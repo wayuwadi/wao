@@ -239,6 +239,57 @@ class WorkdayRhythmNotificationServiceTest {
         verify(feishu, never()).sendCard(any(), any(), any());
     }
 
+    @Test
+    void energyAndFocusUseIndependentTargets() {
+        when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":true,"notifyFocus":true,"channel":"WEBHOOK",
+                  "webhookId":"fw_notice","webhookName":"通知群",
+                  "focusTarget":{"channel":"CHAT","chatId":"oc_wao","chatName":"WAO"}},
+                 "energyItems":[{"id":"WATER","title":"喝水","mode":"COUNT","notify":true}]}
+                """);
+        when(preferences.find("wd", "workday-rhythm-day-2026-08-18")).thenReturn("""
+                {"energyRecords":{"WATER":4},"focus":["任务一","任务二","任务三"]}
+                """);
+        when(webhooks.enabledTarget("fw_notice")).thenReturn(new FeishuWebhookConfigService.NotificationTarget(
+                "fw_notice", "通知群", "https://open.feishu.cn/test-placeholder", true));
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+
+        assertThat(service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY)).chatName()).isEqualTo("通知群");
+        assertThat(service.notifyFocus("wd", DAY).chatName()).isEqualTo("WAO");
+        var energy = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        var focus = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        verify(webhookNotifier).send(org.mockito.ArgumentMatchers.eq("https://open.feishu.cn/test-placeholder"), energy.capture());
+        verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("token"), org.mockito.ArgumentMatchers.eq("oc_wao"), focus.capture());
+        assertThat(energy.getValue().title()).contains("精力补给");
+        assertThat(focus.getValue().title()).contains("今日重点");
+    }
+
+    @Test
+    void explicitEmptyFocusTargetNeverFallsBackToEnergyChat() {
+        when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":true,"notifyFocus":true,"channel":"CHAT",
+                 "chatId":"oc_energy","focusTarget":{"channel":"CHAT"}}}
+                """);
+        when(preferences.find("wd", "workday-rhythm-day-2026-08-18")).thenReturn("""
+                {"focus":["任务一","任务二","任务三"]}
+                """);
+        assertThatThrownBy(() -> service.notifyFocus("wd", DAY)).hasMessageContaining("选择通知群");
+        verify(feishu, never()).sendCard(any(), any(), any());
+        verify(webhookNotifier, never()).send(any(), any());
+    }
+
+    @Test
+    void energyCategoryCanBeDisabledWithoutDisablingFocus() {
+        when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":true,"notifyEnergy":false,"notifyFocus":true,
+                 "channel":"CHAT","chatId":"oc_wao"}}
+                """);
+        assertThat(service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY)).sent()).isFalse();
+        verify(preferences, never()).find("wd", "workday-rhythm-day-2026-08-18");
+    }
+
     private void configured(boolean enabled, boolean meditation) {
         when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
                 {"energyNotification":{"enabled":%s,"chatId":"oc_target","chatName":"娃屋日常",

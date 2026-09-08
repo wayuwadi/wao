@@ -62,6 +62,7 @@ public class WorkdayRhythmNotificationService {
         EnergyAction action = action(config, request.action());
         String targetName = targetName(notification);
         if (!notification.path("enabled").asBoolean(false)
+                || !notification.path("notifyEnergy").asBoolean(true)
                 || !action.shouldNotify()) {
             return new EnergyNotificationResultDto(false, targetName);
         }
@@ -81,7 +82,7 @@ public class WorkdayRhythmNotificationService {
      */
     public EnergyNotificationResultDto notifyFocus(String memberId, LocalDate date) {
         JsonNode config = read(preferences.find(memberId, CONFIG_KEY));
-        JsonNode notification = config.path("energyNotification");
+        JsonNode notification = WorkdayNotificationTargets.resolve(config.path("energyNotification"), "focusTarget");
         String targetName = targetName(notification);
         if (!notification.path("enabled").asBoolean(false)
                 || !notification.path("notifyFocus").asBoolean(true)) {
@@ -127,6 +128,9 @@ public class WorkdayRhythmNotificationService {
                     StringUtils.hasText(target.name()) ? target.name() : "已配置 Webhook");
         }
 
+        if (!"CHAT".equals(notification.path("channel").asText("CHAT"))) {
+            throw new BadRequestException("通知发送方式无效，请重新选择目标群");
+        }
         String chatId = notification.path("chatId").asText("").trim();
         if (!StringUtils.hasText(chatId)) {
             throw new BadRequestException("请先在今日节奏里选择通知群");

@@ -181,7 +181,8 @@ public class TianrenNotificationService {
     private JsonNode config(String memberId) {
         try {
             String raw = preferences.find(memberId, WorkdayRhythmNotificationService.CONFIG_KEY);
-            return raw == null ? json.createObjectNode() : json.readTree(raw).path("energyNotification");
+            return raw == null ? json.createObjectNode()
+                    : WorkdayNotificationTargets.resolve(json.readTree(raw).path("energyNotification"), "tianrenTarget");
         } catch (Exception ex) { return json.createObjectNode(); }
     }
 

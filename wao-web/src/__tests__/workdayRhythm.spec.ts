@@ -5,6 +5,7 @@ import {
   currentBlockIndex,
   defaultRhythmDay,
   minutesUntilEnd,
+  normalizeRhythmConfig,
   parseRhythmConfig,
   parseRhythmConfigDraft,
   parseRhythmDay,
@@ -87,6 +88,30 @@ describe('工作日节奏规则', () => {
       notify: true,
     })
     expect(rhythmConfigError(configured)).toBe('')
+  })
+
+  it('旧共用群迁移为独立目标，精力补给改群不会连带改变重点和卦象', () => {
+    const legacy = structuredClone(DEFAULT_WORKDAY_RHYTHM)
+    Object.assign(legacy.energyNotification, { enabled: true, notifyTianren: true, channel: 'CHAT', chatId: 'oc_wao', chatName: 'WAO' })
+    const migrated = normalizeRhythmConfig(legacy)
+    Object.assign(migrated.energyNotification, { channel: 'WEBHOOK', webhookId: 'fw_notice', webhookName: 'WAO通知群', chatId: '', chatName: '' })
+    const restored = parseRhythmConfig(JSON.stringify(migrated))!
+    expect(restored.energyNotification.webhookId).toBe('fw_notice')
+    expect(restored.energyNotification.focusTarget?.chatId).toBe('oc_wao')
+    expect(restored.energyNotification.tianrenTarget?.chatId).toBe('oc_wao')
+    expect(restored.energyNotification.focusTarget).not.toBe(restored.energyNotification.tianrenTarget)
+  })
+
+  it('只校验开启类别的目标，显式空目标不会回落到旧群', () => {
+    const config = normalizeRhythmConfig(structuredClone(DEFAULT_WORKDAY_RHYTHM))
+    Object.assign(config.energyNotification, { enabled: true, channel: 'CHAT', chatId: 'oc_energy' })
+    expect(rhythmConfigError(config)).toContain('今日重点通知群')
+    config.energyNotification.notifyFocus = false
+    expect(rhythmConfigError(config)).toBe('')
+    config.energyNotification.notifyTianren = true
+    expect(rhythmConfigError(config)).toContain('卦象解读通知群')
+    config.energyNotification.enabled = false
+    expect(rhythmConfigError(config)).toBe('')
   })
 
   it('每日记录只恢复当天并保留已移除项目的历史快照', () => {

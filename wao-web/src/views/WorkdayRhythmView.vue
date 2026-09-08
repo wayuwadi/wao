@@ -17,12 +17,6 @@ import {
   type WorkdayRhythmHistory,
   type WorkdayRhythmHistoryDay,
 } from '@/api/workdayRhythm'
-import {
-  fetchFeishuChats,
-  fetchWebhookEndpoints,
-  type FeishuChat,
-  type FeishuWebhookEndpoint,
-} from '@/api/system'
 import { fetchDailyGuidance, generateDailyGuidance, type DailyGuidance } from '@/api/dailyGuidance'
 import { toast } from '@/composables/toast'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -37,6 +31,7 @@ import {
   currentBlockIndex,
   defaultRhythmDay,
   minutesUntilEnd,
+  normalizeRhythmConfig,
   parseRhythmConfigDraft,
   parseRhythmDay,
   rhythmConfigError,
@@ -45,6 +40,7 @@ import {
   type WorkdayRhythmDay,
   type WorkdayRhythmEnergyItem,
 } from '@/utils/workdayRhythm'
+import WorkdayNotificationRoutes from '@/components/workday/WorkdayNotificationRoutes.vue'
 import WorkdayRhythmDailyPanel from '@/components/workday/WorkdayRhythmDailyPanel.vue'
 import PendingRhythmFocus from '@/components/workday/PendingRhythmFocus.vue'
 import WorkdayRhythmDailySettings from '@/components/workday/WorkdayRhythmDailySettings.vue'
@@ -81,12 +77,6 @@ const editorError = ref('')
 type EditorSection = 'checklist' | 'notification' | 'energy' | 'timeline'
 const editorSection = ref<EditorSection>('checklist')
 const editorDraft = ref<WorkdayRhythmConfig>(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
-const notificationChats = ref<FeishuChat[]>([])
-const notificationChatsLoading = ref(false)
-const notificationChatsError = ref('')
-const notificationWebhooks = ref<FeishuWebhookEndpoint[]>([])
-const notificationWebhooksLoading = ref(false)
-const notificationWebhooksError = ref('')
 const energyNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
 const focusNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
 const pendingFocusNotification = ref<string | null>(null)
@@ -155,21 +145,6 @@ const activeFocusIndex = computed(() => {
     (item, index) => !!item.trim() && day.value.focusCompleted[index] !== true,
   )
 })
-const configuredChatMissing = computed(
-  () =>
-    !!editorDraft.value.energyNotification.chatId &&
-    !notificationChats.value.some(
-      (chat) => chat.chatId === editorDraft.value.energyNotification.chatId,
-    ),
-)
-const configuredWebhookMissing = computed(
-  () =>
-    !!editorDraft.value.energyNotification.webhookId &&
-    !notificationWebhooks.value.some(
-      (endpoint) =>
-        endpoint.id === editorDraft.value.energyNotification.webhookId && endpoint.enabled,
-    ),
-)
 const rhythmFavorite = computed(() => favorites.isFav('module', RHYTHM_FAVORITE_ID))
 let energyItemSequence = 0
 
@@ -386,7 +361,7 @@ async function persistDay(successMessage = ''): Promise<boolean> {
 async function dispatchEnergyNotification(action: WorkdayRhythmEnergyAction, date: string) {
   const notification = config.value.energyNotification
   const selected = config.value.energyItems.some((item) => item.id === action && item.notify)
-  if (!notification.enabled || !selected) return
+  if (!notification.enabled || notification.notifyEnergy === false || !selected) return
   pendingEnergyNotification.value = { action, date }
   energyNotificationState.value = 'sending'
   try {
@@ -576,11 +551,10 @@ async function saveTomorrowFocus() {
 
 function openEditor(section: EditorSection = 'checklist') {
   const savedDraft = parseRhythmConfigDraft(localStorage.getItem(CONFIG_DRAFT_KEY) ?? '')
-  editorDraft.value = savedDraft ?? cloneRhythmConfig(config.value)
+  editorDraft.value = normalizeRhythmConfig(savedDraft ?? config.value)
   editorError.value = ''
   editorSection.value = section
   editorOpen.value = true
-  if (editorDraft.value.energyNotification.enabled) loadNotificationTargets()
 }
 
 function openPetSettingsIfRequested() {
@@ -633,57 +607,6 @@ function historyDateLabel(value: string) {
 
 function energyResult(item: WorkdayRhythmHistoryDay['energyItems'][number]) {
   return item.mode === 'DAILY_ONCE' ? (item.count > 0 ? '已完成' : '未执行') : `${item.count} 次`
-}
-
-async function loadNotificationChats() {
-  if (notificationChatsLoading.value) return
-  notificationChatsLoading.value = true
-  notificationChatsError.value = ''
-  try {
-    notificationChats.value = await fetchFeishuChats()
-    if (!notificationChats.value.length)
-      notificationChatsError.value = '机器人当前不在任何可选群聊中'
-  } catch (error) {
-    notificationChatsError.value =
-      error instanceof Error ? error.message : '可用飞书群读取失败，请稍后重试'
-  } finally {
-    notificationChatsLoading.value = false
-  }
-}
-
-async function loadNotificationWebhooks() {
-  if (notificationWebhooksLoading.value) return
-  notificationWebhooksLoading.value = true
-  notificationWebhooksError.value = ''
-  try {
-    notificationWebhooks.value = await fetchWebhookEndpoints()
-    if (!notificationWebhooks.value.some((endpoint) => endpoint.enabled))
-      notificationWebhooksError.value = '系统设置中没有已启用的 Webhook 配置'
-  } catch (error) {
-    notificationWebhooksError.value =
-      error instanceof Error ? error.message : 'Webhook 配置读取失败，请稍后重试'
-  } finally {
-    notificationWebhooksLoading.value = false
-  }
-}
-
-function loadNotificationTargets() {
-  if (editorDraft.value.energyNotification.channel === 'WEBHOOK') void loadNotificationWebhooks()
-  else void loadNotificationChats()
-}
-
-function selectNotificationChat() {
-  const selected = notificationChats.value.find(
-    (chat) => chat.chatId === editorDraft.value.energyNotification.chatId,
-  )
-  editorDraft.value.energyNotification.chatName = selected?.name ?? ''
-}
-
-function selectNotificationWebhook() {
-  const selected = notificationWebhooks.value.find(
-    (endpoint) => endpoint.id === editorDraft.value.energyNotification.webhookId,
-  )
-  editorDraft.value.energyNotification.webhookName = selected?.name ?? ''
 }
 
 function resetEditor() {
@@ -741,6 +664,7 @@ async function submitEditor() {
     const pendingAction = pendingEnergyNotification.value?.action
     if (
       !config.value.energyNotification.enabled ||
+      config.value.energyNotification.notifyEnergy === false ||
       !config.value.energyItems.some((item) => item.id === pendingAction && item.notify)
     ) {
       pendingEnergyNotification.value = null
@@ -768,20 +692,6 @@ watch(
     if (editorOpen.value) localStorage.setItem(CONFIG_DRAFT_KEY, JSON.stringify(value))
   },
   { deep: true },
-)
-
-watch(
-  () => editorDraft.value.energyNotification.enabled,
-  (enabled) => {
-    if (enabled && editorOpen.value) loadNotificationTargets()
-  },
-)
-
-watch(
-  () => editorDraft.value.energyNotification.channel,
-  () => {
-    if (editorDraft.value.energyNotification.enabled && editorOpen.value) loadNotificationTargets()
-  },
 )
 
 watch(
@@ -832,6 +742,10 @@ onBeforeUnmount(() => {
         </button>
         <button class="history-button" type="button" @click="openHistory">
           <i class="ri-history-line"></i>历史记录
+        </button>
+        <button class="page-action notification-settings-button" type="button"
+          :disabled="loading || !!loadError" @click="openEditor('notification')">
+          <i class="ri-notification-3-line"></i>通知设置
         </button>
         <button class="settings-button" type="button" @click="openEditor()">
           <i class="ri-settings-4-line"></i>调整节奏
@@ -1245,123 +1159,11 @@ onBeforeUnmount(() => {
             v-show="editorSection === 'checklist'"
             @saved="dailyPanelKey += 1"
           />
-          <section
-            v-show="editorSection === 'notification'"
-            class="energy-editor"
-            aria-labelledby="energy-editor-title"
-          >
-            <header>
-              <div>
-                <small>ACTION NOTIFICATION</small>
-                <h3 id="energy-editor-title">今日行动飞书通知</h3>
-              </div>
-              <label class="toggle-field">
-                <input v-model="editorDraft.energyNotification.enabled" type="checkbox" />
-                <span>{{ editorDraft.energyNotification.enabled ? '已启用' : '未启用' }}</span>
-              </label>
-            </header>
-            <p>今日重点或补给行动成功保存后，可使用系统 Webhook 或飞书应用通知指定群聊。</p>
-            <div v-if="editorDraft.energyNotification.enabled" class="energy-editor-fields">
-              <label class="energy-notify-field">
-                <input v-model="editorDraft.energyNotification.notifyFocus" type="checkbox" />
-                <span>今日重点保存后发群</span>
-              </label>
-              <label class="channel-field">
-                <span class="energy-notify-field">
-                  <input v-model="editorDraft.energyNotification.notifyTianren" type="checkbox" />
-                  <span>卦象解读完成后发群</span>
-                </span>
-                <small>开启后，当天已保存的解读和公开结果链接会发到下方所选群；每天一张，重新解读不重复发送。</small>
-              </label>
-              <label class="channel-field">
-                <span>发送方式</span>
-                <select v-model="editorDraft.energyNotification.channel">
-                  <option value="WEBHOOK">系统 Webhook</option>
-                  <option value="CHAT">飞书应用群聊</option>
-                </select>
-              </label>
-              <label v-if="editorDraft.energyNotification.channel === 'WEBHOOK'" class="chat-field">
-                <span>Webhook 配置</span>
-                <select
-                  v-model="editorDraft.energyNotification.webhookId"
-                  :disabled="notificationWebhooksLoading"
-                  @change="selectNotificationWebhook"
-                >
-                  <option value="">请选择系统设置中的 Webhook</option>
-                  <option
-                    v-if="configuredWebhookMissing"
-                    :value="editorDraft.energyNotification.webhookId"
-                    disabled
-                  >
-                    已保存 · {{ editorDraft.energyNotification.webhookName || '配置不可用' }}
-                  </option>
-                  <option
-                    v-for="endpoint in notificationWebhooks.filter((item) => item.enabled)"
-                    :key="endpoint.id"
-                    :value="endpoint.id"
-                  >
-                    {{ endpoint.name }}{{ endpoint.systemDefault ? ' · 系统默认' : '' }}
-                  </option>
-                </select>
-              </label>
-              <label v-else class="chat-field">
-                <span>通知群聊</span>
-                <select
-                  v-model="editorDraft.energyNotification.chatId"
-                  :disabled="notificationChatsLoading"
-                  @change="selectNotificationChat"
-                >
-                  <option value="">请选择机器人所在的群</option>
-                  <option
-                    v-if="configuredChatMissing"
-                    :value="editorDraft.energyNotification.chatId"
-                  >
-                    已保存 · {{ editorDraft.energyNotification.chatName || '未知群聊' }}
-                  </option>
-                  <option v-for="chat in notificationChats" :key="chat.chatId" :value="chat.chatId">
-                    {{ chat.name }}
-                  </option>
-                </select>
-              </label>
-              <button
-                class="refresh-chats"
-                type="button"
-                :disabled="notificationChatsLoading || notificationWebhooksLoading"
-                @click="loadNotificationTargets"
-              >
-                <i
-                  :class="
-                    notificationChatsLoading || notificationWebhooksLoading
-                      ? 'ri-loader-4-line spin'
-                      : 'ri-refresh-line'
-                  "
-                ></i>
-                {{
-                  notificationChatsLoading || notificationWebhooksLoading ? '读取中' : '刷新选项'
-                }}
-              </button>
-            </div>
-            <p
-              v-if="
-                editorDraft.energyNotification.channel === 'WEBHOOK' && notificationWebhooksError
-              "
-              class="chat-load-error"
-              role="alert"
-            >
-              <i class="ri-error-warning-line"></i
-              >{{ notificationWebhooksError }}；可前往系统设置的“Webhook配置”维护。
-            </p>
-            <p
-              v-else-if="
-                editorDraft.energyNotification.channel === 'CHAT' && notificationChatsError
-              "
-              class="chat-load-error"
-              role="alert"
-            >
-              <i class="ri-error-warning-line"></i
-              >{{ notificationChatsError }}；请确认自动化中的飞书应用凭据可用。
-            </p>
-          </section>
+          <WorkdayNotificationRoutes
+            v-if="editorSection === 'notification'"
+            v-model="editorDraft.energyNotification"
+            :disabled="editorBusy"
+          />
           <section
             v-show="editorSection === 'energy'"
             class="energy-items-editor"
@@ -1448,7 +1250,7 @@ onBeforeUnmount(() => {
         </div>
         <footer>
           <button
-            v-if="editorSection !== 'checklist'"
+            v-if="editorSection === 'energy' || editorSection === 'timeline'"
             class="reset"
             type="button"
             :disabled="editorBusy"
@@ -1474,7 +1276,7 @@ onBeforeUnmount(() => {
             :disabled="editorBusy"
             @click="submitEditor"
           >
-            {{ editorBusy ? '保存中…' : '保存节奏' }}
+            {{ editorBusy ? '保存中…' : editorSection === 'notification' ? '保存通知设置' : '保存节奏' }}
           </button>
         </footer>
       </section>
@@ -2942,108 +2744,10 @@ textarea {
   color: #267c65;
   box-shadow: inset 0 -2px #267c65;
 }
-.energy-editor {
-  margin-bottom: 16px;
-  border: 1px solid #b9d8cc;
-  border-radius: 13px;
-  padding: 13px;
-  background: var(--wao-success-bg);
-}
-.energy-editor > header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.energy-editor h3,
 .timeline-editor-title h3 {
   margin: 2px 0 0;
   color: var(--wao-text);
   font-size: 14px;
-}
-.energy-editor > p {
-  margin: 8px 0 0;
-  color: var(--wao-text-weak);
-  font-size: 10.5px;
-  line-height: 1.5;
-}
-.toggle-field {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #267c65;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.toggle-field input,
-.action-field input {
-  accent-color: #267c65;
-}
-.energy-editor-fields {
-  margin-top: 11px;
-  display: grid;
-  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 8px;
-}
-.chat-field,
-.channel-field {
-  display: grid;
-  gap: 4px;
-}
-.chat-field > span,
-.channel-field > span {
-  color: var(--wao-text-faint);
-  font-size: 9.5px;
-}
-.chat-field select,
-.channel-field select {
-  width: 100%;
-  height: 36px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 8px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-  padding: 0 8px;
-  font-size: 11px;
-}
-.refresh-chats {
-  height: 36px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 8px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-weak);
-  padding: 0 9px;
-  cursor: pointer;
-  font-size: 10px;
-}
-.action-field {
-  min-height: 36px;
-  border: 1px solid var(--wao-line);
-  border-radius: 8px;
-  background: var(--wao-bg-card);
-  padding: 5px 7px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-.action-field > span {
-  display: grid;
-}
-.action-field b {
-  font-size: 10.5px;
-}
-.action-field small {
-  color: var(--wao-text-faint);
-  font-size: 8.5px;
-}
-.energy-editor > .chat-load-error {
-  color: #9b4141;
-}
-.chat-load-error i {
-  margin-right: 4px;
 }
 .energy-items-editor {
   margin-bottom: 16px;
@@ -3411,12 +3115,6 @@ textarea {
   }
   .editor-nav {
     grid-template-columns: 1fr 1fr;
-  }
-  .energy-editor-fields {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .channel-field {
-    grid-column: 1 / -1;
   }
   .energy-item-editor {
     grid-template-columns: 25px minmax(0, 1fr) 32px;
