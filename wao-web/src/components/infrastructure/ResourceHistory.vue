@@ -28,4 +28,4 @@ watch(() => [props.points, props.metric], draw, { flush: 'post' })
 onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose() })
 </script>
 <template><div ref="element" class="history-chart" role="img" :aria-label="metric === 'usage' ? 'CPU 和内存使用率历史趋势，百分比' : '根磁盘可用容量与交换分区占用历史趋势，GiB'"></div></template>
-<style scoped>.history-chart { width: 100%; height: 240px; }</style>
+<style scoped>.history-chart { width: 100%; min-width: 0; height: 240px; }</style>
