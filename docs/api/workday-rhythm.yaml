@@ -104,6 +104,7 @@ paths:
       description: >-
         服务端从会话确定成员，并重新读取 workday-rhythm-config-v1 与指定日期的成员偏好；
         请求不接受成员 id、Webhook 配置 id、目标群、项目名称、次数或完成状态。
+        目标使用 energyNotification 原目标字段；enabled、notifyEnergy（缺省 true）及项目通知开关均开启时发送。
       requestBody:
         required: true
         content:
@@ -136,7 +137,8 @@ paths:
     post:
       summary: 把当前成员已保存的今日重点发到本人通知目标
       description: >-
-        请求只接收日期；服务端从会话确定成员，重新读取成员的通知目标和指定日期已落库的非空重点。
+        请求只接收日期；服务端从会话确定成员，重新读取 energyNotification.focusTarget 和指定日期已落库的非空重点。
+        仅未配置 focusTarget 时沿用旧共用目标；显式空目标不回落。
       requestBody:
         required: true
         content:
@@ -153,6 +155,28 @@ paths:
         "502": { description: 飞书开放平台拒绝请求或暂不可达 }
 components:
   schemas:
+    WorkdayActionNotificationTarget:
+      type: object
+      description: 成员偏好中的独立目标，不保存 Webhook 地址或应用凭据。
+      required: [channel, webhookId, webhookName, chatId, chatName]
+      properties:
+        channel: { type: string, enum: [WEBHOOK, CHAT] }
+        webhookId: { type: string, maxLength: 64 }
+        webhookName: { type: string, maxLength: 64 }
+        chatId: { type: string, maxLength: 128 }
+        chatName: { type: string, maxLength: 100 }
+    WorkdayActionNotification:
+      description: workday-rhythm-config-v1.energyNotification；原目标用于精力补给，两个独立目标缺省时兼容旧共用群。
+      allOf:
+        - { $ref: "#/components/schemas/WorkdayActionNotificationTarget" }
+        - type: object
+          properties:
+            enabled: { type: boolean, default: false }
+            notifyEnergy: { type: boolean, default: true }
+            notifyFocus: { type: boolean, default: true }
+            notifyTianren: { type: boolean, default: false }
+            focusTarget: { $ref: "#/components/schemas/WorkdayActionNotificationTarget" }
+            tianrenTarget: { $ref: "#/components/schemas/WorkdayActionNotificationTarget" }
     WorkdayRhythmHistory:
       type: object
       required: [from, to, items, skippedCount]

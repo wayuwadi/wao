@@ -396,7 +396,7 @@ function finishRhythmAction(itemId: string) {
 
 async function notifyRhythmAction(item: WorkdayRhythmEnergyItem) {
   const notification = rhythmConfig.value?.energyNotification
-  if (!notification?.enabled || !item.notify) {
+  if (!notification?.enabled || notification.notifyEnergy === false || !item.notify) {
     finishRhythmAction(item.id)
     return
   }

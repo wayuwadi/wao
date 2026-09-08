@@ -153,6 +153,40 @@ class TianrenNotificationServiceTest {
         assertThat(rendered.length()).isLessThan(6000);
     }
 
+    @Test void tianrenUsesItsOwnChatWhenEnergyUsesWebhook() {
+        when(preferences.find("member", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":true,"notifyTianren":true,"channel":"WEBHOOK",
+                 "webhookId":"fw_notice","webhookName":"通知群",
+                 "focusTarget":{"channel":"CHAT","chatId":"oc_focus","chatName":"重点群"},
+                 "tianrenTarget":{"channel":"CHAT","chatId":"oc_wao","chatName":"WAO"}}}
+                """);
+        service.tick();
+        verify(feishu).sendRawCard(eq("test-only-token"), eq("oc_wao"), any(), eq("tianren-tr-test"));
+        verifyNoInteractions(webhookSender);
+        assertThat(service.status("member", "tr-test").targetName()).isEqualTo("WAO");
+    }
+
+    @Test void emptyIndependentTargetDoesNotFallBackOrPublishReading() {
+        when(preferences.find("member", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":true,"notifyTianren":true,"channel":"CHAT",
+                 "chatId":"oc_energy","tianrenTarget":{}}}
+                """);
+        service.tick();
+        assertThat(service.status("member", "tr-test").state()).isEqualTo("CONFIGURATION_REQUIRED");
+        verifyNoInteractions(readings, feishu, webhookSender);
+    }
+
+    @Test void independentTargetChangesStillProtectFrozenRetry() {
+        when(feishu.tenantAccessToken(anyString(), anyString())).thenThrow(new FeishuApiException("invalid credentials"));
+        service.tick();
+        when(preferences.find("member", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":true,"notifyTianren":true,"channel":"CHAT","chatId":"oc-group",
+                 "tianrenTarget":{"channel":"CHAT","chatId":"oc_other","chatName":"另一个群"}}}
+                """);
+        assertThatThrownBy(() -> service.retry("member", "tr-test", false)).hasMessageContaining("原目标");
+        verify(feishu, never()).sendRawCard(anyString(), anyString(), any(), anyString());
+    }
+
     private void config(boolean enabled, String target) {
         when(preferences.find("member", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn(
                 "{\"energyNotification\":{\"enabled\":true,\"notifyTianren\":" + enabled

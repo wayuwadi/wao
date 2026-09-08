@@ -13,16 +13,25 @@ export interface WorkdayRhythmConfig {
   energyItems: WorkdayRhythmEnergyItem[]
 }
 
-export interface WorkdayRhythmEnergyNotification {
-  enabled: boolean
-  notifyFocus: boolean
-  /** 旧配置默认关闭，开启即允许把当天解读分享到所选群。 */
-  notifyTianren?: boolean
+export type WorkdayNotificationKind = 'energy' | 'focus' | 'tianren'
+
+export interface WorkdayNotificationTarget {
   channel: 'WEBHOOK' | 'CHAT'
   webhookId: string
   webhookName: string
   chatId: string
   chatName: string
+}
+
+export interface WorkdayRhythmEnergyNotification extends WorkdayNotificationTarget {
+  enabled: boolean
+  notifyFocus: boolean
+  notifyEnergy?: boolean
+  /** 缺省时沿用旧版共用目标；首次保存后独立持久化。 */
+  focusTarget?: WorkdayNotificationTarget
+  tianrenTarget?: WorkdayNotificationTarget
+  /** 旧配置默认关闭，开启即允许把当天解读分享到所选群。 */
+  notifyTianren?: boolean
   /** 旧版配置字段只用于读取迁移，新版是否通知由每个补给项目决定。 */
   notifyWater?: boolean
   notifyMeditation?: boolean
@@ -210,27 +219,41 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
     if (
       typeof notification.enabled !== 'boolean' ||
       typeof notification.notifyFocus !== 'boolean' ||
-      (notification.notifyTianren !== undefined && typeof notification.notifyTianren !== 'boolean') ||
-      (notification.channel !== 'WEBHOOK' && notification.channel !== 'CHAT') ||
-      typeof notification.webhookId !== 'string' ||
-      notification.webhookId.length > 64 ||
-      typeof notification.webhookName !== 'string' ||
-      notification.webhookName.length > 64 ||
-      typeof notification.chatId !== 'string' ||
-      notification.chatId.length > 128 ||
-      typeof notification.chatName !== 'string' ||
-      notification.chatName.length > 100
-    ) {
-      return '精力补给通知配置不正确'
-    }
-    if (
-      notification.enabled &&
-      notification.channel === 'WEBHOOK' &&
-      !notification.webhookId.trim()
+      (notification.notifyEnergy !== undefined && typeof notification.notifyEnergy !== 'boolean') ||
+      (notification.notifyTianren !== undefined && typeof notification.notifyTianren !== 'boolean')
     )
-      return '请选择精力补给通知 Webhook'
-    if (notification.enabled && notification.channel === 'CHAT' && !notification.chatId.trim())
-      return '请选择精力补给通知群'
+      return '今日行动通知配置不正确'
+    const routes = [
+      [
+        'energy',
+        '精力补给',
+        notification.notifyEnergy !== false && value.energyItems?.some((item) => item.notify),
+      ],
+      ['focus', '今日重点', notification.notifyFocus],
+      ['tianren', '卦象解读', notification.notifyTianren],
+    ] as const
+    for (const [kind, label, enabled] of routes) {
+      const target = workdayNotificationTarget(notification, kind)
+      if (
+        !target ||
+        !['WEBHOOK', 'CHAT'].includes(target.channel) ||
+        typeof target.webhookId !== 'string' ||
+        target.webhookId.length > 64 ||
+        typeof target.webhookName !== 'string' ||
+        target.webhookName.length > 64 ||
+        typeof target.chatId !== 'string' ||
+        target.chatId.length > 128 ||
+        typeof target.chatName !== 'string' ||
+        target.chatName.length > 100
+      )
+        return `${label}通知配置不正确`
+      if (
+        notification.enabled &&
+        enabled &&
+        !(target.channel === 'WEBHOOK' ? target.webhookId : target.chatId).trim()
+      )
+        return `请选择${label}通知群`
+    }
   }
   if (
     !Array.isArray(value.energyItems) ||
@@ -259,21 +282,38 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
     notification.enabled &&
     !notification.notifyFocus &&
     !notification.notifyTianren &&
-    !value.energyItems.some((item) => item.notify)
+    (notification.notifyEnergy === false || !value.energyItems.some((item) => item.notify))
   )
     return '请至少选择一个需要通知的今日行动'
   return ''
 }
 
+/** 旧成员继续使用原目标；已有独立配置缺失字段时不得回落到另一个群。 */
+export function workdayNotificationTarget(
+  notification: WorkdayRhythmEnergyNotification,
+  kind: WorkdayNotificationKind,
+): WorkdayNotificationTarget {
+  if (kind === 'focus' && notification.focusTarget !== undefined) return notification.focusTarget
+  if (kind === 'tianren' && notification.tianrenTarget !== undefined)
+    return notification.tianrenTarget
+  return notification
+}
+
+function normalizedNotificationTarget(value: WorkdayNotificationTarget): WorkdayNotificationTarget {
+  return {
+    channel:
+      value.channel === undefined ? (value.chatId?.trim() ? 'CHAT' : 'WEBHOOK') : value.channel,
+    webhookId: value.webhookId?.trim() ?? '',
+    webhookName: value.webhookName?.trim() ?? '',
+    chatId: value.chatId?.trim() ?? '',
+    chatName: value.chatName?.trim() ?? '',
+  }
+}
+
 export function normalizeRhythmConfig(value: WorkdayRhythmConfig): WorkdayRhythmConfig {
   const notification = value.energyNotification ?? DEFAULT_WORKDAY_RHYTHM.energyNotification
   const legacyNotification = notification as WorkdayRhythmEnergyNotification
-  const channel =
-    notification.channel === 'WEBHOOK' || notification.channel === 'CHAT'
-      ? notification.channel
-      : notification.chatId?.trim()
-        ? 'CHAT'
-        : 'WEBHOOK'
+  const target = normalizedNotificationTarget(notification)
   const energyItems = Array.isArray(value.energyItems)
     ? value.energyItems
     : DEFAULT_WORKDAY_RHYTHM.energyItems.map((item) => ({
@@ -289,11 +329,14 @@ export function normalizeRhythmConfig(value: WorkdayRhythmConfig): WorkdayRhythm
       enabled: notification.enabled === true,
       notifyFocus: notification.notifyFocus !== false,
       notifyTianren: notification.notifyTianren === true,
-      channel,
-      webhookId: notification.webhookId?.trim() ?? '',
-      webhookName: notification.webhookName?.trim() ?? '',
-      chatId: notification.chatId?.trim() ?? '',
-      chatName: notification.chatName?.trim() ?? '',
+      notifyEnergy: notification.notifyEnergy !== false,
+      ...target,
+      focusTarget: normalizedNotificationTarget(
+        notification.focusTarget === undefined ? target : notification.focusTarget,
+      ),
+      tianrenTarget: normalizedNotificationTarget(
+        notification.tianrenTarget === undefined ? target : notification.tianrenTarget,
+      ),
       notifyWater: energyItems.find((item) => item.id === 'WATER')?.notify ?? true,
       notifyMeditation: energyItems.find((item) => item.id === 'MEDITATION')?.notify ?? true,
     },
