@@ -1,6 +1,12 @@
 package cn.wayuwa.wao.service;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.transaction.annotation.Transactional;
 
 import cn.wayuwa.wao.domain.FeishuNotificationFeedbackEntity;
 import cn.wayuwa.wao.mapper.FeishuNotificationFeedbackMapper;
@@ -16,33 +22,96 @@ import org.springframework.util.StringUtils;
 /** 接收飞书卡片回调并保存用户实际点击；无点击时不落库即为空反馈。 */
 @Service
 public class NotificationFeedbackService {
+    private static final Logger log = LoggerFactory.getLogger(NotificationFeedbackService.class);
     private final FeishuNotificationFeedbackMapper mapper;
     private final AutomationJobMapper jobs;
     private final FeishuNotificationMapper notifications;
-    public NotificationFeedbackService(FeishuNotificationFeedbackMapper mapper, AutomationJobMapper jobs, FeishuNotificationMapper notifications) { this.mapper = mapper; this.jobs = jobs; this.notifications = notifications; }
-    /**
-     * 保存一次飞书卡片按钮回传。
-     *
-     * @param event 飞书 {@code card.action.trigger} 的 event 节点
-     * @return 已保存的中文反馈；不是本功能按钮或回传无效时返回 {@code null}
-     */
-    public String collect(JsonNode event) {
-        JsonNode action = event.path("action");
-        if (!"automation-feedback".equals(action.path("value").path("kind").asText())) return null;
-        String notificationId = action.path("value").path("notificationId").asText();
-        String outcome = action.path("value").path("action").asText();
-        String openId = event.path("operator").path("open_id").asText();
-        if (!StringUtils.hasText(notificationId) || !StringUtils.hasText(openId)
-                || !("done".equals(outcome) || "missed".equals(outcome))) return null;
-        FeishuNotificationEntity p = notifications.selectById(notificationId);
-        if (p == null) return null; // 未知卡片不接受，避免伪造数据。
-        FeishuNotificationFeedbackEntity row = mapper.selectOne(new LambdaQueryWrapper<FeishuNotificationFeedbackEntity>()
-                .eq(FeishuNotificationFeedbackEntity::getNotificationId, notificationId).eq(FeishuNotificationFeedbackEntity::getOperatorOpenId, openId));
-        if (row == null) { row = new FeishuNotificationFeedbackEntity(); row.setId("f" + System.currentTimeMillis()); row.setNotificationId(notificationId); row.setJobId(p.getJobId()); row.setNotificationAt(p.getSentAt()); row.setOperatorOpenId(openId); }
-        row.setAction(outcome); row.setOperatorName(event.path("operator").path("user_id").asText(openId)); row.setActedAt(LocalDateTime.now());
-        if (mapper.selectById(row.getId()) == null) mapper.insert(row); else mapper.updateById(row);
-        return "done".equals(outcome) ? "做到了" : "没做到";
+    private final SettingService settings;
+    private final FeishuOpenApiClient feishu;
+
+    public NotificationFeedbackService(FeishuNotificationFeedbackMapper mapper, AutomationJobMapper jobs,
+            FeishuNotificationMapper notifications, SettingService settings, FeishuOpenApiClient feishu) {
+        this.mapper = mapper; this.jobs = jobs; this.notifications = notifications;
+        this.settings = settings; this.feishu = feishu;
     }
+
+    /** 已落库的实际选择，以及共享反馈是否成功显示。 */
+    public record Result(String outcome, boolean displayed) { }
+
+    /**
+     * 保存真实按钮回传并刷新所有人的最新选择。通知行锁覆盖保存与外部显示，避免多节点交叉覆盖。
+     * 展示失败保留实际反馈，让同一人再次点击重试；未知或身份不匹配的回传返回 null。
+     */
+    @Transactional
+    public Result collect(JsonNode event) {
+        JsonNode value = event.path("action").path("value");
+        if (!"automation-feedback".equals(value.path("kind").asText())) return null;
+        String notificationId = value.path("notificationId").asText();
+        String outcome = value.path("action").asText();
+        String openId = event.path("operator").path("open_id").asText();
+        String messageId = event.path("context").path("open_message_id").asText();
+        if (!StringUtils.hasText(notificationId) || !openId.matches("ou_[A-Za-z0-9_-]+")
+                || !("done".equals(outcome) || "missed".equals(outcome))) return null;
+        FeishuNotificationEntity notification = notifications.lockById(notificationId);
+        if (notification == null) return null;
+        if (StringUtils.hasText(messageId) && StringUtils.hasText(notification.getMessageId())
+                && !messageId.equals(notification.getMessageId())
+                && !messageId.equals(notification.getFeedbackMessageId())) return null;
+        FeishuNotificationFeedbackEntity row = mapper.selectOne(new LambdaQueryWrapper<FeishuNotificationFeedbackEntity>()
+                .eq(FeishuNotificationFeedbackEntity::getNotificationId, notificationId)
+                .eq(FeishuNotificationFeedbackEntity::getOperatorOpenId, openId));
+        boolean isNew = row == null;
+        if (isNew) {
+            row = new FeishuNotificationFeedbackEntity(); row.setId("f" + UUID.randomUUID().toString().replace("-", ""));
+            row.setNotificationId(notificationId); row.setJobId(notification.getJobId());
+            row.setNotificationAt(notification.getSentAt()); row.setOperatorOpenId(openId);
+        }
+        row.setAction(outcome); row.setOperatorName(event.path("operator").path("user_id").asText(openId));
+        row.setActedAt(LocalDateTime.now());
+        if (isNew) mapper.insert(row); else mapper.updateById(row);
+        boolean displayed = false;
+        try {
+            displayed = display(notification, messageId);
+        } catch (RuntimeException ex) {
+            // 飞书显示失败不能撤销用户已经提交的真实选择。
+            log.warn("飞书通知 {} 反馈已保存，但实名摘要更新失败：{}", notificationId, ex.getMessage());
+        }
+        return new Result("done".equals(outcome) ? "做到了" : "没做到", displayed);
+    }
+
+    private boolean display(FeishuNotificationEntity notification, String sourceMessageId) {
+        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+        String secret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
+        if (!StringUtils.hasText(sourceMessageId) || !StringUtils.hasText(appId) || !StringUtils.hasText(secret)) return false;
+        var rows = mapper.selectList(new LambdaQueryWrapper<FeishuNotificationFeedbackEntity>()
+                .eq(FeishuNotificationFeedbackEntity::getNotificationId, notification.getId())
+                .orderByAsc(FeishuNotificationFeedbackEntity::getOperatorOpenId));
+        String summary = rows.stream()
+                .filter(row -> row.getOperatorOpenId() != null && row.getOperatorOpenId().matches("ou_[A-Za-z0-9_-]+"))
+                .map(row -> ("done".equals(row.getAction()) ? "✅ " : "❌ ")
+                        + "<at id=" + row.getOperatorOpenId() + "></at>："
+                        + ("done".equals(row.getAction()) ? "做到了" : "没做到"))
+                .collect(Collectors.joining("\n"));
+        String token = feishu.tenantAccessToken(appId, secret);
+        if (notification.getCardTitle() != null) {
+            feishu.updateFeedbackCard(token, notification.getMessageId(), feishu.feedbackCard(
+                    notification.getCardTitle(), notification.getCardBody(), notification.getId(), summary));
+        } else {
+            var job = jobs.selectById(notification.getJobId());
+            var card = feishu.feedbackCard(job == null ? "通知反馈" : job.getName() + " · 成员反馈",
+                    "每人保留最新选择，再次点击可修改。", notification.getId(), summary);
+            if (!StringUtils.hasText(notification.getFeedbackMessageId())) {
+                String replyId = feishu.replyFeedbackCard(token, sourceMessageId, card, "feedback-" + notification.getId());
+                notification.setMessageId(sourceMessageId);
+                notification.setFeedbackMessageId(replyId);
+                notifications.updateById(notification);
+            } else {
+                feishu.updateFeedbackCard(token, notification.getFeedbackMessageId(), card);
+            }
+        }
+        return true;
+    }
+
     /** 按日、周、月或全部范围汇总真实点击反馈。 */
     public NotificationFeedbackReportDto report(String period) {
         String safe = java.util.Set.of("day", "week", "month", "all").contains(period) ? period : "day";

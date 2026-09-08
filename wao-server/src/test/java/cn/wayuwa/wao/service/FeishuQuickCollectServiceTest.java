@@ -123,97 +123,33 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
-    void cardActionPersistsFeedbackAndMarksTheOriginalGroupCard() {
-        when(feedback.collect(any())).thenReturn("做到了");
-        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_test");
-        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
-        when(feishu.tenantAccessToken("cli_test", "secret")).thenReturn("token");
-
+    void cardActionShowsIdentityResultWithoutAddingBotReaction() {
+        when(feedback.collect(any())).thenReturn(new NotificationFeedbackService.Result("做到了", true));
         var out = service.handleEvent("""
-                {
-                  "schema":"2.0",
-                  "header":{"event_type":"card.action.trigger","token":""},
-                  "event":{
-                    "operator":{"open_id":"ou_member","user_id":"member"},
-                    "context":{"open_message_id":"om_reminder"},
-                    "action":{"value":{"kind":"automation-feedback","notificationId":"n1","action":"done"}}
-                  }
-                }
+                {"header":{"event_type":"card.action.trigger","token":""},"event":{}}
                 """);
-
-        verify(feedback).collect(any());
-        verify(feishu).addMessageReaction("token", "om_reminder", "CheckMark");
-        assertThat(out).containsEntry("toast",
-                Map.of("type", "success", "content", "已记录：做到了，群卡片已标记"));
-    }
-
-    @Test
-    void missedCardActionUsesACrossMarkOnTheOriginalGroupCard() {
-        when(feedback.collect(any())).thenReturn("没做到");
-        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_test");
-        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
-        when(feishu.tenantAccessToken("cli_test", "secret")).thenReturn("token");
-
-        service.handleEvent("""
-                {
-                  "schema":"2.0",
-                  "header":{"event_type":"card.action.trigger","token":""},
-                  "event":{
-                    "operator":{"open_id":"ou_member","user_id":"member"},
-                    "context":{"open_message_id":"om_reminder"},
-                    "action":{"value":{"kind":"automation-feedback","notificationId":"n1","action":"missed"}}
-                  }
-                }
-                """);
-
-        verify(feishu).addMessageReaction("token", "om_reminder", "CrossMark");
-    }
-
-    @Test
-    void savedFeedbackReportsRetryWhenTheGroupCardCannotBeMarked() {
-        when(feedback.collect(any())).thenReturn("做到了");
-
-        var out = service.handleEvent("""
-                {
-                  "schema":"2.0",
-                  "header":{"event_type":"card.action.trigger","token":""},
-                  "event":{
-                    "operator":{"open_id":"ou_member","user_id":"member"},
-                    "action":{"value":{"kind":"automation-feedback","notificationId":"n1","action":"done"}}
-                  }
-                }
-                """);
-
         verify(feedback).collect(any());
         verify(feishu, never()).addMessageReaction(any(), any(), any());
-        assertThat(out).containsEntry("toast", Map.of("type", "warning", "content",
-                "已记录：做到了；群卡片反馈暂未显示，请重试"));
+        assertThat(out).containsEntry("toast", Map.of("type", "success", "content", "已记录：做到了，已显示实际反馈人"));
     }
 
     @Test
-    void savedFeedbackReportsRetryWhenFeishuRejectsTheReaction() {
-        when(feedback.collect(any())).thenReturn("做到了");
-        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_test");
-        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
-        when(feishu.tenantAccessToken("cli_test", "secret")).thenReturn("token");
-        doThrow(new FeishuApiException("表情回执失败"))
-                .when(feishu).addMessageReaction("token", "om_reminder", "CheckMark");
-
+    void savedFeedbackReportsRetryWhenIdentityCardCannotBeDisplayed() {
+        when(feedback.collect(any())).thenReturn(new NotificationFeedbackService.Result("没做到", false));
         var out = service.handleEvent("""
-                {
-                  "schema":"2.0",
-                  "header":{"event_type":"card.action.trigger","token":""},
-                  "event":{
-                    "operator":{"open_id":"ou_member","user_id":"member"},
-                    "context":{"open_message_id":"om_reminder"},
-                    "action":{"value":{"kind":"automation-feedback","notificationId":"n1","action":"done"}}
-                  }
-                }
+                {"header":{"event_type":"card.action.trigger","token":""},"event":{}}
                 """);
+        verify(feishu, never()).addMessageReaction(any(), any(), any());
+        assertThat(out).containsEntry("toast", Map.of("type", "warning", "content", "已记录：没做到；群卡片反馈暂未显示，请重试"));
+    }
 
-        verify(feedback).collect(any());
-        assertThat(out).containsEntry("toast", Map.of("type", "warning", "content",
-                "已记录：做到了；群卡片反馈暂未显示，请重试"));
+    @Test
+    void invalidFeedbackDoesNotClaimItWasRecorded() {
+        var out = service.handleEvent("""
+                {"header":{"event_type":"card.action.trigger","token":""},"event":{}}
+                """);
+        verify(feishu, never()).addMessageReaction(any(), any(), any());
+        assertThat(out).containsEntry("toast", Map.of("type", "warning", "content", "反馈未记录，请稍后重试"));
     }
 
     @Test

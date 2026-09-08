@@ -15,7 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -51,8 +51,8 @@ public class FeishuOpenApiClient {
     }
 
     private static ClientHttpRequestFactory requestFactory() {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofSeconds(10));
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
+                java.net.http.HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
         factory.setReadTimeout(Duration.ofSeconds(30));
         return factory;
     }
@@ -447,18 +447,54 @@ public class FeishuOpenApiClient {
         return openId;
     }
 
-    /** 发送可回传「做到了 / 没做到」的通知卡片；回调值只含业务通知 id，不含任何凭据。 */
-    public void sendFeedbackCard(String token, String chatId, String title, String body, String notificationId) {
+    /** 构造共享通知卡片；摘要内的身份由调用者从已验证回调生成。 */
+    public Map<String, Object> feedbackCard(String title, String body, String notificationId, String summary) {
         Map<String, Object> button = Map.of("tag", "button", "text", Map.of("tag", "plain_text", "content", "做到了"),
                 "type", "primary", "value", Map.of("kind", "automation-feedback", "notificationId", notificationId, "action", "done"));
         Map<String, Object> missed = Map.of("tag", "button", "text", Map.of("tag", "plain_text", "content", "没做到"),
                 "type", "danger", "value", Map.of("kind", "automation-feedback", "notificationId", notificationId, "action", "missed"));
-        Map<String, Object> card = Map.of("config", Map.of("wide_screen_mode", true),
+        List<Object> elements = new java.util.ArrayList<>();
+        if (body != null && !body.isBlank()) elements.add(Map.of("tag", "div", "text", Map.of("tag", "lark_md", "content", body)));
+        elements.add(Map.of("tag", "action", "actions", List.of(button, missed)));
+        if (summary != null && !summary.isBlank()) {
+            elements.add(Map.of("tag", "hr"));
+            elements.add(Map.of("tag", "div", "text", Map.of("tag", "lark_md", "content", "**成员反馈**\n" + summary)));
+        }
+        return Map.of("config", Map.of("wide_screen_mode", true, "update_multi", true),
                 "header", Map.of("template", "blue", "title", Map.of("tag", "plain_text", "content", title)),
-                "elements", List.of(Map.of("tag", "div", "text", Map.of("tag", "lark_md", "content", body)),
-                        Map.of("tag", "action", "actions", List.of(button, missed))));
-        post("/open-apis/im/v1/messages?receive_id_type=chat_id",
-                Map.of("receive_id", chatId, "msg_type", "interactive", "content", writeJson(card)), token);
+                "elements", elements);
+    }
+
+    /** 发送共享反馈卡，要求消息回执用于后续身份校验和原卡更新。 */
+    public String sendFeedbackCard(String token, String chatId, String title, String body, String notificationId) {
+        JsonNode data = post("/open-apis/im/v1/messages?receive_id_type=chat_id",
+                Map.of("receive_id", chatId, "msg_type", "interactive", "uuid", notificationId,
+                        "content", writeJson(feedbackCard(title, body, notificationId, ""))), token);
+        return requireMessageId(data);
+    }
+
+    /** 原地更新所有成员可见的共享卡片，飞书业务失败抛出异常。 */
+    public void updateFeedbackCard(String token, String messageId, Map<String, Object> card) {
+        try {
+            JsonNode res = client.patch().uri("/open-apis/im/v1/messages/{messageId}", messageId)
+                    .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("content", writeJson(card))).retrieve().body(JsonNode.class);
+            requireOk(res);
+        } catch (RestClientException ex) {
+            throw new FeishuApiException("更新通知反馈卡片失败", ex);
+        }
+    }
+
+    /** 旧非共享通知以原消息下的共享回复承载反馈，稳定 uuid 避免重试重复发送。 */
+    public String replyFeedbackCard(String token, String messageId, Map<String, Object> card, String uuid) {
+        return requireMessageId(post("/open-apis/im/v1/messages/{messageId}/reply",
+                Map.of("msg_type", "interactive", "content", writeJson(card), "uuid", uuid), token, messageId));
+    }
+
+    private String requireMessageId(JsonNode data) {
+        String messageId = text(data, "message_id");
+        if (messageId == null || messageId.isBlank()) throw new FeishuApiException("飞书未返回消息回执");
+        return messageId;
     }
 
     /** 往一个成员的飞书私聊发送带 WAO 跳转按钮的行动提醒。 */
