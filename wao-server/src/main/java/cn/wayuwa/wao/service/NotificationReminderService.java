@@ -22,6 +22,7 @@ import org.springframework.util.StringUtils;
 @Service
 public class NotificationReminderService {
     private static final String HANDLER = FeishuNotificationHandler.NAME;
+    private static final String WORKDAY_HANDLER = WorkdayFeishuNotificationHandler.NAME;
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
 
     private final AutomationService automation;
@@ -36,7 +37,7 @@ public class NotificationReminderService {
     /** 返回全部每日群提醒；普通成员可查看，但不能增删改或试发。 */
     public NotificationReminderSettingsDto get(String memberId) {
         List<NotificationReminderDto> reminders = automation.listJobs().stream()
-                .filter(job -> HANDLER.equals(job.handler()))
+                .filter(job -> isReminderHandler(job.handler()))
                 .map(this::toDto)
                 .sorted(Comparator.comparing(NotificationReminderDto::time)
                         .thenComparing(NotificationReminderDto::id))
@@ -65,10 +66,13 @@ public class NotificationReminderService {
         requireManager(memberId);
         AutomationJobDto current = requireReminder(id);
         NormalizedReminder value = normalize(request);
+        boolean workdayOnly = WORKDAY_HANDLER.equals(current.handler());
         AutomationJobDto updated = automation.updateJob(id, new PatchJobRequest(
-                value.title(), "ri-alarm-line", "每日 " + value.time(), value.content(),
-                "通知设置 · 每日提醒", "飞书群", List.of("按上海时间每日触发", "发送飞书提醒卡片"),
-                cron(value.time()), HANDLER));
+                value.title(), "ri-alarm-line", (workdayOnly ? "工作日 " : "每日 ") + value.time(), value.content(),
+                "通知设置 · 每日提醒", "飞书群", workdayOnly
+                        ? List.of("按上海时间每日检查工作日", "仅在工作日发送飞书提醒卡片")
+                        : List.of("按上海时间每日触发", "发送飞书提醒卡片"),
+                cron(value.time()), current.handler()));
         if (value.enabled() && "已暂停".equals(updated.status())) updated = automation.resumeJob(id);
         if (!value.enabled() && !"已暂停".equals(updated.status())) updated = automation.pauseJob(id);
         return toDto(updated);
@@ -96,7 +100,7 @@ public class NotificationReminderService {
         } catch (NotFoundException exception) {
             throw new NotFoundException("每日提醒不存在：" + id);
         }
-        if (!HANDLER.equals(job.handler())) throw new NotFoundException("每日提醒不存在：" + id);
+        if (!isReminderHandler(job.handler())) throw new NotFoundException("每日提醒不存在：" + id);
         return job;
     }
 
@@ -124,8 +128,12 @@ public class NotificationReminderService {
 
     private NotificationReminderDto toDto(AutomationJobDto job) {
         return new NotificationReminderDto(job.id(), job.name(), job.desc() == null ? "" : job.desc(),
-                time(job.cronExpr()),
-                !"已暂停".equals(job.status()), job.last(), job.nextFireAt());
+                time(job.cronExpr()), !"已暂停".equals(job.status()), WORKDAY_HANDLER.equals(job.handler()),
+                job.last(), job.nextFireAt());
+    }
+
+    private static boolean isReminderHandler(String handler) {
+        return HANDLER.equals(handler) || WORKDAY_HANDLER.equals(handler);
     }
 
     private static String cron(String time) {

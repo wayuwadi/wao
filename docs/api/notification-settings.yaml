@@ -24,6 +24,40 @@ paths:
       responses:
         '200': { description: 返回保存后的有效配置 }
         '401': { description: 非管理员尝试修改系统策略 }
+  /api/notification-reminders:
+    get:
+      summary: 读取固定时刻群提醒及每日/工作日规则
+      responses:
+        '200':
+          description: 返回真实自动化提醒与当前成员管理权限
+    post:
+      summary: 新增每日群提醒
+      responses:
+        '200': { description: 返回已保存提醒；新提醒默认每日发送 }
+        '401': { description: 只有管理员可以新增 }
+  /api/notification-reminders/{id}:
+    put:
+      summary: 保存提醒标题、正文、时间和启停状态
+      description: 系统预置的工作日规则只读，编辑后继续保留。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: 返回已保存提醒 }
+        '401': { description: 只有管理员可以修改 }
+    delete:
+      summary: 删除提醒及其运行记录
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: 已删除 }
+  /api/notification-reminders/{id}/test:
+    post:
+      summary: 管理员主动真实试发提醒
+      description: 主动试发不受工作日门禁影响，仍受组织通知策略和真实飞书配置约束。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: 返回包含真实运行结果的提醒 }
 components:
   schemas:
     NotificationSettingsResponse:
@@ -71,3 +105,15 @@ components:
         aiRunSuccess: { type: boolean }
         aiRunFailure: { type: boolean }
         loginActivity: { type: boolean }
+    NotificationReminder:
+      type: object
+      required: [id, title, content, time, enabled, workdayOnly, lastResult]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        content: { type: string }
+        time: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        enabled: { type: boolean }
+        workdayOnly: { type: boolean, description: true 表示自动触发仅在中国工作日发送；只读 }
+        lastResult: { type: string }
+        nextFireAt: { type: string, format: date-time, nullable: true }

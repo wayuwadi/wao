@@ -517,4 +517,18 @@ class FlywayMigrationsTest {
                 .contains("'通知设置 · 每日提醒'")
                 .doesNotContain("INSERT INTO automation_run");
     }
+
+    @Test
+    void clockOutReminderMigrationUsesWorkdayAwareHandler() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V142__clock_out_reminder_workdays.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("WHERE id = 'job-reminder-clock-out'")
+                .contains("handler = 'workday-feishu-notification'")
+                .contains("schedule_label = '工作日 18:00'");
+    }
 }

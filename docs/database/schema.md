@@ -1108,6 +1108,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
   保证首段不是空字符串。
 - `V132__feishu_text_polish_bot.sql`：按飞书原消息持久化成员润色、AI、Webhook 交付与历史收口状态（见 ADR-191）。
 - `V138__knowledge_document_archive.sql`：为知识库文档增加独立、可恢复的长期归档状态及知识库归档查询索引。
+- `V142__clock_out_reminder_workdays.sql`：将下班休息与打卡提醒迁到工作日执行器，保留每日计划点并按法定休息/调休事实发送或跳过（见 ADR-207）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.7.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

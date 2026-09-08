@@ -97,9 +97,33 @@ class NotificationReminderServiceTest {
         assertThat(result.reminders().get(0).content()).isEmpty();
     }
 
+    @Test
+    void keepsWorkdayCadenceWhenEditingClockOutReminder() {
+        when(automation.getJob("clock-out")).thenReturn(
+                workdayJob("clock-out", "下班休息与打卡提醒", "休息并打卡", "0 0 18 * * *", "正常"));
+        when(automation.updateJob(org.mockito.ArgumentMatchers.eq("clock-out"),
+                org.mockito.ArgumentMatchers.any())).thenReturn(
+                workdayJob("clock-out", "下班提醒", "记得休息", "0 30 18 * * *", "正常"));
+
+        NotificationReminderDto result = service.update("admin", "clock-out",
+                new SaveNotificationReminderRequest("下班提醒", "记得休息", "18:30", true));
+
+        ArgumentCaptor<PatchJobRequest> request = ArgumentCaptor.captor();
+        verify(automation).updateJob(org.mockito.ArgumentMatchers.eq("clock-out"), request.capture());
+        assertThat(request.getValue().handler()).isEqualTo(WorkdayFeishuNotificationHandler.NAME);
+        assertThat(request.getValue().schedule()).isEqualTo("工作日 18:30");
+        assertThat(result.workdayOnly()).isTrue();
+    }
+
     private AutomationJobDto job(String id, String title, String content, String cron, String status) {
         return new AutomationJobDto(id, title, "ri-alarm-line", "每日", status, "尚未运行", content,
                 "通知设置 · 每日提醒", "飞书群", List.of(), List.of(), cron,
                 LocalDateTime.of(2026, 9, 1, 8, 50), FeishuNotificationHandler.NAME);
+    }
+
+    private AutomationJobDto workdayJob(String id, String title, String content, String cron, String status) {
+        return new AutomationJobDto(id, title, "ri-alarm-line", "工作日", status, "尚未运行", content,
+                "通知设置 · 每日提醒", "飞书群", List.of(), List.of(), cron,
+                LocalDateTime.of(2026, 9, 1, 18, 0), WorkdayFeishuNotificationHandler.NAME);
     }
 }

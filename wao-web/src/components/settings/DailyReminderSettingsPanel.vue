@@ -69,6 +69,7 @@ function add() {
     content: '',
     time: '09:00',
     enabled: true,
+    workdayOnly: false,
     lastResult: '尚未运行',
     nextFireAt: null,
     isNew: true,
@@ -173,7 +174,7 @@ onMounted(() => {
     <div v-else class="reminder-list">
       <article v-for="item in drafts" :key="item.id" class="reminder-row">
         <label class="time-field">
-          <span>每日</span>
+          <span>{{ item.workdayOnly ? '工作日' : '每日' }}</span>
           <input
             v-model="item.time"
             type="time"

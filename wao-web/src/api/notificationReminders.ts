@@ -6,6 +6,7 @@ export interface NotificationReminder {
   content: string
   time: string
   enabled: boolean
+  workdayOnly: boolean
   lastResult: string
   nextFireAt: string | null
 }
