@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -21,6 +21,14 @@ const creatingTag = ref(false)
 const tagError = ref('')
 const scope = ref<'all' | 'mine'>('all')
 const editId = ref('')
+const writingPane = ref<HTMLElement>()
+async function editNote(id: string, event?: MouseEvent) {
+  if (event?.target instanceof Element && event.target.closest('a, button, input, select, textarea, summary, [contenteditable="true"]')) return
+  editId.value = id
+  await nextTick()
+  writingPane.value?.scrollIntoView?.({ block: 'nearest' })
+  writingPane.value?.querySelector<HTMLElement>('[contenteditable="true"], textarea')?.focus()
+}
 const limit = ref(30)
 const highlighted = ref('')
 const refreshError = ref('')
@@ -101,7 +109,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
   <main class="notes-page">
     <header class="page-heading"><div><h1><i class="ri-sticky-note-line"></i>小记</h1><p>随手记录，随时回来。</p></div><span>{{ notes.length }} 条记录</span></header>
     <div class="notes-workspace">
-      <aside class="writing-pane" aria-label="小记编辑区">
+      <aside ref="writingPane" class="writing-pane" aria-label="小记编辑区">
         <div v-if="editing" class="editing-bar"><span>正在编辑已有小记</span><button @click="editId = ''">返回新建</button></div>
         <NoteComposer :key="`${session.currentUser.id}:${editId || 'new'}`" :note="editing" :loading="loading" :tag-options="availableTags" @saved="onCreated" @close="editId = ''" />
       </aside>
@@ -128,11 +136,13 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
         <p v-if="loadError" class="empty error" role="alert">小记读取失败，已有内容和草稿仍保留。<button @click="reload">重试加载</button></p>
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || selectedTag ? '没有找到相关小记，换个关键词或标签试试。' : '还没有小记，写下第一条想法吧。' }}</p>
-        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ highlighted: highlighted === note.id, editing: editId === note.id }" :data-note-id="note.id">
+        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ highlighted: highlighted === note.id, editing: editId === note.id }" :data-note-id="note.id"
+          tabindex="0" title="双击编辑小记，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 编辑`"
+          @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span v-if="highlighted === note.id" class="saved">已保存</span></div>
           <div class="note-body markdown-body" v-html="renderMarkdown(resolvedRichContent(note).markdown || note.title)"></div>
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
-          <div class="note-actions"><button @click="editId = note.id"><i class="ri-edit-line"></i>{{ editId === note.id ? '正在编辑' : '继续编辑' }}</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
+          <div class="note-actions"><button class="touch-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
         </article>
         <button v-if="matching.length > limit" class="load-more" @click="limit += 30">加载更多（还有 {{ matching.length - limit }} 条）</button>
       </section>
@@ -175,6 +185,7 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .list-summary { display: flex; justify-content: space-between; gap: 10px; margin: 18px 0 12px; font-size: 11px; color: var(--wao-text-faint); }
 .note-card { background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 20px 22px 10px; margin-bottom: 16px; }
 .note-card.highlighted, .note-card.editing { border-color: var(--wao-primary); }
+.note-card:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
 .note-meta { font-size: 11px; color: var(--wao-text-faint); margin-bottom: 16px; flex-wrap: wrap; }
 .author { color: var(--wao-text-2); font-size: 12px; font-weight: 600; }
 .saved { color: var(--wao-success-strong); margin-left: auto; }
@@ -185,7 +196,9 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 14px; }
 .card-tags button { color: var(--wao-primary); overflow-wrap: anywhere; max-width: 100%; padding: 4px 7px; }
 .note-actions { margin-top: 14px; border-top: 1px solid var(--wao-line-control); padding-top: 6px; justify-content: space-between; }
-.note-actions a { text-decoration: none; }
+.note-actions a { text-decoration: none; margin-left: auto; }
+.touch-edit { display: none; }
+@media (hover: none), (pointer: coarse) { .touch-edit { display: inline-flex; gap: 4px; align-items: center; } }
 .editing-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 12px; color: var(--wao-text-faint); }
 .empty { text-align: center; padding: 36px 12px; color: var(--wao-text-faint); font-size: 13px; }
 .error { color: var(--wao-danger-strong); font-size: 12px; }

@@ -243,11 +243,24 @@ describe('小记集中记录空间', () => {
     useDataStore().docs.a = { ...doc('a', '旧记录'), tags: ['工作'] }
     const wrapper = await view()
     await wrapper.find('textarea').setValue('正在写的新草稿')
-    await wrapper.find('.note-actions button').trigger('click')
+    await wrapper.find('.note-card').trigger('click')
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正在写的新草稿')
+    await wrapper.find('.note-card').trigger('dblclick')
     expect(wrapper.findAll('textarea')).toHaveLength(1)
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('旧记录')
     await wrapper.find('.editing-bar button').trigger('click')
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正在写的新草稿')
+    wrapper.unmount()
+  })
+
+  it('卡片支持键盘编辑，标签和文档链接双击不会误入编辑', async () => {
+    useDataStore().docs.a = { ...doc('a', '键盘编辑的记录'), tags: ['工作'] }
+    const wrapper = await view()
+    await wrapper.find('.card-tags button').trigger('dblclick')
+    await wrapper.find('.note-actions a').trigger('dblclick')
+    expect(wrapper.find('.editing-bar').exists()).toBe(false)
+    await wrapper.find('.note-card').trigger('keydown', { key: 'Enter' })
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('键盘编辑的记录')
     wrapper.unmount()
   })
 
