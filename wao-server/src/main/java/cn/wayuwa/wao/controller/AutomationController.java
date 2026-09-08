@@ -94,9 +94,9 @@ public class AutomationController {
 
     private void requireReminderManager(String memberId, String... handlers) {
         for (String handler : handlers) {
-            if (FeishuNotificationHandler.NAME.equals(handler)
+            if ((FeishuNotificationHandler.NAME.equals(handler) || cn.wayuwa.wao.service.WeKnoraSyncService.HANDLER.equals(handler))
                     && !notificationSettings.canManageSystem(memberId)) {
-                throw new UnauthorizedException("只有管理员可以维护或试发每日提醒");
+                throw new UnauthorizedException("只有管理员可以维护或执行系统集成任务");
             }
         }
     }

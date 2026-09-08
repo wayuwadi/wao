@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiExternalAppHealth } from '@/api/agent'
+import WeKnoraSyncPanel from '@/components/weknora/WeKnoraSyncPanel.vue'
 import { useNavStore } from '@/stores/nav'
 
 type State = 'checking' | 'loading' | 'ready' | 'error' | 'missing'
@@ -73,12 +74,14 @@ onMounted(() => nav.loadExternalApps())
         <span>{{ state === 'ready' ? `「${app?.label ?? '应用'}」已连接` : state === 'error' ? '应用不可用' : state === 'missing' ? '应用未注册' : '正在连接应用' }}</span>
       </div>
       <div class="actions">
+        <button v-if="appId === 'weknora'" type="button" @click="router.replace({ query: route.query.tab === 'sync' ? {} : { tab: 'sync' } })">{{ route.query.tab === 'sync' ? '打开知识库' : '内容同步' }}</button>
         <button v-if="app" type="button" @click="loadApp"><i class="ri-refresh-line"></i>重新加载</button>
         <a v-if="app" :href="app.appUrl" target="_blank" rel="noopener"><i class="ri-external-link-line"></i>新窗口打开</a>
       </div>
     </div>
 
-    <div class="external-frame-wrap">
+    <WeKnoraSyncPanel v-if="appId === 'weknora' && route.query.tab === 'sync'" />
+    <div v-else class="external-frame-wrap">
       <iframe
         v-if="app && (state === 'loading' || state === 'ready')"
         :key="frameKey"
@@ -92,7 +95,7 @@ onMounted(() => nav.loadExternalApps())
       <div v-if="state === 'checking' || state === 'loading'" class="state-card overlay">
         <span class="spinner"></span>
         <strong>正在打开{{ app?.label ? `「${app.label}」` : '外部应用' }}</strong>
-        <p>{{ appId === 'weknora' ? '首次使用需建立 WeKnora 账号，并在模型管理中配置对话和向量化 API。' : '正在加载应用，请稍候。' }}</p>
+        <p>{{ appId === 'weknora' ? '首次使用需建立 WeKnora 账号；Wiki 模式只需配置对话模型 API。' : '正在加载应用，请稍候。' }}</p>
       </div>
 
       <div v-else-if="state === 'missing'" class="state-card">
