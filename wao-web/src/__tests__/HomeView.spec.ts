@@ -350,6 +350,39 @@ function pasteInto(el: Element, files: File[]) {
 }
 
 describe('HomeView AI 控制台', () => {
+  it('列表和原卡片同步切换活动与历史运行，重新进入恢复选择', async () => {
+    const first = mountHome()
+    await flushPromises()
+    expect(first.wrapper.get('.run-grid').attributes('data-layout')).toBe('list')
+    const titles = first.wrapper.findAll('.run-card h3').map((item) => item.text())
+    await first.wrapper.get('.run-view-switch button:last-child').trigger('click')
+    expect(first.wrapper.get('.recent-grid').attributes('data-layout')).toBe('5x2')
+    expect(first.wrapper.findAll('.run-card h3').map((item) => item.text())).toEqual(titles)
+    first.wrapper.unmount()
+    const restored = mountHome()
+    await flushPromises()
+    expect(restored.wrapper.get('.run-view-switch button:last-child').attributes('aria-pressed')).toBe('true')
+    await restored.wrapper.get('.run-view-switch button:first-child').trigger('click')
+    expect(restored.wrapper.get('.recent-grid').attributes('data-layout')).toBe('list')
+    await restored.wrapper.get('.run-card').trigger('click')
+    expect(restored.wrapper.find('.run-detail').exists()).toBe(true)
+    restored.wrapper.unmount()
+  })
+
+  it('展开收起执行设置不会清空目标或电脑选择', async () => {
+    const { wrapper } = mountHome()
+    await flushPromises()
+    wrapper.findComponent(MarkdownEditor).vm.$emit('update:modelValue', '保留目标草稿')
+    await wrapper.get('.goal-settings-toggle').trigger('click')
+    await wrapper.get('.goal-runner-select').setValue('rn2')
+    await wrapper.get('.goal-settings-toggle').trigger('click')
+    expect(wrapper.get('.goal-settings-toggle').attributes('aria-expanded')).toBe('false')
+    await wrapper.get('.goal-settings-toggle').trigger('click')
+    expect((wrapper.get('.goal-runner-select').element as HTMLSelectElement).value).toBe('rn2')
+    expect(wrapper.findComponent(MarkdownEditor).props('modelValue')).toBe('保留目标草稿')
+    wrapper.unmount()
+  })
+
   it('活动运行保持五秒刷新，终态活动不再跟随高频轮询', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
@@ -431,7 +464,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.hero .weekly-quota').text()).toContain('Codex 周剩余额度')
     expect(wrapper.find('.hero .weekly-quota').text()).toContain('38%')
     expect(wrapper.find('.console-quota').exists()).toBe(false)
-    expect(wrapper.find('.capacity-orbit').exists()).toBe(true)
+    expect(wrapper.find('.hero-status').text()).toContain('执行 1 / 2')
     expect(wrapper.findAll('.hero-link').find(button => button.text().includes('查看 AI 详情'))!.text()).toContain('查看 AI 详情')
     expect(wrapper.findAll('.hero-link').find(button => button.text().includes('查看系统报告'))!.text()).toContain('查看系统报告')
     wrapper.unmount()
@@ -561,6 +594,7 @@ describe('HomeView AI 控制台', () => {
     const { wrapper } = mountHome()
     await flushPromises()
 
+    await wrapper.get('.run-view-switch button:last-child').trigger('click')
     expect(wrapper.find('.run-grid').attributes('data-layout')).toBe('5x2')
     expect(wrapper.findAll('.run-card')).toHaveLength(10)
     expect(wrapper.find('[aria-label="正在运行分页"]').text()).toContain('共 11 条')
@@ -1017,6 +1051,7 @@ describe('HomeView AI 控制台', () => {
     expect(card.find('.recent-icon').attributes('title')).toBe('功能开发')
     expect(card.find('.recent-outcome').attributes('title')).toBe('运行失败')
     expect(card.find('.recent-hover-action').text()).toContain('查看详情')
+    await wrapper.get('.run-view-switch button:last-child').trigger('click')
     expect(wrapper.find('.recent-grid').attributes('data-layout')).toBe('5x2')
     expect(card.find('.recent-main b').attributes('title')).toBe('修复自动任务')
     expect(wrapper.findAll('.activity-filter-bar')).toHaveLength(1)
