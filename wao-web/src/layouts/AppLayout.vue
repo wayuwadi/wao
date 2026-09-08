@@ -43,6 +43,7 @@ const functionHealth = useFunctionHealth()
 const TRACKED_FEATURES = new Set([
   'home',
   'ai-sessions',
+  'chatgpt',
   'navigation',
   'updates',
   'projects',
@@ -333,7 +334,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <!-- 页面主体撑满剩余高度；复杂页面声明分区后，桌面左侧自动出现本页锚点。 -->
         <div class="page-stage">
           <PageSectionNav :root="pageBodyRef" :scroll-container="contentRef" />
-          <div ref="pageBodyRef" class="page-body"><RouterView /></div>
+          <div ref="pageBodyRef" class="page-body">
+            <RouterView />
+            <!-- 只挂在受保护应用壳内；同一实例在常驻页面与浮层之间移动，保持接收中的回复。 -->
+            <AiAssistantPanel v-model="ui.assistantOpen" :embedded="route.name === 'chatgpt'" />
+          </div>
         </div>
         <SiteFooter reserve-mobile-actions />
       </div>
@@ -350,8 +355,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <GlobalSearch v-if="ui.searchOpen" />
     <ShortcutsHelp v-if="ui.helpOpen" />
     <Celebration v-if="ui.celebrating" />
-    <!-- 助手依赖登录态和私有资产，只挂在受保护的应用壳内，避免遮挡登录页与公开分享页。 -->
-    <AiAssistantPanel v-model="ui.assistantOpen" />
     <!-- 音乐来自真实文件库，只挂在登录后的应用壳；切换页面时 audio 节点不会被路由销毁。 -->
     <MusicPlayer />
   </div>
@@ -546,6 +549,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   width: auto;
   flex: 1 1 0;
 }
+.page-stage:has(#chatgpt-workspace) { flex: 1 1 0; min-height: 420px; align-items: stretch; }
+.page-body:has(#chatgpt-workspace) { position: relative; display: flex; min-height: 0; }
 /* 四象限占据可用视口，列表分别滚动；不让某一格的长清单撑走其他象限。 */
 .page-stage:has(.todo-quadrant) { flex: 1 1 0; min-height: 360px; align-items: stretch; }
 .page-body:has(.todo-quadrant) { display: flex; min-height: 0; }

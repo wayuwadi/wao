@@ -120,6 +120,12 @@ const router = createRouter({
           meta: { module: 'home', tabKind: 'module' },
         },
         {
+          path: 'chatgpt',
+          name: 'chatgpt',
+          component: () => import('@/views/ChatGptView.vue'),
+          meta: { module: 'chatgpt', tabKind: 'module' },
+        },
+        {
           path: 'ai-sessions',
           name: 'ai-sessions',
           component: () => import('@/views/AiSessionsView.vue'),
