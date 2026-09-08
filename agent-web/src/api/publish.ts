@@ -21,6 +21,13 @@ export const createPublishTask = (
 ) => unwrap<PublishTask>(http.post('/api/agent/publish/tasks',
   { topic, platform, generateCopy, sourceHotspotId, sourceNotes, useWaoContext }))
 
+export const createContentGroup = (
+  topic: string,
+  sourceNotes?: string,
+  useWaoContext = true,
+) => unwrap<PublishTask[]>(http.post('/api/agent/publish/content-groups',
+  { topic, sourceNotes, useWaoContext }))
+
 export const updatePublishTask = (taskId: string, payload: {
   version: number
   title?: string

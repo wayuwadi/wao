@@ -973,7 +973,7 @@ AI 运行插入与 `ai_run_id` 关联处在同一事务中，关联还要求当�
 聊天复盘固定知识库 id 为 `kb-chat-reviews`、文件夹 id 为 `kb-chat-reviews-f`，文档 id 由 `crd-<runId>` 稳定派生；固定 id
 用于 worker 接管后的幂等覆盖，不按名称猜测或复用用户自建同名知识库。
 
-## 自媒体 Agent 推荐模型成稿队列（Agent Flyway V10）
+## 自媒体 Agent 推荐模型成稿队列与三端内容组（Agent Flyway V10 / V11）
 
 `agent_publish_task` 在既有发布状态机上增加以下生成字段：
 
@@ -984,6 +984,11 @@ AI 运行插入与 `ai_run_id` 关联处在同一事务中，关联还要求当�
 推荐模型 API Key 不进入该表。Agent 只读取 `ai_account` 的非敏感模型元数据；`wao-server` 在领取任务后通过
 `AiAccountService` 解密并调用模型。失败任务保留固化请求供当前工作区成员重试，成功任务只保留来源快照与成稿。
 该 migration 属于独立的 `flyway_agent_schema_history`。
+
+Agent Flyway V11 为 `agent_publish_task` 增加可空的 `content_group_id`。一次三端生成在一个事务中写入三条任务，
+它们共享同一随机分组 id、标题、参考内容和权限收窄后的来源快照，但分别保存抖音、小红书、公众号提示词与成稿；
+历史单平台任务保持为空。`(workspace_id, content_group_id, created_at)` 索引支持当前工作区内恢复同组手机预览，
+分组 id 不能替代工作区权限校验。
 
 ## 已退役的自媒体 Agent 视频生成域（Agent Flyway V4）
 

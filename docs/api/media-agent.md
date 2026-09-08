@@ -2,11 +2,17 @@
 
 ## AI 图文生成与重试
 
+`POST /api/agent/publish/content-groups`
+
+- 接收 `topic`、可选 `sourceNotes` 与 `useWaoContext`，在一个事务中创建抖音、小红书、公众号三条生成任务。
+- 三条任务返回同一个非空 `contentGroupId`，状态均为 `GENERATING`，但各自固化对应平台的受众、篇幅和内容形态约束。
+- 没有可用真实模型时返回 `400`，不创建任何任务；页面必须保留尚未提交成功的标题和参考内容。
+
 `POST /api/agent/publish/tasks`
 
 - `generateCopy=true` 时必须返回 `GENERATING`，或在没有可用模型时返回明确的 `400`；不得改写为手工草稿。
 - `GET /api/agent/publish/center` 的 `ai` 返回本地模型或 WAO 推荐模型的非敏感供应商与模型标识。
-- 任务返回 `generationRetryable`，只有生成失败且仍保留固化请求时为 `true`。
+- 任务返回 `contentGroupId` 与 `generationRetryable`；历史单平台任务的分组为空，只有生成失败且仍保留固化请求时可重试。
 
 `POST /api/agent/publish/tasks/{taskId}/retry-generation`
 

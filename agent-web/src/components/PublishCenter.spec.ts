@@ -2,13 +2,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PublishCenter from './PublishCenter.vue'
 import {
-  createPublishTask, getPublishCenter, listMedia, retryPublishGeneration,
+  createContentGroup, createPublishTask, getPublishCenter, listMedia, retryPublishGeneration,
   updatePublicationData, updatePublishTask,
 } from '@/api/publish'
 import { createKnowledgeArticle, listKnowledgeBases } from '@/api/knowledge'
 import type { PublishCenter as PublishCenterData, PublishTask } from '@/types'
 
 vi.mock('@/api/publish', () => ({
+  createContentGroup: vi.fn(),
   createPublishTask: vi.fn(),
   getAuthorizeUrl: vi.fn(),
   getPublishCenter: vi.fn(),
@@ -40,6 +41,9 @@ const center: PublishCenterData = {
     platform: 'WECHAT_VIDEO', label: '视频号', oauthSupported: false, publishSupported: false,
     mediaKinds: [], note: '没有第三方内容发布接口，只能导出后人工发布', accounts: [],
   }, {
+    platform: 'XIAOHONGSHU', label: '小红书', oauthSupported: false, publishSupported: false,
+    mediaKinds: ['IMAGE'], note: '导出后人工发布', accounts: [],
+  }, {
     platform: 'WECHAT_MP', label: '公众号', oauthSupported: false, publishSupported: false,
     mediaKinds: ['IMAGE'], note: '导出图文后人工发布', accounts: [],
   }],
@@ -61,12 +65,13 @@ describe('真实发布中心', () => {
     vi.mocked(getPublishCenter).mockResolvedValue(structuredClone(center))
     vi.mocked(listMedia).mockResolvedValue([])
     vi.mocked(createPublishTask).mockResolvedValue(task())
+    vi.mocked(createContentGroup).mockResolvedValue([task()])
     vi.mocked(listKnowledgeBases).mockResolvedValue([])
   })
 
   afterEach(() => vi.useRealTimers())
 
-  it('模型未配置时保留用户的生成意图，不静默创建空白手稿', async () => {
+  it('模型未配置时仍提交真实三端生成意图，不静默创建空白手稿', async () => {
     const wrapper = mount(PublishCenter, { props: { initialTopic: '从真实热点生成内容' } })
     await flushPromises()
 
@@ -75,27 +80,37 @@ describe('真实发布中心', () => {
     await wrapper.get('.create-card > button').trigger('click')
     await flushPromises()
 
-    expect(createPublishTask).toHaveBeenCalledWith(
-      '从真实热点生成内容', 'WECHAT_MP', true, undefined, '', true,
-    )
+    expect(createContentGroup).toHaveBeenCalledWith('从真实热点生成内容', '', true)
     wrapper.unmount()
   })
 
-  it('生成任务完成后自动轮询并把标题正文回填到编辑器', async () => {
+  it('三端任务完成后自动轮询，并可在手机标签间切换对应成稿', async () => {
     vi.useFakeTimers()
     const generating = {
-      ...task(), status: 'GENERATING', progress: 10, topic: '什么是 AI、Skill 和 MCP',
+      ...task(), contentGroupId: 'group-1', status: 'GENERATING', progress: 10,
+      topic: '什么是 AI、Skill 和 MCP',
     }
+    const xhsGenerating = { ...generating, id: 'pt-2', platform: 'XIAOHONGSHU', platformLabel: '小红书' }
+    const wechatGenerating = { ...generating, id: 'pt-3', platform: 'WECHAT_MP', platformLabel: '公众号' }
     const completed = {
-      ...generating, status: 'WAITING_REVIEW', progress: 45,
+      ...generating, status: 'WAITING_REVIEW', progress: 45, coverText: '三层能力讲清楚',
       title: 'AI、Skill 与 MCP：程序员朋友讲明白', content: '先说结论：它们分别解决不同层次的问题。',
+      blocks: [{ label: '钩子', text: '三个词到底差在哪？', seconds: 3 }],
+    }
+    const xhsCompleted = {
+      ...xhsGenerating, status: 'WAITING_REVIEW', progress: 45,
+      title: '终于讲懂 AI、Skill 和 MCP', content: '用三个生活例子一次分清。', tags: ['AI入门'],
+    }
+    const wechatCompleted = {
+      ...wechatGenerating, status: 'WAITING_REVIEW', progress: 45,
+      title: 'AI、Skill 与 MCP 的能力分层', content: '这是一篇完整的公众号文章。',
     }
     const available = { ...structuredClone(center), ai: { available: true, provider: 'WAO 推荐模型', model: 'deepseek-v4-pro' } }
     vi.mocked(getPublishCenter)
       .mockResolvedValueOnce(available)
-      .mockResolvedValueOnce({ ...available, tasks: [generating] })
-      .mockResolvedValueOnce({ ...available, tasks: [completed] })
-    vi.mocked(createPublishTask).mockResolvedValue(generating)
+      .mockResolvedValueOnce({ ...available, tasks: [generating, xhsGenerating, wechatGenerating] })
+      .mockResolvedValueOnce({ ...available, tasks: [completed, xhsCompleted, wechatCompleted] })
+    vi.mocked(createContentGroup).mockResolvedValue([generating, xhsGenerating, wechatGenerating])
 
     const wrapper = mount(PublishCenter, { props: { initialTopic: generating.topic, mode: 'content' } })
     await flushPromises()
@@ -106,7 +121,14 @@ describe('真实发布中心', () => {
     await vi.advanceTimersByTimeAsync(3000)
     await flushPromises()
     expect(wrapper.get('.editor input[maxlength="200"]').element).toHaveProperty('value', completed.title)
-    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain(completed.content)
+    expect(wrapper.get('.platform-preview').text()).toContain('抖音')
+    expect(wrapper.get('.platform-preview').text()).toContain('小红书')
+    expect(wrapper.get('.platform-preview').text()).toContain('公众号')
+    expect(wrapper.get('.platform-preview').text()).toContain('三个词到底差在哪？')
+
+    await wrapper.findAll('.platform-tabs button')[1]!.trigger('click')
+    expect(wrapper.get('.editor input[maxlength="200"]').element).toHaveProperty('value', xhsCompleted.title)
+    expect(wrapper.get('.platform-preview').text()).toContain('用三个生活例子一次分清。')
     wrapper.unmount()
   })
 
@@ -136,12 +158,12 @@ describe('真实发布中心', () => {
 
     const content = mount(PublishCenter, { props: { mode: 'workbench' } })
     await flushPromises()
-    expect(content.text()).toContain('新建图文')
+    expect(content.text()).toContain('新建内容')
     expect(content.text()).toContain('抖音内容稿')
     expect(content.text()).toContain('已上传成片.webm · 4.0 KB')
     expect(content.text()).not.toContain('连接账号')
     expect(content.text()).toContain('确认发布到抖音')
-    expect(content.get('.live-preview iframe').attributes('srcdoc')).toContain('真实话题')
+    expect(content.get('.platform-preview').text()).toContain('真实话题')
     expect(content.text()).toContain('输入后立即同步')
     content.unmount()
   })
@@ -161,7 +183,7 @@ describe('真实发布中心', () => {
     const wrapper = mount(PublishCenter, { props: { mode: 'content' } })
     await flushPromises()
 
-    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain('我的 WAO')
+    expect(wrapper.get('.platform-preview').text()).toContain('我的 WAO')
     await wrapper.findAll('.actions button').find((button) => button.text().includes('导出 HTML'))!.trigger('click')
     expect(wrapper.get('.export-dialog iframe').attributes('srcdoc')).toContain('/agent/article/my-wao-cover.png')
     await wrapper.get('.export-dialog header button').trigger('click')
@@ -199,12 +221,12 @@ describe('真实发布中心', () => {
     await wrapper.get('.embed-dialog select').setValue('python')
     await wrapper.get('.embed-dialog textarea').setValue('print("WAO")')
     await wrapper.get('.embed-dialog').trigger('submit')
-    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain('python')
-    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain('print(&quot;WAO&quot;)')
+    expect(wrapper.get('.platform-preview').text()).toContain('python')
+    expect(wrapper.get('.platform-preview').text()).toContain('print("WAO")')
 
     await toolbar.findAll('button')[0]!.trigger('click')
     await wrapper.get('.embed-dialog').trigger('submit')
-    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain('流程图')
+    expect(wrapper.get('.platform-preview').text()).toContain('flowchart LR')
     expect(wrapper.text()).toContain('有未保存修改')
 
     await wrapper.findAll('.actions button').find((button) => button.text().includes('保存审核稿'))!.trigger('click')

@@ -4,6 +4,7 @@ import cn.wayuwa.wao.agent.auth.AgentSessionManager;
 import cn.wayuwa.wao.agent.common.ApiResponse;
 import cn.wayuwa.wao.agent.common.UnauthorizedException;
 import cn.wayuwa.wao.agent.dto.CreatePublishTaskRequest;
+import cn.wayuwa.wao.agent.dto.CreateContentGroupRequest;
 import cn.wayuwa.wao.agent.dto.MediaAssetDto;
 import cn.wayuwa.wao.agent.dto.PublishCenterDto;
 import cn.wayuwa.wao.agent.dto.PublishTaskDto;
@@ -54,6 +55,13 @@ public class PublishController {
     public ApiResponse<PublishTaskDto> create(@Valid @RequestBody CreatePublishTaskRequest body,
                                               HttpServletRequest request) {
         return ApiResponse.ok(publishTasks.create(accountId(request), body));
+    }
+
+    /** 用同一标题与参考内容原子创建抖音、小红书和公众号三端生成任务。 */
+    @PostMapping("/content-groups")
+    public ApiResponse<List<PublishTaskDto>> createContentGroup(
+            @Valid @RequestBody CreateContentGroupRequest body, HttpServletRequest request) {
+        return ApiResponse.ok(publishTasks.createContentGroup(accountId(request), body));
     }
 
     @PostMapping("/tasks/{taskId}")

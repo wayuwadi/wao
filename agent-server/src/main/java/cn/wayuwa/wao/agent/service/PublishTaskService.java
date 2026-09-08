@@ -16,6 +16,7 @@ import cn.wayuwa.wao.agent.dto.AiStatusDto;
 import cn.wayuwa.wao.agent.dto.ContentMetricSnapshotDto;
 import cn.wayuwa.wao.agent.dto.ContentSourceDto;
 import cn.wayuwa.wao.agent.dto.CreatePublishTaskRequest;
+import cn.wayuwa.wao.agent.dto.CreateContentGroupRequest;
 import cn.wayuwa.wao.agent.dto.PublishCenterDto;
 import cn.wayuwa.wao.agent.dto.PublishTaskDto;
 import cn.wayuwa.wao.agent.dto.UpdatePublicationDataRequest;
@@ -63,6 +64,8 @@ public class PublishTaskService {
     public static final String FAILED = "FAILED";
     private static final String LOCAL_EXECUTOR = "AGENT_LOCAL";
     private static final String CENTRAL_EXECUTOR = "WAO_RECOMMENDED";
+    private static final List<PlatformType> CONTENT_GROUP_PLATFORMS = List.of(
+            PlatformType.DOUYIN, PlatformType.XIAOHONGSHU, PlatformType.WECHAT_MP);
 
     private final SharedAccountService accounts;
     private final PlatformAccountService platformAccounts;
@@ -137,6 +140,46 @@ public class PublishTaskService {
         task.setUpdatedAt(now);
         taskMapper.insert(task);
         return toDto(task, workspaceId);
+    }
+
+    /**
+     * 原子创建一个三端内容组；三条任务复用同一份权限收窄后的上下文快照，分别固化平台提示词。
+     */
+    @Transactional
+    public List<PublishTaskDto> createContentGroup(String accountId, CreateContentGroupRequest request) {
+        String executor = generationExecutor();
+        if (executor == null) {
+            throw new BadRequestException("当前没有可用的推荐模型，请在 WAO 的 AI 账号中启用模型后重试");
+        }
+        String workspaceId = accounts.workspaceId(accountId);
+        String topic = request.topic().trim();
+        String sourceNotes = emptyToNull(request.sourceNotes());
+        boolean useWaoContext = !Boolean.FALSE.equals(request.useWaoContext());
+        CreatorContextService.Context context = useWaoContext
+                ? creatorContext.find(accounts.memberId(accountId), workspaceId, topic, sourceNotes)
+                : new CreatorContextService.Context("", List.of());
+        String contentGroupId = UUID.randomUUID().toString();
+        LocalDateTime now = LocalDateTime.now();
+
+        return CONTENT_GROUP_PLATFORMS.stream().map(platform -> {
+            PublishTaskEntity task = new PublishTaskEntity();
+            task.setId(UUID.randomUUID().toString());
+            task.setWorkspaceId(workspaceId);
+            task.setRequestedByAccountId(accountId);
+            task.setContentGroupId(contentGroupId);
+            task.setPlatform(platform.name());
+            task.setTopic(topic);
+            task.setSourceNotes(sourceNotes);
+            task.setUseWaoContext(useWaoContext);
+            task.setStatus(GENERATING);
+            task.setProgress(10);
+            prepareGeneration(task, platform, executor, context);
+            task.setVersion(1);
+            task.setCreatedAt(now);
+            task.setUpdatedAt(now);
+            taskMapper.insert(task);
+            return toDto(task, workspaceId);
+        }).toList();
     }
 
     /** 生成失败后沿用当时固化的资料再次入队，不重新读取可能已变化的上下文。 */
@@ -436,7 +479,7 @@ public class PublishTaskService {
         }
         MediaAssetEntity media = mediaAssets.find(task.getMediaAssetId());
         HotspotEntity hotspot = hotspots.find(task.getSourceHotspotId());
-        return new PublishTaskDto(task.getId(), task.getPlatform(), type.label(), task.getPlatformAccountId(),
+        return new PublishTaskDto(task.getId(), task.getContentGroupId(), task.getPlatform(), type.label(), task.getPlatformAccountId(),
                 accountName, task.getMediaAssetId(), media == null ? null : media.getOriginalName(),
                 task.getTopic(), task.getTitle(), task.getContent(), readTags(task.getTagsJson()),
                 task.getCoverText(), readBlocks(task.getStructureJson()),
@@ -469,6 +512,11 @@ public class PublishTaskService {
                 ? new CreatorContextService.Context("", List.of())
                 : creatorContext.find(accounts.memberId(task.getRequestedByAccountId()), task.getWorkspaceId(),
                 task.getTopic(), task.getSourceNotes());
+        prepareGeneration(task, platform, executor, context);
+    }
+
+    private void prepareGeneration(PublishTaskEntity task, PlatformType platform, String executor,
+                                   CreatorContextService.Context context) {
         task.setGenerationExecutor(executor);
         task.setGenerationSystemPrompt(PromptLibrary.content(platform, profiles.find(task.getWorkspaceId()),
                 context.prompt()));

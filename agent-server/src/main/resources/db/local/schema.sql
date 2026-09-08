@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS agent_publish_task (
     id VARCHAR(36) PRIMARY KEY,
     workspace_id VARCHAR(36) NOT NULL,
     requested_by_account_id VARCHAR(36) NOT NULL,
+    content_group_id VARCHAR(36),
     platform VARCHAR(32) NOT NULL,
     platform_account_id VARCHAR(36),
     media_asset_id VARCHAR(36),
