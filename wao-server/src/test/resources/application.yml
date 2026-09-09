@@ -37,6 +37,7 @@ mybatis-plus:
 wao:
   tianren:
     notification-scheduler-enabled: false
+    daily-scheduler-enabled: false
   feishu:
     shared-chat:
       polling-enabled: false

@@ -4,7 +4,8 @@
 [ADR-060](../adr/060-tianren-public-reading-share.md) 和 [ADR-067](../adr/067-tianren-share-latest-ai-reflection.md)，
 联合解读分层与历史回看见
 [ADR-068](../adr/068-tianren-joint-interpretation-history.md)，起卦后自动生成首次解读见
-[ADR-192](../adr/192-tianren-auto-first-interpretation.md)。
+[ADR-192](../adr/192-tianren-auto-first-interpretation.md)，可选每日九点自动起卦见
+[ADR-218](../adr/218-tianren-daily-nine-automation.md)。
 
 ## 用户故事
 

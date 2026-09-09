@@ -76,7 +76,7 @@ function copyConfig() {
   }
 }
 function updateFlag(
-  flag: 'enabled' | 'notifyEnergy' | 'notifyFocus' | 'notifyTianren',
+  flag: 'enabled' | 'notifyEnergy' | 'notifyFocus' | 'notifyTianren' | 'autoTianrenAtNine',
   event: Event,
 ) {
   emit('update:modelValue', { ...copyConfig(), [flag]: (event.target as HTMLInputElement).checked })
@@ -154,6 +154,15 @@ onMounted(refresh)
         >
       </div>
       <p>{{ route.description }}</p>
+      <label v-if="route.kind === 'tianren'" class="daily-cast-setting">
+        <input type="checkbox" aria-label="每天 9:00 自动起卦并解读" :checked="!!modelValue.autoTianrenAtNine"
+          :disabled="disabled" @change="updateFlag('autoTianrenAtNine', $event)" />
+        每天 9:00 自动起卦并解读（北京时间）
+      </label>
+      <p v-if="route.kind === 'tianren' && modelValue.autoTianrenAtNine" class="muted">
+        每天执行，周末照常；无需打开页面。需同时启用行动通知和卦象通知并选群，解读完成后发群。
+        当天已起卦会沿用；AI 暂不可用时稍后继续，失败最多自动尝试三次。
+      </p>
       <label class="target-field"
         ><span>目标群</span>
         <select
@@ -203,6 +212,7 @@ onMounted(refresh)
 </template>
 
 <style scoped>
+.daily-cast-setting { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; }
 .notification-routes {
   display: grid;
   gap: 12px;

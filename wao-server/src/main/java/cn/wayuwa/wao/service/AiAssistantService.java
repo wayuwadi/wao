@@ -191,11 +191,25 @@ public class AiAssistantService {
         chatStream(request, memberId, trustedContext, false, emitter);
     }
 
+    /** 将每日卦象解读持久化入队并立即返回；由上层成员事务保证幂等。 */
+    public String enqueueTianren(AssistantChatRequest request, String memberId, String trustedContext) {
+        return enqueue(request, memberId, trustedContext, false).getId();
+    }
+
     private void chatStream(AssistantChatRequest request, String memberId,
             String trustedContext, boolean includeAssets, SseEmitter emitter) {
         try {
-            AiAssistantRunEntity run = enqueue(request, memberId, trustedContext, includeAssets);
-            AiAssistantRunEntity result = waitForResult(run.getId(), memberId);
+            streamQueuedRun(enqueue(request, memberId, trustedContext, includeAssets).getId(), memberId, emitter);
+        } catch (Exception ex) {
+            sendError(emitter, ex.getMessage() == null ? "AI 助手请求失败" : ex.getMessage());
+            emitter.complete();
+        }
+    }
+
+    /** 页面只等待已经入队的成员运行；后台自动解读不需要创建 SSE 连接。 */
+    public void streamQueuedRun(String runId, String memberId, SseEmitter emitter) {
+        try {
+            AiAssistantRunEntity result = waitForResult(runId, memberId);
             if ("succeeded".equals(result.getStatus())) {
                 String content = StringUtils.hasText(result.getResponseText())
                         ? result.getResponseText() : "Codex 没有返回文字内容";
