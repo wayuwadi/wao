@@ -29,7 +29,9 @@ async function editNote(id: string, event?: MouseEvent) {
   writingPane.value?.scrollIntoView?.({ block: 'nearest' })
   writingPane.value?.querySelector<HTMLElement>('[contenteditable="true"], textarea')?.focus()
 }
-const limit = ref(30)
+const PAGE_SIZE = 10
+const limit = ref(PAGE_SIZE)
+const notesList = ref<HTMLElement>()
 const highlighted = ref('')
 const refreshError = ref('')
 const notes = computed(() => {
@@ -53,14 +55,18 @@ const matching = computed(() => {
 const visible = computed(() => matching.value.slice(0, limit.value))
 const loading = computed(() => ['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
-watch([query, scope, selectedTag, sort], () => { limit.value = 30 })
+watch([query, scope, selectedTag, sort], () => {
+  limit.value = PAGE_SIZE
+  notesList.value?.scrollTo?.({ top: 0 })
+})
 function onCreated(id: string) {
   query.value = ''
   selectedTag.value = ''
   editId.value = ''
   scope.value = 'all'
-  limit.value = 30
+  limit.value = PAGE_SIZE
   highlighted.value = id
+  notesList.value?.scrollTo?.({ top: 0 })
 }
 function authorName(id: string) { return session.members.find(member => member.id === id)?.name || '成员' }
 function timeLabel(value: string) {
@@ -113,7 +119,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
         <div v-if="editing" class="editing-bar"><span>正在编辑已有小记</span><button @click="editId = ''">返回新建</button></div>
         <NoteComposer :key="`${session.currentUser.id}:${editId || 'new'}`" :note="editing" :loading="loading" :tag-options="availableTags" @saved="onCreated" @close="editId = ''" />
       </aside>
-      <section class="notes-list" aria-label="小记清单">
+      <section ref="notesList" class="notes-list" aria-label="小记清单">
         <div class="list-toolbar">
           <div class="filters"><button :aria-pressed="scope === 'all'" @click="scope = 'all'">全部小记</button><button :aria-pressed="scope === 'mine'" @click="scope = 'mine'">我记录的</button></div>
           <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"></label>
@@ -144,7 +150,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
           <div class="note-actions"><button class="touch-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
         </article>
-        <button v-if="matching.length > limit" class="load-more" @click="limit += 30">加载更多（还有 {{ matching.length - limit }} 条）</button>
+        <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>
       </section>
     </div>
   </main>
@@ -203,6 +209,14 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .empty { text-align: center; padding: 36px 12px; color: var(--wao-text-faint); font-size: 13px; }
 .error { color: var(--wao-danger-strong); font-size: 12px; }
 .load-more { display: block; margin: 20px auto; }
+@media (min-width: 821px) {
+  .notes-page { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px; }
+  .page-heading { flex: none; }
+  .notes-workspace { flex: 1; min-height: 0; align-items: stretch; overflow: hidden; }
+  .writing-pane { position: static; min-height: 0; display: flex; flex-direction: column; overflow: auto; overscroll-behavior: contain; }
+  .writing-pane :deep(.note-composer:not(.fullscreen)) { flex: 1; min-height: 0; max-height: none; }
+  .notes-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+}
 @media (max-width: 1100px) { .notes-page { padding: 20px; } .notes-workspace { gap: 18px; grid-template-columns: minmax(280px, .9fr) minmax(300px, 1.1fr); } .notes-list { padding-left: 18px; } .search { order: 3; flex-basis: 100%; margin: 0; } .sort { margin-left: auto; } }
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; padding-left: 0; } }
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 16px 12px 8px; } .sort { margin-left: 0; } .list-summary { flex-wrap: wrap; } }

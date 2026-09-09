@@ -556,6 +556,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 .page-stage:has(#chatgpt-workspace) { flex: 1 1 0; min-height: 420px; align-items: stretch; }
 .page-body:has(#chatgpt-workspace) { position: relative; display: flex; min-height: 0; }
+@media (min-width: 821px) {
+  .content:has(.notes-page) { overflow: hidden; }
+  .page-stage:has(.notes-page) { flex: 1 1 0; min-height: 0; align-items: stretch; overflow: hidden; }
+  .page-body:has(.notes-page) { min-height: 0; overflow: hidden; }
+}
 /* 四象限占据可用视口，列表分别滚动；不让某一格的长清单撑走其他象限。 */
 .page-stage:has(.todo-quadrant) { flex: 1 1 0; min-height: 360px; align-items: stretch; }
 .page-body:has(.todo-quadrant) { display: flex; min-height: 0; }
