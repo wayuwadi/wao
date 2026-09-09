@@ -73,7 +73,11 @@ export const fetchTasks = () => get<Task[]>('/api/tasks')
 // 内容 / 参考域
 export const fetchKbs = () => get<KnowledgeBase[]>('/api/kbs')
 export const fetchKbGroups = () => get<KbGroup[]>('/api/kb-groups')
-export const fetchDocs = () => get<Doc[]>('/api/docs')
+/** 文档集合包含完整富文本，给大正文传输保留时间，不扩大其他接口的默认时限。 */
+export async function fetchDocs(): Promise<Doc[]> {
+  const res = await http.get<ApiResponse<Doc[]>>('/api/docs', { timeout: 60_000 })
+  return res.data.data
+}
 export const fetchArchivedDocs = (kbId: string) =>
   get<Doc[]>(`/api/docs/archived?kbId=${encodeURIComponent(kbId)}`)
 export const fetchDoc = (id: string) => get<Doc>(`/api/docs/${id}`)
