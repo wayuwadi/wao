@@ -156,7 +156,7 @@ components:
           properties:
             state:
               type: string
-              enum: [DISABLED, CONFIGURATION_REQUIRED, WAITING, PENDING, SENDING, SENT, FAILED, SKIPPED, UNKNOWN]
+              enum: [DISABLED, CONFIGURATION_REQUIRED, INTERPRETING, INTERPRETATION_FAILED, WAITING, PENDING, SENDING, SENT, FAILED, SKIPPED, UNKNOWN]
             targetName: { type: string }
             message: { type: string }
             retryable: { type: boolean }

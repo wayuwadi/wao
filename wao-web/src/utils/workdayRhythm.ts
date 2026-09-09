@@ -32,6 +32,7 @@ export interface WorkdayRhythmEnergyNotification extends WorkdayNotificationTarg
   tianrenTarget?: WorkdayNotificationTarget
   /** 旧配置默认关闭，开启即允许把当天解读分享到所选群。 */
   notifyTianren?: boolean
+  autoTianrenAtNine?: boolean
   /** 旧版配置字段只用于读取迁移，新版是否通知由每个补给项目决定。 */
   notifyWater?: boolean
   notifyMeditation?: boolean
@@ -76,6 +77,7 @@ export const DEFAULT_WORKDAY_RHYTHM: WorkdayRhythmConfig = {
     enabled: false,
     notifyFocus: true,
     notifyTianren: false,
+    autoTianrenAtNine: false,
     channel: 'WEBHOOK',
     webhookId: '',
     webhookName: '',
@@ -220,7 +222,8 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
       typeof notification.enabled !== 'boolean' ||
       typeof notification.notifyFocus !== 'boolean' ||
       (notification.notifyEnergy !== undefined && typeof notification.notifyEnergy !== 'boolean') ||
-      (notification.notifyTianren !== undefined && typeof notification.notifyTianren !== 'boolean')
+      (notification.notifyTianren !== undefined && typeof notification.notifyTianren !== 'boolean') ||
+      (notification.autoTianrenAtNine !== undefined && typeof notification.autoTianrenAtNine !== 'boolean')
     )
       return '今日行动通知配置不正确'
     const routes = [
@@ -329,6 +332,7 @@ export function normalizeRhythmConfig(value: WorkdayRhythmConfig): WorkdayRhythm
       enabled: notification.enabled === true,
       notifyFocus: notification.notifyFocus !== false,
       notifyTianren: notification.notifyTianren === true,
+      autoTianrenAtNine: notification.autoTianrenAtNine === true,
       notifyEnergy: notification.notifyEnergy !== false,
       ...target,
       focusTarget: normalizedNotificationTarget(

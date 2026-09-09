@@ -64,6 +64,7 @@ public class TianrenReadingService {
     @Transactional
     public TianrenReadingDto createToday(String memberId) {
         requireMember(memberId);
+        mapper.lockMember(memberId);
         LocalDate date = LocalDate.now(WAO_ZONE);
         TianrenDailyReadingEntity existing = find(memberId, date);
         if (existing != null) return view(existing);
@@ -191,6 +192,8 @@ public class TianrenReadingService {
      */
     @Transactional
     public PreparedInterpretation prepareInterpretation(String memberId, String focus) {
+        requireMember(memberId);
+        mapper.lockMember(memberId);
         TianrenDailyReadingEntity row = find(memberId, LocalDate.now(WAO_ZONE));
         if (row == null) throw new BadRequestException("请先起出今天的一卦");
         if (row.getConversationId() == null || row.getConversationId().isBlank()) {

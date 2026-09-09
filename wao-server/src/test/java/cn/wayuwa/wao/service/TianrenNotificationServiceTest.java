@@ -26,12 +26,22 @@ class TianrenNotificationServiceTest {
     private final FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
     private final FeishuWebhookNotifier webhookSender = mock(FeishuWebhookNotifier.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
+    private final AiAssistantRunMapper assistantRuns = mock(AiAssistantRunMapper.class);
     private final ObjectMapper json = new ObjectMapper();
     private final TianrenNotificationService service = new TianrenNotificationService(deliveries, readingMapper,
-            readings, conversations, preferences, policies, settings, webhooks, webhookSender, feishu, json);
+            readings, conversations, preferences, policies, settings, webhooks, webhookSender, feishu, json, assistantRuns);
     private final Map<String, TianrenNotificationEntity> store = new HashMap<>();
     private final TianrenDailyReadingEntity row = new TianrenDailyReadingEntity();
     private TianrenReadingDto reading;
+
+    @Test void failedInterpretationIsNotReportedAsSentOrRetriedAsCard() {
+        var run = new AiAssistantRunEntity(); run.setStatus("failed");
+        when(assistantRuns.selectOne(any())).thenReturn(run);
+        var state = service.status("member", "tr-test");
+        assertThat(state.state()).isEqualTo("INTERPRETATION_FAILED");
+        assertThat(state.retryable()).isFalse();
+        assertThat(state.message()).contains("卡片尚未发送");
+    }
 
     @BeforeEach
     void setup() {

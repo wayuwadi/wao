@@ -10,6 +10,9 @@ import cn.wayuwa.wao.feishu.FeishuAppLinks;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
+import cn.wayuwa.wao.mapper.AiAssistantRunMapper;
+import cn.wayuwa.wao.domain.AiAssistantRunEntity;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import cn.wayuwa.wao.mapper.TianrenDailyReadingMapper;
 import cn.wayuwa.wao.mapper.TianrenNotificationMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -42,13 +45,14 @@ public class TianrenNotificationService {
     private final FeishuWebhookNotifier webhookSender;
     private final FeishuOpenApiClient feishu;
     private final ObjectMapper json;
+    private final AiAssistantRunMapper assistantRuns;
     private String cursor = "";
 
     public TianrenNotificationService(TianrenNotificationMapper deliveries, TianrenDailyReadingMapper readingMapper,
             TianrenReadingService readings, AiAssistantConversationService conversations,
             MemberPreferenceMapper preferences, NotificationSettingsService policies, SettingService settings,
             FeishuWebhookConfigService webhooks, FeishuWebhookNotifier webhookSender,
-            FeishuOpenApiClient feishu, ObjectMapper json) {
+            FeishuOpenApiClient feishu, ObjectMapper json, AiAssistantRunMapper assistantRuns) {
         this.deliveries = deliveries;
         this.readingMapper = readingMapper;
         this.readings = readings;
@@ -60,6 +64,7 @@ public class TianrenNotificationService {
         this.webhookSender = webhookSender;
         this.feishu = feishu;
         this.json = json;
+        this.assistantRuns = assistantRuns;
     }
 
     /** 每次有界扫描当天存档，准备快照并抢占投递；超时不自动重发。 */
@@ -87,6 +92,19 @@ public class TianrenNotificationService {
         }
         if (targetId(config).isBlank()) return new TianrenNotificationDto("CONFIGURATION_REQUIRED", "",
                 "请在今日节奏的通知配置中选择目标群或 Webhook", false);
+        if (StringUtils.hasText(reading.getConversationId())) {
+            AiAssistantRunEntity latest = assistantRuns.selectOne(new LambdaQueryWrapper<AiAssistantRunEntity>()
+                    .eq(AiAssistantRunEntity::getConversationId, reading.getConversationId())
+                    .eq(AiAssistantRunEntity::getMemberId, memberId)
+                    .orderByDesc(AiAssistantRunEntity::getCreatedAt).last("LIMIT 1"));
+            if (latest != null && "failed".equals(latest.getStatus())) {
+                return new TianrenNotificationDto("INTERPRETATION_FAILED", targetName(config),
+                        "AI 解读未完成，卡片尚未发送；自动流程最多尝试三次，也可在卦象页点击解读按钮重试。", false);
+            }
+            if (latest != null && !"succeeded".equals(latest.getStatus())) {
+                return new TianrenNotificationDto("INTERPRETING", targetName(config), "正在生成今日解读，完成后自动发送卡片", false);
+            }
+        }
         return new TianrenNotificationDto("WAITING", targetName(config), "等待已保存的解读与服务端投递", false);
     }
 

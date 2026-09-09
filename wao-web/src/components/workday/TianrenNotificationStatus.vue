@@ -14,7 +14,7 @@ const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
 const panelId = useId()
 const statusLabel = computed(() => error.value ? '读取失败' : notification.value ? labels[notification.value.state] : '读取中')
-const needsAttention = computed(() => !!error.value || ['FAILED', 'UNKNOWN', 'CONFIGURATION_REQUIRED'].includes(notification.value?.state ?? ''))
+const needsAttention = computed(() => !!error.value || ['FAILED', 'UNKNOWN', 'CONFIGURATION_REQUIRED', 'INTERPRETATION_FAILED'].includes(notification.value?.state ?? ''))
 
 function closeDetails() {
   expanded.value = false
@@ -31,6 +31,7 @@ let attempts = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 const labels: Record<TianrenNotification['state'], string> = {
+  INTERPRETING: '解读中', INTERPRETATION_FAILED: '解读失败',
   DISABLED: '未启用', CONFIGURATION_REQUIRED: '待配置', WAITING: '等待解读与投递',
   PENDING: '待发送', SENDING: '发送中', SENT: '已发送', FAILED: '发送失败', SKIPPED: '已跳过', UNKNOWN: '接收结果待确认',
 }
@@ -52,7 +53,7 @@ async function refresh(reset = false) {
     const result = await fetchTianrenNotification(id)
     if (disposed || current !== generation) return
     notification.value = result
-    if (['WAITING', 'PENDING', 'SENDING'].includes(result.state) && attempts++ < 24) {
+    if (['WAITING', 'INTERPRETING', 'INTERPRETATION_FAILED', 'PENDING', 'SENDING'].includes(result.state) && attempts++ < 24) {
       timer = setTimeout(() => { void refresh() }, 5000)
     }
   } catch (cause) {
