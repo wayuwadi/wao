@@ -173,6 +173,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/account-resources',
   },
   games: { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', path: '/games' },
+  'pet-world': { id: 'pet-world', label: '松风庭院', icon: 'ri-landscape-line', path: '/pet-world' },
   infrastructure: { id: 'infrastructure', label: '基础设施', icon: 'ri-server-line', path: '/infrastructure' },
   devices: {
     id: 'devices',
@@ -528,6 +529,9 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       group: 'TOOLS',
       order: 30,
       visible: false,
+    },
+    {
+      id: 'pet-world', label: '松风庭院', icon: 'ri-landscape-line', group: 'TOOLS', order: 31, visible: false,
     },
     {
       id: 'infrastructure', label: '基础设施', icon: 'ri-server-line', group: 'TOOLS', order: 34, visible: true, openMode: 'TAB',

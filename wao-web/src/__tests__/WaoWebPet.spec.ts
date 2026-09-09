@@ -263,11 +263,12 @@ describe('WaoWebPet', () => {
     wrapper.unmount()
   })
 
-  it('点击宠物设置通过站内路由直达真实配置入口', async () => {
+  it('宠物设置和小世界分别进入对应站内路由', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/', component: { template: '<div />' } },
+        { path: '/pet-world', component: { template: '<div />' } },
         {
           path: '/settings',
           name: 'settings',
@@ -282,10 +283,13 @@ describe('WaoWebPet', () => {
       global: { plugins: [router] },
     })
 
-    await wrapper.get('.pet-settings-link:not(.pet-quick-silence)').trigger('click')
+    await wrapper.get('.pet-settings-link:not(.pet-quick-silence):not(.pet-world-link)').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/settings?tab=pet')
+    await wrapper.get('.pet-world-link').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/pet-world')
     wrapper.unmount()
   })
 

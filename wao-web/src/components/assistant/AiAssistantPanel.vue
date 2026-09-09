@@ -694,7 +694,7 @@ onBeforeUnmount(stopStatusRefresh)
       </div>
     </Transition>
 
-    <WaoWebPet v-if="!open && !embedded" :assistant-status="assistantStatus" />
+    <WaoWebPet v-if="!open && !embedded && router.currentRoute.value.name !== 'pet-world'" :assistant-status="assistantStatus" />
   </Teleport>
 </template>
 

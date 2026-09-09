@@ -339,6 +339,12 @@ const router = createRouter({
           meta: { module: 'games', tabKind: 'module' },
         },
         {
+          path: 'pet-world',
+          name: 'pet-world',
+          component: () => import('@/views/PetWorldView.vue'),
+          meta: { module: 'pet-world', tabKind: 'module' },
+        },
+        {
           path: 'infrastructure',
           name: 'infrastructure',
           component: () => import('@/views/InfrastructureView.vue'),
