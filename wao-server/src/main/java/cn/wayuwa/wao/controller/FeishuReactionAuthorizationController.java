@@ -12,6 +12,8 @@ import org.springframework.web.util.HtmlUtils;
 @RestController
 @RequestMapping("/api/auth/feishu/reactions")
 public class FeishuReactionAuthorizationController {
+    private static final String RESULT = "feishu.reaction.result";
+    private static final String RESULT_EXPIRY = "feishu.reaction.result.expiry";
     private final FeishuReactionAuthorizationService service;
     public FeishuReactionAuthorizationController(FeishuReactionAuthorizationService service) { this.service = service; }
     @GetMapping(produces = MediaType.TEXT_HTML_VALUE)
@@ -25,9 +27,23 @@ public class FeishuReactionAuthorizationController {
     }
     /** 从既有 OAuth 回调地址接回，不新增飞书重定向地址。 */
     public ResponseEntity<String> callback(HttpServletRequest request, String state, String code) {
-        try { return html("个人表情已授权", "授权成员：" + service.complete(request.getSession(false), state, code)
+        ResponseEntity<String> result;
+        try { result = html("个人表情已授权", "授权成员：" + service.complete(request.getSession(false), state, code)
                 + "。请回到原提醒再点击一次，你的选择会显示为你本人的表情。", false); }
-        catch (RuntimeException ex) { return html("授权未完成", ex instanceof IllegalStateException ? ex.getMessage() : "请重新授权后再试", true); }
+        catch (RuntimeException ex) { result = html("授权未完成", ex instanceof IllegalStateException ? ex.getMessage() : "请重新授权后再试", true); }
+        var session = request.getSession();
+        session.setAttribute(RESULT, result.getBody());
+        session.setAttribute(RESULT_EXPIRY, System.currentTimeMillis() + 600_000L);
+        return ResponseEntity.status(303).location(URI.create("/api/auth/feishu/reactions/result"))
+                .header("Cache-Control", "no-store").header("Referrer-Policy", "no-referrer").build();
+    }
+    /** 在不含授权码的地址展示短期结果，刷新不重复兑换一次性凭证。 */
+    @GetMapping(value = "/result", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> result(HttpServletRequest request) {
+        var session = request.getSession(false);
+        if (session != null && session.getAttribute(RESULT_EXPIRY) instanceof Long expires && expires > System.currentTimeMillis()
+                && session.getAttribute(RESULT) instanceof String body) return response(body);
+        return page();
     }
     private ResponseEntity<String> html(String title, String description, boolean authorize) {
         String body = """
@@ -36,6 +52,9 @@ public class FeishuReactionAuthorizationController {
                 <main><h1>%s</h1><p>%s</p>%s<a class="back" href="/settings?tab=account">返回账号与登录</a></main></html>
                 """.formatted(HtmlUtils.htmlEscape(title), HtmlUtils.htmlEscape(title), HtmlUtils.htmlEscape(description),
                         authorize ? "<a href=\"/api/auth/feishu/reactions/start\">使用飞书授权个人表情</a>" : "");
+        return response(body);
+    }
+    private ResponseEntity<String> response(String body) {
         return ResponseEntity.ok().contentType(new MediaType("text", "html", java.nio.charset.StandardCharsets.UTF_8)).header("Cache-Control", "no-store")
                 .header("Referrer-Policy", "no-referrer").header("X-Frame-Options", "DENY").body(body);
     }

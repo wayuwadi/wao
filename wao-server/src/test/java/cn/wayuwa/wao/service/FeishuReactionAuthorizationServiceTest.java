@@ -36,7 +36,7 @@ class FeishuReactionAuthorizationServiceTest {
     private String state(MockHttpSession session) { service.authorizationUrl(session); return (String) session.getAttribute("feishu.reaction.state"); }
     private String tokens(String access, String refresh) {
         return """
-            {"code":0,"access_token":"%s","expires_in":7200,"refresh_token":"%s","refresh_token_expires_in":604800,
+            {"code":0,"error":"","access_token":"%s","expires_in":7200,"refresh_token":"%s","refresh_token_expires_in":604800,
              "scope":"im:message.reactions:write_only offline_access","token_type":"Bearer"}
             """.formatted(access, refresh);
     }
@@ -117,5 +117,46 @@ class FeishuReactionAuthorizationServiceTest {
         var row = grant(); when(grants.lockById(row.getId())).thenReturn(row);
         server.expect(requestTo("https://feishu.test/token")).andRespond(withBadRequest().body("{\"error\":\"invalid_grant\"}"));
         assertThat(service.accessToken("ou_real")).isNull(); verify(grants, never()).saveGrant(any()); server.verify();
+    }
+    @Test void httpFailureShowsSafeCategoryAndNeverLeaksResponseOrThrowable() {
+        var session = new MockHttpSession(); var state = state(session);
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(FeishuReactionAuthorizationService.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start(); logger.addAppender(appender);
+        try {
+            server.expect(requestTo("https://feishu.test/token")).andRespond(withBadRequest()
+                    .contentType(MediaType.APPLICATION_JSON).body("""
+                    {"error":"invalid_client","code":20048,"error_description":"secret-value private-code",
+                     "access_token":"private-token","refresh_token":"private-refresh"}
+                    """));
+            assertThatThrownBy(() -> service.complete(session, state, "private-code"))
+                    .hasMessageContaining("应用凭据校验失败").hasMessageContaining("诊断号")
+                    .hasMessageNotContaining("private").hasMessageNotContaining("secret-value").hasNoCause();
+            assertThat(appender.list).hasSize(1);
+            assertThat(appender.list.get(0).getFormattedMessage()).contains("reason=invalid_client", "http=400", "code=20048")
+                    .doesNotContain("private", "secret-value");
+            assertThat(appender.list.get(0).getThrowableProxy()).isNull();
+        } finally { logger.detachAppender(appender); appender.stop(); }
+        verifyNoInteractions(grants); server.verify();
+    }
+    @Test void malformedHttpErrorAndNetworkFailuresDoNotBecomePermissionAdvice() {
+        var session = new MockHttpSession(); var state = state(session);
+        server.expect(requestTo("https://feishu.test/token")).andRespond(withServerError().body("private-response"));
+        assertThatThrownBy(() -> service.complete(session, state, "code"))
+                .hasMessageContaining("令牌兑换未完成").hasMessageNotContaining("private-response").hasNoCause();
+        server.verify(); server.reset();
+        var nextState = state(session);
+        server.expect(requestTo("https://feishu.test/token")).andRespond(withException(new java.io.IOException("private-code")));
+        assertThatThrownBy(() -> service.complete(session, nextState, "code"))
+                .hasMessageContaining("暂时无法完成飞书令牌请求").hasMessageNotContaining("private-code").hasNoCause();
+        verifyNoInteractions(grants); server.verify();
+    }
+    @Test void nonemptyErrorOnHttpSuccessStillRejectsCredentials() {
+        var session = new MockHttpSession(); var state = state(session);
+        server.expect(requestTo("https://feishu.test/token")).andRespond(withSuccess(
+                tokens("private-access", "private-refresh").replace("\"error\":\"\"", "\"error\":\"invalid_grant\""), MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> service.complete(session, state, "code"))
+                .hasMessageContaining("授权码已失效或校验未通过").hasMessageNotContaining("private-access");
+        verifyNoInteractions(grants); server.verify();
     }
 }

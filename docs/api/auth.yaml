@@ -48,6 +48,21 @@ paths:
       summary: 交换飞书授权码并登录、绑定或进入成员认领
       responses:
         "200": { description: 返回统一账号或待认领结果 }
+  /api/auth/feishu/callback:
+    get:
+      summary: 接收飞书登录或个人表情授权回调
+      parameters:
+        - { in: query, name: state, required: true, schema: { type: string } }
+        - { in: query, name: code, schema: { type: string } }
+      responses:
+        "302": { description: 普通登录跳转前端回调页，行为不变 }
+        "303": { description: 个人表情授权处理后跳转 /api/auth/feishu/reactions/result，不在地址中保留授权码 }
+  /api/auth/feishu/reactions/result:
+    get:
+      summary: 查看当前浏览器最近十分钟内的个人表情授权结果
+      description: 返回 HTML；刷新不会再次兑换授权码，无结果或结果过期时展示授权入口。禁止缓存及向外传递来源地址。
+      responses:
+        "200": { description: 个人授权结果或授权入口，不改变 WAO 登录身份 }
   /api/auth/wechat/authorize:
     get:
       summary: 获取微信开放平台网站应用扫码授权地址
