@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
@@ -8,6 +9,7 @@ import { useNow } from '@/composables/now'
 import type { KnowledgeBase, TrashEntry } from '@/types'
 
 const data = useDataStore()
+const shortcuts = useTopShortcutsStore()
 const router = useRouter()
 const now = useNow()
 
@@ -219,6 +221,7 @@ async function createKb() {
           v-for="k in g.items"
           :key="k.id"
           class="kb-card"
+          draggable="true" @dragstart="shortcuts.start(resourceShortcut('kb', k.id, k.name), $event)" @dragend="shortcuts.end"
           :style="{ borderLeftColor: k.color }"
           @click="openKb(k.id)"
         >

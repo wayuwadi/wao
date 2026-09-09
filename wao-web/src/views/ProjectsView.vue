@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
@@ -10,6 +11,7 @@ import type { Project, ProjectStatus } from '@/types'
 const data = useDataStore()
 const ui = useUiStore()
 const route = useRoute()
+const shortcuts = useTopShortcutsStore()
 const router = useRouter()
 const { decoProj } = useDeco()
 
@@ -155,7 +157,7 @@ function openProject(id: string) {
             <span class="group-count wao-tabular">{{ g.count }}</span>
           </div>
           <div class="card-grid">
-            <div v-for="p in g.items" :key="p.id" class="proj-card" @click="openProject(p.id)">
+            <div v-for="p in g.items" :key="p.id" class="proj-card" draggable="true" @dragstart="shortcuts.start(resourceShortcut('project', p.id, p.name), $event)" @dragend="shortcuts.end" @click="openProject(p.id)">
               <div class="pc-top">
                 <div class="pc-icon" :style="{ background: p.areaColor }">
                   <i v-if="p.icon" :class="p.icon"></i>

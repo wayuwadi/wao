@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTopShortcutsStore, favoriteShortcut } from '@/stores/topShortcuts'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/composables/toast'
@@ -18,6 +19,7 @@ const nav = useNavStore()
 const session = useSessionStore()
 const favorites = useFavoritesStore()
 const route = useRoute()
+const shortcuts = useTopShortcutsStore()
 const router = useRouter()
 const isMobile = useIsMobile()
 const menuRef = ref<HTMLElement | null>(null)
@@ -274,6 +276,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
               :key="f.type + f.targetId"
               class="item fav-item"
               :title="f.label"
+              :draggable="!isMobile && !!favoriteShortcut(f)"
+              @dragstart="shortcuts.start(favoriteShortcut(f), $event)" @dragend="shortcuts.end"
               @click="openFavorite(f)"
             >
               <i :class="FAV_ICONS[f.type]"></i>
