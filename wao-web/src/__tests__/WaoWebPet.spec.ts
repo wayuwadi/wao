@@ -76,6 +76,40 @@ function touchPointerEvent(
 }
 
 describe('WaoWebPet', () => {
+  it('拖动才播放方向走路帧，持续移动不重置，暂停和释放恢复且吞掉拖后点击', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('Image', class { onload?: () => void; set src(_value: string) { this.onload?.() } })
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+    const wrapper = mount(WaoWebPet, { props: { assistantStatus: { configured: true, message: '已连接' } } })
+    const avatar = wrapper.get('.pet-avatar')
+    Object.defineProperties(avatar.element, {
+      setPointerCapture: { value: vi.fn() }, hasPointerCapture: { value: () => true }, releasePointerCapture: { value: vi.fn() },
+    })
+    const pointer = (type: string, x: number) => touchPointerEvent(type, { pointerId: 77, clientX: x, clientY: 80 })
+    await vi.advanceTimersByTimeAsync(1)
+    avatar.element.dispatchEvent(pointer('pointerdown', 120))
+    await nextTick()
+    expect(wrapper.get('.wao-web-pet').classes()).toContain('dragging')
+    expect(wrapper.get('.pet-avatar .pet-sprite').attributes('data-state')).toBe('idle')
+    window.dispatchEvent(pointer('pointermove', 150))
+    await nextTick()
+    expect(wrapper.get('.pet-avatar .pet-sprite').attributes('data-state')).toBe('running-right')
+    await vi.advanceTimersByTimeAsync(100)
+    window.dispatchEvent(pointer('pointermove', 170))
+    await vi.advanceTimersByTimeAsync(40)
+    expect(wrapper.get('.pet-avatar .pet-sprite').attributes('data-frame')).toBe('1')
+    window.dispatchEvent(pointer('pointermove', 140))
+    await nextTick()
+    expect(wrapper.get('.pet-avatar .pet-sprite').attributes('data-state')).toBe('running-left')
+    await vi.advanceTimersByTimeAsync(190)
+    expect(wrapper.get('.pet-avatar .pet-sprite').attributes('data-state')).toBe('idle')
+    window.dispatchEvent(pointer('pointerup', 140))
+    await nextTick()
+    await avatar.trigger('click')
+    expect(wrapper.get('.pet-quick-actions').classes()).not.toContain('open')
+    expect(localStorage.getItem('wao-assistant-fab-position-v1')).not.toBeNull()
+    wrapper.unmount()
+  })
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
