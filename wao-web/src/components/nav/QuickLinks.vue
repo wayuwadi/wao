@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { useTopShortcutsStore } from '@/stores/topShortcuts'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { quickLinkPath, type QuickLink } from '@/config/quickLinks'
 
+const shortcuts = useTopShortcutsStore()
 const router = useRouter()
 const { links, load, loading, loadError } = useQuickLinks()
 
@@ -91,7 +93,7 @@ onBeforeUnmount(() => {
           <button @click="retryLoad">重试</button>
         </div>
 
-        <button v-for="link in links" :key="link.id" class="ql-item" @click="visit(link)">
+        <button v-for="link in links" :key="link.id" class="ql-item" draggable="true" @dragstart="shortcuts.start({ key: 'link:' + link.id, label: link.label, icon: link.icon, path: quickLinkPath(link.id), quickLinkId: link.id }, $event)" @dragend="shortcuts.end" @click="visit(link)">
           <i :class="link.icon"></i>
           <span class="ql-text">
             <span class="ql-label">{{ link.label }}</span>

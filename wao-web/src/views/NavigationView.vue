@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTopShortcutsStore } from '@/stores/topShortcuts'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAVIGATION_CATALOG, type NavigationCatalogModuleId } from '@/config/navigationCatalog'
@@ -10,6 +11,7 @@ import { toast } from '@/composables/toast'
 import { useNavStore } from '@/stores/nav'
 import type { NavItemId } from '@/config/nav'
 
+const shortcuts = useTopShortcutsStore()
 const router = useRouter()
 const nav = useNavStore()
 const quickLinks = useQuickLinks()
@@ -335,7 +337,7 @@ onMounted(() => {
       </header>
       <div class="card-grid">
         <button
-          v-for="link in links"
+          v-for="link in links" draggable="true" @dragstart="shortcuts.start({ key: 'link:' + link.id, label: link.label, icon: link.icon, path: quickLinkPath(link.id), quickLinkId: link.id }, $event)" @dragend="shortcuts.end"
           :key="link.id"
           class="nav-card"
           type="button"
