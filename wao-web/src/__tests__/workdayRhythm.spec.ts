@@ -102,6 +102,13 @@ describe('工作日节奏规则', () => {
     expect(restored.energyNotification.focusTarget).not.toBe(restored.energyNotification.tianrenTarget)
   })
 
+  it('每天九点自动起卦默认关闭，明确开启后可序列化恢复', () => {
+    const config = normalizeRhythmConfig(structuredClone(DEFAULT_WORKDAY_RHYTHM))
+    expect(config.energyNotification.autoTianrenAtNine).toBe(false)
+    config.energyNotification.autoTianrenAtNine = true
+    expect(parseRhythmConfig(JSON.stringify(config))?.energyNotification.autoTianrenAtNine).toBe(true)
+  })
+
   it('只校验开启类别的目标，显式空目标不会回落到旧群', () => {
     const config = normalizeRhythmConfig(structuredClone(DEFAULT_WORKDAY_RHYTHM))
     Object.assign(config.energyNotification, { enabled: true, channel: 'CHAT', chatId: 'oc_energy' })

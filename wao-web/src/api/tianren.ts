@@ -27,7 +27,7 @@ export interface TianrenReading {
 }
 
 export interface TianrenNotification {
-  state: 'DISABLED' | 'CONFIGURATION_REQUIRED' | 'WAITING' | 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'UNKNOWN'
+  state: 'DISABLED' | 'CONFIGURATION_REQUIRED' | 'INTERPRETING' | 'INTERPRETATION_FAILED' | 'WAITING' | 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'UNKNOWN'
   targetName: string
   message: string
   retryable: boolean

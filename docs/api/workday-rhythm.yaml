@@ -175,6 +175,7 @@ components:
             notifyEnergy: { type: boolean, default: true }
             notifyFocus: { type: boolean, default: true }
             notifyTianren: { type: boolean, default: false }
+            autoTianrenAtNine: { type: boolean, default: false, description: "每天北京时间09:00自动起卦并解读，解读完成后按卦象通知配置发群；需同时启用enabled和notifyTianren并选择独立目标群" }
             focusTarget: { $ref: "#/components/schemas/WorkdayActionNotificationTarget" }
             tianrenTarget: { $ref: "#/components/schemas/WorkdayActionNotificationTarget" }
     WorkdayRhythmHistory:

@@ -5,7 +5,7 @@ import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.TianrenInterpretRequest;
 import cn.wayuwa.wao.dto.TianrenReadingDto;
 import cn.wayuwa.wao.dto.TianrenShareTokenDto;
-import cn.wayuwa.wao.service.AiAssistantService;
+import cn.wayuwa.wao.service.TianrenDailyAutomationService;
 import cn.wayuwa.wao.service.TianrenReadingService;
 import cn.wayuwa.wao.service.WorkdayRhythmDashboardService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,14 +31,14 @@ public class TianrenController {
     private static final String FALLBACK_MEMBER = "wg";
 
     private final TianrenReadingService readings;
-    private final AiAssistantService assistant;
+    private final TianrenDailyAutomationService automation;
     private final CurrentMember currentMember;
     private final WorkdayRhythmDashboardService rhythm;
 
-    public TianrenController(TianrenReadingService readings, AiAssistantService assistant,
+    public TianrenController(TianrenReadingService readings, TianrenDailyAutomationService automation,
             CurrentMember currentMember, WorkdayRhythmDashboardService rhythm) {
         this.readings = readings;
-        this.assistant = assistant;
+        this.automation = automation;
         this.currentMember = currentMember;
         this.rhythm = rhythm;
     }
@@ -83,12 +83,9 @@ public class TianrenController {
     @PostMapping(value = "/today/interpret/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter interpret(@Valid @RequestBody TianrenInterpretRequest request, HttpServletRequest http) {
         String memberId = member(http);
-        TianrenReadingService.PreparedInterpretation prepared =
-                readings.prepareInterpretation(memberId, request.focus());
         SseEmitter emitter = new SseEmitter(310_000L);
         Thread worker = new Thread(
-                () -> assistant.chatStreamForTianren(
-                        prepared.request(), memberId, prepared.trustedContext(), emitter),
+                () -> automation.interpretStream(memberId, request.focus(), emitter),
                 "wao-tianren-stream");
         worker.setDaemon(true);
         worker.start();

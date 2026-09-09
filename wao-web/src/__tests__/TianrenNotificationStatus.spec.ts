@@ -4,7 +4,7 @@ import TianrenNotificationStatus from '@/components/workday/TianrenNotificationS
 import { fetchTianrenNotification, retryTianrenNotification } from '@/api/tianren'
 
 vi.mock('@/api/tianren', () => ({ fetchTianrenNotification: vi.fn(), retryTianrenNotification: vi.fn() }))
-const state = (value: 'UNKNOWN' | 'SENT' | 'PENDING' | 'WAITING') => ({ state: value, targetName: '原群', message: value, retryable: value === 'UNKNOWN' })
+const state = (value: 'UNKNOWN' | 'SENT' | 'PENDING' | 'WAITING' | 'INTERPRETATION_FAILED') => ({ state: value, targetName: '原群', message: value, retryable: value === 'UNKNOWN' })
 const mountStatus = () => mount(TianrenNotificationStatus, { props: { readingId: 'reading-1', interpreting: false }, global: { stubs: { RouterLink: true } } })
 
 describe('卦象通知状态', () => {
@@ -68,6 +68,15 @@ describe('卦象通知状态', () => {
     expect(wrapper.find('.notice-details').exists()).toBe(false)
     await vi.advanceTimersByTimeAsync(5000)
     expect(trigger.text()).toContain('已发送')
+    wrapper.unmount()
+  })
+
+  it('后台解读失败显示真实阶段且不提供卡片重发操作', async () => {
+    vi.mocked(fetchTianrenNotification).mockResolvedValue(state('INTERPRETATION_FAILED'))
+    const wrapper = mountStatus(); await flushPromises()
+    expect(wrapper.get('.notice-trigger').text()).toContain('解读失败')
+    await wrapper.get('.notice-trigger').trigger('click')
+    expect(wrapper.text()).not.toContain('重试发送')
     wrapper.unmount()
   })
 

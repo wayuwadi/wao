@@ -10,6 +10,11 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface MemberPreferenceMapper {
 
+    /** 按成员主键分页扫描已保存的偏好，不包含已删除成员。 */
+    @Select("SELECT p.member_id FROM member_preference p JOIN member m ON m.id = p.member_id "
+            + "WHERE p.pref_key = #{key} AND p.member_id > #{afterId} ORDER BY p.member_id LIMIT 50")
+    List<String> membersWithPreference(@Param("key") String key, @Param("afterId") String afterId);
+
     @Update("UPDATE member_preference SET pref_value = #{value}, updated_at = NOW() "
             + "WHERE member_id = #{memberId} AND pref_key = #{key} "
             + "AND CAST(pref_value AS BINARY) = CAST(#{expected} AS BINARY)")
