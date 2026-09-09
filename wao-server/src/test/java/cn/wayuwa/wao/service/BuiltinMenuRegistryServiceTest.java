@@ -59,7 +59,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "skills".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
-                    assertThat(menu.label()).isEqualTo("Skill 市场");
+                    assertThat(menu.label()).isEqualTo("WAO-HUB");
                     assertThat(menu.group()).isEqualTo("PUBLIC");
                     assertThat(menu.visible()).isFalse();
                     assertThat(menu.openMode()).isEqualTo("TAB");
@@ -211,7 +211,7 @@ class BuiltinMenuRegistryServiceTest {
         assertThat(upgraded.menus()).noneMatch(menu -> "chat".equals(menu.id()));
         assertThat(upgraded.menus()).filteredOn(menu -> "skills".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
-                    assertThat(menu.label()).isEqualTo("Skill 市场");
+                    assertThat(menu.label()).isEqualTo("WAO-HUB");
                     assertThat(menu.group()).isEqualTo("PUBLIC");
                     assertThat(menu.visible()).isFalse();
                 });

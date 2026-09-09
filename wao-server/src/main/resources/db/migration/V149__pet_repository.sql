@@ -1,0 +1,20 @@
+CREATE TABLE pet_package (
+ id VARCHAR(36) PRIMARY KEY,
+ publisher_id VARCHAR(64) NOT NULL,
+ pet_slug VARCHAR(64) NOT NULL,
+ display_name VARCHAR(100) NOT NULL,
+ description VARCHAR(1000) NOT NULL,
+ sprite_version INT NOT NULL,
+ sprite_type VARCHAR(32) NOT NULL,
+ source VARCHAR(500) NOT NULL,
+ license VARCHAR(40) NOT NULL,
+ sha256 CHAR(64) NOT NULL,
+ package_size INT NOT NULL,
+ package_content MEDIUMBLOB NOT NULL,
+ sprite_content MEDIUMBLOB NOT NULL,
+ listed BOOLEAN NOT NULL DEFAULT FALSE,
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ INDEX idx_pet_public (listed, created_at),
+ INDEX idx_pet_publisher (publisher_id, created_at),
+ CONSTRAINT fk_pet_publisher FOREIGN KEY (publisher_id) REFERENCES skill_publisher(id)
+);

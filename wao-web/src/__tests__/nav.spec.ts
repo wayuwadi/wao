@@ -59,11 +59,14 @@ describe('侧边栏导航配置', () => {
   })
 
   it('Skill 市场同时保留公开路由和 WAO 页签路由', () => {
-    expect(MODULES.skills.path).toBe('/wao/skills')
-    expect(MODULES.skills.newPagePath).toBe('/skills')
+    expect(MODULES.skills.path).toBe('/wao/hub')
+    expect(MODULES.skills.newPagePath).toBe('/hub')
     expect(router.getRoutes().find((route) => route.name === 'skill-market')?.path).toBe('/skills')
     const inApp = router.getRoutes().find((route) => route.name === 'wao-skill-market')
     expect(inApp?.path).toBe('/wao/skills')
+    expect(router.resolve('/wao/hub').meta.module).toBe('skills')
+    expect(router.resolve('/pets').meta.public).toBe(true)
+    expect(router.resolve('/pets/create').meta.public).toBe(false)
     expect(router.resolve('/wao/skills').meta.module).toBe('skills')
     expect(router.resolve('/wao/skills').meta.tabKind).toBe('module')
     expect(

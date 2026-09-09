@@ -18,6 +18,8 @@ function login() { router.push({ path: '/login', query: { redirect: router.curre
       <RouterLink v-if="!embedded" class="market-brand" :to="marketRoutes.path()"><span>WAO</span><b>Skill 市场</b></RouterLink>
       <strong v-else class="market-section-title">Skill 市场</strong>
       <nav>
+        <RouterLink to="/hub">WAO-HUB</RouterLink>
+        <RouterLink to="/pets">Pet 仓库</RouterLink>
         <RouterLink :to="marketRoutes.path()">发现 Skill</RouterLink>
         <template v-if="session.authed">
           <RouterLink :to="marketRoutes.path('/publish')">发布</RouterLink>

@@ -139,10 +139,10 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   ideas: { id: 'ideas', label: '点子库', icon: 'ri-lightbulb-flash-line', path: '/ideas' },
   skills: {
     id: 'skills',
-    label: 'Skill 市场',
+    label: 'WAO-HUB',
     icon: 'ri-sparkling-2-line',
-    path: '/wao/skills',
-    newPagePath: '/skills',
+    path: '/wao/hub',
+    newPagePath: '/hub',
   },
   'skill-connections': {
     id: 'skill-connections',
@@ -316,7 +316,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     },
     {
       id: 'skills',
-      label: 'Skill 市场',
+      label: 'WAO-HUB',
       icon: 'ri-sparkling-2-line',
       group: 'PUBLIC',
       order: 12,
