@@ -32,16 +32,34 @@ class FeishuReactionAuthorizationControllerTest {
         var session = new MockHttpSession();
         when(grants.complete(session, "reaction.state", "code")).thenReturn("娃哥<script>alert(1)</script>");
         mvc.perform(get("/api/auth/feishu/callback").session(session).param("state", "reaction.state").param("code", "code"))
+                .andExpect(status().isSeeOther()).andExpect(redirectedUrl("/api/auth/feishu/reactions/result"))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"));
+        for (int refresh = 0; refresh < 2; refresh++) mvc.perform(get("/api/auth/feishu/reactions/result").session(session))
                 .andExpect(status().isOk()).andExpect(content().string(containsString("个人表情已授权")))
                 .andExpect(content().string(not(containsString("<script>"))))
                 .andExpect(header().string("Referrer-Policy", "no-referrer"));
+        verify(grants, times(1)).complete(session, "reaction.state", "code");
         verifyNoInteractions(login, accounts, sessions);
     }
     @Test void declinedAuthorizationOffersRetryWithoutSuccessClaim() throws Exception {
+        var session = new MockHttpSession();
         when(grants.complete(any(), eq("reaction.state"), isNull())).thenThrow(new IllegalStateException("你尚未同意授权"));
-        mvc.perform(get("/api/auth/feishu/callback").param("state", "reaction.state").param("error", "access_denied"))
+        mvc.perform(get("/api/auth/feishu/callback").session(session).param("state", "reaction.state").param("error", "access_denied"))
+                .andExpect(status().isSeeOther()).andExpect(redirectedUrl("/api/auth/feishu/reactions/result"));
+        mvc.perform(get("/api/auth/feishu/reactions/result").session(session))
                 .andExpect(status().isOk()).andExpect(content().string(containsString("授权未完成")))
                 .andExpect(content().string(not(containsString("个人表情已授权"))));
+    }
+    @Test void resultIsIsolatedToBrowserAndExpiresWithoutReplayingCallback() throws Exception {
+        var session = new MockHttpSession();
+        session.setAttribute("feishu.reaction.result", "private-result");
+        session.setAttribute("feishu.reaction.result.expiry", 1L);
+        mvc.perform(get("/api/auth/feishu/reactions/result").session(session))
+                .andExpect(content().string(not(containsString("private-result"))))
+                .andExpect(content().string(containsString("使用飞书授权个人表情")));
+        mvc.perform(get("/api/auth/feishu/reactions/result"))
+                .andExpect(content().string(not(containsString("private-result"))));
+        verifyNoInteractions(grants);
     }
     @Test void existingLoginCallbackKeepsItsRedirectFlow() throws Exception {
         when(login.callbackUri("code", "login-state")).thenReturn(URI.create("https://wao.test/auth/feishu/callback?code=code"));

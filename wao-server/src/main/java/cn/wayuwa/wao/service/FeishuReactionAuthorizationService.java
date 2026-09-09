@@ -5,6 +5,7 @@ import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.domain.FeishuReactionGrantEntity;
 import cn.wayuwa.wao.mapper.FeishuReactionGrantMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpSession;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -20,10 +21,15 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** 独立的个人表情 OAuth：凭证按应用和真实用户隔离，不改变 WAO 登录绑定。 */
 @Service
 public class FeishuReactionAuthorizationService {
+    private static final Logger log = LoggerFactory.getLogger(FeishuReactionAuthorizationService.class);
     public static final String SCOPE = "im:message.reactions:write_only offline_access";
     private static final String STATE = "feishu.reaction.state";
     private static final String VERIFIER = "feishu.reaction.verifier";
@@ -99,17 +105,42 @@ public class FeishuReactionAuthorizationService {
     }
 
     private JsonNode exchange(Map<String, Object> body) {
+        JsonNode result;
         try {
-            JsonNode result = client.post().uri(tokenUrl).contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JsonNode.class);
-            if (result == null || result.path("code").asInt(0) != 0 || result.hasNonNull("error")
-                    || !StringUtils.hasText(result.path("access_token").asText()) || result.path("expires_in").asLong(0) <= 0
-                    || !java.util.Arrays.asList(result.path("scope").asText().split(" +")).contains("im:message.reactions:write_only"))
-                throw new IllegalStateException();
-            return result;
-        } catch (RuntimeException ex) {
-            // 不传播可能携带令牌响应正文的 HTTP 异常。
-            throw new IllegalStateException("飞书个人表情授权未完成，请确认已开通表情权限并重新授权");
+            result = client.post().uri(tokenUrl).contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JsonNode.class);
+        } catch (RestClientResponseException ex) {
+            JsonNode error = null;
+            try { error = new ObjectMapper().readTree(ex.getResponseBodyAsByteArray()); }
+            catch (java.io.IOException ignored) { /* 不记录原始响应，里面可能有凭证。 */ }
+            throw tokenFailure(error, ex.getStatusCode().value());
+        } catch (RestClientException ex) {
+            throw failure("transport", 0, 0, "暂时无法完成飞书令牌请求，请重新授权；若仍失败请联系管理员");
         }
+        if (result == null || result.path("code").asInt(0) != 0 || StringUtils.hasText(result.path("error").asText()))
+            throw tokenFailure(result, 200);
+        if (!StringUtils.hasText(result.path("access_token").asText()) || result.path("expires_in").asLong(0) <= 0)
+            throw failure("invalid_token_response", 200, 0, "飞书未返回有效的授权凭证，请重新授权");
+        if (!java.util.Arrays.asList(result.path("scope").asText().trim().split("\\s+")).contains("im:message.reactions:write_only"))
+            throw failure("missing_reaction_scope", 200, 0, "本次授权未包含个人表情权限，请确认用户身份权限已发布，并重新同意授权");
+        return result;
+    }
+
+    private IllegalStateException tokenFailure(JsonNode error, int status) {
+        int code = error == null ? 0 : error.path("code").asInt(0);
+        String type = error == null ? "" : error.path("error").asText();
+        return switch (type) {
+            case "invalid_grant" -> failure("invalid_grant", status, code, "飞书授权码已失效或校验未通过，请点击下方按钮重新授权，不要刷新旧回调页");
+            case "invalid_client", "unauthorized_client" -> failure("invalid_client", status, code, "飞书应用凭据校验失败，请联系管理员核对通知机器人的应用配置");
+            case "invalid_scope" -> failure("invalid_scope", status, code, "飞书未接受申请的权限，请确认用户身份表情权限和持续访问权限已开通并发布");
+            default -> failure("token_rejected", status, code, "飞书令牌兑换未完成，请重新授权；若仍失败请联系管理员");
+        };
+    }
+
+    private IllegalStateException failure(String reason, int status, int code, String message) {
+        String reference = UUID.randomUUID().toString().substring(0, 8);
+        // 只记录固定分类、数值状态和本地诊断号，禁止响应正文、异常原因链、授权码与令牌进入日志。
+        log.warn("Feishu reaction authorization failed: ref={} reason={} http={} code={}", reference, reason, status, code);
+        return new IllegalStateException(message + "（诊断号：" + reference + "）");
     }
 
     private void apply(FeishuReactionGrantEntity row, JsonNode token) {
