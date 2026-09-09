@@ -80,6 +80,7 @@ async function save() {
   error.value = ''
   remember()
   restored = true
+  const submittedDraft = JSON.stringify({ revision: revision.value, entries: entries.value })
   try {
     const result = await saveRhythmReview(props.date, {
       revision: revision.value,
@@ -90,7 +91,7 @@ async function save() {
     state.value = 'saved'
     restored = false
     try {
-      localStorage.removeItem(key)
+      if (localStorage.getItem(key) === submittedDraft) localStorage.removeItem(key)
       localError.value = ''
     } catch {
       localError.value = '账号已保存，本机旧草稿清理失败'
@@ -122,7 +123,10 @@ function remove(index: number) {
   changed()
 }
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (['dirty', 'saving', 'error'].includes(state.value) && ready) event.preventDefault()
+  if (['dirty', 'saving', 'error'].includes(state.value) && ready) {
+    remember()
+    event.preventDefault()
+  }
 }
 onMounted(() => {
   restore()
@@ -130,6 +134,7 @@ onMounted(() => {
   window.addEventListener('beforeunload', beforeUnload)
 })
 onBeforeUnmount(() => {
+  if (ready && ['dirty', 'saving', 'error'].includes(state.value)) remember()
   alive = false
   window.removeEventListener('beforeunload', beforeUnload)
 })

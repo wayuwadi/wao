@@ -89,4 +89,27 @@ describe('今日复盘', () => {
     expect(tomorrow.get('textarea').element.value).toBe('')
     tomorrow.unmount()
   })
+  it('迟到保存不得清理另一页面草稿，离开页面重新落下当前未提交输入', async () => {
+    const first = mount(Review, { props })
+    await flushPromises()
+    const second = mount(Review, { props })
+    await flushPromises()
+    await first.get('textarea').setValue('页面一提交')
+    let finish!: (value: unknown) => void
+    api.saveRhythmReview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    await first.get('header button').trigger('click')
+    await second.get('textarea').setValue('页面二尚未提交')
+    finish({ revision: 1, entries: ['页面一提交', '', ''] })
+    await flushPromises()
+    expect(localStorage.getItem(key)).toContain('页面二尚未提交')
+    // 其他页面写入了共享本机键后，当前页面离开仍保存本人正在编辑的文字。
+    localStorage.setItem(key, JSON.stringify({ revision: 1, entries: ['其他页面草稿'] }))
+    second.unmount()
+    expect(localStorage.getItem(key)).toContain('页面二尚未提交')
+    first.unmount()
+  })
 })
