@@ -57,7 +57,6 @@ const noticeHiddenUntil = ref(readDeadline('wao-web-pet-notice-hidden-until'))
 const petHiddenUntil = ref(readDeadline('wao-web-pet-hidden-until'))
 const clockTick = ref(Date.now())
 const petActivity = ref<'stretch' | 'hop' | 'step' | null>(null)
-const petSpriteState = computed(() => petActivity.value === 'hop' ? 'jumping' : petActivity.value ? 'waving' : 'idle')
 const rhythmConfig = ref<WorkdayRhythmConfig | null>(null)
 const rhythmDay = ref<WorkdayRhythmDay | null>(null)
 const rhythmDate = ref(shanghaiClock().date)
@@ -84,9 +83,14 @@ const {
   elementRef: petRef,
   style: petStyle,
   dragging: petDragging,
+  moving: petMoving,
+  horizontalDirection: petDirection,
   onPointerDown: startPetDrag,
   consumeClick,
 } = useFloatingDrag('wao-assistant-fab-position-v1')
+const petSpriteState = computed(() => petMoving.value ? `running-${petDirection.value}` as const
+  : petActivity.value === 'hop' ? 'jumping' : petActivity.value ? 'waving' : 'idle')
+watch(petMoving, (moving) => { if (moving) petActivity.value = null })
 
 const priorityOrder = { P0: 0, P1: 1, P2: 2, P3: 3 }
 
@@ -702,7 +706,7 @@ onBeforeUnmount(() => {
         >
           {{ actionableCount > 99 ? '99+' : actionableCount }}
         </span>
-        <PetSprite :state="petSpriteState" :paused="petDragging || (!webPet.settings.idleAnimation && !petActivity)"
+        <PetSprite :state="petSpriteState" :paused="!petMoving && (petDragging || (!webPet.settings.idleAnimation && !petActivity))"
           @finished="petActivity = null" />
         <span
           class="pet-status"
