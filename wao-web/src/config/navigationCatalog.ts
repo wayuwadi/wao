@@ -105,8 +105,8 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
     items: [
       {
         id: 'skills',
-        description: '发现、安装和管理经过审核的 Skill。',
-        keywords: ['插件', '能力'],
+        description: '在 WAO-HUB 发现 Skill，创造、上传和分享宠物。',
+        keywords: ['插件', '能力', '宠物', 'Pet', '仓库', 'HUB'],
       },
       {
         id: 'skill-connections',

@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 41;
+    private static final int VERSION = 42;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -37,7 +37,7 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("navigation", "工作台", "ri-compass-discover-line", "ROOT", 20, true, "TAB"),
             new BuiltinMenuConfigDto("projects", "项目", "ri-stack-line", "PUBLIC", 10, true, "TAB"),
             new BuiltinMenuConfigDto("updates", "更新日记", "ri-history-line", "PUBLIC", 11, true, "TAB"),
-            new BuiltinMenuConfigDto("skills", "Skill 市场", "ri-sparkling-2-line", "PUBLIC", 12, false, "TAB"),
+            new BuiltinMenuConfigDto("skills", "WAO-HUB", "ri-sparkling-2-line", "PUBLIC", 12, false, "TAB"),
             new BuiltinMenuConfigDto("skill-connections", "Skill 接入", "ri-apps-2-line", "PUBLIC", 13, false, "TAB"),
             new BuiltinMenuConfigDto("todo", "待办", "ri-checkbox-multiple-line", "PERSONAL", 10, true, "TAB"),
             new BuiltinMenuConfigDto("workday-rhythm", "今日节奏", "ri-timer-flash-line", "PERSONAL", 12, true, "TAB"),
@@ -88,6 +88,9 @@ public class BuiltinMenuRegistryService {
             if (stored.version() < 25) menus = applyWorkbenchDefault(menus);
             if (stored.version() < 37) menus = applyCompactDefaults(menus);
             if (stored.version() < 36) menus = applyElectronicWardrobeDefault(menus);
+            if (stored.version() < 42) menus = menus.stream().map(menu ->
+                    "skills".equals(menu.id()) && "Skill 市场".equals(menu.label())
+                    ? new BuiltinMenuConfigDto(menu.id(), "WAO-HUB", menu.icon(), menu.group(), menu.order(), menu.visible(), menu.openMode(), menu.placement()) : menu).toList();
             return new BuiltinMenuRegistryDto(VERSION, menus);
         } catch (RuntimeException | JsonProcessingException exception) {
             return defaults();

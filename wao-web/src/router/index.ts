@@ -72,6 +72,15 @@ const router = createRouter({
       component: () => import('@/views/TianrenShareView.vue'),
       meta: { public: true },
     },
+    { path: '/hub', component: () => import('@/layouts/HubLayout.vue'), meta: { public: true }, children: [
+      { path: '', name: 'wao-hub', component: () => import('@/views/HubView.vue') },
+    ] },
+    { path: '/pets', component: () => import('@/layouts/HubLayout.vue'), meta: { public: true }, children: [
+      { path: '', name: 'pets', component: () => import('@/views/PetRepositoryView.vue') },
+      { path: 'create', name: 'pet-create', component: () => import('@/views/PetCreateView.vue'), meta: { public: false } },
+      { path: 'manage', name: 'pet-manage', component: () => import('@/views/PetRepositoryView.vue'), meta: { public: false } },
+      { path: ':id', name: 'pet-detail', component: () => import('@/views/PetDetailView.vue') },
+    ] },
     {
       path: '/skills',
       component: () => import('@/layouts/SkillMarketLayout.vue'),
@@ -161,6 +170,9 @@ const router = createRouter({
           component: () => import('@/views/ProjectDetailView.vue'),
           meta: { module: 'projects', tabKind: 'project' },
         },
+        { path: 'wao/hub', component: () => import('@/layouts/HubLayout.vue'), meta: { module: 'skills', tabKind: 'module' }, children: [
+          { path: '', name: 'embedded-hub', component: () => import('@/views/HubView.vue') },
+        ] },
         {
           path: 'wao/skills',
           component: () => import('@/layouts/SkillMarketLayout.vue'),

@@ -188,7 +188,7 @@ describe('菜单与快捷链接统一设置', () => {
     await menuRow(wrapper, '待办').get('select[aria-label="展示位置"]').setValue('DOCK')
     await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
-    const menus = vi.mocked(saveBuiltinMenuRegistry).mock.calls.at(-1)![0]
+    const menus = vi.mocked(saveBuiltinMenuRegistry).mock.calls.slice(-1)[0]![0]
     expect(menus.find((menu) => menu.id === 'calendar')?.order).toBe(10)
     expect(menus.find((menu) => menu.id === 'projects')?.order).toBe(30)
     wrapper.unmount()
