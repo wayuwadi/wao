@@ -48,6 +48,32 @@ describe('小记集中记录空间', () => {
     data.kbs = [{ id: 'kb-notes', name: '小记', notes: true, icon: '', color: '', desc: '', project: null, folders: [{ id: 'f', name: '小记', docs: [] }] }]
   })
 
+  it('每批展示十条，筛选和保存恢复首批且保留编辑草稿', async () => {
+    const data = useDataStore()
+    for (let i = 0; i < 24; i++) {
+      const id = String(i).padStart(2, '0')
+      data.docs[id] = doc(id, `记录 ${id}`)
+    }
+    const wrapper = await view()
+    await wrapper.find('textarea').setValue('翻页不丢的草稿')
+    expect(wrapper.findAll('.note-card')).toHaveLength(10)
+    expect(wrapper.find('.note-card').attributes('data-note-id')).toBe('23')
+    await wrapper.find('.load-more').trigger('click')
+    expect(wrapper.findAll('.note-card')).toHaveLength(20)
+    await wrapper.find('.load-more').trigger('click')
+    expect(wrapper.findAll('.note-card')).toHaveLength(24)
+    expect(wrapper.find('.load-more').exists()).toBe(false)
+    await wrapper.find('select').setValue('created')
+    expect(wrapper.findAll('.note-card')).toHaveLength(10)
+    await wrapper.find('input[type="search"]').setValue('记录 00')
+    expect(wrapper.findAll('.note-card')).toHaveLength(1)
+    expect(wrapper.find('.load-more').exists()).toBe(false)
+    await wrapper.find('input[type="search"]').setValue('')
+    expect(wrapper.findAll('.note-card')).toHaveLength(10)
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('翻页不丢的草稿')
+    wrapper.unmount()
+  })
+
   it('聚合历史小记并按时间倒序，正文搜索和作者筛选可以组合', async () => {
     const data = useDataStore()
     data.docs.a = doc('a', '旧想法', '2026-09-06T08:00:00')
