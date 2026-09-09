@@ -167,6 +167,7 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
       },
       { id: 'vault', description: '安全管理需要按需查看的账号资料。', keywords: ['密码'] },
       { id: 'games', description: '打开使用服务端真实存档的小游戏。', keywords: ['游戏'] },
+      { id: 'pet-world', description: '和张三丰一起探索松风庭院，位置保存在本浏览器。', keywords: ['宠物', '小世界', '3D', '张三丰'] },
       { id: 'tianren', description: '创建和回看天人一卦记录。', keywords: ['每日一卦'] },
     ],
   },

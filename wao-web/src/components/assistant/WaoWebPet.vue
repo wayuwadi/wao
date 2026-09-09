@@ -569,6 +569,11 @@ function openPetSettings() {
   void router.push({ path: '/settings', query: { tab: 'pet' } })
 }
 
+function openPetWorld() {
+  settingsPinned.value = false
+  void router.push('/pet-world')
+}
+
 function openPetContext(event: MouseEvent) {
   if (Date.now() < suppressPetContextUntil) return
   if (consumeClick(event)) return
@@ -786,6 +791,11 @@ onBeforeUnmount(() => {
             <strong v-if="item.mode === 'COUNT'">{{ rhythmCount(item) }}</strong>
           </button>
         </template>
+        <button class="pet-settings-link pet-world-link" type="button" @click="openPetWorld">
+          <i class="ri-landscape-line"></i>
+          <span><b>进入小世界</b><small>和张三丰一起逛松风庭院</small></span>
+          <i class="ri-arrow-right-s-line"></i>
+        </button>
         <button class="pet-settings-link" type="button" @click="openPetSettings">
           <i class="ri-settings-4-line"></i>
           <span><b>宠物设置</b><small>配置气泡、触发方式与静默</small></span>
