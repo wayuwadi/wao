@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 42;
+    private static final int VERSION = 43;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -64,6 +64,7 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("account-resources", "账号资源库", "ri-contacts-book-2-line", "TOOLS", 16, true, "TAB"),
             new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, false, "TAB"),
             new BuiltinMenuConfigDto("games", "游戏厅", "ri-gamepad-line", "TOOLS", 30, false, "TAB"),
+            new BuiltinMenuConfigDto("pet-world", "松风庭院", "ri-landscape-line", "TOOLS", 31, false, "TAB"),
             new BuiltinMenuConfigDto("infrastructure", "基础设施", "ri-server-line", "TOOLS", 34, true, "TAB"),
             new BuiltinMenuConfigDto("devices", "终端设备", "ri-webcam-line", "TOOLS", 35, true, "TAB"),
             new BuiltinMenuConfigDto("request-monitoring", "请求监控", "ri-pulse-line", "TOOLS", 40, false, "TAB"));
@@ -99,13 +100,19 @@ public class BuiltinMenuRegistryService {
 
     /** 校验并整体保存所有内置菜单；不能增加、删除或改稳定 id。 */
     public BuiltinMenuRegistryDto saveRegistry(SaveBuiltinMenuRegistryRequest request) {
-        Map<String, String> storedPlacements = getRegistry().menus().stream()
+        List<BuiltinMenuConfigDto> storedMenus = getRegistry().menus();
+        Map<String, String> storedPlacements = storedMenus.stream()
                 .collect(java.util.stream.Collectors.toMap(BuiltinMenuConfigDto::id, BuiltinMenuConfigDto::placement));
         List<BuiltinMenuConfigDto> compatibleMenus = request.menus() == null ? null : request.menus().stream()
                 .map(menu -> menu == null || menu.placement() != null ? menu : new BuiltinMenuConfigDto(
                         menu.id(), menu.label(), menu.icon(), menu.group(), menu.order(), menu.visible(),
                         menu.openMode(), storedPlacements.getOrDefault(menu.id(), "MENU")))
                 .toList();
+        // 旧页面尚无小世界字段时保留服务端该项，不能让其他菜单保存失败或覆盖新入口定制。
+        if (compatibleMenus != null && compatibleMenus.stream().noneMatch(menu -> menu != null && "pet-world".equals(menu.id()))) {
+            compatibleMenus = new ArrayList<>(compatibleMenus);
+            compatibleMenus.add(storedMenus.stream().filter(menu -> "pet-world".equals(menu.id())).findFirst().orElseThrow());
+        }
         BuiltinMenuRegistryDto registry = new BuiltinMenuRegistryDto(VERSION, canonicalize(compatibleMenus, true));
         try {
             settings.put(SettingService.BUILTIN_MENU_REGISTRY, json.writeValueAsString(registry));

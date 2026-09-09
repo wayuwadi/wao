@@ -42,7 +42,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(37);
+        assertThat(service.getRegistry().menus()).hasSize(38);
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "chatgpt".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("ChatGPT对话");
@@ -102,7 +102,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(37);
+        assertThat(service.getRegistry().menus()).hasSize(38);
     }
 
     @Test
@@ -132,6 +132,31 @@ class BuiltinMenuRegistryServiceTest {
         assertThatThrownBy(() -> service.saveRegistry(new SaveBuiltinMenuRegistryRequest(java.util.List.of())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("数量");
+    }
+
+    @Test
+    void petWorldSurvivesOldClientSaveAndReload() throws Exception {
+        var stored = new ArrayList<>(service.getRegistry().menus());
+        var world = stored.stream().filter(menu -> "pet-world".equals(menu.id())).findFirst().orElseThrow();
+        assertThat(world.visible()).isFalse();
+        stored.set(stored.indexOf(world), new BuiltinMenuConfigDto(
+                world.id(), "我的庭院", world.icon(), world.group(), 9, true, "TAB", "TOP"));
+        var saved = service.saveRegistry(new SaveBuiltinMenuRegistryRequest(stored));
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY))
+                .thenReturn(new ObjectMapper().writeValueAsString(saved));
+        var oldClient = new ArrayList<>(stored);
+        oldClient.removeIf(menu -> "pet-world".equals(menu.id()));
+        var restored = service.saveRegistry(new SaveBuiltinMenuRegistryRequest(oldClient));
+        assertThat(restored.menus()).hasSize(38);
+        assertThat(restored.menus()).filteredOn(menu -> "pet-world".equals(menu.id())).singleElement().satisfies(menu -> {
+            assertThat(menu.label()).isEqualTo("我的庭院");
+            assertThat(menu.visible()).isTrue();
+            assertThat(menu.placement()).isEqualTo("TOP");
+            assertThat(menu.order()).isEqualTo(9);
+        });
+        oldClient.removeIf(menu -> "games".equals(menu.id()));
+        assertThatThrownBy(() -> service.saveRegistry(new SaveBuiltinMenuRegistryRequest(oldClient)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("数量");
     }
 
     @Test
@@ -168,7 +193,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(37);
+        assertThat(upgraded.menus()).hasSize(38);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("工作台");
