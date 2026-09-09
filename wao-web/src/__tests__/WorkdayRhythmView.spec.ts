@@ -26,6 +26,8 @@ import {
 } from '@/utils/workdayRhythm'
 
 vi.mock('@/api/workdayRhythm', () => ({
+  fetchRhythmReview: vi.fn().mockResolvedValue({ revision: 0, entries: [] }),
+  saveRhythmReview: vi.fn(),
   fetchWorkdayRhythmHistory: vi.fn<typeof fetchWorkdayRhythmHistory>(),
   fetchWorkdayRhythm: vi.fn<typeof fetchWorkdayRhythm>(),
   fetchWorkdayRhythmDay: vi.fn<typeof fetchWorkdayRhythmDay>(),
@@ -97,6 +99,8 @@ describe('WorkdayRhythmView', () => {
           date: clock.date,
           workdayActive: true,
           focus: ['完成上线链路验收', '整理今日复盘'],
+          focusCompleted: [true, false],
+          review: ['白天记录感受', '', '下次改进\n及时记录'],
           energyItems: [
             { id: 'WATER', title: '喝水', mode: 'COUNT', count: 3 },
             { id: 'MEDITATION', title: '至少冥想一次', mode: 'DAILY_ONCE', count: 1 },
@@ -580,6 +584,9 @@ describe('WorkdayRhythmView', () => {
       expect.stringMatching(new RegExp(`^${clock.date.slice(0, 7)}-\\d{2}$`)),
     )
     expect(wrapper.get('.history-dialog').text()).toContain('完成上线链路验收')
+    expect(wrapper.findAll('.history-focus-status').map(item => item.text())).toEqual(['已完成', '未完成'])
+    expect(wrapper.findAll('.history-review li').map(item => item.text())).toEqual(['白天记录感受', '下次改进\n及时记录'])
+    expect(wrapper.findAll('.history-review li')[1]!.attributes('value')).toBe('3')
     expect(wrapper.get('.history-dialog').text()).toContain('喝水3 次')
     expect(wrapper.get('.history-dialog').text()).toContain('至少冥想一次已完成')
     wrapper.unmount()

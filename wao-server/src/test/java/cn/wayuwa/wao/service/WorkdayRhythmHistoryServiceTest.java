@@ -42,6 +42,7 @@ class WorkdayRhythmHistoryServiceTest {
                         entry("workday-rhythm-day-2026-08-20", """
                                 {"version":1,"date":"2026-08-20","workdayActive":true,
                                  "focus":["完成上线验收","","整理复盘","处理临时事项"],
+                                 "focusCompleted":[true,true,false,true],
                                  "energyRecords":{"WATER":3,"WALK":1,"REMOVED":1},
                                  "energySnapshot":{"WATER":{"title":"当天饮水名称","mode":"COUNT"},
                                    "WALK":{"title":"午后散步","mode":"DAILY_ONCE"}}}
@@ -58,12 +59,27 @@ class WorkdayRhythmHistoryServiceTest {
         assertThat(result.skippedCount()).isEqualTo(2);
         assertThat(result.items().get(0).focus())
                 .containsExactly("完成上线验收", "整理复盘", "处理临时事项");
+        assertThat(result.items().get(0).focusCompleted()).containsExactly(true, false, true);
         assertThat(result.items().get(0).energyItems())
                 .extracting(item -> item.title() + ":" + item.count())
                 .containsExactly("当天饮水名称:3", "午后散步:1", "已移除项目:1");
         assertThat(result.items().get(0).energyItems().get(2).mode()).isEqualTo("COUNT");
         verify(preferences).findRange("m1", "workday-rhythm-day-2026-08-01",
                 "workday-rhythm-day-2026-08-31");
+    }
+
+    @Test
+    void includesReviewOnlyDatesAndCountsCorruptReviewWithoutInventingPlans() {
+        when(preferences.findRange("m1", "workday-rhythm-review-2026-08-01",
+                "workday-rhythm-review-2026-08-31")).thenReturn(List.of(
+                entry("workday-rhythm-review-2026-08-20", "{\"revision\":1,\"entries\":[\"当天感受\",\"\",\"下次改进\"]}"),
+                entry("workday-rhythm-review-2026-08-19", "broken")));
+        var result = service.history("m1", LocalDate.parse("2026-08-01"), LocalDate.parse("2026-08-31"));
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().get(0).review()).containsExactly("当天感受", "", "下次改进");
+        assertThat(result.items().get(0).focus()).isEmpty();
+        assertThat(result.skippedCount()).isEqualTo(1);
+        verify(preferences).findRange("m1", "workday-rhythm-review-2026-08-01", "workday-rhythm-review-2026-08-31");
     }
 
     @Test

@@ -74,8 +74,10 @@ export interface WorkdayRhythmHistoryEnergy {
 
 export interface WorkdayRhythmHistoryDay {
   date: string
-  workdayActive: boolean
+  workdayActive: boolean | null
   focus: string[]
+  focusCompleted?: boolean[]
+  review?: string[]
   energyItems: WorkdayRhythmHistoryEnergy[]
   checklist: Array<{
     title: string
@@ -241,3 +243,13 @@ export const updateRhythmTimer = (id: string, action: 'START' | 'PAUSE' | 'RESET
   )
 export const createRhythmDocument = (date: string, title: string, blocks: DocBlock[]) =>
   responseData<Doc>(http.put(`/api/workday-rhythm/days/${date}/document`, { title, blocks }))
+
+export interface RhythmReview {
+  revision: number
+  entries: string[]
+}
+
+export const fetchRhythmReview = (date: string) =>
+  responseData<RhythmReview>(http.get(`/api/workday-rhythm/days/${date}/review`))
+export const saveRhythmReview = (date: string, body: RhythmReview) =>
+  responseData<RhythmReview>(http.put(`/api/workday-rhythm/days/${date}/review`, body))

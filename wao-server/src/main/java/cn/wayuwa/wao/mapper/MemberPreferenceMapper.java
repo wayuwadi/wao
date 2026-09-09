@@ -15,6 +15,11 @@ public interface MemberPreferenceMapper {
             + "WHERE p.pref_key = #{key} AND p.member_id > #{afterId} ORDER BY p.member_id LIMIT 50")
     List<String> membersWithPreference(@Param("key") String key, @Param("afterId") String afterId);
 
+    /** 首次保存时不覆盖同时创建的记录。 */
+    @Insert("INSERT IGNORE INTO member_preference (member_id, pref_key, pref_value, updated_at) "
+            + "VALUES (#{memberId}, #{key}, #{value}, NOW())")
+    int insertIfAbsent(@Param("memberId") String memberId, @Param("key") String key, @Param("value") String value);
+
     @Update("UPDATE member_preference SET pref_value = #{value}, updated_at = NOW() "
             + "WHERE member_id = #{memberId} AND pref_key = #{key} "
             + "AND CAST(pref_value AS BINARY) = CAST(#{expected} AS BINARY)")
