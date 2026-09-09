@@ -31,6 +31,8 @@ import org.slf4j.LoggerFactory;
 public class FeishuReactionAuthorizationService {
     private static final Logger log = LoggerFactory.getLogger(FeishuReactionAuthorizationService.class);
     public static final String SCOPE = "im:message.reactions:write_only offline_access";
+    // 当前 authorize 端点的 PKCE 须搭配 v2 令牌端点，见 ADR-220。
+    static final String DEFAULT_TOKEN_URL = "https://open.feishu.cn/open-apis/authen/v2/oauth/token";
     private static final String STATE = "feishu.reaction.state";
     private static final String VERIFIER = "feishu.reaction.verifier";
     private static final String EXPIRY = "feishu.reaction.expiry";
@@ -44,7 +46,7 @@ public class FeishuReactionAuthorizationService {
 
     public FeishuReactionAuthorizationService(SettingService settings, FeishuLoginProperties login,
             FeishuReactionGrantMapper grants, VaultCryptoService crypto, RestClient.Builder builder,
-            @Value("${feishu.reactions.token-url:https://accounts.feishu.cn/oauth/v3/token}") String tokenUrl) {
+            @Value("${feishu.reactions.token-url:" + DEFAULT_TOKEN_URL + "}") String tokenUrl) {
         this.settings = settings; this.login = login; this.grants = grants; this.crypto = crypto;
         this.client = builder.build(); this.tokenUrl = tokenUrl;
     }
@@ -128,6 +130,8 @@ public class FeishuReactionAuthorizationService {
     private IllegalStateException tokenFailure(JsonNode error, int status) {
         int code = error == null ? 0 : error.path("code").asInt(0);
         String type = error == null ? "" : error.path("error").asText();
+        if (code == 20049) return failure("pkce_mismatch", status, code,
+                "飞书授权安全校验失败，请联系管理员检查授权接口配对；无需重复添加权限");
         return switch (type) {
             case "invalid_grant" -> failure("invalid_grant", status, code, "飞书授权码已失效或校验未通过，请点击下方按钮重新授权，不要刷新旧回调页");
             case "invalid_client", "unauthorized_client" -> failure("invalid_client", status, code, "飞书应用凭据校验失败，请联系管理员核对通知机器人的应用配置");

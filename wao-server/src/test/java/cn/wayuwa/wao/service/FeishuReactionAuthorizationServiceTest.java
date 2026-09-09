@@ -10,7 +10,10 @@ import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.domain.FeishuReactionGrantEntity;
 import cn.wayuwa.wao.mapper.FeishuReactionGrantMapper;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -28,7 +31,7 @@ class FeishuReactionAuthorizationServiceTest {
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
     private final FeishuReactionAuthorizationService service = new FeishuReactionAuthorizationService(settings,
             new FeishuLoginProperties(true, "different-login-app", "unused", "https://wao.test/api/auth/feishu/callback", "https://wao.test", "https://feishu.test"),
-            grants, crypto, builder, "https://feishu.test/token");
+            grants, crypto, builder, FeishuReactionAuthorizationService.DEFAULT_TOKEN_URL);
     @BeforeEach void setup() {
         when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("bot-app");
         when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("bot-secret");
@@ -40,7 +43,7 @@ class FeishuReactionAuthorizationServiceTest {
              "scope":"im:message.reactions:write_only offline_access","token_type":"Bearer"}
             """.formatted(access, refresh);
     }
-    @Test void authorizationUsesBotAppMinimumScopesSessionStateAndPkce() {
+    @Test void authorizationUsesBotAppMinimumScopesSessionStateAndPkce() throws Exception {
         var session = new MockHttpSession();
         var uri = UriComponentsBuilder.fromUri(URI.create(service.authorizationUrl(session))).build();
         assertThat(uri.getHost()).isEqualTo("accounts.feishu.cn");
@@ -48,6 +51,10 @@ class FeishuReactionAuthorizationServiceTest {
         assertThat(uri.getQueryParams().getFirst("scope")).contains("reactions", "offline_access").doesNotContain("send_as_user");
         assertThat(uri.getQueryParams().getFirst("code_challenge_method")).isEqualTo("S256");
         assertThat(uri.getQueryParams().getFirst("code_challenge")).hasSize(43);
+        String verifier = (String) session.getAttribute("feishu.reaction.verifier");
+        assertThat(verifier).matches("[A-Za-z0-9._~-]{43,128}");
+        assertThat(uri.getQueryParams().getFirst("code_challenge")).isEqualTo(Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII))));
         assertThat(session.getAttribute("feishu.reaction.state")).isNotNull();
         verifyNoInteractions(grants);
     }
@@ -60,8 +67,10 @@ class FeishuReactionAuthorizationServiceTest {
     }
     @Test void savesOnlyVerifiedOpenIdAndEncryptedTokensWithoutChangingLoginIdentity() {
         var session = new MockHttpSession(); var state = state(session);
-        server.expect(requestTo("https://feishu.test/token"))
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v2/oauth/token"))
                 .andExpect(content().json("{\"client_id\":\"bot-app\",\"client_secret\":\"bot-secret\",\"code\":\"one-time\",\"grant_type\":\"authorization_code\"}"))
+                .andExpect(content().json("{\"code_verifier\":\"" + session.getAttribute("feishu.reaction.verifier")
+                        + "\",\"redirect_uri\":\"https://wao.test/api/auth/feishu/callback\"}"))
                 .andRespond(withSuccess(tokens("personal-access", "personal-refresh"), MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://feishu.test/open-apis/authen/v1/user_info"))
                 .andExpect(header("Authorization", "Bearer personal-access"))
@@ -80,7 +89,7 @@ class FeishuReactionAuthorizationServiceTest {
         var session = new MockHttpSession(); var state = state(session);
         assertThatThrownBy(() -> service.complete(session, state, null)).hasMessageContaining("尚未同意");
         final var nextState = state(session);
-        server.expect(requestTo("https://feishu.test/token")).andRespond(withSuccess(
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v2/oauth/token")).andRespond(withSuccess(
                 "{\"code\":0,\"access_token\":\"private-token\",\"expires_in\":7200,\"scope\":\"offline_access\"}", MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> service.complete(session, nextState, "code")).hasMessageNotContaining("private-token");
         verifyNoInteractions(grants); server.verify();
@@ -104,7 +113,7 @@ class FeishuReactionAuthorizationServiceTest {
     }
     @Test void refreshRotatesEncryptedCredentialsUnderRowLock() {
         var row = grant(); when(grants.lockById(row.getId())).thenReturn(row);
-        server.expect(requestTo("https://feishu.test/token"))
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v2/oauth/token"))
                 .andExpect(content().json("{\"grant_type\":\"refresh_token\",\"refresh_token\":\"old-refresh\",\"client_id\":\"bot-app\"}"))
                 .andRespond(withSuccess(tokens("new-access", "new-refresh"), MediaType.APPLICATION_JSON));
         assertThat(service.accessToken("ou_real")).isEqualTo("new-access");
@@ -115,7 +124,7 @@ class FeishuReactionAuthorizationServiceTest {
     }
     @Test void revokedRefreshReturnsNoTokenRatherThanAppCredentials() {
         var row = grant(); when(grants.lockById(row.getId())).thenReturn(row);
-        server.expect(requestTo("https://feishu.test/token")).andRespond(withBadRequest().body("{\"error\":\"invalid_grant\"}"));
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v2/oauth/token")).andRespond(withBadRequest().body("{\"error\":\"invalid_grant\"}"));
         assertThat(service.accessToken("ou_real")).isNull(); verify(grants, never()).saveGrant(any()); server.verify();
     }
     @Test void httpFailureShowsSafeCategoryAndNeverLeaksResponseOrThrowable() {
@@ -124,7 +133,7 @@ class FeishuReactionAuthorizationServiceTest {
         var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
         appender.start(); logger.addAppender(appender);
         try {
-            server.expect(requestTo("https://feishu.test/token")).andRespond(withBadRequest()
+            server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v2/oauth/token")).andRespond(withBadRequest()
                     .contentType(MediaType.APPLICATION_JSON).body("""
                     {"error":"invalid_client","code":20048,"error_description":"secret-value private-code",
                      "access_token":"private-token","refresh_token":"private-refresh"}
@@ -141,22 +150,34 @@ class FeishuReactionAuthorizationServiceTest {
     }
     @Test void malformedHttpErrorAndNetworkFailuresDoNotBecomePermissionAdvice() {
         var session = new MockHttpSession(); var state = state(session);
-        server.expect(requestTo("https://feishu.test/token")).andRespond(withServerError().body("private-response"));
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v2/oauth/token")).andRespond(withServerError().body("private-response"));
         assertThatThrownBy(() -> service.complete(session, state, "code"))
                 .hasMessageContaining("令牌兑换未完成").hasMessageNotContaining("private-response").hasNoCause();
         server.verify(); server.reset();
         var nextState = state(session);
-        server.expect(requestTo("https://feishu.test/token")).andRespond(withException(new java.io.IOException("private-code")));
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v2/oauth/token")).andRespond(withException(new java.io.IOException("private-code")));
         assertThatThrownBy(() -> service.complete(session, nextState, "code"))
                 .hasMessageContaining("暂时无法完成飞书令牌请求").hasMessageNotContaining("private-code").hasNoCause();
         verifyNoInteractions(grants); server.verify();
     }
     @Test void nonemptyErrorOnHttpSuccessStillRejectsCredentials() {
         var session = new MockHttpSession(); var state = state(session);
-        server.expect(requestTo("https://feishu.test/token")).andRespond(withSuccess(
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v2/oauth/token")).andRespond(withSuccess(
                 tokens("private-access", "private-refresh").replace("\"error\":\"\"", "\"error\":\"invalid_grant\""), MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> service.complete(session, state, "code"))
                 .hasMessageContaining("授权码已失效或校验未通过").hasMessageNotContaining("private-access");
+        verifyNoInteractions(grants); server.verify();
+    }
+
+    @Test void pkceFailureDoesNotAskUserToChangePermissionsOrReplayCode() {
+        var session = new MockHttpSession(); var state = state(session);
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v2/oauth/token")).andRespond(withBadRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\":\"invalid_grant\",\"code\":20049,\"error_description\":\"private-verifier\"}"));
+        assertThatThrownBy(() -> service.complete(session, state, "one-time"))
+                .hasMessageContaining("安全校验失败", "检查授权接口配对", "诊断号")
+                .hasMessageNotContaining("已失效").hasMessageNotContaining("private-verifier").hasNoCause();
+        assertThatThrownBy(() -> service.complete(session, state, "one-time")).hasMessageContaining("授权已过期");
         verifyNoInteractions(grants); server.verify();
     }
 }
