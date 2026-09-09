@@ -17,6 +17,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 class ExternalAppRegistryServiceTest {
@@ -187,13 +189,14 @@ class ExternalAppRegistryServiceTest {
                 });
     }
 
-    @Test
-    void savesDockPlacementAndDefaultsMissingPlacementToMenu() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"DOCK", "TOP"})
+    void savesDockPlacementAndDefaultsMissingPlacementToMenu(String placement) throws Exception {
         var docked = new SaveExternalAppConfigRequest(
                 "data-studio", "数据工作台", "ri-apps-2-line", "PUBLIC", 20, true,
-                "https://studio.example.com/", "", "TAB", "DOCK");
+                "https://studio.example.com/", "", "TAB", placement);
         assertThat(service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(docked))).apps())
-                .singleElement().satisfies(app -> assertThat(app.placement()).isEqualTo("DOCK"));
+                .singleElement().satisfies(app -> assertThat(app.placement()).isEqualTo(placement));
 
         var legacy = new ExternalAppConfigDto(
                 "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,

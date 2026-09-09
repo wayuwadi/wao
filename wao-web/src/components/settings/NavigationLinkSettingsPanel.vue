@@ -104,28 +104,33 @@ const qlDirty = computed(() => JSON.stringify(qlEditing.value) !== qlBaseline.va
 
 function resequenceMenuGroups() {
   for (const group of GROUPS) {
-    for (const placement of ['MENU', 'DOCK'] as const) {
-      orderedInGroup(group.code)
-        .filter((item) => item.placement === placement)
-        .forEach((item, index) => { item.order = (index + 1) * 10 })
-    }
+    orderedInGroup(group.code).filter((item) => item.placement === 'MENU')
+      .forEach((item, index) => { item.order = (index + 1) * 10 })
+  }
+  for (const placement of ['DOCK', 'TOP'] as const) {
+    menuItems.value.filter((item) => item.placement === placement)
+      .sort((left, right) => left.order - right.order)
+      .forEach((item, index) => { item.order = (index + 1) * 10 })
   }
 }
 
+function orderedPeers(item: MenuDraft) {
+  return menuItems.value.filter((candidate) => candidate.visible === item.visible
+    && candidate.placement === item.placement
+    && (item.placement !== 'MENU' || candidate.group === item.group))
+    .sort((left, right) => left.order - right.order)
+}
+
 function canMoveMenu(item: MenuDraft, direction: -1 | 1): boolean {
-  const sameVisibility = orderedInGroup(item.group).filter(
-    (candidate) => candidate.visible === item.visible && candidate.placement === item.placement,
-  )
-  const index = sameVisibility.findIndex((candidate) => candidate.key === item.key)
-  return index >= 0 && index + direction >= 0 && index + direction < sameVisibility.length
+  const peers = orderedPeers(item)
+  const index = peers.findIndex((candidate) => candidate.key === item.key)
+  return index >= 0 && index + direction >= 0 && index + direction < peers.length
 }
 
 function moveMenu(item: MenuDraft, direction: -1 | 1) {
-  const sameVisibility = orderedInGroup(item.group).filter(
-    (candidate) => candidate.visible === item.visible && candidate.placement === item.placement,
-  )
-  const index = sameVisibility.findIndex((candidate) => candidate.key === item.key)
-  const target = sameVisibility[index + direction]
+  const peers = orderedPeers(item)
+  const index = peers.findIndex((candidate) => candidate.key === item.key)
+  const target = peers[index + direction]
   if (!target) return
   const currentOrder = item.order
   item.order = target.order
@@ -353,7 +358,7 @@ onMounted(() => {
       <div class="card-head">
         <div>
           <h2>菜单管理</h2>
-          <p>按真实导航分组排列；拖拽可跨组移动，也可选择在侧栏底部显示为图标。</p>
+          <p>按真实导航分组排列；拖拽可跨组移动，也可选择在侧栏底部显示为图标或在顶部显示为按钮。</p>
         </div>
         <button type="button" class="primary" :disabled="menuLoading || menuSaving || !menuDirty" @click="saveMenuSettings">
           {{ menuSaving ? '保存中…' : menuDirty ? '保存菜单' : '已保存' }}
@@ -412,6 +417,7 @@ onMounted(() => {
                 <select v-model="item.placement" aria-label="展示位置" @change="resequenceMenuGroups">
                   <option value="MENU">分组菜单</option>
                   <option value="DOCK">底部图标</option>
+                  <option value="TOP">顶部按钮</option>
                 </select>
               </label>
             </div>

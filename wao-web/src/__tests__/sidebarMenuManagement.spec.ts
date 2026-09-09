@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import TopMenuBar from '@/components/nav/TopMenuBar.vue'
 import SideNav from '@/components/nav/SideNav.vue'
 import { useNavStore } from '@/stores/nav'
 import {
@@ -58,7 +59,7 @@ describe('桌面侧栏直接维护菜单', () => {
     vi.mocked(saveExternalAppRegistry).mockImplementation(async (apps) => ({ version: 6, apps }))
   })
 
-  async function mountSideNav() {
+  async function mountSideNav(withTop = false) {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -69,7 +70,7 @@ describe('桌面侧栏直接维护菜单', () => {
     })
     await router.push('/')
     await router.isReady()
-    const wrapper = mount(SideNav, {
+    const wrapper = mount(withTop ? { components: { SideNav, TopMenuBar }, template: '<SideNav /><TopMenuBar />' } : SideNav, {
       attachTo: document.body,
       global: { plugins: [router], stubs: { QuickLinks: true } },
     })
@@ -108,6 +109,77 @@ describe('桌面侧栏直接维护菜单', () => {
       ]),
     )
     expect(wrapper.get('.dock-item').attributes('title')).toBe('我的项目')
+    wrapper.unmount()
+  })
+
+  it('侧栏拖到顶部形成可点击按钮，并可排序、移到底部和拖回侧栏', async () => {
+    const wrapper = await mountSideNav(true)
+    const nav = useNavStore()
+    const transfer = { setData: vi.fn(), effectAllowed: '' }
+    await wrapper.get('.items [title="项目"]').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('.top-menu-bar').trigger('drop')
+    await flushPromises()
+    expect(nav.topItems).toEqual(['projects'])
+    expect(wrapper.find('.items [title="项目"]').exists()).toBe(false)
+    await wrapper.get('.top-menu-item').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.top-menu-item').attributes('aria-current')).toBe('page')
+
+    await wrapper.get('.items [title="日历"]').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('.top-menu-item').trigger('drop')
+    await flushPromises()
+    expect(nav.topItems).toEqual(['calendar', 'projects'])
+    await wrapper.get('.top-menu-item[title="项目"]').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('.top-menu-item[title="日历"]').trigger('drop')
+    await flushPromises()
+    expect(nav.topItems).toEqual(['projects', 'calendar'])
+
+    await wrapper.get('.top-menu-item[title="项目"]').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('.quick-row').trigger('drop')
+    await flushPromises()
+    expect(nav.dockItems).toEqual(['projects'])
+    await wrapper.get('.dock-item[title="项目"]').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('.top-menu-bar').trigger('drop')
+    await flushPromises()
+    expect(nav.topItems).toEqual(['calendar', 'projects'])
+    await wrapper.get('.top-menu-item[title="项目"]').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('.items [title="首页"]').trigger('drop')
+    await flushPromises()
+    expect(nav.menuConfig('projects')).toMatchObject({ placement: 'MENU', group: 'ROOT' })
+    expect(wrapper.find('.items [title="项目"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('顶部外部应用沿用新窗口打开方式，失败恢复位置且可重新拖拽', async () => {
+    const wrapper = await mountSideNav(true)
+    const nav = useNavStore()
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    await nav.moveMenu('external:getnote', 'TOP', 'TOOLS')
+    await flushPromises()
+    await wrapper.get('.top-menu-item').trigger('click')
+    expect(open).toHaveBeenCalledWith('https://www.biji.com/', '_blank', 'noopener,noreferrer')
+    vi.mocked(saveBuiltinMenuRegistry).mockRejectedValueOnce(new Error('网络不可用'))
+    await wrapper.get('.items [title="项目"]').trigger('dragstart')
+    await wrapper.get('.top-menu-bar').trigger('drop')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('重新拖拽')
+    expect(wrapper.find('.items [title="项目"]').exists()).toBe(true)
+    await wrapper.get('.items [title="项目"]').trigger('dragstart')
+    await wrapper.get('.top-menu-bar').trigger('drop')
+    await flushPromises()
+    expect(nav.topItems).toContain('projects')
+    open.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('无菜单拖拽时忽略普通文本落入，保存中不允许另一次拖拽', async () => {
+    const wrapper = await mountSideNav(true)
+    await wrapper.get('.top-menu-bar').trigger('drop')
+    expect(saveBuiltinMenuRegistry).not.toHaveBeenCalled()
+    useNavStore().menuMutationState = 'saving'
+    await wrapper.get('.items [title="项目"]').trigger('dragstart')
+    await wrapper.get('.top-menu-bar').trigger('drop')
+    expect(saveBuiltinMenuRegistry).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

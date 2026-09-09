@@ -2081,6 +2081,7 @@ components:
         appUrl: { type: string, maxLength: 255, example: /agent/, description: 站内绝对路径或 HTTPS 地址 }
         healthUrl: { type: string, maxLength: 255, example: /api/agent/health, description: 可留空；站内绝对路径或 HTTPS 地址 }
         openMode: { type: string, enum: [TAB, NEW_PAGE], default: TAB, description: 在 WAO 页签嵌入或直接打开浏览器新页面 }
+        placement: { type: string, enum: [MENU, DOCK, TOP], default: MENU, description: 侧栏菜单、底部图标或顶部按钮；旧客户端省略时保留已保存位置 }
     ExternalAppRegistry:
       type: object
       required: [version, apps]
@@ -2103,6 +2104,7 @@ components:
         order: { type: integer, minimum: 0, maximum: 999 }
         visible: { type: boolean }
         openMode: { type: string, enum: [TAB, NEW_PAGE], default: TAB, description: 在 WAO 页签打开或通过浏览器新页面打开 }
+        placement: { type: string, enum: [MENU, DOCK, TOP], default: MENU, description: 侧栏菜单、底部图标或顶部按钮；旧客户端省略时保留已保存位置 }
     BuiltinMenuRegistry:
       type: object
       required: [version, menus]

@@ -21,7 +21,7 @@ public class BuiltinMenuRegistryService {
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
-    private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK");
+    private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK", "TOP");
     /** 导航中心上线后，旧版默认可见但非每日使用的入口收进全量目录；用户改名、换组或调序的定制不覆盖。 */
     private static final Set<String> COMPACT_ON_UPGRADE = Set.of(
             "skills", "skill-connections", "action-plans", "weekly-report", "life-review", "workspaces",

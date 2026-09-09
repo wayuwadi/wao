@@ -166,16 +166,32 @@ describe('菜单与快捷链接统一设置', () => {
     expect(stored.links[0]?.openMode).toBe('TAB')
   })
 
-  it('菜单位置可改为底部图标并写回同一菜单注册表', async () => {
+  it.each(['DOCK', 'TOP'])('菜单位置可改为 %s 并写回同一菜单注册表', async (placement) => {
     const wrapper = await mountSettings()
     const projects = menuRow(wrapper, '项目')
-    await projects.get('select[aria-label="展示位置"]').setValue('DOCK')
+    await projects.get('select[aria-label="展示位置"]').setValue(placement)
     await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
 
     expect(saveBuiltinMenuRegistry).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ id: 'projects', placement: 'DOCK' })]),
+      expect.arrayContaining([expect.objectContaining({ id: 'projects', placement })]),
     )
+  })
+
+  it('修改其他菜单不会重置顶部跨分组顺序', async () => {
+    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({ version: 1, menus: DEFAULT_BUILTIN_MENUS.map((menu) =>
+      menu.id === 'projects' ? { ...menu, placement: 'TOP', order: 30 }
+        : menu.id === 'calendar' ? { ...menu, placement: 'TOP', order: 10 } : menu) })
+    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({ version: 1, apps: DEFAULT_EXTERNAL_APPS.map((app) =>
+      app.id === 'getnote' ? { ...app, placement: 'TOP', order: 20 } : app) })
+    const wrapper = await mountSettings()
+    await menuRow(wrapper, '待办').get('select[aria-label="展示位置"]').setValue('DOCK')
+    await wrapper.get('.menu-card button.primary').trigger('click')
+    await flushPromises()
+    const menus = vi.mocked(saveBuiltinMenuRegistry).mock.calls.at(-1)![0]
+    expect(menus.find((menu) => menu.id === 'calendar')?.order).toBe(10)
+    expect(menus.find((menu) => menu.id === 'projects')?.order).toBe(30)
+    wrapper.unmount()
   })
 
   it('点击当前图标可视化选择并立即保存菜单注册表', async () => {

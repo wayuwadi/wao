@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/composables/toast'
 import { useIsMobile } from '@/composables/viewport'
+import { useMenuDrag } from '@/composables/menuDrag'
 import { useNavStore } from '@/stores/nav'
 import { useSessionStore } from '@/stores/session'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -72,8 +73,7 @@ function orgClick() {
 }
 
 // ---- 桌面统一菜单拖拽与右键改名 ----
-const dragId = ref<NavItemId | null>(null)
-const dragOverId = ref<NavItemId | 'dock' | null>(null)
+const { dragId, dragOverId, onDragStart, onDragOver, onDrop, onDropDock, onDragEnd } = useMenuDrag()
 const renameDraft = ref<{
   id: NavItemId
   original: string
@@ -95,43 +95,6 @@ function groupCode(label: string): BuiltinMenuGroupCode {
   return (
     ({ '': 'ROOT', 公共: 'PUBLIC', 个人: 'PERSONAL', 工具: 'TOOLS' } as const)[label] ?? 'PERSONAL'
   )
-}
-
-function onDragStart(id: NavItemId, ev: DragEvent) {
-  dragId.value = id
-  ev.dataTransfer?.setData('text/plain', id)
-  if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'
-}
-function onDragOver(id: NavItemId | 'dock') {
-  if (dragId.value && dragId.value !== id) dragOverId.value = id
-}
-
-async function onDrop(
-  placement: 'MENU' | 'DOCK',
-  group: BuiltinMenuGroupCode,
-  targetId?: NavItemId,
-) {
-  const from = dragId.value
-  dragId.value = null
-  dragOverId.value = null
-  if (!from || from === targetId) return
-  try {
-    await nav.moveMenu(from, placement, group, targetId)
-    toast(placement === 'DOCK' ? '菜单已移到底部图标区' : '菜单位置已保存', 'ri-check-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '菜单保存失败，请重试', 'ri-error-warning-line')
-  }
-}
-
-function onDropDock(targetId?: NavItemId) {
-  const from = dragId.value
-  const configured = from ? nav.menuConfig(from) : undefined
-  void onDrop('DOCK', (configured?.group ?? 'PERSONAL') as BuiltinMenuGroupCode, targetId)
-}
-
-function onDragEnd() {
-  dragId.value = null
-  dragOverId.value = null
 }
 
 function openRename(event: MouseEvent, id: NavItemId) {
@@ -279,10 +242,10 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
               active: activeItem === id && !(id === 'home' && route.query.console),
               center: nav.collapsed,
               dragging: dragId === id,
-              'drag-over': dragOverId === id,
+              'drag-over': !!dragId && dragOverId === id,
             }"
             :title="nav.itemMeta(id)?.label"
-            :draggable="!isMobile && !nav.collapsed"
+            :draggable="!isMobile && !nav.collapsed && nav.canMoveMenus"
             @click="go(id)"
             @contextmenu.prevent="openContextMenu($event, id)"
             @dragstart="onDragStart(id, $event)"
@@ -328,7 +291,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     <div
       v-if="!nav.collapsed"
       class="quick-row"
-      :class="{ 'drag-over': dragOverId === 'dock' }"
+      :class="{ 'drag-over': !!dragId && dragOverId === 'dock' }"
       aria-label="底部图标区"
       @dragover.prevent="onDragOver('dock')"
       @dragleave="dragOverId === 'dock' && (dragOverId = null)"
@@ -343,10 +306,10 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
         :class="{
           active: activeItem === id,
           dragging: dragId === id,
-          'drag-over': dragOverId === id,
+          'drag-over': !!dragId && dragOverId === id,
         }"
         :title="nav.itemMeta(id)?.label"
-        draggable="true"
+        :draggable="!isMobile && nav.canMoveMenus"
         @click="go(id)"
         @contextmenu.prevent="openContextMenu($event, id)"
         @dragstart="onDragStart(id, $event)"
