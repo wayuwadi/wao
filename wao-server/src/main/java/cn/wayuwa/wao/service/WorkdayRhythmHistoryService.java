@@ -75,6 +75,14 @@ public class WorkdayRhythmHistoryService {
         days.findRange(memberId, from, to).forEach(value -> rhythmDays.put(value.getRhythmDate(), value));
         Set<LocalDate> materializedDates = new LinkedHashSet<>();
         int skipped = 0;
+        Map<LocalDate, List<String>> reviews = new LinkedHashMap<>();
+        for (MemberPreferenceEntity entry : preferences.findRange(memberId,
+                WorkdayRhythmReviewService.PREFIX + from, WorkdayRhythmReviewService.PREFIX + to)) {
+            try {
+                LocalDate date = LocalDate.parse(entry.getPrefKey().substring(WorkdayRhythmReviewService.PREFIX.length()));
+                reviews.put(date, WorkdayRhythmReviewService.parse(entry.getPrefValue(), json).entries());
+            } catch (Exception error) { skipped++; }
+        }
         for (MemberPreferenceEntity entry : preferences.findRange(memberId, fromKey, toKey)) {
             try {
                 LocalDate date = LocalDate.parse(entry.getPrefKey().substring(DAY_KEY_PREFIX.length()));
@@ -91,8 +99,12 @@ public class WorkdayRhythmHistoryService {
         }
         Set<LocalDate> relationalDates = new LinkedHashSet<>(checklistByDate.keySet());
         relationalDates.addAll(rhythmDays.keySet());
+        relationalDates.addAll(reviews.keySet());
         relationalDates.stream().filter(date -> !materializedDates.contains(date)).forEach(date ->
                 items.add(toRelationalDto(date, checklistByDate.getOrDefault(date, List.of()), rhythmDays.get(date))));
+        items.replaceAll(item -> new WorkdayRhythmHistoryDayDto(item.date(), item.workdayActive(),
+                item.focus(), item.focusCompleted(), reviews.getOrDefault(item.date(), List.of()),
+                item.energyItems(), item.checklist(), item.documentId(), item.documentKbId(), item.documentTitle()));
         items.sort((left, right) -> right.date().compareTo(left.date()));
         return new WorkdayRhythmHistoryDto(from, to, List.copyOf(items), skipped);
     }
@@ -163,12 +175,17 @@ public class WorkdayRhythmHistoryService {
             Map<String, EnergyMeta> currentItems, List<WorkdayRhythmChecklistOccurrenceEntity> checklist,
             WorkdayRhythmDayEntity rhythmDay) {
         List<String> focus = new ArrayList<>();
+        List<Boolean> focusCompleted = new ArrayList<>();
+        int focusIndex = 0;
         if (day.path("focus").isArray()) {
             for (JsonNode value : day.path("focus")) {
                 String text = value.asText("").trim();
                 if (StringUtils.hasText(text) && focus.size() < 20) {
+                    focusCompleted.add(day.path("focusCompleted").path(focusIndex).isBoolean()
+                            && day.path("focusCompleted").path(focusIndex).booleanValue());
                     focus.add(text.substring(0, Math.min(text.length(), 100)));
                 }
+                focusIndex++;
             }
         }
 
@@ -191,7 +208,7 @@ public class WorkdayRhythmHistoryService {
         DocEntity document = rhythmDay == null || !StringUtils.hasText(rhythmDay.getDocumentId())
                 ? null : docs.selectById(rhythmDay.getDocumentId());
         return new WorkdayRhythmHistoryDayDto(date, day.path("workdayActive").asBoolean(false),
-                List.copyOf(focus), energyItems, checklistDto, document == null ? null : document.getId(),
+                List.copyOf(focus), List.copyOf(focusCompleted), List.of(), energyItems, checklistDto, document == null ? null : document.getId(),
                 document == null ? null : document.getKbId(), document == null ? null : document.getTitle());
     }
 
@@ -206,7 +223,7 @@ public class WorkdayRhythmHistoryService {
         boolean workdayActive = rhythmDay != null && rhythmDay.getWorkdayOverride() != null
                 ? rhythmDay.getWorkdayOverride()
                 : checklist.stream().anyMatch(value -> "WORK".equals(value.getCategory()));
-        return new WorkdayRhythmHistoryDayDto(date, workdayActive, List.of(), List.of(), checklistDto,
+        return new WorkdayRhythmHistoryDayDto(date, rhythmDay == null && checklist.isEmpty() ? null : workdayActive, List.of(), List.of(), List.of(), List.of(), checklistDto,
                 document == null ? null : document.getId(), document == null ? null : document.getKbId(),
                 document == null ? null : document.getTitle());
     }

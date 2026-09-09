@@ -42,6 +42,7 @@ import {
 } from '@/utils/workdayRhythm'
 import WorkdayNotificationRoutes from '@/components/workday/WorkdayNotificationRoutes.vue'
 import WorkdayRhythmDailyPanel from '@/components/workday/WorkdayRhythmDailyPanel.vue'
+import WorkdayRhythmReview from '@/components/workday/WorkdayRhythmReview.vue'
 import PendingRhythmFocus from '@/components/workday/PendingRhythmFocus.vue'
 import WorkdayRhythmDailySettings from '@/components/workday/WorkdayRhythmDailySettings.vue'
 import WorkdayRhythmHexagramSummary from '@/components/workday/WorkdayRhythmHexagramSummary.vue'
@@ -931,6 +932,11 @@ onBeforeUnmount(() => {
                 </button>
                 <small v-else-if="focusReady">等待当前项完成</small>
               </div>
+              <WorkdayRhythmReview
+                :key="`${session.currentUser.id}:${clock.date}`"
+                :date="clock.date"
+                :member-id="session.currentUser.id"
+              />
               <PendingRhythmFocus :date="clock.date" />
               <div
                 v-if="focusNotificationState !== 'idle'"
@@ -1399,7 +1405,7 @@ onBeforeUnmount(() => {
           <div>
             <small>HISTORY · 真实保存记录</small>
             <h2 id="rhythm-history-title">今日节奏历史</h2>
-            <p>按天回顾每日目标和各精力补给项目的执行次数。</p>
+            <p>按天回顾今日计划、完成情况、复盘和精力补给记录。</p>
           </div>
           <button type="button" aria-label="关闭历史记录" @click="historyOpen = false">
             <i class="ri-close-line"></i>
@@ -1441,7 +1447,7 @@ onBeforeUnmount(() => {
           <template v-else>
             <i class="ri-calendar-check-line"></i>
             <b>这个月还没有已保存记录</b>
-            <span>完成一次打卡、补给记录或保存每日目标后，这里会出现真实历史。</span>
+            <span>完成一次打卡、补给记录或保存计划、复盘后，这里会出现真实历史。</span>
           </template>
         </div>
         <div v-else class="history-list">
@@ -1455,16 +1461,33 @@ onBeforeUnmount(() => {
                 <b>{{ historyDateLabel(record.date) }}</b
                 ><small>{{ record.date }}</small>
               </div>
-              <span :class="{ resting: !record.workdayActive }">
+              <span
+                v-if="record.workdayActive !== null"
+                :class="{ resting: !record.workdayActive }"
+              >
                 {{ record.workdayActive ? '工作日节奏' : '休息日' }}
               </span>
             </header>
             <section>
-              <h3><i class="ri-focus-3-line"></i>每日目标</h3>
+              <h3><i class="ri-focus-3-line"></i>今日计划</h3>
               <ol v-if="record.focus.length">
-                <li v-for="(item, index) in record.focus" :key="`${index}-${item}`">{{ item }}</li>
+                <li v-for="(item, index) in record.focus" :key="`${index}-${item}`">
+                  <span class="history-focus-status">{{
+                    record.focusCompleted?.[index] ? '已完成' : '未完成'
+                  }}</span>
+                  {{ item }}
+                </li>
               </ol>
               <p v-else>当天没有填写目标</p>
+            </section>
+            <section>
+              <h3><i class="ri-edit-line"></i>今日复盘</h3>
+              <ol v-if="record.review?.some((item) => item.trim())" class="history-review">
+                <template v-for="(item, index) in record.review" :key="index">
+                  <li v-if="item.trim()" :value="index + 1">{{ item }}</li>
+                </template>
+              </ol>
+              <p v-else>当天没有保存复盘</p>
             </section>
             <section>
               <h3><i class="ri-battery-charge-line"></i>项目执行</h3>
@@ -2623,6 +2646,14 @@ textarea {
   margin: 0;
   color: var(--wao-text-faint);
   font-size: 10px;
+}
+.history-review li {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.history-focus-status {
+  font-size: 12px;
+  color: var(--wao-text-secondary);
 }
 .history-energy-grid {
   display: grid;
