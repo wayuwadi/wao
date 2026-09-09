@@ -8,7 +8,7 @@ import {
   saveWorkdayRhythmDay,
   sendEnergyNotification,
 } from '@/api/workdayRhythm'
-import raccoonUrl from '@/assets/wao-fruit-kernel-raccoon.png'
+import PetSprite from './PetSprite.vue'
 import { useFloatingDrag } from '@/composables/floatingDrag'
 import { useIsMobile } from '@/composables/viewport'
 import { toast } from '@/composables/toast'
@@ -57,6 +57,7 @@ const noticeHiddenUntil = ref(readDeadline('wao-web-pet-notice-hidden-until'))
 const petHiddenUntil = ref(readDeadline('wao-web-pet-hidden-until'))
 const clockTick = ref(Date.now())
 const petActivity = ref<'stretch' | 'hop' | 'step' | null>(null)
+const petSpriteState = computed(() => petActivity.value === 'hop' ? 'jumping' : petActivity.value ? 'waving' : 'idle')
 const rhythmConfig = ref<WorkdayRhythmConfig | null>(null)
 const rhythmDay = ref<WorkdayRhythmDay | null>(null)
 const rhythmDate = ref(shanghaiClock().date)
@@ -616,7 +617,7 @@ onBeforeUnmount(() => {
     aria-label="宠物静默中，点击立即恢复"
     @click="restorePet"
   >
-    <img :src="raccoonUrl" alt="" /><i class="ri-moon-clear-line"></i>
+    <PetSprite paused /><i class="ri-moon-clear-line"></i>
   </button>
   <section
     v-else
@@ -693,7 +694,6 @@ onBeforeUnmount(() => {
         @pointermove="movePetLongPress"
         @pointerup="endPetLongPress"
         @pointercancel="endPetLongPress"
-        @animationend="petActivity = null"
       >
         <span
           v-if="actionableCount"
@@ -702,7 +702,8 @@ onBeforeUnmount(() => {
         >
           {{ actionableCount > 99 ? '99+' : actionableCount }}
         </span>
-        <img :src="raccoonUrl" alt="" draggable="false" />
+        <PetSprite :state="petSpriteState" :paused="petDragging || (!webPet.settings.idleAnimation && !petActivity)"
+          @finished="petActivity = null" />
         <span
           class="pet-status"
           :class="{ online: assistantStatus.configured }"
@@ -959,7 +960,6 @@ onBeforeUnmount(() => {
   background: transparent;
   cursor: grab;
   filter: drop-shadow(0 10px 11px rgba(55, 39, 79, 0.24));
-  animation: pet-breathe 3.2s ease-in-out infinite;
 }
 .pet-quick-actions,
 .pet-settings-actions {
@@ -1114,6 +1114,8 @@ onBeforeUnmount(() => {
   object-position: center bottom;
   pointer-events: none;
 }
+.pet-avatar :deep(.pet-sprite) { width: 92.307%; }
+.pet-silent-dock :deep(.pet-sprite) { width: 34px; height: 37px; }
 .pet-status {
   position: absolute;
   right: 8px;

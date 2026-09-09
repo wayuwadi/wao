@@ -1,0 +1,8 @@
+{
+  "id": "zhang-sanfeng",
+  "displayName": "張三丰",
+  "description": "A tiny Wudang Daoist sage Codex pet with a white beard, high hair bun, flowing teal-and-white robes, and calm tai chi energy.",
+  "spritesheetPath": "spritesheet.webp",
+  "kind": "person",
+  "spriteVersionNumber": 2
+}
