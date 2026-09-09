@@ -227,8 +227,8 @@ export async function createWorldScene(
         const width = Math.max(1, host.clientWidth),
           height = Math.max(1, host.clientHeight)
         if (
-          renderer.domElement.width !== Math.round(width * renderer.getPixelRatio()) ||
-          renderer.domElement.height !== Math.round(height * renderer.getPixelRatio())
+          renderer.domElement.width !== Math.floor(width * renderer.getPixelRatio()) ||
+          renderer.domElement.height !== Math.floor(height * renderer.getPixelRatio())
         ) {
           renderer.setSize(width, height, false)
           camera.aspect = width / height
