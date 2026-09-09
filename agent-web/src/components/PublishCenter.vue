@@ -56,7 +56,7 @@ const selectedGroupTasks = computed(() => {
 })
 const selectedMedia = computed(() => mediaAssets.value.find((item) => item.id === editForm.mediaAssetId))
 const hasUnsaved = computed(() => dirty.value || publicationDirty.value)
-const editable = computed(() => !!selected.value && isPublishEditable(selected.value.status))
+const editable = computed(() => busy.value !== 'create' && !!selected.value && isPublishEditable(selected.value.status))
 const articleContent = computed(() => selected.value?.platform === 'WECHAT_MP')
 const canPublish = computed(() => !!selected.value && !!selectedPlatform.value
   && canSubmitPublish(selected.value.status, selectedPlatform.value.publishSupported))
@@ -97,7 +97,8 @@ function formatDate(value?: string) {
 watch(() => props.initialTopic, (topic) => {
   if (topic) createForm.topic = topic
 }, { immediate: true })
-watch(hasUnsaved, (value) => emit('dirty-change', value))
+const hasPendingInput = computed(() => hasUnsaved.value || !!createForm.topic.trim() || !!createForm.sourceNotes.trim())
+watch(hasPendingInput, (value) => emit('dirty-change', value))
 
 function platform(code?: string): PlatformSummary | undefined {
   return center.value?.platforms.find((item) => item.platform === code)
@@ -139,7 +140,11 @@ async function refresh(silent = false) {
 }
 
 async function createTask() {
-  if (!createForm.topic.trim()) return
+  if (busy.value || !createForm.topic.trim()) return
+  if (hasUnsaved.value) {
+    error.value = '当前内容还有未保存修改，请先保存后再生成新内容'
+    return
+  }
   busy.value = 'create'
   message.value = ''
   error.value = ''
@@ -438,7 +443,7 @@ onMounted(async () => {
   }
 })
 function warnBeforeUnload(event: BeforeUnloadEvent) {
-  if (!hasUnsaved.value) return
+  if (!hasPendingInput.value) return
   event.preventDefault()
 }
 
@@ -471,13 +476,13 @@ onBeforeUnmount(() => {
 
       <section v-if="showCreate" class="create-card">
         <div><strong>新建内容</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model} 会结合你的输入和授权资料生成初稿，仍需人工审核。` : '当前没有可用模型；三端生成会明确失败，也可选择单一平台并关闭 AI 生成写手稿。' }}</span></div>
-        <input v-model="createForm.topic" maxlength="200" placeholder="输入创作标题或准备解决的问题" @keyup.enter="createTask" />
-        <select v-model="createForm.platform"><option value="CONTENT_GROUP">抖音 + 小红书 + 公众号</option><option v-for="item in center.platforms" :key="item.platform" :value="item.platform">仅{{ item.label }}</option></select>
-        <label v-if="createForm.platform !== 'CONTENT_GROUP'"><input v-model="createForm.generateCopy" type="checkbox" /> AI 生成</label>
+        <input v-model="createForm.topic" :disabled="busy === 'create'" maxlength="200" placeholder="输入创作标题或准备解决的问题" @keyup.enter="createTask" />
+        <select v-model="createForm.platform" :disabled="busy === 'create'"><option value="CONTENT_GROUP">抖音 + 小红书 + 公众号</option><option v-for="item in center.platforms" :key="item.platform" :value="item.platform">仅{{ item.label }}</option></select>
+        <label v-if="createForm.platform !== 'CONTENT_GROUP'"><input v-model="createForm.generateCopy" :disabled="busy === 'create'" type="checkbox" /> AI 生成</label>
         <span v-else class="audience-hint">三端分别适配受众</span>
         <button :disabled="busy === 'create' || !createForm.topic.trim()" @click="createTask">{{ busy === 'create' ? '创建中…' : createForm.platform === 'CONTENT_GROUP' ? '生成三端内容' : '开始创作' }}</button>
-        <label class="source-notes"><span>内容参考</span><textarea v-model="createForm.sourceNotes" maxlength="20000" rows="4" placeholder="粘贴资料、聊天片段、经历或必须保留的判断。创建失败时内容不会清空。"></textarea></label>
-        <label class="context-toggle"><input v-model="createForm.useWaoContext" type="checkbox" /> 结合 WAO 个人记忆、知识库、私人 AI 对话和过往成稿</label>
+        <label class="source-notes"><span>内容参考</span><textarea v-model="createForm.sourceNotes" :disabled="busy === 'create'" maxlength="20000" rows="4" placeholder="粘贴资料、聊天片段、经历或必须保留的判断。创建失败时内容不会清空。"></textarea></label>
+        <label class="context-toggle"><input v-model="createForm.useWaoContext" :disabled="busy === 'create'" type="checkbox" /> 结合 WAO 个人记忆、知识库、私人 AI 对话和过往成稿</label>
       </section>
 
       <div v-if="showWorkspace" class="workspace">
