@@ -42,7 +42,7 @@ public class ExternalAppRegistryService {
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
-    private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK");
+    private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK", "TOP");
     private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight");
 
     private final SettingService settings;

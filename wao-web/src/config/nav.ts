@@ -12,7 +12,7 @@ export interface ModuleMeta {
 }
 
 export type MenuOpenMode = 'TAB' | 'NEW_PAGE'
-export type MenuPlacement = 'MENU' | 'DOCK'
+export type MenuPlacement = 'MENU' | 'DOCK' | 'TOP'
 export type MenuGroupCode = 'PUBLIC' | 'PERSONAL' | 'TOOLS'
 export type BuiltinMenuGroupCode = 'ROOT' | MenuGroupCode
 export type ExternalAppItemId = `external:${string}`
@@ -64,7 +64,7 @@ export function normalizeMenuOpenMode(value: unknown): MenuOpenMode {
 }
 
 export function normalizeMenuPlacement(value: unknown): MenuPlacement {
-  return value === 'DOCK' ? 'DOCK' : 'MENU'
+  return value === 'DOCK' || value === 'TOP' ? value : 'MENU'
 }
 
 export function normalizeExternalApp(app: ExternalAppConfig): ExternalAppConfig {
@@ -653,17 +653,18 @@ export function resolveNavGroups(
   return groups
 }
 
-/** 合成桌面侧栏底部的菜单图标；入口仍使用原菜单 id，不复制成快捷链接。 */
+/** 合成底部图标或顶部按钮；入口仍使用原菜单 id，不复制成快捷链接。 */
 export function resolveDockItems(
   externalApps: ExternalAppConfig[],
   builtinMenus: BuiltinMenuConfig[],
+  placement: 'DOCK' | 'TOP' = 'DOCK',
 ): NavItemId[] {
   return [
     ...builtinMenus
-      .filter((menu) => menu.visible && normalizeMenuPlacement(menu.placement) === 'DOCK')
+      .filter((menu) => menu.visible && normalizeMenuPlacement(menu.placement) === placement)
       .map((menu) => ({ id: menu.id as NavItemId, order: menu.order, sourceOrder: 0 })),
     ...externalApps
-      .filter((app) => app.visible && normalizeMenuPlacement(app.placement) === 'DOCK')
+      .filter((app) => app.visible && normalizeMenuPlacement(app.placement) === placement)
       .map((app) => ({
         id: externalAppItemId(app.id) as NavItemId,
         order: app.order,

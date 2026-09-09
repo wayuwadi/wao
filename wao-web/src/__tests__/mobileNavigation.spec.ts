@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { useNavStore } from '@/stores/nav'
 import SideNav from '@/components/nav/SideNav.vue'
 
 vi.mock('@/api/favorites', () => ({
@@ -124,6 +125,11 @@ describe('手机高密度左侧导航', () => {
     const { wrapper } = await mountNavigation('/')
     const labels = wrapper.findAll('.item').map((item) => item.attributes('title'))
     expect(labels).not.toEqual(expect.arrayContaining(['待办', '自动化']))
+    expect(wrapper.get('[title="项目"]').attributes('draggable')).toBe('false')
+    const nav = useNavStore()
+    nav.builtinMenusState = 'loaded'
+    nav.externalAppsState = 'loaded'
+    await flushPromises()
     expect(wrapper.get('[title="项目"]').attributes('draggable')).toBe('true')
     wrapper.unmount()
   })

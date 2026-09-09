@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
+import TopMenuBar from '@/components/nav/TopMenuBar.vue'
 import SideNav from '@/components/nav/SideNav.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
@@ -285,7 +286,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <i class="ri-arrow-right-s-line crumb-sep"></i>
           <div class="crumb-b">{{ crumbB }}</div>
         </template>
-        <div class="spacer"></div>
+        <TopMenuBar />
 
         <FunctionScoreControl
           v-if="scoredFeatureId"
@@ -413,6 +414,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
 }
 .header {
+  overflow-x: auto;
   height: var(--wao-header-h);
   background: var(--wao-bg-card);
   border-bottom: 1px solid var(--wao-line);
@@ -457,8 +459,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.spacer {
-  flex: 1;
+.header > :not(.top-menu-bar) {
+  flex-shrink: 0;
+}
+.crumb-b {
+  max-width: 180px;
 }
 
 .plus {
@@ -639,9 +644,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
   .bell {
     flex: 0 0 27px;
-  }
-  .spacer {
-    min-width: 1px;
   }
   .content {
     font-size: 11px;

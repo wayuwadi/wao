@@ -81,6 +81,10 @@ export const useNavStore = defineStore('nav', () => {
   const groups = computed(() =>
     resolveNavGroups(personalOrder.value, externalApps.value, builtinMenus.value),
   )
+  const draggedMenuId = ref<NavItemId | null>(null)
+  const topItems = computed(() => resolveDockItems(externalApps.value, builtinMenus.value, 'TOP'))
+  const canMoveMenus = computed(() => builtinMenusState.value === 'loaded'
+    && externalAppsState.value === 'loaded' && menuMutationState.value !== 'saving')
   const dockItems = computed(() => resolveDockItems(externalApps.value, builtinMenus.value))
 
   function persist() {
@@ -297,7 +301,7 @@ export const useNavStore = defineStore('nav', () => {
           item.id !== id &&
           item.menu.visible &&
           (item.menu.placement ?? 'MENU') === placement &&
-          (placement === 'DOCK' || item.menu.group === group),
+          (placement !== 'MENU' || item.menu.group === group),
       )
       .sort((left, right) => left.menu.order - right.menu.order || left.source - right.source)
     const targetIndex = targetId ? candidates.findIndex((item) => item.id === targetId) : -1
@@ -350,7 +354,7 @@ export const useNavStore = defineStore('nav', () => {
       ...externalApps.value.map((app) => ({ id: externalAppItemId(app.id) as NavItemId, menu: app })),
     ].filter((item) => item.id !== id && item.menu.visible
       && (item.menu.placement ?? 'MENU') === placement
-      && (placement === 'DOCK' || item.menu.group === group))
+      && (placement !== 'MENU' || item.menu.group === group))
       .sort((left, right) => left.menu.order - right.menu.order)
     await moveMenu(id, placement, group, peers[0]?.id)
   }
@@ -395,6 +399,9 @@ export const useNavStore = defineStore('nav', () => {
     personalOrder,
     groups,
     dockItems,
+    topItems,
+    draggedMenuId,
+    canMoveMenus,
     externalApps,
     builtinMenus,
     externalAppsState,

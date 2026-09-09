@@ -36,7 +36,7 @@ public record SaveExternalAppConfigRequest(
         String healthUrl,
         @Pattern(regexp = "TAB|NEW_PAGE", message = "打开方式不正确")
         String openMode,
-        @Pattern(regexp = "MENU|DOCK", message = "展示位置不正确")
+        @Pattern(regexp = "MENU|DOCK|TOP", message = "展示位置不正确")
         String placement) {
 
     /** 兼容既有服务调用：未传展示位置时按普通菜单保存。 */
