@@ -19,6 +19,7 @@ import {
 import AppIcon from "../components/AppIcon.vue";
 import TaskRow from "../components/TaskRow.vue";
 import DraftEditor from "../components/DraftEditor.vue";
+import GameEntry from "../components/GameEntry.vue";
 const version = import.meta.env.VITE_MOBILE_VERSION || pkg.version;
 const props = defineProps<{ tab: string }>(),
   w = useWorkspace(),
@@ -298,6 +299,7 @@ onUnmounted(() => {
             }}
           </p>
         </div>
+        <GameEntry v-if="props.tab === 'today'" />
         <p v-if="w.error.value || localError" class="error banner" role="alert">
           {{ w.error.value || localError }}
           <button class="text-button" @click="w.refresh">重新加载</button>
