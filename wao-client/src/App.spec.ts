@@ -99,6 +99,24 @@ describe("desktop workspace preservation", () => {
     });
     wrapper.unmount();
   });
+  it("shows native download results in the toolbar without replacing the workspace", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    mocks.handlers.get("workspace-download")!({
+      payload: "文件已保存到下载文件夹。",
+    });
+    await flushPromises();
+    expect(wrapper.get("header [role=status]").text()).toContain("文件已保存");
+    mocks.handlers.get("workspace-download")!({
+      payload: "文件下载失败，请重新点击下载。",
+    });
+    await flushPromises();
+    expect(wrapper.get("header [role=status]").text()).toContain("下载失败");
+    expect(mocks.invoke).not.toHaveBeenCalledWith("workspace_action", {
+      action: "reload",
+    });
+    wrapper.unmount();
+  });
   it("network recovery does not automatically reload the editor", async () => {
     const wrapper = mount(App);
     await flushPromises();

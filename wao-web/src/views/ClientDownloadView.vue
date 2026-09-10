@@ -233,7 +233,7 @@ onMounted(() => {
                     : 'Mac 安装包正在准备'
               }}
             </button>
-            <small>macOS 11 及以上 · Intel 与 Apple 芯片通用</small>
+            <small>macOS 11.3 及以上 · Intel 与 Apple 芯片通用</small>
             <small v-if="macosState === 'ready' && macos[0]"
               >v{{ macos[0].version }} · {{ sizeText(macos[0].size)
               }}<span v-if="currentPlatform === 'macos'" class="current-device"
