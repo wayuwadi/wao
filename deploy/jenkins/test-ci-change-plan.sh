@@ -32,6 +32,17 @@ assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
 
 base="$(git -C "$fixture" rev-parse HEAD)"
+mkdir -p "$fixture/wao-client/src"
+printf 'desktop shell\n' >"$fixture/wao-client/src/App.vue"
+git -C "$fixture" add wao-client
+git -C "$fixture" commit -qm desktop-client-only
+plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
+assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
+assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
+assert_plan 'WAO_TEST_WAO_WEB=false' "$plan"
+assert_plan 'WAO_TEST_AGENT_WEB=false' "$plan"
+
+base="$(git -C "$fixture" rev-parse HEAD)"
 mkdir -p "$fixture/wao-server/src/main/java"
 printf 'server\n' >"$fixture/wao-server/src/main/java/Example.java"
 git -C "$fixture" add wao-server

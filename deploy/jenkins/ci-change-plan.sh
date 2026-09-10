@@ -42,6 +42,9 @@ else
         docs/*|*.md|.github/*)
           # 文档和 GitHub 辅助流程不改变主站运行制品。
           ;;
+        wao-client/*)
+          # 桌面外壳由 client-release.yml 独立构建发布；不重启 Web/后端。
+          ;;
         pom.xml|deploy/Dockerfile|deploy/maven-settings.xml|Jenkinsfile|deploy/jenkins/ci-*.sh)
           # Reactor、镜像或流水线自身变化必须用全量验证证明新门禁可用。
           force_full_validation
