@@ -30,7 +30,7 @@ const details = {
   android: {
     name: 'Android',
     icon: 'ri-android-fill',
-    suffix: 'APK · Android 7.0 及以上',
+    suffix: 'APK · Android 9.0 及以上',
     action: '下载 Android 版',
   },
   ios: {
@@ -307,7 +307,7 @@ onMounted(() => {
             <span class="step-number">03</span>
             <h3>登录，开始记录</h3>
             <p>
-              使用已有 WAO 账号登录。移动端首版提供待办、日历和小记；更多功能可以随时在网页版使用。
+              使用已有 WAO 账号登录。在「今日」进入松风江湖，使用游戏账号继续旅程，无需另装游戏 App。待办、日历和小记仍可照常使用。
             </p>
           </article>
         </div>
