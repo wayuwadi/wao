@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import { api, ApiError } from "../api/client";
 import type { Session, Project, Task, Note, Draft } from "../domain/models";
-import { notePayload } from "../domain/models";
+import { notePayload, noteText } from "../domain/models";
 import { removeDraft } from "./drafts";
 const session = ref<Session | null>(null),
   tasks = ref<Task[]>([]),
@@ -94,9 +94,35 @@ export function useWorkspace() {
         if (draft.readonly) throw new Error("请在 Web 编辑富文本原文");
         if (draft.existing && draft.rev === undefined)
           throw new Error("缺少文档版本，重新打开后再编辑");
-        const saved = draft.existing
-          ? await api.patchNote(draft.id, notePayload(draft))
-          : await api.createNote(draft.id, notePayload(draft));
+        let saved: Note;
+        if (draft.existing) {
+          saved = await api.patchNote(draft.id, notePayload(draft));
+        } else {
+          // A previous PUT may have succeeded while its response was lost.
+          // Read the stable ID before retrying so a later Web edit is never overwritten.
+          let previous: Note | null = null;
+          try {
+            previous = await api.note(draft.id);
+          } catch (error) {
+            if (!(error instanceof ApiError && error.status === 404))
+              throw error;
+          }
+          if (previous) {
+            const same =
+              previous.author === session.value?.member.id &&
+              !previous.content &&
+              noteText(previous) === draft.text &&
+              (!draft.title.trim() || previous.title === draft.title.trim());
+            if (!same)
+              throw new ApiError(
+                "云端已存在这篇小记且内容不同。草稿已保留，请另存副本。",
+                409,
+              );
+            saved = previous;
+          } else {
+            saved = await api.createNote(draft.id, notePayload(draft));
+          }
+        }
         if (session.value?.accountId === account)
           notes.value = [
             saved,

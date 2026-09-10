@@ -10,12 +10,10 @@ beforeEach(() => {
 });
 describe("真实 API 协议", () => {
   it("使用会话 Cookie，任务仅 PATCH 用户编辑的字段", async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValue({
-        status: 200,
-        json: async () => ({ code: 0, data: { id: "t1" } }),
-      });
+    const fetch = vi.fn().mockResolvedValue({
+      status: 200,
+      json: async () => ({ code: 0, data: { id: "t1" } }),
+    });
     vi.stubGlobal("fetch", fetch);
     await api.patchTask("t/a", { title: "新标题", due: "2026-09-10" });
     expect(fetch).toHaveBeenCalledWith(
@@ -32,12 +30,10 @@ describe("真实 API 协议", () => {
     window.addEventListener("wao:unauthorized", listener);
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue({
-          status: 401,
-          json: async () => ({ code: 401, message: "expired" }),
-        }),
+      vi.fn().mockResolvedValue({
+        status: 401,
+        json: async () => ({ code: 401, message: "expired" }),
+      }),
     );
     await expect(api.tasks()).rejects.toMatchObject({ status: 401 });
     expect(listener).toHaveBeenCalledOnce();
@@ -78,12 +74,10 @@ describe("真实 API 协议", () => {
   it("业务错误与并发冲突保留 HTTP 状态", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue({
-          status: 409,
-          json: async () => ({ code: 409, message: "文档已更新" }),
-        }),
+      vi.fn().mockResolvedValue({
+        status: 409,
+        json: async () => ({ code: 409, message: "文档已更新" }),
+      }),
     );
     await expect(request("/api/docs/n", "PATCH", {})).rejects.toEqual(
       new ApiError("文档已更新", 409, false),
