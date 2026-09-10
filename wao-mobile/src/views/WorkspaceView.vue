@@ -20,6 +20,7 @@ import {
 } from "../domain/models";
 import AppIcon from "../components/AppIcon.vue";
 import TaskRow from "../components/TaskRow.vue";
+import GameEntry from "../components/GameEntry.vue";
 import DraftEditor from "../components/DraftEditor.vue";
 const version = import.meta.env.VITE_MOBILE_VERSION || pkg.version;
 const props = defineProps<{ tab: string }>(),
@@ -303,6 +304,7 @@ onUnmounted(() => {
               }}
             </p>
           </div>
+          <GameEntry v-if="props.tab === 'today'" />
           <p
             v-if="w.error.value || localError"
             class="error banner"

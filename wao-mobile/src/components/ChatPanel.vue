@@ -201,7 +201,7 @@ function time(value: string) {
               >{{ m.reactions.find((r) => r.emojiType === kind)!.count }}</small
             ></button
           ><span v-if="m.author.id === c.member.value" class="chat-read">{{
-            m.readCount > 0 ? `${m.readCount} 人已读` : "已发送"
+            m.readCount - (m.read ? 1 : 0) > 0 ? `${m.readCount - (m.read ? 1 : 0)} 人已读` : "已发送"
           }}</span>
         </div>
       </article>

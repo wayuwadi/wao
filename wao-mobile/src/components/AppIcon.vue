@@ -27,6 +27,7 @@ import {
   Sparkles,
   Calendar,
   FilePenLine,
+  Gamepad2,
 } from "@lucide/vue";
 const icons = {
   chat: MessageCircle,
@@ -56,6 +57,7 @@ const icons = {
   sparkles: Sparkles,
   date: Calendar,
   edit: FilePenLine,
+  game: Gamepad2,
 };
 defineProps<{ name: keyof typeof icons; size?: number }>();
 </script>

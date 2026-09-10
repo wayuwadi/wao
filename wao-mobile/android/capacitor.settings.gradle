@@ -13,3 +13,6 @@ project(':capacitor-keyboard').projectDir = new File('../node_modules/@capacitor
 
 include ':capacitor-share'
 project(':capacitor-share').projectDir = new File('../node_modules/@capacitor/share/android')
+
+include ':capacitor-inappbrowser'
+project(':capacitor-inappbrowser').projectDir = new File('../node_modules/@capacitor/inappbrowser/android')
