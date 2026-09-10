@@ -20,8 +20,31 @@ class FeishuQuickCollectPollingSchedulerTest {
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
     private final FeishuQuickCollectService quickCollect = mock(FeishuQuickCollectService.class);
     private final FeishuTextPolishService textPolish = mock(FeishuTextPolishService.class);
+    private final cn.wayuwa.wao.mapper.SharedChatSyncStateMapper state = mock(cn.wayuwa.wao.mapper.SharedChatSyncStateMapper.class);
+    @org.junit.jupiter.api.BeforeEach
+    void claimPolling() {
+        when(state.claimPolling(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), anyLong())).thenReturn(1);
+    }
     private final FeishuQuickCollectPollingScheduler scheduler =
-            new FeishuQuickCollectPollingScheduler(settings, feishu, quickCollect, textPolish);
+            new FeishuQuickCollectPollingScheduler(settings, feishu, quickCollect, textPolish, state);
+
+    @Test
+    void anotherNodeOrCooldownSkipsAllFeishuReads() {
+        enabled();
+        when(state.claimPolling(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), anyLong())).thenReturn(0);
+        scheduler.poll();
+        scheduler.pollEdits();
+        org.mockito.Mockito.verifyNoInteractions(feishu);
+    }
+
+    @Test
+    void failedReadReleasesLeaseWithoutAdvancingCursor() {
+        enabled();
+        when(feishu.tenantAccessToken("app", "secret")).thenThrow(new RuntimeException("unavailable"));
+        scheduler.poll();
+        verify(state).release(org.mockito.ArgumentMatchers.eq("quick-realtime"), org.mockito.ArgumentMatchers.anyString());
+        verify(state, never()).complete(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), anyLong());
+    }
 
     @Test
     void disabledCollectorDoesNotCallFeishu() {

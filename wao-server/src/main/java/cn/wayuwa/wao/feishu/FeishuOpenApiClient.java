@@ -40,13 +40,48 @@ public class FeishuOpenApiClient {
     private final Map<String, CachedToken> tokens = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Autowired
-    public FeishuOpenApiClient(RestClient.Builder builder,
+    public FeishuOpenApiClient(RestClient.Builder builder, FeishuApiUsageRecorder usage,
                                @Value("${feishu.login.open-api-base-url:https://open.feishu.cn}") String baseUrl) {
+        this(builder, baseUrl, requestFactory(), usage);
+    }
+
+    public FeishuOpenApiClient(RestClient.Builder builder, String baseUrl) {
         this(builder, baseUrl, requestFactory());
     }
 
+    private final Map<String, CachedMembers> memberCache = new java.util.HashMap<>();
+
+    /** 后台同步复用五分钟成员快照；手动读取成员仍走实时接口，失败不缓存。 */
+    public synchronized List<FeishuChatMember> cachedChatMembers(String token, String chatId) {
+        String key = token + ":" + chatId;
+        Instant now = Instant.now();
+        memberCache.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));
+        CachedMembers cached = memberCache.get(key);
+        if (cached != null) return cached.members();
+        List<FeishuChatMember> members = List.copyOf(listChatMembers(token, chatId));
+        memberCache.put(key, new CachedMembers(members, Instant.now().plusSeconds(300)));
+        return members;
+    }
+
+    private record CachedMembers(List<FeishuChatMember> members, Instant expiresAt) { }
+
     FeishuOpenApiClient(RestClient.Builder builder, String baseUrl, ClientHttpRequestFactory requestFactory) {
+        this(builder, baseUrl, requestFactory, null);
+    }
+
+    FeishuOpenApiClient(RestClient.Builder builder, String baseUrl, ClientHttpRequestFactory requestFactory,
+            FeishuApiUsageRecorder usage) {
         if (requestFactory != null) builder.requestFactory(requestFactory);
+        if (usage != null) builder.requestInterceptor((request, body, execution) -> {
+            try { return execution.execute(request, body); }
+            finally {
+                try { usage.record(request.getMethod().name(), request.getURI()); }
+                catch (RuntimeException ignored) {
+                    org.slf4j.LoggerFactory.getLogger(FeishuOpenApiClient.class)
+                            .warn("飞书 API 调用统计写入失败，本次计数缺失");
+                }
+            }
+        });
         this.client = builder.baseUrl(baseUrl).build();
     }
 

@@ -13,7 +13,7 @@ public interface SharedChatSyncStateMapper {
             UPDATE shared_chat_sync_state
                SET cursor_epoch_seconds = CASE WHEN chat_id IS NULL OR chat_id <> #{chatId}
                                                 THEN #{initialCursor} ELSE cursor_epoch_seconds END,
-                   chat_id = #{chatId}, lease_owner = NULL, lease_until = NULL
+                   chat_id = #{chatId}, lease_owner = NULL, lease_until = NULL, last_success_at = NULL
              WHERE id = #{id} AND (chat_id IS NULL OR chat_id <> #{chatId})
             """)
     int prepare(@Param("id") String id, @Param("chatId") String chatId,
@@ -25,6 +25,17 @@ public interface SharedChatSyncStateMapper {
             """)
     int claim(@Param("id") String id, @Param("owner") String owner,
             @Param("now") LocalDateTime now, @Param("until") LocalDateTime until);
+
+    /** 原子检查执行租约及成功后的冷却时间，避免另一节点紧接着重复轮询。 */
+    @Update("""
+            UPDATE shared_chat_sync_state SET lease_owner = #{owner},
+                lease_until = DATE_ADD(CURRENT_TIMESTAMP(6), INTERVAL 60 MINUTE)
+             WHERE id = #{id} AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP(6))
+               AND (last_success_at IS NULL OR
+                    last_success_at <= TIMESTAMPADD(MICROSECOND, -#{intervalMicros}, CURRENT_TIMESTAMP(6)))
+            """)
+    int claimPolling(@Param("id") String id, @Param("owner") String owner,
+            @Param("intervalMicros") long intervalMicros);
 
     @Select("SELECT cursor_epoch_seconds FROM shared_chat_sync_state WHERE id = #{id}")
     Long cursor(@Param("id") String id);

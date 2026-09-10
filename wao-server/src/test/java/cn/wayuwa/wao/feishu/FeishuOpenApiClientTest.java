@@ -24,6 +24,51 @@ class FeishuOpenApiClientTest {
     private static final String BASE_URL = "https://open.feishu.test";
 
     @Test
+    void actualHttpAttemptsAreCountedButCacheHitsAreNotAndStatisticsFailureDoesNotBreakReads() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/chats/oc_real/members?member_id_type=open_id&page_size=100"))
+                .andRespond(withSuccess("{\"code\":0,\"data\":{\"items\":[]}}", MediaType.APPLICATION_JSON));
+        FeishuApiUsageRecorder usage = org.mockito.Mockito.mock(FeishuApiUsageRecorder.class);
+        org.mockito.Mockito.doThrow(new RuntimeException("statistics unavailable")).when(usage)
+                .record(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null, usage);
+        assertThat(client.cachedChatMembers("token", "oc_real")).isEmpty();
+        assertThat(client.cachedChatMembers("token", "oc_real")).isEmpty();
+        org.mockito.Mockito.verify(usage).record(org.mockito.ArgumentMatchers.eq("GET"), org.mockito.ArgumentMatchers.any());
+        server.verify();
+    }
+
+    @Test
+    void backgroundMemberCacheReusesSnapshotButManualReadsStayFresh() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        String endpoint = BASE_URL + "/open-apis/im/v1/chats/oc_real/members?member_id_type=open_id&page_size=100";
+        server.expect(requestTo(endpoint)).andRespond(withSuccess(
+                "{\"code\":0,\"data\":{\"items\":[{\"member_id\":\"ou_1\",\"name\":\"原名\"}]}}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(endpoint)).andRespond(withSuccess(
+                "{\"code\":0,\"data\":{\"items\":[{\"member_id\":\"ou_1\",\"name\":\"新名\"}]}}", MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+        assertThat(client.cachedChatMembers("token", "oc_real").get(0).name()).isEqualTo("原名");
+        assertThat(client.cachedChatMembers("token", "oc_real").get(0).name()).isEqualTo("原名");
+        assertThat(client.listChatMembers("token", "oc_real").get(0).name()).isEqualTo("新名");
+        server.verify();
+    }
+
+    @Test
+    void failedMemberReadIsNotCached() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        String endpoint = BASE_URL + "/open-apis/im/v1/chats/oc_real/members?member_id_type=open_id&page_size=100";
+        server.expect(requestTo(endpoint)).andRespond(withSuccess("{\"code\":99991403,\"msg\":\"quota\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(endpoint)).andRespond(withSuccess("{\"code\":0,\"data\":{\"items\":[]}}", MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+        assertThatThrownBy(() -> client.cachedChatMembers("token", "oc_real")).isInstanceOf(FeishuApiException.class);
+        assertThat(client.cachedChatMembers("token", "oc_real")).isEmpty();
+        server.verify();
+    }
+
+    @Test
     void sendsJsonV2CardWithUuidInBodyAndRequiresReceipt() throws Exception {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
