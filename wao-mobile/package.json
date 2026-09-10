@@ -1,6 +1,6 @@
 {
   "name": "wao-mobile",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -26,6 +26,7 @@
     "@capacitor/android": "8.5.1",
     "@capacitor/app": "8.1.1",
     "@capacitor/core": "8.5.1",
+    "@capacitor/inappbrowser": "4.0.3",
     "@capacitor/ios": "8.5.1",
     "@lucide/vue": "1.43.0",
     "vue": "^3.5.40",
