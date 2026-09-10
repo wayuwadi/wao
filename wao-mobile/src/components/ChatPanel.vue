@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { updates } from "../composables/updates";
 import { chat as c } from "../composables/chat";
 import {
   assetPath,
@@ -23,8 +24,10 @@ const reactions = [
   ["DONE", "✅"],
 ] as const;
 let mounted = false;
+let resize: ResizeObserver | undefined;
 const visible = () =>
   mounted &&
+  !updates.modal.value &&
   c.active.value &&
   document.visibilityState !== "hidden" &&
   nearBottom.value;
@@ -48,16 +51,24 @@ watch(c.messages, async () => {
   await nextTick();
   if (nearBottom.value) void bottom();
 });
+watch(updates.modal, (open) => {
+  if (!open) void seen();
+});
 watch(c.active, (value) => {
   if (value) void seen();
 });
 onMounted(() => {
   mounted = true;
+  resize = new ResizeObserver(() => {
+    if (nearBottom.value) void bottom();
+  });
+  if (list.value) resize.observe(list.value);
   void c.refresh();
   void bottom();
 });
 onUnmounted(() => {
   mounted = false;
+  resize?.disconnect();
 });
 function reply(m: ChatMessage) {
   c.edit(c.draft.value.text, {
@@ -201,7 +212,9 @@ function time(value: string) {
               >{{ m.reactions.find((r) => r.emojiType === kind)!.count }}</small
             ></button
           ><span v-if="m.author.id === c.member.value" class="chat-read">{{
-            m.readCount - (m.read ? 1 : 0) > 0 ? `${m.readCount - (m.read ? 1 : 0)} 人已读` : "已发送"
+            m.readCount - (m.read ? 1 : 0) > 0
+              ? `${m.readCount - (m.read ? 1 : 0)} 人已读`
+              : "已发送"
           }}</span>
         </div>
       </article>

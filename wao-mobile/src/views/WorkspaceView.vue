@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import MyPanel from "../components/MyPanel.vue";
+import { updates } from "../composables/updates";
 import ChatPanel from "../components/ChatPanel.vue";
 import { chat } from "../composables/chat";
 import pkg from "../../package.json";
@@ -44,6 +46,7 @@ const nav = [
   { id: "calendar", name: "日历", icon: "calendar" },
   { id: "notes", name: "小记", icon: "notes" },
   { id: "chat", name: "聊天", icon: "chat" },
+  { id: "me", name: "我的", icon: "me" },
 ] as const;
 const titles: Record<string, string> = {
   today: "今天，也从容一点。",
@@ -209,7 +212,9 @@ onMounted(async () => {
   loadDrafts();
   if (Capacitor.isNativePlatform()) {
     backHandle = await NativeApp.addListener("backButton", () => {
-      if (editor.value) closeEditor();
+      if (updates.modal.value) {
+        if (!updates.opening.value) updates.later();
+      } else if (editor.value) closeEditor();
       else if (accountOpen.value) accountOpen.value = false;
       else if (props.tab !== "today") void router.replace("/today");
       else void NativeApp.minimizeApp();
@@ -278,6 +283,7 @@ onUnmounted(() => {
       </div>
       <main :class="{ 'chat-main': props.tab === 'chat' }">
         <ChatPanel v-if="props.tab === 'chat'" :key="chat.account.value" />
+        <MyPanel v-else-if="props.tab === 'me'" />
         <template v-else>
           <div class="page-heading">
             <p class="eyebrow">
@@ -647,7 +653,7 @@ onUnmounted(() => {
         </template>
       </main>
       <button
-        v-if="props.tab !== 'chat'"
+        v-if="!['chat', 'me'].includes(props.tab)"
         class="fab"
         :aria-label="props.tab === 'notes' ? '新建小记' : '新建待办'"
         @click="create()"
@@ -662,6 +668,10 @@ onUnmounted(() => {
           :class="{ active: props.tab === item.id }"
           ><span
             ><AppIcon :name="item.icon" :size="22" /><b
+              v-if="item.id === 'me' && updates.available.value"
+              class="update-dot"
+              aria-label="有新版本"
+            /><b
               v-if="item.id === 'chat' && chat.unread.value"
               class="chat-badge"
               >{{ chat.unread.value > 99 ? "99+" : chat.unread.value }}</b
