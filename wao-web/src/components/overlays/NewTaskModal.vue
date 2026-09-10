@@ -71,6 +71,11 @@ watch(() => preferences.defaultProject, (value) => {
   }
 })
 const owner = ref(draft.owner ?? session.currentUser.id)
+watch(() => session.members, (members) => {
+  if (members.length && !members.some(member => member.id === owner.value)) {
+    owner.value = members.some(member => member.id === session.currentUser.id) ? session.currentUser.id : members[0]!.id
+  }
+}, { immediate: true })
 const pr = ref<Priority>(draft.pr ?? ui.modalPriority ?? 'P2')
 // 日历双击某天进来时，截止日直接锁定那一天，优先于草稿里存的快捷选项。
 // 草稿里的 ISO 日期（上次从日历带入的）没有对应 pill，回落到「今天」。
@@ -155,6 +160,7 @@ async function create() {
   }
   createState.value = 'submitting'
   let persisted = false
+  let createdId = pendingTaskId.value
   if (pendingTaskId.value) {
     // 首次写入失败后复用同一条本地任务，不重复插入；失败后改过的内容也一起补写。
     data.patchTask(pendingTaskId.value, payload)
@@ -162,6 +168,7 @@ async function create() {
     persisted = data.taskSaveState(pendingTaskId.value) === 'saved'
   } else {
     const result = await data.addTask(payload)
+    createdId = result.task.id
     pendingTaskId.value = result.persisted ? null : result.task.id
     persisted = result.persisted
   }
@@ -172,6 +179,7 @@ async function create() {
   }
   try { localStorage.removeItem(DRAFT_KEY) } catch { /* 服务器已确认保存，不阻止关闭表单。 */ }
   ui.closeModal()
+  if (createdId) ui.openTask(createdId)
   toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
 }
@@ -211,16 +219,11 @@ function requestClose() {
 
     <p v-if="source" class="source-note">来自：<a v-if="source.sourceUrl" :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a><span v-else>{{ source.sourceTitle }}</span>。原文保留不变。</p>
     <div class="label">所属项目 <span v-if="source && !project" class="label-hint">请选择要存入的项目</span></div>
-    <div class="pills">
-      <button
-        v-for="p in openProjects"
-        :key="p.id"
-        class="pill"
-        :class="{ on: project === p.id }"
-        @click="project = p.id"
-      >
-        <span class="dot" :style="{ background: data.areaColor(p.area) }"></span>{{ p.name }}
-      </button>
+    <div class="project-select-row">
+      <select v-model="project" aria-label="所属项目" class="compact-select">
+        <option value="" disabled>请选择所属项目</option>
+        <option v-for="p in openProjects" :key="p.id" :value="p.id">{{ p.name }}</option>
+      </select>
       <button
         v-if="project"
         class="pill default-project"
@@ -235,11 +238,9 @@ function requestClose() {
     <div class="two-col">
       <div>
         <div class="label">负责人</div>
-        <div class="seg-row">
-          <button v-for="m in session.members" :key="m.id" class="seg" :class="{ on: owner === m.id }" @click="owner = m.id">
-            <span class="av" :style="{ background: m.color }">{{ m.initial }}</span>{{ m.name }}
-          </button>
-        </div>
+        <select v-model="owner" aria-label="负责人" class="compact-select">
+          <option v-for="m in session.members" :key="m.id" :value="m.id">{{ m.name }}</option>
+        </select>
       </div>
       <div>
         <div class="label">优先级</div>
@@ -295,6 +296,8 @@ function requestClose() {
 </template>
 
 <style scoped>
+.project-select-row { display: flex; gap: 8px; align-items: center; }
+.compact-select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text); }
 .source-note { margin: 8px 0 14px; font-size: 12px; line-height: 1.6; color: var(--wao-text-weak); overflow-wrap: anywhere; }
 .source-note a { color: var(--wao-primary); }
 .mask {

@@ -14,8 +14,10 @@ import {
   sendSharedChatMessage,
   toggleSharedChatReaction,
   uploadSharedChatImage,
+  uploadSharedChatFile,
   type SharedChatMessage,
 } from '@/api/chat'
+import { useSpeechInput } from '@/composables/speechInput'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import { taskShareTarget } from '@/utils/share'
@@ -96,6 +98,28 @@ const loading = ref(true)
 const loadError = ref('')
 const sending = ref(false)
 const uploadingImage = ref(false)
+const uploadingFile = ref(false)
+const attachmentInput = ref<HTMLInputElement | null>(null)
+function appendDraft(text: string) {
+  if (!composer.value?.appendMarkdown?.(text)) draft.value += text
+}
+const speech = useSpeechInput(appendDraft)
+watch(() => props.visible, (visible) => { if (!visible) speech.stop() })
+async function uploadAttachment(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || uploadingFile.value) return
+  sendError.value = ''
+  if (file.size > 50 * 1024 * 1024) { sendError.value = '文件超过 50MB，请压缩后重试'; input.value = ''; return }
+  uploadingFile.value = true
+  try {
+    const uploaded = await uploadSharedChatFile(file)
+    if (!uploaded.id) throw new Error('文件未保存，请重试')
+    const name = file.name.replace(/[\\[\]<>]/g, '_').replace(/[\r\n]/g, ' ')
+    appendDraft(`\n[${name}](/api/files/${encodeURIComponent(uploaded.id)}/download)\n`)
+  } catch (error) { sendError.value = messageOf(error, '文件上传失败，请重新选择文件重试；文字草稿仍保留') }
+  finally { uploadingFile.value = false; input.value = '' }
+}
 const sendError = ref('')
 const reactingId = ref('')
 const reactionMenuId = ref('')
@@ -111,7 +135,7 @@ const storageKey = computed(
 const contentLength = computed(() => Array.from(draft.value).length)
 const canSend = computed(
   () =>
-    !sending.value && !uploadingImage.value && contentLength.value <= 2_000 && !!draft.value.trim(),
+    !sending.value && !uploadingImage.value && !uploadingFile.value && !speech.listening.value && contentLength.value <= 2_000 && !!draft.value.trim(),
 )
 const unreadCount = computed(() => messages.value.filter((message) => !message.read).length)
 
@@ -542,12 +566,18 @@ onBeforeUnmount(() => {
         />
         <div class="composer-footer">
           <div class="composer-status">
-            <span v-if="uploadingImage">正在保存图片草稿…</span>
+            <span v-if="uploadingFile">正在上传文件，请稍候…</span>
+            <span v-else-if="uploadingImage">正在保存图片草稿…</span>
+            <span v-else-if="speech.listening.value">正在聆听，再点一次结束；转写后可修改再发送</span>
+            <span v-else-if="speech.error.value" role="alert">{{ speech.error.value }}</span>
             <span v-else-if="sendError" class="send-error">{{ sendError }}</span>
             <span v-else>{{ draft ? '草稿已保存在本机' : 'Enter 发送 · Shift+Enter 换行' }}</span>
             <span :class="{ over: contentLength > 2000 }">{{ contentLength }}/2000</span>
           </div>
           <div class="composer-actions">
+            <input ref="attachmentInput" type="file" hidden @change="uploadAttachment" />
+            <button type="button" class="emoji-button" :disabled="uploadingFile || sending" @click="attachmentInput?.click()"><i class="ri-attachment-line"></i>文件</button>
+            <button v-if="speech.supported" type="button" class="emoji-button" :aria-pressed="speech.listening.value" :disabled="sending" title="使用浏览器语音服务，可能联网处理声音；转写后由你确认发送" @click="speech.toggle"><i class="ri-mic-line"></i>{{ speech.listening.value ? '结束语音' : '语音输入' }}</button>
             <div class="emoji-wrap">
               <button type="button" class="emoji-button" @click="emojiOpen = !emojiOpen">
                 <i class="ri-emotion-happy-line"></i>表情

@@ -518,7 +518,14 @@ async fn workspace_action(
     local_shell(&webview)?;
     let workspace = app.get_webview("workspace").ok_or("工作区尚未连接")?;
     match action.as_str() {
-        "pet" => return show_desktop_pet(&app).map_err(|e| e.to_string()),
+        "pet" => {
+            if let Some(pet) = app.get_webview_window("pet") {
+                if pet.is_visible().map_err(|e| e.to_string())? {
+                    return pet.hide().map_err(|e| e.to_string());
+                }
+            }
+            return show_desktop_pet(&app).map_err(|e| e.to_string());
+        },
         "new-task" | "new-note" | "theme" | "shortcuts" | "chat" | "notifications" => {
             if workspace.url().map_err(|e| e.to_string())?.origin() != workspace_url().origin() {
                 return Err("当前页面不支持工作区快捷操作".into());

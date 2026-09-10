@@ -104,7 +104,7 @@ useShortcuts()
 watch(() => ui.modal, (modal) => {
   if (modal === 'note') {
     ui.closeModal()
-    void router.push('/notes')
+    newNote()
   }
 })
 
@@ -220,6 +220,8 @@ function newTask() {
 }
 /** 小记：不用先选知识库，打开就是一个空白输入框，存进小记知识库。 */
 function newNote() {
+  if (ui.openTaskId) void data.flushTask(ui.openTaskId)
+  ui.closeTask()
   void router.push('/notes')
 }
 const themeIcon = computed(() => {

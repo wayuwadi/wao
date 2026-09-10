@@ -1,4 +1,4 @@
-import { apiUploadImage } from './board'
+import { apiUploadImage, apiUploadFile } from './board'
 import { http, type ApiResponse } from './http'
 import type { Member } from '@/types'
 
@@ -63,3 +63,6 @@ export const toggleSharedChatReaction = (id: string, emojiType: string) =>
   data<SharedChatMessage>(http.post(`/api/chat/messages/${id}/reactions/${emojiType}`))
 
 export const uploadSharedChatImage = (file: File) => apiUploadImage(file, 'WAO 聊天')
+
+/** 聊天文件存入真实组织文件库，沿用 50MB 限额和登录鉴权。 */
+export const uploadSharedChatFile = (file: File) => apiUploadFile(file)

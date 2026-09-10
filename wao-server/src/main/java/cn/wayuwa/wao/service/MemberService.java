@@ -29,7 +29,7 @@ public class MemberService {
      * @return 成员列表
      */
     public List<MemberDto> list() {
-        return memberMapper.selectList(null).stream()
+        return memberMapper.directory().stream()
                 .map(this::toDto)
                 .toList();
     }
@@ -43,7 +43,7 @@ public class MemberService {
     public OrgDto org() {
         OrgEntity e = orgMapper.selectList(null).stream().findFirst()
                 .orElseThrow(() -> new NotFoundException("组织不存在"));
-        return new OrgDto(e.getId(), e.getName(), Math.toIntExact(memberMapper.selectCount(null)));
+        return new OrgDto(e.getId(), e.getName(), memberMapper.directory().size());
     }
 
     private MemberDto toDto(MemberEntity e) {

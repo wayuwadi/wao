@@ -85,9 +85,11 @@ describe('右上角新建入口', () => {
     expect(ui.modal).toBe('task')
 
     ui.closeModal()
+    ui.openTask('existing-task')
     await wrapper.findAll('.header .plus')[1]!.trigger('click')
     await flushPromises()
     expect(ui.modal).toBeNull()
+    expect(ui.openTaskId).toBeNull()
     expect(wrapper.vm.$router.currentRoute.value.path).toBe('/notes')
     wrapper.unmount()
   })
@@ -120,13 +122,13 @@ describe('新建任务的所属项目', () => {
       global: { stubs: { MarkdownEditor: true } },
     })
 
-    expect(wrapper.find('.pill.on').text()).toContain(fixtureProject.name)
+    expect(wrapper.get('[aria-label="所属项目"]').element).toHaveProperty('value', fixtureProject.id)
 
     data.projects = [realProject]
     await flushPromises()
 
-    expect(wrapper.find('.pill.on').text()).toContain('真实项目')
-    expect(wrapper.findAll('.pill').map((pill) => pill.text())).not.toContain(fixtureProject.name)
+    expect(wrapper.get('[aria-label="所属项目"]').element).toHaveProperty('value', 'real-project')
+    expect(wrapper.findAll('[aria-label="所属项目"] option').map((pill) => pill.text())).not.toContain(fixtureProject.name)
     wrapper.unmount()
   })
 

@@ -55,11 +55,8 @@ const quietNow = computed(() => {
 
 const personalRows: Array<{ key: keyof PersonalNotificationPolicy; title: string; detail: string }> = [
   { key: 'enabled', title: '我的站内通知', detail: '只影响当前账号的通知中心动态与未读数' },
-  { key: 'taskCreated', title: '任务创建', detail: '在通知中心展示真实新建任务记录' },
-  { key: 'taskCompleted', title: '任务完成', detail: '在通知中心展示真实完成记录' },
   { key: 'aiRunSuccess', title: 'AI Run 成功', detail: '在通知中心保留成功运行，不产生群消息' },
   { key: 'aiRunFailure', title: 'AI Run 失败', detail: '在通知中心保留失败运行与处理入口' },
-  { key: 'loginActivity', title: '成员登录', detail: '展示团队真实成功登录动态，不含设备或身份标识' },
 ]
 
 async function load() {

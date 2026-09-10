@@ -80,12 +80,12 @@ public class NotificationCenterService {
     private static boolean visible(NotificationEventRow row,
             cn.wayuwa.wao.dto.NotificationSettingsDto.PersonalPolicy policy) {
         return switch (row.getEventType()) {
-            case "TASK_CREATED" -> policy.taskCreated();
-            case "TASK_COMPLETED" -> policy.taskCompleted();
+            case "TASK_CREATED" -> false;
+            case "TASK_COMPLETED" -> false;
             case "AI_RUN" -> "SUCCESS".equals(row.getSeverity())
                     ? policy.aiRunSuccess() : policy.aiRunFailure();
-            case "LOGIN" -> policy.loginActivity();
-            case "INTERNAL" -> true;
+            case "LOGIN" -> false;
+            case "INTERNAL" -> row.getEventId() != null && row.getEventId().startsWith("mention-");
             default -> false;
         };
     }

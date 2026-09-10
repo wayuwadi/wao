@@ -11,6 +11,8 @@ import { useFavoritesStore } from '@/stores/favorites'
 import type { Favorite } from '@/api/favorites'
 import type { ModuleId } from '@/types'
 import { externalAppItemId, type NavItemId } from '@/config/nav'
+import { hasDesktopToolbar } from '@/utils/desktopToolbar'
+const desktopToolbar = hasDesktopToolbar()
 import QuickLinks from '@/components/nav/QuickLinks.vue'
 
 const emit = defineEmits<{ (e: 'open-search'): void }>()
@@ -68,10 +70,6 @@ function go(id: NavItemId) {
 }
 function goSettings() {
   router.push('/settings')
-}
-
-function orgClick() {
-  toast('组织切换将在设置 · 组织管理中提供')
 }
 
 // ---- 桌面统一菜单拖拽与右键改名 ----
@@ -192,12 +190,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 
 <template>
   <aside class="side" :class="{ collapsed: nav.collapsed }">
-    <div class="brand-row">
+    <div v-if="!desktopToolbar" class="brand-row">
       <div class="brand-mark">WAO</div>
-      <button v-if="!nav.collapsed" class="org" @click="orgClick">
-        <span class="org-name">{{ session.org.name }}</span>
-        <i class="ri-arrow-down-s-line"></i>
-      </button>
     </div>
 
     <div v-if="!nav.collapsed" class="search-row">
