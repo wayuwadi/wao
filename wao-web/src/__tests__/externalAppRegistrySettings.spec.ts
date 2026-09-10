@@ -19,6 +19,9 @@ import {
 } from '@/config/nav'
 import { fetchNavigationLayout, saveNavigationLayout } from '@/api/navigationLayout'
 import { fetchPreference, savePreference } from '@/api/favorites'
+import { useSessionStore } from '@/stores/session'
+import type { AuthSession } from '@/api/auth'
+import { snapshotNavigation } from '@/config/navigationLayout'
 
 vi.mock('@/api/navigationLayout', () => ({
   fetchNavigationLayout: vi.fn(),
@@ -100,6 +103,74 @@ describe('菜单与快捷链接统一设置', () => {
     vi.mocked(saveExternalAppRegistry).mockImplementation(async (apps) => ({ version: 1, apps }))
     vi.mocked(fetchPreference).mockResolvedValue('')
     vi.mocked(savePreference).mockResolvedValue(undefined)
+  })
+
+  it('未保存名称在重新挂载后恢复，账号保存成功后清理本机草稿', async () => {
+    useSessionStore().account = { member: { id: 'draft-owner' } } as AuthSession
+    const wrapper = await mountSettings()
+    await menuRow(wrapper, '项目').get('input').setValue('继续编辑的项目')
+    await flushPromises()
+    wrapper.unmount()
+    setActivePinia(createPinia())
+    useSessionStore().account = { member: { id: 'draft-owner' } } as AuthSession
+    const restored = await mountSettings()
+    expect(menuRow(restored, '继续编辑的项目')).toBeTruthy()
+    expect(saveNavigationLayout).not.toHaveBeenCalled()
+    await restored.get('.menu-card button.primary').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('wao-navigation-settings-draft-v1:draft-owner')).toBeNull()
+    restored.unmount()
+  })
+
+  it('恢复旧版本草稿不能覆盖新版本，另一账号不能读取该草稿', async () => {
+    const layout = snapshotNavigation(DEFAULT_BUILTIN_MENUS, DEFAULT_EXTERNAL_APPS)
+    layout.items.find(item => item.id === 'projects')!.label = '旧版本未保存输入'
+    localStorage.setItem('wao-navigation-settings-draft-v1:member-a', JSON.stringify({
+      revision: 'old-revision', layout, links: null,
+    }))
+    vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'new-revision', layout: null })
+    useSessionStore().account = { member: { id: 'member-b' } } as AuthSession
+    const other = await mountSettings()
+    expect(menuRow(other, '旧版本未保存输入')).toBeUndefined()
+    other.unmount()
+    setActivePinia(createPinia())
+    useSessionStore().account = { member: { id: 'member-a' } } as AuthSession
+    const owner = await mountSettings()
+    await owner.get('.menu-card button.primary').trigger('click')
+    await flushPromises()
+    expect(saveNavigationLayout).not.toHaveBeenCalled()
+    expect(owner.text()).toContain('导航已发生变化，草稿仍保留')
+    expect(JSON.parse(localStorage.getItem('wao-navigation-settings-draft-v1:member-a')!).revision).toBe('old-revision')
+    expect(menuRow(owner, '旧版本未保存输入')).toBeTruthy()
+    owner.unmount()
+  })
+
+  it('切换设置页面后仍恢复快捷链接草稿', async () => {
+    useSessionStore().account = { member: { id: 'link-owner' } } as AuthSession
+    const wrapper = await mountSettings()
+    await wrapper.get('.quick-link-row input').setValue('尚未保存的快捷入口')
+    const profile = wrapper.findAll('.snav button').find(button => button.text() === '个人资料')
+    expect(profile).toBeTruthy()
+    await profile!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.snav button').find(button => button.text() === '我的导航')!.trigger('click')
+    await flushPromises()
+    expect((wrapper.get('.quick-link-row input').element as HTMLInputElement).value).toBe('尚未保存的快捷入口')
+    expect(savePreference).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('本机存储不可用时刷新仍有未保存保护', async () => {
+    useSessionStore().account = { member: { id: 'storage-full' } } as AuthSession
+    const wrapper = await mountSettings()
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    await menuRow(wrapper, '项目').get('input').setValue('尚未保存')
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.text()).toContain('本机草稿保存失败')
+    wrapper.unmount()
+    storage.mockRestore()
   })
 
   it('把已注册应用并入真实菜单分组，并隐藏独立注册表编辑器', async () => {

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { toast } from '@/composables/toast'
 import { useQuickLinks } from '@/composables/quickLinks'
 import type { QuickLink } from '@/config/quickLinks'
 import { type BuiltinMenuGroupCode, type MenuOpenMode, type MenuPlacement } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { recommendedLayout } from '@/config/navigationCatalog'
-import type { NavigationLayout, NavigationGroup } from '@/config/navigationLayout'
+import { validateNavigationLayout, type NavigationLayout, type NavigationGroup } from '@/config/navigationLayout'
+import { useSessionStore } from '@/stores/session'
 import { externalAppItemId, type NavItemId } from '@/config/nav'
 import IconPicker from '@/components/ui/IconPicker.vue'
 
@@ -27,6 +28,12 @@ interface MenuDraft {
 
 const nav = useNavStore()
 const quickLinks = useQuickLinks()
+const session = useSessionStore()
+const draftOwner = session.userId
+const draftKey = `wao-navigation-settings-draft-v1:${draftOwner}`
+const draftReady = ref(false)
+const localDraftStatus = ref('')
+let unreadDraft = false
 
 const menuItems = ref<MenuDraft[]>([])
 const draftGroups = ref<NavigationGroup[]>([])
@@ -355,18 +362,85 @@ async function saveQuickLinks() {
   }
 }
 
-function confirmLeave(): boolean {
-  return (
-    !(menuDirty.value || qlDirty.value) ||
-    window.confirm('菜单或快捷链接还有未保存的修改，确认放弃吗？')
-  )
+function persistDraft(): boolean {
+  if (!draftReady.value || !draftOwner || draftOwner !== session.userId) return false
+  try {
+    if (!menuDirty.value && !qlDirty.value) {
+      if (unreadDraft) return true
+      localStorage.removeItem(draftKey)
+      localDraftStatus.value = ''
+    } else {
+      localStorage.setItem(draftKey, JSON.stringify({
+        revision: draftRevision.value,
+        layout: menuDirty.value ? draftLayout() : null,
+        links: qlDirty.value ? qlEditing.value : null,
+      }))
+      localDraftStatus.value = '未保存到账号，草稿已留在本机；切换功能或刷新后可继续编辑。'
+    }
+    return true
+  } catch {
+    localDraftStatus.value = '本机草稿保存失败，请先保存到账号再离开。'
+    return false
+  }
 }
+
+function restoreDraft() {
+  if (!draftOwner || draftOwner !== session.userId) return
+  try {
+    const raw = localStorage.getItem(draftKey)
+    if (!raw) return
+    const draft = JSON.parse(raw)
+    if (draft.layout && typeof draft.revision === 'string') {
+      readDraft(validateNavigationLayout(draft.layout))
+      // 保留编辑开始时的版本，不能用最新版本为旧草稿绕过并发校验。
+      draftRevision.value = draft.revision
+    }
+    if (Array.isArray(draft.links) && draft.links.every((link: QuickLink) =>
+      link && ['id', 'label', 'subtitle', 'icon', 'url'].every(key =>
+        typeof link[key as keyof QuickLink] === 'string') &&
+      ['TAB', 'NEW_PAGE'].includes(link.openMode) && Array.isArray(link.keywords) &&
+      link.keywords.every(keyword => typeof keyword === 'string'))) {
+      qlEditing.value = cloneQuickLinks(draft.links)
+    }
+    localDraftStatus.value = '已恢复本机未保存的草稿；保存后才会应用到账号。'
+  } catch {
+    unreadDraft = true
+    localDraftStatus.value = '本机草稿无法读取，原记录仍保留；账号布局已正常读取。'
+  }
+}
+
+function confirmLeave(): boolean {
+  return !(menuDirty.value || qlDirty.value) || persistDraft() ||
+    window.confirm('菜单或快捷链接还有未保存的修改，确认放弃吗？')
+}
+
+function beforeUnload(event: BeforeUnloadEvent) {
+  if ((menuDirty.value || qlDirty.value) && !persistDraft()) {
+    event.preventDefault()
+    event.returnValue = ''
+  }
+}
+
+watch([menuItems, draftGroups, draftLocked, qlEditing, builtinBaseline, externalBaseline,
+  groupsBaseline, lockedBaseline, qlBaseline], () => {
+  if (!menuLoading.value && !qlLoading.value && !menuSaving.value && !qlSaving.value) persistDraft()
+}, { deep: true })
+watch([menuSaving, qlSaving], () => {
+  if (!menuSaving.value && !qlSaving.value) persistDraft()
+})
 
 defineExpose({ confirmLeave })
 
-onMounted(() => {
-  void loadMenuSettings()
-  void loadQuickLinkSettings()
+onMounted(async () => {
+  window.addEventListener('beforeunload', beforeUnload)
+  await Promise.all([loadMenuSettings(), loadQuickLinkSettings()])
+  if (!nav.layoutLoaded || nav.layoutError || quickLinks.loadError.value) return
+  restoreDraft()
+  draftReady.value = true
+})
+onUnmounted(() => {
+  persistDraft()
+  window.removeEventListener('beforeunload', beforeUnload)
 })
 </script>
 
@@ -378,6 +452,7 @@ onMounted(() => {
     </div>
   </div>
 
+  <p v-if="localDraftStatus" class="status" role="status">{{ localDraftStatus }}</p>
   <div class="navigation-settings-grid">
     <section class="settings-card menu-card">
       <div class="card-head">
