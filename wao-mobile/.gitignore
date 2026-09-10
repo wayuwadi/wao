@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.env*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+*.p8
+*.ipa
+*.apk
+*.aab
+.DS_Store
+artifacts/

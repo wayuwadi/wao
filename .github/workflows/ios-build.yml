@@ -2,11 +2,6 @@ name: WAO Native iOS Build
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "wao-ios/**"
-      - ".github/workflows/ios-build.yml"
 
 permissions:
   contents: read

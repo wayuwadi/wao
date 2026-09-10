@@ -1,0 +1,52 @@
+{
+  "name": "wao-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "check": "npm run test && npm run build",
+    "sync": "npm run build && cap sync",
+    "android": "npm run sync && cap run android",
+    "ios": "npm run sync && cap run ios",
+    "open:android": "cap open android",
+    "open:ios": "cap open ios",
+    "doctor": "node scripts/doctor.mjs",
+    "version:native": "node scripts/version.mjs",
+    "release": "node scripts/release.mjs",
+    "format": "prettier --write src tests scripts *.ts *.json *.html"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.1",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.1",
+    "@capacitor/ios": "8.5.1",
+    "@lucide/vue": "1.43.0",
+    "vue": "^3.5.40",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.1",
+    "@types/node": "^22.19.0",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/test-utils": "^2.4.11",
+    "jsdom": "^27.4.0",
+    "prettier": "3.9.5",
+    "sharp": "0.35.4",
+    "typescript": "~5.9.3",
+    "vite": "^8.2.2",
+    "vitest": "4.1.11",
+    "vue-tsc": "^3.3.7"
+  },
+  "overrides": {
+    "xcode": {
+      "uuid": "11.1.1"
+    }
+  }
+}

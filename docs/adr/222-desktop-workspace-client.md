@@ -24,4 +24,3 @@
 ## 验收依据
 
 见 `docs/specs/desktop-client-v1.md` 与 `wao-client/README.md`。必须验证安装、真实登录及业务操作、关闭恢复、断网恢复、签名更新与覆盖升级；不得用网页预览或构建通过代替实机验收。
-
