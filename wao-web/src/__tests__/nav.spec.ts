@@ -107,7 +107,7 @@ describe('侧边栏导航配置', () => {
 
   it('公共组保留兼容模块顺序，自媒体 Agent 保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
-    expect(publicGroup?.items).toEqual(['projects', 'updates', externalAppItemId('media-agent'), externalAppItemId('weknora')])
+    expect(publicGroup?.items).toEqual(['projects', 'updates', 'changelog', externalAppItemId('media-agent'), externalAppItemId('weknora')])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
       '/apps/media-agent',
     )
@@ -123,6 +123,13 @@ describe('侧边栏导航配置', () => {
       visible: true,
     })
     expect(router.resolve('/updates').meta).toMatchObject({ module: 'updates', tabKind: 'module' })
+  })
+
+  it('更新日志使用独立入口，保留真实更新日记路由', () => {
+    expect(MODULES.changelog).toMatchObject({ label: '更新日志', path: '/changelog' })
+    expect(router.resolve('/changelog').meta).toMatchObject({ module: 'changelog', tabKind: 'module' })
+    expect(router.resolve('/changelog').meta.public).not.toBe(true)
+    expect(router.resolve('/updates').name).toBe('updates')
   })
 
   it('聊天从菜单和页签退休，旧地址改为打开首页悬浮框', () => {

@@ -160,6 +160,12 @@ const router = createRouter({
           meta: { module: 'updates', tabKind: 'module' },
         },
         {
+          path: 'changelog',
+          name: 'changelog',
+          component: () => import('@/views/ChangelogView.vue'),
+          meta: { module: 'changelog', tabKind: 'module' },
+        },
+        {
           path: 'projects',
           name: 'projects',
           component: () => import('@/views/ProjectsView.vue'),

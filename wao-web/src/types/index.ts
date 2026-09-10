@@ -25,6 +25,7 @@ export type ModuleId =
   | 'notes'
   | 'navigation'
   | 'updates'
+  | 'changelog'
   | 'projects'
   | 'ideas'
   | 'calendar'

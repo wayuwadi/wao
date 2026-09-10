@@ -141,9 +141,17 @@ export const useNavStore = defineStore('nav', () => {
       )
     builtinMenus.value = [...globalBuiltin.value, ...extra].map((item) => {
       const own = overrides.get(item.id)
+      // 前端 V1 新入口不依赖后端菜单发布；已有个人显隐、位置和名称仍优先。
+      const changelogDefault = item.id === 'changelog' && !own
+        ? {
+            ...DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'changelog'),
+            group: layoutGroups.value.some((group) => group.id === 'PUBLIC') ? 'PUBLIC' : 'ROOT',
+          }
+        : {}
       return normalizeBuiltinMenu({
         ...item,
         ...(personalLayout.value ? { visible: false } : {}),
+        ...changelogDefault,
         ...own,
       } as BuiltinMenuConfig)
     })
