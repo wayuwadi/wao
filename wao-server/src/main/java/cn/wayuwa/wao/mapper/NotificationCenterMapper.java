@@ -12,27 +12,32 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface NotificationCenterMapper {
     String EVENT_UNION = """
-            SELECT CONCAT('internal:', id) AS event_id, 'INTERNAL' AS event_type,
-                   title, body AS detail, NULL AS actor_name, created_at AS occurred_at,
-                   target_path, 'INFO' AS severity FROM internal_notification
-             WHERE member_id IS NULL OR member_id = #{memberId}
+            SELECT CONCAT('mention-chat:', c.id) AS event_id, 'INTERNAL' AS event_type,
+                   '聊天中有人 @ 你' AS title, c.content AS detail, sender.name AS actor_name,
+                   c.created_at AS occurred_at, '/?chat=1' AS target_path, 'INFO' AS severity
+              FROM shared_chat_message c
+              JOIN member recipient ON recipient.id = #{memberId}
+              LEFT JOIN member sender ON sender.id = c.member_id
+             WHERE c.source = 'WAO' AND c.deleted = 0 AND c.member_id <> #{memberId}
+               AND LOCATE(CONCAT('@', recipient.name), c.content) > 0
+               AND SUBSTRING(c.content, LOCATE(CONCAT('@', recipient.name), c.content) + CHAR_LENGTH(recipient.name) + 1) REGEXP '^([[:space:][:punct:]]|$)'
             UNION ALL
-            SELECT CONCAT('task-created:', t.id) AS event_id, 'TASK_CREATED' AS event_type,
-                   t.title, '创建了任务' AS detail, creator.name AS actor_name,
-                   t.created_at AS occurred_at,
-                   CONCAT('/projects/', t.project_id, '?task=', t.id) AS target_path,
-                   'INFO' AS severity
+            SELECT CONCAT('mention-comment:', t.id, ':', comment.ordinality) AS event_id,
+                   'INTERNAL' AS event_type, t.title,
+                   comment.text AS detail, sender.name AS actor_name,
+                   STR_TO_DATE(LEFT(REPLACE(comment.time, 'T', ' '), 19), '%Y-%m-%d %H:%i:%s') AS occurred_at,
+                   CONCAT('/projects/', t.project_id, '?task=', t.id) AS target_path, 'INFO' AS severity
               FROM task t
-              LEFT JOIN member creator ON creator.id = t.created_by
-             WHERE t.created_at IS NOT NULL
-            UNION ALL
-            SELECT CONCAT('task-completed:', t.id) AS event_id, 'TASK_COMPLETED' AS event_type,
-                   t.title, '完成了任务' AS detail, NULL AS actor_name,
-                   t.completed_at AS occurred_at,
-                   CONCAT('/projects/', t.project_id, '?task=', t.id) AS target_path,
-                   'SUCCESS' AS severity
-              FROM task t
-             WHERE t.completed_at IS NOT NULL
+              JOIN project p ON p.id = t.project_id
+              JOIN member recipient ON recipient.id = #{memberId}
+              JOIN JSON_TABLE(t.detail_json, '$.comments[*]' COLUMNS (
+                   ordinality FOR ORDINALITY, who VARCHAR(64) PATH '$.who',
+                   text TEXT PATH '$.text', time VARCHAR(64) PATH '$.time')) AS comment
+              LEFT JOIN member sender ON sender.id = comment.who
+             WHERE comment.who <> #{memberId}
+               AND LOCATE(CONCAT('@', recipient.name), comment.text) > 0
+               AND SUBSTRING(comment.text, LOCATE(CONCAT('@', recipient.name), comment.text) + CHAR_LENGTH(recipient.name) + 1) REGEXP '^([[:space:][:punct:]]|$)'
+               AND (p.owner_id = #{memberId} OR JSON_CONTAINS(p.detail_json, JSON_QUOTE(#{memberId}), '$.members'))
             UNION ALL
             SELECT CONCAT('ai-run:', r.id) AS event_id, 'AI_RUN' AS event_type,
                    COALESCE(t.title, '已删除的开发任务') AS title,
@@ -49,17 +54,7 @@ public interface NotificationCenterMapper {
               LEFT JOIN member requester ON requester.id = r.requested_by
              WHERE r.finished_at IS NOT NULL
                AND r.status NOT IN ('queued', 'claimed', 'running')
-            UNION ALL
-            SELECT CONCAT('login:', e.id) AS event_id, 'LOGIN' AS event_type,
-                   CONCAT(m.name, '登录了 WAO') AS title,
-                   CASE e.provider WHEN 'feishu' THEN '通过飞书登录'
-                       WHEN 'wechat' THEN '通过微信登录'
-                       WHEN 'email' THEN '通过邮箱登录'
-                       ELSE '成功登录' END AS detail,
-                   m.name AS actor_name, e.logged_in_at AS occurred_at,
-                   NULL AS target_path, 'INFO' AS severity
-              FROM account_login_event e
-              JOIN member m ON m.id = e.member_id
+               AND r.requested_by = #{memberId}
             """;
 
     @Select("SELECT events.* FROM (" + EVENT_UNION + ") events "
@@ -81,6 +76,7 @@ public interface NotificationCenterMapper {
                    MAX(e.logged_in_at) AS last_login_at
               FROM member m
               LEFT JOIN account_login_event e ON e.member_id = m.id
+             WHERE m.directory_visible = 1
              GROUP BY m.id, m.name, m.color
              ORDER BY count7_days DESC, last_login_at DESC, m.name
             """)

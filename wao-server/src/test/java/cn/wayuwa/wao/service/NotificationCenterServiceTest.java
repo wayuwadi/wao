@@ -30,8 +30,8 @@ class NotificationCenterServiceTest {
     @Test
     void returnsGroundedEventsUsageAndUsesSevenDayUnreadWindowForFirstVisit() {
         NotificationEventRow event = new NotificationEventRow();
-        event.setEventId("task-created:t1");
-        event.setEventType("TASK_CREATED");
+        event.setEventId("mention-comment:t1:1");
+        event.setEventType("INTERNAL");
         event.setTitle("建设通知中心");
         event.setDetail("创建了任务");
         event.setActorName("娃哥");
@@ -54,7 +54,7 @@ class NotificationCenterServiceTest {
         var result = service.get("wg");
 
         assertThat(result.events()).singleElement().satisfies(item -> {
-            assertThat(item.id()).isEqualTo("task-created:t1");
+            assertThat(item.id()).isEqualTo("mention-comment:t1:1");
             assertThat(item.actorName()).isEqualTo("娃哥");
             assertThat(item.occurredAt().getOffset().toString()).isEqualTo("+08:00");
         });
@@ -112,7 +112,7 @@ class NotificationCenterServiceTest {
     @Test
     void oldFrontendDoesNotReceiveUnsupportedInternalEventType() {
         when(notificationSettings.personalPolicy("wd")).thenReturn(allEvents());
-        NotificationEventRow internal = aiEvent("internal:1", "INFO", "团队提醒");
+        NotificationEventRow internal = aiEvent("mention-chat:1", "INFO", "团队提醒");
         internal.setEventType("INTERNAL");
         when(center.recentEvents(120, "wd")).thenReturn(List.of(internal));
         when(center.eventsSince(org.mockito.ArgumentMatchers.any(), eq("wd"))).thenReturn(List.of(internal));
@@ -120,6 +120,18 @@ class NotificationCenterServiceTest {
         assertThat(service.get("wd", false).events()).isEmpty();
         assertThat(service.get("wd", false).unreadCount()).isZero();
         assertThat(service.get("wd", true).events()).hasSize(1);
+    }
+
+    @Test
+    void excludesOrdinaryActivityAndLegacyInternalCardsEvenWhenOldPreferencesEnableThem() {
+        when(notificationSettings.personalPolicy("wd")).thenReturn(allEvents());
+        var events = java.util.stream.Stream.of("TASK_CREATED", "TASK_COMPLETED", "LOGIN", "INTERNAL")
+                .map(type -> { var row = aiEvent("legacy:1", "INFO", "旧动态"); row.setEventType(type); return row; }).toList();
+        when(center.recentEvents(120, "wd")).thenReturn(events);
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any(), eq("wd"))).thenReturn(events);
+        when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        assertThat(service.get("wd").events()).isEmpty();
+        assertThat(service.get("wd").unreadCount()).isZero();
     }
 
     private static NotificationEventRow aiEvent(String id, String severity, String detail) {

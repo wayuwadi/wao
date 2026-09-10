@@ -35,7 +35,7 @@ const status = computed(() =>
   !online.value
     ? "网络已断开"
     : connection.value === "ready"
-      ? "工作区已打开"
+      ? ""
       : connection.value === "error"
         ? "连接待恢复"
         : "正在连接",
@@ -61,8 +61,14 @@ async function quickAction(name: string) {
   await action(name);
 }
 const cleanup: UnlistenFn[] = [];
+let updateTimer: ReturnType<typeof setInterval> | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
+async function startUpdate() {
+  if (state.phase === "error") await updater.find();
+  if (state.phase === "available") await updater.download();
+  if (state.phase === "ready") await ask("install");
+}
 async function action(name: string) {
   if (!native) return;
   try {
@@ -96,6 +102,7 @@ async function accept() {
   }
   if (kind === "install") {
     await updater.install();
+    await visibility();
     return;
   }
   await visibility();
@@ -166,6 +173,8 @@ onMounted(async () => {
   window.addEventListener("keydown", keydown);
   if (native) {
     version.value = await getVersion();
+    void updater.find();
+    updateTimer = setInterval(() => void updater.find(), 30 * 60 * 1000);
     cleanup.push(
       await listen<{ ready: boolean; chat: string; notifications: string }>("toolbar-state", (event) => { toolbar.value = event.payload; }),
       await listen<string>("workspace-state", (event) => {
@@ -195,6 +204,7 @@ onMounted(async () => {
   await connect();
 });
 onUnmounted(() => {
+  clearInterval(updateTimer);
   cleanup.forEach((fn) => fn());
   clearTimeout(timer);
   window.removeEventListener("online", networkChanged);
@@ -207,7 +217,7 @@ onUnmounted(() => {
   <div class="client">
     <header class="toolbar">
       <div class="brand" data-tauri-drag-region>
-        <span class="edition" data-tauri-drag-region>工作区</span>
+        <span class="edition" data-tauri-drag-region>WAO</span>
       </div>
       <div class="divider"></div>
       <nav class="history" aria-label="工作区导航">
@@ -250,6 +260,7 @@ onUnmounted(() => {
         </button>
       </nav>
       <span
+        v-if="status"
         class="connection"
         :class="{ offline: !online || connection === 'error' }"
         ><i></i>{{ status }}</span
@@ -266,13 +277,16 @@ onUnmounted(() => {
       </button>
       <button class="pet-button" @click="action('pet')" title="让宠物到桌面帮你传话"><span>桌面宠物</span></button>
       <button
+        v-if="['available', 'downloading', 'ready', 'installing'].includes(state.phase) || (state.phase === 'error' && state.version)"
         class="update-button"
+        :disabled="['downloading', 'installing'].includes(state.phase)"
+        :title="state.message"
         :class="{ active: panel }"
-        @click="togglePanel(!panel)"
+        @click="startUpdate"
       >
         <svg viewBox="0 0 24 24">
           <path d="M12 16V4m-4 4 4-4 4 4M5 15v5h14v-5" /></svg
-        ><span>客户端</span
+        ><span>{{ state.phase === 'downloading' ? '正在更新…' : state.phase === 'error' ? '重试更新' : '更新客户端' }}</span
         ><i
           v-if="['available', 'ready'].includes(state.phase)"
           class="update-dot"
@@ -435,6 +449,7 @@ onUnmounted(() => {
           ><button class="text-button" @click="ask('quit')">退出 WAO</button>
         </div>
       </section>
+      <div v-if="state.phase === 'error' && state.version" class="error-toast" role="alert">{{ state.message }}</div>
       <div v-if="error" class="error-toast" role="alert">{{ error }}</div>
       <div v-if="confirm" class="modal-backdrop">
         <section

@@ -11,6 +11,7 @@ import {
   sendSharedChatMessage,
   toggleSharedChatReaction,
   uploadSharedChatImage,
+  uploadSharedChatFile,
   type SharedChatMessage,
 } from '@/api/chat'
 
@@ -19,6 +20,7 @@ vi.mock('@/api/chat', () => ({
   markSharedChatRead: vi.fn<(typeof import('@/api/chat'))['markSharedChatRead']>(),
   sendSharedChatMessage: vi.fn<(typeof import('@/api/chat'))['sendSharedChatMessage']>(),
   toggleSharedChatReaction: vi.fn<(typeof import('@/api/chat'))['toggleSharedChatReaction']>(),
+  uploadSharedChatFile: vi.fn<(typeof import('@/api/chat'))['uploadSharedChatFile']>(),
   uploadSharedChatImage: vi.fn<(typeof import('@/api/chat'))['uploadSharedChatImage']>(),
 }))
 
@@ -304,6 +306,27 @@ describe('ChatView', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(vi.mocked(sendSharedChatMessage).mock.calls[1]![0].clientToken).toBe(token)
+  })
+
+  it('真实文件落库后才追加下载链接，上传期间新文字不丢失，失败可重选', async () => {
+    const wrapper = await mountView()
+    await wrapper.get('textarea').setValue('原文')
+    const input = wrapper.get<HTMLInputElement>('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [new File(['内容'], '验收.txt')] })
+    let resolve!: (value: Awaited<ReturnType<typeof uploadSharedChatFile>>) => void
+    vi.mocked(uploadSharedChatFile).mockReturnValueOnce(new Promise(r => { resolve = r }))
+    await input.trigger('change')
+    await wrapper.get('textarea').setValue('原文与新增内容')
+    expect(sendSharedChatMessage).not.toHaveBeenCalled()
+    resolve({ id: 'file1', name: '验收.txt', size: '6 B', icon: '', time: '', by: '', link: '' })
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toContain('原文与新增内容')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toContain('/api/files/file1/download')
+    vi.mocked(uploadSharedChatFile).mockRejectedValueOnce(new Error('上传失败'))
+    await input.trigger('change')
+    await flushPromises()
+    expect(wrapper.text()).toContain('上传失败')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toContain('/api/files/file1/download')
   })
 
 })

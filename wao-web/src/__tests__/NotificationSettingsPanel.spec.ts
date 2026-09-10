@@ -90,7 +90,7 @@ describe('通知设置', () => {
 
     expect(wrapper.findAll('.policy-card')[0]!.findAll('input').every((input) => input.attributes('disabled') !== undefined)).toBe(true)
     const personalRows = wrapper.findAll('.policy-card')[1]!.findAll('.policy-row')
-    await personalRows[5]!.get('input').setValue(false)
+    await personalRows[2]!.get('input').setValue(false)
     await wrapper.get('footer button').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('网络不可用')

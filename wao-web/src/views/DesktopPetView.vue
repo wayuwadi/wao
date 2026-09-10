@@ -123,12 +123,13 @@ onBeforeUnmount(() => {
     </button>
     <button
       class="pet-avatar"
-      aria-label="宠物：点击打开或收起 WAO，拖动调整位置"
-      title="点击打开或收起 WAO，拖动调整位置"
+      aria-label="宠物：点击打开或收起 WAO，右键打开聊天，拖动调整位置"
+      title="点击打开或收起 WAO，右键打开聊天，拖动调整位置"
       @pointerdown="pointerDown"
       @pointermove="pointerMove"
       @pointercancel="pointerStart = null"
       @click="toggleWorkspace"
+      @contextmenu.prevent="nativeAction('open-chat')"
     >
       <PetSprite :state="noticeVisible ? 'waving' : 'idle'" />
     </button>

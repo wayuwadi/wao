@@ -35,6 +35,8 @@ vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
 describe("desktop workspace preservation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.check.mockResolvedValue(null);
+    vi.stubEnv("DEV", false);
     mocks.handlers.clear();
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   });
@@ -54,6 +56,35 @@ describe("desktop workspace preservation", () => {
     expect(mocks.invoke).not.toHaveBeenCalledWith('workspace_action', { action: 'reload' });
     wrapper.unmount();
   });
+  it("正常连接不显示冗余状态，无新版隐藏更新按钮", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    mocks.handlers.get('workspace-state')!({ payload: 'ready' });
+    await flushPromises();
+    expect(wrapper.find('.connection').exists()).toBe(false);
+    expect(wrapper.find('.update-button').exists()).toBe(false);
+    expect(wrapper.get('.edition').text()).toBe('WAO');
+    wrapper.unmount();
+  });
+  it("发现新版显示黄点，点击直接下载且验签完成才提示安装", async () => {
+    let downloaded!: () => void;
+    const artifact = { version: '1.1.5', close: vi.fn(), download: vi.fn(() => new Promise<void>(resolve => { downloaded = resolve })), install: vi.fn() };
+    mocks.check.mockResolvedValue(artifact);
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(mocks.check).toHaveBeenCalledOnce();
+    expect(wrapper.find('.update-dot').exists()).toBe(true);
+    await wrapper.get('.update-button').trigger('click');
+    await flushPromises();
+    expect(artifact.download).toHaveBeenCalledOnce();
+    expect(wrapper.find('.settings').exists()).toBe(false);
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    downloaded();
+    await flushPromises();
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('安装并重新打开');
+    expect(artifact.install).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
   it("opens the pet without reloading or hiding the task workspace", async () => {
     const wrapper = mount(App);
     await flushPromises();
@@ -66,7 +97,7 @@ describe("desktop workspace preservation", () => {
   it("hides the existing webview for settings and restores the same workspace", async () => {
     const wrapper = mount(App);
     await flushPromises();
-    await wrapper.get(".update-button").trigger("click");
+    mocks.handlers.get("shell-action")!({ payload: "update" });
     await flushPromises();
     expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", {
       action: "hide",

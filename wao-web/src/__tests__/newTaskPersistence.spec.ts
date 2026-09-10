@@ -60,6 +60,7 @@ describe('新建任务的落库反馈', () => {
     await flushPromises()
 
     expect(useToastHost().items.some((item) => item.text.includes('已创建'))).toBe(true)
+    expect(useUiStore().openTaskId).toBe(data.tasks[0]!.id)
     wrapper.unmount()
   })
 
@@ -94,7 +95,7 @@ describe('新建任务的落库反馈', () => {
     ui.modalTaskSeed = { draftKey: 'document-selection-test', title: '文档里的待办', desc: '完整选区\n\n来源文档：/kb/k3?doc=d7', sourceTitle: '来源文档', sourceUrl: '/kb/k3?doc=d7', sourceDocId: 'd7' }
     const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
     expect(wrapper.get('.title-input').element).toHaveProperty('value', '文档里的待办')
-    expect(wrapper.findAll('.pill.on').some((pill) => pill.text().includes(target.name))).toBe(true)
+    expect(wrapper.get('[aria-label="所属项目"]').element).toHaveProperty('value', target.id)
     await wrapper.get('.title-input').setValue('文档待办修改后标题')
     putTask.mockRejectedValueOnce(new Error('网络中断'))
     await wrapper.get('.foot .btn-primary').trigger('click')
@@ -108,6 +109,7 @@ describe('新建任务的落库反馈', () => {
     await wrapper.get('.foot .btn-primary').trigger('click')
     await flushPromises()
     expect(putTask.mock.calls[1]![0]).toBe(firstId)
+    expect(ui.openTaskId).toBe(firstId)
     expect(localStorage.getItem('document-selection-test')).toBeNull()
     expect(localStorage.getItem('wao-new-task-draft-v1')).toBe(original)
     wrapper.unmount()
@@ -163,6 +165,7 @@ describe('新建任务的落库反馈', () => {
     expect(data.tasks).toHaveLength(before + 1)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(useToastHost().items.some((item) => item.text.includes('已创建'))).toBe(true)
+    expect(useUiStore().openTaskId).toBe(data.tasks[0]!.id)
     wrapper.unmount()
   })
 

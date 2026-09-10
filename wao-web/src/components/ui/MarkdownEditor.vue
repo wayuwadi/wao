@@ -1486,7 +1486,13 @@ function clearSentContent(expected: string): boolean {
   e.commands.clearContent(true)
   return true
 }
-defineExpose({ clearSentContent })
+/** 将用户主动插入的附件或语音追加到最新内容，避免聚焦时后台回灌延迟。 */
+function appendMarkdown(text: string): boolean {
+  const e = editor.value
+  if (!e) return false
+  return e.commands.insertContentAt(e.state.doc.content.size, text, { contentType: 'markdown' })
+}
+defineExpose({ clearSentContent, appendMarkdown })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
