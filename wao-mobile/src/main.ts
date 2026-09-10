@@ -7,7 +7,7 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: "/", redirect: "/today" },
-    ...["today", "tasks", "calendar", "notes", "chat"].map((tab) => ({
+    ...["today", "tasks", "calendar", "notes", "chat", "me"].map((tab) => ({
       path: `/${tab}`,
       component: WorkspaceView,
       props: { tab },

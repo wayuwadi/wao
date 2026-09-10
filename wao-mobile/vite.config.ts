@@ -7,6 +7,10 @@ export default defineConfig(({ mode }) => ({
     port: 5178,
     strictPort: true,
     proxy: {
+      "/downloads/mobile": {
+        target: "https://wao.wayuwa.cn",
+        changeOrigin: true,
+      },
       "/api": {
         target: "https://wao.wayuwa.cn",
         changeOrigin: true,

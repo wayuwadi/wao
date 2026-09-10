@@ -112,6 +112,28 @@ export function previewServer(): Plugin {
     name: "wao-explicit-demo",
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
+        if (req.url?.startsWith("/downloads/mobile/latest.json")) {
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            JSON.stringify({
+              version: "1.2.0",
+              publishedAt: "2026-09-11T00:00:00Z",
+              files: {
+                android: {
+                  name: "WAO-1.2.0-android.apk",
+                  size: 3200000,
+                  sha256: "0".repeat(64),
+                },
+                ios: {
+                  name: "WAO-1.2.0-ios-unsigned.ipa",
+                  size: 600000,
+                  sha256: "0".repeat(64),
+                },
+              },
+            }),
+          );
+          return;
+        }
         if (!req.url?.startsWith("/api/")) return next();
         if (req.url === "/api/files/demo-file/download") {
           res.setHeader("Content-Type", "text/plain");

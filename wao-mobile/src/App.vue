@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { useWorkspace } from "./composables/workspace";
+import UpdateDialog from "./components/UpdateDialog.vue";
+import { updates } from "./composables/updates";
 import { chat } from "./composables/chat";
 import { App as NativeApp } from "@capacitor/app";
 import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
@@ -33,6 +35,7 @@ function scheduleChat() {
 }
 function visibility() {
   chat.active.value = document.visibilityState !== "hidden";
+  if (chat.active.value) void updates.check();
   scheduleChat();
 }
 watch(
@@ -77,11 +80,13 @@ onMounted(() => {
   if (Capacitor.isNativePlatform())
     void NativeApp.addListener("appStateChange", ({ isActive }) => {
       chat.active.value = isActive;
+      if (isActive) void updates.check();
       scheduleChat();
     }).then((handle) => {
       if (disposed) void handle.remove();
       else nativeListener = handle;
     });
+  void updates.initialize();
   void boot();
 });
 onUnmounted(() => {
@@ -153,4 +158,5 @@ onUnmounted(() => {
     <p class="login-footer">使用已有 WAO 账号登录 · 与 Web 数据同步</p>
   </div>
   <RouterView v-else />
+  <UpdateDialog />
 </template>

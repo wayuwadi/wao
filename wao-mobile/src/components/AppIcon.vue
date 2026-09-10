@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  UserRound,
   MessageCircle,
   Send,
   Reply,
@@ -30,6 +31,7 @@ import {
   Gamepad2,
 } from "@lucide/vue";
 const icons = {
+  me: UserRound,
   chat: MessageCircle,
   send: Send,
   reply: Reply,
