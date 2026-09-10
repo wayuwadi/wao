@@ -502,6 +502,30 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('发送确认立即清空有焦点的编辑器，并取消待回灌内容', async () => {
+    const w = await mountEditor({ modelValue: '已发送消息' })
+    const editable = w.get('[contenteditable]').element as HTMLElement
+    editable.focus()
+    await w.setProps({ modelValue: '待回灌旧内容' })
+    const api = w.vm as unknown as { clearSentContent: (expected: string) => boolean }
+    expect(api.clearSentContent('已发送消息')).toBe(true)
+    await nextTick()
+    expect(w.get('.md-body').text()).toBe('')
+    expect(document.activeElement).toBe(editable)
+    editable.blur()
+    await nextTick()
+    expect(w.get('.md-body').text()).toBe('')
+    w.unmount()
+  })
+
+  it('发送期间新增输入不能被旧请求确认清除', async () => {
+    const w = await mountEditor({ modelValue: '已发送消息和后续输入' })
+    const api = w.vm as unknown as { clearSentContent: (expected: string) => boolean }
+    expect(api.clearSentContent('已发送消息')).toBe(false)
+    expect(w.get('.md-body').text()).toContain('后续输入')
+    w.unmount()
+  })
+
   it('外部改 modelValue 会回灌到编辑器（切换任务时不能留着上一条的内容）', async () => {
     const w = await mountEditor({ modelValue: '第一个任务的描述' })
 

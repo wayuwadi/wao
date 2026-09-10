@@ -89,6 +89,7 @@ const ui = useUiStore()
 const messages = ref<SharedChatMessage[]>([])
 let disposed = false
 const draft = ref('')
+const composer = ref<InstanceType<typeof MarkdownEditor> | null>(null)
 let sendAttempt: { content: string; replyToId?: string; token: string } | null = null
 const replyingTo = ref<SharedChatMessage | null>(null)
 const loading = ref(true)
@@ -279,6 +280,7 @@ async function send() {
     })
     merge([saved])
     if (draft.value === sentDraft && replyingTo.value?.id === sentReply) {
+      composer.value?.clearSentContent?.(sentDraft)
       draft.value = ''
       replyingTo.value = null
       localStorage.removeItem(storageKey.value)
@@ -532,6 +534,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <MarkdownEditor
+          ref="composer"
           v-model="draft"
           :min-height="92"
           placeholder="输入消息，支持 Markdown 快捷输入和粘贴图片…"

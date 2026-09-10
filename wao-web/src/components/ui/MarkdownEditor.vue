@@ -1477,6 +1477,16 @@ function flushExternal() {
     editor.value.commands.setContent(next, { contentType: 'markdown', emitUpdate: false })
   }
 }
+/** Explicit send acknowledgement; never discard text typed while the request was pending. */
+function clearSentContent(expected: string): boolean {
+  const e = editor.value
+  if (!e || e.getMarkdown() !== expected) return false
+  pendingExternal = null
+  pendingExternalDocument = null
+  e.commands.clearContent(true)
+  return true
+}
+defineExpose({ clearSentContent })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
