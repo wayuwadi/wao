@@ -18,6 +18,7 @@ Windows 10/11 x64 首发，复用现有 WAO Web 全部业务功能。macOS 使�
 - 同仓库单需求 PR，独立客户端工作流；普通 Web 更新不用重打安装包。
 - `npm run desktop:dev` 本地启动，`npm run desktop:build` 生成 Windows NSIS 安装包。
 - 本地调试可连接 localhost Web，生产包固定线上地址。
+- CI 开发宿主通过独立进程名 `wao-client-dev.exe` 启动，正式安装器不能因可执行文件同名关闭该宿主；下载制品保留，原生宿主更新需退出后替换，前端热更新不受影响。
 - 版本发布脚本同步 package/Cargo/Tauri 版本，提交后创建标签触发 CI/CD；已有版本不可覆盖。
 - 更新包签名由 CI 注入，公钥内置；清单与版本制品同域 HTTPS 提供，清单禁缓存。
 

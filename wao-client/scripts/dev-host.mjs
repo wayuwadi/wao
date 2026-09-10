@@ -1,16 +1,24 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { prepareDevHost } from "./dev-host-files.mjs";
 
 // The optional CI-built development host lets Windows frontend work use Vite HMR
 // without invoking a compiler on machines whose approved toolchain is not ready.
-const executable = resolve(
+const source = resolve(
   process.env.WAO_CLIENT_DEV_HOST || "dev-host/wao-client.exe",
 );
-if (process.platform !== "win32" || !existsSync(executable)) {
+if (process.platform !== "win32" || !existsSync(source)) {
   console.error(
     "请从 GitHub Actions 下载 WAO-client-dev-host-windows，将 wao-client.exe 放入 wao-client/dev-host/，然后重试。macOS 请使用 desktop:dev。",
   );
+  process.exit(1);
+}
+let executable;
+try {
+  executable = prepareDevHost(source, resolve("dev-host/runtime"));
+} catch (error) {
+  console.error("无法准备开发宿主，请先退出正在运行的开发宿主后重试。", error.message);
   process.exit(1);
 }
 let stopped = false;
