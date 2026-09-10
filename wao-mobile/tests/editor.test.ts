@@ -11,6 +11,7 @@ vi.mock("../src/api/client", async (importOriginal) => {
     api: {
       ...mod.api,
       createNote: vi.fn(),
+      note: vi.fn(),
       patchNote: vi.fn(),
       createTask: vi.fn(),
     },
@@ -20,6 +21,7 @@ const w = useWorkspace();
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  vi.mocked(api.note).mockRejectedValue(new ApiError("不存在", 404));
   w.session.value = {
     accountId: "a",
     member: { id: "me", name: "测试", initial: "测", color: "" },
@@ -110,6 +112,61 @@ describe("用户编辑链路", () => {
     expect(wrapper.text()).toContain("上次提交可能已经成功");
     expect(wrapper.find("button.primary").attributes("disabled")).toBeDefined();
     expect(readDrafts("a")).toHaveLength(1);
+    wrapper.unmount();
+  });
+  it("响应丢失后再次保存先核对稳定 id，不覆盖 Web 后续编辑", async () => {
+    const wrapper = mount(DraftEditor, {
+      props: {
+        initial: {
+          kind: "note",
+          id: "m1",
+          existing: false,
+          title: "标题",
+          text: "手机原稿",
+        },
+      },
+    });
+    vi.mocked(api.note).mockResolvedValueOnce({
+      id: "m1",
+      title: "标题",
+      author: "me",
+      created: "",
+      updated: "",
+      blocks: [{ p: "电脑后续修改" }],
+      rev: 2,
+    });
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect(api.createNote).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("另存副本");
+    expect(readDrafts("a")[0]?.title).toBe("标题");
+    wrapper.unmount();
+  });
+  it("响应丢失但云端内容一致时确认已保存，不重复 PUT", async () => {
+    const wrapper = mount(DraftEditor, {
+      props: {
+        initial: {
+          kind: "note",
+          id: "m1",
+          existing: false,
+          title: "标题",
+          text: "正文",
+        },
+      },
+    });
+    vi.mocked(api.note).mockResolvedValueOnce({
+      id: "m1",
+      title: "标题",
+      author: "me",
+      created: "",
+      updated: "",
+      blocks: [{ p: "正文" }],
+      rev: 1,
+    });
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect(wrapper.emitted("saved")).toHaveLength(1);
+    expect(api.createNote).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 });
