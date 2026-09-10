@@ -1,6 +1,6 @@
 # WAO 桌面客户端
 
-Windows 优先的完整 WAO 工作区，使用 Tauri 2 + Vue 3 + TypeScript。业务界面直接复用线上 `wao-web`，桌面外壳在此目录维护；`wao-desktop` 仍是独立桌宠，不互相覆盖安装或更新。
+Windows 与 macOS 共用的完整 WAO 工作区，使用 Tauri 2 + Vue 3 + TypeScript。业务界面直接复用线上 `wao-web`，桌面外壳在此目录维护；`wao-desktop` 仍是独立桌宠，不互相覆盖安装或更新。
 
 ## Windows 本地开发
 
@@ -34,19 +34,21 @@ npm run desktop:dev
 npm run desktop:build
 ```
 
-安装包位于 `src-tauri/target/release/bundle/nsis/`。本地没有更新私钥时只生成安装包，不生成可发布更新签名；CI 中由 Secret 自动签名。无需把私钥复制到开发机。
+Windows 安装包位于 `src-tauri/target/release/bundle/nsis/`；Mac 通用安装包位于 `src-tauri/target/universal-apple-darwin/release/bundle/dmg/`。本地没有更新私钥时只生成安装包，不生成可发布更新签名；CI 中由 Secret 自动签名。无需把私钥复制到开发机。
 
 普通 Web 功能由既有 Jenkins 发布；客户端主动刷新或重新启动后使用最新业务页面。不会强制刷新正在编辑的工作区。
 
 外壳更新的标准流程：
 
 1. `npm run version:set -- 1.0.1`，执行 `npm install --package-lock-only`，原生检查同步 `Cargo.lock`，完成测试后按一个需求一个 PR 合并。
-2. 在包含该改动的 main 提交创建 `client-v1.0.1` 标签并推送。GitHub Actions 自动测试、构建、签名、上传和验证生产安装包。
+2. 在包含该改动的 main 提交创建 `client-v1.0.1` 标签并推送。GitHub Actions 在 Windows 与 macOS 同时测试、构建、签名；两端成功后上传并验证生产安装包。
 3. 客户端进入「客户端 → 检查更新」，下载并验证后点击「安装并重新打开」。安装前保存编辑内容；安装标识保持不变，覆盖升级保留会话。
 
 分支验证可使用唯一 `client-check-<时间或提交号>` 标签，只产生 CI 制品，不发布生产。工作流也支持手动运行；仅 main 可勾选 publish，版本不可覆盖。制品和下载渠道独立于 Web dist 生命周期。
 
 - 固定下载地址：`https://wao.wayuwa.cn/downloads/desktop/client/WAO-windows-x64-setup.exe`
+- Mac 固定下载：`https://wao.wayuwa.cn/downloads/desktop/client/WAO-macos-universal.dmg`
+- 公开下载页：`https://wao.wayuwa.cn/download`
 - 更新清单：`https://wao.wayuwa.cn/downloads/desktop/client/latest.json`
 - 版本安装包：`https://wao.wayuwa.cn/downloads/desktop/client/WAO_<version>_windows-x64-setup.exe`
 - 版本 SHA256：`https://wao.wayuwa.cn/downloads/desktop/client/SHA256-<version>.txt`
@@ -55,11 +57,23 @@ npm run desktop:build
 
 更新签名用于验证 WAO 更新来源，不能代替 Windows Authenticode 代码签名。没有组织代码签名证书时不宣称安装包已受 Windows 信任；需要证书的受管设备由管理员处理。
 
-## macOS 接续开发
+## macOS 开发与安装
 
-在 Mac 安装 Xcode Command Line Tools、Node.js 24 和 Rust，检出同一仓库，进入本目录执行 `npm ci`、`npm run desktop:dev`。`tauri.macos.conf.json` 使用标准系统窗口；共享全部工作区与更新 UI。
+支持 macOS 11 及以上，通用 DMG 同时包含 Intel x86_64 与 Apple Silicon arm64；共享 Windows 的全部工作区、会话和更新 UI，使用系统标题栏与编辑快捷键。关闭窗口保留工作区，从 Dock 或菜单栏恢复；Cmd+Q 和菜单退出会提示保存，Cmd+W 收起主工作区。
 
-后续须在真实 Mac 验证子 WebView 布局、文件上传下载、飞书登录、关闭恢复及更新，再启用 macOS 构建 job、签名/公证和对应 `darwin-*` 更新平台。Windows 工作流不会伪造 macOS 已发布或阻塞 Windows 首发等待 Mac。
+安装 Xcode Command Line Tools、Node.js 24 和 Rust，进入本目录：
+
+```bash
+npm ci
+npm run desktop:dev
+# 通用安装包需要两个目标
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+npm run desktop:build -- --target universal-apple-darwin
+```
+
+正式构建使用 `.github/workflows/client-release.yml` 的 macOS job；生成 DMG、`.app.tar.gz` 与更新签名，使用 `lipo` 校验两个架构并验证应用代码签名。`prepare-release.mjs` 要求 Windows 安装包、Mac DMG、Mac 更新归档及两端更新签名齐全；公开校验重新下载所有文件并比较 SHA-256。稳定下载文件和清单不缓存，版本文件不可覆盖。
+
+打开 DMG，将 WAO 拖入 Applications 后从应用程序启动。当前仅 ad-hoc 代码签名，没有 Apple Developer ID 签名与公证；首次打开如遇系统拦截，用户确认来源后可在“系统设置 → 隐私与安全性”处理该应用。不要关闭系统整体安全保护。应用内更新使用已有 WAO 更新公钥强制校验，不需卸载旧版。
 
 ## 验收记录
 

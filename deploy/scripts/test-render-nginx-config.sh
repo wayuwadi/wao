@@ -43,6 +43,7 @@ grep -q 'location = /amer_demo_5 {' "${rendered}"
 grep -q 'return 308 /amer_demo_5/;' "${rendered}"
 grep -A 3 'location \^~ /amer_demo_5/ {' "${rendered}" | grep -q 'try_files \$uri \$uri/ =404;'
 grep -A 3 'location \^~ /amer_demo_4/ {' "${rendered}" | grep -q 'try_files \$uri \$uri/ =404;'
+grep -A 4 'location = /downloads/desktop/client/WAO-macos-universal.dmg {' "${rendered}" | grep -q 'no-store'
 unexpected_upstreams="$(awk '$1 == "server" && $2 ~ /:9000/ && $2 !~ /^(203\.0\.113\.10|198\.51\.100\.20):9000/ { print }' "${rendered}")"
 if [ -n "${unexpected_upstreams}" ]; then
   echo 'Rendered Nginx upstreams must contain IPv4 literals only.' >&2

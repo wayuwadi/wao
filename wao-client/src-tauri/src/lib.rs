@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -5,7 +6,6 @@ use tauri::{
     Emitter, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl, WindowEvent,
 };
 use tauri_plugin_opener::OpenerExt;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 const PRODUCTION: &str = "https://wao.wayuwa.cn";
 const HEADER: f64 = 64.0;
@@ -30,20 +30,37 @@ fn internal_url(url: &tauri::Url, origin: &tauri::Url) -> bool {
     if url.origin() == origin.origin() {
         return true;
     }
-    url.scheme() == "https" && matches!(url.host_str(), Some("accounts.feishu.cn" | "open.feishu.cn" | "passport.feishu.cn" | "accounts.larksuite.com" | "open.weixin.qq.com"))
+    url.scheme() == "https"
+        && matches!(
+            url.host_str(),
+            Some(
+                "accounts.feishu.cn"
+                    | "open.feishu.cn"
+                    | "passport.feishu.cn"
+                    | "accounts.larksuite.com"
+                    | "open.weixin.qq.com"
+            )
+        )
 }
 
 fn external_url(url: &tauri::Url) -> bool {
-    matches!(url.scheme(), "https" | "http") && url.username().is_empty() && url.password().is_none()
+    matches!(url.scheme(), "https" | "http")
+        && url.username().is_empty()
+        && url.password().is_none()
 }
 
 // Custom commands are also origin checked: remote workspace gets no native authority,
 // even if a future capability accidentally broadens an allow list.
 fn local_shell(view: &Webview) -> Result<(), String> {
     let url = view.url().map_err(|_| "无法验证调用来源")?;
-    let origin_ok = url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost")
-        || (cfg!(debug_assertions) && url.host_str() == Some("localhost") && url.port() == Some(1430));
-    if view.label() != "main" || !origin_ok { return Err("仅本地桌面外壳可执行此操作".into()); }
+    let origin_ok = url.scheme() == "tauri"
+        || url.host_str() == Some("tauri.localhost")
+        || (cfg!(debug_assertions)
+            && url.host_str() == Some("localhost")
+            && url.port() == Some(1430));
+    if view.label() != "main" || !origin_ok {
+        return Err("仅本地桌面外壳可执行此操作".into());
+    }
     Ok(())
 }
 
@@ -55,39 +72,128 @@ fn show(app: &tauri::AppHandle) {
     }
 }
 
-fn popup(app: &tauri::AppHandle, url: tauri::Url, features: tauri::webview::NewWindowFeatures) -> NewWindowResponse<tauri::Wry> {
+#[cfg(target_os = "macos")]
+fn macos_menu(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::SubmenuBuilder;
+    let quit = MenuItemBuilder::with_id("mac-quit", "退出 WAO…")
+        .accelerator("CmdOrCtrl+Q")
+        .build(app)?;
+    let application = SubmenuBuilder::new(app, "WAO")
+        .text("mac-open", "打开 WAO 工作区")
+        .text("mac-update", "检查客户端更新")
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .item(&quit)
+        .build()?;
+    let edit = SubmenuBuilder::new(app, "编辑")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    let close = MenuItemBuilder::with_id("mac-close", "收起工作区")
+        .accelerator("CmdOrCtrl+W")
+        .build(app)?;
+    let window = SubmenuBuilder::new(app, "窗口")
+        .minimize()
+        .item(&close)
+        .text("mac-open", "打开 WAO 工作区")
+        .build()?;
+    app.set_menu(
+        MenuBuilder::new(app)
+            .items(&[&application, &edit, &window])
+            .build()?,
+    )?;
+    app.on_menu_event(|app, event| match event.id.as_ref() {
+        "mac-open" => show(app),
+        "mac-close" => {
+            if let Some(window) = app.get_window("main") {
+                let _ = window.hide();
+            }
+        }
+        "mac-update" | "mac-quit" => {
+            show(app);
+            let action = if event.id.as_ref() == "mac-update" {
+                "update"
+            } else {
+                "quit"
+            };
+            let _ = app.emit_to("main", "shell-action", action);
+        }
+        _ => {}
+    });
+    Ok(())
+}
+
+fn popup(
+    app: &tauri::AppHandle,
+    url: tauri::Url,
+    features: tauri::webview::NewWindowFeatures,
+) -> NewWindowResponse<tauri::Wry> {
     let origin = workspace_url();
     if url.as_str() != "about:blank" && !internal_url(&url, &origin) {
-        if external_url(&url) { let _ = app.opener().open_url(url.as_str(), None::<&str>); }
+        if external_url(&url) {
+            let _ = app.opener().open_url(url.as_str(), None::<&str>);
+        }
         return NewWindowResponse::Deny;
     }
     let navigation_app = app.clone();
     let popup_app = app.clone();
     let label = format!("document-{}", POPUP_ID.fetch_add(1, Ordering::Relaxed));
     // Preserve window.open and shared WebView session without granting native permissions.
-    let result = tauri::WebviewWindowBuilder::new(app, label, WebviewUrl::External("about:blank".parse().unwrap()))
-        .window_features(features).title("WAO · 新窗口").inner_size(1100.0, 760.0)
-        .on_navigation(move |next| {
-            if next.as_str() == "about:blank" || internal_url(next, &origin) { return true; }
-            if external_url(next) { let _ = navigation_app.opener().open_url(next.as_str(), None::<&str>); }
-            false
-        })
-        .on_new_window(move |next, features| popup(&popup_app, next, features))
-        .on_document_title_changed(|window, title| { let _ = window.set_title(&format!("WAO · {title}")); })
-        .build();
-    match result { Ok(window) => NewWindowResponse::Create { window }, Err(_) => NewWindowResponse::Deny }
+    let result = tauri::WebviewWindowBuilder::new(
+        app,
+        label,
+        WebviewUrl::External("about:blank".parse().unwrap()),
+    )
+    .window_features(features)
+    .title("WAO · 新窗口")
+    .inner_size(1100.0, 760.0)
+    .on_navigation(move |next| {
+        if next.as_str() == "about:blank" || internal_url(next, &origin) {
+            return true;
+        }
+        if external_url(next) {
+            let _ = navigation_app
+                .opener()
+                .open_url(next.as_str(), None::<&str>);
+        }
+        false
+    })
+    .on_new_window(move |next, features| popup(&popup_app, next, features))
+    .on_document_title_changed(|window, title| {
+        let _ = window.set_title(&format!("WAO · {title}"));
+    })
+    .build();
+    match result {
+        Ok(window) => NewWindowResponse::Create { window },
+        Err(_) => NewWindowResponse::Deny,
+    }
 }
 
 #[tauri::command]
 async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(), String> {
     local_shell(&webview)?;
     if app.get_webview("workspace").is_some() {
-        let phase = if WORKSPACE_READY.load(Ordering::Relaxed) { "ready" } else { "loading" };
+        let phase = if WORKSPACE_READY.load(Ordering::Relaxed) {
+            "ready"
+        } else {
+            "loading"
+        };
         let _ = app.emit_to("main", "workspace-state", phase);
         return Ok(());
     }
     let window = app.get_window("main").ok_or("窗口不存在")?;
-    let size = window.inner_size().map_err(|e| e.to_string())?.to_logical::<f64>(window.scale_factor().map_err(|e| e.to_string())?);
+    let size = window
+        .inner_size()
+        .map_err(|e| e.to_string())?
+        .to_logical::<f64>(window.scale_factor().map_err(|e| e.to_string())?);
     let origin = workspace_url();
     let navigation_origin = origin.clone();
     let navigation_app = app.clone();
@@ -95,17 +201,32 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
     let builder = WebviewBuilder::new("workspace", WebviewUrl::External(origin))
         .disable_drag_drop_handler()
         .on_navigation(move |url| {
-            if internal_url(url, &navigation_origin) { return true; }
-            if external_url(url) { let _ = navigation_app.opener().open_url(url.as_str(), None::<&str>); }
+            if internal_url(url, &navigation_origin) {
+                return true;
+            }
+            if external_url(url) {
+                let _ = navigation_app.opener().open_url(url.as_str(), None::<&str>);
+            }
             false
         })
         .on_new_window(move |url, features| popup(&popup_app, url, features))
         .on_page_load(|view, event| {
-            WORKSPACE_READY.store(matches!(event.event(), PageLoadEvent::Finished), Ordering::Relaxed);
-            let phase = match event.event() { PageLoadEvent::Started => "loading", PageLoadEvent::Finished => "ready" };
+            WORKSPACE_READY.store(
+                matches!(event.event(), PageLoadEvent::Finished),
+                Ordering::Relaxed,
+            );
+            let phase = match event.event() {
+                PageLoadEvent::Started => "loading",
+                PageLoadEvent::Finished => "ready",
+            };
             let _ = view.app_handle().emit_to("main", "workspace-state", phase);
         });
-    window.add_child(builder, LogicalPosition::new(0.0, HEADER), LogicalSize::new(size.width, (size.height - HEADER).max(1.0)))
+    window
+        .add_child(
+            builder,
+            LogicalPosition::new(0.0, HEADER),
+            LogicalSize::new(size.width, (size.height - HEADER).max(1.0)),
+        )
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -120,9 +241,15 @@ fn workspace_action(app: tauri::AppHandle, webview: Webview, action: String) -> 
         "reload" => workspace.reload(),
         "hide" => workspace.hide(),
         "show" => workspace.show(),
-        "browser" => return app.opener().open_url(PRODUCTION, None::<&str>).map_err(|e| e.to_string()),
+        "browser" => {
+            return app
+                .opener()
+                .open_url(PRODUCTION, None::<&str>)
+                .map_err(|e| e.to_string())
+        }
         _ => return Err("不支持的工作区操作".into()),
-    }.map_err(|e| e.to_string())
+    }
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -138,45 +265,102 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_window_state::Builder::default()
-            .with_state_flags(tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE)
-            .build())
-        .invoke_handler(tauri::generate_handler![attach_workspace, workspace_action, quit_client])
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        & !tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
+        .invoke_handler(tauri::generate_handler![
+            attach_workspace,
+            workspace_action,
+            quit_client
+        ])
         .on_window_event(|window, event| {
-            if window.label() != "main" { return; }
+            if window.label() != "main" {
+                return;
+            }
             match event {
-            WindowEvent::CloseRequested { api, .. } => { api.prevent_close(); let _ = window.hide(); },
-            WindowEvent::Resized(size) => {
-                if let Some(view) = window.app_handle().get_webview("workspace") {
-                    let logical = size.to_logical::<f64>(window.scale_factor().unwrap_or(1.0));
-                    let _ = view.set_position(LogicalPosition::new(0.0, HEADER));
-                    let _ = view.set_size(LogicalSize::new(logical.width, (logical.height - HEADER).max(1.0)));
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
-            },
-            _ => {}
-        }})
+                WindowEvent::Resized(size) => {
+                    if let Some(view) = window.app_handle().get_webview("workspace") {
+                        let logical = size.to_logical::<f64>(window.scale_factor().unwrap_or(1.0));
+                        let _ = view.set_position(LogicalPosition::new(0.0, HEADER));
+                        let _ = view.set_size(LogicalSize::new(
+                            logical.width,
+                            (logical.height - HEADER).max(1.0),
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        })
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            macos_menu(app)?;
             let open = MenuItemBuilder::with_id("open", "打开 WAO 工作区").build(app)?;
             let update = MenuItemBuilder::with_id("update", "检查客户端更新").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出 WAO…").build(app)?;
-            let menu = MenuBuilder::new(app).items(&[&open, &update]).separator().item(&quit).build()?;
-            TrayIconBuilder::new().icon(app.default_window_icon().unwrap().clone())
-                .tooltip("WAO · 你的桌面工作区").menu(&menu).show_menu_on_left_click(false)
+            let menu = MenuBuilder::new(app)
+                .items(&[&open, &update])
+                .separator()
+                .item(&quit)
+                .build()?;
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("WAO · 你的桌面工作区")
+                .menu(&menu)
+                .show_menu_on_left_click(cfg!(target_os = "macos"))
                 .on_menu_event(|app, event| {
                     show(app);
                     match event.id.as_ref() {
-                        "update" => { let _ = app.emit_to("main", "shell-action", "update"); },
-                        "quit" => { let _ = app.emit_to("main", "shell-action", "quit"); },
+                        "update" => {
+                            let _ = app.emit_to("main", "shell-action", "update");
+                        }
+                        "quit" => {
+                            let _ = app.emit_to("main", "shell-action", "quit");
+                        }
                         _ => {}
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event { show(tray.app_handle()); }
-                }).build(app)?;
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show(tray.app_handle());
+                    }
+                })
+                .build(app)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("WAO client failed to start");
+        .build(tauri::generate_context!())
+        .expect("WAO client failed to start")
+        .run(|_app, event| {
+            #[cfg(target_os = "macos")]
+            match event {
+                tauri::RunEvent::Reopen { .. } => show(_app),
+                // System/Dock quit has no exit code. Explicit confirmed quit and
+                // updater restarts carry a code and must remain able to complete.
+                tauri::RunEvent::ExitRequested {
+                    code: None, api, ..
+                } => {
+                    api.prevent_exit();
+                    show(_app);
+                    let _ = _app.emit_to("main", "shell-action", "quit");
+                }
+                _ => {}
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = event;
+        });
 }
 
 #[cfg(test)]
@@ -185,12 +369,35 @@ mod tests {
     #[test]
     fn navigation_keeps_only_wao_and_known_auth_origins() {
         let origin = tauri::Url::parse(PRODUCTION).unwrap();
-        for url in ["https://wao.wayuwa.cn/projects/1", "https://accounts.feishu.cn/open-apis/authen/v1/authorize"] { assert!(internal_url(&tauri::Url::parse(url).unwrap(), &origin)); }
-        for url in ["https://wao.wayuwa.cn.evil.test", "http://wao.wayuwa.cn", "https://accounts.feishu.cn.evil.test", "file:///C:/secret", "javascript:alert(1)"] { assert!(!internal_url(&tauri::Url::parse(url).unwrap(), &origin)); }
+        for url in [
+            "https://wao.wayuwa.cn/projects/1",
+            "https://accounts.feishu.cn/open-apis/authen/v1/authorize",
+        ] {
+            assert!(internal_url(&tauri::Url::parse(url).unwrap(), &origin));
+        }
+        for url in [
+            "https://wao.wayuwa.cn.evil.test",
+            "http://wao.wayuwa.cn",
+            "https://accounts.feishu.cn.evil.test",
+            "file:///C:/secret",
+            "javascript:alert(1)",
+        ] {
+            assert!(!internal_url(&tauri::Url::parse(url).unwrap(), &origin));
+        }
     }
     #[test]
     fn external_links_cannot_execute_local_protocols() {
-        for url in ["file:///C:/Windows", "ms-settings:privacy", "powershell:run", "javascript:alert(1)", "https://user:password@example.com"] { assert!(!external_url(&tauri::Url::parse(url).unwrap())); }
-        assert!(external_url(&tauri::Url::parse("https://example.com/doc").unwrap()));
+        for url in [
+            "file:///C:/Windows",
+            "ms-settings:privacy",
+            "powershell:run",
+            "javascript:alert(1)",
+            "https://user:password@example.com",
+        ] {
+            assert!(!external_url(&tauri::Url::parse(url).unwrap()));
+        }
+        assert!(external_url(
+            &tauri::Url::parse("https://example.com/doc").unwrap()
+        ));
     }
 }

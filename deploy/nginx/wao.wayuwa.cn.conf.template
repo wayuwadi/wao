@@ -348,6 +348,12 @@ server {
         add_header X-Content-Type-Options nosniff always;
     }
 
+    location = /downloads/desktop/client/WAO-macos-universal.dmg {
+        alias /var/www/wao-downloads/desktop/client/WAO-macos-universal.dmg;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
     # 桌面宠物安装包与签名更新包独立于 Web dist 生命周期；发布清单最后原子替换且禁止缓存。
     location = /downloads/desktop/latest.json {
         alias /var/www/wao-downloads/desktop/latest.json;

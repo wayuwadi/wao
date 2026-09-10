@@ -36,6 +36,7 @@ describe("desktop workspace preservation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.handlers.clear();
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   });
   it("hides the existing webview for settings and restores the same workspace", async () => {
     const wrapper = mount(App);
@@ -80,6 +81,22 @@ describe("desktop workspace preservation", () => {
     await wrapper.get('[aria-label="收起到托盘"]').trigger("click");
     expect(mocks.hide).toHaveBeenCalledOnce();
     expect(mocks.invoke).not.toHaveBeenCalledWith("quit_client");
+    wrapper.unmount();
+  });
+  it("macOS uses native controls and menu quit preserves the workspace until confirmed", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.find(".window-controls").exists()).toBe(false);
+    mocks.handlers.get("shell-action")!({ payload: "quit" });
+    await flushPromises();
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain("退出 WAO");
+    expect(mocks.invoke).not.toHaveBeenCalledWith("quit_client");
+    await wrapper.get(".modal .secondary").trigger("click");
+    await flushPromises();
+    expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", {
+      action: "show",
+    });
     wrapper.unmount();
   });
   it("network recovery does not automatically reload the editor", async () => {

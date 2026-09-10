@@ -5,6 +5,7 @@ import {
   detectClientPlatform,
   fetchMobileDownloads,
   fetchWindowsDownload,
+  fetchMacosDownload,
   type ClientDownload,
   type ClientPlatform,
 } from '@/api/clientDownloads'
@@ -13,6 +14,8 @@ const mobile = ref<ClientDownload[]>([])
 const desktop = ref<ClientDownload[]>([])
 const mobileState = ref('loading')
 const desktopState = ref('loading')
+const macos = ref<ClientDownload[]>([])
+const macosState = ref('loading')
 const currentPlatform = detectClientPlatform(
   navigator.userAgent,
   navigator.platform,
@@ -58,6 +61,15 @@ async function loadDesktop() {
     desktopState.value = 'error'
   }
 }
+async function loadMacos() {
+  macosState.value = 'loading'
+  try {
+    macos.value = await fetchMacosDownload()
+    macosState.value = 'ready'
+  } catch {
+    macosState.value = 'error'
+  }
+}
 async function copyHash(file: ClientDownload) {
   copyError.value = false
   try {
@@ -70,6 +82,7 @@ async function copyHash(file: ClientDownload) {
 onMounted(() => {
   void loadMobile()
   void loadDesktop()
+  void loadMacos()
 })
 </script>
 
@@ -201,14 +214,40 @@ onMounted(() => {
               ></small
             >
           </div>
-          <div>
-            <button class="download-button secondary" disabled>
-              <i class="ri-apple-fill"></i>macOS 版即将推出</button
-            ><small>现在可以先使用 <a href="/">WAO 网页版 ↗</a></small>
+          <div class="macos-download" :aria-busy="macosState === 'loading'">
+            <a
+              v-if="macosState === 'ready' && macos[0]"
+              class="download-button secondary"
+              :href="macos[0].url"
+              download
+            >
+              <i class="ri-apple-fill"></i>下载 Mac 版<i class="ri-download-2-line"></i>
+            </a>
+            <button v-else class="download-button secondary" disabled>
+              <i class="ri-apple-fill"></i
+              >{{
+                macosState === 'loading'
+                  ? '正在检查版本…'
+                  : macosState === 'error'
+                    ? 'Mac 版暂时无法下载'
+                    : 'Mac 安装包正在准备'
+              }}
+            </button>
+            <small>macOS 11 及以上 · Intel 与 Apple 芯片通用</small>
+            <small v-if="macosState === 'ready' && macos[0]"
+              >v{{ macos[0].version }} · {{ sizeText(macos[0].size)
+              }}<span v-if="currentPlatform === 'macos'" class="current-device"
+                >适合当前设备</span
+              ></small
+            >
+            <small><a href="#mac-install">查看 Mac 安装说明</a></small>
           </div>
         </div>
         <p v-if="desktopState === 'error'" class="load-error" role="alert">
           桌面版发布信息加载失败。<button @click="loadDesktop">重新加载</button>
+        </p>
+        <p v-if="macosState === 'error'" class="load-error" role="alert">
+          Mac 版发布信息加载失败。<button @click="loadMacos">重新加载 Mac 版</button>
         </p>
         <div class="desktop-stage" aria-label="WAO 桌面工作区界面示意">
           <div class="workspace">
@@ -272,6 +311,22 @@ onMounted(() => {
             </p>
           </article>
         </div>
+        <article id="mac-install" class="mac-install">
+          <h3>Mac，拖入“应用程序”即可安装</h3>
+          <p>
+            下载并打开 DMG，把 WAO 拖入 Applications（应用程序），再从应用程序中打开。Intel 和 Apple
+            芯片使用同一个安装包；关闭窗口后，可从 Dock 或菜单栏找回工作区。
+          </p>
+          <p>
+            当前 Mac 版尚未经过 Apple Developer ID 签名与公证。首次打开若被 macOS
+            拦截，请确认文件来自本站，再到“系统设置 →
+            隐私与安全性”查看该应用的打开选项。后续可在客户端内检查更新，更新包会验证 WAO 发布签名。
+          </p>
+          <details v-if="macosState === 'ready' && macos[0]" class="checksums">
+            <summary>查看 Mac 安装包 SHA-256</summary>
+            <code>{{ macos[0].sha256 }}</code>
+          </details>
+        </article>
         <details v-if="mobileState === 'ready' && mobile.length" class="checksums">
           <summary>查看安装包 SHA-256 校验信息</summary>
           <div v-for="file in mobile" :key="file.platform">
@@ -869,6 +924,17 @@ onMounted(() => {
   line-height: 1.9;
   color: var(--muted);
   margin: 0;
+}
+.mac-install {
+  margin-top: 38px;
+  padding-top: 24px;
+  border-top: 1px solid #e0e6da;
+  scroll-margin-top: 24px;
+}
+.mac-install p {
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--muted);
 }
 .checksums {
   margin-top: 40px;

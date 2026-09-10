@@ -1,4 +1,4 @@
-export type ClientPlatform = 'android' | 'ios' | 'windows'
+export type ClientPlatform = 'android' | 'ios' | 'windows' | 'macos'
 export interface ClientDownload {
   platform: ClientPlatform
   version: string
@@ -54,6 +54,39 @@ export function parseWindowsManifest(value: unknown): Omit<ClientDownload, 'size
     throw new Error('安装包信息不完整')
   return { platform: 'windows', version: data.version, url }
 }
+export function parseMacosManifest(value: unknown): ClientDownload | null {
+  const data = value as {
+    version?: string
+    platforms?: Record<string, { url?: string; signature?: string }>
+    downloads?: Record<string, { url?: string; size?: number; sha256?: string }>
+  }
+  if (!data || typeof data.version !== 'string' || !semver.test(data.version))
+    throw new Error('发布版本无效')
+  const intel = data.platforms?.['darwin-x86_64']
+  const arm = data.platforms?.['darwin-aarch64']
+  const file = data.downloads?.macos
+  if (!intel && !arm && !file) return null
+  const prefix = `/downloads/desktop/client/WAO_${data.version}_macos-universal`
+  if (
+    intel?.url !== origin + prefix + '.app.tar.gz' ||
+    arm?.url !== intel.url ||
+    typeof intel.signature !== 'string' ||
+    intel.signature.length < 20 ||
+    arm?.signature !== intel.signature ||
+    file?.url !== origin + prefix + '.dmg' ||
+    !Number.isSafeInteger(file.size) ||
+    file.size! <= 0 ||
+    !hash.test(file.sha256 ?? '')
+  )
+    throw new Error('Mac 安装包信息不完整')
+  return {
+    platform: 'macos',
+    version: data.version,
+    url: prefix + '.dmg',
+    size: file.size!,
+    sha256: file.sha256,
+  }
+}
 // 使用基础 AbortController，兼容 iOS 15；读取 JSON 正文也计入超时。
 async function withTimeout<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController()
@@ -98,6 +131,11 @@ export async function fetchMobileDownloads(): Promise<ClientDownload[]> {
 export async function fetchWindowsDownload(): Promise<ClientDownload[]> {
   const data = await manifest('/downloads/desktop/client/latest.json')
   return data === null ? [] : [await verifyFile(parseWindowsManifest(data))]
+}
+export async function fetchMacosDownload(): Promise<ClientDownload[]> {
+  const data = await manifest('/downloads/desktop/client/latest.json')
+  const file = data === null ? null : parseMacosManifest(data)
+  return file === null ? [] : [await verifyFile(file)]
 }
 export function detectClientPlatform(
   userAgent: string,
