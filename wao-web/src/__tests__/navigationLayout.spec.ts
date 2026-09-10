@@ -71,6 +71,22 @@ describe('个人导航快照', () => {
     })
     expect(saved.items.find((item) => item.id === 'external:getnote')).not.toHaveProperty('appUrl')
   })
+
+  it('旧服务端与自定义分组也能显示新更新日志，个人隐藏设置仍生效', async () => {
+    const oldMenus = clone(customMenus).filter(item => item.id !== 'changelog')
+    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({ version: 1, menus: oldMenus })
+    const layout = snapshotNavigation(oldMenus, [])
+    layout.items = layout.items.map(item => ({ ...item, group: 'ROOT' }))
+    layout.groups = [{ id: 'ROOT', label: '' }, { id: 'PERSONAL', label: '自定义' }, { id: 'TOOLS', label: '工具' }]
+    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({ version: 1, apps: [] })
+    vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'old', layout })
+    const nav = useNavStore()
+    await nav.loadMenus()
+    expect(nav.groups.find(group => group.id === 'ROOT')?.items).toContain('changelog')
+    expect(saveNavigationLayout).not.toHaveBeenCalled()
+    await nav.setMenuVisibility('changelog', false)
+    expect(nav.menuConfig('changelog')?.visible).toBe(false)
+  })
   it('推荐分类只做草稿，不重置顶部停靠、隐藏项、自定义名称；原快照可撤销', async () => {
     const nav = useNavStore()
     await nav.loadMenus()

@@ -38,6 +38,11 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     keywords: ['更新', '日记', '版本', '发布'],
   },
   {
+    id: 'changelog',
+    description: '预览产品更新、版本时间线与订阅体验，当前内容为示例。',
+    keywords: ['Changelog', '更新日志', '版本', '订阅'],
+  },
+  {
     id: 'ideas',
     description: '归并旧版点子档案；新想法直接进入项目任务。',
     keywords: ['历史点子', '灵感'],
@@ -224,7 +229,7 @@ const DOMAINS: Array<{
     label: '设置与帮助',
     icon: 'ri-settings-3-line',
     description: '个人偏好与产品更新。',
-    ids: ['settings', 'updates'],
+    ids: ['settings', 'updates', 'changelog'],
   },
 ]
 const details = new Map(CATALOG_DETAILS.map((item) => [item.id, item]))

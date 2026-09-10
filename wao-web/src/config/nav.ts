@@ -135,6 +135,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/navigation',
   },
   updates: { id: 'updates', label: '更新日记', icon: 'ri-history-line', path: '/updates' },
+  changelog: { id: 'changelog', label: '更新日志', icon: 'ri-megaphone-line', path: '/changelog' },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
   ideas: { id: 'ideas', label: '点子库', icon: 'ri-lightbulb-flash-line', path: '/ideas' },
   skills: {
@@ -321,6 +322,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       group: 'PUBLIC',
       order: 12,
       visible: false,
+    },
+    {
+      id: 'changelog',
+      label: '更新日志',
+      icon: 'ri-megaphone-line',
+      group: 'PUBLIC',
+      order: 14,
+      visible: true,
     },
     {
       id: 'skill-connections',
