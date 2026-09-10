@@ -45,7 +45,7 @@ const summary = ref<DashboardSummary | null>(null)
 const aiTrend = ref<AiRunTrendItem[]>([])
 const taskTrend = ref<TaskTrendItem[]>([])
 const engines = ref<EngineUsageItem[]>([])
-const quotaHistory = ref<AiQuotaHistory>({ recordedSamples: 0, series: [], refreshes: [] })
+const quotaHistory = ref<AiQuotaHistory>({ recordedSamples: 0, series: [], refreshes: [], officialResets: [] })
 const usageInsights = ref<AiUsageInsights | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
@@ -54,17 +54,23 @@ const loadError = ref('')
 const recentRuns = computed(() => aiTrend.value.reduce((sum, day) => sum + day.total, 0))
 const recordedRuns = computed(() => aiTrend.value.reduce((sum, day) => sum + day.recordedRuns, 0))
 const recentTokens = computed(() => aiTrend.value.reduce((sum, day) => sum + day.totalTokens, 0))
+const officialResetMorningCount = computed(() => quotaHistory.value.officialResets
+  .filter((event) => resetTimeMinutes(event.resetAt) < 12 * 60).length)
+const officialResetAfternoonCount = computed(() =>
+  quotaHistory.value.officialResets.length - officialResetMorningCount.value)
 
 const aiChartEl = ref<HTMLElement | null>(null)
 const taskChartEl = ref<HTMLElement | null>(null)
 const engineChartEl = ref<HTMLElement | null>(null)
 const tokenChartEl = ref<HTMLElement | null>(null)
 const quotaChartEl = ref<HTMLElement | null>(null)
+const officialResetChartEl = ref<HTMLElement | null>(null)
 let aiChart: echarts.ECharts | null = null
 let taskChart: echarts.ECharts | null = null
 let engineChart: echarts.ECharts | null = null
 let tokenChart: echarts.ECharts | null = null
 let quotaChart: echarts.ECharts | null = null
+let officialResetChart: echarts.ECharts | null = null
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let loadInFlight = false
 
@@ -105,6 +111,23 @@ function formatTime(value: string | null): string {
   return new Intl.DateTimeFormat('zh-CN', {
     month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(date)
+}
+
+function resetTimeMinutes(value: string): number {
+  const match = value.match(/T(\d{2}):(\d{2})/)
+  if (!match) return 0
+  return Number(match[1]) * 60 + Number(match[2])
+}
+
+function clockTime(value: number): string {
+  const hours = Math.floor(value / 60).toString().padStart(2, '0')
+  const minutes = Math.round(value % 60).toString().padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+function formatOfficialResetTime(value: string): string {
+  const normalized = value.replace('T', ' ')
+  return normalized.length >= 16 ? normalized.slice(0, 16) : normalized
 }
 
 function adviceIcon(category: string): string {
@@ -341,6 +364,57 @@ function renderQuotaChart() {
   }, true)
 }
 
+function renderOfficialResetChart() {
+  if (!officialResetChartEl.value) return
+  if (!officialResetChart) officialResetChart = echarts.init(officialResetChartEl.value)
+  const c = themeColors()
+  const events = [...quotaHistory.value.officialResets]
+    .sort((left, right) => left.resetAt.localeCompare(right.resetAt))
+  if (!events.length) {
+    officialResetChart.clear()
+    officialResetChart.setOption({
+      title: {
+        text: '等待首次 Codex 七天额度跨周期样本', left: 'center', top: 'center',
+        textStyle: { color: c.textWeak, fontSize: 14, fontWeight: 400 },
+      },
+    })
+    return
+  }
+  officialResetChart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: c.bgCard,
+      borderColor: c.line,
+      textStyle: { color: c.text, fontSize: 12 },
+      formatter: (params: Array<{ dataIndex: number; marker: string }>) => {
+        const event = events[params[0]?.dataIndex ?? 0]
+        return event ? `${params[0]?.marker ?? ''}${event.accountLabel} · ${event.windowLabel}<br/>` +
+          `官方重置：${formatOfficialResetTime(event.resetAt)}<br/>` +
+          `重置前后：${event.beforeRemainingPercent}% → ${event.afterRemainingPercent}%` : ''
+      },
+    },
+    grid: { left: 54, right: 18, top: 24, bottom: 34 },
+    xAxis: {
+      type: 'category',
+      data: events.map((event) => event.resetAt.slice(5, 10)),
+      axisLine: { lineStyle: { color: c.line } },
+      axisLabel: { color: c.textWeak, fontSize: 11 },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value', min: 0, max: 24 * 60 - 1, interval: 360,
+      axisLabel: { color: c.textWeak, fontSize: 11, formatter: clockTime },
+      splitLine: { lineStyle: { color: c.line, type: 'dashed' } },
+    },
+    series: [{
+      name: '官方重置时间', type: 'line', showSymbol: true,
+      data: events.map((event) => resetTimeMinutes(event.resetAt)),
+      lineStyle: { color: c.primary, width: 2 },
+      itemStyle: { color: c.primary },
+    }],
+  }, true)
+}
+
 function renderEngineChart() {
   if (!engineChartEl.value) return
   if (!engineChart) {
@@ -393,6 +467,7 @@ function renderAll() {
   renderTaskChart()
   renderEngineChart()
   renderQuotaChart()
+  renderOfficialResetChart()
 }
 
 function onResize() {
@@ -401,6 +476,7 @@ function onResize() {
   engineChart?.resize()
   tokenChart?.resize()
   quotaChart?.resize()
+  officialResetChart?.resize()
 }
 
 async function load() {
@@ -455,6 +531,7 @@ onBeforeUnmount(() => {
   engineChart?.dispose()
   tokenChart?.dispose()
   quotaChart?.dispose()
+  officialResetChart?.dispose()
 })
 
 function goProjects() { router.push('/projects') }
@@ -523,6 +600,39 @@ function goHome() { router.push('/') }
       <section class="chart-row quota-row">
         <div class="chart-card wide">
           <div class="chart-head">
+            <h2><i class="ri-time-line"></i>Codex 官方重置时间趋势</h2>
+            <span class="chart-hint">近 30 天 · 上午 {{ officialResetMorningCount }} 次 · 下午 {{ officialResetAfternoonCount }} 次</span>
+          </div>
+          <div ref="officialResetChartEl" class="chart"></div>
+          <p class="chart-note">只认七天窗口由供应商返回的重置时间跨周期推进；纵轴为上海时间，不把刷新卡造成的额度上涨混入。</p>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head">
+            <h2><i class="ri-calendar-check-line"></i>官方重置时间点</h2>
+            <span class="chart-hint">最近 {{ Math.min(5, quotaHistory.officialResets.length) }} 条</span>
+          </div>
+          <div v-if="quotaHistory.officialResets.length" class="refresh-list">
+            <article v-for="item in quotaHistory.officialResets.slice(0, 5)"
+              :key="`${item.resetAt}-${item.accountLabel}-${item.windowLabel}`" class="refresh-item">
+              <div class="refresh-title">
+                <strong>{{ item.accountLabel }}</strong>
+                <span>{{ formatOfficialResetTime(item.resetAt).slice(11) }}</span>
+              </div>
+              <p>{{ item.windowLabel }}：{{ item.beforeRemainingPercent }}% → {{ item.afterRemainingPercent }}%</p>
+              <small>{{ formatOfficialResetTime(item.resetAt) }} 官方重置 · {{ formatTime(item.confirmedAt) }} 确认</small>
+            </article>
+          </div>
+          <div v-else class="empty-panel">
+            <i class="ri-time-line"></i>
+            <strong>还没有可确认的官方重置</strong>
+            <span>系统会等待同一 Codex 七天窗口跨周期，再记录供应商给出的准确重置时间。</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="chart-row quota-row">
+        <div class="chart-card wide">
+          <div class="chart-head">
             <h2><i class="ri-battery-charge-line"></i>额度剩余与每日下降</h2>
             <span class="chart-hint">近 30 天 · {{ quotaHistory.recordedSamples }} 次真实采样</span>
           </div>
@@ -531,7 +641,7 @@ function goHome() { router.push('/') }
         </div>
         <div class="chart-card">
           <div class="chart-head">
-            <h2><i class="ri-history-line"></i>额度刷新记录</h2>
+            <h2><i class="ri-history-line"></i>全部额度上涨记录</h2>
             <span class="chart-hint">最近 {{ Math.min(5, quotaHistory.refreshes.length) }} 条</span>
           </div>
           <div v-if="quotaHistory.refreshes.length" class="refresh-list">
@@ -548,7 +658,7 @@ function goHome() { router.push('/') }
           <div v-else class="empty-panel">
             <i class="ri-history-line"></i>
             <strong>还没有额度刷新记录</strong>
-            <span>系统会从后续真实采样开始记录；额度未上升时不会制造刷新事件。</span>
+            <span>系统会从后续真实采样开始记录；这里包含自动重置和手动刷新卡造成的真实上涨。</span>
           </div>
         </div>
       </section>

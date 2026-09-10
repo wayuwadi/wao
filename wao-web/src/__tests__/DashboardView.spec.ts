@@ -104,6 +104,16 @@ vi.mock('@/api/dashboard', () => ({
         observedAt: '2026-08-11T09:00:00',
       },
     ],
+    officialResets: [
+      {
+        accountLabel: 'Codex 主账号',
+        windowLabel: '七天额度',
+        beforeRemainingPercent: 70,
+        afterRemainingPercent: 100,
+        resetAt: '2026-08-11T09:00:00',
+        confirmedAt: '2026-08-11T09:02:00',
+      },
+    ],
   }),
   fetchAiUsageInsights: vi.fn<() => Promise<AiUsageInsights>>().mockResolvedValue({
     windowDays: 30,
@@ -171,12 +181,15 @@ describe('DashboardView AI 用量面板', () => {
     expect(wrapper.find('.usage-overview').text()).toContain('未回传2 次')
     expect(wrapper.text()).toContain('额度剩余与每日下降')
     expect(wrapper.find('.refresh-list').text()).toContain('70% → 100%')
+    expect(wrapper.text()).toContain('Codex 官方重置时间趋势')
+    expect(wrapper.text()).toContain('上午 1 次 · 下午 0 次')
+    expect(wrapper.text()).toContain('2026-08-11 09:00 官方重置')
     expect(wrapper.find('.insight-card').text()).toContain('AI 交付效能')
     expect(wrapper.find('.insight-card').text()).toContain('7.5K')
     expect(wrapper.find('.insight-card').text()).toContain('2 / 4')
     expect(wrapper.find('.insight-card').text()).toContain('3 分 0 秒')
     expect(wrapper.find('.insight-card').text()).toContain('端到端等待时间不会被当成模型速度')
-    expect(initChart).toHaveBeenCalledTimes(5)
+    expect(initChart).toHaveBeenCalledTimes(6)
 
     const tokenOption = chart.setOption.mock.calls
       .map(([option]) => option as { series?: Array<{ name: string; data: number[] }> })
@@ -187,6 +200,10 @@ describe('DashboardView AI 用量面板', () => {
     expect(tokenOption?.series?.find((series) => series.name === '总 Token')?.data).toEqual([
       10_000, 20_000,
     ])
+    const resetOption = chart.setOption.mock.calls
+      .map(([option]) => option as { series?: Array<{ name: string; data: number[] }> })
+      .find((option) => option.series?.some((series) => series.name === '官方重置时间'))
+    expect(resetOption?.series?.[0]?.data).toEqual([9 * 60])
     wrapper.unmount()
   })
 

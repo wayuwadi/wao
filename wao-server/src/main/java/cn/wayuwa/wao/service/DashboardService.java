@@ -45,6 +45,7 @@ public class DashboardService {
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ISO_LOCAL_DATE;
+    private static final int OFFICIAL_RESET_LOOKBACK_DAYS = 8;
 
     private final AiTaskRunMapper runMapper;
     private final TaskMapper taskMapper;
@@ -194,17 +195,20 @@ public class DashboardService {
     }
 
     /**
-     * 返回近 N 天真实额度采样的每日收盘值、下降幅度与剩余额度上升事件。
+     * 返回近 N 天真实额度采样的每日收盘值、下降幅度、额度上升事件与 Codex 官方重置。
      *
      * <p>同一账号/窗口一天内只取最后一次采样画趋势；“下降”只计算相邻有记录日期的真实差值，
-     * 额度上升单独列为刷新事件，避免把重置误算成负消耗。
+     * 额度上升单独列为刷新事件，避免把重置误算成负消耗。Codex 官方重置只以七天窗口的供应商
+     * {@code resetsAt} 跨周期推进为准；具体时间取上一周期的供应商时间，不拿采样发现时间冒充。
      */
     public AiQuotaHistoryDto quotaHistory(int days) {
         int span = Math.max(1, Math.min(days, 90));
         LocalDateTime from = LocalDate.now(ZONE).minusDays(span - 1L).atStartOfDay();
         List<AiQuotaSnapshotEntity> snapshots = quotaMapper.selectList(
                 new LambdaQueryWrapper<AiQuotaSnapshotEntity>()
-                        .ge(AiQuotaSnapshotEntity::getObservedAt, from)
+                        // 多读一个七天周期，只用于识别查询边界当天发生的官方重置。
+                        .ge(AiQuotaSnapshotEntity::getObservedAt,
+                                from.minusDays(OFFICIAL_RESET_LOOKBACK_DAYS))
                         .orderByAsc(AiQuotaSnapshotEntity::getObservedAt)
                         .orderByAsc(AiQuotaSnapshotEntity::getId));
 
@@ -217,21 +221,33 @@ public class DashboardService {
 
         List<AiQuotaHistoryDto.Series> series = new ArrayList<>();
         List<AiQuotaHistoryDto.RefreshEvent> refreshes = new ArrayList<>();
+        List<AiQuotaHistoryDto.OfficialResetEvent> officialResets = new ArrayList<>();
         for (Map.Entry<QuotaSeriesKey, List<AiQuotaSnapshotEntity>> entry : grouped.entrySet()) {
             List<AiQuotaSnapshotEntity> values = entry.getValue();
-            AiQuotaSnapshotEntity first = values.get(0);
+            AiQuotaSnapshotEntity firstInRange = values.stream()
+                    .filter(value -> !value.getObservedAt().isBefore(from))
+                    .findFirst().orElse(null);
             Map<LocalDate, AiQuotaSnapshotEntity> dailyLast = new LinkedHashMap<>();
             AiQuotaSnapshotEntity previous = null;
             for (AiQuotaSnapshotEntity current : values) {
-                dailyLast.put(current.getObservedAt().toLocalDate(), current);
-                if (previous != null && current.getRemainingPercent() > previous.getRemainingPercent()) {
+                if (!current.getObservedAt().isBefore(from)) {
+                    dailyLast.put(current.getObservedAt().toLocalDate(), current);
+                }
+                if (previous != null && !current.getObservedAt().isBefore(from)
+                        && current.getRemainingPercent() > previous.getRemainingPercent()) {
                     refreshes.add(new AiQuotaHistoryDto.RefreshEvent(current.getAccountLabel(),
                             current.getProvider(), current.getWindowLabel(), previous.getRemainingPercent(),
                             current.getRemainingPercent(), current.getRemainingPercent() - previous.getRemainingPercent(),
                             text(current.getResetsAt()), text(current.getObservedAt())));
                 }
+                if (previous != null && officialCodexWeeklyReset(entry.getKey(), previous, current, from)) {
+                    officialResets.add(new AiQuotaHistoryDto.OfficialResetEvent(current.getAccountLabel(),
+                            current.getWindowLabel(), previous.getRemainingPercent(), current.getRemainingPercent(),
+                            text(previous.getResetsAt()), text(current.getObservedAt())));
+                }
                 previous = current;
             }
+            if (firstInRange == null) continue;
             List<AiQuotaHistoryDto.DailyPoint> points = new ArrayList<>();
             Integer previousRemaining = null;
             for (Map.Entry<LocalDate, AiQuotaSnapshotEntity> day : dailyLast.entrySet()) {
@@ -240,12 +256,33 @@ public class DashboardService {
                 points.add(new AiQuotaHistoryDto.DailyPoint(day.getKey().format(DATE_FMT), remaining, decrease));
                 previousRemaining = remaining;
             }
-            series.add(new AiQuotaHistoryDto.Series(seriesId(entry.getKey()), first.getAccountLabel(),
-                    first.getProvider(), first.getWindowLabel(), points));
+            series.add(new AiQuotaHistoryDto.Series(seriesId(entry.getKey()), firstInRange.getAccountLabel(),
+                    firstInRange.getProvider(), firstInRange.getWindowLabel(), points));
         }
         refreshes.sort(Comparator.comparing(AiQuotaHistoryDto.RefreshEvent::observedAt).reversed());
         if (refreshes.size() > 30) refreshes = new ArrayList<>(refreshes.subList(0, 30));
-        return new AiQuotaHistoryDto(snapshots.size(), series, refreshes);
+        officialResets.sort(Comparator.comparing(AiQuotaHistoryDto.OfficialResetEvent::resetAt).reversed());
+        if (officialResets.size() > 30) officialResets = new ArrayList<>(officialResets.subList(0, 30));
+        int recordedSamples = (int) snapshots.stream()
+                .filter(snapshot -> snapshot.getObservedAt() != null && !snapshot.getObservedAt().isBefore(from))
+                .count();
+        return new AiQuotaHistoryDto(recordedSamples, series, refreshes, officialResets);
+    }
+
+    private static boolean officialCodexWeeklyReset(QuotaSeriesKey key, AiQuotaSnapshotEntity previous,
+            AiQuotaSnapshotEntity current, LocalDateTime from) {
+        if (!"codex".equalsIgnoreCase(current.getProvider()) || !weeklyWindow(key.windowKey())) return false;
+        LocalDateTime previousReset = previous.getResetsAt();
+        LocalDateTime currentReset = current.getResetsAt();
+        return previousReset != null && currentReset != null
+                && currentReset.isAfter(previousReset)
+                && !previousReset.isBefore(from)
+                && !previousReset.isAfter(current.getObservedAt());
+    }
+
+    private static boolean weeklyWindow(String windowKey) {
+        return "weekly".equals(windowKey) || "weekly_all".equals(windowKey)
+                || "seven_day".equals(windowKey) || (windowKey != null && windowKey.endsWith(":10080"));
     }
 
     /**
