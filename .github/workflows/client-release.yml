@@ -8,7 +8,7 @@ on:
         type: boolean
         default: false
   push:
-    tags: ['client-v*', 'client-check-*']
+    tags: ["client-v*", "client-check-*"]
 
 permissions:
   contents: read
@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: "24"
           cache: npm
           cache-dependency-path: wao-client/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
@@ -76,6 +76,15 @@ jobs:
             wao-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
             wao-client/src-tauri/Cargo.lock
           if-no-files-found: error
+      - name: Build reusable Windows development host
+        env:
+          TAURI_CONFIG: '{"identifier":"cn.wayuwa.wao.client.dev","productName":"WAO 开发宿主"}'
+        run: cargo build --manifest-path wao-client/src-tauri/Cargo.toml
+      - uses: actions/upload-artifact@v7
+        with:
+          name: WAO-client-dev-host-windows
+          path: wao-client/src-tauri/target/debug/wao-client.exe
+          if-no-files-found: error
 
   publish:
     if: inputs.publish || startsWith(github.ref, 'refs/tags/client-v')
@@ -85,7 +94,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: "24"
       - uses: actions/download-artifact@v8
         with:
           name: WAO-client-windows-${{ needs.build.outputs.version }}

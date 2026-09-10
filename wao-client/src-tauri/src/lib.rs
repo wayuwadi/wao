@@ -56,7 +56,7 @@ fn show(app: &tauri::AppHandle) {
 
 fn popup(app: &tauri::AppHandle, url: tauri::Url, features: tauri::webview::NewWindowFeatures) -> NewWindowResponse<tauri::Wry> {
     let origin = workspace_url();
-    if !internal_url(&url, &origin) {
+    if url.as_str() != "about:blank" && !internal_url(&url, &origin) {
         if external_url(&url) { let _ = app.opener().open_url(url.as_str(), None::<&str>); }
         return NewWindowResponse::Deny;
     }
@@ -128,6 +128,7 @@ fn quit_client(app: tauri::AppHandle, webview: Webview) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

@@ -22,6 +22,10 @@ npm run desktop:dev
 
 若 Windows Code Integrity 明确拒绝加载 Rust DLL，本地前端仍可开发，原生编译由 `client-check-*` 标签触发 GitHub Windows runner。不要关闭或绕过企业安全策略；本机原生编译须由设备管理员批准开发工具链。
 
+还可使用 CI 构建好的开发宿主：从同次工作流下载 `WAO-client-dev-host-windows`，把 `wao-client.exe` 放进本目录的 `dev-host/`（已忽略，不入库），运行 `npm run desktop:dev:host`。它启动 Vite 与已编译的真实 Windows 外壳，修改 Vue/TypeScript/CSS 即可热更新，无需本机运行 Rust 编译器。修改 Rust 原生逻辑时仍需重新构建宿主。宿主只用于开发，不是安装版，仍受本机应用执行策略约束；设备拒绝执行时须由管理员批准。
+
+开发宿主使用独立应用标识与会话目录，不与已安装正式版抢占单实例；开发界面不会下载、安装生产更新。开发时仍使用真实 WAO 后端，请勿把测试业务写入误认为演示数据。
+
 ## 打包与迭代
 
 ```powershell

@@ -9,6 +9,7 @@
     "test": "vitest run",
     "tauri": "tauri",
     "desktop:dev": "node scripts/desktop.mjs dev",
+    "desktop:dev:host": "node scripts/dev-host.mjs",
     "desktop:build": "node scripts/desktop.mjs build",
     "version:set": "node scripts/version.mjs"
   },

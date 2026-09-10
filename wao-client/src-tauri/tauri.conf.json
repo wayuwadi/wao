@@ -10,12 +10,20 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{
-      "label": "main", "title": "WAO · 工作区",
-      "width": 1380, "height": 900, "minWidth": 800, "minHeight": 560,
-      "center": true, "decorations": false, "visible": false,
-      "backgroundColor": "#f7f8fc"
-    }],
+    "windows": [
+      {
+        "label": "main",
+        "title": "WAO · 工作区",
+        "width": 1380,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 560,
+        "center": true,
+        "decorations": false,
+        "visible": false,
+        "backgroundColor": "#f7f8fc"
+      }
+    ],
     "security": {
       "capabilities": ["shell"],
       "csp": "default-src 'self'; script-src 'self'; connect-src ipc: http://ipc.localhost https://wao.wayuwa.cn; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-src 'none'"
@@ -26,14 +34,28 @@
     "createUpdaterArtifacts": true,
     "shortDescription": "WAO 桌面工作区",
     "category": "Productivity",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
-    "windows": { "nsis": { "installMode": "currentUser", "languages": ["SimpChinese", "English"], "displayLanguageSelector": false } },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": false
+      }
+    },
     "macOS": { "minimumSystemVersion": "11.0", "signingIdentity": "-" }
   },
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczNThGNDhGQjQxREFENTcKUldSWHJSMjBqL1JZYzQ3STFDSDNaV3Z2WkkrVFgrNUd4eWxpZmNsUUxSOFp3SjBLV2tCU2RCeEgK",
-      "endpoints": ["https://wao.wayuwa.cn/downloads/desktop/client/latest.json"],
+      "endpoints": [
+        "https://wao.wayuwa.cn/downloads/desktop/client/latest.json"
+      ],
       "windows": { "installMode": "passive" }
     }
   }

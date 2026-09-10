@@ -8,16 +8,22 @@ destination=/var/www/wao-downloads/desktop/client
 install -d -m 0755 "$destination"
 exec 9>"$destination/.publish.lock"
 flock -n 9 || { echo 'Another client publication is running'; exit 1; }
-test ! -e "$destination/WAO_${version}_windows-x64-setup.exe" || { echo 'Version already published; increment the version'; exit 1; }
+(cd "$incoming" && sha256sum -c "SHA256-${version}.txt")
+# A retry may complete an interrupted upload, but can never replace versioned bytes.
+if [ -e "$destination/WAO_${version}_windows-x64-setup.exe" ]; then
+  cmp -s "$incoming/WAO_${version}_windows-x64-setup.exe" "$destination/WAO_${version}_windows-x64-setup.exe" || { echo 'Version has different bytes; increment the version'; exit 1; }
+fi
 if [ -f "$destination/latest.json" ]; then
-  python3 - "$destination/latest.json" "$version" <<'PY'
+  python3 - "$destination/latest.json" "$version" "$incoming/latest.json" <<'PY'
 import json, sys
-old = tuple(map(int, json.load(open(sys.argv[1]))['version'].split('.')))
+previous = json.load(open(sys.argv[1]))
+old = tuple(map(int, previous['version'].split('.')))
 new = tuple(map(int, sys.argv[2].split('.')))
-if new <= old: raise SystemExit('Refusing release downgrade or overwrite')
+if new < old: raise SystemExit('Refusing release downgrade')
+if new == old and previous['platforms'] != json.load(open(sys.argv[3]))['platforms']:
+    raise SystemExit('Refusing signature or artifact replacement for an existing release')
 PY
 fi
-(cd "$incoming" && sha256sum -c "SHA256-${version}.txt")
 for file in "$incoming"/*; do
   name=${file##*/}
   [ "$name" = latest.json ] && continue
