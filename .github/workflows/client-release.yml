@@ -132,7 +132,7 @@ jobs:
       - name: Verify both architectures and application signature
         run: |
           app=wao-client/src-tauri/target/universal-apple-darwin/release/bundle/macos/WAO.app
-          lipo -verify_arch x86_64 arm64 "$app/Contents/MacOS/wao-client"
+          lipo "$app/Contents/MacOS/wao-client" -verify_arch x86_64 arm64
           codesign --verify --deep --strict --verbose=2 "$app"
       - uses: actions/upload-artifact@v7
         with:
