@@ -377,7 +377,12 @@ pub fn run() {
                         workspace_size(logical, window.is_minimized().unwrap_or(false))
                     {
                         if let Some(view) = window.app_handle().get_webview("workspace") {
-                            let _ = view.set_size(size);
+                            // Refresh the logical header offset together with the size;
+                            // the old physical position can be stale after a DPI change.
+                            let _ = view.set_bounds(tauri::Rect {
+                                position: LogicalPosition::new(0.0, HEADER).into(),
+                                size: size.into(),
+                            });
                         }
                     }
                 }
