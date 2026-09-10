@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AssistantStatus } from '@/api/assistant'
+import { nextPetTaskNotice } from '@/utils/petTaskNotice'
 import PetSprite from './PetSprite.vue'
 import PetMessenger from '@/components/chat/PetMessenger.vue'
 import { useFloatingDrag } from '@/composables/floatingDrag'
@@ -36,29 +37,10 @@ watch(
   () => {
     if (data.taskLoadState !== 'loaded' || !session.userId || !webPet.settings.showTaskNotices)
       return
-    const key = `wao-pet-task-seen:${session.userId}`
-    try {
-      if (localStorage.getItem(key) === snapshot.value) return
-      localStorage.setItem(key, snapshot.value)
-    } catch {
-      /* Reminders remain bounded by the timer. */
-    }
-    const task =
-      data.tasks.find((t) => t.status === '待验证') ??
-      data.tasks.find((t) => t.status === 'AI 进行中') ??
-      data.tasks.find((t) => t.status === '待办')
+    const next = nextPetTaskNotice(data.tasks, session.userId)
+    if (!next) return
     clearTimeout(timer)
-    notice.value = task
-      ? {
-          id: task.id,
-          label:
-            task.status === '待验证'
-              ? '有任务等你验收'
-              : task.status === 'AI 进行中'
-                ? 'AI 正在处理任务'
-                : '有待办任务，点击查看',
-        }
-      : null
+    notice.value = next
     timer = setTimeout(() => {
       notice.value = null
     }, 8000)

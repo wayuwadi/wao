@@ -5,6 +5,7 @@ import { useSessionStore } from '@/stores/session'
 import PetSprite from '@/components/assistant/PetSprite.vue'
 import PetMessenger from '@/components/chat/PetMessenger.vue'
 import { fetchSharedChatMessages } from '@/api/chat'
+import { nextPetTaskNotice } from '@/utils/petTaskNotice'
 import { fetchTasks } from '@/api/board'
 import { getSession } from '@/api/auth'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
@@ -73,27 +74,9 @@ const poller = createVisibilityPoller(
         tasksReadAt = Date.now()
         const tasks = await fetchTasks()
         if (disposed || session.userId !== account.member.id) return
-        const relevant = tasks.filter((task) =>
-          ['待验证', 'AI 进行中', '待办'].includes(task.status),
-        )
-        const fingerprint = relevant
-          .map((task) => `${task.id}:${task.status}`)
-          .sort()
-          .join('|')
-        const key = `wao-pet-task-seen:${session.userId}`
-        let seen = false
-        try {
-          seen = localStorage.getItem(key) === fingerprint
-          localStorage.setItem(key, fingerprint)
-        } catch {
-          /* optional */
-        }
-        const task = relevant.find((task) => task.status === '待验证') ?? relevant[0]
-        if (!seen && task) {
-          taskNotice.value = {
-            id: task.id,
-            label: task.status === '待验证' ? '有任务等你验收' : '有任务动态，点击查看',
-          }
+        const next = nextPetTaskNotice(tasks, session.userId)
+        if (next) {
+          taskNotice.value = next
           resize(noticeVisible.value)
           clearTimeout(taskNoticeTimer)
           taskNoticeTimer = setTimeout(() => {
