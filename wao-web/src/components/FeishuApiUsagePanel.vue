@@ -5,7 +5,7 @@ const rows = ref<FeishuApiUsage[]>([])
 const loading = ref(false)
 const error = ref('')
 const total = computed(() => rows.value.reduce((sum, row) => sum + row.requests, 0))
-const since = computed(() => rows.value.map(row => row.firstObservedAt).sort()[0]?.replace('T', ' '))
+const since = computed(() => rows.value.map(row => row.firstObservedAt).sort()[0]?.slice(0, 19).replace('T', ' '))
 async function refresh() {
   if (loading.value) return
   loading.value = true
@@ -37,13 +37,13 @@ onMounted(refresh)
 </template>
 
 <style scoped>
-.usage { padding: 16px; border: 1px solid var(--border, #ddd); border-radius: 10px; margin: 16px 20px; }
+.usage { padding: 16px; border: 1px solid var(--wao-divider); border-radius: 10px; margin: 16px 20px; }
 .usage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-p { font-size: 12px; line-height: 1.6; color: var(--text-secondary, #666); margin: 8px 0; }
-button { border: 1px solid var(--border, #ccc); border-radius: 6px; padding: 4px 10px; background: transparent; color: inherit; cursor: pointer; }
+p { font-size: 12px; line-height: 1.6; color: var(--wao-text-2); margin: 8px 0; }
+button { border: 1px solid var(--wao-line-strong); border-radius: 6px; padding: 4px 10px; background: transparent; color: inherit; cursor: pointer; }
 button:disabled { opacity: .5; cursor: wait; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th, td { padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--border, #ddd); }
+th, td { padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--wao-divider); }
 td:first-child { overflow-wrap: anywhere; min-width: 160px; } th:not(:first-child), td:not(:first-child) { white-space: nowrap; text-align: right; }
 </style>
