@@ -35,6 +35,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: wao-client/src-tauri -> target
+          cache-on-failure: true
       - name: Validate source and release version
         id: version
         shell: pwsh
@@ -61,7 +62,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm --prefix wao-client run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path wao-client/src-tauri/Cargo.toml
+          cargo test --release --target x86_64-pc-windows-msvc --manifest-path wao-client/src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build signed Windows updater and installer
         env:

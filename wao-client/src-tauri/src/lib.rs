@@ -5,9 +5,11 @@ use tauri::{
     Emitter, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl, WindowEvent,
 };
 use tauri_plugin_opener::OpenerExt;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const PRODUCTION: &str = "https://wao.wayuwa.cn";
 const HEADER: f64 = 64.0;
+static POPUP_ID: AtomicUsize = AtomicUsize::new(1);
 
 fn workspace_url() -> tauri::Url {
     #[cfg(debug_assertions)]
@@ -52,6 +54,29 @@ fn show(app: &tauri::AppHandle) {
     }
 }
 
+fn popup(app: &tauri::AppHandle, url: tauri::Url, features: tauri::webview::NewWindowFeatures) -> NewWindowResponse<tauri::Wry> {
+    let origin = workspace_url();
+    if !internal_url(&url, &origin) {
+        if external_url(&url) { let _ = app.opener().open_url(url.as_str(), None::<&str>); }
+        return NewWindowResponse::Deny;
+    }
+    let navigation_app = app.clone();
+    let popup_app = app.clone();
+    let label = format!("document-{}", POPUP_ID.fetch_add(1, Ordering::Relaxed));
+    // Preserve window.open and shared WebView session without granting native permissions.
+    let result = tauri::WebviewWindowBuilder::new(app, label, WebviewUrl::External("about:blank".parse().unwrap()))
+        .window_features(features).title("WAO · 新窗口").inner_size(1100.0, 760.0)
+        .on_navigation(move |next| {
+            if next.as_str() == "about:blank" || internal_url(next, &origin) { return true; }
+            if external_url(next) { let _ = navigation_app.opener().open_url(next.as_str(), None::<&str>); }
+            false
+        })
+        .on_new_window(move |next, features| popup(&popup_app, next, features))
+        .on_document_title_changed(|window, title| { let _ = window.set_title(&format!("WAO · {title}")); })
+        .build();
+    match result { Ok(window) => NewWindowResponse::Create { window }, Err(_) => NewWindowResponse::Deny }
+}
+
 #[tauri::command]
 async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(), String> {
     local_shell(&webview)?;
@@ -62,7 +87,6 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
     let navigation_origin = origin.clone();
     let navigation_app = app.clone();
     let popup_app = app.clone();
-    let popup_origin = origin.clone();
     let builder = WebviewBuilder::new("workspace", WebviewUrl::External(origin))
         .disable_drag_drop_handler()
         .on_navigation(move |url| {
@@ -70,12 +94,7 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
             if external_url(url) { let _ = navigation_app.opener().open_url(url.as_str(), None::<&str>); }
             false
         })
-        .on_new_window(move |url, _| {
-            if internal_url(&url, &popup_origin) {
-                if let Some(workspace) = popup_app.get_webview("workspace") { let _ = workspace.navigate(url); }
-            } else if external_url(&url) { let _ = popup_app.opener().open_url(url.as_str(), None::<&str>); }
-            NewWindowResponse::Deny
-        })
+        .on_new_window(move |url, features| popup(&popup_app, url, features))
         .on_page_load(|view, event| {
             let phase = match event.event() { PageLoadEvent::Started => "loading", PageLoadEvent::Finished => "ready" };
             let _ = view.app_handle().emit_to("main", "workspace-state", phase);
@@ -116,7 +135,9 @@ pub fn run() {
             .with_state_flags(tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE)
             .build())
         .invoke_handler(tauri::generate_handler![attach_workspace, workspace_action, quit_client])
-        .on_window_event(|window, event| match event {
+        .on_window_event(|window, event| {
+            if window.label() != "main" { return; }
+            match event {
             WindowEvent::CloseRequested { api, .. } => { api.prevent_close(); let _ = window.hide(); },
             WindowEvent::Resized(size) => {
                 if let Some(view) = window.app_handle().get_webview("workspace") {
@@ -126,7 +147,7 @@ pub fn run() {
                 }
             },
             _ => {}
-        })
+        }})
         .setup(|app| {
             let open = MenuItemBuilder::with_id("open", "打开 WAO 工作区").build(app)?;
             let update = MenuItemBuilder::with_id("update", "检查客户端更新").build(app)?;
@@ -144,7 +165,7 @@ pub fn run() {
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event { show(tray.app_handle()); }
-                }).build()?;
+                }).build(app)?;
             Ok(())
         })
         .run(tauri::generate_context!())
