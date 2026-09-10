@@ -6,6 +6,8 @@ import {
   fetchWindowsDownload,
   parseMobileManifest,
   parseWindowsManifest,
+  parseMacosManifest,
+  fetchMacosDownload,
 } from '@/api/clientDownloads'
 import ClientDownloadView from '@/views/ClientDownloadView.vue'
 vi.mock('@/components/SiteFooter.vue', () => ({ default: { template: '<footer />' } }))
@@ -14,6 +16,30 @@ const manifest = () => ({
   files: {
     android: { name: 'WAO-1.0.0-android.apk', size: 1000, sha256: 'a'.repeat(64) },
     ios: { name: 'WAO-1.0.0-ios-unsigned.ipa', size: 800, sha256: 'b'.repeat(64) },
+  },
+})
+const desktopManifest = () => ({
+  version: '1.0.1',
+  platforms: {
+    'windows-x86_64': {
+      signature: 'x'.repeat(40),
+      url: 'https://wao.wayuwa.cn/downloads/desktop/client/WAO_1.0.1_windows-x64-setup.exe',
+    },
+    'darwin-x86_64': {
+      signature: 'm'.repeat(40),
+      url: 'https://wao.wayuwa.cn/downloads/desktop/client/WAO_1.0.1_macos-universal.app.tar.gz',
+    },
+    'darwin-aarch64': {
+      signature: 'm'.repeat(40),
+      url: 'https://wao.wayuwa.cn/downloads/desktop/client/WAO_1.0.1_macos-universal.app.tar.gz',
+    },
+  },
+  downloads: {
+    macos: {
+      url: 'https://wao.wayuwa.cn/downloads/desktop/client/WAO_1.0.1_macos-universal.dmg',
+      size: 4096,
+      sha256: 'c'.repeat(64),
+    },
   },
 })
 const json = (data: unknown) =>
@@ -53,6 +79,48 @@ describe('客户端下载与发布状态', () => {
         },
       }),
     ).toThrow()
+  })
+  it('Mac 首次安装使用 DMG，两个架构的更新归档和签名必须一致', () => {
+    const data = desktopManifest()
+    expect(parseMacosManifest(data)?.url).toMatch(/macos-universal\.dmg$/)
+    expect(parseMacosManifest({ version: '1.0.0', platforms: {} })).toBeNull()
+    data.platforms['darwin-aarch64'].signature = 'other-signature'.repeat(3)
+    expect(() => parseMacosManifest(data)).toThrow()
+    const invalid = desktopManifest()
+    invalid.downloads.macos.url = 'https://example.com/WAO.dmg'
+    expect(() => parseMacosManifest(invalid)).toThrow()
+  })
+  it('Mac 下载独立于 Windows 失败，真实制品校验后才展示按钮', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/downloads/mobile/latest.json') return new Response(null, { status: 404 })
+        if (url.endsWith('latest.json')) return json(desktopManifest())
+        if (url.endsWith('.dmg')) return binary(4096)
+        return new Response(null, { status: 503 })
+      }),
+    )
+    const wrapper = mount(ClientDownloadView)
+    await flushPromises()
+    expect(wrapper.get('.macos-download a[download]').attributes('href')).toMatch(
+      /macos-universal\.dmg$/,
+    )
+    expect(wrapper.text()).toContain('桌面版发布信息加载失败')
+    expect(wrapper.text()).toContain('Apple Developer ID')
+    expect(wrapper.get('.macos-download').text()).toContain('v1.0.1')
+    wrapper.unmount()
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(json(desktopManifest()))
+        .mockResolvedValue(
+          new Response('<html/>', {
+            headers: { 'content-type': 'text/html', 'content-length': '4096' },
+          }),
+        ),
+    )
+    await expect(fetchMacosDownload()).rejects.toThrow()
   })
   it('200 HTML 和尺寸不一致不能变为下载链接', async () => {
     vi.stubGlobal(

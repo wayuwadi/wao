@@ -243,8 +243,8 @@ onUnmounted(() => {
           class="update-dot"
         ></i>
       </button>
-      <div class="divider"></div>
-      <div class="window-controls">
+      <div v-if="platform !== 'macOS'" class="divider"></div>
+      <div v-if="platform !== 'macOS'" class="window-controls">
         <button
           class="icon-button"
           aria-label="最小化"
@@ -381,7 +381,13 @@ onUnmounted(() => {
           <aside class="help-card">
             <span class="spark">✦</span>
             <h2>保持专注，<br />其余交给 WAO。</h2>
-            <p>关闭窗口会收起到托盘。再次打开时，回到刚才的工作内容。</p>
+            <p>
+              {{
+                platform === "macOS"
+                  ? "关闭窗口后，可从 Dock 或菜单栏重新打开，回到刚才的工作内容。"
+                  : "关闭窗口会收起到托盘。再次打开时，回到刚才的工作内容。"
+              }}
+            </p>
             <div class="help-rule"></div>
             <p>Web 新功能无需重新安装。准备好后，刷新工作区即可使用。</p>
             <button class="text-button" @click="action('browser')">
@@ -408,7 +414,7 @@ onUnmounted(() => {
           <p>
             请先保存工作区中的编辑内容，未保存的输入可能丢失。{{
               confirm === "quit"
-                ? "如果只是暂时离开，可以使用右上角关闭按钮收起窗口。"
+                ? "如果只是暂时离开，可以使用窗口关闭按钮收起窗口。"
                 : "你也可以取消，回到工作区继续编辑。"
             }}
           </p>

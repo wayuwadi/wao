@@ -4,6 +4,7 @@ import {
   mkdirSync,
   copyFileSync,
   writeFileSync,
+  statSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
 import { createHash } from "node:crypto";
@@ -24,34 +25,65 @@ function files(path) {
       : [join(path, entry.name)],
   );
 }
-const installers = files(resolve(raw)).filter((path) =>
-  path.endsWith("-setup.exe"),
-);
-if (installers.length !== 1)
-  throw new Error(`Expected one installer, found ${installers.length}`);
-const installer = installers[0];
-const signature = readFileSync(`${installer}.sig`, "utf8").trim();
-if (signature.length < 20) throw new Error("Missing updater signature");
+const all = files(resolve(raw));
+function one(suffix) {
+  const matches = all.filter((path) => path.endsWith(suffix));
+  if (matches.length !== 1)
+    throw new Error(`Expected one ${suffix}, found ${matches.length}`);
+  if (!statSync(matches[0]).size) throw new Error(`Empty artifact: ${suffix}`);
+  return matches[0];
+}
+function signed(path) {
+  const signature = readFileSync(`${path}.sig`, "utf8").trim();
+  if (signature.length < 20) throw new Error("Missing updater signature");
+  return signature;
+}
+const windows = one("-setup.exe"),
+  dmg = one(".dmg"),
+  macos = one(".app.tar.gz");
+const windowsSignature = signed(windows),
+  macosSignature = signed(macos);
+const base = "https://wao.wayuwa.cn/downloads/desktop/client/";
+const windowsName = `WAO_${version}_windows-x64-setup.exe`;
+const macosName = `WAO_${version}_macos-universal.app.tar.gz`;
+const dmgName = `WAO_${version}_macos-universal.dmg`;
 mkdirSync(output, { recursive: true });
-const name = `WAO_${version}_windows-x64-setup.exe`;
-copyFileSync(installer, join(output, name));
-writeFileSync(join(output, `${name}.sig`), signature + "\n");
-copyFileSync(installer, join(output, "WAO-windows-x64-setup.exe"));
-const hash = createHash("sha256").update(readFileSync(installer)).digest("hex");
-writeFileSync(join(output, `SHA256-${version}.txt`), `${hash}  ${name}\n`);
+const checksums = [];
+function artifact(source, name) {
+  copyFileSync(source, join(output, name));
+  const sha256 = createHash("sha256")
+    .update(readFileSync(source))
+    .digest("hex");
+  checksums.push(`${sha256}  ${name}`);
+  return { url: base + name, size: statSync(source).size, sha256 };
+}
+const windowsDownload = artifact(windows, windowsName);
+artifact(`${windows}.sig`, `${windowsName}.sig`);
+artifact(windows, "WAO-windows-x64-setup.exe");
+const macosDownload = artifact(dmg, dmgName);
+artifact(dmg, "WAO-macos-universal.dmg");
+artifact(macos, macosName);
+artifact(`${macos}.sig`, `${macosName}.sig`);
+writeFileSync(
+  join(output, `SHA256-${version}.txt`),
+  checksums.join("\n") + "\n",
+);
 writeFileSync(
   join(output, "latest.json"),
   JSON.stringify(
     {
       version,
-      notes: `WAO 桌面客户端 ${version}。完整工作区、窗口状态保留与签名更新。`,
+      notes: `WAO ${version}：新增 macOS 通用版，支持 Intel 与 Apple Silicon、系统菜单、Dock 恢复及签名更新。`,
       pub_date: new Date().toISOString(),
       platforms: {
         "windows-x86_64": {
-          signature,
-          url: `https://wao.wayuwa.cn/downloads/desktop/client/${name}`,
+          signature: windowsSignature,
+          url: base + windowsName,
         },
+        "darwin-x86_64": { signature: macosSignature, url: base + macosName },
+        "darwin-aarch64": { signature: macosSignature, url: base + macosName },
       },
+      downloads: { windows: windowsDownload, macos: macosDownload },
     },
     null,
     2,
