@@ -60,10 +60,22 @@ export interface AiQuotaRefreshEvent {
   observedAt: string
 }
 
+export interface CodexOfficialResetEvent {
+  accountLabel: string
+  windowLabel: string
+  beforeRemainingPercent: number
+  afterRemainingPercent: number
+  /** 供应商在上一周期返回的官方重置时间，使用上海时区。 */
+  resetAt: string
+  /** 首次观察到周期已推进的真实采样时间。 */
+  confirmedAt: string
+}
+
 export interface AiQuotaHistory {
   recordedSamples: number
   series: AiQuotaSeries[]
   refreshes: AiQuotaRefreshEvent[]
+  officialResets: CodexOfficialResetEvent[]
 }
 
 export interface AiUsageAdvice {

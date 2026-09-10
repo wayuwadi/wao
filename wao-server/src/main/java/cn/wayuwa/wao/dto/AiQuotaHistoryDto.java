@@ -6,7 +6,8 @@ import java.util.List;
 public record AiQuotaHistoryDto(
         int recordedSamples,
         List<Series> series,
-        List<RefreshEvent> refreshes) {
+        List<RefreshEvent> refreshes,
+        List<OfficialResetEvent> officialResets) {
 
     public record Series(
             String id,
@@ -28,5 +29,15 @@ public record AiQuotaHistoryDto(
             int refreshedPercent,
             String resetsAt,
             String observedAt) {
+    }
+
+    /** Codex 七天窗口由供应商时间推进确认的一次官方自动重置。 */
+    public record OfficialResetEvent(
+            String accountLabel,
+            String windowLabel,
+            int beforeRemainingPercent,
+            int afterRemainingPercent,
+            String resetAt,
+            String confirmedAt) {
     }
 }

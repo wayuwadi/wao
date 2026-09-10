@@ -26,7 +26,7 @@ paths:
   /api/dashboard/quota-history:
     get:
       operationId: getAiQuotaHistory
-      summary: 查询真实 AI 额度采样形成的每日趋势与刷新记录
+      summary: 查询真实 AI 额度采样形成的每日趋势、额度上涨与 Codex 官方重置记录
       parameters:
         - in: query
           name: days
@@ -125,7 +125,7 @@ components:
         timestamp: { type: integer, format: int64 }
         data:
           type: object
-          required: [recordedSamples, series, refreshes]
+          required: [recordedSamples, series, refreshes, officialResets]
           properties:
             recordedSamples: { type: integer, description: 查询窗口内保存的真实采样数 }
             series:
@@ -161,6 +161,19 @@ components:
                   refreshedPercent: { type: integer }
                   resetsAt: { type: string, nullable: true }
                   observedAt: { type: string }
+            officialResets:
+              type: array
+              description: 仅包含 Codex 七天窗口由供应商 resetsAt 跨周期推进确认的官方自动重置；不把手动刷新卡造成的额度上涨混入
+              items:
+                type: object
+                required: [accountLabel, windowLabel, beforeRemainingPercent, afterRemainingPercent, resetAt, confirmedAt]
+                properties:
+                  accountLabel: { type: string }
+                  windowLabel: { type: string }
+                  beforeRemainingPercent: { type: integer }
+                  afterRemainingPercent: { type: integer }
+                  resetAt: { type: string, description: 上一周期由供应商返回的官方精确重置时间，Asia/Shanghai }
+                  confirmedAt: { type: string, description: 首次采样确认周期已推进的时间，Asia/Shanghai }
     AiUsageInsightsEnvelope:
       type: object
       required: [code, message, data, timestamp]

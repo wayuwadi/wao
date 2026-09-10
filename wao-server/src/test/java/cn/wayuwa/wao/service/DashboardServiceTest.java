@@ -108,6 +108,31 @@ class DashboardServiceTest {
             assertThat(refresh.afterRemainingPercent()).isEqualTo(100);
             assertThat(refresh.refreshedPercent()).isEqualTo(40);
         });
+        assertThat(history.officialResets()).isEmpty();
+    }
+
+    @Test
+    void quotaHistoryUsesSupplierWindowAdvanceForExactOfficialResetInsteadOfBalanceIncrease() {
+        LocalDate today = LocalDate.now(ZONE);
+        LocalDateTime officialReset = today.atTime(8, 37);
+        when(quotaMapper.selectList(any())).thenReturn(List.of(
+                quota(today.minusDays(1).atTime(10, 0), 50, officialReset),
+                // 重置时间未推进时的上涨可能来自刷新卡，只进入普通上涨记录。
+                quota(today.atTime(8, 20), 80, officialReset),
+                // 即使重置后已经发生消耗，只要供应商周期推进，仍能确认官方重置。
+                quota(today.atTime(8, 40), 70, officialReset.plusDays(7))));
+
+        AiQuotaHistoryDto history = service.quotaHistory(30);
+
+        assertThat(history.recordedSamples()).isEqualTo(3);
+        assertThat(history.refreshes()).singleElement().satisfies(refresh ->
+                assertThat(refresh.observedAt()).isEqualTo(today.atTime(8, 20).toString()));
+        assertThat(history.officialResets()).singleElement().satisfies(reset -> {
+            assertThat(reset.resetAt()).isEqualTo(officialReset.toString());
+            assertThat(reset.confirmedAt()).isEqualTo(today.atTime(8, 40).toString());
+            assertThat(reset.beforeRemainingPercent()).isEqualTo(80);
+            assertThat(reset.afterRemainingPercent()).isEqualTo(70);
+        });
     }
 
     @Test
@@ -176,6 +201,10 @@ class DashboardServiceTest {
     }
 
     private static AiQuotaSnapshotEntity quota(LocalDateTime at, int remaining) {
+        return quota(at, remaining, null);
+    }
+
+    private static AiQuotaSnapshotEntity quota(LocalDateTime at, int remaining, LocalDateTime resetsAt) {
         AiQuotaSnapshotEntity value = new AiQuotaSnapshotEntity();
         value.setSourceKey("central:aa1");
         value.setAccountLabel("Codex 主账号");
@@ -183,6 +212,7 @@ class DashboardServiceTest {
         value.setWindowKey("weekly");
         value.setWindowLabel("七天额度");
         value.setRemainingPercent(remaining);
+        value.setResetsAt(resetsAt);
         value.setObservedAt(at);
         return value;
     }
