@@ -26,7 +26,6 @@ import {
   type FamilyImportantDateEvent,
   type SaveFamilyImportantDate,
 } from '@/api/importantDates'
-import { fetchFeishuChats, type FeishuChat } from '@/api/system'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
 import type { Task } from '@/types'
@@ -203,7 +202,7 @@ const importantDateLoadError = ref('')
 const importantDateChannelAvailable = ref(false)
 const importantDateChannelHint = ref('正在读取飞书提醒通道状态…')
 const importantDateGroupChannelAvailable = ref(false)
-const importantDateGroupChannelHint = ref('正在读取飞书群提醒通道状态…')
+const importantDateGroupChannelHint = ref('正在读取 WAO 提醒通道状态…')
 let importantDateRequestSequence = 0
 
 const caldavState = computed(() => {
@@ -305,7 +304,7 @@ async function loadImportantDates() {
     importantDateChannelAvailable.value = result.reminderChannelAvailable
     importantDateChannelHint.value = result.reminderChannelHint
     importantDateGroupChannelAvailable.value = Boolean(result.groupChannelAvailable)
-    importantDateGroupChannelHint.value = result.groupChannelHint || '飞书群提醒通道暂不可用'
+    importantDateGroupChannelHint.value = result.groupChannelHint || 'WAO 提醒通道暂不可用'
     importantDateState.value = 'ready'
   } catch (error) {
     if (requestSequence !== importantDateRequestSequence) return
@@ -824,9 +823,6 @@ const dateConversionLabel = ref('')
 const dateConversionState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const dateConversionError = ref('')
 let dateConversionSequence = 0
-const feishuChats = ref<FeishuChat[]>([])
-const feishuChatsState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
-const feishuChatsError = ref('')
 const importantDateDraftKey = computed(() =>
   `wao-family-important-date-draft:${session.currentUser.id || 'anonymous'}:${editingImportantDateId.value || 'new'}`)
 
@@ -841,7 +837,7 @@ function copyImportantDateDraft(value?: FamilyImportantDate) {
   importantDateDraft.lunarMonth = value?.lunarMonth ?? null
   importantDateDraft.lunarDay = value?.lunarDay ?? null
   importantDateDraft.lunarLeapMonth = value?.lunarLeapMonth ?? false
-  importantDateDraft.notificationType = value?.notificationType ?? 'DIRECT'
+  importantDateDraft.notificationType = value?.notificationType ?? 'GROUP'
   importantDateDraft.chatId = value?.chatId ?? null
   importantDateDraft.chatName = value?.chatName ?? null
   lunarYear.value = new Date(`${value?.eventDate ?? data.today}T00:00:00`).getFullYear()
@@ -876,7 +872,6 @@ function openImportantDateManager() {
   importantDateEditorOpen.value = false
   importantDateSaveError.value = ''
   showImportantDates.value = true
-  loadFeishuChats()
 }
 
 function closeImportantDateManager() {
@@ -905,24 +900,6 @@ function editImportantDate(value: FamilyImportantDate) {
   void refreshDateConversion()
 }
 
-async function loadFeishuChats() {
-  if (!importantDateGroupChannelAvailable.value || feishuChatsState.value === 'loading') return
-  feishuChatsState.value = 'loading'
-  feishuChatsError.value = ''
-  try {
-    feishuChats.value = await fetchFeishuChats()
-    feishuChatsState.value = 'ready'
-  } catch (error) {
-    feishuChats.value = []
-    feishuChatsError.value = error instanceof Error ? error.message : '读取飞书群失败'
-    feishuChatsState.value = 'error'
-  }
-}
-
-function selectReminderChat() {
-  const chat = feishuChats.value.find((item) => item.chatId === importantDateDraft.chatId)
-  importantDateDraft.chatName = chat?.name ?? null
-}
 
 async function refreshDateConversion() {
   const sequence = ++dateConversionSequence
@@ -999,12 +976,7 @@ async function submitImportantDate() {
     return
   }
   if (importantDateDraft.reminderEnabled && !importantDateDraft.reminderTime) {
-    importantDateSaveError.value = '开启飞书提醒后请选择时间'
-    return
-  }
-  if (importantDateDraft.reminderEnabled && importantDateDraft.notificationType === 'GROUP'
-      && (!importantDateDraft.chatId || !importantDateDraft.chatName)) {
-    importantDateSaveError.value = '请选择要发送提醒的飞书群'
+    importantDateSaveError.value = '开启提醒后请选择时间'
     return
   }
   importantDateSaving.value = true
@@ -1063,7 +1035,7 @@ function importantDateMonthDay(value: string) {
 function importantDateReminderLabel(value: FamilyImportantDate) {
   if (!value.reminderEnabled) return '仅在日历显示'
   const before = value.reminderDaysBefore ? `提前 ${value.reminderDaysBefore} 天` : '当天'
-  const target = value.notificationType === 'GROUP' ? `群聊「${value.chatName}」` : '飞书私聊'
+  const target = value.notificationType === 'GROUP' ? 'WAO 通知中心' : '飞书私聊'
   return `${before} ${value.reminderTime} ${target}提醒`
 }
 
@@ -1493,22 +1465,13 @@ function onDropDay(dayIso: string) {
               <textarea v-model="importantDateDraft.note" maxlength="200" rows="3" placeholder="例如：喜欢百合花，记得提前订餐" :disabled="importantDateSaving"></textarea>
             </label>
             <label class="important-date-reminder-toggle">
-              <span><b>飞书通知</b><small>{{ importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelHint : importantDateChannelHint }}</small></span>
+              <span><b>提醒通知</b><small>{{ importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelHint : importantDateChannelHint }}</small></span>
               <input v-model="importantDateDraft.reminderEnabled" type="checkbox" :disabled="importantDateSaving || (!(importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelAvailable : importantDateChannelAvailable) && !importantDateDraft.reminderEnabled)" />
             </label>
             <div class="calendar-type-switch notification-type" role="group" aria-label="通知方式">
               <button type="button" :class="{ on: importantDateDraft.notificationType === 'DIRECT' }" @click="importantDateDraft.notificationType = 'DIRECT'">私聊我</button>
-              <button type="button" :class="{ on: importantDateDraft.notificationType === 'GROUP' }" @click="importantDateDraft.notificationType = 'GROUP'; loadFeishuChats()">群聊并 @ 我</button>
+              <button type="button" :class="{ on: importantDateDraft.notificationType === 'GROUP' }" @click="importantDateDraft.notificationType = 'GROUP'">WAO 内部提醒</button>
             </div>
-            <label v-if="importantDateDraft.notificationType === 'GROUP'" class="important-date-field">
-              <span>目标飞书群</span>
-              <select v-model="importantDateDraft.chatId" :disabled="feishuChatsState === 'loading' || !importantDateGroupChannelAvailable" required @change="selectReminderChat">
-                <option :value="null" disabled>{{ feishuChatsState === 'loading' ? '正在读取机器人所在群…' : '请选择群聊' }}</option>
-                <option v-for="chat in feishuChats" :key="chat.chatId" :value="chat.chatId">{{ chat.name }}</option>
-              </select>
-              <small v-if="feishuChatsState === 'error'" class="field-error">读取失败：{{ feishuChatsError }}。<button type="button" @click="loadFeishuChats">重试</button></small>
-              <small v-else>群列表实时来自飞书；发送时会通过 Union ID 重新确认并只 @ 配置人。</small>
-            </label>
             <div class="important-date-reminder-fields">
               <label class="important-date-field">
                 <span>提前天数</span>

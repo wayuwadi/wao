@@ -1,6 +1,6 @@
 [package]
 name = "wao-client"
-version = "1.0.3"
+version = "1.1.0"
 description = "WAO desktop workspace"
 authors = ["WAO"]
 edition = "2021"
@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "unstable"] }
+tauri = { version = "2", features = ["tray-icon", "unstable", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"

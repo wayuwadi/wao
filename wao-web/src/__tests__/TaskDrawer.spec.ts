@@ -150,11 +150,11 @@ describe('TaskDrawer', () => {
     const w = mountDrawer()
     await w.vm.$nextTick()
 
-    await w.get('[title="人工通知到飞书群"]').trigger('click')
+    await w.get('[title="通知到 WAO"]').trigger('click')
     await flushPromises()
 
     expect(notifyTaskManually).toHaveBeenCalledWith(taskId)
-    expect(useToastHost().items.some((item) => item.text === '任务已人工通知到飞书群')).toBe(true)
+    expect(useToastHost().items.some((item) => item.text === '任务已通知到 WAO')).toBe(true)
   })
 
   it('从真实成员目录增加和移除任务参与人', async () => {

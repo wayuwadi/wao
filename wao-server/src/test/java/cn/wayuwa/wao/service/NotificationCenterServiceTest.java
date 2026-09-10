@@ -46,8 +46,8 @@ class NotificationCenterServiceTest {
         usage.setCount30Days(8);
         usage.setLastLoginAt(LocalDateTime.of(2026, 8, 28, 9, 0));
         when(notificationSettings.personalPolicy("wg")).thenReturn(allEvents());
-        when(center.recentEvents(120)).thenReturn(List.of(event));
-        when(center.eventsSince(org.mockito.ArgumentMatchers.any())).thenReturn(List.of(event, event, event, event));
+        when(center.recentEvents(120, "wg")).thenReturn(List.of(event));
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("wg"))).thenReturn(List.of(event, event, event, event));
         when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of(usage));
 
@@ -65,7 +65,7 @@ class NotificationCenterServiceTest {
         assertThat(result.unreadCount()).isEqualTo(4);
         assertThat(result.readAt()).isNull();
         ArgumentCaptor<LocalDateTime> since = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(center).eventsSince(since.capture());
+        verify(center).eventsSince(since.capture(), org.mockito.ArgumentMatchers.eq("wg"));
         assertThat(since.getValue()).isBetween(LocalDateTime.now().minusDays(7).minusMinutes(1),
                 LocalDateTime.now().minusDays(7).plusMinutes(1));
     }
@@ -75,15 +75,15 @@ class NotificationCenterServiceTest {
         String stored = "2026-08-27T08:15:30+08:00";
         when(preferences.find("wd", NotificationCenterService.READ_AT_KEY)).thenReturn(stored);
         when(notificationSettings.personalPolicy("wd")).thenReturn(allEvents());
-        when(center.recentEvents(120)).thenReturn(List.of());
-        when(center.eventsSince(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        when(center.recentEvents(120, "wd")).thenReturn(List.of());
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("wd"))).thenReturn(List.of());
         when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of());
 
         var result = service.get("wd");
 
         assertThat(result.readAt()).isEqualTo(OffsetDateTime.parse(stored));
-        verify(center).eventsSince(LocalDateTime.of(2026, 8, 27, 8, 15, 30));
+        verify(center).eventsSince(LocalDateTime.of(2026, 8, 27, 8, 15, 30), "wd");
 
         OffsetDateTime marked = service.markRead("wd");
         ArgumentCaptor<String> value = ArgumentCaptor.forClass(String.class);
@@ -98,8 +98,8 @@ class NotificationCenterServiceTest {
         when(notificationSettings.personalPolicy("wd")).thenReturn(
                 new cn.wayuwa.wao.dto.NotificationSettingsDto.PersonalPolicy(
                         true, false, false, false, true, false));
-        when(center.recentEvents(120)).thenReturn(List.of(success, failure));
-        when(center.eventsSince(org.mockito.ArgumentMatchers.any())).thenReturn(List.of(success, failure));
+        when(center.recentEvents(120, "wd")).thenReturn(List.of(success, failure));
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("wd"))).thenReturn(List.of(success, failure));
         when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of());
 
@@ -107,6 +107,19 @@ class NotificationCenterServiceTest {
 
         assertThat(result.events()).extracting("id").containsExactly("ai-run:failed");
         assertThat(result.unreadCount()).isEqualTo(1);
+    }
+
+    @Test
+    void oldFrontendDoesNotReceiveUnsupportedInternalEventType() {
+        when(notificationSettings.personalPolicy("wd")).thenReturn(allEvents());
+        NotificationEventRow internal = aiEvent("internal:1", "INFO", "团队提醒");
+        internal.setEventType("INTERNAL");
+        when(center.recentEvents(120, "wd")).thenReturn(List.of(internal));
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any(), eq("wd"))).thenReturn(List.of(internal));
+        when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        assertThat(service.get("wd", false).events()).isEmpty();
+        assertThat(service.get("wd", false).unreadCount()).isZero();
+        assertThat(service.get("wd", true).events()).hasSize(1);
     }
 
     private static NotificationEventRow aiEvent(String id, String severity, String detail) {

@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: WAO 节假日日历 API
   version: 0.4.0
-  description: 当前成员维护公历/农历提醒事项、主动选择节日范围，并设置飞书私聊或群提醒。
+  description: 当前成员维护公历/农历提醒事项、主动选择节日范围，并设置飞书私聊或仅本人可见的 WAO 内部提醒（GROUP 为兼容标识）。
 servers:
   - url: /api
 paths:
@@ -130,7 +130,7 @@ components:
         lunarMonth: { type: integer, nullable: true, minimum: 1, maximum: 12 }
         lunarDay: { type: integer, nullable: true, minimum: 1, maximum: 30 }
         lunarLeapMonth: { type: boolean, default: false }
-        notificationType: { type: string, enum: [DIRECT, GROUP] }
+        notificationType: { type: string, enum: [DIRECT, GROUP], description: DIRECT 为既有飞书私聊，GROUP 为 WAO 内部提醒，无需群凭据 }
         chatId: { type: string, nullable: true, maxLength: 128 }
         chatName: { type: string, nullable: true, maxLength: 128 }
     FamilyImportantDate:
@@ -157,7 +157,7 @@ components:
         calendarType: { type: string, enum: [SOLAR, LUNAR] }
         solarDateLabel: { type: string }
         lunarDateLabel: { type: string }
-        notificationType: { type: string, enum: [DIRECT, GROUP] }
+        notificationType: { type: string, enum: [DIRECT, GROUP], description: DIRECT 为既有飞书私聊，GROUP 为 WAO 内部提醒，无需群凭据 }
         chatName: { type: string, nullable: true }
     FamilyImportantDateCalendar:
       type: object

@@ -9,22 +9,14 @@ import {
   watch,
 } from 'vue'
 import {
-  fetchSharedChatConfig,
-  fetchSharedChatFeishuGroups,
   fetchSharedChatMessages,
-  fetchSharedChatSyncRuns,
   markSharedChatRead,
-  retrySharedChatFeishu,
-  saveSharedChatConfig,
   sendSharedChatMessage,
   toggleSharedChatReaction,
-  runSharedChatSyncNow,
   uploadSharedChatImage,
-  type SharedChatConfig,
-  type SharedChatFeishuGroup,
   type SharedChatMessage,
-  type SharedChatSyncRun,
 } from '@/api/chat'
+import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import { renderMarkdown } from '@/utils/markdown'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
@@ -35,8 +27,9 @@ const props = withDefaults(
     visible?: boolean
     reviewId?: string
     reviewRequestVersion?: number
+    draftScope?: string
   }>(),
-  { floating: false, visible: true, reviewId: '', reviewRequestVersion: 0 },
+  { floating: false, visible: true, reviewId: '', reviewRequestVersion: 0, draftScope: '' },
 )
 const emit = defineEmits<{
   minimize: []
@@ -56,37 +49,28 @@ const REACTIONS = [
 ]
 
 const session = useSessionStore()
+const ui = useUiStore()
 const messages = ref<SharedChatMessage[]>([])
+let disposed = false
 const draft = ref('')
-const clientToken = ref('')
+let sendAttempt: { content: string; replyToId?: string; token: string } | null = null
 const replyingTo = ref<SharedChatMessage | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 const sending = ref(false)
 const uploadingImage = ref(false)
 const sendError = ref('')
-const retryingId = ref('')
 const reactingId = ref('')
 const reactionMenuId = ref('')
 const emojiOpen = ref(false)
 const unreadBoundaryId = ref('')
 const stream = ref<HTMLElement | null>(null)
-const config = ref<SharedChatConfig | null>(null)
-const groups = ref<SharedChatFeishuGroup[]>([])
-const groupMenuOpen = ref(false)
-const configLoading = ref(true)
-const groupsLoading = ref(false)
-const configSaving = ref(false)
-const configError = ref('')
-const syncRuns = ref<SharedChatSyncRun[]>([])
-const syncRunsLoading = ref(false)
-const syncRunning = ref(false)
-const syncError = ref('')
-const pollIntervalAmount = ref(15)
-const pollIntervalUnit = ref<'SECONDS' | 'MINUTES'>('SECONDS')
 const reviewOpen = ref(false)
 const initialReviewId = ref('')
-const storageKey = computed(() => `wao-shared-chat-draft-v2:${session.userId || 'unknown'}`)
+const storageKey = computed(
+  () =>
+    `wao-shared-chat-draft-v2${props.draftScope ? `-${props.draftScope}` : ''}:${session.userId || 'unknown'}`,
+)
 const contentLength = computed(() => Array.from(draft.value).length)
 const canSend = computed(
   () =>
@@ -144,17 +128,22 @@ async function markVisibleRead() {
   const last = messages.value[messages.value.length - 1]
   if (!last || messages.value.every((message) => message.read)) return
   try {
+    const readIds = new Set(messages.value.map((message) => message.id))
     await markSharedChatRead(last.id)
-    messages.value = messages.value.map((message) => ({ ...message, read: true }))
+    messages.value = messages.value.map((message) =>
+      readIds.has(message.id) ? { ...message, read: true } : message,
+    )
   } catch (error) {
     loadError.value = messageOf(error, '已读状态同步失败，请重试')
   }
 }
 
 async function load(initial = false) {
+  const memberId = session.userId
   const shouldFollow = props.visible && (initial || nearBottom())
   try {
     const incoming = await fetchSharedChatMessages()
+    if (disposed || memberId !== session.userId) return
     if (initial && !unreadBoundaryId.value) {
       unreadBoundaryId.value = incoming.find((message) => !message.read)?.id ?? ''
     }
@@ -175,110 +164,8 @@ async function poll() {
   if (!sending.value) await load(false)
 }
 
-// 展开时保留 5 秒消息反馈；最小化后只为未读角标每分钟检查一次。
-const messagePolling = createVisibilityPoller(
-  poll,
-  () => props.visible ? POLL_MS : 60_000,
-)
-
-async function loadConfig() {
-  configLoading.value = true
-  try {
-    config.value = await fetchSharedChatConfig()
-    const seconds = config.value.pollIntervalSeconds || 15
-    if (seconds >= 60 && seconds % 60 === 0) {
-      pollIntervalUnit.value = 'MINUTES'
-      pollIntervalAmount.value = seconds / 60
-    } else {
-      pollIntervalUnit.value = 'SECONDS'
-      pollIntervalAmount.value = seconds
-    }
-    configError.value = ''
-  } catch (error) {
-    configError.value = messageOf(error, '飞书群配置读取失败')
-  } finally {
-    configLoading.value = false
-  }
-}
-
-async function toggleGroupMenu() {
-  if (configSaving.value) return
-  groupMenuOpen.value = !groupMenuOpen.value
-  if (!groupMenuOpen.value) return
-  void loadSyncRuns()
-  if (groups.value.length) return
-  groupsLoading.value = true
-  try {
-    groups.value = await fetchSharedChatFeishuGroups()
-    configError.value = ''
-  } catch (error) {
-    configError.value = messageOf(error, '真实飞书群读取失败，请检查自建应用配置')
-  } finally {
-    groupsLoading.value = false
-  }
-}
-
-async function loadSyncRuns() {
-  syncRunsLoading.value = true
-  try {
-    syncRuns.value = await fetchSharedChatSyncRuns(6)
-    syncError.value = ''
-  } catch (error) {
-    syncError.value = messageOf(error, '同步运行读取失败')
-  } finally { syncRunsLoading.value = false }
-}
-
-async function syncToday() {
-  if (!config.value?.configured || syncRunning.value) return
-  syncRunning.value = true
-  syncError.value = ''
-  try {
-    const result = await runSharedChatSyncNow()
-    syncRuns.value = [result, ...syncRuns.value.filter((item) => item.id !== result.id)].slice(0, 6)
-    await load(false)
-  } catch (error) {
-    syncError.value = messageOf(error, '当日聊天核对失败，请查看原因后重试')
-    await loadSyncRuns()
-  } finally { syncRunning.value = false }
-}
-
-function storageText(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-async function selectGroup(chatId: string) {
-  configSaving.value = true
-  try {
-    config.value = await saveSharedChatConfig(chatId, intervalSeconds())
-    configError.value = ''
-    groupMenuOpen.value = false
-  } catch (error) {
-    configError.value = messageOf(error, '飞书群保存失败，原目标未改变')
-  } finally {
-    configSaving.value = false
-  }
-}
-
-function intervalSeconds() {
-  return Math.round(pollIntervalAmount.value * (pollIntervalUnit.value === 'MINUTES' ? 60 : 1))
-}
-
-async function savePollingInterval() {
-  const seconds = intervalSeconds()
-  if (seconds < 5 || seconds > 3_600) {
-    configError.value = '同步频率必须在 5 秒到 60 分钟之间'
-    return
-  }
-  configSaving.value = true
-  try {
-    config.value = await saveSharedChatConfig(config.value?.chatId || '', seconds)
-    configError.value = ''
-  } catch (error) {
-    configError.value = messageOf(error, '同步频率保存失败，原设置未改变')
-  } finally { configSaving.value = false }
-}
+// 展开每 5 秒刷新；收起仍为入口和宠物保持及时未读提示。
+const messagePolling = createVisibilityPoller(poll, () => (props.visible ? POLL_MS : 10_000))
 
 async function uploadInlineImage(file: File, done: (url: string | null, name: string) => void) {
   sendError.value = ''
@@ -310,6 +197,26 @@ function insertEmoji(emoji: string) {
   emojiOpen.value = false
 }
 
+function onComposerKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return
+  if (
+    !(event.target instanceof Element) ||
+    !event.target.closest('textarea, [contenteditable="true"]')
+  )
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  void send()
+}
+
+watch(
+  () => ui.chatDraftRequestVersion,
+  () => {
+    const addition = ui.consumeChatDraft()
+    if (addition) draft.value += `${draft.value.trim() ? '\n\n' : ''}${addition}`
+  },
+)
+
 function quote(message: SharedChatMessage) {
   replyingTo.value = message
   reactionMenuId.value = ''
@@ -319,34 +226,33 @@ async function send() {
   if (!canSend.value) return
   sending.value = true
   sendError.value = ''
-  if (!clientToken.value) clientToken.value = newToken()
+  if (
+    !sendAttempt ||
+    sendAttempt.content !== draft.value ||
+    sendAttempt.replyToId !== replyingTo.value?.id
+  ) {
+    sendAttempt = { content: draft.value, replyToId: replyingTo.value?.id, token: newToken() }
+  }
+  const sentDraft = draft.value
+  const sentReply = replyingTo.value?.id
   try {
     const saved = await sendSharedChatMessage({
-      clientToken: clientToken.value,
+      clientToken: sendAttempt.token,
       content: draft.value,
       replyToId: replyingTo.value?.id,
     })
     merge([saved])
-    draft.value = ''
-    replyingTo.value = null
-    localStorage.removeItem(storageKey.value)
-    clientToken.value = ''
+    if (draft.value === sentDraft && replyingTo.value?.id === sentReply) {
+      draft.value = ''
+      replyingTo.value = null
+      localStorage.removeItem(storageKey.value)
+    }
+    sendAttempt = null
     await scrollBottom()
   } catch (error) {
     sendError.value = messageOf(error, '发送失败，草稿已保留，请重试')
   } finally {
     sending.value = false
-  }
-}
-
-async function retryFeishu(message: SharedChatMessage) {
-  retryingId.value = message.id
-  try {
-    merge([await retrySharedChatFeishu(message.id)])
-  } catch (error) {
-    sendError.value = messageOf(error, '飞书同步重试失败')
-  } finally {
-    retryingId.value = ''
   }
 }
 
@@ -374,7 +280,22 @@ watch([draft, replyingTo], () => {
   } else localStorage.removeItem(storageKey.value)
 })
 
-watch(unreadCount, (count) => emit('unread-change', count), { immediate: true })
+watch(
+  messages,
+  () => {
+    ui.chatUnreadCount = unreadCount.value
+    ui.chatLatestUnread =
+      [...messages.value]
+        .reverse()
+        .find((message) => !message.read && message.author.id !== session.userId) || null
+    emit('unread-change', unreadCount.value)
+  },
+  { immediate: true },
+)
+watch(
+  () => ui.chatRefreshVersion,
+  () => void load(false),
+)
 
 watch(
   () => props.visible,
@@ -423,13 +344,14 @@ onMounted(async () => {
       draft.value = stored
     }
   }
-  await Promise.all([load(true), loadConfig()])
+  await load(true)
   if (restoredReplyId)
     replyingTo.value = messages.value.find((message) => message.id === restoredReplyId) ?? null
   messagePolling.start(false)
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   messagePolling.stop()
 })
 </script>
@@ -442,85 +364,12 @@ onBeforeUnmount(() => {
         <h1>
           聊天 <span v-if="unreadCount">{{ unreadCount }} 条未读</span>
         </h1>
-        <p>WAO 与所选飞书群共享同一条消息流；Markdown、图文、引用、已读和表情均保留真实状态。</p>
+        <p>和团队聊一聊，任务、图片和想法都能在这里分享。</p>
       </div>
       <div class="header-actions">
         <button class="review-trigger" type="button" @click="reviewOpen = true">
           <i class="ri-chat-history-line"></i><span>复盘</span>
         </button>
-        <div class="group-picker">
-        <button
-          class="group-trigger"
-          type="button"
-          :disabled="configLoading || configSaving"
-          @click="toggleGroupMenu"
-        >
-          <i :class="configLoading || configSaving ? 'ri-loader-4-line spin' : 'ri-group-line'"></i>
-          <span>{{
-            configSaving ? '保存中…' : config?.configured ? config.chatName : '选择飞书群'
-          }}</span>
-          <i class="ri-arrow-down-s-line"></i>
-        </button>
-        <div v-if="groupMenuOpen" class="group-menu">
-          <header><b>双向同步群</b><small>只显示自建应用真实所在群</small></header>
-          <div v-if="groupsLoading" class="group-state">
-            <i class="ri-loader-4-line spin"></i>正在读取…
-          </div>
-          <template v-else>
-            <button
-              type="button"
-              :class="{ selected: !config?.configured }"
-              @click="selectGroup('')"
-            >
-              <i class="ri-link-unlink-m"></i
-              ><span><b>暂不桥接</b><small>WAO 消息仍会保存</small></span>
-            </button>
-            <button
-              v-for="group in groups"
-              :key="group.chatId"
-              type="button"
-              :class="{ selected: config?.chatId === group.chatId }"
-              @click="selectGroup(group.chatId)"
-            >
-              <i class="ri-group-2-line"></i
-              ><span
-                ><b>{{ group.name }}</b
-                ><small>机器人已在群内</small></span
-              >
-            </button>
-            <div v-if="!groups.length" class="group-state">
-              暂无真实群，请先在自动化中配置飞书自建应用。
-            </div>
-          </template>
-          <section class="poll-config">
-            <div><b>消息同步频率</b><small>和当前群一起保存</small></div>
-            <label><input v-model.number="pollIntervalAmount" type="number" min="1" max="3600" />
-              <select v-model="pollIntervalUnit"><option value="SECONDS">秒</option><option value="MINUTES">分钟</option></select>
-            </label>
-            <button type="button" :disabled="configSaving" @click="savePollingInterval">保存频率</button>
-          </section>
-          <section class="sync-history">
-            <header><div><b>当日聊天核对</b><small>每日 00:10 自动核对前一日</small></div>
-              <button type="button" :disabled="!config?.configured || syncRunning" @click="syncToday">
-                <i :class="syncRunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ syncRunning ? '核对中' : '立即核对今日' }}
-              </button>
-            </header>
-            <div v-if="syncRunsLoading" class="sync-state"><i class="ri-loader-4-line spin"></i>读取运行记录…</div>
-            <div v-else-if="!syncRuns.length" class="sync-state">还没有夜间或手动核对记录</div>
-            <template v-else>
-              <article v-for="run in syncRuns" :key="run.id" :class="run.status.toLowerCase()">
-                <span><b>{{ run.syncDay }} · {{ run.triggerType === 'NIGHTLY' ? '夜间' : '手动' }}</b>
-                  <small v-if="run.status === 'SUCCEEDED'">扫描 {{ run.messagesScanned }} · 新增 {{ run.messagesInserted }} · 更新 {{ run.messagesUpdated }}</small>
-                  <small v-else>{{ run.errorMessage || '正在核对真实群消息' }}</small></span>
-                <em>{{ run.status === 'SUCCEEDED' ? `+${storageText(run.contentBytesAdded)}` : run.status === 'FAILED' ? '失败' : '运行中' }}</em>
-              </article>
-            </template>
-            <p>空间口径为本次新增正文与图片原始字节，不把数据库索引页或其它进程的磁盘变化算进聊天任务。</p>
-          </section>
-          <div v-if="syncError" class="config-error">{{ syncError }} <button type="button" @click="loadSyncRuns">重试</button></div>
-          <div v-if="configError" class="config-error">{{ configError }}</div>
-        </div>
-        </div>
         <button
           v-if="floating"
           class="minimize-trigger"
@@ -559,7 +408,6 @@ onBeforeUnmount(() => {
             <div class="message-body">
               <div class="message-meta">
                 <strong>{{ message.author.name }}</strong>
-                <span v-if="message.source === 'FEISHU'" class="source-badge">飞书</span>
                 <time>{{ formatTime(message.createdAt) }}</time>
               </div>
               <button v-if="message.replyTo" class="reply-card" type="button">
@@ -618,31 +466,9 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </div>
-              <div v-if="message.source !== 'FEISHU'" class="delivery" :class="message.feishuStatus.toLowerCase()">
-                <template v-if="message.feishuStatus === 'SENT'">
-                  <i class="ri-check-double-line"></i>
-                  {{
-                    message.feishuReadCount
-                      ? `飞书 ${message.feishuReadCount} 人已读`
-                      : message.readCount > 1
-                        ? `${message.readCount} 人已读`
-                        : '已同步飞书'
-                  }}
-                </template>
-                <template v-else-if="message.feishuStatus === 'PENDING'"
-                  ><i class="ri-loader-4-line spin"></i> 正在同步飞书</template
-                >
-                <template v-else>
-                  <i class="ri-alert-line"></i> {{ message.feishuError || '未同步飞书' }}
-                  <button
-                    v-if="['FAILED', 'UNAVAILABLE'].includes(message.feishuStatus)"
-                    type="button"
-                    :disabled="retryingId === message.id"
-                    @click="retryFeishu(message)"
-                  >
-                    {{ retryingId === message.id ? '重试中…' : '重试' }}
-                  </button>
-                </template>
+              <div class="delivery">
+                <i class="ri-check-double-line"></i>
+                {{ message.readCount > 1 ? `${message.readCount} 人已读` : '已发送' }}
               </div>
             </div>
           </article>
@@ -652,12 +478,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <form
-        class="composer"
-        @submit.prevent="send"
-        @keydown.ctrl.enter.prevent="send"
-        @keydown.meta.enter.prevent="send"
-      >
+      <form class="composer" @submit.prevent="send" @keydown.capture="onComposerKeydown">
         <div v-if="replyingTo" class="replying">
           <i class="ri-reply-line"></i
           ><span
@@ -678,7 +499,7 @@ onBeforeUnmount(() => {
           <div class="composer-status">
             <span v-if="uploadingImage">正在保存图片草稿…</span>
             <span v-else-if="sendError" class="send-error">{{ sendError }}</span>
-            <span v-else>{{ draft ? '草稿已保存在本机' : 'Ctrl / ⌘ + Enter 发送' }}</span>
+            <span v-else>{{ draft ? '草稿已保存在本机' : 'Enter 发送 · Shift+Enter 换行' }}</span>
             <span :class="{ over: contentLength > 2000 }">{{ contentLength }}/2000</span>
           </div>
           <div class="composer-actions">
@@ -752,109 +573,10 @@ onBeforeUnmount(() => {
   font-weight: 700;
   letter-spacing: 0.12em;
 }
-.group-picker {
-  position: relative;
-}
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .review-trigger { height: 36px; padding: 0 13px; border: 1px solid var(--wao-line-control); border-radius: 10px; background: var(--wao-primary); color: #fff; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .minimize-trigger { width: 36px; height: 36px; flex: 0 0 36px; border: 1px solid var(--wao-line-control); border-radius: 10px; background: var(--wao-bg-card); color: var(--wao-text-weak); display: grid; place-items: center; cursor: pointer; }
 .minimize-trigger:hover { background: var(--wao-bg-hover-2); color: var(--wao-text); }
-.group-trigger {
-  width: 180px;
-  height: 36px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 10px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-2);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  cursor: pointer;
-}
-.group-trigger span {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-.group-menu {
-  position: absolute;
-  z-index: 30;
-  right: 0;
-  top: 43px;
-  width: min(310px, calc(100vw - 40px));
-  max-height: 420px;
-  overflow: auto;
-  background: var(--wao-bg-card);
-  border: 1px solid var(--wao-line);
-  border-radius: 12px;
-  padding: 8px;
-  box-shadow: 0 18px 48px rgba(20, 35, 31, 0.2);
-}
-.group-menu header {
-  display: grid;
-  padding: 5px 7px 9px;
-}
-.group-menu header small,
-.group-menu button small {
-  color: var(--wao-text-faint);
-  font-size: 9px;
-}
-.group-menu > button {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  border-radius: 9px;
-  padding: 8px;
-  display: grid;
-  grid-template-columns: 22px 1fr;
-  text-align: left;
-  color: var(--wao-text-2);
-  cursor: pointer;
-}
-.group-menu > button.selected,
-.group-menu > button:hover {
-  background: color-mix(in srgb, var(--wao-primary) 9%, transparent);
-}
-.group-menu > button span {
-  display: grid;
-}
-.group-state,
-.config-error {
-  padding: 9px;
-  color: var(--wao-text-weak);
-  font-size: 10px;
-}
-.poll-config { margin-top: 6px; padding: 10px 7px 5px; border-top: 1px solid var(--wao-divider); display: grid; grid-template-columns: 1fr auto; gap: 7px; align-items: center; }
-.poll-config>div { display: grid; }
-.poll-config small { color: var(--wao-text-faint); font-size: 8px; }
-.poll-config label { display: flex; }
-.poll-config input { width: 54px; }
-.poll-config input,.poll-config select { min-height: 30px; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); padding: 4px 6px; }
-.poll-config input { border-radius: 7px 0 0 7px; }
-.poll-config select { border-left: 0; border-radius: 0 7px 7px 0; }
-.poll-config>button { grid-column: 1/-1; min-height: 30px; border: 0; border-radius: 7px; background: var(--wao-primary-soft); color: var(--wao-primary-text); cursor: pointer; }
-.sync-history { margin-top: 8px; padding: 10px 7px 5px; border-top: 1px solid var(--wao-divider); }
-.sync-history > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.sync-history > header div { display: grid; }
-.sync-history > header small,.sync-history > p,.sync-state { color: var(--wao-text-faint); font-size: 8px; }
-.sync-history > header button { min-height: 28px; border: 0; border-radius: 7px; padding: 0 8px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: 9px; cursor: pointer; }
-.sync-history > header button:disabled { opacity: .5; cursor: not-allowed; }
-.sync-history article { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding: 7px; border-radius: 8px; background: var(--wao-bg-sub); }
-.sync-history article > span { min-width: 0; flex: 1; display: grid; }
-.sync-history article b { font-size: 9px; }
-.sync-history article small { overflow: hidden; color: var(--wao-text-weak); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.sync-history article em { color: var(--wao-primary-text); font-size: 9px; font-style: normal; }
-.sync-history article.failed em { color: var(--wao-danger); }
-.sync-history > p { margin: 8px 0 0; line-height: 1.45; }
-.config-error button { border: 0; background: transparent; color: inherit; text-decoration: underline; cursor: pointer; }
-.config-error {
-  color: var(--wao-danger);
-  background: var(--wao-danger-tint);
-  border-radius: 8px;
-}
 .chat-shell {
   min-height: 0;
   flex: 1;
@@ -1004,7 +726,11 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   transition: 0.15s;
 }
-.message-row.mine .message-actions { left: auto; right: calc(100% + 7px); flex-direction: row-reverse; }
+.message-row.mine .message-actions {
+  left: auto;
+  right: calc(100% + 7px);
+  flex-direction: row-reverse;
+}
 .message-row:hover .message-actions,
 .message-actions:focus-within {
   opacity: 1;
@@ -1172,15 +898,33 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 14px;
 }
-.floating .chat-header { align-items: center; }
-.floating .chat-header > div:first-child { min-width: 0; flex: 1; }
-.floating .chat-header h1 { margin: 0; font-size: 19px; }
-.floating .chat-header p { display: none; }
-.floating .header-actions { flex: 0 1 auto; min-width: 0; }
-.floating .group-trigger { width: min(180px, 26vw); }
-.floating .chat-shell { border-radius: 13px; }
-.floating .message-stream { padding: 16px 18px; }
-.floating .composer { padding: 9px 11px; }
+.floating .chat-header {
+  align-items: center;
+}
+.floating .chat-header > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+.floating .chat-header h1 {
+  margin: 0;
+  font-size: 19px;
+}
+.floating .chat-header p {
+  display: none;
+}
+.floating .header-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.floating .chat-shell {
+  border-radius: 13px;
+}
+.floating .message-stream {
+  padding: 16px 18px;
+}
+.floating .composer {
+  padding: 9px 11px;
+}
 .spin {
   display: inline-block;
   animation: spin 1s linear infinite;
@@ -1207,12 +951,14 @@ onBeforeUnmount(() => {
   .chat-header p:not(.eyebrow) {
     display: none;
   }
-  .group-trigger {
-    width: 145px;
+      .review-trigger span {
+    display: none;
   }
-  .floating .group-trigger { width: min(132px, 35vw); }
-  .review-trigger span { display: none; }
-  .review-trigger { width: 36px; padding: 0; justify-content: center; }
+  .review-trigger {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
   .message-stream {
     padding: 14px 10px;
   }
@@ -1235,7 +981,9 @@ onBeforeUnmount(() => {
     transform: none;
     margin-top: 4px;
   }
-  .message-row.mine .message-actions { flex-direction: row; }
+  .message-row.mine .message-actions {
+    flex-direction: row;
+  }
   .message-text {
     font-size: 12px;
   }

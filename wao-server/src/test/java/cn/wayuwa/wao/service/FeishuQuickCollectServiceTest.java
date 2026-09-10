@@ -54,14 +54,13 @@ class FeishuQuickCollectServiceTest {
     private final FeishuQuickCollectEventMapper events = mock(FeishuQuickCollectEventMapper.class);
     private final ImageService images = mock(ImageService.class);
     private final NotificationFeedbackService feedback = mock(NotificationFeedbackService.class);
-    private final SharedChatFeishuBridge sharedChat = mock(SharedChatFeishuBridge.class);
     private final FeishuQuickCollectAiRunService reactionAiRuns = mock(FeishuQuickCollectAiRunService.class);
     private final FeishuQuickCollectReactionPolicy reactionPolicy = new FeishuQuickCollectReactionPolicy(settings);
     private final FeishuQuickCollectRecallService recalls = mock(FeishuQuickCollectRecallService.class);
     private final FeishuLinkPreviewService linkPreviews = mock(FeishuLinkPreviewService.class);
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
             settings, feishu, tasks, projects, accounts, identities, events, images, new ObjectMapper(), feedback,
-            sharedChat, reactionAiRuns, reactionPolicy, recalls, linkPreviews);
+            reactionAiRuns, reactionPolicy, recalls, linkPreviews);
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
@@ -118,7 +117,6 @@ class FeishuQuickCollectServiceTest {
 
         assertThat(out).isEqualTo(preview);
         verify(linkPreviews).preview(any(), eq("https://wao.example"));
-        verify(sharedChat, never()).handleEvent(any());
         verify(reactionAiRuns, never()).trigger(any(), any());
     }
 
@@ -161,7 +159,6 @@ class FeishuQuickCollectServiceTest {
         service.handleEvent(reaction("real-token"), "https://wao.example");
 
         verify(reactionAiRuns).trigger(any(), eq("https://wao.example"));
-        verify(sharedChat).handleEvent(any());
     }
 
     @Test
@@ -171,7 +168,6 @@ class FeishuQuickCollectServiceTest {
         service.handleEvent(reaction(""), "https://wao.example");
 
         verify(reactionAiRuns, never()).trigger(any(), any());
-        verify(sharedChat).handleEvent(any());
     }
 
     @Test

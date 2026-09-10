@@ -32,7 +32,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-/** 组织共享聊天：可靠保存、阅读事实、引用和表情，并把飞书故障收口为可重试状态。 */
+/** 组织共享聊天：可靠保存、阅读事实、引用和表情，全部在 WAO 内持久化。 */
 @Service
 public class SharedChatService {
     private static final int MAX_MESSAGES = 100;
@@ -46,17 +46,14 @@ public class SharedChatService {
     private final SharedChatReactionMapper reactions;
     private final MemberMapper members;
     private final ImageBlobMapper images;
-    private final SharedChatFeishuBridge bridge;
 
     public SharedChatService(SharedChatMessageMapper messages, SharedChatMessageReadMapper reads,
-            SharedChatReactionMapper reactions, MemberMapper members, ImageBlobMapper images,
-            SharedChatFeishuBridge bridge) {
+            SharedChatReactionMapper reactions, MemberMapper members, ImageBlobMapper images) {
         this.messages = messages;
         this.reads = reads;
         this.reactions = reactions;
         this.members = members;
         this.images = images;
-        this.bridge = bridge;
     }
 
     /** 读取最近消息或已知游标后的消息，并带上当前成员的真实已读与表情状态。 */
@@ -72,9 +69,9 @@ public class SharedChatService {
         return toDtos(found, memberId);
     }
 
-    /** 发送文字、Markdown 图文或引用回复；消息先落库再尝试飞书。 */
+    /** 发送文字、Markdown 图文或引用回复；仅写入 WAO 消息流。 */
     public SharedChatMessageDto create(String memberId, CreateSharedChatMessageRequest request) {
-        MemberEntity member = requireMember(memberId);
+        requireMember(memberId);
         String token = clientToken(request == null ? null : request.clientToken());
         SharedChatMessageEntity duplicate = messages.findByClientToken(memberId, token);
         if (duplicate != null) return toDtos(List.of(duplicate), memberId).get(0);
@@ -85,7 +82,7 @@ public class SharedChatService {
         SharedChatMessageEntity reply = null;
         if (StringUtils.hasText(request.replyToId())) {
             reply = messages.selectById(request.replyToId().trim());
-            if (reply == null) throw new BadRequestException("引用的聊天消息不存在，请重新选择");
+            if (reply == null || !"WAO".equals(reply.getSource())) throw new BadRequestException("引用的聊天消息不存在，请重新选择");
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -99,7 +96,7 @@ public class SharedChatService {
         entity.setImageName(image == null ? null : image.getName());
         entity.setReplyToId(reply == null ? null : reply.getId());
         entity.setDeleted(false);
-        entity.setFeishuStatus("PENDING");
+        entity.setFeishuStatus("LOCAL");
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
         try {
@@ -110,17 +107,6 @@ public class SharedChatService {
             return toDtos(List.of(winner), memberId).get(0);
         }
         markOneRead(entity.getId(), memberId, "WAO", now);
-        bridge.deliver(entity, member);
-        return toDtos(List.of(entity), memberId).get(0);
-    }
-
-    /** 重试尚未成功的飞书投递；成功消息与飞书入站消息都不会重复发送。 */
-    public SharedChatMessageDto retry(String memberId, String id) {
-        SharedChatMessageEntity entity = messages.selectById(id);
-        if (entity == null) throw new NotFoundException("聊天消息不存在");
-        if ("WAO".equals(entity.getSource()) && !"SENT".equals(entity.getFeishuStatus())) {
-            bridge.deliver(entity, requireMember(entity.getMemberId()));
-        }
         return toDtos(List.of(entity), memberId).get(0);
     }
 
@@ -142,8 +128,26 @@ public class SharedChatService {
 
     /** 切换当前成员对一条消息的表情回复，并返回刷新后的消息状态。 */
     public SharedChatMessageDto toggleReaction(String memberId, String id, String emojiType) {
-        bridge.toggleReaction(memberId, id, emojiType == null ? "" : emojiType.trim());
+        String emoji = emojiType == null ? "" : emojiType.trim();
+        if (!EMOJI_GLYPHS.containsKey(emoji)) throw new BadRequestException("不支持该表情");
+        MemberEntity member = requireMember(memberId);
         SharedChatMessageEntity message = messages.selectById(id);
+        if (message == null || !"WAO".equals(message.getSource())) throw new NotFoundException("聊天消息不存在");
+        String key = "member:" + memberId;
+        if (reactions.find(id, key, emoji) != null) {
+            reactions.deleteReaction(id, key, emoji);
+        } else {
+            SharedChatReactionEntity reaction = new SharedChatReactionEntity();
+            reaction.setId(uuid());
+            reaction.setMessageId(id);
+            reaction.setReactorKey(key);
+            reaction.setMemberId(memberId);
+            reaction.setReactorName(member.getName());
+            reaction.setEmojiType(emoji);
+            reaction.setSource("WAO");
+            reaction.setCreatedAt(LocalDateTime.now());
+            try { reactions.insert(reaction); } catch (DuplicateKeyException ignored) { /* 并发重复点击已落库 */ }
+        }
         return toDtos(List.of(message), memberId).get(0);
     }
 
@@ -167,9 +171,9 @@ public class SharedChatService {
 
         List<String> ids = entities.stream().map(SharedChatMessageEntity::getId).toList();
         List<SharedChatMessageReadEntity> readRows = reads.selectList(
-                new LambdaQueryWrapper<SharedChatMessageReadEntity>().in(SharedChatMessageReadEntity::getMessageId, ids));
+                new LambdaQueryWrapper<SharedChatMessageReadEntity>().eq(SharedChatMessageReadEntity::getSource, "WAO").in(SharedChatMessageReadEntity::getMessageId, ids));
         List<SharedChatReactionEntity> reactionRows = reactions.selectList(
-                new LambdaQueryWrapper<SharedChatReactionEntity>().in(SharedChatReactionEntity::getMessageId, ids));
+                new LambdaQueryWrapper<SharedChatReactionEntity>().eq(SharedChatReactionEntity::getSource, "WAO").in(SharedChatReactionEntity::getMessageId, ids));
         Map<String, List<SharedChatMessageReadEntity>> readsByMessage = groupReads(readRows);
         Map<String, List<SharedChatReactionEntity>> reactionsByMessage = groupReactions(reactionRows);
 

@@ -63,7 +63,8 @@ describe('悬浮聊天入口', () => {
   it('点击右上角入口打开，点击框外最小化且重新打开仍保留输入', async () => {
     const { wrapper, ui } = await mountFloating()
 
-    await wrapper.get('.chat-entry').trigger('click')
+    bodyElement<HTMLButtonElement>('.chat-entry').click()
+    await nextTick()
     const draft = bodyElement<HTMLInputElement>('input[aria-label="聊天草稿"]')
     draft.value = '还没发完'
     draft.dispatchEvent(new Event('input', { bubbles: true }))
@@ -74,7 +75,8 @@ describe('悬浮聊天入口', () => {
     await nextTick()
     expect(ui.chatOpen).toBe(false)
 
-    await wrapper.get('.chat-entry').trigger('click')
+    bodyElement<HTMLButtonElement>('.chat-entry').click()
+    await nextTick()
     expect(bodyElement<HTMLInputElement>('input[aria-label="聊天草稿"]').value).toBe('还没发完')
   })
 
@@ -83,7 +85,7 @@ describe('悬浮聊天入口', () => {
 
     bodyElement<HTMLButtonElement>('.stub-unread').click()
     await nextTick()
-    expect(wrapper.get('.chat-badge').text()).toBe('3')
+    expect(bodyElement('.chat-badge').textContent).toBe('3')
 
     ui.openChat()
     bodyElement<HTMLButtonElement>('.stub-minimize').click()

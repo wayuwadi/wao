@@ -259,6 +259,120 @@ fn popup(
     }
 }
 
+// The remote pet can request only these fixed UI actions. No arbitrary URLs,
+// filesystem paths, JavaScript, credentials, or native capabilities cross this boundary.
+fn pet_action_name(url: &tauri::Url, origin: &tauri::Url) -> Option<String> {
+    if url.origin() != origin.origin() || url.query().is_some() || url.fragment().is_some() {
+        return None;
+    }
+    let action = url.path().strip_prefix("/__desktop_pet__/")?;
+    if matches!(
+        action,
+        "compact" | "bubble" | "chat" | "hide" | "workspace" | "drag"
+    ) {
+        Some(action.to_string())
+    } else {
+        None
+    }
+}
+
+fn resize_pet(window: &tauri::WebviewWindow, width: f64, height: f64) {
+    // Keep the bottom-right anchor on expansion, and clamp to the current work area.
+    if let (Ok(position), Ok(size), Ok(scale), Ok(Some(monitor))) = (
+        window.outer_position(),
+        window.outer_size(),
+        window.scale_factor(),
+        window.current_monitor(),
+    ) {
+        let area = monitor.work_area();
+        let width = width.min(area.size.width as f64 / scale);
+        let height = height.min(area.size.height as f64 / scale);
+        let x = (position.x + size.width as i32 - (width * scale) as i32)
+            .max(area.position.x)
+            .min(area.position.x + area.size.width as i32 - (width * scale) as i32);
+        let y = (position.y + size.height as i32 - (height * scale) as i32)
+            .max(area.position.y)
+            .min(area.position.y + area.size.height as i32 - (height * scale) as i32);
+        let _ = window.set_size(LogicalSize::new(width, height));
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+}
+
+fn show_desktop_pet(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("pet") {
+        window.show()?;
+        return Ok(());
+    }
+    let origin = workspace_url();
+    let url = origin
+        .join("/desktop-pet?native=1")
+        .expect("fixed pet route");
+    let navigation_app = app.clone();
+    let window = tauri::WebviewWindowBuilder::new(app, "pet", WebviewUrl::External(url))
+        .title("WAO · 宠物传话")
+        .inner_size(180.0, 190.0)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .disable_drag_drop_handler()
+        .on_navigation(move |next| {
+            if let Some(action) = pet_action_name(next, &origin) {
+                if let Some(pet) = navigation_app.get_webview_window("pet") {
+                    // Requests must originate from this same-origin pet page.
+                    if pet
+                        .url()
+                        .map(|current| {
+                            current.origin() == origin.origin() && current.path() == "/desktop-pet"
+                        })
+                        .unwrap_or(false)
+                    {
+                        match action.as_str() {
+                            "compact" => resize_pet(&pet, 180.0, 190.0),
+                            "bubble" => resize_pet(&pet, 340.0, 510.0),
+                            "chat" => resize_pet(&pet, 620.0, 780.0),
+                            "hide" => {
+                                let _ = pet.hide();
+                            }
+                            "workspace" => show(&navigation_app),
+                            "drag" => {
+                                let _ = pet.start_dragging();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                return false;
+            }
+            if next.origin() == origin.origin() && next.path() == "/desktop-pet" {
+                return true;
+            }
+            if next.origin() == origin.origin() && next.path() == "/login" {
+                show(&navigation_app);
+                return false;
+            }
+            if external_url(next) {
+                let _ = navigation_app
+                    .opener()
+                    .open_url(next.as_str(), None::<&str>);
+            }
+            false
+        })
+        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .build()?;
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let area = monitor.work_area();
+        let scale = monitor.scale_factor();
+        window.set_position(tauri::PhysicalPosition::new(
+            area.position.x + area.size.width as i32 - (204.0 * scale) as i32,
+            area.position.y + area.size.height as i32 - (214.0 * scale) as i32,
+        ))?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(), String> {
     local_shell(&webview)?;
@@ -316,10 +430,15 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
 }
 
 #[tauri::command]
-fn workspace_action(app: tauri::AppHandle, webview: Webview, action: String) -> Result<(), String> {
+async fn workspace_action(
+    app: tauri::AppHandle,
+    webview: Webview,
+    action: String,
+) -> Result<(), String> {
     local_shell(&webview)?;
     let workspace = app.get_webview("workspace").ok_or("工作区尚未连接")?;
     match action.as_str() {
+        "pet" => return show_desktop_pet(&app).map_err(|e| e.to_string()),
         "back" => workspace.eval("history.back()"),
         "forward" => workspace.eval("history.forward()"),
         "reload" => workspace.reload(),
@@ -393,10 +512,11 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             macos_menu(app)?;
             let open = MenuItemBuilder::with_id("open", "打开 WAO 工作区").build(app)?;
+            let pet = MenuItemBuilder::with_id("pet", "显示桌面宠物").build(app)?;
             let update = MenuItemBuilder::with_id("update", "检查客户端更新").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出 WAO…").build(app)?;
             let menu = MenuBuilder::new(app)
-                .items(&[&open, &update])
+                .items(&[&open, &pet, &update])
                 .separator()
                 .item(&quit)
                 .build()?;
@@ -408,6 +528,9 @@ pub fn run() {
                 .on_menu_event(|app, event| {
                     show(app);
                     match event.id.as_ref() {
+                        "pet" => {
+                            let _ = show_desktop_pet(app);
+                        }
                         "update" => {
                             let _ = app.emit_to("main", "shell-action", "update");
                         }
@@ -534,6 +657,22 @@ mod tests {
             assert!(!internal_url(&tauri::Url::parse(url).unwrap(), &origin));
         }
     }
+    #[test]
+    fn pet_only_accepts_fixed_same_origin_actions() {
+        let origin = tauri::Url::parse(PRODUCTION).unwrap();
+        assert_eq!(
+            pet_action_name(&origin.join("/__desktop_pet__/chat").unwrap(), &origin).as_deref(),
+            Some("chat")
+        );
+        for url in [
+            "https://evil.test/__desktop_pet__/chat",
+            "https://wao.wayuwa.cn/__desktop_pet__/eval",
+            "https://wao.wayuwa.cn/__desktop_pet__/chat?url=file:///etc/passwd",
+        ] {
+            assert!(pet_action_name(&tauri::Url::parse(url).unwrap(), &origin).is_none());
+        }
+    }
+
     #[test]
     fn external_links_cannot_execute_local_protocols() {
         for url in [

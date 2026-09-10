@@ -14,6 +14,7 @@ public interface SharedChatMessageMapper extends BaseMapper<SharedChatMessageEnt
 
     @Select("""
             SELECT * FROM shared_chat_message
+             WHERE source = 'WAO'
              ORDER BY created_at DESC, id DESC
              LIMIT #{limit}
             """)
@@ -21,7 +22,7 @@ public interface SharedChatMessageMapper extends BaseMapper<SharedChatMessageEnt
 
     @Select("""
             SELECT * FROM shared_chat_message
-             WHERE created_at >= #{since}
+             WHERE source = 'WAO' AND created_at >= #{since}
              ORDER BY created_at ASC, id ASC
             """)
     List<SharedChatMessageEntity> since(@Param("since") LocalDateTime since);
@@ -29,8 +30,8 @@ public interface SharedChatMessageMapper extends BaseMapper<SharedChatMessageEnt
     @Select("""
             SELECT message.* FROM shared_chat_message message
               JOIN shared_chat_message anchor ON anchor.id = #{afterId}
-             WHERE message.created_at > anchor.created_at
-                OR (message.created_at = anchor.created_at AND message.id > anchor.id)
+             WHERE message.source = 'WAO' AND (message.created_at > anchor.created_at
+                OR (message.created_at = anchor.created_at AND message.id > anchor.id))
              ORDER BY message.created_at ASC, message.id ASC
              LIMIT #{limit}
             """)

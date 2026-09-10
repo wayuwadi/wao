@@ -1,34 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { useUiStore } from '@/stores/ui'
 import ChatView from '@/views/ChatView.vue'
 import {
-  fetchSharedChatConfig,
-  fetchSharedChatFeishuGroups,
   fetchSharedChatMessages,
-  fetchSharedChatSyncRuns,
   markSharedChatRead,
-  retrySharedChatFeishu,
-  saveSharedChatConfig,
   sendSharedChatMessage,
   toggleSharedChatReaction,
-  runSharedChatSyncNow,
   uploadSharedChatImage,
   type SharedChatMessage,
 } from '@/api/chat'
 
 vi.mock('@/api/chat', () => ({
-  fetchSharedChatConfig: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatConfig']>(),
-  fetchSharedChatFeishuGroups:
-    vi.fn<(typeof import('@/api/chat'))['fetchSharedChatFeishuGroups']>(),
   fetchSharedChatMessages: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatMessages']>(),
-  fetchSharedChatSyncRuns: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatSyncRuns']>(),
   markSharedChatRead: vi.fn<(typeof import('@/api/chat'))['markSharedChatRead']>(),
-  retrySharedChatFeishu: vi.fn<(typeof import('@/api/chat'))['retrySharedChatFeishu']>(),
-  saveSharedChatConfig: vi.fn<(typeof import('@/api/chat'))['saveSharedChatConfig']>(),
   sendSharedChatMessage: vi.fn<(typeof import('@/api/chat'))['sendSharedChatMessage']>(),
   toggleSharedChatReaction: vi.fn<(typeof import('@/api/chat'))['toggleSharedChatReaction']>(),
-  runSharedChatSyncNow: vi.fn<(typeof import('@/api/chat'))['runSharedChatSyncNow']>(),
   uploadSharedChatImage: vi.fn<(typeof import('@/api/chat'))['uploadSharedChatImage']>(),
 }))
 
@@ -42,7 +30,7 @@ const message: SharedChatMessage = {
   readCount: 1,
   feishuReadCount: 0,
   reactions: [],
-  feishuStatus: 'SENT',
+  feishuStatus: 'LOCAL',
   createdAt: '2026-08-26T10:00:00+08:00',
 }
 
@@ -74,36 +62,9 @@ describe('ChatView', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     vi.mocked(fetchSharedChatMessages).mockResolvedValue([message])
-    vi.mocked(fetchSharedChatConfig).mockResolvedValue({
-      chatId: '',
-      chatName: '',
-      configured: false,
-      pollIntervalSeconds: 15,
-    })
-    vi.mocked(fetchSharedChatFeishuGroups).mockResolvedValue([])
-    vi.mocked(fetchSharedChatSyncRuns).mockResolvedValue([])
     vi.mocked(markSharedChatRead).mockResolvedValue(undefined)
-    vi.mocked(saveSharedChatConfig).mockResolvedValue({
-      chatId: '',
-      chatName: '',
-      configured: false,
-      pollIntervalSeconds: 15,
-    })
     vi.mocked(toggleSharedChatReaction).mockResolvedValue(message)
     vi.mocked(sendSharedChatMessage).mockResolvedValue(message)
-    vi.mocked(runSharedChatSyncNow).mockResolvedValue({
-      id: 'sync1',
-      triggerType: 'MANUAL',
-      chatName: '娃屋日常',
-      syncDay: '2026-08-27',
-      status: 'SUCCEEDED',
-      messagesScanned: 8,
-      messagesInserted: 2,
-      messagesUpdated: 1,
-      contentBytesAdded: 1536,
-      startedAt: '2026-08-27T10:00:00',
-      finishedAt: '2026-08-27T10:00:01',
-    })
     vi.mocked(uploadSharedChatImage).mockResolvedValue({
       id: 'img1',
       name: '截图.png',
@@ -123,11 +84,11 @@ describe('ChatView', () => {
     vi.useRealTimers()
   })
 
-  it('读取真实消息并展示飞书同步结果', async () => {
+  it('读取 WAO 消息并展示本地发送状态', async () => {
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain('从 WAO 发来的消息')
-    expect(wrapper.text()).toContain('已同步飞书')
+    expect(wrapper.text()).toContain('已发送')
     expect(fetchSharedChatMessages).toHaveBeenCalledWith()
   })
 
@@ -143,7 +104,7 @@ describe('ChatView', () => {
     expect(wrapper.text()).not.toContain('1 条未读')
   })
 
-  it('最小化后退避到每分钟读取，重新打开时立即同步', async () => {
+  it('最小化后每十秒读取，重新打开时立即同步', async () => {
     vi.useFakeTimers()
     const wrapper = await mountView({ floating: true, visible: false })
     const initialCalls = vi.mocked(fetchSharedChatMessages).mock.calls.length
@@ -151,7 +112,7 @@ describe('ChatView', () => {
     await vi.advanceTimersByTimeAsync(5_000)
     expect(fetchSharedChatMessages).toHaveBeenCalledTimes(initialCalls)
 
-    await vi.advanceTimersByTimeAsync(55_000)
+    await vi.advanceTimersByTimeAsync(5_000)
     expect(fetchSharedChatMessages).toHaveBeenCalledTimes(initialCalls + 1)
 
     await wrapper.setProps({ visible: true })
@@ -177,62 +138,7 @@ describe('ChatView', () => {
     expect(wrapper.find('.message-text script').exists()).toBe(false)
   })
 
-  it('只从飞书应用真实群列表选择并保存双向目标', async () => {
-    vi.mocked(fetchSharedChatFeishuGroups).mockResolvedValue([
-      { chatId: 'oc_real', name: '娃屋日常' },
-    ])
-    vi.mocked(saveSharedChatConfig).mockResolvedValue({
-      chatId: 'oc_real',
-      chatName: '娃屋日常',
-      configured: true,
-      pollIntervalSeconds: 15,
-    })
-    const wrapper = await mountView()
 
-    await wrapper.get('.group-trigger').trigger('click')
-    await flushPromises()
-    await wrapper.findAll('.group-menu > button')[1]!.trigger('click')
-    await flushPromises()
-
-    expect(saveSharedChatConfig).toHaveBeenCalledWith('oc_real', 15)
-    expect(wrapper.get('.group-trigger').text()).toContain('娃屋日常')
-  })
-
-  it('展示真实同步空间口径并可立即核对当日聊天', async () => {
-    vi.mocked(fetchSharedChatConfig).mockResolvedValue({
-      chatId: 'oc_real',
-      chatName: '娃屋日常',
-      configured: true,
-      pollIntervalSeconds: 15,
-    })
-    vi.mocked(fetchSharedChatSyncRuns).mockResolvedValue([
-      {
-        id: 'sync0',
-        triggerType: 'NIGHTLY',
-        chatName: '娃屋日常',
-        syncDay: '2026-08-26',
-        status: 'SUCCEEDED',
-        messagesScanned: 12,
-        messagesInserted: 3,
-        messagesUpdated: 1,
-        contentBytesAdded: 2048,
-        startedAt: '2026-08-27T00:10:00',
-        finishedAt: '2026-08-27T00:10:03',
-      },
-    ])
-    const wrapper = await mountView()
-
-    await wrapper.get('.group-trigger').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('.sync-history').text()).toContain('扫描 12 · 新增 3 · 更新 1')
-    expect(wrapper.get('.sync-history').text()).toContain('+2.0 KB')
-    expect(wrapper.get('.sync-history').text()).toContain('不把数据库索引页')
-
-    await wrapper.get('.sync-history header button').trigger('click')
-    await flushPromises()
-    expect(runSharedChatSyncNow).toHaveBeenCalledTimes(1)
-    expect(wrapper.get('.sync-history').text()).toContain('扫描 8 · 新增 2 · 更新 1')
-  })
 
   it('发送时保留引用关系并可添加真实表情回复', async () => {
     const wrapper = await mountView()
@@ -297,20 +203,43 @@ describe('ChatView', () => {
     )
   })
 
-  it('飞书失败时保留消息并允许重试', async () => {
-    const failed = {
-      ...message,
-      feishuStatus: 'FAILED' as const,
-      feishuError: '同步失败，请稍后重试',
-    }
-    vi.mocked(fetchSharedChatMessages).mockResolvedValue([failed])
-    vi.mocked(retrySharedChatFeishu).mockResolvedValue(message)
+
+  it('Enter 发送，Shift+Enter 和中文输入法确认不发送', async () => {
     const wrapper = await mountView()
-
-    await wrapper.get('.delivery button').trigger('click')
+    const editor = wrapper.get('textarea')
+    await editor.setValue('测试快捷发送')
+    await editor.trigger('keydown', { key: 'Enter', shiftKey: true })
+    await editor.trigger('keydown', { key: 'Enter', isComposing: true })
+    expect(sendSharedChatMessage).not.toHaveBeenCalled()
+    await editor.trigger('keydown', { key: 'Enter' })
     await flushPromises()
-
-    expect(retrySharedChatFeishu).toHaveBeenCalledWith('msg1')
-    expect(wrapper.text()).toContain('已同步飞书')
+    expect(sendSharedChatMessage).toHaveBeenCalledTimes(1)
   })
+
+  it('任务分享追加到原草稿且不关闭任务', async () => {
+    const wrapper = await mountView({ floating: true, visible: false })
+    await wrapper.get('textarea').setValue('原来的想法')
+    const ui = useUiStore()
+    ui.openTask('task1')
+    ui.shareToChat('[任务](/s/t/task1)')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('原来的想法\n\n[任务](/s/t/task1)')
+    expect(ui.openTaskId).toBe('task1')
+    expect(ui.chatOpen).toBe(true)
+    expect(sendSharedChatMessage).not.toHaveBeenCalled()
+  })
+
+  it('发送失败保留草稿并以相同幂等标识重试', async () => {
+    vi.mocked(sendSharedChatMessage).mockRejectedValueOnce(new Error('网络断开'))
+    const wrapper = await mountView()
+    await wrapper.get('textarea').setValue('不能丢的消息')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('不能丢的消息')
+    const token = vi.mocked(sendSharedChatMessage).mock.calls[0]![0].clientToken
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(vi.mocked(sendSharedChatMessage).mock.calls[1]![0].clientToken).toBe(token)
+  })
+
 })

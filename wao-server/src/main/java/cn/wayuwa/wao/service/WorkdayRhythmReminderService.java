@@ -146,11 +146,7 @@ public class WorkdayRhythmReminderService {
                 List.of(List.of("归属日期", value.getOccurrenceDate().toString()),
                         List.of("截止时间", value.getDueTime().toString().substring(0, 5))),
                 body, "打开今日节奏", links.open("/workday-rhythm"));
-        if ("CHAT".equals(channel)) {
-            if (!StringUtils.hasText(value.getChatId()) || !StringUtils.hasText(appId) || !StringUtils.hasText(secret)) throw new IllegalStateException("飞书群聊提醒配置不可用");
-            feishu.sendCard(feishu.tenantAccessToken(appId, secret), value.getChatId(), card); return;
-        }
-        var target = webhooks.enabledTarget(value.getWebhookId()); webhookNotifier.send(target.url(), card);
+        if (!webhookNotifier.notifyCard(card)) throw new IllegalStateException("WAO 通知保存失败");
     }
 
     private LocalDateTime reminderAt(WorkdayRhythmChecklistOccurrenceEntity value) {

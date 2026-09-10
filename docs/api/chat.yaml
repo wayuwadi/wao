@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: WAO 组织共享聊天 API
-  version: 0.2.0
-  description: 所有接口需要 WAO 登录会话；消息对组织成员共享，飞书状态只来自真实开放 API 或事件。
+  version: 0.3.0
+  description: 所有接口需要 WAO 登录会话；消息对组织成员共享，发送、阅读和表情只在 WAO 内保存；飞书桥接和同步接口已退休（ADR-227）。
 security:
   - cookieAuth: []
 paths:
@@ -17,15 +17,15 @@ paths:
         "400": { description: 游标已经失效 }
     post:
       operationId: createSharedChatMessage
-      summary: 保存 Markdown 图文或引用回复，并尝试发送普通飞书富文本
-      description: 消息先落库；同成员与 clientToken 去重，消息 id 同时作为飞书 uuid。
+      summary: 保存 Markdown 图文或引用回复，到 WAO 聊天
+      description: 同成员与 clientToken 去重；重试使用相同 token，不调用飞书。
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/CreateMessageRequest" }
       responses:
-        "200": { description: 返回含飞书同步终态的已保存消息 }
+        "200": { description: 返回已保存消息；兼容字段 feishuStatus 为 LOCAL }
         "400": { description: 消息为空、超过 2000 字、token 或引用非法 }
   /api/chat/messages/read:
     post:
@@ -35,15 +35,6 @@ paths:
         - { name: through, in: query, required: true, schema: { type: string, maxLength: 32 } }
       responses:
         "200": { description: 已读事实已幂等保存 }
-  /api/chat/messages/{id}/retry-feishu:
-    post:
-      operationId: retrySharedChatFeishu
-      summary: 以相同飞书 uuid 重试一条 WAO 消息
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string, maxLength: 32 } }
-      responses:
-        "200": { description: 返回最新投递状态 }
-        "404": { description: 消息不存在 }
   /api/chat/messages/{id}/reactions/{emojiType}:
     post:
       operationId: toggleSharedChatReaction
@@ -52,47 +43,7 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string, maxLength: 32 } }
         - { name: emojiType, in: path, required: true, schema: { type: string, enum: [THUMBSUP, HEART, SMILE, DONE] } }
       responses:
-        "200": { description: 飞书操作成功后返回最新聚合；没有飞书消息 id 时只保存 WAO 状态 }
-  /api/chat/config:
-    get:
-      operationId: getSharedChatConfig
-      summary: 读取当前共享聊天飞书群目标
-      responses:
-        "200": { description: 不包含飞书应用密钥 }
-    put:
-      operationId: saveSharedChatConfig
-      summary: 保存机器人真实所在群；空 chatId 明确停用桥接
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties: { chatId: { type: string, maxLength: 128 } }
-      responses:
-        "200": { description: 返回已验证并保存的群目标 }
-        "400": { description: 群不在当前应用真实群列表或应用未配置 }
-  /api/chat/feishu-chats:
-    get:
-      operationId: listSharedChatFeishuGroups
-      summary: 列出自建应用机器人真实所在群
-      responses:
-        "200": { description: 飞书开放 API 实时群列表 }
-  /api/chat/sync-runs:
-    get:
-      operationId: listSharedChatSyncRuns
-      summary: 查询最近夜间或手动当日核对运行
-      parameters:
-        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 30, default: 10 } }
-      responses:
-        "200": { description: 返回真实扫描、变更和新增正文/图片字节 }
-  /api/chat/sync-now:
-    post:
-      operationId: runSharedChatSyncNow
-      summary: 立即核对上海时区当日飞书群消息
-      responses:
-        "200": { description: 返回已落库的同步运行终态 }
-        "400": { description: 飞书应用或共享群未配置 }
+        "200": { description: WAO 表情事实落库后返回最新聚合 }
 components:
   securitySchemes:
     cookieAuth: { type: apiKey, in: cookie, name: WAO_SESSION }
@@ -145,8 +96,8 @@ components:
         deleted: { type: boolean }
         read: { type: boolean, description: 当前 WAO 成员是否已读 }
         readCount: { type: integer, minimum: 0 }
-        feishuReadCount: { type: integer, minimum: 0, description: 仅统计官方已读事件 }
+        feishuReadCount: { type: integer, minimum: 0, description: 历史兼容字段，新消息为 0, deprecated: true }
         reactions: { type: array, items: { $ref: "#/components/schemas/Reaction" } }
-        feishuStatus: { type: string, enum: [PENDING, SENT, FAILED, UNAVAILABLE, RECEIVED] }
+        feishuStatus: { type: string, enum: [LOCAL, PENDING, SENT, FAILED, UNAVAILABLE, RECEIVED], deprecated: true }
         feishuError: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }

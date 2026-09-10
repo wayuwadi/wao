@@ -34,6 +34,8 @@ import org.springframework.util.StringUtils;
 /** 日历提醒事项的成员级维护、阴阳历年度展开与真实飞书投递。 */
 @Service
 public class FamilyImportantDateService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private InternalNotificationService internalNotifications;
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private final FamilyImportantDateMapper dates;
     private final FamilyImportantDateDeliveryMapper deliveries;
@@ -167,30 +169,13 @@ public class FamilyImportantDateService {
             }
         }
         if (request.reminderEnabled() && request.reminderTime() == null) {
-            throw new BadRequestException("开启飞书提醒后请选择提醒时间");
+            throw new BadRequestException("开启提醒后请选择提醒时间");
         }
         String notificationType = notificationType(request.notificationType());
-        if (request.reminderEnabled() && "GROUP".equals(notificationType)
-                && (!StringUtils.hasText(request.chatId()) || !StringUtils.hasText(request.chatName()))) {
-            throw new BadRequestException("群提醒需要选择目标飞书群");
-        }
         Channel reminderChannel = request.reminderEnabled()
                 ? "GROUP".equals(notificationType) ? groupChannel(memberId) : directChannel(memberId) : null;
         if (reminderChannel != null && !reminderChannel.available()) {
             throw new BadRequestException(reminderChannel.hint());
-        }
-        if (request.reminderEnabled() && "GROUP".equals(notificationType)) {
-            String token = feishu.tenantAccessToken(appId(), appSecret());
-            boolean selectedChatExists = feishu.listChats(token).stream()
-                    .anyMatch(chat -> request.chatId().equals(chat.chatId())
-                            && request.chatName().equals(chat.name()));
-            if (!selectedChatExists) {
-                throw new BadRequestException("所选飞书群已不存在或名称已变化，请重新选择");
-            }
-            String mention = feishu.chatMemberOpenIdByUnionId(token, request.chatId(), unionId(memberId));
-            if (!StringUtils.hasText(mention)) {
-                throw new BadRequestException("当前账号无法在所选群中唯一匹配，不能保证 @ 到配置人");
-            }
         }
     }
 
@@ -233,32 +218,22 @@ public class FamilyImportantDateService {
                 deliveries.updateById(delivery);
                 return;
             }
-            var account = accounts.findByMemberId(entity.getMemberId());
-            var identity = account == null ? null : identities.findByAccountProvider(account.getId(), "feishu");
-            String appId = appId();
-            String secret = appSecret();
-            if (identity == null || !StringUtils.hasText(appId) || !StringUtils.hasText(secret)) {
-                throw new IllegalStateException(directChannel(entity.getMemberId()).hint());
-            }
-            String when = entity.getReminderDaysBefore() == 0
-                    ? "今天" : entity.getReminderDaysBefore() + " 天后";
+            String when = entity.getReminderDaysBefore() == 0 ? "今天" : entity.getReminderDaysBefore() + " 天后";
             String note = StringUtils.hasText(entity.getNote()) ? "\n\n备注：" + entity.getNote() : "";
-            String token = feishu.tenantAccessToken(appId, secret);
             String body = when + "是 " + occurrence + "（" + entity.getName() + "）。" + note;
             if ("GROUP".equals(notificationType(entity.getNotificationType()))) {
-                String mention = feishu.chatMemberOpenIdByUnionId(token, entity.getChatId(),
-                        identity.getProviderUnionSubject());
-                if (!StringUtils.hasText(mention)) {
-                    throw new IllegalStateException("当前账号已无法在目标群中唯一匹配，未发送以避免 @ 错人");
-                }
-                feishu.sendCard(token, entity.getChatId(), new FeishuWebhookNotifier.Card(
-                        "日历提醒 · " + entity.getName(), "orange", List.of(
-                                List.of("日期", occurrence.toString()),
-                                List.of("提醒", when)),
-                        "<at id=" + mention + "></at> " + body,
+                internalNotifications.publishToMember(entity.getMemberId(), new FeishuWebhookNotifier.Card(
+                        "日历提醒 · " + entity.getName(), "orange", List.of(), body,
                         "打开 WAO 日历", FeishuAppLinks.SITE + "/calendar"));
             } else {
-                feishu.sendDirectCard(token, identity.getProviderSubject(),
+                var account = accounts.findByMemberId(entity.getMemberId());
+                var identity = account == null ? null : identities.findByAccountProvider(account.getId(), "feishu");
+                String appId = appId();
+                String secret = appSecret();
+                if (identity == null || !StringUtils.hasText(appId) || !StringUtils.hasText(secret)) {
+                    throw new IllegalStateException(directChannel(entity.getMemberId()).hint());
+                }
+                feishu.sendDirectCard(feishu.tenantAccessToken(appId, secret), identity.getProviderSubject(),
                         "日历提醒 · " + entity.getName(), body,
                         FeishuAppLinks.SITE + "/calendar", "打开 WAO 日历");
             }
@@ -299,12 +274,7 @@ public class FamilyImportantDateService {
     }
 
     private Channel groupChannel(String memberId) {
-        Channel direct = directChannel(memberId);
-        if (!direct.available()) return direct;
-        if (!StringUtils.hasText(unionId(memberId))) {
-            return new Channel(false, "当前飞书身份缺少跨应用 Union ID，不能可靠地在群里 @ 配置人");
-        }
-        return new Channel(true, "将发送到所选飞书群，并且只 @ 当前配置人");
+        return new Channel(true, "提醒将保存到 WAO 通知中心，仅自己可见");
     }
 
     private static void apply(FamilyImportantDateEntity entity, SaveFamilyImportantDateRequest request) {
@@ -319,10 +289,8 @@ public class FamilyImportantDateService {
         entity.setReminderDaysBefore(request.reminderDaysBefore());
         entity.setReminderTime(request.reminderEnabled() ? request.reminderTime() : null);
         entity.setNotificationType(notificationType(request.notificationType()));
-        entity.setChatId("GROUP".equals(entity.getNotificationType()) && StringUtils.hasText(request.chatId())
-                ? request.chatId().trim() : null);
-        entity.setChatName("GROUP".equals(entity.getNotificationType()) && StringUtils.hasText(request.chatName())
-                ? request.chatName().trim() : null);
+        entity.setChatId(null);
+        entity.setChatName("GROUP".equals(entity.getNotificationType()) ? "WAO 通知中心" : null);
     }
 
     private static boolean matchesOccurrence(FamilyImportantDateEntity entity, LocalDate day) {
@@ -368,12 +336,6 @@ public class FamilyImportantDateService {
     private static String lunarLabel(Lunar lunar) {
         return "农历" + lunar.getYearInChinese() + "年" + (lunar.getMonth() < 0 ? "闰" : "")
                 + lunar.getMonthInChinese() + "月" + lunar.getDayInChinese();
-    }
-
-    private String unionId(String memberId) {
-        var account = accounts.findByMemberId(memberId);
-        var identity = account == null ? null : identities.findByAccountProvider(account.getId(), "feishu");
-        return identity == null ? "" : identity.getProviderUnionSubject();
     }
 
     private String appId() { return settings.get(SettingService.CHAT_SYNC_APP_ID, ""); }
