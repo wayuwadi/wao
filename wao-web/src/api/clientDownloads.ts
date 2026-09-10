@@ -54,32 +54,42 @@ export function parseWindowsManifest(value: unknown): Omit<ClientDownload, 'size
     throw new Error('安装包信息不完整')
   return { platform: 'windows', version: data.version, url }
 }
+// 使用基础 AbortController，兼容 iOS 15；读取 JSON 正文也计入超时。
+async function withTimeout<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12000)
+  try {
+    return await request(controller.signal)
+  } finally {
+    clearTimeout(timer)
+  }
+}
 async function manifest(path: string): Promise<unknown | null> {
-  const response = await fetch(path, { cache: 'no-store', signal: AbortSignal.timeout(12000) })
-  if (response.status === 404) return null
-  if (!response.ok || !response.headers.get('content-type')?.includes('application/json'))
-    throw new Error('暂时无法读取发布信息')
-  return response.json()
+  return withTimeout(async (signal) => {
+    const response = await fetch(path, { cache: 'no-store', signal })
+    if (response.status === 404) return null
+    if (!response.ok || !response.headers.get('content-type')?.includes('application/json'))
+      throw new Error('暂时无法读取发布信息')
+    return response.json()
+  })
 }
 async function verifyFile(
   file: Omit<ClientDownload, 'size'> & { size?: number },
 ): Promise<ClientDownload> {
-  const response = await fetch(file.url, {
-    method: 'HEAD',
-    cache: 'no-store',
-    signal: AbortSignal.timeout(12000),
+  return withTimeout(async (signal) => {
+    const response = await fetch(file.url, { method: 'HEAD', cache: 'no-store', signal })
+    const size = Number(response.headers.get('content-length'))
+    const type = response.headers.get('content-type') ?? ''
+    if (
+      !response.ok ||
+      !Number.isSafeInteger(size) ||
+      size <= 0 ||
+      /text\/|json/i.test(type) ||
+      (file.size && file.size !== size)
+    )
+      throw new Error('安装包暂时不可用')
+    return { ...file, size }
   })
-  const size = Number(response.headers.get('content-length'))
-  const type = response.headers.get('content-type') ?? ''
-  if (
-    !response.ok ||
-    !Number.isSafeInteger(size) ||
-    size <= 0 ||
-    /text\/|json/i.test(type) ||
-    (file.size && file.size !== size)
-  )
-    throw new Error('安装包暂时不可用')
-  return { ...file, size }
 }
 export async function fetchMobileDownloads(): Promise<ClientDownload[]> {
   const data = await manifest('/downloads/mobile/latest.json')
