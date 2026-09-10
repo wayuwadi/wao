@@ -1,6 +1,6 @@
 [package]
 name = "wao-client"
-version = "1.1.0"
+version = "1.1.1"
 description = "WAO desktop workspace"
 authors = ["WAO"]
 edition = "2021"

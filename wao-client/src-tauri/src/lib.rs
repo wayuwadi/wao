@@ -526,18 +526,25 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(cfg!(target_os = "macos"))
                 .on_menu_event(|app, event| {
-                    show(app);
                     match event.id.as_ref() {
                         "pet" => {
-                            let _ = show_desktop_pet(app);
+                            // WebView2 window creation can deadlock inside a Windows event handler.
+                            let handle = app.clone();
+                            tauri::async_runtime::spawn_blocking(move || {
+                                if let Err(error) = show_desktop_pet(&handle) {
+                                    eprintln!("Could not open desktop pet: {error}");
+                                }
+                            });
                         }
                         "update" => {
+                            show(app);
                             let _ = app.emit_to("main", "shell-action", "update");
                         }
                         "quit" => {
+                            show(app);
                             let _ = app.emit_to("main", "shell-action", "quit");
                         }
-                        _ => {}
+                        _ => show(app),
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
