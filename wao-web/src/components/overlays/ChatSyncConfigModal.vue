@@ -7,6 +7,7 @@
  * 之后每天 23:59 由自动化按计划跑；这里也能补录今天或一段历史日期。
  */
 import { onMounted, ref } from 'vue'
+import FeishuApiUsagePanel from '@/components/FeishuApiUsagePanel.vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
@@ -265,6 +266,7 @@ async function runHistory() {
       <button class="close" @click="emit('close')"><i class="ri-close-line"></i></button>
     </div>
 
+    <FeishuApiUsagePanel />
     <div v-if="loading" class="loading">读取配置中…</div>
     <template v-else>
       <div class="section">

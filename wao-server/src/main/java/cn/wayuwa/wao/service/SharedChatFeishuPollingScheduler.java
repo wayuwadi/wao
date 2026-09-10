@@ -1,8 +1,7 @@
 package cn.wayuwa.wao.service;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+import org.springframework.beans.factory.annotation.Value;
 import java.util.UUID;
 import cn.wayuwa.wao.mapper.SharedChatSyncStateMapper;
 import org.slf4j.Logger;
@@ -12,7 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-/** 共享聊天入站兜底：按持久化秒级配置拉新消息，每分钟回看一天以同步编辑和撤回。 */
+/** 共享聊天入站兜底：按持久化秒级配置拉新消息，每五分钟回看一天以同步编辑和撤回。 */
 @Component
 @ConditionalOnProperty(prefix = "wao.feishu.shared-chat", name = "polling-enabled",
         havingValue = "true", matchIfMissing = true)
@@ -20,7 +19,6 @@ public class SharedChatFeishuPollingScheduler {
     private static final Logger log = LoggerFactory.getLogger(SharedChatFeishuPollingScheduler.class);
     private static final long LOOKBACK_SECONDS = 120;
     private static final long EDIT_LOOKBACK_SECONDS = 24 * 60 * 60;
-    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
 
     private final SettingService settings;
     private final SharedChatFeishuBridge bridge;
@@ -28,6 +26,8 @@ public class SharedChatFeishuPollingScheduler {
     private final SharedChatSyncStateMapper state;
     private final String leaseOwner = UUID.randomUUID().toString().replace("-", "");
     private volatile long lastMessagePollNanos;
+    @Value("${wao.feishu.shared-chat-edit-poll-ms:300000}")
+    private long editPollMs = 300000;
 
     public SharedChatFeishuPollingScheduler(SettingService settings, SharedChatFeishuBridge bridge,
             SharedChatSynchronizationService synchronization, SharedChatSyncStateMapper state) {
@@ -48,7 +48,7 @@ public class SharedChatFeishuPollingScheduler {
     }
 
     /** 飞书客户端编辑消息不一定再次触发接收事件，回看一天同步真实终态。 */
-    @Scheduled(fixedDelayString = "${wao.feishu.shared-chat-edit-poll-ms:60000}", initialDelay = 30000)
+    @Scheduled(fixedDelayString = "${wao.feishu.shared-chat-edit-poll-ms:300000}", initialDelay = 30000)
     public void pollEdits() {
         pollRange(true);
     }
@@ -62,8 +62,7 @@ public class SharedChatFeishuPollingScheduler {
         long end = Instant.now().getEpochSecond();
         String key = edits ? "edits" : "realtime";
         state.prepare(key, chatId, end);
-        LocalDateTime now = LocalDateTime.now(SHANGHAI);
-        if (state.claim(key, leaseOwner, now, now.plusMinutes(10)) != 1) return;
+        if (state.claimPolling(key, leaseOwner, edits ? editPollMs * 1000 : bridge.pollIntervalSeconds() * 1_000_000L) != 1) return;
         Long cursor = state.cursor(key);
         long start = edits ? end - EDIT_LOOKBACK_SECONDS
                 : Math.max((cursor == null ? end : cursor) - 2, end - LOOKBACK_SECONDS);

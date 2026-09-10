@@ -28,6 +28,18 @@ class SharedChatSynchronizationServiceTest {
             settings, feishu, bridge, runs, state);
 
     @Test
+    void emptyPollDoesNotFetchMembers() {
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(settings.get(SettingService.SHARED_CHAT_CHAT_ID, "")).thenReturn("oc_real");
+        when(settings.get(SettingService.SHARED_CHAT_CHAT_NAME, "飞书群聊")).thenReturn("真实群");
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+        when(feishu.listMessages("token", "oc_real", 100L, 200L)).thenReturn(List.of());
+        assertThat(service.synchronize(100, 200).scanned()).isZero();
+        org.mockito.Mockito.verify(feishu, org.mockito.Mockito.never()).cachedChatMembers(any(), any());
+    }
+
+    @Test
     void dailyReconciliationPersistsScannedChangesAndAttributableBytes() {
         when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");
         when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
@@ -35,7 +47,7 @@ class SharedChatSynchronizationServiceTest {
         when(settings.get(SettingService.SHARED_CHAT_CHAT_NAME, "飞书群聊")).thenReturn("娃屋日常");
         when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
         when(state.claim(eq("daily"), any(), any(), any())).thenReturn(1);
-        when(feishu.listChatMembers("token", "oc_real"))
+        when(feishu.cachedChatMembers("token", "oc_real"))
                 .thenReturn(List.of(new FeishuChatMember("ou1", "娃弟")));
         FeishuMessage first = new FeishuMessage("om1", "ou1", "text", "{\"text\":\"新增\"}", 1L, false);
         FeishuMessage second = new FeishuMessage("om2", "ou1", "text", "{\"text\":\"编辑\"}", 2L, false);

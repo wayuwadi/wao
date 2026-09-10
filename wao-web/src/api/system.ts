@@ -233,3 +233,11 @@ export const saveFeishuTextPolishConfig = (payload: {
   webhookId?: string
   mentionName?: string
 }) => put<FeishuTextPolishConfig>('/api/feishu/text-polish/config', payload)
+
+export interface FeishuApiUsage {
+  endpoint: string
+  requests: number
+  firstObservedAt: string
+  lastObservedAt: string
+}
+export const fetchFeishuApiUsage = () => get<FeishuApiUsage[]>('/api/feishu/chat-sync/api-usage')

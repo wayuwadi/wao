@@ -46,15 +46,17 @@ public class SharedChatSynchronizationService {
 
     private BatchResult synchronize(Target target, long startEpochSeconds, long endEpochSeconds) {
         String token = feishu.tenantAccessToken(target.appId(), target.secret());
+        var messages = feishu.listMessages(token, target.chatId(), startEpochSeconds, endEpochSeconds);
+        if (messages.isEmpty()) return new BatchResult(0, 0, 0, 0);
         Map<String, String> names = new LinkedHashMap<>();
-        for (FeishuChatMember member : feishu.listChatMembers(token, target.chatId())) {
+        for (FeishuChatMember member : feishu.cachedChatMembers(token, target.chatId())) {
             names.put(member.openId(), member.name());
         }
         int scanned = 0;
         int inserted = 0;
         int updated = 0;
         long bytes = 0;
-        for (var message : feishu.listMessages(token, target.chatId(), startEpochSeconds, endEpochSeconds)) {
+        for (var message : messages) {
             scanned++;
             var result = bridge.importMessage(token, target.chatId(), target.chatName(), message, names);
             inserted += result.inserted();

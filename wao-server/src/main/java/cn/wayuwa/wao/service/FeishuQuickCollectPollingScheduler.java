@@ -1,6 +1,9 @@
 package cn.wayuwa.wao.service;
 
 import java.time.Instant;
+import java.util.UUID;
+import cn.wayuwa.wao.mapper.SharedChatSyncStateMapper;
+import org.springframework.beans.factory.annotation.Value;
 import java.util.List;
 
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
@@ -30,12 +33,18 @@ public class FeishuQuickCollectPollingScheduler {
     private final FeishuOpenApiClient feishu;
     private final FeishuQuickCollectService quickCollect;
     private final FeishuTextPolishService textPolish;
-    private volatile long lastSuccessfulEnd = Instant.now().getEpochSecond();
+    private final SharedChatSyncStateMapper state;
+    private final String leaseOwner = UUID.randomUUID().toString().replace("-", "");
+    @Value("${wao.feishu.quick-collect-poll-ms:15000}")
+    private long pollMs = 15000;
+    @Value("${wao.feishu.quick-collect-edit-poll-ms:300000}")
+    private long editPollMs = 300000;
     private volatile String botOpenId;
     private volatile boolean readyLogged;
 
     public FeishuQuickCollectPollingScheduler(SettingService settings, FeishuOpenApiClient feishu,
-            FeishuQuickCollectService quickCollect, FeishuTextPolishService textPolish) {
+            FeishuQuickCollectService quickCollect, FeishuTextPolishService textPolish, SharedChatSyncStateMapper state) {
+        this.state = state;
         this.settings = settings;
         this.feishu = feishu;
         this.quickCollect = quickCollect;
@@ -48,7 +57,6 @@ public class FeishuQuickCollectPollingScheduler {
         boolean quickEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
         boolean textPolishEnabled = textPolish.enabled();
         if (!quickEnabled && !textPolishEnabled) {
-            lastSuccessfulEnd = Instant.now().getEpochSecond();
             readyLogged = false;
             return;
         }
@@ -59,7 +67,10 @@ public class FeishuQuickCollectPollingScheduler {
             return;
         }
         long end = Instant.now().getEpochSecond();
-        long start = Math.max(lastSuccessfulEnd - 2, end - LOOKBACK_SECONDS);
+        state.prepare("quick-realtime", appId + ":" + chatId, end);
+        if (state.claimPolling("quick-realtime", leaseOwner, pollMs * 1000) != 1) return;
+        Long cursor = state.cursor("quick-realtime");
+        long start = Math.max((cursor == null ? end : cursor) - 2, end - LOOKBACK_SECONDS);
         try {
             String token = feishu.tenantAccessToken(appId, appSecret);
             String currentBot = null;
@@ -101,21 +112,23 @@ public class FeishuQuickCollectPollingScheduler {
                     }
                 }
             }
-            lastSuccessfulEnd = end;
+            state.complete("quick-realtime", leaseOwner, end);
         } catch (RuntimeException ex) {
             botOpenId = null;
             readyLogged = false;
             log.warn("飞书个人收集轮询失败：{}", ex.getMessage());
+        } finally {
+            state.release("quick-realtime", leaseOwner);
         }
     }
 
     /**
-     * 每分钟回看近 24 小时消息，捕获客户端编辑，并补收启用润色前尚未处理的真实提及。
+     * 每五分钟回看近 24 小时消息，捕获客户端编辑，并补收启用润色前尚未处理的真实提及。
      *
      * <p>快速收集的内容变化和双节点互斥由消息指纹原子判定；润色以 message_id 唯一键去重，
      * 因此两类入口都读取真实当前正文，不用时间或随机数据推测结果。
      */
-    @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-edit-poll-ms:60000}", initialDelay = 30000)
+    @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-edit-poll-ms:300000}", initialDelay = 30000)
     public void pollEdits() {
         boolean quickEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
         boolean textPolishEnabled = textPolish.enabled();
@@ -127,6 +140,8 @@ public class FeishuQuickCollectPollingScheduler {
             return;
         }
         long end = Instant.now().getEpochSecond();
+        state.prepare("quick-edits", appId + ":" + chatId, end);
+        if (state.claimPolling("quick-edits", leaseOwner, editPollMs * 1000) != 1) return;
         try {
             String token = feishu.tenantAccessToken(appId, appSecret);
             String currentBot = botOpenId;
@@ -162,9 +177,12 @@ public class FeishuQuickCollectPollingScheduler {
                     }
                 }
             }
+            state.complete("quick-edits", leaseOwner, end);
         } catch (RuntimeException ex) {
             botOpenId = null;
             log.warn("飞书编辑消息回看失败：{}", ex.getMessage());
+        } finally {
+            state.release("quick-edits", leaseOwner);
         }
     }
 
