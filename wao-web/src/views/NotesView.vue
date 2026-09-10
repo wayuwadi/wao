@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { defineAsyncComponent, computed, nextTick, onMounted, ref, watch } from 'vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
-import { renderMarkdown } from '@/utils/markdown'
 import { apiCreateNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 
+const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const data = useDataStore()
 const session = useSessionStore()
 const query = ref('')
@@ -117,7 +117,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
     <div class="notes-workspace">
       <aside ref="writingPane" class="writing-pane" aria-label="小记编辑区">
         <div v-if="editing" class="editing-bar"><span>正在编辑已有小记</span><button @click="editId = ''">返回新建</button></div>
-        <NoteComposer :key="`${session.currentUser.id}:${editId || 'new'}`" :note="editing" :loading="loading" :tag-options="availableTags" @saved="onCreated" @close="editId = ''" />
+        <NoteComposer :key="`${session.currentUser.id}:${editId || 'new'}`" :note="editing" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" @close="editId = ''" />
       </aside>
       <section ref="notesList" class="notes-list" aria-label="小记清单">
         <div class="list-toolbar">
@@ -146,7 +146,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
           tabindex="0" title="双击编辑小记，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 编辑`"
           @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span v-if="highlighted === note.id" class="saved">已保存</span></div>
-          <div class="note-body markdown-body" v-html="renderMarkdown(resolvedRichContent(note).markdown || note.title)"></div>
+          <div class="note-body"><MarkdownEditor :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" /></div>
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
           <div class="note-actions"><button class="touch-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
         </article>

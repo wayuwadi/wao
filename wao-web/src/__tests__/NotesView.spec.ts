@@ -74,6 +74,39 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
+  it('编辑区新增标签失败保留输入，成功选中并同步字典和草稿', async () => {
+    const wrapper = composer()
+    await wrapper.find('textarea').setValue('正文保留')
+    await wrapper.find('.add-tag').trigger('click')
+    await wrapper.find('[aria-label="编辑区新标签名称"]').setValue('新分类')
+    vi.mocked(apiCreateNoteTag).mockRejectedValueOnce(new Error('暂时离线')).mockResolvedValueOnce('新分类')
+    await wrapper.find('.new-tag-form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('.new-tag-form').text()).toContain('重试新增')
+    expect(wrapper.find('.tag-chip').exists()).toBe(false)
+    await wrapper.find('.new-tag-form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('.tag-chip').text()).toContain('新分类')
+    expect(wrapper.emitted('tag-created')).toEqual([['新分类']])
+    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).tags).toEqual(['新分类'])
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正文保留')
+    wrapper.unmount()
+  })
+
+  it('清单直接使用富文本结构，嵌套列表不被有损 Markdown 投影压平', async () => {
+    const note = doc('nested', '1. 父项\n2. 子项')
+    note.content = { version: 1, markdown: note.title, document: { type: 'doc', content: [{ type: 'orderedList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: '父项' }] }, { type: 'orderedList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: '子项' }] }] }] }] }] }] } }
+    useDataStore().docs.nested = note
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }] })
+    await router.push('/notes')
+    const wrapper = mount(NotesView, { global: { plugins: [router] } })
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(wrapper.find('.note-body ol ol li').text()).toBe('子项')
+    expect(wrapper.find('.note-body .tiptap').attributes('contenteditable')).toBe('false')
+    wrapper.unmount()
+  })
+
   it('聚合历史小记并按时间倒序，正文搜索和作者筛选可以组合', async () => {
     const data = useDataStore()
     data.docs.a = doc('a', '旧想法', '2026-09-06T08:00:00')
@@ -97,7 +130,7 @@ describe('小记集中记录空间', () => {
     const original = JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).id
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.note-card').text()).toContain('即时显示的想法')
+    expect((wrapper.find('.note-card textarea').element as HTMLTextAreaElement).value).toBe('即时显示的想法')
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
     expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
     await wrapper.find('textarea').setValue('第二条')
@@ -325,7 +358,7 @@ describe('小记集中记录空间', () => {
     await wrapper.find('.note-card').trigger('click')
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正在写的新草稿')
     await wrapper.find('.note-card').trigger('dblclick')
-    expect(wrapper.findAll('textarea')).toHaveLength(1)
+    expect(wrapper.findAll('.writing-pane textarea')).toHaveLength(1)
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('旧记录')
     await wrapper.find('.editing-bar button').trigger('click')
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正在写的新草稿')

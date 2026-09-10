@@ -2,12 +2,12 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
-import { apiPatchDoc } from '@/api/board'
+import { apiCreateNoteTag, apiPatchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
 const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[] }>()
-const emit = defineEmits<{ saved: [id: string]; close: [] }>()
+const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string] }>()
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const data = useDataStore()
 const session = useSessionStore()
@@ -30,6 +30,24 @@ function readDraft(): Draft {
 const initial = readDraft()
 const tags = ref<string[]>(initial.tags ?? [])
 const showTagPicker = ref(false)
+const newTag = ref('')
+const creatingTag = ref(false)
+const tagError = ref('')
+async function createTag() {
+  if (creatingTag.value || saving.value || tags.value.length >= 20) return
+  const name = newTag.value.trim()
+  if (!name || name.length > 32) { tagError.value = '请输入 1–32 个字符的标签名称'; return }
+  creatingTag.value = true
+  tagError.value = ''
+  try {
+    if (!data.apiLive) throw new Error('服务尚未连接，请稍后重试')
+    const saved = await apiCreateNoteTag(name)
+    if (!tags.value.includes(saved)) tags.value = [...tags.value, saved]
+    emit('tag-created', saved)
+    newTag.value = ''
+  } catch (cause) { tagError.value = cause instanceof Error ? cause.message : '标签保存失败，请重试' }
+  finally { creatingTag.value = false }
+}
 const fullscreen = ref(false)
 const composerElement = ref<HTMLElement>()
 let previousOverflow: string | undefined
@@ -48,7 +66,7 @@ function editorKeys(event: KeyboardEvent) {
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
 }
 function toggleTag(tag: string) {
-  if (saving.value) return
+  if (saving.value || creatingTag.value) return
   if (tags.value.includes(tag)) tags.value = tags.value.filter(item => item !== tag)
   else if (tags.value.length < 20) tags.value = [...tags.value, tag]
 }
@@ -72,7 +90,7 @@ const copyId = crypto.randomUUID().replace(/-/g, '')
 const draftError = ref(false)
 const status = ref(restored ? '已恢复草稿，可继续记录' : '')
 let resetting = false
-const canSave = computed(() => !!text.value.trim() && !saving.value && !props.loading)
+const canSave = computed(() => !!text.value.trim() && !saving.value && !creatingTag.value && !props.loading)
 watch([text, content, tags], () => {
   if (resetting) return
   error.value = ''
@@ -174,7 +192,11 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     </div>
     <div v-if="showTagPicker" class="tag-picker" aria-label="选择小记标签">
       <button v-for="tag in choices" :key="tag" type="button" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" :aria-pressed="tags.includes(tag)" @click="toggleTag(tag)"># {{ tag }}</button>
-      <span v-if="!choices.length">在清单顶部新增标签后，即可在这里选用。</span>
+      <form class="new-tag-form" @submit.prevent="createTag">
+        <input v-model="newTag" aria-label="编辑区新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag || tags.length >= 20">
+        <button type="submit" :disabled="saving || creatingTag || !newTag.trim() || tags.length >= 20">{{ creatingTag ? '正在保存…' : tagError ? '重试新增' : '新增标签' }}</button>
+        <span v-if="tagError" class="error" role="alert">{{ tagError }}</span>
+      </form>
       <span v-if="tags.length >= 20">每篇最多 20 个标签</span>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
@@ -206,7 +228,15 @@ button:disabled { opacity: .5; cursor: default; }
 .composer-heading b { font-size: 15px; }
 .fullscreen-toggle { margin-left: auto; padding: 5px 7px; border: 0; }
 .fullscreen-toggle i { font-size: 17px; color: var(--wao-text-3); }
-.editor-space { flex: 1; min-height: 0; overflow: auto; }
+.editor-space { flex: 1; min-height: 0; display: flex; }
+.editor-space :deep(.md) { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.editor-space :deep(.md-editor-wrap) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.editor-space :deep(.md-body) { flex: 1; min-height: 0 !important; overflow: auto; display: flex; flex-direction: column; }
+.editor-space :deep(.tiptap) { flex: 1; cursor: text; }
+.editor-space :deep(.image-upload) { position: static; align-self: flex-end; flex-shrink: 0; margin-top: 6px; }
+.new-tag-form { display: flex; flex-wrap: wrap; gap: 7px; width: 100%; }
+.new-tag-form input { min-width: 0; flex: 1; border: 1px solid var(--wao-line-control); border-radius: 6px; padding: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); }
+.new-tag-form .error { width: 100%; }
 .editor-space :deep(.md-body) { overflow-wrap: anywhere; }
 .composer-tags, .tag-picker { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
 .composer-tags button, .tag-picker button { padding: 5px 8px; font-size: 12px; max-width: 100%; overflow-wrap: anywhere; }
@@ -214,6 +244,6 @@ button:disabled { opacity: .5; cursor: default; }
 .tag-picker { padding: 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; max-height: 150px; overflow: auto; }
 .tag-picker span { color: var(--wao-text-faint); font-size: 12px; }
 .note-composer.fullscreen { position: fixed; inset: 0; z-index: 2100; border-radius: 0; padding: 24px max(24px, calc((100vw - 1100px) / 2)); height: 100dvh; }
-.fullscreen .editor-space :deep(.md-body) { min-height: calc(100dvh - 240px) !important; }
+
 @media (max-width: 600px) { .note-composer.fullscreen { padding: 12px; } }
 </style>
