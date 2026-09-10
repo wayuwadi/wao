@@ -318,6 +318,19 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
+    # 工作区客户端独立于桌宠；更新清单和固定下载地址不可被父级 immutable 缓存。
+    location = /downloads/desktop/client/latest.json {
+        alias /var/www/wao-downloads/desktop/client/latest.json;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
+    location = /downloads/desktop/client/WAO-windows-x64-setup.exe {
+        alias /var/www/wao-downloads/desktop/client/WAO-windows-x64-setup.exe;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
     # 桌面宠物安装包与签名更新包独立于 Web dist 生命周期；发布清单最后原子替换且禁止缓存。
     location = /downloads/desktop/latest.json {
         alias /var/www/wao-downloads/desktop/latest.json;

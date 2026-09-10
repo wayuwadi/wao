@@ -1,0 +1,157 @@
+name: WAO Client Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 发布到 WAO 下载和更新通道（仅 main）
+        type: boolean
+        default: false
+      upgrade_fixture:
+        description: 额外生成仅供覆盖升级验收的 0.9.0 安装包（不发布）
+        type: boolean
+        default: false
+  push:
+    tags: ["client-v*", "client-check-*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wao-client-windows
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wao-client/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wao-client/src-tauri -> target
+          cache-on-failure: true
+      - name: Validate source and release version
+        id: version
+        shell: pwsh
+        env:
+          PUBLISH: ${{ inputs.publish || startsWith(github.ref, 'refs/tags/client-v') }}
+        run: |
+          $version = (Get-Content wao-client/package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') { throw 'Invalid stable version' }
+          $config = Get-Content wao-client/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if ($config.version -ne $version) { throw 'Package and Tauri versions differ' }
+          if ($env:GITHUB_REF -like 'refs/tags/client-v*' -and $env:GITHUB_REF_NAME -ne "client-v$version") { throw 'Tag and package versions differ' }
+          if ($env:PUBLISH -eq 'true') {
+            git merge-base --is-ancestor HEAD origin/main
+            if ($LASTEXITCODE -ne 0) { throw 'Only merged main commits can publish' }
+            if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:GITHUB_REF -ne 'refs/heads/main') { throw 'Manual publication requires main' }
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Test shell and native boundaries
+        shell: pwsh
+        run: |
+          npm --prefix wao-client ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix wao-client test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix wao-client run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --release --target x86_64-pc-windows-msvc --manifest-path wao-client/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build signed Windows updater and installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: npm --prefix wao-client run tauri build -- --target x86_64-pc-windows-msvc
+      - uses: actions/upload-artifact@v7
+        with:
+          name: WAO-client-windows-${{ steps.version.outputs.version }}
+          path: |
+            wao-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            wao-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
+            wao-client/src-tauri/Cargo.lock
+          if-no-files-found: error
+      - name: Build reusable Windows development host
+        env:
+          TAURI_CONFIG: '{"identifier":"cn.wayuwa.wao.client.dev","productName":"WAO 开发宿主"}'
+        run: cargo build --manifest-path wao-client/src-tauri/Cargo.toml
+      - uses: actions/upload-artifact@v7
+        with:
+          name: WAO-client-dev-host-windows
+          path: wao-client/src-tauri/target/debug/wao-client.exe
+          if-no-files-found: error
+      - name: Build previous-version upgrade acceptance fixture
+        if: inputs.upgrade_fixture
+        shell: pwsh
+        run: |
+          $configPath = Join-Path $env:RUNNER_TEMP 'wao-upgrade-fixture.json'
+          Set-Content -LiteralPath $configPath -Value '{"version":"0.9.0","bundle":{"createUpdaterArtifacts":false}}'
+          npm --prefix wao-client run tauri build -- --target x86_64-pc-windows-msvc --config $configPath
+      - uses: actions/upload-artifact@v7
+        if: inputs.upgrade_fixture
+        with:
+          name: WAO-client-upgrade-fixture-0.9.0
+          path: wao-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*0.9.0*-setup.exe
+          if-no-files-found: error
+
+  publish:
+    if: inputs.publish || startsWith(github.ref, 'refs/tags/client-v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v8
+        with:
+          name: WAO-client-windows-${{ needs.build.outputs.version }}
+          path: client-release/raw
+      - name: Prepare immutable signed release
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: node wao-client/scripts/prepare-release.mjs client-release/raw client-release/publish "$VERSION"
+      - name: Configure deployment SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Publish artifacts then atomically switch manifest
+        env:
+          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
+          CLOUD_USER: ${{ secrets.CLOUD_USER }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -eu
+          incoming="/tmp/wao-client-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh "$CLOUD_USER@$CLOUD_HOST" "install -d '$incoming'"
+          scp client-release/publish/* "$CLOUD_USER@$CLOUD_HOST:$incoming/"
+          ssh "$CLOUD_USER@$CLOUD_HOST" bash -s -- "$incoming" "$VERSION" < wao-client/scripts/publish.sh
+      - name: Verify public installer and update manifest
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -eu
+          base=https://wao.wayuwa.cn/downloads/desktop/client
+          curl --retry 3 -fsS "$base/latest.json?run=$GITHUB_RUN_ID" -o manifest.json
+          jq -e --arg version "$VERSION" '.version == $version and (.platforms["windows-x86_64"].signature | length > 20)' manifest.json
+          curl --retry 3 -fsS "$base/WAO_${VERSION}_windows-x64-setup.exe" -o public-installer.exe
+          expected=$(sha256sum "client-release/publish/WAO_${VERSION}_windows-x64-setup.exe" | cut -d' ' -f1)
+          actual=$(sha256sum public-installer.exe | cut -d' ' -f1)
+          test "$expected" = "$actual"
+          curl -fsSI "$base/latest.json" | grep -i 'cache-control:.*no-store'
+          printf 'Windows %s published and verified. SHA256: %s\n' "$VERSION" "$actual" >> "$GITHUB_STEP_SUMMARY"
