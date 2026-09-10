@@ -12,6 +12,16 @@ const HEADER: f64 = 64.0;
 static POPUP_ID: AtomicUsize = AtomicUsize::new(1);
 static WORKSPACE_READY: AtomicBool = AtomicBool::new(false);
 
+// A minimized Windows window reports a transient viewport (often 0 × 0).
+// Keep the child WebView's last usable size so responsive content does not
+// switch to its mobile layout and animate back when the window is restored.
+fn workspace_size(size: LogicalSize<f64>, minimized: bool) -> Option<LogicalSize<f64>> {
+    if minimized || size.width <= 0.0 || size.height <= HEADER {
+        return None;
+    }
+    Some(LogicalSize::new(size.width, size.height - HEADER))
+}
+
 fn workspace_url() -> tauri::Url {
     #[cfg(debug_assertions)]
     if let Ok(value) = std::env::var("WAO_WEB_DEV_URL") {
@@ -362,13 +372,13 @@ pub fn run() {
                     let _ = window.hide();
                 }
                 WindowEvent::Resized(size) => {
-                    if let Some(view) = window.app_handle().get_webview("workspace") {
-                        let logical = size.to_logical::<f64>(window.scale_factor().unwrap_or(1.0));
-                        let _ = view.set_position(LogicalPosition::new(0.0, HEADER));
-                        let _ = view.set_size(LogicalSize::new(
-                            logical.width,
-                            (logical.height - HEADER).max(1.0),
-                        ));
+                    let logical = size.to_logical::<f64>(window.scale_factor().unwrap_or(1.0));
+                    if let Some(size) =
+                        workspace_size(logical, window.is_minimized().unwrap_or(false))
+                    {
+                        if let Some(view) = window.app_handle().get_webview("workspace") {
+                            let _ = view.set_size(size);
+                        }
                     }
                 }
                 _ => {}
@@ -440,6 +450,32 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn minimize_restore_keeps_workspace_viewport_and_normal_resizing() {
+        let initial = LogicalSize::new(1380.0, 836.0);
+        let mut viewport = initial;
+        for (size, minimized) in [
+            (LogicalSize::new(0.0, 0.0), true),
+            (LogicalSize::new(160.0, 28.0), true),
+            (LogicalSize::new(960.0, 700.0), true),
+            (LogicalSize::new(0.0, 900.0), false),
+            (LogicalSize::new(1380.0, 64.0), false),
+        ] {
+            if let Some(next) = workspace_size(size, minimized) {
+                viewport = next;
+            }
+            assert_eq!(viewport, initial);
+        }
+        assert_eq!(
+            workspace_size(LogicalSize::new(1380.0, 900.0), false),
+            Some(initial)
+        );
+        // A real resize (including a DPI-converted width) must still reach the WebView.
+        assert_eq!(
+            workspace_size(tauri::PhysicalSize::new(1200, 840).to_logical(1.5), false),
+            Some(LogicalSize::new(800.0, 496.0))
+        );
+    }
     #[test]
     fn macos_downloads_keep_the_origin_and_cannot_overwrite_or_escape_downloads() {
         let origin = tauri::Url::parse(PRODUCTION).unwrap();
