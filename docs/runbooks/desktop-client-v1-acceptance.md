@@ -14,13 +14,17 @@
 - `bash deploy/scripts/test-render-nginx-config.sh`：通过。
 - `bash deploy/jenkins/test-ci-change-plan.sh`：通过，包括仅客户端变化不部署主站。
 - `bash -n wao-client/scripts/publish.sh` 与 `git diff --check`：通过。
-- 外壳预览在 1280×720 下检查顶栏、更新中心、文字和按钮布局；此项仅证明外壳视觉。
+- 外壳预览在 1280×720 和 800×560 下检查顶栏、更新中心、滚动和确认框居中；验证 Shift+Tab/Tab 焦点循环与 Escape 取消。此项仅证明外壳视觉与键盘交互。
 
 ## 当前环境事实
 
 Windows Code Integrity 事件 3077/3033 拒绝 Rust 编译器的 `rustc_driver`/`std` DLL，原生本地编译因此不能完成。没有修改安全策略，也没有将该限制归因于业务代码。
 
 CI Windows runner 已通过第二轮源代码的原生测试；最初托盘构造参数缺失已修正。最终版本仍须以对应 Git SHA 的 CI 结果为准。新增 CI 开发宿主允许在可执行该宿主的机器上使用 Vite 热更新；本机执行与安装能力须实际验证。
+
+发布前验收构建 `fa039e07` 的 Windows CI `34425711972` 已成功；其安装包 SHA256 为 `77682F6B64B3D6F935A3516E8A6772CA1BBB62A0479377CB33F34702136D7F41`。在本机按当前用户静默安装返回 0，安装目录为 `C:\Users\wobus\AppData\Local\WAO`。实际启动后看到原生顶栏、完整线上 WAO 登录页和飞书二维码。客户端执行正常，不能把 Rust 编译器的 DLL 限制扩大描述为客户端不可运行。
+
+上述安装包是发布前验证构建，不等于最终公开制品；发布后还须核对最终构建和摘要。真实账号登录由用户本人完成，当前没有据此宣称任务编辑、会话保留或更新已验收。
 
 ## 待完成的真实验收
 
