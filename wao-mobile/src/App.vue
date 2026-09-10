@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { useWorkspace } from "./composables/workspace";
+import { chat } from "./composables/chat";
+import { App as NativeApp } from "@capacitor/app";
+import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import AppIcon from "./components/AppIcon.vue";
 const demo = import.meta.env.DEV && import.meta.env.MODE === "demo";
 const w = useWorkspace(),
@@ -10,6 +13,35 @@ const w = useWorkspace(),
   password = ref(""),
   logging = ref(false),
   loginError = ref("");
+let poll: ReturnType<typeof setTimeout> | undefined,
+  nativeListener: PluginListenerHandle | undefined,
+  disposed = false,
+  schedule = 0;
+function scheduleChat() {
+  const ticket = ++schedule;
+  clearTimeout(poll);
+  if (!chat.account.value || !chat.active.value || disposed) return;
+  void chat.refresh().finally(() => {
+    if (
+      ticket === schedule &&
+      !disposed &&
+      chat.account.value &&
+      chat.active.value
+    )
+      poll = setTimeout(scheduleChat, 5000);
+  });
+}
+function visibility() {
+  chat.active.value = document.visibilityState !== "hidden";
+  scheduleChat();
+}
+watch(
+  () => w.session.value,
+  (session) => {
+    chat.reset(session?.accountId || "", session?.member.id || "");
+    scheduleChat();
+  },
+);
 async function boot() {
   booting.value = true;
   bootError.value = "";
@@ -41,9 +73,24 @@ function expired() {
 }
 onMounted(() => {
   window.addEventListener("wao:unauthorized", expired);
+  document.addEventListener("visibilitychange", visibility);
+  if (Capacitor.isNativePlatform())
+    void NativeApp.addListener("appStateChange", ({ isActive }) => {
+      chat.active.value = isActive;
+      scheduleChat();
+    }).then((handle) => {
+      if (disposed) void handle.remove();
+      else nativeListener = handle;
+    });
   void boot();
 });
-onUnmounted(() => window.removeEventListener("wao:unauthorized", expired));
+onUnmounted(() => {
+  disposed = true;
+  clearTimeout(poll);
+  void nativeListener?.remove();
+  document.removeEventListener("visibilitychange", visibility);
+  window.removeEventListener("wao:unauthorized", expired);
+});
 </script>
 <template>
   <div v-if="demo" class="demo-ribbon">

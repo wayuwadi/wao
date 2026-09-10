@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import {
+  MessageCircle,
+  Send,
+  Reply,
+  Paperclip,
+  Image,
+  Download,
   Sun,
   CheckCheck,
   CalendarDays,
@@ -23,6 +29,12 @@ import {
   FilePenLine,
 } from "@lucide/vue";
 const icons = {
+  chat: MessageCircle,
+  send: Send,
+  reply: Reply,
+  attach: Paperclip,
+  image: Image,
+  download: Download,
   sun: Sun,
   tasks: CheckCheck,
   calendar: CalendarDays,
