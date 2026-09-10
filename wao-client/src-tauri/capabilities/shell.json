@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "shell",
+  "description": "Only the bundled local shell may control windows and signed updates. Remote workspace has no capability.",
+  "webviews": ["main"],
+  "permissions": [
+    "core:default", "core:window:allow-start-dragging", "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize", "core:window:allow-hide", "core:window:allow-show",
+    "updater:default", "process:allow-restart"
+  ]
+}
