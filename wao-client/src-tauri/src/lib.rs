@@ -131,6 +131,76 @@ fn macos_menu(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn download_url_allowed(url: &tauri::Url, origin: &tauri::Url) -> bool {
+    url.origin() == origin.origin()
+        && (matches!(url.scheme(), "https" | "blob")
+            || (cfg!(debug_assertions) && url.scheme() == "http"))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn download_path(directory: &std::path::Path, suggested: &std::path::Path) -> std::path::PathBuf {
+    let name = suggested
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("WAO-download"));
+    let mut path = directory.join(name);
+    let stem = path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let extension = path
+        .extension()
+        .map(|value| format!(".{}", value.to_string_lossy()))
+        .unwrap_or_default();
+    let mut number = 1;
+    while path.symlink_metadata().is_ok() {
+        path = directory.join(format!("{stem} ({number}){extension}"));
+        number += 1;
+    }
+    path
+}
+
+#[cfg(target_os = "macos")]
+fn handle_download(app: &tauri::AppHandle, event: tauri::webview::DownloadEvent<'_>) -> bool {
+    use tauri::webview::DownloadEvent;
+    let message = match event {
+        DownloadEvent::Requested { url, destination } => {
+            if !download_url_allowed(&url, &workspace_url()) {
+                let _ = app.emit_to(
+                    "main",
+                    "workspace-download",
+                    "该下载链接暂不支持，请在浏览器打开。",
+                );
+                return false;
+            }
+            let Ok(directory) = app.path().download_dir() else {
+                let _ = app.emit_to(
+                    "main",
+                    "workspace-download",
+                    "无法找到下载文件夹，请在浏览器重试。",
+                );
+                return false;
+            };
+            if std::fs::create_dir_all(&directory).is_err() {
+                let _ = app.emit_to(
+                    "main",
+                    "workspace-download",
+                    "无法访问下载文件夹，请检查权限后重试。",
+                );
+                return false;
+            }
+            *destination = download_path(&directory, destination);
+            "正在保存到下载文件夹…"
+        }
+        DownloadEvent::Finished { success: true, .. } => "文件已保存到下载文件夹。",
+        DownloadEvent::Finished { success: false, .. } => "文件下载失败，请重新点击下载。",
+        _ => return false,
+    };
+    let _ = app.emit_to("main", "workspace-download", message);
+    true
+}
+
 fn popup(
     app: &tauri::AppHandle,
     url: tauri::Url,
@@ -147,7 +217,7 @@ fn popup(
     let popup_app = app.clone();
     let label = format!("document-{}", POPUP_ID.fetch_add(1, Ordering::Relaxed));
     // Preserve window.open and shared WebView session without granting native permissions.
-    let result = tauri::WebviewWindowBuilder::new(
+    let builder = tauri::WebviewWindowBuilder::new(
         app,
         label,
         WebviewUrl::External("about:blank".parse().unwrap()),
@@ -169,8 +239,10 @@ fn popup(
     .on_new_window(move |next, features| popup(&popup_app, next, features))
     .on_document_title_changed(|window, title| {
         let _ = window.set_title(&format!("WAO · {title}"));
-    })
-    .build();
+    });
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_download(|view, event| handle_download(view.app_handle(), event));
+    let result = builder.build();
     match result {
         Ok(window) => NewWindowResponse::Create { window },
         Err(_) => NewWindowResponse::Deny,
@@ -221,6 +293,8 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
             };
             let _ = view.app_handle().emit_to("main", "workspace-state", phase);
         });
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_download(|view, event| handle_download(view.app_handle(), event));
     window
         .add_child(
             builder,
@@ -366,6 +440,40 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn macos_downloads_keep_the_origin_and_cannot_overwrite_or_escape_downloads() {
+        let origin = tauri::Url::parse(PRODUCTION).unwrap();
+        assert!(download_url_allowed(
+            &tauri::Url::parse("https://wao.wayuwa.cn/api/files/1").unwrap(),
+            &origin
+        ));
+        assert!(download_url_allowed(
+            &tauri::Url::parse("blob:https://wao.wayuwa.cn/1234").unwrap(),
+            &origin
+        ));
+        for url in [
+            "blob:https://evil.test/1234",
+            "https://evil.test/file",
+            "file:///etc/passwd",
+            "data:text/plain,secret",
+        ] {
+            assert!(!download_url_allowed(
+                &tauri::Url::parse(url).unwrap(),
+                &origin
+            ));
+        }
+        let directory =
+            std::env::temp_dir().join(format!("wao-download-test-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("report.txt"), "existing content").unwrap();
+        let chosen = download_path(&directory, std::path::Path::new("../../report.txt"));
+        assert_eq!(chosen, directory.join("report (1).txt"));
+        assert_eq!(
+            std::fs::read_to_string(directory.join("report.txt")).unwrap(),
+            "existing content"
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
     #[test]
     fn navigation_keeps_only_wao_and_known_auth_origins() {
         let origin = tauri::Url::parse(PRODUCTION).unwrap();

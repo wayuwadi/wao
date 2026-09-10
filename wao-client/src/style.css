@@ -513,3 +513,12 @@ progress {
     transition: none !important;
   }
 }
+
+.download-status {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #526963;
+}

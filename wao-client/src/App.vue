@@ -15,6 +15,7 @@ const online = ref(navigator.onLine);
 const panel = ref(false);
 const confirm = ref<"reload" | "quit" | "install" | null>(null);
 const error = ref("");
+const downloadMessage = ref("");
 const updater = createUpdater(!import.meta.env.DEV);
 const state = updater.state;
 const modal = computed(() => confirm.value !== null);
@@ -171,6 +172,11 @@ onMounted(async () => {
         if (event.payload === "quit") void ask("quit");
       }),
     );
+    cleanup.push(
+      await listen<string>("workspace-download", (event) => {
+        downloadMessage.value = event.payload;
+      }),
+    );
     await getCurrentWindow().show();
   }
   await connect();
@@ -226,6 +232,13 @@ onUnmounted(() => {
         class="connection"
         :class="{ offline: !online || connection === 'error' }"
         ><i></i>{{ status }}</span
+      >
+      <span
+        v-if="downloadMessage"
+        class="download-status"
+        role="status"
+        :title="downloadMessage"
+        >{{ downloadMessage }}</span
       >
       <button v-if="connection === 'error'" class="retry-small" @click="retry">
         重试连接

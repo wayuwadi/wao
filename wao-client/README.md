@@ -59,7 +59,7 @@ Windows 安装包位于 `src-tauri/target/release/bundle/nsis/`；Mac 通用安�
 
 ## macOS 开发与安装
 
-支持 macOS 11 及以上，通用 DMG 同时包含 Intel x86_64 与 Apple Silicon arm64；共享 Windows 的全部工作区、会话和更新 UI，使用系统标题栏与编辑快捷键。关闭窗口保留工作区，从 Dock 或菜单栏恢复；Cmd+Q 和菜单退出会提示保存，Cmd+W 收起主工作区。
+支持 macOS 11.3 及以上，通用 DMG 同时包含 Intel x86_64 与 Apple Silicon arm64；共享 Windows 的全部工作区、会话和更新 UI，使用系统标题栏与编辑快捷键。关闭窗口保留工作区，从 Dock 或菜单栏恢复；Cmd+Q 和菜单退出会提示保存，Cmd+W 收起主工作区。
 
 安装 Xcode Command Line Tools、Node.js 24 和 Rust，进入本目录：
 

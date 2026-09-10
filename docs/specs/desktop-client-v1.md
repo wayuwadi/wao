@@ -32,8 +32,12 @@ Windows 10/11 x64 首发，复用现有 WAO Web 全部业务功能。macOS 使�
 
 ## macOS 1.0.1 扩展
 
-依据 ADR-226，同一发布包含 Windows x64 与 macOS 11+ Universal。Mac 使用系统标题栏，不显示重复的 Windows 窗口按钮；提供原生编辑菜单、Cmd+Q 保存提醒、Cmd+W 收起工作区和 Dock 恢复。子 WebView 布局仍按内容区 64px 顶栏定位，关闭/恢复和更新面板不销毁会话。
+依据 ADR-226，同一发布包含 Windows x64 与 macOS 11.3+ Universal。Mac 使用系统标题栏，不显示重复的 Windows 窗口按钮；提供原生编辑菜单、Cmd+Q 保存提醒、Cmd+W 收起工作区和 Dock 恢复。子 WebView 布局仍按内容区 64px 顶栏定位，关闭/恢复和更新面板不销毁会话。
 
 `/download` 按平台独立读取和校验发布状态。Mac 首次安装按钮指向版本化 DMG；两个 darwin 更新平台必须指向同一签名 `.app.tar.gz`。DMG 大小、SHA-256 和路径需有效，缺失包和 HTML 回退不得作为可下载文件；Windows 下载失败不影响已验证的 Mac 下载。页面公开提供首次拖入 Applications、未公证状态与更新说明。
 
 新增验收记录见 [Mac 验收](../runbooks/macos-client-acceptance.md)，不沿用 Windows 实测结论。
+
+## Mac 文件下载修复（1.0.2）
+
+WKWebView 下载需要显式注册处理器；工作区及新窗口均启用同源 HTTPS / Blob 文件下载，保存到用户下载目录，同名文件编号保留旧文件，顶栏提示下载中、成功或失败重试。远程页面仍无文件系统命令权限，跨域和本地文件协议不能通过此处理器下载。最低系统为支持 WKDownload 的 macOS 11.3；实机文件交互仍需用户验收。
