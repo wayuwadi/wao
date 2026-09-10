@@ -22,3 +22,7 @@ AAB 是未来应用商店上传产物，不能直接点击安装。
 ## 发布渠道
 安装包位于私有 GitHub 仓库 Release，下载需要仓库访问权限。不要为分享两人内测包把整个仓库公开。
 后续接入 Apple Developer 后可增加 TestFlight；首版不含 App Store/Google Play 公开上架，也不执行应用内远程代码热更新。
+
+## 站内下载
+
+访问 https://wao.wayuwa.cn/download 无需 GitHub 登录即可下载最新 APK 与未签名 IPA。页面会展示真实版本与 SHA-256。移动端版本发布成功后自动更新站内清单，无需重新发布 WAO 主站。若 GitHub Release 已完成而云端上传失败，重新运行失败的 `publish` job 即可重试；相同版本只能复用相同制品，不能更换包内容。

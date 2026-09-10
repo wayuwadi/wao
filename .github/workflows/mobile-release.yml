@@ -65,6 +65,8 @@ jobs:
         working-directory: wao-mobile
       - run: npm run check
         working-directory: wao-mobile
+      - name: Test public download publication
+        run: node --test wao-mobile/scripts/check-download-publication.mjs
       - name: Validate native versions
         run: npm run version:native
         working-directory: wao-mobile
@@ -170,6 +172,9 @@ jobs:
           pattern: wao-mobile-*
           path: artifacts
           merge-multiple: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
       - name: Publish private repository release with checksums
         env:
           GH_TOKEN: ${{ github.token }}
@@ -187,3 +192,44 @@ jobs:
           fi
           gh release upload "$tag" artifacts/* --clobber
           gh release edit "$tag" --draft=false
+      - name: Prepare public mobile downloads
+        env:
+          MOBILE_VERSION: ${{ needs.check.outputs.version }}
+        run: node wao-mobile/scripts/prepare-downloads.mjs artifacts public-downloads "$MOBILE_VERSION"
+      - name: Configure deployment SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Publish mobile downloads atomically
+        env:
+          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
+          CLOUD_USER: ${{ secrets.CLOUD_USER }}
+          MOBILE_VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          incoming="/tmp/wao-mobile-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh "$CLOUD_USER@$CLOUD_HOST" "install -d '$incoming'"
+          scp -r public-downloads/* "$CLOUD_USER@$CLOUD_HOST:$incoming/"
+          ssh "$CLOUD_USER@$CLOUD_HOST" bash -s -- "$incoming" "$MOBILE_VERSION" < wao-mobile/scripts/publish-downloads.sh
+      - name: Verify public downloads
+        env:
+          MOBILE_VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          base=https://wao.wayuwa.cn/downloads/mobile
+          curl --retry 3 -fsS "$base/latest.json" -o manifest.json
+          jq -e --arg version "$MOBILE_VERSION" '.version == $version' manifest.json
+          mkdir verified
+          cd verified
+          for name in "WAO-$MOBILE_VERSION-android.apk" "WAO-$MOBILE_VERSION-ios-unsigned.ipa" SHA256SUMS.txt; do
+            curl --retry 3 -fsS "$base/$MOBILE_VERSION/$name" -o "$name"
+          done
+          sha256sum -c "../public-downloads/$MOBILE_VERSION/SHA256SUMS.txt"
+          curl -fsSI "$base/latest.json" | grep -i 'cache-control:.*no-store'
+          echo "Android and iOS $MOBILE_VERSION published at https://wao.wayuwa.cn/download" >> "$GITHUB_STEP_SUMMARY"

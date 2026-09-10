@@ -81,6 +81,15 @@ export const DEVOPS_LINKS: QuickLink[] = [
 /** WAO 自身的独立产品入口。 */
 export const PRODUCT_LINKS: QuickLink[] = [
   {
+    id: 'wao-client-download',
+    label: '下载 WAO',
+    subtitle: 'Android、iOS 与桌面客户端',
+    icon: 'ri-download-cloud-2-line',
+    url: '/download',
+    openMode: 'NEW_PAGE',
+    keywords: ['download', 'xiazai', 'android', 'ios', '客户端'],
+  },
+  {
     id: 'wao-desktop-pet',
     label: 'WAO 桌面宠物',
     subtitle: '下载 Windows / macOS 版本',

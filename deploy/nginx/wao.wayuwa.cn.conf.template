@@ -318,6 +318,23 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
+    # 移动安装包独立保存；清单最后切换，版本目录不可变，缺失文件禁止回落 SPA。
+    location = /downloads/mobile/latest.json {
+        alias /var/www/wao-downloads/mobile/latest.json;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
+    location ^~ /downloads/mobile/ {
+        alias /var/www/wao-downloads/mobile/;
+        try_files $uri =404;
+        types { application/vnd.android.package-archive apk; application/octet-stream ipa; text/plain txt; }
+        default_type application/octet-stream;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header Content-Disposition attachment;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
     # 工作区客户端独立于桌宠；更新清单和固定下载地址不可被父级 immutable 缓存。
     location = /downloads/desktop/client/latest.json {
         alias /var/www/wao-downloads/desktop/client/latest.json;
