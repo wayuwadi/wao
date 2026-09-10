@@ -175,6 +175,9 @@ html.desktop-pet-surface #app {
 }
 .pet-dock .pet-avatar {
   position: relative;
+  width: 90px;
+  height: 98px;
+  flex-shrink: 0;
   background: transparent;
   padding: 0;
 }
