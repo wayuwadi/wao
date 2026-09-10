@@ -16,6 +16,7 @@ const router = createRouter({
 
 describe('项目页聚焦任务', () => {
   beforeEach(() => {
+    localStorage.clear()
     setActivePinia(createPinia())
     seedDataStore(useDataStore())
   })
@@ -47,11 +48,12 @@ describe('项目页聚焦任务', () => {
     expect(wrapper.get('.selection-count').text()).toBe('已选 1 项')
     await wrapper.findAll('.copy-selection-actions > button').find((button) => button.text() === '完成选择')!.trigger('click')
     expect(wrapper.find('.copy-selection-actions').exists()).toBe(false)
-    await wrapper.get('.empty-columns-control button').trigger('click')
+    await wrapper.get('.empty-columns-control button[aria-expanded]').trigger('click')
     expect(wrapper.findAll('.board-col')).toHaveLength(6)
-    await wrapper.get('.empty-columns-control button').trigger('click')
+    await wrapper.get('.empty-columns-control button[aria-expanded]').trigger('click')
     await wrapper.get('.board-card').trigger('dragstart')
-    expect(wrapper.findAll('.board-col')).toHaveLength(6)
+    expect(wrapper.findAll('.board-col')).toHaveLength(2)
+    expect(wrapper.findAll('.empty-column-target')).toHaveLength(4)
     await wrapper.get('.board-card').trigger('dragend')
     expect(wrapper.findAll('.board-col')).toHaveLength(2)
     wrapper.unmount()
@@ -93,6 +95,7 @@ describe('项目页聚焦任务', () => {
   it('项目看板卡片中的连续长文本不会撑出状态列', async () => {
     const data = useDataStore()
     const task = data.tasksByProject('p1')[0]!
+    task.status = '待办'
     task.title = `https://example.com/${'continuous-segment-'.repeat(30)}`
     await router.push('/projects/p1?view=board')
     await router.isReady()

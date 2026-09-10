@@ -76,7 +76,25 @@ const settingsOpen = ref(false)
 const projectInfoOpen = ref(false)
 const projectMenuOpen = ref(false)
 const batchSelectionOpen = ref(false)
-const showEmptyColumns = ref(false)
+const columnPreferenceMemory = ref<Record<string, boolean>>({})
+function columnPreference(kind: string) {
+  return computed({
+    get: () => {
+      const memoryKey = `${kind}:${pid.value}`
+      if (memoryKey in columnPreferenceMemory.value) return columnPreferenceMemory.value[memoryKey]!
+      try { return JSON.parse(localStorage.getItem(`wao-board-${kind}`) || '{}')[pid.value] === true }
+      catch { return false }
+    },
+    set: (value: boolean) => {
+      columnPreferenceMemory.value[`${kind}:${pid.value}`] = value
+      try {
+        const stored = JSON.parse(localStorage.getItem(`wao-board-${kind}`) || '{}')
+        localStorage.setItem(`wao-board-${kind}`, JSON.stringify({ ...stored, [pid.value]: value }))
+      } catch { /* Storage restrictions must not prevent interaction. */ }
+    },
+  })
+}
+const showEmptyColumns = columnPreference('empty-columns-v1')
 function finishSelection() {
   batchSelectionOpen.value = false
   selectedTaskIds.value = []
@@ -105,7 +123,11 @@ function onProjectDeleted() {
 
 // ---- 拖拽：看板改状态 / 列表排序 ----
 const dragId = ref<string | null>(null)
-function onDragStart(id: string) {
+function onDragStart(id: string, event: DragEvent) {
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', id)
+  }
   dragId.value = id
 }
 function onDropStatus(status: TaskStatus) {
@@ -141,7 +163,7 @@ const linkedDocs = computed(() => {
 })
 // ---- 已完成任务的收起 / 缓冲 ----
 // 默认收起已完成，点击展开；刚勾完成的任务先原地停留 3 秒再归档，给操作一个反应时间。
-const showDone = ref(false)
+const showDone = columnPreference('done-expanded-v1')
 const { toggle: toggleTask, isSettling } = useCompletionSettle()
 
 const creatorOptions = computed(() => {
@@ -197,7 +219,7 @@ const board = computed(() =>
   })),
 )
 const emptyBoardColumns = computed(() => board.value.filter((col) => !col.items.length && !col.collapsible && !col.addable))
-const visibleBoard = computed(() => board.value.filter((col) => showEmptyColumns.value || dragId.value || col.items.length || col.collapsible || col.addable))
+const visibleBoard = computed(() => board.value.filter((col) => showEmptyColumns.value || col.items.length || col.collapsible || col.addable))
 const pdTabs = computed(() => {
   // 任务角标只数未完成的：一个跑了半年的项目里「25」几乎全是已完成，看不出还剩多少事。
   const openCount = ptasks.value.filter((t) => isOpenStatus(t.status)).length
@@ -616,7 +638,7 @@ watch(visibleTaskIds, (ids) => {
           :class="{ dragging: dragId === t.id, settling: isSettling(t.id) }"
           draggable="true"
           @click="openTask(t.id)"
-          @dragstart="onDragStart(t.id)"
+          @dragstart="onDragStart(t.id, $event)"
           @dragend="dragId = null"
           @dragover.prevent
           @drop="onDropReorder(t.id)"
@@ -796,7 +818,7 @@ watch(visibleTaskIds, (ids) => {
             :class="{ dragging: dragId === t.id }"
             draggable="true"
             @click="openTask(t.id)"
-            @dragstart="onDragStart(t.id)"
+            @dragstart="onDragStart(t.id, $event)"
             @dragend="dragId = null"
             @dragover.prevent.stop
             @drop.stop="onDropGroup(g.id, t.id)"
@@ -866,7 +888,7 @@ watch(visibleTaskIds, (ids) => {
               :class="{ dragging: dragId === t.id }"
               draggable="true"
               @click="openTask(t.id)"
-              @dragstart="onDragStart(t.id)"
+              @dragstart="onDragStart(t.id, $event)"
               @dragend="dragId = null"
             >
               <button
@@ -892,7 +914,10 @@ watch(visibleTaskIds, (ids) => {
         </div>
       </div>
       <div v-if="pdTaskView === 'board' && emptyBoardColumns.length" class="empty-columns-control">
-        <span>空列：{{ emptyBoardColumns.map((col) => `${col.label} 0`).join(' · ') }}</span>
+        <span>空列：</span>
+        <button v-for="col in emptyBoardColumns" :key="col.label" class="empty-column-target"
+          @dragover.prevent @drop.prevent.stop="onDropStatus(col.label)"
+          :title="`拖到此处标记为「${col.label}」`">{{ col.label }} 0</button>
         <button :aria-expanded="showEmptyColumns" @click="showEmptyColumns = !showEmptyColumns">{{ showEmptyColumns ? '折叠空列' : '显示空列' }}</button>
       </div>
     </div>

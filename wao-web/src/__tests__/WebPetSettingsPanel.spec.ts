@@ -21,21 +21,20 @@ describe('网页宠物设置', () => {
     vi.mocked(savePreference).mockResolvedValue(undefined)
   })
 
-  it('读取当前成员设置并保存三种触发方式与自选静默时长', async () => {
+  it('读取当前成员设置并保存一次性提醒开关', async () => {
     const wrapper = mount(WebPetSettingsPanel)
     await flushPromises()
 
     expect(fetchPreference).toHaveBeenCalledWith('web-pet-settings-v1')
-    await wrapper.get('select[aria-label="宠物悬停动作"]').setValue('NONE')
-    await wrapper.get('select[aria-label="宠物右键动作"]').setValue('QUICK_ACTIONS')
-    await wrapper.findAll('input[type="number"]')[0]!.setValue(15)
+    expect(wrapper.find('select').exists()).toBe(false)
+    await wrapper.findAll('input[type=checkbox]')[0]!.setValue(false)
     await wrapper.get('button.primary').trigger('click')
     await flushPromises()
 
     const [key, raw] = vi.mocked(savePreference).mock.calls[0]!
     expect(key).toBe('web-pet-settings-v1')
     expect(JSON.parse(raw)).toMatchObject({
-      hoverAction: 'NONE', rightClickAction: 'QUICK_ACTIONS', noticeSnoozeMinutes: 15,
+      showTaskNotices: false,
     })
     expect(wrapper.get('button.primary').text()).toBe('已保存')
   })
@@ -44,12 +43,12 @@ describe('网页宠物设置', () => {
     vi.mocked(savePreference).mockRejectedValueOnce(new Error('偏好服务暂时不可用'))
     const wrapper = mount(WebPetSettingsPanel)
     await flushPromises()
-    await wrapper.get('select[aria-label="宠物左键动作"]').setValue('NONE')
+    await wrapper.findAll('input[type=checkbox]')[0]!.setValue(false)
     await wrapper.get('button.primary').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('偏好服务暂时不可用')
-    expect((wrapper.get('select[aria-label="宠物左键动作"]').element as HTMLSelectElement).value).toBe('NONE')
+    expect((wrapper.findAll('input[type=checkbox]')[0]!.element as HTMLInputElement).checked).toBe(false)
     expect(wrapper.text()).toContain('重试保存')
   })
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
@@ -224,6 +225,7 @@ onUnmounted(() => {
   if (timer) clearTimeout(timer)
   window.removeEventListener('beforeunload', beforeUnload)
 })
+useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 </script>
 <template>
   <main class="sync-panel">

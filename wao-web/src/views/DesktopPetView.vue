@@ -1,143 +1,156 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import PetSprite from '@/components/assistant/PetSprite.vue'
 import PetMessenger from '@/components/chat/PetMessenger.vue'
-import ChatView from '@/views/ChatView.vue'
+import { fetchSharedChatMessages } from '@/api/chat'
+import { fetchTasks } from '@/api/board'
 import { getSession } from '@/api/auth'
-import { isAxiosError } from 'axios'
-
-const AiAssistantPanel = defineAsyncComponent(
-  () => import('@/components/assistant/AiAssistantPanel.vue'),
-)
+import { createVisibilityPoller } from '@/composables/visibilityPolling'
 const ui = useUiStore()
 const session = useSessionStore()
-const aiOpen = ref(false)
-const quickReplyOpen = ref(false)
-const native = new URLSearchParams(location.search).get('native') === '1'
-const mode = computed(() =>
-  !session.authed
-    ? 'bubble'
-    : ui.chatOpen || aiOpen.value
-      ? 'chat'
-      : ui.chatUnreadCount || quickReplyOpen.value
-        ? 'bubble'
-        : 'compact',
-)
-function nativeAction(action: 'compact' | 'bubble' | 'chat' | 'hide' | 'workspace' | 'drag') {
+const nativeVersion = new URLSearchParams(location.search).get('native')
+const native = nativeVersion === '1' || nativeVersion === '2'
+const noticeVisible = ref(false)
+const taskNotice = ref<{ id: string; label: string } | null>(null)
+let taskNoticeTimer: ReturnType<typeof setTimeout> | undefined
+let tasksReadAt = 0
+let disposed = false
+let pointerStart: { x: number; y: number } | null = null
+let dragged = false
+function nativeAction(
+  action: 'compact' | 'bubble' | 'open-chat' | 'workspace' | 'drag' | `task/${string}`,
+) {
+  if (nativeVersion === '1' && (action === 'open-chat' || action.startsWith('task/'))) {
+    try {
+      localStorage.setItem(
+        'wao-desktop-open-request',
+        JSON.stringify({ action, member: session.userId, time: Date.now() }),
+      )
+    } catch {
+      /* Open the workspace for manual navigation. */
+    }
+    location.href = '/__desktop_pet__/workspace'
+    return
+  }
   if (native) location.href = `/__desktop_pet__/${action}`
+  else if (action === 'open-chat') location.href = '/?chat=1'
   else if (action === 'workspace') location.href = '/'
 }
-watch(mode, (value) => nativeAction(value))
+function resize(visible: boolean) {
+  noticeVisible.value = visible
+  nativeAction(visible || taskNotice.value || !session.authed ? 'bubble' : 'compact')
+}
+function pointerDown(event: PointerEvent) {
+  if (event.button !== 0) return
+  pointerStart = { x: event.clientX, y: event.clientY }
+  dragged = false
+}
+function pointerMove(event: PointerEvent) {
+  if (!pointerStart || dragged || !event.buttons) return
+  if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5) {
+    dragged = true
+    nativeAction('drag')
+  }
+}
 function openChat() {
-  aiOpen.value = false
-  ui.openChat()
+  pointerStart = null
+  if (!dragged) nativeAction(session.authed ? 'open-chat' : 'workspace')
 }
-function openAi() {
-  ui.closeChat()
-  aiOpen.value = true
-}
-function escape(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    ui.closeChat()
-    aiOpen.value = false
-  }
-}
-let sessionTimer: ReturnType<typeof setInterval> | undefined
-async function refreshSession() {
-  try {
-    const account = await getSession()
-    if (account.member.id !== session.userId) {
-      ui.closeChat()
-      aiOpen.value = false
+const poller = createVisibilityPoller(
+  async () => {
+    try {
+      const account = await getSession()
+      if (disposed) return
       session.accept(account)
+      const messages = await fetchSharedChatMessages()
+      if (disposed || session.userId !== account.member.id) return
+      const unread = messages.filter((message) => !message.read)
+      ui.chatUnreadCount = unread.length
+      ui.chatLatestUnread = unread[unread.length - 1] ?? null
+      if (Date.now() - tasksReadAt > 60_000) {
+        tasksReadAt = Date.now()
+        const tasks = await fetchTasks()
+        if (disposed || session.userId !== account.member.id) return
+        const relevant = tasks.filter((task) =>
+          ['待验证', 'AI 进行中', '待办'].includes(task.status),
+        )
+        const fingerprint = relevant
+          .map((task) => `${task.id}:${task.status}`)
+          .sort()
+          .join('|')
+        const key = `wao-pet-task-seen:${session.userId}`
+        let seen = false
+        try {
+          seen = localStorage.getItem(key) === fingerprint
+          localStorage.setItem(key, fingerprint)
+        } catch {
+          /* optional */
+        }
+        const task = relevant.find((task) => task.status === '待验证') ?? relevant[0]
+        if (!seen && task) {
+          taskNotice.value = {
+            id: task.id,
+            label: task.status === '待验证' ? '有任务等你验收' : '有任务动态，点击查看',
+          }
+          resize(noticeVisible.value)
+          clearTimeout(taskNoticeTimer)
+          taskNoticeTimer = setTimeout(() => {
+            taskNotice.value = null
+            resize(noticeVisible.value)
+          }, 8000)
+        }
+      }
+    } catch (error) {
+      const status = error as { status?: number; response?: { status?: number } }
+      if (status.status === 401 || status.response?.status === 401) {
+        session.account = null
+        ui.chatUnreadCount = 0
+        ui.chatLatestUnread = null
+      }
     }
-  } catch (error) {
-    if (
-      (isAxiosError(error) && error.response?.status === 401) ||
-      (error instanceof Error && 'status' in error && error.status === 401)
-    ) {
-      session.account = null
-      ui.chatLatestUnread = null
-      ui.chatUnreadCount = 0
-      ui.closeChat()
-      aiOpen.value = false
-    }
-  }
-}
+  },
+  () => 10_000,
+)
 onMounted(() => {
-  sessionTimer = setInterval(refreshSession, 30_000)
-  window.addEventListener('focus', refreshSession)
   document.documentElement.classList.add('desktop-pet-surface')
-  window.addEventListener('keydown', escape)
-  nativeAction(mode.value)
+  resize(false)
+  poller.start()
 })
 onBeforeUnmount(() => {
-  clearInterval(sessionTimer)
-  window.removeEventListener('focus', refreshSession)
+  disposed = true
+  poller.stop()
+  clearTimeout(taskNoticeTimer)
   document.documentElement.classList.remove('desktop-pet-surface')
-  window.removeEventListener('keydown', escape)
 })
 </script>
-
 <template>
-  <main class="desktop-pet" :class="mode">
-    <section v-if="!session.authed" class="pet-login">
-      <p>先登录 WAO，我就能帮你传话。</p>
-      <button @click="nativeAction('workspace')">打开 WAO 登录</button>
-    </section>
-    <template v-else :key="session.userId">
-      <div v-show="ui.chatOpen" class="pet-chat-panel">
-        <ChatView
-          floating
-          draft-scope="desktop"
-          :visible="ui.chatOpen"
-          @minimize="ui.closeChat()"
-        />
-      </div>
-      <section v-if="aiOpen" class="pet-ai-panel">
-        <header>和宠物聊 · AI<button @click="aiOpen = false">收起</button></header>
-        <div><AiAssistantPanel title="和宠物聊 · AI" :model-value="true" embedded /></div>
-      </section>
-      <PetMessenger v-if="!aiOpen" @expanded="quickReplyOpen = $event" />
-    </template>
-    <footer class="pet-dock">
-      <button
-        class="drag-handle"
-        title="拖动宠物"
-        aria-label="拖动宠物"
-        @pointerdown="nativeAction('drag')"
-      >
-        <i class="ri-draggable"></i>
-      </button>
-      <button
-        class="pet-avatar"
-        title="打开团队聊天"
-        aria-label="宠物传话：打开团队聊天"
-        @click="openChat"
-      >
-        <PetSprite :state="ui.chatUnreadCount ? 'waving' : 'idle'" /><b v-if="ui.chatUnreadCount">{{
-          ui.chatUnreadCount
-        }}</b>
-      </button>
-      <nav>
-        <button title="团队聊天" aria-label="团队聊天" @click="openChat">
-          <i class="ri-chat-3-line"></i></button
-        ><button title="和宠物聊 · AI" aria-label="和宠物聊 · AI" @click="openAi">
-          <i class="ri-sparkling-line"></i></button
-        ><button
-          title="隐藏宠物，可从客户端恢复"
-          aria-label="隐藏宠物"
-          @click="nativeAction('hide')"
-        >
-          <i class="ri-subtract-line"></i>
-        </button>
-      </nav>
-    </footer>
+  <main class="desktop-pet">
+    <button v-if="!session.authed" class="pet-login" @click="nativeAction('workspace')">
+      打开 WAO 登录
+    </button>
+    <PetMessenger v-else @open="nativeAction('open-chat')" @visible="resize" />
+    <button
+      v-if="taskNotice && !noticeVisible"
+      class="pet-login"
+      @click="nativeAction(`task/${encodeURIComponent(taskNotice.id)}`)"
+    >
+      {{ taskNotice.label }}
+    </button>
+    <button
+      class="pet-avatar"
+      aria-label="宠物：点击打开聊天，拖动调整位置"
+      title="点击打开聊天，拖动调整位置"
+      @pointerdown="pointerDown"
+      @pointermove="pointerMove"
+      @pointercancel="pointerStart = null"
+      @click="openChat"
+    >
+      <PetSprite :state="noticeVisible ? 'waving' : 'idle'" />
+    </button>
   </main>
 </template>
-
 <style>
 html.desktop-pet-surface,
 html.desktop-pet-surface body,
@@ -159,76 +172,20 @@ html.desktop-pet-surface #app {
   gap: 8px;
   overflow: hidden;
 }
-.pet-dock {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-.pet-dock button {
-  border: 0;
-  cursor: pointer;
-  color: var(--wao-text-2);
-  background: var(--wao-bg-card);
-  border-radius: 12px;
-  padding: 6px;
-}
-.pet-dock .pet-avatar {
-  position: relative;
+.pet-avatar {
   width: 90px;
-  height: 98px;
-  flex-shrink: 0;
+  height: 100px;
   background: transparent;
+  border: 0;
   padding: 0;
-}
-.pet-avatar b {
-  position: absolute;
-  right: 0;
-  top: 0;
-  background: var(--wao-danger);
-  color: white;
-  border-radius: 12px;
-  padding: 0 5px;
-  font-size: 11px;
-}
-.pet-dock nav {
-  display: grid;
-  gap: 3px;
-}
-.drag-handle {
-  cursor: grab !important;
-}
-.pet-chat-panel,
-.pet-ai-panel {
-  width: 100%;
-  flex: 1;
-  min-height: 0;
-  background: var(--wao-bg-card);
-  border-radius: 18px;
-  overflow: hidden;
-  border: 1px solid var(--wao-line);
-}
-.pet-chat-panel :deep(.chat-page) {
-  height: 100%;
-}
-.pet-ai-panel {
-  display: flex;
-  flex-direction: column;
-}
-.pet-ai-panel > header {
-  padding: 10px;
-  display: flex;
-  justify-content: space-between;
-}
-.pet-ai-panel > div {
-  position: relative;
-  flex: 1;
-  min-height: 0;
+  cursor: grab;
+  touch-action: none;
 }
 .pet-login {
   background: var(--wao-bg-card);
-  padding: 12px;
-  border-radius: 14px;
-  font-size: 12px;
+  color: var(--wao-text-2);
+  border: 1px solid var(--wao-line);
+  padding: 10px;
+  border-radius: 12px;
 }
 </style>

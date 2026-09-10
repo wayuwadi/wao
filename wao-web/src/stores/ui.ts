@@ -76,6 +76,7 @@ function loadCreatorFilters(): Record<string, string> {
 /** 全局 UI 覆盖层：任务抽屉、新建弹窗、全局搜索、庆祝动画等跨屏状态。 */
 export const useUiStore = defineStore('ui', () => {
   const openTaskId = ref<string | null>(null)
+  const openTaskSubId = ref<string | null>(null)
 
   /** 任务视图偏好，按项目、跨会话记忆。 */
   const taskViews = ref<Record<string, TaskView>>(loadTaskViews())
@@ -111,7 +112,8 @@ export const useUiStore = defineStore('ui', () => {
   const chatReviewId = ref('')
   const chatReviewRequestVersion = ref(0)
 
-  function openTask(id: string) {
+  function openTask(id: string, subId?: string) {
+    openTaskSubId.value = subId ?? null
     openTaskId.value = id
   }
   function closeTask() {
@@ -233,7 +235,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    openTaskId, modal, modalProject, modalPriority, modalTaskSeed, modalDue, modalStartAt, modalEndAt,
+    openTaskId, openTaskSubId, modal, modalProject, modalPriority, modalTaskSeed, modalDue, modalStartAt, modalEndAt,
     searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft,
     chatOpen, chatDraft, chatDraftRequestVersion, chatUnreadCount, chatLatestUnread, chatRefreshVersion, shareToChat, consumeChatDraft, chatReviewId, chatReviewRequestVersion, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,

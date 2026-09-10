@@ -84,6 +84,37 @@ describe('ChatView', () => {
     vi.useRealTimers()
   })
 
+  it('点击聊天中的子任务链接直接打开对应任务与子任务', async () => {
+    vi.mocked(fetchSharedChatMessages).mockResolvedValue([{ ...message, content: '[查看子任务](/s/t/t123/s456)' }])
+    const wrapper = await mountView({ floating: true })
+    const ui = useUiStore()
+    ui.openChat()
+    await wrapper.get('.message-stream a').trigger('click', { button: 0 })
+    expect(ui.openTaskId).toBe('t123')
+    expect(ui.openTaskSubId).toBe('s456')
+    expect(ui.chatOpen).toBe(false)
+  })
+
+  it('图片右键菜单复制 PNG 到剪贴板', async () => {
+    vi.mocked(fetchSharedChatMessages).mockResolvedValue([{ ...message, content: '![测试](/api/images/i1/raw)' }])
+    const write = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write } })
+    vi.stubGlobal('ClipboardItem', class { constructor(public data: unknown) {} })
+    const draw = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D)
+    const blob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => callback(new Blob(['png'], { type: 'image/png' })))
+    const wrapper = await mountView()
+    const img = wrapper.get('img')
+    Object.defineProperties(img.element, { naturalWidth: { value: 10 }, naturalHeight: { value: 10 } })
+    await img.trigger('contextmenu', { clientX: 100, clientY: 100 })
+    const menu = document.querySelector<HTMLButtonElement>('.chat-image-menu')!
+    expect(menu.textContent).toContain('复制图片')
+    menu.click()
+    await flushPromises()
+    expect(write).toHaveBeenCalledOnce()
+    draw.mockRestore()
+    blob.mockRestore()
+  })
+
   it('读取 WAO 消息并展示本地发送状态', async () => {
     const wrapper = await mountView()
 

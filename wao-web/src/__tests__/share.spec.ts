@@ -1,3 +1,4 @@
+import { taskShareTarget } from '@/utils/share'
 import { describe, expect, it } from 'vitest'
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 
@@ -27,5 +28,14 @@ describe('分享链接', () => {
   it('子任务链接上 openOnly 无意义，不带这个参数', () => {
     expect(shareUrl('t1', 's9', true)).toBe(`${window.location.origin}/s/t/t1/s9`)
     expect(shareMarkdownUrl('t1', 's9', true)).toBe(`${window.location.origin}/api/share/tasks/t1/subs/s9.md`)
+  })
+})
+
+describe('聊天任务链接解析', () => {
+  it('支持分享页和 Markdown 子任务链接，拒绝外站仿冒路径', () => {
+    expect(taskShareTarget('/s/t/t1/s2')).toEqual({ taskId: 't1', subId: 's2' })
+    expect(taskShareTarget('/api/share/tasks/t1.md?openOnly=true')).toEqual({ taskId: 't1' })
+    expect(taskShareTarget('/api/share/tasks/t1/subs/s2.md')).toEqual({ taskId: 't1', subId: 's2' })
+    expect(taskShareTarget('https://evil.test/s/t/t1')).toBeNull()
   })
 })

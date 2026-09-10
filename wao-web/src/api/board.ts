@@ -1,3 +1,4 @@
+import { desktopCachedRead } from './desktopCache'
 import { http, type ApiResponse } from './http'
 import type {
   Area,
@@ -45,8 +46,10 @@ export interface GoalDto {
  */
 
 async function get<T>(url: string): Promise<T> {
-  const res = await http.get<ApiResponse<T>>(url)
-  return res.data.data
+  return desktopCachedRead(url, async () => {
+    const res = await http.get<ApiResponse<T>>(url)
+    return res.data.data
+  })
 }
 async function post<T>(url: string, body?: unknown): Promise<T> {
   const res = await http.post<ApiResponse<T>>(url, body)

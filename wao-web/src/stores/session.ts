@@ -1,3 +1,4 @@
+import { setDesktopCacheMember } from '@/api/desktopCache'
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Member } from '@/types'
@@ -33,6 +34,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function accept(session: AuthSession) {
+    setDesktopCacheMember(session.member.id)
     account.value = session
     pendingClaim.value = null
     if (!members.value.some((member) => member.id === session.member.id)) members.value.push(session.member)
@@ -80,6 +82,7 @@ export const useSessionStore = defineStore('session', () => {
 
   async function logout() {
     try { await logoutSession() } finally {
+      setDesktopCacheMember('')
       account.value = null
       pendingClaim.value = null
       initialized.value = true

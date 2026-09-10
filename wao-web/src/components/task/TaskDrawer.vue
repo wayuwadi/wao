@@ -154,6 +154,10 @@ watch(() => ui.openTaskId, (taskId) => {
   if (taskId) void data.ensureDocsLoaded()
 }, { immediate: true })
 
+watch(() => [ui.openTaskId, ui.openTaskSubId], () => {
+  openSubId.value = ui.openTaskSubId ?? null
+}, { flush: 'post', immediate: true })
+
 const activeAiRun = computed(() => aiRuns.value.find((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 /** 已经单独派过 AI 工的子任务：行上标一下，分享给 AI 时它们也会被自动摘掉。 */
 const dispatchedSubIds = computed(

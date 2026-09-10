@@ -1241,6 +1241,21 @@ export const useDataStore = defineStore('data', () => {
     while (taskPersisting[id]) await new Promise((resolve) => window.setTimeout(resolve, 25))
   }
 
+  /** 刷新工作区前等待所有任务、文档写入；失败保留页面与草稿。 */
+  async function flushWorkspace(): Promise<boolean> {
+    const taskIds = Object.keys(taskDrafts.value)
+    await Promise.all(taskIds.map(flushTask))
+    if (taskIds.some(id => taskSaveState(id) === 'error')) return false
+    // An in-flight document write may schedule a newer draft; drain until stable.
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const ids = Object.keys(docEdits.value)
+      if (!ids.length) return true
+      const results = await Promise.all(ids.map(persistDocNow))
+      if (results.some(result => !result)) return false
+    }
+    return Object.keys(docEdits.value).length === 0
+  }
+
   /** 独立追加评论，避免评论与富文本全文自动保存互相覆盖。 */
   async function addTaskComment(id: string, text: string) {
     const task = taskById(id)
@@ -2068,7 +2083,7 @@ export const useDataStore = defineStore('data', () => {
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     ensureDocsLoaded, refreshDocs,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
-    taskSaveState, taskSavedAt, flushTask, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
+    taskSaveState, taskSavedAt, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,

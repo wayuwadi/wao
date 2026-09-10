@@ -1,3 +1,4 @@
+import { invalidateDesktopCache } from './desktopCache'
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { reportBrowserRequest } from '@/utils/requestMetricReporter'
 
@@ -112,6 +113,8 @@ http.interceptors.response.use(
     if (typeof envelope?.code === 'number' && envelope.code !== 0) {
       return Promise.reject(new Error(envelope.message || '请求失败'))
     }
+    if (!['get', 'head'].includes(response.config.method?.toLowerCase() ?? 'get')
+      && /^\/api\/(tasks|projects|areas|members|org|kbs|kb-groups)(?:\/|$)/.test(response.config.url ?? '')) invalidateDesktopCache()
     return response
   },
   (error: unknown) => {

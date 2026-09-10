@@ -46,3 +46,15 @@ export function docShareUrl(docId: string): string {
 export function docShareMarkdownUrl(docId: string): string {
   return absoluteUrl(`/api/share/docs/${encodeURIComponent(docId)}.md`)
 }
+
+/** Recognize only same-origin task shares; external links retain normal browser behavior. */
+export function taskShareTarget(href: string): { taskId: string; subId?: string } | null {
+  try {
+    const url = new URL(href, window.location.origin)
+    if (url.origin !== window.location.origin) return null
+    const match = url.pathname.match(/^\/s\/t\/([^/]+)(?:\/([^/]+))?\/?$/)
+      ?? url.pathname.match(/^\/api\/share\/tasks\/([^/]+?)(?:\/subs\/([^/]+?))?(?:\.md)?$/)
+    if (!match?.[1]) return null
+    return { taskId: decodeURIComponent(match[1]), subId: match[2] ? decodeURIComponent(match[2]) : undefined }
+  } catch { return null }
+}

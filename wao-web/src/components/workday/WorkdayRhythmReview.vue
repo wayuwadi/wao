@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchRhythmReview, saveRhythmReview, type RhythmReview } from '@/api/workdayRhythm'
 
@@ -138,6 +139,7 @@ onBeforeUnmount(() => {
   alive = false
   window.removeEventListener('beforeunload', beforeUnload)
 })
+useSaveBeforeRefresh(async () => { if (ready && ['dirty', 'error'].includes(state.value)) await save() })
 </script>
 
 <template>
