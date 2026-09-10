@@ -19,7 +19,7 @@ describe('网站备案页脚', () => {
     expect(wrapper.text()).toContain('WAO Life OS')
     expect(wrapper.text()).toContain('个人事务与 AI 协作系统')
     expect(wrapper.text()).toContain('豫ICP备2024105476号-1')
-    expect(wrapper.get('a').attributes('href')).toBe('https://beian.miit.gov.cn')
+    expect(wrapper.get('a[href="https://beian.miit.gov.cn"]').attributes('href')).toBe('https://beian.miit.gov.cn')
     expect(wrapper.get('footer').classes()).not.toContain('reserve-mobile-actions')
   })
 
@@ -36,6 +36,9 @@ describe('网站备案页脚', () => {
     const wrapper = mount(SiteFooter)
     await flushPromises()
 
-    expect(wrapper.find('footer').exists()).toBe(false)
+    expect(wrapper.find('footer').exists()).toBe(true)
+    expect(wrapper.get('a[href="/download"]').text()).toBe('下载 WAO')
+    expect(wrapper.find('a[href="https://beian.miit.gov.cn"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('ICP备')
   })
 })
