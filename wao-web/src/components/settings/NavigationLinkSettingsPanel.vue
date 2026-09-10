@@ -1,24 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import {
-  fetchBuiltinMenuRegistry,
-  fetchExternalAppRegistry,
-  saveBuiltinMenuRegistry,
-  saveExternalAppRegistry,
-} from '@/api/system'
 import { toast } from '@/composables/toast'
 import { useQuickLinks } from '@/composables/quickLinks'
 import type { QuickLink } from '@/config/quickLinks'
-import {
-  normalizeBuiltinMenu,
-  normalizeExternalApp,
-  type BuiltinMenuConfig,
-  type BuiltinMenuGroupCode,
-  type ExternalAppConfig,
-  type MenuOpenMode,
-  type MenuPlacement,
-} from '@/config/nav'
+import { type BuiltinMenuGroupCode, type MenuOpenMode, type MenuPlacement } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
+import { recommendedLayout } from '@/config/navigationCatalog'
+import type { NavigationLayout, NavigationGroup } from '@/config/navigationLayout'
+import { externalAppItemId, type NavItemId } from '@/config/nav'
 import IconPicker from '@/components/ui/IconPicker.vue'
 
 type MenuSource = 'builtin' | 'external'
@@ -36,18 +25,22 @@ interface MenuDraft {
   placement: MenuPlacement
 }
 
-const GROUPS: Array<{ code: BuiltinMenuGroupCode; label: string }> = [
-  { code: 'ROOT', label: '顶层' },
-  { code: 'PUBLIC', label: '公共' },
-  { code: 'PERSONAL', label: '个人' },
-  { code: 'TOOLS', label: '工具' },
-]
-
 const nav = useNavStore()
 const quickLinks = useQuickLinks()
 
 const menuItems = ref<MenuDraft[]>([])
-const externalOriginals = ref<Record<string, ExternalAppConfig>>({})
+const draftGroups = ref<NavigationGroup[]>([])
+const GROUPS = computed(() =>
+  draftGroups.value.map((g) => ({ code: g.id, label: g.label || '顶层' })),
+)
+const groupsBaseline = ref('')
+const draftLocked = ref(false)
+const lockedBaseline = ref(false)
+const draftRevision = ref('none')
+const menuQuery = ref('')
+const previousLayout = ref<NavigationLayout | null>(null)
+const previewing = ref(false)
+const newGroupName = ref('')
 const menuLoading = ref(false)
 const menuSaving = ref(false)
 const menuError = ref('')
@@ -66,58 +59,76 @@ function cloneQuickLinks(links: readonly QuickLink[]): QuickLink[] {
   return links.map((link) => ({ ...link, keywords: [...link.keywords] }))
 }
 
-function draftFromBuiltin(menu: BuiltinMenuConfig): MenuDraft {
-  return { ...menu, placement: menu.placement ?? 'MENU', key: `builtin:${menu.id}`, source: 'builtin' }
-}
-
-function draftFromExternal(app: ExternalAppConfig): MenuDraft {
-  return { ...app, placement: app.placement ?? 'MENU', key: `external:${app.id}`, source: 'external' }
-}
-
 function orderedInGroup(group: BuiltinMenuGroupCode): MenuDraft[] {
   return menuItems.value
     .filter((item) => item.group === group)
     .sort((left, right) => Number(right.visible) - Number(left.visible) || left.order - right.order)
 }
 
-const menuGroups = computed(() => GROUPS.map((group) => ({
-  ...group,
-  items: orderedInGroup(group.code),
-})))
+const menuGroups = computed(() =>
+  GROUPS.value.map((group) => ({
+    ...group,
+    items: orderedInGroup(group.code).filter(
+      (item) =>
+        !menuQuery.value.trim() ||
+        (item.label + item.id).toLowerCase().includes(menuQuery.value.trim().toLowerCase()),
+    ),
+  })),
+)
 
 function sourceSnapshot(source: MenuSource): string {
   return JSON.stringify(
     menuItems.value
       .filter((item) => item.source === source)
       .map(({ id, label, icon, group, order, visible, openMode, placement }) => ({
-        id, label, icon, group, order, visible, openMode, placement,
+        id,
+        label,
+        icon,
+        group,
+        order,
+        visible,
+        openMode,
+        placement,
       }))
       .sort((left, right) => left.id.localeCompare(right.id)),
   )
 }
 
-const menuDirty = computed(() =>
-  sourceSnapshot('builtin') !== builtinBaseline.value
-  || sourceSnapshot('external') !== externalBaseline.value,
+const menuDirty = computed(
+  () =>
+    sourceSnapshot('builtin') !== builtinBaseline.value ||
+    sourceSnapshot('external') !== externalBaseline.value ||
+    JSON.stringify(draftGroups.value) !== groupsBaseline.value ||
+    draftLocked.value !== lockedBaseline.value,
 )
 const qlDirty = computed(() => JSON.stringify(qlEditing.value) !== qlBaseline.value)
 
 function resequenceMenuGroups() {
-  for (const group of GROUPS) {
-    orderedInGroup(group.code).filter((item) => item.placement === 'MENU')
-      .forEach((item, index) => { item.order = (index + 1) * 10 })
+  for (const group of GROUPS.value) {
+    orderedInGroup(group.code)
+      .filter((item) => item.placement === 'MENU')
+      .forEach((item, index) => {
+        item.order = (index + 1) * 10
+      })
   }
   for (const placement of ['DOCK', 'TOP'] as const) {
-    menuItems.value.filter((item) => item.placement === placement)
+    menuItems.value
+      .filter((item) => item.placement === placement)
       .sort((left, right) => left.order - right.order)
-      .forEach((item, index) => { item.order = (index + 1) * 10 })
+      .forEach((item, index) => {
+        item.order = (index + 1) * 10
+      })
   }
 }
 
 function orderedPeers(item: MenuDraft) {
-  return menuItems.value.filter((candidate) => candidate.visible === item.visible
-    && candidate.placement === item.placement
-    && (item.placement !== 'MENU' || candidate.group === item.group))
+  return menuItems.value
+    .filter(
+      (candidate) =>
+        candidate.visible === item.visible &&
+        candidate.placement === item.placement &&
+        (item.placement !== 'MENU' || candidate.group === item.group),
+    )
     .sort((left, right) => left.order - right.order)
 }
 
@@ -143,8 +154,7 @@ function toggleMenuVisibility(item: MenuDraft) {
   resequenceMenuGroups()
 }
 
-function changeMenuGroup(item: MenuDraft) {
-  if (item.source === 'external' && item.group === 'ROOT') item.group = 'PUBLIC'
+function changeMenuGroup() {
   resequenceMenuGroups()
 }
 
@@ -157,10 +167,6 @@ function dragMenu(item: MenuDraft, event: DragEvent) {
 function dropMenu(group: BuiltinMenuGroupCode, targetKey = '') {
   const source = menuItems.value.find((item) => item.key === draggedMenuKey.value)
   if (!source || source.key === targetKey) return
-  if (source.source === 'external' && group === 'ROOT') {
-    toast('外部应用不能移动到顶层', 'ri-error-warning-line')
-    return
-  }
   source.group = group
   const groupItems = orderedInGroup(group).filter((item) => item.key !== source.key)
   const targetIndex = targetKey ? groupItems.findIndex((item) => item.key === targetKey) : -1
@@ -168,103 +174,120 @@ function dropMenu(group: BuiltinMenuGroupCode, targetKey = '') {
   groupItems.splice(insertAt, 0, source)
   const visible = groupItems.filter((item) => item.visible)
   const hidden = groupItems.filter((item) => !item.visible)
-  ;[...visible, ...hidden].forEach((item, index) => { item.order = (index + 1) * 10 })
+  ;[...visible, ...hidden].forEach((item, index) => {
+    item.order = (index + 1) * 10
+  })
   resequenceMenuGroups()
   draggedMenuKey.value = ''
 }
 
+function readDraft(layout: NavigationLayout) {
+  draftGroups.value = layout.groups.map((g) => ({ ...g }))
+  draftLocked.value = layout.locked
+  menuItems.value = layout.items.map((item) => ({
+    ...item,
+    key: item.id,
+    source: item.id.startsWith('external:') ? 'external' : 'builtin',
+    id: item.id.replace(/^external:/, ''),
+  }))
+}
+function markBaseline() {
+  builtinBaseline.value = sourceSnapshot('builtin')
+  externalBaseline.value = sourceSnapshot('external')
+  groupsBaseline.value = JSON.stringify(draftGroups.value)
+  lockedBaseline.value = draftLocked.value
+  draftRevision.value = nav.layoutRevision
+}
+function draftLayout(): NavigationLayout {
+  return {
+    schemaVersion: 1,
+    groups: draftGroups.value.map((g) => ({ ...g })),
+    locked: draftLocked.value,
+    items: menuItems.value.map(
+      ({ id, source, label, icon, group, order, visible, openMode, placement }) => ({
+        id: source === 'external' ? externalAppItemId(id) : (id as NavItemId),
+        label,
+        icon,
+        group,
+        order,
+        visible,
+        openMode,
+        placement,
+      }),
+    ),
+  }
+}
 async function loadMenuSettings() {
   if (menuLoading.value) return
   menuLoading.value = true
   menuError.value = ''
   try {
-    const [builtinRegistry, externalRegistry] = await Promise.all([
-      fetchBuiltinMenuRegistry(),
-      fetchExternalAppRegistry(),
-    ])
-    const builtin = builtinRegistry.menus.map(normalizeBuiltinMenu)
-    const external = externalRegistry.apps.map(normalizeExternalApp)
-    externalOriginals.value = Object.fromEntries(external.map((app) => [app.id, { ...app }]))
-    menuItems.value = [
-      ...builtin.map(draftFromBuiltin),
-      ...external.map(draftFromExternal),
-    ]
-    resequenceMenuGroups()
-    builtinBaseline.value = sourceSnapshot('builtin')
-    externalBaseline.value = sourceSnapshot('external')
-    nav.applyBuiltinMenus(builtin)
-    nav.applyExternalApps(external)
+    await nav.loadMenus()
+    if (!nav.layoutLoaded || nav.layoutError) throw new Error(nav.layoutError || '导航尚未读取完成')
+    readDraft(nav.currentLayout())
+    markBaseline()
+    previewing.value = false
+    if (nav.pendingLayout) {
+      readDraft(nav.pendingLayout)
+      menuError.value = nav.menuMutationError
+    }
   } catch (error) {
     menuError.value = error instanceof Error ? error.message : '菜单配置读取失败'
   } finally {
     menuLoading.value = false
   }
 }
-
 async function saveMenuSettings() {
   if (!menuDirty.value || menuSaving.value) return
-  resequenceMenuGroups()
   menuSaving.value = true
   menuError.value = ''
-
-  const builtinDirty = sourceSnapshot('builtin') !== builtinBaseline.value
-  const externalDirty = sourceSnapshot('external') !== externalBaseline.value
-  const builtin = menuItems.value
-    .filter((item) => item.source === 'builtin')
-    .map(({ id, label, icon, group, order, visible, openMode, placement }) => ({
-      id, label, icon, group, order, visible, openMode, placement,
-    }) as BuiltinMenuConfig)
-  const external = menuItems.value
-    .filter((item) => item.source === 'external')
-    .map(({ id, label, icon, group, order, visible, openMode, placement }) => ({
-      ...externalOriginals.value[id]!,
-      id,
-      label,
-      icon,
-      group: group === 'ROOT' ? 'PUBLIC' : group,
-      order,
-      visible,
-      openMode,
-      placement,
-    }))
-
-  const failures: string[] = []
+  const before = nav.currentLayout()
   try {
-    if (builtinDirty) {
-      try {
-        const registry = await saveBuiltinMenuRegistry(builtin)
-        nav.applyBuiltinMenus(registry.menus)
-        builtinBaseline.value = sourceSnapshot('builtin')
-      } catch (error) {
-        failures.push(error instanceof Error ? error.message : '原生菜单保存失败')
-      }
-    }
-    if (externalDirty) {
-      try {
-        const registry = await saveExternalAppRegistry(external)
-        const normalized = registry.apps.map(normalizeExternalApp)
-        externalOriginals.value = Object.fromEntries(normalized.map((app) => [app.id, { ...app }]))
-        nav.applyExternalApps(normalized)
-        externalBaseline.value = sourceSnapshot('external')
-      } catch (error) {
-        failures.push(error instanceof Error ? error.message : '应用菜单保存失败')
-      }
-    }
-    if (failures.length) {
-      menuError.value = `部分配置未保存：${failures.join('；')}`
-      toast(menuError.value, 'ri-error-warning-line')
-    } else {
-      toast('菜单顺序与分组已保存并立即生效', 'ri-check-line')
-    }
+    await nav.saveLayout(draftLayout(), draftRevision.value)
+    previousLayout.value = before
+    markBaseline()
+    previewing.value = false
+    toast('个人导航已保存并立即生效', 'ri-check-line')
+  } catch (error) {
+    menuError.value = error instanceof Error ? error.message : '导航未保存，草稿仍保留'
   } finally {
     menuSaving.value = false
   }
 }
-
-function selectMenuIcon() {
-  // 图标选择是明确的单击操作，选择后立即写回统一注册表。
-  if (menuSaving.value) return
-  queueMicrotask(() => void saveMenuSettings())
+function previewRecommendation() {
+  readDraft(recommendedLayout(draftLayout()))
+  previewing.value = true
+}
+async function undoLayout() {
+  if (!previousLayout.value) return
+  readDraft(previousLayout.value)
+  await saveMenuSettings()
+}
+function addGroup() {
+  const label = newGroupName.value.trim()
+  if (!label || draftGroups.value.length >= 30) return
+  draftGroups.value.push({ id: 'custom:' + crypto.randomUUID(), label })
+  newGroupName.value = ''
+}
+function moveGroup(id: string, direction: -1 | 1) {
+  const index = draftGroups.value.findIndex((group) => group.id === id)
+  const target = index + direction
+  if (id === 'ROOT' || target < 1 || target >= draftGroups.value.length) return
+  const [group] = draftGroups.value.splice(index, 1)
+  if (group) draftGroups.value.splice(target, 0, group)
+}
+function removeGroup(id: string) {
+  if (id === 'ROOT' || menuItems.value.some((item) => item.group === id)) return
+  draftGroups.value = draftGroups.value.filter((group) => group.id !== id)
+}
+async function reloadDraft() {
+  if (
+    (menuDirty.value || nav.pendingLayout) &&
+    !window.confirm('重新读取会放弃当前未保存的导航草稿，继续吗？')
+  )
+    return
+  await nav.discardLayoutDraft()
+  await loadMenuSettings()
 }
 
 async function loadQuickLinkSettings(force = false) {
@@ -333,8 +356,10 @@ async function saveQuickLinks() {
 }
 
 function confirmLeave(): boolean {
-  return !(menuDirty.value || qlDirty.value)
-    || window.confirm('菜单或快捷链接还有未保存的修改，确认放弃吗？')
+  return (
+    !(menuDirty.value || qlDirty.value) ||
+    window.confirm('菜单或快捷链接还有未保存的修改，确认放弃吗？')
+  )
 }
 
 defineExpose({ confirmLeave })
@@ -349,7 +374,7 @@ onMounted(() => {
   <div class="settings-heading">
     <div>
       <h1>菜单与快捷链接</h1>
-      <p>左侧管理 WAO 一级菜单，右侧管理成员自己的左下角链接；两个区域独立保存。</p>
+      <p>菜单布局和快捷链接只影响你的账号。左侧、顶部、底部与右侧工作区页签继续保留。</p>
     </div>
   </div>
 
@@ -357,15 +382,60 @@ onMounted(() => {
     <section class="settings-card menu-card">
       <div class="card-head">
         <div>
-          <h2>菜单管理</h2>
-          <p>按真实导航分组排列；拖拽可跨组移动，也可选择在侧栏底部显示为图标或在顶部显示为按钮。</p>
+          <h2>我的导航布局</h2>
+          <p>
+            按真实导航分组排列；拖拽可跨组移动，也可选择在侧栏底部显示为图标或在顶部显示为按钮。
+          </p>
         </div>
-        <button type="button" class="primary" :disabled="menuLoading || menuSaving || !menuDirty" @click="saveMenuSettings">
+        <button
+          type="button"
+          class="primary"
+          :disabled="menuLoading || menuSaving || !menuDirty"
+          @click="saveMenuSettings"
+        >
           {{ menuSaving ? '保存中…' : menuDirty ? '保存菜单' : '已保存' }}
         </button>
       </div>
 
-      <div v-if="menuLoading" class="status"><i class="ri-loader-4-line spin"></i>正在读取菜单…</div>
+      <fieldset class="menu-editor" :disabled="menuSaving || menuLoading">
+      <div class="layout-tools">
+        <input
+          v-model="menuQuery"
+          type="search"
+          aria-label="查找要调整的菜单"
+          placeholder="查找要调整的菜单"
+        />
+        <button type="button" :disabled="menuLoading || menuSaving" @click="previewRecommendation">
+          预览推荐分类
+        </button>
+        <button type="button" :disabled="!previousLayout || menuSaving" @click="undoLayout">
+          撤销上次保存
+        </button>
+        <button type="button" :disabled="menuSaving" @click="reloadDraft">重新读取</button>
+        <label><input v-model="draftLocked" type="checkbox" />锁定日常拖拽（仍可在此编辑）</label>
+      </div>
+      <p v-if="previewing" class="status" role="status">
+        推荐分类预览中：仅调整左侧菜单归属，保存后生效；顶部、底部、名称与显隐均保留。
+      </p>
+      <div class="layout-tools">
+        <input
+          v-model="newGroupName"
+          maxlength="24"
+          aria-label="新分组名称"
+          placeholder="新分组名称"
+          @keydown.enter.prevent="addGroup"
+        />
+        <button
+          type="button"
+          :disabled="!newGroupName.trim() || draftGroups.length >= 30"
+          @click="addGroup"
+        >
+          添加分组
+        </button>
+      </div>
+      <div v-if="menuLoading" class="status">
+        <i class="ri-loader-4-line spin"></i>正在读取菜单…
+      </div>
       <div v-else-if="menuError && !menuItems.length" class="status error">
         <span>{{ menuError }}</span>
         <button type="button" @click="loadMenuSettings">重新读取</button>
@@ -378,8 +448,47 @@ onMounted(() => {
           @dragover.prevent
           @drop.prevent="dropMenu(group.code)"
         >
-          <header><strong>{{ group.label }}</strong><span>{{ group.items.length }} 项</span></header>
-          <div v-if="!group.items.length" class="empty-drop">拖到这里即可移动到“{{ group.label }}”</div>
+          <header>
+            <strong v-if="group.code === 'ROOT'">顶层</strong
+            ><input
+              v-else
+              v-model="draftGroups.find((g) => g.id === group.code)!.label"
+              maxlength="24"
+              :aria-label="'分组名称：' + group.label"
+            /><span>{{ group.items.length }} 项</span
+            ><template v-if="group.code !== 'ROOT'"
+              ><button
+                type="button"
+                :disabled="draftGroups.findIndex((g) => g.id === group.code) <= 1"
+                :aria-label="group.label + '分组上移'"
+                @click="moveGroup(group.code, -1)"
+              >
+                ↑</button
+              ><button
+                type="button"
+                :disabled="
+                  draftGroups.findIndex((g) => g.id === group.code) === draftGroups.length - 1
+                "
+                :aria-label="group.label + '分组下移'"
+                @click="moveGroup(group.code, 1)"
+              >
+                ↓
+              </button></template
+            ><button
+              v-if="group.code !== 'ROOT'"
+              type="button"
+              :disabled="menuItems.some((item) => item.group === group.code)"
+              title="先移出组内所有菜单再删除分组"
+              @click="removeGroup(group.code)"
+            >
+              删除空分组
+            </button>
+          </header>
+          <div v-if="!group.items.length" class="empty-drop">
+            {{
+              menuQuery.trim() ? '此分组没有匹配菜单' : '拖到这里即可移动到“' + group.label + '”'
+            }}
+          </div>
           <article
             v-for="item in group.items"
             :key="item.key"
@@ -395,14 +504,18 @@ onMounted(() => {
               title="拖拽调整顺序或分组"
               @dragstart="dragMenu(item, $event)"
               @dragend="draggedMenuKey = ''"
-            ><i class="ri-draggable"></i></button>
-            <IconPicker v-model="item.icon" @select="selectMenuIcon" />
+            >
+              <i class="ri-draggable"></i>
+            </button>
+            <IconPicker v-model="item.icon" />
             <div class="menu-fields">
               <label><span>名称</span><input v-model.trim="item.label" maxlength="24" /></label>
               <label>
                 <span>所属分组</span>
-                <select v-model="item.group" aria-label="所属分组" @change="changeMenuGroup(item)">
-                  <option v-for="option in GROUPS" :key="option.code" :value="option.code" :disabled="item.source === 'external' && option.code === 'ROOT'">{{ option.label }}</option>
+                <select v-model="item.group" aria-label="所属分组" @change="changeMenuGroup()">
+                  <option v-for="option in GROUPS" :key="option.code" :value="option.code">
+                    {{ option.label }}
+                  </option>
                 </select>
               </label>
               <label>
@@ -414,7 +527,11 @@ onMounted(() => {
               </label>
               <label>
                 <span>展示位置</span>
-                <select v-model="item.placement" aria-label="展示位置" @change="resequenceMenuGroups">
+                <select
+                  v-model="item.placement"
+                  aria-label="展示位置"
+                  @change="resequenceMenuGroups"
+                >
                   <option value="MENU">分组菜单</option>
                   <option value="DOCK">底部图标</option>
                   <option value="TOP">顶部按钮</option>
@@ -424,18 +541,43 @@ onMounted(() => {
             <div class="menu-meta">
               <span>{{ item.source === 'external' ? '已注册应用' : item.id }}</span>
               <div class="row-actions">
-                <button type="button" :disabled="!canMoveMenu(item, -1)" title="上移" @click="moveMenu(item, -1)"><i class="ri-arrow-up-s-line"></i></button>
-                <button type="button" :disabled="!canMoveMenu(item, 1)" title="下移" @click="moveMenu(item, 1)"><i class="ri-arrow-down-s-line"></i></button>
-                <button type="button" class="visibility" :class="{ on: item.visible }" @click="toggleMenuVisibility(item)">
-                  <i :class="item.visible ? 'ri-eye-line' : 'ri-eye-off-line'"></i>{{ item.visible ? '显示' : '隐藏' }}
+                <button
+                  type="button"
+                  :disabled="!canMoveMenu(item, -1)"
+                  title="上移"
+                  @click="moveMenu(item, -1)"
+                >
+                  <i class="ri-arrow-up-s-line"></i>
+                </button>
+                <button
+                  type="button"
+                  :disabled="!canMoveMenu(item, 1)"
+                  title="下移"
+                  @click="moveMenu(item, 1)"
+                >
+                  <i class="ri-arrow-down-s-line"></i>
+                </button>
+                <button
+                  type="button"
+                  class="visibility"
+                  :class="{ on: item.visible }"
+                  @click="toggleMenuVisibility(item)"
+                >
+                  <i :class="item.visible ? 'ri-eye-line' : 'ri-eye-off-line'"></i
+                  >{{ item.visible ? '显示' : '隐藏' }}
                 </button>
               </div>
             </div>
           </article>
         </section>
       </div>
-      <div v-if="menuError && menuItems.length" class="status error" role="alert">{{ menuError }}；未保存草稿仍保留，可直接重试。</div>
-      <p class="footnote">外部应用的独立注册表编辑器已隐藏；真实注册接口和应用数据不变，注册成功的应用会自动作为普通菜单项出现在这里。</p>
+      <div v-if="menuError && menuItems.length" class="status error" role="alert">
+        {{ menuError }}；未保存草稿仍保留。版本冲突时请重新读取后调整。
+      </div>
+      </fieldset>
+      <p class="footnote">
+        隐藏菜单仍可从“全部功能”打开；分组名称和位置属于个人偏好。应用地址与授权仍由系统管理。
+      </p>
     </section>
 
     <section class="settings-card links-card">
@@ -444,12 +586,19 @@ onMounted(() => {
           <h2>左下角快捷链接</h2>
           <p>拖拽或用上下按钮排序；“WAO 页签”会在站内嵌入目标页面。</p>
         </div>
-        <button type="button" class="primary" :disabled="qlLoading || qlSaving || !qlDirty" @click="saveQuickLinks">
+        <button
+          type="button"
+          class="primary"
+          :disabled="qlLoading || qlSaving || !qlDirty"
+          @click="saveQuickLinks"
+        >
           {{ qlSaving ? '保存中…' : qlDirty ? '保存链接' : '已保存' }}
         </button>
       </div>
 
-      <div v-if="qlLoading" class="status"><i class="ri-loader-4-line spin"></i>正在读取快捷链接…</div>
+      <div v-if="qlLoading" class="status">
+        <i class="ri-loader-4-line spin"></i>正在读取快捷链接…
+      </div>
       <div v-else-if="quickLinks.loadError.value" class="status error">
         <span>当前显示安全默认值：{{ quickLinks.loadError.value }}</span>
         <button type="button" @click="loadQuickLinkSettings(true)">重试</button>
@@ -470,12 +619,20 @@ onMounted(() => {
             title="拖拽调整顺序"
             @dragstart="draggedQuickLinkId = link.id"
             @dragend="draggedQuickLinkId = ''"
-          ><i class="ri-draggable"></i></button>
+          >
+            <i class="ri-draggable"></i>
+          </button>
           <IconPicker v-model="link.icon" />
           <div class="quick-link-fields">
-            <label><span>名称</span><input v-model.trim="link.label" placeholder="例如 Jenkins" /></label>
-            <label><span>地址</span><input v-model.trim="link.url" placeholder="/path 或 https://…" /></label>
-            <label><span>描述</span><input v-model.trim="link.subtitle" placeholder="可选" /></label>
+            <label
+              ><span>名称</span><input v-model.trim="link.label" placeholder="例如 Jenkins"
+            /></label>
+            <label
+              ><span>地址</span><input v-model.trim="link.url" placeholder="/path 或 https://…"
+            /></label>
+            <label
+              ><span>描述</span><input v-model.trim="link.subtitle" placeholder="可选"
+            /></label>
             <label class="open-mode">
               <span>打开方式</span>
               <select v-model="link.openMode">
@@ -485,83 +642,408 @@ onMounted(() => {
             </label>
           </div>
           <div class="row-actions quick-actions">
-            <button type="button" :disabled="index === 0" title="上移" @click="moveQuickLink(index, -1)"><i class="ri-arrow-up-s-line"></i></button>
-            <button type="button" :disabled="index === qlEditing.length - 1" title="下移" @click="moveQuickLink(index, 1)"><i class="ri-arrow-down-s-line"></i></button>
-            <button type="button" class="remove" title="删除" @click="qlEditing.splice(index, 1)"><i class="ri-delete-bin-line"></i></button>
+            <button
+              type="button"
+              :disabled="index === 0"
+              title="上移"
+              @click="moveQuickLink(index, -1)"
+            >
+              <i class="ri-arrow-up-s-line"></i>
+            </button>
+            <button
+              type="button"
+              :disabled="index === qlEditing.length - 1"
+              title="下移"
+              @click="moveQuickLink(index, 1)"
+            >
+              <i class="ri-arrow-down-s-line"></i>
+            </button>
+            <button type="button" class="remove" title="删除" @click="qlEditing.splice(index, 1)">
+              <i class="ri-delete-bin-line"></i>
+            </button>
           </div>
         </article>
       </div>
 
-      <div v-if="qlError" class="status error" role="alert">{{ qlError }}；草稿仍保留，可修改后重试。</div>
+      <div v-if="qlError" class="status error" role="alert">
+        {{ qlError }}；草稿仍保留，可修改后重试。
+      </div>
       <div class="link-actions">
         <button type="button" @click="addQuickLink"><i class="ri-add-line"></i>添加链接</button>
-        <button type="button" @click="resetQuickLinks"><i class="ri-history-line"></i>恢复默认</button>
+        <button type="button" @click="resetQuickLinks">
+          <i class="ri-history-line"></i>恢复默认
+        </button>
       </div>
-      <p class="footnote">部分网站禁止被 iframe 嵌入；遇到目标站限制时，把该链接改为“新页面”即可。</p>
+      <p class="footnote">
+        部分网站禁止被 iframe 嵌入；遇到目标站限制时，把该链接改为“新页面”即可。
+      </p>
     </section>
   </div>
 </template>
 
 <style scoped>
-.settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.settings-heading h1 { margin: 0; font-size: 18px; }
-.settings-heading p, .card-head p, .footnote { margin: 5px 0 0; color: var(--wao-text-weak); font-size: 12px; line-height: 1.55; }
-.navigation-settings-grid { display: grid; grid-template-columns: minmax(520px, 1.45fr) minmax(330px, .9fr); gap: 14px; align-items: start; margin-top: 14px; }
-.settings-card { min-width: 0; padding: 16px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); }
-.card-head { display: flex; align-items: flex-start; gap: 12px; }
-.card-head > div { flex: 1; min-width: 0; }
-.card-head h2 { margin: 0; font-size: 14px; }
-.primary { min-height: 34px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--wao-primary); color: #fff; cursor: pointer; white-space: nowrap; }
-.primary:disabled { opacity: .55; cursor: default; }
-.status { display: flex; align-items: center; gap: 7px; margin-top: 12px; padding: 9px 10px; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 12px; }
-.status span { flex: 1; }
-.status button { border: 0; background: none; color: inherit; cursor: pointer; }
-.status.error { background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
-.spin { animation: spin .9s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.menu-groups { display: grid; gap: 12px; margin-top: 14px; }
-.menu-group { min-height: 54px; border: 1px solid var(--wao-divider); border-radius: 10px; background: var(--wao-bg-sub); overflow: hidden; }
-.menu-group > header { display: flex; align-items: center; gap: 8px; padding: 9px 11px; color: var(--wao-text-2); font-size: 12px; }
-.menu-group > header span { color: var(--wao-text-faint); font-size: 10.5px; }
-.empty-drop { margin: 0 8px 8px; padding: 12px; border: 1px dashed var(--wao-line-strong); border-radius: 7px; color: var(--wao-text-faint); text-align: center; font-size: 11px; }
-.menu-row, .quick-link-row { display: grid; align-items: center; gap: 8px; padding: 10px; border-top: 1px solid var(--wao-divider); background: var(--wao-bg-card); }
-.menu-row { grid-template-columns: 24px 30px minmax(0, 1fr) auto; }
-.menu-row.hidden { opacity: .68; }
-.menu-row.dragging { opacity: .4; }
-.drag-handle { width: 24px; height: 30px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-faint); cursor: grab; }
-.drag-handle:hover { background: var(--wao-bg-hover); color: var(--wao-text-2); }
-.menu-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-text-3); }
-.menu-fields, .quick-link-fields { display: grid; gap: 7px; }
-.menu-fields { grid-template-columns: 1.1fr 90px 100px 92px; }
-.menu-fields label, .quick-link-fields label { display: grid; gap: 4px; min-width: 0; color: var(--wao-text-weak); font-size: 10.5px; }
-.menu-fields input, .menu-fields select, .quick-link-fields input, .quick-link-fields select { min-width: 0; height: 32px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); outline: none; }
-.menu-fields input:focus, .menu-fields select:focus, .quick-link-fields input:focus, .quick-link-fields select:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 2px var(--wao-primary-soft); }
-.menu-meta { display: grid; justify-items: end; gap: 7px; min-width: 112px; }
-.menu-meta > span { max-width: 150px; overflow: hidden; color: var(--wao-text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.row-actions { display: flex; align-items: center; gap: 3px; }
-.row-actions button, .link-actions button { min-height: 28px; padding: 0 7px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text-3); cursor: pointer; }
-.row-actions button:disabled { opacity: .3; cursor: default; }
-.row-actions .visibility { display: inline-flex; align-items: center; gap: 4px; min-width: 62px; justify-content: center; }
-.row-actions .visibility.on { color: var(--wao-primary); background: var(--wao-primary-tint); }
-.quick-link-list { margin-top: 14px; border: 1px solid var(--wao-divider); border-radius: 10px; overflow: hidden; }
-.quick-link-row { grid-template-columns: 24px 30px minmax(0, 1fr) auto; }
-.quick-link-row:first-child { border-top: 0; }
-.quick-link-fields { grid-template-columns: 1fr 1fr; }
-.quick-link-fields .open-mode { grid-column: 1 / -1; }
-.quick-actions { flex-direction: column; }
-.row-actions .remove { color: var(--wao-danger); }
-.link-actions { display: flex; gap: 8px; margin-top: 12px; }
-.link-actions button { display: inline-flex; align-items: center; gap: 5px; }
-.footnote { padding-top: 10px; }
-@media (max-width: 1180px) { .navigation-settings-grid { grid-template-columns: 1fr; } }
+.menu-editor { min-width: 0; border: 0; margin: 0; padding: 0; }
+
+.layout-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.layout-tools input[type='search'] {
+  flex: 1;
+  min-width: 170px;
+}
+.layout-tools button,
+.layout-tools input:not([type='checkbox']),
+.menu-group header input,
+.menu-group header button {
+  padding: 7px 9px;
+  border: 1px solid var(--wao-line);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+}
+.layout-tools button:disabled,
+.menu-group header button:disabled {
+  opacity: 0.45;
+}
+.menu-group header input {
+  width: 150px;
+  min-width: 0;
+}
+
+.settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.settings-heading h1 {
+  margin: 0;
+  font-size: 18px;
+}
+.settings-heading p,
+.card-head p,
+.footnote {
+  margin: 5px 0 0;
+  color: var(--wao-text-weak);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.navigation-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 580px), 1fr));
+  gap: 14px;
+  align-items: start;
+  margin-top: 14px;
+}
+.settings-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+}
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.card-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.card-head h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.primary {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--wao-primary);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-weak);
+  font-size: 12px;
+}
+.status span {
+  flex: 1;
+}
+.status button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.status.error {
+  background: var(--wao-danger-bg);
+  color: var(--wao-danger-strong);
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.menu-groups {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.menu-group {
+  min-height: 54px;
+  border: 1px solid var(--wao-divider);
+  border-radius: 10px;
+  background: var(--wao-bg-sub);
+  overflow: hidden;
+}
+.menu-group > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  color: var(--wao-text-2);
+  font-size: 12px;
+}
+.menu-group > header span {
+  white-space: nowrap;
+  color: var(--wao-text-faint);
+  font-size: 10.5px;
+}
+.empty-drop {
+  margin: 0 8px 8px;
+  padding: 12px;
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 7px;
+  color: var(--wao-text-faint);
+  text-align: center;
+  font-size: 11px;
+}
+.menu-row,
+.quick-link-row {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--wao-divider);
+  background: var(--wao-bg-card);
+}
+.menu-row {
+  grid-template-columns: 24px 30px minmax(0, 1fr) auto;
+}
+.menu-row.hidden {
+  opacity: 0.68;
+}
+.menu-row.dragging {
+  opacity: 0.4;
+}
+.drag-handle {
+  width: 24px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wao-text-faint);
+  cursor: grab;
+}
+.drag-handle:hover {
+  background: var(--wao-bg-hover);
+  color: var(--wao-text-2);
+}
+.menu-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-3);
+}
+.menu-fields,
+.quick-link-fields {
+  display: grid;
+  gap: 7px;
+}
+.menu-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.menu-fields label,
+.quick-link-fields label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--wao-text-weak);
+  font-size: 10.5px;
+}
+.menu-fields input,
+.menu-fields select,
+.quick-link-fields input,
+.quick-link-fields select {
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  outline: none;
+}
+.menu-fields input:focus,
+.menu-fields select:focus,
+.quick-link-fields input:focus,
+.quick-link-fields select:focus {
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 2px var(--wao-primary-soft);
+}
+.menu-meta {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+  min-width: 112px;
+}
+.menu-meta > span {
+  max-width: 150px;
+  overflow: hidden;
+  color: var(--wao-text-faint);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.row-actions button,
+.link-actions button {
+  min-height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--wao-line);
+  border-radius: 6px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-3);
+  cursor: pointer;
+}
+.row-actions button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.row-actions .visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 62px;
+  justify-content: center;
+}
+.row-actions .visibility.on {
+  color: var(--wao-primary);
+  background: var(--wao-primary-tint);
+}
+.quick-link-list {
+  margin-top: 14px;
+  border: 1px solid var(--wao-divider);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.quick-link-row {
+  grid-template-columns: 24px 30px minmax(0, 1fr) auto;
+}
+.quick-link-row:first-child {
+  border-top: 0;
+}
+.quick-link-fields {
+  grid-template-columns: 1fr 1fr;
+}
+.quick-link-fields .open-mode {
+  grid-column: 1 / -1;
+}
+.quick-actions {
+  flex-direction: column;
+}
+.row-actions .remove {
+  color: var(--wao-danger);
+}
+.link-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.link-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.footnote {
+  padding-top: 10px;
+}
+@media (max-width: 1180px) {
+  .navigation-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
 @media (max-width: 760px) {
-  .settings-heading p { display: block; }
-  .card-head { flex-direction: column; }
-  .primary { width: 100%; justify-content: center; }
-  .menu-row, .quick-link-row { grid-template-columns: 24px 30px minmax(0, 1fr); }
-  .menu-fields, .quick-link-fields { grid-template-columns: 1fr 1fr; }
-  .menu-fields { grid-column: 3; }
-  .menu-meta, .quick-actions { grid-column: 1 / -1; justify-items: stretch; flex-direction: row; }
-  .menu-meta { display: flex; justify-content: space-between; align-items: center; }
+  .settings-heading p {
+    display: block;
+  }
+  .card-head {
+    flex-direction: column;
+  }
+  .primary {
+    width: 100%;
+    justify-content: center;
+  }
+  .menu-row,
+  .quick-link-row {
+    grid-template-columns: 24px 30px minmax(0, 1fr);
+  }
+  .menu-fields,
+  .quick-link-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .menu-fields {
+    grid-column: 1 / -1;
+  }
+  .menu-fields input,
+  .menu-fields select {
+    min-height: 36px;
+    font-size: 12px;
+  }
+  .menu-meta,
+  .quick-actions {
+    grid-column: 1 / -1;
+    justify-items: stretch;
+    flex-direction: row;
+  }
+  .menu-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
 }
 </style>

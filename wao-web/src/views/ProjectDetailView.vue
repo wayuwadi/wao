@@ -175,7 +175,7 @@ const effectiveCreator = computed(() =>
   creatorFilter.value && creatorOptions.value.some((c) => c.id === creatorFilter.value) ? creatorFilter.value : null,
 )
 const activeCreatorName = computed(() =>
-  effectiveCreator.value ? creatorOptions.value.find((creator) => creator.id === effectiveCreator.value)?.name ?? effectiveCreator.value : '创建人',
+  effectiveCreator.value ? creatorOptions.value.find((creator) => creator.id === effectiveCreator.value)?.name ?? effectiveCreator.value : '全部创建人',
 )
 const creatorTasks = computed(() => ptasks.value
   .filter((task) => !effectiveCreator.value || task.createdBy === effectiveCreator.value))
@@ -541,7 +541,7 @@ watch(visibleTaskIds, (ids) => {
 
     <div v-if="projectInfoOpen" class="project-info">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ fmtDate(pd.due) }}</div>
     <div class="ptabs">
-      <button v-for="tb in pdTabs.filter((item) => ['任务', '文档', '文件'].includes(item.label) || item.on)" :key="tb.label" class="ptab" :class="{ on: tb.on }" :title="tb.title" @click="setTab(tb.label)">
+      <button v-for="tb in pdTabs" :key="tb.label" class="ptab" :class="{ on: tb.on }" :title="tb.title" @click="setTab(tb.label)">
         {{ tb.label }}<span v-if="tb.showCount" class="ptab-count wao-tabular">{{ tb.count }}</span>
       </button>
       <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar">
@@ -575,6 +575,7 @@ watch(visibleTaskIds, (ids) => {
 
     <!-- 任务 -->
     <div v-if="projTab === '任务'">
+      <div v-if="effectiveCreator" class="task-scope" role="status">当前仅显示 {{ activeCreatorName }} 创建的任务 · {{ creatorTasks.length }} / {{ ptasks.length }} 项<button @click="creatorFilter = null">查看全部创建人</button></div>
       <div class="delivery-filter" role="group" aria-label="按交付阶段筛选任务">
         <span class="delivery-filter-label">交付阶段</span>
         <button
@@ -583,7 +584,7 @@ watch(visibleTaskIds, (ids) => {
           :aria-pressed="!deliveryStageFilter"
           title="查看当前创建人范围内的全部任务"
           @click="setDeliveryStage(null)"
-        >全部 <em class="wao-tabular">{{ creatorTasks.length }}</em></button>
+        >全部阶段 <em class="wao-tabular">{{ creatorTasks.length }}</em></button>
         <button
           v-for="stage in deliveryStageOptions"
           :key="stage.id"
@@ -977,6 +978,8 @@ watch(visibleTaskIds, (ids) => {
 </template>
 
 <style scoped>
+.task-scope { padding:8px 16px; color:var(--wao-text-weak); background:var(--wao-bg-sub); font-size:12px; }.task-scope button { margin-left:12px; border:0; background:none; color:var(--wao-primary); cursor:pointer; }
+
 .copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
 .missing {
   padding: 60px 24px;

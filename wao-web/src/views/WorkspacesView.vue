@@ -363,7 +363,7 @@ onMounted(loadAll)
     <header class="workspace-hero">
       <div>
         <span class="eyebrow">MY WORK SYSTEM</span>
-        <h1>工作台</h1>
+        <h1>链接空间</h1>
         <p>把环境、后台、知识页和项目工具收进自己的空间，需要时一眼找到。</p>
       </div>
       <button class="primary-button" type="button" @click="openCreate">

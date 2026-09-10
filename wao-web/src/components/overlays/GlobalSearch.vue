@@ -1,16 +1,25 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 
+import { useNavStore } from '@/stores/nav'
+import { NAVIGATION_CATALOG, matchesFunction, menuLocation } from '@/config/navigationCatalog'
+import { externalAppItemId, type NavItemId } from '@/config/nav'
+const nav = useNavStore()
 const data = useDataStore()
 const ui = useUiStore()
 const router = useRouter()
 
 const q = ref('')
+const activeResult = ref(0)
+watch(q, () => {
+  activeResult.value = 0
+})
 const inputEl = ref<HTMLInputElement | null>(null)
 onMounted(() => {
+  void nav.loadMenus()
   void data.ensureDocsLoaded()
   void nextTick(() => inputEl.value?.focus())
 })
@@ -36,29 +45,77 @@ function openDoc(id: string) {
 const groups = computed(() => {
   const kw = q.value.trim().toLowerCase()
   const gs: { label: string; items: Item[] }[] = []
+  const functionIds: NavItemId[] = [
+    ...NAVIGATION_CATALOG.flatMap((section) => section.items.map((item) => item.id)),
+    'navigation',
+    ...nav.externalApps.map((app) => externalAppItemId(app.id)),
+  ]
+  const functions = functionIds
+    .filter((id) => matchesFunction(id, nav.itemMeta(id)?.label ?? id, q.value))
+    .slice(0, kw ? 12 : 4)
+    .map<Item>((id) => {
+      const meta = nav.itemMeta(id)!
+      return {
+        icon: meta.icon,
+        iconColor: 'var(--wao-primary)',
+        title:
+          id === 'navigation'
+            ? '全部功能'
+            : id === 'workspaces' && meta.label === '工作台'
+              ? '链接空间'
+              : meta.label,
+        sub:
+          '功能 · ' +
+          (nav.layoutLoaded ? menuLocation(id, nav.currentLayout()) : '个人位置尚未读取'),
+        go: () => {
+          close()
+          if (meta.openMode === 'NEW_PAGE')
+            window.open(
+              meta.newPagePath ?? router.resolve(meta.path).href,
+              '_blank',
+              'noopener,noreferrer',
+            )
+          else void router.push(meta.path)
+        },
+      }
+    })
+  if (functions.length) gs.push({ label: '功能与应用', items: functions })
   const ps = data.projects
     .filter((p) => !kw || p.name.toLowerCase().includes(kw) || p.goal.toLowerCase().includes(kw))
     .slice(0, 4)
     .map<Item>((p) => ({
-      icon: 'ri-stack-line', iconColor: data.areaColor(p.area), title: p.name,
+      icon: 'ri-stack-line',
+      iconColor: data.areaColor(p.area),
+      title: p.name,
       sub: `${p.status} · 进度 ${p.progress}%`,
-      go: () => { close(); router.push(`/projects/${p.id}`) },
+      go: () => {
+        close()
+        router.push(`/projects/${p.id}`)
+      },
     }))
   const ts = data.tasks
     .filter((t) => !kw || t.title.toLowerCase().includes(kw))
     .slice(0, 4)
     .map<Item>((t) => ({
-      icon: 'ri-checkbox-circle-line', iconColor: '#5A5E6B', title: t.title,
+      icon: 'ri-checkbox-circle-line',
+      iconColor: '#5A5E6B',
+      title: t.title,
       sub: `${data.projectById(t.project)?.name ?? ''} · ${t.status}`,
-      go: () => { close(); ui.openTask(t.id) },
+      go: () => {
+        close()
+        ui.openTask(t.id)
+      },
     }))
   const ds = Object.values(data.docs)
     .filter((d) => !data.isDocArchived(d.id))
     .filter((d) => !kw || d.title.toLowerCase().includes(kw))
     .slice(0, 4)
     .map<Item>((d) => ({
-      icon: d.auto ? 'ri-flashlight-line' : 'ri-file-text-line', iconColor: '#7A5CC6', title: d.title,
-      sub: `更新于 ${d.updated}`, go: () => openDoc(d.id),
+      icon: d.auto ? 'ri-flashlight-line' : 'ri-file-text-line',
+      iconColor: '#7A5CC6',
+      title: d.title,
+      sub: `更新于 ${d.updated}`,
+      go: () => openDoc(d.id),
     }))
   if (ps.length) gs.push({ label: '项目', items: ps })
   if (ts.length) gs.push({ label: '任务', items: ts })
@@ -66,6 +123,14 @@ const groups = computed(() => {
   return gs
 })
 
+const results = computed(() => groups.value.flatMap((group) => group.items))
+function moveResult(direction: number) {
+  const count = results.value.length
+  if (count) activeResult.value = (activeResult.value + direction + count) % count
+}
+function openSelected() {
+  results.value[activeResult.value]?.go()
+}
 </script>
 
 <template>
@@ -76,14 +141,26 @@ const groups = computed(() => {
       <input
         ref="inputEl"
         v-model="q"
-        placeholder="搜索真实项目、任务、文档…"
+        @keydown.down.prevent="moveResult(1)"
+        @keydown.up.prevent="moveResult(-1)"
+        @keydown.enter.prevent="openSelected"
+        placeholder="搜索功能、项目、任务、文档…"
       />
       <span class="kbd">Esc</span>
+    </div>
+    <div v-if="nav.layoutError" class="g-label" role="alert">
+      {{ nav.layoutError }} <button @click="nav.loadMenus(true)">重试导航</button>
     </div>
     <div class="results">
       <template v-for="g in groups" :key="g.label">
         <div class="g-label">{{ g.label }}</div>
-        <button v-for="(it, i) in g.items" :key="i" class="result" @click="it.go()">
+        <button
+          v-for="(it, i) in g.items"
+          :key="i"
+          class="result"
+          :class="{ selected: results[activeResult] === it }"
+          @click="it.go()"
+        >
           <i :class="it.icon" :style="{ color: it.iconColor }"></i>
           <span class="r-main">
             <span class="r-title">{{ it.title }}</span>
@@ -95,7 +172,7 @@ const groups = computed(() => {
       <div v-if="groups.length === 0" class="empty">没有匹配结果——换个关键词试试</div>
     </div>
     <div class="footer">
-      <span class="try">按真实项目名称与目标、任务标题、文档标题匹配</span>
+      <span class="try">功能支持原名、别名与用途；也可搜索项目、任务和文档</span>
     </div>
   </div>
 </template>
@@ -175,7 +252,8 @@ const groups = computed(() => {
   cursor: pointer;
   text-align: left;
 }
-.result:hover {
+.result:hover,
+.result.selected {
   background: var(--wao-bg-hover);
 }
 .result > i {

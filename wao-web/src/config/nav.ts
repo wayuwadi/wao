@@ -13,7 +13,7 @@ export interface ModuleMeta {
 
 export type MenuOpenMode = 'TAB' | 'NEW_PAGE'
 export type MenuPlacement = 'MENU' | 'DOCK' | 'TOP'
-export type MenuGroupCode = 'PUBLIC' | 'PERSONAL' | 'TOOLS'
+export type MenuGroupCode = string
 export type BuiltinMenuGroupCode = 'ROOT' | MenuGroupCode
 export type ExternalAppItemId = `external:${string}`
 export type NavItemId = ModuleId | ExternalAppItemId
@@ -130,7 +130,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
   navigation: {
     id: 'navigation',
-    label: '工作台',
+    label: '全部功能',
     icon: 'ri-compass-discover-line',
     path: '/navigation',
   },
@@ -277,7 +277,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   memory: { id: 'memory', label: '记忆中心', icon: 'ri-brain-line', path: '/memories' },
   workspaces: {
     id: 'workspaces',
-    label: '工作台',
+    label: '链接空间',
     icon: 'ri-layout-grid-line',
     path: '/workspaces',
   },
@@ -292,7 +292,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     { id: 'notes', label: '小记', icon: 'ri-sticky-note-line', group: 'ROOT', order: 15, visible: true },
     {
       id: 'navigation',
-      label: '工作台',
+      label: '全部功能',
       icon: 'ri-compass-discover-line',
       group: 'ROOT',
       order: 20,
@@ -412,7 +412,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     },
     {
       id: 'workspaces',
-      label: '工作台',
+      label: '链接空间',
       icon: 'ri-layout-grid-line',
       group: 'PERSONAL',
       order: 28,

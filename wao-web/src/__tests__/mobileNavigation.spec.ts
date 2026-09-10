@@ -7,6 +7,11 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { useNavStore } from '@/stores/nav'
 import SideNav from '@/components/nav/SideNav.vue'
 
+vi.mock('@/api/navigationLayout', () => ({
+  fetchNavigationLayout: vi.fn().mockResolvedValue({ revision: 'none', layout: null }),
+  saveNavigationLayout: vi.fn(),
+}))
+
 vi.mock('@/api/favorites', () => ({
   fetchPreference: vi.fn<() => Promise<string>>().mockResolvedValue(''),
   savePreference: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -129,6 +134,7 @@ describe('手机高密度左侧导航', () => {
     const nav = useNavStore()
     nav.builtinMenusState = 'loaded'
     nav.externalAppsState = 'loaded'
+    nav.layoutLoaded = true
     await flushPromises()
     expect(wrapper.get('[title="项目"]').attributes('draggable')).toBe('true')
     wrapper.unmount()

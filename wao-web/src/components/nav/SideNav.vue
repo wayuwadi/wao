@@ -10,7 +10,7 @@ import { useSessionStore } from '@/stores/session'
 import { useFavoritesStore } from '@/stores/favorites'
 import type { Favorite } from '@/api/favorites'
 import type { ModuleId } from '@/types'
-import { externalAppItemId, type BuiltinMenuGroupCode, type NavItemId } from '@/config/nav'
+import { externalAppItemId, type NavItemId } from '@/config/nav'
 import QuickLinks from '@/components/nav/QuickLinks.vue'
 
 const emit = defineEmits<{ (e: 'open-search'): void }>()
@@ -92,12 +92,6 @@ const contextMenu = ref<{
   busy: boolean
   error: string
 } | null>(null)
-
-function groupCode(label: string): BuiltinMenuGroupCode {
-  return (
-    ({ '': 'ROOT', 公共: 'PUBLIC', 个人: 'PERSONAL', 工具: 'TOOLS' } as const)[label] ?? 'PERSONAL'
-  )
-}
 
 function openRename(event: MouseEvent, id: NavItemId) {
   if (isMobile.value) return
@@ -209,32 +203,44 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     <div v-if="!nav.collapsed" class="search-row">
       <button class="search" @click="emit('open-search')">
         <i class="ri-search-line"></i>
-        <span class="search-text">搜索或提问 AI</span>
+        <span class="search-text">搜索功能与内容</span>
         <span class="kbd">⌘K</span>
       </button>
     </div>
 
+    <button
+      v-if="!nav.menuConfig('navigation')?.visible"
+      class="all-functions"
+      :title="nav.collapsed ? '全部功能' : undefined"
+      @click="router.push('/navigation')"
+    >
+      <i class="ri-apps-2-line"></i><span v-if="!nav.collapsed">全部功能</span>
+    </button>
+    <div v-if="nav.menuMutationError && !nav.collapsed" class="nav-save-error" role="alert">
+      {{ nav.menuMutationError
+      }}<button @click="router.push('/settings?tab=navigation')">处理未保存的布局</button>
+    </div>
     <nav ref="menuRef" class="menu" aria-label="模块导航">
-      <template v-for="g in groups" :key="g.label || 'root'">
+      <template v-for="g in groups" :key="g.id">
         <button
           v-if="g.label && !nav.collapsed"
           class="group-label"
           :title="isMobile ? g.label : '折叠 / 展开分组'"
           @dragover.prevent="onDragOver(g.items[0] ?? 'dock')"
-          @drop.prevent="onDrop('MENU', groupCode(g.label))"
-          @click="!isMobile && nav.toggleGroup(g.label)"
+          @drop.prevent="onDrop('MENU', g.id)"
+          @click="!isMobile && nav.toggleGroup(g.id)"
         >
           {{ g.label }}
-          <i :class="nav.isFolded(g.label) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>
+          <i :class="nav.isFolded(g.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>
         </button>
         <div v-else-if="g.label && nav.collapsed" class="group-gap"></div>
 
         <!-- 手机没有分组展开按钮，必须始终展示全部可见模块，不能复用桌面的折叠状态。 -->
         <div
-          v-if="isMobile || !nav.isFolded(g.label) || nav.collapsed"
+          v-if="isMobile || !nav.isFolded(g.id) || nav.collapsed"
           class="items"
           @dragover.prevent
-          @drop.prevent="onDrop('MENU', groupCode(g.label))"
+          @drop.prevent="onDrop('MENU', g.id)"
         >
           <button
             v-for="id in g.items"
@@ -252,7 +258,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             @contextmenu.prevent="openContextMenu($event, id)"
             @dragstart="onDragStart(id, $event)"
             @dragover.stop.prevent="onDragOver(id)"
-            @drop.stop.prevent="onDrop('MENU', groupCode(g.label), id)"
+            @drop.stop.prevent="onDrop('MENU', g.id, id)"
             @dragend="onDragEnd"
           >
             <i :class="nav.itemMeta(id)?.icon"></i>
@@ -277,7 +283,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
               class="item fav-item"
               :title="f.label"
               :draggable="!isMobile && !!favoriteShortcut(f)"
-              @dragstart="shortcuts.start(favoriteShortcut(f), $event)" @dragend="shortcuts.end"
+              @dragstart="shortcuts.start(favoriteShortcut(f), $event)"
+              @dragend="shortcuts.end"
               @click="openFavorite(f)"
             >
               <i :class="FAV_ICONS[f.type]"></i>
@@ -412,6 +419,35 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 </template>
 
 <style scoped>
+.all-functions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 4px 12px 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  cursor: pointer;
+  font-size: 12px;
+}
+.nav-save-error {
+  margin: 0 12px 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--wao-danger-bg);
+  color: var(--wao-danger-strong);
+  font-size: 11px;
+}
+.nav-save-error button {
+  border: 0;
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .side {
   width: var(--wao-side-w);
   transition: width 0.18s ease;

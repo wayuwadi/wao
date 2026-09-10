@@ -1,149 +1,100 @@
 <script setup lang="ts">
-import { useTopShortcutsStore } from '@/stores/topShortcuts'
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { NAVIGATION_CATALOG, type NavigationCatalogModuleId } from '@/config/navigationCatalog'
-import { externalAppItemId } from '@/config/nav'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { NAVIGATION_CATALOG, matchesFunction, menuLocation } from '@/config/navigationCatalog'
+import { externalAppItemId, type NavItemId } from '@/config/nav'
 import { quickLinkPath, type QuickLink } from '@/config/quickLinks'
 import { useQuickLinks } from '@/composables/quickLinks'
-import { useFunctionHealth } from '@/composables/functionHealth'
-import { toast } from '@/composables/toast'
 import { useNavStore } from '@/stores/nav'
-import type { NavItemId } from '@/config/nav'
-
-const shortcuts = useTopShortcutsStore()
+import { useTopShortcutsStore } from '@/stores/topShortcuts'
+import { useMenuDrag } from '@/composables/menuDrag'
+import { toast } from '@/composables/toast'
+const Governance = defineAsyncComponent(() => import('@/components/nav/NavigationGovernance.vue'))
+const route = useRoute()
 const router = useRouter()
 const nav = useNavStore()
-const quickLinks = useQuickLinks()
-const health = useFunctionHealth()
+const links = useQuickLinks()
+const shortcuts = useTopShortcutsStore()
+const drag = useMenuDrag()
 const query = ref('')
-const menuActionId = ref<NavItemId | null>(null)
-const failedMenuAction = ref<{ id: NavItemId; visible: boolean; message: string } | null>(null)
-
-function includesQuery(values: Array<string | undefined>) {
-  const needle = query.value.trim().toLocaleLowerCase()
-  return !needle || values.some((value) => value?.toLocaleLowerCase().includes(needle))
-}
-
+const selected = ref('today')
+const actionError = ref('')
+const layout = computed(() => nav.currentLayout())
+const governance = computed(() => route.query.view === 'governance')
 const sections = computed(() =>
   NAVIGATION_CATALOG.map((section) => ({
     ...section,
-    items: section.items
-      .map((item) => {
-        const meta = nav.itemMeta(item.id)!
-        const configured = nav.builtinMenus.find((menu) => menu.id === item.id)
-        return {
-          ...item,
-          meta,
-          sidebarVisible: configured?.visible ?? false,
-          health: health.byId.value[item.id],
-        }
-      })
-      .filter((item) =>
-        includesQuery([
-          item.meta.label,
-          item.description,
-          ...(item.keywords ?? []),
-          section.label,
-          section.description,
-        ]),
-      ),
-  })).filter((section) => section.items.length),
+    items: section.items.filter((item) =>
+      matchesFunction(item.id, nav.itemMeta(item.id)?.label ?? item.id, query.value),
+    ),
+  })).filter(
+    (section) =>
+      section.items.length &&
+      (query.value.trim() || selected.value === 'all' || selected.value === section.id),
+  ),
 )
-
-const apps = computed(() =>
+const visibleApps = computed(() =>
   nav.externalApps.filter((app) =>
-    includesQuery([app.label, app.id, app.group, app.appUrl, '应用', '外部应用']),
+    matchesFunction(externalAppItemId(app.id), [app.label, app.appUrl, app.group, '应用', '外部应用'].join(' '), query.value),
   ),
 )
-const links = computed(() =>
-  quickLinks.links.value.filter((link) =>
-    includesQuery([link.label, link.subtitle, link.url, ...link.keywords, '链接', '快捷链接']),
+const visibleLinks = computed(() =>
+  links.links.value.filter(
+    (link) =>
+      !query.value.trim() ||
+      [link.label, link.subtitle, link.url, ...link.keywords]
+        .join(' ')
+        .toLowerCase()
+        .includes(query.value.trim().toLowerCase()),
   ),
 )
-const showQuickNote = computed(() => includesQuery(['小记', '记录', '笔记', '常用入口']))
-const showSettings = computed(() => includesQuery(['设置', '账号', '偏好', '菜单', '常用入口']))
+const dynamicVisible = computed(
+  () => !!query.value.trim() || ['all', 'links'].includes(selected.value),
+)
 const resultCount = computed(
   () =>
-    sections.value.reduce((sum, section) => sum + section.items.length, 0) +
-    apps.value.length +
-    links.value.length +
-    (showQuickNote.value ? 1 : 0) +
-    (showSettings.value ? 1 : 0),
+    sections.value.reduce((n, section) => n + section.items.length, 0) +
+    (dynamicVisible.value ? visibleApps.value.length + visibleLinks.value.length : 0),
 )
-const loading = computed(
-  () =>
-    nav.builtinMenusState === 'loading' ||
-    nav.externalAppsState === 'loading' ||
-    quickLinks.loading.value ||
-    health.loading.value,
-)
-const errors = computed(() =>
-  [
-    nav.builtinMenusError,
-    nav.externalAppsError,
-    quickLinks.loadError.value,
-    health.error.value,
-  ].filter(Boolean),
-)
-function openTarget(path: string, newPagePath: string | undefined, openMode: 'TAB' | 'NEW_PAGE') {
-  if (openMode === 'NEW_PAGE') {
-    const target = newPagePath ?? path
-    const href = /^https:\/\//i.test(target) ? target : router.resolve(target).href
-    window.open(href, '_blank', 'noopener,noreferrer')
-    return
-  }
-  void router.push(path)
-}
-
-function openModule(id: NavigationCatalogModuleId) {
+function open(id: NavItemId) {
   const meta = nav.itemMeta(id)
-  if (meta) openTarget(meta.path, meta.newPagePath, meta.openMode)
+  if (!meta?.path) return
+  if (meta.openMode === 'NEW_PAGE') {
+    const target = meta.newPagePath ?? router.resolve(meta.path).href
+    window.open(target, '_blank', 'noopener,noreferrer')
+  } else void router.push(meta.path)
 }
-
-function openApp(id: string) {
-  const meta = nav.itemMeta(externalAppItemId(id))
-  if (meta) openTarget(meta.path, meta.newPagePath, meta.openMode)
-}
-
 function openLink(link: QuickLink) {
   if (link.openMode === 'TAB') void router.push(quickLinkPath(link.id))
   else window.open(link.url, '_blank', 'noopener,noreferrer')
 }
-
-async function setMenuVisibility(id: NavItemId, visible: boolean) {
-  if (menuActionId.value) return
-  menuActionId.value = id
-  failedMenuAction.value = null
+function position(id: NavItemId) {
+  const item = layout.value.items.find((item) => item.id === id)
+  return item?.visible ? item.placement : 'HIDDEN'
+}
+async function place(id: NavItemId, event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  const next = nav.currentLayout()
+  const item = next.items.find((item) => item.id === id)
+  if (!item) return
+  item.visible = value !== 'HIDDEN'
+  if (value === 'MENU' || value === 'TOP' || value === 'DOCK') item.placement = value
+  actionError.value = ''
   try {
-    await nav.setMenuVisibility(id, visible)
-    toast(visible ? '菜单已显示' : '菜单已隐藏，仍可从工作台恢复', 'ri-check-line')
+    await nav.saveLayout(next)
+    toast('个人导航已更新', 'ri-check-line')
   } catch (error) {
-    const message = error instanceof Error ? error.message : '菜单保存失败'
-    failedMenuAction.value = { id, visible, message }
-    toast(`${message}，可在工作台重试`, 'ri-error-warning-line')
-  } finally {
-    menuActionId.value = null
+    actionError.value = error instanceof Error ? error.message : '导航未保存'
+    ;(event.target as HTMLSelectElement).value = position(id)
   }
 }
-
-function retryMenuAction() {
-  const failed = failedMenuAction.value
-  if (failed) void setMenuVisibility(failed.id, failed.visible)
+async function retry() {
+  await nav.loadMenus(true)
+  await links.load(true)
 }
-
-function retry() {
-  void nav.loadBuiltinMenus(true)
-  void nav.loadExternalApps(true)
-  void quickLinks.load(true)
-  void health.load(true)
-}
-
 onMounted(() => {
-  void nav.loadBuiltinMenus()
-  void nav.loadExternalApps()
-  void quickLinks.load()
-  void health.load()
+  void nav.loadMenus()
+  void links.load()
 })
 </script>
 
@@ -151,602 +102,489 @@ onMounted(() => {
   <main class="navigation-center">
     <header class="hero">
       <div>
-        <div class="eyebrow"><i class="ri-apps-2-line"></i> WAO WORKBENCH</div>
-        <h1>工作台</h1>
-        <p>项目和小记留在手边；其他真实功能、接入应用和个人链接都从这里打开。</p>
+        <span class="eyebrow">WAO / 导航</span>
+        <h1>{{ governance ? '功能治理' : '全部功能' }}</h1>
+        <p>
+          {{
+            governance ? '查看真实使用与运行情况。' : '按要做的事找入口，把常用功能放在顺手的位置。'
+          }}
+        </p>
+      </div>
+      <div class="header-actions">
+        <button @click="router.push('/settings?tab=navigation')">
+          <i class="ri-layout-line"></i>整理我的导航</button
+        ><button
+          @click="
+            router.replace({ path: '/navigation', query: governance ? {} : { view: 'governance' } })
+          "
+        >
+          {{ governance ? '返回全部功能' : '功能治理' }}
+        </button>
       </div>
     </header>
-
-    <label class="search">
-      <i class="ri-search-line"></i>
-      <input v-model="query" type="search" placeholder="搜索功能、应用或链接" />
-      <span v-if="query.trim()">{{ resultCount }} 个结果</span>
-    </label>
-
-    <section class="health-summary" aria-label="功能健康度概览">
-      <div>
-        <b>{{ health.overview.value?.recentOpens ?? 0 }}</b
-        ><span>近 30 天真实打开</span>
-      </div>
-      <div>
-        <b>{{
-          health.overview.value?.functions.filter((item) => item.recentOpens > 0).length ?? 0
-        }}</b
-        ><span>近期使用功能</span>
-      </div>
-      <p>
-        <i class="ri-pulse-line"></i> AI
-        巡检会同时读取这份真实使用快照，分析低频、路径和功能重叠；没有数据时不会补演示结论。
-      </p>
-    </section>
-
-    <div v-if="errors.length" class="load-status error" role="alert">
-      <i class="ri-error-warning-line"></i>
-      <span>部分目录读取失败，当前仍可使用安全默认值：{{ errors.join('；') }}</span>
-      <button type="button" @click="retry">重试</button>
-    </div>
-    <div v-else-if="loading" class="load-status" role="status">
-      <i class="ri-loader-4-line spin"></i>正在同步最新导航…
-    </div>
-    <div v-if="failedMenuAction" class="load-status error menu-action-error" role="alert">
-      <i class="ri-error-warning-line"></i>
-      <span>菜单修改未保存：{{ failedMenuAction.message }}</span>
-      <button type="button" :disabled="!!menuActionId" @click="retryMenuAction">重试</button>
-    </div>
-
-    <section v-if="showQuickNote || showSettings" class="catalog-section quick-actions-section">
-      <header>
-        <span><i class="ri-flashlight-line"></i></span>
-        <div>
-          <h2>常用入口</h2>
-          <p>直接复用 WAO 的真实创建与设置链路，不新增演示入口。</p>
-        </div>
-      </header>
-      <div class="card-grid">
-        <button v-if="showQuickNote" class="nav-card" type="button" @click="router.push('/notes')">
-          <span class="card-icon"><i class="ri-sticky-note-line"></i></span>
-          <span class="card-copy"><b>小记</b><small>直接记录、搜索和回看全部小记。</small></span>
-          <i class="ri-arrow-right-line card-arrow"></i>
-        </button>
-        <button
-          v-if="showSettings"
-          class="nav-card"
-          type="button"
-          @click="router.push('/settings')"
+    <Governance v-if="governance" />
+    <template v-else>
+      <label class="search"
+        ><i class="ri-search-line"></i
+        ><input
+          v-model="query"
+          type="search"
+          placeholder="搜索功能、旧名称、应用或链接"
+          aria-label="搜索全部功能"
+        /><span v-if="query.trim()">{{ resultCount }} 个结果</span
+        ><kbd v-else>全局搜索也能找功能</kbd></label
+      >
+      <nav class="domains" aria-label="功能分类">
+        <button :class="{ active: selected === 'all' }" @click="selected = 'all'">全部</button
+        ><button
+          v-for="section in NAVIGATION_CATALOG"
+          :key="section.id"
+          :class="{ active: selected === section.id }"
+          @click="selected = section.id"
         >
-          <span class="card-icon"><i class="ri-settings-3-line"></i></span>
-          <span class="card-copy"
-            ><b>设置</b><small>管理账号、偏好、全局菜单和个人链接。</small></span
-          >
-          <i class="ri-arrow-right-line card-arrow"></i>
+          <i :class="section.icon"></i>{{ section.label }}</button
+        ><button :class="{ active: selected === 'links' }" @click="selected = 'links'">
+          应用与链接
+        </button>
+      </nav>
+      <p v-if="query.trim()" class="hint">搜索覆盖所有分类，也包含未固定的功能。</p>
+      <div v-if="nav.layoutError || links.loadError.value" role="alert" class="status error">
+        {{
+          nav.layoutError
+            ? nav.layoutError + '。当前展示已知目录，个人位置暂无法确认。'
+            : '快捷链接读取失败：' + links.loadError.value
+        }}<button @click="retry">重试读取</button>
+      </div>
+      <div v-else-if="nav.layoutLoading || links.loading.value" class="status" role="status">
+        正在同步你的导航…
+      </div>
+      <div v-if="actionError || nav.menuMutationError" class="status error" role="alert">
+        {{ actionError || nav.menuMutationError }}。原布局已恢复，草稿保留。<button
+          @click="router.push('/settings?tab=navigation')"
+        >
+          处理保存问题
         </button>
       </div>
-    </section>
-
-    <section v-for="section in sections" :key="section.id" class="catalog-section">
-      <header>
-        <span><i :class="section.icon"></i></span>
-        <div>
-          <h2>{{ section.label }}</h2>
-          <p>{{ section.description }}</p>
-        </div>
-      </header>
-      <div class="card-grid">
-        <article v-for="item in section.items" :key="item.id" class="nav-card manageable-card">
-          <button class="card-open" type="button" @click="openModule(item.id)">
-            <span class="card-icon"><i :class="item.meta.icon"></i></span>
-            <span class="card-copy">
-              <b>{{ item.meta.label }}</b>
-              <small>{{ item.description }}</small>
-              <em v-if="item.health" :class="item.health.insightLevel.toLowerCase()">{{
-                item.health.insight
-              }}</em>
-            </span>
-            <span v-if="item.health" class="health-badges">
-              <b>{{ item.health.score }} 分</b>
-              <small
-                >30 天 {{ item.health.recentOpens }} 次 ·
-                {{ item.health.recentShare.toFixed(1) }}%</small
-              >
-            </span>
-            <span v-if="!item.sidebarVisible" class="hidden-badge">侧栏已隐藏</span>
-            <i
-              :class="
-                item.meta.openMode === 'NEW_PAGE' ? 'ri-arrow-right-up-line' : 'ri-arrow-right-line'
-              "
-              class="card-arrow"
-            ></i>
-          </button>
-          <button
-            type="button"
-            class="menu-visibility"
-            :class="{ on: item.sidebarVisible }"
-            :disabled="!!menuActionId"
-            :aria-label="`${item.meta.label}：${item.sidebarVisible ? '隐藏菜单' : '显示菜单'}`"
-            @click="setMenuVisibility(item.id, !item.sidebarVisible)"
-          >
-            <i
-              :class="
-                menuActionId === item.id
-                  ? 'ri-loader-4-line spin'
-                  : item.sidebarVisible
-                    ? 'ri-eye-line'
-                    : 'ri-eye-off-line'
-              "
-            ></i>
-            <span>{{ item.sidebarVisible ? '隐藏菜单' : '显示菜单' }}</span>
-          </button>
-        </article>
-      </div>
-    </section>
-
-    <section v-if="apps.length" class="catalog-section dynamic-section">
-      <header>
-        <span><i class="ri-apps-2-line"></i></span>
-        <div>
-          <h2>接入应用</h2>
-          <p>来自 WAO 真实应用注册表，侧栏隐藏后仍可在这里打开。</p>
-        </div>
-      </header>
-      <div class="card-grid">
-        <article v-for="app in apps" :key="app.id" class="nav-card manageable-card">
-          <button class="card-open" type="button" @click="openApp(app.id)">
-            <span class="card-icon"><i :class="app.icon"></i></span>
-            <span class="card-copy"
-              ><b>{{ app.label }}</b
-              ><small>{{ app.appUrl }}</small></span
+      <section v-for="section in sections" :key="section.id" class="catalog-section">
+        <header>
+          <div>
+            <h2>{{ section.label }}</h2>
+            <p>{{ section.description }}</p>
+          </div>
+          <span>{{ section.items.length }} 个功能</span>
+        </header>
+        <div class="function-list">
+          <article v-for="item in section.items" :key="item.id" class="function-row">
+            <button
+              v-if="nav.menuConfig(item.id)"
+              class="drag"
+              :draggable="nav.canMoveMenus"
+              :disabled="!nav.canMoveMenus"
+              :aria-label="'拖动' + nav.itemMeta(item.id)?.label"
+              title="可直接拖到左侧、顶部或底部"
+              @dragstart="drag.onDragStart(item.id, $event)"
+              @dragend="drag.onDragEnd"
             >
-            <span v-if="!app.visible" class="hidden-badge">侧栏已隐藏</span>
-            <i
-              :class="
-                app.openMode === 'NEW_PAGE' ? 'ri-arrow-right-up-line' : 'ri-arrow-right-line'
-              "
-              class="card-arrow"
-            ></i>
-          </button>
-          <button
-            type="button"
-            class="menu-visibility"
-            :class="{ on: app.visible }"
-            :disabled="!!menuActionId"
-            :aria-label="`${app.label}：${app.visible ? '隐藏菜单' : '显示菜单'}`"
-            @click="setMenuVisibility(externalAppItemId(app.id), !app.visible)"
-          >
-            <i
-              :class="
-                menuActionId === externalAppItemId(app.id)
-                  ? 'ri-loader-4-line spin'
-                  : app.visible
-                    ? 'ri-eye-line'
-                    : 'ri-eye-off-line'
-              "
-            ></i>
-            <span>{{ app.visible ? '隐藏菜单' : '显示菜单' }}</span>
-          </button>
-        </article>
-      </div>
-    </section>
-
-    <section v-if="links.length" class="catalog-section dynamic-section">
-      <header>
-        <span><i class="ri-links-line"></i></span>
-        <div>
-          <h2>我的快捷链接</h2>
-          <p>来自当前账号的跨设备配置，不会展示其他成员的链接。</p>
+              <i class="ri-draggable"></i></button
+            ><span v-else class="drag"></span>
+            <button class="function-open" @click="open(item.id)">
+              <i :class="nav.itemMeta(item.id)?.icon"></i
+              ><span
+                ><b>{{
+                  item.id === 'workspaces' && nav.itemMeta(item.id)?.label === '工作台'
+                    ? '链接空间'
+                    : nav.itemMeta(item.id)?.label
+                }}</b
+                ><small>{{ item.description }}</small></span
+              ><i
+                :class="
+                  nav.itemMeta(item.id)?.openMode === 'NEW_PAGE'
+                    ? 'ri-external-link-line'
+                    : 'ri-arrow-right-line'
+                "
+              ></i>
+            </button>
+            <div class="position">
+              <small>{{ nav.layoutLoaded ? menuLocation(item.id, layout) : '位置同步中' }}</small
+              ><select
+                v-if="nav.menuConfig(item.id)"
+                :value="position(item.id)"
+                :disabled="!nav.canEditLayout || nav.layoutConflict"
+                :aria-label="nav.itemMeta(item.id)?.label + '展示位置'"
+                @change="place(item.id, $event)"
+              >
+                <option value="HIDDEN">不固定</option>
+                <option value="MENU">左侧菜单</option>
+                <option value="TOP">顶部菜单</option>
+                <option value="DOCK">底部停靠</option>
+              </select>
+            </div>
+          </article>
         </div>
-      </header>
-      <div class="card-grid">
-        <button
-          v-for="link in links" draggable="true" @dragstart="shortcuts.start({ key: 'link:' + link.id, label: link.label, icon: link.icon, path: quickLinkPath(link.id), quickLinkId: link.id }, $event)" @dragend="shortcuts.end"
-          :key="link.id"
-          class="nav-card"
-          type="button"
-          @click="openLink(link)"
-        >
-          <span class="card-icon"><i :class="link.icon"></i></span>
-          <span class="card-copy"
-            ><b>{{ link.label }}</b
-            ><small>{{ link.subtitle || link.url }}</small></span
+      </section>
+      <section v-if="dynamicVisible && visibleApps.length" class="catalog-section">
+        <header>
+          <h2>接入应用</h2>
+          <span>{{ visibleApps.length }} 个应用</span>
+        </header>
+        <div class="function-list">
+          <article v-for="app in visibleApps" :key="app.id" class="function-row">
+            <button
+              class="drag"
+              :draggable="nav.canMoveMenus"
+              :disabled="!nav.canMoveMenus"
+              :aria-label="'拖动' + app.label"
+              @dragstart="drag.onDragStart(externalAppItemId(app.id), $event)"
+              @dragend="drag.onDragEnd"
+            >
+              <i class="ri-draggable"></i></button
+            ><button class="function-open" @click="open(externalAppItemId(app.id))">
+              <i :class="app.icon"></i
+              ><span
+                ><b>{{ app.label }}</b
+                ><small>{{
+                  app.openMode === 'NEW_PAGE' ? '在新页面打开' : '在 WAO 页签打开'
+                }}</small></span
+              ><i class="ri-arrow-right-line"></i>
+            </button>
+            <div class="position">
+              <small>{{ menuLocation(externalAppItemId(app.id), layout) }}</small
+              ><select
+                :value="position(externalAppItemId(app.id))"
+                :disabled="!nav.canEditLayout || nav.layoutConflict"
+                :aria-label="app.label + '展示位置'"
+                @change="place(externalAppItemId(app.id), $event)"
+              >
+                <option value="HIDDEN">不固定</option>
+                <option value="MENU">左侧菜单</option>
+                <option value="TOP">顶部菜单</option>
+                <option value="DOCK">底部停靠</option>
+              </select>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section v-if="dynamicVisible && visibleLinks.length" class="catalog-section">
+        <header>
+          <h2>我的快捷链接</h2>
+          <span>可拖到顶部收藏</span>
+        </header>
+        <div class="function-list">
+          <button
+            v-for="link in visibleLinks"
+            :key="link.id"
+            class="link-row"
+            draggable="true"
+            @dragstart="
+              shortcuts.start(
+                {
+                  key: 'link:' + link.id,
+                  label: link.label,
+                  icon: link.icon,
+                  path: quickLinkPath(link.id),
+                  quickLinkId: link.id,
+                },
+                $event,
+              )
+            "
+            @dragend="shortcuts.end"
+            @click="openLink(link)"
           >
-          <i
-            :class="link.openMode === 'NEW_PAGE' ? 'ri-arrow-right-up-line' : 'ri-arrow-right-line'"
-            class="card-arrow"
-          ></i>
+            <i :class="link.icon"></i
+            ><span
+              ><b>{{ link.label }}</b
+              ><small>{{ link.subtitle }}</small></span
+            ><i class="ri-arrow-right-up-line"></i>
+          </button>
+        </div>
+      </section>
+      <div v-if="!resultCount" class="empty">
+        <i class="ri-search-line"></i>
+        <h2>没有找到匹配入口</h2>
+        <p>试试功能原名、用途或旧名称。</p>
+        <button
+          @click="
+            query = ''; selected = 'all'
+          "
+        >
+          查看全部功能
         </button>
       </div>
-    </section>
-
-    <section v-if="!loading && !resultCount" class="empty-state">
-      <i class="ri-search-eye-line"></i><b>没有找到匹配入口</b
-      ><span>换个名称、用途或关键词试试。</span>
-      <button type="button" @click="query = ''">清除搜索</button>
-    </section>
+    </template>
   </main>
 </template>
 
 <style scoped>
 .navigation-center {
-  width: min(1220px, 100%);
-  box-sizing: border-box;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 28px 28px 48px;
+  padding: 32px clamp(16px, 3vw, 44px) 64px;
+  color: var(--wao-text);
 }
 .hero {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 24px;
+  margin-bottom: 26px;
 }
 .eyebrow {
-  color: var(--wao-primary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-.hero h1 {
-  margin: 7px 0 5px;
-  color: var(--wao-text);
-  font-size: clamp(28px, 4vw, 42px);
-  line-height: 1.1;
-}
-.hero p,
-.catalog-section header p {
-  margin: 0;
   color: var(--wao-text-weak);
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+h1 {
+  margin: 8px 0;
+  font-size: 27px;
+  letter-spacing: -0.5px;
+}
+h2 {
+  margin: 0;
+  font-size: 16px;
+}
+p {
+  color: var(--wao-text-weak);
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 4px 0;
+}
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.header-actions button,
+.status button,
+.empty button {
+  padding: 9px 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
 }
 .search {
-  height: 46px;
-  margin: 24px 0 8px;
-  padding: 0 14px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  padding: 15px 17px;
   border: 1px solid var(--wao-line-control);
   border-radius: 12px;
   background: var(--wao-bg-card);
-  box-shadow: 0 8px 28px color-mix(in srgb, var(--wao-text) 5%, transparent);
-}
-.health-summary {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  gap: 10px;
-  margin: 10px 0 20px;
-}
-.health-summary > div,
-.health-summary > p {
-  margin: 0;
-  padding: 11px 13px;
-  border: 1px solid var(--wao-line);
-  border-radius: 11px;
-  background: var(--wao-bg-card);
-}
-.health-summary > div {
-  min-width: 110px;
-  display: grid;
-}
-.health-summary > div b {
-  font-size: 18px;
-  color: var(--wao-primary-text);
-}
-.health-summary > div span {
-  font-size: 9px;
-  color: var(--wao-text-weak);
-}
-.health-summary > p {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--wao-text-2);
-  font-size: 10px;
-  line-height: 1.55;
-}
-.health-summary > p i {
-  font-size: 18px;
-  color: var(--wao-primary);
-}
-.card-copy em {
-  display: block;
-  margin-top: 5px;
-  color: var(--wao-text-weak);
-  font-size: 9px;
-  font-style: normal;
-}
-.card-copy em.low,
-.card-copy em.high {
-  color: var(--wao-warning-strong);
-}
-.card-copy em.mature,
-.card-copy em.stable {
-  color: var(--wao-success-strong);
-}
-.health-badges {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
-  margin-left: auto;
-  white-space: nowrap;
-}
-.health-badges b {
-  color: var(--wao-primary-text);
-  font-size: 11px;
-}
-.health-badges small {
-  color: var(--wao-text-faint);
-  font-size: 8px;
 }
 .search:focus-within {
   border-color: var(--wao-primary);
   box-shadow: 0 0 0 3px var(--wao-primary-soft);
 }
-.search > i {
-  color: var(--wao-text-weak);
-  font-size: 18px;
-}
 .search input {
-  min-width: 0;
   flex: 1;
+  min-width: 0;
   border: 0;
   outline: 0;
-  background: transparent;
-  color: var(--wao-text);
-  font: inherit;
-}
-.search span {
-  color: var(--wao-text-faint);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.load-status {
-  margin-top: 12px;
-  padding: 9px 11px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border-radius: 8px;
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary-text);
-  font-size: 11.5px;
-}
-.load-status span {
-  flex: 1;
-}
-.load-status.error {
-  background: var(--wao-danger-bg);
-  color: var(--wao-danger-strong);
-}
-.load-status button {
-  border: 0;
   background: none;
   color: inherit;
-  cursor: pointer;
+  font-size: 15px;
 }
-.spin {
-  animation: spin 0.8s linear infinite;
+.search span,
+.search kbd {
+  font-size: 11px;
+  color: var(--wao-text-weak);
 }
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.domains {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 18px 0 24px;
+}
+.domains button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-3);
+  font-size: 12px;
+}
+.domains .active {
+  color: var(--wao-primary);
+  background: var(--wao-primary-soft);
+  border-color: var(--wao-primary);
 }
 .catalog-section {
   margin-top: 28px;
 }
-.catalog-section > header {
+.catalog-section header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 11px;
 }
-.catalog-section > header > span {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary);
-  font-size: 17px;
+.catalog-section header > span {
+  color: var(--wao-text-faint);
+  font-size: 11px;
 }
-.catalog-section h2 {
-  margin: 0;
-  color: var(--wao-text);
-  font-size: 15px;
-}
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-.nav-card {
-  min-width: 0;
-  min-height: 84px;
-  padding: 14px;
-  display: flex;
-  align-items: center;
-  gap: 11px;
+.function-list {
   border: 1px solid var(--wao-line);
   border-radius: 12px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color 0.14s ease,
-    transform 0.14s ease,
-    box-shadow 0.14s ease;
-}
-.nav-card:hover {
-  border-color: color-mix(in srgb, var(--wao-primary) 50%, var(--wao-line));
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--wao-text) 6%, transparent);
-  transform: translateY(-1px);
-}
-.manageable-card {
-  padding: 0;
   overflow: hidden;
+  background: var(--wao-bg-card);
 }
-.card-open {
-  min-width: 0;
-  min-height: 82px;
-  padding: 14px 8px 14px 14px;
+.function-row {
   display: flex;
   align-items: center;
-  gap: 11px;
-  flex: 1;
-  align-self: stretch;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
+  gap: 4px;
+  padding: 10px 14px 10px 5px;
+  border-bottom: 1px solid var(--wao-divider);
 }
-.menu-visibility {
-  width: 70px;
-  min-height: 82px;
-  padding: 9px 6px;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 5px;
-  align-self: stretch;
+.function-row:last-child {
+  border-bottom: 0;
+}
+.function-row:hover,
+.link-row:hover {
+  background: var(--wao-bg-hover);
+}
+.drag {
+  width: 25px;
+  flex-shrink: 0;
   border: 0;
-  border-left: 1px solid var(--wao-divider);
-  background: var(--wao-bg-sub);
+  background: none;
   color: var(--wao-text-faint);
-  font-size: 9px;
-  cursor: pointer;
+  cursor: grab;
+  padding: 8px 3px;
 }
-.menu-visibility i {
-  font-size: 16px;
+.function-open {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 6px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  background: none;
+  color: inherit;
 }
-.menu-visibility.on {
-  color: var(--wao-primary-text);
-}
-.menu-visibility:hover:not(:disabled) {
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary);
-}
-.menu-visibility:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-.card-open:focus-visible,
-.menu-visibility:focus-visible {
-  position: relative;
-  z-index: 1;
-  outline: 2px solid var(--wao-primary);
-  outline-offset: -2px;
-}
-.card-icon {
-  width: 38px;
-  height: 38px;
-  flex: none;
+.function-open > i:first-child {
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 9px;
   background: var(--wao-bg-sub);
   color: var(--wao-primary);
   font-size: 19px;
 }
-.card-copy {
-  min-width: 0;
+.function-open > span,
+.link-row > span {
   flex: 1;
-  display: grid;
-  gap: 4px;
+  min-width: 0;
 }
-.card-copy b {
+b {
+  display: block;
   font-size: 13px;
+  font-weight: 600;
 }
-.card-copy small {
-  overflow: hidden;
+small {
+  display: block;
+  font-size: 11px;
   color: var(--wao-text-weak);
-  font-size: 10.5px;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  margin-top: 5px;
+  line-height: 1.5;
 }
-.hidden-badge {
-  align-self: flex-start;
-  flex: none;
-  padding: 2px 5px;
-  border-radius: 5px;
-  background: var(--wao-bg-sub);
+.function-open > i:last-child {
   color: var(--wao-text-faint);
-  font-size: 9px;
-  white-space: nowrap;
+  margin: 0 12px;
 }
-.card-arrow {
-  flex: none;
-  color: var(--wao-text-faint);
-}
-.dynamic-section {
-  padding-top: 2px;
-  border-top: 1px solid var(--wao-divider);
-}
-.empty-state {
-  min-height: 260px;
-  margin-top: 26px;
+.position {
+  min-width: 138px;
   display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 7px;
-  border: 1px dashed var(--wao-line-strong);
-  border-radius: 14px;
-  color: var(--wao-text-weak);
-  text-align: center;
+  justify-items: end;
+  gap: 5px;
 }
-.empty-state > i {
-  font-size: 28px;
+.position small {
+  margin: 0;
+  font-size: 10px;
 }
-.empty-state b {
-  color: var(--wao-text-2);
-  font-size: 14px;
+select {
+  font-size: 11px;
+  padding: 5px 8px;
+  border: 1px solid var(--wao-line);
+  border-radius: 6px;
+  color: var(--wao-text-3);
+  background: var(--wao-bg-card);
 }
-.empty-state span {
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 16px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--wao-divider);
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--wao-bg-sub);
   font-size: 12px;
 }
-.empty-state button {
-  margin-top: 4px;
-  border: 0;
-  background: none;
-  color: var(--wao-primary);
-  cursor: pointer;
+.error {
+  color: var(--wao-danger-strong);
+  background: var(--wao-danger-bg);
 }
-@media (max-width: 980px) {
-  .card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.empty {
+  padding: 50px 20px;
+  text-align: center;
 }
-@media (max-width: 620px) {
-  .navigation-center {
-    padding: 20px 14px 96px;
-  }
+.empty > i {
+  font-size: 26px;
+  color: var(--wao-text-weak);
+}
+.hint {
+  font-size: 12px;
+}
+@media (max-width: 720px) {
   .hero {
-    align-items: stretch;
+    align-items: flex-start;
     flex-direction: column;
+    gap: 12px;
   }
-  .search {
-    margin-top: 18px;
+  .navigation-center {
+    padding-top: 20px;
   }
-  .health-summary {
-    grid-template-columns: 1fr 1fr;
-  }
-  .health-summary > p {
-    grid-column: 1 / -1;
-  }
-  .health-badges {
+  .search kbd {
     display: none;
   }
-  .card-grid {
-    grid-template-columns: 1fr;
+  .function-row {
+    flex-wrap: wrap;
+    padding-right: 10px;
   }
-  .nav-card {
-    min-height: 76px;
+  .position {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-left: 36px;
   }
-  .hidden-badge {
-    display: none;
+  .function-open > i:last-child {
+    margin: 0;
   }
 }
 </style>

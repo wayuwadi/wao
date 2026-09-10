@@ -105,6 +105,30 @@ describe('知识库详情目录体验', () => {
     wrapper.unmount()
   })
 
+  it('搜索展开匹配文档，定位恢复当前文件夹，移动仍保留编辑内容', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true)
+    const data = useDataStore(pinia)
+    const target = data.kbById('k3')!.folders.find(folder => !folder.docs.includes('d7'))!
+    const scrolling = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+    const order = vi.spyOn(data, 'reorderDocs')
+    try {
+      await wrapper.get('[aria-label="搜索本知识库文件夹和文档"]').setValue('卡片盒')
+      expect(wrapper.findAll('.folder-row')).toHaveLength(1)
+      expect(wrapper.get('.doc-tree').text()).toContain('卡片盒笔记法')
+      await wrapper.get('.tree-search button').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('.doc-node.on').exists()).toBe(true)
+      const original = (wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value
+      await wrapper.get('[aria-label="移动当前文档到文件夹"]').setValue(target.id)
+      await flushPromises()
+      expect(order).toHaveBeenCalledWith('k3', expect.arrayContaining([expect.objectContaining({ folderId: target.id, docIds: expect.arrayContaining(['d7']) })]))
+      expect(data.kbById('k3')!.folders.find(folder => folder.id === target.id)?.docs).toContain('d7')
+      expect((wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value).toBe(original)
+      expect(wrapper.find('.doc-node.on').exists()).toBe(true)
+    } finally { HTMLElement.prototype.scrollIntoView = scrolling; order.mockRestore() }
+  })
+
   it('从文档选区创建待办时带入知识库真实项目和完整原文，并隔离不同选区草稿', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     useDataStore(pinia).kbById('k3')!.project = 'p2'

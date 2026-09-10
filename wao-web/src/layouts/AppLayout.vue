@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
+import NavigationContext from '@/components/nav/NavigationContext.vue'
 import TopMenuBar from '@/components/nav/TopMenuBar.vue'
 import SideNav from '@/components/nav/SideNav.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
@@ -16,7 +17,6 @@ import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import FloatingChat from '@/components/chat/FloatingChat.vue'
 import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
-import FunctionScoreControl from '@/components/navigation/FunctionScoreControl.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -119,10 +119,6 @@ const crumbB = computed(() => {
   const kind = route.meta.tabKind as string
   if (kind === 'project' || kind === 'kb') return tabs.activeTab()?.label ?? ''
   return ''
-})
-const scoredFeatureId = computed(() => {
-  const featureId = String(route.meta.module || '')
-  return functionHealth.byId.value[featureId] ? featureId : ''
 })
 
 /** 路由变化即同步页签（覆盖点击导航 / 直接 URL / 前进后退）。 */
@@ -284,18 +280,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <button class="fold" title="折叠 / 展开导航" @click="nav.toggleCollapse">
           <i :class="nav.collapsed ? 'ri-menu-unfold-line' : 'ri-menu-fold-line'"></i>
         </button>
-        <div class="crumb-a">{{ crumbA }}</div>
+        <NavigationContext class="crumb-a" :label="crumbA" />
         <template v-if="crumbB">
           <i class="ri-arrow-right-s-line crumb-sep"></i>
           <div class="crumb-b">{{ crumbB }}</div>
         </template>
         <TopMenuBar />
 
-        <FunctionScoreControl
-          v-if="scoredFeatureId"
-          :feature-id="scoredFeatureId"
-          :label="crumbA"
-        />
 
         <button class="assistant-entry" title="问问 AI（Ctrl/⌘ + J）" @click="ui.openAssistant()">
           <i class="ri-robot-2-line"></i>问问 AI
