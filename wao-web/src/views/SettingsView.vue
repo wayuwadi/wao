@@ -544,7 +544,7 @@ async function bindFeishu() {
 
         <!-- 系统 · 菜单配置 -->
         <template v-else-if="tab === 'navigation'">
-          <NavigationLinkSettingsPanel ref="navigationPanel" />
+          <NavigationLinkSettingsPanel :key="session.userId" ref="navigationPanel" />
         </template>
 
         <!-- 系统 · 通用 Webhook 配置 -->
