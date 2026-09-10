@@ -20,17 +20,18 @@ onMounted(async () => {
 
 <template>
   <footer
-    v-if="site"
     class="site-footer"
     :class="{ 'reserve-mobile-actions': reserveMobileActions }"
     aria-label="网站备案信息"
   >
-    <span>© {{ new Date().getFullYear() }} {{ site.siteName }}</span>
-    <span v-if="site.description" class="separator">·</span>
-    <span v-if="site.description">{{ site.description }}</span>
-    <span v-if="site.icpNumber" class="separator">·</span>
-    <a v-if="site.icpNumber" :href="site.icpUrl" target="_blank" rel="noopener noreferrer">{{
-      site.icpNumber
+    <a href="/download">下载 WAO</a>
+    <span class="separator">·</span>
+    <span>© {{ new Date().getFullYear() }} {{ site?.siteName ?? 'WAO' }}</span>
+    <span v-if="site?.description" class="separator">·</span>
+    <span v-if="site?.description">{{ site?.description }}</span>
+    <span v-if="site?.icpNumber" class="separator">·</span>
+    <a v-if="site?.icpNumber" :href="site?.icpUrl" target="_blank" rel="noopener noreferrer">{{
+      site?.icpNumber
     }}</a>
   </footer>
 </template>

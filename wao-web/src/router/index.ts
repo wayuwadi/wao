@@ -39,6 +39,12 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: '/download',
+      name: 'client-download',
+      component: () => import('@/views/ClientDownloadView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/desktop',
       name: 'desktop-download',
       component: () => import('@/views/DesktopDownloadView.vue'),
@@ -453,6 +459,8 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  // 安装包分发无需会话；服务端临时不可用也不应阻塞公开下载页。
+  if (to.name === 'client-download') return true
   const session = useSessionStore()
   await session.initialize()
   if (!to.meta.public && !session.authed) {
