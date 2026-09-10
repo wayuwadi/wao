@@ -199,7 +199,7 @@ onUnmounted(() => {
         </fieldset>
         <p v-if="draft.kind === 'note' && draft.readonly" class="notice">
           这篇小记包含富文本，首版保持原文只读。<a
-            href="https://wao.wayuwa.cn/#/notes"
+            href="https://wao.wayuwa.cn/notes"
             target="_blank"
             rel="noopener noreferrer"
             >前往 Web 编辑</a
