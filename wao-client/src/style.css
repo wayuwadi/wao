@@ -407,8 +407,8 @@ button {
   font-size: 11px;
 }
 .modal-backdrop {
-  position: absolute;
-  inset: 0;
+  position: fixed;
+  inset: 64px 0 0;
   background: #27345425;
   backdrop-filter: blur(5px);
   display: grid;

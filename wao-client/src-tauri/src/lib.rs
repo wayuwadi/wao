@@ -5,11 +5,12 @@ use tauri::{
     Emitter, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl, WindowEvent,
 };
 use tauri_plugin_opener::OpenerExt;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 const PRODUCTION: &str = "https://wao.wayuwa.cn";
 const HEADER: f64 = 64.0;
 static POPUP_ID: AtomicUsize = AtomicUsize::new(1);
+static WORKSPACE_READY: AtomicBool = AtomicBool::new(false);
 
 fn workspace_url() -> tauri::Url {
     #[cfg(debug_assertions)]
@@ -80,7 +81,11 @@ fn popup(app: &tauri::AppHandle, url: tauri::Url, features: tauri::webview::NewW
 #[tauri::command]
 async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(), String> {
     local_shell(&webview)?;
-    if app.get_webview("workspace").is_some() { return Ok(()); }
+    if app.get_webview("workspace").is_some() {
+        let phase = if WORKSPACE_READY.load(Ordering::Relaxed) { "ready" } else { "loading" };
+        let _ = app.emit_to("main", "workspace-state", phase);
+        return Ok(());
+    }
     let window = app.get_window("main").ok_or("窗口不存在")?;
     let size = window.inner_size().map_err(|e| e.to_string())?.to_logical::<f64>(window.scale_factor().map_err(|e| e.to_string())?);
     let origin = workspace_url();
@@ -96,6 +101,7 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
         })
         .on_new_window(move |url, features| popup(&popup_app, url, features))
         .on_page_load(|view, event| {
+            WORKSPACE_READY.store(matches!(event.event(), PageLoadEvent::Finished), Ordering::Relaxed);
             let phase = match event.event() { PageLoadEvent::Started => "loading", PageLoadEvent::Finished => "ready" };
             let _ = view.app_handle().emit_to("main", "workspace-state", phase);
         });

@@ -103,6 +103,7 @@ async function connect() {
   }
   try {
     await invoke("attach_workspace");
+    await visibility();
   } catch {
     connection.value = "error";
     error.value = "工作区未能打开，请重试。";
@@ -156,6 +157,7 @@ onMounted(async () => {
     cleanup.push(
       await listen<string>("workspace-state", (event) => {
         connection.value = event.payload === "ready" ? "ready" : "loading";
+        if (connection.value === "ready") error.value = "";
         if (connection.value === "loading") armTimeout();
         else clearTimeout(timer);
       }),
