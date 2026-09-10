@@ -123,6 +123,7 @@ onBeforeUnmount(() => {
 <template>
   <button
     class="notification-trigger"
+    data-desktop-action="notifications"
     type="button"
     :title="hasUnread ? `通知中心，${snapshot?.unreadCount} 条未读` : '通知中心'"
     aria-haspopup="dialog"

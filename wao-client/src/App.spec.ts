@@ -38,6 +38,22 @@ describe("desktop workspace preservation", () => {
     mocks.handlers.clear();
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   });
+  it("标题栏复用六个业务动作并同步真实未读，工作区未就绪时禁用", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.findAll('.quick-actions button')).toHaveLength(6);
+    expect(wrapper.get('[data-action="chat"]').attributes('disabled')).toBeDefined();
+    mocks.handlers.get('toolbar-state')!({ payload: { ready: true, chat: '3', notifications: '99+' } as unknown as string });
+    await flushPromises();
+    expect(wrapper.get('[data-action="chat"] small').text()).toBe('3');
+    expect(wrapper.get('[data-action="notifications"] small').text()).toBe('99+');
+    for (const name of ['new-task', 'new-note', 'theme', 'shortcuts', 'chat', 'notifications']) {
+      await wrapper.get(`[data-action="${name}"]`).trigger('click');
+      expect(mocks.invoke).toHaveBeenCalledWith('workspace_action', { action: name });
+    }
+    expect(mocks.invoke).not.toHaveBeenCalledWith('workspace_action', { action: 'reload' });
+    wrapper.unmount();
+  });
   it("opens the pet without reloading or hiding the task workspace", async () => {
     const wrapper = mount(App);
     await flushPromises();

@@ -58,6 +58,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
       class="chat-entry"
       :class="{ active: ui.chatOpen }"
       type="button"
+      data-desktop-action="chat"
       data-chat-trigger
       :aria-expanded="ui.chatOpen"
       aria-controls="wao-floating-chat"

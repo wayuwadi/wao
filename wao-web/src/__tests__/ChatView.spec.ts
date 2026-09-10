@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useUiStore } from '@/stores/ui'
+import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import type { Editor } from '@tiptap/core'
 import ChatView from '@/views/ChatView.vue'
 import {
   fetchSharedChatMessages,
@@ -36,12 +38,13 @@ const message: SharedChatMessage = {
 
 let wrappers: VueWrapper[] = []
 
-async function mountView(props: Record<string, unknown> = {}) {
+async function mountView(props: Record<string, unknown> = {}, realEditor = false) {
   const wrapper = mount(ChatView, {
     props,
+    attachTo: document.body,
     global: {
       stubs: {
-        MarkdownEditor: {
+        MarkdownEditor: realEditor ? false : {
           props: ['modelValue'],
           emits: ['update:modelValue'],
           template:
@@ -197,6 +200,36 @@ describe('ChatView', () => {
 
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('还没发完')
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('还没发完')
+  })
+
+  it('真实富文本编辑器 Enter 成功后立即清空且继续输入不带回旧消息', async () => {
+    const wrapper = await mountView({}, true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const rich = wrapper.getComponent(MarkdownEditor)
+    const editor = (rich.vm as unknown as { editor: Editor }).editor
+    editor.commands.setContent('本次消息', { contentType: 'markdown' })
+    editor.view.focus()
+    await flushPromises()
+    await rich.get('[contenteditable]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(sendSharedChatMessage).toHaveBeenCalledWith(expect.objectContaining({ content: '本次消息' }))
+    expect(editor.getMarkdown()).toBe('')
+    expect(editor.isFocused).toBe(true)
+    editor.commands.insertContent('下一条')
+    await flushPromises()
+    expect(editor.getMarkdown()).toBe('下一条')
+  })
+
+  it('请求完成前继续编辑时保留新草稿', async () => {
+    let complete!: (value: SharedChatMessage) => void
+    vi.mocked(sendSharedChatMessage).mockReturnValue(new Promise((resolve) => { complete = resolve }))
+    const wrapper = await mountView()
+    await wrapper.get('textarea').setValue('正在发送')
+    await wrapper.get('form').trigger('submit')
+    await wrapper.get('textarea').setValue('下一条新草稿')
+    complete(message)
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('下一条新草稿')
   })
 
   it('发送文字并在请求完成后清除草稿', async () => {

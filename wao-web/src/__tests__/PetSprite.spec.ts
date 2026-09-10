@@ -9,6 +9,14 @@ describe('宠物动画生命周期', () => {
     vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
   })
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+  it('待机放慢为原来两倍时长，交互动画继续正常播放', async () => {
+    const wrapper = mount(PetSprite)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(wrapper.attributes('data-frame')).toBe('0')
+    await vi.advanceTimersByTimeAsync(270)
+    expect(wrapper.attributes('data-frame')).toBe('1')
+    wrapper.unmount()
+  })
   it('在同一动作内前进；暂停、恢复和卸载不会遗留动画计时器', async () => {
     const wrapper = mount(PetSprite, { props: { state: 'running-right' } })
     await vi.advanceTimersByTimeAsync(130)

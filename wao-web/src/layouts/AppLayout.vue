@@ -28,8 +28,14 @@ import { useTheme } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useShortcuts } from '@/composables/shortcuts'
 import { useFunctionHealth } from '@/composables/functionHealth'
+import { hasDesktopToolbar, mountDesktopToolbar } from '@/utils/desktopToolbar'
 import type { ModuleId } from '@/types'
 
+const desktopToolbar = hasDesktopToolbar()
+const toolbarRef = ref<HTMLElement | null>(null)
+let stopDesktopToolbar: (() => void) | undefined
+onMounted(() => { if (toolbarRef.value) stopDesktopToolbar = mountDesktopToolbar(toolbarRef.value) })
+onBeforeUnmount(() => stopDesktopToolbar?.())
 const route = useRoute()
 const router = useRouter()
 const nav = useNavStore()
@@ -291,22 +297,24 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <button class="assistant-entry" title="问问 AI（Ctrl/⌘ + J）" @click="ui.openAssistant()">
           <i class="ri-robot-2-line"></i>问问 AI
         </button>
-        <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
-        <button class="plus" @click="newTask">
-          <i class="ri-checkbox-circle-line"></i>新建任务
-        </button>
-        <button class="plus ghost" @click="newNote">
-          <i class="ri-sticky-note-line"></i>新建小记
-        </button>
+        <div ref="toolbarRef" class="quick-actions" :class="{ relocated: desktopToolbar }">
+          <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
+          <button class="plus" data-desktop-action="new-task" @click="newTask">
+            <i class="ri-checkbox-circle-line"></i>新建任务
+          </button>
+          <button class="plus ghost" data-desktop-action="new-note" @click="newNote">
+            <i class="ri-sticky-note-line"></i>新建小记
+          </button>
 
-        <button class="bell" :title="themeTitle" @click="toggleTheme">
-          <i :class="themeIcon"></i>
-        </button>
-        <button class="bell" title="快捷键（?）" @click="ui.toggleHelp()">
-          <i class="ri-keyboard-line"></i>
-        </button>
-        <FloatingChat />
-        <NotificationCenter />
+          <button class="bell" data-desktop-action="theme" :title="themeTitle" @click="toggleTheme">
+            <i :class="themeIcon"></i>
+          </button>
+          <button class="bell" data-desktop-action="shortcuts" title="快捷键（?）" @click="ui.toggleHelp()">
+            <i class="ri-keyboard-line"></i>
+          </button>
+          <FloatingChat />
+          <NotificationCenter />
+        </div>
       </header>
 
       <TabBar />
@@ -356,6 +364,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </template>
 
 <style scoped>
+.quick-actions { display: contents; }
+.quick-actions.relocated { display: none; }
 .shell {
   display: flex;
   height: 100vh;

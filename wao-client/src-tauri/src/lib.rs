@@ -279,12 +279,27 @@ fn pet_action_name(url: &tauri::Url, origin: &tauri::Url) -> Option<String> {
     }
     if matches!(
         action,
-        "compact" | "bubble" | "chat" | "hide" | "workspace" | "drag" | "open-chat"
+        "compact" | "bubble" | "chat" | "hide" | "workspace" | "toggle-workspace" | "drag" | "open-chat"
     ) {
         Some(action.to_string())
     } else {
         None
     }
+}
+
+// Values crossing from the remote page are bounded display data only.
+fn toolbar_state(url: &tauri::Url) -> serde_json::Value {
+    let mut state = serde_json::json!({"ready": false, "chat": "0", "notifications": "0"});
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "ready" => state["ready"] = serde_json::json!(value == "1"),
+            "chat" | "notifications" if value == "99+" || value.parse::<u8>().is_ok_and(|n| n <= 99) => {
+                state[key.as_ref()] = serde_json::json!(value);
+            },
+            _ => {},
+        }
+    }
+    state
 }
 
 fn resize_pet(window: &tauri::WebviewWindow, width: f64, height: f64) {
@@ -316,7 +331,7 @@ fn show_desktop_pet(app: &tauri::AppHandle) -> tauri::Result<()> {
     }
     let origin = workspace_url();
     let url = origin
-        .join("/desktop-pet?native=2")
+        .join("/desktop-pet?native=3")
         .expect("fixed pet route");
     let navigation_app = app.clone();
     let window = tauri::WebviewWindowBuilder::new(app, "pet", WebviewUrl::External(url))
@@ -348,6 +363,19 @@ fn show_desktop_pet(app: &tauri::AppHandle) -> tauri::Result<()> {
                                 let _ = pet.hide();
                             }
                             "workspace" => show(&navigation_app),
+                            "toggle-workspace" => {
+                                if let Some(main) = navigation_app.get_window("main") {
+                                    if main.is_visible().unwrap_or(false) && !main.is_minimized().unwrap_or(false) {
+                                        let _ = main.hide();
+                                    } else {
+                                        show(&navigation_app);
+                                        let _ = navigation_app.emit_to("main", "shell-action", "workspace");
+                                        if let Some(workspace) = navigation_app.get_webview("workspace") {
+                                            let _ = workspace.show();
+                                        }
+                                    }
+                                }
+                            },
                             "open-chat" => {
                                 show(&navigation_app);
                                 let _ = navigation_app.emit_to("main", "shell-action", "workspace");
@@ -425,8 +453,16 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
     let popup_app = app.clone();
     let builder = WebviewBuilder::new("workspace", WebviewUrl::External(origin))
         .disable_drag_drop_handler()
-        .initialization_script("Object.defineProperty(window, '__WAO_DESKTOP__', { value: true });")
+        .initialization_script("Object.defineProperty(window, '__WAO_DESKTOP__', { value: true }); Object.defineProperty(window, '__WAO_DESKTOP_TOOLBAR__', { value: true });")
         .on_navigation(move |url| {
+            if url.origin() == navigation_origin.origin() && url.path() == "/__desktop_toolbar__" {
+                if navigation_app.get_webview("workspace").and_then(|view| view.url().ok())
+                    .is_some_and(|current| current.origin() == navigation_origin.origin()) {
+                    let state = toolbar_state(url);
+                    let _ = navigation_app.emit_to("main", "toolbar-state", state);
+                }
+                return false;
+            }
             if internal_url(url, &navigation_origin) {
                 return true;
             }
@@ -446,6 +482,9 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
                 PageLoadEvent::Finished => "ready",
             };
             let _ = view.app_handle().emit_to("main", "workspace-state", phase);
+            if matches!(event.event(), PageLoadEvent::Started) {
+                let _ = view.app_handle().emit_to("main", "toolbar-state", serde_json::json!({"ready": false, "chat": "0", "notifications": "0"}));
+            }
             if matches!(event.event(), PageLoadEvent::Finished)
                 && !PET_STARTED.swap(true, Ordering::Relaxed)
             {
@@ -480,6 +519,13 @@ async fn workspace_action(
     let workspace = app.get_webview("workspace").ok_or("工作区尚未连接")?;
     match action.as_str() {
         "pet" => return show_desktop_pet(&app).map_err(|e| e.to_string()),
+        "new-task" | "new-note" | "theme" | "shortcuts" | "chat" | "notifications" => {
+            if workspace.url().map_err(|e| e.to_string())?.origin() != workspace_url().origin() {
+                return Err("当前页面不支持工作区快捷操作".into());
+            }
+            // Only the matched fixed selector reaches eval; no caller-supplied code is accepted.
+            workspace.eval(format!("document.querySelector('[data-desktop-action=\"{}\"]')?.click()", action))
+        },
         "back" => workspace.eval("history.back()"),
         "forward" => workspace.eval("history.forward()"),
         "reload" => workspace.eval("window.dispatchEvent(new Event('wao-workspace-reload'))"),
@@ -706,6 +752,17 @@ mod tests {
             assert!(!internal_url(&tauri::Url::parse(url).unwrap(), &origin));
         }
     }
+    #[test]
+    fn toolbar_only_forwards_bounded_display_state() {
+        let url = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?ready=1&chat=3&notifications=99%2B&script=ignored").unwrap();
+        assert_eq!(toolbar_state(&url), serde_json::json!({"ready": true, "chat": "3", "notifications": "99+"}));
+        let url = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?ready=wrong&chat=-1&notifications=1000").unwrap();
+        assert_eq!(toolbar_state(&url), serde_json::json!({"ready": false, "chat": "0", "notifications": "0"}));
+        let origin = tauri::Url::parse(PRODUCTION).unwrap();
+        assert_eq!(pet_action_name(&origin.join("/__desktop_pet__/toggle-workspace").unwrap(), &origin).as_deref(), Some("toggle-workspace"));
+        assert!(pet_action_name(&tauri::Url::parse("https://evil.test/__desktop_pet__/toggle-workspace").unwrap(), &origin).is_none());
+    }
+
     #[test]
     fn pet_only_accepts_fixed_same_origin_actions() {
         let origin = tauri::Url::parse(PRODUCTION).unwrap();

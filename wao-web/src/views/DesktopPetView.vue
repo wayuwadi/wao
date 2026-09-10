@@ -12,7 +12,7 @@ import { createVisibilityPoller } from '@/composables/visibilityPolling'
 const ui = useUiStore()
 const session = useSessionStore()
 const nativeVersion = new URLSearchParams(location.search).get('native')
-const native = nativeVersion === '1' || nativeVersion === '2'
+const native = ['1', '2', '3'].includes(nativeVersion ?? '')
 const noticeVisible = ref(false)
 const taskNotice = ref<{ id: string; label: string } | null>(null)
 let taskNoticeTimer: ReturnType<typeof setTimeout> | undefined
@@ -21,7 +21,7 @@ let disposed = false
 let pointerStart: { x: number; y: number } | null = null
 let dragged = false
 function nativeAction(
-  action: 'compact' | 'bubble' | 'open-chat' | 'workspace' | 'drag' | `task/${string}`,
+  action: 'compact' | 'bubble' | 'open-chat' | 'workspace' | 'toggle-workspace' | 'drag' | `task/${string}`,
 ) {
   if (nativeVersion === '1' && (action === 'open-chat' || action.startsWith('task/'))) {
     try {
@@ -55,9 +55,9 @@ function pointerMove(event: PointerEvent) {
     nativeAction('drag')
   }
 }
-function openChat() {
+function toggleWorkspace() {
   pointerStart = null
-  if (!dragged) nativeAction(session.authed ? 'open-chat' : 'workspace')
+  if (!dragged) nativeAction(nativeVersion === '3' ? 'toggle-workspace' : 'workspace')
 }
 const poller = createVisibilityPoller(
   async () => {
@@ -123,12 +123,12 @@ onBeforeUnmount(() => {
     </button>
     <button
       class="pet-avatar"
-      aria-label="宠物：点击打开聊天，拖动调整位置"
-      title="点击打开聊天，拖动调整位置"
+      aria-label="宠物：点击打开或收起 WAO，拖动调整位置"
+      title="点击打开或收起 WAO，拖动调整位置"
       @pointerdown="pointerDown"
       @pointermove="pointerMove"
       @pointercancel="pointerStart = null"
-      @click="openChat"
+      @click="toggleWorkspace"
     >
       <PetSprite :state="noticeVisible ? 'waving' : 'idle'" />
     </button>

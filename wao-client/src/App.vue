@@ -47,6 +47,19 @@ const confirmTitle = computed(() =>
       ? "退出 WAO？"
       : "安装并重新打开 WAO？",
 );
+const toolbar = ref({ ready: false, chat: '0', notifications: '0' });
+const toolbarActions = [
+  { id: 'new-task', label: '新建任务', icon: 'M9 12l2 2 4-4', circle: true },
+  { id: 'new-note', label: '新建小记', icon: 'M5 4h14v12l-4 4H5zM14 20v-5h5' },
+  { id: 'theme', label: '切换主题', icon: 'M12 3v18', circle: true },
+  { id: 'shortcuts', label: '快捷键', icon: 'M3 6h18v12H3zM6 9h1m3 0h1m3 0h1m3 0h1M6 12h1m3 0h1m3 0h1m3 0h1M8 15h8' },
+  { id: 'chat', label: '聊天', icon: 'M20 11a8 8 0 0 1-8 8H5l-3 3V11a9 9 0 0 1 18 0z' },
+  { id: 'notifications', label: '通知中心', icon: 'M5 16h14l-2-3V9a5 5 0 0 0-10 0v4zM10 20h4' },
+];
+async function quickAction(name: string) {
+  if (panel.value) await togglePanel(false);
+  await action(name);
+}
 const cleanup: UnlistenFn[] = [];
 let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -154,6 +167,7 @@ onMounted(async () => {
   if (native) {
     version.value = await getVersion();
     cleanup.push(
+      await listen<{ ready: boolean; chat: string; notifications: string }>("toolbar-state", (event) => { toolbar.value = event.payload; }),
       await listen<string>("workspace-state", (event) => {
         connection.value = event.payload === "ready" ? "ready" : "loading";
         if (connection.value === "ready") error.value = "";
@@ -225,6 +239,16 @@ onUnmounted(() => {
         </button>
       </nav>
       <div class="drag-space" data-tauri-drag-region></div>
+      <nav class="quick-actions" aria-label="工作区快捷操作">
+        <button v-for="item in toolbarActions" :key="item.id" :data-action="item.id"
+          :disabled="!toolbar.ready" :title="item.label" :aria-label="item.label"
+          @click="quickAction(item.id)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle v-if="item.circle" cx="12" cy="12" r="9"/><path :d="item.icon"/></svg>
+          <span v-if="item.id === 'new-task' || item.id === 'new-note'" class="quick-label">{{ item.label }}</span>
+          <small v-if="item.id === 'chat' && toolbar.chat !== '0'">{{ toolbar.chat }}</small>
+          <small v-if="item.id === 'notifications' && toolbar.notifications !== '0'">{{ toolbar.notifications }}</small>
+        </button>
+      </nav>
       <span
         class="connection"
         :class="{ offline: !online || connection === 'error' }"

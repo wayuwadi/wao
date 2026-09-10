@@ -2,7 +2,7 @@
 export const PET_ATLAS = { columns: 8, rows: 11, cellWidth: 192, cellHeight: 208 } as const
 
 export const PET_SEQUENCES = {
-  idle: { row: 0, durations: [280, 110, 110, 140, 140, 320], loop: true },
+  idle: { row: 0, durations: [560, 220, 220, 280, 280, 640], loop: true },
   'running-right': { row: 1, durations: [120, 120, 120, 120, 120, 120, 120, 220], loop: true },
   'running-left': { row: 2, durations: [120, 120, 120, 120, 120, 120, 120, 220], loop: true },
   waving: { row: 3, durations: [140, 140, 140, 280], loop: false },

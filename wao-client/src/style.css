@@ -524,3 +524,10 @@ progress {
 }
 
 .pet-button { border: 1px solid #dedeea; border-radius: 8px; padding: 7px 10px; background: #fff; color: #554e72; cursor: pointer; white-space: nowrap; }
+
+.quick-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.quick-actions button { display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border-radius: 7px; background: #f6f7fd; position: relative; font-size: 12px; }
+.quick-actions button:first-child { background: #4958dd; color: white; }
+.quick-actions button:hover { box-shadow: inset 0 0 0 1px #a7b0ed; }
+.quick-actions small { background: #e5484d; color: white; border-radius: 8px; padding: 0 3px; }
+@media (max-width: 1100px) { .quick-label, .toolbar .connection { display: none; } .toolbar { gap: 5px; padding-left: 8px; } }
