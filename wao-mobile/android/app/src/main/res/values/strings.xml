@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">WAO</string>
+    <string name="title_activity_main">WAO</string>
+    <string name="package_name">cn.wayuwa.wao</string>
+    <string name="custom_url_scheme">cn.wayuwa.wao</string>
+</resources>
