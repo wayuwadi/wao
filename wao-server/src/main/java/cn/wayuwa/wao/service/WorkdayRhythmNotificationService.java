@@ -117,40 +117,11 @@ public class WorkdayRhythmNotificationService {
         if (!notificationSettings.allowsReminders()) {
             throw new BadRequestException(notificationSettings.blockedReason());
         }
-        if ("WEBHOOK".equals(notification.path("channel").asText(""))) {
-            String webhookId = notification.path("webhookId").asText("").trim();
-            if (!StringUtils.hasText(webhookId)) {
-                throw new BadRequestException("请先在今日节奏里选择通知 Webhook");
-            }
-            FeishuWebhookConfigService.NotificationTarget target = webhooks.enabledTarget(webhookId);
-            webhookNotifier.send(target.url(), card);
-            return new EnergyNotificationResultDto(true,
-                    StringUtils.hasText(target.name()) ? target.name() : "已配置 Webhook");
-        }
-
-        if (!"CHAT".equals(notification.path("channel").asText("CHAT"))) {
-            throw new BadRequestException("通知发送方式无效，请重新选择目标群");
-        }
-        String chatId = notification.path("chatId").asText("").trim();
-        if (!StringUtils.hasText(chatId)) {
-            throw new BadRequestException("请先在今日节奏里选择通知群");
-        }
-        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
-        String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
-        if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) {
-            throw new BadRequestException("飞书应用尚未配置，请先在自动化的飞书群聊配置中填写应用凭据");
-        }
-
-        feishu.sendCard(feishu.tenantAccessToken(appId, appSecret), chatId, card);
-        return new EnergyNotificationResultDto(true,
-                StringUtils.hasText(targetName(notification)) ? targetName(notification) : "已配置群聊");
+        if (!webhookNotifier.notifyCard(card)) throw new BadRequestException("WAO 通知保存失败，请重试");
+        return new EnergyNotificationResultDto(true, "WAO 通知中心");
     }
 
-    private String targetName(JsonNode notification) {
-        return "WEBHOOK".equals(notification.path("channel").asText(""))
-                ? notification.path("webhookName").asText("").trim()
-                : notification.path("chatName").asText("").trim();
-    }
+    private String targetName(JsonNode notification) { return "WAO 通知中心"; }
 
     private FeishuWebhookNotifier.Card card(EnergyAction action, String actionId, LocalDate date, JsonNode day,
             String memberName) {

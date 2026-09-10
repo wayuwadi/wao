@@ -31,7 +31,7 @@ interface Msg {
   streaming?: boolean
 }
 
-const props = defineProps<{ modelValue: boolean; embedded?: boolean }>()
+const props = defineProps<{ modelValue: boolean; embedded?: boolean; title?: string }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void }>()
 
 const router = useRouter()
@@ -487,7 +487,7 @@ onBeforeUnmount(stopStatusRefresh)
           <aside class="history-sidebar" :class="{ visible: sidebarOpen }">
             <div class="history-brand">
               <span class="brand-icon"><i class="ri-robot-2-line"></i></span>
-              <div><b>{{ embedded ? 'ChatGPT对话' : 'WAO AI' }}</b><small>我的问答知识库</small></div>
+              <div><b>{{ title || (embedded ? 'ChatGPT对话' : 'WAO AI') }}</b><small>我的问答知识库</small></div>
             </div>
             <button class="new-chat-btn" :disabled="sending" @click="newChat">
               <i class="ri-add-line"></i><span>新对话</span>

@@ -35,11 +35,13 @@ class FamilyImportantDateServiceTest {
     private final SettingService settings = mock(SettingService.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
     private final NotificationSettingsService notificationSettings = mock(NotificationSettingsService.class);
+    private final InternalNotificationService internal = mock(InternalNotificationService.class);
     private final FamilyImportantDateService service = new FamilyImportantDateService(
             dates, deliveries, accounts, identities, settings, feishu, notificationSettings);
 
     @BeforeEach
     void availableChannel() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "internalNotifications", internal);
         when(notificationSettings.allowsReminders()).thenReturn(true);
         AccountEntity account = new AccountEntity();
         account.setId("a1");
@@ -136,7 +138,7 @@ class FamilyImportantDateServiceTest {
     }
 
     @Test
-    void sendsGroupReminderAndMentionsOnlyTheCreatorMappedThroughUnionId() {
+    void savesFormerGroupReminderOnlyForItsOwner() {
         FamilyImportantDateEntity reminder = date("fid-group", LocalDate.of(2025, 5, 10));
         reminder.setReminderEnabled(true);
         reminder.setReminderDaysBefore(1);
@@ -154,27 +156,21 @@ class FamilyImportantDateServiceTest {
 
         ArgumentCaptor<cn.wayuwa.wao.feishu.FeishuWebhookNotifier.Card> card =
                 ArgumentCaptor.forClass(cn.wayuwa.wao.feishu.FeishuWebhookNotifier.Card.class);
-        verify(feishu).sendCard(eq("token"), eq("oc_team"), card.capture());
-        assertThat(card.getValue().body()).contains("<at id=ou_group_family></at>", "1 天后");
+        verify(internal).publishToMember(eq("wg"), card.capture());
+        org.mockito.Mockito.verifyNoInteractions(feishu);
+        assertThat(card.getValue().body()).contains("1 天后");
     }
 
     @Test
-    void savesOnlyARealSelectedChatWhoseCreatorCanBeMentioned() {
-        when(feishu.tenantAccessToken("app-id", "secret")).thenReturn("token");
-        when(feishu.listChats("token")).thenReturn(List.of(
-                new FeishuOpenApiClient.FeishuChat("oc_family", "家人群")));
-        when(feishu.chatMemberOpenIdByUnionId("token", "oc_family", "on_family"))
-                .thenReturn("ou_group_family");
-
+    void savesInternalReminderWithoutFeishuGroupOrCredentials() {
         service.create("wg", new SaveFamilyImportantDateRequest(
                 "续费提醒", LocalDate.of(2026, 9, 1), null, true, 1, LocalTime.of(9, 0),
-                "SOLAR", null, null, false, "GROUP", "oc_family", "家人群"));
-
-        verify(dates).insert(any(FamilyImportantDateEntity.class));
-        assertThatThrownBy(() -> service.create("wg", new SaveFamilyImportantDateRequest(
-                "伪造群名", LocalDate.of(2026, 9, 1), null, true, 1, LocalTime.of(9, 0),
-                "SOLAR", null, null, false, "GROUP", "oc_family", "另一个群")))
-                .isInstanceOf(BadRequestException.class).hasMessageContaining("重新选择");
+                "SOLAR", null, null, false, "GROUP", null, null));
+        ArgumentCaptor<FamilyImportantDateEntity> saved = ArgumentCaptor.forClass(FamilyImportantDateEntity.class);
+        verify(dates).insert(saved.capture());
+        assertThat(saved.getValue().getChatId()).isNull();
+        assertThat(saved.getValue().getChatName()).isEqualTo("WAO 通知中心");
+        org.mockito.Mockito.verifyNoInteractions(feishu);
     }
 
     private static FamilyImportantDateEntity date(String id, LocalDate eventDate) {

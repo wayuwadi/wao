@@ -33,18 +33,21 @@ public class NotificationCenterService {
     }
 
     /** 返回当前成员的最近事件、团队登录频率与未读数量。 */
-    public NotificationCenterDto get(String memberId) {
+    public NotificationCenterDto get(String memberId) { return get(memberId, true); }
+
+    /** 旧前端未声明支持 INTERNAL 时只返回原事件类型，避免滚动发布期间旧页面崩溃。 */
+    public NotificationCenterDto get(String memberId, boolean includeInternal) {
         OffsetDateTime now = OffsetDateTime.now(ZONE);
         OffsetDateTime readAt = readAt(memberId);
         LocalDateTime unreadSince = (readAt == null ? now.minusDays(7) : readAt)
                 .atZoneSameInstant(ZONE).toLocalDateTime();
         var policy = notificationSettings.personalPolicy(memberId);
         List<NotificationEventRow> events = policy.enabled()
-                ? center.recentEvents(EVENT_LIMIT * 4).stream().filter(row -> visible(row, policy))
+                ? center.recentEvents(EVENT_LIMIT * 4, memberId).stream().filter(row -> visible(row, policy) && (includeInternal || !"INTERNAL".equals(row.getEventType())))
                         .limit(EVENT_LIMIT).toList()
                 : List.of();
         long unread = policy.enabled()
-                ? center.eventsSince(unreadSince).stream().filter(row -> visible(row, policy)).count() : 0;
+                ? center.eventsSince(unreadSince, memberId).stream().filter(row -> visible(row, policy) && (includeInternal || !"INTERNAL".equals(row.getEventType()))).count() : 0;
         return new NotificationCenterDto(
                 events.stream().map(this::eventDto).toList(),
                 center.loginUsage(now.minusDays(7).toLocalDateTime(), now.minusDays(30).toLocalDateTime())
@@ -82,6 +85,7 @@ public class NotificationCenterService {
             case "AI_RUN" -> "SUCCESS".equals(row.getSeverity())
                     ? policy.aiRunSuccess() : policy.aiRunFailure();
             case "LOGIN" -> policy.loginActivity();
+            case "INTERNAL" -> true;
             default -> false;
         };
     }

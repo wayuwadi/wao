@@ -522,3 +522,5 @@ progress {
   font-size: 11px;
   color: #526963;
 }
+
+.pet-button { border: 1px solid #dedeea; border-radius: 8px; padding: 7px 10px; background: #fff; color: #554e72; cursor: pointer; white-space: nowrap; }

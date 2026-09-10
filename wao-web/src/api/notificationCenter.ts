@@ -1,6 +1,6 @@
 import { http, type ApiResponse } from './http'
 
-export type NotificationEventType = 'TASK_CREATED' | 'TASK_COMPLETED' | 'AI_RUN' | 'LOGIN'
+export type NotificationEventType = 'TASK_CREATED' | 'TASK_COMPLETED' | 'AI_RUN' | 'LOGIN' | 'INTERNAL'
 
 export interface NotificationEvent {
   id: string
@@ -33,7 +33,7 @@ export async function fetchNotificationCenter() {
   const response = await http.get<ApiResponse<NotificationCenterSnapshot>>(
     '/api/notification-center',
     {
-      params: { _: Date.now() },
+      params: { _: Date.now(), includeInternal: true },
     },
   )
   return response.data.data

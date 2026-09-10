@@ -78,6 +78,7 @@ const router = createRouter({
       component: () => import('@/views/TianrenShareView.vue'),
       meta: { public: true },
     },
+    { path: '/desktop-pet', name: 'desktop-pet', component: () => import('@/views/DesktopPetView.vue'), meta: { public: true } },
     { path: '/hub', component: () => import('@/layouts/HubLayout.vue'), meta: { public: true }, children: [
       { path: '', name: 'wao-hub', component: () => import('@/views/HubView.vue') },
     ] },

@@ -1,11 +1,16 @@
 openapi: 3.0.3
 info:
   title: WAO 通知中心 API
-  version: 0.1.0
+  version: 0.2.0
 paths:
   /api/notification-center:
     get:
       summary: 读取最近真实系统事件、当前成员未读数和团队登录频率
+      parameters:
+        - name: includeInternal
+          in: query
+          schema: { type: boolean, default: false }
+          description: 新前端声明支持 INTERNAL 事件；个人内部通知按当前成员过滤
       responses:
         '200':
           description: 最多 30 条倒序事件；首次未读范围为最近 7 天
@@ -41,7 +46,7 @@ components:
       required: [id, type, title, detail, occurredAt]
       properties:
         id: { type: string }
-        type: { type: string, enum: [TASK_CREATED, TASK_COMPLETED, AI_RUN, LOGIN] }
+        type: { type: string, enum: [TASK_CREATED, TASK_COMPLETED, AI_RUN, LOGIN, INTERNAL] }
         title: { type: string }
         detail: { type: string }
         actorName: { type: string, nullable: true }

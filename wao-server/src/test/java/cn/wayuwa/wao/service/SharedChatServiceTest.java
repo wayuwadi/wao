@@ -33,9 +33,8 @@ class SharedChatServiceTest {
     private final SharedChatReactionMapper reactions = mock(SharedChatReactionMapper.class);
     private final MemberMapper members = mock(MemberMapper.class);
     private final ImageBlobMapper images = mock(ImageBlobMapper.class);
-    private final SharedChatFeishuBridge bridge = mock(SharedChatFeishuBridge.class);
     private final SharedChatService service =
-            new SharedChatService(messages, reads, reactions, members, images, bridge);
+            new SharedChatService(messages, reads, reactions, members, images);
 
     @BeforeEach
     void memberExists() {
@@ -51,7 +50,7 @@ class SharedChatServiceTest {
     }
 
     @Test
-    void persistsBeforeSendingTextAndScreenshotToConfiguredWebhook() {
+    void persistsTextAndScreenshotLocally() {
         ImageBlobEntity image = new ImageBlobEntity();
         image.setId("img1");
         image.setName("桌面截图.png");
@@ -62,22 +61,20 @@ class SharedChatServiceTest {
 
         assertThat(result.content()).isEqualTo("看一下这张图");
         assertThat(result.imageUrl()).isEqualTo("/api/images/img1/raw");
-        assertThat(result.feishuStatus()).isEqualTo("PENDING");
+        assertThat(result.feishuStatus()).isEqualTo("LOCAL");
         ArgumentCaptor<SharedChatMessageEntity> saved = ArgumentCaptor.forClass(SharedChatMessageEntity.class);
         verify(messages).insert(saved.capture());
         assertThat(saved.getValue().getMemberId()).isEqualTo("m1");
         assertThat(saved.getValue().getSource()).isEqualTo("WAO");
-        verify(bridge).deliver(saved.getValue(), members.selectById("m1"));
     }
 
     @Test
-    void keepsMessageWhenFeishuBridgeIsUnavailable() {
+    void savesWithoutExternalConfiguration() {
         var result = service.create("m1", new CreateSharedChatMessageRequest(
                 "client_token_456", "WAO 内照常保存", null));
 
-        assertThat(result.feishuStatus()).isEqualTo("PENDING");
+        assertThat(result.feishuStatus()).isEqualTo("LOCAL");
         verify(messages).insert(any(SharedChatMessageEntity.class));
-        verify(bridge).deliver(any(SharedChatMessageEntity.class), any(MemberEntity.class));
     }
 
     @Test
@@ -96,7 +93,27 @@ class SharedChatServiceTest {
         assertThat(result.id()).isEqualTo("msg1");
         assertThat(result.content()).isEqualTo("已经发过");
         verify(messages, never()).insert(any(SharedChatMessageEntity.class));
-        verify(bridge, never()).deliver(any(), any());
+    }
+
+    @Test
+    void reactionsPersistLocallyWithoutAnyFeishuIdentity() {
+        SharedChatMessageEntity message = new SharedChatMessageEntity();
+        message.setId("msg1"); message.setSource("WAO"); message.setMemberId("m1");
+        when(messages.selectById("msg1")).thenReturn(message);
+        service.toggleReaction("m1", "msg1", "HEART");
+        var captured = ArgumentCaptor.forClass(cn.wayuwa.wao.domain.SharedChatReactionEntity.class);
+        verify(reactions).insert(captured.capture());
+        assertThat(captured.getValue().getReactorKey()).isEqualTo("member:m1");
+        assertThat(captured.getValue().getEmojiType()).isEqualTo("HEART");
+        assertThat(captured.getValue().getFeishuReactionId()).isNull();
+    }
+
+    @Test
+    void rejectsReactionsToMissingMessagesAndUnsupportedEmoji() {
+        assertThatThrownBy(() -> service.toggleReaction("m1", "missing", "HEART"))
+                .isInstanceOf(cn.wayuwa.wao.common.NotFoundException.class);
+        assertThatThrownBy(() -> service.toggleReaction("m1", "missing", "INVALID"))
+                .isInstanceOf(BadRequestException.class);
     }
 
     @Test

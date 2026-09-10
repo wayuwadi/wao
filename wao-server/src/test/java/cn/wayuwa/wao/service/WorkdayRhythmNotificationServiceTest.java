@@ -44,6 +44,7 @@ class WorkdayRhythmNotificationServiceTest {
     @BeforeEach
     void allowGroupReminders() {
         when(notificationSettings.allowsReminders()).thenReturn(true);
+        when(webhookNotifier.notifyCard(any(FeishuWebhookNotifier.Card.class))).thenReturn(true);
     }
 
     @Test
@@ -62,10 +63,9 @@ class WorkdayRhythmNotificationServiceTest {
         var result = service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY));
 
         assertThat(result.sent()).isTrue();
-        assertThat(result.chatName()).isEqualTo("娃屋日常");
+        assertThat(result.chatName()).isEqualTo("WAO 通知中心");
         ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
-        verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("tenant-token"),
-                org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
+        verify(webhookNotifier).notifyCard(card.capture());
         assertThat(card.getValue().title()).isEqualTo("精力补给 · 喝水 +1");
         assertThat(card.getValue().fields()).contains(java.util.List.of("成员", "娃弟"),
                 java.util.List.of("今日记录", "已记录 3 次"));
@@ -108,8 +108,7 @@ class WorkdayRhythmNotificationServiceTest {
 
         assertThat(result.sent()).isTrue();
         ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
-        verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("tenant-token"),
-                org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
+        verify(webhookNotifier).notifyCard(card.capture());
         assertThat(card.getValue().title()).isEqualTo("精力补给 · 至少冥想一次");
         assertThat(card.getValue().fields()).contains(java.util.List.of("今日记录", "今日已完成"));
     }
@@ -145,8 +144,7 @@ class WorkdayRhythmNotificationServiceTest {
 
         assertThat(result.sent()).isTrue();
         ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
-        verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("tenant-token"),
-                org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
+        verify(webhookNotifier).notifyCard(card.capture());
         assertThat(card.getValue().title()).isEqualTo("精力补给 · 起身走动");
         assertThat(card.getValue().fields()).contains(java.util.List.of("今日记录", "今日已完成"));
     }
@@ -168,9 +166,8 @@ class WorkdayRhythmNotificationServiceTest {
         var result = service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY));
 
         assertThat(result.sent()).isTrue();
-        assertThat(result.chatName()).isEqualTo("精力补给群");
-        verify(webhookNotifier).send(org.mockito.ArgumentMatchers.eq("https://open.feishu.cn/safe-placeholder"),
-                any(FeishuWebhookNotifier.Card.class));
+        assertThat(result.chatName()).isEqualTo("WAO 通知中心");
+        verify(webhookNotifier).notifyCard(any(FeishuWebhookNotifier.Card.class));
         verify(feishu, never()).tenantAccessToken(any(), any());
     }
 
@@ -193,8 +190,7 @@ class WorkdayRhythmNotificationServiceTest {
 
         assertThat(result.sent()).isTrue();
         ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
-        verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("tenant-token"),
-                org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
+        verify(webhookNotifier).notifyCard(card.capture());
         assertThat(card.getValue().title()).isEqualTo("今日重点 · 已承诺");
         assertThat(card.getValue().fields()).contains(java.util.List.of("成员", "娃弟"),
                 java.util.List.of("重点 1", "交付最小 MVP"),
@@ -240,7 +236,7 @@ class WorkdayRhythmNotificationServiceTest {
     }
 
     @Test
-    void energyAndFocusUseIndependentTargets() {
+    void energyAndFocusBothUseWaoNotifications() {
         when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
                 {"energyNotification":{"enabled":true,"notifyFocus":true,"channel":"WEBHOOK",
                   "webhookId":"fw_notice","webhookName":"通知群",
@@ -256,18 +252,18 @@ class WorkdayRhythmNotificationServiceTest {
         when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
         when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
 
-        assertThat(service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY)).chatName()).isEqualTo("通知群");
-        assertThat(service.notifyFocus("wd", DAY).chatName()).isEqualTo("WAO");
-        var energy = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
-        var focus = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
-        verify(webhookNotifier).send(org.mockito.ArgumentMatchers.eq("https://open.feishu.cn/test-placeholder"), energy.capture());
-        verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("token"), org.mockito.ArgumentMatchers.eq("oc_wao"), focus.capture());
-        assertThat(energy.getValue().title()).contains("精力补给");
-        assertThat(focus.getValue().title()).contains("今日重点");
+        assertThat(service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY)).chatName()).isEqualTo("WAO 通知中心");
+        assertThat(service.notifyFocus("wd", DAY).chatName()).isEqualTo("WAO 通知中心");
+        var cards = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        verify(webhookNotifier, org.mockito.Mockito.times(2)).notifyCard(cards.capture());
+        assertThat(cards.getAllValues()).extracting(FeishuWebhookNotifier.Card::title)
+                .containsExactly("精力补给 · 喝水 +1", "今日重点 · 已承诺");
+        org.mockito.Mockito.verifyNoInteractions(feishu);
+
     }
 
     @Test
-    void explicitEmptyFocusTargetNeverFallsBackToEnergyChat() {
+    void emptyLegacyGroupTargetDoesNotBlockInternalNotifications() {
         when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
                 {"energyNotification":{"enabled":true,"notifyFocus":true,"channel":"CHAT",
                  "chatId":"oc_energy","focusTarget":{"channel":"CHAT"}}}
@@ -275,7 +271,8 @@ class WorkdayRhythmNotificationServiceTest {
         when(preferences.find("wd", "workday-rhythm-day-2026-08-18")).thenReturn("""
                 {"focus":["任务一","任务二","任务三"]}
                 """);
-        assertThatThrownBy(() -> service.notifyFocus("wd", DAY)).hasMessageContaining("选择通知群");
+        assertThat(service.notifyFocus("wd", DAY).sent()).isTrue();
+        verify(webhookNotifier).notifyCard(any(FeishuWebhookNotifier.Card.class));
         verify(feishu, never()).sendCard(any(), any(), any());
         verify(webhookNotifier, never()).send(any(), any());
     }

@@ -9,6 +9,7 @@ import {
   sendEnergyNotification,
 } from '@/api/workdayRhythm'
 import PetSprite from './PetSprite.vue'
+import PetMessenger from '@/components/chat/PetMessenger.vue'
 import { useFloatingDrag } from '@/composables/floatingDrag'
 import { useIsMobile } from '@/composables/viewport'
 import { toast } from '@/composables/toast'
@@ -637,9 +638,10 @@ onBeforeUnmount(() => {
     aria-label="WAO 网页宠物"
     @pointerdown="startPetDrag"
   >
+    <PetMessenger />
     <Transition name="pet-notice" mode="out-in">
       <div
-        v-if="noticeVisible"
+        v-if="noticeVisible && !ui.chatUnreadCount"
         :key="currentNotice.id"
         class="pet-notice"
         :class="`tone-${currentNotice.tone}`"
@@ -728,6 +730,8 @@ onBeforeUnmount(() => {
         @pointerdown.stop
       >
         <span class="quick-actions-label">快捷操作</span>
+        <button type="button" class="pet-message-link" @click="ui.openChat()"><i class="ri-chat-3-line"></i><span><b>团队聊天 {{ ui.chatUnreadCount || '' }}</b><small>看看大家的消息</small></span></button>
+        <button type="button" class="pet-message-link" @click="ui.openAssistant()"><i class="ri-sparkling-line"></i><span><b>和宠物聊 · AI</b><small>问问题、整理想法</small></span></button>
         <button type="button" class="pet-settings-link pet-quick-silence" @click="hidePet(webPet.settings.petSnoozeMinutes)">
           <i class="ri-moon-clear-line"></i><span><b>宠物静默</b><small>收起 {{ webPet.settings.petSnoozeMinutes }} 分钟，可随时恢复</small></span>
         </button>
@@ -837,7 +841,7 @@ onBeforeUnmount(() => {
   position: fixed;
   right: 78px;
   bottom: 12px;
-  z-index: 70;
+  z-index: 1099;
   width: min(280px, calc(100vw - 24px));
   min-height: 160px;
   touch-action: none;
@@ -1018,7 +1022,7 @@ onBeforeUnmount(() => {
 }
 .pet-rhythm-action,
 .pet-rhythm-state,
-.pet-settings-link {
+:is(.pet-settings-link, .pet-message-link) {
   width: 166px;
   min-height: 40px;
   padding: 6px 9px;
@@ -1040,13 +1044,13 @@ onBeforeUnmount(() => {
 }
 .pet-rhythm-action:hover:not(:disabled),
 .pet-rhythm-state:hover:not(:disabled),
-.pet-settings-link:hover {
+:is(.pet-settings-link, .pet-message-link):hover {
   border-color: var(--wao-primary-line);
   transform: translateX(-2px);
 }
 .pet-rhythm-action > i,
 .pet-rhythm-state > i,
-.pet-settings-link > i {
+:is(.pet-settings-link, .pet-message-link) > i {
   color: var(--wao-primary);
   font-size: 17px;
   text-align: center;
@@ -1057,31 +1061,31 @@ onBeforeUnmount(() => {
 .pet-rhythm-state span,
 .pet-rhythm-state b,
 .pet-rhythm-state small,
-.pet-settings-link span,
-.pet-settings-link b,
-.pet-settings-link small {
+:is(.pet-settings-link, .pet-message-link) span,
+:is(.pet-settings-link, .pet-message-link) b,
+:is(.pet-settings-link, .pet-message-link) small {
   min-width: 0;
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pet-settings-link {
+:is(.pet-settings-link, .pet-message-link) {
   cursor: pointer;
 }
-.pet-settings-link > i:last-child {
+:is(.pet-settings-link, .pet-message-link) > i:last-child {
   color: var(--wao-text-weak);
 }
 .pet-rhythm-action b,
 .pet-rhythm-state b,
-.pet-settings-link b {
+:is(.pet-settings-link, .pet-message-link) b {
   color: var(--wao-text);
   font-size: 11px;
   font-weight: 700;
 }
 .pet-rhythm-action small,
 .pet-rhythm-state small,
-.pet-settings-link small {
+:is(.pet-settings-link, .pet-message-link) small {
   margin-top: 1px;
   color: var(--wao-text-weak);
   font-size: 9px;
@@ -1162,7 +1166,7 @@ onBeforeUnmount(() => {
   line-height: 18px;
   text-align: center;
 }
-.pet-silent-dock { position: fixed; z-index: 70; right: 0; bottom: 92px; width: 42px; height: 48px; padding: 2px 0 2px 4px; border: 1px solid var(--wao-line); border-right: 0; border-radius: 16px 0 0 16px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); cursor: pointer; overflow: hidden; }
+.pet-silent-dock { position: fixed; z-index: 1099; right: 0; bottom: 92px; width: 42px; height: 48px; padding: 2px 0 2px 4px; border: 1px solid var(--wao-line); border-right: 0; border-radius: 16px 0 0 16px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); cursor: pointer; overflow: hidden; }
 .pet-silent-dock img { width: 34px; height: 34px; object-fit: contain; }.pet-silent-dock i { position: absolute; right: 3px; bottom: 3px; padding: 2px; border-radius: 50%; background: var(--wao-bg-card); color: var(--wao-text-weak); font-size: 10px; }
 .spin {
   animation: pet-spin 1s linear infinite;
@@ -1285,7 +1289,7 @@ onBeforeUnmount(() => {
   }
   .pet-rhythm-action,
   .pet-rhythm-state,
-  .pet-settings-link {
+  :is(.pet-settings-link, .pet-message-link) {
     width: 100%;
     min-height: 38px;
     padding: 5px 8px;

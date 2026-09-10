@@ -248,7 +248,10 @@ function onKeydown(e: KeyboardEvent) {
     ui.toggleAssistant()
   } else if (e.key === 'Escape') {
     // 逐层关闭：聊天 → 助手 → 庆祝 → 帮助 → 搜索 → 弹窗
-    if (ui.chatOpen) ui.closeChat()
+    if (ui.chatOpen) {
+      e.preventDefault()
+      ui.closeChat()
+    }
     else if (ui.assistantOpen) ui.closeAssistant()
     else if (ui.celebrating) ui.stopCelebrate()
     else if (ui.helpOpen) ui.closeHelp()

@@ -23,11 +23,15 @@ class FeishuNotificationHandlerTest {
         when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
         when(feishu.sendFeedbackCard(eq("token"), eq("oc_group"), eq("下班提醒"), eq("休息并打卡"), anyString())).thenReturn("om_sent");
         var job = new AutomationJobEntity(); job.setId("job1"); job.setName("下班提醒"); job.setDescription("休息并打卡");
-        new FeishuNotificationHandler(settings, feishu, notifications, policy).execute(job);
+        var handler = new FeishuNotificationHandler(settings, feishu, notifications, policy);
+        var internal = mock(InternalNotificationService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(handler, "internalNotifications", internal);
+        handler.execute(job);
+        verify(internal).publish(any());
+        verifyNoInteractions(feishu);
         var captured = ArgumentCaptor.forClass(FeishuNotificationEntity.class);
         verify(notifications).insert(captured.capture());
-        assertThat(captured.getValue()).extracting(FeishuNotificationEntity::getMessageId,
-                FeishuNotificationEntity::getCardTitle, FeishuNotificationEntity::getCardBody)
-                .containsExactly("om_sent", "下班提醒", "休息并打卡");
+        assertThat(captured.getValue()).extracting(FeishuNotificationEntity::getCardTitle, FeishuNotificationEntity::getCardBody)
+                .containsExactly("下班提醒", "休息并打卡");
     }
 }

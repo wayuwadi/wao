@@ -339,7 +339,7 @@ function close() {
 }
 /** Esc 逐层关闭：先关下拉菜单，再收子任务详情，最后关抽屉。 */
 function onKey(e: KeyboardEvent) {
-  if (e.key !== 'Escape' || !task.value) return
+  if (e.key !== 'Escape' || !task.value || e.defaultPrevented || ui.chatOpen) return
   if (relationOpen.value) relationOpen.value = false
   else if (menu.value) menu.value = null
   else if (openSubId.value) openSubId.value = null
@@ -549,6 +549,16 @@ function deleteSub() {
 const shareOpenOnly = ref(false)
 const shareDoneCount = computed(() => (task.value?.subs ?? []).filter((s) => s.done).length)
 
+/** 把当前任务分享追加到聊天草稿，不离开任务编辑现场。 */
+function shareToChat() {
+  const t = task.value
+  if (!t) return
+  const sub = t.subs.find((item) => item.id === openSubId.value)
+  const title = (sub?.text || t.title).replace(/[\\[\]`*_<>]/g, ' ').replace(/\s+/g, ' ')
+  ui.shareToChat(`[${title}](${shareUrl(t.id, openSubId.value, !sub && shareOpenOnly.value)})`)
+  menu.value = null
+}
+
 /** 复制当前上下文（任务或已展开的子任务）的分享链接。 */
 async function copyShare(kind: 'page' | 'md') {
   const t = task.value
@@ -584,7 +594,7 @@ async function notifyTask() {
   notifyingTask.value = true
   try {
     const sent = await notifyTaskManually(id)
-    toast(sent ? '任务已人工通知到飞书群' : '通知未发送，请检查通知策略、项目静音和 Webhook',
+    toast(sent ? '任务已通知到 WAO' : '通知未发送，请检查通知策略和项目静音',
       sent ? 'ri-notification-3-line' : 'ri-error-warning-line')
   } catch (error) {
     toast(error instanceof Error ? error.message : '人工通知失败，请重试', 'ri-error-warning-line')
@@ -943,7 +953,7 @@ async function uploadAttachment(event: Event) {
         >
           <i :class="favorites.isFav('task', task.id) ? 'ri-star-fill' : 'ri-star-line'"></i>
         </button>
-        <button class="icon-btn" :disabled="notifyingTask" title="人工通知到飞书群" @click="notifyTask">
+        <button class="icon-btn" :disabled="notifyingTask" title="通知到 WAO" @click="notifyTask">
           <i :class="notifyingTask ? 'ri-loader-4-line spin' : 'ri-notification-2-line'"></i>
         </button>
         <div class="share-wrap">
@@ -960,6 +970,10 @@ async function uploadAttachment(event: Event) {
                 <em>过滤掉已完成的 {{ shareDoneCount }} 条{{ dispatchedSubIds.size ? `和已单独派给 AI 的 ${dispatchedSubIds.size} 条` : '' }}，避免重复派工</em>
               </span>
             </label>
+            <button class="share-item" @click="shareToChat">
+              <i class="ri-chat-forward-line"></i>
+              <span class="share-main"><b>分享到聊天</b><em>放入聊天草稿，可补充说明后发送</em></span>
+            </button>
             <button class="share-item" @click="copyShare('page')">
               <i class="ri-external-link-line"></i>
               <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>
@@ -1183,7 +1197,7 @@ async function uploadAttachment(event: Event) {
             <div class="comment-input">
               <span class="c-av" :style="{ background: session.currentUser.color }">{{ session.currentUser.initial }}</span>
               <div class="ci-wrap">
-                <input v-model="commentText" :disabled="sendingComment" placeholder="写评论，回车发送；@成员名 对方会收到飞书通知" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey" />
+                <input v-model="commentText" :disabled="sendingComment" placeholder="写评论，回车发送；@成员名 对方会收到 WAO 通知" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey" />
                 <div v-if="mentionOpen && mentionCandidates.length" class="mention-menu">
                   <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
                     <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}

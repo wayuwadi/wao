@@ -73,7 +73,7 @@ writeFileSync(
   JSON.stringify(
     {
       version,
-      notes: `WAO ${version}：修复 Windows 窗口恢复时侧边栏先收起再展开的问题；最小化期间保留工作区尺寸、草稿与会话。`,
+      notes: `WAO ${version}：新增独立桌面宠物：消息气泡、引用快速回复、团队聊天与独立 AI 对话；主窗口收起后宠物仍可使用。`,
       pub_date: new Date().toISOString(),
       platforms: {
         "windows-x86_64": {

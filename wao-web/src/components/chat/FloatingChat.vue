@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ChatView from '@/views/ChatView.vue'
 import { useUiStore } from '@/stores/ui'
@@ -9,7 +9,7 @@ const route = useRoute()
 const ui = useUiStore()
 const trigger = ref<HTMLElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
-const unreadCount = ref(0)
+const unreadCount = computed(() => ui.chatUnreadCount)
 const {
   elementRef: draggablePanel,
   style: panelStyle,
@@ -52,22 +52,25 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 </script>
 
 <template>
-  <button
-    ref="trigger"
-    class="chat-entry"
-    :class="{ active: ui.chatOpen }"
-    type="button"
-    data-chat-trigger
-    :aria-expanded="ui.chatOpen"
-    aria-controls="wao-floating-chat"
-    :title="unreadCount ? `聊天（${unreadCount} 条未读）` : '聊天'"
-    @click="ui.toggleChat()"
-  >
-    <i class="ri-chat-3-line"></i>
-    <span v-if="unreadCount" class="chat-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
-  </button>
-
+  <span class="chat-slot" aria-hidden="true"></span>
   <Teleport to="body">
+    <button
+      ref="trigger"
+      class="chat-entry"
+      :class="{ active: ui.chatOpen }"
+      type="button"
+      data-chat-trigger
+      :aria-expanded="ui.chatOpen"
+      aria-controls="wao-floating-chat"
+      :title="unreadCount ? `聊天（${unreadCount} 条未读）` : '聊天'"
+      @click="ui.toggleChat()"
+    >
+      <i class="ri-chat-3-line"></i>
+      <span v-if="unreadCount" class="chat-badge">{{
+        unreadCount > 99 ? '99+' : unreadCount
+      }}</span>
+    </button>
+
     <aside
       id="wao-floating-chat"
       :ref="setPanelRef"
@@ -85,13 +88,18 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
         :review-id="ui.chatReviewId"
         :review-request-version="ui.chatReviewRequestVersion"
         @minimize="ui.closeChat()"
-        @unread-change="unreadCount = $event"
+        @unread-change="ui.chatUnreadCount = $event"
       />
     </aside>
   </Teleport>
 </template>
 
 <style scoped>
+.chat-slot {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+}
 .chat-entry {
   width: 32px;
   height: 32px;
@@ -102,7 +110,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
   cursor: pointer;
   display: grid;
   place-items: center;
-  position: relative;
+  position: fixed;
+  top: max(4px, calc((var(--wao-header-h) - 32px) / 2 - 4px));
+  right: 56px;
+  z-index: 1100;
+  background: var(--wao-bg-card);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
 }
 .chat-entry:hover,
 .chat-entry.active {
@@ -130,7 +143,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 }
 .floating-chat {
   position: fixed;
-  z-index: 82;
+  z-index: 1101;
   top: calc(var(--wao-header-h) + 8px);
   right: 16px;
   width: min(720px, calc(100vw - 32px));
@@ -142,10 +155,21 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
   background: var(--wao-bg-card);
   box-shadow: 0 24px 64px rgba(15, 23, 42, 0.24);
 }
-.floating-chat :deep(.chat-header) { cursor: grab; user-select: none; }
-.floating-chat.dragging, .floating-chat.dragging :deep(.chat-header) { cursor: grabbing; }
+.floating-chat :deep(.chat-header) {
+  cursor: grab;
+  user-select: none;
+}
+.floating-chat.dragging,
+.floating-chat.dragging :deep(.chat-header) {
+  cursor: grabbing;
+}
 @media (max-width: 760px) {
+  .chat-slot {
+    width: 36px;
+    flex-basis: 36px;
+  }
   .chat-entry {
+    right: 42px;
     width: 36px;
     height: 36px;
   }
@@ -157,6 +181,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
     border: 0;
     border-radius: 0;
   }
-  .floating-chat :deep(.chat-header) { cursor: default; }
+  .floating-chat :deep(.chat-header) {
+    cursor: default;
+  }
 }
 </style>

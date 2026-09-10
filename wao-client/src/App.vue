@@ -243,6 +243,7 @@ onUnmounted(() => {
       <button v-if="connection === 'error'" class="retry-small" @click="retry">
         重试连接
       </button>
+      <button class="pet-button" @click="action('pet')" title="让宠物到桌面帮你传话"><span>桌面宠物</span></button>
       <button
         class="update-button"
         :class="{ active: panel }"

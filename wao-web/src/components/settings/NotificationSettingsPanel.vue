@@ -28,10 +28,10 @@ const dirty = computed(() => Boolean(snapshot.value && system.value && personal.
 const systemRows: Array<{ key: BooleanSystemPolicyKey; title: string; detail: string }> = [
   { key: 'taskActivity', title: '任务普通动态', detail: '新建、状态变化、子任务与普通评论；默认关闭以减少噪音' },
   { key: 'taskSuccess', title: '任务成功通知', detail: '任务进入已完成时推送；默认关闭' },
-  { key: 'aiRunSuccess', title: 'AI Run 成功通知', detail: '成功后发待验收卡片；默认关闭，飞书原消息仍显示完成勾' },
+  { key: 'aiRunSuccess', title: 'AI Run 成功通知', detail: '成功后生成待验收通知；默认关闭' },
   { key: 'aiRunFailure', title: 'AI Run 失败通知', detail: '失败或未报告终态时推送真实原因与处理入口' },
   { key: 'manualTask', title: '人工通知任务', detail: '允许成员在任务详情明确点击后发送一张任务卡片' },
-  { key: 'reminders', title: '群聊提醒', detail: '日历、今日节奏和自动化定时提醒；飞书私聊提醒不受影响' },
+  { key: 'reminders', title: '站内提醒', detail: '日历、今日节奏和自动化定时提醒' },
   { key: 'deliveryFailure', title: 'Jenkins 失败通知', detail: '构建或部署失败时发送真实失败阶段；成功部署继续保持静默' },
   { key: 'automation', title: '自动触发说明', detail: '闲置派工、HTTP 巡检等无人操作场景说明为什么启动' },
 ]
@@ -140,7 +140,7 @@ onBeforeUnmount(() => {
           <span><b>{{ !system.enabled ? '全部群通知已关闭' : quietNow ? '当前处于沉默时段' : '当前允许群通知' }}</b><small>上海时间（UTC+8）· 私聊消息不受影响</small></span>
         </div>
         <label class="policy-row">
-          <span><b>群通知总开关</b><small>关闭后所有 WAO 业务群推送停止，站内记录和飞书私聊不受影响</small></span>
+          <span><b>系统通知总开关</b><small>控制 WAO 业务通知；已保存的记录仍保留</small></span>
           <input v-model="system.enabled" type="checkbox" :disabled="!snapshot.canManageSystem || saving" />
         </label>
         <div class="quiet-row">

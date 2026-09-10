@@ -38,6 +38,15 @@ describe("desktop workspace preservation", () => {
     mocks.handlers.clear();
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   });
+  it("opens the pet without reloading or hiding the task workspace", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    mocks.invoke.mockClear();
+    await wrapper.get(".pet-button").trigger("click");
+    await flushPromises();
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("workspace_action", { action: "pet" });
+    wrapper.unmount();
+  });
   it("hides the existing webview for settings and restores the same workspace", async () => {
     const wrapper = mount(App);
     await flushPromises();

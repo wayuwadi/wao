@@ -123,7 +123,7 @@ http.interceptors.response.use(
       )
       if (retry) return retry
       const message = error.response?.data?.message
-      if (message) return Promise.reject(new Error(message))
+      if (message) return Promise.reject(Object.assign(new Error(message), { status: error.response?.status }))
     }
     return Promise.reject(error)
   },

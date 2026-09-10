@@ -26,6 +26,7 @@ const unreadLabel = computed(() => {
 const hasUnread = computed(() => (snapshot.value?.unreadCount ?? 0) > 0)
 
 const eventMeta: Record<NotificationEvent['type'], { icon: string; label: string }> = {
+  INTERNAL: { icon: 'ri-notification-3-line', label: 'WAO 通知' },
   TASK_CREATED: { icon: 'ri-add-circle-line', label: '新建任务' },
   TASK_COMPLETED: { icon: 'ri-checkbox-circle-line', label: '任务完成' },
   AI_RUN: { icon: 'ri-robot-2-line', label: 'AI 运行' },

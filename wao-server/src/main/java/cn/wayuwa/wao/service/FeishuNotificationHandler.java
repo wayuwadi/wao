@@ -13,6 +13,8 @@ import org.springframework.util.StringUtils;
 @Component
 public class FeishuNotificationHandler implements JobHandler {
     public static final String NAME = "feishu-notification";
+    @org.springframework.beans.factory.annotation.Autowired
+    private InternalNotificationService internalNotifications;
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final FeishuNotificationMapper notifications;
@@ -28,19 +30,14 @@ public class FeishuNotificationHandler implements JobHandler {
         if (!notificationSettings.allowsReminders()) {
             return "已跳过 · " + notificationSettings.blockedReason();
         }
-        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
-        String secret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
-        String chatId = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");
-        if (!StringUtils.hasText(appId) || !StringUtils.hasText(secret) || !StringUtils.hasText(chatId)) {
-            throw new IllegalStateException("请先在自动化的飞书群聊配置中填写应用凭据并选择目标群");
-        }
         String notificationId = "n" + java.util.UUID.randomUUID().toString().replace("-", "");
         String content = StringUtils.hasText(job.getDescription()) ? job.getDescription() : job.getName();
         LocalDateTime now = LocalDateTime.now();
-        String messageId = feishu.sendFeedbackCard(feishu.tenantAccessToken(appId, secret), chatId, job.getName(), content, notificationId);
+        internalNotifications.publish(cn.wayuwa.wao.feishu.FeishuWebhookNotifier.Card.simple(job.getName(), "blue", content));
+        String messageId = "wao:" + notificationId;
         FeishuNotificationEntity sent = new FeishuNotificationEntity(); sent.setId(notificationId); sent.setJobId(job.getId()); sent.setSentAt(now);
         sent.setCardTitle(job.getName()); sent.setCardBody(content); sent.setMessageId(messageId);
         notifications.insert(sent);
-        return "成功 · 已发送飞书通知";
+        return "成功 · 已保存 WAO 内部通知";
     }
 }

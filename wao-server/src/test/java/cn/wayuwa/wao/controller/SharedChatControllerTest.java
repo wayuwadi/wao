@@ -12,19 +12,15 @@ import cn.wayuwa.wao.dto.CreateSharedChatMessageRequest;
 import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.dto.SharedChatMessageDto;
 import cn.wayuwa.wao.service.SharedChatService;
-import cn.wayuwa.wao.service.SharedChatSynchronizationService;
-import cn.wayuwa.wao.service.SharedChatFeishuBridge;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
 class SharedChatControllerTest {
     private final SharedChatService service = mock(SharedChatService.class);
-    private final SharedChatFeishuBridge bridge = mock(SharedChatFeishuBridge.class);
-    private final SharedChatSynchronizationService synchronization = mock(SharedChatSynchronizationService.class);
     private final CurrentMember currentMember = mock(CurrentMember.class);
     private final SharedChatController controller = new SharedChatController(
-            service, bridge, synchronization, currentMember);
+            service, currentMember);
     private final HttpServletRequest http = mock(HttpServletRequest.class);
 
     @Test

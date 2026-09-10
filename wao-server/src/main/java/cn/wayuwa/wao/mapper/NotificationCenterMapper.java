@@ -12,6 +12,11 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface NotificationCenterMapper {
     String EVENT_UNION = """
+            SELECT CONCAT('internal:', id) AS event_id, 'INTERNAL' AS event_type,
+                   title, body AS detail, NULL AS actor_name, created_at AS occurred_at,
+                   target_path, 'INFO' AS severity FROM internal_notification
+             WHERE member_id IS NULL OR member_id = #{memberId}
+            UNION ALL
             SELECT CONCAT('task-created:', t.id) AS event_id, 'TASK_CREATED' AS event_type,
                    t.title, '创建了任务' AS detail, creator.name AS actor_name,
                    t.created_at AS occurred_at,
@@ -59,15 +64,15 @@ public interface NotificationCenterMapper {
 
     @Select("SELECT events.* FROM (" + EVENT_UNION + ") events "
             + "ORDER BY events.occurred_at DESC, events.event_id DESC LIMIT #{limit}")
-    List<NotificationEventRow> recentEvents(@Param("limit") int limit);
+    List<NotificationEventRow> recentEvents(@Param("limit") int limit, @Param("memberId") String memberId);
 
     @Select("SELECT COUNT(*) FROM (" + EVENT_UNION + ") events WHERE events.occurred_at > #{since}")
-    long countEventsSince(@Param("since") LocalDateTime since);
+    long countEventsSince(@Param("since") LocalDateTime since, @Param("memberId") String memberId);
 
     /** 读取未读窗口内真实事件，由成员级偏好在服务层做同一套过滤后计数。 */
     @Select("SELECT events.* FROM (" + EVENT_UNION + ") events WHERE events.occurred_at > #{since} "
             + "ORDER BY events.occurred_at DESC, events.event_id DESC")
-    List<NotificationEventRow> eventsSince(@Param("since") LocalDateTime since);
+    List<NotificationEventRow> eventsSince(@Param("since") LocalDateTime since, @Param("memberId") String memberId);
 
     @Select("""
             SELECT m.id AS member_id, m.name AS member_name, m.color,

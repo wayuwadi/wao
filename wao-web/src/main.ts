@@ -16,6 +16,7 @@ installPreloadErrorRecovery()
 const uninstallNativeContextMenuGuard = installNativeContextMenuGuard()
 import.meta.hot?.dispose(uninstallNativeContextMenuGuard)
 
+if (location.pathname === '/desktop-pet') document.documentElement.classList.add('desktop-pet-surface')
 const app = createApp(App)
 
 app.use(createPinia())

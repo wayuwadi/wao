@@ -1,3 +1,4 @@
+import type { SharedChatMessage } from '@/api/chat'
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { usePreferenceStore } from '@/stores/preferences'
@@ -101,6 +102,11 @@ export const useUiStore = defineStore('ui', () => {
 
   /** 共享聊天悬浮框；最小化只改变可见性，组件和未发送草稿都继续保留。 */
   const chatOpen = ref(false)
+  const chatDraft = ref('')
+  const chatDraftRequestVersion = ref(0)
+  const chatUnreadCount = ref(0)
+  const chatLatestUnread = ref<SharedChatMessage | null>(null)
+  const chatRefreshVersion = ref(0)
   /** 从历史链接或首页活动带入的复盘请求；序号保证重复打开同一份复盘也会响应。 */
   const chatReviewId = ref('')
   const chatReviewRequestVersion = ref(0)
@@ -208,6 +214,16 @@ export const useUiStore = defineStore('ui', () => {
       chatReviewRequestVersion.value += 1
     }
   }
+  function shareToChat(content: string) {
+    chatDraft.value = content
+    chatDraftRequestVersion.value += 1
+    openChat()
+  }
+  function consumeChatDraft() {
+    const value = chatDraft.value
+    chatDraft.value = ''
+    return value
+  }
   function closeChat() {
     chatOpen.value = false
   }
@@ -219,7 +235,7 @@ export const useUiStore = defineStore('ui', () => {
   return {
     openTaskId, modal, modalProject, modalPriority, modalTaskSeed, modalDue, modalStartAt, modalEndAt,
     searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft,
-    chatOpen, chatReviewId, chatReviewRequestVersion, taskViews,
+    chatOpen, chatDraft, chatDraftRequestVersion, chatUnreadCount, chatLatestUnread, chatRefreshVersion, shareToChat, consumeChatDraft, chatReviewId, chatReviewRequestVersion, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
     taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
     openAssistant, closeAssistant, toggleAssistant, consumeAssistantDraft,

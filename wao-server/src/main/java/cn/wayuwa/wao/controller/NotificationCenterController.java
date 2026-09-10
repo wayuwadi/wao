@@ -27,7 +27,7 @@ public class NotificationCenterController {
 
     @GetMapping
     public ApiResponse<NotificationCenterDto> get(HttpServletRequest request) {
-        return ApiResponse.ok(service.get(member(request)));
+        return ApiResponse.ok(service.get(member(request), "true".equals(request.getParameter("includeInternal"))));
     }
 
     @PutMapping("/read")

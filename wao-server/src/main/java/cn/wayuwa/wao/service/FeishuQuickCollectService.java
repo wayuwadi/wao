@@ -83,7 +83,6 @@ public class FeishuQuickCollectService {
     private final ImageService images;
     private final ObjectMapper json;
     private final NotificationFeedbackService feedback;
-    private final SharedChatFeishuBridge sharedChat;
     private final FeishuQuickCollectAiRunService reactionAiRuns;
     private final FeishuQuickCollectReactionPolicy reactionPolicy;
     private final FeishuQuickCollectRecallService recalls;
@@ -91,7 +90,7 @@ public class FeishuQuickCollectService {
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             TaskService tasks, ProjectService projects, AccountMapper accounts,
             AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
-            ObjectMapper json, NotificationFeedbackService feedback, SharedChatFeishuBridge sharedChat,
+            ObjectMapper json, NotificationFeedbackService feedback,
             FeishuQuickCollectAiRunService reactionAiRuns, FeishuQuickCollectReactionPolicy reactionPolicy,
             FeishuQuickCollectRecallService recalls, FeishuLinkPreviewService linkPreviews) {
         this.settings = settings;
@@ -104,7 +103,6 @@ public class FeishuQuickCollectService {
         this.images = images;
         this.json = json;
         this.feedback = feedback;
-        this.sharedChat = sharedChat;
         this.reactionAiRuns = reactionAiRuns;
         this.reactionPolicy = reactionPolicy;
         this.recalls = recalls;
@@ -197,7 +195,6 @@ public class FeishuQuickCollectService {
                 // 回调仍按既有协议返回 200；一分钟回看会用 deleted=true 的真实消息状态再次收敛。
                 log.warn("飞书原消息撤回同步失败：{}", ex.getMessage());
             }
-            sharedChat.handleEvent(body);
             return Map.of();
         }
         boolean quickCollectEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
@@ -215,8 +212,7 @@ public class FeishuQuickCollectService {
                 reactionTriggered = true;
             }
         }
-        // 同一条飞书消息可能也被共享聊天归档；reaction 既触发派工，也保留聊天里的真实表情事实。
-        if (sharedChat.handleEvent(body) || reactionTriggered) {
+        if (reactionTriggered) {
             return Map.of();
         }
         if (!quickCollectEnabled) {

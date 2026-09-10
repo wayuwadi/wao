@@ -424,7 +424,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     })
   })
 
-  it('可维护每年显示的家庭重要日，并设置提前飞书提醒', async () => {
+  it('可维护每年显示的家庭重要日，并设置提前站内提醒', async () => {
     const data = useDataStore(pinia)
     const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
@@ -478,9 +478,9 @@ describe('日历成员隔离、清单与时间轴', () => {
       name: '妈妈生日', eventDate: data.today, note: '记得提前订花', reminderEnabled: true,
       reminderDaysBefore: 3, reminderTime: '08:30',
       calendarType: 'SOLAR', lunarMonth: 1, lunarDay: 1, lunarLeapMonth: false,
-      notificationType: 'DIRECT', chatId: null, chatName: null,
+      notificationType: 'GROUP', chatId: null, chatName: null,
     })
-    expect(wrapper.find('.important-date-item').text()).toContain('提前 3 天 08:30 飞书私聊提醒')
+    expect(wrapper.find('.important-date-item').text()).toContain('提前 3 天 08:30 WAO 通知中心提醒')
     expect(wrapper.findAll('.event').some((event) => event.text().includes('妈妈生日'))).toBe(true)
 
     await wrapper.find('.important-date-main').trigger('click')
@@ -495,7 +495,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.find('.important-date-empty').exists()).toBe(true)
   })
 
-  it('从日历可分流创建农历群提醒，并可搜索后跳到当日预览', async () => {
+  it('从日历可分流创建农历站内提醒，并可搜索后跳到当日预览', async () => {
     const data = useDataStore(pinia)
     const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
@@ -531,7 +531,8 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.find('.date-conversion').text()).toContain('对应公历')
     await wrapper.findAll('.notification-type button')[1]!.trigger('click')
     await flushPromises()
-    expect(wrapper.find('.important-date-field select option').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('目标飞书群')
+    expect(wrapper.text()).toContain('WAO 内部提醒')
 
     await wrapper.find('.cd-close').trigger('click')
     await wrapper.find('.calendar-search input').setValue('农历生日')
