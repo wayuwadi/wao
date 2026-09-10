@@ -33,7 +33,7 @@ function onPointerDown(event: PointerEvent) {
   if (!ui.chatOpen || !(event.target instanceof Node)) return
   if (panel.value?.contains(event.target) || trigger.value?.contains(event.target)) return
   // 复盘弹层由聊天悬浮框发起但 Teleport 到 body；操作复盘时不能误把底层聊天最小化。
-  if (event.target instanceof Element && event.target.closest('.review-mask')) return
+  if (event.target instanceof Element && event.target.closest('.review-mask, .chat-image-menu-mask')) return
   ui.closeChat()
 }
 
@@ -52,8 +52,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
 </script>
 
 <template>
-  <span class="chat-slot" aria-hidden="true"></span>
-  <Teleport to="body">
+
     <button
       ref="trigger"
       class="chat-entry"
@@ -71,6 +70,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
       }}</span>
     </button>
 
+  <Teleport to="body">
     <aside
       id="wao-floating-chat"
       :ref="setPanelRef"
@@ -110,10 +110,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
   cursor: pointer;
   display: grid;
   place-items: center;
-  position: fixed;
-  top: max(4px, calc((var(--wao-header-h) - 32px) / 2 - 4px));
-  right: 56px;
-  z-index: 1100;
+  position: relative;
+  flex-shrink: 0;
   background: var(--wao-bg-card);
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
 }
@@ -169,7 +167,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
     flex-basis: 36px;
   }
   .chat-entry {
-    right: 42px;
     width: 36px;
     height: 36px;
   }

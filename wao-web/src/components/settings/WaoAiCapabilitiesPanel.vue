@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchAvailableAiSkills, fetchWaoApplicationSkills, saveWaoApplicationSkills } from '@/api/ai'
 import { toast } from '@/composables/toast'
@@ -71,6 +72,7 @@ function beforeUnload(event: BeforeUnloadEvent) {
 defineExpose({ confirmLeave })
 onMounted(() => { window.addEventListener('beforeunload', beforeUnload); void load() })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
+useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 </script>
 
 <template>

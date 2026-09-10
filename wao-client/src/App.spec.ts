@@ -68,20 +68,14 @@ describe("desktop workspace preservation", () => {
     });
     wrapper.unmount();
   });
-  it("canceling refresh never reloads or destroys unsaved content", async () => {
+  it("refresh requests automatic save without a confirmation dialog", async () => {
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get('[aria-label="刷新工作区"]').trigger("click");
     await flushPromises();
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain(
-      "未保存的输入可能丢失",
-    );
-    await wrapper.get(".modal .secondary").trigger("click");
-    await flushPromises();
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
-    expect(mocks.invoke).not.toHaveBeenCalledWith("workspace_action", {
-      action: "reload",
-    });
+    expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", { action: "reload" });
+    expect(wrapper.find("header .logo").exists()).toBe(false);
     wrapper.unmount();
   });
   it("closing hides the window and never quits", async () => {

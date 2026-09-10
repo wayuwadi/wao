@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PetMessenger from '@/components/chat/PetMessenger.vue'
@@ -20,47 +20,40 @@ const message = (id: string, name: string): SharedChatMessage => ({
   createdAt: '2026-09-10T12:00:00',
 })
 
-describe('宠物传话', () => {
+describe('宠物消息提示', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
-    vi.resetAllMocks()
+    vi.useFakeTimers()
   })
-  it('气泡显示真实发送者，写回复时新消息不会改变引用目标', async () => {
+  afterEach(() => vi.useRealTimers())
+  it('隐藏消息详情，点击打开聊天且不发送任何内容', async () => {
     const ui = useUiStore()
     ui.chatUnreadCount = 1
     ui.chatLatestUnread = message('a', '小王')
     const wrapper = mount(PetMessenger)
-    expect(wrapper.text()).toContain('小王')
-    await wrapper.get('.message-peek').trigger('click')
-    await wrapper.get('textarea').setValue('收到，我来处理')
-    ui.chatLatestUnread = message('b', '小李')
-    ui.chatUnreadCount = 2
-    await flushPromises()
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(sendSharedChatMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: '收到，我来处理', replyToId: 'a' }),
-    )
-    expect(ui.chatRefreshVersion).toBe(1)
+    expect(wrapper.text()).toContain('有新消息')
+    expect(wrapper.text()).not.toContain('小王')
+    expect(wrapper.text()).not.toContain('来看看任务')
+    expect(wrapper.find('textarea').exists()).toBe(false)
+    await wrapper.get('button').trigger('click')
+    expect(ui.chatOpen).toBe(true)
+    expect(sendSharedChatMessage).not.toHaveBeenCalled()
     wrapper.unmount()
   })
-  it('失败保留草稿，重试不重复发送，快速回复不冒充全部已读', async () => {
+  it('八秒收起，同一消息重挂载不再提示，新消息可再提示一次', async () => {
     const ui = useUiStore()
-    ui.chatUnreadCount = 2
+    ui.chatUnreadCount = 1
     ui.chatLatestUnread = message('a', '小王')
-    vi.mocked(sendSharedChatMessage).mockRejectedValueOnce(new Error('离线'))
     const wrapper = mount(PetMessenger)
-    await wrapper.get('.message-peek').trigger('click')
-    await wrapper.get('textarea').setValue('保留这句')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('保留这句')
-    const first = vi.mocked(sendSharedChatMessage).mock.calls[0]![0]
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(vi.mocked(sendSharedChatMessage).mock.calls[1]![0]).toEqual(first)
-    expect(ui.chatUnreadCount).toBe(2)
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(wrapper.find('button').exists()).toBe(false)
     wrapper.unmount()
+    const reopened = mount(PetMessenger)
+    expect(reopened.find('button').exists()).toBe(false)
+    ui.chatLatestUnread = message('b', '小李')
+    await flushPromises()
+    expect(reopened.find('button').exists()).toBe(true)
+    reopened.unmount()
   })
 })

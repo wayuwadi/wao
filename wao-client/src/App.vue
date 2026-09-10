@@ -111,8 +111,6 @@ async function connect() {
   }
 }
 async function reload() {
-  connection.value = "loading";
-  armTimeout();
   await action("reload");
 }
 async function retry() {
@@ -170,6 +168,7 @@ onMounted(async () => {
           void updater.find();
         }
         if (event.payload === "quit") void ask("quit");
+        if (event.payload === "workspace") { confirm.value = null; void togglePanel(false); }
       }),
     );
     cleanup.push(
@@ -194,9 +193,7 @@ onUnmounted(() => {
   <div class="client">
     <header class="toolbar">
       <div class="brand" data-tauri-drag-region>
-        <span class="logo" data-tauri-drag-region>W</span
-        ><strong data-tauri-drag-region>WAO</strong
-        ><span class="edition" data-tauri-drag-region>工作区</span>
+        <span class="edition" data-tauri-drag-region>工作区</span>
       </div>
       <div class="divider"></div>
       <nav class="history" aria-label="工作区导航">
@@ -220,7 +217,7 @@ onUnmounted(() => {
           class="icon-button"
           title="刷新工作区"
           aria-label="刷新工作区"
-          @click="ask('reload')"
+          @click="reload"
         >
           <svg viewBox="0 0 24 24">
             <path d="M20 7v5h-5M19 12a7 7 0 1 0-1.8 4.7M20 12l-2-5" />

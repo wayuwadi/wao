@@ -18,8 +18,44 @@ import {
 } from '@/api/chat'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
+import { taskShareTarget } from '@/utils/share'
+import { toast } from '@/composables/toast'
 import { renderMarkdown } from '@/utils/markdown'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
+
+function openTaskLink(event: MouseEvent) {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  const link = event.target instanceof Element ? event.target.closest('a[href]') : null
+  const target = link ? taskShareTarget(link.getAttribute('href') || '') : null
+  if (!target) return
+  event.preventDefault()
+  ui.closeChat()
+  ui.openTask(target.taskId, target.subId)
+}
+const imageMenu = ref<{ x: number; y: number; image: HTMLImageElement } | null>(null)
+function imageContext(event: MouseEvent) {
+  if (!(event.target instanceof HTMLImageElement)) return
+  event.preventDefault()
+  imageMenu.value = { image: event.target, x: Math.max(8, Math.min(event.clientX, innerWidth - 160)), y: Math.max(8, Math.min(event.clientY, innerHeight - 56)) }
+}
+async function copyImage() {
+  const img = imageMenu.value?.image
+  imageMenu.value = null
+  if (!img) return
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const context = canvas.getContext('2d')
+    if (!context || !canvas.width || !canvas.height) throw new Error('图片尚未加载')
+    context.drawImage(img, 0, 0)
+    const png = new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('图片转换失败')), 'image/png'))
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+    toast('图片已复制', 'ri-file-copy-line')
+  } catch {
+    toast('图片复制失败，请打开图片后使用系统菜单复制或保存', 'ri-error-warning-line')
+  }
+}
 
 const props = withDefaults(
   defineProps<{
@@ -357,6 +393,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <Teleport to="body">
+    <div v-if="imageMenu" class="chat-image-menu-mask" @pointerdown.self="imageMenu = null" @contextmenu.prevent="imageMenu = null">
+      <button class="chat-image-menu" :style="{ left: `${imageMenu.x}px`, top: `${imageMenu.y}px` }" @click="copyImage" @keydown.esc="imageMenu = null">复制图片</button>
+    </div>
+  </Teleport>
   <main class="chat-page" :class="{ floating }">
     <header class="chat-header">
       <div>
@@ -384,7 +425,7 @@ onBeforeUnmount(() => {
     </header>
 
     <section class="chat-shell">
-      <div ref="stream" class="message-stream" aria-live="polite" @scroll.passive="markVisibleRead">
+      <div ref="stream" class="message-stream" aria-live="polite" @scroll.passive="markVisibleRead" @click="openTaskLink" @contextmenu="imageContext">
         <div v-if="loading" class="state-card">
           <i class="ri-loader-4-line spin"></i> 正在读取聊天记录…
         </div>
@@ -418,6 +459,7 @@ onBeforeUnmount(() => {
                 v-if="message.content"
                 class="message-text md-body"
                 v-html="renderMarkdown(message.content)"
+
               ></div>
               <a
                 v-if="message.imageUrl"
@@ -988,4 +1030,9 @@ onBeforeUnmount(() => {
     font-size: 12px;
   }
 }
+</style>
+
+<style scoped>
+.chat-image-menu-mask { position: fixed; inset: 0; z-index: 5000; }
+.chat-image-menu { position: absolute; width: 150px; padding: 10px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text); box-shadow: 0 4px 16px #0002; cursor: pointer; }
 </style>

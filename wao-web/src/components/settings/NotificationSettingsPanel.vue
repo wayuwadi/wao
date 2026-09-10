@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   fetchNotificationSettings,
@@ -116,6 +117,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', beforeUnload)
   if (clockTimer !== undefined) window.clearInterval(clockTimer)
 })
+useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 </script>
 
 <template>

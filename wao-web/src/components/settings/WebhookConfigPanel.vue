@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { toast } from '@/composables/toast'
 import {
@@ -203,6 +204,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserLeave))
 defineExpose({ confirmLeave })
+useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 </script>
 
 <template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   createCrawlerCapability,
@@ -194,6 +195,7 @@ onMounted(() => {
   void load()
 })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
+useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 </script>
 
 <template>

@@ -1,21 +1,15 @@
 <script setup lang="ts">
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { computed, onMounted, ref, watch } from 'vue'
 import { toast } from '@/composables/toast'
 import {
   type WebPetSettings,
-  type WebPetTriggerAction,
   useWebPetStore,
 } from '@/stores/webPet'
 
 const pet = useWebPetStore()
 const draft = ref<WebPetSettings | null>(null)
 const baseline = ref('')
-
-const triggerOptions: Array<{ value: WebPetTriggerAction; label: string; detail: string }> = [
-  { value: 'QUICK_ACTIONS', label: '快捷操作气泡', detail: '展示今日节奏快捷记录' },
-  { value: 'SETTINGS', label: '宠物功能气泡', detail: '展示设置、气泡静音和隐藏宠物' },
-  { value: 'NONE', label: '不响应', detail: '保留宠物但不展开菜单' },
-]
 
 const dirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== baseline.value)
 
@@ -54,13 +48,17 @@ function confirmLeave() {
 
 defineExpose({ confirmLeave })
 onMounted(() => void load())
+useSaveBeforeRefresh(async () => {
+  if (dirty.value) await save()
+  if (dirty.value) throw new Error('宠物设置保存失败，草稿已保留')
+})
 </script>
 
 <template>
   <div class="settings-heading">
     <div>
       <h1>网页宠物设置</h1>
-      <p>按当前成员跨设备保存；临时静音只影响当前浏览器，并可随时从侧边小图标恢复。</p>
+      <p>按当前成员跨设备保存。点击宠物打开聊天，拖动宠物调整位置。</p>
     </div>
     <button
       class="primary"
@@ -80,45 +78,10 @@ onMounted(() => void load())
   </div>
   <form v-else-if="draft" class="pet-settings" @submit.prevent="save">
     <section class="settings-card">
-      <header><div><h2>触发方式</h2><p>分别决定悬停、左键和右键时出现哪一种气泡。</p></div></header>
-      <div class="trigger-grid">
-        <label>
-          <span>鼠标悬停</span>
-          <select v-model="draft.hoverAction" aria-label="宠物悬停动作">
-            <option v-for="option in triggerOptions" :key="option.value" :value="option.value">
-              {{ option.label }} · {{ option.detail }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span>左键点击</span>
-          <select v-model="draft.leftClickAction" aria-label="宠物左键动作">
-            <option v-for="option in triggerOptions" :key="option.value" :value="option.value">
-              {{ option.label }} · {{ option.detail }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span>右键点击</span>
-          <select v-model="draft.rightClickAction" aria-label="宠物右键动作">
-            <option v-for="option in triggerOptions" :key="option.value" :value="option.value">
-              {{ option.label }} · {{ option.detail }}
-            </option>
-          </select>
-        </label>
-      </div>
-    </section>
-
-    <section class="settings-card">
-      <header><div><h2>气泡与静默</h2><p>关闭气泡或隐藏宠物时使用这些自选时长，右键菜单仍提供 5 分钟和 10 分钟快捷项。</p></div></header>
-      <div class="duration-grid">
-        <label><span>气泡默认静音</span><div><input v-model.number="draft.noticeSnoozeMinutes" type="number" min="1" max="120" /><em>分钟</em></div></label>
-        <label><span>宠物默认隐藏</span><div><input v-model.number="draft.petSnoozeMinutes" type="number" min="1" max="120" /><em>分钟</em></div></label>
-        <label><span>任务气泡轮播</span><div><input v-model.number="draft.noticeRotationSeconds" type="number" min="3" max="60" /><em>秒</em></div></label>
-      </div>
+      <header><div><h2>宠物提醒</h2><p>新动态仅提示一次，8 秒后收起。悬停不展开操作按钮。</p></div></header>
       <div class="switch-list">
-        <label><input v-model="draft.showTaskNotices" type="checkbox" /><span><b>展示真实任务气泡</b><small>关闭后仅保留宠物与手动快捷操作，不生成演示提醒。</small></span></label>
-        <label><input v-model="draft.idleAnimation" type="checkbox" /><span><b>空闲基础动作</b><small>关闭后仍保留点击反馈；系统“减少动态效果”始终优先。</small></span></label>
+        <label><input v-model="draft.showTaskNotices" type="checkbox" /><span><b>展示真实任务气泡</b><small>关闭后保留宠物和聊天消息提示。</small></span></label>
+        <label><input v-model="draft.idleAnimation" type="checkbox" /><span><b>空闲基础动作</b><small>关闭后宠物保持静止；系统“减少动态效果”始终优先。</small></span></label>
       </div>
     </section>
 

@@ -8,8 +8,9 @@ use tauri::{
 use tauri_plugin_opener::OpenerExt;
 
 const PRODUCTION: &str = "https://wao.wayuwa.cn";
-const HEADER: f64 = 64.0;
+const HEADER: f64 = 40.0;
 static POPUP_ID: AtomicUsize = AtomicUsize::new(1);
+static PET_STARTED: AtomicBool = AtomicBool::new(false);
 static WORKSPACE_READY: AtomicBool = AtomicBool::new(false);
 
 // A minimized Windows window reports a transient viewport (often 0 × 0).
@@ -266,9 +267,19 @@ fn pet_action_name(url: &tauri::Url, origin: &tauri::Url) -> Option<String> {
         return None;
     }
     let action = url.path().strip_prefix("/__desktop_pet__/")?;
+    if let Some(id) = action.strip_prefix("task/") {
+        if !id.is_empty()
+            && id.len() <= 100
+            && id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        {
+            return Some(action.to_string());
+        }
+    }
     if matches!(
         action,
-        "compact" | "bubble" | "chat" | "hide" | "workspace" | "drag"
+        "compact" | "bubble" | "chat" | "hide" | "workspace" | "drag" | "open-chat"
     ) {
         Some(action.to_string())
     } else {
@@ -305,12 +316,12 @@ fn show_desktop_pet(app: &tauri::AppHandle) -> tauri::Result<()> {
     }
     let origin = workspace_url();
     let url = origin
-        .join("/desktop-pet?native=1")
+        .join("/desktop-pet?native=2")
         .expect("fixed pet route");
     let navigation_app = app.clone();
     let window = tauri::WebviewWindowBuilder::new(app, "pet", WebviewUrl::External(url))
         .title("WAO · 宠物传话")
-        .inner_size(180.0, 190.0)
+        .inner_size(120.0, 120.0)
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -330,17 +341,35 @@ fn show_desktop_pet(app: &tauri::AppHandle) -> tauri::Result<()> {
                         .unwrap_or(false)
                     {
                         match action.as_str() {
-                            "compact" => resize_pet(&pet, 180.0, 190.0),
-                            "bubble" => resize_pet(&pet, 340.0, 510.0),
+                            "compact" => resize_pet(&pet, 120.0, 120.0),
+                            "bubble" => resize_pet(&pet, 260.0, 190.0),
                             "chat" => resize_pet(&pet, 620.0, 780.0),
                             "hide" => {
                                 let _ = pet.hide();
                             }
                             "workspace" => show(&navigation_app),
+                            "open-chat" => {
+                                show(&navigation_app);
+                                let _ = navigation_app.emit_to("main", "shell-action", "workspace");
+                                if let Some(workspace) = navigation_app.get_webview("workspace") {
+                                    let _ = workspace.show();
+                                    let _ = workspace.eval("window.dispatchEvent(new Event('wao-open-chat'))");
+                                }
+                            },
                             "drag" => {
                                 let _ = pet.start_dragging();
                             }
-                            _ => {}
+                            _ => {
+                                if let Some(id) = action.strip_prefix("task/") {
+                                    show(&navigation_app);
+                                    let _ = navigation_app.emit_to("main", "shell-action", "workspace");
+                                    if let Some(workspace) = navigation_app.get_webview("workspace") {
+                                        let _ = workspace.show();
+                                        let detail = serde_json::to_string(id).unwrap_or_default();
+                                        let _ = workspace.eval(format!("window.dispatchEvent(new CustomEvent('wao-open-task', {{ detail: {detail} }}))"));
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -396,6 +425,7 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
     let popup_app = app.clone();
     let builder = WebviewBuilder::new("workspace", WebviewUrl::External(origin))
         .disable_drag_drop_handler()
+        .initialization_script("Object.defineProperty(window, '__WAO_DESKTOP__', { value: true });")
         .on_navigation(move |url| {
             if internal_url(url, &navigation_origin) {
                 return true;
@@ -416,6 +446,17 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
                 PageLoadEvent::Finished => "ready",
             };
             let _ = view.app_handle().emit_to("main", "workspace-state", phase);
+            if matches!(event.event(), PageLoadEvent::Finished)
+                && !PET_STARTED.swap(true, Ordering::Relaxed)
+            {
+                let app = view.app_handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(error) = show_desktop_pet(&app) {
+                        PET_STARTED.store(false, Ordering::Relaxed);
+                        eprintln!("Could not open desktop pet: {error}");
+                    }
+                });
+            }
         });
     #[cfg(target_os = "macos")]
     let builder = builder.on_download(|view, event| handle_download(view.app_handle(), event));
@@ -441,7 +482,7 @@ async fn workspace_action(
         "pet" => return show_desktop_pet(&app).map_err(|e| e.to_string()),
         "back" => workspace.eval("history.back()"),
         "forward" => workspace.eval("history.forward()"),
-        "reload" => workspace.reload(),
+        "reload" => workspace.eval("window.dispatchEvent(new Event('wao-workspace-reload'))"),
         "hide" => workspace.hide(),
         "show" => workspace.show(),
         "browser" => {
@@ -509,6 +550,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            show(app.handle());
             #[cfg(target_os = "macos")]
             macos_menu(app)?;
             let open = MenuItemBuilder::with_id("open", "打开 WAO 工作区").build(app)?;
@@ -587,14 +629,14 @@ mod tests {
     use super::*;
     #[test]
     fn minimize_restore_keeps_workspace_viewport_and_normal_resizing() {
-        let initial = LogicalSize::new(1380.0, 836.0);
+        let initial = LogicalSize::new(1380.0, 860.0);
         let mut viewport = initial;
         for (size, minimized) in [
             (LogicalSize::new(0.0, 0.0), true),
             (LogicalSize::new(160.0, 28.0), true),
             (LogicalSize::new(960.0, 700.0), true),
             (LogicalSize::new(0.0, 900.0), false),
-            (LogicalSize::new(1380.0, 64.0), false),
+            (LogicalSize::new(1380.0, HEADER), false),
         ] {
             if let Some(next) = workspace_size(size, minimized) {
                 viewport = next;
@@ -608,7 +650,7 @@ mod tests {
         // A real resize (including a DPI-converted width) must still reach the WebView.
         assert_eq!(
             workspace_size(tauri::PhysicalSize::new(1200, 840).to_logical(1.5), false),
-            Some(LogicalSize::new(800.0, 496.0))
+            Some(LogicalSize::new(800.0, 520.0))
         );
     }
     #[test]
@@ -671,9 +713,21 @@ mod tests {
             pet_action_name(&origin.join("/__desktop_pet__/chat").unwrap(), &origin).as_deref(),
             Some("chat")
         );
+        assert_eq!(
+            pet_action_name(&origin.join("/__desktop_pet__/open-chat").unwrap(), &origin)
+                .as_deref(),
+            Some("open-chat")
+        );
+        assert_eq!(
+            pet_action_name(&origin.join("/__desktop_pet__/task/t123").unwrap(), &origin)
+                .as_deref(),
+            Some("task/t123")
+        );
         for url in [
             "https://evil.test/__desktop_pet__/chat",
             "https://wao.wayuwa.cn/__desktop_pet__/eval",
+            "https://wao.wayuwa.cn/__desktop_pet__/task/a%27b",
+            "https://wao.wayuwa.cn/__desktop_pet__/task/a/b",
             "https://wao.wayuwa.cn/__desktop_pet__/chat?url=file:///etc/passwd",
         ] {
             assert!(pet_action_name(&tauri::Url::parse(url).unwrap(), &origin).is_none());

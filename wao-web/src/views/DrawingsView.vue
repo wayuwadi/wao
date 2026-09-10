@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   createDrawing,
@@ -411,6 +412,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', beforeUnload)
   document.removeEventListener('fullscreenchange', fullscreenChanged)
 })
+useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 </script>
 
 <template>
