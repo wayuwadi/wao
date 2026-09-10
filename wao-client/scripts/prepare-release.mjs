@@ -73,7 +73,7 @@ writeFileSync(
   JSON.stringify(
     {
       version,
-      notes: `WAO ${version}：新增 macOS 通用版，支持 Intel 与 Apple Silicon、系统菜单、Dock 恢复及签名更新。`,
+      notes: `WAO ${version}：修复 Windows 窗口恢复时侧边栏先收起再展开的问题；最小化期间保留工作区尺寸、草稿与会话。`,
       pub_date: new Date().toISOString(),
       platforms: {
         "windows-x86_64": {
