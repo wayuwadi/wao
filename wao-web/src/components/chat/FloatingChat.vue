@@ -29,12 +29,19 @@ function onPanelPointerDown(event: PointerEvent) {
   startPanelDrag(event)
 }
 
-function onPointerDown(event: PointerEvent) {
+function onPointerDown(event: Event) {
   if (!ui.chatOpen || !(event.target instanceof Node)) return
   if (panel.value?.contains(event.target) || trigger.value?.contains(event.target)) return
   // 复盘弹层由聊天悬浮框发起但 Teleport 到 body；操作复盘时不能误把底层聊天最小化。
   if (event.target instanceof Element && event.target.closest('.review-mask, .chat-image-menu-mask')) return
   ui.closeChat()
+}
+
+// Native toolbar and keyboard activation produce click without pointerdown.
+function onToolbarClick(event: MouseEvent) {
+  if (event.target instanceof Element && event.target.closest('[data-desktop-action]')) {
+    onPointerDown(event)
+  }
 }
 
 watch(
@@ -47,8 +54,14 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => document.addEventListener('pointerdown', onPointerDown, true))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown, true))
+onMounted(() => {
+  document.addEventListener('pointerdown', onPointerDown, true)
+  document.addEventListener('click', onToolbarClick, true)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onPointerDown, true)
+  document.removeEventListener('click', onToolbarClick, true)
+})
 </script>
 
 <template>

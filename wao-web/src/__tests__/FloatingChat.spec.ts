@@ -80,6 +80,28 @@ describe('悬浮聊天入口', () => {
     expect(bodyElement<HTMLInputElement>('input[aria-label="聊天草稿"]').value).toBe('还没发完')
   })
 
+  it('原生顶栏与键盘点击其它业务入口时收起聊天，聊天按钮仍正常切换且保留草稿', async () => {
+    const { ui } = await mountFloating()
+    bodyElement<HTMLButtonElement>('.chat-entry').click()
+    await nextTick()
+    const draft = bodyElement<HTMLInputElement>('input[aria-label="聊天草稿"]')
+    draft.value = '切换功能也要保留'
+    draft.dispatchEvent(new Event('input', { bubbles: true }))
+    const button = document.createElement('button')
+    button.dataset.desktopAction = 'new-task'
+    document.body.append(button)
+    button.click()
+    await nextTick()
+    expect(ui.chatOpen).toBe(false)
+    bodyElement<HTMLButtonElement>('.chat-entry').click()
+    await nextTick()
+    expect(ui.chatOpen).toBe(true)
+    expect(bodyElement<HTMLInputElement>('input[aria-label="聊天草稿"]').value).toBe('切换功能也要保留')
+    bodyElement<HTMLButtonElement>('.chat-entry').click()
+    await nextTick()
+    expect(ui.chatOpen).toBe(false)
+  })
+
   it('展示真实未读数量，并支持框内按钮最小化', async () => {
     const { wrapper, ui } = await mountFloating()
 
