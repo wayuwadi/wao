@@ -1,8 +1,51 @@
 // Explicitly selected local demo mode only. Never included in production bundles.
+import type { ChatMessage } from "../src/api/chat.ts";
 import type { Plugin } from "vite";
 import { localDate } from "../src/domain/models.ts";
 const today = localDate();
 export function previewServer(): Plugin {
+  const messages: ChatMessage[] = [
+    {
+      id: "demo-chat-1",
+      author: { id: "demo-other", name: "小雨" },
+      content: "忙完这阵，一起去散个步吧。🌿",
+      createdAt: new Date(Date.now() - 1800000).toISOString(),
+      deleted: false,
+      read: false,
+      readCount: 0,
+      reactions: [],
+    },
+    {
+      id: "demo-chat-2",
+      author: { id: "demo-me", name: "演示用户" },
+      content: "好呀，今天的小事都快做完了。",
+      createdAt: new Date(Date.now() - 900000).toISOString(),
+      deleted: false,
+      read: true,
+      readCount: 1,
+      reactions: [
+        {
+          emojiType: "HEART",
+          emoji: "❤️",
+          count: 1,
+          reacted: false,
+          names: ["小雨"],
+        },
+      ],
+    },
+    {
+      id: "demo-chat-3",
+      author: { id: "demo-other", name: "小雨" },
+      content:
+        "顺便把周末的计划记下来，不赶时间，慢慢来。\n[周末清单](/api/files/demo-file/download)",
+      createdAt: new Date().toISOString(),
+      deleted: false,
+      read: false,
+      readCount: 0,
+      reactions: [],
+    },
+  ];
+  const attempts = new Map<string, ChatMessage>();
   const tasks = [
     {
       id: "demo-t1",
@@ -70,15 +113,99 @@ export function previewServer(): Plugin {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith("/api/")) return next();
+        if (req.url === "/api/files/demo-file/download") {
+          res.setHeader("Content-Type", "text/plain");
+          res.end("周末清单：散步、读书、一起做饭。");
+          return;
+        }
         let data: any = {};
         if (req.method !== "GET") {
           let raw = "";
           for await (const chunk of req) raw += chunk;
-          data = raw ? JSON.parse(raw) : {};
+          data =
+            raw && req.headers["content-type"]?.includes("application/json")
+              ? JSON.parse(raw)
+              : {};
         }
         const path = req.url.split("?")[0];
         let result: unknown = null;
-        if (path === "/api/auth/session" || path === "/api/auth/email/login")
+        if (path === "/api/chat/messages" && req.method === "GET")
+          result = messages;
+        else if (path === "/api/chat/messages" && req.method === "POST") {
+          const prior = attempts.get(data.clientToken);
+          if (prior) result = prior;
+          else {
+            const replied = messages.find((m) => m.id === data.replyToId);
+            const message: ChatMessage = {
+              id: `demo-chat-${Date.now()}`,
+              author: { id: "demo-me", name: "演示用户" },
+              content: data.content,
+              createdAt: new Date().toISOString(),
+              deleted: false,
+              read: true,
+              readCount: 0,
+              reactions: [],
+              ...(replied
+                ? {
+                    replyTo: {
+                      id: replied.id,
+                      authorName: replied.author.name,
+                      preview: replied.content,
+                    },
+                  }
+                : {}),
+            };
+            messages.push(message);
+            attempts.set(data.clientToken, message);
+            result = message;
+          }
+        } else if (path === "/api/chat/messages/read") {
+          for (const m of messages) {
+            m.read = true;
+            if (
+              m.id ===
+              new URL(req.url, "http://localhost").searchParams.get("through")
+            )
+              break;
+          }
+        } else if (path.match(/^\/api\/chat\/messages\/[^/]+\/reactions\//)) {
+          const parts = path.split("/"),
+            message = messages.find((m) => m.id === parts[4])!,
+            kind = parts[6]!;
+          const reaction = message.reactions.find((r) => r.emojiType === kind);
+          if (reaction) {
+            reaction.reacted = !reaction.reacted;
+            reaction.count += reaction.reacted ? 1 : -1;
+          } else
+            message.reactions.push({
+              emojiType: kind,
+              emoji: (
+                {
+                  THUMBSUP: "👍",
+                  HEART: "❤️",
+                  SMILE: "😊",
+                  DONE: "✅",
+                } as Record<string, string>
+              )[kind]!,
+              count: 1,
+              reacted: true,
+              names: ["演示用户"],
+            });
+          result = message;
+        } else if (path === "/api/images" || path === "/api/files") {
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            JSON.stringify({
+              code: 1,
+              message: "演示环境不保存附件；真实账号支持上传。",
+            }),
+          );
+          return;
+        } else if (
+          path === "/api/auth/session" ||
+          path === "/api/auth/email/login"
+        )
           result = {
             accountId: "demo-account",
             member: {

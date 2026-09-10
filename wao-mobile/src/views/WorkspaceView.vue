@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ChatPanel from "../components/ChatPanel.vue";
+import { chat } from "../composables/chat";
 import pkg from "../../package.json";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -18,8 +20,8 @@ import {
 } from "../domain/models";
 import AppIcon from "../components/AppIcon.vue";
 import TaskRow from "../components/TaskRow.vue";
-import DraftEditor from "../components/DraftEditor.vue";
 import GameEntry from "../components/GameEntry.vue";
+import DraftEditor from "../components/DraftEditor.vue";
 const version = import.meta.env.VITE_MOBILE_VERSION || pkg.version;
 const props = defineProps<{ tab: string }>(),
   w = useWorkspace(),
@@ -41,6 +43,7 @@ const nav = [
   { id: "tasks", name: "待办", icon: "tasks" },
   { id: "calendar", name: "日历", icon: "calendar" },
   { id: "notes", name: "小记", icon: "notes" },
+  { id: "chat", name: "聊天", icon: "chat" },
 ] as const;
 const titles: Record<string, string> = {
   today: "今天，也从容一点。",
@@ -242,7 +245,7 @@ onUnmounted(() => {
             class="icon-button"
             aria-label="刷新云端数据"
             :disabled="w.loading.value"
-            @click="w.refresh"
+            @click="props.tab === 'chat' ? chat.refresh() : w.refresh()"
           >
             <AppIcon
               name="refresh"
@@ -273,333 +276,157 @@ onUnmounted(() => {
           <AppIcon name="logout" />{{ loggingOut ? "正在退出…" : "退出登录" }}
         </button>
       </div>
-      <main>
-        <div class="page-heading">
-          <p class="eyebrow">
-            {{
-              props.tab === "today"
-                ? "YOUR DAILY SPACE"
-                : props.tab === "tasks"
-                  ? "ONE THING AT A TIME"
-                  : props.tab === "calendar"
-                    ? "DAYS WITH INTENTION"
-                    : "LITTLE THINGS, KEPT"
-            }}
-          </p>
-          <h1>{{ titles[props.tab] }}</h1>
-          <p class="muted">
-            {{
-              props.tab === "today"
-                ? dateLabel
-                : props.tab === "tasks"
-                  ? "不必一次完成全部，先迈出一小步。"
-                  : props.tab === "calendar"
-                    ? "计划与留白，都是生活的一部分。"
-                    : "灵感、心情，和不想忘记的瞬间。"
-            }}
-          </p>
-        </div>
-        <GameEntry v-if="props.tab === 'today'" />
-        <p v-if="w.error.value || localError" class="error banner" role="alert">
-          {{ w.error.value || localError }}
-          <button class="text-button" @click="w.refresh">重新加载</button>
-        </p>
-        <p v-if="w.loading.value" class="loading-line" role="status">
-          正在同步你的日常…
-        </p>
-        <button
-          v-if="drafts.length"
-          class="draft-banner"
-          @click="editor = drafts[0]!"
-        >
-          <AppIcon name="edit" /><span
-            >你有 {{ drafts.length }} 份本机草稿<span class="muted"
-              >继续写完那件小事</span
-            ></span
-          ><AppIcon name="right" />
-        </button>
-        <details v-if="drafts.length > 1" class="draft-list">
-          <summary>查看其他草稿</summary>
-          <button
-            v-for="draft in drafts"
-            :key="draft.id"
-            class="text-button"
-            @click="editor = draft"
+      <main :class="{ 'chat-main': props.tab === 'chat' }">
+        <ChatPanel v-if="props.tab === 'chat'" :key="chat.account.value" />
+        <template v-else>
+          <div class="page-heading">
+            <p class="eyebrow">
+              {{
+                props.tab === "today"
+                  ? "YOUR DAILY SPACE"
+                  : props.tab === "tasks"
+                    ? "ONE THING AT A TIME"
+                    : props.tab === "calendar"
+                      ? "DAYS WITH INTENTION"
+                      : "LITTLE THINGS, KEPT"
+              }}
+            </p>
+            <h1>{{ titles[props.tab] }}</h1>
+            <p class="muted">
+              {{
+                props.tab === "today"
+                  ? dateLabel
+                  : props.tab === "tasks"
+                    ? "不必一次完成全部，先迈出一小步。"
+                    : props.tab === "calendar"
+                      ? "计划与留白，都是生活的一部分。"
+                      : "灵感、心情，和不想忘记的瞬间。"
+              }}
+            </p>
+          </div>
+          <GameEntry v-if="props.tab === 'today'" />
+          <p
+            v-if="w.error.value || localError"
+            class="error banner"
+            role="alert"
           >
-            {{ draft.kind === "task" ? "待办" : "小记" }} ·
-            {{ draft.title || "未命名草稿" }}
-          </button>
-        </details>
-        <template v-if="props.tab === 'today'"
-          ><section class="today-hero">
-            <div>
-              <span class="hero-label"
-                ><span class="live-dot" />给今天一点方向</span
-              >
-              <h2>
-                {{
-                  dueToday.length
-                    ? "专注眼前，\n一步一步来。"
-                    : "今天的留白，\n由你来安排。"
-                }}
-              </h2>
-              <button class="hero-action" @click="create('task')">
-                记一件待办<AppIcon name="plus" :size="17" />
-              </button>
-            </div>
-            <div class="sun-art" aria-hidden="true">
-              <div class="sun-disc" />
-              <div class="sun-hill" />
-              <div class="sun-line" />
-            </div>
-          </section>
-          <section class="stats">
-            <div>
-              <span class="stat-icon green"
-                ><AppIcon name="tasks" :size="18" /></span
-              ><strong>{{ myOpen.length }}</strong
-              ><span>待办事项</span>
-            </div>
-            <div>
-              <span class="stat-icon amber"
-                ><AppIcon name="sun" :size="18" /></span
-              ><strong>{{ dueToday.length }}</strong
-              ><span>今日关注</span>
-            </div>
-            <div>
-              <span class="stat-icon violet"
-                ><AppIcon name="notes" :size="18" /></span
-              ><strong>{{ w.myNotes.value.length }}</strong
-              ><span>我的小记</span>
-            </div>
-          </section>
-          <div class="section-heading">
-            <h2>
-              今日关注 <span>{{ dueToday.length }}</span>
-            </h2>
-            <RouterLink to="/tasks"
-              >全部待办<AppIcon name="right" :size="16"
-            /></RouterLink>
-          </div>
-          <div class="task-list">
-            <TaskRow
-              v-for="task in dueToday.slice(0, 6)"
-              :key="task.id"
-              :task="task"
-              :project="project(task.project)"
-              :busy="w.toggling.value.has(task.id)"
-              @edit="taskEditor"
-              @toggle="w.toggle"
-            />
-            <div v-if="!dueToday.length && !w.loading.value" class="empty">
-              <span class="empty-icon"><AppIcon name="sun" :size="26" /></span>
-              <h3>{{ doneToday ? "今天的待办已完成" : "今天，留一点轻松" }}</h3>
-              <p>添加一件小事，为今天定个方向。</p>
-              <button class="text-button" @click="create('task')">
-                ＋ 新建待办
-              </button>
-            </div>
-          </div>
-          <div class="section-heading">
-            <h2>最近的小记</h2>
-            <RouterLink to="/notes"
-              >全部小记<AppIcon name="right" :size="16"
-            /></RouterLink>
-          </div>
-          <p v-if="w.noteError.value" class="error">
-            {{ w.noteError.value
-            }}<button class="text-button" @click="w.refresh">重试</button>
+            {{ w.error.value || localError }}
+            <button class="text-button" @click="w.refresh">重新加载</button>
+          </p>
+          <p v-if="w.loading.value" class="loading-line" role="status">
+            正在同步你的日常…
           </p>
           <button
-            v-for="note in w.myNotes.value.slice(0, 2)"
-            :key="note.id"
-            class="note-card"
-            @click="noteEditor(note)"
+            v-if="drafts.length"
+            class="draft-banner"
+            @click="editor = drafts[0]!"
           >
-            <span class="note-stamp"
-              ><AppIcon name="notes" :size="15" />{{
-                note.updated.slice(0, 10).replaceAll("-", " / ")
-              }}</span
-            >
-            <h3>{{ note.title }}</h3>
-            <p>{{ noteText(note) }}</p>
-            <AppIcon class="note-arrow" name="arrow" :size="18" /></button
-          ><button
-            v-if="!w.myNotes.value.length"
-            class="quick-note"
-            @click="create('note')"
-          >
-            <AppIcon name="notes" /><span
-              >此刻有什么想记下的？<small
-                >留住一个想法，只需要几句话。</small
+            <AppIcon name="edit" /><span
+              >你有 {{ drafts.length }} 份本机草稿<span class="muted"
+                >继续写完那件小事</span
               ></span
-            ><AppIcon name="plus" /></button
-        ></template>
-        <template v-else-if="props.tab === 'tasks'"
-          ><div class="search-box">
-            <AppIcon name="search" /><input
-              v-model="search"
-              aria-label="搜索待办"
-              placeholder="搜索你想做的事…"
-            />
-          </div>
-          <div class="filter-row">
-            <div class="segments">
-              <button
-                :class="{ active: filter === 'open' }"
-                @click="filter = 'open'"
-              >
-                待完成</button
-              ><button
-                :class="{ active: filter === 'done' }"
-                @click="filter = 'done'"
-              >
-                已完成</button
-              ><button
-                :class="{ active: filter === 'all' }"
-                @click="filter = 'all'"
-              >
-                全部
-              </button>
-            </div>
-            <button class="scope-button" @click="mine = !mine">
-              {{ mine ? "我的" : "所有可见"
-              }}<AppIcon name="filter" :size="15" />
+            ><AppIcon name="right" />
+          </button>
+          <details v-if="drafts.length > 1" class="draft-list">
+            <summary>查看其他草稿</summary>
+            <button
+              v-for="draft in drafts"
+              :key="draft.id"
+              class="text-button"
+              @click="editor = draft"
+            >
+              {{ draft.kind === "task" ? "待办" : "小记" }} ·
+              {{ draft.title || "未命名草稿" }}
             </button>
-          </div>
-          <div class="section-heading">
-            <h2>
-              {{ filter === "done" ? "做过的，都算数" : "每一小步，都算数" }}
-              <span>{{ taskList.length }}</span>
-            </h2>
-          </div>
-          <div class="task-list">
-            <TaskRow
-              v-for="task in taskList"
-              :key="task.id"
-              :task="task"
-              :project="project(task.project)"
-              :busy="w.toggling.value.has(task.id)"
-              @edit="taskEditor"
-              @toggle="w.toggle"
-            />
-            <div v-if="!taskList.length && !w.loading.value" class="empty">
-              <span class="empty-icon"
-                ><AppIcon name="tasks" :size="28"
-              /></span>
-              <h3>{{ search ? "没有找到相关待办" : "这里还没有待办" }}</h3>
-              <p>
-                {{ search ? "换个词试试看。" : "让想法落地，从第一件事开始。" }}
-              </p>
-              <button class="text-button" @click="create('task')">
-                ＋ 新建待办
-              </button>
-            </div>
-          </div></template
-        >
-        <template v-else-if="props.tab === 'calendar'"
-          ><section class="calendar-card">
-            <div class="month-header">
-              <h2>
-                {{ month.getFullYear() }}<span> / </span
-                >{{ String(month.getMonth() + 1).padStart(2, "0") }}
-              </h2>
+          </details>
+          <template v-if="props.tab === 'today'"
+            ><section class="today-hero">
               <div>
-                <button class="text-button" @click="goToday">今天</button
-                ><button
-                  class="icon-button"
-                  aria-label="上个月"
-                  @click="shiftMonth(-1)"
+                <span class="hero-label"
+                  ><span class="live-dot" />给今天一点方向</span
                 >
-                  <AppIcon name="left" /></button
-                ><button
-                  class="icon-button"
-                  aria-label="下个月"
-                  @click="shiftMonth(1)"
-                >
-                  <AppIcon name="right" />
+                <h2>
+                  {{
+                    dueToday.length
+                      ? "专注眼前，\n一步一步来。"
+                      : "今天的留白，\n由你来安排。"
+                  }}
+                </h2>
+                <button class="hero-action" @click="create('task')">
+                  记一件待办<AppIcon name="plus" :size="17" />
+                </button>
+              </div>
+              <div class="sun-art" aria-hidden="true">
+                <div class="sun-disc" />
+                <div class="sun-hill" />
+                <div class="sun-line" />
+              </div>
+            </section>
+            <section class="stats">
+              <div>
+                <span class="stat-icon green"
+                  ><AppIcon name="tasks" :size="18" /></span
+                ><strong>{{ myOpen.length }}</strong
+                ><span>待办事项</span>
+              </div>
+              <div>
+                <span class="stat-icon amber"
+                  ><AppIcon name="sun" :size="18" /></span
+                ><strong>{{ dueToday.length }}</strong
+                ><span>今日关注</span>
+              </div>
+              <div>
+                <span class="stat-icon violet"
+                  ><AppIcon name="notes" :size="18" /></span
+                ><strong>{{ w.myNotes.value.length }}</strong
+                ><span>我的小记</span>
+              </div>
+            </section>
+            <div class="section-heading">
+              <h2>
+                今日关注 <span>{{ dueToday.length }}</span>
+              </h2>
+              <RouterLink to="/tasks"
+                >全部待办<AppIcon name="right" :size="16"
+              /></RouterLink>
+            </div>
+            <div class="task-list">
+              <TaskRow
+                v-for="task in dueToday.slice(0, 6)"
+                :key="task.id"
+                :task="task"
+                :project="project(task.project)"
+                :busy="w.toggling.value.has(task.id)"
+                @edit="taskEditor"
+                @toggle="w.toggle"
+              />
+              <div v-if="!dueToday.length && !w.loading.value" class="empty">
+                <span class="empty-icon"
+                  ><AppIcon name="sun" :size="26"
+                /></span>
+                <h3>
+                  {{ doneToday ? "今天的待办已完成" : "今天，留一点轻松" }}
+                </h3>
+                <p>添加一件小事，为今天定个方向。</p>
+                <button class="text-button" @click="create('task')">
+                  ＋ 新建待办
                 </button>
               </div>
             </div>
-            <div class="calendar-grid">
-              <span
-                v-for="day in ['一', '二', '三', '四', '五', '六', '日']"
-                :key="day"
-                class="weekday"
-                >{{ day }}</span
-              ><button
-                v-for="day in days"
-                :key="day.date"
-                :aria-label="`${day.date}，${dayCounts.get(day.date) || 0} 件待办`"
-                :aria-pressed="selected === day.date"
-                :class="{
-                  outside: !day.current,
-                  selected: selected === day.date,
-                  today: day.date === today,
-                }"
-                @click="selected = day.date"
-              >
-                <span>{{ day.day }}</span
-                ><i v-if="dayCounts.get(day.date)" />
-              </button>
+            <div class="section-heading">
+              <h2>最近的小记</h2>
+              <RouterLink to="/notes"
+                >全部小记<AppIcon name="right" :size="16"
+              /></RouterLink>
             </div>
-            <p class="calendar-legend"><i />有待办的日子 · 按截止日期展示</p>
-          </section>
-          <div class="section-heading">
-            <h2>
-              {{ selected.slice(5).replace("-", " 月 ") }} 日
-              <span>{{ dayTasks.length }}</span>
-            </h2>
-            <button class="text-button" @click="create('task')">
-              添加<AppIcon name="plus" :size="17" />
-            </button>
-          </div>
-          <div class="task-list">
-            <TaskRow
-              v-for="task in dayTasks"
-              :key="task.id"
-              :task="task"
-              :project="project(task.project)"
-              :busy="w.toggling.value.has(task.id)"
-              @edit="taskEditor"
-              @toggle="w.toggle"
-            />
-            <div v-if="!dayTasks.length" class="empty">
-              <span class="empty-icon"
-                ><AppIcon name="calendar" :size="28"
-              /></span>
-              <h3>这一天，还很自由</h3>
-              <p>为重要的事，留一个位置。</p>
-              <button class="text-button" @click="create('task')">
-                ＋ 安排一件事
-              </button>
-            </div>
-          </div></template
-        >
-        <template v-else
-          ><div class="search-box">
-            <AppIcon name="search" /><input
-              v-model="search"
-              aria-label="搜索小记"
-              placeholder="找回某个想法…"
-            />
-          </div>
-          <p v-if="w.noteError.value" class="error" role="alert">
-            {{ w.noteError.value
-            }}<button class="text-button" @click="w.refresh">重试</button>
-          </p>
-          <div class="section-heading">
-            <h2>
-              我的片刻 <span>{{ noteList.length }}</span>
-            </h2>
-            <span class="muted">按最近更新</span>
-          </div>
-          <div class="notes-grid">
+            <p v-if="w.noteError.value" class="error">
+              {{ w.noteError.value
+              }}<button class="text-button" @click="w.refresh">重试</button>
+            </p>
             <button
-              v-for="(note, i) in noteList"
+              v-for="note in w.myNotes.value.slice(0, 2)"
               :key="note.id"
               class="note-card"
-              :class="{ peach: i % 3 === 1, lavender: i % 3 === 2 }"
               @click="noteEditor(note)"
             >
               <span class="note-stamp"
@@ -609,24 +436,218 @@ onUnmounted(() => {
               >
               <h3>{{ note.title }}</h3>
               <p>{{ noteText(note) }}</p>
-              <span v-if="note.tags?.length" class="note-tags">{{
-                note.tags.map((t) => "#" + t).join(" ")
-              }}</span
-              ><AppIcon class="note-arrow" name="arrow" :size="18" />
-            </button>
-          </div>
-          <div v-if="!noteList.length && !w.loading.value" class="empty">
-            <span class="empty-icon"><AppIcon name="notes" :size="28" /></span>
-            <h3>{{ search ? "没有找到这段记忆" : "小事，也值得被记住" }}</h3>
-            <p>记一段心情，留一个灵感。</p>
-            <button class="text-button" @click="create('note')">
-              ＋ 写下第一篇小记
-            </button>
-          </div></template
-        >
-        <p class="page-footnote">一点秩序，一点自由。<span>WAO DAILY</span></p>
+              <AppIcon class="note-arrow" name="arrow" :size="18" /></button
+            ><button
+              v-if="!w.myNotes.value.length"
+              class="quick-note"
+              @click="create('note')"
+            >
+              <AppIcon name="notes" /><span
+                >此刻有什么想记下的？<small
+                  >留住一个想法，只需要几句话。</small
+                ></span
+              ><AppIcon name="plus" /></button
+          ></template>
+          <template v-else-if="props.tab === 'tasks'"
+            ><div class="search-box">
+              <AppIcon name="search" /><input
+                v-model="search"
+                aria-label="搜索待办"
+                placeholder="搜索你想做的事…"
+              />
+            </div>
+            <div class="filter-row">
+              <div class="segments">
+                <button
+                  :class="{ active: filter === 'open' }"
+                  @click="filter = 'open'"
+                >
+                  待完成</button
+                ><button
+                  :class="{ active: filter === 'done' }"
+                  @click="filter = 'done'"
+                >
+                  已完成</button
+                ><button
+                  :class="{ active: filter === 'all' }"
+                  @click="filter = 'all'"
+                >
+                  全部
+                </button>
+              </div>
+              <button class="scope-button" @click="mine = !mine">
+                {{ mine ? "我的" : "所有可见"
+                }}<AppIcon name="filter" :size="15" />
+              </button>
+            </div>
+            <div class="section-heading">
+              <h2>
+                {{ filter === "done" ? "做过的，都算数" : "每一小步，都算数" }}
+                <span>{{ taskList.length }}</span>
+              </h2>
+            </div>
+            <div class="task-list">
+              <TaskRow
+                v-for="task in taskList"
+                :key="task.id"
+                :task="task"
+                :project="project(task.project)"
+                :busy="w.toggling.value.has(task.id)"
+                @edit="taskEditor"
+                @toggle="w.toggle"
+              />
+              <div v-if="!taskList.length && !w.loading.value" class="empty">
+                <span class="empty-icon"
+                  ><AppIcon name="tasks" :size="28"
+                /></span>
+                <h3>{{ search ? "没有找到相关待办" : "这里还没有待办" }}</h3>
+                <p>
+                  {{
+                    search ? "换个词试试看。" : "让想法落地，从第一件事开始。"
+                  }}
+                </p>
+                <button class="text-button" @click="create('task')">
+                  ＋ 新建待办
+                </button>
+              </div>
+            </div></template
+          >
+          <template v-else-if="props.tab === 'calendar'"
+            ><section class="calendar-card">
+              <div class="month-header">
+                <h2>
+                  {{ month.getFullYear() }}<span> / </span
+                  >{{ String(month.getMonth() + 1).padStart(2, "0") }}
+                </h2>
+                <div>
+                  <button class="text-button" @click="goToday">今天</button
+                  ><button
+                    class="icon-button"
+                    aria-label="上个月"
+                    @click="shiftMonth(-1)"
+                  >
+                    <AppIcon name="left" /></button
+                  ><button
+                    class="icon-button"
+                    aria-label="下个月"
+                    @click="shiftMonth(1)"
+                  >
+                    <AppIcon name="right" />
+                  </button>
+                </div>
+              </div>
+              <div class="calendar-grid">
+                <span
+                  v-for="day in ['一', '二', '三', '四', '五', '六', '日']"
+                  :key="day"
+                  class="weekday"
+                  >{{ day }}</span
+                ><button
+                  v-for="day in days"
+                  :key="day.date"
+                  :aria-label="`${day.date}，${dayCounts.get(day.date) || 0} 件待办`"
+                  :aria-pressed="selected === day.date"
+                  :class="{
+                    outside: !day.current,
+                    selected: selected === day.date,
+                    today: day.date === today,
+                  }"
+                  @click="selected = day.date"
+                >
+                  <span>{{ day.day }}</span
+                  ><i v-if="dayCounts.get(day.date)" />
+                </button>
+              </div>
+              <p class="calendar-legend"><i />有待办的日子 · 按截止日期展示</p>
+            </section>
+            <div class="section-heading">
+              <h2>
+                {{ selected.slice(5).replace("-", " 月 ") }} 日
+                <span>{{ dayTasks.length }}</span>
+              </h2>
+              <button class="text-button" @click="create('task')">
+                添加<AppIcon name="plus" :size="17" />
+              </button>
+            </div>
+            <div class="task-list">
+              <TaskRow
+                v-for="task in dayTasks"
+                :key="task.id"
+                :task="task"
+                :project="project(task.project)"
+                :busy="w.toggling.value.has(task.id)"
+                @edit="taskEditor"
+                @toggle="w.toggle"
+              />
+              <div v-if="!dayTasks.length" class="empty">
+                <span class="empty-icon"
+                  ><AppIcon name="calendar" :size="28"
+                /></span>
+                <h3>这一天，还很自由</h3>
+                <p>为重要的事，留一个位置。</p>
+                <button class="text-button" @click="create('task')">
+                  ＋ 安排一件事
+                </button>
+              </div>
+            </div></template
+          >
+          <template v-else
+            ><div class="search-box">
+              <AppIcon name="search" /><input
+                v-model="search"
+                aria-label="搜索小记"
+                placeholder="找回某个想法…"
+              />
+            </div>
+            <p v-if="w.noteError.value" class="error" role="alert">
+              {{ w.noteError.value
+              }}<button class="text-button" @click="w.refresh">重试</button>
+            </p>
+            <div class="section-heading">
+              <h2>
+                我的片刻 <span>{{ noteList.length }}</span>
+              </h2>
+              <span class="muted">按最近更新</span>
+            </div>
+            <div class="notes-grid">
+              <button
+                v-for="(note, i) in noteList"
+                :key="note.id"
+                class="note-card"
+                :class="{ peach: i % 3 === 1, lavender: i % 3 === 2 }"
+                @click="noteEditor(note)"
+              >
+                <span class="note-stamp"
+                  ><AppIcon name="notes" :size="15" />{{
+                    note.updated.slice(0, 10).replaceAll("-", " / ")
+                  }}</span
+                >
+                <h3>{{ note.title }}</h3>
+                <p>{{ noteText(note) }}</p>
+                <span v-if="note.tags?.length" class="note-tags">{{
+                  note.tags.map((t) => "#" + t).join(" ")
+                }}</span
+                ><AppIcon class="note-arrow" name="arrow" :size="18" />
+              </button>
+            </div>
+            <div v-if="!noteList.length && !w.loading.value" class="empty">
+              <span class="empty-icon"
+                ><AppIcon name="notes" :size="28"
+              /></span>
+              <h3>{{ search ? "没有找到这段记忆" : "小事，也值得被记住" }}</h3>
+              <p>记一段心情，留一个灵感。</p>
+              <button class="text-button" @click="create('note')">
+                ＋ 写下第一篇小记
+              </button>
+            </div></template
+          >
+          <p class="page-footnote">
+            一点秩序，一点自由。<span>WAO DAILY</span>
+          </p>
+        </template>
       </main>
       <button
+        v-if="props.tab !== 'chat'"
         class="fab"
         :aria-label="props.tab === 'notes' ? '新建小记' : '新建待办'"
         @click="create()"
@@ -639,8 +660,13 @@ onUnmounted(() => {
           :key="item.id"
           :to="`/${item.id}`"
           :class="{ active: props.tab === item.id }"
-          ><span><AppIcon :name="item.icon" :size="22" /></span>{{ item.name
-          }}<i
+          ><span
+            ><AppIcon :name="item.icon" :size="22" /><b
+              v-if="item.id === 'chat' && chat.unread.value"
+              class="chat-badge"
+              >{{ chat.unread.value > 99 ? "99+" : chat.unread.value }}</b
+            ></span
+          >{{ item.name }}<i
         /></RouterLink>
       </nav>
     </div>
