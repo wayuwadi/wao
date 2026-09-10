@@ -574,6 +574,45 @@ async function removeTemplate(template: DocTemplate) {
 
 // ---- 文档树拖拽 ----
 
+const treeQuery = ref('')
+const treeElement = ref<HTMLElement | null>(null)
+const currentFolderId = computed(
+  () => kb.value?.folders.find((folder) => folder.docs.includes(docId.value ?? ''))?.id ?? '',
+)
+function treeMatches(folderName: string, id: string) {
+  const query = treeQuery.value.trim().toLocaleLowerCase()
+  return (
+    !query ||
+    (folderName + ' ' + (data.docById(id)?.title ?? '')).toLocaleLowerCase().includes(query)
+  )
+}
+const searchedFolders = computed(() =>
+  (kb.value?.folders ?? []).filter(
+    (folder) =>
+      !treeQuery.value.trim() ||
+      folder.name.toLocaleLowerCase().includes(treeQuery.value.trim().toLocaleLowerCase()) ||
+      folder.docs.some((id) => treeMatches(folder.name, id)),
+  ),
+)
+async function locateCurrentDoc() {
+  treeQuery.value = ''
+  if (currentFolderId.value) folderOpen[currentFolderId.value] = true
+  await nextTick()
+  treeElement.value?.querySelector('.doc-node.on')?.scrollIntoView({ block: 'nearest' })
+}
+async function moveCurrentDoc(event: Event) {
+  const target = (event.target as HTMLSelectElement).value
+  const folder = kb.value?.folders.find((folder) => folder.id === target)
+  if (!docId.value || !folder || target === currentFolderId.value) return
+  draggingDocId.value = docId.value
+  await dropDoc(target, folder.docs.length)
+  if (treeSaveState.value === 'saved') {
+    folderOpen[target] = true
+    await locateCurrentDoc()
+  }
+  ;(event.target as HTMLSelectElement).value = currentFolderId.value
+}
+
 const draggingDocId = ref<string | null>(null)
 const treeSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 let pendingOrder: { folderId: string; docIds: string[] }[] | null = null
@@ -806,8 +845,10 @@ async function keepConflictCopy() {
         </div>
       </div>
 
-      <div class="tree">
-        <div v-for="f in kb.folders" :key="f.id">
+      <div class="tree-search"><strong>文件夹与文档</strong><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文件夹、文档" /></label><button :disabled="!docId" @click="locateCurrentDoc">定位当前文档</button></div>
+      <div ref="treeElement" class="tree">
+        <p v-if="treeQuery.trim() && !searchedFolders.length" class="folder-empty">没有匹配的文件夹或文档</p>
+        <div v-for="f in searchedFolders" :key="f.id">
           <div class="folder-row" @dragover.prevent @drop="dropDoc(f.id, f.docs.length)">
             <input
               v-if="renamingFolder === f.id"
@@ -842,10 +883,11 @@ async function keepConflictCopy() {
               </button>
             </template>
           </div>
-          <div v-if="isOpen(f.id)" class="doc-tree">
+          <div v-if="treeQuery.trim() || isOpen(f.id)" class="doc-tree">
             <div
               v-for="(dId, index) in f.docs"
               :key="dId"
+              v-show="treeMatches(f.name, dId)"
               class="doc-row"
               :class="{ dragging: draggingDocId === dId }"
               draggable="true"
@@ -942,6 +984,7 @@ async function keepConflictCopy() {
               ><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span
             >
 
+            <label v-if="docId && !currentArchived" class="move-document">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
             <SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" />
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
             <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
@@ -1074,7 +1117,7 @@ async function keepConflictCopy() {
         </div>
 
         <div v-if="toc.length" class="toc">
-          <div class="toc-label">目录</div>
+          <div class="toc-label">文档大纲</div>
           <div class="toc-list">
             <button v-for="(t, i) in toc" :key="`${t.text}-${i}`" class="toc-item" :class="{ sub: t.level === 2, deep: t.level === 3, active: activeToc === i }" @click="tocGo(i)">{{ t.text }}</button>
           </div>
@@ -1170,6 +1213,9 @@ async function keepConflictCopy() {
 </template>
 
 <style scoped>
+.tree-search { padding:10px 12px; display:grid; gap:7px; font-size:11px; border-bottom:1px solid var(--wao-line); }.tree-search strong { font-weight:500; color:var(--wao-text-weak); }.tree-search label { display:flex; align-items:center; gap:6px; padding:7px; border:1px solid var(--wao-line); border-radius:6px; }.tree-search input { min-width:0; width:100%; border:0; outline:0; background:none; color:var(--wao-text); }.tree-search button { justify-self:start; border:0; background:none; color:var(--wao-primary); cursor:pointer; }
+.move-document { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--wao-text-weak); }.move-document select { max-width:130px; min-width:70px; padding:5px; border:1px solid var(--wao-line); border-radius:5px; background:var(--wao-bg-card); color:var(--wao-text); }
+
 .missing {
   padding: 60px 24px;
   text-align: center;

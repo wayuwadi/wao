@@ -26,12 +26,15 @@ vi.mock('@/api/system', () => ({
   fetchExternalAppRegistry: vi.fn<() => Promise<unknown>>(),
   fetchSiteInfo: vi.fn<() => Promise<unknown>>(),
   fetchNetworkOutageWindow: vi.fn<() => Promise<unknown>>().mockResolvedValue({
-    enabled: true, startTime: '00:00', endTime: '06:00',
+    enabled: true,
+    startTime: '00:00',
+    endTime: '06:00',
   }),
   saveBuiltinMenuRegistry: vi.fn<() => Promise<unknown>>(),
   saveExternalAppRegistry: vi.fn<() => Promise<unknown>>(),
   saveSiteInfo: vi.fn<() => Promise<unknown>>(),
-  saveNetworkOutageWindow: vi.fn<(value: { enabled: boolean; startTime: string; endTime: string }) => Promise<unknown>>()
+  saveNetworkOutageWindow: vi
+    .fn<(value: { enabled: boolean; startTime: string; endTime: string }) => Promise<unknown>>()
     .mockImplementation(async (value) => value),
 }))
 
@@ -44,13 +47,26 @@ describe('设置页 Webhook 草稿路由保护', () => {
     const notificationSettings = {
       canManageSystem: true,
       system: {
-        enabled: true, quietHoursEnabled: false, quietStart: '22:00', quietEnd: '08:00',
-        taskActivity: false, taskSuccess: false, aiRunSuccess: false, aiRunFailure: true,
-        manualTask: true, reminders: true, deliveryFailure: true, automation: true,
+        enabled: true,
+        quietHoursEnabled: false,
+        quietStart: '22:00',
+        quietEnd: '08:00',
+        taskActivity: false,
+        taskSuccess: false,
+        aiRunSuccess: false,
+        aiRunFailure: true,
+        manualTask: true,
+        reminders: true,
+        deliveryFailure: true,
+        automation: true,
       },
       personal: {
-        enabled: true, taskCreated: true, taskCompleted: true, aiRunSuccess: true,
-        aiRunFailure: true, loginActivity: true,
+        enabled: true,
+        taskCreated: true,
+        taskCompleted: true,
+        aiRunSuccess: true,
+        aiRunFailure: true,
+        loginActivity: true,
       },
     }
     notificationApi.fetch.mockReset().mockResolvedValue(structuredClone(notificationSettings))
@@ -85,8 +101,9 @@ describe('设置页 Webhook 草稿路由保护', () => {
 
     expect(router.currentRoute.value.path).toBe('/settings')
     expect(window.confirm).toHaveBeenCalledOnce()
-    expect((wrapper.get('input[placeholder="例如 WAO 主群"]').element as HTMLInputElement).value)
-      .toBe('未保存机器人')
+    expect(
+      (wrapper.get('input[placeholder="例如 WAO 主群"]').element as HTMLInputElement).value,
+    ).toBe('未保存机器人')
   })
 
   it('断网时段覆盖加载、草稿防丢和保存成功状态', async () => {
@@ -106,13 +123,16 @@ describe('设置页 Webhook 草稿路由保护', () => {
     await wrapper.get('form.site-form').trigger('submit')
     await flushPromises()
     expect(saveNetworkOutageWindow).toHaveBeenCalledWith({
-      enabled: true, startTime: '00:00', endTime: '06:30',
+      enabled: true,
+      startTime: '00:00',
+      endTime: '06:30',
     })
     expect(wrapper.text()).toContain('已保存')
   })
 
   it('通知设置保留设置侧栏，并在切换菜单配置时保护未保存草稿', async () => {
-    const notificationEntry = wrapper.findAll('.snav-item')
+    const notificationEntry = wrapper
+      .findAll('.snav-item')
       .find((button) => button.text() === '通知设置')
     await notificationEntry!.trigger('click')
     await flushPromises()
@@ -124,8 +144,9 @@ describe('设置页 Webhook 草稿路由保护', () => {
 
     await wrapper.get('.quiet-row > label input').setValue(true)
     window.confirm = vi.fn<(message?: string) => boolean>(() => false)
-    const navigationEntry = wrapper.findAll('.snav-item')
-      .find((button) => button.text() === '菜单配置')
+    const navigationEntry = wrapper
+      .findAll('.snav-item')
+      .find((button) => button.text() === '我的导航')
     await navigationEntry!.trigger('click')
 
     expect(window.confirm).toHaveBeenCalledOnce()

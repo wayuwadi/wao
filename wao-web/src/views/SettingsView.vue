@@ -43,8 +43,8 @@ const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(nu
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['系统登录配置', 'login-settings'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['宠物设置', 'pet'], ['偏好', 'prefs']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['系统登录配置', 'login-settings'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['我的导航', 'navigation'], ['个人资料', 'profile'], ['账号与登录', 'account'], ['宠物设置', 'pet'], ['偏好', 'prefs']] },
 ] as const
 
 const requestedTab = (route.query.tab as string) || 'members'

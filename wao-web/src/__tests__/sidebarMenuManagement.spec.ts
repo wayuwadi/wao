@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TopMenuBar from '@/components/nav/TopMenuBar.vue'
 import SideNav from '@/components/nav/SideNav.vue'
+import { fetchNavigationLayout, saveNavigationLayout } from '@/api/navigationLayout'
 import { useNavStore } from '@/stores/nav'
 import {
   fetchBuiltinMenuRegistry,
@@ -19,6 +20,11 @@ import {
   type ExternalAppConfig,
   type ExternalAppRegistry,
 } from '@/config/nav'
+
+vi.mock('@/api/navigationLayout', () => ({
+  fetchNavigationLayout: vi.fn(),
+  saveNavigationLayout: vi.fn(),
+}))
 
 vi.mock('@/api/system', () => ({
   fetchBuiltinMenuRegistry: vi.fn<() => Promise<BuiltinMenuRegistry>>(),
@@ -38,6 +44,11 @@ vi.mock('@/api/favorites', () => ({
 describe('桌面侧栏直接维护菜单', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'none', layout: null })
+    vi.mocked(saveNavigationLayout).mockImplementation(async (_revision, layout) => ({
+      revision: crypto.randomUUID(),
+      layout,
+    }))
     localStorage.clear()
     document.body.innerHTML = ''
     window.matchMedia = ((query: string) => ({
@@ -70,23 +81,33 @@ describe('桌面侧栏直接维护菜单', () => {
     })
     await router.push('/')
     await router.isReady()
-    const wrapper = mount(withTop ? { components: { SideNav, TopMenuBar }, template: '<SideNav /><TopMenuBar />' } : SideNav, {
-      attachTo: document.body,
-      global: { plugins: [router], stubs: { QuickLinks: true } },
-    })
+    const wrapper = mount(
+      withTop
+        ? { components: { SideNav, TopMenuBar }, template: '<SideNav /><TopMenuBar />' }
+        : SideNav,
+      {
+        attachTo: document.body,
+        global: { plugins: [router], stubs: { QuickLinks: true } },
+      },
+    )
     await flushPromises()
     return wrapper
   }
 
-  it('拖到底部后以原菜单图标显示，并可右键改名写回注册表', async () => {
+  it('拖到底部后以原菜单图标显示，并可右键改名保存个人布局', async () => {
     const wrapper = await mountSideNav()
     const transfer = { setData: vi.fn<(format: string, data: string) => void>(), effectAllowed: '' }
     await wrapper.get('[title="项目"]').trigger('dragstart', { dataTransfer: transfer })
     await wrapper.get('.quick-row').trigger('drop')
     await flushPromises()
 
-    expect(saveBuiltinMenuRegistry).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ id: 'projects', placement: 'DOCK' })]),
+    expect(saveNavigationLayout).toHaveBeenCalledWith(
+      'none',
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({ id: 'projects', placement: 'DOCK' }),
+        ]),
+      }),
     )
     const docked = wrapper.get('.dock-item[title="项目"]')
     expect(wrapper.findAll('.items .item[title="项目"]')).toHaveLength(0)
@@ -102,8 +123,8 @@ describe('桌面侧栏直接维护菜单', () => {
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
-    const saveCalls = vi.mocked(saveBuiltinMenuRegistry).mock.calls
-    expect(saveCalls[saveCalls.length - 1]?.[0]).toEqual(
+    const saveCalls = vi.mocked(saveNavigationLayout).mock.calls
+    expect(saveCalls[saveCalls.length - 1]?.[1].items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'projects', label: '我的项目', placement: 'DOCK' }),
       ]),
@@ -129,12 +150,16 @@ describe('桌面侧栏直接维护菜单', () => {
     await wrapper.get('.top-menu-item').trigger('drop')
     await flushPromises()
     expect(nav.topItems).toEqual(['calendar', 'projects'])
-    await wrapper.get('.top-menu-item[title="项目"]').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper
+      .get('.top-menu-item[title="项目"]')
+      .trigger('dragstart', { dataTransfer: transfer })
     await wrapper.get('.top-menu-item[title="日历"]').trigger('drop')
     await flushPromises()
     expect(nav.topItems).toEqual(['projects', 'calendar'])
 
-    await wrapper.get('.top-menu-item[title="项目"]').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper
+      .get('.top-menu-item[title="项目"]')
+      .trigger('dragstart', { dataTransfer: transfer })
     await wrapper.get('.quick-row').trigger('drop')
     await flushPromises()
     expect(nav.dockItems).toEqual(['projects'])
@@ -142,7 +167,9 @@ describe('桌面侧栏直接维护菜单', () => {
     await wrapper.get('.top-menu-bar').trigger('drop')
     await flushPromises()
     expect(nav.topItems).toEqual(['calendar', 'projects'])
-    await wrapper.get('.top-menu-item[title="项目"]').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper
+      .get('.top-menu-item[title="项目"]')
+      .trigger('dragstart', { dataTransfer: transfer })
     await wrapper.get('.items [title="首页"]').trigger('drop')
     await flushPromises()
     expect(nav.menuConfig('projects')).toMatchObject({ placement: 'MENU', group: 'ROOT' })
@@ -158,11 +185,16 @@ describe('桌面侧栏直接维护菜单', () => {
     await flushPromises()
     await wrapper.get('.top-menu-item').trigger('click')
     expect(open).toHaveBeenCalledWith('https://www.biji.com/', '_blank', 'noopener,noreferrer')
-    vi.mocked(saveBuiltinMenuRegistry).mockRejectedValueOnce(new Error('网络不可用'))
+    vi.mocked(saveNavigationLayout).mockRejectedValueOnce(new Error('网络不可用'))
     await wrapper.get('.items [title="项目"]').trigger('dragstart')
     await wrapper.get('.top-menu-bar').trigger('drop')
     await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('重新拖拽')
+    expect(
+      wrapper
+        .findAll('[role="alert"]')
+        .map((el) => el.text())
+        .join(' '),
+    ).toContain('网络不可用')
     expect(wrapper.find('.items [title="项目"]').exists()).toBe(true)
     await wrapper.get('.items [title="项目"]').trigger('dragstart')
     await wrapper.get('.top-menu-bar').trigger('drop')
@@ -175,11 +207,11 @@ describe('桌面侧栏直接维护菜单', () => {
   it('无菜单拖拽时忽略普通文本落入，保存中不允许另一次拖拽', async () => {
     const wrapper = await mountSideNav(true)
     await wrapper.get('.top-menu-bar').trigger('drop')
-    expect(saveBuiltinMenuRegistry).not.toHaveBeenCalled()
+    expect(saveNavigationLayout).not.toHaveBeenCalled()
     useNavStore().menuMutationState = 'saving'
     await wrapper.get('.items [title="项目"]').trigger('dragstart')
     await wrapper.get('.top-menu-bar').trigger('drop')
-    expect(saveBuiltinMenuRegistry).not.toHaveBeenCalled()
+    expect(saveNavigationLayout).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -189,16 +221,17 @@ describe('桌面侧栏直接维护菜单', () => {
     await nav.moveMenu('projects', 'MENU', 'TOOLS')
 
     expect(nav.menuConfig('projects')).toMatchObject({ group: 'TOOLS', placement: 'MENU' })
-    expect(saveBuiltinMenuRegistry).toHaveBeenCalled()
-    expect(saveExternalAppRegistry).toHaveBeenCalled()
+    expect(saveNavigationLayout).toHaveBeenCalledTimes(1)
+    expect(saveBuiltinMenuRegistry).not.toHaveBeenCalled()
+    expect(saveExternalAppRegistry).not.toHaveBeenCalled()
 
-    vi.mocked(saveBuiltinMenuRegistry).mockRejectedValueOnce(new Error('网络不可用'))
+    vi.mocked(saveNavigationLayout).mockRejectedValueOnce(new Error('网络不可用'))
     await expect(nav.moveMenu('projects', 'DOCK', 'TOOLS')).rejects.toThrow('网络不可用')
-    expect(nav.menuConfig('projects')).toMatchObject({ group: 'PUBLIC', placement: 'MENU' })
+    expect(nav.menuConfig('projects')).toMatchObject({ group: 'TOOLS', placement: 'MENU' })
     expect(nav.menuMutationError).toBe('网络不可用')
   })
 
-  it('右键菜单提供置顶与隐藏并写回统一注册表', async () => {
+  it('右键菜单提供置顶与隐藏并保存个人布局', async () => {
     const wrapper = await mountSideNav()
     await wrapper.get('[title="日历"]').trigger('contextmenu', { clientX: 40, clientY: 80 })
     const actions = [...document.querySelectorAll<HTMLButtonElement>('.menu-actions button')]
@@ -206,8 +239,8 @@ describe('桌面侧栏直接维护菜单', () => {
     actions[1]!.click()
     await flushPromises()
 
-    const pinCalls = vi.mocked(saveBuiltinMenuRegistry).mock.calls
-    const pinCall = pinCalls[pinCalls.length - 1]?.[0] ?? []
+    const pinCalls = vi.mocked(saveNavigationLayout).mock.calls
+    const pinCall = pinCalls[pinCalls.length - 1]?.[1].items ?? []
     const calendar = pinCall.find((menu) => menu.id === 'calendar')!
     const personalPeers = pinCall.filter((menu) => menu.visible && menu.group === 'PERSONAL')
     expect(calendar.order).toBe(Math.min(...personalPeers.map((menu) => menu.order)))
@@ -216,8 +249,8 @@ describe('桌面侧栏直接维护菜单', () => {
     document.querySelectorAll<HTMLButtonElement>('.menu-actions button')[2]!.click()
     await flushPromises()
 
-    const hideCalls = vi.mocked(saveBuiltinMenuRegistry).mock.calls
-    expect(hideCalls[hideCalls.length - 1]?.[0]).toEqual(
+    const hideCalls = vi.mocked(saveNavigationLayout).mock.calls
+    expect(hideCalls[hideCalls.length - 1]?.[1].items).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'calendar', visible: false })]),
     )
     expect(wrapper.find('[title="日历"]').exists()).toBe(false)

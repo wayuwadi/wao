@@ -17,7 +17,13 @@ import {
   type ExternalAppConfig,
   type ExternalAppRegistry,
 } from '@/config/nav'
+import { fetchNavigationLayout, saveNavigationLayout } from '@/api/navigationLayout'
 import { fetchPreference, savePreference } from '@/api/favorites'
+
+vi.mock('@/api/navigationLayout', () => ({
+  fetchNavigationLayout: vi.fn(),
+  saveNavigationLayout: vi.fn(),
+}))
 
 vi.mock('@/api/system', () => ({
   fetchExternalAppRegistry: vi.fn<() => Promise<ExternalAppRegistry>>(),
@@ -65,12 +71,21 @@ function menuRow(wrapper: ReturnType<typeof mount>, label: string) {
 function menuGroup(wrapper: ReturnType<typeof mount>, label: string) {
   return wrapper
     .findAll('.menu-group')
-    .find((group) => group.find('header').text().startsWith(label))!
+    .find((group) =>
+      group.find('header input').exists()
+        ? (group.find('header input').element as HTMLInputElement).value === label
+        : group.find('header').text().startsWith(label),
+    )!
 }
 
 describe('菜单与快捷链接统一设置', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'none', layout: null })
+    vi.mocked(saveNavigationLayout).mockImplementation(async (_revision, layout) => ({
+      revision: crypto.randomUUID(),
+      layout,
+    }))
     localStorage.clear()
     setActivePinia(createPinia())
     vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({
@@ -127,7 +142,7 @@ describe('菜单与快捷链接统一设置', () => {
     await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
 
-    const saved = vi.mocked(saveBuiltinMenuRegistry).mock.calls[0]![0]
+    const saved = vi.mocked(saveNavigationLayout).mock.calls[0]![1].items
     const savedToolMenus = saved.filter((menu) => menu.group === 'TOOLS')
     const project = savedToolMenus.find((menu) => menu.id === 'projects')!
     expect(project).toMatchObject({ group: 'TOOLS', visible: false })
@@ -146,12 +161,15 @@ describe('菜单与快捷链接统一设置', () => {
     await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
 
-    expect(saveExternalAppRegistry).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'media-agent', group: 'TOOLS' }),
-        expect.objectContaining({ id: 'getnote', openMode: 'NEW_PAGE' }),
-        expect.objectContaining({ id: 'jumpserver', openMode: 'NEW_PAGE' }),
-      ]),
+    expect(saveNavigationLayout).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({ id: 'external:media-agent', group: 'TOOLS' }),
+          expect.objectContaining({ id: 'external:getnote', openMode: 'NEW_PAGE' }),
+          expect.objectContaining({ id: 'external:jumpserver', openMode: 'NEW_PAGE' }),
+        ]),
+      }),
     )
 
     const firstLink = wrapper.get('.quick-link-row')
@@ -173,36 +191,57 @@ describe('菜单与快捷链接统一设置', () => {
     await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
 
-    expect(saveBuiltinMenuRegistry).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ id: 'projects', placement })]),
+    expect(saveNavigationLayout).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        items: expect.arrayContaining([expect.objectContaining({ id: 'projects', placement })]),
+      }),
     )
   })
 
   it('修改其他菜单不会重置顶部跨分组顺序', async () => {
-    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({ version: 1, menus: DEFAULT_BUILTIN_MENUS.map((menu) =>
-      menu.id === 'projects' ? { ...menu, placement: 'TOP', order: 30 }
-        : menu.id === 'calendar' ? { ...menu, placement: 'TOP', order: 10 } : menu) })
-    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({ version: 1, apps: DEFAULT_EXTERNAL_APPS.map((app) =>
-      app.id === 'getnote' ? { ...app, placement: 'TOP', order: 20 } : app) })
+    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({
+      version: 1,
+      menus: DEFAULT_BUILTIN_MENUS.map((menu) =>
+        menu.id === 'projects'
+          ? { ...menu, placement: 'TOP', order: 30 }
+          : menu.id === 'calendar'
+            ? { ...menu, placement: 'TOP', order: 10 }
+            : menu,
+      ),
+    })
+    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({
+      version: 1,
+      apps: DEFAULT_EXTERNAL_APPS.map((app) =>
+        app.id === 'getnote' ? { ...app, placement: 'TOP', order: 20 } : app,
+      ),
+    })
     const wrapper = await mountSettings()
     await menuRow(wrapper, '待办').get('select[aria-label="展示位置"]').setValue('DOCK')
     await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
-    const menus = vi.mocked(saveBuiltinMenuRegistry).mock.calls.slice(-1)[0]![0]
+    const menus = vi.mocked(saveNavigationLayout).mock.calls.slice(-1)[0]![1].items
     expect(menus.find((menu) => menu.id === 'calendar')?.order).toBe(10)
     expect(menus.find((menu) => menu.id === 'projects')?.order).toBe(30)
     wrapper.unmount()
   })
 
-  it('点击当前图标可视化选择并立即保存菜单注册表', async () => {
+  it('点击图标选择先保留草稿，明确保存后写个人布局', async () => {
     const wrapper = await mountSettings()
     const projects = menuRow(wrapper, '项目')
     await projects.get('.icon-trigger').trigger('click')
     await projects.get('button[title="ri-rocket-2-line"]').trigger('click')
+    expect(saveNavigationLayout).not.toHaveBeenCalled()
+    await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
 
-    expect(saveBuiltinMenuRegistry).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ id: 'projects', icon: 'ri-rocket-2-line' })]),
+    expect(saveNavigationLayout).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({ id: 'projects', icon: 'ri-rocket-2-line' }),
+        ]),
+      }),
     )
     expect(projects.get('.icon-trigger i').classes()).toContain('ri-rocket-2-line')
   })

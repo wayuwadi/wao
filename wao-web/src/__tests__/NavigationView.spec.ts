@@ -10,6 +10,8 @@ import {
 } from '@/config/nav'
 import { NAVIGATION_CATALOG } from '@/config/navigationCatalog'
 import { MODULES } from '@/config/nav'
+import { fetchNavigationLayout, saveNavigationLayout } from '@/api/navigationLayout'
+import { useNavStore } from '@/stores/nav'
 import { useUiStore } from '@/stores/ui'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import {
@@ -19,6 +21,11 @@ import {
   saveExternalAppRegistry,
 } from '@/api/system'
 import { fetchFunctionHealth } from '@/api/functionHealth'
+
+vi.mock('@/api/navigationLayout', () => ({
+  fetchNavigationLayout: vi.fn(),
+  saveNavigationLayout: vi.fn(),
+}))
 
 vi.mock('@/api/favorites', () => ({
   fetchPreference: vi.fn<() => Promise<string>>(),
@@ -69,6 +76,11 @@ async function mountNavigation() {
 describe('全量导航页', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'none', layout: null })
+    vi.mocked(saveNavigationLayout).mockImplementation(async (_revision, layout) => ({
+      revision: crypto.randomUUID(),
+      layout,
+    }))
     localStorage.clear()
     setActivePinia(createPinia())
     vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({
@@ -133,33 +145,34 @@ describe('全量导航页', () => {
   it('完整目录覆盖所有非兼容模块，且不受侧栏显隐影响', async () => {
     const catalogIds = NAVIGATION_CATALOG.flatMap((section) => section.items.map((item) => item.id))
     const expected = Object.keys(MODULES).filter(
-      (id) => !['home', 'notes', 'navigation', 'settings', 'chat', 'chat-reviews'].includes(id),
+      (id) => !['navigation', 'chat', 'chat-reviews'].includes(id),
     )
     expect(new Set(catalogIds)).toEqual(new Set(expected))
 
     const { wrapper } = await mountNavigation()
+    await wrapper.get('.domains button').trigger('click')
     expect(wrapper.text()).toContain('游戏厅')
     expect(wrapper.text()).toContain('记忆中心')
     expect(wrapper.text()).toContain('隐藏应用')
     expect(wrapper.text()).toContain('我的资料')
-    expect(wrapper.findAll('.hidden-badge').length).toBeGreaterThan(0)
+    expect(wrapper.text()).toContain('未固定')
     wrapper.unmount()
   })
 
   it('可搜索 Codex 记忆入口，并打开侧栏已隐藏的真实模块和应用', async () => {
     const { router, wrapper } = await mountNavigation()
     await wrapper.get('.search input').setValue('Codex MCP')
-    expect(wrapper.findAll('.nav-card')).toHaveLength(1)
-    expect(wrapper.get('.nav-card').text()).toContain('记忆中心')
+    expect(wrapper.findAll('.function-row')).toHaveLength(1)
+    expect(wrapper.get('.function-row').text()).toContain('记忆中心')
 
     await wrapper.get('.search input').setValue('游戏厅')
-    await wrapper.get('.card-open').trigger('click')
+    await wrapper.get('.function-open').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/games')
 
     await router.push('/navigation')
     await wrapper.get('.search input').setValue('隐藏应用')
-    await wrapper.get('.card-open').trigger('click')
+    await wrapper.get('.function-open').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/apps/hidden-app')
     wrapper.unmount()
@@ -169,9 +182,9 @@ describe('全量导航页', () => {
     const { wrapper } = await mountNavigation()
     await wrapper.get('.search input').setValue('历史点子')
 
-    expect(wrapper.findAll('.nav-card')).toHaveLength(1)
-    expect(wrapper.get('.nav-card').text()).toContain('归并旧版点子档案')
-    expect(wrapper.get('.nav-card').text()).toContain('新想法直接进入项目任务')
+    expect(wrapper.findAll('.function-row')).toHaveLength(1)
+    expect(wrapper.get('.function-row').text()).toContain('归并旧版点子档案')
+    expect(wrapper.get('.function-row').text()).toContain('新想法直接进入项目任务')
     wrapper.unmount()
   })
 
@@ -181,77 +194,71 @@ describe('全量导航页', () => {
     expect(wrapper.text()).not.toContain('编辑手机底栏')
     expect(savePreference).not.toHaveBeenCalledWith('mobile-bottom-nav-v1', expect.any(String))
 
-    await wrapper.get('.quick-actions-section .nav-card').trigger('click')
+    await wrapper.get('.search input').setValue('小记')
+    await wrapper.get('.function-open').trigger('click')
     await flushPromises()
     expect(useUiStore().modal).toBeNull()
     expect(router.currentRoute.value.path).toBe('/notes')
     wrapper.unmount()
   })
 
-  it('使用真实快照展示分数、次数、占比和优化提示', async () => {
-    const { wrapper } = await mountNavigation()
+  it('打开功能时不读取治理统计，治理页再展示真实快照', async () => {
+    const { router, wrapper } = await mountNavigation()
+    expect(fetchFunctionHealth).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('30 天真实打开')
+    await router.replace('/navigation?view=governance')
+    await flushPromises()
+    await vi.waitFor(() => expect(wrapper.text()).toContain('近 30 天真实打开'))
+    expect(fetchFunctionHealth).toHaveBeenCalled()
     expect(wrapper.text()).toContain('40')
-    await wrapper.get('.search input').setValue('游戏厅')
-    expect(wrapper.get('.nav-card').text()).toContain('12 分')
-    expect(wrapper.get('.nav-card').text()).toContain('30 天 10 次 · 25.0%')
-    expect(wrapper.get('.nav-card').text()).toContain('优先缩短高频操作路径')
+    expect(wrapper.text()).toContain('优先缩短高频操作路径')
     wrapper.unmount()
   })
 
-  it('从工作台直接隐藏内置菜单，保存后仍留在当前工作台恢复', async () => {
-    const { router, wrapper } = await mountNavigation()
-    await wrapper.get('.search input').setValue('项目')
-    const card = wrapper.findAll('.manageable-card').find(card => card.find('.card-copy > b').text().trim() === '项目')!
-    expect(card.get('.menu-visibility').text()).toContain('隐藏菜单')
-
-    await card.get('.menu-visibility').trigger('click')
-    await flushPromises()
-
-    expect(router.currentRoute.value.path).toBe('/navigation')
-    expect(saveBuiltinMenuRegistry).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ id: 'projects', visible: false })]),
-    )
-    expect(card.text()).toContain('侧栏已隐藏')
-    expect(card.get('.menu-visibility').text()).toContain('显示菜单')
-    wrapper.unmount()
-  })
-
-  it('从工作台直接恢复已隐藏的接入应用', async () => {
-    const { router, wrapper } = await mountNavigation()
-    await wrapper.get('.search input').setValue('隐藏应用')
-    const card = wrapper.get('.manageable-card')
-    expect(card.text()).toContain('侧栏已隐藏')
-
-    await card.get('.menu-visibility').trigger('click')
-    await flushPromises()
-
-    expect(router.currentRoute.value.path).toBe('/navigation')
-    expect(saveExternalAppRegistry).toHaveBeenCalledWith([
-      expect.objectContaining({ id: 'hidden-app', visible: true }),
-    ])
-    expect(card.text()).not.toContain('侧栏已隐藏')
-    expect(card.get('.menu-visibility').text()).toContain('隐藏菜单')
-    wrapper.unmount()
-  })
-
-  it('菜单保存失败时恢复服务端状态并可原地重试', async () => {
-    vi.mocked(saveBuiltinMenuRegistry)
-      .mockRejectedValueOnce(new Error('网络不可用'))
-      .mockImplementationOnce(async (menus) => ({ version: 24, menus }))
+  it('隐藏菜单仍可发现，恢复外部应用及跨位置只保存个人快照', async () => {
     const { wrapper } = await mountNavigation()
-    await wrapper.get('.search input').setValue('项目')
-
-    await wrapper.get('.menu-visibility').trigger('click')
+    await wrapper.get('.search input').setValue('隐藏应用')
+    expect(wrapper.text()).toContain('未固定')
+    await wrapper.get('.position select').setValue('TOP')
     await flushPromises()
+    expect(saveNavigationLayout).toHaveBeenCalledWith(
+      'none',
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({ id: 'external:hidden-app', visible: true, placement: 'TOP' }),
+        ]),
+      }),
+    )
+    expect(wrapper.text()).toContain('顶部菜单')
+    expect(saveBuiltinMenuRegistry).not.toHaveBeenCalled()
+    expect(saveExternalAppRegistry).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 
-    expect(wrapper.get('.menu-action-error').text()).toContain('网络不可用')
-    expect(wrapper.get('.menu-visibility').text()).toContain('隐藏菜单')
-    await wrapper.get('.menu-action-error button').trigger('click')
+  it('菜单保存失败恢复位置，并保留可重试的草稿', async () => {
+    vi.mocked(saveNavigationLayout).mockRejectedValueOnce(new Error('网络不可用'))
+    const { wrapper } = await mountNavigation()
+    await wrapper.get('.search input').setValue('隐藏应用')
+    await wrapper.get('.position select').setValue('TOP')
     await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('网络不可用')
+    expect((wrapper.get('.position select').element as HTMLSelectElement).value).toBe('HIDDEN')
+    await useNavStore().retryLayout()
+    await flushPromises()
+    expect(useNavStore().menuConfig('external:hidden-app')).toMatchObject({
+      placement: 'TOP',
+      visible: true,
+    })
+    wrapper.unmount()
+  })
 
-    expect(saveBuiltinMenuRegistry).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('.menu-action-error').exists()).toBe(false)
-    expect(wrapper.get('.menu-visibility').text()).toContain('显示菜单')
+  it('旧工作台名称可找到链接空间，整理入口直达个人菜单设置', async () => {
+    const { router, wrapper } = await mountNavigation()
+    await wrapper.get('.search input').setValue('工作台')
+    expect(wrapper.text()).toContain('链接空间')
+    await wrapper.get('.header-actions button').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=navigation')
     wrapper.unmount()
   })
 })

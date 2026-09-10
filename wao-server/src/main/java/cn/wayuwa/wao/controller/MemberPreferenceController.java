@@ -40,6 +40,9 @@ public class MemberPreferenceController {
     public ApiResponse<Void> put(@PathVariable String key, @RequestBody Map<String, String> body,
             HttpServletRequest http) {
         String value = body.get("value");
+        if (cn.wayuwa.wao.service.NavigationLayoutService.PREFERENCE_KEY.equals(key)) {
+            throw new BadRequestException("请使用个人导航接口保存布局，以保护跨设备修改");
+        }
         if (value == null || value.length() > MAX_VALUE_LENGTH) {
             throw new BadRequestException("偏好值不能为空且不超过 " + MAX_VALUE_LENGTH + " 字符");
         }

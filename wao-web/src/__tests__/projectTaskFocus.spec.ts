@@ -11,7 +11,10 @@ vi.mock('@/api/ai', () => ({ createAiRuns: vi.fn<() => Promise<never[]>>().mockR
 
 const router = createRouter({
   history: createMemoryHistory(),
-  routes: [{ path: '/projects/:id', component: { template: '<div/>' } }, { path: '/:p(.*)*', component: { template: '<div/>' } }],
+  routes: [
+    { path: '/projects/:id', component: { template: '<div/>' } },
+    { path: '/:p(.*)*', component: { template: '<div/>' } },
+  ],
 })
 
 describe('项目页聚焦任务', () => {
@@ -37,7 +40,9 @@ describe('项目页聚焦任务', () => {
 
   it('批量操作按需显示，空列可展开且拖拽时保留全部目标状态', async () => {
     const data = useDataStore()
-    data.tasks.forEach((task) => { if (task.project === 'p1') task.status = '待办' })
+    data.tasks.forEach((task) => {
+      if (task.project === 'p1') task.status = '待办'
+    })
     await router.push('/projects/p1?view=board')
     const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
     await flushPromises()
@@ -46,7 +51,10 @@ describe('项目页聚焦任务', () => {
     await wrapper.get('.batch-selection-toggle').trigger('click')
     await wrapper.get('.select-dot').trigger('click')
     expect(wrapper.get('.selection-count').text()).toBe('已选 1 项')
-    await wrapper.findAll('.copy-selection-actions > button').find((button) => button.text() === '完成选择')!.trigger('click')
+    await wrapper
+      .findAll('.copy-selection-actions > button')
+      .find((button) => button.text() === '完成选择')!
+      .trigger('click')
     expect(wrapper.find('.copy-selection-actions').exists()).toBe(false)
     await wrapper.get('.empty-columns-control button[aria-expanded]').trigger('click')
     expect(wrapper.findAll('.board-col')).toHaveLength(6)
@@ -72,7 +80,11 @@ describe('项目页聚焦任务', () => {
 
     const filters = wrapper.findAll('.delivery-filter-button')
     expect(filters.map((button) => button.text())).toEqual([
-      '全部 6', '方向探索 1', '待开发 3', '待验收 1', '已验证 1',
+      '全部阶段 6',
+      '方向探索 1',
+      '待开发 3',
+      '待验收 1',
+      '已验证 1',
     ])
 
     await filters[3]!.trigger('click')

@@ -36,7 +36,6 @@ export function useFunctionHealth() {
     } catch {
       // 页面功能本身优先；统计失败由功能地图的重试状态承接，不能阻断导航。
     }
-    await load(true)
   }
 
   async function adjust(featureId: string, delta: -1 | 1): Promise<FunctionHealthItem> {
