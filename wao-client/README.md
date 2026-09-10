@@ -26,6 +26,8 @@ npm run desktop:dev
 
 开发宿主使用独立应用标识与会话目录，不与已安装正式版抢占单实例；开发界面不会下载、安装生产更新。开发时仍使用真实 WAO 后端，请勿把测试业务写入误认为演示数据。
 
+启动脚本会把下载的宿主复制为 `dev-host/runtime/wao-client-dev.exe` 再运行，避免正式安装器按 `wao-client.exe` 进程名关闭开发宿主。更新宿主制品后先退出旧宿主再重新执行启动命令；Vue/TypeScript/CSS 热更新无需替换宿主。通过 `desktop:dev` 自行编译的原生调试进程仍应在安装正式版前保存并退出。
+
 ## 打包与迭代
 
 ```powershell
