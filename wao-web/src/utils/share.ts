@@ -58,3 +58,8 @@ export function taskShareTarget(href: string): { taskId: string; subId?: string 
     return { taskId: decodeURIComponent(match[1]), subId: match[2] ? decodeURIComponent(match[2]) : undefined }
   } catch { return null }
 }
+
+/** 分享草稿中的标题按纯文本转义，避免括号破坏链接。 */
+export function chatShareLink(title: string, url: string): string {
+  return `[${title.replace(/[\\\[\]]/g, '\\$&').replace(/\s+/g, ' ').slice(0, 240)}](<${url.replace(/>/g, '%3E')}>)`
+}

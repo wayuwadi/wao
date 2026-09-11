@@ -33,7 +33,7 @@ function onPointerDown(event: Event) {
   if (!ui.chatOpen || !(event.target instanceof Node)) return
   if (panel.value?.contains(event.target) || trigger.value?.contains(event.target)) return
   // 复盘弹层由聊天悬浮框发起但 Teleport 到 body；操作复盘时不能误把底层聊天最小化。
-  if (event.target instanceof Element && event.target.closest('.review-mask, .chat-image-menu-mask')) return
+  if (event.target instanceof Element && event.target.closest('.review-mask, .chat-image-menu-mask, [data-chat-trigger]')) return
   ui.closeChat()
 }
 

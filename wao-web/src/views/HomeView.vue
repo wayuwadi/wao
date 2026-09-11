@@ -1272,7 +1272,7 @@ onBeforeUnmount(() => {
             <strong>{{ heroWeeklyQuota ? heroWeeklyQuota.remainingPercent : '—' }}<em v-if="heroWeeklyQuota">%</em></strong>
             <small>{{ heroWeeklyQuota ? resetText(heroWeeklyQuota.resetsAt) : '等待额度同步' }}</small>
           </div>
-          <CodexBenefitsPanel compact />
+          <CodexBenefitsPanel compact :accounts="quotaOverview?.codexQuotas" />
         </div>
         <div class="hero-status">
           <span><i class="signal-dot"></i>{{ onlineRunners.length }} 台在线</span>

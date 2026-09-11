@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useUiStore } from '@/stores/ui'
+import { chatShareLink, docShareUrl } from '@/utils/share'
+const ui = useUiStore()
 import { defineAsyncComponent, computed, nextTick, onMounted, ref, watch } from 'vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useDataStore } from '@/stores/data'
@@ -113,7 +116,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
 
 <template>
   <main class="notes-page">
-    <header class="page-heading"><div><h1><i class="ri-sticky-note-line"></i>小记</h1><p>随手记录，随时回来。</p></div><span>{{ notes.length }} 条记录</span></header>
+    <header class="page-heading"><div><h1><i class="ri-sticky-note-line"></i>小记</h1></div><span>{{ notes.length }} 条记录</span></header>
     <div class="notes-workspace">
       <aside ref="writingPane" class="writing-pane" aria-label="小记编辑区">
         <div v-if="editing" class="editing-bar"><span>正在编辑已有小记</span><button @click="editId = ''">返回新建</button></div>
@@ -148,7 +151,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span v-if="highlighted === note.id" class="saved">已保存</span></div>
           <div class="note-body"><MarkdownEditor :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" /></div>
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
-          <div class="note-actions"><button class="touch-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
+          <div class="note-actions"><button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button><button class="touch-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
         </article>
         <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>
       </section>
@@ -157,9 +160,9 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
 </template>
 
 <style scoped>
-.notes-page { width: 100%; max-width: 1800px; margin: 0 auto; padding: 24px 28px 48px; box-sizing: border-box; color: var(--wao-text-2); }
-.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
-h1 { display: flex; gap: 10px; align-items: center; font-size: 22px; margin: 0 0 6px; color: var(--wao-text); }
+.notes-page { width: 100%; max-width: 1800px; margin: 0 auto; padding: 12px 28px 24px; box-sizing: border-box; color: var(--wao-text-2); }
+.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+h1 { display: flex; gap: 10px; align-items: center; font-size: 18px; margin: 0; color: var(--wao-text); }
 h1 i { color: #7a5cc6; }
 .page-heading p { margin: 0; color: var(--wao-text-faint); font-size: 13px; }
 .page-heading > span { color: var(--wao-text-faint); white-space: nowrap; font-size: 12px; }

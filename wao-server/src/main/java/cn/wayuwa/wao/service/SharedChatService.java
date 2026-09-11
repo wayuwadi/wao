@@ -1,6 +1,9 @@
 package cn.wayuwa.wao.service;
 
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.ConflictException;
+import cn.wayuwa.wao.common.ForbiddenException;
+import cn.wayuwa.wao.dto.UpdateSharedChatMessageRequest;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.ImageBlobEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
@@ -107,6 +110,28 @@ public class SharedChatService {
             return toDtos(List.of(winner), memberId).get(0);
         }
         markOneRead(entity.getId(), memberId, "WAO", now);
+        return toDtos(List.of(entity), memberId).get(0);
+    }
+
+    /** 修改本人发送的 WAO 消息正文；条件写入防止不同窗口静默覆盖。 */
+    public SharedChatMessageDto edit(String memberId, String id, UpdateSharedChatMessageRequest request) {
+        requireMember(memberId);
+        SharedChatMessageEntity entity = messages.selectById(id);
+        if (entity == null) throw new NotFoundException("消息不存在");
+        if (!memberId.equals(entity.getMemberId()) || !"WAO".equals(entity.getSource())) {
+            throw new ForbiddenException("只能修改自己发送的消息");
+        }
+        if (Boolean.TRUE.equals(entity.getDeleted())) throw new BadRequestException("已撤回消息不能修改");
+        if (request == null || request.expectedContent() == null) throw new BadRequestException("请先读取原消息");
+        String content = normalizeContent(request.content());
+        if (content.isEmpty() && !StringUtils.hasText(entity.getImageId())) throw new BadRequestException("消息不能为空");
+        if (content.equals(entity.getContent())) return toDtos(List.of(entity), memberId).get(0);
+        LocalDateTime now = LocalDateTime.now();
+        if (messages.editContent(id, memberId, content, request.expectedContent(), now) != 1) {
+            throw new ConflictException("消息已在其它窗口修改，请核对最新消息后重试；本机草稿已保留");
+        }
+        entity.setContent(content);
+        entity.setUpdatedAt(now);
         return toDtos(List.of(entity), memberId).get(0);
     }
 

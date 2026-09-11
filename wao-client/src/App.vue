@@ -47,7 +47,7 @@ const confirmTitle = computed(() =>
       ? "退出 WAO？"
       : "安装并重新打开 WAO？",
 );
-const toolbar = ref({ ready: false, chat: '0', notifications: '0' });
+const toolbar = ref({ ready: false, chat: '0', notifications: '0', theme: 'light' });
 const toolbarActions = [
   { id: 'new-task', label: '新建任务', icon: 'M9 12l2 2 4-4', circle: true },
   { id: 'new-note', label: '新建小记', icon: 'M5 4h14v12l-4 4H5zM14 20v-5h5' },
@@ -176,7 +176,7 @@ onMounted(async () => {
     void updater.find();
     updateTimer = setInterval(() => void updater.find(), 30 * 60 * 1000);
     cleanup.push(
-      await listen<{ ready: boolean; chat: string; notifications: string }>("toolbar-state", (event) => { toolbar.value = event.payload; }),
+      await listen<{ ready: boolean; chat: string; notifications: string; theme: string }>("toolbar-state", (event) => { toolbar.value = event.payload; }),
       await listen<string>("workspace-state", (event) => {
         connection.value = event.payload === "ready" ? "ready" : "loading";
         if (connection.value === "ready") error.value = "";
@@ -214,7 +214,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="client">
+  <div class="client" :data-theme="toolbar.theme">
     <header class="toolbar">
       <div class="brand" data-tauri-drag-region>
         <span class="edition" data-tauri-drag-region>WAO</span>
@@ -253,7 +253,7 @@ onUnmounted(() => {
         <button v-for="item in toolbarActions" :key="item.id" :data-action="item.id"
           :disabled="!toolbar.ready" :title="item.label" :aria-label="item.label"
           @click="quickAction(item.id)">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle v-if="item.circle" cx="12" cy="12" r="9"/><path :d="item.icon"/></svg>
+          <span v-if="item.id === 'theme'" class="theme-glyph">{{ toolbar.theme === 'dark' ? '🌙' : '☀️' }}</span><svg v-else viewBox="0 0 24 24" aria-hidden="true"><circle v-if="item.circle" cx="12" cy="12" r="9"/><path :d="item.icon"/></svg>
           <span v-if="item.id === 'new-task' || item.id === 'new-note'" class="quick-label">{{ item.label }}</span>
           <small v-if="item.id === 'chat' && toolbar.chat !== '0'">{{ toolbar.chat }}</small>
           <small v-if="item.id === 'notifications' && toolbar.notifications !== '0'">{{ toolbar.notifications }}</small>
@@ -275,7 +275,7 @@ onUnmounted(() => {
       <button v-if="connection === 'error'" class="retry-small" @click="retry">
         重试连接
       </button>
-      <button class="pet-button" @click="action('pet')" title="让宠物到桌面帮你传话"><span>桌面宠物</span></button>
+      <button class="pet-button" @click="action('pet')" title="显示/隐藏宠物"><span>显示/隐藏宠物</span></button>
       <button
         v-if="['available', 'downloading', 'ready', 'installing'].includes(state.phase) || (state.phase === 'error' && state.version)"
         class="update-button"
@@ -288,7 +288,7 @@ onUnmounted(() => {
           <path d="M12 16V4m-4 4 4-4 4 4M5 15v5h14v-5" /></svg
         ><span>{{ state.phase === 'downloading' ? '正在更新…' : state.phase === 'error' ? '重试更新' : '更新客户端' }}</span
         ><i
-          v-if="['available', 'ready'].includes(state.phase)"
+          v-if="['available', 'ready', 'downloading'].includes(state.phase) || (state.phase === 'error' && state.version)"
           class="update-dot"
         ></i>
       </button>

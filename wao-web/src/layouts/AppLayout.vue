@@ -225,8 +225,7 @@ function newNote() {
   void router.push('/notes')
 }
 const themeIcon = computed(() => {
-  if (theme.mode.value === 'system') return 'ri-contrast-line'
-  return theme.effective.value === 'dark' ? 'ri-sun-line' : 'ri-moon-line'
+  return theme.effective.value === 'dark' ? 'ri-moon-line' : 'ri-sun-line'
 })
 const themeTitle = computed(() => {
   const labels = {
@@ -280,7 +279,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="shell" :data-control-style="preferences.effectiveControlStyle">
+  <div class="shell" :class="{ 'desktop-shell': desktopToolbar }" :data-control-style="preferences.effectiveControlStyle">
     <SideNav @open-search="openSearch" />
 
     <main class="main">
@@ -308,7 +307,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <i class="ri-sticky-note-line"></i>新建小记
           </button>
 
-          <button class="bell" data-desktop-action="theme" :title="themeTitle" @click="toggleTheme">
+          <button class="bell" data-desktop-action="theme" :data-theme="theme.effective.value" :title="themeTitle" @click="toggleTheme">
             <i :class="themeIcon"></i>
           </button>
           <button class="bell" data-desktop-action="shortcuts" title="快捷键（?）" @click="ui.toggleHelp()">
@@ -354,6 +353,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       <i class="ri-add-line"></i>
     </button>
 
+    <nav class="mobile-main-nav" aria-label="手机主入口">
+      <RouterLink to="/" :class="{ active: route.path === '/' && !ui.chatOpen }"><i class="ri-home-4-line"></i>首页</RouterLink>
+      <button type="button" data-chat-trigger :class="{ active: ui.chatOpen }" :aria-expanded="ui.chatOpen" @click="ui.toggleChat()"><i class="ri-chat-3-line"></i>聊天<span v-if="ui.chatUnreadCount" class="mobile-unread">{{ ui.chatUnreadCount > 99 ? '99+' : ui.chatUnreadCount }}</span></button>
+      <RouterLink to="/todo"><i class="ri-checkbox-multiple-line"></i>待办</RouterLink>
+      <RouterLink to="/notes"><i class="ri-sticky-note-line"></i>小记</RouterLink>
+    </nav>
     <TaskDrawer />
     <NewTaskModal v-if="ui.modal === 'task'" />
     <NewProjectModal v-if="ui.modal === 'project'" />
@@ -366,6 +371,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </template>
 
 <style scoped>
+.mobile-main-nav { display: none; }
+.desktop-shell { --wao-bg-side: #eef2f8; }
+:global([data-theme="dark"]) .desktop-shell { --wao-bg-side: #13151c; }
+.desktop-shell .header { background: var(--wao-bg-side); border-bottom: 0; }
+@media (min-width: 761px) {
+  .desktop-shell :deep(.side) { border-right: 0; }
+  .desktop-shell :deep(.item) { min-height: 32px; padding-top: 6px; padding-bottom: 6px; }
+  .desktop-shell :deep(.group-title) { margin-top: 10px; }
+}
+@media (max-width: 760px) {
+  .mobile-main-nav { position: fixed; z-index: 72; bottom: 0; inset-inline: 0; display: flex; height: calc(54px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; background: var(--wao-bg-card); border-top: 1px solid var(--wao-line); }
+  .mobile-main-nav > * { position: relative; flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center; font-size: 11px; border: 0; text-decoration: none; color: var(--wao-text-weak); background: transparent; }
+  .mobile-main-nav i { font-size: 20px; }
+  .mobile-main-nav .active, .mobile-main-nav .router-link-exact-active { color: var(--wao-primary); }
+  .mobile-unread { position: absolute; top: 2px; left: 55%; border-radius: 10px; background: var(--wao-danger); color: white; padding: 1px 4px; font-size: 9px; }
+  .shell :deep(.side) { padding-bottom: calc(54px + env(safe-area-inset-bottom)); box-sizing: border-box; }
+  .shell .main { padding-bottom: calc(54px + env(safe-area-inset-bottom)); box-sizing: border-box; }
+  .shell .fab { bottom: calc(66px + env(safe-area-inset-bottom)); }
+}
 .quick-actions { display: contents; }
 .quick-actions.relocated { display: none; }
 .shell {

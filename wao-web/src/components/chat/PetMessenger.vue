@@ -1,48 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
-import { useSessionStore } from '@/stores/session'
 const emit = defineEmits<{ open: []; visible: [value: boolean] }>()
 const ui = useUiStore()
-const session = useSessionStore()
-const visible = ref(false)
-let timer: ReturnType<typeof setTimeout> | undefined
-const messageKey = computed(() =>
-  ui.chatLatestUnread ? `${session.userId}:${ui.chatLatestUnread.id}` : '',
-)
-watch(
-  messageKey,
-  (key) => {
-    clearTimeout(timer)
-    visible.value = false
-    if (!key || ui.chatOpen || !ui.chatUnreadCount) return
-    const storageKey = `wao-pet-message-seen:${session.userId}`
-    try {
-      if (localStorage.getItem(storageKey) === key) return
-      localStorage.setItem(storageKey, key)
-    } catch {
-      /* The current component still shows each message only once. */
-    }
-    visible.value = true
-    timer = setTimeout(() => {
-      visible.value = false
-    }, 8000)
-  },
-  { immediate: true },
-)
-watch(
-  () => ui.chatOpen,
-  (open) => {
-    if (open) visible.value = false
-  },
-)
-watch(visible, (value) => emit('visible', value), { immediate: true })
+const visible = computed(() => !!ui.chatLatestUnread && ui.chatUnreadCount > 0 && !ui.chatOpen)
+watch(visible, value => emit('visible', value), { immediate: true })
 function open() {
-  visible.value = false
   emit('open')
   if (location.pathname !== '/desktop-pet') ui.openChat()
 }
-onBeforeUnmount(() => clearTimeout(timer))
 </script>
 <template>
   <button v-if="visible && !ui.chatOpen" class="pet-messenger" @pointerdown.stop @click="open">

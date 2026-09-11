@@ -151,6 +151,19 @@ onMounted(loadAiConfig)
       <button class="close" @click="emit('close')"><i class="ri-close-line"></i></button>
     </div>
 
+    <div class="label">项目名称</div>
+    <input v-model="name" class="title-input" placeholder="项目名称" @keydown.enter="save" />
+
+    <div class="label">项目状态</div>
+    <select v-model="status" class="status-select" aria-label="项目状态">
+      <option value="规划中">规划中</option>
+      <option value="进行中">进行中</option>
+      <option value="有风险">有风险</option>
+      <option value="已完成">已完成</option>
+      <option value="已搁置">已搁置</option>
+    </select>
+
+    <details class="optional-project"><summary>更多项目属性 · 图标、领域与目标</summary>
     <div class="label">项目图标</div>
     <div class="icon-grid">
       <button
@@ -165,9 +178,6 @@ onMounted(loadAiConfig)
       </button>
     </div>
 
-    <div class="label">项目名称</div>
-    <input v-model="name" class="title-input" placeholder="项目名称" @keydown.enter="save" />
-
     <div class="label">所属领域</div>
     <div class="pills">
       <button v-for="a in data.areas" :key="a.id" class="pill" :class="{ on: area === a.id }" @click="area = a.id">
@@ -175,19 +185,11 @@ onMounted(loadAiConfig)
       </button>
     </div>
 
-    <div class="label">项目状态</div>
-    <select v-model="status" class="status-select" aria-label="项目状态">
-      <option value="规划中">规划中</option>
-      <option value="进行中">进行中</option>
-      <option value="有风险">有风险</option>
-      <option value="已完成">已完成</option>
-      <option value="已搁置">已搁置</option>
-    </select>
-
     <div class="label">项目描述 / 目标</div>
     <textarea v-model="goal" class="goal" rows="3" placeholder="这个项目做成了，会是什么样？"></textarea>
 
-    <section class="ai-section">
+    </details>
+    <details class="ai-section"><summary>AI 执行配置与 Skill</summary>
       <div class="ai-head">
         <div>
           <div class="ai-title"><i class="ri-robot-2-line"></i>AI Run</div>
@@ -276,7 +278,7 @@ onMounted(loadAiConfig)
         <span>{{ pairCode }}</span>
         <small>十分钟内有效 · 到期时间 {{ pairExpiresAt.replace('T', ' ') }}</small>
       </div>
-    </section>
+    </details>
 
     <div class="danger-zone">
       <template v-if="!confirming">
@@ -305,6 +307,7 @@ onMounted(loadAiConfig)
 </template>
 
 <style scoped>
+summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-size: 13px; }
 .mask {
   position: fixed;
   inset: 0;

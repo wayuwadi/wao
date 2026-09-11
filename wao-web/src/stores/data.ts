@@ -189,6 +189,7 @@ export const useDataStore = defineStore('data', () => {
   const goals = ref<GoalDto[]>([])
   /** 尚未被服务端确认的任务快照；刷新或意外关闭页面后仍可恢复。 */
   const taskDrafts = ref<Record<string, Task>>(loadTaskDrafts())
+  let taskDataMember = useSessionStore().userId
   /** 用户自建知识库分组（个人库归入其中）。 */
   const myGroups = ref<{ id: string; name: string }[]>([])
 
@@ -219,6 +220,14 @@ export const useDataStore = defineStore('data', () => {
    * （{@code apiLive=true}），从而新建 / 更新会真正落库，而非仅本地乐观更新。
    */
   async function hydrate() {
+    const requestMember = useSessionStore().userId
+    if (taskDataMember !== requestMember) {
+      tasks.value = []
+      projects.value = []
+      areas.value = []
+      taskDrafts.value = loadTaskDrafts()
+      taskDataMember = requestMember
+    }
     // 已经进入过知识库 / 图床后，手动“重新加载”要继续刷新这些可见数据；首次启动仍保持按需。
     const reloadDocs = loadStates.docs === 'loaded'
     const reloadImages = loadStates.images === 'loaded'
@@ -247,9 +256,8 @@ export const useDataStore = defineStore('data', () => {
     fileLoadError.value = ''
     apiLive.value = false
     vaultError.value = false
-    areas.value = []
-    projects.value = []
-    tasks.value = []
+    // 保留已加载的项目，避免重新加载触发表单自动更换所属项目。
+    // 重新加载期间继续保留真实任务与未保存输入。
     kbs.value = []
     myGroups.value = []
     Object.keys(docs).forEach((id) => delete docs[id])
@@ -266,18 +274,20 @@ export const useDataStore = defineStore('data', () => {
     // 任务请求单独处理结果，不等知识库、文件、密码库等无关域的最慢请求全部结束。
     const taskRequest = fetchTasks()
       .then((loadedTasks) => {
-        tasks.value = loadedTasks
+        if (requestMember !== useSessionStore().userId) return loadedTasks
+        mergeList(tasks.value, loadedTasks, taskProtectedIds())
         // 只叠加仍未收到服务端确认的本地草稿，避免刷新把刚输入的长文本吞掉。
         for (const [id, draft] of Object.entries(taskDrafts.value)) {
           const current = tasks.value.find((task) => task.id === id)
           if (current) Object.assign(current, clone(draft))
+          else tasks.value.unshift(clone(draft))
         }
         taskLoadState.value = 'loaded'
         loadStates.tasks = 'loaded'
         return loadedTasks
       })
       .catch((cause: unknown) => {
-        tasks.value = []
+        // 失败不能清掉本机真实输入；错误状态由页面明确展示。
         taskLoadState.value = 'error'
         taskLoadError.value = cause instanceof Error && cause.message
           ? cause.message
@@ -310,6 +320,7 @@ export const useDataStore = defineStore('data', () => {
       settle('vault', fetchVault()), settle('schedule', fetchSchedule()),
       settle('suggestions', fetchSuggestions()), settle('goals', fetchGoals()),
     ])
+    if (requestMember !== useSessionStore().userId) return
     const [kb, kg] = knowledge ?? [null, null]
     if (a !== null) areas.value = a
     if (p !== null) projects.value = p
@@ -399,7 +410,7 @@ export const useDataStore = defineStore('data', () => {
     for (let i = local.length - 1; i >= 0; i--) {
       const id = local[i]!.id
       // 刚本地乐观创建、PUT 还没回来的记录不能按「服务端没有」删掉，否则新建的任务会闪没。
-      if (!remoteIds.has(id) && !pendingTaskIds.has(id)) local.splice(i, 1)
+      if (!remoteIds.has(id) && !pendingTaskIds.has(id) && !protectedIds.has(id)) local.splice(i, 1)
     }
   }
   function startSync() {
@@ -1148,12 +1159,20 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ---- task 变更 ----
+  function taskDraftStorageKey() {
+    const member = useSessionStore().userId
+    return member ? `${TASK_DRAFT_KEY}:${member}` : TASK_DRAFT_KEY
+  }
+
   function loadTaskDrafts(): Record<string, Task> {
     try {
-      return JSON.parse(localStorage.getItem(TASK_DRAFT_KEY) || '{}')
-    } catch {
-      return {}
-    }
+      const scoped = localStorage.getItem(taskDraftStorageKey())
+      if (scoped) return JSON.parse(scoped)
+      // 迁移旧草稿只认明确的创建人，未知归属留在原缓存中，不跨账号自动重放。
+      const legacy = JSON.parse(localStorage.getItem(TASK_DRAFT_KEY) || '{}') as Record<string, Task>
+      const member = useSessionStore().userId
+      return Object.fromEntries(Object.entries(legacy).filter(([, task]) => !member || task.createdBy === member))
+    } catch { return {} }
   }
 
   const taskPersistTimers: Record<string, ReturnType<typeof setTimeout>> = {}
@@ -1165,13 +1184,13 @@ export const useDataStore = defineStore('data', () => {
 
   function storeTaskDraft(task: Task) {
     taskDrafts.value = { ...taskDrafts.value, [task.id]: clone(task) }
-    localStorage.setItem(TASK_DRAFT_KEY, JSON.stringify(taskDrafts.value))
+    localStorage.setItem(taskDraftStorageKey(), JSON.stringify(taskDrafts.value))
   }
 
   function clearTaskDraft(id: string) {
     const { [id]: _saved, ...rest } = taskDrafts.value
     taskDrafts.value = rest
-    localStorage.setItem(TASK_DRAFT_KEY, JSON.stringify(rest))
+    localStorage.setItem(taskDraftStorageKey(), JSON.stringify(rest))
   }
 
   /** 刚被本地改过的任务 id → 时刻。 */
@@ -1208,17 +1227,15 @@ export const useDataStore = defineStore('data', () => {
     if (taskPersisting[id]) return
     const task = taskById(id)
     if (!task) return
-    if (!apiLive.value) {
-      taskSaveStates[id] = 'saved'
-      taskSavedAts[id] = nowIso()
-      return
-    }
     const version = taskPersistVersions[id] ?? 0
     const snapshot = clone(task)
+    const requestMember = useSessionStore().userId
     taskPersisting[id] = true
     try {
-      await apiPutTask(id, snapshot)
+      const saved = await apiPutTask(id, snapshot)
+      if (requestMember !== useSessionStore().userId) return
       if ((taskPersistVersions[id] ?? 0) === version) {
+        if (pendingTaskIds.has(id)) Object.assign(task, saved)
         clearTaskDraft(id)
         taskSaveStates[id] = 'saved'
         taskSavedAts[id] = nowIso()
@@ -1382,30 +1399,22 @@ export const useDataStore = defineStore('data', () => {
     const { desc = '', images = [], pdcaCycles = [], ...core } = payload
     const createdAt = nowIso()
     const local: Task = {
-      id: uid('t'), status: '待办', createdAt, parts: [], desc, steps: [], subs: [], files: [],
+      id: uid('t'), status: '待办', createdAt, createdBy: useSessionStore().userId, parts: [], desc, steps: [], subs: [], files: [],
       docs: [], linkTasks: [], comments: [], custom: [], images,
       pdcaCycles,
       activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '创建了任务', time: createdAt, by: currentAuthor() }],
       ...core,
     }
     tasks.value.unshift(local)
-    if (!apiLive.value) return { task: local, persisted: true }
+    storeTaskDraft(local)
+    taskSaveStates[local.id] = 'saving'
 
     pendingTaskIds.add(local.id)
     try {
-      const saved = await apiPutTask(local.id, local)
-      const i = tasks.value.findIndex((t) => t.id === local.id)
-      if (i >= 0) tasks.value.splice(i, 1, saved)
-      // 抽屉可能已经用本地 id 打开了，换成服务端 id 才能继续写透。
-      const ui = useUiStore()
-      if (ui.openTaskId === local.id) ui.openTask(saved.id)
-      return { task: saved, persisted: true }
-    } catch {
-      // 失败时保留用户刚录入的任务和本地草稿，并把结果交给入口展示；用户可原地重试同一个 id。
+      // 新建与后续编辑共用串行写入队列，迟到的新建响应不能覆盖输入中的正文。
+      await flushTask(local.id)
       taskTouchedAt[local.id] = Date.now()
-      storeTaskDraft(local)
-      taskSaveStates[local.id] = 'error'
-      return { task: local, persisted: false }
+      return { task: taskById(local.id) ?? local, persisted: taskSaveState(local.id) === 'saved' }
     } finally {
       pendingTaskIds.delete(local.id)
     }
@@ -1527,7 +1536,7 @@ export const useDataStore = defineStore('data', () => {
     if (!t) return
     storeTaskDraft(t)
     taskPersistVersions[id] = (taskPersistVersions[id] ?? 0) + 1
-    taskSaveStates[id] = apiLive.value ? 'saving' : 'saved'
+    taskSaveStates[id] = 'saving'
     clearTimeout(taskPersistTimers[id])
     taskPersistTimers[id] = setTimeout(() => void drainTask(id), 600)
   }

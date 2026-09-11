@@ -9,6 +9,7 @@ export function mountDesktopToolbar(root: HTMLElement): () => void {
   const publish = () => {
     const query = new URLSearchParams({
       ready: '1',
+      theme: root.querySelector('[data-desktop-action=theme]')?.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
       chat: root.querySelector('.chat-badge')?.textContent?.trim() || '0',
       notifications: root.querySelector('.notification-badge')?.textContent?.trim() || '0',
     }).toString()
@@ -17,7 +18,7 @@ export function mountDesktopToolbar(root: HTMLElement): () => void {
     window.location.assign(`/__desktop_toolbar__?${query}`)
   }
   const observer = new MutationObserver(publish)
-  observer.observe(root, { childList: true, subtree: true, characterData: true })
+  observer.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['data-theme'] })
   publish()
   return () => {
     observer.disconnect()

@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { benefitDaysLeft, emptyCodexBenefits, fetchCodexBenefits, saveCodexBenefits, validBenefitDate } from '@/api/codexBenefits'
+import type { CodexQuotaAccount } from '@/api/ai'
+import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { useSessionStore } from '@/stores/session'
 
 const session = useSessionStore()
-defineProps<{ compact?: boolean }>()
+const props = defineProps<{ compact?: boolean; accounts?: CodexQuotaAccount[] }>()
+const officialAccounts = computed(() => (props.accounts ?? []).filter(account => account.resetCredits))
 const saved = ref(emptyCodexBenefits())
 const loading = ref(true)
 const loaded = ref(false)
@@ -25,6 +28,7 @@ const expiryLabel = computed(() => daysLeft.value === null ? '到期日未设置
 const draftKey = (memberId: string) => `wao:codex-benefits-draft:${memberId}`
 
 async function load() {
+  if (saving.value || editing.value) return
   const requestVersion = ++version
   loading.value = true
   loaded.value = false
@@ -108,6 +112,9 @@ async function save() {
     if (requestVersion === version) saving.value = false
   }
 }
+const refreshPoller = createVisibilityPoller(load, () => 60_000)
+onMounted(() => refreshPoller.start(false))
+onBeforeUnmount(() => refreshPoller.stop())
 </script>
 
 <template>
@@ -115,11 +122,14 @@ async function save() {
     <header><span>我的 Codex 权益</span><button type="button" :disabled="!loaded || saving" aria-label="编辑 Codex 权益" @click="openEditor"><i class="ri-edit-line"></i>编辑</button></header>
     <p v-if="loading" role="status">正在读取权益…</p>
     <template v-else-if="loaded">
-      <div class="benefit-line"><span><i class="ri-ticket-2-line"></i>重置卡</span><b>{{ saved.resetCards === null ? '未设置' : `${saved.resetCards} 张` }}</b></div>
+      <div v-if="!officialAccounts.length" class="benefit-line"><span><i class="ri-ticket-2-line"></i>重置卡（手工）</span><b>{{ saved.resetCards === null ? '未设置' : `${saved.resetCards} 张` }}</b></div>
       <div class="benefit-line"><span>Pro 到期</span><b>{{ saved.proExpiresOn ? saved.proExpiresOn.replace(/-/g, '/') : '未设置' }}</b></div>
       <p class="benefit-countdown" :class="{ soon: daysLeft !== null && daysLeft <= 7 }">{{ expiryLabel }}<span v-if="daysLeft !== null && daysLeft > 0"> · 让额度变成成果</span></p>
     </template>
     <p v-else-if="!error">登录后配置你的权益</p>
+    <div v-for="account in officialAccounts" :key="account.key" class="official-reset" :title="`同步于 ${account.lastSyncedAt}`">
+      <span>重置卡 · {{ account.accountEmail || account.key }}</span><b>{{ account.resetCredits!.availableCount }} 张</b><small>{{ account.fresh ? '官方同步' : '历史快照' }} · {{ account.lastSyncedAt }}</small>
+    </div>
     <form v-if="editing" class="benefit-editor" @submit.prevent="save">
       <label>重置卡数量<input v-model="draft.resetCards" aria-label="重置卡数量" type="number" min="0" max="9999" step="1" placeholder="未设置" :disabled="saving" @input="persistDraft" /></label>
       <label>Pro 到期日期<input v-model="draft.proExpiresOn" aria-label="Pro 到期日期" type="date" :disabled="saving" @input="persistDraft" /></label>
@@ -133,6 +143,8 @@ async function save() {
 </template>
 
 <style scoped>
+.official-reset { display: flex; flex-wrap: wrap; gap: 5px 10px; grid-column: 1 / -1; margin-top: 4px; font-size: 11px; overflow-wrap: anywhere; }
+.official-reset small { opacity: .75; font-size: 10px; }
 .codex-benefits { margin-top: 10px; padding-top: 9px; border-top: 1px solid #ffffff30; color: #fff; min-width: 0; }
 header, .benefit-line, footer { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 header { margin-bottom: 8px; font-size: 10px; color: #ffffffc7; }

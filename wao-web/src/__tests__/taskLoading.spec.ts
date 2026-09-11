@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import { TASKS } from '@/data/fixtures'
 import type { Area, Task } from '@/types'
 
+const putTask = vi.hoisted(() => vi.fn())
 const fetchTasks = vi.fn<() => Promise<Task[]>>()
 let resolveAreas: ((areas: Area[]) => void) | undefined
 
@@ -12,6 +14,7 @@ vi.mock('@/api/board', async (importOriginal) => {
   const empty = async () => []
   return {
     ...actual,
+    apiPutTask: putTask,
     fetchAreas: () => new Promise<Area[]>((resolve) => { resolveAreas = resolve }),
     fetchProjects: empty,
     fetchTasks: () => fetchTasks(),
@@ -33,7 +36,58 @@ describe('任务真实数据加载', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     fetchTasks.mockReset()
+    putTask.mockReset().mockRejectedValue(new Error('离线'))
     resolveAreas = undefined
+  })
+
+  it('初始化期间新建仍请求服务器，失败任务在同步与刷新后保留', async () => {
+    const data = useDataStore()
+    fetchTasks.mockResolvedValue([])
+    const hydrating = data.hydrate()
+    const result = await data.addTask({ title: '不应丢失的新任务', project: 'p1', pr: 'P2', owner: 'm1', due: '', desc: '' })
+    expect(result.persisted).toBe(false)
+    expect(putTask).toHaveBeenCalledWith(result.task.id, expect.objectContaining({ title: '不应丢失的新任务' }))
+    resolveAreas?.([])
+    await hydrating
+    expect(data.taskById(result.task.id)?.title).toBe('不应丢失的新任务')
+    const reloading = data.hydrate()
+    await vi.waitFor(() => expect(data.taskLoadState).toBe('loaded'))
+    resolveAreas?.([])
+    await reloading
+    expect(data.taskById(result.task.id)?.title).toBe('不应丢失的新任务')
+  })
+
+  it('重新打开后恢复服务器尚无记录的草稿，仍用原 ID 重试', async () => {
+    const draft = { ...TASKS[0]!, id: 't-draft', title: '离线前输入' }
+    localStorage.setItem('wao-task-drafts-v1', JSON.stringify({ 't-draft': draft }))
+    const data = useDataStore()
+    fetchTasks.mockResolvedValue([])
+    const hydrating = data.hydrate()
+    await vi.waitFor(() => expect(data.taskLoadState).toBe('loaded'))
+    expect(data.taskById('t-draft')?.title).toBe('离线前输入')
+    resolveAreas?.([])
+    await hydrating
+    putTask.mockResolvedValue(draft)
+    await data.flushTask('t-draft')
+    expect(putTask).toHaveBeenCalledWith('t-draft', expect.objectContaining({ title: '离线前输入' }))
+    expect(data.taskSaveState('t-draft')).toBe('saved')
+  })
+
+  it('切换成员后不保留上一账号任务，也不重放其旧草稿', async () => {
+    const session = useSessionStore()
+    session.$patch({ account: { member: { id: 'm1' } } } as never)
+    localStorage.setItem('wao-task-drafts-v1', JSON.stringify({ old: { ...TASKS[0]!, id: 'old', createdBy: 'm1' } }))
+    const data = useDataStore()
+    data.tasks = [{ ...TASKS[0]!, id: 'old', createdBy: 'm1' }]
+    session.$patch({ account: { member: { id: 'm2' } } } as never)
+    fetchTasks.mockResolvedValue([])
+    const hydrating = data.hydrate()
+    await vi.waitFor(() => expect(data.taskLoadState).toBe('loaded'))
+    resolveAreas?.([])
+    await hydrating
+    expect(data.tasks).toEqual([])
+    expect(putTask).not.toHaveBeenCalled()
+    expect(localStorage.getItem('wao-task-drafts-v1')).toContain('old')
   })
 
   it('任务接口一返回就接管空 store，不等待其他业务域', async () => {

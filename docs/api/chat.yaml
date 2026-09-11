@@ -27,6 +27,29 @@ paths:
       responses:
         "200": { description: 返回已保存消息；兼容字段 feishuStatus 为 LOCAL }
         "400": { description: 消息为空、超过 2000 字、token 或引用非法 }
+  /api/chat/messages/{id}:
+    patch:
+      summary: 修改本人发送的 WAO 消息正文
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content, expectedContent]
+              properties:
+                content: { type: string, maxLength: 2000 }
+                expectedContent: { type: string, description: 编辑开始时的原正文，精确比较防止覆盖其他窗口修改 }
+      responses:
+        '200': { description: 返回更新后的消息，ID、创建时间、引用及已读保持不变 }
+        '400': { description: 正文无效或消息已撤回 }
+        '403': { description: 不允许修改他人的消息或外部导入消息 }
+        '409': { description: 原正文已变化，本机保留草稿并提示核对后重试 }
   /api/chat/messages/read:
     post:
       operationId: markSharedChatRead

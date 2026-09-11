@@ -7,10 +7,20 @@ import java.time.LocalDateTime;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 /** 共享聊天消息查询；游标按数据库中的创建时间和 id 组合排序，避免同一微秒漏消息。 */
 @Mapper
 public interface SharedChatMessageMapper extends BaseMapper<SharedChatMessageEntity> {
+
+    @Update("""
+            UPDATE shared_chat_message SET content = #{content}, updated_at = #{now}
+             WHERE id = #{id} AND member_id = #{memberId} AND source = 'WAO'
+               AND deleted = 0 AND BINARY content = BINARY #{expectedContent}
+            """)
+    int editContent(@Param("id") String id, @Param("memberId") String memberId,
+            @Param("content") String content, @Param("expectedContent") String expectedContent,
+            @Param("now") LocalDateTime now);
 
     @Select("""
             SELECT * FROM shared_chat_message

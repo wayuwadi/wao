@@ -66,3 +66,6 @@ export const uploadSharedChatImage = (file: File) => apiUploadImage(file, 'WAO �
 
 /** 聊天文件存入真实组织文件库，沿用 50MB 限额和登录鉴权。 */
 export const uploadSharedChatFile = (file: File) => apiUploadFile(file)
+
+export const editSharedChatMessage = (id: string, content: string, expectedContent: string) =>
+  data<SharedChatMessage>(http.patch(`/api/chat/messages/${encodeURIComponent(id)}`, { content, expectedContent }))

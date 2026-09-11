@@ -4,7 +4,8 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { toast } from '@/composables/toast'
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
+const route = useRoute()
 import ToastHost from '@/components/ui/ToastHost.vue'
 import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
 let refreshing = false
@@ -75,5 +76,5 @@ onBeforeUnmount(() => {
 <template>
   <RouterView />
   <ToastHost />
-  <VersionUpdateNotice />
+  <VersionUpdateNotice v-if="route?.path !== '/desktop-pet'" />
 </template>

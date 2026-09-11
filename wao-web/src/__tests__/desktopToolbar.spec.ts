@@ -7,16 +7,19 @@ describe('桌面顶栏只同步真实入口计数', () => {
     const realWindow = window
     vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: false })
     const root = document.createElement('div')
-    root.innerHTML = '<span class="chat-badge">3</span><span class="notification-badge">99+</span>'
+    root.innerHTML = '<button data-desktop-action="theme" data-theme="light"></button><span class="chat-badge">3</span><span class="notification-badge">99+</span>'
     document.body.append(root)
     mountDesktopToolbar(root)()
     expect(assign).not.toHaveBeenCalled()
     vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: true })
     const stop = mountDesktopToolbar(root)
-    expect(assign).toHaveBeenLastCalledWith('/__desktop_toolbar__?ready=1&chat=3&notifications=99%2B')
+    expect(assign).toHaveBeenLastCalledWith('/__desktop_toolbar__?ready=1&theme=light&chat=3&notifications=99%2B')
     root.querySelector('.chat-badge')!.remove()
     await new Promise(resolve => realWindow.setTimeout(resolve, 0))
-    expect(assign).toHaveBeenLastCalledWith('/__desktop_toolbar__?ready=1&chat=0&notifications=99%2B')
+    expect(assign).toHaveBeenLastCalledWith('/__desktop_toolbar__?ready=1&theme=light&chat=0&notifications=99%2B')
+    root.querySelector('[data-desktop-action=theme]')!.setAttribute('data-theme', 'dark')
+    await new Promise(resolve => realWindow.setTimeout(resolve, 0))
+    expect(assign).toHaveBeenLastCalledWith('/__desktop_toolbar__?ready=1&theme=dark&chat=0&notifications=99%2B')
     stop()
     expect(assign).toHaveBeenLastCalledWith('/__desktop_toolbar__?ready=0')
   })

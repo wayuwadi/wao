@@ -12,7 +12,7 @@ import { toast } from '@/composables/toast'
 // 不该压在首屏包里。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 import SaveHint from '@/components/ui/SaveHint.vue'
-import { shareMarkdownUrl, shareUrl } from '@/utils/share'
+import { chatShareLink, shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { createAiRuns, fetchTaskAiRuns, pauseAiRun } from '@/api/ai'
 import AiRunArchive from '@/components/ai/AiRunArchive.vue'
@@ -559,7 +559,7 @@ function shareToChat() {
   if (!t) return
   const sub = t.subs.find((item) => item.id === openSubId.value)
   const title = (sub?.text || t.title).replace(/[\\[\]`*_<>]/g, ' ').replace(/\s+/g, ' ')
-  ui.shareToChat(`[${title}](${shareUrl(t.id, openSubId.value, !sub && shareOpenOnly.value)})`)
+  ui.shareToChat(chatShareLink(title, shareUrl(t.id, openSubId.value, !sub && shareOpenOnly.value)))
   menu.value = null
 }
 
@@ -1351,6 +1351,36 @@ async function uploadAttachment(event: Event) {
           </div>
 
           <div class="prop-row">
+            <span class="prop-key">截止</span>
+            <input
+              class="date-input due"
+              type="date"
+              :value="task.due || ''"
+              :min="task.start || undefined"
+              :style="{ color: tv.dueColor }"
+              title="截止日期，留空表示未排期"
+              @change="setDate('due', $event)"
+            />
+            <span v-if="dueHint" class="due-hint" :style="{ color: tv.dueColor }">{{ dueHint }}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-key">所属项目</span>
+            <button class="proj-btn" @click="gotoProject"><span class="pdot" :style="{ background: tv.projColor }"></span><span class="ellip">{{ tv.projName }}</span></button>
+          </div>
+          <div class="prop-row">
+            <span class="prop-key">分组</span>
+            <button class="owner-btn" title="分组视图里这条任务归在哪一堆" @click="menu = menu === 'group' ? null : 'group'">
+              <i class="ri-folder-2-line group-ico"></i>{{ currentGroup?.name ?? '未分组' }}<i class="ri-arrow-down-s-line"></i>
+            </button>
+            <div v-if="menu === 'group'" class="pmenu w150">
+              <button v-for="g in taskGroups" :key="g.id" class="pmenu-item" @click="setGroup(g.id)">
+                <span class="pmenu-name">{{ g.name }}</span>
+                <i v-if="currentGroup?.id === g.id" class="ri-check-line chk"></i>
+              </button>
+            </div>
+          </div>
+          <details class="optional-props"><summary>更多属性 · 参与人、排期与自定义</summary>
+          <div class="prop-row">
             <span class="prop-key">参与人</span>
             <span class="parts">
               <span v-for="(p, i) in parts" :key="i" class="mini-av bordered" :title="p.name" :style="{ background: p.color }">{{ p.initial }}</span>
@@ -1391,41 +1421,12 @@ async function uploadAttachment(event: Event) {
             />
           </div>
           <div class="prop-row">
-            <span class="prop-key">截止</span>
-            <input
-              class="date-input due"
-              type="date"
-              :value="task.due || ''"
-              :min="task.start || undefined"
-              :style="{ color: tv.dueColor }"
-              title="截止日期，留空表示未排期"
-              @change="setDate('due', $event)"
-            />
-            <span v-if="dueHint" class="due-hint" :style="{ color: tv.dueColor }">{{ dueHint }}</span>
-          </div>
-          <div class="prop-row">
             <span class="prop-key">时段开始</span>
             <input class="datetime-input" type="datetime-local" :value="task.startAt || ''" @change="setDateTime('startAt', $event)" />
           </div>
           <div class="prop-row">
             <span class="prop-key">时段结束</span>
             <input class="datetime-input" type="datetime-local" :value="task.endAt || ''" :min="task.startAt || undefined" @change="setDateTime('endAt', $event)" />
-          </div>
-          <div class="prop-row">
-            <span class="prop-key">所属项目</span>
-            <button class="proj-btn" @click="gotoProject"><span class="pdot" :style="{ background: tv.projColor }"></span><span class="ellip">{{ tv.projName }}</span></button>
-          </div>
-          <div class="prop-row">
-            <span class="prop-key">分组</span>
-            <button class="owner-btn" title="分组视图里这条任务归在哪一堆" @click="menu = menu === 'group' ? null : 'group'">
-              <i class="ri-folder-2-line group-ico"></i>{{ currentGroup?.name ?? '未分组' }}<i class="ri-arrow-down-s-line"></i>
-            </button>
-            <div v-if="menu === 'group'" class="pmenu w150">
-              <button v-for="g in taskGroups" :key="g.id" class="pmenu-item" @click="setGroup(g.id)">
-                <span class="pmenu-name">{{ g.name }}</span>
-                <i v-if="currentGroup?.id === g.id" class="ri-check-line chk"></i>
-              </button>
-            </div>
           </div>
           <div class="prop-row">
             <span class="prop-key">可见范围</span>
@@ -1467,6 +1468,7 @@ async function uploadAttachment(event: Event) {
             </div>
           </div>
 
+          </details>
           <!-- 删除任务：明摆在属性栏底部，不藏在右键菜单里 -->
           <div class="danger-zone">
             <template v-if="!confirmingDelete">
@@ -1508,6 +1510,7 @@ async function uploadAttachment(event: Event) {
 </template>
 
 <style scoped>
+.optional-props > summary { padding: 12px 0; font-size: 12px; color: var(--wao-text-weak); cursor: pointer; }
 /* 评论操作 / 编辑态 */
 .c-op {
   width: 22px;

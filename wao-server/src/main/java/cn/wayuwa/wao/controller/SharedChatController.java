@@ -4,6 +4,8 @@ import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.dto.CreateSharedChatMessageRequest;
+import cn.wayuwa.wao.dto.UpdateSharedChatMessageRequest;
+import org.springframework.web.bind.annotation.PatchMapping;
 import cn.wayuwa.wao.dto.SharedChatMessageDto;
 import cn.wayuwa.wao.service.SharedChatService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,6 +40,12 @@ public class SharedChatController {
     public ApiResponse<SharedChatMessageDto> create(@RequestBody CreateSharedChatMessageRequest body,
             HttpServletRequest request) {
         return ApiResponse.ok(service.create(requireMember(request), body));
+    }
+
+    @PatchMapping("/messages/{id}")
+    public ApiResponse<SharedChatMessageDto> edit(@PathVariable String id,
+            @RequestBody UpdateSharedChatMessageRequest body, HttpServletRequest request) {
+        return ApiResponse.ok(service.edit(requireMember(request), id, body));
     }
 
     @PostMapping("/messages/read")
