@@ -94,16 +94,17 @@ const groups = computed(() => {
       },
     }))
   const ts = data.tasks
-    .filter((t) => !kw || t.title.toLowerCase().includes(kw))
-    .slice(0, 4)
+    .filter((t) => !kw || [t.title, t.desc, ...t.subs.map((sub) => `${sub.text} ${sub.desc ?? ''}`)].join(' ').toLowerCase().includes(kw))
+    .slice(0, kw ? 50 : 4)
     .map<Item>((t) => ({
       icon: 'ri-checkbox-circle-line',
       iconColor: '#5A5E6B',
       title: t.title,
-      sub: `${data.projectById(t.project)?.name ?? ''} · ${t.status}`,
+      sub: `${data.projectById(t.project)?.name ?? ''} · ${t.status}${kw && !t.title.toLowerCase().includes(kw) ? ' · 正文或子任务匹配' : ''}`,
       go: () => {
         close()
-        ui.openTask(t.id)
+        const matchedSub = kw ? t.subs.find(sub => `${sub.text} ${sub.desc ?? ''}`.toLowerCase().includes(kw)) : undefined
+        ui.openTask(t.id, matchedSub?.id)
       },
     }))
   const ds = Object.values(data.docs)

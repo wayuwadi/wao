@@ -10,6 +10,11 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { seedDataStore } from './helpers/seedDataStore'
 
+vi.mock('@/api/board', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/board')>(),
+  apiPutTask: vi.fn(async (_id: string, task: import('@/types').Task) => JSON.parse(JSON.stringify(task))),
+}))
+
 describe('TODO 四象限', () => {
   beforeEach(() => {
     localStorage.clear()

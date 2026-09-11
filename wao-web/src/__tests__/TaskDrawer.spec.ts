@@ -640,15 +640,15 @@ describe('TaskDrawer', () => {
     const inputs = w.findAll('.props .date-input')
     expect(inputs).toHaveLength(2)
 
-    await inputs[0]!.setValue('2026-07-20')
-    await inputs[1]!.setValue('2026-08-01')
+    await w.get('.props .date-input[title^="开始"]').setValue('2026-07-20')
+    await w.get('.props .date-input.due').setValue('2026-08-01')
 
     const t = data.taskById(taskId)!
     expect(t.start).toBe('2026-07-20')
     expect(t.due).toBe('2026-08-01')
     expect(t.activity[0]!.text).toContain('截止日期')
 
-    await w.findAll('.props .date-input')[0]!.setValue('')
+    await w.get('.props .date-input[title^="开始"]').setValue('')
 
     expect(data.taskById(taskId)!.start).toBe('')
     expect(data.taskById(taskId)!.activity[0]!.text).toContain('清空了开始日期')

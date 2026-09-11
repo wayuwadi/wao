@@ -15,6 +15,11 @@ vi.mock('@/api/ai', () => ({
   fetchTaskAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
 }))
 
+vi.mock('@/api/board', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/board')>(),
+  apiPutTask: vi.fn(async (_id: string, task: import('@/types').Task) => JSON.parse(JSON.stringify(task))),
+}))
+
 describe('项目任务合并为一次 AI Run', () => {
   beforeEach(() => {
     localStorage.clear()

@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import type { Editor } from '@tiptap/core'
 import ChatView from '@/views/ChatView.vue'
 import {
   fetchSharedChatMessages,
+  editSharedChatMessage,
   markSharedChatRead,
   sendSharedChatMessage,
   toggleSharedChatReaction,
@@ -16,6 +18,7 @@ import {
 } from '@/api/chat'
 
 vi.mock('@/api/chat', () => ({
+  editSharedChatMessage: vi.fn(),
   fetchSharedChatMessages: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatMessages']>(),
   markSharedChatRead: vi.fn<(typeof import('@/api/chat'))['markSharedChatRead']>(),
   sendSharedChatMessage: vi.fn<(typeof import('@/api/chat'))['sendSharedChatMessage']>(),
@@ -61,6 +64,25 @@ async function mountView(props: Record<string, unknown> = {}, realEditor = false
 }
 
 describe('ChatView', () => {
+  it('修改本人消息，失败保留正文且轮询不覆盖编辑草稿，重试成功不新增消息', async () => {
+    useSessionStore().$patch({ account: { member: message.author } } as never)
+    const wrapper = await mountView()
+    await wrapper.get('.message-actions button').trigger('click')
+    await wrapper.get('[aria-label="修改消息正文"]').setValue('修改后的消息')
+    vi.mocked(editSharedChatMessage).mockRejectedValueOnce(new Error('网络中断'))
+    await wrapper.get('.message-edit').trigger('submit')
+    await flushPromises()
+    expect(wrapper.text()).toContain('网络中断')
+    expect(localStorage.getItem('wao-chat-edit:m1:msg1')).toContain('修改后的消息')
+    vi.mocked(editSharedChatMessage).mockResolvedValueOnce({ ...message, content: '修改后的消息' })
+    await wrapper.get('.message-edit').trigger('submit')
+    await flushPromises()
+    expect(editSharedChatMessage).toHaveBeenLastCalledWith('msg1', '修改后的消息', message.content)
+    expect(wrapper.findAll('.message-row')).toHaveLength(1)
+    expect(wrapper.find('.message-edit').exists()).toBe(false)
+    expect(wrapper.get('.message-text').text()).toContain('修改后的消息')
+    expect(localStorage.getItem('wao-chat-edit:m1:msg1')).toBeNull()
+  })
   beforeEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()

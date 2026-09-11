@@ -10,6 +10,7 @@ import {
 } from 'vue'
 import {
   fetchSharedChatMessages,
+  editSharedChatMessage,
   markSharedChatRead,
   sendSharedChatMessage,
   toggleSharedChatReaction,
@@ -33,6 +34,47 @@ function openTaskLink(event: MouseEvent) {
   event.preventDefault()
   ui.closeChat()
   ui.openTask(target.taskId, target.subId)
+}
+const editingId = ref('')
+const editDraft = ref('')
+const editOriginal = ref('')
+const editSaving = ref(false)
+const editError = ref('')
+const editKey = (id: string) => `wao-chat-edit:${session.userId}:${id}`
+function startEdit(message: SharedChatMessage) {
+  if (editSaving.value) return
+  editingId.value = message.id
+  editDraft.value = message.content
+  editOriginal.value = message.content
+  editError.value = ''
+  try {
+    const cached = JSON.parse(localStorage.getItem(editKey(message.id)) || 'null')
+    if (typeof cached?.content === 'string' && typeof cached?.original === 'string') {
+      editDraft.value = cached.content
+      editOriginal.value = cached.original
+    }
+  } catch { editError.value = '本机草稿无法读取，请保持页面打开' }
+}
+watch([editDraft, editOriginal], () => {
+  if (!editingId.value) return
+  try { localStorage.setItem(editKey(editingId.value), JSON.stringify({ content: editDraft.value, original: editOriginal.value })) }
+  catch { editError.value = '本机草稿保存失败，请保持页面打开并保存修改' }
+})
+async function saveEdit() {
+  if (!editingId.value || editSaving.value) return
+  const id = editingId.value
+  const member = session.userId
+  editSaving.value = true
+  editError.value = ''
+  try {
+    const saved = await editSharedChatMessage(id, editDraft.value, editOriginal.value)
+    if (session.userId !== member) return
+    merge([saved])
+    try { localStorage.removeItem(editKey(id)) } catch { /* 服务端已确认保存。 */ }
+    editingId.value = ''
+    toast('消息修改已保存', 'ri-check-line')
+  } catch (error) { editError.value = messageOf(error, '修改失败，草稿已保留，可重试') }
+  finally { editSaving.value = false }
 }
 const imageMenu = ref<{ x: number; y: number; image: HTMLImageElement } | null>(null)
 function imageContext(event: MouseEvent) {
@@ -473,6 +515,13 @@ onBeforeUnmount(() => {
               message.author.initial
             }}</span>
             <div class="message-body">
+              <form v-if="editingId === message.id" class="message-edit" @submit.prevent="saveEdit">
+                <label>修改消息<textarea v-model="editDraft" aria-label="修改消息正文" :disabled="editSaving" rows="4" /></label>
+                <p v-if="editError" role="alert">{{ editError }}</p>
+                <button v-if="editOriginal !== message.content" type="button" :disabled="editSaving" @click="editOriginal = message.content; editError = ''">已核对下方最新消息，保留草稿重试</button>
+                <button type="button" :disabled="editSaving" @click="editingId = ''">收起，保留草稿</button>
+                <button type="submit" :disabled="editSaving || !editDraft.trim()">{{ editSaving ? '保存中…' : editError ? '重试保存' : '保存修改' }}</button>
+              </form>
               <div class="message-meta">
                 <strong>{{ message.author.name }}</strong>
                 <time>{{ formatTime(message.createdAt) }}</time>
@@ -511,6 +560,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <div class="message-actions">
+                <button v-if="message.author.id === session.userId && message.source === 'WAO' && !message.deleted" type="button" :disabled="editSaving" @click="startEdit(message)"><i class="ri-edit-line"></i>修改</button>
                 <button type="button" @click="quote(message)">
                   <i class="ri-reply-line"></i>引用
                 </button>
@@ -662,10 +712,15 @@ onBeforeUnmount(() => {
   background: var(--wao-bg-card);
   overflow: hidden;
 }
+.message-edit { display: grid; gap: 8px; min-width: min(280px, 100%); padding: 10px; border: 1px solid var(--wao-line); border-radius: 8px; }
+.message-edit textarea { box-sizing: border-box; width: 100%; color: var(--wao-text); background: var(--wao-bg-card); resize: vertical; }
+.message-edit p { color: var(--wao-danger); overflow-wrap: anywhere; }
 .message-stream {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
   padding: 22px clamp(14px, 3vw, 32px);
   display: flex;
   flex-direction: column;
@@ -706,6 +761,8 @@ onBeforeUnmount(() => {
 .message-body {
   min-width: 0;
   position: relative;
+  max-width: 100%;
+  margin-bottom: 18px;
 }
 .message-meta {
   display: flex;
@@ -756,7 +813,9 @@ onBeforeUnmount(() => {
   border-radius: 9px;
   margin-top: 7px;
 }
+.message-text :deep(table) { display: block; max-width: 100%; overflow-x: auto; }
 .message-text :deep(pre) {
+  max-width: 100%;
   overflow: auto;
   background: var(--wao-bg-sub);
   padding: 8px;
@@ -794,16 +853,16 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 6px;
   position: absolute;
-  left: calc(100% + 7px);
-  top: 50%;
-  transform: translateY(-50%);
+  left: 0;
+  bottom: 0;
+  transform: translateY(100%);
   margin: 0;
   white-space: nowrap;
   transition: 0.15s;
 }
 .message-row.mine .message-actions {
   left: auto;
-  right: calc(100% + 7px);
+  right: 0;
   flex-direction: row-reverse;
 }
 .message-row:hover .message-actions,

@@ -289,9 +289,10 @@ fn pet_action_name(url: &tauri::Url, origin: &tauri::Url) -> Option<String> {
 
 // Values crossing from the remote page are bounded display data only.
 fn toolbar_state(url: &tauri::Url) -> serde_json::Value {
-    let mut state = serde_json::json!({"ready": false, "chat": "0", "notifications": "0"});
+    let mut state = serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light"});
     for (key, value) in url.query_pairs() {
         match key.as_ref() {
+            "theme" if value == "light" || value == "dark" => state["theme"] = serde_json::json!(value),
             "ready" => state["ready"] = serde_json::json!(value == "1"),
             "chat" | "notifications" if value == "99+" || value.parse::<u8>().is_ok_and(|n| n <= 99) => {
                 state[key.as_ref()] = serde_json::json!(value);
@@ -483,7 +484,7 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
             };
             let _ = view.app_handle().emit_to("main", "workspace-state", phase);
             if matches!(event.event(), PageLoadEvent::Started) {
-                let _ = view.app_handle().emit_to("main", "toolbar-state", serde_json::json!({"ready": false, "chat": "0", "notifications": "0"}));
+                let _ = view.app_handle().emit_to("main", "toolbar-state", serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light"}));
             }
             if matches!(event.event(), PageLoadEvent::Finished)
                 && !PET_STARTED.swap(true, Ordering::Relaxed)
@@ -607,7 +608,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             macos_menu(app)?;
             let open = MenuItemBuilder::with_id("open", "打开 WAO 工作区").build(app)?;
-            let pet = MenuItemBuilder::with_id("pet", "显示桌面宠物").build(app)?;
+            let pet = MenuItemBuilder::with_id("pet", "显示/隐藏宠物").build(app)?;
             let update = MenuItemBuilder::with_id("update", "检查客户端更新").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出 WAO…").build(app)?;
             let menu = MenuBuilder::new(app)
@@ -626,6 +627,12 @@ pub fn run() {
                             // WebView2 window creation can deadlock inside a Windows event handler.
                             let handle = app.clone();
                             tauri::async_runtime::spawn_blocking(move || {
+                                if let Some(pet) = handle.get_webview_window("pet") {
+                                    if pet.is_visible().unwrap_or(false) {
+                                        let _ = pet.hide();
+                                        return;
+                                    }
+                                }
                                 if let Err(error) = show_desktop_pet(&handle) {
                                     eprintln!("Could not open desktop pet: {error}");
                                 }
@@ -762,9 +769,13 @@ mod tests {
     #[test]
     fn toolbar_only_forwards_bounded_display_state() {
         let url = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?ready=1&chat=3&notifications=99%2B&script=ignored").unwrap();
-        assert_eq!(toolbar_state(&url), serde_json::json!({"ready": true, "chat": "3", "notifications": "99+"}));
+        assert_eq!(toolbar_state(&url), serde_json::json!({"ready": true, "chat": "3", "notifications": "99+", "theme": "light"}));
         let url = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?ready=wrong&chat=-1&notifications=1000").unwrap();
-        assert_eq!(toolbar_state(&url), serde_json::json!({"ready": false, "chat": "0", "notifications": "0"}));
+        assert_eq!(toolbar_state(&url), serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light"}));
+        let dark = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?theme=dark").unwrap();
+        assert_eq!(toolbar_state(&dark)["theme"], "dark");
+        let invalid = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?theme=arbitrary").unwrap();
+        assert_eq!(toolbar_state(&invalid)["theme"], "light");
         let origin = tauri::Url::parse(PRODUCTION).unwrap();
         assert_eq!(pet_action_name(&origin.join("/__desktop_pet__/toggle-workspace").unwrap(), &origin).as_deref(), Some("toggle-workspace"));
         assert!(pet_action_name(&tauri::Url::parse("https://evil.test/__desktop_pet__/toggle-workspace").unwrap(), &origin).is_none());

@@ -23,6 +23,8 @@ describe('桌面宠物入口', () => {
     expect(location.href).toBe('/__desktop_pet__/open-chat')
     await wrapper.get('.notice').trigger('click')
     expect(location.href).toBe('/__desktop_pet__/open-chat')
+    await wrapper.get('[aria-label="隐藏桌面宠物"]').trigger('click')
+    expect(location.href).toBe('/__desktop_pet__/hide')
     wrapper.unmount()
   })
   it('旧客户端回到工作区且不发送未知动作', async () => {

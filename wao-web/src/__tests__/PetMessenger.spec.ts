@@ -41,19 +41,23 @@ describe('宠物消息提示', () => {
     expect(sendSharedChatMessage).not.toHaveBeenCalled()
     wrapper.unmount()
   })
-  it('八秒收起，同一消息重挂载不再提示，新消息可再提示一次', async () => {
+  it('未读持续提示，超过八秒及重挂载后仍在，实际已读后消失', async () => {
     const ui = useUiStore()
     ui.chatUnreadCount = 1
     ui.chatLatestUnread = message('a', '小王')
     const wrapper = mount(PetMessenger)
-    await vi.advanceTimersByTimeAsync(8000)
-    expect(wrapper.find('button').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(80_000)
+    expect(wrapper.find('button').exists()).toBe(true)
     wrapper.unmount()
     const reopened = mount(PetMessenger)
-    expect(reopened.find('button').exists()).toBe(false)
+    expect(reopened.find('button').exists()).toBe(true)
     ui.chatLatestUnread = message('b', '小李')
     await flushPromises()
     expect(reopened.find('button').exists()).toBe(true)
+    ui.chatUnreadCount = 0
+    ui.chatLatestUnread = null
+    await flushPromises()
+    expect(reopened.find('button').exists()).toBe(false)
     reopened.unmount()
   })
 })

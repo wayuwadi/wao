@@ -11,6 +11,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.ConflictException;
+import cn.wayuwa.wao.common.ForbiddenException;
+import cn.wayuwa.wao.dto.UpdateSharedChatMessageRequest;
 import cn.wayuwa.wao.domain.ImageBlobEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.SharedChatMessageEntity;
@@ -153,6 +156,35 @@ class SharedChatServiceTest {
             assertThat(row.getReadAt()).isEqualTo(rows.getValue().get(0).getReadAt());
         });
         verify(reads, never()).insertIgnore(anyString(), anyString(), anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void editsOnlyOwnMessageAndRetainsIdentityAndCreationTime() {
+        SharedChatMessageEntity entity = message("edit1", LocalDateTime.of(2026, 9, 11, 10, 0));
+        entity.setMemberId("m1"); entity.setSource("WAO"); entity.setDeleted(false); entity.setContent("原文");
+        when(messages.selectById("edit1")).thenReturn(entity);
+        when(messages.editContent(eq("edit1"), eq("m1"), eq("新文"), eq("原文"), any())).thenReturn(1);
+        var result = service.edit("m1", "edit1", new UpdateSharedChatMessageRequest("新文", "原文"));
+        assertThat(result.id()).isEqualTo("edit1");
+        assertThat(result.content()).isEqualTo("新文");
+        assertThat(result.createdAt()).isEqualTo(entity.getCreatedAt());
+        verify(messages, never()).insert(any(SharedChatMessageEntity.class));
+    }
+
+    @Test
+    void rejectsOtherAuthorsDeletedEmptyAndConcurrentChanges() {
+        SharedChatMessageEntity entity = message("edit1", LocalDateTime.now());
+        entity.setMemberId("m2"); entity.setSource("WAO"); entity.setDeleted(false); entity.setContent("原文");
+        when(messages.selectById("edit1")).thenReturn(entity);
+        var request = new UpdateSharedChatMessageRequest("新文", "原文");
+        assertThatThrownBy(() -> service.edit("m1", "edit1", request)).isInstanceOf(ForbiddenException.class);
+        entity.setMemberId("m1"); entity.setDeleted(true);
+        assertThatThrownBy(() -> service.edit("m1", "edit1", request)).isInstanceOf(BadRequestException.class);
+        entity.setDeleted(false);
+        assertThatThrownBy(() -> service.edit("m1", "edit1", new UpdateSharedChatMessageRequest(" ", "原文")))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.edit("m1", "edit1", request)).isInstanceOf(ConflictException.class);
+        assertThat(entity.getContent()).isEqualTo("原文");
     }
 
     private static SharedChatMessageEntity message(String id, LocalDateTime createdAt) {

@@ -49,6 +49,11 @@ describe("desktop workspace preservation", () => {
     await flushPromises();
     expect(wrapper.get('[data-action="chat"] small').text()).toBe('3');
     expect(wrapper.get('[data-action="notifications"] small').text()).toBe('99+');
+    mocks.handlers.get('toolbar-state')!({ payload: { ready: true, chat: '3', notifications: '99+', theme: 'dark' } as unknown as string });
+    await flushPromises();
+    expect(wrapper.get('[data-action="theme"]').text()).toContain('🌙');
+    expect(wrapper.get('.client').attributes('data-theme')).toBe('dark');
+
     for (const name of ['new-task', 'new-note', 'theme', 'shortcuts', 'chat', 'notifications']) {
       await wrapper.get(`[data-action="${name}"]`).trigger('click');
       expect(mocks.invoke).toHaveBeenCalledWith('workspace_action', { action: name });
@@ -66,7 +71,7 @@ describe("desktop workspace preservation", () => {
     expect(wrapper.get('.edition').text()).toBe('WAO');
     wrapper.unmount();
   });
-  it("发现新版显示黄点，点击直接下载且验签完成才提示安装", async () => {
+  it("发现新版显示更新圆点，点击直接下载且验签完成才提示安装", async () => {
     let downloaded!: () => void;
     const artifact = { version: '1.1.5', close: vi.fn(), download: vi.fn(() => new Promise<void>(resolve => { downloaded = resolve })), install: vi.fn() };
     mocks.check.mockResolvedValue(artifact);

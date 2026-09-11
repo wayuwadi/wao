@@ -44,6 +44,7 @@ describe('首页 Codex 权益', () => {
     expect(wrapper.text()).toContain('剩 1 天')
     expect(wrapper.text()).toContain('已保存')
     expect(localStorage.getItem('wao:codex-benefits-draft:wg')).toBeNull()
+    vi.mocked(fetchPreference).mockResolvedValue(JSON.stringify({ resetCards: 3, proExpiresOn: '2026-09-09' }))
     await vi.advanceTimersByTimeAsync(86_400_000)
     expect(wrapper.text()).toContain('今天到期')
     await wrapper.get('[aria-label="编辑 Codex 权益"]').trigger('click')
@@ -53,6 +54,20 @@ describe('首页 Codex 权益', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('0 张')
     expect(wrapper.text()).toContain('到期日未设置')
+  })
+
+  it('官方数量变化自动展示，后台刷新不会覆盖打开的日期草稿', async () => {
+    const { wrapper } = setup()
+    await flushPromises()
+    const account = { key: 'account-a', accountEmail: '验收账号', plan: 'pro', credits: null, limits: [], runnerNames: [], lastSyncedAt: '2026-09-11T10:00:00', fresh: true, resetCredits: { availableCount: 2, credits: [] } }
+    await wrapper.setProps({ accounts: [account] })
+    expect(wrapper.text()).toContain('2 张')
+    await wrapper.get('[aria-label="编辑 Codex 权益"]').trigger('click')
+    await wrapper.get('[aria-label="Pro 到期日期"]').setValue('2026-10-01')
+    await wrapper.setProps({ accounts: [{ ...account, resetCredits: { availableCount: 1, credits: [] } }] })
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(wrapper.text()).toContain('1 张')
+    expect(wrapper.get('[aria-label="Pro 到期日期"]').element).toHaveProperty('value', '2026-10-01')
   })
 
   it('保存失败保留旧展示与草稿，刷新后可恢复并重试', async () => {

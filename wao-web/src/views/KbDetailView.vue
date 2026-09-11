@@ -15,7 +15,7 @@ import { useDocPresence } from '@/composables/docPresence'
 import { openEditorSelectionTask } from '@/composables/editorSelectionTask'
 import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
-import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
+import { chatShareLink, docShareMarkdownUrl, docShareUrl } from '@/utils/share'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { blocksToText, textToBlocks } from '@/utils/doc'
 import { resolvedRichContent, richHeadings } from '@/utils/richDoc'
@@ -1006,6 +1006,7 @@ async function keepConflictCopy() {
                 <div class="share-scope">
                   分享整篇{{ kb.notes ? '小记' : '文档' }} · 公开只读，免登录
                 </div>
+                <button class="share-item" @click="ui.shareToChat(chatShareLink(doc.title, docShareUrl(docId!))); shareMenu = false"><i class="ri-chat-forward-line"></i><span class="share-main"><b>分享到聊天</b><em>追加到聊天草稿，可补充说明后发送</em></span></button>
                 <button class="share-item" @click="copyDocShare('page')">
                   <i class="ri-external-link-line"></i>
                   <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>

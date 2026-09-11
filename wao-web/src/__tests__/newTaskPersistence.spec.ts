@@ -40,6 +40,21 @@ describe('新建任务的落库反馈', () => {
     putTask.mockReset()
   })
 
+  it('新建响应迟到时继续串行保存最新输入，不回灌旧正文', async () => {
+    let confirm!: (task: Task) => void
+    putTask.mockImplementationOnce(() => new Promise(resolve => { confirm = resolve }))
+    putTask.mockImplementationOnce(savedTask)
+    const creating = data.addTask({ title: '新任务', project: 'p1', pr: 'P2', owner: 'm1', due: '', desc: '最初正文' })
+    const original = JSON.parse(JSON.stringify(data.tasks[0]!)) as Task
+    data.patchTask(original.id, { desc: '请求期间继续写的正文' })
+    confirm(original)
+    const result = await creating
+    expect(result.persisted).toBe(true)
+    expect(data.taskById(original.id)?.desc).toBe('请求期间继续写的正文')
+    expect(putTask).toHaveBeenCalledTimes(2)
+    expect(putTask.mock.calls[1]?.[1].desc).toBe('请求期间继续写的正文')
+  })
+
   it('服务端确认前保持提交中，成功后才提示已创建', async () => {
     let confirm!: (task: Task) => void
     putTask.mockImplementationOnce((_id, task) => new Promise((resolve) => { confirm = resolve; void task }))

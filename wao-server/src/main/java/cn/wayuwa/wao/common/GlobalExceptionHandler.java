@@ -61,6 +61,12 @@ public class GlobalExceptionHandler {
         return ApiResponse.fail(40100, exception.getMessage());
     }
 
+    @ExceptionHandler(ForbiddenException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleForbidden(ForbiddenException exception) {
+        return ApiResponse.fail(40300, exception.getMessage());
+    }
+
     @ExceptionHandler(ConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleConflict(ConflictException exception) {

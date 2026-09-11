@@ -21,7 +21,7 @@ let disposed = false
 let pointerStart: { x: number; y: number } | null = null
 let dragged = false
 function nativeAction(
-  action: 'compact' | 'bubble' | 'open-chat' | 'workspace' | 'toggle-workspace' | 'drag' | `task/${string}`,
+  action: 'compact' | 'bubble' | 'open-chat' | 'workspace' | 'toggle-workspace' | 'drag' | 'hide' | `task/${string}`,
 ) {
   if (nativeVersion === '1' && (action === 'open-chat' || action.startsWith('task/'))) {
     try {
@@ -121,6 +121,8 @@ onBeforeUnmount(() => {
     >
       {{ taskNotice.label }}
     </button>
+    <div class="pet-body">
+    <button v-if="native" class="pet-close" aria-label="隐藏桌面宠物" title="隐藏宠物，可从客户端或托盘恢复" @click="nativeAction('hide')">×</button>
     <button
       class="pet-avatar"
       aria-label="宠物：点击打开或收起 WAO，右键打开聊天，拖动调整位置"
@@ -133,6 +135,7 @@ onBeforeUnmount(() => {
     >
       <PetSprite :state="noticeVisible ? 'waving' : 'idle'" />
     </button>
+    </div>
   </main>
 </template>
 <style>
@@ -156,6 +159,9 @@ html.desktop-pet-surface #app {
   gap: 8px;
   overflow: hidden;
 }
+.pet-body { position: relative; flex-shrink: 0; }
+.pet-close { position: absolute; z-index: 1; right: 0; top: 0; width: 24px; height: 24px; border: 1px solid var(--wao-line); border-radius: 50%; background: var(--wao-bg-card); color: var(--wao-text); opacity: 0; cursor: pointer; }
+.pet-body:hover .pet-close, .pet-body:focus-within .pet-close { opacity: 1; }
 .pet-avatar {
   width: 90px;
   height: 100px;
