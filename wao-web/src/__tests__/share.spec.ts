@@ -1,6 +1,6 @@
 import { taskShareTarget } from '@/utils/share'
 import { describe, expect, it } from 'vitest'
-import { shareMarkdownUrl, shareUrl } from '@/utils/share'
+import { docShareTarget, shareMarkdownUrl, shareUrl } from '@/utils/share'
 
 describe('分享链接', () => {
   it('主任务链接指向分享页', () => {
@@ -17,17 +17,31 @@ describe('分享链接', () => {
 
   it('Markdown 地址走后端，AI 一次 GET 就能读到全文', () => {
     expect(shareMarkdownUrl('t1')).toBe(`${window.location.origin}/api/share/tasks/t1.md`)
-    expect(shareMarkdownUrl('t1', 's9')).toBe(`${window.location.origin}/api/share/tasks/t1/subs/s9.md`)
+    expect(shareMarkdownUrl('t1', 's9')).toBe(
+      `${window.location.origin}/api/share/tasks/t1/subs/s9.md`,
+    )
   })
 
   it('只分享未完成子任务时带上 openOnly', () => {
     expect(shareUrl('t1', null, true)).toBe(`${window.location.origin}/s/t/t1?openOnly=true`)
-    expect(shareMarkdownUrl('t1', null, true)).toBe(`${window.location.origin}/api/share/tasks/t1.md?openOnly=true`)
+    expect(shareMarkdownUrl('t1', null, true)).toBe(
+      `${window.location.origin}/api/share/tasks/t1.md?openOnly=true`,
+    )
   })
 
   it('子任务链接上 openOnly 无意义，不带这个参数', () => {
     expect(shareUrl('t1', 's9', true)).toBe(`${window.location.origin}/s/t/t1/s9`)
-    expect(shareMarkdownUrl('t1', 's9', true)).toBe(`${window.location.origin}/api/share/tasks/t1/subs/s9.md`)
+    expect(shareMarkdownUrl('t1', 's9', true)).toBe(
+      `${window.location.origin}/api/share/tasks/t1/subs/s9.md`,
+    )
+  })
+})
+
+describe('文档分享跳转', () => {
+  it('只识别同源小记或文档分享地址', () => {
+    expect(docShareTarget('/s/d/note-1')).toEqual({ docId: 'note-1' })
+    expect(docShareTarget('/api/share/docs/note%202.md')).toEqual({ docId: 'note 2' })
+    expect(docShareTarget('https://evil.example/s/d/note-1')).toBeNull()
   })
 })
 

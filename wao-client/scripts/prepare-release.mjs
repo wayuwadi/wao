@@ -73,7 +73,7 @@ writeFileSync(
   JSON.stringify(
     {
       version,
-      notes: `WAO ${version}：新增独立桌面宠物：消息气泡、引用快速回复、团队聊天与独立 AI 对话；主窗口收起后宠物仍可使用。`,
+      notes: `WAO ${version}：支持成员配置窗口内与系统级快捷键，网页顶部入口整合到原生工具栏；macOS Dock 图标视觉尺寸同步优化。`,
       pub_date: new Date().toISOString(),
       platforms: {
         "windows-x86_64": {

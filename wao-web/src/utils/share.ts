@@ -52,14 +52,39 @@ export function taskShareTarget(href: string): { taskId: string; subId?: string 
   try {
     const url = new URL(href, window.location.origin)
     if (url.origin !== window.location.origin) return null
-    const match = url.pathname.match(/^\/s\/t\/([^/]+)(?:\/([^/]+))?\/?$/)
-      ?? url.pathname.match(/^\/api\/share\/tasks\/([^/]+?)(?:\/subs\/([^/]+?))?(?:\.md)?$/)
+    const match =
+      url.pathname.match(/^\/s\/t\/([^/]+)(?:\/([^/]+))?\/?$/) ??
+      url.pathname.match(/^\/api\/share\/tasks\/([^/]+?)(?:\/subs\/([^/]+?))?(?:\.md)?$/)
     if (!match?.[1]) return null
-    return { taskId: decodeURIComponent(match[1]), subId: match[2] ? decodeURIComponent(match[2]) : undefined }
-  } catch { return null }
+    return {
+      taskId: decodeURIComponent(match[1]),
+      subId: match[2] ? decodeURIComponent(match[2]) : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Recognize only same-origin document / note shares for in-workspace navigation. */
+export function docShareTarget(href: string): { docId: string } | null {
+  try {
+    const url = new URL(href, window.location.origin)
+    if (url.origin !== window.location.origin) return null
+    const match =
+      url.pathname.match(/^\/s\/d\/([^/]+)\/?$/) ??
+      url.pathname.match(/^\/api\/share\/docs\/([^/]+?)(?:\.md)?$/)
+    return match?.[1] ? { docId: decodeURIComponent(match[1]) } : null
+  } catch {
+    return null
+  }
 }
 
 /** 分享草稿中的标题按纯文本转义，避免括号破坏链接。 */
 export function chatShareLink(title: string, url: string): string {
-  return `[${title.replace(/[\\\[\]]/g, '\\$&').replace(/\s+/g, ' ').slice(0, 240)}](<${url.replace(/>/g, '%3E')}>)`
+  return `[${title
+    .replace(/\\/g, '\\\\')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\s+/g, ' ')
+    .slice(0, 240)}](<${url.replace(/>/g, '%3E')}>)`
 }

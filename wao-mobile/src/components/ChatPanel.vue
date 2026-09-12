@@ -44,7 +44,7 @@ function scroll() {
 async function bottom() {
   nearBottom.value = true;
   await nextTick();
-  list.value?.scrollTo({ top: list.value.scrollHeight });
+  if (list.value) list.value.scrollTop = list.value.scrollHeight;
   void seen();
 }
 watch(c.messages, async () => {
@@ -57,14 +57,14 @@ watch(updates.modal, (open) => {
 watch(c.active, (value) => {
   if (value) void seen();
 });
-onMounted(() => {
+onMounted(async () => {
   mounted = true;
   resize = new ResizeObserver(() => {
     if (nearBottom.value) void bottom();
   });
   if (list.value) resize.observe(list.value);
-  void c.refresh();
-  void bottom();
+  await c.refresh();
+  await bottom();
 });
 onUnmounted(() => {
   mounted = false;
@@ -219,8 +219,13 @@ function time(value: string) {
         </div>
       </article>
     </div>
-    <button v-if="!nearBottom" class="chat-jump" @click="bottom">
-      回到最新消息
+    <button
+      v-if="!nearBottom"
+      class="chat-jump"
+      aria-label="直接回到最新消息"
+      @click="bottom"
+    >
+      ↓ 回到最新消息
       <span v-if="c.unread.value">· {{ c.unread.value }} 条未读</span>
     </button>
     <form class="chat-composer" @submit.prevent="c.send">

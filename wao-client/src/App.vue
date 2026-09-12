@@ -4,6 +4,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { createUpdater } from "./updater";
 import packageInfo from "../package.json";
 
@@ -47,20 +48,55 @@ const confirmTitle = computed(() =>
       ? "退出 WAO？"
       : "安装并重新打开 WAO？",
 );
-const toolbar = ref({ ready: false, chat: '0', notifications: '0', theme: 'light' });
+interface ToolbarState {
+  ready: boolean;
+  chat: string;
+  notifications: string;
+  theme: string;
+  context: string;
+  contextItems: string[];
+  menus: string[];
+}
+const toolbar = ref<ToolbarState>({
+  ready: false,
+  chat: "0",
+  notifications: "0",
+  theme: "light",
+  context: "",
+  contextItems: [],
+  menus: [],
+});
 const toolbarActions = [
-  { id: 'new-task', label: '新建任务', icon: 'M9 12l2 2 4-4', circle: true },
-  { id: 'new-note', label: '新建小记', icon: 'M5 4h14v12l-4 4H5zM14 20v-5h5' },
-  { id: 'theme', label: '切换主题', icon: 'M12 3v18', circle: true },
-  { id: 'shortcuts', label: '快捷键', icon: 'M3 6h18v12H3zM6 9h1m3 0h1m3 0h1m3 0h1M6 12h1m3 0h1m3 0h1m3 0h1M8 15h8' },
-  { id: 'chat', label: '聊天', icon: 'M20 11a8 8 0 0 1-8 8H5l-3 3V11a9 9 0 0 1 18 0z' },
-  { id: 'notifications', label: '通知中心', icon: 'M5 16h14l-2-3V9a5 5 0 0 0-10 0v4zM10 20h4' },
+  { id: "new-task", label: "新建任务", icon: "M9 12l2 2 4-4", circle: true },
+  { id: "new-note", label: "新建小记", icon: "M5 4h14v12l-4 4H5zM14 20v-5h5" },
+  { id: "theme", label: "切换主题", icon: "M12 3v18", circle: true },
+  {
+    id: "shortcuts",
+    label: "快捷键",
+    icon: "M3 6h18v12H3zM6 9h1m3 0h1m3 0h1m3 0h1M6 12h1m3 0h1m3 0h1m3 0h1M8 15h8",
+  },
+  {
+    id: "chat",
+    label: "聊天",
+    icon: "M20 11a8 8 0 0 1-8 8H5l-3 3V11a9 9 0 0 1 18 0z",
+  },
+  {
+    id: "notifications",
+    label: "通知中心",
+    icon: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4zM10 20h4",
+  },
 ];
 async function quickAction(name: string) {
   if (panel.value) await togglePanel(false);
   await action(name);
 }
+async function selectContext(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  if (select.value) await quickAction(`context/${select.value}`);
+  select.value = "";
+}
 const cleanup: UnlistenFn[] = [];
+let shortcutGeneration = 0;
 let updateTimer: ReturnType<typeof setInterval> | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -76,6 +112,34 @@ async function action(name: string) {
     error.value = "";
   } catch {
     error.value = "操作暂未完成，请重试。";
+  }
+}
+async function globalAction(name: string) {
+  await action("reveal");
+  await action(name);
+}
+async function applyGlobalShortcuts(config: Record<string, string>) {
+  if (!native) return;
+  const generation = ++shortcutGeneration;
+  try {
+    await unregisterAll();
+    for (const [name, shortcut] of Object.entries(config)) {
+      if (generation !== shortcutGeneration) return;
+      await register(shortcut, (event) => {
+        if (event.state === "Pressed") void globalAction(name);
+      });
+    }
+    if (
+      generation === shortcutGeneration &&
+      error.value.startsWith("系统级快捷键")
+    )
+      error.value = "";
+  } catch {
+    if (generation === shortcutGeneration) {
+      await unregisterAll().catch(() => undefined);
+      error.value =
+        "系统级快捷键未能注册，可能已被其他应用占用；请在快捷键页面修改后重试。";
+    }
   }
 }
 async function visibility() {
@@ -176,7 +240,17 @@ onMounted(async () => {
     void updater.find();
     updateTimer = setInterval(() => void updater.find(), 30 * 60 * 1000);
     cleanup.push(
-      await listen<{ ready: boolean; chat: string; notifications: string; theme: string }>("toolbar-state", (event) => { toolbar.value = event.payload; }),
+      await listen<ToolbarState>("toolbar-state", (event) => {
+        toolbar.value = {
+          ...toolbar.value,
+          ...event.payload,
+          contextItems: event.payload.contextItems ?? [],
+          menus: event.payload.menus ?? [],
+        };
+      }),
+      await listen<Record<string, string>>("shortcut-config", (event) => {
+        void applyGlobalShortcuts(event.payload);
+      }),
       await listen<string>("workspace-state", (event) => {
         connection.value = event.payload === "ready" ? "ready" : "loading";
         if (connection.value === "ready") error.value = "";
@@ -191,7 +265,10 @@ onMounted(async () => {
           void updater.find();
         }
         if (event.payload === "quit") void ask("quit");
-        if (event.payload === "workspace") { confirm.value = null; void togglePanel(false); }
+        if (event.payload === "workspace") {
+          confirm.value = null;
+          void togglePanel(false);
+        }
       }),
     );
     cleanup.push(
@@ -204,6 +281,8 @@ onMounted(async () => {
   await connect();
 });
 onUnmounted(() => {
+  shortcutGeneration++;
+  if (native) void unregisterAll();
   clearInterval(updateTimer);
   cleanup.forEach((fn) => fn());
   clearTimeout(timer);
@@ -248,15 +327,74 @@ onUnmounted(() => {
           </svg>
         </button>
       </nav>
+      <nav class="workspace-menu" aria-label="页面与顶部菜单">
+        <button
+          class="icon-button"
+          :disabled="!toolbar.ready"
+          title="折叠或展开导航"
+          aria-label="折叠或展开导航"
+          @click="quickAction('fold')"
+        >
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h16" /></svg>
+        </button>
+        <select
+          v-if="toolbar.contextItems.length"
+          class="workspace-context"
+          value=""
+          :aria-label="`${toolbar.context}，切换功能`"
+          @change="selectContext"
+        >
+          <option value="" disabled>{{ toolbar.context }}</option>
+          <option
+            v-for="(label, index) in toolbar.contextItems"
+            :key="`${index}:${label}`"
+            :value="index"
+          >
+            {{ label }}
+          </option>
+        </select>
+        <span v-else-if="toolbar.context" class="workspace-context" :title="toolbar.context">{{ toolbar.context }}</span>
+        <button
+          v-for="(label, index) in toolbar.menus"
+          :key="`${index}:${label}`"
+          class="workspace-menu-item"
+          :disabled="!toolbar.ready"
+          :title="label"
+          @click="quickAction(`menu/${index}`)"
+        >
+          {{ label }}
+        </button>
+      </nav>
       <div class="drag-space" data-tauri-drag-region></div>
       <nav class="quick-actions" aria-label="工作区快捷操作">
-        <button v-for="item in toolbarActions" :key="item.id" :data-action="item.id"
-          :disabled="!toolbar.ready" :title="item.label" :aria-label="item.label"
-          @click="quickAction(item.id)">
-          <span v-if="item.id === 'theme'" class="theme-glyph">{{ toolbar.theme === 'dark' ? '🌙' : '☀️' }}</span><svg v-else viewBox="0 0 24 24" aria-hidden="true"><circle v-if="item.circle" cx="12" cy="12" r="9"/><path :d="item.icon"/></svg>
-          <span v-if="item.id === 'new-task' || item.id === 'new-note'" class="quick-label">{{ item.label }}</span>
-          <small v-if="item.id === 'chat' && toolbar.chat !== '0'">{{ toolbar.chat }}</small>
-          <small v-if="item.id === 'notifications' && toolbar.notifications !== '0'">{{ toolbar.notifications }}</small>
+        <button
+          v-for="item in toolbarActions"
+          :key="item.id"
+          :data-action="item.id"
+          :disabled="!toolbar.ready"
+          :title="item.label"
+          :aria-label="item.label"
+          @click="quickAction(item.id)"
+        >
+          <span v-if="item.id === 'theme'" class="theme-glyph">{{
+            toolbar.theme === "dark" ? "🌙" : "☀️"
+          }}</span
+          ><svg v-else viewBox="0 0 24 24" aria-hidden="true">
+            <circle v-if="item.circle" cx="12" cy="12" r="9" />
+            <path :d="item.icon" />
+          </svg>
+          <span
+            v-if="item.id === 'new-task' || item.id === 'new-note'"
+            class="quick-label"
+            >{{ item.label }}</span
+          >
+          <small v-if="item.id === 'chat' && toolbar.chat !== '0'">{{
+            toolbar.chat
+          }}</small>
+          <small
+            v-if="item.id === 'notifications' && toolbar.notifications !== '0'"
+            >{{ toolbar.notifications }}</small
+          >
         </button>
       </nav>
       <span
@@ -275,9 +413,16 @@ onUnmounted(() => {
       <button v-if="connection === 'error'" class="retry-small" @click="retry">
         重试连接
       </button>
-      <button class="pet-button" @click="action('pet')" title="显示/隐藏宠物"><span>显示/隐藏宠物</span></button>
+      <button class="pet-button" @click="action('pet')" title="显示/隐藏宠物">
+        <span>显示/隐藏宠物</span>
+      </button>
       <button
-        v-if="['available', 'downloading', 'ready', 'installing'].includes(state.phase) || (state.phase === 'error' && state.version)"
+        v-if="
+          ['available', 'downloading', 'ready', 'installing'].includes(
+            state.phase,
+          ) ||
+          (state.phase === 'error' && state.version)
+        "
         class="update-button"
         :disabled="['downloading', 'installing'].includes(state.phase)"
         :title="state.message"
@@ -286,9 +431,18 @@ onUnmounted(() => {
       >
         <svg viewBox="0 0 24 24">
           <path d="M12 16V4m-4 4 4-4 4 4M5 15v5h14v-5" /></svg
-        ><span>{{ state.phase === 'downloading' ? '正在更新…' : state.phase === 'error' ? '重试更新' : '更新客户端' }}</span
+        ><span>{{
+          state.phase === "downloading"
+            ? "正在更新…"
+            : state.phase === "error"
+              ? "重试更新"
+              : "更新客户端"
+        }}</span
         ><i
-          v-if="['available', 'ready', 'downloading'].includes(state.phase) || (state.phase === 'error' && state.version)"
+          v-if="
+            ['available', 'ready', 'downloading'].includes(state.phase) ||
+            (state.phase === 'error' && state.version)
+          "
           class="update-dot"
         ></i>
       </button>
@@ -449,7 +603,13 @@ onUnmounted(() => {
           ><button class="text-button" @click="ask('quit')">退出 WAO</button>
         </div>
       </section>
-      <div v-if="state.phase === 'error' && state.version" class="error-toast" role="alert">{{ state.message }}</div>
+      <div
+        v-if="state.phase === 'error' && state.version"
+        class="error-toast"
+        role="alert"
+      >
+        {{ state.message }}
+      </div>
       <div v-if="error" class="error-toast" role="alert">{{ error }}</div>
       <div v-if="confirm" class="modal-backdrop">
         <section

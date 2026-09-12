@@ -64,20 +64,23 @@ describe('页面分区锚点导航', () => {
     const wrapper = mount(PageSectionNav, { props: { root, scrollContainer } })
     await settleFrame()
 
+    expect(wrapper.find('nav').exists()).toBe(false)
+    expect(wrapper.get('.page-section-floating').element.getAttribute('style')).toBeNull()
+    await wrapper.get('.page-section-toggle').trigger('click')
     expect(wrapper.get('nav').attributes('aria-label')).toBe('本页内容')
-    expect(wrapper.findAll('button').map((button) => button.text())).toEqual([
+    expect(wrapper.findAll('nav button').map((button) => button.text())).toEqual([
       'AI 控制中心',
       '自主目标',
       '成长教练',
     ])
-    expect(wrapper.findAll('button')[0]!.attributes('aria-current')).toBe('location')
+    expect(wrapper.findAll('nav button')[0]!.attributes('aria-current')).toBe('location')
 
-    await wrapper.findAll('button')[2]!.trigger('click')
+    await wrapper.findAll('nav button')[2]!.trigger('click')
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({
       behavior: 'smooth',
       block: 'start',
     })
-    expect(wrapper.findAll('button')[2]!.attributes('aria-current')).toBe('location')
+    expect(wrapper.find('nav').exists()).toBe(false)
 
     root.removeChild(sections[2]!)
     await settleFrame()
@@ -97,7 +100,8 @@ describe('页面分区锚点导航', () => {
     const wrapper = mount(PageSectionNav, { props: { root, scrollContainer } })
     await settleFrame()
 
-    expect(wrapper.findAll('button')[1]!.attributes('aria-current')).toBe('location')
+    await wrapper.get('.page-section-toggle').trigger('click')
+    expect(wrapper.findAll('nav button')[1]!.attributes('aria-current')).toBe('location')
     wrapper.unmount()
   })
 
@@ -118,7 +122,8 @@ describe('页面分区锚点导航', () => {
     const wrapper = mount(PageSectionNav, { props: { root, scrollContainer } })
     await settleFrame()
 
-    expect(wrapper.findAll('button')[2]!.attributes('aria-current')).toBe('location')
+    await wrapper.get('.page-section-toggle').trigger('click')
+    expect(wrapper.findAll('nav button')[2]!.attributes('aria-current')).toBe('location')
     wrapper.unmount()
   })
 })

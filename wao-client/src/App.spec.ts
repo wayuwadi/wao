@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   hide: vi.fn(),
   check: vi.fn(),
   handlers: new Map<string, (event: { payload: string }) => void>(),
+  register: vi.fn().mockResolvedValue(undefined),
+  unregisterAll: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => true,
@@ -31,6 +33,10 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
+vi.mock("@tauri-apps/plugin-global-shortcut", () => ({
+  register: mocks.register,
+  unregisterAll: mocks.unregisterAll,
+}));
 
 describe("desktop workspace preservation", () => {
   beforeEach(() => {
@@ -43,50 +49,129 @@ describe("desktop workspace preservation", () => {
   it("标题栏复用六个业务动作并同步真实未读，工作区未就绪时禁用", async () => {
     const wrapper = mount(App);
     await flushPromises();
-    expect(wrapper.findAll('.quick-actions button')).toHaveLength(6);
-    expect(wrapper.get('[data-action="chat"]').attributes('disabled')).toBeDefined();
-    mocks.handlers.get('toolbar-state')!({ payload: { ready: true, chat: '3', notifications: '99+' } as unknown as string });
+    expect(wrapper.findAll(".quick-actions button")).toHaveLength(6);
+    expect(
+      wrapper.get('[data-action="chat"]').attributes("disabled"),
+    ).toBeDefined();
+    mocks.handlers.get("toolbar-state")!({
+      payload: {
+        ready: true,
+        chat: "3",
+        notifications: "99+",
+        theme: "light",
+        context: "首页",
+        contextItems: ["今日"],
+        menus: ["更新日志"],
+      } as unknown as string,
+    });
     await flushPromises();
-    expect(wrapper.get('[data-action="chat"] small').text()).toBe('3');
-    expect(wrapper.get('[data-action="notifications"] small').text()).toBe('99+');
-    mocks.handlers.get('toolbar-state')!({ payload: { ready: true, chat: '3', notifications: '99+', theme: 'dark' } as unknown as string });
+    expect(wrapper.get('[data-action="chat"] small').text()).toBe("3");
+    expect(wrapper.get('[data-action="notifications"] small').text()).toBe(
+      "99+",
+    );
+    expect(wrapper.get(".workspace-context").text()).toContain("首页");
+    await wrapper.get("select.workspace-context").setValue("0");
+    expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", {
+      action: "context/0",
+    });
+    await wrapper.get(".workspace-menu-item").trigger("click");
+    expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", {
+      action: "menu/0",
+    });
+    mocks.handlers.get("toolbar-state")!({
+      payload: {
+        ready: true,
+        chat: "3",
+        notifications: "99+",
+        theme: "dark",
+        context: "首页",
+        contextItems: [],
+        menus: [],
+      } as unknown as string,
+    });
     await flushPromises();
-    expect(wrapper.get('[data-action="theme"]').text()).toContain('🌙');
-    expect(wrapper.get('.client').attributes('data-theme')).toBe('dark');
+    expect(wrapper.get('[data-action="theme"]').text()).toContain("🌙");
+    expect(wrapper.get(".client").attributes("data-theme")).toBe("dark");
 
-    for (const name of ['new-task', 'new-note', 'theme', 'shortcuts', 'chat', 'notifications']) {
-      await wrapper.get(`[data-action="${name}"]`).trigger('click');
-      expect(mocks.invoke).toHaveBeenCalledWith('workspace_action', { action: name });
+    for (const name of [
+      "new-task",
+      "new-note",
+      "theme",
+      "shortcuts",
+      "chat",
+      "notifications",
+    ]) {
+      await wrapper.get(`[data-action="${name}"]`).trigger("click");
+      expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", {
+        action: name,
+      });
     }
-    expect(mocks.invoke).not.toHaveBeenCalledWith('workspace_action', { action: 'reload' });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("workspace_action", {
+      action: "reload",
+    });
+    wrapper.unmount();
+  });
+  it("registers member-configured system shortcuts and reveals the workspace before acting", async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+    mocks.handlers.get("shortcut-config")!({
+      payload: { "new-note": "Alt+Shift+Y" } as unknown as string,
+    });
+    await flushPromises();
+    expect(mocks.unregisterAll).toHaveBeenCalled();
+    expect(mocks.register).toHaveBeenCalledWith(
+      "Alt+Shift+Y",
+      expect.any(Function),
+    );
+    const handler = mocks.register.mock.calls.at(-1)![1];
+    handler({ state: "Pressed" });
+    await flushPromises();
+    expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", {
+      action: "reveal",
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", {
+      action: "new-note",
+    });
     wrapper.unmount();
   });
   it("正常连接不显示冗余状态，无新版隐藏更新按钮", async () => {
     const wrapper = mount(App);
     await flushPromises();
-    mocks.handlers.get('workspace-state')!({ payload: 'ready' });
+    mocks.handlers.get("workspace-state")!({ payload: "ready" });
     await flushPromises();
-    expect(wrapper.find('.connection').exists()).toBe(false);
-    expect(wrapper.find('.update-button').exists()).toBe(false);
-    expect(wrapper.get('.edition').text()).toBe('WAO');
+    expect(wrapper.find(".connection").exists()).toBe(false);
+    expect(wrapper.find(".update-button").exists()).toBe(false);
+    expect(wrapper.get(".edition").text()).toBe("WAO");
     wrapper.unmount();
   });
   it("发现新版显示更新圆点，点击直接下载且验签完成才提示安装", async () => {
     let downloaded!: () => void;
-    const artifact = { version: '1.1.5', close: vi.fn(), download: vi.fn(() => new Promise<void>(resolve => { downloaded = resolve })), install: vi.fn() };
+    const artifact = {
+      version: "1.1.5",
+      close: vi.fn(),
+      download: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            downloaded = resolve;
+          }),
+      ),
+      install: vi.fn(),
+    };
     mocks.check.mockResolvedValue(artifact);
     const wrapper = mount(App);
     await flushPromises();
     expect(mocks.check).toHaveBeenCalledOnce();
-    expect(wrapper.find('.update-dot').exists()).toBe(true);
-    await wrapper.get('.update-button').trigger('click');
+    expect(wrapper.find(".update-dot").exists()).toBe(true);
+    await wrapper.get(".update-button").trigger("click");
     await flushPromises();
     expect(artifact.download).toHaveBeenCalledOnce();
-    expect(wrapper.find('.settings').exists()).toBe(false);
+    expect(wrapper.find(".settings").exists()).toBe(false);
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     downloaded();
     await flushPromises();
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain('安装并重新打开');
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain(
+      "安装并重新打开",
+    );
     expect(artifact.install).not.toHaveBeenCalled();
     wrapper.unmount();
   });
@@ -96,7 +181,9 @@ describe("desktop workspace preservation", () => {
     mocks.invoke.mockClear();
     await wrapper.get(".pet-button").trigger("click");
     await flushPromises();
-    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("workspace_action", { action: "pet" });
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("workspace_action", {
+      action: "pet",
+    });
     wrapper.unmount();
   });
   it("hides the existing webview for settings and restores the same workspace", async () => {
@@ -126,7 +213,9 @@ describe("desktop workspace preservation", () => {
     await wrapper.get('[aria-label="刷新工作区"]').trigger("click");
     await flushPromises();
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
-    expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", { action: "reload" });
+    expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", {
+      action: "reload",
+    });
     expect(wrapper.find("header .logo").exists()).toBe(false);
     wrapper.unmount();
   });

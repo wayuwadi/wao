@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
+import { useDataStore } from '@/stores/data'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import type { Editor } from '@tiptap/core'
 import ChatView from '@/views/ChatView.vue'
@@ -18,7 +20,7 @@ import {
 } from '@/api/chat'
 
 vi.mock('@/api/chat', () => ({
-  editSharedChatMessage: vi.fn(),
+  editSharedChatMessage: vi.fn<(typeof import('@/api/chat'))['editSharedChatMessage']>(),
   fetchSharedChatMessages: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatMessages']>(),
   markSharedChatRead: vi.fn<(typeof import('@/api/chat'))['markSharedChatRead']>(),
   sendSharedChatMessage: vi.fn<(typeof import('@/api/chat'))['sendSharedChatMessage']>(),
@@ -44,17 +46,29 @@ const message: SharedChatMessage = {
 let wrappers: VueWrapper[] = []
 
 async function mountView(props: Record<string, unknown> = {}, realEditor = false) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/kb/:id', component: { template: '<div />' } },
+    ],
+  })
+  await router.push('/')
+  await router.isReady()
   const wrapper = mount(ChatView, {
     props,
     attachTo: document.body,
     global: {
+      plugins: [router],
       stubs: {
-        MarkdownEditor: realEditor ? false : {
-          props: ['modelValue'],
-          emits: ['update:modelValue'],
-          template:
-            '<textarea class="markdown-editor-stub" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)"></textarea>',
-        },
+        MarkdownEditor: realEditor
+          ? false
+          : {
+              props: ['modelValue'],
+              emits: ['update:modelValue'],
+              template:
+                '<textarea class="markdown-editor-stub" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)"></textarea>',
+            },
       },
     },
   })
@@ -112,7 +126,9 @@ describe('ChatView', () => {
   })
 
   it('点击聊天中的子任务链接直接打开对应任务与子任务', async () => {
-    vi.mocked(fetchSharedChatMessages).mockResolvedValue([{ ...message, content: '[查看子任务](/s/t/t123/s456)' }])
+    vi.mocked(fetchSharedChatMessages).mockResolvedValue([
+      { ...message, content: '[查看子任务](/s/t/t123/s456)' },
+    ])
     const wrapper = await mountView({ floating: true })
     const ui = useUiStore()
     ui.openChat()
@@ -122,16 +138,50 @@ describe('ChatView', () => {
     expect(ui.chatOpen).toBe(false)
   })
 
+  it('点击聊天中的小记分享直接进入登录后的完整文档', async () => {
+    vi.mocked(fetchSharedChatMessages).mockResolvedValue([
+      { ...message, content: '[一条小记](/s/d/note-1)' },
+    ])
+    const data = useDataStore()
+    data.docs['note-1'] = { id: 'note-1', kbId: 'kb-notes', title: '一条小记' } as never
+    data.loadStates.docs = 'loaded'
+    const wrapper = await mountView({ floating: true })
+    const ui = useUiStore()
+    ui.openChat()
+
+    await wrapper.get('.message-stream a').trigger('click', { button: 0 })
+    await flushPromises()
+
+    expect(wrapper.vm.$router.currentRoute.value.fullPath).toBe('/kb/kb-notes?doc=note-1')
+    expect(ui.chatOpen).toBe(false)
+  })
+
   it('图片右键菜单复制 PNG 到剪贴板', async () => {
-    vi.mocked(fetchSharedChatMessages).mockResolvedValue([{ ...message, content: '![测试](/api/images/i1/raw)' }])
-    const write = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(fetchSharedChatMessages).mockResolvedValue([
+      { ...message, content: '![测试](/api/images/i1/raw)' },
+    ])
+    const write = vi.fn<(items: ClipboardItem[]) => Promise<void>>().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write } })
-    vi.stubGlobal('ClipboardItem', class { constructor(public data: unknown) {} })
-    const draw = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D)
-    const blob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => callback(new Blob(['png'], { type: 'image/png' })))
+    vi.stubGlobal(
+      'ClipboardItem',
+      class {
+        constructor(public data: unknown) {}
+      },
+    )
+    const draw = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue({
+        drawImage: vi.fn<(image: CanvasImageSource, dx: number, dy: number) => void>(),
+      } as unknown as CanvasRenderingContext2D)
+    const blob = vi
+      .spyOn(HTMLCanvasElement.prototype, 'toBlob')
+      .mockImplementation((callback) => callback(new Blob(['png'], { type: 'image/png' })))
     const wrapper = await mountView()
     const img = wrapper.get('img')
-    Object.defineProperties(img.element, { naturalWidth: { value: 10 }, naturalHeight: { value: 10 } })
+    Object.defineProperties(img.element, {
+      naturalWidth: { value: 10 },
+      naturalHeight: { value: 10 },
+    })
     await img.trigger('contextmenu', { clientX: 100, clientY: 100 })
     const menu = document.querySelector<HTMLButtonElement>('.chat-image-menu')!
     expect(menu.textContent).toContain('复制图片')
@@ -196,8 +246,6 @@ describe('ChatView', () => {
     expect(wrapper.find('.message-text script').exists()).toBe(false)
   })
 
-
-
   it('发送时保留引用关系并可添加真实表情回复', async () => {
     const wrapper = await mountView()
     await wrapper.get('.message-actions > button').trigger('click')
@@ -236,7 +284,9 @@ describe('ChatView', () => {
     await flushPromises()
     await rich.get('[contenteditable]').trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    expect(sendSharedChatMessage).toHaveBeenCalledWith(expect.objectContaining({ content: '本次消息' }))
+    expect(sendSharedChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: '本次消息' }),
+    )
     expect(editor.getMarkdown()).toBe('')
     expect(editor.isFocused).toBe(true)
     editor.commands.insertContent('下一条')
@@ -246,7 +296,11 @@ describe('ChatView', () => {
 
   it('请求完成前继续编辑时保留新草稿', async () => {
     let complete!: (value: SharedChatMessage) => void
-    vi.mocked(sendSharedChatMessage).mockReturnValue(new Promise((resolve) => { complete = resolve }))
+    vi.mocked(sendSharedChatMessage).mockReturnValue(
+      new Promise((resolve) => {
+        complete = resolve
+      }),
+    )
     const wrapper = await mountView()
     await wrapper.get('textarea').setValue('正在发送')
     await wrapper.get('form').trigger('submit')
@@ -291,7 +345,6 @@ describe('ChatView', () => {
     )
   })
 
-
   it('Enter 发送，Shift+Enter 和中文输入法确认不发送', async () => {
     const wrapper = await mountView()
     const editor = wrapper.get('textarea')
@@ -311,7 +364,9 @@ describe('ChatView', () => {
     ui.openTask('task1')
     ui.shareToChat('[任务](/s/t/task1)')
     await flushPromises()
-    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('原来的想法\n\n[任务](/s/t/task1)')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe(
+      '原来的想法\n\n[任务](/s/t/task1)',
+    )
     expect(ui.openTaskId).toBe('task1')
     expect(ui.chatOpen).toBe(true)
     expect(sendSharedChatMessage).not.toHaveBeenCalled()
@@ -334,21 +389,31 @@ describe('ChatView', () => {
     const wrapper = await mountView()
     await wrapper.get('textarea').setValue('原文')
     const input = wrapper.get<HTMLInputElement>('input[type="file"]')
-    Object.defineProperty(input.element, 'files', { configurable: true, value: [new File(['内容'], '验收.txt')] })
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['内容'], '验收.txt')],
+    })
     let resolve!: (value: Awaited<ReturnType<typeof uploadSharedChatFile>>) => void
-    vi.mocked(uploadSharedChatFile).mockReturnValueOnce(new Promise(r => { resolve = r }))
+    vi.mocked(uploadSharedChatFile).mockReturnValueOnce(
+      new Promise((r) => {
+        resolve = r
+      }),
+    )
     await input.trigger('change')
     await wrapper.get('textarea').setValue('原文与新增内容')
     expect(sendSharedChatMessage).not.toHaveBeenCalled()
     resolve({ id: 'file1', name: '验收.txt', size: '6 B', icon: '', time: '', by: '', link: '' })
     await flushPromises()
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toContain('原文与新增内容')
-    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toContain('/api/files/file1/download')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toContain(
+      '/api/files/file1/download',
+    )
     vi.mocked(uploadSharedChatFile).mockRejectedValueOnce(new Error('上传失败'))
     await input.trigger('change')
     await flushPromises()
     expect(wrapper.text()).toContain('上传失败')
-    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toContain('/api/files/file1/download')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toContain(
+      '/api/files/file1/download',
+    )
   })
-
 })

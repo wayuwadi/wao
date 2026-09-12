@@ -279,7 +279,14 @@ fn pet_action_name(url: &tauri::Url, origin: &tauri::Url) -> Option<String> {
     }
     if matches!(
         action,
-        "compact" | "bubble" | "chat" | "hide" | "workspace" | "toggle-workspace" | "drag" | "open-chat"
+        "compact"
+            | "bubble"
+            | "chat"
+            | "hide"
+            | "workspace"
+            | "toggle-workspace"
+            | "drag"
+            | "open-chat"
     ) {
         Some(action.to_string())
     } else {
@@ -289,18 +296,62 @@ fn pet_action_name(url: &tauri::Url, origin: &tauri::Url) -> Option<String> {
 
 // Values crossing from the remote page are bounded display data only.
 fn toolbar_state(url: &tauri::Url) -> serde_json::Value {
-    let mut state = serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light"});
+    let mut state = serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light", "context": "", "contextItems": [], "menus": []});
     for (key, value) in url.query_pairs() {
         match key.as_ref() {
-            "theme" if value == "light" || value == "dark" => state["theme"] = serde_json::json!(value),
+            "theme" if value == "light" || value == "dark" => {
+                state["theme"] = serde_json::json!(value)
+            }
             "ready" => state["ready"] = serde_json::json!(value == "1"),
-            "chat" | "notifications" if value == "99+" || value.parse::<u8>().is_ok_and(|n| n <= 99) => {
+            "chat" | "notifications"
+                if value == "99+" || value.parse::<u8>().is_ok_and(|n| n <= 99) =>
+            {
                 state[key.as_ref()] = serde_json::json!(value);
-            },
-            _ => {},
+            }
+            "context" if value.chars().count() <= 80 && !value.chars().any(char::is_control) => {
+                state["context"] = serde_json::json!(value);
+            }
+            "contextItems" | "menus" => {
+                if let Ok(labels) = serde_json::from_str::<Vec<String>>(&value) {
+                    if labels.len() <= 50
+                        && labels.iter().all(|label| {
+                            label.chars().count() <= 80 && !label.chars().any(char::is_control)
+                        })
+                    {
+                        state[key.as_ref()] = serde_json::json!(labels);
+                    }
+                }
+            }
+            _ => {}
         }
     }
     state
+}
+
+fn valid_shortcut(value: &str) -> bool {
+    let parts = value.split('+').collect::<Vec<_>>();
+    if !(2..=4).contains(&parts.len())
+        || !parts
+            .last()
+            .is_some_and(|key| key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric())
+    {
+        return false;
+    }
+    let mut seen = std::collections::HashSet::new();
+    parts[..parts.len() - 1]
+        .iter()
+        .all(|part| matches!(*part, "CommandOrControl" | "Alt" | "Shift") && seen.insert(*part))
+}
+
+// Remote workspace can only request bounded combinations for three fixed product actions.
+fn shortcut_config(url: &tauri::Url) -> serde_json::Value {
+    let mut config = serde_json::Map::new();
+    for (key, value) in url.query_pairs() {
+        if matches!(key.as_ref(), "new-task" | "new-note" | "chat") && valid_shortcut(&value) {
+            config.insert(key.into_owned(), serde_json::json!(value));
+        }
+    }
+    serde_json::Value::Object(config)
 }
 
 fn resize_pet(window: &tauri::WebviewWindow, width: f64, height: f64) {
@@ -464,6 +515,13 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
                 }
                 return false;
             }
+            if url.origin() == navigation_origin.origin() && url.path() == "/__desktop_shortcuts__" {
+                if navigation_app.get_webview("workspace").and_then(|view| view.url().ok())
+                    .is_some_and(|current| current.origin() == navigation_origin.origin()) {
+                    let _ = navigation_app.emit_to("main", "shortcut-config", shortcut_config(url));
+                }
+                return false;
+            }
             if internal_url(url, &navigation_origin) {
                 return true;
             }
@@ -484,7 +542,7 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
             };
             let _ = view.app_handle().emit_to("main", "workspace-state", phase);
             if matches!(event.event(), PageLoadEvent::Started) {
-                let _ = view.app_handle().emit_to("main", "toolbar-state", serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light"}));
+                let _ = view.app_handle().emit_to("main", "toolbar-state", serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light", "context": "", "contextItems": [], "menus": []}));
             }
             if matches!(event.event(), PageLoadEvent::Finished)
                 && !PET_STARTED.swap(true, Ordering::Relaxed)
@@ -526,19 +584,54 @@ async fn workspace_action(
                 }
             }
             return show_desktop_pet(&app).map_err(|e| e.to_string());
-        },
-        "new-task" | "new-note" | "theme" | "shortcuts" | "chat" | "notifications" => {
+        }
+        "new-task" | "new-note" | "theme" | "shortcuts" | "chat" | "notifications" | "fold" => {
             if workspace.url().map_err(|e| e.to_string())?.origin() != workspace_url().origin() {
                 return Err("当前页面不支持工作区快捷操作".into());
             }
             // Only the matched fixed selector reaches eval; no caller-supplied code is accepted.
-            workspace.eval(format!("document.querySelector('[data-desktop-action=\"{}\"]')?.click()", action))
-        },
+            workspace.eval(format!(
+                "document.querySelector('[data-desktop-action=\"{}\"]')?.click()",
+                action
+            ))
+        }
+        action
+            if action
+                .strip_prefix("menu/")
+                .is_some_and(|index| index.parse::<u8>().is_ok_and(|value| value < 50)) =>
+        {
+            if workspace.url().map_err(|e| e.to_string())?.origin() != workspace_url().origin() {
+                return Err("当前页面不支持工作区快捷操作".into());
+            }
+            let index = action.strip_prefix("menu/").unwrap();
+            workspace.eval(format!(
+                "document.querySelector('[data-desktop-menu-index=\"{}\"]')?.click()",
+                index
+            ))
+        }
+        action
+            if action
+                .strip_prefix("context/")
+                .is_some_and(|index| index.parse::<u8>().is_ok_and(|value| value < 50)) =>
+        {
+            if workspace.url().map_err(|e| e.to_string())?.origin() != workspace_url().origin() {
+                return Err("当前页面不支持工作区快捷操作".into());
+            }
+            let index = action.strip_prefix("context/").unwrap();
+            workspace.eval(format!(
+                "const s=document.querySelector('.context-nav select');const o=s?.querySelectorAll('option:not(:disabled)')[{}];if(s&&o){{s.value=o.value;s.dispatchEvent(new Event('change',{{bubbles:true}}))}}",
+                index
+            ))
+        }
         "back" => workspace.eval("history.back()"),
         "forward" => workspace.eval("history.forward()"),
         "reload" => workspace.eval("window.dispatchEvent(new Event('wao-workspace-reload'))"),
         "hide" => workspace.hide(),
         "show" => workspace.show(),
+        "reveal" => {
+            show(&app);
+            workspace.show()
+        }
         "browser" => {
             return app
                 .opener()
@@ -562,6 +655,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -768,17 +862,54 @@ mod tests {
     }
     #[test]
     fn toolbar_only_forwards_bounded_display_state() {
-        let url = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?ready=1&chat=3&notifications=99%2B&script=ignored").unwrap();
-        assert_eq!(toolbar_state(&url), serde_json::json!({"ready": true, "chat": "3", "notifications": "99+", "theme": "light"}));
-        let url = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?ready=wrong&chat=-1&notifications=1000").unwrap();
-        assert_eq!(toolbar_state(&url), serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light"}));
-        let dark = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?theme=dark").unwrap();
+        let url = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?ready=1&chat=3&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D&script=ignored").unwrap();
+        assert_eq!(
+            toolbar_state(&url),
+            serde_json::json!({"ready": true, "chat": "3", "notifications": "99+", "theme": "light", "context": "首页", "contextItems": ["今日"], "menus": ["更新日志"]})
+        );
+        let url = tauri::Url::parse(
+            "https://wao.wayuwa.cn/__desktop_toolbar__?ready=wrong&chat=-1&notifications=1000",
+        )
+        .unwrap();
+        assert_eq!(
+            toolbar_state(&url),
+            serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light", "context": "", "contextItems": [], "menus": []})
+        );
+        let dark =
+            tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?theme=dark").unwrap();
         assert_eq!(toolbar_state(&dark)["theme"], "dark");
-        let invalid = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?theme=arbitrary").unwrap();
+        let invalid =
+            tauri::Url::parse("https://wao.wayuwa.cn/__desktop_toolbar__?theme=arbitrary").unwrap();
         assert_eq!(toolbar_state(&invalid)["theme"], "light");
         let origin = tauri::Url::parse(PRODUCTION).unwrap();
-        assert_eq!(pet_action_name(&origin.join("/__desktop_pet__/toggle-workspace").unwrap(), &origin).as_deref(), Some("toggle-workspace"));
-        assert!(pet_action_name(&tauri::Url::parse("https://evil.test/__desktop_pet__/toggle-workspace").unwrap(), &origin).is_none());
+        assert_eq!(
+            pet_action_name(
+                &origin.join("/__desktop_pet__/toggle-workspace").unwrap(),
+                &origin
+            )
+            .as_deref(),
+            Some("toggle-workspace")
+        );
+        assert!(pet_action_name(
+            &tauri::Url::parse("https://evil.test/__desktop_pet__/toggle-workspace").unwrap(),
+            &origin
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn global_shortcut_bridge_only_accepts_fixed_actions_and_bounded_combinations() {
+        let url = tauri::Url::parse("https://wao.wayuwa.cn/__desktop_shortcuts__?new-note=Alt%2BShift%2BY&chat=CommandOrControl%2BAlt%2BF&unknown=Alt%2BX&new-task=Q").unwrap();
+        assert_eq!(
+            shortcut_config(&url),
+            serde_json::json!({
+                "new-note": "Alt+Shift+Y",
+                "chat": "CommandOrControl+Alt+F"
+            })
+        );
+        assert!(valid_shortcut("Alt+Q"));
+        assert!(!valid_shortcut("Alt+Alt+Q"));
+        assert!(!valid_shortcut("Alt+F12"));
     }
 
     #[test]

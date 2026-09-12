@@ -35,6 +35,7 @@ describe("release artifacts", () => {
       const manifest = JSON.parse(
         readFileSync(join(output, "latest.json"), "utf8"),
       );
+      expect(manifest.notes).toContain("系统级快捷键");
       expect(manifest.platforms["windows-x86_64"].url).toBe(
         "https://wao.wayuwa.cn/downloads/desktop/client/WAO_1.0.0_windows-x64-setup.exe",
       );
