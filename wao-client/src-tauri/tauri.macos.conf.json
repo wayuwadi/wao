@@ -16,6 +16,6 @@
   },
   "bundle": {
     "targets": ["app", "dmg"],
-    "icon": ["icons/icon-macos.icns"]
+    "icon": ["icons/icon-macos.png", "icons/icon-macos.icns"]
   }
 }
