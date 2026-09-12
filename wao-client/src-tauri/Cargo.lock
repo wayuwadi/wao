@@ -4613,7 +4613,7 @@ dependencies = [
 
 [[package]]
 name = "wao-client"
-version = "1.1.7"
+version = "1.1.8"
 dependencies = [
  "serde",
  "serde_json",
