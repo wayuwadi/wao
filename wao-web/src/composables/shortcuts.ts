@@ -1,7 +1,14 @@
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useTabsStore } from '@/stores/tabs'
+import { useSessionStore } from '@/stores/session'
+import { useShortcutSettingsStore } from '@/stores/shortcuts'
+import {
+  SHORTCUT_ACTIONS,
+  shortcutMatches,
+  type ConfigurableShortcutAction,
+} from '@/utils/shortcutConfig'
 
 /** 「g 前缀」跳转表：先按 g，再按对应键跳转到模块。 */
 const GO_ROUTES: Record<string, string> = {
@@ -17,13 +24,12 @@ const GO_ROUTES: Record<string, string> = {
 /** 快捷键分组，供帮助浮层展示（label 与实现保持一致）。 */
 export const SHORTCUT_GROUPS: { title: string; items: [keys: string, desc: string][] }[] = [
   {
-    title: '全局',
+    title: '固定快捷键',
     items: [
       ['⌘/Ctrl K', '打开搜索'],
       ['⌘/Ctrl J', '打开 AI 助手'],
       ['⌘/Ctrl S', '拦截浏览器另存为'],
       ['/', '打开搜索'],
-      ['N', '新建任务'],
       ['Shift N', '新建项目'],
       ['?', '显示 / 隐藏快捷键'],
       ['Esc', '逐层关闭浮层'],
@@ -31,9 +37,7 @@ export const SHORTCUT_GROUPS: { title: string; items: [keys: string, desc: strin
   },
   {
     title: '页签',
-    items: [
-      ['⌘/Ctrl W', '关闭当前页签'],
-    ],
+    items: [['⌘/Ctrl W', '关闭当前页签']],
   },
   {
     title: '跳转（先按 G）',
@@ -59,13 +63,15 @@ function isEditable(el: EventTarget | null): boolean {
  * 全局快捷键。挂在 AppLayout：
  * - ⌘/Ctrl+S 阻止浏览器打开「另存为」，正文仍沿用各编辑器自身的自动保存；
  * - ⌘/Ctrl+W 关闭当前页签（而非浏览器标签，尽力 preventDefault）；
- * - 单键动作 N / Shift+N / / / ?，以及 G 前缀跳转；
+ * - 可配置的组合键动作、单键 Shift+N / / / ?，以及 G 前缀跳转；
  * - 输入框内、弹窗 / 搜索开启时不触发单键动作，避免误伤打字。
  */
 export function useShortcuts() {
   const router = useRouter()
   const ui = useUiStore()
   const tabs = useTabsStore()
+  const session = useSessionStore()
+  const shortcutSettings = useShortcutSettingsStore()
 
   let goPending = false
   let goTimer: ReturnType<typeof setTimeout> | null = null
@@ -73,6 +79,12 @@ export function useShortcuts() {
   function closeActiveTab() {
     const next = tabs.close(tabs.activeKey)
     if (next) router.push(next.path)
+  }
+
+  function runConfiguredAction(action: ConfigurableShortcutAction) {
+    if (action === 'new-task') ui.openModal('task')
+    else if (action === 'new-note') ui.openModal('note')
+    else ui.openChat()
   }
 
   function onKey(e: KeyboardEvent) {
@@ -87,6 +99,16 @@ export function useShortcuts() {
       e.preventDefault()
       closeActiveTab()
       return
+    }
+    if (!ui.modal && !ui.searchOpen && !ui.helpOpen) {
+      const configured = SHORTCUT_ACTIONS.find((item) =>
+        shortcutMatches(e, shortcutSettings.settings.window[item.id]),
+      )
+      if (configured) {
+        e.preventDefault()
+        runConfiguredAction(configured.id)
+        return
+      }
     }
     // ? 帮助：即使在其它浮层上也可切换（但不在输入框中）。
     if (e.key === '?' && !isEditable(e.target)) {
@@ -116,10 +138,6 @@ export function useShortcuts() {
         goPending = true
         goTimer = setTimeout(() => (goPending = false), 900)
         break
-      case 'n':
-        e.preventDefault()
-        ui.openModal('task')
-        break
       case 'N':
         e.preventDefault()
         ui.openModal('project')
@@ -134,5 +152,13 @@ export function useShortcuts() {
   }
 
   onMounted(() => window.addEventListener('keydown', onKey))
-  onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+  onMounted(() => void shortcutSettings.load())
+  const stopMemberWatch = watch(
+    () => session.userId,
+    () => void shortcutSettings.load(true),
+  )
+  onBeforeUnmount(() => {
+    window.removeEventListener('keydown', onKey)
+    stopMemberWatch()
+  })
 }

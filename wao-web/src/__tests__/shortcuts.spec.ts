@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { useShortcuts } from '@/composables/shortcuts'
+import { useUiStore } from '@/stores/ui'
 
 const ShortcutHost = defineComponent({
   setup() {
@@ -59,6 +60,23 @@ describe('全局快捷键', () => {
     wrapper.find('textarea').element.dispatchEvent(event)
 
     expect(event.defaultPrevented).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('默认组合键分别打开任务、小记快速记录和聊天', async () => {
+    const wrapper = await mountHost()
+    const ui = useUiStore()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', altKey: true, cancelable: true }))
+    expect(ui.modal).toBe('task')
+    ui.closeModal()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', altKey: true, cancelable: true }))
+    expect(ui.modal).toBe('note')
+    ui.closeModal()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', altKey: true, cancelable: true }))
+    expect(ui.chatOpen).toBe(true)
     wrapper.unmount()
   })
 })

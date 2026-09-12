@@ -14,6 +14,7 @@ const props = defineProps<{
 
 const items = ref<SectionItem[]>([])
 const activeId = ref('')
+const expanded = ref(false)
 let observer: MutationObserver | undefined
 let frame = 0
 
@@ -85,6 +86,7 @@ function goTo(item: SectionItem) {
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   item.element.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
   activeId.value = item.id
+  expanded.value = false
 }
 
 watch(
@@ -112,28 +114,70 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <nav v-if="items.length >= 3" class="page-section-nav" aria-label="本页内容">
-    <div class="page-section-title"><i class="ri-list-check-3"></i>本页内容</div>
+  <aside v-if="items.length >= 3" class="page-section-floating" :class="{ expanded }">
     <button
-      v-for="item in items"
-      :key="item.id"
+      class="page-section-toggle"
       type="button"
-      :class="{ active: activeId === item.id }"
-      :aria-current="activeId === item.id ? 'location' : undefined"
-      @click="goTo(item)"
+      :aria-expanded="expanded"
+      aria-label="打开本页目录"
+      title="本页目录"
+      @click="expanded = !expanded"
     >
-      <i aria-hidden="true"></i><span>{{ item.label }}</span>
+      <i class="ri-list-check-3" aria-hidden="true"></i>
     </button>
-  </nav>
+    <nav v-if="expanded" class="page-section-nav" aria-label="本页内容">
+      <div class="page-section-title"><i class="ri-list-check-3"></i>本页内容</div>
+      <button
+        v-for="item in items"
+        :key="item.id"
+        type="button"
+        :class="{ active: activeId === item.id }"
+        :aria-current="activeId === item.id ? 'location' : undefined"
+        @click="goTo(item)"
+      >
+        <i aria-hidden="true"></i><span>{{ item.label }}</span>
+      </button>
+    </nav>
+  </aside>
 </template>
 
 <style scoped>
-.page-section-nav {
+.page-section-floating {
   position: sticky;
   top: 16px;
+  z-index: 20;
+  width: 0;
+  height: 36px;
+  flex: 0 0 0;
+  align-self: flex-start;
+  overflow: visible;
+}
+.page-section-toggle {
+  position: absolute;
+  left: 10px;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--wao-line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--wao-bg-card) 94%, transparent);
+  color: var(--wao-text-weak);
+  box-shadow: var(--wao-shadow-card-hover-2);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+}
+.page-section-toggle:hover,
+.expanded .page-section-toggle {
+  color: var(--wao-primary);
+  border-color: var(--wao-primary-line);
+  background: var(--wao-primary-soft);
+}
+.page-section-nav {
+  position: absolute;
+  left: 10px;
+  top: 40px;
   width: 148px;
   max-height: calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h) - 32px);
-  margin: 16px 0 20px 12px;
   padding: 11px 9px;
   overflow-y: auto;
   flex: 0 0 148px;
@@ -193,7 +237,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 3px var(--wao-primary-soft-2);
 }
 @media (max-width: 1180px) {
-  .page-section-nav {
+  .page-section-floating {
     display: none;
   }
 }

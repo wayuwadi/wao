@@ -8,6 +8,7 @@ import {
   ref,
   watch,
 } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   fetchSharedChatMessages,
   editSharedChatMessage,
@@ -21,19 +22,33 @@ import {
 import { useSpeechInput } from '@/composables/speechInput'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
-import { taskShareTarget } from '@/utils/share'
+import { useDataStore } from '@/stores/data'
+import { docShareTarget, taskShareTarget } from '@/utils/share'
 import { toast } from '@/composables/toast'
 import { renderMarkdown } from '@/utils/markdown'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
 
-function openTaskLink(event: MouseEvent) {
+async function openSharedLink(event: MouseEvent) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
   const link = event.target instanceof Element ? event.target.closest('a[href]') : null
-  const target = link ? taskShareTarget(link.getAttribute('href') || '') : null
-  if (!target) return
+  const href = link?.getAttribute('href') || ''
+  const target = link ? taskShareTarget(href) : null
+  const documentTarget = link ? docShareTarget(href) : null
+  if (!target && !documentTarget) return
   event.preventDefault()
+  if (target) {
+    ui.closeChat()
+    ui.openTask(target.taskId, target.subId)
+    return
+  }
+  await data.ensureDocsLoaded()
+  const doc = data.docById(documentTarget!.docId)
+  if (!doc?.kbId) {
+    toast('小记或文档无法读取，请确认仍有访问权限后重试', 'ri-error-warning-line')
+    return
+  }
   ui.closeChat()
-  ui.openTask(target.taskId, target.subId)
+  await router.push({ path: `/kb/${doc.kbId}`, query: { doc: doc.id } })
 }
 const editingId = ref('')
 const editDraft = ref('')
@@ -53,12 +68,20 @@ function startEdit(message: SharedChatMessage) {
       editDraft.value = cached.content
       editOriginal.value = cached.original
     }
-  } catch { editError.value = '本机草稿无法读取，请保持页面打开' }
+  } catch {
+    editError.value = '本机草稿无法读取，请保持页面打开'
+  }
 }
 watch([editDraft, editOriginal], () => {
   if (!editingId.value) return
-  try { localStorage.setItem(editKey(editingId.value), JSON.stringify({ content: editDraft.value, original: editOriginal.value })) }
-  catch { editError.value = '本机草稿保存失败，请保持页面打开并保存修改' }
+  try {
+    localStorage.setItem(
+      editKey(editingId.value),
+      JSON.stringify({ content: editDraft.value, original: editOriginal.value }),
+    )
+  } catch {
+    editError.value = '本机草稿保存失败，请保持页面打开并保存修改'
+  }
 })
 async function saveEdit() {
   if (!editingId.value || editSaving.value) return
@@ -70,17 +93,33 @@ async function saveEdit() {
     const saved = await editSharedChatMessage(id, editDraft.value, editOriginal.value)
     if (session.userId !== member) return
     merge([saved])
-    try { localStorage.removeItem(editKey(id)) } catch { /* 服务端已确认保存。 */ }
+    try {
+      localStorage.removeItem(editKey(id))
+    } catch {
+      /* 服务端已确认保存。 */
+    }
     editingId.value = ''
     toast('消息修改已保存', 'ri-check-line')
-  } catch (error) { editError.value = messageOf(error, '修改失败，草稿已保留，可重试') }
-  finally { editSaving.value = false }
+  } catch (error) {
+    editError.value = messageOf(error, '修改失败，草稿已保留，可重试')
+  } finally {
+    editSaving.value = false
+  }
+}
+
+function acceptLatestMessage(content: string) {
+  editOriginal.value = content
+  editError.value = ''
 }
 const imageMenu = ref<{ x: number; y: number; image: HTMLImageElement } | null>(null)
 function imageContext(event: MouseEvent) {
   if (!(event.target instanceof HTMLImageElement)) return
   event.preventDefault()
-  imageMenu.value = { image: event.target, x: Math.max(8, Math.min(event.clientX, innerWidth - 160)), y: Math.max(8, Math.min(event.clientY, innerHeight - 56)) }
+  imageMenu.value = {
+    image: event.target,
+    x: Math.max(8, Math.min(event.clientX, innerWidth - 160)),
+    y: Math.max(8, Math.min(event.clientY, innerHeight - 56)),
+  }
 }
 async function copyImage() {
   const img = imageMenu.value?.image
@@ -93,7 +132,12 @@ async function copyImage() {
     const context = canvas.getContext('2d')
     if (!context || !canvas.width || !canvas.height) throw new Error('图片尚未加载')
     context.drawImage(img, 0, 0)
-    const png = new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('图片转换失败')), 'image/png'))
+    const png = new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('图片转换失败'))),
+        'image/png',
+      ),
+    )
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
     toast('图片已复制', 'ri-file-copy-line')
   } catch {
@@ -130,6 +174,8 @@ const REACTIONS = [
 
 const session = useSessionStore()
 const ui = useUiStore()
+const data = useDataStore()
+const router = useRouter()
 const messages = ref<SharedChatMessage[]>([])
 let disposed = false
 const draft = ref('')
@@ -146,21 +192,34 @@ function appendDraft(text: string) {
   if (!composer.value?.appendMarkdown?.(text)) draft.value += text
 }
 const speech = useSpeechInput(appendDraft)
-watch(() => props.visible, (visible) => { if (!visible) speech.stop() })
+watch(
+  () => props.visible,
+  (visible) => {
+    if (!visible) speech.stop()
+  },
+)
 async function uploadAttachment(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file || uploadingFile.value) return
   sendError.value = ''
-  if (file.size > 50 * 1024 * 1024) { sendError.value = '文件超过 50MB，请压缩后重试'; input.value = ''; return }
+  if (file.size > 50 * 1024 * 1024) {
+    sendError.value = '文件超过 50MB，请压缩后重试'
+    input.value = ''
+    return
+  }
   uploadingFile.value = true
   try {
     const uploaded = await uploadSharedChatFile(file)
     if (!uploaded.id) throw new Error('文件未保存，请重试')
     const name = file.name.replace(/[\\[\]<>]/g, '_').replace(/[\r\n]/g, ' ')
     appendDraft(`\n[${name}](/api/files/${encodeURIComponent(uploaded.id)}/download)\n`)
-  } catch (error) { sendError.value = messageOf(error, '文件上传失败，请重新选择文件重试；文字草稿仍保留') }
-  finally { uploadingFile.value = false; input.value = '' }
+  } catch (error) {
+    sendError.value = messageOf(error, '文件上传失败，请重新选择文件重试；文字草稿仍保留')
+  } finally {
+    uploadingFile.value = false
+    input.value = ''
+  }
 }
 const sendError = ref('')
 const reactingId = ref('')
@@ -177,7 +236,12 @@ const storageKey = computed(
 const contentLength = computed(() => Array.from(draft.value).length)
 const canSend = computed(
   () =>
-    !sending.value && !uploadingImage.value && !uploadingFile.value && !speech.listening.value && contentLength.value <= 2_000 && !!draft.value.trim(),
+    !sending.value &&
+    !uploadingImage.value &&
+    !uploadingFile.value &&
+    !speech.listening.value &&
+    contentLength.value <= 2_000 &&
+    !!draft.value.trim(),
 )
 const unreadCount = computed(() => messages.value.filter((message) => !message.read).length)
 
@@ -462,8 +526,20 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="imageMenu" class="chat-image-menu-mask" @pointerdown.self="imageMenu = null" @contextmenu.prevent="imageMenu = null">
-      <button class="chat-image-menu" :style="{ left: `${imageMenu.x}px`, top: `${imageMenu.y}px` }" @click="copyImage" @keydown.esc="imageMenu = null">复制图片</button>
+    <div
+      v-if="imageMenu"
+      class="chat-image-menu-mask"
+      @pointerdown.self="imageMenu = null"
+      @contextmenu.prevent="imageMenu = null"
+    >
+      <button
+        class="chat-image-menu"
+        :style="{ left: `${imageMenu.x}px`, top: `${imageMenu.y}px` }"
+        @click="copyImage"
+        @keydown.esc="imageMenu = null"
+      >
+        复制图片
+      </button>
     </div>
   </Teleport>
   <main class="chat-page" :class="{ floating }">
@@ -493,7 +569,14 @@ onBeforeUnmount(() => {
     </header>
 
     <section class="chat-shell">
-      <div ref="stream" class="message-stream" aria-live="polite" @scroll.passive="markVisibleRead" @click="openTaskLink" @contextmenu="imageContext">
+      <div
+        ref="stream"
+        class="message-stream"
+        aria-live="polite"
+        @scroll.passive="markVisibleRead"
+        @click="openSharedLink"
+        @contextmenu="imageContext"
+      >
         <div v-if="loading" class="state-card">
           <i class="ri-loader-4-line spin"></i> 正在读取聊天记录…
         </div>
@@ -516,11 +599,29 @@ onBeforeUnmount(() => {
             }}</span>
             <div class="message-body">
               <form v-if="editingId === message.id" class="message-edit" @submit.prevent="saveEdit">
-                <label>修改消息<textarea v-model="editDraft" aria-label="修改消息正文" :disabled="editSaving" rows="4" /></label>
+                <label
+                  >修改消息<textarea
+                    v-model="editDraft"
+                    aria-label="修改消息正文"
+                    :disabled="editSaving"
+                    rows="4"
+                  />
+                </label>
                 <p v-if="editError" role="alert">{{ editError }}</p>
-                <button v-if="editOriginal !== message.content" type="button" :disabled="editSaving" @click="editOriginal = message.content; editError = ''">已核对下方最新消息，保留草稿重试</button>
-                <button type="button" :disabled="editSaving" @click="editingId = ''">收起，保留草稿</button>
-                <button type="submit" :disabled="editSaving || !editDraft.trim()">{{ editSaving ? '保存中…' : editError ? '重试保存' : '保存修改' }}</button>
+                <button
+                  v-if="editOriginal !== message.content"
+                  type="button"
+                  :disabled="editSaving"
+                  @click="acceptLatestMessage(message.content)"
+                >
+                  已核对下方最新消息，保留草稿重试
+                </button>
+                <button type="button" :disabled="editSaving" @click="editingId = ''">
+                  收起，保留草稿
+                </button>
+                <button type="submit" :disabled="editSaving || !editDraft.trim()">
+                  {{ editSaving ? '保存中…' : editError ? '重试保存' : '保存修改' }}
+                </button>
               </form>
               <div class="message-meta">
                 <strong>{{ message.author.name }}</strong>
@@ -534,7 +635,6 @@ onBeforeUnmount(() => {
                 v-if="message.content"
                 class="message-text md-body"
                 v-html="renderMarkdown(message.content)"
-
               ></div>
               <a
                 v-if="message.imageUrl"
@@ -560,7 +660,18 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <div class="message-actions">
-                <button v-if="message.author.id === session.userId && message.source === 'WAO' && !message.deleted" type="button" :disabled="editSaving" @click="startEdit(message)"><i class="ri-edit-line"></i>修改</button>
+                <button
+                  v-if="
+                    message.author.id === session.userId &&
+                    message.source === 'WAO' &&
+                    !message.deleted
+                  "
+                  type="button"
+                  :disabled="editSaving"
+                  @click="startEdit(message)"
+                >
+                  <i class="ri-edit-line"></i>修改
+                </button>
                 <button type="button" @click="quote(message)">
                   <i class="ri-reply-line"></i>引用
                 </button>
@@ -618,7 +729,9 @@ onBeforeUnmount(() => {
           <div class="composer-status">
             <span v-if="uploadingFile">正在上传文件，请稍候…</span>
             <span v-else-if="uploadingImage">正在保存图片草稿…</span>
-            <span v-else-if="speech.listening.value">正在聆听，再点一次结束；转写后可修改再发送</span>
+            <span v-else-if="speech.listening.value"
+              >正在聆听，再点一次结束；转写后可修改再发送</span
+            >
             <span v-else-if="speech.error.value" role="alert">{{ speech.error.value }}</span>
             <span v-else-if="sendError" class="send-error">{{ sendError }}</span>
             <span v-else>{{ draft ? '草稿已保存在本机' : 'Enter 发送 · Shift+Enter 换行' }}</span>
@@ -626,8 +739,25 @@ onBeforeUnmount(() => {
           </div>
           <div class="composer-actions">
             <input ref="attachmentInput" type="file" hidden @change="uploadAttachment" />
-            <button type="button" class="emoji-button" :disabled="uploadingFile || sending" @click="attachmentInput?.click()"><i class="ri-attachment-line"></i>文件</button>
-            <button v-if="speech.supported" type="button" class="emoji-button" :aria-pressed="speech.listening.value" :disabled="sending" title="使用浏览器语音服务，可能联网处理声音；转写后由你确认发送" @click="speech.toggle"><i class="ri-mic-line"></i>{{ speech.listening.value ? '结束语音' : '语音输入' }}</button>
+            <button
+              type="button"
+              class="emoji-button"
+              :disabled="uploadingFile || sending"
+              @click="attachmentInput?.click()"
+            >
+              <i class="ri-attachment-line"></i>文件
+            </button>
+            <button
+              v-if="speech.supported"
+              type="button"
+              class="emoji-button"
+              :aria-pressed="speech.listening.value"
+              :disabled="sending"
+              title="使用浏览器语音服务，可能联网处理声音；转写后由你确认发送"
+              @click="speech.toggle"
+            >
+              <i class="ri-mic-line"></i>{{ speech.listening.value ? '结束语音' : '语音输入' }}
+            </button>
             <div class="emoji-wrap">
               <button type="button" class="emoji-button" @click="emojiOpen = !emojiOpen">
                 <i class="ri-emotion-happy-line"></i>表情
@@ -698,10 +828,39 @@ onBeforeUnmount(() => {
   font-weight: 700;
   letter-spacing: 0.12em;
 }
-.header-actions { display: flex; align-items: center; gap: 8px; }
-.review-trigger { height: 36px; padding: 0 13px; border: 1px solid var(--wao-line-control); border-radius: 10px; background: var(--wao-primary); color: #fff; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.minimize-trigger { width: 36px; height: 36px; flex: 0 0 36px; border: 1px solid var(--wao-line-control); border-radius: 10px; background: var(--wao-bg-card); color: var(--wao-text-weak); display: grid; place-items: center; cursor: pointer; }
-.minimize-trigger:hover { background: var(--wao-bg-hover-2); color: var(--wao-text); }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.review-trigger {
+  height: 36px;
+  padding: 0 13px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 10px;
+  background: var(--wao-primary);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.minimize-trigger {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-weak);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.minimize-trigger:hover {
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-text);
+}
 .chat-shell {
   min-height: 0;
   flex: 1;
@@ -712,9 +871,25 @@ onBeforeUnmount(() => {
   background: var(--wao-bg-card);
   overflow: hidden;
 }
-.message-edit { display: grid; gap: 8px; min-width: min(280px, 100%); padding: 10px; border: 1px solid var(--wao-line); border-radius: 8px; }
-.message-edit textarea { box-sizing: border-box; width: 100%; color: var(--wao-text); background: var(--wao-bg-card); resize: vertical; }
-.message-edit p { color: var(--wao-danger); overflow-wrap: anywhere; }
+.message-edit {
+  display: grid;
+  gap: 8px;
+  min-width: min(280px, 100%);
+  padding: 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+}
+.message-edit textarea {
+  box-sizing: border-box;
+  width: 100%;
+  color: var(--wao-text);
+  background: var(--wao-bg-card);
+  resize: vertical;
+}
+.message-edit p {
+  color: var(--wao-danger);
+  overflow-wrap: anywhere;
+}
 .message-stream {
   flex: 1;
   min-height: 0;
@@ -813,7 +988,11 @@ onBeforeUnmount(() => {
   border-radius: 9px;
   margin-top: 7px;
 }
-.message-text :deep(table) { display: block; max-width: 100%; overflow-x: auto; }
+.message-text :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
 .message-text :deep(pre) {
   max-width: 100%;
   overflow: auto;
@@ -1085,7 +1264,7 @@ onBeforeUnmount(() => {
   .chat-header p:not(.eyebrow) {
     display: none;
   }
-      .review-trigger span {
+  .review-trigger span {
     display: none;
   }
   .review-trigger {
@@ -1125,6 +1304,20 @@ onBeforeUnmount(() => {
 </style>
 
 <style scoped>
-.chat-image-menu-mask { position: fixed; inset: 0; z-index: 5000; }
-.chat-image-menu { position: absolute; width: 150px; padding: 10px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text); box-shadow: 0 4px 16px #0002; cursor: pointer; }
+.chat-image-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+}
+.chat-image-menu {
+  position: absolute;
+  width: 150px;
+  padding: 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  box-shadow: 0 4px 16px #0002;
+  cursor: pointer;
+}
 </style>

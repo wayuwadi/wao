@@ -34,7 +34,9 @@ import type { ModuleId } from '@/types'
 const desktopToolbar = hasDesktopToolbar()
 const toolbarRef = ref<HTMLElement | null>(null)
 let stopDesktopToolbar: (() => void) | undefined
-onMounted(() => { if (toolbarRef.value) stopDesktopToolbar = mountDesktopToolbar(toolbarRef.value) })
+onMounted(() => {
+  if (toolbarRef.value) stopDesktopToolbar = mountDesktopToolbar(toolbarRef.value)
+})
 onBeforeUnmount(() => stopDesktopToolbar?.())
 const route = useRoute()
 const router = useRouter()
@@ -101,12 +103,15 @@ preferences.prepareForMember(session.currentUser.id)
 useShortcuts()
 
 // 兼容旧动作调用，所有小记入口都回到同一个记录空间。
-watch(() => ui.modal, (modal) => {
-  if (modal === 'note') {
-    ui.closeModal()
-    newNote()
-  }
-})
+watch(
+  () => ui.modal,
+  (modal) => {
+    if (modal === 'note') {
+      ui.closeModal()
+      newNote()
+    }
+  },
+)
 
 const crumbA = computed(() => {
   if (route.meta.tabKind === 'external') {
@@ -254,8 +259,7 @@ function onKeydown(e: KeyboardEvent) {
     if (ui.chatOpen) {
       e.preventDefault()
       ui.closeChat()
-    }
-    else if (ui.assistantOpen) ui.closeAssistant()
+    } else if (ui.assistantOpen) ui.closeAssistant()
     else if (ui.celebrating) ui.stopCelebrate()
     else if (ui.helpOpen) ui.closeHelp()
     else if (ui.searchOpen) ui.closeSearch()
@@ -279,12 +283,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="shell" :class="{ 'desktop-shell': desktopToolbar }" :data-control-style="preferences.effectiveControlStyle">
+  <div
+    class="shell"
+    :class="{ 'desktop-shell': desktopToolbar }"
+    :data-control-style="preferences.effectiveControlStyle"
+  >
     <SideNav @open-search="openSearch" />
 
     <main class="main">
-      <header class="header">
-        <button class="fold" title="折叠 / 展开导航" @click="nav.toggleCollapse">
+      <header ref="toolbarRef" class="header">
+        <button
+          class="fold"
+          data-desktop-action="fold"
+          title="折叠 / 展开导航"
+          @click="nav.toggleCollapse"
+        >
           <i :class="nav.collapsed ? 'ri-menu-unfold-line' : 'ri-menu-fold-line'"></i>
         </button>
         <NavigationContext class="crumb-a" :label="crumbA" />
@@ -294,11 +307,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </template>
         <TopMenuBar />
 
-
         <button class="assistant-entry" title="问问 AI（Ctrl/⌘ + J）" @click="ui.openAssistant()">
           <i class="ri-robot-2-line"></i>问问 AI
         </button>
-        <div ref="toolbarRef" class="quick-actions" :class="{ relocated: desktopToolbar }">
+        <div class="quick-actions" :class="{ relocated: desktopToolbar }">
           <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
           <button class="plus" data-desktop-action="new-task" @click="newTask">
             <i class="ri-checkbox-circle-line"></i>新建任务
@@ -307,10 +319,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <i class="ri-sticky-note-line"></i>新建小记
           </button>
 
-          <button class="bell" data-desktop-action="theme" :data-theme="theme.effective.value" :title="themeTitle" @click="toggleTheme">
+          <button
+            class="bell"
+            data-desktop-action="theme"
+            :data-theme="theme.effective.value"
+            :title="themeTitle"
+            @click="toggleTheme"
+          >
             <i :class="themeIcon"></i>
           </button>
-          <button class="bell" data-desktop-action="shortcuts" title="快捷键（?）" @click="ui.toggleHelp()">
+          <button
+            class="bell"
+            data-desktop-action="shortcuts"
+            title="快捷键（?）"
+            @click="ui.toggleHelp()"
+          >
             <i class="ri-keyboard-line"></i>
           </button>
           <FloatingChat />
@@ -354,8 +377,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     </button>
 
     <nav class="mobile-main-nav" aria-label="手机主入口">
-      <RouterLink to="/" :class="{ active: route.path === '/' && !ui.chatOpen }"><i class="ri-home-4-line"></i>首页</RouterLink>
-      <button type="button" data-chat-trigger :class="{ active: ui.chatOpen }" :aria-expanded="ui.chatOpen" @click="ui.toggleChat()"><i class="ri-chat-3-line"></i>聊天<span v-if="ui.chatUnreadCount" class="mobile-unread">{{ ui.chatUnreadCount > 99 ? '99+' : ui.chatUnreadCount }}</span></button>
+      <RouterLink to="/" :class="{ active: route.path === '/' && !ui.chatOpen }"
+        ><i class="ri-home-4-line"></i>首页</RouterLink
+      >
+      <button
+        type="button"
+        data-chat-trigger
+        :class="{ active: ui.chatOpen }"
+        :aria-expanded="ui.chatOpen"
+        @click="ui.toggleChat()"
+      >
+        <i class="ri-chat-3-line"></i>聊天<span v-if="ui.chatUnreadCount" class="mobile-unread">{{
+          ui.chatUnreadCount > 99 ? '99+' : ui.chatUnreadCount
+        }}</span>
+      </button>
       <RouterLink to="/todo"><i class="ri-checkbox-multiple-line"></i>待办</RouterLink>
       <RouterLink to="/notes"><i class="ri-sticky-note-line"></i>小记</RouterLink>
     </nav>
@@ -371,27 +406,97 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </template>
 
 <style scoped>
-.mobile-main-nav { display: none; }
-.desktop-shell { --wao-bg-side: #eef2f8; }
-:global([data-theme="dark"]) .desktop-shell { --wao-bg-side: #13151c; }
-.desktop-shell .header { background: var(--wao-bg-side); border-bottom: 0; }
+.mobile-main-nav {
+  display: none;
+}
+.desktop-shell {
+  --wao-bg-side: #eef2f8;
+}
+:global([data-theme='dark']) .desktop-shell {
+  --wao-bg-side: #13151c;
+}
+.desktop-shell .header {
+  background: var(--wao-bg-side);
+  border-bottom: 0;
+}
+.desktop-shell .header {
+  display: none;
+}
 @media (min-width: 761px) {
-  .desktop-shell :deep(.side) { border-right: 0; }
-  .desktop-shell :deep(.item) { min-height: 32px; padding-top: 6px; padding-bottom: 6px; }
-  .desktop-shell :deep(.group-title) { margin-top: 10px; }
+  .desktop-shell :deep(.side) {
+    border-right: 0;
+  }
+  .desktop-shell :deep(.item) {
+    min-height: 32px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .desktop-shell :deep(.group-title) {
+    margin-top: 10px;
+  }
 }
 @media (max-width: 760px) {
-  .mobile-main-nav { position: fixed; z-index: 72; bottom: 0; inset-inline: 0; display: flex; height: calc(54px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; background: var(--wao-bg-card); border-top: 1px solid var(--wao-line); }
-  .mobile-main-nav > * { position: relative; flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center; font-size: 11px; border: 0; text-decoration: none; color: var(--wao-text-weak); background: transparent; }
-  .mobile-main-nav i { font-size: 20px; }
-  .mobile-main-nav .active, .mobile-main-nav .router-link-exact-active { color: var(--wao-primary); }
-  .mobile-unread { position: absolute; top: 2px; left: 55%; border-radius: 10px; background: var(--wao-danger); color: white; padding: 1px 4px; font-size: 9px; }
-  .shell :deep(.side) { padding-bottom: calc(54px + env(safe-area-inset-bottom)); box-sizing: border-box; }
-  .shell .main { padding-bottom: calc(54px + env(safe-area-inset-bottom)); box-sizing: border-box; }
-  .shell .fab { bottom: calc(66px + env(safe-area-inset-bottom)); }
+  .mobile-main-nav {
+    position: fixed;
+    z-index: 72;
+    bottom: 0;
+    inset-inline: 0;
+    display: flex;
+    height: calc(54px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    box-sizing: border-box;
+    background: var(--wao-bg-card);
+    border-top: 1px solid var(--wao-line);
+  }
+  .mobile-main-nav > * {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    border: 0;
+    text-decoration: none;
+    color: var(--wao-text-weak);
+    background: transparent;
+  }
+  .mobile-main-nav i {
+    font-size: 20px;
+  }
+  .mobile-main-nav .active,
+  .mobile-main-nav .router-link-exact-active {
+    color: var(--wao-primary);
+  }
+  .mobile-unread {
+    position: absolute;
+    top: 2px;
+    left: 55%;
+    border-radius: 10px;
+    background: var(--wao-danger);
+    color: white;
+    padding: 1px 4px;
+    font-size: 9px;
+  }
+  .shell :deep(.side) {
+    padding-bottom: calc(54px + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+  }
+  .shell .main {
+    padding-bottom: calc(54px + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+  }
+  .shell .fab {
+    bottom: calc(66px + env(safe-area-inset-bottom));
+  }
 }
-.quick-actions { display: contents; }
-.quick-actions.relocated { display: none; }
+.quick-actions {
+  display: contents;
+}
+.quick-actions.relocated {
+  display: none;
+}
 .shell {
   display: flex;
   height: 100vh;
@@ -584,16 +689,41 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   width: auto;
   flex: 1 1 0;
 }
-.page-stage:has(#chatgpt-workspace) { flex: 1 1 0; min-height: 420px; align-items: stretch; }
-.page-body:has(#chatgpt-workspace) { position: relative; display: flex; min-height: 0; }
+.page-stage:has(#chatgpt-workspace) {
+  flex: 1 1 0;
+  min-height: 420px;
+  align-items: stretch;
+}
+.page-body:has(#chatgpt-workspace) {
+  position: relative;
+  display: flex;
+  min-height: 0;
+}
 @media (min-width: 821px) {
-  .content:has(.notes-page) { overflow: hidden; }
-  .page-stage:has(.notes-page) { flex: 1 1 0; min-height: 0; align-items: stretch; overflow: hidden; }
-  .page-body:has(.notes-page) { min-height: 0; overflow: hidden; }
+  .content:has(.notes-page) {
+    overflow: hidden;
+  }
+  .page-stage:has(.notes-page) {
+    flex: 1 1 0;
+    min-height: 0;
+    align-items: stretch;
+    overflow: hidden;
+  }
+  .page-body:has(.notes-page) {
+    min-height: 0;
+    overflow: hidden;
+  }
 }
 /* 四象限占据可用视口，列表分别滚动；不让某一格的长清单撑走其他象限。 */
-.page-stage:has(.todo-quadrant) { flex: 1 1 0; min-height: 360px; align-items: stretch; }
-.page-body:has(.todo-quadrant) { display: flex; min-height: 0; }
+.page-stage:has(.todo-quadrant) {
+  flex: 1 1 0;
+  min-height: 360px;
+  align-items: stretch;
+}
+.page-body:has(.todo-quadrant) {
+  display: flex;
+  min-height: 0;
+}
 
 /* 悬浮新建按钮只在手机上出现；桌面顶栏已经有「新建任务」了 */
 .fab {

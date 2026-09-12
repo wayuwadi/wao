@@ -120,6 +120,52 @@ button {
   height: 100%;
   min-width: 12px;
 }
+.workspace-menu {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: min(42vw, 520px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.workspace-menu::-webkit-scrollbar {
+  display: none;
+}
+.workspace-context {
+  flex: none;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #5e6678;
+  font-size: 12px;
+}
+select.workspace-context {
+  height: 28px;
+  border: 1px solid #dde1ed;
+  border-radius: 7px;
+  background: #f8f9fc;
+}
+.workspace-menu-item {
+  flex: none;
+  max-width: 132px;
+  height: 28px;
+  padding: 0 9px;
+  overflow: hidden;
+  border: 1px solid #dde1ed;
+  border-radius: 7px;
+  background: #f8f9fc;
+  color: #555e73;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.workspace-menu-item:hover {
+  border-color: #a7b0ed;
+  background: #eff1ff;
+  color: #4958c9;
+}
 .connection {
   display: flex;
   align-items: center;
@@ -523,22 +569,102 @@ progress {
   color: #526963;
 }
 
-.pet-button { border: 1px solid #dedeea; border-radius: 8px; padding: 7px 10px; background: #fff; color: #554e72; cursor: pointer; white-space: nowrap; }
+.pet-button {
+  border: 1px solid #dedeea;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fff;
+  color: #554e72;
+  cursor: pointer;
+  white-space: nowrap;
+}
 
-.quick-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
-.quick-actions button { display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border-radius: 7px; background: #f6f7fd; position: relative; font-size: 12px; }
-.quick-actions button:first-child { background: #4958dd; color: white; }
-.quick-actions button:hover { box-shadow: inset 0 0 0 1px #a7b0ed; }
-.quick-actions small { background: #e5484d; color: white; border-radius: 8px; padding: 0 3px; }
-@media (max-width: 1100px) { .quick-label, .toolbar .connection { display: none; } .toolbar { gap: 5px; padding-left: 8px; } }
+.quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.quick-actions button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: #f6f7fd;
+  position: relative;
+  font-size: 12px;
+}
+.quick-actions button:first-child {
+  background: #4958dd;
+  color: white;
+}
+.quick-actions button:hover {
+  box-shadow: inset 0 0 0 1px #a7b0ed;
+}
+.quick-actions small {
+  background: #e5484d;
+  color: white;
+  border-radius: 8px;
+  padding: 0 3px;
+}
+@media (max-width: 1100px) {
+  .quick-label,
+  .toolbar .connection,
+  .workspace-context {
+    display: none;
+  }
+  .workspace-menu {
+    max-width: 260px;
+  }
+  .toolbar {
+    gap: 5px;
+    padding-left: 8px;
+  }
+}
+@media (max-width: 900px) {
+  .workspace-menu-item {
+    display: none;
+  }
+  .workspace-menu {
+    width: 32px;
+  }
+}
 
 /* 与远程工作区左栏共用连续表面，窗口控件保持原生位置。 */
-.toolbar { background: #eef2f8; border-bottom-color: transparent; }
-.client[data-theme="dark"] { color: #e5e7ef; background: #13151c; }
-.client[data-theme="dark"] .toolbar { background: #13151c; }
-.theme-glyph { font-size: 16px; line-height: 1; }
-.update-button { position: relative; }
-.update-button .update-dot { background: #ef4444; width: 7px; height: 7px; border-radius: 50%; }
+.toolbar {
+  background: #eef2f8;
+  border-bottom-color: transparent;
+}
+.client[data-theme="dark"] {
+  color: #e5e7ef;
+  background: #13151c;
+}
+.client[data-theme="dark"] .toolbar {
+  background: #13151c;
+}
+.theme-glyph {
+  font-size: 16px;
+  line-height: 1;
+}
+.update-button {
+  position: relative;
+}
+.update-button .update-dot {
+  background: #ef4444;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
 
 .client[data-theme="dark"] .quick-actions button:not(:first-child),
-.client[data-theme="dark"] .pet-button { background: #202431; color: #e5e7ef; border-color: #363c4e; }
+.client[data-theme="dark"] .pet-button,
+.client[data-theme="dark"] .workspace-menu-item {
+  background: #202431;
+  color: #e5e7ef;
+  border-color: #363c4e;
+}
+.client[data-theme="dark"] .workspace-context {
+  color: #adb4c4;
+}
