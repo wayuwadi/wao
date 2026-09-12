@@ -21,3 +21,18 @@ test("macOS icon override keeps a PNG for Tauri compile-time metadata and the de
   );
   assert.deepEqual(config.bundle.icon, ["icons/icon-macos.png", "icons/icon-macos.icns"]);
 });
+
+test("JavaScript and Rust Tauri plugins keep matching major and minor versions", () => {
+  const packageLock = JSON.parse(
+    readFileSync(new URL("../package-lock.json", import.meta.url)),
+  );
+  const cargoLock = readFileSync(new URL("../src-tauri/Cargo.lock", import.meta.url), "utf8");
+  for (const name of ["global-shortcut", "opener", "process", "updater"]) {
+    const javascript = packageLock.packages[`node_modules/@tauri-apps/plugin-${name}`]?.version;
+    const native = cargoLock.match(
+      new RegExp(`name = "tauri-plugin-${name}"\\nversion = "(\\d+\\.\\d+)\\.`),
+    )?.[1];
+    assert(javascript && native, `${name}: both plugin locks must exist`);
+    assert.equal(javascript.split(".").slice(0, 2).join("."), native, `${name}: plugin versions differ`);
+  }
+});
