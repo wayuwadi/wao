@@ -14,3 +14,10 @@ test("macOS transparent-window feature matches Tauri config on every build platf
     assert.equal(privateApi, app.macOSPrivateApi === true, `${platform}: feature/config mismatch breaks cargo test before compilation`);
   }
 });
+
+test("macOS icon override keeps a PNG for Tauri compile-time metadata and the dedicated ICNS bundle", () => {
+  const config = JSON.parse(
+    readFileSync(new URL("../src-tauri/tauri.macos.conf.json", import.meta.url)),
+  );
+  assert.deepEqual(config.bundle.icon, ["icons/icon-macos.png", "icons/icon-macos.icns"]);
+});
