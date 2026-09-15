@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mountDesktopToolbar, syncDesktopGlobalShortcuts } from '@/utils/desktopToolbar'
+import {
+  hasDesktopToolbar,
+  mountDesktopToolbar,
+  syncDesktopGlobalShortcuts,
+} from '@/utils/desktopToolbar'
 afterEach(() => {
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
 describe('桌面顶栏只同步真实入口计数', () => {
-  it('旧壳沿用受限导航，新壳用标题消息同步且不再导航', async () => {
+  it('旧壳保留网页入口且不再导航，新壳用标题消息同步', async () => {
     const assign = vi.fn<(url: string) => void>()
     const realWindow = window
     vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: false })
@@ -15,11 +19,20 @@ describe('桌面顶栏只同步真实入口计数', () => {
     document.body.append(root)
     mountDesktopToolbar(root)()
     expect(assign).not.toHaveBeenCalled()
+    expect(hasDesktopToolbar()).toBe(false)
+
+    vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: true })
+    mountDesktopToolbar(root)()
+    syncDesktopGlobalShortcuts({ 'new-note': 'Alt+Shift+Y' })
+    expect(hasDesktopToolbar()).toBe(false)
+    expect(assign).not.toHaveBeenCalled()
+
     vi.stubGlobal('window', {
       location: { assign },
       __WAO_DESKTOP_TOOLBAR__: true,
       __WAO_DESKTOP_BRIDGE__: 2,
     })
+    expect(hasDesktopToolbar()).toBe(true)
     const stop = mountDesktopToolbar(root)
     expect(document.title).toBe(
       'WAO_DESKTOP_SIGNAL:/__desktop_toolbar__?ready=1&theme=light&chat=3&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D',
@@ -44,12 +57,5 @@ describe('桌面顶栏只同步真实入口计数', () => {
     )
     expect(assign).not.toHaveBeenCalled()
 
-    vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: true })
-    const stopLegacy = mountDesktopToolbar(root)
-    expect(assign).toHaveBeenLastCalledWith(
-      '/__desktop_toolbar__?ready=1&theme=dark&chat=0&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D',
-    )
-    stopLegacy()
-    expect(assign).toHaveBeenLastCalledWith('/__desktop_toolbar__?ready=0')
   })
 })

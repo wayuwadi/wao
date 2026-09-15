@@ -1,21 +1,20 @@
 /** Versioned UI-only bridge. Older clients retain their in-page buttons. */
 export function hasDesktopToolbar(): boolean {
-  return (window as Window & { __WAO_DESKTOP_TOOLBAR__?: boolean }).__WAO_DESKTOP_TOOLBAR__ === true
+  const shell = window as Window & {
+    __WAO_DESKTOP_TOOLBAR__?: boolean
+    __WAO_DESKTOP_BRIDGE__?: number
+  }
+  return shell.__WAO_DESKTOP_TOOLBAR__ === true && (shell.__WAO_DESKTOP_BRIDGE__ ?? 0) >= 2
 }
 
 const DESKTOP_SIGNAL_PREFIX = 'WAO_DESKTOP_SIGNAL:'
 
 /**
  * 新壳通过文档标题变化读取受限状态，避免把每次角标/菜单变化伪装成顶层导航。
- * 旧壳继续使用原导航拦截器，直到用户完成客户端升级。
+ * 旧壳不再同步原生顶栏，改为保留网页内入口，确保工作区连续可用。
  */
 function sendDesktopSignal(path: string): void {
-  const bridge = (window as Window & { __WAO_DESKTOP_BRIDGE__?: number }).__WAO_DESKTOP_BRIDGE__
-  if (bridge && bridge >= 2) {
-    document.title = `${DESKTOP_SIGNAL_PREFIX}${path}`
-    return
-  }
-  window.location.assign(path)
+  document.title = `${DESKTOP_SIGNAL_PREFIX}${path}`
 }
 
 export function mountDesktopToolbar(root: HTMLElement): () => void {
