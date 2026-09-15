@@ -13,27 +13,26 @@ import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMention;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
 import org.junit.jupiter.api.Test;
+import org.springframework.scheduling.annotation.Scheduled;
 
 class FeishuQuickCollectPollingSchedulerTest {
 
     private final SettingService settings = mock(SettingService.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
     private final FeishuQuickCollectService quickCollect = mock(FeishuQuickCollectService.class);
-    private final FeishuTextPolishService textPolish = mock(FeishuTextPolishService.class);
     private final cn.wayuwa.wao.mapper.SharedChatSyncStateMapper state = mock(cn.wayuwa.wao.mapper.SharedChatSyncStateMapper.class);
     @org.junit.jupiter.api.BeforeEach
     void claimPolling() {
         when(state.claimPolling(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), anyLong())).thenReturn(1);
     }
     private final FeishuQuickCollectPollingScheduler scheduler =
-            new FeishuQuickCollectPollingScheduler(settings, feishu, quickCollect, textPolish, state);
+            new FeishuQuickCollectPollingScheduler(settings, feishu, quickCollect, state);
 
     @Test
     void anotherNodeOrCooldownSkipsAllFeishuReads() {
         enabled();
         when(state.claimPolling(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), anyLong())).thenReturn(0);
         scheduler.poll();
-        scheduler.pollEdits();
         org.mockito.Mockito.verifyNoInteractions(feishu);
     }
 
@@ -78,24 +77,6 @@ class FeishuQuickCollectPollingSchedulerTest {
     }
 
     @Test
-    void polishCanReusePollingWhenQuickCollectIsDisabled() {
-        when(textPolish.enabled()).thenReturn(true);
-        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");
-        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
-        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_chat");
-        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
-        FeishuMessage source = message("om_polish", "user", false, "ou_custom_bot");
-        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
-                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
-                .thenReturn(List.of(source));
-
-        scheduler.poll();
-
-        verify(textPolish).collectPolled("oc_chat", source);
-        verify(feishu, never()).botOpenId("token");
-    }
-
-    @Test
     void eligibilityRequiresExactBotMention() {
         assertThat(FeishuQuickCollectPollingScheduler.eligible(
                 message("om_1", "user", false, "ou_bot"), "ou_bot")).isTrue();
@@ -104,55 +85,13 @@ class FeishuQuickCollectPollingSchedulerTest {
     }
 
     @Test
-    void editSweepReplaysCurrentMessageContentThroughTheIdempotentCollector() {
-        enabled();
-        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
-        when(feishu.botOpenId("token")).thenReturn("ou_bot");
-        FeishuMessage edited = message("om_edited", "user", false, "ou_bot");
-        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
-                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
-                .thenReturn(List.of(edited));
+    void realtimePollingDefaultsToSixtySecondsAndHasNoHistoricalSweep() throws Exception {
+        Scheduled scheduled = FeishuQuickCollectPollingScheduler.class
+                .getDeclaredMethod("poll").getAnnotation(Scheduled.class);
 
-        scheduler.pollEdits();
-
-        verify(quickCollect).collectPolled("oc_chat", edited);
-        verify(quickCollect).triggerPolledReaction("token", "om_edited");
-    }
-
-    @Test
-    void editSweepAlsoConvergesARecalledMessage() {
-        enabled();
-        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
-        when(feishu.botOpenId("token")).thenReturn("ou_bot");
-        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
-                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
-                .thenReturn(List.of(message("om_recalled", "user", true, "ou_bot")));
-
-        scheduler.pollEdits();
-
-        verify(quickCollect).recallPolled("oc_chat", "om_recalled");
-        verify(quickCollect, never()).collectPolled(org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any());
-    }
-
-    @Test
-    void polishOnlyEditSweepBackfillsRealMentionsWithoutQuickCollect() {
-        when(textPolish.enabled()).thenReturn(true);
-        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");
-        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
-        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_chat");
-        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
-        FeishuMessage source = message("om_polish_backfill", "user", false, "ou_custom_bot");
-        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
-                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
-                .thenReturn(List.of(source));
-
-        scheduler.pollEdits();
-
-        verify(textPolish).collectPolled("oc_chat", source);
-        verify(feishu, never()).botOpenId("token");
-        verify(quickCollect, never()).collectPolled(org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any());
+        assertThat(scheduled.fixedDelayString()).contains(":60000}");
+        assertThat(FeishuQuickCollectPollingScheduler.class.getDeclaredMethods())
+                .noneMatch(method -> method.getName().equals("pollEdits"));
     }
 
     private void enabled() {

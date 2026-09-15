@@ -9,6 +9,8 @@ import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import javax.crypto.Cipher;
@@ -70,6 +72,8 @@ public class FeishuQuickCollectService {
     private static final String MESSAGE_RECALLED_EVENT = "im.message.recalled_v1";
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final String PUBLIC_BASE_URL = "https://wao.wayuwa.cn";
+    private static final long REACTION_CHECK_TTL_NANOS = TimeUnit.MINUTES.toNanos(5);
+    private static final int MAX_RECENT_REACTION_CHECKS = 10_000;
 
     private static final Logger log = LoggerFactory.getLogger(FeishuQuickCollectService.class);
 
@@ -87,6 +91,7 @@ public class FeishuQuickCollectService {
     private final FeishuQuickCollectReactionPolicy reactionPolicy;
     private final FeishuQuickCollectRecallService recalls;
     private final FeishuLinkPreviewService linkPreviews;
+    private final Map<String, Long> recentReactionChecks = new ConcurrentHashMap<>();
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             TaskService tasks, ProjectService projects, AccountMapper accounts,
             AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
@@ -277,12 +282,35 @@ public class FeishuQuickCollectService {
      */
     public void triggerPolledReaction(String token, String messageId) {
         if (!StringUtils.hasText(messageId) || reactionAiRuns.hasTriggered(messageId)) return;
-        List<FeishuMessageReaction> reactions = feishu.listMessageReactions(
-                token, messageId, reactionPolicy.triggerEmoji());
-        for (FeishuMessageReaction reaction : reactions) {
-            reactionAiRuns.triggerPolled(messageId, reaction, PUBLIC_BASE_URL);
-            if (reactionAiRuns.hasTriggered(messageId)) return;
+        long now = System.nanoTime();
+        if (!claimReactionCheck(messageId, now)) return;
+        try {
+            List<FeishuMessageReaction> reactions = feishu.listMessageReactions(
+                    token, messageId, reactionPolicy.triggerEmoji());
+            for (FeishuMessageReaction reaction : reactions) {
+                reactionAiRuns.triggerPolled(messageId, reaction, PUBLIC_BASE_URL);
+                if (reactionAiRuns.hasTriggered(messageId)) return;
+            }
+        } catch (RuntimeException ex) {
+            recentReactionChecks.remove(messageId);
+            throw ex;
         }
+    }
+
+    private boolean claimReactionCheck(String messageId, long now) {
+        long expiresAt = now + REACTION_CHECK_TTL_NANOS;
+        Long previous = recentReactionChecks.putIfAbsent(messageId, expiresAt);
+        if (previous != null && previous > now) return false;
+        if (previous != null && !recentReactionChecks.replace(messageId, previous, expiresAt)) return false;
+        if (recentReactionChecks.size() > MAX_RECENT_REACTION_CHECKS) {
+            recentReactionChecks.entrySet().removeIf(entry -> entry.getValue() <= now);
+            int excess = recentReactionChecks.size() - MAX_RECENT_REACTION_CHECKS;
+            if (excess > 0) {
+                recentReactionChecks.keySet().stream().limit(excess)
+                        .forEach(recentReactionChecks::remove);
+            }
+        }
+        return true;
     }
 
     /** 真正把一条群消息变成任务。 */

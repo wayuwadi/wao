@@ -205,6 +205,33 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
+    void pollingChecksTheSameMessageReactionOnlyOnceWithinFiveMinutes() {
+        when(feishu.listMessageReactions("token", "om_source", "StatusInFlight"))
+                .thenReturn(List.of());
+
+        service.triggerPolledReaction("token", "om_source");
+        service.triggerPolledReaction("token", "om_source");
+
+        verify(feishu, org.mockito.Mockito.times(1))
+                .listMessageReactions("token", "om_source", "StatusInFlight");
+    }
+
+    @Test
+    void failedReactionReadCanRetryOnTheNextPoll() {
+        when(feishu.listMessageReactions("token", "om_source", "StatusInFlight"))
+                .thenThrow(new RuntimeException("unavailable"))
+                .thenReturn(List.of());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> service.triggerPolledReaction("token", "om_source"))
+                .isInstanceOf(RuntimeException.class);
+        service.triggerPolledReaction("token", "om_source");
+
+        verify(feishu, org.mockito.Mockito.times(2))
+                .listMessageReactions("token", "om_source", "StatusInFlight");
+    }
+
+    @Test
     void pollingSkipsExternalApiAfterMessageWasAlreadyDispatched() {
         when(reactionAiRuns.hasTriggered("om_source")).thenReturn(true);
 

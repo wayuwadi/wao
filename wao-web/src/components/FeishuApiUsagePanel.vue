@@ -31,7 +31,7 @@ onMounted(refresh)
         <tbody><tr v-for="row in rows" :key="row.endpoint"><td>{{ row.endpoint }}</td><td>{{ row.requests.toLocaleString() }}</td><td>{{ total ? (row.requests / total * 100).toFixed(1) : '0.0' }}%</td></tr></tbody>
       </table>
     </div>
-    <p>后台成员缓存 5 分钟；编辑、撤回和旧消息飞机表情默认每 5 分钟兜底回看。已配置的事件回调仍实时处理。</p>
+    <p>后台成员身份转换与群聊同步复用 5 分钟成员缓存；快速收集默认每 60 秒读取近两分钟增量消息，不再回扫 24 小时历史。已配置的事件回调仍实时处理。</p>
     <p>月额度由飞书租户统一管理，换应用不能增加总额度；额度不足请联系管理员核对官方用量与升级方案。</p>
   </section>
 </template>

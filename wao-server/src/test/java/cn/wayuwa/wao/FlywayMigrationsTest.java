@@ -90,6 +90,19 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void retiredFeishuTextPolishBotKeepsHistoryAndDisablesOnlyTheOldSwitch() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V153__retire_feishu_text_polish_bot.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("WHERE cfg_key = 'feishu.text-polish.enabled'")
+                .doesNotContain("DROP TABLE", "DELETE FROM feishu_text_polish_run");
+    }
+
+    @Test
     void knowledgeDocumentArchiveKeepsArchiveSeparateFromTrash() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V138__knowledge_document_archive.sql"))

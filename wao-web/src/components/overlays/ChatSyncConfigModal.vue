@@ -15,18 +15,13 @@ import {
   fetchChatSyncConfig,
   fetchFeishuChatMembers,
   fetchFeishuChats,
-  fetchFeishuTextPolishConfig,
   fetchQuickCollectConfig,
-  fetchWebhookEndpoints,
   runChatSync,
   saveChatSyncConfig,
-  saveFeishuTextPolishConfig,
   saveQuickCollectConfig,
   type ChatSyncConfig,
   type FeishuChat,
   type FeishuSender,
-  type FeishuTextPolishConfig,
-  type FeishuWebhookEndpoint,
   type QuickCollectConfig,
 } from '@/api/system'
 
@@ -66,13 +61,6 @@ const emojiOptions = [
   { value: 'CheckMark', label: '勾选（已完成）' },
 ]
 
-// ---- 群聊润色（现有应用读取 @消息并默认直接回复，可选独立 Webhook） ----
-const textPolish = ref<FeishuTextPolishConfig | null>(null)
-const textPolishEnabled = ref(false)
-const textPolishWebhookId = ref('')
-const textPolishMentionName = ref('润色机器人')
-const webhookEndpoints = ref<FeishuWebhookEndpoint[]>([])
-
 /** 事件订阅地址：填到飞书开放平台「事件订阅」里，机器人收到的消息才会送到 WAO。 */
 const eventUrl = `${window.location.origin}/api/feishu/events`
 
@@ -91,11 +79,9 @@ async function copyEventUrl() {
 
 onMounted(async () => {
   try {
-    const [c, q, polish, webhooks] = await Promise.all([
+    const [c, q] = await Promise.all([
       fetchChatSyncConfig(),
       fetchQuickCollectConfig(),
-      fetchFeishuTextPolishConfig(),
-      fetchWebhookEndpoints(),
     ])
     cfg.value = c
     appId.value = c.appId
@@ -110,11 +96,6 @@ onMounted(async () => {
     receivedEmoji.value = q.receivedEmoji
     triggerEmoji.value = q.triggerEmoji
     completedEmoji.value = q.completedEmoji
-    textPolish.value = polish
-    textPolishEnabled.value = polish.enabled
-    textPolishWebhookId.value = polish.webhookId
-    textPolishMentionName.value = polish.mentionName || '润色机器人'
-    webhookEndpoints.value = webhooks
   } catch (error) {
     toast(error instanceof Error ? error.message : '读取配置失败')
   } finally {
@@ -165,25 +146,17 @@ function removeSender(i: number) {
 
 /** 快速收集单独存一份：密文字段留空表示保留已存的那一份。 */
 async function persistQuick() {
-  const [savedQuick, savedPolish] = await Promise.all([
-    saveQuickCollectConfig({
-      enabled: quickEnabled.value,
-      projectId: quickProjectId.value,
-      verificationToken: verifyToken.value.trim() || undefined,
-      encryptKey: encryptKey.value.trim() || undefined,
-      mentionOpenIds: mentionIds.value,
-      receivedEmoji: receivedEmoji.value,
-      triggerEmoji: triggerEmoji.value,
-      completedEmoji: completedEmoji.value,
-    }),
-    saveFeishuTextPolishConfig({
-      enabled: textPolishEnabled.value,
-      webhookId: textPolishWebhookId.value,
-      mentionName: textPolishMentionName.value.trim(),
-    }),
-  ])
+  const savedQuick = await saveQuickCollectConfig({
+    enabled: quickEnabled.value,
+    projectId: quickProjectId.value,
+    verificationToken: verifyToken.value.trim() || undefined,
+    encryptKey: encryptKey.value.trim() || undefined,
+    mentionOpenIds: mentionIds.value,
+    receivedEmoji: receivedEmoji.value,
+    triggerEmoji: triggerEmoji.value,
+    completedEmoji: completedEmoji.value,
+  })
   quick.value = savedQuick
-  textPolish.value = savedPolish
   verifyToken.value = ''
   encryptKey.value = ''
 }
@@ -340,7 +313,7 @@ async function runHistory() {
         <div class="tip">
           在群里 @ 机器人说「记录任务：…」、「记录想法：…」或直接说内容，会记入发言人自己的未排期任务列表。
           每个人需要先用同一飞书账号登录过 WAO；普通群聊不会被收集。
-          开启后 WAO 会用上方已授权的应用凭据主动读取新消息，通常 15 秒内完成；下方事件订阅可作为更低延迟的可选入口。
+          开启后 WAO 会用上方已授权的应用凭据主动读取新消息，通常 60 秒内完成；下方事件订阅可作为更低延迟的可选入口。
           撤回这条原消息时，对应任务也会自动删除。
           手机上直接用飞书的语音输入说完就发即可；发语音条我认不出来，会回一句提示让你转文字。
         </div>
@@ -416,49 +389,6 @@ async function runHistory() {
           <div v-if="!senders.filter((x) => x.id).length" class="empty">先在上面读取群成员，这里才能勾人</div>
         </div>
         <div class="tip">操作人自己永远不会被 @；一个人都不勾就只发通知不 @ 人。</div>
-      </div>
-
-      <div class="section">
-        <div class="label-row">
-          <div class="label">群聊润色机器人</div>
-          <div class="spacer"></div>
-          <label class="switch">
-            <input v-model="textPolishEnabled" type="checkbox" />
-            <span>在群里 @机器人 直接润色并回群</span>
-          </label>
-        </div>
-        <div class="tip">
-          WAO 使用上方自建应用读取群消息，精确识别触发名称；默认由同一应用回复原消息，也可以选择独立 Webhook 发出。
-          发言人必须先用同一飞书账号登录 WAO，机器人会使用该成员在「润色」页面保存的提示词，成功结果也进入其个人历史。
-        </div>
-        <div class="two">
-          <input
-            v-model="textPolishMentionName"
-            class="input"
-            maxlength="64"
-            placeholder="群内机器人名称，如：润色机器人"
-          />
-          <select v-model="textPolishWebhookId" class="input">
-            <option value="">WAO 应用直接回复原消息（推荐）</option>
-            <option
-              v-for="endpoint in webhookEndpoints.filter((item) => item.enabled)"
-              :key="endpoint.id"
-              :value="endpoint.id"
-            >
-              {{ endpoint.name }}{{ endpoint.systemDefault ? ' · 系统默认' : '' }}
-            </option>
-            <option
-              v-if="textPolishWebhookId && !webhookEndpoints.some((item) => item.id === textPolishWebhookId && item.enabled)"
-              :value="textPolishWebhookId"
-              disabled
-            >
-              已保存的 Webhook 当前不可用
-            </option>
-          </select>
-        </div>
-        <div class="tip">
-          触发示例：@{{ textPolishMentionName || '润色机器人' }} 这段话帮我整理清楚。需要独立发件机器人时，可选择系统设置中已登记的 Webhook。
-        </div>
       </div>
 
       <div class="foot">
