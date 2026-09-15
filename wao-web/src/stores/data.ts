@@ -216,7 +216,7 @@ export const useDataStore = defineStore('data', () => {
    * 从 /api 拉取各域真实数据；加载与失败期间保持空值，不用原型数据掩盖读取失败。
    *
    * <p>按域独立容错（{@code Promise.allSettled}）：单个域（如内容域表尚未建好而 500）失败时，
-   * 其余域仍正常接管，且不会拖垮写路径。只要核心读路径（领域 / 项目 / 任务）可达即判定后端在线
+   * 其余域仍正常接管，且不会拖垮写路径。只要任一已鉴权的启动读路径可达即判定后端在线
    * （{@code apiLive=true}），从而新建 / 更新会真正落库，而非仅本地乐观更新。
    */
   async function hydrate() {
@@ -331,12 +331,15 @@ export const useDataStore = defineStore('data', () => {
     if (sc !== null) schedule.value = sc
     if (sg !== null) suggestions.value = sg
     if (gl !== null) goals.value = gl
-    // 核心读路径任一可达即认为后端在线；写路径（POST/PUT）随之启用。
-    apiLive.value = a !== null && p !== null && t !== null
+    // 任一已鉴权读路径成功即可证明会话和后端可达；单个慢域不能拖死小记等独立写路径。
+    apiLive.value = [a, p, t, knowledge, fl, va, sc, sg, gl].some(result => result !== null)
     vaultError.value = va === null
     if (apiLive.value) {
-      lastServerSyncFingerprint = serverSyncFingerprint(p!, t!)
-      startSync()
+      // 项目/任务都拿到真实快照后才启动合并轮询；其一失败时保留当前数据，等待手工重试。
+      if (p !== null && t !== null) {
+        lastServerSyncFingerprint = serverSyncFingerprint(p, t)
+        startSync()
+      }
       Object.keys(taskDrafts.value).forEach(persistTask)
     }
     await Promise.all([docsReloadRequest, imagesReloadRequest, automationReloadRequest])
