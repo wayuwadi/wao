@@ -7,18 +7,32 @@ export function hasDesktopToolbar(): boolean {
   return shell.__WAO_DESKTOP_TOOLBAR__ === true && (shell.__WAO_DESKTOP_BRIDGE__ ?? 0) >= 2
 }
 
+function hasLegacyDesktopToolbar(): boolean {
+  const shell = window as Window & {
+    __WAO_DESKTOP_TOOLBAR__?: boolean
+    __WAO_DESKTOP_BRIDGE__?: number
+  }
+  return shell.__WAO_DESKTOP_TOOLBAR__ === true && (shell.__WAO_DESKTOP_BRIDGE__ ?? 0) < 2
+}
+
 const DESKTOP_SIGNAL_PREFIX = 'WAO_DESKTOP_SIGNAL:'
 
 /**
  * 新壳通过文档标题变化读取受限状态，避免把每次角标/菜单变化伪装成顶层导航。
- * 旧壳不再同步原生顶栏，改为保留网页内入口，确保工作区连续可用。
+ * 旧壳只在挂载后发送一次 ready 信号，恢复固定原生按钮但不持续同步易变状态。
  */
 function sendDesktopSignal(path: string): void {
   document.title = `${DESKTOP_SIGNAL_PREFIX}${path}`
 }
 
 export function mountDesktopToolbar(root: HTMLElement): () => void {
-  if (!hasDesktopToolbar()) return () => {}
+  if (!hasDesktopToolbar()) {
+    if (!hasLegacyDesktopToolbar()) return () => {}
+    const timer = globalThis.setTimeout(() => {
+      window.location.assign('/__desktop_toolbar__?ready=1')
+    }, 0)
+    return () => globalThis.clearTimeout(timer)
+  }
   let previous = ''
   const publish = () => {
     const contextItems = [

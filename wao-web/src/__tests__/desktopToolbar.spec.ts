@@ -9,7 +9,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('桌面顶栏只同步真实入口计数', () => {
-  it('旧壳保留网页入口且不再导航，新壳用标题消息同步', async () => {
+  it('旧壳只激活一次固定按钮，新壳用标题消息持续同步', async () => {
     const assign = vi.fn<(url: string) => void>()
     const realWindow = window
     vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: false })
@@ -22,10 +22,18 @@ describe('桌面顶栏只同步真实入口计数', () => {
     expect(hasDesktopToolbar()).toBe(false)
 
     vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: true })
-    mountDesktopToolbar(root)()
+    const stopLegacy = mountDesktopToolbar(root)
+    await new Promise((resolve) => realWindow.setTimeout(resolve, 0))
     syncDesktopGlobalShortcuts({ 'new-note': 'Alt+Shift+Y' })
     expect(hasDesktopToolbar()).toBe(false)
-    expect(assign).not.toHaveBeenCalled()
+    expect(assign).toHaveBeenCalledOnce()
+    expect(assign).toHaveBeenCalledWith('/__desktop_toolbar__?ready=1')
+    root.querySelector('.chat-badge')!.textContent = '4'
+    await new Promise((resolve) => realWindow.setTimeout(resolve, 0))
+    expect(assign).toHaveBeenCalledOnce()
+    stopLegacy()
+    root.querySelector('.chat-badge')!.textContent = '3'
+    assign.mockClear()
 
     vi.stubGlobal('window', {
       location: { assign },
