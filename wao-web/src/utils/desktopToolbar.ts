@@ -3,6 +3,21 @@ export function hasDesktopToolbar(): boolean {
   return (window as Window & { __WAO_DESKTOP_TOOLBAR__?: boolean }).__WAO_DESKTOP_TOOLBAR__ === true
 }
 
+const DESKTOP_SIGNAL_PREFIX = 'WAO_DESKTOP_SIGNAL:'
+
+/**
+ * 新壳通过文档标题变化读取受限状态，避免把每次角标/菜单变化伪装成顶层导航。
+ * 旧壳继续使用原导航拦截器，直到用户完成客户端升级。
+ */
+function sendDesktopSignal(path: string): void {
+  const bridge = (window as Window & { __WAO_DESKTOP_BRIDGE__?: number }).__WAO_DESKTOP_BRIDGE__
+  if (bridge && bridge >= 2) {
+    document.title = `${DESKTOP_SIGNAL_PREFIX}${path}`
+    return
+  }
+  window.location.assign(path)
+}
+
 export function mountDesktopToolbar(root: HTMLElement): () => void {
   if (!hasDesktopToolbar()) return () => {}
   let previous = ''
@@ -33,7 +48,7 @@ export function mountDesktopToolbar(root: HTMLElement): () => void {
     }).toString()
     if (previous === query) return
     previous = query
-    window.location.assign(`/__desktop_toolbar__?${query}`)
+    sendDesktopSignal(`/__desktop_toolbar__?${query}`)
   }
   const observer = new MutationObserver(publish)
   observer.observe(root, {
@@ -46,7 +61,7 @@ export function mountDesktopToolbar(root: HTMLElement): () => void {
   publish()
   return () => {
     observer.disconnect()
-    window.location.assign('/__desktop_toolbar__?ready=0')
+    sendDesktopSignal('/__desktop_toolbar__?ready=0')
   }
 }
 
@@ -58,5 +73,5 @@ export function syncDesktopGlobalShortcuts(config: Record<string, string>): void
     const shortcut = config[action]
     if (shortcut) query.set(action, shortcut)
   }
-  window.location.assign(`/__desktop_shortcuts__?${query}`)
+  sendDesktopSignal(`/__desktop_shortcuts__?${query}`)
 }
