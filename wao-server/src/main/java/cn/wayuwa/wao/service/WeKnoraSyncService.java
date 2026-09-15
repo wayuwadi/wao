@@ -38,7 +38,6 @@ public class WeKnoraSyncService {
     /** 返回脱敏设置、真实来源计数与最近运行记录，不回传 API Key。 */
     public Map<String,Object> overview(String owner) {
         Map<String,Object> config=config();
-        checkOwner(config,owner);
         Map<String,Object> view=new LinkedHashMap<>();
         if (config!=null) {
             view.put("kbId",config.get("kb_id"));view.put("modules",modules(config));view.put("batchLimit",config.get("batch_limit"));
@@ -60,12 +59,11 @@ public class WeKnoraSyncService {
     }
     /** 轮询只返回运行信息，前端不使用它重置正在编辑的表单。 */
     public Map<String,Object> progress(String owner) {
-        checkOwner(config(),owner);
         return Map.of("runs",runs(),"items",db.queryForList("SELECT source_key,module_id,source_title,source_url,remote_id,status,parse_status,summary_status,error_message,updated_at FROM weknora_sync_item ORDER BY updated_at DESC LIMIT 100"));
     }
     /** 源链接展示当前源内容，权限与同步配置一致；已删除来源返回 404。 */
     public WeKnoraSourceService.Source source(String owner,String key) {
-        Map<String,Object> c=config();checkOwner(c,owner);
+        Map<String,Object> c=config();
         if(c==null)throw new NotFoundException("尚未配置同步");
         return sources.snapshot(owner,modules(c)).stream().filter(s->s.key().equals(key)).findFirst()
             .orElseThrow(()->new NotFoundException("来源已删除或不在当前同步范围内"));
@@ -78,7 +76,7 @@ public class WeKnoraSyncService {
             // Serializes initial configuration too, including an empty configuration table.
             db.queryForList("SELECT cfg_key FROM system_setting WHERE cfg_key='weknora-sync-lock' FOR UPDATE");
             db.queryForList("SELECT id FROM weknora_sync_config WHERE id='default' FOR UPDATE");
-            Map<String,Object> old=config();checkOwner(old,owner);
+            Map<String,Object> old=config();
             if (active()!=null) throw new ConflictException("同步正在执行，请完成后再修改设置");
             if (old!=null && ((Number)old.get("revision")).intValue()!=s.revision) throw new ConflictException("配置已变化，请刷新后合并修改");
             if (old!=null && !Objects.equals(old.get("kb_id"),s.kbId) && db.queryForObject("SELECT COUNT(*) FROM weknora_sync_item",Long.class)>0)
@@ -100,7 +98,6 @@ public class WeKnoraSyncService {
         return transactions.execute(tx -> {
             var rows=db.queryForList("SELECT id FROM weknora_sync_config WHERE id='default' FOR UPDATE");
             if(rows.isEmpty())throw new IllegalArgumentException("请先保存同步配置");
-            if(owner!=null)checkOwner(config(),owner);
             String existing=active();if(existing!=null)return existing;
             String id=UUID.randomUUID().toString();db.update("INSERT INTO weknora_sync_run(id,trigger_type,status) VALUES(?,?,'queued')",id,trigger);return id;
         });
@@ -193,7 +190,6 @@ public class WeKnoraSyncService {
     private void updateCounts(String id,int u,int s,int d,int r,int f) {db.update("UPDATE weknora_sync_run SET uploaded=?,skipped=?,removed=?,remaining=?,failed=? WHERE id=?",u,s,d,r,f,id);}
     private String active() {var r=db.queryForList("SELECT id FROM weknora_sync_run WHERE status IN ('queued','running') ORDER BY created_at LIMIT 1",String.class);return r.isEmpty()?null:r.get(0);}
     private Map<String,Object> config(){var r=db.queryForList("SELECT id,owner_member_id,kb_id,api_key_cipher,api_key_nonce,modules_json,batch_limit,sync_deletes,revision FROM weknora_sync_config WHERE id='default'");return r.isEmpty()?null:r.get(0);}
-    private void checkOwner(Map<String,Object> c,String owner){if(owner==null || (c!=null && !owner.equals(c.get("owner_member_id"))))throw new UnauthorizedException("只有此同步配置的所属成员可以查看或维护");}
     private WeKnoraClient.Connection connection(Map<String,Object> c){return new WeKnoraClient.Connection((String)c.get("kb_id"),crypto.decrypt((byte[])c.get("api_key_cipher"),(byte[])c.get("api_key_nonce")));}
     private List<String> modules(Map<String,Object> c){try{return json.readValue((String)c.get("modules_json"),new TypeReference<>(){});}catch(Exception ex){throw new IllegalStateException("同步范围配置损坏");}}
     private String write(Object v){try{return json.writeValueAsString(v);}catch(Exception ex){throw new IllegalArgumentException("同步配置无法保存");}}
