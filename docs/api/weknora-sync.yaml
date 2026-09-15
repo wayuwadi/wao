@@ -5,12 +5,12 @@ info:
 paths:
   /api/weknora-sync:
     get:
-      summary: 管理员所属配置、来源数量及近期运行记录；不返回密钥
+      summary: 已登录成员可读取共享配置、本人可见来源数量及近期运行记录；不返回密钥
       responses:
         '200': {description: ApiResponse，data 包含 ownerId、configured、settings、catalog、runs、items、totals}
-        '401': {description: 非管理员或不属于配置者}
+        '401': {description: 未登录}
     put:
-      summary: CAS 保存并验证连接；apiKey 为空保留现有加密密钥
+      summary: 仅系统管理员可 CAS 保存并验证连接；apiKey 为空保留现有加密密钥
       requestBody:
         required: true
         content:
