@@ -414,6 +414,8 @@ class FeishuOpenApiClientTest {
 
         assertThat(client.chatMemberUnionId("token-test", "oc_chat", "ou_sender"))
                 .isEqualTo("on_sender");
+        assertThat(client.chatMemberUnionId("token-test", "oc_chat", "ou_sender"))
+                .isEqualTo("on_sender");
         server.verify();
     }
 
@@ -459,6 +461,8 @@ class FeishuOpenApiClientTest {
 
         FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
 
+        assertThat(client.chatMemberOpenIdByUnionId("token-test", "oc_chat", "on_sender"))
+                .isEqualTo("ou_sender");
         assertThat(client.chatMemberOpenIdByUnionId("token-test", "oc_chat", "on_sender"))
                 .isEqualTo("ou_sender");
         server.verify();

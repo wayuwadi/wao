@@ -1,15 +1,15 @@
 package cn.wayuwa.wao.service;
 
 import java.time.Instant;
-import java.util.UUID;
-import cn.wayuwa.wao.mapper.SharedChatSyncStateMapper;
-import org.springframework.beans.factory.annotation.Value;
 import java.util.List;
+import java.util.UUID;
 
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
+import cn.wayuwa.wao.mapper.SharedChatSyncStateMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -17,7 +17,7 @@ import org.springframework.util.StringUtils;
 /**
  * 飞书个人快速收集的主动轮询入口。
  *
- * <p>现有群聊归档已具备读取目标群消息的真实应用权限。这里每 15 秒只读近两分钟，
+ * <p>现有群聊归档已具备读取目标群消息的真实应用权限。这里每 60 秒只读近两分钟，
  * 并只交给收集服务“用户发送、精确 @ 当前应用机器人”的消息；已撤回消息则按 message_id 删除
  * 原任务。Linux / Windows 同时扫到也由持久事件状态保证幂等。回调链路仍保留，两种入口共用去重。
  */
@@ -26,37 +26,29 @@ public class FeishuQuickCollectPollingScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(FeishuQuickCollectPollingScheduler.class);
     private static final long LOOKBACK_SECONDS = 120;
-    /** 飞书客户端允许用户在发送后一段时间继续编辑，回看一天覆盖该真实交互窗口。 */
-    private static final long EDIT_LOOKBACK_SECONDS = 24 * 60 * 60;
-
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final FeishuQuickCollectService quickCollect;
-    private final FeishuTextPolishService textPolish;
     private final SharedChatSyncStateMapper state;
     private final String leaseOwner = UUID.randomUUID().toString().replace("-", "");
-    @Value("${wao.feishu.quick-collect-poll-ms:15000}")
-    private long pollMs = 15000;
-    @Value("${wao.feishu.quick-collect-edit-poll-ms:300000}")
-    private long editPollMs = 300000;
+    @Value("${wao.feishu.quick-collect-poll-ms:60000}")
+    private long pollMs = 60000;
     private volatile String botOpenId;
     private volatile boolean readyLogged;
 
     public FeishuQuickCollectPollingScheduler(SettingService settings, FeishuOpenApiClient feishu,
-            FeishuQuickCollectService quickCollect, FeishuTextPolishService textPolish, SharedChatSyncStateMapper state) {
+            FeishuQuickCollectService quickCollect, SharedChatSyncStateMapper state) {
         this.state = state;
         this.settings = settings;
         this.feishu = feishu;
         this.quickCollect = quickCollect;
-        this.textPolish = textPolish;
     }
 
     /** 定时读取新消息；单次失败保留旧水位，下次仍有最多两分钟的恢复窗口。 */
-    @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-poll-ms:15000}", initialDelay = 15000)
+    @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-poll-ms:60000}", initialDelay = 60000)
     public void poll() {
         boolean quickEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
-        boolean textPolishEnabled = textPolish.enabled();
-        if (!quickEnabled && !textPolishEnabled) {
+        if (!quickEnabled) {
             readyLogged = false;
             return;
         }
@@ -73,13 +65,10 @@ public class FeishuQuickCollectPollingScheduler {
         long start = Math.max((cursor == null ? end : cursor) - 2, end - LOOKBACK_SECONDS);
         try {
             String token = feishu.tenantAccessToken(appId, appSecret);
-            String currentBot = null;
-            if (quickEnabled) {
-                currentBot = botOpenId;
-                if (!StringUtils.hasText(currentBot)) {
-                    currentBot = feishu.botOpenId(token);
-                    botOpenId = currentBot;
-                }
+            String currentBot = botOpenId;
+            if (!StringUtils.hasText(currentBot)) {
+                currentBot = feishu.botOpenId(token);
+                botOpenId = currentBot;
             }
             List<FeishuMessage> messages = feishu.listMessages(token, chatId, start, end);
             if (!readyLogged) {
@@ -88,26 +77,18 @@ public class FeishuQuickCollectPollingScheduler {
             }
             for (FeishuMessage message : messages) {
                 if (message != null && message.deleted()) {
-                    if (quickEnabled) try {
+                    try {
                         quickCollect.recallPolled(chatId, message.messageId());
                     } catch (RuntimeException ex) {
                         log.warn("飞书轮询撤回同步失败：message={} reason={}",
                                 message.messageId(), ex.getMessage());
                     }
-                } else if (quickEnabled && eligible(message, currentBot)) {
+                } else if (eligible(message, currentBot)) {
                     try {
                         quickCollect.collectPolled(chatId, message);
                         quickCollect.triggerPolledReaction(token, message.messageId());
                     } catch (RuntimeException ex) {
                         log.warn("飞书轮询收集或表情派工失败：message={} reason={}",
-                                message.messageId(), ex.getMessage());
-                    }
-                }
-                if (textPolishEnabled && message != null && !message.deleted()) {
-                    try {
-                        textPolish.collectPolled(chatId, message);
-                    } catch (RuntimeException ex) {
-                        log.warn("飞书轮询润色单条消息失败：message={} reason={}",
                                 message.messageId(), ex.getMessage());
                     }
                 }
@@ -119,70 +100,6 @@ public class FeishuQuickCollectPollingScheduler {
             log.warn("飞书个人收集轮询失败：{}", ex.getMessage());
         } finally {
             state.release("quick-realtime", leaseOwner);
-        }
-    }
-
-    /**
-     * 每五分钟回看近 24 小时消息，捕获客户端编辑，并补收启用润色前尚未处理的真实提及。
-     *
-     * <p>快速收集的内容变化和双节点互斥由消息指纹原子判定；润色以 message_id 唯一键去重，
-     * 因此两类入口都读取真实当前正文，不用时间或随机数据推测结果。
-     */
-    @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-edit-poll-ms:300000}", initialDelay = 30000)
-    public void pollEdits() {
-        boolean quickEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
-        boolean textPolishEnabled = textPolish.enabled();
-        if (!quickEnabled && !textPolishEnabled) return;
-        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
-        String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
-        String chatId = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");
-        if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret) || !StringUtils.hasText(chatId)) {
-            return;
-        }
-        long end = Instant.now().getEpochSecond();
-        state.prepare("quick-edits", appId + ":" + chatId, end);
-        if (state.claimPolling("quick-edits", leaseOwner, editPollMs * 1000) != 1) return;
-        try {
-            String token = feishu.tenantAccessToken(appId, appSecret);
-            String currentBot = botOpenId;
-            if (quickEnabled && !StringUtils.hasText(currentBot)) {
-                currentBot = feishu.botOpenId(token);
-                botOpenId = currentBot;
-            }
-            for (FeishuMessage message : feishu.listMessages(token, chatId, end - EDIT_LOOKBACK_SECONDS, end)) {
-                if (message != null && message.deleted()) {
-                    if (quickEnabled) {
-                        try {
-                            quickCollect.recallPolled(chatId, message.messageId());
-                        } catch (RuntimeException ex) {
-                            log.warn("飞书撤回消息回看失败：message={} reason={}",
-                                    message.messageId(), ex.getMessage());
-                        }
-                    }
-                } else if (quickEnabled && eligible(message, currentBot)) {
-                    try {
-                        quickCollect.collectPolled(chatId, message);
-                        quickCollect.triggerPolledReaction(token, message.messageId());
-                    } catch (RuntimeException ex) {
-                        log.warn("飞书编辑消息或表情派工回看失败：message={} reason={}",
-                                message.messageId(), ex.getMessage());
-                    }
-                }
-                if (textPolishEnabled && message != null && !message.deleted()) {
-                    try {
-                        textPolish.collectPolled(chatId, message);
-                    } catch (RuntimeException ex) {
-                        log.warn("飞书润色消息回看失败：message={} reason={}",
-                                message.messageId(), ex.getMessage());
-                    }
-                }
-            }
-            state.complete("quick-edits", leaseOwner, end);
-        } catch (RuntimeException ex) {
-            botOpenId = null;
-            log.warn("飞书编辑消息回看失败：{}", ex.getMessage());
-        } finally {
-            state.release("quick-edits", leaseOwner);
         }
     }
 

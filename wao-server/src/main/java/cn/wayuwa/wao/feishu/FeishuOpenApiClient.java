@@ -51,14 +51,19 @@ public class FeishuOpenApiClient {
 
     private final Map<String, CachedMembers> memberCache = new java.util.HashMap<>();
 
-    /** 后台同步复用五分钟成员快照；手动读取成员仍走实时接口，失败不缓存。 */
+    /** 后台同步复用五分钟 Open ID 成员快照；手动读取成员仍走实时接口，失败不缓存。 */
     public synchronized List<FeishuChatMember> cachedChatMembers(String token, String chatId) {
-        String key = token + ":" + chatId;
+        return cachedChatMembers(token, chatId, "open_id");
+    }
+
+    private synchronized List<FeishuChatMember> cachedChatMembers(
+            String token, String chatId, String memberIdType) {
+        String key = token + ":" + chatId + ":" + memberIdType;
         Instant now = Instant.now();
         memberCache.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));
         CachedMembers cached = memberCache.get(key);
         if (cached != null) return cached.members();
-        List<FeishuChatMember> members = List.copyOf(listChatMembers(token, chatId));
+        List<FeishuChatMember> members = List.copyOf(listChatMembers(token, chatId, memberIdType));
         memberCache.put(key, new CachedMembers(members, Instant.now().plusSeconds(300)));
         return members;
     }
@@ -167,14 +172,14 @@ public class FeishuOpenApiClient {
         if (openId == null || openId.isBlank()) {
             return "";
         }
-        List<FeishuChatMember> openMembers = listChatMembers(token, chatId, "open_id");
+        List<FeishuChatMember> openMembers = cachedChatMembers(token, chatId, "open_id");
         FeishuChatMember source = openMembers.stream()
                 .filter(member -> openId.equals(member.openId())).findFirst().orElse(null);
         if (source == null || source.name().isBlank()
                 || openMembers.stream().filter(member -> source.name().equals(member.name())).count() != 1) {
             return "";
         }
-        List<FeishuChatMember> unionMembers = listChatMembers(token, chatId, "union_id");
+        List<FeishuChatMember> unionMembers = cachedChatMembers(token, chatId, "union_id");
         List<FeishuChatMember> matches = unionMembers.stream()
                 .filter(member -> source.name().equals(member.name())).toList();
         return matches.size() == 1 ? matches.get(0).openId() : "";
@@ -193,14 +198,14 @@ public class FeishuOpenApiClient {
      */
     public String chatMemberOpenIdByUnionId(String token, String chatId, String unionId) {
         if (unionId == null || unionId.isBlank()) return "";
-        List<FeishuChatMember> unionMembers = listChatMembers(token, chatId, "union_id");
+        List<FeishuChatMember> unionMembers = cachedChatMembers(token, chatId, "union_id");
         FeishuChatMember source = unionMembers.stream()
                 .filter(member -> unionId.equals(member.openId())).findFirst().orElse(null);
         if (source == null || source.name().isBlank()
                 || unionMembers.stream().filter(member -> source.name().equals(member.name())).count() != 1) {
             return "";
         }
-        List<FeishuChatMember> openMembers = listChatMembers(token, chatId, "open_id");
+        List<FeishuChatMember> openMembers = cachedChatMembers(token, chatId, "open_id");
         List<FeishuChatMember> matches = openMembers.stream()
                 .filter(member -> source.name().equals(member.name())).toList();
         return matches.size() == 1 ? matches.get(0).openId() : "";
