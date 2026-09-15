@@ -9,6 +9,8 @@ use tauri_plugin_opener::OpenerExt;
 
 const PRODUCTION: &str = "https://wao.wayuwa.cn";
 const HEADER: f64 = 40.0;
+const DESKTOP_SIGNAL_PREFIX: &str = "WAO_DESKTOP_SIGNAL:";
+const MAX_DESKTOP_SIGNAL_BYTES: usize = 32 * 1024;
 static POPUP_ID: AtomicUsize = AtomicUsize::new(1);
 static PET_STARTED: AtomicBool = AtomicBool::new(false);
 static WORKSPACE_READY: AtomicBool = AtomicBool::new(false);
@@ -58,6 +60,21 @@ fn external_url(url: &tauri::Url) -> bool {
     matches!(url.scheme(), "https" | "http")
         && url.username().is_empty()
         && url.password().is_none()
+}
+
+fn desktop_signal_url(title: &str, origin: &tauri::Url) -> Option<tauri::Url> {
+    if title.len() > MAX_DESKTOP_SIGNAL_BYTES {
+        return None;
+    }
+    let signal = title.strip_prefix(DESKTOP_SIGNAL_PREFIX)?;
+    let url = origin.join(signal).ok()?;
+    if url.origin() != origin.origin()
+        || url.fragment().is_some()
+        || !matches!(url.path(), "/__desktop_toolbar__" | "/__desktop_shortcuts__")
+    {
+        return None;
+    }
+    Some(url)
 }
 
 // Custom commands are also origin checked: remote workspace gets no native authority,
@@ -502,10 +519,11 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
     let origin = workspace_url();
     let navigation_origin = origin.clone();
     let navigation_app = app.clone();
+    let title_origin = origin.clone();
     let popup_app = app.clone();
     let builder = WebviewBuilder::new("workspace", WebviewUrl::External(origin))
         .disable_drag_drop_handler()
-        .initialization_script("Object.defineProperty(window, '__WAO_DESKTOP__', { value: true }); Object.defineProperty(window, '__WAO_DESKTOP_TOOLBAR__', { value: true });")
+        .initialization_script("Object.defineProperty(window, '__WAO_DESKTOP__', { value: true }); Object.defineProperty(window, '__WAO_DESKTOP_TOOLBAR__', { value: true }); Object.defineProperty(window, '__WAO_DESKTOP_BRIDGE__', { value: 2 });")
         .on_navigation(move |url| {
             if url.origin() == navigation_origin.origin() && url.path() == "/__desktop_toolbar__" {
                 if navigation_app.get_webview("workspace").and_then(|view| view.url().ok())
@@ -531,6 +549,30 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
             false
         })
         .on_new_window(move |url, features| popup(&popup_app, url, features))
+        .on_document_title_changed(move |view, title| {
+            if !view
+                .url()
+                .ok()
+                .is_some_and(|current| current.origin() == title_origin.origin())
+            {
+                return;
+            }
+            let Some(signal) = desktop_signal_url(&title, &title_origin) else {
+                return;
+            };
+            match signal.path() {
+                "/__desktop_toolbar__" => {
+                    let state = toolbar_state(&signal);
+                    let _ = view.app_handle().emit_to("main", "toolbar-state", state);
+                }
+                "/__desktop_shortcuts__" => {
+                    let _ = view
+                        .app_handle()
+                        .emit_to("main", "shortcut-config", shortcut_config(&signal));
+                }
+                _ => {}
+            }
+        })
         .on_page_load(|view, event| {
             WORKSPACE_READY.store(
                 matches!(event.event(), PageLoadEvent::Finished),
@@ -893,6 +935,37 @@ mod tests {
         assert!(pet_action_name(
             &tauri::Url::parse("https://evil.test/__desktop_pet__/toggle-workspace").unwrap(),
             &origin
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn desktop_title_signal_only_accepts_bounded_same_origin_bridge_paths() {
+        let origin = tauri::Url::parse(PRODUCTION).unwrap();
+        let toolbar = desktop_signal_url(
+            "WAO_DESKTOP_SIGNAL:/__desktop_toolbar__?ready=1&chat=3",
+            &origin,
+        )
+        .unwrap();
+        assert_eq!(toolbar.path(), "/__desktop_toolbar__");
+        assert_eq!(toolbar_state(&toolbar)["chat"], "3");
+        let shortcuts = desktop_signal_url(
+            "WAO_DESKTOP_SIGNAL:/__desktop_shortcuts__?new-note=Alt%2BShift%2BY",
+            &origin,
+        )
+        .unwrap();
+        assert_eq!(shortcut_config(&shortcuts)["new-note"], "Alt+Shift+Y");
+        for title in [
+            "/__desktop_toolbar__?ready=1",
+            "WAO_DESKTOP_SIGNAL:https://evil.test/__desktop_toolbar__?ready=1",
+            "WAO_DESKTOP_SIGNAL:/api/tasks",
+            "WAO_DESKTOP_SIGNAL:/__desktop_toolbar__#ignored",
+        ] {
+            assert!(desktop_signal_url(title, &origin).is_none());
+        }
+        assert!(desktop_signal_url(
+            &format!("{DESKTOP_SIGNAL_PREFIX}/__desktop_toolbar__?x={}", "a".repeat(MAX_DESKTOP_SIGNAL_BYTES)),
+            &origin,
         )
         .is_none());
     }

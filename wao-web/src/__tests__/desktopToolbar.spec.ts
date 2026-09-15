@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mountDesktopToolbar } from '@/utils/desktopToolbar'
+import { mountDesktopToolbar, syncDesktopGlobalShortcuts } from '@/utils/desktopToolbar'
 afterEach(() => {
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
 describe('桌面顶栏只同步真实入口计数', () => {
-  it('新壳同步未读变化并在卸载时禁用入口，旧壳不发导航', async () => {
+  it('旧壳沿用受限导航，新壳用标题消息同步且不再导航', async () => {
     const assign = vi.fn<(url: string) => void>()
     const realWindow = window
     vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: false })
@@ -15,22 +15,41 @@ describe('桌面顶栏只同步真实入口计数', () => {
     document.body.append(root)
     mountDesktopToolbar(root)()
     expect(assign).not.toHaveBeenCalled()
-    vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: true })
+    vi.stubGlobal('window', {
+      location: { assign },
+      __WAO_DESKTOP_TOOLBAR__: true,
+      __WAO_DESKTOP_BRIDGE__: 2,
+    })
     const stop = mountDesktopToolbar(root)
-    expect(assign).toHaveBeenLastCalledWith(
-      '/__desktop_toolbar__?ready=1&theme=light&chat=3&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D',
+    expect(document.title).toBe(
+      'WAO_DESKTOP_SIGNAL:/__desktop_toolbar__?ready=1&theme=light&chat=3&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D',
     )
+    expect(assign).not.toHaveBeenCalled()
     root.querySelector('.chat-badge')!.remove()
     await new Promise((resolve) => realWindow.setTimeout(resolve, 0))
-    expect(assign).toHaveBeenLastCalledWith(
-      '/__desktop_toolbar__?ready=1&theme=light&chat=0&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D',
+    expect(document.title).toBe(
+      'WAO_DESKTOP_SIGNAL:/__desktop_toolbar__?ready=1&theme=light&chat=0&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D',
     )
     root.querySelector('[data-desktop-action=theme]')!.setAttribute('data-theme', 'dark')
     await new Promise((resolve) => realWindow.setTimeout(resolve, 0))
+    expect(document.title).toBe(
+      'WAO_DESKTOP_SIGNAL:/__desktop_toolbar__?ready=1&theme=dark&chat=0&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D',
+    )
+    stop()
+    expect(document.title).toBe('WAO_DESKTOP_SIGNAL:/__desktop_toolbar__?ready=0')
+    expect(assign).not.toHaveBeenCalled()
+    syncDesktopGlobalShortcuts({ 'new-note': 'Alt+Shift+Y' })
+    expect(document.title).toBe(
+      'WAO_DESKTOP_SIGNAL:/__desktop_shortcuts__?new-note=Alt%2BShift%2BY',
+    )
+    expect(assign).not.toHaveBeenCalled()
+
+    vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: true })
+    const stopLegacy = mountDesktopToolbar(root)
     expect(assign).toHaveBeenLastCalledWith(
       '/__desktop_toolbar__?ready=1&theme=dark&chat=0&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D',
     )
-    stop()
+    stopLegacy()
     expect(assign).toHaveBeenLastCalledWith('/__desktop_toolbar__?ready=0')
   })
 })
