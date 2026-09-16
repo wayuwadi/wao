@@ -16,5 +16,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * @param images 内嵌图片
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record Step(String text, boolean done, String id, String desc, List<ImageRef> images) {
+public record Step(String text, boolean done, String id, String desc, List<ImageRef> images, Long number) {
+    /** 兼容历史调用；编号只由服务端分配。 */
+    public Step(String text, boolean done, String id, String desc, List<ImageRef> images) {
+        this(text, done, id, desc, images, null);
+    }
 }

@@ -8,6 +8,7 @@ import {
   type NotificationEvent,
 } from '@/api/notificationCenter'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
+import { hasDesktopToolbar } from '@/utils/desktopToolbar'
 
 const router = useRouter()
 const open = ref(false)
@@ -80,10 +81,10 @@ function close() {
 
 async function refresh() {
   const loaded = await load(true)
-  if (loaded && open.value) await markRead()
+  if (loaded && open.value && !document.hidden) await markRead()
 }
 
-const notificationPolling = createVisibilityPoller(refresh, () => 60_000)
+const notificationPolling = createVisibilityPoller(refresh, () => 60_000, document, hasDesktopToolbar)
 
 async function navigate(path: string | null) {
   if (!path) return

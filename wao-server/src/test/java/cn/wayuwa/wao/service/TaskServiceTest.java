@@ -36,7 +36,7 @@ class TaskServiceTest {
     private final ProjectService projects = mock(ProjectService.class);
     private final FeishuTaskNotifier taskNotifier = mock(FeishuTaskNotifier.class);
     private final TaskService service = new TaskService(mapper, new ObjectMapper(),
-            notifier, taskNotifier, members, projects);
+            notifier, taskNotifier, members, projects, new WorkItemNumberService(mock(cn.wayuwa.wao.mapper.WorkItemNumberMapper.class)));
 
     private TaskEntity todo() {
         TaskEntity e = new TaskEntity();

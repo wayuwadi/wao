@@ -37,7 +37,24 @@ public record TaskDto(
         /** 任务真实创建时间；极早期没有可靠来源的历史任务可能为空。 */
         String createdAt,
         /** 关联的人工上传 HTML 托管页 id；历史任务缺省为空。 */
-        List<String> hostedPages) {
+        List<String> hostedPages,
+        /** 服务端分配的永久编号，从 0 开始。 */ Long number) {
+
+    /** 兼容尚未引入固定编号的调用；外部编号一律由服务端重算。 */
+    public TaskDto(String id, String title, String project, String status, String pr, String owner,
+            List<String> parts, String start, String due, String waiting, String desc,
+            List<Step> steps, List<Step> subs, List<FileRef> files, List<String> docs,
+            List<TaskLink> linkTasks, List<CommentDto> comments, List<CustomProp> custom,
+            List<Activity> activity, List<ImageRef> images, String createdBy, String completedAt,
+            String groupId, String startAt, String endAt, List<PdcaCycle> pdcaCycles, String createdAt,
+            List<String> hostedPages) {
+        this(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, null);
+    }
+
+    /** 返回带服务端编号与规范子任务身份的副本。 */
+    public TaskDto withNumbers(Long number, List<Step> subs) {
+        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number);
+    }
 
     /** 兼容尚未引入 HTML 关联的既有调用。 */
     public TaskDto(String id, String title, String project, String status, String pr, String owner,

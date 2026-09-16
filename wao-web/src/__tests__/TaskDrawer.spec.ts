@@ -1075,6 +1075,7 @@ describe('TaskDrawer', () => {
     try {
       data.addSub(taskId, '归档到 NAS')
       data.addSub(taskId, '扫描身份证')
+      data.taskById(taskId)!.subs[0]!.number = 0
       ui.openTask(taskId)
       const w = mountDrawer()
       await w.vm.$nextTick()
@@ -1083,7 +1084,7 @@ describe('TaskDrawer', () => {
 
       const page = w.find('.props.sub-page')
       expect(page.exists()).toBe(true)
-      expect(page.find('.sub-page-title b').text()).toBe('子任务 1 / 2')
+      expect(page.find('.sub-page-title b').text()).toBe('子任务 #0')
       // 桌面版的「返回任务属性」在手机上换成顶栏返回键，不占正文空间
       expect(w.find('.sub-back').exists()).toBe(false)
 

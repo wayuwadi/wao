@@ -55,6 +55,25 @@ describe('新建任务的落库反馈', () => {
     expect(putTask.mock.calls[1]?.[1].desc).toBe('请求期间继续写的正文')
   })
 
+  it('保存期间新增子任务时只接收服务端编号，不覆盖较新的编辑', async () => {
+    const task = data.tasks[0]!
+    task.subs = [{ id: 's-original', text: '旧标题', done: false }]
+    let confirm!: (task: Task) => void
+    putTask.mockImplementationOnce(() => new Promise(resolve => { confirm = resolve }))
+    putTask.mockImplementationOnce(async (_id, value) => ({ ...value, number: 0, subs: value.subs.map(s => ({ ...s, number: s.id === 's-original' ? 1 : 2 })) }))
+    data.updateSub(task.id, 's-original', { text: '第一次修改' })
+    const firstSave = data.flushTask(task.id)
+    const snapshot = JSON.parse(JSON.stringify(task)) as Task
+    data.updateSub(task.id, 's-original', { text: '继续修改' })
+    data.addSub(task.id, '新子任务')
+    confirm({ ...snapshot, number: 0, subs: snapshot.subs.map(s => ({ ...s, number: 1 })) })
+    await firstSave
+    await flushPromises()
+    expect(task.number).toBe(0)
+    expect(task.subs.find(s => s.id === 's-original')).toMatchObject({ number: 1, text: '继续修改' })
+    expect(task.subs[0]).toMatchObject({ text: '新子任务', number: 2 })
+  })
+
   it('服务端确认前保持提交中，成功后才提示已创建', async () => {
     let confirm!: (task: Task) => void
     putTask.mockImplementationOnce((_id, task) => new Promise((resolve) => { confirm = resolve; void task }))

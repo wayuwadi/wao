@@ -57,7 +57,7 @@ docker run --rm \
   "$@"
 
 if [ "$require_mysql_contracts" = true ]; then
-  for test_class in FeishuWebhookMigrationMySqlTest ChatReviewMySqlIntegrationTest; do
+  for test_class in FeishuWebhookMigrationMySqlTest ChatReviewMySqlIntegrationTest WorkItemNumberMySqlTest; do
     report="wao-server/target/surefire-reports/TEST-cn.wayuwa.wao.${test_class}.xml"
     if [ ! -f "$report" ] \
       || ! grep -Eq '<testsuite [^>]*tests="[1-9][0-9]*"' "$report" \

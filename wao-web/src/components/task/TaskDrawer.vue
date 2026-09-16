@@ -487,11 +487,6 @@ function toggleSub(idx: number) {
 const openSub = computed(() =>
   task.value && openSubId.value ? data.subById(task.value.id, openSubId.value) : undefined,
 )
-const openSubIndex = computed(() =>
-  task.value && openSubId.value
-    ? task.value.subs.findIndex((s, i) => data.subKey(task.value!.id, s, i) === openSubId.value)
-    : -1,
-)
 
 function showSub(idx: number) {
   const key = subKeyOf(idx)
@@ -1062,7 +1057,7 @@ async function uploadAttachment(event: Event) {
               >
                 <i class="ri-draggable sub-grip" title="拖拽调整顺序"></i>
                 <span class="cbox circle" :class="{ done: r.sub.done }" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
-                <span class="sub-number wao-tabular">{{ r.idx + 1 }}.</span><span class="check-text" :class="{ done: r.sub.done }">{{ r.sub.text }}</span>
+                <span class="sub-number wao-tabular">{{ r.sub.number ?? '…' }}</span><span class="check-text" :class="{ done: r.sub.done }">{{ r.sub.text }}</span>
                 <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
                 <span class="spacer"></span>
                 <span v-if="dispatchedSubIds.has(r.key)" class="sub-dispatched" title="已单独派给 AI，主任务再派工时不会重复纳入">
@@ -1096,7 +1091,7 @@ async function uploadAttachment(event: Event) {
                   @click="showSub(r.idx)"
                 >
                   <span class="cbox circle done" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
-                  <span class="sub-number wao-tabular">{{ r.idx + 1 }}.</span><span class="check-text done">{{ r.sub.text }}</span>
+                  <span class="sub-number wao-tabular">{{ r.sub.number ?? '…' }}</span><span class="check-text done">{{ r.sub.text }}</span>
                   <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
                   <span class="spacer"></span>
                   <i class="ri-arrow-right-s-line sub-chev"></i>
@@ -1222,7 +1217,7 @@ async function uploadAttachment(event: Event) {
           <div v-if="isMobile" class="sub-page-head">
             <button class="sub-page-back" @click="openSubId = null"><i class="ri-arrow-left-line"></i></button>
             <div class="sub-page-title">
-              <b>子任务 {{ openSubIndex + 1 }} / {{ task.subs.length }}</b>
+              <b>子任务 #{{ openSub?.number ?? '…' }}</b>
               <em class="ellip">{{ task.title }}</em>
             </div>
             <button class="sub-page-done" :class="{ on: openSub.done }" @click="toggleSubDone">
@@ -1230,7 +1225,7 @@ async function uploadAttachment(event: Event) {
             </button>
           </div>
           <button v-if="!isMobile" class="sub-back" @click="openSubId = null"><i class="ri-arrow-left-line"></i>返回任务属性</button>
-          <div v-if="!isMobile" class="props-label">子任务 {{ openSubIndex + 1 }} / {{ task.subs.length }}</div>
+          <div v-if="!isMobile" class="props-label">子任务 #{{ openSub?.number ?? '…' }}</div>
 
           <div class="sub-title-row">
             <button class="cbox circle big" :class="{ done: openSub.done }" title="标记完成" @click="toggleSubDone"><i class="ri-check-line"></i></button>

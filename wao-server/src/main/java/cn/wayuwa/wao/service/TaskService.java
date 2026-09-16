@@ -44,15 +44,17 @@ public class TaskService {
     private final FeishuTaskNotifier taskNotifier;
     private final MemberService members;
     private final ProjectService projects;
+    private final WorkItemNumberService numbers;
 
     public TaskService(TaskMapper taskMapper, ObjectMapper json, FeishuCommentNotifier commentNotifier,
-            FeishuTaskNotifier taskNotifier, MemberService members, ProjectService projects) {
+            FeishuTaskNotifier taskNotifier, MemberService members, ProjectService projects, WorkItemNumberService numbers) {
         this.taskMapper = taskMapper;
         this.json = json;
         this.commentNotifier = commentNotifier;
         this.taskNotifier = taskNotifier;
         this.members = members;
         this.projects = projects;
+        this.numbers = numbers;
     }
 
     /**
@@ -64,10 +66,10 @@ public class TaskService {
     public List<TaskDto> list(String memberId) {
         Set<String> visibleProjectIds = projects.visibleProjectIds(memberId);
         if (visibleProjectIds.isEmpty()) return List.of();
-        return taskMapper.selectList(new QueryWrapper<TaskEntity>()
+        return numbers.attach(taskMapper.selectList(new QueryWrapper<TaskEntity>()
                         .in("project_id", visibleProjectIds)).stream()
-                .map(this::toDto)
-                .toList();
+                .map(this::rawDto)
+                .toList());
     }
 
     /**
@@ -632,6 +634,10 @@ public class TaskService {
     }
 
     private TaskDto toDto(TaskEntity e) {
+        return numbers.attach(List.of(rawDto(e))).get(0);
+    }
+
+    private TaskDto rawDto(TaskEntity e) {
         TaskDetail d = parse(e.getDetailJson());
         return new TaskDto(
                 e.getId(), e.getTitle(), e.getProjectId(), e.getStatus(), e.getPr(), e.getOwnerId(),
