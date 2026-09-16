@@ -1139,3 +1139,10 @@ V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库�
 `feishu_reaction_grant` 按 `app_id + open_id` 唯一保存真实飞书成员授权，`access_cipher/access_nonce` 与 `refresh_cipher/refresh_nonce` 使用既有 AES-GCM 密钥库加密；`expires_at/refresh_expires_at` 取接口实际有效期。刷新在独立事务内锁定授权行，保证轮换凭证不会被卡片失败回滚。表不能作为浏览器 DTO 返回。
 
 `feishu_notification_feedback.reaction_id/reaction_action` 只追踪本功能以该成员身份添加的原生表情，改选时仅移除对应本人的旧表情。ADR-214 的共享摘要回复逻辑停止执行，历史数据保留。
+
+
+## 工作项固定编号（V154）
+
+`work_item_number` 保存任务及子任务的永久展示编号：`sequence_id BIGINT AUTO_INCREMENT PRIMARY KEY`（从 1 开始，API 输出减 1），`item_key VARCHAR(512)` 使用 utf8mb4_bin 唯一索引。
+任务 key 为 `taskId/`，子任务 key 为 `taskId/subId`。历史缺少子任务 id 时使用兼容身份 `taskId#index`，读取结果返回这个稳定 id，后续保存写入任务 JSON。
+迁移按任务 id、子任务原顺序回填；运行时按最多 500 个身份批量查找和幂等分配。删除工作项不删除注册项，不复用旧编号；并发分配允许跳号。编号只读，客户端传入的 number 不影响服务端结果。

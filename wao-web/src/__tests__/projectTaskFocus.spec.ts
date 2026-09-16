@@ -24,6 +24,35 @@ describe('项目页聚焦任务', () => {
     seedDataStore(useDataStore())
   })
 
+  it('项目表格保留固定列和可展开的子任务', async () => {
+    const task = useDataStore().taskById('t1')!
+    task.number = 0
+    task.subs = [{ id: 'stable-sub', text: '固定子任务', done: false, number: 13 }]
+    await router.push('/projects/p1?view=list')
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.get('table').attributes('aria-label')).toBe('项目任务表格')
+    expect(wrapper.findAll('thead th').map((node) => node.text())).toEqual([
+      '选择',
+      '编号',
+      '标题',
+      '优先级',
+      '状态',
+      '负责人',
+      '创建人',
+      '计划开始',
+      '截止日期',
+    ])
+    const row = wrapper.findAll('.trow').find((node) => node.text().includes(task.title))!
+    expect(row.get('.table-number').text()).toBe('0')
+    expect(wrapper.text()).toContain('固定子任务')
+    await row.get('.tree-toggle').trigger('click')
+    expect(wrapper.text()).not.toContain('固定子任务')
+    await row.get('.tree-toggle').trigger('click')
+    expect(wrapper.get('.sub-number').text()).toBe('13')
+    wrapper.unmount()
+  })
+
   it('项目头部之后直接展示任务页签，不再展示项目迭代概览', async () => {
     await router.push('/projects/p1')
     await router.isReady()

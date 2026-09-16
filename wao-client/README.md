@@ -78,3 +78,6 @@ npm run desktop:build -- --target universal-apple-darwin
 ## 验收记录
 
 验收结果写入 `docs/runbooks/desktop-client-v1-acceptance.md`。未验证的项目保留明确状态，不用界面预览或模拟接口代替实机与生产验收。
+
+
+Windows 托盘右键菜单提供“新消息闪烁”，默认开启。工作区有未读聊天或通知时闪烁，清零或关闭后恢复；开关保存在本机应用配置目录的 `tray-flash.json`，重启保留。读取失败使用默认值，保存失败在菜单中显示重试提示。macOS 不启用闪烁。

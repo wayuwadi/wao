@@ -14,7 +14,12 @@ describe('可见页面串行轮询', () => {
     vi.useFakeTimers()
     const target = visibilityDocument()
     let resolveRequest!: () => void
-    const task = vi.fn(() => new Promise<void>((resolve) => { resolveRequest = resolve }))
+    const task = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRequest = resolve
+        }),
+    )
     const poller = createVisibilityPoller(task, () => 5_000, target)
 
     poller.start()
@@ -29,6 +34,24 @@ describe('可见页面串行轮询', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(task).toHaveBeenCalledTimes(2)
     poller.stop()
+  })
+
+  it('显式桌面消息轮询在隐藏后继续，停止后不再触发', async () => {
+    vi.useFakeTimers()
+    const target = visibilityDocument(true)
+    const task = vi.fn().mockResolvedValue(undefined)
+    const poller = createVisibilityPoller(
+      task,
+      () => 10_000,
+      target,
+      () => true,
+    )
+    poller.start()
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(task).toHaveBeenCalledTimes(3)
+    poller.stop()
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(task).toHaveBeenCalledTimes(3)
   })
 
   it('页面隐藏时暂停，重新可见后立即补一次并继续轮询', async () => {

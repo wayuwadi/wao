@@ -192,8 +192,18 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 
 <template>
   <aside class="side" :class="{ collapsed: nav.collapsed }">
-    <div v-if="!desktopToolbar" class="brand-row">
-      <div class="brand-mark">WAO</div>
+    <div class="side-heading">
+      <div v-if="!desktopToolbar && !nav.collapsed" class="brand-mark">WAO</div>
+      <button
+        class="side-collapse"
+        :aria-label="nav.collapsed ? '展开侧栏' : '折叠侧栏'"
+        :title="nav.collapsed ? '展开侧栏' : '折叠侧栏'"
+        :aria-expanded="!nav.collapsed"
+        @click="nav.toggleCollapse()"
+      >
+        <i :class="nav.collapsed ? 'ri-side-bar-line' : 'ri-sidebar-fold-line'"></i
+        ><span v-if="!nav.collapsed && desktopToolbar">折叠侧栏</span>
+      </button>
     </div>
 
     <div v-if="!nav.collapsed" class="search-row">
@@ -218,7 +228,18 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     </div>
     <nav ref="menuRef" class="menu" aria-label="模块导航">
       <div v-if="desktopToolbar" class="items">
-        <button class="item" :class="{ active: ui.chatOpen, center: nav.collapsed }" title="聊天" data-chat-trigger @click="ui.toggleChat()"><i class="ri-chat-3-line"></i><span v-if="!nav.collapsed" class="item-label">聊天</span><span v-if="ui.chatUnreadCount" class="side-chat-unread">{{ ui.chatUnreadCount > 99 ? '99+' : ui.chatUnreadCount }}</span></button>
+        <button
+          class="item"
+          :class="{ active: ui.chatOpen, center: nav.collapsed }"
+          title="聊天"
+          data-chat-trigger
+          @click="ui.toggleChat()"
+        >
+          <i class="ri-chat-3-line"></i><span v-if="!nav.collapsed" class="item-label">聊天</span
+          ><span v-if="ui.chatUnreadCount" class="side-chat-unread">{{
+            ui.chatUnreadCount > 99 ? '99+' : ui.chatUnreadCount
+          }}</span>
+        </button>
       </div>
       <template v-for="g in groups" :key="g.id">
         <button
@@ -418,7 +439,47 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 </template>
 
 <style scoped>
-.side-chat-unread { margin-left: auto; border-radius: 9px; background: var(--wao-danger); color: #fff; padding: 1px 5px; font-size: 10px; }
+.side-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  min-height: 36px;
+  flex-shrink: 0;
+}
+.collapsed .side-heading {
+  justify-content: center;
+  padding: 4px;
+}
+.side-collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 30px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--wao-line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  font-size: 12px;
+}
+.side-collapse:hover {
+  background: var(--wao-bg-hover);
+  color: var(--wao-text);
+}
+
+.side-chat-unread {
+  margin-left: auto;
+  border-radius: 9px;
+  background: var(--wao-danger);
+  color: #fff;
+  padding: 1px 5px;
+  font-size: 10px;
+}
 .all-functions {
   display: flex;
   align-items: center;

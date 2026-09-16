@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder},
+    menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder},
     Emitter, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl, WindowEvent,
@@ -13,7 +13,40 @@ const DESKTOP_SIGNAL_PREFIX: &str = "WAO_DESKTOP_SIGNAL:";
 const MAX_DESKTOP_SIGNAL_BYTES: usize = 32 * 1024;
 static POPUP_ID: AtomicUsize = AtomicUsize::new(1);
 static PET_STARTED: AtomicBool = AtomicBool::new(false);
+static TRAY_UNREAD: AtomicBool = AtomicBool::new(false);
+static TRAY_FLASH_ENABLED: AtomicBool = AtomicBool::new(true);
 static WORKSPACE_READY: AtomicBool = AtomicBool::new(false);
+
+// Only bounded unread counts already carried by the trusted workspace bridge are used.
+fn has_unread(state: &serde_json::Value) -> bool {
+    state["ready"] == true && ["chat", "notifications"].iter().any(|key| {
+        state[*key].as_str().is_some_and(|value| value == "99+" || value.parse::<u8>().is_ok_and(|n| n > 0 && n <= 99))
+    })
+}
+
+fn tray_preference_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|path| path.join("tray-flash.json"))
+}
+
+#[cfg(target_os = "windows")]
+fn start_tray_flash(app: tauri::AppHandle) {
+    let icon = app.default_window_icon().unwrap();
+    let normal = tauri::image::Image::new_owned(icon.rgba().to_vec(), icon.width(), icon.height());
+    let blank = tauri::image::Image::new_owned(vec![0; normal.rgba().len()], normal.width(), normal.height());
+    std::thread::spawn(move || {
+        let mut hidden = false;
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(600));
+            let next = TRAY_UNREAD.load(Ordering::Relaxed) && TRAY_FLASH_ENABLED.load(Ordering::Relaxed) && !hidden;
+            if next != hidden {
+                if let Some(tray) = app.tray_by_id("workspace") {
+                    let _ = tray.set_icon(Some(if next { blank.clone() } else { normal.clone() }));
+                }
+                hidden = next;
+            }
+        }
+    });
+}
 
 // A minimized Windows window reports a transient viewport (often 0 × 0).
 // Keep the child WebView's last usable size so responsive content does not
@@ -529,6 +562,7 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
                 if navigation_app.get_webview("workspace").and_then(|view| view.url().ok())
                     .is_some_and(|current| current.origin() == navigation_origin.origin()) {
                     let state = toolbar_state(url);
+                    TRAY_UNREAD.store(has_unread(&state), Ordering::Relaxed);
                     let _ = navigation_app.emit_to("main", "toolbar-state", state);
                 }
                 return false;
@@ -563,6 +597,7 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
             match signal.path() {
                 "/__desktop_toolbar__" => {
                     let state = toolbar_state(&signal);
+                    TRAY_UNREAD.store(has_unread(&state), Ordering::Relaxed);
                     let _ = view.app_handle().emit_to("main", "toolbar-state", state);
                 }
                 "/__desktop_shortcuts__" => {
@@ -584,6 +619,7 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
             };
             let _ = view.app_handle().emit_to("main", "workspace-state", phase);
             if matches!(event.event(), PageLoadEvent::Started) {
+                TRAY_UNREAD.store(false, Ordering::Relaxed);
                 let _ = view.app_handle().emit_to("main", "toolbar-state", serde_json::json!({"ready": false, "chat": "0", "notifications": "0", "theme": "light", "context": "", "contextItems": [], "menus": []}));
             }
             if matches!(event.event(), PageLoadEvent::Finished)
@@ -747,18 +783,34 @@ pub fn run() {
             let pet = MenuItemBuilder::with_id("pet", "显示/隐藏宠物").build(app)?;
             let update = MenuItemBuilder::with_id("update", "检查客户端更新").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出 WAO…").build(app)?;
+            let enabled = tray_preference_path(app.handle())
+                .and_then(|path| std::fs::read_to_string(path).ok())
+                .and_then(|value| serde_json::from_str::<bool>(&value).ok()).unwrap_or(true);
+            TRAY_FLASH_ENABLED.store(enabled, Ordering::Relaxed);
+            let flash = CheckMenuItemBuilder::with_id("tray-flash", "新消息闪烁")
+                .checked(enabled).enabled(cfg!(target_os = "windows")).build(app)?;
             let menu = MenuBuilder::new(app)
-                .items(&[&open, &pet, &update])
+                .items(&[&open, &pet, &update, &flash])
                 .separator()
                 .item(&quit)
                 .build()?;
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("workspace")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("WAO · 你的桌面工作区")
                 .menu(&menu)
                 .show_menu_on_left_click(cfg!(target_os = "macos"))
-                .on_menu_event(|app, event| {
+                .on_menu_event(move |app, event| {
                     match event.id.as_ref() {
+                        "tray-flash" => {
+                            let old = TRAY_FLASH_ENABLED.load(Ordering::Relaxed);
+                            let saved = tray_preference_path(app).is_some_and(|path| {
+                                path.parent().is_some_and(|dir| std::fs::create_dir_all(dir).is_ok())
+                                    && std::fs::write(path, if old { "false" } else { "true" }).is_ok()
+                            });
+                            if saved { TRAY_FLASH_ENABLED.store(!old, Ordering::Relaxed); }
+                            let _ = flash.set_checked(if saved { !old } else { old });
+                            let _ = flash.set_text(if saved { "新消息闪烁" } else { "新消息闪烁（保存失败，点击重试）" });
+                        }
                         "pet" => {
                             // WebView2 window creation can deadlock inside a Windows event handler.
                             let handle = app.clone();
@@ -796,6 +848,8 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            #[cfg(target_os = "windows")]
+            start_tray_flash(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -823,6 +877,15 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn tray_unread_requires_ready_and_bounded_positive_counts() {
+        assert!(!has_unread(&serde_json::json!({"ready":false,"chat":"1"})));
+        assert!(!has_unread(&serde_json::json!({"ready":true,"chat":"0","notifications":"0"})));
+        assert!(has_unread(&serde_json::json!({"ready":true,"chat":"99+"})));
+        assert!(has_unread(&serde_json::json!({"ready":true,"notifications":"3"})));
+        assert!(!has_unread(&serde_json::json!({"ready":true,"chat":"999"})));
+    }
+
     #[test]
     fn minimize_restore_keeps_workspace_viewport_and_normal_resizing() {
         let initial = LogicalSize::new(1380.0, 860.0);

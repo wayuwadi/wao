@@ -43,6 +43,12 @@ const { decoProj, decoTask } = useDeco()
 const now = useNow()
 const showTime = (t: string) => relativeTime(t, now.value)
 
+const collapsedSubTasks = ref<string[]>([])
+function toggleSubtasks(id: string) {
+  collapsedSubTasks.value = collapsedSubTasks.value.includes(id)
+    ? collapsedSubTasks.value.filter((value) => value !== id)
+    : [...collapsedSubTasks.value, id]
+}
 const pid = computed(() => String(route.params.id))
 const project = computed(() => data.projectById(pid.value))
 // 「总览」标签页已下线：老链接归到任务。文件页签已经接入真实资产 id 后重新开放。
@@ -547,7 +553,7 @@ watch(visibleTaskIds, (ids) => {
       </button>
       <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar">
         <div class="seg">
-          <button v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
+          <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
             <i :class="v[1]"></i>{{ v[0] }}
           </button>
         </div>
@@ -632,127 +638,356 @@ watch(visibleTaskIds, (ids) => {
         </div>
         <TaskBatchCopy :tasks="selectedCopyTasks" />
       </div>
-      <div v-if="pdTaskView === 'list'" class="task-list-card">
-        <template v-for="t in openTasks" :key="t.id">
-        <div
-          class="trow"
-          :class="{ dragging: dragId === t.id, settling: isSettling(t.id) }"
-          draggable="true"
-          @click="openTask(t.id)"
-          @dragstart="onDragStart(t.id, $event)"
-          @dragend="dragId = null"
-          @dragover.prevent
-          @drop="onDropReorder(t.id)"
-        >
-          <i class="drag-grip ri-draggable" title="拖拽排序"></i>
-          <button
-            class="select-dot"
-            :class="{ on: selectedTaskIds.includes(t.id) }"
-            :aria-label="`选择任务 ${t.title}`"
-            :aria-pressed="selectedTaskIds.includes(t.id)"
-            title="选择后可合并复制或交给 AI"
-            @click.stop="toggleSelection(t.id)"
-          >
-            <i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i>
-          </button>
-          <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
-          <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
-          <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span>
-          <div class="task-status" @click.stop>
-            <button
-              class="mini task-status-trigger"
-              :class="{ saving: statusSavingTaskId === t.id, error: statusSaveErrorIds.includes(t.id) }"
-              :style="{ background: t.stBg, color: t.stColor }"
-              :title="statusSaveErrorIds.includes(t.id) ? '状态保存失败，点击重试' : '点击修改状态'"
-              aria-haspopup="menu"
-              :aria-expanded="openStatusTaskId === t.id"
-              @click="toggleStatusMenu(t.id)"
-            >
-              <i v-if="statusSavingTaskId === t.id" class="ri-loader-4-line spin"></i>
-              <i v-else-if="statusSaveErrorIds.includes(t.id)" class="ri-error-warning-line"></i>
-              {{ t.status }}<i class="ri-arrow-down-s-line"></i>
-            </button>
-            <div v-if="openStatusTaskId === t.id" class="task-status-menu" role="menu">
-              <button
-                v-for="status in TASK_STATUSES"
-                :key="status"
-                role="menuitemradio"
-                :aria-checked="t.status === status"
-                :class="{ on: t.status === status }"
-                @click="changeTaskStatus(t.id, status)"
+      <div v-if="pdTaskView === 'list'" class="task-list-card task-table-scroll">
+        <table class="project-task-table" aria-label="项目任务表格">
+          <colgroup>
+            <col style="width: 36px" />
+            <col style="width: 76px" />
+            <col style="width: auto" />
+            <col style="width: 72px" />
+            <col style="width: 116px" />
+            <col style="width: 116px" />
+            <col style="width: 110px" />
+            <col style="width: 110px" />
+            <col style="width: 110px" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col"><span class="sr-only">选择</span></th>
+              <th scope="col">编号</th>
+              <th scope="col">标题</th>
+              <th scope="col">优先级</th>
+              <th scope="col">状态</th>
+              <th scope="col">负责人</th>
+              <th scope="col">创建人</th>
+              <th scope="col">计划开始</th>
+              <th scope="col">截止日期</th>
+            </tr>
+          </thead>
+          <template v-for="t in openTasks" :key="t.id"
+            ><tbody>
+              <tr
+                class="trow"
+                :class="{
+                  done: t.status === '已完成',
+                  dragging: dragId === t.id,
+                  settling: isSettling(t.id),
+                }"
+                draggable="true"
+                @dragstart="onDragStart(t.id, $event)"
+                @dragend="dragId = null"
+                @dragover.prevent
+                @drop="onDropReorder(t.id)"
+                @click="openTask(t.id)"
               >
-                <span class="status-dot" :style="{ background: TASK_STATUS_DOTS[status] }"></span>
-                {{ status }}
-                <i v-if="t.status === status" :class="statusSaveErrorIds.includes(t.id) ? 'ri-refresh-line' : 'ri-check-line'"></i>
-              </button>
-            </div>
-          </div>
-          <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
-          <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
-          <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
-        </div>
-
-        <InlineSubtasks :task-id="t.id" />
-        </template>
-        <!-- 已完成默认收起 -->
-        <button
-          v-if="doneTasks.length"
-          class="done-toggle"
-          :class="{ fixed: deliveryStageFilter === 'verified' }"
-          :aria-expanded="showDone || deliveryStageFilter === 'verified'"
-          @click="deliveryStageFilter !== 'verified' && (showDone = !showDone)"
-        >
-          <i :class="showDone || deliveryStageFilter === 'verified' ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
-          已完成<span class="done-count wao-tabular">{{ doneTasks.length }}</span>
-          <span class="done-hint">{{ deliveryStageFilter === 'verified' ? '筛选结果' : showDone ? '点击收起' : '点击展开' }}</span>
-        </button>
-        <template v-if="showDone || deliveryStageFilter === 'verified'">
-          <template v-for="t in doneTasks" :key="t.id">
-          <div class="trow done" @click="openTask(t.id)">
-            <i class="drag-grip ri-draggable placeholder"></i>
-            <button class="select-dot" :class="{ on: selectedTaskIds.includes(t.id) }" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i class="ri-checkbox-blank-circle-line"></i></button>
-            <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
-            <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
-            <div class="task-status" @click.stop>
-              <button
-                class="mini task-status-trigger"
-                :class="{ saving: statusSavingTaskId === t.id, error: statusSaveErrorIds.includes(t.id) }"
-                :style="{ background: t.stBg, color: t.stColor }"
-                :title="statusSaveErrorIds.includes(t.id) ? '状态保存失败，点击重试' : '点击修改状态'"
-                aria-haspopup="menu"
-                :aria-expanded="openStatusTaskId === t.id"
-                @click="toggleStatusMenu(t.id)"
-              >
-                <i v-if="statusSavingTaskId === t.id" class="ri-loader-4-line spin"></i>
-                <i v-else-if="statusSaveErrorIds.includes(t.id)" class="ri-error-warning-line"></i>
-                {{ t.status }}<i class="ri-arrow-down-s-line"></i>
-              </button>
-              <div v-if="openStatusTaskId === t.id" class="task-status-menu" role="menu">
+                <td>
+                  <button
+                    class="select-dot"
+                    :class="{ on: selectedTaskIds.includes(t.id) }"
+                    :aria-label="`选择任务 ${t.title}`"
+                    :aria-pressed="selectedTaskIds.includes(t.id)"
+                    @click.stop="toggleSelection(t.id)"
+                  >
+                    <i
+                      :class="
+                        selectedTaskIds.includes(t.id)
+                          ? 'ri-checkbox-circle-fill'
+                          : 'ri-checkbox-blank-circle-line'
+                      "
+                    ></i>
+                  </button>
+                </td>
+                <td class="table-number wao-tabular">{{ t.number ?? '…' }}</td>
+                <td>
+                  <div class="table-title-content">
+                    <button
+                      class="tree-toggle"
+                      :aria-label="`展开或收起 ${t.title} 的子任务`"
+                      :aria-expanded="!collapsedSubTasks.includes(t.id)"
+                      @click.stop="toggleSubtasks(t.id)"
+                    >
+                      <i
+                        :class="
+                          collapsedSubTasks.includes(t.id)
+                            ? 'ri-arrow-right-s-line'
+                            : 'ri-arrow-down-s-line'
+                        "
+                      ></i>
+                    </button>
+                    <button
+                      class="check"
+                      :aria-label="`完成任务 ${t.title}`"
+                      :style="{ borderColor: t.checkBorder, background: t.checkBg }"
+                      @click.stop="toggleTask(t.id)"
+                    >
+                      <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
+                    </button>
+                    <button
+                      class="trow-title"
+                      :title="t.title"
+                      :style="{ color: t.titleColor, textDecoration: t.deco }"
+                      @click.stop="openTask(t.id)"
+                    >
+                      {{ t.title }}
+                    </button>
+                    <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span
+                    ><small v-if="t.subs.length" class="sub-count"
+                      >{{ t.subs.filter((s) => s.done).length }}/{{ t.subs.length }}</small
+                    >
+                  </div>
+                </td>
+                <td>
+                  <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{
+                    t.pr
+                  }}</span>
+                </td>
+                <td>
+                  <div class="task-status" @click.stop>
+                    <button
+                      class="mini task-status-trigger"
+                      :class="{
+                        saving: statusSavingTaskId === t.id,
+                        error: statusSaveErrorIds.includes(t.id),
+                      }"
+                      :style="{ background: t.stBg, color: t.stColor }"
+                      :title="
+                        statusSaveErrorIds.includes(t.id)
+                          ? '状态保存失败，点击重试'
+                          : '点击修改状态'
+                      "
+                      aria-haspopup="menu"
+                      :aria-expanded="openStatusTaskId === t.id"
+                      @click="toggleStatusMenu(t.id)"
+                    >
+                      <i v-if="statusSavingTaskId === t.id" class="ri-loader-4-line spin"></i>
+                      <i
+                        v-else-if="statusSaveErrorIds.includes(t.id)"
+                        class="ri-error-warning-line"
+                      ></i>
+                      {{ t.status }}<i class="ri-arrow-down-s-line"></i>
+                    </button>
+                    <div v-if="openStatusTaskId === t.id" class="task-status-menu" role="menu">
+                      <button
+                        v-for="status in TASK_STATUSES"
+                        :key="status"
+                        role="menuitemradio"
+                        :aria-checked="t.status === status"
+                        :class="{ on: t.status === status }"
+                        @click="changeTaskStatus(t.id, status)"
+                      >
+                        <span
+                          class="status-dot"
+                          :style="{ background: TASK_STATUS_DOTS[status] }"
+                        ></span>
+                        {{ status }}
+                        <i
+                          v-if="t.status === status"
+                          :class="
+                            statusSaveErrorIds.includes(t.id) ? 'ri-refresh-line' : 'ri-check-line'
+                          "
+                        ></i>
+                      </button>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="table-member"
+                    ><span class="owner-av" :style="{ background: t.ownerColor }">{{
+                      t.ownerInitial
+                    }}</span
+                    >{{ t.ownerName }}</span
+                  >
+                </td>
+                <td :title="t.createdBy ? session.memberById(t.createdBy).name : ''">
+                  {{ t.createdBy ? session.memberById(t.createdBy).name : '—' }}
+                </td>
+                <td>{{ t.start || '—' }}</td>
+                <td class="trow-due" :style="{ color: t.dueColor }">{{ t.due || '—' }}</td>
+              </tr>
+            </tbody>
+            <InlineSubtasks v-if="!collapsedSubTasks.includes(t.id)" :task-id="t.id" table
+          /></template>
+          <tbody v-if="doneTasks.length">
+            <tr>
+              <td colspan="9" class="table-section">
                 <button
-                  v-for="status in TASK_STATUSES"
-                  :key="status"
-                  role="menuitemradio"
-                  :aria-checked="t.status === status"
-                  :class="{ on: t.status === status }"
-                  @click="changeTaskStatus(t.id, status)"
+                  class="done-toggle"
+                  :aria-expanded="showDone || deliveryStageFilter === 'verified'"
+                  @click="deliveryStageFilter !== 'verified' && (showDone = !showDone)"
                 >
-                  <span class="status-dot" :style="{ background: TASK_STATUS_DOTS[status] }"></span>
-                  {{ status }}
-                  <i v-if="t.status === status" :class="statusSaveErrorIds.includes(t.id) ? 'ri-refresh-line' : 'ri-check-line'"></i>
+                  <i
+                    :class="
+                      showDone || deliveryStageFilter === 'verified'
+                        ? 'ri-arrow-down-s-line'
+                        : 'ri-arrow-right-s-line'
+                    "
+                  ></i
+                  >已完成 <span class="done-count">{{ doneTasks.length }}</span>
                 </button>
-              </div>
-            </div>
-            <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
-            <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
-            <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
-          </div>
-          <InlineSubtasks :task-id="t.id" />
-          </template>
-        </template>
-
-        <div v-if="!ptasks.length" class="empty-inline">还没有任务——点右上角「新建任务」开始拆解</div>
-        <div v-else-if="!allTasks.length" class="empty-inline">当前筛选没有任务，切换交付阶段或创建人后再看</div>
-        <div v-else-if="!openTasks.length && !showDone" class="empty-inline">未完成的任务都清空了 🎉</div>
+              </td>
+            </tr>
+          </tbody>
+          <template v-if="showDone || deliveryStageFilter === 'verified'"
+            ><template v-for="t in doneTasks" :key="t.id"
+              ><tbody>
+                <tr
+                  class="trow"
+                  :class="{
+                    done: t.status === '已完成',
+                    dragging: dragId === t.id,
+                    settling: isSettling(t.id),
+                  }"
+                  draggable="true"
+                  @dragstart="onDragStart(t.id, $event)"
+                  @dragend="dragId = null"
+                  @dragover.prevent
+                  @drop="onDropReorder(t.id)"
+                  @click="openTask(t.id)"
+                >
+                  <td>
+                    <button
+                      class="select-dot"
+                      :class="{ on: selectedTaskIds.includes(t.id) }"
+                      :aria-label="`选择任务 ${t.title}`"
+                      :aria-pressed="selectedTaskIds.includes(t.id)"
+                      @click.stop="toggleSelection(t.id)"
+                    >
+                      <i
+                        :class="
+                          selectedTaskIds.includes(t.id)
+                            ? 'ri-checkbox-circle-fill'
+                            : 'ri-checkbox-blank-circle-line'
+                        "
+                      ></i>
+                    </button>
+                  </td>
+                  <td class="table-number wao-tabular">{{ t.number ?? '…' }}</td>
+                  <td>
+                    <div class="table-title-content">
+                      <button
+                        class="tree-toggle"
+                        :aria-label="`展开或收起 ${t.title} 的子任务`"
+                        :aria-expanded="!collapsedSubTasks.includes(t.id)"
+                        @click.stop="toggleSubtasks(t.id)"
+                      >
+                        <i
+                          :class="
+                            collapsedSubTasks.includes(t.id)
+                              ? 'ri-arrow-right-s-line'
+                              : 'ri-arrow-down-s-line'
+                          "
+                        ></i>
+                      </button>
+                      <button
+                        class="check"
+                        :aria-label="`完成任务 ${t.title}`"
+                        :style="{ borderColor: t.checkBorder, background: t.checkBg }"
+                        @click.stop="toggleTask(t.id)"
+                      >
+                        <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
+                      </button>
+                      <button
+                        class="trow-title"
+                        :title="t.title"
+                        :style="{ color: t.titleColor, textDecoration: t.deco }"
+                        @click.stop="openTask(t.id)"
+                      >
+                        {{ t.title }}
+                      </button>
+                      <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span
+                      ><small v-if="t.subs.length" class="sub-count"
+                        >{{ t.subs.filter((s) => s.done).length }}/{{ t.subs.length }}</small
+                      >
+                    </div>
+                  </td>
+                  <td>
+                    <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{
+                      t.pr
+                    }}</span>
+                  </td>
+                  <td>
+                    <div class="task-status" @click.stop>
+                      <button
+                        class="mini task-status-trigger"
+                        :class="{
+                          saving: statusSavingTaskId === t.id,
+                          error: statusSaveErrorIds.includes(t.id),
+                        }"
+                        :style="{ background: t.stBg, color: t.stColor }"
+                        :title="
+                          statusSaveErrorIds.includes(t.id)
+                            ? '状态保存失败，点击重试'
+                            : '点击修改状态'
+                        "
+                        aria-haspopup="menu"
+                        :aria-expanded="openStatusTaskId === t.id"
+                        @click="toggleStatusMenu(t.id)"
+                      >
+                        <i v-if="statusSavingTaskId === t.id" class="ri-loader-4-line spin"></i>
+                        <i
+                          v-else-if="statusSaveErrorIds.includes(t.id)"
+                          class="ri-error-warning-line"
+                        ></i>
+                        {{ t.status }}<i class="ri-arrow-down-s-line"></i>
+                      </button>
+                      <div v-if="openStatusTaskId === t.id" class="task-status-menu" role="menu">
+                        <button
+                          v-for="status in TASK_STATUSES"
+                          :key="status"
+                          role="menuitemradio"
+                          :aria-checked="t.status === status"
+                          :class="{ on: t.status === status }"
+                          @click="changeTaskStatus(t.id, status)"
+                        >
+                          <span
+                            class="status-dot"
+                            :style="{ background: TASK_STATUS_DOTS[status] }"
+                          ></span>
+                          {{ status }}
+                          <i
+                            v-if="t.status === status"
+                            :class="
+                              statusSaveErrorIds.includes(t.id)
+                                ? 'ri-refresh-line'
+                                : 'ri-check-line'
+                            "
+                          ></i>
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="table-member"
+                      ><span class="owner-av" :style="{ background: t.ownerColor }">{{
+                        t.ownerInitial
+                      }}</span
+                      >{{ t.ownerName }}</span
+                    >
+                  </td>
+                  <td :title="t.createdBy ? session.memberById(t.createdBy).name : ''">
+                    {{ t.createdBy ? session.memberById(t.createdBy).name : '—' }}
+                  </td>
+                  <td>{{ t.start || '—' }}</td>
+                  <td class="trow-due" :style="{ color: t.dueColor }">{{ t.due || '—' }}</td>
+                </tr>
+              </tbody>
+              <InlineSubtasks
+                v-if="!collapsedSubTasks.includes(t.id)"
+                :task-id="t.id"
+                table /></template
+          ></template>
+          <tbody v-if="!allTasks.length">
+            <tr>
+              <td colspan="9" class="empty-inline">
+                {{
+                  ptasks.length
+                    ? '当前筛选没有任务，切换交付阶段或创建人后再看'
+                    : '还没有任务——点右上角「新建任务」开始拆解'
+                }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <!-- 分组：按自己定义的 domain 分堆，组内只看做没做完 -->
@@ -985,15 +1220,15 @@ watch(visibleTaskIds, (ids) => {
 <style scoped>
 .task-scope { padding:8px 16px; color:var(--wao-text-weak); background:var(--wao-bg-sub); font-size:12px; }.task-scope button { margin-left:12px; border:0; background:none; color:var(--wao-primary); cursor:pointer; }
 
-.copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
+.copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 6px; }
 .missing {
   padding: 60px 24px;
   text-align: center;
   color: var(--wao-text-weak);
 }
 .detail {
-  padding: 14px 24px 40px;
-  max-width: var(--wao-content-max);
+  padding: 10px 16px 24px;
+  max-width: none;
   margin: 0 auto;
   animation: waoFadeUp 0.25s ease;
 }
@@ -1263,7 +1498,7 @@ watch(visibleTaskIds, (ids) => {
 
 /* 任务/文档/文件 tabs */
 .tab-toolbar {
-  margin-top: 14px;
+  margin-top: 8px;
   display: flex;
   align-items: center;
 }
@@ -2172,5 +2407,124 @@ watch(visibleTaskIds, (ids) => {
   .board-col.is-collapsed { min-width: 0; }
   .phead-status { display: none; }
   .project-more-menu { right: 0; }
+}
+.task-list-card.task-table-scroll {
+  padding: 0;
+  border-radius: 6px;
+  overflow: auto;
+  max-height: calc(100dvh - 260px);
+  min-height: 180px;
+}
+.project-task-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  min-width: 1160px;
+  table-layout: fixed;
+  font-size: 12px;
+}
+.project-task-table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--wao-bg-sub);
+  text-align: left;
+  height: 34px;
+  font-weight: 500;
+  color: var(--wao-text-weak);
+}
+.project-task-table :is(th, td) {
+  padding: 5px 9px;
+  border-right: 1px solid var(--wao-line);
+  border-bottom: 1px solid var(--wao-line);
+}
+.project-task-table th:last-child,
+.project-task-table td:last-child {
+  border-right: 0;
+}
+.project-task-table .trow {
+  display: table-row;
+  height: 36px;
+}
+.project-task-table tbody:nth-of-type(even) {
+  background: var(--wao-bg-sub);
+}
+.project-task-table .table-title-content {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+.project-task-table .trow-title {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  flex: 1;
+}
+.project-task-table .check {
+  flex-shrink: 0;
+  margin: 0;
+  width: 16px;
+  height: 16px;
+}
+.project-task-table .table-number {
+  color: var(--wao-text-faint);
+}
+.project-task-table .tree-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  flex-shrink: 0;
+}
+.project-task-table .table-member {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.project-task-table .owner-av {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+.project-task-table .select-dot {
+  width: 22px;
+  height: 22px;
+}
+.project-task-table .trow-due {
+  width: auto;
+  text-align: left;
+}
+.project-task-table .sub-count {
+  font-size: 10px;
+  color: var(--wao-text-faint);
+  flex-shrink: 0;
+}
+.project-task-table .done-toggle {
+  padding: 3px 0;
+  margin: 0;
+  border: 0;
+}
+.project-task-table .table-section {
+  background: var(--wao-bg-sub);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 </style>

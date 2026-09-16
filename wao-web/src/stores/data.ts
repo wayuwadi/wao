@@ -1237,6 +1237,12 @@ export const useDataStore = defineStore('data', () => {
     try {
       const saved = await apiPutTask(id, snapshot)
       if (requestMember !== useSessionStore().userId) return
+      // Merge only server-owned metadata even if another edit happened during this request.
+      task.number = saved.number
+      for (const sub of task.subs) {
+        const canonical = saved.subs?.find(s => s.id === sub.id)
+        if (canonical && sub.id) sub.number = canonical.number
+      }
       if ((taskPersistVersions[id] ?? 0) === version) {
         if (pendingTaskIds.has(id)) Object.assign(task, saved)
         clearTaskDraft(id)

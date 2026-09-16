@@ -6,12 +6,13 @@ export interface VisibilityPoller {
 }
 
 /**
- * 只在页面可见时串行轮询；下一轮总在上一轮结束后计时，避免慢请求跨轮堆叠。
+ * 默认只在页面可见时串行轮询；桌面消息入口可显式保留后台未读检查。下一轮总在上一轮结束后计时，避免慢请求跨轮堆叠。
  */
 export function createVisibilityPoller(
   task: () => Promise<unknown>,
   delay: () => number,
   target: Document = document,
+  allowHidden: () => boolean = () => false,
 ): VisibilityPoller {
   let timer: ReturnType<typeof setTimeout> | null = null
   let inFlight: Promise<void> | null = null
@@ -25,7 +26,7 @@ export function createVisibilityPoller(
 
   function schedule() {
     clearTimer()
-    if (!started || target.hidden) return
+    if (!started || (target.hidden && !allowHidden())) return
     timer = setTimeout(() => {
       timer = null
       void trigger()
@@ -34,7 +35,7 @@ export function createVisibilityPoller(
 
   async function trigger() {
     clearTimer()
-    if (!started || target.hidden) return
+    if (!started || (target.hidden && !allowHidden())) return
     if (inFlight) return inFlight
     inFlight = Promise.resolve(task()).then(() => undefined)
     try {
@@ -46,7 +47,7 @@ export function createVisibilityPoller(
   }
 
   function onVisibilityChange() {
-    if (target.hidden) clearTimer()
+    if (target.hidden && !allowHidden()) clearTimer()
     else void trigger()
   }
 

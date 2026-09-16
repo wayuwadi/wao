@@ -106,6 +106,8 @@ export interface Project {
 }
 
 export interface TaskStep {
+  /** 服务端固定编号；未保存时为空。 */
+  number?: number
   text: string
   done: boolean
   /**
@@ -266,6 +268,7 @@ export interface Idea {
 }
 
 export interface Task {
+  number?: number
   id: string
   title: string
   project: string

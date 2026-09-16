@@ -1588,6 +1588,7 @@ components:
       type: object
       description: 字段与前端 Task 一致（含 steps/subs/comments/activity 等嵌套）
       properties:
+        number: { type: integer, format: int64, minimum: 0, readOnly: true, description: "服务端持久化的固定编号，与子任务共享序列；删除不回收，排序不改变" }
         id: { type: string }
         title: { type: string }
         project: { type: string }
@@ -1655,6 +1656,7 @@ components:
       type: object
       description: 步骤 / 子任务条目；子任务可以有自己的描述与图片
       properties:
+        number: { type: integer, format: int64, minimum: 0, readOnly: true, description: "子任务服务端固定编号，历史及新建未保存条目可缺省；客户端输入不参与分配" }
         text: { type: string }
         done: { type: boolean }
         id: { type: string, description: 稳定标识；历史数据可能缺失，此时按下标兜底 }

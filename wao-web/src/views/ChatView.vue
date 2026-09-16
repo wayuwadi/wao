@@ -28,6 +28,7 @@ import { fetchDoc } from '@/api/board'
 import { toast } from '@/composables/toast'
 import { renderMarkdown } from '@/utils/markdown'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
+import { hasDesktopToolbar } from '@/utils/desktopToolbar'
 
 async function openSharedLink(event: MouseEvent) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
@@ -342,7 +343,7 @@ async function poll() {
 }
 
 // 展开每 5 秒刷新；收起仍为入口和宠物保持及时未读提示。
-const messagePolling = createVisibilityPoller(poll, () => (props.visible ? POLL_MS : 10_000))
+const messagePolling = createVisibilityPoller(poll, () => (props.visible && !document.hidden ? POLL_MS : 10_000), document, hasDesktopToolbar)
 
 async function uploadInlineImage(file: File, done: (url: string | null, name: string) => void) {
   sendError.value = ''
