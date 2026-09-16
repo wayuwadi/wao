@@ -7,7 +7,33 @@ import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
-import { apiCreateNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
+import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
+import { fetchPreference, savePreference } from '@/api/favorites'
+import { matchesNoteDate } from '@/utils/noteDates'
+
+const dateFilter = ref<'all' | 'today' | 'yesterday'>('all')
+const pinnedIds = ref<string[]>([])
+const pinsReady = ref(false)
+const pinSaving = ref(false)
+const pinError = ref('')
+async function loadPins() {
+  pinsReady.value = false
+  pinError.value = ''
+  try {
+    const value: unknown = JSON.parse(await fetchPreference('note-pins-v1') || '[]')
+    pinnedIds.value = Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
+    pinsReady.value = true
+  } catch { pinError.value = '置顶设置读取失败，请重试' }
+}
+async function togglePin(id: string) {
+  if (!pinsReady.value || pinSaving.value) return
+  pinSaving.value = true
+  pinError.value = ''
+  const next = pinnedIds.value.includes(id) ? pinnedIds.value.filter(item => item !== id) : [...pinnedIds.value, id]
+  try { await savePreference('note-pins-v1', JSON.stringify(next)); pinnedIds.value = next }
+  catch { pinError.value = '置顶保存失败，请再次点击重试' }
+  finally { pinSaving.value = false }
+}
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const data = useDataStore()
@@ -18,6 +44,26 @@ const selectedTag = ref('')
 const tagNames = ref<string[]>([])
 const tagsLoading = ref(false)
 const tagsError = ref('')
+const managingTags = ref(false)
+const sourceTag = ref('')
+const targetTag = ref('')
+const tagSaving = ref(false)
+async function manageTag(merge: boolean) {
+  if (tagSaving.value || !sourceTag.value || (merge && (!targetTag.value || targetTag.value === sourceTag.value))) return
+  const source = sourceTag.value, target = targetTag.value
+  if (!window.confirm(merge ? `将“${source}”合并到“${target}”？文章保留，重复标签会去重。` : `删除标签“${source}”？只移除标签，不删除文章。`)) return
+  tagSaving.value = true
+  tagsError.value = ''
+  try {
+    if (merge) await apiMergeNoteTag(source, target)
+    else await apiDeleteNoteTag(source)
+    if (selectedTag.value === source) selectedTag.value = merge ? target : ''
+    sourceTag.value = ''
+    targetTag.value = ''
+    await Promise.all([loadTags(), data.refreshDocs()])
+  } catch (cause) { tagsError.value = cause instanceof Error ? cause.message : '标签修改失败，请重试' }
+  finally { tagSaving.value = false }
+}
 const addingTag = ref(false)
 const newTag = ref('')
 const creatingTag = ref(false)
@@ -40,7 +86,7 @@ const refreshError = ref('')
 const notes = computed(() => {
   const ids = new Set(data.kbs.filter(kb => kb.notes).map(kb => kb.id))
   return Object.values(data.docs).filter(doc => ids.has(doc.kbId ?? '') && !data.isDocArchived(doc.id))
-    .sort((a, b) => (Date.parse(b[sort.value]) || Date.parse(b.created) || 0) - (Date.parse(a[sort.value]) || Date.parse(a.created) || 0) || b.id.localeCompare(a.id))
+    .sort((a, b) => Number(pinnedIds.value.includes(b.id)) - Number(pinnedIds.value.includes(a.id)) || (Date.parse(b[sort.value]) || Date.parse(b.created) || 0) - (Date.parse(a[sort.value]) || Date.parse(a.created) || 0) || b.id.localeCompare(a.id))
 })
 const editing = computed(() => editId.value ? data.docs[editId.value] : undefined)
 const availableTags = computed(() => [...new Set([...tagNames.value, ...notes.value.flatMap(note => note.tags ?? [])])].sort((a, b) => a.localeCompare(b, 'zh-CN')))
@@ -52,17 +98,19 @@ const tagCounts = computed(() => {
 const matching = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
   return notes.value.filter(doc => (scope.value === 'all' || doc.author === session.currentUser.id)
+    && matchesNoteDate(doc.created, dateFilter.value)
     && (!selectedTag.value || doc.tags?.includes(selectedTag.value))
     && (!needle || `${doc.title}\n${resolvedRichContent(doc).markdown}\n${(doc.tags ?? []).join(' ')}`.toLocaleLowerCase().includes(needle)))
 })
 const visible = computed(() => matching.value.slice(0, limit.value))
 const loading = computed(() => ['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
-watch([query, scope, selectedTag, sort], () => {
+watch([query, scope, selectedTag, sort, dateFilter], () => {
   limit.value = PAGE_SIZE
   notesList.value?.scrollTo?.({ top: 0 })
 })
 function onCreated(id: string) {
+  dateFilter.value = 'all'
   query.value = ''
   selectedTag.value = ''
   editId.value = ''
@@ -112,6 +160,7 @@ async function createTag() {
   finally { creatingTag.value = false }
 }
 onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
+onMounted(() => void loadPins())
 </script>
 
 <template>
@@ -125,6 +174,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
       <section ref="notesList" class="notes-list" aria-label="小记清单">
         <div class="list-toolbar">
           <div class="filters"><button :aria-pressed="scope === 'all'" @click="scope = 'all'">全部小记</button><button :aria-pressed="scope === 'mine'" @click="scope = 'mine'">我记录的</button></div>
+          <div class="filters" aria-label="按创建日期筛选"><button :aria-pressed="dateFilter === 'all'" @click="dateFilter = 'all'">全部时间</button><button :aria-pressed="dateFilter === 'yesterday'" @click="dateFilter = 'yesterday'">昨天</button><button :aria-pressed="dateFilter === 'today'" @click="dateFilter = 'today'">今天</button></div>
           <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"></label>
           <label class="sort"><i class="ri-sort-desc"></i><select v-model="sort" aria-label="小记排序"><option value="updated">更新时间排序</option><option value="created">创建时间排序</option></select></label>
           <button class="refresh" :disabled="loading" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i class="ri-refresh-line"></i></button>
@@ -133,6 +183,13 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
           <button class="tag-filter" :aria-pressed="!selectedTag" @click="selectedTag = ''">全部标签</button>
           <button v-for="tag in availableTags" :key="tag" class="tag-filter" :aria-pressed="selectedTag === tag" @click="selectedTag = selectedTag === tag ? '' : tag">{{ tag }} <span>{{ tagCounts.get(tag) ?? 0 }}</span></button>
           <button class="new-tag-toggle" :aria-expanded="addingTag" @click="addingTag = !addingTag"><i class="ri-add-line"></i>新增标签</button>
+          <button :aria-expanded="managingTags" @click="managingTags = !managingTags">管理标签</button>
+        </div>
+        <div v-if="managingTags" class="new-tag-form" aria-label="标签管理">
+          <select v-model="sourceTag" aria-label="待处理标签" :disabled="tagSaving"><option value="">选择标签</option><option v-for="tag in availableTags" :key="tag" :value="tag">{{ tag }}</option></select>
+          <button :disabled="tagSaving || !sourceTag" @click="manageTag(false)">删除标签（保留文章）</button>
+          <select v-model="targetTag" aria-label="合并到标签" :disabled="tagSaving"><option value="">合并到…</option><option v-for="tag in availableTags.filter(item => item !== sourceTag)" :key="tag" :value="tag">{{ tag }}</option></select>
+          <button :disabled="tagSaving || !sourceTag || !targetTag || sourceTag === targetTag" @click="manageTag(true)">{{ tagSaving ? '保存中…' : '合并标签' }}</button>
         </div>
         <form v-if="addingTag" class="new-tag-form" @submit.prevent="createTag">
           <input v-model="newTag" aria-label="新标签名称" placeholder="标签名称" maxlength="32" :disabled="creatingTag">
@@ -140,6 +197,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
           <span v-if="tagError" class="error" role="alert">{{ tagError }}</span>
         </form>
         <p v-if="tagsLoading" class="tag-status" role="status">正在读取标签…</p>
+        <p v-if="pinError" class="error" role="alert">{{ pinError }}<button v-if="!pinsReady" @click="loadPins">重试读取置顶</button></p>
         <p v-if="tagsError" class="tag-status error" role="alert">{{ tagsError }}<button @click="loadTags">重试标签</button></p>
         <div class="list-summary"><span>{{ selectedTag ? `# ${selectedTag} · ` : '' }}{{ matching.length }} 条小记</span><span>按{{ sort === 'updated' ? '更新' : '创建' }}时间从新到旧</span></div>
         <p v-if="loadError" class="empty error" role="alert">小记读取失败，已有内容和草稿仍保留。<button @click="reload">重试加载</button></p>
@@ -151,7 +209,7 @@ onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span v-if="highlighted === note.id" class="saved">已保存</span></div>
           <div class="note-body"><MarkdownEditor :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" /></div>
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
-          <div class="note-actions"><button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button><button class="touch-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
+          <div class="note-actions"><button :disabled="!pinsReady || pinSaving" :aria-pressed="pinnedIds.includes(note.id)" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i>{{ pinnedIds.includes(note.id) ? '取消置顶' : '置顶' }}</button><button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button><button class="touch-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
         </article>
         <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>
       </section>

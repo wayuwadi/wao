@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Dropdown as ADropdown, Menu as AMenu, MenuItem as AMenuItem } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { functionDomain } from '@/config/navigationCatalog'
 import { useNavStore } from '@/stores/nav'
@@ -11,6 +12,10 @@ defineProps<{ label: string }>()
 const domain = computed(() => functionDomain(route.meta.module as NavItemId))
 function open(event: Event) {
   const id = (event.target as HTMLSelectElement).value as NavItemId
+  openItem(id)
+  ;(event.target as HTMLSelectElement).value = ''
+}
+function openItem(id: NavItemId) {
   const meta = nav.itemMeta(id)
   if (meta?.path) {
     if (meta.openMode === 'NEW_PAGE')
@@ -21,18 +26,21 @@ function open(event: Event) {
       )
     else void router.push(meta.path)
   }
-  ;(event.target as HTMLSelectElement).value = ''
 }
 </script>
 <template>
   <div class="context-nav">
     <span>{{ label }}</span
-    ><select v-if="domain" value="" :aria-label="'切换' + domain.label + '功能'" @change="open">
+    ><select v-if="domain" hidden aria-hidden="true" tabindex="-1" value="" :aria-label="'切换' + domain.label + '功能'" @change="open">
       <option value="" disabled>{{ domain.label }} · 切换</option>
       <option v-for="item in domain.items" :key="item.id" :value="item.id">
         {{ nav.itemMeta(item.id)?.label }}
       </option>
     </select>
+    <ADropdown v-if="domain" :trigger="['click']">
+      <button type="button" :aria-label="'切换' + domain.label + '功能'">{{ domain.label }} · 切换 <i class="ri-arrow-down-s-line"></i></button>
+      <template #overlay><AMenu @click="({ key }) => openItem(String(key) as NavItemId)"><AMenuItem v-for="item in domain.items" :key="item.id">{{ nav.itemMeta(item.id)?.label }}</AMenuItem></AMenu></template>
+    </ADropdown>
   </div>
 </template>
 <style scoped>
@@ -45,7 +53,7 @@ function open(event: Event) {
 .context-nav > span {
   white-space: nowrap;
 }
-select {
+button {
   max-width: 155px;
   min-width: 65px;
   padding: 4px;
@@ -56,7 +64,7 @@ select {
   font-size: 11px;
 }
 @media (max-width: 900px) {
-  select {
+  button {
     max-width: 100px;
   }
 }

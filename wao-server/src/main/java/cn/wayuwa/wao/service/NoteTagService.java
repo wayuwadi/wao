@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 /** 管理小记共享标签与一致的名称约束。 */
 @Service
 public class NoteTagService {
+    private final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
     private final NoteTagMapper mapper;
     public NoteTagService(NoteTagMapper mapper) { this.mapper = mapper; }
 
@@ -20,6 +21,29 @@ public class NoteTagService {
         String normalized = checkedName(name);
         mapper.ensureName(normalized);
         return normalized;
+    }
+
+    /** 删除标签或将其并入目标标签；仅更改标签关联，保留文档正文和生命周期。 */
+    @org.springframework.transaction.annotation.Transactional
+    public void replace(String source, String target) {
+        String from = checkedName(source);
+        String to = target == null ? null : checkedName(target);
+        if (from.equals(to)) throw new BadRequestException("请选择不同的目标标签");
+        if (to != null) mapper.ensureName(to);
+        for (var note : mapper.taggedNotes(from)) {
+            try {
+                List<String> current = json.readValue(note.getTagsJson(), new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+                LinkedHashSet<String> updated = new LinkedHashSet<>();
+                for (String tag : current) {
+                    if (!from.equals(tag)) updated.add(tag);
+                    else if (to != null) updated.add(to);
+                }
+                mapper.updateTags(note.getId(), json.writeValueAsString(updated));
+            } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+                throw new IllegalStateException("标签数据无法读取，未提交本次修改", exception);
+            }
+        }
+        mapper.deleteName(from);
     }
 
     /** 校验并去重一篇小记的标签；空集合表示明确清空。 */

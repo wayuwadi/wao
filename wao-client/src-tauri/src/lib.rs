@@ -125,7 +125,7 @@ fn macos_menu(app: &tauri::App) -> tauri::Result<()> {
         .paste()
         .select_all()
         .build()?;
-    let close = MenuItemBuilder::with_id("mac-close", "收起工作区")
+    let close = MenuItemBuilder::with_id("mac-close", "关闭当前页签")
         .accelerator("CmdOrCtrl+W")
         .build(app)?;
     let window = SubmenuBuilder::new(app, "窗口")
@@ -141,8 +141,8 @@ fn macos_menu(app: &tauri::App) -> tauri::Result<()> {
     app.on_menu_event(|app, event| match event.id.as_ref() {
         "mac-open" => show(app),
         "mac-close" => {
-            if let Some(window) = app.get_window("main") {
-                let _ = window.hide();
+            if let Some(workspace) = app.get_webview("workspace") {
+                let _ = workspace.eval("window.dispatchEvent(new Event('wao-close-active-tab'))");
             }
         }
         "mac-update" | "mac-quit" => {

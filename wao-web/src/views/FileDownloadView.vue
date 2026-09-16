@@ -6,9 +6,10 @@
  * 现在必须人点一次「下载」换一张一次性票据（两分钟内有效、用完即废）；管理员可再启用算术题。
  * 自己人在站内下载走的是登录会话，不用答题。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { apiDownloadChallenge, apiDownloadTicket, fetchFileMeta } from '@/api/board'
+import { apiDownloadChallenge, apiDownloadTicket, fetchFileMeta, fetchPublicFilePreview } from '@/api/board'
+import { renderMarkdown } from '@/utils/markdown'
 import type { FileItem } from '@/types'
 import { fileDisplayName } from '@/utils/files'
 
@@ -24,6 +25,18 @@ const captchaEnabled = ref(true)
 const busy = ref(false)
 const hint = ref('')
 const done = ref(false)
+const previewContent = ref<string | null>(null)
+const previewable = computed(() => /\.(md|markdown)$/i.test(file.value?.name || '') || file.value?.contentType === 'text/markdown')
+async function preview() {
+  if (busy.value || (captchaEnabled.value && !answer.value.trim())) return
+  busy.value = true
+  hint.value = ''
+  try {
+    const { ticket } = await apiDownloadTicket(fileId, challengeId.value, answer.value)
+    previewContent.value = (await fetchPublicFilePreview(fileId, ticket)).content
+  } catch (error) { hint.value = error instanceof Error ? error.message : '预览失败，请重试' }
+  finally { await newChallenge(); busy.value = false }
+}
 
 onMounted(async () => {
   try {
@@ -71,7 +84,7 @@ async function download() {
 
 <template>
   <div class="page">
-    <div class="card">
+    <div class="card" :class="{ expanded: previewContent !== null }">
       <div class="brand"><i class="ri-hard-drive-2-line"></i>WAO 文件下载</div>
 
       <div v-if="loadError" class="missing">
@@ -111,6 +124,8 @@ async function download() {
         <div v-else-if="hint" class="hint bad standalone">{{ hint }}</div>
         <div v-else-if="done" class="hint ok standalone">已开始下载。再次下载需要重新点击。</div>
 
+        <button v-if="previewable" class="btn-primary" :disabled="busy || (captchaEnabled && !answer.trim())" @click="preview"><i class="ri-file-markdown-line"></i>{{ busy ? '准备中…' : previewContent === null ? '预览 Markdown' : '重新加载预览' }}</button>
+        <article v-if="previewContent !== null" class="markdown-preview" v-html="renderMarkdown(previewContent)"></article>
         <button
           class="btn-primary"
           :disabled="busy || (captchaEnabled && !answer.trim())"
@@ -127,6 +142,11 @@ async function download() {
 </template>
 
 <style scoped>
+.card.expanded { width: min(1000px, 100%); }
+.markdown-preview { margin: 18px 0; overflow: auto; overflow-wrap: anywhere; max-height: 70vh; line-height: 1.75; }
+.markdown-preview :deep(img) { max-width: 100%; }
+.markdown-preview :deep(pre) { overflow: auto; }
+.btn-primary + .btn-primary { margin-top: 10px; }
 .page {
   min-height: 100vh;
   display: flex;

@@ -559,7 +559,7 @@ function shareToChat() {
   if (!t) return
   const sub = t.subs.find((item) => item.id === openSubId.value)
   const title = (sub?.text || t.title).replace(/[\\[\]`*_<>]/g, ' ').replace(/\s+/g, ' ')
-  ui.shareToChat(chatShareLink(title, shareUrl(t.id, openSubId.value, !sub && shareOpenOnly.value)))
+  ui.shareToChat(chatShareLink(`${sub ? '子任务' : '任务'}：${title}`, shareUrl(t.id, openSubId.value, !sub && shareOpenOnly.value)))
   menu.value = null
 }
 

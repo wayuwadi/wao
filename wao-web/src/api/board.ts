@@ -68,6 +68,8 @@ async function del(url: string): Promise<void> {
 }
 
 export const fetchMembers = () => get<Member[]>('/api/members')
+export const apiDeleteNoteTag = (name: string) => del(`/api/docs/note-tags?name=${encodeURIComponent(name)}`)
+export const apiMergeNoteTag = (source: string, target: string) => post<void>('/api/docs/note-tags/merge', { source, target })
 export const fetchOrg = () => get<Org>('/api/org')
 export const fetchAreas = () => get<Area[]>('/api/areas')
 export const fetchProjects = () => get<Project[]>('/api/projects')
@@ -126,6 +128,10 @@ export async function apiSaveHostedPage(payload: {
 export const apiDeleteHostedPage = (id: string) => del(`/api/hosted-pages/${id}`)
 /** 公开：下载确认页要展示的文件信息。 */
 export const fetchFileMeta = (id: string) => get<FileItem>(`/api/files/${id}/meta`)
+export async function fetchPublicFilePreview(id: string, ticket: string) {
+  const res = await http.get<ApiResponse<{ content: string }>>(`/api/files/${encodeURIComponent(id)}/public-preview`, { params: { ticket } })
+  return res.data.data
+}
 export const fetchFilePreview = (id: string) =>
   get<{ id: string; name: string; contentType: string; content: string }>(
     `/api/files/${id}/preview`,
