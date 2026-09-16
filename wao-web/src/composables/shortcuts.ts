@@ -152,6 +152,7 @@ export function useShortcuts() {
   }
 
   onMounted(() => window.addEventListener('keydown', onKey))
+  onMounted(() => window.addEventListener('wao-close-active-tab', closeActiveTab))
   onMounted(() => void shortcutSettings.load())
   const stopMemberWatch = watch(
     () => session.userId,
@@ -159,6 +160,7 @@ export function useShortcuts() {
   )
   onBeforeUnmount(() => {
     window.removeEventListener('keydown', onKey)
+    window.removeEventListener('wao-close-active-tab', closeActiveTab)
     stopMemberWatch()
   })
 }

@@ -38,6 +38,6 @@ public class AuthInterceptor implements HandlerInterceptor {
                 && (path.matches("/api/files/[^/]+/challenge") || path.matches("/api/files/[^/]+/ticket"))) return true;
         return "GET".equals(request.getMethod())
                 && (path.matches("/api/images/[^/]+/raw") || path.matches("/api/files/[^/]+/download")
-                    || path.matches("/api/files/[^/]+/meta") || path.matches("/api/pages/[^/]+(?:/icon)?"));
+                    || path.matches("/api/files/[^/]+/meta") || path.matches("/api/files/[^/]+/public-preview") || path.matches("/api/pages/[^/]+(?:/icon)?"));
     }
 }

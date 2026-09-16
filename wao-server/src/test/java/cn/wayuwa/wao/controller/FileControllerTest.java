@@ -20,6 +20,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 
 class FileControllerTest {
+    @Test
+    void publicPreviewRequiresAnUnconsumedTicket() {
+        var tickets = mock(DownloadTicketService.class);
+        var previewController = new FileController(files, currentMember, tickets, mock(AuthSessionManager.class), projects);
+        assertThatThrownBy(() -> previewController.publicPreview("doc", "bad"))
+                .isInstanceOf(cn.wayuwa.wao.common.UnauthorizedException.class);
+        org.mockito.Mockito.verifyNoInteractions(files);
+        when(tickets.consume("doc", "valid")).thenReturn(true);
+        previewController.publicPreview("doc", "valid");
+        verify(files).preview("doc");
+    }
     private final FileService files = mock(FileService.class);
     private final CurrentMember currentMember = mock(CurrentMember.class);
     private final ProjectService projects = mock(ProjectService.class);

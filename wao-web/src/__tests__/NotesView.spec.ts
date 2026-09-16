@@ -13,6 +13,8 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import type { Doc } from '@/types'
+import { fetchPreference, savePreference } from '@/api/favorites'
+vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
 
 vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
 vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
@@ -33,6 +35,27 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('置顶跨次加载恢复，保存失败保留原排序和编辑草稿', async () => {
+    const data = useDataStore()
+    data.docs.old = doc('old', '较早小记', '2026-09-01T08:00:00')
+    data.docs.new = doc('new', '较新小记', '2026-09-02T08:00:00')
+    vi.mocked(fetchPreference).mockResolvedValueOnce('["old"]')
+    const wrapper = await view()
+    await flushPromises()
+    expect(wrapper.find('.note-card').attributes('data-note-id')).toBe('old')
+    await wrapper.find('textarea').setValue('未保存草稿')
+    vi.mocked(savePreference).mockRejectedValueOnce(new Error('网络错误'))
+    await wrapper.find('[data-note-id="old"] .note-actions button').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('置顶保存失败')
+    expect(wrapper.find('.note-card').attributes('data-note-id')).toBe('old')
+    expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('未保存草稿')
+    await wrapper.find('[data-note-id="old"] .note-actions button').trigger('click')
+    await flushPromises()
+    expect(savePreference).toHaveBeenLastCalledWith('note-pins-v1', '[]')
+    expect(wrapper.find('.note-card').attributes('data-note-id')).toBe('new')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.mocked(apiPatchDoc).mockReset()

@@ -24,6 +24,7 @@ import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import { docShareTarget, taskShareTarget } from '@/utils/share'
+import { fetchDoc } from '@/api/board'
 import { toast } from '@/composables/toast'
 import { renderMarkdown } from '@/utils/markdown'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
@@ -41,8 +42,17 @@ async function openSharedLink(event: MouseEvent) {
     ui.openTask(target.taskId, target.subId)
     return
   }
-  await data.ensureDocsLoaded()
-  const doc = data.docById(documentTarget!.docId)
+  let doc = data.docById(documentTarget!.docId)
+  if (!doc?.kbId) {
+    try {
+      doc = await fetchDoc(documentTarget!.docId)
+      data.docs[doc.id] = doc
+    } catch {
+      ui.closeChat()
+      await router.push(`/s/d/${encodeURIComponent(documentTarget!.docId)}`)
+      return
+    }
+  }
   if (!doc?.kbId) {
     toast('小记或文档无法读取，请确认仍有访问权限后重试', 'ri-error-warning-line')
     return

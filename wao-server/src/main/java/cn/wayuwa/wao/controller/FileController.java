@@ -88,6 +88,13 @@ public class FileController {
         return ApiResponse.ok(files.preview(id));
     }
 
+    /** 分享页消费一次性票据后读取受大小和编码限制的 Markdown。 */
+    @GetMapping("/{id}/public-preview")
+    public ApiResponse<FilePreviewDto> publicPreview(@PathVariable String id, @RequestParam String ticket) {
+        if (!tickets.consume(id, ticket)) throw new UnauthorizedException("预览需要重新验证，请重试");
+        return ApiResponse.ok(files.preview(id));
+    }
+
     /** 确认页要展示的文件信息（公开；只有文件名与大小，不含正文）。 */
     @GetMapping("/{id}/meta")
     public ApiResponse<FileItemDto> meta(@PathVariable String id) {
