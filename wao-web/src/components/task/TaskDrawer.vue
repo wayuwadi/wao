@@ -1062,7 +1062,7 @@ async function uploadAttachment(event: Event) {
               >
                 <i class="ri-draggable sub-grip" title="拖拽调整顺序"></i>
                 <span class="cbox circle" :class="{ done: r.sub.done }" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
-                <span class="check-text" :class="{ done: r.sub.done }">{{ r.sub.text }}</span>
+                <span class="sub-number wao-tabular">{{ r.idx + 1 }}.</span><span class="check-text" :class="{ done: r.sub.done }">{{ r.sub.text }}</span>
                 <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
                 <span class="spacer"></span>
                 <span v-if="dispatchedSubIds.has(r.key)" class="sub-dispatched" title="已单独派给 AI，主任务再派工时不会重复纳入">
@@ -1096,7 +1096,7 @@ async function uploadAttachment(event: Event) {
                   @click="showSub(r.idx)"
                 >
                   <span class="cbox circle done" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
-                  <span class="check-text done">{{ r.sub.text }}</span>
+                  <span class="sub-number wao-tabular">{{ r.idx + 1 }}.</span><span class="check-text done">{{ r.sub.text }}</span>
                   <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
                   <span class="spacer"></span>
                   <i class="ri-arrow-right-s-line sub-chev"></i>

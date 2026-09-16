@@ -28,6 +28,7 @@ import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import ProjectAssetsPanel from '@/components/files/ProjectAssetsPanel.vue'
 import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
+import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -632,9 +633,8 @@ watch(visibleTaskIds, (ids) => {
         <TaskBatchCopy :tasks="selectedCopyTasks" />
       </div>
       <div v-if="pdTaskView === 'list'" class="task-list-card">
+        <template v-for="t in openTasks" :key="t.id">
         <div
-          v-for="t in openTasks"
-          :key="t.id"
           class="trow"
           :class="{ dragging: dragId === t.id, settling: isSettling(t.id) }"
           draggable="true"
@@ -692,6 +692,8 @@ watch(visibleTaskIds, (ids) => {
           <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
         </div>
 
+        <InlineSubtasks :task-id="t.id" />
+        </template>
         <!-- 已完成默认收起 -->
         <button
           v-if="doneTasks.length"
@@ -705,7 +707,8 @@ watch(visibleTaskIds, (ids) => {
           <span class="done-hint">{{ deliveryStageFilter === 'verified' ? '筛选结果' : showDone ? '点击收起' : '点击展开' }}</span>
         </button>
         <template v-if="showDone || deliveryStageFilter === 'verified'">
-          <div v-for="t in doneTasks" :key="t.id" class="trow done" @click="openTask(t.id)">
+          <template v-for="t in doneTasks" :key="t.id">
+          <div class="trow done" @click="openTask(t.id)">
             <i class="drag-grip ri-draggable placeholder"></i>
             <button class="select-dot" :class="{ on: selectedTaskIds.includes(t.id) }" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i class="ri-checkbox-blank-circle-line"></i></button>
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
@@ -743,6 +746,8 @@ watch(visibleTaskIds, (ids) => {
             <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
             <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
           </div>
+          <InlineSubtasks :task-id="t.id" />
+          </template>
         </template>
 
         <div v-if="!ptasks.length" class="empty-inline">还没有任务——点右上角「新建任务」开始拆解</div>

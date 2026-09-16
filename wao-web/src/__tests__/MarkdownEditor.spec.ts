@@ -9,6 +9,10 @@ import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { CellSelection } from '@tiptap/pm/tables'
 import { createPinia, setActivePinia } from 'pinia'
 import { useUiStore } from '@/stores/ui'
+import { loadRotationImage } from '@/api/imageRotation'
+import { rotateImage } from '@/utils/rotateImage'
+vi.mock('@/api/imageRotation', () => ({ loadRotationImage: vi.fn() }))
+vi.mock('@/utils/rotateImage', () => ({ rotateImage: vi.fn() }))
 
 vi.mock('@/api/assistant', () => ({
   polishDocumentText: vi.fn<(text: string) => Promise<{ polished: string }>>(),
@@ -422,6 +426,44 @@ describe('MarkdownEditor（所见即所得）', () => {
     const restored = await mountEditor({ modelValue: markdown, imageControls: true })
     expect(restored.get('.md-body img').attributes('style')).toContain('width: 50%')
     restored.unmount()
+  })
+
+  it('旋转上传成功后新图片地址进入 Markdown，重新打开仍使用新图', async () => {
+    vi.mocked(loadRotationImage).mockResolvedValue(new Blob(['image']))
+    vi.mocked(rotateImage).mockResolvedValue(new File(['png'], 'rotated.png'))
+    const w = await mountEditor({ modelValue: '![截图](/api/images/original/raw)', imageControls: true })
+    const instance = w.vm as unknown as { editor: Editor; rotateSelectedImage: (clockwise: boolean) => Promise<void> }
+    instance.editor.commands.setNodeSelection(0)
+    const rotating = instance.rotateSelectedImage(true)
+    await flushPromises()
+    const upload = w.emitted('upload-image')!.slice(-1)[0] as [File, (url: string, name: string) => void]
+    expect(w.get('.md-body img').attributes('src')).toBe('/api/images/original/raw')
+    upload[1]('/api/images/rotated/raw', 'rotated.png')
+    await rotating
+    await nextTick()
+    const markdown = (w.emitted('update:modelValue') as [string][]).slice(-1)[0]![0]
+    expect(markdown).toContain('/api/images/rotated/raw')
+    w.unmount()
+    const restored = await mountEditor({ modelValue: markdown, imageControls: true })
+    expect(restored.get('.md-body img').attributes('src')).toBe('/api/images/rotated/raw')
+    restored.unmount()
+  })
+
+  it('旋转期间原节点被删除时不覆盖其它图片', async () => {
+    vi.mocked(loadRotationImage).mockResolvedValue(new Blob(['image']))
+    vi.mocked(rotateImage).mockResolvedValue(new File(['png'], 'rotated.png'))
+    const w = await mountEditor({ modelValue: '![一](/api/images/one/raw)\n\n![二](/api/images/two/raw)', imageControls: true })
+    const instance = w.vm as unknown as { editor: Editor; rotateSelectedImage: (clockwise: boolean) => Promise<void> }
+    instance.editor.commands.setNodeSelection(0)
+    const rotating = instance.rotateSelectedImage(true)
+    await flushPromises()
+    instance.editor.commands.deleteSelection()
+    const upload = w.emitted('upload-image')!.slice(-1)[0] as [File, (url: string, name: string) => void]
+    upload[1]('/api/images/rotated/raw', 'rotated.png')
+    await rotating
+    await nextTick()
+    expect(w.get('.md-body img').attributes('src')).toBe('/api/images/two/raw')
+    w.unmount()
   })
 
   it('文档图片可设置像素长宽并限制为安全范围', async () => {
