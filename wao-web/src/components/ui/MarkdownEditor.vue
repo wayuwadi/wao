@@ -39,6 +39,8 @@ import { common, createLowlight } from 'lowlight'
 import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
 import { polishDocumentText } from '@/api/assistant'
+import { loadRotationImage } from '@/api/imageRotation'
+import { rotateImage } from '@/utils/rotateImage'
 import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/editorSelectionTask'
 import { toast } from '@/composables/toast'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
@@ -825,6 +827,38 @@ function setImageScale(percent: 25 | 50 | 75 | 100) {
   imageWidthInput.value = ''
   imageHeightInput.value = ''
   imageSizeError.value = ''
+}
+
+const imageRotating = ref(false)
+async function rotateSelectedImage(clockwise: boolean) {
+  const e = editor.value
+  if (!e?.isActive('image') || imageRotating.value) return
+  const position = e.state.selection.from
+  const original = e.state.doc.nodeAt(position)
+  if (original?.type.name !== 'image' || typeof original.attrs.src !== 'string') return
+  imageRotating.value = true
+  imageSizeError.value = ''
+  // Map the node through intervening typing; a late upload must never replace another image.
+  let mappedPosition = position
+  let removed = false
+  const track = ({ transaction }: { transaction: import('@tiptap/pm/state').Transaction }) => {
+    const mapped = transaction.mapping.mapResult(mappedPosition, 1)
+    mappedPosition = mapped.pos
+    removed ||= mapped.deleted
+  }
+  e.on('transaction', track)
+  try {
+    const file = await rotateImage(await loadRotationImage(original.attrs.src), clockwise)
+    const url = await new Promise<string | null>(resolve => emit('upload-image', file, value => resolve(value)))
+    if (!url) throw new Error('旋转图片上传失败，请重试；原图仍保留')
+    const current = e.state.doc.nodeAt(mappedPosition)
+    if (e.isDestroyed || removed || current?.type.name !== 'image' || current.attrs.src !== original.attrs.src) {
+      throw new Error('原图片已被修改，本次旋转未覆盖新内容')
+    }
+    const attrs = { ...current.attrs, src: url, width: null, height: null }
+    e.view.dispatch(e.state.tr.setNodeMarkup(mappedPosition, undefined, attrs))
+  } catch (error) { imageSizeError.value = error instanceof Error ? error.message : '旋转失败，请重试' }
+  finally { e.off('transaction', track); imageRotating.value = false }
 }
 
 function applyImageDimensions() {
@@ -1663,6 +1697,8 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="imageSizeError" class="image-size-error" role="alert">{{ imageSizeError }}</div>
             <div class="image-size-actions">
+              <button type="button" :disabled="imageRotating" @click="rotateSelectedImage(false)">向左旋转 90°</button>
+              <button type="button" :disabled="imageRotating" @click="rotateSelectedImage(true)">{{ imageRotating ? '正在旋转并上传…' : '向右旋转 90°' }}</button>
               <button type="button" @click="clearImageSize">原始大小</button>
               <button type="button" @click="openSelectedImage"><i class="ri-zoom-in-line"></i>查看原图</button>
             </div>
