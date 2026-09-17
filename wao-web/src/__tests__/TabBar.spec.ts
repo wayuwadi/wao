@@ -110,7 +110,7 @@ describe('TabBar', () => {
     const wrapper = mount(TabBar, { global: { plugins: [pinia, testRouter()] } })
 
     await wrapper.findAll('.tab')[1]!.trigger('contextmenu', { clientX: 80, clientY: 60 })
-    await wrapper.findAll('.menu-item')[0]!.trigger('click')
+    await wrapper.findAll('.menu-item').find((item) => item.text().includes('重命名页签'))!.trigger('click')
     await wrapper.get('#tab-rename-input').setValue('核心项目')
     await wrapper.get('.rename-form').trigger('submit')
     expect(tabs.tabs[1]?.label).toBe('核心项目')
