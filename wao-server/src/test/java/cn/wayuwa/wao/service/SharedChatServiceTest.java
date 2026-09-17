@@ -52,6 +52,17 @@ class SharedChatServiceTest {
         when(reactions.selectList(any())).thenReturn(List.of());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"THUMBSUP", "HEART", "SMILE", "DONE", "APPLAUSE", "FIRE", "PARTY", "THANKS", "LAUGH", "WOW", "THINKING", "SAD", "LOVE", "STRONG", "OK", "EYES", "ROCKET", "HUNDRED", "COFFEE", "STAR"})
+    void supportsTwentyPersistedReactionTypes(String type) {
+        SharedChatMessageEntity message = new SharedChatMessageEntity();
+        message.setId("msg1"); message.setMemberId("m1"); message.setSource("WAO");
+        message.setCreatedAt(LocalDateTime.now()); when(messages.selectById("msg1")).thenReturn(message);
+        service.toggleReaction("m1", "msg1", type);
+        var saved = ArgumentCaptor.forClass(cn.wayuwa.wao.domain.SharedChatReactionEntity.class);
+        verify(reactions).insert(saved.capture()); assertThat(saved.getValue().getEmojiType()).isEqualTo(type);
+    }
+
     @Test
     void persistsTextAndScreenshotLocally() {
         ImageBlobEntity image = new ImageBlobEntity();

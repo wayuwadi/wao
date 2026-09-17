@@ -38,7 +38,23 @@ public record TaskDto(
         String createdAt,
         /** 关联的人工上传 HTML 托管页 id；历史任务缺省为空。 */
         List<String> hostedPages,
-        /** 服务端分配的永久编号，从 0 开始。 */ Long number) {
+        /** 服务端分配的永久编号，从 0 开始。 */ Long number, String subtaskVersion) {
+
+    /** 兼容既有服务端构造调用。 */
+    public TaskDto(String id, String title, String project, String status, String pr, String owner,
+            List<String> parts, String start, String due, String waiting, String desc,
+            List<Step> steps, List<Step> subs, List<FileRef> files, List<String> docs,
+            List<TaskLink> linkTasks, List<CommentDto> comments, List<CustomProp> custom,
+            List<Activity> activity, List<ImageRef> images, String createdBy, String completedAt,
+            String groupId, String startAt, String endAt, List<PdcaCycle> pdcaCycles, String createdAt,
+            List<String> hostedPages, Long number) {
+        this(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, null);
+    }
+
+    /** 返回携带子任务保存前置条件的副本。 */
+    public TaskDto withSubtaskVersion(String version) {
+        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, version);
+    }
 
     /** 兼容尚未引入固定编号的调用；外部编号一律由服务端重算。 */
     public TaskDto(String id, String title, String project, String status, String pr, String owner,
@@ -53,7 +69,7 @@ public record TaskDto(
 
     /** 返回带服务端编号与规范子任务身份的副本。 */
     public TaskDto withNumbers(Long number, List<Step> subs) {
-        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number);
+        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion);
     }
 
     /** 兼容尚未引入 HTML 关联的既有调用。 */

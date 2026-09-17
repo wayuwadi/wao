@@ -903,3 +903,21 @@ describe('MarkdownEditor（所见即所得）', () => {
     spy.mockRestore()
   })
 })
+
+
+describe('跨应用复制选区', () => {
+  it('只复制选中的正文，HTML 保持标题语义，纯文本保留 Markdown', async () => {
+    const w = await mountEditor({ modelValue: '## 标题\n\n不要复制的后文' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setTextSelection({ from: 1, to: 3 })
+    const values: Record<string, string> = {}
+    const event = new Event('copy', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { setData: (type: string, value: string) => values[type] = value } })
+    w.get('.tiptap').element.dispatchEvent(event)
+    expect(values['text/html']).toContain('<h2')
+    expect(values['text/plain']).toContain('## 标题')
+    expect(values['text/plain']).not.toContain('后文')
+    expect(event.defaultPrevented).toBe(true)
+    w.unmount()
+  })
+})

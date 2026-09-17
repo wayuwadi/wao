@@ -78,6 +78,15 @@ async function mountView(props: Record<string, unknown> = {}, realEditor = false
 }
 
 describe('ChatView', () => {
+  it('表情选择器提供 20 个选项并提交所选类型', async () => {
+    const wrapper = await mountView()
+    await wrapper.get('.reaction-picker-wrap > button').trigger('click')
+    const choices = wrapper.findAll('.reaction-picker button')
+    expect(choices).toHaveLength(20)
+    await choices[19]!.trigger('click'); await flushPromises()
+    expect(toggleSharedChatReaction).toHaveBeenCalledWith('msg1', 'STAR')
+  })
+
   it('修改本人消息，失败保留正文且轮询不覆盖编辑草稿，重试成功不新增消息', async () => {
     useSessionStore().$patch({ account: { member: message.author } } as never)
     const wrapper = await mountView()

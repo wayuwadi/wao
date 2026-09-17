@@ -42,6 +42,7 @@ import { polishDocumentText } from '@/api/assistant'
 import { loadRotationImage } from '@/api/imageRotation'
 import { rotateImage } from '@/utils/rotateImage'
 import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/editorSelectionTask'
+import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
 import { toast } from '@/composables/toast'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
@@ -362,6 +363,19 @@ const editor = useEditor({
     MermaidBlock,
   ],
   editorProps: {
+    handleDOMEvents: {
+      copy: (view, event) => {
+        if (!event.clipboardData || view.state.selection.empty) return false
+        const slice = view.state.selection.content()
+        const { dom } = view.serializeForClipboard(slice)
+        const markdown = editor.value?.markdown?.serialize({ type: 'doc', content: slice.content.toJSON() })
+          || view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '\n')
+        event.clipboardData.setData('text/html', portableClipboardHtml(dom.innerHTML))
+        event.clipboardData.setData('text/plain', markdown)
+        event.preventDefault()
+        return true
+      },
+    },
     transformPastedHTML: sanitizePastedHtml,
     handlePaste: (_view, event) => consumeImages(event.clipboardData),
     handleDrop: (_view, event) => consumeImages((event as DragEvent).dataTransfer),
@@ -1526,7 +1540,13 @@ function appendMarkdown(text: string): boolean {
   if (!e) return false
   return e.commands.insertContentAt(e.state.doc.content.size, text, { contentType: 'markdown' })
 }
-defineExpose({ clearSentContent, appendMarkdown })
+async function copyFormatted() {
+  const e = editor.value
+  if (!e) return
+  const ok = await copyRichContent(e.getHTML(), e.getMarkdown())
+  toast(ok ? '已复制，支持富文本与 Markdown 粘贴' : '复制失败，请手动选择复制', ok ? 'ri-file-copy-line' : 'ri-error-warning-line')
+}
+defineExpose({ clearSentContent, appendMarkdown, copyFormatted })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(

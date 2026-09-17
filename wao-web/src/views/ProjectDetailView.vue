@@ -18,6 +18,7 @@ import {
   taskDeliveryStage,
   taskStatusesForDeliveryStage,
 } from '@/utils/domain'
+import { readSubtaskDrag } from '@/utils/subtaskTree'
 import { toast } from '@/composables/toast'
 import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
@@ -144,7 +145,14 @@ function onDropStatus(status: TaskStatus) {
   const t = data.taskById(id)
   if (t && t.status !== status) data.patchTask(id, { status }, `将状态改为「${status}」`)
 }
-function onDropReorder(overId: string) {
+function onDropReorder(overId: string, event?: DragEvent) {
+  const payload = event && readSubtaskDrag(event)
+  if (payload) {
+    event?.preventDefault()
+    event?.stopPropagation()
+    void data.moveSubtask(payload.taskId, payload.subId, overId).catch(error => toast(error.message, 'ri-error-warning-line'))
+    return
+  }
   const id = dragId.value
   dragId.value = null
   if (id) data.reorderTask(id, overId)
@@ -677,7 +685,7 @@ watch(visibleTaskIds, (ids) => {
                 @dragstart="onDragStart(t.id, $event)"
                 @dragend="dragId = null"
                 @dragover.prevent
-                @drop="onDropReorder(t.id)"
+                @drop="onDropReorder(t.id, $event)"
                 @click="openTask(t.id)"
               >
                 <td>
@@ -841,7 +849,7 @@ watch(visibleTaskIds, (ids) => {
                   @dragstart="onDragStart(t.id, $event)"
                   @dragend="dragId = null"
                   @dragover.prevent
-                  @drop="onDropReorder(t.id)"
+                  @drop="onDropReorder(t.id, $event)"
                   @click="openTask(t.id)"
                 >
                   <td>
@@ -1062,7 +1070,7 @@ watch(visibleTaskIds, (ids) => {
             @dragstart="onDragStart(t.id, $event)"
             @dragend="dragId = null"
             @dragover.prevent.stop
-            @drop.stop="onDropGroup(g.id, t.id)"
+            @drop.stop="readSubtaskDrag($event) ? onDropReorder(t.id, $event) : onDropGroup(g.id, t.id)"
           >
             <button class="select-dot" :class="{ on: selectedTaskIds.includes(t.id) }" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i class="ri-checkbox-blank-circle-line"></i></button>
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)">
@@ -1125,7 +1133,7 @@ watch(visibleTaskIds, (ids) => {
             <div
               v-for="t in col.items"
               :key="t.id"
-              class="board-card"
+              class="board-card" @dragover.prevent @drop.stop="onDropReorder(t.id, $event)"
               :class="{ dragging: dragId === t.id }"
               draggable="true"
               @click="openTask(t.id)"

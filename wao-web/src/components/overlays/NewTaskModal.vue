@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -27,8 +28,10 @@ function dueDate(label: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+const route = useRoute()
+const contextProject = ui.modalProject || (route?.name === 'project' ? String(route.params.id || '') : '')
 const source = ui.modalTaskSeed
-const DRAFT_KEY = source?.draftKey || (ui.modalPriority
+const DRAFT_KEY = source?.draftKey || (contextProject ? `wao-new-task-project-${contextProject}-draft-v1` : '') || (ui.modalPriority
   ? `wao-new-task-quadrant-${ui.modalPriority}-draft-v1` : 'wao-new-task-draft-v1')
 type Draft = {
   title: string; project: string; owner: string; pr: Priority; due: string; desc: string
@@ -47,26 +50,32 @@ const title = ref(draft.title ?? source?.title ?? '')
 // modalProject 未预选时是空串（不是 null），必须用 || 兜底到第一个进行中的项目，
 // 否则从顶栏全局入口建出的任务 project 为空，在所有项目列表里都看不见。
 const project = ref(
-  draft.project || ui.modalProject || (source ? '' : preferences.defaultProject || openProjects.value[0]?.id || ''),
+  draft.project || contextProject || (source ? '' : preferences.defaultProject || openProjects.value[0]?.id || ''),
 )
 
 /**
  * 真实项目列表到达后，只有当前预选项目不在列表中时才回退到首个可用项目。
  * 这样既能清理 fixtures / 过期草稿留下的伪 id，也不会覆盖用户已经选中的真实项目。
  */
+const projectChosenByUser = ref(false)
 watch(openProjects, (projects) => {
+  if (!projectChosenByUser.value && !draft.project && contextProject && projects.some(item => item.id === contextProject)) {
+    project.value = contextProject
+    return
+  }
   if (!projects.some((item) => item.id === project.value)) {
     if (source) {
       project.value = projects.some((item) => item.id === ui.modalProject) ? ui.modalProject : ''
       return
     }
-    project.value = projects.some((item) => item.id === preferences.defaultProject)
+    project.value = projects.some((item) => item.id === contextProject) ? contextProject
+      : projects.some((item) => item.id === preferences.defaultProject)
       ? preferences.defaultProject
       : projects[0]?.id || ''
   }
 }, { immediate: true })
 watch(() => preferences.defaultProject, (value) => {
-  if (!source && !draft.project && !ui.modalProject && value && openProjects.value.some((item) => item.id === value)) {
+  if (!source && !draft.project && !contextProject && value && openProjects.value.some((item) => item.id === value)) {
     project.value = value
   }
 })
@@ -220,7 +229,7 @@ function requestClose() {
     <p v-if="source" class="source-note">来自：<a v-if="source.sourceUrl" :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a><span v-else>{{ source.sourceTitle }}</span>。原文保留不变。</p>
     <div class="label">所属项目 <span v-if="source && !project" class="label-hint">请选择要存入的项目</span></div>
     <div class="project-select-row">
-      <select v-model="project" aria-label="所属项目" class="compact-select">
+      <select v-model="project" @change="projectChosenByUser = true" aria-label="所属项目" class="compact-select">
         <option value="" disabled>请选择所属项目</option>
         <option v-for="p in openProjects" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>

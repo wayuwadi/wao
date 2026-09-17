@@ -1146,3 +1146,10 @@ V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库�
 `work_item_number` 保存任务及子任务的永久展示编号：`sequence_id BIGINT AUTO_INCREMENT PRIMARY KEY`（从 1 开始，API 输出减 1），`item_key VARCHAR(512)` 使用 utf8mb4_bin 唯一索引。
 任务 key 为 `taskId/`，子任务 key 为 `taskId/subId`。历史缺少子任务 id 时使用兼容身份 `taskId#index`，读取结果返回这个稳定 id，后续保存写入任务 JSON。
 迁移按任务 id、子任务原顺序回填；运行时按最多 500 个身份批量查找和幂等分配。删除工作项不删除注册项，不复用旧编号；并发分配允许跳号。编号只读，客户端传入的 number 不影响服务端结果。
+
+
+### 子任务树补充（2026-09-17）
+
+`task.detail_json.subs` 保持平铺数组，增加可空 `parentId`、`owner`、`due`（yyyy-MM-dd）。父标识只引用同一数组内的稳定子任务 id，不允许循环；空父标识为根。跨任务移动在单事务内修改两个 JSON，并迁移 `work_item_number.item_key`，保留编号。无需新增表或 migration。删除父节点时其直接孩子提升到原父节点层级。
+
+移动后的分享路径使用新主任务 id，旧的主任务路径不自动重定向；历史 AI 执行仍归属原主任务。任一任务有未结束的 AI 执行时拒绝移动。新的页面全文保存回传 `subtaskVersion` 摘要并在行锁内校验，避免过期关系覆盖；旧客户端未携带摘要的兼容保存不具有该冲突保护。

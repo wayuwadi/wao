@@ -181,6 +181,22 @@ const REACTIONS = [
   { type: 'HEART', emoji: '❤️' },
   { type: 'SMILE', emoji: '😊' },
   { type: 'DONE', emoji: '✅' },
+  { type: 'APPLAUSE', emoji: '👏' },
+  { type: 'FIRE', emoji: '🔥' },
+  { type: 'PARTY', emoji: '🎉' },
+  { type: 'THANKS', emoji: '🙏' },
+  { type: 'LAUGH', emoji: '😂' },
+  { type: 'WOW', emoji: '😮' },
+  { type: 'THINKING', emoji: '🤔' },
+  { type: 'SAD', emoji: '😢' },
+  { type: 'LOVE', emoji: '😍' },
+  { type: 'STRONG', emoji: '💪' },
+  { type: 'OK', emoji: '👌' },
+  { type: 'EYES', emoji: '👀' },
+  { type: 'ROCKET', emoji: '🚀' },
+  { type: 'HUNDRED', emoji: '💯' },
+  { type: 'COFFEE', emoji: '☕' },
+  { type: 'STAR', emoji: '⭐' },
 ]
 
 const session = useSessionStore()
@@ -1331,4 +1347,8 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 16px #0002;
   cursor: pointer;
 }
+</style>
+
+<style scoped>
+.reaction-picker { display: grid; grid-template-columns: repeat(5, 32px); max-width: calc(100vw - 32px); }
 </style>

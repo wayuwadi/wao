@@ -6,6 +6,9 @@ import org.apache.ibatis.annotations.*;
 /** Permanent display number registry; deleted numbers are retained. */
 @Mapper
 public interface WorkItemNumberMapper {
+    /** 跨主任务移动时保留已分配的展示编号。 */
+    @Update("UPDATE work_item_number SET item_key = #{target} WHERE item_key = #{source}")
+    int move(@Param("source") String source, @Param("target") String target);
     record Entry(String itemKey, long number) {}
 
     @Select("""

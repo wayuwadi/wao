@@ -33,6 +33,7 @@ import {
   apiPauseJob,
   apiDeleteImage,
   apiPutTask,
+  apiMoveSubtask,
   apiReauthJob,
   apiUploadImage,
   apiUploadFile,
@@ -1226,7 +1227,12 @@ export const useDataStore = defineStore('data', () => {
    * 串行写透最新任务快照。写入期间若又有修改，旧请求完成后立刻续写最新版本；
    * 后台轮询在草稿确认前也不会覆盖本地任务。
    */
+  const movingSubtasks = ref(false)
+  let preparingSubtaskMove = false
+  const lockedSubtaskIds = new Set<string>()
+
   async function drainTask(id: string): Promise<void> {
+    if (lockedSubtaskIds.has(id)) return
     if (taskPersisting[id]) return
     const task = taskById(id)
     if (!task) return
@@ -1238,6 +1244,7 @@ export const useDataStore = defineStore('data', () => {
       const saved = await apiPutTask(id, snapshot)
       if (requestMember !== useSessionStore().userId) return
       // Merge only server-owned metadata even if another edit happened during this request.
+      task.subtaskVersion = saved.subtaskVersion
       task.number = saved.number
       for (const sub of task.subs) {
         const canonical = saved.subs?.find(s => s.id === sub.id)
@@ -1614,12 +1621,14 @@ export const useDataStore = defineStore('data', () => {
    * @param text   子任务标题
    * @return 新子任务的标识，标题为空时返回 null
    */
-  function addSub(taskId: string, text: string): string | null {
+  function addSub(taskId: string, text: string, parentId?: string | null): string | null {
+    if (lockedSubtaskIds.has(taskId)) return null
     const t = taskById(taskId)
     const title = text.trim()
     if (!t || !title) return null
     const id = uid('s')
-    t.subs.unshift({ id, text: title, done: false, desc: '', images: [] })
+    if (parentId && !t.subs.some(sub => sub.id === parentId)) return null
+    t.subs.unshift({ id, text: title, done: false, desc: '', images: [], parentId: parentId || null })
     logActivity(t, `添加了子任务「${title}」`)
     persistTask(taskId)
     return id
@@ -1627,6 +1636,7 @@ export const useDataStore = defineStore('data', () => {
 
   /** 把一条子任务移动到另一条之前；稳定 id 保证分享链接不会因排序失效。 */
   function reorderSub(taskId: string, dragSubId: string, overSubId: string) {
+    if (lockedSubtaskIds.has(taskId)) return
     if (dragSubId === overSubId) return
     const t = taskById(taskId)
     if (!t) return
@@ -1651,6 +1661,7 @@ export const useDataStore = defineStore('data', () => {
    * @param patch  要合并的字段
    */
   function updateSub(taskId: string, subId: string, patch: Partial<TaskStep>) {
+    if (lockedSubtaskIds.has(taskId)) return
     const t = taskById(taskId)
     const sub = subById(taskId, subId)
     if (!t || !sub) return
@@ -1664,17 +1675,53 @@ export const useDataStore = defineStore('data', () => {
 
   /** 删除子任务。 */
   function removeSub(taskId: string, subId: string) {
+    if (lockedSubtaskIds.has(taskId)) return
     const t = taskById(taskId)
     if (!t) return
     const idx = t.subs.findIndex((s, i) => subKey(taskId, s, i) === subId)
     if (idx < 0) return
     const [removed] = t.subs.splice(idx, 1)
+    for (const child of t.subs) if (child.parentId === subId) child.parentId = removed?.parentId || null
     logActivity(t, `删除了子任务「${removed!.text}」`, 'ri-delete-bin-line')
     persistTask(taskId)
   }
 
+  /** 等待草稿保存后发起原子迁移；网络失败保留源与目标的全部内容。 */
+  async function moveSubtask(sourceId: string, subId: string, targetId: string, parentId?: string | null): Promise<void> {
+    if (movingSubtasks.value || preparingSubtaskMove) throw new Error('正在移动子任务，请稍后再试')
+    const source = taskById(sourceId), target = taskById(targetId)
+    if (!source || !target) throw new Error('任务不存在或尚未加载')
+    preparingSubtaskMove = true
+    try {
+      await Promise.all([...new Set([sourceId, targetId])].map(flushTask))
+      if ([sourceId, targetId].some(id => taskSaveState(id) === 'error')) throw new Error('请先重试保存任务，再移动子任务')
+      movingSubtasks.value = true
+      lockedSubtaskIds.add(sourceId)
+      lockedSubtaskIds.add(targetId)
+      const saved = await apiMoveSubtask(clone(source), subId, clone(target), parentId)
+      for (const item of saved) {
+        const local = taskById(item.id)
+        if (local) {
+          local.subs = item.subs
+          local.subtaskVersion = item.subtaskVersion
+          taskTouchedAt[item.id] = Date.now()
+          if (taskSaveState(item.id) === 'saving') storeTaskDraft(local)
+          else clearTaskDraft(item.id)
+        }
+      }
+    } finally {
+      preparingSubtaskMove = false
+      movingSubtasks.value = false
+      lockedSubtaskIds.clear()
+      for (const id of new Set([sourceId, targetId])) {
+        if (taskSaveState(id) === 'saving') persistTask(id)
+      }
+    }
+  }
+
   /** 给子任务追加一张图片。 */
   function addSubImage(taskId: string, subId: string, image: ImageRef) {
+    if (lockedSubtaskIds.has(taskId)) return
     const sub = subById(taskId, subId)
     if (!sub) return
     sub.images = [...(sub.images ?? []), image]
@@ -1683,6 +1730,7 @@ export const useDataStore = defineStore('data', () => {
 
   /** 移除子任务的第 idx 张图片。 */
   function removeSubImage(taskId: string, subId: string, idx: number) {
+    if (lockedSubtaskIds.has(taskId)) return
     const sub = subById(taskId, subId)
     if (!sub?.images) return
     sub.images = sub.images.filter((_, i) => i !== idx)
@@ -2102,7 +2150,7 @@ export const useDataStore = defineStore('data', () => {
     ensureDocsLoaded, refreshDocs,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     taskSaveState, taskSavedAt, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
-    subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
+    movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,
     hostedPages, hostedPageLoadState, hostedPageLoadError, refreshHostedPages, saveHostedPage, deleteHostedPage,

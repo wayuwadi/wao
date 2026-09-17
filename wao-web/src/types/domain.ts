@@ -106,6 +106,12 @@ export interface Project {
 }
 
 export interface TaskStep {
+  /** 同一主任务内的父子任务 id；空值表示根节点。 */
+  parentId?: string | null
+  /** 负责人真实成员 id。 */
+  owner?: string | null
+  /** 截止日，yyyy-MM-dd。 */
+  due?: string | null
   /** 服务端固定编号；未保存时为空。 */
   number?: number
   text: string
@@ -268,6 +274,7 @@ export interface Idea {
 }
 
 export interface Task {
+  subtaskVersion?: string
   number?: number
   id: string
   title: string

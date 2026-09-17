@@ -206,8 +206,14 @@ public class TaskService {
      * @param memberId 当前操作人成员 id，用于「收集中」通知里排掉自己
      * @return 保存后的任务
      */
+    @org.springframework.transaction.annotation.Transactional
     public TaskDto replace(String id, TaskDto dto, String memberId) {
         TaskEntity previous = taskMapper.selectById(id);
+        if (dto.subtaskVersion() != null) {
+            previous = taskMapper.lockById(id);
+            if (previous != null && !dto.subtaskVersion().equals(SubtaskTree.version(parse(previous.getDetailJson()).subs())))
+                throw new cn.wayuwa.wao.common.ConflictException("子任务已被其他窗口更新，请保留草稿并刷新后重试");
+        }
         if (previous != null) {
             requireVisible(id, memberId);
         } else {
@@ -243,6 +249,7 @@ public class TaskService {
         String endAt = dateTime(dto.endAt());
         validateRange(startAt, endAt);
         List<PdcaCycle> pdcaCycles = validatePdca(dto.pdcaCycles());
+        SubtaskTree.validate(dto.subs());
         TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
                 dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images(),
                 dto.groupId(), startAt, endAt, pdcaCycles, dto.hostedPages());
@@ -647,7 +654,7 @@ public class TaskService {
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
                 d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()),
-                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages()));
+                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs()));
     }
 
     /**

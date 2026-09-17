@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const editorRef = ref<{ copyFormatted: () => Promise<void> } | null>(null)
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -178,9 +179,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 
 <template>
   <section ref="composerElement" class="note-composer" :class="{ fullscreen }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
-    <div class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? '继续编辑' : '此刻，想记点什么？' }}</b><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
+    <div class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? '继续编辑' : '此刻，想记点什么？' }}</b><button type="button" title="复制完整内容并保留格式" @click="editorRef?.copyFormatted()">复制内容</button><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
-      <MarkdownEditor :key="id" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls
+      <MarkdownEditor ref="editorRef" :key="id" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls
         :menu-z-index="fullscreen ? 2200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
