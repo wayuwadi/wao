@@ -21,6 +21,7 @@ import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
+import { useFloatingTabsStore } from '@/stores/floatingTabs'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
@@ -43,6 +44,7 @@ const route = useRoute()
 const router = useRouter()
 const nav = useNavStore()
 const tabs = useTabsStore()
+const floatingTabs = useFloatingTabsStore()
 const assistantTarget = ref<HTMLElement | null>(null)
 const ui = useUiStore()
 const data = useDataStore()
@@ -179,6 +181,7 @@ function needsDocs() {
     route.name === 'kb' ||
     route.meta.module === 'knowledge' ||
     route.meta.module === 'notes' ||
+    floatingTabs.keys.some((key) => key.startsWith('proj:') || key.startsWith('kb:') || key === 'knowledge' || key === 'notes') ||
     !!ui.openTaskId ||
     ui.searchOpen
   )
@@ -186,7 +189,7 @@ function needsDocs() {
 function ensureVisibleHeavyDomains() {
   if (needsDocs()) void data.ensureDocsLoaded()
 }
-watch(() => [route.name, route.meta.module], ensureVisibleHeavyDomains, { immediate: true })
+watch(() => [route.name, route.meta.module, ...floatingTabs.keys], ensureVisibleHeavyDomains, { immediate: true })
 
 async function reloadAll() {
   await data.hydrate()
