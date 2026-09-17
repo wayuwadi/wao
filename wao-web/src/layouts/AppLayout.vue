@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterView, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import TabWorkspace from '@/components/tabs/TabWorkspace.vue'
 import NavigationContext from '@/components/nav/NavigationContext.vue'
 import TopMenuBar from '@/components/nav/TopMenuBar.vue'
 import SideNav from '@/components/nav/SideNav.vue'
@@ -42,6 +43,7 @@ const route = useRoute()
 const router = useRouter()
 const nav = useNavStore()
 const tabs = useTabsStore()
+const assistantTarget = ref<HTMLElement | null>(null)
 const ui = useUiStore()
 const data = useDataStore()
 const preferences = usePreferenceStore()
@@ -138,6 +140,7 @@ watch(
   () => {
     const tab = tabFromRoute(route)
     if (tab) {
+      tab.path = route.fullPath
       if (route.meta.tabKind === 'external') {
         const app = nav.externalAppById(String(route.params.appId))
         if (app) {
@@ -362,9 +365,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <div class="page-stage">
           <PageSectionNav :root="pageBodyRef" :scroll-container="contentRef" />
           <div ref="pageBodyRef" class="page-body">
-            <RouterView />
+            <TabWorkspace @assistant-target="assistantTarget = $event" />
             <!-- 只挂在受保护应用壳内；同一实例在常驻页面与浮层之间移动，保持接收中的回复。 -->
-            <AiAssistantPanel v-model="ui.assistantOpen" :embedded="route.name === 'chatgpt'" />
+            <Teleport :to="assistantTarget || 'body'" :disabled="!assistantTarget">
+              <AiAssistantPanel v-model="ui.assistantOpen" :embedded="!!assistantTarget" />
+            </Teleport>
           </div>
         </div>
         <SiteFooter reserve-mobile-actions />

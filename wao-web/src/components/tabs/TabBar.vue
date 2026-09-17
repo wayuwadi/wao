@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTabsStore } from '@/stores/tabs'
+import { useFloatingTabsStore } from '@/stores/floatingTabs'
 import type { Tab } from '@/types'
 
 const tabs = useTabsStore()
+const windows = useFloatingTabsStore()
 const router = useRouter()
 
 const menu = reactive({ open: false, x: 0, y: 0, key: '' })
@@ -56,8 +58,35 @@ const menuTargetPinned = computed(
 )
 
 function selectTab(tab: Tab) {
+  if (windows.keys.includes(tab.key)) {
+    windows.front = tab.key
+    return
+  }
   router.push(tab.path)
 }
+
+function floatMenuTab() {
+  windows.float(menu.key)
+  closeMenu()
+}
+
+function onWorkspaceDragOver(event: DragEvent) {
+  if (dragKey.value && event.target instanceof Element && !event.target.closest('.tabbar-shell')) event.preventDefault()
+}
+function onWorkspaceDrop(event: DragEvent) {
+  if (!dragKey.value || !(event.target instanceof Element) || event.target.closest('.tabbar-shell')) return
+  event.preventDefault()
+  windows.float(dragKey.value)
+  onDragEnd()
+}
+onMounted(() => {
+  document.addEventListener('dragover', onWorkspaceDragOver)
+  document.addEventListener('drop', onWorkspaceDrop)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('dragover', onWorkspaceDragOver)
+  document.removeEventListener('drop', onWorkspaceDrop)
+})
 
 // ---- 拖拽排序 ----
 // 页签顺序是用户自己的动线，堆到第七八个时想把常看的挪到前面，只能靠拖。
@@ -165,7 +194,7 @@ function mCloseUnpinned() {
           over: overKey === tab.key,
         }"
         :draggable="tab.key !== 'home'"
-        title="拖动可调整顺序；右键：置顶 / 关闭当前 / 左边 / 右边 / 全部"
+        title="栏内拖动排序，拖出栏外悬浮；右键设置悬浮、置顶或关闭"
         @click="selectTab(tab)"
         @contextmenu.prevent="openMenu($event, tab)"
         @dragstart="onDragStart(tab, $event)"
@@ -175,6 +204,7 @@ function mCloseUnpinned() {
       >
         <i :class="tab.icon"></i>
         <span class="tab-label">{{ tab.label }}</span>
+        <i v-if="windows.keys.includes(tab.key)" class="ri-picture-in-picture-line" title="已悬浮，点击置前"></i>
         <i v-if="tab.pinned" class="tab-pin ri-pushpin-fill" title="已置顶，批量关闭时保留"></i>
         <button v-if="tab.closable" class="close" title="关闭" @click.stop="closeTab(tab)">
           <i class="ri-close-line"></i>
@@ -198,6 +228,9 @@ function mCloseUnpinned() {
         </div>
       </form>
       <template v-else>
+        <button class="menu-item" @click="floatMenuTab">
+          <i class="ri-picture-in-picture-line"></i>{{ windows.keys.includes(menu.key) ? '显示悬浮窗口' : '设为悬浮' }}
+        </button>
         <button class="menu-item" :disabled="!menuTargetClosable" @click="mRename">
           <i class="ri-edit-line"></i>重命名页签
         </button>
