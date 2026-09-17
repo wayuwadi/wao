@@ -40,7 +40,7 @@ public class WorkItemNumberService {
             for (int i = 0; i < task.subs().size(); i++) {
                 Step sub = task.subs().get(i);
                 String id = subId(task, sub, i);
-                subs.add(new Step(sub.text(), sub.done(), id, sub.desc(), sub.images(), numbers.get(task.id() + "/" + id)));
+                subs.add(new Step(sub.text(), sub.done(), id, sub.desc(), sub.images(), numbers.get(task.id() + "/" + id), sub.parentId(), sub.owner(), sub.due()));
             }
             return task.withNumbers(numbers.get(task.id() + "/"), subs);
         }).toList();

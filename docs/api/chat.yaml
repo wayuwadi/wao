@@ -64,7 +64,7 @@ paths:
       summary: 切换当前成员的表情回复
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, maxLength: 32 } }
-        - { name: emojiType, in: path, required: true, schema: { type: string, enum: [THUMBSUP, HEART, SMILE, DONE] } }
+        - { name: emojiType, in: path, required: true, schema: { type: string, enum: [THUMBSUP, HEART, SMILE, DONE, APPLAUSE, FIRE, PARTY, THANKS, LAUGH, WOW, THINKING, SAD, LOVE, STRONG, OK, EYES, ROCKET, HUNDRED, COFFEE, STAR] } }
       responses:
         "200": { description: WAO 表情事实落库后返回最新聚合 }
 components:

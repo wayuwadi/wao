@@ -53,6 +53,17 @@ class TaskServiceTest {
     }
 
     @Test
+    void staleSubtaskVersionCannotOverwriteMovedTree() {
+        when(mapper.selectById("t1")).thenReturn(todo());
+        when(mapper.lockById("t1")).thenReturn(todo());
+        TaskDto dto = mock(TaskDto.class);
+        when(dto.subtaskVersion()).thenReturn("older-tree");
+        assertThatThrownBy(() -> service.replace("t1", dto, "wg"))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+        verify(mapper, never()).updateById(any(TaskEntity.class));
+    }
+
+    @Test
     void patchStatusLogsActivity() {
         when(mapper.selectById("t1")).thenReturn(todo());
         when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);

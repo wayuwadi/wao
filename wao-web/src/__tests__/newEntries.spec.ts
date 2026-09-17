@@ -28,7 +28,7 @@ function router() {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
-      { path: '/projects/:id', component: { template: '<div />' } },
+      { path: '/projects/:id', name: 'project', component: { template: '<div />' } },
       { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
     ],
   })
@@ -112,6 +112,20 @@ describe('新建任务的所属项目', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     seedDataStore()
+  })
+
+  it('项目页入口不被旧全局草稿覆盖，重开恢复该项目草稿', async () => {
+    const data = useDataStore(), project = data.projects[1]!
+    localStorage.setItem('wao-new-task-draft-v1', JSON.stringify({ title: '全局草稿', project: data.projects[0]!.id }))
+    const r = router(); await r.push(`/projects/${project.id}`)
+    const first = mount(NewTaskModal, { global: { plugins: [r] } })
+    expect(first.get('[aria-label="所属项目"]').element).toHaveProperty('value', project.id)
+    expect(first.get('.title-input').element).toHaveProperty('value', '')
+    await first.get('.title-input').setValue('项目草稿'); first.unmount()
+    await r.push(`/projects/${project.id}`)
+    const second = mount(NewTaskModal, { global: { plugins: [r] } })
+    expect(second.get('.title-input').element).toHaveProperty('value', '项目草稿')
+    expect(JSON.parse(localStorage.getItem('wao-new-task-draft-v1')!).title).toBe('全局草稿'); second.unmount()
   })
 
   it('真实项目列表替换启动 fixtures 后，首页入口会改选真实项目', async () => {

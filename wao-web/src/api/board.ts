@@ -477,3 +477,10 @@ export const apiDeleteVaultItem = (id: string) => del(`/api/vault/items/${id}`)
 /** 按需解密并返回一次密码明文；未设置密码的条目返回 null。 */
 export const apiRevealVaultItem = (id: string) =>
   post<{ secret: string | null }>(`/api/vault/items/${id}/reveal`)
+
+/** 整棵子树关系调整由服务器事务提交，不拆成两次任务保存。 */
+export async function apiMoveSubtask(source: Task, subId: string, target: Task, parentId?: string | null): Promise<Task[]> {
+  return post(`/api/tasks/${encodeURIComponent(source.id)}/subs/${encodeURIComponent(subId)}/move`, {
+    targetTaskId: target.id, parentId: parentId || null, expectedSourceSubs: source.subs, expectedTargetSubs: target.subs,
+  })
+}

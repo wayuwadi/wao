@@ -11,6 +11,9 @@ import { toast } from '@/composables/toast'
 // 异步加载：编辑器带着 ProseMirror（gzip 约 110KB），只有真正打开任务详情时才需要，
 // 不该压在首屏包里。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
+import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
+import SubtaskProperties from '@/components/task/SubtaskProperties.vue'
+import { subtaskRows, SUBTASK_DRAG_TYPE, readSubtaskDrag } from '@/utils/subtaskTree'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { chatShareLink, shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
@@ -447,7 +450,7 @@ const { begin: beginSettle, cancel: cancelSettle, isSettling } = useSettle()
 
 /** 带上原始下标的子任务视图 —— 过滤后仍要能定位回 task.subs 里的那一条。 */
 const subRows = computed(() =>
-  (task.value?.subs ?? []).map((sub, idx) => ({ sub, idx, key: subKeyOf(idx) })),
+  subtaskRows(task.value?.id || '', task.value?.subs || []),
 )
 const openSubRows = computed(() => subRows.value.filter((r) => !r.sub.done || isSettling(r.key)))
 const doneSubRows = computed(() => subRows.value.filter((r) => r.sub.done && !isSettling(r.key)))
@@ -457,17 +460,19 @@ const dragOverSubId = ref<string | null>(null)
 function startSubDrag(subId: string, event: DragEvent) {
   draggingSubId.value = subId
   event.dataTransfer?.setData('text/plain', subId)
+  event.dataTransfer?.setData(SUBTASK_DRAG_TYPE, JSON.stringify({ taskId: task.value?.id, subId }))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
 function overSub(subId: string) {
   if (draggingSubId.value && draggingSubId.value !== subId) dragOverSubId.value = subId
 }
-function dropSub(overId: string) {
+function dropSub(overId: string, event: DragEvent) {
   const t = task.value
-  const from = draggingSubId.value
+  const payload = readSubtaskDrag(event)
+  const from = payload?.subId || draggingSubId.value
   draggingSubId.value = null
   dragOverSubId.value = null
-  if (t && from) data.reorderSub(t.id, from, overId)
+  if (t && from) void data.moveSubtask(payload?.taskId || t.id, from, t.id, overId).catch(error => toast(error.message, 'ri-error-warning-line'))
 }
 function endSubDrag() {
   draggingSubId.value = null
@@ -901,7 +906,7 @@ async function uploadAttachment(event: Event) {
 <template>
   <template v-if="task && tv">
     <div class="mask" @click="close"></div>
-    <aside class="drawer">
+    <aside class="drawer" :inert="data.movingSubtasks">
       <!-- 顶栏 -->
       <div class="dhead">
         <button class="proj-link" @click="gotoProject">
@@ -1037,11 +1042,12 @@ async function uploadAttachment(event: Event) {
                 <input v-model="newSub" placeholder="添加子任务，回车确认" @keydown.enter="addSub" />
               </div>
             </div>
+            <button v-if="doneSubRows.length" class="sub-visibility-toggle" @click="showDoneSubs = !showDoneSubs">{{ showDoneSubs ? '隐藏已完成' : '显示已完成' }}</button>
             <div>
               <div
                 v-for="r in openSubRows"
                 :key="r.key"
-                class="check-row sub-row"
+                class="check-row sub-row" :style="{ paddingLeft: `${r.depth * 18}px` }"
                 :class="{
                   active: openSubId === r.key,
                   settling: isSettling(r.key),
@@ -1052,10 +1058,10 @@ async function uploadAttachment(event: Event) {
                 @click="showSub(r.idx)"
                 @dragstart="startSubDrag(r.key, $event)"
                 @dragover.prevent="overSub(r.key)"
-                @drop.prevent="dropSub(r.key)"
+                @drop.prevent.stop="dropSub(r.key, $event)"
                 @dragend="endSubDrag"
               >
-                <i class="ri-draggable sub-grip" title="拖拽调整顺序"></i>
+                <i class="ri-draggable sub-grip" title="拖到另一子任务下，或拖到其他主任务以移动整棵子树"></i>
                 <span class="cbox circle" :class="{ done: r.sub.done }" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
                 <span class="sub-number wao-tabular">{{ r.sub.number ?? '…' }}</span><span class="check-text" :class="{ done: r.sub.done }">{{ r.sub.text }}</span>
                 <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
@@ -1080,13 +1086,13 @@ async function uploadAttachment(event: Event) {
               <button class="sub-done-toggle" @click="showDoneSubs = !showDoneSubs">
                 <i :class="showDoneSubs ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
                 已完成<span class="sub-done-count wao-tabular">{{ doneSubRows.length }}</span>
-                <span class="sub-done-hint">{{ showDoneSubs ? '点击收起' : '点击展开' }}</span>
+                <span class="sub-done-hint">{{ showDoneSubs ? '隐藏已完成' : '显示已完成' }}</span>
               </button>
               <div v-if="showDoneSubs">
                 <div
                   v-for="r in doneSubRows"
                   :key="r.key"
-                  class="check-row sub-row"
+                  class="check-row sub-row" :style="{ paddingLeft: `${r.depth * 18}px` }"
                   :class="{ active: openSubId === r.key }"
                   @click="showSub(r.idx)"
                 >
@@ -1226,6 +1232,8 @@ async function uploadAttachment(event: Event) {
           </div>
           <button v-if="!isMobile" class="sub-back" @click="openSubId = null"><i class="ri-arrow-left-line"></i>返回任务属性</button>
           <div v-if="!isMobile" class="props-label">子任务 #{{ openSub?.number ?? '…' }}</div>
+          <SubtaskProperties :task-id="task.id" :sub-id="openSubId!" />
+          <InlineSubtasks :task-id="task.id" :parent-id="openSubId" />
 
           <div class="sub-title-row">
             <button class="cbox circle big" :class="{ done: openSub.done }" title="标记完成" @click="toggleSubDone"><i class="ri-check-line"></i></button>

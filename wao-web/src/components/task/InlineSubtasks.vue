@@ -3,14 +3,38 @@ import { computed, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
-const props = defineProps<{ taskId: string; table?: boolean }>()
+import { subtaskRows, SUBTASK_DRAG_TYPE, readSubtaskDrag } from '@/utils/subtaskTree'
+const props = defineProps<{ taskId: string; table?: boolean; parentId?: string | null }>()
 const data = useDataStore()
 const ui = useUiStore()
 const session = useSessionStore()
 const task = computed(() => data.taskById(props.taskId))
+const hideDone = ref(false)
+const rows = computed(() => {
+  const all = subtaskRows(props.taskId, task.value?.subs || [])
+  if (!props.parentId) return all
+  const parent = all.find(row => row.key === props.parentId)
+  if (!parent) return []
+  const start = all.indexOf(parent) + 1
+  const children = []
+  for (let i = start; i < all.length && all[i]!.depth > parent.depth; i++) children.push({ ...all[i]!, depth: all[i]!.depth - parent.depth - 1 })
+  return children
+})
+const visibleRows = computed(() => rows.value.filter(row => !hideDone.value || !row.sub.done))
+function drag(event: DragEvent, subId: string) {
+  event.dataTransfer?.setData(SUBTASK_DRAG_TYPE, JSON.stringify({ taskId: props.taskId, subId }))
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+async function drop(event: DragEvent, parentId?: string | null) {
+  const payload = readSubtaskDrag(event)
+  if (!payload) return
+  localError.value = ''
+  try { await data.moveSubtask(payload.taskId, payload.subId, props.taskId, parentId) }
+  catch (error) { localError.value = error instanceof Error ? error.message : '移动失败，请重试' }
+}
 const draft = ref('')
 const localError = ref('')
-const key = computed(() => `wao-inline-sub:${session.userId}:${props.taskId}`)
+const key = computed(() => `wao-inline-sub:${session.userId}:${props.taskId}${props.parentId ? `:${props.parentId}` : ''}`)
 watch(
   key,
   (value) => {
@@ -31,23 +55,24 @@ watch(draft, (value) => {
   }
 })
 function add() {
-  if (data.addSub(props.taskId, draft.value)) {
+  if (data.addSub(props.taskId, draft.value, props.parentId)) {
     draft.value = ''
     void data.flushTask(props.taskId)
   }
 }
 </script>
 <template>
-  <tbody v-if="task && table" class="table-subs" @click.stop @dragstart.stop.prevent>
+  <tbody v-if="task && table" class="table-subs" @click.stop @dragstart.stop @dragover.prevent @drop.prevent.stop="drop($event, parentId)" :inert="data.movingSubtasks">
+    <tr><td colspan="9"><button type="button" @click="hideDone = !hideDone">{{ hideDone ? '显示已完成' : '隐藏已完成' }}</button><small v-if="localError" class="error" role="alert">{{ localError }}</small></td></tr>
     <tr
-      v-for="(sub, index) in task.subs"
+      v-for="{ sub, idx: index, key: subId, depth } in visibleRows"
       :key="data.subKey(taskId, sub, index)"
-      class="inline-sub-row"
+      class="inline-sub-row" draggable="true" @dragstart.stop="drag($event, subId)" @dragover.prevent.stop @drop.prevent.stop="drop($event, subId)"
     >
       <td></td>
       <td class="sub-number">{{ sub.number ?? '…' }}</td>
       <td>
-        <div class="sub-title">
+        <div class="sub-title" :style="{ paddingLeft: `${22 + depth * 18}px` }">
           <span class="branch">└</span
           ><input
             type="checkbox"
@@ -63,13 +88,13 @@ function add() {
           </button>
         </div>
       </td>
-      <td>—</td>
+      <td>{{ sub.owner ? session.memberById(sub.owner).name : '未分配' }}</td>
       <td>
         <span class="sub-state" :class="{ completed: sub.done }">{{
           sub.done ? '已完成' : '待办'
         }}</span>
       </td>
-      <td>—</td>
+      <td>{{ sub.due || '—' }}</td>
       <td>—</td>
       <td>—</td>
       <td>—</td>
@@ -102,12 +127,13 @@ function add() {
     class="inline-subs"
     aria-label="任务子任务"
     @click.stop
-    @dragstart.stop.prevent
+    @dragstart.stop @dragover.prevent @drop.prevent.stop="drop($event, parentId)" :inert="data.movingSubtasks"
   >
+    <button type="button" @click="hideDone = !hideDone">{{ hideDone ? '显示已完成' : '隐藏已完成' }}</button>
     <div
-      v-for="(sub, index) in task.subs"
+      v-for="{ sub, idx: index, key: subId, depth } in visibleRows"
       :key="data.subKey(taskId, sub, index)"
-      class="inline-sub"
+      class="inline-sub" :style="{ paddingLeft: `${depth * 18}px` }" draggable="true" @dragstart.stop="drag($event, subId)" @dragover.prevent.stop @drop.prevent.stop="drop($event, subId)"
     >
       <input
         type="checkbox"

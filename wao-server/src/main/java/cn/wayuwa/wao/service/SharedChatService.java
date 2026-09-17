@@ -41,8 +41,27 @@ public class SharedChatService {
     private static final int MAX_MESSAGES = 100;
     private static final int MAX_CONTENT_CODEPOINTS = 2_000;
     private static final Pattern CLIENT_TOKEN = Pattern.compile("[A-Za-z0-9_-]{8,64}");
-    private static final Map<String, String> EMOJI_GLYPHS = Map.of(
-            "THUMBSUP", "👍", "HEART", "❤️", "SMILE", "😊", "DONE", "✅");
+    private static final Map<String, String> EMOJI_GLYPHS = Map.ofEntries(
+            Map.entry("THUMBSUP", "👍"),
+            Map.entry("HEART", "❤️"),
+            Map.entry("SMILE", "😊"),
+            Map.entry("DONE", "✅"),
+            Map.entry("APPLAUSE", "👏"),
+            Map.entry("FIRE", "🔥"),
+            Map.entry("PARTY", "🎉"),
+            Map.entry("THANKS", "🙏"),
+            Map.entry("LAUGH", "😂"),
+            Map.entry("WOW", "😮"),
+            Map.entry("THINKING", "🤔"),
+            Map.entry("SAD", "😢"),
+            Map.entry("LOVE", "😍"),
+            Map.entry("STRONG", "💪"),
+            Map.entry("OK", "👌"),
+            Map.entry("EYES", "👀"),
+            Map.entry("ROCKET", "🚀"),
+            Map.entry("HUNDRED", "💯"),
+            Map.entry("COFFEE", "☕"),
+            Map.entry("STAR", "⭐"));
 
     private final SharedChatMessageMapper messages;
     private final SharedChatMessageReadMapper reads;

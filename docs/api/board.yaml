@@ -437,6 +437,30 @@ paths:
       responses:
         '200': { description: OK }
         '404': { description: 不存在 }
+  /tasks/{id}/subs/{subId}/move:
+    post:
+      summary: 原子移动子任务及全部后代，保留稳定身份与编号
+      description: 校验源与目标可见性、完整子任务快照和无环关系；有未结束 AI 执行时拒绝。不会先从源删除再单独保存目标。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: subId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetTaskId, expectedSourceSubs, expectedTargetSubs]
+              properties:
+                targetTaskId: { type: string }
+                parentId: { type: string, nullable: true, description: 留空表示直接属于目标主任务 }
+                expectedSourceSubs: { type: array, items: { $ref: '#/components/schemas/Step' } }
+                expectedTargetSubs: { type: array, items: { $ref: '#/components/schemas/Step' } }
+      responses:
+        '200':
+          description: ApiResponse 内 data 为更新后的源与目标 Task 数组；同主任务只返回一个
+        '400': { description: 关系无效、快照过期或有未结束 AI 执行；均未移动 }
+
   /tasks/{id}/comments:
     post:
       summary: 原子追加评论；普通评论按任务动态策略通知，真实 @成员按人工通知策略通知
@@ -1588,6 +1612,7 @@ components:
       type: object
       description: 字段与前端 Task 一致（含 steps/subs/comments/activity 等嵌套）
       properties:
+        subtaskVersion: { type: string, description: 服务端子任务快照摘要；客户端全文保存原样回传，过期返回 409 并保留草稿 }
         number: { type: integer, format: int64, minimum: 0, readOnly: true, description: "服务端持久化的固定编号，与子任务共享序列；删除不回收，排序不改变" }
         id: { type: string }
         title: { type: string }
@@ -1656,6 +1681,9 @@ components:
       type: object
       description: 步骤 / 子任务条目；子任务可以有自己的描述与图片
       properties:
+        parentId: { type: string, nullable: true, description: 同一主任务内的父子任务稳定 id，空为根 }
+        owner: { type: string, nullable: true, description: 负责人成员 id }
+        due: { type: string, format: date, nullable: true, description: 截止日期 }
         number: { type: integer, format: int64, minimum: 0, readOnly: true, description: "子任务服务端固定编号，历史及新建未保存条目可缺省；客户端输入不参与分配" }
         text: { type: string }
         done: { type: boolean }

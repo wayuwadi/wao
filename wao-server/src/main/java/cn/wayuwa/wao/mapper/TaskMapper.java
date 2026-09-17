@@ -11,6 +11,17 @@ import java.util.List;
 /** 任务表 Mapper。 */
 @Mapper
 public interface TaskMapper extends BaseMapper<TaskEntity> {
+    /** 事务内按稳定顺序锁定源任务与目标任务。 */
+    @Select("SELECT * FROM task WHERE id = #{id} FOR UPDATE")
+    TaskEntity lockById(String id);
+
+    /** 只更新内嵌详情，保留并发更新的其它任务属性。 */
+    @Update("UPDATE task SET detail_json = #{detail} WHERE id = #{id}")
+    int updateDetail(@Param("id") String id, @Param("detail") String detail);
+
+    /** 有未结束 AI 执行时禁止迁移归属，避免正在运行的提示与回写指向错误任务。 */
+    @Select("SELECT COUNT(*) FROM ai_task_run WHERE task_id IN (#{source}, #{target}) AND finished_at IS NULL")
+    int countUnfinishedRuns(@Param("source") String source, @Param("target") String target);
 
     /**
      * 按录入时间读取所选项目、所选安全状态中最早且具备真实 AI 工作流的任务。

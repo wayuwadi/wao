@@ -18,6 +18,7 @@ import {
   type WeekStart,
 } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
+import VersionSettingsPanel from '@/components/settings/VersionSettingsPanel.vue'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel.vue'
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
@@ -43,7 +44,7 @@ const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(nu
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['系统登录配置', 'login-settings'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['版本与更新', 'version'], ['网站信息 · 备案', 'site'], ['系统登录配置', 'login-settings'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['我的导航', 'navigation'], ['个人资料', 'profile'], ['账号与登录', 'account'], ['宠物设置', 'pet'], ['偏好', 'prefs']] },
 ] as const
 
@@ -430,6 +431,7 @@ async function bindFeishu() {
     <!-- 右侧内容 -->
     <div class="spane">
       <div class="scontent" :class="{ 'navigation-wide': tab === 'navigation' }">
+        <VersionSettingsPanel v-if="tab === 'version'" />
         <!-- 组织与成员 -->
         <template v-if="tab === 'members'">
           <div class="s-h1">组织与成员</div>
