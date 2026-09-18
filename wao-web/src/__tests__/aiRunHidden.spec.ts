@@ -99,7 +99,7 @@ describe('项目表格按分组查看与修改', () => {
 
     const openTask = data.tasksByProject('p1').find((task) => task.status !== '已完成')!
     const row = wrapper.findAll('.task-row').find((node) => node.text().includes(openTask.title))!
-    await row.get('.group-select').setValue('g2')
+    await row.get('select.cell-input').setValue('g2')
     expect(data.taskById(openTask.id)!.groupId).toBe('g2')
 
     await wrapper.findAll('.table-group-row')[1]!.get('.group-collapse').trigger('click')

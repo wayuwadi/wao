@@ -74,6 +74,8 @@ export const fetchOrg = () => get<Org>('/api/org')
 export const fetchAreas = () => get<Area[]>('/api/areas')
 export const fetchProjects = () => get<Project[]>('/api/projects')
 export const fetchTasks = () => get<Task[]>('/api/tasks')
+/** 单条任务最新快照；不走桌面短缓存，用于保存冲突后的合并。 */
+export const apiGetTask = (id: string) => get<Task>(`/api/tasks/${encodeURIComponent(id)}`)
 
 // 内容 / 参考域
 export const fetchKbs = () => get<KnowledgeBase[]>('/api/kbs')
