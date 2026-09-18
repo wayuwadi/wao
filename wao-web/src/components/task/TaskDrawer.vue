@@ -5,7 +5,7 @@ import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useDeco } from '@/composables/deco'
-import { statusMeta, priorityMeta, TASK_STATUSES } from '@/utils/domain'
+import { statusMeta, priorityMeta } from '@/utils/domain'
 import { fmtDate } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 // 异步加载：编辑器带着 ProseMirror（gzip 约 110KB），只有真正打开任务详情时才需要，
@@ -13,7 +13,8 @@ import { toast } from '@/composables/toast'
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import SubtaskProperties from '@/components/task/SubtaskProperties.vue'
-import { subtaskRows, SUBTASK_DRAG_TYPE, readSubtaskDrag } from '@/utils/subtaskTree'
+import WorkItemIcon from '@/components/task/WorkItemIcon.vue'
+import { AI_RUN_ENABLED, selectableTaskStatuses } from '@/config/features'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { chatShareLink, shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
@@ -22,16 +23,14 @@ import AiRunArchive from '@/components/ai/AiRunArchive.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import TaskRelationPicker from '@/components/task/TaskRelationPicker.vue'
 import { engineLabel } from '@/composables/aiEngines'
-import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { activitySentence } from '@/utils/activity'
 import { fileDisplayName } from '@/utils/files'
-import { useIsMobile } from '@/composables/viewport'
 import { useFavoritesStore } from '@/stores/favorites'
 import { nextTaskAiRunPollDelay, taskAiRunFingerprint } from '@/utils/taskAiRunPolling'
 import { notifyTaskManually } from '@/api/board'
-import type { AiEngine, AiRun, Priority, TaskStatus } from '@/types'
+import type { AiEngine, AiRun, Priority, TaskStatus, TaskStep } from '@/types'
 
 const ui = useUiStore()
 const data = useDataStore()
@@ -40,8 +39,6 @@ const favorites = useFavoritesStore()
 const router = useRouter()
 const route = useRoute()
 const { decoTask } = useDeco()
-
-const isMobile = useIsMobile()
 
 /** 复用任务已有的持久化自定义属性，不新增一套会漂移的验收数据模型。 */
 const ACCEPTANCE_FIELD_NAMES = ['成功条件', '验收证据', '端到端耗时', '异常与恢复', '通知结果'] as const
@@ -53,7 +50,6 @@ const acceptanceFieldsComplete = computed(() => Boolean(task.value)
 const isAcceptanceField = (name: string) => (ACCEPTANCE_FIELD_NAMES as readonly string[]).includes(name)
 
 const menu = ref<'status' | 'pr' | 'owner' | 'participants' | 'prop' | 'share' | 'group' | null>(null)
-const newSub = ref('')
 const commentText = ref('')
 const mentionOpen = ref(false)
 const sendingComment = ref(false)
@@ -77,7 +73,7 @@ let lastAiRunsFingerprint = ''
 let aiRunsRequestTaskId: string | null = null
 let aiRunsRequestGeneration = 0
 let aiRunsPollingStopped = false
-/** 右侧栏当前展开的子任务标识；为 null 时显示任务属性栏。 */
+/** 当前在弹框里查看的子任务；为 null 时查看主任务。与 ui.openTaskSubId 同步，面包屑与列表都通过 ui.openTask 切换。 */
 const openSubId = ref<string | null>(null)
 
 function clearAiRunsTimer() {
@@ -89,7 +85,6 @@ watch(
   () => ui.openTaskId,
   () => {
     menu.value = null
-    newSub.value = ''
     commentText.value = ''
     openSubId.value = null
     aiLauncherOpen.value = false
@@ -107,7 +102,8 @@ watch(
 
 async function refreshTaskAiRuns() {
   const taskId = ui.openTaskId
-  if (!taskId) {
+  // AI Run 入口下线期间不再轮询运行档案，接口与逻辑保留，开关打开即恢复。
+  if (!AI_RUN_ENABLED || !taskId) {
     aiRuns.value = []
     return
   }
@@ -331,7 +327,7 @@ const saveState = computed(() => (task.value ? data.taskSaveState(task.value.id)
 /** 上一次写透成功的时刻，给「自动保存成功 14:32」用。 */
 const savedAt = computed(() => (task.value ? data.taskSavedAt(task.value.id) : null))
 
-const STATUS_OPTS: TaskStatus[] = TASK_STATUSES
+const statusOptions = computed<TaskStatus[]>(() => selectableTaskStatuses(task.value?.status))
 const PR_OPTS: { key: Priority; sub: string }[] = [
   { key: 'P0', sub: '当天必须处理' },
   { key: 'P1', sub: '影响里程碑' },
@@ -349,7 +345,7 @@ function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape' || !task.value || e.defaultPrevented || ui.chatOpen) return
   if (relationOpen.value) relationOpen.value = false
   else if (menu.value) menu.value = null
-  else if (openSubId.value) openSubId.value = null
+  else if (openSubId.value) backToTask()
   else close()
 }
 function syncTaskAiRunsImmediately() {
@@ -429,75 +425,32 @@ function viewImage(url: string) {
 function toggleStep(idx: number, kind: 'steps' | 'subs') {
   if (task.value) data.toggleStep(task.value.id, idx, kind)
 }
-function addSub() {
-  const t = task.value
-  if (!t) return
-  const id = data.addSub(t.id, newSub.value)
-  if (id) {
-    newSub.value = ''
-    // 新建即展开，方便顺手补描述
-    openSubId.value = id
-  }
-}
+// ---- 子任务详情：与主任务同一版式，在弹框主区展示 ----
 
-// ---- 子任务详情（右侧栏切换成子任务视图） ----
-
-const subKeyOf = (idx: number) => (task.value ? data.subKey(task.value.id, task.value.subs[idx]!, idx) : '')
-
-// 已完成的子任务沉到底部并默认收起；刚勾完成的先原地停留 3 秒再沉下去。
-const showDoneSubs = ref(false)
-const { begin: beginSettle, cancel: cancelSettle, isSettling } = useSettle()
-
-/** 带上原始下标的子任务视图 —— 过滤后仍要能定位回 task.subs 里的那一条。 */
-const subRows = computed(() =>
-  subtaskRows(task.value?.id || '', task.value?.subs || []),
-)
-const openSubRows = computed(() => subRows.value.filter((r) => !r.sub.done || isSettling(r.key)))
-const doneSubRows = computed(() => subRows.value.filter((r) => r.sub.done && !isSettling(r.key)))
-const draggingSubId = ref<string | null>(null)
-const dragOverSubId = ref<string | null>(null)
-
-function startSubDrag(subId: string, event: DragEvent) {
-  draggingSubId.value = subId
-  event.dataTransfer?.setData('text/plain', subId)
-  event.dataTransfer?.setData(SUBTASK_DRAG_TYPE, JSON.stringify({ taskId: task.value?.id, subId }))
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-}
-function overSub(subId: string) {
-  if (draggingSubId.value && draggingSubId.value !== subId) dragOverSubId.value = subId
-}
-function dropSub(overId: string, event: DragEvent) {
-  const t = task.value
-  const payload = readSubtaskDrag(event)
-  const from = payload?.subId || draggingSubId.value
-  draggingSubId.value = null
-  dragOverSubId.value = null
-  if (t && from) void data.moveSubtask(payload?.taskId || t.id, from, t.id, overId).catch(error => toast(error.message, 'ri-error-warning-line'))
-}
-function endSubDrag() {
-  draggingSubId.value = null
-  dragOverSubId.value = null
-}
-
-/** 勾选子任务：完成时进入缓冲，取消完成时立即撤销缓冲。 */
-function toggleSub(idx: number) {
-  const t = task.value
-  if (!t) return
-  const key = subKeyOf(idx)
-  const wasDone = t.subs[idx]?.done === true
-  data.toggleStep(t.id, idx, 'subs')
-  if (wasDone) cancelSettle(key)
-  else beginSettle(key)
+/** 回到主任务视图。走 ui.openTask 而不是只改本地状态，再次点开同一子任务时才会响应。 */
+function backToTask() {
+  if (task.value) ui.openTask(task.value.id)
 }
 const openSub = computed(() =>
   task.value && openSubId.value ? data.subById(task.value.id, openSubId.value) : undefined,
 )
 
-function showSub(idx: number) {
-  const key = subKeyOf(idx)
-  openSubId.value = openSubId.value === key ? null : key
-  menu.value = null
-}
+/** 面包屑：主任务 → 各级父子任务 → 当前子任务，按 parentId 向上追溯。 */
+const subChain = computed(() => {
+  const t = task.value
+  if (!t || !openSubId.value) return []
+  const byId = new Map<string, TaskStep>(t.subs.map((sub, idx) => [data.subKey(t.id, sub, idx), sub]))
+  const chain: { id: string; number?: number; text: string }[] = []
+  const seen = new Set<string>()
+  let id: string | null | undefined = openSubId.value
+  while (id && byId.has(id) && !seen.has(id)) {
+    seen.add(id)
+    const sub: TaskStep = byId.get(id)!
+    chain.unshift({ id, number: sub.number, text: sub.text })
+    id = sub.parentId
+  }
+  return chain
+})
 /**
  * 子任务标题用自动撑高的 textarea：标题写长了要能整段看到，
  * 原来的单行 input 会把后半截截掉。
@@ -543,7 +496,7 @@ function deleteSub() {
   if (!t || !openSubId.value || !sub) return
   if (!window.confirm(`删除子任务「${sub.text}」？其描述和执行记录关联也会一并移除。`)) return
   data.removeSub(t.id, openSubId.value)
-  openSubId.value = null
+  backToTask()
   toast('子任务已删除', 'ri-delete-bin-line')
 }
 
@@ -653,8 +606,8 @@ function runOpenSubWithAi() {
 const aiLauncherScope = computed(() => {
   const key = aiLauncherSubId.value
   if (!key) return '整个任务'
-  const row = subRows.value.find((r) => r.key === key)
-  return `子任务「${row?.sub.text ?? ''}」（带主任务与已完成子任务历史）`
+  const sub = task.value ? data.subById(task.value.id, key) : undefined
+  return `子任务「${sub?.text ?? ''}」（带主任务与已完成子任务历史）`
 })
 async function sendComment() {
   if (sendingComment.value) return
@@ -906,17 +859,28 @@ async function uploadAttachment(event: Event) {
 <template>
   <template v-if="task && tv">
     <div class="mask" @click="close"></div>
-    <aside class="drawer" :inert="data.movingSubtasks">
+    <aside class="drawer" role="dialog" aria-modal="true" :aria-label="openSub ? `子任务 ${openSub.text}` : `任务 ${task.title}`" :inert="data.movingSubtasks">
       <!-- 顶栏 -->
       <div class="dhead">
-        <button class="proj-link" @click="gotoProject">
-          <span class="pdot" :style="{ background: tv.projColor }"></span>
-          <span class="ellip">{{ tv.projName }}</span>
-        </button>
-        <i class="ri-arrow-right-s-line sep"></i>
-        <span class="crumb">任务详情</span>
+        <nav class="crumbs" aria-label="任务层级">
+          <button class="proj-link" @click="gotoProject">
+            <span class="pdot" :style="{ background: tv.projColor }"></span>
+            <span class="ellip">{{ tv.projName }}</span>
+          </button>
+          <i class="ri-arrow-right-s-line sep"></i>
+          <button class="crumb-item" :class="{ current: !openSub }" :title="task.title" @click="backToTask">
+            <WorkItemIcon kind="task" /><span class="wao-tabular">#{{ task.number ?? '…' }}</span>
+          </button>
+          <template v-for="item in subChain" :key="item.id">
+            <i class="ri-arrow-right-s-line sep"></i>
+            <button class="crumb-item" :class="{ current: item.id === openSubId }" :title="item.text" @click="ui.openTask(task.id, item.id)">
+              <WorkItemIcon kind="subtask" /><span class="wao-tabular">#{{ item.number ?? '…' }}</span>
+            </button>
+          </template>
+        </nav>
         <span v-if="task.waiting" class="wait-badge">{{ task.waiting }}</span>
         <div class="spacer"></div>
+        <template v-if="AI_RUN_ENABLED">
         <div class="ai-run-wrap">
           <button
             class="ai-run-btn"
@@ -949,6 +913,7 @@ async function uploadAttachment(event: Event) {
           <i :class="pausingRunId === activeAiRun.id ? 'ri-loader-4-line spin' : 'ri-stop-circle-line'"></i>
           {{ pausingRunId === activeAiRun.id ? '停止中' : '停止 AI' }}
         </button>
+        </template>
         <button
           class="icon-btn"
           :class="{ faved: favorites.isFav('task', task.id) }"
@@ -967,11 +932,11 @@ async function uploadAttachment(event: Event) {
             <div class="share-scope">
               {{ openSubId ? '分享范围：当前子任务' : shareOpenOnly ? '分享范围：本任务 + 还没人做的子任务' : '分享范围：本任务 + 全部子任务' }}
             </div>
-            <label v-if="!openSubId && (shareDoneCount || dispatchedSubIds.size)" class="share-filter">
+            <label v-if="!openSubId && (shareDoneCount || (AI_RUN_ENABLED && dispatchedSubIds.size))" class="share-filter">
               <input v-model="shareOpenOnly" type="checkbox" />
               <span class="share-filter-main">
                 <b>只分享还没人做的子任务</b>
-                <em>过滤掉已完成的 {{ shareDoneCount }} 条{{ dispatchedSubIds.size ? `和已单独派给 AI 的 ${dispatchedSubIds.size} 条` : '' }}，避免重复派工</em>
+                <em>过滤掉已完成的 {{ shareDoneCount }} 条{{ AI_RUN_ENABLED && dispatchedSubIds.size ? `和已单独派给 AI 的 ${dispatchedSubIds.size} 条` : '' }}，避免重复派工</em>
               </span>
             </label>
             <button class="share-item" @click="shareToChat">
@@ -993,7 +958,65 @@ async function uploadAttachment(event: Event) {
 
       <div class="dbody">
         <!-- 主区 -->
-        <div class="main">
+        <div v-if="openSub" class="main">
+          <div class="type-line">
+            <WorkItemIcon kind="subtask" :size="18" />子任务
+            <span class="type-parent">属于 <button @click="backToTask">#{{ task.number ?? '…' }} {{ task.title }}</button></span>
+          </div>
+          <textarea
+            ref="subTitleArea"
+            class="title-input"
+            :class="{ done: openSub.done }"
+            rows="1"
+            :value="openSub.text"
+            placeholder="子任务名称"
+            @input="editSubTitle"
+            @keydown.enter.prevent
+          ></textarea>
+
+          <div class="field">
+            <div class="field-headline">
+              <div class="field-label">描述</div>
+              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error'" />
+            </div>
+            <MarkdownEditor
+              v-model="subDesc"
+              placeholder="补充这个子任务的做法、验收标准…敲 ## 变标题、- 变列表，可直接粘贴截图"
+              :min-height="200"
+              @upload-image="onSubImage"
+            />
+          </div>
+
+          <!-- 历史数据里挂在子任务上的图片；新粘贴的图现在直接进描述正文 -->
+          <div v-if="openSub.images?.length" class="field">
+            <div class="field-label">图片</div>
+            <div class="img-grid">
+              <div v-for="(im, i) in openSub.images" :key="i" class="img-cell">
+                <img :src="im.url" :alt="im.name" @click="viewImage(im.url)" />
+                <button class="img-del" title="移除" @click="removeSubImage(i)"><i class="ri-close-line"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <InlineSubtasks :task-id="task.id" :parent-id="openSubId" />
+          </div>
+
+          <AiRunArchive
+            v-if="AI_RUN_ENABLED"
+            class="sub-ai-archive"
+            :runs="openSubAiRuns"
+            :loading="aiRunsLoading"
+            :loaded="aiRunsLoaded"
+            :requested-run-id="requestedRunId"
+            :show-scope="false"
+            @refresh="refreshTaskAiRuns"
+            @upload-image="onContinueImage"
+          />
+        </div>
+
+        <div v-else class="main">
+          <div class="type-line"><WorkItemIcon kind="task" :size="18" />任务</div>
           <textarea ref="taskTitleArea" class="title-input" rows="1" :value="task.title" @input="editTitle"></textarea>
 
           <div class="field">
@@ -1034,76 +1057,7 @@ async function uploadAttachment(event: Event) {
           </div>
 
           <div class="field">
-            <!-- 输入框放在标题行上：子任务多的时候不必拉到最底下才能加一条 -->
-            <div class="sub-head">
-              <div class="field-label nomb">子任务</div>
-              <div class="sub-add">
-                <i class="ri-add-line"></i>
-                <input v-model="newSub" placeholder="添加子任务，回车确认" @keydown.enter="addSub" />
-              </div>
-            </div>
-            <button v-if="doneSubRows.length" class="sub-visibility-toggle" @click="showDoneSubs = !showDoneSubs">{{ showDoneSubs ? '隐藏已完成' : '显示已完成' }}</button>
-            <div>
-              <div
-                v-for="r in openSubRows"
-                :key="r.key"
-                class="check-row sub-row" :style="{ paddingLeft: `${r.depth * 18}px` }"
-                :class="{
-                  active: openSubId === r.key,
-                  settling: isSettling(r.key),
-                  dragging: draggingSubId === r.key,
-                  'drag-over': dragOverSubId === r.key,
-                }"
-                draggable="true"
-                @click="showSub(r.idx)"
-                @dragstart="startSubDrag(r.key, $event)"
-                @dragover.prevent="overSub(r.key)"
-                @drop.prevent.stop="dropSub(r.key, $event)"
-                @dragend="endSubDrag"
-              >
-                <i class="ri-draggable sub-grip" title="拖到另一子任务下，或拖到其他主任务以移动整棵子树"></i>
-                <span class="cbox circle" :class="{ done: r.sub.done }" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
-                <span class="sub-number wao-tabular">{{ r.sub.number ?? '…' }}</span><span class="check-text" :class="{ done: r.sub.done }">{{ r.sub.text }}</span>
-                <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
-                <span class="spacer"></span>
-                <span v-if="dispatchedSubIds.has(r.key)" class="sub-dispatched" title="已单独派给 AI，主任务再派工时不会重复纳入">
-                  <i class="ri-robot-2-line"></i>已派工
-                </span>
-                <button
-                  v-else
-                  class="sub-ai"
-                  title="只执行这条子任务，并带上主任务及已完成子任务作为历史上下文"
-                  @click.stop="runSubWithAi(r.key)"
-                >
-                  <i class="ri-robot-2-line"></i>AI run
-                </button>
-                <i class="ri-arrow-right-s-line sub-chev"></i>
-              </div>
-            </div>
-
-            <!-- 已完成的沉到底部，默认收起 -->
-            <template v-if="doneSubRows.length">
-              <button class="sub-done-toggle" @click="showDoneSubs = !showDoneSubs">
-                <i :class="showDoneSubs ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
-                已完成<span class="sub-done-count wao-tabular">{{ doneSubRows.length }}</span>
-                <span class="sub-done-hint">{{ showDoneSubs ? '隐藏已完成' : '显示已完成' }}</span>
-              </button>
-              <div v-if="showDoneSubs">
-                <div
-                  v-for="r in doneSubRows"
-                  :key="r.key"
-                  class="check-row sub-row" :style="{ paddingLeft: `${r.depth * 18}px` }"
-                  :class="{ active: openSubId === r.key }"
-                  @click="showSub(r.idx)"
-                >
-                  <span class="cbox circle done" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
-                  <span class="sub-number wao-tabular">{{ r.sub.number ?? '…' }}</span><span class="check-text done">{{ r.sub.text }}</span>
-                  <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
-                  <span class="spacer"></span>
-                  <i class="ri-arrow-right-s-line sub-chev"></i>
-                </div>
-              </div>
-            </template>
+            <InlineSubtasks :task-id="task.id" />
           </div>
 
           <div v-if="task.files.length" class="field">
@@ -1166,6 +1120,7 @@ async function uploadAttachment(event: Event) {
           </div>
 
           <AiRunArchive
+            v-if="AI_RUN_ENABLED"
             :runs="aiRuns"
             :loading="aiRunsLoading"
             :loaded="aiRunsLoaded"
@@ -1214,85 +1169,32 @@ async function uploadAttachment(event: Event) {
           </div>
         </div>
 
-        <!--
-          子任务详情：桌面上展开子任务时顶掉属性栏；手机上盖成一整页。
-          手机窗口小，原来排在正文下面，点开还得往下滑一段才找得到，滑到了也不知道
-          看的是哪一条 —— 现在直接盖满一屏，顶上写清楚是第几条，返回退回任务。
-        -->
-        <div v-if="openSub" class="props" :class="{ 'sub-page': isMobile }">
-          <div v-if="isMobile" class="sub-page-head">
-            <button class="sub-page-back" @click="openSubId = null"><i class="ri-arrow-left-line"></i></button>
-            <div class="sub-page-title">
-              <b>子任务 #{{ openSub?.number ?? '…' }}</b>
-              <em class="ellip">{{ task.title }}</em>
-            </div>
-            <button class="sub-page-done" :class="{ on: openSub.done }" @click="toggleSubDone">
-              <i class="ri-check-line"></i>{{ openSub.done ? '已完成' : '标记完成' }}
+        <!-- 子任务属性：与任务属性栏同一位置、同一版式 -->
+        <div v-if="openSub" class="props">
+          <div class="props-label">子任务属性</div>
+          <div class="prop-row">
+            <span class="prop-key">编号</span>
+            <span class="prop-val wao-tabular">#{{ openSub.number ?? '…' }}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-key">状态</span>
+            <button class="state-pill" :class="{ completed: openSub.done }" :title="openSub.done ? '点击改回未开始' : '点击标记已完成'" @click="toggleSubDone">
+              {{ openSub.done ? '已完成' : '未开始' }}<i class="ri-arrow-left-right-line"></i>
             </button>
           </div>
-          <button v-if="!isMobile" class="sub-back" @click="openSubId = null"><i class="ri-arrow-left-line"></i>返回任务属性</button>
-          <div v-if="!isMobile" class="props-label">子任务 #{{ openSub?.number ?? '…' }}</div>
-          <SubtaskProperties :task-id="task.id" :sub-id="openSubId!" />
-          <InlineSubtasks :task-id="task.id" :parent-id="openSubId" />
-
-          <div class="sub-title-row">
-            <button class="cbox circle big" :class="{ done: openSub.done }" title="标记完成" @click="toggleSubDone"><i class="ri-check-line"></i></button>
-            <textarea
-              ref="subTitleArea"
-              class="sub-title-input"
-              :class="{ done: openSub.done }"
-              rows="1"
-              :value="openSub.text"
-              placeholder="子任务名称"
-              @input="editSubTitle"
-              @keydown.enter.prevent
-            ></textarea>
+          <div class="prop-row">
+            <span class="prop-key">所属任务</span>
+            <button class="proj-btn" :title="task.title" @click="backToTask"><WorkItemIcon kind="task" :size="14" /><span class="ellip">{{ task.title }}</span></button>
           </div>
-
-          <div v-if="isMobile && !openSub.done" class="sub-page-ai-slot">
-            <button v-if="openSubDispatched" class="sub-page-ai dispatched" type="button" disabled>
+          <SubtaskProperties :task-id="task.id" :sub-id="openSubId!" />
+          <div v-if="AI_RUN_ENABLED && !openSub.done" class="prop-section">
+            <button v-if="openSubDispatched" class="sub-detail-action" type="button" disabled>
               <i class="ri-robot-2-line"></i>已派给 AI
             </button>
-            <button v-else class="sub-page-ai" type="button" @click="runOpenSubWithAi">
+            <button v-else class="sub-detail-action" type="button" @click="runOpenSubWithAi">
               <i class="ri-robot-2-line"></i>交给 AI 跑
             </button>
           </div>
-
-          <AiRunArchive
-            class="sub-ai-archive"
-            :runs="openSubAiRuns"
-            :loading="aiRunsLoading"
-            :loaded="aiRunsLoaded"
-            :requested-run-id="requestedRunId"
-            :show-scope="false"
-            @refresh="refreshTaskAiRuns"
-            @upload-image="onContinueImage"
-          />
-
-          <div class="sub-field">
-            <div class="field-headline">
-              <div class="props-label sm">描述</div>
-              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error'" />
-            </div>
-            <MarkdownEditor
-              v-model="subDesc"
-              placeholder="补充这个子任务的做法、验收标准…敲 ## 变标题、- 变列表，可直接粘贴截图"
-              :min-height="120"
-              @upload-image="onSubImage"
-            />
-          </div>
-
-          <!-- 历史数据里挂在子任务上的图片；新粘贴的图现在直接进描述正文 -->
-          <div v-if="openSub.images?.length" class="sub-field">
-            <div class="props-label sm">图片</div>
-            <div class="img-grid sub-img-grid">
-              <div v-for="(im, i) in openSub.images" :key="i" class="img-cell">
-                <img :src="im.url" :alt="im.name" @click="viewImage(im.url)" />
-                <button class="img-del" title="移除" @click="removeSubImage(i)"><i class="ri-close-line"></i></button>
-              </div>
-            </div>
-          </div>
-
           <div class="prop-section sub-detail-actions">
             <button class="sub-detail-action" type="button" @click="copyShare('page')">
               <i class="ri-links-line"></i>复制该子任务分享链接
@@ -1303,7 +1205,7 @@ async function uploadAttachment(event: Event) {
           </div>
         </div>
 
-        <!-- 属性栏 -->
+                <!-- 属性栏 -->
         <div v-else class="props">
           <div v-if="menu && menu !== 'share'" class="menu-mask" @click="menu = null"></div>
           <div class="props-label">属性</div>
@@ -1319,7 +1221,7 @@ async function uploadAttachment(event: Event) {
             <span class="prop-key">状态</span>
             <button class="pill" :style="{ background: tv.stBg, color: tv.stColor }" @click="menu = menu === 'status' ? null : 'status'">{{ tv.status }}<i class="ri-arrow-down-s-line"></i></button>
             <div v-if="menu === 'status'" class="pmenu w150">
-              <button v-for="o in STATUS_OPTS" :key="o" class="pmenu-item" @click="setStatus(o)">
+              <button v-for="o in statusOptions" :key="o" class="pmenu-item" @click="setStatus(o)">
                 <span class="mini pill-mini" :style="{ background: statusMeta(o).bg, color: statusMeta(o).color }">{{ o }}</span>
                 <span class="spacer"></span>
                 <i v-if="task.status === o" class="ri-check-line chk"></i>
@@ -1623,18 +1525,105 @@ async function uploadAttachment(event: Event) {
   background: rgba(23, 25, 35, 0.32);
   z-index: 80;
 }
+/* 居中弹框（参照 ONES 工作项详情）：任务与子任务都在这里打开 */
 .drawer {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(920px, calc(100vw - 48px));
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(1120px, calc(100vw - 64px));
+  height: min(860px, calc(100vh - 48px));
   background: var(--wao-bg-card);
   z-index: 81;
-  box-shadow: -12px 0 40px rgba(16, 18, 28, 0.16);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(16, 18, 28, 0.22);
   display: flex;
   flex-direction: column;
-  animation: waoDrawer 0.2s ease;
+  animation: waoTaskModal 0.18s ease;
+}
+@keyframes waoTaskModal {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+.crumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--wao-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.crumb-item:hover {
+  background: var(--wao-bg-hover-2);
+}
+.crumb-item.current {
+  color: var(--wao-text);
+  cursor: default;
+}
+.crumb-item.current:hover {
+  background: none;
+}
+.type-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--wao-text-weak);
+  margin-bottom: 6px;
+  min-width: 0;
+}
+.type-parent {
+  margin-left: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.type-parent button {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--wao-primary);
+  cursor: pointer;
+}
+.title-input.done {
+  color: var(--wao-text-faint);
+  text-decoration: line-through;
+}
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid #338fe5;
+  border-radius: 11px;
+  background: none;
+  color: #338fe5;
+  font-size: 12px;
+  cursor: pointer;
+}
+.state-pill.completed {
+  border-color: #3fb96f;
+  color: #3fb96f;
+}
+.state-pill i {
+  font-size: 11px;
+  opacity: 0.7;
 }
 .spacer {
   flex: 1;
@@ -1680,10 +1669,6 @@ async function uploadAttachment(event: Event) {
 .sep {
   color: var(--wao-text-faint-2);
   font-size: 14px;
-}
-.crumb {
-  font-size: 12.5px;
-  color: var(--wao-text-weak);
 }
 .wait-badge {
   font-size: 11px;
@@ -1965,9 +1950,6 @@ async function uploadAttachment(event: Event) {
 .cbox.sq {
   border-radius: 5px;
 }
-.cbox.circle {
-  border-radius: 50%;
-}
 .cbox i {
   font-size: 11px;
   color: #fff;
@@ -1988,197 +1970,12 @@ async function uploadAttachment(event: Event) {
   color: var(--wao-text-weak);
   text-decoration: line-through;
 }
-.sub-row .cbox {
-  cursor: pointer;
-}
-.sub-row[draggable='true'] { cursor: grab; }
-.sub-row.dragging { opacity: .45; }
-.sub-row.drag-over { box-shadow: inset 0 2px var(--wao-primary); }
-.sub-grip {
-  color: var(--wao-text-faint);
-  font-size: 14px;
-  flex: 0 0 auto;
-}
-.sub-row.active {
-  background: var(--wao-primary-tint);
-}
-.sub-flag {
-  font-size: 12px;
-  color: var(--wao-text-faint-2);
-}
-.sub-chev {
-  font-size: 15px;
-  color: var(--wao-text-faint-2);
-  opacity: 0;
-}
-/* 单条子任务派工：常态隐形，鼠标移到这一行才出现，不给静态列表添噪音 */
-.sub-ai {
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border: 1px solid var(--wao-line);
-  border-radius: 6px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-3);
-  font-size: 10.5px;
-  cursor: pointer;
-  opacity: 0;
-}
-.sub-ai i { margin-right: 3px; }
-.sub-row:hover .sub-ai,
-.sub-row.active .sub-ai { opacity: 1; }
-.sub-ai:hover { border-color: #b7c0ea; color: #4358d6; }
-.sub-dispatched {
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: var(--wao-bg-tab);
-  color: var(--wao-area-finance);
-  font-size: 10.5px;
-}
-.sub-dispatched i { margin-right: 3px; }
-.sub-row:hover .sub-chev,
-.sub-row.active .sub-chev {
-  opacity: 1;
-}
-/* 刚勾完成、还在 3 秒缓冲里：淡出但不移位 */
-.sub-row.settling {
-  opacity: 0.55;
-  transition: opacity 0.4s ease;
-}
-.sub-done-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: none;
-  background: none;
-  padding: 7px 8px;
-  margin: 2px -8px 0;
-  border-radius: 7px;
-  font-size: 12px;
-  color: var(--wao-text-weak);
-  cursor: pointer;
-  text-align: left;
-}
-.sub-done-toggle:hover {
-  background: var(--wao-bg-hover);
-  color: var(--wao-text-2);
-}
-.sub-done-toggle > i {
-  font-size: 15px;
-}
-.sub-done-count {
-  background: var(--wao-divider);
-  border-radius: 999px;
-  padding: 1px 7px;
-  font-size: 11px;
-}
-.sub-done-hint {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--wao-text-faint);
-}
-
-/* 子任务详情栏 */
-.sub-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: none;
-  background: none;
-  color: var(--wao-text-3);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 3px 6px;
-  margin: 0 0 8px -6px;
-  border-radius: 6px;
-}
-.sub-back:hover {
-  background: var(--wao-bg-hover-2);
-  color: var(--wao-primary-text);
-}
-.sub-back i {
-  font-size: 13px;
-}
-.sub-title-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 4px 0 4px;
-}
 .cbox.big {
   width: 18px;
   height: 18px;
   padding: 0;
   cursor: pointer;
   margin-top: 4px;
-}
-.sub-title-input {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid transparent;
-  outline: none;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: var(--wao-text);
-  background: none;
-  border-radius: 7px;
-  padding: 3px 6px;
-  margin-left: -6px;
-  /* 长标题要整段展开，不能截断也不能出现内部滚动条 */
-  font-family: inherit;
-  resize: none;
-  overflow: hidden;
-  word-break: break-word;
-}
-.sub-title-input:focus {
-  border-color: var(--wao-line-control);
-  background: var(--wao-bg-card);
-}
-.sub-title-input.done {
-  color: var(--wao-text-weak);
-  text-decoration: line-through;
-}
-.sub-field {
-  margin-top: 14px;
-}
-.sub-img-grid {
-  margin-bottom: 4px;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-}
-.sub-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 6px;
-}
-.sub-add {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 3px 8px;
-}
-.sub-add:focus-within {
-  border-color: var(--wao-line-control);
-  background: var(--wao-bg-card);
-}
-.sub-add i {
-  font-size: 14px;
-  color: var(--wao-text-faint);
-}
-.sub-add input {
-  flex: 1;
-  border: none;
-  outline: none;
-  font-size: 13px;
-  color: var(--wao-text-2);
-  background: none;
-  padding: 4px 0;
 }
 
 .img-grid {
@@ -2816,112 +2613,8 @@ async function uploadAttachment(event: Event) {
   font-size: 11px;
   color: var(--wao-text-faint);
 }
-
-/* 手机上的子任务详情：盖住整个抽屉的一页，自带顶栏 */
-.props.sub-page {
-  position: fixed;
-  inset: 0;
-  z-index: 82;
-  width: auto;
-  background: var(--wao-bg-card);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 0;
-  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
-  animation: waoSubPage 0.16s ease;
-}
 @keyframes waoSubPage {
   from { transform: translateX(14px); opacity: 0.4; }
-}
-.sub-page-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  margin: 0 -16px;
-  padding: 0 8px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--wao-bg-card);
-  border-bottom: 1px solid var(--wao-line);
-}
-.sub-page-back {
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: none;
-  border-radius: 9px;
-  color: var(--wao-text-2);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.sub-page-back i {
-  font-size: 20px;
-}
-.sub-page-title {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-}
-.sub-page-title b {
-  font-size: 13px;
-}
-.sub-page-title em {
-  font-style: normal;
-  font-size: 11px;
-  color: var(--wao-text-weak);
-}
-.sub-page-done {
-  height: 32px;
-  padding: 0 11px;
-  border: 1px solid var(--wao-line-control);
-  background: var(--wao-bg-card);
-  border-radius: 999px;
-  font-size: 12.5px;
-  color: var(--wao-text-3);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.sub-page-done.on {
-  background: var(--wao-success-bg, #eaf8f0);
-  border-color: #bfe6cf;
-  color: var(--wao-success-strong);
-}
-.sub-page-ai-slot {
-  margin: 12px 0 16px 26px;
-}
-.sub-page-ai {
-  width: 100%;
-  min-height: 44px;
-  border: 1px solid color-mix(in srgb, var(--wao-primary) 38%, var(--wao-line));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--wao-primary) 8%, var(--wao-bg-card));
-  color: var(--wao-primary-text);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.sub-page-ai:active:not(:disabled) {
-  transform: scale(0.99);
-}
-.sub-page-ai.dispatched {
-  border-color: var(--wao-line);
-  background: var(--wao-bg-tab);
-  color: var(--wao-area-finance);
-  cursor: default;
 }
 
 @media (max-width: 760px) {
@@ -2931,6 +2624,10 @@ async function uploadAttachment(event: Event) {
     width: 100%;
     max-width: none;
     height: 100dvh;
+    border-radius: 0;
+  }
+  .crumb-item {
+    padding-inline: 4px;
   }
   .dhead {
     height: 52px;
@@ -2941,8 +2638,6 @@ async function uploadAttachment(event: Event) {
     max-width: min(42vw, 180px);
     padding-inline: 5px;
   }
-  .sep,
-  .crumb,
   .wait-badge {
     display: none;
   }
@@ -2982,21 +2677,8 @@ async function uploadAttachment(event: Event) {
     border-left: none;
     padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
   }
-  .sub-head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 5px;
-  }
-  .sub-add {
-    width: 100%;
-    box-sizing: border-box;
-    background: var(--wao-bg-sub);
-  }
   .check-row {
     min-height: 32px;
-  }
-  .sub-chev {
-    opacity: 1;
   }
   .comment-input {
     align-items: flex-start;
