@@ -313,9 +313,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </template>
         <TopMenuBar />
 
-        <button class="assistant-entry" title="问问 AI（Ctrl/⌘ + J）" @click="ui.openAssistant()">
-          <i class="ri-robot-2-line"></i>问问 AI
-        </button>
+        <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
         <div class="quick-actions" :class="{ relocated: desktopToolbar }">
           <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
           <button class="plus" data-desktop-action="new-task" @click="newTask">
@@ -623,22 +621,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   gap: 6px;
 }
-.assistant-entry {
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--wao-primary-line);
-  border-radius: 8px;
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary-text);
-  font-size: 12px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.assistant-entry:hover {
-  background: var(--wao-bg-hover-2);
-}
 .plus:hover {
   background: var(--wao-primary-hover);
 }
@@ -799,8 +781,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   .fold,
   .bell,
   .plus,
-  .plus.ghost,
-  .assistant-entry {
+  .plus.ghost {
     width: 27px;
     min-width: 27px;
     height: 27px;
@@ -811,8 +792,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
   .fold i,
   .bell i,
-  .plus i,
-  .assistant-entry i {
+  .plus i {
     font-size: 14px;
   }
   .bell {

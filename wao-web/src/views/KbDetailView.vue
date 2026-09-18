@@ -1594,7 +1594,7 @@ async function keepConflictCopy() {
 .doc-col {
   flex: 1;
   min-width: min(420px, 100%);
-  max-width: 1080px;
+  max-width: none;
 }
 .doc-bar {
   display: flex;

@@ -33,7 +33,6 @@ describe('项目页聚焦任务', () => {
     await flushPromises()
     expect(wrapper.get('table').attributes('aria-label')).toBe('项目任务表格')
     expect(wrapper.findAll('thead th').map((node) => node.text())).toEqual([
-      '选择',
       'ID',
       '标题',
       '分组',
@@ -41,6 +40,7 @@ describe('项目页聚焦任务', () => {
       '状态',
       '负责人',
       '创建者',
+      '创建日期',
       '计划开始',
       '截止日期',
     ])
@@ -102,41 +102,31 @@ describe('项目页聚焦任务', () => {
     wrapper.unmount()
   })
 
-  it('按派生交付阶段展示真实数量并用 URL 恢复筛选', async () => {
+  it('交付阶段筛选按钮已去掉，旧链接里的 stage 参数不再隐藏任务', async () => {
     const data = useDataStore()
     data.taskById('t1')!.status = '进行中'
     data.taskById('t2')!.status = '收集中'
     data.taskById('t3')!.status = '待验证'
-    data.taskById('t12')!.status = '已完成'
-    await router.push('/projects/p1?view=board')
+    await router.push('/projects/p1?view=board&stage=acceptance')
     await router.isReady()
     const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
     await flushPromises()
 
-    const filters = wrapper.findAll('.delivery-filter-button')
-    expect(filters.map((button) => button.text())).toEqual([
-      '全部阶段 6',
-      '方向探索 1',
-      '待开发 3',
-      '待验收 1',
-      '已验证 1',
-    ])
-
-    await filters[3]!.trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.query.stage).toBe('acceptance')
-    expect(wrapper.findAll('.board-col')).toHaveLength(1)
-    expect(wrapper.get('.board-col-label').text()).toBe('待验证')
+    expect(wrapper.find('.delivery-filter').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('全部阶段')
+    expect(wrapper.text()).toContain(data.taskById('t2')!.title)
     expect(wrapper.text()).toContain(data.taskById('t3')!.title)
-    expect(wrapper.text()).not.toContain(data.taskById('t2')!.title)
-
     wrapper.unmount()
-    await router.push('/projects/p1?view=board&stage=acceptance')
-    const restored = mount(ProjectDetailView, { global: { plugins: [router] } })
+  })
+
+  it('项目头部不再显示项目状态，表格视图没有批量选择入口', async () => {
+    await router.push('/projects/p1?view=list')
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
     await flushPromises()
-    expect(restored.get('.delivery-filter-button.on').text()).toContain('待验收')
-    expect(restored.findAll('.board-col')).toHaveLength(1)
-    restored.unmount()
+    expect(wrapper.find('.phead-status').exists()).toBe(false)
+    expect(wrapper.find('.batch-selection-toggle').exists()).toBe(false)
+    expect(wrapper.get('.task-view-toolbar').text()).toContain('不分组')
+    wrapper.unmount()
   })
 
   it('项目看板卡片中的连续长文本不会撑出状态列', async () => {

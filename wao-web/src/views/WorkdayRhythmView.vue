@@ -1531,7 +1531,7 @@ onBeforeUnmount(() => {
 .rhythm-page {
   min-height: calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h) - 44px);
   box-sizing: border-box;
-  max-width: 1180px;
+  max-width: none;
   margin: 0 auto;
   padding: 16px 28px 24px;
   color: var(--wao-text);

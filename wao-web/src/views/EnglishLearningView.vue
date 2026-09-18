@@ -472,7 +472,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.english-page { max-width: 1480px; margin: 0 auto; padding: 28px 30px 72px; color: var(--wao-text); }
+.english-page { max-width: none; margin: 0 auto; padding: 28px 30px 72px; color: var(--wao-text); }
 button, textarea, input, select { color: inherit; }
 button { cursor: pointer; }
 .state-card { min-height: 420px; display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center; color: var(--wao-text-3); }

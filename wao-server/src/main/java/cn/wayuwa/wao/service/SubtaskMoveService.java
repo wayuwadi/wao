@@ -48,7 +48,7 @@ public class SubtaskMoveService {
         if (parent != null && to.stream().noneMatch(sub -> parent.equals(sub.id()))) throw new BadRequestException("目标父子任务不存在");
         if (!sourceId.equals(targetId) && to.stream().anyMatch(sub -> moving.contains(sub.id()))) throw new BadRequestException("目标已存在同标识子任务，请刷新");
         List<Step> moved = from.stream().filter(sub -> moving.contains(sub.id())).map(sub ->
-                sub.id().equals(subId) ? new Step(sub.text(), sub.done(), sub.id(), sub.desc(), sub.images(), null, parent, sub.owner(), sub.due()) : sub).toList();
+                sub.id().equals(subId) ? sub.with(sub.id(), null, parent) : sub).toList();
         from.removeIf(sub -> moving.contains(sub.id()));
         to.addAll(moved);
         SubtaskTree.validate(from);
@@ -81,7 +81,8 @@ public class SubtaskMoveService {
             Step sub = subs.get(i);
             result.add(new Step(sub.text(), sub.done(), blank(sub.id()) == null ? taskId + "#" + i : sub.id(),
                     sub.desc() == null ? "" : sub.desc(), sub.images() == null ? List.of() : sub.images(), null,
-                    blank(sub.parentId()), blank(sub.owner()), blank(sub.due())));
+                    blank(sub.parentId()), blank(sub.owner()), blank(sub.due()), blank(sub.status()),
+                    blank(sub.createdBy()), blank(sub.createdAt()), sub.docs(), sub.comments()));
         }
         return result;
     }

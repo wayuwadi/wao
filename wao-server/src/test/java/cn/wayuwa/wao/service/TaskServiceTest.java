@@ -187,6 +187,15 @@ class TaskServiceTest {
     }
 
     @Test
+    void createWithoutDueLeavesTaskUnscheduled() {
+        when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
+
+        TaskDto dto = service.create(new CreateTaskRequest("不排期的任务", "p2", "P2", "wd", "", null, null));
+
+        assertThat(dto.due()).isNull();
+    }
+
+    @Test
     void createAndPatchKeepPdcaHistoryInTaskDetail() {
         when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
         PdcaCycle cycle = new PdcaCycle("pc1", "一周跑三次", "", "", null,

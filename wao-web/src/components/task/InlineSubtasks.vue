@@ -3,14 +3,20 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
-import { subtaskRows, SUBTASK_DRAG_TYPE, readSubtaskDrag } from '@/utils/subtaskTree'
+import {
+  subtaskRows, subtaskState, SUBTASK_DRAG_TYPE, SUBTASK_STATE_COLOR, SUBTASK_STATES, readSubtaskDrag,
+} from '@/utils/subtaskTree'
 import WorkItemIcon from '@/components/task/WorkItemIcon.vue'
+import CellMenu from '@/components/task/CellMenu.vue'
+import type { SubtaskState, TaskStep } from '@/types'
 /**
  * 子任务列表：项目表格里渲染成与主任务同列的 `<tbody>` 行；任务 / 子任务详情里渲染成紧凑列表。
  * 两种形态共用同一套数据、编号、拖拽与草稿逻辑，只是外观不同。
  *
  * <p>表格形态的「隐藏已完成」由表格工具条统一控制（`hideDone`），每个任务下不再各放一个按钮；
- * 新增行也不常驻，只在点了行尾「+」后出现（`adding`，`addParentId` 为要挂到哪条子任务下）。
+ * 新增行也不常驻，只在点了行尾「+」后出现（`adding`，`addParentId` 为要挂到哪条子任务下），
+ * 并且紧跟在要挂的那一行下面——新子任务本来就插在最前，输入框和刚加好的条目在同一个位置。
+ * 有下级的子任务可以单独收起；`ownerFilter` 只保留该负责人的子任务及其上级。
  */
 const props = defineProps<{
   taskId: string
@@ -19,6 +25,7 @@ const props = defineProps<{
   hideDone?: boolean
   adding?: boolean
   addParentId?: string | null
+  ownerFilter?: string | null
 }>()
 const emit = defineEmits<{ 'add-sub': [parentId: string | null]; 'close-add': [] }>()
 const data = useDataStore()
@@ -37,7 +44,62 @@ const rows = computed(() => {
   for (let i = start; i < all.length && all[i]!.depth > parent.depth; i++) children.push({ ...all[i]!, depth: all[i]!.depth - parent.depth - 1 })
   return children
 })
-const visibleRows = computed(() => rows.value.filter(row => !hidingDone.value || !row.sub.done))
+/** 有下级的子任务 id，只有它们才显示收起箭头。 */
+const parentIds = computed(() => new Set(rows.value.map(row => row.sub.parentId).filter((id): id is string => !!id)))
+/** 表格里收起的子任务：只在本次页面内记住，展开主任务时默认全部展开。 */
+const collapsed = ref<string[]>([])
+function toggleCollapse(subId: string) {
+  collapsed.value = collapsed.value.includes(subId) ? collapsed.value.filter(id => id !== subId) : [...collapsed.value, subId]
+}
+/** 按负责人筛选时保留命中的子任务和它们的上级链，层级才看得懂。 */
+const ownerKeep = computed(() => {
+  const owner = props.ownerFilter
+  if (!owner) return null
+  const byId = new Map(rows.value.map(row => [row.key, row.sub]))
+  const keep = new Set<string>()
+  for (const row of rows.value) {
+    if (row.sub.owner !== owner) continue
+    let id: string | null | undefined = row.key
+    while (id && !keep.has(id)) {
+      keep.add(id)
+      id = byId.get(id)?.parentId
+    }
+  }
+  return keep
+})
+const visibleRows = computed(() => {
+  const hiddenUnder: number[] = []
+  return rows.value.filter(row => {
+    while (hiddenUnder.length && hiddenUnder[hiddenUnder.length - 1]! >= row.depth) hiddenUnder.pop()
+    if (props.table && hiddenUnder.length) return false
+    if (hidingDone.value && row.sub.done) return false
+    if (ownerKeep.value && !ownerKeep.value.has(row.key)) return false
+    if (props.table && collapsed.value.includes(row.key)) hiddenUnder.push(row.depth)
+    return true
+  })
+})
+/** 表格行序列：新增输入行插在要挂的父行下面，挂在主任务下时就是第一行。 */
+const tableItems = computed(() => {
+  const items: ({ kind: 'row'; row: (typeof visibleRows.value)[number] } | { kind: 'add'; depth: number })[] =
+    visibleRows.value.map(row => ({ kind: 'row' as const, row }))
+  if (!props.adding) return items
+  const parent = props.addParentId ?? null
+  if (!parent) return [{ kind: 'add' as const, depth: 0 }, ...items]
+  const at = items.findIndex(item => item.kind === 'row' && item.row.key === parent)
+  if (at < 0) return [...items, { kind: 'add' as const, depth: 0 }]
+  const depth = (items[at] as { row: { depth: number } }).row.depth + 1
+  return [...items.slice(0, at + 1), { kind: 'add' as const, depth }, ...items.slice(at + 1)]
+})
+// 给某条子任务加下级时，它和它的上级都得展开，输入框才看得见。
+watch(() => [props.adding, props.addParentId], () => {
+  let id = props.adding ? props.addParentId : null
+  const byId = new Map(rows.value.map(row => [row.key, row.sub]))
+  while (id) {
+    const current: string = id
+    collapsed.value = collapsed.value.filter(item => item !== current)
+    id = byId.get(current)?.parentId
+  }
+})
 const doneCount = computed(() => rows.value.filter(row => row.sub.done).length)
 function drag(event: DragEvent, subId: string) {
   event.dataTransfer?.setData(SUBTASK_DRAG_TYPE, JSON.stringify({ taskId: props.taskId, subId }))
@@ -50,11 +112,30 @@ async function drop(event: DragEvent, parentId?: string | null) {
   try { await data.moveSubtask(payload.taskId, payload.subId, props.taskId, parentId) }
   catch (error) { localError.value = error instanceof Error ? error.message : '移动失败，请重试' }
 }
-function toggleDone(subId: string, done: boolean) {
-  data.updateSub(props.taskId, subId, { done: !done })
-}
 function member(id?: string | null) {
   return id ? session.memberById(id) : null
+}
+function stateStyle(sub: TaskStep) {
+  const color = SUBTASK_STATE_COLOR[subtaskState(sub)]
+  return { color, borderColor: color }
+}
+function createdDate(sub: TaskStep) {
+  return sub.createdAt?.slice(0, 10).replace(/-/g, '/') ?? ''
+}
+// ---- 状态 / 负责人悬浮菜单：点单元格任意处打开，悬浮在表格之上 ----
+const menu = ref<{ kind: 'state' | 'owner'; subId: string; anchor: HTMLElement } | null>(null)
+const menuSub = computed(() => (menu.value ? data.subById(props.taskId, menu.value.subId) : undefined))
+function openMenu(kind: 'state' | 'owner', subId: string, event: Event) {
+  const anchor = event.currentTarget as HTMLElement
+  menu.value = menu.value?.kind === kind && menu.value.subId === subId ? null : { kind, subId, anchor }
+}
+function pickState(state: SubtaskState) {
+  if (menu.value) data.setSubState(props.taskId, menu.value.subId, state)
+  menu.value = null
+}
+function pickOwner(owner: string) {
+  if (menu.value && menuSub.value?.owner !== owner) data.updateSub(props.taskId, menu.value.subId, { owner })
+  menu.value = null
 }
 /** 新子任务挂到哪里：表格里由行尾「+」决定，详情里固定挂在当前查看的节点下。 */
 const targetParent = computed(() => (props.table ? props.addParentId ?? null : props.parentId ?? null))
@@ -64,9 +145,6 @@ const targetParentText = computed(() => {
 })
 function setDue(subId: string, event: Event) {
   data.updateSub(props.taskId, subId, { due: (event.target as HTMLInputElement).value || null })
-}
-function setOwner(subId: string, event: Event) {
-  data.updateSub(props.taskId, subId, { owner: (event.target as HTMLSelectElement).value || null })
 }
 // ---- 子任务标题就地改名（表格） ----
 const renamingId = ref<string | null>(null)
@@ -86,9 +164,9 @@ function commitRename() {
   const text = renameDraft.value.trim()
   if (id && text) data.updateSub(props.taskId, id, { text })
 }
-const addInput = ref<HTMLInputElement | null>(null)
+const addInput = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
 watch(() => [props.adding, props.addParentId], () => {
-  if (props.table && props.adding) nextTick(() => addInput.value?.focus())
+  if (props.table && props.adding) nextTick(() => (Array.isArray(addInput.value) ? addInput.value[0] : addInput.value)?.focus())
 }, { immediate: true })
 function closeAddIfEmpty() {
   if (!draft.value.trim()) emit('close-add')
@@ -129,89 +207,118 @@ function add() {
 <template>
   <tbody v-if="task && table" class="table-subs" @click.stop @dragstart.stop @dragover.prevent @drop.prevent.stop="drop($event, parentId)" :inert="data.movingSubtasks">
     <tr v-if="localError"><td colspan="10"><small class="error" role="alert">{{ localError }}</small></td></tr>
-    <tr
-      v-for="{ sub, idx: index, key: subId, depth } in visibleRows"
-      :key="data.subKey(taskId, sub, index)"
-      class="inline-sub-row" :class="{ 'is-done': sub.done }" draggable="true" @dragstart.stop="drag($event, subId)" @dragover.prevent.stop @drop.prevent.stop="drop($event, subId)"
-      @click="ui.openTask(taskId, subId)"
-    >
-      <td></td>
-      <td class="sub-number wao-tabular">{{ sub.number ?? '…' }}</td>
-      <td>
-        <div class="sub-title" :style="{ paddingLeft: `${24 + depth * 20}px` }">
-          <WorkItemIcon kind="subtask" /><input
-            v-if="renamingId === subId"
-            ref="renameInput"
-            v-model="renameDraft"
-            class="rename-input"
-            :aria-label="`修改子任务 ${sub.text} 的标题`"
-            @click.stop
-            @keydown.enter.prevent="!$event.isComposing && commitRename()"
-            @keydown.esc.stop="renamingId = null"
-            @blur="commitRename"
-          /><template v-else><button
-            class="sub-title-text"
-            :class="{ done: sub.done }"
-            :title="sub.text"
-            @click.stop="ui.openTask(taskId, subId)"
-          >
-            {{ sub.text }}
-          </button><span class="row-tools">
-            <button class="row-tool" title="修改标题" :aria-label="`修改子任务 ${sub.text} 的标题`" @click.stop="startRename(subId, sub.text)"><i class="ri-pencil-line"></i></button>
-            <button class="row-tool" title="在这条下添加子任务" :aria-label="`在 ${sub.text} 下添加子任务`" @click.stop="emit('add-sub', subId)"><i class="ri-add-line"></i></button>
-          </span></template>
-        </div>
-      </td>
-      <td></td>
-      <td><span class="faint">—</span></td>
-      <td>
-        <button
-          class="sub-state"
-          :class="{ completed: sub.done }"
-          :title="sub.done ? '点击改回未开始' : '点击标记已完成'"
-          :aria-label="`${sub.done ? '取消完成' : '完成'}子任务 ${sub.text}`"
-          @click.stop="toggleDone(subId, sub.done)"
-        >{{ sub.done ? '已完成' : '未开始' }}</button>
-      </td>
-      <td class="cell-owner" @click.stop>
-        <span v-if="member(sub.owner)" class="sub-av cell-av" :style="{ background: member(sub.owner)!.color }">{{ member(sub.owner)!.initial }}</span>
-        <select class="cell-input" :class="{ 'with-av': member(sub.owner) }" :value="sub.owner || ''" :aria-label="`子任务 ${sub.text} 的负责人`" @change="setOwner(subId, $event)">
-          <option value="">—</option>
-          <option v-for="m in session.members" :key="m.id" :value="m.id">{{ m.name }}</option>
-        </select>
-      </td>
-      <td><span class="faint">—</span></td>
-      <td><span class="faint">—</span></td>
-      <td @click.stop>
-        <input class="cell-input wao-tabular" type="date" :value="sub.due || ''" :aria-label="`子任务 ${sub.text} 的截止日期`" @change="setDue(subId, $event)" />
-      </td>
-    </tr>
-    <tr v-if="adding" class="sub-add-row">
-      <td></td>
-      <td></td>
-      <td colspan="8">
-        <form @submit.prevent="add">
-          <input
-            ref="addInput"
-            v-model="draft"
-            :aria-label="`为 ${task.title} 添加子任务`"
-            :placeholder="targetParentText ? `添加到「${targetParentText}」下，回车保存，Esc 收起` : '添加子任务，回车保存，Esc 收起'"
-            @keydown.enter="$event.isComposing && $event.preventDefault()"
-            @keydown.esc.stop="cancelAdd"
-            @blur="closeAddIfEmpty"
-          /><button :disabled="!draft.trim()">添加</button>
-        </form>
-      </td>
-    </tr>
+    <template v-for="item in tableItems" :key="item.kind === 'row' ? data.subKey(taskId, item.row.sub, item.row.idx) : '__add'">
+      <tr v-if="item.kind === 'add'" class="sub-add-row">
+        <td></td>
+        <td colspan="9">
+          <form :style="{ paddingLeft: `${44 + item.depth * 20}px` }" @submit.prevent="add">
+            <input
+              ref="addInput"
+              v-model="draft"
+              :aria-label="`为 ${task.title} 添加子任务`"
+              :placeholder="targetParentText ? `添加到「${targetParentText}」下，回车保存，Esc 收起` : '添加子任务，回车保存，Esc 收起'"
+              @keydown.enter="$event.isComposing && $event.preventDefault()"
+              @keydown.esc.stop="cancelAdd"
+              @blur="closeAddIfEmpty"
+            /><button :disabled="!draft.trim()">添加</button>
+          </form>
+        </td>
+      </tr>
+      <tr
+        v-else
+        class="inline-sub-row" :class="{ 'is-done': item.row.sub.done }" draggable="true" @dragstart.stop="drag($event, item.row.key)" @dragover.prevent.stop @drop.prevent.stop="drop($event, item.row.key)"
+        @click="ui.openTask(taskId, item.row.key)"
+      >
+        <td class="sub-number wao-tabular">{{ item.row.sub.number ?? '…' }}</td>
+        <td>
+          <div class="sub-title" :style="{ paddingLeft: `${22 + item.row.depth * 20}px` }">
+            <button
+              v-if="parentIds.has(item.row.key)"
+              class="tree-toggle"
+              :aria-label="`展开或收起 ${item.row.sub.text} 的子任务`"
+              :aria-expanded="!collapsed.includes(item.row.key)"
+              @click.stop="toggleCollapse(item.row.key)"
+            ><i :class="collapsed.includes(item.row.key) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+            <span v-else class="tree-spacer"></span>
+            <WorkItemIcon kind="subtask" /><input
+              v-if="renamingId === item.row.key"
+              ref="renameInput"
+              v-model="renameDraft"
+              class="rename-input"
+              :aria-label="`修改子任务 ${item.row.sub.text} 的标题`"
+              @click.stop
+              @keydown.enter.prevent="!$event.isComposing && commitRename()"
+              @keydown.esc.stop="renamingId = null"
+              @blur="commitRename"
+            /><template v-else><button
+              class="sub-title-text"
+              :class="{ done: item.row.sub.done }"
+              :title="item.row.sub.text"
+              @click.stop="ui.openTask(taskId, item.row.key)"
+            >
+              {{ item.row.sub.text }}
+            </button><span class="row-tools">
+              <button class="row-tool" title="修改标题" :aria-label="`修改子任务 ${item.row.sub.text} 的标题`" @click.stop="startRename(item.row.key, item.row.sub.text)"><i class="ri-pencil-line"></i></button>
+              <button class="row-tool" title="在这条下添加子任务" :aria-label="`在 ${item.row.sub.text} 下添加子任务`" @click.stop="emit('add-sub', item.row.key)"><i class="ri-add-line"></i></button>
+            </span></template>
+          </div>
+        </td>
+        <td></td>
+        <td><span class="faint">—</span></td>
+        <td class="cell-pop" title="点击修改状态" @click.stop="openMenu('state', item.row.key, $event)">
+          <button
+            class="sub-state"
+            :style="stateStyle(item.row.sub)"
+            :aria-label="`修改子任务 ${item.row.sub.text} 的状态`"
+            aria-haspopup="menu"
+            :aria-expanded="menu?.kind === 'state' && menu.subId === item.row.key"
+          >{{ subtaskState(item.row.sub) }}</button>
+        </td>
+        <td class="cell-pop" :title="member(item.row.sub.owner) ? `负责人：${member(item.row.sub.owner)!.name}，点击修改` : '点击设置负责人'" @click.stop="openMenu('owner', item.row.key, $event)">
+          <button class="member-trigger" :aria-label="`修改子任务 ${item.row.sub.text} 的负责人`" aria-haspopup="menu">
+            <template v-if="member(item.row.sub.owner)">
+              <span class="sub-av" :style="{ background: member(item.row.sub.owner)!.color }">{{ member(item.row.sub.owner)!.initial }}</span><span class="member-name">{{ member(item.row.sub.owner)!.name }}</span>
+            </template>
+            <span v-else class="faint">—</span>
+          </button>
+        </td>
+        <td :title="member(item.row.sub.createdBy) ? `创建者：${member(item.row.sub.createdBy)!.name}` : '历史子任务没有创建者记录'">
+          <span v-if="member(item.row.sub.createdBy)" class="member-trigger">
+            <span class="sub-av" :style="{ background: member(item.row.sub.createdBy)!.color }">{{ member(item.row.sub.createdBy)!.initial }}</span><span class="member-name">{{ member(item.row.sub.createdBy)!.name }}</span>
+          </span>
+          <span v-else class="faint">—</span>
+        </td>
+        <td class="wao-tabular created-date">
+          <span v-if="createdDate(item.row.sub)">{{ createdDate(item.row.sub) }}</span><span v-else class="faint">—</span>
+        </td>
+        <td><span class="faint">—</span></td>
+        <td @click.stop>
+          <input class="cell-input date wao-tabular" :class="{ empty: !item.row.sub.due }" type="date" :value="item.row.sub.due || ''" :aria-label="`子任务 ${item.row.sub.text} 的截止日期`" @change="setDue(item.row.key, $event)" />
+        </td>
+      </tr>
+    </template>
     <tr v-if="data.taskSaveState(taskId) === 'error'" class="sub-add-row">
       <td></td>
-      <td></td>
-      <td colspan="8">
+      <td colspan="9">
         <small class="error" role="alert"
           >保存失败{{ data.taskSaveError(taskId) ? `：${data.taskSaveError(taskId)}` : '' }}，草稿已保留<button type="button" @click="data.flushTask(taskId)">重试保存</button></small
         >
       </td>
     </tr>
+    <CellMenu v-if="menu" :anchor="menu.anchor" :min-width="menu.kind === 'owner' ? 120 : 110" @close="menu = null">
+      <template v-if="menu.kind === 'state'">
+        <button v-for="state in SUBTASK_STATES" :key="state" role="menuitemradio" :aria-checked="!!menuSub && subtaskState(menuSub) === state" :class="{ on: menuSub && subtaskState(menuSub) === state }" @click="pickState(state)">
+          <span class="sub-state" :style="{ color: SUBTASK_STATE_COLOR[state], borderColor: SUBTASK_STATE_COLOR[state] }">{{ state }}</span>
+          <i v-if="menuSub && subtaskState(menuSub) === state" class="ri-check-line"></i>
+        </button>
+      </template>
+      <template v-else>
+        <button v-for="m in session.members" :key="m.id" role="menuitemradio" :aria-checked="menuSub?.owner === m.id" :class="{ on: menuSub?.owner === m.id }" @click="pickOwner(m.id)">
+          <span class="member-trigger"><span class="sub-av" :style="{ background: m.color }">{{ m.initial }}</span>{{ m.name }}</span>
+          <i v-if="menuSub?.owner === m.id" class="ri-check-line"></i>
+        </button>
+      </template>
+    </CellMenu>
   </tbody>
   <section
     v-else-if="task"
@@ -248,10 +355,11 @@ function add() {
       <span v-if="member(sub.owner)" class="sub-av" :title="member(sub.owner)!.name" :style="{ background: member(sub.owner)!.color }">{{ member(sub.owner)!.initial }}</span>
       <button
         class="sub-state"
-        :class="{ completed: sub.done }"
-        :aria-label="`${sub.done ? '取消完成' : '完成'}子任务 ${sub.text}`"
-        @click="toggleDone(subId, sub.done)"
-      >{{ sub.done ? '已完成' : '未开始' }}</button>
+        :style="stateStyle(sub)"
+        :aria-label="`修改子任务 ${sub.text} 的状态`"
+        aria-haspopup="menu"
+        @click="openMenu('state', subId, $event)"
+      >{{ subtaskState(sub) }}</button>
     </div>
     <div v-if="!rows.length" class="empty">还没有子任务</div>
     <form @submit.prevent="add">
@@ -269,6 +377,12 @@ function add() {
       >保存失败{{ data.taskSaveError(taskId) ? `：${data.taskSaveError(taskId)}` : '' }}，草稿已保留<button @click="data.flushTask(taskId)">重试保存</button></small
     >
     <small v-if="localError" class="error" role="alert">{{ localError }}</small>
+    <CellMenu v-if="menu?.kind === 'state'" :anchor="menu.anchor" @close="menu = null">
+      <button v-for="state in SUBTASK_STATES" :key="state" role="menuitemradio" :class="{ on: menuSub && subtaskState(menuSub) === state }" @click="pickState(state)">
+        <span class="sub-state" :style="{ color: SUBTASK_STATE_COLOR[state], borderColor: SUBTASK_STATE_COLOR[state] }">{{ state }}</span>
+        <i v-if="menuSub && subtaskState(menuSub) === state" class="ri-check-line"></i>
+      </button>
+    </CellMenu>
   </section>
 </template>
 <style scoped>
@@ -313,10 +427,6 @@ small {
   line-height: 1;
   white-space: nowrap;
   flex-shrink: 0;
-}
-.sub-state.completed {
-  border-color: #3fb96f;
-  color: #3fb96f;
 }
 .sub-state:hover {
   filter: brightness(0.9);
@@ -561,8 +671,39 @@ small {
   font-size: 13px;
   outline: none;
 }
-.table-subs td.cell-owner {
-  position: relative;
+.table-subs td.cell-pop {
+  cursor: pointer;
+}
+.member-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  color: var(--wao-text-2);
+}
+.member-trigger .member-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.created-date {
+  color: var(--wao-text-weak);
+  font-size: 12px;
+}
+.tree-toggle {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wao-text-weak);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.tree-spacer {
+  width: 16px;
+  flex-shrink: 0;
 }
 .cell-input {
   width: 100%;
@@ -576,26 +717,18 @@ small {
   padding: 0 2px;
   cursor: pointer;
 }
-.cell-input.with-av {
-  padding-left: 22px;
+.cell-input.date.empty:not(:hover):not(:focus) {
+  color: transparent;
 }
 .cell-input:hover,
 .cell-input:focus {
   border-color: var(--wao-line-control);
   outline: none;
 }
-.cell-av {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
 .table-subs form {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-left: 46px;
   height: 28px;
 }
 .table-subs form input {

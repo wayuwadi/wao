@@ -774,7 +774,7 @@ onMounted(loadAll)
   justify-content: space-between;
   gap: 24px;
   margin: 0 auto 22px;
-  max-width: 1240px;
+  max-width: none;
 }
 .workspace-hero h1 {
   font-size: 38px;
@@ -839,7 +839,7 @@ onMounted(loadAll)
 }
 .state-card,
 .empty-card {
-  max-width: 1240px;
+  max-width: none;
   margin: 20px auto;
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
@@ -881,7 +881,7 @@ onMounted(loadAll)
   font-size: 31px;
 }
 .space-toolbar {
-  max-width: 1240px;
+  max-width: none;
   margin: 0 auto 14px;
   justify-content: space-between;
   gap: 16px;
@@ -933,7 +933,7 @@ onMounted(loadAll)
   color: #3f7e5b;
 }
 .space-intro {
-  max-width: 1180px;
+  max-width: none;
   margin: 0 auto 16px;
   padding: 26px 30px;
   justify-content: space-between;
@@ -1000,7 +1000,7 @@ onMounted(loadAll)
 }
 .favorite-section,
 .group-section {
-  max-width: 1180px;
+  max-width: none;
   margin: 24px auto;
 }
 .section-title {
@@ -1090,7 +1090,7 @@ onMounted(loadAll)
   text-align: center;
 }
 .workspace-editor {
-  max-width: 1180px;
+  max-width: none;
   margin: 0 auto;
 }
 .editor-meta {

@@ -356,7 +356,7 @@ onBeforeUnmount(() => { if (noteTimer) { clearTimeout(noteTimer); void flushNote
 </template>
 
 <style scoped>
-.action-page { max-width: 1180px; margin: 0 auto; padding: 24px 28px 52px; color: var(--wao-text); }
+.action-page { max-width: none; margin: 0 auto; padding: 24px 28px 52px; color: var(--wao-text); }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .eyebrow { color: #267c65; font-size: 10px; font-weight: 750; letter-spacing: 2.2px; }
 h1 { margin: 5px 0 1px; font-size: 25px; } .page-head p { margin: 0; color: var(--wao-text-weak); font-size: 13px; }

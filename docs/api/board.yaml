@@ -1692,6 +1692,25 @@ components:
         images:
           type: array
           items: { $ref: '#/components/schemas/ImageRef' }
+        status: { type: string, nullable: true, enum: [进行中], description: 未完成子任务的细分状态；空为未开始，完成态仍以 done 为准 }
+        createdBy: { type: string, nullable: true, description: 子任务创建人成员 id；历史子任务缺省 }
+        createdAt: { type: string, nullable: true, description: 子任务创建时间（ISO 8601）；历史子任务缺省 }
+        docs:
+          type: array
+          nullable: true
+          description: 子任务关联的知识文档 id
+          items: { type: string }
+        comments:
+          type: array
+          nullable: true
+          description: 子任务评论，随任务全文保存
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              who: { type: string, description: 评论人成员 id }
+              time: { type: string, description: 评论时间（ISO 8601） }
+              text: { type: string }
     ImageRef:
       type: object
       properties:

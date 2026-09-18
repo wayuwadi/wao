@@ -220,7 +220,7 @@ onMounted(() => void loadPins())
 </template>
 
 <style scoped>
-.notes-page { width: 100%; max-width: 1800px; margin: 0 auto; padding: 12px 28px 24px; box-sizing: border-box; color: var(--wao-text-2); }
+.notes-page { width: 100%; max-width: none; margin: 0 auto; padding: 12px 28px 24px; box-sizing: border-box; color: var(--wao-text-2); }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 h1 { display: flex; gap: 10px; align-items: center; font-size: 18px; margin: 0; color: var(--wao-text); }
 h1 i { color: #7a5cc6; }

@@ -63,12 +63,12 @@ describe('任务与项目里的 AI Run 入口已隐藏', () => {
 
   it('项目批量选择后只保留复制，不再出现「给 AI」', async () => {
     const router = makeRouter()
-    await router.push('/projects/p1?view=list')
+    await router.push('/projects/p1?view=board')
     await router.isReady()
     const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
     await flushPromises()
     await wrapper.get('.batch-selection-toggle').trigger('click')
-    await wrapper.get('.task-row .select-dot').trigger('click')
+    await wrapper.get('.board-card .select-dot').trigger('click')
 
     expect(wrapper.get('.selection-count').text()).toBe('已选 1 项')
     expect(wrapper.find('.batch-ai-actions').exists()).toBe(false)

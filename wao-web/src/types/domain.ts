@@ -125,7 +125,20 @@ export interface TaskStep {
   desc?: string
   /** 子任务内嵌图片。 */
   images?: ImageRef[]
+  /** 未完成时的细分状态：目前只有「进行中」；空表示未开始。完成态仍以 done 为准。 */
+  status?: '进行中' | null
+  /** 子任务创建人成员 id；历史子任务没有。 */
+  createdBy?: string | null
+  /** 子任务创建时间（ISO）；历史子任务没有。 */
+  createdAt?: string | null
+  /** 子任务关联的知识文档 id。 */
+  docs?: string[] | null
+  /** 子任务评论，随任务全文保存。 */
+  comments?: Comment[] | null
 }
+
+/** 子任务在表格与详情里展示的三态。 */
+export type SubtaskState = '未开始' | '进行中' | '已完成'
 
 export interface Comment {
   /** 评论稳定 id（`c` + 时间戳）。历史评论没有，改 / 删时按数组下标兜底。 */

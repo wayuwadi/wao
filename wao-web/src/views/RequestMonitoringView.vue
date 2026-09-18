@@ -341,7 +341,7 @@ onMounted(load)
 
 <style scoped>
 .monitor-page {
-  max-width: 1240px;
+  max-width: none;
   margin: 0 auto;
   padding: 24px 28px 60px;
   color: var(--wao-text);

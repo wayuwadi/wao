@@ -78,11 +78,12 @@ import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { readDocumentDraft, removeDocumentDraft, writeDocumentDraft, type DocumentDraft } from '@/utils/documentDrafts'
 import { nowIso, todayIso } from '@/utils/time'
 import { mergeSubtasks } from '@/utils/subtaskMerge'
+import { subtaskState } from '@/utils/subtaskTree'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import type {
   AiRun, Area, AutomationJob, Comment, Doc, DocBlock, FileItem, HostedPage, ImageItem, ImageRef, RichDocContent,
-  KnowledgeBase, Project, ScheduleItem, Suggestion, Task, TaskGroup, TaskStep, TrashEntry, VaultGroup, VaultItem,
+  KnowledgeBase, Project, ScheduleItem, SubtaskState, Suggestion, Task, TaskGroup, TaskStep, TrashEntry, VaultGroup, VaultItem,
 } from '@/types'
 
 /** 兜底分组的 id：项目还没建过分组时，所有任务都算落在它里面。 */
@@ -1695,7 +1696,12 @@ export const useDataStore = defineStore('data', () => {
     if (!t || !title) return null
     const id = uid('s')
     if (parentId && !t.subs.some(sub => sub.id === parentId)) return null
-    t.subs.unshift({ id, text: title, done: false, desc: '', images: [], parentId: parentId || null })
+    // 与主任务一致：负责人、创建人都不留空，默认就是录入的人。
+    const me = useSessionStore().userId
+    t.subs.unshift({
+      id, text: title, done: false, desc: '', images: [], parentId: parentId || null,
+      owner: me || null, createdBy: me || null, createdAt: nowIso(),
+    })
     logActivity(t, `添加了子任务「${title}」`)
     persistTask(taskId)
     return id
@@ -1734,9 +1740,31 @@ export const useDataStore = defineStore('data', () => {
     if (!t || !sub) return
     const wasDone = sub.done
     Object.assign(sub, patch)
+    // 勾完成后「进行中」就过期了，重新打开时回到未开始。
+    if (patch.done !== undefined && patch.status === undefined) sub.status = null
     if (patch.done !== undefined && patch.done !== wasDone) {
       logActivity(t, `${patch.done ? '完成了' : '重新打开了'}子任务「${sub.text}」`)
     }
+    persistTask(taskId)
+  }
+
+  /**
+   * 改子任务的三态：未开始 / 进行中 / 已完成。
+   *
+   * <p>完成与否仍写在 done 上（分享、通知、统计都只认它），「进行中」另记在 status 上。
+   *
+   * @param taskId 所属任务 id
+   * @param subId  子任务标识
+   * @param state  目标状态
+   */
+  function setSubState(taskId: string, subId: string, state: SubtaskState) {
+    if (lockedSubtaskIds.has(taskId)) return
+    const t = taskById(taskId)
+    const sub = subById(taskId, subId)
+    if (!t || !sub || subtaskState(sub) === state) return
+    sub.done = state === '已完成'
+    sub.status = state === '进行中' ? '进行中' : null
+    logActivity(t, `将子任务「${sub.text}」改为${state}`)
     persistTask(taskId)
   }
 
@@ -2218,7 +2246,7 @@ export const useDataStore = defineStore('data', () => {
     ensureDocsLoaded, refreshDocs,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
-    movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
+    movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,
     hostedPages, hostedPageLoadState, hostedPageLoadError, refreshHostedPages, saveHostedPage, deleteHostedPage,

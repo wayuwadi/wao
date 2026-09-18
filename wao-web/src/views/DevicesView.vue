@@ -460,7 +460,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .devices-page {
-  max-width: 1240px;
+  max-width: none;
   margin: 0 auto;
   padding: 28px 30px 72px;
   color: var(--wao-text);

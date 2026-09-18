@@ -626,7 +626,7 @@ onMounted(load)
 
 <style scoped>
 .account-page {
-  max-width: 1180px;
+  max-width: none;
   margin: 0 auto;
   padding: 30px 26px 56px;
 }

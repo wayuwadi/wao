@@ -5,8 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { useDeco } from '@/composables/deco'
-import { statusMeta } from '@/utils/domain'
-import type { Project, ProjectStatus } from '@/types'
+import type { Project } from '@/types'
 
 const data = useDataStore()
 const ui = useUiStore()
@@ -20,17 +19,16 @@ if (route.query.view === 'mytasks') router.replace('/todo')
 
 // ---------- 项目视图 ----------
 const q = ref('')
-const groupBy = ref<'不分组' | '按领域' | '按状态'>('不分组')
+// 项目状态已下线：项目只看任务推进，不再手工标「进行中 / 有风险」。
+const groupBy = ref<'不分组' | '按领域'>('不分组')
 const sortBy = ref<'按截止日期' | '按进度' | '按名称'>('按截止日期')
-const statusF = ref<'全部' | ProjectStatus>('全部')
 const openDrop = ref<'group' | 'sort' | null>(null)
 
 const filteredProjects = computed(() => {
   const kw = q.value.trim().toLowerCase()
-  let list = data.projects.filter(
+  const list = data.projects.filter(
     (p) => !kw || p.name.toLowerCase().includes(kw) || p.goal.toLowerCase().includes(kw),
   )
-  if (statusF.value !== '全部') list = list.filter((p) => p.status === statusF.value)
   const sorts: Record<string, (a: Project, b: Project) => number> = {
     按截止日期: (a, b) => (a.due || '9').localeCompare(b.due || '9'),
     按进度: (a, b) => b.progress - a.progress,
@@ -46,10 +44,6 @@ const projGroups = computed(() => {
     groups = data.areas
       .map((a) => ({ label: a.name, dot: a.color, items: list.filter((p) => p.area === a.id) }))
       .filter((g) => g.items.length)
-  } else if (groupBy.value === '按状态') {
-    groups = (['进行中', '有风险', '规划中', '已完成', '已搁置'] as ProjectStatus[])
-      .map((st) => ({ label: st, dot: statusMeta(st).color, items: list.filter((p) => p.status === st) }))
-      .filter((g) => g.items.length)
   } else {
     groups = [{ label: '全部项目', dot: '#9A9DA9', items: list, hide: true }]
   }
@@ -58,14 +52,6 @@ const projGroups = computed(() => {
     items: g.items.map(decoProj),
   }))
 })
-
-const statusChips = computed(() =>
-  (['全部', '进行中', '有风险', '规划中', '已完成', '已搁置'] as const).map((st) => ({
-    label: st,
-    count: data.projects.filter((p) => (st === '全部' ? true : p.status === st)).length,
-    on: statusF.value === st,
-  })),
-)
 
 // ---------- 交互 ----------
 function openProject(id: string) {
@@ -112,7 +98,7 @@ function openProject(id: string) {
           </button>
           <div v-if="openDrop === 'group'" class="drop-menu">
             <button
-              v-for="o in (['不分组', '按领域', '按状态'] as const)"
+              v-for="o in (['不分组', '按领域'] as const)"
               :key="o"
               class="drop-item"
               @click="((groupBy = o), (openDrop = null))"
@@ -138,18 +124,6 @@ function openProject(id: string) {
         </div>
       </div>
 
-      <div class="chips">
-        <button
-          v-for="c in statusChips"
-          :key="c.label"
-          class="chip"
-          :class="{ on: c.on }"
-          @click="statusF = c.label"
-        >
-          {{ c.label }}<span class="chip-count wao-tabular">{{ c.count }}</span>
-        </button>
-      </div>
-
       <div class="groups">
         <div v-for="g in projGroups" :key="g.label">
           <div v-if="g.showHead" class="group-head">
@@ -167,7 +141,6 @@ function openProject(id: string) {
                   <div class="pc-name">{{ p.name }}</div>
                   <div class="pc-sub">{{ p.areaName }} · 负责人 {{ p.ownerName }}</div>
                 </div>
-                <span class="pc-status" :style="{ background: p.stBg, color: p.stColor }">{{ p.status }}</span>
               </div>
               <div class="pc-goal">{{ p.goalShort }}</div>
               <div class="pc-meta">
@@ -187,7 +160,7 @@ function openProject(id: string) {
         </div>
         <div v-if="filteredProjects.length === 0" class="empty">
           <i class="ri-filter-3-line"></i>
-          <div>没有符合条件的项目——试试清除搜索或切换状态筛选</div>
+          <div>没有符合条件的项目——试试清除搜索</div>
         </div>
       </div>
     </template>

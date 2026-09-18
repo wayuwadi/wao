@@ -74,6 +74,17 @@ describe('新建任务的落库反馈', () => {
     expect(task.subs[0]).toMatchObject({ text: '新子任务', number: 2 })
   })
 
+  it('截止日期默认不设置，不再自动落在今天', async () => {
+    putTask.mockImplementation((id, task) => savedTask(id, task))
+    const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(wrapper.find('.pills .pill.on').text()).toBe('不设置')
+    await wrapper.find('.title-input').setValue('不排期的任务')
+    await wrapper.find('.foot .btn-primary').trigger('click')
+    await flushPromises()
+    expect(data.tasks[0]).toMatchObject({ title: '不排期的任务', due: '' })
+    wrapper.unmount()
+  })
+
   it('服务端确认前保持提交中，成功后才提示已创建', async () => {
     let confirm!: (task: Task) => void
     putTask.mockImplementationOnce((_id, task) => new Promise((resolve) => { confirm = resolve; void task }))
