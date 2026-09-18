@@ -34,17 +34,21 @@ describe('项目页聚焦任务', () => {
     expect(wrapper.get('table').attributes('aria-label')).toBe('项目任务表格')
     expect(wrapper.findAll('thead th').map((node) => node.text())).toEqual([
       '选择',
-      '编号',
+      'ID',
       '标题',
+      '分组',
       '优先级',
       '状态',
       '负责人',
-      '创建人',
+      '创建者',
       '计划开始',
       '截止日期',
     ])
-    const row = wrapper.findAll('.trow').find((node) => node.text().includes(task.title))!
+    const row = wrapper.findAll('.task-row').find((node) => node.text().includes(task.title))!
     expect(row.get('.table-number').text()).toBe('0')
+    expect(row.find('.work-item-icon.task').exists()).toBe(true)
+    expect(row.get('.sub-count').text()).toBe('0/1')
+    expect(wrapper.find('.table-subs .work-item-icon.subtask').exists()).toBe(true)
     expect(wrapper.text()).toContain('固定子任务')
     await row.get('.tree-toggle').trigger('click')
     expect(wrapper.text()).not.toContain('固定子任务')
@@ -86,11 +90,13 @@ describe('项目页聚焦任务', () => {
       .trigger('click')
     expect(wrapper.find('.copy-selection-actions').exists()).toBe(false)
     await wrapper.get('.empty-columns-control button[aria-expanded]').trigger('click')
-    expect(wrapper.findAll('.board-col')).toHaveLength(6)
+    // AI Run 下线后「AI 进行中」列不再出现
+    expect(wrapper.findAll('.board-col')).toHaveLength(5)
+    expect(wrapper.findAll('.board-col-label').map((node) => node.text())).not.toContain('AI 进行中')
     await wrapper.get('.empty-columns-control button[aria-expanded]').trigger('click')
     await wrapper.get('.board-card').trigger('dragstart')
     expect(wrapper.findAll('.board-col')).toHaveLength(2)
-    expect(wrapper.findAll('.empty-column-target')).toHaveLength(4)
+    expect(wrapper.findAll('.empty-column-target')).toHaveLength(3)
     await wrapper.get('.board-card').trigger('dragend')
     expect(wrapper.findAll('.board-col')).toHaveLength(2)
     wrapper.unmount()

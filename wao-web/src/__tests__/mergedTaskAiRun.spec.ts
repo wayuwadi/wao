@@ -15,6 +15,11 @@ vi.mock('@/api/ai', () => ({
   fetchTaskAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
 }))
 
+// 批量派工入口已隐藏但代码保留；这里打开开关覆盖保留下来的实现。
+vi.mock('@/config/features', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/features')>()),
+  AI_RUN_ENABLED: true,
+}))
 vi.mock('@/api/board', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/api/board')>(),
   apiPutTask: vi.fn(async (_id: string, task: import('@/types').Task) => JSON.parse(JSON.stringify(task))),

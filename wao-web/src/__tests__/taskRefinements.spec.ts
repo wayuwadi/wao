@@ -21,7 +21,7 @@ describe('子任务树和移动', () => {
     task.subs = [{ id: 'child', parentId: 'root', text: '子项', done: false }, { id: 'root', text: '父项', done: true }]
     expect(subtaskRows(task.id, task.subs).map(row => [row.key, row.depth])).toEqual([['root', 0], ['child', 1]])
     const wrapper = mount(InlineSubtasks, { props: { taskId: task.id } })
-    await wrapper.findAll('button').find(button => button.text() === '隐藏已完成')!.trigger('click')
+    await wrapper.get('.done-switch').trigger('click')
     expect(wrapper.findAll('.inline-sub')).toHaveLength(1)
     expect(wrapper.text()).toContain('子项'); expect(task.subs).toHaveLength(2)
     wrapper.unmount()

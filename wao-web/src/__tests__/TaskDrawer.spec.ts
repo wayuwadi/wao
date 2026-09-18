@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SETTLE_MS } from '@/composables/completion'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
@@ -51,6 +50,12 @@ vi.mock('@/api/ai', () => ({
       startedAt: '2026-07-25T20:29:10', finishedAt: null,
     },
   ]),
+}))
+
+// AI Run 入口已隐藏但代码保留；本文件覆盖保留下来的实现，所以在这里打开开关。
+vi.mock('@/config/features', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/features')>()),
+  AI_RUN_ENABLED: true,
 }))
 
 vi.mock('@/api/aiAccount', () => ({
@@ -524,7 +529,7 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
-  it('默认展示任务属性栏，点击子任务后切成子任务详情', async () => {
+  it('默认展示任务属性栏，点击子任务后在弹框主区切成子任务详情', async () => {
     const subId = data.addSub(taskId, '扫描身份证')!
     ui.openTask(taskId)
     const w = mountDrawer()
@@ -532,20 +537,24 @@ describe('TaskDrawer', () => {
 
     // 只看右侧栏——「自定义属性」这几个字也出现在种子数据的评论里，全局断言会误判
     expect(w.find('.props').text()).toContain('自定义属性')
-    expect(w.find('.sub-back').exists()).toBe(false)
+    expect(w.find('.type-line').text()).toContain('任务')
+    expect(w.findAll('.crumb-item')).toHaveLength(1)
 
-    await w.find('.sub-row').trigger('click')
+    await w.find('.inline-sub .sub-open').trigger('click')
 
-    expect(w.find('.sub-back').exists()).toBe(true)
-    expect(w.find('.sub-title-input').attributes('value')).toBe('扫描身份证')
+    expect(w.find('.type-line').text()).toContain('子任务')
+    expect((w.find('.main .title-input').element as HTMLTextAreaElement).value).toBe('扫描身份证')
+    expect(w.findAll('.crumb-item')).toHaveLength(2)
+    expect(w.find('.props').text()).toContain('子任务属性')
     expect(w.find('.props').text()).not.toContain('自定义属性')
-    const subActions = w.findAll('.sub-detail-action')
+    const subActions = w.findAll('.sub-detail-actions .sub-detail-action')
     expect(subActions).toHaveLength(2)
     expect(subActions[0]!.text()).toContain('复制该子任务分享链接')
     expect(subActions[1]!.classes()).toContain('danger')
     expect(subActions[1]!.text()).toContain('删除子任务')
     expect(data.subById(taskId, subId)).toBeDefined()
   })
+
 
   it('删除子任务必须二次确认，取消时保留原数据', async () => {
     const subId = data.addSub(taskId, '不能误删的子任务')!
@@ -555,7 +564,7 @@ describe('TaskDrawer', () => {
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
-    await w.find('.sub-row').trigger('click')
+    await w.find('.inline-sub .sub-open').trigger('click')
     const button = w.find('.sub-detail-action.danger')
 
     await button.trigger('click')
@@ -564,6 +573,8 @@ describe('TaskDrawer', () => {
 
     expect(confirm.mock.calls[0]?.[0]).toContain('执行记录关联也会一并移除')
     expect(data.subById(taskId, subId)).toBeUndefined()
+    // 删完回到主任务
+    expect(w.find('.type-line').text()).not.toContain('子任务')
     confirm.mockRestore()
     w.unmount()
   })
@@ -573,26 +584,29 @@ describe('TaskDrawer', () => {
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
-    await w.find('.sub-row').trigger('click')
+    await w.find('.inline-sub .sub-open').trigger('click')
 
-    const input = w.find('.sub-title-input')
-    ;(input.element as HTMLInputElement).value = '新名字'
+    const input = w.find('.main .title-input')
+    ;(input.element as HTMLTextAreaElement).value = '新名字'
     await input.trigger('input')
 
     expect(data.subById(taskId, subId)?.text).toBe('新名字')
   })
 
-  it('点子任务的勾选框只切完成态，不展开详情', async () => {
+
+  it('点子任务的状态胶囊只切完成态，不展开详情', async () => {
     const subId = data.addSub(taskId, '扫描身份证')!
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
 
-    await w.find('.sub-row .cbox').trigger('click')
+    await w.find('.inline-sub .sub-state').trigger('click')
 
     expect(data.subById(taskId, subId)?.done).toBe(true)
-    expect(w.find('.sub-back').exists()).toBe(false)
+    expect(w.find('.inline-sub .sub-state').text()).toBe('已完成')
+    expect(w.find('.props').text()).toContain('自定义属性')
   })
+
 
   it('分享菜单同时给出分享页与 Markdown 两种链接', async () => {
     ui.openTask(taskId)
@@ -608,7 +622,7 @@ describe('TaskDrawer', () => {
     expect(menu.text()).toContain('复制 Markdown 地址')
   })
 
-  it('已完成的子任务沉到底部并默认收起，点击才展开', async () => {
+  it('已完成子任务原位划线显示，开关可一键隐藏', async () => {
     data.addSub(taskId, '未完成的')
     const doneId = data.addSub(taskId, '已完成的')!
     data.updateSub(taskId, doneId, { done: true })
@@ -616,21 +630,18 @@ describe('TaskDrawer', () => {
     const w = mountDrawer()
     await w.vm.$nextTick()
 
-    // 默认只看得到未完成的那条，已完成的藏在折叠条后面
-    expect(w.findAll('.sub-row')).toHaveLength(1)
-    expect(w.find('.sub-row').text()).toContain('未完成的')
+    expect(w.findAll('.inline-sub')).toHaveLength(2)
+    expect(w.find('.list-count').text()).toBe('1/2')
 
-    const toggle = w.find('.sub-done-toggle')
-    expect(toggle.exists()).toBe(true)
-    expect(toggle.text()).toContain('1')
-
+    const toggle = w.find('.done-switch')
+    expect(toggle.attributes('aria-checked')).toBe('true')
     await toggle.trigger('click')
 
-    const rows = w.findAll('.sub-row')
-    expect(rows).toHaveLength(2)
-    // 已完成的排在最底部
-    expect(rows[1]!.text()).toContain('已完成的')
+    expect(w.findAll('.inline-sub')).toHaveLength(1)
+    expect(w.find('.inline-sub').text()).toContain('未完成的')
+    expect(w.find('.done-switch').attributes('aria-checked')).toBe('false')
   })
+
 
   it('属性栏里能改开始与截止日期，也能清空', async () => {
     ui.openTask(taskId)
@@ -654,50 +665,50 @@ describe('TaskDrawer', () => {
     expect(data.taskById(taskId)!.activity[0]!.text).toContain('清空了开始日期')
   })
 
-  it('没有已完成子任务时不显示折叠条', async () => {
+  it('没有已完成子任务时不显示隐藏开关', async () => {
     data.addSub(taskId, '只有这一条')
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
 
-    expect(w.find('.sub-done-toggle').exists()).toBe(false)
+    expect(w.find('.done-switch').exists()).toBe(false)
   })
 
-  it('刚勾完成的子任务先原地停留，不会立刻沉底消失', async () => {
-    vi.useFakeTimers()
-    try {
-      data.addSub(taskId, '马上要勾的')
-      ui.openTask(taskId)
-      const w = mountDrawer()
-      await w.vm.$nextTick()
 
-      await w.find('.sub-row .cbox').trigger('click')
+  it('面包屑按层级展示子任务，点主任务即可返回', async () => {
+    const parentId = data.addSub(taskId, '父子任务')!
+    const childId = data.addSub(taskId, '孙子任务', parentId)!
+    ui.openTask(taskId, childId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
 
-      // 仍在原位，只是淡出
-      expect(w.findAll('.sub-row')).toHaveLength(1)
-      expect(w.find('.sub-row').classes()).toContain('settling')
+    const crumbs = w.findAll('.crumb-item')
+    expect(crumbs).toHaveLength(3)
+    expect(crumbs[2]!.classes()).toContain('current')
+    expect((w.find('.main .title-input').element as HTMLTextAreaElement).value).toBe('孙子任务')
 
-      vi.advanceTimersByTime(SETTLE_MS)
-      await w.vm.$nextTick()
+    await crumbs[1]!.trigger('click')
+    expect((w.find('.main .title-input').element as HTMLTextAreaElement).value).toBe('父子任务')
+    // 父子任务的详情里列出自己的下级
+    expect(w.find('.main .inline-subs').text()).toContain('孙子任务')
 
-      expect(w.findAll('.sub-row')).toHaveLength(0)
-      expect(w.find('.sub-done-toggle').exists()).toBe(true)
-    } finally {
-      vi.useRealTimers()
-    }
+    await w.findAll('.crumb-item')[0]!.trigger('click')
+    expect(w.find('.props').text()).toContain('自定义属性')
   })
+
 
   it('子任务标题用可撑高的 textarea，长标题不会被截断', async () => {
     data.addSub(taskId, '一个特别长的子任务标题'.repeat(6))
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
-    await w.find('.sub-row').trigger('click')
+    await w.find('.inline-sub .sub-open').trigger('click')
 
-    const title = w.find('.sub-title-input')
+    const title = w.find('.main .title-input')
     expect(title.element.tagName).toBe('TEXTAREA')
     expect((title.element as HTMLTextAreaElement).value).toBe('一个特别长的子任务标题'.repeat(6))
   })
+
 
   it('有已完成子任务时，分享菜单给出「只分享未完成」开关', async () => {
     data.addSub(taskId, '未完成的')
@@ -761,7 +772,8 @@ describe('TaskDrawer', () => {
     const w = mountDrawer()
     await w.vm.$nextTick()
 
-    await w.find('.sub-row .sub-ai').trigger('click')
+    await w.find('.inline-sub .sub-open').trigger('click')
+    await w.findAll('.props .sub-detail-action').find((b) => b.text().includes('交给 AI 跑'))!.trigger('click')
     await flushPromises()
 
     expect(w.find('.launcher .scope').text()).toContain('子任务也能单独跑')
@@ -807,8 +819,10 @@ describe('TaskDrawer', () => {
     const w = mountDrawer()
     await flushPromises()
 
-    expect(w.find('.sub-row .sub-dispatched').exists()).toBe(true)
-    expect(w.find('.sub-row .sub-ai').exists()).toBe(false)
+    await w.find('.inline-sub .sub-open').trigger('click')
+    const actions = w.findAll('.props .sub-detail-action')
+    expect(actions.find((b) => b.text().includes('已派给 AI'))!.attributes('disabled')).toBeDefined()
+    expect(actions.some((b) => b.text().includes('交给 AI 跑'))).toBe(false)
     w.unmount()
   })
 
@@ -825,8 +839,8 @@ describe('TaskDrawer', () => {
     const w = mountDrawer()
     await flushPromises()
 
-    const firstRow = w.findAll('.sub-row').find((row) => row.text().includes('第一条子任务'))!
-    await firstRow.trigger('click')
+    const firstRow = w.findAll('.inline-sub').find((row) => row.text().includes('第一条子任务'))!
+    await firstRow.find('.sub-open').trigger('click')
 
     const archive = w.find('.sub-ai-archive')
     expect(archive.exists()).toBe(true)
@@ -850,11 +864,11 @@ describe('TaskDrawer', () => {
     const w = mountDrawer()
     await flushPromises()
 
-    await w.find('.sub-row .sub-ai').trigger('click')
+    await w.find('.inline-sub .sub-open').trigger('click')
+    await w.findAll('.props .sub-detail-action').find((b) => b.text().includes('交给 AI 跑'))!.trigger('click')
     await flushPromises()
     await w.find('.launcher footer .primary').trigger('click')
     await flushPromises()
-    await w.find('.sub-row').trigger('click')
 
     const archive = w.find('.sub-ai-archive')
     expect(archive.text()).toContain('等待执行电脑领取')
@@ -1052,56 +1066,13 @@ describe('TaskDrawer', () => {
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
-    await w.find('.sub-row').trigger('click')
+    await w.find('.inline-sub .sub-open').trigger('click')
 
     await w.find('.share-wrap .icon-btn').trigger('click')
 
     expect(w.find('.share-menu').text()).toContain('当前子任务')
   })
 
-  /**
-   * 手机上点子任务要新开一整页。
-   *
-   * 原来子任务详情排在正文下面，手机窗口小，点开还得往下滑一段才找得到，
-   * 滑到了也认不出看的是哪一条。
-   */
-  it('手机上点子任务盖成一整页，可直接把当前子任务交给 AI 并能返回', async () => {
-    const original = window.matchMedia
-    window.matchMedia = ((query: string) => ({
-      matches: true, media: query, onchange: null,
-      addEventListener: () => {}, removeEventListener: () => {},
-      addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
-    })) as unknown as typeof window.matchMedia
-    try {
-      data.addSub(taskId, '归档到 NAS')
-      data.addSub(taskId, '扫描身份证')
-      data.taskById(taskId)!.subs[0]!.number = 0
-      ui.openTask(taskId)
-      const w = mountDrawer()
-      await w.vm.$nextTick()
-
-      await w.findAll('.sub-row')[0]!.trigger('click')
-
-      const page = w.find('.props.sub-page')
-      expect(page.exists()).toBe(true)
-      expect(page.find('.sub-page-title b').text()).toBe('子任务 #0')
-      // 桌面版的「返回任务属性」在手机上换成顶栏返回键，不占正文空间
-      expect(w.find('.sub-back').exists()).toBe(false)
-
-      const aiButton = page.find('.sub-page-ai')
-      expect(aiButton.text()).toContain('交给 AI 跑')
-      await aiButton.trigger('click')
-      await flushPromises()
-      expect(w.find('.launcher .scope').text()).toContain('扫描身份证')
-      await w.find('.launcher .close').trigger('click')
-
-      await page.find('.sub-page-back').trigger('click')
-      expect(w.find('.props.sub-page').exists()).toBe(false)
-      w.unmount()
-    } finally {
-      window.matchMedia = original
-    }
-  })
 
   it('属性栏能改任务分组——手机上拖不动，只能从这里挪', async () => {
     ui.openTask(taskId)

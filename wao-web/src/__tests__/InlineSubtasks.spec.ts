@@ -50,8 +50,11 @@ describe('列表内子任务', () => {
     task.subs.reverse()
     await wrapper.vm.$nextTick()
     expect(wrapper.findAll('.sub-number').map((node) => node.text())).toEqual(['8', '0'])
-    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('.sub-state').trigger('click')
+    expect(task.subs[0]!.done).toBe(true)
     expect(task.subs[0]!.number).toBe(8)
+    await wrapper.setProps({ hideDone: true })
+    expect(wrapper.findAll('.sub-number').map((node) => node.text())).toEqual(['0'])
     wrapper.unmount()
   })
   it('未提交的文字在重挂载时恢复', async () => {
