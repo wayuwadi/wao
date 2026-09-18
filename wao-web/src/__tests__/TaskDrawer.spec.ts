@@ -133,14 +133,16 @@ describe('TaskDrawer', () => {
     expect(await waitFor(w, '.md-body')).toBe(true)
   })
 
-  it('属性栏展示真实 JOBID，点击后复制任务稳定标识', async () => {
+  it('属性栏与子任务一样显示井号编号，点击后复制任务稳定标识', async () => {
     const { copyToClipboard } = await import('@/utils/clipboard')
+    data.taskById(taskId)!.number = 1066
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
 
     const jobId = w.get('.job-id-copy')
-    expect(jobId.text()).toContain(taskId)
+    expect(jobId.text()).toBe('#1066')
+    expect(jobId.attributes('title')).toContain(taskId)
     await jobId.trigger('click')
     await flushPromises()
 
@@ -196,8 +198,7 @@ describe('TaskDrawer', () => {
     await w.get('.job-id-copy').trigger('click')
     await flushPromises()
 
-    expect(w.get('.job-id-copy').text()).toContain(taskId)
-    expect(useToastHost().items.some((item) => item.text.includes('复制失败'))).toBe(true)
+    expect(useToastHost().items.some((item) => item.text.includes('复制失败') && item.text.includes(taskId))).toBe(true)
     w.unmount()
   })
 
@@ -417,7 +418,9 @@ describe('TaskDrawer', () => {
     await w.find('.comment-input .send').trigger('click')
 
     expect(addComment).toHaveBeenCalledTimes(1)
-    expect(w.find('.comment-input .send').text()).toContain('发送中')
+    expect(w.find('.comment-input .send').attributes('aria-label')).toBe('发送中')
+    // 评论已挪到右侧属性栏
+    expect(w.find('.props .comment-input').exists()).toBe(true)
     resolveComment(true)
     await flushPromises()
     expect(w.find('.comment-input input').attributes('disabled')).toBeUndefined()
@@ -594,17 +597,48 @@ describe('TaskDrawer', () => {
   })
 
 
-  it('点子任务的状态胶囊只切完成态，不展开详情', async () => {
+  it('点子任务的状态胶囊弹出三态菜单，不展开详情', async () => {
     const subId = data.addSub(taskId, '扫描身份证')!
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
 
     await w.find('.inline-sub .sub-state').trigger('click')
+    const pick = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.cell-menu button')]
+      .find((node) => node.textContent?.includes(label))!
+    pick('进行中').click()
+    await flushPromises()
+    expect(data.subById(taskId, subId)).toMatchObject({ done: false, status: '进行中' })
+    expect(w.find('.inline-sub .sub-state').text()).toBe('进行中')
 
+    await w.find('.inline-sub .sub-state').trigger('click')
+    pick('已完成').click()
+    await flushPromises()
     expect(data.subById(taskId, subId)?.done).toBe(true)
     expect(w.find('.inline-sub .sub-state').text()).toBe('已完成')
     expect(w.find('.props').text()).toContain('自定义属性')
+  })
+
+  it('子任务在属性栏里有自己的评论和关联文档', async () => {
+    const subId = data.addSub(taskId, '扫描身份证')!
+    const docId = Object.keys(data.docs)[0]
+    ui.openTask(taskId, subId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    const props = w.get('.props')
+    expect(props.text()).toContain('关联')
+    expect(props.text()).toContain('评论')
+    await props.get('.comment-input input').setValue('子任务上的讨论')
+    await props.get('.comment-input .send').trigger('click')
+    expect(data.subById(taskId, subId)?.comments?.map((item) => item.text)).toEqual(['子任务上的讨论'])
+    expect(data.taskById(taskId)!.comments.some((item) => item.text === '子任务上的讨论')).toBe(false)
+    expect(w.get('.props').text()).toContain('子任务上的讨论')
+
+    expect(docId).toBeTruthy()
+    data.updateSub(taskId, subId, { docs: [docId!] })
+    await w.vm.$nextTick()
+    expect(w.findAll('.props .side-relations .attach')).toHaveLength(1)
   })
 
 

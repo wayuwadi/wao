@@ -23,6 +23,7 @@ export interface DocumentTaskSeed {
 
 const TASK_VIEW_KEY = 'wao-task-view-v1'
 const CREATOR_FILTER_KEY = 'wao-proj-creator-filter-v1'
+const OWNER_FILTER_KEY = 'wao-proj-owner-filter-v1'
 
 /**
  * 读取上一次用过的任务视图。
@@ -59,9 +60,9 @@ function loadTaskViews(): Record<string, TaskView> {
 }
 
 /** 读取各项目记住的「创建人筛选」，坏数据当没存过。 */
-function loadCreatorFilters(): Record<string, string> {
+function loadCreatorFilters(key = CREATOR_FILTER_KEY): Record<string, string> {
   try {
-    const raw = JSON.parse(localStorage.getItem(CREATOR_FILTER_KEY) || '{}')
+    const raw = JSON.parse(localStorage.getItem(key) || '{}')
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       const out: Record<string, string> = {}
       for (const [k, v] of Object.entries(raw)) if (typeof v === 'string' && v) out[k] = v
@@ -188,6 +189,22 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
+  /** 各项目任务列表的「负责人筛选」，同样跨会话记忆。 */
+  const ownerFilters = ref<Record<string, string>>(loadCreatorFilters(OWNER_FILTER_KEY))
+
+  function ownerFilterOf(projectId: string): string {
+    return ownerFilters.value[projectId] ?? ''
+  }
+  function setOwnerFilter(projectId: string, ownerId: string) {
+    if (ownerId) ownerFilters.value[projectId] = ownerId
+    else delete ownerFilters.value[projectId]
+    try {
+      localStorage.setItem(OWNER_FILTER_KEY, JSON.stringify(ownerFilters.value))
+    } catch {
+      /* 写不进本地存储时筛选仍在本次会话内生效 */
+    }
+  }
+
   function toggleHelp() {
     helpOpen.value = !helpOpen.value
   }
@@ -239,7 +256,7 @@ export const useUiStore = defineStore('ui', () => {
     searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft,
     chatOpen, chatDraft, chatDraftRequestVersion, chatUnreadCount, chatLatestUnread, chatRefreshVersion, shareToChat, consumeChatDraft, chatReviewId, chatReviewRequestVersion, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
-    taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
+    taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, ownerFilters, ownerFilterOf, setOwnerFilter, toggleHelp, closeHelp,
     openAssistant, closeAssistant, toggleAssistant, consumeAssistantDraft,
     openChat, closeChat, toggleChat,
   }

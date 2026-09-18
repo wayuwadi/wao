@@ -352,7 +352,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 
 <style scoped>
 .crawler-page {
-  max-width: 1120px;
+  max-width: none;
   margin: 0 auto;
   padding: 30px 26px 56px;
 }

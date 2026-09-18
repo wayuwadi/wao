@@ -13,6 +13,7 @@ import {
   saveAiProjectSkills,
 } from '@/api/ai'
 import { AI_ENGINES, engineLabel } from '@/composables/aiEngines'
+import { AI_RUN_ENABLED } from '@/config/features'
 import type { AiEngine, AiRunner, AiSkillCapability, Project } from '@/types'
 
 const props = defineProps<{ project: Project }>()
@@ -22,7 +23,6 @@ const data = useDataStore()
 
 const name = ref(props.project.name)
 const area = ref(props.project.area)
-const status = ref(props.project.status)
 const goal = ref(props.project.goal === '尚未填写目标——打开项目后可补充。' ? '' : props.project.goal)
 const icon = ref(props.project.icon || 'ri-stack-line')
 const confirming = ref(false)
@@ -67,11 +67,16 @@ async function save() {
     const projectSaved = await data.updateProject(props.project.id, {
       name: name.value.trim(),
       area: area.value,
-      status: status.value,
       goal: goal.value.trim(),
       icon: icon.value,
     })
     if (!projectSaved) throw new Error('项目设置保存失败，请重试')
+    // AI Run 下线期间不展示、也不读取执行配置，保存时绝不能用空白默认值覆盖服务端已有配置。
+    if (!AI_RUN_ENABLED) {
+      toast('项目设置已保存', 'ri-check-line')
+      emit('close')
+      return
+    }
     await saveAiProjectConfig(props.project.id, {
       enabled: aiEnabled.value,
       repoUrl: repoUrl.value.trim(),
@@ -138,7 +143,9 @@ async function generatePairCode() {
   }
 }
 
-onMounted(loadAiConfig)
+onMounted(() => {
+  if (AI_RUN_ENABLED) void loadAiConfig()
+})
 </script>
 
 <template>
@@ -153,15 +160,6 @@ onMounted(loadAiConfig)
 
     <div class="label">项目名称</div>
     <input v-model="name" class="title-input" placeholder="项目名称" @keydown.enter="save" />
-
-    <div class="label">项目状态</div>
-    <select v-model="status" class="status-select" aria-label="项目状态">
-      <option value="规划中">规划中</option>
-      <option value="进行中">进行中</option>
-      <option value="有风险">有风险</option>
-      <option value="已完成">已完成</option>
-      <option value="已搁置">已搁置</option>
-    </select>
 
     <details class="optional-project"><summary>更多项目属性 · 图标、领域与目标</summary>
     <div class="label">项目图标</div>
@@ -189,7 +187,7 @@ onMounted(loadAiConfig)
     <textarea v-model="goal" class="goal" rows="3" placeholder="这个项目做成了，会是什么样？"></textarea>
 
     </details>
-    <details class="ai-section"><summary>AI 执行配置与 Skill</summary>
+    <details v-if="AI_RUN_ENABLED" class="ai-section"><summary>AI 执行配置与 Skill</summary>
       <div class="ai-head">
         <div>
           <div class="ai-title"><i class="ri-robot-2-line"></i>AI Run</div>
@@ -456,22 +454,6 @@ summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-si
   color: var(--wao-text);
   outline: none;
   resize: none;
-}
-.status-select {
-  margin-top: 6px;
-  width: 100%;
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 9px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-  font-size: 13px;
-  outline: none;
-}
-.status-select:focus {
-  border-color: var(--wao-primary);
-  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
 }
 .goal:focus {
   border-color: var(--wao-primary);

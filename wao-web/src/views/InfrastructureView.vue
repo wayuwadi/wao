@@ -106,7 +106,7 @@ watch(selected, () => { query.value = ''; state.value = 'all' })
 </template>
 
 <style scoped>
-.infra-page { padding: 26px 28px 40px; max-width: 1600px; margin: auto; color: var(--wao-text); }
+.infra-page { padding: 26px 28px 40px; max-width: none; margin: auto; color: var(--wao-text); }
 .page-header,.section-heading,.header-actions,.node-title { display:flex; align-items:center; justify-content:space-between; gap:16px; }
 h1 { font-size:26px; margin:5px 0 7px; letter-spacing:-.5px; } h2 { font-size:17px; margin:0 0 7px; } h2 span { font-size:12px; font-weight:400; margin-left:8px; color:var(--wao-text-weak); }
 p { margin:0; color:var(--wao-text-weak); font-size:12px; line-height:1.7; }.eyebrow { font-size:11px; letter-spacing:1px; color:var(--wao-primary); }.header-actions { color:var(--wao-text-weak); font-size:12px; }

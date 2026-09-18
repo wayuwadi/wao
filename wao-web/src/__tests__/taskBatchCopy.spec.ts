@@ -9,6 +9,7 @@ import TodoView from '@/views/TodoView.vue'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
+import { useUiStore } from '@/stores/ui'
 import { seedDataStore } from './helpers/seedDataStore'
 import type { Task } from '@/types'
 
@@ -78,9 +79,15 @@ describe('批量复制任务全文', () => {
     wrapper.unmount()
   })
 
-  it.each(['list', 'board', 'group'])('项目 %s 视图选择、全选和清空均可复制，筛选隐藏项不继续选中', async (view) => {
+  // 表格视图按用户要求去掉了批量选择，看板与分组视图保留
+  it.each(['board', 'group'])('项目 %s 视图选择、全选和清空均可复制，筛选隐藏项不继续选中', async (view) => {
     const data = useDataStore()
-    data.tasks = data.tasks.filter((task) => task.project === 'p1').map((task) => ({ ...task, status: '待办' }))
+    const session = useSessionStore()
+    session.members = [
+      { id: 'wg', name: '娃哥', initial: '哥', color: '#446' },
+      { id: 'wd', name: '娃弟', initial: '弟', color: '#664' },
+    ] as typeof session.members
+    data.tasks = data.tasks.filter((task) => task.project === 'p1').map((task) => ({ ...task, status: '待办', owner: 'wg', subs: [] }))
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id', component: ProjectDetailView }] })
     await router.push(`/projects/p1?view=${view}`)
     const wrapper = mount(ProjectDetailView, { global: { plugins: [router], stubs: { ProjectMemoryPanel: true, ProjectAssetsPanel: true } } })
@@ -91,9 +98,20 @@ describe('批量复制任务全文', () => {
     expect(copyToClipboard).toHaveBeenCalledOnce()
     await wrapper.get('.copy-selection-actions button').trigger('click')
     expect(wrapper.get('.copy-tasks').text()).toContain(`· ${data.tasks.length}`)
-    await router.push(`/projects/p1?view=${view}&stage=verified`)
+    // 负责人筛选把所选任务都藏起来后，选择随之清空
+    useUiStore().setOwnerFilter('p1', 'wd')
     await flushPromises()
     expect(wrapper.get('.copy-tasks').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('项目表格视图不再提供批量选择', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id', component: ProjectDetailView }] })
+    await router.push('/projects/p1?view=list')
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router], stubs: { ProjectMemoryPanel: true, ProjectAssetsPanel: true } } })
+    await flushPromises()
+    expect(wrapper.find('.batch-selection-toggle').exists()).toBe(false)
+    expect(wrapper.find('.select-dot').exists()).toBe(false)
     wrapper.unmount()
   })
 

@@ -93,7 +93,8 @@
   --wao-side-w-collapsed: 62px;
   --wao-header-h: 52px;
   --wao-tabbar-h: 39px;
-  --wao-content-max: 1340px;
+  /* 页面铺满可用宽度（与项目表格、小记一致），不再居中留白 */
+  --wao-content-max: none;
 }
 
 @media (max-width: 760px) {

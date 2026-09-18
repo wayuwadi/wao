@@ -9,22 +9,13 @@ import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
-import {
-  fmtDate,
-  isOpenStatus,
-  TASK_DELIVERY_STAGES,
-  TASK_STATUSES,
-  TASK_STATUS_DOTS,
-  taskDeliveryStage,
-  taskStatusesForDeliveryStage,
-} from '@/utils/domain'
+import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import { readSubtaskDrag } from '@/utils/subtaskTree'
 import { toast } from '@/composables/toast'
 import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import { useFavoritesStore } from '@/stores/favorites'
 import type { AiEngine, TaskStatus } from '@/types'
-import type { TaskDeliveryStage } from '@/utils/domain'
 import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import ProjectAssetsPanel from '@/components/files/ProjectAssetsPanel.vue'
@@ -69,6 +60,7 @@ function setTab(t: string) {
   router.replace({ query: { ...route.query, tab: t === '任务' ? undefined : t } })
 }
 function setView(v: TaskView) {
+  if (v === 'list') finishSelection()
   ui.setTaskView(pid.value, v)
   router.replace({ query: { ...route.query, view: v } })
 }
@@ -85,6 +77,7 @@ watch(
 const settingsOpen = ref(false)
 const projectInfoOpen = ref(false)
 const projectMenuOpen = ref(false)
+/** 批量选择只在看板 / 分组视图提供；表格视图按用户要求去掉了。 */
 const batchSelectionOpen = ref(false)
 const columnPreferenceMemory = ref<Record<string, boolean>>({})
 function columnPreference(kind: string) {
@@ -107,7 +100,7 @@ function columnPreference(kind: string) {
 const showEmptyColumns = columnPreference('empty-columns-v1')
 /** 表格视图是否按任务分组分段展示（与「分组」视图共用同一份分组数据，可在表格里直接改）。 */
 const tableGrouped = columnPreference('table-grouped-v1')
-/** 表格里正在录入子任务的位置：点行尾「+」才出现输入行，不再每个任务下常驻一行。 */
+/** 表格里正在录入子任务的位置：点行尾「+」才出现输入行，并且紧跟在要挂的那一行下面。 */
 const addingSub = ref<{ taskId: string; parentId: string | null } | null>(null)
 function startAddSub(taskId: string, parentId: string | null) {
   collapsedSubTasks.value = collapsedSubTasks.value.filter((id) => id !== taskId)
@@ -124,6 +117,12 @@ const aiBatchMode = ref<'separate' | 'merge' | null>(null)
 const creatingDoc = ref(false)
 const docCreateError = ref('')
 const creatorFilterOpen = ref(false)
+const ownerFilterOpen = ref(false)
+/** 负责人筛选：同样按项目记在本地，「只看我的」刷新后还在。 */
+const ownerFilter = computed<string | null>({
+  get: () => ui.ownerFilterOf(pid.value) || null,
+  set: (v) => ui.setOwnerFilter(pid.value, v ?? ''),
+})
 /** 创建人筛选：按项目记在本地存储里，下次进来还是上次选的（此前刷新即丢）。 */
 const creatorFilter = computed<string | null>({
   get: () => ui.creatorFilterOf(pid.value) || null,
@@ -201,22 +200,23 @@ const activeCreatorName = computed(() =>
 )
 const creatorTasks = computed(() => ptasks.value
   .filter((task) => !effectiveCreator.value || task.createdBy === effectiveCreator.value))
-const deliveryStageFilter = computed<TaskDeliveryStage | null>(() => {
-  const stage = route.query.stage
-  return typeof stage === 'string' && TASK_DELIVERY_STAGES.some((option) => option.id === stage)
-    ? stage as TaskDeliveryStage
-    : null
+/** 负责人选项：项目成员全部列出，当前登录人排第一并标成「我」，一点就是「只看我的」。 */
+const ownerOptions = computed(() => {
+  const me = session.currentUser.id
+  const list = session.members.map((member) => ({ id: member.id, name: member.id === me ? `${member.name}（我）` : member.name }))
+  return [...list.filter((item) => item.id === me), ...list.filter((item) => item.id !== me)]
 })
-const deliveryStageOptions = computed(() => TASK_DELIVERY_STAGES.map((stage) => ({
-  ...stage,
-  count: creatorTasks.value.filter((task) => taskDeliveryStage(task.status) === stage.id).length,
-})))
-function setDeliveryStage(stage: TaskDeliveryStage | null) {
-  selectedTaskIds.value = []
-  router.replace({ query: { ...route.query, stage: stage ?? undefined } })
-}
+const effectiveOwner = computed(() =>
+  ownerFilter.value && ownerOptions.value.some((option) => option.id === ownerFilter.value) ? ownerFilter.value : null,
+)
+const activeOwnerName = computed(() =>
+  effectiveOwner.value ? ownerOptions.value.find((option) => option.id === effectiveOwner.value)?.name ?? effectiveOwner.value : '全部负责人',
+)
+/** 主任务归这个人，或者有子任务派给了这个人，都算「他的任务」。 */
+const ownsTask = (task: { owner: string; subs: { owner?: string | null }[] }, owner: string) =>
+  task.owner === owner || task.subs.some((sub) => sub.owner === owner)
 const allTasks = computed(() => creatorTasks.value
-  .filter((task) => !deliveryStageFilter.value || taskDeliveryStage(task.status) === deliveryStageFilter.value)
+  .filter((task) => !effectiveOwner.value || ownsTask(task, effectiveOwner.value))
   .map(decoTask))
 /**
  * 真正收尾的任务：主任务已完成且子任务全部完成。主任务点了完成、子任务还有没做完的，
@@ -229,12 +229,10 @@ const doneDesc = (a: { completedAt?: string | null; id: string }, b: { completed
   (b.completedAt ?? '').localeCompare(a.completedAt ?? '') || b.id.localeCompare(a.id)
 const doneTasks = computed(() =>
   allTasks.value.filter((t) => isFinished(t) && !isSettling(t.id)).sort(doneDesc))
-/** 「显示已完成的任务」开关；按交付阶段看「已验证」时本来就只剩已完成，始终展示。 */
-const showFinished = computed(() => showDone.value || deliveryStageFilter.value === 'verified')
+/** 「显示已完成的任务」开关。 */
+const showFinished = computed(() => showDone.value)
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
-const boardStatuses = computed(() => (deliveryStageFilter.value
-  ? taskStatusesForDeliveryStage(deliveryStageFilter.value)
-  : TASK_STATUSES).filter((status) => AI_RUN_ENABLED || status !== 'AI 进行中'
+const boardStatuses = computed(() => TASK_STATUSES.filter((status) => AI_RUN_ENABLED || status !== 'AI 进行中'
   || allTasks.value.some((task) => task.status === status)))
 const board = computed(() =>
   boardStatuses.value.map((st) => ({
@@ -275,9 +273,7 @@ const visibleTaskIds = computed(() => {
   if (pdTaskView.value === 'group') return groupSections.value.flatMap((group) => [
     ...group.open, ...(openedDoneGroups.value.includes(group.id) ? group.done : []),
   ]).map((task) => task.id)
-  return allTasks.value.filter((task) => !isFinished(task) || showDone.value
-    || (pdTaskView.value === 'list' && deliveryStageFilter.value === 'verified')
-    || (pdTaskView.value === 'list' && isSettling(task.id))).map((task) => task.id)
+  return allTasks.value.filter((task) => !isFinished(task) || showDone.value).map((task) => task.id)
 })
 const selectedCopyTasks = computed(() => allTasks.value.filter((task) => selectedTaskIds.value.includes(task.id)))
 const selectedTaskScope = computed(() => selectedTaskIds.value
@@ -474,9 +470,10 @@ async function submitQuickAdd(groupId: string) {
   if (quickAddState.value === 'submitting') return
   const title = quickAddText.value.trim()
   if (!title) return
+  // 快速新建不替用户排期：截止日期留空，需要时再在表格里点选。
   const payload = {
     title, project: pid.value, pr: 'P2' as const, owner: session.currentUser.id,
-    due: data.today, desc: '', images: [], groupId, startAt: null, endAt: null,
+    due: '', desc: '', images: [], groupId, startAt: null, endAt: null,
   }
   quickAddState.value = 'submitting'
   let persisted = false
@@ -539,7 +536,7 @@ watch(visibleTaskIds, (ids) => {
 
 <template>
   <div v-if="!pd" class="missing">项目不存在或已被移除。</div>
-  <div v-else class="detail" :class="{ 'selecting-tasks': batchSelectionOpen || selectedTaskIds.length }">
+  <div v-else class="detail" :class="{ 'selecting-tasks': pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length) }">
 
     <div class="phead">
       <button class="back" aria-label="全部项目" title="全部项目" @click="router.push('/projects')"><i class="ri-arrow-left-line"></i></button>
@@ -547,7 +544,6 @@ watch(visibleTaskIds, (ids) => {
       <div class="phead-name-wrap">
         <div class="phead-name-row">
           <div class="phead-name">{{ pd.name }}</div>
-          <span class="phead-status" :style="{ background: pd.stBg, color: pd.stColor }">{{ pd.status }}</span>
         </div>
       </div>
       <div class="spacer"></div>
@@ -581,10 +577,29 @@ watch(visibleTaskIds, (ids) => {
         <div class="creator-filter">
           <button
             class="creator-filter-btn"
+            :class="{ on: effectiveOwner }"
+            title="按负责人筛选；主任务或其中子任务派给了此人都算"
+            @click="ownerFilterOpen = !ownerFilterOpen; creatorFilterOpen = false"
+          >
+            <i class="ri-user-follow-line"></i>{{ activeOwnerName }}<i class="ri-arrow-down-s-line"></i>
+          </button>
+          <div v-if="ownerFilterOpen" class="creator-filter-menu">
+            <button :class="{ on: !effectiveOwner }" @click="ownerFilter = null; ownerFilterOpen = false">全部负责人</button>
+            <button
+              v-for="owner in ownerOptions"
+              :key="owner.id"
+              :class="{ on: effectiveOwner === owner.id }"
+              @click="ownerFilter = owner.id; ownerFilterOpen = false"
+            >{{ owner.name }}</button>
+          </div>
+        </div>
+        <div class="creator-filter">
+          <button
+            class="creator-filter-btn"
             :class="{ on: creatorFilter }"
             :disabled="!creatorOptions.length"
             :title="creatorOptions.length ? '按创建人筛选任务' : '历史任务没有可靠的创建人记录'"
-            @click="creatorFilterOpen = !creatorFilterOpen"
+            @click="creatorFilterOpen = !creatorFilterOpen; ownerFilterOpen = false"
           >
             <i class="ri-user-search-line"></i>{{ activeCreatorName }}<i class="ri-arrow-down-s-line"></i>
           </button>
@@ -598,34 +613,36 @@ watch(visibleTaskIds, (ids) => {
             >{{ creator.name }}</button>
           </div>
         </div>
+        <button v-if="pdTaskView !== 'list' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
+        <!-- 表格的分组方式与已完成开关放在原「批量选择」的位置，和筛选同一行 -->
+        <template v-if="pdTaskView === 'list'">
+          <div class="table-seg" role="group" aria-label="表格分组方式">
+            <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
+            <button :class="{ on: tableGrouped }" :aria-pressed="tableGrouped" @click="tableGrouped = true">按分组</button>
+          </div>
+          <button v-if="tableGrouped" class="table-toolbar-btn" :disabled="groupsSaving" @click="addGroup">
+            <i class="ri-add-line"></i>{{ groupsSaving ? '保存中…' : '新建分组' }}
+          </button>
+          <button
+            class="done-switch"
+            role="switch"
+            :aria-checked="showFinished"
+            title="是否显示已完成的任务与子任务；主任务完成但子任务未做完的始终显示"
+            @click="showDone = !showDone"
+          ><span class="track"><span class="thumb"></span></span>显示已完成<em v-if="doneTasks.length" class="done-switch-count wao-tabular">{{ doneTasks.length }}</em></button>
+        </template>
       </div>
     </div>
 
     <!-- 任务 -->
     <div v-if="projTab === '任务'">
-      <div v-if="effectiveCreator" class="task-scope" role="status">当前仅显示 {{ activeCreatorName }} 创建的任务 · {{ creatorTasks.length }} / {{ ptasks.length }} 项<button @click="creatorFilter = null">查看全部创建人</button></div>
-      <div class="delivery-filter" role="group" aria-label="按交付阶段筛选任务">
-        <span class="delivery-filter-label">交付阶段</span>
-        <button
-          class="delivery-filter-button"
-          :class="{ on: !deliveryStageFilter }"
-          :aria-pressed="!deliveryStageFilter"
-          title="查看当前创建人范围内的全部任务"
-          @click="setDeliveryStage(null)"
-        >全部阶段 <em class="wao-tabular">{{ creatorTasks.length }}</em></button>
-        <button
-          v-for="stage in deliveryStageOptions"
-          :key="stage.id"
-          class="delivery-filter-button"
-          :class="{ on: deliveryStageFilter === stage.id }"
-          :aria-pressed="deliveryStageFilter === stage.id"
-          :title="stage.description"
-          @click="setDeliveryStage(deliveryStageFilter === stage.id ? null : stage.id)"
-        >{{ stage.label }} <em class="wao-tabular">{{ stage.count }}</em></button>
-        <span class="spacer"></span>
-        <button v-if="!batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
+      <div v-if="effectiveCreator || effectiveOwner" class="task-scope" role="status">
+        当前仅显示{{ effectiveOwner ? ` ${activeOwnerName} 负责的` : '' }}{{ effectiveCreator ? ` ${activeCreatorName} 创建的` : '' }}任务 · {{ allTasks.length }} / {{ ptasks.length }} 项
+        <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
+        <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
-      <div v-if="batchSelectionOpen || selectedTaskIds.length" class="copy-selection-actions">
+      <!-- 表格视图不再提供批量选择；看板和分组视图仍可多选后复制 -->
+      <div v-if="pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length)" class="copy-selection-actions">
         <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
         <button v-if="selectedTaskIds.length" class="creator-filter-btn" @click="selectedTaskIds = []">清空选择</button>
         <span class="selection-count">已选 {{ selectedTaskIds.length }} 项</span>
@@ -660,42 +677,22 @@ watch(visibleTaskIds, (ids) => {
         <TaskBatchCopy :tasks="selectedCopyTasks" />
       </div>
       <template v-if="pdTaskView === 'list'">
-      <div class="table-toolbar">
-        <span class="table-toolbar-label">分组</span>
-        <div class="table-seg" role="group" aria-label="表格分组方式">
-          <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
-          <button :class="{ on: tableGrouped }" :aria-pressed="tableGrouped" @click="tableGrouped = true">按分组</button>
-        </div>
-        <button v-if="tableGrouped" class="table-toolbar-btn" :disabled="groupsSaving" @click="addGroup">
-          <i class="ri-add-line"></i>{{ groupsSaving ? '保存中…' : '新建分组' }}
-        </button>
-        <span class="spacer"></span>
-        <button
-          class="done-switch"
-          role="switch"
-          :aria-checked="showFinished"
-          :disabled="deliveryStageFilter === 'verified'"
-          title="是否显示已完成的任务与子任务；主任务完成但子任务未做完的始终显示"
-          @click="showDone = !showDone"
-        ><span class="track"><span class="thumb"></span></span>显示已完成的任务<em v-if="doneTasks.length" class="done-switch-count wao-tabular">{{ doneTasks.length }}</em></button>
-      </div>
       <div class="task-list-card task-table-scroll">
         <table class="project-task-table" aria-label="项目任务表格">
           <colgroup>
-            <col style="width: 36px" />
-            <col style="width: 72px" />
+            <col style="width: 64px" />
             <col style="width: auto" />
-            <col style="width: 120px" />
-            <col style="width: 72px" />
-            <col style="width: 104px" />
-            <col style="width: 120px" />
-            <col style="width: 120px" />
-            <col style="width: 104px" />
-            <col style="width: 104px" />
+            <col style="width: 112px" />
+            <col style="width: 64px" />
+            <col style="width: 92px" />
+            <col style="width: 88px" />
+            <col style="width: 88px" />
+            <col style="width: 96px" />
+            <col style="width: 124px" />
+            <col style="width: 124px" />
           </colgroup>
           <thead>
             <tr>
-              <th scope="col"><span class="sr-only">选择</span></th>
               <th scope="col">ID</th>
               <th scope="col">标题</th>
               <th scope="col">分组</th>
@@ -703,6 +700,7 @@ watch(visibleTaskIds, (ids) => {
               <th scope="col">状态</th>
               <th scope="col">负责人</th>
               <th scope="col">创建者</th>
+              <th scope="col">创建日期</th>
               <th scope="col">计划开始</th>
               <th scope="col">截止日期</th>
             </tr>
@@ -759,15 +757,12 @@ watch(visibleTaskIds, (ids) => {
                     :task="t"
                     :groups="groups"
                     :group-id="groupIdOf(t)"
-                    :selected="selectedTaskIds.includes(t.id)"
                     :expanded="!collapsedSubTasks.includes(t.id)"
                     :dragging="dragId === t.id"
                     :class="{ settling: isSettling(t.id) }"
-                    @select="toggleSelection(t.id)"
                     @toggle-subs="toggleSubtasks(t.id)"
                     @add-sub="startAddSub(t.id, null)"
                     @open="openTask(t.id)"
-                    @completed="selectedTaskIds = selectedTaskIds.filter((id) => id !== t.id)"
                     @dragstart="onDragStart(t.id, $event)"
                     @dragend="dragId = null"
                     @dragover.prevent
@@ -780,6 +775,7 @@ watch(visibleTaskIds, (ids) => {
                   :hide-done="!showFinished"
                   :adding="addingSub?.taskId === t.id"
                   :add-parent-id="addingSub?.taskId === t.id ? addingSub.parentId : null"
+                  :owner-filter="effectiveOwner && t.owner !== effectiveOwner ? effectiveOwner : null"
                   table
                   @add-sub="(parentId) => startAddSub(t.id, parentId)"
                   @close-add="addingSub = null"
@@ -795,7 +791,7 @@ watch(visibleTaskIds, (ids) => {
               <td colspan="10" class="empty-inline">
                 {{
                   ptasks.length
-                    ? '当前筛选没有任务，切换交付阶段或创建人后再看'
+                    ? '当前筛选没有任务，换个负责人或创建人再看'
                     : '还没有任务——点右上角「新建任务」开始拆解'
                 }}
               </td>
@@ -1042,7 +1038,7 @@ watch(visibleTaskIds, (ids) => {
   color: var(--wao-text-weak);
 }
 .detail {
-  padding: 10px 16px 24px;
+  padding: 6px 16px 16px;
   max-width: none;
   margin: 0 auto;
   animation: waoFadeUp 0.25s ease;
@@ -1072,7 +1068,7 @@ watch(visibleTaskIds, (ids) => {
 }
 
 .phead {
-  margin-top: 8px;
+  margin-top: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1102,11 +1098,6 @@ watch(visibleTaskIds, (ids) => {
 .phead-name {
   font-size: 20px;
   font-weight: 700;
-}
-.phead-status {
-  font-size: 11.5px;
-  border-radius: 999px;
-  padding: 2px 9px;
 }
 .phead-sub {
   margin-top: 3px;
@@ -1435,44 +1426,6 @@ watch(visibleTaskIds, (ids) => {
 }
 .creator-filter-menu button:hover,
 .creator-filter-menu button.on { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
-.delivery-filter {
-  margin-top: 9px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  padding-bottom: 1px;
-}
-.delivery-filter-label {
-  color: var(--wao-text-weak);
-  font-size: 12px;
-  flex: 0 0 auto;
-}
-.delivery-filter-button {
-  height: 28px;
-  padding: 0 9px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 999px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-3);
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-.delivery-filter-button em {
-  margin-left: 3px;
-  color: var(--wao-text-faint);
-  font-style: normal;
-}
-.delivery-filter-button:hover,
-.delivery-filter-button.on {
-  border-color: #c7d0f1;
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary-text);
-}
-.delivery-filter-button.on em { color: inherit; }
 .task-list-card,
 .doc-list-card,
 .file-list-card {
@@ -2123,7 +2076,6 @@ watch(visibleTaskIds, (ids) => {
   .phead-name-wrap { grid-column: 2; }
   .phead-name-row { flex-wrap: nowrap; gap: 6px; }
   .phead-name { min-width: 0; overflow: hidden; font-size: 17px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
-  .phead-status { flex-shrink: 0; padding: 2px 7px; font-size: 10.5px; }
   .phead-sub { margin-top: 2px; overflow: hidden; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
   .phead > .spacer { display: none; }
   .phead-avs { grid-column: 3; margin: 0; padding-left: 5px; }
@@ -2140,8 +2092,6 @@ watch(visibleTaskIds, (ids) => {
   .seg-btn { flex: 1; justify-content: center; height: 36px; }
   .creator-filter { order: 2; margin-left: 0; }
   .creator-filter-btn, .batch-ai { min-height: 40px; }
-  .delivery-filter { margin-top: 8px; }
-  .delivery-filter-button { min-height: 36px; padding: 0 11px; }
   .tab-toolbar > .spacer { order: 3; }
   .batch-ai-actions { order: 5; width: 100%; }
   .batch-ai-actions .batch-ai { flex: 1; justify-content: center; }
@@ -2182,18 +2132,24 @@ watch(visibleTaskIds, (ids) => {
 }
 /* 任务优先：项目标题、页签与视图、交付筛选合为三条紧凑工具栏。 */
 .detail { padding-top: 12px; }
-.phead { margin-top: 0; gap: 9px; }
-.phead-icon { width: 30px; height: 30px; font-size: 16px; border-radius: 8px; }
-.phead-name { font-size: 18px; overflow-wrap: anywhere; }
+/* 头部压紧：项目名一行 + 页签/工具一行，把高度让给任务表格 */
+.phead { margin-top: 0; gap: 8px; }
+.phead .back { padding: 2px 4px; }
+.phead-icon { width: 24px; height: 24px; font-size: 13px; border-radius: 6px; }
+.phead-name { font-size: 15px; overflow-wrap: anywhere; }
 .phead-name-wrap { flex: 0 1 auto; }
 .phead-name-row { gap: 7px; }
-.ptabs { margin-top: 10px; align-items: center; gap: 8px; flex-wrap: wrap; overflow: visible; padding-bottom: 7px; }
-.ptab { padding: 7px 9px; }
+.phead-av { width: 22px; height: 22px; font-size: 10px; }
+.phead .btn-icon { width: 28px; height: 28px; }
+.phead .btn-primary.sm { height: 28px; padding: 0 11px; }
+.ptabs { margin-top: 4px; align-items: center; gap: 6px; flex-wrap: wrap; overflow: visible; padding-bottom: 4px; }
+.ptab { height: 30px; padding: 4px 8px; }
 .task-view-toolbar { margin: 0 0 0 auto; flex-wrap: wrap; gap: 6px; }
 .task-view-toolbar .creator-filter { margin-left: 0; }
-.delivery-filter { margin: 8px 0; flex-wrap: wrap; overflow: visible; }
-.delivery-filter-label { display: none; }
-.delivery-filter-button { border-radius: 6px; }
+.task-view-toolbar .seg { padding: 2px; border-radius: 7px; }
+.task-view-toolbar .seg-btn { height: 24px; padding: 0 9px; font-size: 12px; }
+.task-view-toolbar .creator-filter-btn { height: 28px; font-size: 12px; }
+.task-view-toolbar .table-toolbar-btn { height: 28px; }
 .copy-selection-actions { align-items: center; margin: 8px 0; padding: 8px; border-radius: 8px; background: var(--wao-primary-soft); }
 .copy-selection-actions .selection-count { font-size: 12px; color: var(--wao-primary-text); }
 .copy-selection-actions :deep(.task-batch-copy) { display: contents; }
@@ -2220,21 +2176,20 @@ watch(visibleTaskIds, (ids) => {
   .task-view-toolbar .seg-btn { padding: 0 9px; }
   .task-view-toolbar .creator-filter { margin-left: auto; }
   .board-col.is-collapsed { min-width: 0; }
-  .phead-status { display: none; }
   .project-more-menu { right: 0; }
 }
 .task-list-card.task-table-scroll {
   padding: 0;
   border-radius: 6px;
   overflow: auto;
-  max-height: calc(100dvh - 260px);
+  max-height: calc(100dvh - 190px);
   min-height: 180px;
 }
 .project-task-table {
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  min-width: 1160px;
+  min-width: 1100px;
   table-layout: fixed;
   font-size: 12px;
 }
@@ -2294,16 +2249,6 @@ watch(visibleTaskIds, (ids) => {
 }
 .project-task-table .table-quick-add td {
   padding: 4px 8px 4px 40px;
-}
-.table-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 12px;
-}
-.table-toolbar-label {
-  color: var(--wao-text-weak);
 }
 .table-seg {
   display: inline-flex;

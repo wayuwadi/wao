@@ -917,7 +917,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .chat-review-page {
-  max-width: 1240px;
+  max-width: none;
   margin: 0 auto;
   padding: 24px 28px 58px;
   color: var(--wao-text);

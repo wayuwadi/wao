@@ -301,7 +301,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .report-page {
-  max-width: 1260px;
+  max-width: none;
   margin: 0 auto;
   padding: 24px 28px 56px;
   color: var(--wao-text);

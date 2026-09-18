@@ -24,13 +24,15 @@ import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import TaskRelationPicker from '@/components/task/TaskRelationPicker.vue'
 import { engineLabel } from '@/composables/aiEngines'
 import { useNow } from '@/composables/now'
-import { absoluteTime, relativeTime } from '@/utils/time'
+import { absoluteTime, nowIso, relativeTime } from '@/utils/time'
 import { activitySentence } from '@/utils/activity'
 import { fileDisplayName } from '@/utils/files'
 import { useFavoritesStore } from '@/stores/favorites'
 import { nextTaskAiRunPollDelay, taskAiRunFingerprint } from '@/utils/taskAiRunPolling'
 import { notifyTaskManually } from '@/api/board'
-import type { AiEngine, AiRun, Priority, TaskStatus, TaskStep } from '@/types'
+import CellMenu from '@/components/task/CellMenu.vue'
+import { subtaskState, SUBTASK_STATE_COLOR, SUBTASK_STATES } from '@/utils/subtaskTree'
+import type { AiEngine, AiRun, Comment, Priority, SubtaskState, TaskStatus, TaskStep } from '@/types'
 
 const ui = useUiStore()
 const data = useDataStore()
@@ -192,8 +194,10 @@ const stepPct = computed(() => (stepsTotal.value ? Math.round((stepsDone.value /
 const now = useNow()
 const showTime = (t: string) => relativeTime(t, now.value)
 
+/** 评论跟着当前查看的对象走：看子任务时是子任务自己的评论，否则是主任务的评论。 */
+const commentSource = computed<Comment[]>(() => (openSub.value ? openSub.value.comments ?? [] : task.value?.comments ?? []))
 const comments = computed(() =>
-  (task.value?.comments ?? []).map((c, index) => {
+  commentSource.value.map((c, index) => {
     const m = session.memberById(c.who)
     return {
       index, name: m.name, initial: m.initial, color: m.color,
@@ -227,10 +231,21 @@ function cancelEditComment() {
   editingComment.value = null
   editingText.value = ''
 }
+/** 子任务评论随任务全文保存；只能改删自己的，与主任务评论同一规则。 */
+function writeSubComments(next: Comment[]) {
+  const t = task.value
+  if (t && openSubId.value) data.updateSub(t.id, openSubId.value, { comments: next })
+}
 async function saveComment() {
   const t = task.value
   const index = editingComment.value
   if (!t || index === null) return
+  if (openSub.value) {
+    const text = editingText.value.trim()
+    if (text) writeSubComments(commentSource.value.map((item, i) => (i === index ? { ...item, text } : item)))
+    cancelEditComment()
+    return
+  }
   const ok = await data.updateTaskComment(t.id, index, editingText.value)
   cancelEditComment()
   toast(ok ? '评论已更新' : '评论修改失败，请重试', ok ? 'ri-check-line' : 'ri-error-warning-line')
@@ -240,6 +255,11 @@ async function removeComment(index: number) {
   if (!t) return
   if (!window.confirm('删除这条评论？此操作不可恢复。')) return
   if (editingComment.value === index) cancelEditComment()
+  if (openSub.value) {
+    writeSubComments(commentSource.value.filter((_, i) => i !== index))
+    toast('评论已删除', 'ri-delete-bin-line')
+    return
+  }
   const ok = await data.deleteTaskComment(t.id, index)
   toast(ok ? '评论已删除' : '评论删除失败，请重试', ok ? 'ri-delete-bin-line' : 'ri-error-warning-line')
 }
@@ -282,8 +302,10 @@ const linkTasks = computed(() =>
     return { id: l.id, title: lt?.title ?? '', rel: l.rel, status: lt?.status ?? '', stBg: st.bg, stColor: st.color }
   }),
 )
+/** 关联文档跟着当前查看的对象走：子任务有自己的关联文档。 */
+const currentDocIds = computed(() => (openSub.value ? openSub.value.docs ?? [] : task.value?.docs ?? []))
 const linkedDocs = computed(() =>
-  (task.value?.docs ?? []).flatMap((id) => {
+  currentDocIds.value.flatMap((id) => {
     const document = data.docById(id)
     return document && !data.isDocArchived(id) ? [{ id, title: document.title }] : []
   }),
@@ -340,12 +362,39 @@ function close() {
   if (task.value) data.flushTask(task.value.id)
   ui.closeTask()
 }
-/** Esc：先关弹出的菜单，否则直接关闭弹框——在子任务详情里也是按一次就退出，不必先退回主任务。 */
+/**
+ * 弹框里的浏览足迹：从表格点开时为空；在弹框里点开下一级（子任务、子任务的子任务、关联任务）才入栈。
+ * Esc 按足迹往回退一层——从表格直接点开的深层子任务按 Esc 回到表格；从子任务里再点开的下级，
+ * 按 Esc 回到上一个子任务。点面包屑回到足迹里已有的一层时，视为后退，截掉之后的足迹。
+ */
+const visitTrail: { taskId: string; subId: string | null }[] = []
+let steppingBack = false
+watch(() => [ui.openTaskId, ui.openTaskSubId] as const, ([taskId, subId], [prevTaskId, prevSubId]) => {
+  if (!taskId) {
+    visitTrail.length = 0
+    return
+  }
+  if (steppingBack) {
+    steppingBack = false
+    return
+  }
+  const at = visitTrail.findIndex((item) => item.taskId === taskId && item.subId === (subId ?? null))
+  if (at >= 0) visitTrail.splice(at)
+  else if (prevTaskId) visitTrail.push({ taskId: prevTaskId, subId: prevSubId ?? null })
+})
+/** Esc：先关弹出的菜单，再按足迹退回上一层，没有上一层才关闭弹框回到表格。 */
 function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape' || !task.value || e.defaultPrevented || ui.chatOpen) return
   if (relationOpen.value) relationOpen.value = false
   else if (menu.value) menu.value = null
-  else close()
+  else if (subStateOpen.value) subStateOpen.value = false
+  else {
+    const previous = visitTrail.pop()
+    if (!previous) return close()
+    if (previous.taskId !== ui.openTaskId || previous.subId !== (ui.openTaskSubId ?? null)) steppingBack = true
+    if (previous.taskId !== ui.openTaskId) data.flushTask(ui.openTaskId!)
+    ui.openTask(previous.taskId, previous.subId ?? undefined)
+  }
 }
 function syncTaskAiRunsImmediately() {
   if (document.hidden || !ui.openTaskId) return
@@ -477,11 +526,14 @@ const subDesc = computed({
     if (t && openSubId.value) data.updateSub(t.id, openSubId.value, { desc: v })
   },
 })
-function toggleSubDone() {
+const subStateOpen = ref(false)
+const subStateAnchor = ref<HTMLElement | null>(null)
+function setSubState(state: SubtaskState) {
   const t = task.value
-  const s = openSub.value
-  if (t && s && openSubId.value) data.updateSub(t.id, openSubId.value, { done: !s.done })
+  if (t && openSubId.value) data.setSubState(t.id, openSubId.value, state)
+  subStateOpen.value = false
 }
+const subCreator = computed(() => (openSub.value?.createdBy ? session.memberById(openSub.value.createdBy) : null))
 const onSubImage = (file: File, done: (url: string | null, name: string) => void) =>
   uploadInline(file, done, `子任务 · ${openSub.value?.text ?? ''}`)
 
@@ -539,7 +591,7 @@ async function copyJobId() {
   if (!id) return
   const copied = await copyToClipboard(id)
   toast(
-    copied ? `JOBID ${id} 已复制` : '复制失败，请手动选中 JOBID 复制',
+    copied ? `JOBID ${id} 已复制` : `复制失败，请手动复制 JOBID：${id}`,
     copied ? 'ri-file-copy-line' : 'ri-error-warning-line',
   )
 }
@@ -613,6 +665,11 @@ async function sendComment() {
   const t = task.value
   const v = commentText.value.trim()
   if (!t || !v) return
+  if (openSub.value) {
+    writeSubComments([...commentSource.value, { id: `c${Date.now()}`, who: session.currentUser.id, time: nowIso(), text: v }])
+    commentText.value = ''
+    return
+  }
   sendingComment.value = true
   try {
     if (await data.addTaskComment(t.id, v)) commentText.value = ''
@@ -797,6 +854,12 @@ function removeAttachedFile(index: number) {
 function toggleRelation(type: 'doc' | 'task' | 'file' | 'page', id: string) {
   const t = task.value
   if (!t) return
+  if (type === 'doc' && openSub.value && openSubId.value) {
+    const docs = openSub.value.docs ?? []
+    const selected = docs.includes(id)
+    data.updateSub(t.id, openSubId.value, { docs: selected ? docs.filter((item) => item !== id) : [...docs, id] })
+    return
+  }
   if (type === 'doc') {
     const selected = t.docs.includes(id)
     const title = data.docById(id)?.title || '未命名文档'
@@ -1090,34 +1153,6 @@ async function uploadAttachment(event: Event) {
             <input ref="attachmentInput" type="file" hidden @change="uploadAttachment" />
           </div>
 
-          <div class="field">
-            <div class="field-label">关联</div>
-            <div class="attach-list">
-              <div v-for="ld in linkedDocs" :key="ld.id" class="attach link" @click="openDoc(ld.id)">
-                <i class="ri-book-2-line" style="color: #7a5cc6"></i>
-                <span class="attach-name ellip">{{ ld.title }}</span>
-                <span class="attach-size">知识库</span>
-                <i class="ri-arrow-right-s-line dl"></i>
-                <button class="relation-unlink" :aria-label="`取消关联知识文档 ${ld.title}`" title="取消关联" @click.stop="toggleRelation('doc', ld.id)"><i class="ri-link-unlink-m"></i></button>
-              </div>
-              <div v-for="lk in linkTasks" :key="lk.id" class="attach link" @click="openLinkTask(lk.id)">
-                <i class="ri-checkbox-circle-line" style="color: #5a5e6b"></i>
-                <span class="attach-name ellip">{{ lk.title }}</span>
-                <span class="rel">{{ lk.rel }}</span>
-                <span class="mini" :style="{ background: lk.stBg, color: lk.stColor }">{{ lk.status }}</span>
-                <button class="relation-unlink" :aria-label="`取消关联任务 ${lk.title}`" title="取消关联" @click.stop="toggleRelation('task', lk.id)"><i class="ri-link-unlink-m"></i></button>
-              </div>
-              <div v-for="page in linkedHostedPages" :key="page.id" class="attach link" :class="{ legacy: !page.url }" @click="openHostedPage(page.url)">
-                <i class="ri-html5-line" style="color: #d55c22"></i>
-                <span class="attach-name ellip">{{ page.title }}</span>
-                <span class="attach-size">HTML</span>
-                <i :class="page.url ? 'ri-external-link-line dl' : 'ri-information-line dl'"></i>
-                <button class="relation-unlink" :aria-label="`取消关联 HTML ${page.title}`" title="取消关联" @click.stop="toggleRelation('page', page.id)"><i class="ri-link-unlink-m"></i></button>
-              </div>
-            </div>
-            <button class="text-btn" @click="openRelationPicker"><i class="ri-links-line"></i>关联知识、任务、文件或 HTML</button>
-          </div>
-
           <AiRunArchive
             v-if="AI_RUN_ENABLED"
             :runs="aiRuns"
@@ -1128,44 +1163,6 @@ async function uploadAttachment(event: Event) {
             @upload-image="onContinueImage"
           />
 
-          <div class="comments">
-            <div class="field-label">评论</div>
-            <div class="comment-list">
-              <div v-for="(cm, i) in comments" :key="i" class="comment">
-                <span class="c-av" :style="{ background: cm.color }">{{ cm.initial }}</span>
-                <div class="c-main">
-                  <div class="c-head">
-                    <b>{{ cm.name }}</b><span class="c-time" :title="cm.fullTime">{{ cm.time }}</span>
-                    <span class="spacer"></span>
-                    <template v-if="cm.mine && editingComment !== cm.index">
-                      <button class="c-op" title="修改评论" @click="startEditComment(cm.index, cm.text)"><i class="ri-edit-line"></i></button>
-                      <button class="c-op danger" title="删除评论" @click="removeComment(cm.index)"><i class="ri-delete-bin-line"></i></button>
-                    </template>
-                  </div>
-                  <div v-if="editingComment === cm.index" class="c-edit">
-                    <textarea v-model="editingText" class="c-edit-input" rows="2" @keydown.esc="cancelEditComment"></textarea>
-                    <div class="c-edit-ops">
-                      <button class="text-btn small" @click="cancelEditComment">取消</button>
-                      <button class="text-btn small primary" :disabled="!editingText.trim()" @click="saveComment">保存</button>
-                    </div>
-                  </div>
-                  <div v-else class="c-text">{{ cm.text }}</div>
-                </div>
-              </div>
-            </div>
-            <div class="comment-input">
-              <span class="c-av" :style="{ background: session.currentUser.color }">{{ session.currentUser.initial }}</span>
-              <div class="ci-wrap">
-                <input v-model="commentText" :disabled="sendingComment" placeholder="写评论，回车发送；@成员名 对方会收到 WAO 通知" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey" />
-                <div v-if="mentionOpen && mentionCandidates.length" class="mention-menu">
-                  <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
-                    <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}
-                  </button>
-                </div>
-                <button class="send" :disabled="!commentText.trim() || sendingComment" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ sendingComment ? '发送中' : '发送' }}</button>
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- 子任务属性：与任务属性栏同一位置、同一版式 -->
@@ -1177,15 +1174,104 @@ async function uploadAttachment(event: Event) {
           </div>
           <div class="prop-row">
             <span class="prop-key">状态</span>
-            <button class="state-pill" :class="{ completed: openSub.done }" :title="openSub.done ? '点击改回未开始' : '点击标记已完成'" @click="toggleSubDone">
-              {{ openSub.done ? '已完成' : '未开始' }}<i class="ri-arrow-left-right-line"></i>
+            <button
+              ref="subStateAnchor"
+              class="state-pill"
+              :style="{ color: SUBTASK_STATE_COLOR[subtaskState(openSub)], borderColor: SUBTASK_STATE_COLOR[subtaskState(openSub)] }"
+              aria-haspopup="menu"
+              :aria-expanded="subStateOpen"
+              @click="subStateOpen = !subStateOpen"
+            >
+              {{ subtaskState(openSub) }}<i class="ri-arrow-down-s-line"></i>
             </button>
+            <CellMenu v-if="subStateOpen" :anchor="subStateAnchor" :min-width="110" @close="subStateOpen = false">
+              <button v-for="state in SUBTASK_STATES" :key="state" role="menuitemradio" :aria-checked="subtaskState(openSub) === state" :class="{ on: subtaskState(openSub) === state }" @click="setSubState(state)">
+                <span class="state-pill sm" :style="{ color: SUBTASK_STATE_COLOR[state], borderColor: SUBTASK_STATE_COLOR[state] }">{{ state }}</span>
+                <i v-if="subtaskState(openSub) === state" class="ri-check-line"></i>
+              </button>
+            </CellMenu>
           </div>
           <div class="prop-row">
             <span class="prop-key">所属任务</span>
             <button class="proj-btn" :title="task.title" @click="backToTask"><WorkItemIcon kind="task" :size="14" /><span class="ellip">{{ task.title }}</span></button>
           </div>
           <SubtaskProperties :task-id="task.id" :sub-id="openSubId!" />
+          <div class="prop-row">
+            <span class="prop-key">创建者</span>
+            <span class="prop-val">
+              <template v-if="subCreator"><span class="mini-av" :style="{ background: subCreator.color }">{{ subCreator.initial }}</span>{{ subCreator.name }}</template>
+              <span v-else class="parts-empty">历史子任务未记录</span>
+            </span>
+          </div>
+          <div v-if="openSub.createdAt" class="prop-row">
+            <span class="prop-key">创建日期</span>
+            <span class="prop-val wao-tabular">{{ openSub.createdAt.slice(0, 10).replace(/-/g, '/') }}</span>
+          </div>
+          <!-- 关联：任务与子任务都能关联文档，放在属性栏里随手可见 -->
+          <div class="prop-section side-relations">
+            <div class="props-label sm">关联</div>
+            <div class="attach-list">
+              <div v-for="ld in linkedDocs" :key="ld.id" class="attach link" @click="openDoc(ld.id)">
+                <i class="ri-book-2-line" style="color: #7a5cc6"></i>
+                <span class="attach-name ellip">{{ ld.title }}</span>
+                <button class="relation-unlink" :aria-label="`取消关联知识文档 ${ld.title}`" title="取消关联" @click.stop="toggleRelation('doc', ld.id)"><i class="ri-link-unlink-m"></i></button>
+              </div>
+              <template v-if="!openSub">
+                <div v-for="lk in linkTasks" :key="lk.id" class="attach link" @click="openLinkTask(lk.id)">
+                  <i class="ri-checkbox-circle-line" style="color: #5a5e6b"></i>
+                  <span class="attach-name ellip">{{ lk.title }}</span>
+                  <span class="mini" :style="{ background: lk.stBg, color: lk.stColor }">{{ lk.status }}</span>
+                  <button class="relation-unlink" :aria-label="`取消关联任务 ${lk.title}`" title="取消关联" @click.stop="toggleRelation('task', lk.id)"><i class="ri-link-unlink-m"></i></button>
+                </div>
+                <div v-for="page in linkedHostedPages" :key="page.id" class="attach link" :class="{ legacy: !page.url }" @click="openHostedPage(page.url)">
+                  <i class="ri-html5-line" style="color: #d55c22"></i>
+                  <span class="attach-name ellip">{{ page.title }}</span>
+                  <button class="relation-unlink" :aria-label="`取消关联 HTML ${page.title}`" title="取消关联" @click.stop="toggleRelation('page', page.id)"><i class="ri-link-unlink-m"></i></button>
+                </div>
+              </template>
+            </div>
+            <button class="text-btn small" @click="openRelationPicker"><i class="ri-links-line"></i>{{ openSub ? '关联知识文档' : '关联知识、任务、文件或 HTML' }}</button>
+          </div>
+
+          <!-- 评论：跟着当前查看的任务 / 子任务 -->
+          <div class="prop-section side-comments">
+            <div class="props-label sm">评论<span v-if="comments.length" class="side-count wao-tabular">{{ comments.length }}</span></div>
+            <div class="comment-list">
+              <div v-for="cm in comments" :key="cm.index" class="comment">
+                <span class="c-av" :style="{ background: cm.color }">{{ cm.initial }}</span>
+                <div class="c-main">
+                  <div class="c-head">
+                    <b>{{ cm.name }}</b><span class="c-time" :title="cm.fullTime">{{ cm.time }}</span>
+                    <span class="spacer"></span>
+                    <template v-if="cm.mine && editingComment !== cm.index">
+                      <button class="c-op" title="修改评论" @click="startEditComment(cm.index, cm.text)"><i class="ri-edit-line"></i></button>
+                      <button class="c-op danger" title="删除评论" @click="removeComment(cm.index)"><i class="ri-delete-bin-line"></i></button>
+                    </template>
+                  </div>
+                  <div v-if="editingComment === cm.index" class="c-edit">
+                    <textarea v-model="editingText" class="c-edit-input" rows="2" @keydown.esc.stop="cancelEditComment"></textarea>
+                    <div class="c-edit-ops">
+                      <button class="text-btn small" @click="cancelEditComment">取消</button>
+                      <button class="text-btn small primary" :disabled="!editingText.trim()" @click="saveComment">保存</button>
+                    </div>
+                  </div>
+                  <div v-else class="c-text">{{ cm.text }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="comment-input">
+              <div class="ci-wrap">
+                <input v-model="commentText" :disabled="sendingComment" :placeholder="openSub ? '写评论，回车发送' : '写评论，回车发送；@成员名 会通知对方'" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey" />
+                <div v-if="!openSub && mentionOpen && mentionCandidates.length" class="mention-menu">
+                  <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
+                    <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}
+                  </button>
+                </div>
+                <button class="send" :disabled="!commentText.trim() || sendingComment" :aria-label="sendingComment ? '发送中' : '发送评论'" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i></button>
+              </div>
+            </div>
+          </div>
+
           <div v-if="AI_RUN_ENABLED && !openSub.done" class="prop-section">
             <button v-if="openSubDispatched" class="sub-detail-action" type="button" disabled>
               <i class="ri-robot-2-line"></i>已派给 AI
@@ -1210,9 +1296,9 @@ async function uploadAttachment(event: Event) {
           <div class="props-label">属性</div>
 
           <div class="prop-row">
-            <span class="prop-key">JOBID</span>
-            <button class="job-id-copy" type="button" :title="`复制 JOBID ${task.id}`" @click="copyJobId">
-              <code>{{ task.id }}</code><i class="ri-file-copy-line"></i>
+            <span class="prop-key">编号</span>
+            <button class="job-id-copy" type="button" :title="`与子任务一样显示井号编号；点击复制 JOBID ${task.id}`" @click="copyJobId">
+              <span class="wao-tabular">#{{ task.number ?? '…' }}</span><i class="ri-file-copy-line"></i>
             </button>
           </div>
 
@@ -1281,6 +1367,70 @@ async function uploadAttachment(event: Event) {
                 <span class="pmenu-name">{{ g.name }}</span>
                 <i v-if="currentGroup?.id === g.id" class="ri-check-line chk"></i>
               </button>
+            </div>
+          </div>
+          <!-- 关联：任务与子任务都能关联文档，放在属性栏里随手可见 -->
+          <div class="prop-section side-relations">
+            <div class="props-label sm">关联</div>
+            <div class="attach-list">
+              <div v-for="ld in linkedDocs" :key="ld.id" class="attach link" @click="openDoc(ld.id)">
+                <i class="ri-book-2-line" style="color: #7a5cc6"></i>
+                <span class="attach-name ellip">{{ ld.title }}</span>
+                <button class="relation-unlink" :aria-label="`取消关联知识文档 ${ld.title}`" title="取消关联" @click.stop="toggleRelation('doc', ld.id)"><i class="ri-link-unlink-m"></i></button>
+              </div>
+              <template v-if="!openSub">
+                <div v-for="lk in linkTasks" :key="lk.id" class="attach link" @click="openLinkTask(lk.id)">
+                  <i class="ri-checkbox-circle-line" style="color: #5a5e6b"></i>
+                  <span class="attach-name ellip">{{ lk.title }}</span>
+                  <span class="mini" :style="{ background: lk.stBg, color: lk.stColor }">{{ lk.status }}</span>
+                  <button class="relation-unlink" :aria-label="`取消关联任务 ${lk.title}`" title="取消关联" @click.stop="toggleRelation('task', lk.id)"><i class="ri-link-unlink-m"></i></button>
+                </div>
+                <div v-for="page in linkedHostedPages" :key="page.id" class="attach link" :class="{ legacy: !page.url }" @click="openHostedPage(page.url)">
+                  <i class="ri-html5-line" style="color: #d55c22"></i>
+                  <span class="attach-name ellip">{{ page.title }}</span>
+                  <button class="relation-unlink" :aria-label="`取消关联 HTML ${page.title}`" title="取消关联" @click.stop="toggleRelation('page', page.id)"><i class="ri-link-unlink-m"></i></button>
+                </div>
+              </template>
+            </div>
+            <button class="text-btn small" @click="openRelationPicker"><i class="ri-links-line"></i>{{ openSub ? '关联知识文档' : '关联知识、任务、文件或 HTML' }}</button>
+          </div>
+
+          <!-- 评论：跟着当前查看的任务 / 子任务 -->
+          <div class="prop-section side-comments">
+            <div class="props-label sm">评论<span v-if="comments.length" class="side-count wao-tabular">{{ comments.length }}</span></div>
+            <div class="comment-list">
+              <div v-for="cm in comments" :key="cm.index" class="comment">
+                <span class="c-av" :style="{ background: cm.color }">{{ cm.initial }}</span>
+                <div class="c-main">
+                  <div class="c-head">
+                    <b>{{ cm.name }}</b><span class="c-time" :title="cm.fullTime">{{ cm.time }}</span>
+                    <span class="spacer"></span>
+                    <template v-if="cm.mine && editingComment !== cm.index">
+                      <button class="c-op" title="修改评论" @click="startEditComment(cm.index, cm.text)"><i class="ri-edit-line"></i></button>
+                      <button class="c-op danger" title="删除评论" @click="removeComment(cm.index)"><i class="ri-delete-bin-line"></i></button>
+                    </template>
+                  </div>
+                  <div v-if="editingComment === cm.index" class="c-edit">
+                    <textarea v-model="editingText" class="c-edit-input" rows="2" @keydown.esc.stop="cancelEditComment"></textarea>
+                    <div class="c-edit-ops">
+                      <button class="text-btn small" @click="cancelEditComment">取消</button>
+                      <button class="text-btn small primary" :disabled="!editingText.trim()" @click="saveComment">保存</button>
+                    </div>
+                  </div>
+                  <div v-else class="c-text">{{ cm.text }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="comment-input">
+              <div class="ci-wrap">
+                <input v-model="commentText" :disabled="sendingComment" :placeholder="openSub ? '写评论，回车发送' : '写评论，回车发送；@成员名 会通知对方'" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey" />
+                <div v-if="!openSub && mentionOpen && mentionCandidates.length" class="mention-menu">
+                  <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
+                    <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}
+                  </button>
+                </div>
+                <button class="send" :disabled="!commentText.trim() || sendingComment" :aria-label="sendingComment ? '发送中' : '发送评论'" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i></button>
+              </div>
             </div>
           </div>
           <details class="optional-props"><summary>更多属性 · 参与人、排期与自定义</summary>
@@ -1397,10 +1547,10 @@ async function uploadAttachment(event: Event) {
     <TaskRelationPicker
       v-if="relationOpen"
       :docs="relationDocs"
-      :tasks="relationTasks"
-      :files="relationFiles"
-      :pages="manualHostedPages"
-      :selected-doc-ids="task.docs"
+      :tasks="openSub ? [] : relationTasks"
+      :files="openSub ? [] : relationFiles"
+      :pages="openSub ? [] : manualHostedPages"
+      :selected-doc-ids="currentDocIds"
       :selected-task-ids="task.linkTasks.map((item) => item.id)"
       :selected-file-ids="selectedFileIds"
       :selected-page-ids="task.hostedPages ?? []"
@@ -2208,9 +2358,9 @@ async function uploadAttachment(event: Event) {
 .mention-menu button:hover { background: var(--wao-primary-soft); }
 .mention-menu span { width: 20px; height:20px; border-radius:50%; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:10px; }
 
-/* 属性栏 */
+/* 属性栏：关联与评论也在这里，比原来宽一点 */
 .props {
-  width: 290px;
+  width: 330px;
   flex-shrink: 0;
   border-left: 1px solid var(--wao-divider);
   background: var(--wao-bg-sub-2);
@@ -2692,4 +2842,17 @@ async function uploadAttachment(event: Event) {
     margin-left: auto;
   }
 }
+/* 属性栏里的关联与评论：窄栏排版 */
+.side-relations .attach-list { margin: 4px 0 2px; }
+.side-relations .attach { padding: 6px 8px; }
+.side-count { margin-left: 6px; color: var(--wao-text-faint); letter-spacing: 0; }
+.side-comments .comment-list { gap: 10px; margin-top: 6px; }
+.side-comments .c-av { width: 22px; height: 22px; font-size: 10px; }
+.side-comments .c-text { font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.side-comments .comment-input { margin-top: 10px; }
+.side-comments .ci-wrap { gap: 6px; }
+.side-comments .ci-wrap input { height: 32px; font-size: 12.5px; }
+.side-comments .send { width: 34px; height: 32px; padding: 0; justify-content: center; flex-shrink: 0; }
+.side-comments .mention-menu { right: 40px; }
+.state-pill.sm { cursor: inherit; }
 </style>

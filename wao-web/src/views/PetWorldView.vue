@@ -340,7 +340,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .pet-world-page {
   padding: 24px 28px 18px;
-  max-width: 1600px;
+  max-width: none;
   margin: 0 auto;
   color: var(--wao-text, #253a32);
 }

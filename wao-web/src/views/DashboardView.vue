@@ -782,7 +782,7 @@ function goHome() { router.push('/') }
 <style scoped>
 .dashboard {
   padding: 28px 32px 48px;
-  max-width: 1280px;
+  max-width: none;
   margin: 0 auto;
 }
 .dash-head {

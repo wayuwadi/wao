@@ -165,7 +165,7 @@ onMounted(load)
 
 <style scoped>
 .data-center-page {
-  max-width: 1180px;
+  max-width: none;
   margin: 0 auto;
   padding: 24px 28px 60px;
   color: var(--wao-text);

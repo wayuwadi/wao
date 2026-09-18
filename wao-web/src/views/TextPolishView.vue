@@ -303,7 +303,7 @@ onMounted(load)
 
 <style scoped>
 .polish-page {
-  max-width: 1180px;
+  max-width: none;
   margin: 0 auto;
   padding: 28px 30px 80px;
   color: var(--wao-text);

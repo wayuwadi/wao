@@ -213,7 +213,7 @@ onMounted(load)
 </template>
 
 <style scoped>
-.decisions-page{max-width:1180px;margin:0 auto;padding:32px 28px 56px;color:var(--wao-text-1)}
+.decisions-page{max-width:none;margin:0 auto;padding:32px 28px 56px;color:var(--wao-text-1)}
 .hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:28px;border:1px solid var(--wao-line);border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--wao-accent) 12%,var(--wao-bg-card)),var(--wao-bg-card))}
 .eyebrow{color:var(--wao-accent);font-size:12px;font-weight:700;letter-spacing:.08em}.hero h1{margin:8px 0 6px;font-size:28px}.hero p{max-width:620px;margin:0;color:var(--wao-text-3);line-height:1.7}
 button,.memory-link{border:1px solid var(--wao-line);border-radius:9px;background:var(--wao-bg-card);color:var(--wao-text-2);font:inherit;cursor:pointer}.primary{padding:10px 16px;border-color:var(--wao-accent);background:var(--wao-accent);color:#fff;font-weight:700}.primary i{margin-right:5px}button:disabled{cursor:not-allowed;opacity:.55}

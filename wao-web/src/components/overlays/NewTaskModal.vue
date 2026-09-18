@@ -16,8 +16,12 @@ const session = useSessionStore()
 const ui = useUiStore()
 const preferences = usePreferenceStore()
 
-/** 快捷截止选项按真实「今天」推算：今天 / 明天 / 本周日 / 下周一；ISO 日期（日历双击带入）原样返回。 */
+/**
+ * 快捷截止选项按真实「今天」推算：今天 / 明天 / 本周日 / 下周一；ISO 日期（日历双击带入）原样返回。
+ * 「不设置」返回空串——没选截止日期就不排期，不再默认落在今天。
+ */
 function dueDate(label: string): string {
+  if (label === NO_DUE) return ''
   if (/^\d{4}-\d{2}-\d{2}$/.test(label)) return label
   const d = new Date(`${data.today}T00:00:00`)
   const dow = d.getDay() || 7
@@ -28,6 +32,7 @@ function dueDate(label: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+const NO_DUE = '不设置'
 const route = useRoute()
 const contextProject = ui.modalProject || (route?.name === 'project' ? String(route.params.id || '') : '')
 const source = ui.modalTaskSeed
@@ -87,15 +92,15 @@ watch(() => session.members, (members) => {
 }, { immediate: true })
 const pr = ref<Priority>(draft.pr ?? ui.modalPriority ?? 'P2')
 // 日历双击某天进来时，截止日直接锁定那一天，优先于草稿里存的快捷选项。
-// 草稿里的 ISO 日期（上次从日历带入的）没有对应 pill，回落到「今天」。
-const QUICK_DUES = ['今天', '明天', '周日', '下周一']
-const due = ref(ui.modalDue || (QUICK_DUES.includes(draft.due ?? '') ? draft.due! : '今天'))
+// 草稿里的 ISO 日期（上次从日历带入的）没有对应 pill，回落到「不设置」。
+const QUICK_DUES = [NO_DUE, '今天', '明天', '周日', '下周一']
+const due = ref(ui.modalDue || (QUICK_DUES.includes(draft.due ?? '') ? draft.due! : NO_DUE))
 const dueOptions = computed(() => (ui.modalDue ? [ui.modalDue, ...QUICK_DUES] : QUICK_DUES))
 const scheduleMode = ref<'deadline' | 'range'>(
   ui.modalStartAt ? 'range' : draft.scheduleMode === 'range' ? 'range' : 'deadline',
 )
-const startAt = ref(ui.modalStartAt || draft.startAt || `${dueDate(due.value)}T09:00`)
-const endAt = ref(ui.modalEndAt || draft.endAt || `${dueDate(due.value)}T10:00`)
+const startAt = ref(ui.modalStartAt || draft.startAt || `${dueDate(due.value) || data.today}T09:00`)
+const endAt = ref(ui.modalEndAt || draft.endAt || `${dueDate(due.value) || data.today}T10:00`)
 const desc = ref(draft.desc ?? source?.desc ?? '')
 const draftState = ref<'saving' | 'saved' | 'error'>('saved')
 const createState = ref<'idle' | 'submitting' | 'error'>('idle')

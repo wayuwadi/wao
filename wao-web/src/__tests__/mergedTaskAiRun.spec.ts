@@ -52,13 +52,13 @@ describe('项目任务合并为一次 AI Run', () => {
       history: createMemoryHistory(),
       routes: [{ path: '/projects/:id', component: { template: '<div />' } }],
     })
-    await router.push('/projects/p1?view=list')
+    await router.push('/projects/p1?view=group')
     await router.isReady()
     const wrapper = mountProject(router)
     await flushPromises()
     expect(wrapper.find('.select-all').exists()).toBe(false)
     expect(wrapper.find('.batch-ai').exists()).toBe(false)
-    const selectable = wrapper.findAll('.task-list-card .select-dot')
+    const selectable = wrapper.findAll('.groups .select-dot')
     expect(selectable.length).toBeGreaterThanOrEqual(2)
 
     await selectable[0]!.trigger('click')
@@ -92,11 +92,11 @@ describe('项目任务合并为一次 AI Run', () => {
       history: createMemoryHistory(),
       routes: [{ path: '/projects/:id', component: { template: '<div />' } }],
     })
-    await router.push('/projects/p1?view=list')
+    await router.push('/projects/p1?view=group')
     await router.isReady()
     const wrapper = mountProject(router)
     await flushPromises()
-    const selectable = wrapper.findAll('.task-list-card .select-dot')
+    const selectable = wrapper.findAll('.groups .select-dot')
     await selectable[0]!.trigger('click')
     await selectable[1]!.trigger('click')
     const selectedIds = data.tasksByProject('p1').filter((task) => task.status !== '已完成')
@@ -132,10 +132,11 @@ describe('项目任务合并为一次 AI Run', () => {
     const firstTask = data.tasksByProject('p1').find((task) => task.status !== '已完成')!
 
     await wrapper.findAll('.task-list-card .task-status-trigger')[0]!.trigger('click')
-    const options = wrapper.findAll('.task-status-menu button')
-    const verifying = options.find((option) => option.text().includes('待验证'))
+    // 状态菜单悬浮挂在 body 上，不撑开表格
+    const options = [...document.querySelectorAll<HTMLButtonElement>('.task-status-menu button')]
+    const verifying = options.find((option) => option.textContent?.includes('待验证'))
     expect(verifying).toBeDefined()
-    await verifying!.trigger('click')
+    verifying!.click()
     await flushPromises()
 
     expect(data.taskById(firstTask.id)?.status).toBe('待验证')

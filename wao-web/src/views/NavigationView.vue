@@ -316,7 +316,7 @@ onMounted(() => {
 
 <style scoped>
 .navigation-center {
-  max-width: 1120px;
+  max-width: none;
   margin: 0 auto;
   padding: 32px clamp(16px, 3vw, 44px) 64px;
   color: var(--wao-text);

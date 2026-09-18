@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -123,7 +122,8 @@ public class TaskService {
         e.setOwnerId(StringUtils.hasText(req.owner()) ? req.owner() : "wg");
         e.setCreatedBy(createdBy);
         e.setCreatedAt(LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
-        e.setDueDate(StringUtils.hasText(req.due()) ? req.due() : today());
+        // 没选截止日期就不排期，不再默认落在今天。
+        e.setDueDate(StringUtils.hasText(req.due()) ? req.due() : null);
         e.setDescription(req.desc() == null ? "" : req.desc());
         String startAt = dateTime(req.startAt());
         String endAt = dateTime(req.endAt());
@@ -385,11 +385,6 @@ public class TaskService {
         }
         return members.list().stream().filter(m -> m.id().equals(memberId))
                 .map(m -> m.name()).findFirst().orElse(memberId);
-    }
-
-    /** 上海时区的今天，任务默认截止日期用它，不再写死原型日期。 */
-    private static String today() {
-        return LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
     }
 
     /**

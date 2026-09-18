@@ -6,6 +6,13 @@ import { saveAiProjectConfig } from '@/api/ai'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 
+// AI Run 下线期间设置里不展示 AI 配置；保留的配置代码在开关打开时仍需可用
+const flags = vi.hoisted(() => ({ ai: false }))
+vi.mock('@/config/features', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/features')>()),
+  get AI_RUN_ENABLED() { return flags.ai },
+}))
+
 vi.mock('@/api/ai', () => ({
   createAiPairCode: vi.fn(),
   fetchAvailableAiSkills: vi.fn(async () => [{
@@ -36,30 +43,31 @@ describe('项目设置', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     seedDataStore()
+    flags.ai = false
+    vi.mocked(saveAiProjectConfig).mockClear()
   })
 
-  it('可以维护规划中项目的状态并保存到数据层', async () => {
+  it('项目状态与 AI 配置都不再出现，保存不会覆盖已有 AI 配置', async () => {
     const data = useDataStore()
     const project = data.projects.find((item) => item.status === '规划中')!
     const wrapper = mount(ProjectSettingsModal, { props: { project } })
     await flushPromises()
 
-    const status = wrapper.find('select[aria-label="项目状态"]')
-    expect((status.element as HTMLSelectElement).value).toBe('规划中')
-    await status.setValue('进行中')
+    expect(wrapper.find('select[aria-label="项目状态"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('项目状态')
+    expect(wrapper.text()).not.toContain('AI 执行配置')
+    await wrapper.get('.title-input').setValue('改名后的项目')
     await wrapper.find('.btn-primary').trigger('click')
     await flushPromises()
 
-    expect(data.projectById(project.id)?.status).toBe('进行中')
-    expect(vi.mocked(saveAiProjectConfig)).toHaveBeenCalledWith(project.id, expect.objectContaining({
-      failureRetryCount: 2,
-      executionPrompt: '先完整阅读任务原文，再按可验证结果实现。',
-    }))
+    expect(data.projectById(project.id)).toMatchObject({ name: '改名后的项目', status: '规划中' })
+    expect(vi.mocked(saveAiProjectConfig)).not.toHaveBeenCalled()
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
 
-  it('展示审核 Skill 并允许固定版本到项目', async () => {
+  it('AI Run 开关打开时仍展示审核 Skill 并允许固定版本到项目', async () => {
+    flags.ai = true
     const project = useDataStore().projects[0]!
     const wrapper = mount(ProjectSettingsModal, { props: { project } })
     await flushPromises()

@@ -51,6 +51,9 @@ describe('列表内子任务', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.findAll('.sub-number').map((node) => node.text())).toEqual(['8', '0'])
     await wrapper.get('.sub-state').trigger('click')
+    const done = [...document.querySelectorAll<HTMLButtonElement>('.cell-menu button')].find((node) => node.textContent?.includes('已完成'))!
+    done.click()
+    await wrapper.vm.$nextTick()
     expect(task.subs[0]!.done).toBe(true)
     expect(task.subs[0]!.number).toBe(8)
     await wrapper.setProps({ hideDone: true })

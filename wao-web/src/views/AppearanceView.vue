@@ -1466,7 +1466,7 @@ onBeforeUnmount(() => {
   --amber: #c37b2c;
   color: var(--ink);
   padding: 28px 32px 70px;
-  max-width: 1500px;
+  max-width: none;
   margin: 0 auto;
 }
 .hero {
