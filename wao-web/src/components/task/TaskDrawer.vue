@@ -340,12 +340,11 @@ function close() {
   if (task.value) data.flushTask(task.value.id)
   ui.closeTask()
 }
-/** Esc 逐层关闭：先关下拉菜单，再收子任务详情，最后关抽屉。 */
+/** Esc：先关弹出的菜单，否则直接关闭弹框——在子任务详情里也是按一次就退出，不必先退回主任务。 */
 function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape' || !task.value || e.defaultPrevented || ui.chatOpen) return
   if (relationOpen.value) relationOpen.value = false
   else if (menu.value) menu.value = null
-  else if (openSubId.value) backToTask()
   else close()
 }
 function syncTaskAiRunsImmediately() {

@@ -33,6 +33,7 @@ import {
   apiPauseJob,
   apiDeleteImage,
   apiPutTask,
+  apiGetTask,
   apiMoveSubtask,
   apiReauthJob,
   apiUploadImage,
@@ -76,6 +77,7 @@ import { blocksToText, textToBlocks } from '@/utils/doc'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { readDocumentDraft, removeDocumentDraft, writeDocumentDraft, type DocumentDraft } from '@/utils/documentDrafts'
 import { nowIso, todayIso } from '@/utils/time'
+import { mergeSubtasks } from '@/utils/subtaskMerge'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import type {
@@ -276,12 +278,19 @@ export const useDataStore = defineStore('data', () => {
     const taskRequest = fetchTasks()
       .then((loadedTasks) => {
         if (requestMember !== useSessionStore().userId) return loadedTasks
-        mergeList(tasks.value, loadedTasks, taskProtectedIds())
+        const protectedIds = taskProtectedIds()
+        mergeList(tasks.value, loadedTasks, protectedIds)
+        rememberSubBases(loadedTasks, protectedIds)
         // 只叠加仍未收到服务端确认的本地草稿，避免刷新把刚输入的长文本吞掉。
+        // 草稿里的 subtaskVersion 可能早于服务端已确认的版本，保存时由冲突合并兜底。
         for (const [id, draft] of Object.entries(taskDrafts.value)) {
           const current = tasks.value.find((task) => task.id === id)
           if (current) Object.assign(current, clone(draft))
           else tasks.value.unshift(clone(draft))
+          if (!taskSubBases[id]) {
+            const remote = loadedTasks.find((task) => task.id === id)
+            if (remote) taskSubBases[id] = clone(remote.subs ?? [])
+          }
         }
         taskLoadState.value = 'loaded'
         loadStates.tasks = 'loaded'
@@ -383,7 +392,11 @@ export const useDataStore = defineStore('data', () => {
         : 0
       lastServerSyncFingerprint = fingerprint
       if (Array.isArray(p)) mergeList(projects.value, p)
-      if (Array.isArray(t)) mergeList(tasks.value, t, taskProtectedIds())
+      if (Array.isArray(t)) {
+        const protectedIds = taskProtectedIds()
+        mergeList(tasks.value, t, protectedIds)
+        rememberSubBases(t, protectedIds)
+      }
     } catch {
       unchangedSyncRounds = 0
       /* 网络抖动时静默跳过，下个周期重试 */
@@ -1185,6 +1198,40 @@ export const useDataStore = defineStore('data', () => {
   const taskSaveStates = reactive<Record<string, SaveState>>({})
   /** 每个任务上一次写透成功的时刻 —— 「自动保存成功 14:32」里的那个时间。 */
   const taskSavedAts = reactive<Record<string, string>>({})
+  /** 最近一次保存失败的服务端原因，展示在「保存失败」旁，便于定位。 */
+  const taskSaveErrors = reactive<Record<string, string>>({})
+  /**
+   * 每个任务最近一次与服务端一致的子任务快照（与本地 subtaskVersion 对应）。
+   *
+   * <p>保存遇到 409 版本冲突时以它为基线做三方合并：别的窗口、超时后其实已落库的上一次保存、
+   * 或刷新后回放的旧草稿都会让版本落后，以前这种情况只能一直显示「保存失败」，重试也没用。
+   */
+  const taskSubBases: Record<string, TaskStep[]> = {}
+  /** 连续冲突合并次数；一次保存最多自动合并两轮，避免与另一窗口来回打架。 */
+  const taskConflictRetries: Record<string, number> = {}
+
+  function rememberSubBases(remote: Task[], protectedIds: Set<string>) {
+    for (const task of remote) if (!protectedIds.has(task.id)) taskSubBases[task.id] = clone(task.subs ?? [])
+  }
+
+  /**
+   * 版本冲突后取服务端最新任务，把本地子任务改动合并上去并采用服务端版本。
+   *
+   * @return 是否已合并，可以立即重试保存
+   */
+  async function rebaseSubtasksOnServer(id: string): Promise<boolean> {
+    const task = taskById(id)
+    if (!task) return false
+    const latest = await apiGetTask(id)
+    const current = taskById(id)
+    if (!current) return false
+    // 没有基线（例如首次加载前就有旧草稿）时以空基线合并：两边的条目都保留，宁可多留不丢
+    current.subs = mergeSubtasks(taskSubBases[id] ?? [], current.subs, latest.subs ?? [])
+    current.subtaskVersion = latest.subtaskVersion
+    taskSubBases[id] = clone(latest.subs ?? [])
+    storeTaskDraft(current)
+    return true
+  }
 
   function storeTaskDraft(task: Task) {
     taskDrafts.value = { ...taskDrafts.value, [task.id]: clone(task) }
@@ -1222,6 +1269,8 @@ export const useDataStore = defineStore('data', () => {
   const taskSaveState = (id: string): SaveState => taskSaveStates[id] ?? 'idle'
   /** 上一次写透成功的时刻（ISO），没成功过时为 null。 */
   const taskSavedAt = (id: string): string | null => taskSavedAts[id] ?? null
+  /** 最近一次保存失败的原因；没有失败时为空串。 */
+  const taskSaveError = (id: string): string => taskSaveErrors[id] ?? ''
 
   /**
    * 串行写透最新任务快照。写入期间若又有修改，旧请求完成后立刻续写最新版本；
@@ -1246,6 +1295,9 @@ export const useDataStore = defineStore('data', () => {
       // Merge only server-owned metadata even if another edit happened during this request.
       task.subtaskVersion = saved.subtaskVersion
       task.number = saved.number
+      taskSubBases[id] = clone(saved.subs ?? snapshot.subs)
+      taskConflictRetries[id] = 0
+      delete taskSaveErrors[id]
       for (const sub of task.subs) {
         const canonical = saved.subs?.find(s => s.id === sub.id)
         if (canonical && sub.id) sub.number = canonical.number
@@ -1255,9 +1307,22 @@ export const useDataStore = defineStore('data', () => {
         clearTaskDraft(id)
         taskSaveStates[id] = 'saved'
         taskSavedAts[id] = nowIso()
+      } else if (taskDrafts.value[id]) {
+        // 请求期间又有新改动：草稿要记住刚确认的版本，否则刷新回放草稿后会带着旧版本必然冲突。
+        storeTaskDraft(task)
       }
-    } catch {
-      taskSaveStates[id] = 'error'
+    } catch (error) {
+      const conflict = (error as { status?: number })?.status === 409
+      let rebased = false
+      if (conflict && (taskConflictRetries[id] ?? 0) < 2 && requestMember === useSessionStore().userId) {
+        taskConflictRetries[id] = (taskConflictRetries[id] ?? 0) + 1
+        rebased = await rebaseSubtasksOnServer(id).catch(() => false)
+      }
+      if (rebased) taskPersistVersions[id] = (taskPersistVersions[id] ?? 0) + 1
+      else {
+        taskSaveStates[id] = 'error'
+        taskSaveErrors[id] = error instanceof Error && error.message ? error.message : '网络异常'
+      }
     } finally {
       taskPersisting[id] = false
       if ((taskPersistVersions[id] ?? 0) !== version) {
@@ -1270,6 +1335,8 @@ export const useDataStore = defineStore('data', () => {
   /** 关闭抽屉或切换上下文时立即启动写透，不再等待去抖计时。 */
   async function flushTask(id: string) {
     clearTimeout(taskPersistTimers[id])
+    // 手动重试或切换上下文时重新允许冲突自动合并
+    taskConflictRetries[id] = 0
     await drainTask(id)
     while (taskPersisting[id]) await new Promise((resolve) => window.setTimeout(resolve, 25))
   }
@@ -1704,6 +1771,7 @@ export const useDataStore = defineStore('data', () => {
         if (local) {
           local.subs = item.subs
           local.subtaskVersion = item.subtaskVersion
+          taskSubBases[item.id] = clone(item.subs)
           taskTouchedAt[item.id] = Date.now()
           if (taskSaveState(item.id) === 'saving') storeTaskDraft(local)
           else clearTaskDraft(item.id)
@@ -2149,7 +2217,7 @@ export const useDataStore = defineStore('data', () => {
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     ensureDocsLoaded, refreshDocs,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
-    taskSaveState, taskSavedAt, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
+    taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,

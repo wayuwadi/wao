@@ -107,8 +107,12 @@ function columnPreference(kind: string) {
 const showEmptyColumns = columnPreference('empty-columns-v1')
 /** 表格视图是否按任务分组分段展示（与「分组」视图共用同一份分组数据，可在表格里直接改）。 */
 const tableGrouped = columnPreference('table-grouped-v1')
-/** 表格里统一隐藏已完成的子任务；不再在每个任务下各放一个按钮。 */
-const hideDoneSubs = columnPreference('hide-done-subs-v1')
+/** 表格里正在录入子任务的位置：点行尾「+」才出现输入行，不再每个任务下常驻一行。 */
+const addingSub = ref<{ taskId: string; parentId: string | null } | null>(null)
+function startAddSub(taskId: string, parentId: string | null) {
+  collapsedSubTasks.value = collapsedSubTasks.value.filter((id) => id !== taskId)
+  addingSub.value = { taskId, parentId }
+}
 function finishSelection() {
   batchSelectionOpen.value = false
   selectedTaskIds.value = []
@@ -214,12 +218,19 @@ function setDeliveryStage(stage: TaskDeliveryStage | null) {
 const allTasks = computed(() => creatorTasks.value
   .filter((task) => !deliveryStageFilter.value || taskDeliveryStage(task.status) === deliveryStageFilter.value)
   .map(decoTask))
-const openTasks = computed(() => allTasks.value.filter((t) => t.status !== '已完成' || isSettling(t.id)))
+/**
+ * 真正收尾的任务：主任务已完成且子任务全部完成。主任务点了完成、子任务还有没做完的，
+ * 仍算进行中的事，留在列表里展示，不跟着收进「已完成」。
+ */
+const isFinished = (t: { status: string; subs: { done: boolean }[] }) => t.status === '已完成' && t.subs.every((sub) => sub.done)
+const openTasks = computed(() => allTasks.value.filter((t) => !isFinished(t) || isSettling(t.id)))
 /** 已完成倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
 const doneDesc = (a: { completedAt?: string | null; id: string }, b: { completedAt?: string | null; id: string }) =>
   (b.completedAt ?? '').localeCompare(a.completedAt ?? '') || b.id.localeCompare(a.id)
 const doneTasks = computed(() =>
-  allTasks.value.filter((t) => t.status === '已完成' && !isSettling(t.id)).sort(doneDesc))
+  allTasks.value.filter((t) => isFinished(t) && !isSettling(t.id)).sort(doneDesc))
+/** 「显示已完成的任务」开关；按交付阶段看「已验证」时本来就只剩已完成，始终展示。 */
+const showFinished = computed(() => showDone.value || deliveryStageFilter.value === 'verified')
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
 const boardStatuses = computed(() => (deliveryStageFilter.value
   ? taskStatusesForDeliveryStage(deliveryStageFilter.value)
@@ -264,7 +275,7 @@ const visibleTaskIds = computed(() => {
   if (pdTaskView.value === 'group') return groupSections.value.flatMap((group) => [
     ...group.open, ...(openedDoneGroups.value.includes(group.id) ? group.done : []),
   ]).map((task) => task.id)
-  return allTasks.value.filter((task) => task.status !== '已完成' || showDone.value
+  return allTasks.value.filter((task) => !isFinished(task) || showDone.value
     || (pdTaskView.value === 'list' && deliveryStageFilter.value === 'verified')
     || (pdTaskView.value === 'list' && isSettling(task.id))).map((task) => task.id)
 })
@@ -400,8 +411,8 @@ const groupSections = computed(() =>
     const mine = allTasks.value.filter((t) => groupIdOf(t) === g.id)
     return {
       ...g,
-      open: mine.filter((t) => t.status !== '已完成'),
-      done: mine.filter((t) => t.status === '已完成').sort(doneDesc),
+      open: mine.filter((t) => !isFinished(t)),
+      done: mine.filter((t) => isFinished(t)).sort(doneDesc),
       total: mine.length,
     }
   }),
@@ -497,22 +508,17 @@ const tableSections = computed(() => {
     return [{
       id: '__all', name: '', header: false, collapsed: false,
       open: openTasks.value, done: doneTasks.value, total: allTasks.value.length,
-      doneOpen: showDone.value || deliveryStageFilter.value === 'verified',
+      doneOpen: showFinished.value,
     }]
   }
   return groupSections.value.map((group) => ({
     ...group,
     header: true,
     collapsed: collapsedGroups.value.includes(group.id),
-    open: allTasks.value.filter((task) => groupIdOf(task) === group.id && (task.status !== '已完成' || isSettling(task.id))),
-    doneOpen: openedDoneGroups.value.includes(group.id) || deliveryStageFilter.value === 'verified',
+    open: allTasks.value.filter((task) => groupIdOf(task) === group.id && (!isFinished(task) || isSettling(task.id))),
+    doneOpen: showFinished.value,
   }))
 })
-function toggleSectionDone(section: { id: string; header: boolean }) {
-  if (deliveryStageFilter.value === 'verified') return
-  if (section.header) toggleGroupDone(section.id)
-  else showDone.value = !showDone.value
-}
 function onTableDrop(overId: string, sectionId: string, event: DragEvent) {
   if (readSubtaskDrag(event) || !tableGrouped.value) onDropReorder(overId, event)
   else onDropGroup(sectionId, overId)
@@ -667,10 +673,11 @@ watch(visibleTaskIds, (ids) => {
         <button
           class="done-switch"
           role="switch"
-          :aria-checked="!hideDoneSubs"
-          title="表格里是否显示已完成的子任务"
-          @click="hideDoneSubs = !hideDoneSubs"
-        ><span class="track"><span class="thumb"></span></span>显示已完成子任务</button>
+          :aria-checked="showFinished"
+          :disabled="deliveryStageFilter === 'verified'"
+          title="是否显示已完成的任务与子任务；主任务完成但子任务未做完的始终显示"
+          @click="showDone = !showDone"
+        ><span class="track"><span class="thumb"></span></span>显示已完成的任务<em v-if="doneTasks.length" class="done-switch-count wao-tabular">{{ doneTasks.length }}</em></button>
       </div>
       <div class="task-list-card task-table-scroll">
         <table class="project-task-table" aria-label="项目任务表格">
@@ -758,6 +765,7 @@ watch(visibleTaskIds, (ids) => {
                     :class="{ settling: isSettling(t.id) }"
                     @select="toggleSelection(t.id)"
                     @toggle-subs="toggleSubtasks(t.id)"
+                    @add-sub="startAddSub(t.id, null)"
                     @open="openTask(t.id)"
                     @completed="selectedTaskIds = selectedTaskIds.filter((id) => id !== t.id)"
                     @dragstart="onDragStart(t.id, $event)"
@@ -766,21 +774,17 @@ watch(visibleTaskIds, (ids) => {
                     @drop.stop="onTableDrop(t.id, section.id, $event)"
                   />
                 </tbody>
-                <InlineSubtasks v-if="t.subs.length && !collapsedSubTasks.includes(t.id)" :task-id="t.id" :hide-done="hideDoneSubs" table />
+                <InlineSubtasks
+                  v-if="(t.subs.length && !collapsedSubTasks.includes(t.id)) || addingSub?.taskId === t.id"
+                  :task-id="t.id"
+                  :hide-done="!showFinished"
+                  :adding="addingSub?.taskId === t.id"
+                  :add-parent-id="addingSub?.taskId === t.id ? addingSub.parentId : null"
+                  table
+                  @add-sub="(parentId) => startAddSub(t.id, parentId)"
+                  @close-add="addingSub = null"
+                />
               </template>
-              <tbody v-if="section.done.length">
-                <tr>
-                  <td colspan="10" class="table-section">
-                    <button
-                      class="done-toggle"
-                      :aria-expanded="section.doneOpen"
-                      @click="toggleSectionDone(section)"
-                    >
-                      <i :class="section.doneOpen ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>已完成 <span class="done-count">{{ section.done.length }}</span>
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
               <tbody v-if="section.header && !section.total && quickAddGroup !== section.id">
                 <tr><td colspan="10" class="empty-inline">这个分组还没有任务，点分组名旁的「+」添加</td></tr>
               </tbody>
@@ -2344,6 +2348,18 @@ watch(visibleTaskIds, (ids) => {
   color: var(--wao-text-weak);
   font-size: 12px;
   cursor: pointer;
+}
+.done-switch:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.done-switch-count {
+  font-style: normal;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-weak);
+  font-size: 11px;
 }
 .done-switch .track {
   position: relative;

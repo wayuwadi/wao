@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useDeco } from '@/composables/deco'
 import { toast } from '@/composables/toast'
 import { selectableTaskStatuses } from '@/config/features'
+import { fmtDate } from '@/utils/domain'
 import WorkItemIcon from '@/components/task/WorkItemIcon.vue'
 import type { Priority, TaskGroup, TaskStatus } from '@/types'
 
@@ -13,7 +14,8 @@ type TaskRowView = ReturnType<ReturnType<typeof useDeco>['decoTask']>
 /**
  * 项目表格里的一行主任务，版式参照 ONES：编号、类型图标 + 标题、分组、实心优先级、描边状态胶囊、成员头像。
  *
- * <p>状态与分组都能在行内直接改；状态保存失败时保留本地修改，点胶囊即可重试。
+ * <p>展示出来的字段都能在行内直接改：标题（铅笔）、分组、优先级、状态、负责人、计划开始、截止日期。
+ * 创建者由服务端记录，只读。状态保存失败时保留本地修改，点胶囊即可重试。
  */
 const props = defineProps<{
   task: TaskRowView
@@ -23,7 +25,7 @@ const props = defineProps<{
   expanded: boolean
   dragging: boolean
 }>()
-const emit = defineEmits<{ select: []; 'toggle-subs': []; open: []; completed: [] }>()
+const emit = defineEmits<{ select: []; 'toggle-subs': []; open: []; completed: []; 'add-sub': [] }>()
 const data = useDataStore()
 const session = useSessionStore()
 
@@ -37,20 +39,23 @@ const STATUS_COLOR: Record<TaskStatus, string> = {
   已完成: '#3fb96f',
 }
 const PRIORITY_COLOR: Record<Priority, string> = { P0: '#e5484d', P1: '#f08c00', P2: '#338fe5', P3: '#9aa0ab' }
+const PRIORITIES: Priority[] = ['P0', 'P1', 'P2', 'P3']
 const statusColor = (status: TaskStatus) => STATUS_COLOR[status] ?? '#9aa0ab'
+const statusLabel = (status: TaskStatus) => (status === '待办' ? '未开始' : status)
 
-const menuOpen = ref(false)
+const menu = ref<'status' | 'pr' | 'owner' | null>(null)
 const saving = ref(false)
 const failed = ref(false)
 const statusOptions = computed(() => selectableTaskStatuses(props.task.status))
 const doneSubs = computed(() => props.task.subs.filter((sub) => sub.done).length)
 const creator = computed(() => (props.task.createdBy ? session.memberById(props.task.createdBy) : null))
 
-function toggleMenu() {
-  if (!saving.value) menuOpen.value = !menuOpen.value
+function toggle(kind: 'status' | 'pr' | 'owner') {
+  if (kind === 'status' && saving.value) return
+  menu.value = menu.value === kind ? null : kind
 }
 async function changeStatus(status: TaskStatus) {
-  menuOpen.value = false
+  menu.value = null
   if (saving.value || (status === props.task.status && !failed.value)) return
   saving.value = true
   if (status !== props.task.status) {
@@ -65,8 +70,39 @@ async function changeStatus(status: TaskStatus) {
   )
   saving.value = false
 }
+function changePriority(pr: Priority) {
+  menu.value = null
+  if (pr !== props.task.pr) data.patchTask(props.task.id, { pr }, `将优先级改为 ${pr}`)
+}
+function changeOwner(id: string) {
+  menu.value = null
+  if (id !== props.task.owner) data.patchTask(props.task.id, { owner: id }, `将负责人改为 ${session.memberById(id).name}`)
+}
 function changeGroup(event: Event) {
   data.moveTaskToGroup(props.task.id, (event.target as HTMLSelectElement).value)
+}
+function changeDate(field: 'start' | 'due', event: Event) {
+  const value = (event.target as HTMLInputElement).value
+  if ((props.task[field] ?? '') === value) return
+  const label = field === 'start' ? '计划开始' : '截止日期'
+  data.patchTask(props.task.id, field === 'start' ? { start: value } : { due: value },
+    value ? `将${label}改为 ${fmtDate(value)}` : `清空了${label}`)
+}
+
+// ---- 标题就地改名 ----
+const editingTitle = ref(false)
+const titleDraft = ref('')
+const titleInput = ref<HTMLInputElement | null>(null)
+function startRename() {
+  titleDraft.value = props.task.title
+  editingTitle.value = true
+  nextTick(() => titleInput.value?.select())
+}
+function commitRename() {
+  if (!editingTitle.value) return
+  editingTitle.value = false
+  const title = titleDraft.value.trim()
+  if (title && title !== props.task.title) data.patchTask(props.task.id, { title }, `将标题改为「${title}」`)
 }
 </script>
 
@@ -97,61 +133,96 @@ function changeGroup(event: Event) {
         </button>
         <span v-else class="tree-spacer"></span>
         <WorkItemIcon kind="task" />
-        <button class="trow-title" :class="{ done: task.status === '已完成' }" :title="task.title" @click.stop="emit('open')">{{ task.title }}</button>
-        <span v-if="task.waitBadge" class="wait-badge">{{ task.waitBadge }}</span>
-        <span v-if="task.subs.length" class="sub-count wao-tabular" :title="`子任务 已完成 ${doneSubs} / 共 ${task.subs.length}`"
-          ><i class="ri-node-tree"></i>{{ doneSubs }}/{{ task.subs.length }}</span
-        >
+        <input
+          v-if="editingTitle"
+          ref="titleInput"
+          v-model="titleDraft"
+          class="title-input"
+          :aria-label="`修改 ${task.title} 的标题`"
+          @click.stop
+          @keydown.enter.prevent="!$event.isComposing && commitRename()"
+          @keydown.esc.stop="editingTitle = false"
+          @blur="commitRename"
+        />
+        <template v-else>
+          <button class="trow-title" :class="{ done: task.status === '已完成' }" :title="task.title" @click.stop="emit('open')">{{ task.title }}</button>
+          <span v-if="task.waitBadge" class="wait-badge">{{ task.waitBadge }}</span>
+          <span v-if="task.subs.length" class="sub-count wao-tabular" :title="`子任务 已完成 ${doneSubs} / 共 ${task.subs.length}`"
+            ><i class="ri-node-tree"></i>{{ doneSubs }}/{{ task.subs.length }}</span
+          >
+          <span class="row-tools">
+            <button class="row-tool" title="修改标题" :aria-label="`修改 ${task.title} 的标题`" @click.stop="startRename"><i class="ri-pencil-line"></i></button>
+            <button class="row-tool" title="添加子任务" :aria-label="`为 ${task.title} 添加子任务`" @click.stop="emit('add-sub')"><i class="ri-add-line"></i></button>
+          </span>
+        </template>
       </div>
     </td>
     <td @click.stop>
-      <select class="group-select" :value="groupId" :aria-label="`${task.title} 所在分组`" title="修改分组" @change="changeGroup">
+      <select class="cell-input" :value="groupId" :aria-label="`${task.title} 所在分组`" title="修改分组" @change="changeGroup">
         <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
       </select>
     </td>
-    <td>
-      <span class="priority" :style="{ background: PRIORITY_COLOR[task.pr] ?? '#9aa0ab' }">{{ task.pr }}</span>
-    </td>
-    <td class="cell-status">
-      <div class="task-status" @click.stop>
-        <button
-          class="status-pill task-status-trigger"
-          :class="{ saving, error: failed }"
-          :style="{ color: statusColor(task.status), borderColor: statusColor(task.status) }"
-          :title="failed ? '状态保存失败，点击重试' : '点击修改状态'"
-          aria-haspopup="menu"
-          :aria-expanded="menuOpen"
-          @click="failed ? changeStatus(task.status) : toggleMenu()"
-        >
-          <i v-if="saving" class="ri-loader-4-line spin"></i>
-          <i v-else-if="failed" class="ri-error-warning-line"></i>
-          {{ task.status === '待办' ? '未开始' : task.status }}
+    <td class="cell-pop" @click.stop>
+      <button class="priority" :style="{ background: PRIORITY_COLOR[task.pr] ?? '#9aa0ab' }" :aria-label="`修改 ${task.title} 的优先级`" aria-haspopup="menu" :aria-expanded="menu === 'pr'" @click="toggle('pr')">{{ task.pr }}</button>
+      <div v-if="menu === 'pr'" class="menu-mask" @click="menu = null"></div>
+      <div v-if="menu === 'pr'" class="cell-menu" role="menu">
+        <button v-for="pr in PRIORITIES" :key="pr" role="menuitemradio" :aria-checked="task.pr === pr" :class="{ on: task.pr === pr }" @click="changePriority(pr)">
+          <span class="priority sm" :style="{ background: PRIORITY_COLOR[pr] }">{{ pr }}</span>
+          <i v-if="task.pr === pr" class="ri-check-line"></i>
         </button>
-        <div v-if="menuOpen" class="menu-mask" @click="menuOpen = false"></div>
-        <div v-if="menuOpen" class="task-status-menu" role="menu">
-          <button
-            v-for="status in statusOptions"
-            :key="status"
-            role="menuitemradio"
-            :aria-checked="task.status === status"
-            :class="{ on: task.status === status }"
-            @click="changeStatus(status)"
-          >
-            <span class="status-pill sm" :style="{ color: statusColor(status), borderColor: statusColor(status) }">{{ status === '待办' ? '未开始' : status }}</span>
-            <i v-if="task.status === status" class="ri-check-line"></i>
-          </button>
-        </div>
       </div>
     </td>
-    <td>
-      <span class="table-member"><span class="member-av" :style="{ background: task.ownerColor }">{{ task.ownerInitial }}</span>{{ task.ownerName }}</span>
+    <td class="cell-pop" @click.stop>
+      <button
+        class="status-pill task-status-trigger"
+        :class="{ saving, error: failed }"
+        :style="{ color: statusColor(task.status), borderColor: statusColor(task.status) }"
+        :title="failed ? '状态保存失败，点击重试' : '点击修改状态'"
+        aria-haspopup="menu"
+        :aria-expanded="menu === 'status'"
+        @click="failed ? changeStatus(task.status) : toggle('status')"
+      >
+        <i v-if="saving" class="ri-loader-4-line spin"></i>
+        <i v-else-if="failed" class="ri-error-warning-line"></i>
+        {{ statusLabel(task.status) }}
+      </button>
+      <div v-if="menu === 'status'" class="menu-mask" @click="menu = null"></div>
+      <div v-if="menu === 'status'" class="cell-menu task-status-menu" role="menu">
+        <button
+          v-for="status in statusOptions"
+          :key="status"
+          role="menuitemradio"
+          :aria-checked="task.status === status"
+          :class="{ on: task.status === status }"
+          @click="changeStatus(status)"
+        >
+          <span class="status-pill sm" :style="{ color: statusColor(status), borderColor: statusColor(status) }">{{ statusLabel(status) }}</span>
+          <i v-if="task.status === status" class="ri-check-line"></i>
+        </button>
+      </div>
     </td>
-    <td>
+    <td class="cell-pop" @click.stop>
+      <button class="table-member member-trigger" :aria-label="`修改 ${task.title} 的负责人`" aria-haspopup="menu" :aria-expanded="menu === 'owner'" @click="toggle('owner')">
+        <span class="member-av" :style="{ background: task.ownerColor }">{{ task.ownerInitial }}</span><span class="member-name">{{ task.ownerName }}</span>
+      </button>
+      <div v-if="menu === 'owner'" class="menu-mask" @click="menu = null"></div>
+      <div v-if="menu === 'owner'" class="cell-menu" role="menu">
+        <button v-for="m in session.members" :key="m.id" role="menuitemradio" :aria-checked="task.owner === m.id" :class="{ on: task.owner === m.id }" @click="changeOwner(m.id)">
+          <span class="table-member"><span class="member-av" :style="{ background: m.color }">{{ m.initial }}</span>{{ m.name }}</span>
+          <i v-if="task.owner === m.id" class="ri-check-line"></i>
+        </button>
+      </div>
+    </td>
+    <td title="创建者由系统记录，不可修改">
       <span v-if="creator" class="table-member"><span class="member-av" :style="{ background: creator.color }">{{ creator.initial }}</span>{{ creator.name }}</span>
       <span v-else class="faint">—</span>
     </td>
-    <td class="wao-tabular">{{ task.start || '—' }}</td>
-    <td class="wao-tabular" :style="{ color: task.dueColor }">{{ task.due || '—' }}</td>
+    <td @click.stop>
+      <input class="cell-input date" type="date" :value="task.start || ''" :max="task.due || undefined" :aria-label="`${task.title} 计划开始`" @change="changeDate('start', $event)" />
+    </td>
+    <td @click.stop>
+      <input class="cell-input date" type="date" :value="task.due || ''" :min="task.start || undefined" :style="{ color: task.dueColor }" :aria-label="`${task.title} 截止日期`" @change="changeDate('due', $event)" />
+    </td>
   </tr>
 </template>
 
@@ -171,7 +242,8 @@ function changeGroup(event: Event) {
   text-overflow: ellipsis;
   background: var(--wao-bg-card);
 }
-.task-row td.cell-status {
+.task-row td.cell-pop {
+  position: relative;
   overflow: visible;
 }
 .task-row td:last-child {
@@ -235,7 +307,7 @@ function changeGroup(event: Event) {
   flex-shrink: 0;
 }
 .trow-title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   border: none;
   background: none;
@@ -254,6 +326,19 @@ function changeGroup(event: Event) {
 }
 .trow-title.done {
   color: var(--wao-text-faint);
+}
+.title-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--wao-primary);
+  border-radius: 4px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
 }
 .wait-badge {
   font-size: 11px;
@@ -275,21 +360,54 @@ function changeGroup(event: Event) {
   color: var(--wao-text-weak);
   font-size: 11px;
 }
-.group-select {
+/* 行尾小工具：鼠标移到这一行才出现，不常驻占位 */
+.row-tools {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0;
+}
+.task-row:hover .row-tools,
+.row-tools:focus-within {
+  opacity: 1;
+}
+.row-tool {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.row-tool:hover {
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-primary);
+}
+.cell-input {
   width: 100%;
+  height: 26px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
   color: var(--wao-text-2);
   font: inherit;
   font-size: 13px;
-  padding: 2px 0;
+  padding: 0 2px;
   cursor: pointer;
 }
-.group-select:hover,
-.group-select:focus {
+.cell-input:hover,
+.cell-input:focus {
   border-color: var(--wao-line-control);
   outline: none;
+}
+.cell-input.date {
+  font-variant-numeric: tabular-nums;
 }
 .priority {
   display: inline-flex;
@@ -298,13 +416,15 @@ function changeGroup(event: Event) {
   min-width: 24px;
   height: 18px;
   padding: 0 4px;
+  border: none;
   border-radius: 3px;
   color: #fff;
   font-size: 11px;
   font-weight: 600;
+  cursor: pointer;
 }
-.task-status {
-  position: relative;
+.priority.sm {
+  cursor: inherit;
 }
 .status-pill {
   display: inline-flex;
@@ -327,43 +447,67 @@ function changeGroup(event: Event) {
 .status-pill.error {
   border-style: dashed;
 }
+.member-trigger {
+  max-width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.member-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .menu-mask {
   position: fixed;
   inset: 0;
   z-index: 20;
+  cursor: default;
 }
-.task-status-menu {
+.cell-menu {
   position: absolute;
   z-index: 21;
-  top: 24px;
-  left: 0;
+  top: 30px;
+  left: 6px;
   min-width: 140px;
+  max-height: 260px;
+  overflow-y: auto;
   padding: 4px;
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(16, 18, 28, 0.14);
 }
-.task-status-menu button {
+.cell-menu button {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   border: none;
   background: none;
   padding: 6px 8px;
   border-radius: 6px;
   cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  color: var(--wao-text-2);
+}
+.cell-menu button > i {
   color: var(--wao-primary);
 }
-.task-status-menu button:hover,
-.task-status-menu button.on {
+.cell-menu button:hover,
+.cell-menu button.on {
   background: var(--wao-bg-hover);
 }
 .table-member {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 .member-av {
   width: 18px;
