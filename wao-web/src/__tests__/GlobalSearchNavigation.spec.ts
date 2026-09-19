@@ -41,3 +41,24 @@ it('通过子任务原文找到父任务，点击直接展开匹配的子任务'
   expect(useUiStore().openTaskSubId).toBe('sub-find')
   wrapper.unmount()
 })
+
+ it.each([
+  ['文件库', '管理真实文件、图片和分享地址。', '/files'],
+  ['测试麦克风', '检测本机摄像头和麦克风', '/devices'],
+  ['终端设备', '检测本机摄像头和麦克风', '/devices'],
+  ['共享账号', '团队共用的平台账号', '/account-resources'],
+  ['AI任务', '创建 AI 任务、查看执行结果', '/ai-sessions'],
+  ['定时任务', '配置自动任务并查看运行结果', '/automation'],
+ ])('日常叫法 %s 能找到用途明确的功能并用键盘打开', async (query, description, path) => {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
+  await router.push('/navigation')
+  const wrapper = mount(GlobalSearch, { global: { plugins: [router] } })
+  await flushPromises()
+  await wrapper.get('input').setValue(query)
+  expect(wrapper.findAll('.result')).toHaveLength(1)
+  expect(wrapper.get('.result').text()).toContain(description)
+  await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(router.currentRoute.value.path).toBe(path)
+  wrapper.unmount()
+ })

@@ -24,8 +24,8 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   },
   {
     id: 'ai-sessions',
-    description: '集中查看 AiRun 会话、执行历史，直接继续与 Codex 对话。',
-    keywords: ['Codex', 'session', 'AI Run', '会话'],
+    description: '创建 AI 任务、查看执行结果，或继续已有任务的对话。',
+    keywords: ['Codex', 'session', 'AI Run', 'AiRun', '会话', 'AI任务', 'AI 任务', '执行历史'],
   },
   {
     id: 'projects',
@@ -96,8 +96,8 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     keywords: ['应用', '连接'],
   },
   { id: 'drawings', description: '创建和整理草图。', keywords: ['画图'] },
-  { id: 'files', description: '管理真实文件、图片和分享地址。', keywords: ['图床', '上传'] },
-  { id: 'automation', description: '配置自动任务并查看运行结果。', keywords: ['流程'] },
+  { id: 'files', description: '管理真实文件、图片和分享地址。', keywords: ['文件库', '图片库', '图床', '上传', '上传文件', '上传图片', '分享文件'] },
+  { id: 'automation', description: '配置自动任务并查看运行结果。', keywords: ['流程', '定时任务', '自动任务', '自动化任务'] },
   {
     id: 'crawler-capabilities',
     description: '集中管理后续自动化任务可引用的真实爬虫源码。',
@@ -105,8 +105,8 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   },
   {
     id: 'account-resources',
-    description: '共享管理平台账号，并把手机验证码转发给飞书和爬虫。',
-    keywords: ['账号', '手机号', '验证码', '短信'],
+    description: '集中管理团队共用的平台账号、登录手机号和短信验证码。',
+    keywords: ['账号', '共享账号', '团队账号', '平台账号', '手机号', '验证码', '短信'],
   },
   {
     id: 'text-polish',
@@ -137,7 +137,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   {
     id: 'devices',
     description: '检测本机摄像头和麦克风，并完成实时预览与连通调试。',
-    keywords: ['摄像头', '麦克风', '相机', '音频'],
+    keywords: ['摄像头', '麦克风', '相机', '音频', '测试摄像头', '测试麦克风', '检测摄像头', '检测麦克风'],
   },
   { id: 'vault', description: '安全管理需要按需查看的账号资料。', keywords: ['密码'] },
   { id: 'games', description: '打开使用服务端真实存档的小游戏。', keywords: ['游戏'] },
@@ -252,6 +252,10 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = DOMAINS.map((domai
 }))
 export function functionDomain(id: NavItemId) {
   return NAVIGATION_CATALOG.find((section) => section.items.some((item) => item.id === id))
+}
+/** 目录与全局搜索共用用途说明，避免搜索结果只告诉用户入口放在哪里。 */
+export function functionDescription(id: NavItemId): string | undefined {
+  return functionDomain(id)?.items.find((item) => item.id === id)?.description
 }
 export function matchesFunction(id: NavItemId, label: string, query: string): boolean {
   const domain = functionDomain(id)
