@@ -76,6 +76,8 @@ cd wao-web && npm run dev
 
 ### 本机开发，连接服务器 MySQL
 
+[工程资产总入口](docs/runbooks/engineering-assets.md) 汇总开发体检、只读性能基准、一致性检查和草稿回归的使用时机、证据与接续方式。
+
 开发前可执行 `python3 deploy/scripts/dev-doctor.py --env-file .env.local-cloud --web-url http://127.0.0.1:5174`
 只读检查运行时、依赖和本地连接；失败时输出下一步处理建议。参数、输出含义和独立工作区用法见
 [本地开发体检](docs/runbooks/local-development-doctor.md)。体检不安装或启动服务，也不替代真实用户链路验收。
