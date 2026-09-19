@@ -331,7 +331,7 @@ function mCloseUnpinned() {
   user-select: none;
 }
 .tab:hover {
-  background: #e6e7ec;
+  background: var(--wao-bg-hover);
 }
 /* 拖拽中的页签变淡，落点页签左侧压一道主色，指明会插到哪儿 */
 .tab.dragging {
@@ -374,7 +374,7 @@ function mCloseUnpinned() {
   padding: 0;
 }
 .close:hover {
-  background: #e0e2e9;
+  background: var(--wao-bg-hover-2);
   color: var(--wao-text-2);
 }
 .close i {
