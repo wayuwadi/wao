@@ -294,9 +294,12 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             <span class="item-label" :class="{ 'compact-label': nav.collapsed }">{{ nav.itemMeta(id)?.label }}</span>
           </button>
           <div v-if="id === 'knowledge' && favoriteKbs.length && !nav.collapsed" class="knowledge-children">
-            <button v-for="kb in favoriteKbs" :key="kb.id" class="item" :class="{ active: route.params.id === kb.id && route.name === 'kb' }" :title="kb.name" @click="router.push(tabs.tabs.find((tab) => tab.key === `kb:${kb.id}`)?.path || `/kb/${kb.id}`)">
+            <div v-for="kb in favoriteKbs" :key="kb.id" class="knowledge-child">
+            <button class="item" :class="{ active: route.params.id === kb.id && route.name === 'kb' }" :title="kb.name" @click="router.push(tabs.tabs.find((tab) => tab.key === `kb:${kb.id}`)?.path || `/kb/${kb.id}`)">
               <span class="knowledge-child-dot" aria-hidden="true">·</span><span class="item-label">{{ kb.name }}</span>
             </button>
+            <button class="knowledge-unfavorite" title="取消常用" :aria-label="`取消常用：${kb.name}`" :disabled="knowledgeFavorites.saving" @click="knowledgeFavorites.toggle(kb.id)"><i class="ri-star-line" aria-hidden="true"></i></button>
+            </div>
           </div>
           </template>
         </div>
@@ -457,6 +460,15 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 
 <style scoped>
 .knowledge-children { margin-left: 22px; border-left: 1px solid var(--wao-line); padding-left: 4px; }
+.knowledge-child { display: flex; align-items: center; gap: 2px; }
+.knowledge-child > .item { flex: 1; min-width: 0; width: auto; }
+.knowledge-unfavorite { flex: 0 0 26px; width: 26px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-weak); cursor: pointer; }
+.knowledge-unfavorite:hover { color: var(--wao-primary); background: var(--wao-bg-hover); }
+.knowledge-unfavorite:disabled { opacity: .5; cursor: wait; }
+@media (hover: hover) and (pointer: fine) {
+  .knowledge-unfavorite { opacity: 0; pointer-events: none; }
+  .knowledge-child:hover .knowledge-unfavorite, .knowledge-child:focus-within .knowledge-unfavorite { opacity: 1; pointer-events: auto; }
+}
 .knowledge-child-dot { color: var(--wao-text-weak); }
 .side.collapsed .item.center { height: auto; min-height: 54px; flex-direction: column; gap: 3px; padding: 7px 2px; }
 .side.collapsed .item .compact-label { display: block; width: 100%; text-align: center; font-size: 10px; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
