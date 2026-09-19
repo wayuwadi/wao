@@ -43,7 +43,7 @@ public class ProjectController {
         return ApiResponse.ok(projectService.start(id, currentMember.idOr(http, "wg")));
     }
 
-    /** 幂等创建或返回项目说明文档；不预建空知识库。 */
+    /** 兼容旧入口并提示改用任务文档关联；不再创建项目知识库。 */
     @PostMapping("/{id}/brief-doc")
     public ApiResponse<DocDto> briefDoc(@PathVariable String id, HttpServletRequest http) {
         String memberId = currentMember.idOr(http, "wg");

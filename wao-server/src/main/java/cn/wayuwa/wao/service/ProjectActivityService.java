@@ -16,13 +16,13 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import cn.wayuwa.wao.domain.DocEntity;
-import cn.wayuwa.wao.domain.KbEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.Activity;
 import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.mapper.DocMapper;
-import cn.wayuwa.wao.mapper.KbMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Set;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Service;
@@ -46,14 +46,14 @@ public class ProjectActivityService {
     private static final String GREEN = "#2E7D4F";
 
     private final TaskMapper taskMapper;
-    private final KbMapper kbMapper;
+    private final ObjectMapper json;
     private final DocMapper docMapper;
     private final MemberService members;
 
-    public ProjectActivityService(TaskMapper taskMapper, KbMapper kbMapper, DocMapper docMapper,
+    public ProjectActivityService(TaskMapper taskMapper, ObjectMapper json, DocMapper docMapper,
             MemberService members) {
         this.taskMapper = taskMapper;
-        this.kbMapper = kbMapper;
+        this.json = json;
         this.docMapper = docMapper;
         this.members = members;
     }
@@ -69,7 +69,7 @@ public class ProjectActivityService {
     }
 
     /**
-     * 批量计算一组项目的动态时间线，任务 / 知识库 / 文档各查一次库。
+     * 批量计算一组项目的动态时间线，任务及其明确关联的文档各查一次库。
      *
      * @param projects 项目实体列表
      * @return 项目 id → 动态列表（倒序）
@@ -84,19 +84,20 @@ public class ProjectActivityService {
 
         Map<String, List<TaskEntity>> tasksByProject = taskMapper.selectList(
                 new QueryWrapper<TaskEntity>()
-                        .select("id", "project_id", "title", "owner_id", "created_by", "completed_at")
+                        .select("id", "project_id", "title", "owner_id", "created_by", "completed_at", "detail_json")
                         .in("project_id", ids))
                 .stream().collect(Collectors.groupingBy(TaskEntity::getProjectId));
-        List<KbEntity> kbs = kbMapper.selectList(new QueryWrapper<KbEntity>()
-                .select("id", "project_id")
-                .in("project_id", ids).isNull("deleted_at"));
-        Map<String, String> kbToProject = kbs.stream()
-                .collect(Collectors.toMap(KbEntity::getId, KbEntity::getProjectId, (a, b) -> a));
-        Map<String, List<DocEntity>> docsByProject = kbs.isEmpty() ? Map.of()
-                : docMapper.selectList(new QueryWrapper<DocEntity>()
-                        .select("id", "kb_id", "title", "author_id", "created_at")
-                        .in("kb_id", kbToProject.keySet()).isNull("deleted_at").isNull("archived_at"))
-                        .stream().collect(Collectors.groupingBy(d -> kbToProject.get(d.getKbId())));
+        Map<String, Set<String>> docIdsByProject = new HashMap<>();
+        tasksByProject.forEach((projectId, tasks) -> docIdsByProject.put(projectId, tasks.stream()
+                .flatMap(task -> TaskDocumentLinks.ids(task.getDetailJson(), json).stream())
+                .collect(Collectors.toSet())));
+        Set<String> docIds = docIdsByProject.values().stream().flatMap(Set::stream).collect(Collectors.toSet());
+        List<DocEntity> docs = docIds.isEmpty() ? List.of() : docMapper.selectList(new QueryWrapper<DocEntity>()
+                .select("id", "kb_id", "title", "author_id", "created_at")
+                .in("id", docIds).isNull("deleted_at").isNull("archived_at"));
+        Map<String, List<DocEntity>> docsByProject = new HashMap<>();
+        docIdsByProject.forEach((projectId, linkedIds) -> docsByProject.put(projectId,
+                docs.stream().filter(doc -> linkedIds.contains(doc.getId())).toList()));
 
         Map<String, List<Activity>> out = new HashMap<>();
         for (ProjectEntity p : projects) {

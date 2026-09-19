@@ -792,7 +792,7 @@ export const useDataStore = defineStore('data', () => {
     const id = uid('d')
     docs[id] = {
       id, title: '', author: currentAuthor(), created: nowIso(), updated: nowIso(),
-      links: kb.project ? [{ type: 'project', id: kb.project }] : [],
+      links: [],
       blocks: [], backlinks: [], kbId, folderId, rev: 1,
     }
     folder.docs.push(id)
@@ -908,7 +908,7 @@ export const useDataStore = defineStore('data', () => {
   async function addKb(payload: CreateKbPayload): Promise<KnowledgeBase | null> {
     if (apiLive.value) {
       try {
-        const kb = await apiCreateKb(payload)
+        const kb = await apiCreateKb({ ...payload, project: undefined })
         kbs.value.unshift(kb)
         return kb
       } catch {
@@ -917,7 +917,7 @@ export const useDataStore = defineStore('data', () => {
     }
     const kb: KnowledgeBase = {
       id: 'kb' + Date.now(), name: payload.name, icon: payload.icon || 'ri-book-2-line',
-      color: payload.color || '#4358D6', project: payload.project ?? null,
+      color: payload.color || '#4358D6', project: null,
       desc: payload.desc || '', folders: [{ id: 'f' + Date.now(), name: '文档', docs: [] }],
       group: payload.group, perm: payload.perm,
     }
@@ -1596,11 +1596,10 @@ export const useDataStore = defineStore('data', () => {
     patchTask(taskId, { groupId }, name ? `把任务移到分组「${name}」` : undefined)
   }
 
-  /** 删除项目（连同其任务与关联知识库）；apiLive 时写透后端。 */
+  /** 删除项目及其任务；知识库和文档独立保留；apiLive 时写透后端。 */
   async function deleteProject(id: string) {
     projects.value = projects.value.filter((p) => p.id !== id)
     tasks.value = tasks.value.filter((t) => t.project !== id)
-    kbs.value = kbs.value.filter((k) => k.project !== id)
     if (apiLive.value) {
       try {
         await apiDeleteProject(id)

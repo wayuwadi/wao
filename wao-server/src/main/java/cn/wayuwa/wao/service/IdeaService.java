@@ -251,11 +251,6 @@ public class IdeaService {
         ProjectDto target = conversionTarget(entity, snapshot, req == null ? null : req.projectId(), actor);
 
         DocDto archive = knowledge.ensureIdeaArchive(target, snapshot, actor);
-        for (IdeaDto.Artifact artifact : snapshot.artifacts()) {
-            if (!"LEGACY_ARCHIVE".equals(artifact.kind())) {
-                knowledge.linkDocToProject(artifact.docId(), target.id());
-            }
-        }
         if (snapshot.artifacts().stream().noneMatch(a -> "LEGACY_ARCHIVE".equals(a.kind()))) {
             addArtifact(entity, "LEGACY_ARCHIVE", archive.id(), archive.title(), actor);
         }

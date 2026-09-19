@@ -237,9 +237,14 @@ public class AiAssistantAssetService {
                 .isNull(DocEntity::getArchivedAt)
                 .orderByDesc(DocEntity::getUpdatedAt)
                 .last("LIMIT 300"));
+        Set<String> linkedDocs = filter.projectIds().isEmpty() ? Set.of() : taskMapper.selectList(
+                new QueryWrapper<TaskEntity>().select("detail_json")
+                        .in("project_id", filter.projectIds())).stream()
+                .flatMap(task -> TaskDocumentLinks.ids(task.getDetailJson(), json).stream())
+                .collect(java.util.stream.Collectors.toSet());
         for (DocEntity doc : docs) {
             KbEntity kb = knowledgeBases.get(doc.getKbId());
-            if (kb == null || (!filter.projectIds().isEmpty() && !filter.projectIds().contains(kb.getProjectId()))) {
+            if (kb == null || (!filter.projectIds().isEmpty() && !linkedDocs.contains(doc.getId()))) {
                 continue;
             }
             String content = plainText(doc);

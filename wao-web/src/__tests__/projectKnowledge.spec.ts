@@ -22,4 +22,16 @@ describe('data store · 项目知识库', () => {
     expect(data.kbs).toHaveLength(before)
     expect(data.kbs.some((kb) => kb.project === project.id)).toBe(false)
   })
+  it('历史项目知识库创建文档不继承项目，删除项目不移除知识库', async () => {
+    const data = useDataStore()
+    const kb = await data.addKb({ name: '独立资料', project: 'p-old' })
+    expect(kb!.project).toBeNull()
+    kb!.project = 'p-old'
+    const id = await data.addDoc(kb!.id, kb!.folders[0]!.id)
+    expect(data.docById(id!)!.links).toEqual([])
+    await data.deleteProject('p-old')
+    expect(data.kbById(kb!.id)).toBeDefined()
+    expect(data.docById(id!)).toBeDefined()
+  })
+
 })

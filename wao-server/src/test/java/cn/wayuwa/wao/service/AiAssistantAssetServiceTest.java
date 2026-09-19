@@ -115,6 +115,7 @@ class AiAssistantAssetServiceTest {
         task.setProjectId("p1");
         task.setTitle("发布检查任务");
         task.setDescription("确认数据库迁移");
+        task.setDetailJson("{\"docs\":[\"doc1\"]}");
         when(taskMapper.selectList(any())).thenReturn(List.of(task));
 
         String context = service.relevantAssets("发布前数据库迁移任务", new AssistantSourceFilter(
@@ -124,6 +125,22 @@ class AiAssistantAssetServiceTest {
                 .contains("type=\"project\"").contains("/projects/p1")
                 .contains("type=\"task\"").contains("/projects/p1?task=t1")
                 .contains("参考 WAO 资产");
+    }
+
+    @Test
+    void projectKnowledgeFilterIncludesOnlyExplicitTaskAndSubtaskDocuments() {
+        KbEntity legacy = new KbEntity(); legacy.setId("kb-legacy"); legacy.setName("旧项目库"); legacy.setProjectId("p1");
+        KbEntity independent = new KbEntity(); independent.setId("kb-independent"); independent.setName("独立库");
+        when(kbMapper.selectList(any())).thenReturn(List.of(legacy, independent));
+        when(docMapper.selectList(any())).thenReturn(List.of(
+                doc("unlinked", "kb-legacy", "发布秘密资料", "[{\"p\":\"发布秘密资料\"}]"),
+                doc("linked", "kb-independent", "发布任务资料", "[{\"p\":\"发布任务资料\"}]")));
+        TaskEntity task = new TaskEntity(); task.setProjectId("p1");
+        task.setDetailJson("{\"subs\":[{\"docs\":[\"linked\"]}]}");
+        when(taskMapper.selectList(any())).thenReturn(List.of(task));
+        String context = service.relevantAssets("发布", new AssistantSourceFilter(
+                List.of("knowledge"), List.of(), List.of(), null, null, List.of("p1")));
+        assertThat(context).contains("发布任务资料").doesNotContain("发布秘密资料");
     }
 
     @Test

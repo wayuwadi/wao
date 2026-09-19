@@ -114,8 +114,6 @@ function finishSelection() {
 const selectedTaskIds = ref<string[]>([])
 const aiBatchStarting = ref(false)
 const aiBatchMode = ref<'separate' | 'merge' | null>(null)
-const creatingDoc = ref(false)
-const docCreateError = ref('')
 const creatorFilterOpen = ref(false)
 const ownerFilterOpen = ref(false)
 /** 负责人筛选：同样按项目记在本地，「只看我的」刷新后还在。 */
@@ -166,15 +164,10 @@ function onDropReorder(overId: string, event?: DragEvent) {
 
 const pd = computed(() => (project.value ? decoProj(project.value) : null))
 const ptasks = computed(() => (project.value ? data.tasksByProject(project.value.id) : []))
-const kb = computed(() => data.kbs.find((k) => k.project === pid.value))
-
 const linkedDocs = computed(() => {
-  const ids = new Set(project.value?.docs ?? [])
-  kb.value?.folders.forEach((folder) => folder.docs.forEach((id) => ids.add(id)))
-  Object.values(data.docs).forEach((doc) => {
-    if (data.isDocArchived(doc.id)) return
-    if (doc.links.some((link) => link.type === 'project' && link.id === pid.value)) ids.add(doc.id)
-  })
+  const ids = new Set(ptasks.value.flatMap(task => [
+    ...(task.docs ?? []), ...task.subs.flatMap(sub => sub.docs ?? []),
+  ]))
   return [...ids].flatMap((id) => {
     const doc = data.docById(id)
     return doc && !data.isDocArchived(id)
@@ -321,44 +314,6 @@ function openDoc(id: string) {
   const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
   if (k) router.push({ path: `/kb/${k.id}`, query: { doc: id } })
   else router.push('/knowledge')
-}
-function openKb() {
-  if (kb.value) router.push(`/kb/${kb.value.id}`)
-}
-/**
- * 从项目里新建文档。项目本身不再预建空知识库；用户首次明确点击时才创建并关联项目知识库。
- */
-async function createProjectDoc() {
-  const currentProject = project.value
-  if (!currentProject || creatingDoc.value) return
-  creatingDoc.value = true
-  docCreateError.value = ''
-  try {
-    const targetKb = kb.value ?? await data.addKb({
-      name: currentProject.name,
-      desc: `项目「${currentProject.name}」的文档与知识沉淀`,
-      icon: currentProject.icon || 'ri-stack-line',
-      color: data.areaColor(currentProject.area),
-      project: currentProject.id,
-      perm: '成员可编辑',
-    })
-    if (!targetKb) throw new Error('项目知识库创建失败，请重试')
-
-    let folderId = targetKb.folders[0]?.id
-    if (!folderId) folderId = await data.addFolder(targetKb.id, '文档') ?? undefined
-    if (!folderId) throw new Error('文档文件夹创建失败，请重试')
-
-    const id = await data.addDoc(targetKb.id, folderId)
-    if (!id) throw new Error('文档没有保存到服务器，请重试')
-
-    toast('已创建文档并关联到本项目', 'ri-file-add-line')
-    await router.push({ path: `/kb/${targetKb.id}`, query: { doc: id } })
-  } catch (error) {
-    docCreateError.value = error instanceof Error ? error.message : '文档创建失败，请重试'
-    toast(docCreateError.value, 'ri-error-warning-line')
-  } finally {
-    creatingDoc.value = false
-  }
 }
 // ---- 分组视图 ----
 // 一个项目里同时压着好几个 domain 的事：按状态切的看板帮不上忙，得按「这是哪一摊事」分。
@@ -977,15 +932,9 @@ watch(visibleTaskIds, (ids) => {
     <!-- 文档 -->
     <div v-else-if="projTab === '文档'">
       <div class="tab-toolbar gap">
-        <button v-if="kb" class="kb-chip" @click="openKb"><i class="ri-book-2-line"></i>关联知识库 · {{ kb.name }}</button>
-        <span v-else class="no-kb">该项目尚未关联知识库</span>
+        <span class="no-kb">仅展示本项目任务关联的文档</span>
         <div class="spacer"></div>
-        <button class="btn-primary xs" :disabled="creatingDoc" @click="createProjectDoc">
-          <i :class="creatingDoc ? 'ri-loader-4-line spin' : 'ri-file-add-line'"></i>{{ creatingDoc ? '创建中…' : docCreateError ? '重试创建' : '新建文档' }}
-        </button>
-      </div>
-      <div v-if="docCreateError" class="doc-create-error" role="alert">
-        <i class="ri-error-warning-line"></i>{{ docCreateError }}；已成功的步骤会保留，可点击“重试创建”。
+        <button class="btn-primary xs" @click="router.push('/knowledge')"><i class="ri-book-2-line"></i>前往知识库</button>
       </div>
       <div class="doc-list-card">
         <div v-for="d in linkedDocs" :key="d.id" class="doc-row" @click="openDoc(d.id)">
@@ -996,7 +945,7 @@ watch(visibleTaskIds, (ids) => {
         </div>
         <div v-if="!linkedDocs.length" class="doc-empty">
           <i class="ri-file-add-line"></i>
-          <span>{{ kb ? '还没有项目文档，点击“新建文档”开始沉淀。' : '首次新建文档时会创建并关联项目知识库。' }}</span>
+          <span>在任务或子任务中关联文档后，会展示在这里。</span>
         </div>
       </div>
     </div>
@@ -1635,40 +1584,9 @@ watch(visibleTaskIds, (ids) => {
   color: var(--wao-text-faint-2);
 }
 
-.kb-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--wao-line-control);
-  background: var(--wao-bg-card);
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 12px;
-  color: #3a4cc2;
-  cursor: pointer;
-}
-.kb-chip:hover {
-  border-color: #c7d0f1;
-  background: var(--wao-primary-tint);
-}
-.kb-chip i {
-  font-size: 13px;
-}
 .no-kb {
   font-size: 12px;
   color: var(--wao-text-weak);
-}
-.doc-create-error {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--wao-danger-line);
-  border-radius: 8px;
-  background: var(--wao-danger-bg);
-  color: var(--wao-danger-strong);
-  font-size: 12px;
 }
 .doc-empty {
   min-height: 108px;
@@ -2128,7 +2046,6 @@ watch(visibleTaskIds, (ids) => {
   .doc-row { min-height: 48px; padding: 9px 7px; }
   .doc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc-time { flex-shrink: 0; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tab-toolbar.gap .kb-chip { max-width: 100%; min-height: 38px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 /* 任务优先：项目标题、页签与视图、交付筛选合为三条紧凑工具栏。 */
 .detail { padding-top: 12px; }

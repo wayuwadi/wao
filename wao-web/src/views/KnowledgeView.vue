@@ -31,12 +31,11 @@ const newKbOpen = ref(false)
 const newKbName = ref('')
 const newKbDesc = ref('')
 const query = ref('')
-type KnowledgeScope = 'all' | 'project' | 'shared' | 'personal'
+type KnowledgeScope = 'all' | 'shared' | 'personal'
 const scope = ref<KnowledgeScope>('all')
 
 const scopeOptions: { value: KnowledgeScope; label: string }[] = [
   { value: 'all', label: '全部资料' },
-  { value: 'project', label: '项目资料' },
   { value: 'shared', label: '共享资料' },
   { value: 'personal', label: '个人资料' },
 ]
@@ -46,9 +45,8 @@ function docCount(k: KnowledgeBase) {
 }
 
 function matchesScope(kb: KnowledgeBase) {
-  if (scope.value === 'project') return !!kb.project
   if (scope.value === 'shared') return kb.perm === '成员可编辑'
-  if (scope.value === 'personal') return !kb.project && !kb.auto
+  if (scope.value === 'personal') return !kb.auto && kb.perm !== '成员可编辑'
   return true
 }
 
@@ -82,10 +80,6 @@ const groups = computed(() => {
 const visibleCount = computed(() => groups.value.reduce((total, group) => total + group.items.length, 0))
 const filtering = computed(() => scope.value !== 'all' || !!query.value.trim())
 
-function projName(k: KnowledgeBase) {
-  if (k.project) return data.projectById(k.project)?.name ?? ''
-  return k.auto ? '自动化' : ''
-}
 function openKb(id: string) {
   router.push(tabs.tabs.find((tab) => tab.key === `kb:${id}`)?.path || `/kb/${id}`)
 }
@@ -254,7 +248,6 @@ async function createKb() {
           <div class="kb-meta">
             <i class="ri-file-text-line"></i>{{ docCount(k) }} 篇文档
             <span class="spacer"></span>
-            <span v-if="k.project" class="kb-proj"><i class="ri-stack-line"></i>{{ projName(k) }}</span>
           </div>
         </div>
       </div>
@@ -280,11 +273,11 @@ async function createKb() {
         <div class="modal-body">
           <p v-if="cfgError" role="alert">{{ cfgError }}</p>
           <label class="f-label">名称</label>
-          <input v-model="cfgKb.name" class="f-input" :disabled="cfgSaving || !!cfgKb.project || !!cfgKb.auto" />
+          <input v-model="cfgKb.name" class="f-input" :disabled="cfgSaving || !!cfgKb.auto" />
           <label class="f-label">简介</label>
-          <textarea v-model="cfgKb.desc" class="f-textarea" rows="2" :disabled="cfgSaving || !!cfgKb.project || !!cfgKb.auto"></textarea>
-          <div v-if="cfgKb.project || cfgKb.auto" class="f-note">
-            {{ cfgKb.project ? '项目 · ' + projName(cfgKb) : '自动化 · 飞书群聊沉淀' }} 的知识库跟随来源，名称与简介不可修改。
+          <textarea v-model="cfgKb.desc" class="f-textarea" rows="2" :disabled="cfgSaving || !!cfgKb.auto"></textarea>
+          <div v-if="cfgKb.auto" class="f-note">
+            自动化知识库跟随来源，名称与简介不可修改。
           </div>
 
           <div class="kb-group-setting">
@@ -325,7 +318,7 @@ async function createKb() {
           <div class="f-note">权限对组织内成员直接生效，不生成虚假的外部邀请链接。</div>
         </div>
         <div class="modal-foot">
-          <button v-if="!cfgKb.project && !cfgKb.auto && !cfgKb.notes" class="btn-danger" @click="cfgDelete">
+          <button v-if="!cfgKb.auto && !cfgKb.notes" class="btn-danger" @click="cfgDelete">
             <i class="ri-delete-bin-line"></i>删除
           </button>
           <div class="spacer"></div>
@@ -742,15 +735,6 @@ async function createKb() {
   color: var(--wao-text-weak);
 }
 .kb-meta > i {
-  font-size: 12px;
-}
-.kb-proj {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--wao-primary-text);
-}
-.kb-proj i {
   font-size: 12px;
 }
 .kgroup-empty {

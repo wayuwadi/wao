@@ -9,13 +9,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import cn.wayuwa.wao.domain.DocEntity;
-import cn.wayuwa.wao.domain.KbEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.Activity;
 import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.mapper.DocMapper;
-import cn.wayuwa.wao.mapper.KbMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -25,11 +24,10 @@ import static org.mockito.Mockito.verify;
 class ProjectActivityServiceTest {
 
     private final TaskMapper taskMapper = mock(TaskMapper.class);
-    private final KbMapper kbMapper = mock(KbMapper.class);
     private final DocMapper docMapper = mock(DocMapper.class);
     private final MemberService members = mock(MemberService.class);
     private final ProjectActivityService service =
-            new ProjectActivityService(taskMapper, kbMapper, docMapper, members);
+            new ProjectActivityService(taskMapper, new ObjectMapper(), docMapper, members);
 
     // 2026-07-01 08:00:00 +08:00
     private static final long T0 = 1_782_864_000_000L;
@@ -60,14 +58,10 @@ class ProjectActivityServiceTest {
         task.setCompletedAt(LocalDateTime.of(2026, 7, 3, 10, 0));
         when(taskMapper.selectList(any())).thenReturn(List.of(task));
 
-        KbEntity kb = new KbEntity();
-        kb.setId("kb1");
-        kb.setProjectId(p.getId());
-        when(kbMapper.selectList(any())).thenReturn(List.of(kb));
-
         DocEntity doc = new DocEntity();
         doc.setId("d" + (T0 + 120_000));
-        doc.setKbId("kb1");
+        doc.setKbId("kb-independent");
+        task.setDetailJson("{\"subs\":[{\"docs\":[\"" + doc.getId() + "\"]}]}");
         doc.setTitle("走线记录");
         doc.setAuthorId("auto");
         doc.setCreatedAt(LocalDateTime.of(2026, 7, 2, 9, 0));
@@ -89,7 +83,7 @@ class ProjectActivityServiceTest {
         ArgumentCaptor<QueryWrapper<TaskEntity>> taskQuery = ArgumentCaptor.forClass(QueryWrapper.class);
         verify(taskMapper).selectList(taskQuery.capture());
         assertThat(taskQuery.getValue().getSqlSelect())
-                .isEqualTo("id,project_id,title,owner_id,created_by,completed_at");
+                .isEqualTo("id,project_id,title,owner_id,created_by,completed_at,detail_json");
         @SuppressWarnings("unchecked")
         ArgumentCaptor<QueryWrapper<DocEntity>> docQuery = ArgumentCaptor.forClass(QueryWrapper.class);
         verify(docMapper).selectList(docQuery.capture());
@@ -101,7 +95,6 @@ class ProjectActivityServiceTest {
     void seedIdsWithoutTimestampProduceNoFabricatedEvents() {
         stubMembers();
         when(taskMapper.selectList(any())).thenReturn(List.of());
-        when(kbMapper.selectList(any())).thenReturn(List.of());
 
         assertThat(service.forProject(project("p1"))).isEmpty();
     }
@@ -116,7 +109,6 @@ class ProjectActivityServiceTest {
         task.setTitle("老任务");
         task.setOwnerId("wg");
         when(taskMapper.selectList(any())).thenReturn(List.of(task));
-        when(kbMapper.selectList(any())).thenReturn(List.of());
 
         List<Activity> acts = service.forProject(p);
 
