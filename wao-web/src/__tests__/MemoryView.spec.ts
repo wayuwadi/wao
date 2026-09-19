@@ -36,16 +36,43 @@ describe('MemoryView', () => {
     vi.mocked(fetchMemories).mockResolvedValue([])
   })
 
-  it('展示五种隔离范围和正式个人记忆', async () => {
+  it('默认突出个人与共享记忆，技术范围可展开', async () => {
     vi.mocked(fetchMemories).mockResolvedValue([memory()])
     const wrapper = mount(MemoryView); await flushPromises()
-    expect(wrapper.text()).toContain('个人记忆')
+    expect(wrapper.text()).toContain('关于我')
     expect(wrapper.text()).toContain('组织记忆')
     expect(wrapper.text()).toContain('项目记忆')
+    expect(wrapper.findAll('.scope-tabs button')).toHaveLength(3)
+    await wrapper.get('.technical-toggle').trigger('click')
+    expect(wrapper.findAll('.scope-tabs button')).toHaveLength(5)
     expect(wrapper.text()).toContain('机器记忆')
     expect(wrapper.text()).toContain('应用记忆')
     expect(wrapper.text()).toContain('晨跑偏好')
-    expect(wrapper.text()).toContain('正式版 v1')
+    expect(wrapper.text()).toContain('已生效 · v1')
+  })
+
+  it('技术范围深链保持可见并保留原查询范围', async () => {
+    route.query = { scope: 'machine', machine: 'rn1' }
+    const wrapper = mount(MemoryView); await flushPromises()
+    expect(wrapper.findAll('.scope-tabs button')).toHaveLength(5)
+    expect(wrapper.get('.technical-toggle').attributes('disabled')).toBeDefined()
+    expect(fetchMemories).toHaveBeenLastCalledWith(expect.objectContaining({ scopeType: 'machine', scopeId: 'rn1' }))
+  })
+
+  it('共享记忆在提交前显示对象与审核边界，保留后端范围和补充来源', async () => {
+    route.query = { scope: 'organization' }
+    vi.mocked(createMemory).mockResolvedValue(memory({ scopeType: 'organization', scopeId: 'o1' }))
+    const wrapper = mount(MemoryView); await flushPromises()
+    await wrapper.get('.hero .primary').trigger('click')
+    expect(wrapper.get('.editor header').text()).toContain('组织记忆 · WAO')
+    expect(wrapper.get('.editor header').text()).toContain('管理员审核后生效')
+    expect(wrapper.get('.editor footer .primary').text()).toBe('提交审核')
+    expect(wrapper.get('.optional-fields').attributes('open')).toBeUndefined()
+    await wrapper.get('input[maxlength="200"]').setValue('团队约定')
+    await wrapper.get('textarea[maxlength="20000"]').setValue('变更先记录验收结果')
+    await wrapper.get('.optional-fields textarea').setValue('https://example.com/evidence')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(createMemory).toHaveBeenCalledWith(expect.objectContaining({ scopeType: 'organization', scopeId: 'o1', evidenceLinks: ['https://example.com/evidence'] }))
   })
 
   it('在记忆中心内打开 Codex 连接，不再跳到设置页', async () => {
