@@ -142,14 +142,15 @@ export class DocumentDraftRegression {
     writeFault(this.faultFile, { docId: this.docId, mode, delayMs, expiresAt: Date.now() + 10 * 60_000 })
   }
 
+  // 对原生按钮和菜单项使用其键盘激活语义；后台浏览器的鼠标输入可能没有可验证效果。
   async create() {
     if (this.docId) throw new Error('本轮已经创建文档；重跑须使用新实例')
     if (await this.tab.url() !== this.baseURL + this.kbPath) await this.tab.goto(this.baseURL + this.kbPath)
     await this.visible(this.tab.playwright.getByRole('heading', { name: this.kbName, exact: true }))
     await this.snapshot()
-    await this.tab.playwright.getByRole('button', { name: '新增内容', exact: true }).click()
+    await this.tab.playwright.getByRole('button', { name: '新增内容', exact: true }).press('Enter')
     await this.snapshot()
-    await this.tab.playwright.getByRole('menuitem', { name: '新建文档', exact: true }).click()
+    await this.tab.playwright.getByRole('menuitem', { name: '新建文档', exact: true }).press('Enter')
     await this.visible(this.titleInput())
     await this.snapshot()
     const url = new URL(await this.tab.url())
@@ -185,11 +186,14 @@ export class DocumentDraftRegression {
     await this.snapshot()
     await this.text(this.draft)
     await this.record('保存失败明确显示原因且保留正文')
-    await this.tab.playwright.getByRole('button', { name: '切换到首页', exact: true }).click()
+    const returnLabel = await this.tab.playwright.locator('button.tab-open[aria-current="page"]').getAttribute('aria-label')
+    if (!returnLabel?.startsWith('切换到')) throw new Error('无法确认当前知识库页签，停止切换')
+    await this.tab.playwright.getByRole('button', { name: '切换到首页', exact: true }).press('Enter')
     await this.snapshot()
-    await this.tab.playwright.getByRole('button', { name: `切换到${this.kbName}`, exact: true }).click()
+    await this.tab.playwright.getByRole('button', { name: returnLabel, exact: true }).press('Enter')
     await this.snapshot()
     await this.text(this.draft)
+    if (await this.tab.url() !== this.docURL) throw new Error('返回页签不是本轮文档，停止验收')
     return this.record('应用页签切换不丢草稿')
   }
 
@@ -200,7 +204,7 @@ export class DocumentDraftRegression {
     await this.text(this.draft)
     await this.record('保存失败后刷新恢复草稿与重试入口')
     clearFault(this.faultFile)
-    await this.tab.playwright.getByRole('button', { name: '重试', exact: true }).click()
+    await this.tab.playwright.getByRole('button', { name: '重试', exact: true }).press('Enter')
     await this.saved()
     await this.tab.reload()
     await this.snapshot()
@@ -237,7 +241,7 @@ export class DocumentDraftRegression {
   }
 
   async saveConflictCopy() {
-    await this.tab.playwright.getByRole('button', { name: '本机草稿另存副本', exact: true }).click()
+    await this.tab.playwright.getByRole('button', { name: '本机草稿另存副本', exact: true }).press('Enter')
     return this.verifyConflictCopy()
   }
 
