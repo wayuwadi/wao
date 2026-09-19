@@ -5,6 +5,7 @@ import cn.wayuwa.wao.common.*;
 import cn.wayuwa.wao.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
+import java.util.List;
 import org.springframework.web.bind.annotation.*;
 
 /** 共享同步中心：所有已登录成员可查看并触发，只有管理员可改连接设置；密钥不会返回前端或进入日志。 */
@@ -22,4 +23,6 @@ public class WeKnoraSyncController {
     @GetMapping("/source") public ApiResponse<WeKnoraSourceService.Source> source(@RequestParam String key,HttpServletRequest request){return ApiResponse.ok(sync.source(member(request),key));}
     @PutMapping public ApiResponse<Void> save(@RequestBody WeKnoraSyncService.Settings settings,HttpServletRequest request){sync.save(manager(request),settings);return ApiResponse.ok(null);}
     @PostMapping("/run") public ApiResponse<Map<String,String>> run(HttpServletRequest request){return ApiResponse.ok(Map.of("id",sync.enqueue("manual",member(request))));}
+    @PostMapping("/knowledge-run") public ApiResponse<Map<String,String>> knowledgeRun(HttpServletRequest request){return ApiResponse.ok(Map.of("id",sync.enqueue("knowledge-manual",member(request))));}
+    @GetMapping("/documents") public ApiResponse<List<WeKnoraSyncService.DocumentState>> documents(@RequestParam List<String> ids,HttpServletRequest request){return ApiResponse.ok(sync.documentStates(member(request),ids));}
 }

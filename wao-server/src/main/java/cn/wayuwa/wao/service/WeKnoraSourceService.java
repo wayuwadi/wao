@@ -11,7 +11,8 @@ import org.springframework.stereotype.Service;
 /** 显式字段白名单的知识导出；私有记录始终限定到配置者。 */
 @Service
 public class WeKnoraSourceService {
-    public record Source(String key, String module, String title, String url, String content, String hash) { }
+    public record Source(String key, String module, String title, String url, String content, String hash,
+                         String originalUrl) { }
     public record Module(String id, String label, String scope, long count) { }
     record Definition(String id, String label, String scope, String select, String from, String where,
                       String route, boolean personal) { }
@@ -61,6 +62,15 @@ public class WeKnoraSourceService {
     }
     /** 获取完整且有确定顺序的源清单；任何查询失败整体失败，禁止据此删除远端。 */
     public List<Source> snapshot(String owner, List<String> modules) {
+        return snapshot(owner, modules, null);
+    }
+    /** 只读取当前成员可见的指定文档，供编辑页面批量核对服务器版本。 */
+    public List<Source> documents(String owner, List<String> ids) {
+        if (ids == null || ids.isEmpty() || ids.size() > 100 || ids.stream().anyMatch(id -> id == null || id.length() > 64))
+            throw new IllegalArgumentException("每次可查询 1–100 篇文档");
+        return snapshot(owner, List.of("docs"), ids);
+    }
+    private List<Source> snapshot(String owner, List<String> modules, List<String> ids) {
         if (owner == null || owner.isBlank()) throw new IllegalArgumentException("缺少同步所属成员");
         validateModules(modules);
         List<Source> result = new ArrayList<>();
@@ -68,18 +78,28 @@ public class WeKnoraSourceService {
             if (!modules.contains(d.id)) continue;
             Map<String,StringBuilder> bodies=new LinkedHashMap<>();
             Map<String,String> titles=new HashMap<>();
+            Map<String,String> urls=new HashMap<>();
+            String select=d.select, where=d.where;
+            List<Object> parameters=new ArrayList<>(Arrays.asList(args(d,owner)));
+            if (d.id.equals("docs")) select += ",d.kb_id AS source_kb_id";
+            if (ids != null) {
+                where="("+where+") AND d.id IN ("+String.join(",",Collections.nCopies(ids.size(),"?"))+")";
+                parameters.addAll(ids);
+            }
             String order=switch(d.id) {case "assistant" -> "1,m.created_at,m.id";case "chat" -> "1,created_at,shared_chat_message.id";case "ai-runs" -> "1,p.created_at,p.id";default -> "1";};
-            jdbc.query("SELECT " + d.select + " FROM " + d.from + " WHERE " + d.where + " ORDER BY "+order+" LIMIT 50001", rs -> {
+            jdbc.query("SELECT " + select + " FROM " + d.from + " WHERE " + where + " ORDER BY "+order+" LIMIT 50001", rs -> {
                 String id = rs.getString(1), title = Objects.toString(rs.getString(2), d.label);
                 titles.put(id,title);
+                if (d.id.equals("docs")) urls.put(id,"/kb/"+java.net.URLEncoder.encode(rs.getString("source_kb_id"),StandardCharsets.UTF_8)+"?doc="+java.net.URLEncoder.encode(id,StandardCharsets.UTF_8));
                 StringBuilder body=bodies.computeIfAbsent(id,k->new StringBuilder());
                 for (int c=3;c<=rs.getMetaData().getColumnCount();c++) {
+                    if ("source_kb_id".equalsIgnoreCase(rs.getMetaData().getColumnLabel(c))) continue;
                     String text = render(Objects.toString(rs.getString(c), ""));
                     if (!text.isBlank()) body.append("\n## ").append(rs.getMetaData().getColumnLabel(c)).append("\n").append(text).append('\n');
                 }
                 if(rs.getRow()>50000 || body.length()>5_000_000)throw new IllegalStateException("单类来源超过读取上限，已停止；请缩小范围或扩展分批读取");
-            }, args(d,owner));
-            bodies.forEach((id,body)->result.addAll(parts(d.id,id,titles.get(id),"",body.toString())));
+            }, parameters.toArray());
+            bodies.forEach((id,body)->result.addAll(parts(d.id,id,titles.get(id),urls.getOrDefault(id,""),body.toString())));
 
         }
         return result;
@@ -93,6 +113,7 @@ public class WeKnoraSourceService {
     /** 稳定分段保留全部正文，指纹不包含导出时刻。 */
     static List<Source> parts(String module,String id,String title,String url,String text) {
         List<Source> result = new ArrayList<>();
+        String originalUrl=url;
         String clean = redact(text);
         for (int pos=0,part=1; pos<Math.max(1,clean.length());part++) {
             int end=Math.min(clean.length(),pos+PART_SIZE);
@@ -104,7 +125,7 @@ public class WeKnoraSourceService {
             String marker="wao-sync:"+hash(key).substring(0,24);
             url="https://wao.wayuwa.cn/apps/weknora?tab=sync&source="+java.net.URLEncoder.encode(key,StandardCharsets.UTF_8);
             String content="# "+label+"\n\n来源：[在 WAO 查看]("+url+")\n\n同步标识："+marker+"\n\n"+clean.substring(pos,end);
-            result.add(new Source(key,module,label+" ["+marker+"]",url,content,hash(content)));
+            result.add(new Source(key,module,label+" ["+marker+"]",url,content,hash(content),originalUrl));
             if (end==clean.length()) break;
             pos=end;
         }

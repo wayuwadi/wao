@@ -143,3 +143,39 @@ jobs:
           }
         }
       }
+  - script: >
+      pipelineJob('wao-client-release') {
+        description('WAO 桌面客户端自建发布：Linux2 构建 Windows，Mac 节点构建通用包，Linux2 统一签名和原子发布。')
+        quietPeriod(300)
+        properties {
+          githubProjectUrl('https://github.com/wayuwacn/wao/')
+        }
+        parameters {
+          booleanParam('PUBLISH_CLIENT', false, '双端构建、原公钥验签和公开哈希核对后发布；仅 main。')
+          booleanParam('BUILD_MACOS', true, '关闭时只构建 Windows，不允许发布。')
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('ssh://git@ssh.github.com:443/wayuwacn/wao.git')
+                  credentials('wao-github-scm-ssh')
+                  refspec('+refs/heads/main:refs/remotes/origin/main')
+                }
+                branch('*/main')
+                extensions {
+                  cloneOptions {
+                    shallow(false)
+                    noTags(true)
+                    honorRefspec(true)
+                    timeout(20)
+                  }
+                }
+              }
+            }
+            scriptPath('Jenkinsfile.client')
+            lightweight(false)
+          }
+        }
+      }

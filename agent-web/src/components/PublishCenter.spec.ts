@@ -132,6 +132,59 @@ describe('真实发布中心', () => {
     wrapper.unmount()
   })
 
+  it.each(['DOUYIN', 'XIAOHONGSHU', 'WECHAT_MP'])('清空 %s 审核稿时手机预览不恢复旧内容', async (platform) => {
+    const saved = { ...task(), platform, title: '已保存旧标题', content: '已保存旧正文', coverText: '旧封面文案' }
+    vi.mocked(getPublishCenter).mockResolvedValue({ ...structuredClone(center), tasks: [saved] })
+    const wrapper = mount(PublishCenter, { props: { mode: 'content' } })
+    await flushPromises()
+    await wrapper.get('.editor input[maxlength="200"]').setValue('实时新标题')
+    expect(wrapper.get('.phone-screen').text()).toContain('实时新标题')
+    await wrapper.get('.editor input[maxlength="200"]').setValue('')
+    await wrapper.get('.body-field textarea').setValue('')
+    const phone = wrapper.get('.phone-screen').text()
+    expect(phone).not.toContain('已保存旧标题')
+    expect(phone).not.toContain('已保存旧正文')
+    expect(phone).toContain('标题待填写')
+    expect(phone).toContain('正文待填写')
+    wrapper.unmount()
+  })
+
+  it('生成新内容前保护当前未保存的审核稿和创作参考', async () => {
+    vi.mocked(getPublishCenter).mockResolvedValue({ ...structuredClone(center), tasks: [task()] })
+    const wrapper = mount(PublishCenter, { props: { mode: 'content' } })
+    await flushPromises()
+    await wrapper.get('.editor input[maxlength="200"]').setValue('尚未保存的修改')
+    await wrapper.get('.create-card > input').setValue('下一个主题')
+    await wrapper.get('.source-notes textarea').setValue('下一篇的参考')
+    await wrapper.get('.create-card > button').trigger('click')
+    expect(createContentGroup).not.toHaveBeenCalled()
+    expect(wrapper.get('.error').text()).toContain('请先保存')
+    expect(wrapper.get('.editor input[maxlength="200"]').element).toHaveProperty('value', '尚未保存的修改')
+    expect(wrapper.get('.source-notes textarea').element).toHaveProperty('value', '下一篇的参考')
+    wrapper.unmount()
+  })
+
+  it('生成中的回车不重复提交，失败后保留标题与参考供重试', async () => {
+    let reject!: (error: Error) => void
+    vi.mocked(createContentGroup).mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))
+    const wrapper = mount(PublishCenter, { props: { mode: 'content' } })
+    await flushPromises()
+    await wrapper.get('.create-card > input').setValue('保留创作标题')
+    await wrapper.get('.source-notes textarea').setValue('保留参考资料')
+    expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([true])
+    await wrapper.get('.create-card > button').trigger('click')
+    await wrapper.get('.create-card > input').trigger('keyup.enter')
+    expect(createContentGroup).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.source-notes textarea').attributes('disabled')).toBeDefined()
+    reject(new Error('模型暂时不可用'))
+    await flushPromises()
+    expect(wrapper.get('.error').text()).toContain('模型暂时不可用')
+    expect(wrapper.get('.create-card > input').element).toHaveProperty('value', '保留创作标题')
+    expect(wrapper.get('.source-notes textarea').element).toHaveProperty('value', '保留参考资料')
+    expect(wrapper.get('.create-card > button').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('生成失败时提供原任务的一键重试', async () => {
     const failed = {
       ...task(), status: 'FAILED', progress: 25, generationRetryable: true,
@@ -163,7 +216,7 @@ describe('真实发布中心', () => {
     expect(content.text()).toContain('已上传成片.webm · 4.0 KB')
     expect(content.text()).not.toContain('连接账号')
     expect(content.text()).toContain('确认发布到抖音')
-    expect(content.get('.platform-preview').text()).toContain('真实话题')
+    expect(content.get('.platform-preview').text()).toContain('标题待填写')
     expect(content.text()).toContain('输入后立即同步')
     content.unmount()
   })

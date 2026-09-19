@@ -540,6 +540,7 @@ export const useDataStore = defineStore('data', () => {
   }, { flush: 'sync' })
   /** 保存最新本机草稿及基础版本；编辑和已确认版本推进使用同一持久化边界。 */
   async function persistLocalDocDraft(id: string, next: DocEdit, base: Doc): Promise<void> {
+    const generation = docMemberGeneration
     try {
       localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value))
     } catch {
@@ -554,7 +555,8 @@ export const useDataStore = defineStore('data', () => {
         content: next.content,
         baseRev: next.baseRev ?? 1,
         updatedAt: Date.now(),
-      }).then(() => (docDraftErrors[id] = false)).catch(() => (docDraftErrors[id] = true))
+      }).then(() => { if (generation === docMemberGeneration) docDraftErrors[id] = false })
+        .catch(() => { if (generation === docMemberGeneration) docDraftErrors[id] = true })
     }
   }
   /**
@@ -624,6 +626,7 @@ export const useDataStore = defineStore('data', () => {
         latest.baseRev = saved.rev ?? (captured.baseRev ?? 1) + 1
         // 第一版已落库，后续输入的草稿必须记住新基线；否则补交失败后刷新会误判为协同冲突。
         await persistLocalDocDraft(id, latest, saved)
+        if (requestGeneration !== docMemberGeneration) return false
         clearTimeout(docPersistTimers[id])
         docPersistTimers[id] = setTimeout(() => void persistDocNow(id), 100)
       }
@@ -633,7 +636,12 @@ export const useDataStore = defineStore('data', () => {
       const message = cause instanceof Error ? cause.message : ''
       markSaved(`doc:${id}`, false, message)
       if (message.includes('其他窗口') || message.includes('刷新后处理')) {
-        try { docConflicts[id] = await fetchDoc(id) } catch { docConflicts[id] = docs[id] ?? null }
+        try {
+          const remote = await fetchDoc(id)
+          if (requestGeneration === docMemberGeneration) docConflicts[id] = remote
+        } catch {
+          if (requestGeneration === docMemberGeneration) docConflicts[id] = docs[id] ?? null
+        }
       }
       return false
     }).finally(() => {
@@ -661,7 +669,8 @@ export const useDataStore = defineStore('data', () => {
         baseRev: legacy.baseRev ?? base.rev ?? 1, updatedAt: Date.now(),
       }
       await writeDocumentDraft(draft)
-        .then(() => (docDraftErrors[id] = false)).catch(() => (docDraftErrors[id] = true))
+        .then(() => { if (restoreGeneration === docMemberGeneration) docDraftErrors[id] = false })
+        .catch(() => { if (restoreGeneration === docMemberGeneration) docDraftErrors[id] = true })
     } else {
       draft = await readDocumentDraft(memberId, id).catch(() => null)
     }
