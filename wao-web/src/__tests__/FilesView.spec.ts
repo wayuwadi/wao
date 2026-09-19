@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FilesView from '@/views/FilesView.vue'
 import { useDataStore } from '@/stores/data'
 import { fetchFileSettings } from '@/api/system'
+import { useSessionStore } from '@/stores/session'
 
 vi.mock('@/api/system', () => ({
   fetchFileSettings: vi.fn<(typeof import('@/api/system'))['fetchFileSettings']>(),
@@ -98,7 +99,7 @@ describe('FilesView', () => {
     })
     await flushPromises()
 
-    expect(uploadImage).toHaveBeenCalledWith(image, '图床')
+    expect(uploadImage).toHaveBeenCalledWith(image, '图床', { requirePersisted: true })
     expect(uploadFile).toHaveBeenCalledWith(file)
     expect(wrapper.find('.page-dialog').exists()).toBe(true)
     const inputs = wrapper.findAll('.page-dialog input')
@@ -297,6 +298,128 @@ describe('FilesView', () => {
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('还没有托管网页')
+    wrapper.unmount()
+  })
+  it('批量部分失败保留逐项结果，重试只提交失败文件', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    const success = {
+      id: 'ok',
+      name: '成功.txt',
+      icon: 'ri-file-line',
+      size: '1 B',
+      by: '我',
+      time: '刚刚',
+      link: '/api/files/ok/download',
+    }
+    const upload = vi
+      .spyOn(data, 'uploadFile')
+      .mockResolvedValueOnce(success)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(success)
+    const wrapper = mount(FilesView, {
+      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+    })
+    await flushPromises()
+    const first = new File(['a'], '成功.txt')
+    const second = new File(['b'], '重试.txt')
+    await wrapper.get('.unified-drop').trigger('drop', { dataTransfer: { files: [first, second] } })
+    await flushPromises()
+    const results = wrapper.get('[aria-label="本次上传结果"]')
+    expect(results.text()).toContain('已上传 1 项')
+    expect(results.text()).toContain('1 项需处理')
+    expect(results.text()).toContain('未收到上传成功确认')
+    expect(results.text()).toContain('刷新或离开后需重新选择')
+    await results.get('[aria-label="重试上传 重试.txt"]').trigger('click')
+    await flushPromises()
+    expect(upload).toHaveBeenCalledTimes(3)
+    expect(upload.mock.calls.map((call) => call[0])).toEqual([first, second, second])
+    expect(results.text()).toContain('已上传 2 项')
+    expect(results.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('单项异常不阻断后续上传，超限项说明如何恢复且不重复请求', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    const upload = vi
+      .spyOn(data, 'uploadFile')
+      .mockRejectedValueOnce(new Error('网络中断'))
+      .mockResolvedValue(null)
+    const wrapper = mount(FilesView, {
+      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+    })
+    await flushPromises()
+    const oversized = new File(['x'], '过大.txt')
+    Object.defineProperty(oversized, 'size', { value: 13 * 1024 * 1024 })
+    await wrapper
+      .get('.unified-drop')
+      .trigger('drop', {
+        dataTransfer: {
+          files: [new File(['a'], '中断.txt'), oversized, new File(['b'], '后续.txt')],
+        },
+      })
+    await flushPromises()
+    expect(upload).toHaveBeenCalledTimes(2)
+    const results = wrapper.get('[aria-label="本次上传结果"]')
+    expect(results.text()).toContain('网络中断')
+    expect(results.text()).toContain('超过 12MB 上限，请压缩后重新选择文件')
+    expect(results.find('[aria-label="重试上传 过大.txt"]').exists()).toBe(false)
+    expect(results.text()).toContain('3 项需处理')
+    wrapper.unmount()
+  })
+
+  it('图片持久化失败不能显示已上传，也不重复提交处理中条目', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    let resolve!: (value: null) => void
+    const upload = vi.spyOn(data, 'uploadImage').mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r
+        }),
+    )
+    const wrapper = mount(FilesView, {
+      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+    })
+    await flushPromises()
+    const image = new File(['x'], '图片.png', { type: 'image/png' })
+    await wrapper.get('.unified-drop').trigger('drop', { dataTransfer: { files: [image] } })
+    expect(wrapper.get('[aria-label="本次上传结果"]').text()).toContain('上传中')
+    expect(upload).toHaveBeenCalledWith(image, '图床', { requirePersisted: true })
+    resolve(null)
+    await flushPromises()
+    expect(wrapper.get('[aria-label="本次上传结果"]').text()).toContain('已上传 0 项')
+    expect(wrapper.get('[aria-label="本次上传结果"]').text()).toContain('1 项需处理')
+    wrapper.unmount()
+  })
+
+  it('切换账号后清空上传记录且停止队列后续请求', async () => {
+    const pinia = createPinia()
+    const session = useSessionStore(pinia)
+    const data = useDataStore(pinia)
+    let resolve!: (value: null) => void
+    const upload = vi.spyOn(data, 'uploadFile').mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r
+        }),
+    )
+    const wrapper = mount(FilesView, {
+      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+    })
+    await flushPromises()
+    await wrapper
+      .get('.unified-drop')
+      .trigger('drop', {
+        dataTransfer: { files: [new File(['a'], '旧账号.txt'), new File(['b'], '排队.txt')] },
+      })
+    session.$patch({ account: { member: { id: 'other', name: '其他成员' } } } as never)
+    await flushPromises()
+    resolve(null)
+    await flushPromises()
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[aria-label="本次上传结果"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })
