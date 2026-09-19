@@ -22,6 +22,7 @@ public final class SubtaskTree {
         if (subs == null) return;
         Map<String, Step> byId = new HashMap<>();
         for (Step sub : subs) {
+            if (sub.pr() != null && !Set.of("P0", "P1", "P2", "P3").contains(sub.pr())) throw new BadRequestException("子任务优先级必须为 P0 至 P3");
             if (sub.id() != null && byId.put(sub.id(), sub) != null) throw new BadRequestException("子任务标识重复");
             if (sub.due() != null && !sub.due().isBlank()) {
                 try { LocalDate.parse(sub.due()); } catch (RuntimeException e) { throw new BadRequestException("子任务截止日期格式错误"); }

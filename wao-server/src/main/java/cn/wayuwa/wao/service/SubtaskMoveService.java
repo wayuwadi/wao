@@ -82,7 +82,7 @@ public class SubtaskMoveService {
             result.add(new Step(sub.text(), sub.done(), blank(sub.id()) == null ? taskId + "#" + i : sub.id(),
                     sub.desc() == null ? "" : sub.desc(), sub.images() == null ? List.of() : sub.images(), null,
                     blank(sub.parentId()), blank(sub.owner()), blank(sub.due()), blank(sub.status()),
-                    blank(sub.createdBy()), blank(sub.createdAt()), sub.docs(), sub.comments()));
+                    blank(sub.createdBy()), blank(sub.createdAt()), sub.docs(), sub.comments(), sub.pr()));
         }
         return result;
     }

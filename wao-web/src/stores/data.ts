@@ -1706,7 +1706,7 @@ export const useDataStore = defineStore('data', () => {
     // 与主任务一致：负责人、创建人都不留空，默认就是录入的人。
     const me = useSessionStore().userId
     t.subs.unshift({
-      id, text: title, done: false, desc: '', images: [], parentId: parentId || null,
+      id, text: title, done: false, desc: '', images: [], parentId: parentId || null, pr: 'P2',
       owner: me || null, createdBy: me || null, createdAt: nowIso(),
     })
     logActivity(t, `添加了子任务「${title}」`)

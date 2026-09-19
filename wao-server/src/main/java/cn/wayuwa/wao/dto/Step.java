@@ -26,6 +26,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param createdAt 创建时间（ISO 时间戳）
  * @param docs 关联的知识文档 id
  * @param comments 子任务评论
+ * @param pr 子任务独立优先级，历史未设置时为空
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record Step(String text, boolean done, String id, String desc, List<ImageRef> images, Long number,
@@ -34,7 +35,14 @@ public record Step(String text, boolean done, String id, String desc, List<Image
         @JsonInclude(JsonInclude.Include.NON_NULL) String createdBy,
         @JsonInclude(JsonInclude.Include.NON_NULL) String createdAt,
         @JsonInclude(JsonInclude.Include.NON_NULL) List<String> docs,
-        @JsonInclude(JsonInclude.Include.NON_NULL) List<CommentDto> comments) {
+        @JsonInclude(JsonInclude.Include.NON_NULL) List<CommentDto> comments,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String pr) {
+    /** 兼容已有构造调用，历史优先级缺省为空，不改变快照摘要。 */
+    public Step(String text, boolean done, String id, String desc, List<ImageRef> images, Long number,
+            String parentId, String owner, String due, String status, String createdBy, String createdAt,
+            List<String> docs, List<CommentDto> comments) {
+        this(text, done, id, desc, images, number, parentId, owner, due, status, createdBy, createdAt, docs, comments, null);
+    }
     /** 兼容只带树与排期属性的调用；其余新增属性缺省为空。 */
     public Step(String text, boolean done, String id, String desc, List<ImageRef> images, Long number,
             String parentId, String owner, String due) {
@@ -51,7 +59,7 @@ public record Step(String text, boolean done, String id, String desc, List<Image
 
     /** 同一条子任务换一个编号与层级，其余属性原样保留。 */
     public Step with(String id, Long number, String parentId) {
-        return new Step(text, done, id, desc, images, number, parentId, owner, due, status, createdBy, createdAt, docs, comments);
+        return new Step(text, done, id, desc, images, number, parentId, owner, due, status, createdBy, createdAt, docs, comments, pr);
     }
 
     /** 展示用状态：已完成 / 进行中 / 未开始。 */

@@ -60,6 +60,25 @@ describe('列表内子任务', () => {
     expect(wrapper.findAll('.sub-number').map((node) => node.text())).toEqual(['0'])
     wrapper.unmount()
   })
+  it('新子任务显示 P2，调整只保存子任务自己的优先级', async () => {
+    const data = useDataStore()
+    const task = data.tasks[0]!
+    task.pr = 'P0'
+    task.subs = []
+    const id = data.addSub(task.id, '默认普通优先级')!
+    const wrapper = mount(InlineSubtasks, { props: { taskId: task.id, table: true } })
+    expect(wrapper.get('.sub-priority').text()).toBe('P2')
+    await wrapper.get('.sub-priority').trigger('click')
+    const choice = [...document.querySelectorAll<HTMLButtonElement>('.cell-menu button')].find(node => node.textContent?.trim() === 'P1')!
+    choice.click()
+    await wrapper.vm.$nextTick()
+    expect(data.subById(task.id, id)?.pr).toBe('P1')
+    expect(task.pr).toBe('P0')
+    await data.flushTask(task.id)
+    expect(apiPutTask).toHaveBeenLastCalledWith(task.id, expect.objectContaining({ subs: [expect.objectContaining({ id, pr: 'P1' })] }))
+    wrapper.unmount()
+  })
+
   it('未提交的文字在重挂载时恢复', async () => {
     const id = useDataStore().tasks[0]!.id
     const first = mount(InlineSubtasks, { props: { taskId: id } })

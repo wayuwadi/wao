@@ -106,6 +106,8 @@ export interface Project {
 }
 
 export interface TaskStep {
+  /** 子任务独立优先级；历史未设置的记录为空，新建默认 P2。 */
+  pr?: Priority | null
   /** 同一主任务内的父子任务 id；空值表示根节点。 */
   parentId?: string | null
   /** 负责人真实成员 id。 */

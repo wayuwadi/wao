@@ -24,6 +24,9 @@ describe('data store · 子任务', () => {
     const sub = data.subById(taskId, id!)
     expect(sub?.text).toBe('扫描身份证')
     expect(sub?.done).toBe(false)
+    expect(sub?.pr).toBe('P2')
+    const child = data.addSub(taskId, '下级子任务', id)!
+    expect(data.subById(taskId, child)?.pr).toBe('P2')
     expect(sub?.desc).toBe('')
     expect(sub?.images).toEqual([])
   })

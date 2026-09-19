@@ -1,6 +1,7 @@
 package cn.wayuwa.wao.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import cn.wayuwa.wao.service.SubtaskTree;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -49,4 +50,14 @@ class StepTest {
         assertThat(moved.createdBy()).isEqualTo("wd");
         assertThat(moved.docs()).containsExactly("doc1");
     }
+    @Test
+    void priorityPersistsAcrossRoundTripAndMoveAndRejectsInvalidValues() throws Exception {
+        Step step = json.readValue("{\"text\":\"子任务\",\"done\":false,\"id\":\"s1\",\"pr\":\"P2\"}", Step.class);
+        assertThat(json.readValue(json.writeValueAsString(step), Step.class).pr()).isEqualTo("P2");
+        assertThat(step.with("s1", 5L, null).pr()).isEqualTo("P2");
+        SubtaskTree.validate(List.of(step));
+        Step invalid = json.readValue("{\"text\":\"子任务\",\"done\":false,\"id\":\"s2\",\"pr\":\"P9\"}", Step.class);
+        assertThatThrownBy(() -> SubtaskTree.validate(List.of(invalid))).hasMessageContaining("优先级");
+    }
+
 }

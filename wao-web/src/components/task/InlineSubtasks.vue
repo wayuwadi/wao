@@ -8,7 +8,8 @@ import {
 } from '@/utils/subtaskTree'
 import WorkItemIcon from '@/components/task/WorkItemIcon.vue'
 import CellMenu from '@/components/task/CellMenu.vue'
-import type { SubtaskState, TaskStep } from '@/types'
+import { priorityMeta } from '@/utils/domain'
+import type { Priority, SubtaskState, TaskStep } from '@/types'
 /**
  * 子任务列表：项目表格里渲染成与主任务同列的 `<tbody>` 行；任务 / 子任务详情里渲染成紧凑列表。
  * 两种形态共用同一套数据、编号、拖拽与草稿逻辑，只是外观不同。
@@ -123,14 +124,19 @@ function createdDate(sub: TaskStep) {
   return sub.createdAt?.slice(0, 10).replace(/-/g, '/') ?? ''
 }
 // ---- 状态 / 负责人悬浮菜单：点单元格任意处打开，悬浮在表格之上 ----
-const menu = ref<{ kind: 'state' | 'owner'; subId: string; anchor: HTMLElement } | null>(null)
+const menu = ref<{ kind: 'state' | 'owner' | 'priority'; subId: string; anchor: HTMLElement } | null>(null)
 const menuSub = computed(() => (menu.value ? data.subById(props.taskId, menu.value.subId) : undefined))
-function openMenu(kind: 'state' | 'owner', subId: string, event: Event) {
+function openMenu(kind: 'state' | 'owner' | 'priority', subId: string, event: Event) {
   const anchor = event.currentTarget as HTMLElement
   menu.value = menu.value?.kind === kind && menu.value.subId === subId ? null : { kind, subId, anchor }
 }
 function pickState(state: SubtaskState) {
   if (menu.value) data.setSubState(props.taskId, menu.value.subId, state)
+  menu.value = null
+}
+const priorities: Priority[] = ['P0', 'P1', 'P2', 'P3']
+function pickPriority(pr: Priority) {
+  if (menu.value && menuSub.value?.pr !== pr) data.updateSub(props.taskId, menu.value.subId, { pr })
   menu.value = null
 }
 function pickOwner(owner: string) {
@@ -264,7 +270,9 @@ function add() {
           </div>
         </td>
         <td></td>
-        <td><span class="faint">—</span></td>
+        <td class="cell-pop" title="点击修改优先级" @click.stop="openMenu('priority', item.row.key, $event)">
+          <button class="sub-priority" :style="item.row.sub.pr ? { background: priorityMeta(item.row.sub.pr).bg, color: priorityMeta(item.row.sub.pr).color } : {}" :aria-label="`修改子任务 ${item.row.sub.text} 的优先级`" aria-haspopup="menu" :aria-expanded="menu?.kind === 'priority' && menu.subId === item.row.key">{{ item.row.sub.pr || '—' }}</button>
+        </td>
         <td class="cell-pop" title="点击修改状态" @click.stop="openMenu('state', item.row.key, $event)">
           <button
             class="sub-state"
@@ -311,6 +319,9 @@ function add() {
           <span class="sub-state" :style="{ color: SUBTASK_STATE_COLOR[state], borderColor: SUBTASK_STATE_COLOR[state] }">{{ state }}</span>
           <i v-if="menuSub && subtaskState(menuSub) === state" class="ri-check-line"></i>
         </button>
+      </template>
+      <template v-else-if="menu.kind === 'priority'">
+        <button v-for="pr in priorities" :key="pr" role="menuitemradio" :aria-checked="menuSub?.pr === pr" @click="pickPriority(pr)"><span class="sub-priority" :style="{ background: priorityMeta(pr).bg, color: priorityMeta(pr).color }">{{ pr }}</span><i v-if="menuSub?.pr === pr" class="ri-check-line"></i></button>
       </template>
       <template v-else>
         <button v-for="m in session.members" :key="m.id" role="menuitemradio" :aria-checked="menuSub?.owner === m.id" :class="{ on: menuSub?.owner === m.id }" @click="pickOwner(m.id)">
@@ -386,6 +397,7 @@ function add() {
   </section>
 </template>
 <style scoped>
+.sub-priority { border: 0; border-radius: 4px; padding: 3px 6px; font-size: 11px; cursor: pointer; }
 button {
   border: 0;
   background: transparent;
