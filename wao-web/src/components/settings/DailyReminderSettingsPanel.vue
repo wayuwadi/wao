@@ -10,6 +10,11 @@ import {
   type SaveNotificationReminder,
 } from '@/api/notificationReminders'
 
+import type { NotificationSettings } from '@/api/notificationSettings'
+import { diagnoseReminder } from '@/utils/notificationDiagnosis'
+
+const props = defineProps<{ settings?: NotificationSettings }>()
+
 type ReminderDraft = NotificationReminder & { isNew?: boolean }
 
 const saved = ref<NotificationReminder[]>([])
@@ -19,6 +24,7 @@ const loading = ref(false)
 const busyId = ref('')
 const error = ref('')
 const success = ref('')
+const testFeedback = ref(false)
 
 const hasDirty = computed(
   () =>
@@ -75,6 +81,7 @@ function add() {
     isNew: true,
   })
   success.value = ''
+  testFeedback.value = false
 }
 
 async function save(item: ReminderDraft) {
@@ -82,6 +89,7 @@ async function save(item: ReminderDraft) {
   busyId.value = item.id
   error.value = ''
   success.value = ''
+  testFeedback.value = false
   try {
     const result = item.isNew
       ? await createNotificationReminder(toPayload(item))
@@ -110,6 +118,7 @@ async function remove(item: ReminderDraft) {
   busyId.value = item.id
   error.value = ''
   success.value = ''
+  testFeedback.value = false
   try {
     await deleteNotificationReminder(item.id)
     saved.value = saved.value.filter((entry) => entry.id !== item.id)
@@ -127,15 +136,15 @@ async function test(item: ReminderDraft) {
   busyId.value = item.id
   error.value = ''
   success.value = ''
+  testFeedback.value = false
   try {
     const result = await testNotificationReminder(item.id)
     const savedIndex = saved.value.findIndex((entry) => entry.id === item.id)
     if (savedIndex >= 0) saved.value[savedIndex] = structuredClone(result)
     const draftIndex = drafts.value.findIndex((entry) => entry.id === item.id)
     if (draftIndex >= 0) drafts.value[draftIndex] = structuredClone(result)
-    success.value = result.lastResult.includes('成功')
-      ? `“${result.title}”已真实发送`
-      : `“${result.title}”试发完成：${result.lastResult}`
+    testFeedback.value = true
+    success.value = `“${result.title}”试发返回：${result.lastResult || '结果待确认'}`
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '每日提醒试发失败，请重试'
   } finally {
@@ -154,7 +163,7 @@ onMounted(() => {
     <div class="reminder-head">
       <div>
         <h2>系统 · 每日提醒</h2>
-        <p>按上海时间发送到已配置的飞书群，复用自动化真实调度，并受群提醒总开关和沉默时段控制。</p>
+        <p>按上海时间保存 WAO 站内记录，不发送到飞书群。下方按已保存配置检查；试发会真实执行并保存记录。</p>
       </div>
       <button v-if="canManage" type="button" :disabled="Boolean(busyId)" @click="add">
         <i class="ri-add-line"></i>新增提醒
@@ -162,6 +171,7 @@ onMounted(() => {
       <span v-else>仅管理员可编辑</span>
     </div>
 
+    <p class="visibility-notice" role="note">每日提醒目前不会出现在通知中心：现有展示规则只保留 AI 结果与提及。执行成功仅表示记录已保存。</p>
     <div v-if="loading && !drafts.length" class="reminder-state">
       <i class="ri-loader-4-line spin"></i>正在读取真实提醒…
     </div>
@@ -199,8 +209,20 @@ onMounted(() => {
             :disabled="!canManage || busyId === item.id"
           ></textarea>
           <small
-            >{{ item.lastResult }}<template v-if="rowDirty(item)"> · 有未保存修改</template></small
+            >最近结果：{{ item.lastResult || '尚无结果' }}<template v-if="rowDirty(item)"> · 有未保存修改</template></small
           >
+          <details class="reminder-diagnosis" :aria-label="`${item.title || '新提醒'}的生效检查`">
+            <summary>查看已保存配置检查</summary>
+            <p v-if="item.isNew">尚未保存，不会自动触发。填写完成后点击本条提醒的“保存”。</p>
+            <template v-else>
+              <p v-if="rowDirty(item)">本条有未保存修改，以下仍按原配置判断。</p>
+              <ul>
+                <li v-for="(finding, index) in diagnoseReminder(original(item.id), props.settings)" :key="index">
+                  {{ finding.text }} <a v-if="finding.target" :href="`#${finding.target}`">{{ finding.action }}</a>
+                </li>
+              </ul>
+            </template>
+          </details>
         </div>
         <div class="reminder-controls">
           <label class="enable-switch"
@@ -215,7 +237,7 @@ onMounted(() => {
               type="button"
               class="ghost"
               :disabled="Boolean(busyId) || item.isNew || rowDirty(item)"
-              title="立即真实发送一次"
+              title="立即尝试创建一条站内通知，仍受通知策略限制"
               @click="test(item)"
             >
               试发
@@ -238,11 +260,16 @@ onMounted(() => {
       </article>
     </div>
     <div v-if="error && drafts.length" class="inline-message error" role="alert">{{ error }}</div>
-    <div v-else-if="success" class="inline-message success" role="status">{{ success }}</div>
+    <div v-else-if="success" class="inline-message" :class="testFeedback ? 'result' : 'success'" role="status">{{ success }}</div>
   </section>
 </template>
 
 <style scoped>
+.visibility-notice { margin: 12px 16px; padding: 10px 12px; border-radius: 7px; color: var(--wao-warning-strong); background: var(--wao-warning-bg); }
+.reminder-diagnosis summary { cursor: pointer; color: var(--wao-primary-text); }
+.reminder-diagnosis { padding: 9px 10px; border-radius: 7px; background: var(--wao-bg-sub); font-size: 12px; line-height: 1.6; }
+.reminder-diagnosis ul { margin: 5px 0 0; padding-left: 18px; }
+.reminder-diagnosis a { color: var(--wao-primary-text); }
 .reminder-card {
   border: 1px solid var(--wao-line);
   border-radius: 12px;
@@ -297,7 +324,7 @@ p {
   padding: 13px 16px;
   border-top: 1px solid var(--wao-divider);
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr) 146px;
+  grid-template-columns: 112px minmax(0, 1fr) 160px;
   gap: 12px;
   align-items: start;
 }
@@ -360,6 +387,8 @@ p {
   gap: 5px;
 }
 .actions button {
+  white-space: nowrap;
+  font-size: 12px;
   border: 0;
   border-radius: 6px;
   padding: 6px 8px;
@@ -406,6 +435,7 @@ p {
 .inline-message.error {
   background: var(--wao-danger-bg);
 }
+.inline-message.result { color: var(--wao-text); background: var(--wao-bg-sub); }
 .inline-message.success {
   color: var(--wao-success);
   background: color-mix(in srgb, var(--wao-success) 9%, transparent);
