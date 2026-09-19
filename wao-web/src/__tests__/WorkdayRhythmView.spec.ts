@@ -207,10 +207,10 @@ describe('WorkdayRhythmView', () => {
   it('把本人填写的今日重点持久化而不生成任务数据', async () => {
     const wrapper = await mountView()
     await flushPromises()
-    const inputs = wrapper.findAll('.focus-card input')
+    const inputs = wrapper.findAll('.focus-card textarea')
     await inputs[0]!.setValue('完成上线链路验收')
     const saveButton = wrapper.get('.focus-save')
-    expect(saveButton.text()).toBe('')
+    expect(saveButton.text()).toBe('保存重点')
     expect(saveButton.get('i').classes()).toContain('ri-save-3-line')
     expect(saveButton.attributes('aria-label')).toContain('草稿已保存在本机')
     await saveButton.trigger('click')
@@ -301,7 +301,7 @@ describe('WorkdayRhythmView', () => {
     const wrapper = await mountView()
     await flushPromises()
 
-    const inputs = wrapper.findAll('.focus-row input')
+    const inputs = wrapper.findAll('.focus-row textarea')
     await inputs[0]!.setValue('交付最小 MVP')
     await inputs[1]!.setValue('完成上线验收')
     await inputs[2]!.setValue('整理真实反馈')
@@ -344,7 +344,7 @@ describe('WorkdayRhythmView', () => {
     expect(wrapper.findAll('.focus-row')).toHaveLength(3)
     expect(wrapper.find('[aria-label="添加一个今日重点"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('旧版额外目标')
-    await wrapper.findAll('.focus-row input')[0]!.setValue('修改后的重点一')
+    await wrapper.findAll('.focus-row textarea')[0]!.setValue('修改后的重点一')
     await wrapper.get('.focus-save').trigger('click')
     await flushPromises()
     expect(saveWorkdayRhythmDay).toHaveBeenCalledWith(expect.objectContaining({
@@ -396,7 +396,7 @@ describe('WorkdayRhythmView', () => {
       }),
     )
 
-    const inputs = wrapper.findAll('.focus-row input')
+    const inputs = wrapper.findAll('.focus-row textarea')
     await inputs[0]!.setValue('交付选择器')
     await inputs[1]!.setValue('完成真实验收')
     await inputs[2]!.setValue('整理反馈')
@@ -516,7 +516,7 @@ describe('WorkdayRhythmView', () => {
     const wrapper = await mountView()
     await flushPromises()
 
-    const inputs = wrapper.findAll('.focus-row input')
+    const inputs = wrapper.findAll('.focus-row textarea')
     await inputs[0]!.setValue('重点一')
     await inputs[1]!.setValue('重点二')
     await inputs[2]!.setValue('重点三')
@@ -538,7 +538,7 @@ describe('WorkdayRhythmView', () => {
     expect(wrapper.find('.tomorrow-focus').exists()).toBe(false)
     await wrapper.get('.tomorrow-toggle').trigger('click')
 
-    const input = wrapper.find('.tomorrow-focus input')
+    const input = wrapper.find('.tomorrow-focus textarea')
     await input.setValue('为紧急评审准备验收证据')
     expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${tomorrow}`)).toContain(
       '为紧急评审准备验收证据',
@@ -559,7 +559,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
     await wrapper.get('.tomorrow-toggle').trigger('click')
 
-    await wrapper.find('.tomorrow-focus input').setValue('准备明天的发布清单')
+    await wrapper.find('.tomorrow-focus textarea').setValue('准备明天的发布清单')
     await wrapper.get('.tomorrow-focus footer button').trigger('click')
     await flushPromises()
 
@@ -811,7 +811,7 @@ describe('WorkdayRhythmView', () => {
     await wrapper.findAll('.remove-energy-item')[2]!.trigger('click')
     await wrapper.get('.editor .primary').trigger('click')
     await flushPromises()
-    await wrapper.findAll('.focus-card input')[0]!.setValue('保存其它真实目标')
+    await wrapper.findAll('.focus-card textarea')[0]!.setValue('保存其它真实目标')
     await wrapper.get('.focus-save').trigger('click')
     await flushPromises()
 
@@ -865,7 +865,7 @@ describe('WorkdayRhythmView', () => {
     localStorage.setItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${clock.date}`, JSON.stringify(draft))
     const wrapper = await mountView()
     await flushPromises()
-    expect(wrapper.get('.focus-row input').element).toHaveProperty('value', '我的草稿')
+    expect(wrapper.get('.focus-row textarea').element).toHaveProperty('value', '我的草稿')
     expect(localStorage.getItem(`wao-workday-rhythm-day-draft-${clock.date}`)).toContain('旧账号内容')
     expect(wrapper.text()).not.toContain('旧账号内容')
     wrapper.unmount()
@@ -876,14 +876,14 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(saveWorkdayRhythmDay).mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve }))
     const wrapper = await mountView()
     await flushPromises()
-    await wrapper.get('.focus-row input').setValue('账号一未完成保存')
+    await wrapper.get('.focus-row textarea').setValue('账号一未完成保存')
     await wrapper.get('.focus-save').trigger('click')
     useSessionStore().account = { member: { id: 'member-two' } } as never
     await flushPromises()
-    await wrapper.get('.focus-row input').setValue('账号二本机草稿')
+    await wrapper.get('.focus-row textarea').setValue('账号二本机草稿')
     finish()
     await flushPromises()
-    expect(wrapper.get('.focus-row input').element).toHaveProperty('value', '账号二本机草稿')
+    expect(wrapper.get('.focus-row textarea').element).toHaveProperty('value', '账号二本机草稿')
     expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${clock.date}`)).toContain('账号一未完成保存')
     expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:member-two:${clock.date}`)).toContain('账号二本机草稿')
     expect(saveRhythmFocus).not.toHaveBeenCalled()
@@ -909,7 +909,7 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(saveWorkdayRhythmDay).mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve }))
     const wrapper = await mountView()
     await flushPromises()
-    await wrapper.get('.focus-row input').setValue('本次提交')
+    await wrapper.get('.focus-row textarea').setValue('本次提交')
     await wrapper.get('.focus-save').trigger('click')
     const key = `wao-workday-rhythm-day-draft-v2:rhythm-test:${clock.date}`
     const newer = defaultRhythmDay(clock.date, clock.weekday)
@@ -925,9 +925,9 @@ describe('WorkdayRhythmView', () => {
     const wrapper = await mountView()
     await flushPromises()
     const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
-    await wrapper.get('.focus-row input').setValue('当前页面保留的输入')
+    await wrapper.get('.focus-row textarea').setValue('当前页面保留的输入')
     expect(wrapper.text()).toContain('本机草稿保存失败')
-    expect(wrapper.get('.focus-row input').element).toHaveProperty('value', '当前页面保留的输入')
+    expect(wrapper.get('.focus-row textarea').element).toHaveProperty('value', '当前页面保留的输入')
     fail.mockRestore()
     await wrapper.get('.save-banner.error button').trigger('click')
     await flushPromises()
@@ -945,14 +945,14 @@ describe('WorkdayRhythmView', () => {
     const wrapper = await mountView()
     try {
       await flushPromises()
-      await wrapper.get('.focus-row input').setValue('昨日待返回的提交')
+      await wrapper.get('.focus-row textarea').setValue('昨日待返回的提交')
       await wrapper.get('.focus-save').trigger('click')
       await vi.advanceTimersByTimeAsync(30_000)
       await flushPromises()
-      await wrapper.get('.focus-row input').setValue('午夜后的新输入')
+      await wrapper.get('.focus-row textarea').setValue('午夜后的新输入')
       finish()
       await flushPromises()
-      expect(wrapper.get('.focus-row input').element).toHaveProperty('value', '午夜后的新输入')
+      expect(wrapper.get('.focus-row textarea').element).toHaveProperty('value', '午夜后的新输入')
       expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${tomorrow}`)).toContain('午夜后的新输入')
       expect(saveRhythmFocus).not.toHaveBeenCalled()
     } finally { wrapper.unmount(); vi.useRealTimers() }

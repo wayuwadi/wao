@@ -1001,15 +1001,6 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="focus-header-actions">
                   <button
-                    class="growth-coach-trigger"
-                    type="button"
-                    aria-label="打开成长教练"
-                    title="结合已保存的今日重点获得成长启发"
-                    @click="openGrowthCoach"
-                  >
-                    <i class="ri-compass-discover-line"></i><span>成长教练</span>
-                  </button>
-                  <button
                     class="focus-save"
                     :class="dayState"
                     type="button"
@@ -1019,20 +1010,32 @@ onBeforeUnmount(() => {
                     @click="saveFocus"
                   >
                     <i :class="focusSaveIcon"></i>
+                    <span>{{ dayState === 'saving' ? '保存中…' : dayState === 'error' ? '重试保存' : dayState === 'saved' ? '已保存' : '保存重点' }}</span>
+                  </button>
+                  <button
+                    class="growth-coach-trigger"
+                    type="button"
+                    aria-label="打开成长教练"
+                    title="结合已保存的今日重点获得成长启发"
+                    @click="openGrowthCoach"
+                  >
+                    <i class="ri-compass-discover-line"></i><span>成长教练</span>
                   </button>
                   <button
                     class="tomorrow-toggle"
                     type="button"
                     :aria-label="tomorrowOpen ? '收起明日计划' : '展开明日计划'"
                     :title="tomorrowOpen ? '收起明日计划' : '展开明日计划'"
+                    :aria-expanded="tomorrowOpen"
                     @click="tomorrowOpen = !tomorrowOpen"
                   >
                     <i
                       :class="tomorrowOpen ? 'ri-calendar-close-line' : 'ri-calendar-todo-line'"
-                    ></i>
+                    ></i><span>{{ tomorrowOpen ? '收起明日' : '明日计划' }}</span>
                   </button>
                 </div>
               </header>
+              <p class="focus-help">填写三个重点，保存后按顺序推进；先写一部分也可以保存。</p>
               <div
                 v-for="(_, index) in todayFocus"
                 :key="index"
@@ -1041,8 +1044,10 @@ onBeforeUnmount(() => {
               >
                 <label
                   ><span>{{ index + 1 }}</span
-                  ><input
+                  ><textarea
                     v-model="day.focus[index]"
+                    :aria-label="`今日重点第 ${index + 1} 项`"
+                    rows="3"
                     :disabled="dayState === 'saving'"
                     maxlength="100"
                     :placeholder="index === 0 ? '今天最重要、最难的一件事' : '另一个可观察的结果'"
@@ -1142,8 +1147,10 @@ onBeforeUnmount(() => {
                 <div v-for="(_, index) in tomorrowFocus" :key="index" class="tomorrow-row">
                   <label>
                     <span>{{ index + 1 }}</span>
-                    <input
+                    <textarea
                       v-model="tomorrowDay.focus[index]"
+                      :aria-label="`明日重点第 ${index + 1} 项`"
+                      rows="3"
                       :disabled="tomorrowState === 'saving'"
                       maxlength="100"
                       :placeholder="
@@ -2029,6 +2036,8 @@ textarea {
 }
 .focus-card header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   align-items: center;
 }
 .focus-card h2,
@@ -2037,22 +2046,26 @@ textarea {
   font-size: 16px;
 }
 .focus-header-actions {
-  margin-left: auto;
+  width: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 .focus-card header .focus-save,
 .focus-card header .tomorrow-toggle,
 .focus-card header .growth-coach-trigger {
-  width: 32px;
-  height: 32px;
+  min-height: 44px;
+  padding: 0 9px;
+  font-size: 13px;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   background: var(--wao-bg-page);
   color: var(--wao-text-2);
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 .focus-card header .growth-coach-trigger {
@@ -2063,7 +2076,7 @@ textarea {
   color: #6548c4;
   display: inline-flex;
   gap: 5px;
-  font-size: 10px;
+  font-size: 13px;
   white-space: nowrap;
 }
 .focus-card header .focus-save.dirty {
@@ -2092,11 +2105,10 @@ textarea {
   gap: 9px;
 }
 .focus-row {
-  flex: 1 0 63px;
+  flex: 0 0 auto;
   min-height: 63px;
-  max-height: 76px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   margin-top: 8px;
@@ -2114,8 +2126,8 @@ textarea {
   background: transparent;
 }
 .focus-row > small {
-  color: var(--wao-text-weak);
-  font-size: 9px;
+  color: var(--wao-text-2);
+  font-size: 12px;
 }
 .focus-row.active {
   border-color: color-mix(in srgb, var(--wao-primary) 55%, var(--wao-line));
@@ -2124,17 +2136,18 @@ textarea {
 .focus-row.done {
   opacity: 0.62;
 }
-.focus-row.done input {
+.focus-row.done textarea {
   text-decoration: line-through;
 }
 .focus-complete {
+  min-height: 44px;
   border: 0;
   border-radius: 9px;
   background: var(--wao-primary);
   color: #fff;
   padding: 9px 10px;
-  font-size: 9.5px;
-  white-space: nowrap;
+  font-size: 13px;
+  white-space: normal;
   cursor: pointer;
 }
 .focus-complete:disabled {
@@ -2142,6 +2155,8 @@ textarea {
   cursor: wait;
 }
 .focus-undo {
+  min-height: 44px;
+  font-size: 13px;
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -2195,12 +2210,14 @@ textarea {
 }
 .focus-notice {
   display: flex;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
   border-radius: 9px;
-  font-size: 9.5px;
+  font-size: 12px;
 }
 .focus-notice.sending {
   background: var(--wao-bg-sub);
@@ -2215,11 +2232,23 @@ textarea {
   color: var(--wao-danger-strong);
 }
 .focus-notice button {
+  min-height: 44px;
+  font-size: 13px;
   border: 0;
   background: none;
   color: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+.focus-help {
+  margin: 12px 0 0;
+  color: var(--wao-text-2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.focus-card button:focus-visible {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: 3px;
 }
 .focus-card label:focus-within {
   border-color: #71ad98;
@@ -2233,6 +2262,7 @@ textarea {
   box-shadow: 0 0 0 3px rgba(62, 139, 112, 0.08);
 }
 .focus-card label span {
+  flex: 0 0 33px;
   width: 33px;
   height: 33px;
   border-radius: 10px;
@@ -2243,17 +2273,26 @@ textarea {
   font-size: 10px;
   font-weight: 700;
 }
-.focus-card input {
+.focus-card textarea {
+  field-sizing: content;
+  width: 100%;
+  resize: vertical;
+  line-height: 1.5;
+  min-height: 72px;
+  box-sizing: border-box;
   min-width: 0;
   flex: 1;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--wao-text);
-  font-size: 12.5px;
+  font-size: 16px;
 }
 .tomorrow-focus footer {
-  min-height: 35px;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  min-height: 44px;
   margin-top: 8px;
   display: flex;
   align-items: center;
@@ -2271,14 +2310,14 @@ textarea {
   flex: 1;
 }
 .tomorrow-focus footer button {
-  height: 31px;
+  min-height: 44px;
   border: 0;
   border-radius: 8px;
   background: #267c65;
   color: #fff;
   padding: 0 12px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 13px;
 }
 .tomorrow-focus footer button:disabled {
   opacity: 0.55;
