@@ -814,13 +814,13 @@ describe('HomeView AI 控制台', () => {
     const preferences = usePreferenceStore(pinia)
 
     expect(wrapper.findAll('.goal-control-field > span')).toHaveLength(0)
-    expect(wrapper.find('.goal-workflow-select').attributes('aria-label')).toBe('放进哪条工作流')
+    expect(wrapper.find('.goal-workflow-select').attributes('aria-label')).toBe('任务归属项目')
     expect(wrapper.find('.goal-runner-select').text()).toContain('自动分配电脑')
 
     preferences.controlStyle = 'detailed'
     await flushPromises()
     expect(wrapper.findAll('.goal-control-field > span')).toHaveLength(2)
-    expect(wrapper.text()).toContain('放进哪条工作流')
+    expect(wrapper.text()).toContain('任务归属项目')
     expect(wrapper.text()).toContain('执行电脑')
     wrapper.unmount()
   })
@@ -837,14 +837,23 @@ describe('HomeView AI 控制台', () => {
       configured: true, projectDeleted: false, preferredRunnerName: '娃哥电脑',
       activeRuns: 1, succeededRuns: 4, failedRuns: 1, lastRunAt: '2026-07-25T20:18:00',
     }])
+    const { fetchAiRunOptions } = await import('@/api/ai')
+    vi.mocked(fetchAiRunOptions).mockRejectedValueOnce(new Error('配置连接失败'))
     const { wrapper } = mountHome()
     await flushPromises()
 
-    const planMode = wrapper.find('.goal-plan-mode')
-    expect(planMode.attributes('aria-checked')).toBe('true')
+    const mode = wrapper.get('.goal-mode-select')
+    expect((mode.element as HTMLSelectElement).value).toBe('plan')
+    expect(wrapper.get('.goal-mode-description').text()).toContain('不会停在计划阶段等待你确认')
     const editor = wrapper.findComponent(MarkdownEditor)
     editor.vm.$emit('update:modelValue', '先梳理步骤再完成首页体验优化')
     await flushPromises()
+    expect(wrapper.get('.goal-options-status[role="alert"]').text()).toContain('你的目标仍保留')
+    expect(wrapper.get('.goal-submit').attributes('disabled')).toBeDefined()
+    await wrapper.get('.goal-options-status button').trigger('click')
+    await flushPromises()
+    expect(editor.props('modelValue')).toBe('先梳理步骤再完成首页体验优化')
+    expect(wrapper.find('.goal-options-status').exists()).toBe(false)
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
     expect(launchAutonomousGoal).toHaveBeenLastCalledWith(
@@ -852,19 +861,18 @@ describe('HomeView AI 控制台', () => {
     )
 
     editor.vm.$emit('update:modelValue', '直接完成第二个目标')
-    await planMode.trigger('click')
+    await mode.setValue('direct')
     await flushPromises()
-    expect(planMode.attributes('aria-checked')).toBe('false')
+    expect(wrapper.get('.goal-mode-description').text()).toContain('发送后立即开始处理目标')
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
     expect(launchAutonomousGoal).toHaveBeenLastCalledWith('p1', '直接完成第二个目标', 'rn1', false, false, 'high')
 
     editor.vm.$emit('update:modelValue', '持续推进第三个目标直到验收')
-    const goalMode = wrapper.findAll('.goal-plan-mode')[1]!
-    await goalMode.trigger('click')
+    await mode.setValue('goal')
     await flushPromises()
-    expect(goalMode.attributes('aria-checked')).toBe('true')
-    expect(planMode.attributes('aria-checked')).toBe('false')
+    expect((mode.element as HTMLSelectElement).value).toBe('goal')
+    expect(wrapper.get('.goal-mode-description').text()).toContain('持续消耗模型额度')
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
     expect(launchAutonomousGoal).toHaveBeenLastCalledWith(
