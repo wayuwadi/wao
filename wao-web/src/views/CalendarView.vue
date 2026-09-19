@@ -1650,7 +1650,7 @@ function onDropDay(dayIso: string) {
   font-weight: 600;
   border-left: 1px solid var(--wao-divider);
 }
-.week-date.today { color: var(--wao-primary); }
+.week-date.today { color: var(--wao-primary-text); }
 .time-axis {
   position: relative;
   height: 1440px;
@@ -1788,7 +1788,7 @@ button.holiday-status { cursor: pointer; }
 .calendar-menu { position: relative; }
 .calendar-menu summary { display: inline-flex; height: 30px; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 11.5px; cursor: pointer; list-style: none; }
 .calendar-menu summary::-webkit-details-marker { display: none; }
-.calendar-menu[open] summary { border-color: var(--wao-primary); color: var(--wao-primary); background: var(--wao-primary-soft); }
+.calendar-menu[open] summary { border-color: var(--wao-primary); color: var(--wao-primary-text); background: var(--wao-primary-soft); }
 .calendar-menu-popover { position: absolute; z-index: 30; top: 36px; right: 0; display: grid; width: min(310px, calc(100vw - 32px)); padding: 6px; border: 1px solid var(--wao-line); border-radius: 11px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-modal); }
 .calendar-menu-popover button { display: grid; grid-template-columns: 20px minmax(0,1fr) auto; align-items: center; gap: 8px; width: 100%; padding: 9px; border: 0; border-radius: 8px; background: transparent; color: var(--wao-text-2); text-align: left; cursor: pointer; }
 .calendar-menu-popover button:hover { background: var(--wao-bg-hover); }
@@ -1798,7 +1798,7 @@ button.holiday-status { cursor: pointer; }
 .calendar-menu-popover button b { font-size: 12px; }
 .calendar-menu-popover button small { margin-top: 2px; color: var(--wao-text-weak); font-size: 10.5px; }
 .calendar-menu-popover button em { color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; }
-.calendar-menu-popover button.on em { color: var(--wao-primary); }
+.calendar-menu-popover button.on em { color: var(--wao-primary-text); }
 .member-calendar {
   height: 30px;
   display: inline-flex;
@@ -1902,7 +1902,7 @@ button.holiday-status { cursor: pointer; }
   overflow: hidden;
 }
 .day.drop-target {
-  outline: 1px dashed #c9cdda;
+  outline: 1px dashed var(--wao-line-control);
   outline-offset: -3px;
 }
 .day.drop-over {
@@ -1934,15 +1934,15 @@ button.holiday-status { cursor: pointer; }
   font-weight: 700;
 }
 .day-mark.rest { color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
-.day-mark.work { color: #656b78; background: #eceef2; }
+.day-mark.work { color: var(--wao-text-3); background: var(--wao-bg-sub-2); }
 .work-week-mark {
   width: fit-content;
   max-width: 100%;
   margin-top: 3px;
   padding: 1px 5px;
   border-radius: 999px;
-  background: #edf8f1;
-  color: #25734b;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
   font-size: 9.5px;
   line-height: 1.5;
   white-space: nowrap;
@@ -1957,8 +1957,8 @@ button.holiday-status { cursor: pointer; }
   margin: 2px auto 0;
   padding: 0 4px;
   border-radius: 999px;
-  background: #edf8f1;
-  color: #25734b;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
   font-size: 9px;
   line-height: 1.4;
   overflow: hidden;
@@ -1986,7 +1986,7 @@ button.holiday-status { cursor: pointer; }
   overflow: hidden;
 }
 .event:hover {
-  background: #edeff5;
+  background: var(--wao-bg-hover);
 }
 .event[draggable='true'] {
   cursor: grab;
@@ -2125,7 +2125,7 @@ button.holiday-status { cursor: pointer; }
   background: var(--wao-bg-card);
 }
 .bl-item:hover {
-  border-color: #c9cdda;
+  border-color: var(--wao-line-control);
   background: var(--wao-bg-sub);
 }
 .bl-item.dragging {
@@ -2217,13 +2217,13 @@ button.holiday-status { cursor: pointer; }
   color: var(--wao-text-weak);
   font-size: 13px;
 }
-.work-schedule-state.error { flex-wrap: wrap; color: #ad4934; }
+.work-schedule-state.error { flex-wrap: wrap; color: var(--wao-danger-strong); }
 .work-schedule-state.error button {
-  border: 1px solid #e6b7ac;
+  border: 1px solid var(--wao-danger-line);
   border-radius: 7px;
   padding: 5px 9px;
   background: var(--wao-danger-bg);
-  color: #ad4934;
+  color: var(--wao-danger-strong);
   cursor: pointer;
 }
 .work-schedule-state.compact { justify-content: flex-start; min-height: 0; margin-top: 12px; }
@@ -2301,15 +2301,15 @@ button.holiday-status { cursor: pointer; }
   gap: 7px;
   margin: 0 14px 12px;
   padding: 9px 11px;
-  border: 1px solid #ead7ad;
+  border: 1px solid var(--wao-warning-line);
   border-radius: 8px;
   background: var(--wao-warning-bg);
-  color: #7b642f;
+  color: var(--wao-warning-strong);
   font-size: 11.5px;
   line-height: 1.5;
 }
 .holiday-source-warning span { flex: 1; }
-.holiday-source-warning a { flex-shrink: 0; color: #8a6717; }
+.holiday-source-warning a { flex-shrink: 0; color: var(--wao-warning-strong); }
 .holiday-modal {
   position: fixed;
   top: 50%;
@@ -2352,7 +2352,7 @@ button.holiday-status { cursor: pointer; }
 .holiday-facts div { display: grid; grid-template-columns: 76px 1fr; gap: 8px; padding: 9px 11px; background: var(--wao-bg-card); }
 .holiday-facts dt { color: var(--wao-text-weak); font-size: 12px; }
 .holiday-facts dd { margin: 0; color: var(--wao-text-2); font-size: 12px; }
-.holiday-facts a { color: var(--wao-primary); }
+.holiday-facts a { color: var(--wao-primary-text); }
 .holiday-reminder-form { margin-top: 14px; }
 .holiday-reminder-form .work-schedule-field { margin-top: 12px; }
 .holiday-reminder-unavailable {
@@ -2465,7 +2465,7 @@ button.holiday-status { cursor: pointer; }
   border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card);
   color: var(--wao-text-3); font-size: 11.5px; cursor: pointer;
 }
-.completed-toggle.on { color: var(--wao-primary); border-color: color-mix(in srgb, var(--wao-primary) 45%, var(--wao-line-control)); }
+.completed-toggle.on { color: var(--wao-primary-text); border-color: color-mix(in srgb, var(--wao-primary) 45%, var(--wao-line-control)); }
 .calendar-search { position: relative; width: min(240px, 100%); height: 30px; }
 .calendar-search > i { position: absolute; z-index: 1; left: 9px; top: 7px; color: var(--wao-text-weak); }
 .calendar-search > input { width: 100%; height: 30px; padding: 0 9px 0 28px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-1); }
@@ -2479,7 +2479,7 @@ button.holiday-status { cursor: pointer; }
 .create-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px 20px 20px; }
 .create-choice-grid button { display: grid; justify-items: start; gap: 7px; padding: 16px; border: 1px solid var(--wao-line); border-radius: 11px; background: var(--wao-bg-card); color: var(--wao-text-2); text-align: left; cursor: pointer; }
 .create-choice-grid button:hover { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
-.create-choice-grid i { font-size: 24px; color: var(--wao-primary); }.create-choice-grid b { font-size: 14px; }.create-choice-grid span { color: var(--wao-text-weak); font-size: 11.5px; line-height: 1.55; }
+.create-choice-grid i { font-size: 24px; color: var(--wao-primary-text); }.create-choice-grid b { font-size: 14px; }.create-choice-grid span { color: var(--wao-text-weak); font-size: 11.5px; line-height: 1.55; }
 .search-preview-modal .holiday-facts { margin: 4px 20px 20px; }
 .calendar-type-switch { display: inline-flex; width: fit-content; padding: 2px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); }
 .calendar-type-switch button { min-width: 90px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-3); cursor: pointer; }
@@ -2489,7 +2489,7 @@ button.holiday-status { cursor: pointer; }
 .lunar-leap-toggle { display: inline-flex; height: 36px; align-items: center; gap: 5px; color: var(--wao-text-2); font-size: 12px; }
 .date-conversion { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 7px 10px; border-radius: 8px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: 11.5px; }
 .date-conversion.error { background: var(--wao-danger-bg); color: var(--wao-danger); }
-.field-error { color: var(--wao-danger) !important; }.field-error button { padding: 0; border: 0; background: transparent; color: var(--wao-primary); cursor: pointer; }
+.field-error { color: var(--wao-danger) !important; }.field-error button { padding: 0; border: 0; background: transparent; color: var(--wao-primary-text); cursor: pointer; }
 @media (max-width: 640px) {
   .cal { padding-inline: 12px; }
   .holiday-source-warning { flex-wrap: wrap; }

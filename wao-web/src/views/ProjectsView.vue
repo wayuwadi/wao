@@ -229,7 +229,7 @@ function openProject(id: string) {
   gap: 8px;
   text-align: center;
 }
-.load-state > i { color: var(--wao-primary); font-size: 24px; }
+.load-state > i { color: var(--wao-primary-text); font-size: 24px; }
 .load-state b { color: var(--wao-text); }
 .load-state.error > i { color: #bc4141; }
 .load-state button {
@@ -340,7 +340,7 @@ function openProject(id: string) {
 }
 .drop-item i {
   font-size: 14px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .drop-item:hover {
   background: var(--wao-bg-hover-2);

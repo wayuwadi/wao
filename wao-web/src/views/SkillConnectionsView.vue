@@ -86,7 +86,7 @@ import { RouterLink } from 'vue-router'
 .eyebrow,
 .section-kicker {
   display: block;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 1.6px;
@@ -185,7 +185,7 @@ h1 {
   border-radius: 16px;
 }
 .requirements article > i {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 22px;
 }
 .requirements h3 {

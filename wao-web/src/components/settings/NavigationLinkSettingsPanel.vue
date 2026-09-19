@@ -1037,7 +1037,7 @@ onUnmounted(() => {
   justify-content: center;
 }
 .row-actions .visibility.on {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   background: var(--wao-primary-tint);
 }
 .quick-link-list {

@@ -31,5 +31,5 @@ onMounted(async () => {
 
 <style scoped>
 .callback { min-height: 100vh; display: grid; place-content: center; gap: 12px; text-align: center; color: #5a5e6b; }
-a { color: var(--wao-primary); }
+a { color: var(--wao-primary-text); }
 </style>

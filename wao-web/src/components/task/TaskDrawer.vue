@@ -1625,7 +1625,7 @@ async function uploadAttachment(event: Event) {
 /* 删除任务 */
 .danger-zone {
   margin-top: 14px;
-  border: 1px solid #f0d9d9;
+  border: 1px solid var(--wao-danger-line);
   background: var(--wao-danger-bg);
   border-radius: 10px;
   padding: 10px 12px;
@@ -1711,7 +1711,7 @@ async function uploadAttachment(event: Event) {
   padding: 4px 6px;
   border-radius: 6px;
   font-size: 13px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -1746,7 +1746,7 @@ async function uploadAttachment(event: Event) {
   background: none;
   padding: 0;
   font: inherit;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   cursor: pointer;
 }
 .title-input.done {
@@ -1846,7 +1846,7 @@ async function uploadAttachment(event: Event) {
 }
 .icon-btn.faved,
 .icon-btn.faved:hover {
-  color: #b9821f;
+  color: var(--wao-warning-strong);
 }
 
 .dbody {
@@ -1916,7 +1916,7 @@ async function uploadAttachment(event: Event) {
 .ai-run-btn {
   height: 30px;
   padding: 0 11px;
-  border: 1px solid #c9d1f5;
+  border: 1px solid var(--wao-primary-line);
   border-radius: 8px;
   background: linear-gradient(135deg, var(--wao-primary-soft), var(--wao-bg-card));
   color: var(--wao-primary-text);
@@ -1933,7 +1933,7 @@ async function uploadAttachment(event: Event) {
 }
 .ai-run-btn.running {
   color: var(--wao-warning-strong);
-  border-color: #efd69a;
+  border-color: var(--wao-warning-line);
   background: var(--wao-warning-bg);
 }
 .ai-run-btn:disabled {
@@ -1942,10 +1942,10 @@ async function uploadAttachment(event: Event) {
 .pause-ai-btn {
   height: 30px;
   padding: 0 10px;
-  border: 1px solid #efc9c9;
+  border: 1px solid var(--wao-danger-line);
   border-radius: 8px;
   background: var(--wao-danger-bg);
-  color: #b64141;
+  color: var(--wao-danger-strong);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -2089,7 +2089,7 @@ async function uploadAttachment(event: Event) {
 .cbox {
   width: 16px;
   height: 16px;
-  border: 1.5px solid #c9cdda;
+  border: 1.5px solid var(--wao-line-control);
   background: var(--wao-bg-card);
   display: inline-flex;
   align-items: center;
@@ -2190,11 +2190,11 @@ async function uploadAttachment(event: Event) {
 }
 .attach-open:disabled { cursor: default; }
 .attach:hover {
-  border-color: #d9dce5;
+  border-color: var(--wao-line);
   background: var(--wao-bg-sub);
 }
 .attach.link:hover {
-  border-color: #c7d0f1;
+  border-color: var(--wao-primary-line);
   background: var(--wao-primary-tint);
 }
 .attach.legacy { cursor: default; opacity: .72; }
@@ -2251,7 +2251,7 @@ async function uploadAttachment(event: Event) {
   padding: 4px 0;
 }
 .text-btn:hover {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .text-btn i {
   font-size: 13px;
@@ -2262,7 +2262,7 @@ async function uploadAttachment(event: Event) {
 
 .comments {
   margin-top: 18px;
-  border-top: 1px solid #f0f0f3;
+  border-top: 1px solid var(--wao-divider);
   padding-top: 14px;
 }
 .comment-list {
@@ -2534,7 +2534,7 @@ async function uploadAttachment(event: Event) {
 .add-part {
   width: 20px;
   height: 20px;
-  border: 1px dashed #c9cdda;
+  border: 1px dashed var(--wao-line-control);
   background: none;
   border-radius: 50%;
   cursor: pointer;
@@ -2546,7 +2546,7 @@ async function uploadAttachment(event: Event) {
 }
 .add-part:hover {
   border-color: var(--wao-primary);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .add-part i {
   font-size: 11px;
@@ -2566,7 +2566,7 @@ async function uploadAttachment(event: Event) {
   max-width: 190px;
 }
 .proj-btn:hover {
-  background: #eef1fc;
+  background: var(--wao-primary-soft);
 }
 .pmenu {
   position: absolute;
@@ -2630,7 +2630,7 @@ async function uploadAttachment(event: Event) {
 }
 .chk {
   font-size: 14px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 
 .prop-section {
@@ -2650,7 +2650,7 @@ async function uploadAttachment(event: Event) {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border: 1px solid #cbd4f4;
+  border: 1px solid var(--wao-primary-line);
   border-radius: 9px;
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
@@ -2659,8 +2659,8 @@ async function uploadAttachment(event: Event) {
   cursor: pointer;
 }
 .sub-detail-action:hover {
-  border-color: #9ba9eb;
-  background: #e7ebff;
+  border-color: var(--wao-primary);
+  background: var(--wao-primary-soft);
 }
 .sub-detail-action:focus-visible {
   outline: 3px solid rgba(67, 88, 214, .16);
@@ -2672,7 +2672,7 @@ async function uploadAttachment(event: Event) {
   color: var(--wao-danger-strong);
 }
 .sub-detail-action.danger:hover {
-  border-color: #dc9090;
+  border-color: var(--wao-danger-line);
   background: var(--wao-danger-bg);
 }
 .custom-row {
@@ -2720,7 +2720,7 @@ async function uploadAttachment(event: Event) {
 .custom-name { border: 0; background: transparent; padding: 3px; min-width: 0; }
 .custom-name:focus, .custom-val:focus { outline: 1px solid var(--wao-primary); border-radius: 4px; background: var(--wao-bg-card); }
 .custom-delete { border: 0; background: transparent; color: var(--wao-text-faint); cursor: pointer; padding: 3px; }
-.custom-delete:hover { color: #cf3b3b; }
+.custom-delete:hover { color: var(--wao-danger); }
 
 .act-wrap {
   position: relative;
@@ -2744,7 +2744,7 @@ async function uploadAttachment(event: Event) {
   height: 14px;
   border-radius: 50%;
   background: var(--wao-bg-sub-2);
-  border: 2px solid #d9dce5;
+  border: 2px solid var(--wao-line);
   flex-shrink: 0;
   z-index: 1;
   margin-top: 2px;

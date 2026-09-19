@@ -1161,7 +1161,7 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 .eyebrow {
-  color: var(--wao-primary) !important;
+  color: var(--wao-primary-text) !important;
   font-weight: 700;
   letter-spacing: 0.12em;
 }
@@ -1294,8 +1294,8 @@ onBeforeUnmount(() => {
 .source-badge {
   padding: 1px 5px;
   border-radius: 999px;
-  background: #eaf2ff;
-  color: #4776ba;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
 }
 .message-text {
   padding: 10px 12px;
@@ -1457,7 +1457,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 9px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 9px;
 }
 .unread-divider:before,

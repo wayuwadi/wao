@@ -204,7 +204,7 @@ onBeforeUnmount(() => {
 .spin { animation: ql-spin .9s linear infinite; }
 @keyframes ql-spin { to { transform: rotate(360deg); } }
 .ql-empty-link {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   cursor: pointer;
   text-decoration: underline;
 }

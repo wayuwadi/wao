@@ -57,15 +57,40 @@ interface ToolbarState {
   contextItems: string[];
   menus: string[];
 }
+// 远程工作区连接之前沿用上次主题，首次安装则跟随系统，避免亮色闪屏。
+function initialTheme(): "light" | "dark" {
+  try {
+    const saved = localStorage.getItem("wao-client-theme-v1");
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {
+    /* 本机存储不可用时仍可启动。 */
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
 const toolbar = ref<ToolbarState>({
   ready: false,
   chat: "0",
   notifications: "0",
-  theme: "light",
+  theme: initialTheme(),
   context: "",
   contextItems: [],
   menus: [],
 });
+watch(
+  () => toolbar.value.theme,
+  (value) => {
+    document.documentElement.dataset.theme = value;
+    document.documentElement.style.colorScheme = value;
+    try {
+      localStorage.setItem("wao-client-theme-v1", value);
+    } catch {
+      /* 主题仍在当前窗口生效。 */
+    }
+  },
+  { immediate: true },
+);
 const toolbarActions = [
   { id: "new-task", label: "新建任务", icon: "M9 12l2 2 4-4", circle: true },
   { id: "new-note", label: "新建小记", icon: "M5 4h14v12l-4 4H5zM14 20v-5h5" },
@@ -243,6 +268,11 @@ onMounted(async () => {
         toolbar.value = {
           ...toolbar.value,
           ...event.payload,
+          // 导航开始的占位消息带有默认 light，不应覆盖已同步的工作区主题。
+          theme:
+            event.payload.ready && ["light", "dark"].includes(event.payload.theme)
+              ? event.payload.theme
+              : toolbar.value.theme,
           contextItems: event.payload.contextItems ?? [],
           menus: event.payload.menus ?? [],
         };

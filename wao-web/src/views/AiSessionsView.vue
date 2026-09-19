@@ -659,7 +659,7 @@ h1 {
   border: 1px solid var(--wao-line-control);
   background: var(--wao-bg-card);
   padding: 8px 10px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   border-radius: 8px;
   font-size: 12px;
 }
@@ -721,7 +721,7 @@ h1 {
 }
 .list-tabs .chosen {
   background: var(--wao-primary-soft);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .list-tabs .refresh {
   margin-left: auto;
@@ -793,7 +793,7 @@ h1 {
   white-space: nowrap;
 }
 .row-meta .running {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .row-meta .failed {
   color: var(--wao-danger-strong);
@@ -866,7 +866,7 @@ h1 {
 }
 .session-identity a,
 .session-identity button {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   background: transparent;
   border: 0;
   font-size: 10px;
@@ -908,7 +908,7 @@ h1 {
 }
 .new-heading > i {
   font-size: 30px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .new-heading h2 {
   font-size: 24px;
@@ -1014,7 +1014,7 @@ h1 {
     border: 0;
     background: transparent;
     padding: 10px 14px;
-    color: var(--wao-primary);
+    color: var(--wao-primary-text);
     font-size: 12px;
   }
   .conversation-header {

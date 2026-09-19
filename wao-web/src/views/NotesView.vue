@@ -237,7 +237,7 @@ h1 i { color: #7a5cc6; }
 .list-toolbar { flex-wrap: wrap; margin-bottom: 16px; gap: 8px; }
 button, a, select { color: var(--wao-text-3); font-size: 12px; }
 button { cursor: pointer; border: 0; border-radius: 7px; background: transparent; padding: 7px 9px; }
-button:hover, button[aria-pressed="true"] { background: var(--wao-bg-hover); color: var(--wao-primary); }
+button:hover, button[aria-pressed="true"] { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
 button:disabled { cursor: default; opacity: .5; }
 .search { margin-left: auto; flex: 1; min-width: 140px; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 7px 10px; gap: 6px; }
 input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: inherit; font-size: 12px; }
@@ -265,7 +265,7 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .note-body :deep(img) { max-width: 100%; max-height: 300px; border-radius: 8px; }
 .note-body :deep(pre), .note-body :deep(table) { max-width: 100%; overflow: auto; }
 .card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 14px; }
-.card-tags button { color: var(--wao-primary); overflow-wrap: anywhere; max-width: 100%; padding: 4px 7px; }
+.card-tags button { color: var(--wao-primary-text); overflow-wrap: anywhere; max-width: 100%; padding: 4px 7px; }
 .note-actions { margin-top: 14px; border-top: 1px solid var(--wao-line-control); padding-top: 6px; justify-content: space-between; }
 .note-actions a { text-decoration: none; margin-left: auto; }
 .card-edit { display: inline-flex; gap: 4px; align-items: center; }

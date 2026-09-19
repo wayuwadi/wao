@@ -313,7 +313,7 @@ function requestClose() {
 .project-select-row { display: flex; gap: 8px; align-items: center; }
 .compact-select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text); }
 .source-note { margin: 8px 0 14px; font-size: 12px; line-height: 1.6; color: var(--wao-text-weak); overflow-wrap: anywhere; }
-.source-note a { color: var(--wao-primary); }
+.source-note a { color: var(--wao-primary-text); }
 .mask {
   position: fixed;
   inset: 0;
@@ -451,7 +451,7 @@ function requestClose() {
 }
 .add-img:hover {
   border-color: var(--wao-primary);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .add-img i {
   font-size: 15px;

@@ -391,7 +391,7 @@ onBeforeUnmount(() => { generation++ })
 }
 .eyebrow,
 .section-title span {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 1.2px;
@@ -401,7 +401,7 @@ h1 {
   font-size: 25px;
 }
 h1 i {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .page-header p {
   margin: 0;
@@ -453,7 +453,7 @@ h1 i {
 }
 .save-status.saving,
 .save-status.saved {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .save-status.error {
   color: var(--wao-danger-strong);
@@ -578,7 +578,7 @@ button {
 }
 .result-empty i {
   font-size: 27px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .result-empty strong {
   color: var(--wao-text-2);
@@ -627,7 +627,7 @@ button {
 }
 .history-empty i,
 .state-card > i {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 25px;
 }
 .history-empty strong,
@@ -670,7 +670,7 @@ button {
   display: block;
 }
 .history-list time {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 8.5px;
 }
 .history-list b {
@@ -699,7 +699,7 @@ button {
   background: var(--wao-bg-card);
 }
 .history-compare article > span {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 8.5px;
   font-weight: 750;
 }

@@ -297,7 +297,7 @@ function commitRename() {
   white-space: nowrap;
 }
 .trow-title:hover {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .trow-title.done {
   color: var(--wao-text-faint);
@@ -362,7 +362,7 @@ function commitRename() {
 }
 .row-tool:hover {
   background: var(--wao-bg-hover-2);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .cell-input {
   width: 100%;

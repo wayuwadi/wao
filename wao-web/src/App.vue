@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ConfigProvider, theme as antTheme } from 'ant-design-vue'
+import { useTheme } from '@/composables/theme'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -8,6 +10,11 @@ import { RouterView, useRoute } from 'vue-router'
 const route = useRoute()
 import ToastHost from '@/components/ui/ToastHost.vue'
 import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
+const { effective } = useTheme()
+const componentTheme = computed(() => ({
+  algorithm: effective.value === 'dark' ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
+  token: { colorPrimary: effective.value === 'dark' ? '#5365d8' : '#4358d6' },
+}))
 watch(() => useSessionStore().userId, clearToasts, { flush: 'sync' })
 let refreshing = false
 async function reloadWorkspace() {
@@ -75,7 +82,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <RouterView />
-  <ToastHost />
-  <VersionUpdateNotice v-if="route?.path !== '/desktop-pet'" />
+  <ConfigProvider :theme="componentTheme">
+    <RouterView />
+    <ToastHost />
+    <VersionUpdateNotice v-if="route?.path !== '/desktop-pet'" />
+  </ConfigProvider>
 </template>

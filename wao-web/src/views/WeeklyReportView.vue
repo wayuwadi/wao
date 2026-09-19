@@ -313,7 +313,7 @@ onBeforeUnmount(() => {
   gap: 20px;
 }
 .eyebrow {
-  color: #267c65;
+  color: var(--wao-success-strong);
   font-size: 10px;
   font-weight: 750;
   letter-spacing: 1.8px;
@@ -346,7 +346,7 @@ h1 {
 }
 .draft-pill.saved {
   border-color: #b7d8cb;
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .draft-pill.error {
   border-color: #e7b8b0;
@@ -373,7 +373,7 @@ h1 {
 }
 .truth-note > i {
   font-size: 20px;
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .truth-note div {
   display: grid;
@@ -425,8 +425,8 @@ h1 {
   width: 29px;
   height: 29px;
   border-radius: 9px;
-  background: #dcefe7;
-  color: #267c65;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
   display: grid;
   place-items: center;
   font-size: 10px;
@@ -488,8 +488,8 @@ h1 {
   font-size: 10.5px;
 }
 .ai-state.ready {
-  background: #edf7f2;
-  color: #267c65;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
 }
 .ai-state.error {
   background: var(--wao-danger-bg);
@@ -568,7 +568,7 @@ h1 {
   border-radius: 8px;
   padding: 0 11px;
   background: var(--wao-bg-card);
-  color: #267c65;
+  color: var(--wao-success-strong);
   font: inherit;
   font-size: 11px;
   cursor: pointer;
@@ -593,8 +593,8 @@ h1 {
   height: 66px;
   margin-bottom: 15px;
   border-radius: 20px;
-  background: #eaf5f0;
-  color: #39816a;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
   display: grid;
   place-items: center;
   font-size: 26px;
@@ -670,7 +670,7 @@ h1 {
   gap: 15px;
 }
 .candidate-card header span {
-  color: #267c65;
+  color: var(--wao-success-strong);
   font-size: 9.5px;
   font-weight: 750;
   letter-spacing: 1.4px;
@@ -695,7 +695,7 @@ h1 {
   cursor: pointer;
 }
 .candidate-card button.accept {
-  border-color: #267c65;
+  border-color: var(--wao-success-strong);
   background: #267c65;
   color: #fff;
 }
@@ -712,7 +712,7 @@ h1 {
   background: var(--wao-bg-page);
 }
 .candidate-grid b {
-  color: #267c65;
+  color: var(--wao-success-strong);
   font-size: 11px;
 }
 .candidate-grid pre {

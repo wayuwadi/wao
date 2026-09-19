@@ -978,7 +978,7 @@ watch(visibleTaskIds, (ids) => {
 </template>
 
 <style scoped>
-.task-scope { padding:8px 16px; color:var(--wao-text-weak); background:var(--wao-bg-sub); font-size:12px; }.task-scope button { margin-left:12px; border:0; background:none; color:var(--wao-primary); cursor:pointer; }
+.task-scope { padding:8px 16px; color:var(--wao-text-weak); background:var(--wao-bg-sub); font-size:12px; }.task-scope button { margin-left:12px; border:0; background:none; color:var(--wao-primary-text); cursor:pointer; }
 
 .copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 6px; }
 .missing {
@@ -1345,7 +1345,7 @@ watch(visibleTaskIds, (ids) => {
 }
 .creator-filter-btn:hover:not(:disabled),
 .creator-filter-btn.on {
-  border-color: #c7d0f1;
+  border-color: var(--wao-primary-line);
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
 }
@@ -1621,8 +1621,8 @@ watch(visibleTaskIds, (ids) => {
   transition: box-shadow 0.12s, border-color 0.12s;
 }
 .group-card.drop-hint {
-  border-color: #c7d0f1;
-  box-shadow: inset 0 0 0 1px #c7d0f1;
+  border-color: var(--wao-primary-line);
+  box-shadow: inset 0 0 0 1px var(--wao-primary-line);
 }
 .group-head {
   display: flex;
@@ -1722,7 +1722,7 @@ watch(visibleTaskIds, (ids) => {
 .group-add-row.error { border-color: var(--wao-danger); background: var(--wao-danger-bg); }
 .group-add-row > i {
   font-size: 15px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .group-add-row input {
   flex: 1;
@@ -1856,8 +1856,8 @@ watch(visibleTaskIds, (ids) => {
   transition: background 0.12s, box-shadow 0.12s;
 }
 .board-col.drop-hint {
-  background: #eaedfb;
-  box-shadow: inset 0 0 0 1.5px #c7d0f1;
+  background: var(--wao-primary-soft);
+  box-shadow: inset 0 0 0 1.5px var(--wao-primary-line);
 }
 .board-empty {
   border: 1px dashed #cfd3de;

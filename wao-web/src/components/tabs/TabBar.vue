@@ -351,7 +351,7 @@ function mCloseUnpinned() {
   border-bottom-color: var(--wao-primary);
 }
 .tab.active i {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .tab .tab-pin {
   font-size: 12px;

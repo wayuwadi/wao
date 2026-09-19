@@ -999,7 +999,7 @@ async function bindFeishu() {
   border-radius: 5px;
   padding: 2px 8px;
 }
-.identity-icon { width: 30px; height: 30px; display: grid; place-content: center; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-primary); font-size: 17px; }
+.identity-icon { width: 30px; height: 30px; display: grid; place-content: center; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-primary-text); font-size: 17px; }
 .bind-actions { display: flex; gap: 10px; margin-top: 12px; }
 .credential-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-top: 12px; }
 .member-account-form { padding: 13px; border-radius: 9px; background: var(--wao-bg-sub); }
@@ -1046,7 +1046,7 @@ async function bindFeishu() {
 .registry-row.active { border-color: color-mix(in srgb, var(--wao-primary) 45%, transparent); box-shadow: 0 0 0 3px var(--wao-primary-soft); }
 .registry-select { flex: 1; min-width: 0; padding: 10px; display: flex; align-items: center; gap: 9px; border: 0; background: transparent; cursor: pointer; text-align: left; }
 .registry-select:hover, .registry-delete:hover { background: var(--wao-bg-hover-2); }
-.registry-icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--wao-primary-soft); color: var(--wao-primary); font-size: 17px; }
+.registry-icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: 17px; }
 .registry-meta { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .registry-meta strong { overflow: hidden; color: var(--wao-text); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 .registry-meta small { overflow: hidden; color: var(--wao-text-faint); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
@@ -1061,7 +1061,7 @@ async function bindFeishu() {
 .editor-title { grid-column: 1 / -1; padding-bottom: 10px; border-bottom: 1px solid var(--wao-line); color: var(--wao-text); font-size: 13px; font-weight: 600; }
 .wide-field { grid-column: 1 / -1; }
 .visibility-choice { height: 36px; padding: 0 11px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-3); cursor: pointer; text-align: left; }
-.visibility-choice.on { border-color: color-mix(in srgb, var(--wao-primary) 35%, transparent); background: var(--wao-primary-soft); color: var(--wao-primary); }
+.visibility-choice.on { border-color: color-mix(in srgb, var(--wao-primary) 35%, transparent); background: var(--wao-primary-soft); color: var(--wao-primary-text); }
 .choice-icon { width: 20px; display: inline-grid; place-items: center; }
 .menu-preview { grid-column: 1 / -1; padding: 13px 14px; display: grid; grid-template-columns: 72px 1fr; gap: 8px 12px; border: 1px dashed var(--wao-line-strong); border-radius: 9px; background: var(--wao-bg-sub); font-size: 12px; }
 .menu-preview .preview-label { width: auto; margin: 0; text-align: left; }
@@ -1071,7 +1071,7 @@ async function bindFeishu() {
 .connected.err { color: var(--wao-danger); }
 .connected.err .c-dot { background: var(--wao-danger); }
 .filing-preview { margin-top: 14px; padding: 12px 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; border: 1px dashed var(--wao-line-strong); border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 11.5px; }
-.filing-preview a { color: var(--wao-primary); text-decoration: none; }
+.filing-preview a { color: var(--wao-primary-text); text-decoration: none; }
 .preview-label { width: 100%; margin-bottom: 2px; color: var(--wao-text-faint); text-align: center; font-size: 10.5px; }
 .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
 .hint {
@@ -1134,7 +1134,7 @@ async function bindFeishu() {
   font-size: 13px;
 }
 .kv-v.link-c {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .dim {
   margin-left: 8px;

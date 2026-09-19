@@ -127,7 +127,7 @@ async function save() {
 .name-row button:hover,
 .rename-row button:hover {
   background: var(--wao-bg-hover);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .name-row button span {
   margin-left: 3px;

@@ -463,7 +463,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 .knowledge-child { display: flex; align-items: center; gap: 2px; }
 .knowledge-child > .item { flex: 1; min-width: 0; width: auto; }
 .knowledge-unfavorite { flex: 0 0 26px; width: 26px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-weak); cursor: pointer; }
-.knowledge-unfavorite:hover { color: var(--wao-primary); background: var(--wao-bg-hover); }
+.knowledge-unfavorite:hover { color: var(--wao-primary-text); background: var(--wao-bg-hover); }
 .knowledge-unfavorite:disabled { opacity: .5; cursor: wait; }
 @media (hover: hover) and (pointer: fine) {
   .knowledge-unfavorite { opacity: 0; pointer-events: none; }
@@ -723,7 +723,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   background: var(--wao-primary-soft);
 }
 .item.active i {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .item.active .item-label {
   font-weight: 600;
@@ -771,7 +771,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   background: var(--wao-bg-hover-2);
 }
 .dock-item.active {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   background: var(--wao-primary-soft);
 }
 .dock-item.dragging {
@@ -790,7 +790,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 }
 .dock-saving {
   margin-left: auto;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   animation: spin 0.9s linear infinite;
 }
 @keyframes spin {

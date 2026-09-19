@@ -37,5 +37,5 @@ async function choose(memberId: string) {
 h1 { margin: 0; font-size: 22px; } p { color: var(--wao-text-weak); line-height: 1.7; }
 button { width: 100%; display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 12px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); cursor: pointer; }
 button:hover { border-color: var(--wao-primary); } button span { width: 30px; height: 30px; display: grid; place-content: center; border-radius: 50%; color: #fff; }
-.error { margin-top: 12px; color: var(--wao-danger-strong); } a { color: var(--wao-primary); }
+.error { margin-top: 12px; color: var(--wao-danger-strong); } a { color: var(--wao-primary-text); }
 </style>

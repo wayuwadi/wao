@@ -1720,7 +1720,7 @@ onBeforeUnmount(() => {
 article header small,
 aside header small,
 .editor header small {
-  color: #267c65;
+  color: var(--wao-success-strong);
   font-size: 10px;
   font-weight: 750;
   letter-spacing: 1.7px;
@@ -1764,14 +1764,14 @@ textarea {
   gap: 6px;
 }
 .page-action.active {
-  border-color: #b9d8cc;
+  border-color: var(--wao-success-line);
   background: var(--wao-success-bg);
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .history-button {
-  border-color: #b9d8cc;
+  border-color: var(--wao-success-line);
   background: var(--wao-success-bg);
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .state-card {
   margin-top: 20px;
@@ -1985,10 +1985,10 @@ textarea {
   font-size: 10.5px;
 }
 .save-banner.saved {
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .save-banner.error {
-  color: #a84545;
+  color: var(--wao-danger-strong);
 }
 .save-banner button {
   border: 0;
@@ -2073,7 +2073,7 @@ textarea {
   padding: 0 9px;
   border-color: color-mix(in srgb, #7558d8 36%, var(--wao-line-control));
   background: color-mix(in srgb, #7558d8 8%, var(--wao-bg-card));
-  color: #6548c4;
+  color: var(--wao-area-finance);
   display: inline-flex;
   gap: 5px;
   font-size: 13px;
@@ -2082,7 +2082,7 @@ textarea {
 .focus-card header .focus-save.dirty {
   border-color: color-mix(in srgb, var(--wao-primary) 42%, var(--wao-line-control));
   background: var(--wao-success-bg);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .focus-card header .focus-save.error {
   border-color: color-mix(in srgb, var(--wao-danger) 42%, var(--wao-line-control));
@@ -2160,7 +2160,7 @@ textarea {
   border: 0;
   background: transparent;
   cursor: pointer;
-  color: #267c65 !important;
+  color: var(--wao-success-strong) !important;
 }
 .focus-undo:disabled {
   opacity: 0.55;
@@ -2176,7 +2176,7 @@ textarea {
   border: 1px dashed var(--wao-line-control);
   border-radius: 9px;
   background: var(--wao-bg-page);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   display: grid;
   place-items: center;
   font-size: 15px;
@@ -2225,7 +2225,7 @@ textarea {
 }
 .focus-notice.sent {
   background: color-mix(in srgb, #2f9674 10%, var(--wao-bg-card));
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .focus-notice.error {
   background: color-mix(in srgb, var(--wao-danger) 8%, var(--wao-bg-card));
@@ -2266,8 +2266,8 @@ textarea {
   width: 33px;
   height: 33px;
   border-radius: 10px;
-  background: #e0f0e9;
-  color: #267c65;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
   display: grid;
   place-items: center;
   font-size: 10px;
@@ -2298,13 +2298,13 @@ textarea {
   align-items: center;
 }
 .tomorrow-focus footer small {
-  color: #9a741e;
+  color: var(--wao-warning-strong);
 }
 .tomorrow-focus footer .focus-error {
   color: var(--wao-danger-strong);
 }
 .tomorrow-focus footer .focus-saved {
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .tomorrow-focus footer span {
   flex: 1;
@@ -2341,7 +2341,7 @@ textarea {
 .tomorrow-state button {
   border: 0;
   background: none;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   cursor: pointer;
 }
 .energy-card {
@@ -2378,8 +2378,8 @@ textarea {
   width: 33px;
   height: 33px;
   border-radius: 10px;
-  background: #dcecf2;
-  color: #37738a;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
   display: grid;
   place-items: center;
   font-size: 17px;
@@ -2412,7 +2412,7 @@ textarea {
   flex-direction: column;
   align-items: center;
   line-height: 1.3;
-  color: #37738a;
+  color: var(--wao-primary-text);
   font-size: 21px;
 }
 .energy-action strong small {
@@ -2431,16 +2431,16 @@ textarea {
   opacity: 0.62;
 }
 .energy-action.meditate > i {
-  background: #efe9f6;
-  color: #775b92;
+  background: color-mix(in srgb, var(--wao-area-finance) 12%, var(--wao-bg-card));
+  color: var(--wao-area-finance);
 }
 .energy-action.once.done {
-  border-color: #9ac7b7;
-  background: #eff8f4;
+  border-color: var(--wao-success-line);
+  background: var(--wao-success-bg);
 }
 .energy-action.once.done > i {
-  background: #d9eee5;
-  color: #267c65;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
 }
 .energy-notice {
   min-height: 34px;
@@ -2457,12 +2457,12 @@ textarea {
   overflow-wrap: anywhere;
 }
 .energy-notice.error {
-  color: #9b4141;
+  color: var(--wao-danger-strong);
   background: var(--wao-danger-bg);
 }
 .energy-notice.sent {
-  color: #267c65;
-  background: #eff8f4;
+  color: var(--wao-success-strong);
+  background: var(--wao-success-bg);
 }
 .energy-notice button {
   min-height: 44px;
@@ -2511,7 +2511,7 @@ textarea {
   flex: 1;
 }
 .growth-coach-dialog > header small {
-  color: #6548c4;
+  color: var(--wao-area-finance);
   font-size: 9px;
   font-weight: 750;
   letter-spacing: 1.4px;
@@ -2540,7 +2540,7 @@ textarea {
   flex: 0 0 auto;
   border-radius: 12px;
   background: color-mix(in srgb, #7558d8 14%, var(--wao-bg-card));
-  color: #7558d8;
+  color: var(--wao-area-finance);
   display: grid;
   place-items: center;
   font-size: 20px;
@@ -2561,7 +2561,7 @@ textarea {
   gap: 12px;
 }
 .growth-coach-state > i {
-  color: #7558d8;
+  color: var(--wao-area-finance);
   font-size: 22px;
 }
 .growth-coach-state > div:not(.growth-coach-state-actions) {
@@ -2708,7 +2708,7 @@ textarea {
   flex: 1;
 }
 .history-dialog > header small {
-  color: #267c65;
+  color: var(--wao-success-strong);
   font-size: 9px;
   font-weight: 750;
   letter-spacing: 1.5px;
@@ -2777,18 +2777,18 @@ textarea {
   font-size: 11px;
 }
 .history-state.error {
-  color: #9b4141;
+  color: var(--wao-danger-strong);
 }
 .history-state.empty {
   flex-direction: column;
   text-align: center;
 }
 .history-state.empty > i {
-  color: #6cad95;
+  color: var(--wao-success-strong);
   font-size: 28px;
 }
 .history-state.empty.corrupt > i {
-  color: #a66b22;
+  color: var(--wao-warning-strong);
 }
 .history-state.empty b {
   color: var(--wao-text-2);
@@ -2803,7 +2803,7 @@ textarea {
   padding: 8px 10px;
   border-radius: 8px;
   background: var(--wao-warning-bg);
-  color: #876714;
+  color: var(--wao-warning-strong);
   font-size: 10px;
 }
 .history-warning i {
@@ -2841,13 +2841,13 @@ textarea {
 .history-day > header > span {
   padding: 3px 7px;
   border-radius: 999px;
-  background: #dceee6;
-  color: #267c65;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
   font-size: 9px;
 }
 .history-day > header > span.resting {
-  background: #e8ecef;
-  color: #65737b;
+  background: var(--wao-bg-sub-2);
+  color: var(--wao-text-3);
 }
 .history-day > section {
   padding: 10px 13px;
@@ -2862,7 +2862,7 @@ textarea {
 }
 .history-day h3 i {
   margin-right: 5px;
-  color: #3f8b71;
+  color: var(--wao-success-strong);
 }
 .history-day ol {
   margin: 0;
@@ -2908,7 +2908,7 @@ textarea {
   white-space: nowrap;
 }
 .history-energy-grid b {
-  color: #267c65;
+  color: var(--wao-success-strong);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -3002,9 +3002,9 @@ textarea {
   font-size: 12px;
 }
 .editor-nav button.active {
-  border-color: #9fcaba;
+  border-color: var(--wao-success-line);
   background: var(--wao-success-bg);
-  color: #267c65;
+  color: var(--wao-success-strong);
   box-shadow: inset 0 -2px #267c65;
 }
 .timeline-editor-title h3 {
@@ -3033,10 +3033,10 @@ textarea {
 }
 .energy-items-editor > header button {
   min-height: 32px;
-  border: 1px solid #9fcaba;
+  border: 1px solid var(--wao-success-line);
   border-radius: 8px;
-  background: #eff8f4;
-  color: #267c65;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
   padding: 0 10px;
   cursor: pointer;
   font-size: 12px;
@@ -3062,8 +3062,8 @@ textarea {
   height: 25px;
   margin-bottom: 6px;
   border-radius: 8px;
-  background: #dceee6;
-  color: #267c65;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -3107,10 +3107,10 @@ textarea {
 .remove-energy-item {
   width: 32px;
   min-height: 36px;
-  border: 1px solid #e2c5c1;
+  border: 1px solid var(--wao-danger-line);
   border-radius: 8px;
   background: var(--wao-danger-bg);
-  color: #a04f45;
+  color: var(--wao-danger-strong);
   cursor: pointer;
 }
 .remove-energy-item:disabled {
@@ -3148,8 +3148,8 @@ textarea {
   height: 25px;
   margin-bottom: 6px;
   border-radius: 8px;
-  background: #dceee6;
-  color: #267c65;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -3190,7 +3190,7 @@ textarea {
 }
 .editor-error {
   margin: 12px 2px 0;
-  color: #aa4242;
+  color: var(--wao-danger-strong);
   font-size: 12px;
 }
 .editor-error i {

@@ -629,7 +629,7 @@ button:disabled {
   margin-left: auto;
   border: 0;
   background: none;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   cursor: pointer;
 }
 .automation-state .spin {
@@ -1050,7 +1050,7 @@ button:disabled {
   height: 18px;
   border-radius: 50%;
   background: var(--wao-primary-tint);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 11px;
   display: inline-flex;
   align-items: center;

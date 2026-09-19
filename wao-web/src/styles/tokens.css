@@ -1,6 +1,6 @@
 /**
  * WAO Life OS 设计 token —— 源自 init-design/README.md「Design Tokens」。
- * 所有界面像素级还原都以此文件的变量为准；组件内可直接用字面值对齐原型。
+ * 界面文字、表面和状态颜色统一使用语义变量，保证明暗主题同步。
  */
 :root {
   /* 品牌主色 */
@@ -45,6 +45,7 @@
   --wao-warning: #d9a13b;
   --wao-warning-strong: #a96a10;
   --wao-warning-bg: #fbf3e4;
+  --wao-warning-line: #e5d3a8;
   --wao-danger: #d65454;
   --wao-danger-strong: #bc4141;
   --wao-danger-bg: #fbebeb;
@@ -68,6 +69,19 @@
   --wao-p2-bg: #eef1fc;
   --wao-p3: #5a5e6b;
   --wao-p3-bg: #f0f1f4;
+
+  /* 兼容已有组件的语义别名；引用原始 token，随主题一同解析。 */
+  --wao-text-1: var(--wao-text);
+  --wao-text-secondary: var(--wao-text-2);
+  --wao-text-muted: var(--wao-text-weak);
+  --wao-bg: var(--wao-bg-page);
+  --wao-bg-elevated: var(--wao-bg-card);
+  --wao-bg-soft: var(--wao-bg-sub);
+  --wao-bg-input: var(--wao-bg-card);
+  --wao-line-soft: var(--wao-divider);
+  --wao-danger-tint: var(--wao-danger-bg);
+  --wao-shadow-sm: var(--wao-shadow-card-hover);
+  --wao-shadow-lg: var(--wao-shadow-modal);
 
   /* 字体 */
   --wao-font:
@@ -107,9 +121,9 @@
 /* 深色模式 —— 与明亮模式保持相同的语义层级，仅反转亮度关系 */
 :root[data-theme='dark'] {
   /* 品牌主色：略微提亮，保证在深色背景上的可读性 */
-  --wao-primary: #5b6fe8;
-  --wao-primary-hover: #7687f0;
-  --wao-primary-text: #7687f0;
+  --wao-primary: #5365d8;
+  --wao-primary-hover: #5869d5;
+  --wao-primary-text: #a4b0ff;
   --wao-primary-soft: #252b4d;
   --wao-primary-soft-2: #1e2442;
   --wao-primary-tint: #131624;
@@ -128,10 +142,10 @@
   /* 文字层级：由高到低 */
   --wao-text: #f0f1f5;
   --wao-text-2: #c4c7d2;
-  --wao-text-3: #8b8f9a;
-  --wao-text-weak: #6b6f7d;
-  --wao-text-faint: #5a5e6b;
-  --wao-text-faint-2: #4a4e59;
+  --wao-text-3: #afb4c2;
+  --wao-text-weak: #9da3b3;
+  --wao-text-faint: #9299a9;
+  --wao-text-faint-2: #828a9b;
 
   /* 边框 / 分隔线 */
   --wao-line: #2d303b;
@@ -148,6 +162,7 @@
   --wao-warning: #e0ac52;
   --wao-warning-strong: #ecc476;
   --wao-warning-bg: #33270e;
+  --wao-warning-line: #69532b;
   --wao-danger: #e86e6e;
   --wao-danger-strong: #f28a8a;
   --wao-danger-bg: #381515;
@@ -167,9 +182,9 @@
   --wao-p0-bg: #381515;
   --wao-p1: #e0ac52;
   --wao-p1-bg: #33270e;
-  --wao-p2: #5b6fe8;
+  --wao-p2: #a4b0ff;
   --wao-p2-bg: #1e2442;
-  --wao-p3: #8b8f9a;
+  --wao-p3: #afb4c2;
   --wao-p3-bg: #2a2d38;
 
   /* 阴影：使用浅色半透明，降低不透明度 */
