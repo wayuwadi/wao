@@ -207,8 +207,14 @@ const messages = ref<SharedChatMessage[]>([])
 let disposed = false
 const draft = ref('')
 const composer = ref<InstanceType<typeof MarkdownEditor> | null>(null)
-let sendAttempt: { content: string; replyToId?: string; token: string } | null = null
-const replyingTo = ref<SharedChatMessage | null>(null)
+type SendAttempt = { content: string; replyToId?: string; token: string }
+const sendAttempt = ref<SendAttempt | null>(null)
+const storageError = ref('')
+const outboxPrefix = computed(() => `${storageKey.value}:outbox:`)
+let restoringDraft = false
+let corruptDraft = false
+type DraftReply = Pick<SharedChatMessage, 'id' | 'author' | 'content'>
+const replyingTo = ref<DraftReply | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 const sending = ref(false)
@@ -270,8 +276,8 @@ const canSend = computed(
     !uploadingImage.value &&
     !uploadingFile.value &&
     !speech.listening.value &&
-    contentLength.value <= 2_000 &&
-    !!draft.value.trim(),
+    !storageError.value &&
+    (!!sendAttempt.value || (contentLength.value <= 2_000 && !!draft.value.trim())),
 )
 const unreadCount = computed(() => messages.value.filter((message) => !message.read).length)
 
@@ -454,36 +460,116 @@ function quote(message: SharedChatMessage) {
   reactionMenuId.value = ''
 }
 
+function validAttempt(value: unknown): value is SendAttempt {
+  const attempt = value as Partial<SendAttempt> | null
+  return (
+    !!attempt &&
+    typeof attempt.content === 'string' &&
+    typeof attempt.token === 'string' &&
+    /^[A-Za-z0-9_-]{8,64}$/.test(attempt.token) &&
+    (attempt.replyToId === undefined || typeof attempt.replyToId === 'string')
+  )
+}
+
+function pendingAttempts(): SendAttempt[] {
+  const pending: SendAttempt[] = []
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index)
+    if (!key?.startsWith(outboxPrefix.value)) continue
+    const attempt = JSON.parse(localStorage.getItem(key) || 'null')
+    if (!validAttempt(attempt) || key !== outboxPrefix.value + attempt.token)
+      throw new Error('待确认消息读取失败，请保留本机数据后重试')
+    pending.push(attempt)
+  }
+  return pending.sort((a, b) => a.token.localeCompare(b.token))
+}
+
 async function send() {
   if (!canSend.value) return
+  try {
+    if (!sendAttempt.value) {
+      const recovered = pendingAttempts()[0]
+      if (recovered) {
+        sendAttempt.value = recovered
+        return // Show the recovered content before the user explicitly confirms it.
+      }
+    }
+  } catch (error) {
+    storageError.value = messageOf(error, '待确认消息读取失败，请重试')
+    return
+  }
+  // Persist the immutable attempt before any network side effect. A retry confirms
+  // this attempt even if the user has meanwhile composed a different message.
+  const attempt = sendAttempt.value ?? {
+    content: draft.value,
+    replyToId: replyingTo.value?.id,
+    token: newToken(),
+  }
+  if (!persistDraft(draft.value, replyingTo.value, attempt)) return
+  sendAttempt.value = attempt
+  try {
+    // One immutable record per token: another window's draft cannot erase an outbox.
+    localStorage.setItem(outboxPrefix.value + attempt.token, JSON.stringify(attempt))
+  } catch {
+    storageError.value = '本机待确认消息保存失败，请释放存储空间后重试；暂不发送。'
+    return
+  }
   sending.value = true
   sendError.value = ''
-  if (
-    !sendAttempt ||
-    sendAttempt.content !== draft.value ||
-    sendAttempt.replyToId !== replyingTo.value?.id
-  ) {
-    sendAttempt = { content: draft.value, replyToId: replyingTo.value?.id, token: newToken() }
-  }
-  const sentDraft = draft.value
-  const sentReply = replyingTo.value?.id
   try {
     const saved = await sendSharedChatMessage({
-      clientToken: sendAttempt.token,
-      content: draft.value,
-      replyToId: replyingTo.value?.id,
+      clientToken: attempt.token,
+      content: attempt.content,
+      replyToId: attempt.replyToId,
     })
     merge([saved])
-    if (draft.value === sentDraft && replyingTo.value?.id === sentReply) {
-      composer.value?.clearSentContent?.(sentDraft)
+    const unchanged = draft.value === attempt.content && replyingTo.value?.id === attempt.replyToId
+    // Keep the original token recoverable when clearing storage fails after success.
+    const stored = JSON.parse(localStorage.getItem(storageKey.value) || 'null')
+    // A different window may have saved a draft while this request was pending.
+    // Acknowledging this token must not erase that window's durable input.
+    if (
+      stored?.pending?.token === attempt.token &&
+      !persistDraft(unchanged ? '' : draft.value, unchanged ? null : replyingTo.value, null)
+    )
+      return
+    try {
+      localStorage.removeItem(outboxPrefix.value + attempt.token)
+    } catch {
+      storageError.value = '本机草稿保存失败，请重试确认；消息不会重复创建。'
+      return
+    }
+    const nextAttempt = pendingAttempts()[0] ?? null
+    restoringDraft = true
+    sendAttempt.value = nextAttempt
+    if (unchanged) {
+      composer.value?.clearSentContent?.(attempt.content)
       draft.value = ''
       replyingTo.value = null
-      localStorage.removeItem(storageKey.value)
     }
-    sendAttempt = null
+    restoringDraft = false
     await scrollBottom()
   } catch (error) {
-    sendError.value = messageOf(error, '发送失败，草稿已保留，请重试')
+    const status =
+      (error as { status?: number; response?: { status?: number } })?.status ??
+      (error as { response?: { status?: number } })?.response?.status
+    // A definitive validation/permission rejection cannot have created this message.
+    // Keep ambiguous network/server failures immutable, but allow rejected input to be corrected.
+    if (status && [400, 403, 404, 413, 422].includes(status)) {
+      try {
+        const stored = JSON.parse(localStorage.getItem(storageKey.value) || 'null')
+        if (
+          stored?.pending?.token === attempt.token &&
+          !persistDraft(draft.value, replyingTo.value, null)
+        )
+          return
+        localStorage.removeItem(outboxPrefix.value + attempt.token)
+        sendAttempt.value = pendingAttempts()[0] ?? null
+      } catch {
+        storageError.value = '本机草稿保存失败，请恢复存储后重试。'
+      }
+    }
+    sendError.value = messageOf(error, '发送结果未确认，请重试确认；草稿已保留')
   } finally {
     sending.value = false
   }
@@ -501,17 +587,47 @@ async function toggleReaction(message: SharedChatMessage, emojiType: string) {
   }
 }
 
-watch([draft, replyingTo], () => {
-  if (draft.value || replyingTo.value) {
-    localStorage.setItem(
-      storageKey.value,
-      JSON.stringify({
-        content: draft.value,
-        replyToId: replyingTo.value?.id ?? '',
-      }),
-    )
-  } else localStorage.removeItem(storageKey.value)
-})
+function persistDraft(
+  content = draft.value,
+  reply = replyingTo.value,
+  pending = sendAttempt.value,
+) {
+  if (corruptDraft) return false
+  try {
+    if (content || reply || pending) {
+      localStorage.setItem(
+        storageKey.value,
+        JSON.stringify({
+          content,
+          replyToId: reply?.id ?? '',
+          reply,
+          pending,
+        }),
+      )
+    } else localStorage.removeItem(storageKey.value)
+    storageError.value = ''
+    return true
+  } catch {
+    storageError.value = '本机草稿保存失败，请释放存储空间后重试；暂不发送。'
+    return false
+  }
+}
+
+function retryDraftStorage() {
+  if (corruptDraft) {
+    storageError.value = '本机草稿读取失败，请保留本机数据并刷新重试。'
+    return
+  }
+  persistDraft()
+}
+
+watch(
+  [draft, replyingTo],
+  () => {
+    if (!restoringDraft) persistDraft()
+  },
+  { flush: 'sync' },
+)
 
 watch(
   messages,
@@ -566,27 +682,45 @@ onMounted(async () => {
     streamResize.observe(stream.value)
   }
   let restoredReplyId = ''
-  const stored =
-    localStorage.getItem(storageKey.value) ??
-    localStorage.getItem(`wao-shared-chat-draft-v1:${session.userId || 'unknown'}`)
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored) as {
-        content?: string
-        imageId?: string
-        imageName?: string
-        replyToId?: string
-      }
-      draft.value = parsed.content ?? ''
+  restoringDraft = true
+  try {
+    const stored =
+      localStorage.getItem(storageKey.value) ??
+      localStorage.getItem(`wao-shared-chat-draft-v1:${session.userId || 'unknown'}`)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (
+        typeof parsed.content !== 'string' ||
+        (parsed.pending &&
+          (typeof parsed.pending.content !== 'string' ||
+            !/^[A-Za-z0-9_-]{8,64}$/.test(parsed.pending.token) ||
+            (parsed.pending.replyToId !== undefined &&
+              typeof parsed.pending.replyToId !== 'string')))
+      )
+        throw new Error('Invalid draft')
+      draft.value = parsed.content
       if (parsed.imageId)
         draft.value += `${draft.value ? '\n\n' : ''}![${parsed.imageName || '图片'}](/api/images/${parsed.imageId}/raw)`
       restoredReplyId = parsed.replyToId ?? ''
-    } catch {
-      draft.value = stored
+      sendAttempt.value = parsed.pending ?? null
+      if (
+        parsed.reply &&
+        typeof parsed.reply.id === 'string' &&
+        typeof parsed.reply.content === 'string' &&
+        typeof parsed.reply.author?.name === 'string'
+      ) {
+        replyingTo.value = parsed.reply
+      }
     }
+    if (!sendAttempt.value) sendAttempt.value = pendingAttempts()[0] ?? null
+  } catch {
+    corruptDraft = true
+    storageError.value = '本机草稿读取失败，请保留本机数据并刷新重试；暂不发送。'
+  } finally {
+    restoringDraft = false
   }
   await load(true)
-  if (restoredReplyId)
+  if (restoredReplyId && !replyingTo.value)
     replyingTo.value = messages.value.find((message) => message.id === restoredReplyId) ?? null
   messagePolling.start(false)
 })
@@ -819,7 +953,16 @@ onBeforeUnmount(() => {
               >正在聆听，再点一次结束；转写后可修改再发送</span
             >
             <span v-else-if="speech.error.value" role="alert">{{ speech.error.value }}</span>
+            <span v-else-if="storageError" class="send-error" role="alert"
+              >{{ storageError }}
+              <button type="button" data-testid="retry-chat-storage" @click="retryDraftStorage">
+                重试保存草稿
+              </button></span
+            >
             <span v-else-if="sendError" class="send-error">{{ sendError }}</span>
+            <span v-else-if="sendAttempt"
+              >待确认：{{ sendAttempt.content.slice(0, 80) }}。确认后可发送新内容。</span
+            >
             <span v-else>{{ draft ? '草稿已保存在本机' : 'Enter 发送 · Shift+Enter 换行' }}</span>
             <span :class="{ over: contentLength > 2000 }">{{ contentLength }}/2000</span>
           </div>
@@ -861,7 +1004,7 @@ onBeforeUnmount(() => {
             </div>
             <button class="send-button" type="submit" :disabled="!canSend">
               <i :class="sending ? 'ri-loader-4-line spin' : 'ri-send-plane-2-fill'"></i
-              >{{ sending ? '发送中…' : '发送' }}
+              >{{ sending ? '发送中…' : sendAttempt ? '重试确认上一条' : '发送' }}
             </button>
           </div>
         </div>
