@@ -18,6 +18,7 @@ import { fetchFeishuChats, fetchWebhookEndpoints } from '@/api/system'
 import { fetchDailyGuidance, generateDailyGuidance } from '@/api/dailyGuidance'
 import { apiAddFavorite, apiRemoveFavorite, fetchFavorites } from '@/api/favorites'
 import { useUiStore } from '@/stores/ui'
+import { useSessionStore } from '@/stores/session'
 import {
   DEFAULT_WORKDAY_RHYTHM,
   cloneRhythmConfig,
@@ -72,9 +73,11 @@ async function mountView(path = '/workday-rhythm') {
   })
   await router.push(path)
   await router.isReady()
+  const pinia = createPinia()
+  useSessionStore(pinia).account = { member: { id: 'rhythm-test' } } as never
   return mount(WorkdayRhythmView, {
     global: {
-      plugins: [createPinia(), router],
+      plugins: [pinia, router],
       stubs: {
         WorkdayRhythmDailyPanel: true,
         WorkdayRhythmDailySettings: true,
@@ -415,7 +418,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
 
     expect(wrapper.get('.editor-error').text()).toContain('网络暂时不可用')
-    expect(localStorage.getItem('wao-workday-rhythm-config-draft-v1')).toContain('fw_daily')
+    expect(localStorage.getItem('wao-workday-rhythm-config-draft-v2:rhythm-test')).toContain('fw_daily')
     expect(wrapper.get('[aria-label="精力补给目标群"]').element).toHaveProperty('value', 'WEBHOOK:fw_daily')
     wrapper.unmount()
   })
@@ -445,7 +448,7 @@ describe('WorkdayRhythmView', () => {
       focusTarget: expect.objectContaining({ channel: 'CHAT', chatId: 'oc_daily' }),
       tianrenTarget: expect.objectContaining({ channel: 'CHAT', chatId: 'oc_daily' }),
     }) }))
-    expect(localStorage.getItem('wao-workday-rhythm-config-draft-v1')).toBeNull()
+    expect(localStorage.getItem('wao-workday-rhythm-config-draft-v2:rhythm-test')).toBeNull()
     await wrapper.get('.notification-settings-button').trigger('click')
     await flushPromises()
     expect(wrapper.get('[aria-label="精力补给目标群"]').element).toHaveProperty('value', 'WEBHOOK:fw_daily')
@@ -523,7 +526,7 @@ describe('WorkdayRhythmView', () => {
 
     const input = wrapper.find('.tomorrow-focus input')
     await input.setValue('为紧急评审准备验收证据')
-    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-${tomorrow}`)).toContain(
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${tomorrow}`)).toContain(
       '为紧急评审准备验收证据',
     )
 
@@ -531,7 +534,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
 
     expect(saveRhythmFocus).toHaveBeenCalledWith(tomorrow, ['为紧急评审准备验收证据', '', ''])
-    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-${tomorrow}`)).toBeNull()
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${tomorrow}`)).toBeNull()
     expect(wrapper.get('.tomorrow-focus').text()).toContain('已保存，明天自动接续')
     wrapper.unmount()
   })
@@ -547,7 +550,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
 
     expect(wrapper.get('.tomorrow-focus').text()).toContain('网络暂时不可用，草稿仍在本机')
-    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-${tomorrow}`)).toContain(
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${tomorrow}`)).toContain(
       '准备明天的发布清单',
     )
 
@@ -619,7 +622,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
 
     expect(wrapper.get('.save-banner.error').text()).toContain('未提交内容仍在本机')
-    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-${clock.date}`)).toContain(
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${clock.date}`)).toContain(
       '"waterCount":1',
     )
     await wrapper.get('.save-banner.error button').trigger('click')
@@ -838,4 +841,126 @@ describe('WorkdayRhythmView', () => {
     )
     wrapper.unmount()
   })
+
+  it('只恢复当前成员草稿，不认领或删除无归属旧草稿', async () => {
+    const draft = defaultRhythmDay(clock.date, clock.weekday)
+    draft.focus[0] = '旧账号内容'
+    localStorage.setItem(`wao-workday-rhythm-day-draft-${clock.date}`, JSON.stringify(draft))
+    localStorage.setItem(`wao-workday-rhythm-day-draft-v2:someone-else:${clock.date}`, JSON.stringify(draft))
+    draft.focus[0] = '我的草稿'
+    localStorage.setItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${clock.date}`, JSON.stringify(draft))
+    const wrapper = await mountView()
+    await flushPromises()
+    expect(wrapper.get('.focus-row input').element).toHaveProperty('value', '我的草稿')
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-${clock.date}`)).toContain('旧账号内容')
+    expect(wrapper.text()).not.toContain('旧账号内容')
+    wrapper.unmount()
+  })
+
+  it('切换账号后旧保存结果不清草稿，也不启动重点联动或通知', async () => {
+    let finish!: () => void
+    vi.mocked(saveWorkdayRhythmDay).mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve }))
+    const wrapper = await mountView()
+    await flushPromises()
+    await wrapper.get('.focus-row input').setValue('账号一未完成保存')
+    await wrapper.get('.focus-save').trigger('click')
+    useSessionStore().account = { member: { id: 'member-two' } } as never
+    await flushPromises()
+    await wrapper.get('.focus-row input').setValue('账号二本机草稿')
+    finish()
+    await flushPromises()
+    expect(wrapper.get('.focus-row input').element).toHaveProperty('value', '账号二本机草稿')
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${clock.date}`)).toContain('账号一未完成保存')
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:member-two:${clock.date}`)).toContain('账号二本机草稿')
+    expect(saveRhythmFocus).not.toHaveBeenCalled()
+    expect(sendFocusNotification).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('旧账号模板读取完成后不发起新账号日期请求', async () => {
+    let finish!: (value: ReturnType<typeof cloneRhythmConfig>) => void
+    vi.mocked(fetchWorkdayRhythm).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const wrapper = await mountView()
+    useSessionStore().account = { member: { id: 'member-two' } } as never
+    await flushPromises()
+    const calls = vi.mocked(fetchWorkdayRhythmDay).mock.calls.length
+    finish(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
+    await flushPromises()
+    expect(fetchWorkdayRhythmDay).toHaveBeenCalledTimes(calls)
+    wrapper.unmount()
+  })
+
+  it('保存期间的另一标签页草稿不被旧提交清除', async () => {
+    let finish!: () => void
+    vi.mocked(saveWorkdayRhythmDay).mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve }))
+    const wrapper = await mountView()
+    await flushPromises()
+    await wrapper.get('.focus-row input').setValue('本次提交')
+    await wrapper.get('.focus-save').trigger('click')
+    const key = `wao-workday-rhythm-day-draft-v2:rhythm-test:${clock.date}`
+    const newer = defaultRhythmDay(clock.date, clock.weekday)
+    newer.focus[0] = '另一标签页新增输入'
+    localStorage.setItem(key, JSON.stringify(newer))
+    finish()
+    await flushPromises()
+    expect(localStorage.getItem(key)).toContain('另一标签页新增输入')
+    wrapper.unmount()
+  })
+
+  it('本机写入失败时输入仍可编辑，并可原位重试保存草稿', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+    const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    await wrapper.get('.focus-row input').setValue('当前页面保留的输入')
+    expect(wrapper.text()).toContain('本机草稿保存失败')
+    expect(wrapper.get('.focus-row input').element).toHaveProperty('value', '当前页面保留的输入')
+    fail.mockRestore()
+    await wrapper.get('.save-banner.error button').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${clock.date}`)).toContain('当前页面保留的输入')
+    expect(wrapper.text()).not.toContain('本机草稿保存失败')
+    wrapper.unmount()
+  })
+
+
+  it('跨午夜的旧保存不清除下一天草稿，也不启动新的联动', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date(`${clock.date}T15:59:50Z`))
+    let finish!: () => void
+    vi.mocked(saveWorkdayRhythmDay).mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve }))
+    const wrapper = await mountView()
+    try {
+      await flushPromises()
+      await wrapper.get('.focus-row input').setValue('昨日待返回的提交')
+      await wrapper.get('.focus-save').trigger('click')
+      await vi.advanceTimersByTimeAsync(30_000)
+      await flushPromises()
+      await wrapper.get('.focus-row input').setValue('午夜后的新输入')
+      finish()
+      await flushPromises()
+      expect(wrapper.get('.focus-row input').element).toHaveProperty('value', '午夜后的新输入')
+      expect(localStorage.getItem(`wao-workday-rhythm-day-draft-v2:rhythm-test:${tomorrow}`)).toContain('午夜后的新输入')
+      expect(saveRhythmFocus).not.toHaveBeenCalled()
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
+
+  it('配置提交期间新增修改保留在弹窗和草稿中', async () => {
+    let finish!: (value: ReturnType<typeof cloneRhythmConfig>) => void
+    vi.mocked(saveWorkdayRhythm).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const wrapper = await mountView()
+    await flushPromises()
+    await wrapper.get('.settings-button').trigger('click')
+    await wrapper.get('[data-editor-section="timeline"]').trigger('click')
+    const title = wrapper.get('.block-editor input:not([type])')
+    await title.setValue('第一版标题')
+    await wrapper.get('.editor .primary').trigger('click')
+    await title.setValue('新增修改不可丢失')
+    finish(cloneRhythmConfig(vi.mocked(saveWorkdayRhythm).mock.calls[0]![0]))
+    await flushPromises()
+    expect(wrapper.get('.editor-error').text()).toContain('新增修改尚未提交')
+    expect(localStorage.getItem('wao-workday-rhythm-config-draft-v2:rhythm-test')).toContain('新增修改不可丢失')
+    expect(wrapper.get('.block-editor input:not([type])').element).toHaveProperty('value', '新增修改不可丢失')
+    wrapper.unmount()
+  })
+
 })

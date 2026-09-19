@@ -1,7 +1,10 @@
+import { createPinia, setActivePinia } from 'pinia'
+import { useSessionStore } from '@/stores/session'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkdayRhythmDailySettings from '@/components/workday/WorkdayRhythmDailySettings.vue'
 import {
+  saveRhythmSettings,
   deleteRhythmChecklistItem,
   fetchRhythmChecklistItems,
   fetchRhythmSettings,
@@ -77,6 +80,7 @@ async function mountSettings() {
 
 describe('WorkdayRhythmDailySettings', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.mocked(fetchRhythmSettings).mockResolvedValue({
@@ -169,4 +173,19 @@ describe('WorkdayRhythmDailySettings', () => {
       expect.objectContaining({ itemType: 'COUNTDOWN', durationMinutes: 20 }),
     )
   })
+
+  it('保存设置后已切换成员，不继续保存旧清单', async () => {
+    const wrapper = mount(WorkdayRhythmDailySettings)
+    await flushPromises()
+    let finish!: () => void
+    vi.mocked(saveRhythmSettings).mockReturnValueOnce(new Promise<Awaited<ReturnType<typeof saveRhythmSettings>>>(resolve => { finish = () => resolve(wrapper.vm.form!) }))
+    const pending = wrapper.vm.submit()
+    useSessionStore().account = { member: { id: 'another-member' } } as never
+    finish()
+    await pending
+    expect(updateRhythmChecklistItem).not.toHaveBeenCalled()
+    expect(wrapper.emitted('saved')).toBeUndefined()
+    wrapper.unmount()
+  })
+
 })
