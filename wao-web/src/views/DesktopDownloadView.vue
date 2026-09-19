@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WaoLogo from '@/components/WaoLogo.vue'
 import { computed, onMounted, ref } from 'vue'
 import fruitKernelRaccoon from '@/assets/wao-fruit-kernel-raccoon.png'
 import {
@@ -51,7 +52,7 @@ onMounted(async () => {
 <template>
   <main class="desktop-page">
     <header class="desktop-header">
-      <a class="brand" href="/" aria-label="返回 WAO"><span>WAO</span><b>桌面宠物</b></a>
+      <a class="brand" href="/" aria-label="返回 WAO"><WaoLogo wordmark /><b>桌面宠物</b></a>
       <a class="back" href="/"><i class="ri-arrow-left-line"></i>返回网页版</a>
     </header>
 
@@ -102,7 +103,7 @@ onMounted(async () => {
 <style scoped>
 .desktop-page { min-height: 100vh; color: var(--wao-text); background: radial-gradient(circle at 82% 14%, var(--wao-primary-soft) 0, transparent 30%), var(--wao-bg-page); font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
 .desktop-header { height: 68px; display: flex; align-items: center; justify-content: space-between; max-width: 1120px; margin: auto; padding: 0 28px; }
-.brand { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }.brand span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: white; background: #6668dc; font-weight: 800; font-size: 11px; }.brand b { font-size: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }.brand b { font-size: 14px; }
 .back { display: flex; align-items: center; gap: 5px; color: var(--wao-text-3); text-decoration: none; font-size: 13px; }.back:hover { color: var(--wao-primary-text); }
 .hero { max-width: 1064px; min-height: 470px; margin: auto; padding: 62px 34px 42px; display: grid; grid-template-columns: 1.2fr .8fr; align-items: center; gap: 60px; }
 .eyebrow { color: var(--wao-primary-text); font-size: 11px; font-weight: 800; letter-spacing: 2px; }.hero h1 { margin: 14px 0 18px; font-size: clamp(36px, 4.6vw, 58px); line-height: 1.12; letter-spacing: -2px; }.hero-copy > p { max-width: 590px; color: var(--wao-text-3); font-size: 16px; line-height: 1.8; }.status { width: fit-content; margin-top: 26px; padding: 9px 14px; border: 1px solid var(--wao-line); border-radius: 99px; background: color-mix(in srgb,var(--wao-bg-card) 75%,transparent); color: var(--wao-text-2); font-size: 12px; }.status i { margin-right: 7px; color: var(--wao-primary-text); }

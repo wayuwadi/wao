@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WaoLogo from '@/components/WaoLogo.vue'
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { startFeishuLogin } from '@/api/feishu'
@@ -136,7 +137,7 @@ onBeforeUnmount(() => { unmountQr?.(); stopWechatPolling() })
 <template>
   <div class="login">
     <aside class="brand">
-      <div class="brand-top"><div class="brand-mark">W</div><div class="brand-name">WAO<span>Wayuwa All in One</span></div></div>
+      <div class="brand-top"><WaoLogo /><div class="brand-name">WAO<span>Wayuwa All in One</span></div></div>
       <div>
         <h1>想法有多大，产出就有多大。</h1>
         <p class="brand-slogan">安排每天要做的事，整理文件与资料，也可以把目标交给 AI，查看执行过程和结果。</p>
@@ -148,6 +149,7 @@ onBeforeUnmount(() => { unmountQr?.(); stopWechatPolling() })
 
     <main class="panel">
       <section class="card">
+        <WaoLogo class="login-logo" wordmark />
         <h2>{{ method === 'email' && mode === 'register' ? '创建 WAO 账号' : '登录 WAO' }}</h2>
         <p class="product-summary">安排待办、整理资料，与 AI 一起完成任务。</p>
         <template v-if="method === 'feishu'">
@@ -209,6 +211,7 @@ onBeforeUnmount(() => { unmountQr?.(); stopWechatPolling() })
 
 <style scoped>
 .login { position: fixed; inset: 0; display: flex; background: var(--wao-bg-page); }
+.login-logo { margin-bottom: 18px; }
 .brand { width: 42%; min-width: 340px; padding: 44px 48px; display: flex; flex-direction: column; justify-content: space-between; background: #20263b; color: #fff; }
 .brand-top { display: flex; align-items: center; gap: 10px; }.brand-mark { width: 32px; height: 32px; display: grid; place-content: center; border-radius: 9px; background: var(--wao-primary); font-weight: 700; }.brand-name { font-weight: 600; }.brand-name span { margin-left: 8px; color: #8e96b3; font-size: 12px; font-weight: 400; }
 h1 { max-width: 540px; margin: 0; font-size: 31px; line-height: 1.45; } .brand p { color: #a7aec7; font-size: 13.5px; line-height: 1.9; }.brand-slogan { max-width: 520px; margin-bottom: 20px; }.brand ul { padding: 0; list-style: none; color: #c9cedf; font-size: 13px; line-height: 2.6; }.brand li { display: flex; align-items: center; gap: 10px; }.brand li i { color: #9da8d8; font-size: 16px; }.brand-foot { color: #6e7590; font-size: 12px; }

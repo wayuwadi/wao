@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WaoLogo from '@/components/WaoLogo.vue'
 /**
  * 公开的文件下载页 —— 对外分享的链接落在这里，而不是直接给字节。
  *
@@ -85,7 +86,7 @@ async function download() {
 <template>
   <div class="page">
     <div class="card" :class="{ expanded: previewContent !== null }">
-      <div class="brand"><i class="ri-hard-drive-2-line"></i>WAO 文件下载</div>
+      <div class="brand"><WaoLogo />WAO 文件下载</div>
 
       <div v-if="loadError" class="missing">
         <i class="ri-error-warning-line"></i>{{ loadError }}

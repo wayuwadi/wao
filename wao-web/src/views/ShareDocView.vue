@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WaoLogo from '@/components/WaoLogo.vue'
 /**
  * 公开分享页（免登录）—— 文档或小记的只读视图。
  *
@@ -57,7 +58,7 @@ async function copyMd() {
 
       <template v-else-if="shared">
         <div class="brand">
-          <span class="brand-dot"></span>WAO · {{ shared.note ? '小记分享' : '文档分享' }}
+          <WaoLogo />WAO · {{ shared.note ? '小记分享' : '文档分享' }}
         </div>
         <a class="locate" :href="originalUrl"><i class="ri-corner-up-left-line"></i>回到 WAO 中的原文档</a>
         <h1 class="title">{{ shared.title || (shared.note ? '未命名小记' : '未命名文档') }}</h1>
