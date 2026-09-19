@@ -4,7 +4,12 @@ type Recognition = {
   lang: string
   continuous: boolean
   interimResults: boolean
-  onresult: ((event: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null
+  onresult:
+    | ((event: {
+        resultIndex: number
+        results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>
+      }) => void)
+    | null
   onerror: ((event: { error: string }) => void) | null
   onend: (() => void) | null
   start(): void
@@ -23,9 +28,14 @@ export function useSpeechInput(append: (text: string) => void) {
   const listening = ref(false)
   const error = ref('')
   let recognition: Recognition | undefined
-  function stop() { recognition?.stop() }
+  function stop() {
+    recognition?.stop()
+  }
   function toggle() {
-    if (listening.value) { stop(); return }
+    if (listening.value) {
+      stop()
+      return
+    }
     if (!Constructor) return
     error.value = ''
     const current = new Constructor()
@@ -34,28 +44,44 @@ export function useSpeechInput(append: (text: string) => void) {
     current.continuous = false
     current.interimResults = false
     current.onresult = (event) => {
+      if (recognition !== current) return
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i]
         if (result?.isFinal) append(result[0].transcript)
       }
     }
     current.onerror = (event) => {
-      error.value = event.error === 'not-allowed' ? '麦克风未获授权，可在浏览器设置中允许后重试'
-        : event.error === 'no-speech' ? '没有识别到语音，请再试一次'
-          : '语音识别服务暂不可用，请重试或继续键盘输入'
+      if (recognition !== current) return
+      error.value =
+        event.error === 'not-allowed'
+          ? '麦克风未获授权，可在浏览器设置中允许后重试'
+          : event.error === 'no-speech'
+            ? '没有识别到语音，请再试一次'
+            : '语音识别服务暂不可用，请重试或继续键盘输入'
       listening.value = false
     }
-    current.onend = () => { listening.value = false }
-    try { listening.value = true; current.start() }
-    catch { listening.value = false; error.value = '语音识别未能启动，请重试' }
+    current.onend = () => {
+      if (recognition === current) listening.value = false
+    }
+    try {
+      listening.value = true
+      current.start()
+    } catch {
+      listening.value = false
+      error.value = '语音识别未能启动，请重试'
+    }
   }
-  onBeforeUnmount(() => {
+  function cancel() {
     if (recognition) {
       recognition.onresult = null
       recognition.onerror = null
       recognition.onend = null
       recognition.abort()
+      recognition = undefined
     }
-  })
-  return { supported, listening, error, toggle, stop }
+    listening.value = false
+    error.value = ''
+  }
+  onBeforeUnmount(cancel)
+  return { supported, listening, error, toggle, stop, cancel }
 }
