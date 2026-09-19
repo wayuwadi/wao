@@ -121,6 +121,8 @@ const props = withDefaults(
     compact?: boolean
     /** 挂到 body 的菜单层级；全屏容器需显式提升，避免菜单被遮挡。 */
     menuZIndex?: number
+    /** 知识库页面的常驻顶部工具栏挂载点。 */
+    toolbarTarget?: HTMLElement | null
     /** 已持久化的完整 Tiptap JSON；存在时优先于 Markdown 装载。 */
     document?: RichDocNode | null
   }>(),
@@ -138,6 +140,7 @@ const props = withDefaults(
     advanced: false,
     compact: false,
     menuZIndex: 1000,
+    toolbarTarget: null,
     document: null,
   },
 )
@@ -921,9 +924,37 @@ const shell = ref<HTMLElement | null>(null)
 const imagePicker = ref<HTMLInputElement | null>(null)
 const filePicker = ref<HTMLInputElement | null>(null)
 const slashOpen = ref(false)
+const slashMenuEl = ref<HTMLElement | null>(null)
+const slashPosition = ref({ left: '12px', top: '12px', maxHeight: '360px' })
+function positionSlashMenu(anchor?: HTMLElement) {
+  const e = editor.value
+  if (!e) return
+  let rect
+  try { rect = anchor?.getBoundingClientRect() ?? e.view.coordsAtPos(e.state.selection.from) }
+  catch { rect = shell.value?.getBoundingClientRect() }
+  if (!rect) return
+  const width = Math.min(340, window.innerWidth - 24)
+  const below = window.innerHeight - rect.bottom - 20
+  const above = rect.top - 20
+  const height = Math.max(48, Math.min(360, Math.max(below, above)))
+  slashPosition.value = {
+    left: `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`,
+    top: `${Math.max(12, below >= height ? rect.bottom + 8 : rect.top - height - 8)}px`,
+    maxHeight: `${height}px`,
+  }
+}
+function dismissSlashMenu(event: Event) {
+  if (!slashOpen.value) return
+  const target = event.target as Node | null
+  if (target && slashMenuEl.value?.contains(target)) return
+  if (event.type === 'pointerdown' && target && (shell.value?.contains(target) || props.toolbarTarget?.contains(target))) return
+  slashOpen.value = false
+}
+
 const slashFromInput = ref(false)
 const slashQuery = ref('')
 const slashIndex = ref(0)
+watch(slashIndex, () => nextTick(() => slashMenuEl.value?.querySelector('.active')?.scrollIntoView?.({ block: 'nearest' })))
 const composing = ref(false)
 const findOpen = ref(false)
 const helpOpen = ref(false)
@@ -1144,6 +1175,9 @@ function replaceCurrent() {
 const slashActions = computed<SlashAction[]>(() => [
   { id: 'h1', label: '一级标题', hint: '章节主标题', icon: 'ri-h-1', run: () => editor.value?.chain().focus().setHeading({ level: 1 }).run() },
   { id: 'h2', label: '二级标题', hint: '章节标题', icon: 'ri-h-2', run: () => editor.value?.chain().focus().setHeading({ level: 2 }).run() },
+  { id: 'h3', label: '三级标题', hint: '子章节标题', icon: 'ri-h-3', run: () => editor.value?.chain().focus().setHeading({ level: 3 }).run() },
+  { id: 'h4', label: '四级标题', hint: '细分章节标题', icon: 'ri-h-4', run: () => editor.value?.chain().focus().setHeading({ level: 4 }).run() },
+  { id: 'paragraph', label: '正文', hint: '普通段落', icon: 'ri-text', run: () => editor.value?.chain().focus().setParagraph().run() },
   { id: 'bullet', label: '无序列表', hint: '项目清单', icon: 'ri-list-unordered', run: () => editor.value?.chain().focus().toggleBulletList().run() },
   { id: 'number', label: '有序列表', hint: '步骤清单', icon: 'ri-list-ordered-2', run: () => editor.value?.chain().focus().toggleOrderedList().run() },
   { id: 'task', label: '任务列表', hint: '可勾选事项', icon: 'ri-list-check-3', run: () => editor.value?.chain().focus().toggleTaskList().run() },
@@ -1179,6 +1213,7 @@ function updateSlashMenu(e: Editor) {
   const { $from } = e.state.selection
   const text = $from.parent.textBetween(0, $from.parentOffset, undefined, '\ufffc')
   const match = /^\/([^\s/]*)$/.exec(text)
+  if (match) positionSlashMenu()
   slashOpen.value = !!match
   slashFromInput.value = !!match
   slashQuery.value = match?.[1] ?? ''
@@ -1198,7 +1233,8 @@ function chooseSlash(action: SlashAction) {
   action.run()
 }
 
-function toggleInsertMenu() {
+function toggleInsertMenu(event?: MouseEvent) {
+  positionSlashMenu(event?.currentTarget as HTMLElement | undefined)
   slashFromInput.value = false
   slashQuery.value = ''
   slashIndex.value = 0
@@ -1364,6 +1400,9 @@ watch(() => props.peers, scheduleMeasure, { deep: true })
 onMounted(() => {
   scheduleMeasure()
   window.addEventListener('resize', scheduleMeasure)
+  document.addEventListener('pointerdown', dismissSlashMenu, true)
+  document.addEventListener('scroll', dismissSlashMenu, true)
+  window.addEventListener('resize', dismissSlashMenu)
   document.addEventListener('pointerdown', dismissTableMenu, true)
   document.addEventListener('scroll', dismissTableMenu, true)
   window.addEventListener('resize', dismissTableMenu)
@@ -1557,6 +1596,9 @@ watch(
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleMeasure)
+  document.removeEventListener('pointerdown', dismissSlashMenu, true)
+  document.removeEventListener('scroll', dismissSlashMenu, true)
+  window.removeEventListener('resize', dismissSlashMenu)
   document.removeEventListener('pointerdown', dismissTableMenu, true)
   document.removeEventListener('scroll', dismissTableMenu, true)
   window.removeEventListener('resize', dismissTableMenu)
@@ -1585,13 +1627,14 @@ onBeforeUnmount(() => {
       aria-hidden="true"
       @change="onFilePicked"
     />
-    <div v-if="advanced && !readonly && editor" class="editor-tools">
-      <button type="button" class="toolbar-toggle" :aria-expanded="toolbarOpen" :title="toolbarOpen ? '收起编辑工具' : '展开编辑工具'" @mousedown.prevent @click="toolbarOpen = !toolbarOpen">
+    <Teleport :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
+    <div v-if="advanced && !readonly && editor" class="editor-tools" :class="{ docked: toolbarTarget }">
+      <button v-if="!toolbarTarget" type="button" class="toolbar-toggle" :aria-expanded="toolbarOpen" :title="toolbarOpen ? '收起编辑工具' : '展开编辑工具'" @mousedown.prevent @click="toolbarOpen = !toolbarOpen">
         <i class="ri-equalizer-line" aria-hidden="true"></i>
         <span>编辑工具</span>
         <i :class="toolbarOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>
       </button>
-    <div v-show="toolbarOpen" class="advanced-toolbar" role="toolbar" aria-label="文档格式工具栏">
+    <div v-show="toolbarTarget || toolbarOpen" class="advanced-toolbar" role="toolbar" aria-label="文档格式工具栏">
       <button type="button" title="撤销" :disabled="!editor.can().undo()" @click="editor.chain().focus().undo().run()"><i class="ri-arrow-go-back-line"></i></button>
       <button type="button" title="重做" :disabled="!editor.can().redo()" @click="editor.chain().focus().redo().run()"><i class="ri-arrow-go-forward-line"></i></button>
       <span class="tool-sep"></span>
@@ -1621,6 +1664,7 @@ onBeforeUnmount(() => {
       <button type="button" title="快捷键帮助（Ctrl/⌘+/）" @click="helpOpen = true"><i class="ri-question-line"></i></button>
     </div>
     </div>
+    </Teleport>
     <form v-if="advanced && findOpen" class="find-panel" @submit.prevent="runFind()">
       <input v-model="findText" placeholder="查找" aria-label="查找内容" />
       <input v-model="replaceText" placeholder="替换为" aria-label="替换内容" />
@@ -1743,12 +1787,14 @@ onBeforeUnmount(() => {
           <button type="button" @click="deleteSelectedBlock">删除块</button>
         </div>
       </DragHandle>
-      <div v-if="slashOpen && !readonly" class="slash-menu" role="listbox" aria-label="插入内容块">
-        <button v-for="(action, index) in filteredSlashActions" :key="action.id" type="button" :class="{ active: slashIndex === index }" @mousedown.prevent="chooseSlash(action)">
+      <Teleport to="body">
+      <div v-if="slashOpen && !readonly" ref="slashMenuEl" class="slash-menu" :style="{ ...slashPosition, zIndex: menuZIndex }" role="listbox" aria-label="插入内容块">
+        <button v-for="(action, index) in filteredSlashActions" :key="action.id" type="button" :class="{ active: slashIndex === index }" role="option" :aria-selected="slashIndex === index" @mousedown.prevent @click="chooseSlash(action)">
           <i :class="action.icon"></i><span><b>{{ action.label }}</b><small>{{ action.hint }}</small></span>
         </button>
         <div v-if="!filteredSlashActions.length" class="slash-empty">没有匹配的内容块</div>
       </div>
+      </Teleport>
       <div v-if="pendingUploads.length" class="upload-queue" aria-live="polite">
         <div v-for="upload in pendingUploads" :key="upload.id" :class="upload.state">
           <i :class="upload.state === 'uploading' ? 'ri-loader-4-line spin' : 'ri-error-warning-line'"></i>
@@ -1922,6 +1968,8 @@ onBeforeUnmount(() => {
   z-index: 8;
   margin-bottom: 6px;
 }
+.editor-tools.docked { position: relative; margin: 0; }
+.docked .advanced-toolbar { margin: 0; border: 0; border-bottom: 1px solid var(--wao-divider); border-radius: 0; box-shadow: none; padding: 5px 12px; }
 .toolbar-toggle {
   display: flex;
   align-items: center;
@@ -2020,11 +2068,9 @@ onBeforeUnmount(() => {
 .context-toolbar { display:flex; gap:3px; padding:5px; border-radius:9px; background:#292b35; box-shadow:0 8px 24px rgba(0,0,0,.24); }
 .context-toolbar button,.context-toolbar select { height:30px; border:0; border-radius:6px; padding:0 8px; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; font-size:11px; }.context-toolbar button:hover { background:rgba(255,255,255,.17); }.context-toolbar button.danger { color:#ffb7b7; }.context-toolbar select option { color:#222; }
 .slash-menu {
-  position: absolute;
-  z-index: 20;
-  left: 12px;
-  top: min(55%, 360px);
-  width: min(340px, calc(100vw - 48px));
+  position: fixed;
+  box-sizing: border-box;
+  width: min(340px, calc(100vw - 24px));
   max-height: 360px;
   overflow: auto;
   padding: 6px;

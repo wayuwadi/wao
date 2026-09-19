@@ -38,6 +38,7 @@ async function mountEditor(props: {
   imageControls?: boolean
   advanced?: boolean
   compact?: boolean
+  toolbarTarget?: HTMLElement | null
   document?: RichDocNode | null
 }) {
   // jsdom 的 Range 缺少布局 API；BubbleMenu 只需要一个稳定空矩形完成挂载。
@@ -240,6 +241,61 @@ describe('MarkdownEditor（所见即所得）', () => {
     const latest = changes[changes.length - 1]?.[0]
     expect(latest?.document.content?.some((node: RichDocNode) => node.type === 'table')).toBe(true)
     expect(latest?.markdown).toContain('|')
+    w.unmount()
+  })
+
+  it('知识库顶部工具栏保持可见并操作同一个编辑器，其他调用保持折叠入口', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const w = await mountEditor({ modelValue: '正文', advanced: true, toolbarTarget: host })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    expect(w.find('.toolbar-toggle').exists()).toBe(false)
+    expect(host.querySelector<HTMLElement>('.advanced-toolbar')?.style.display).not.toBe('none')
+    e.commands.selectAll()
+    host.querySelector<HTMLButtonElement>('button[title="粗体"]')!.click()
+    await nextTick()
+    expect(e.getHTML()).toContain('<strong>正文</strong>')
+    await w.setProps({ toolbarTarget: null })
+    expect((w.vm as unknown as { editor: Editor }).editor).toBe(e)
+    expect(w.find('.toolbar-toggle').exists()).toBe(true)
+    expect(w.get('.advanced-toolbar').isVisible()).toBe(false)
+    w.unmount()
+    host.remove()
+  })
+
+  it('斜线菜单跟随光标且键盘选择会删除命令并插入二级标题', async () => {
+    const w = await mountEditor({ modelValue: '', advanced: true, allowH1: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    vi.spyOn(e.view, 'coordsAtPos').mockReturnValue({ top: 120, bottom: 140, left: 200, right: 200 })
+    e.commands.insertContent('/')
+    await nextTick()
+    const menu = document.querySelector<HTMLElement>('.slash-menu')!
+    expect(menu.style.left).toBe('200px')
+    expect(menu.style.top).toBe('148px')
+    await w.get('.tiptap').trigger('keydown', { key: 'ArrowDown' })
+    await w.get('.tiptap').trigger('keydown', { key: 'Enter' })
+    expect(e.isActive('heading', { level: 2 })).toBe(true)
+    expect(e.getText().trim()).toBe('')
+    expect(document.querySelector('.slash-menu')).toBeNull()
+    w.unmount()
+  })
+
+  it('斜线搜索可插入表格，外部点击只关闭菜单而保留输入', async () => {
+    const w = await mountEditor({ modelValue: '', advanced: true, allowH1: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.insertContent('/table')
+    await nextTick()
+    expect(document.querySelectorAll('.slash-menu button')).toHaveLength(1)
+    document.querySelector<HTMLButtonElement>('.slash-menu button')!.click()
+    await nextTick()
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(true)
+    e.commands.setContent('<p>/h3</p>')
+    e.commands.setTextSelection(4)
+    await nextTick()
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await nextTick()
+    expect(document.querySelector('.slash-menu')).toBeNull()
+    expect(e.getText()).toBe('/h3')
     w.unmount()
   })
 

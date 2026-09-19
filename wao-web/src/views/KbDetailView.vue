@@ -55,6 +55,12 @@ const firstDocId = () => {
 const docId = ref<string | null>((route.query.doc as string) || null)
 const folderOpen = reactive<Record<string, boolean>>({})
 const scrollEl = ref<HTMLElement | null>(null)
+const toolbarHost = ref<HTMLElement | null>(null)
+const outlineTrigger = ref<HTMLButtonElement | null>(null)
+function closeOutline() {
+  tocOpen.value = false
+  outlineTrigger.value?.focus()
+}
 const titleEl = ref<HTMLInputElement | null>(null)
 /** 正在重命名的文件夹 id。 */
 const renamingFolder = ref<string | null>(null)
@@ -923,7 +929,7 @@ async function saveKbSettings() {
 
       <div class="tree-search"><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" /></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
       <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
-      <div class="directory-heading"><span>目录</span><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button></div>
+      <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button></div>
       <div ref="treeElement" class="tree">
         <p v-if="treeQuery.trim() && !searchedFolders.length" class="folder-empty">没有匹配的文件夹或文档</p>
         <div v-for="f in searchedFolders" :key="f.id">
@@ -1008,19 +1014,7 @@ async function saveKbSettings() {
     </div>
 
     <!-- 文档区 -->
-    <div ref="scrollEl" class="doc-scroll" :class="{ 'library-home-scroll': !docId }" @scroll.passive="onDocScroll">
-      <div class="doc-wrap">
-        <div class="doc-col">
-          <section v-if="!docId" class="library-home">
-            <header><div class="library-cover-icon" :style="{ color: kb.color }"><i :class="kb.icon"></i></div><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 篇文档 · {{ kb.folders.length }} 个分组</p></div><button class="library-star" :disabled="knowledgeFavorites.saving" :aria-pressed="knowledgeFavorites.ids.includes(kbId)" @click="knowledgeFavorites.toggle(kbId)"><i :class="knowledgeFavorites.ids.includes(kbId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ knowledgeFavorites.ids.includes(kbId) ? '已常用' : '添加常用' }}</button><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i></button></header>
-            <p v-if="kb.desc" class="library-description">{{ kb.desc }}</p>
-            <div v-if="data.loadStates.docs !== 'loaded'" class="doc-empty">正在加载目录…</div>
-            <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。<button class="library-star" @click="createAction('doc')">新建文档</button></div>
-            <section v-for="folder in kb.folders" :key="folder.id" class="home-folder">
-              <button class="home-folder-title" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="homeFolderOpen[folder.id] !== false ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>{{ folder.name }}<small>{{ folder.docs.length }}</small></button>
-              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in folder.docs" :key="id" @click="selectDoc(id)"><span>{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time>{{ data.docById(id)?.updated ? absoluteTime(data.docById(id)!.updated!) : '' }}</time></button></div>
-            </section>
-          </section>
+    <div class="document-pane">
           <div v-if="doc" class="doc-bar">
             <span class="ellip">{{ kb.name }}</span>
             <i class="ri-arrow-right-s-line b-sep"></i>
@@ -1052,7 +1046,7 @@ async function saveKbSettings() {
             >
 
             <label v-if="docId && !currentArchived" class="move-document">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
-            <button class="icon-act" title="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i></button>
+            <button ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
             <SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" />
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
@@ -1105,6 +1099,21 @@ async function saveKbSettings() {
             </button>
           </div>
 
+      <div ref="toolbarHost" class="document-toolbar"></div>
+      <div class="document-content">
+    <div ref="scrollEl" class="doc-scroll" :class="{ 'library-home-scroll': !docId }" @scroll.passive="onDocScroll">
+      <div class="doc-wrap">
+        <div class="doc-col">
+          <section v-if="!docId" class="library-home">
+            <header><div class="library-cover-icon" :style="{ color: kb.color }"><i :class="kb.icon"></i></div><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 篇文档 · {{ kb.folders.length }} 个分组</p></div><button class="library-star" :disabled="knowledgeFavorites.saving" :aria-pressed="knowledgeFavorites.ids.includes(kbId)" @click="knowledgeFavorites.toggle(kbId)"><i :class="knowledgeFavorites.ids.includes(kbId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ knowledgeFavorites.ids.includes(kbId) ? '已常用' : '添加常用' }}</button><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i></button></header>
+            <p v-if="kb.desc" class="library-description">{{ kb.desc }}</p>
+            <div v-if="data.loadStates.docs !== 'loaded'" class="doc-empty">正在加载目录…</div>
+            <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。<button class="library-star" @click="createAction('doc')">新建文档</button></div>
+            <section v-for="folder in kb.folders" :key="folder.id" class="home-folder">
+              <button class="home-folder-title" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="homeFolderOpen[folder.id] !== false ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>{{ folder.name }}<small>{{ folder.docs.length }}</small></button>
+              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in folder.docs" :key="id" @click="selectDoc(id)"><span>{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time>{{ data.docById(id)?.updated ? absoluteTime(data.docById(id)!.updated!) : '' }}</time></button></div>
+            </section>
+          </section>
           <template v-if="doc">
             <input
               ref="titleEl"
@@ -1147,6 +1156,7 @@ async function saveKbSettings() {
               :key="docId ?? 'empty-doc'"
               :model-value="body"
               :document="bodyContent?.document"
+              :toolbar-target="toolbarHost"
               class="doc-body"
               bare
               allow-h1
@@ -1154,7 +1164,7 @@ async function saveKbSettings() {
               polishable
               link-controls
               image-controls
-              placeholder="开始写作…敲 # / ## 变标题、Tab 缩进，可直接粘贴截图"
+              placeholder="开始写作…输入 / 插入内容块，支持 Markdown 和粘贴截图"
               :min-height="360"
               :peers="peers"
               @caret-line="setCaretLine"
@@ -1179,12 +1189,16 @@ async function saveKbSettings() {
           <div v-else-if="docId" class="doc-empty pad">文档正在加载或已移走，请从左侧目录重新选择。</div>
         </div>
 
-        <div v-if="doc && tocOpen" class="toc">
-          <div class="toc-label">文档大纲</div><p v-if="!toc.length" class="folder-empty">添加标题后会在这里显示目录。</p>
+
+      </div>
+    </div>
+
+        <aside v-if="doc && tocOpen" class="toc" aria-label="文档大纲" @keydown.esc.stop="closeOutline">
+          <div class="toc-label"><span>文档大纲</span><button class="icon-act" aria-label="关闭文档大纲" @click="closeOutline"><i class="ri-close-line"></i></button></div><p v-if="!toc.length" class="folder-empty">添加标题后会在这里显示目录。</p>
           <div class="toc-list">
             <button v-for="(t, i) in toc" :key="`${t.text}-${i}`" class="toc-item" :class="{ sub: t.level === 2, deep: t.level === 3, active: activeToc === i }" @click="tocGo(i)">{{ t.text }}</button>
           </div>
-        </div>
+        </aside>
       </div>
     </div>
 
@@ -1289,7 +1303,9 @@ async function saveKbSettings() {
 .kb-switch { min-width: 0; flex: 1; border: 0; font-size: 15px; font-weight: 600; background: transparent; color: var(--wao-text); padding: 6px 0; text-overflow: ellipsis; }
 .library-home-link { display: flex; align-items: center; gap: 10px; margin: 4px 10px; padding: 9px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text); cursor: pointer; text-align: left; }
 .library-home-link.on { background: var(--wao-bg-hover); font-weight: 600; }
-.directory-heading { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px 6px; font-size: 12px; color: var(--wao-text-weak); }
+.directory-heading { display: flex; align-items: center; justify-content: space-between; padding: 12px 22px 8px; font-size: 14px; color: var(--wao-text-weak); }
+.directory-heading > span { display: flex; align-items: center; gap: 10px; }
+.library-home-link { font-size: 14px; }
 .directory-heading button { border: 0; background: transparent; color: inherit; cursor: pointer; }
 .library-home-scroll { background: var(--wao-bg-sub); }
 .library-home { padding: 38px; margin: 24px auto; width: 100%; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 12px; }
@@ -1673,7 +1689,16 @@ async function saveKbSettings() {
   padding: 0;
 }
 
+/* 桌面悬停显示行操作；键盘焦点、已打开菜单和触屏始终有入口。 */
+@media (hover: hover) and (pointer: fine) {
+  :is(.folder-row, .doc-row) :deep(.resource-trigger) { opacity: 0; pointer-events: none; }
+  :is(.folder-row, .doc-row):is(:hover, :focus-within, :has([aria-expanded="true"])) :deep(.resource-trigger) { opacity: 1; pointer-events: auto; }
+}
 /* 文档区 */
+.document-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--wao-bg-card); }
+.document-pane > .doc-bar { flex: 0 0 auto; padding: 10px 16px; border-bottom: 1px solid var(--wao-divider); }
+.document-content { flex: 1; min-height: 0; position: relative; display: flex; }
+.document-toolbar { flex: 0 0 auto; }
 .doc-scroll {
   flex: 1;
   min-width: 0;
@@ -1765,6 +1790,7 @@ async function saveKbSettings() {
   align-items: center;
   justify-content: center;
 }
+.icon-act.outline-toggle { width: auto; padding: 0 8px; gap: 4px; white-space: nowrap; flex-shrink: 0; }
 .icon-act:hover {
   background: var(--wao-bg-hover);
 }
@@ -2016,19 +2042,23 @@ async function saveKbSettings() {
 
 /* TOC */
 .toc {
-  width: 168px;
-  flex-shrink: 0;
-  align-self: flex-start;
-  position: sticky;
-  top: 20px;
-  padding-top: 46px;
-}
-@media (max-width: 1180px) {
-  .toc {
-    display: none;
-  }
+  position: absolute;
+  z-index: 30;
+  top: 12px;
+  right: 12px;
+  width: 240px;
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 24px);
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--wao-divider);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+  box-shadow: 0 8px 28px rgb(20 23 35 / 12%);
 }
 .toc-label {
+  display: flex; align-items: center; justify-content: space-between;
   font-size: 11px;
   color: var(--wao-text-weak);
   letter-spacing: 1.5px;
@@ -2150,5 +2180,5 @@ async function saveKbSettings() {
 .tree-search { display: flex; align-items: center; gap: 6px; }
 .tree-search label { flex: 1; min-width: 0; }
 .doc-bar { flex-wrap: wrap; }
-.toc { display: block; }
+
 </style>
