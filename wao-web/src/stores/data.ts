@@ -80,6 +80,7 @@ import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { readDocumentDraft, removeDocumentDraft, writeDocumentDraft, type DocumentDraft } from '@/utils/documentDrafts'
 import { nowIso, todayIso } from '@/utils/time'
 import { mergeSubtasks } from '@/utils/subtaskMerge'
+import { mergeServerList } from '@/utils/mergeServerList'
 import { subtaskState } from '@/utils/subtaskTree'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
@@ -418,21 +419,9 @@ export const useDataStore = defineStore('data', () => {
   }
   /** 用服务端列表就地合并本地数组：更新已存在项、追加新项、移除已删除项，保持数组引用稳定。 */
   function mergeList<T extends { id: string }>(local: T[], remote: T[], protectedIds = new Set<string>()) {
-    const remoteIds = new Set(remote.map((r) => r.id))
-    for (const r of remote) {
-      const existing = local.find((l) => l.id === r.id)
-      if (existing) {
-        if (!protectedIds.has(r.id)) Object.assign(existing, r)
-      } else {
-        local.push(r)
-      }
-    }
-    for (let i = local.length - 1; i >= 0; i--) {
-      const id = local[i]!.id
-      // 刚本地乐观创建、PUT 还没回来的记录不能按「服务端没有」删掉，否则新建的任务会闪没。
-      if (!remoteIds.has(id) && !pendingTaskIds.has(id) && !protectedIds.has(id)) local.splice(i, 1)
-    }
+    mergeServerList(local, remote, protectedIds, pendingTaskIds)
   }
+
   function startSync() {
     if (syncTimer) return
     scheduleSync()

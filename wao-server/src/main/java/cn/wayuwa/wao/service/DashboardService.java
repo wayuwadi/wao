@@ -62,30 +62,16 @@ public class DashboardService {
 
     /** 顶部指标卡片：总运行数、当前活动运行、在线 Runner 数、本周任务完成情况。 */
     public DashboardSummaryDto summary() {
-        List<AiTaskRunEntity> runs = runMapper.selectList(null);
-        int total = runs.size();
-        int active = (int) runs.stream()
-                .filter(r -> "queued".equals(r.getStatus()) || "claimed".equals(r.getStatus())
-                        || "running".equals(r.getStatus()))
-                .count();
-
-        LocalDateTime cutoff = LocalDateTime.now(ZONE).minusMinutes(2);
-        int onlineRunners = (int) runnerMapper.selectList(null).stream()
-                .filter(r -> r.getLastSeenAt() != null && r.getLastSeenAt().isAfter(cutoff))
-                .count();
-
         LocalDate today = LocalDate.now(ZONE);
         LocalDateTime weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).atStartOfDay();
-        List<TaskEntity> tasks = taskMapper.selectList(
-                new LambdaQueryWrapper<TaskEntity>().ge(TaskEntity::getCompletedAt, weekStart));
-        int completed = (int) tasks.stream().filter(t -> "已完成".equals(t.getStatus())).count();
-
-        List<AiTaskRunEntity> weekRuns = runMapper.selectList(
-                new LambdaQueryWrapper<AiTaskRunEntity>().ge(AiTaskRunEntity::getCreatedAt, weekStart));
-        int succeededWeek = (int) weekRuns.stream().filter(r -> "succeeded".equals(r.getStatus())).count();
-        int failedWeek = (int) weekRuns.stream().filter(r -> "failed".equals(r.getStatus())).count();
-
-        return new DashboardSummaryDto(total, active, onlineRunners, completed, succeededWeek, failedWeek);
+        var counts = runMapper.selectDashboardCounts(weekStart);
+        LocalDateTime cutoff = LocalDateTime.now(ZONE).minusMinutes(2);
+        int onlineRunners = Math.toIntExact(runnerMapper.selectCount(
+                new LambdaQueryWrapper<AiRunnerNodeEntity>().gt(AiRunnerNodeEntity::getLastSeenAt, cutoff)));
+        int completed = Math.toIntExact(taskMapper.selectCount(new LambdaQueryWrapper<TaskEntity>()
+                .ge(TaskEntity::getCompletedAt, weekStart).eq(TaskEntity::getStatus, "已完成")));
+        return new DashboardSummaryDto(counts.total(), counts.active(), onlineRunners, completed,
+                counts.succeededWeek(), counts.failedWeek());
     }
 
     /**
@@ -102,6 +88,9 @@ public class DashboardService {
 
         List<AiTaskRunEntity> runs = runMapper.selectList(
                 new LambdaQueryWrapper<AiTaskRunEntity>()
+                        .select(AiTaskRunEntity::getCreatedAt, AiTaskRunEntity::getStatus,
+                                AiTaskRunEntity::getInputTokens, AiTaskRunEntity::getOutputTokens,
+                                AiTaskRunEntity::getCachedInputTokens, AiTaskRunEntity::getTotalTokens)
                         .ge(AiTaskRunEntity::getCreatedAt, from));
 
         // 按日期分桶，保留空桶顺序。
@@ -140,12 +129,11 @@ public class DashboardService {
         LocalDateTime from = start.atStartOfDay();
 
         List<TaskEntity> completed = taskMapper.selectList(
-                new LambdaQueryWrapper<TaskEntity>()
+                new LambdaQueryWrapper<TaskEntity>().select(TaskEntity::getCompletedAt)
                         .ge(TaskEntity::getCompletedAt, from)
                         .eq(TaskEntity::getStatus, "已完成"));
-        // 任务创建时间没有专门字段，复用 detailJson 中 activity 的创建时间过于复杂，
-        // 这里只统计完成趋势；创建统计需要新增字段，本阶段跳过。
-        List<TaskEntity> all = taskMapper.selectList(null);
+        // 保持现有按 id 估算创建日期的历史口径；本轮仅收窄查询，不改为 created_at 重新解释历史。
+        List<TaskEntity> all = taskMapper.selectList(new LambdaQueryWrapper<TaskEntity>().select(TaskEntity::getId));
 
         Map<LocalDate, Integer> completedByDay = new LinkedHashMap<>();
         Map<LocalDate, Integer> createdByDay = new LinkedHashMap<>();
@@ -185,7 +173,8 @@ public class DashboardService {
     /** 各引擎历史使用次数。 */
     public List<EngineUsageItem> engineUsage() {
         List<AiTaskRunEntity> runs = runMapper.selectList(
-                new LambdaQueryWrapper<AiTaskRunEntity>().isNotNull(AiTaskRunEntity::getEngine));
+                new LambdaQueryWrapper<AiTaskRunEntity>().select(AiTaskRunEntity::getEngine)
+                        .isNotNull(AiTaskRunEntity::getEngine));
         Map<String, Long> counts = runs.stream()
                 .filter(r -> r.getEngine() != null && !r.getEngine().isBlank())
                 .collect(Collectors.groupingBy(AiTaskRunEntity::getEngine, Collectors.counting()));
@@ -295,6 +284,12 @@ public class DashboardService {
         int span = Math.max(1, Math.min(days, 90));
         LocalDateTime from = LocalDate.now(ZONE).minusDays(span - 1L).atStartOfDay();
         List<AiTaskRunEntity> runs = runMapper.selectList(new LambdaQueryWrapper<AiTaskRunEntity>()
+                .select(AiTaskRunEntity::getId, AiTaskRunEntity::getTaskId, AiTaskRunEntity::getStatus,
+                        AiTaskRunEntity::getDeliveryStage, AiTaskRunEntity::getActivityType,
+                        AiTaskRunEntity::getModel, AiTaskRunEntity::getRequestedModel,
+                        AiTaskRunEntity::getReasoningEffort, AiTaskRunEntity::getRetryOfRunId,
+                        AiTaskRunEntity::getStartedAt, AiTaskRunEntity::getFinishedAt,
+                        AiTaskRunEntity::getAiExecutionDurationMs, AiTaskRunEntity::getTotalTokens)
                 .ge(AiTaskRunEntity::getCreatedAt, from));
         List<AiTaskRunEntity> completed = runs.stream().filter(DashboardService::terminal).toList();
         List<Long> durations = completed.stream()
@@ -314,7 +309,8 @@ public class DashboardService {
                 .flatMap(run -> taskIdsByRun.getOrDefault(run.getId(), List.of()).stream())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         List<TaskEntity> deliveredTasks = deliveredTaskIds.isEmpty() ? List.of()
-                : Objects.requireNonNullElse(taskMapper.selectBatchIds(deliveredTaskIds), List.of());
+                : Objects.requireNonNullElse(taskMapper.selectList(new LambdaQueryWrapper<TaskEntity>()
+                        .select(TaskEntity::getId, TaskEntity::getStatus).in(TaskEntity::getId, deliveredTaskIds)), List.of());
         int verifiedTasks = (int) deliveredTasks.stream().filter(task -> "已完成".equals(task.getStatus())).count();
 
         int metered = (int) completed.stream().filter(DashboardService::usageRecorded).count();

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -30,15 +31,33 @@ class HttpRequestMetricServiceTest {
 
         assertThat(service.record("member-a", List.of(input))).isEqualTo(1);
 
-        ArgumentCaptor<HttpRequestMetricEntity> captured = ArgumentCaptor.forClass(HttpRequestMetricEntity.class);
-        verify(mapper).insert(captured.capture());
-        assertThat(captured.getValue()).satisfies(metric -> {
+        ArgumentCaptor<List<HttpRequestMetricEntity>> captured = ArgumentCaptor.forClass(List.class);
+        verify(mapper).insertBatch(captured.capture());
+        assertThat(captured.getValue()).singleElement().satisfies(metric -> {
             assertThat(metric.getMemberId()).isEqualTo("member-a");
             assertThat(metric.getMethod()).isEqualTo("GET");
             assertThat(metric.getRequestPath()).isEqualTo("/api/projects");
             assertThat(metric.getDurationMs()).isEqualTo(1_234);
             assertThat(metric.getRetryAttempt()).isEqualTo(1);
         });
+    }
+
+    @Test
+    void validatesWholeBatchBeforeOneWriteAndSkipsEmptyBatches() {
+        var valid = new RequestMetricInput("GET", "/api/projects", 200, 20, null, 0, OffsetDateTime.now());
+        var invalid = new RequestMetricInput("GET", "/api/tasks?secret=value", 200, 20, null, 0, OffsetDateTime.now());
+        assertThat(service.record("member-a", List.of())).isZero();
+        assertThatThrownBy(() -> service.record("member-a", List.of(valid, invalid)))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.record("member-a", java.util.Collections.nCopies(101, valid)))
+                .isInstanceOf(BadRequestException.class);
+        verifyNoInteractions(mapper);
+        var batch = java.util.Collections.nCopies(100, valid);
+        assertThat(service.record("member-a", batch)).isEqualTo(100);
+        ArgumentCaptor<List<HttpRequestMetricEntity>> captured = ArgumentCaptor.forClass(List.class);
+        verify(mapper).insertBatch(captured.capture());
+        assertThat(captured.getValue()).hasSize(100).allSatisfy(metric ->
+                assertThat(metric.getMemberId()).isEqualTo("member-a"));
     }
 
     @Test

@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,7 +54,7 @@ class DocPresenceServiceTest {
 
     @Test
     void heartbeatReportsOtherPeopleOnTheSameDocWithTheLineTheyAreOn() {
-        when(knowledge.getDoc("d1")).thenReturn(docWithRev(4));
+        when(knowledge.getDocRevision("d1")).thenReturn(4);
         when(presenceMapper.selectById(any())).thenReturn(null);
         when(presenceMapper.selectList(any())).thenReturn(List.of(presence("m2", 3, now), presence("m1", 1, now)));
         when(memberMapper.selectBatchIds(any())).thenReturn(List.of(member("m2", "娃弟")));
@@ -68,7 +69,7 @@ class DocPresenceServiceTest {
 
     @Test
     void heartbeatSkipsTheBodyWhenTheClientIsAlreadyOnTheServerRevision() {
-        when(knowledge.getDoc("d1")).thenReturn(docWithRev(7));
+        when(knowledge.getDocRevision("d1")).thenReturn(7);
         when(presenceMapper.selectById(any())).thenReturn(null);
         when(presenceMapper.selectList(any())).thenReturn(List.of());
 
@@ -76,13 +77,17 @@ class DocPresenceServiceTest {
         assertThat(same.doc()).isNull();
         assertThat(same.rev()).isEqualTo(7);
 
+        verify(knowledge, never()).getDoc(any());
+        when(knowledge.getDoc("d1")).thenReturn(docWithRev(8));
         DocPresenceDto stale = service.heartbeat("d1", "m1", new DocPresenceRequest(0, false, 6), now);
         assertThat(stale.doc()).isNotNull();
+        assertThat(stale.rev()).isEqualTo(8);
+        verify(knowledge).getDoc("d1");
     }
 
     @Test
     void heartbeatUpsertsInsteadOfPilingUpRowsForTheSameReader() {
-        when(knowledge.getDoc("d1")).thenReturn(docWithRev(1));
+        when(knowledge.getDocRevision("d1")).thenReturn(1);
         when(presenceMapper.selectById("d1:m1")).thenReturn(presence("m1", 0, now.minusSeconds(5)));
         when(presenceMapper.selectList(any())).thenReturn(List.of());
 

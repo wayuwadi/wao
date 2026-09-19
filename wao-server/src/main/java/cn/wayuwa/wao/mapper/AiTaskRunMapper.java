@@ -2,6 +2,7 @@ package cn.wayuwa.wao.mapper;
 
 import cn.wayuwa.wao.domain.AiTaskRunEntity;
 import cn.wayuwa.wao.domain.AiTaskRunTaskEntity;
+import cn.wayuwa.wao.domain.DashboardRunCounts;
 import cn.wayuwa.wao.domain.ReviewableTaskRunRow;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Insert;
@@ -15,6 +16,16 @@ import java.util.List;
 
 @Mapper
 public interface AiTaskRunMapper extends BaseMapper<AiTaskRunEntity> {
+
+    /** 一次聚合历史总数、活动数和本周终态数，不返回运行详情。 */
+    @Select("""
+            SELECT COUNT(*) AS total,
+              COALESCE(SUM(BINARY status IN ('queued', 'claimed', 'running')), 0) AS active,
+              COALESCE(SUM(BINARY status = 'succeeded' AND created_at >= #{weekStart}), 0) AS succeededWeek,
+              COALESCE(SUM(BINARY status = 'failed' AND created_at >= #{weekStart}), 0) AS failedWeek
+            FROM ai_task_run
+            """)
+    DashboardRunCounts selectDashboardCounts(@Param("weekStart") LocalDateTime weekStart);
 
     /** 跨 API 节点串行化对话状态写入，避免进度回传覆盖刚保存的用户输入。 */
     @Select("SELECT * FROM ai_task_run WHERE id = #{runId} FOR UPDATE")

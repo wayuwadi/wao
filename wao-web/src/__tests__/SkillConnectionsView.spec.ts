@@ -18,8 +18,8 @@ describe('应用 Skill 接入入口', () => {
     const wrapper = mount(SkillConnectionsView, { global: { plugins: [router] } })
 
     expect(wrapper.get('h1').text()).toBe('应用 Skill 接入')
-    expect(wrapper.text()).toContain('还没有已接入的应用 Skill')
-    expect(wrapper.text()).toContain('不会用演示数据或明文 API Key 假装连接成功')
+    expect(wrapper.text()).toContain('外部应用接入尚未开放')
+    expect(wrapper.text()).toContain('目前还不能连接应用账号，无需进行配置')
     expect(wrapper.get('.market-link').attributes('href')).toBe('/wao/skills')
     expect(wrapper.find('input').exists()).toBe(false)
     expect(wrapper.findAll('button')).toHaveLength(0)

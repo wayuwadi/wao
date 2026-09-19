@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, provide, watch } from 'vue'
+import { pageVisibleKey } from '@/composables/pageVisibility'
 import { useFloatingDrag } from '@/composables/floatingDrag'
 import { useFloatingTabsStore } from '@/stores/floatingTabs'
 
 const props = defineProps<{ pageKey: string; label: string; floating: boolean; visible: boolean }>()
+provide(pageVisibleKey, computed(() => props.visible))
 defineEmits<{ dock: [] }>()
 const windows = useFloatingTabsStore()
 const { elementRef, style, dragging, onPointerDown } = useFloatingDrag(

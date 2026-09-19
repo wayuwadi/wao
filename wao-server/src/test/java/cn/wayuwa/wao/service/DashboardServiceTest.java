@@ -25,14 +25,49 @@ import cn.wayuwa.wao.mapper.TaskMapper;
 import org.junit.jupiter.api.Test;
 
 class DashboardServiceTest {
+    @org.junit.jupiter.api.BeforeAll
+    static void initializeMapperMetadata() {
+        var assistant = new org.apache.ibatis.builder.MapperBuilderAssistant(
+                new com.baomidou.mybatisplus.core.MybatisConfiguration(), "");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, AiTaskRunEntity.class);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, TaskEntity.class);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, cn.wayuwa.wao.domain.AiRunnerNodeEntity.class);
+    }
+
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final AiTaskRunMapper runMapper = mock(AiTaskRunMapper.class);
     private final TaskMapper taskMapper = mock(TaskMapper.class);
     private final AiQuotaSnapshotMapper quotaMapper = mock(AiQuotaSnapshotMapper.class);
+    private final AiRunnerNodeMapper runnerMapper = mock(AiRunnerNodeMapper.class);
     private final DashboardService service = new DashboardService(
-            runMapper, taskMapper, mock(AiRunnerNodeMapper.class), quotaMapper);
+            runMapper, taskMapper, runnerMapper, quotaMapper);
+
+    @Test
+    void summaryUsesScalarCountsWithoutLoadingHistory() {
+        when(runMapper.selectDashboardCounts(any())).thenReturn(
+                new cn.wayuwa.wao.domain.DashboardRunCounts(200, 3, 17, 2));
+        when(runnerMapper.selectCount(any())).thenReturn(2L);
+        when(taskMapper.selectCount(any())).thenReturn(8L);
+        assertThat(service.summary()).isEqualTo(new cn.wayuwa.wao.dto.DashboardSummaryDto(200, 3, 2, 8, 17, 2));
+        org.mockito.Mockito.verify(runMapper, org.mockito.Mockito.never()).selectList(any());
+        org.mockito.Mockito.verify(taskMapper, org.mockito.Mockito.never()).selectList(any());
+        org.mockito.Mockito.verify(runnerMapper, org.mockito.Mockito.never()).selectList(any());
+    }
+
+    @Test
+    void trendAndInsightsDoNotSelectUnrelatedPayloadColumns() {
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        service.aiRunTrend(30);
+        service.usageInsights(30);
+        var queries = org.mockito.ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        org.mockito.Mockito.verify(runMapper, org.mockito.Mockito.times(2)).selectList(queries.capture());
+        assertThat(queries.getAllValues()).allSatisfy(query -> {
+            assertThat(query.getSqlSelect()).contains("status", "total_tokens");
+            assertThat(query.getSqlSelect()).doesNotContain("result_summary", "latest_progress", "pending_input", "capability_");
+        });
+    }
 
     @Test
     void aiRunTrendAggregatesDailyFrequencyAndRealTokenUsage() {
@@ -152,7 +187,7 @@ class DashboardServiceTest {
                 "gpt-5.6-luna", "low", 720, 200, 8_000, false);
         failed.setRetryOfRunId("older-failure");
         when(runMapper.selectList(any())).thenReturn(List.of(first, second, third, fourth, fifth, failed));
-        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(
+        when(taskMapper.selectList(any())).thenReturn(List.of(
                 task("t1", "已完成"), task("t2", "已完成"), task("t3", "待验证"),
                 task("t4", "待验证"), task("t5", "待验证")));
 

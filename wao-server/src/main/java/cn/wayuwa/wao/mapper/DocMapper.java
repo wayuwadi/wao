@@ -8,11 +8,25 @@ import cn.wayuwa.wao.domain.DocEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /** 文档表 Mapper。 */
 @Mapper
 public interface DocMapper extends BaseMapper<DocEntity> {
+
+    /** 按主键只读有效文档的版本；不存在或已删除时返回 null，历史空版本视为 1。 */
+    @Select("SELECT COALESCE(rev, 1) FROM doc WHERE id = #{id} AND deleted_at IS NULL")
+    Integer selectAliveRevision(@Param("id") String id);
+
+    /** 只返回真正引用目标的来源及摘要字段；同类型/id 必须在同一个出链对象内匹配。 */
+    @Select("""
+            SELECT id, title, blocks_json, content_markdown
+            FROM doc
+            WHERE deleted_at IS NULL AND id != #{id}
+              AND JSON_CONTAINS(links_json, JSON_OBJECT('type', 'doc', 'id', #{id}))
+            """)
+    List<DocEntity> selectBacklinkSources(@Param("id") String id);
 
     /**
      * 用一条语句保存完整文档树顺序，只改文件夹和序号，不回写可能已被同步刷新的正文快照。

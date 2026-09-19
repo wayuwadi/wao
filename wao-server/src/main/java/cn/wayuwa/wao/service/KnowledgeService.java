@@ -215,7 +215,8 @@ public class KnowledgeService {
         KbEntity kb = requireKb(id);
         List<KbFolderEntity> folders = folderMapper.selectList(
                 aliveFolders().eq(KbFolderEntity::getKbId, id).orderByAsc(KbFolderEntity::getOrd));
-        List<DocEntity> docs = docMapper.selectList(activeDocs().eq(DocEntity::getKbId, id).orderByAsc(DocEntity::getOrd));
+        List<DocEntity> docs = docMapper.selectList(activeDocs().select(DocEntity::getId, DocEntity::getFolderId)
+                .eq(DocEntity::getKbId, id).orderByAsc(DocEntity::getOrd));
         return toDto(kb, folders, docIdsByFolder(docs));
     }
 
@@ -350,7 +351,7 @@ public class KnowledgeService {
             e.setName(req.name().trim());
             folderMapper.updateById(e);
         }
-        List<String> docIds = docMapper.selectList(aliveDocs()
+        List<String> docIds = docMapper.selectList(aliveDocs().select(DocEntity::getId)
                         .eq(DocEntity::getFolderId, folderId).orderByAsc(DocEntity::getOrd))
                 .stream().map(DocEntity::getId).toList();
         return new FolderDto(e.getId(), e.getName(), docIds);
@@ -415,13 +416,22 @@ public class KnowledgeService {
                 .isNotNull(DocEntity::getArchivedAt)
                 .orderByDesc(DocEntity::getArchivedAt));
         List<DocEntity> retained = docMapper.selectList(aliveDocs());
-        return archived.stream().map(doc -> toDto(doc, retained)).toList();
+        Map<String, List<BacklinkDto>> backlinks = backlinkIndex(retained);
+        return archived.stream().map(doc -> toDtoWithBacklinks(doc,
+                backlinks.getOrDefault(doc.getId(), List.of()))).toList();
+    }
+
+    /** 仅查询未删除文档的当前版本，供高频心跳判断是否需要读取正文。 */
+    public int getDocRevision(String id) {
+        Integer revision = docMapper.selectAliveRevision(id);
+        if (revision == null) throw new NotFoundException("文档不存在：" + id);
+        return revision;
     }
 
     /** 按 id 获取单篇文档。 */
     public DocDto getDoc(String id) {
         DocEntity e = requireDoc(id);
-        return toDto(e, docMapper.selectList(aliveDocs()));
+        return toDto(e);
     }
 
     /**
@@ -482,7 +492,7 @@ public class KnowledgeService {
             if (!Objects.equals(existing.getAuthorId(), author)) {
                 throw new BadRequestException("每日文档标识已被占用");
             }
-            return toDto(existing, docMapper.selectList(aliveDocs()));
+            return toDto(existing);
         }
         requireKb(kbId);
         requireFolder(kbId, folderId);
@@ -770,7 +780,7 @@ public class KnowledgeService {
                 existing.setUpdatedAt(LocalDateTime.now());
                 docMapper.updateContentSnapshot(existing);
             }
-            return toDto(existing, docMapper.selectList(aliveDocs()));
+            return toDto(existing);
         }
         KbEntity kb = notesKb();
         KbFolderEntity folder = authorFolder(kb.getId(), author);
@@ -963,7 +973,7 @@ public class KnowledgeService {
         existingDoc.setRev(rev(existingDoc) + 1);
         existingDoc.setUpdatedAt(LocalDateTime.now());
         docMapper.updateContentSnapshot(existingDoc);
-        return toDto(existingDoc, docMapper.selectList(aliveDocs()));
+        return toDto(existingDoc);
     }
 
     /**
@@ -983,7 +993,7 @@ public class KnowledgeService {
             existing.setCascadeDel(false);
             existing.setLinksJson(write(mergeProjectLink(readList(existing.getLinksJson(), LINKS_TYPE), project.id())));
             docMapper.updateById(existing);
-            return toDto(existing, docMapper.selectList(aliveDocs()));
+            return toDto(existing);
         }
         List<DocBlockDto> blocks = List.of(
                 new DocBlockDto("这个文档跟随项目长期保留；AI 每次只读取任务明确提供的上下文，不会默认读取整个知识库。",
@@ -1007,7 +1017,7 @@ public class KnowledgeService {
             existing.setCascadeDel(false);
             existing.setLinksJson(write(mergeProjectLink(readList(existing.getLinksJson(), LINKS_TYPE), project.id())));
             docMapper.updateById(existing);
-            return toDto(existing, docMapper.selectList(aliveDocs()));
+            return toDto(existing);
         }
         StringBuilder content = new StringBuilder();
         content.append("## 原始想法\n\n").append(blankOr(idea.rawIdea(), "未填写"));
@@ -1037,7 +1047,7 @@ public class KnowledgeService {
         DocEntity doc = requireDoc(docId);
         doc.setLinksJson(write(mergeProjectLink(readList(doc.getLinksJson(), LINKS_TYPE), projectId)));
         docMapper.updateById(doc);
-        return toDto(doc, docMapper.selectList(aliveDocs()));
+        return toDto(doc);
     }
 
     private KbFolderEntity ensureProjectFolder(ProjectDto project) {
@@ -1212,7 +1222,7 @@ public class KnowledgeService {
         e.setTagsJson(tags == null ? null : write(tags));
         e.setOrd(nextOrd(count));
         docMapper.insert(e);
-        return toDto(e, docMapper.selectList(aliveDocs()));
+        return toDto(e);
     }
 
     /**
@@ -1239,7 +1249,7 @@ public class KnowledgeService {
             DocEntity inserted = requireDoc(created.id());
             inserted.setAuto(true);
             docMapper.updateById(inserted);
-            return toDto(inserted, docMapper.selectList(aliveDocs()));
+            return toDto(inserted);
         }
         if (existing.getAutoSyncScope() != null && !existing.getAutoSyncScope().isBlank()
                 && existing.getAutoSyncDate() != null) {
@@ -1251,7 +1261,7 @@ public class KnowledgeService {
         existing.setRev(rev(existing) + 1);
         existing.setUpdatedAt(LocalDateTime.now());
         docMapper.updateContentSnapshot(existing);
-        return toDto(existing, docMapper.selectList(aliveDocs()));
+        return toDto(existing);
     }
 
     /**
@@ -1285,14 +1295,14 @@ public class KnowledgeService {
                 throw new IllegalStateException("自动归档文档初始化失败");
             }
             DocEntity e = requireDoc(created.id());
-            return toDto(e, docMapper.selectList(aliveDocs()));
+            return toDto(e);
         }
         if (docMapper.updateAutoArchive(existing.getId(), kbId, folder.getId(), title, write(blocks),
                 syncScope, syncDate, syncVersion) != 1) {
             throw new StaleChatArchiveException();
         }
         DocEntity saved = requireDoc(existing.getId());
-        return toDto(saved, docMapper.selectList(aliveDocs()));
+        return toDto(saved);
     }
 
     /**
@@ -1363,7 +1373,7 @@ public class KnowledgeService {
         } else {
             docMapper.updateContentSnapshot(e);
         }
-        return toDto(e, docMapper.selectList(aliveDocs()));
+        return toDto(e);
     }
 
     private DocDto updateVersionedArchive(DocEntity e, PatchDocRequest req) {
@@ -1395,7 +1405,7 @@ public class KnowledgeService {
                 || !Objects.equals(contentVersion, e.getContentVersion());
         boolean changed = contentChanged || !Objects.equals(links, e.getLinksJson())
                 || !Objects.equals(folderId, e.getFolderId());
-        if (!changed) return toDto(e, docMapper.selectList(aliveDocs()));
+        if (!changed) return toDto(e);
 
         long nextVersion = archiveVersions.nextVersion();
         int nextRev = contentChanged ? rev(e) + 1 : rev(e);
@@ -1409,7 +1419,7 @@ public class KnowledgeService {
             throw new ConflictException("飞书聊天归档已被同步更新，请刷新后重试");
         }
         DocEntity saved = requireDoc(e.getId());
-        return toDto(saved, docMapper.selectList(aliveDocs()));
+        return toDto(saved);
     }
 
     /**
@@ -1440,7 +1450,7 @@ public class KnowledgeService {
             e.setArchivedAt(now);
             e.setArchivedBy(memberId);
         }
-        return toDto(e, docMapper.selectList(aliveDocs()));
+        return toDto(e);
     }
 
     /**
@@ -1460,7 +1470,7 @@ public class KnowledgeService {
             e.setArchivedAt(null);
             e.setArchivedBy(null);
         }
-        return toDto(e, docMapper.selectList(aliveDocs()));
+        return toDto(e);
     }
 
     private DocEntity requireDoc(String id) {
@@ -1685,15 +1695,18 @@ public class KnowledgeService {
                 Boolean.TRUE.equals(kb.getNotes()));
     }
 
-    private DocDto toDto(DocEntity e, List<DocEntity> allDocs) {
-        return toDtoWithBacklinks(e, backlinkIndex(allDocs).getOrDefault(e.getId(), List.of()));
+    private DocDto toDto(DocEntity e) {
+        List<BacklinkDto> backlinks = e.getDeletedAt() != null ? List.of()
+                : docMapper.selectBacklinkSources(e.getId()).stream()
+                .map(source -> new BacklinkDto("doc", source.getId(), snippetOf(source))).toList();
+        return toDtoWithBacklinks(e, backlinks);
     }
 
     /**
      * 单次解析每篇文档的出链，建立目标文档到来源文档的反向索引。
      *
      * <p>旧实现为每一篇目标文档重新扫描并解析全库出链，文档列表会退化成 O(n²)。索引构建后，
-     * 列表路径只解析 n 次出链；单篇文档路径仍复用同一结果口径。
+     * 列表路径只解析 n 次出链；单篇文档由 SQL 筛选引用来源，沿用相同摘要口径。
      */
     private Map<String, List<BacklinkDto>> backlinkIndex(List<DocEntity> docs) {
         return backlinkIndex(docs,
