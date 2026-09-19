@@ -17,6 +17,7 @@ export const useSessionStore = defineStore('session', () => {
   const account = ref<AuthSession | null>(null)
   const pendingClaim = ref<AuthResolution | null>(null)
   const initialized = ref(false)
+  const connectionError = ref('')
   let initializePromise: Promise<void> | null = null
 
   const members = ref<Member[]>([])
@@ -36,6 +37,8 @@ export const useSessionStore = defineStore('session', () => {
   function accept(session: AuthSession) {
     setDesktopCacheMember(session.member.id)
     account.value = session
+    connectionError.value = ''
+    initialized.value = true
     pendingClaim.value = null
     if (!members.value.some((member) => member.id === session.member.id)) members.value.push(session.member)
   }
@@ -57,10 +60,20 @@ export const useSessionStore = defineStore('session', () => {
   async function initialize() {
     if (initialized.value) return
     if (!initializePromise) {
+      connectionError.value = ''
       initializePromise = getSession()
         .then(async (value) => { accept(value); await refreshDirectory() })
-        .catch(() => { account.value = null })
-        .finally(() => { initialized.value = true })
+        .catch((error: unknown) => {
+          const status = (error as { status?: number; response?: { status?: number } })?.status
+            ?? (error as { response?: { status?: number } })?.response?.status
+          if (status === 401) {
+            account.value = null
+            initialized.value = true
+          } else {
+            connectionError.value = error instanceof Error ? error.message : '暂时无法连接服务器'
+          }
+        })
+        .finally(() => { initializePromise = null })
     }
     return initializePromise
   }
@@ -90,7 +103,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   return {
-    account, pendingClaim, initialized, authed, userId, members, org, currentUser,
+    account, pendingClaim, initialized, connectionError, authed, userId, members, org, currentUser,
     memberById, accept, acceptResolution, initialize, refreshDirectory, emailLogin, emailRegister, claim, logout,
   }
 })
