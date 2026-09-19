@@ -99,6 +99,8 @@ const props = withDefaults(
     minHeight?: number
     /** 只读展示，不可编辑。 */
     readonly?: boolean
+    /** 原地编辑首次挂载后将焦点交给正文。 */
+    autofocus?: boolean
     /** 文档正文等沉浸场景不显示输入框边框与底色。 */
     bare?: boolean
     /** 文档正文允许一级标题；任务描述等场景仍从二级标题开始。 */
@@ -130,6 +132,7 @@ const props = withDefaults(
     placeholder: '写点什么…支持 Markdown 快捷输入',
     minHeight: 84,
     readonly: false,
+    autofocus: false,
     bare: false,
     allowH1: false,
     peers: () => [],
@@ -404,7 +407,10 @@ const editor = useEditor({
       return true
     },
   },
-  onCreate: () => nextTick(() => (editorReady.value = true)),
+  onCreate: ({ editor: e }) => nextTick(() => {
+    editorReady.value = true
+    if (props.autofocus && !props.readonly && !e.isDestroyed) e.commands.focus('start', { scrollIntoView: false })
+  }),
   onUpdate: ({ editor: e }) => {
     tableMenu.value = null
     selectionDismissed.value = false

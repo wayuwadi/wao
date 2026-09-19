@@ -7,7 +7,7 @@ import { apiCreateNoteTag, apiPatchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
-const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[] }>()
+const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean }>()
 const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string] }>()
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const data = useDataStore()
@@ -51,6 +51,7 @@ async function createTag() {
 }
 const fullscreen = ref(false)
 const composerElement = ref<HTMLElement>()
+
 let previousOverflow: string | undefined
 watch(fullscreen, value => {
   if (value) { previousOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden' }
@@ -178,11 +179,11 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </script>
 
 <template>
-  <section ref="composerElement" class="note-composer" :class="{ fullscreen }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
-    <div class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? '继续编辑' : '此刻，想记点什么？' }}</b><button type="button" title="复制完整内容并保留格式" @click="editorRef?.copyFormatted()">复制内容</button><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
+  <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
+    <div class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><button type="button" title="复制完整内容并保留格式" @click="editorRef?.copyFormatted()">复制内容</button><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
       <MarkdownEditor ref="editorRef" :key="id" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls
-        :menu-z-index="fullscreen ? 2200 : 1000"
+        :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile" />
@@ -212,6 +213,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 
 <style scoped>
 .note-composer { display: flex; flex-direction: column; min-width: 0; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 14px; padding: 18px; background: var(--wao-bg-card); }
+.note-composer.inline:not(.fullscreen) { padding: 0; border: 0; border-radius: 0; }
+.inline:not(.fullscreen) .editor-space { min-height: 160px; max-height: 460px; }
+.inline .composer-heading { flex-wrap: wrap; }
 .note-composer:focus-within { border-color: var(--wao-primary); }
 .composer-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .composer-heading i { color: var(--wao-primary); font-size: 20px; }
