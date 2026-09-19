@@ -58,6 +58,7 @@ function clearDraft(key: string, expected: string) {
   }
 }
 const archivingId = ref('')
+const archiveError = ref<{ item: MemoryDocument; message: string } | null>(null)
 const form = reactive({ title: '', situation: '', choice: '', reason: '' })
 let queryTimer: number | undefined
 
@@ -89,6 +90,7 @@ async function load() {
       scopeType: 'personal',
       scopeId: session.userId,
       category: 'decision',
+      state: 'active',
       query: requestedQuery || undefined,
     })
     if (!isCurrent() || sequence !== loadSequence || requestedQuery !== query.value.trim()) return
@@ -214,18 +216,21 @@ async function save() {
 }
 
 async function archive(item: MemoryDocument) {
+  if (archivingId.value) return
   const isCurrent = requestContext()
   if (!isCurrent()) return
   if (!window.confirm(`确认废止“${item.revision.title}”？历史版本仍会保留。`)) return
   archivingId.value = item.id
+  archiveError.value = null
   try {
     await archiveMemory(item.id)
     if (!isCurrent()) return
+    decisions.value = decisions.value.filter(decision => decision.id !== item.id)
     toast('决策已废止，不再进入默认检索', 'ri-archive-line')
     await load()
   } catch (error) {
     if (!isCurrent()) return
-    toast(error instanceof Error ? error.message : '废止失败，请重试', 'ri-error-warning-line')
+    archiveError.value = { item, message: error instanceof Error ? error.message : '连接失败，请重试' }
   } finally {
     if (isCurrent()) archivingId.value = ''
   }
@@ -238,6 +243,7 @@ watch(() => session.userId, () => {
   editing.value = null
   saving.value = false
   archivingId.value = ''
+  archiveError.value = null
   resetForm()
   query.value = ''
   window.clearTimeout(queryTimer)
@@ -258,6 +264,11 @@ onMounted(load)
       <button class="primary" type="button" @click="openCreate"><i class="ri-add-line"></i>新增决策</button>
     </header>
 
+    <div v-if="archiveError" class="state-card error" role="alert">
+      <span>未能确认“{{ archiveError.item.revision.title }}”的废止结果：{{ archiveError.message }}。可重试或重新加载核对。</span>
+      <button type="button" :disabled="!!archivingId" @click="archive(archiveError.item)">重试废止</button>
+      <button type="button" :disabled="loading" @click="load">重新加载核对</button>
+    </div>
     <section class="toolbar">
       <label class="search"><i class="ri-search-line"></i><input v-model="query" placeholder="搜索情境、决定或原因" /></label>
       <RouterLink to="/memories?scope=personal" class="memory-link"><i class="ri-history-line"></i>在记忆中心查看完整版本</RouterLink>
@@ -284,7 +295,7 @@ onMounted(load)
         </dl>
         <footer>
           <span>更新于 {{ formatTime(item.updatedAt) }}</span>
-          <div><button type="button" @click="openEdit(item)"><i class="ri-edit-line"></i>编辑</button><button class="danger" type="button" :disabled="archivingId === item.id" @click="archive(item)"><i class="ri-archive-line"></i>{{ archivingId === item.id ? '废止中…' : '废止' }}</button></div>
+          <div><button type="button" :disabled="!!archivingId" @click="openEdit(item)"><i class="ri-edit-line"></i>编辑</button><button class="danger" type="button" :disabled="!!archivingId" @click="archive(item)"><i class="ri-archive-line"></i>{{ archivingId === item.id ? '废止中…' : '废止' }}</button></div>
         </footer>
       </article>
     </section>
