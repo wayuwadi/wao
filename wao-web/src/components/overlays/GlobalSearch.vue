@@ -5,7 +5,7 @@ import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 
 import { useNavStore } from '@/stores/nav'
-import { NAVIGATION_CATALOG, matchesFunction, menuLocation } from '@/config/navigationCatalog'
+import { NAVIGATION_CATALOG, functionDescription, matchesFunction, menuLocation } from '@/config/navigationCatalog'
 import { externalAppItemId, type NavItemId } from '@/config/nav'
 const nav = useNavStore()
 const data = useDataStore()
@@ -65,7 +65,8 @@ const groups = computed(() => {
               ? '链接空间'
               : meta.label,
         sub:
-          '功能 · ' +
+          (functionDescription(id) ?? (id.startsWith('external:') ? '打开接入的外部应用。' : '查找 WAO 的全部功能。')) +
+          ' · ' +
           (nav.layoutLoaded ? menuLocation(id, nav.currentLayout()) : '个人位置尚未读取'),
         go: () => {
           close()
