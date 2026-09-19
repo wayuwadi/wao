@@ -1,4 +1,4 @@
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { taskDraftWindowId, readTaskDrafts, writeTaskDraft, removeTaskDraft } from '@/utils/taskDraftStorage'
 import { defineStore } from 'pinia'
 import {
@@ -509,12 +509,13 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ---- 文档高级正文编辑（IndexedDB 草稿 + localStorage 兼容） ----
+  function docDraftStorageKey() { return `${DOC_KEY}:${encodeURIComponent(useSessionStore().userId || 'anonymous')}` }
   const docEdits = ref<Record<string, DocEdit>>(loadDocEdits())
   const docConflicts = reactive<Record<string, Doc | null>>({})
   const docDraftErrors = reactive<Record<string, boolean>>({})
   function loadDocEdits(): Record<string, DocEdit> {
     try {
-      return JSON.parse(localStorage.getItem(DOC_KEY) || '{}')
+      return JSON.parse(localStorage.getItem(docDraftStorageKey()) || '{}')
     } catch {
       return {}
     }
@@ -526,10 +527,21 @@ export const useDataStore = defineStore('data', () => {
   const docDirty = reactive<Record<string, boolean>>({})
   const docEditSequences: Record<string, number> = {}
   const docRestoreSequences: Record<string, number> = {}
+  let docMemberGeneration = 0
+  watch(() => useSessionStore().userId, () => {
+    docMemberGeneration++
+    Object.values(docPersistTimers).forEach(clearTimeout)
+    Object.keys(docSavePromises).forEach(id => { docSavePromises[id] = undefined })
+    Object.keys(docDirty).forEach(id => { delete docDirty[id] })
+    Object.keys(docConflicts).forEach(id => { delete docConflicts[id] })
+    Object.keys(docDraftErrors).forEach(id => { delete docDraftErrors[id] })
+    Object.keys(saveStates).filter(key => key.startsWith('doc:')).forEach(key => { delete saveStates[key] })
+    docEdits.value = loadDocEdits()
+  }, { flush: 'sync' })
   /** 保存最新本机草稿及基础版本；编辑和已确认版本推进使用同一持久化边界。 */
   async function persistLocalDocDraft(id: string, next: DocEdit, base: Doc): Promise<void> {
     try {
-      localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
+      localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value))
     } catch {
       docDraftErrors[id] = true
     }
@@ -589,12 +601,15 @@ export const useDataStore = defineStore('data', () => {
     if (!captured?.content) return true
     const resolved = docOf(id)
     markSaving(`doc:${id}`)
+    const requestGeneration = docMemberGeneration
+    const requestMember = useSessionStore().userId || 'anonymous'
     const request = apiPatchDoc(id, {
       title: resolved.title,
       blocks: legacyProjection(captured.content),
       content: captured.content,
       expectedRev: captured.baseRev ?? resolved.base.rev ?? 1,
     }).then(async (saved) => {
+      if (requestGeneration !== docMemberGeneration) return false
       docs[id] = saved
       markSaved(`doc:${id}`, true)
       const latest = docEdits.value[id]
@@ -603,8 +618,8 @@ export const useDataStore = defineStore('data', () => {
         docEdits.value = rest
         docDirty[id] = false
         delete docDraftErrors[id]
-        try { localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value)) } catch { /* IndexedDB remains */ }
-        await removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
+        try { localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value)) } catch { /* IndexedDB remains */ }
+        await removeDocumentDraft(requestMember, id).catch(() => undefined)
       } else if (latest) {
         latest.baseRev = saved.rev ?? (captured.baseRev ?? 1) + 1
         // 第一版已落库，后续输入的草稿必须记住新基线；否则补交失败后刷新会误判为协同冲突。
@@ -614,6 +629,7 @@ export const useDataStore = defineStore('data', () => {
       }
       return true
     }).catch(async (cause: unknown) => {
+      if (requestGeneration !== docMemberGeneration) return false
       const message = cause instanceof Error ? cause.message : ''
       markSaved(`doc:${id}`, false, message)
       if (message.includes('其他窗口') || message.includes('刷新后处理')) {
@@ -621,7 +637,7 @@ export const useDataStore = defineStore('data', () => {
       }
       return false
     }).finally(() => {
-      docSavePromises[id] = undefined
+      if (docSavePromises[id] === request) docSavePromises[id] = undefined
     })
     docSavePromises[id] = request
     return request
@@ -631,6 +647,7 @@ export const useDataStore = defineStore('data', () => {
 
   /** 从 IndexedDB 找回浏览器草稿；版本落后时先进入冲突处理，不自动覆盖服务器。 */
   async function restoreDocumentDraft(id: string): Promise<boolean> {
+    const restoreGeneration = docMemberGeneration
     const editSequence = docEditSequences[id] ?? 0
     const restoreSequence = docRestoreSequences[id] = (docRestoreSequences[id] ?? 0) + 1
     const memberId = useSessionStore().userId || 'anonymous'
@@ -648,7 +665,7 @@ export const useDataStore = defineStore('data', () => {
     } else {
       draft = await readDocumentDraft(memberId, id).catch(() => null)
     }
-    if (!draft || memberId !== (useSessionStore().userId || 'anonymous')
+    if (!draft || restoreGeneration !== docMemberGeneration || memberId !== (useSessionStore().userId || 'anonymous')
       || editSequence !== (docEditSequences[id] ?? 0)
       || restoreSequence !== docRestoreSequences[id]
       || base !== docs[id]) return false
@@ -659,7 +676,7 @@ export const useDataStore = defineStore('data', () => {
       docEdits.value = rest
       docDirty[id] = false
       delete docDraftErrors[id]
-      try { localStorage.setItem(DOC_KEY, JSON.stringify(rest)) } catch { /* 正文已经落库 */ }
+      try { localStorage.setItem(docDraftStorageKey(), JSON.stringify(rest)) } catch { /* 正文已经落库 */ }
       await removeDocumentDraft(memberId, id).catch(() => undefined)
       return false
     }
@@ -668,7 +685,7 @@ export const useDataStore = defineStore('data', () => {
       [id]: { title: draft.title, text: draft.content.markdown, content: draft.content, baseRev: draft.baseRev },
     }
     docDirty[id] = true
-    try { localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value)) } catch { docDraftErrors[id] = true }
+    try { localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value)) } catch { docDraftErrors[id] = true }
     if ((base.rev ?? 1) !== draft.baseRev) {
       docConflicts[id] = base
       markSaved(`doc:${id}`, false)
@@ -697,7 +714,7 @@ export const useDataStore = defineStore('data', () => {
     if (override && override.text != null && override.text !== remoteMarkdown) {
       const { [doc.id]: _dropped, ...rest } = docEdits.value
       docEdits.value = rest
-      localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
+      localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value))
     }
     return true
   }
@@ -723,7 +740,7 @@ export const useDataStore = defineStore('data', () => {
     docEdits.value = rest
     docDirty[id] = false
     delete docConflicts[id]
-    try { localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value)) } catch { /* 已有云端版本 */ }
+    try { localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value)) } catch { /* 已有云端版本 */ }
     await removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
     markSaved(`doc:${id}`, true)
     return true
@@ -1024,7 +1041,7 @@ export const useDataStore = defineStore('data', () => {
       .map(([kbId, ids]) => [kbId, ids.filter((docId) => docId !== id)]))
     const { [id]: _dropped, ...rest } = docEdits.value
     docEdits.value = rest
-    localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
+    localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value))
     void removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
     if (apiLive.value) {
       try {

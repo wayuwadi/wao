@@ -57,7 +57,7 @@ describe('文档草稿完整生命周期回归', () => {
     }))
     expect(data.docPending(id)).toBe(false)
     expect(data.docEdits[id]).toBeUndefined()
-    expect(JSON.parse(localStorage.getItem('wao-docs-v1') ?? '{}')[id]).toBeUndefined()
+    expect(JSON.parse(localStorage.getItem('wao-docs-v1:draft-lifecycle-member') ?? '{}')[id]).toBeUndefined()
     expect(await readDocumentDraft(memberId, id)).toBeNull()
   })
 

@@ -20,7 +20,7 @@ describe('恢复未同步的文档草稿', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   function restoreSetup(baseRev = 3) {
-    localStorage.setItem('wao-docs-v1', JSON.stringify({
+    localStorage.setItem('wao-docs-v1:anonymous', JSON.stringify({
       'recovery-doc': { title: '恢复验收', content: { version: 1, document: null, markdown: '尚未同步的草稿' }, baseRev },
     }))
     const data = useDataStore()
@@ -57,7 +57,7 @@ describe('恢复未同步的文档草稿', () => {
       failed: true, saving: false, savedAt: null, errorMessage: '有序列表编号样式不受支持',
     })
     expect(data.docEdits['recovery-doc']).toEqual(pending)
-    expect(localStorage.getItem('wao-docs-v1')).toContain('尚未同步的草稿')
+    expect(localStorage.getItem('wao-docs-v1:anonymous')).toContain('尚未同步的草稿')
     expect(data.docs['recovery-doc']?.content?.markdown).toBe('服务器已有正文')
 
     vi.mocked(apiPatchDoc).mockResolvedValueOnce({
@@ -70,7 +70,7 @@ describe('恢复未同步的文档草稿', () => {
     expect(data.saveState('doc:recovery-doc')).toMatchObject({ failed: false, errorMessage: '' })
     expect(data.saveState('doc:recovery-doc').savedAt).not.toBeNull()
     expect(data.docEdits['recovery-doc']).toBeUndefined()
-    expect(localStorage.getItem('wao-docs-v1')).not.toContain('recovery-doc')
+    expect(localStorage.getItem('wao-docs-v1:anonymous')).not.toContain('recovery-doc')
     expect(data.docs['recovery-doc']?.content?.markdown).toBe('尚未同步的草稿')
   })
 })
