@@ -108,3 +108,17 @@ describe('AutomationView 导航', () => {
     expect(wrapper.find('.http-config').exists()).toBe(true)
   })
 })
+
+it('启用状态不表示运行成功，并可进入已提交任务的真实执行结果', async () => {
+  const item = job(1)
+  item.runs[0]!.aiRunId = 'run-123'
+  item.runs[0]!.result = '成功 · 已创建 AI Run run-123'
+  const wrapper = mountView([item])
+  expect(wrapper.text()).toContain('已启用')
+  expect(wrapper.text()).toContain('已提交执行')
+  await wrapper.get('.job-name').trigger('click')
+  expect(wrapper.get('.grid-aoruns .mini').text()).toBe('已提交执行')
+  expect(wrapper.get('a.result-link').attributes('href')).toBe('/ai-sessions?session=run-123')
+  expect(wrapper.text()).toContain('触发记录：成功 · 已创建 AI Run run-123')
+  wrapper.unmount()
+})
