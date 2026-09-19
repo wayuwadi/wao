@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
+import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import projectDetailSource from '@/views/ProjectDetailView.vue?raw'
@@ -22,6 +23,23 @@ describe('项目页聚焦任务', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     seedDataStore(useDataStore())
+  })
+
+  it('普通入口始终默认表格，忽略旧看板偏好，仍允许手动切换', async () => {
+    useUiStore().setTaskView('p1', 'board')
+    await router.push('/projects/p1')
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.find('table[aria-label="项目任务表格"]').exists()).toBe(true)
+    const boardButton = wrapper.findAll('.seg-btn').find((button) => button.text().includes('看板'))!
+    await boardButton.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.view).toBe('board')
+    expect(wrapper.find('.board').exists()).toBe(true)
+    await router.push('/projects/p1')
+    await flushPromises()
+    expect(wrapper.find('table[aria-label="项目任务表格"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('项目表格保留固定列和可展开的子任务', async () => {

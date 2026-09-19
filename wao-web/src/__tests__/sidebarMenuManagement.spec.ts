@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TopMenuBar from '@/components/nav/TopMenuBar.vue'
 import SideNav from '@/components/nav/SideNav.vue'
+import { useFavoritesStore } from '@/stores/favorites'
 import { fetchNavigationLayout, saveNavigationLayout } from '@/api/navigationLayout'
 import { useNavStore } from '@/stores/nav'
 import {
@@ -76,6 +77,7 @@ describe('桌面侧栏直接维护菜单', () => {
       routes: [
         { path: '/', component: { template: '<div />' }, meta: { module: 'home' } },
         { path: '/projects', component: { template: '<div />' }, meta: { module: 'projects' } },
+        { path: '/projects/:id', component: { template: '<div />' }, meta: { module: 'projects' } },
         { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
       ],
     })
@@ -93,6 +95,49 @@ describe('桌面侧栏直接维护菜单', () => {
     await flushPromises()
     return wrapper
   }
+
+  it('项目收藏位于项目菜单下，取消收藏不跳转且保留其他收藏', async () => {
+    const wrapper = await mountSideNav()
+    const favorites = useFavoritesStore()
+    favorites.items = [
+      { type: 'project', targetId: 'p1', label: '收藏项目', parentId: null },
+      { type: 'doc', targetId: 'd1', label: '收藏文档', parentId: 'kb1' },
+    ]
+    await flushPromises()
+    const children = wrapper.get('.project-children')
+    expect(children.element.previousElementSibling?.getAttribute('aria-label')).toBe('项目')
+    expect(children.get('.item').find('i').exists()).toBe(false)
+    expect(wrapper.findAll('.fav-item').map((item) => item.text())).toEqual(['收藏文档'])
+    await children.get('.item').trigger('click')
+    await flushPromises()
+    expect(children.get('.item').classes()).toContain('active')
+    expect(wrapper.get('[aria-label="项目"]').classes()).not.toContain('active')
+    useNavStore().toggleCollapse()
+    await flushPromises()
+    expect(wrapper.get('[aria-label="项目"]').classes()).toContain('active')
+    useNavStore().toggleCollapse()
+    await flushPromises()
+    await wrapper.get('[aria-label="取消收藏：收藏项目"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.project-children').exists()).toBe(false)
+    expect(favorites.items.map((item) => item.label)).toEqual(['收藏文档'])
+    wrapper.unmount()
+  })
+
+  it('仅收藏项目时不显示顶部收藏组，收缩侧栏隐藏项目子项', async () => {
+    const wrapper = await mountSideNav()
+    useFavoritesStore().items = [{ type: 'project', targetId: 'p1', label: '收藏项目', parentId: null }]
+    await flushPromises()
+    expect(wrapper.find('.fav-group').exists()).toBe(false)
+    expect(wrapper.find('.project-children').exists()).toBe(true)
+    useNavStore().toggleCollapse()
+    await flushPromises()
+    expect(wrapper.find('.project-children').exists()).toBe(false)
+    useNavStore().toggleCollapse()
+    await flushPromises()
+    expect(wrapper.get('.project-children').text()).toContain('收藏项目')
+    wrapper.unmount()
+  })
 
   it('拖到底部后以原菜单图标显示，并可右键改名保存个人布局', async () => {
     const wrapper = await mountSideNav()

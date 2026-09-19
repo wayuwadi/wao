@@ -38,7 +38,7 @@ export const useFavoritesStore = defineStore('favorites', () => {
     items.value = [...items.value, { type, targetId, label, parentId }]
     try {
       await apiAddFavorite(type, targetId)
-      toast('已收藏，左侧菜单「收藏」里随时可打开', 'ri-star-fill')
+      toast(type === 'project' ? '已收藏，可从左侧项目菜单下打开' : '已收藏，左侧菜单「收藏」里随时可打开', 'ri-star-fill')
     } catch {
       items.value = items.value.filter((f) => !(f.type === type && f.targetId === targetId))
       toast('收藏失败，请重试', 'ri-error-warning-line')

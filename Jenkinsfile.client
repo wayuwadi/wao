@@ -1,0 +1,87 @@
+pipeline {
+    agent none
+    options {
+        disableConcurrentBuilds(abortPrevious: false)
+        skipDefaultCheckout(true)
+        timestamps()
+        timeout(time: 120, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '3'))
+    }
+    parameters {
+        booleanParam(name: 'PUBLISH_CLIENT', defaultValue: false, description: '双端制品齐全并通过旧公钥验签后发布；只允许 main。')
+        booleanParam(name: 'BUILD_MACOS', defaultValue: true, description: '使用 wao-client-macos 节点构建通用 DMG；关闭时只验收 Windows，不能发布。')
+    }
+    stages {
+        stage('检出并核对版本') {
+            agent { label 'built-in' }
+            steps {
+                deleteDir()
+                checkout scm
+                script {
+                    env.WAO_CLIENT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    if (params.PUBLISH_CLIENT && !params.BUILD_MACOS) {
+                        error('正式发布必须同时构建 Windows 和 Mac，不能用旧 Mac 包冒充新版本。')
+                    }
+                    if (params.PUBLISH_CLIENT) {
+                        if (!(env.GIT_BRANCH in ['origin/main', 'main'])) {
+                            error('正式发布只允许受信任的 main。')
+                        }
+                        sh 'test -s /etc/jenkins/secrets/tauri-updater.key || { echo "缺少原有 Tauri 更新签名私钥，请先恢复受限密钥文件。"; exit 1; }'
+                    }
+                    env.WAO_CLIENT_VERSION = sh(script: '''
+                        docker run --rm --network host --user "$(id -u):$(id -g)" \
+                          -e PUBLISH_CLIENT -v "$PWD:/workspace" -w /workspace \
+                          node:24.15.0-bookworm-slim node deploy/jenkins/client/validate.mjs
+                    ''', returnStdout: true).trim()
+                    currentBuild.description = "${env.WAO_CLIENT_VERSION} · ${env.WAO_CLIENT_SHA.take(8)} · ${params.PUBLISH_CLIENT ? '正式发布' : '仅构建'}"
+                }
+                stash name: 'client-source', includes: 'wao-client/**,deploy/jenkins/client/**', useDefaultExcludes: true
+            }
+        }
+        stage('原生安装包') {
+            parallel {
+                stage('Linux2 构建 Windows') {
+                    agent { label 'built-in' }
+                    steps {
+                        unstash 'client-source'
+                        sh 'bash deploy/jenkins/client/windows.sh'
+                        stash name: 'windows-installer', includes: 'client-release/raw/windows/**'
+                        archiveArtifacts artifacts: 'client-release/raw/windows/*', fingerprint: true
+                    }
+                }
+                stage('Mac 通用包') {
+                    when { beforeAgent true; expression { params.BUILD_MACOS } }
+                    options { timeout(time: 45, unit: 'MINUTES') }
+                    agent { label 'wao-client-macos' }
+                    steps {
+                        deleteDir()
+                        unstash 'client-source'
+                        sh 'bash deploy/jenkins/client/macos.sh'
+                        stash name: 'macos-installer', includes: 'client-release/raw/macos/**'
+                        archiveArtifacts artifacts: 'client-release/raw/macos/*', fingerprint: true
+                    }
+                }
+            }
+        }
+        stage('统一签名与原子发布') {
+            when { beforeAgent true; expression { params.PUBLISH_CLIENT } }
+            agent { label 'built-in' }
+            steps {
+                unstash 'windows-installer'
+                unstash 'macos-installer'
+                sh 'bash deploy/jenkins/client/sign.sh'
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'wao-cloud-ssh', keyFileVariable: 'CLOUD_KEY_FILE', usernameVariable: 'CLOUD_USER'),
+                    file(credentialsId: 'wao-cloud-known-hosts', variable: 'CLOUD_KNOWN_HOSTS_FILE')
+                ]) {
+                    sh 'bash deploy/jenkins/client/publish.sh'
+                }
+                archiveArtifacts artifacts: 'client-release/publish/*', fingerprint: true
+            }
+        }
+    }
+    post {
+        success { echo "${params.PUBLISH_CLIENT ? '双端客户端已发布，公网文件哈希验证通过。' : '仅构建完成，没有变更公开下载或更新通道。'} Windows 实机安装和 Mac 覆盖升级仍需另行验收。" }
+        failure { echo '客户端流水线失败；请检查失败阶段，不得将构建或签名失败描述为已发布。' }
+    }
+}

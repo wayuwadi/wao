@@ -62,4 +62,75 @@ class WeKnoraSyncServiceTest {
         assertThrows(IllegalArgumentException.class,()->WeKnoraSyncService.validate(new WeKnoraSyncService.Settings("8f7e78c1-4933-4dec-bce3-f35dd8f4e698","",List.of("docs"),101,true,true,"02:00",0)));
         assertThrows(IllegalArgumentException.class,()->WeKnoraSyncService.validate(new WeKnoraSyncService.Settings("8f7e78c1-4933-4dec-bce3-f35dd8f4e698","",List.of("docs"),20,true,true,"25:00",0)));
     }
+    @Test void cleanupBacklogCannotConsumeWritingBudget() {
+        config.put("batch_limit",1);
+        when(db.queryForList("SELECT source_key,remote_id,content_hash,status FROM weknora_sync_item")).thenReturn(List.of(
+            Map.of("source_key","docs:old1:1","remote_id","old1","status","synced"),
+            Map.of("source_key","docs:old2:1","remote_id","old2","status","synced")));
+        when(client.list(any())).thenReturn(List.of());
+        when(client.write(any(),isNull(),eq(document))).thenReturn(remote());run();
+        verify(client,times(1)).delete(any(),any());
+        verify(client).write(any(),isNull(),eq(document));
+        var order=inOrder(client);order.verify(client).write(any(),isNull(),eq(document));order.verify(client).delete(any(),any());
+        verify(db).update(contains("SET status=?,finished_at"),eq("backlog"),anyString(),eq("run-1"));
+    }
+    @Test void knowledgeRunCannotDeleteOtherSelectedOrExcludedModules() {
+        config.put("modules_json","[\"docs\",\"chat\"]");
+        tracked(Map.of("source_key","chat:day:1","remote_id","chat-1","status","synced"));
+        when(client.list(any())).thenReturn(List.of());
+        when(client.write(any(),isNull(),eq(document))).thenReturn(remote());
+        ReflectionTestUtils.invokeMethod(service,"synchronize","run-1",config,lock,true);
+        verify(source).snapshot("owner",List.of("docs"));
+        verify(client,never()).delete(any(),any());
+        verify(client).write(any(),isNull(),eq(document));
+    }
+    @Test void knowledgeChangeDetectionIgnoresOtherModulesAndUnchangedContent() {
+        var record=new HashMap<String,Object>(Map.of("source_key",document.key(),"module_id","docs","content_hash",document.hash(),"status","synced","parse_status","completed","summary_status","completed"));
+        var other=Map.<String,Object>of("source_key","chat:old:1","module_id","chat");
+        assertFalse(WeKnoraSyncService.knowledgeChanged(List.of(document),List.of(record,other),List.of("docs"),true));
+        record.put("content_hash","previous");
+        assertTrue(WeKnoraSyncService.knowledgeChanged(List.of(document),List.of(record),List.of("docs"),true));
+        assertTrue(WeKnoraSyncService.knowledgeChanged(List.of(),List.of(record),List.of("docs"),true));
+        assertFalse(WeKnoraSyncService.knowledgeChanged(List.of(),List.of(record),List.of("docs"),false));
+    }
+    @Test void stateRequiresCurrentHashAndEveryLongDocumentPart() {
+        var record=new HashMap<String,Object>(Map.of("content_hash",document.hash(),"desired_hash",document.hash(),"status","synced","parse_status","completed","summary_status","completed"));
+        var tracked=new HashMap<String,Map<String,Object>>();tracked.put(document.key(),record);
+        assertEquals("processed",WeKnoraSyncService.documentState(List.of(document),tracked));
+        record.put("summary_status","processing");
+        assertEquals("processing",WeKnoraSyncService.documentState(List.of(document),tracked));
+        record.put("summary_status","failed");
+        assertEquals("failed",WeKnoraSyncService.documentState(List.of(document),tracked));
+        record.put("content_hash","old");record.put("desired_hash","old");
+        assertEquals("pending",WeKnoraSyncService.documentState(List.of(document),tracked));
+        var longParts=WeKnoraSourceService.parts("docs","long","长文","","正文".repeat(10000));
+        var first=longParts.get(0);
+        assertEquals("pending",WeKnoraSyncService.documentState(longParts,Map.of(first.key(),Map.of("content_hash",first.hash(),"status","synced","parse_status","completed","summary_status","completed"))));
+    }
+    @Test void disabledLiveSyncAndRecentCrossNodeCheckDoNotScanSources() {
+        when(db.queryForList("SELECT cfg_value FROM system_setting WHERE cfg_key=?",String.class,"weknora-sync-live-enabled")).thenReturn(List.of("false"));
+        assertNull(ReflectionTestUtils.invokeMethod(service,"queueKnowledgeRun",config));
+        verifyNoInteractions(source);
+        when(db.queryForList("SELECT cfg_value FROM system_setting WHERE cfg_key=?",String.class,"weknora-sync-live-enabled")).thenReturn(List.of("true"));
+        when(db.queryForList("SELECT cfg_value FROM system_setting WHERE cfg_key=?",String.class,"weknora-sync-live-check")).thenReturn(List.of(Long.toString(System.currentTimeMillis()+240_000)));
+        assertNull(ReflectionTestUtils.invokeMethod(service,"queueKnowledgeRun",config));
+        verifyNoInteractions(source);
+    }
+    @Test void queryDoesNotExposeTargetWhenConfiguredOwnerCannotReadDocument() {
+        config.put("owner_member_id","another-owner");
+        when(source.documents("reader",List.of("d1"))).thenReturn(List.of(document));
+        when(source.documents("another-owner",List.of("d1"))).thenReturn(List.of());
+        when(db.queryForList(startsWith("SELECT id,owner_member_id,kb_id"))).thenReturn(List.of(config));
+        var result=service.documentStates("reader",List.of("d1"));
+        assertEquals("excluded",result.get(0).state());
+        assertEquals("",result.get(0).knowledgeUrl());
+        assertEquals("",result.get(0).sourceUrl());
+        verifyNoInteractions(client,crypto);
+    }
+    @Test void sourceDiscoveryFailureIsRecordedWithoutRemoteWrites() {
+        when(source.snapshot("owner",List.of("docs"))).thenThrow(new IllegalStateException("来源读取失败"));
+        assertThrows(IllegalStateException.class,()->ReflectionTestUtils.invokeMethod(service,"queueKnowledgeRun",config));
+        verify(db).update(startsWith("INSERT INTO weknora_sync_run"),anyString(),eq("来源读取失败"));
+        verifyNoInteractions(client);
+    }
 }

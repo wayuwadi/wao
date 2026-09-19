@@ -25,6 +25,8 @@ import { useNow } from '@/composables/now'
 import ResourceMenu from '@/components/ui/ResourceMenu.vue'
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 import SaveHint from '@/components/ui/SaveHint.vue'
+import WeKnoraDocumentStatus from '@/components/weknora/WeKnoraDocumentStatus.vue'
+import { useWeKnoraDocuments } from '@/composables/weknoraDocuments'
 import { useFavoritesStore } from '@/stores/favorites'
 import {
   apiPatchKb,
@@ -130,6 +132,7 @@ const saveFailed = computed(() => currentSaveState.value?.failed ?? false)
 const docSavedAt = computed(() =>
   docId.value ? data.saveState(`doc:${docId.value}`).savedAt : null,
 )
+const knowledgeSync = useWeKnoraDocuments(() => data.apiLive && docId.value ? [docId.value] : [], () => docSavedAt.value)
 const createdLabel = computed(() =>
   base.value?.created ? relativeTime(base.value.created, now.value) : '—',
 )
@@ -815,9 +818,18 @@ async function keepConflictCopy() {
   selectDoc(copyId)
   toast('本机草稿已另存为冲突副本', 'ri-file-copy-2-line')
 }
+function homeDocumentTime(value: string): string {
+  const date = new Date(value)
+  if (!value || Number.isNaN(date.getTime())) return value
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const today = new Date()
+  const day = date.toDateString() === today.toDateString() ? '今天' : `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  return `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 const homeFolderOpen = reactive<Record<string, boolean>>({})
 const docTotal = computed(() => kb.value?.folders.reduce((total, folder) => total + folder.docs.length, 0) ?? 0)
 const kbSettingsOpen = ref(false)
+const kbIconPickerExpanded = ref(false)
 const kbSettings = reactive({ name: '', desc: '', icon: '' })
 const kbSettingsBusy = ref(false)
 const kbSettingsError = ref('')
@@ -881,7 +893,12 @@ async function confirmMove() {
   await dropDoc(moveFolderId.value, kb.value?.folders.find((folder) => folder.id === moveFolderId.value)?.docs.length ?? 0)
   if (treeSaveState.value === 'saved') { folderOpen[moveFolderId.value] = true; moveDocId.value = null }
 }
+function openKbIconSettings() {
+  openKbSettings()
+  kbIconPickerExpanded.value = true
+}
 function openKbSettings() {
+  kbIconPickerExpanded.value = false
   kbSettings.name = kb.value?.name || ''
   kbSettings.desc = kb.value?.desc || ''
   kbSettings.icon = kb.value?.icon || 'wao-kb-icon-notebook'
@@ -1048,6 +1065,7 @@ async function saveKbSettings() {
             <button ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
             <SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" />
+            <WeKnoraDocumentStatus v-if="docId && data.apiLive" :state="knowledgeSync.states.value[docId]" :error="knowledgeSync.error.value" :dirty="data.docPending(docId)" @retry="knowledgeSync.refresh" />
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
             <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
             <button
@@ -1104,13 +1122,13 @@ async function saveKbSettings() {
       <div class="doc-wrap">
         <div class="doc-col">
           <section v-if="!docId" class="library-home">
-            <header><div class="library-cover-icon" :style="{ color: kb.color }"><i :class="kb.icon"></i></div><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 篇文档 · {{ kb.folders.length }} 个分组</p></div><button class="library-star" :disabled="knowledgeFavorites.saving" :aria-pressed="knowledgeFavorites.ids.includes(kbId)" @click="knowledgeFavorites.toggle(kbId)"><i :class="knowledgeFavorites.ids.includes(kbId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ knowledgeFavorites.ids.includes(kbId) ? '已常用' : '添加常用' }}</button><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i></button></header>
+            <header><button class="library-cover-icon" :style="{ color: kb.color }" title="更换知识库图标" aria-label="更换知识库图标" @click="openKbIconSettings"><i :class="kb.icon" aria-hidden="true"></i></button><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 文档</p></div><button class="library-star" :disabled="knowledgeFavorites.saving" :aria-pressed="knowledgeFavorites.ids.includes(kbId)" @click="knowledgeFavorites.toggle(kbId)"><i :class="knowledgeFavorites.ids.includes(kbId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ knowledgeFavorites.ids.includes(kbId) ? '已常用' : '添加常用' }}</button><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i>设置</button></header>
             <p v-if="kb.desc" class="library-description">{{ kb.desc }}</p>
             <div v-if="data.loadStates.docs !== 'loaded'" class="doc-empty">正在加载目录…</div>
             <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。<button class="library-star" @click="createAction('doc')">新建文档</button></div>
             <section v-for="folder in kb.folders" :key="folder.id" class="home-folder">
-              <button class="home-folder-title" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="homeFolderOpen[folder.id] !== false ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>{{ folder.name }}<small>{{ folder.docs.length }}</small></button>
-              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in folder.docs" :key="id" @click="selectDoc(id)"><span>{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time>{{ data.docById(id)?.updated ? absoluteTime(data.docById(id)!.updated!) : '' }}</time></button></div>
+              <button class="home-folder-title" :aria-expanded="homeFolderOpen[folder.id] !== false" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="homeFolderOpen[folder.id] !== false ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>{{ folder.name }}</button>
+              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in folder.docs" :key="id" @click="selectDoc(id)"><span class="home-document-name" :title="data.docOf(id).title">{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time :title="absoluteTime(data.docById(id)?.updated ?? '')">{{ homeDocumentTime(data.docById(id)?.updated ?? '') }}</time></button></div>
             </section>
           </section>
           <template v-if="doc">
@@ -1201,7 +1219,7 @@ async function saveKbSettings() {
       </div>
     </div>
 
-    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><KnowledgeIconPicker v-model="kbSettings.icon" :disabled="kbSettingsBusy" /><label>名称<input :disabled="kbSettingsBusy" v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea :disabled="kbSettingsBusy" v-model="kbSettings.desc" rows="3"></textarea></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
+    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><KnowledgeIconPicker v-model="kbSettings.icon" :disabled="kbSettingsBusy" :initially-expanded="kbIconPickerExpanded" /><label>名称<input :disabled="kbSettingsBusy" v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea :disabled="kbSettingsBusy" v-model="kbSettings.desc" rows="3"></textarea></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
     <div v-if="moveDocId" class="modal-backdrop" @click.self="moveDocId = null"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="移动文档"><header><h2>移动文档</h2><button aria-label="关闭移动文档" @click="moveDocId = null">×</button></header><label>目标分组<select v-model="moveFolderId"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label><p v-if="treeSaveState === 'error'" role="alert">移动失败，请重试。</p><footer><button class="btn-primary" :disabled="treeSaveState === 'saving'" @click="confirmMove">{{ treeSaveState === 'saving' ? '移动中…' : '移动' }}</button></footer></section></div>
     <div v-if="newDocFolderId && templatePickerOpen" class="modal-backdrop" @click.self="newDocFolderId = null">
       <section class="template-modal" role="dialog" aria-modal="true" aria-label="新建文档">
@@ -1307,24 +1325,41 @@ async function saveKbSettings() {
 .library-home-link { font-size: 14px; }
 .directory-actions { display: flex; align-items: center; gap: 8px; }
 .directory-heading button { border: 0; background: transparent; color: inherit; cursor: pointer; }
-.library-home-scroll { background: var(--wao-bg-sub); }
-.library-home { padding: 38px; margin: 24px auto; width: 100%; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 12px; }
-.library-home header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.library-cover-icon { font-size: 34px; }
+/* 首页使用独立纸面与紧凑目录，不改变正文阅读宽度。 */
+.doc-scroll.library-home-scroll { background: var(--wao-bg-sub); }
+.library-home-scroll .doc-wrap { padding: 56px 40px 64px; }
+.library-home-scroll .doc-col { max-width: 1120px; min-width: 0; }
+.library-home { padding: 40px; margin: 0 auto; width: 100%; min-height: 560px; background: var(--wao-bg-card); border-radius: 12px; }
+.library-home header { display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
+.library-cover-icon { padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; font-size: 36px; line-height: 42px; flex-shrink: 0; }
+.library-cover-icon:hover { background: var(--wao-bg-hover); }
+.library-cover-icon:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 4px; }
 .library-heading { flex: 1; min-width: 120px; }
-.library-heading h1 { font-size: 28px; margin: 0 0 8px; }
-.library-heading p,.library-description { color: var(--wao-text-weak); font-size: 13px; }
-.library-description { margin: 22px 0 40px; white-space: pre-wrap; }
+.library-heading h1 { font-size: 28px; line-height: 42px; margin: 0 0 8px; color: var(--wao-text); }
+.library-heading p { margin: 0; color: var(--wao-text-3); font-size: 15px; }
+.library-description { margin: 24px 0 0 56px; color: var(--wao-text-weak); font-size: 13px; white-space: pre-wrap; }
 .library-star { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--wao-line); border-radius: 6px; padding: 7px 10px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
-.home-folder { margin-top: 18px; }
-.home-folder-title { display: flex; align-items: center; gap: 9px; padding: 10px 0; border: 0; background: none; color: var(--wao-text); cursor: pointer; }
-.home-folder-title small { color: var(--wao-text-weak); }
-.home-documents { padding-left: 24px; }
-.home-documents button { display: flex; align-items: center; gap: 16px; width: 100%; padding: 13px 0; border: 0; background: none; color: var(--wao-text-2); text-align: left; cursor: pointer; }
-.home-documents button:hover { color: var(--wao-primary-text); }
-.home-documents time { font-size: 11px; color: var(--wao-text-weak); white-space: nowrap; }
-.dot-leader { flex: 1; min-width: 20px; border-bottom: 1px dashed var(--wao-line-strong); }
-@media (max-width: 760px) { .library-home { padding: 18px; margin: 8px 0; } .home-documents time { display: none; } }
+.home-folder { margin: 0; }
+.home-folder:first-of-type { margin-top: 64px; }
+.home-folder-title { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 8px; border: 0; border-radius: 6px; background: none; color: var(--wao-text); font-size: 14px; text-align: left; cursor: pointer; }
+.home-folder-title:hover, .home-documents button:hover { background: var(--wao-bg-hover); }
+.home-folder-title i { color: var(--wao-text-3); font-size: 14px; }
+.home-documents { padding-left: 26px; }
+.home-documents button { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 38px; padding: 8px; border: 0; border-radius: 6px; background: none; color: var(--wao-text-2); font-size: 14px; text-align: left; cursor: pointer; }
+.home-document-name { min-width: 0; max-width: 70%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.home-documents time { font-size: 13px; color: var(--wao-text-weak); white-space: nowrap; }
+.dot-leader { flex: 1; min-width: 16px; border-bottom: 1px dashed var(--wao-line-control); }
+@media (max-width: 760px) {
+  .library-home-scroll .doc-wrap { padding: 16px 12px 32px; }
+  .library-home { padding: 20px 14px; min-height: 0; }
+  .library-home header { gap: 12px; }
+  .library-heading h1 { font-size: 23px; }
+  .library-description { margin-left: 0; }
+  .home-folder:first-of-type { margin-top: 32px; }
+  .home-documents { padding-left: 16px; }
+  .home-document-name { max-width: none; }
+  .home-documents time { display: none; }
+}
 
 .tree-search { padding:10px 12px; display:grid; gap:7px; font-size:11px; border-bottom:1px solid var(--wao-line); }.tree-search strong { font-weight:500; color:var(--wao-text-weak); }.tree-search label { display:flex; align-items:center; gap:6px; padding:7px; border:1px solid var(--wao-line); border-radius:6px; }.tree-search input { min-width:0; width:100%; border:0; outline:0; background:none; color:var(--wao-text); }.tree-search button { justify-self:start; border:0; background:none; color:var(--wao-primary-text); cursor:pointer; }
 .move-document { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--wao-text-weak); }.move-document select { max-width:130px; min-width:70px; padding:5px; border:1px solid var(--wao-line); border-radius:5px; background:var(--wao-bg-card); color:var(--wao-text); }

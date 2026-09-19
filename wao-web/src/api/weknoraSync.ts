@@ -6,6 +6,7 @@ export interface SyncSettings {
   batchLimit: number
   syncDeletes: boolean
   enabled: boolean
+  liveSync?: boolean
   time: string
   revision: number
   customSchedule?: boolean
@@ -62,6 +63,20 @@ export interface SyncSource {
   url: string
   content: string
   hash: string
+  originalUrl: string
+}
+export interface DocumentSyncState {
+  id: string
+  state: string
+  message: string
+  sourceUrl: string
+  knowledgeUrl: string
+}
+export async function getDocumentSyncStates(ids: string[]) {
+  return (await http.get<ApiResponse<DocumentSyncState[]>>('/api/weknora-sync/documents', { params: { ids: ids.join(',') } })).data.data
+}
+export async function runKnowledgeSync() {
+  return (await http.post<ApiResponse<{ id: string }>>('/api/weknora-sync/knowledge-run')).data.data
 }
 export async function getSyncOverview() {
   return (await http.get<ApiResponse<SyncOverview>>('/api/weknora-sync')).data.data
