@@ -516,6 +516,25 @@ export const useDataStore = defineStore('data', () => {
   const docSavePromises: Record<string, Promise<boolean> | undefined> = {}
   /** 有未写透编辑的文档 id —— 协同拉取时不能用服务端版本盖掉这些文档。 */
   const docDirty = reactive<Record<string, boolean>>({})
+  /** 保存最新本机草稿及基础版本；编辑和已确认版本推进使用同一持久化边界。 */
+  async function persistLocalDocDraft(id: string, next: DocEdit, base: Doc): Promise<void> {
+    try {
+      localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
+    } catch {
+      docDraftErrors[id] = true
+    }
+    const memberId = useSessionStore().userId || 'anonymous'
+    if (next.content) {
+      await writeDocumentDraft({
+        id,
+        memberId,
+        title: next.title ?? base.title,
+        content: next.content,
+        baseRev: next.baseRev ?? 1,
+        updatedAt: Date.now(),
+      }).then(() => (docDraftErrors[id] = false)).catch(() => (docDraftErrors[id] = true))
+    }
+  }
   /**
    * 合并一次文档编辑（title / text）并持久化；apiLive 时去抖写透后端。
    *
@@ -536,22 +555,7 @@ export const useDataStore = defineStore('data', () => {
       baseRev: previous?.baseRev ?? base.rev ?? 1,
     }
     docEdits.value = { ...docEdits.value, [id]: next }
-    try {
-      localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
-    } catch {
-      docDraftErrors[id] = true
-    }
-    const memberId = useSessionStore().userId || 'anonymous'
-    if (next.content) {
-      void writeDocumentDraft({
-        id,
-        memberId,
-        title: next.title ?? base.title,
-        content: next.content,
-        baseRev: next.baseRev ?? 1,
-        updatedAt: Date.now(),
-      }).then(() => (docDraftErrors[id] = false)).catch(() => (docDraftErrors[id] = true))
-    }
+    void persistLocalDocDraft(id, next, base)
     docDirty[id] = true
     delete docConflicts[id]
     if (!apiLive.value) {
@@ -592,6 +596,8 @@ export const useDataStore = defineStore('data', () => {
         await removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
       } else if (latest) {
         latest.baseRev = saved.rev ?? (captured.baseRev ?? 1) + 1
+        // 第一版已落库，后续输入的草稿必须记住新基线；否则补交失败后刷新会误判为协同冲突。
+        await persistLocalDocDraft(id, latest, saved)
         clearTimeout(docPersistTimers[id])
         docPersistTimers[id] = setTimeout(() => void persistDocNow(id), 100)
       }
