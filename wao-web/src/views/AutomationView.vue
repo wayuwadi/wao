@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { automationResult } from '@/utils/automationResult'
 import { useDataStore } from '@/stores/data'
-import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 import ChatSyncConfigModal from '@/components/overlays/ChatSyncConfigModal.vue'
@@ -124,40 +123,62 @@ const aoRuns = computed(() =>
   })),
 )
 
-async function onRun(id: string) {
+type Operation = 'run' | 'fix' | 'pause' | 'resume'
+const pending = ref<Record<string, Operation | undefined>>({})
+const feedback = ref<Record<string, { message: string; error: boolean }>>({})
+const operationLabels = {
+  run: '正在运行',
+  fix: '正在重新授权',
+  pause: '正在暂停',
+  resume: '正在恢复',
+}
+
+async function operate(id: string, operation: Operation) {
+  if (pending.value[id]) return
+  pending.value[id] = operation
+  delete feedback.value[id]
   try {
-    await data.runJob(id)
-    toast('已手动触发真实执行器', 'ri-play-line')
+    if (operation === 'run') {
+      await data.runJob(id)
+      const run = data.autos.find((job) => job.id === id)?.runs[0]
+      const result = run ? automationResult(run.result, run.aiRunId) : null
+      feedback.value[id] = {
+        message: run
+          ? `${result!.label}：${run.result}`
+          : '请求已返回，尚未取得本次运行结果，请查看运行记录。',
+        error: result?.label === '失败' || result?.label === '部分成功',
+      }
+    } else {
+      if (operation === 'fix') await data.reauthJob(id)
+      if (operation === 'pause') await data.pauseJob(id)
+      if (operation === 'resume') await data.resumeJob(id)
+      feedback.value[id] = {
+        message:
+          operation === 'pause'
+            ? '已暂停，后续不再按计划运行。'
+            : operation === 'resume'
+              ? '已恢复，后续按计划运行。'
+              : '已重新授权，请查看后续运行结果。',
+        error: false,
+      }
+    }
   } catch (error) {
-    toast(
-      error instanceof Error ? error.message : '自动化运行失败，请重试',
-      'ri-error-warning-line',
-    )
+    feedback.value[id] = {
+      message: `${error instanceof Error ? error.message : '请求失败'}。未能确认操作结果，请先刷新记录核对，避免重复执行。`,
+      error: true,
+    }
+  } finally {
+    delete pending.value[id]
   }
 }
-async function onFix(id: string) {
-  try {
-    await data.reauthJob(id)
-    toast('已重新授权', 'ri-tools-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '重新授权失败，请重试', 'ri-error-warning-line')
-  }
-}
-async function onPause(id: string) {
-  try {
-    await data.pauseJob(id)
-    toast('已暂停，将不再按计划运行', 'ri-pause-circle-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '暂停失败，请重试', 'ri-error-warning-line')
-  }
-}
-async function onResume(id: string) {
-  try {
-    await data.resumeJob(id)
-    toast('已恢复', 'ri-play-circle-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '恢复失败，请重试', 'ri-error-warning-line')
-  }
+const onRun = (id: string) => operate(id, 'run')
+const onFix = (id: string) => operate(id, 'fix')
+const onPause = (id: string) => operate(id, 'pause')
+const onResume = (id: string) => operate(id, 'resume')
+
+async function inspectRecords(id: string) {
+  selId.value = id
+  await data.refreshAutomation()
 }
 async function createAuto() {
   if (!newName.value.trim()) return
@@ -221,6 +242,22 @@ onMounted(() => {
       <span>{{ data.loadErrors.automation || '自动化读取失败' }}</span>
       <button @click="data.refreshAutomation()">重新读取</button>
     </div>
+    <div
+      v-for="job in data.autos.filter((job) => pending[job.id] || feedback[job.id])"
+      :key="job.id"
+      class="automation-state operation-feedback"
+      :class="{ error: feedback[job.id]?.error }"
+      :role="feedback[job.id]?.error ? 'alert' : 'status'"
+      :aria-busy="!!pending[job.id]"
+    >
+      <strong>{{ job.name }}</strong>
+      <span>{{
+        pending[job.id]
+          ? `${operationLabels[pending[job.id]!]}，请稍候…`
+          : feedback[job.id]?.message
+      }}</span>
+      <button v-if="!pending[job.id]" @click="inspectRecords(job.id)">刷新并查看记录</button>
+    </div>
     <!-- 列表 -->
     <template v-if="!sel">
       <div class="atop">
@@ -278,24 +315,48 @@ onMounted(() => {
             ></span>
           </div>
           <div class="ops">
-            <button v-if="jb.configurable" class="op" title="配置" @click="openConfig(jb.job)">
+            <button
+              v-if="jb.configurable"
+              class="op"
+              title="配置"
+              :disabled="!!pending[jb.job.id]"
+              @click="openConfig(jb.job)"
+            >
               <i class="ri-settings-3-line"></i>
             </button>
-            <button v-if="jb.needFix" class="op fix" title="重新授权" @click="onFix(jb.job.id)">
+            <button
+              v-if="jb.needFix"
+              class="op fix"
+              title="重新授权"
+              :disabled="!!pending[jb.job.id]"
+              @click="onFix(jb.job.id)"
+            >
               <i class="ri-tools-line"></i>
             </button>
             <button
               v-if="jb.job.status === '已暂停'"
               class="op"
               title="恢复"
+              :disabled="!!pending[jb.job.id]"
               @click="onResume(jb.job.id)"
             >
               <i class="ri-play-circle-line"></i>
             </button>
-            <button v-else class="op" title="暂停" @click="onPause(jb.job.id)">
+            <button
+              v-else
+              class="op"
+              title="暂停"
+              :disabled="!!pending[jb.job.id]"
+              @click="onPause(jb.job.id)"
+            >
               <i class="ri-pause-circle-line"></i>
             </button>
-            <button class="op" title="手动运行" @click="onRun(jb.job.id)">
+            <button
+              class="op"
+              title="手动运行"
+              :disabled="!!pending[jb.job.id]"
+              @click="onRun(jb.job.id)"
+            >
               <i class="ri-play-line"></i>
             </button>
           </div>
@@ -364,19 +425,34 @@ onMounted(() => {
           <div class="jh-desc">{{ sel.desc }}</div>
         </div>
         <div class="spacer"></div>
-        <button v-if="isConfigurable(sel.handler)" class="btn-ghost" @click="openConfig(sel)">
+        <button
+          v-if="isConfigurable(sel.handler)"
+          class="btn-ghost"
+          :disabled="!!pending[sel.id]"
+          @click="openConfig(sel)"
+        >
           <i class="ri-settings-3-line"></i>配置
         </button>
-        <button v-if="sel.status === '待修复'" class="btn-danger" @click="onFix(sel.id)">
+        <button
+          v-if="sel.status === '待修复'"
+          class="btn-danger"
+          :disabled="!!pending[sel.id]"
+          @click="onFix(sel.id)"
+        >
           重新授权
         </button>
-        <button class="btn-primary sm" @click="onRun(sel.id)">
+        <button class="btn-primary sm" :disabled="!!pending[sel.id]" @click="onRun(sel.id)">
           <i class="ri-play-line"></i>手动运行
         </button>
-        <button v-if="sel.status === '已暂停'" class="btn-ghost" @click="onResume(sel.id)">
+        <button
+          v-if="sel.status === '已暂停'"
+          class="btn-ghost"
+          :disabled="!!pending[sel.id]"
+          @click="onResume(sel.id)"
+        >
           <i class="ri-play-circle-line"></i>恢复
         </button>
-        <button v-else class="btn-ghost" @click="onPause(sel.id)">
+        <button v-else class="btn-ghost" :disabled="!!pending[sel.id]" @click="onPause(sel.id)">
           <i class="ri-pause-circle-line"></i>暂停
         </button>
       </div>
@@ -489,6 +565,19 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.operation-feedback {
+  padding: 12px 14px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.operation-feedback strong {
+  color: var(--wao-text);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .latest-result {
   display: grid;
   gap: 4px;
