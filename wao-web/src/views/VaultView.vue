@@ -4,7 +4,6 @@ import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import { useIsMobile } from '@/composables/viewport'
-import DemoBanner from '@/components/ui/DemoBanner.vue'
 import type { VaultItem } from '@/types'
 
 const data = useDataStore()
@@ -221,12 +220,6 @@ async function deleteItem() {
 
 <template>
   <div class="vault">
-    <DemoBanner
-      icon="ri-key-2-line"
-      title="密码库"
-      text="密钥库已接入真实后端：分组与条目的新增 / 编辑 / 删除均会保存，密码以 AES-256-GCM 在服务端静态加密存储，列表接口从不返回明文，仅在点击「查看」时按需解密一次。这是服务端加密而非零知识端到端加密——真正的客户端主密码派生留待后续独立立项。"
-      storage-key="vault"
-    />
     <div class="vtop">
       <div class="vtitle">密码库</div>
       <button class="group-manage" :class="{ on: managingGroups }" @click="managingGroups = !managingGroups">
@@ -235,11 +228,6 @@ async function deleteItem() {
       <div class="spacer"></div>
       <input v-model="query" class="vault-search f-input" type="search" aria-label="搜索密码条目" placeholder="搜索名称、账号或网址" />
       <button class="btn-primary" @click="openNewItem"><i class="ri-add-line"></i>添加条目</button>
-    </div>
-
-    <div class="banner">
-      <i class="ri-shield-check-line"></i>
-      <span>密码以 AES-256-GCM 加密存储在服务端；拥有数据库与加密密钥的一方仍可解密，尚不是零知识端到端加密，请评估后再存放高敏感凭据。</span>
     </div>
 
     <div v-if="data.vaultError" class="banner error">
