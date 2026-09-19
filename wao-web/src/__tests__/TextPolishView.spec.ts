@@ -56,6 +56,34 @@ describe('TextPolishView', () => {
     expect(wrapper.text()).not.toContain('未保存')
     expect(wrapper.text()).toContain('还没有润色记录')
     expect(wrapper.text()).toContain('不会填充演示内容')
+    expect(wrapper.get('.method-settings').attributes('open')).toBeUndefined()
+    expect(wrapper.html().indexOf('workbench-grid')).toBeLessThan(wrapper.html().indexOf('method-settings'))
+  })
+
+  it('无需展开方法即可用已保存方法润色，不重新保存配置', async () => {
+    const wrapper = mount(TextPolishView)
+    await flushPromises()
+    await wrapper.get('[aria-label="待润色原文"]').setValue('这件事需要梳理。')
+    await wrapper.get('.run-button').trigger('click')
+    await flushPromises()
+    expect(saveTextPolishPrompt).not.toHaveBeenCalled()
+    expect(runTextPolish).toHaveBeenCalledWith('这件事需要梳理。')
+    expect(wrapper.get('.method-settings').attributes('open')).toBeUndefined()
+  })
+
+  it('恢复未保存方法自动展开，收起后仍提示保存范围并可定位修改', async () => {
+    localStorage.setItem('wao-text-polish-prompt-draft-v2:member-a', '表达更简洁。')
+    const wrapper = mount(TextPolishView)
+    await flushPromises()
+    const details = wrapper.get('.method-settings')
+    expect(details.attributes('open')).toBeDefined()
+    ;(details.element as HTMLDetailsElement).open = false
+    await details.trigger('toggle')
+    expect(wrapper.get('.method-notice').text()).toContain('并用于后续润色')
+    ;(details.element as HTMLElement).scrollIntoView = vi.fn()
+    await wrapper.get('.method-notice button').trigger('click')
+    expect(details.attributes('open')).toBeDefined()
+    expect((details.element as HTMLElement).scrollIntoView).toHaveBeenCalled()
   })
 
   it('本地未保存草稿优先于服务端旧值，润色前先保存可见提示词', async () => {

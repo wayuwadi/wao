@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import {
   fetchTextPolishWorkspace,
   runTextPolish,
@@ -26,12 +26,21 @@ const records = ref<TextPolishRecord[]>([])
 const copyState = ref<'idle' | 'copied' | 'error'>('idle')
 const initialized = ref(false)
 const restoredDraft = ref(false)
+const methodOpen = ref(false)
+const methodSettings = ref<HTMLDetailsElement | null>(null)
+async function showMethod() {
+  methodOpen.value = true
+  await nextTick()
+  methodSettings.value?.querySelector('summary')?.focus()
+  methodSettings.value?.scrollIntoView({ block: 'nearest' })
+}
 const draftErrors = ref({ prompt: false, original: false })
 const draftError = computed(() => draftErrors.value.prompt || draftErrors.value.original)
 const promptDirty = computed(() => prompt.value.trim() !== savedPrompt.value)
 const canRun = computed(() => initialized.value && originalText.value.trim().length > 0
   && prompt.value.trim().length > 0 && !running.value && !promptSaving.value)
-const runLabel = computed(() => running.value ? '正在润色…' : promptDirty.value ? '保存提示词并润色' : '开始润色')
+const runLabel = computed(() => running.value ? '正在润色…' : promptDirty.value ? '保存方法并润色' : '开始润色')
+watch([promptDirty, promptError], ([dirty, error]) => { if (dirty || error) methodOpen.value = true })
 
 type DraftKind = 'prompt' | 'original'
 function draftKey(kind: DraftKind) {
@@ -195,6 +204,7 @@ watch(() => session.userId, (member) => {
   running.value = false
   copyState.value = 'idle'
   restoredDraft.value = false
+  methodOpen.value = false
   draftErrors.value = { prompt: false, original: false }
   void load()
 }, { immediate: true, flush: 'sync' })
@@ -214,7 +224,7 @@ onBeforeUnmount(() => { generation++ })
 
     <section v-if="loading" class="state-card">
       <i class="ri-loader-4-line spin"></i>
-      <span>正在读取提示词与历史…</span>
+      <span>正在读取你的润色方法与历史…</span>
     </section>
     <section v-else-if="loadError" class="state-card error-state">
       <i class="ri-error-warning-line"></i>
@@ -229,45 +239,7 @@ onBeforeUnmount(() => { generation++ })
         <button @click="persistDrafts">重试保存草稿</button>
       </div>
       <p v-else-if="restoredDraft" class="draft-notice" role="status">已恢复当前账号的本机草稿；原文不会跨设备同步。</p>
-      <section class="prompt-card">
-        <div class="section-title">
-          <div>
-            <span>润色方法</span>
-            <h2>给机器人一套稳定的表达方法</h2>
-          </div>
-          <div class="save-status" :class="promptState">
-            <template v-if="promptState === 'saving'"
-              ><i class="ri-loader-4-line spin"></i> 保存中</template
-            >
-            <template v-else-if="promptState === 'saved'"
-              ><i class="ri-checkbox-circle-line"></i> 已保存</template
-            >
-            <template v-else-if="promptDirty"><i class="ri-edit-circle-line"></i> 未保存</template>
-            <template v-else><i class="ri-cloud-line"></i> 已同步</template>
-          </div>
-        </div>
-        <textarea
-          v-model="prompt"
-          maxlength="4000"
-          aria-label="润色提示词"
-          placeholder="写下希望机器人遵循的润色方法"
-        ></textarea>
-        <div class="prompt-actions">
-          <span>{{ prompt.length }} / 4000</span>
-          <button
-            class="secondary-button"
-            :disabled="!promptDirty || promptSaving || running"
-            @click="savePrompt"
-          >
-            {{ promptState === 'saving' ? '正在保存…' : '保存提示词' }}
-          </button>
-        </div>
-        <div v-if="promptError" class="inline-error">
-          <i class="ri-error-warning-line"></i><span>{{ promptError }}</span>
-          <button :disabled="promptSaving || running" @click="savePrompt">重试</button>
-        </div>
-      </section>
-
+      <p class="start-hint">粘贴原文后即可开始，将沿用你已保存的润色方法。需要调整表达风格时，可展开下方“润色方法”。</p>
       <section class="workbench-grid">
         <article class="editor-card">
           <div class="section-title compact">
@@ -290,6 +262,7 @@ onBeforeUnmount(() => { generation++ })
           <button class="run-button" :disabled="!canRun" @click="run">
             <i :class="running ? 'ri-loader-4-line spin' : 'ri-sparkling-2-line'"></i>{{ runLabel }}
           </button>
+          <p v-if="promptDirty" class="method-notice">润色方法有未保存修改；开始时会先保存，并用于后续润色。<button type="button" @click="showMethod">查看修改</button></p>
         </article>
 
         <article class="result-card">
@@ -314,6 +287,47 @@ onBeforeUnmount(() => { generation++ })
           </div>
         </article>
       </section>
+
+      <details ref="methodSettings" class="prompt-card method-settings" :open="methodOpen" @toggle="methodOpen = ($event.target as HTMLDetailsElement).open">
+        <summary>润色方法（可选调整）<span>{{ promptDirty ? '有未保存修改' : '沿用已保存的方法' }}</span></summary>
+        <div class="section-title">
+          <div>
+            <span>润色方法</span>
+            <h2>希望怎样表达</h2>
+          </div>
+          <div class="save-status" :class="promptState">
+            <template v-if="promptState === 'saving'"
+              ><i class="ri-loader-4-line spin"></i> 保存中</template
+            >
+            <template v-else-if="promptState === 'saved'"
+              ><i class="ri-checkbox-circle-line"></i> 已保存</template
+            >
+            <template v-else-if="promptDirty"><i class="ri-edit-circle-line"></i> 未保存</template>
+            <template v-else><i class="ri-cloud-line"></i> 已同步</template>
+          </div>
+        </div>
+        <p class="method-help">可以说明用途和语气，例如“用于工作沟通，先给结论，表达简洁”或“保留我的口语风格”。这里的提示词会保存为你后续润色使用的方法，不必每次填写。</p>
+        <textarea
+          v-model="prompt"
+          maxlength="4000"
+          aria-label="润色提示词"
+          placeholder="写下希望机器人遵循的润色方法"
+        ></textarea>
+        <div class="prompt-actions">
+          <span>{{ prompt.length }} / 4000</span>
+          <button
+            class="secondary-button"
+            :disabled="!promptDirty || promptSaving || running"
+            @click="savePrompt"
+          >
+            {{ promptState === 'saving' ? '正在保存…' : '保存润色方法' }}
+          </button>
+        </div>
+        <div v-if="promptError" class="inline-error">
+          <i class="ri-error-warning-line"></i><span>{{ promptError }}</span>
+          <button :disabled="promptSaving || running" @click="savePrompt">重试</button>
+        </div>
+      </details>
 
       <section class="history-card">
         <div class="section-title">
@@ -360,6 +374,7 @@ onBeforeUnmount(() => { generation++ })
 </template>
 
 <style scoped>
+.start-hint,.method-help,.method-notice{font-size:13px;color:var(--wao-text-3);line-height:1.7}.start-hint{margin:0 0 16px}.method-settings>summary{cursor:pointer;font-size:14px;font-weight:600;line-height:1.7}.method-settings>summary span{margin-left:12px;font-size:12px;font-weight:400;color:var(--wao-text-3)}.method-settings[open]>summary{margin-bottom:20px}.method-help{margin:0 0 14px}.method-notice button{border:0;background:transparent;color:var(--wao-primary-text);cursor:pointer;text-decoration:underline;font:inherit}.method-settings>summary:focus-visible,.method-notice button:focus-visible{outline:2px solid var(--wao-primary-text);outline-offset:3px}
 .draft-notice { color: var(--wao-text-3); font-size: 12px; margin: 0 0 14px; }
 .polish-page {
   max-width: none;
