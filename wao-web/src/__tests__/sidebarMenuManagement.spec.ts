@@ -77,6 +77,7 @@ describe('桌面侧栏直接维护菜单', () => {
       routes: [
         { path: '/', component: { template: '<div />' }, meta: { module: 'home' } },
         { path: '/projects', component: { template: '<div />' }, meta: { module: 'projects' } },
+        { path: '/projects/:id', component: { template: '<div />' }, meta: { module: 'projects' } },
         { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
       ],
     })
@@ -110,7 +111,13 @@ describe('桌面侧栏直接维护菜单', () => {
     await children.get('.item').trigger('click')
     await flushPromises()
     expect(children.get('.item').classes()).toContain('active')
-    await children.get('[aria-label="取消收藏：收藏项目"]').trigger('click')
+    expect(wrapper.get('[aria-label="项目"]').classes()).not.toContain('active')
+    useNavStore().toggleCollapse()
+    await flushPromises()
+    expect(wrapper.get('[aria-label="项目"]').classes()).toContain('active')
+    useNavStore().toggleCollapse()
+    await flushPromises()
+    await wrapper.get('[aria-label="取消收藏：收藏项目"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('.project-children').exists()).toBe(false)
     expect(favorites.items.map((item) => item.label)).toEqual(['收藏文档'])
