@@ -14,9 +14,9 @@ async function render() {
   const wrapper = mount(HomeStartGuide, { global: { plugins: [router] } })
   return { wrapper, router }
 }
-it('每个起点只导航到对应功能并保留新会话参数', async () => {
+it('每个起点只导航到对应功能', async () => {
   const { wrapper, router } = await render()
-  for (const [index, path] of ['/todo', '/files', '/ai-sessions?new=1'].entries()) {
+  for (const [index, path] of ['/todo', '/files', '/projects'].entries()) {
     await wrapper.findAll('a')[index]!.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe(path)

@@ -100,10 +100,9 @@ let shortcutGeneration = 0;
 let updateTimer: ReturnType<typeof setInterval> | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-async function startUpdate() {
-  if (state.phase === "error") await updater.find();
-  if (state.phase === "available") await updater.download();
-  if (state.phase === "ready") await ask("install");
+async function openUpdates() {
+  await togglePanel(true);
+  if (["idle", "current", "error"].includes(state.phase)) void updater.find();
 }
 async function action(name: string) {
   if (!native) return;
@@ -414,20 +413,14 @@ onUnmounted(() => {
         重试连接
       </button>
       <button class="pet-button" @click="action('pet')" title="显示/隐藏宠物">
-        <span>显示/隐藏宠物</span>
+        <span>桌宠</span>
       </button>
       <button
-        v-if="
-          ['available', 'downloading', 'ready', 'installing'].includes(
-            state.phase,
-          ) ||
-          (state.phase === 'error' && state.version)
-        "
         class="update-button"
-        :disabled="['downloading', 'installing'].includes(state.phase)"
-        :title="state.message"
+        :title="`当前版本 ${version} · ${state.message}`"
+        aria-label="版本与更新"
         :class="{ active: panel }"
-        @click="startUpdate"
+        @click="openUpdates"
       >
         <svg viewBox="0 0 24 24">
           <path d="M12 16V4m-4 4 4-4 4 4M5 15v5h14v-5" /></svg
@@ -435,8 +428,8 @@ onUnmounted(() => {
           state.phase === "downloading"
             ? "正在更新…"
             : state.phase === "error"
-              ? "重试更新"
-              : "更新客户端"
+              ? "更新重试"
+              : ["available", "ready"].includes(state.phase) ? "发现新版本" : "版本与更新"
         }}</span
         ><i
           v-if="

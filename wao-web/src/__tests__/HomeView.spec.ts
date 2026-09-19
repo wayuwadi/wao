@@ -478,6 +478,22 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
+  it('AI Run 默认收起，展开和再次收起保留目标草稿', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+    expect(wrapper.get('#home-ai-area').isVisible()).toBe(false)
+    wrapper.findComponent(MarkdownEditor).vm.$emit('update:modelValue', '保留本地目标')
+    await wrapper.get('.ai-entry button').trigger('click')
+    expect((wrapper.get('#home-ai-area').element as HTMLElement).style.display).not.toBe('none')
+    expect(wrapper.get('.ai-entry button').attributes('aria-expanded')).toBe('true')
+    await wrapper.get('.ai-entry button').trigger('click')
+    expect(wrapper.get('#home-ai-area').isVisible()).toBe(false)
+    expect(wrapper.find('.goal-launcher').exists()).toBe(true)
+    expect(wrapper.findComponent(MarkdownEditor).props('modelValue')).toBe('保留本地目标')
+    wrapper.unmount()
+  })
+
   it('首页保留理念、目标和 AI 控制台且不再展示成长教练大卡', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()

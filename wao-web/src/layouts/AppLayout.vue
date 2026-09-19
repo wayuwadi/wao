@@ -32,10 +32,11 @@ import { useTheme } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useShortcuts } from '@/composables/shortcuts'
 import { useFunctionHealth } from '@/composables/functionHealth'
-import { hasDesktopToolbar, mountDesktopToolbar } from '@/utils/desktopToolbar'
+import { hasDesktopToolbar, hasLegacyDesktopToolbar, mountDesktopToolbar } from '@/utils/desktopToolbar'
 import type { ModuleId } from '@/types'
 
 const desktopToolbar = hasDesktopToolbar()
+const legacyDesktopToolbar = hasLegacyDesktopToolbar()
 const toolbarRef = ref<HTMLElement | null>(null)
 let stopDesktopToolbar: (() => void) | undefined
 onMounted(() => {
@@ -298,7 +299,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 <template>
   <div
     class="shell"
-    :class="{ 'desktop-shell': desktopToolbar }"
+    :class="{ 'desktop-shell': desktopToolbar, 'legacy-desktop-shell': legacyDesktopToolbar }"
     :data-control-style="preferences.effectiveControlStyle"
   >
     <SideNav @open-search="openSearch" />
@@ -428,6 +429,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .mobile-main-nav {
   display: none;
 }
+.legacy-desktop-shell .header { height: 32px; min-height: 32px; }
+.legacy-desktop-shell .quick-actions { display: none; }
 .desktop-shell {
   --wao-bg-side: #eef2f8;
 }

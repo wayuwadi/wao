@@ -19,7 +19,7 @@ fi
 is_policy=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    */api/public/notification-settings/jenkins-failure) is_policy=true ;;
+    */api/public/notification-settings/jenkins-*) is_policy=true ;;
   esac
   if [ "$1" = --data ]; then
     shift
@@ -28,7 +28,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 if [ "$is_policy" = true ]; then
-  printf '%s' '{"code":0}'
+  printf '%s' '{"code":0,"data":{"allowed":true}}'
   exit 0
 fi
 printf '%s' '{"code":0}'
@@ -70,7 +70,11 @@ WAO_COMMIT_MESSAGE='- feat(task): 精简 AI Run 通知
 BUILD_NUMBER=321 \
 sh "$project_root/deploy/jenkins/notify-feishu.sh"
 
-test ! -e "$fixture/payload.json"
+assert_json '.card.header.title.content == "WAO 生产发布 ✅ 成功"'
+assert_json '.card.header.template == "green"'
+assert_json '.card.elements[0].text.content | contains("双节点、云端与公共入口检查通过")'
+assert_json '.card.elements[0].text.content | contains("精简 Jenkins 通知")'
+rm -f "$fixture/payload.json"
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
 slave_status=success
@@ -146,5 +150,26 @@ quiet_output="$(PATH="$fixture/bin:$PATH" \
   sh "$project_root/deploy/jenkins/notify-feishu.sh")"
 printf '%s' "$quiet_output" | grep -q 'Jenkins failure notification skipped: 当前处于沉默时段 22:00–08:00'
 test ! -e "$fixture/payload.json"
+
+
+# 成功时策略被拒绝、无法读取或生产检查未完成，均不能发绿色卡片。
+for policy in '{"code":0,"data":{"allowed":false,"reason":"静默"}}' '{"code":0}'; do
+  PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
+    WAO_TEST_POLICY_RESPONSE="$policy" WAO_PIPELINE_RESULT=success \
+    WAO_MASTER_PROJECT_ROOT="$fixture/master" WAO_RUN_TEMP="$fixture/run" \
+    sh "$project_root/deploy/jenkins/notify-feishu.sh"
+  test ! -e "$fixture/payload.json"
+done
+PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
+  WAO_PIPELINE_RESULT=success WAO_MASTER_PROJECT_ROOT="$fixture/master" \
+  WAO_RUN_TEMP="$fixture/run" WAO_DEPLOY_REQUIRED=true DEPLOY_PRODUCTION=true \
+  sh "$project_root/deploy/jenkins/notify-feishu.sh"
+test ! -e "$fixture/payload.json"
+PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
+  WAO_PIPELINE_RESULT=success WAO_MASTER_PROJECT_ROOT="$fixture/master" \
+  WAO_RUN_TEMP="$fixture/run" WAO_DEPLOY_REQUIRED=false DEPLOY_PRODUCTION=true \
+  sh "$project_root/deploy/jenkins/notify-feishu.sh"
+assert_json '.card.header.title.content == "WAO 验证（无需部署） ✅ 成功"'
+assert_json '.card.elements[0].text.content | contains("未发布到生产环境")'
 
 echo 'Jenkins Feishu notification tests passed.'

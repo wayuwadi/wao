@@ -34,7 +34,7 @@ const systemRows: Array<{ key: BooleanSystemPolicyKey; title: string; detail: st
   { key: 'aiRunFailure', title: 'AI Run 失败通知', detail: '失败或未报告终态时推送真实原因与处理入口' },
   { key: 'manualTask', title: '人工通知任务', detail: '允许成员在任务详情明确点击后发送一张任务卡片' },
   { key: 'reminders', title: '站内提醒', detail: '日历、今日节奏和自动化定时提醒' },
-  { key: 'deliveryFailure', title: 'Jenkins 失败通知', detail: '构建或部署失败时发送真实失败阶段；成功部署继续保持静默' },
+  { key: 'deliveryFailure', title: 'Jenkins 失败通知', detail: '构建或部署失败时发送真实失败阶段；成功通知遵守群通知总开关与沉默时段' },
   { key: 'automation', title: '自动触发说明', detail: '闲置派工、HTTP 巡检等无人操作场景说明为什么启动' },
 ]
 

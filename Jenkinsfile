@@ -268,6 +268,7 @@ pipeline {
                     }
                 }
             }
+            sh 'WAO_PIPELINE_RESULT=success deploy/jenkins/notify-feishu.sh || true'
             sh 'if [ "$DEPLOY_PRODUCTION" = true ] && [ "$WAO_DEPLOY_REQUIRED" = true ]; then deploy/jenkins/cleanup-images.sh; fi'
         }
         failure {

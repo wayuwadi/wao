@@ -28,6 +28,19 @@ class NotificationSettingsServiceTest {
             settings, preferences, members, new ObjectMapper());
 
     @Test
+    void jenkinsSuccessRespectsGlobalPolicyButNotFailureToggle() {
+        when(settings.get(SettingService.NOTIFICATION_POLICY, "")).thenReturn(
+                "{\"enabled\":true,\"deliveryFailure\":false,\"quietHoursEnabled\":false}");
+        assertThat(service.deliverySuccessDecision().allowed()).isTrue();
+        assertThat(service.deliveryFailureDecision().allowed()).isFalse();
+        when(settings.get(SettingService.NOTIFICATION_POLICY, "")).thenReturn("{\"enabled\":false}");
+        assertThat(service.deliverySuccessDecision().allowed()).isFalse();
+        when(settings.get(SettingService.NOTIFICATION_POLICY, "")).thenReturn(
+                "{\"enabled\":true,\"quietHoursEnabled\":true,\"quietStart\":\"00:00\",\"quietEnd\":\"23:59\"}");
+        assertThat(service.deliverySuccessDecision(LocalDateTime.of(2026, 9, 19, 12, 0)).allowed()).isFalse();
+    }
+
+    @Test
     void defaultsKeepSuccessQuietAndFailuresManualActionsEnabled() {
         MemberEntity member = member("wd", "成员");
         when(members.selectById("wd")).thenReturn(member);

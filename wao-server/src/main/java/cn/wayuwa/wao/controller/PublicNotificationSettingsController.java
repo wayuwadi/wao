@@ -21,4 +21,8 @@ public class PublicNotificationSettingsController {
     public ApiResponse<GroupNotificationDecisionDto> jenkinsFailure() {
         return ApiResponse.ok(service.deliveryFailureDecision());
     }
+    @GetMapping("/jenkins-success")
+    public ApiResponse<GroupNotificationDecisionDto> jenkinsSuccess() {
+        return ApiResponse.ok(service.deliverySuccessDecision());
+    }
 }
