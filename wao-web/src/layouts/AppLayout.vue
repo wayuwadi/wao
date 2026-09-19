@@ -309,10 +309,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           v-if="isMobile || desktopToolbar"
           class="fold"
           data-desktop-action="fold"
-          title="折叠 / 展开导航"
+          :title="nav.collapsed ? '展开导航' : '折叠导航'"
+          :aria-label="nav.collapsed ? '展开导航' : '折叠导航'"
+          :aria-expanded="!nav.collapsed"
           @click="nav.toggleCollapse"
         >
-          <i :class="nav.collapsed ? 'ri-menu-unfold-line' : 'ri-menu-fold-line'"></i>
+          <i :class="nav.collapsed ? 'ri-menu-unfold-line' : 'ri-menu-fold-line'" aria-hidden="true"></i>
         </button>
         <NavigationContext class="crumb-a" :label="crumbA" />
         <template v-if="crumbB">
@@ -336,17 +338,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             data-desktop-action="theme"
             :data-theme="theme.effective.value"
             :title="themeTitle"
+            :aria-label="themeTitle"
             @click="toggleTheme"
           >
-            <i :class="themeIcon"></i>
+            <i :class="themeIcon" aria-hidden="true"></i>
           </button>
           <button
             class="bell"
             data-desktop-action="shortcuts"
-            title="快捷键（?）"
+            title="查看快捷键"
+            aria-label="查看快捷键"
+            :aria-expanded="ui.helpOpen"
             @click="ui.toggleHelp()"
           >
-            <i class="ri-keyboard-line"></i>
+            <i class="ri-keyboard-line" aria-hidden="true"></i>
           </button>
           <FloatingChat />
           <NotificationCenter />

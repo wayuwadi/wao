@@ -215,7 +215,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     </div>
 
     <div v-if="!nav.collapsed" class="search-row">
-      <button class="search" @click="emit('open-search')">
+      <button class="search" aria-label="搜索功能与内容" aria-keyshortcuts="Meta+K Control+K" @click="emit('open-search')">
         <i class="ri-search-line"></i>
         <span class="search-text">搜索功能与内容</span>
         <span class="kbd">⌘K</span>
@@ -280,6 +280,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
               'drag-over': !!dragId && dragOverId === id,
             }"
             :title="nav.itemMeta(id)?.label"
+            :aria-label="nav.itemMeta(id)?.label"
             :draggable="!isMobile && !nav.collapsed && nav.canMoveMenus"
             @click="go(id)"
             @contextmenu.prevent="openContextMenu($event, id)"
@@ -354,6 +355,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           'drag-over': !!dragId && dragOverId === id,
         }"
         :title="nav.itemMeta(id)?.label"
+            :aria-label="nav.itemMeta(id)?.label"
         :draggable="!isMobile && nav.canMoveMenus"
         @click="go(id)"
         @contextmenu.prevent="openContextMenu($event, id)"

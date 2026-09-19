@@ -127,11 +127,12 @@ onBeforeUnmount(() => {
     data-desktop-action="notifications"
     type="button"
     :title="hasUnread ? `通知中心，${snapshot?.unreadCount} 条未读` : '通知中心'"
+    :aria-label="hasUnread ? `通知中心，${snapshot?.unreadCount} 条未读` : '通知中心'"
     aria-haspopup="dialog"
     :aria-expanded="open"
     @click="toggle"
   >
-    <i class="ri-notification-3-line"></i>
+    <i class="ri-notification-3-line" aria-hidden="true"></i>
     <span v-if="hasUnread" class="notification-badge" aria-live="polite">{{ unreadLabel }}</span>
   </button>
 

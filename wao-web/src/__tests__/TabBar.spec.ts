@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TabBar from '@/components/tabs/TabBar.vue'
@@ -13,6 +13,23 @@ function testRouter() {
 }
 
 describe('TabBar', () => {
+  it('页签使用独立切换与关闭按钮，键盘关闭后焦点回到剩余页签', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const tabs = useTabsStore()
+    tabs.open({ key: 'files', label: '文件库', icon: 'ri-file-line', path: '/files', closable: true })
+    const router = testRouter()
+    await router.push('/files')
+    const wrapper = mount(TabBar, { attachTo: document.body, global: { plugins: [pinia, router] } })
+    expect(wrapper.get('[aria-label="切换到文件库"]').element.tagName).toBe('BUTTON')
+    expect(wrapper.get('[aria-label="关闭页签：文件库"]').element.parentElement?.tagName).toBe('DIV')
+    wrapper.get('[aria-label="关闭页签：文件库"]').element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/')
+    expect(document.activeElement).toBe(wrapper.get('.home-tab').element)
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     localStorage.clear()
   })

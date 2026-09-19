@@ -13,6 +13,7 @@ const menu = reactive({ open: false, x: 0, y: 0, key: '' })
 const renameDraft = ref('')
 const renaming = ref(false)
 const scroller = ref<HTMLElement | null>(null)
+const shell = ref<HTMLElement | null>(null)
 const canLeft = ref(false)
 const canRight = ref(false)
 const homeTab = computed(() => tabs.tabs.find((tab) => tab.key === 'home'))
@@ -116,9 +117,14 @@ function onDragEnd() {
   overKey.value = null
 }
 
-function closeTab(tab: Tab) {
+async function closeTab(tab: Tab, event: MouseEvent) {
+  const keyboard = event.detail === 0
   const next = tabs.close(tab.key)
-  if (next) router.push(next.path)
+  if (next) await router.push(next.path)
+  if (keyboard) {
+    await nextTick()
+    shell.value?.querySelector<HTMLButtonElement>('button[aria-current="page"]')?.focus()
+  }
 }
 
 function openMenu(e: MouseEvent, tab: Tab) {
@@ -165,9 +171,12 @@ function mCloseUnpinned() {
 </script>
 
 <template>
-  <div class="tabbar-shell">
-    <div
+  <div ref="shell" class="tabbar-shell">
+    <button
       v-if="homeTab"
+      type="button"
+      :aria-label="'切换到' + homeTab.label"
+      :aria-current="homeTab.key === tabs.activeKey ? 'page' : undefined"
       class="tab home-tab"
       :class="{ active: homeTab.key === tabs.activeKey, over: overKey === homeTab.key }"
       title="首页固定在页签栏左侧"
@@ -176,10 +185,10 @@ function mCloseUnpinned() {
       @dragover.prevent="onDragOver(homeTab)"
       @drop.prevent="onDrop(homeTab)"
     >
-      <i :class="homeTab.icon"></i>
+      <i :class="homeTab.icon" aria-hidden="true"></i>
       <span class="tab-label">{{ homeTab.label }}</span>
-    </div>
-    <button class="scroll-btn" :disabled="!canLeft" title="查看左侧页签" @click="scrollByPage(-1)">
+    </button>
+    <button class="scroll-btn" :disabled="!canLeft" title="查看左侧页签" aria-label="查看左侧页签" @click="scrollByPage(-1)">
       <i class="ri-arrow-left-s-line"></i>
     </button>
     <div ref="scroller" class="tabbar" @scroll.passive="measureScroll" @wheel="scrollWithWheel">
@@ -202,16 +211,18 @@ function mCloseUnpinned() {
         @drop.prevent="onDrop(tab)"
         @dragend="onDragEnd"
       >
-        <i :class="tab.icon"></i>
-        <span class="tab-label">{{ tab.label }}</span>
-        <i v-if="windows.keys.includes(tab.key)" class="ri-picture-in-picture-line" title="已悬浮，点击置前"></i>
-        <i v-if="tab.pinned" class="tab-pin ri-pushpin-fill" title="已置顶，批量关闭时保留"></i>
-        <button v-if="tab.closable" class="close" title="关闭" @click.stop="closeTab(tab)">
+        <button type="button" class="tab-open" :aria-label="'切换到' + tab.label" :aria-current="tab.key === tabs.activeKey ? 'page' : undefined" @click.stop="selectTab(tab)">
+          <i :class="tab.icon" aria-hidden="true"></i>
+          <span class="tab-label">{{ tab.label }}</span>
+          <i v-if="windows.keys.includes(tab.key)" class="ri-picture-in-picture-line" title="已悬浮，点击置前" aria-hidden="true"></i>
+          <i v-if="tab.pinned" class="tab-pin ri-pushpin-fill" title="已置顶，批量关闭时保留" aria-hidden="true"></i>
+        </button>
+        <button v-if="tab.closable" type="button" class="close" :title="'关闭页签：' + tab.label" :aria-label="'关闭页签：' + tab.label" @click.stop="closeTab(tab, $event)">
           <i class="ri-close-line"></i>
         </button>
       </div>
     </div>
-    <button class="scroll-btn" :disabled="!canRight" title="查看右侧页签" @click="scrollByPage(1)">
+    <button class="scroll-btn" :disabled="!canRight" title="查看右侧页签" aria-label="查看右侧页签" @click="scrollByPage(1)">
       <i class="ri-arrow-right-s-line"></i>
     </button>
   </div>
@@ -278,6 +289,9 @@ function mCloseUnpinned() {
   gap: 2px;
   overflow-x: auto;
 }
+.tab-open { display: flex; align-items: center; gap: 7px; min-width: 0; height: 100%; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.home-tab { border: 0; border-bottom: 2px solid transparent; }
+.tab-open:focus-visible, .home-tab:focus-visible, .close:focus-visible, .scroll-btn:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .home-tab {
   flex: 0 0 auto;
   margin-left: 10px;

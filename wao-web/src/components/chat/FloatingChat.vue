@@ -75,10 +75,11 @@ onBeforeUnmount(() => {
       data-chat-trigger
       :aria-expanded="ui.chatOpen"
       aria-controls="wao-floating-chat"
+      :aria-label="unreadCount ? `聊天（${unreadCount} 条未读）` : '聊天'"
       :title="unreadCount ? `聊天（${unreadCount} 条未读）` : '聊天'"
       @click="ui.toggleChat()"
     >
-      <i class="ri-chat-3-line"></i>
+      <i class="ri-chat-3-line" aria-hidden="true"></i>
       <span v-if="unreadCount" class="chat-badge">{{
         unreadCount > 99 ? '99+' : unreadCount
       }}</span>
