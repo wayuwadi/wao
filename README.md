@@ -84,6 +84,8 @@ cd wao-web && npm run dev
 
 提交前可运行 [工程一致性检查](docs/runbooks/engineering-consistency-check.md)，核对 ADR / migration 编号、已交付 migration 不可变性和本次文档的本地链接。
 
+修改文档编辑与草稿逻辑时，使用 [草稿防丢回归包](docs/runbooks/document-draft-regression.md)，覆盖保存失败、刷新恢复、两窗口冲突和本轮验收文档清理。
+
 前端和 Java 服务在本机运行时，后端使用 `local-cloud` Profile，网关使用 `local` Profile。
 通过运行进程的环境变量提供 `MYSQL_HOST`、`MYSQL_PORT`、`DB_NAME`、`DB_USER`、`DB_PASS`；
 优先通过 SSH 本地端口转发访问服务器数据库。凭据不要写入仓库、命令历史或日志。
