@@ -27,7 +27,7 @@
 ## 验收标准
 
 - JCasC 中 `wao-main-cd` 的 quiet period 为 300 秒；批次含多个提交时变更规划和 GitHub 状态覆盖全部提交，成功不发飞书
-  卡片，失败只发原因和详情入口（见 ADR-152）。
+  卡片，失败只发原因和详情入口（见 [ADR-152：成功静默通知](../adr/152-silent-success-delivery-notifications.md)）。
 - 上一批部署失败后，新批次成功会把仍未上线的祖先提交状态更新为 success，线上前端版本等于新批次头的七位 SHA。
 - Runner 只接受 AI message 中独占一行的等待部署标记；命令内容、任务 Markdown 和工具参数中的相同文本不会改变阶段。
 - 运行卡片在 waiting_deployment 显示“代码已完成 · 等待部署”，档案显示三步进度；部署成功、部署失败和代码失败文案互不混淆。

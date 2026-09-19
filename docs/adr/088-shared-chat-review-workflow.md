@@ -3,7 +3,7 @@
 ## 状态
 
 已采纳。复用 [ADR-019](019-feishu-chat-sync-and-system-settings.md)、
-[ADR-023](023-chat-sync-history-and-monthly-archive.md)、[ADR-041](041-codex-backed-ai-assistant.md)、
+[ADR-023：群聊历史与月归档](023-chat-sync-history-and-monthly-archive.md)、[ADR-041](041-codex-backed-ai-assistant.md)、
 [ADR-044](044-local-codex-assistant-routing.md)、[ADR-045](045-persistent-assistant-conversations.md) 和
 [ADR-072](072-grounded-periodic-life-review.md) 的飞书归档、只读 Runner、会话隔离与证据校验边界。
 

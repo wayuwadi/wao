@@ -30,7 +30,7 @@ schema 与 Claude Code 同构（`system/init`、`assistant`、`result` 事件，
   非交互模式下 default 无人批准写操作，效果等同只读），`workspace-write` →
   `--permission-mode accept_edits`，`danger-full-access` → `--dangerously-skip-permissions`。
   qodercli 以启动目录为主信任目录，worktree 的 `.git` 指向主仓库，须用 `--add-dir` 一并信任。
-- worktree 仍由 Runner 按 ADR-023 管理（`.wao-runs/<run-id>` + 主克隆游离 HEAD），
+- worktree 仍由 Runner 按 [ADR-023：主克隆游离 HEAD](023-ai-runner-detached-primary-clone.md) 管理（`.wao-runs/<run-id>` + 主克隆游离 HEAD），
   不使用 qodercli 自带的 `--worktree`：后者会绕开保留期回收和续跑派回原机的机制。
 - 用量口径：Qoder 按 Credits 配额计费，但实测 `result` 事件带完整的 `usage` /
   `total_cost_usd` / `modelUsage` 字段，现有 Claude 解析器直接记账；字段缺失时仍回落成

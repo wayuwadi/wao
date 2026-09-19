@@ -258,7 +258,7 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 | created_at / updated_at | DATETIME(3) | 上海时区创建与更新时间 |
 
 爬虫能力与 `automation_job` 分离：前者是源码资产，后者是绑定已登记 `JobHandler` 的调度实例。
-当前服务只编目源码，不直接执行任意代码；运行边界见 ADR-187。
+当前服务只编目源码，不直接执行任意代码；运行边界见 [ADR-187：爬虫源码资产](../adr/187-crawler-capability-source-assets.md)。
 
 ### account_resource / verification_message（账号资源与验证码转发，V131）
 
@@ -1108,7 +1108,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V107__remove_mock_automation_jobs.sql`：删除 V8 的四条演示自动化及演示运行记录；未知执行器由服务层失败关闭。
 - `V108__assistant_web_search.sql`：固化普通页面问答的联网开关，并为所选 API Provider 暂存有界搜索材料；终态清除（见 ADR-142）。
 - `V109__ai_run_delivery_stage.sql`：把 AI Run 的代码、等待部署与部署终态分开持久化，并只把历史成功回填为已部署（见 ADR-144）。
-- `V110__batch_oldest_task_auto_run.sql`：为最早待办空闲自动推进增加单次推进数，并按所选项目并发上限回填（见 ADR-152）。
+- `V110__batch_oldest_task_auto_run.sql`：为最早待办空闲自动推进增加单次推进数，并按所选项目并发上限回填（见 [ADR-152：批量推进最早待办](../adr/152-batch-oldest-task-idle-auto-run.md)）。
 - `V111__notification_center_login_events.sql`：逐次记录成功登录的最小事实，供通知中心统计真实成员使用频率（见 ADR-153）。
 - `V112__feishu_reaction_ai_run_trigger.sql`：飞书原消息飞机表情触发 AI Run 的事件级持久幂等；运行被清理后仍保留去重事实（见 ADR-155）。
 - `V114__appearance_management.sql`：保存成员私有形象管理工作区和按会话鉴权的衣物、穿搭实拍原件。

@@ -231,7 +231,7 @@ Runner 会自动上传到隔离托管并把公开地址关联到本次运行，�
   操作写入不合法的 `core.worktree=/mnt/...`，下一次领取会在 fetch 前原位清除，不需要删库重克隆。
 - `<root>/<工程文件夹>` 的主克隆只当对象仓库用：新克隆带 `--no-checkout`，并且每次准备
   工作区时都会切成游离 HEAD。这样默认分支（`main`）永远不被占用，AI 在 worktree 里执行
-  `git switch main` 不会再撞上 `fatal: 'main' is already checked out at ...`（见 ADR-023）。
+  `git switch main` 不会再撞上 `fatal: 'main' is already checked out at ...`（见 [ADR-023：主克隆游离 HEAD](../../docs/adr/023-ai-runner-detached-primary-clone.md)）。
   旧版本留下的主克隆会在下一次运行时自动纠正，不需要删目录重来。
 - 运行结束后 worktree 会保留 7 天供人工复查，超期在下一次准备工作区时自动回收，避免
   `.wao-runs/` 无限堆积完整源码副本。要长期留存某次运行现场，请在到期前自行复制出去。
