@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
+import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
 /**
  * 知识库详情：左边是文件夹 / 文档树，右边是文档本身。
  *
@@ -80,7 +82,7 @@ watch(
   },
 )
 onMounted(() => {
-  if (kb.value) tabs.setLabel(`kb:${kbId.value}`, kb.value.name)
+  if (kb.value) tabs.setMeta(`kb:${kbId.value}`, { label: kb.value.name, icon: kb.value.icon })
   void knowledgeFavorites.load()
 })
 
@@ -816,7 +818,7 @@ async function keepConflictCopy() {
 const homeFolderOpen = reactive<Record<string, boolean>>({})
 const docTotal = computed(() => kb.value?.folders.reduce((total, folder) => total + folder.docs.length, 0) ?? 0)
 const kbSettingsOpen = ref(false)
-const kbSettings = reactive({ name: '', desc: '' })
+const kbSettings = reactive({ name: '', desc: '', icon: '' })
 const kbSettingsBusy = ref(false)
 const kbSettingsError = ref('')
 const moveDocId = ref<string | null>(null)
@@ -882,6 +884,7 @@ async function confirmMove() {
 function openKbSettings() {
   kbSettings.name = kb.value?.name || ''
   kbSettings.desc = kb.value?.desc || ''
+  kbSettings.icon = kb.value?.icon || 'wao-kb-icon-notebook'
   kbSettingsError.value = ''
   kbSettingsOpen.value = true
 }
@@ -889,10 +892,10 @@ async function saveKbSettings() {
   if (!kbSettings.name.trim() || kbSettingsBusy.value || !kb.value) return
   kbSettingsBusy.value = true
   try {
-    const patch = { name: kbSettings.name.trim(), desc: kbSettings.desc.trim() }
+    const patch = { name: kbSettings.name.trim(), desc: kbSettings.desc.trim(), icon: kbSettings.icon }
     await apiPatchKb(kbId.value, patch)
     Object.assign(kb.value, patch)
-    tabs.setLabel(`kb:${kbId.value}`, patch.name)
+    tabs.setMeta(`kb:${kbId.value}`, { label: patch.name, icon: patch.icon })
     kbSettingsOpen.value = false
   } catch { kbSettingsError.value = '设置保存失败，输入已保留，请重试。' }
   finally { kbSettingsBusy.value = false }
@@ -910,7 +913,7 @@ async function saveKbSettings() {
           <i class="ri-arrow-left-line"></i>全部知识库
         </button>
         <div class="side-kb">
-          <div class="side-icon" :style="{ background: kb.color }"><i :class="kb.icon"></i></div>
+          <div class="side-icon" :style="{ background: isColoredKnowledgeIcon(kb.icon) ? 'transparent' : kb.color }"><i :class="kb.icon"></i></div>
           <select class="kb-switch" :value="kbId" aria-label="切换知识库" @change="switchKb"><option v-for="library in data.kbs" :key="library.id" :value="library.id">{{ library.name }}</option></select>
           <ResourceMenu label="知识库设置" :items="[{ id: 'settings', label: '设置', icon: 'ri-settings-3-line' }, { id: 'templates', label: '模板管理', icon: 'ri-file-copy-2-line' }]" @select="$event === 'settings' ? openKbSettings() : templateManagerOpen = true" />
         </div>
@@ -1198,7 +1201,7 @@ async function saveKbSettings() {
       </div>
     </div>
 
-    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><label>名称<input v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea v-model="kbSettings.desc" rows="3"></textarea></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
+    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><KnowledgeIconPicker v-model="kbSettings.icon" :disabled="kbSettingsBusy" /><label>名称<input :disabled="kbSettingsBusy" v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea :disabled="kbSettingsBusy" v-model="kbSettings.desc" rows="3"></textarea></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
     <div v-if="moveDocId" class="modal-backdrop" @click.self="moveDocId = null"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="移动文档"><header><h2>移动文档</h2><button aria-label="关闭移动文档" @click="moveDocId = null">×</button></header><label>目标分组<select v-model="moveFolderId"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label><p v-if="treeSaveState === 'error'" role="alert">移动失败，请重试。</p><footer><button class="btn-primary" :disabled="treeSaveState === 'saving'" @click="confirmMove">{{ treeSaveState === 'saving' ? '移动中…' : '移动' }}</button></footer></section></div>
     <div v-if="newDocFolderId && templatePickerOpen" class="modal-backdrop" @click.self="newDocFolderId = null">
       <section class="template-modal" role="dialog" aria-modal="true" aria-label="新建文档">
