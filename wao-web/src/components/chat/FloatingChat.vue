@@ -161,7 +161,7 @@ onBeforeUnmount(() => {
   right: 16px;
   width: min(720px, calc(100vw - 32px));
   height: min(760px, calc(100dvh - var(--wao-header-h) - 24px));
-  min-height: 520px;
+  min-height: min(520px, calc(100dvh - var(--wao-header-h) - 24px));
   overflow: hidden;
   border: 1px solid var(--wao-line);
   border-radius: 18px;

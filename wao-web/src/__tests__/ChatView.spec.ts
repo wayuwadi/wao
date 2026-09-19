@@ -72,6 +72,10 @@ async function mountView(props: Record<string, unknown> = {}, realEditor = false
       },
     },
   })
+  Object.defineProperties(wrapper.get('.message-stream').element, {
+    clientHeight: { value: 400, configurable: true },
+    scrollHeight: { value: 400, configurable: true },
+  })
   wrappers.push(wrapper)
   await flushPromises()
   return wrapper
@@ -83,7 +87,8 @@ describe('ChatView', () => {
     await wrapper.get('.reaction-picker-wrap > button').trigger('click')
     const choices = wrapper.findAll('.reaction-picker button')
     expect(choices).toHaveLength(20)
-    await choices[19]!.trigger('click'); await flushPromises()
+    await choices[19]!.trigger('click')
+    await flushPromises()
     expect(toggleSharedChatReaction).toHaveBeenCalledWith('msg1', 'STAR')
   })
 
@@ -177,11 +182,9 @@ describe('ChatView', () => {
         constructor(public data: unknown) {}
       },
     )
-    const draw = vi
-      .spyOn(HTMLCanvasElement.prototype, 'getContext')
-      .mockReturnValue({
-        drawImage: vi.fn<(image: CanvasImageSource, dx: number, dy: number) => void>(),
-      } as unknown as CanvasRenderingContext2D)
+    const draw = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: vi.fn<(image: CanvasImageSource, dx: number, dy: number) => void>(),
+    } as unknown as CanvasRenderingContext2D)
     const blob = vi
       .spyOn(HTMLCanvasElement.prototype, 'toBlob')
       .mockImplementation((callback) => callback(new Blob(['png'], { type: 'image/png' })))
@@ -425,4 +428,73 @@ describe('ChatView', () => {
       '/api/files/file1/download',
     )
   })
+  it('审计：刷新请求期间上滑阅读历史，不被晚到响应拉回底部', async () => {
+    const wrapper = await mountView()
+    const stream = wrapper.get<HTMLElement>('.message-stream').element
+    Object.defineProperties(stream, {
+      scrollHeight: { value: 2000, configurable: true },
+      clientHeight: { value: 400, configurable: true },
+    })
+    stream.scrollTop = 1600
+    let finish!: (value: SharedChatMessage[]) => void
+    vi.mocked(fetchSharedChatMessages).mockReturnValueOnce(
+      new Promise((r) => {
+        finish = r
+      }),
+    )
+    useUiStore().chatRefreshVersion++
+    await flushPromises()
+    stream.scrollTop = 400
+    await wrapper.get('.message-stream').trigger('scroll')
+    finish([message])
+    await flushPromises()
+    expect(stream.scrollTop).toBe(400)
+  })
+
+  it('距离底部仍有未显示内容时不标已读，点击回到最新才同步', async () => {
+    const wrapper = await mountView({ visible: false })
+    const stream = wrapper.get<HTMLElement>('.message-stream').element
+    Object.defineProperties(stream, {
+      scrollHeight: { value: 2000, configurable: true },
+      clientHeight: { value: 400, configurable: true },
+    })
+    await wrapper.setProps({ visible: true })
+    await flushPromises()
+    vi.mocked(markSharedChatRead).mockClear()
+    // Reset server read facts and move only 60px off the bottom, inside the old 120px threshold.
+    stream.scrollTop = 1540
+    await wrapper.get('.message-stream').trigger('scroll')
+    useUiStore().chatRefreshVersion++
+    await flushPromises()
+    expect(markSharedChatRead).not.toHaveBeenCalled()
+    expect(wrapper.get('.latest-button').text()).toContain('回到最新消息')
+    await wrapper.get('.latest-button').trigger('click')
+    await flushPromises()
+    expect(markSharedChatRead).toHaveBeenCalledWith(message.id)
+    expect(wrapper.find('.latest-button').exists()).toBe(false)
+  })
+
+  it('隐藏的消息区域没有可见高度时不标记已读', async () => {
+    const wrapper = await mountView({ visible: false })
+    const stream = wrapper.get<HTMLElement>('.message-stream').element
+    Object.defineProperty(stream, 'clientHeight', { value: 0, configurable: true })
+    await wrapper.setProps({ visible: true })
+    await flushPromises()
+    expect(markSharedChatRead).not.toHaveBeenCalled()
+  })
+  it('图片加载只在跟随最新消息时补齐位置，阅读历史时保持位置', async () => {
+    const wrapper = await mountView()
+    const stream = wrapper.get<HTMLElement>('.message-stream').element
+    Object.defineProperty(stream, 'scrollHeight', {value: 2000, configurable: true})
+    await wrapper.get('.message-stream').trigger('load')
+    await flushPromises()
+    expect(stream.scrollTop).toBe(2000)
+    stream.scrollTop = 600
+    await wrapper.get('.message-stream').trigger('scroll')
+    Object.defineProperty(stream, 'scrollHeight', {value: 2500, configurable: true})
+    await wrapper.get('.message-stream').trigger('load')
+    await flushPromises()
+    expect(stream.scrollTop).toBe(600)
+  })
+
 })
