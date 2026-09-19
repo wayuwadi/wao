@@ -2,7 +2,7 @@
 import { useUiStore } from '@/stores/ui'
 import { chatShareLink } from '@/utils/share'
 const ui = useUiStore()
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { absoluteUrl, fileShareUrl } from '@/utils/share'
@@ -16,6 +16,7 @@ import AssetPreviewModal, { type AssetPreview } from '@/components/files/AssetPr
 import FileDisplayNameEditor from '@/components/files/FileDisplayNameEditor.vue'
 import AssetReplaceModal, { type ReplacementTarget } from '@/components/files/AssetReplaceModal.vue'
 import { fileDisplayName } from '@/utils/files'
+import { useSessionStore } from '@/stores/session'
 
 const data = useDataStore()
 const tab = ref<'files' | 'img' | 'pages'>('files')
@@ -81,6 +82,118 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const unifiedInput = ref<HTMLInputElement | null>(null)
 const unifiedDragging = ref(false)
 const uploading = ref(0)
+const session = useSessionStore()
+type UploadAttempt = {
+  id: number
+  file: File
+  kind: 'img' | 'files'
+  state: 'waiting' | 'uploading' | 'success' | 'failed'
+  reason: string
+  retryable: boolean
+}
+const uploadAttempts = ref<UploadAttempt[]>([])
+let nextUploadId = 0
+let uploadGeneration = 0
+const failedUploads = computed(() => uploadAttempts.value.filter((item) => item.state === 'failed'))
+const checkingUploads = ref(false)
+const uploadCheckMessage = ref('')
+const successfulUploads = computed(
+  () => uploadAttempts.value.filter((item) => item.state === 'success').length,
+)
+watch(
+  () => session.userId,
+  () => {
+    uploadGeneration++
+    uploadAttempts.value = []
+    uploading.value = 0
+    checkingUploads.value = false
+    uploadCheckMessage.value = ''
+  },
+  { flush: 'sync' },
+)
+onBeforeUnmount(() => {
+  uploadGeneration++
+})
+
+async function runUpload(item: UploadAttempt, generation: number) {
+  if (generation !== uploadGeneration) return
+  item.state = 'uploading'
+  item.reason = ''
+  const limit = item.kind === 'img' ? fileSettings.value.imageMaxMb : fileSettings.value.fileMaxMb
+  if (fileSettingsLoaded.value && item.file.size > limit * 1024 * 1024) {
+    item.state = 'failed'
+    item.reason = `超过 ${limit}MB 上限，请压缩后重新选择文件。`
+    item.retryable = false
+    return
+  }
+  try {
+    const result =
+      item.kind === 'img'
+        ? await data.uploadImage(item.file, '图床', { requirePersisted: true })
+        : await data.uploadFile(item.file)
+    if (generation !== uploadGeneration) return
+    if (!result) throw new Error('未收到上传成功确认。请先核对列表；若未出现该文件，再重试。')
+    item.state = 'success'
+  } catch (cause) {
+    if (generation !== uploadGeneration) return
+    item.state = 'failed'
+    item.reason = cause instanceof Error ? cause.message : '未能确认上传结果，请核对列表后重试。'
+  }
+}
+
+async function uploadBatch(files: File[], kind: UploadAttempt['kind']) {
+  const generation = uploadGeneration
+  const batch = files.map((file) => ({
+    id: ++nextUploadId,
+    file,
+    kind,
+    state: 'waiting' as const,
+    reason: '',
+    retryable: true,
+  }))
+  uploadAttempts.value.push(...batch)
+  // 使用响应式条目，异步进度才能即时显示。
+  const entries = uploadAttempts.value.filter((item) => batch.some((entry) => entry.id === item.id))
+  uploading.value += entries.length
+  try {
+    for (const item of entries) {
+      if (generation !== uploadGeneration) break
+      await runUpload(item, generation)
+    }
+  } finally {
+    if (generation === uploadGeneration) uploading.value -= entries.length
+  }
+}
+
+async function retryUpload(item: UploadAttempt) {
+  if (uploading.value || !item.retryable || item.state !== 'failed') return
+  const generation = uploadGeneration
+  uploading.value++
+  try {
+    await runUpload(item, generation)
+  } finally {
+    if (generation === uploadGeneration) uploading.value--
+  }
+}
+
+async function checkUploadList() {
+  if (checkingUploads.value) return
+  const generation = uploadGeneration
+  checkingUploads.value = true
+  uploadCheckMessage.value = ''
+  try {
+    const results = await Promise.all([data.refreshFiles(), data.refreshImages()])
+    if (generation !== uploadGeneration) return
+    uploadCheckMessage.value = results.every(Boolean)
+      ? '列表已刷新，请在文件或图床中核对后再重试。'
+      : '部分列表读取失败，暂不能确认上传结果，请稍后重新核对。'
+  } catch {
+    if (generation === uploadGeneration) uploadCheckMessage.value = '列表读取失败，请重新核对。'
+  } finally {
+    if (generation === uploadGeneration) checkingUploads.value = false
+  }
+}
+
 const replacement = ref<ReplacementTarget | null>(null)
 const preview = ref<AssetPreview | null>(null)
 
@@ -119,25 +232,7 @@ async function uploadImages(files: FileList | File[]) {
     toast('请选择图片文件', 'ri-error-warning-line')
     return
   }
-  uploading.value += list.length
-  let failed = 0
-  try {
-    for (const f of list) {
-      if (f.size > fileSettings.value.imageMaxMb * 1024 * 1024) {
-        toast(
-          `「${f.name}」超过 ${fileSettings.value.imageMaxMb}MB，已跳过`,
-          'ri-error-warning-line',
-        )
-        failed++
-        continue
-      }
-      if (!(await data.uploadImage(f, '图床'))) failed++
-    }
-  } finally {
-    uploading.value -= list.length
-  }
-  const ok = list.length - failed
-  if (ok) toast(`已上传 ${ok} 张图片到图床`, 'ri-image-add-line')
+  await uploadBatch(list, 'img')
 }
 
 function hostedPageBaseName(fileName: string) {
@@ -261,22 +356,7 @@ async function removePage(page: HostedPage) {
 async function uploadAttachments(files: FileList | File[]) {
   const list = Array.from(files)
   if (!list.length) return
-  uploading.value += list.length
-  let failed = 0
-  try {
-    for (const file of list) {
-      if (file.size > fileSettings.value.fileMaxMb * 1024 * 1024 || !(await data.uploadFile(file)))
-        failed++
-    }
-  } finally {
-    uploading.value -= list.length
-  }
-  if (list.length - failed) toast(`已上传 ${list.length - failed} 个文件`, 'ri-upload-cloud-2-line')
-  if (failed)
-    toast(
-      `${failed} 个文件上传失败或超过 ${fileSettings.value.fileMaxMb}MB`,
-      'ri-error-warning-line',
-    )
+  await uploadBatch(list, 'files')
 }
 
 function onPick(e: Event) {
@@ -446,6 +526,53 @@ function onFileSettingsSaved(settings: FileSettings) {
       <input ref="unifiedInput" type="file" multiple hidden @change="onUnifiedPick" />
     </div>
 
+    <section v-if="uploadAttempts.length" class="upload-results" aria-label="本次上传结果">
+      <div class="upload-result-header">
+        <p role="status">
+          已上传 {{ successfulUploads }} 项<span v-if="uploading"
+            >，正在处理 {{ uploading }} 项</span
+          ><span v-if="failedUploads.length">，{{ failedUploads.length }} 项需处理</span>。
+        </p>
+        <button type="button" :disabled="uploading > 0 || checkingUploads" @click="checkUploadList">
+          {{ checkingUploads ? '正在核对…' : '刷新列表核对' }}
+        </button>
+        <button type="button" :disabled="uploading > 0" @click="uploadAttempts = []">
+          清除上传记录
+        </button>
+      </div>
+      <p v-if="uploadCheckMessage" role="status">{{ uploadCheckMessage }}</p>
+      <p v-if="failedUploads.length">
+        待重试文件仅保留在当前页面，刷新或离开后需重新选择。清除记录不会删除已上传文件。
+      </p>
+      <ul>
+        <li v-for="item in uploadAttempts" :key="item.id">
+          <strong>{{ item.file.name }}</strong>
+          <span
+            >{{ item.kind === 'img' ? '图床' : '文件库' }} ·
+            {{
+              item.state === 'success'
+                ? '已上传'
+                : item.state === 'uploading'
+                  ? '上传中…'
+                  : item.state === 'waiting'
+                    ? '等待上传'
+                    : '需处理'
+            }}</span
+          >
+          <span v-if="item.reason" role="alert" class="upload-reason">{{ item.reason }}</span>
+          <button
+            v-if="item.state === 'failed' && item.retryable"
+            type="button"
+            :disabled="uploading > 0"
+            :aria-label="`重试上传 ${item.file.name}`"
+            @click="retryUpload(item)"
+          >
+            重试上传
+          </button>
+        </li>
+      </ul>
+    </section>
+
     <template v-if="tab === 'files'">
       <div v-if="fileSettingsLoaded" class="note">
         支持拖拽或选择文件上传，单个文件不超过
@@ -495,12 +622,36 @@ function onFileSettingsSaved(settings: FileSettings) {
             >
               <i class="ri-links-line"></i>复制链接
             </button>
-            <button v-if="f.id" class="copy-btn" @click="ui.shareToChat(chatShareLink(fileDisplayName(f), fileShareUrl(f.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button>
-            <button v-if="f.id" class="copy-btn" title="重新上传文件" @click="replacement = { kind: 'file', id: f.id, name: fileDisplayName(f), url: fileShareUrl(f.id) }"><i class="ri-upload-2-line"></i>重新上传</button>
+            <button
+              v-if="f.id"
+              class="copy-btn"
+              @click="ui.shareToChat(chatShareLink(fileDisplayName(f), fileShareUrl(f.id)))"
+            >
+              <i class="ri-chat-forward-line"></i>分享到聊天
+            </button>
+            <button
+              v-if="f.id"
+              class="copy-btn"
+              title="重新上传文件"
+              @click="
+                replacement = {
+                  kind: 'file',
+                  id: f.id,
+                  name: fileDisplayName(f),
+                  url: fileShareUrl(f.id),
+                }
+              "
+            >
+              <i class="ri-upload-2-line"></i>重新上传
+            </button>
             <a class="dl-btn" title="直接下载" :href="absoluteUrl(f.link)"
               ><i class="ri-download-2-line"></i
             ></a>
-            <button class="dl-btn danger" title="删除" @click="removeFile(f.id, fileDisplayName(f))">
+            <button
+              class="dl-btn danger"
+              title="删除"
+              @click="removeFile(f.id, fileDisplayName(f))"
+            >
               <i class="ri-delete-bin-line"></i>
             </button>
           </div>
@@ -593,8 +744,14 @@ function onFileSettingsSaved(settings: FileSettings) {
           {{ option.label }}
         </button>
       </div>
-      <div v-if="data.hostedPageLoadState === 'loading'" class="img-empty page-empty" role="status">正在加载托管网页…</div>
-      <div v-else-if="data.hostedPageLoadState === 'error'" class="img-empty page-empty" role="alert">
+      <div v-if="data.hostedPageLoadState === 'loading'" class="img-empty page-empty" role="status">
+        正在加载托管网页…
+      </div>
+      <div
+        v-else-if="data.hostedPageLoadState === 'error'"
+        class="img-empty page-empty"
+        role="alert"
+      >
         {{ data.hostedPageLoadError }}
         <button class="copy-btn" @click="data.refreshHostedPages()">重新加载</button>
       </div>
@@ -634,7 +791,13 @@ function onFileSettingsSaved(settings: FileSettings) {
           >
             <i class="ri-eye-line"></i>
           </button>
-          <button class="copy-btn" title="重新上传 HTML" @click="replacement = { kind: 'html', id: page.id, name: page.title, url: page.url }"><i class="ri-upload-2-line"></i>重新上传</button>
+          <button
+            class="copy-btn"
+            title="重新上传 HTML"
+            @click="replacement = { kind: 'html', id: page.id, name: page.title, url: page.url }"
+          >
+            <i class="ri-upload-2-line"></i>重新上传
+          </button>
           <button class="dl-btn" title="修改" @click="openPageDialog(page)">
             <i class="ri-edit-line"></i>
           </button>
@@ -752,12 +915,62 @@ function onFileSettingsSaved(settings: FileSettings) {
       @close="settingsOpen = false"
       @saved="onFileSettingsSaved"
     />
-    <AssetReplaceModal v-if="replacement" :target="replacement" @close="replacement = null" @saved="preview = null" />
+    <AssetReplaceModal
+      v-if="replacement"
+      :target="replacement"
+      @close="replacement = null"
+      @saved="preview = null"
+    />
     <AssetPreviewModal v-if="preview" :asset="preview" @close="preview = null" />
   </div>
 </template>
 
 <style scoped>
+.upload-results {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+  font-size: 13px;
+}
+.upload-result-header,
+.upload-results li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.upload-results p {
+  margin: 0 0 8px;
+}
+.upload-results ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.upload-results strong {
+  overflow-wrap: anywhere;
+}
+.upload-results button {
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--wao-bg-card);
+  color: var(--wao-primary);
+  cursor: pointer;
+}
+.upload-results button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.upload-reason {
+  color: var(--wao-danger-strong);
+  overflow-wrap: anywhere;
+}
+
 .files {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);
