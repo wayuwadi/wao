@@ -2205,16 +2205,22 @@ export const useDataStore = defineStore('data', () => {
     name?: string; icon?: string; user?: string; site?: string; note?: string; secret?: string; groupId?: string
   }) {
     const item = vaultItemById(id)
-    if (!item) return
-    Object.assign(item, payload, { updated: '刚刚', hasSecret: payload.secret ? true : item.hasSecret })
-    if (apiLive.value) {
-      try {
-        const updated = await apiPatchVaultItem(id, payload)
-        Object.assign(item, updated)
-      } catch {
-        /* 保留本地乐观更新 */
+    if (!item) return false
+    const source = vault.value.find((group) => group.items.some((entry) => entry.id === id))
+    const target = payload.groupId ? vault.value.find((group) => group.id === payload.groupId) : source
+    if (!source || !target) return false
+    try {
+      const { secret, groupId: _groupId, ...fields } = payload
+      const updated = apiLive.value ? await apiPatchVaultItem(id, payload) : {
+        ...item, ...fields, updated: '刚刚', hasSecret: secret ? true : item.hasSecret,
       }
-    }
+      Object.assign(item, updated)
+      if (source !== target) {
+        source.items = source.items.filter((entry) => entry.id !== id)
+        target.items.push(item)
+      }
+      return true
+    } catch { return false }
   }
 
   /** 删除密钥库条目。 */

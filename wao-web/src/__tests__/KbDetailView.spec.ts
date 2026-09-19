@@ -91,6 +91,21 @@ describe('知识库详情目录体验', () => {
     expect(wrapper.find('.save-retry').exists()).toBe(false)
   })
 
+  it('普通知识库入口展示目录首页，点击文档后可返回首页', async () => {
+    const data = useDataStore(pinia)
+    data.loadStates.docs = 'loaded'
+    const wrapper = await mountView('/kb/k3')
+    expect(wrapper.find('.library-home').exists()).toBe(true)
+    expect(wrapper.find('.doc-bar').exists()).toBe(false)
+    await wrapper.get('.home-documents button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.doc-bar').exists()).toBe(true)
+    await wrapper.get('.library-home-link').trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$router.currentRoute.value.query.doc).toBeUndefined()
+    expect(wrapper.find('.library-home').exists()).toBe(true)
+  })
+
   it('首次进入只展开当前文档所在文件夹，其余文件夹默认收起', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     const folders = wrapper.findAll('.folder-row')
@@ -116,7 +131,7 @@ describe('知识库详情目录体验', () => {
       await wrapper.get('[aria-label="搜索本知识库文件夹和文档"]').setValue('卡片盒')
       expect(wrapper.findAll('.folder-row')).toHaveLength(1)
       expect(wrapper.get('.doc-tree').text()).toContain('卡片盒笔记法')
-      await wrapper.get('.tree-search button').trigger('click')
+      await wrapper.get('[title="定位当前文档"]').trigger('click')
       await flushPromises()
       expect(wrapper.find('.doc-node.on').exists()).toBe(true)
       const original = (wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value
@@ -214,11 +229,13 @@ describe('知识库详情目录体验', () => {
     const confirm = vi.spyOn(window, 'confirm')
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(true)
-    const button = wrapper.get('.doc-row .row-act.danger')
+    const removeAction = () => wrapper.find('.doc-row').findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'delete')
 
-    await button.trigger('click')
+    removeAction()
+    await flushPromises()
     expect(remove).not.toHaveBeenCalled()
-    await button.trigger('click')
+    removeAction()
+    await flushPromises()
     await flushPromises()
 
     expect(confirm.mock.calls[0]?.[0]).toContain('7 天内可恢复')
@@ -237,6 +254,8 @@ describe('知识库详情目录体验', () => {
     ]
     await wrapper.vm.$nextTick()
 
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    await wrapper.get('[title="文档大纲"]').trigger('click')
     expect(wrapper.findAll('.toc-item').map((item) => item.text())).toEqual([
       '一级标题',
       '二级标题',
@@ -267,7 +286,8 @@ describe('知识库详情目录体验', () => {
     const wrapper = await mountView('/kb/k3?doc=d7', true, true)
     await flushPromises()
 
-    await wrapper.findAll('.side-actions button')[1]!.trigger('click')
+    wrapper.findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'templates')
+    await flushPromises()
     expect(wrapper.get('.template-content-preview textarea').attributes('value')).toContain(
       '# 本周进展',
     )
@@ -322,7 +342,8 @@ describe('知识库详情目录体验', () => {
     })
     const wrapper = await mountView('/kb/k3?doc=d7', true, true)
 
-    await wrapper.findAll('.side-actions button')[1]!.trigger('click')
+    wrapper.findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'templates')
+    await flushPromises()
     await wrapper.get('.template-row-actions button').trigger('click')
     expect(wrapper.get('.template-edit-status').text()).toContain('其他窗口保存的新版本')
     expect(wrapper.get('textarea.template-content-editor').attributes('value')).toBe(
@@ -382,7 +403,8 @@ describe('知识库详情目录体验', () => {
     vi.mocked(fetchDocTemplates).mockResolvedValue([template])
     let wrapper = await mountView('/kb/k3?doc=d7', true, true, 'm1')
 
-    await wrapper.findAll('.side-actions button')[1]!.trigger('click')
+    wrapper.findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'templates')
+    await flushPromises()
     await wrapper.get('.template-row-actions button').trigger('click')
     await wrapper.get('textarea.template-content-editor').setValue('只属于成员一的未保存正文')
 
@@ -396,7 +418,8 @@ describe('知识库详情目录体验', () => {
     wrapper.unmount()
 
     wrapper = await mountView('/kb/k3?doc=d7', true, true, 'm1')
-    await wrapper.findAll('.side-actions button')[1]!.trigger('click')
+    wrapper.findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'templates')
+    await flushPromises()
     await wrapper.get('.template-row-actions button').trigger('click')
     expect(wrapper.get('textarea.template-content-editor').attributes('value')).toBe(
       '只属于成员一的未保存正文',
@@ -405,7 +428,8 @@ describe('知识库详情目录体验', () => {
     wrapper.unmount()
 
     wrapper = await mountView('/kb/k3?doc=d7', true, true, 'm2')
-    await wrapper.findAll('.side-actions button')[1]!.trigger('click')
+    wrapper.findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'templates')
+    await flushPromises()
     await wrapper.get('.template-row-actions button').trigger('click')
     expect(wrapper.get('textarea.template-content-editor').attributes('value')).toBe('服务端正文')
     expect(wrapper.get('.template-edit-status').text()).toContain('已保存到服务器')
@@ -434,7 +458,8 @@ describe('知识库详情目录体验', () => {
       }))
     const wrapper = await mountView('/kb/k3?doc=d7', true, true)
 
-    await wrapper.findAll('.side-actions button')[1]!.trigger('click')
+    wrapper.findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'templates')
+    await flushPromises()
     await wrapper.get('.template-row-actions button').trigger('click')
     await wrapper.get('.template-modal.manager input').setValue('失败后仍可重试')
     await wrapper.findAll('.template-edit-footer .template-row-actions button')[1]!.trigger('click')

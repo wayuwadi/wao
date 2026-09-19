@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
+import { apiCreateVaultItem, apiPatchVaultItem } from '@/api/board'
 import VaultView from '@/views/VaultView.vue'
 import type { VaultGroup, VaultItem } from '@/types'
 
@@ -26,6 +27,8 @@ vi.mock('@/api/board', async (importOriginal) => {
     fetchJobs: () => ok(), fetchFiles: () => ok(), fetchImages: () => ok(),
     fetchSchedule: () => ok(), fetchSuggestions: () => ok(), fetchGoals: () => ok(),
     fetchVault: () => fetchVault(),
+    apiCreateVaultItem: vi.fn(),
+    apiPatchVaultItem: vi.fn(),
     apiRevealVaultItem: (id: string) => revealApi(id),
   }
 })
@@ -217,5 +220,73 @@ describe('手机端查看 / 复制密码', () => {
     expect(view.find('.d-name').text()).toBe('家庭 Wi-Fi')
 
     view.unmount()
+  })
+})
+
+
+describe('密码本快速录入', () => {
+  beforeEach(() => { setActivePinia(createPinia()); vi.mocked(apiCreateVaultItem).mockReset(); vi.mocked(apiPatchVaultItem).mockReset() })
+  it('搜索结果跨组编辑后继续选中编辑的条目', async () => {
+    const data = useDataStore()
+    data.apiLive = true
+    data.vault = [group({ items: [item()] }), group({ id: 'work', group: '工作', isDefault: false, items: [item({ id: 'other', name: '其他条目' })] })]
+    vi.mocked(apiPatchVaultItem).mockResolvedValue(item())
+    const view = mount(VaultView, { global: { stubs: { DemoBanner: true } } })
+    await view.get('.vault-search').setValue('家庭')
+    await view.get('button[title="编辑"]').trigger('click')
+    await view.findAll('.group-choices button')[1]!.trigger('click')
+    await view.get('.modal-foot .btn-primary').trigger('click')
+    await flushPromises()
+    expect(view.get('.d-name').text()).toBe('家庭 Wi-Fi')
+    expect(view.findAll('.item-btn')).toHaveLength(2)
+    view.unmount()
+  })
+  it('切换搜索结果后不展示前一条目的迟到密码响应', async () => {
+    const data = useDataStore()
+    data.apiLive = true
+    data.vault = [group({ items: [item(), item({ id: 'vi2', name: '其他条目' })] })]
+    let finish!: (value: { secret: string }) => void
+    revealApi.mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    const view = mount(VaultView, { global: { stubs: { DemoBanner: true } } })
+    await view.get('button[title="查看"]').trigger('click')
+    await view.get('.vault-search').setValue('其他')
+    finish({ secret: 'test-only-secret' })
+    await flushPromises()
+    expect(view.get('.d-name').text()).toBe('其他条目')
+    expect(view.text()).not.toContain('test-only-secret')
+    view.unmount()
+  })
+  it('在当前分组新建，保存失败保留输入，成功后展示新条目', async () => {
+    const data = useDataStore()
+    data.apiLive = true
+    data.vault = [group(), group({ id: 'work', group: '工作', isDefault: false })]
+    vi.mocked(apiCreateVaultItem).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(item({ id: 'new', name: '验收条目' }))
+    const wrapper = mount(VaultView, { global: { stubs: { DemoBanner: true } } })
+    await wrapper.findAll('.group-btn')[2]!.trigger('click')
+    await wrapper.get('.vtop .btn-primary').trigger('click')
+    expect(wrapper.findAll('.group-choices button')[1]!.attributes('aria-pressed')).toBe('true')
+    await wrapper.get('input[placeholder="例如「家庭 Wi-Fi」"]').setValue('验收条目')
+    await wrapper.get('.modal-foot .btn-primary').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.modal').exists()).toBe(true)
+    expect(wrapper.get('[role="alert"]').text()).toContain('输入已保留')
+    expect(data.vault[1]!.items).toEqual([])
+    await wrapper.get('.modal-foot .btn-primary').trigger('click')
+    await flushPromises()
+    expect(apiCreateVaultItem).toHaveBeenLastCalledWith(expect.objectContaining({ groupId: 'work', name: '验收条目' }))
+    expect(wrapper.find('.modal').exists()).toBe(false)
+    expect(wrapper.text()).toContain('验收条目')
+    wrapper.unmount()
+  })
+  it('跨组编辑失败不改变原条目，成功后只出现在目标组', async () => {
+    const data = useDataStore()
+    data.apiLive = true
+    data.vault = [group({ items: [item()] }), group({ id: 'work', group: '工作', isDefault: false })]
+    vi.mocked(apiPatchVaultItem).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(item({ name: '新名称' }))
+    expect(await data.updateVaultItem('vi1', { groupId: 'work', name: '新名称' })).toBe(false)
+    expect(data.vault[0]!.items[0]!.name).toBe('家庭 Wi-Fi')
+    expect(await data.updateVaultItem('vi1', { groupId: 'work', name: '新名称' })).toBe(true)
+    expect(data.vault[0]!.items).toEqual([])
+    expect(data.vault[1]!.items[0]!.name).toBe('新名称')
   })
 })

@@ -8,6 +8,9 @@ import { relativeTime } from '@/utils/time'
 import { useNow } from '@/composables/now'
 import type { KnowledgeBase, TrashEntry } from '@/types'
 
+import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
+const knowledgeFavorites = useKnowledgeFavoritesStore()
+const favoriteKbs = computed(() => data.kbs.filter((kb) => knowledgeFavorites.ids.includes(kb.id) && matchesQuery(kb) && matchesScope(kb)))
 const data = useDataStore()
 const shortcuts = useTopShortcutsStore()
 const router = useRouter()
@@ -15,6 +18,7 @@ const now = useNow()
 
 onMounted(() => {
   void data.refreshTrash()
+  void knowledgeFavorites.load()
 })
 
 const editGroupId = ref<string | null>(null)
@@ -135,6 +139,7 @@ function daysLeft(entry: TrashEntry): string {
 function openTrash() {
   trashOpen.value = true
   void data.refreshTrash()
+  void knowledgeFavorites.load()
 }
 function closeTrash() {
   trashOpen.value = false
@@ -196,6 +201,9 @@ async function createKb() {
       <span class="kb-result-count">{{ visibleCount }} 个知识库</span>
     </div>
 
+    <section v-if="favoriteKbs.length" class="frequent-section">
+      <h2>常用</h2><div class="frequent-grid"><button v-for="k in favoriteKbs" :key="k.id" class="frequent-card" @click="openKb(k.id)"><i :class="k.icon" :style="{ color: k.color }"></i><span><strong>{{ k.name }}</strong><small>{{ k.desc || `${docCount(k)} 篇文档` }}</small></span></button></div>
+    </section>
     <div v-for="g in groups" v-show="g.items.length || !filtering" :key="g.id" class="kgroup">
       <div class="kgroup-head">
         <template v-if="!g.fixed && editGroupId === g.id">
@@ -230,6 +238,7 @@ async function createKb() {
             <div class="kb-name">{{ k.name }}</div>
             <span v-if="k.auto" class="tag auto">自动</span>
             <span v-if="k.perm === '成员可编辑'" class="tag shared">已共享</span>
+            <button class="gear" :title="knowledgeFavorites.ids.includes(k.id) ? '取消常用' : '添加为常用'" :aria-pressed="knowledgeFavorites.ids.includes(k.id)" :disabled="knowledgeFavorites.saving" @click.stop="knowledgeFavorites.toggle(k.id)"><i :class="knowledgeFavorites.ids.includes(k.id) ? 'ri-star-fill' : 'ri-star-line'"></i></button>
             <button class="gear" title="知识库设置" @click.stop="openCfg(k)"><i class="ri-settings-3-line"></i></button>
           </div>
           <div class="kb-desc">{{ k.desc }}</div>
@@ -369,6 +378,13 @@ async function createKb() {
 </template>
 
 <style scoped>
+.frequent-section { background: var(--wao-bg-hover); border-radius: 12px; padding: 20px; margin: 24px 0; }
+.frequent-section h2 { font-size: 14px; font-weight: 500; margin: 0 0 14px; color: var(--wao-text-weak); }
+.frequent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.frequent-card { display: flex; gap: 14px; align-items: center; padding: 18px; text-align: left; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text); cursor: pointer; }
+.frequent-card i { font-size: 24px; }
+.frequent-card strong,.frequent-card small { display: block; }
+.frequent-card small { color: var(--wao-text-weak); margin-top: 4px; }
 .know {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);

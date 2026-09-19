@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
@@ -25,7 +25,11 @@ interface FlatItem extends VaultItem {
 const items = computed<FlatItem[]>(() =>
   data.vault.flatMap((g) => g.items.map((it) => ({ ...it, groupId: g.id, groupName: g.group }))),
 )
-const filtered = computed(() => (groupId.value === 'all' ? items.value : items.value.filter((i) => i.groupId === groupId.value)))
+const query = ref('')
+const filtered = computed(() => items.value.filter((item) =>
+  (groupId.value === 'all' || item.groupId === groupId.value) &&
+  `${item.name} ${item.user} ${item.site}`.toLocaleLowerCase().includes(query.value.trim().toLocaleLowerCase()),
+))
 const sel = computed(() => filtered.value.find((i) => i.id === selId.value) ?? filtered.value[0] ?? null)
 
 /**
@@ -107,16 +111,19 @@ async function createGroup() {
 // ---- 查看 / 复制密码 ----
 const revealed = ref<string | null>(null)
 const revealing = ref(false)
-watch(selId, () => (revealed.value = null))
+watch(() => sel.value?.id, () => (revealed.value = null))
 async function reveal() {
   if (!sel.value || revealing.value) return
   if (!sel.value.hasSecret) {
     toast('该条目未设置密码', 'ri-lock-line')
     return
   }
+  const requestedId = sel.value.id
   revealing.value = true
   try {
-    revealed.value = await data.revealVaultItem(sel.value.id)
+    const secret = await data.revealVaultItem(requestedId)
+    if (sel.value?.id !== requestedId) return
+    revealed.value = secret
     if (revealed.value == null) toast('未能获取密码', 'ri-error-warning-line')
   } finally {
     revealing.value = false
@@ -124,8 +131,9 @@ async function reveal() {
 }
 async function copyPassword() {
   if (!sel.value) return
+  const requestedId = sel.value.id
   if (revealed.value == null) await reveal()
-  if (revealed.value != null) copyText(revealed.value, '已复制密码')
+  if (sel.value?.id === requestedId && revealed.value != null) copyText(revealed.value, '已复制密码')
 }
 function copyUser() {
   if (sel.value) copyText(sel.value.user, '已复制用户名')
@@ -141,18 +149,26 @@ const formSite = ref('')
 const formNote = ref('')
 const formSecret = ref('')
 
-function openNewItem() {
+const nameInput = ref<HTMLInputElement | null>(null)
+const savingItem = ref(false)
+const itemError = ref('')
+
+async function openNewItem() {
   editingId.value = null
-  formGroupId.value = defaultGroupId.value
+  formGroupId.value = groupId.value === 'all' ? defaultGroupId.value : groupId.value
   formName.value = ''
   formUser.value = ''
   formSite.value = ''
   formNote.value = ''
   formSecret.value = ''
+  itemError.value = ''
   itemOpen.value = true
+  await nextTick()
+  nameInput.value?.focus()
 }
 function openEditItem() {
   if (!sel.value) return
+  itemError.value = ''
   editingId.value = sel.value.id
   formGroupId.value = sel.value.groupId
   formName.value = sel.value.name
@@ -163,21 +179,35 @@ function openEditItem() {
   itemOpen.value = true
 }
 async function saveItem() {
-  if (!formName.value.trim()) return
-  if (editingId.value) {
-    await data.updateVaultItem(editingId.value, {
-      name: formName.value.trim(), user: formUser.value.trim(), site: formSite.value.trim(),
-      note: formNote.value.trim(), secret: formSecret.value || undefined, groupId: formGroupId.value,
-    })
-    revealed.value = null
-  } else {
-    const item = await data.addVaultItem({
-      groupId: formGroupId.value, name: formName.value.trim(), user: formUser.value.trim(),
-      site: formSite.value.trim(), note: formNote.value.trim(), secret: formSecret.value || undefined,
-    })
-    if (item) selId.value = item.id
-  }
-  itemOpen.value = false
+  if (!formName.value.trim() || savingItem.value) return
+  savingItem.value = true
+  itemError.value = ''
+  try {
+    if (editingId.value) {
+      const updated = await data.updateVaultItem(editingId.value, {
+        name: formName.value.trim(), user: formUser.value.trim(), site: formSite.value.trim(),
+        note: formNote.value.trim(), secret: formSecret.value || undefined, groupId: formGroupId.value,
+      })
+      if (!updated) throw new Error('保存失败')
+      selId.value = editingId.value
+      groupId.value = formGroupId.value
+      query.value = ''
+      revealed.value = null
+    } else {
+      const item = await data.addVaultItem({
+        groupId: formGroupId.value, name: formName.value.trim(), user: formUser.value.trim(),
+        site: formSite.value.trim(), note: formNote.value.trim(), secret: formSecret.value || undefined,
+      })
+      if (!item) throw new Error('保存失败，请重试')
+      groupId.value = formGroupId.value
+      query.value = ''
+      selId.value = item.id
+    }
+    itemOpen.value = false
+    formSecret.value = ''
+  } catch {
+    itemError.value = '保存失败，输入已保留，请重试。'
+  } finally { savingItem.value = false }
 }
 async function deleteItem() {
   if (!sel.value) return
@@ -203,7 +233,8 @@ async function deleteItem() {
         <i class="ri-settings-4-line"></i>{{ managingGroups ? '完成分组管理' : '分组管理' }}
       </button>
       <div class="spacer"></div>
-      <button class="btn-ghost" @click="openNewItem"><i class="ri-add-line"></i>添加条目</button>
+      <input v-model="query" class="vault-search f-input" type="search" aria-label="搜索密码条目" placeholder="搜索名称、账号或网址" />
+      <button class="btn-primary" @click="openNewItem"><i class="ri-add-line"></i>添加条目</button>
     </div>
 
     <div class="banner">
@@ -304,32 +335,30 @@ async function deleteItem() {
 
     <!-- 新建 / 编辑条目弹层 -->
     <template v-if="itemOpen">
-      <div class="modal-mask" @click="itemOpen = false"></div>
+      <div class="modal-mask" @click="!savingItem && (itemOpen = false)"></div>
       <div class="modal">
         <div class="modal-head">
           <div class="modal-title">{{ editingId ? '编辑条目' : '新建条目' }}</div>
           <div class="spacer"></div>
-          <button class="icon-btn" @click="itemOpen = false"><i class="ri-close-line"></i></button>
+          <button class="icon-btn" @click="!savingItem && (itemOpen = false)"><i class="ri-close-line"></i></button>
         </div>
-        <div class="modal-body">
-          <label class="f-label">分组 <span class="optional">选填，默认放入“{{ defaultGroupName }}”</span></label>
-          <select v-model="formGroupId" class="f-input">
-            <option v-for="g in data.vault" :key="g.id" :value="g.id">{{ g.group }}</option>
-          </select>
+        <fieldset class="modal-body" :disabled="savingItem" style="border: 0; margin: 0; min-width: 0">
+          <label class="f-label">分组 <span class="optional">点选分组；全部视图默认放入“{{ defaultGroupName }}”</span></label>
+          <div class="group-choices" role="group" aria-label="条目分组"><button v-for="g in data.vault" :key="g.id" type="button" :aria-pressed="formGroupId === g.id" :class="{ on: formGroupId === g.id }" @click="formGroupId = g.id">{{ g.group }}</button></div>
           <label class="f-label">名称</label>
-          <input v-model="formName" class="f-input" placeholder="例如「家庭 Wi-Fi」" />
+          <input ref="nameInput" v-model="formName" class="f-input" placeholder="例如「家庭 Wi-Fi」" />
           <label class="f-label">用户名</label>
-          <input v-model="formUser" class="f-input" placeholder="选填" />
+          <input v-model="formUser" name="vault-user" autocomplete="off" class="f-input" placeholder="选填" />
           <label class="f-label">网址</label>
-          <input v-model="formSite" class="f-input" placeholder="选填" />
+          <input v-model="formSite" name="vault-site" autocomplete="off" class="f-input" placeholder="选填" />
           <label class="f-label">密码</label>
-          <input v-model="formSecret" type="password" class="f-input" :placeholder="editingId ? '留空则不修改' : '选填'" />
+          <input v-model="formSecret" type="password" name="vault-secret" autocomplete="new-password" class="f-input" :placeholder="editingId ? '留空则不修改' : '选填'" />
           <label class="f-label">备注</label>
           <textarea v-model="formNote" class="f-textarea" rows="2" placeholder="选填"></textarea>
-        </div>
+        </fieldset>
         <div class="modal-foot">
           <div class="spacer"></div>
-          <button class="btn-primary" :disabled="!formName.trim()" @click="saveItem">保存</button>
+          <span v-if="itemError" role="alert">{{ itemError }}</span><button class="btn-primary" :disabled="!formName.trim() || savingItem" @click="saveItem">{{ savingItem ? '保存中…' : '保存' }}</button>
         </div>
       </div>
     </template>
@@ -356,6 +385,11 @@ async function deleteItem() {
 </template>
 
 <style scoped>
+.vault-search { max-width: 260px; }
+.group-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.group-choices button { border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); padding: 7px 12px; cursor: pointer; }
+.group-choices button.on { color: var(--wao-primary-text); border-color: var(--wao-primary); background: var(--wao-primary-soft); }
+@media (max-width: 760px) { .vtop { flex-wrap: wrap; } .vault-search { max-width: none; flex: 1; min-width: 140px; } }
 .vault {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);

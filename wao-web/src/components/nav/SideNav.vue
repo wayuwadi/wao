@@ -14,6 +14,11 @@ import type { ModuleId } from '@/types'
 import { externalAppItemId, type NavItemId } from '@/config/nav'
 import { hasDesktopToolbar } from '@/utils/desktopToolbar'
 const desktopToolbar = hasDesktopToolbar()
+import { useDataStore } from '@/stores/data'
+import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
+const data = useDataStore()
+const knowledgeFavorites = useKnowledgeFavoritesStore()
+const favoriteKbs = computed(() => data.kbs.filter((kb) => knowledgeFavorites.ids.includes(kb.id)))
 import QuickLinks from '@/components/nav/QuickLinks.vue'
 
 const emit = defineEmits<{ (e: 'open-search'): void }>()
@@ -57,6 +62,7 @@ onMounted(() => {
   nav.loadExternalApps()
   nav.loadBuiltinMenus()
   favorites.load()
+  void knowledgeFavorites.load()
 })
 
 function go(id: NavItemId) {
@@ -282,7 +288,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             @dragend="onDragEnd"
           >
             <i :class="nav.itemMeta(id)?.icon"></i>
-            <span v-if="!nav.collapsed" class="item-label">{{ nav.itemMeta(id)?.label }}</span>
+            <span class="item-label" :class="{ 'compact-label': nav.collapsed }">{{ nav.itemMeta(id)?.label }}</span>
           </button>
         </div>
 
@@ -316,6 +322,12 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           </div>
         </template>
       </template>
+      <section v-if="favoriteKbs.length" class="favorite-kbs">
+        <div v-if="!nav.collapsed" class="group-label">常用知识库</div>
+        <button v-for="kb in favoriteKbs" :key="kb.id" class="item" :class="{ center: nav.collapsed, active: route.params.id === kb.id && route.name === 'kb' }" :title="kb.name" @click="router.push(`/kb/${kb.id}`)">
+          <i :class="kb.icon || 'ri-book-2-line'"></i><span class="item-label" :class="{ 'compact-label': nav.collapsed }">{{ kb.name }}</span>
+        </button>
+      </section>
     </nav>
 
     <!-- 停靠菜单仍由菜单注册表驱动；快捷链接继续使用独立的成员级真实配置。 -->
@@ -439,6 +451,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 </template>
 
 <style scoped>
+.side.collapsed .item.center { height: auto; min-height: 54px; flex-direction: column; gap: 3px; padding: 7px 2px; }
+.side.collapsed .item .compact-label { display: block; width: 100%; text-align: center; font-size: 10px; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-heading {
   display: flex;
   align-items: center;

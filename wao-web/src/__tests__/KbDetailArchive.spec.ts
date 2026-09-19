@@ -47,7 +47,7 @@ describe('知识库详情 · 文档归档', () => {
     await router.isReady()
     wrapper = shallowMount(KbDetailView, { global: { plugins: [router] } })
 
-    await wrapper.find('button[title="归档文档（长期保留）"]').trigger('click')
+    wrapper.find('.doc-row').findComponent({ name: 'ResourceMenu' }).vm.$emit('select', 'archive')
     await flushPromises()
 
     expect(knowledgeBase.folders[0]!.docs).not.toContain('d1')
