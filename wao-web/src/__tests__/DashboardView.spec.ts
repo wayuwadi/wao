@@ -236,4 +236,28 @@ describe('DashboardView AI 用量面板', () => {
     expect(wrapper.find('.load-error button').text()).toContain('重试')
     wrapper.unmount()
   })
+
+  it('摘要解释运行和记账缺口，并进入真实运行入口', async () => {
+    const wrapper = mountDashboard(); await flushPromises()
+    expect(wrapper.get('.usage-guidance').text()).toContain('1 次运行排队或执行中')
+    expect(wrapper.get('.usage-guidance').text()).toContain('2 次运行尚未回传用量')
+    expect(wrapper.get('.usage-guidance').text()).toContain('不是个人效率评分')
+    expect(wrapper.html().indexOf('insight-card')).toBeLessThan(wrapper.html().indexOf('chart-row quota-row'))
+    await wrapper.get('.guidance-actions button').trigger('click'); await flushPromises()
+    expect(wrapper.vm.$router.currentRoute.value.path).toBe('/ai-sessions')
+    wrapper.unmount()
+  })
+
+  it('刷新失败持续标记旧统计并可原位重试', async () => {
+    const wrapper = mountDashboard(); await flushPromises()
+    const previous = wrapper.get('.usage-guidance p').text()
+    vi.mocked(fetchAiUsageInsights).mockRejectedValueOnce(new Error('建议接口暂不可用'))
+    await wrapper.get('.dash-actions button').trigger('click'); await flushPromises()
+    expect(wrapper.get('.refresh-error').text()).toContain('以下统计仍是上一次结果')
+    expect(wrapper.get('.usage-guidance p').text()).toBe(previous)
+    expect(wrapper.get('.kpi-grid').text()).toContain('30K')
+    await wrapper.get('.refresh-error button').trigger('click'); await flushPromises()
+    expect(wrapper.find('.refresh-error').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })
