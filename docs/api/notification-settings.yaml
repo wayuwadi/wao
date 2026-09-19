@@ -3,6 +3,13 @@ info:
   title: WAO 通知设置 API
   version: 0.1.0
 paths:
+  /api/public/notification-settings/jenkins-success:
+    get:
+      summary: 返回 Jenkins 成功群通知当前是否允许发送
+      description: 遵守群通知总开关和沉默时段，独立于 Jenkins 失败通知开关。
+      responses:
+        '200':
+          description: 只返回最终门禁结论与原因，不公开完整系统策略
   /api/public/notification-settings/jenkins-failure:
     get:
       summary: 返回 Jenkins 失败群通知当前是否允许发送

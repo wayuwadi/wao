@@ -560,7 +560,10 @@ watch(view, (next) => {
   if (next === 'workflows' && !workflows.value.length) void refreshWorkflows()
 })
 
+const aiAreaOpen = ref(Boolean(route.query.console) || route.hash === '#ai-launcher')
+
 function revealAiArea() {
+  aiAreaOpen.value = true
   const target = route.hash === '#ai-launcher' ? '#ai-launcher' : '#ai-console'
   void nextTick(() => document.querySelector(target)?.scrollIntoView({ block: 'start' }))
 }
@@ -1271,10 +1274,15 @@ onBeforeUnmount(() => {
   <div class="home" :class="{ 'run-list-view': runLayout === 'list' }">
     <div class="home-primary">
       <HomeStartGuide />
+      <section class="ai-entry" aria-label="AI Run 实验功能">
+        <div><h2>AI Run <span>实验功能</span></h2><p>日常开发优先在本地电脑完成；需要体验自动执行时再展开。</p></div>
+        <button type="button" :aria-expanded="aiAreaOpen" aria-controls="home-ai-area" @click="aiAreaOpen = !aiAreaOpen">{{ aiAreaOpen ? '收起 AI Run' : '展开 AI Run' }}<span v-if="activeRuns.length"> · {{ activeRuns.length }} 项进行中</span></button>
+      </section>
+      <div id="home-ai-area" v-show="aiAreaOpen" class="ai-area">
       <section id="home-ai-overview" class="hero" data-page-anchor="AI 控制中心">
         <div class="hero-heading">
           <div class="eyebrow">AI CONTROL CENTER</div>
-          <h1 class="slogan">娃有多大胆，AI 有多大产</h1>
+          <h1 class="slogan">AI 自动执行工作区</h1>
         </div>
         <div class="quota-summary">
           <span role="status">{{ quotaError ? '额度读取失败' : quotaLoading && !quotaOverview ? '正在读取额度…' : heroWeeklyQuota ? `Codex 周剩余 ${heroWeeklyQuota.remainingPercent}%` : '暂无有效额度快照' }}</span>
@@ -1316,7 +1324,7 @@ onBeforeUnmount(() => {
         <div class="goal-heading">
           <span class="goal-icon"><i class="ri-sparkling-2-line"></i></span>
           <div>
-            <h2 id="goal-launcher-title">给我一个目标，剩下的交给 AI</h2>
+            <h2 id="goal-launcher-title">描述一个目标，尝试 AI 执行</h2>
           </div>
           <button class="goal-settings-toggle" type="button" aria-label="执行设置" :aria-expanded="goalSettingsOpen" @click="goalSettingsOpen = !goalSettingsOpen"><i class="ri-equalizer-line"></i></button>
         </div>
@@ -1419,7 +1427,6 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-    </div>
 
     <nav id="ai-console" class="console-tabs" data-page-anchor="AI 运行控制台">
       <button
@@ -1927,6 +1934,9 @@ onBeforeUnmount(() => {
       </section>
     </template>
 
+      </div>
+    </div>
+
     <div v-if="taskAutoRunSettingsOpen" class="run-detail-mask" @click.self="taskAutoRunSettingsOpen = false">
       <section class="run-detail auto-run-dialog" role="dialog" aria-modal="true" aria-labelledby="auto-run-policy-title">
         <header>
@@ -2408,6 +2418,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.ai-area { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.ai-entry { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 18px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); }
+.ai-entry h2 { margin: 0; font-size: 14px; }
+.ai-entry h2 span { margin-left: 8px; font-size: 11px; font-weight: 400; color: var(--wao-text-weak); }
+.ai-entry p { margin: 6px 0 0; font-size: 12px; color: var(--wao-text-weak); }
+.ai-entry button { border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-text); padding: 8px 12px; cursor: pointer; }
+.ai-entry button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
+
 .home {
   min-height: 100%;
   max-width: var(--wao-content-max);

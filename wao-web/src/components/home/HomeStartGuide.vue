@@ -25,9 +25,9 @@ const starts = [
   { title: '整理资料', icon: 'ri-folder-upload-line', path: '/files',
     description: '上传一份文件或图片，把需要的资料存下来。',
     next: '上传后在文件列表查看、下载或分享。', action: '打开文件库' },
-  { title: '交给 AI', icon: 'ri-sparkling-line', path: '/ai-sessions?new=1',
-    description: '描述目标，选择项目和执行方式，确认后开始任务。',
-    next: '在同一会话查看执行结果，并继续提问或补充要求。', action: '创建 AI 任务' },
+  { title: '推进项目', icon: 'ri-stack-line', path: '/projects',
+    description: '整理项目需求，选择要在本地电脑开发的任务。',
+    next: '复制任务分享链接，在本地开发完成后回到项目跟进。', action: '打开项目' },
 ]
 </script>
 

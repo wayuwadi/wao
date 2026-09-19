@@ -1,4 +1,4 @@
-/** Versioned UI-only bridge. Older clients retain their in-page buttons. */
+/** Versioned UI-only bridge. Older clients retain in-page context and use their fixed native actions. */
 export function hasDesktopToolbar(): boolean {
   const shell = window as Window & {
     __WAO_DESKTOP_TOOLBAR__?: boolean
@@ -7,7 +7,7 @@ export function hasDesktopToolbar(): boolean {
   return shell.__WAO_DESKTOP_TOOLBAR__ === true && (shell.__WAO_DESKTOP_BRIDGE__ ?? 0) >= 2
 }
 
-function hasLegacyDesktopToolbar(): boolean {
+export function hasLegacyDesktopToolbar(): boolean {
   const shell = window as Window & {
     __WAO_DESKTOP_TOOLBAR__?: boolean
     __WAO_DESKTOP_BRIDGE__?: number

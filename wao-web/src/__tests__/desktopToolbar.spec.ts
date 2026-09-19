@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   hasDesktopToolbar,
+  hasLegacyDesktopToolbar,
   mountDesktopToolbar,
   syncDesktopGlobalShortcuts,
 } from '@/utils/desktopToolbar'
@@ -22,6 +23,7 @@ describe('桌面顶栏只同步真实入口计数', () => {
     expect(hasDesktopToolbar()).toBe(false)
 
     vi.stubGlobal('window', { location: { assign }, __WAO_DESKTOP_TOOLBAR__: true })
+    expect(hasLegacyDesktopToolbar()).toBe(true)
     const stopLegacy = mountDesktopToolbar(root)
     await new Promise((resolve) => realWindow.setTimeout(resolve, 0))
     syncDesktopGlobalShortcuts({ 'new-note': 'Alt+Shift+Y' })
@@ -41,6 +43,7 @@ describe('桌面顶栏只同步真实入口计数', () => {
       __WAO_DESKTOP_BRIDGE__: 2,
     })
     expect(hasDesktopToolbar()).toBe(true)
+    expect(hasLegacyDesktopToolbar()).toBe(false)
     const stop = mountDesktopToolbar(root)
     expect(document.title).toBe(
       'WAO_DESKTOP_SIGNAL:/__desktop_toolbar__?ready=1&theme=light&chat=3&notifications=99%2B&context=%E9%A6%96%E9%A1%B5&contextItems=%5B%22%E4%BB%8A%E6%97%A5%22%5D&menus=%5B%22%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97%22%5D',
