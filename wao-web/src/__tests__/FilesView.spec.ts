@@ -22,6 +22,8 @@ describe('FilesView', () => {
   it('展示真实上传限制并将网页托管默认分页为10条', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     data.hostedPages = Array.from({ length: 11 }, (_, index) => ({
       id: `page-${index + 1}`,
       slug: `page-${index + 1}`,
@@ -56,6 +58,8 @@ describe('FilesView', () => {
   it('统一入口按真实文件类型分流，并为 HTML 生成可修改的标题和后缀', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     const saveHostedPage = vi.spyOn(data, 'saveHostedPage').mockResolvedValue({
       id: 'page-1',
       slug: 'wao-dashboard',
@@ -110,14 +114,28 @@ describe('FilesView', () => {
   it('网页托管按持久化来源区分人工上传与 AI Run 报告', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     data.hostedPages = [
       {
-        id: 'page-manual', slug: 'manual', title: '人工页面', fileName: 'manual.html',
-        sourceType: 'MANUAL_UPLOAD', hasIcon: false, updatedAt: '8月31日 10:00', url: '/api/pages/manual',
+        id: 'page-manual',
+        slug: 'manual',
+        title: '人工页面',
+        fileName: 'manual.html',
+        sourceType: 'MANUAL_UPLOAD',
+        hasIcon: false,
+        updatedAt: '8月31日 10:00',
+        url: '/api/pages/manual',
       },
       {
-        id: 'run-report-ar1', slug: 'ai-run-ar1', title: '视觉优化 · AI 报告', fileName: 'report.html',
-        sourceType: 'AI_RUN_REPORT', hasIcon: false, updatedAt: '8月31日 11:00', url: '/api/pages/ai-run-ar1',
+        id: 'run-report-ar1',
+        slug: 'ai-run-ar1',
+        title: '视觉优化 · AI 报告',
+        fileName: 'report.html',
+        sourceType: 'AI_RUN_REPORT',
+        hasIcon: false,
+        updatedAt: '8月31日 11:00',
+        url: '/api/pages/ai-run-ar1',
       },
     ]
     const wrapper = mount(FilesView, {
@@ -130,8 +148,10 @@ describe('FilesView', () => {
     expect(wrapper.text()).toContain('人工上传')
     expect(wrapper.text()).toContain('AI Run 报告')
 
-    await wrapper.findAll('[aria-label="网页托管类型"] button')
-      .find((button) => button.text() === 'AI Run 报告')!.trigger('click')
+    await wrapper
+      .findAll('[aria-label="网页托管类型"] button')
+      .find((button) => button.text() === 'AI Run 报告')!
+      .trigger('click')
     expect(wrapper.findAll('.file-row')).toHaveLength(1)
     expect(wrapper.text()).toContain('视觉优化 · AI 报告')
     expect(wrapper.text()).not.toContain('人工页面')
@@ -164,6 +184,8 @@ describe('FilesView', () => {
   it('托管弹窗支持拖入 HTML 和 icon，并在发布时使用已选文件', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     const saveHostedPage = vi.spyOn(data, 'saveHostedPage').mockResolvedValue({
       id: 'page-2',
       slug: 'dragged-page',
@@ -196,5 +218,85 @@ describe('FilesView', () => {
     expect(saveHostedPage).toHaveBeenCalledWith(
       expect.objectContaining({ html, icon, slug: 'dragged-page', title: 'dragged-page' }),
     )
+  })
+  it('全局文件和 HTML 列表都能按原资产打开重新上传', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
+    data.files = [
+      {
+        id: 'f1',
+        name: 'old.pdf',
+        displayName: '保留名称',
+        size: '1 B',
+        icon: 'ri-file-line',
+        time: '刚刚',
+        by: 'wg',
+        link: '/api/files/f1/download',
+      },
+    ]
+    data.hostedPages = [
+      {
+        id: 'h1',
+        slug: 'stable',
+        title: '原页面',
+        fileName: 'old.html',
+        hasIcon: false,
+        updatedAt: '刚刚',
+        url: '/api/pages/stable',
+      },
+    ]
+    const wrapper = mount(FilesView, {
+      global: {
+        plugins: [pinia],
+        stubs: { DemoBanner: true, FileSettingsModal: true, AssetReplaceModal: true },
+      },
+    })
+    await flushPromises()
+    await wrapper.get('button[title="重新上传文件"]').trigger('click')
+    const modal = wrapper.findComponent({ name: 'AssetReplaceModal' })
+    expect(modal.props('target')).toEqual(
+      expect.objectContaining({ kind: 'file', id: 'f1', name: '保留名称' }),
+    )
+    modal.vm.$emit('close')
+    await flushPromises()
+    await wrapper.findAll('.seg-btn')[2]!.trigger('click')
+    await wrapper.get('button[title="重新上传 HTML"]').trigger('click')
+    expect(wrapper.findComponent({ name: 'AssetReplaceModal' }).props('target')).toEqual({
+      kind: 'html',
+      id: 'h1',
+      name: '原页面',
+      url: '/api/pages/stable',
+    })
+    wrapper.unmount()
+  })
+  it('托管页加载失败明确提示并可重试，不误报空列表', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    const refresh = vi.spyOn(data, 'refreshHostedPages').mockImplementation(async () => {
+      data.hostedPageLoadState = 'error'
+      data.hostedPageLoadError = '连接失败'
+      return false
+    })
+    const wrapper = mount(FilesView, {
+      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+    })
+    await flushPromises()
+    await wrapper.findAll('.seg-btn')[2]!.trigger('click')
+    expect(wrapper.get('[role="alert"]').text()).toContain('连接失败')
+    expect(wrapper.text()).not.toContain('还没有托管网页')
+    refresh.mockImplementationOnce(async () => {
+      data.hostedPageLoadState = 'loaded'
+      return true
+    })
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('还没有托管网页')
+    wrapper.unmount()
   })
 })

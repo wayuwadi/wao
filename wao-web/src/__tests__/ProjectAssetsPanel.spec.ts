@@ -15,7 +15,7 @@ describe('ProjectAssetsPanel', () => {
       data,
       wrapper: mount(ProjectAssetsPanel, {
         props: { projectId: 'p1', projectName: 'WAO' },
-        global: { plugins: [pinia], stubs: { AssetPreviewModal: true } },
+        global: { plugins: [pinia], stubs: { AssetPreviewModal: true, AssetReplaceModal: true } },
       }),
     }
   }
@@ -75,6 +75,18 @@ describe('ProjectAssetsPanel', () => {
 
     expect(wrapper.text()).toContain('报告.md')
     expect(wrapper.text()).not.toContain('其它.md')
+    await wrapper.get('button[title="重新上传文件"]').trigger('click')
+    const fileReplacement = wrapper.findComponent({ name: 'AssetReplaceModal' })
+    expect(fileReplacement.props('target')).toEqual(
+      expect.objectContaining({
+        kind: 'file',
+        id: 'f1',
+        name: '报告.md',
+      }),
+    )
+    fileReplacement.vm.$emit('close')
+    await flushPromises()
+
     await wrapper
       .findAll('.asset-row button')
       .find((button) => button.text().includes('预览'))!
@@ -85,6 +97,15 @@ describe('ProjectAssetsPanel', () => {
     expect(wrapper.text()).toContain('截图.png')
     await wrapper.findAll('.asset-tabs button')[2]!.trigger('click')
     expect(wrapper.text()).toContain('HTML 报告')
+    await wrapper.get('button[title="重新上传 HTML"]').trigger('click')
+    const replacement = wrapper.findComponent({ name: 'AssetReplaceModal' })
+    expect(replacement.props('target')).toEqual({
+      kind: 'html',
+      id: 'h1',
+      name: 'HTML 报告',
+      url: '/api/pages/report',
+    })
+    wrapper.unmount()
   })
 
   it('按类型复用真实上传链路并携带当前项目 id', async () => {

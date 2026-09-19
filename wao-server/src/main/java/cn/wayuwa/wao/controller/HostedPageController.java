@@ -60,6 +60,15 @@ public class HostedPageController {
         return ApiResponse.ok(pages.update(id, html, slug, title, icon));
     }
 
+    @PutMapping(value = "/hosted-pages/{id}/content", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<HostedPageDto> replace(@PathVariable String id, @RequestParam MultipartFile html,
+            HttpServletRequest request) {
+        String memberId = currentMember.id(request);
+        String projectId = pages.projectId(id);
+        if (projectId != null) projects.requireAccess(projectId, memberId);
+        return ApiResponse.ok(pages.replace(id, html));
+    }
+
     @DeleteMapping("/hosted-pages/{id}")
     public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest request) {
         String projectId = pages.projectId(id);

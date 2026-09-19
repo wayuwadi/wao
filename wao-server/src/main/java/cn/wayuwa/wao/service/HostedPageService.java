@@ -171,6 +171,14 @@ public class HostedPageService {
         return dto(entity);
     }
 
+    /** 只替换 HTML 文件，保留最新标题、分享后缀、图标和归属，避免旧表单覆盖元数据。 */
+    public HostedPageDto replace(String id, MultipartFile html) {
+        HostedPageEntity entity = required(id);
+        fill(entity, html, entity.getSlug(), entity.getTitle(), null, true);
+        if (mapper.replaceContent(entity) == 0) throw new NotFoundException("托管页面不存在");
+        return dto(required(id));
+    }
+
     /** 返回管理操作所需的项目归属；不存在时与其它管理接口一致返回 404。 */
     public String projectId(String id) { return required(id).getProjectId(); }
 

@@ -103,4 +103,23 @@ class FileControllerTest {
         entity.setContent(body.getBytes(StandardCharsets.UTF_8));
         return entity;
     }
+    @Test
+    void replacementChecksProjectAccessBeforeWritingContent() {
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "new.pdf", "application/pdf", "new".getBytes());
+        var entity = new FileBlobEntity(); entity.setProjectId("p1");
+        when(files.metadata("f1")).thenReturn(entity);
+        when(currentMember.id(request)).thenReturn("member");
+        controller.replace("f1", file, request);
+        var order = org.mockito.Mockito.inOrder(projects, files);
+        order.verify(projects).requireAccess("p1", "member");
+        order.verify(files).replace("f1", file);
+        org.mockito.Mockito.reset(files);
+        when(files.metadata("f1")).thenReturn(entity);
+        org.mockito.Mockito.doThrow(new cn.wayuwa.wao.common.NotFoundException("项目不可见"))
+                .when(projects).requireAccess("p1", "member");
+        assertThatThrownBy(() -> controller.replace("f1", file, request)).hasMessageContaining("项目不可见");
+        org.mockito.Mockito.verify(files, org.mockito.Mockito.never()).replace("f1", file);
+    }
+
 }

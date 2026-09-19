@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface HostedPageMapper extends BaseMapper<HostedPageEntity> {
@@ -23,4 +24,7 @@ public interface HostedPageMapper extends BaseMapper<HostedPageEntity> {
     List<HostedPageEntity> listMetaByIds(@Param("ids") Collection<String> ids);
     @Select("SELECT * FROM hosted_page WHERE slug = #{slug} LIMIT 1")
     HostedPageEntity findBySlug(@Param("slug") String slug);
+    @Update("UPDATE hosted_page SET file_name = #{fileName}, html_content = #{htmlContent}, "
+            + "updated_at = #{updatedAt} WHERE id = #{id}")
+    int replaceContent(HostedPageEntity entity);
 }
