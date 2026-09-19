@@ -252,3 +252,27 @@ describe('云端会话工作区', () => {
     expect(w.find('textarea').exists()).toBe(true)
   })
 })
+
+it('配置失败不冒充无工作流，也不使用草稿项目直接派发；重试保留目标', async () => {
+  localStorage.setItem('wao:ai-session-new:u1', JSON.stringify({ goal: '保留我的目标', projectId: 'p1' }))
+  vi.mocked(api.sessionWorkflows).mockRejectedValueOnce(new Error('连接失败'))
+  const { wrapper } = await view('/ai-sessions?new=1')
+  expect(wrapper.text()).toContain('配置读取失败')
+  expect(wrapper.text()).not.toContain('暂无可用项目工作流')
+  expect(wrapper.get('.new-footer button').attributes('disabled')).toBeDefined()
+  await wrapper.get('form').trigger('submit')
+  expect(api.createSession).not.toHaveBeenCalled()
+  await wrapper.findAll('button').find((b) => b.text() === '重新加载配置')!.trigger('click')
+  await flushPromises()
+  expect(wrapper.get<HTMLTextAreaElement>('[aria-label="新会话内容"]').element.value).toBe('保留我的目标')
+  expect(wrapper.get('.new-footer button').attributes('disabled')).toBeUndefined()
+})
+
+it('失效草稿项目必须重新选择，不能派发不存在于配置中的目标', async () => {
+  localStorage.setItem('wao:ai-session-new:u1', JSON.stringify({ goal: '保留目标', projectId: 'removed' }))
+  const { wrapper } = await view('/ai-sessions?new=1')
+  expect(wrapper.text()).toContain('原选择暂不可用')
+  expect(wrapper.get('.new-footer button').attributes('disabled')).toBeDefined()
+  await wrapper.get('form select').setValue('p1')
+  expect(wrapper.get('.new-footer button').attributes('disabled')).toBeUndefined()
+})

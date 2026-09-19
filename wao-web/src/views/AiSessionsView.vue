@@ -46,7 +46,10 @@ const rename = ref(false),
 const workflows = ref<AiWorkflow[]>([]),
   runners = ref<AiRunner[]>([]),
   setupError = ref(''),
-  setupLoading = ref(false)
+  setupLoading = ref(false),
+  setupReady = ref(false),
+  setupCheckedAt = ref('')
+let setupSequence = 0
 const form = reactive({
   goal: '',
   projectId: '',
@@ -187,18 +190,24 @@ watch([selectedId, isNew], () => {
   void loadDetail()
 })
 async function setup() {
+  const seq = ++setupSequence
+  const owner = account.userId
+  setupReady.value = false
   setupLoading.value = true
   setupError.value = ''
   try {
     const [flows, nodes] = await Promise.all([sessionWorkflows(), fetchAiRunners()])
-    if (disposed) return
+    if (disposed || seq !== setupSequence || owner !== account.userId) return
     workflows.value = flows
     runners.value = nodes
     if (!form.projectId) form.projectId = flows[0]?.projectId || ''
+    setupReady.value = true
+    setupCheckedAt.value = new Date().toLocaleTimeString()
   } catch (e) {
-    setupError.value = e instanceof Error ? e.message : '执行配置读取失败'
+    if (!disposed && seq === setupSequence && owner === account.userId)
+      setupError.value = e instanceof Error ? e.message : '执行配置读取失败'
   } finally {
-    setupLoading.value = false
+    if (!disposed && seq === setupSequence && owner === account.userId) setupLoading.value = false
   }
 }
 function restoreDraft() {
@@ -245,8 +254,11 @@ watch(
     void loadDetail()
   },
 )
+const projectAvailable = computed(() => workflows.value.some((flow) => flow.projectId === form.projectId))
+const runnerAvailable = computed(() => !form.runnerId || runners.value.some((node) => node.id === form.runnerId))
+const canLaunch = computed(() => setupReady.value && !setupLoading.value && !setupError.value && projectAvailable.value && runnerAvailable.value && !!form.goal.trim() && !creating.value)
 async function launch() {
-  if (creating.value || !form.goal.trim() || !form.projectId) return
+  if (!canLaunch.value) return
   creating.value = true
   createError.value = ''
   try {
@@ -449,9 +461,11 @@ onBeforeUnmount(() => {
           <p>说清目标，交给执行电脑。离开页面后任务继续运行，回来直接接着聊。</p>
         </div>
         <form @submit.prevent="launch">
-          <div v-if="setupError" class="error">
-            {{ setupError }} <button type="button" @click="setup">重新加载配置</button>
+          <p v-if="setupLoading" class="hint" role="status">正在检查可用工作流与执行电脑…目标内容可继续填写。</p>
+          <div v-if="setupError" class="error" role="alert">
+            配置读取失败：{{ setupError }}。尚未派发，目标草稿已保留。 <button type="button" @click="setup">重新加载配置</button>
           </div>
+          <p v-if="setupReady" class="hint">配置检查于 {{ setupCheckedAt }} <button type="button" @click="setup" :disabled="creating || setupLoading">刷新配置</button></p>
           <label
             >项目工作流<select
               v-model="form.projectId"
@@ -459,6 +473,7 @@ onBeforeUnmount(() => {
               required
             >
               <option value="" disabled>选择项目</option>
+              <option v-if="form.projectId && !projectAvailable" :value="form.projectId" disabled>原选择暂不可用，请重新选择项目</option>
               <option v-for="flow in workflows" :key="flow.projectId" :value="flow.projectId">
                 {{ flow.projectName }} · {{ flow.config?.defaultEngine || 'Codex' }}
               </option>
@@ -476,8 +491,9 @@ onBeforeUnmount(() => {
           </label>
           <div class="new-options">
             <label
-              >执行电脑<select v-model="form.runnerId" :disabled="creating">
+              >执行电脑<select v-model="form.runnerId" :disabled="creating || setupLoading || !setupReady">
                 <option value="">自动分配空闲电脑</option>
+                <option v-if="!runnerAvailable" :value="form.runnerId" disabled>原执行电脑不可用，请重新选择</option>
                 <option v-for="node in runners" :key="node.id" :value="node.id">
                   {{ node.name }} · {{ node.online ? '在线' : '离线，等待上线' }}
                 </option>
@@ -502,7 +518,7 @@ onBeforeUnmount(() => {
             新 Codex 会话默认
             GPT-6。纯问答建议直接执行；复杂开发可选持续目标。仍由已接入的服务器执行。
           </p>
-          <p v-if="!setupLoading && !workflows.length" class="error">
+          <p v-if="setupReady && !setupLoading && !workflows.length" class="error">
             暂无可用项目工作流，请先在首页的 AI 工作流中配置项目。
           </p>
           <div class="new-footer">
@@ -513,7 +529,7 @@ onBeforeUnmount(() => {
             }}</small
             ><button
               class="primary"
-              :disabled="creating || setupLoading || !form.goal.trim() || !form.projectId"
+              :disabled="!canLaunch"
             >
               {{ creating ? '正在派发…' : createError ? '重试派发' : '发送并开始' }}
               <i class="ri-arrow-up-line"></i>
