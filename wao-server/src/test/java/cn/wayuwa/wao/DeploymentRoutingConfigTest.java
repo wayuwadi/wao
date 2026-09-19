@@ -54,7 +54,6 @@ class DeploymentRoutingConfigTest {
         String casc = readFromRepository("deploy/jenkins/jenkins.yaml");
         String status = readFromRepository("deploy/jenkins/github-status.sh");
         String resolver = readFromRepository("deploy/jenkins/resolve-batch-base.sh");
-        String notification = readFromRepository("deploy/jenkins/notify-feishu.sh");
 
         assertThat(casc).contains("quietPeriod(300)");
         assertThat(pipeline)
@@ -73,15 +72,17 @@ class DeploymentRoutingConfigTest {
                 .contains("--retry 5 --retry-delay 2 --retry-all-errors")
                 .contains("GitHub commit status delivery failed")
                 .contains("Jenkins result is unchanged");
-        assertThat(pipeline)
-                .doesNotContain("WAO_PIPELINE_RESULT=success deploy/jenkins/notify-feishu.sh")
-                .contains("WAO_PIPELINE_RESULT=failure deploy/jenkins/notify-feishu.sh");
-        assertThat(notification)
-                .contains("Jenkins success notification skipped.")
-                .contains("**失败原因**")
-                .contains("查看 Jenkins 详情")
-                .doesNotContain("**本次改动**")
-                .doesNotContain("**失败范围**");
+    }
+
+    @Test
+    void jenkinsInvokesBothNotificationPoliciesAfterBuildCompletion() throws IOException {
+        String pipeline = readFromRepository("Jenkinsfile");
+        // ADR-234 恢复受策略控制的成功短卡；卡片与静默行为由 test-notify-feishu.sh 验证。
+        String completion = pipeline.substring(pipeline.lastIndexOf("\n    post {"));
+        String success = completion.substring(completion.indexOf("success {"), completion.indexOf("failure {"));
+        String failure = completion.substring(completion.indexOf("failure {"), completion.indexOf("cleanup {"));
+        assertThat(success).contains("WAO_PIPELINE_RESULT=success deploy/jenkins/notify-feishu.sh || true");
+        assertThat(failure).contains("WAO_PIPELINE_RESULT=failure deploy/jenkins/notify-feishu.sh || true");
     }
 
     @Test
