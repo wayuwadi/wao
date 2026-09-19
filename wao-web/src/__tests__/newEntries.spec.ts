@@ -17,7 +17,7 @@ vi.mock('@/components/ui/MarkdownEditor.vue', () => ({
 }))
 
 /**
- * 新建入口与任务视图：右上角只留两个按钮、看板「待办」列自带加号、视图被记住。
+ * 新建入口与任务视图：右上角只留两个按钮、普通入口默认表格、看板「待办」列自带加号。
  *
  * 这些都是「少点一次」的交互，断言必须落在真实渲染出来的 DOM 上，
  * 光验证 store 的状态说明不了按钮到底在不在。
@@ -184,21 +184,22 @@ describe('项目任务视图', () => {
     })
   }
 
-  it('没有记忆时默认进看板，不是列表', async () => {
+  it('普通入口默认进入表格，不是看板', async () => {
     const wrapper = await mountProject()
 
-    expect(wrapper.find('.board').exists()).toBe(true)
-    expect(wrapper.find('.task-list-card').exists()).toBe(false)
+    expect(wrapper.find('.board').exists()).toBe(false)
+    expect(wrapper.find('.task-list-card').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('切到列表后记住，下次打开还是列表', async () => {
+  it('手动切到看板后，从普通入口重新打开仍默认表格', async () => {
     const first = await mountProject()
-    await first.findAll('.seg-btn')[0]!.trigger('click')
-    expect(first.find('.task-list-card').exists()).toBe(true)
+    await first.findAll('.seg-btn')[1]!.trigger('click')
+    await flushPromises()
+    expect(first.find('.board').exists()).toBe(true)
     first.unmount()
 
-    // 换一个 pinia 实例模拟重开页面，localStorage 里的偏好仍在
+    // 重开普通入口不应恢复上次的看板视图。
     setActivePinia(createPinia())
     data = useDataStore()
     seedDataStore(data)
@@ -210,6 +211,8 @@ describe('项目任务视图', () => {
   it('看板「待办」列头有加号，点它直接新建这个项目的任务', async () => {
     const ui = useUiStore()
     const wrapper = await mountProject()
+    await wrapper.findAll('.seg-btn')[1]!.trigger('click')
+    await flushPromises()
 
     const adds = wrapper.findAll('.board-col-add')
     // 只有「待办」一列有加号
