@@ -108,6 +108,66 @@ describe('RequestMonitoringView', () => {
     expect(wrapper.text()).toContain('504')
   })
 
+  it('解释成员样本并从摘要定位失败接口，不自动启动巡检', async () => {
+    const wrapper = mount(RequestMonitoringView)
+    await flushPromises()
+    const summary = wrapper.get('[aria-label="请求体验摘要"]')
+    expect(summary.text()).toContain('当前账号 · 最近 24 小时')
+    expect(summary.text()).toContain('先关注未成功的请求')
+    expect(summary.text()).toContain('不能直接相加')
+    const section = wrapper.get('[aria-label="优先关注的接口"]').element as HTMLElement
+    section.scrollIntoView = vi.fn()
+    const focus = vi.spyOn(section, 'focus')
+    await summary.find('button').trigger('click')
+    expect(section.scrollIntoView).toHaveBeenCalledOnce()
+    expect(focus).toHaveBeenCalledOnce()
+    expect(apiRunJob).not.toHaveBeenCalled()
+    await summary.findAll('button')[1]!.trigger('click')
+    await flushPromises()
+    expect(fetchAutomationJob).toHaveBeenCalledWith('job-http-performance-ai-run')
+  })
+
+  it.each([
+    [0, 1, '有等待较久的请求'],
+    [0, 0, '当前样本未发现失败或慢请求'],
+  ])('根据真实失败数 %s 和慢请求数 %s 给出有限结论', async (failedRequests, slowRequests, title) => {
+    vi.mocked(fetchRequestMetricOverview).mockResolvedValue({ ...overview, failedRequests, slowRequests })
+    const wrapper = mount(RequestMonitoringView)
+    await flushPromises()
+    expect(wrapper.get('[aria-label="请求体验摘要"]').text()).toContain(title)
+  })
+
+  it('切换时间范围清除旧样本，晚返回的旧请求不能覆盖新范围', async () => {
+    let resolveOld!: (value: RequestMetricOverview) => void
+    vi.mocked(fetchRequestMetricOverview).mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve }))
+    const wrapper = mount(RequestMonitoringView)
+    vi.mocked(fetchRequestMetricOverview).mockResolvedValueOnce({ ...overview, windowHours: 1 })
+    await wrapper.get('select').setValue(1)
+    await flushPromises()
+    resolveOld(overview)
+    await flushPromises()
+    expect(wrapper.get('.sample-context').text()).toContain('最近 1 小时')
+    vi.mocked(fetchRequestMetricOverview).mockRejectedValueOnce(new Error('offline'))
+    await wrapper.get('select').setValue(6)
+    await flushPromises()
+    expect(wrapper.find('.attention-summary').exists()).toBe(false)
+    expect(wrapper.text()).toContain('重新加载')
+  })
+
+  it('同范围刷新失败保留已标明时间的旧样本与重试入口', async () => {
+    const wrapper = mount(RequestMonitoringView)
+    await flushPromises()
+    vi.mocked(fetchRequestMetricOverview).mockRejectedValueOnce(new Error('offline'))
+    await wrapper.findAll('.actions button').find(button => button.text() === '刷新')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('已保留上一次结果')
+    expect(wrapper.get('.sample-context').text()).toContain('最近 24 小时')
+    vi.mocked(fetchRequestMetricOverview).mockResolvedValueOnce(overview)
+    await wrapper.get('.inline-error button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.inline-error').exists()).toBe(false)
+  })
+
   it('无数据时明确不填演示数据', async () => {
     vi.mocked(fetchRequestMetricOverview).mockResolvedValue({
       ...overview,
