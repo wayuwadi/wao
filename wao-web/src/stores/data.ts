@@ -1935,11 +1935,6 @@ export const useDataStore = defineStore('data', () => {
     files.value = files.value.filter((file) => file.id !== id)
   }
   async function refreshHostedPages() {
-    if (!apiLive.value) {
-      hostedPageLoadState.value = 'error'
-      hostedPageLoadError.value = '服务暂不可用，请稍后重试'
-      return false
-    }
     hostedPageLoadState.value = 'loading'
     hostedPageLoadError.value = ''
     try {

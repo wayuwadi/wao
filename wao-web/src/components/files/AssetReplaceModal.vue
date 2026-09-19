@@ -103,7 +103,11 @@ async function save() {
     emit('saved')
     emit('close')
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '重新上传失败，请重试'
+    const message = cause instanceof Error ? cause.message : ''
+    error.value =
+      !message || /^(Network Error|Request failed with status code|timeout of)/.test(message)
+        ? '上传暂时失败，已保留所选文件，请检查网络后重试'
+        : message
   } finally {
     saving.value = false
   }

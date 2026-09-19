@@ -303,6 +303,11 @@ async function removePage(page: HostedPage) {
     </div>
 
     <div v-else class="asset-list">
+      <div v-if="data.hostedPageLoadState === 'loading'" class="asset-empty" role="status">正在加载项目 HTML…</div>
+      <div v-else-if="data.hostedPageLoadState === 'error'" class="asset-error" role="alert">
+        {{ data.hostedPageLoadError }}
+        <button @click="data.refreshHostedPages()">重新加载</button>
+      </div>
       <div v-for="page in pages" :key="page.id" class="asset-row">
         <i class="ri-html5-line"></i>
         <div>
@@ -321,7 +326,7 @@ async function removePage(page: HostedPage) {
         </button>
         <button class="danger" @click="removePage(page)"><i class="ri-delete-bin-line"></i></button>
       </div>
-      <div v-if="!pages.length" class="asset-empty">
+      <div v-if="data.hostedPageLoadState === 'loaded' && !pages.length" class="asset-empty">
         <i class="ri-html5-line"></i>还没有项目 HTML 报告。
       </div>
     </div>

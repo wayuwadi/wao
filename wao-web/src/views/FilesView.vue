@@ -593,7 +593,12 @@ function onFileSettingsSaved(settings: FileSettings) {
           {{ option.label }}
         </button>
       </div>
-      <div v-if="!data.hostedPages.length" class="img-empty page-empty">
+      <div v-if="data.hostedPageLoadState === 'loading'" class="img-empty page-empty" role="status">正在加载托管网页…</div>
+      <div v-else-if="data.hostedPageLoadState === 'error'" class="img-empty page-empty" role="alert">
+        {{ data.hostedPageLoadError }}
+        <button class="copy-btn" @click="data.refreshHostedPages()">重新加载</button>
+      </div>
+      <div v-else-if="!data.hostedPages.length" class="img-empty page-empty">
         <i class="ri-global-line"></i>
         <div>还没有托管网页——点右上角“托管 HTML”快速发布</div>
       </div>

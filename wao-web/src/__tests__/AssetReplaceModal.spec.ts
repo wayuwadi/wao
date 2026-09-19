@@ -80,4 +80,16 @@ describe('保持地址重新上传', () => {
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
+  it('网络故障显示可操作的中文提示并保留文件', async () => {
+    const { wrapper, data } = setup()
+    vi.spyOn(data, 'replaceFile').mockRejectedValue(
+      new Error('Request failed with status code 502'),
+    )
+    await wrapper.get('.file-picker').trigger('drop', { dataTransfer: { files: [html] } })
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('已保留所选文件')
+    expect(wrapper.get('.primary').text()).toBe('重试')
+    wrapper.unmount()
+  })
 })

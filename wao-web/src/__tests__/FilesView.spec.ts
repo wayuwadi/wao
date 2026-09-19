@@ -22,6 +22,8 @@ describe('FilesView', () => {
   it('展示真实上传限制并将网页托管默认分页为10条', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     data.hostedPages = Array.from({ length: 11 }, (_, index) => ({
       id: `page-${index + 1}`,
       slug: `page-${index + 1}`,
@@ -56,6 +58,8 @@ describe('FilesView', () => {
   it('统一入口按真实文件类型分流，并为 HTML 生成可修改的标题和后缀', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     const saveHostedPage = vi.spyOn(data, 'saveHostedPage').mockResolvedValue({
       id: 'page-1',
       slug: 'wao-dashboard',
@@ -110,6 +114,8 @@ describe('FilesView', () => {
   it('网页托管按持久化来源区分人工上传与 AI Run 报告', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     data.hostedPages = [
       {
         id: 'page-manual',
@@ -178,6 +184,8 @@ describe('FilesView', () => {
   it('托管弹窗支持拖入 HTML 和 icon，并在发布时使用已选文件', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     const saveHostedPage = vi.spyOn(data, 'saveHostedPage').mockResolvedValue({
       id: 'page-2',
       slug: 'dragged-page',
@@ -214,6 +222,8 @@ describe('FilesView', () => {
   it('全局文件和 HTML 列表都能按原资产打开重新上传', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
     vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
     vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
@@ -262,6 +272,31 @@ describe('FilesView', () => {
       name: '原页面',
       url: '/api/pages/stable',
     })
+    wrapper.unmount()
+  })
+  it('托管页加载失败明确提示并可重试，不误报空列表', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    const refresh = vi.spyOn(data, 'refreshHostedPages').mockImplementation(async () => {
+      data.hostedPageLoadState = 'error'
+      data.hostedPageLoadError = '连接失败'
+      return false
+    })
+    const wrapper = mount(FilesView, {
+      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+    })
+    await flushPromises()
+    await wrapper.findAll('.seg-btn')[2]!.trigger('click')
+    expect(wrapper.get('[role="alert"]').text()).toContain('连接失败')
+    expect(wrapper.text()).not.toContain('还没有托管网页')
+    refresh.mockImplementationOnce(async () => {
+      data.hostedPageLoadState = 'loaded'
+      return true
+    })
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('还没有托管网页')
     wrapper.unmount()
   })
 })
