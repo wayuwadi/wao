@@ -56,4 +56,18 @@ class MemoryAccessTokenServiceTest {
         assertThatThrownBy(() -> service.revoke("wd", "token-1"))
                 .isInstanceOf(NotFoundException.class).hasMessage("记忆令牌不存在");
     }
+    @Test
+    void archiveGrantIsExplicitWriteOnlyAndBoundToTokenOwner() {
+        var grantMapper = mock(cn.wayuwa.wao.mapper.MemoryAccessGrantMapper.class);
+        var scoped = new MemoryAccessTokenService(mapper, grantMapper, null, null, null);
+        MemoryAccessTokenEntity row = new MemoryAccessTokenEntity();
+        row.setId("token-1"); row.setMemberId("wg");
+        when(mapper.selectById("token-1")).thenReturn(row);
+        var normalized = scoped.saveGrants("wg", "token-1", java.util.List.of(
+                new cn.wayuwa.wao.dto.MemoryGrantDto("codex_archive", "another-member", true, true, true)));
+        assertThat(normalized).contains(new cn.wayuwa.wao.dto.MemoryGrantDto("codex_archive", "wg", false, false, true));
+        assertThat(scoped.saveGrants("wg", "token-1", java.util.List.of()))
+                .noneMatch(item -> "codex_archive".equals(item.scopeType()));
+    }
+
 }

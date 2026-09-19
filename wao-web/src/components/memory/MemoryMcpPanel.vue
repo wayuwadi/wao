@@ -25,7 +25,9 @@ const session = useSessionStore()
 const projects = ref<Project[]>([])
 const grantToken = ref<MemoryAccessToken | null>(null)
 const grantsLoading = ref(false)
+const grantsLoaded = ref(false)
 const orgGranted = ref(false)
+const archiveGranted = ref(false)
 const projectGrants = ref<string[]>([])
 
 const endpoint = computed(() => `${window.location.origin}/api/mcp/memory/personal`)
@@ -64,19 +66,24 @@ async function load() {
 async function manageGrants(token: MemoryAccessToken) {
   grantToken.value = token
   grantsLoading.value = true
+  grantsLoaded.value = false
   error.value = ''
   try {
     const values = await fetchMemoryGrants(token.id)
+    archiveGranted.value = values.some((item) => item.scopeType === 'codex_archive' && item.canDirectWrite)
     orgGranted.value = values.some((item) => item.scopeType === 'organization' && item.scopeId === session.org.id)
     projectGrants.value = values.filter((item) => item.scopeType === 'project').map((item) => item.scopeId)
+    grantsLoaded.value = true
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '设备授权读取失败' }
   finally { grantsLoading.value = false }
 }
 
 async function persistGrants() {
-  if (!grantToken.value) return
+  if (!grantToken.value || !grantsLoaded.value || busy.value) return
+  error.value = ''
   busy.value = true
   const values: MemoryGrant[] = []
+  if (archiveGranted.value) values.push({ scopeType: 'codex_archive', scopeId: 'self', canRead: false, canPropose: false, canDirectWrite: true })
   if (orgGranted.value && session.org.id) values.push({ scopeType: 'organization', scopeId: session.org.id, canRead: true, canPropose: true, canDirectWrite: false })
   projectGrants.value.forEach((scopeId) => values.push({ scopeType: 'project', scopeId, canRead: true, canPropose: true, canDirectWrite: false }))
   try { await saveMemoryGrants(grantToken.value.id, values); toast('设备记忆范围已更新', 'ri-checkbox-circle-line') }
@@ -163,7 +170,7 @@ onMounted(load)
         <div v-for="token in tokens" :key="token.id" class="token-row">
           <span class="device-icon"><i class="ri-computer-line"></i></span>
           <span class="token-meta"><b>{{ token.name }}</b><small><code>{{ token.tokenPrefix }}••••</code> · 创建 {{ formatTime(token.createdAt) }} · 最近使用 {{ formatTime(token.lastUsedAt) }}</small></span>
-          <button class="grant" :disabled="busy" @click="manageGrants(token)">授权范围</button>
+          <button class="grant" :disabled="busy || grantsLoading" @click="manageGrants(token)">授权范围</button>
           <button class="revoke" :disabled="busy" @click="revoke(token)">吊销</button>
         </div>
         <div v-if="!tokens.length && !error" class="memory-empty">还没有设备令牌</div>
@@ -176,10 +183,11 @@ onMounted(load)
       <div v-if="grantsLoading" class="memory-empty"><i class="ri-loader-4-line spin"></i>正在读取授权…</div>
       <div v-else class="grant-options">
         <label><input type="checkbox" checked disabled /><span><b>个人记忆</b><small>读取与明确要求时直接保存</small></span></label>
+        <label><input v-model="archiveGranted" type="checkbox" :disabled="busy" /><span><b>Codex 工作记录归档</b><small>允许采集 Skill 写入团队知识库；聊天和工具过程按知识库现有范围可见。取消勾选即可停止上传。</small></span></label>
         <label><input v-model="orgGranted" type="checkbox" /><span><b>{{ session.org.name || '当前组织' }}</b><small>读取正式版本、提交待审核候选</small></span></label>
         <label v-for="project in projects" :key="project.id"><input v-model="projectGrants" type="checkbox" :value="project.id" /><span><b>{{ project.name }}</b><small>仅当前项目上下文</small></span></label>
       </div>
-      <div class="grant-actions"><button @click="grantToken = null">关闭</button><button class="btn-primary" :disabled="busy" @click="persistGrants">保存授权</button></div>
+      <div class="grant-actions"><button @click="grantToken = null">关闭</button><button class="btn-primary" :disabled="busy || !grantsLoaded" @click="persistGrants">保存授权</button></div>
     </section>
 
     <section class="card">
@@ -210,7 +218,7 @@ onMounted(load)
         <span><i class="ri-save-3-line"></i><b>保存</b><small>对 Codex 说：“请记住：以后每个任务都主动给出一条体验建议。”</small></span>
         <span><i class="ri-book-open-line"></i><b>核对</b><small>打开“记忆中心”，确认个人记录已发布，组织/项目记录仍是待审核候选。</small></span>
       </div>
-      <p class="safety-note"><i class="ri-shield-keyhole-line"></i>不要让 Codex 保存密码、令牌、私钥或临时闲聊。外部 Codex 历史没有官方可靠导出接口，因此不会伪造自动导入；需要跨设备复用的结论通过 <code>save_memory</code> 明确沉淀。</p>
+      <p class="safety-note"><i class="ri-shield-keyhole-line"></i>不要让 Codex 保存密码、令牌、私钥或临时闲聊。安装 codex-knowledge-archive Skill 并单独勾选归档权限后，可同步本机聊天到知识库；云端未落盘任务不在采集范围。长期结论通过 <code>save_memory</code> 明确沉淀。</p>
     </section>
   </div>
 </template>
