@@ -71,7 +71,7 @@ describe('DecisionsView', () => {
     await flushPromises()
 
     expect(fetchMemories).toHaveBeenCalledWith({
-      scopeType: 'personal', scopeId: 'member-1', category: 'decision', query: undefined,
+      scopeType: 'personal', scopeId: 'member-1', category: 'decision', state: 'active', query: undefined,
     })
     expect(wrapper.text()).toContain('去武汉的出行方式')
     expect(wrapper.text()).toContain('优先坐傍晚的高铁')
@@ -224,6 +224,34 @@ describe('DecisionsView', () => {
     expect(wrapper.get('.editor').text()).toContain('决策已保存')
     expect(wrapper.find('.save-error').exists()).toBe(false)
     expect(wrapper.get('.editor footer .primary').text()).toBe('保存新版本')
+  })
+
+
+  it('废止失败在原处保留原因并支持重试', async () => {
+    vi.mocked(fetchMemories).mockResolvedValueOnce([decision()]).mockResolvedValue([])
+    vi.mocked(archiveMemory).mockRejectedValueOnce(new Error('暂时无法连接')).mockResolvedValueOnce(undefined)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = view(); await flushPromises()
+    await wrapper.get('.decision-card .danger').trigger('click'); await flushPromises()
+    const feedback = wrapper.get('[role="alert"]')
+    expect(feedback.text()).toContain('暂时无法连接')
+    expect(feedback.text()).toContain('去武汉的出行方式')
+    expect(wrapper.find('.decision-card').exists()).toBe(true)
+    await feedback.findAll('button')[0]!.trigger('click'); await flushPromises()
+    expect(archiveMemory).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.decision-card').exists()).toBe(false)
+  })
+
+  it('废止已成功但刷新失败，不把已废止对象继续展示为有效决策', async () => {
+    vi.mocked(fetchMemories).mockResolvedValueOnce([decision()]).mockRejectedValueOnce(new Error('刷新失败'))
+    vi.mocked(archiveMemory).mockResolvedValueOnce(undefined)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = view(); await flushPromises()
+    await wrapper.get('.decision-card .danger').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('刷新失败')
+    expect(wrapper.find('.decision-card').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('未能确认')
   })
 
 })
