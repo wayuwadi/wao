@@ -45,7 +45,7 @@ describe('ExternalAppView', () => {
     expect(frame.attributes('title')).toBe('自媒体 Agent')
 
     await frame.trigger('load')
-    expect(wrapper.text()).toContain('「自媒体 Agent」已连接')
+    expect(wrapper.text()).toContain('「自媒体 Agent」页面已载入')
   })
 
   it('服务不可用时保留失败说明、重试和新窗口入口', async () => {

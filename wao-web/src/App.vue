@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
-import { toast } from '@/composables/toast'
+import { toast, clearToasts } from '@/composables/toast'
 import { RouterView, useRoute } from 'vue-router'
 const route = useRoute()
 import ToastHost from '@/components/ui/ToastHost.vue'
 import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
+watch(() => useSessionStore().userId, clearToasts, { flush: 'sync' })
 let refreshing = false
 async function reloadWorkspace() {
   if (refreshing) return
