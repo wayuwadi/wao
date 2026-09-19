@@ -668,6 +668,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .bell i {
   font-size: 16px;
 }
+.content:has(.cal) { overflow: hidden; }
+.page-stage:has(.cal) { flex: 1 1 0; min-height: 0; align-items: stretch; overflow: hidden; }
+.page-body:has(.cal) { min-height: 0; overflow: hidden; }
 .content {
   flex: 1;
   overflow-y: auto;
