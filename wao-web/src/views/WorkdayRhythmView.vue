@@ -1529,6 +1529,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .rhythm-page {
+  container-type: inline-size;
   min-height: calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h) - 44px);
   box-sizing: border-box;
   max-width: none;
@@ -1636,7 +1637,7 @@ textarea {
   background: linear-gradient(128deg, #174f43, #267c65 62%, #3f9677);
   color: #fff;
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 1.5fr) minmax(0, 1.5fr);
+  grid-template-columns: minmax(0, 3fr) minmax(210px, 1fr) minmax(210px, 1fr);
   align-items: center;
   gap: 20px;
   box-shadow: 0 18px 40px rgba(32, 99, 78, 0.16);
@@ -1658,7 +1659,7 @@ textarea {
   background: linear-gradient(128deg, #344956, #526d75);
 }
 .hero.without-hexagram {
-  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
+  grid-template-columns: minmax(0, 3fr) minmax(210px, 1fr);
 }
 .hero-copy,
 .hero-flow {
@@ -1678,15 +1679,17 @@ textarea {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 7px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
 .hero-flow-head small {
   color: #cce9df;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
 }
 .hero-flow-head span {
-  color: rgba(255, 255, 255, 0.48);
-  font-size: 8.5px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
 }
 .hero-flow ol {
   margin: 0;
@@ -1694,15 +1697,17 @@ textarea {
   list-style: none;
 }
 .hero-flow li {
-  min-height: 21px;
+  min-height: 30px;
   display: grid;
-  grid-template-columns: 37px 9px minmax(0, 1fr);
+  grid-template-columns: 42px 9px minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   border-radius: 7px;
-  padding: 0 6px;
-  color: rgba(255, 255, 255, 0.64);
-  font-size: 9px;
+  padding: 4px 6px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .hero-flow li time {
   font-variant-numeric: tabular-nums;
@@ -3005,6 +3010,29 @@ textarea {
     transform: rotate(360deg);
   }
 }
+@container (max-width: 900px) {
+  .hero,
+  .hero.without-hexagram {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hero-copy {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .hero.without-hexagram .hero-flow {
+    grid-column: 1 / -1;
+  }
+  .page-head {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
+@container (max-width: 560px) {
+  .hero,
+  .hero.without-hexagram {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 760px) {
   .rhythm-page {
     min-height: 0;
@@ -3052,12 +3080,6 @@ textarea {
   }
   .hero.without-hexagram {
     grid-template-columns: 1fr;
-  }
-  .hero-flow {
-    order: 3;
-  }
-  .hero > :last-child {
-    order: 2;
   }
   .hero h2 {
     font-size: 30px;

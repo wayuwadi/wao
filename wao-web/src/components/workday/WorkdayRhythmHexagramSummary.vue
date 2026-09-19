@@ -149,10 +149,11 @@ onMounted(load)
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .hexagram-head small {
   color: #cce9df;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -162,7 +163,7 @@ onMounted(load)
   text-decoration: none;
 }
 .hexagram-head a {
-  font-size: 9px;
+  font-size: 12px;
   opacity: 0.72;
 }
 .hexagram-result {
@@ -193,16 +194,13 @@ onMounted(load)
 .hexagram-result small,
 .hero-hexagram p,
 .hexagram-state {
-  color: rgba(255, 255, 255, 0.68);
-  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
   line-height: 1.5;
 }
 .hero-hexagram p {
-  display: -webkit-box;
-  overflow: hidden;
   margin: 0;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
+  overflow-wrap: anywhere;
 }
 .hexagram-state {
   min-height: 92px;
