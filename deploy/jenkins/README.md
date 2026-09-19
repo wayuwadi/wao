@@ -139,3 +139,7 @@ MySQL、JumpServer 和部署恢复材料一起加密上传到 123 云盘。外�
 
 恢复时先安装相同 Jenkins LTS 与 `plugins.txt` 中的插件，再恢复归档；`secrets/master.key` 与
 `credentials.xml` 必须来自同一份备份。
+
+## 完整桌面工作区客户端
+
+`wao-client-release` 使用独立的 `Jenkinsfile.client`，由 Linux2 构建 Windows NSIS，自有 Mac 节点构建通用包，Linux2 统一签名并发布。默认只做构建，双端和原有密钥就绪后显式勾选发布；不再触发客户端 GitHub Actions。参见 [客户端流水线](client/README.md)。

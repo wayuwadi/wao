@@ -17,5 +17,5 @@ writeFileSync(
   ),
 );
 console.log(
-  `版本已设为 ${version}。请运行 npm install --package-lock-only 和 cargo check 同步锁文件，再提交 PR；合并后推送 client-v${version} 标签。`,
+  `版本已设为 ${version}。请运行 npm install --package-lock-only 和 cargo check 同步锁文件，再提交 PR；合并后在 Jenkins 的 wao-client-release 运行双端构建与发布。`,
 );
