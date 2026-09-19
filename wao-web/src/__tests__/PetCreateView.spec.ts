@@ -19,7 +19,7 @@ describe('宠物创建保存与防丢',()=>{
  it('草稿写入尚未完成时保护刷新，落地后允许刷新', async () => {
   const { wrapper } = await render()
   let finish!: () => void
-  api.writePetDraft.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  api.writePetDraft.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
   await wrapper.get('input[maxlength="500"]').setValue('本地验收来源')
   await flushPromises()
   expect(wrapper.text()).toContain('正在保存本地草稿')
@@ -61,8 +61,8 @@ describe('宠物创建保存与防丢',()=>{
   let firstDone!: () => void
   let secondDone!: () => void
   api.writePetDraft
-    .mockImplementationOnce(() => new Promise(resolve => { firstDone = resolve }))
-    .mockImplementationOnce(() => new Promise(resolve => { secondDone = resolve }))
+    .mockImplementationOnce(() => new Promise<void>(resolve => { firstDone = resolve }))
+    .mockImplementationOnce(() => new Promise<void>(resolve => { secondDone = resolve }))
   await wrapper.get('input[maxlength="500"]').setValue('第一版来源')
   await flushPromises()
   const navigation = router.push('/pets/manage')
@@ -74,7 +74,7 @@ describe('宠物创建保存与防丢',()=>{
   secondDone()
   await navigation
   await flushPromises()
-  const lastWritten = api.writePetDraft.mock.calls.at(-1)?.[1]
+  const lastWritten = api.writePetDraft.mock.calls[api.writePetDraft.mock.calls.length - 1]?.[1]
   const finalRoute = router.currentRoute.value.path
   wrapper.unmount()
   expect(routeWhilePending).toBe('/pets/create')
