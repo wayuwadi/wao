@@ -162,6 +162,9 @@ describe('全量导航页', () => {
 
   it('可搜索 Codex 记忆入口，并打开侧栏已隐藏的真实模块和应用', async () => {
     const { router, wrapper } = await mountNavigation()
+    await wrapper.get('.search input').setValue('文件库')
+    expect(wrapper.findAll('.function-row')).toHaveLength(1)
+    expect(wrapper.get('.function-row').text()).toContain('文件与图床')
     await wrapper.get('.search input').setValue('Codex MCP')
     expect(wrapper.findAll('.function-row')).toHaveLength(1)
     expect(wrapper.get('.function-row').text()).toContain('记忆中心')
