@@ -1,0 +1,21 @@
+/* 本地彩色知识库图标；兼容现有 icon 字符串的持久化与渲染。 */
+i[class*="wao-kb-icon-"] { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; background: center / contain no-repeat; vertical-align: -0.12em; }
+i[class*="wao-kb-icon-"]::before { content: none; }
+.wao-kb-icon-notebook { background-image: url(../assets/knowledge-icons/notebook.svg) !important; }
+.wao-kb-icon-growth { background-image: url(../assets/knowledge-icons/growth.svg) !important; }
+.wao-kb-icon-documents { background-image: url(../assets/knowledge-icons/documents.svg) !important; }
+.wao-kb-icon-ideas { background-image: url(../assets/knowledge-icons/ideas.svg) !important; }
+.wao-kb-icon-target { background-image: url(../assets/knowledge-icons/target.svg) !important; }
+.wao-kb-icon-work { background-image: url(../assets/knowledge-icons/work.svg) !important; }
+.wao-kb-icon-pictures { background-image: url(../assets/knowledge-icons/pictures.svg) !important; }
+.wao-kb-icon-messages { background-image: url(../assets/knowledge-icons/messages.svg) !important; }
+.wao-kb-icon-reading { background-image: url(../assets/knowledge-icons/reading.svg) !important; }
+.wao-kb-icon-location { background-image: url(../assets/knowledge-icons/location.svg) !important; }
+.wao-kb-icon-team { background-image: url(../assets/knowledge-icons/team.svg) !important; }
+.wao-kb-icon-calendar { background-image: url(../assets/knowledge-icons/calendar.svg) !important; }
+.wao-kb-icon-code { background-image: url(../assets/knowledge-icons/code.svg) !important; }
+.wao-kb-icon-discussion { background-image: url(../assets/knowledge-icons/discussion.svg) !important; }
+.wao-kb-icon-checklist { background-image: url(../assets/knowledge-icons/checklist.svg) !important; }
+.wao-kb-icon-books { background-image: url(../assets/knowledge-icons/books.svg) !important; }
+.wao-kb-icon-folder { background-image: url(../assets/knowledge-icons/folder.svg) !important; }
+.wao-kb-icon-writing { background-image: url(../assets/knowledge-icons/writing.svg) !important; }

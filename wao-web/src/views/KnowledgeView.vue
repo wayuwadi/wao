@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
+import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
 import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -30,6 +32,9 @@ const cfgError = ref('')
 const newKbOpen = ref(false)
 const newKbName = ref('')
 const newKbDesc = ref('')
+const newKbIcon = ref('wao-kb-icon-notebook')
+const newKbSaving = ref(false)
+const newKbError = ref('')
 const query = ref('')
 type KnowledgeScope = 'all' | 'shared' | 'personal'
 const scope = ref<KnowledgeScope>('all')
@@ -109,6 +114,7 @@ async function cfgDone() {
   const saved = await data.updateKb(k.id, { name: k.name, desc: k.desc, icon: k.icon, color: k.color, group: k.group, perm: k.perm })
   cfgSaving.value = false
   if (!saved) { cfgError.value = '保存失败，输入已保留，请重试。'; return }
+  tabs.setMeta(`kb:${k.id}`, { label: k.name, icon: k.icon })
   cfgKb.value = null
   toast('知识库设置已保存', 'ri-checkbox-circle-line')
 }
@@ -155,21 +161,30 @@ async function purge(entry: TrashEntry) {
 function openNewKb() {
   newKbName.value = ''
   newKbDesc.value = ''
+  newKbIcon.value = 'wao-kb-icon-notebook'
+  newKbError.value = ''
   newKbOpen.value = true
 }
 async function createKb() {
-  if (!newKbName.value.trim()) return
-  const kb = await data.addKb({ name: newKbName.value.trim(), desc: newKbDesc.value.trim() })
-  newKbOpen.value = false
-  if (kb) openKb(kb.id)
+  if (!newKbName.value.trim() || newKbSaving.value) return
+  newKbSaving.value = true
+  newKbError.value = ''
+  try {
+    const kb = await data.addKb({ name: newKbName.value.trim(), desc: newKbDesc.value.trim(), icon: newKbIcon.value })
+    if (!kb) throw new Error('知识库创建失败，请重试')
+    newKbOpen.value = false
+    openKb(kb.id)
+  } catch { newKbError.value = '创建失败，名称、简介和图标已保留，请重试。' }
+  finally { newKbSaving.value = false }
 }
+
 </script>
 
 <template>
   <div class="know">
     <div class="ktop">
       <div class="ktitle">知识库</div>
-      <span class="ktip">按知识库组织文档；项目可关联自己的知识库</span>
+      <span class="ktip">按知识库组织文档；任务可关联具体文档</span>
       <div class="spacer"></div>
       <button class="btn-ghost" @click="openTrash">
         <i class="ri-delete-bin-line"></i>回收站<span v-if="data.trash.length" class="trash-badge">{{ data.trash.length }}</span>
@@ -232,7 +247,7 @@ async function createKb() {
           @click="openKb(k.id)"
         >
           <div class="kb-top">
-            <div class="kb-icon" :style="{ background: k.color }"><i :class="k.icon"></i></div>
+            <div class="kb-icon" :style="{ background: isColoredKnowledgeIcon(k.icon) ? 'transparent' : k.color }"><i :class="k.icon"></i></div>
             <div class="kb-name">{{ k.name }}</div>
             <span v-if="k.auto" class="tag auto">自动</span>
             <span v-if="k.perm === '成员可编辑'" class="tag shared">已共享</span>
@@ -265,13 +280,14 @@ async function createKb() {
       <div class="modal-mask" @click="!cfgSaving && (cfgKb = null)"></div>
       <div class="modal">
         <div class="modal-head">
-          <div class="modal-icon" :style="{ background: cfgKb.color }"><i :class="cfgKb.icon"></i></div>
+          <div class="modal-icon" :style="{ background: isColoredKnowledgeIcon(cfgKb.icon) ? 'transparent' : cfgKb.color }"><i :class="cfgKb.icon"></i></div>
           <div class="modal-title">知识库设置</div>
           <div class="spacer"></div>
           <button class="icon-btn" @click="!cfgSaving && (cfgKb = null)"><i class="ri-close-line"></i></button>
         </div>
         <div class="modal-body">
           <p v-if="cfgError" role="alert">{{ cfgError }}</p>
+          <label class="f-label">图标</label><KnowledgeIconPicker v-model="cfgKb.icon" :disabled="cfgSaving" />
           <label class="f-label">名称</label>
           <input v-model="cfgKb.name" class="f-input" :disabled="cfgSaving || !!cfgKb.auto" />
           <label class="f-label">简介</label>
@@ -354,22 +370,24 @@ async function createKb() {
 
     <!-- 新建知识库弹层 -->
     <template v-if="newKbOpen">
-      <div class="modal-mask" @click="newKbOpen = false"></div>
+      <div class="modal-mask" @click="!newKbSaving && (newKbOpen = false)"></div>
       <div class="modal">
         <div class="modal-head">
           <div class="modal-title">新建知识库</div>
           <div class="spacer"></div>
-          <button class="icon-btn" @click="newKbOpen = false"><i class="ri-close-line"></i></button>
+          <button class="icon-btn" @click="!newKbSaving && (newKbOpen = false)"><i class="ri-close-line"></i></button>
         </div>
         <div class="modal-body">
+          <p v-if="newKbError" role="alert">{{ newKbError }}</p>
+          <label class="f-label">图标</label><KnowledgeIconPicker v-model="newKbIcon" :disabled="newKbSaving" />
           <label class="f-label">名称</label>
-          <input v-model="newKbName" class="f-input" placeholder="给知识库起个名字" @keydown.enter="createKb" />
+          <input :disabled="newKbSaving" v-model="newKbName" class="f-input" placeholder="给知识库起个名字" @keydown.enter="createKb" />
           <label class="f-label">简介</label>
-          <textarea v-model="newKbDesc" class="f-textarea" rows="2" placeholder="选填"></textarea>
+          <textarea v-model="newKbDesc" :disabled="newKbSaving" class="f-textarea" rows="2" placeholder="选填"></textarea>
         </div>
         <div class="modal-foot">
           <div class="spacer"></div>
-          <button class="btn-primary" :disabled="!newKbName.trim()" @click="createKb">创建</button>
+          <button class="btn-primary" :disabled="newKbSaving || !newKbName.trim()" @click="createKb">{{ newKbSaving ? '创建中…' : newKbError ? '重试创建' : '创建' }}</button>
         </div>
       </div>
     </template>
