@@ -80,7 +80,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   { id: 'knowledge', description: '按知识库、文件夹和文档组织长期资料。', keywords: ['文档'] },
   {
     id: 'memory',
-    description: '管理个人、组织、项目、机器与应用记忆，并连接 Codex MCP。',
+    description: '记下希望 AI 参考的偏好、背景和经验，管理共享记忆与 AI 读取权限。',
     keywords: ['mcp', 'codex', '上下文'],
   },
   { id: 'english-learning', description: '使用真实学习材料完成英语训练。', keywords: ['英语'] },
