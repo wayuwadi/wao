@@ -59,27 +59,15 @@ const tab = ref<string>(availableTabs.has(normalizedTab) ? normalizedTab : 'memb
 let skipWebhookRouteGuardOnce = false
 
 function selectTab(next: string) {
-  if (tab.value === 'pet' && next !== 'pet' && webPetPanel.value
-      && !webPetPanel.value.confirmLeave()) return
-  if (tab.value === 'login-settings' && next !== 'login-settings' && loginSettingsPanel.value
-      && !loginSettingsPanel.value.confirmLeave()) return
-  if (tab.value === 'navigation' && next !== 'navigation' && navigationPanel.value
-      && !navigationPanel.value.confirmLeave()) return
-  if (tab.value === 'notifications' && next !== 'notifications' && notificationSettingsPanel.value
-      && !notificationSettingsPanel.value.confirmLeave()) return
-  if (tab.value === 'webhook' && next !== 'webhook' && webhookPanel.value
-      && !webhookPanel.value.confirmLeave()) return
-  if (tab.value === 'network-outage' && next !== 'network-outage' && !confirmNetworkOutageDraft()) return
-  if (tab.value === 'wao-ai-capabilities' && next !== 'wao-ai-capabilities'
-      && waoAiCapabilitiesPanel.value && !waoAiCapabilitiesPanel.value.confirmLeave()) return
-  tab.value = next
+  if (next === tab.value) return
+  // 路由守卫只检查当前面板；导航成功后由 query watcher 切换内容。
   void router.replace({ query: { ...route.query, tab: next === 'members' ? undefined : next } })
 }
 
 watch(
   () => route.query.tab,
   (value) => {
-    const requested = value === 'quick-links' ? 'navigation' : value === 'caldav' ? 'members' : value
+    const requested = value === 'quick-links' ? 'navigation' : value === 'caldav' ? 'members' : (value ?? 'members')
     if (typeof requested === 'string' && availableTabs.has(requested)) tab.value = requested
   },
 )
@@ -626,7 +614,7 @@ async function bindFeishu() {
 
         <!-- 当前成员的网页宠物偏好 -->
         <template v-else-if="tab === 'pet'">
-          <WebPetSettingsPanel ref="webPetPanel" />
+          <WebPetSettingsPanel :key="session.userId" ref="webPetPanel" />
         </template>
 
         <!-- 偏好 -->

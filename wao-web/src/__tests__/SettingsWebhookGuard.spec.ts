@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
+import { useSessionStore } from '@/stores/session'
+import { useWebPetStore } from '@/stores/webPet'
+import type { AuthSession } from '@/api/auth'
 import SettingsView from '@/views/SettingsView.vue'
 import { fetchNetworkOutageWindow, saveNetworkOutageWindow } from '@/api/system'
 
@@ -148,9 +151,33 @@ describe('设置页 Webhook 草稿路由保护', () => {
       .findAll('.snav-item')
       .find((button) => button.text() === '我的导航')
     await navigationEntry!.trigger('click')
+    await flushPromises()
 
     expect(window.confirm).toHaveBeenCalledOnce()
     expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notifications')
     expect((wrapper.get('.quiet-row > label input').element as HTMLInputElement).checked).toBe(true)
   })
+  it('进入恢复草稿的宠物设置不误触发离开确认', async () => {
+    useSessionStore().account = { member: { id: 'pet-guard' } } as AuthSession
+    useWebPetStore().loadState = 'loaded'
+    localStorage.setItem('wao-web-pet-settings-draft-v1:pet-guard', JSON.stringify({ showTaskNotices: false }))
+    window.confirm = vi.fn(() => false)
+    await wrapper.findAll('.snav-item').find(button => button.text() === '宠物设置')!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=pet')
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('已恢复未保存的宠物设置')
+    await wrapper.findAll('.snav-item').find(button => button.text() === '偏好')!.trigger('click')
+    await flushPromises()
+    expect(window.confirm).toHaveBeenCalledOnce()
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=pet')
+    window.confirm = vi.fn(() => true)
+    await wrapper.findAll('.snav-item').find(button => button.text() === '组织与成员')!.trigger('click')
+    await flushPromises()
+    expect(window.confirm).toHaveBeenCalledOnce()
+    expect(router.currentRoute.value.fullPath).toBe('/settings')
+    expect(wrapper.findAll('.snav-item').find(button => button.text() === '组织与成员')!.classes()).toContain('on')
+    localStorage.removeItem('wao-web-pet-settings-draft-v1:pet-guard')
+  })
+
 })
