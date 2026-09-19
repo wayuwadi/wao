@@ -1,5 +1,5 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionStore } from '@/stores/session'
 import DecisionsView from '@/views/DecisionsView.vue'
 import {
@@ -39,11 +39,11 @@ const decision = (overrides: Partial<MemoryDocument> = {}): MemoryDocument => ({
 
 const mounted: ReturnType<typeof mount>[] = []
 function view() {
-  const wrapper = mount(DecisionsView, { global: { stubs: { RouterLink: true } } })
+  const wrapper = mount(DecisionsView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
   mounted.push(wrapper)
-  return wrapper
+  return new DOMWrapper(document.body)
 }
-afterEach(() => { mounted.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks() })
+afterEach(() => { mounted.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks(); document.body.innerHTML = '' })
 
 describe('decision content', () => {
   it('把结构化表单保存为记忆中心和 MCP 可读的 Markdown', () => {
@@ -58,10 +58,23 @@ describe('decision content', () => {
 })
 
 describe('DecisionsView', () => {
+  // jsdom 不实现 dialog 顶层行为；键盘焦点与遮罩另在真实浏览器验收。
+  const modalDescriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal')
+  const closeDescriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close')
+  beforeAll(() => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true } })
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false } })
+  })
+  afterAll(() => {
+    for (const [key, descriptor] of [['showModal', modalDescriptor], ['close', closeDescriptor]] as const) {
+      if (descriptor) Object.defineProperty(HTMLDialogElement.prototype, key, descriptor)
+      else Reflect.deleteProperty(HTMLDialogElement.prototype, key)
+    }
+  })
   beforeEach(() => {
     Object.assign(useSessionStore(), { userId: 'member-1' })
     localStorage.clear()
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     vi.mocked(fetchMemories).mockResolvedValue([])
   })
 
@@ -119,10 +132,11 @@ describe('DecisionsView', () => {
   it('明确确认后废止决策并重新读取列表', async () => {
     vi.mocked(fetchMemories).mockResolvedValue([decision()])
     vi.mocked(archiveMemory).mockResolvedValue(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const wrapper = view()
     await flushPromises()
-    await wrapper.get('.decision-card .danger').trigger('click')
+    await wrapper.get('.decision-card .danger').trigger('click'); await flushPromises()
+    expect(archiveMemory).not.toHaveBeenCalled()
+    await wrapper.get('.archive-confirm').trigger('click')
     await flushPromises()
 
     expect(archiveMemory).toHaveBeenCalledWith('decision-1')
@@ -230,14 +244,15 @@ describe('DecisionsView', () => {
   it('废止失败在原处保留原因并支持重试', async () => {
     vi.mocked(fetchMemories).mockResolvedValueOnce([decision()]).mockResolvedValue([])
     vi.mocked(archiveMemory).mockRejectedValueOnce(new Error('暂时无法连接')).mockResolvedValueOnce(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const wrapper = view(); await flushPromises()
     await wrapper.get('.decision-card .danger').trigger('click'); await flushPromises()
+    expect(archiveMemory).not.toHaveBeenCalled()
+    await wrapper.get('.archive-confirm').trigger('click'); await flushPromises()
     const feedback = wrapper.get('[role="alert"]')
     expect(feedback.text()).toContain('暂时无法连接')
-    expect(feedback.text()).toContain('去武汉的出行方式')
+    expect(wrapper.get('.archive-dialog').text()).toContain('去武汉的出行方式')
     expect(wrapper.find('.decision-card').exists()).toBe(true)
-    await feedback.findAll('button')[0]!.trigger('click'); await flushPromises()
+    await wrapper.get('.archive-confirm').trigger('click'); await flushPromises()
     expect(archiveMemory).toHaveBeenCalledTimes(2)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.find('.decision-card').exists()).toBe(false)
@@ -246,12 +261,45 @@ describe('DecisionsView', () => {
   it('废止已成功但刷新失败，不把已废止对象继续展示为有效决策', async () => {
     vi.mocked(fetchMemories).mockResolvedValueOnce([decision()]).mockRejectedValueOnce(new Error('刷新失败'))
     vi.mocked(archiveMemory).mockResolvedValueOnce(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const wrapper = view(); await flushPromises()
     await wrapper.get('.decision-card .danger').trigger('click'); await flushPromises()
+    expect(archiveMemory).not.toHaveBeenCalled()
+    await wrapper.get('.archive-confirm').trigger('click'); await flushPromises()
     expect(wrapper.text()).toContain('刷新失败')
     expect(wrapper.find('.decision-card').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('未能确认')
+  })
+
+  it('取消和 Escape 不提交，切换账号会关闭旧账号确认框', async () => {
+    vi.mocked(fetchMemories).mockResolvedValue([decision()])
+    const wrapper = view(); await flushPromises()
+    await wrapper.get('.decision-card .danger').trigger('click'); await flushPromises()
+    expect(wrapper.get('.archive-dialog').text()).toContain('历史版本仍会保留')
+    await wrapper.get('.archive-dialog button').trigger('click'); await flushPromises()
+    expect(wrapper.get('.archive-dialog').element).toHaveProperty('open', false)
+    await wrapper.get('.decision-card .danger').trigger('click'); await flushPromises()
+    await wrapper.get('.archive-dialog').trigger('cancel'); await flushPromises()
+    expect(wrapper.get('.archive-dialog').element).toHaveProperty('open', false)
+    await wrapper.get('.decision-card .danger').trigger('click'); await flushPromises()
+    Object.assign(useSessionStore(), { userId: 'member-2' }); await flushPromises()
+    expect(wrapper.get('.archive-dialog').element).toHaveProperty('open', false)
+    expect(archiveMemory).not.toHaveBeenCalled()
+  })
+
+  it('废止请求期间防止重复提交和关闭，成功后关闭确认框', async () => {
+    let finish!: () => void
+    vi.mocked(fetchMemories).mockResolvedValueOnce([decision()]).mockResolvedValue([])
+    vi.mocked(archiveMemory).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const wrapper = view(); await flushPromises()
+    await wrapper.get('.decision-card .danger').trigger('click'); await flushPromises()
+    await wrapper.get('.archive-confirm').trigger('click'); await flushPromises()
+    expect(wrapper.get('.archive-dialog').text()).toContain('正在废止')
+    await wrapper.get('.archive-confirm').trigger('click')
+    await wrapper.get('.archive-dialog').trigger('cancel'); await flushPromises()
+    expect(wrapper.get('.archive-dialog').element).toHaveProperty('open', true)
+    expect(archiveMemory).toHaveBeenCalledTimes(1)
+    finish(); await flushPromises()
+    expect(wrapper.get('.archive-dialog').element).toHaveProperty('open', false)
   })
 
 })

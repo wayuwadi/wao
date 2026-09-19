@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
   archiveMemory,
@@ -56,6 +56,21 @@ function clearDraft(key: string, expected: string) {
   } catch {
     draftError.value = '决策已保存，但本机旧草稿未清理；重新打开时请先核对内容。'
   }
+}
+const archiveTarget = ref<MemoryDocument | null>(null)
+const archiveDialog = ref<HTMLDialogElement | null>(null)
+watch(archiveTarget, async target => {
+  await nextTick()
+  if (target && archiveTarget.value === target && !archiveDialog.value?.open) archiveDialog.value?.showModal()
+  else if (!archiveTarget.value) archiveDialog.value?.close()
+})
+function requestArchive(item: MemoryDocument) {
+  if (archivingId.value || !requestContext()()) return
+  archiveError.value = null
+  archiveTarget.value = item
+}
+function cancelArchive() {
+  if (!archivingId.value) archiveTarget.value = null
 }
 const archivingId = ref('')
 const archiveError = ref<{ item: MemoryDocument; message: string } | null>(null)
@@ -215,16 +230,17 @@ async function save() {
   }
 }
 
-async function archive(item: MemoryDocument) {
-  if (archivingId.value) return
+async function archive() {
+  const item = archiveTarget.value
+  if (!item || archivingId.value) return
   const isCurrent = requestContext()
   if (!isCurrent()) return
-  if (!window.confirm(`确认废止“${item.revision.title}”？历史版本仍会保留。`)) return
   archivingId.value = item.id
   archiveError.value = null
   try {
     await archiveMemory(item.id)
     if (!isCurrent()) return
+    archiveTarget.value = null
     decisions.value = decisions.value.filter(decision => decision.id !== item.id)
     toast('决策已废止，不再进入默认检索', 'ri-archive-line')
     await load()
@@ -243,6 +259,7 @@ watch(() => session.userId, () => {
   editing.value = null
   saving.value = false
   archivingId.value = ''
+  archiveTarget.value = null
   archiveError.value = null
   resetForm()
   query.value = ''
@@ -264,9 +281,9 @@ onMounted(load)
       <button class="primary" type="button" @click="openCreate"><i class="ri-add-line"></i>新增决策</button>
     </header>
 
-    <div v-if="archiveError" class="state-card error" role="alert">
+    <div v-if="archiveError && !archiveTarget" class="state-card error" role="alert">
       <span>未能确认“{{ archiveError.item.revision.title }}”的废止结果：{{ archiveError.message }}。可重试或重新加载核对。</span>
-      <button type="button" :disabled="!!archivingId" @click="archive(archiveError.item)">重试废止</button>
+      <button type="button" :disabled="!!archivingId" @click="requestArchive(archiveError.item)">重试废止</button>
       <button type="button" :disabled="loading" @click="load">重新加载核对</button>
     </div>
     <section class="toolbar">
@@ -295,10 +312,26 @@ onMounted(load)
         </dl>
         <footer>
           <span>更新于 {{ formatTime(item.updatedAt) }}</span>
-          <div><button type="button" :disabled="!!archivingId" @click="openEdit(item)"><i class="ri-edit-line"></i>编辑</button><button class="danger" type="button" :disabled="!!archivingId" @click="archive(item)"><i class="ri-archive-line"></i>{{ archivingId === item.id ? '废止中…' : '废止' }}</button></div>
+          <div><button type="button" :disabled="!!archivingId" @click="openEdit(item)"><i class="ri-edit-line"></i>编辑</button><button class="danger" type="button" :disabled="!!archivingId" @click="requestArchive(item)"><i class="ri-archive-line"></i>{{ archivingId === item.id ? '废止中…' : '废止' }}</button></div>
         </footer>
       </article>
     </section>
+
+    <Teleport to="body">
+      <dialog ref="archiveDialog" class="archive-dialog" aria-labelledby="archive-title" aria-describedby="archive-description" @cancel.prevent="cancelArchive">
+        <template v-if="archiveTarget">
+          <h2 id="archive-title">废止这条决策？</h2>
+          <p class="archive-name">{{ archiveTarget.revision.title }}</p>
+          <p id="archive-description">废止后，这条决策将从有效列表和默认检索中移除。历史版本仍会保留，可在记忆中心查看。</p>
+          <p v-if="archiveError" class="archive-error" role="alert">未能确认废止结果：{{ archiveError.message }}。可重试，或取消后重新加载核对。</p>
+          <p v-if="archivingId" role="status">正在废止，请稍候…</p>
+          <footer>
+            <button type="button" autofocus :disabled="!!archivingId" @click="cancelArchive">取消</button>
+            <button type="button" class="archive-confirm" :disabled="!!archivingId" @click="archive">{{ archivingId ? '废止中…' : archiveError ? '重试废止' : '确认废止' }}</button>
+          </footer>
+        </template>
+      </dialog>
+    </Teleport>
 
     <div v-if="editorOpen" class="mask" @click.self="closeEditor">
       <section class="editor" role="dialog" aria-modal="true" :aria-label="editing ? '编辑决策' : '新增决策'">
@@ -318,6 +351,19 @@ onMounted(load)
 </template>
 
 <style scoped>
+.archive-dialog{box-sizing:border-box;width:min(460px,calc(100vw - 28px));max-height:calc(100dvh - 28px);padding:22px;border:1px solid var(--wao-line);border-radius:var(--wao-radius-modal);background:var(--wao-bg-card);color:var(--wao-text);box-shadow:var(--wao-shadow-modal);font-family:var(--wao-font);overflow:auto}
+.archive-dialog::backdrop{background:rgba(15,23,42,.52)}
+.archive-dialog h2{margin:0 0 14px;font-size:20px}
+.archive-dialog p{font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.archive-dialog .archive-name{font-size:14px;font-weight:600}
+.archive-dialog #archive-description{color:var(--wao-text-2)}
+.archive-dialog .archive-error{padding:10px;border-radius:var(--wao-radius-control);color:var(--wao-danger-strong);background:var(--wao-danger-bg)}
+.archive-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+.archive-dialog button{min-height:44px;padding:9px 16px;border:1px solid var(--wao-line-control);border-radius:var(--wao-radius-control);background:var(--wao-bg-card);color:var(--wao-text);font:inherit;font-size:13px;cursor:pointer}
+.archive-dialog .archive-confirm{background:var(--wao-danger-bg);color:var(--wao-danger-strong);border-color:var(--wao-danger-strong)}
+.archive-dialog button:focus-visible{outline:2px solid var(--wao-primary);outline-offset:3px}
+.archive-dialog button:disabled{opacity:.6;cursor:wait}
+
 .decisions-page{max-width:none;margin:0 auto;padding:32px 28px 56px;color:var(--wao-text)}
 .hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:28px;border:1px solid var(--wao-line);border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--wao-primary) 12%,var(--wao-bg-card)),var(--wao-bg-card))}
 .eyebrow{color:var(--wao-primary-text);font-size:12px;font-weight:700;letter-spacing:.08em}.hero h1{margin:8px 0 6px;font-size:28px}.hero p{max-width:620px;margin:0;color:var(--wao-text-3);line-height:1.7}
