@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { Tab } from '@/types'
-import { externalAppItemId, externalAppPath, moduleTab } from '@/config/nav'
+import type { Tab, ModuleId } from '@/types'
+import { externalAppItemId, externalAppPath, moduleTab, MODULES } from '@/config/nav'
 
 /**
  * 页签 store：多页签栏的可视化路由栈。
@@ -29,6 +29,10 @@ function load(): Persisted {
         .filter((t) => !RETIRED_TAB_KEYS.has(t.key))
         .map((tab) => {
           const normalized = { ...tab, pinned: tab.pinned === true }
+          // 系统模块沿用当前名称；显式自定义、动态实体与外部应用标题不覆盖。
+          if (!tab.customLabel && Object.prototype.hasOwnProperty.call(MODULES, tab.key)) {
+            normalized.label = MODULES[tab.key as ModuleId].label
+          }
           return tab.key === 'mediaAgent'
             ? {
                 ...normalized,
