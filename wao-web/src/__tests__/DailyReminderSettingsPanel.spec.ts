@@ -140,4 +140,33 @@ describe('每日提醒设置', () => {
         .every((input) => input.attributes('disabled') !== undefined),
     ).toBe(true)
   })
+  it('检查使用已保存提醒，编辑草稿不会改变阻断原因', async () => {
+    const wrapper = mount(DailyReminderSettingsPanel, { props: { settings: {
+      canManageSystem: true,
+      system: { enabled: false, reminders: true, quietHoursEnabled: false, quietStart: '22:00', quietEnd: '08:00', taskActivity: false, taskSuccess: false, aiRunSuccess: false, aiRunFailure: true, manualTask: true, deliveryFailure: true, automation: true },
+      personal: { enabled: true, taskCreated: true, taskCompleted: true, aiRunSuccess: true, aiRunFailure: true, loginActivity: true },
+    } } })
+    await flushPromises()
+    await wrapper.findAll('.enable-switch input')[0]!.setValue(false)
+    const diagnosis = wrapper.findAll('.reminder-diagnosis')[0]!
+    expect(diagnosis.text()).toContain('仍按原配置判断')
+    expect(diagnosis.text()).toContain('系统通知总开关已关闭')
+    expect(diagnosis.text()).not.toContain('本条提醒已暂停')
+    expect(diagnosis.get('a').attributes('href')).toBe('#notification-system-enabled')
+    expect(api.test).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('试发返回失败记录时不展示发送成功或成功颜色', async () => {
+    api.test.mockResolvedValue({ ...reminders[0], lastResult: '今天 08:50 · 失败 · 未成功保存' })
+    const wrapper = mount(DailyReminderSettingsPanel)
+    await flushPromises()
+    await wrapper.findAll('.actions .ghost')[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.inline-message').text()).toContain('试发返回：今天 08:50 · 失败')
+    expect(wrapper.get('.inline-message').classes()).not.toContain('success')
+    expect(wrapper.text()).not.toContain('已真实发送')
+    wrapper.unmount()
+  })
+
 })

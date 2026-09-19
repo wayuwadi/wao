@@ -7,7 +7,7 @@ import App from '@/App.vue'
 const flush = vi.hoisted(() => vi.fn())
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('@/stores/data', () => ({ useDataStore: () => ({ flushWorkspace: flush }) }))
-vi.mock('@/composables/toast', () => ({ toast }))
+vi.mock('@/composables/toast', () => ({ toast, clearToasts: vi.fn() }))
 beforeEach(() => { setActivePinia(createPinia()); flush.mockReset(); toast.mockReset() })
 afterEach(() => vi.restoreAllMocks())
 describe('刷新保存屏障', () => {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useSessionStore } from '@/stores/session'
 import { fetchProjects } from '@/api/board'
 import {
   createWorkspace,
@@ -13,6 +14,25 @@ import {
   type WorkspaceSummary,
 } from '@/api/workspaces'
 import type { Project } from '@/types'
+
+const session = useSessionStore()
+let owner = session.userId
+let generation = 0
+let detailSequence = 0
+const storageError = ref('')
+const scopedKey = (key: string) => `wao-workspaces:v2:${encodeURIComponent(owner)}:${key}`
+function draftGet(key: string) {
+  if (!owner) return null
+  try { return localStorage.getItem(scopedKey(key)) } catch { storageError.value = '本机草稿无法读取，请保留页面并检查浏览器存储。'; return null }
+}
+function draftSet(key: string, value: string) {
+  if (!owner) return
+  try { localStorage.setItem(scopedKey(key), value) } catch { storageError.value = '本机草稿未能保存，请勿关闭页面；可以继续保存到服务端。' }
+}
+function draftRemove(key: string) {
+  if (!owner) return
+  try { localStorage.removeItem(scopedKey(key)) } catch { storageError.value = '本机草稿未能清理，再次编辑时请核对内容。' }
+}
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
@@ -72,25 +92,27 @@ watch(
   createForm,
   (value) => {
     if (value.name || value.description || value.projectId) {
-      localStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify(value))
+      draftSet(CREATE_DRAFT_KEY, JSON.stringify(value))
     } else {
-      localStorage.removeItem(CREATE_DRAFT_KEY)
+      draftRemove(CREATE_DRAFT_KEY)
     }
   },
-  { deep: true },
+  { deep: true, flush: 'sync' },
 )
 
 watch(
   editModel,
   (value) => {
-    if (suppressDraftWatch.value || !editing.value || !value || saveState.value === 'saving') return
-    saveState.value = 'dirty'
-    localStorage.setItem(editDraftKey(value.id), JSON.stringify(value))
+    if (suppressDraftWatch.value || !editing.value || !value) return
+    if (saveState.value !== 'saving') saveState.value = 'dirty'
+    draftSet(editDraftKey(value.id), JSON.stringify(value))
   },
-  { deep: true },
+  { deep: true, flush: 'sync' },
 )
 
 async function loadAll() {
+  const version = generation
+  if (!owner) { loading.value = false; return }
   loading.value = true
   loadError.value = ''
   try {
@@ -98,30 +120,35 @@ async function loadAll() {
       fetchWorkspaces(),
       fetchProjects().catch(() => []),
     ])
+    if (version !== generation) return
     summaries.value = spaces
     projects.value = projectResult
-    const remembered = localStorage.getItem(LAST_SPACE_KEY)
+    const remembered = draftGet(LAST_SPACE_KEY)
     const initial = spaces.find((item) => item.id === remembered)?.id ?? spaces[0]?.id ?? ''
     if (initial) await loadDetail(initial)
   } catch (error) {
-    loadError.value = messageOf(error, '工作空间读取失败')
+    if (version === generation) loadError.value = messageOf(error, '工作空间读取失败')
   } finally {
-    loading.value = false
+    if (version === generation) loading.value = false
   }
 }
 
 async function loadDetail(id: string) {
+  const version = generation
+  const sequence = ++detailSequence
   detailLoading.value = true
   detailError.value = ''
   try {
-    active.value = await fetchWorkspace(id)
+    const result = await fetchWorkspace(id)
+    if (version !== generation || sequence !== detailSequence) return
+    active.value = result
     activeId.value = id
-    localStorage.setItem(LAST_SPACE_KEY, id)
+    draftSet(LAST_SPACE_KEY, id)
     search.value = ''
   } catch (error) {
-    detailError.value = messageOf(error, '空间内容读取失败')
+    if (version === generation && sequence === detailSequence) detailError.value = messageOf(error, '空间内容读取失败')
   } finally {
-    detailLoading.value = false
+    if (version === generation && sequence === detailSequence) detailLoading.value = false
   }
 }
 
@@ -143,14 +170,14 @@ async function selectSpace(event: Event) {
 
 function startEdit() {
   if (!active.value) return
-  const raw = localStorage.getItem(editDraftKey(active.value.id))
+  const raw = draftGet(editDraftKey(active.value.id))
   let draft: WorkspaceDetail | null = null
   if (raw) {
     try {
       const candidate = JSON.parse(raw) as WorkspaceDetail
       if (candidate.id === active.value.id && Array.isArray(candidate.groups)) draft = candidate
     } catch {
-      localStorage.removeItem(editDraftKey(active.value.id))
+      draftRemove(editDraftKey(active.value.id))
     }
   }
   suppressDraftWatch.value = true
@@ -166,14 +193,15 @@ function startEdit() {
 function cancelEdit() {
   if (['dirty', 'error'].includes(saveState.value) && !window.confirm('放弃当前修改和本机草稿吗？'))
     return
-  if (active.value) localStorage.removeItem(editDraftKey(active.value.id))
+  if (active.value) draftRemove(editDraftKey(active.value.id))
   editing.value = false
   editModel.value = null
   saveState.value = 'idle'
 }
 
 async function persist() {
-  const model = editModel.value
+  const version = generation
+  const model = editModel.value ? clone(editModel.value) : null
   if (!model || saveState.value === 'saving') return
   saveState.value = 'saving'
   saveError.value = ''
@@ -184,15 +212,21 @@ async function persist() {
       projectId: model.projectId || null,
       groups: model.groups,
     })
+    if (version !== generation || activeId.value !== model.id) return
     active.value = saved
+    if (JSON.stringify(editModel.value) !== JSON.stringify(model)) {
+      upsertSummary(saved)
+      saveState.value = 'dirty'
+      return
+    }
     suppressDraftWatch.value = true
     editModel.value = clone(saved)
-    await nextTick()
-    localStorage.removeItem(editDraftKey(saved.id))
+    draftRemove(editDraftKey(saved.id))
     suppressDraftWatch.value = false
     upsertSummary(saved)
     saveState.value = 'saved'
   } catch (error) {
+    if (version !== generation || activeId.value !== model.id) return
     saveError.value = messageOf(error, '保存失败，本机草稿已保留')
     saveState.value = 'error'
   }
@@ -245,12 +279,19 @@ function move<T>(items: T[], index: number, offset: number) {
   if (item) items.splice(target, 0, item)
 }
 
+function retryDrafts() {
+  storageError.value = ''
+  draftSet(CREATE_DRAFT_KEY, JSON.stringify(createForm))
+  if (editing.value && editModel.value) draftSet(editDraftKey(editModel.value.id), JSON.stringify(editModel.value))
+}
+
 function openCreate() {
   createOpen.value = true
   createError.value = ''
 }
 
 async function submitCreate() {
+  const version = generation
   if (!createForm.name.trim() || creating.value) return
   creating.value = true
   createError.value = ''
@@ -260,37 +301,40 @@ async function submitCreate() {
       description: createForm.description,
       projectId: createForm.projectId || null,
     })
+    if (version !== generation) return
     active.value = created
     activeId.value = created.id
-    localStorage.setItem(LAST_SPACE_KEY, created.id)
+    draftSet(LAST_SPACE_KEY, created.id)
     upsertSummary(created)
     createOpen.value = false
     Object.assign(createForm, { name: '', description: '', projectId: '' })
-    localStorage.removeItem(CREATE_DRAFT_KEY)
+    draftRemove(CREATE_DRAFT_KEY)
     startEdit()
   } catch (error) {
-    createError.value = messageOf(error, '创建失败，草稿仍在本机')
+    if (version === generation) createError.value = messageOf(error, '创建失败，草稿仍在本机')
   } finally {
-    creating.value = false
+    if (version === generation) creating.value = false
   }
 }
 
 async function removeSpace() {
+  const version = generation
   const target = active.value
   if (!target || !window.confirm(`删除工作空间“${target.name}”？这只会删除 WAO 中的导航资料。`))
     return
   try {
     await deleteWorkspace(target.id)
-    localStorage.removeItem(editDraftKey(target.id))
+    if (version !== generation) return
+    draftRemove(editDraftKey(target.id))
     summaries.value = summaries.value.filter((item) => item.id !== target.id)
     active.value = null
     activeId.value = ''
     editing.value = false
     const next = summaries.value[0]
     if (next) await loadDetail(next.id)
-    else localStorage.removeItem(LAST_SPACE_KEY)
+    else draftRemove(LAST_SPACE_KEY)
   } catch (error) {
-    detailError.value = messageOf(error, '删除失败，请重试')
+    if (version === generation) detailError.value = messageOf(error, '删除失败，请重试')
   }
 }
 
@@ -341,7 +385,7 @@ function messageOf(error: unknown, fallback: string) {
 }
 function readCreateDraft() {
   try {
-    const value = JSON.parse(localStorage.getItem(CREATE_DRAFT_KEY) ?? '{}') as Record<
+    const value = JSON.parse(draftGet(CREATE_DRAFT_KEY) ?? '{}') as Record<
       string,
       unknown
     >
@@ -355,11 +399,26 @@ function readCreateDraft() {
   }
 }
 
+watch(() => session.userId, (next) => {
+  generation++
+  detailSequence++
+  owner = ''
+  summaries.value = []; projects.value = []; active.value = null; activeId.value = ''
+  editing.value = false; editModel.value = null; createOpen.value = false; creating.value = false
+  saveState.value = 'idle'; saveError.value = ''; createError.value = ''; storageError.value = ''
+  detailError.value = ''; detailLoading.value = false; search.value = ''
+  Object.assign(createForm, { name: '', description: '', projectId: '' })
+  owner = next
+  Object.assign(createForm, readCreateDraft())
+  void loadAll()
+}, { flush: 'sync' })
+onBeforeUnmount(() => { generation++; detailSequence++ })
 onMounted(loadAll)
 </script>
 
 <template>
   <main class="workspace-page">
+    <p v-if="storageError" class="inline-error" role="alert">{{ storageError }} <button type="button" @click="retryDrafts">重试本机草稿保存</button></p>
     <header class="workspace-hero">
       <div>
         <span class="eyebrow">MY WORK SYSTEM</span>
@@ -563,7 +622,7 @@ onMounted(loadAll)
         </section>
         <p class="draft-hint">
           <i class="ri-shield-check-line"></i
-          >修改会立即保存在本机草稿中，只有点击“保存”才会同步到服务端。
+          >修改会立即保存在本机草稿中，并按当前账号隔离；只有点击“保存”才会同步到服务端。
         </p>
         <p v-if="saveError" class="inline-error">
           <i class="ri-error-warning-line"></i>{{ saveError }}
@@ -691,14 +750,14 @@ onMounted(loadAll)
       </form>
     </template>
 
-    <div v-if="createOpen" class="modal-backdrop" @click.self="createOpen = false">
+    <div v-if="createOpen" class="modal-backdrop" @click.self="!creating && (createOpen = false)">
       <form class="create-modal" @submit.prevent="submitCreate">
         <div class="modal-head">
           <div>
             <span class="eyebrow">NEW SPACE</span>
             <h2>新建工作空间</h2>
           </div>
-          <button type="button" title="关闭" @click="createOpen = false">
+          <button type="button" title="关闭" :disabled="creating" @click="createOpen = false">
             <i class="ri-close-line"></i>
           </button>
         </div>
@@ -706,6 +765,7 @@ onMounted(loadAll)
           ><span>空间名称</span
           ><input
             v-model="createForm.name"
+            :readonly="creating"
             maxlength="60"
             required
             autofocus
@@ -713,7 +773,7 @@ onMounted(loadAll)
         /></label>
         <label
           ><span>关联项目 <small>可选</small></span
-          ><select v-model="createForm.projectId">
+          ><select v-model="createForm.projectId" :disabled="creating">
             <option value="">暂不关联</option>
             <option v-for="project in projects" :key="project.id" :value="project.id">
               {{ project.name }}
@@ -723,13 +783,13 @@ onMounted(loadAll)
         <label
           ><span>空间说明</span
           ><textarea
-            v-model="createForm.description"
+            v-model="createForm.description" :readonly="creating"
             maxlength="400"
             rows="3"
             placeholder="放哪些入口、用于什么场景"
           ></textarea>
         </label>
-        <small class="draft-note">未提交内容会保存在本机</small>
+        <small class="draft-note">未提交内容按当前账号保存在本机</small>
         <p v-if="createError" class="inline-error">
           <i class="ri-error-warning-line"></i>{{ createError }}
         </p>

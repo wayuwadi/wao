@@ -145,6 +145,10 @@ watch(
     const tab = tabFromRoute(route)
     if (tab) {
       tab.path = route.fullPath
+      if (route.meta.tabKind === 'module' && route.meta.module) {
+        const meta = nav.itemMeta(route.meta.module as ModuleId)
+        if (meta) { tab.label = meta.label; tab.icon = meta.icon }
+      }
       if (route.meta.tabKind === 'external') {
         const app = nav.externalAppById(String(route.params.appId))
         if (app) {
@@ -202,7 +206,8 @@ watch(
   () => nav.builtinMenus.map((menu) => `${menu.id}|${menu.label}|${menu.icon}`).join('\n'),
   () => {
     for (const menu of nav.builtinMenus) {
-      tabs.setMeta(menu.id, { label: menu.label, icon: menu.icon })
+      const meta = nav.itemMeta(menu.id)
+      if (meta) tabs.setMeta(menu.id, { label: meta.label, icon: meta.icon })
     }
   },
   { immediate: true },

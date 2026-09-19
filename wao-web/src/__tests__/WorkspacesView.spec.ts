@@ -1,5 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useSessionStore } from '@/stores/session'
 import WorkspacesView from '@/views/WorkspacesView.vue'
 import { fetchProjects } from '@/api/board'
 import {
@@ -55,6 +57,8 @@ function detail(): WorkspaceDetail {
 describe('个人工作台', () => {
   beforeEach(() => {
     localStorage.clear()
+    setActivePinia(createPinia())
+    useSessionStore().account = { member: { id: 'u1' } } as never
     vi.clearAllMocks()
     vi.mocked(fetchProjects).mockResolvedValue([])
     vi.mocked(fetchWorkspaces).mockResolvedValue([])
@@ -104,7 +108,7 @@ describe('个人工作台', () => {
     await wrapper.get('.toolbar-actions .ghost-button').trigger('click')
     const title = wrapper.get('.link-editor input')
     await title.setValue('Nacos 预发环境')
-    expect(localStorage.getItem('wao-workspace-edit-draft:ws1')).toContain('Nacos 预发环境')
+    expect(localStorage.getItem('wao-workspaces:v2:u1:wao-workspace-edit-draft:ws1')).toContain('Nacos 预发环境')
     await wrapper.get('.edit-actions .primary-button').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('网络不可用')
@@ -113,7 +117,7 @@ describe('个人工作台', () => {
     await wrapper.get('.edit-actions .primary-button').trigger('click')
     await flushPromises()
     expect(saveWorkspace).toHaveBeenCalledTimes(2)
-    expect(localStorage.getItem('wao-workspace-edit-draft:ws1')).toBeNull()
+    expect(localStorage.getItem('wao-workspaces:v2:u1:wao-workspace-edit-draft:ws1')).toBeNull()
     expect(wrapper.text()).toContain('已保存')
     wrapper.unmount()
   })
@@ -145,6 +149,58 @@ describe('个人工作台', () => {
     expect(wrapper.text()).toContain('没有匹配“不存在”的链接')
     await wrapper.get('.search-box input').setValue('服务发现')
     expect(wrapper.text()).toContain('Nacos 测试环境')
+    wrapper.unmount()
+  })
+
+  it('新建草稿按成员隔离，不读取来源不明的旧草稿', async () => {
+    localStorage.setItem('wao-workspace-create-draft', JSON.stringify({ name: '旧账号内容' }))
+    const wrapper = mount(WorkspacesView)
+    await flushPromises()
+    await wrapper.get('.primary-button').trigger('click')
+    const name = wrapper.get('.create-modal input')
+    expect((name.element as HTMLInputElement).value).toBe('')
+    await name.setValue('成员一草稿')
+    useSessionStore().account = { member: { id: 'u2' } } as never
+    await flushPromises()
+    await wrapper.get('.primary-button').trigger('click')
+    expect((wrapper.get('.create-modal input').element as HTMLInputElement).value).toBe('')
+    useSessionStore().account = { member: { id: 'u1' } } as never
+    await flushPromises()
+    await wrapper.get('.primary-button').trigger('click')
+    expect((wrapper.get('.create-modal input').element as HTMLInputElement).value).toBe('成员一草稿')
+    expect(localStorage.getItem('wao-workspace-create-draft')).toContain('旧账号内容')
+    wrapper.unmount()
+  })
+  it('保存中继续输入仍写草稿，旧响应不得覆盖新输入', async () => {
+    vi.mocked(fetchWorkspaces).mockResolvedValue([{ ...detail(), groupCount: 1, linkCount: 1 }])
+    vi.mocked(fetchWorkspace).mockResolvedValue(detail())
+    let resolve!: (value: WorkspaceDetail) => void
+    vi.mocked(saveWorkspace).mockImplementation(() => new Promise(r => { resolve = r }))
+    const wrapper = mount(WorkspacesView)
+    await flushPromises()
+    await wrapper.get('.toolbar-actions .ghost-button').trigger('click')
+    await wrapper.get('.link-editor input').setValue('先保存的值')
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await wrapper.get('.link-editor input').setValue('保存中的新输入')
+    expect(localStorage.getItem('wao-workspaces:v2:u1:wao-workspace-edit-draft:ws1')).toContain('保存中的新输入')
+    resolve(detail())
+    await flushPromises()
+    expect((wrapper.get('.link-editor input').element as HTMLInputElement).value).toBe('保存中的新输入')
+    expect(wrapper.text()).toContain('有未保存修改')
+    wrapper.unmount()
+  })
+
+  it('本机存储失败明确提示，重试不会丢掉输入', async () => {
+    const wrapper = mount(WorkspacesView)
+    await flushPromises()
+    await wrapper.get('.primary-button').trigger('click')
+    const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    await wrapper.get('.create-modal input').setValue('不能丢的内容')
+    expect(wrapper.get('[role="alert"]').text()).toContain('本机草稿未能保存')
+    fail.mockRestore()
+    await wrapper.get('[role="alert"] button').trigger('click')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(localStorage.getItem('wao-workspaces:v2:u1:wao-workspace-create-draft')).toContain('不能丢的内容')
     wrapper.unmount()
   })
 })

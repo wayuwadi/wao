@@ -276,3 +276,42 @@ it('失效草稿项目必须重新选择，不能派发不存在于配置中的�
   await wrapper.get('form select').setValue('p1')
   expect(wrapper.get('.new-footer button').attributes('disabled')).toBeUndefined()
 })
+
+
+it('无需部署不遮盖失败状态，无绑定的下一步只进入新会话表单', async () => {
+  vi.mocked(api.getSession).mockResolvedValueOnce({ ...detail(), run: { ...run, status: 'failed', sessionId: null, deliveryStage: 'not_required' } })
+  const { wrapper, router } = await view()
+  expect(wrapper.get('.heading p').text()).toContain('需处理 · 本轮无需部署')
+  await wrapper.findAll('button').find(b => b.text() === '新建会话继续处理')!.trigger('click')
+  await flushPromises()
+  expect(router.currentRoute.value.query.new).toBe('1')
+  expect(wrapper.find('[aria-label="新会话内容"]').exists()).toBe(true)
+  expect(api.createSession).not.toHaveBeenCalled()
+  expect(api.sendSessionInput).not.toHaveBeenCalled()
+})
+
+
+it('先规划明确连续执行，保留原有派发参数', async () => {
+  const { wrapper } = await view('/ai-sessions?new=1')
+  await wrapper.get('[aria-label="新会话内容"]').setValue('验证计划语义')
+  await wrapper.findAll('select').find(s => s.text().includes('先规划，再自动执行'))!.setValue('plan')
+  expect(wrapper.get('.mode-description').text()).toContain('不会停在计划阶段等待你确认')
+  expect(wrapper.get('.advanced-options').attributes('open')).toBeUndefined()
+  vi.mocked(api.createSession).mockResolvedValueOnce(run)
+  await wrapper.get('.new-panel form').trigger('submit')
+  await flushPromises()
+  expect(api.createSession).toHaveBeenCalledWith(expect.objectContaining({ planMode: true, goalMode: false, runnerId: null, reasoningEffort: 'medium' }))
+})
+
+it('非Codex旧计划草稿不能被静默忽略或直接派发，显式重选后恢复', async () => {
+  vi.mocked(api.sessionWorkflows).mockResolvedValueOnce([{ projectId: 'p1', projectName: 'WAO', config: { defaultEngine: 'claude' } }] as never)
+  localStorage.setItem('wao:ai-session-new:u1', JSON.stringify({ goal: '保留目标', projectId: 'p1', mode: 'plan' }))
+  const { wrapper } = await view('/ai-sessions?new=1')
+  expect(wrapper.text()).toContain('当前工作流不支持已选执行方式')
+  expect(wrapper.get('.new-footer button').attributes('disabled')).toBeDefined()
+  await wrapper.get('.new-panel form').trigger('submit')
+  expect(api.createSession).not.toHaveBeenCalled()
+  await wrapper.findAll('select').find(s => s.text().includes('先规划，再自动执行'))!.setValue('direct')
+  expect(wrapper.get('.new-footer button').attributes('disabled')).toBeUndefined()
+  expect(wrapper.get<HTMLTextAreaElement>('[aria-label="新会话内容"]').element.value).toBe('保留目标')
+})

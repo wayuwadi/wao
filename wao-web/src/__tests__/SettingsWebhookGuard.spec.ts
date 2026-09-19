@@ -138,7 +138,7 @@ describe('设置页 Webhook 草稿路由保护', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notifications')
-    expect(wrapper.get('.notification-settings').text()).toContain('系统 · 群聊通知')
+    expect(wrapper.get('.notification-settings').text()).toContain('系统 · 共享通知策略')
     expect(wrapper.get('.project-policy').text()).toContain('按项目通知')
     expect(notificationEntry!.classes()).toContain('on')
 

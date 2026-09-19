@@ -71,7 +71,7 @@ const labels: Record<string, string> = {
   queued: '排队中',
   claimed: '准备中',
   running: '运行中',
-  succeeded: '已完成',
+  succeeded: '执行结束',
   failed: '需处理',
   cancelled: '已暂停',
 }
@@ -80,9 +80,8 @@ const title = computed(
 )
 const selectedActive = computed(() => !!detail.value && active(detail.value.run.status))
 const sessionState = computed(() =>
-  detail.value?.run.deliveryStage === 'not_required'
-    ? '本轮无需部署'
-    : labels[detail.value?.run.status || ''] || '',
+  (labels[detail.value?.run.status || ''] || '') +
+    (detail.value?.run.deliveryStage === 'not_required' ? ' · 本轮无需部署' : ''),
 )
 const maxPage = computed(() => Math.max(1, Math.ceil(total.value / 25)))
 const activityTime = (value: string) => {
@@ -256,7 +255,15 @@ watch(
 )
 const projectAvailable = computed(() => workflows.value.some((flow) => flow.projectId === form.projectId))
 const runnerAvailable = computed(() => !form.runnerId || runners.value.some((node) => node.id === form.runnerId))
-const canLaunch = computed(() => setupReady.value && !setupLoading.value && !setupError.value && projectAvailable.value && runnerAvailable.value && !!form.goal.trim() && !creating.value)
+const selectedEngine = computed(() => workflows.value.find(flow => flow.projectId === form.projectId)?.config?.defaultEngine || 'codex')
+const modeSupported = computed(() => form.mode === 'direct' || (selectedEngine.value === 'codex' && ['plan', 'goal'].includes(form.mode)))
+const modeDescriptions: Record<string, string> = {
+  direct: '发送后立即开始处理目标；如果目标包含修改或执行操作，AI 会按工作流规则执行。',
+  plan: '先制定计划，再连续执行。常规选择会自动采用推荐项；不会停在计划阶段等待你确认。',
+  goal: '围绕目标持续执行多个回合，直到完成、阻塞或受额度等限制；可能持续消耗模型额度。',
+}
+const modeDescription = computed(() => modeDescriptions[form.mode] || '请选择可用的执行方式。')
+const canLaunch = computed(() => setupReady.value && !setupLoading.value && !setupError.value && modeSupported.value && projectAvailable.value && runnerAvailable.value && !!form.goal.trim() && !creating.value)
 async function launch() {
   if (!canLaunch.value) return
   creating.value = true
@@ -377,7 +384,7 @@ onBeforeUnmount(() => {
         <select v-model="status" aria-label="会话状态">
           <option value="">全部状态</option>
           <option value="active">运行中</option>
-          <option value="succeeded">已完成</option>
+          <option value="succeeded">执行结束</option>
           <option value="failed">需处理</option>
           <option value="cancelled">已暂停</option>
         </select>
@@ -467,7 +474,17 @@ onBeforeUnmount(() => {
           </div>
           <p v-if="setupReady" class="hint">配置检查于 {{ setupCheckedAt }} <button type="button" @click="setup" :disabled="creating || setupLoading">刷新配置</button></p>
           <label
-            >项目工作流<select
+            >目标或问题<textarea
+              v-model="form.goal"
+              :readonly="creating"
+              maxlength="12000"
+              required
+              placeholder="描述这次要做的事；后续直接在同一个会话中追加要求。"
+              aria-label="新会话内容"
+            ></textarea>
+          </label>
+          <label
+            >任务归属项目<select
               v-model="form.projectId"
               :disabled="creating || setupLoading"
               required
@@ -479,16 +496,18 @@ onBeforeUnmount(() => {
               </option>
             </select></label
           >
-          <label
-            >目标或问题<textarea
-              v-model="form.goal"
-              :readonly="creating"
-              maxlength="12000"
-              required
-              placeholder="描述这次要做的事；后续直接在同一个会话中追加要求。"
-              aria-label="新会话内容"
-            ></textarea>
-          </label>
+            <label
+              >执行方式<select v-model="form.mode" :disabled="creating">
+                <option value="direct">直接执行 · 问答与明确的小任务</option>
+                <option value="plan" :disabled="selectedEngine !== 'codex'">先规划，再自动执行</option>
+                <option value="goal" :disabled="selectedEngine !== 'codex'">持续执行目标 · 多回合推进</option>
+              </select></label
+            >
+          <p class="mode-description" role="status">{{ modeDescription }}</p>
+          <p v-if="setupReady && !modeSupported" class="error">当前工作流不支持已选执行方式，请选择直接执行，或改选 Codex 项目。</p>
+          <p class="hint">发送后会在所选项目创建一条任务并开始执行。只想讨论方案时，请在目标中写明“仅讨论，不执行修改”。</p>
+          <details class="advanced-options">
+            <summary>高级设置 · 执行电脑与推理强度</summary>
           <div class="new-options">
             <label
               >执行电脑<select v-model="form.runnerId" :disabled="creating || setupLoading || !setupReady">
@@ -500,13 +519,6 @@ onBeforeUnmount(() => {
               </select></label
             >
             <label
-              >执行方式<select v-model="form.mode" :disabled="creating">
-                <option value="direct">直接执行 · 问答与明确的小任务</option>
-                <option value="plan">先规划再执行</option>
-                <option value="goal">持续目标 · 复杂长任务</option>
-              </select></label
-            >
-            <label
               >推理强度<select v-model="form.reasoningEffort" :disabled="creating">
                 <option value="low">低 · 简单问答</option>
                 <option value="medium">中 · 日常任务</option>
@@ -514,10 +526,7 @@ onBeforeUnmount(() => {
               </select></label
             >
           </div>
-          <p class="hint">
-            新 Codex 会话默认
-            GPT-6。纯问答建议直接执行；复杂开发可选持续目标。仍由已接入的服务器执行。
-          </p>
+          </details>
           <p v-if="setupReady && !setupLoading && !workflows.length" class="error">
             暂无可用项目工作流，请先在首页的 AI 工作流中配置项目。
           </p>
@@ -531,7 +540,7 @@ onBeforeUnmount(() => {
               class="primary"
               :disabled="!canLaunch"
             >
-              {{ creating ? '正在派发…' : createError ? '重试派发' : '发送并开始' }}
+              {{ creating ? '正在派发…' : createError ? '重试派发' : '创建任务并开始' }}
               <i class="ri-arrow-up-line"></i>
             </button>
           </div>
@@ -595,6 +604,7 @@ onBeforeUnmount(() => {
           :run="detail.run"
           :prompt="detail.prompt"
           @updated="updated"
+          @new-session="startNew"
         />
       </template>
     </main>
@@ -938,9 +948,11 @@ h1 {
   resize: vertical;
   line-height: 1.8;
 }
+.mode-description { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-text); font-size: 13px; line-height: 1.7; }
+.advanced-options summary { cursor: pointer; font-size: 13px; color: var(--wao-primary-text); margin-bottom: 10px; }
 .new-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 .new-footer {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiExternalAppHealth } from '@/api/agent'
 import WeKnoraSyncPanel from '@/components/weknora/WeKnoraSyncPanel.vue'
@@ -12,6 +12,15 @@ const router = useRouter()
 const nav = useNavStore()
 const state = ref<State>('checking')
 const frameKey = ref(0)
+const slow = ref(false)
+let frameTimer: ReturnType<typeof setTimeout> | undefined
+watch([state, frameKey], () => {
+  clearTimeout(frameTimer)
+  slow.value = false
+  if (state.value === 'loading') frameTimer = setTimeout(() => { slow.value = true }, 15_000)
+}, { immediate: true, flush: 'sync' })
+onBeforeUnmount(() => { clearTimeout(frameTimer); requestSequence++ })
+
 const errorMessage = ref('')
 let requestSequence = 0
 
@@ -71,7 +80,7 @@ onMounted(() => nav.loadExternalApps())
     <div class="external-toolbar">
       <div>
         <span class="status-dot" :class="state"></span>
-        <span>{{ state === 'ready' ? `「${app?.label ?? '应用'}」已连接` : state === 'error' ? '应用不可用' : state === 'missing' ? '应用未注册' : '正在连接应用' }}</span>
+        <span>{{ state === 'ready' ? `「${app?.label ?? '应用'}」页面已载入` : state === 'error' ? '应用不可用' : state === 'missing' ? '应用未注册' : '正在连接应用' }}</span>
       </div>
       <div class="actions">
         <button v-if="appId === 'weknora'" type="button" @click="router.replace({ query: route.query.tab === 'sync' ? {} : { tab: 'sync' } })">{{ route.query.tab === 'sync' ? '打开知识库' : '内容同步' }}</button>
@@ -80,6 +89,7 @@ onMounted(() => nav.loadExternalApps())
       </div>
     </div>
 
+    <p v-if="app && route.query.tab !== 'sync'" class="embed-help" role="status">{{ slow ? '加载时间较长。可以继续等待、重新加载，或在新窗口打开。' : '若页面空白、提示登录或无法显示，请在新窗口打开；页面载入不代表应用已登录或可用。' }}</p>
     <WeKnoraSyncPanel v-if="appId === 'weknora' && route.query.tab === 'sync'" />
     <div v-else class="external-frame-wrap">
       <iframe
@@ -92,7 +102,7 @@ onMounted(() => nav.loadExternalApps())
         @error="frameFailed"
       ></iframe>
 
-      <div v-if="state === 'checking' || state === 'loading'" class="state-card overlay">
+      <div v-if="state === 'checking' || (state === 'loading' && !slow)" class="state-card overlay" role="status">
         <span class="spinner"></span>
         <strong>正在打开{{ app?.label ? `「${app.label}」` : '外部应用' }}</strong>
         <p>{{ appId === 'weknora' ? '首次使用需建立 WeKnora 账号；Wiki 模式只需配置对话模型 API。' : '正在加载应用，请稍候。' }}</p>
@@ -116,11 +126,12 @@ onMounted(() => nav.loadExternalApps())
 </template>
 
 <style scoped>
+.embed-help { flex: none; margin: 0; padding: 8px 14px; font-size: 12px; line-height: 1.6; color: var(--wao-text-weak); background: var(--wao-bg-sub); border-bottom: 1px solid var(--wao-line); }
 .external-host { min-height: 560px; height: calc(100vh - var(--wao-header-h) - 42px); display: flex; flex-direction: column; background: var(--wao-bg-page); }
 .external-toolbar { height: 42px; padding: 0 14px; flex: none; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--wao-line); background: var(--wao-bg-card); color: var(--wao-text-weak); font-size: 12px; }
 .external-toolbar > div { display: flex; align-items: center; gap: 7px; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #d59a2e; box-shadow: 0 0 0 3px #fff3dc; }
-.status-dot.ready { background: #38a169; box-shadow: 0 0 0 3px #e3f7eb; }
+.status-dot.ready { background: var(--wao-text-weak); box-shadow: none; }
 .status-dot.error, .status-dot.missing { background: #d84b4b; box-shadow: 0 0 0 3px #fde8e8; }
 .actions { display: flex; gap: 5px; }
 .actions button, .actions a { height: 28px; padding: 0 9px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); text-decoration: none; cursor: pointer; }

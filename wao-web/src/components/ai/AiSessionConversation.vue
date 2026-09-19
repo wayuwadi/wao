@@ -5,11 +5,14 @@ import { sessionConversation, sendSessionInput } from '@/api/aiSessions'
 import { useSessionStore } from '@/stores/session'
 import { renderMarkdown } from '@/utils/markdown'
 import { formatTokens } from '@/composables/aiUsage'
+import AiSessionResult from './AiSessionResult.vue'
 import AiRunDeliverySteps from './AiRunDeliverySteps.vue'
 const props = defineProps<{ run: AiRun; prompt: string | null }>()
-const emit = defineEmits<{ updated: [run: AiRun] }>()
+const emit = defineEmits<{ updated: [run: AiRun]; newSession: [] }>()
 const account = useSessionStore()
 const draftKey = computed(() => `wao:airun-draft:${account.userId}:${props.run.id}`)
+const composerInput = ref<HTMLTextAreaElement | null>(null)
+function focusComposer() { composerInput.value?.focus() }
 const draft = ref(''),
   draftError = ref(''),
   sendError = ref(''),
@@ -58,13 +61,17 @@ watch(
     // 保存轮询窗口滑出之前的消息，避免阅读中的内容每 50 条被截断。
     if (previous)
       history.value = [...new Map([...history.value, ...previous].map((x) => [x.id, x])).values()]
-    if (nearBottom.value)
+    if (nearBottom.value && active.value)
       void nextTick(() => {
         if (scroll.value) scroll.value.scrollTop = scroll.value.scrollHeight
       })
   },
   { immediate: true },
 )
+watch(() => props.run.status, (status, previous) => {
+  if (['queued', 'claimed', 'running'].includes(previous) && !active.value && nearBottom.value)
+    void nextTick(() => { if (scroll.value) scroll.value.scrollTop = 0 })
+})
 function onScroll() {
   const el = scroll.value
   if (el) nearBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 100
@@ -113,6 +120,7 @@ const time = (s: string) => new Date(s).toLocaleString('zh-CN', { hour12: false 
 <template>
   <div class="session-conversation">
     <div ref="scroll" class="message-scroll" @scroll="onScroll">
+      <AiSessionResult :run="run" @continue="focusComposer" @new-session="emit('newSession')" />
       <details class="initial-request">
         <summary>初始任务要求</summary>
         <div
@@ -163,13 +171,7 @@ const time = (s: string) => new Date(s).toLocaleString('zh-CN', { hour12: false 
             <p>{{ event.content }}</p>
           </li>
         </ol>
-        <details v-if="run.resultSummary">
-          <summary>本轮最终结果</summary>
-          <pre>{{ run.resultSummary }}</pre>
-        </details>
-        <a v-if="run.reportUrl" :href="run.reportUrl" target="_blank" rel="noopener noreferrer"
-          >打开验收报告 ↗</a
-        >
+
       </details>
       <p v-if="active" class="live-status" role="status">
         <i class="ri-loader-4-line"></i> {{ run.latestProgress || 'AI 正在执行' }}
@@ -181,6 +183,7 @@ const time = (s: string) => new Date(s).toLocaleString('zh-CN', { hour12: false 
       </div>
       <template v-else>
         <textarea
+          ref="composerInput"
           :value="draft"
           :readonly="sending"
           :disabled="run.continuationPending"
