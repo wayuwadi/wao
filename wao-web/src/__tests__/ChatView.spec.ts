@@ -485,16 +485,178 @@ describe('ChatView', () => {
   it('图片加载只在跟随最新消息时补齐位置，阅读历史时保持位置', async () => {
     const wrapper = await mountView()
     const stream = wrapper.get<HTMLElement>('.message-stream').element
-    Object.defineProperty(stream, 'scrollHeight', {value: 2000, configurable: true})
+    Object.defineProperty(stream, 'scrollHeight', { value: 2000, configurable: true })
     await wrapper.get('.message-stream').trigger('load')
     await flushPromises()
     expect(stream.scrollTop).toBe(2000)
     stream.scrollTop = 600
     await wrapper.get('.message-stream').trigger('scroll')
-    Object.defineProperty(stream, 'scrollHeight', {value: 2500, configurable: true})
+    Object.defineProperty(stream, 'scrollHeight', { value: 2500, configurable: true })
     await wrapper.get('.message-stream').trigger('load')
     await flushPromises()
     expect(stream.scrollTop).toBe(600)
   })
 
+  it('响应丢失后重新挂载仍使用原请求标识确认发送', async () => {
+    vi.mocked(sendSharedChatMessage).mockRejectedValueOnce(new Error('响应丢失'))
+    const first = await mountView()
+    await first.get('textarea').setValue('刷新后不能重复发送')
+    await first.get('form').trigger('submit')
+    await flushPromises()
+    const attempt = vi.mocked(sendSharedChatMessage).mock.calls[0]![0]
+    first.unmount()
+    wrappers = wrappers.filter((w) => w !== first)
+    const second = await mountView()
+    await second.get('form').trigger('submit')
+    await flushPromises()
+    expect(vi.mocked(sendSharedChatMessage).mock.calls[1]![0]).toEqual(attempt)
+  })
+
+  it('未确认消息重试保持原文，新输入等待下一次发送', async () => {
+    vi.mocked(sendSharedChatMessage).mockRejectedValueOnce(new Error('响应丢失'))
+    const wrapper = await mountView()
+    await wrapper.get('textarea').setValue('第一条')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const attempt = vi.mocked(sendSharedChatMessage).mock.calls[0]![0]
+    await wrapper.get('textarea').setValue('第二条')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(vi.mocked(sendSharedChatMessage).mock.calls[1]![0]).toEqual(attempt)
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('第二条')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(vi.mocked(sendSharedChatMessage).mock.calls[2]![0].content).toBe('第二条')
+  })
+
+  it('本机存储失败阻止发送并提供恢复入口', async () => {
+    const wrapper = await mountView()
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError')
+    })
+    try {
+      await wrapper.get('textarea').setValue('必须保留的输入')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(sendSharedChatMessage).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain('草稿保存失败')
+    } finally {
+      storage.mockRestore()
+    }
+    await wrapper.get('[data-testid="retry-chat-storage"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(sendSharedChatMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('服务端确认后本机清理失败，恢复存储后仍以原标识确认且只清理原文', async () => {
+    let finish!: (value: SharedChatMessage) => void
+    vi.mocked(sendSharedChatMessage).mockReturnValueOnce(
+      new Promise((r) => {
+        finish = r
+      }),
+    )
+    const wrapper = await mountView()
+    await wrapper.get('textarea').setValue('落库后不能重复')
+    await wrapper.get('form').trigger('submit')
+    const attempt = vi.mocked(sendSharedChatMessage).mock.calls[0]![0]
+    const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    try {
+      finish(message)
+      await flushPromises()
+      expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('落库后不能重复')
+      expect(wrapper.text()).toContain('草稿保存失败')
+    } finally {
+      remove.mockRestore()
+    }
+    await wrapper.get('[data-testid="retry-chat-storage"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(vi.mocked(sendSharedChatMessage).mock.calls[1]![0]).toEqual(attempt)
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('')
+  })
+
+  it('损坏的持久化请求不被静默覆盖或发送', async () => {
+    const raw = '{"content":"重要草稿","pending":{"token":"bad"}}'
+    localStorage.setItem('wao-shared-chat-draft-v2:unknown', raw)
+    const wrapper = await mountView()
+    await wrapper.get('textarea').setValue('新输入')
+    await wrapper.get('form').trigger('submit')
+    expect(sendSharedChatMessage).not.toHaveBeenCalled()
+    expect(localStorage.getItem('wao-shared-chat-draft-v2:unknown')).toBe(raw)
+    expect(wrapper.text()).toContain('草稿读取失败')
+  })
+
+  it('引用对象离开最近消息列表后刷新仍保留引用和发送请求', async () => {
+    const first = await mountView()
+    await first.get('.message-actions > button').trigger('click')
+    await first.get('textarea').setValue('引用历史消息')
+    first.unmount()
+    wrappers = wrappers.filter((w) => w !== first)
+    vi.mocked(fetchSharedChatMessages).mockResolvedValue([])
+    const second = await mountView()
+    expect(second.get('.replying').text()).toContain(message.author.name)
+    await second.get('form').trigger('submit')
+    await flushPromises()
+    expect(sendSharedChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ replyToId: message.id }),
+    )
+  })
+  it('明确拒绝的请求可以修改后重发，不会永久卡在原请求', async () => {
+    vi.mocked(sendSharedChatMessage).mockRejectedValueOnce(
+      Object.assign(new Error('引用消息不存在'), { status: 400 }),
+    )
+    const wrapper = await mountView()
+    await wrapper.get('textarea').setValue('需要修改')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    await wrapper.get('textarea').setValue('修正后的消息')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(vi.mocked(sendSharedChatMessage).mock.calls[1]![0].content).toBe('修正后的消息')
+    expect(vi.mocked(sendSharedChatMessage).mock.calls[1]![0].clientToken).not.toBe(
+      vi.mocked(sendSharedChatMessage).mock.calls[0]![0].clientToken,
+    )
+  })
+
+  it('其他窗口编辑草稿后，未确认请求仍可在重新打开时恢复', async () => {
+    vi.mocked(sendSharedChatMessage).mockRejectedValueOnce(new Error('响应丢失'))
+    const first = await mountView()
+    await first.get('textarea').setValue('窗口 A 的待确认消息')
+    await first.get('form').trigger('submit')
+    await flushPromises()
+    const attempt = vi.mocked(sendSharedChatMessage).mock.calls[0]![0]
+    first.unmount()
+    wrappers = wrappers.filter((w) => w !== first)
+    localStorage.setItem(
+      'wao-shared-chat-draft-v2:unknown',
+      JSON.stringify({ content: '窗口 B 的新草稿' }),
+    )
+    const second = await mountView()
+    expect(second.text()).toContain('待确认：窗口 A 的待确认消息')
+    await second.get('form').trigger('submit')
+    await flushPromises()
+    expect(vi.mocked(sendSharedChatMessage).mock.calls[1]![0]).toEqual(attempt)
+    expect(second.get<HTMLTextAreaElement>('textarea').element.value).toBe('窗口 B 的新草稿')
+  })
+
+  it('确认本窗口消息时不删除另一窗口刚保存的草稿', async () => {
+    let finish!: (value: SharedChatMessage) => void
+    vi.mocked(sendSharedChatMessage).mockReturnValueOnce(
+      new Promise((r) => {
+        finish = r
+      }),
+    )
+    const wrapper = await mountView()
+    await wrapper.get('textarea').setValue('窗口 A')
+    await wrapper.get('form').trigger('submit')
+    const other = JSON.stringify({ content: '窗口 B 未发送输入' })
+    localStorage.setItem('wao-shared-chat-draft-v2:unknown', other)
+    finish(message)
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('')
+    expect(localStorage.getItem('wao-shared-chat-draft-v2:unknown')).toBe(other)
+  })
 })
