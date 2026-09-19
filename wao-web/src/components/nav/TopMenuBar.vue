@@ -177,6 +177,7 @@ function revealDragEdge(event: DragEvent) {
           'drag-over': !!dragId && dragOverId === id,
         }"
         :title="nav.itemMeta(id)?.label"
+        :aria-label="nav.itemMeta(id)?.label"
         :aria-current="activeItem === id ? 'page' : undefined"
         :draggable="!isMobile && nav.canMoveMenus"
         @click="go(id)"
@@ -199,6 +200,7 @@ function revealDragEdge(event: DragEvent) {
           type="button"
           class="top-menu-item personal-shortcut"
           :title="shortcutLabel(item)"
+          :aria-label="shortcutLabel(item)"
           :data-desktop-menu-index="nav.topItems.length + index"
           :class="{ active: route.fullPath === item.path }"
           :aria-current="route.fullPath === item.path ? 'page' : undefined"
