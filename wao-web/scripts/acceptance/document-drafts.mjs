@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { resolve, relative, isAbsolute, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -15,6 +15,15 @@ const REQUIRED_STEPS = [
   '冲突副本和原服务器版本分别持久化', '仅将本轮验收文档移入回收站并刷新核实',
 ]
 const repository = realpathSync(resolve(import.meta.dirname, '../../..'))
+
+function writeArtifact(path, content) {
+  // 原子替换避免中断时留下半份 JSON，也不会沿已有文件符号链接把私有证据写入其他位置。
+  const temporary = `${path}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, content, { mode: 0o600, flag: 'wx' })
+    renameSync(temporary, path)
+  } finally { rmSync(temporary, { force: true }) }
+}
 
 function outsideRepository(path) {
   const absolute = resolve(path)
@@ -79,7 +88,7 @@ export class DocumentDraftRegression {
     return run
   }
 
-  saveReport() { writeFileSync(resolve(this.outputDir, 'report.json'), JSON.stringify(this.report, null, 2), { mode: 0o600 }) }
+  saveReport() { writeArtifact(resolve(this.outputDir, 'report.json'), JSON.stringify(this.report, null, 2)) }
   body(tab = this.tab) { return tab.playwright.locator('.tiptap[contenteditable="true"]') }
   titleInput(tab = this.tab) { return tab.playwright.getByPlaceholder('未命名文档', { exact: true }) }
   async titleValue() {
@@ -124,7 +133,7 @@ export class DocumentDraftRegression {
   async record(name, tab = this.tab) {
     const index = String(this.report.steps.length + 1).padStart(2, '0')
     const screenshot = `${index}.png`
-    writeFileSync(resolve(this.outputDir, screenshot), await tab.screenshot({ fullPage: false }), { mode: 0o600 })
+    writeArtifact(resolve(this.outputDir, screenshot), await tab.screenshot({ fullPage: false }))
     this.report.steps.push({ name, status: 'passed', at: new Date().toISOString(), screenshot })
     this.saveReport()
     return { step: name, status: 'passed', report: resolve(this.outputDir, 'report.json') }
@@ -323,7 +332,7 @@ export class DocumentDraftRegression {
     if (error) this.report.error = String(error.message ?? error)
     else if (success) delete this.report.error
     if (!success) {
-      try { writeFileSync(resolve(this.outputDir, 'failure.png'), await this.tab.screenshot({ fullPage: false }), { mode: 0o600 }) } catch { /* 页面失联时仍保留已有步骤和报告 */ }
+      try { writeArtifact(resolve(this.outputDir, 'failure.png'), await this.tab.screenshot({ fullPage: false })) } catch { /* 页面失联时仍保留已有步骤和报告 */ }
     }
     this.saveReport()
     return { status: this.report.status, steps: this.report.steps.length, report: resolve(this.outputDir, 'report.json') }

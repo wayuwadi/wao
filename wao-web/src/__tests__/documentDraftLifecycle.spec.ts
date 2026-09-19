@@ -9,7 +9,7 @@ import { readDocumentDraft } from '@/utils/documentDrafts'
 import type { Doc } from '@/types'
 
 vi.mock('@/api/board', async (original) => ({
-  ...await original<typeof import('@/api/board')>(), apiPatchDoc: vi.fn(),
+  ...await original<typeof import('@/api/board')>(), apiPatchDoc: vi.fn<typeof apiPatchDoc>(),
 }))
 
 const id = 'draft-lifecycle-document'
