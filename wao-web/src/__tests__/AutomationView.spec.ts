@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import AutomationView from '@/views/AutomationView.vue'
 import { useDataStore } from '@/stores/data'
@@ -120,5 +120,48 @@ it('启用状态不表示运行成功，并可进入已提交任务的真实执�
   expect(wrapper.get('.grid-aoruns .mini').text()).toBe('已提交执行')
   expect(wrapper.get('a.result-link').attributes('href')).toBe('/ai-sessions?session=run-123')
   expect(wrapper.text()).toContain('触发记录：成功 · 已创建 AI Run run-123')
+  wrapper.unmount()
+})
+
+it('等待期间阻止同一任务重复操作并展示执行器真实失败', async () => {
+  const wrapper = mountView([job(1)])
+  const data = useDataStore()
+  let finish!: () => void
+  const run = vi.spyOn(data, 'runJob').mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = () => {
+          data.autos[0]!.runs[0]!.result = '失败 · 无可用执行电脑'
+          resolve()
+        }
+      }),
+  )
+  await wrapper.get('[title="手动运行"]').trigger('click')
+  expect(wrapper.text()).toContain('正在运行，请稍候')
+  expect(wrapper.get('[title="暂停"]').attributes('disabled')).toBeDefined()
+  await wrapper.get('[title="手动运行"]').trigger('click')
+  expect(run).toHaveBeenCalledTimes(1)
+  finish()
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toContain('无可用执行电脑')
+  expect(wrapper.get('[title="手动运行"]').attributes('disabled')).toBeUndefined()
+  wrapper.unmount()
+})
+
+it('请求失败保留核对入口，刷新记录不会再次运行', async () => {
+  const wrapper = mountView([job(1)])
+  const data = useDataStore()
+  const run = vi.spyOn(data, 'runJob').mockRejectedValue(new Error('连接中断'))
+  const refresh = vi.spyOn(data, 'refreshAutomation').mockResolvedValue(true)
+  await wrapper.get('[title="手动运行"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toContain('避免重复执行')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === '刷新并查看记录')!
+    .trigger('click')
+  expect(refresh).toHaveBeenCalledOnce()
+  expect(run).toHaveBeenCalledOnce()
+  expect(wrapper.text()).toContain('任务详情')
   wrapper.unmount()
 })
