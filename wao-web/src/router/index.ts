@@ -467,13 +467,18 @@ const router = createRouter({
         },
       ],
     },
-    { path: '/:pathMatch(.*)*', redirect: '/' },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('@/views/NotFoundView.vue'),
+      meta: { public: true },
+    },
   ],
 })
 
 router.beforeEach(async (to) => {
   // 安装包分发无需会话；服务端临时不可用也不应阻塞公开下载页。
-  if (to.name === 'client-download' || to.name === 'connection-recovery') return true
+  if (to.name === 'client-download' || to.name === 'connection-recovery' || to.name === 'not-found') return true
   const session = useSessionStore()
   await session.initialize()
   if (session.connectionError && !to.meta.public) {
