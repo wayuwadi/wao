@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -31,6 +31,8 @@ describe('新建任务的落库反馈', () => {
   let data: ReturnType<typeof useDataStore>
 
   beforeEach(() => {
+    // 隔离各用例中 store 的延迟保存，避免旧任务写入下一条用例的 API mock。
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     localStorage.clear()
     useToastHost().items.splice(0)
     setActivePinia(createPinia())
@@ -38,6 +40,11 @@ describe('新建任务的落库反馈', () => {
     seedDataStore(data)
     data.apiLive = true
     putTask.mockReset()
+  })
+
+  afterEach(() => {
+    vi.clearAllTimers()
+    vi.useRealTimers()
   })
 
   it('新建响应迟到时继续串行保存最新输入，不回灌旧正文', async () => {
