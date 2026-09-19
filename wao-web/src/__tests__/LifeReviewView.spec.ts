@@ -1,6 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import LifeReviewView from '@/views/LifeReviewView.vue'
+import { readReviewActionDraft } from '@/utils/reviewActionDraft'
+const navigation = vi.hoisted(() => ({ push: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('vue-router', () => ({ useRouter: () => navigation }))
+vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'review-member' }) }))
 import { fetchAssistantStatus } from '@/api/assistant'
 import {
   fetchLifeReview,
@@ -43,11 +47,34 @@ const generated: LifeReview = {
 
 describe('LifeReviewView', () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
+    localStorage.clear()
     vi.clearAllMocks()
     vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })
     vi.mocked(fetchLifeReview).mockResolvedValue(overview)
     vi.mocked(fetchLifeReviewHistory).mockResolvedValue([])
     vi.mocked(generateLifeReview).mockResolvedValue(generated)
+  })
+
+  it('选定参考只保存本人草稿并导航，不自动创建计划或再次生成', async () => {
+    vi.mocked(fetchLifeReview).mockResolvedValue(generated)
+    const wrapper = mount(LifeReviewView); await flushPromises()
+    await wrapper.get('.action-draft-button').trigger('click'); await flushPromises()
+    const target = navigation.push.mock.calls[0]![0]
+    expect(target.path).toBe('/action-plans')
+    expect(readReviewActionDraft('review-member', target.query.reviewDraft)?.source.text).toBe('哪项改进最值得继续？')
+    expect(readReviewActionDraft('other-member', target.query.reviewDraft)).toBeNull()
+    expect(generateLifeReview).not.toHaveBeenCalled()
+  })
+
+  it('无法保存参考时留在回顾页，不丢失原文', async () => {
+    vi.mocked(fetchLifeReview).mockResolvedValue(generated)
+    const wrapper = mount(LifeReviewView); await flushPromises()
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    await wrapper.get('.action-draft-button').trigger('click'); await flushPromises()
+    expect(navigation.push).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('回顾原文仍保留在这里')
+    expect(wrapper.text()).toContain('哪项改进最值得继续？')
   })
 
   it('先展示真实资料覆盖，再由用户生成可追溯回顾', async () => {
