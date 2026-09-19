@@ -3,18 +3,17 @@
     <section class="connections-hero">
       <div class="hero-icon" aria-hidden="true"><i class="ri-apps-2-line"></i></div>
       <div>
-        <span class="eyebrow">APPLICATION SKILLS</span>
+        <span class="eyebrow">规划中 · 尚未开放授权</span>
         <h1>应用 Skill 接入</h1>
-        <p>这里将集中管理常用应用向 WAO 提供的 Skill 能力、账号授权和连接状态。</p>
+        <p>这里介绍外部应用接入规划。目前还不能连接应用账号，无需进行配置。</p>
       </div>
     </section>
 
     <section class="connection-card" aria-labelledby="connection-empty-title">
       <div class="empty-icon" aria-hidden="true"><i class="ri-link-unlink-m"></i></div>
-      <h2 id="connection-empty-title">还没有已接入的应用 Skill</h2>
+      <h2 id="connection-empty-title">外部应用接入尚未开放</h2>
       <p>
-        微信读书、得到等应用需要先具备可核验的官方能力接口和安全授权方式，才会出现在这里。 WAO
-        不会用演示数据或明文 API Key 假装连接成功。
+        微信读书、得到等应用仍在规划中，尚无可用的授权入口。如果你想查找可复用的 AI 工作流包，可以前往下方 Skill 市场。
       </p>
     </section>
 

@@ -39,7 +39,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   },
   {
     id: 'changelog',
-    description: '预览产品更新、版本时间线与订阅体验，当前内容为示例。',
+    description: '示例预览：查看更新日志样式；真实交付请打开「更新日记」。',
     keywords: ['Changelog', '更新日志', '版本', '订阅'],
   },
   {
@@ -92,7 +92,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   },
   {
     id: 'skill-connections',
-    description: '查看具备真实接口和授权条件的外部应用接入。',
+    description: '规划中：外部应用授权尚未开放，当前只能查看接入规划。',
     keywords: ['应用', '连接'],
   },
   { id: 'drawings', description: '创建和整理草图。', keywords: ['画图'] },
