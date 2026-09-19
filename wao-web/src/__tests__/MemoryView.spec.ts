@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MemoryView from '@/views/MemoryView.vue'
-import { createMemory, fetchMemories, reviseMemory, type MemoryDocument } from '@/api/unifiedMemories'
+import { createMemory, fetchMemories, fetchMemoryRevisions, reviseMemory, type MemoryDocument, type MemoryRevision } from '@/api/unifiedMemories'
 
 const route = { query: {} as Record<string, string> }
 const replace = vi.fn()
@@ -109,6 +109,52 @@ describe('MemoryView', () => {
       scopeType: 'personal', scopeId: 'wg', category: 'experience', title: '未完成的经历', content: '稍后继续写',
     }))
     expect(localStorage.getItem('wao:unified-memory-draft:personal:wg:new')).toBeNull()
+  })
+
+  it('另一条记忆历史读取失败时不保留旧内容，支持原位重试', async () => {
+    const first = memory()
+    const second = memory({ id: 'mem2', revision: { ...first.revision, id: 'rev2', title: '第二条记忆' } })
+    vi.mocked(fetchMemories).mockResolvedValue([first, second])
+    vi.mocked(fetchMemoryRevisions).mockResolvedValueOnce([first.revision])
+      .mockRejectedValueOnce(new Error('版本服务暂不可用')).mockResolvedValueOnce([second.revision])
+    const wrapper = mount(MemoryView); await flushPromises()
+    await wrapper.findAll('button[title="版本历史"]')[0]!.trigger('click'); await flushPromises()
+    expect(wrapper.get('.versions').text()).toContain('已发布')
+    await wrapper.get('button[aria-label="关闭版本历史"]').trigger('click')
+    await wrapper.findAll('button[title="版本历史"]')[1]!.trigger('click'); await flushPromises()
+    expect(wrapper.get('.versions').text()).toContain('版本服务暂不可用')
+    expect(wrapper.find('.versions .timeline').exists()).toBe(false)
+    expect(wrapper.get('.versions').text()).not.toContain(first.revision.content)
+    await wrapper.get('.version-state button').trigger('click'); await flushPromises()
+    expect(fetchMemoryRevisions).toHaveBeenLastCalledWith('mem2')
+    expect(wrapper.get('.versions').text()).toContain('第二条记忆')
+    expect(wrapper.find('.version-state.error').exists()).toBe(false)
+  })
+
+  it('关闭再打开另一条记忆时，迟到的旧响应不能覆盖当前历史', async () => {
+    let resolveOld!: (value: MemoryRevision[]) => void
+    const first = memory()
+    const second = memory({ id: 'mem2', revision: { ...first.revision, id: 'rev2', title: '第二条', content: '当前记录正文' } })
+    vi.mocked(fetchMemories).mockResolvedValue([first, second])
+    vi.mocked(fetchMemoryRevisions).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+      .mockResolvedValueOnce([second.revision])
+    const wrapper = mount(MemoryView); await flushPromises()
+    await wrapper.findAll('button[title="版本历史"]')[0]!.trigger('click')
+    expect(wrapper.get('.version-state').text()).toContain('正在读取')
+    await wrapper.get('button[aria-label="关闭版本历史"]').trigger('click')
+    await wrapper.findAll('button[title="版本历史"]')[1]!.trigger('click'); await flushPromises()
+    resolveOld([first.revision]); await flushPromises()
+    expect(wrapper.get('.versions').text()).toContain('当前记录正文')
+    expect(wrapper.get('.versions').text()).not.toContain(first.revision.content)
+  })
+
+  it('历史成功返回空数组时展示空状态', async () => {
+    vi.mocked(fetchMemories).mockResolvedValue([memory()])
+    vi.mocked(fetchMemoryRevisions).mockResolvedValueOnce([])
+    const wrapper = mount(MemoryView); await flushPromises()
+    await wrapper.get('button[title="版本历史"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('.version-state').text()).toBe('暂无版本记录')
+    expect(wrapper.find('.timeline').exists()).toBe(false)
   })
 
   it('读取失败时保留重试入口', async () => {
