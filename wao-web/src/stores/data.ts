@@ -524,6 +524,8 @@ export const useDataStore = defineStore('data', () => {
   const docSavePromises: Record<string, Promise<boolean> | undefined> = {}
   /** 有未写透编辑的文档 id —— 协同拉取时不能用服务端版本盖掉这些文档。 */
   const docDirty = reactive<Record<string, boolean>>({})
+  const docEditSequences: Record<string, number> = {}
+  const docRestoreSequences: Record<string, number> = {}
   /** 保存最新本机草稿及基础版本；编辑和已确认版本推进使用同一持久化边界。 */
   async function persistLocalDocDraft(id: string, next: DocEdit, base: Doc): Promise<void> {
     try {
@@ -550,6 +552,7 @@ export const useDataStore = defineStore('data', () => {
    * 只在停顿处发一次请求，停手不到一秒内容就已经在服务端了。
    */
   function setDocEdit(id: string, patch: DocEdit) {
+    docEditSequences[id] = (docEditSequences[id] ?? 0) + 1
     const base = docs[id] ?? emptyDoc(id)
     const previous = docEdits.value[id]
     const content = patch.content ?? (patch.text != null
@@ -628,6 +631,8 @@ export const useDataStore = defineStore('data', () => {
 
   /** 从 IndexedDB 找回浏览器草稿；版本落后时先进入冲突处理，不自动覆盖服务器。 */
   async function restoreDocumentDraft(id: string): Promise<boolean> {
+    const editSequence = docEditSequences[id] ?? 0
+    const restoreSequence = docRestoreSequences[id] = (docRestoreSequences[id] ?? 0) + 1
     const memberId = useSessionStore().userId || 'anonymous'
     const legacy = docEdits.value[id]
     const base = docs[id] ?? emptyDoc(id)
@@ -643,7 +648,10 @@ export const useDataStore = defineStore('data', () => {
     } else {
       draft = await readDocumentDraft(memberId, id).catch(() => null)
     }
-    if (!draft) return false
+    if (!draft || memberId !== (useSessionStore().userId || 'anonymous')
+      || editSequence !== (docEditSequences[id] ?? 0)
+      || restoreSequence !== docRestoreSequences[id]
+      || base !== docs[id]) return false
     const sameAsServer = JSON.stringify(draft.content) === JSON.stringify(resolvedRichContent(base))
       && draft.title === base.title
     if (sameAsServer) {
