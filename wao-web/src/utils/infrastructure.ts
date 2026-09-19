@@ -1,5 +1,18 @@
 import type { InfraNode, InfraService } from '@/api/infrastructure'
 
+/** 解释采集到的状态，不把进程运行等同于应用可用。 */
+export function infraServiceState(service: InfraService): string {
+  const labels: Record<string, string> = {
+    created: '已创建，尚未启动', running: '运行中', paused: '已暂停',
+    restarting: '正在重启', removing: '正在移除', exited: '已退出', dead: '无法运行',
+    active: '已激活', inactive: '未运行', activating: '正在启动',
+    deactivating: '正在停止', failed: '失败状态', reloading: '正在重新加载',
+  }
+  const label = labels[service.state.toLowerCase()] ?? '未识别状态'
+  return infraRunning(service) && service.status.toLowerCase().includes('unhealthy')
+    ? `${label} · 健康检查异常` : label
+}
+
 export function infraNeedsReview(service: InfraService): boolean {
   return !infraRunning(service) || service.status.toLowerCase().includes('unhealthy')
 }
