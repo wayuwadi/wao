@@ -1,151 +1,204 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   fetchTextPolishWorkspace,
   runTextPolish,
   saveTextPolishPrompt,
   type TextPolishRecord,
 } from '@/api/textPolish'
+import { useSessionStore } from '@/stores/session'
 
-const PROMPT_DRAFT_KEY = 'wao-text-polish-prompt-draft-v1'
-const ORIGINAL_DRAFT_KEY = 'wao-text-polish-original-draft-v1'
-
+const session = useSessionStore()
+const owner = ref('')
+let generation = 0
 const loading = ref(true)
 const loadError = ref('')
 const prompt = ref('')
 const savedPrompt = ref('')
 const promptState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const promptSaving = ref(false)
 const promptError = ref('')
-const originalText = ref(readDraft(ORIGINAL_DRAFT_KEY))
+const originalText = ref('')
 const running = ref(false)
 const runError = ref('')
 const result = ref<TextPolishRecord | null>(null)
 const records = ref<TextPolishRecord[]>([])
 const copyState = ref<'idle' | 'copied' | 'error'>('idle')
 const initialized = ref(false)
-
+const restoredDraft = ref(false)
+const draftErrors = ref({ prompt: false, original: false })
+const draftError = computed(() => draftErrors.value.prompt || draftErrors.value.original)
 const promptDirty = computed(() => prompt.value.trim() !== savedPrompt.value)
-const canRun = computed(
-  () => originalText.value.trim().length > 0 && prompt.value.trim().length > 0 && !running.value,
-)
-const runLabel = computed(() => {
-  if (running.value) return '正在润色…'
-  return promptDirty.value ? '保存提示词并润色' : '开始润色'
-})
+const canRun = computed(() => initialized.value && originalText.value.trim().length > 0
+  && prompt.value.trim().length > 0 && !running.value && !promptSaving.value)
+const runLabel = computed(() => running.value ? '正在润色…' : promptDirty.value ? '保存提示词并润色' : '开始润色')
 
-function readDraft(key: string) {
-  try {
-    return localStorage.getItem(key) || ''
-  } catch {
-    return ''
-  }
+type DraftKind = 'prompt' | 'original'
+function draftKey(kind: DraftKind) {
+  return `wao-text-polish-${kind}-draft-v2:${encodeURIComponent(owner.value)}`
 }
-
-function writeDraft(key: string, value: string) {
-  try {
-    if (value) localStorage.setItem(key, value)
-    else localStorage.removeItem(key)
-  } catch {
-    // 浏览器禁用存储时继续使用当前页面内存，不阻塞核心功能。
-  }
+function readDraft(kind: DraftKind): string | null {
+  if (!owner.value) return null
+  try { return localStorage.getItem(draftKey(kind)) }
+  catch { draftErrors.value[kind] = true; return null }
 }
-
+function writeDraft(kind: DraftKind, value: string | null) {
+  if (!owner.value || owner.value !== session.userId) return
+  try {
+    if (value === null) localStorage.removeItem(draftKey(kind))
+    else localStorage.setItem(draftKey(kind), value)
+    draftErrors.value[kind] = false
+  } catch { draftErrors.value[kind] = true }
+}
+function persistDrafts() {
+  if (!initialized.value) return
+  writeDraft('prompt', promptDirty.value ? prompt.value : null)
+  writeDraft('original', originalText.value || null)
+}
+function current(version: number) {
+  return version === generation && Boolean(owner.value) && owner.value === session.userId
+}
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
 async function load() {
+  const version = ++generation
   loading.value = true
   loadError.value = ''
+  if (!owner.value) {
+    loading.value = false
+    loadError.value = '请先登录后使用润色'
+    return
+  }
   try {
     const workspace = await fetchTextPolishWorkspace()
-    const serverPrompt = workspace.prompt.trim()
-    savedPrompt.value = serverPrompt
-    const localPrompt = readDraft(PROMPT_DRAFT_KEY)
-    prompt.value = localPrompt && localPrompt.trim() !== serverPrompt ? localPrompt : serverPrompt
+    if (!current(version)) return
+    const localPrompt = readDraft('prompt')
+    const localOriginal = readDraft('original')
+    savedPrompt.value = workspace.prompt.trim()
+    prompt.value = localPrompt ?? savedPrompt.value
+    originalText.value = localOriginal ?? ''
+    restoredDraft.value = localPrompt !== null || localOriginal !== null
     records.value = workspace.records
     initialized.value = true
   } catch (error) {
-    loadError.value = errorMessage(error, '润色工作台加载失败')
+    if (current(version)) loadError.value = errorMessage(error, '润色工作台加载失败')
   } finally {
-    loading.value = false
+    if (current(version)) loading.value = false
   }
 }
 
 async function savePrompt() {
-  const value = prompt.value.trim()
+  if (!initialized.value || promptSaving.value) return false
+  const version = generation
+  const input = prompt.value
+  const value = input.trim()
   if (!value) {
     promptState.value = 'error'
     promptError.value = '润色提示词不能为空'
     return false
   }
+  promptSaving.value = true
   promptState.value = 'saving'
   promptError.value = ''
   try {
-    savedPrompt.value = (await saveTextPolishPrompt(value)).trim()
-    prompt.value = savedPrompt.value
-    promptState.value = 'saved'
-    writeDraft(PROMPT_DRAFT_KEY, '')
+    const saved = (await saveTextPolishPrompt(value)).trim()
+    if (!current(version)) return false
+    savedPrompt.value = saved
+    // 只规范化这次实际提交的文本，保存期间的新编辑保留为未保存草稿。
+    if (prompt.value === input) prompt.value = saved
+    writeDraft('prompt', promptDirty.value ? prompt.value : null)
+    promptState.value = promptDirty.value ? 'idle' : 'saved'
     return true
   } catch (error) {
-    promptState.value = 'error'
-    promptError.value = errorMessage(error, '提示词保存失败，请重试')
+    if (current(version)) {
+      promptState.value = 'error'
+      promptError.value = errorMessage(error, '提示词保存失败，请重试')
+    }
     return false
+  } finally {
+    if (current(version)) promptSaving.value = false
   }
 }
 
 async function run() {
   if (!canRun.value) return
+  const version = generation
+  const original = originalText.value.trim()
+  running.value = true
   runError.value = ''
   copyState.value = 'idle'
-  if (promptDirty.value && !(await savePrompt())) return
-  running.value = true
   try {
-    const record = await runTextPolish(originalText.value.trim())
+    if (promptDirty.value && !(await savePrompt())) return
+    if (!current(version)) return
+    if (promptDirty.value) {
+      runError.value = '提示词在保存期间发生了修改，请确认后重新润色；当前输入已保留。'
+      return
+    }
+    const record = await runTextPolish(original)
+    if (!current(version)) return
     result.value = record
     records.value = [record, ...records.value.filter((item) => item.id !== record.id)]
   } catch (error) {
-    runError.value = errorMessage(error, '润色失败，请稍后重试')
+    if (current(version)) runError.value = errorMessage(error, '润色失败，请稍后重试')
   } finally {
-    running.value = false
+    if (current(version)) running.value = false
   }
 }
 
 async function copyResult() {
   if (!result.value) return
+  const version = generation
   try {
     await navigator.clipboard.writeText(result.value.polishedText)
-    copyState.value = 'copied'
+    if (current(version)) copyState.value = 'copied'
   } catch {
-    copyState.value = 'error'
+    if (current(version)) copyState.value = 'error'
   }
 }
-
 function reuse(record: TextPolishRecord) {
   originalText.value = record.originalText
   result.value = record
   runError.value = ''
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
-
 function formatTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   }).format(new Date(value))
 }
 
 watch(prompt, (value) => {
   if (!initialized.value) return
+  if (!promptSaving.value) promptState.value = 'idle'
+  promptError.value = ''
+  writeDraft('prompt', value.trim() === savedPrompt.value ? null : value)
+}, { flush: 'sync' })
+watch(originalText, (value) => {
+  if (initialized.value) writeDraft('original', value || null)
+}, { flush: 'sync' })
+watch(() => session.userId, (member) => {
+  // 在读取新成员前清空可见数据；旧异步请求从此失效。
+  generation++
+  initialized.value = false
+  owner.value = member
+  prompt.value = ''
+  savedPrompt.value = ''
+  originalText.value = ''
+  result.value = null
+  records.value = []
+  promptSaving.value = false
   promptState.value = 'idle'
   promptError.value = ''
-  writeDraft(PROMPT_DRAFT_KEY, value.trim() === savedPrompt.value ? '' : value)
-})
-watch(originalText, (value) => writeDraft(ORIGINAL_DRAFT_KEY, value))
-
-onMounted(load)
+  runError.value = ''
+  running.value = false
+  copyState.value = 'idle'
+  restoredDraft.value = false
+  draftErrors.value = { prompt: false, original: false }
+  void load()
+}, { immediate: true, flush: 'sync' })
+onBeforeUnmount(() => { generation++ })
 </script>
 
 <template>
@@ -156,7 +209,7 @@ onMounted(load)
         <h1><i class="ri-magic-line"></i> 润色</h1>
         <p>把口语化长文整理成清晰、自然、可直接发送的表达，并保留每次前后对照。</p>
       </div>
-      <div class="privacy-note"><i class="ri-user-shared-line"></i> 提示词与历史仅当前成员可见</div>
+      <div class="privacy-note"><i class="ri-user-shared-line"></i> 提示词、历史与本机草稿按当前账号隔离</div>
     </header>
 
     <section v-if="loading" class="state-card">
@@ -171,6 +224,11 @@ onMounted(load)
     </section>
 
     <template v-else>
+      <div v-if="draftError" class="inline-error" role="alert">
+        <span>本机草稿保存不可用，请保持页面打开或复制原文备份。</span>
+        <button @click="persistDrafts">重试保存草稿</button>
+      </div>
+      <p v-else-if="restoredDraft" class="draft-notice" role="status">已恢复当前账号的本机草稿；原文不会跨设备同步。</p>
       <section class="prompt-card">
         <div class="section-title">
           <div>
@@ -198,7 +256,7 @@ onMounted(load)
           <span>{{ prompt.length }} / 4000</span>
           <button
             class="secondary-button"
-            :disabled="!promptDirty || promptState === 'saving'"
+            :disabled="!promptDirty || promptSaving || running"
             @click="savePrompt"
           >
             {{ promptState === 'saving' ? '正在保存…' : '保存提示词' }}
@@ -206,7 +264,7 @@ onMounted(load)
         </div>
         <div v-if="promptError" class="inline-error">
           <i class="ri-error-warning-line"></i><span>{{ promptError }}</span>
-          <button @click="savePrompt">重试</button>
+          <button :disabled="promptSaving || running" @click="savePrompt">重试</button>
         </div>
       </section>
 
@@ -302,6 +360,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.draft-notice { color: var(--wao-text-3); font-size: 12px; margin: 0 0 14px; }
 .polish-page {
   max-width: none;
   margin: 0 auto;
