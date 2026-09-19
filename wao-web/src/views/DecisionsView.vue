@@ -5,6 +5,7 @@ import {
   archiveMemory,
   createMemory,
   fetchMemories,
+  fetchMemory,
   reviseMemory,
   type MemoryDocument,
   type SaveMemoryPayload,
@@ -22,6 +23,65 @@ const editorOpen = ref(false)
 const editing = ref<MemoryDocument | null>(null)
 const saving = ref(false)
 const saveError = ref('')
+const hasConflict = ref(false)
+const conflictPanel = ref<HTMLElement | null>(null)
+const latestDecision = ref<MemoryDocument | null>(null)
+const conflictLoading = ref(false)
+const conflictError = ref('')
+let conflictSequence = 0
+const decisionFields = [
+  { key: 'title', label: '决策标题' }, { key: 'situation', label: '何时适用' },
+  { key: 'choice', label: '具体决定' }, { key: 'reason', label: '为什么' },
+] as const
+const latestFields = computed(() => latestDecision.value
+  ? { title: latestDecision.value.revision.title, ...details(latestDecision.value) } : null)
+function clearConflict() {
+  conflictSequence += 1
+  hasConflict.value = false
+  latestDecision.value = null
+  conflictLoading.value = false
+  conflictError.value = ''
+}
+async function loadConflict() {
+  const target = editing.value
+  if (!target || !hasConflict.value) return
+  const isCurrent = requestContext()
+  const sequence = ++conflictSequence
+  conflictLoading.value = true
+  conflictError.value = ''
+  latestDecision.value = null
+  try {
+    const latest = await fetchMemory(target.id)
+    if (!isCurrent() || sequence !== conflictSequence || editing.value?.id !== target.id) return
+    if (latest.id !== target.id || latest.scopeType !== 'personal' || latest.scopeId !== session.userId || latest.category !== 'decision' || !latest.currentPublishedRevisionId) {
+      throw new Error('最新记录无法用于比较，请关闭编辑并重新加载核对；当前输入仍保留。')
+    }
+    latestDecision.value = latest
+  } catch (error) {
+    if (!isCurrent() || sequence !== conflictSequence) return
+    conflictError.value = error instanceof Error ? error.message : '最新版本读取失败，请重试'
+  } finally {
+    if (isCurrent() && sequence === conflictSequence) conflictLoading.value = false
+  }
+}
+function adoptLatestField(key: typeof decisionFields[number]['key']) {
+  if (!latestFields.value || conflictLoading.value || latestDecision.value?.state !== 'active') return
+  form[key] = latestFields.value[key]
+}
+function confirmComparison() {
+  const latest = latestDecision.value
+  if (!latest || conflictLoading.value || latest.state !== 'active') return
+  editing.value = latest
+  clearConflict()
+  saveError.value = ''
+  persistDraft()
+  savedNotice.value = '已完成版本核对，当前内容尚未提交。请检查后点击“保存新版本”；若再次发生更新，系统会重新提示核对。'
+}
+function isVersionConflict(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const value = error as { status?: number; response?: { status?: number } }
+  return value.status === 409 || value.response?.status === 409
+}
 const restored = ref(false)
 const draftError = ref('')
 const draftSaved = ref(false)
@@ -124,6 +184,7 @@ watch(query, () => {
 }, { flush: 'sync' })
 
 function resetForm() {
+  clearConflict()
   Object.assign(form, { title: '', situation: '', choice: '', reason: '' })
   saveError.value = ''
   restored.value = false
@@ -173,6 +234,7 @@ function openEdit(item: MemoryDocument) {
 function closeEditor() {
   if (saving.value) return
   if (draftError.value && !window.confirm('本机草稿可能未保存，请先复制备份。仍要关闭吗？')) return
+  clearConflict()
   editorOpen.value = false
 }
 
@@ -180,7 +242,7 @@ watch(form, persistDraft, { deep: true, flush: 'sync' })
 
 async function save() {
   const isCurrent = requestContext()
-  if (saving.value || !isCurrent()) return
+  if (saving.value || hasConflict.value || !isCurrent()) return
   if (!form.title.trim() || !form.choice.trim()) {
     saveError.value = '请填写决策标题和具体决定'
     return
@@ -224,7 +286,13 @@ async function save() {
     await load()
   } catch (error) {
     if (!isCurrent()) return
-    saveError.value = error instanceof Error ? error.message : '保存失败，请重试'
+    if (target && isVersionConflict(error)) {
+      hasConflict.value = true
+      savedNotice.value = ''
+      saveError.value = ''
+      void loadConflict()
+      void nextTick(() => conflictPanel.value?.focus())
+    } else saveError.value = error instanceof Error ? error.message : '保存失败，请重试'
   } finally {
     if (isCurrent()) saving.value = false
   }
@@ -339,18 +407,51 @@ onMounted(load)
         <div v-if="savedNotice" class="draft" role="status">{{ savedNotice }}</div>
         <div v-if="draftError" class="draft" role="alert">{{ draftError }}<button type="button" @click="persistDraft">重试保存本机草稿</button></div>
         <div v-if="restored" class="draft"><i class="ri-history-line"></i>已恢复本机未保存草稿</div>
+        <section v-if="hasConflict" ref="conflictPanel" tabindex="-1" class="conflict-panel" aria-label="版本冲突核对">
+          <h3>这条决策已有更新，先核对再保存</h3>
+          <p role="alert">你的输入没有被替换。请比较最新版本与下方待保存内容，将需要保留的改动合并到表单后确认。</p>
+          <p v-if="conflictLoading" role="status">正在读取最新版本…</p>
+          <p v-if="conflictError" class="conflict-error" role="alert">{{ conflictError }}；当前输入未改动，可重试读取。</p>
+          <template v-if="latestDecision && latestFields">
+            <p>最新版本 v{{ latestDecision.revision.versionNo }} · {{ formatTime(latestDecision.updatedAt) }}</p>
+            <p v-if="latestDecision.state !== 'active'" role="alert">这条决策已不再有效，不能通过本次冲突处理继续保存。请先备份下方输入，再关闭编辑并重新加载核对。</p>
+            <div v-for="field in decisionFields" :key="field.key" class="conflict-field">
+              <div><strong>{{ field.label }}</strong><span>{{ form[field.key] === latestFields[field.key] ? '与当前输入相同' : '与当前输入不同' }}</span></div>
+              <p tabindex="0" :aria-label="`最新${field.label}`">{{ latestFields[field.key] || '（未填写）' }}</p>
+              <button v-if="form[field.key] !== latestFields[field.key] && latestDecision.state === 'active'" type="button" @click="adoptLatestField(field.key)">将最新{{ field.label }}填入表单</button>
+            </div>
+          </template>
+          <div class="conflict-actions">
+            <button type="button" :disabled="conflictLoading" @click="loadConflict">{{ conflictLoading ? '读取中…' : '重新读取最新版本' }}</button>
+            <button type="button" :disabled="conflictLoading || !latestDecision || latestDecision.state !== 'active'" @click="confirmComparison">已核对，继续编辑当前内容</button>
+          </div>
+        </section>
+        <h3 v-if="hasConflict" class="current-content-title">你的待保存内容</h3>
         <label>决策标题 <span>必填</span><input v-model="form.title" maxlength="120" placeholder="例如：去武汉的出行方式" /></label>
         <label>何时适用<textarea v-model="form.situation" maxlength="5000" rows="3" placeholder="例如：从当前城市去武汉，行程可安排在傍晚时"></textarea></label>
         <label>具体决定 <span>必填</span><textarea v-model="form.choice" maxlength="10000" rows="4" placeholder="例如：优先坐傍晚的高铁，到站后再坐地铁"></textarea></label>
         <label>为什么<textarea v-model="form.reason" maxlength="5000" rows="4" placeholder="记录事实依据和代价，方便以后判断是否仍然适用"></textarea></label>
         <div v-if="saveError" class="save-error" role="alert">{{ saveError }}；{{ draftSaved ? '当前输入仍保存在本机，可直接重试。' : '输入仅在当前页面，请勿刷新，可重试保存。' }}</div>
-        <footer><span>{{ saving ? '正在保存提交的版本，可继续补充内容' : draftSaved ? '当前输入已保存为本机草稿' : '输入后自动保存为本机草稿' }}</span><div><button type="button" :disabled="saving" @click="closeEditor">取消</button><button class="primary" type="button" :disabled="saving" @click="save">{{ saving ? '保存中…' : editing ? '保存新版本' : '保存决策' }}</button></div></footer>
+        <footer><span>{{ saving ? '正在保存提交的版本，可继续补充内容' : draftSaved ? '当前输入已保存为本机草稿' : '输入后自动保存为本机草稿' }}</span><div><button type="button" :disabled="saving" @click="closeEditor">取消</button><button class="primary" type="button" :disabled="saving || hasConflict" @click="save">{{ saving ? '保存中…' : editing ? '保存新版本' : '保存决策' }}</button></div></footer>
       </section>
     </div>
   </div>
 </template>
 
 <style scoped>
+.conflict-panel{margin:8px 22px;padding:14px;border:1px solid var(--wao-line-control);border-radius:var(--wao-radius-control);background:var(--wao-bg-sub)}
+.conflict-panel h3,.current-content-title{margin:0 0 8px;font-size:15px}
+.current-content-title{margin:12px 22px 4px}
+.conflict-panel p{margin:8px 0;font-size:13px;line-height:1.7;overflow-wrap:anywhere;white-space:pre-wrap}
+.conflict-field{padding:12px 0;border-top:1px solid var(--wao-line)}
+.conflict-field>div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:13px}
+.conflict-field span{color:var(--wao-text-2);font-size:12px}
+.conflict-field p{max-height:180px;overflow:auto}
+.conflict-panel .conflict-error{color:var(--wao-danger-strong)}
+.conflict-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.conflict-panel button{min-height:44px;padding:8px 10px;font-size:13px}
+.conflict-panel button:disabled{opacity:.6;cursor:not-allowed}
+
 .archive-dialog{box-sizing:border-box;width:min(460px,calc(100vw - 28px));max-height:calc(100dvh - 28px);padding:22px;border:1px solid var(--wao-line);border-radius:var(--wao-radius-modal);background:var(--wao-bg-card);color:var(--wao-text);box-shadow:var(--wao-shadow-modal);font-family:var(--wao-font);overflow:auto}
 .archive-dialog::backdrop{background:rgba(15,23,42,.52)}
 .archive-dialog h2{margin:0 0 14px;font-size:20px}

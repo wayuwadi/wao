@@ -6,6 +6,7 @@ import {
   archiveMemory,
   createMemory,
   fetchMemories,
+  fetchMemory,
   reviseMemory,
   type MemoryDocument,
 } from '@/api/unifiedMemories'
@@ -16,6 +17,7 @@ vi.mock('@/api/unifiedMemories', async () => {
   const actual = await vi.importActual<typeof import('@/api/unifiedMemories')>('@/api/unifiedMemories')
   return {
     ...actual,
+    fetchMemory: vi.fn<typeof actual.fetchMemory>(),
     fetchMemories: vi.fn<typeof actual.fetchMemories>(),
     createMemory: vi.fn<typeof actual.createMemory>(),
     reviseMemory: vi.fn<typeof actual.reviseMemory>(),
@@ -113,20 +115,99 @@ describe('DecisionsView', () => {
     expect(localStorage.getItem('wao:decision-draft:member-1:new')).toBeNull()
   })
 
-  it('编辑冲突时保留表单和本机草稿，允许直接重试', async () => {
+  it('版本冲突保留输入，明确核对前不能提交，采用字段后以最新基线保存', async () => {
+    const latest = decision({ currentPublishedRevisionId: 'revision-2', revision: { ...decision().revision, id: 'revision-2', versionNo: 2, title: '另一设备的新标题' } })
     vi.mocked(fetchMemories).mockResolvedValue([decision()])
-    vi.mocked(reviseMemory).mockRejectedValue(new Error('记忆已在其他设备更新（409）'))
-    const wrapper = view()
-    await flushPromises()
+    vi.mocked(fetchMemory).mockResolvedValue(latest)
+    vi.mocked(reviseMemory).mockRejectedValueOnce(Object.assign(new Error('冲突'), { status: 409 })).mockResolvedValueOnce(decision({ currentPublishedRevisionId: 'revision-3' }))
+    const wrapper = view(); await flushPromises()
     await wrapper.get('.decision-card footer button').trigger('click')
-    const choice = wrapper.findAll('.editor textarea')[1]!
-    await choice.setValue('改坐下午五点的高铁')
-    await wrapper.get('.editor footer .primary').trigger('click')
-    await flushPromises()
+    await wrapper.findAll('.editor textarea')[1]!.setValue('保留我的新决定')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(wrapper.get('.conflict-panel').text()).toContain('另一设备的新标题')
+    expect(wrapper.findAll('.editor textarea')[1]!.element).toHaveProperty('value', '保留我的新决定')
+    expect(wrapper.get('.editor footer .primary').attributes('disabled')).toBeDefined()
+    expect(localStorage.getItem('wao:decision-draft:member-1:decision-1')).toContain('revision-1')
+    await wrapper.get('.conflict-field button').trigger('click')
+    expect(wrapper.get('.editor input').element).toHaveProperty('value', '另一设备的新标题')
+    await wrapper.get('.conflict-actions button:last-child').trigger('click')
+    expect(reviseMemory).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('wao:decision-draft:member-1:decision-1')).toContain('revision-2')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(reviseMemory).toHaveBeenLastCalledWith('decision-1', expect.objectContaining({ title: '另一设备的新标题', baseRevisionId: 'revision-2', content: expect.stringContaining('保留我的新决定') }))
+  })
 
-    expect(wrapper.text()).toContain('记忆已在其他设备更新（409）')
-    expect((choice.element as HTMLTextAreaElement).value).toBe('改坐下午五点的高铁')
-    expect(localStorage.getItem('wao:decision-draft:member-1:decision-1')).not.toBeNull()
+  it('冲突比较读取失败可重试，再次冲突必须重新核对', async () => {
+    vi.mocked(fetchMemories).mockResolvedValue([decision()])
+    vi.mocked(fetchMemory).mockRejectedValueOnce(new Error('暂时断网')).mockResolvedValue(decision({ currentPublishedRevisionId: 'revision-2' }))
+    vi.mocked(reviseMemory).mockRejectedValue(Object.assign(new Error('冲突'), { response: { status: 409 } }))
+    const wrapper = view(); await flushPromises()
+    await wrapper.get('.decision-card footer button').trigger('click')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(wrapper.get('.conflict-error').text()).toContain('暂时断网')
+    expect(wrapper.get('.conflict-actions button:last-child').attributes('disabled')).toBeDefined()
+    await wrapper.get('.conflict-actions button').trigger('click'); await flushPromises()
+    await wrapper.get('.conflict-actions button:last-child').trigger('click')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(wrapper.find('.conflict-panel').exists()).toBe(true)
+    expect(fetchMemory).toHaveBeenCalledTimes(3)
+    expect(wrapper.get('.editor footer .primary').attributes('disabled')).toBeDefined()
+  })
+
+  it('最新版本已废止时不能核对后继续保存', async () => {
+    vi.mocked(fetchMemories).mockResolvedValue([decision()])
+    vi.mocked(fetchMemory).mockResolvedValue(decision({ state: 'archived' }))
+    vi.mocked(reviseMemory).mockRejectedValue(Object.assign(new Error('冲突'), { status: 409 }))
+    const wrapper = view(); await flushPromises()
+    await wrapper.get('.decision-card footer button').trigger('click')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(wrapper.get('.conflict-panel').text()).toContain('已不再有效')
+    expect(wrapper.get('.conflict-actions button:last-child').attributes('disabled')).toBeDefined()
+  })
+
+  it('成员切换后旧冲突读取不进入新编辑器', async () => {
+    let finish!: (value: MemoryDocument) => void
+    vi.mocked(fetchMemories).mockResolvedValue([decision()])
+    vi.mocked(fetchMemory).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    vi.mocked(reviseMemory).mockRejectedValue(Object.assign(new Error('冲突'), { status: 409 }))
+    const wrapper = view(); await flushPromises()
+    await wrapper.get('.decision-card footer button').trigger('click')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    Object.assign(useSessionStore(), { userId: 'member-2' }); await flushPromises()
+    await wrapper.get('.hero .primary').trigger('click')
+    await wrapper.get('.editor input').setValue('新账号输入')
+    finish(decision()); await flushPromises()
+    expect(wrapper.find('.conflict-panel').exists()).toBe(false)
+    expect(wrapper.get('.editor input').element).toHaveProperty('value', '新账号输入')
+  })
+
+  it('关闭后重新编辑时旧读取回包不改变新输入或重新打开核对', async () => {
+    let finish!: (value: MemoryDocument) => void
+    vi.mocked(fetchMemories).mockResolvedValue([decision()])
+    vi.mocked(fetchMemory).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    vi.mocked(reviseMemory).mockRejectedValue(Object.assign(new Error('冲突'), { status: 409 }))
+    const wrapper = view(); await flushPromises()
+    await wrapper.get('.decision-card footer button').trigger('click')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    await wrapper.get('.editor footer button').trigger('click')
+    await wrapper.get('.decision-card footer button').trigger('click')
+    await wrapper.get('.editor input').setValue('重新打开后的输入')
+    finish(decision()); await flushPromises()
+    expect(wrapper.find('.conflict-panel').exists()).toBe(false)
+    expect(wrapper.get('.editor input').element).toHaveProperty('value', '重新打开后的输入')
+  })
+
+  it('不接受错误成员或无发布版本的比较结果', async () => {
+    vi.mocked(fetchMemories).mockResolvedValue([decision()])
+    vi.mocked(fetchMemory).mockResolvedValueOnce(decision({ scopeId: 'member-2' })).mockResolvedValueOnce(decision({ currentPublishedRevisionId: undefined }))
+    vi.mocked(reviseMemory).mockRejectedValue(Object.assign(new Error('冲突'), { status: 409 }))
+    const wrapper = view(); await flushPromises()
+    await wrapper.get('.decision-card footer button').trigger('click')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(wrapper.get('.conflict-error').text()).toContain('无法用于比较')
+    await wrapper.get('.conflict-actions button').trigger('click'); await flushPromises()
+    expect(wrapper.get('.conflict-actions button:last-child').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.conflict-field').exists()).toBe(false)
   })
 
   it('明确确认后废止决策并重新读取列表', async () => {
