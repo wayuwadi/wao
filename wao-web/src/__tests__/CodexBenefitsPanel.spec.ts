@@ -29,6 +29,19 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.useRealTimers() })
 
 describe('首页 Codex 权益', () => {
+  it('向折叠容器传递真实到期、编辑和失败状态', async () => {
+    vi.mocked(fetchPreference).mockResolvedValueOnce(JSON.stringify({ resetCards: 1, proExpiresOn: '2026-09-09' }))
+    const { wrapper } = setup()
+    await flushPromises()
+    expect(wrapper.emitted('attention')?.slice(-1)[0]).toEqual(['Pro 剩 1 天（手工记录）'])
+    await wrapper.get('[aria-label="编辑 Codex 权益"]').trigger('click')
+    expect(wrapper.emitted('attention')?.slice(-1)[0]).toEqual(['权益有未完成编辑'])
+    vi.mocked(savePreference).mockRejectedValueOnce(new Error('保存失败'))
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.emitted('attention')?.slice(-1)[0]).toEqual(['权益记录需处理'])
+  })
+
   it('保存到成员偏好并显示数量、完整日期和倒计时，零张不当作未设置', async () => {
     const { wrapper } = setup()
     await flushPromises()
