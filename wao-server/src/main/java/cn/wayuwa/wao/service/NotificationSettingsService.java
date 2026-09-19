@@ -139,6 +139,21 @@ public class NotificationSettingsService {
         return new GroupNotificationDecisionDto(true, "允许发送");
     }
 
+    /** Jenkins 成功通知遵守群通知总开关和沉默时段，独立于失败通知开关。 */
+    public GroupNotificationDecisionDto deliverySuccessDecision() {
+        return deliverySuccessDecision(LocalDateTime.now(ZONE));
+    }
+
+    GroupNotificationDecisionDto deliverySuccessDecision(LocalDateTime now) {
+        SystemPolicy policy = systemPolicy();
+        if (!policy.enabled()) return new GroupNotificationDecisionDto(false, "群通知总开关已关闭");
+        if (isQuiet(policy, now.toLocalTime())) {
+            return new GroupNotificationDecisionDto(false,
+                    "当前处于沉默时段 " + policy.quietStart() + "–" + policy.quietEnd());
+        }
+        return new GroupNotificationDecisionDto(true, "允许发送");
+    }
+
     /** 当前是否允许群提醒；私聊提醒不受系统群通知策略影响。 */
     public boolean allowsReminders() {
         return allows(SystemPolicy::reminders);

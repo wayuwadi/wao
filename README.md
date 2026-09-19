@@ -76,6 +76,10 @@ cd wao-web && npm run dev
 
 ### 本机开发，连接服务器 MySQL
 
+开发前可执行 `python3 deploy/scripts/dev-doctor.py --env-file .env.local-cloud --web-url http://127.0.0.1:5174`
+只读检查运行时、依赖和本地连接；失败时输出下一步处理建议。参数、输出含义和独立工作区用法见
+[本地开发体检](docs/runbooks/local-development-doctor.md)。体检不安装或启动服务，也不替代真实用户链路验收。
+
 前端和 Java 服务在本机运行时，后端使用 `local-cloud` Profile，网关使用 `local` Profile。
 通过运行进程的环境变量提供 `MYSQL_HOST`、`MYSQL_PORT`、`DB_NAME`、`DB_USER`、`DB_PASS`；
 优先通过 SSH 本地端口转发访问服务器数据库。凭据不要写入仓库、命令历史或日志。

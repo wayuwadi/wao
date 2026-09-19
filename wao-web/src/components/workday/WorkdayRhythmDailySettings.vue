@@ -25,8 +25,16 @@ const session = useSessionStore()
 const owner = session.userId
 let active = true
 const isCurrent = () => active && session.userId === owner
-watch(() => session.userId, () => { active = false }, { flush: 'sync' })
-onBeforeUnmount(() => { active = false })
+watch(
+  () => session.userId,
+  () => {
+    active = false
+  },
+  { flush: 'sync' },
+)
+onBeforeUnmount(() => {
+  active = false
+})
 const emit = defineEmits<{ saved: [] }>()
 const loading = ref(true)
 const saving = ref(false)
@@ -469,6 +477,8 @@ onMounted(load)
 
 <style scoped>
 .daily-settings {
+  font-size: 13px;
+  line-height: 1.6;
   padding-bottom: 20px;
   margin-bottom: 20px;
   border-bottom: 1px solid var(--wao-divider);
@@ -487,14 +497,15 @@ onMounted(load)
 .daily-settings p {
   margin: 4px 0;
   color: var(--wao-text-weak);
-  font-size: 10.5px;
+  font-size: 12px;
 }
 .daily-settings > header small {
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.16em;
   color: var(--wao-primary);
 }
 .daily-settings button {
+  font: inherit;
   border: 0;
   background: none;
   color: var(--wao-primary);
@@ -514,7 +525,7 @@ onMounted(load)
 }
 .setting-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 14px 0;
 }
@@ -530,17 +541,17 @@ onMounted(load)
   gap: 3px;
 }
 .switch-row b {
-  font-size: 11px;
+  font-size: 13px;
 }
 .switch-row small {
-  font-size: 9px;
+  font-size: 12px;
   color: var(--wao-text-weak);
 }
 .items-settings {
   margin-top: 16px;
 }
 .items-settings h4 {
-  font-size: 12px;
+  font-size: 14px;
 }
 .project-list {
   display: grid;
@@ -557,11 +568,12 @@ onMounted(load)
 .target-row span,
 .notify-row > label > span,
 .item-title-field > span {
-  font-size: 9.5px;
+  font-size: 12px;
   color: var(--wao-text-weak);
 }
 .item-editor input,
 .item-editor select {
+  font: inherit;
   min-width: 0;
   height: 34px;
   box-sizing: border-box;
@@ -599,7 +611,7 @@ onMounted(load)
   color: var(--wao-primary);
   display: grid;
   place-items: center;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
 }
 .item-main {
@@ -610,19 +622,21 @@ onMounted(load)
 .item-main b {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11.5px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 14px;
 }
 .item-main small {
   overflow: hidden;
   color: var(--wao-text-weak);
-  font-size: 9.5px;
+  font-size: 12px;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .item-summary em {
   font-style: normal;
-  font-size: 9px;
+  font-size: 12px;
   color: var(--wao-primary);
 }
 .item-status {
@@ -630,14 +644,14 @@ onMounted(load)
   border-radius: 999px;
   background: var(--wao-success-bg);
   color: #267c65;
-  font-size: 9px;
+  font-size: 12px;
 }
 .item-status.disabled {
   background: var(--wao-bg-hover);
   color: var(--wao-text-weak);
 }
 .item-summary button {
-  height: 30px;
+  min-height: 36px;
   border-radius: 8px;
 }
 .edit-item {
@@ -682,7 +696,7 @@ onMounted(load)
   align-items: end !important;
   grid-auto-flow: column;
   justify-content: start;
-  font-size: 9.5px;
+  font-size: 12px;
 }
 .inline input,
 .item-editor input[type='checkbox'] {
@@ -715,13 +729,13 @@ onMounted(load)
   border-top: 1px dashed var(--wao-line);
 }
 .notify-row b {
-  font-size: 10px;
+  font-size: 12px;
 }
 .notify-row label {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 9.5px;
+  font-size: 12px;
 }
 .target-row {
   display: grid;
@@ -735,7 +749,7 @@ onMounted(load)
   align-items: center;
   gap: 15px;
   margin-top: 14px;
-  font-size: 10px;
+  font-size: 12px;
   color: #267c65;
 }
 .daily-settings > footer .primary {
@@ -745,7 +759,7 @@ onMounted(load)
   color: #fff;
 }
 .save-error {
-  font-size: 10px;
+  font-size: 12px;
 }
 @media (max-width: 700px) {
   .setting-grid,
@@ -756,32 +770,50 @@ onMounted(load)
     grid-template-columns: 1fr 1fr;
   }
   .item-summary {
-    grid-template-columns: 26px minmax(0, 1fr) auto 32px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
-  .item-summary > em,
-  .item-status {
+  .item-index {
     display: none;
   }
-  .edit-item {
-    font-size: 0;
-    width: 32px;
-    padding: 0;
+  .item-main {
+    grid-column: 1 / -1;
   }
-  .edit-item i {
-    margin: 0;
-    font-size: 14px;
+  .item-summary > em {
+    grid-column: 1 / -1;
   }
+  .item-status {
+    grid-column: 1;
+    justify-self: start;
+  }
+  .item-summary button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .edit-item,
   .restore-item {
-    width: 32px;
-    padding: 0;
-    font-size: 0;
+    font-size: 13px;
+    width: auto;
   }
-  .restore-item i {
-    margin: 0;
-    font-size: 14px;
+  .item-editor input:not([type='checkbox']),
+  .item-editor select {
+    width: 100%;
+    font-size: 16px;
   }
   .weekday-row {
     flex-wrap: wrap;
+  }
+  .weekday-row button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .daily-settings > header,
+  .items-settings > header {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 420px) {
+  .item-fields {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

@@ -31,6 +31,8 @@ import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { hasDesktopToolbar } from '@/utils/desktopToolbar'
 
 async function openSharedLink(event: MouseEvent) {
+  const ticket = accountGeneration.value
+  if (!isCurrent(ticket)) return
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
   const link = event.target instanceof Element ? event.target.closest('a[href]') : null
   const href = link?.getAttribute('href') || ''
@@ -47,8 +49,10 @@ async function openSharedLink(event: MouseEvent) {
   if (!doc?.kbId) {
     try {
       doc = await fetchDoc(documentTarget!.docId)
+      if (!isCurrent(ticket)) return
       data.docs[doc.id] = doc
     } catch {
+      if (!isCurrent(ticket)) return
       ui.closeChat()
       await router.push(`/s/d/${encodeURIComponent(documentTarget!.docId)}`)
       return
@@ -84,7 +88,7 @@ function startEdit(message: SharedChatMessage) {
   }
 }
 watch([editDraft, editOriginal], () => {
-  if (!editingId.value) return
+  if (!editingId.value || restoringAccount || !session.userId) return
   try {
     localStorage.setItem(
       editKey(editingId.value),
@@ -95,14 +99,15 @@ watch([editDraft, editOriginal], () => {
   }
 })
 async function saveEdit() {
+  const ticket = accountGeneration.value
+  if (!isCurrent(ticket)) return
   if (!editingId.value || editSaving.value) return
   const id = editingId.value
-  const member = session.userId
   editSaving.value = true
   editError.value = ''
   try {
     const saved = await editSharedChatMessage(id, editDraft.value, editOriginal.value)
-    if (session.userId !== member) return
+    if (!isCurrent(ticket)) return
     merge([saved])
     try {
       localStorage.removeItem(editKey(id))
@@ -112,8 +117,10 @@ async function saveEdit() {
     editingId.value = ''
     toast('消息修改已保存', 'ri-check-line')
   } catch (error) {
+    if (!isCurrent(ticket)) return
     editError.value = messageOf(error, '修改失败，草稿已保留，可重试')
   } finally {
+    if (!isCurrent(ticket)) return
     editSaving.value = false
   }
 }
@@ -205,6 +212,15 @@ const data = useDataStore()
 const router = useRouter()
 const messages = ref<SharedChatMessage[]>([])
 let disposed = false
+let mounted = false
+let restoringAccount = false
+const accountGeneration = ref(0)
+let messageRevision = 0
+let loadSequence = 0
+let reading = false
+function isCurrent(ticket: number) {
+  return !disposed && !!session.userId && ticket === accountGeneration.value
+}
 const draft = ref('')
 const composer = ref<InstanceType<typeof MarkdownEditor> | null>(null)
 type SendAttempt = { content: string; replyToId?: string; token: string }
@@ -232,6 +248,8 @@ watch(
   },
 )
 async function uploadAttachment(event: Event) {
+  const ticket = accountGeneration.value
+  if (!isCurrent(ticket)) return
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file || uploadingFile.value) return
@@ -244,12 +262,15 @@ async function uploadAttachment(event: Event) {
   uploadingFile.value = true
   try {
     const uploaded = await uploadSharedChatFile(file)
+    if (!isCurrent(ticket)) return
     if (!uploaded.id) throw new Error('文件未保存，请重试')
     const name = file.name.replace(/[\\[\]<>]/g, '_').replace(/[\r\n]/g, ' ')
     appendDraft(`\n[${name}](/api/files/${encodeURIComponent(uploaded.id)}/download)\n`)
   } catch (error) {
+    if (!isCurrent(ticket)) return
     sendError.value = messageOf(error, '文件上传失败，请重新选择文件重试；文字草稿仍保留')
   } finally {
+    if (!isCurrent(ticket)) return
     uploadingFile.value = false
     input.value = ''
   }
@@ -272,6 +293,7 @@ const storageKey = computed(
 const contentLength = computed(() => Array.from(draft.value).length)
 const canSend = computed(
   () =>
+    !!session.userId &&
     !sending.value &&
     !uploadingImage.value &&
     !uploadingFile.value &&
@@ -337,6 +359,7 @@ async function onMediaLoaded() {
 }
 
 function merge(incoming: SharedChatMessage[]) {
+  messageRevision++
   const byId = new Map(messages.value.map((message) => [message.id, message]))
   incoming.forEach((message) => byId.set(message.id, message))
   messages.value = [...byId.values()].sort(
@@ -347,7 +370,10 @@ function merge(incoming: SharedChatMessage[]) {
 }
 
 async function markVisibleRead() {
+  const ticket = accountGeneration.value
   if (
+    !isCurrent(ticket) ||
+    reading ||
     !props.visible ||
     !positionReady.value ||
     document.visibilityState !== 'visible' ||
@@ -356,23 +382,32 @@ async function markVisibleRead() {
     return
   const last = messages.value[messages.value.length - 1]
   if (!last || messages.value.every((message) => message.read)) return
+  reading = true
   try {
     const readIds = new Set(messages.value.map((message) => message.id))
     await markSharedChatRead(last.id)
+    if (!isCurrent(ticket)) return
+    messageRevision++
     messages.value = messages.value.map((message) =>
       readIds.has(message.id) ? { ...message, read: true } : message,
     )
   } catch (error) {
+    if (!isCurrent(ticket)) return
     loadError.value = messageOf(error, '已读状态同步失败，请重试')
+  } finally {
+    if (isCurrent(ticket)) reading = false
   }
 }
 
 async function load(initial = false) {
-  const memberId = session.userId
+  const ticket = accountGeneration.value
+  if (!isCurrent(ticket)) return
+  const revision = messageRevision
+  const sequence = ++loadSequence
   const shouldFollow = props.visible && (initial || nearBottom())
   try {
     const incoming = await fetchSharedChatMessages()
-    if (disposed || memberId !== session.userId) return
+    if (!isCurrent(ticket) || sequence !== loadSequence || revision !== messageRevision) return
     if (initial && !unreadBoundaryId.value) {
       unreadBoundaryId.value = incoming.find((message) => !message.read)?.id ?? ''
     }
@@ -384,9 +419,10 @@ async function load(initial = false) {
     positionReady.value = true
     if (follow) await markVisibleRead()
   } catch (error) {
+    if (!isCurrent(ticket) || sequence !== loadSequence) return
     loadError.value = messageOf(error, '聊天记录读取失败，请重试')
   } finally {
-    if (initial) {
+    if (isCurrent(ticket) && sequence === loadSequence && initial) {
       loading.value = false
       positionReady.value = true
     }
@@ -406,6 +442,8 @@ const messagePolling = createVisibilityPoller(
 )
 
 async function uploadInlineImage(file: File, done: (url: string | null, name: string) => void) {
+  const ticket = accountGeneration.value
+  if (!isCurrent(ticket)) return
   sendError.value = ''
   if (!file.type.startsWith('image/')) {
     sendError.value = '只能发送图片文件'
@@ -420,12 +458,15 @@ async function uploadInlineImage(file: File, done: (url: string | null, name: st
   uploadingImage.value = true
   try {
     const uploaded = await uploadSharedChatImage(file)
+    if (!isCurrent(ticket)) return
     if (!uploaded.id) throw new Error('图片未能持久化，请重试')
     done(uploaded.url, uploaded.name)
   } catch (error) {
+    if (!isCurrent(ticket)) return
     sendError.value = messageOf(error, '图片上传失败，草稿已保留')
     done(null, file.name)
   } finally {
+    if (!isCurrent(ticket)) return
     uploadingImage.value = false
   }
 }
@@ -485,6 +526,8 @@ function pendingAttempts(): SendAttempt[] {
 }
 
 async function send() {
+  const ticket = accountGeneration.value
+  if (!isCurrent(ticket)) return
   if (!canSend.value) return
   try {
     if (!sendAttempt.value) {
@@ -522,6 +565,7 @@ async function send() {
       content: attempt.content,
       replyToId: attempt.replyToId,
     })
+    if (!isCurrent(ticket)) return
     merge([saved])
     const unchanged = draft.value === attempt.content && replyingTo.value?.id === attempt.replyToId
     // Keep the original token recoverable when clearing storage fails after success.
@@ -550,6 +594,7 @@ async function send() {
     restoringDraft = false
     await scrollBottom()
   } catch (error) {
+    if (!isCurrent(ticket)) return
     const status =
       (error as { status?: number; response?: { status?: number } })?.status ??
       (error as { response?: { status?: number } })?.response?.status
@@ -571,18 +616,25 @@ async function send() {
     }
     sendError.value = messageOf(error, '发送结果未确认，请重试确认；草稿已保留')
   } finally {
+    if (!isCurrent(ticket)) return
     sending.value = false
   }
 }
 
 async function toggleReaction(message: SharedChatMessage, emojiType: string) {
+  const ticket = accountGeneration.value
+  if (!isCurrent(ticket)) return
   reactingId.value = `${message.id}:${emojiType}`
   try {
-    merge([await toggleSharedChatReaction(message.id, emojiType)])
+    const saved = await toggleSharedChatReaction(message.id, emojiType)
+    if (!isCurrent(ticket)) return
+    merge([saved])
     reactionMenuId.value = ''
   } catch (error) {
+    if (!isCurrent(ticket)) return
     sendError.value = messageOf(error, '表情回复失败，请重试')
   } finally {
+    if (!isCurrent(ticket)) return
     reactingId.value = ''
   }
 }
@@ -624,7 +676,7 @@ function retryDraftStorage() {
 watch(
   [draft, replyingTo],
   () => {
-    if (!restoringDraft) persistDraft()
+    if (!restoringDraft && !restoringAccount && session.userId && !disposed) persistDraft()
   },
   { flush: 'sync' },
 )
@@ -654,7 +706,9 @@ watch(
       return
     }
     positionReady.value = false
+    const ticket = accountGeneration.value
     await messagePolling.trigger()
+    if (!isCurrent(ticket)) return
     if (!unreadBoundaryId.value) {
       unreadBoundaryId.value = messages.value.find((message) => !message.read)?.id ?? ''
     }
@@ -674,13 +728,33 @@ watch(
   { immediate: true },
 )
 
-onMounted(async () => {
-  if (typeof ResizeObserver !== 'undefined' && stream.value) {
-    streamResize = new ResizeObserver(() => {
-      void onMediaLoaded()
-    })
-    streamResize.observe(stream.value)
+async function initializeAccount() {
+  const ticket = ++accountGeneration.value
+  messagePolling.stop()
+  speech.cancel()
+  restoringAccount = true
+  messages.value = []
+  draft.value = ''
+  replyingTo.value = null
+  sendAttempt.value = null
+  corruptDraft = false
+  storageError.value = ''
+  positionReady.value = false
+  atLatest.value = true
+  sending.value = uploadingImage.value = uploadingFile.value = false
+  editingId.value = editDraft.value = editOriginal.value = editError.value = ''
+  editSaving.value = false
+  imageMenu.value = null
+  reactingId.value = reactionMenuId.value = unreadBoundaryId.value = ''
+  loadError.value = sendError.value = ''
+  reading = false
+  reviewOpen.value = false
+  loading.value = !!session.userId
+  if (!session.userId) {
+    restoringAccount = false
+    return
   }
+
   let restoredReplyId = ''
   restoringDraft = true
   try {
@@ -719,10 +793,29 @@ onMounted(async () => {
   } finally {
     restoringDraft = false
   }
+  restoringAccount = false
   await load(true)
+  if (!isCurrent(ticket)) return
   if (restoredReplyId && !replyingTo.value)
     replyingTo.value = messages.value.find((message) => message.id === restoredReplyId) ?? null
   messagePolling.start(false)
+}
+watch(
+  () => session.userId,
+  () => {
+    if (mounted) void initializeAccount()
+  },
+  { flush: 'sync' },
+)
+onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined' && stream.value) {
+    streamResize = new ResizeObserver(() => {
+      void onMediaLoaded()
+    })
+    streamResize.observe(stream.value)
+  }
+  mounted = true
+  void initializeAccount()
 })
 
 onBeforeUnmount(() => {
@@ -939,6 +1032,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <MarkdownEditor
+          :key="accountGeneration"
           ref="composer"
           v-model="draft"
           :min-height="92"

@@ -9,9 +9,7 @@ import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
-import { matchesNoteDate } from '@/utils/noteDates'
 
-const dateFilter = ref<'all' | 'today' | 'yesterday'>('all')
 const pinnedIds = ref<string[]>([])
 const pinsReady = ref(false)
 const pinSaving = ref(false)
@@ -42,7 +40,7 @@ const noteEditors = new Map<string, { copyFormatted: () => Promise<void> }>()
 function setNoteEditor(id: string, value: unknown) { if (value) noteEditors.set(id, value as { copyFormatted: () => Promise<void> }); else noteEditors.delete(id) }
 const query = ref('')
 const sort = ref<'updated' | 'created'>('updated')
-const selectedTag = ref('')
+const selectedTag = ref<string | null>('')
 const tagNames = ref<string[]>([])
 const tagsLoading = ref(false)
 const tagsError = ref('')
@@ -70,7 +68,6 @@ const addingTag = ref(false)
 const newTag = ref('')
 const creatingTag = ref(false)
 const tagError = ref('')
-const scope = ref<'all' | 'mine'>('all')
 const editingIds = ref<string[]>([])
 function closeEditing(id: string) { editingIds.value = editingIds.value.filter(item => item !== id) }
 async function editNote(id: string, event?: MouseEvent) {
@@ -98,9 +95,7 @@ const tagCounts = computed(() => {
 })
 const matching = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
-  return notes.value.filter(doc => (scope.value === 'all' || doc.author === session.currentUser.id)
-    && matchesNoteDate(doc.created, dateFilter.value)
-    && (!selectedTag.value || doc.tags?.includes(selectedTag.value))
+  return notes.value.filter(doc => (selectedTag.value === null ? !doc.tags?.length : !selectedTag.value || doc.tags?.includes(selectedTag.value))
     && (!needle || `${doc.title}\n${resolvedRichContent(doc).markdown}\n${(doc.tags ?? []).join(' ')}`.toLocaleLowerCase().includes(needle)))
 })
 // 筛选、分页或远端刷新不能卸载正在输入的卡片，尤其是浏览器草稿写入失败时。
@@ -109,15 +104,13 @@ const retainedEdits = computed(() => notes.value.filter(note => editingIds.value
 const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
 const loading = computed(() => ['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
-watch([query, scope, selectedTag, sort, dateFilter], () => {
+watch([query, selectedTag, sort], () => {
   limit.value = PAGE_SIZE
   notesList.value?.scrollTo?.({ top: 0 })
 })
 function onCreated(id: string) {
-  dateFilter.value = 'all'
   query.value = ''
   selectedTag.value = ''
-  scope.value = 'all'
   limit.value = PAGE_SIZE
   highlighted.value = id
   notesList.value?.scrollTo?.({ top: 0 })
@@ -181,15 +174,14 @@ onMounted(() => void loadPins())
       </aside>
       <section ref="notesList" class="notes-list" aria-label="小记清单">
         <div class="list-toolbar">
-          <div class="filters"><button :aria-pressed="scope === 'all'" @click="scope = 'all'">全部小记</button><button :aria-pressed="scope === 'mine'" @click="scope = 'mine'">我记录的</button></div>
-          <div class="filters" aria-label="按创建日期筛选"><button :aria-pressed="dateFilter === 'all'" @click="dateFilter = 'all'">全部时间</button><button :aria-pressed="dateFilter === 'yesterday'" @click="dateFilter = 'yesterday'">昨天</button><button :aria-pressed="dateFilter === 'today'" @click="dateFilter = 'today'">今天</button></div>
           <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"></label>
           <label class="sort"><i class="ri-sort-desc"></i><select v-model="sort" aria-label="小记排序"><option value="updated">更新时间排序</option><option value="created">创建时间排序</option></select></label>
           <button class="refresh" :disabled="loading" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i class="ri-refresh-line"></i></button>
         </div>
         <div class="tags-toolbar" aria-label="按标签筛选">
-          <button class="tag-filter" :aria-pressed="!selectedTag" @click="selectedTag = ''">全部标签</button>
+          <button class="tag-filter" :aria-pressed="selectedTag === ''" @click="selectedTag = ''">全部标签</button>
           <button v-for="tag in availableTags" :key="tag" class="tag-filter" :aria-pressed="selectedTag === tag" @click="selectedTag = selectedTag === tag ? '' : tag">{{ tag }} <span>{{ tagCounts.get(tag) ?? 0 }}</span></button>
+          <button class="tag-filter" :aria-pressed="selectedTag === null" @click="selectedTag = selectedTag === null ? '' : null">无标签 <span>{{ notes.filter(note => !note.tags?.length).length }}</span></button>
           <button class="new-tag-toggle" :aria-expanded="addingTag" @click="addingTag = !addingTag"><i class="ri-add-line"></i>新增标签</button>
           <button :aria-expanded="managingTags" @click="managingTags = !managingTags">管理标签</button>
         </div>
@@ -207,7 +199,7 @@ onMounted(() => void loadPins())
         <p v-if="tagsLoading" class="tag-status" role="status">正在读取标签…</p>
         <p v-if="pinError" class="error" role="alert">{{ pinError }}<button v-if="!pinsReady" @click="loadPins">重试读取置顶</button></p>
         <p v-if="tagsError" class="tag-status error" role="alert">{{ tagsError }}<button @click="loadTags">重试标签</button></p>
-        <div class="list-summary"><span>{{ selectedTag ? `# ${selectedTag} · ` : '' }}{{ matching.length }} 条小记</span><span>按{{ sort === 'updated' ? '更新' : '创建' }}时间从新到旧</span></div>
+        <div class="list-summary"><span>{{ selectedTag === null ? '无标签 · ' : selectedTag ? `# ${selectedTag} · ` : '' }}{{ matching.length }} 条小记</span><span>按{{ sort === 'updated' ? '更新' : '创建' }}时间从新到旧</span></div>
         <p v-if="loadError" class="empty error" role="alert">小记读取失败，已有内容和草稿仍保留。<button @click="reload">重试加载</button></p>
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || selectedTag ? '没有找到相关小记，换个关键词或标签试试。' : '还没有小记，写下第一条想法吧。' }}</p>
@@ -241,9 +233,8 @@ h1 i { color: #7a5cc6; }
 .writing-pane { min-width: 0; position: sticky; top: 20px; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
 .notes-list { min-width: 0; padding-left: 26px; border-left: 1px solid var(--wao-line-control); }
-.list-toolbar, .filters, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
+.list-toolbar, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
 .list-toolbar { flex-wrap: wrap; margin-bottom: 16px; gap: 8px; }
-.filters { gap: 2px; }
 button, a, select { color: var(--wao-text-3); font-size: 12px; }
 button { cursor: pointer; border: 0; border-radius: 7px; background: transparent; padding: 7px 9px; }
 button:hover, button[aria-pressed="true"] { background: var(--wao-bg-hover); color: var(--wao-primary); }

@@ -134,17 +134,38 @@ describe("desktop workspace preservation", () => {
     });
     wrapper.unmount();
   });
-  it("正常连接不显示冗余状态，无新版隐藏更新按钮", async () => {
+  it("Mac 无新版也能打开版本与更新并返回工作区", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
     const wrapper = mount(App);
     await flushPromises();
     mocks.handlers.get("workspace-state")!({ payload: "ready" });
     await flushPromises();
     expect(wrapper.find(".connection").exists()).toBe(false);
-    expect(wrapper.find(".update-button").exists()).toBe(false);
+    expect(wrapper.get(".update-button").text()).toContain("版本与更新");
+    await wrapper.get(".update-button").trigger("click");
+    await flushPromises();
+    expect(wrapper.get(".settings").text()).toContain("当前版本 1.0.0");
+    expect(wrapper.get(".settings").text()).toContain("检查更新");
+    expect(mocks.check).toHaveBeenCalledTimes(2);
+    await wrapper.get(".settings-top button").trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".settings").exists()).toBe(false);
+    expect(mocks.invoke).toHaveBeenCalledWith("workspace_action", { action: "show" });
     expect(wrapper.get(".edition").text()).toBe("WAO");
     wrapper.unmount();
   });
-  it("发现新版显示更新圆点，点击直接下载且验签完成才提示安装", async () => {
+  it("检查失败时入口仍可见，打开更新页可重试", async () => {
+    mocks.check.mockRejectedValueOnce(new Error("offline"));
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get(".update-button").text()).toContain("更新重试");
+    await wrapper.get(".update-button").trigger("click");
+    await flushPromises();
+    expect(mocks.check).toHaveBeenCalledTimes(2);
+    expect(wrapper.get(".settings").text()).toContain("你正在使用最新版本");
+    wrapper.unmount();
+  });
+  it("发现新版显示更新圆点，进入更新页确认下载且验签完成才提示安装", async () => {
     let downloaded!: () => void;
     const artifact = {
       version: "1.1.5",
@@ -164,10 +185,16 @@ describe("desktop workspace preservation", () => {
     expect(wrapper.find(".update-dot").exists()).toBe(true);
     await wrapper.get(".update-button").trigger("click");
     await flushPromises();
+    expect(artifact.download).not.toHaveBeenCalled();
+    expect(wrapper.find(".settings").exists()).toBe(true);
+    await wrapper.get(".update-actions .primary").trigger("click");
+    await flushPromises();
     expect(artifact.download).toHaveBeenCalledOnce();
-    expect(wrapper.find(".settings").exists()).toBe(false);
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     downloaded();
+    await flushPromises();
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
+    await wrapper.get(".update-actions .primary").trigger("click");
     await flushPromises();
     expect(wrapper.get('[role="alertdialog"]').text()).toContain(
       "安装并重新打开",

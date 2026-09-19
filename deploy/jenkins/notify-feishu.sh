@@ -3,27 +3,29 @@ set -eu
 
 : "${WAO_PIPELINE_RESULT:?WAO_PIPELINE_RESULT is required}"
 
-if [ "$WAO_PIPELINE_RESULT" = success ]; then
-  echo 'Jenkins success notification skipped.'
-  exit 0
-fi
-if [ "$WAO_PIPELINE_RESULT" != failure ]; then
-  echo "Unsupported WAO_PIPELINE_RESULT: $WAO_PIPELINE_RESULT" >&2
-  exit 2
-fi
+case "$WAO_PIPELINE_RESULT" in
+  success|failure) ;;
+  *) echo "Unsupported WAO_PIPELINE_RESULT: $WAO_PIPELINE_RESULT" >&2; exit 2 ;;
+esac
 
 : "${WAO_MASTER_PROJECT_ROOT:?WAO_MASTER_PROJECT_ROOT is required}"
 
 # 应用只公开最终门禁结论，不向 Jenkins 暴露完整系统设置。首次发布旧版本尚无此接口、
 # 或应用本身故障时必须 fail-open，避免真正的发布故障连最后一条告警也丢失。
-policy_url="${WAO_NOTIFICATION_POLICY_URL:-http://127.0.0.1:8080/api/public/notification-settings/jenkins-failure}"
+policy_url="${WAO_NOTIFICATION_POLICY_URL:-http://127.0.0.1:8080/api/public/notification-settings/jenkins-${WAO_PIPELINE_RESULT}}"
 policy_response="$(curl --fail --silent --show-error --max-time 3 "$policy_url" 2>/dev/null || true)"
 policy_allowed="$(printf '%s' "$policy_response" \
   | jq -r '.data.allowed | if . == true then "true" elif . == false then "false" else empty end' \
       2>/dev/null || true)"
 if [ "$policy_allowed" = false ]; then
   policy_reason="$(printf '%s' "$policy_response" | jq -r '.data.reason // "系统通知策略已暂停"')"
-  echo "Jenkins failure notification skipped: $policy_reason"
+  echo "Jenkins $WAO_PIPELINE_RESULT notification skipped: $policy_reason"
+  exit 0
+fi
+
+# 成功消息不需要故障兜底：策略不可读时保持静默；失败告警仍按既有规则 fail-open。
+if [ "$WAO_PIPELINE_RESULT" = success ] && [ "$policy_allowed" != true ]; then
+  echo 'Jenkins success notification skipped: notification policy unavailable.'
   exit 0
 fi
 
@@ -116,7 +118,27 @@ payload="$(jq -n \
     }
   }')"
 
+if [ "$WAO_PIPELINE_RESULT" = success ]; then
+  if [ "$pipeline_kind" = '生产发布' ]; then
+    if [ "$slave_status" != success ] || [ "$master_status" != success ] || [ "$cloud_status" != success ] || [ "$verification_status" != success ]; then
+      echo 'Jenkins success notification skipped: production verification is incomplete.' >&2
+      exit 0
+    fi
+    success_detail='双节点、云端与公共入口检查通过'
+  else
+    success_detail='验证通过，本批次未发布到生产环境'
+  fi
+  # 卡片只放提交标题；详细改动、原因与验收留在 Git 历史。
+  changes="$(printf '%s' "${WAO_COMMIT_MESSAGE:-无提交摘要}" | jq -R -s -r 'split("\n") | map(select(length > 0)) | .[:8] | map(.[0:100]) | join("\n")')"
+  payload="$(jq -n --arg title "WAO ${pipeline_kind} ✅ 成功" \
+    --arg detail "$success_detail" --arg changes "$changes" --arg run_url "$run_url" \
+    '{msg_type:"interactive",card:{config:{wide_screen_mode:true},
+      header:{template:"green",title:{tag:"plain_text",content:$title}},
+      elements:[{tag:"div",text:{tag:"lark_md",content:($detail+"\n**本次改动**\n"+$changes)}},
+        {tag:"action",actions:[{tag:"button",text:{tag:"plain_text",content:"查看 Jenkins 详情"},url:$run_url,type:"primary"}]}]}}')"
+fi
+
 response="$(curl --fail --silent --show-error -X POST "$webhook" \
   -H 'Content-Type: application/json' --data "$payload")"
 printf '%s' "$response" | jq -e '(.code // .StatusCode // 0) == 0' >/dev/null
-echo 'Jenkins failure notification delivered.'
+echo "Jenkins $WAO_PIPELINE_RESULT notification delivered."

@@ -130,16 +130,16 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('聚合历史小记并按时间倒序，正文搜索和作者筛选可以组合', async () => {
+  it('聚合历史小记并按时间倒序，正文搜索和标签筛选可以组合', async () => {
     const data = useDataStore()
-    data.docs.a = doc('a', '旧想法', '2026-09-06T08:00:00')
+    data.docs.a = { ...doc('a', '旧想法', '2026-09-06T08:00:00'), tags: ['历史'] }
     data.docs.b = doc('b', '发布清单', '2026-09-07T08:00:00', 'wd')
     data.docs.c = { ...doc('c', '普通文档'), kbId: 'other' }
     const wrapper = await view()
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['b', 'a'])
     await wrapper.find('input[type="search"]').setValue('发布')
     expect(wrapper.findAll('.note-card')).toHaveLength(1)
-    await wrapper.findAll('.filters button')[1]!.trigger('click')
+    await wrapper.findAll('.tag-filter').find(button => button.text().startsWith('历史'))!.trigger('click')
     expect(wrapper.text()).toContain('没有找到相关小记')
     wrapper.unmount()
   })
@@ -467,6 +467,22 @@ describe('小记集中记录空间', () => {
     expect(wrapper.find('.note-card .note-composer').exists()).toBe(false)
     await wrapper.find('.note-card').trigger('keydown', { key: 'Enter' })
     expect(wrapper.get<HTMLTextAreaElement>('.note-card textarea').element.value).toBe('键盘编辑的记录')
+    wrapper.unmount()
+  })
+
+  it('只保留标签筛选，无标签独立筛选且再次点击恢复全部', async () => {
+    const data = useDataStore()
+    data.docs.a = { ...doc('a', '有标签正文'), tags: ['工作'] }
+    data.docs.b = { ...doc('b', '无标签正文'), tags: [] }
+    const wrapper = await view()
+    expect(wrapper.text()).not.toContain('全部小记')
+    expect(wrapper.text()).not.toContain('全部时间')
+    expect(wrapper.find('[aria-label="按创建日期筛选"]').exists()).toBe(false)
+    const untagged = () => wrapper.findAll('.tag-filter').find(button => button.text().startsWith('无标签'))!
+    await untagged().trigger('click')
+    expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['b'])
+    await untagged().trigger('click')
+    expect(wrapper.findAll('.note-card')).toHaveLength(2)
     wrapper.unmount()
   })
 
