@@ -705,7 +705,7 @@ export const useDataStore = defineStore('data', () => {
    * 也不能把用户刚敲的半句话吞掉。
    */
   function applyRemoteDoc(doc: Doc): boolean {
-    if (docPending(doc.id)) return false
+    if (docPending(doc.id) || (doc.rev ?? 1) < (docs[doc.id]?.rev ?? 1)) return false
     const override = docEdits.value[doc.id]
     docs[doc.id] = doc
     // 内容其实一样（多半是自己刚存的那一版转了一圈回来）就别动覆盖，
