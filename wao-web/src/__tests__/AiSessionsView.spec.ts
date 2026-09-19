@@ -276,3 +276,16 @@ it('失效草稿项目必须重新选择，不能派发不存在于配置中的�
   await wrapper.get('form select').setValue('p1')
   expect(wrapper.get('.new-footer button').attributes('disabled')).toBeUndefined()
 })
+
+
+it('无需部署不遮盖失败状态，无绑定的下一步只进入新会话表单', async () => {
+  vi.mocked(api.getSession).mockResolvedValueOnce({ ...detail(), run: { ...run, status: 'failed', sessionId: null, deliveryStage: 'not_required' } })
+  const { wrapper, router } = await view()
+  expect(wrapper.get('.heading p').text()).toContain('需处理 · 本轮无需部署')
+  await wrapper.findAll('button').find(b => b.text() === '新建会话继续处理')!.trigger('click')
+  await flushPromises()
+  expect(router.currentRoute.value.query.new).toBe('1')
+  expect(wrapper.find('[aria-label="新会话内容"]').exists()).toBe(true)
+  expect(api.createSession).not.toHaveBeenCalled()
+  expect(api.sendSessionInput).not.toHaveBeenCalled()
+})

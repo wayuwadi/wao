@@ -71,7 +71,7 @@ const labels: Record<string, string> = {
   queued: '排队中',
   claimed: '准备中',
   running: '运行中',
-  succeeded: '已完成',
+  succeeded: '执行结束',
   failed: '需处理',
   cancelled: '已暂停',
 }
@@ -80,9 +80,8 @@ const title = computed(
 )
 const selectedActive = computed(() => !!detail.value && active(detail.value.run.status))
 const sessionState = computed(() =>
-  detail.value?.run.deliveryStage === 'not_required'
-    ? '本轮无需部署'
-    : labels[detail.value?.run.status || ''] || '',
+  (labels[detail.value?.run.status || ''] || '') +
+    (detail.value?.run.deliveryStage === 'not_required' ? ' · 本轮无需部署' : ''),
 )
 const maxPage = computed(() => Math.max(1, Math.ceil(total.value / 25)))
 const activityTime = (value: string) => {
@@ -377,7 +376,7 @@ onBeforeUnmount(() => {
         <select v-model="status" aria-label="会话状态">
           <option value="">全部状态</option>
           <option value="active">运行中</option>
-          <option value="succeeded">已完成</option>
+          <option value="succeeded">执行结束</option>
           <option value="failed">需处理</option>
           <option value="cancelled">已暂停</option>
         </select>
@@ -595,6 +594,7 @@ onBeforeUnmount(() => {
           :run="detail.run"
           :prompt="detail.prompt"
           @updated="updated"
+          @new-session="startNew"
         />
       </template>
     </main>
