@@ -12,7 +12,8 @@ const buildVersion = buildCommitSha ? buildCommitSha.slice(0, 7) : undefined
 export default defineConfig({
   plugins: [
     vue(),
-    process.env.WAO_VUE_DEVTOOLS === 'false' ? undefined : vueDevTools(),
+    // 调试插件按需开启，避免真实数据页面的调试采集拖慢浏览器验收。
+    process.env.WAO_VUE_DEVTOOLS === 'true' ? vueDevTools() : undefined,
     webUpdateNotice({
       ...(buildVersion
         ? { versionType: 'custom', customVersion: buildVersion }

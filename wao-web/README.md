@@ -35,6 +35,14 @@ npm install
 npm run dev
 ```
 
+Vue DevTools 的 Vite 插件默认关闭。需要组件调试时显式开启：
+
+```sh
+WAO_VUE_DEVTOOLS=true npm run dev
+```
+
+在当前真实数据页面验收中，开启插件会触发浏览器控制超时；关闭后聊天输入和页面读取恢复正常。自动化验收使用默认启动方式即可。如果已有开发服务启用了插件，应停止该服务后重新启动，再刷新页面；单纯重试浏览器操作不会移除已加载的插件。
+
 ### Type-Check, Compile and Minify for Production
 
 ```sh
