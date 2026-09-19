@@ -278,6 +278,8 @@ onBeforeUnmount(() => {
 }
 .panel-state button,
 .restore-auto {
+  min-height: 44px;
+  font-size: 13px;
   border: 0;
   background: none;
   color: #267c65;
@@ -304,7 +306,7 @@ onBeforeUnmount(() => {
   align-items: flex-start;
 }
 .panel-head small {
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.18em;
   color: #267c65;
 }
@@ -315,15 +317,16 @@ onBeforeUnmount(() => {
 .panel-head p {
   margin: 0;
   color: var(--wao-text-weak);
-  font-size: 10px;
+  font-size: 12px;
 }
 .checklist-list {
   margin-top: 14px;
 }
 .check-row {
+  box-sizing: border-box;
   width: 100%;
   display: grid;
-  grid-template-columns: 33px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   min-height: 63px;
@@ -337,8 +340,8 @@ onBeforeUnmount(() => {
 }
 .check-toggle,
 .check-row > i {
-  width: 33px;
-  height: 33px;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   background: #e0f0e9;
   display: grid;
@@ -356,34 +359,39 @@ onBeforeUnmount(() => {
 .check-row span {
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
-  overflow: hidden;
 }
 .check-row b {
   flex: none;
-  white-space: nowrap;
-  font-size: 12.5px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  font-size: 14px;
 }
 .check-row small {
   min-width: 0;
-  overflow: hidden;
-  color: var(--wao-text-weak);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--wao-text-2);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .check-row em {
   font-style: normal;
 }
 .check-row strong {
-  font-size: 9.5px;
+  font-size: 12px;
   color: #267c65;
 }
 .timer-controls {
+  grid-column: 2 / -1;
+  justify-self: start;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 5px;
 }
 .timer-controls .timer-value {
@@ -394,14 +402,14 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 .timer-controls button {
-  height: 28px;
+  min-height: 44px;
   padding: 0 7px;
   border: 1px solid var(--wao-line-control);
   border-radius: 7px;
   background: var(--wao-bg-card);
   color: var(--wao-primary);
   cursor: pointer;
-  font-size: 9px;
+  font-size: 13px;
 }
 .timer-controls button i {
   margin-right: 3px;
@@ -427,6 +435,13 @@ onBeforeUnmount(() => {
   text-align: center;
   color: var(--wao-text-weak);
 }
+.check-toggle:focus-visible,
+.timer-controls button:focus-visible,
+.panel-state button:focus-visible,
+.restore-auto:focus-visible {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: 3px;
+}
 .spin {
   animation: spin 0.8s linear infinite;
 }
@@ -440,7 +455,7 @@ onBeforeUnmount(() => {
     padding: 14px;
   }
   .check-row {
-    grid-template-columns: 33px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr);
   }
   .check-row > strong,
   .timer-controls {
