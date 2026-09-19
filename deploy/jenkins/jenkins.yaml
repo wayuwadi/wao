@@ -159,7 +159,7 @@ jobs:
             scm {
               git {
                 remote {
-                  url('git@github.com:wayuwacn/wao.git')
+                  url('ssh://git@ssh.github.com:443/wayuwacn/wao.git')
                   credentials('wao-github-scm-ssh')
                   refspec('+refs/heads/main:refs/remotes/origin/main')
                 }

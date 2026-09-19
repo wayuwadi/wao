@@ -4,7 +4,7 @@
 
 ## Linux2
 
-沿用 Jenkins 的 Docker、Git SCM 与云发布 SSH 凭据；应用 JCasC 后出现独立任务。首次先选 `PUBLISH_CLIENT=false`、`BUILD_MACOS=false` 验收 Windows 交叉构建。构建镜像和依赖放在 Linux2，缓存位于 Jenkins 用户的 `caches/wao-client-windows`；控制器重启后仍保留。
+沿用 Jenkins 的 Docker、Git SCM 与云发布 SSH 凭据；先以 Jenkins 用户运行 `bash deploy/jenkins/client/configure-git.sh` 配置 GitHub 官方 SSH 443 入口，继续使用已核验的 github.com 主机公钥；应用 JCasC 后出现独立任务。首次先选 `PUBLISH_CLIENT=false`、`BUILD_MACOS=false` 验收 Windows 交叉构建。构建镜像和依赖放在 Linux2，缓存位于 Jenkins 用户的 `caches/wao-client-windows`；控制器重启后仍保留。
 
 构建生成 NSIS 安装程序并归档为 Jenkins 制品。交叉构建编译 Windows 测试，但不执行 Windows 原生测试，交付记录必须保留此限制。没有 Mac 或私钥时仍可做 Windows 影子构建。
 
