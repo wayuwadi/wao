@@ -32,7 +32,7 @@ const memory = (overrides: Partial<MemoryDocument> = {}): MemoryDocument => ({
 
 describe('MemoryView', () => {
   beforeEach(() => {
-    localStorage.clear(); vi.clearAllMocks(); route.query = {}
+    vi.restoreAllMocks(); localStorage.clear(); vi.clearAllMocks(); route.query = {}
     vi.mocked(fetchMemories).mockResolvedValue([])
   })
 
@@ -155,6 +155,63 @@ describe('MemoryView', () => {
     await wrapper.get('button[title="版本历史"]').trigger('click'); await flushPromises()
     expect(wrapper.get('.version-state').text()).toBe('暂无版本记录')
     expect(wrapper.find('.timeline').exists()).toBe(false)
+  })
+
+  it('读取本机草稿失败不会阻止编辑器打开或清除原草稿', async () => {
+    const wrapper = mount(MemoryView); await flushPromises()
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    const remove = vi.spyOn(Storage.prototype, 'removeItem')
+    const set = vi.spyOn(Storage.prototype, 'setItem')
+    await wrapper.get('.hero .primary').trigger('click')
+    expect(wrapper.find('.editor').exists()).toBe(true)
+    expect(wrapper.text()).toContain('无法读取本机草稿')
+    expect(remove).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('本机存储写入失败时不承诺已保存，并可重试恢复', async () => {
+    const wrapper = mount(MemoryView); await flushPromises()
+    await wrapper.get('.hero .primary').trigger('click')
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    await wrapper.get('input[maxlength="200"]').setValue('尚未落盘')
+    await wrapper.get('textarea[maxlength="20000"]').setValue('需要保留的输入')
+    expect(wrapper.get('.editor footer').text()).toContain('草稿未保存')
+    expect(wrapper.text()).toContain('内容目前只在此页面')
+    set.mockRestore()
+    await wrapper.get('.editor .draft button').trigger('click')
+    expect(wrapper.get('.editor footer').text()).toContain('草稿已保存在本机')
+    expect(JSON.parse(localStorage.getItem('wao:unified-memory-draft:personal:wg:new')!).content).toBe('需要保留的输入')
+  })
+
+  it('服务端成功但清理草稿失败时明确成功，不留重复提交表单', async () => {
+    vi.mocked(createMemory).mockResolvedValue(memory())
+    const wrapper = mount(MemoryView); await flushPromises()
+    await wrapper.get('.hero .primary').trigger('click')
+    await wrapper.get('input[maxlength="200"]').setValue('服务器记录')
+    await wrapper.get('textarea[maxlength="20000"]').setValue('已保存内容')
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('denied') })
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(wrapper.find('.editor').exists()).toBe(false)
+    expect(wrapper.text()).toContain('记忆已保存到服务器，但本机旧草稿未能清除')
+    expect(createMemory).toHaveBeenCalledTimes(1)
+  })
+
+  it('保存期间锁定输入与关闭操作，失败后恢复并保留草稿', async () => {
+    let rejectSave!: (error: Error) => void
+    vi.mocked(createMemory).mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject }))
+    const wrapper = mount(MemoryView); await flushPromises()
+    await wrapper.get('.hero .primary').trigger('click')
+    await wrapper.get('input[maxlength="200"]').setValue('等待保存')
+    await wrapper.get('textarea[maxlength="20000"]').setValue('不能丢失')
+    await wrapper.get('.editor footer .primary').trigger('click')
+    expect(wrapper.get('textarea[maxlength="20000"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[aria-label="关闭记忆编辑器"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('.mask').trigger('click')
+    expect(wrapper.find('.editor').exists()).toBe(true)
+    rejectSave(new Error('连接中断')); await flushPromises()
+    expect(wrapper.get('textarea[maxlength="20000"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('.save-error').text()).toContain('草稿已保存在本机')
+    expect(localStorage.getItem('wao:unified-memory-draft:personal:wg:new')).toContain('不能丢失')
   })
 
   it('读取失败时保留重试入口', async () => {
