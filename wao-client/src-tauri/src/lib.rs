@@ -58,6 +58,40 @@ fn workspace_size(size: LogicalSize<f64>, minimized: bool) -> Option<LogicalSize
     Some(LogicalSize::new(size.width, size.height - HEADER))
 }
 
+// Tauri's visible macOS titlebar uses a full-size content view. Its bounds
+// include the system titlebar, while the local shell is laid out below it.
+// Size the child from AppKit's unobscured content rect, in parent coordinates.
+#[cfg(target_os = "macos")]
+fn macos_workspace_frame(
+    bounds: objc2_foundation::NSRect,
+    flipped: bool,
+    minimized: bool,
+) -> Option<objc2_foundation::NSRect> {
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    let size = workspace_size(LogicalSize::new(bounds.size.width, bounds.size.height), minimized)?;
+    Some(NSRect::new(
+        NSPoint::new(bounds.origin.x, bounds.origin.y + if flipped { HEADER } else { 0.0 }),
+        NSSize::new(size.width, size.height),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn resize_macos_workspace(view: &Webview) -> tauri::Result<()> {
+    view.with_webview(|platform| {
+        use objc2_app_kit::NSView;
+        // The platform callback runs on the main thread, and Tauri owns the
+        // WKWebView (an NSView subclass) for the duration of this callback.
+        let view = unsafe { &*platform.inner().cast::<NSView>() };
+        let (Some(parent), Some(window)) = (unsafe { view.superview() }, view.window()) else {
+            return;
+        };
+        let content = parent.convertRect_fromView(window.contentLayoutRect(), None);
+        if let Some(frame) = macos_workspace_frame(content, parent.isFlipped(), window.isMiniaturized()) {
+            view.setFrame(frame);
+        }
+    })
+}
+
 fn workspace_url() -> tauri::Url {
     #[cfg(debug_assertions)]
     if let Ok(value) = std::env::var("WAO_WEB_DEV_URL") {
@@ -674,10 +708,18 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
         return Ok(());
     }
     let window = app.get_window("main").ok_or("窗口不存在")?;
-    let size = window
-        .inner_size()
-        .map_err(|e| e.to_string())?
-        .to_logical::<f64>(window.scale_factor().map_err(|e| e.to_string())?);
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let bounds = webview.bounds().map_err(|e| e.to_string())?;
+    let size = bounds.size.to_logical::<f64>(scale);
+    #[cfg(target_os = "macos")]
+    let position = {
+        // The shell already excludes the system titlebar. Match its origin
+        // before adding our toolbar so the first child frame is correct too.
+        let shell = bounds.position.to_logical::<f64>(scale);
+        LogicalPosition::new(shell.x, shell.y + HEADER)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let position = LogicalPosition::new(0.0, HEADER);
     let origin = workspace_url();
     let navigation_origin = origin.clone();
     let navigation_app = app.clone();
@@ -765,13 +807,17 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
         });
     #[cfg(target_os = "macos")]
     let builder = builder.on_download(|view, event| handle_download(view.app_handle(), event));
-    window
+    let workspace = window
         .add_child(
             builder,
-            LogicalPosition::new(0.0, HEADER),
+            position,
             LogicalSize::new(size.width, (size.height - HEADER).max(1.0)),
         )
         .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    resize_macos_workspace(&workspace).map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "macos"))]
+    let _ = workspace;
     Ok(())
 }
 
@@ -883,6 +929,13 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.hide();
                 }
+                #[cfg(target_os = "macos")]
+                WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                    if let Some(view) = window.app_handle().get_webview("workspace") {
+                        let _ = resize_macos_workspace(&view);
+                    }
+                }
+                #[cfg(not(target_os = "macos"))]
                 WindowEvent::Resized(size) => {
                     let logical = size.to_logical::<f64>(window.scale_factor().unwrap_or(1.0));
                     if let Some(size) =
@@ -1056,6 +1109,29 @@ mod tests {
         assert!(has_unread(&serde_json::json!({"ready":true,"chat":"99+"})));
         assert!(has_unread(&serde_json::json!({"ready":true,"notifications":"3"})));
         assert!(!has_unread(&serde_json::json!({"ready":true,"chat":"999"})));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_workspace_stays_below_toolbar_in_current_content_bounds() {
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+        // Normal, minimum, fullscreen and restored content sizes; the outer
+        // window/titlebar dimensions are deliberately absent from the input.
+        for (width, height) in [(1100.0, 760.0), (800.0, 560.0), (1920.0, 1080.0), (1100.0, 732.0)] {
+            for flipped in [false, true] {
+                let bounds = NSRect::new(NSPoint::new(7.0, 11.0), NSSize::new(width, height));
+                let frame = macos_workspace_frame(bounds, flipped, false).unwrap();
+                let top = if flipped { frame.origin.y - bounds.origin.y }
+                    else { bounds.origin.y + height - frame.origin.y - frame.size.height };
+                assert_eq!(top, HEADER);
+                assert_eq!(frame.size, NSSize::new(width, height - HEADER));
+                assert_eq!(frame.origin.x, bounds.origin.x);
+                assert!(macos_workspace_frame(bounds, flipped, true).is_none());
+            }
+        }
+        for (width, height) in [(0.0, 760.0), (1100.0, 0.0), (1100.0, HEADER)] {
+            assert!(macos_workspace_frame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(width, height)), false, false).is_none());
+        }
     }
 
     #[test]
