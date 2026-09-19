@@ -1,3 +1,4 @@
+import { readTaskDrafts, taskDraftWindowId } from '@/utils/taskDraftStorage'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSessionStore } from '@/stores/session'
@@ -87,7 +88,7 @@ describe('任务真实数据加载', () => {
     await hydrating
     expect(data.tasks).toEqual([])
     expect(putTask).not.toHaveBeenCalled()
-    expect(localStorage.getItem('wao-task-drafts-v1')).toContain('old')
+    expect(readTaskDrafts('m1', taskDraftWindowId()).old?.createdBy).toBe('m1')
   })
 
   it('任务接口一返回就接管空 store，不等待其他业务域', async () => {
