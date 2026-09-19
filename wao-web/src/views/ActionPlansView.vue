@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { readReviewActionDraft, reviewActionDraftKey, writeReviewActionDraft, type ReviewActionDraft, type ReviewActionSource } from '@/utils/reviewActionDraft'
 import {
   createActionPlan,
   fetchActionPlans,
@@ -32,6 +34,24 @@ const editingId = ref('')
 const editorBusy = ref(false)
 const session = useSessionStore()
 const userId = computed(() => session.userId)
+const route = useRoute()
+const router = useRouter()
+const reviewEntry = ref<ReviewActionDraft | null>(null)
+const reviewEntryError = ref('')
+const editorSource = ref<ReviewActionSource | null>(null)
+const editorDraftError = ref('')
+const reviewDraftId = computed(() => typeof route.query.reviewDraft === 'string' ? route.query.reviewDraft : '')
+function readReviewEntry() {
+  reviewEntry.value = null
+  reviewEntryError.value = ''
+  if (!reviewDraftId.value) return
+  try {
+    reviewEntry.value = readReviewActionDraft(userId.value, reviewDraftId.value)
+    if (!reviewEntry.value) reviewEntryError.value = '这份回顾草稿在当前账号或浏览器中不存在，可能已保存为计划。请先查看计划列表，或返回人生回顾重新选择。'
+  } catch { reviewEntryError.value = '回顾草稿暂时无法读取，请检查浏览器存储后重试。原草稿没有被清除。' }
+}
+watch([reviewDraftId, userId], readReviewEntry, { immediate: true })
+watch(userId, () => { editorOpen.value = false; editorSource.value = null; editorDraftError.value = '' })
 let loadVersion = 0
 
 interface ItemForm { id?: string; title: string; weekdays: number[] }
@@ -127,6 +147,9 @@ function emptyForm() {
   })
 }
 function openCreate() {
+  if (editorOpen.value) return
+  editorSource.value = null
+  editorDraftError.value = ''
   editingId.value = ''
   emptyForm()
   editorOpen.value = true
@@ -134,6 +157,8 @@ function openCreate() {
 function openEdit() {
   const plan = activePlan.value
   if (!plan) return
+  editorSource.value = null
+  editorDraftError.value = ''
   editingId.value = plan.id
   Object.assign(form, {
     title: plan.title, vision: plan.vision, startDate: plan.startDate, targetDate: plan.targetDate,
@@ -143,9 +168,38 @@ function openEdit() {
   })
   editorOpen.value = true
 }
+function persistEditorDraft() {
+  try {
+    if (editorSource.value) writeReviewActionDraft(userId.value, { source: editorSource.value, form })
+    else localStorage.setItem(DRAFT_KEY, JSON.stringify(form))
+    editorDraftError.value = ''
+  } catch { editorDraftError.value = '本机草稿保存失败，请保留此页面并复制备份，或直接确认保存计划。' }
+}
 watch(form, () => {
-  if (editorOpen.value && !editingId.value) localStorage.setItem(DRAFT_KEY, JSON.stringify(form))
-}, { deep: true })
+  if (editorOpen.value && !editingId.value && !editorBusy.value) persistEditorDraft()
+}, { deep: true, flush: 'sync' })
+function openReviewDraft() {
+  if (editorOpen.value) return
+  readReviewEntry()
+  const draft = reviewEntry.value
+  if (!draft) return
+  editorSource.value = draft.source
+  editorDraftError.value = ''
+  editingId.value = ''
+  const reference = `来自人生回顾（${draft.source.periodLabel}）：\n${draft.source.text}`
+  Object.assign(form, draft.form || {
+    title: '', vision: reference.length <= 1000 ? reference : '', startDate: today, targetDate: plusDays(today, 99),
+    reminderTime: '20:00', reminderEnabled: false,
+    items: [{ title: '', weekdays: [1, 2, 3, 4, 5] }],
+  })
+  editorOpen.value = true
+  persistEditorDraft()
+}
+function closeEditor() {
+  if (editorBusy.value) return
+  if (editorDraftError.value && !window.confirm('草稿尚未保存在本机。请确认已复制备份后再关闭。')) return
+  editorOpen.value = false
+}
 function addItem() {
   if (form.items.length < 20) form.items.push({ title: '', weekdays: [1, 2, 3, 4, 5] })
 }
@@ -165,9 +219,12 @@ function editorError() {
   return ''
 }
 async function submit() {
+  if (editorBusy.value) return
   const error = editorError()
   if (error) { toast(error, 'ri-information-line'); return }
   editorBusy.value = true
+  const wasEditing = Boolean(editingId.value)
+  const savedDraftKey = editorSource.value ? reviewActionDraftKey(userId.value, editorSource.value.id) : DRAFT_KEY
   const payload: SaveActionPlan = {
     ...form,
     title: form.title.trim(), vision: form.vision.trim(),
@@ -181,7 +238,19 @@ async function submit() {
     activePlanId.value = updated.id
     await load()
     editorOpen.value = false
-    localStorage.removeItem(DRAFT_KEY)
+    if (!wasEditing) {
+      try { localStorage.removeItem(savedDraftKey) }
+      catch { toast('计划已保存，但本机旧草稿未能清除，下次恢复前请核对计划列表。', 'ri-error-warning-line') }
+    }
+    if (editorSource.value) {
+      reviewEntry.value = null
+      if (route.query.reviewDraft === editorSource.value.id) {
+        const query = { ...route.query }
+        delete query.reviewDraft
+        try { await router.replace({ path: '/action-plans', query }) }
+        catch { toast('计划已保存，返回行动计划列表后可查看。', 'ri-information-line') }
+      }
+    }
     toast(editingId.value ? '计划已保存，历史打卡未受影响' : '行动计划已创建，从今天开始执行', 'ri-check-line')
   } catch (error) {
     toast(error instanceof Error ? error.message : '计划保存失败，请重试', 'ri-error-warning-line')
@@ -216,6 +285,16 @@ onMounted(() => void load(false))
       </div>
       <button class="primary" type="button" @click="openCreate"><i class="ri-add-line"></i>新建计划</button>
     </header>
+
+    <section v-if="reviewEntry" class="review-reference">
+      <b>来自人生回顾的行动草稿 · {{ reviewEntry.source.periodLabel }}</b>
+      <p>{{ reviewEntry.source.text }}</p>
+      <small>尚未创建计划。请确认目标、日期与具体动作；普通新建草稿保持不变。</small>
+      <button type="button" :disabled="editorOpen" @click="openReviewDraft">继续填写行动草稿</button>
+    </section>
+    <section v-else-if="reviewEntryError" class="review-reference" role="alert">
+      <p>{{ reviewEntryError }}</p><button type="button" @click="readReviewEntry">重试读取草稿</button><a href="/life-review">返回人生回顾</a>
+    </section>
 
     <div v-if="loading" class="state-card"><i class="ri-loader-4-line spin"></i>正在读取你的行动计划…</div>
     <div v-else-if="loadError" class="state-card error">
@@ -291,10 +370,12 @@ onMounted(() => void load(false))
     </template>
 
     <template v-if="editorOpen">
-      <div class="mask" @click="!editorBusy && (editorOpen = false)"></div>
+      <div class="mask" @click="closeEditor"></div>
       <section class="editor" role="dialog" aria-modal="true" aria-labelledby="action-editor-title">
-        <header><div><small>{{ editingId ? '调整执行节奏' : '建立长期方向' }}</small><h2 id="action-editor-title">{{ editingId ? '设置行动计划' : '新建行动计划' }}</h2></div><button type="button" @click="editorOpen = false"><i class="ri-close-line"></i></button></header>
-        <div class="editor-body">
+        <header><div><small>{{ editingId ? '调整执行节奏' : '建立长期方向' }}</small><h2 id="action-editor-title">{{ editingId ? '设置行动计划' : '新建行动计划' }}</h2></div><button type="button" aria-label="关闭行动计划编辑器" :disabled="editorBusy" @click="closeEditor"><i class="ri-close-line"></i></button></header>
+        <fieldset class="editor-body" :disabled="editorBusy">
+          <section v-if="editorSource" class="review-reference"><b>回顾参考 · {{ editorSource.periodLabel }}</b><p>{{ editorSource.text }}</p><small>请把参考转成你确认要做的事；保存前不会创建计划或开启提醒。</small></section>
+          <div v-if="editorDraftError" class="review-reference" role="alert">{{ editorDraftError }}<button type="button" @click="persistEditorDraft">重试保存草稿</button></div>
           <label><span>我想达成</span><input v-model="form.title" maxlength="128" placeholder="例如：100 天健康重启" /></label>
           <label><span>想成为的样子与判断标准</span><textarea v-model="form.vision" maxlength="1000" rows="3" placeholder="写自己的目标和可观察结果；不要只写一个模糊数字。"></textarea></label>
           <div class="date-grid"><label><span>开始日期</span><input v-model="form.startDate" type="date" /></label><label><span>目标日期</span><input v-model="form.targetDate" type="date" /></label></div>
@@ -308,14 +389,15 @@ onMounted(() => void load(false))
             <input v-if="form.reminderEnabled" v-model="form.reminderTime" type="time" aria-label="提醒时间" />
           </div>
           <p class="safety"><i class="ri-shield-check-line"></i>WAO 负责规划、提醒和记录，不根据外形照片生成医疗、饮食或训练处方；疼痛或健康风险请向合格专业人士确认。</p>
-        </div>
-        <footer><span>{{ !editingId ? '新建草稿会自动保存在本机' : '保存后立即在所有设备生效' }}</span><button type="button" @click="editorOpen = false">取消</button><button class="primary" type="button" :disabled="editorBusy" @click="submit">{{ editorBusy ? '保存中…' : '保存计划' }}</button></footer>
+        </fieldset>
+        <footer><span>{{ editorDraftError ? '草稿未保存，请保留页面' : !editingId ? '新建草稿会自动保存在本机' : '保存后立即在所有设备生效' }}</span><button type="button" :disabled="editorBusy" @click="closeEditor">取消</button><button class="primary" type="button" :disabled="editorBusy" @click="submit">{{ editorBusy ? '保存中…' : '保存计划' }}</button></footer>
       </section>
     </template>
   </main>
 </template>
 
 <style scoped>
+.review-reference{margin:14px 0;padding:14px;border:1px solid var(--wao-line);border-radius:10px;background:var(--wao-bg-sub);font-size:13px;overflow-wrap:anywhere}.review-reference p{white-space:pre-wrap;line-height:1.7}.review-reference small{display:block;color:var(--wao-text-3);line-height:1.6}.review-reference button,.review-reference a{display:inline-block;margin:10px 10px 0 0;border:1px solid var(--wao-line-control);border-radius:8px;padding:7px 10px;background:var(--wao-bg-card);color:var(--wao-primary-text)}fieldset.editor-body{border:0;margin:0;min-width:0}
 .action-page { max-width: none; margin: 0 auto; padding: 24px 28px 52px; color: var(--wao-text); }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .eyebrow { color: #267c65; font-size: 10px; font-weight: 750; letter-spacing: 2.2px; }

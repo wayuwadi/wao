@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useSessionStore } from '@/stores/session'
+import { prepareReviewActionDraft, reviewActionSuggestions } from '@/utils/reviewActionDraft'
 import { fetchAssistantStatus, type AssistantStatus } from '@/api/assistant'
 import {
   fetchLifeReview,
@@ -27,6 +30,10 @@ const SECTIONS = [
 ]
 
 const period = ref<LifeReviewPeriod>('WEEK')
+const router = useRouter()
+const session = useSessionStore()
+const actionDraftError = ref('')
+const actionDraftBusy = ref(false)
 const anchorDate = ref('')
 const review = ref<LifeReview | null>(null)
 const history = ref<LifeReviewHistory[]>([])
@@ -42,6 +49,24 @@ let historyVersion = 0
 const assistant = ref<AssistantStatus>({ configured: false, message: '正在检查本地 Codex…' })
 
 const hasEvidence = computed(() => (review.value?.sources.length ?? 0) > 0)
+const actionReferences = computed(() => review.value?.report ? reviewActionSuggestions(review.value.report.nextFocus) : [])
+async function startActionDraft(text: string, index: number) {
+  if (!review.value || actionDraftBusy.value) return
+  actionDraftBusy.value = true
+  actionDraftError.value = ''
+  const source = {
+    id: `${review.value.periodKey}:${review.value.generatedAt || 'saved'}:${index}`,
+    periodLabel: review.value.periodLabel,
+    text,
+  }
+  try {
+    prepareReviewActionDraft(session.userId, source)
+    const failure = await router.push({ path: '/action-plans', query: { reviewDraft: source.id } })
+    if (failure) actionDraftError.value = '草稿已保存在本机，但页面未能打开，请再次点击。'
+  } catch {
+    actionDraftError.value = '无法打开行动草稿，请检查浏览器存储和连接后重试。回顾原文仍保留在这里。'
+  } finally { actionDraftBusy.value = false }
+}
 const canGenerate = computed(() => hasEvidence.value && assistant.value.configured && !generating.value && !loading.value)
 const canGoNext = computed(() => {
   if (!review.value || period.value === 'LIFE') return false
@@ -191,7 +216,15 @@ onMounted(async () => {
         <div class="report-sections">
           <article v-for="section in SECTIONS" :key="section.key">
             <h3><i :class="section.icon"></i>{{ section.title }}</h3>
-            <div class="markdown" v-html="renderMarkdown(review.report[section.key])"></div>
+            <template v-if="section.key === 'nextFocus'">
+              <p class="action-hint">选一条你想落实的内容，带到行动计划中确认。此处不会直接创建计划或开启提醒。</p>
+              <div v-for="(reference, index) in actionReferences" :key="index" class="action-reference">
+                <div class="markdown" v-html="renderMarkdown(reference)"></div>
+                <button class="action-draft-button" :disabled="actionDraftBusy" :aria-label="`以第 ${index + 1} 条内容创建行动草稿`" @click="startActionDraft(reference, index)">创建行动草稿</button>
+              </div>
+              <p v-if="actionDraftError" class="inline-error" role="alert">{{ actionDraftError }}</p>
+            </template>
+            <div v-else class="markdown" v-html="renderMarkdown(review.report[section.key])"></div>
           </article>
         </div>
         <button class="generate-button secondary" :disabled="!canGenerate" @click="generate">
@@ -237,6 +270,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.action-hint{font-size:12px;color:var(--wao-text-3);line-height:1.6}.action-reference{padding:12px 0;border-top:1px solid var(--wao-line)}.action-draft-button{border:1px solid var(--wao-line-control);border-radius:8px;padding:7px 10px;background:var(--wao-bg-card);color:var(--wao-primary-text);font-size:12px;cursor:pointer}
 .generation-progress{background:var(--wao-primary-soft)!important;color:var(--wao-text)!important}
 
 .review-page { max-width: none; margin: 0 auto; padding: 24px 28px 60px; color: var(--wao-text); }

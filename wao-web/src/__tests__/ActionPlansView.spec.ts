@@ -1,6 +1,10 @@
 import { flushPromises, mount, enableAutoUnmount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ActionPlansView from '@/views/ActionPlansView.vue'
+import { prepareReviewActionDraft, readReviewActionDraft } from '@/utils/reviewActionDraft'
+const actionRoute = { query: {} as Record<string, string> }
+const replaceRoute = vi.fn().mockResolvedValue(undefined)
+vi.mock('vue-router', () => ({ useRoute: () => actionRoute, useRouter: () => ({ replace: replaceRoute }) }))
 import {
   createActionPlan,
   fetchActionPlans,
@@ -34,6 +38,7 @@ const plan: ActionPlan = {
 
 describe('ActionPlansView', () => {
   beforeEach(() => {
+    actionRoute.query = {}
     vi.useFakeTimers()
     localStorage.clear()
     vi.mocked(fetchActionPlans).mockResolvedValue([plan])
@@ -42,6 +47,58 @@ describe('ActionPlansView', () => {
     vi.mocked(saveActionNote).mockResolvedValue(plan)
   })
   afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.clearAllMocks() })
+
+  it('回顾草稿带入原文、保留普通草稿且不会自动创建或开启提醒', async () => {
+    const normal = JSON.stringify({ title: '尚未完成的普通草稿' })
+    localStorage.setItem('wao-action-plan-draft-v1', normal)
+    prepareReviewActionDraft('member-a', { id: 'review-1', periodLabel: '本周回顾', text: '怎样把复盘变成行动？' })
+    actionRoute.query = { reviewDraft: 'review-1' }
+    const wrapper = mount(ActionPlansView); await flushPromises()
+    expect(wrapper.find('.editor').exists()).toBe(false)
+    await wrapper.get('.review-reference button').trigger('click')
+    expect(wrapper.get('.editor').text()).toContain('怎样把复盘变成行动？')
+    expect((wrapper.get('.editor input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('.editor input[maxlength="128"]').setValue('每周确认一个改进')
+    expect(readReviewActionDraft('member-a', 'review-1')?.form?.title).toBe('每周确认一个改进')
+    expect(localStorage.getItem('wao-action-plan-draft-v1')).toBe(normal)
+    expect(createActionPlan).not.toHaveBeenCalled()
+    wrapper.unmount()
+    const reopened = mount(ActionPlansView); await flushPromises()
+    await reopened.get('.review-reference button').trigger('click')
+    expect((reopened.get('.editor input[maxlength="128"]').element as HTMLInputElement).value).toBe('每周确认一个改进')
+  })
+
+  it('确认回顾计划保存成功仅清理对应草稿', async () => {
+    localStorage.setItem('wao-action-plan-draft-v1', 'untouched')
+    prepareReviewActionDraft('member-a', { id: 'review-2', periodLabel: '本周回顾', text: '如何持续改进？' })
+    actionRoute.query = { reviewDraft: 'review-2' }
+    vi.mocked(createActionPlan).mockResolvedValue(plan)
+    const wrapper = mount(ActionPlansView); await flushPromises()
+    await wrapper.get('.review-reference button').trigger('click')
+    await wrapper.get('.editor input[maxlength="128"]').setValue('落实一项改进')
+    await wrapper.get('.item-input input').setValue('检查本周改进结果')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(createActionPlan).toHaveBeenCalledWith(expect.objectContaining({ title: '落实一项改进', reminderEnabled: false, reminderTime: null }))
+    expect(readReviewActionDraft('member-a', 'review-2')).toBeNull()
+    expect(localStorage.getItem('wao-action-plan-draft-v1')).toBe('untouched')
+    expect(replaceRoute).toHaveBeenCalledWith({ path: '/action-plans', query: {} })
+  })
+
+  it('回顾计划保存失败后保留来源和输入，可原样重试', async () => {
+    prepareReviewActionDraft('member-a', { id: 'retry', periodLabel: '本周回顾', text: '要改进什么？' })
+    actionRoute.query = { reviewDraft: 'retry' }
+    vi.mocked(createActionPlan).mockRejectedValueOnce(new Error('连接中断')).mockResolvedValueOnce(plan)
+    const wrapper = mount(ActionPlansView); await flushPromises()
+    await wrapper.get('.review-reference button').trigger('click')
+    await wrapper.get('.editor input[maxlength="128"]').setValue('确认后的目标')
+    await wrapper.get('.item-input input').setValue('确认后的动作')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(wrapper.get('.editor').text()).toContain('要改进什么？')
+    expect(readReviewActionDraft('member-a', 'retry')?.form?.title).toBe('确认后的目标')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(createActionPlan).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.editor').exists()).toBe(false)
+  })
 
   it('展示服务端真实计划并在点击后保存当日打卡', async () => {
     const wrapper = mount(ActionPlansView)
