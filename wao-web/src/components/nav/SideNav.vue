@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WaoLogo from '@/components/WaoLogo.vue'
 import { useTopShortcutsStore, favoriteShortcut } from '@/stores/topShortcuts'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -201,7 +202,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 <template>
   <aside class="side" :class="{ collapsed: nav.collapsed }">
     <div class="side-heading">
-      <div v-if="!desktopToolbar && !nav.collapsed" class="brand-mark">WAO</div>
+      <WaoLogo v-if="!desktopToolbar && !nav.collapsed" wordmark />
       <button
         class="side-collapse"
         :aria-label="nav.collapsed ? '展开侧栏' : '折叠侧栏'"
@@ -949,6 +950,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 }
 
 @media (max-width: 760px) {
+  .side-heading :deep(.wao-logo-name) { display: none; }
+  .side-heading :deep(.wao-logo-symbol) { width: 30px; height: 22px; }
   .side,
   .side.collapsed {
     position: relative;

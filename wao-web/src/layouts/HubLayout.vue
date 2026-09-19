@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import WaoLogo from '@/components/WaoLogo.vue'
 import { useSessionStore } from '@/stores/session'
 const session = useSessionStore()
 </script>
 <template>
   <div class="hub-shell">
     <header class="hub-header">
-      <RouterLink to="/hub" class="hub-brand">WAO-HUB</RouterLink>
+      <RouterLink to="/hub" class="hub-brand"><WaoLogo wordmark /> HUB</RouterLink>
       <nav aria-label="仓库导航">
         <RouterLink to="/skills">Skill 仓库</RouterLink><RouterLink to="/pets">Pet 仓库</RouterLink>
         <RouterLink v-if="session.authed" to="/pets/create">创造 / 上传</RouterLink>

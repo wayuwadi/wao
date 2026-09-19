@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WaoLogo from '@/components/WaoLogo.vue'
 /**
  * 公开分享页（免登录）—— 任务或子任务的只读视图。
  *
@@ -88,7 +89,7 @@ async function copyMd() {
 
       <template v-else-if="shared">
         <div class="brand">
-          <span class="brand-dot"></span>WAO · {{ shared.kind === 'sub' ? '子任务分享' : '任务分享' }}
+          <WaoLogo />WAO · {{ shared.kind === 'sub' ? '子任务分享' : '任务分享' }}
         </div>
         <a class="locate" :href="originalUrl"><i class="ri-corner-up-left-line"></i>回到 WAO 中的原任务</a>
         <h1 class="title">{{ shared.title }}</h1>
