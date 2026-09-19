@@ -15,6 +15,12 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
+      path: '/connection-recovery',
+      name: 'connection-recovery',
+      component: () => import('@/views/ConnectionRecoveryView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
@@ -467,9 +473,12 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   // 安装包分发无需会话；服务端临时不可用也不应阻塞公开下载页。
-  if (to.name === 'client-download') return true
+  if (to.name === 'client-download' || to.name === 'connection-recovery') return true
   const session = useSessionStore()
   await session.initialize()
+  if (session.connectionError && !to.meta.public) {
+    return { name: 'connection-recovery', query: { redirect: to.fullPath }, replace: true }
+  }
   if (!to.meta.public && !session.authed) {
     return { name: 'login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : undefined }
   }
