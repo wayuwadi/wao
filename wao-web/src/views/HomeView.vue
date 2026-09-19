@@ -80,6 +80,10 @@ const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
 const workflowsLoading = ref(false)
 const quotaOverview = ref<AiEvolutionOverview | null>(null)
+const quotaLoading = ref(true)
+const quotaError = ref(false)
+const quotaDetailsOpen = ref(false)
+const benefitsAttention = ref('')
 const taskAutoRunPolicy = ref<AiTaskAutoRunPolicy | null>(null)
 const taskAutoRunEnabled = ref(true)
 const taskAutoRunHours = ref(2)
@@ -432,10 +436,14 @@ async function refreshGoalRunOptions() {
 
 /** 额度仍在首页展示，但不再渲染、生成或派发任何自主进化建议。 */
 async function refreshQuotaOverview() {
+  quotaLoading.value = true
+  quotaError.value = false
   try {
     quotaOverview.value = await fetchAiEvolution()
   } catch {
-    // 额度读取失败时隐藏入口，运行状态与目标派发继续可用。
+    quotaError.value = true
+  } finally {
+    quotaLoading.value = false
   }
 }
 
@@ -1267,14 +1275,21 @@ onBeforeUnmount(() => {
           <div class="eyebrow">AI CONTROL CENTER</div>
           <h1 class="slogan">娃有多大胆，AI 有多大产</h1>
         </div>
-        <div class="hero-metrics">
+        <div class="quota-summary">
+          <span role="status">{{ quotaError ? '额度读取失败' : quotaLoading && !quotaOverview ? '正在读取额度…' : heroWeeklyQuota ? `Codex 周剩余 ${heroWeeklyQuota.remainingPercent}%` : '暂无有效额度快照' }}</span>
+          <button type="button" :aria-expanded="quotaDetailsOpen" aria-controls="home-quota-details" @click="quotaDetailsOpen = !quotaDetailsOpen">{{ quotaDetailsOpen ? '收起额度与权益' : '展开额度与权益' }}</button>
+        </div>
+        <p v-if="quotaError" class="quota-attention" role="alert">暂时无法确认当前额度；已有快照仅供参考。<button type="button" :disabled="quotaLoading" @click="refreshQuotaOverview">重试读取额度</button></p>
+        <p v-else-if="heroWeeklyQuota && heroWeeklyQuota.remainingPercent < 20" class="quota-attention" role="status">周额度偏低，长任务可能受限；展开可查看重置时间与权益记录。</p>
+        <p v-if="benefitsAttention" class="quota-attention" role="status">{{ benefitsAttention }}，展开额度与权益查看。</p>
+        <div v-show="quotaDetailsOpen" id="home-quota-details" class="hero-metrics">
           <div class="quota-card weekly-quota" :class="heroWeeklyQuota ? quotaClass(heroWeeklyQuota.remainingPercent) : ''"
             :title="heroWeeklyQuota ? `Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}` : '周额度暂不可用'">
             <span>Codex 周剩余额度</span>
             <strong>{{ heroWeeklyQuota ? heroWeeklyQuota.remainingPercent : '—' }}<em v-if="heroWeeklyQuota">%</em></strong>
             <small>{{ heroWeeklyQuota ? resetText(heroWeeklyQuota.resetsAt) : '等待额度同步' }}</small>
           </div>
-          <CodexBenefitsPanel compact :accounts="quotaOverview?.codexQuotas" />
+          <CodexBenefitsPanel compact :accounts="quotaOverview?.codexQuotas" @attention="benefitsAttention = $event" />
         </div>
         <div class="hero-status">
           <span><i class="signal-dot"></i>{{ onlineRunners.length }} 台在线</span>
@@ -3267,6 +3282,12 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .hero h1.slogan { font-size: 22px; margin: 5px 0 0; }
 .hero-metrics { display: flex; align-items: flex-start; gap: 22px; width: 100%; }
 .hero-metrics > .codex-benefits { flex: 1; }
+.home-primary > :deep(.start-guide) { grid-column: 1 / -1; }
+.quota-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #e0e5ff; }
+.quota-summary button, .quota-attention button { border: 1px solid #ffffff40; border-radius: 6px; padding: 5px 8px; background: #ffffff12; color: inherit; font: inherit; cursor: pointer; }
+.quota-attention { margin: 0; font-size: 12px; line-height: 1.6; color: #ffe9a9; }
+.quota-attention button { margin-left: 6px; }
+.quota-summary button:focus-visible, .quota-attention button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .quota-card { flex: 0 0 auto; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; align-content: start; }
 .quota-card strong { font-size: 26px; margin-top: 5px; }
 .quota-card strong em { font-size: 14px; }

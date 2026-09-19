@@ -5,6 +5,7 @@ import type { CodexQuotaAccount } from '@/api/ai'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { useSessionStore } from '@/stores/session'
 
+const emit = defineEmits<{ attention: [message: string] }>()
 const session = useSessionStore()
 const props = defineProps<{ compact?: boolean; accounts?: CodexQuotaAccount[] }>()
 const officialAccounts = computed(() => (props.accounts ?? []).filter(account => account.resetCredits))
@@ -25,6 +26,12 @@ const daysLeft = computed(() => saved.value.proExpiresOn ? benefitDaysLeft(saved
 const expiryLabel = computed(() => daysLeft.value === null ? '到期日未设置'
   : daysLeft.value < 0 ? `已到期 ${-daysLeft.value} 天`
     : daysLeft.value === 0 ? '今天到期' : `剩 ${daysLeft.value} 天`)
+// 折叠容器仍需提示错误、未完成编辑和手工记录的到期提醒。
+watch(() => error.value ? '权益记录需处理'
+  : draftWarning.value ? '权益草稿需处理'
+    : editing.value ? '权益有未完成编辑'
+      : loaded.value && daysLeft.value !== null && daysLeft.value <= 7 ? `Pro ${expiryLabel.value}（手工记录）` : '',
+  message => emit('attention', message), { immediate: true })
 const draftKey = (memberId: string) => `wao:codex-benefits-draft:${memberId}`
 
 async function load() {

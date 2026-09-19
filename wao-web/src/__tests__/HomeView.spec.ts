@@ -350,6 +350,36 @@ function pasteInto(el: Element, files: File[]) {
 }
 
 describe('HomeView AI 控制台', () => {
+  it('常态额度折叠但保留权益组件，展开后仍可查看原始详情', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+    expect(wrapper.get('.quota-summary').text()).toContain('Codex 周剩余 38%')
+    expect(wrapper.get('#home-quota-details').isVisible()).toBe(false)
+    expect(wrapper.find('.codex-benefits').exists()).toBe(true)
+    await wrapper.get('.quota-summary button').trigger('click')
+    expect((wrapper.get('#home-quota-details').element as HTMLElement).style.display).not.toBe('none')
+    expect(wrapper.get('.quota-summary button').attributes('aria-expanded')).toBe('true')
+    await wrapper.get('.quota-summary button').trigger('click')
+    expect(wrapper.get('#home-quota-details').isVisible()).toBe(false)
+    expect(wrapper.find('.codex-benefits').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('额度读取失败即使折叠也显示恢复入口，重试成功恢复真实摘要', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiEvolution).mockRejectedValueOnce(new Error('网络断开'))
+    const { wrapper } = mountHome()
+    await flushPromises()
+    expect(wrapper.get('.quota-summary').text()).toContain('额度读取失败')
+    expect(wrapper.get('.quota-attention[role="alert"]').text()).toContain('重试读取额度')
+    await wrapper.get('.quota-attention button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.quota-summary').text()).toContain('Codex 周剩余 38%')
+    expect(wrapper.find('.quota-attention[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('列表和原卡片同步切换活动与历史运行，重新进入恢复选择', async () => {
     const first = mountHome()
     await flushPromises()
