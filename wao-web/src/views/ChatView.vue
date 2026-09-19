@@ -254,6 +254,9 @@ const reactionMenuId = ref('')
 const emojiOpen = ref(false)
 const unreadBoundaryId = ref('')
 const stream = ref<HTMLElement | null>(null)
+const atLatest = ref(true)
+const positionReady = ref(false)
+let streamResize: ResizeObserver | undefined
 const reviewOpen = ref(false)
 const initialReviewId = ref('')
 const storageKey = computed(
@@ -302,9 +305,29 @@ function nearBottom() {
   return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 120
 }
 
+function isAtLatest() {
+  const el = stream.value
+  return !!el && el.clientHeight > 0 && el.scrollHeight - el.scrollTop - el.clientHeight <= 2
+}
+
 async function scrollBottom() {
   await nextTick()
   if (stream.value) stream.value.scrollTop = stream.value.scrollHeight
+  atLatest.value = isAtLatest()
+}
+
+function onStreamScroll() {
+  atLatest.value = isAtLatest()
+  void markVisibleRead()
+}
+
+async function goToLatest() {
+  await scrollBottom()
+  await markVisibleRead()
+}
+
+async function onMediaLoaded() {
+  if (props.visible && atLatest.value) await goToLatest()
 }
 
 function merge(incoming: SharedChatMessage[]) {
@@ -318,7 +341,13 @@ function merge(incoming: SharedChatMessage[]) {
 }
 
 async function markVisibleRead() {
-  if (!props.visible || document.visibilityState !== 'visible' || !nearBottom()) return
+  if (
+    !props.visible ||
+    !positionReady.value ||
+    document.visibilityState !== 'visible' ||
+    !isAtLatest()
+  )
+    return
   const last = messages.value[messages.value.length - 1]
   if (!last || messages.value.every((message) => message.read)) return
   try {
@@ -341,16 +370,20 @@ async function load(initial = false) {
     if (initial && !unreadBoundaryId.value) {
       unreadBoundaryId.value = incoming.find((message) => !message.read)?.id ?? ''
     }
+    // Recheck after the request: the user may have scrolled up while it was in flight.
+    const follow = shouldFollow && (initial || isAtLatest())
     merge(incoming)
     loadError.value = ''
-    if (shouldFollow) {
-      await scrollBottom()
-      await markVisibleRead()
-    }
+    if (follow) await scrollBottom()
+    positionReady.value = true
+    if (follow) await markVisibleRead()
   } catch (error) {
     loadError.value = messageOf(error, '聊天记录读取失败，请重试')
   } finally {
-    if (initial) loading.value = false
+    if (initial) {
+      loading.value = false
+      positionReady.value = true
+    }
   }
 }
 
@@ -359,7 +392,12 @@ async function poll() {
 }
 
 // 展开每 5 秒刷新；收起仍为入口和宠物保持及时未读提示。
-const messagePolling = createVisibilityPoller(poll, () => (props.visible && !document.hidden ? POLL_MS : 10_000), document, hasDesktopToolbar)
+const messagePolling = createVisibilityPoller(
+  poll,
+  () => (props.visible && !document.hidden ? POLL_MS : 10_000),
+  document,
+  hasDesktopToolbar,
+)
 
 async function uploadInlineImage(file: File, done: (url: string | null, name: string) => void) {
   sendError.value = ''
@@ -499,11 +537,13 @@ watch(
       messagePolling.reschedule()
       return
     }
+    positionReady.value = false
     await messagePolling.trigger()
     if (!unreadBoundaryId.value) {
       unreadBoundaryId.value = messages.value.find((message) => !message.read)?.id ?? ''
     }
     await scrollBottom()
+    positionReady.value = true
     await markVisibleRead()
   },
 )
@@ -519,6 +559,12 @@ watch(
 )
 
 onMounted(async () => {
+  if (typeof ResizeObserver !== 'undefined' && stream.value) {
+    streamResize = new ResizeObserver(() => {
+      void onMediaLoaded()
+    })
+    streamResize.observe(stream.value)
+  }
   let restoredReplyId = ''
   const stored =
     localStorage.getItem(storageKey.value) ??
@@ -547,6 +593,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   disposed = true
+  streamResize?.disconnect()
   messagePolling.stop()
 })
 </script>
@@ -599,8 +646,10 @@ onBeforeUnmount(() => {
       <div
         ref="stream"
         class="message-stream"
+        :class="{ 'position-pending': !positionReady && messages.length }"
         aria-live="polite"
-        @scroll.passive="markVisibleRead"
+        @scroll.passive="onStreamScroll"
+        @load.capture="onMediaLoaded"
         @click="openSharedLink"
         @contextmenu="imageContext"
       >
@@ -734,6 +783,16 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <button
+        v-if="!atLatest && messages.length"
+        class="latest-button"
+        type="button"
+        @click="goToLatest"
+      >
+        <i class="ri-arrow-down-line"></i>回到最新消息<span v-if="unreadCount"
+          >（{{ unreadCount }} 条未读）</span
+        >
+      </button>
       <form class="composer" @submit.prevent="send" @keydown.capture="onComposerKeydown">
         <div v-if="replyingTo" class="replying">
           <i class="ri-reply-line"></i
@@ -817,6 +876,20 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.message-stream.position-pending {
+  visibility: hidden;
+}
+.latest-button {
+  align-self: center;
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border: 1px solid var(--wao-line);
+  border-radius: 20px;
+  color: var(--wao-primary-text);
+  background: var(--wao-bg-card);
+  cursor: pointer;
+}
+
 .chat-page {
   height: calc(100vh - 112px);
   min-height: 560px;
@@ -1350,5 +1423,9 @@ onBeforeUnmount(() => {
 </style>
 
 <style scoped>
-.reaction-picker { display: grid; grid-template-columns: repeat(5, 32px); max-width: calc(100vw - 32px); }
+.reaction-picker {
+  display: grid;
+  grid-template-columns: repeat(5, 32px);
+  max-width: calc(100vw - 32px);
+}
 </style>
