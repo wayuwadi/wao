@@ -59,6 +59,9 @@ describe('知识库真实资料检索', () => {
     expect(group.text()).toContain('WAO 项目档案')
     await group.get('button[title="知识库设置"]').trigger('click')
     expect(wrapper.text()).toContain('所属分组')
+    expect(wrapper.find('.f-input').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.f-textarea').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('名称与简介不可修改')
   })
   it('按文档标题找到所属知识库，并能直接打开命中文档', async () => {
     const { wrapper, router } = await render()
@@ -90,7 +93,7 @@ describe('知识库真实资料检索', () => {
   it('共享筛选只展示后端标记为成员可编辑的知识库', async () => {
     const { wrapper } = await render()
 
-    await wrapper.findAll('.kb-scopes button')[2]!.trigger('click')
+    await wrapper.findAll('.kb-scopes button').find(button => button.text() === '共享资料')!.trigger('click')
 
     expect(wrapper.findAll('.kb-card').map((card) => card.text())).toEqual([
       expect.stringContaining('WAO 项目档案'),

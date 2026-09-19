@@ -38,6 +38,7 @@ import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.DocLinkDto;
 import cn.wayuwa.wao.dto.DocTemplateDto;
 import cn.wayuwa.wao.dto.KbDto;
+import cn.wayuwa.wao.dto.IdeaDto;
 import cn.wayuwa.wao.dto.PatchDocRequest;
 import cn.wayuwa.wao.dto.PatchDocTemplateRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
@@ -378,32 +379,32 @@ class KnowledgeServiceTest {
     }
 
     @Test
-    void projectBriefIsCreatedLazilyAndReusedByStableId() {
-        ProjectDto project = mock(ProjectDto.class);
-        when(project.id()).thenReturn("p-idea");
-        when(project.name()).thenReturn("桌面应用");
-        when(project.goal()).thenReturn("做出可安装的第一版");
-        KbEntity projectKb = kb("kb-project");
-        projectKb.setProjectId("p-idea");
-        KbFolderEntity projectFolder = folder("f-project", projectKb.getId());
-        when(kbMapper.selectList(any())).thenReturn(List.of(projectKb));
-        when(folderMapper.selectList(any())).thenReturn(List.of(projectFolder));
-        when(docMapper.selectCount(any())).thenReturn(0L);
+    void retiredProjectBriefDoesNotCreateKnowledgeContent() {
+        assertThatThrownBy(() -> service.ensureProjectBrief(mock(ProjectDto.class), "wg"))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("具体任务");
+        verify(kbMapper, never()).insert(any(KbEntity.class));
+        verify(docMapper, never()).insert(any(DocEntity.class));
+    }
+
+    @Test
+    void ideaArchiveUsesIndependentAssetLibraryAndKeepsStableDocumentIdentity() {
+        IdeaDto idea = mock(IdeaDto.class);
+        when(idea.id()).thenReturn("idea1");
+        when(idea.title()).thenReturn("测试点子");
+        when(idea.detail()).thenReturn(mock(IdeaDto.Detail.class));
         when(docMapper.selectList(any())).thenReturn(List.of());
         AtomicReference<DocEntity> inserted = new AtomicReference<>();
         when(docMapper.selectById(anyString())).thenAnswer(invocation -> inserted.get());
         when(docMapper.insert(any(DocEntity.class))).thenAnswer(invocation -> {
-            inserted.set(invocation.getArgument(0));
-            return 1;
+            inserted.set(invocation.getArgument(0)); return 1;
         });
-
-        DocDto first = service.ensureProjectBrief(project, "wg");
-        DocDto repeated = service.ensureProjectBrief(project, "wg");
-
-        assertThat(repeated.id()).isEqualTo(first.id()).hasSize(32);
-        assertThat(first.title()).isEqualTo("项目说明 · 桌面应用");
-        assertThat(first.links()).containsExactly(new DocLinkDto("project", "p-idea"));
+        DocDto first = service.ensureIdeaArchive(mock(ProjectDto.class), idea, "wg");
+        DocDto second = service.ensureIdeaArchive(mock(ProjectDto.class), idea, "wg");
+        assertThat(first.kbId()).isEqualTo(KnowledgeService.IDEA_ASSET_KB_ID);
+        assertThat(first.links()).isEmpty();
+        assertThat(second.id()).isEqualTo(first.id());
         verify(docMapper, times(1)).insert(any(DocEntity.class));
+        verify(kbMapper, times(1)).insert(any(KbEntity.class));
     }
 
     @Test
@@ -428,7 +429,7 @@ class KnowledgeServiceTest {
     }
 
     @Test
-    void createDocInProjectKbCarriesTheProjectLink() {
+    void createDocInLegacyProjectKbDoesNotInheritProject() {
         KbEntity projectKb = kb("k1");
         projectKb.setProjectId("p1");
         when(kbMapper.selectById("k1")).thenReturn(projectKb);
@@ -438,7 +439,7 @@ class KnowledgeServiceTest {
 
         DocDto dto = service.createDoc(new CreateDocRequest("k1", "f1", "项目文档"), "m-wadi");
 
-        assertThat(dto.links()).containsExactly(new DocLinkDto("project", "p1"));
+        assertThat(dto.links()).isEmpty();
     }
 
     @Test
@@ -872,7 +873,7 @@ class KnowledgeServiceTest {
     }
 
     @Test
-    void updateKbCannotRenameWhenLockedToProject() {
+    void legacyProjectKbCanBeRenamedIndependently() {
         KbEntity kb = kb("k1");
         kb.setName("项目知识库");
         kb.setProjectId("p1");
@@ -884,9 +885,22 @@ class KnowledgeServiceTest {
 
         KbDto dto = service.updateKb("k1", new PatchKbRequest("改名", "改简介", "ri-star-line", null, "g-custom", null));
 
-        assertThat(dto.name()).isEqualTo("项目知识库");
+        assertThat(dto.name()).isEqualTo("改名");
+        assertThat(dto.desc()).isEqualTo("改简介");
+        assertThat(dto.project()).isNull();
         assertThat(dto.icon()).isEqualTo("ri-star-line");
         assertThat(kb.getGroupId()).isEqualTo("g-custom");
+    }
+
+    @Test
+    void legacyProjectLinksAreHiddenButTaskAndDocumentLinksRemain() {
+        DocEntity d = doc("d1", "k1", "f1");
+        d.setLinksJson("[{\"type\":\"project\",\"id\":\"p1\"},{\"type\":\"task\",\"id\":\"t1\"},{\"type\":\"doc\",\"id\":\"d2\"}]");
+        when(docMapper.selectById("d1")).thenReturn(d);
+        when(docMapper.selectList(any())).thenReturn(List.of(d));
+        assertThat(service.getDoc("d1").links()).containsExactly(
+                new DocLinkDto("task", "t1"), new DocLinkDto("doc", "d2"));
+        verify(docMapper, never()).updateById(any(DocEntity.class));
     }
 
     @Test

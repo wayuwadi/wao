@@ -228,7 +228,8 @@ public class KnowledgeService {
         e.setName(req.name().trim());
         e.setIcon(blankOr(req.icon(), "ri-book-2-line"));
         e.setColor(blankOr(req.color(), "#4358D6"));
-        e.setProjectId(req.project());
+        // 历史请求字段仅为兼容保留，新知识库不再绑定项目。
+        e.setProjectId(null);
         e.setAuto(false);
         e.setNotes(false);
         e.setDescription(req.desc());
@@ -248,10 +249,10 @@ public class KnowledgeService {
         return toDto(e, List.of(folder), Map.of());
     }
 
-    /** 局部更新知识库（项目 / 自动化知识库的名称与简介不可改）。 */
+    /** 局部更新知识库（自动化知识库的名称与简介不可改）。 */
     public KbDto updateKb(String id, PatchKbRequest req) {
         KbEntity e = requireKb(id);
-        boolean locked = e.getProjectId() != null || Boolean.TRUE.equals(e.getAuto());
+        boolean locked = Boolean.TRUE.equals(e.getAuto());
         if (!locked && req.name() != null && !req.name().isBlank()) {
             e.setName(req.name().trim());
         }
@@ -444,9 +445,7 @@ public class KnowledgeService {
     public DocDto createDoc(CreateDocRequest req, String author) {
         KbEntity kb = requireKb(req.kbId());
         KbFolderEntity folder = requireFolder(req.kbId(), req.folderId());
-        List<DocLinkDto> links = kb.getProjectId() == null || kb.getProjectId().isBlank()
-                ? List.of()
-                : List.of(new DocLinkDto("project", kb.getProjectId()));
+        List<DocLinkDto> links = List.of();
         List<DocBlockDto> blocks = List.of();
         RichDocContentDto content = null;
         if (req.blocks() != null && !req.blocks().isEmpty()) {
@@ -976,49 +975,23 @@ public class KnowledgeService {
         return toDto(existingDoc);
     }
 
-    /**
-     * 幂等创建项目说明；只有用户明确点击时才建立项目知识库与文档。
-     *
-     * @param project 项目
-     * @param author 当前成员
-     * @return 稳定的项目说明文档
-     */
-    @Transactional
+    /** 兼容旧客户端入口；文档只通过具体任务关联，不再创建项目知识库。 */
     public DocDto ensureProjectBrief(ProjectDto project, String author) {
-        KbFolderEntity folder = ensureProjectFolder(project);
-        String id = stableDocId("project-brief", project.id());
-        DocEntity existing = docMapper.selectById(id);
-        if (existing != null) {
-            existing.setDeletedAt(null);
-            existing.setCascadeDel(false);
-            existing.setLinksJson(write(mergeProjectLink(readList(existing.getLinksJson(), LINKS_TYPE), project.id())));
-            docMapper.updateById(existing);
-            return toDto(existing);
-        }
-        List<DocBlockDto> blocks = List.of(
-                new DocBlockDto("这个文档跟随项目长期保留；AI 每次只读取任务明确提供的上下文，不会默认读取整个知识库。",
-                        null, null, null, null),
-                new DocBlockDto(null, "项目目标", null, null, null, 2),
-                new DocBlockDto(null, null, blankOr(project.goal(), "尚未填写目标。"), null, null),
-                new DocBlockDto(null, "背景、决策与验收记录", null, null, null, 2),
-                new DocBlockDto(null, null, "在这里持续补充，不需要按固定阶段填写。", null, null));
-        return insertDoc(id, folder.getKbId(), folder.getId(), "项目说明 · " + project.name(), author, blocks,
-                List.of(new DocLinkDto("project", project.id())));
+        throw new BadRequestException("项目不再直接关联文档，请在知识库创建文档后关联到具体任务");
     }
 
-    /** 把旧点子的完整历史沉淀为项目知识文档；稳定 id 保证重复归并不产生副本。 */
+    /** 把旧点子的完整历史沉淀到独立的点子资产库；稳定 id 保证重复归并不产生副本。 */
     @Transactional
     public DocDto ensureIdeaArchive(ProjectDto project, IdeaDto idea, String author) {
-        KbFolderEntity folder = ensureProjectFolder(project);
         String id = stableDocId("idea-archive", idea.id());
         DocEntity existing = docMapper.selectById(id);
         if (existing != null) {
             existing.setDeletedAt(null);
             existing.setCascadeDel(false);
-            existing.setLinksJson(write(mergeProjectLink(readList(existing.getLinksJson(), LINKS_TYPE), project.id())));
             docMapper.updateById(existing);
             return toDto(existing);
         }
+        KbFolderEntity folder = ideaFolder(idea.id(), idea.title());
         StringBuilder content = new StringBuilder();
         content.append("## 原始想法\n\n").append(blankOr(idea.rawIdea(), "未填写"));
         content.append("\n\n## 要解决的问题\n\n").append(blankOr(idea.problem(), "未填写"));
@@ -1038,46 +1011,7 @@ public class KnowledgeService {
             }
         }
         return insertDoc(id, folder.getKbId(), folder.getId(), "原始点子与迭代历史 · " + idea.title(), author,
-                ideaBlocks(idea.title(), content.toString()), List.of(new DocLinkDto("project", project.id())));
-    }
-
-    /** 为旧资产文档补项目出链；文档不移动、不复制，旧地址继续可用。 */
-    @Transactional
-    public DocDto linkDocToProject(String docId, String projectId) {
-        DocEntity doc = requireDoc(docId);
-        doc.setLinksJson(write(mergeProjectLink(readList(doc.getLinksJson(), LINKS_TYPE), projectId)));
-        docMapper.updateById(doc);
-        return toDto(doc);
-    }
-
-    private KbFolderEntity ensureProjectFolder(ProjectDto project) {
-        KbEntity kb = kbMapper.selectList(aliveKbs().eq(KbEntity::getProjectId, project.id()))
-                .stream().findFirst().orElse(null);
-        if (kb == null) {
-            KbDto created = createKb(new CreateKbRequest(project.name(),
-                    "项目「" + project.name() + "」的文档与知识沉淀", project.icon(), "#4358D6",
-                    project.id(), null, "成员可编辑"));
-            kb = requireKb(created.id());
-        }
-        KbFolderEntity folder = folderMapper.selectList(aliveFolders().eq(KbFolderEntity::getKbId, kb.getId())
-                .orderByAsc(KbFolderEntity::getOrd)).stream().findFirst().orElse(null);
-        if (folder != null) return folder;
-        folder = new KbFolderEntity();
-        folder.setId("f" + UUID.randomUUID().toString().replace("-", "").substring(0, 31));
-        folder.setKbId(kb.getId());
-        folder.setName("文档");
-        folder.setOrd(1);
-        folder.setCascadeDel(false);
-        folderMapper.insert(folder);
-        return folder;
-    }
-
-    private static List<DocLinkDto> mergeProjectLink(List<DocLinkDto> links, String projectId) {
-        List<DocLinkDto> merged = new ArrayList<>(links == null ? List.of() : links);
-        if (merged.stream().noneMatch(link -> "project".equals(link.type()) && projectId.equals(link.id()))) {
-            merged.add(new DocLinkDto("project", projectId));
-        }
-        return List.copyOf(merged);
+                ideaBlocks(idea.title(), content.toString()), List.of());
     }
 
     private static String stableDocId(String namespace, String value) {
@@ -1356,7 +1290,7 @@ public class KnowledgeService {
             applyRichContent(e, null);
         }
         if (req.links() != null) {
-            e.setLinksJson(write(req.links()));
+            e.setLinksJson(write(withoutProjectLinks(req.links())));
         }
         if (req.folderId() != null && !req.folderId().isBlank()) {
             requireFolder(e.getKbId(), req.folderId());
@@ -1392,7 +1326,7 @@ public class KnowledgeService {
         Integer contentVersion = req.content() == null
                 ? (req.blocks() == null ? e.getContentVersion() : null)
                 : content.version();
-        String links = req.links() == null ? e.getLinksJson() : write(req.links());
+        String links = req.links() == null ? e.getLinksJson() : write(withoutProjectLinks(req.links()));
         String folderId = e.getFolderId();
         if (req.folderId() != null && !req.folderId().isBlank()) {
             requireFolder(e.getKbId(), req.folderId());
@@ -1690,7 +1624,7 @@ public class KnowledgeService {
         List<FolderDto> folderDtos = folders.stream()
                 .map(f -> new FolderDto(f.getId(), f.getName(), docIdsByFolder.getOrDefault(f.getId(), List.of())))
                 .toList();
-        return new KbDto(kb.getId(), kb.getName(), kb.getIcon(), kb.getColor(), kb.getProjectId(),
+        return new KbDto(kb.getId(), kb.getName(), kb.getIcon(), kb.getColor(), null,
                 kb.getAuto(), kb.getDescription(), folderDtos, kb.getGroupId(), kb.getPerm(),
                 Boolean.TRUE.equals(kb.getNotes()));
     }
@@ -1743,8 +1677,12 @@ public class KnowledgeService {
             List<DocLinkDto> links, List<DocBlockDto> blocks) {
         return new DocDto(e.getId(), e.getTitle(), e.getAuthorId(),
                 stamp(e.getCreatedAt(), e.getCreatedLabel()), stamp(e.getUpdatedAt(), e.getUpdatedLabel()),
-                e.getAuto(), links, blocks, richContentOf(e), backlinks, e.getKbId(), e.getFolderId(), rev(e),
+                e.getAuto(), withoutProjectLinks(links), blocks, richContentOf(e), backlinks, e.getKbId(), e.getFolderId(), rev(e),
                 readList(e.getTagsJson(), new TypeReference<List<String>>() {}));
+    }
+
+    private static List<DocLinkDto> withoutProjectLinks(List<DocLinkDto> links) {
+        return links.stream().filter(link -> !"project".equals(link.type())).toList();
     }
 
     /** 时间戳优先，老数据回落到升级前写死的展示文案。 */

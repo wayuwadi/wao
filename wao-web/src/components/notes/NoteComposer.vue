@@ -79,7 +79,6 @@ const taskSource = computed(() => ({
   title: props.note?.title || '未保存小记',
   url: props.note ? `/kb/${encodeURIComponent(props.note.kbId ?? '')}?doc=${encodeURIComponent(props.note.id)}` : undefined,
   docId: props.note?.id,
-  projectId: data.kbs.find(kb => kb.id === props.note?.kbId)?.project ?? undefined,
 }))
 const text = ref(initial.text)
 const content = ref<RichDocContent | undefined>(initial.content)

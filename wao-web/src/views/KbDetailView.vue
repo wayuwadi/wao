@@ -136,22 +136,19 @@ const updatedLabel = computed(() =>
 )
 
 const TYPE_ICON: Record<string, string> = {
-  project: 'ri-stack-line',
   task: 'ri-checkbox-circle-line',
   doc: 'ri-file-text-line',
 }
 function linkName(l: DocLink) {
-  if (l.type === 'project') return '项目 · ' + (data.projectById(l.id)?.name ?? '')
   if (l.type === 'task') return '任务 · ' + (data.taskById(l.id)?.title ?? '')
   return '文档 · ' + (data.docOf(l.id).title ?? '')
 }
 function goLink(l: DocLink) {
-  if (l.type === 'project') router.push(`/projects/${l.id}`)
-  else if (l.type === 'task') ui.openTask(l.id)
+  if (l.type === 'task') ui.openTask(l.id)
   else openDoc(l.id)
 }
 const docLinks = computed(() =>
-  (base.value?.links ?? []).map((l) => ({ icon: TYPE_ICON[l.type]!, label: linkName(l), link: l })),
+  (base.value?.links ?? []).filter(l => l.type !== 'project').map((l) => ({ icon: TYPE_ICON[l.type]!, label: linkName(l), link: l })),
 )
 /**
  * 任务把文档 id 保存在自己的 docs 中，因此这里按当前成员可见任务动态反查。
@@ -237,9 +234,8 @@ async function addSelectionToTask(text: string) {
   try {
     const id = docId.value
     const sourceTitle = doc.value?.title || '未命名文档'
-    const projectId = kb.value?.project || ''
     const sourceUrl = `/kb/${encodeURIComponent(kbId.value)}?doc=${encodeURIComponent(id)}`
-    await openEditorSelectionTask(text, { id, title: sourceTitle, url: sourceUrl, docId: id, projectId })
+    await openEditorSelectionTask(text, { id, title: sourceTitle, url: sourceUrl, docId: id })
   } catch {
     toast('暂时无法准备待办，请重试；文档内容未改变', 'ri-error-warning-line')
   } finally {
@@ -772,9 +768,7 @@ async function copyDocShare(kind: 'page' | 'md') {
     'ri-links-line',
   )
 }
-function gotoProject() {
-  if (kb.value?.project) router.push(`/projects/${kb.value.project}`)
-}
+
 /** 粘贴 / 拖入的图片存进图床，再把地址回插到光标处。 */
 async function onUploadImage(file: File, done: (url: string | null, name: string) => void) {
   if (file.size > data.MAX_IMAGE_BYTES) {
@@ -796,7 +790,7 @@ async function onUploadFile(file: File, done: (item: FileItem | null) => void) {
     done(null)
     return
   }
-  const item = await data.uploadFile(file, kb.value?.project ?? undefined)
+  const item = await data.uploadFile(file)
   if (!item) toast('文件上传失败，正文仍可继续编辑', 'ri-error-warning-line')
   done(item)
 }
@@ -920,10 +914,7 @@ async function saveKbSettings() {
           <select class="kb-switch" :value="kbId" aria-label="切换知识库" @change="switchKb"><option v-for="library in data.kbs" :key="library.id" :value="library.id">{{ library.name }}</option></select>
           <ResourceMenu label="知识库设置" :items="[{ id: 'settings', label: '设置', icon: 'ri-settings-3-line' }, { id: 'templates', label: '模板管理', icon: 'ri-file-copy-2-line' }]" @select="$event === 'settings' ? openKbSettings() : templateManagerOpen = true" />
         </div>
-        <button v-if="kb.project" class="proj-chip" @click="gotoProject">
-          <i class="ri-stack-line"></i
-          ><span class="ellip">关联项目 · {{ data.projectById(kb.project)?.name }}</span>
-        </button>
+
         <p v-if="creatingDoc" class="tree-save">正在创建文档…</p>
         <div v-if="treeSaveState !== 'idle'" class="tree-save" :class="treeSaveState">
           <i :class="treeSaveState === 'saving' ? 'ri-loader-4-line spin' : treeSaveState === 'error' ? 'ri-error-warning-line' : 'ri-check-line'"></i>
@@ -1436,27 +1427,6 @@ async function saveKbSettings() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.proj-chip {
-  margin-top: 7px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid var(--wao-line-control);
-  background: var(--wao-bg-card);
-  border-radius: 999px;
-  padding: 2.5px 10px;
-  font-size: 11.5px;
-  color: var(--wao-primary-text);
-  cursor: pointer;
-  max-width: 100%;
-}
-.proj-chip:hover {
-  border-color: #c7d0f1;
-  background: var(--wao-primary-tint);
-}
-.proj-chip i {
-  font-size: 12px;
 }
 .new-folder {
   margin-top: 8px;

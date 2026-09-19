@@ -149,7 +149,7 @@ describe('知识库详情目录体验', () => {
     } finally { HTMLElement.prototype.scrollIntoView = scrolling; order.mockRestore() }
   })
 
-  it('从文档选区创建待办时带入知识库真实项目和完整原文，并隔离不同选区草稿', async () => {
+  it('从文档选区创建待办时不继承知识库项目并保留完整原文，并隔离不同选区草稿', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     useDataStore(pinia).kbById('k3')!.project = 'p2'
     const vm = wrapper.vm as unknown as { addSelectionToTask: (text: string) => Promise<void> }
@@ -157,7 +157,7 @@ describe('知识库详情目录体验', () => {
     await vm.addSelectionToTask(text)
     const ui = useUiStore(pinia)
     expect(ui.modal).toBe('task')
-    expect(ui.modalProject).toBe('p2')
+    expect(ui.modalProject).toBe('')
     expect(ui.modalTaskSeed?.title).toHaveLength(200)
     expect(ui.modalTaskSeed?.desc).toContain(text)
     expect(ui.modalTaskSeed?.desc).toContain('[查看来源文档](/kb/k3?doc=d7)')
