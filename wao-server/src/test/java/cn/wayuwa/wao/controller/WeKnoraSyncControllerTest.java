@@ -18,6 +18,8 @@ class WeKnoraSyncControllerTest {
     @Test void unauthenticatedMembersCannotReadOrTriggerSync() {
         assertThrows(UnauthorizedException.class,()->controller.get(request));
         assertThrows(UnauthorizedException.class,()->controller.run(request));
+        assertThrows(UnauthorizedException.class,()->controller.documents(java.util.List.of("d1"),request));
+        assertThrows(UnauthorizedException.class,()->controller.knowledgeRun(request));
         verifyNoInteractions(service);
     }
     @Test void everySignedInMemberCanViewPreviewAndTriggerSharedSync() {

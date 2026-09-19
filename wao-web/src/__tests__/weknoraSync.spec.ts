@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import WeKnoraSyncPanel from '@/components/weknora/WeKnoraSyncPanel.vue'
-import { getSyncOverview, getSyncProgress, saveSyncSettings, runSync } from '@/api/weknoraSync'
+import { getSyncOverview, getSyncProgress, saveSyncSettings, runSync, runKnowledgeSync } from '@/api/weknoraSync'
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
 vi.mock('@/api/weknoraSync', () => ({
   getSyncOverview: vi.fn(),
   getSyncProgress: vi.fn(),
   saveSyncSettings: vi.fn(),
   runSync: vi.fn(),
+  runKnowledgeSync: vi.fn(),
   getSyncSource: vi.fn(),
 }))
 const initial = () => ({
@@ -65,7 +66,7 @@ describe('WeKnora 内容同步', () => {
     expect(w.text()).toContain('41')
     expect(w.text()).toContain('尚未运行')
     vi.mocked(runSync).mockResolvedValue({ id: 'actual-run' })
-    await w.get('.sync-header button').trigger('click')
+    await w.findAll('.sync-header button')[1]!.trigger('click')
     await flushPromises()
     expect(runSync).toHaveBeenCalledOnce()
     expect(w.text()).toContain('同步已入队')
@@ -77,5 +78,18 @@ describe('WeKnora 内容同步', () => {
     expect(w.text()).toContain('只有管理员')
     expect(w.find('.stats').exists()).toBe(false)
     expect(w.text()).toContain('重新加载')
+  })
+  it('知识同步使用独立入口，暂停及时同步不改变夜间计划', async () => {
+    const w = view()
+    await flushPromises()
+    vi.mocked(runKnowledgeSync).mockResolvedValue({ id: 'knowledge-run' })
+    await w.findAll('.sync-header button')[0]!.trigger('click')
+    await flushPromises()
+    expect(runKnowledgeSync).toHaveBeenCalledOnce()
+    expect(runSync).not.toHaveBeenCalled()
+    await w.findAll('input[type=checkbox]')[0]!.setValue(false)
+    await w.get('.save-row button').trigger('click')
+    await flushPromises()
+    expect(saveSyncSettings).toHaveBeenCalledWith(expect.objectContaining({ liveSync: false, enabled: true }))
   })
 })
