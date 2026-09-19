@@ -116,6 +116,7 @@ describe('ChatView', () => {
     vi.clearAllMocks()
     localStorage.clear()
     setActivePinia(createPinia())
+    useSessionStore().$patch({ account: { member: { ...message.author, id: 'viewer' } } } as never)
     vi.mocked(fetchSharedChatMessages).mockResolvedValue([message])
     vi.mocked(markSharedChatRead).mockResolvedValue(undefined)
     vi.mocked(toggleSharedChatReaction).mockResolvedValue(message)
@@ -277,7 +278,7 @@ describe('ChatView', () => {
 
   it('从本机恢复草稿且消息读取不覆盖输入', async () => {
     localStorage.setItem(
-      'wao-shared-chat-draft-v2:unknown',
+      'wao-shared-chat-draft-v2:viewer',
       JSON.stringify({ content: '还没发完', replyToId: '' }),
     )
     const wrapper = await mountView()
@@ -332,12 +333,12 @@ describe('ChatView', () => {
       expect.objectContaining({ content: '从电脑发消息' }),
     )
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('')
-    expect(localStorage.getItem('wao-shared-chat-draft-v2:unknown')).toBeNull()
+    expect(localStorage.getItem('wao-shared-chat-draft-v2:viewer')).toBeNull()
   })
 
   it('恢复已经上传的截图草稿并直接发送，不重复上传', async () => {
     localStorage.setItem(
-      'wao-shared-chat-draft-v1:unknown',
+      'wao-shared-chat-draft-v1:viewer',
       JSON.stringify({
         content: '',
         imageId: 'img-draft',
@@ -580,12 +581,12 @@ describe('ChatView', () => {
 
   it('损坏的持久化请求不被静默覆盖或发送', async () => {
     const raw = '{"content":"重要草稿","pending":{"token":"bad"}}'
-    localStorage.setItem('wao-shared-chat-draft-v2:unknown', raw)
+    localStorage.setItem('wao-shared-chat-draft-v2:viewer', raw)
     const wrapper = await mountView()
     await wrapper.get('textarea').setValue('新输入')
     await wrapper.get('form').trigger('submit')
     expect(sendSharedChatMessage).not.toHaveBeenCalled()
-    expect(localStorage.getItem('wao-shared-chat-draft-v2:unknown')).toBe(raw)
+    expect(localStorage.getItem('wao-shared-chat-draft-v2:viewer')).toBe(raw)
     expect(wrapper.text()).toContain('草稿读取失败')
   })
 
@@ -621,6 +622,128 @@ describe('ChatView', () => {
     )
   })
 
+  it('审计：切换成员后恢复该成员草稿并忽略上一成员晚到发送', async () => {
+    const session = useSessionStore()
+    session.$patch({ account: { member: { ...message.author, id: 'a' } } } as never)
+    let finish!: (value: SharedChatMessage) => void
+    vi.mocked(sendSharedChatMessage).mockReturnValueOnce(
+      new Promise((r) => {
+        finish = r
+      }),
+    )
+    const wrapper = await mountView()
+    await wrapper.get('textarea').setValue('成员 A 私有草稿')
+    await wrapper.get('form').trigger('submit')
+    localStorage.setItem('wao-shared-chat-draft-v2:b', JSON.stringify({ content: '成员 B 草稿' }))
+    vi.mocked(fetchSharedChatMessages).mockResolvedValue([])
+    session.$patch({ account: { member: { ...message.author, id: 'b' } } } as never)
+    await flushPromises()
+    finish({ ...message, id: 'late-a', content: '晚到的 A 消息' })
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('成员 B 草稿')
+    expect(wrapper.text()).not.toContain('晚到的 A 消息')
+  })
+
+  it('审计：晚到刷新不覆盖刚完成的消息修改', async () => {
+    useSessionStore().$patch({ account: { member: message.author } } as never)
+    const wrapper = await mountView()
+    let finish!: (value: SharedChatMessage[]) => void
+    vi.mocked(fetchSharedChatMessages).mockReturnValueOnce(
+      new Promise((r) => {
+        finish = r
+      }),
+    )
+    useUiStore().chatRefreshVersion++
+    await flushPromises()
+    await wrapper.get('.message-actions button').trigger('click')
+    await wrapper.get('[aria-label="修改消息正文"]').setValue('刚保存的新内容')
+    vi.mocked(editSharedChatMessage).mockResolvedValueOnce({
+      ...message,
+      content: '刚保存的新内容',
+    })
+    await wrapper.get('.message-edit').trigger('submit')
+    await flushPromises()
+    finish([message])
+    await flushPromises()
+    expect(wrapper.get('.message-text').text()).toContain('刚保存的新内容')
+  })
+
+  it.each(['success', 'failure'])('账号切换后旧附件%s不进入新草稿或错误提示', async (outcome) => {
+    let resolve!: (value: Awaited<ReturnType<typeof uploadSharedChatFile>>) => void
+    let reject!: (reason: Error) => void
+    vi.mocked(uploadSharedChatFile).mockReturnValueOnce(
+      new Promise((yes, no) => {
+        resolve = yes
+        reject = no
+      }),
+    )
+    const wrapper = await mountView()
+    const input = wrapper.get<HTMLInputElement>('input[type="file"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['x'], '旧账号.txt')],
+    })
+    await input.trigger('change')
+    useSessionStore().$patch({ account: { member: { ...message.author, id: 'next' } } } as never)
+    await flushPromises()
+    await wrapper.get('textarea').setValue('新账号草稿')
+    if (outcome === 'success')
+      resolve({
+        id: 'old-file',
+        name: '旧账号.txt',
+        size: '',
+        icon: '',
+        time: '',
+        by: '',
+        link: '',
+      })
+    else reject(new Error('旧账号上传失败'))
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('新账号草稿')
+    expect(wrapper.text()).not.toContain('旧账号上传失败')
+  })
+
+  it('退出登录立即清理聊天并停止请求，重新登录同一成员也忽略旧请求', async () => {
+    let finish!: (value: SharedChatMessage[]) => void
+    const wrapper = await mountView({ visible: false })
+    vi.mocked(fetchSharedChatMessages).mockReturnValueOnce(
+      new Promise((r) => {
+        finish = r
+      }),
+    )
+    useUiStore().chatRefreshVersion++
+    await flushPromises()
+    useSessionStore().account = null
+    await flushPromises()
+    expect(wrapper.findAll('.message-row')).toHaveLength(0)
+    const count = vi.mocked(fetchSharedChatMessages).mock.calls.length
+    useUiStore().chatRefreshVersion++
+    await flushPromises()
+    expect(fetchSharedChatMessages).toHaveBeenCalledTimes(count)
+    vi.mocked(fetchSharedChatMessages).mockResolvedValue([])
+    useSessionStore().$patch({ account: { member: { ...message.author, id: 'viewer' } } } as never)
+    await flushPromises()
+    finish([{ ...message, content: '已失效会话的结果' }])
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('已失效会话的结果')
+  })
+
+  it('旧账号的已读响应不能清除新账号的未读', async () => {
+    let finish!: () => void
+    vi.mocked(markSharedChatRead).mockReturnValueOnce(
+      new Promise((r) => {
+        finish = r
+      }),
+    )
+    const wrapper = await mountView()
+    await wrapper.setProps({ visible: false })
+    useSessionStore().$patch({ account: { member: { ...message.author, id: 'next' } } } as never)
+    await flushPromises()
+    expect(useUiStore().chatUnreadCount).toBe(1)
+    finish()
+    await flushPromises()
+    expect(useUiStore().chatUnreadCount).toBe(1)
+  })
   it('其他窗口编辑草稿后，未确认请求仍可在重新打开时恢复', async () => {
     vi.mocked(sendSharedChatMessage).mockRejectedValueOnce(new Error('响应丢失'))
     const first = await mountView()
@@ -631,7 +754,7 @@ describe('ChatView', () => {
     first.unmount()
     wrappers = wrappers.filter((w) => w !== first)
     localStorage.setItem(
-      'wao-shared-chat-draft-v2:unknown',
+      'wao-shared-chat-draft-v2:viewer',
       JSON.stringify({ content: '窗口 B 的新草稿' }),
     )
     const second = await mountView()
@@ -653,10 +776,10 @@ describe('ChatView', () => {
     await wrapper.get('textarea').setValue('窗口 A')
     await wrapper.get('form').trigger('submit')
     const other = JSON.stringify({ content: '窗口 B 未发送输入' })
-    localStorage.setItem('wao-shared-chat-draft-v2:unknown', other)
+    localStorage.setItem('wao-shared-chat-draft-v2:viewer', other)
     finish(message)
     await flushPromises()
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('')
-    expect(localStorage.getItem('wao-shared-chat-draft-v2:unknown')).toBe(other)
+    expect(localStorage.getItem('wao-shared-chat-draft-v2:viewer')).toBe(other)
   })
 })
