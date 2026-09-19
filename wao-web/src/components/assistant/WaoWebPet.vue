@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { AssistantStatus } from '@/api/assistant'
 import { nextPetTaskNotice } from '@/utils/petTaskNotice'
 import PetSprite from './PetSprite.vue'
@@ -23,7 +23,7 @@ const {
   onPointerDown,
   consumeClick,
 } = useFloatingDrag('wao-assistant-fab-position-v1')
-const notice = ref<{ id: string; label: string } | null>(null)
+const notice = ref<{ id: string; label: string; status: string } | null>(null)
 let timer: ReturnType<typeof setTimeout> | undefined
 const snapshot = computed(() =>
   data.tasks
@@ -32,18 +32,34 @@ const snapshot = computed(() =>
     .sort()
     .join('|'),
 )
+function clearNotice() {
+  clearTimeout(timer)
+  notice.value = null
+}
+watch(() => session.userId, () => {
+  clearNotice()
+  void webPet.load()
+}, { immediate: true })
 watch(
-  [snapshot, () => data.taskLoadState, () => session.userId],
+  [snapshot, () => data.taskLoadState, () => session.userId,
+    () => webPet.loadState, () => webPet.settings.showTaskNotices,
+    () => ui.chatUnreadCount, () => ui.chatOpen],
   () => {
-    if (data.taskLoadState !== 'loaded' || !session.userId || !webPet.settings.showTaskNotices)
+    if (data.taskLoadState !== 'loaded' || !session.userId || webPet.loadState !== 'loaded'
+        || !webPet.settings.showTaskNotices || ui.chatUnreadCount || ui.chatOpen) {
+      clearNotice()
       return
+    }
+    // 完成、删除或再次进入其他状态后，不再保留旧提示的文案和入口。
+    const shown = notice.value
+    if (shown && !data.tasks.some(task => task.id === shown.id && task.status === shown.status)) {
+      clearNotice()
+    }
     const next = nextPetTaskNotice(data.tasks, session.userId)
     if (!next) return
-    clearTimeout(timer)
-    notice.value = next
-    timer = setTimeout(() => {
-      notice.value = null
-    }, 8000)
+    clearNotice()
+    notice.value = { ...next, status: data.tasks.find(task => task.id === next.id)!.status }
+    timer = setTimeout(clearNotice, 8000)
   },
   { immediate: true },
 )
@@ -52,12 +68,9 @@ function click(event: MouseEvent) {
 }
 function openNotice() {
   if (notice.value) ui.openTask(notice.value.id)
-  notice.value = null
+  clearNotice()
 }
-onMounted(() => {
-  void webPet.load()
-})
-onBeforeUnmount(() => clearTimeout(timer))
+onBeforeUnmount(clearNotice)
 </script>
 <template>
   <section

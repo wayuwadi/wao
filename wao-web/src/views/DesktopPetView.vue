@@ -14,7 +14,7 @@ const session = useSessionStore()
 const nativeVersion = new URLSearchParams(location.search).get('native')
 const native = ['1', '2', '3'].includes(nativeVersion ?? '')
 const noticeVisible = ref(false)
-const taskNotice = ref<{ id: string; label: string } | null>(null)
+const taskNotice = ref<{ id: string; label: string; status: string } | null>(null)
 let taskNoticeTimer: ReturnType<typeof setTimeout> | undefined
 let tasksReadAt = 0
 let disposed = false
@@ -43,6 +43,17 @@ function resize(visible: boolean) {
   noticeVisible.value = visible
   nativeAction(visible || taskNotice.value || !session.authed ? 'bubble' : 'compact')
 }
+function clearTaskNotice() {
+  clearTimeout(taskNoticeTimer)
+  taskNotice.value = null
+  if (!disposed) resize(noticeVisible.value)
+}
+function openTaskNotice() {
+  const id = taskNotice.value?.id
+  // 原计时器负责收紧窗口；此事件只发一次原生导航，避免覆盖任务跳转。
+  taskNotice.value = null
+  if (id) nativeAction(`task/${encodeURIComponent(id)}`)
+}
 function pointerDown(event: PointerEvent) {
   if (event.button !== 0) return
   pointerStart = { x: event.clientX, y: event.clientY }
@@ -64,33 +75,46 @@ const poller = createVisibilityPoller(
     try {
       const account = await getSession()
       if (disposed) return
+      const memberChanged = session.userId !== account.member.id
+      if (memberChanged) {
+        tasksReadAt = 0
+        ui.chatUnreadCount = 0
+        ui.chatLatestUnread = null
+        clearTaskNotice()
+      }
       session.accept(account)
+      if (memberChanged) resize(noticeVisible.value)
       const messages = await fetchSharedChatMessages()
       if (disposed || session.userId !== account.member.id) return
       const unread = messages.filter((message) => !message.read)
       ui.chatUnreadCount = unread.length
       ui.chatLatestUnread = unread[unread.length - 1] ?? null
       if (Date.now() - tasksReadAt > 60_000) {
-        tasksReadAt = Date.now()
         const tasks = await fetchTasks()
         if (disposed || session.userId !== account.member.id) return
+        tasksReadAt = Date.now()
+        const shown = taskNotice.value
+        if (shown && !tasks.some(task => task.id === shown.id && task.status === shown.status)) clearTaskNotice()
+        // 聊天正在占用气泡时，下一次轮询再处理任务，避免提前消费提示。
+        if (unread.length) { tasksReadAt = 0; clearTaskNotice(); return }
         const next = nextPetTaskNotice(tasks, session.userId)
         if (next) {
-          taskNotice.value = next
+          taskNotice.value = { ...next, status: tasks.find(task => task.id === next.id)!.status }
           resize(noticeVisible.value)
           clearTimeout(taskNoticeTimer)
-          taskNoticeTimer = setTimeout(() => {
-            taskNotice.value = null
-            resize(noticeVisible.value)
-          }, 8000)
+          taskNoticeTimer = setTimeout(clearTaskNotice, 8000)
         }
       }
     } catch (error) {
+      if (disposed) return
+      tasksReadAt = 0
+      clearTaskNotice()
       const status = error as { status?: number; response?: { status?: number } }
       if (status.status === 401 || status.response?.status === 401) {
         session.account = null
         ui.chatUnreadCount = 0
         ui.chatLatestUnread = null
+        resize(false)
       }
     }
   },
@@ -117,7 +141,7 @@ onBeforeUnmount(() => {
     <button
       v-if="taskNotice && !noticeVisible"
       class="pet-login"
-      @click="nativeAction(`task/${encodeURIComponent(taskNotice.id)}`)"
+      @click="openTaskNotice"
     >
       {{ taskNotice.label }}
     </button>
