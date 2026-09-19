@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { useSessionStore } from '@/stores/session'
 import {
   fetchFeishuChats,
   fetchWebhookEndpoints,
@@ -20,6 +21,12 @@ import {
 import { toast } from '@/composables/toast'
 
 defineProps<{ externalSave?: boolean }>()
+const session = useSessionStore()
+const owner = session.userId
+let active = true
+const isCurrent = () => active && session.userId === owner
+watch(() => session.userId, () => { active = false }, { flush: 'sync' })
+onBeforeUnmount(() => { active = false })
 const emit = defineEmits<{ saved: [] }>()
 const loading = ref(true)
 const saving = ref(false)
@@ -72,6 +79,7 @@ async function load() {
       fetchFeishuChats().catch(() => []),
       fetchWebhookEndpoints().catch(() => []),
     ])
+    if (!isCurrent()) return
     form.value = structuredClone(settings)
     items.value = structuredClone(checklist).map((item) => ({
       ...item,
@@ -81,8 +89,10 @@ async function load() {
     chats.value = chatOptions
     webhooks.value = webhookOptions
   } catch (cause) {
+    if (!isCurrent()) return
     error.value = cause instanceof Error ? cause.message : '每日面板设置读取失败'
   } finally {
+    if (!isCurrent()) return
     loading.value = false
   }
 }
@@ -167,18 +177,22 @@ async function removeItem(item: RhythmChecklistItem & { fresh?: boolean }) {
         item.id,
         payload({ ...item, active: false }),
       )
+      if (!isCurrent()) return
       const index = items.value.findIndex((entry) => entry.id === item.id)
       if (index >= 0) items.value[index] = savedItem
       toast(`已从每日必做中移除“${item.title}”`, 'ri-check-line')
     } else {
       await deleteRhythmChecklistItem(item.id)
+      if (!isCurrent()) return
       items.value = items.value.filter((entry) => entry.id !== item.id)
       toast(`已删除“${item.title}”`, 'ri-check-line')
     }
     expandedId.value = null
   } catch (cause) {
+    if (!isCurrent()) return
     error.value = cause instanceof Error ? cause.message : '项目移除失败，请重试'
   } finally {
+    if (!isCurrent()) return
     mutatingId.value = ''
   }
 }
@@ -192,12 +206,15 @@ async function restoreItem(item: RhythmChecklistItem & { fresh?: boolean }) {
   error.value = ''
   try {
     const savedItem = await updateRhythmChecklistItem(item.id, payload({ ...item, active: true }))
+    if (!isCurrent()) return
     const index = items.value.findIndex((entry) => entry.id === item.id)
     if (index >= 0) items.value[index] = savedItem
     toast(`已恢复“${item.title}”`, 'ri-check-line')
   } catch (cause) {
+    if (!isCurrent()) return
     error.value = cause instanceof Error ? cause.message : '项目恢复失败，请重试'
   } finally {
+    if (!isCurrent()) return
     mutatingId.value = ''
   }
 }
@@ -209,6 +226,7 @@ async function submit() {
   error.value = ''
   try {
     await saveRhythmSettings(form.value)
+    if (!isCurrent()) return
     await Promise.all(
       items.value.map((item) =>
         item.fresh
@@ -216,12 +234,15 @@ async function submit() {
           : updateRhythmChecklistItem(item.id, payload(item)),
       ),
     )
+    if (!isCurrent()) return
     saved.value = true
     emit('saved')
     await load()
   } catch (cause) {
+    if (!isCurrent()) return
     error.value = cause instanceof Error ? cause.message : '每日面板设置保存失败'
   } finally {
+    if (!isCurrent()) return
     saving.value = false
   }
 }
