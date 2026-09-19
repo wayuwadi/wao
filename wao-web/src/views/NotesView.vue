@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import WeKnoraDocumentStatus from '@/components/weknora/WeKnoraDocumentStatus.vue'
+import { useWeKnoraDocuments } from '@/composables/weknoraDocuments'
 import { useUiStore } from '@/stores/ui'
 import { chatShareLink, docShareUrl } from '@/utils/share'
 const ui = useUiStore()
@@ -102,6 +104,7 @@ const matching = computed(() => {
 const retainedEdits = computed(() => notes.value.filter(note => editingIds.value.includes(note.id)
   && !matching.value.slice(0, limit.value).some(item => item.id === note.id)))
 const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
+const knowledgeSync = useWeKnoraDocuments(() => data.apiLive ? visible.value.map(note => note.id) : [], () => visible.value.map(note => note.updated))
 const loading = computed(() => ['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
 watch([query, selectedTag, sort], () => {
@@ -213,6 +216,7 @@ onMounted(() => void loadPins())
           <template v-else>
           <div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" /></div>
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
+          <WeKnoraDocumentStatus v-if="data.apiLive" :state="knowledgeSync.states.value[note.id]" :error="knowledgeSync.error.value" @retry="knowledgeSync.refresh" />
           <div class="note-actions"><button @click="noteEditors.get(note.id)?.copyFormatted()">复制内容</button><button :disabled="!pinsReady || pinSaving" :aria-pressed="pinnedIds.includes(note.id)" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i>{{ pinnedIds.includes(note.id) ? '取消置顶' : '置顶' }}</button><button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button><button class="card-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
           </template>
         </article>

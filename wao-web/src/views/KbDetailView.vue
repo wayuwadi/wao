@@ -23,6 +23,8 @@ import { useNow } from '@/composables/now'
 import ResourceMenu from '@/components/ui/ResourceMenu.vue'
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 import SaveHint from '@/components/ui/SaveHint.vue'
+import WeKnoraDocumentStatus from '@/components/weknora/WeKnoraDocumentStatus.vue'
+import { useWeKnoraDocuments } from '@/composables/weknoraDocuments'
 import { useFavoritesStore } from '@/stores/favorites'
 import {
   apiPatchKb,
@@ -128,6 +130,7 @@ const saveFailed = computed(() => currentSaveState.value?.failed ?? false)
 const docSavedAt = computed(() =>
   docId.value ? data.saveState(`doc:${docId.value}`).savedAt : null,
 )
+const knowledgeSync = useWeKnoraDocuments(() => data.apiLive && docId.value ? [docId.value] : [], () => docSavedAt.value)
 const createdLabel = computed(() =>
   base.value?.created ? relativeTime(base.value.created, now.value) : '—',
 )
@@ -1045,6 +1048,7 @@ async function saveKbSettings() {
             <button ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
             <SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" />
+            <WeKnoraDocumentStatus v-if="docId && data.apiLive" :state="knowledgeSync.states.value[docId]" :error="knowledgeSync.error.value" :dirty="data.docPending(docId)" @retry="knowledgeSync.refresh" />
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
             <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
             <button

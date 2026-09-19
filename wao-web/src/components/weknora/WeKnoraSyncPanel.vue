@@ -7,6 +7,7 @@ import {
   getSyncProgress,
   saveSyncSettings,
   runSync,
+  runKnowledgeSync,
   getSyncSource,
   type SyncSettings,
   type SyncModule,
@@ -22,11 +23,15 @@ const form = reactive<SyncSettings>({
   batchLimit: 20,
   syncDeletes: true,
   enabled: true,
+  liveSync: true,
   time: '02:00',
   revision: 0,
 })
 const apiKey = ref('')
 const customSchedule = ref(false)
+const sourceLoading = ref(false)
+const sourceKey = ref('')
+let sourceGeneration = 0
 const catalog = ref<SyncModule[]>([]),
   runs = ref<SyncRun[]>([]),
   items = ref<SyncItem[]>([])
@@ -59,6 +64,7 @@ const stateLabel = (s: string) =>
     queued: '等待执行',
     running: '同步中',
     completed: '本轮完成',
+    backlog: '仍有待处理',
     partial: '部分失败',
     failed: '失败',
     synced: '已传输',
@@ -112,6 +118,7 @@ async function load() {
             'batchLimit',
             'syncDeletes',
             'enabled',
+            'liveSync',
             'time',
             'revision',
           ] as const) {
@@ -147,11 +154,11 @@ async function save() {
     saving.value = false
   }
 }
-async function trigger() {
+async function trigger(knowledgeOnly = false) {
   triggering.value = true
   error.value = ''
   try {
-    await runSync()
+    await (knowledgeOnly ? runKnowledgeSync() : runSync())
     notice.value = '同步已入队，可以离开此页；进度会自动刷新'
     await poll(false)
   } catch (e) {
@@ -187,15 +194,23 @@ async function poll(schedule = true) {
   if (schedule && !disposed) timer = setTimeout(() => void poll(), 5000)
 }
 async function showSource(key: string) {
+  const generation = ++sourceGeneration
+  sourceKey.value = key
+  sourceLoading.value = true
   source.value = null
   sourceError.value = ''
   try {
-    source.value = await getSyncSource(key)
+    const result = await getSyncSource(key)
+    if (generation === sourceGeneration) source.value = result
   } catch (e) {
-    sourceError.value = e instanceof Error ? e.message : '来源读取失败'
+    if (generation === sourceGeneration) sourceError.value = e instanceof Error ? e.message : '来源读取失败'
+  } finally {
+    if (generation === sourceGeneration) sourceLoading.value = false
   }
 }
 function closeSource() {
+  sourceGeneration++
+  sourceLoading.value = false
   source.value = null
   sourceError.value = ''
 }
@@ -235,10 +250,11 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
         <h1>内容同步</h1>
         <p>在 WAO 维护原始内容，让知识库按计划接收更新。</p>
       </div>
+      <button class="primary" :disabled="!configured || dirty || active || triggering || loading" @click="trigger(true)">同步知识库、小记与记忆</button>
       <button
         class="primary"
         :disabled="!configured || dirty || active || triggering || loading"
-        @click="trigger"
+        @click="trigger(false)"
       >
         <i class="ri-refresh-line"></i
         >{{ active ? '同步执行中' : triggering ? '正在入队' : '立即同步' }}
@@ -265,7 +281,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
           ><small>未运行时数量待核对</small>
         </article>
         <article>
-          <span>夜间计划</span><strong>{{ form.enabled ? form.time : '已暂停' }}</strong
+          <span>及时同步 / 夜间计划</span><strong>{{ form.liveSync ? '每分钟' : '已暂停' }} / {{ form.enabled ? form.time : '已暂停' }}</strong
           ><small>北京时间 · {{ dirty ? '未保存修改' : '已保存的配置' }}</small>
         </article>
       </div>
@@ -298,13 +314,14 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
               <label class="field"
                 >夜间时间（北京时间）<input v-model="form.time" type="time" /></label
               ><label class="field"
-                >每轮最多变化篇数<input
+                >每轮写入上限（清理另享相同额度）<input
                   v-model.number="form.batchLimit"
                   type="number"
                   min="1"
                   max="100"
               /></label>
             </div>
+            <label class="check"><input v-model="form.liveSync" type="checkbox" />知识库、小记与已选记忆每分钟检查更新</label>
             <label class="check"
               ><input v-model="form.enabled" type="checkbox" />启用每天夜间自动同步</label
             >
@@ -381,7 +398,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
             <tbody>
               <tr v-for="run in runs" :key="run.id">
                 <td>{{ timeLabel(run.created_at) }}</td>
-                <td>{{ run.trigger_type === 'manual' ? '手动' : '夜间' }}</td>
+                <td>{{ run.trigger_type === 'knowledge' ? '及时同步' : run.trigger_type === 'knowledge-manual' ? '手动知识同步' : run.trigger_type === 'manual' ? '手动' : '夜间' }}</td>
                 <td>
                   <span class="badge" :class="run.status">{{ stateLabel(run.status) }}</span>
                 </td>
@@ -424,7 +441,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
       </section>
     </template>
     <div
-      v-if="source || sourceError"
+      v-if="source || sourceError || sourceLoading"
       class="source-overlay"
       @click.self="closeSource"
     >
@@ -436,11 +453,13 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
           关闭
         </button>
         <h2>WAO 当前来源</h2>
-        <p v-if="sourceError" role="alert">{{ sourceError }}</p>
+        <p v-if="sourceLoading" role="status">正在读取当前来源…</p>
+        <p v-if="sourceError" role="alert">{{ sourceError }} <button @click="showSource(sourceKey)">重试读取</button></p>
         <template v-if="source"
           ><p class="muted">
             来源标识：{{ source.key }} · 此处展示当前内容，可能新于上次同步副本。
           </p>
+          <a v-if="source.originalUrl" :href="source.originalUrl" target="_blank" rel="noopener">打开 WAO 原文 ↗</a>
           <pre>{{ source.content }}</pre>
         </template>
       </section>
