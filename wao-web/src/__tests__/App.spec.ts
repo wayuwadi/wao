@@ -12,15 +12,23 @@ describe('App', () => {
       global: {
         plugins: [createPinia()],
         stubs: ['RouterView'],
+        renderStubDefaultSlot: true,
       },
     })
     expect(wrapper.find('router-view-stub').exists()).toBe(true)
     expect(wrapper.find('toast-host-stub').exists()).toBe(true)
     expect(wrapper.find('ai-assistant-panel-stub').exists()).toBe(false)
+    wrapper.unmount()
   })
   it('账号切换立即清除上一账号的持久提示', () => {
     const pinia = createPinia()
-    const wrapper = shallowMount(App, { global: { plugins: [pinia], stubs: ['RouterView'] } })
+    const wrapper = shallowMount(App, {
+      global: {
+        plugins: [pinia],
+        stubs: ['RouterView'],
+        renderStubDefaultSlot: true,
+      },
+    })
     const session = useSessionStore(pinia)
     session.account = { member: { id: 'first' } } as never
     toast('仅上一账号的错误', 'ri-error-warning-line')
