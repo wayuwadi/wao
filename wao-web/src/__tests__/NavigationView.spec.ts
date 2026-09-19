@@ -160,6 +160,26 @@ describe('全量导航页', () => {
     wrapper.unmount()
   })
 
+  it('把明确规划与示例放到同分类末尾，保留搜索和打开能力且不保存个人布局', async () => {
+    const before = NAVIGATION_CATALOG.map(section => section.items.map(item => item.id))
+    const { wrapper, router } = await mountNavigation()
+    await wrapper.get('.domains button').trigger('click')
+    const ai = wrapper.findAll('.catalog-section').find(section => section.find('h2').text() === 'AI 与自动化')!
+    const rows = ai.findAll('.function-row')
+    expect(rows[rows.length - 1]!.text()).toContain('外部应用授权尚未开放')
+    expect(rows[rows.length - 1]!.get('.maturity-label').text()).toBe('规划中')
+    expect(rows[rows.length - 2]!.text()).toContain('真实爬虫源码')
+    expect(NAVIGATION_CATALOG.map(section => section.items.map(item => item.id))).toEqual(before)
+    await wrapper.get('.search input').setValue('示例')
+    expect(wrapper.get('.maturity-label').text()).toBe('示例预览')
+    await wrapper.get('.function-open').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/changelog')
+    expect(saveNavigationLayout).not.toHaveBeenCalled()
+    expect(saveBuiltinMenuRegistry).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('可搜索 Codex 记忆入口，并打开侧栏已隐藏的真实模块和应用', async () => {
     const { router, wrapper } = await mountNavigation()
     await wrapper.get('.search input').setValue('文件库')
