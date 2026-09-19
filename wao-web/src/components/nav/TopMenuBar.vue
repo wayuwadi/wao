@@ -348,7 +348,7 @@ function revealDragEdge(event: DragEvent) {
 }
 .top-menu-item:hover,
 .top-menu-item.active {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   background: var(--wao-primary-soft);
   border-color: var(--wao-primary);
 }

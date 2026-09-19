@@ -53,7 +53,7 @@ function dismiss() {
 }
 .b-icon {
   font-size: 18px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   margin-top: 1px;
   flex-shrink: 0;
 }

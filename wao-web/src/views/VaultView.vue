@@ -552,7 +552,7 @@ async function deleteItem() {
 }
 .group-add:hover {
   border-color: var(--wao-primary);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 
 .item-col {

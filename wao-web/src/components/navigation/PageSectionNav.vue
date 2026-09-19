@@ -168,7 +168,7 @@ onBeforeUnmount(() => {
 }
 .page-section-toggle:hover,
 .expanded .page-section-toggle {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   border-color: var(--wao-primary-line);
   background: var(--wao-primary-soft);
 }

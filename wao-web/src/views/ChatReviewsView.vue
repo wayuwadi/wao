@@ -1292,7 +1292,7 @@ button {
   padding: 5px 8px;
   border-radius: 999px;
   background: var(--wao-primary-soft);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .run-focus,
 .report-focus {
@@ -1354,7 +1354,7 @@ button {
 }
 .stage-list li.active .stage-dot {
   background: var(--wao-primary-soft);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   animation: pulse 1.5s infinite;
 }
 .stage-list li.failed .stage-dot {
@@ -1388,7 +1388,7 @@ button {
   font-size: 10.5px;
 }
 .run-progress i {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .run-progress span {
   flex: 1;

@@ -41,11 +41,11 @@ body {
 }
 
 a {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   text-decoration: none;
 }
 a:hover {
-  color: var(--wao-primary-hover);
+  color: var(--wao-primary-text);
   text-decoration: underline;
 }
 
@@ -65,6 +65,7 @@ textarea::placeholder {
 }
 
 button {
+  color: inherit;
   font: inherit;
 }
 button:disabled {

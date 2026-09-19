@@ -562,7 +562,7 @@ button {
   place-items: center;
   border-radius: 11px;
   background: var(--wao-primary-soft);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 19px;
 }
 .probe-summary div {
@@ -835,7 +835,7 @@ button {
   color: var(--wao-text-3);
 }
 .boundary-note > i {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 19px;
 }
 .boundary-note b {

@@ -4613,7 +4613,7 @@ dependencies = [
 
 [[package]]
 name = "wao-client"
-version = "1.1.9"
+version = "1.1.10"
 dependencies = [
  "dispatch2",
  "objc2",

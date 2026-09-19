@@ -157,7 +157,7 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color);
 .quadrant-task.selected { background: var(--wao-primary-soft); }
 .quadrant-task.dragging { opacity: .4; }
 .quadrant-complete, .quadrant-select { display: grid; place-items: center; flex: 0 0 26px; height: 26px; padding: 0; border: 0; background: transparent; color: var(--quadrant-color); font-size: 19px; }
-.quadrant-select { color: var(--wao-primary); }
+.quadrant-select { color: var(--wao-primary-text); }
 .quadrant-task-body { flex: 1; min-width: 0; }
 .quadrant-title { display: block; width: 100%; padding: 3px 0; border: 0; background: none; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 20px; font-size: 13px; }
 .quadrant-title:hover { color: var(--wao-primary-text); }

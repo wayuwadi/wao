@@ -282,7 +282,7 @@ onBeforeUnmount(() => {
   font-size: 13px;
   border: 0;
   background: none;
-  color: #267c65;
+  color: var(--wao-success-strong);
   cursor: pointer;
 }
 .daily-card {
@@ -308,7 +308,7 @@ onBeforeUnmount(() => {
 .panel-head small {
   font-size: 12px;
   letter-spacing: 0.18em;
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .panel-head h2 {
   margin: 3px 0;
@@ -343,11 +343,11 @@ onBeforeUnmount(() => {
   width: 44px;
   height: 44px;
   border-radius: 10px;
-  background: #e0f0e9;
+  background: var(--wao-success-bg);
   display: grid;
   place-items: center;
   font-size: 17px;
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .check-toggle {
   border: 0;
@@ -383,7 +383,7 @@ onBeforeUnmount(() => {
 }
 .check-row strong {
   font-size: 12px;
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .timer-controls {
   grid-column: 2 / -1;
@@ -396,7 +396,7 @@ onBeforeUnmount(() => {
 }
 .timer-controls .timer-value {
   min-width: 48px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -407,7 +407,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--wao-line-control);
   border-radius: 7px;
   background: var(--wao-bg-card);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   cursor: pointer;
   font-size: 13px;
 }

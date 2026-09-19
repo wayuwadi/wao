@@ -169,7 +169,7 @@ header b { font-size: 16px; color: var(--wao-text); }
 header p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: 11.5px; }
 .close { width: 32px; height: 32px; border: 0; border-radius: 9px; background: var(--wao-bg-hover-2); color: var(--wao-text-3); cursor: pointer; }
 .search { height: 40px; margin: 0 18px 12px; display: flex; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid var(--wao-line-control); border-radius: 10px; }
-.search:focus-within { border-color: #9ba9eb; box-shadow: 0 0 0 3px rgba(67, 88, 214, .1); }
+.search:focus-within { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .1); }
 .search > i { color: var(--wao-text-weak); }
 .search input { flex: 1; min-width: 0; border: 0; outline: 0; font-size: 13px; color: var(--wao-text); }
 .search button { width: 26px; height: 26px; border: 0; background: none; color: var(--wao-text-faint); cursor: pointer; }
@@ -188,9 +188,9 @@ nav span { margin-left: 5px; color: var(--wao-text-faint); font-size: 10px; }
 .relation-row:hover { background: var(--wao-bg-hover-2); }
 .relation-row.selected { background: var(--wao-primary-soft); }
 .type-icon { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; border-radius: 9px; background: var(--wao-bg-tab); color: var(--wao-area-finance); }
-.type-icon.task { background: #edf1ff; color: #4358d6; }
-.type-icon.file { background: #ecf7f1; color: #31805a; }
-.type-icon.page { background: #fff0e8; color: #d55c22; }
+.type-icon.task { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.type-icon.file { background: var(--wao-success-bg); color: var(--wao-success-strong); }
+.type-icon.page { background: var(--wao-warning-bg); color: var(--wao-warning-strong); }
 .relation-main { flex: 1; min-width: 0; }
 .relation-main b, .relation-main em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .relation-main b { color: var(--wao-text); font-size: 12.5px; }

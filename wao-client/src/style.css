@@ -1,7 +1,58 @@
+/* 外壳与工作区使用相同的明暗层级；所有本地页面共用此调色板。 */
+:root {
+  color-scheme: light;
+  --client-bg-page: #ffffff;
+  --client-bg-side: #fafafa;
+  --client-bg-card: #ffffff;
+  --client-bg-sub: #f7f7f7;
+  --client-bg-hover: #ededed;
+  --client-primary: #4358d6;
+  --client-primary-hover: #3a4cc2;
+  --client-primary-text: #3a4cc2;
+  --client-primary-soft: #e7ebfa;
+  --client-primary-line: #d9dff6;
+  --client-focus: #a7b0ed;
+  --client-line: #dedede;
+  --client-text: #283149;
+  --client-text-secondary: #555e73;
+  --client-text-muted: #727b8d;
+  --client-success: #257a50;
+  --client-success-bg: #e8f5ee;
+  --client-warning: #a96a10;
+  --client-warning-bg: #fbf3e4;
+  --client-danger: #bc4141;
+  --client-danger-bg: #fbebeb;
+  --client-danger-line: #f0c9c9;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --client-bg-page: #0f1115;
+  --client-bg-side: #13151c;
+  --client-bg-card: #1a1c24;
+  --client-bg-sub: #1d1f28;
+  --client-bg-hover: #2a2d38;
+  --client-primary: #5365d8;
+  --client-primary-hover: #5869d5;
+  --client-primary-text: #a4b0ff;
+  --client-primary-soft: #252b4d;
+  --client-primary-line: #333a63;
+  --client-focus: #a4b0ff;
+  --client-line: #363945;
+  --client-text: #f0f1f5;
+  --client-text-secondary: #c4c7d2;
+  --client-text-muted: #9da3b3;
+  --client-success: #6ac295;
+  --client-success-bg: #143425;
+  --client-warning: #ecc476;
+  --client-warning-bg: #33270e;
+  --client-danger: #f28a8a;
+  --client-danger-bg: #381515;
+  --client-danger-line: #5a2525;
+}
 :root {
   font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
-  color: #283149;
-  background: #f7f8fc;
+  color: var(--client-text);
+  background: var(--client-bg-page);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -26,7 +77,7 @@ button:disabled {
   opacity: 0.55;
 }
 button:focus-visible {
-  outline: 3px solid #b0bfff;
+  outline: 3px solid var(--client-focus);
   outline-offset: 2px;
 }
 button svg {
@@ -57,8 +108,8 @@ button {
   align-items: center;
   gap: 14px;
   padding: 0 10px 0 22px;
-  background: #fff;
-  border-bottom: 1px solid #e5e8f0;
+  background: var(--client-bg-card);
+  border-bottom: 1px solid var(--client-line);
   user-select: none;
 }
 .brand {
@@ -76,21 +127,21 @@ button {
   width: 29px;
   height: 29px;
   border-radius: 9px;
-  background: #5466df;
+  background: var(--client-primary);
   color: white;
   font-size: 20px;
   font-weight: 800;
   box-shadow: 0 3px 7px #5466df20;
 }
 .edition {
-  color: #8b91a0;
+  color: var(--client-text-muted);
   font-size: 12px;
   margin-left: 3px;
 }
 .divider {
   width: 1px;
   height: 20px;
-  background: #e8eaf1;
+  background: var(--client-line);
 }
 .history,
 .window-controls {
@@ -105,15 +156,15 @@ button {
   border-radius: 6px;
   display: grid;
   place-content: center;
-  color: #697185;
+  color: var(--client-text-secondary);
 }
 .icon-button:hover {
-  background: #f0f2f8;
-  color: #3d4d91;
+  background: var(--client-bg-hover);
+  color: var(--client-primary-text);
 }
 .icon-button.close:hover {
-  background: #fbe8e9;
-  color: #c83f52;
+  background: var(--client-danger-bg);
+  color: var(--client-danger);
 }
 .drag-space {
   flex: 1;
@@ -138,14 +189,14 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #5e6678;
+  color: var(--client-text-secondary);
   font-size: 12px;
 }
 select.workspace-context {
   height: 28px;
-  border: 1px solid #dde1ed;
+  border: 1px solid var(--client-line);
   border-radius: 7px;
-  background: #f8f9fc;
+  background: var(--client-bg-sub);
 }
 .workspace-menu-item {
   flex: none;
@@ -153,24 +204,24 @@ select.workspace-context {
   height: 28px;
   padding: 0 9px;
   overflow: hidden;
-  border: 1px solid #dde1ed;
+  border: 1px solid var(--client-line);
   border-radius: 7px;
-  background: #f8f9fc;
-  color: #555e73;
+  background: var(--client-bg-sub);
+  color: var(--client-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
 }
 .workspace-menu-item:hover {
-  border-color: #a7b0ed;
-  background: #eff1ff;
-  color: #4958c9;
+  border-color: var(--client-focus);
+  background: var(--client-primary-soft);
+  color: var(--client-primary-text);
 }
 .connection {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #888f9e;
+  color: var(--client-text-muted);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -188,18 +239,18 @@ select.workspace-context {
   display: flex;
   align-items: center;
   gap: 7px;
-  border: 1px solid #e6e9f2;
+  border: 1px solid var(--client-line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--client-bg-card);
   height: 32px;
   padding: 0 10px;
   font-size: 12px;
 }
 .update-button:hover,
 .update-button.active {
-  background: #eff1ff;
-  color: #5366d7;
-  border-color: #dbe0fc;
+  background: var(--client-primary-soft);
+  color: var(--client-primary-text);
+  border-color: var(--client-primary-line);
 }
 .update-dot {
   width: 6px;
@@ -215,7 +266,7 @@ select.workspace-context {
   position: relative;
   overflow: auto;
   background:
-    radial-gradient(ellipse at 83% 6%, #edf0ff, transparent 58%), #f7f8fc;
+    radial-gradient(ellipse at 83% 6%, var(--client-primary-soft), transparent 58%), var(--client-bg-page);
 }
 .connection-page {
   min-height: 100%;
@@ -233,7 +284,7 @@ select.workspace-context {
   display: grid;
   place-content: center;
   border-radius: 23px;
-  background: #5366db;
+  background: var(--client-primary);
   color: white;
   font-size: 46px;
   font-weight: 800;
@@ -249,7 +300,7 @@ select.workspace-context {
 .eyebrow {
   font-size: 10px;
   letter-spacing: 2.5px;
-  color: #818aa6;
+  color: var(--client-text-muted);
   font-weight: 600;
 }
 .connection-page h1 {
@@ -257,14 +308,14 @@ select.workspace-context {
   letter-spacing: -0.7px;
 }
 .connection-page p:not(.eyebrow) {
-  color: #8a91a1;
+  color: var(--client-text-muted);
   font-size: 13px;
 }
 .loader {
   width: 22px;
   height: 22px;
-  border: 2px solid #dde2fa;
-  border-top-color: #5366db;
+  border: 2px solid var(--client-primary-line);
+  border-top-color: var(--client-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -282,19 +333,19 @@ select.workspace-context {
   white-space: nowrap;
 }
 .primary {
-  background: #5366db;
+  background: var(--client-primary);
   color: #fff;
   box-shadow: 0 3px 8px #5366db20;
 }
 .primary:hover {
-  background: #4659cd;
+  background: var(--client-primary-hover);
 }
 .secondary {
-  background: #fff;
-  border: 1px solid #e0e4ef;
+  background: var(--client-bg-card);
+  border: 1px solid var(--client-line);
 }
 .secondary:hover {
-  background: #f1f3fa;
+  background: var(--client-bg-hover);
 }
 .secondary span {
   margin-left: 12px;
@@ -317,7 +368,7 @@ select.workspace-context {
   margin: 12px 0;
 }
 .settings-top p:last-child {
-  color: #9198a9;
+  color: var(--client-text-muted);
   font-size: 13px;
 }
 .settings-grid {
@@ -326,8 +377,8 @@ select.workspace-context {
   gap: 22px;
 }
 .version-card {
-  border: 1px solid #e2e6f0;
-  background: #fff;
+  border: 1px solid var(--client-line);
+  background: var(--client-bg-card);
   border-radius: 18px;
   padding: 28px;
   box-shadow: 0 6px 18px #2d3b6e04;
@@ -347,13 +398,13 @@ select.workspace-context {
 }
 .version-heading span:not(.platform-tag) {
   font-size: 12px;
-  color: #9ba1b0;
+  color: var(--client-text-muted);
 }
 .platform-tag {
   margin-left: auto;
   font-size: 10px;
-  color: #8c94a6;
-  border: 1px solid #e9ecf4;
+  color: var(--client-text-muted);
+  border: 1px solid var(--client-line);
   padding: 5px 8px;
   border-radius: 5px;
 }
@@ -363,20 +414,20 @@ select.workspace-context {
 }
 .pill {
   font-size: 10px;
-  color: #7181b2;
+  color: var(--client-primary-text);
   padding: 5px 9px;
-  background: #f0f3fd;
+  background: var(--client-primary-soft);
   border-radius: 20px;
   display: inline-block;
 }
 .pill.ready,
 .pill.current {
-  color: #558f73;
-  background: #ecf6f0;
+  color: var(--client-success);
+  background: var(--client-success-bg);
 }
 .pill.error {
-  color: #b37b36;
-  background: #fff5e7;
+  color: var(--client-warning);
+  background: var(--client-warning-bg);
 }
 .update-state h3 {
   font-size: 14px;
@@ -387,7 +438,7 @@ select.workspace-context {
 }
 .notes {
   white-space: pre-wrap;
-  color: #8a91a1;
+  color: var(--client-text-muted);
   font-size: 12px;
   line-height: 1.8;
   margin-top: 12px;
@@ -398,23 +449,23 @@ select.workspace-context {
   display: flex;
   align-items: center;
   gap: 15px;
-  border-top: 1px solid #f0f2f7;
+  border-top: 1px solid var(--client-line);
   padding-top: 22px;
 }
 .update-actions span {
   font-size: 10px;
-  color: #a0a6b5;
+  color: var(--client-text-muted);
 }
 .help-card {
-  background: #edf0fb;
-  border: 1px solid #e1e6f5;
+  background: var(--client-primary-soft);
+  border: 1px solid var(--client-primary-line);
   border-radius: 18px;
   padding: 28px;
-  color: #546087;
+  color: var(--client-primary-text);
 }
 .spark {
   font-size: 29px;
-  color: #8997cd;
+  color: var(--client-primary-text);
 }
 .help-card h2 {
   font-size: 21px;
@@ -425,21 +476,21 @@ select.workspace-context {
 .help-card p {
   font-size: 12px;
   line-height: 1.9;
-  color: #8892af;
+  color: var(--client-text-muted);
 }
 .help-rule {
   height: 1px;
-  background: #dfe4f2;
+  background: var(--client-primary-line);
   margin: 19px 0;
 }
 .text-button {
   padding: 0;
   background: none;
   font-size: 12px;
-  color: #7c88b0;
+  color: var(--client-primary-text);
 }
 .text-button:hover {
-  color: #5366db;
+  color: var(--client-primary-text);
 }
 .help-card .text-button {
   margin-top: 20px;
@@ -449,13 +500,13 @@ select.workspace-context {
   justify-content: space-between;
   align-items: center;
   margin-top: 24px;
-  color: #a6adbc;
+  color: var(--client-text-muted);
   font-size: 11px;
 }
 .modal-backdrop {
   position: fixed;
   inset: 40px 0 0;
-  background: #27345425;
+  background: rgba(0, 0, 0, .38);
   backdrop-filter: blur(5px);
   display: grid;
   place-items: center;
@@ -466,12 +517,12 @@ select.workspace-context {
   width: min(440px, 100%);
   padding: 30px;
   border-radius: 20px;
-  background: #fff;
+  background: var(--client-bg-card);
   box-shadow: 0 24px 90px #25335425;
 }
 .modal-symbol {
-  color: #6c7ede;
-  background: #edf0ff;
+  color: var(--client-primary-text);
+  background: var(--client-primary-soft);
   border-radius: 12px;
   padding: 9px 13px;
   display: inline-block;
@@ -485,7 +536,7 @@ select.workspace-context {
 .modal p {
   font-size: 13px;
   line-height: 1.9;
-  color: #939aaa;
+  color: var(--client-text-muted);
 }
 .modal-actions {
   display: flex;
@@ -498,9 +549,9 @@ select.workspace-context {
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  background: #fff2f0;
-  color: #a94942;
-  border: 1px solid #ffccc7;
+  background: var(--client-danger-bg);
+  color: var(--client-danger);
+  border: 1px solid var(--client-danger-line);
   padding: 12px 20px;
   border-radius: 9px;
   font-size: 12px;
@@ -508,8 +559,8 @@ select.workspace-context {
 }
 .retry-small {
   font-size: 11px;
-  color: #5366db;
-  background: #f0f3ff;
+  color: var(--client-primary-text);
+  background: var(--client-primary-soft);
   padding: 5px 8px;
   border-radius: 5px;
 }
@@ -517,10 +568,10 @@ progress {
   width: 100%;
   height: 6px;
   margin: 18px 0 5px;
-  accent-color: #5366db;
+  accent-color: var(--client-primary);
 }
 .update-state small {
-  color: #9299aa;
+  color: var(--client-text-muted);
   font-size: 11px;
 }
 @media (max-width: 950px) {
@@ -566,15 +617,15 @@ progress {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: #526963;
+  color: var(--client-success);
 }
 
 .pet-button {
-  border: 1px solid #dedeea;
+  border: 1px solid var(--client-line);
   border-radius: 8px;
   padding: 7px 10px;
-  background: #fff;
-  color: #554e72;
+  background: var(--client-bg-card);
+  color: var(--client-text-secondary);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -592,16 +643,16 @@ progress {
   height: 30px;
   padding: 0 8px;
   border-radius: 7px;
-  background: #f6f7fd;
+  background: var(--client-bg-sub);
   position: relative;
   font-size: 12px;
 }
 .quick-actions button:first-child {
-  background: #4958dd;
+  background: var(--client-primary);
   color: white;
 }
 .quick-actions button:hover {
-  box-shadow: inset 0 0 0 1px #a7b0ed;
+  box-shadow: inset 0 0 0 1px var(--client-focus);
 }
 .quick-actions small {
   background: #e5484d;
@@ -634,15 +685,8 @@ progress {
 
 /* 与远程工作区左栏共用连续表面，窗口控件保持原生位置。 */
 .toolbar {
-  background: #eef2f8;
+  background: var(--client-bg-side);
   border-bottom-color: transparent;
-}
-.client[data-theme="dark"] {
-  color: #e5e7ef;
-  background: #13151c;
-}
-.client[data-theme="dark"] .toolbar {
-  background: #13151c;
 }
 .theme-glyph {
   font-size: 16px;
@@ -656,15 +700,4 @@ progress {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-}
-
-.client[data-theme="dark"] .quick-actions button:not(:first-child),
-.client[data-theme="dark"] .pet-button,
-.client[data-theme="dark"] .workspace-menu-item {
-  background: #202431;
-  color: #e5e7ef;
-  border-color: #363c4e;
-}
-.client[data-theme="dark"] .workspace-context {
-  color: #adb4c4;
 }

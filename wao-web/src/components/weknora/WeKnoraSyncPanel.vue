@@ -474,7 +474,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 .eyebrow {
   font-size: 11px;
   letter-spacing: 2px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-weight: 700;
 }
 h1 {
@@ -688,23 +688,23 @@ td.message {
 }
 .badge.synced,
 .badge.completed {
-  background: #e5f4ec;
-  color: #278158;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
 }
 .badge.failed,
 .badge.partial,
 .badge.uncertain {
-  background: #fff0e5;
-  color: #ae651a;
+  background: var(--wao-warning-bg);
+  color: var(--wao-warning-strong);
 }
 .badge.running,
 .badge.queued {
-  background: #eeebff;
-  color: #6754c7;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
 }
 .section-title a {
   font-size: 12px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   text-decoration: none;
 }
 .item-list {
@@ -728,7 +728,7 @@ td.message {
   font-size: 12px;
   min-width: 180px;
   overflow-wrap: anywhere;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .item-error {
   font-size: 12px;

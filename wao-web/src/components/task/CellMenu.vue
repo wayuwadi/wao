@@ -94,7 +94,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .cell-menu :slotted(button > i) {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .cell-menu :slotted(button:hover),
 .cell-menu :slotted(button.on) {

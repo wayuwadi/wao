@@ -57,9 +57,9 @@ header button { flex-shrink: 0; padding: 7px 10px; border: 1px solid var(--wao-l
 .start-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
 article { display: flex; flex-direction: column; padding: 14px; border: 1px solid var(--wao-divider); border-radius: 10px; background: var(--wao-bg-sub); }
 h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 14px; }
-h3 i { color: var(--wao-primary); }
+h3 i { color: var(--wao-primary-text); }
 .next-step { flex: 1; }
-a { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; color: var(--wao-primary); font-size: 13px; text-decoration: none; }
+a { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; color: var(--wao-primary-text); font-size: 13px; text-decoration: none; }
 a:hover { text-decoration: underline; }
 a:focus-visible, button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
 @media (max-width: 760px) { .start-guide { padding: 14px; } .start-options { grid-template-columns: 1fr; } }

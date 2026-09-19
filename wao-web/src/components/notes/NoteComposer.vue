@@ -217,7 +217,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .inline .composer-heading { flex-wrap: wrap; }
 .note-composer:focus-within { border-color: var(--wao-primary); }
 .composer-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.composer-heading i { color: var(--wao-primary); font-size: 20px; }
+.composer-heading i { color: var(--wao-primary-text); font-size: 20px; }
 .composer-footer > span { color: var(--wao-text-faint); font-size: 12px; }
 .composer-footer { flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .composer-footer > span { flex: 1; min-width: 140px; }
@@ -244,7 +244,7 @@ button:disabled { opacity: .5; cursor: default; }
 .editor-space :deep(.md-body) { overflow-wrap: anywhere; }
 .composer-tags, .tag-picker { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
 .composer-tags button, .tag-picker button { padding: 5px 8px; font-size: 12px; max-width: 100%; overflow-wrap: anywhere; }
-.tag-chip, .tag-picker button[aria-pressed="true"] { color: var(--wao-primary); background: var(--wao-bg-hover); }
+.tag-chip, .tag-picker button[aria-pressed="true"] { color: var(--wao-primary-text); background: var(--wao-bg-hover); }
 .tag-picker { padding: 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; max-height: 150px; overflow: auto; }
 .tag-picker span { color: var(--wao-text-faint); font-size: 12px; }
 .note-composer.fullscreen { position: fixed; inset: 0; z-index: 2100; border-radius: 0; padding: 24px max(24px, calc((100vw - 1100px) / 2)); height: 100dvh; }

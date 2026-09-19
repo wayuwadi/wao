@@ -92,6 +92,18 @@ describe("desktop workspace preservation", () => {
     await flushPromises();
     expect(wrapper.get('[data-action="theme"]').text()).toContain("🌙");
     expect(wrapper.get(".client").attributes("data-theme")).toBe("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    // 工作区导航的占位状态不能把整个外壳闪回浅色。
+    mocks.handlers.get("toolbar-state")!({
+      payload: { ready: false, theme: "light" } as unknown as string,
+    });
+    await flushPromises();
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    mocks.handlers.get("toolbar-state")!({
+      payload: { ready: true, theme: "dark" } as unknown as string,
+    });
+    await flushPromises();
 
     for (const name of [
       "new-task",

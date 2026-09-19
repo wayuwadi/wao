@@ -420,7 +420,7 @@ async function removePage(page: HostedPage) {
 }
 .asset-drop.dragging {
   border-color: var(--wao-primary);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   background: var(--wao-primary-soft);
 }
 .asset-error {

@@ -431,12 +431,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 .legacy-desktop-shell .header { height: 32px; min-height: 32px; }
 .legacy-desktop-shell .quick-actions { display: none; }
-.desktop-shell {
-  --wao-bg-side: #eef2f8;
-}
-:global([data-theme='dark']) .desktop-shell {
-  --wao-bg-side: #13151c;
-}
 .desktop-shell .header {
   background: var(--wao-bg-side);
   border-bottom: 0;
@@ -489,7 +483,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
   .mobile-main-nav .active,
   .mobile-main-nav .router-link-exact-active {
-    color: var(--wao-primary);
+    color: var(--wao-primary-text);
   }
   .mobile-unread {
     position: absolute;
@@ -538,16 +532,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   border: 1px solid #dce2f5;
   border-radius: 9px;
   background: var(--wao-primary-tint);
-  color: #4358d6;
+  color: var(--wao-primary-text);
   font-size: 13px;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 .data-status.error {
-  border-color: #f0c7c7;
+  border-color: var(--wao-danger-line);
   background: var(--wao-danger-bg);
-  color: #a83b3b;
+  color: var(--wao-danger-strong);
 }
 .data-status span {
   flex: 1;

@@ -166,7 +166,7 @@ p { margin: 7px 0 0; font-size: 10px; line-height: 1.5; color: #ffffffb5; }
 .benefit-countdown.soon { color: #ffe9a9; }
 .benefit-editor { display: grid; gap: 9px; margin-top: 12px; }
 label { display: grid; gap: 4px; font-size: 11px; }
-input { box-sizing: border-box; width: 100%; min-width: 0; padding: 6px; border: 1px solid #d9def6; border-radius: 5px; background: #fff; color: #20264c; font: inherit; color-scheme: light; }
+input { box-sizing: border-box; width: 100%; min-width: 0; padding: 6px; border: 1px solid var(--wao-line-control); border-radius: 5px; background: var(--wao-bg-card); color: var(--wao-text); font: inherit; color-scheme: inherit; }
 footer { justify-content: flex-end; font-size: 11px; }
 .benefit-error { color: #ffe9a9; }
 .compact { position: relative; margin: 0; padding: 0; border: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 24px; align-content: start; }

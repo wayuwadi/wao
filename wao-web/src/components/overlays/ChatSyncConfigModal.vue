@@ -629,7 +629,7 @@ async function runHistory() {
 }
 .event-url .mono { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--wao-text-2); }
 .event-requirement { margin-top: 8px; display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; border-radius: 9px; background: var(--wao-primary-soft); color: var(--wao-text-2); font-size: 11.5px; line-height: 1.65; }
-.event-requirement i { color: var(--wao-primary); margin-top: 2px; }
+.event-requirement i { color: var(--wao-primary-text); margin-top: 2px; }
 .reaction-flow { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 8px; }
 .reaction-flow label { min-width: 0; display: grid; gap: 5px; color: var(--wao-text-weak); font-size: 11.5px; }
 .reaction-flow > i { align-self: center; margin-top: 18px; color: var(--wao-text-faint); }

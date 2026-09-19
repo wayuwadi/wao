@@ -959,7 +959,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   border-radius: 8px;
   padding: 6px 10px;
   background: var(--wao-bg-card);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   cursor: pointer;
 }
 .upload-results button:disabled {
@@ -1019,7 +1019,7 @@ function onFileSettingsSaved(settings: FileSettings) {
   padding: 1px 6px;
   border-radius: 999px;
   background: var(--wao-primary-soft, #eef0ff);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .btn-primary {
   height: 32px;
@@ -1082,7 +1082,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 }
 .unified-drop > i {
   font-size: 26px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .unified-drop > div {
   min-width: 0;
@@ -1246,7 +1246,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 .page-file-picker > i {
   flex-shrink: 0;
   font-size: 22px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .page-file-picker > span {
   min-width: 0;
@@ -1421,7 +1421,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 }
 .img-more:hover {
   border-color: var(--wao-primary);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .img-more i {
   font-size: 15px;
