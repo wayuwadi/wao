@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AI_EXECUTION_MODE_DESCRIPTIONS } from '@/config/aiExecutionModes'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -1330,12 +1331,12 @@ onBeforeUnmount(() => {
             @upload-image="onGoalImage"
           />
           <div class="goal-actions">
-            <label class="goal-control-field" title="放进哪条工作流">
-              <span v-if="!preferences.compactControls">放进哪条工作流</span>
+            <label class="goal-control-field" title="任务归属项目">
+              <span v-if="!preferences.compactControls">任务归属项目</span>
               <select
                 v-model="goalProjectId"
                 class="goal-workflow-select"
-                aria-label="放进哪条工作流"
+                aria-label="任务归属项目"
                 :disabled="workflowsLoading || launchingGoal || !activeWorkflows.length"
               >
                 <option v-if="!activeWorkflows.length" value="">还没有已启用的工作流</option>
@@ -1383,31 +1384,14 @@ onBeforeUnmount(() => {
                 {{ goalRunOptionsLoading ? '读取思考深度' : '重试思考深度' }}
               </button>
             </label>
-            <button
-              v-if="goalSupportsPlanMode"
-              class="goal-plan-mode"
-              :class="{ on: goalExecutionMode === 'plan' }"
-              type="button"
-              role="radio"
-              :aria-checked="goalExecutionMode === 'plan'"
-              :disabled="launchingGoal"
-              @click="goalExecutionMode = goalExecutionMode === 'plan' ? 'direct' : 'plan'"
-            >
-              <i class="ri-route-line"></i><span>Plan 模式</span>
-            </button>
-            <button
-              v-if="goalSupportsPlanMode"
-              class="goal-plan-mode"
-              :class="{ on: goalExecutionMode === 'goal' }"
-              type="button"
-              role="radio"
-              :aria-checked="goalExecutionMode === 'goal'"
-              :disabled="launchingGoal"
-              title="持续推进到完成或明确阻塞"
-              @click="goalExecutionMode = goalExecutionMode === 'goal' ? 'direct' : 'goal'"
-            >
-              <i class="ri-focus-3-line"></i><span>目标模式</span>
-            </button>
+            <label v-if="goalSupportsPlanMode" class="goal-control-field">
+              <span v-if="!preferences.compactControls">执行方式</span>
+              <select v-model="goalExecutionMode" class="goal-mode-select" aria-label="执行方式" aria-describedby="home-goal-mode-description" :disabled="launchingGoal">
+                <option value="direct">直接执行 · 问答与明确的小任务</option>
+                <option value="plan">先规划，再自动执行</option>
+                <option value="goal">持续执行目标 · 多回合推进</option>
+              </select>
+            </label>
             <span class="goal-shortcut" :class="{ 'has-draft': goal.length || goalImageUploads || goalDraftState === 'error' }">
               <template v-if="goalImageUploads">{{ goalImageUploads }} 张图片上传中 · </template>
               <template v-else-if="goalDraftState === 'saved'">草稿已保存在本机 · </template>
@@ -1421,12 +1405,17 @@ onBeforeUnmount(() => {
               @click="launchGoal"
             >
               <i :class="launchingGoal ? 'ri-loader-4-line spin' : 'ri-rocket-2-line'"></i>
-              {{ launchingGoal ? '正在派发…' : '让 AI 开始' }}
+              {{ launchingGoal ? '正在创建并开始…' : '创建任务并开始' }}
             </button>
             <button v-else class="goal-submit setup" :disabled="workflowsLoading" @click="view = 'workflows'">
               <i class="ri-settings-3-line"></i>{{ workflowsLoading ? '正在读取…' : '先接入工作流' }}
             </button>
           </div>
+          <p id="home-goal-mode-description" class="goal-mode-description" role="status">{{ AI_EXECUTION_MODE_DESCRIPTIONS[goalSupportsPlanMode ? goalExecutionMode : 'direct'] }}</p>
+          <p v-if="goalSupportsPlanMode && !goalRunOptions" class="goal-options-status" :role="goalRunOptionsLoading ? 'status' : 'alert'">
+            {{ goalRunOptionsLoading ? '正在读取执行配置，请稍候…' : '执行配置未能读取，暂时无法开始；你的目标仍保留。' }}
+            <button v-if="!goalRunOptionsLoading" type="button" @click="refreshGoalRunOptions">重试执行配置</button>
+          </p>
         </div>
       </section>
 
@@ -3300,6 +3289,10 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .hero-signals > span { font-size: 11px; }
 .hero-link { font-size: 11px; padding: 5px 8px; }
 .home-primary .goal-launcher { min-height: 196px; padding: 12px 14px; gap: 9px; align-content: start; box-shadow: none; }
+.goal-mode-description, .goal-options-status { margin: 8px 0 0; font-size: 12px; line-height: 1.6; color: var(--wao-text-weak); }
+.goal-options-status[role="alert"] { color: var(--wao-danger-strong); }
+.goal-options-status button { margin-left: 6px; padding: 3px 6px; border: 1px solid var(--wao-line-control); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-primary); cursor: pointer; }
+.goal-mode-select { max-width: 230px; }
 .goal-heading { align-items: center; gap: 8px; }
 .goal-heading h2 { font-size: 16px; margin: 0; }
 .goal-icon { width: 28px; height: 28px; font-size: 16px; border-radius: 8px; }
