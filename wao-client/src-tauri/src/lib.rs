@@ -133,6 +133,100 @@ fn show(app: &tauri::AppHandle) {
     }
 }
 
+// macOS window coordinates are points. Restoring another display's saved physical
+// pixels through the startup display's scale can halve both the frame and position.
+// Let AppKit preserve its own screen-aware frame, scoped to this app and window.
+#[cfg(target_os = "macos")]
+fn restore_macos_frame(window: tauri::Window) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSScreen, NSWindow};
+    use objc2_foundation::{NSPoint, NSString, NSUserDefaults};
+    use tauri_plugin_window_state::WindowExt;
+
+    let name = format!("{}.{}", window.app_handle().config().identifier, window.label());
+    let pet = window.label() == "pet";
+    // Tao queues its initial position on this queue. Restore after that operation,
+    // and only then show the window, or the queued default position wins later.
+    dispatch2::DispatchQueue::main().exec_async(move || {
+        if let Ok(pointer) = window.ns_window() {
+            // Tauri owns this NSWindow for the lifetime of the cloned handle.
+            // AppKit is accessed only on the macOS main thread.
+            let window = unsafe { &*pointer.cast::<NSWindow>() };
+            let default_frame = window.frame();
+            let name = NSString::from_str(&name);
+            let key = NSString::from_str(&format!("NSWindow Frame {name}"));
+            let saved = NSUserDefaults::standardUserDefaults().stringForKey(&key);
+            let areas = NSScreen::screens(MainThreadMarker::new().expect("main dispatch queue"))
+                .iter().map(|screen| screen.visibleFrame()).collect::<Vec<_>>();
+            let frame = saved.and_then(|saved| saved_macos_frame(&saved.to_string(), &areas));
+            // Setting the autosave name can itself relocate the frame to the
+            // currently active display. Apply our validated global points after it.
+            window.setFrameAutosaveName(&name);
+            if let Some(frame) = frame {
+                window.setFrame_display(frame, false);
+            } else {
+                window.setFrame_display(default_frame, false);
+                if pet {
+                    if let Some(screen) = window.screen() {
+                        let area = screen.visibleFrame();
+                        window.setFrameOrigin(NSPoint::new(
+                            area.origin.x + area.size.width - 204.0,
+                            area.origin.y + 214.0 - window.frame().size.height,
+                        ));
+                    }
+                }
+            }
+            window.saveFrameUsingName(&name);
+        }
+        // Preserve the plugin's fullscreen/maximized state after restoring the
+        // normal AppKit frame; these flags deliberately exclude position/size.
+        let _ = window.restore_state(window_state_flags());
+        let _ = window.show();
+        if window.label() == "main" {
+            let _ = window.set_focus();
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn saved_macos_frame(value: &str, areas: &[objc2_foundation::NSRect]) -> Option<objc2_foundation::NSRect> {
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    // AppKit's frame descriptor stores window x/y/width/height, then screen frame.
+    let values = value.split_whitespace().map(str::parse::<f64>)
+        .collect::<Result<Vec<_>, _>>().ok()?;
+    if values.len() != 8 || values.iter().any(|value| !value.is_finite())
+        || values[2] <= 0.0 || values[3] <= 0.0 {
+        return None;
+    }
+    let frame = NSRect::new(NSPoint::new(values[0], values[1]), NSSize::new(values[2], values[3]));
+    let overlap = |area: &&NSRect| {
+        let width = (frame.origin.x + frame.size.width).min(area.origin.x + area.size.width)
+            - frame.origin.x.max(area.origin.x);
+        let height = (frame.origin.y + frame.size.height).min(area.origin.y + area.size.height)
+            - frame.origin.y.max(area.origin.y);
+        width.max(0.0) * height.max(0.0)
+    };
+    let area = areas.iter().filter(|area| overlap(area) > 0.0)
+        .max_by(|a, b| overlap(a).total_cmp(&overlap(b)))?;
+    let width = frame.size.width.min(area.size.width);
+    let height = frame.size.height.min(area.size.height);
+    Some(NSRect::new(
+        NSPoint::new(
+            frame.origin.x.clamp(area.origin.x, area.origin.x + area.size.width - width),
+            frame.origin.y.clamp(area.origin.y, area.origin.y + area.size.height - height),
+        ),
+        NSSize::new(width, height),
+    ))
+}
+
+fn window_state_flags() -> tauri_plugin_window_state::StateFlags {
+    use tauri_plugin_window_state::StateFlags;
+    let flags = StateFlags::all() & !StateFlags::VISIBLE;
+    #[cfg(target_os = "macos")]
+    let flags = flags & !(StateFlags::POSITION | StateFlags::SIZE);
+    flags
+}
+
 #[cfg(target_os = "macos")]
 fn macos_menu(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::SubmenuBuilder;
@@ -404,7 +498,37 @@ fn shortcut_config(url: &tauri::Url) -> serde_json::Value {
     serde_json::Value::Object(config)
 }
 
+#[cfg(target_os = "macos")]
+fn pet_frame(frame: objc2_foundation::NSRect, area: objc2_foundation::NSRect, width: f64, height: f64) -> objc2_foundation::NSRect {
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    let width = width.min(area.size.width);
+    let height = height.min(area.size.height);
+    let x = (frame.origin.x + frame.size.width - width)
+        .clamp(area.origin.x, area.origin.x + area.size.width - width);
+    let y = frame.origin.y
+        .clamp(area.origin.y, area.origin.y + area.size.height - height);
+    NSRect::new(NSPoint::new(x, y), NSSize::new(width, height))
+}
+
 fn resize_pet(window: &tauri::WebviewWindow, width: f64, height: f64) {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWindow;
+        let window = window.clone();
+        // Read frame and screen together in AppKit points. Separate physical
+        // getters can straddle a backing-scale change during cross-screen restore.
+        dispatch2::DispatchQueue::main().exec_async(move || {
+            if let Ok(pointer) = window.ns_window() {
+                // The owned Tauri handle keeps the NSWindow alive on this queue.
+                let window = unsafe { &*pointer.cast::<NSWindow>() };
+                if let Some(screen) = window.screen() {
+                    window.setFrame_display(pet_frame(window.frame(), screen.visibleFrame(), width, height), true);
+                }
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
     // Keep the bottom-right anchor on expansion, and clamp to the current work area.
     if let (Ok(position), Ok(size), Ok(scale), Ok(Some(monitor))) = (
         window.outer_position(),
@@ -423,6 +547,7 @@ fn resize_pet(window: &tauri::WebviewWindow, width: f64, height: f64) {
             .min(area.position.y + area.size.height as i32 - (height * scale) as i32);
         let _ = window.set_size(LogicalSize::new(width, height));
         let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    }
     }
 }
 
@@ -444,6 +569,7 @@ fn show_desktop_pet(app: &tauri::AppHandle) -> tauri::Result<()> {
         .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
+        .visible(!cfg!(target_os = "macos"))
         .resizable(false)
         .disable_drag_drop_handler()
         .on_navigation(move |next| {
@@ -521,6 +647,7 @@ fn show_desktop_pet(app: &tauri::AppHandle) -> tauri::Result<()> {
         })
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()?;
+    #[cfg(not(target_os = "macos"))]
     if let Ok(Some(monitor)) = window.current_monitor() {
         let area = monitor.work_area();
         let scale = monitor.scale_factor();
@@ -529,6 +656,8 @@ fn show_desktop_pet(app: &tauri::AppHandle) -> tauri::Result<()> {
             area.position.y + area.size.height as i32 - (214.0 * scale) as i32,
         ))?;
     }
+    #[cfg(target_os = "macos")]
+    restore_macos_frame(window.as_ref().window());
     Ok(())
 }
 
@@ -737,10 +866,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_state_flags(
-                    tauri_plugin_window_state::StateFlags::all()
-                        & !tauri_plugin_window_state::StateFlags::VISIBLE,
-                )
+                .with_state_flags(window_state_flags())
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
@@ -776,6 +902,11 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_window("main") {
+                restore_macos_frame(window);
+            }
+            #[cfg(not(target_os = "macos"))]
             show(app.handle());
             #[cfg(target_os = "macos")]
             macos_menu(app)?;
@@ -877,6 +1008,47 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn saved_frames_keep_their_display_regardless_of_the_active_screen_order() {
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+        let primary = NSRect::new(NSPoint::new(0.0, 60.0), NSSize::new(1792.0, 1035.0));
+        let secondary = NSRect::new(NSPoint::new(1792.0, 0.0), NSSize::new(1920.0, 1055.0));
+        let saved = "206 267 1100 760 0 0 1792 1095";
+        let expected = NSRect::new(NSPoint::new(206.0, 267.0), NSSize::new(1100.0, 760.0));
+        assert_eq!(saved_macos_frame(saved, &[secondary, primary]), Some(expected));
+        assert_eq!(saved_macos_frame(saved, &[primary, secondary]), Some(expected));
+        let saved = "2300 220 1000 700 1792 0 1920 1055";
+        assert_eq!(saved_macos_frame(saved, &[primary, secondary]).unwrap().origin, NSPoint::new(2300.0, 220.0));
+        assert_eq!(saved_macos_frame(saved, &[primary]), None);
+        assert_eq!(saved_macos_frame("NaN 0 100 100 0 0 100 100", &[primary]), None);
+        assert_eq!(saved_macos_frame("0 0 -1 100 0 0 100 100", &[primary]), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn pet_expansion_and_compaction_preserve_secondary_screen_anchor() {
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+        let area = NSRect::new(NSPoint::new(1792.0, 0.0), NSSize::new(1920.0, 1055.0));
+        let compact = NSRect::new(NSPoint::new(2066.0, 212.0), NSSize::new(120.0, 120.0));
+        let bubble = pet_frame(compact, area, 260.0, 190.0);
+        assert_eq!(bubble.origin, NSPoint::new(1926.0, 212.0));
+        assert_eq!(pet_frame(bubble, area, 120.0, 120.0), compact);
+        // An unchanged bubble on the 1x display must not jump after 2x startup.
+        assert_eq!(pet_frame(bubble, area, 260.0, 190.0), bubble);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn pet_frame_stays_inside_work_area_even_when_the_saved_screen_is_gone() {
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+        let frame = NSRect::new(NSPoint::new(3452.0, -30.0), NSSize::new(260.0, 190.0));
+        let area = NSRect::new(NSPoint::new(0.0, 60.0), NSSize::new(1792.0, 1035.0));
+        assert_eq!(pet_frame(frame, area, 260.0, 190.0).origin, NSPoint::new(1532.0, 60.0));
+        let tiny = NSRect::new(NSPoint::new(-100.0, 10.0), NSSize::new(100.0, 80.0));
+        assert_eq!(pet_frame(frame, tiny, 260.0, 190.0), tiny);
+    }
+
     #[test]
     fn tray_unread_requires_ready_and_bounded_positive_counts() {
         assert!(!has_unread(&serde_json::json!({"ready":false,"chat":"1"})));
