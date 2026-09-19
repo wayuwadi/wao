@@ -1,4 +1,5 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { useSessionStore } from '@/stores/session'
 import { defineStore } from 'pinia'
 import { fetchPreference, savePreference } from '@/api/favorites'
 
@@ -57,34 +58,70 @@ export const useWebPetStore = defineStore('web-pet', () => {
   const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const error = ref('')
 
-  async function load(force = false) {
-    if (loadState.value === 'loading' || (!force && loadState.value === 'loaded')) return settings.value
+  const session = useSessionStore()
+  let epoch = 0
+  let revision = 0
+  let pendingLoad: Promise<WebPetSettings> | undefined
+
+  watch(() => session.userId, () => {
+    epoch += 1
+    revision += 1
+    pendingLoad = undefined
+    settings.value = { ...DEFAULT_WEB_PET_SETTINGS }
+    loadState.value = 'idle'
+    saveState.value = 'idle'
+    error.value = ''
+  }, { flush: 'sync' })
+
+  function load(force = false): Promise<WebPetSettings> {
+    if (pendingLoad) return pendingLoad
+    if (!force && loadState.value === 'loaded') return Promise.resolve(settings.value)
+    if (!session.userId) return Promise.resolve(settings.value)
+    const owner = epoch
+    const current = revision
     loadState.value = 'loading'
     error.value = ''
-    try {
-      const raw = await fetchPreference(WEB_PET_PREFERENCE_KEY)
-      settings.value = normalizeWebPetSettings(raw ? JSON.parse(raw) : null)
-      loadState.value = 'loaded'
-    } catch (cause) {
-      loadState.value = 'error'
-      error.value = cause instanceof Error ? cause.message : '宠物设置读取失败'
-    }
-    return settings.value
+    const request = (async () => {
+      try {
+        const raw = await fetchPreference(WEB_PET_PREFERENCE_KEY)
+        if (owner === epoch && current === revision) {
+          settings.value = normalizeWebPetSettings(raw ? JSON.parse(raw) : null)
+          loadState.value = 'loaded'
+        }
+      } catch (cause) {
+        if (owner === epoch && current === revision) {
+          loadState.value = 'error'
+          error.value = cause instanceof Error ? cause.message : '宠物设置读取失败'
+        }
+      }
+      return settings.value
+    })()
+    pendingLoad = request
+    void request.finally(() => { if (pendingLoad === request) pendingLoad = undefined })
+    return request
   }
 
   async function save(next: WebPetSettings) {
+    if (!session.userId) throw new Error('请登录后保存宠物设置')
+    if (saveState.value === 'saving') throw new Error('宠物设置正在保存，请稍候')
+    const owner = epoch
     const normalized = normalizeWebPetSettings(next)
+    revision += 1
     saveState.value = 'saving'
     error.value = ''
     try {
       await savePreference(WEB_PET_PREFERENCE_KEY, JSON.stringify(normalized))
+      if (owner !== epoch) throw new Error('账号已切换，请在当前账号重新读取设置')
+      revision += 1
       settings.value = normalized
       loadState.value = 'loaded'
       saveState.value = 'saved'
       return normalized
     } catch (cause) {
-      saveState.value = 'error'
-      error.value = cause instanceof Error ? cause.message : '宠物设置保存失败'
+      if (owner === epoch) {
+        saveState.value = 'error'
+        error.value = cause instanceof Error ? cause.message : '宠物设置保存失败'
+      }
       throw cause
     }
   }

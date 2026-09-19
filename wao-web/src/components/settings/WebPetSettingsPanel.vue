@@ -1,56 +1,110 @@
 <script setup lang="ts">
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useSessionStore } from '@/stores/session'
 import { toast } from '@/composables/toast'
 import {
   type WebPetSettings,
+  normalizeWebPetSettings,
   useWebPetStore,
 } from '@/stores/webPet'
 
 const pet = useWebPetStore()
+const session = useSessionStore()
+const owner = session.userId
+const draftKey = `wao-web-pet-settings-draft-v1:${owner}`
 const draft = ref<WebPetSettings | null>(null)
 const baseline = ref('')
-
+const draftError = ref('')
+const draftRestored = ref(false)
+let draftReadable = false
+let disposed = false
+let pendingSave: Promise<void> | undefined
 const dirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== baseline.value)
 
-watch(
-  () => pet.settings,
-  (value) => {
-    if (dirty.value || pet.saveState === 'saving') return
-    draft.value = { ...value }
-    baseline.value = JSON.stringify(value)
-  },
-  { deep: true },
-)
+function persistDraft(confirmed = false) {
+  if (!owner || session.userId !== owner || !draft.value || !draftReadable) return
+  try {
+    if (dirty.value || (pendingSave && !confirmed)) localStorage.setItem(draftKey, JSON.stringify(draft.value))
+    else localStorage.removeItem(draftKey)
+    draftError.value = ''
+  } catch {
+    draftError.value = '本地草稿暂时无法保存，请保存到服务器后再离开。'
+  }
+}
+watch(draft, () => persistDraft(), { deep: true })
+watch(() => pet.settings, (value) => {
+  if (!draft.value || dirty.value || pendingSave || pet.saveState === 'saving' || pet.loadState !== 'loaded') return
+  draft.value = { ...value }
+  baseline.value = JSON.stringify(value)
+}, { deep: true })
 
 async function load(force = false) {
   await pet.load(force)
-  if (pet.loadState === 'error' && !draft.value) return
-  draft.value = { ...pet.settings }
+  if (disposed || session.userId !== owner || pet.loadState !== 'loaded') return
+  if (draft.value && dirty.value) return
   baseline.value = JSON.stringify(pet.settings)
-}
-
-async function save() {
-  if (!draft.value || !dirty.value || pet.saveState === 'saving') return
+  let restored: WebPetSettings | null = null
   try {
-    const saved = await pet.save(draft.value)
-    draft.value = { ...saved }
-    baseline.value = JSON.stringify(saved)
-    toast('宠物设置已保存并立即生效', 'ri-bear-smile-line')
+    const raw = localStorage.getItem(draftKey)
+    if (raw) restored = normalizeWebPetSettings(JSON.parse(raw))
+    draftReadable = true
   } catch {
-    // 原草稿保留在表单中，页面直接提供重试。
+    draftError.value = '本地草稿读取失败，离开前请先保存设置。'
   }
+  draft.value = restored ?? { ...pet.settings }
+  draftRestored.value = !!restored && dirty.value
 }
 
+function save(): Promise<void> {
+  if (pendingSave) return pendingSave
+  if (!draft.value || !dirty.value || session.userId !== owner) return Promise.resolve()
+  const submitted = { ...draft.value }
+  const request = (async () => {
+    try {
+      const saved = await pet.save(submitted)
+      if (disposed || session.userId !== owner) return
+      // 请求期间允许继续编辑；只确认本次已落库的快照。
+      if (JSON.stringify(draft.value) === JSON.stringify(submitted)) draft.value = { ...saved }
+      baseline.value = JSON.stringify(saved)
+      draftReadable = true
+      persistDraft(true)
+      draftRestored.value = false
+      toast(dirty.value ? '本次设置已保存，后续修改仍待保存' : '宠物设置已保存并立即生效', 'ri-bear-smile-line')
+    } catch {
+      // 原草稿保留在表单和本地存储中，允许原样重试。
+    }
+  })()
+  pendingSave = request
+  void request.finally(() => {
+    if (pendingSave === request) {
+      pendingSave = undefined
+      if (!disposed) persistDraft()
+    }
+  })
+  return request
+}
 function confirmLeave() {
-  return !dirty.value || window.confirm('宠物设置还有未保存的修改，确认放弃吗？')
+  return (!dirty.value && !pendingSave) || window.confirm('宠物设置还有未保存的修改，确认离开吗？')
 }
-
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (!dirty.value && !pendingSave) return
+  event.preventDefault()
+  event.returnValue = ''
+}
 defineExpose({ confirmLeave })
-onMounted(() => void load())
+onMounted(() => {
+  void load()
+  window.addEventListener('beforeunload', beforeUnload)
+})
+onBeforeUnmount(() => {
+  disposed = true
+  window.removeEventListener('beforeunload', beforeUnload)
+})
 useSaveBeforeRefresh(async () => {
+  if (pendingSave) await pendingSave
   if (dirty.value) await save()
-  if (dirty.value) throw new Error('宠物设置保存失败，草稿已保留')
+  if (dirty.value) throw new Error('宠物设置尚未全部保存，草稿已保留')
 })
 </script>
 
@@ -66,7 +120,7 @@ useSaveBeforeRefresh(async () => {
       :disabled="!dirty || pet.saveState === 'saving'"
       @click="save"
     >
-      {{ pet.saveState === 'saving' ? '保存中…' : dirty ? '保存宠物设置' : '已保存' }}
+      {{ pet.saveState === 'saving' ? '保存中…' : dirty ? '保存宠物设置' : pet.loadState === 'loaded' ? '已保存' : '等待读取' }}
     </button>
   </div>
 
@@ -77,8 +131,10 @@ useSaveBeforeRefresh(async () => {
     <span>{{ pet.error }}</span><button type="button" @click="load(true)">重新读取</button>
   </div>
   <form v-else-if="draft" class="pet-settings" @submit.prevent="save">
+    <p v-if="draftRestored && dirty" class="state-card" role="status">已恢复未保存的宠物设置，请确认后保存。</p>
+    <div v-if="draftError" class="state-card error" role="alert">{{ draftError }}<button v-if="draftReadable || !dirty" type="button" @click="draftReadable ? persistDraft() : load(true)">重试草稿</button></div>
     <section class="settings-card">
-      <header><div><h2>宠物提醒</h2><p>新动态仅提示一次，8 秒后收起。悬停不展开操作按钮。</p></div></header>
+      <header><div><h2>宠物提醒</h2><p>任务动态仅提示一次，8 秒后收起；聊天未读提示保留到查看。悬停不展开操作按钮。</p></div></header>
       <div class="switch-list">
         <label><input v-model="draft.showTaskNotices" type="checkbox" /><span><b>展示真实任务气泡</b><small>关闭后保留宠物和聊天消息提示。</small></span></label>
         <label><input v-model="draft.idleAnimation" type="checkbox" /><span><b>空闲基础动作</b><small>关闭后宠物保持静止；系统“减少动态效果”始终优先。</small></span></label>
