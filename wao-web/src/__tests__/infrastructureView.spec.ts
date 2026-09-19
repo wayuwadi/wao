@@ -64,4 +64,19 @@ describe('基础设施页面状态', () => {
     await w.get('.header-actions button').trigger('click'); await flushPromises()
     expect(w.text()).toContain('仅管理员'); expect(w.text()).not.toContain('jms_core')
   })
+  it('提供键盘可聚焦表格与滚动提示，中文状态旁保留采集原文', async () => {
+    const data = sample()
+    data.nodes[0]!.services[0]!.state = 'created'
+    data.nodes[0]!.services[0]!.status = 'Created'
+    vi.mocked(apiInfrastructureOverview).mockResolvedValue(data)
+    const w=view(); await flushPromises()
+    const region = w.get('.table-scroll')
+    expect(region.attributes('tabindex')).toBe('0')
+    expect(region.attributes('role')).toBe('region')
+    const help = w.get(`[id="${region.attributes('aria-describedby')}"]`)
+    expect(help.text()).toContain('左右方向键')
+    expect(region.text()).toContain('已创建，尚未启动')
+    expect(region.text()).toContain('created · Created')
+  })
+
 })

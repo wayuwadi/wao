@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { infraAttention, infraBytes, infraFilter, infraMemoryUsed, infraPercent } from '@/utils/infrastructure'
+import { infraServiceState, infraAttention, infraBytes, infraFilter, infraMemoryUsed, infraPercent } from '@/utils/infrastructure'
 import type { InfraNode, InfraService } from '@/api/infrastructure'
 
 describe('基础设施真实数据展示', () => {
@@ -37,4 +37,12 @@ describe('基础设施真实数据展示', () => {
     expect(infraFilter(services, '', 'stopped').map(s => s.name)).toEqual(['grafana'])
     expect(infraFilter(services, 'unknown', 'all')).toHaveLength(0)
   })
+  it('解释已创建与退出状态，保留未知状态边界，不把运行中判为健康', () => {
+    expect(infraServiceState({ ...healthy, state: 'created' })).toBe('已创建，尚未启动')
+    expect(infraServiceState({ ...healthy, state: 'exited' })).toBe('已退出')
+    expect(infraServiceState({ ...healthy, state: 'new-state' })).toBe('未识别状态')
+    expect(infraServiceState(healthy)).toBe('运行中')
+    expect(infraServiceState({ ...healthy, status: 'Up (UNHEALTHY)' })).toContain('健康检查异常')
+  })
+
 })
