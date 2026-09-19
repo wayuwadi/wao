@@ -54,9 +54,17 @@ const owner = session.userId
 const CONFIG_DRAFT_KEY = `wao-workday-rhythm-config-draft-v2:${encodeURIComponent(owner)}`
 let alive = true
 let loadSequence = 0
-watch(() => session.userId, () => { alive = false }, { flush: 'sync' })
+watch(
+  () => session.userId,
+  () => {
+    alive = false
+  },
+  { flush: 'sync' },
+)
 const localDraftError = ref('')
-const draftRetention = computed(() => localDraftError.value ? '输入仍在当前页面，请勿关闭' : '草稿仍在本机')
+const draftRetention = computed(() =>
+  localDraftError.value ? '输入仍在当前页面，请勿关闭' : '草稿仍在本机',
+)
 const pendingDraftWrites = new Map<string, string | null>()
 function captureContext() {
   const date = clock.value.date
@@ -64,7 +72,9 @@ function captureContext() {
 }
 function readDraft(key: string): string | null {
   if (pendingDraftWrites.has(key)) return pendingDraftWrites.get(key) ?? null
-  try { return localStorage.getItem(key) } catch {
+  try {
+    return localStorage.getItem(key)
+  } catch {
     localDraftError.value = '本机草稿暂不可用，请保持页面打开或保存到系统。'
     return null
   }
@@ -135,8 +145,12 @@ const growthCoachRefreshing = ref(false)
 const growthCoachError = ref('')
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
-const dayDraftKey = computed(() => `wao-workday-rhythm-day-draft-v2:${encodeURIComponent(owner)}:${clock.value.date}`)
-const tomorrowDraftKey = computed(() => `wao-workday-rhythm-day-draft-v2:${encodeURIComponent(owner)}:${tomorrowDate.value}`)
+const dayDraftKey = computed(
+  () => `wao-workday-rhythm-day-draft-v2:${encodeURIComponent(owner)}:${clock.value.date}`,
+)
+const tomorrowDraftKey = computed(
+  () => `wao-workday-rhythm-day-draft-v2:${encodeURIComponent(owner)}:${tomorrowDate.value}`,
+)
 const blockIndex = computed(() => currentBlockIndex(config.value.blocks, clock.value))
 const currentBlock = computed(() => config.value.blocks[blockIndex.value] ?? null)
 const nextBlock = computed(() => {
@@ -167,7 +181,10 @@ const focusReady = computed(() => todayFocus.value.every((item) => !!item.trim()
 const focusSaveLabel = computed(() => {
   if (dayState.value === 'saving') return '正在保存今日重点'
   if (dayState.value === 'error') return '重试保存今日重点'
-  if (dayState.value === 'dirty') return localDraftError.value ? '保存今日重点，输入仅在当前页面' : '保存今日重点，草稿已保存在本机'
+  if (dayState.value === 'dirty')
+    return localDraftError.value
+      ? '保存今日重点，输入仅在当前页面'
+      : '保存今日重点，草稿已保存在本机'
   if (dayState.value === 'saved') return '今日重点已保存'
   return '保存今日重点'
 })
@@ -418,7 +435,9 @@ async function persistDay(successMessage = ''): Promise<boolean> {
     if (!isCurrent()) return false
     dayState.value = 'error'
     toast(
-      error instanceof Error ? `${error.message}，${draftRetention.value}` : `保存失败，${draftRetention.value}`,
+      error instanceof Error
+        ? `${error.message}，${draftRetention.value}`
+        : `保存失败，${draftRetention.value}`,
       'ri-error-warning-line',
     )
     return false
@@ -484,7 +503,7 @@ async function recordEnergy(item: WorkdayRhythmEnergyItem) {
   }
   syncLegacyEnergyFields()
   markDayDirty()
-  if (await persistDay(`${item.title}已记录`) && isCurrent()) {
+  if ((await persistDay(`${item.title}已记录`)) && isCurrent()) {
     await dispatchEnergyNotification(item.id, day.value.date)
   }
 }
@@ -515,9 +534,8 @@ function focusInput(index: number) {
   day.value.focus = day.value.focus.map((item, i) =>
     i < DEFAULT_FOCUS_COUNT ? item.slice(0, 100) : item,
   )
-  day.value.focusCompleted = day.value.focusCompleted.map(
-    (completed, completedIndex) =>
-      completedIndex >= DEFAULT_FOCUS_COUNT ? completed : completedIndex < index && completed,
+  day.value.focusCompleted = day.value.focusCompleted.map((completed, completedIndex) =>
+    completedIndex >= DEFAULT_FOCUS_COUNT ? completed : completedIndex < index && completed,
   )
   focusNotificationState.value = 'idle'
   pendingFocusNotification.value = null
@@ -535,9 +553,7 @@ function tomorrowFocusInput() {
 async function saveFocus() {
   const isCurrent = captureContext()
   if (!isCurrent()) return
-  day.value.focus = day.value.focus.map((item, i) =>
-    i < DEFAULT_FOCUS_COUNT ? item.trim() : item,
-  )
+  day.value.focus = day.value.focus.map((item, i) => (i < DEFAULT_FOCUS_COUNT ? item.trim() : item))
   markDayDirty()
   const submittedFocus = [...day.value.focus]
   const submittedDate = day.value.date
@@ -615,7 +631,8 @@ async function undoFocus(index: number) {
   undoPendingIndex.value = index
   day.value.focusCompleted[index] = false
   markDayDirty()
-  if (await persistDay(`已撤销重点 ${index + 1} 的完成状态`) && isCurrent()) undoPendingIndex.value = null
+  if ((await persistDay(`已撤销重点 ${index + 1} 的完成状态`)) && isCurrent())
+    undoPendingIndex.value = null
 }
 
 async function saveTomorrowFocus() {
@@ -790,7 +807,9 @@ async function submitEditor() {
   } catch (error) {
     if (!isCurrent()) return
     editorError.value =
-      error instanceof Error ? `${error.message}，${draftRetention.value}` : `模板保存失败，${draftRetention.value}`
+      error instanceof Error
+        ? `${error.message}，${draftRetention.value}`
+        : `模板保存失败，${draftRetention.value}`
   } finally {
     if (!isCurrent()) return
     editorBusy.value = false
@@ -846,7 +865,9 @@ onBeforeUnmount(() => {
   <main class="rhythm-page">
     <div v-if="localDraftError" class="save-banner error" role="alert">
       <span>{{ localDraftError }}</span>
-      <button v-if="pendingDraftWrites.size" type="button" @click="retryLocalDrafts">重试本机保存</button>
+      <button v-if="pendingDraftWrites.size" type="button" @click="retryLocalDrafts">
+        重试本机保存
+      </button>
     </div>
     <header class="page-head">
       <div>
@@ -869,8 +890,12 @@ onBeforeUnmount(() => {
         <button class="history-button" type="button" @click="openHistory">
           <i class="ri-history-line"></i>历史记录
         </button>
-        <button class="page-action notification-settings-button" type="button"
-          :disabled="loading || !!loadError" @click="openEditor('notification')">
+        <button
+          class="page-action notification-settings-button"
+          type="button"
+          :disabled="loading || !!loadError"
+          @click="openEditor('notification')"
+        >
           <i class="ri-notification-3-line"></i>通知设置
         </button>
         <button class="settings-button" type="button" @click="openEditor()">
@@ -945,7 +970,11 @@ onBeforeUnmount(() => {
       </section>
 
       <div v-if="dayState === 'error'" class="save-banner error" role="alert">
-        <i class="ri-cloud-off-line"></i><span>上次保存失败，{{ localDraftError ? '输入仅在当前页面，请勿关闭。' : '未提交内容仍在本机。' }}</span
+        <i class="ri-cloud-off-line"></i
+        ><span
+          >上次保存失败，{{
+            localDraftError ? '输入仅在当前页面，请勿关闭。' : '未提交内容仍在本机。'
+          }}</span
         ><button type="button" @click="persistDay('今日记录已重新保存')">重试保存</button>
       </div>
       <div v-else-if="dayState === 'saving'" class="save-banner">
@@ -1407,7 +1436,13 @@ onBeforeUnmount(() => {
             :disabled="editorBusy"
             @click="submitEditor"
           >
-            {{ editorBusy ? '保存中…' : editorSection === 'notification' ? '保存通知设置' : '保存节奏' }}
+            {{
+              editorBusy
+                ? '保存中…'
+                : editorSection === 'notification'
+                  ? '保存通知设置'
+                  : '保存节奏'
+            }}
           </button>
         </footer>
       </section>
@@ -2814,6 +2849,8 @@ textarea {
   white-space: nowrap;
 }
 .editor {
+  font-size: 13px;
+  line-height: 1.6;
   position: fixed;
   z-index: 101;
   top: 4vh;
@@ -2855,7 +2892,7 @@ textarea {
 .editor-intro {
   margin: 0 0 11px;
   color: var(--wao-text-faint);
-  font-size: 10.5px;
+  font-size: 12px;
 }
 .editor-nav {
   display: grid;
@@ -2889,15 +2926,16 @@ textarea {
 .editor-nav small {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .editor-nav b {
   color: var(--wao-text-2);
-  font-size: 10.5px;
+  font-size: 12px;
 }
 .editor-nav small {
   color: var(--wao-text-faint);
-  font-size: 8.5px;
+  font-size: 12px;
 }
 .editor-nav button.active {
   border-color: #9fcaba;
@@ -2927,7 +2965,7 @@ textarea {
 .energy-items-editor header p {
   margin: 4px 0 0;
   color: var(--wao-text-faint);
-  font-size: 10px;
+  font-size: 12px;
 }
 .energy-items-editor > header button {
   min-height: 32px;
@@ -2937,7 +2975,7 @@ textarea {
   color: #267c65;
   padding: 0 10px;
   cursor: pointer;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
 }
 .energy-items-editor > header button:disabled {
@@ -2964,7 +3002,7 @@ textarea {
   color: #267c65;
   display: grid;
   place-items: center;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
 }
 .energy-item-editor label:not(.energy-notify-field) {
@@ -2973,23 +3011,23 @@ textarea {
 }
 .energy-item-editor label > span {
   color: var(--wao-text-faint);
-  font-size: 9px;
+  font-size: 12px;
 }
 .energy-item-editor input[type='text'],
 .energy-item-editor input:not([type]),
 .energy-item-editor select {
   width: 100%;
-  height: 34px;
+  min-height: 36px;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   background: var(--wao-bg-card);
   color: var(--wao-text);
   padding: 0 8px;
   font: inherit;
-  font-size: 10.5px;
+  font-size: 12px;
 }
 .energy-notify-field {
-  height: 34px;
+  min-height: 36px;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   background: var(--wao-bg-card);
@@ -3004,7 +3042,7 @@ textarea {
 }
 .remove-energy-item {
   width: 32px;
-  height: 34px;
+  min-height: 36px;
   border: 1px solid #e2c5c1;
   border-radius: 8px;
   background: var(--wao-danger-bg);
@@ -3020,7 +3058,7 @@ textarea {
   margin: 7px 2px 0;
   color: var(--wao-text-faint);
   text-align: right;
-  font-size: 9px;
+  font-size: 12px;
 }
 .timeline-editor-title {
   margin: 2px 2px 9px;
@@ -3028,7 +3066,7 @@ textarea {
 .timeline-editor-title p {
   margin: 4px 0 0;
   color: var(--wao-text-faint);
-  font-size: 10px;
+  font-size: 12px;
 }
 .block-editor {
   margin-top: 8px;
@@ -3050,7 +3088,7 @@ textarea {
   color: #267c65;
   display: grid;
   place-items: center;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 .time-fields {
@@ -3064,7 +3102,7 @@ textarea {
 }
 .block-editor label span {
   color: var(--wao-text-faint);
-  font-size: 9.5px;
+  font-size: 12px;
 }
 .block-editor input,
 .block-editor textarea {
@@ -3075,7 +3113,7 @@ textarea {
   color: var(--wao-text);
   padding: 7px 8px;
   outline: none;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .block-editor textarea {
   min-height: 52px;
@@ -3089,7 +3127,7 @@ textarea {
 .editor-error {
   margin: 12px 2px 0;
   color: #aa4242;
-  font-size: 11px;
+  font-size: 12px;
 }
 .editor-error i {
   margin-right: 5px;
@@ -3103,10 +3141,12 @@ textarea {
   gap: 8px;
 }
 .editor > footer span {
+  min-width: 0;
+  overflow-wrap: anywhere;
   flex: 1;
 }
 .editor > footer button {
-  height: 34px;
+  min-height: 36px;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   background: var(--wao-bg-card);
@@ -3291,8 +3331,21 @@ textarea {
   .editor-body {
     padding: 12px;
   }
+  .editor input:not([type='checkbox']),
+  .editor select,
+  .editor textarea {
+    font-size: 16px;
+    min-width: 0;
+  }
+  .editor > footer {
+    flex-wrap: wrap;
+  }
+  .editor > footer button {
+    min-height: 44px;
+    flex-shrink: 0;
+  }
   .editor-nav {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
   .energy-item-editor {
     grid-template-columns: 25px minmax(0, 1fr) 32px;
