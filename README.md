@@ -110,6 +110,8 @@ wao/
 
 ## 文档入口
 
+- [WAO Design System / UX 规范](docs/ux/wao-design-system.md)：当前视觉变量、组件复用前提、页面状态和用户旅程验收基线。
+
 - [原版技术方案](docs/WAO系统技术架构方案.md)：用户提供的原始方案，原样归档，作为项目愿景和实施范围来源。
 - [当前架构基线](docs/architecture.md)：结合兼容性与实机环境验证后的落地架构。
 - [多合一交付决策](docs/adr/049-unified-product-monorepo-delivery.md)：Agent、游戏与 Insight 的统一边界和迁移取舍。
