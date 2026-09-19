@@ -50,6 +50,16 @@ describe('知识库真实资料检索', () => {
     return { wrapper: mount(KnowledgeView, { global: { plugins: [router] } }), router }
   }
 
+  it('项目知识库进入自定义分组，不再展示锁定项目分组', async () => {
+    data.myGroups.push({ id: 'work', name: '工作资料' })
+    data.kbs[0]!.group = 'work'
+    const { wrapper } = await render()
+    expect(wrapper.text()).not.toContain('默认分组，不可修改')
+    const group = wrapper.findAll('.kgroup').find((row) => row.find('.kgroup-label').text() === '工作资料')!
+    expect(group.text()).toContain('WAO 项目档案')
+    await group.get('button[title="知识库设置"]').trigger('click')
+    expect(wrapper.text()).toContain('所属分组')
+  })
   it('按文档标题找到所属知识库，并能直接打开命中文档', async () => {
     const { wrapper, router } = await render()
 

@@ -49,6 +49,7 @@ async function setup() {
         component: Shell,
         children: [
           { path: '', component: Page, meta: { module: 'home', tabKind: 'module' } },
+          { path: 'kb/:id', name: 'kb', component: Page, meta: { tabKind: 'kb' } },
           { path: 'projects/:id', name: 'project', component: Page, meta: { tabKind: 'project' } },
         ],
       },
@@ -64,6 +65,25 @@ describe('悬浮页面工作区', () => {
   afterEach(() => {
     wrapper?.unmount()
     document.body.innerHTML = ''
+  })
+  it('知识库切换页面保留实例，关闭页签才释放', async () => {
+    const { router, tabs } = await setup()
+    await router.push('/kb/one?filter=initial')
+    await flushPromises()
+    const input = wrapper.get('article input')
+    await input.setValue('知识库未完成输入')
+    const original = input.element
+    await router.push('/')
+    await flushPromises()
+    expect(document.body.contains(original)).toBe(true)
+    await router.push('/kb/one?filter=initial')
+    await flushPromises()
+    expect(wrapper.findAll('article input').some((item) => item.element === original)).toBe(true)
+    expect((original as HTMLInputElement).value).toBe('知识库未完成输入')
+    await router.push('/')
+    tabs.close('kb:one')
+    await flushPromises()
+    expect(document.body.contains(original)).toBe(false)
   })
   it('悬浮页保留本页离开确认，同时不阻止底层页面导航', async () => {
     const { router, windows } = await setup()

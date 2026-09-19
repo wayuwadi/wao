@@ -20,9 +20,12 @@ import { absoluteTime, relativeTime } from '@/utils/time'
 import { blocksToText, textToBlocks } from '@/utils/doc'
 import { resolvedRichContent, richHeadings } from '@/utils/richDoc'
 import { useNow } from '@/composables/now'
+import ResourceMenu from '@/components/ui/ResourceMenu.vue'
+import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { useFavoritesStore } from '@/stores/favorites'
 import {
+  apiPatchKb,
   apiCreateDocTemplate,
   apiDeleteDocTemplate,
   apiPatchDocTemplate,
@@ -39,6 +42,8 @@ const session = useSessionStore()
 const ui = useUiStore()
 const tabs = useTabsStore()
 const favorites = useFavoritesStore()
+const knowledgeFavorites = useKnowledgeFavoritesStore()
+const tocOpen = ref(false)
 
 const kbId = computed(() => String(route.params.id))
 const kb = computed(() => data.kbById(kbId.value))
@@ -47,7 +52,7 @@ const firstDocId = () => {
   for (const f of kb.value?.folders ?? []) if (f.docs.length) return f.docs[0]!
   return null
 }
-const docId = ref<string | null>((route.query.doc as string) || firstDocId())
+const docId = ref<string | null>((route.query.doc as string) || null)
 const folderOpen = reactive<Record<string, boolean>>({})
 const scrollEl = ref<HTMLElement | null>(null)
 const titleEl = ref<HTMLInputElement | null>(null)
@@ -61,21 +66,18 @@ const { peers, setCaretLine, markTyping } = useDocPresence(docId)
 const now = useNow()
 
 watch(
-  () => route.query.doc,
-  (v) => {
-    if (v) docId.value = String(v)
+  () => [route.params.id, route.query.doc],
+  () => {
+    flushCurrentDoc()
+    docId.value = typeof route.query.doc === 'string' ? route.query.doc : null
+    tocOpen.value = false
   },
 )
 onMounted(() => {
   if (kb.value) tabs.setLabel(`kb:${kbId.value}`, kb.value.name)
+  void knowledgeFavorites.load()
 })
-watch(
-  [kb, () => data.loadStates.docs],
-  () => {
-    if (!docId.value) docId.value = firstDocId()
-  },
-  { immediate: true },
-)
+
 
 const doc = computed(() => (docId.value ? data.docOf(docId.value) : null))
 const base = computed(() => doc.value?.base ?? null)
@@ -213,6 +215,7 @@ onBeforeUnmount(() => {
   flushCurrentDoc()
 })
 function selectDoc(id: string) {
+  flushCurrentDoc()
   docId.value = id
   void router.replace({ query: { ...route.query, doc: id } })
 }
@@ -239,9 +242,7 @@ function openDoc(id: string) {
 }
 const newDocFolderId = ref<string | null>(null)
 const creatingDoc = ref(false)
-function addDocTo(folderId: string) {
-  newDocFolderId.value = folderId
-}
+const templatePickerOpen = ref(false)
 async function createDocFrom(templateId?: string) {
   const folderId = newDocFolderId.value
   if (!folderId || creatingDoc.value) return
@@ -807,6 +808,91 @@ async function keepConflictCopy() {
   selectDoc(copyId)
   toast('本机草稿已另存为冲突副本', 'ri-file-copy-2-line')
 }
+const homeFolderOpen = reactive<Record<string, boolean>>({})
+const docTotal = computed(() => kb.value?.folders.reduce((total, folder) => total + folder.docs.length, 0) ?? 0)
+const kbSettingsOpen = ref(false)
+const kbSettings = reactive({ name: '', desc: '' })
+const kbSettingsBusy = ref(false)
+const kbSettingsError = ref('')
+const moveDocId = ref<string | null>(null)
+const moveFolderId = ref('')
+const createItems = [
+  { id: 'doc', label: '新建文档', icon: 'ri-file-text-line' },
+  { id: 'template', label: '从模板新建…', icon: 'ri-file-copy-2-line' },
+  { id: 'folder', label: '新建分组', icon: 'ri-folder-add-line' },
+]
+const folderItems = [
+  { id: 'rename', label: '重命名', icon: 'ri-edit-line' },
+  { id: 'delete', label: '移入回收站', icon: 'ri-delete-bin-line', danger: true },
+]
+const docItems = [
+  { id: 'rename', label: '重命名', icon: 'ri-edit-line' },
+  { id: 'move', label: '移动…', icon: 'ri-folder-transfer-line' },
+  { id: 'template', label: '另存为模板…', icon: 'ri-file-copy-2-line' },
+  { id: 'archive', label: '归档', icon: 'ri-archive-line' },
+  { id: 'delete', label: '移入回收站', icon: 'ri-delete-bin-line', danger: true },
+]
+function goHome() {
+  flushCurrentDoc()
+  docId.value = null
+  const query = { ...route.query }; delete query.doc
+  void router.replace({ query })
+}
+function switchKb(event: Event) {
+  flushCurrentDoc()
+  void router.push(`/kb/${(event.target as HTMLSelectElement).value}`)
+}
+async function createAction(action: string, folderId?: string) {
+  if (creatingDoc.value) return
+  if (action === 'folder') { await addFolder(); return }
+  const target = folderId || currentFolderId.value || kb.value?.folders[0]?.id || await data.addFolder(kbId.value)
+  if (!target) { toast('创建目录失败，请重试', 'ri-error-warning-line'); return }
+  templatePickerOpen.value = action === 'template'
+  newDocFolderId.value = target
+  if (action === 'doc') await createDocFrom()
+}
+function folderAction(action: string, id: string) {
+  if (action === 'rename') renamingFolder.value = id
+  else if (action === 'delete') void removeFolder(id)
+}
+async function docAction(action: string, id: string) {
+  if (action === 'delete') { await removeDoc(id); return }
+  if (action === 'archive') { await archiveDoc(id); return }
+  if (action === 'move') {
+    moveDocId.value = id
+    moveFolderId.value = kb.value?.folders.find((folder) => folder.docs.includes(id))?.id || ''
+    return
+  }
+  selectDoc(id)
+  await nextTick()
+  if (action === 'rename') { titleEl.value?.focus(); titleEl.value?.select() }
+  if (action === 'template') openSaveTemplate()
+}
+async function confirmMove() {
+  if (!moveDocId.value || !moveFolderId.value) return
+  draggingDocId.value = moveDocId.value
+  await dropDoc(moveFolderId.value, kb.value?.folders.find((folder) => folder.id === moveFolderId.value)?.docs.length ?? 0)
+  if (treeSaveState.value === 'saved') { folderOpen[moveFolderId.value] = true; moveDocId.value = null }
+}
+function openKbSettings() {
+  kbSettings.name = kb.value?.name || ''
+  kbSettings.desc = kb.value?.desc || ''
+  kbSettingsError.value = ''
+  kbSettingsOpen.value = true
+}
+async function saveKbSettings() {
+  if (!kbSettings.name.trim() || kbSettingsBusy.value || !kb.value) return
+  kbSettingsBusy.value = true
+  try {
+    const patch = { name: kbSettings.name.trim(), desc: kbSettings.desc.trim() }
+    await apiPatchKb(kbId.value, patch)
+    Object.assign(kb.value, patch)
+    tabs.setLabel(`kb:${kbId.value}`, patch.name)
+    kbSettingsOpen.value = false
+  } catch { kbSettingsError.value = '设置保存失败，输入已保留，请重试。' }
+  finally { kbSettingsBusy.value = false }
+}
+
 </script>
 
 <template>
@@ -820,24 +906,14 @@ async function keepConflictCopy() {
         </button>
         <div class="side-kb">
           <div class="side-icon" :style="{ background: kb.color }"><i :class="kb.icon"></i></div>
-          <div class="side-name">{{ kb.name }}</div>
-          <button
-            v-if="!kb.notes"
-            class="kb-del"
-            :title="kb.project ? '删除知识库（项目的关联知识库）' : '删除知识库'"
-            @click="removeKb"
-          >
-            <i class="ri-delete-bin-line"></i>
-          </button>
+          <select class="kb-switch" :value="kbId" aria-label="切换知识库" @change="switchKb"><option v-for="library in data.kbs" :key="library.id" :value="library.id">{{ library.name }}</option></select>
+          <ResourceMenu label="知识库设置" :items="[{ id: 'settings', label: '设置', icon: 'ri-settings-3-line' }, { id: 'templates', label: '模板管理', icon: 'ri-file-copy-2-line' }]" @select="$event === 'settings' ? openKbSettings() : templateManagerOpen = true" />
         </div>
         <button v-if="kb.project" class="proj-chip" @click="gotoProject">
           <i class="ri-stack-line"></i
           ><span class="ellip">关联项目 · {{ data.projectById(kb.project)?.name }}</span>
         </button>
-        <div class="side-actions">
-          <button class="new-folder" @click="addFolder"><i class="ri-folder-add-line"></i>新建文件夹</button>
-          <button class="new-folder" @click="templateManagerOpen = true"><i class="ri-file-copy-2-line"></i>模板管理</button>
-        </div>
+        <p v-if="creatingDoc" class="tree-save">正在创建文档…</p>
         <div v-if="treeSaveState !== 'idle'" class="tree-save" :class="treeSaveState">
           <i :class="treeSaveState === 'saving' ? 'ri-loader-4-line spin' : treeSaveState === 'error' ? 'ri-error-warning-line' : 'ri-check-line'"></i>
           <span>{{ treeSaveState === 'saving' ? '正在保存顺序' : treeSaveState === 'error' ? '顺序保存失败' : '顺序已保存' }}</span>
@@ -845,7 +921,9 @@ async function keepConflictCopy() {
         </div>
       </div>
 
-      <div class="tree-search"><strong>文件夹与文档</strong><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文件夹、文档" /></label><button :disabled="!docId" @click="locateCurrentDoc">定位当前文档</button></div>
+      <div class="tree-search"><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" /></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
+      <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
+      <div class="directory-heading"><span>目录</span><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button></div>
       <div ref="treeElement" class="tree">
         <p v-if="treeQuery.trim() && !searchedFolders.length" class="folder-empty">没有匹配的文件夹或文档</p>
         <div v-for="f in searchedFolders" :key="f.id">
@@ -864,23 +942,11 @@ async function keepConflictCopy() {
                   :class="isOpen(f.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"
                   class="chev"
                 ></i>
-                <i class="ri-folder-3-line folder-icon"></i>
                 <span class="folder-name">{{ f.name }}</span>
                 <span class="folder-count wao-tabular">{{ f.docs.length }}</span>
               </button>
-              <button class="row-act" title="重命名文件夹" @click="renamingFolder = f.id">
-                <i class="ri-edit-line"></i>
-              </button>
-              <button
-                class="row-act danger"
-                title="删除文件夹（进回收站）"
-                @click="removeFolder(f.id)"
-              >
-                <i class="ri-delete-bin-line"></i>
-              </button>
-              <button class="row-act" title="在此文件夹新建文档" @click="addDocTo(f.id)">
-                <i class="ri-add-line"></i>
-              </button>
+              <ResourceMenu :label="`${f.name}的更多操作`" :items="folderItems" @select="folderAction($event, f.id)" />
+              <ResourceMenu :label="`在${f.name}新增内容`" icon="ri-add-line" :items="createItems" @select="createAction($event, f.id)" />
             </template>
           </div>
           <div v-if="treeQuery.trim() || isOpen(f.id)" class="doc-tree">
@@ -896,26 +962,17 @@ async function keepConflictCopy() {
               @dragover.prevent
               @drop.stop="dropDoc(f.id, index)"
             >
-              <i class="drag-handle ri-draggable" title="拖拽调整顺序或移动到其他文件夹"></i>
               <button class="doc-node" :class="{ on: docId === dId }" @click="selectDoc(dId)">
-                <i
-                  :class="data.docById(dId)?.auto ? 'ri-flashlight-line' : 'ri-file-text-line'"
-                  class="doc-node-icon"
-                ></i>
                 <span class="doc-node-title">{{ data.docOf(dId).title || '未命名文档' }}</span>
               </button>
-              <button class="row-act" title="归档文档（长期保留）" @click="archiveDoc(dId)">
-                <i class="ri-archive-line"></i>
-              </button>
-              <button class="row-act danger" title="删除文档（进回收站）" @click="removeDoc(dId)">
-                <i class="ri-delete-bin-line"></i>
-              </button>
+              <ResourceMenu :label="`${data.docOf(dId).title || '文档'}的更多操作`" :items="docItems" @select="docAction($event, dId)" />
+              <ResourceMenu label="在同一分组新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event, f.id)" />
             </div>
             <div v-if="!f.docs.length" class="folder-empty" @dragover.prevent @drop="dropDoc(f.id, 0)">还没有文档 —— 点右侧 + 新建，也可把文档拖到这里</div>
           </div>
         </div>
 
-        <section class="archive-tree">
+        <section v-if="archivedDocs.length || archivedError || archivedLoading" class="archive-tree">
           <button class="archive-head" @click="archivedOpen = !archivedOpen">
             <i :class="archivedOpen ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
             <i class="ri-archive-line"></i>
@@ -951,9 +1008,19 @@ async function keepConflictCopy() {
     </div>
 
     <!-- 文档区 -->
-    <div ref="scrollEl" class="doc-scroll" @scroll.passive="onDocScroll">
+    <div ref="scrollEl" class="doc-scroll" :class="{ 'library-home-scroll': !docId }" @scroll.passive="onDocScroll">
       <div class="doc-wrap">
         <div class="doc-col">
+          <section v-if="!docId" class="library-home">
+            <header><div class="library-cover-icon" :style="{ color: kb.color }"><i :class="kb.icon"></i></div><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 篇文档 · {{ kb.folders.length }} 个分组</p></div><button class="library-star" :disabled="knowledgeFavorites.saving" :aria-pressed="knowledgeFavorites.ids.includes(kbId)" @click="knowledgeFavorites.toggle(kbId)"><i :class="knowledgeFavorites.ids.includes(kbId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ knowledgeFavorites.ids.includes(kbId) ? '已常用' : '添加常用' }}</button><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i></button></header>
+            <p v-if="kb.desc" class="library-description">{{ kb.desc }}</p>
+            <div v-if="data.loadStates.docs !== 'loaded'" class="doc-empty">正在加载目录…</div>
+            <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。<button class="library-star" @click="createAction('doc')">新建文档</button></div>
+            <section v-for="folder in kb.folders" :key="folder.id" class="home-folder">
+              <button class="home-folder-title" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="homeFolderOpen[folder.id] !== false ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>{{ folder.name }}<small>{{ folder.docs.length }}</small></button>
+              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in folder.docs" :key="id" @click="selectDoc(id)"><span>{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time>{{ data.docById(id)?.updated ? absoluteTime(data.docById(id)!.updated!) : '' }}</time></button></div>
+            </section>
+          </section>
           <div v-if="doc" class="doc-bar">
             <span class="ellip">{{ kb.name }}</span>
             <i class="ri-arrow-right-s-line b-sep"></i>
@@ -985,6 +1052,8 @@ async function keepConflictCopy() {
             >
 
             <label v-if="docId && !currentArchived" class="move-document">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
+            <button class="icon-act" title="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i></button>
+            <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
             <SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" />
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
             <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
@@ -1045,13 +1114,6 @@ async function keepConflictCopy() {
               @input="editTitle"
             />
 
-            <div class="doc-meta">
-              <span class="m-av" :style="{ background: author.color }">{{ author.initial }}</span>
-              <span class="m-name">{{ author.name }}</span>
-              <span :title="absoluteTime(base?.created ?? '')">创建于 {{ createdLabel }}</span>
-              <span>·</span>
-              <span :title="absoluteTime(base?.updated ?? '')">更新于 {{ updatedLabel }}</span>
-            </div>
             <div v-if="docLinks.length" class="doc-links">
               <span class="dl-label">关联</span>
               <button v-for="(l, i) in docLinks" :key="i" class="dl-chip" @click="goLink(l.link)">
@@ -1114,11 +1176,11 @@ async function keepConflictCopy() {
               </div>
             </div>
           </template>
-          <div v-else class="doc-empty pad">这个知识库还没有文档——在左侧文件夹点 + 新建。</div>
+          <div v-else-if="docId" class="doc-empty pad">文档正在加载或已移走，请从左侧目录重新选择。</div>
         </div>
 
-        <div v-if="toc.length" class="toc">
-          <div class="toc-label">文档大纲</div>
+        <div v-if="doc && tocOpen" class="toc">
+          <div class="toc-label">文档大纲</div><p v-if="!toc.length" class="folder-empty">添加标题后会在这里显示目录。</p>
           <div class="toc-list">
             <button v-for="(t, i) in toc" :key="`${t.text}-${i}`" class="toc-item" :class="{ sub: t.level === 2, deep: t.level === 3, active: activeToc === i }" @click="tocGo(i)">{{ t.text }}</button>
           </div>
@@ -1126,7 +1188,9 @@ async function keepConflictCopy() {
       </div>
     </div>
 
-    <div v-if="newDocFolderId" class="modal-backdrop" @click.self="newDocFolderId = null">
+    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><label>名称<input v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea v-model="kbSettings.desc" rows="3"></textarea></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
+    <div v-if="moveDocId" class="modal-backdrop" @click.self="moveDocId = null"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="移动文档"><header><h2>移动文档</h2><button aria-label="关闭移动文档" @click="moveDocId = null">×</button></header><label>目标分组<select v-model="moveFolderId"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label><p v-if="treeSaveState === 'error'" role="alert">移动失败，请重试。</p><footer><button class="btn-primary" :disabled="treeSaveState === 'saving'" @click="confirmMove">{{ treeSaveState === 'saving' ? '移动中…' : '移动' }}</button></footer></section></div>
+    <div v-if="newDocFolderId && templatePickerOpen" class="modal-backdrop" @click.self="newDocFolderId = null">
       <section class="template-modal" role="dialog" aria-modal="true" aria-label="新建文档">
         <header><div><h2>新建文档</h2><p>选择空白文档，或复用已有模板的正文结构。</p></div><button @click="newDocFolderId = null"><i class="ri-close-line"></i></button></header>
         <div v-if="templateLoading" class="template-state"><i class="ri-loader-4-line spin"></i>正在加载模板…</div>
@@ -1214,6 +1278,38 @@ async function keepConflictCopy() {
 </template>
 
 <style scoped>
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.doc-info { color: var(--wao-text-weak); cursor: help; }
+.tree-search { padding: 6px 10px !important; }
+.tree-search label { padding: 5px 8px !important; background: var(--wao-bg-sub); border: 0 !important; }
+.tree-search input { height: 22px; font-size: 12px; }
+.doc-row { cursor: grab; }
+.doc-row:active { cursor: grabbing; }
+
+.kb-switch { min-width: 0; flex: 1; border: 0; font-size: 15px; font-weight: 600; background: transparent; color: var(--wao-text); padding: 6px 0; text-overflow: ellipsis; }
+.library-home-link { display: flex; align-items: center; gap: 10px; margin: 4px 10px; padding: 9px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text); cursor: pointer; text-align: left; }
+.library-home-link.on { background: var(--wao-bg-hover); font-weight: 600; }
+.directory-heading { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px 6px; font-size: 12px; color: var(--wao-text-weak); }
+.directory-heading button { border: 0; background: transparent; color: inherit; cursor: pointer; }
+.library-home-scroll { background: var(--wao-bg-sub); }
+.library-home { padding: 38px; margin: 24px auto; width: 100%; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 12px; }
+.library-home header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.library-cover-icon { font-size: 34px; }
+.library-heading { flex: 1; min-width: 120px; }
+.library-heading h1 { font-size: 28px; margin: 0 0 8px; }
+.library-heading p,.library-description { color: var(--wao-text-weak); font-size: 13px; }
+.library-description { margin: 22px 0 40px; white-space: pre-wrap; }
+.library-star { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--wao-line); border-radius: 6px; padding: 7px 10px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
+.home-folder { margin-top: 18px; }
+.home-folder-title { display: flex; align-items: center; gap: 9px; padding: 10px 0; border: 0; background: none; color: var(--wao-text); cursor: pointer; }
+.home-folder-title small { color: var(--wao-text-weak); }
+.home-documents { padding-left: 24px; }
+.home-documents button { display: flex; align-items: center; gap: 16px; width: 100%; padding: 13px 0; border: 0; background: none; color: var(--wao-text-2); text-align: left; cursor: pointer; }
+.home-documents button:hover { color: var(--wao-primary-text); }
+.home-documents time { font-size: 11px; color: var(--wao-text-weak); white-space: nowrap; }
+.dot-leader { flex: 1; min-width: 20px; border-bottom: 1px dashed var(--wao-line-strong); }
+@media (max-width: 760px) { .library-home { padding: 18px; margin: 8px 0; } .home-documents time { display: none; } }
+
 .tree-search { padding:10px 12px; display:grid; gap:7px; font-size:11px; border-bottom:1px solid var(--wao-line); }.tree-search strong { font-weight:500; color:var(--wao-text-weak); }.tree-search label { display:flex; align-items:center; gap:6px; padding:7px; border:1px solid var(--wao-line); border-radius:6px; }.tree-search input { min-width:0; width:100%; border:0; outline:0; background:none; color:var(--wao-text); }.tree-search button { justify-self:start; border:0; background:none; color:var(--wao-primary); cursor:pointer; }
 .move-document { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--wao-text-weak); }.move-document select { max-width:130px; min-width:70px; padding:5px; border:1px solid var(--wao-line); border-radius:5px; background:var(--wao-bg-card); color:var(--wao-text); }
 
@@ -2051,4 +2147,8 @@ async function keepConflictCopy() {
     justify-content: center;
   }
 }
+.tree-search { display: flex; align-items: center; gap: 6px; }
+.tree-search label { flex: 1; min-width: 0; }
+.doc-bar { flex-wrap: wrap; }
+.toc { display: block; }
 </style>

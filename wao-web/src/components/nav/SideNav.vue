@@ -14,6 +14,13 @@ import type { ModuleId } from '@/types'
 import { externalAppItemId, type NavItemId } from '@/config/nav'
 import { hasDesktopToolbar } from '@/utils/desktopToolbar'
 const desktopToolbar = hasDesktopToolbar()
+import { useTabsStore } from '@/stores/tabs'
+import { useDataStore } from '@/stores/data'
+import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
+const data = useDataStore()
+const tabs = useTabsStore()
+const knowledgeFavorites = useKnowledgeFavoritesStore()
+const favoriteKbs = computed(() => data.kbs.filter((kb) => knowledgeFavorites.ids.includes(kb.id)))
 import QuickLinks from '@/components/nav/QuickLinks.vue'
 
 const emit = defineEmits<{ (e: 'open-search'): void }>()
@@ -57,6 +64,7 @@ onMounted(() => {
   nav.loadExternalApps()
   nav.loadBuiltinMenus()
   favorites.load()
+  void knowledgeFavorites.load()
 })
 
 function go(id: NavItemId) {
@@ -262,9 +270,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           @dragover.prevent
           @drop.prevent="onDrop('MENU', g.id)"
         >
+          <template v-for="id in g.items" :key="id">
           <button
-            v-for="id in g.items"
-            :key="id"
             class="item"
             :class="{
               active: activeItem === id && !(id === 'home' && route.query.console),
@@ -282,8 +289,14 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             @dragend="onDragEnd"
           >
             <i :class="nav.itemMeta(id)?.icon"></i>
-            <span v-if="!nav.collapsed" class="item-label">{{ nav.itemMeta(id)?.label }}</span>
+            <span class="item-label" :class="{ 'compact-label': nav.collapsed }">{{ nav.itemMeta(id)?.label }}</span>
           </button>
+          <div v-if="id === 'knowledge' && favoriteKbs.length" class="knowledge-children" :class="{ compact: nav.collapsed }">
+            <button v-for="kb in favoriteKbs" :key="kb.id" class="item" :class="{ center: nav.collapsed, active: route.params.id === kb.id && route.name === 'kb' }" :title="kb.name" @click="router.push(tabs.tabs.find((tab) => tab.key === `kb:${kb.id}`)?.path || `/kb/${kb.id}`)">
+              <span class="knowledge-child-dot" aria-hidden="true">·</span><span class="item-label" :class="{ 'compact-label': nav.collapsed }">{{ kb.name }}</span>
+            </button>
+          </div>
+          </template>
         </div>
 
         <!-- 收藏分组紧跟首页之后；手机与桌面复用同一份真实收藏。 -->
@@ -316,6 +329,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           </div>
         </template>
       </template>
+
     </nav>
 
     <!-- 停靠菜单仍由菜单注册表驱动；快捷链接继续使用独立的成员级真实配置。 -->
@@ -439,6 +453,11 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 </template>
 
 <style scoped>
+.knowledge-children { margin-left: 22px; border-left: 1px solid var(--wao-line); padding-left: 4px; }
+.knowledge-children.compact { margin-left: 0; padding-left: 0; border-left: 0; }
+.knowledge-child-dot { color: var(--wao-text-weak); }
+.side.collapsed .item.center { height: auto; min-height: 54px; flex-direction: column; gap: 3px; padding: 7px 2px; }
+.side.collapsed .item .compact-label { display: block; width: 100%; text-align: center; font-size: 10px; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-heading {
   display: flex;
   align-items: center;

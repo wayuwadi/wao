@@ -263,7 +263,7 @@ public class KnowledgeService {
         if (req.color() != null && !req.color().isBlank()) {
             e.setColor(req.color());
         }
-        if (!locked && req.group() != null) {
+        if (req.group() != null) {
             e.setGroupId(req.group().isBlank() ? null : req.group());
         }
         if (req.perm() != null && !req.perm().isBlank()) {

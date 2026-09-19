@@ -852,10 +852,11 @@ class KnowledgeServiceTest {
         when(folderMapper.selectList(any())).thenReturn(List.of());
         when(docMapper.selectList(any())).thenReturn(List.of());
 
-        KbDto dto = service.updateKb("k1", new PatchKbRequest("改名", "改简介", "ri-star-line", null, null, null));
+        KbDto dto = service.updateKb("k1", new PatchKbRequest("改名", "改简介", "ri-star-line", null, "g-custom", null));
 
         assertThat(dto.name()).isEqualTo("项目知识库");
         assertThat(dto.icon()).isEqualTo("ri-star-line");
+        assertThat(kb.getGroupId()).isEqualTo("g-custom");
     }
 
     @Test

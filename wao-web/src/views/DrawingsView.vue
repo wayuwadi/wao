@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   createDrawing,
   deleteDrawing,
@@ -14,7 +14,7 @@ import {
   type DrawingFileSummary,
   type DrawingFileVersion,
 } from '@/api/drawings'
-import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
+const DrawingCanvas = defineAsyncComponent(() => import('@/components/drawings/DrawingCanvas.vue').then((module) => module.default))
 import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft } from '@/utils/drawingDrafts'
 
 type SyncState = 'loading' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict'
@@ -76,7 +76,7 @@ async function loadList() {
   try {
     files.value = await fetchDrawings()
     const requested = new URLSearchParams(window.location.search).get('drawing') ?? ''
-    const first = files.value.find((item) => item.id === requested) ?? files.value[0]
+    const first = files.value.find((item) => item.id === requested)
     if (first) await openFile(first.id)
     else syncState.value = 'saved'
   } catch (cause) {
@@ -366,7 +366,7 @@ async function removeFile(file: DrawingFileSummary) {
       activeId.value = ''
       current.value = null
       sceneJson.value = ''
-      if (files.value.length) await openFile(files.value[0]!.id)
+      syncState.value = 'saved'
     }
   } catch (cause) {
     error.value = message(cause, '草图删除失败')
@@ -589,9 +589,9 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
         <div v-else class="canvas-empty">
           <span><i class="ri-draft-line"></i></span>
           <h1>把想法画出来</h1>
-          <p>Excalidraw 画布已接入 WAO，每份文件只属于当前账号。</p>
+          <p>选择左侧草图继续创作，或新建一张。打开文件后才会加载画布。</p>
           <button :disabled="creating" @click="newFile">
-            <i class="ri-add-line"></i>新建第一张草图
+            <i class="ri-add-line"></i>新建草图
           </button>
         </div>
       </div>

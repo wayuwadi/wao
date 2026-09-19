@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useIsMobile } from '@/composables/viewport'
+const isMobile = useIsMobile()
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import TabWorkspace from '@/components/tabs/TabWorkspace.vue'
@@ -304,6 +306,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <main class="main">
       <header ref="toolbarRef" class="header">
         <button
+          v-if="isMobile || desktopToolbar"
           class="fold"
           data-desktop-action="fold"
           title="折叠 / 展开导航"
