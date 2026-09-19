@@ -76,6 +76,9 @@ const editing = ref<MemoryDocument | null>(null)
 const saving = ref(false)
 const saveError = ref('')
 const restored = ref(false)
+const draftError = ref('')
+const draftSaved = ref(false)
+const cleanupWarning = ref('')
 const versionsOpen = ref(false)
 const versionMemory = ref<MemoryDocument | null>(null)
 const versions = ref<MemoryRevision[]>([])
@@ -163,13 +166,41 @@ async function load() {
 }
 function clearForm() {
   form.category = categories.value[0]?.value || 'context'; form.title = ''; form.content = ''
-  form.changeSummary = ''; form.evidence = ''; form.expiresAt = ''; restored.value = false; saveError.value = ''
+  form.changeSummary = ''; form.evidence = ''; form.expiresAt = ''; restored.value = false; saveError.value = ''; draftError.value = ''; draftSaved.value = false
 }
 function restoreDraft() {
-  const raw = localStorage.getItem(draftKey.value)
-  if (!raw) return
-  try { Object.assign(form, JSON.parse(raw)); restored.value = true }
-  catch { localStorage.removeItem(draftKey.value) }
+  try {
+    const raw = localStorage.getItem(draftKey.value)
+    if (!raw) return
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid draft')
+    const draft = parsed as Record<string, unknown>
+    for (const key of Object.keys(form) as (keyof typeof form)[]) {
+      if (draft[key] !== undefined && typeof draft[key] !== 'string') throw new Error('invalid draft')
+    }
+    for (const key of Object.keys(form) as (keyof typeof form)[]) {
+      if (typeof draft[key] === 'string') form[key] = draft[key]
+    }
+    restored.value = true
+    draftSaved.value = true
+  } catch {
+    draftError.value = '无法读取本机草稿。现有内容未被清除，请检查浏览器存储设置。'
+  }
+}
+function persistDraft() {
+  try {
+    localStorage.setItem(draftKey.value, JSON.stringify(form))
+    draftSaved.value = true
+    draftError.value = ''
+  } catch {
+    draftSaved.value = false
+    draftError.value = '本机草稿保存失败。内容目前只在此页面，请先复制备份或直接保存到服务器。'
+  }
+}
+function closeEditor() {
+  if (saving.value) return
+  if (draftError.value && [form.title, form.content, form.changeSummary, form.evidence, form.expiresAt].some(Boolean) && !window.confirm('本机草稿尚未保存，关闭会失去当前输入。请确认已复制备份后再关闭。')) return
+  editorOpen.value = false
 }
 function openCreate() { editing.value = null; clearForm(); restoreDraft(); editorOpen.value = true }
 function openEdit(item: MemoryDocument) {
@@ -177,25 +208,42 @@ function openEdit(item: MemoryDocument) {
   form.content = item.revision.content; form.evidence = item.revision.sources.map((source) => source.url).filter(Boolean).join('\n')
   form.expiresAt = item.revision.expiresAt?.slice(0, 16) || ''; restoreDraft(); editorOpen.value = true
 }
-watch(form, () => { if (editorOpen.value && !saving.value) localStorage.setItem(draftKey.value, JSON.stringify(form)) }, { deep: true })
+watch(form, () => { if (editorOpen.value && !saving.value) persistDraft() }, { deep: true, flush: 'sync' })
 
 async function save() {
+  if (saving.value) return
   if (!scopeId.value || !form.title.trim() || !form.content.trim()) { saveError.value = '请选择有效范围，并填写标题和正文'; return }
-  saving.value = true; saveError.value = ''
+  saveError.value = ''
+  if (form.expiresAt && Number.isNaN(new Date(form.expiresAt).getTime())) { saveError.value = '失效时间无效，请重新选择'; return }
+  saving.value = true
+  const submittedDraftKey = draftKey.value
   const payload: SaveMemoryPayload = { scopeType: activeScope.value, scopeId: scopeId.value,
     category: form.category, title: form.title.trim(), content: form.content.trim(),
     changeSummary: form.changeSummary.trim() || undefined,
     evidenceLinks: form.evidence.split('\n').map((item) => item.trim()).filter(Boolean),
     expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString().slice(0, 19) : undefined,
     baseRevisionId: editing.value?.currentPublishedRevisionId }
+  let saved: MemoryDocument
   try {
-    const saved = editing.value ? await reviseMemory(editing.value.id, payload) : await createMemory(payload)
-    localStorage.removeItem(draftKey.value); editorOpen.value = false
-    toast(activeScope.value === 'personal' ? '个人记忆已保存并生效' : '记忆已提交，等待审核', 'ri-checkbox-circle-line')
-    await router.replace({ query: routeQuery(activeScope.value, saved.id) }); await load()
-  } catch (error) { saveError.value = error instanceof Error ? error.message : '保存失败，草稿已保留' }
+    saved = editing.value ? await reviseMemory(editing.value.id, payload) : await createMemory(payload)
+  } catch (error) {
+    saveError.value = error instanceof Error ? error.message : '保存失败，请重试'
+    saving.value = false
+    return
+  }
+  // 服务端已成功：本机清理或列表刷新失败不能引导用户重复提交。
+  cleanupWarning.value = ''
+  try { localStorage.removeItem(submittedDraftKey) }
+  catch { cleanupWarning.value = '记忆已保存到服务器，但本机旧草稿未能清除。下次恢复草稿前请先核对已保存内容，避免重复提交。' }
+  editorOpen.value = false
+  toast(activeScope.value === 'personal' ? '个人记忆已保存并生效' : '记忆已提交，等待审核', 'ri-checkbox-circle-line')
+  try {
+    await router.replace({ query: routeQuery(activeScope.value, saved.id) })
+    await load()
+  } catch { toast('记忆已保存，但列表刷新失败，请刷新页面查看。', 'ri-error-warning-line') }
   finally { saving.value = false }
 }
+
 async function review(item: MemoryDocument, action: 'publish' | 'reject') {
   actionId.value = item.revision.id
   try {
@@ -267,6 +315,7 @@ onMounted(async () => {
 <template>
   <main class="memory-center">
     <header class="hero"><div><div class="eyebrow"><i class="ri-brain-line"></i> WAO MEMORY CENTER</div><h1>记忆中心</h1><p>记下希望 AI 长期参考的偏好、背景和经验。从「关于我」开始；与团队共享的内容需审核后生效。</p></div><button v-if="activeSection === 'memories'" class="primary" :disabled="!scopeId" @click="openCreate"><i class="ri-add-line"></i>{{ activeScope === 'personal' ? '记住一件事' : '提交记忆审核' }}</button></header>
+    <div v-if="cleanupWarning" class="draft" role="alert">{{ cleanupWarning }}</div>
     <nav class="center-sections" aria-label="记忆中心功能">
       <button :class="{ active: activeSection === 'memories' }" @click="setSection('memories')"><i class="ri-archive-stack-line"></i>记忆内容</button>
       <button :class="{ active: activeSection === 'mcp' }" @click="setSection('mcp')"><i class="ri-plug-line"></i>Codex 连接</button>
@@ -283,7 +332,7 @@ onMounted(async () => {
     <section v-else-if="!memories.length" class="state-card"><i class="ri-inbox-archive-line"></i><b>当前范围还没有匹配记忆</b><span>{{ activeScope === 'personal' ? '记录稳定偏好、经历、职责或规划。' : ['machine','application'].includes(activeScope) ? 'Runner 只在发现真实本机记忆并成功生成报告后提交候选。' : '候选审核后才会进入 AI 上下文。' }}</span></section>
     <section v-else class="memory-list"><article v-for="item in memories" :id="`memory-${item.id}`" :key="item.id" :class="{ highlighted: route.query.entry === item.id, candidate: item.revision.state === 'draft' }"><header><span class="category">{{ categoryLabel(item.category) }}</span><span class="status" :class="item.revision.state">{{ stateLabel(item) }}</span><button title="版本历史" @click="openVersions(item)"><i class="ri-history-line"></i></button></header><h2>{{ item.revision.title }}</h2><p>{{ item.revision.content }}</p><div v-if="item.revision.changeSummary" class="change"><i class="ri-git-commit-line"></i>{{ item.revision.changeSummary }}</div><div class="sources"><a v-for="source in item.revision.sources.filter((source) => source.url)" :key="source.url" :href="source.url" target="_blank"><i class="ri-links-line"></i>{{ source.type }}</a><span v-if="item.revision.authorType === 'ai'"><i class="ri-robot-2-line"></i>AI 候选</span><time>{{ formatTime(item.updatedAt) }}</time></div><footer><div v-if="item.revision.state === 'draft' && canReview"><button class="approve" :disabled="actionId === item.revision.id" @click="review(item, 'publish')">发布</button><button class="reject" :disabled="actionId === item.revision.id" @click="review(item, 'reject')">驳回</button></div><span v-else></span><div><button v-if="item.state !== 'archived'" @click="openEdit(item)"><i class="ri-edit-line"></i>修改记忆</button><button v-if="item.state !== 'archived' && (activeScope === 'personal' || canReview)" class="archive" @click="archive(item)"><i class="ri-archive-line"></i>废止</button></div></footer></article></section>
 
-    <div v-if="editorOpen" class="mask" @click.self="editorOpen = false"><section class="editor"><header><div><h2>{{ editing ? '修改记忆' : activeScope === 'personal' ? '记住一件事' : '提交记忆审核' }}</h2><p>{{ saveDestination }}<br />{{ saveEffect }}</p></div><button aria-label="关闭记忆编辑器" @click="editorOpen = false"><i class="ri-close-line"></i></button></header><div v-if="restored" class="draft">已恢复本机未保存草稿</div><label>分类<select v-model="form.category"><option v-for="item in categories" :key="item.value" :value="item.value">{{ item.label }}</option></select></label><label>标题<input v-model="form.title" maxlength="200" /></label><label>正文<textarea v-model="form.content" maxlength="20000" rows="9"></textarea><small>{{ form.content.length }} / 20000</small></label><details class="optional-fields" :open="!!editing"><summary>补充说明、来源和失效时间（选填）</summary><label>变更说明<input v-model="form.changeSummary" maxlength="1000" /></label><label>证据链接（每行一个）<textarea v-model="form.evidence" rows="3"></textarea></label><label>可选失效时间<input v-model="form.expiresAt" type="datetime-local" /></label></details><div v-if="saveError" class="save-error">{{ saveError }}；草稿仍保存在本机。</div><footer><span>{{ saving ? '保存中，请勿关闭…' : '输入会自动保存为本机草稿' }}</span><div><button @click="editorOpen = false">取消</button><button class="primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : activeScope === 'personal' ? '保存并生效' : '提交审核' }}</button></div></footer></section></div>
+    <div v-if="editorOpen" class="mask" @click.self="closeEditor"><section class="editor"><header><div><h2>{{ editing ? '修改记忆' : activeScope === 'personal' ? '记住一件事' : '提交记忆审核' }}</h2><p>{{ saveDestination }}<br />{{ saveEffect }}</p></div><button aria-label="关闭记忆编辑器" :disabled="saving" @click="closeEditor"><i class="ri-close-line"></i></button></header><div v-if="restored" class="draft">已恢复本机未保存草稿</div><div v-if="draftError" class="draft" role="alert">{{ draftError }}<button :disabled="saving" @click="persistDraft">重试保存草稿</button></div><label>分类<select :disabled="saving" v-model="form.category"><option v-for="item in categories" :key="item.value" :value="item.value">{{ item.label }}</option></select></label><label>标题<input :disabled="saving" v-model="form.title" maxlength="200" /></label><label>正文<textarea :disabled="saving" v-model="form.content" maxlength="20000" rows="9"></textarea><small>{{ form.content.length }} / 20000</small></label><details class="optional-fields" :open="!!editing"><summary>补充说明、来源和失效时间（选填）</summary><label>变更说明<input :disabled="saving" v-model="form.changeSummary" maxlength="1000" /></label><label>证据链接（每行一个）<textarea :disabled="saving" v-model="form.evidence" rows="3"></textarea></label><label>可选失效时间<input :disabled="saving" v-model="form.expiresAt" type="datetime-local" /></label></details><div v-if="saveError" class="save-error">{{ saveError }}。{{ draftSaved ? '草稿已保存在本机，可重试保存。' : '输入仍在当前页面，请勿刷新；可复制备份后重试。' }}</div><footer><span>{{ saving ? '保存中，请勿关闭…' : draftSaved ? '草稿已保存在本机' : draftError ? '草稿未保存，请保留此页面' : '输入后自动保存为本机草稿' }}</span><div><button :disabled="saving" @click="closeEditor">取消</button><button class="primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : activeScope === 'personal' ? '保存并生效' : '提交审核' }}</button></div></footer></section></div>
     <div v-if="versionsOpen" class="mask" @click.self="closeVersions"><section class="versions"><header><div><h2>版本历史</h2><p>{{ versionMemory?.revision.title }}</p></div><button aria-label="关闭版本历史" @click="closeVersions"><i class="ri-close-line"></i></button></header><div v-if="versionsLoading" class="version-state" role="status">正在读取版本历史…</div><div v-else-if="versionsError" class="version-state error" role="alert"><p>{{ versionsError }}</p><button @click="versionMemory && openVersions(versionMemory)">重试读取版本历史</button></div><div v-else-if="!versions.length" class="version-state">暂无版本记录</div><div v-else class="timeline"><article v-for="(version, index) in versions" :key="version.id"><span class="dot"></span><div><header><b>v{{ version.versionNo }} · {{ revisionStateLabel(version.state) }}</b><time>{{ formatTime(version.publishedAt || version.createdAt) }}</time></header><p v-if="version.changeSummary">{{ version.changeSummary }}</p><details><summary>查看该版正文</summary><h3>{{ version.title }}</h3><pre>{{ version.content }}</pre></details><details v-if="previousVersion(index)" class="diff"><summary>与 v{{ previousVersion(index)?.versionNo }} 对比</summary><div><section><b>旧版</b><pre>{{ previousVersion(index)?.content }}</pre></section><section><b>本版</b><pre>{{ version.content }}</pre></section></div></details><button v-if="!['draft','rejected'].includes(version.state) && version.id !== versionMemory?.currentPublishedRevisionId" @click="rollback(version)">以此版本创建新修订</button></div></article></div></section></div>
     </template>
   </main>
