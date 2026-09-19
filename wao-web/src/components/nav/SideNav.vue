@@ -293,9 +293,9 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             <i :class="nav.itemMeta(id)?.icon"></i>
             <span class="item-label" :class="{ 'compact-label': nav.collapsed }">{{ nav.itemMeta(id)?.label }}</span>
           </button>
-          <div v-if="id === 'knowledge' && favoriteKbs.length" class="knowledge-children" :class="{ compact: nav.collapsed }">
-            <button v-for="kb in favoriteKbs" :key="kb.id" class="item" :class="{ center: nav.collapsed, active: route.params.id === kb.id && route.name === 'kb' }" :title="kb.name" @click="router.push(tabs.tabs.find((tab) => tab.key === `kb:${kb.id}`)?.path || `/kb/${kb.id}`)">
-              <span class="knowledge-child-dot" aria-hidden="true">·</span><span class="item-label" :class="{ 'compact-label': nav.collapsed }">{{ kb.name }}</span>
+          <div v-if="id === 'knowledge' && favoriteKbs.length && !nav.collapsed" class="knowledge-children">
+            <button v-for="kb in favoriteKbs" :key="kb.id" class="item" :class="{ active: route.params.id === kb.id && route.name === 'kb' }" :title="kb.name" @click="router.push(tabs.tabs.find((tab) => tab.key === `kb:${kb.id}`)?.path || `/kb/${kb.id}`)">
+              <span class="knowledge-child-dot" aria-hidden="true">·</span><span class="item-label">{{ kb.name }}</span>
             </button>
           </div>
           </template>
@@ -457,7 +457,6 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 
 <style scoped>
 .knowledge-children { margin-left: 22px; border-left: 1px solid var(--wao-line); padding-left: 4px; }
-.knowledge-children.compact { margin-left: 0; padding-left: 0; border-left: 0; }
 .knowledge-child-dot { color: var(--wao-text-weak); }
 .side.collapsed .item.center { height: auto; min-height: 54px; flex-direction: column; gap: 3px; padding: 7px 2px; }
 .side.collapsed .item .compact-label { display: block; width: 100%; text-align: center; font-size: 10px; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
