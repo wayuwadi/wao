@@ -1039,6 +1039,11 @@ async function uploadAttachment(event: Event) {
         <button class="icon-btn" title="关闭（Esc）" @click="close"><i class="ri-close-line"></i></button>
       </div>
 
+      <div v-if="data.taskDraftErrors[task.id]" class="task-save-conflict" role="alert">
+        本机草稿无法保存，请保持页面打开。服务器保存仍会尝试。
+        <button type="button" @click="data.flushTask(task.id)">重试服务器保存</button>
+        <button type="button" @click="copyLocalTask">复制本机内容</button>
+      </div>
       <div v-if="data.taskConflicts[task.id]" class="task-save-conflict" role="alert">
         任务已在其他窗口更新，本机内容已保留，自动保存已暂停。
         <button type="button" @click="viewServerTask">查看服务器版</button>
@@ -1067,7 +1072,7 @@ async function uploadAttachment(event: Event) {
           <div class="field">
             <div class="field-headline">
               <div class="field-label">描述</div>
-              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error'" />
+              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" />
             </div>
             <MarkdownEditor
               v-model="subDesc"
@@ -1112,7 +1117,7 @@ async function uploadAttachment(event: Event) {
           <div class="field">
             <div class="field-headline">
               <div class="field-label">描述</div>
-              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error'" />
+              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" />
             </div>
             <MarkdownEditor
               v-model="desc"
