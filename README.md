@@ -82,6 +82,8 @@ cd wao-web && npm run dev
 
 需要记录首页聚合或文档读取的查询次数与耗时时，使用 [只读性能基准](docs/runbooks/read-only-performance-baseline.md)，可生成带版本和采样条件的报告并比较两次结果。
 
+提交前可运行 [工程一致性检查](docs/runbooks/engineering-consistency-check.md)，核对 ADR / migration 编号、已交付 migration 不可变性和本次文档的本地链接。
+
 前端和 Java 服务在本机运行时，后端使用 `local-cloud` Profile，网关使用 `local` Profile。
 通过运行进程的环境变量提供 `MYSQL_HOST`、`MYSQL_PORT`、`DB_NAME`、`DB_USER`、`DB_PASS`；
 优先通过 SSH 本地端口转发访问服务器数据库。凭据不要写入仓库、命令历史或日志。
