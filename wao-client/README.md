@@ -20,9 +20,9 @@ npm run desktop:dev
 
 `npm run dev` 只预览外壳，无业务 WebView、登录或原生操作，不属于客户端验收。
 
-若 Windows Code Integrity 明确拒绝加载 Rust DLL，本地前端仍可开发，原生编译由 `client-check-*` 标签触发 GitHub Windows runner。不要关闭或绕过企业安全策略；本机原生编译须由设备管理员批准开发工具链。
+若 Windows Code Integrity 明确拒绝加载 Rust DLL，本地前端仍可开发；安装包交由 Linux2 的 `wao-client-release` 交叉构建。不要关闭或绕过企业安全策略；本机原生编译须由设备管理员批准开发工具链。
 
-还可使用 CI 构建好的开发宿主：从同次工作流下载 `WAO-client-dev-host-windows`，把 `wao-client.exe` 放进本目录的 `dev-host/`（已忽略，不入库），运行 `npm run desktop:dev:host`。它启动 Vite 与已编译的真实 Windows 外壳，修改 Vue/TypeScript/CSS 即可热更新，无需本机运行 Rust 编译器。修改 Rust 原生逻辑时仍需重新构建宿主。宿主只用于开发，不是安装版，仍受本机应用执行策略约束；设备拒绝执行时须由管理员批准。
+旧的 GitHub Actions 开发宿主制品仍可用于本地调试；新的 Jenkins 任务只构建正式安装包。修改 Rust 原生逻辑后需本地重新编译开发宿主，不再用 `client-check-*` 标签生成。
 
 开发宿主使用独立应用标识与会话目录，不与已安装正式版抢占单实例；开发界面不会下载、安装生产更新。开发时仍使用真实 WAO 后端，请勿把测试业务写入误认为演示数据。
 
@@ -34,17 +34,17 @@ npm run desktop:dev
 npm run desktop:build
 ```
 
-Windows 安装包位于 `src-tauri/target/release/bundle/nsis/`；Mac 通用安装包位于 `src-tauri/target/universal-apple-darwin/release/bundle/dmg/`。本地没有更新私钥时只生成安装包，不生成可发布更新签名；CI 中由 Secret 自动签名。无需把私钥复制到开发机。
+Windows 安装包位于 `src-tauri/target/release/bundle/nsis/`；Mac 通用安装包位于 `src-tauri/target/universal-apple-darwin/release/bundle/dmg/`。本地没有更新私钥时只生成安装包，不生成可发布更新签名；Jenkins 在 Linux2 上统一签名并用旧客户端公钥验证。无需把私钥复制到开发机。
 
 普通 Web 功能由既有 Jenkins 发布；客户端主动刷新或重新启动后使用最新业务页面。不会强制刷新正在编辑的工作区。
 
 外壳更新的标准流程：
 
 1. `npm run version:set -- 1.0.1`，执行 `npm install --package-lock-only`，原生检查同步 `Cargo.lock`，完成测试后按一个需求一个 PR 合并。
-2. 在包含该改动的 main 提交创建 `client-v1.0.1` 标签并推送。GitHub Actions 在 Windows 与 macOS 同时测试、构建、签名；两端成功后上传并验证生产安装包。
+2. 在自建 Jenkins 的 `wao-client-release` 选择 `PUBLISH_CLIENT=true`、`BUILD_MACOS=true`。Linux2 构建 Windows NSIS，Mac 节点构建 Universal 包；双端齐全后由 Linux2 使用原有私钥签名、验签、原子发布并核对公网文件哈希。
 3. 客户端进入「客户端 → 检查更新」，下载并验证后点击「安装并重新打开」。安装前保存编辑内容；安装标识保持不变，覆盖升级保留会话。
 
-分支验证可使用唯一 `client-check-<时间或提交号>` 标签，只产生 CI 制品，不发布生产。工作流也支持手动运行；仅 main 可勾选 publish，版本不可覆盖。制品和下载渠道独立于 Web dist 生命周期。
+影子验收选择 `PUBLISH_CLIENT=false`；没有 Mac 节点时可关闭 `BUILD_MACOS` 仅验收 Windows。正式发布只允许 main，必须双端齐全且版本高于线上。原生安装与覆盖升级需要实机验收，不能用交叉编译代替。`client-v*` 与 `client-check-*` 不再触发 GitHub Actions。配置、节点与密钥准备见 `deploy/jenkins/client/README.md`。
 
 - 固定下载地址：`https://wao.wayuwa.cn/downloads/desktop/client/WAO-windows-x64-setup.exe`
 - Mac 固定下载：`https://wao.wayuwa.cn/downloads/desktop/client/WAO-macos-universal.dmg`
@@ -53,7 +53,7 @@ Windows 安装包位于 `src-tauri/target/release/bundle/nsis/`；Mac 通用安�
 - 版本安装包：`https://wao.wayuwa.cn/downloads/desktop/client/WAO_<version>_windows-x64-setup.exe`
 - 版本 SHA256：`https://wao.wayuwa.cn/downloads/desktop/client/SHA256-<version>.txt`
 
-这些是发布目标地址，实际可用版本以已成功完成的工作流与线上清单为准。当前流水线复用 `TAURI_SIGNING_PRIVATE_KEY`、`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`CLOUD_HOST`、`CLOUD_USER`，Secret 值不得入库。
+这些是发布目标地址，实际可用版本以已成功完成的 Jenkins 发布与线上清单为准。原有更新私钥保存在 Linux2 受限文件中；云发布使用 `wao-cloud-ssh` 和 `wao-cloud-known-hosts` 凭据，Secret 值不得入库。
 
 更新签名用于验证 WAO 更新来源，不能代替 Windows Authenticode 代码签名。没有组织代码签名证书时不宣称安装包已受 Windows 信任；需要证书的受管设备由管理员处理。
 
@@ -73,7 +73,7 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run desktop:build -- --target universal-apple-darwin
 ```
 
-正式构建使用 `.github/workflows/client-release.yml` 的 macOS job；生成 DMG、`.app.tar.gz` 与更新签名，使用 `lipo` 校验两个架构并验证应用代码签名。`prepare-release.mjs` 要求 Windows 安装包、Mac DMG、Mac 更新归档及两端更新签名齐全；公开校验重新下载所有文件并比较 SHA-256。稳定下载文件和清单不缓存，版本文件不可覆盖。
+正式构建使用 `wao-client-release` 的 `wao-client-macos` 节点；生成 DMG 与 `.app.tar.gz`，使用 `lipo` 校验两个架构并验证应用代码签名，更新签名由 Linux2 统一生成。`prepare-release.mjs` 要求 Windows 安装包、Mac DMG、Mac 更新归档及两端更新签名齐全；公开校验重新下载所有文件并比较 SHA-256。稳定下载文件和清单不缓存，版本文件不可覆盖。
 
 打开 DMG，将 WAO 拖入 Applications 后从应用程序启动。当前仅 ad-hoc 代码签名，没有 Apple Developer ID 签名与公证；首次打开如遇系统拦截，用户确认来源后可在“系统设置 → 隐私与安全性”处理该应用。不要关闭系统整体安全保护。应用内更新使用已有 WAO 更新公钥强制校验，不需卸载旧版。
 
