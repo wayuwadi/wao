@@ -1,12 +1,15 @@
+import { reactive, nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PetWorldView from '@/views/PetWorldView.vue'
 
 const scene = vi.hoisted(() => ({ render: vi.fn(), dispose: vi.fn(), create: vi.fn() }))
 vi.mock('@/features/pet-world/scene', () => ({ createWorldScene: scene.create }))
-vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ userId: 'world-test-member' }) }))
+const testSession = reactive({ userId: 'world-test-member' })
+vi.mock('@/stores/session', () => ({ useSessionStore: () => testSession }))
 describe('小世界真实输入和生命周期', () => {
   beforeEach(() => {
+    testSession.userId = 'world-test-member'
     vi.useFakeTimers()
     localStorage.clear()
     scene.render.mockClear()
@@ -90,4 +93,36 @@ describe('小世界真实输入和生命周期', () => {
     expect(scene.render.mock.calls.length).toBe(calls)
     expect(vi.getTimerCount()).toBe(0)
   })
+  it('读取存档失败不会用默认坐标覆盖原存档，重试恢复原位置', async () => {
+    const original = '{"version":1,"x":2,"z":4}'
+    localStorage.setItem('wao-pet-world-v1:world-test-member', original)
+    const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementationOnce(() => { throw new Error('暂时不可读') })
+    const write = vi.spyOn(Storage.prototype, 'setItem')
+    const wrapper = mount(PetWorldView)
+    await flushPromises()
+    expect(wrapper.text()).toContain('原存档读取失败')
+    expect(write).not.toHaveBeenCalled()
+    await wrapper.get('.world-canvas').trigger('blur')
+    expect(write).not.toHaveBeenCalled()
+    read.mockRestore()
+    expect(localStorage.getItem('wao-pet-world-v1:world-test-member')).toBe(original)
+    await wrapper.get('.world-footer button').trigger('click')
+    expect(wrapper.get('.world-canvas').attributes('data-player-x')).toBe('2.000')
+    expect(wrapper.text()).toContain('位置已保存')
+    wrapper.unmount()
+  })
+
+  it('切换成员先保存旧位置再恢复新成员存档，不串写账号', async () => {
+    localStorage.setItem('wao-pet-world-v1:world-test-member', '{"version":1,"x":2,"z":4}')
+    localStorage.setItem('wao-pet-world-v1:other-member', '{"version":1,"x":-2,"z":3}')
+    const wrapper = mount(PetWorldView)
+    await flushPromises()
+    testSession.userId = 'other-member'
+    await nextTick()
+    expect(wrapper.get('.world-canvas').attributes('data-player-x')).toBe('-2.000')
+    wrapper.unmount()
+    expect(JSON.parse(localStorage.getItem('wao-pet-world-v1:world-test-member')!).x).toBe(2)
+    expect(JSON.parse(localStorage.getItem('wao-pet-world-v1:other-member')!).x).toBe(-2)
+  })
+
 })

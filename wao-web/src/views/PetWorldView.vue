@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import {
   initialWorldState,
@@ -27,7 +27,9 @@ let frame = 0,
   waveUntil = 0,
   drag: { id: number; x: number } | undefined
 let disposed = false
-const storageKey = computed(() => (session.userId ? `wao-pet-world-v1:${session.userId}` : ''))
+let owner = session.userId
+let storageReady = false
+const readFailed = ref(false)
 const landmark = computed(() =>
   LANDMARKS.find((l) => Math.hypot(state.x - l.x, state.z - l.z) < 2.5),
 )
@@ -39,13 +41,14 @@ const saveLabel = computed(
     ],
 )
 function save() {
-  if (!storageKey.value) {
+  if (!owner) {
     saveState.value = 'session'
     return
   }
+  if (!storageReady) return
   saveState.value = 'saving'
   try {
-    localStorage.setItem(storageKey.value, serializeWorld(state))
+    localStorage.setItem(`wao-pet-world-v1:${owner}`, serializeWorld(state))
     saveState.value = 'saved'
   } catch {
     saveState.value = 'error'
@@ -193,13 +196,35 @@ async function enter() {
     if (!current.signal.aborted) loadState.value = 'error'
   }
 }
-onMounted(() => {
+function restorePosition() {
+  storageReady = false
+  readFailed.value = false
+  saveState.value = 'session'
   try {
-    if (storageKey.value)
-      Object.assign(state, initialWorldState(localStorage.getItem(storageKey.value)))
+    const saved = owner ? localStorage.getItem(`wao-pet-world-v1:${owner}`) : null
+    Object.assign(state, initialWorldState(saved))
+    storageReady = !!owner
+    if (saved) saveState.value = 'saved'
   } catch {
+    readFailed.value = true
     saveState.value = 'error'
   }
+}
+function retryStorage() {
+  if (readFailed.value) {
+    stop()
+    restorePosition()
+  } else save()
+}
+watch(() => session.userId, (member) => {
+  // 先按原成员保存，再恢复新成员；不把上一位的坐标写入新账号。
+  stop()
+  owner = member
+  Object.assign(state, initialWorldState())
+  restorePosition()
+}, { flush: 'sync' })
+onMounted(() => {
+  restorePosition()
   void enter()
   window.addEventListener('keyup', keyUp)
   window.addEventListener('blur', stop)
@@ -328,7 +353,7 @@ onBeforeUnmount(() => {
         <kbd>空格</kbd> 跳跃 <span>·</span> <kbd>E</kbd> 招手 <span>·</span> 拖动旋转 · 滚轮缩放
       </p>
       <span :class="{ 'save-error': saveState === 'error' }" role="status"
-        >{{ saveLabel }}<button v-if="saveState === 'error'" @click="save">重试保存</button></span
+        >{{ readFailed ? '原存档读取失败，本次位置暂不保存' : saveLabel }}<button v-if="saveState === 'error'" @click="retryStorage">{{ readFailed ? '重试读取存档' : '重试保存' }}</button></span
       >
     </footer>
     <p class="world-note">
