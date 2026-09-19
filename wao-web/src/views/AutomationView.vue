@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { automationResult } from '@/utils/automationResult'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
@@ -31,16 +32,17 @@ const httpConfigOpen = ref(false)
 const RUN_PAGE_SIZE = 10
 const runPage = ref(1)
 
-const isFail = (result: string) => result.includes('失败')
 const isConfigurable = (handler?: string | null) =>
   handler === CHAT_SYNC_HANDLER || handler === HTTP_PERFORMANCE_HANDLER
 const durationOf = (durationMs?: number | null) =>
   durationMs == null ? '—' : `${Math.max(1, Math.round(durationMs / 1000))} 秒`
 
 function stMeta(a: AutomationJob) {
-  if (a.status === '正常') return { bg: '#E8F5EE', color: '#257A50' }
-  if (a.status === '已暂停') return { bg: '#F0F1F4', color: '#6B6E79' }
-  return { bg: '#FBEBEB', color: '#BC4141' }
+  if (a.status === '正常')
+    return { bg: 'var(--wao-bg-sub)', color: 'var(--wao-text-weak)', label: '已启用' }
+  if (a.status === '已暂停')
+    return { bg: 'var(--wao-bg-sub)', color: 'var(--wao-text-weak)', label: '已暂停' }
+  return { bg: 'var(--wao-danger-bg)', color: 'var(--wao-danger-strong)', label: '需要处理' }
 }
 
 const jobs = computed(() =>
@@ -48,13 +50,15 @@ const jobs = computed(() =>
     const st = stMeta(a)
     const dots = a.runs
       .map((r) => ({
-        bg: isFail(r.result) ? '#D65454' : '#2C8A5B',
-        title: `${r.time} · ${r.executor} · ${r.result}`,
+        bg: automationResult(r.result, r.aiRunId).color,
+        title: `${r.time} · ${r.executor} · ${automationResult(r.result, r.aiRunId).label} · ${r.result}`,
       }))
       .slice(0, 5)
     return {
       job: a,
       stBg: st.bg,
+      stLabel: st.label,
+      latest: a.runs[0] ? automationResult(a.runs[0].result, a.runs[0].aiRunId).label : '尚未运行',
       stColor: st.color,
       needFix: a.status === '待修复',
       configurable: isConfigurable(a.handler),
@@ -70,6 +74,8 @@ const allRuns = computed(() => {
     job: string
     icon: string
     result: string
+    label: string
+    aiRunId?: string | null
     dur: string
     color: string
     bg: string
@@ -87,8 +93,8 @@ const allRuns = computed(() => {
         icon: a.icon,
         result: r.result,
         dur: durationOf(r.durationMs),
-        color: isFail(r.result) ? '#BC4141' : '#257A50',
-        bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE',
+        ...automationResult(r.result, r.aiRunId),
+        aiRunId: r.aiRunId,
         id: a.id,
         runAt: r.runAt ?? null,
         order: order++,
@@ -106,15 +112,15 @@ const visibleRuns = computed(() =>
 )
 
 const sel = computed(() => data.autos.find((a) => a.id === selId.value) ?? null)
-const selMeta = computed(() => (sel.value ? stMeta(sel.value) : { bg: '', color: '' }))
+const selMeta = computed(() => (sel.value ? stMeta(sel.value) : { bg: '', color: '', label: '' }))
 const aoRuns = computed(() =>
   (sel.value?.runs ?? []).map((r) => ({
     time: r.time,
     executor: r.executor,
     result: r.result,
     dur: durationOf(r.durationMs),
-    color: isFail(r.result) ? '#BC4141' : '#257A50',
-    bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE',
+    ...automationResult(r.result, r.aiRunId),
+    aiRunId: r.aiRunId,
   })),
 )
 
@@ -123,7 +129,10 @@ async function onRun(id: string) {
     await data.runJob(id)
     toast('已手动触发真实执行器', 'ri-play-line')
   } catch (error) {
-    toast(error instanceof Error ? error.message : '自动化运行失败，请重试', 'ri-error-warning-line')
+    toast(
+      error instanceof Error ? error.message : '自动化运行失败，请重试',
+      'ri-error-warning-line',
+    )
   }
 }
 async function onFix(id: string) {
@@ -198,13 +207,17 @@ onMounted(() => {
     <DemoBanner
       icon="ri-flashlight-line"
       title="自动化"
-      text="自动化任务已接入真实后端：手动触发、暂停与恢复均会保存并产生真实的运行记录，填写 Cron 表达式的任务由服务端按计划自动执行。自动化属于系统功能，不提供删除入口；不再需要时请暂停。"
+      text="查看定时任务是否启用，以及每次运行发生了什么。已启用只代表允许按计划运行；已入队或已提交执行不代表任务完成。不再需要的任务可以暂停。"
       storage-key="automation"
     />
     <div v-if="data.loadStates.automation === 'loading'" class="automation-state" role="status">
       <i class="ri-loader-4-line spin"></i>正在读取自动化任务与真实运行记录…
     </div>
-    <div v-else-if="data.loadStates.automation === 'error'" class="automation-state error" role="alert">
+    <div
+      v-else-if="data.loadStates.automation === 'error'"
+      class="automation-state error"
+      role="alert"
+    >
       <span>{{ data.loadErrors.automation || '自动化读取失败' }}</span>
       <button @click="data.refreshAutomation()">重新读取</button>
     </div>
@@ -233,7 +246,7 @@ onMounted(() => {
         <div class="grid-jobs th">
           <div>名称</div>
           <div>计划</div>
-          <div>状态</div>
+          <div>计划开关</div>
           <div>上次运行</div>
           <div>近 5 次</div>
           <div class="right">操作</div>
@@ -246,16 +259,21 @@ onMounted(() => {
           <div class="cell">{{ jb.job.schedule }}</div>
           <div>
             <span class="mini" :style="{ background: jb.stBg, color: jb.stColor }">{{
-              jb.job.status
+              jb.stLabel
             }}</span>
           </div>
-          <div class="cell muted ellip">{{ jb.job.last }}</div>
+          <div class="cell muted latest-result">
+            <strong>{{ jb.latest }}</strong
+            ><span>{{ jb.job.last }}</span>
+          </div>
           <div class="dots">
             <span
               v-for="(d, i) in jb.dots"
               :key="i"
               class="dot"
               :title="d.title"
+              :aria-label="d.title"
+              role="img"
               :style="{ background: d.bg }"
             ></span>
           </div>
@@ -303,9 +321,15 @@ onMounted(() => {
           </div>
           <div class="cell muted wao-tabular">{{ rn.dur }}</div>
           <div>
-            <span class="mini" :style="{ background: rn.bg, color: rn.color }">{{
-              rn.result
-            }}</span>
+            <span class="mini" :style="{ background: rn.bg, color: rn.color }">{{ rn.label }}</span>
+            <div class="result-detail">触发记录：{{ rn.result }}</div>
+            <a
+              v-if="rn.aiRunId"
+              class="result-link"
+              :href="`/ai-sessions?session=${encodeURIComponent(rn.aiRunId)}`"
+              @click.stop
+              >查看执行结果</a
+            >
           </div>
         </div>
         <WaoPagination
@@ -334,7 +358,7 @@ onMounted(() => {
           <div class="jh-title-row">
             <div class="jh-title">{{ sel.name }}</div>
             <span class="mini" :style="{ background: selMeta.bg, color: selMeta.color }">{{
-              sel.status
+              selMeta.label
             }}</span>
           </div>
           <div class="jh-desc">{{ sel.desc }}</div>
@@ -360,6 +384,9 @@ onMounted(() => {
       <div class="job-cols">
         <div class="table-card flush">
           <div class="jc-head">运行记录</div>
+          <div v-if="!aoRuns.length" class="automation-state">
+            尚未运行。可等待计划执行，或使用“手动运行”。
+          </div>
           <div class="grid-aoruns th sub">
             <div>开始时间</div>
             <div>执行人</div>
@@ -371,13 +398,20 @@ onMounted(() => {
             <div class="cell muted">{{ r.executor }}</div>
             <div class="cell muted wao-tabular">{{ r.dur }}</div>
             <div>
-              <span class="mini" :style="{ background: r.bg, color: r.color }">{{ r.result }}</span>
+              <span class="mini" :style="{ background: r.bg, color: r.color }">{{ r.label }}</span>
+              <div class="result-detail">触发记录：{{ r.result }}</div>
+              <a
+                v-if="r.aiRunId"
+                class="result-link"
+                :href="`/ai-sessions?session=${encodeURIComponent(r.aiRunId)}`"
+                >查看执行结果</a
+              >
             </div>
           </div>
         </div>
 
         <div class="detail-card">
-          <div class="dc-title">Job 详情</div>
+          <div class="dc-title">任务详情</div>
           <div class="dc-rows">
             <div class="dc-row">
               <span class="dc-key">触发器</span
@@ -455,6 +489,32 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.latest-result {
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.latest-result strong {
+  color: var(--wao-text);
+  font-weight: 500;
+}
+.result-detail {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--wao-text-weak);
+  overflow-wrap: anywhere;
+}
+.result-link {
+  display: inline-block;
+  margin-top: 5px;
+  color: var(--wao-primary-text);
+  font-size: 12px;
+}
+.result-link:focus-visible {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: 3px;
+}
+
 .auto {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);
@@ -487,7 +547,9 @@ onMounted(() => {
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .spacer {
   flex: 1;
@@ -601,7 +663,7 @@ onMounted(() => {
   overflow-x: auto;
 }
 .table-card.flush {
-  overflow: hidden;
+  overflow-x: auto;
 }
 .grid-jobs {
   display: grid;
