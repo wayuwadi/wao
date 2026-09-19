@@ -183,21 +183,26 @@ const toc = computed(() => doc.value ? richHeadings(doc.value.content).filter((i
 const activeToc = ref(0)
 
 function isOpen(fid: string) {
-  return folderOpen[fid] === true
+  return folderOpen[fid] !== false
 }
 function toggleFolder(fid: string) {
   folderOpen[fid] = !isOpen(fid)
 }
-/**
- * 文件夹首次进入默认收起，避免目录较多时文档列表铺满整栏；当前文档所在文件夹例外，
- * 保证从分享链接、收藏或跨文档链接进入时仍能立刻看见选中项。
- */
+const allFoldersOpen = computed(() => !!kb.value?.folders.length && kb.value.folders.every(folder => isOpen(folder.id)))
+function resetFolderExpansion() {
+  for (const id of Object.keys(folderOpen)) delete folderOpen[id]
+}
+function toggleAllFolders() {
+  const expand = !allFoldersOpen.value
+  for (const folder of kb.value?.folders ?? []) folderOpen[folder.id] = expand
+}
+// 工作区会保留页签实例，重新进入该知识库时仍恢复全部展开。
+watch([() => tabs.activeKey, kbId], ([active, current], [previousActive, previousKb]) => {
+  if (current !== previousKb || (active === `kb:${current}` && active !== previousActive)) resetFolderExpansion()
+})
 watch(
-  [docId, kb],
-  ([currentDocId, currentKb]) => {
-    const activeFolder = currentKb?.folders.find((folder) => folder.docs.includes(currentDocId ?? ''))
-    if (activeFolder) folderOpen[activeFolder.id] = true
-  },
+  [docId, () => kb.value?.folders.find(folder => folder.docs.includes(docId.value ?? ''))?.id],
+  ([, folderId]) => { if (folderId) folderOpen[folderId] = true },
   { immediate: true },
 )
 
@@ -929,7 +934,7 @@ async function saveKbSettings() {
 
       <div class="tree-search"><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" /></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
       <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
-      <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button></div>
+      <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
       <div ref="treeElement" class="tree">
         <p v-if="treeQuery.trim() && !searchedFolders.length" class="folder-empty">没有匹配的文件夹或文档</p>
         <div v-for="f in searchedFolders" :key="f.id">
@@ -943,7 +948,7 @@ async function saveKbSettings() {
               @blur="commitFolderName(f.id, $event)"
             />
             <template v-else>
-              <button class="folder-btn" @click="toggleFolder(f.id)">
+              <button class="folder-btn" :aria-expanded="treeQuery.trim() ? true : isOpen(f.id)" @click="toggleFolder(f.id)">
                 <i
                   :class="isOpen(f.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"
                   class="chev"
@@ -1306,6 +1311,7 @@ async function saveKbSettings() {
 .directory-heading { display: flex; align-items: center; justify-content: space-between; padding: 12px 22px 8px; font-size: 14px; color: var(--wao-text-weak); }
 .directory-heading > span { display: flex; align-items: center; gap: 10px; }
 .library-home-link { font-size: 14px; }
+.directory-actions { display: flex; align-items: center; gap: 8px; }
 .directory-heading button { border: 0; background: transparent; color: inherit; cursor: pointer; }
 .library-home-scroll { background: var(--wao-bg-sub); }
 .library-home { padding: 38px; margin: 24px auto; width: 100%; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 12px; }
@@ -1692,7 +1698,7 @@ async function saveKbSettings() {
 /* 桌面悬停显示行操作；键盘焦点、已打开菜单和触屏始终有入口。 */
 @media (hover: hover) and (pointer: fine) {
   :is(.folder-row, .doc-row) :deep(.resource-trigger) { opacity: 0; pointer-events: none; }
-  :is(.folder-row, .doc-row):is(:hover, :focus-within, :has([aria-expanded="true"])) :deep(.resource-trigger) { opacity: 1; pointer-events: auto; }
+  :is(.folder-row, .doc-row):is(:hover, :focus-within, :has(.resource-trigger[aria-expanded="true"])) :deep(.resource-trigger) { opacity: 1; pointer-events: auto; }
 }
 /* 文档区 */
 .document-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--wao-bg-card); }

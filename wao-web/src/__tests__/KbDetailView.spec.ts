@@ -9,6 +9,7 @@ import KbDetailView from '@/views/KbDetailView.vue'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
+import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
 import { apiPatchDocTemplate, fetchDocTemplates } from '@/api/board'
 
@@ -106,16 +107,20 @@ describe('知识库详情目录体验', () => {
     expect(wrapper.find('.library-home').exists()).toBe(true)
   })
 
-  it('首次进入只展开当前文档所在文件夹，其余文件夹默认收起', async () => {
+  it('首次进入全部展开，一键收起展开不改变文档，重新进入恢复展开', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
-    const folders = wrapper.findAll('.folder-row')
-
-    expect(folders).toHaveLength(2)
-    expect(folders[0]!.get('.chev').classes()).toContain('ri-arrow-down-s-line')
-    expect(folders[1]!.get('.chev').classes()).toContain('ri-arrow-right-s-line')
-    expect(wrapper.findAll('.doc-tree')).toHaveLength(1)
-
-    await folders[1]!.get('.folder-btn').trigger('click')
+    expect(wrapper.findAll('.folder-row')).toHaveLength(2)
+    expect(wrapper.findAll('.doc-tree')).toHaveLength(2)
+    await wrapper.get('[aria-label="折叠全部目录"]').trigger('click')
+    expect(wrapper.findAll('.doc-tree')).toHaveLength(0)
+    expect(wrapper.vm.$router.currentRoute.value.query.doc).toBe('d7')
+    await wrapper.get('[aria-label="展开全部目录"]').trigger('click')
+    expect(wrapper.findAll('.doc-tree')).toHaveLength(2)
+    await wrapper.get('[aria-label="折叠全部目录"]').trigger('click')
+    useTabsStore(pinia).activeKey = 'notes'
+    await wrapper.vm.$nextTick()
+    useTabsStore(pinia).activeKey = 'kb:k3'
+    await wrapper.vm.$nextTick()
     expect(wrapper.findAll('.doc-tree')).toHaveLength(2)
     wrapper.unmount()
   })
@@ -170,7 +175,7 @@ describe('知识库详情目录体验', () => {
     const wrapper = await mountView('/kb/k3?doc=d8')
     const folders = wrapper.findAll('.folder-row')
 
-    expect(folders[0]!.get('.chev').classes()).toContain('ri-arrow-right-s-line')
+    expect(folders[0]!.get('.chev').classes()).toContain('ri-arrow-down-s-line')
     expect(folders[1]!.get('.chev').classes()).toContain('ri-arrow-down-s-line')
     expect(wrapper.get('.doc-node.on').text()).toContain('阅读笔记：卡片盒笔记法')
     wrapper.unmount()
@@ -211,7 +216,6 @@ describe('知识库详情目录体验', () => {
 
   it('切换文档后同步地址，刷新仍打开所选文档', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
-    await wrapper.findAll('.folder-row')[1]!.get('.folder-btn').trigger('click')
     const target = wrapper.findAll('.doc-node').find((node) => node.text().includes('阅读笔记：卡片盒笔记法'))!
     await target.trigger('click')
     await flushPromises()
