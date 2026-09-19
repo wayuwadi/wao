@@ -108,4 +108,52 @@ class FileServiceTest {
         assertThatThrownBy(() -> service.renameDisplayName("f1", "x".repeat(256)))
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("1～255");
     }
+    @Test
+    void replacementKeepsIdentityAndClassificationAndOnlyWritesContentColumns() {
+        defaultLimit();
+        var metadata = new FileBlobEntity();
+        metadata.setId("f1"); metadata.setName("new.pdf"); metadata.setDisplayName("保留名称");
+        metadata.setProjectId("p1"); metadata.setCreatedBy("wg"); metadata.setByteSize(3L);
+        when(mapper.findMeta("f1")).thenReturn(metadata);
+        var bytes = "new".getBytes();
+        when(mapper.replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes)).thenReturn(1);
+        var result = service.replace("f1", new MockMultipartFile("file", "../new.pdf", "application/pdf", bytes));
+        assertThat(result.id()).isEqualTo("f1");
+        assertThat(result.projectId()).isEqualTo("p1");
+        assertThat(result.displayName()).isEqualTo("保留名称");
+        assertThat(result.link()).isEqualTo("/api/files/f1/download");
+        verify(mapper).replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes);
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).insert(any(FileBlobEntity.class));
+    }
+
+    @Test
+    void replacementValidationAndReadFailuresNeverWriteOrDeleteOldContent() throws Exception {
+        defaultLimit();
+        when(mapper.findMeta("f1")).thenReturn(new FileBlobEntity());
+        var broken = mock(org.springframework.web.multipart.MultipartFile.class);
+        when(broken.isEmpty()).thenReturn(false);
+        when(broken.getSize()).thenReturn(10L);
+        when(broken.getBytes()).thenThrow(new java.io.IOException("读取失败"));
+        assertThatThrownBy(() -> service.replace("f1", broken)).hasMessageContaining("读取上传文件失败");
+        assertThatThrownBy(() -> service.replace("f1", new MockMultipartFile("file", new byte[0])))
+                .isInstanceOf(BadRequestException.class);
+        when(settings.get()).thenReturn(new FileSettingsDto(1, 10, true));
+        assertThatThrownBy(() -> service.replace("f1", new MockMultipartFile("file", new byte[1024 * 1024 + 1])))
+                .hasMessageContaining("1MB");
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).replaceContent(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong(), any(byte[].class));
+    }
+
+    @Test
+    void replacementOfMissingOrConcurrentlyDeletedFileReturnsNotFound() {
+        defaultLimit();
+        var file = new MockMultipartFile("file", "new.pdf", "application/pdf", "new".getBytes());
+        assertThatThrownBy(() -> service.replace("gone", file))
+                .isInstanceOf(cn.wayuwa.wao.common.NotFoundException.class);
+        when(mapper.findMeta("gone")).thenReturn(new FileBlobEntity());
+        assertThatThrownBy(() -> service.replace("gone", file))
+                .isInstanceOf(cn.wayuwa.wao.common.NotFoundException.class);
+    }
+
 }

@@ -1271,6 +1271,12 @@ paths:
       summary: 登录成员站内读取 2MB 以内的 UTF-8 Markdown 正文
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: 返回 Markdown 原文，由前端净化渲染 }, '400': { description: 非 Markdown、超限或非 UTF-8 }, '404': { description: 不存在或所属项目不可见 } }
+  /files/{id}/content:
+    put:
+      summary: 重新上传普通文件，保留 id、展示名、项目和原访问地址
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } } } } }
+      responses: { '200': { description: 返回更新后的 FileItem，下载文件名和内容更新 }, '400': { description: 空文件、读取失败或超过系统大小上限 }, '401': { description: 未登录 }, '404': { description: 文件不存在或项目不可见 } }
   /files/{id}:
     patch:
       summary: 修改文件在 WAO 内的展示名称，原始下载文件名保持不变
@@ -1292,6 +1298,12 @@ paths:
       summary: 上传 UTF-8 单文件 HTML 并配置唯一链接后缀、标题和可选 icon
       requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [html, slug, title], properties: { html: { type: string, format: binary }, slug: { type: string }, title: { type: string }, icon: { type: string, format: binary }, projectId: { type: string, nullable: true } } } } } }
       responses: { '200': { description: 已发布 }, '400': { description: 文件、后缀或标题无效 } }
+  /hosted-pages/{id}/content:
+    put:
+      summary: 重新上传 HTML，仅更新正文、文件名和更新时间，保留分享后缀与所有其它元数据
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [html], properties: { html: { type: string, format: binary } } } } } }
+      responses: { '200': { description: 返回更新后的 HostedPage }, '400': { description: 空文件、非 HTML、非 UTF-8 或超过 10MB }, '401': { description: 未登录 }, '404': { description: 页面不存在或项目不可见 } }
   /hosted-pages/{id}:
     put:
       summary: 修改托管页；HTML 与 icon 不上传时保留原内容

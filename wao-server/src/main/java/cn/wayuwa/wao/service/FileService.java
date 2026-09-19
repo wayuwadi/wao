@@ -52,11 +52,7 @@ public class FileService {
 
     /** 上传一个文件并记录可空的项目归属。 */
     public FileItemDto upload(MultipartFile file, String memberId, String projectId) {
-        if (file == null || file.isEmpty()) throw new BadRequestException("请选择要上传的文件");
-        int limitMb = settings.get().fileMaxMb();
-        if (file.getSize() > limitMb * 1024L * 1024L) {
-            throw new BadRequestException("文件超过 " + limitMb + "MB，请压缩后再上传");
-        }
+        validateUpload(file);
         FileBlobEntity entity = new FileBlobEntity();
         entity.setId("file-" + UUID.randomUUID());
         entity.setName(safeName(file.getOriginalFilename()));
@@ -69,6 +65,27 @@ public class FileService {
         catch (IOException ex) { throw new BadRequestException("读取上传文件失败，请重试"); }
         mapper.insert(entity);
         return toDto(entity);
+    }
+
+    /** 替换文件正文和上传文件名，保留 id、展示名、项目归属及创建信息。 */
+    public FileItemDto replace(String id, MultipartFile file) {
+        metadata(id);
+        validateUpload(file);
+        byte[] content;
+        try { content = file.getBytes(); }
+        catch (IOException ex) { throw new BadRequestException("读取上传文件失败，请重试"); }
+        if (mapper.replaceContent(id, safeName(file.getOriginalFilename()),
+                file.getContentType() == null ? "application/octet-stream" : file.getContentType(),
+                content.length, content) == 0) throw new NotFoundException("文件不存在：" + id);
+        return meta(id);
+    }
+
+    private void validateUpload(MultipartFile file) {
+        if (file == null || file.isEmpty()) throw new BadRequestException("请选择要上传的文件");
+        int limitMb = settings.get().fileMaxMb();
+        if (file.getSize() > limitMb * 1024L * 1024L) {
+            throw new BadRequestException("文件超过 " + limitMb + "MB，请压缩后再上传");
+        }
     }
 
     /** 读取文件正文用于下载。 */

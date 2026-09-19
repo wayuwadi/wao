@@ -99,4 +99,39 @@ class HostedPageServiceTest {
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("来源类型");
     }
+    @Test void replacementPreservesPublicUrlTitleIconAndProject() {
+        var entity = new HostedPageEntity();
+        entity.setId("h1"); entity.setSlug("stable"); entity.setTitle("保留标题");
+        entity.setProjectId("p1"); entity.setSourceType("MANUAL_UPLOAD");
+        entity.setIconContent(new byte[] { 1 }); entity.setIconContentType("image/png");
+        entity.setHtmlContent("old".getBytes(StandardCharsets.UTF_8));
+        when(mapper.selectById("h1")).thenReturn(entity);
+        when(mapper.replaceContent(entity)).thenReturn(1);
+        var html = new MockMultipartFile("html", "new.html", "text/html", "<p>新版</p>".getBytes(StandardCharsets.UTF_8));
+        var result = service.replace("h1", html);
+        assertThat(result.id()).isEqualTo("h1");
+        assertThat(result.url()).isEqualTo("/api/pages/stable");
+        assertThat(result.title()).isEqualTo("保留标题");
+        assertThat(result.fileName()).isEqualTo("new.html");
+        assertThat(result.projectId()).isEqualTo("p1");
+        assertThat(entity.getIconContent()).containsExactly((byte) 1);
+        assertThat(new String(service.render(entity), StandardCharsets.UTF_8)).contains("<p>新版</p>");
+        verify(mapper).replaceContent(entity);
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).updateById(any(HostedPageEntity.class));
+    }
+
+    @Test void replacementRejectsEmptyWrongTypeAndInvalidEncodingBeforePersisting() {
+        var entity = new HostedPageEntity();
+        entity.setId("h1"); entity.setSlug("stable"); entity.setTitle("保留标题");
+        when(mapper.selectById("h1")).thenReturn(entity);
+        for (var file : List.of(
+                new MockMultipartFile("html", "empty.html", "text/html", new byte[0]),
+                new MockMultipartFile("html", "wrong.pdf", "application/pdf", "bad".getBytes()),
+                new MockMultipartFile("html", "bad.html", "text/html", new byte[] {(byte) 0xc3, 0x28}),
+                new MockMultipartFile("html", "large.html", "text/html", new byte[10 * 1024 * 1024 + 1]))) {
+            assertThatThrownBy(() -> service.replace("h1", file)).isInstanceOf(BadRequestException.class);
+        }
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).replaceContent(any());
+    }
+
 }

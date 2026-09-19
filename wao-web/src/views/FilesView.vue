@@ -14,6 +14,7 @@ import { fetchFileSettings, type FileSettings } from '@/api/system'
 import type { HostedPage } from '@/types'
 import AssetPreviewModal, { type AssetPreview } from '@/components/files/AssetPreviewModal.vue'
 import FileDisplayNameEditor from '@/components/files/FileDisplayNameEditor.vue'
+import AssetReplaceModal, { type ReplacementTarget } from '@/components/files/AssetReplaceModal.vue'
 import { fileDisplayName } from '@/utils/files'
 
 const data = useDataStore()
@@ -80,6 +81,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const unifiedInput = ref<HTMLInputElement | null>(null)
 const unifiedDragging = ref(false)
 const uploading = ref(0)
+const replacement = ref<ReplacementTarget | null>(null)
 const preview = ref<AssetPreview | null>(null)
 
 // 打开页面时重新拉一次，让其他标签页 / 其他人上传的图也出现
@@ -494,6 +496,7 @@ function onFileSettingsSaved(settings: FileSettings) {
               <i class="ri-links-line"></i>复制链接
             </button>
             <button v-if="f.id" class="copy-btn" @click="ui.shareToChat(chatShareLink(fileDisplayName(f), fileShareUrl(f.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button>
+            <button v-if="f.id" class="copy-btn" title="重新上传文件" @click="replacement = { kind: 'file', id: f.id, name: fileDisplayName(f), url: fileShareUrl(f.id) }"><i class="ri-upload-2-line"></i>重新上传</button>
             <a class="dl-btn" title="直接下载" :href="absoluteUrl(f.link)"
               ><i class="ri-download-2-line"></i
             ></a>
@@ -626,6 +629,7 @@ function onFileSettingsSaved(settings: FileSettings) {
           >
             <i class="ri-eye-line"></i>
           </button>
+          <button class="copy-btn" title="重新上传 HTML" @click="replacement = { kind: 'html', id: page.id, name: page.title, url: page.url }"><i class="ri-upload-2-line"></i>重新上传</button>
           <button class="dl-btn" title="修改" @click="openPageDialog(page)">
             <i class="ri-edit-line"></i>
           </button>
@@ -743,6 +747,7 @@ function onFileSettingsSaved(settings: FileSettings) {
       @close="settingsOpen = false"
       @saved="onFileSettingsSaved"
     />
+    <AssetReplaceModal v-if="replacement" :target="replacement" @close="replacement = null" @saved="preview = null" />
     <AssetPreviewModal v-if="preview" :asset="preview" @close="preview = null" />
   </div>
 </template>

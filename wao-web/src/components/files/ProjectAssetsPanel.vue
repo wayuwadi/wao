@@ -9,6 +9,7 @@ import { copyText } from '@/utils/clipboard'
 import { absoluteUrl, fileShareUrl } from '@/utils/share'
 import AssetPreviewModal, { type AssetPreview } from './AssetPreviewModal.vue'
 import FileDisplayNameEditor from './FileDisplayNameEditor.vue'
+import AssetReplaceModal, { type ReplacementTarget } from '@/components/files/AssetReplaceModal.vue'
 import { fileDisplayName } from '@/utils/files'
 import type { HostedPage } from '@/types'
 
@@ -19,6 +20,7 @@ const input = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 const uploadError = ref('')
 const dragging = ref(false)
+const replacement = ref<ReplacementTarget | null>(null)
 const preview = ref<AssetPreview | null>(null)
 const htmlDialog = ref(false)
 const editingPage = ref<HostedPage | null>(null)
@@ -265,6 +267,7 @@ async function removePage(page: HostedPage) {
           <i class="ri-links-line"></i>分享
         </button>
         <button v-if="file.id" @click="ui.shareToChat(chatShareLink(fileDisplayName(file), fileShareUrl(file.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button>
+        <button v-if="file.id" title="重新上传文件" @click="replacement = { kind: 'file', id: file.id, name: fileDisplayName(file), url: fileShareUrl(file.id) }"><i class="ri-upload-2-line"></i>重新上传</button>
         <a :href="absoluteUrl(file.link)" title="下载"><i class="ri-download-2-line"></i></a>
         <button class="danger" @click="removeFile(file.id, fileDisplayName(file))">
           <i class="ri-delete-bin-line"></i>
@@ -312,6 +315,7 @@ async function removePage(page: HostedPage) {
         <button @click="copyText(absoluteUrl(page.url), '已复制公网分享链接')">
           <i class="ri-links-line"></i>分享
         </button>
+        <button title="重新上传 HTML" @click="replacement = { kind: 'html', id: page.id, name: page.title, url: page.url }"><i class="ri-upload-2-line"></i>重新上传</button>
         <button title="修改 WAO 显示名称" @click="editPage(page)">
           <i class="ri-edit-line"></i>改名
         </button>
@@ -343,6 +347,7 @@ async function removePage(page: HostedPage) {
         </footer>
       </form>
     </div>
+    <AssetReplaceModal v-if="replacement" :target="replacement" @close="replacement = null" @saved="preview = null" />
     <AssetPreviewModal v-if="preview" :asset="preview" @close="preview = null" />
   </section>
 </template>

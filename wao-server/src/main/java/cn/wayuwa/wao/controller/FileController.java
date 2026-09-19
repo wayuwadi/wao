@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -78,6 +79,14 @@ public class FileController {
         String memberId = currentMember.id(request);
         if (projectId != null) projects.requireAccess(projectId, memberId);
         return ApiResponse.ok(files.upload(file, memberId, projectId));
+    }
+
+    /** 重新上传到同一个文件 id，沿用原项目权限与下载入口。 */
+    @PutMapping(value = "/{id}/content", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<FileItemDto> replace(@PathVariable String id,
+            @RequestParam("file") MultipartFile file, HttpServletRequest request) {
+        requireAssetAccess(files.metadata(id).getProjectId(), currentMember.id(request));
+        return ApiResponse.ok(files.replace(id, file));
     }
 
     /** 登录成员在站内预览 UTF-8 Markdown；HTML 继续走隔离托管页。 */
@@ -139,6 +148,7 @@ public class FileController {
         FileBlobEntity entity = files.raw(id);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(entity.getContentType()))
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                 .header("Content-Disposition", ContentDisposition.attachment()
                         .filename(entity.getName(), StandardCharsets.UTF_8).build().toString())
                 .body(entity.getContent());

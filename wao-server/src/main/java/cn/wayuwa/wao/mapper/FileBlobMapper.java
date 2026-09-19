@@ -19,4 +19,9 @@ public interface FileBlobMapper extends BaseMapper<FileBlobEntity> {
 
     @Update("UPDATE file_blob SET display_name = #{displayName} WHERE id = #{id}")
     int updateDisplayName(@Param("id") String id, @Param("displayName") String displayName);
+    @Update("UPDATE file_blob SET name = #{name}, content_type = #{contentType}, "
+            + "byte_size = #{byteSize}, content = #{content} WHERE id = #{id}")
+    int replaceContent(@Param("id") String id, @Param("name") String name,
+            @Param("contentType") String contentType, @Param("byteSize") long byteSize,
+            @Param("content") byte[] content);
 }

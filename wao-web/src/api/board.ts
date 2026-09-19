@@ -101,6 +101,14 @@ export async function apiUploadFile(file: File, projectId?: string): Promise<Fil
 }
 export const apiRenameFile = (id: string, displayName: string) =>
   patch<FileItem>(`/api/files/${id}`, { displayName })
+export async function apiReplaceFile(id: string, file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await http.put<ApiResponse<FileItem>>(
+    `/api/files/${encodeURIComponent(id)}/content`, form, { timeout: 120_000 },
+  )
+  return res.data.data
+}
 export const apiDeleteFile = (id: string) => del(`/api/files/${id}`)
 export const fetchHostedPages = (projectId?: string) =>
   get<HostedPage[]>(
@@ -125,6 +133,14 @@ export async function apiSaveHostedPage(payload: {
         timeout: 120_000,
       })
     : await http.post<ApiResponse<HostedPage>>('/api/hosted-pages', form, { timeout: 120_000 })
+  return res.data.data
+}
+export async function apiReplaceHostedPage(id: string, html: File) {
+  const form = new FormData()
+  form.append('html', html)
+  const res = await http.put<ApiResponse<HostedPage>>(
+    `/api/hosted-pages/${encodeURIComponent(id)}/content`, form, { timeout: 120_000 },
+  )
   return res.data.data
 }
 export const apiDeleteHostedPage = (id: string) => del(`/api/hosted-pages/${id}`)

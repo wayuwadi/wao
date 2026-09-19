@@ -41,6 +41,8 @@ import {
   apiSaveHostedPage,
   apiPurgeTrash,
   apiRenameFile,
+  apiReplaceFile,
+  apiReplaceHostedPage,
   apiRenameFolder,
   apiRenameKbGroup,
   apiRenameVaultGroup,
@@ -1915,6 +1917,12 @@ export const useDataStore = defineStore('data', () => {
       return item
     } catch { return null }
   }
+  async function replaceFile(id: string, file: File) {
+    const updated = await apiReplaceFile(id, file)
+    const index = files.value.findIndex((item) => item.id === id)
+    if (index >= 0) files.value.splice(index, 1, updated)
+    return updated
+  }
   async function renameFileDisplayName(id: string, displayName: string) {
     const updated = await apiRenameFile(id, displayName)
     const index = files.value.findIndex((file) => file.id === id)
@@ -1950,6 +1958,12 @@ export const useDataStore = defineStore('data', () => {
     const item = await apiSaveHostedPage(payload)
     hostedPages.value = [item, ...hostedPages.value.filter((page) => page.id !== item.id)]
     return item
+  }
+  async function replaceHostedPage(id: string, html: File) {
+    const updated = await apiReplaceHostedPage(id, html)
+    const index = hostedPages.value.findIndex((page) => page.id === id)
+    if (index >= 0) hostedPages.value.splice(index, 1, updated)
+    return updated
   }
   async function deleteHostedPage(id: string) {
     await apiDeleteHostedPage(id)
@@ -2248,8 +2262,8 @@ export const useDataStore = defineStore('data', () => {
     taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
-    uploadFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,
-    hostedPages, hostedPageLoadState, hostedPageLoadError, refreshHostedPages, saveHostedPage, deleteHostedPage,
+    uploadFile, replaceFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,
+    hostedPages, hostedPageLoadState, hostedPageLoadError, refreshHostedPages, saveHostedPage, replaceHostedPage, deleteHostedPage,
     updateProject, deleteProject, syncFromServer, applyAiRunStatuses,
     taskGroupsOf, setTaskGroups, moveTaskToGroup,
     jobById, ensureAutomationLoaded, refreshAutomation,
