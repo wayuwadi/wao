@@ -57,7 +57,7 @@ describe('文档草稿完整生命周期回归', () => {
     }))
     expect(data.docPending(id)).toBe(false)
     expect(data.docEdits[id]).toBeUndefined()
-    expect(JSON.parse(localStorage.getItem('wao-docs-v1') ?? '{}')[id]).toBeUndefined()
+    expect(JSON.parse(localStorage.getItem('wao-docs-v1:draft-lifecycle-member') ?? '{}')[id]).toBeUndefined()
     expect(await readDocumentDraft(memberId, id)).toBeNull()
   })
 
@@ -72,6 +72,18 @@ describe('文档草稿完整生命周期回归', () => {
     await data.persistDocNow(id)
     expect(data.applyRemoteDoc({ ...remote, rev: 9 })).toBe(true)
     expect(data.docOf(id)).toMatchObject({ title: '另一窗口标题', text: '另一窗口正文' })
+  })
+
+  it('保存成功之后迟到的旧心跳不能让正文和版本倒退', async () => {
+    const data = freshStore()
+    data.setDocEdit(id, { content: content('已经确认的新内容') })
+    vi.mocked(apiPatchDoc).mockResolvedValueOnce({ ...baseDoc(), rev: 8, content: content('已经确认的新内容') })
+    await data.persistDocNow(id)
+    expect(data.applyRemoteDoc(baseDoc())).toBe(false)
+    expect(data.docOf(id).text).toBe('已经确认的新内容')
+    expect(data.docs[id]?.rev).toBe(8)
+    expect(data.applyRemoteDoc({ ...baseDoc(), rev: 9, content: content('后来真实的新版本') })).toBe(true)
+    expect(data.docOf(id).text).toBe('后来真实的新版本')
   })
 
   it('失败后重建页面状态仍能恢复草稿，重试成功后刷新只读服务器版本', async () => {

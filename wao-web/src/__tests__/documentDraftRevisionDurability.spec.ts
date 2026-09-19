@@ -67,7 +67,7 @@ describe('已确认保存版本必须同步进入剩余草稿', () => {
   it('仅从 IndexedDB 恢复时，同样保留第二版内容和已经确认的版本', async () => {
     const { saved } = await saveFirstWhileSecondFails()
     expect(await readDocumentDraft(memberId, id)).toMatchObject({ baseRev: 8, content: content('第二版仍未上传') })
-    localStorage.removeItem('wao-docs-v1')
+    localStorage.removeItem('wao-docs-v1:revision-durability-member')
     const restored = freshStore(saved)
     expect(await restored.restoreDocumentDraft(id)).toBe(true)
     expect(restored.docConflicts[id]).toBeFalsy()
@@ -89,7 +89,7 @@ describe('已确认保存版本必须同步进入剩余草稿', () => {
   it('兼容存储写入失败时，IndexedDB 仍保存剩余正文的新基础版本', async () => {
     const setItem = Storage.prototype.setItem
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-      if (key === 'wao-docs-v1') throw new DOMException('测试配额不足', 'QuotaExceededError')
+      if (key === 'wao-docs-v1:revision-durability-member') throw new DOMException('测试配额不足', 'QuotaExceededError')
       return setItem.call(this, key, value)
     })
     const { saved } = await saveFirstWhileSecondFails()
