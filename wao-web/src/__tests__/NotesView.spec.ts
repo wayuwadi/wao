@@ -452,6 +452,10 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     await vi.waitFor(() => expect(document.activeElement).toBe(wrapper.get('.tiptap').element))
     expect(wrapper.classes()).toContain('inline')
+    expect(wrapper.find('.composer-heading').exists()).toBe(false)
+    expect(wrapper.find('.editor-tools').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('复制内容')
+    expect(wrapper.text()).toContain('保存修改')
     wrapper.unmount()
   })
 
