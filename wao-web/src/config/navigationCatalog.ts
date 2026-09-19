@@ -9,7 +9,12 @@ export interface NavigationCatalogSection {
   label: string
   description: string
   icon: string
-  items: Array<{ id: NavigationCatalogModuleId; description: string; keywords?: string[] }>
+  items: Array<{
+    id: NavigationCatalogModuleId
+    description: string
+    keywords?: string[]
+    preview?: 'planned' | 'demo'
+  }>
 }
 
 /**
@@ -39,6 +44,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   },
   {
     id: 'changelog',
+    preview: 'demo',
     description: '示例预览：查看更新日志样式；真实交付请打开「更新日记」。',
     keywords: ['Changelog', '更新日志', '版本', '订阅'],
   },
@@ -92,6 +98,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   },
   {
     id: 'skill-connections',
+    preview: 'planned',
     description: '规划中：外部应用授权尚未开放，当前只能查看接入规划。',
     keywords: ['应用', '连接'],
   },

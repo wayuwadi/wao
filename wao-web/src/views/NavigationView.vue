@@ -25,14 +25,17 @@ const governance = computed(() => route.query.view === 'governance')
 const sections = computed(() =>
   NAVIGATION_CATALOG.map((section) => ({
     ...section,
-    items: section.items.filter((item) =>
-      matchesFunction(item.id, nav.itemMeta(item.id)?.label ?? item.id, query.value),
-    ),
+    items: section.items
+      .filter((item) => matchesFunction(item.id, nav.itemMeta(item.id)?.label ?? item.id, query.value))
+      .sort((a, b) => Number(!!a.preview) - Number(!!b.preview)),
   })).filter(
     (section) =>
       section.items.length &&
       (query.value.trim() || selected.value === 'all' || selected.value === section.id),
   ),
+)
+const previewsVisible = computed(() =>
+  sections.value.some((section) => section.items.some((item) => item.preview)),
 )
 const visibleApps = computed(() =>
   nav.externalApps.filter((app) =>
@@ -149,7 +152,10 @@ onMounted(() => {
           应用与链接
         </button>
       </nav>
-      <p v-if="query.trim()" class="hint">搜索覆盖所有分类，也包含未固定的功能。</p>
+      <p v-if="previewsVisible || query.trim()" class="hint">
+        <template v-if="previewsVisible">同一分类中，规划与示例入口列在最后，仍可打开查看。</template>
+        <template v-if="query.trim()">搜索覆盖所有分类，也包含未固定的功能。</template>
+      </p>
       <div v-if="nav.layoutError || links.loadError.value" role="alert" class="status error">
         {{
           nav.layoutError
@@ -196,7 +202,7 @@ onMounted(() => {
                   item.id === 'workspaces' && nav.itemMeta(item.id)?.label === '工作台'
                     ? '链接空间'
                     : nav.itemMeta(item.id)?.label
-                }}</b
+                }}<em v-if="item.preview" class="maturity-label">{{ item.preview === 'planned' ? '规划中' : '示例预览' }}</em></b
                 ><small>{{ item.description }}</small></span
               ><i
                 :class="
@@ -318,6 +324,18 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.maturity-label {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  font-style: normal;
+  color: var(--wao-text-2);
+  background: var(--wao-bg-sub);
+}
 .navigation-center {
   max-width: none;
   margin: 0 auto;
