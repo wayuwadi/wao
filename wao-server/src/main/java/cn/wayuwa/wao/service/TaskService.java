@@ -209,9 +209,11 @@ public class TaskService {
     @org.springframework.transaction.annotation.Transactional
     public TaskDto replace(String id, TaskDto dto, String memberId) {
         TaskEntity previous = taskMapper.selectById(id);
-        if (dto.subtaskVersion() != null) {
+        if (dto.subtaskVersion() != null || dto.editVersion() != null) {
             previous = taskMapper.lockById(id);
-            if (previous != null && !dto.subtaskVersion().equals(SubtaskTree.version(parse(previous.getDetailJson()).subs())))
+            if (previous != null && dto.editVersion() != null && !dto.editVersion().equals(editVersion(previous)))
+                throw new cn.wayuwa.wao.common.ConflictException("任务内容已被其他窗口更新，请保留本机内容并查看服务器版本");
+            if (previous != null && dto.subtaskVersion() != null && !dto.subtaskVersion().equals(SubtaskTree.version(parse(previous.getDetailJson()).subs())))
                 throw new cn.wayuwa.wao.common.ConflictException("子任务已被其他窗口更新，请保留草稿并刷新后重试");
         }
         if (previous != null) {
@@ -635,6 +637,16 @@ public class TaskService {
         }
     }
 
+    /** 对持久化编辑字段取稳定摘要；不含读取时分配的展示编号，无需修改历史数据。 */
+    private String editVersion(TaskEntity e) {
+        try {
+            byte[] snapshot = json.writeValueAsBytes(java.util.Arrays.asList(
+                    e.getTitle(), e.getProjectId(), e.getStatus(), e.getPr(), e.getOwnerId(),
+                    e.getStartDate(), e.getDueDate(), e.getWaiting(), e.getDescription(), parse(e.getDetailJson())));
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(snapshot));
+        } catch (Exception ex) { throw new IllegalStateException("任务编辑版本计算失败", ex); }
+    }
+
     private TaskDto toDto(TaskEntity e) {
         return numbers.attach(List.of(rawDto(e))).get(0);
     }
@@ -649,7 +661,7 @@ public class TaskService {
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
                 d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()),
-                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs()));
+                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs())).withEditVersion(editVersion(e));
     }
 
     /**

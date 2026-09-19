@@ -1624,6 +1624,7 @@ components:
       type: object
       description: 字段与前端 Task 一致（含 steps/subs/comments/activity 等嵌套）
       properties:
+        editVersion: { type: string, description: 完整任务编辑快照摘要；新客户端全文保存原样回传，过期返回 409，禁止自动重放旧全文；旧客户端缺省兼容 }
         subtaskVersion: { type: string, description: 服务端子任务快照摘要；客户端全文保存原样回传，过期返回 409 并保留草稿 }
         number: { type: integer, format: int64, minimum: 0, readOnly: true, description: "服务端持久化的固定编号，与子任务共享序列；删除不回收，排序不改变" }
         id: { type: string }

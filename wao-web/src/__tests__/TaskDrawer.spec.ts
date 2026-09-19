@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
@@ -11,6 +11,8 @@ import { useToastHost } from '@/composables/toast'
 import type { AiRun } from '@/types'
 
 enableAutoUnmount(afterEach)
+// 预先完成重型编辑器的模块转换，DOM 就绪断言不承担构建耗时。
+beforeAll(async () => { await import('@/components/ui/MarkdownEditor.vue') }, 30_000)
 
 vi.mock('@/utils/clipboard', () => ({
   copyToClipboard: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
