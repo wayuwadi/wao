@@ -139,16 +139,17 @@ onBeforeUnmount(() => { unmountQr?.(); stopWechatPolling() })
       <div class="brand-top"><div class="brand-mark">W</div><div class="brand-name">WAO<span>Wayuwa All in One</span></div></div>
       <div>
         <h1>想法有多大，产出就有多大。</h1>
-        <p class="brand-slogan">你只管把要做的事提出来——拆解、执行、交付交给 AI：多台电脑并行开工，跑完直接等你验收。</p>
-        <p>一个 WAO 账号可以同时绑定飞书、微信和邮箱。无论从哪个入口登录，都会回到同一个成员身份，不再出现娃哥、娃弟会话串用。</p>
-        <ul><li><i class="ri-shield-user-line"></i>服务端安全会话，不再依赖浏览器本地身份</li><li><i class="ri-link-m"></i>多种登录方式绑定同一账号</li><li><i class="ri-node-tree"></i>目标、项目、任务与知识双向关联</li></ul>
+        <p class="brand-slogan">安排每天要做的事，整理文件与资料，也可以把目标交给 AI，查看执行过程和结果。</p>
+        <p>一个 WAO 账号可以绑定飞书、微信和邮箱。使用已经绑定的方式登录，即可继续同一个账号下的任务与资料。</p>
+        <ul><li><i class="ri-shield-user-line"></i>使用自己的账号，继续自己的工作</li><li><i class="ri-link-m"></i>多种登录方式绑定同一账号</li><li><i class="ri-node-tree"></i>从待办、文件或 AI 任务开始</li></ul>
       </div>
       <div class="brand-foot">WAO · 统一账号中心</div>
     </aside>
 
     <main class="panel">
       <section class="card">
-        <h2>登录 WAO</h2>
+        <h2>{{ method === 'email' && mode === 'register' ? '创建 WAO 账号' : '登录 WAO' }}</h2>
+        <p class="product-summary">安排待办、整理资料，与 AI 一起完成任务。</p>
         <template v-if="method === 'feishu'">
           <template v-if="inAppTrying">
             <p class="subtitle">检测到飞书环境，正在免登…</p>
@@ -158,8 +159,8 @@ onBeforeUnmount(() => { unmountQr?.(); stopWechatPolling() })
             <p class="subtitle">使用飞书扫码，快速进入你的 WAO</p>
             <div v-if="!qrError" id="feishu-qr" class="qr"><div class="qr-loading"><i class="ri-loader-4-line"></i>正在加载飞书二维码…</div></div>
             <div v-else class="qr-fallback"><i class="ri-qr-code-line"></i><span>二维码暂不可用</span></div>
-            <div v-if="qrError" class="qr-error">{{ qrError }}</div>
-            <div v-if="inAppError" class="qr-error">{{ inAppError }}</div>
+            <div v-if="qrError" class="qr-error" role="alert">{{ qrError }}</div>
+            <div v-if="inAppError" class="qr-error" role="alert">{{ inAppError }}</div>
             <button class="authorization-cta" type="button" @click="startFeishuLogin('authorization')"><i class="ri-feishu-line"></i><span>{{ qrError ? '改用飞书授权登录' : '二维码不方便？使用飞书授权登录' }}</span><i class="ri-arrow-right-s-line"></i></button>
           </template>
         </template>
@@ -176,17 +177,17 @@ onBeforeUnmount(() => { unmountQr?.(); stopWechatPolling() })
             <div class="wechat-code" aria-label="微信公众号登录验证码">{{ wechatLogin.verificationCode }}</div>
             <p class="wechat-state">{{ wechatStatus === 'WAITING_CODE' ? '已识别扫码，等待公众号收到验证码…' : wechatStatus === 'COMPLETED' ? '验证成功，正在进入 WAO…' : '等待微信扫码…' }}</p>
           </template>
-          <div v-if="wechatError" class="wechat-unavailable"><i class="ri-wechat-fill"></i><span>{{ wechatError }}</span><button type="button" @click="loadWechat">重新获取</button></div>
+          <div v-if="wechatError" class="wechat-unavailable" role="alert"><i class="ri-wechat-fill"></i><span>{{ wechatError }}</span><button type="button" @click="loadWechat">重新获取</button></div>
         </template>
 
         <template v-else>
           <p class="subtitle">{{ mode === 'login' ? '使用邮箱密码登录' : '创建一个新的 WAO 账号' }}</p>
           <form class="email-form" @submit.prevent="submitEmail">
-            <input v-if="mode === 'register'" v-model.trim="name" autocomplete="name" required placeholder="成员名称" />
-            <input v-model.trim="email" type="email" autocomplete="email" required placeholder="邮箱" />
-            <input v-model="password" type="password" :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" minlength="8" required placeholder="密码（至少 8 位）" />
-            <div v-if="error" class="error">{{ error }}</div>
-            <button class="primary" :disabled="busy">{{ busy ? '处理中…' : mode === 'login' ? '登录' : '创建账号' }}</button>
+            <label v-if="mode === 'register'">显示名称<input v-model.trim="name" autocomplete="name" required placeholder="其他成员看到的名字" /></label>
+            <label>邮箱<input v-model.trim="email" type="email" autocomplete="email" required placeholder="你的邮箱地址" /></label>
+            <label>密码<input v-model="password" type="password" :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" minlength="8" required :placeholder="mode === 'register' ? '设置密码（至少 8 位）' : '输入账号密码'" /></label>
+            <div v-if="error" class="error" role="alert">{{ error }}</div>
+            <button class="primary" :disabled="busy">{{ busy ? (mode === 'login' ? '正在登录…' : '正在创建账号…') : mode === 'login' ? '登录' : '创建账号' }}</button>
           </form>
           <button class="switch" type="button" @click="mode = mode === 'login' ? 'register' : 'login'; error = ''">
             {{ mode === 'login' ? '没有账号？使用邮箱注册' : '已有账号？返回登录' }}
@@ -199,7 +200,7 @@ onBeforeUnmount(() => { unmountQr?.(); stopWechatPolling() })
           <button v-if="method !== 'wechat'" type="button" @click="switchMethod('wechat')"><i class="ri-wechat-fill"></i>微信</button>
           <button v-if="method !== 'email'" type="button" @click="switchMethod('email')"><i class="ri-mail-line"></i>邮箱</button>
         </div>
-        <p class="foot">首次使用第三方登录时只需确认一次成员身份，之后会自动进入同一账号。</p>
+        <p class="foot">已有 WAO 账号？请选择已绑定的登录方式。首次使用第三方登录时，按提示确认成员身份；登录后可在账号设置中绑定其他方式。</p>
       </section>
       <SiteFooter class="login-footer" />
     </main>
@@ -212,6 +213,9 @@ onBeforeUnmount(() => { unmountQr?.(); stopWechatPolling() })
 .brand-top { display: flex; align-items: center; gap: 10px; }.brand-mark { width: 32px; height: 32px; display: grid; place-content: center; border-radius: 9px; background: var(--wao-primary); font-weight: 700; }.brand-name { font-weight: 600; }.brand-name span { margin-left: 8px; color: #8e96b3; font-size: 12px; font-weight: 400; }
 h1 { max-width: 540px; margin: 0; font-size: 31px; line-height: 1.45; } .brand p { color: #a7aec7; font-size: 13.5px; line-height: 1.9; }.brand-slogan { max-width: 520px; margin-bottom: 20px; }.brand ul { padding: 0; list-style: none; color: #c9cedf; font-size: 13px; line-height: 2.6; }.brand li { display: flex; align-items: center; gap: 10px; }.brand li i { color: #9da8d8; font-size: 16px; }.brand-foot { color: #6e7590; font-size: 12px; }
 .panel { position: relative; flex: 1; display: flex; padding: 32px 32px 68px; overflow-y: auto; background: radial-gradient(circle at 50% 20%, var(--wao-bg-card) 0, var(--wao-bg-page) 72%); }.card { width: 368px; margin: auto; padding: 32px; border: 1px solid var(--wao-line); border-radius: 20px; background: var(--wao-bg-card); box-shadow: 0 18px 52px rgba(32, 38, 59, .10); }.card h2 { margin: 0; text-align: center; font-size: 24px; letter-spacing: -.5px; }.subtitle { margin: 8px 0 20px; text-align: center; color: var(--wao-text-weak); font-size: 13px; }
+.product-summary { margin: 8px 0 16px; text-align: center; color: var(--wao-text-weak); font-size: 12px; line-height: 1.6; }
+.email-form label { display: block; margin-top: 12px; color: var(--wao-text-2); font-size: 13px; }
+.email-form label input { margin-top: 6px; }
 .login-footer { position: absolute; right: 0; bottom: 0; left: 0; }
 .qr { width: 100%; max-width: 302px; aspect-ratio: 1; margin: auto; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 14px; }.qr-loading { height: 100%; display: grid; place-content: center; gap: 8px; text-align: center; color: var(--wao-text-weak); font-size: 12px; }.qr-loading i { font-size: 30px; color: var(--wao-primary); }.qr-error,.error { margin-top: 8px; color: var(--wao-danger-strong); font-size: 12px; text-align: center; }
 .qr-fallback { width: 100%; max-width: 302px; height: 160px; margin: auto; display: grid; place-content: center; gap: 8px; text-align: center; border: 1px dashed var(--wao-line-strong); border-radius: 14px; color: var(--wao-text-weak); font-size: 12px; }.qr-fallback i { color: var(--wao-primary); font-size: 30px; }
