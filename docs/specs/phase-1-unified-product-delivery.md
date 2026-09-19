@@ -28,5 +28,5 @@
 - `mvn test` 覆盖 WAO、Gateway 和 Agent；两个前端均通过单测、类型检查和生产构建。
 - Agent 页面不再暴露 `/api/agent/demo/**` 对应的模拟运行与草稿工作台。
 - 记忆翻牌加载、保存中、已保存、失败重试、空最佳记录和完成状态都有明确反馈；旧 revision 返回 409 后前端重新读取权威牌局。
-- main CD 成功后，Agent 和 WAO 的制品来自同一提交且飞书保持静默；失败时只发送原因和 Jenkins 详情入口（见 ADR-152）。
+- main CD 成功后，Agent 和 WAO 的制品来自同一提交且飞书保持静默；失败时只发送原因和 Jenkins 详情入口（见 [ADR-152：成功静默通知](../adr/152-silent-success-delivery-notifications.md)）。
 - 不导入只有 fixtures 的 Insight；后续重新建设前必须先提供真实数据模型、接口和分析执行来源。

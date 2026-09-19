@@ -2,12 +2,12 @@
 
 ## 状态
 
-已采纳（2026-08-31），修正 ADR-172 中“已收下同时用于人工派工”以及“只能依赖事件回调”的决策。
+已采纳（2026-08-31），修正 [ADR-172：可配置飞书任务表情工作流](172-configurable-feishu-task-reaction-workflow.md) 中“已收下同时用于人工派工”以及“只能依赖事件回调”的决策。
 
 ## 背景
 
 真实需求是 `GET → StatusInFlight → DONE` 三个含义不同的阶段：机器人保存任务后表示已了解；成员认为内容
-可以执行时添加飞机；AI Run 执行期间保持飞机，完成待验收后添加 Done。ADR-172 把前两个阶段合并成同一
+可以执行时添加飞机；AI Run 执行期间保持飞机，完成待验收后添加 Done。[ADR-172：可配置飞书任务表情工作流](172-configurable-feishu-task-reaction-workflow.md) 把前两个阶段合并成同一
 设置，后端因此只监听默认 `GET`，成员添加飞机不会触发。
 
 生产环境已经配置飞书自建应用 App ID / Secret，消息主动轮询可以正常建任务，但没有配置 Verification Token

@@ -1,7 +1,7 @@
 # Phase 1：飞书任务表情工作流
 
 本规格增量替代既有快速收集表情的阶段含义；原有身份、可信回调、幂等和失败恢复边界继续有效。
-决策见 [ADR-172](../adr/172-configurable-feishu-task-reaction-workflow.md)。
+决策见 [ADR-172：可配置飞书任务表情工作流](../adr/172-configurable-feishu-task-reaction-workflow.md)。
 
 ## 用户结果
 
