@@ -942,7 +942,6 @@ async function saveKbSettings() {
                   :class="isOpen(f.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"
                   class="chev"
                 ></i>
-                <i class="ri-folder-3-line folder-icon"></i>
                 <span class="folder-name">{{ f.name }}</span>
                 <span class="folder-count wao-tabular">{{ f.docs.length }}</span>
               </button>
@@ -963,12 +962,7 @@ async function saveKbSettings() {
               @dragover.prevent
               @drop.stop="dropDoc(f.id, index)"
             >
-              <i class="drag-handle ri-draggable" title="拖拽调整顺序或移动到其他文件夹"></i>
               <button class="doc-node" :class="{ on: docId === dId }" @click="selectDoc(dId)">
-                <i
-                  :class="data.docById(dId)?.auto ? 'ri-flashlight-line' : 'ri-file-text-line'"
-                  class="doc-node-icon"
-                ></i>
                 <span class="doc-node-title">{{ data.docOf(dId).title || '未命名文档' }}</span>
               </button>
               <ResourceMenu :label="`${data.docOf(dId).title || '文档'}的更多操作`" :items="docItems" @select="docAction($event, dId)" />
@@ -978,7 +972,7 @@ async function saveKbSettings() {
           </div>
         </div>
 
-        <section class="archive-tree">
+        <section v-if="archivedDocs.length || archivedError || archivedLoading" class="archive-tree">
           <button class="archive-head" @click="archivedOpen = !archivedOpen">
             <i :class="archivedOpen ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
             <i class="ri-archive-line"></i>
@@ -1059,6 +1053,7 @@ async function saveKbSettings() {
 
             <label v-if="docId && !currentArchived" class="move-document">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
             <button class="icon-act" title="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i></button>
+            <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
             <SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" />
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
             <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
@@ -1119,13 +1114,6 @@ async function saveKbSettings() {
               @input="editTitle"
             />
 
-            <div class="doc-meta">
-              <span class="m-av" :style="{ background: author.color }">{{ author.initial }}</span>
-              <span class="m-name">{{ author.name }}</span>
-              <span :title="absoluteTime(base?.created ?? '')">创建于 {{ createdLabel }}</span>
-              <span>·</span>
-              <span :title="absoluteTime(base?.updated ?? '')">更新于 {{ updatedLabel }}</span>
-            </div>
             <div v-if="docLinks.length" class="doc-links">
               <span class="dl-label">关联</span>
               <button v-for="(l, i) in docLinks" :key="i" class="dl-chip" @click="goLink(l.link)">
@@ -1290,6 +1278,14 @@ async function saveKbSettings() {
 </template>
 
 <style scoped>
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.doc-info { color: var(--wao-text-weak); cursor: help; }
+.tree-search { padding: 6px 10px !important; }
+.tree-search label { padding: 5px 8px !important; background: var(--wao-bg-sub); border: 0 !important; }
+.tree-search input { height: 22px; font-size: 12px; }
+.doc-row { cursor: grab; }
+.doc-row:active { cursor: grabbing; }
+
 .kb-switch { min-width: 0; flex: 1; border: 0; font-size: 15px; font-weight: 600; background: transparent; color: var(--wao-text); padding: 6px 0; text-overflow: ellipsis; }
 .library-home-link { display: flex; align-items: center; gap: 10px; margin: 4px 10px; padding: 9px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text); cursor: pointer; text-align: left; }
 .library-home-link.on { background: var(--wao-bg-hover); font-weight: 600; }

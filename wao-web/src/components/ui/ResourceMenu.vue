@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import KnowledgeIcon from './KnowledgeIcon.vue'
 import { nextTick, onBeforeUnmount, ref } from 'vue'
 defineProps<{ label: string; icon?: string; items: { id: string; label: string; icon?: string; danger?: boolean }[] }>()
 const emit = defineEmits<{ select: [id: string] }>()
@@ -33,7 +34,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', close))
     <template v-if="open">
       <div class="resource-mask" @click="close"></div>
       <div ref="panel" class="resource-menu" :style="position" role="menu" :aria-label="label" @keydown="keydown">
-        <button v-for="item in items" :key="item.id" role="menuitem" :class="{ danger: item.danger }" @click="choose(item.id)"><i :class="item.icon"></i>{{ item.label }}</button>
+        <button v-for="item in items" :key="item.id" role="menuitem" :class="{ danger: item.danger }" @click="choose(item.id)"><KnowledgeIcon v-if="item.id === 'doc' || item.id === 'folder' || item.id === 'template' || item.id === 'table'" :kind="item.id" /><i v-else :class="item.icon"></i>{{ item.label }}</button>
       </div>
     </template>
   </Teleport>

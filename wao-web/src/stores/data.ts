@@ -937,11 +937,16 @@ export const useDataStore = defineStore('data', () => {
   }
 
   /** 更新知识库（名称 / 简介 / 图标 / 颜色 / 分组 / 权限）；apiLive 时写透后端。 */
-  function updateKb(id: string, patch: PatchKbPayload) {
+  async function updateKb(id: string, patch: PatchKbPayload) {
     const kb = kbById(id)
-    if (!kb) return
-    Object.assign(kb, patch)
-    if (apiLive.value) apiPatchKb(id, patch).catch(() => {})
+    if (!kb) return false
+    try {
+      if (apiLive.value) {
+        const updated = await apiPatchKb(id, patch)
+        Object.assign(kb, updated)
+      } else Object.assign(kb, patch)
+      return true
+    } catch { return false }
   }
 
   /**

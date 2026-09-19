@@ -2,6 +2,7 @@
 import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useTabsStore } from '@/stores/tabs'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import { relativeTime } from '@/utils/time'
@@ -14,6 +15,7 @@ const favoriteKbs = computed(() => data.kbs.filter((kb) => knowledgeFavorites.id
 const data = useDataStore()
 const shortcuts = useTopShortcutsStore()
 const router = useRouter()
+const tabs = useTabsStore()
 const now = useNow()
 
 onMounted(() => {
@@ -23,6 +25,8 @@ onMounted(() => {
 
 const editGroupId = ref<string | null>(null)
 const cfgKb = ref<KnowledgeBase | null>(null)
+const cfgSaving = ref(false)
+const cfgError = ref('')
 const newKbOpen = ref(false)
 const newKbName = ref('')
 const newKbDesc = ref('')
@@ -67,17 +71,12 @@ function matchesQuery(kb: KnowledgeBase) {
 }
 
 const groups = computed(() => {
-  const projGroup = {
-    id: 'proj', label: '项目知识库', fixed: true,
-    hint: '跟随项目与自动化 · 默认分组，不可修改',
-    items: data.kbs.filter((k) => (k.project || k.auto) && matchesScope(k) && matchesQuery(k)),
-  }
-  const userGroups = data.myGroups.map((g) => ({
+  const fallback = data.myGroups[0]?.id || 'g1'
+  return data.myGroups.map((g) => ({
     id: g.id, label: g.name, fixed: false, hint: '',
-    items: data.kbs.filter((k) => !k.project && !k.auto && (k.group || 'g1') === g.id
+    items: data.kbs.filter((k) => (data.myGroups.some((group) => group.id === k.group) ? k.group : fallback) === g.id
       && matchesScope(k) && matchesQuery(k)),
   }))
-  return [projGroup, ...userGroups]
 })
 
 const visibleCount = computed(() => groups.value.reduce((total, group) => total + group.items.length, 0))
@@ -88,7 +87,7 @@ function projName(k: KnowledgeBase) {
   return k.auto ? '自动化' : ''
 }
 function openKb(id: string) {
-  router.push(`/kb/${id}`)
+  router.push(tabs.tabs.find((tab) => tab.key === `kb:${id}`)?.path || `/kb/${id}`)
 }
 function openDoc(kbId: string, docId: string) {
   router.push({ path: `/kb/${kbId}`, query: { doc: docId } })
@@ -105,16 +104,21 @@ function commitGroupRename(g: { id: string; name: string }) {
 }
 function openCfg(k: KnowledgeBase) {
   if (!k.perm) k.perm = '仅自己'
-  cfgKb.value = k
+  cfgKb.value = { ...k }
+  cfgError.value = ''
 }
-function cfgDone() {
-  if (cfgKb.value) {
-    const k = cfgKb.value
-    data.updateKb(k.id, { name: k.name, desc: k.desc, icon: k.icon, color: k.color, group: k.group, perm: k.perm })
-  }
+async function cfgDone() {
+  if (!cfgKb.value || cfgSaving.value) return
+  cfgSaving.value = true
+  cfgError.value = ''
+  const k = cfgKb.value
+  const saved = await data.updateKb(k.id, { name: k.name, desc: k.desc, icon: k.icon, color: k.color, group: k.group, perm: k.perm })
+  cfgSaving.value = false
+  if (!saved) { cfgError.value = '保存失败，输入已保留，请重试。'; return }
   cfgKb.value = null
   toast('知识库设置已保存', 'ri-checkbox-circle-line')
 }
+
 async function cfgDelete() {
   if (!cfgKb.value) return
   if (!window.confirm(`删除知识库「${cfgKb.value.name}」及其中全部文件夹和文档？删除后会进入回收站，7 天内可恢复。`)) return
@@ -254,7 +258,7 @@ async function createKb() {
           </div>
         </div>
       </div>
-      <div v-if="g.items.length === 0" class="kgroup-empty">这个分组还是空的——在知识库设置中可将个人知识库移入此分组</div>
+      <div v-if="g.items.length === 0" class="kgroup-empty">这个分组还是空的——在知识库设置中可将知识库移入此分组</div>
     </div>
     <div v-if="filtering && visibleCount === 0" class="kb-filter-empty">
       <i class="ri-search-eye-line"></i>
@@ -265,37 +269,39 @@ async function createKb() {
 
     <!-- 知识库设置弹层 -->
     <template v-if="cfgKb">
-      <div class="modal-mask" @click="cfgKb = null"></div>
+      <div class="modal-mask" @click="!cfgSaving && (cfgKb = null)"></div>
       <div class="modal">
         <div class="modal-head">
           <div class="modal-icon" :style="{ background: cfgKb.color }"><i :class="cfgKb.icon"></i></div>
           <div class="modal-title">知识库设置</div>
           <div class="spacer"></div>
-          <button class="icon-btn" @click="cfgKb = null"><i class="ri-close-line"></i></button>
+          <button class="icon-btn" @click="!cfgSaving && (cfgKb = null)"><i class="ri-close-line"></i></button>
         </div>
         <div class="modal-body">
+          <p v-if="cfgError" role="alert">{{ cfgError }}</p>
           <label class="f-label">名称</label>
-          <input v-model="cfgKb.name" class="f-input" :disabled="!!cfgKb.project || !!cfgKb.auto" />
+          <input v-model="cfgKb.name" class="f-input" :disabled="cfgSaving || !!cfgKb.project || !!cfgKb.auto" />
           <label class="f-label">简介</label>
-          <textarea v-model="cfgKb.desc" class="f-textarea" rows="2" :disabled="!!cfgKb.project || !!cfgKb.auto"></textarea>
+          <textarea v-model="cfgKb.desc" class="f-textarea" rows="2" :disabled="cfgSaving || !!cfgKb.project || !!cfgKb.auto"></textarea>
           <div v-if="cfgKb.project || cfgKb.auto" class="f-note">
             {{ cfgKb.project ? '项目 · ' + projName(cfgKb) : '自动化 · 飞书群聊沉淀' }} 的知识库跟随来源，名称与简介不可修改。
           </div>
 
-          <template v-if="!cfgKb.project && !cfgKb.auto">
+          <div class="kb-group-setting">
             <label class="f-label">所属分组</label>
             <div class="chips">
               <button
                 v-for="grp in data.myGroups"
                 :key="grp.id"
                 class="chip"
+                :disabled="cfgSaving"
                 :class="{ on: (cfgKb.group || 'g1') === grp.id }"
                 @click="cfgKb.group = grp.id"
               >
                 {{ grp.name }}
               </button>
             </div>
-          </template>
+          </div>
 
           <label class="f-label">权限</label>
           <div class="perms">
@@ -323,7 +329,7 @@ async function createKb() {
             <i class="ri-delete-bin-line"></i>删除
           </button>
           <div class="spacer"></div>
-          <button class="btn-primary" @click="cfgDone">完成</button>
+          <button class="btn-primary"  :disabled="cfgSaving" @click="cfgDone">完成</button>
         </div>
       </div>
     </template>
