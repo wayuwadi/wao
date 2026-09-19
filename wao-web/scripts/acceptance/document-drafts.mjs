@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { writeFault, clearFault, localOrigin, SAVE_FAILURE } from './faults.mjs'
-import { registerCleanupDocuments } from './cleanup.mjs'
 
 const PREFIX = 'WAO 验收 · 草稿回归 · '
 const REQUIRED_STEPS = [
@@ -261,32 +260,6 @@ export class DocumentDraftRegression {
     return this.record('冲突副本和原服务器版本分别持久化')
   }
 
-  async cleanup() {
-    clearFault(this.faultFile)
-    registerCleanupDocuments(`${this.faultFile}.owned.json`, this.report.documents)
-    for (const doc of this.report.documents) {
-      if (doc.cleaned) continue
-      if (await this.tab.url() !== doc.url) await this.tab.goto(doc.url)
-      await this.visible(this.titleInput())
-      await this.snapshot()
-      // 标题由本轮生成，ID 来自本轮新建结果；不按前缀批量删除。
-      if (!doc.title.startsWith(PREFIX)) throw new Error('清理前文档身份不一致，停止清理')
-      await this.titleEquals(doc.title)
-      await this.tab.playwright.locator('button[title="删除这篇文档（进回收站）"]').click()
-      await this.snapshot()
-      const dialog = this.tab.playwright.getByRole('dialog', { name: '本轮验收文档清理', exact: true })
-      await this.visible(dialog)
-      await dialog.getByRole('button', { name: '确认移入回收站', exact: true }).click()
-      await this.snapshot()
-      const titles = await this.directoryTitles()
-      if (titles.includes(doc.title)) throw new Error('刷新后文档仍在目录，不能声称清理成功')
-      doc.cleaned = true
-      this.saveReport()
-    }
-    clearFault(`${this.faultFile}.owned.json`)
-    return this.record('仅将本轮验收文档移入回收站并刷新核实')
-  }
-
   async directoryTitles() {
     const url = this.baseURL + this.kbPath
     if (await this.tab.url() !== url) await this.tab.goto(url)
@@ -308,7 +281,7 @@ export class DocumentDraftRegression {
     throw new Error('目录尚未加载完成，不能确认清理')
   }
 
-  /** 工具无法处理原生确认框时，由用户在页面软删除后调用；仍须刷新目录核实。 */
+  /** 定向清理命令或页面软删除后，刷新真实目录核实；命令成功不等于浏览器验收通过。 */
   async verifyCleanup() {
     clearFault(this.faultFile)
     if (this.report.documents.length !== 2) throw new Error('本轮两篇文档尚未完整记录')
@@ -321,7 +294,6 @@ export class DocumentDraftRegression {
 
   async finish(success, error) {
     clearFault(this.faultFile)
-    clearFault(`${this.faultFile}.owned.json`)
     const passed = new Set(this.report.steps.filter(step => step.status === 'passed').map(step => step.name))
     if (success && (REQUIRED_STEPS.some(name => !passed.has(name)) || this.report.documents.length !== 2 || this.report.documents.some(doc => !doc.cleaned))) {
       success = false

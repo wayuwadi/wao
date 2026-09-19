@@ -48,15 +48,30 @@ await run.failureAndTabSwitch()
 await run.reloadAndRetry()
 await run.prepareConflict(peerTab, 'http://127.0.0.1:5232')
 await run.saveConflictCopy()
-await run.cleanup()
-await run.finish(true)
+// 保存与冲突验证完成后，按下节清理本轮文档。
 ```
 
 任何一步失败，立即 `await run.finish(false, error)`：清除故障开关，保存失败截图和已通过的步骤，保留本轮文档供诊断。不得跳过失败步骤后标成全通过。重跑新建独立实例；不要重复调用旧实例的 `create()`。
 
-独立验收入口的文档删除使用页面内“本轮验收文档清理”确认框，`cleanup()` 会先登记两篇精确 ID / 标题，有效期十分钟。未登记文档不能通过该入口删除；普通开发和生产构建仍使用原有逻辑。适配器仅替换已核实的一处文档确认，源码不匹配时启动页面失败，需人工更新适配器，不能改成全局自动确认。
+## 清理本轮文档
 
-若旧版本留下原生确认框阻塞浏览器，先人工取消；需要人工清理时，按报告中的精确 ID / 标题在正常页面把本轮文档移入回收站，再调用 `await run.verifyCleanup()` 刷新核实。知识库首页分组需要全部展开；标题数量与文档总数不一致时不会确认清理。未核实清理前报告保留 `cleaned: false`，不得用清空回收站替代。
+在仓库根目录先运行只读预检，确认输出的目标数与本轮报告一致，再增加 `--apply`：
+
+```bash
+python3 deploy/scripts/cleanup-draft-acceptance.py /实际本机路径/report.json --env-file .env.local-cloud
+python3 deploy/scripts/cleanup-draft-acceptance.py /实际本机路径/report.json --env-file .env.local-cloud --apply
+```
+
+可用 `--java-home`、`--maven-bin` 指定已有运行时。该命令不启动 Spring、Flyway 或后台任务，只读取报告中最多两篇文档，核对精确 ID、标题、知识库、创建时间及非自动生成属性。报告超过 24 小时、任一目标不符时停止；执行模式先锁定全部目标并核对，再通过现有 `KnowledgeService.deleteDoc` 软删除，失败回滚。已经进入回收站的目标不会重复删除，维护清理的删除人留空。不要改写报告来清理其他文档。
+
+随后通过浏览器刷新目录核实，并完成报告：
+
+```javascript
+await run.verifyCleanup()
+await run.finish(true)
+```
+
+也可在正常页面按报告精确 ID / 标题把本轮文档移入回收站，再调用 `verifyCleanup()`。知识库首页分组需要全部展开；标题数量与文档总数不一致时不会确认清理。未核实清理前报告保留 `cleaned: false`，不得用清空回收站替代。验收入口不修改应用的删除确认框；原生弹窗阻塞浏览器工具时，人工取消后再继续交互。
 
 浏览器工具会话重置时，可以恢复已有报告继续诊断或清理，不重复创建文档：
 

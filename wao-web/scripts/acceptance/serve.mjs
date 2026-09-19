@@ -1,9 +1,8 @@
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { realpathSync, readFileSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { createServer, loadConfigFromFile } from 'vite'
 import { faultMiddleware, localOrigin } from './faults.mjs'
-import { cleanupRegistryMiddleware, transformCleanupConfirmation } from './cleanup.mjs'
 
 const root = resolve(import.meta.dirname, '../..')
 const target = localOrigin(process.env.WAO_ACCEPTANCE_API ?? 'http://127.0.0.1:18080', 'WAO_ACCEPTANCE_API')
@@ -16,15 +15,8 @@ const server = await createServer({
   ...loaded.config, configFile: false, root,
   plugins: [...loaded.config.plugins, {
     name: 'wao-local-draft-acceptance',
-    enforce: 'pre',
-    transform(code, id) {
-      if (id === resolve(root, 'src/views/KbDetailView.vue')) return { code: transformCleanupConfirmation(code), map: null }
-    },
-    resolveId(id) { if (id === 'virtual:wao-acceptance-confirm') return '\0wao-acceptance-confirm' },
-    load(id) { if (id === '\0wao-acceptance-confirm') return readFileSync(new URL('./cleanup-dialog.mjs', import.meta.url), 'utf8') },
     configureServer(server) {
       server.middlewares.use(faultMiddleware(faultFile))
-      server.middlewares.use(cleanupRegistryMiddleware(`${faultFile}.owned.json`))
     },
   }],
   server: { ...loaded.config.server, host: '127.0.0.1', port, strictPort: true,
