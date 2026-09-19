@@ -43,6 +43,7 @@ const generated: LifeReview = {
 
 describe('LifeReviewView', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })
     vi.mocked(fetchLifeReview).mockResolvedValue(overview)
     vi.mocked(fetchLifeReviewHistory).mockResolvedValue([])
@@ -87,4 +88,63 @@ describe('LifeReviewView', () => {
     expect(wrapper.text()).toContain('保留记录并重试')
     expect(wrapper.text()).toContain('修复登录白屏')
   })
+  it('切换周期读取失败后不展示上一周期资料，重试只读取不生成', async () => {
+    vi.mocked(fetchLifeReview).mockResolvedValueOnce(generated).mockRejectedValueOnce(new Error('月份读取失败')).mockResolvedValueOnce({ ...overview, period: 'MONTH' })
+    const wrapper = mount(LifeReviewView); await flushPromises()
+    await wrapper.findAll('.period-tabs button')[1]!.trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('月份读取失败')
+    expect(wrapper.find('.report-card').exists()).toBe(false)
+    await wrapper.get('.state-card.error button').trigger('click'); await flushPromises()
+    expect(fetchLifeReview).toHaveBeenLastCalledWith('MONTH', undefined)
+    expect(generateLifeReview).not.toHaveBeenCalled()
+  })
+
+  it('慢的旧周期响应不能覆盖新周期', async () => {
+    let resolveOld!: (value: LifeReview) => void
+    vi.mocked(fetchLifeReview).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+      .mockResolvedValueOnce({ ...overview, period: 'MONTH', periodLabel: '月度记录' })
+    const wrapper = mount(LifeReviewView); await flushPromises()
+    await wrapper.findAll('.period-tabs button')[1]!.trigger('click'); await flushPromises()
+    resolveOld(generated); await flushPromises()
+    expect(wrapper.get('.scope-bar').text()).toContain('月度记录')
+    expect(wrapper.find('.report-card').exists()).toBe(false)
+  })
+
+  it('生成期间可浏览其他周期，完成后不把周报放到月份下', async () => {
+    let resolveGeneration!: (value: LifeReview) => void
+    vi.mocked(generateLifeReview).mockImplementationOnce(() => new Promise(resolve => { resolveGeneration = resolve }))
+    const wrapper = mount(LifeReviewView); await flushPromises()
+    await wrapper.get('.generate-button').trigger('click')
+    vi.mocked(fetchLifeReview).mockResolvedValueOnce({ ...overview, period: 'MONTH', periodLabel: '月份资料', startDate: '2026-07-01' })
+    await wrapper.findAll('.period-tabs button')[1]!.trigger('click'); await flushPromises()
+    expect(wrapper.get('.generation-progress').text()).toContain(overview.periodLabel)
+    resolveGeneration(generated); await flushPromises()
+    expect(wrapper.get('.scope-bar').text()).toContain('月份资料')
+    expect(wrapper.find('.report-card').exists()).toBe(false)
+    expect(wrapper.find('.generation-progress').exists()).toBe(false)
+  })
+
+  it('生成成功后的档案列表失败可独立重试，不再次生成报告', async () => {
+    vi.mocked(fetchLifeReviewHistory).mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('档案连接失败')).mockResolvedValueOnce([])
+    const wrapper = mount(LifeReviewView); await flushPromises()
+    await wrapper.get('.generate-button').trigger('click'); await flushPromises()
+    expect(wrapper.get('.report-card').text()).toContain('完成登录修复')
+    expect(wrapper.get('.history-card').text()).toContain('档案连接失败')
+    await wrapper.get('.history-card .inline-error button').trigger('click'); await flushPromises()
+    expect(generateLifeReview).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.history-card').text()).toContain('还没有已生成的回顾档案')
+  })
+
+  it('生成失败后切换周期，错误入口仍重试原周期', async () => {
+    vi.mocked(generateLifeReview).mockRejectedValueOnce(new Error('生成中断')).mockResolvedValueOnce(generated)
+    const wrapper = mount(LifeReviewView); await flushPromises()
+    await wrapper.get('.generate-button').trigger('click'); await flushPromises()
+    vi.mocked(fetchLifeReview).mockResolvedValueOnce({ ...overview, period: 'MONTH', periodLabel: '月份资料', startDate: '2026-07-01' })
+    await wrapper.findAll('.period-tabs button')[1]!.trigger('click'); await flushPromises()
+    expect(wrapper.get('.inline-error').text()).toContain(overview.periodLabel)
+    await wrapper.get('.inline-error button').trigger('click'); await flushPromises()
+    expect(generateLifeReview).toHaveBeenLastCalledWith('WEEK', '2026-08-03')
+    expect(wrapper.get('.scope-bar').text()).toContain('月份资料')
+  })
+
 })
