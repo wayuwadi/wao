@@ -19,6 +19,7 @@ const drag = useMenuDrag()
 const query = ref('')
 const selected = ref('today')
 const actionError = ref('')
+const customizing = ref(false)
 const layout = computed(() => nav.currentLayout())
 const governance = computed(() => route.query.view === 'governance')
 const sections = computed(() =>
@@ -99,31 +100,32 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="navigation-center">
+  <main class="navigation-center" :class="{ customizing }">
     <header class="hero">
       <div>
         <span class="eyebrow">WAO / 导航</span>
         <h1>{{ governance ? '功能治理' : '全部功能' }}</h1>
         <p>
           {{
-            governance ? '查看真实使用与运行情况。' : '按要做的事找入口，把常用功能放在顺手的位置。'
+            governance ? '查看真实使用与运行情况。' : '按要做的事查找功能，点击即可打开。'
           }}
         </p>
       </div>
       <div class="header-actions">
-        <button @click="router.push('/settings?tab=navigation')">
-          <i class="ri-layout-line"></i>整理我的导航</button
-        ><button
-          @click="
-            router.replace({ path: '/navigation', query: governance ? {} : { view: 'governance' } })
-          "
-        >
+        <button v-if="!governance" class="customize-toggle" :aria-pressed="customizing" :disabled="nav.menuMutationState === 'saving'" @click="customizing = !customizing">
+          <i class="ri-layout-line" aria-hidden="true"></i>{{ customizing ? '完成整理' : '自定义导航' }}
+        </button>
+        <button v-if="customizing && !governance" class="more-settings" @click="router.push('/settings?tab=navigation')">更多导航设置</button>
+        <button v-if="customizing || governance" @click="router.replace({ path: '/navigation', query: governance ? {} : { view: 'governance' } })">
           {{ governance ? '返回全部功能' : '功能治理' }}
         </button>
       </div>
     </header>
     <Governance v-if="governance" />
     <template v-else>
+      <p v-if="customizing" class="status" role="status">
+        {{ nav.menuMutationState === 'saving' ? '正在保存导航位置…' : '选择常用功能的展示位置，或拖到左侧、顶部、底部。每次调整会自动保存到你的账号；完成整理后返回浏览。' }}
+      </p>
       <label class="search"
         ><i class="ri-search-line"></i
         ><input
@@ -176,7 +178,7 @@ onMounted(() => {
         <div class="function-list">
           <article v-for="item in section.items" :key="item.id" class="function-row">
             <button
-              v-if="nav.menuConfig(item.id)"
+              v-if="customizing && nav.menuConfig(item.id)"
               class="drag"
               :draggable="nav.canMoveMenus"
               :disabled="!nav.canMoveMenus"
@@ -186,7 +188,7 @@ onMounted(() => {
               @dragend="drag.onDragEnd"
             >
               <i class="ri-draggable"></i></button
-            ><span v-else class="drag"></span>
+            ><span v-else-if="customizing" class="drag"></span>
             <button class="function-open" @click="open(item.id)">
               <i :class="nav.itemMeta(item.id)?.icon"></i
               ><span
@@ -204,7 +206,7 @@ onMounted(() => {
                 "
               ></i>
             </button>
-            <div class="position">
+            <div v-if="customizing" class="position">
               <small>{{ nav.layoutLoaded ? menuLocation(item.id, layout) : '位置同步中' }}</small
               ><select
                 v-if="nav.menuConfig(item.id)"
@@ -230,6 +232,7 @@ onMounted(() => {
         <div class="function-list">
           <article v-for="app in visibleApps" :key="app.id" class="function-row">
             <button
+              v-if="customizing"
               class="drag"
               :draggable="nav.canMoveMenus"
               :disabled="!nav.canMoveMenus"
@@ -247,7 +250,7 @@ onMounted(() => {
                 }}</small></span
               ><i class="ri-arrow-right-line"></i>
             </button>
-            <div class="position">
+            <div v-if="customizing" class="position">
               <small>{{ menuLocation(externalAppItemId(app.id), layout) }}</small
               ><select
                 :value="position(externalAppItemId(app.id))"
@@ -267,16 +270,16 @@ onMounted(() => {
       <section v-if="dynamicVisible && visibleLinks.length" class="catalog-section">
         <header>
           <h2>我的快捷链接</h2>
-          <span>可拖到顶部收藏</span>
+          <span v-if="customizing">可拖到顶部收藏</span>
         </header>
         <div class="function-list">
           <button
             v-for="link in visibleLinks"
             :key="link.id"
             class="link-row"
-            draggable="true"
+            :draggable="customizing"
             @dragstart="
-              shortcuts.start(
+              customizing && shortcuts.start(
                 {
                   key: 'link:' + link.id,
                   label: link.label,
@@ -444,6 +447,9 @@ button:disabled {
   gap: 4px;
   padding: 10px 14px 10px 5px;
   border-bottom: 1px solid var(--wao-divider);
+}
+.navigation-center:not(.customizing) .function-row {
+  padding-left: 14px;
 }
 .function-row:last-child {
   border-bottom: 0;
