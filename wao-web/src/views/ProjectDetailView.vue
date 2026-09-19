@@ -50,10 +50,10 @@ const projTab = computed(() => {
   const t = route.query.tab as string | undefined
   return t && t !== '总览' ? t : '任务'
 })
-// URL 上写了 view 就听 URL 的（分享出去的链接要能指定视图）；没写时用记住的偏好。
+// 普通入口统一打开表格；显式视图链接及当前页面的手动切换仍由 URL 指定。
 const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
-  return q === 'list' || q === 'board' || q === 'group' ? q : ui.taskViewOf(pid.value)
+  return q === 'list' || q === 'board' || q === 'group' ? q : 'list'
 })
 
 function setTab(t: string) {
