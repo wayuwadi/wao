@@ -30,6 +30,8 @@ const ui = useUiStore()
 const nav = useNavStore()
 const session = useSessionStore()
 const favorites = useFavoritesStore()
+const favoriteProjects = computed(() => favorites.items.filter((item) => item.type === 'project'))
+const otherFavorites = computed(() => favorites.items.filter((item) => item.type !== 'project'))
 const route = useRoute()
 const shortcuts = useTopShortcutsStore()
 const router = useRouter()
@@ -293,19 +295,30 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             <i :class="nav.itemMeta(id)?.icon"></i>
             <span class="item-label" :class="{ 'compact-label': nav.collapsed }">{{ nav.itemMeta(id)?.label }}</span>
           </button>
-          <div v-if="id === 'knowledge' && favoriteKbs.length && !nav.collapsed" class="knowledge-children">
-            <div v-for="kb in favoriteKbs" :key="kb.id" class="knowledge-child">
+          <div v-if="id === 'knowledge' && favoriteKbs.length && !nav.collapsed" class="favorite-children knowledge-children">
+            <div v-for="kb in favoriteKbs" :key="kb.id" class="favorite-child knowledge-child">
             <button class="item" :class="{ active: route.params.id === kb.id && route.name === 'kb' }" :title="kb.name" @click="router.push(tabs.tabs.find((tab) => tab.key === `kb:${kb.id}`)?.path || `/kb/${kb.id}`)">
-              <i :class="kb.icon || 'ri-book-2-line'" aria-hidden="true"></i><span class="item-label">{{ kb.name }}</span>
+              <span class="item-label">{{ kb.name }}</span>
             </button>
-            <button class="knowledge-unfavorite" title="取消常用" :aria-label="`取消常用：${kb.name}`" :disabled="knowledgeFavorites.saving" @click="knowledgeFavorites.toggle(kb.id)"><i class="ri-star-line" aria-hidden="true"></i></button>
+            <button class="favorite-unfavorite knowledge-unfavorite" title="取消收藏" :aria-label="`取消收藏：${kb.name}`" :disabled="knowledgeFavorites.saving" @click="knowledgeFavorites.toggle(kb.id)"><i class="ri-star-fill" aria-hidden="true"></i></button>
+            </div>
+          </div>
+          <div v-if="id === 'projects' && favoriteProjects.length && !nav.collapsed" class="favorite-children project-children">
+            <div v-for="project in favoriteProjects" :key="project.targetId" class="favorite-child">
+              <button class="item" :class="{ active: route.path === `/projects/${project.targetId}` }" :title="project.label"
+                :draggable="!isMobile && !!favoriteShortcut(project)"
+                @dragstart="shortcuts.start(favoriteShortcut(project), $event)" @dragend="shortcuts.end"
+                @click="openFavorite(project)">
+                <span class="item-label">{{ project.label }}</span>
+              </button>
+              <button class="favorite-unfavorite" title="取消收藏" :aria-label="`取消收藏：${project.label}`" @click="removeFavorite(project, $event)"><i class="ri-star-fill" aria-hidden="true"></i></button>
             </div>
           </div>
           </template>
         </div>
 
         <!-- 收藏分组紧跟首页之后；手机与桌面复用同一份真实收藏。 -->
-        <template v-if="!g.label && favorites.items.length && !nav.collapsed">
+        <template v-if="!g.label && otherFavorites.length && !nav.collapsed">
           <button
             class="group-label fav-group"
             :title="isMobile ? '收藏' : '折叠 / 展开分组'"
@@ -316,7 +329,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           </button>
           <div v-if="isMobile || !nav.isFolded('收藏')" class="items">
             <button
-              v-for="f in favorites.items"
+              v-for="f in otherFavorites"
               :key="f.type + f.targetId"
               class="item fav-item"
               :title="f.label"
@@ -459,17 +472,16 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 </template>
 
 <style scoped>
-.knowledge-children { margin-left: 22px; border-left: 1px solid var(--wao-line); padding-left: 4px; }
-.knowledge-child { display: flex; align-items: center; gap: 2px; }
-.knowledge-child > .item { flex: 1; min-width: 0; width: auto; }
-.knowledge-unfavorite { flex: 0 0 26px; width: 26px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-weak); cursor: pointer; }
-.knowledge-unfavorite:hover { color: var(--wao-primary-text); background: var(--wao-bg-hover); }
-.knowledge-unfavorite:disabled { opacity: .5; cursor: wait; }
+.favorite-children { margin-left: 22px; border-left: 1px solid var(--wao-line); padding-left: 4px; }
+.favorite-child { display: flex; align-items: center; gap: 2px; }
+.favorite-child > .item { flex: 1; min-width: 0; width: auto; }
+.favorite-unfavorite { flex: 0 0 26px; width: 26px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-warning-strong); cursor: pointer; }
+.favorite-unfavorite:hover { background: var(--wao-warning-bg); }
+.favorite-unfavorite:disabled { opacity: .5; cursor: wait; }
 @media (hover: hover) and (pointer: fine) {
-  .knowledge-unfavorite { opacity: 0; pointer-events: none; }
-  .knowledge-child:hover .knowledge-unfavorite, .knowledge-child:focus-within .knowledge-unfavorite { opacity: 1; pointer-events: auto; }
+  .favorite-unfavorite { opacity: 0; pointer-events: none; }
+  .favorite-child:hover .favorite-unfavorite, .favorite-child:focus-within .favorite-unfavorite { opacity: 1; pointer-events: auto; }
 }
-.knowledge-child > .item > i { font-size: 18px; }
 .side.collapsed .item.center { height: auto; min-height: 54px; flex-direction: column; gap: 3px; padding: 7px 2px; }
 .side.collapsed .item .compact-label { display: block; width: 100%; text-align: center; font-size: 10px; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-heading {
