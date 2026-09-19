@@ -31,7 +31,9 @@ const loading = ref(true),
   dirty = ref(false),
   draftFailed = ref(false),
   draftPending = ref(false),
-  imageValid = ref(false)
+  imageValid = ref(false),
+  imageChecking = ref(false),
+  imageError = ref('')
 let revision = 0,
   queue: Promise<void> = Promise.resolve()
 function persist() {
@@ -68,22 +70,31 @@ async function flushDraftQueue() {
 watch(form, persist)
 watch(identity, persist)
 watch(file, persist)
-watch([file, () => form.mode, () => form.version], async () => {
+watch([file, () => form.mode], () => {
   if (preview.value) URL.revokeObjectURL(preview.value)
   preview.value = ''
   imageValid.value = false
+  imageChecking.value = false
+  imageError.value = ''
   if (form.mode !== 'create' || !file.value) return
   const selected = file.value,
     url = URL.createObjectURL(selected)
   preview.value = url
+  imageChecking.value = true
+  if (!form.slug) form.slug = `pet-${crypto.randomUUID().slice(0, 8)}`
   const image = new Image()
   image.onload = () => {
     if (preview.value !== url) return
-    imageValid.value = image.width === 1536 && image.height === (form.version === 1 ? 1872 : 2288)
-    if (!imageValid.value) error.value = `图集尺寸应为 1536×${form.version === 1 ? 1872 : 2288}`
+    imageChecking.value = false
+    imageValid.value = image.width === 1536 && [1872, 2288].includes(image.height)
+    if (imageValid.value) form.version = image.height === 1872 ? 1 : 2
+    else
+      imageError.value = `这张图片为 ${image.width}×${image.height}，需要完整动作图集（1536×1872 或 1536×2288）。单张照片不能直接使用，请展开“如何制作图集？”准备素材。`
   }
   image.onerror = () => {
-    if (preview.value === url) error.value = '图片无法解码，请重新选择 PNG/WebP 图集'
+    if (preview.value !== url) return
+    imageChecking.value = false
+    imageError.value = '图片无法读取，请重新选择有效的 PNG/WebP 动作图集。'
   }
   image.src = url
 })
@@ -181,7 +192,8 @@ useSaveBeforeRefresh(async () => {
   if (saving.value) throw new Error('宠物正在保存，请完成后再刷新')
   if (draftFailed.value) persist()
   await flushDraftQueue()
-  if (draftPending.value || draftFailed.value) throw new Error('宠物本地草稿尚未保存，请重试后再刷新')
+  if (draftPending.value || draftFailed.value)
+    throw new Error('宠物本地草稿尚未保存，请重试后再刷新')
 })
 onBeforeRouteLeave(async () => {
   if (saving.value && dirty.value) return false
@@ -200,9 +212,12 @@ onUnmounted(() => {
 </script>
 <template>
   <section style="max-width: 780px; margin: auto">
-    <h1>创造 / 上传宠物</h1>
+    <h1>添加自己的宠物</h1>
     <p class="hub-lead">
-      从自己的完整动作图集创造一个可安装宠物，或上传现有宠物 ZIP。先私人保存，再决定是否公开分享。
+      已有宠物包可以直接导入；已有完整动作图集可以制作可安装宠物。先私人保存，再决定是否公开分享。
+    </p>
+    <p class="hub-note">
+      只想使用宠物？<RouterLink to="/pets">去宠物仓库挑选</RouterLink>，无需准备素材或填写创建表单。
     </p>
     <div v-if="loading" role="status">正在加载作者身份与草稿…</div>
     <div v-if="error" class="hub-error" role="alert">
@@ -239,15 +254,11 @@ onUnmounted(() => {
             <option value="create">用自己的图集创造宠物</option>
           </select></label
         ><template v-if="form.mode === 'create'"
-          ><label class="hub-field"
-            >宠物标识<input
-              v-model="form.slug"
-              class="hub-input"
-              required
-              maxlength="64"
-              pattern="[a-z0-9]+(-[a-z0-9]+)*"
-              placeholder="例如 zhang-sanfeng" /></label
-          ><label class="hub-field"
+          ><p class="hub-note">
+            准备一张包含全部动作的 PNG/WebP
+            图集。系统会自动识别格式；普通照片或单张角色图需要先制作成动作图集。
+          </p>
+          <label class="hub-field"
             >宠物名称<input v-model="form.name" required maxlength="100" class="hub-input" /></label
           ><label class="hub-field"
             >角色描述<textarea
@@ -256,13 +267,20 @@ onUnmounted(() => {
               maxlength="1000"
               class="hub-input"
               rows="3"
-            ></textarea></label
-          ><label class="hub-field"
-            >图集版本<select v-model="form.version" class="hub-input">
-              <option :value="1">v1 · 1536×1872 · 8 列 9 行</option>
-              <option :value="2">v2 · 1536×2288 · 8 列 11 行</option>
-            </select></label
-          >
+            ></textarea>
+          </label>
+          <details class="hub-note">
+            <summary>高级选项：宠物标识</summary>
+            <p>系统自动生成安装目录标识，通常无需修改。仅支持小写英文、数字和连字符。</p>
+            <label class="hub-field"
+              >宠物标识<input
+                v-model="form.slug"
+                class="hub-input"
+                required
+                maxlength="64"
+                pattern="[a-z0-9]+(-[a-z0-9]+)*"
+            /></label>
+          </details>
           <details class="hub-note">
             <summary>如何制作图集？</summary>
             <p>
@@ -288,6 +306,13 @@ onUnmounted(() => {
         /></label>
         <p v-if="file" class="hub-note">
           已选择 / 恢复：{{ file.name }} · {{ (file.size / 1024).toFixed(1) }} KiB
+        </p>
+        <p v-if="imageChecking" class="hub-status" role="status">正在识别图集并准备动作预览…</p>
+        <p v-if="imageError" class="hub-error" role="alert">{{ imageError }}</p>
+        <p v-if="imageValid" class="hub-note">
+          已自动识别{{
+            form.version === 1 ? '基础动作图集' : '含视线动作的图集'
+          }}。请检查下方动作预览后保存。
         </p>
         <RepositoryPetPreview v-if="preview && imageValid" :src="preview" :version="form.version" />
         <p v-if="form.mode === 'zip'" class="hub-note">
