@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import DataCenterView from '@/views/DataCenterView.vue'
 import { fetchDataCenterOverview, type DataCenterOverview } from '@/api/dataCenter'
@@ -6,6 +6,7 @@ import { fetchDataCenterOverview, type DataCenterOverview } from '@/api/dataCent
 vi.mock('@/api/dataCenter', () => ({
   fetchDataCenterOverview: vi.fn<(typeof import('@/api/dataCenter'))['fetchDataCenterOverview']>(),
 }))
+function view() { return mount(DataCenterView, { global: { stubs: { RouterLink: RouterLinkStub } } }) }
 
 const overview: DataCenterOverview = {
   generatedAt: '2026-08-28T10:00:00',
@@ -58,7 +59,7 @@ describe('DataCenterView', () => {
   })
 
   it('展示真实记录量和 Git 最小采集边界', async () => {
-    const wrapper = mount(DataCenterView)
+    const wrapper = view()
     await flushPromises()
     expect(wrapper.text()).toContain('目录内记录总量')
     expect(wrapper.text()).toContain('15 条')
@@ -68,7 +69,7 @@ describe('DataCenterView', () => {
   })
 
   it('按分类筛选且不丢失真实空数据源', async () => {
-    const wrapper = mount(DataCenterView)
+    const wrapper = view()
     await flushPromises()
     await wrapper
       .get('.filters')
@@ -92,7 +93,7 @@ describe('DataCenterView', () => {
         status: 'EMPTY',
       })),
     })
-    const wrapper = mount(DataCenterView)
+    const wrapper = view()
     await flushPromises()
     expect(wrapper.text()).toContain('还没有可统计记录')
     expect(wrapper.text()).toContain('不会填充演示数字')
@@ -102,12 +103,38 @@ describe('DataCenterView', () => {
     vi.mocked(fetchDataCenterOverview)
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(overview)
-    const wrapper = mount(DataCenterView)
+    const wrapper = view()
     await flushPromises()
     expect(wrapper.text()).toContain('数据目录读取失败')
     await wrapper.get('.state button').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('数据中心')
     expect(wrapper.text()).toContain('15 条')
+  })
+
+  it('按状态查看并说明登记与正文边界，冲突筛选可清除', async () => {
+    const wrapper = view(); await flushPromises()
+    expect(wrapper.text()).toContain('不能作为完成量或质量评分')
+    await wrapper.get('.status-filters').findAll('button').find(button => button.text().startsWith('仅登记'))!.trigger('click')
+    expect(wrapper.findAll('.source-card')).toHaveLength(1)
+    expect(wrapper.get('.source-card').text()).toContain('不能据此分析来源正文')
+    await wrapper.get('.filters').findAll('button').find(button => button.text() === '沟通')!.trigger('click')
+    expect(wrapper.text()).toContain('当前分类和状态下没有数据源')
+    await wrapper.get('.state button').trigger('click')
+    expect(wrapper.findAll('.source-card')).toHaveLength(3)
+  })
+
+  it('有记录不声称持续同步，链接指向既有功能', async () => {
+    const wrapper = view(); await flushPromises()
+    expect(wrapper.text()).toContain('不保证持续同步或数据完整')
+    expect(wrapper.findAllComponents(RouterLinkStub).map(link => link.props('to'))).toContain('/todo')
+    expect(wrapper.findAllComponents(RouterLinkStub).map(link => link.props('to'))).not.toContain('/git-repositories')
+  })
+
+  it('未知状态仍显示卡片和保守提示，不中断页面', async () => {
+    vi.mocked(fetchDataCenterOverview).mockResolvedValue({ ...overview, sources: [{ ...overview.sources[0]!, status: 'FUTURE' as never }] })
+    const wrapper = view(); await flushPromises()
+    expect(wrapper.text()).toContain('状态待确认')
+    expect(wrapper.text()).toContain('当前状态尚无法解释')
   })
 })

@@ -11,25 +11,46 @@ const overview = ref<DataCenterOverview | null>(null)
 const loading = ref(true)
 const error = ref('')
 const selectedCategory = ref('全部')
+const selectedStatus = ref<DataCenterStatus | 'ALL'>('ALL')
 
 const categories = computed(() => [
   '全部',
   ...new Set((overview.value?.sources ?? []).map((source) => source.category)),
 ])
 const visibleSources = computed(() =>
-  selectedCategory.value === '全部'
-    ? (overview.value?.sources ?? [])
-    : (overview.value?.sources ?? []).filter(
-        (source) => source.category === selectedCategory.value,
-      ),
+  (overview.value?.sources ?? []).filter(source =>
+    (selectedCategory.value === '全部' || source.category === selectedCategory.value)
+    && (selectedStatus.value === 'ALL' || source.status === selectedStatus.value)),
 )
 
 const statusMeta: Record<DataCenterStatus, { label: string; icon: string }> = {
-  READY: { label: '数据可用', icon: 'ri-checkbox-circle-line' },
+  READY: { label: '有记录和写入时间', icon: 'ri-checkbox-circle-line' },
   TIME_UNKNOWN: { label: '时间未知', icon: 'ri-time-line' },
   EMPTY: { label: '暂无数据', icon: 'ri-inbox-2-line' },
   REGISTERED_ONLY: { label: '仅登记', icon: 'ri-link' },
 }
+const statusCounts = computed(() => Object.entries(statusMeta).map(([status, meta]) => ({
+  status: status as DataCenterStatus, label: meta.label,
+  count: (overview.value?.sources ?? []).filter(source => source.status === status).length,
+})))
+const sourceDestinations: Record<string, { path: string; label: string }> = {
+  projects: { path: '/projects', label: '查看项目' },
+  tasks: { path: '/todo', label: '查看待办' },
+  'ai-runs': { path: '/ai-sessions', label: '查看 AI 会话' },
+  'knowledge-documents': { path: '/knowledge', label: '查看知识库' },
+  'memory-revisions': { path: '/memory', label: '查看记忆' },
+  'shared-chat-messages': { path: '/chat', label: '查看共享聊天' },
+  'http-request-metrics': { path: '/request-monitoring', label: '查看请求监控' },
+  'product-updates': { path: '/updates', label: '查看更新日记' },
+}
+function guidance(source: DataCenterSource) {
+  if (source.status === 'EMPTY') return '当前没有记录，不等于功能故障。先在对应功能产生数据，再刷新目录。'
+  if (source.coverage === 'REGISTRY_ONLY') return '只有来源登记信息，不能据此分析来源正文或完整历史。需要采集内容时应先确认接入范围。'
+  if (source.status === 'TIME_UNKNOWN') return '已有记录，但无法判断最近何时更新；请到对应功能核对内容，不据此判断更新频率。'
+  if (source.status === 'READY') return '请到对应功能确认内容是否覆盖所需时间和主题；最近写入时间不保证持续同步或数据完整。'
+  return '当前状态尚无法解释，请刷新后再确认覆盖范围。'
+}
+function resetFilters() { selectedCategory.value = '全部'; selectedStatus.value = 'ALL' }
 
 function formatCount(source: DataCenterSource) {
   return `${new Intl.NumberFormat('zh-CN').format(source.recordCount)} ${source.recordUnit}`
@@ -71,8 +92,9 @@ onMounted(load)
       <div>
         <span>WAO DATA CENTER</span>
         <h1>数据中心</h1>
-        <p>先确认真实数据是否存在、是否持续写入，再用它生成报告和新功能。</p>
+        <p>查看 WAO 保存了哪些数据，核对范围后再用于报告或分析。</p>
       </div>
+
       <button type="button" :disabled="loading" @click="load">
         <i :class="loading ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
         {{ loading ? '读取中…' : '刷新目录' }}
@@ -92,6 +114,17 @@ onMounted(load)
         <span>{{ error }} 已保留上一次成功结果。</span
         ><button type="button" @click="load">重试</button>
       </div>
+
+      <section class="data-guidance" aria-label="数据使用前检查">
+        <h2>这些数据能用来做什么？</h2>
+        <p>先看是否有记录，再核对覆盖边界和时间。此处是系统目录汇总，不是个人完成量，也不代表实时同步状态。</p>
+        <p>统计于 {{ formatTime(overview.generatedAt) }}<span v-if="loading"> · 正在刷新，下方暂为上一次结果</span></p>
+        <div class="status-filters" role="group" aria-label="按数据状态查看">
+          <button type="button" :aria-pressed="selectedStatus === 'ALL'" @click="selectedStatus = 'ALL'">全部状态</button>
+          <button v-for="item in statusCounts" :key="item.status" type="button" :aria-pressed="selectedStatus === item.status" @click="selectedStatus = item.status">{{ item.label }} · {{ item.count }}</button>
+        </div>
+        <p>空数据和仅登记不一定需要修复；有记录也需要核对内容。“目录内记录总量”混合了不同单位，不能作为完成量或质量评分。</p>
+      </section>
 
       <section class="summary">
         <article>
@@ -128,11 +161,17 @@ onMounted(load)
           :key="category"
           type="button"
           :class="{ active: selectedCategory === category }"
+          :aria-pressed="selectedCategory === category"
           @click="selectedCategory = category"
         >
           {{ category }}
         </button>
       </nav>
+
+      <div v-if="visibleSources.length === 0" class="state">
+        <b>{{ overview.sources.length ? '当前分类和状态下没有数据源' : '暂时没有已登记的数据源' }}</b>
+        <button v-if="overview.sources.length" type="button" @click="resetFilters">清除筛选</button>
+      </div>
 
       <section class="source-grid">
         <article v-for="source in visibleSources" :key="source.id" class="source-card">
@@ -142,7 +181,7 @@ onMounted(load)
               <h2>{{ source.label }}</h2>
             </div>
             <span :class="`status ${source.status.toLowerCase()}`">
-              <i :class="statusMeta[source.status].icon"></i>{{ statusMeta[source.status].label }}
+              <i :class="statusMeta[source.status]?.icon ?? 'ri-question-line'"></i>{{ statusMeta[source.status]?.label ?? '状态待确认' }}
             </span>
           </header>
           <strong class="count">{{ formatCount(source) }}</strong>
@@ -157,6 +196,7 @@ onMounted(load)
               <dd>{{ source.boundary }}</dd>
             </div>
           </dl>
+          <div class="source-next"><p>{{ guidance(source) }}</p><router-link v-if="sourceDestinations[source.id]" :to="sourceDestinations[source.id]!.path">{{ sourceDestinations[source.id]!.label }} →</router-link></div>
         </article>
       </section>
     </template>
@@ -164,6 +204,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.data-guidance{margin-top:18px;padding:18px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.data-guidance h2{font-size:17px;margin:0 0 10px}.data-guidance p,.source-next p{font-size:13px;line-height:1.7;color:var(--wao-text-3)}.status-filters{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.status-filters button{font:inherit;font-size:12px;padding:8px 10px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text);cursor:pointer}.status-filters button[aria-pressed=true]{background:var(--wao-primary-soft);color:var(--wao-primary-text)}.source-next{border-top:1px solid var(--wao-line);margin-top:14px;padding-top:10px}.source-next a{font-size:13px;color:var(--wao-primary-text);display:inline-block;padding:6px 0}.status-filters button:focus-visible,.source-next a:focus-visible{outline:2px solid var(--wao-primary-text);outline-offset:3px}
 .data-center-page {
   max-width: none;
   margin: 0 auto;
