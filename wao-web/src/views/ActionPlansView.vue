@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createActionPlan,
   fetchActionPlans,
-  saveActionNote,
   setActionPlanCompleted,
   toggleActionCheckin,
   updateActionPlan,
@@ -11,6 +10,8 @@ import {
   type SaveActionPlan,
 } from '@/api/actionPlans'
 import { toast } from '@/composables/toast'
+import { useActionNoteDraft } from '@/composables/useActionNoteDraft'
+import { useSessionStore } from '@/stores/session'
 
 const WEEKDAYS = [
   { value: 1, label: '一' }, { value: 2, label: '二' }, { value: 3, label: '三' },
@@ -29,12 +30,9 @@ const statusBusy = ref(false)
 const editorOpen = ref(false)
 const editingId = ref('')
 const editorBusy = ref(false)
-const noteDraft = ref('')
-const noteState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
-const pendingNotePlanId = ref('')
-const pendingNoteDate = ref('')
-const pendingNoteContent = ref('')
-let noteTimer: ReturnType<typeof setTimeout> | null = null
+const session = useSessionStore()
+const userId = computed(() => session.userId)
+let loadVersion = 0
 
 interface ItemForm { id?: string; title: string; weekdays: number[] }
 const form = reactive<SaveActionPlan>({
@@ -44,6 +42,7 @@ const form = reactive<SaveActionPlan>({
 })
 
 const activePlan = computed(() => plans.value.find((plan) => plan.id === activePlanId.value) ?? plans.value[0] ?? null)
+const { text: noteDraft, state: noteState, retry: flushNote, localError: noteLocalError } = useActionNoteDraft(userId, activePlan, selectedDate)
 const allDone = computed(() => Boolean(activePlan.value?.scheduledCount)
   && activePlan.value?.completedCount === activePlan.value?.scheduledCount)
 const dateLabel = computed(() => {
@@ -74,33 +73,25 @@ function shiftDate(days: number) {
 function selectToday() { selectedDate.value = today }
 
 async function load(keepPlan = true) {
+  const version = ++loadVersion
+  const date = selectedDate.value
   loading.value = true
   loadError.value = ''
   try {
-    const next = await fetchActionPlans(selectedDate.value)
+    const next = await fetchActionPlans(date)
+    if (version !== loadVersion) return
     plans.value = next
     if (!keepPlan || !next.some((plan) => plan.id === activePlanId.value)) {
       activePlanId.value = next.find((plan) => plan.status === 'ACTIVE')?.id ?? next[0]?.id ?? ''
     }
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : '行动计划读取失败'
+    if (version === loadVersion) loadError.value = error instanceof Error ? error.message : '行动计划读取失败'
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
-watch(selectedDate, () => {
-  if (noteTimer) void flushNote()
-  void load()
-})
-watch(activePlan, (plan) => {
-  noteDraft.value = plan?.note ?? ''
-  noteState.value = 'idle'
-}, { immediate: true })
-watch(noteDraft, (value, oldValue) => {
-  if (!activePlan.value || value === oldValue || value === activePlan.value.note) return
-  queueNoteSave()
-})
+watch(selectedDate, () => void load())
 
 async function toggle(itemId: string) {
   const plan = activePlan.value
@@ -119,40 +110,8 @@ async function toggle(itemId: string) {
   }
 }
 
-function queueNoteSave() {
-  if (noteTimer) clearTimeout(noteTimer)
-  const plan = activePlan.value
-  if (!plan) return
-  pendingNotePlanId.value = plan.id
-  pendingNoteDate.value = selectedDate.value
-  pendingNoteContent.value = noteDraft.value
-  noteState.value = 'saving'
-  noteTimer = setTimeout(() => void flushNote(), 650)
-}
-async function flushNote() {
-  if (noteTimer) clearTimeout(noteTimer)
-  noteTimer = null
-  const planId = pendingNotePlanId.value
-  const date = pendingNoteDate.value
-  const content = pendingNoteContent.value
-  if (!planId || date > today) return
-  noteState.value = 'saving'
-  try {
-    const updated = await saveActionNote(planId, date, content)
-    if (activePlan.value?.id === planId && selectedDate.value === date) {
-      replacePlan(updated)
-      noteState.value = 'saved'
-    }
-  } catch {
-    if (activePlan.value?.id === planId && selectedDate.value === date) noteState.value = 'error'
-  } finally {
-    pendingNotePlanId.value = ''
-    pendingNoteDate.value = ''
-    pendingNoteContent.value = ''
-  }
-}
-
 function replacePlan(updated: ActionPlan) {
+  if (updated.selectedDate !== selectedDate.value) return
   plans.value = plans.value.map((plan) => plan.id === updated.id ? updated : plan)
 }
 
@@ -245,7 +204,6 @@ async function togglePlanStatus() {
 }
 
 onMounted(() => void load(false))
-onBeforeUnmount(() => { if (noteTimer) { clearTimeout(noteTimer); void flushNote() } })
 </script>
 
 <template>
@@ -321,11 +279,13 @@ onBeforeUnmount(() => { if (noteTimer) { clearTimeout(noteTimer); void flushNote
         <div v-else class="rest-day"><i class="ri-moon-clear-line"></i><b>今天没有安排动作</b><span>休息也是计划的一部分；需要调整节奏可打开“设置计划”。</span></div>
 
         <div class="note-block">
-          <div class="note-title"><span><i class="ri-quill-pen-line"></i>当天复盘</span>
+          <div class="note-title" aria-live="polite"><span><i class="ri-quill-pen-line"></i>当天复盘</span>
             <small v-if="noteState === 'saving'">保存中…</small><small v-else-if="noteState === 'saved'" class="saved">已保存</small>
+            <button v-else-if="noteState === 'pending'" type="button" @click="flushNote">草稿待保存 · 保存</button>
             <button v-else-if="noteState === 'error'" type="button" @click="flushNote">保存失败 · 重试</button>
           </div>
-          <textarea v-model="noteDraft" maxlength="2000" placeholder="只写事实：今天做了什么、哪里卡住、明天怎么调整。"></textarea>
+          <p v-if="noteLocalError" role="alert">本机草稿未能保存，请保持页面打开，等待保存成功或复制内容备份。</p>
+          <textarea aria-label="当天复盘" v-model="noteDraft" maxlength="2000" placeholder="只写事实：今天做了什么、哪里卡住、明天怎么调整。"></textarea>
         </div>
       </section>
     </template>
