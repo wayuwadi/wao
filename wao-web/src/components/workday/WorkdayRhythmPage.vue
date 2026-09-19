@@ -1250,6 +1250,7 @@ onBeforeUnmount(() => {
       </section>
     </template>
 
+    <Teleport to="body">
     <template v-if="editorOpen">
       <div class="mask" @click="!editorSaving && (editorOpen = false)"></div>
       <section class="editor" role="dialog" aria-modal="true" aria-labelledby="rhythm-editor-title">
@@ -1684,6 +1685,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </template>
+    </Teleport>
   </main>
 </template>
 
@@ -2413,12 +2415,12 @@ textarea {
 .mask {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 1000;
   background: rgba(18, 29, 26, 0.44);
 }
 .growth-coach-dialog {
   position: fixed;
-  z-index: 101;
+  z-index: 1001;
   top: 5vh;
   left: 50%;
   transform: translateX(-50%);
@@ -2618,7 +2620,7 @@ textarea {
 }
 .history-dialog {
   position: fixed;
-  z-index: 101;
+  z-index: 1001;
   top: 4vh;
   left: 50%;
   transform: translateX(-50%);
@@ -2852,7 +2854,7 @@ textarea {
   font-size: 13px;
   line-height: 1.6;
   position: fixed;
-  z-index: 101;
+  z-index: 1001;
   top: 4vh;
   left: 50%;
   transform: translateX(-50%);

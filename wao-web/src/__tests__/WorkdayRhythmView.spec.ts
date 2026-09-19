@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -75,7 +75,10 @@ async function mountView(path = '/workday-rhythm') {
   await router.isReady()
   const pinia = createPinia()
   useSessionStore(pinia).account = { member: { id: 'rhythm-test' } } as never
-  return mount(WorkdayRhythmView, {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const view = mount(WorkdayRhythmView, {
+    attachTo: host,
     global: {
       plugins: [pinia, router],
       stubs: {
@@ -86,6 +89,16 @@ async function mountView(path = '/workday-rhythm') {
       },
     },
   })
+  // 使用真实 Teleport；页面与顶层弹窗都从可见文档查询。
+  const page = new DOMWrapper(document.body)
+  return {
+    vm: view.vm,
+    find: page.find.bind(page),
+    findAll: page.findAll.bind(page),
+    get: page.get.bind(page),
+    text: page.text.bind(page),
+    unmount: () => { view.unmount(); host.remove() },
+  }
 }
 
 describe('WorkdayRhythmView', () => {
@@ -360,6 +373,7 @@ describe('WorkdayRhythmView', () => {
     expect(wrapper.text()).not.toContain('累计项目可反复记录')
 
     await wrapper.get('.settings-button').trigger('click')
+    expect(document.querySelector('.editor')?.parentElement).toBe(document.body)
     expect(wrapper.get('[data-editor-section="checklist"]').classes()).toContain('active')
     await wrapper.get('[data-editor-section="notification"]').trigger('click')
     await flushPromises()
