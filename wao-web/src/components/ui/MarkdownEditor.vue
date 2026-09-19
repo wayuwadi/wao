@@ -121,6 +121,8 @@ const props = withDefaults(
     advanced?: boolean
     /** 小记使用紧凑工具栏，并隐藏需要进入完整文档继续编辑的重型内容块。 */
     compact?: boolean
+    /** 保留斜线与选区能力，但不显示顶部格式工具栏。 */
+    hideToolbar?: boolean
     /** 挂到 body 的菜单层级；全屏容器需显式提升，避免菜单被遮挡。 */
     menuZIndex?: number
     /** 知识库页面的常驻顶部工具栏挂载点。 */
@@ -142,6 +144,7 @@ const props = withDefaults(
     imageControls: false,
     advanced: false,
     compact: false,
+    hideToolbar: false,
     menuZIndex: 1000,
     toolbarTarget: null,
     document: null,
@@ -1634,7 +1637,7 @@ onBeforeUnmount(() => {
       @change="onFilePicked"
     />
     <Teleport :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
-    <div v-if="advanced && !readonly && editor" class="editor-tools" :class="{ docked: toolbarTarget }">
+    <div v-if="advanced && !hideToolbar && !readonly && editor" class="editor-tools" :class="{ docked: toolbarTarget }">
       <button v-if="!toolbarTarget" type="button" class="toolbar-toggle" :aria-expanded="toolbarOpen" :title="toolbarOpen ? '收起编辑工具' : '展开编辑工具'" @mousedown.prevent @click="toolbarOpen = !toolbarOpen">
         <i class="ri-equalizer-line" aria-hidden="true"></i>
         <span>编辑工具</span>
