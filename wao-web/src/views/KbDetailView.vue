@@ -826,6 +826,7 @@ function homeDocumentTime(value: string): string {
 const homeFolderOpen = reactive<Record<string, boolean>>({})
 const docTotal = computed(() => kb.value?.folders.reduce((total, folder) => total + folder.docs.length, 0) ?? 0)
 const kbSettingsOpen = ref(false)
+const kbIconPickerExpanded = ref(false)
 const kbSettings = reactive({ name: '', desc: '', icon: '' })
 const kbSettingsBusy = ref(false)
 const kbSettingsError = ref('')
@@ -889,7 +890,12 @@ async function confirmMove() {
   await dropDoc(moveFolderId.value, kb.value?.folders.find((folder) => folder.id === moveFolderId.value)?.docs.length ?? 0)
   if (treeSaveState.value === 'saved') { folderOpen[moveFolderId.value] = true; moveDocId.value = null }
 }
+function openKbIconSettings() {
+  openKbSettings()
+  kbIconPickerExpanded.value = true
+}
 function openKbSettings() {
+  kbIconPickerExpanded.value = false
   kbSettings.name = kb.value?.name || ''
   kbSettings.desc = kb.value?.desc || ''
   kbSettings.icon = kb.value?.icon || 'wao-kb-icon-notebook'
@@ -1112,7 +1118,7 @@ async function saveKbSettings() {
       <div class="doc-wrap">
         <div class="doc-col">
           <section v-if="!docId" class="library-home">
-            <header><div class="library-cover-icon" :style="{ color: kb.color }"><i :class="kb.icon"></i></div><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 文档</p></div><button class="library-star" :disabled="knowledgeFavorites.saving" :aria-pressed="knowledgeFavorites.ids.includes(kbId)" @click="knowledgeFavorites.toggle(kbId)"><i :class="knowledgeFavorites.ids.includes(kbId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ knowledgeFavorites.ids.includes(kbId) ? '已常用' : '添加常用' }}</button><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i></button></header>
+            <header><button class="library-cover-icon" :style="{ color: kb.color }" title="更换知识库图标" aria-label="更换知识库图标" @click="openKbIconSettings"><i :class="kb.icon" aria-hidden="true"></i></button><div class="library-heading"><h1>{{ kb.name }}</h1><p>{{ docTotal }} 文档</p></div><button class="library-star" :disabled="knowledgeFavorites.saving" :aria-pressed="knowledgeFavorites.ids.includes(kbId)" @click="knowledgeFavorites.toggle(kbId)"><i :class="knowledgeFavorites.ids.includes(kbId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ knowledgeFavorites.ids.includes(kbId) ? '已常用' : '添加常用' }}</button><button class="library-star" title="知识库设置" @click="openKbSettings"><i class="ri-settings-3-line"></i>设置</button></header>
             <p v-if="kb.desc" class="library-description">{{ kb.desc }}</p>
             <div v-if="data.loadStates.docs !== 'loaded'" class="doc-empty">正在加载目录…</div>
             <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。<button class="library-star" @click="createAction('doc')">新建文档</button></div>
@@ -1209,7 +1215,7 @@ async function saveKbSettings() {
       </div>
     </div>
 
-    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><KnowledgeIconPicker v-model="kbSettings.icon" :disabled="kbSettingsBusy" /><label>名称<input :disabled="kbSettingsBusy" v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea :disabled="kbSettingsBusy" v-model="kbSettings.desc" rows="3"></textarea></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
+    <div v-if="kbSettingsOpen" class="modal-backdrop" @click.self="!kbSettingsBusy && (kbSettingsOpen = false)"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="知识库设置"><header><h2>知识库设置</h2><button :disabled="kbSettingsBusy" aria-label="关闭设置" @click="kbSettingsOpen = false">×</button></header><KnowledgeIconPicker v-model="kbSettings.icon" :disabled="kbSettingsBusy" :initially-expanded="kbIconPickerExpanded" /><label>名称<input :disabled="kbSettingsBusy" v-model="kbSettings.name" maxlength="128" /></label><label>简介<textarea :disabled="kbSettingsBusy" v-model="kbSettings.desc" rows="3"></textarea></label><p v-if="kbSettingsError" role="alert">{{ kbSettingsError }}</p><footer><button v-if="!kb.notes" class="link-button" :disabled="kbSettingsBusy" @click="removeKb">删除知识库</button><button class="btn-primary" :disabled="kbSettingsBusy || !kbSettings.name.trim()" @click="saveKbSettings">{{ kbSettingsBusy ? '保存中…' : '保存' }}</button></footer></section></div>
     <div v-if="moveDocId" class="modal-backdrop" @click.self="moveDocId = null"><section class="template-modal compact" role="dialog" aria-modal="true" aria-label="移动文档"><header><h2>移动文档</h2><button aria-label="关闭移动文档" @click="moveDocId = null">×</button></header><label>目标分组<select v-model="moveFolderId"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label><p v-if="treeSaveState === 'error'" role="alert">移动失败，请重试。</p><footer><button class="btn-primary" :disabled="treeSaveState === 'saving'" @click="confirmMove">{{ treeSaveState === 'saving' ? '移动中…' : '移动' }}</button></footer></section></div>
     <div v-if="newDocFolderId && templatePickerOpen" class="modal-backdrop" @click.self="newDocFolderId = null">
       <section class="template-modal" role="dialog" aria-modal="true" aria-label="新建文档">
@@ -1321,7 +1327,9 @@ async function saveKbSettings() {
 .library-home-scroll .doc-col { max-width: 1120px; min-width: 0; }
 .library-home { padding: 40px; margin: 0 auto; width: 100%; min-height: 560px; background: var(--wao-bg-card); border-radius: 12px; }
 .library-home header { display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
-.library-cover-icon { font-size: 36px; line-height: 42px; flex-shrink: 0; }
+.library-cover-icon { padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; font-size: 36px; line-height: 42px; flex-shrink: 0; }
+.library-cover-icon:hover { background: var(--wao-bg-hover); }
+.library-cover-icon:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 4px; }
 .library-heading { flex: 1; min-width: 120px; }
 .library-heading h1 { font-size: 28px; line-height: 42px; margin: 0 0 8px; color: var(--wao-text); }
 .library-heading p { margin: 0; color: var(--wao-text-3); font-size: 15px; }
