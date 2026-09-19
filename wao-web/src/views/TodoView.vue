@@ -237,7 +237,7 @@ function onDropStatus(status: TaskStatus) {
 <style scoped>
 .copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
 .task-select { flex-shrink: 0; width: 28px; height: 28px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; }
-.task-select[aria-pressed='true'] { color: var(--wao-primary); background: var(--wao-primary-soft); }
+.task-select[aria-pressed='true'] { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
 .todo {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);
@@ -283,7 +283,7 @@ function onDropStatus(status: TaskStatus) {
   border: none;
   border-radius: 7px;
   background: transparent;
-  color: #7a7d89;
+  color: var(--wao-text-3);
   font-size: 12.5px;
   cursor: pointer;
   display: inline-flex;
@@ -336,7 +336,7 @@ function onDropStatus(status: TaskStatus) {
 .chip.on {
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
-  border-color: #c7d0f1;
+  border-color: var(--wao-primary-line);
   font-weight: 600;
 }
 
@@ -378,7 +378,7 @@ function onDropStatus(status: TaskStatus) {
 }
 .task-state > i {
   font-size: 24px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .task-state b {
   color: var(--wao-text-2);
@@ -470,7 +470,7 @@ function onDropStatus(status: TaskStatus) {
   width: 17px;
   height: 17px;
   border-radius: 5px;
-  border: 1.5px solid #c9cdda;
+  border: 1.5px solid var(--wao-line-control);
   background: var(--wao-bg-card);
   cursor: pointer;
   display: flex;
@@ -563,8 +563,8 @@ function onDropStatus(status: TaskStatus) {
   transition: background 0.12s, box-shadow 0.12s;
 }
 .board-col.drop-hint {
-  background: #eaedfb;
-  box-shadow: inset 0 0 0 1.5px #c7d0f1;
+  background: var(--wao-primary-soft);
+  box-shadow: inset 0 0 0 1.5px var(--wao-primary-line);
 }
 .board-col-head {
   display: flex;
@@ -626,7 +626,7 @@ function onDropStatus(status: TaskStatus) {
   opacity: 0.5;
 }
 .board-card:hover {
-  border-color: #c9cdda;
+  border-color: var(--wao-line-control);
   box-shadow: 0 2px 8px rgba(16, 18, 28, 0.06);
 }
 .bc-title {

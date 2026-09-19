@@ -502,13 +502,13 @@ onMounted(load)
 .daily-settings > header small {
   font-size: 12px;
   letter-spacing: 0.16em;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .daily-settings button {
   font: inherit;
   border: 0;
   background: none;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   cursor: pointer;
 }
 .settings-state {
@@ -608,7 +608,7 @@ onMounted(load)
   height: 26px;
   border-radius: 8px;
   background: var(--wao-primary-soft);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -637,13 +637,13 @@ onMounted(load)
 .item-summary em {
   font-style: normal;
   font-size: 12px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .item-status {
   padding: 3px 7px;
   border-radius: 999px;
   background: var(--wao-success-bg);
-  color: #267c65;
+  color: var(--wao-success-strong);
   font-size: 12px;
 }
 .item-status.disabled {
@@ -671,8 +671,8 @@ onMounted(load)
 }
 .restore-item {
   padding: 0 9px;
-  border: 1px solid #9fcaba !important;
-  background: #eff8f4 !important;
+  border: 1px solid var(--wao-success-line) !important;
+  background: var(--wao-success-bg) !important;
 }
 .restore-item i {
   margin-right: 4px;
@@ -717,7 +717,7 @@ onMounted(load)
 .weekday-row button.active {
   border-color: var(--wao-primary);
   background: var(--wao-primary-soft);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .notify-row {
   display: flex;
@@ -750,7 +750,7 @@ onMounted(load)
   gap: 15px;
   margin-top: 14px;
   font-size: 12px;
-  color: #267c65;
+  color: var(--wao-success-strong);
 }
 .daily-settings > footer .primary {
   padding: 8px 15px;

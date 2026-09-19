@@ -61,13 +61,13 @@ function choose(icon: string) {
 <style scoped>
 .icon-picker { position: relative; width: 30px; height: 30px; }
 .icon-trigger { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-text-3); cursor: pointer; }
-.icon-trigger:hover { color: var(--wao-primary); box-shadow: 0 0 0 2px var(--wao-primary-soft); }
+.icon-trigger:hover { color: var(--wao-primary-text); box-shadow: 0 0 0 2px var(--wao-primary-soft); }
 .icon-trigger i { font-size: 16px; }
 .icon-popover { position: absolute; z-index: 30; top: 36px; left: 0; width: 280px; padding: 9px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop-2); }
 .icon-popover label { height: 32px; padding: 0 8px; border: 1px solid var(--wao-line-control); border-radius: 7px; display: flex; align-items: center; gap: 6px; }
 .icon-popover label i { color: var(--wao-text-faint); }.icon-popover input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--wao-text); font-size: 11px; }
 .icon-grid { max-height: 210px; margin-top: 8px; overflow-y: auto; display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.icon-grid button { aspect-ratio: 1; padding: 0; border: 1px solid transparent; border-radius: 7px; background: var(--wao-bg-sub); color: var(--wao-text-3); cursor: pointer; }.icon-grid button:hover,.icon-grid button.on { border-color: var(--wao-primary); color: var(--wao-primary); background: var(--wao-primary-soft); }.icon-grid i { font-size: 17px; }
+.icon-grid button { aspect-ratio: 1; padding: 0; border: 1px solid transparent; border-radius: 7px; background: var(--wao-bg-sub); color: var(--wao-text-3); cursor: pointer; }.icon-grid button:hover,.icon-grid button.on { border-color: var(--wao-primary); color: var(--wao-primary-text); background: var(--wao-primary-soft); }.icon-grid i { font-size: 17px; }
 .icon-popover p { margin: 10px 0 2px; color: var(--wao-text-weak); text-align: center; font-size: 11px; }
 @media (max-width: 760px) { .icon-popover { position: fixed; top: 20%; left: 5vw; width: 90vw; box-sizing: border-box; } }
 </style>

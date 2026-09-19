@@ -183,7 +183,7 @@ function reset() {
 }
 .title i {
   font-size: 18px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .close {
   width: 28px;

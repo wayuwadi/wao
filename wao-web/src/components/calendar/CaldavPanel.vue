@@ -421,7 +421,7 @@ async function toggleCalendar(cal: CaldavCalendar) {
   color: var(--wao-text-weak);
 }
 .provider-guide a {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   text-decoration: none;
   white-space: nowrap;
 }

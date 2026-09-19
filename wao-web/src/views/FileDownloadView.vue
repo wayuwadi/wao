@@ -172,7 +172,7 @@ async function download() {
   color: var(--wao-text-2);
 }
 .brand i {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 16px;
 }
 .missing {

@@ -597,7 +597,7 @@ async function createKb() {
 }
 .rename:hover {
   background: var(--wao-divider);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .rename i {
   font-size: 12px;
@@ -709,7 +709,7 @@ async function createKb() {
 }
 .gear:hover {
   background: var(--wao-divider);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .gear i {
   font-size: 14px;

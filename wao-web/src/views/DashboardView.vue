@@ -919,7 +919,7 @@ function goRuns() { router.push('/ai-sessions') }
   top: 16px;
   right: 18px;
   font-size: 22px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   opacity: 0.25;
 }
 .kpi-num {
@@ -970,7 +970,7 @@ function goRuns() { router.push('/ai-sessions') }
 }
 .chart-head h2 i {
   font-size: 16px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .chart-hint {
   font-size: 12px;
@@ -1072,7 +1072,7 @@ function goRuns() { router.push('/ai-sessions') }
   border-radius: 9px;
   background: var(--wao-bg-hover-2);
 }
-.advice-item > i { color: var(--wao-primary); font-size: 17px; flex: 0 0 auto; }
+.advice-item > i { color: var(--wao-primary-text); font-size: 17px; flex: 0 0 auto; }
 .advice-item strong { color: var(--wao-text); font-size: 12px; }
 .advice-item p { margin: 5px 0; color: var(--wao-text-2); font-size: 12px; line-height: 1.5; }
 .advice-item small { color: var(--wao-text-weak); font-size: 10px; line-height: 1.5; }
@@ -1135,7 +1135,7 @@ function goRuns() { router.push('/ai-sessions') }
   padding: 6px 10px;
   border: 1px solid var(--wao-line);
   background: transparent;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   border-radius: 7px;
   font-size: 13px;
   cursor: pointer;

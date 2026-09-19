@@ -934,8 +934,8 @@ onMounted(loadAll)
   width: 70px;
   height: 70px;
   border-radius: 22px;
-  background: #f2eadc;
-  color: #8b7046;
+  background: var(--wao-warning-bg);
+  color: var(--wao-warning-strong);
   display: grid;
   place-items: center;
   font-size: 31px;
@@ -1112,8 +1112,8 @@ onMounted(loadAll)
   border-radius: 10px;
   display: grid;
   place-items: center;
-  background: #f2eee6;
-  color: #82663e;
+  background: var(--wao-warning-bg);
+  color: var(--wao-warning-strong);
   font-size: 18px;
 }
 .link-card span {
@@ -1291,8 +1291,8 @@ onMounted(loadAll)
   gap: 6px;
   padding: 9px 12px;
   margin-top: 11px;
-  background: #f0eee9;
-  color: #65583f;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-2);
 }
 .add-group {
   background: #282a30;

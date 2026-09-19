@@ -549,7 +549,7 @@ small {
   color: var(--wao-text);
 }
 .sub-open:hover {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .sub-open.done {
   color: var(--wao-text-faint);
@@ -591,7 +591,7 @@ small {
   outline: none;
 }
 .inline-subs form button {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 12px;
 }
 .inline-subs > small {
@@ -640,7 +640,7 @@ small {
   color: var(--wao-text);
 }
 .sub-title .sub-title-text:hover {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .sub-title .sub-title-text.done {
   color: var(--wao-text-faint);
@@ -668,7 +668,7 @@ small {
 }
 .row-tool:hover {
   background: var(--wao-bg-hover-2);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .rename-input {
   flex: 1;
@@ -759,7 +759,7 @@ small {
 }
 .table-subs form button {
   font-size: 12px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .table-subs .sub-add-row td {
   height: 30px;

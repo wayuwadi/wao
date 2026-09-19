@@ -111,7 +111,7 @@ ul {
   line-height: 2;
 }
 li::marker {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .card-footer {
   justify-content: space-between;

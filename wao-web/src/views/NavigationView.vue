@@ -417,7 +417,7 @@ button:disabled {
   font-size: 12px;
 }
 .domains .active {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   background: var(--wao-primary-soft);
   border-color: var(--wao-primary);
 }
@@ -487,7 +487,7 @@ button:disabled {
   flex-shrink: 0;
   border-radius: 9px;
   background: var(--wao-bg-sub);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   font-size: 19px;
 }
 .function-open > span,

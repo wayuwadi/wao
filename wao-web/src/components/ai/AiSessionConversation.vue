@@ -279,7 +279,7 @@ const time = (s: string) => new Date(s).toLocaleString('zh-CN', { hour12: false 
   margin-bottom: 12px;
 }
 .message-label b {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .markdown {
   font-size: 14px;
@@ -301,7 +301,7 @@ const time = (s: string) => new Date(s).toLocaleString('zh-CN', { hour12: false 
   overflow: auto;
 }
 .markdown :deep(a) {
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .composer {
   border-top: 1px solid var(--wao-line);
@@ -357,7 +357,7 @@ button:disabled {
   margin: 12px auto;
   border: 1px solid var(--wao-line);
   background: var(--wao-bg-card);
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
   border-radius: 8px;
   padding: 8px 16px;
   cursor: pointer;

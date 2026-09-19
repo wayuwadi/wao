@@ -212,7 +212,7 @@ function openSelected() {
 }
 .bar-icon {
   font-size: 17px;
-  color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .bar input {
   flex: 1;
