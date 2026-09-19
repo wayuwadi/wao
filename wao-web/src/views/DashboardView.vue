@@ -24,7 +24,6 @@ import {
   type EngineUsageItem,
   type TaskTrendItem,
 } from '@/api/dashboard'
-import { toast } from '@/composables/toast'
 import { formatTokens } from '@/composables/aiUsage'
 import { formatDuration } from '@/composables/aiRunDuration'
 import CodexMembershipPanel from '@/components/dashboard/CodexMembershipPanel.vue'
@@ -50,6 +49,7 @@ const usageInsights = ref<AiUsageInsights | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
 const loadError = ref('')
+const lastLoadedAt = ref<string | null>(null)
 
 const recentRuns = computed(() => aiTrend.value.reduce((sum, day) => sum + day.total, 0))
 const recordedRuns = computed(() => aiTrend.value.reduce((sum, day) => sum + day.recordedRuns, 0))
@@ -500,10 +500,10 @@ async function load() {
     engines.value = eng
     quotaHistory.value = quota
     usageInsights.value = insights
+    lastLoadedAt.value = new Date().toISOString()
     loadError.value = ''
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '仪表盘数据加载失败'
-    toast(loadError.value, 'ri-error-warning-line')
   } finally {
     loading.value = false
     refreshing.value = false
@@ -536,6 +536,7 @@ onBeforeUnmount(() => {
 
 function goProjects() { router.push('/projects') }
 function goHome() { router.push('/') }
+function goRuns() { router.push('/ai-sessions') }
 </script>
 
 <template>
@@ -543,11 +544,11 @@ function goHome() { router.push('/') }
     <header class="dash-head">
       <div>
         <div class="eyebrow">DATA INSIGHTS</div>
-        <h1>数据仪表盘</h1>
+        <h1>使用统计</h1>
         <p>每天的 AI 使用频次、真实 Token、额度变化与有证据的使用建议。</p>
       </div>
       <div class="dash-actions">
-        <button class="ghost-btn" :disabled="refreshing" @click="load">
+        <button class="ghost-btn" :disabled="loading || refreshing" @click="load">
           <i class="ri-refresh-line" :class="{ spin: refreshing }"></i>{{ refreshing ? '刷新中' : '刷新' }}
         </button>
         <button class="ghost-btn" @click="goHome">
@@ -555,6 +556,21 @@ function goHome() { router.push('/') }
         </button>
       </div>
     </header>
+
+    <section v-if="summary" class="usage-guidance" aria-label="统计解读与下一步">
+      <h2>先查看运行，再判断消耗</h2>
+      <p>本页读取时间：{{ formatTime(lastLoadedAt) }}。这是系统汇总，不是个人效率评分；各图表的时间范围不同。</p>
+      <div v-if="loadError" class="refresh-error" role="alert"><strong>刷新失败，以下统计仍是上一次结果。</strong><span>{{ loadError }}</span><button class="ghost-btn" :disabled="refreshing" @click="load">重试刷新</button></div>
+      <p v-else-if="refreshing" role="status">正在刷新，暂时保留上一次统计。</p>
+      <ul>
+        <li v-if="summary.activeRuns">当前有 {{ summary.activeRuns }} 次运行排队或执行中，可先查看进度。</li>
+        <li v-if="summary.failedThisWeek">本周创建的运行中，有 {{ summary.failedThisWeek }} 次失败；查看失败原因与已有产物后再决定是否重试。</li>
+        <li v-if="recentRuns > recordedRuns">近 30 天有 {{ recentRuns - recordedRuns }} 次运行尚未回传用量；当前 Token 总量并不完整，不代表这些运行没有消耗。</li>
+        <li v-if="!summary.totalRuns">还没有 AI 运行记录，可先从首页表达一个目标。</li>
+      </ul>
+      <div class="guidance-actions"><button class="ghost-btn" @click="goRuns">查看 AI 运行</button><button class="ghost-btn" @click="goHome">打开首页</button></div>
+      <p>下方建议附有证据；样本不足时先补齐观察，不据此直接调整模型或比较效率。</p>
+    </section>
 
     <CodexMembershipPanel />
 
@@ -581,13 +597,13 @@ function goHome() { router.push('/') }
           <i class="ri-computer-line"></i>
           <div class="kpi-num">{{ summary?.onlineRunners ?? 0 }}</div>
           <div class="kpi-label">在线执行电脑</div>
-          <div class="kpi-sub">全部接入即可开始运行</div>
+          <div class="kpi-sub">仅表示近期在线，运行前仍需检查配置</div>
         </div>
         <div class="kpi">
           <i class="ri-checkbox-circle-line"></i>
           <div class="kpi-num">{{ summary?.completedThisWeek ?? 0 }}</div>
           <div class="kpi-label">本周完成任务</div>
-          <div class="kpi-sub">成功 {{ summary?.succeededThisWeek ?? 0 }} · 失败 {{ summary?.failedThisWeek ?? 0 }}</div>
+          <div class="kpi-sub">本周创建的 AI 运行：成功 {{ summary?.succeededThisWeek ?? 0 }} · 失败 {{ summary?.failedThisWeek ?? 0 }}</div>
         </div>
         <div class="kpi">
           <i class="ri-cpu-line"></i>
@@ -595,6 +611,52 @@ function goHome() { router.push('/') }
           <div class="kpi-label">近 30 天 Token</div>
           <div class="kpi-sub">已记账 <b>{{ recordedRuns }}</b> / {{ recentRuns }} 次运行</div>
         </div>
+      </section>
+
+      <section class="chart-card insight-card">
+        <div class="chart-head">
+          <h2><i class="ri-route-line"></i>AI 交付效能</h2>
+          <span class="chart-hint">近 {{ usageInsights?.windowDays ?? 30 }} 天 · 基于真实运行</span>
+        </div>
+        <div v-if="usageInsights" class="outcome-metrics">
+          <article>
+            <strong>{{ usageInsights.deliveredTasks }}</strong>
+            <span>有效交付任务</span>
+            <small>{{ usageInsights.deliveredRuns }} 次运行完成部署与线上验收</small>
+          </article>
+          <article>
+            <strong>{{ usageInsights.tokensPerDeliveredTask === null ? (usageInsights.deliveredTasks ? '记账不全' : '等待交付') : formatTokens(usageInsights.tokensPerDeliveredTask) }}</strong>
+            <span>每个有效交付 Token</span>
+            <small>窗口内全部已结束运行消耗 ÷ 有效交付任务</small>
+          </article>
+          <article>
+            <strong>{{ usageInsights.verifiedTasks }} / {{ usageInsights.deliveredTasks }}</strong>
+            <span>成员已验收</span>
+            <small>AI 成功不会代替成员最终验收</small>
+          </article>
+          <article>
+            <strong>{{ usageInsights.medianAiExecutionSeconds === null ? '未回传' : formatDuration(usageInsights.medianAiExecutionSeconds * 1000) }}</strong>
+            <span>AI 实际执行中位</span>
+            <small>{{ usageInsights.timedRuns }}/{{ usageInsights.completedRuns }} 次已回传 · 不含 Git、部署和验收等待</small>
+          </article>
+          <article>
+            <strong>{{ formatTokens(usageInsights.failedTokens) }}</strong>
+            <span>已记录未交付消耗</span>
+            <small>已记录重试 {{ usageInsights.retryRuns }} 次 · {{ formatTokens(usageInsights.retryTokens) }} Token</small>
+          </article>
+        </div>
+        <div class="advice-grid">
+          <article v-for="item in usageInsights?.advice ?? []" :key="item.category"
+            class="advice-item" :class="{ insufficient: !item.sufficientData }">
+            <i :class="adviceIcon(item.category)"></i>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.recommendation }}</p>
+              <small>{{ item.evidence }}</small>
+            </div>
+          </article>
+        </div>
+        <p class="insight-disclaimer">有效交付必须同时通过部署与线上验收；模型路由只在同一任务类型、每个配置至少 3 次且真实 Token 与 AI 执行时长完整时比较，端到端等待时间不会被当成模型速度。</p>
       </section>
 
       <section class="chart-row quota-row">
@@ -663,51 +725,6 @@ function goHome() { router.push('/') }
         </div>
       </section>
 
-      <section class="chart-card insight-card">
-        <div class="chart-head">
-          <h2><i class="ri-route-line"></i>AI 交付效能</h2>
-          <span class="chart-hint">近 {{ usageInsights?.windowDays ?? 30 }} 天 · 基于真实运行</span>
-        </div>
-        <div v-if="usageInsights" class="outcome-metrics">
-          <article>
-            <strong>{{ usageInsights.deliveredTasks }}</strong>
-            <span>有效交付任务</span>
-            <small>{{ usageInsights.deliveredRuns }} 次运行完成部署与线上验收</small>
-          </article>
-          <article>
-            <strong>{{ usageInsights.tokensPerDeliveredTask === null ? (usageInsights.deliveredTasks ? '记账不全' : '等待交付') : formatTokens(usageInsights.tokensPerDeliveredTask) }}</strong>
-            <span>每个有效交付 Token</span>
-            <small>窗口内全部已结束运行消耗 ÷ 有效交付任务</small>
-          </article>
-          <article>
-            <strong>{{ usageInsights.verifiedTasks }} / {{ usageInsights.deliveredTasks }}</strong>
-            <span>成员已验收</span>
-            <small>AI 成功不会代替成员最终验收</small>
-          </article>
-          <article>
-            <strong>{{ usageInsights.medianAiExecutionSeconds === null ? '未回传' : formatDuration(usageInsights.medianAiExecutionSeconds * 1000) }}</strong>
-            <span>AI 实际执行中位</span>
-            <small>{{ usageInsights.timedRuns }}/{{ usageInsights.completedRuns }} 次已回传 · 不含 Git、部署和验收等待</small>
-          </article>
-          <article>
-            <strong>{{ formatTokens(usageInsights.failedTokens) }}</strong>
-            <span>已记录未交付消耗</span>
-            <small>已记录重试 {{ usageInsights.retryRuns }} 次 · {{ formatTokens(usageInsights.retryTokens) }} Token</small>
-          </article>
-        </div>
-        <div class="advice-grid">
-          <article v-for="item in usageInsights?.advice ?? []" :key="item.category"
-            class="advice-item" :class="{ insufficient: !item.sufficientData }">
-            <i :class="adviceIcon(item.category)"></i>
-            <div>
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.recommendation }}</p>
-              <small>{{ item.evidence }}</small>
-            </div>
-          </article>
-        </div>
-        <p class="insight-disclaimer">有效交付必须同时通过部署与线上验收；模型路由只在同一任务类型、每个配置至少 3 次且真实 Token 与 AI 执行时长完整时比较，端到端等待时间不会被当成模型速度。</p>
-      </section>
 
       <section class="chart-row">
         <div class="chart-card wide">
@@ -764,7 +781,7 @@ function goHome() { router.push('/') }
             <h2><i class="ri-lightbulb-flash-line"></i>小提示</h2>
           </div>
           <div class="tips">
-            <p>点击任意指标卡片，可以跳转到相关页面查看详情。</p>
+            <p>通过下方入口查看原始记录，结合任务结果判断统计含义。</p>
             <button class="link-btn" @click="goProjects">
               <i class="ri-stack-line"></i>打开项目列表
             </button>
@@ -780,6 +797,7 @@ function goHome() { router.push('/') }
 </template>
 
 <style scoped>
+.usage-guidance{padding:18px;margin-bottom:20px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card);color:var(--wao-text)}.usage-guidance h2{font-size:17px;margin:0 0 10px}.usage-guidance p,.usage-guidance li{font-size:13px;line-height:1.7;color:var(--wao-text-2)}.usage-guidance ul{padding-left:20px}.guidance-actions{display:flex;gap:8px;flex-wrap:wrap}.refresh-error{display:flex;align-items:flex-start;flex-direction:column;gap:8px;font-size:13px;color:var(--wao-danger)}.guidance-actions button:focus-visible{outline:2px solid var(--wao-primary);outline-offset:3px}
 .dashboard {
   padding: 28px 32px 48px;
   max-width: none;
