@@ -29,7 +29,7 @@ import { activitySentence } from '@/utils/activity'
 import { fileDisplayName } from '@/utils/files'
 import { useFavoritesStore } from '@/stores/favorites'
 import { nextTaskAiRunPollDelay, taskAiRunFingerprint } from '@/utils/taskAiRunPolling'
-import { notifyTaskManually } from '@/api/board'
+import { apiGetTask, notifyTaskManually } from '@/api/board'
 import CellMenu from '@/components/task/CellMenu.vue'
 import { subtaskState, SUBTASK_STATE_COLOR, SUBTASK_STATES } from '@/utils/subtaskTree'
 import type { AiEngine, AiRun, Comment, Priority, SubtaskState, TaskStatus, TaskStep } from '@/types'
@@ -50,6 +50,27 @@ const tv = computed(() => (task.value ? decoTask(task.value) : null))
 const acceptanceFieldsComplete = computed(() => Boolean(task.value)
   && ACCEPTANCE_FIELD_NAMES.every((name) => task.value!.custom.some((item) => item.name === name)))
 const isAcceptanceField = (name: string) => (ACCEPTANCE_FIELD_NAMES as readonly string[]).includes(name)
+
+const viewingServerTask = ref(false)
+const serverTaskText = ref('')
+async function viewServerTask() {
+  if (!task.value) return
+  try {
+    const remote = await apiGetTask(task.value.id)
+    serverTaskText.value = `${remote.title}\n状态：${remote.status} · 优先级：${remote.pr}\n\n${remote.desc ?? ''}`
+    viewingServerTask.value = true
+  } catch { toast('服务器版本读取失败，请重试', 'ri-error-warning-line') }
+}
+async function loadServerTask() {
+  if (!task.value || !window.confirm('放弃本机修改并载入服务器版？请先复制需要保留的本机内容。')) return
+  if (!await data.useServerTask(task.value.id)) toast('读取失败或期间有新输入，本机内容已保留，请重试')
+}
+watch(() => ui.openTaskId, () => { viewingServerTask.value = false; serverTaskText.value = '' })
+async function copyLocalTask() {
+  if (!task.value) return
+  const ok = await copyToClipboard(JSON.stringify(task.value, null, 2))
+  toast(ok ? '本机任务内容已复制' : '复制失败，请重试')
+}
 
 const menu = ref<'status' | 'pr' | 'owner' | 'participants' | 'prop' | 'share' | 'group' | null>(null)
 const commentText = ref('')
@@ -1018,6 +1039,13 @@ async function uploadAttachment(event: Event) {
         <button class="icon-btn" title="关闭（Esc）" @click="close"><i class="ri-close-line"></i></button>
       </div>
 
+      <div v-if="data.taskConflicts[task.id]" class="task-save-conflict" role="alert">
+        任务已在其他窗口更新，本机内容已保留，自动保存已暂停。
+        <button type="button" @click="viewServerTask">查看服务器版</button>
+        <button type="button" @click="copyLocalTask">复制本机内容</button>
+        <button type="button" @click="loadServerTask">放弃本机修改并载入服务器版</button>
+        <pre v-if="viewingServerTask">{{ serverTaskText }}</pre>
+      </div>
       <div class="dbody">
         <!-- 主区 -->
         <div v-if="openSub" class="main">
@@ -1564,6 +1592,9 @@ async function uploadAttachment(event: Event) {
 </template>
 
 <style scoped>
+.task-save-conflict { padding: 12px 20px; color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
+.task-save-conflict button { margin-left: 10px; }
+.task-save-conflict pre { max-height: 180px; overflow: auto; white-space: pre-wrap; }
 .optional-props > summary { padding: 12px 0; font-size: 12px; color: var(--wao-text-weak); cursor: pointer; }
 /* 评论操作 / 编辑态 */
 .c-op {

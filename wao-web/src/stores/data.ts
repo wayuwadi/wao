@@ -291,6 +291,12 @@ export const useDataStore = defineStore('data', () => {
           const current = tasks.value.find((task) => task.id === id)
           if (current) Object.assign(current, clone(draft))
           else tasks.value.unshift(clone(draft))
+          const remoteTask = loadedTasks.find((task) => task.id === id)
+          if (remoteTask?.editVersion && !draft.editVersion) {
+            taskConflicts[id] = true
+            taskSaveStates[id] = 'error'
+            taskSaveErrors[id] = '旧草稿缺少保存版本，请先查看服务器版并保留本机内容'
+          }
           if (!taskSubBases[id]) {
             const remote = loadedTasks.find((task) => task.id === id)
             if (remote) taskSubBases[id] = clone(remote.subs ?? [])
@@ -1203,6 +1209,7 @@ export const useDataStore = defineStore('data', () => {
   const taskSavedAts = reactive<Record<string, string>>({})
   /** 最近一次保存失败的服务端原因，展示在「保存失败」旁，便于定位。 */
   const taskSaveErrors = reactive<Record<string, string>>({})
+  const taskConflicts = reactive<Record<string, boolean>>({})
   /**
    * 每个任务最近一次与服务端一致的子任务快照（与本地 subtaskVersion 对应）。
    *
@@ -1284,7 +1291,7 @@ export const useDataStore = defineStore('data', () => {
   const lockedSubtaskIds = new Set<string>()
 
   async function drainTask(id: string): Promise<void> {
-    if (lockedSubtaskIds.has(id)) return
+    if (taskConflicts[id] || lockedSubtaskIds.has(id)) return
     if (taskPersisting[id]) return
     const task = taskById(id)
     if (!task) return
@@ -1296,6 +1303,7 @@ export const useDataStore = defineStore('data', () => {
       const saved = await apiPutTask(id, snapshot)
       if (requestMember !== useSessionStore().userId) return
       // Merge only server-owned metadata even if another edit happened during this request.
+      task.editVersion = saved.editVersion
       task.subtaskVersion = saved.subtaskVersion
       task.number = saved.number
       taskSubBases[id] = clone(saved.subs ?? snapshot.subs)
@@ -1317,7 +1325,8 @@ export const useDataStore = defineStore('data', () => {
     } catch (error) {
       const conflict = (error as { status?: number })?.status === 409
       let rebased = false
-      if (conflict && (taskConflictRetries[id] ?? 0) < 2 && requestMember === useSessionStore().userId) {
+      if (conflict && snapshot.editVersion) taskConflicts[id] = true
+      if (conflict && !snapshot.editVersion && (taskConflictRetries[id] ?? 0) < 2 && requestMember === useSessionStore().userId) {
         taskConflictRetries[id] = (taskConflictRetries[id] ?? 0) + 1
         rebased = await rebaseSubtasksOnServer(id).catch(() => false)
       }
@@ -1328,11 +1337,31 @@ export const useDataStore = defineStore('data', () => {
       }
     } finally {
       taskPersisting[id] = false
-      if ((taskPersistVersions[id] ?? 0) !== version) {
+      if (!taskConflicts[id] && (taskPersistVersions[id] ?? 0) !== version) {
         taskSaveStates[id] = 'saving'
         void drainTask(id)
       }
     }
+  }
+
+  /** 用户明确放弃冲突草稿后采用服务器版；读取期间继续输入则保持原稿。 */
+  async function useServerTask(id: string): Promise<boolean> {
+    const version = taskPersistVersions[id] ?? 0
+    const member = useSessionStore().userId
+    try {
+      const remote = await apiGetTask(id)
+      if (member !== useSessionStore().userId || version !== (taskPersistVersions[id] ?? 0)) return false
+      const task = taskById(id)
+      if (!task) return false
+      Object.assign(task, remote)
+      clearTaskDraft(id)
+      delete taskConflicts[id]
+      delete taskSaveErrors[id]
+      taskSubBases[id] = clone(remote.subs ?? [])
+      taskSaveStates[id] = 'saved'
+      taskSavedAts[id] = nowIso()
+      return true
+    } catch { return false }
   }
 
   /** 关闭抽屉或切换上下文时立即启动写透，不再等待去抖计时。 */
@@ -1621,7 +1650,7 @@ export const useDataStore = defineStore('data', () => {
     if (!t) return
     storeTaskDraft(t)
     taskPersistVersions[id] = (taskPersistVersions[id] ?? 0) + 1
-    taskSaveStates[id] = 'saving'
+    taskSaveStates[id] = taskConflicts[id] ? 'error' : 'saving'
     clearTimeout(taskPersistTimers[id])
     taskPersistTimers[id] = setTimeout(() => void drainTask(id), 600)
   }
@@ -2259,7 +2288,7 @@ export const useDataStore = defineStore('data', () => {
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     ensureDocsLoaded, refreshDocs,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
-    taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
+    useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, replaceFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,

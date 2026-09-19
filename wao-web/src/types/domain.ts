@@ -289,6 +289,8 @@ export interface Idea {
 }
 
 export interface Task {
+  /** 完整编辑快照版本，原样回传；过期写入返回 409。 */
+  editVersion?: string
   subtaskVersion?: string
   number?: number
   id: string

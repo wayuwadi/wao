@@ -53,6 +53,34 @@ class TaskServiceTest {
     }
 
     @Test
+    void staleFullTaskVersionCannotOverwriteAnotherWindowsDescription() {
+        TaskEntity existing = todo();
+        when(mapper.selectById("t1")).thenReturn(existing);
+        String oldVersion = service.get("t1").editVersion();
+        existing.setDescription("另一窗口已保存的正文");
+        when(mapper.lockById("t1")).thenReturn(existing);
+        TaskDto dto = mock(TaskDto.class);
+        when(dto.editVersion()).thenReturn(oldVersion);
+        assertThatThrownBy(() -> service.replace("t1", dto, "wg"))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class)
+                .hasMessageContaining("任务内容");
+        verify(mapper, never()).updateById(any(TaskEntity.class));
+    }
+
+    @Test
+    void fullTaskVersionCoversPropertiesAndSurvivesNumberAttachment() {
+        TaskEntity existing = todo();
+        when(mapper.selectById("t1")).thenReturn(existing);
+        String original = service.get("t1").editVersion();
+        assertThat(original).isNotBlank().isEqualTo(service.get("t1").editVersion());
+        existing.setPr("P2");
+        assertThat(service.get("t1").editVersion()).isNotEqualTo(original);
+        String changed = service.get("t1").editVersion();
+        existing.setTitle("另一窗口改名");
+        assertThat(service.get("t1").editVersion()).isNotEqualTo(changed);
+    }
+
+    @Test
     void staleSubtaskVersionCannotOverwriteMovedTree() {
         when(mapper.selectById("t1")).thenReturn(todo());
         when(mapper.lockById("t1")).thenReturn(todo());
