@@ -159,10 +159,16 @@ public class MemoryAccessTokenService {
         if (requested != null) {
             java.util.LinkedHashMap<String, MemoryGrantDto> unique = new java.util.LinkedHashMap<>();
             requested.stream().filter(item -> item != null && !"personal".equals(item.scopeType()))
-                    .filter(item -> "organization".equals(item.scopeType()) || "project".equals(item.scopeType()))
+                    .filter(item -> "organization".equals(item.scopeType()) || "project".equals(item.scopeType())
+                            || "codex_archive".equals(item.scopeType()))
                     .filter(item -> item.scopeId() != null && !item.scopeId().isBlank())
-                    .forEach(item -> unique.put(item.scopeType() + ":" + item.scopeId(), item));
+                    .forEach(item -> unique.put(item.scopeType() + ":" + ("codex_archive".equals(item.scopeType()) ? memberId : item.scopeId()), item));
             unique.values().forEach(item -> {
+                        if ("codex_archive".equals(item.scopeType())) {
+                            if (item.canDirectWrite()) normalized.add(new MemoryGrantDto(
+                                    "codex_archive", memberId, false, false, true));
+                            return;
+                        }
                         requireGrantableScope(memberId, item.scopeType(), item.scopeId());
                         normalized.add(new MemoryGrantDto(item.scopeType(), item.scopeId(),
                                 item.canRead(), item.canPropose(), false));

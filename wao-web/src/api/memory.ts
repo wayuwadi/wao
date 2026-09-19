@@ -14,7 +14,7 @@ export interface CreatedMemoryAccessToken {
 }
 
 export interface MemoryGrant {
-  scopeType: 'personal' | 'organization' | 'project'
+  scopeType: 'personal' | 'organization' | 'project' | 'codex_archive'
   scopeId: string
   canRead: boolean
   canPropose: boolean

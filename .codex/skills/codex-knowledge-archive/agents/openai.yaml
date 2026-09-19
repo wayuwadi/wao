@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex 工作记录归档"
+  short_description: "补录本机聊天历史并自动同步可见对话与工具过程到 WAO 知识库"
+  default_prompt: "使用 $codex-knowledge-archive 安装本机采集器，补录历史并启用后续自动归档。"
