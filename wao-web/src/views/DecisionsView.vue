@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
   archiveMemory,
@@ -23,6 +23,40 @@ const editing = ref<MemoryDocument | null>(null)
 const saving = ref(false)
 const saveError = ref('')
 const restored = ref(false)
+const draftError = ref('')
+const draftSaved = ref(false)
+const savedNotice = ref('')
+let generation = 0
+let loadSequence = 0
+let alive = true
+function requestContext() {
+  const member = session.userId
+  const version = generation
+  return () => alive && !!member && member === session.userId && version === generation
+}
+function serializeDraft() {
+  return JSON.stringify({ ...form, baseRevisionId: editing.value?.currentPublishedRevisionId ?? null })
+}
+function persistDraft() {
+  if (!editorOpen.value || !session.userId) return false
+  try {
+    localStorage.setItem(draftKey.value, serializeDraft())
+    draftError.value = ''
+    draftSaved.value = true
+    return true
+  } catch {
+    draftSaved.value = false
+    draftError.value = '本机草稿保存失败，输入仅保留在当前页面；请勿刷新，可复制备份。'
+    return false
+  }
+}
+function clearDraft(key: string, expected: string) {
+  try {
+    if (localStorage.getItem(key) === expected) localStorage.removeItem(key)
+  } catch {
+    draftError.value = '决策已保存，但本机旧草稿未清理；重新打开时请先核对内容。'
+  }
+}
 const archivingId = ref('')
 const form = reactive({ title: '', situation: '', choice: '', reason: '' })
 let queryTimer: number | undefined
@@ -39,6 +73,9 @@ function formatTime(value: string) {
 }
 
 async function load() {
+  const isCurrent = requestContext()
+  const sequence = ++loadSequence
+  const requestedQuery = query.value.trim()
   if (!session.userId) {
     decisions.value = []
     loading.value = false
@@ -48,42 +85,59 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    decisions.value = await fetchMemories({
+    const result = await fetchMemories({
       scopeType: 'personal',
       scopeId: session.userId,
       category: 'decision',
-      query: query.value.trim() || undefined,
+      query: requestedQuery || undefined,
     })
+    if (!isCurrent() || sequence !== loadSequence || requestedQuery !== query.value.trim()) return
+    decisions.value = result
   } catch (error) {
+    if (!isCurrent() || sequence !== loadSequence || requestedQuery !== query.value.trim()) return
     loadError.value = error instanceof Error ? error.message : '决策读取失败，请重试'
   } finally {
-    loading.value = false
+    if (isCurrent() && sequence === loadSequence && requestedQuery === query.value.trim()) loading.value = false
   }
 }
 
 watch(query, () => {
   window.clearTimeout(queryTimer)
   queryTimer = window.setTimeout(() => void load(), 250)
-})
+}, { flush: 'sync' })
 
 function resetForm() {
   Object.assign(form, { title: '', situation: '', choice: '', reason: '' })
   saveError.value = ''
   restored.value = false
+  draftError.value = ''
+  draftSaved.value = false
+  savedNotice.value = ''
 }
 
 function restoreDraft() {
-  const raw = localStorage.getItem(draftKey.value)
-  if (!raw) return
   try {
-    Object.assign(form, JSON.parse(raw))
+    const raw = localStorage.getItem(draftKey.value)
+    if (!raw) return
+    const value: unknown = JSON.parse(raw)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid draft')
+    const draft = value as Record<string, unknown>
+    for (const key of ['title', 'situation', 'choice', 'reason'] as const) {
+      if (typeof draft[key] !== 'string') throw new Error('invalid draft')
+    }
+    Object.assign(form, { title: draft.title, situation: draft.situation, choice: draft.choice, reason: draft.reason })
+    if (editing.value && typeof draft.baseRevisionId === 'string') {
+      editing.value = { ...editing.value, currentPublishedRevisionId: draft.baseRevisionId }
+    }
     restored.value = true
+    draftSaved.value = true
   } catch {
-    localStorage.removeItem(draftKey.value)
+    draftError.value = '本机草稿暂时无法恢复，原草稿仍保留；请先核对内容。'
   }
 }
 
 function openCreate() {
+  if (saving.value || !session.userId) return
   editing.value = null
   resetForm()
   restoreDraft()
@@ -91,6 +145,7 @@ function openCreate() {
 }
 
 function openEdit(item: MemoryDocument) {
+  if (saving.value || !session.userId) return
   editing.value = item
   resetForm()
   Object.assign(form, { title: item.revision.title, ...details(item) })
@@ -100,20 +155,27 @@ function openEdit(item: MemoryDocument) {
 
 function closeEditor() {
   if (saving.value) return
+  if (draftError.value && !window.confirm('本机草稿可能未保存，请先复制备份。仍要关闭吗？')) return
   editorOpen.value = false
 }
 
-watch(form, () => {
-  if (editorOpen.value && !saving.value) localStorage.setItem(draftKey.value, JSON.stringify(form))
-}, { deep: true })
+watch(form, persistDraft, { deep: true, flush: 'sync' })
 
 async function save() {
+  const isCurrent = requestContext()
+  if (saving.value || !isCurrent()) return
   if (!form.title.trim() || !form.choice.trim()) {
     saveError.value = '请填写决策标题和具体决定'
     return
   }
+  persistDraft()
+  const submitted = JSON.stringify(form)
+  const submittedDraft = serializeDraft()
+  const key = draftKey.value
+  const target = editing.value
   saving.value = true
   saveError.value = ''
+  savedNotice.value = ''
   const payload: SaveMemoryPayload = {
     scopeType: 'personal',
     scopeId: session.userId,
@@ -125,33 +187,63 @@ async function save() {
     baseRevisionId: editing.value?.currentPublishedRevisionId,
   }
   try {
-    if (editing.value) await reviseMemory(editing.value.id, payload)
-    else await createMemory(payload)
-    localStorage.removeItem(draftKey.value)
-    editorOpen.value = false
-    toast(editing.value ? '决策已更新并保留历史版本' : '决策已保存，可在相似情境中检索', 'ri-checkbox-circle-line')
+    const saved = target ? await reviseMemory(target.id, payload) : await createMemory(payload)
+    if (!isCurrent()) return
+    const changed = JSON.stringify(form) !== submitted
+    if (changed) {
+      const latestDraft = serializeDraft()
+      editing.value = saved
+      const stored = persistDraft()
+      // 新建成功后改用真实对象的草稿键，下一次保存更新同一条决策。
+      if (stored && key !== draftKey.value) clearDraft(key, latestDraft)
+      savedNotice.value = '上一版已保存；你刚补充的内容尚未提交，可继续保存为新版本。'
+    } else {
+      clearDraft(key, submittedDraft)
+      editing.value = saved
+      if (!draftError.value) editorOpen.value = false
+      else savedNotice.value = '决策已保存，本机清理问题不会导致重复新建。'
+      toast(target ? '决策已更新并保留历史版本' : '决策已保存，可在相似情境中检索', 'ri-checkbox-circle-line')
+    }
     await load()
   } catch (error) {
+    if (!isCurrent()) return
     saveError.value = error instanceof Error ? error.message : '保存失败，请重试'
   } finally {
-    saving.value = false
+    if (isCurrent()) saving.value = false
   }
 }
 
 async function archive(item: MemoryDocument) {
+  const isCurrent = requestContext()
+  if (!isCurrent()) return
   if (!window.confirm(`确认废止“${item.revision.title}”？历史版本仍会保留。`)) return
   archivingId.value = item.id
   try {
     await archiveMemory(item.id)
+    if (!isCurrent()) return
     toast('决策已废止，不再进入默认检索', 'ri-archive-line')
     await load()
   } catch (error) {
+    if (!isCurrent()) return
     toast(error instanceof Error ? error.message : '废止失败，请重试', 'ri-error-warning-line')
   } finally {
-    archivingId.value = ''
+    if (isCurrent()) archivingId.value = ''
   }
 }
 
+watch(() => session.userId, () => {
+  generation += 1
+  editorOpen.value = false
+  decisions.value = []
+  editing.value = null
+  saving.value = false
+  archivingId.value = ''
+  resetForm()
+  query.value = ''
+  window.clearTimeout(queryTimer)
+  void load()
+}, { flush: 'sync' })
+onBeforeUnmount(() => { alive = false; window.clearTimeout(queryTimer) })
 onMounted(load)
 </script>
 
@@ -200,13 +292,15 @@ onMounted(load)
     <div v-if="editorOpen" class="mask" @click.self="closeEditor">
       <section class="editor" role="dialog" aria-modal="true" :aria-label="editing ? '编辑决策' : '新增决策'">
         <header><div><h2>{{ editing ? '更新这条决策' : '新增决策' }}</h2><p>写清适用情境，未来检索时才知道何时采用。</p></div><button type="button" aria-label="关闭" :disabled="saving" @click="closeEditor"><i class="ri-close-line"></i></button></header>
+        <div v-if="savedNotice" class="draft" role="status">{{ savedNotice }}</div>
+        <div v-if="draftError" class="draft" role="alert">{{ draftError }}<button type="button" @click="persistDraft">重试保存本机草稿</button></div>
         <div v-if="restored" class="draft"><i class="ri-history-line"></i>已恢复本机未保存草稿</div>
         <label>决策标题 <span>必填</span><input v-model="form.title" maxlength="120" placeholder="例如：去武汉的出行方式" /></label>
         <label>何时适用<textarea v-model="form.situation" maxlength="5000" rows="3" placeholder="例如：从当前城市去武汉，行程可安排在傍晚时"></textarea></label>
         <label>具体决定 <span>必填</span><textarea v-model="form.choice" maxlength="10000" rows="4" placeholder="例如：优先坐傍晚的高铁，到站后再坐地铁"></textarea></label>
         <label>为什么<textarea v-model="form.reason" maxlength="5000" rows="4" placeholder="记录事实依据和代价，方便以后判断是否仍然适用"></textarea></label>
-        <div v-if="saveError" class="save-error" role="alert">{{ saveError }}；当前输入仍保存在本机，可直接重试。</div>
-        <footer><span>{{ saving ? '保存中，请勿关闭…' : '输入会自动保存为本机草稿' }}</span><div><button type="button" :disabled="saving" @click="closeEditor">取消</button><button class="primary" type="button" :disabled="saving" @click="save">{{ saving ? '保存中…' : editing ? '保存新版本' : '保存决策' }}</button></div></footer>
+        <div v-if="saveError" class="save-error" role="alert">{{ saveError }}；{{ draftSaved ? '当前输入仍保存在本机，可直接重试。' : '输入仅在当前页面，请勿刷新，可重试保存。' }}</div>
+        <footer><span>{{ saving ? '正在保存提交的版本，可继续补充内容' : draftSaved ? '当前输入已保存为本机草稿' : '输入后自动保存为本机草稿' }}</span><div><button type="button" :disabled="saving" @click="closeEditor">取消</button><button class="primary" type="button" :disabled="saving" @click="save">{{ saving ? '保存中…' : editing ? '保存新版本' : '保存决策' }}</button></div></footer>
       </section>
     </div>
   </div>
