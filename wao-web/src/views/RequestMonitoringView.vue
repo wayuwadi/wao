@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import {
   clearRequestMetricHistory,
   fetchRequestMetricOverview,
@@ -28,6 +28,21 @@ const endpointPage = ref(1)
 const recentPage = ref(1)
 type EndpointSort = 'failedCount' | 'averageDurationMs' | 'p95DurationMs'
 const endpointSort = ref<EndpointSort>('failedCount')
+const endpointSection = ref<HTMLElement | null>(null)
+let loadVersion = 0
+const attention = computed(() => {
+  const value = overview.value
+  if (!value || !value.totalRequests) return null
+  if (value.failedRequests > 0) return { title: '先关注未成功的请求', detail: `有 ${value.failedRequests} 次请求未成功，可能对应加载或保存失败。先查看失败较多的接口，再结合当时的操作判断影响。`, sort: 'failedCount' as const, action: '查看失败较多的接口' }
+  if (value.slowRequests > 0) return { title: '有等待较久的请求', detail: `有 ${value.slowRequests} 次请求等待至少 1 秒，可能影响操作流畅度。可先查看平均耗时较长的接口。`, sort: 'averageDurationMs' as const, action: '查看耗时较长的接口' }
+  return { title: '当前样本未发现失败或慢请求', detail: '可以继续正常使用。这里只反映当前账号在这一时间段采集到的请求，不代表全站或所有成员的状态。', sort: null, action: '' }
+})
+async function inspectEndpoints(field: EndpointSort) {
+  sortEndpoints(field)
+  await nextTick()
+  endpointSection.value?.focus()
+  endpointSection.value?.scrollIntoView({ block: 'start' })
+}
 
 const cards = computed(() => {
   const value = overview.value
@@ -71,16 +86,21 @@ const visibleRecentRequests = computed(() =>
 )
 
 async function load() {
+  const version = ++loadVersion
+  const requestedHours = hours.value
+  if (overview.value?.windowHours !== requestedHours) overview.value = null
   loading.value = true
   error.value = ''
   try {
-    overview.value = await fetchRequestMetricOverview(hours.value)
+    const result = await fetchRequestMetricOverview(requestedHours)
+    if (version !== loadVersion) return
+    overview.value = result
     endpointPage.value = 1
     recentPage.value = 1
   } catch {
-    error.value = '请求监控加载失败，请检查网络后重试'
+    if (version === loadVersion) error.value = '请求监控加载失败，请检查网络后重试'
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
@@ -166,14 +186,14 @@ onMounted(load)
         <button class="secondary-button history-button" @click="historyOpen = true">
           <i class="ri-history-line"></i>巡检历史
         </button>
-        <select v-model.number="hours" aria-label="统计时间范围" @change="load">
+        <select v-model.number="hours" :disabled="clearing" aria-label="统计时间范围" @change="load">
           <option :value="1">最近 1 小时</option>
           <option :value="6">最近 6 小时</option>
           <option :value="24">最近 24 小时</option>
           <option :value="72">最近 3 天</option>
           <option :value="168">最近 7 天</option>
         </select>
-        <button :disabled="loading" @click="load">
+        <button :disabled="loading || clearing" @click="load">
           <i :class="loading ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
           {{ loading ? '刷新中' : '刷新' }}
         </button>
@@ -196,6 +216,20 @@ onMounted(load)
         <i class="ri-error-warning-line"></i><span>{{ error }}，已保留上一次结果。</span
         ><button @click="load">重试</button>
       </div>
+      <section class="attention-summary" aria-label="请求体验摘要" :aria-busy="loading">
+        <p class="sample-context">当前账号 · 最近 {{ overview.windowHours }} 小时 · 统计于 {{ formatTime(overview.generatedAt) }}</p>
+        <p v-if="loading" role="status">正在刷新；下方暂时显示上一次统计结果。</p>
+        <template v-if="attention">
+          <h2>{{ attention.title }}</h2>
+          <p>{{ attention.detail }}</p>
+          <div class="summary-actions">
+            <button v-if="attention.sort" type="button" @click="inspectEndpoints(attention.sort)">{{ attention.action }}</button>
+            <button type="button" @click="historyOpen = true">查看巡检启动记录</button>
+          </div>
+        </template>
+        <p v-else>暂时没有可判断的样本。使用 WAO 后再刷新，或扩大统计时间范围。</p>
+        <details><summary>这些数字代表什么？</summary><p>慢请求指等待至少 1 秒；失败包括网络错误及 HTTP 4xx / 5xx。慢和失败可能是同一次请求，不能直接相加。P95 表示约 95% 的请求在该耗时内结束；这些数字不能单独判断故障原因。</p></details>
+      </section>
       <section class="metric-grid">
         <article v-for="card in cards" :key="card.label" :class="card.tone">
           <span>{{ card.label }}</span
@@ -211,7 +245,7 @@ onMounted(load)
       </section>
       <template v-else>
         <div class="request-tables">
-          <section class="table-card">
+          <section ref="endpointSection" class="table-card" tabindex="-1" aria-label="优先关注的接口">
             <header>
               <div>
                 <span>ENDPOINTS</span>
@@ -219,6 +253,7 @@ onMounted(load)
               </div>
               <small>按所选指标倒序 · 慢请求 ≥ 1000 ms</small>
             </header>
+            <p class="endpoint-scope">接口列表最多展示 50 项；排序仅针对当前列表，失败总数以统计卡片为准。</p>
             <div class="table-scroll">
               <table>
                 <thead>
@@ -340,6 +375,8 @@ onMounted(load)
 </template>
 
 <style scoped>
+.attention-summary{margin-top:18px;padding:18px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card);line-height:1.7;overflow-wrap:anywhere}.attention-summary h2{font-size:17px;margin:8px 0}.attention-summary p{margin:8px 0;font-size:13px}.sample-context,.attention-summary details{color:var(--wao-text-3);font-size:12px}.summary-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.summary-actions button{padding:8px 12px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-sub);color:var(--wao-primary-text);cursor:pointer}.attention-summary summary{cursor:pointer}.table-card:focus-visible{outline:2px solid var(--wao-primary-text);outline-offset:3px}
+.endpoint-scope{padding:0 16px;color:var(--wao-text-3);font-size:12px;line-height:1.6}
 .monitor-page {
   max-width: none;
   margin: 0 auto;
