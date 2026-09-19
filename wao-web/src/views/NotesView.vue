@@ -71,14 +71,14 @@ const newTag = ref('')
 const creatingTag = ref(false)
 const tagError = ref('')
 const scope = ref<'all' | 'mine'>('all')
-const editId = ref('')
-const writingPane = ref<HTMLElement>()
+const editingIds = ref<string[]>([])
+function closeEditing(id: string) { editingIds.value = editingIds.value.filter(item => item !== id) }
 async function editNote(id: string, event?: MouseEvent) {
   if (event?.target instanceof Element && event.target.closest('a, button, input, select, textarea, summary, [contenteditable="true"]')) return
-  editId.value = id
+  if (!editingIds.value.includes(id)) editingIds.value = [...editingIds.value, id]
   await nextTick()
-  writingPane.value?.scrollIntoView?.({ block: 'nearest' })
-  writingPane.value?.querySelector<HTMLElement>('[contenteditable="true"], textarea')?.focus()
+  const card = Array.from(notesList.value?.querySelectorAll<HTMLElement>('[data-note-id]') ?? []).find(el => el.dataset.noteId === id)
+  card?.querySelector<HTMLElement>('[contenteditable="true"], textarea')?.focus({ preventScroll: true })
 }
 const PAGE_SIZE = 10
 const limit = ref(PAGE_SIZE)
@@ -90,7 +90,6 @@ const notes = computed(() => {
   return Object.values(data.docs).filter(doc => ids.has(doc.kbId ?? '') && !data.isDocArchived(doc.id))
     .sort((a, b) => Number(pinnedIds.value.includes(b.id)) - Number(pinnedIds.value.includes(a.id)) || (Date.parse(b[sort.value]) || Date.parse(b.created) || 0) - (Date.parse(a[sort.value]) || Date.parse(a.created) || 0) || b.id.localeCompare(a.id))
 })
-const editing = computed(() => editId.value ? data.docs[editId.value] : undefined)
 const availableTags = computed(() => [...new Set([...tagNames.value, ...notes.value.flatMap(note => note.tags ?? [])])].sort((a, b) => a.localeCompare(b, 'zh-CN')))
 const tagCounts = computed(() => {
   const counts = new Map<string, number>()
@@ -104,7 +103,10 @@ const matching = computed(() => {
     && (!selectedTag.value || doc.tags?.includes(selectedTag.value))
     && (!needle || `${doc.title}\n${resolvedRichContent(doc).markdown}\n${(doc.tags ?? []).join(' ')}`.toLocaleLowerCase().includes(needle)))
 })
-const visible = computed(() => matching.value.slice(0, limit.value))
+// 筛选、分页或远端刷新不能卸载正在输入的卡片，尤其是浏览器草稿写入失败时。
+const retainedEdits = computed(() => notes.value.filter(note => editingIds.value.includes(note.id)
+  && !matching.value.slice(0, limit.value).some(item => item.id === note.id)))
+const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
 const loading = computed(() => ['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
 watch([query, scope, selectedTag, sort, dateFilter], () => {
@@ -115,11 +117,16 @@ function onCreated(id: string) {
   dateFilter.value = 'all'
   query.value = ''
   selectedTag.value = ''
-  editId.value = ''
   scope.value = 'all'
   limit.value = PAGE_SIZE
   highlighted.value = id
   notesList.value?.scrollTo?.({ top: 0 })
+}
+function onEdited(sourceId: string, savedId: string) {
+  closeEditing(sourceId)
+  highlighted.value = savedId
+  // 冲突另存副本时展示新记录；普通修改保留当前筛选和滚动位置。
+  if (sourceId !== savedId) onCreated(savedId)
 }
 function authorName(id: string) { return session.members.find(member => member.id === id)?.name || '成员' }
 function timeLabel(value: string) {
@@ -169,9 +176,8 @@ onMounted(() => void loadPins())
   <main class="notes-page">
     <header class="page-heading"><div><h1><i class="ri-sticky-note-line"></i>小记</h1></div><span>{{ notes.length }} 条记录</span></header>
     <div class="notes-workspace">
-      <aside ref="writingPane" class="writing-pane" aria-label="小记编辑区">
-        <div v-if="editing" class="editing-bar"><span>正在编辑已有小记</span><button @click="editId = ''">返回新建</button></div>
-        <NoteComposer :key="`${session.currentUser.id}:${editId || 'new'}`" :note="editing" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" @close="editId = ''" />
+      <aside class="writing-pane" aria-label="新建小记区">
+        <NoteComposer :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
       </aside>
       <section ref="notesList" class="notes-list" aria-label="小记清单">
         <div class="list-toolbar">
@@ -205,13 +211,18 @@ onMounted(() => void loadPins())
         <p v-if="loadError" class="empty error" role="alert">小记读取失败，已有内容和草稿仍保留。<button @click="reload">重试加载</button></p>
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || selectedTag ? '没有找到相关小记，换个关键词或标签试试。' : '还没有小记，写下第一条想法吧。' }}</p>
-        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ highlighted: highlighted === note.id, editing: editId === note.id }" :data-note-id="note.id"
-          tabindex="0" title="双击编辑小记，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 编辑`"
+        <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
+        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
+          tabindex="0" title="双击在卡片内编辑，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 在卡片内编辑`"
           @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)">
-          <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span v-if="highlighted === note.id" class="saved">已保存</span></div>
+          <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span></div>
+          <NoteComposer v-if="editingIds.includes(note.id)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
+            @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
+          <template v-else>
           <div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" /></div>
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
-          <div class="note-actions"><button @click="noteEditors.get(note.id)?.copyFormatted()">复制内容</button><button :disabled="!pinsReady || pinSaving" :aria-pressed="pinnedIds.includes(note.id)" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i>{{ pinnedIds.includes(note.id) ? '取消置顶' : '置顶' }}</button><button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button><button class="touch-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
+          <div class="note-actions"><button @click="noteEditors.get(note.id)?.copyFormatted()">复制内容</button><button :disabled="!pinsReady || pinSaving" :aria-pressed="pinnedIds.includes(note.id)" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i>{{ pinnedIds.includes(note.id) ? '取消置顶' : '置顶' }}</button><button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button><button class="card-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
+          </template>
         </article>
         <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>
       </section>
@@ -266,9 +277,8 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .card-tags button { color: var(--wao-primary); overflow-wrap: anywhere; max-width: 100%; padding: 4px 7px; }
 .note-actions { margin-top: 14px; border-top: 1px solid var(--wao-line-control); padding-top: 6px; justify-content: space-between; }
 .note-actions a { text-decoration: none; margin-left: auto; }
-.touch-edit { display: none; }
-@media (hover: none), (pointer: coarse) { .touch-edit { display: inline-flex; gap: 4px; align-items: center; } }
-.editing-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 12px; color: var(--wao-text-faint); }
+.card-edit { display: inline-flex; gap: 4px; align-items: center; }
+.note-actions { flex-wrap: wrap; }
 .empty { text-align: center; padding: 36px 12px; color: var(--wao-text-faint); font-size: 13px; }
 .error { color: var(--wao-danger-strong); font-size: 12px; }
 .load-more { display: block; margin: 20px auto; }
