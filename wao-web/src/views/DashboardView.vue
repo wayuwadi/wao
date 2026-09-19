@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -26,6 +26,8 @@ import {
 } from '@/api/dashboard'
 import { formatTokens } from '@/composables/aiUsage'
 import { formatDuration } from '@/composables/aiRunDuration'
+import { createVisibilityPoller } from '@/composables/visibilityPolling'
+import { usePageVisibility } from '@/composables/pageVisibility'
 import CodexMembershipPanel from '@/components/dashboard/CodexMembershipPanel.vue'
 
 echarts.use([
@@ -71,7 +73,11 @@ let engineChart: echarts.ECharts | null = null
 let tokenChart: echarts.ECharts | null = null
 let quotaChart: echarts.ECharts | null = null
 let officialResetChart: echarts.ECharts | null = null
-let refreshTimer: ReturnType<typeof setInterval> | null = null
+let disposed = false
+let chartFingerprint = ''
+const poller = createVisibilityPoller(load, () => 30_000)
+const pageVisible = usePageVisibility()
+watch(pageVisible, visible => visible ? poller.start() : poller.stop())
 let loadInFlight = false
 
 function cssVar(name: string, fallback: string): string {
@@ -480,8 +486,9 @@ function onResize() {
 }
 
 async function load() {
-  if (loadInFlight) return
+  if (loadInFlight || disposed) return
   loadInFlight = true
+  let chartsChanged = false
   const initial = summary.value === null
   if (initial) loading.value = true
   else refreshing.value = true
@@ -494,22 +501,30 @@ async function load() {
       fetchAiQuotaHistory(30),
       fetchAiUsageInsights(30),
     ])
-    summary.value = s
-    aiTrend.value = ai
-    taskTrend.value = t
-    engines.value = eng
-    quotaHistory.value = quota
-    usageInsights.value = insights
+    if (disposed) return
+    const nextFingerprint = JSON.stringify([ai, t, eng, quota])
+    chartsChanged = nextFingerprint !== chartFingerprint
+    if (chartsChanged) {
+      aiTrend.value = ai
+      taskTrend.value = t
+      engines.value = eng
+      quotaHistory.value = quota
+      chartFingerprint = nextFingerprint
+    }
+    if (JSON.stringify(summary.value) !== JSON.stringify(s)) summary.value = s
+    if (JSON.stringify(usageInsights.value) !== JSON.stringify(insights)) usageInsights.value = insights
     lastLoadedAt.value = new Date().toISOString()
     loadError.value = ''
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : '仪表盘数据加载失败'
+    if (!disposed) loadError.value = error instanceof Error ? error.message : '仪表盘数据加载失败'
   } finally {
     loading.value = false
     refreshing.value = false
     loadInFlight = false
-    await nextTick()
-    renderAll()
+    if (chartsChanged) {
+      await nextTick()
+      if (!disposed) renderAll()
+    }
   }
 }
 
@@ -517,14 +532,14 @@ async function load() {
 const observer = new MutationObserver(() => renderAll())
 
 onMounted(() => {
-  void load()
+  if (pageVisible.value) poller.start()
   window.addEventListener('resize', onResize)
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-  refreshTimer = setInterval(() => void load(), 30_000)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
-  if (refreshTimer) clearInterval(refreshTimer)
+  disposed = true
+  poller.stop()
   observer.disconnect()
   aiChart?.dispose()
   taskChart?.dispose()

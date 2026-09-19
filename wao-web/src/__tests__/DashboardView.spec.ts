@@ -162,10 +162,12 @@ describe('DashboardView AI 用量面板', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
   })
 
   afterEach(() => {
     vi.useRealTimers()
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
   })
 
   it('展示每日频次、Token 总量与真实记账覆盖数，并在节点挂载后绘图', async () => {
@@ -224,6 +226,35 @@ describe('DashboardView AI 用量面板', () => {
     wrapper.unmount()
     await vi.advanceTimersByTimeAsync(30_000)
     expect(fetchAiRunTrend).toHaveBeenCalledTimes(2)
+  })
+
+  it('隐藏时暂停六个统计接口，重新可见只补一轮且无变化不重绘', async () => {
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const drawings = chart.setOption.mock.calls.length
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(90_000)
+    expect(fetchDashboardSummary).toHaveBeenCalledTimes(1)
+    expect(fetchAiRunTrend).toHaveBeenCalledTimes(1)
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(fetchDashboardSummary).toHaveBeenCalledTimes(2)
+    expect(chart.setOption).toHaveBeenCalledTimes(drawings)
+    wrapper.unmount()
+  })
+
+  it('慢请求不堆叠，卸载后的晚到结果不会重建图表', async () => {
+    let resolve!: (summary: DashboardSummary) => void
+    vi.mocked(fetchDashboardSummary).mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const wrapper = mountDashboard()
+    await vi.advanceTimersByTimeAsync(90_000)
+    expect(fetchDashboardSummary).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    resolve({ totalRuns: 1, activeRuns: 0, onlineRunners: 0, completedThisWeek: 0, succeededThisWeek: 0, failedThisWeek: 0 })
+    await flushPromises()
+    expect(initChart).not.toHaveBeenCalled()
   })
 
   it('首次加载失败时保留可理解的错误和重试入口', async () => {

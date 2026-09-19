@@ -11,6 +11,7 @@
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { apiDocPresence, apiLeaveDoc } from '@/api/board'
 import { useDataStore } from '@/stores/data'
+import { usePageVisibility } from '@/composables/pageVisibility'
 import type { DocPeer } from '@/types'
 
 /** 心跳间隔：够快到「看得见对方在动」，又不至于把请求打成机关枪。 */
@@ -18,6 +19,7 @@ const BEAT_MS = 5_000
 
 export function useDocPresence(docId: Ref<string | null>) {
   const data = useDataStore()
+  const pageVisible = usePageVisibility()
   /** 此刻也开着这篇文档的其他人。 */
   const peers = ref<DocPeer[]>([])
   /** 自己的光标落在第几个顶层块上。 */
@@ -36,7 +38,7 @@ export function useDocPresence(docId: Ref<string | null>) {
 
   async function beat() {
     const id = docId.value
-    if (!id || !data.apiLive || inflight || document.hidden) return
+    if (!id || !data.apiLive || inflight || document.hidden || !pageVisible.value) return
     inflight = true
     const wasTyping = typed
     typed = false
@@ -58,7 +60,7 @@ export function useDocPresence(docId: Ref<string | null>) {
   }
 
   function start() {
-    if (timer) return
+    if (timer || !pageVisible.value) return
     timer = setInterval(beat, BEAT_MS)
     document.addEventListener('visibilitychange', beat)
   }
@@ -88,6 +90,13 @@ export function useDocPresence(docId: Ref<string | null>) {
     },
     { immediate: true },
   )
+
+  watch(pageVisible, (visible) => {
+    if (visible && docId.value) {
+      void beat()
+      start()
+    } else stop()
+  })
 
   onBeforeUnmount(() => {
     stop()

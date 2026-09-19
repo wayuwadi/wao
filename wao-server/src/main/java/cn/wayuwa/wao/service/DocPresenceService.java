@@ -56,13 +56,14 @@ public class DocPresenceService {
      */
     @Transactional
     public DocPresenceDto heartbeat(String docId, String memberId, DocPresenceRequest req, LocalDateTime now) {
-        DocDto doc = knowledge.getDoc(docId);
+        int revision = knowledge.getDocRevision(docId);
         if (memberId != null) {
             touch(docId, memberId, req, now);
         }
         List<DocPeerDto> peers = peers(docId, memberId, now);
-        boolean stale = req.rev() == null || !req.rev().equals(doc.rev());
-        return new DocPresenceDto(peers, doc.rev(), stale ? doc : null);
+        boolean stale = req.rev() == null || !req.rev().equals(revision);
+        DocDto doc = stale ? knowledge.getDoc(docId) : null;
+        return new DocPresenceDto(peers, doc == null ? revision : doc.rev(), doc);
     }
 
     /**

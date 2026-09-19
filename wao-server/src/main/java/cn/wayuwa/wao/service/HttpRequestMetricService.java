@@ -48,10 +48,12 @@ public class HttpRequestMetricService {
      */
     @Transactional
     public int record(String memberId, List<RequestMetricInput> inputs) {
+        if (inputs.isEmpty()) return 0;
+        if (inputs.size() > 100) throw new BadRequestException("单批最多 100 条指标");
         OffsetDateTime now = OffsetDateTime.now(ZONE);
-        for (RequestMetricInput input : inputs) {
-            mapper.insert(entity(memberId, input, now));
-        }
+        List<HttpRequestMetricEntity> metrics = inputs.stream()
+                .map(input -> entity(memberId, input, now)).toList();
+        mapper.insertBatch(metrics);
         return inputs.size();
     }
 

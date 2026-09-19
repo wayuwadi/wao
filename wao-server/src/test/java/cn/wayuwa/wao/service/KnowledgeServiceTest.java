@@ -58,6 +58,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 class KnowledgeServiceTest {
+    @org.junit.jupiter.api.BeforeAll
+    static void initializeMapperMetadata() {
+        var assistant = new org.apache.ibatis.builder.MapperBuilderAssistant(
+                new com.baomidou.mybatisplus.core.MybatisConfiguration(), "");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, DocEntity.class);
+    }
+
 
     private final KbGroupMapper groupMapper = mock(KbGroupMapper.class);
     private final KbMapper kbMapper = mock(KbMapper.class);
@@ -741,19 +748,42 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void revisionReadUsesOnlyTheVersionLookupAndKeepsMissingDocumentsUnavailable() {
+        when(docMapper.selectAliveRevision("d1")).thenReturn(7);
+        when(docMapper.selectAliveRevision("deleted")).thenReturn(null);
+        assertThat(service.getDocRevision("d1")).isEqualTo(7);
+        assertThatThrownBy(() -> service.getDocRevision("deleted")).isInstanceOf(NotFoundException.class);
+        verify(docMapper, never()).selectById(anyString());
+        verify(docMapper, never()).selectList(any());
+        verify(docMapper, never()).selectBacklinkSources(anyString());
+    }
+
+    @Test
+    void idempotentDailyDocumentKeepsDeletedTargetsWithoutBacklinks() {
+        DocEntity deleted = doc("d1", "k1", "f1");
+        deleted.setAuthorId("m1");
+        deleted.setDeletedAt(LocalDateTime.now());
+        when(docMapper.selectById("d1")).thenReturn(deleted);
+        var result = service.createDailyRhythmDoc("d1", "k1", "f1", null, "日常", List.of(), "m1");
+        assertThat(result.backlinks()).isEmpty();
+        verify(docMapper, never()).selectBacklinkSources(anyString());
+    }
+
+    @Test
     void getDocComputesBacklinksFromOtherDocsLinks() {
         DocEntity target = doc("d1", "k1", "f1");
         DocEntity source = doc("d2", "k1", "f1");
         source.setBlocksJson("[{\"p\":\"引用了目标文档\"}]");
         source.setLinksJson("[{\"type\":\"doc\",\"id\":\"d1\"}]");
         when(docMapper.selectById("d1")).thenReturn(target);
-        when(docMapper.selectList(any())).thenReturn(List.of(target, source));
+        when(docMapper.selectBacklinkSources("d1")).thenReturn(List.of(source));
 
         DocDto dto = service.getDoc("d1");
 
         assertThat(dto.backlinks()).hasSize(1);
         assertThat(dto.backlinks().get(0).id()).isEqualTo("d2");
         assertThat(dto.backlinks().get(0).snippet()).contains("引用了目标文档");
+        verify(docMapper, never()).selectList(any());
     }
 
     @Test
