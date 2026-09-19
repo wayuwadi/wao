@@ -1210,6 +1210,7 @@ export const useDataStore = defineStore('data', () => {
   /** 最近一次保存失败的服务端原因，展示在「保存失败」旁，便于定位。 */
   const taskSaveErrors = reactive<Record<string, string>>({})
   const taskConflicts = reactive<Record<string, boolean>>({})
+  const taskDraftErrors = reactive<Record<string, boolean>>({})
   /**
    * 每个任务最近一次与服务端一致的子任务快照（与本地 subtaskVersion 对应）。
    *
@@ -1245,13 +1246,19 @@ export const useDataStore = defineStore('data', () => {
 
   function storeTaskDraft(task: Task) {
     taskDrafts.value = { ...taskDrafts.value, [task.id]: clone(task) }
-    localStorage.setItem(taskDraftStorageKey(), JSON.stringify(taskDrafts.value))
+    try {
+      localStorage.setItem(taskDraftStorageKey(), JSON.stringify(taskDrafts.value))
+      delete taskDraftErrors[task.id]
+    } catch { taskDraftErrors[task.id] = true }
   }
 
   function clearTaskDraft(id: string) {
     const { [id]: _saved, ...rest } = taskDrafts.value
     taskDrafts.value = rest
-    localStorage.setItem(taskDraftStorageKey(), JSON.stringify(rest))
+    try {
+      localStorage.setItem(taskDraftStorageKey(), JSON.stringify(rest))
+      delete taskDraftErrors[id]
+    } catch { taskDraftErrors[id] = true }
   }
 
   /** 刚被本地改过的任务 id → 时刻。 */
@@ -2288,7 +2295,7 @@ export const useDataStore = defineStore('data', () => {
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     ensureDocsLoaded, refreshDocs,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
-    useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
+    taskDraftErrors, useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, replaceFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,
