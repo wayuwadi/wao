@@ -1311,6 +1311,7 @@ function onDropDay(dayIso: string) {
             </select>
           </label>
           <div class="bl-hint">按 P0–P3 排序；未排期任务可拖到日期格完成排期</div>
+          <div class="bl-list" role="region" aria-label="待安排任务列表" tabindex="0">
           <div v-if="!backlog.length" class="bl-empty">当前筛选下没有待安排任务</div>
           <div
             v-for="t in backlog"
@@ -1327,6 +1328,7 @@ function onDropDay(dayIso: string) {
               <div class="bl-name">{{ t.title }}</div>
               <div class="bl-sub">{{ t.pr }} · {{ t.whenLabel }} · {{ t.projName }}</div>
             </div>
+          </div>
           </div>
         </template>
       </aside>
@@ -1613,7 +1615,11 @@ function onDropDay(dayIso: string) {
 
 <style scoped>
 .cal {
-  padding: 16px 24px 40px;
+  padding: 16px 24px;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   max-width: var(--wao-content-max);
   margin: 0 auto;
   animation: waoFadeUp 0.25s ease;
@@ -1854,7 +1860,9 @@ button.holiday-status { cursor: pointer; }
   display: flex;
   gap: 14px;
   margin-top: 14px;
-  align-items: flex-start;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 .cal-card {
   flex: 1;
@@ -1862,7 +1870,9 @@ button.holiday-status { cursor: pointer; }
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
-  overflow: hidden;
+  overflow: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
 }
 .cal-head {
   display: flex;
@@ -2030,10 +2040,14 @@ button.holiday-status { cursor: pointer; }
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 10px;
-  position: sticky;
-  top: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   transition: width .16s ease, padding .16s ease;
 }
+.bl-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.bl-head, .bl-filter, .bl-hint { flex-shrink: 0; }
 .backlog.folded {
   width: 42px;
   padding: 6px;
@@ -2160,6 +2174,7 @@ button.holiday-status { cursor: pointer; }
     flex-direction: column-reverse;
   }
   .backlog {
+    max-height: 32dvh;
     width: 100%;
     position: static;
   }
