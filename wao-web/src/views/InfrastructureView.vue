@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { apiInfrastructureOverview, type InfraOverview, type InfraNode } from '@/api/infrastructure'
-import { infraBytes, infraFilter, infraMemoryUsed, infraPercent, infraRunning } from '@/utils/infrastructure'
+import { infraAttention, infraBytes, infraFilter, infraMemoryUsed, infraPercent, infraRunning } from '@/utils/infrastructure'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import ResourceHistory from '@/components/infrastructure/ResourceHistory.vue'
 
@@ -15,8 +15,24 @@ const query = ref('')
 const state = ref('all')
 const clock = ref(Date.now() / 1000)
 const node = computed(() => data.value?.nodes.find(n => n.id === selected.value) ?? data.value?.nodes[0])
-const stale = (n: InfraNode) => !n.collectedAt || clock.value - n.collectedAt > 180
-const status = (n: InfraNode) => n.error ? '采集失败' : stale(n) ? '数据过期' : n.online ? '采集正常' : '等待采集'
+const stale = (n: InfraNode) => n.stale || !n.collectedAt || clock.value - n.collectedAt > 180
+const status = (n: InfraNode) => n.error ? '采集失败' : !n.collectedAt ? '等待采集' : stale(n) ? '数据过期' : n.online ? '采集正常' : '等待采集'
+const attention = computed(() => (data.value?.nodes ?? []).flatMap(host => {
+  const issue = infraAttention(host, clock.value)
+  return issue ? [{ host, ...issue }] : []
+}))
+const detailPanel = ref<HTMLElement | null>(null)
+const servicesPanel = ref<HTMLElement | null>(null)
+async function inspectNode(id: string, services: boolean) {
+  selected.value = id
+  await nextTick()
+  query.value = ''
+  state.value = services ? 'review' : 'all'
+  await nextTick()
+  const target = services ? servicesPanel.value : detailPanel.value
+  target?.focus()
+  target?.scrollIntoView({ block: 'start' })
+}
 const time = (value?: number) => value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '尚未采集'
 const rootDisk = (n: InfraNode) => n.disks?.find(d => d.mount === '/')
 const filtered = computed(() => infraFilter(node.value?.services ?? [], query.value, state.value))
@@ -41,7 +57,7 @@ async function load() {
     const statusCode = (e as { response?: { status?: number } })?.response?.status
     forbidden.value = statusCode === 403
     if (forbidden.value) data.value = undefined
-    error.value = forbidden.value ? '仅管理员和超级管理员可以查看基础设施信息。' : '总览暂时无法刷新，请重试。已有数据保留，采集时间见各节点。'
+    error.value = forbidden.value ? '仅管理员和超级管理员可以查看基础设施信息。' : data.value ? '总览暂时无法刷新，请重试。已有数据保留，采集时间见各节点。' : '基础设施信息读取失败，请检查连接后重试。'
   } finally {
     busy.value = false; clock.value = Date.now() / 1000
     if (requested && active) { requested = false; void load() }
@@ -64,20 +80,30 @@ watch(selected, () => { query.value = ''; state.value = 'all' })
     </header>
     <div v-if="error" class="notice danger" role="alert">{{ error }}</div>
     <div v-if="!data && busy" class="empty" role="status">正在读取主机与应用信息…</div>
-    <div v-else-if="!data && !forbidden" class="empty">暂无采集数据。<button @click="load">重新读取</button></div>
+    <div v-else-if="!data && !forbidden" class="empty">{{ error ? '当前无法判断主机与服务状态。' : '暂无采集数据。' }}<button @click="load">重新读取</button></div>
     <template v-if="data">
+      <section class="panel attention-summary" aria-label="基础设施关注摘要">
+        <h2>{{ attention.length ? '需要先核对什么' : data.nodes.length ? '当前快照未发现待核对的采集或服务状态' : '还没有节点数据' }}</h2>
+        <p>这是采集快照，不是应用可用性检测。资源是否足够请结合下方趋势与实际使用判断；此页只读，不会自动重启或修改服务。</p>
+        <p v-if="error">刷新失败，下方摘要基于上一次读取的数据。</p>
+        <p v-else-if="busy">正在刷新，下方暂为上一次读取的数据。</p>
+        <ul v-if="attention.length">
+          <li v-for="item in attention" :key="item.host.id"><div><strong>{{ item.host.name }} · {{ item.title }}</strong><p>{{ item.detail }}</p><small>最后成功 {{ time(item.host.collectedAt) }}</small></div><button type="button" @click="inspectNode(item.host.id, item.services)">{{ item.services ? '核对服务' : '查看节点原因' }}</button></li>
+        </ul>
+        <p v-else-if="!data.nodes.length">等待首次采集后刷新；没有数据时无法判断主机状态。</p>
+      </section>
       <div class="node-grid">
         <button v-for="host in data.nodes" :key="host.id" class="node-card" :class="{ selected: host.id === node?.id }" :aria-pressed="host.id === node?.id" @click="selected = host.id">
-          <div class="node-title"><strong><i class="ri-server-line"></i> {{ host.name }}</strong><span class="badge" :class="{ warning: !!host.error || stale(host) }">{{ status(host) }}</span></div>
+          <div class="node-title"><strong><i class="ri-server-line"></i> {{ host.name }}</strong><span class="badge" :class="{ warning: !!host.error || stale(host) || !host.online }">{{ status(host) }}</span></div>
           <p>{{ host.role }}</p>
           <div class="node-metrics"><span>CPU <b>{{ infraPercent(host.cpuPercent) }}</b></span><span>内存可用 <b>{{ infraBytes(host.memory?.available) }}</b></span><span>根磁盘可用 <b>{{ infraBytes(rootDisk(host)?.available) }}</b></span></div>
           <small>最后成功 {{ time(host.collectedAt) }}</small>
         </button>
       </div>
       <template v-if="node">
-        <section class="node-detail">
+        <section ref="detailPanel" class="node-detail" tabindex="-1" aria-label="节点详情">
           <div class="section-heading"><div><h2>{{ node.name }} <span>{{ node.cpuCores ?? '—' }} 核 · {{ infraBytes(node.memory?.total) }} 内存</span></h2><p>{{ node.os ?? '系统信息待采集' }} · {{ node.hostname ?? '—' }} · {{ node.address }}</p></div><span>已运行 {{ days }}</span></div>
-          <div v-if="node.error || stale(node)" class="notice warning" role="status">{{ node.error ?? '采集数据超过 3 分钟未更新。' }} 以下为最后成功快照；最近尝试 {{ time(node.lastAttemptAt) }}。</div>
+          <div v-if="node.error || stale(node) || !node.online" class="notice warning" role="status">{{ node.error || (!node.collectedAt ? '尚无成功采集数据。' : '采集快照需要更新。') }} {{ node.collectedAt ? '以下为最后成功快照；' : '' }}最近尝试 {{ time(node.lastAttemptAt) }}。</div>
           <div v-for="warning in node.warnings" :key="warning" class="notice warning">{{ warning }}</div>
           <div class="resource-grid">
             <div class="resource"><label>CPU 使用率</label><strong>{{ infraPercent(node.cpuPercent) }}</strong><progress :value="node.cpuPercent ?? 0" max="100" aria-label="CPU 使用率"></progress><small>负载（1 / 5 / 15 分钟）{{ node.loadAverage?.map(x => x.toFixed(2)).join(' / ') ?? '—' }}</small></div>
@@ -91,9 +117,9 @@ watch(selected, () => { query.value = ''; state.value = 'all' })
           <div v-if="node.history.length" class="charts"><ResourceHistory :points="node.history" metric="usage" /><ResourceHistory :points="node.history" metric="capacity" /></div>
           <div v-else class="empty">还没有历史采样，首次采集完成后会在这里显示。</div>
         </section>
-        <section class="panel services">
+        <section ref="servicesPanel" class="panel services" tabindex="-1" aria-label="部署应用与服务">
           <div class="section-heading"><div><h2>部署应用与服务 <span>{{ node.services?.length ?? 0 }} 项 · {{ running }} 项运行中</span></h2><p>按应用归类；展开可查看组件、镜像版本、运行状态与资源占用。</p></div></div>
-          <div class="filters"><input v-model="query" placeholder="搜索 Jenkins、JumpServer、WeKnora 或服务名" aria-label="搜索应用与服务" /><select v-model="state" aria-label="服务运行状态"><option value="all">全部状态</option><option value="running">运行中</option><option value="stopped">未运行</option></select><span>{{ filtered.length }} 项匹配</span></div>
+          <div class="filters"><input v-model="query" placeholder="搜索 Jenkins、JumpServer、WeKnora 或服务名" aria-label="搜索应用与服务" /><select v-model="state" aria-label="服务运行状态"><option value="all">全部状态</option><option value="running">运行中</option><option value="stopped">未运行</option><option value="review">待核对（未运行或健康异常）</option></select><span>{{ filtered.length }} 项匹配</span></div>
           <details v-for="[group, items] in groups" :key="`${node.id}:${group}`" :open="group !== '其他服务' || !!query" class="service-group"><summary><strong>{{ group }}</strong><span>{{ items.length }} 项 · {{ items.filter(infraRunning).length }} 项运行中</span><a v-if="group === 'WeKnora'" href="/apps/weknora" @click.stop>打开知识库 ↗</a><a v-if="group === 'Jenkins'" href="/jenkins/" target="_blank" rel="noopener" @click.stop>打开 Jenkins ↗</a><a v-if="group === 'JumpServer'" href="/api/auth/jumpserver" target="_blank" rel="noopener" @click.stop>打开资源管理 ↗</a></summary>
             <div class="table-scroll"><table><thead><tr><th>组件 / 镜像版本</th><th>运行方式</th><th>状态</th><th>CPU</th><th>内存</th></tr></thead><tbody><tr v-for="service in items" :key="`${service.kind}:${service.name}`"><td><strong>{{ service.name }}</strong><small v-if="service.image">{{ service.image }}</small><small v-if="service.ports">端口 {{ service.ports }}</small></td><td>{{ service.kind === 'docker' ? 'Docker' : service.kind === 'user-service' ? '用户服务' : '系统服务' }}</td><td><span class="badge" :class="{ warning: !infraRunning(service) || service.status.includes('unhealthy') }">{{ service.state }}</span><small>{{ service.status }}</small></td><td>{{ infraPercent(service.cpuPercent) }}</td><td>{{ infraBytes(service.memoryBytes) }}<small v-if="service.memoryLimitBytes && service.memoryLimitBytes < (node.memory?.total ?? 0) * 0.99">上限 {{ infraBytes(service.memoryLimitBytes) }}</small></td></tr></tbody></table></div>
           </details>
@@ -106,6 +132,7 @@ watch(selected, () => { query.value = ''; state.value = 'all' })
 </template>
 
 <style scoped>
+.attention-summary{margin-top:20px}.attention-summary ul{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:12px}.attention-summary li{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:12px;border-top:1px solid var(--wao-line)}.attention-summary strong{font-size:14px;overflow-wrap:anywhere}.attention-summary small{font-size:12px;color:var(--wao-text-weak)}.attention-summary button{flex-shrink:0}.node-detail:focus-visible,.services:focus-visible{outline:2px solid var(--wao-primary);outline-offset:3px}@media(max-width:700px){.attention-summary li{align-items:flex-start;flex-direction:column}}
 .infra-page { padding: 26px 28px 40px; max-width: none; margin: auto; color: var(--wao-text); }
 .page-header,.section-heading,.header-actions,.node-title { display:flex; align-items:center; justify-content:space-between; gap:16px; }
 h1 { font-size:26px; margin:5px 0 7px; letter-spacing:-.5px; } h2 { font-size:17px; margin:0 0 7px; } h2 span { font-size:12px; font-weight:400; margin-left:8px; color:var(--wao-text-weak); }
