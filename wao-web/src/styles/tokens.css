@@ -13,14 +13,14 @@
   --wao-primary-line: #d9dff6;
 
   /* 背景层级 */
-  --wao-bg-page: #f6f7f9;
-  --wao-bg-side: #f3f4f7;
+  --wao-bg-page: #ffffff;
+  --wao-bg-side: #fafafa;
   --wao-bg-card: #ffffff;
-  --wao-bg-sub: #fbfbfc;
-  --wao-bg-sub-2: #fafafb;
-  --wao-bg-tab: #eff0f4;
-  --wao-bg-hover: #f6f7fa;
-  --wao-bg-hover-2: #f2f3f6;
+  --wao-bg-sub: #fafafa;
+  --wao-bg-sub-2: #f7f7f7;
+  --wao-bg-tab: #fafafa;
+  --wao-bg-hover: #f3f3f3;
+  --wao-bg-hover-2: #ededed;
 
   /* 文字层级 */
   --wao-text: #1a1c23;
@@ -31,11 +31,11 @@
   --wao-text-faint-2: #c4c7d2;
 
   /* 边框 / 分隔线 */
-  --wao-line: #e8e9ed;
-  --wao-line-control: #e3e4ea;
-  --wao-line-strong: #dddfe6;
-  --wao-divider: #eeeff3;
-  --wao-divider-2: #f3f3f6;
+  --wao-line: #e8e8e8;
+  --wao-line-control: #dedede;
+  --wao-line-strong: #d5d5d5;
+  --wao-divider: #eeeeee;
+  --wao-divider-2: #f3f3f3;
 
   /* 语义色 */
   --wao-success: #2c8a5b;

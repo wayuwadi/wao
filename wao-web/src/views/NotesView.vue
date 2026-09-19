@@ -232,7 +232,7 @@ h1 i { color: #7a5cc6; }
 .notes-workspace { display: grid; grid-template-columns: minmax(300px, 0.85fr) minmax(360px, 1.15fr); gap: 28px; align-items: start; }
 .writing-pane { min-width: 0; position: sticky; top: 20px; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
-.notes-list { min-width: 0; padding-left: 26px; border-left: 1px solid var(--wao-line-control); }
+.notes-list { min-width: 0; padding: 16px 20px; border-left: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .list-toolbar, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
 .list-toolbar { flex-wrap: wrap; margin-bottom: 16px; gap: 8px; }
 button, a, select { color: var(--wao-text-3); font-size: 12px; }
@@ -282,6 +282,6 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
   .notes-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 }
 @media (max-width: 1100px) { .notes-page { padding: 20px; } .notes-workspace { gap: 18px; grid-template-columns: minmax(280px, .9fr) minmax(300px, 1.1fr); } .notes-list { padding-left: 18px; } .search { order: 3; flex-basis: 100%; margin: 0; } .sort { margin-left: auto; } }
-@media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; padding-left: 0; } }
+@media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 16px 10px; } }
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 16px 12px 8px; } .sort { margin-left: 0; } .list-summary { flex-wrap: wrap; } }
 </style>
