@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { onMounted, onUnmounted, reactive, ref, shallowRef, toRaw, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
@@ -29,12 +30,14 @@ const loading = ref(true),
   ready = ref(false),
   dirty = ref(false),
   draftFailed = ref(false),
+  draftPending = ref(false),
   imageValid = ref(false)
 let revision = 0,
   queue: Promise<void> = Promise.resolve()
 function persist() {
   if (!ready.value) return
   dirty.value = true
+  draftPending.value = true
   const current = ++revision
   draftStatus.value = '正在保存本地草稿…'
   const snapshot = { ...toRaw(form), file: file.value, identity: { ...toRaw(identity) } }
@@ -45,12 +48,22 @@ function persist() {
       if (current === revision) {
         draftStatus.value = '本地草稿已保存（含所选文件）'
         draftFailed.value = false
+        draftPending.value = false
       }
     })
     .catch(() => {
+      if (current !== revision) return
+      draftPending.value = false
       draftFailed.value = true
       draftStatus.value = '本地草稿保存失败，请重试；离开页面前先保存宠物。'
     })
+}
+async function flushDraftQueue() {
+  let current: Promise<void>
+  do {
+    current = queue
+    await current
+  } while (current !== queue)
 }
 watch(form, persist)
 watch(identity, persist)
@@ -143,7 +156,7 @@ async function submit() {
       )
     }
     await createPet(body)
-    await queue
+    await flushDraftQueue()
     try {
       await clearPetDraft(owner)
     } catch {
@@ -159,14 +172,20 @@ async function submit() {
   }
 }
 function unload(event: BeforeUnloadEvent) {
-  if (dirty.value && (draftFailed.value || saving.value)) {
+  if (dirty.value && (draftPending.value || draftFailed.value || saving.value)) {
     event.preventDefault()
     event.returnValue = ''
   }
 }
+useSaveBeforeRefresh(async () => {
+  if (saving.value) throw new Error('宠物正在保存，请完成后再刷新')
+  if (draftFailed.value) persist()
+  await flushDraftQueue()
+  if (draftPending.value || draftFailed.value) throw new Error('宠物本地草稿尚未保存，请重试后再刷新')
+})
 onBeforeRouteLeave(async () => {
   if (saving.value && dirty.value) return false
-  await queue
+  await flushDraftQueue()
   if (dirty.value && draftFailed.value)
     return window.confirm('本地草稿未保存，离开将丢失输入。仍要离开吗？')
 })
