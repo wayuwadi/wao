@@ -1229,7 +1229,9 @@ onBeforeUnmount(() => {
                   }}</small
                 ></span
               >
-              <strong v-if="item.mode === 'COUNT'">{{ energyCount(item) }}</strong>
+              <strong v-if="item.mode === 'COUNT'">
+                <small>今日</small>{{ energyCount(item) }}<small>次</small>
+              </strong>
             </button>
             <div v-if="energyNotificationState === 'sending'" class="energy-notice sending">
               <i class="ri-loader-4-line spin"></i><span>记录已保存，正在发送飞书通知…</span>
@@ -2316,7 +2318,8 @@ textarea {
   justify-content: space-between;
 }
 .energy-action {
-  flex: 1 0 63px;
+  flex: 1 0 auto;
+  box-sizing: border-box;
   width: 100%;
   min-height: 63px;
   margin-top: 8px;
@@ -2332,6 +2335,7 @@ textarea {
   cursor: pointer;
 }
 .energy-action > i {
+  flex: 0 0 33px;
   width: 33px;
   height: 33px;
   border-radius: 10px;
@@ -2345,26 +2349,41 @@ textarea {
   min-width: 0;
   flex: 1;
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
-  overflow: hidden;
 }
 .energy-action b {
-  flex: none;
-  font-size: 12.5px;
-  white-space: nowrap;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
-.energy-action small {
+.energy-action > span > small {
   min-width: 0;
-  overflow: hidden;
-  color: var(--wao-text-faint);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--wao-text-2);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .energy-action strong {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.3;
   color: #37738a;
   font-size: 21px;
+}
+.energy-action strong small {
+  font-size: 12px;
+  font-weight: 400;
+}
+.energy-action:focus-visible,
+.energy-notice button:focus-visible {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: 3px;
 }
 .energy-action:disabled {
   cursor: default;
@@ -2394,7 +2413,9 @@ textarea {
   gap: 6px;
   color: var(--wao-text-weak);
   background: var(--wao-bg-page);
-  font-size: 10px;
+  font-size: 12px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
 }
 .energy-notice.error {
   color: #9b4141;
@@ -2405,6 +2426,8 @@ textarea {
   background: #eff8f4;
 }
 .energy-notice button {
+  min-height: 44px;
+  font-size: 13px;
   margin-left: auto;
   border: 0;
   background: transparent;
