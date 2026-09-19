@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
 import { apiGetTask, apiPutTask } from '@/api/board'
+import { readTaskDrafts, taskDraftWindowId } from '@/utils/taskDraftStorage'
 import { TASKS } from '@/data/fixtures'
 import type { Task } from '@/types'
 
@@ -24,7 +25,7 @@ describe('任务全文保存版本', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(apiPutTask).toHaveBeenCalledTimes(1)
     expect(data.tasks[0]!.desc).toBe('继续输入仍保留')
-    expect(localStorage.getItem('wao-task-drafts-v1')).toContain('继续输入仍保留')
+    expect(readTaskDrafts('', taskDraftWindowId())[id]?.desc).toBe('继续输入仍保留')
   })
   it('请求期间继续输入，下次串行提交使用刚确认的完整版本', async () => {
     const data = useDataStore(); data.tasks = [{ ...copy(TASKS[0]!), editVersion: 'v1' }]

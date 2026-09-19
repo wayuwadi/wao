@@ -1,4 +1,5 @@
 import { reactive, ref } from 'vue'
+import { taskDraftWindowId, readTaskDrafts, writeTaskDraft, removeTaskDraft } from '@/utils/taskDraftStorage'
 import { defineStore } from 'pinia'
 import {
   apiAddTaskComment,
@@ -195,6 +196,7 @@ export const useDataStore = defineStore('data', () => {
   const suggestions = ref<Suggestion[]>([])
   const goals = ref<GoalDto[]>([])
   /** 尚未被服务端确认的任务快照；刷新或意外关闭页面后仍可恢复。 */
+  const taskDraftWindow = taskDraftWindowId()
   const taskDrafts = ref<Record<string, Task>>(loadTaskDrafts())
   let taskDataMember = useSessionStore().userId
   /** 用户自建知识库分组（个人库归入其中）。 */
@@ -1192,12 +1194,21 @@ export const useDataStore = defineStore('data', () => {
 
   function loadTaskDrafts(): Record<string, Task> {
     try {
-      const scoped = localStorage.getItem(taskDraftStorageKey())
-      if (scoped) return JSON.parse(scoped)
-      // 迁移旧草稿只认明确的创建人，未知归属留在原缓存中，不跨账号自动重放。
-      const legacy = JSON.parse(localStorage.getItem(TASK_DRAFT_KEY) || '{}') as Record<string, Task>
       const member = useSessionStore().userId
-      return Object.fromEntries(Object.entries(legacy).filter(([, task]) => !member || task.createdBy === member))
+      const recovered = readTaskDrafts(member, taskDraftWindow)
+      const legacyKey = taskDraftStorageKey()
+      const legacy = JSON.parse(localStorage.getItem(legacyKey) || '{}') as Record<string, Task>
+      // 旧的无成员集合只认明确创建人；无法确认归属的旧记录留在原处。
+      const unscoped = legacyKey === TASK_DRAFT_KEY ? {} : JSON.parse(localStorage.getItem(TASK_DRAFT_KEY) || '{}') as Record<string, Task>
+      const eligible = Object.fromEntries(Object.entries(unscoped).filter(([, task]) => task.createdBy === member))
+      for (const [id, task] of Object.entries({ ...eligible, ...legacy })) {
+        if (!recovered[id]) { recovered[id] = task; writeTaskDraft(member, taskDraftWindow, task) }
+      }
+      // 所有新记录写入成功后才移走兼容项；新代码不再整包写草稿。
+      localStorage.removeItem(legacyKey)
+      if (Object.keys(eligible).length) localStorage.setItem(TASK_DRAFT_KEY,
+        JSON.stringify(Object.fromEntries(Object.entries(unscoped).filter(([id]) => !eligible[id]))))
+      return recovered
     } catch { return {} }
   }
 
@@ -1247,7 +1258,7 @@ export const useDataStore = defineStore('data', () => {
   function storeTaskDraft(task: Task) {
     taskDrafts.value = { ...taskDrafts.value, [task.id]: clone(task) }
     try {
-      localStorage.setItem(taskDraftStorageKey(), JSON.stringify(taskDrafts.value))
+      writeTaskDraft(useSessionStore().userId, taskDraftWindow, task)
       delete taskDraftErrors[task.id]
     } catch { taskDraftErrors[task.id] = true }
   }
@@ -1256,7 +1267,7 @@ export const useDataStore = defineStore('data', () => {
     const { [id]: _saved, ...rest } = taskDrafts.value
     taskDrafts.value = rest
     try {
-      localStorage.setItem(taskDraftStorageKey(), JSON.stringify(rest))
+      removeTaskDraft(useSessionStore().userId, taskDraftWindow, id)
       delete taskDraftErrors[id]
     } catch { taskDraftErrors[id] = true }
   }
