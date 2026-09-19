@@ -262,6 +262,13 @@ describe('知识库详情目录体验', () => {
       '三级标题',
     ])
     expect(wrapper.findAll('.toc-item')[2]!.classes()).toContain('deep')
+    expect(wrapper.get('.toc').element.parentElement).toBe(wrapper.get('.document-content').element)
+    expect(wrapper.find('.doc-wrap .toc').exists()).toBe(false)
+    await wrapper.get('[aria-label="关闭文档大纲"]').trigger('click')
+    expect(wrapper.find('.toc').exists()).toBe(false)
+    await wrapper.get('[title="文档大纲"]').trigger('click')
+    await wrapper.get('.toc').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('.toc').exists()).toBe(false)
     wrapper.unmount()
   })
 
