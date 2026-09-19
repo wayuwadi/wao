@@ -118,6 +118,13 @@ describe('左下角快捷链接配置', () => {
     await flushPromises()
     expect(page.get('iframe').attributes('src')).toBe('https://docs.example.com/')
     expect(page.get('iframe').attributes('title')).toBe('文档站')
+    await page.get('iframe').trigger('load')
+    expect(page.text()).toContain('「文档站」页面已载入')
+    await page.get('iframe').trigger('error')
+    expect(page.get('[role="alert"]').text()).toContain('页面未能载入')
+    await page.get('[role="alert"] button').trigger('click')
+    expect(page.find('.overlay').exists()).toBe(true)
+    page.unmount()
   })
 
   it('保存失败时不覆盖当前正在使用的入口', async () => {
