@@ -33,6 +33,7 @@ import {
   type AiActivityType,
   type ReviewableTask,
 } from '@/api/ai'
+import HomeStartGuide from '@/components/home/HomeStartGuide.vue'
 import CodexBenefitsPanel from '@/components/ai/CodexBenefitsPanel.vue'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
@@ -1260,6 +1261,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="home" :class="{ 'run-list-view': runLayout === 'list' }">
     <div class="home-primary">
+      <HomeStartGuide />
       <section id="home-ai-overview" class="hero" data-page-anchor="AI 控制中心">
         <div class="hero-heading">
           <div class="eyebrow">AI CONTROL CENTER</div>
