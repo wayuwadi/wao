@@ -8,6 +8,7 @@ import {
   type PersonalNotificationPolicy,
   type SystemNotificationPolicy,
 } from '@/api/notificationSettings'
+import { isQuietTime } from '@/utils/notificationDiagnosis'
 import DailyReminderSettingsPanel from './DailyReminderSettingsPanel.vue'
 
 const snapshot = ref<NotificationSettings | null>(null)
@@ -38,19 +39,12 @@ const systemRows: Array<{ key: BooleanSystemPolicyKey; title: string; detail: st
 ]
 
 const quietNow = computed(() => {
-  if (!system.value?.enabled || !system.value.quietHoursEnabled) return false
-  const parts = new Intl.DateTimeFormat('zh-CN', {
+  const policy = snapshot.value?.system
+  if (!policy?.enabled) return false
+  const time = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(clock.value)
-  const current = Number(parts.find((part) => part.type === 'hour')?.value ?? 0) * 60
-    + Number(parts.find((part) => part.type === 'minute')?.value ?? 0)
-  const minutes = (value: string) => {
-    const [hour = '0', minute = '0'] = value.split(':')
-    return Number(hour) * 60 + Number(minute)
-  }
-  const start = minutes(system.value.quietStart)
-  const end = minutes(system.value.quietEnd)
-  return start < end ? current >= start && current < end : current >= start || current < end
+  }).format(clock.value)
+  return isQuietTime(policy, time)
 })
 
 const personalRows: Array<{ key: keyof PersonalNotificationPolicy; title: string; detail: string }> = [
@@ -120,7 +114,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 <template>
   <div class="notification-settings">
     <header>
-      <div><h1>通知设置</h1><p>系统群推送由管理员共享管理；站内偏好只属于当前成员。</p></div>
+      <div><h1>通知设置</h1><p>系统通知由管理员共享管理；站内偏好只属于当前成员。</p></div>
       <span v-if="saving" class="save-state"><i class="ri-loader-4-line spin"></i>保存中</span>
       <span v-else-if="savedAt" class="save-state saved"><i class="ri-check-line"></i>{{ savedAt }} 已保存</span>
     </header>
@@ -133,17 +127,18 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
       <div v-if="error" class="inline-error" role="alert">{{ error }}<button type="button" @click="save">重试保存</button></div>
 
       <section class="policy-card">
-        <div class="policy-head"><div><h2>系统 · 群聊通知</h2><p>全组织共享，覆盖 Jenkins、任务、提醒和其他 WAO Webhook 消息。</p></div><span>{{ snapshot.canManageSystem ? '管理员可编辑' : '仅管理员可编辑' }}</span></div>
-        <div class="effective-state" :class="{ quiet: quietNow, off: !system.enabled }">
-          <i :class="!system.enabled ? 'ri-notification-off-line' : quietNow ? 'ri-moon-clear-line' : 'ri-notification-3-line'"></i>
-          <span><b>{{ !system.enabled ? '全部群通知已关闭' : quietNow ? '当前处于沉默时段' : '当前允许群通知' }}</b><small>上海时间（UTC+8）· 私聊消息不受影响</small></span>
+        <div class="policy-head"><div><h2>系统 · 共享通知策略</h2><p>全组织共享。每日提醒保存为 WAO 站内记录；其他通知按各自渠道处理。</p></div><span>{{ snapshot.canManageSystem ? '管理员可编辑' : '仅管理员可编辑' }}</span></div>
+        <div class="effective-state" :class="{ quiet: quietNow, off: !snapshot.system.enabled }">
+          <i :class="!snapshot.system.enabled ? 'ri-notification-off-line' : quietNow ? 'ri-moon-clear-line' : 'ri-notification-3-line'"></i>
+          <span><b>{{ !snapshot.system.enabled ? '系统通知总开关已关闭' : quietNow ? '当前处于沉默时段' : '总开关已开启，仍需检查通知类型' }}</b><small>按已读取的保存配置判断 · 上海时间（UTC+8）</small></span>
         </div>
-        <label class="policy-row">
+        <p v-if="dirty" class="draft-status" role="status">下方有未保存修改，当前生效状态不会随草稿改变。</p>
+        <label class="policy-row" id="notification-system-enabled">
           <span><b>系统通知总开关</b><small>控制 WAO 业务通知；已保存的记录仍保留</small></span>
           <input v-model="system.enabled" type="checkbox" :disabled="!snapshot.canManageSystem || saving" />
         </label>
-        <div class="quiet-row">
-          <label><span><b>每日沉默时段</b><small>时段内所有群通知直接跳过，不积压到次日补发</small></span><input v-model="system.quietHoursEnabled" type="checkbox" :disabled="!snapshot.canManageSystem || saving" /></label>
+        <div class="quiet-row" id="notification-quiet-hours">
+          <label><span><b>每日沉默时段</b><small>受此策略控制的通知在时段内直接跳过，不积压到次日补发</small></span><input v-model="system.quietHoursEnabled" type="checkbox" :disabled="!snapshot.canManageSystem || saving" /></label>
           <div class="quiet-times" :class="{ disabled: !system.quietHoursEnabled }">
             <input v-model="system.quietStart" type="time" aria-label="沉默开始时间" :disabled="!snapshot.canManageSystem || saving || !system.quietHoursEnabled" />
             <span>至</span>
@@ -151,13 +146,13 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
             <small>上海时间，支持跨午夜</small>
           </div>
         </div>
-        <label v-for="row in systemRows" :key="row.key" class="policy-row">
+        <label v-for="row in systemRows" :key="row.key" :id="`notification-system-${row.key}`" class="policy-row">
           <span><b>{{ row.title }}</b><small>{{ row.detail }}</small></span>
           <input v-model="system[row.key]" type="checkbox" :disabled="!snapshot.canManageSystem || saving" />
         </label>
       </section>
 
-      <section class="policy-card">
+      <section class="policy-card" id="notification-personal">
         <div class="policy-head"><div><h2>个人 · 站内通知中心</h2><p>按当前登录成员隔离，不改变其他成员看到的动态。</p></div><span>仅自己</span></div>
         <label v-for="row in personalRows" :key="row.key" class="policy-row">
           <span><b>{{ row.title }}</b><small>{{ row.detail }}</small></span>
@@ -165,7 +160,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
         </label>
       </section>
 
-      <DailyReminderSettingsPanel ref="reminderPanel" />
+      <DailyReminderSettingsPanel ref="reminderPanel" :settings="snapshot" />
 
       <footer><span>{{ dirty ? '有未保存修改' : '当前设置已同步' }}</span><button type="button" :disabled="!dirty || saving" @click="save">{{ saving ? '保存中…' : '保存通知设置' }}</button></footer>
     </template>
@@ -173,6 +168,8 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
 </template>
 
 <style scoped>
+.draft-status { margin: 10px 16px; font-size: 12px; color: var(--wao-warning-strong); }
+[id^="notification-"] { scroll-margin-top: 20px; }
 .notification-settings { max-width: 820px; display: grid; gap: 14px; }
 header { display: flex; align-items: center; gap: 16px; }
 header > div { flex: 1; }
