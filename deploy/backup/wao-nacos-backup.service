@@ -1,0 +1,13 @@
+[Unit]
+Description=Encrypted peer backup of cleanly stopped embedded Nacos
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/wao-backup/create-nacos-recovery.sh
+TimeoutStartSec=40min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+MemoryMax=2G
+UMask=0077

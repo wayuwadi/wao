@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -u
 
+# Shared with clean Nacos backups: do not restart applications during its stop window.
+# Legacy hosts without the installed maintenance lock keep their existing behavior.
+if [[ -f /run/lock/wao-infra-maintenance.lock ]]; then
+  exec 7>/run/lock/wao-infra-maintenance.lock || exit 1
+  flock -s -w 600 7 || { echo '基础设施维护未结束，拒绝重启应用。'; exit 1; }
+fi
+
 : "${WAO_GIT_SHA:?WAO_GIT_SHA is required}"
 : "${WAO_RUN_TEMP:?WAO_RUN_TEMP is required}"
 : "${WAO_MASTER_PROJECT_ROOT:?WAO_MASTER_PROJECT_ROOT is required}"
