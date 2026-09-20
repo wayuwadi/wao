@@ -25,7 +25,7 @@ function harness(overrides = {}) {
     if (url.endsWith('/release-manifest.json')) return Response.json(overrides.manifest || manifest)
     if (url.startsWith(node)) {
       if (overrides.nodeFailure) throw new Error('Network unavailable')
-      return new Response(overrides.corrupt ? 'wrong' : asset, { headers: { 'content-type': 'text/javascript', 'set-cookie': 'must-not-forward' } })
+      return new Response(overrides.corrupt ? 'wrong' : (overrides.body ?? asset), { headers: { 'content-type': overrides.contentType || 'text/javascript', 'set-cookie': 'must-not-forward' } })
     }
     return new Response('cloud same release', { headers: { 'content-type': 'text/javascript' } })
   }
@@ -35,7 +35,9 @@ function harness(overrides = {}) {
     calls,
     request(url = origin + path, options = {}) {
       let pending
-      listeners.get('fetch')({ request: new Request(url, options), respondWith(value) { pending = value } })
+      const request = new Request(url, options)
+      if (options.destination) Object.defineProperty(request, 'destination', { value: options.destination })
+      listeners.get('fetch')({ request, respondWith(value) { pending = value } })
       return pending
     },
   }
@@ -49,6 +51,40 @@ test('public asset goes directly to a node without cookies and retains same-orig
   assert.equal(response.headers.get('set-cookie'), null)
   assert.equal(response.headers.get('x-wao-static-route'), 'linux1.wayuwa.cn')
   assert.equal(h.calls.at(-1).options.credentials, 'omit')
+})
+
+test('public in-page images route anonymously while the original URL remains unchanged', async () => {
+  const h = harness({ config: { ...config, publicImagesEnabled: true }, contentType: 'image/png' })
+  const response = await h.request(origin + '/api/images/img123/raw', { destination: 'image' })
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), asset)
+  assert.equal(response.headers.get('x-wao-image-route'), 'linux1.wayuwa.cn')
+  assert.equal(response.headers.get('set-cookie'), null)
+  assert.equal(response.url, '')
+  assert.equal(h.calls.at(-1).options.credentials, 'omit')
+})
+
+test('image rollout defaults off; private files, navigation, query tickets and uploads stay untouched', async () => {
+  const h = harness()
+  const image = origin + '/api/images/img123/raw'
+  assert.equal(await (await h.request(image, { destination: 'image' })).text(), 'cloud same release')
+  assert.equal(h.calls.some(c => c.url.startsWith(node)), false)
+  for (const [url, options] of [[image, {}], [image, { destination: 'document' }],
+    [origin + '/api/files/file123/download', { destination: 'image' }],
+    [image + '?ticket=private', { destination: 'image' }],
+    [image, { destination: 'image', method: 'POST', body: 'upload' }],
+    [image, { destination: 'image', headers: { Range: 'bytes=0-10' } }]]) {
+    assert.equal(h.request(url, options), undefined)
+  }
+})
+
+test('image network failure, HTML response, empty or oversized body fall back exactly once', async () => {
+  for (const change of [{ nodeFailure: true }, { contentType: 'text/html' }, { body: '' },
+    { body: new Uint8Array(10 * 1024 * 1024 + 1) }]) {
+    const h = harness({ config: { ...config, publicImagesEnabled: true }, contentType: 'image/png', ...change })
+    const url = origin + '/api/images/img123/raw'
+    assert.equal(await (await h.request(url, { destination: 'image' })).text(), 'cloud same release')
+    assert.equal(h.calls.filter(c => c.url === url).length, 1)
+  }
 })
 
 test('network failure, corrupt bytes and wrong release fall back to the exact original request', async () => {
