@@ -11,7 +11,7 @@ import { useTheme } from './composables/theme'
 import { installNativeContextMenuGuard } from './utils/nativeContextMenu'
 import { installPreloadErrorRecovery } from './utils/preloadErrorRecovery'
 
-// 新版本发布后，长驻旧页面可能仍引用已删除的哈希分包；在任何懒加载发生前安装恢复。
+// 分包失败只提示手动恢复，避免节点切换导致页面刷新并丢失未保存输入。
 installPreloadErrorRecovery()
 // WAO 自己承载右键交互；只屏蔽浏览器菜单，不阻断业务 contextmenu 事件。
 const uninstallNativeContextMenuGuard = installNativeContextMenuGuard()

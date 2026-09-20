@@ -12,12 +12,24 @@ function createStorage(initialValue?: string) {
 }
 
 describe('发布后动态分包恢复', () => {
+  it('默认不刷新当前编辑页面，重复失败只提示手动恢复', () => {
+    const target = new EventTarget()
+    const reload = vi.fn<() => void>()
+    const showRetry = vi.fn<() => void>()
+    const storage = createStorage()
+    installPreloadErrorRecovery({ target, reload, showRetry, storage })
+    target.dispatchEvent(new Event('vite:preloadError', { cancelable: true }))
+    target.dispatchEvent(new Event('vite:preloadError', { cancelable: true }))
+    expect(reload).not.toHaveBeenCalled()
+    expect(storage.setItem).not.toHaveBeenCalled()
+    expect(showRetry).toHaveBeenCalledTimes(2)
+  })
   it('首次加载失败时阻止异常并只刷新一次', () => {
     const target = new EventTarget()
     const storage = createStorage()
     const reload = vi.fn<() => void>()
     const showRetry = vi.fn<() => void>()
-    installPreloadErrorRecovery({ target, storage, reload, showRetry, now: () => 1_000 })
+    installPreloadErrorRecovery({ target, storage, reload, showRetry, now: () => 1_000, autoReload: true })
 
     const event = new Event('vite:preloadError', { cancelable: true })
     target.dispatchEvent(event)
@@ -51,6 +63,7 @@ describe('发布后动态分包恢复', () => {
       reload,
       showRetry: vi.fn<() => void>(),
       now: () => 61_001,
+      autoReload: true,
     })
 
     target.dispatchEvent(new Event('vite:preloadError', { cancelable: true }))

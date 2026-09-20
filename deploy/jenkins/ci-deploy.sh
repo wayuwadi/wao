@@ -338,9 +338,12 @@ deploy_cloud() {
       "python3 deploy/wao-public-edge/incoming/static-release.py install deploy/wao-public-edge/incoming/wao-static.tgz deploy/wao-public-edge/releases '$WAO_GIT_SHA'" || return
   fi
   retry_remote "云静态制品" scp -o ConnectTimeout=15 \
-    "$WAO_RUN_TEMP/wao-static.tgz" deploy/scripts/static-release.py wao-cloud:/tmp/ || return
+    "$WAO_RUN_TEMP/wao-static.tgz" deploy/scripts/static-release.py \
+    deploy/scripts/publish-static-routing.py wao-cloud:/tmp/ || return
   retry_remote "云静态校验" ssh -o ConnectTimeout=15 wao-cloud \
     "python3 /tmp/static-release.py install /tmp/wao-static.tgz /var/www/wao/releases '$WAO_GIT_SHA'" || return
+  retry_remote "静态路由清单" ssh -o ConnectTimeout=15 wao-cloud \
+    "python3 /tmp/publish-static-routing.py /etc/wao-public-edge/routing.json '$WAO_GIT_SHA'" || return
   resolve_ipv4() {
     getent ahostsv4 "$1" | awk '$2 == "STREAM" { print $1; exit }'
   }

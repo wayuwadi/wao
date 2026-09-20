@@ -303,6 +303,21 @@ server {
     root /var/www/wao/dist;
     index index.html;
 
+    location = /_edge/routing.json {
+        alias /etc/wao-public-edge/routing.json;
+        default_type application/json;
+        add_header Cache-Control "no-store" always;
+    }
+    location = /edge-static-worker.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Service-Worker-Allowed "/" always;
+    }
+    location = /edge-bootstrap.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    }
+
     # Same release identity on home nodes and cloud fallback; missing chunks
     # must remain 404 instead of returning a different release or SPA HTML.
     location ~ "^/releases/[0-9a-f]{40}/(?:assets/[^.][^\\?]*|release-manifest\.json)$" {
