@@ -95,3 +95,24 @@ test('build loader delays entry and styles while preserving main-site icons', ()
   assert.match(output, /data-styles="\[&quot;\/releases\//)
   assert.throws(() => edgeBootstrapHtml('<script type="module" src="/assets/unversioned.js"></script>'))
 })
+
+test('an unresponsive connection aborts early while a responding slow body keeps its download budget', async () => {
+  const source = readFileSync(new URL('../public/edge-static-worker.js', import.meta.url), 'utf8')
+  const delays = []
+  const context = {
+    self: { addEventListener() {} }, AbortController, Uint8Array,
+    setTimeout: (fn, ms) => { delays.push(ms); return setTimeout(fn, ms / 100) }, clearTimeout,
+    fetch: (_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('aborted')))),
+  }
+  const bounded = vm.runInNewContext(source + '\n;boundedFetch', context)
+  await assert.rejects(bounded('https://node.invalid/asset', {}, 12000), /aborted/)
+  assert.equal(delays[0], 1500)
+  context.fetch = async () => new Response(new ReadableStream({
+    start(controller) { setTimeout(() => { controller.enqueue(new Uint8Array([42])); controller.close() }, 35) },
+  }))
+  delays.length = 0
+  const result = await bounded('https://node.invalid/asset', {}, 12000)
+  assert.equal(result.bytes[0], 42)
+  assert.equal(delays[0], 1500)
+  assert.ok(delays[1] > 10000)
+})

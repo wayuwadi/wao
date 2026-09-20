@@ -12,9 +12,13 @@ self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim(
 
 async function boundedFetch(url, options, timeout) {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeout)
+  const started = Date.now()
+  // An offline listener must not consume the whole file-download budget.
+  let timer = setTimeout(() => controller.abort(), Math.min(timeout, 1500))
   try {
     const response = await fetch(url, { ...options, signal: controller.signal })
+    clearTimeout(timer)
+    timer = setTimeout(() => controller.abort(), Math.max(1, timeout - (Date.now() - started)))
     if (!response.ok || response.redirected || response.type === 'opaque') throw new Error('Unavailable asset')
     if (Number(response.headers.get('content-length')) > MAX_ASSET_BYTES) throw new Error('Asset too large')
     const reader = response.body.getReader()
