@@ -50,6 +50,12 @@ public class DocController {
         return ApiResponse.ok(knowledge.listDocs());
     }
 
+    /** 目录不预取普通文档正文；小记保留全文供列表展示和内容搜索。 */
+    @GetMapping("/catalog")
+    public ApiResponse<List<DocDto>> catalog() {
+        return ApiResponse.ok(knowledge.listDocCatalog());
+    }
+
     /** 列出一个知识库中长期保留、但已退出日常文档树的归档文档。 */
     @GetMapping("/archived")
     public ApiResponse<List<DocDto>> archived(@RequestParam String kbId) {

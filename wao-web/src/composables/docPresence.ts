@@ -46,7 +46,7 @@ export function useDocPresence(docId: Ref<string | null>) {
       const res = await apiDocPresence(id, {
         line: caretLine.value,
         editing: wasTyping,
-        rev: data.docById(id)?.rev ?? 0,
+        rev: data.docById(id)?.bodyLoaded === false ? 0 : data.docById(id)?.rev ?? 0,
       })
       // 心跳可能比切换文档慢一步，回来时已经不是同一篇了就整个丢掉
       if (docId.value !== id) return

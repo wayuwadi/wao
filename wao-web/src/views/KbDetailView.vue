@@ -89,7 +89,8 @@ onMounted(() => {
 })
 
 
-const doc = computed(() => (docId.value ? data.docOf(docId.value) : null))
+const doc = computed(() => (docId.value && data.docById(docId.value)
+  && data.docById(docId.value)?.bodyLoaded !== false ? data.docOf(docId.value) : null))
 const base = computed(() => doc.value?.base ?? null)
 const archivedDocs = computed(() => data.archivedDocsOf(kbId.value))
 const currentArchived = computed(() => Boolean(docId.value && data.isDocArchived(docId.value)))
@@ -208,8 +209,15 @@ watch(
   { immediate: true },
 )
 
-watch([docId, () => data.loadStates.docs], ([id, state]) => {
-  if (id && state === 'loaded') void data.restoreDocumentDraft(id)
+async function loadSelectedDoc() {
+  const id = docId.value
+  if (id && await data.ensureDocLoaded(id) && docId.value === id)
+    await data.restoreDocumentDraft(id)
+}
+watch([docId, () => data.loadStates.docs,
+  () => docId.value ? data.docById(docId.value)?.bodyLoaded : undefined,
+  () => docId.value ? data.docById(docId.value)?.detailLoaded : undefined], ([id, state]) => {
+  if (id && state === 'loaded') void loadSelectedDoc()
 }, { immediate: true })
 
 function flushCurrentDoc() {
@@ -1203,7 +1211,10 @@ async function saveKbSettings() {
               </div>
             </div>
           </template>
-          <div v-else-if="docId" class="doc-empty pad">文档正在加载或已移走，请从左侧目录重新选择。</div>
+          <div v-else-if="docId" class="doc-empty pad" role="status">
+            <template v-if="data.docLoadErrors[docId]">文档正文加载失败：{{ data.docLoadErrors[docId] }} <button @click="loadSelectedDoc">重试</button></template>
+            <template v-else>正在加载文档正文…</template>
+          </div>
         </div>
 
 

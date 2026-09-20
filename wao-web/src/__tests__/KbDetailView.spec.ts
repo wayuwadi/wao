@@ -11,12 +11,13 @@ import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
 import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
-import { apiPatchDocTemplate, fetchDocTemplates } from '@/api/board'
+import { apiPatchDocTemplate, fetchDocTemplates, fetchDoc } from '@/api/board'
 
 vi.mock('@/api/board', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/board')>()
   return {
     ...actual,
+    fetchDoc: vi.fn<typeof actual.fetchDoc>(),
     fetchDocTemplates: vi.fn<typeof actual.fetchDocTemplates>(),
     apiPatchDocTemplate: vi.fn<typeof actual.apiPatchDocTemplate>(),
     apiDocPresence: vi.fn<typeof actual.apiDocPresence>().mockResolvedValue({
@@ -52,6 +53,7 @@ describe('知识库详情目录体验', () => {
     setActivePinia(pinia)
     seedDataStore()
     vi.mocked(fetchDocTemplates).mockReset()
+    vi.mocked(fetchDoc).mockReset()
     vi.mocked(apiPatchDocTemplate).mockReset()
   })
 
@@ -90,6 +92,22 @@ describe('知识库详情目录体验', () => {
     await flushPromises()
     expect(wrapper.find('.doc-draft-warning').exists()).toBe(false)
     expect(wrapper.find('.save-retry').exists()).toBe(false)
+  })
+
+  it('目录条目不渲染空白编辑器，正文失败后重试才开放编辑', async () => {
+    const data = useDataStore(pinia)
+    const original = { ...data.docs.d7! }
+    data.docs.d7 = { ...original, bodyLoaded: false, content: null, blocks: [] }
+    data.loadStates.docs = 'loaded'
+    vi.mocked(fetchDoc).mockRejectedValueOnce(new Error('正文超时'))
+      .mockResolvedValueOnce({ ...original, bodyLoaded: true })
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true)
+    expect(wrapper.find('.markdown-editor-stub').exists()).toBe(false)
+    expect(wrapper.get('.doc-empty').text()).toContain('正文超时')
+    await wrapper.get('.doc-empty button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.markdown-editor-stub').exists()).toBe(true)
+    expect(wrapper.find('.doc-empty').exists()).toBe(false)
   })
 
   it('普通知识库入口展示目录首页，点击文档后可返回首页', async () => {

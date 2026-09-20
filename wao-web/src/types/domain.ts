@@ -388,6 +388,10 @@ export interface Backlink {
 }
 
 export interface Doc {
+  /** false 表示目录条目；详情加载成功前不得作为空正文编辑或保存。 */
+  bodyLoaded?: boolean
+  /** 客户端目录标记；小记虽含正文，打开详情仍需补齐反向链接。 */
+  detailLoaded?: boolean
   tags?: string[]
   id: string
   title: string
