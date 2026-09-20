@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataAccessException;
 
 /** 主站CSRF、节点票据签发与一次性兑换；所有响应禁止缓存。 */
 @RestController
@@ -30,7 +31,17 @@ public class NodeSessionController {
     @GetMapping("/ready")
     public ApiResponse<Map<String, Integer>> ready(HttpServletResponse response) {
         response.setHeader("Cache-Control", "no-store");
-        jdbc.queryForObject("SELECT 1", Integer.class);
+        try {
+            Integer writable = jdbc.queryForObject(
+                    "SELECT IF(@@global.read_only=0 AND @@global.super_read_only=0,1,0)", Integer.class);
+            if (!Integer.valueOf(1).equals(writable)) {
+                response.setStatus(503);
+                return ApiResponse.fail(50300, "权威数据库未就绪");
+            }
+        } catch (DataAccessException unavailable) {
+            response.setStatus(503);
+            return ApiResponse.fail(50300, "权威数据库未就绪");
+        }
         return ApiResponse.ok(Map.of("protocol", 1));
     }
 

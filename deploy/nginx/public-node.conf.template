@@ -29,6 +29,9 @@ server {
     # Explicit allowlist: login/OAuth, Agent, runner and anonymous download tickets
     # keep their existing main-domain contracts. API rollout is disabled by default.
     location ~ ^/api/(?:edge/(?:ready|exchange|session)$|(?:tasks|projects|areas|members|org|kbs|kb-groups|docs)(?:/|$)) {
+        # Empty map keys leave business requests unaffected by the probe budget.
+        limit_req zone=edge_probe burst=10 nodelay;
+        limit_req_status 429;
         if ($wao_edge_api_enabled != "true") { return 503; }
         if ($host != "${WAO_EDGE_HOST}") { return 421; }
         if ($http_origin != "https://wao.wayuwa.cn") { return 403; }
