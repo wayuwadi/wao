@@ -255,7 +255,11 @@ describe('小记集中记录空间', () => {
     instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
     await instance.startPolish()
     await flushPromises()
-    expect(polishDocumentText).toHaveBeenCalledWith(source)
+    expect(polishDocumentText).toHaveBeenCalledWith(source, expect.objectContaining({
+      requestId: expect.any(String),
+      isActive: expect.any(Function),
+      onProgress: expect.any(Function),
+    }))
     expect(wrapper.find('.tiptap').text()).toBe(source)
     await wrapper.find('.polish-apply').trigger('click')
     expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).text).toContain('更加自然')
