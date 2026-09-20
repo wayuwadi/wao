@@ -19,6 +19,9 @@ sh deploy/jenkins/test-backup-controller.sh
 python3 -m unittest deploy/ai-runner/test_linux2_tunnel.py
 python3 -m unittest deploy/backup/test_webdav_client.py
 python3 -m unittest deploy/backup/test_peer_retention.py deploy/backup/test_peer_health.py
+python3 -m unittest deploy/scripts/test_node_dns_acme.py
+bash -n deploy/scripts/node-dns-acme-remote.sh
+bash -n deploy/scripts/deploy-node-certificate.sh
 bash -n deploy/backup/create-peer-backup.sh
 bash -n deploy/backup/verify-peer-restore.sh
 bash -n deploy/backup/check-peer-backup.sh

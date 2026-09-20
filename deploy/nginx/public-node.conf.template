@@ -1,0 +1,18 @@
+server {
+    listen 9443 ssl;
+    listen [::]:9443 ssl;
+    server_name ${WAO_EDGE_HOST};
+    ssl_certificate /etc/nginx/node-tls/current/fullchain.pem;
+    ssl_certificate_key /etc/nginx/node-tls/current/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+    location = /_edge/health {
+        default_type application/json;
+        add_header Cache-Control "no-store" always;
+        add_header Access-Control-Allow-Origin "https://wao.wayuwa.cn" always;
+        return 200 '{"node":"${WAO_EDGE_NODE}","tlsReady":true,"businessRoutingEnabled":false}';
+    }
+    # Business and static routes are enabled only after their separate
+    # authentication, version and fallback acceptance gates pass.
+    location / { return 404; }
+}
