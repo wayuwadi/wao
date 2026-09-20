@@ -20,6 +20,7 @@ services:
       - ./nginx/public-node-main.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/public-node.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ${WAO_EDGE_TLS_DIR:?}:/etc/nginx/node-tls:ro
+      - ${WAO_EDGE_RELEASES_DIR:?}:/srv/wao/releases:ro
     tmpfs:
       - /etc/nginx/conf.d:size=1m
       - /var/cache/nginx:size=16m

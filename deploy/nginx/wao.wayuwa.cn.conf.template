@@ -303,6 +303,16 @@ server {
     root /var/www/wao/dist;
     index index.html;
 
+    # Same release identity on home nodes and cloud fallback; missing chunks
+    # must remain 404 instead of returning a different release or SPA HTML.
+    location ~ "^/releases/[0-9a-f]{40}/(?:assets/[^.][^\\?]*|release-manifest\.json)$" {
+        root /var/www/wao;
+        try_files $uri =404;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+    location /releases/ { return 404; }
+
     location /assets/ {
         try_files $uri =404;
         expires 1y;
