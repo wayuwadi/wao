@@ -47,6 +47,11 @@ peer "set -e; test -d '$PEER_DEPLOY_ROOT'; tar -C '$PEER_DEPLOY_ROOT' --exclude=
 gzip -t "$staging/recovery/linux1-deploy.tar.gz"
 tar -C "$PROJECT_ROOT/deploy" --exclude='./backups' --exclude='./.public-ip' -czf "$staging/recovery/linux2-deploy.tar.gz" .
 
+# Runtime roles/epochs/auth live outside the deployment tree. These plaintext
+# archives remain in the private staging directory and are encrypted below.
+python3 "$PROJECT_ROOT/deploy/redis/export-durable-state.py" master >"$staging/recovery/linux2-redis-state.tar.gz"
+peer "python3 '$PEER_DEPLOY_ROOT/redis/export-durable-state.py' slave" >"$staging/recovery/linux1-redis-state.tar.gz"
+
 set -a
 . "$PROJECT_ROOT/deploy/.env"
 set +a
@@ -88,7 +93,7 @@ jenkins_archive="$(find "$jenkins_root" -maxdepth 1 -name 'jenkins-home-*.tar.gz
 [[ -n "$jenkins_archive" && -f "$jenkins_archive.sha256" ]] || { echo 'No verified Jenkins archive younger than 26 hours.' >&2; exit 1; }
 (cd "$jenkins_root"; sha256sum -c "$(basename "$jenkins_archive.sha256")")
 cp "$jenkins_archive" "$staging/recovery/jenkins-home.tar.gz"
-printf 'format=1\ncreated_utc=%s\ndatabase=%s\nsource=linux2-primary\n' "$stamp" "$DB_NAME" >"$staging/recovery/metadata.txt"
+printf 'format=2\ncreated_utc=%s\ndatabase=%s\nsource=linux2-primary\n' "$stamp" "$DB_NAME" >"$staging/recovery/metadata.txt"
 (cd "$staging/recovery"; sha256sum *.gz tables.txt metadata.txt >SHA256SUMS)
 tar -C "$staging" -cf - recovery | gpg --batch --yes --pinentry-mode loopback \
   --passphrase-file "$PASSPHRASE_FILE" --symmetric --cipher-algo AES256 --compress-algo none \

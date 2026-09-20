@@ -22,6 +22,19 @@ trap 'exit 143' TERM HUP
 gpg --batch --pinentry-mode loopback --passphrase-file "$passphrase" --decrypt "$snapshot/recovery.tar.gpg" \
   | tar -C "$temporary" -xf -
 (cd "$temporary/recovery"; sha256sum -c SHA256SUMS)
+if grep -qx 'format=2' "$temporary/recovery/metadata.txt"; then
+  python3 - "$temporary/recovery" <<'PY'
+import json, pathlib, sys, tarfile
+for node in ('linux1', 'linux2'):
+    with tarfile.open(pathlib.Path(sys.argv[1]) / f'{node}-redis-state.tar.gz') as archive:
+        assert set(archive.getnames()) == {'redis.conf', 'sentinel.conf', 'role.json'}
+        assert all(member.isfile() for member in archive.getmembers())
+        assert json.load(archive.extractfile('role.json'))[0] in ('master', 'slave')
+        assert b'sentinel myid ' in archive.extractfile('sentinel.conf').read()
+        assert b'requirepass ' in archive.extractfile('redis.conf').read()
+print('Both protected Redis configuration archives are structurally valid; no historical role was applied.')
+PY
+fi
 printf 'MYSQL_ROOT_PASSWORD=' >"$temporary/mysql.env"
 openssl rand -hex 32 >>"$temporary/mysql.env"
 printf 'MYSQL_DATABASE=wao_restore\n' >>"$temporary/mysql.env"

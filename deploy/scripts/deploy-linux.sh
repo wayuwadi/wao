@@ -206,15 +206,9 @@ start_services() {
     # The proxy tag is reused between releases. Force recreation so Docker does
     # not keep a healthy container that still points at the previous image ID.
     compose up -d --force-recreate --wait codex-vpn codex-egress-proxy || return 1
-    sentinel_service=sentinel-master
-  else
-    sentinel_service=sentinel-slave
   fi
-  # Sentinel rewrites its runtime config after a failover, while its generated
-  # source config is bind-mounted. Recreate one node at a time during the
-  # existing slave -> master rollout so quorum policy and the declared master
-  # are reapplied without taking both discovery endpoints down together.
-  compose up -d --force-recreate --no-deps "${sentinel_service}" || return 1
+  # Durable Redis/Sentinel state survives container recreation. Do not reset
+  # elected roles or Sentinel identities during ordinary application releases.
   compose up -d --wait
 }
 
