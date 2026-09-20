@@ -73,11 +73,8 @@ services:
     ports:
       - "${MASTER_BIND_IP:-0.0.0.0}:26379:26379"
     environment:
-      REDIS_MASTER_HOST: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
-      REDIS_SENTINEL_QUORUM: ${REDIS_SENTINEL_QUORUM:-3}
       REDIS_PASS: ${REDIS_PASS}
-      SENTINEL_ANNOUNCE_HOST: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}
     command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
     volumes:
       - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro
@@ -94,6 +91,13 @@ services:
       interval: 10s
       timeout: 3s
       retries: 15
+    pids_limit: 64
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+          pids: 64
     logging: *default-logging
     networks: [wao]
 
