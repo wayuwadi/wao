@@ -295,7 +295,6 @@ deploy_slave() {
   fi
   run_slave_installer \
     "sh '$remote_dir/$remote_installer' '$remote_dir/$remote_release' '$remote_dir/$remote_secrets' '$remote_dir/$remote_shared_env' '$remote_dir/$remote_certificate' '$remote_dir/$remote_images' '$WAO_GIT_SHA' '$snapshot_argument'" || return
-  slave_deployed=true
 }
 
 prepare_cloud_routing() {
@@ -606,6 +605,9 @@ if [ "$slave_available" = true ]; then
       exit 1
     fi
   else
+    # 安装函数在重试子 shell/管道内运行，变量赋值不会回到主流程。
+    # 云端回源也通过后才记录成功，避免收尾误摘流或恢复未就绪节点。
+    slave_deployed=true
     set_upstream_state slave up || exit 1
     echo 'Linux1 deployment completed and the node is back in the public upstream.'
   fi
