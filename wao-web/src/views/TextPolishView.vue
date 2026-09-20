@@ -7,6 +7,7 @@ import {
   type TextPolishRecord,
 } from '@/api/textPolish'
 import { useSessionStore } from '@/stores/session'
+import { newPolishRequestId } from '@/api/polishJobs'
 
 const session = useSessionStore()
 const owner = ref('')
@@ -20,6 +21,15 @@ const promptSaving = ref(false)
 const promptError = ref('')
 const originalText = ref('')
 const running = ref(false)
+const runProgress = ref('')
+const pendingJob = ref<{ requestId: string; original: string; failed?: boolean } | null>(null)
+function pendingKey() { return `wao-text-polish-pending-v1:${owner.value}` }
+function savePending() {
+  try {
+    if (pendingJob.value) localStorage.setItem(pendingKey(), JSON.stringify(pendingJob.value))
+    else localStorage.removeItem(pendingKey())
+  } catch { draftErrors.value.original = true }
+}
 const runError = ref('')
 const result = ref<TextPolishRecord | null>(null)
 const records = ref<TextPolishRecord[]>([])
@@ -39,7 +49,7 @@ const draftError = computed(() => draftErrors.value.prompt || draftErrors.value.
 const promptDirty = computed(() => prompt.value.trim() !== savedPrompt.value)
 const canRun = computed(() => initialized.value && originalText.value.trim().length > 0
   && prompt.value.trim().length > 0 && !running.value && !promptSaving.value)
-const runLabel = computed(() => running.value ? '正在润色…' : promptDirty.value ? '保存方法并润色' : '开始润色')
+const runLabel = computed(() => running.value ? '正在润色…' : pendingJob.value && !pendingJob.value.failed ? '继续查看结果' : promptDirty.value ? '保存方法并润色' : '开始润色')
 watch([promptDirty, promptError], ([dirty, error]) => { if (dirty || error) methodOpen.value = true })
 
 type DraftKind = 'prompt' | 'original'
@@ -91,6 +101,13 @@ async function load() {
     restoredDraft.value = localPrompt !== null || localOriginal !== null
     records.value = workspace.records
     initialized.value = true
+    try {
+      const pending = JSON.parse(localStorage.getItem(pendingKey()) ?? 'null')
+      if (pending && /^[a-f0-9]{32}$/.test(pending.requestId) && typeof pending.original === 'string') {
+        pendingJob.value = pending
+        if (!pending.failed) void continueJob(version)
+      }
+    } catch { /* 无效缓存不影响已保存的原文和方法。 */ }
   } catch (error) {
     if (current(version)) loadError.value = errorMessage(error, '润色工作台加载失败')
   } finally {
@@ -139,18 +156,46 @@ async function run() {
   runError.value = ''
   copyState.value = 'idle'
   try {
+    if (pendingJob.value && !pendingJob.value.failed) { await continueJob(version); return }
     if (promptDirty.value && !(await savePrompt())) return
     if (!current(version)) return
     if (promptDirty.value) {
       runError.value = '提示词在保存期间发生了修改，请确认后重新润色；当前输入已保留。'
       return
     }
-    const record = await runTextPolish(original)
-    if (!current(version)) return
-    result.value = record
-    records.value = [record, ...records.value.filter((item) => item.id !== record.id)]
+    pendingJob.value = { requestId: newPolishRequestId(), original }
+    savePending()
+    await continueJob(version)
   } catch (error) {
     if (current(version)) runError.value = errorMessage(error, '润色失败，请稍后重试')
+  } finally {
+    if (current(version)) running.value = false
+  }
+}
+
+async function continueJob(version: number) {
+  const pending = pendingJob.value
+  if (!pending) return
+  running.value = true
+  runError.value = ''
+  try {
+    const record = await runTextPolish(pending.original, {
+      requestId: pending.requestId,
+      isActive: () => current(version),
+      onProgress: job => {
+        if (!current(version)) return
+        runProgress.value = job.message
+        pending.failed = job.status === 'FAILED'
+        savePending()
+      },
+    })
+    if (!current(version)) return
+    result.value = record
+    records.value = [record, ...records.value.filter(item => item.id !== record.id)]
+    pendingJob.value = null
+    savePending()
+  } catch (error) {
+    if (current(version)) runError.value = errorMessage(error, '暂时无法读取结果，请继续查看原任务')
   } finally {
     if (current(version)) running.value = false
   }
@@ -202,6 +247,8 @@ watch(() => session.userId, (member) => {
   promptError.value = ''
   runError.value = ''
   running.value = false
+  pendingJob.value = null
+  runProgress.value = ''
   copyState.value = 'idle'
   restoredDraft.value = false
   methodOpen.value = false
@@ -278,7 +325,7 @@ onBeforeUnmount(() => { generation++ })
           </div>
           <div v-if="running" class="result-empty active">
             <i class="ri-magic-line"></i><strong>机器人正在梳理表达</strong
-            ><span>原文会一直保留，完成后自动记录前后内容。</span>
+            ><span>{{ runProgress || '原文会一直保留，完成后自动记录前后内容。' }}</span>
           </div>
           <pre v-else-if="result" class="result-text">{{ result.polishedText }}</pre>
           <div v-else class="result-empty">

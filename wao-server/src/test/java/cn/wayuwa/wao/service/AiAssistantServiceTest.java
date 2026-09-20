@@ -49,6 +49,32 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void unifiedDefaultRoutesReadOnlyJobsToApiAndFallsBackAfterRemoval() {
+        AiRunAccountDto api = new AiRunAccountDto("aa1", "deepseek", "默认模型", "api_key",
+                null, "test-value", "https://api.deepseek.com", "deepseek-chat", "chat_completions");
+        when(accountService.defaultDocumentPolishAccount()).thenReturn(api);
+        when(accountService.assistantAccount("aa1")).thenReturn(api);
+        service.enqueueReadOnlyJob("tianren-test", "解释卦象");
+        ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(queued.capture());
+        assertThat(queued.getValue().getAiCapabilityId()).isEqualTo("aa1");
+        assertThat(queued.getValue().getStatus()).isEqualTo("provider_queued");
+        when(accountService.defaultDocumentPolishAccount()).thenReturn(null);
+        assertThat(service.defaultCapabilityId()).isEqualTo("local-codex");
+    }
+
+    @Test
+    void centralLoginRestoresAvailabilityDespiteInvalidNodeLocalLogin() {
+        AiRunnerNodeEntity node = runner("Linux", "codex");
+        when(runnerMapper.selectList(any())).thenReturn(List.of(node));
+        when(runnerMapper.hasInvalidLocalCodexAuth(node.getId())).thenReturn(true);
+        assertThat(service.status().configured()).isFalse();
+        when(accountService.defaultCodexRunAccount()).thenReturn(new AiRunAccountDto(
+                "aa1", "codex", "统一登录", "oauth", "{}", null, null, null, null));
+        assertThat(service.status().configured()).isTrue();
+    }
+
+    @Test
     void statusAcceptsAnyOnlineLocalCodexRunner() {
         AiRunnerNodeEntity windows = runner("Windows Server 2025", "codex");
         AiRunnerNodeEntity linuxWithoutCodex = runner("Linux 6.8", "claude");

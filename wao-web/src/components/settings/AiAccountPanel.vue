@@ -434,7 +434,7 @@ watch(() => true, load, { immediate: true })
       <div>
         <div class="eyebrow">AI ACCESS</div>
         <h1>AI 账号与 API</h1>
-        <p>集中管理 OAuth、CLI 凭据和模型 API；DeepSeek Token 加密保存，所选模型直接用于文档润色。</p>
+        <p>集中管理并加密保存 AI 凭据。润色、卦象等默认共用最新启用的模型 API；没有 API 时使用 Codex，由在线执行节点处理。统一登录后各节点可共用授权。</p>
       </div>
       <button class="refresh-btn" :disabled="busy" @click="load">
         <i :class="busy ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ busy ? '读取中' : '刷新列表' }}

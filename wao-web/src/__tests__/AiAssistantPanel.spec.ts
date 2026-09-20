@@ -198,7 +198,7 @@ describe('AiAssistantPanel', () => {
         dateFrom: '2026-07-01',
         dateTo: '2026-07-31',
       }),
-      'local-codex',
+      '',
     )
     expect(document.body.textContent).toContain('找到了')
     wrapper.unmount()

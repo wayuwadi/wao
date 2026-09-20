@@ -1631,6 +1631,20 @@ class LinuxCodexAssistantTest(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix="wao-assistant-"))
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
 
+    @patch.object(RUNNER, "run_codex")
+    def test_invalid_login_returns_safe_code_without_repeating_or_leaking_output(self, run_codex: Mock) -> None:
+        run_codex.return_value = (1, "401 Unauthorized: invalidated oauth token PRIVATE-DETAIL", None, {})
+        api = Mock()
+        RUNNER.execute_assistant_claim(api, {"runId": "auth-failed", "claimToken": "attempt", "prompt": "原文"},
+                                      self.root, "codex", "git")
+        run_codex.assert_called_once()
+        completion = api.post.call_args.args[1]
+        self.assertEqual("CODEX_AUTH_REQUIRED", completion["error"])
+        self.assertEqual("", completion["response"])
+        self.assertNotIn("PRIVATE-DETAIL", str(completion))
+        self.assertFalse(RUNNER.codex_auth_required("429 quota exceeded"))
+        self.assertFalse(RUNNER.codex_auth_required("request timed out"))
+
     @patch.object(RUNNER, "find_engine_executable")
     def test_extra_codex_engine_keeps_explicit_claude_engine(self, find: Mock) -> None:
         find.side_effect = lambda name, command: command or f"/usr/bin/{name}"
