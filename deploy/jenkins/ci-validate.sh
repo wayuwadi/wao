@@ -7,6 +7,7 @@ sh deploy/scripts/test-activate-nginx-config.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
 sh deploy/scripts/test-linux-slave-availability.sh
 sh deploy/scripts/test-redis-sentinel-policy.sh
+sh deploy/scripts/test-validate-jvm-budget.sh
 sh deploy/scripts/test-ensure-codex-egress.sh
 sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh

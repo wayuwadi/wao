@@ -36,9 +36,15 @@ RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR_HOST}/g" /etc/apk/repositor
     && addgroup -S wao \
     && adduser -S wao -G wao
 USER wao
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+UseG1GC", "-XX:+HeapDumpOnOutOfMemoryError", "-XX:HeapDumpPath=/tmp/heapdump.hprof", "-jar", "app.jar"]
+# Use explicit heap ceilings: percentage ergonomics can use host RAM even when
+# cgroup metrics report the container limit (observed on the Linux2 host).
+# Gateway/agent have 1 GiB containers; leave room for native buffers and threads.
+ENV JAVA_TOOL_OPTIONS="-Xms128m -Xmx512m"
+ENTRYPOINT ["java", "-XX:+UseG1GC", "-XX:+HeapDumpOnOutOfMemoryError", "-XX:HeapDumpPath=/tmp/heapdump.hprof", "-jar", "app.jar"]
 
 FROM runtime AS server-runtime
+# The application container has a 2 GiB limit, including all non-heap memory.
+ENV JAVA_TOOL_OPTIONS="-Xms256m -Xmx1024m"
 COPY --from=build /workspace/wao-server/target/wao-server-*.jar app.jar
 EXPOSE 8080
 
