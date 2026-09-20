@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily local public certificate delivery retry
+
+[Timer]
+OnCalendar=*-*-* 06:10:00 Asia/Shanghai
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
