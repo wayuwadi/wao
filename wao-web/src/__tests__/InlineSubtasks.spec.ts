@@ -16,6 +16,21 @@ describe('列表内子任务', () => {
     vi.mocked(apiPutTask).mockReset()
     vi.mocked(apiPutTask).mockImplementation(async (_id, task) => task as never)
   })
+  it.each([true, false])('冲突草稿提供处理入口而不是无效重试（table=%s）', async (table) => {
+    const data = useDataStore()
+    const task = data.tasks[0]!
+    data.taskConflicts[task.id] = true
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('error')
+    const wrapper = mount(InlineSubtasks, { props: { taskId: task.id, table } })
+    expect(wrapper.text()).not.toContain('重试保存')
+    const action = wrapper.findAll('button').find(button => button.text() === '查看并处理冲突')!
+    await action.trigger('click')
+    expect(useUiStore().openTaskId).toBe(task.id)
+    expect(apiPutTask).not.toHaveBeenCalled()
+    expect(data.taskConflicts[task.id]).toBe(true)
+    wrapper.unmount()
+    vi.restoreAllMocks()
+  })
   it('直接新增、编号与跳转，保存失败可重试而不重复添加', async () => {
     const data = useDataStore()
     const task = data.tasks[0]!

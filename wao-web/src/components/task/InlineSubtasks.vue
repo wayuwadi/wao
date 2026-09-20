@@ -309,7 +309,7 @@ function add() {
       <td></td>
       <td colspan="9">
         <small class="error" role="alert"
-          >保存失败{{ data.taskSaveError(taskId) ? `：${data.taskSaveError(taskId)}` : '' }}，草稿已保留<button type="button" @click="data.flushTask(taskId)">重试保存</button></small
+          >保存失败{{ data.taskSaveError(taskId) ? `：${data.taskSaveError(taskId)}` : '' }}，草稿已保留<button v-if="data.taskConflicts[taskId]" type="button" @click="ui.openTask(taskId)">查看并处理冲突</button><button v-else type="button" @click="data.flushTask(taskId)">重试保存</button></small
         >
       </td>
     </tr>
@@ -385,7 +385,7 @@ function add() {
     <small v-if="data.taskSaveState(taskId) === 'saving'" role="status">保存中…</small>
     <small v-else-if="data.taskSaveState(taskId) === 'saved'" role="status">已保存</small>
     <small v-else-if="data.taskSaveState(taskId) === 'error'" class="error" role="alert"
-      >保存失败{{ data.taskSaveError(taskId) ? `：${data.taskSaveError(taskId)}` : '' }}，草稿已保留<button @click="data.flushTask(taskId)">重试保存</button></small
+      >保存失败{{ data.taskSaveError(taskId) ? `：${data.taskSaveError(taskId)}` : '' }}，草稿已保留<button v-if="data.taskConflicts[taskId]" type="button" @click="ui.openTask(taskId)">查看并处理冲突</button><button v-else type="button" @click="data.flushTask(taskId)">重试保存</button></small
     >
     <small v-if="localError" class="error" role="alert">{{ localError }}</small>
     <CellMenu v-if="menu?.kind === 'state'" :anchor="menu.anchor" @close="menu = null">

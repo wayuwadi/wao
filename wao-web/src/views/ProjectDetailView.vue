@@ -591,6 +591,11 @@ watch(visibleTaskIds, (ids) => {
 
     <!-- 任务 -->
     <div v-if="projTab === '任务'">
+      <div v-if="data.taskLoadState === 'error'" class="task-scope" role="alert">
+        任务加载失败，当前列表可能不完整，本机草稿已保留。{{ data.taskLoadError }}
+        <button @click="data.hydrate()">重新加载任务</button>
+      </div>
+      <div v-else-if="data.taskLoadState === 'loading'" class="task-scope" role="status">正在加载任务，已显示的任务和本机草稿会继续保留。</div>
       <div v-if="effectiveCreator || effectiveOwner" class="task-scope" role="status">
         当前仅显示{{ effectiveOwner ? ` ${activeOwnerName} 负责的` : '' }}{{ effectiveCreator ? ` ${activeCreatorName} 创建的` : '' }}任务 · {{ allTasks.length }} / {{ ptasks.length }} 项
         <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
@@ -737,7 +742,7 @@ watch(visibleTaskIds, (ids) => {
                 />
               </template>
               <tbody v-if="section.header && !section.total && quickAddGroup !== section.id">
-                <tr><td colspan="10" class="empty-inline">这个分组还没有任务，点分组名旁的「+」添加</td></tr>
+                <tr><td colspan="10" class="empty-inline">{{ data.taskLoadState === 'error' ? '任务加载失败，请重新加载' : data.taskLoadState === 'loading' ? '正在加载任务…' : '这个分组还没有任务，点分组名旁的「+」添加' }}</td></tr>
               </tbody>
             </template>
           </template>
@@ -745,7 +750,11 @@ watch(visibleTaskIds, (ids) => {
             <tr>
               <td colspan="10" class="empty-inline">
                 {{
-                  ptasks.length
+                  data.taskLoadState === 'error'
+                    ? '任务加载失败，暂时无法确认任务数量，请重新加载'
+                    : data.taskLoadState === 'loading'
+                    ? '正在加载任务…'
+                    : ptasks.length
                     ? '当前筛选没有任务，换个负责人或创建人再看'
                     : '还没有任务——点右上角「新建任务」开始拆解'
                 }}
