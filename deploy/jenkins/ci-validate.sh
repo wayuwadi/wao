@@ -21,6 +21,7 @@ python3 -m unittest deploy/backup/test_webdav_client.py
 python3 -m unittest deploy/backup/test_peer_retention.py deploy/backup/test_peer_health.py
 python3 -m unittest deploy/scripts/test_node_dns_acme.py
 python3 -m unittest deploy/scripts/test_static_release.py
+python3 -m unittest deploy/scripts/test_static_routing.py
 bash -n deploy/scripts/node-dns-acme-remote.sh
 bash -n deploy/scripts/deploy-node-certificate.sh
 bash -n deploy/backup/create-peer-backup.sh

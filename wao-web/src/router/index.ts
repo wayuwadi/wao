@@ -12,7 +12,8 @@ export function legacyNotificationSettingsRedirect() {
 }
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  // Static release paths are independent of the public application's routes.
+  history: createWebHistory('/'),
   routes: [
     {
       path: '/connection-recovery',

@@ -13,6 +13,7 @@ export interface PreloadErrorRecoveryOptions {
   reload?: () => void
   showRetry?: () => void
   cooldownMs?: number
+  autoReload?: boolean
 }
 
 interface PreloadErrorBannerOptions {
@@ -86,7 +87,8 @@ export function showPreloadErrorBanner(options: PreloadErrorBannerOptions = {}) 
 }
 
 /**
- * 安装 Vite 动态分包加载失败恢复。首次失败自动刷新，短时间内复发则交给用户手动重试，避免刷新死循环。
+ * 默认仅提示手动恢复，防止资源节点故障刷新页面并丢失当前草稿。
+ * 显式无编辑状态的调用方才可启用受限自动刷新。
  */
 export function installPreloadErrorRecovery(options: PreloadErrorRecoveryOptions = {}) {
   const target = options.target ?? window
@@ -97,6 +99,10 @@ export function installPreloadErrorRecovery(options: PreloadErrorRecoveryOptions
 
   const handlePreloadError = (event: Event) => {
     event.preventDefault()
+    if (options.autoReload !== true) {
+      showRetry()
+      return
+    }
 
     let previousReload = 0
     let storage = options.storage

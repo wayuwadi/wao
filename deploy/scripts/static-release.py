@@ -73,6 +73,7 @@ def install(archive_path, root, release):
     release_id(release)
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
+    root.chmod(0o755)
     stage = Path(tempfile.mkdtemp(prefix=".incoming-", dir=root))
     try:
         seen = set()
