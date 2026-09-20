@@ -1644,8 +1644,9 @@ export const useDataStore = defineStore('data', () => {
       try {
         created = await apiCreateProject(payload)
         projects.value.unshift(created)
-      } catch {
-        /* 后端异常时回落本地 */
+      } catch (error) {
+        // 在线保存失败必须保留表单，不能把本地临时记录当作已保存。
+        throw error
       }
     }
     if (!created) {
@@ -2292,8 +2293,9 @@ export const useDataStore = defineStore('data', () => {
         const g = await apiCreateVaultGroup(name)
         vault.value.push(g)
         return g
-      } catch {
-        /* 后端异常时回落本地 */
+      } catch (error) {
+        // 在线保存失败必须保留表单，不能把本地临时记录当作已保存。
+        throw error
       }
     }
     const g: VaultGroup = { id: 'vg' + Date.now(), group: name, items: [] }

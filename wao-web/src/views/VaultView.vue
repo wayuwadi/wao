@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
@@ -99,12 +100,17 @@ async function dropGroup(targetId: string) {
   ids.splice(targetIndex, 0, sourceId)
   await data.reorderVaultGroups(ids)
 }
+const savingGroup = ref(false), groupError = ref('')
 async function createGroup() {
-  if (!newGroupName.value.trim()) return
+  if (!newGroupName.value.trim() || savingGroup.value) return
+  savingGroup.value = true; groupError.value = ''
+  try {
   const g = await data.addVaultGroup(newGroupName.value.trim())
   newGroupOpen.value = false
   newGroupName.value = ''
   groupId.value = g.id
+  } catch { groupError.value = '保存分组失败，名称已保留，请重试。' }
+  finally { savingGroup.value = false }
 }
 
 // ---- 查看 / 复制密码 ----
@@ -147,6 +153,8 @@ const formUser = ref('')
 const formSite = ref('')
 const formNote = ref('')
 const formSecret = ref('')
+const itemSnapshot = () => JSON.stringify([formGroupId.value, formName.value, formUser.value, formSite.value, formNote.value, formSecret.value])
+const itemOriginal = ref('')
 
 const nameInput = ref<HTMLInputElement | null>(null)
 const savingItem = ref(false)
@@ -161,6 +169,7 @@ async function openNewItem() {
   formNote.value = ''
   formSecret.value = ''
   itemError.value = ''
+  itemOriginal.value = itemSnapshot()
   itemOpen.value = true
   await nextTick()
   nameInput.value?.focus()
@@ -175,6 +184,7 @@ function openEditItem() {
   formSite.value = sel.value.site
   formNote.value = sel.value.note
   formSecret.value = ''
+  itemOriginal.value = itemSnapshot()
   itemOpen.value = true
 }
 async function saveItem() {
@@ -216,6 +226,20 @@ async function deleteItem() {
   await data.deleteVaultItem(id)
   toast('已删除条目', 'ri-delete-bin-line')
 }
+async function closeItem() {
+  if (savingItem.value) return
+  if (itemSnapshot() !== itemOriginal.value) {
+    if (!formName.value.trim()) { itemError.value = '请填写名称后保存，输入已保留。'; return }
+    await saveItem()
+  } else itemOpen.value = false
+}
+async function closeNewGroup() {
+  if (savingGroup.value) return
+  if (newGroupName.value.trim()) await createGroup()
+  else newGroupOpen.value = false
+}
+useOverlayDismiss(() => itemOpen.value, closeItem)
+useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 </script>
 
 <template>
@@ -323,12 +347,12 @@ async function deleteItem() {
 
     <!-- 新建 / 编辑条目弹层 -->
     <template v-if="itemOpen">
-      <div class="modal-mask" @click="!savingItem && (itemOpen = false)"></div>
+      <div class="modal-mask" @click="closeItem()"></div>
       <div class="modal">
         <div class="modal-head">
           <div class="modal-title">{{ editingId ? '编辑条目' : '新建条目' }}</div>
           <div class="spacer"></div>
-          <button class="icon-btn" @click="!savingItem && (itemOpen = false)"><i class="ri-close-line"></i></button>
+          <button class="icon-btn" @click="closeItem()"><i class="ri-close-line"></i></button>
         </div>
         <fieldset class="modal-body" :disabled="savingItem" style="border: 0; margin: 0; min-width: 0">
           <label class="f-label">分组 <span class="optional">点选分组；全部视图默认放入“{{ defaultGroupName }}”</span></label>
@@ -353,19 +377,19 @@ async function deleteItem() {
 
     <!-- 新建分组弹层 -->
     <template v-if="newGroupOpen">
-      <div class="modal-mask" @click="newGroupOpen = false"></div>
-      <div class="modal narrow">
+      <div class="modal-mask" @click="closeNewGroup"></div>
+      <div class="modal narrow" role="dialog" aria-modal="true"><p v-if="groupError" role="alert">{{ groupError }}</p>
         <div class="modal-head">
           <div class="modal-title">新建分组</div>
           <div class="spacer"></div>
-          <button class="icon-btn" @click="newGroupOpen = false"><i class="ri-close-line"></i></button>
+          <button class="icon-btn" @click="closeNewGroup"><i class="ri-close-line"></i></button>
         </div>
         <div class="modal-body">
-          <input v-model="newGroupName" class="f-input" placeholder="分组名称" @keydown.enter="createGroup" />
+          <input v-model="newGroupName" :disabled="savingGroup" class="f-input" placeholder="分组名称" @keydown.enter="createGroup" />
         </div>
         <div class="modal-foot">
           <div class="spacer"></div>
-          <button class="btn-primary" :disabled="!newGroupName.trim()" @click="createGroup">创建</button>
+          <button class="btn-primary" :disabled="!newGroupName.trim() || savingGroup" @click="createGroup">创建</button>
         </div>
       </div>
     </template>
@@ -373,6 +397,11 @@ async function deleteItem() {
 </template>
 
 <style scoped>
+.vault { height: 100%; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; }
+.vtop, .banner { flex-shrink: 0; }
+.vault .cols { flex: 1; min-height: 0; }
+.group-col, .item-col, .detail-col { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+
 .vault-search { max-width: 260px; }
 .group-choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .group-choices button { border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); padding: 7px 12px; cursor: pointer; }
@@ -963,4 +992,5 @@ async function deleteItem() {
   .f-icon { width: 40px; height: 40px; }
   .f-icon i { font-size: 16px; }
 }
+@media (max-width: 760px) { .vault .group-col { flex: 0 0 auto; max-height: 25%; } .vault .item-col { flex: 1; min-height: 0; } }
 </style>

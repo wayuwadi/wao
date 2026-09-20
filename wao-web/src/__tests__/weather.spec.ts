@@ -13,10 +13,12 @@ const initial = () => ({ location: city, rhythmVisible: true, calendarVisible: t
 const forecast = () => ({ fetchedAt: new Date().toISOString(), days: [{ date: '2026-09-04', code: 0, low: 21, high: 29, rain: 0, wind: 10 }] })
 describe('真实天气与成员设置', () => {
   beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); setActivePinia(createPinia()); api.fetchPreference.mockResolvedValue(''); api.savePreference.mockResolvedValue(undefined); api.fetchWeather.mockResolvedValue(forecast()) })
-  it('首次不猜位置，无效坐标被丢弃，真实零值仍可展示', async () => {
+  it('默认武汉，保留已有城市和主动清空设置，真实零值仍可展示', async () => {
     const store = useWeatherStore(); await flushPromises()
-    expect(store.prefs.location).toBeNull(); expect(api.fetchWeather).not.toHaveBeenCalled()
-    expect(parseWeatherPreferences(JSON.stringify({ location: { ...city, latitude: 91 } })).location).toBeNull()
+    expect(store.prefs.location?.name).toBe('武汉'); expect(api.fetchWeather).toHaveBeenCalled()
+    expect(parseWeatherPreferences(JSON.stringify({ location: { ...city, latitude: 91 } })).location?.name).toBe('武汉')
+    expect(parseWeatherPreferences(JSON.stringify(initial())).location).toEqual(city)
+    expect(parseWeatherPreferences(JSON.stringify({ location: null })).location).toBeNull()
     expect(weatherName(0)).toBe('晴'); expect(weatherName(null)).toBe('天气状况未知')
   })
   it('迟到的设置读取不覆盖本地输入，保存失败仍保留草稿并可重试', async () => {
@@ -25,7 +27,7 @@ describe('真实天气与成员设置', () => {
     const store = useWeatherStore(); store.draft.location = city
     finish(''); await flushPromises(); expect(store.draft.location?.name).toBe('上海')
     api.savePreference.mockRejectedValueOnce(new Error('网络超时'))
-    await store.save(); expect(store.error).toBe('网络超时'); expect(store.prefs.location).toBeNull()
+    await store.save(); expect(store.error).toBe('网络超时'); expect(store.prefs.location?.name).toBe('武汉')
     expect(localStorage.getItem('wao-weather-draft-v1:weather-member')).toContain('上海')
     await store.save(); expect(store.prefs.location?.name).toBe('上海'); expect(store.message).toBe('天气设置已保存')
     expect(localStorage.getItem('wao-weather-draft-v1:weather-member')).toBeNull()

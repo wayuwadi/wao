@@ -262,6 +262,7 @@ function openSearch() {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  if (e.defaultPrevented) return
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     ui.openSearch()
@@ -668,7 +669,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .bell i {
   font-size: 16px;
 }
-.content:has(.cal) { overflow: hidden; }
+.content:has(.cal), .content:has(.drawings-page), .content:has(.vault) { overflow: hidden; }
+.page-stage:has(.drawings-page), .page-stage:has(.vault) { flex: 1 1 0; min-height: 0; align-items: stretch; overflow: hidden; }
+.page-body:has(.drawings-page), .page-body:has(.vault) { min-height: 0; overflow: hidden; }
 .page-stage:has(.cal) { flex: 1 1 0; min-height: 0; align-items: stretch; overflow: hidden; }
 .page-body:has(.cal) { min-height: 0; overflow: hidden; }
 .content {

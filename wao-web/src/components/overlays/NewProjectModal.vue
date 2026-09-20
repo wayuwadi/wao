@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
@@ -19,8 +20,11 @@ const VIS_OPTS = [
   { label: '全部成员可见', desc: '组织内成员可查看', icon: 'ri-team-line' },
 ]
 
+const saving = ref(false), error = ref('')
 async function create() {
-  if (!name.value.trim()) return
+  if (!name.value.trim() || saving.value) return
+  saving.value = true; error.value = ''
+  try {
   const p = await data.addProject({
     name: name.value.trim(), area: area.value, goal: goal.value.trim(), visAll: vis.value === '全部成员可见',
   })
@@ -28,17 +32,26 @@ async function create() {
   toast(`项目「${p.name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
   router.push(`/projects/${p.id}`)
+  } catch { error.value = '保存失败，输入已保留，请重试。' }
+  finally { saving.value = false }
 }
+async function requestClose() {
+  if (saving.value) return
+  if (name.value.trim()) await create()
+  else if (goal.value.trim() || area.value !== 'career' || vis.value !== '仅自己可见') error.value = '请填写项目名称后保存，输入已保留。'
+  else ui.closeModal()
+}
+useOverlayDismiss(() => true, requestClose)
 </script>
 
 <template>
-  <div class="mask" @click="ui.closeModal()"></div>
-  <div class="modal">
+  <div class="mask" @click="requestClose"></div>
+  <div class="modal" :inert="saving"><p v-if="error" role="alert">{{ error }}</p>
     <div class="head">
       <div class="title">新建项目</div>
       <span class="head-tip">软件项目或人生大事，都值得立项</span>
       <div class="spacer"></div>
-      <button class="close" @click="ui.closeModal()"><i class="ri-close-line"></i></button>
+      <button class="close" @click="requestClose"><i class="ri-close-line"></i></button>
     </div>
     <input v-model="name" class="title-input" placeholder="项目名称，例如「阳台花园改造」" @keydown.enter="create" />
 
@@ -63,7 +76,7 @@ async function create() {
     <div class="foot">
       <span class="foot-tip">创建后可随时邀请成员并设置查看 / 编辑权限</span>
       <div class="spacer"></div>
-      <button class="btn-ghost" @click="ui.closeModal()">取消</button>
+      <button class="btn-ghost" @click="requestClose">完成并关闭</button>
       <button class="btn-primary" :disabled="!name.trim()" @click="create">创建项目</button>
     </div>
   </div>

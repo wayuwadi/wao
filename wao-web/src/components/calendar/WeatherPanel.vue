@@ -1,16 +1,17 @@
 <script setup lang="ts">
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Modal } from 'ant-design-vue'
 import { useWeatherStore } from '@/stores/weather'
 import { searchWeatherLocations, type WeatherLocation } from '@/api/weather'
 import { weatherAdvice, weatherName, weatherTemperature, weatherErrorMessage } from '@/utils/weather'
-const props = defineProps<{ surface: 'rhythm' | 'calendar'; date: string }>()
+const props = defineProps<{ surface: 'rhythm' | 'calendar'; date: string; toolbar?: boolean }>()
 const weather = useWeatherStore()
 const settingsOpen = ref(false), searching = ref(false), locating = ref(false), searched = ref(false), locationError = ref('')
 const locations = ref<WeatherLocation[]>([])
 const visible = computed(() => props.surface === 'rhythm' ? weather.prefs.rhythmVisible : weather.prefs.calendarVisible)
 const today = computed(() => weather.days.find(day => day.date === props.date))
-const compact = computed(() => props.surface === 'rhythm')
+const compact = computed(() => props.surface === 'rhythm' || props.toolbar)
 const twoDays = computed(() => [0, 1].map(offset => {
   const date = new Date(`${props.date}T00:00:00+08:00`)
   date.setUTCDate(date.getUTCDate() + offset)
@@ -21,6 +22,15 @@ const advice = computed(() => today.value ? weatherAdvice(today.value) : '')
 let sequence = 0, active = true, timer: ReturnType<typeof setInterval> | undefined
 watch(() => weather.query, () => { sequence++; locations.value = []; searched.value = false; searching.value = false; locating.value = false; locationError.value = '' })
 function openSettings() { settingsOpen.value = true }
+async function closeSettings() {
+  if (weather.saving || searching.value || locating.value) return
+  if (weather.dirty) {
+    await weather.save()
+    if (weather.dirty || weather.error) return
+  }
+  settingsOpen.value = false
+}
+useOverlayDismiss(() => settingsOpen.value, closeSettings)
 defineExpose({ openSettings })
 async function search() {
   const request = ++sequence
@@ -48,8 +58,8 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
 </script>
 
 <template>
-  <section class="weather-panel" :class="{ 'weather-compact': compact }" aria-label="天气与卦名设置">
-    <header><strong>天气<span v-if="weather.prefs.location"> · {{ weather.prefs.location.name }}</span></strong><span v-if="!visible">已隐藏</span><button type="button" @click="settingsOpen = !settingsOpen" :aria-expanded="settingsOpen">天气设置</button></header>
+  <section class="weather-panel" :class="{ 'weather-compact': compact, 'weather-toolbar': toolbar }" aria-label="天气与卦名设置">
+    <header><strong>天气<span v-if="weather.prefs.location"> · {{ weather.prefs.location.name }}</span></strong><span v-if="!visible">已隐藏</span><button type="button" @click="settingsOpen ? closeSettings() : openSettings()" :aria-expanded="settingsOpen">天气设置</button></header>
     <p v-if="weather.loading">正在读取天气设置…</p>
     <p v-if="weather.error" role="alert">{{ weather.error }} <button v-if="!weather.loaded" @click="weather.load">重新读取</button></p>
     <template v-if="visible && weather.loaded">
@@ -75,12 +85,12 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
         </template>
       </template>
     </template>
-    <component :is="compact ? Modal : 'div'" v-if="settingsOpen" :open="settingsOpen" :footer="null" title="天气设置" @cancel="settingsOpen = false">
+    <component :is="compact ? Modal : 'div'" v-if="settingsOpen" :open="settingsOpen" :footer="null" title="天气设置" @cancel="closeSettings">
     <form class="weather-settings" @submit.prevent="weather.save">
       <fieldset :disabled="weather.saving || !weather.loaded">
         <legend>位置与显示</legend>
         <p>当前选择：{{ weather.draft.location?.name || '尚未选择城市' }} <button type="button" v-if="weather.draft.location" @click="weather.draft.location = null">清除位置</button></p>
-        <div class="weather-search"><label>城市<input v-model="weather.query" maxlength="80" placeholder="例如：上海" @keydown.enter.prevent="search" /></label><button type="button" :disabled="weather.query.trim().length < 2 || searching || locating" @click="search">{{ searching ? '搜索中…' : '搜索城市' }}</button><button type="button" :disabled="locating || searching" @click="locate">{{ locating ? '定位中…' : '使用当前位置' }}</button></div>
+        <div class="weather-search"><label>城市<input v-model="weather.query" maxlength="80" placeholder="例如：武汉" @keydown.enter.prevent="search" /></label><button type="button" :disabled="weather.query.trim().length < 2 || searching || locating" @click="search">{{ searching ? '搜索中…' : '搜索城市' }}</button><button type="button" :disabled="locating || searching" @click="locate">{{ locating ? '定位中…' : '使用当前位置' }}</button></div>
         <small>定位需浏览器授权；仅用约公里精度的位置获取天气。城市名称来自 <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a>。</small>
         <p v-if="locationError" role="alert">{{ locationError }}</p><p v-else-if="searched && !locations.length">未找到城市，可换用拼音或更完整的城市名。</p>
         <div class="weather-results"><button v-for="location in locations" :key="`${location.latitude}:${location.longitude}`" type="button" @click="weather.draft.location = location">{{ location.name }}</button></div>
@@ -101,4 +111,8 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
 .weather-compact p{margin:5px 0}.weather-two-days{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:6px}.weather-two-days>span{display:flex;gap:6px;flex-wrap:wrap}.weather-two-days a{color:inherit;font-size:10px;opacity:.75}
 .weather-panel{padding:16px 18px;border:1px solid var(--wao-line);border-radius:14px;background:var(--wao-bg-card);margin:14px 0;min-width:0;font-size:13px;color:var(--wao-text)}
 header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}header strong{flex:1;min-width:0;overflow-wrap:anywhere}button{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:inherit;border-radius:7px;padding:5px 9px;cursor:pointer}button:disabled{opacity:.55;cursor:default}p{margin:10px 0;line-height:1.7}small{display:block;color:var(--wao-text-3);line-height:1.7}a{color:var(--wao-primary-text)}.weather-today{display:flex;gap:8px 20px;flex-wrap:wrap;margin:12px 0}.weather-advice{padding:9px 12px;border-radius:8px;background:var(--wao-warning-bg);color:var(--wao-warning-strong)}.weather-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:12px 0}.weather-week>div{display:flex;flex-direction:column;gap:5px;text-align:center;padding:8px 3px;background:var(--wao-bg-sub);border-radius:8px}.weather-settings{margin-top:12px}fieldset{border:1px solid var(--wao-line);border-radius:10px;padding:12px;min-width:0}.weather-search,.weather-results,.weather-switches{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.weather-search label{display:flex;align-items:center;gap:8px;flex:1;min-width:170px}input:not([type=checkbox]){border:1px solid var(--wao-line-control);border-radius:7px;padding:6px 9px;min-width:0;width:100%;background:var(--wao-bg-card);color:inherit}.weather-switches label{display:flex;align-items:center;gap:5px}.weather-results button{text-align:left;overflow-wrap:anywhere}fieldset>button{margin:4px 8px 0 0}@media(max-width:640px){.weather-panel{padding:12px}.weather-week{grid-template-columns:repeat(3,minmax(0,1fr))}.weather-switches{flex-direction:column}.weather-search label{flex-basis:100%}}
+.weather-toolbar.weather-compact { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; padding: 6px 0 0!important; margin: 0!important; border-top: 1px solid var(--wao-line)!important; }
+.weather-toolbar .weather-two-days { margin: 0; }
+.weather-toolbar header button, .weather-toolbar .weather-two-days button { border-color: var(--wao-line-control); }
+.weather-toolbar header strong { font-weight: 500; }
 </style>

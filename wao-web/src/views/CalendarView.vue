@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, defineAsyncComponent, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
@@ -155,8 +156,9 @@ function openWorkScheduleConfig() {
   showWorkScheduleConfig.value = true
 }
 
-function closeWorkScheduleConfig() {
+async function closeWorkScheduleConfig() {
   if (workScheduleSaving.value) return
+  if (JSON.stringify(workScheduleDraft) !== JSON.stringify(workSchedule.value)) { await submitWorkSchedule(); return }
   localStorage.removeItem(workScheduleDraftKey.value)
   showWorkScheduleConfig.value = false
 }
@@ -705,8 +707,9 @@ function openHolidaySettings() {
   showHolidaySettings.value = true
 }
 
-function closeHolidaySettings() {
+async function closeHolidaySettings() {
   if (holidaySettingsSaving.value) return
+  if (JSON.stringify([...holidayCategoryDraft.value].sort()) !== JSON.stringify([...(holidaySettings.value?.selectedInternationalCategories ?? [])].sort())) { await submitHolidaySettings(); return }
   localStorage.removeItem(holidaySettingsDraftKey.value)
   showHolidaySettings.value = false
 }
@@ -756,8 +759,10 @@ function openHolidayDetail(holiday: HolidayEvent) {
   }
 }
 
-function closeHolidayDetail() {
+async function closeHolidayDetail() {
   if (holidayReminderSaving.value) return
+  if (activeHoliday.value && (holidayReminderEnabled.value !== activeHoliday.value.reminderEnabled
+    || holidayReminderTime.value !== (activeHoliday.value.reminderTime || '09:00'))) { await submitHolidayReminder(); return }
   if (holidayReminderDraftKey.value) localStorage.removeItem(holidayReminderDraftKey.value)
   activeHoliday.value = null
 }
@@ -874,8 +879,14 @@ function openImportantDateManager() {
   showImportantDates.value = true
 }
 
-function closeImportantDateManager() {
+async function closeImportantDateManager() {
   if (importantDateSaving.value || importantDateDeletingId.value) return
+  if (importantDateEditorOpen.value && importantDateDraft.name.trim()) {
+    await submitImportantDate()
+    if (importantDateEditorOpen.value) return
+  } else if (importantDateEditorOpen.value && importantDateDraft.note?.trim()) {
+    importantDateSaveError.value = '请填写名称后保存，输入已保留。'; return
+  }
   showImportantDates.value = false
   editingImportantDateId.value = null
   importantDateEditorOpen.value = false
@@ -1041,6 +1052,11 @@ function importantDateReminderLabel(value: FamilyImportantDate) {
 
 // ---------- CalDAV 配置浮层：账户是个人维度，就近在日历页里配置 ----------
 const showCaldavConfig = ref(false)
+const caldavPanel = ref<InstanceType<typeof CaldavPanel> | null>(null)
+async function closeCaldav() {
+  if (await caldavPanel.value?.prepareClose() === false) return
+  showCaldavConfig.value = false
+}
 function onCaldavChanged() {
   loadCaldav()
   loadEvents()
@@ -1140,6 +1156,13 @@ function onDropDay(dayIso: string) {
   )
   toast(`「${t.title}」已排到 ${dayIso}`, 'ri-calendar-check-line')
 }
+useOverlayDismiss(() => showWorkScheduleConfig.value, closeWorkScheduleConfig)
+useOverlayDismiss(() => showHolidaySettings.value, closeHolidaySettings)
+useOverlayDismiss(() => !!activeHoliday.value, closeHolidayDetail)
+useOverlayDismiss(() => showImportantDates.value, closeImportantDateManager)
+useOverlayDismiss(() => showCaldavConfig.value, closeCaldav)
+useOverlayDismiss(() => !!searchPreview.value, () => { searchPreview.value = null })
+useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value = false })
 </script>
 
 <template>
@@ -1177,9 +1200,10 @@ function onDropDay(dayIso: string) {
           <button class="work-schedule" type="button" @click="openWorkScheduleConfig"><span class="cd-dot" :style="{ background: workScheduleState.dot }"></span><span><b>大小周配置</b><small>{{ workScheduleState.label }}</small></span></button>
         </div></details>
       </div>
+      <WeatherPanel ref="weatherPanel" surface="calendar" :date="data.today" toolbar />
     </div>
 
-    <WeatherPanel ref="weatherPanel" surface="calendar" :date="data.today" />
+
     <p v-if="readingsLoading" class="holiday-status">正在读取已保存卦名…</p>
     <p v-else-if="readingsError" class="holiday-status error" role="alert">{{ readingsError }} <button @click="loadCalendarReadings">重试读取卦名</button></p>
     <div class="cal-body">
@@ -1364,15 +1388,15 @@ function onDropDay(dayIso: string) {
 
     <!-- CalDAV 配置浮层 -->
     <template v-if="showCaldavConfig">
-      <div class="cd-mask" @click="showCaldavConfig = false"></div>
+      <div class="cd-mask" @click="closeCaldav"></div>
       <div class="cd-modal">
         <div class="cd-head">
           <div class="cd-title">日历账户 · CalDAV</div>
           <div class="spacer"></div>
-          <button class="cd-close" @click="showCaldavConfig = false"><i class="ri-close-line"></i></button>
+          <button class="cd-close" @click="closeCaldav"><i class="ri-close-line"></i></button>
         </div>
         <div class="cd-body">
-          <CaldavPanel @changed="onCaldavChanged" />
+          <CaldavPanel ref="caldavPanel" @changed="onCaldavChanged" />
         </div>
       </div>
     </template>
@@ -1392,7 +1416,7 @@ function onDropDay(dayIso: string) {
             <span>读取失败：{{ workScheduleLoadError }}</span>
             <button type="button" @click="retryLoadWorkSchedule">重新读取</button>
           </div>
-          <form v-else @submit.prevent="submitWorkSchedule">
+          <form v-else :inert="workScheduleSaving" @submit.prevent="submitWorkSchedule">
             <label class="work-schedule-toggle">
               <span><b>启用大小周</b><small>大周周日上班，小周周六、周日双休</small></span>
               <input v-model="workScheduleDraft.enabled" type="checkbox" />
@@ -1414,7 +1438,7 @@ function onDropDay(dayIso: string) {
             <p class="work-schedule-help">保存后，日历会按自然周自动向前、向后交替标记；不会创建或修改任何日程。</p>
             <div v-if="workScheduleSaveError" class="work-schedule-state error compact">保存失败：{{ workScheduleSaveError }}。草稿仍在，可直接重试。</div>
             <div class="work-schedule-actions">
-              <button type="button" class="work-schedule-cancel" :disabled="workScheduleSaving" @click="closeWorkScheduleConfig">取消</button>
+              <button type="button" class="work-schedule-cancel" :disabled="workScheduleSaving" @click="closeWorkScheduleConfig">完成并关闭</button>
               <button type="submit" class="work-schedule-save" :disabled="workScheduleSaving">
                 <i v-if="workScheduleSaving" class="ri-loader-4-line spinning"></i>{{ workScheduleSaving ? '保存中…' : workScheduleSaveError ? '重试保存' : '保存设置' }}
               </button>
@@ -1437,7 +1461,7 @@ function onDropDay(dayIso: string) {
           <button class="cd-close" aria-label="关闭日历提醒事项" :disabled="importantDateSaving || !!importantDateDeletingId" @click="closeImportantDateManager"><i class="ri-close-line"></i></button>
         </div>
         <div class="important-date-body">
-          <form v-if="importantDateEditorOpen" class="important-date-form" @submit.prevent="submitImportantDate">
+          <form v-if="importantDateEditorOpen" class="important-date-form" :inert="importantDateSaving" @submit.prevent="submitImportantDate">
             <p class="important-date-intro">事项独立保存在日历中，不进入个人任务；按所选公历或农历日期每年显示，并可提前通知。</p>
             <label class="important-date-field">
               <span>名称</span>
@@ -1551,7 +1575,7 @@ function onDropDay(dayIso: string) {
             <span>读取失败：{{ holidaySettingsLoadError || '没有拿到节日设置' }}</span>
             <button type="button" @click="loadHolidaySettings">重新读取</button>
           </div>
-          <form v-else @submit.prevent="submitHolidaySettings">
+          <form v-else :inert="holidaySettingsSaving" @submit.prevent="submitHolidaySettings">
             <p class="holiday-setting-intro">中国节假日始终显示；国际节日默认不添加，请只选择你真正关心的范围。</p>
             <div class="holiday-category-list">
               <label v-for="category in holidaySettings.availableInternationalCategories" :key="category.code" class="holiday-category">
@@ -1562,7 +1586,7 @@ function onDropDay(dayIso: string) {
             <p class="holiday-setting-note">关闭类别会同时关闭该类别下已经设置的提醒，避免隐藏的节日仍然发送通知。</p>
             <div v-if="holidaySettingsSaveError" class="work-schedule-state error compact">保存失败：{{ holidaySettingsSaveError }}。选择草稿仍在，可直接重试。</div>
             <div class="work-schedule-actions">
-              <button type="button" class="work-schedule-cancel" :disabled="holidaySettingsSaving" @click="closeHolidaySettings">取消</button>
+              <button type="button" class="work-schedule-cancel" :disabled="holidaySettingsSaving" @click="closeHolidaySettings">完成并关闭</button>
               <button type="submit" class="work-schedule-save" :disabled="holidaySettingsSaving">
                 <i v-if="holidaySettingsSaving" class="ri-loader-4-line spinning"></i>{{ holidaySettingsSaving ? '保存中…' : holidaySettingsSaveError ? '重试保存' : '保存范围' }}
               </button>
@@ -1588,7 +1612,7 @@ function onDropDay(dayIso: string) {
             <div><dt>年份</dt><dd>{{ activeHoliday.year }} 年数据</dd></div>
             <div><dt>来源</dt><dd><a v-if="activeHoliday.sourceUrl" :href="activeHoliday.sourceUrl" target="_blank" rel="noopener">{{ activeHoliday.sourceName }}</a><span v-else>{{ activeHoliday.sourceName }}</span></dd></div>
           </dl>
-          <form v-if="activeHoliday.remindable" class="holiday-reminder-form" @submit.prevent="submitHolidayReminder">
+          <form v-if="activeHoliday.remindable" class="holiday-reminder-form" :inert="holidayReminderSaving" @submit.prevent="submitHolidayReminder">
             <label class="work-schedule-toggle">
               <span><b>每年提醒我</b><small>{{ holidaySettings?.reminderChannelHint || '提醒将通过当前账号的飞书身份发送' }}</small></span>
               <input v-model="holidayReminderEnabled" type="checkbox" :disabled="holidayReminderSaving || (!holidaySettings?.reminderChannelAvailable && !activeHoliday.reminderEnabled)" />
@@ -1600,7 +1624,7 @@ function onDropDay(dayIso: string) {
             <div v-if="holidayReminderEnabled && !holidaySettings?.reminderChannelAvailable" class="work-schedule-state error compact">{{ holidaySettings?.reminderChannelHint || '提醒通道暂不可用' }}</div>
             <div v-if="holidayReminderSaveError" class="work-schedule-state error compact">保存失败：{{ holidayReminderSaveError }}。草稿仍在，可直接重试。</div>
             <div class="work-schedule-actions">
-              <button type="button" class="work-schedule-cancel" :disabled="holidayReminderSaving" @click="closeHolidayDetail">取消</button>
+              <button type="button" class="work-schedule-cancel" :disabled="holidayReminderSaving" @click="closeHolidayDetail">完成并关闭</button>
               <button type="submit" class="work-schedule-save" :disabled="holidayReminderSaving || (holidayReminderEnabled && !holidaySettings?.reminderChannelAvailable)">
                 <i v-if="holidayReminderSaving" class="ri-loader-4-line spinning"></i>{{ holidayReminderSaving ? '保存中…' : holidayReminderSaveError ? '重试保存' : holidayReminderEnabled ? '保存提醒' : activeHoliday.reminderEnabled ? '关闭提醒' : '保存' }}
               </button>
@@ -1859,7 +1883,7 @@ button.holiday-status { cursor: pointer; }
 .cal-body {
   display: flex;
   gap: 14px;
-  margin-top: 14px;
+  margin-top: 10px;
   align-items: stretch;
   flex: 1;
   min-height: 0;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
 import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
 import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
@@ -13,7 +14,6 @@ import type { KnowledgeBase, TrashEntry } from '@/types'
 
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 const knowledgeFavorites = useKnowledgeFavoritesStore()
-const favoriteKbs = computed(() => data.kbs.filter((kb) => knowledgeFavorites.ids.includes(kb.id) && matchesQuery(kb) && matchesScope(kb)))
 const data = useDataStore()
 const shortcuts = useTopShortcutsStore()
 const router = useRouter()
@@ -27,6 +27,8 @@ onMounted(() => {
 
 const editGroupId = ref<string | null>(null)
 const cfgKb = ref<KnowledgeBase | null>(null)
+const cfgOriginal = ref('')
+const cfgSnapshot = (kb: KnowledgeBase) => JSON.stringify([kb.name, kb.desc, kb.icon, kb.color, kb.group, kb.perm || '仅自己'])
 const cfgSaving = ref(false)
 const cfgError = ref('')
 const newKbOpen = ref(false)
@@ -104,15 +106,24 @@ function commitGroupRename(g: { id: string; name: string }) {
 function openCfg(k: KnowledgeBase) {
   if (!k.perm) k.perm = '仅自己'
   cfgKb.value = { ...k }
+  cfgOriginal.value = cfgSnapshot(cfgKb.value)
   cfgError.value = ''
+}
+async function closeCfg() {
+  if (!cfgKb.value || cfgSaving.value) return
+  if (cfgSnapshot(cfgKb.value) !== cfgOriginal.value) await cfgDone()
+  else cfgKb.value = null
 }
 async function cfgDone() {
   if (!cfgKb.value || cfgSaving.value) return
+  if (!cfgKb.value.name.trim()) { cfgError.value = '请填写知识库名称，输入已保留。'; return }
   cfgSaving.value = true
   cfgError.value = ''
   const k = cfgKb.value
-  const saved = await data.updateKb(k.id, { name: k.name, desc: k.desc, icon: k.icon, color: k.color, group: k.group, perm: k.perm })
-  cfgSaving.value = false
+  let saved = false
+  try { saved = await data.updateKb(k.id, { name: k.name, desc: k.desc, icon: k.icon, color: k.color, group: k.group, perm: k.perm }) }
+  catch { saved = false }
+  finally { cfgSaving.value = false }
   if (!saved) { cfgError.value = '保存失败，输入已保留，请重试。'; return }
   tabs.setMeta(`kb:${k.id}`, { label: k.name, icon: k.icon })
   cfgKb.value = null
@@ -178,6 +189,16 @@ async function createKb() {
   finally { newKbSaving.value = false }
 }
 
+async function closeNewKb() {
+  if (newKbSaving.value) return
+  if (newKbName.value.trim() || newKbDesc.value.trim() || newKbIcon.value !== 'wao-kb-icon-notebook') {
+    if (!newKbName.value.trim()) { newKbError.value = '请填写名称后保存，输入已保留。'; return }
+    await createKb()
+  } else newKbOpen.value = false
+}
+useOverlayDismiss(() => !!cfgKb.value, closeCfg)
+useOverlayDismiss(() => trashOpen.value, closeTrash)
+useOverlayDismiss(() => newKbOpen.value, closeNewKb)
 </script>
 
 <template>
@@ -214,9 +235,7 @@ async function createKb() {
       <span class="kb-result-count">{{ visibleCount }} 个知识库</span>
     </div>
 
-    <section v-if="favoriteKbs.length" class="frequent-section">
-      <h2>常用</h2><div class="frequent-grid"><button v-for="k in favoriteKbs" :key="k.id" class="frequent-card" @click="openKb(k.id)"><i :class="k.icon" :style="{ color: k.color }"></i><span><strong>{{ k.name }}</strong><small>{{ k.desc || `${docCount(k)} 篇文档` }}</small></span></button></div>
-    </section>
+
     <div v-for="g in groups" v-show="g.items.length || !filtering" :key="g.id" class="kgroup">
       <div class="kgroup-head">
         <template v-if="!g.fixed && editGroupId === g.id">
@@ -243,17 +262,14 @@ async function createKb() {
           :key="k.id"
           class="kb-card"
           draggable="true" @dragstart="shortcuts.start(resourceShortcut('kb', k.id, k.name), $event)" @dragend="shortcuts.end"
-          :style="{ borderLeftColor: k.color }"
+          :style="{ '--kb-cover': k.color }"
           @click="openKb(k.id)"
         >
-          <div class="kb-top">
+          <div class="kb-cover">
             <div class="kb-icon" :style="{ background: isColoredKnowledgeIcon(k.icon) ? 'transparent' : k.color }"><i :class="k.icon"></i></div>
-            <div class="kb-name">{{ k.name }}</div>
-            <span v-if="k.auto" class="tag auto">自动</span>
-            <span v-if="k.perm === '成员可编辑'" class="tag shared">已共享</span>
-            <button class="gear" :title="knowledgeFavorites.ids.includes(k.id) ? '取消常用' : '添加为常用'" :aria-pressed="knowledgeFavorites.ids.includes(k.id)" :disabled="knowledgeFavorites.saving" @click.stop="knowledgeFavorites.toggle(k.id)"><i :class="knowledgeFavorites.ids.includes(k.id) ? 'ri-star-fill' : 'ri-star-line'"></i></button>
-            <button class="gear" title="知识库设置" @click.stop="openCfg(k)"><i class="ri-settings-3-line"></i></button>
+            <button class="gear kb-star" :class="{ starred: knowledgeFavorites.ids.includes(k.id) }" :title="knowledgeFavorites.ids.includes(k.id) ? '取消常用' : '添加为常用'" :aria-pressed="knowledgeFavorites.ids.includes(k.id)" :disabled="knowledgeFavorites.saving" @click.stop="knowledgeFavorites.toggle(k.id)"><i :class="knowledgeFavorites.ids.includes(k.id) ? 'ri-star-fill' : 'ri-star-line'"></i></button>
           </div>
+          <div class="kb-name" :title="k.name">{{ k.name }}</div>
           <div class="kb-desc">{{ k.desc }}</div>
           <div v-if="matchingDocs(k).length" class="kb-doc-matches">
             <button v-for="doc in matchingDocs(k)" :key="doc.id" @click.stop="openDoc(k.id, doc.id)">
@@ -262,7 +278,10 @@ async function createKb() {
           </div>
           <div class="kb-meta">
             <i class="ri-file-text-line"></i>{{ docCount(k) }} 篇文档
+            <span v-if="k.auto" class="tag auto">自动</span>
+            <span v-if="k.perm === '成员可编辑'" class="tag shared">已共享</span>
             <span class="spacer"></span>
+            <button class="gear" title="知识库设置" @click.stop="openCfg(k)"><i class="ri-settings-3-line"></i></button>
           </div>
         </div>
       </div>
@@ -277,13 +296,13 @@ async function createKb() {
 
     <!-- 知识库设置弹层 -->
     <template v-if="cfgKb">
-      <div class="modal-mask" @click="!cfgSaving && (cfgKb = null)"></div>
-      <div class="modal">
+      <div class="modal-mask" @click="closeCfg()"></div>
+      <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-head">
           <div class="modal-icon" :style="{ background: isColoredKnowledgeIcon(cfgKb.icon) ? 'transparent' : cfgKb.color }"><i :class="cfgKb.icon"></i></div>
           <div class="modal-title">知识库设置</div>
           <div class="spacer"></div>
-          <button class="icon-btn" @click="!cfgSaving && (cfgKb = null)"><i class="ri-close-line"></i></button>
+          <button class="icon-btn" @click="closeCfg()"><i class="ri-close-line"></i></button>
         </div>
         <div class="modal-body">
           <p v-if="cfgError" role="alert">{{ cfgError }}</p>
@@ -320,7 +339,7 @@ async function createKb() {
                 { label: '成员可编辑', desc: '组织内成员可实时协同编辑', icon: 'ri-team-line' },
               ]"
               :key="p.label"
-              class="perm"
+              class="perm" :disabled="cfgSaving"
               :class="{ on: (cfgKb.perm || '仅自己') === p.label }"
               @click="cfgKb.perm = p.label"
             >
@@ -346,7 +365,7 @@ async function createKb() {
     <!-- 回收站 -->
     <template v-if="trashOpen">
       <div class="modal-mask" @click="closeTrash"></div>
-      <div class="modal">
+      <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-head">
           <div class="modal-title">回收站</div>
           <span class="modal-hint">删除的内容保留 7 天，到期自动彻底删除</span>
@@ -370,12 +389,12 @@ async function createKb() {
 
     <!-- 新建知识库弹层 -->
     <template v-if="newKbOpen">
-      <div class="modal-mask" @click="!newKbSaving && (newKbOpen = false)"></div>
-      <div class="modal">
+      <div class="modal-mask" @click="closeNewKb()"></div>
+      <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-head">
           <div class="modal-title">新建知识库</div>
           <div class="spacer"></div>
-          <button class="icon-btn" @click="!newKbSaving && (newKbOpen = false)"><i class="ri-close-line"></i></button>
+          <button class="icon-btn" @click="closeNewKb()"><i class="ri-close-line"></i></button>
         </div>
         <div class="modal-body">
           <p v-if="newKbError" role="alert">{{ newKbError }}</p>
@@ -395,13 +414,6 @@ async function createKb() {
 </template>
 
 <style scoped>
-.frequent-section { background: var(--wao-bg-hover); border-radius: 12px; padding: 20px; margin: 24px 0; }
-.frequent-section h2 { font-size: 14px; font-weight: 500; margin: 0 0 14px; color: var(--wao-text-weak); }
-.frequent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
-.frequent-card { display: flex; gap: 14px; align-items: center; padding: 18px; text-align: left; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text); cursor: pointer; }
-.frequent-card i { font-size: 24px; }
-.frequent-card strong,.frequent-card small { display: block; }
-.frequent-card small { color: var(--wao-text-weak); margin-top: 4px; }
 .know {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);
@@ -636,15 +648,15 @@ async function createKb() {
 .kb-grid {
   margin-top: 10px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
   gap: 12px;
 }
 .kb-card {
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
-  border-left: 4px solid #4358d6;
   border-radius: 10px;
   padding: 14px 15px;
+  min-width: 0;
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -671,15 +683,18 @@ async function createKb() {
   font-size: 16px;
 }
 .kb-name {
-  flex: 1;
   min-width: 0;
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 650;
   color: var(--wao-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
+.kb-cover { display: flex; align-items: center; justify-content: space-between; padding: 10px; margin: -14px -15px 4px; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--kb-cover) 9%, var(--wao-bg-card)); }
+.kb-star.starred { color: var(--wao-warning-strong); }
+.kb-meta { margin-top: auto; flex-wrap: wrap; }
+
 .tag {
   font-size: 10.5px;
   border-radius: 4px;

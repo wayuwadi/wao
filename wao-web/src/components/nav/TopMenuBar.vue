@@ -5,13 +5,15 @@ import { useNavStore } from '@/stores/nav'
 import { useMenuDrag } from '@/composables/menuDrag'
 import { useIsMobile } from '@/composables/viewport'
 import { externalAppItemId, type NavItemId } from '@/config/nav'
-import { useTopShortcutsStore, type TopShortcut } from '@/stores/topShortcuts'
+import { useTopShortcutsStore, favoriteShortcut, type TopShortcut } from '@/stores/topShortcuts'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import type { ModuleId } from '@/types'
 
+import { useFavoritesStore } from '@/stores/favorites'
+const favorites = useFavoritesStore()
 const shortcuts = useTopShortcutsStore()
 const quickLinks = useQuickLinks()
 const session = useSessionStore()
@@ -41,7 +43,20 @@ const loading = computed(
   () => nav.builtinMenusState === 'loading' || nav.externalAppsState === 'loading',
 )
 
-const hasItems = computed(() => nav.topItems.length + shortcuts.items.length)
+// 收藏沿用同一份服务端数据，旧收藏直接显示在顶部，无需迁移或重复写偏好。
+const favoriteEntries = computed(() => favorites.items.filter(f => f.type === 'task' || f.type === 'doc'))
+const topEntries = computed(() => {
+  const items = new Map(shortcuts.items.map(item => [item.key, item]))
+  for (const favorite of favoriteEntries.value) {
+    const resolved = favorite.parentId ? favorite : { ...favorite, parentId: favorite.type === 'task'
+      ? data.taskById(favorite.targetId)?.project ?? null
+      : data.kbs.find(kb => kb.folders.some(folder => folder.docs.includes(favorite.targetId)))?.id ?? null }
+    const item = favoriteShortcut(resolved)
+    if (item) items.set(item.key, item)
+  }
+  return [...items.values()]
+})
+const hasItems = computed(() => nav.topItems.length + topEntries.value.length)
 const dragging = computed(() => !!dragId.value || !!shortcuts.dragged)
 watch(dragId, (id) => {
   if (id) shortcuts.end()
@@ -102,7 +117,12 @@ function dropTop(targetId?: NavItemId) {
 }
 async function removeShortcut(key: string) {
   try {
-    await shortcuts.remove(key)
+    const favorite = favoriteEntries.value.find(f => `${f.type}:${f.targetId}` === key)
+    if (favorite) {
+      await favorites.toggle(favorite.type, favorite.targetId, favorite.label, favorite.parentId)
+      if (favorites.isFav(favorite.type, favorite.targetId)) return
+    }
+    if (shortcuts.items.some(item => item.key === key)) await shortcuts.remove(key)
   } catch {
     /* 顶栏保留失败原因和重试入口。 */
   }
@@ -189,7 +209,7 @@ function revealDragEdge(event: DragEvent) {
         <i :class="nav.itemMeta(id)?.icon"></i><span>{{ nav.itemMeta(id)?.label }}</span>
       </button>
       <span
-        v-for="(item, index) in shortcuts.items"
+        v-for="(item, index) in topEntries"
         :key="item.key"
         class="shortcut-wrap"
         :class="{ 'drag-over': shortcutOver === item.key }"
