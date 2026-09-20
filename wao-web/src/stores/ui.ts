@@ -83,6 +83,7 @@ export const useUiStore = defineStore('ui', () => {
   const taskViews = ref<Record<string, TaskView>>(loadTaskViews())
 
   const modal = ref<'task' | 'project' | 'note' | null>(null)
+  const modalOpenTaskAfterCreate = ref(false)
   const modalProject = ref<string>('') // 新建任务时预选的项目
   const modalPriority = ref<Priority | null>(null) // 四象限入口的默认优先级
   const modalTaskSeed = ref<DocumentTaskSeed | null>(null)
@@ -128,6 +129,7 @@ export const useUiStore = defineStore('ui', () => {
     presetStartAt = '',
     presetEndAt = '',
   ) {
+    modalOpenTaskAfterCreate.value = false
     modalTaskSeed.value = null
     modalPriority.value = null
     modal.value = kind
@@ -135,6 +137,11 @@ export const useUiStore = defineStore('ui', () => {
     modalDue.value = presetDue
     modalStartAt.value = presetStartAt
     modalEndAt.value = presetEndAt
+  }
+  /** 仅页面右上角完整新建入口在保存成功后打开详情。 */
+  function openNewTask(project = '') {
+    openModal('task', project)
+    modalOpenTaskAfterCreate.value = true
   }
   function closeModal() {
     modal.value = null
@@ -252,10 +259,10 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    openTaskId, openTaskSubId, modal, modalProject, modalPriority, modalTaskSeed, modalDue, modalStartAt, modalEndAt,
+    openTaskId, openTaskSubId, modalOpenTaskAfterCreate, modal, modalProject, modalPriority, modalTaskSeed, modalDue, modalStartAt, modalEndAt,
     searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft,
     chatOpen, chatDraft, chatDraftRequestVersion, chatUnreadCount, chatLatestUnread, chatRefreshVersion, shareToChat, consumeChatDraft, chatReviewId, chatReviewRequestVersion, taskViews,
-    openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
+    openTask, closeTask, openNewTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
     taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, ownerFilters, ownerFilterOf, setOwnerFilter, toggleHelp, closeHelp,
     openAssistant, closeAssistant, toggleAssistant, consumeAssistantDraft,
     openChat, closeChat, toggleChat,

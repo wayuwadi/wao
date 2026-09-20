@@ -11,6 +11,18 @@ import java.util.List;
 /** 任务表 Mapper。 */
 @Mapper
 public interface TaskMapper extends BaseMapper<TaskEntity> {
+    /** 同一项目的关系变更串行化，防止并发交叉拖拽形成环。 */
+    @Select("SELECT * FROM task WHERE project_id = #{projectId} ORDER BY id FOR UPDATE")
+    List<TaskEntity> lockProjectTasks(String projectId);
+
+    /** 关系接口只改父任务列，不触碰正文、附件、编号与历史。 */
+    @Update("UPDATE task SET parent_task_id = #{parentId} WHERE id = #{id}")
+    int updateParent(@Param("id") String id, @Param("parentId") String parentId);
+
+    /** 有子任务的任务不能直接跨项目移动。 */
+    @Select("SELECT COUNT(*) FROM task WHERE parent_task_id = #{id}")
+    int countChildTasks(String id);
+
     /** 事务内按稳定顺序锁定源任务与目标任务。 */
     @Select("SELECT * FROM task WHERE id = #{id} FOR UPDATE")
     TaskEntity lockById(String id);

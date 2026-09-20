@@ -25,6 +25,29 @@ describe('项目页聚焦任务', () => {
     seedDataStore(useDataStore())
   })
 
+  it('表格实际拖放形成任务树，折叠和移回顶层入口可用', async () => {
+    const data = useDataStore(), tasks = data.tasksByProject('p1')
+    const parent = tasks[0]!, child = tasks[1]!
+    const move = vi.spyOn(data, 'moveTask').mockImplementation(async (id, parentId) => { data.taskById(id)!.parentTaskId = parentId })
+    await router.push('/projects/p1?view=list')
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    const children = () => wrapper.findAll('.task-row').filter(row => row.text().includes(child.title))
+    const transfer = { setData: vi.fn(), getData: () => '', effectAllowed: '' }
+    await children()[0]!.trigger('dragstart', { dataTransfer: transfer })
+    const parentRow = wrapper.findAll('.task-row').find(row => row.text().includes(parent.title))!
+    await parentRow.trigger('drop', { dataTransfer: transfer, clientY: 0 }); await flushPromises()
+    expect(move).toHaveBeenCalledWith(child.id, parent.id)
+    const toggle = wrapper.get(`[aria-label="展开或收起 ${parent.title} 的子任务"]`)
+    expect(children()).toHaveLength(1)
+    await toggle.trigger('click'); expect(children()).toHaveLength(0)
+    await toggle.trigger('click'); expect(children()).toHaveLength(1)
+    await children()[0]!.get('[aria-label="移回顶层"]').trigger('click'); await flushPromises()
+    expect(move).toHaveBeenCalledWith(child.id, null)
+    expect(children()).toHaveLength(1)
+    wrapper.unmount(); move.mockRestore()
+  })
+
   it('加载失败不会冒充空项目，重试期间继续保留已显示任务', async () => {
     const data = useDataStore()
     const originalTasks = [...data.tasks]

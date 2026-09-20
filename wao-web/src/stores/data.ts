@@ -36,6 +36,7 @@ import {
   apiPutTask,
   apiGetTask,
   apiMoveSubtask,
+  apiMoveTask,
   apiReauthJob,
   apiUploadImage,
   apiUploadFile,
@@ -1554,9 +1555,17 @@ export const useDataStore = defineStore('data', () => {
     const [removed] = tasks.value.splice(index, 1)
     delete taskTouchedAt[id]
     clearTaskDraft(id)
-    if (!apiLive.value) return true
+    const detachChildren = () => {
+      for (const child of tasks.value.filter(task => task.parentTaskId === id)) {
+        child.parentTaskId = null
+        taskTouchedAt[child.id] = Date.now()
+        if (taskSaveState(child.id) === 'saving') storeTaskDraft(child)
+      }
+    }
+    if (!apiLive.value) { detachChildren(); return true }
     try {
       await apiDeleteTask(id)
+      detachChildren()
       return true
     } catch {
       if (removed) tasks.value.splice(index, 0, removed)
@@ -1902,6 +1911,27 @@ export const useDataStore = defineStore('data', () => {
     for (const child of t.subs) if (child.parentId === subId) child.parentId = removed?.parentId || null
     logActivity(t, `删除了子任务「${removed!.text}」`, 'ri-delete-bin-line')
     persistTask(taskId)
+  }
+
+  const movingTask = ref(false)
+  /** 关系保存只合并父任务字段，不覆盖等待请求期间输入的草稿。 */
+  async function moveTask(id: string, parentId: string | null): Promise<void> {
+    if (movingTask.value) throw new Error('正在调整任务归属，请稍后再试')
+    const task = taskById(id)
+    if (!task) throw new Error('任务尚未加载')
+    const requestMember = useSessionStore().userId
+    movingTask.value = true
+    try {
+      await flushTask(id)
+      if (taskSaveState(id) === 'error') throw new Error('请先保存任务草稿，再调整归属')
+      const saved = await apiMoveTask(clone(task), parentId)
+      if (requestMember !== useSessionStore().userId) return
+      const current = taskById(id)
+      if (!current) return
+      current.parentTaskId = saved.parentTaskId
+      taskTouchedAt[id] = Date.now()
+      if (taskSaveState(id) === 'saving') storeTaskDraft(current)
+    } finally { movingTask.value = false }
   }
 
   /** 等待草稿保存后发起原子迁移；网络失败保留源与目标的全部内容。 */
@@ -2382,7 +2412,7 @@ export const useDataStore = defineStore('data', () => {
     ensureDocsLoaded, refreshDocs, ensureDocLoaded, docLoadErrors,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     taskDraftErrors, useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
-    movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
+    movingTask, moveTask, movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, replaceFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,
     hostedPages, hostedPageLoadState, hostedPageLoadError, refreshHostedPages, saveHostedPage, replaceHostedPage, deleteHostedPage,

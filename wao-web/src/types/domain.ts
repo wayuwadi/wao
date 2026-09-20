@@ -289,6 +289,8 @@ export interface Idea {
 }
 
 export interface Task {
+  /** 完整任务的父任务；仅通过专用关系接口调整。 */
+  parentTaskId?: string | null
   /** 完整编辑快照版本，原样回传；过期写入返回 409。 */
   editVersion?: string
   subtaskVersion?: string

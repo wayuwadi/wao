@@ -327,7 +327,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
         <div class="quick-actions" :class="{ relocated: desktopToolbar }">
           <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
-          <button class="plus" data-desktop-action="new-task" @click="newTask">
+          <button class="plus" data-desktop-action="new-task" @click="ui.openNewTask()">
             <i class="ri-checkbox-circle-line"></i>新建任务
           </button>
           <button class="plus ghost" data-desktop-action="new-note" @click="newNote">

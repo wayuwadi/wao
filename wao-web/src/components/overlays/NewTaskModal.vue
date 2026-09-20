@@ -193,7 +193,7 @@ async function create() {
   }
   try { localStorage.removeItem(DRAFT_KEY) } catch { /* 服务器已确认保存，不阻止关闭表单。 */ }
   ui.closeModal()
-  if (createdId) ui.openTask(createdId)
+  if (createdId && ui.modalOpenTaskAfterCreate) ui.openTask(createdId)
   toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
 }

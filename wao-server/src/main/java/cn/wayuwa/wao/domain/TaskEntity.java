@@ -11,6 +11,13 @@ public class TaskEntity {
 
     @TableId
     private String id;
+    // 普通任务全文保存不能改动关系，避免旧客户端清空或并发覆盖。
+    @com.baomidou.mybatisplus.annotation.TableField(
+        insertStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER,
+        updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private String parentTaskId;
+    public String getParentTaskId() { return parentTaskId; }
+    public void setParentTaskId(String value) { parentTaskId = value; }
     private String title;
     private String projectId;
     private String status;
