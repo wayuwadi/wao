@@ -395,6 +395,31 @@ public class KnowledgeService {
 
     // ---------------- 文档 ----------------
 
+    /**
+     * 读取轻量文档目录。普通文档明确标记正文尚未加载，必须通过详情接口读取后才能编辑。
+     * 小记列表需要正文展示与全文筛选，因此单独批量读取小记，避免预取全库聊天归档正文。
+     */
+    public List<DocDto> listDocCatalog() {
+        List<DocEntity> entries = docMapper.selectList(activeDocs().select(
+                DocEntity::getId, DocEntity::getKbId, DocEntity::getFolderId, DocEntity::getTitle,
+                DocEntity::getAuthorId, DocEntity::getAuto, DocEntity::getCreatedLabel,
+                DocEntity::getUpdatedLabel, DocEntity::getCreatedAt, DocEntity::getUpdatedAt,
+                DocEntity::getRev, DocEntity::getTagsJson, DocEntity::getLinksJson));
+        List<String> noteKbIds = kbMapper.selectList(aliveKbs()).stream()
+                .filter(kb -> Boolean.TRUE.equals(kb.getNotes())).map(KbEntity::getId).toList();
+        Map<String, DocEntity> notes = noteKbIds.isEmpty() ? Map.of()
+                : docMapper.selectList(activeDocs().in(DocEntity::getKbId, noteKbIds)).stream()
+                    .collect(Collectors.toMap(DocEntity::getId, doc -> doc));
+        return entries.stream().map(entry -> {
+            DocEntity note = notes.get(entry.getId());
+            if (note != null) return toDtoWithBacklinks(note, List.of());
+            DocDto metadata = toDtoWithBacklinks(entry, List.of());
+            return new DocDto(metadata.id(), metadata.title(), metadata.author(), metadata.created(),
+                    metadata.updated(), metadata.auto(), metadata.links(), List.of(), null, List.of(),
+                    metadata.kbId(), metadata.folderId(), metadata.rev(), metadata.tags(), false);
+        }).toList();
+    }
+
     /** 列出全部日常文档（含正文与反向链接），不含回收站与归档里的。 */
     public List<DocDto> listDocs() {
         List<DocEntity> docs = docMapper.selectList(activeDocs());

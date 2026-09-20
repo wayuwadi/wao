@@ -22,7 +22,13 @@ public record DocDto(
         String kbId,
         String folderId,
         Integer rev,
-        List<String> tags) {
+        List<String> tags,
+        boolean bodyLoaded) {
+    public DocDto(String id, String title, String author, String created, String updated, Boolean auto,
+            List<DocLinkDto> links, List<DocBlockDto> blocks, RichDocContentDto content,
+            List<BacklinkDto> backlinks, String kbId, String folderId, Integer rev, List<String> tags) {
+        this(id, title, author, created, updated, auto, links, blocks, content, backlinks, kbId, folderId, rev, tags, true);
+    }
     public DocDto(String id, String title, String author, String created, String updated, Boolean auto,
             List<DocLinkDto> links, List<DocBlockDto> blocks, RichDocContentDto content,
             List<BacklinkDto> backlinks, String kbId, String folderId, Integer rev) {

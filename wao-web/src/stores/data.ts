@@ -269,7 +269,7 @@ export const useDataStore = defineStore('data', () => {
     // 重新加载期间继续保留真实任务与未保存输入。
     kbs.value = []
     myGroups.value = []
-    Object.keys(docs).forEach((id) => delete docs[id])
+    // 重载目录期间保留已经打开的正文和草稿基线，成功后再按目录合并。
     autos.value = []
     files.value = []
     imgs.value = []
@@ -530,6 +530,8 @@ export const useDataStore = defineStore('data', () => {
   let docMemberGeneration = 0
   watch(() => useSessionStore().userId, () => {
     docMemberGeneration++
+    docRequests.clear()
+    Object.keys(docLoadErrors).forEach(id => { delete docLoadErrors[id] })
     Object.values(docPersistTimers).forEach(clearTimeout)
     Object.keys(docSavePromises).forEach(id => { docSavePromises[id] = undefined })
     Object.keys(docDirty).forEach(id => { delete docDirty[id] })
@@ -566,6 +568,10 @@ export const useDataStore = defineStore('data', () => {
    * 只在停顿处发一次请求，停手不到一秒内容就已经在服务端了。
    */
   function setDocEdit(id: string, patch: DocEdit) {
+    if (docs[id]?.bodyLoaded === false) {
+      markSaved(`doc:${id}`, false, '文档正文尚未加载，请加载成功后再编辑')
+      return
+    }
     docEditSequences[id] = (docEditSequences[id] ?? 0) + 1
     const base = docs[id] ?? emptyDoc(id)
     const previous = docEdits.value[id]
@@ -595,6 +601,7 @@ export const useDataStore = defineStore('data', () => {
   /** 立即写透一篇文档；飞行中再次修改会在本次响应后自动补交最新草稿。 */
   async function persistDocNow(id: string): Promise<boolean> {
     clearTimeout(docPersistTimers[id])
+    if (docs[id]?.bodyLoaded === false) return false
     if (docConflicts[id]) return false
     if (docSavePromises[id]) return docSavePromises[id]!
     const pending = docEdits.value[id]
@@ -655,6 +662,7 @@ export const useDataStore = defineStore('data', () => {
 
   /** 从 IndexedDB 找回浏览器草稿；版本落后时先进入冲突处理，不自动覆盖服务器。 */
   async function restoreDocumentDraft(id: string): Promise<boolean> {
+    if (docs[id]?.bodyLoaded === false && !(await ensureDocLoaded(id))) return false
     const restoreGeneration = docMemberGeneration
     const editSequence = docEditSequences[id] ?? 0
     const restoreSequence = docRestoreSequences[id] = (docRestoreSequences[id] ?? 0) + 1
@@ -1133,19 +1141,52 @@ export const useDataStore = defineStore('data', () => {
   // ---- 回收站 ----
 
   let docsRequest: Promise<boolean> | null = null
+  const docLoadErrors = reactive<Record<string, string>>({})
+  const docRequests = new Map<string, Promise<boolean>>()
+
+  /** 单篇详情并发去重；失败保持目录和本地草稿，不能把未加载正文当成空文档。 */
+  function ensureDocLoaded(id: string): Promise<boolean> {
+    if (docs[id] && docs[id]!.bodyLoaded !== false && docs[id]!.detailLoaded !== false) return Promise.resolve(true)
+    const existing = docRequests.get(id)
+    if (existing) return existing
+    const generation = docMemberGeneration
+    delete docLoadErrors[id]
+    const request = fetchDoc(id).then((remote) => {
+      if (generation !== docMemberGeneration) return false
+      if (docPending(id) && docs[id]?.bodyLoaded !== false) return true
+      if (!docs[id] || (remote.rev ?? 1) >= (docs[id]!.rev ?? 1)) docs[id] = remote
+      if (docs[id]?.bodyLoaded === false) docLoadErrors[id] = '文档版本已更新，请重试'
+      return docs[id]?.bodyLoaded !== false
+    }).catch((cause: unknown) => {
+      if (generation === docMemberGeneration)
+        docLoadErrors[id] = cause instanceof Error ? cause.message : '文档正文加载失败'
+      return false
+    }).finally(() => {
+      if (docRequests.get(id) === request) docRequests.delete(id)
+    })
+    docRequests.set(id, request)
+    return request
+  }
 
   function replaceDocs(list: Doc[]) {
+    const previous = { ...docs }
     const archived = Object.values(archivedDocIds.value).flat()
       .flatMap((id) => docs[id] ? [docs[id]!] : [])
     Object.keys(docs).forEach((id) => delete docs[id])
-    list.forEach((doc) => (docs[doc.id] = doc))
+    list.forEach((doc) => {
+      const old = previous[doc.id]
+      // 目录刷新不卸载已加载的正文，也不能替换用户正在编辑的基线。
+      docs[doc.id] = old && (docPending(doc.id)
+        || ((doc.bodyLoaded === false || doc.detailLoaded === false)
+          && old.bodyLoaded !== false && old.detailLoaded !== false && old.rev === doc.rev)) ? old : doc
+    })
     archived.forEach((doc) => {
       if (!docs[doc.id]) docs[doc.id] = doc
     })
   }
 
   /**
-   * 首次需要文档正文时再读取；并发打开搜索、任务抽屉与知识库时复用同一个请求。
+   * 首次需要文档目录时读取；并发打开搜索、任务抽屉与知识库时复用同一个请求。
    *
    * @return 是否已经取得服务端文档列表
    */
@@ -2338,7 +2379,7 @@ export const useDataStore = defineStore('data', () => {
     addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
     archiveDoc, unarchiveDoc, refreshArchivedDocs,
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
-    ensureDocsLoaded, refreshDocs,
+    ensureDocsLoaded, refreshDocs, ensureDocLoaded, docLoadErrors,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     taskDraftErrors, useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,

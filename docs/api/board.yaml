@@ -516,6 +516,16 @@ paths:
       description: 请求必须包含当前全部未归档文档，已归档文档不参与排序；完整校验后用一条批量语句窄更新每篇文档的 folder_id / ord。即使命中飞书 scoped 自动同步文档，也不回写正文、链接或 auto_sync_version、不签发同步序列，后续自动同步可将文档恢复到固定月目录
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '400': { description: 文件夹或文档缺失、重复或不属于该知识库 } }
+  /docs/catalog:
+    get:
+      summary: 轻量日常文档目录；小记保留全文，普通文档按需取详情
+      description: >
+        与 /docs 一样排除回收站和归档。返回相同的文档标识、标题、版本和归属字段。
+        普通文档 bodyLoaded=false、content=null、blocks=[]；这些字段表示正文未加载，不能作为空正文保存。
+        小记 bodyLoaded=true，保留完整正文供列表展示和全文筛选。目录不包含反向链接，
+        打开任一文档时须 GET /docs/{id} 读取详情；原 /docs 全文契约保持兼容。
+      responses:
+        '200': { description: ApiResponse 包裹的目录条目数组 }
   /docs:
     get: { summary: 日常文档列表（含正文块与动态计算的反向链接，不含已删除或已归档文档）, responses: { '200': { description: OK } } }
     post:

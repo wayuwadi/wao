@@ -59,6 +59,34 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 class KnowledgeServiceTest {
+    @Test
+    void catalogOmitsOrdinaryBodiesButKeepsCompleteNotesWithoutPerDocumentQueries() {
+        KbEntity notesKb = kb("notes");
+        notesKb.setNotes(true);
+        DocEntity ordinary = doc("d1", "k1", "f1");
+        DocEntity note = doc("n1", "notes", "nf");
+        note.setContentMarkdown("完整小记正文，用于全文搜索和编辑");
+        note.setContentVersion(1);
+        when(kbMapper.selectList(any())).thenReturn(List.of(notesKb));
+        when(docMapper.selectList(any())).thenReturn(List.of(ordinary, note), List.of(note));
+
+        List<DocDto> result = service.listDocCatalog();
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).bodyLoaded()).isFalse();
+        assertThat(result.get(0).content()).isNull();
+        assertThat(result.get(0).blocks()).isEmpty();
+        assertThat(result.get(0).title()).isEqualTo(ordinary.getTitle());
+        assertThat(result.get(1).bodyLoaded()).isTrue();
+        assertThat(result.get(1).content().markdown()).isEqualTo(note.getContentMarkdown());
+        var queries = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(docMapper, times(2)).selectList(queries.capture());
+        assertThat(queries.getAllValues().get(0).getSqlSelect())
+                .doesNotContain("blocks_json", "content_json", "content_markdown");
+        assertThat(queries.getAllValues().get(0).getSqlSegment()).contains("deleted_at IS NULL", "archived_at IS NULL");
+        verify(docMapper, never()).selectBacklinkSources(anyString());
+    }
+
     @org.junit.jupiter.api.BeforeAll
     static void initializeMapperMetadata() {
         var assistant = new org.apache.ibatis.builder.MapperBuilderAssistant(
