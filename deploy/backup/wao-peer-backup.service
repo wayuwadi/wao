@@ -1,0 +1,14 @@
+[Unit]
+Description=Create and verify independent WAO backups on both Linux hosts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/lib/wao-backup/create-peer-backup.sh
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=100%
+MemoryMax=1G
+TimeoutStartSec=4h

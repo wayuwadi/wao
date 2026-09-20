@@ -1,0 +1,9 @@
+[Unit]
+Description=Verify independent recovery on the first Sunday of each month
+
+[Timer]
+OnCalendar=Sun *-*-01..07 05:30:00 Asia/Shanghai
+Persistent=true
+
+[Install]
+WantedBy=timers.target

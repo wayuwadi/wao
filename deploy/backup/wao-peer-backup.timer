@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Linux peer recovery snapshot after the Jenkins archive
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 Asia/Shanghai
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
