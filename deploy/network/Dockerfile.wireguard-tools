@@ -1,0 +1,5 @@
+ARG BASE_IMAGE=alpine:3.22
+FROM ${BASE_IMAGE}
+RUN apk add --no-cache wireguard-tools iproute2 iputils
+ENTRYPOINT []
+CMD ["wg", "--version"]

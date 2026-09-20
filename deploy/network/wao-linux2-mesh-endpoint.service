@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh Linux2 direct peer IPv6 endpoint
+After=wg-quick@wg0.service network-online.target
+Requires=wg-quick@wg0.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/wao-network/refresh-mesh-endpoint.py --role linux2
+TimeoutStartSec=30
+UMask=0077

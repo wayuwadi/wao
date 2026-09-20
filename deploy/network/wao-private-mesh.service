@@ -1,0 +1,15 @@
+[Unit]
+Description=Linux1 dedicated private infrastructure WireGuard interface
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/docker run --rm --network host --cap-drop ALL --cap-add NET_ADMIN --cap-add DAC_READ_SEARCH --security-opt no-new-privileges --read-only -v %h/.config/wao-wireguard:/config:ro wao-wireguard-tools:1 sh /config/interface.sh ensure
+ExecStop=/usr/bin/docker run --rm --network host --cap-drop ALL --cap-add NET_ADMIN --cap-add DAC_READ_SEARCH --security-opt no-new-privileges --read-only -v %h/.config/wao-wireguard:/config:ro wao-wireguard-tools:1 sh /config/interface.sh stop
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=45
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target
