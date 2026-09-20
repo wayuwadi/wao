@@ -99,7 +99,7 @@ const sourceFilter = reactive<{
 const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查本地 Codex…' })
 const capabilities = ref<AiCapability[]>([])
 function initialCapability() {
-  try { return localStorage.getItem('wao-assistant-capability-v1') || 'local-codex' } catch { return 'local-codex' }
+  try { return localStorage.getItem('wao-assistant-capability-v1') || '' } catch { return '' }
 }
 const capabilityId = ref(initialCapability())
 const listRef = ref<HTMLElement | null>(null)
@@ -194,8 +194,8 @@ async function loadStatus() {
 async function loadCapabilities() {
   try {
     capabilities.value = await fetchAiCapabilities()
-    if (!capabilities.value.some((item) => item.id === capabilityId.value)) {
-      capabilityId.value = capabilities.value[0]?.id || 'local-codex'
+    if (capabilityId.value && !capabilities.value.some((item) => item.id === capabilityId.value)) {
+      capabilityId.value = ''
     }
   } catch {
     capabilities.value = [{ id: 'local-codex', label: '本地 Codex', provider: 'codex',
@@ -663,6 +663,7 @@ onBeforeUnmount(stopStatusRefresh)
                 <label class="capability-picker">
                   <i class="ri-sparkling-2-line"></i>
                   <select v-model="capabilityId" :disabled="sending" aria-label="本次 AI 能力">
+                    <option value="">统一默认 AI</option>
                     <option v-for="capability in capabilities" :key="capability.id" :value="capability.id">
                       {{ capability.label }}{{ capability.model ? ` · ${capability.model}` : '' }}{{ capability.available ? '' : ' · 当前不可用' }}
                     </option>

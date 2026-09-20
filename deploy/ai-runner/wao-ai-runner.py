@@ -1921,6 +1921,8 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         session_id = event.get("thread_id") or event.get("session_id") or session_id
     result_text = (result_file.read_text(encoding="utf-8", errors="replace")
                    if result_file.exists() else output[-12000:])
+    if tools_disabled and exit_code != 0 and codex_auth_required(output):
+        result_text = "CODEX_AUTH_REQUIRED"
     return exit_code, result_text, session_id, collect_usage(output, "codex")
 
 
@@ -2551,6 +2553,16 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                 base_sha_path.unlink(missing_ok=True)
 
 
+def codex_auth_required(output: str) -> bool:
+    """只识别确定的登录失效证据，普通超时或额度错误不误报为登录失效。"""
+    text = output.lower()
+    return any(marker in text for marker in (
+        "codex_auth_required",
+        "invalidated oauth token", "refresh_token_reused", "refresh token has already been used",
+        "401 unauthorized", "authentication token has been invalidated",
+    ))
+
+
 def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, executable: str,
         git_command: str, cli_environment: dict[str, str] | None = None,
         codex_environment: dict[str, str] | None = None) -> None:
@@ -2587,6 +2599,11 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
                 response = response.strip()
                 if exit_code == 0 and response:
                     error = ""
+                    break
+                if exit_code != 0 and codex_auth_required(response):
+                    # 只回传固定错误码，绝不上传 CLI 原始错误或凭据；失效登录重试无效。
+                    response = ""
+                    error = "CODEX_AUTH_REQUIRED"
                     break
                 # 非零退出的部分 stdout 可能包含原对话或未完成报告，不回传、不持久化。
                 response = ""
@@ -2967,6 +2984,8 @@ def main() -> int:
         log("AI 账号凭据同步已启用")
         sync_ai_credentials(api, Path.home())
     futures: set[Future[None]] = set()
+    assistant_futures: set[Future[None]] = set()
+    prefer_assistant = True
     last_credentials_sync = time.monotonic()
     last_reported_log_hash: str | None = None
     last_codex_quota_check = float("-inf")
@@ -2978,6 +2997,7 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=MAX_RUNNER_CONCURRENCY, thread_name_prefix="wao-ai") as executor:
         while True:
             futures = {future for future in futures if not future.done()}
+            assistant_futures = {future for future in assistant_futures if not future.done()}
             try:
                 now = time.monotonic()
                 if "codex" in engine_commands and now - last_codex_quota_check >= CODEX_QUOTA_INTERVAL_SECONDS:
@@ -3031,6 +3051,17 @@ def main() -> int:
                             collect_codex_memory_report, api, args.name,
                             engine_commands["codex"], codex_environment)
                     collection_slots = 1 if memory_collection_future and not memory_collection_future.done() else 0
+                    # 并发额度内先给交互 AI 一个槽位，不额外增加最大并发，也不抢占已运行任务。
+                    if ("codex" in engine_commands and not assistant_futures
+                            and (runtime_concurrency > 1 or prefer_assistant)
+                            and len(futures) + collection_slots < runtime_concurrency):
+                        assistant_claim = api.post("/api/ai/runner/assistant-v2/claim")
+                        if assistant_claim:
+                            future = executor.submit(execute_assistant_claim, api, assistant_claim, root,
+                                engine_commands["codex"], git_command, cli_environment, codex_environment)
+                            futures.add(future)
+                            assistant_futures.add(future)
+                            prefer_assistant = False
                     while len(futures) + collection_slots < runtime_concurrency:
                         claim = api.post("/api/ai/runner/claim")
                         if not claim and "codex" in engine_commands:
@@ -3038,10 +3069,12 @@ def main() -> int:
                             # 旧服务端无法领取新的 tool-free 安全队列。
                             assistant_claim = api.post("/api/ai/runner/assistant-v2/claim")
                             if assistant_claim:
-                                futures.add(executor.submit(
+                                future = executor.submit(
                                     execute_assistant_claim, api, assistant_claim, root,
                                     engine_commands["codex"], git_command, cli_environment,
-                                    codex_environment))
+                                    codex_environment)
+                                futures.add(future)
+                                assistant_futures.add(future)
                                 continue
                         if not claim:
                             break
@@ -3049,6 +3082,7 @@ def main() -> int:
                             execute_claim, api, claim, root, args.sandbox, git_command,
                             engine_commands, cli_environment, args.claude_model,
                             args.git_protocol, github_token_ready, codex_environment))
+                        prefer_assistant = True
             except PairingRevokedError as exc:
                 # WAO 后台解除了这台电脑的接入：令牌已经作废，重试没有意义，
                 # 清掉本地令牌后退出，需要重新接入时用新的配对码启动即可。

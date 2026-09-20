@@ -1,4 +1,5 @@
 import { http, streamTextEvents, type ApiResponse } from './http'
+import { waitForPolish, type PolishJobOptions } from './polishJobs'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -86,8 +87,10 @@ export const fetchAiCapabilities = () =>
   }))
 
 /** 润色文档中明确选中的文字；结果不会写进 AI 助手聊天历史。 */
-export const polishDocumentText = (text: string) =>
-  data<PolishTextResult>(http.post('/api/assistant/polish', { text }, { timeout: 310_000 }))
+export const polishDocumentText = async (text: string, options?: PolishJobOptions): Promise<PolishTextResult> => {
+  const job = await waitForPolish(text, 'DOCUMENT', options)
+  return { polished: job.polished ?? '' }
+}
 
 export const fetchAssistantSourceOptions = () =>
   data<AssistantSourceOptions>(http.get('/api/assistant/source-options'))

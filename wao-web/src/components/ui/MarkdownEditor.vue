@@ -39,6 +39,9 @@ import { common, createLowlight } from 'lowlight'
 import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
 import { polishDocumentText } from '@/api/assistant'
+import { newPolishRequestId } from '@/api/polishJobs'
+import { getActivePinia } from 'pinia'
+import { useSessionStore } from '@/stores/session'
 import { loadRotationImage } from '@/api/imageRotation'
 import { rotateImage } from '@/utils/rotateImage'
 import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/editorSelectionTask'
@@ -307,6 +310,9 @@ const TabIndent = Extension.create({
 })
 
 interface PolishDialog {
+  requestId?: string
+  progress?: string
+  failed?: boolean
   from: number
   to: number
   original: string
@@ -318,6 +324,35 @@ interface PolishDialog {
   error: string
 }
 const polishDialog = ref<PolishDialog | null>(null)
+const polishSession = getActivePinia() ? useSessionStore() : null
+let polishMounted = true
+function polishStorageKey() {
+  if (!polishSession?.userId) return ''
+  return `wao-polish-selection-v1:${polishSession.userId}:${props.taskSource?.id ?? location.pathname}:${props.placeholder}`
+}
+function persistPolish(dialog: PolishDialog | null) {
+  const key = polishStorageKey()
+  if (!key) return
+  try {
+    if (dialog) localStorage.setItem(key, JSON.stringify({ dialog, savedAt: Date.now() }))
+    else localStorage.removeItem(key)
+  } catch { /* 浏览器存储受限不阻止本次润色；服务端任务仍保留。 */ }
+}
+function restorePolish() {
+  if (polishDialog.value || !editor.value || !selectionActionsEnabled.value || props.readonly) return
+  const key = polishStorageKey()
+  if (!key) return
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) ?? 'null')
+    if (!saved) return
+    if (Date.now() - saved.savedAt > 24 * 60 * 60_000) { localStorage.removeItem(key); return }
+    const dialog = saved.dialog as PolishDialog
+    // 通用页面可能同时挂载多个编辑器，只在完整正文匹配时恢复冻结选区。
+    if (!dialog.requestId?.match(/^[a-f0-9]{32}$/) || dialog.sourceDocument !== editor.value.getMarkdown()) return
+    polishDialog.value = { ...dialog, loading: false }
+    if (!dialog.polished && !dialog.failed) void requestPolish(polishDialog.value)
+  } catch { /* 无效缓存不覆盖正文。 */ }
+}
 const editorReady = ref(!props.advanced)
 const toolbarOpen = ref(false)
 
@@ -624,10 +659,22 @@ async function startPolish() {
 }
 
 async function requestPolish(dialog: PolishDialog) {
+  dialog.requestId ??= newPolishRequestId()
+  const owner = polishSession?.userId
   dialog.loading = true
   dialog.error = ''
+  dialog.progress = '正在提交润色任务…'
+  persistPolish(dialog)
   try {
-    const result = await polishDocumentText(dialog.original)
+    const result = await polishDocumentText(dialog.original, {
+      requestId: dialog.requestId,
+      isActive: () => polishMounted && polishDialog.value === dialog && polishSession?.userId === owner,
+      onProgress: (job) => {
+        dialog.progress = job.message
+        dialog.failed = job.status === 'FAILED'
+        persistPolish(dialog)
+      },
+    })
     if (polishDialog.value !== dialog) return
     dialog.polished = result.polished.trim()
     if (!dialog.polished) dialog.error = 'AI 没有返回可用内容，请重试'
@@ -635,15 +682,23 @@ async function requestPolish(dialog: PolishDialog) {
     if (polishDialog.value !== dialog) return
     dialog.error = cause instanceof Error ? cause.message : '润色失败，请重试'
   } finally {
-    if (polishDialog.value === dialog) dialog.loading = false
+    if (polishDialog.value === dialog) { dialog.loading = false; persistPolish(dialog) }
   }
 }
 
 async function retryPolish() {
-  if (polishDialog.value) await requestPolish(polishDialog.value)
+  if (polishDialog.value) {
+    // 网络错误重查同一任务；终态失败或主动重新润色才创建新任务。
+    if (polishDialog.value.failed || polishDialog.value.polished) {
+      polishDialog.value.requestId = newPolishRequestId()
+      polishDialog.value.failed = false
+    }
+    await requestPolish(polishDialog.value)
+  }
 }
 
 function keepOriginal() {
+  persistPolish(null)
   polishDialog.value = null
 }
 
@@ -670,8 +725,16 @@ function applyPolish() {
     .focus()
     .insertContentAt({ from: dialog.from, to: dialog.to }, replacement, options)
     .run()
+  persistPolish(null)
   polishDialog.value = null
 }
+
+watch([() => polishSession?.userId, () => props.taskSource?.id], () => {
+  polishDialog.value = null
+  void nextTick(restorePolish)
+})
+watch([editor, () => props.modelValue], () => { void nextTick(restorePolish) })
+onBeforeUnmount(() => { polishMounted = false })
 
 // ---- 文档链接与图片尺寸 ----
 
@@ -1907,7 +1970,7 @@ onBeforeUnmount(() => {
           <article>
             <div class="polish-card-title"><span>润色结果</span><em>确认后才会写入</em></div>
             <div v-if="polishDialog.loading" class="polish-state">
-              <i class="ri-loader-4-line"></i><span>AI 正在润色…</span>
+              <i class="ri-loader-4-line"></i><span>{{ polishDialog.progress || 'AI 正在润色…' }}</span>
             </div>
             <pre v-else-if="polishDialog.polished">{{ polishDialog.polished }}</pre>
             <div v-else class="polish-state">

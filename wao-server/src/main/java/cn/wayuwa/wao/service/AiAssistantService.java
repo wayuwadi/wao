@@ -147,6 +147,11 @@ public class AiAssistantService {
                     "未检测到已更新且支持安全只读协议的本地 Codex Runner",
                     capabilityId, capabilityLabel(capabilityId));
         }
+        if (selectedAccount(capabilityId) == null
+                && online.stream().allMatch(node -> runnerMapper.hasInvalidLocalCodexAuth(node.getId()))) {
+            return new AssistantStatusDto(false, "执行电脑在线，但 Codex 登录已失效；请在 AI 账号中重新登录",
+                    capabilityId, capabilityLabel(capabilityId));
+        }
         String primary = text(online.get(0).getName(), "本地 Codex");
         String suffix = online.size() > 1 ? "（另有 " + (online.size() - 1) + " 台可用）" : "";
         return new AssistantStatusDto(true, "已连接 " + primary + suffix,
@@ -260,7 +265,7 @@ public class AiAssistantService {
      * @return {@code ai_assistant_run.id}
      */
     public String enqueueReadOnlyJob(String operationKey, String instruction) {
-        return enqueueReadOnlyJob(operationKey, instruction, LOCAL_CODEX_CAPABILITY);
+        return enqueueReadOnlyJob(operationKey, instruction, defaultCapabilityId());
     }
 
     /** 按调用方固定的能力把内部只读分析入队。 */
@@ -457,6 +462,10 @@ public class AiAssistantService {
                 .orderByAsc(AiAssistantRunEntity::getCreatedAt)
                 .last("LIMIT 8"));
         for (AiAssistantRunEntity candidate : candidates) {
+            AiRunAccountDto candidateAccount = WEB_SEARCH_QUEUED.equals(candidate.getStatus())
+                    ? accountService.defaultCodexRunAccount()
+                    : selectedAccount(normalizeCapability(candidate.getAiCapabilityId()));
+            if (candidateAccount == null && runnerMapper.hasInvalidLocalCodexAuth(runner.getId())) continue;
             String claimToken = UUID.randomUUID().toString().replace("-", "");
             String expected = candidate.getStatus();
             String claimedStatus = SECURE_QUEUED.equals(expected) ? SECURE_RUNNING
@@ -469,9 +478,7 @@ public class AiAssistantService {
                     : Boolean.TRUE.equals(claimed.getWebSearchEnabled()) ? "ASSISTANT" : "READ_ONLY";
             String prompt = providerSearch
                     ? buildWebSearchPrompt(claimed.getPromptText()) : claimed.getPromptText();
-            AiRunAccountDto account = providerSearch
-                    ? accountService.defaultCodexRunAccount()
-                    : selectedAccount(normalizeCapability(claimed.getAiCapabilityId()));
+            AiRunAccountDto account = candidateAccount;
             return new AiAssistantClaimDto(claimed.getId(), claimToken, prompt,
                     providerSearch ? WEB_SEARCH_RUNTIME_SECONDS
                             : assistantMaxRuntimeSeconds(SECURE_QUEUED.equals(expected)),
@@ -571,7 +578,9 @@ public class AiAssistantService {
         boolean succeeded = request.exitCode() == 0 && StringUtils.hasText(request.response());
         String response = succeeded ? limit(request.response(), RESULT_LIMIT) : null;
         // Runner 回传字段属于不可信输入；失败时不持久化可能夹带的部分对话或模型输出。
-        String error = succeeded ? null : assistantFailure(request.exitCode());
+        String error = succeeded ? null : "CODEX_AUTH_REQUIRED".equals(request.error())
+                ? "Codex 登录已失效，请在 AI 账号中重新登录，或在执行电脑恢复登录后重试"
+                : assistantFailure(request.exitCode());
         int updated;
         if (succeeded && WEB_SEARCH_RUNNING.equals(run.getStatus())) {
             updated = mapper.completeWebSearchSucceeded(
@@ -673,9 +682,8 @@ public class AiAssistantService {
     private void recoverStaleRuns() {
         LocalDateTime stale = LocalDateTime.now().minusMinutes(3);
         for (AiAssistantRunEntity run : mapper.selectList(new LambdaQueryWrapper<AiAssistantRunEntity>()
-                // durable 安全只读任务由数据库时钟硬超时收口；普通回答和 Provider 联网阶段
-                // 仍按 Runner 心跳恢复，避免节点掉线后一直占住页面五分钟等待窗口。
-                .in(AiAssistantRunEntity::getStatus, List.of(RUNNING, WEB_SEARCH_RUNNING))
+                // 节点失联后重新排队；数据库硬超时仍限制每次排队和执行的期限。
+                .in(AiAssistantRunEntity::getStatus, List.of(RUNNING, SECURE_RUNNING, WEB_SEARCH_RUNNING))
                 .lt(AiAssistantRunEntity::getUpdatedAt, stale))) {
             AiRunnerNodeEntity owner = StringUtils.hasText(run.getRunnerId())
                     ? runnerMapper.selectById(run.getRunnerId()) : null;
@@ -727,8 +735,22 @@ public class AiAssistantService {
         }
     }
 
-    private static String normalizeCapability(String capabilityId) {
-        return StringUtils.hasText(capabilityId) ? capabilityId.trim() : LOCAL_CODEX_CAPABILITY;
+    /** 未显式指定的页面能力与润色共用默认配置；删除 API 后回退本地 Codex。 */
+    public String defaultCapabilityId() {
+        var account = accountService.defaultDocumentPolishAccount();
+        return account == null ? LOCAL_CODEX_CAPABILITY : account.id();
+    }
+
+    /** 给后台润色提供无凭据的等待原因；API 路径不要求 Runner 在线。 */
+    public String polishQueueMessage() {
+        if (!LOCAL_CODEX_CAPABILITY.equals(defaultCapabilityId())) return "已提交，等待 AI 处理";
+        AssistantStatusDto availability = status();
+        return availability.configured() ? "已提交，等待空闲 AI 执行；可以离开后回来查看"
+                : availability.message() + "；任务已保留，恢复后会继续执行";
+    }
+
+    private String normalizeCapability(String capabilityId) {
+        return StringUtils.hasText(capabilityId) ? capabilityId.trim() : defaultCapabilityId();
     }
 
     String buildPrompt(AssistantChatRequest request, List<ChatMessage> history,

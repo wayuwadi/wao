@@ -846,7 +846,7 @@ describe('MarkdownEditor（所见即所得）', () => {
     await instance.startPolish()
     await flushPromises()
 
-    expect(polishDocumentText).toHaveBeenCalledWith(source)
+    expect(polishDocumentText).toHaveBeenCalledWith(source, expect.objectContaining({ requestId: expect.any(String) }))
     expect(w.find('.polish-dialog').exists()).toBe(true)
     expect(w.findAll('.polish-compare pre').map((node) => node.text())).toEqual([
       source,
@@ -901,7 +901,7 @@ describe('MarkdownEditor（所见即所得）', () => {
     await instance.startPolish()
     await flushPromises()
 
-    expect(polishDocumentText).toHaveBeenCalledWith('第一段原文。\n\n第二段原文。')
+    expect(polishDocumentText).toHaveBeenCalledWith('第一段原文。\n\n第二段原文。', expect.objectContaining({ requestId: expect.any(String) }))
     await w.find('.polish-apply').trigger('click')
     await nextTick()
 

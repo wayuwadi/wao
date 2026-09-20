@@ -47,6 +47,40 @@ describe('TextPolishView', () => {
     vi.mocked(runTextPolish).mockReset().mockResolvedValue(record)
   })
 
+  it('网络错误后刷新沿用任务标识且不覆盖后来编辑的草稿', async () => {
+    vi.mocked(runTextPolish).mockRejectedValueOnce(new Error('网络中断'))
+    const first = mount(TextPolishView)
+    await flushPromises()
+    await first.get('[aria-label="待润色原文"]').setValue('提交时的原文')
+    await first.get('.run-button').trigger('click')
+    await flushPromises()
+    const requestId = vi.mocked(runTextPolish).mock.calls[0]?.[1]?.requestId
+    await first.get('[aria-label="待润色原文"]').setValue('后来继续编辑的草稿')
+    first.unmount()
+    const restored = mount(TextPolishView)
+    await flushPromises()
+    expect(runTextPolish).toHaveBeenLastCalledWith('提交时的原文', expect.objectContaining({ requestId }))
+    expect(restored.get('[aria-label="待润色原文"]').element).toHaveProperty('value', '后来继续编辑的草稿')
+    expect(restored.findAll('.history-list details')).toHaveLength(1)
+    expect(localStorage.getItem('wao-text-polish-pending-v1:member-a')).toBeNull()
+  })
+
+  it('终态失败后的重试创建新任务', async () => {
+    vi.mocked(runTextPolish).mockImplementationOnce(async (_text, options) => {
+      options?.onProgress?.({ id: 'pj1', status: 'FAILED', message: '登录失效' })
+      throw new Error('登录失效')
+    })
+    const wrapper = mount(TextPolishView)
+    await flushPromises()
+    await wrapper.get('[aria-label="待润色原文"]').setValue('要保留的原文')
+    await wrapper.get('.run-button').trigger('click')
+    await flushPromises()
+    const firstId = vi.mocked(runTextPolish).mock.calls[0]?.[1]?.requestId
+    await wrapper.get('.run-button').trigger('click')
+    await flushPromises()
+    expect(vi.mocked(runTextPolish).mock.calls[1]?.[1]?.requestId).not.toBe(firstId)
+  })
+
   it('首次加载真实提示词并明确展示无历史空状态', async () => {
     const wrapper = mount(TextPolishView)
     await flushPromises()
@@ -67,7 +101,7 @@ describe('TextPolishView', () => {
     await wrapper.get('.run-button').trigger('click')
     await flushPromises()
     expect(saveTextPolishPrompt).not.toHaveBeenCalled()
-    expect(runTextPolish).toHaveBeenCalledWith('这件事需要梳理。')
+    expect(runTextPolish).toHaveBeenCalledWith('这件事需要梳理。', expect.objectContaining({ requestId: expect.any(String) }))
     expect(wrapper.get('.method-settings').attributes('open')).toBeUndefined()
   })
 
@@ -99,7 +133,7 @@ describe('TextPolishView', () => {
     await flushPromises()
 
     expect(saveTextPolishPrompt).toHaveBeenCalledWith('先写结论，再列步骤。')
-    expect(runTextPolish).toHaveBeenCalledWith('这个事情吧大概比较绕。')
+    expect(runTextPolish).toHaveBeenCalledWith('这个事情吧大概比较绕。', expect.objectContaining({ requestId: expect.any(String) }))
     expect(wrapper.get('.result-text').text()).toContain('需要先梳理背景')
     expect(wrapper.findAll('.history-list details')).toHaveLength(1)
     expect(localStorage.getItem('wao-text-polish-prompt-draft-v2:member-a')).toBeNull()
