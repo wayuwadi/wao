@@ -8,6 +8,7 @@ import {
 } from '@/api/textPolish'
 import { useSessionStore } from '@/stores/session'
 import { newPolishRequestId } from '@/api/polishJobs'
+import PolishProgress from '@/components/ui/PolishProgress.vue'
 
 const session = useSessionStore()
 const owner = ref('')
@@ -22,7 +23,7 @@ const promptError = ref('')
 const originalText = ref('')
 const running = ref(false)
 const runProgress = ref('')
-const pendingJob = ref<{ requestId: string; original: string; failed?: boolean } | null>(null)
+const pendingJob = ref<{ requestId: string; original: string; failed?: boolean; startedAt?: number } | null>(null)
 function pendingKey() { return `wao-text-polish-pending-v1:${owner.value}` }
 function savePending() {
   try {
@@ -163,7 +164,8 @@ async function run() {
       runError.value = '提示词在保存期间发生了修改，请确认后重新润色；当前输入已保留。'
       return
     }
-    pendingJob.value = { requestId: newPolishRequestId(), original }
+    runProgress.value = '正在提交润色任务…'
+    pendingJob.value = { requestId: newPolishRequestId(), original, startedAt: Date.now() }
     savePending()
     await continueJob(version)
   } catch (error) {
@@ -324,8 +326,8 @@ onBeforeUnmount(() => { generation++ })
             </button>
           </div>
           <div v-if="running" class="result-empty active">
-            <i class="ri-magic-line"></i><strong>机器人正在梳理表达</strong
-            ><span>{{ runProgress || '原文会一直保留，完成后自动记录前后内容。' }}</span>
+            <PolishProgress :message="runProgress" :started-at="pendingJob?.startedAt" />
+            <span>可以切换页面，回来后继续查看结果。</span>
           </div>
           <pre v-else-if="result" class="result-text">{{ result.polishedText }}</pre>
           <div v-else class="result-empty">
