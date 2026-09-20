@@ -1,0 +1,8 @@
+[Unit]
+Description=Independent Linux1 WAO peer backup freshness alarm
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=%h/.local/libexec/wao-backup/check-peer-backup.sh
+TimeoutStartSec=1m

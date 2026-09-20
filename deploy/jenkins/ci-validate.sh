@@ -18,6 +18,11 @@ sh deploy/jenkins/test-github-status.sh
 sh deploy/jenkins/test-backup-controller.sh
 python3 -m unittest deploy/ai-runner/test_linux2_tunnel.py
 python3 -m unittest deploy/backup/test_webdav_client.py
+python3 -m unittest deploy/backup/test_peer_retention.py deploy/backup/test_peer_health.py
+bash -n deploy/backup/create-peer-backup.sh
+bash -n deploy/backup/verify-peer-restore.sh
+bash -n deploy/backup/check-peer-backup.sh
+bash -n deploy/backup/restore-latest-peer-backup.sh
 sh deploy/backup/test-offsite-backup.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
 python3 -m unittest deploy/jumpserver/test_verify_wao_ssh.py

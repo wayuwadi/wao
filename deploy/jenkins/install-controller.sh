@@ -131,9 +131,13 @@ install -m 0644 "$script_dir/wao-jenkins-backup.timer" \
 install -d -m 0700 /etc/wao-backup
 install -d -m 0755 /usr/local/lib/wao-backup
 for backup_script in \
-  configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh; do
+  configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
+  create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
   install -m 0755 "$script_dir/../backup/$backup_script" \
     "/usr/local/lib/wao-backup/$backup_script"
+done
+for unit in wao-peer-backup.service wao-peer-backup.timer; do
+  install -m 0644 "$script_dir/../backup/$unit" "/etc/systemd/system/$unit"
 done
 install -m 0755 "$script_dir/../backup/webdav_client.py" \
   /usr/local/lib/wao-backup/webdav_client.py
