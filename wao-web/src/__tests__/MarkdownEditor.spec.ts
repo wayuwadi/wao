@@ -833,6 +833,34 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('处理中收起仍取回同一任务，完成后主动查看且不覆盖新输入', async () => {
+    let finish!: (value: { polished: string }) => void
+    vi.mocked(polishDocumentText).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const source = '等待润色的原文。'
+    const w = await mountEditor({ modelValue: source, polishable: true })
+    const instance = w.vm as unknown as {
+      editor: { commands: { setTextSelection: (range: { from: number; to: number }) => void } }
+      startPolish: () => Promise<void>
+    }
+    instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
+    const pending = instance.startPolish()
+    await flushPromises()
+    expect(w.text()).toContain('已等待 0 秒')
+    await w.get('.polish-keep').trigger('click')
+    expect(w.find('.polish-dialog').exists()).toBe(false)
+    expect(w.get('.polish-resume').text()).toContain('后台处理')
+    await w.setProps({ modelValue: '等待期间继续修改的正文。' })
+    finish({ polished: '改写后的候选。' })
+    await pending
+    await flushPromises()
+    expect(w.get('.polish-resume').text()).toContain('已完成')
+    await w.get('.polish-resume').trigger('click')
+    await w.get('.polish-apply').trigger('click')
+    expect(w.get('.md-body').text()).toContain('等待期间继续修改的正文。')
+    expect(w.get('.polish-error').text()).toContain('变化')
+    w.unmount()
+  })
+
   it('润色结果先与原文对照，选择保留原文时不修改编辑器', async () => {
     vi.mocked(polishDocumentText).mockResolvedValueOnce({ polished: '这句话表达得更加自然。' })
     const source = '这句话写得不是特别顺。'
