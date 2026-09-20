@@ -64,6 +64,8 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  edge:
+    session-enabled: ${WAO_EDGE_SESSION_ENABLED:false}
   system-report:
     # 确定性系统报告只由 Linux 主节点按数据库共享设置刷新；其它节点仍可读、保存设置和手动补齐。
     scheduler-enabled: ${WAO_SYSTEM_REPORT_SCHEDULER_ENABLED:false}

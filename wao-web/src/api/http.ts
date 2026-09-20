@@ -1,6 +1,7 @@
 import { invalidateDesktopCache } from './desktopCache'
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { reportBrowserRequest } from '@/utils/requestMetricReporter'
+import { edgeApiRouting, isSafeEdgeMethod } from './edgeRouting'
 
 export interface ApiResponse<T> {
   code: number
@@ -22,6 +23,8 @@ interface RetriableRequestConfig extends InternalAxiosRequestConfig {
   waoGatewayRetry?: number
   waoMetricStartedAt?: number
   waoMetricStartedAtEpoch?: number
+  waoEdgeOrigin?: string
+  waoEdgeFallback?: boolean
 }
 
 const RETRIABLE_GATEWAY_STATUSES = new Set([502, 503, 504])
@@ -32,6 +35,7 @@ function retryGatewayRequest(
   status: number | undefined,
 ) {
   if (!config || !status || !RETRIABLE_GATEWAY_STATUSES.has(status)) return null
+  if (config.waoEdgeFallback) return null
   if (!['get', 'head'].includes(config.method?.toLowerCase() ?? '')) return null
   const attempt = config.waoGatewayRetry ?? 0
   if (attempt >= GATEWAY_RETRY_DELAYS.length) return null
@@ -88,6 +92,16 @@ export async function* streamTextEvents(url: string, body: unknown): AsyncGenera
 }
 
 http.interceptors.request.use((config: RetriableRequestConfig) => {
+  const url = config.url ?? ''
+  if (/^\/api\/auth\//.test(url)) edgeApiRouting.reset()
+  if (!config.waoEdgeFallback && !config.waoEdgeOrigin && (!config.baseURL || config.baseURL === '/')) {
+    const route = edgeApiRouting.route(url, config.method?.toLowerCase() ?? 'get')
+    if (route) {
+      config.baseURL = route.origin
+      config.waoEdgeOrigin = route.origin
+      if (!isSafeEdgeMethod(config.method ?? 'get')) config.headers.set('X-WAO-CSRF', route.csrf)
+    }
+  }
   config.waoMetricStartedAt = performance.now()
   config.waoMetricStartedAtEpoch = Date.now()
   return config
@@ -120,6 +134,28 @@ http.interceptors.response.use(
   (error: unknown) => {
     if (axios.isAxiosError<ApiResponse<unknown>>(error)) {
       report(error.config as RetriableRequestConfig | undefined, error.response?.status ?? null)
+      const config = error.config as RetriableRequestConfig | undefined
+      if (config?.waoEdgeOrigin) {
+        // Cancellation and authorization failures are never transport failover.
+        if (axios.isCancel(error) || config.signal?.aborted) return Promise.reject(error)
+        const transportFailure = !error.response || RETRIABLE_GATEWAY_STATUSES.has(error.response.status)
+        if (transportFailure || error.response?.status === 401 || error.response?.status === 403) {
+          edgeApiRouting.failed(config.waoEdgeOrigin)
+        }
+        if (transportFailure && isSafeEdgeMethod(config.method ?? 'get') && !config.waoEdgeFallback) {
+          config.waoEdgeFallback = true
+          config.waoEdgeOrigin = undefined
+          config.baseURL = '/'
+          config.headers.delete('X-WAO-CSRF')
+          return http.request(config)
+        }
+        if (transportFailure && !isSafeEdgeMethod(config.method ?? 'get')) {
+          return Promise.reject(Object.assign(new Error('连接中断，保存结果尚未确认。请先检查最新内容，再决定是否重试。'), { cause: error }))
+        }
+        // Do not fall through to the legacy cloud retry loop for node requests.
+        const message = error.response?.data?.message
+        return Promise.reject(message ? Object.assign(new Error(message), { status: error.response?.status }) : error)
+      }
       const retry = retryGatewayRequest(
         error.config as RetriableRequestConfig | undefined,
         error.response?.status,
