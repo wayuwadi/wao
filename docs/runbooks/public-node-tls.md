@@ -53,3 +53,27 @@ Certbot 手动 DNS 验证必须配合认证 hook 才能自动续期，见
 
 停用独立入口可在其目录执行 `docker compose down`；不停止 WAO 网关、数据库或云入口。
 路由器新增的单条映射可单独停用；切勿删除其他 NAT 规则或关闭防火墙。证书与备份私有材料不应进入 Git。
+
+## Linux2 公共入口
+
+Linux2 使用相同受限 Compose，目录 /opt/wao-public-edge；主机网络只监听9443，限额0.5 CPU/128MiB。
+证书 /etc/letsencrypt/live/wao-linux2-public 通过既有 DNS hook 签发，私有副本位于
+/etc/wao-public-tls-linux2。当前证书到期2026-12-19。
+
+公共静态副本只读挂载 /var/lib/jenkins/wao-static/releases；API仍404，健康状态的业务开关保持false。
+UFW仅增加TCP9443规则。启用监听后，Windows和云机使用显式公网IPv4和系统CA均通过，无需修改既有路由器规则。
+路由管理登录未成功，随后确认公网已可达；临时管理转发和页面已关闭。未关闭防火墙，未修改其他NAT规则。
+
+Certbot统一部署hook按准确lineage分派，Linux1仍走原远程分发，Linux2调用
+/etc/wao-node-tls/deploy-local-node-certificate.sh：校验域名、有效期和公私钥配对后原子换链，
+Nginx校验、热加载、本地可信HTTPS失败则恢复旧链接。
+独立wao-public-certificate-sync-linux2.timer每天06:10补发，与Linux1任务分离。
+
+```bash
+sudo certbot renew --cert-name wao-linux2-public --dry-run --run-deploy-hooks
+sudo systemctl status wao-public-certificate-sync-linux2.service
+```
+
+本地补发服务已成功；浏览器双节点静态选择另行记录。IPv6尚未独立确认，代理返回的ULA不能算公网IPv6证据。
+
+2026-09-20：Linux2完整模拟续期（含部署hook）通过，域名/有效期/配对、Nginx语法、热加载与可信HTTPS均成功。主站独立验收页已从Linux2直连取得同版静态文件，哈希一致。

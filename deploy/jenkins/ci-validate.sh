@@ -24,6 +24,7 @@ python3 -m unittest deploy/scripts/test_static_release.py
 python3 -m unittest deploy/scripts/test_static_routing.py
 bash -n deploy/scripts/node-dns-acme-remote.sh
 bash -n deploy/scripts/deploy-node-certificate.sh
+bash -n deploy/scripts/deploy-local-node-certificate.sh
 bash -n deploy/backup/create-peer-backup.sh
 bash -n deploy/backup/verify-peer-restore.sh
 bash -n deploy/backup/check-peer-backup.sh
