@@ -6,6 +6,19 @@ server {
     ssl_certificate_key /etc/nginx/node-tls/current/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     server_tokens off;
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/css application/json application/javascript image/svg+xml;
+    # Immutable build assets only. No SPA fallback, user uploads or API routes.
+    location ~ "^/releases/[0-9a-f]{40}/(?:assets/[^.][^\\?]*|release-manifest\.json)$" {
+        root /srv/wao;
+        try_files $uri =404;
+        limit_except GET { deny all; }
+        add_header Access-Control-Allow-Origin "https://wao.wayuwa.cn" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
     location = /_edge/health {
         default_type application/json;
         add_header Cache-Control "no-store" always;

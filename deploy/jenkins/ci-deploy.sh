@@ -323,6 +323,24 @@ prepare_cloud_routing() {
 }
 
 deploy_cloud() {
+  # Stage verified immutable assets before changing the public entry page.
+  # A disabled/offline slave never receives an incomplete release advertisement.
+  python3 deploy/scripts/static-release.py pack wao-web/dist "$WAO_RUN_TEMP/wao-static.tgz" "$WAO_GIT_SHA" || return
+  python3 deploy/scripts/static-release.py install "$WAO_RUN_TEMP/wao-static.tgz" \
+    "${JENKINS_HOME:-/var/lib/jenkins}/wao-static/releases" "$WAO_GIT_SHA" || return
+  if [ "$slave_available" = true ]; then
+    retry_remote "从节点静态目录" ssh -o ConnectTimeout=15 wao-slave \
+      'install -d "$HOME/deploy/wao-public-edge/releases" "$HOME/deploy/wao-public-edge/incoming"' || return
+    retry_remote "从节点静态制品" scp -o ConnectTimeout=15 \
+      "$WAO_RUN_TEMP/wao-static.tgz" deploy/scripts/static-release.py \
+      wao-slave:deploy/wao-public-edge/incoming/ || return
+    retry_remote "从节点静态校验" ssh -o ConnectTimeout=15 wao-slave \
+      "python3 deploy/wao-public-edge/incoming/static-release.py install deploy/wao-public-edge/incoming/wao-static.tgz deploy/wao-public-edge/releases '$WAO_GIT_SHA'" || return
+  fi
+  retry_remote "云静态制品" scp -o ConnectTimeout=15 \
+    "$WAO_RUN_TEMP/wao-static.tgz" deploy/scripts/static-release.py wao-cloud:/tmp/ || return
+  retry_remote "云静态校验" ssh -o ConnectTimeout=15 wao-cloud \
+    "python3 /tmp/static-release.py install /tmp/wao-static.tgz /var/www/wao/releases '$WAO_GIT_SHA'" || return
   resolve_ipv4() {
     getent ahostsv4 "$1" | awk '$2 == "STREAM" { print $1; exit }'
   }
@@ -410,8 +428,11 @@ deploy_cloud() {
       >/etc/cron.d/wao-nginx-ddns-reload
     chmod 0644 /etc/cron.d/wao-nginx-ddns-reload
     install -d /var/www/wao/dist
-    find /var/www/wao/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-    cp -a /tmp/wao-dist/. /var/www/wao/dist/
+    # Keep legacy hashed chunks for already-open pages. Publish entry HTML last.
+    # Old immutable releases are retained until an explicit retention policy.
+    find /tmp/wao-dist -mindepth 1 -maxdepth 1 ! -name index.html -exec cp -a -- {} /var/www/wao/dist/ \;
+    install -m 0644 /tmp/wao-dist/index.html /var/www/wao/dist/.index.html.next
+    mv -f /var/www/wao/dist/.index.html.next /var/www/wao/dist/index.html
     install -d /var/www/wao-agent/dist
     find /var/www/wao-agent/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
     cp -a /tmp/wao-agent-dist/. /var/www/wao-agent/dist/
