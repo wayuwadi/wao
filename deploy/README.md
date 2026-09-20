@@ -174,7 +174,7 @@ https://wao.wayuwa.cn/api/hello
 
 额外同域应用的静态路由仍可放在 `/etc/nginx/wao-external-apps.d/*.conf`。自媒体 Agent 已并入 WAO 主仓库和主 CD，随主站一起更新 `/var/www/wao-agent/dist` 与 `wao-agent-server`；游戏已进入原生 `/games`，不再依赖 `/game/` 独立入口。目录继续保留给真正需要独立路由的第三方或后续模块。
 
-Amer 风险管理 HTML Demo 位于 `wao-web/public/amer_demo_1/` 至 `wao-web/public/amer_demo_4/`，随 WAO Web 制品发布到同名路径。Nginx 为四个前缀分别使用独立静态路由和 404 边界，不回退到 WAO SPA；更新 Demo 时保持入口、样式和脚本使用相对路径。V4 基于本地 V3 最新工作副本，移除列表流程条、展开 Risk 原位编辑表单并修复 Action 面板关闭。`amer_demo_3/` 同步 V4 内容以保留原链接，`amer_demo_4/` 是新的版本入口，前两版不变。V3/V4 两条路径均沿用 `amer-risk-demo-v3` 浏览器存储键，以保留并共享同域现有演示数据；HTML 引用的 JS/CSS 带版本查询参数防止旧缓存。它们仍是模拟数据页面，不连接真实 Power Platform。
+Amer 风险管理 HTML Demo 位于 `wao-web/public/amer_demo_1/` 至 `wao-web/public/amer_demo_6/`，随 WAO Web 制品发布到同名路径。Nginx 为各版本前缀分别使用独立静态路由和 404 边界，不回退到 WAO SPA；更新 Demo 时保持入口、样式和脚本使用相对路径。V4 基于本地 V3 最新工作副本，移除列表流程条、展开 Risk 原位编辑表单并修复 Action 面板关闭。`amer_demo_3/` 同步 V4 内容以保留原链接，`amer_demo_4/` 是新的版本入口，前两版不变。V3–V6 均沿用 `amer-risk-demo-v3` 浏览器存储键，以保留并共享同域现有演示数据；HTML 引用的 JS/CSS 带版本查询参数防止旧缓存。它们仍是模拟数据页面，不连接真实 Power Platform。
 
 V4 回归可在安装 WAO Web 开发依赖后运行 `node wao-web/scripts/test-amer-demo-v4.mjs`；用 `DEMO_ROOT` 指向 `wao-web/public/amer_demo_3` 可验证原链接对应的同版资源。Nginx 路由验证使用 `sh deploy/scripts/test-render-nginx-config.sh`。窄窗口下关联表格使用横向滚动，避免内容压成竖排。
 
@@ -193,6 +193,12 @@ V4 回归可在安装 WAO Web 开发依赖后运行 `node wao-web/scripts/test-a
 V5 仍为纯模拟页面，沿用 `amer-risk-demo-v3` 浏览器存储键以兼容旧数据，因此同域 V3/V4/V5 共享演示记录。避免用旧版本交替编辑含新字段的记录。不连接真实 Dataverse、Entra ID 或邮件。样例邮箱使用 `example.invalid`；旧字段和历史值不清空，历史 Assessment 未记录处置时显示“未记录”。评分按 20–25 Critical、15–19 High、6–14 Medium；需求截图未给出 1–5 标签，暂沿用 Low。
 
 测试：安装 WAO Web 开发依赖后执行 `node wao-web/scripts/test-amer-demo-v5.mjs`，以及 `sh deploy/scripts/test-render-nginx-config.sh`。静态文件与本地 V5 构建逐文件校验。
+
+### Amer Risk Demo V6
+
+`wao-web/public/amer_demo_6/` 发布到 `/amer_demo_6/`，保留 V1–V5 入口不变。V6 在 V5 基础上增加状态推导、Risk 恢复、Initial / Current Risk Level、Action 搜索与筛选，并支持 Action / Assessment 新建和更新。基础 CSS / JS 已复制到 V6 目录，不依赖 V5 URL 才能加载。
+
+V6 仍为纯前端模拟页面，沿用 `amer-risk-demo-v3` 浏览器存储键，因此与 V3–V5 共享同域演示数据；不连接真实 Dataverse、Entra ID 或邮件。测试执行 `node wao-web/scripts/test-amer-demo-v6.mjs` 和 `sh deploy/scripts/test-render-nginx-config.sh`。
 
 主站 `main` 由 Linux 主节点上的 Jenkins 构建和发布，GitHub 只负责仓库、签名 Webhook 和提交状态。
 Jenkins 使用 Linux1、云节点两套独立 SSH 密钥与严格 `known_hosts`；生产 `.env`、`.env.secrets` 和网关证书
