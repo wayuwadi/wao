@@ -1,3 +1,11 @@
+server:
+  compression:
+    # Compress at the application before crossing the home-node/cloud link.
+    # SSE, images and downloads keep their existing streaming/binary behavior.
+    enabled: true
+    min-response-size: 2KB
+    mime-types: application/json,text/plain,text/markdown
+
 spring:
   data:
     redis:
