@@ -25,6 +25,31 @@ describe('项目页聚焦任务', () => {
     seedDataStore(useDataStore())
   })
 
+  it('加载失败不会冒充空项目，重试期间继续保留已显示任务', async () => {
+    const data = useDataStore()
+    const originalTasks = [...data.tasks]
+    data.tasks = []
+    data.taskLoadState = 'error'
+    data.taskLoadError = 'timeout of 10000ms exceeded'
+    const reload = vi.spyOn(data, 'hydrate').mockImplementation(async () => {
+      data.taskLoadState = 'loading'
+    })
+    await router.push('/projects/p1?view=list')
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('任务加载失败')
+    expect(wrapper.text()).not.toContain('还没有任务')
+    await wrapper.get('[role="alert"] button').trigger('click')
+    expect(reload).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain('正在加载任务')
+    expect(wrapper.text()).not.toContain('还没有任务')
+    data.tasks = originalTasks
+    await flushPromises()
+    expect(wrapper.findAll('.task-row').length).toBeGreaterThan(0)
+    wrapper.unmount()
+    reload.mockRestore()
+  })
+
   it('普通入口始终默认表格，忽略旧看板偏好，仍允许手动切换', async () => {
     useUiStore().setTaskView('p1', 'board')
     await router.push('/projects/p1')
