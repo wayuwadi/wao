@@ -54,7 +54,19 @@ for service in wao-server wao-agent-server wao-gateway; do
   }
   health="$(run_docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_id}")"
   test "${health}" = healthy || { echo "${service} is ${health}." >&2; exit 1; }
+  # Health alone misses a JVM using host RAM instead of its cgroup budget.
+  # Read effective JVM flags with the same image environment used at startup.
+  max_heap="$(run_docker exec "${container_id}" sh -c 'java -XX:+PrintFlagsFinal -version 2>/dev/null | awk '\''$2 == "MaxHeapSize" { print $4 }'\''')"
+  case "${service}" in
+    wao-server) expected_heap=1073741824 ;;
+    *) expected_heap=536870912 ;;
+  esac
+  test "${max_heap}" = "${expected_heap}" || {
+    echo "${service} JVM max heap is ${max_heap:-unknown}; expected ${expected_heap} bytes." >&2
+    exit 1
+  }
   printf '%s_image=%s health=%s\n' "${service}" "${running_image}" "${health}"
+  printf '%s_max_heap_bytes=%s\n' "${service}" "${max_heap}"
 done
 
 gateway_id="$(compose ps -q wao-gateway)"
