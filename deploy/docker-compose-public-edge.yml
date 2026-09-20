@@ -1,0 +1,31 @@
+services:
+  public-edge:
+    image: ${WAO_EDGE_IMAGE:?Set a verified nginx image digest}
+    container_name: wao-public-edge
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 128m
+    pids_limit: 64
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    # Bind only the Nginx listeners below. The home node's existing Docker
+    # forwarding path drops inbound public traffic; do not disable its firewall.
+    network_mode: host
+    environment:
+      WAO_EDGE_HOST: ${WAO_EDGE_HOST:?}
+      WAO_EDGE_NODE: ${WAO_EDGE_NODE:?}
+      NGINX_ENVSUBST_FILTER: ^WAO_EDGE_
+    volumes:
+      - ./nginx/public-node-main.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/public-node.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${WAO_EDGE_TLS_DIR:?}:/etc/nginx/node-tls:ro
+    tmpfs:
+      - /etc/nginx/conf.d:size=1m
+      - /var/cache/nginx:size=16m
+      - /var/run:size=1m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
