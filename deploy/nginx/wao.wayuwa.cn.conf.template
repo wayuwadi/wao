@@ -462,6 +462,16 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    # V6 固化 V5 基础资源并叠加状态、评估和 Action 交互优化。
+    location = /amer_demo_6 {
+        return 308 /amer_demo_6/;
+    }
+
+    location ^~ /amer_demo_6/ {
+        try_files $uri $uri/ =404;
+        add_header Cache-Control "no-cache";
+    }
+
     # 旧游戏入口收敛到 WAO 原生游戏厅；无真实接口的 Insight 明确退役。
     location = /game {
         return 308 /games;

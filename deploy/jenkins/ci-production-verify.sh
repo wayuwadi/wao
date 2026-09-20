@@ -55,6 +55,13 @@ require_public_content https://wao.wayuwa.cn/amer_demo_2/styles.css '--power:'
 require_public_content https://wao.wayuwa.cn/amer_demo_2/app.js 'amer-risk-demo-v2'
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_2)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_2/not-found.js)" = 404
+require_public_content https://wao.wayuwa.cn/amer_demo_6/ '<title>IT Risk Management v6 · Power Apps Demo</title>'
+require_public_content https://wao.wayuwa.cn/amer_demo_6/styles.css '--power:'
+require_public_content https://wao.wayuwa.cn/amer_demo_6/app.js 'IT Risk Management v6'
+require_public_content https://wao.wayuwa.cn/amer_demo_6/enhancements.css '.risk-register-table'
+require_public_content https://wao.wayuwa.cn/amer_demo_6/enhancements.js 'derivedRiskStatus'
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_6)" = 308
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_6/not-found.js)" = 404
 # V4 同时服务新入口和原 V3 地址；存储键继续沿用 V3，保留用户的演示数据。
 for demo_path in amer_demo_3 amer_demo_4; do
   require_public_content "https://wao.wayuwa.cn/$demo_path/" '<title>IT Risk Management v4 · Power Apps Demo</title>'
