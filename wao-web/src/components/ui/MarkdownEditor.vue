@@ -40,6 +40,7 @@ import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
 import { polishDocumentText } from '@/api/assistant'
 import { newPolishRequestId } from '@/api/polishJobs'
+import PolishProgress from './PolishProgress.vue'
 import { getActivePinia } from 'pinia'
 import { useSessionStore } from '@/stores/session'
 import { loadRotationImage } from '@/api/imageRotation'
@@ -310,6 +311,7 @@ const TabIndent = Extension.create({
 })
 
 interface PolishDialog {
+  startedAt?: number
   requestId?: string
   progress?: string
   failed?: boolean
@@ -324,6 +326,11 @@ interface PolishDialog {
   error: string
 }
 const polishDialog = ref<PolishDialog | null>(null)
+const polishMinimized = ref(false)
+function dismissPolish() {
+  if (polishDialog.value?.loading) polishMinimized.value = true
+  else keepOriginal()
+}
 const polishSession = getActivePinia() ? useSessionStore() : null
 let polishMounted = true
 function polishStorageKey() {
@@ -621,6 +628,7 @@ async function addSelectionTask() {
  * 同时冻结选区与整篇正文，避免等待 AI 时的协同更新导致结果替换到错误位置。
  */
 async function startPolish() {
+  if (polishDialog.value) { polishMinimized.value = false; return }
   const e = editor.value
   if (!e) return
   const { from, to, $from } = e.state.selection
@@ -659,6 +667,8 @@ async function startPolish() {
 }
 
 async function requestPolish(dialog: PolishDialog) {
+  dialog.startedAt ??= Date.now()
+  polishMinimized.value = false
   dialog.requestId ??= newPolishRequestId()
   const owner = polishSession?.userId
   dialog.loading = true
@@ -691,6 +701,7 @@ async function retryPolish() {
     // 网络错误重查同一任务；终态失败或主动重新润色才创建新任务。
     if (polishDialog.value.failed || polishDialog.value.polished) {
       polishDialog.value.requestId = newPolishRequestId()
+      polishDialog.value.startedAt = Date.now()
       polishDialog.value.failed = false
     }
     await requestPolish(polishDialog.value)
@@ -1945,7 +1956,10 @@ onBeforeUnmount(() => {
         </footer>
       </form>
     </div>
-    <div v-if="polishDialog" class="polish-mask" @click.self="keepOriginal">
+    <button v-if="polishDialog && polishMinimized" type="button" class="polish-resume" @click="polishMinimized = false" role="status">
+      {{ polishDialog.loading ? '润色正在后台处理 · 查看进度' : polishDialog.error ? '润色遇到问题 · 查看并重试' : '润色已完成 · 查看结果' }}
+    </button>
+    <div v-if="polishDialog && !polishMinimized" class="polish-mask" @click.self="dismissPolish">
       <section class="polish-dialog" role="dialog" aria-modal="true" aria-labelledby="polish-title">
         <header>
           <div>
@@ -1955,8 +1969,8 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="polish-close"
-            aria-label="关闭并保留原文"
-            @click="keepOriginal"
+            :aria-label="polishDialog.loading ? '收起并继续后台润色' : '关闭并保留原文'"
+            @click="dismissPolish"
           >
             <i class="ri-close-line"></i>
           </button>
@@ -1970,7 +1984,7 @@ onBeforeUnmount(() => {
           <article>
             <div class="polish-card-title"><span>润色结果</span><em>确认后才会写入</em></div>
             <div v-if="polishDialog.loading" class="polish-state">
-              <i class="ri-loader-4-line"></i><span>{{ polishDialog.progress || 'AI 正在润色…' }}</span>
+              <PolishProgress :message="polishDialog.progress" :started-at="polishDialog.startedAt" />
             </div>
             <pre v-else-if="polishDialog.polished">{{ polishDialog.polished }}</pre>
             <div v-else class="polish-state">
@@ -1992,7 +2006,7 @@ onBeforeUnmount(() => {
         </div>
 
         <footer>
-          <button type="button" class="polish-keep" @click="keepOriginal">保留原文</button>
+          <button type="button" class="polish-keep" @click="dismissPolish">{{ polishDialog.loading ? '收起，继续做其他事' : '保留原文' }}</button>
           <button
             type="button"
             class="polish-retry"
@@ -2021,6 +2035,20 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.polish-resume {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: block;
+  margin: 12px 0 0 auto;
+  max-width: 100%;
+  border: 1px solid #c4b5fd;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #f5f3ff;
+  color: #5b21b6;
+  cursor: pointer;
+}
 .table-context-menu { position:fixed; z-index:1000; width:210px; max-width:calc(100vw - 16px); max-height:calc(100vh - 16px); overflow-y:auto; padding:6px; border:1px solid var(--wao-line-control); border-radius:10px; background:var(--wao-bg-card,#fff); box-shadow:0 8px 28px #0002; }
 .table-context-menu button { display:flex; align-items:center; gap:10px; width:100%; border:0; border-radius:6px; padding:8px 10px; background:transparent; color:var(--wao-text); font:inherit; font-size:13px; text-align:left; cursor:pointer; }
 .table-context-menu button:hover,.table-context-menu button:focus-visible { background:var(--wao-bg-sub); outline:2px solid var(--wao-line-control); outline-offset:-2px; }
