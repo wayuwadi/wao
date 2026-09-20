@@ -61,6 +61,34 @@ server {
         proxy_hide_header Access-Control-Allow-Origin;
         proxy_hide_header Access-Control-Allow-Credentials;
     }
+    # Existing anonymous raw-image contract only; private files and uploads stay separate.
+    location ~ ^/api/images/[A-Za-z0-9_-]+/raw$ {
+        if ($wao_edge_api_enabled != "true") { return 503; }
+        if ($host != "${WAO_EDGE_HOST}") { return 421; }
+        if ($http_origin != "https://wao.wayuwa.cn") { return 403; }
+        limit_except GET { deny all; }
+        add_header Access-Control-Allow-Origin "https://wao.wayuwa.cn" always;
+        add_header Vary "Origin" always;
+        add_header X-Content-Type-Options nosniff always;
+        proxy_pass ${WAO_EDGE_GATEWAY_SCHEME}://${WAO_EDGE_GATEWAY};
+        proxy_ssl_verify off;
+        proxy_http_version 1.1;
+        proxy_set_header Host "${WAO_EDGE_HOST}:9443";
+        proxy_set_header X-Forwarded-Host "${WAO_EDGE_HOST}:9443";
+        proxy_set_header X-Forwarded-Port 9443;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Forwarded "";
+        proxy_set_header Cookie "";
+        proxy_set_header Authorization "";
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 30s;
+        proxy_next_upstream off;
+        proxy_hide_header Set-Cookie;
+        proxy_hide_header Access-Control-Allow-Origin;
+    }
     # Business and static routes are enabled only after their separate
     # authentication, version and fallback acceptance gates pass.
     location / { return 404; }
