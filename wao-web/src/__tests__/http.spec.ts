@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { http } from '@/api/http'
 import { reportBrowserRequest } from '@/utils/requestMetricReporter'
+import { edgeApiRouting } from '@/api/edgeRouting'
 
 vi.mock('@/utils/requestMetricReporter', () => ({
   reportBrowserRequest:
@@ -24,6 +25,7 @@ describe('HTTP 网关短暂故障自愈', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.mocked(reportBrowserRequest).mockClear()
+    vi.restoreAllMocks()
   })
 
   it('对纯读请求的 502/503/504 按退避上限重试', async () => {
@@ -80,5 +82,44 @@ describe('HTTP 网关短暂故障自愈', () => {
     ).rejects.toBeInstanceOf(AxiosError)
     expect(attempts).toBe(1)
     expect(reportBrowserRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('节点纯读故障只回云端一次，不叠加旧重试循环', async () => {
+    vi.spyOn(edgeApiRouting, 'route').mockReturnValue({ origin: 'https://linux2.wayuwa.cn:9443', csrf: 'test-csrf', validUntil: Infinity })
+    vi.spyOn(edgeApiRouting, 'failed').mockImplementation(() => {})
+    const bases: string[] = []
+    await expect(http.get('/api/projects', { adapter: async config => {
+      bases.push(config.baseURL!)
+      throw gatewayError(config, 503)
+    } })).rejects.toBeInstanceOf(AxiosError)
+    expect(bases).toEqual(['https://linux2.wayuwa.cn:9443', '/'])
+  })
+
+  it('节点写请求携带CSRF，断网后保留结果未知状态而不重放', async () => {
+    vi.spyOn(edgeApiRouting, 'route').mockReturnValue({ origin: 'https://linux2.wayuwa.cn:9443', csrf: 'test-csrf', validUntil: Infinity })
+    vi.spyOn(edgeApiRouting, 'failed').mockImplementation(() => {})
+    let calls = 0
+    await expect(http.post('/api/tasks', { title: '仅单测' }, { adapter: async config => {
+      calls++
+      expect(config.headers.get('X-WAO-CSRF')).toBe('test-csrf')
+      throw new AxiosError('network lost', 'ERR_NETWORK', config)
+    } })).rejects.toThrow('保存结果尚未确认')
+    expect(calls).toBe(1)
+  })
+
+  it('节点401和用户取消都不跨入口重试', async () => {
+    vi.spyOn(edgeApiRouting, 'route').mockReturnValue({ origin: 'https://linux2.wayuwa.cn:9443', csrf: 'test-csrf', validUntil: Infinity })
+    vi.spyOn(edgeApiRouting, 'failed').mockImplementation(() => {})
+    for (const status of [401, 403]) {
+      let calls = 0
+      await expect(http.get('/api/tasks', { adapter: async config => { calls++; throw gatewayError(config, status) } })).rejects.toBeInstanceOf(AxiosError)
+      expect(calls).toBe(1)
+    }
+    const abort = new AbortController()
+    let calls = 0
+    await expect(http.get('/api/tasks', { signal: abort.signal, adapter: async config => {
+      calls++; abort.abort(); throw new AxiosError('cancel', 'ERR_CANCELED', config)
+    } })).rejects.toBeDefined()
+    expect(calls).toBe(1)
   })
 })

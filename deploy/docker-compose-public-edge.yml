@@ -15,6 +15,9 @@ services:
     environment:
       WAO_EDGE_HOST: ${WAO_EDGE_HOST:?}
       WAO_EDGE_NODE: ${WAO_EDGE_NODE:?}
+      WAO_EDGE_API_ENABLED: ${WAO_EDGE_API_ENABLED:-false}
+      WAO_EDGE_GATEWAY: ${WAO_EDGE_GATEWAY:-127.0.0.1:9000}
+      WAO_EDGE_GATEWAY_SCHEME: ${WAO_EDGE_GATEWAY_SCHEME:-https}
       NGINX_ENVSUBST_FILTER: ^WAO_EDGE_
     volumes:
       - ./nginx/public-node-main.conf:/etc/nginx/nginx.conf:ro

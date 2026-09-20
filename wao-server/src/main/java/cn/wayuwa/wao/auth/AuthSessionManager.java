@@ -4,16 +4,23 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.ObjectProvider;
 
 /** 只在服务端 HttpSession 中读写当前账号和待认领第三方身份。 */
 @Component
 public class AuthSessionManager {
+    private final ObjectProvider<NodeSessionBridge> bridge;
+    public AuthSessionManager(ObjectProvider<NodeSessionBridge> bridge) { this.bridge = bridge; }
     private static final String ACCOUNT_ID = "wao.accountId";
     private static final String PENDING_IDENTITY = "wao.pendingIdentity";
 
     /** 返回当前账号 id；未登录时返回 null。 */
     public String currentAccountId(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
+        if (session != null && session.getAttribute(NodeSessionBridge.ROOT_SESSION) != null) {
+            NodeSessionBridge available = bridge.getIfAvailable();
+            return available == null ? null : available.currentAccount(request, session);
+        }
         return session == null ? null : (String) session.getAttribute(ACCOUNT_ID);
     }
 
@@ -43,6 +50,12 @@ public class AuthSessionManager {
     /** 注销并删除当前服务端会话。 */
     public void logout(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
+        if (session != null && session.getAttribute(NodeSessionBridge.ROOT_SESSION) != null) {
+            NodeSessionBridge available = bridge.getIfAvailable();
+            if (available != null) available.logout(request, session);
+            else session.invalidate();
+            return;
+        }
         if (session != null) session.invalidate();
     }
 }
