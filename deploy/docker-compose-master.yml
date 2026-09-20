@@ -49,13 +49,11 @@ services:
       - "${MASTER_BIND_IP:-0.0.0.0}:6379:6379"
     environment:
       REDIS_PASS: ${REDIS_PASS}
-    command:
-      - /bin/sh
-      - -ec
-      - exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$$REDIS_PASS" --masterauth "$$REDIS_PASS"
+    command: ["/bin/sh", "/opt/wao/start-redis.sh"]
     volumes:
       - redis-master-data:/data
       - ./redis/master.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./redis/start-redis.sh:/opt/wao/start-redis.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASS ping | grep PONG"]
       interval: 10s
@@ -83,6 +81,7 @@ services:
     command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
     volumes:
       - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro
+      - sentinel-master-data:/data
     depends_on:
       redis-master:
         condition: service_healthy
@@ -404,6 +403,9 @@ services:
 volumes:
   mysql-master-data:
   redis-master-data:
+  sentinel-master-data:
+    name: wao-master_sentinel-master-data
+    external: true
   nacos-data:
   ddns-go-data:
   wao-agent-media:

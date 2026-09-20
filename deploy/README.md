@@ -154,7 +154,7 @@ https://wao.wayuwa.cn/api/hello
 
 应返回 HTTP 200、`X-Request-Id` 响应头和 `code=0` 的统一 JSON；随后检查 MySQL 复制、两个 Sentinel 的 master 视图和 Nacos 中的两台应用实例。
 
-当前只有主、从两个 Sentinel。它们用于监控和客户端发现，默认仲裁数设为 3，明确禁止两节点自行故障转移，避免短暂主库重启后形成无法自动回切的错误拓扑。后续增加独立的第三仲裁节点并验证双向 Redis 链路后，才把 `REDIS_SENTINEL_QUORUM` 调整为 2 以启用自动故障转移。
+当前只有主、从两个 Sentinel。它们用于监控和客户端发现，默认仲裁数设为 3，明确禁止两节点自行故障转移，避免短暂主库重启后形成无法自动回切的错误拓扑。Redis与Sentinel已改为读取持久运行配置；初次采用前必须完成[状态迁移](../docs/runbooks/redis-durable-state.md)，缺少配置会拒绝启动。后续增加独立第三节点并验证私网、客户端与角色持久化后，才通过受控运行配置将quorum调整为2；仅修改环境变量不改变已运行拓扑。
 
 ## 图床
 

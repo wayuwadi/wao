@@ -63,13 +63,11 @@ services:
       REDIS_MASTER_HOST: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}
       REDIS_PASS: ${REDIS_PASS}
       REDIS_REPLICA_ANNOUNCE_HOST: ${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}
-    command:
-      - /bin/sh
-      - -ec
-      - exec redis-server /usr/local/etc/redis/redis.conf --replicaof "$$REDIS_MASTER_HOST" 6379 --masterauth "$$REDIS_PASS" --requirepass "$$REDIS_PASS" --replica-announce-ip "$$REDIS_REPLICA_ANNOUNCE_HOST" --replica-announce-port 6379
+    command: ["/bin/sh", "/opt/wao/start-redis.sh"]
     volumes:
       - redis-slave-data:/data
       - ./redis/slave.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./redis/start-redis.sh:/opt/wao/start-redis.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASS ping | grep PONG"]
       interval: 10s
@@ -97,6 +95,7 @@ services:
     command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
     volumes:
       - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro
+      - sentinel-slave-data:/data
     depends_on:
       redis-slave:
         condition: service_healthy
@@ -309,6 +308,9 @@ services:
 volumes:
   mysql-slave-data:
   redis-slave-data:
+  sentinel-slave-data:
+    name: wao-slave_sentinel-slave-data
+    external: true
   ddns-go-data:
   wao-agent-media:
     name: wao-agent-slave_wao-agent-media
