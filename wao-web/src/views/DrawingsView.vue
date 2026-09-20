@@ -601,13 +601,15 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 
 <style scoped>
 .drawings-page {
-  height: calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h));
-  min-height: 560px;
+  height: 100%;
+  min-height: 0;
   display: flex;
   overflow: hidden;
   background: var(--wao-bg-page);
 }
 .file-sidebar {
+  min-height: 0;
+  overflow: hidden;
   width: 268px;
   flex: 0 0 268px;
   display: flex;
@@ -677,6 +679,8 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   display: grid;
   align-content: start;
   gap: 5px;
@@ -789,6 +793,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
   line-height: 1.5;
 }
 .drawing-workspace {
+  min-height: 0;
   min-width: 0;
   flex: 1;
   display: flex;
@@ -1072,8 +1077,8 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 }
 @media (max-width: 760px) {
   .drawings-page {
-    height: calc(100dvh - 48px - var(--wao-tabbar-h) - 64px);
-    min-height: 420px;
+    height: 100%;
+    min-height: 0;
   }
   .file-sidebar {
     position: absolute;

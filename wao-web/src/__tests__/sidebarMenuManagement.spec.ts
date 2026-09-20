@@ -1,3 +1,4 @@
+import { useTopShortcutsStore, favoriteShortcut } from '@/stores/topShortcuts'
 import { useDataStore } from '@/stores/data'
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 import { seedDataStore } from './helpers/seedDataStore'
@@ -103,6 +104,26 @@ describe('桌面侧栏直接维护菜单', () => {
     return wrapper
   }
 
+  it('任务文档收藏统一显示顶部，与已固定入口去重且可以取消', async () => {
+    const wrapper = await mountSideNav(true)
+    const favorites = useFavoritesStore(), shortcuts = useTopShortcutsStore()
+    favorites.items = [
+      { type: 'doc', targetId: 'd1', label: '收藏文档', parentId: 'kb1' },
+      { type: 'task', targetId: 't1', label: '收藏任务', parentId: 'p1' },
+    ]
+    shortcuts.loaded = true; shortcuts.state = 'loaded'
+    shortcuts.items = [favoriteShortcut(favorites.items[0]!)!]
+    await flushPromises()
+    expect(wrapper.findAll('.fav-item')).toHaveLength(0)
+    expect(wrapper.findAll('.personal-shortcut')).toHaveLength(2)
+    await wrapper.get('[aria-label="移除顶部快捷入口：收藏文档"]').trigger('click')
+    await flushPromises()
+    expect(favorites.items.map(item => item.targetId)).toEqual(['t1'])
+    expect(shortcuts.items).toHaveLength(0)
+    expect(wrapper.findAll('.personal-shortcut')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('知识库只高亮收藏子项，折叠后恢复父菜单高亮', async () => {
     seedDataStore(useDataStore())
     const wrapper = await mountSideNav()
@@ -129,7 +150,7 @@ describe('桌面侧栏直接维护菜单', () => {
     const children = wrapper.get('.project-children')
     expect(children.element.previousElementSibling?.getAttribute('aria-label')).toBe('项目')
     expect(children.get('.item').find('i').exists()).toBe(false)
-    expect(wrapper.findAll('.fav-item').map((item) => item.text())).toEqual(['收藏文档'])
+    expect(wrapper.findAll('.fav-item').map((item) => item.text())).toEqual([])
     await children.get('.item').trigger('click')
     await flushPromises()
     expect(children.get('.item').classes()).toContain('active')

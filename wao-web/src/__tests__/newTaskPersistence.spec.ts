@@ -1,3 +1,4 @@
+import { apiCreateProject, apiCreateVaultGroup } from '@/api/board'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -14,12 +15,15 @@ import { useUiStore } from '@/stores/ui'
 vi.mock('@/api/board', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/api/board')>(),
   apiPutTask: vi.fn<typeof apiPutTask>(),
+  apiCreateProject: vi.fn(),
+  apiCreateVaultGroup: vi.fn(),
 }))
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
   fetchTaskAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
 }))
+
 
 const putTask = vi.mocked(apiPutTask)
 
@@ -45,6 +49,17 @@ describe('新建任务的落库反馈', () => {
   afterEach(() => {
     vi.clearAllTimers()
     vi.useRealTimers()
+  })
+
+  it('在线创建项目失败不会生成伪造的本地成功记录', async () => {
+    const count = data.projects.length
+    vi.mocked(apiCreateProject).mockRejectedValueOnce(new Error('网络中断'))
+    await expect(data.addProject({ name: '保留草稿', area: 'career', goal: '', visAll: false })).rejects.toThrow('网络中断')
+    expect(data.projects).toHaveLength(count)
+    const groups = data.vault.length
+    vi.mocked(apiCreateVaultGroup).mockRejectedValueOnce(new Error('网络中断'))
+    await expect(data.addVaultGroup('保留分组')).rejects.toThrow('网络中断')
+    expect(data.vault).toHaveLength(groups)
   })
 
   it('新建响应迟到时继续串行保存最新输入，不回灌旧正文', async () => {

@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import KnowledgeView from '@/views/KnowledgeView.vue'
 import { useDataStore } from '@/stores/data'
 import type { Doc, KnowledgeBase } from '@/types'
+
+enableAutoUnmount(afterEach)
 
 function testRouter() {
   return createRouter({
@@ -49,6 +51,24 @@ describe('知识库真实资料检索', () => {
     await router.isReady()
     return { wrapper: mount(KnowledgeView, { global: { plugins: [router] } }), router }
   }
+
+  it('关闭设置先保存，失败保留输入，保存中等待成功再关闭', async () => {
+    const update = vi.spyOn(data, 'updateKb').mockResolvedValue(false)
+    const { wrapper } = await render()
+    const open = () => wrapper.findAll('button[title="知识库设置"]')[0]!.trigger('click')
+    const escape = () => globalThis.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
+    await open(); escape(); await flushPromises()
+    expect(wrapper.find('.modal').exists()).toBe(false); expect(update).not.toHaveBeenCalled()
+    await open(); await wrapper.get('.modal .f-input').setValue('保留此名称')
+    escape(); await flushPromises()
+    expect(wrapper.find('.modal').exists()).toBe(true)
+    expect((wrapper.get('.modal .f-input').element as HTMLInputElement).value).toBe('保留此名称')
+    let finish!: (value: boolean) => void
+    update.mockReturnValueOnce(new Promise<boolean>(resolve => { finish = resolve }))
+    await wrapper.get('.modal-mask').trigger('click'); await flushPromises()
+    expect(wrapper.find('.modal').exists()).toBe(true)
+    finish(true); await flushPromises(); expect(wrapper.find('.modal').exists()).toBe(false)
+  })
 
   it('项目知识库进入自定义分组，不再展示锁定项目分组', async () => {
     data.myGroups.push({ id: 'work', name: '工作资料' })

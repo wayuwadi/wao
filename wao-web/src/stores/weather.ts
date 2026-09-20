@@ -6,17 +6,18 @@ import { fetchWeather, type WeatherForecast, type WeatherLocation } from '@/api/
 import { weatherErrorMessage } from '@/utils/weather'
 
 export interface WeatherPreferences { location: WeatherLocation | null; rhythmVisible: boolean; calendarVisible: boolean; readingsVisible: boolean }
-const defaults = (): WeatherPreferences => ({ location: null, rhythmVisible: true, calendarVisible: true, readingsVisible: true })
+const defaults = (): WeatherPreferences => ({ location: { name: '武汉', latitude: 30.59, longitude: 114.31 }, rhythmVisible: true, calendarVisible: true, readingsVisible: true })
 const copy = (value: WeatherPreferences): WeatherPreferences => JSON.parse(JSON.stringify(value))
 export function parseWeatherPreferences(raw: string): WeatherPreferences {
   const result = defaults()
   try {
     const value = JSON.parse(raw)
     for (const key of ['rhythmVisible', 'calendarVisible', 'readingsVisible'] as const) if (typeof value[key] === 'boolean') result[key] = value[key]
+    if (value.location === null) result.location = null
     const p = value.location
     if (p && typeof p.name === 'string' && p.name.length <= 160 && Number.isFinite(p.latitude) && Math.abs(p.latitude) <= 90 && Number.isFinite(p.longitude) && Math.abs(p.longitude) <= 180)
       result.location = { name: p.name, latitude: Math.round(p.latitude * 100) / 100, longitude: Math.round(p.longitude * 100) / 100 }
-  } catch { /* 初次使用不猜测位置。 */ }
+  } catch { /* 首次使用按产品默认城市武汉展示；已有位置与主动清空保持不变。 */ }
   return result
 }
 

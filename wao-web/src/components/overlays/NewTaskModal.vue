@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDataStore } from '@/stores/data'
@@ -209,9 +210,13 @@ async function makeDefaultProject() {
 }
 
 /** 写入正在飞行时不允许误关弹窗；失败后仍可关闭，草稿和本地任务都会保留。 */
-function requestClose() {
-  if (createState.value !== 'submitting') ui.closeModal()
+async function requestClose() {
+  if (createState.value === 'submitting') return
+  if (title.value.trim()) await create()
+  else if (desc.value.trim()) toast('请填写标题后保存，正文已保留', 'ri-information-line')
+  else ui.closeModal()
 }
+useOverlayDismiss(() => true, requestClose)
 </script>
 
 <template>
@@ -300,7 +305,7 @@ function requestClose() {
       <span v-else-if="draftState === 'error'" class="draft-state" role="alert">草稿未能写入本机，请保持弹窗打开。<button type="button" @click="saveDraft">重试</button></span>
       <span v-else class="draft-state"><i :class="draftState === 'saving' ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ draftState === 'saving' ? '正在保存草稿' : '草稿已保存' }}</span>
       <div class="spacer"></div>
-      <button class="btn-ghost" :disabled="createState === 'submitting'" @click="requestClose">取消</button>
+      <button class="btn-ghost" :disabled="createState === 'submitting'" @click="requestClose">完成并关闭</button>
       <button class="btn-primary" :disabled="!title.trim() || createState === 'submitting'" @click="create">
         <i v-if="createState === 'submitting'" class="ri-loader-4-line spin"></i>
         {{ createState === 'submitting' ? '正在创建' : createState === 'error' ? '重试创建' : '创建任务' }}

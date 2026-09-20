@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { onMounted, reactive, ref } from 'vue'
 import { fetchFileSettings, saveFileSettings, type FileSettings } from '@/api/system'
 import { toast } from '@/composables/toast'
@@ -17,12 +18,14 @@ const loading = ref(true)
 const loaded = ref(false)
 const saving = ref(false)
 const error = ref('')
+const original = ref('')
 
 async function load() {
   loading.value = true
   error.value = ''
   try {
     Object.assign(form, await fetchFileSettings())
+    original.value = JSON.stringify(form)
     loaded.value = true
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '文件设置读取失败，请重试'
@@ -32,6 +35,11 @@ async function load() {
 }
 
 async function save() {
+  if (saving.value || !loaded.value) return
+  if (!Number.isInteger(form.fileMaxMb) || form.fileMaxMb < 1 || form.fileMaxMb > 50 || !Number.isInteger(form.imageMaxMb) || form.imageMaxMb < 1 || form.imageMaxMb > 10) {
+    error.value = '请输入有效上传上限：普通文件 1–50MB，图片 1–10MB'
+    return
+  }
   saving.value = true
   error.value = ''
   try {
@@ -47,18 +55,24 @@ async function save() {
   }
 }
 
+async function close() {
+  if (saving.value) return
+  if (loaded.value && JSON.stringify(form) !== original.value) await save()
+  else emit('close')
+}
 onMounted(load)
+useOverlayDismiss(() => true, close)
 </script>
 
 <template>
-  <div class="mask" @click.self="emit('close')">
+  <div class="mask" @click.self="close">
     <form class="dialog" @submit.prevent="save">
       <header>
         <div>
           <span>FILES & IMAGE STORE</span>
           <h2>文件与图床设置</h2>
         </div>
-        <button type="button" aria-label="关闭" @click="emit('close')">
+        <button type="button" aria-label="关闭" @click="close">
           <i class="ri-close-line"></i>
         </button>
       </header>
@@ -69,7 +83,7 @@ onMounted(load)
         ><button type="button" @click="load">重新读取</button>
       </div>
       <template v-else>
-        <div class="fields">
+        <div class="fields" :inert="saving || undefined">
           <label>
             <span>普通文件上传上限</span>
             <div>
@@ -102,7 +116,7 @@ onMounted(load)
       </template>
 
       <footer>
-        <button type="button" class="ghost" @click="emit('close')">取消</button>
+        <button type="button" class="ghost" @click="close">完成并关闭</button>
         <button class="primary" :disabled="loading || !loaded || saving">
           {{ saving ? '保存中…' : '保存设置' }}
         </button>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
@@ -61,8 +62,23 @@ const ICONS = [
   'ri-money-cny-circle-line', 'ri-run-line', 'ri-music-2-line', 'ri-lightbulb-line',
 ]
 
+const saving = ref(false), saveError = ref('')
+const basicSnapshot = () => JSON.stringify([name.value, area.value, goal.value, icon.value])
+const basicOriginal = basicSnapshot()
+const aiSnapshot = () => JSON.stringify([aiEnabled.value, repoUrl.value, defaultBranch.value, workspaceDir.value, defaultEngine.value, preferredRunnerId.value, maxParallelRuns.value, failureRetryCount.value, executionPrompt.value, selectedSkillVersions.value])
+const aiOriginal = ref(''), aiLoaded = ref(!AI_RUN_ENABLED)
+async function requestClose() {
+  if (saving.value) return
+  if (confirming.value) { confirming.value = false; return }
+  if (basicSnapshot() !== basicOriginal || (aiLoaded.value && AI_RUN_ENABLED && aiSnapshot() !== aiOriginal.value)) await save()
+  else emit('close')
+}
+useOverlayDismiss(() => true, requestClose)
 async function save() {
-  if (!name.value.trim()) return
+  if (saving.value) return
+  if (!name.value.trim()) { saveError.value = '请填写项目名称，输入已保留。'; return }
+  if (!aiLoaded.value) { saveError.value = '请先成功加载配置，避免覆盖已有设置。'; return }
+  saving.value = true; saveError.value = ''
   try {
     const projectSaved = await data.updateProject(props.project.id, {
       name: name.value.trim(),
@@ -92,8 +108,9 @@ async function save() {
     toast('项目设置与 AI Run 配置已保存', 'ri-check-line')
     emit('close')
   } catch (error) {
-    toast(error instanceof Error ? error.message : '项目设置保存失败', 'ri-error-warning-line')
-  }
+    saveError.value = error instanceof Error ? error.message : '项目设置保存失败'
+    toast(saveError.value, 'ri-error-warning-line')
+  } finally { saving.value = false }
 }
 
 async function remove() {
@@ -125,6 +142,7 @@ async function loadAiConfig() {
     const availableVersionIds = new Set(skills.map((item) => item.versionId))
     availableSkills.value = [...skills, ...enabledSkills.filter((item) => !availableVersionIds.has(item.versionId))]
     selectedSkillVersions.value = enabledSkills.map((item) => item.versionId)
+    aiOriginal.value = aiSnapshot(); aiLoaded.value = true
   } catch (error) {
     toast(error instanceof Error ? error.message : 'AI Run 配置加载失败', 'ri-error-warning-line')
   } finally {
@@ -149,13 +167,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mask" @click="emit('close')"></div>
-  <div class="modal">
+  <div class="mask" @click="requestClose"></div>
+  <div class="modal" role="dialog" aria-modal="true" :inert="saving">
+    <p v-if="saveError" role="alert">{{ saveError }}</p>
     <div class="head">
       <div class="title">项目设置</div>
       <span class="head-tip">自定义图标、名称、描述，或删除项目</span>
       <div class="spacer"></div>
-      <button class="close" @click="emit('close')"><i class="ri-close-line"></i></button>
+      <button class="close" @click="requestClose"><i class="ri-close-line"></i></button>
     </div>
 
     <div class="label">项目名称</div>
@@ -291,14 +310,14 @@ onMounted(() => {
           <div class="dz-title">确认删除「{{ project.name }}」？</div>
           <div class="dz-sub">此操作不可撤销。</div>
         </div>
-        <button class="btn-ghost sm" @click="confirming = false">取消</button>
+        <button class="btn-ghost sm" @click="confirming = false">完成并关闭</button>
         <button class="btn-danger" @click="remove"><i class="ri-delete-bin-line"></i>确认删除</button>
       </template>
     </div>
 
     <div class="foot">
       <div class="spacer"></div>
-      <button class="btn-ghost" @click="emit('close')">取消</button>
+      <button class="btn-ghost" @click="requestClose">完成并关闭</button>
       <button class="btn-primary" :disabled="!name.trim()" @click="save">保存</button>
     </div>
   </div>

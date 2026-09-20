@@ -42,6 +42,7 @@ function useWecomPreset() {
 }
 
 async function addAccount() {
+  if (busy.value) return
   if (!form.serverUrl.trim() || !form.username.trim() || !form.password) {
     toast('请填写服务器地址、账号和密码')
     return
@@ -109,6 +110,13 @@ async function toggleCalendar(cal: CaldavCalendar) {
     busy.value = null
   }
 }
+/** 外层设置浮层关闭前保存已输入账户；缺字段或请求失败时留在原处。 */
+async function prepareClose() {
+  if (busy.value) return false
+  if (Object.values(form).some(value => value.trim())) await addAccount()
+  return !Object.values(form).some(value => value.trim())
+}
+defineExpose({ prepareClose })
 </script>
 
 <template>
@@ -169,7 +177,7 @@ async function toggleCalendar(cal: CaldavCalendar) {
         <div class="spacer"></div>
         <button v-if="!showForm" class="btn-primary sm" @click="showForm = true"><i class="ri-add-line"></i>连接 CalDAV</button>
       </div>
-      <form v-if="showForm" class="site-form" @submit.prevent="addAccount">
+      <form v-if="showForm" class="site-form" :inert="busy === 'add'" @submit.prevent="addAccount">
         <div class="provider-guide">
           <div><b>连接企业微信日程</b><span>可直接使用官方页面取得的账号、密码和服务器信息。</span></div>
           <button type="button" class="btn-ghost sm" @click="useWecomPreset">填入企业微信服务器</button>
