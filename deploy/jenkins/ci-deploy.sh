@@ -41,8 +41,10 @@ require_shared_env_line() {
   fi
 }
 
-require_shared_env_line 'REDIS_MASTER_HOST=linux2.wayuwa.cn' || exit 1
-require_shared_env_line 'REDIS_SENTINEL_NODES=linux2.wayuwa.cn:26379,linux1.wayuwa.cn:26379' || exit 1
+require_shared_env_line 'REDIS_MASTER_HOST=192.168.31.180' || exit 1
+require_shared_env_line 'REDIS_SENTINEL_NODES=192.168.31.180:26379,192.168.2.180:26379,10.66.0.1:26379' || exit 1
+# 4 is the staged no-failover gate; 2 is enabled only after client acceptance.
+grep -Eq '^REDIS_HA_QUORUM=(2|4)$' "$WAO_MASTER_PROJECT_ROOT/deploy/.env" || exit 1
 require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn' || exit 1
 require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn' || exit 1
 

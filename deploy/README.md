@@ -95,7 +95,7 @@ Linux2 主节点使用 `refresh-public-ip.sh master`，Linux1 从节点使用 `r
 sudo sh deploy/scripts/provision-cloud-node.sh <证书通知邮箱>
 ```
 
-脚本只安装 Nginx 与 Certbot，签发 TLS 证书，安装健康检查与 Nginx DDNS 激活任务，并验证证书续期。云节点不安装 Docker、不运行数据库或 Sentinel；前端生产制品放在 `/var/www/wao/dist`。证书签发前的 HTTP 引导配置会提供静态前端；证书签发后，如果两个 Gateway 健康端点均未就绪，则使用 HTTPS 待后端模式并让 `/api/` 返回 503。定时任务每分钟解析两个 DDNS 域名的 IPv4，只有地址变化时才重载 Nginx；即使 DDNS 同时发布不可达的 AAAA，也不会把 IPv6 加入上游。检测到至少一个 Gateway 健康端点可用后，会自动切换到正式双 Gateway 配置。CD 会用 `set-nginx-upstream-state.sh` 在应用节点发布前临时摘流；摘流锁存在时 DDNS 定时任务不会覆盖临时状态。
+脚本只安装 Nginx 与 Certbot，签发 TLS 证书，安装健康检查与 Nginx DDNS 激活任务，并验证证书续期。该初始化脚本不安装 Docker或完整数据库；第三Sentinel按独立运维流程安装和限额。前端生产制品放在 `/var/www/wao/dist`。证书签发前的 HTTP 引导配置会提供静态前端；证书签发后，如果两个 Gateway 健康端点均未就绪，则使用 HTTPS 待后端模式并让 `/api/` 返回 503。定时任务每分钟解析两个 DDNS 域名的 IPv4，只有地址变化时才重载 Nginx；即使 DDNS 同时发布不可达的 AAAA，也不会把 IPv6 加入上游。检测到至少一个 Gateway 健康端点可用后，会自动切换到正式双 Gateway 配置。CD 会用 `set-nginx-upstream-state.sh` 在应用节点发布前临时摘流；摘流锁存在时 DDNS 定时任务不会覆盖临时状态。
 
 ## JumpServer 资源管理
 
@@ -154,7 +154,7 @@ https://wao.wayuwa.cn/api/hello
 
 应返回 HTTP 200、`X-Request-Id` 响应头和 `code=0` 的统一 JSON；随后检查 MySQL 复制、两个 Sentinel 的 master 视图和 Nacos 中的两台应用实例。
 
-当前只有主、从两个 Sentinel。它们用于监控和客户端发现，默认仲裁数设为 3，明确禁止两节点自行故障转移，避免短暂主库重启后形成无法自动回切的错误拓扑。Redis与Sentinel已改为读取持久运行配置；初次采用前必须完成[状态迁移](../docs/runbooks/redis-durable-state.md)，缺少配置会拒绝启动。后续增加独立第三节点并验证私网、客户端与角色持久化后，才通过受控运行配置将quorum调整为2；仅修改环境变量不改变已运行拓扑。
+Redis使用两Linux数据节点与云机轻量第三Sentinel，均通过WireGuard私网互通。按[三Sentinel运维流程](../docs/runbooks/redis-private-ha.md)先以quorum=4部署和验收客户端，再受控启用quorum=2。实际主从角色来自持久运行配置，缺失状态拒绝启动；发布不得根据Linux节点标签重置主从。`REDIS_HA_QUORUM`用于核对已采用策略，仅修改env不会改变运行仲裁。
 
 ## 图床
 
