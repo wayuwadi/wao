@@ -92,7 +92,8 @@ describe('新建任务的落库反馈', () => {
     wrapper.unmount()
   })
 
-  it('服务端确认前保持提交中，成功后才提示已创建', async () => {
+  it('右上角新建等待服务端确认，再打开详情', async () => {
+    useUiStore().openNewTask()
     let confirm!: (task: Task) => void
     putTask.mockImplementationOnce((_id, task) => new Promise((resolve) => { confirm = resolve; void task }))
     const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
@@ -161,7 +162,7 @@ describe('新建任务的落库反馈', () => {
     await wrapper.get('.foot .btn-primary').trigger('click')
     await flushPromises()
     expect(putTask.mock.calls[1]![0]).toBe(firstId)
-    expect(ui.openTaskId).toBe(firstId)
+    expect(ui.openTaskId).toBeNull()
     expect(localStorage.getItem('document-selection-test')).toBeNull()
     expect(localStorage.getItem('wao-new-task-draft-v1')).toBe(original)
     wrapper.unmount()
@@ -217,7 +218,31 @@ describe('新建任务的落库反馈', () => {
     expect(data.tasks).toHaveLength(before + 1)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(useToastHost().items.some((item) => item.text.includes('已创建'))).toBe(true)
-    expect(useUiStore().openTaskId).toBe(data.tasks[0]!.id)
+    expect(useUiStore().openTaskId).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('表格标题加号原地创建、失败保留，输入法选词不误提交', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id', component: { template: '<div />' } }] })
+    await router.push('/projects/p1?view=list'); await router.isReady()
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await wrapper.get('[aria-label="快速新建任务"]').trigger('click')
+    const input = wrapper.get('.table-quick-add input')
+    await input.setValue('标题即可创建')
+    await input.trigger('keydown.enter', { isComposing: true })
+    expect(putTask).not.toHaveBeenCalled()
+    putTask.mockRejectedValueOnce(new Error('失败'))
+    await input.trigger('keydown.enter'); await flushPromises()
+    expect(input.element).toHaveProperty('value', '标题即可创建')
+    const id = putTask.mock.calls[0]![0]
+    // 再次点加号不丢弃失败输入。
+    await wrapper.get('[aria-label="快速新建任务"]').trigger('click')
+    expect(input.element).toHaveProperty('value', '标题即可创建')
+    putTask.mockImplementationOnce(savedTask)
+    await wrapper.get('.table-quick-add button').trigger('click'); await flushPromises()
+    expect(putTask.mock.calls[1]![0]).toBe(id)
+    expect(useUiStore().openTaskId).toBeNull()
+    expect(input.element).toHaveProperty('value', '')
     wrapper.unmount()
   })
 

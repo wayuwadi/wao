@@ -1,5 +1,4 @@
 <script setup lang="ts">
-const editorRef = ref<{ copyFormatted: () => Promise<void> } | null>(null)
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -179,9 +178,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 
 <template>
   <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
-    <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><button type="button" title="复制完整内容并保留格式" @click="editorRef?.copyFormatted()">复制内容</button><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
+    <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
-      <MarkdownEditor ref="editorRef" :key="id" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls
+      <MarkdownEditor :key="id" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls
         :hide-toolbar="inline" :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
@@ -226,6 +225,7 @@ button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-car
 button:disabled { opacity: .5; cursor: default; }
 .error { color: var(--wao-danger-strong) !important; font-size: 12px; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } }
+.composer-footer > button { padding: 4px 9px; min-height: 28px; font-size: 12px; border-radius: 6px; }
 </style>
 
 <style scoped>
@@ -250,4 +250,5 @@ button:disabled { opacity: .5; cursor: default; }
 .note-composer.fullscreen { position: fixed; inset: 0; z-index: 2100; border-radius: 0; padding: 24px max(24px, calc((100vw - 1100px) / 2)); height: 100dvh; }
 
 @media (max-width: 600px) { .note-composer.fullscreen { padding: 12px; } }
+.composer-footer > button { padding: 4px 9px; min-height: 28px; font-size: 12px; border-radius: 6px; }
 </style>

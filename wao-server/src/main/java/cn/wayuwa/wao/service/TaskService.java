@@ -208,9 +208,8 @@ public class TaskService {
      */
     @org.springframework.transaction.annotation.Transactional
     public TaskDto replace(String id, TaskDto dto, String memberId) {
-        TaskEntity previous = taskMapper.selectById(id);
+        TaskEntity previous = taskMapper.lockById(id);
         if (dto.subtaskVersion() != null || dto.editVersion() != null) {
-            previous = taskMapper.lockById(id);
             if (previous != null && dto.editVersion() != null && !dto.editVersion().equals(editVersion(previous)))
                 throw new cn.wayuwa.wao.common.ConflictException("任务内容已被其他窗口更新，请保留本机内容并查看服务器版本");
             if (previous != null && dto.subtaskVersion() != null && !dto.subtaskVersion().equals(SubtaskTree.version(parse(previous.getDetailJson()).subs())))
@@ -224,6 +223,12 @@ public class TaskService {
         String previousStatus = previous == null ? null : previous.getStatus();
         TaskEntity e = new TaskEntity();
         e.setId(id);
+        if (previous != null && !java.util.Objects.equals(previous.getProjectId(), dto.project())) {
+            requireProjectVisible(dto.project(), memberId);
+            if (previous.getParentTaskId() != null || taskMapper.countChildTasks(id) > 0)
+                throw new cn.wayuwa.wao.common.BadRequestException("请先解除父子任务关系，再移动到其他项目");
+        }
+        e.setParentTaskId(previous == null ? null : previous.getParentTaskId());
         e.setTitle(dto.title());
         e.setProjectId(dto.project());
         e.setStatus(dto.status());
@@ -661,7 +666,7 @@ public class TaskService {
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
                 d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()),
-                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs())).withEditVersion(editVersion(e));
+                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs())).withEditVersion(editVersion(e)).withParentTaskId(e.getParentTaskId());
     }
 
     /**

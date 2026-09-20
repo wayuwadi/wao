@@ -38,6 +38,22 @@ class TaskServiceTest {
     private final TaskService service = new TaskService(mapper, new ObjectMapper(),
             notifier, taskNotifier, members, projects, new WorkItemNumberService(mock(cn.wayuwa.wao.mapper.WorkItemNumberMapper.class)));
 
+    @org.junit.jupiter.api.BeforeEach
+    void lockReadsCurrentRow() {
+        when(mapper.lockById(any())).thenAnswer(call -> mapper.selectById((String) call.getArgument(0)));
+    }
+
+    @Test
+    void oldFullSaveCannotClearParentOrChangeIt() {
+        TaskEntity existing = todo(); existing.setParentTaskId("parent");
+        when(mapper.selectById("t1")).thenReturn(existing);
+        TaskDto oldClient = service.get("t1").withParentTaskId("forged");
+        TaskDto saved = service.replace("t1", oldClient, "wg");
+        assertThat(saved.parentTaskId()).isEqualTo("parent");
+        assertThat(saved.withNumbers(42L, saved.subs()).withEditVersion("v").withSubtaskVersion("s").parentTaskId()).isEqualTo("parent");
+        assertThat(saved.desc()).isEqualTo("desc");
+    }
+
     private TaskEntity todo() {
         TaskEntity e = new TaskEntity();
         e.setId("t1");

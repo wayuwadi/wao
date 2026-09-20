@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { taskTreeRows, taskDropIsNesting } from '@/utils/taskHierarchy'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
@@ -351,7 +352,14 @@ const firstOf = (r: HTMLInputElement | HTMLInputElement[] | null) => (Array.isAr
 const openedDoneGroups = ref<string[]>([])
 
 /** 任务归属分组：没归过组、或归到已删除的分组，都算落在第一个分组里。 */
-function groupIdOf(task: { groupId?: string | null }): string {
+function groupIdOf(task: { id?: string; groupId?: string | null; parentTaskId?: string | null }): string {
+  const seen = new Set<string>()
+  while (task.parentTaskId && !seen.has(task.parentTaskId)) {
+    seen.add(task.parentTaskId)
+    const parent = ptasks.value.find(t => t.id === task.parentTaskId)
+    if (!parent) break
+    task = parent
+  }
   const id = task.groupId
   return id && groups.value.some((g) => g.id === id) ? id : groups.value[0]!.id
 }
@@ -414,6 +422,11 @@ function toggleGroupDone(id: string) {
 }
 /** 分组头上的「+」：就地展开一行输入框，回车即建，手机上不用再进弹窗。 */
 function startQuickAdd(groupId: string) {
+  if (quickAddState.value === 'submitting') return
+  if (quickAddGroup.value !== null && (quickAddText.value.trim() || quickAddState.value === 'error')) {
+    toast('请先完成当前输入，内容已保留', 'ri-information-line')
+    return
+  }
   if (collapsedGroups.value.includes(groupId)) toggleGroup(groupId)
   quickAddGroup.value = groupId
   quickAddText.value = ''
@@ -428,7 +441,7 @@ async function submitQuickAdd(groupId: string) {
   // 快速新建不替用户排期：截止日期留空，需要时再在表格里点选。
   const payload = {
     title, project: pid.value, pr: 'P2' as const, owner: session.currentUser.id,
-    due: '', desc: '', images: [], groupId, startAt: null, endAt: null,
+    due: '', desc: '', images: [], groupId: groupId === '__all' ? groups.value[0]!.id : groupId, startAt: null, endAt: null,
   }
   quickAddState.value = 'submitting'
   let persisted = false
@@ -471,14 +484,60 @@ const tableSections = computed(() => {
     doneOpen: showFinished.value,
   }))
 })
-function onTableDrop(overId: string, sectionId: string, event: DragEvent) {
-  if (readSubtaskDrag(event) || !tableGrouped.value) onDropReorder(overId, event)
-  else onDropGroup(sectionId, overId)
+const nestingOver = ref<string | null>(null)
+function onTableDragOver(id: string, event: DragEvent) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  nestingOver.value = dragId.value && dragId.value !== id && taskDropIsNesting(event.clientY, rect.top, rect.height) ? id : null
 }
-function onDropGroup(groupId: string, overId?: string) {
+async function moveUnder(id: string, parentId: string | null) {
+  try {
+    await data.moveTask(id, parentId)
+    if (parentId) collapsedSubTasks.value = collapsedSubTasks.value.filter(value => value !== parentId)
+    toast(parentId ? '已移为子任务，内容与编号保持不变' : '已移回顶层', 'ri-node-tree')
+  } catch (error) { toast(error instanceof Error ? error.message : '移动失败，请重试', 'ri-error-warning-line') }
+}
+async function onTableDrop(overId: string, sectionId: string, event: DragEvent) {
+  nestingOver.value = null
+  if (readSubtaskDrag(event)) return onDropReorder(overId, event)
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  if (dragId.value && dragId.value !== overId && taskDropIsNesting(event.clientY, rect.top, rect.height)) {
+    const id = dragId.value
+    dragId.value = null
+    void moveUnder(id, overId)
+  } else {
+    const id = dragId.value
+    dragId.value = null
+    const source = id ? data.taskById(id) : undefined, target = data.taskById(overId)
+    if (!source || !target || source.id === target.id) return
+    try {
+      if ((source.parentTaskId || null) !== (target.parentTaskId || null))
+        await data.moveTask(source.id, target.parentTaskId || null)
+      if (tableGrouped.value && !target.parentTaskId) data.moveTaskToGroup(source.id, sectionId)
+      data.reorderTask(source.id, overId)
+    } catch (error) { toast(error instanceof Error ? error.message : '移动失败', 'ri-error-warning-line') }
+  }
+}
+function tableRows(section: typeof tableSections.value[number]) {
+  const candidates = [...section.open, ...(section.doneOpen ? section.done : [])]
+  // 未完成后代仍需展示已完成父任务作为上下文。
+  const ids = new Set(candidates.map(t => t.id))
+  for (let i = 0; i < candidates.length; i++) {
+    const parent = allTasks.value.find(t => t.id === candidates[i]!.parentTaskId)
+    if (parent && !ids.has(parent.id)) { ids.add(parent.id); candidates.push(parent) }
+  }
+  return taskTreeRows(candidates, collapsedSubTasks.value)
+}
+function childTaskCount(id: string) { return ptasks.value.filter(task => task.parentTaskId === id).length }
+async function onDropGroup(groupId: string, overId?: string) {
   const id = dragId.value
   dragId.value = null
   if (!id) return
+  try {
+    if (data.taskById(id)?.parentTaskId) await data.moveTask(id, null)
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '移动失败', 'ri-error-warning-line')
+    return
+  }
   data.moveTaskToGroup(id, groupId)
   // 同组内落到某条任务上就是排序；空白处只改变分组，保持该组已有顺序。
   if (overId && overId !== id) data.reorderTask(id, overId)
@@ -515,7 +574,7 @@ watch(visibleTaskIds, (ids) => {
           <button @click="setTab('动态'); projectMenuOpen = false"><i class="ri-history-line"></i>项目动态</button>
         </div>
       </div>
-      <button class="btn-primary sm" @click="ui.openModal('task', pid)"><i class="ri-add-line"></i>新建任务</button>
+      <button class="btn-primary sm" @click="ui.openNewTask(pid)"><i class="ri-add-line"></i>新建任务</button>
     </div>
 
     <div v-if="projectInfoOpen" class="project-info">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ fmtDate(pd.due) }}</div>
@@ -654,7 +713,7 @@ watch(visibleTaskIds, (ids) => {
           <thead>
             <tr>
               <th scope="col">ID</th>
-              <th scope="col">标题</th>
+              <th scope="col"><div class="table-title-heading">标题<button class="group-op" aria-label="快速新建任务" title="只输入标题新建任务" @click="startQuickAdd(tableGrouped ? groups[0]!.id : '__all')"><i class="ri-add-line"></i></button></div></th>
               <th scope="col">分组</th>
               <th scope="col">优先级</th>
               <th scope="col">状态</th>
@@ -691,7 +750,9 @@ watch(visibleTaskIds, (ids) => {
                   </div>
                 </td>
               </tr>
-              <tr v-if="quickAddGroup === section.id && !section.collapsed" class="table-quick-add">
+            </tbody>
+            <tbody v-if="quickAddGroup === section.id && !section.collapsed">
+              <tr class="table-quick-add">
                 <td colspan="10">
                   <div class="group-add-row" :class="{ error: quickAddState === 'error' }">
                     <i :class="quickAddState === 'submitting' ? 'ri-loader-4-line spinning' : 'ri-add-line'"></i>
@@ -700,7 +761,7 @@ watch(visibleTaskIds, (ids) => {
                       v-model="quickAddText"
                       :disabled="quickAddState === 'submitting'"
                       placeholder="任务标题，回车创建，连着敲可以一次录好几条"
-                      @keydown.enter.prevent="submitQuickAdd(section.id)"
+                      @keydown.enter.prevent="!$event.isComposing && submitQuickAdd(section.id)"
                       @keydown.esc="quickAddGroup = null"
                     />
                     <button class="group-add-done" :disabled="quickAddState === 'submitting'" @click="quickAddState === 'error' ? submitQuickAdd(section.id) : (quickAddGroup = null)">
@@ -711,10 +772,14 @@ watch(visibleTaskIds, (ids) => {
               </tr>
             </tbody>
             <template v-if="!section.collapsed">
-              <template v-for="t in [...section.open, ...(section.doneOpen ? section.done : [])]" :key="t.id">
+              <template v-for="{ task: t, depth } in tableRows(section)" :key="t.id">
                 <tbody>
                   <ProjectTaskRow
                     :task="t"
+                    :depth="depth"
+                    :child-task-count="childTaskCount(t.id)"
+                    :nesting-over="nestingOver === t.id"
+                    @detach="moveUnder(t.id, null)"
                     :groups="groups"
                     :group-id="groupIdOf(t)"
                     :expanded="!collapsedSubTasks.includes(t.id)"
@@ -724,14 +789,16 @@ watch(visibleTaskIds, (ids) => {
                     @add-sub="startAddSub(t.id, null)"
                     @open="openTask(t.id)"
                     @dragstart="onDragStart(t.id, $event)"
-                    @dragend="dragId = null"
-                    @dragover.prevent
-                    @drop.stop="onTableDrop(t.id, section.id, $event)"
+                    @dragend="dragId = null; nestingOver = null"
+                    @dragleave="nestingOver = null"
+                    @dragover.prevent="onTableDragOver(t.id, $event)"
+                    @drop.prevent.stop="onTableDrop(t.id, section.id, $event)"
                   />
                 </tbody>
                 <InlineSubtasks
                   v-if="(t.subs.length && !collapsedSubTasks.includes(t.id)) || addingSub?.taskId === t.id"
                   :task-id="t.id"
+                  :task-depth="depth"
                   :hide-done="!showFinished"
                   :adding="addingSub?.taskId === t.id"
                   :add-parent-id="addingSub?.taskId === t.id ? addingSub.parentId : null"
@@ -2271,4 +2338,5 @@ watch(visibleTaskIds, (ids) => {
   overflow: hidden;
   clip-path: inset(50%);
 }
+.table-title-heading { display: flex; align-items: center; justify-content: space-between; }
 </style>

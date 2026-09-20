@@ -277,7 +277,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           <button
             class="item"
             :class="{
-              active: activeItem === id && !(id === 'home' && route.query.console) && !(id === 'projects' && !nav.collapsed && favoriteProjects.some((project) => route.path === `/projects/${project.targetId}`)),
+              active: activeItem === id && !(id === 'knowledge' && !nav.collapsed && route.name === 'kb' && favoriteKbs.some((kb) => kb.id === route.params.id)) && !(id === 'home' && route.query.console) && !(id === 'projects' && !nav.collapsed && favoriteProjects.some((project) => route.path === `/projects/${project.targetId}`)),
               center: nav.collapsed,
               dragging: dragId === id,
               'drag-over': !!dragId && dragOverId === id,

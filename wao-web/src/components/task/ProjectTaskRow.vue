@@ -24,9 +24,12 @@ const props = defineProps<{
   groups: TaskGroup[]
   groupId: string
   expanded: boolean
+  depth?: number
+  childTaskCount?: number
+  nestingOver?: boolean
   dragging: boolean
 }>()
-const emit = defineEmits<{ 'toggle-subs': []; open: []; completed: []; 'add-sub': [] }>()
+const emit = defineEmits<{ 'toggle-subs': []; open: []; completed: []; 'add-sub': []; detach: [] }>()
 const data = useDataStore()
 const session = useSessionStore()
 
@@ -113,12 +116,12 @@ function commitRename() {
 </script>
 
 <template>
-  <tr class="task-row" :class="{ done: task.status === '已完成', dragging }" draggable="true" @click="emit('open')">
+  <tr class="task-row" :class="{ done: task.status === '已完成', dragging, 'nesting-over': nestingOver }" draggable="true" @click="emit('open')">
     <td class="table-number wao-tabular">{{ task.number ?? '…' }}</td>
     <td>
-      <div class="title-cell">
+      <div class="title-cell" :style="{ paddingLeft: `${(depth ?? 0) * 20}px` }">
         <button
-          v-if="task.subs.length"
+          v-if="task.subs.length || childTaskCount"
           class="tree-toggle"
           :aria-label="`展开或收起 ${task.title} 的子任务`"
           :aria-expanded="expanded"
@@ -127,7 +130,7 @@ function commitRename() {
           <i :class="expanded ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
         </button>
         <span v-else class="tree-spacer"></span>
-        <WorkItemIcon kind="task" />
+        <WorkItemIcon :kind="task.parentTaskId ? 'subtask' : 'task'" />
         <input
           v-if="editingTitle"
           ref="titleInput"
@@ -145,7 +148,10 @@ function commitRename() {
           <span v-if="task.subs.length" class="sub-count wao-tabular" :title="`子任务 已完成 ${doneSubs} / 共 ${task.subs.length}`"
             ><i class="ri-node-tree"></i>{{ doneSubs }}/{{ task.subs.length }}</span
           >
+          <span v-if="childTaskCount" class="sub-count">{{ childTaskCount }} 个子任务</span>
+          <span v-if="nestingOver" class="sub-count">放开移为子任务</span>
           <span class="row-tools">
+            <button v-if="task.parentTaskId" class="row-tool" title="移回顶层" aria-label="移回顶层" @click.stop="emit('detach')"><i class="ri-indent-decrease"></i></button>
             <button class="row-tool" title="修改标题" :aria-label="`修改 ${task.title} 的标题`" @click.stop="startRename"><i class="ri-pencil-line"></i></button>
             <button class="row-tool" title="添加子任务" :aria-label="`为 ${task.title} 添加子任务`" @click.stop="emit('add-sub')"><i class="ri-add-line"></i></button>
           </span>
@@ -153,7 +159,7 @@ function commitRename() {
       </div>
     </td>
     <td @click.stop>
-      <select class="cell-input" :value="groupId" :aria-label="`${task.title} 所在分组`" title="修改分组" @change="changeGroup">
+      <select class="cell-input" :disabled="!!task.parentTaskId" :value="groupId" :aria-label="`${task.title} 所在分组`" title="修改分组" @change="changeGroup">
         <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
       </select>
     </td>
@@ -472,4 +478,5 @@ function commitRename() {
     transform: rotate(360deg);
   }
 }
+.task-row.nesting-over td { background: var(--wao-primary-soft, var(--wao-bg-hover)); box-shadow: inset 0 -2px var(--wao-primary); }
 </style>

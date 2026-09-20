@@ -22,6 +22,7 @@ import type { Priority, SubtaskState, TaskStep } from '@/types'
 const props = defineProps<{
   taskId: string
   table?: boolean
+  taskDepth?: number
   parentId?: string | null
   hideDone?: boolean
   adding?: boolean
@@ -217,7 +218,7 @@ function add() {
       <tr v-if="item.kind === 'add'" class="sub-add-row">
         <td></td>
         <td colspan="9">
-          <form :style="{ paddingLeft: `${44 + item.depth * 20}px` }" @submit.prevent="add">
+          <form :style="{ paddingLeft: `${44 + (item.depth + (taskDepth ?? 0)) * 20}px` }" @submit.prevent="add">
             <input
               ref="addInput"
               v-model="draft"
@@ -237,7 +238,7 @@ function add() {
       >
         <td class="sub-number wao-tabular">{{ item.row.sub.number ?? '…' }}</td>
         <td>
-          <div class="sub-title" :style="{ paddingLeft: `${22 + item.row.depth * 20}px` }">
+          <div class="sub-title" :style="{ paddingLeft: `${22 + (item.row.depth + (taskDepth ?? 0)) * 20}px` }">
             <button
               v-if="parentIds.has(item.row.key)"
               class="tree-toggle"

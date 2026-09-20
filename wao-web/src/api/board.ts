@@ -502,3 +502,9 @@ export async function apiMoveSubtask(source: Task, subId: string, target: Task, 
     targetTaskId: target.id, parentId: parentId || null, expectedSourceSubs: source.subs, expectedTargetSubs: target.subs,
   })
 }
+
+/** 调整完整任务的归属，保留原始任务全部内容与编号。 */
+export const apiMoveTask = (task: Task, parentTaskId: string | null) =>
+  post<Task>(`/api/tasks/${encodeURIComponent(task.id)}/parent`, {
+    parentTaskId, expectedParentTaskId: task.parentTaskId || null,
+  })

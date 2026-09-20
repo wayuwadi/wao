@@ -1,3 +1,6 @@
+import { useDataStore } from '@/stores/data'
+import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
+import { seedDataStore } from './helpers/seedDataStore'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -21,6 +24,9 @@ import {
   type ExternalAppConfig,
   type ExternalAppRegistry,
 } from '@/config/nav'
+
+// 导航测试不加载品牌图片，避免 Windows 公共资源路径的 Vitest 转换限制。
+vi.mock('@/components/WaoLogo.vue', () => ({ default: { template: '<span />' } }))
 
 vi.mock('@/api/navigationLayout', () => ({
   fetchNavigationLayout: vi.fn(),
@@ -76,6 +82,7 @@ describe('桌面侧栏直接维护菜单', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', component: { template: '<div />' }, meta: { module: 'home' } },
+        { path: '/kb/:id', name: 'kb', component: { template: '<div />' }, meta: { module: 'knowledge' } },
         { path: '/projects', component: { template: '<div />' }, meta: { module: 'projects' } },
         { path: '/projects/:id', component: { template: '<div />' }, meta: { module: 'projects' } },
         { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
@@ -95,6 +102,21 @@ describe('桌面侧栏直接维护菜单', () => {
     await flushPromises()
     return wrapper
   }
+
+  it('知识库只高亮收藏子项，折叠后恢复父菜单高亮', async () => {
+    seedDataStore(useDataStore())
+    const wrapper = await mountSideNav()
+    const kb = useDataStore().kbs[0]!
+    useKnowledgeFavoritesStore().ids = [kb.id]
+    await flushPromises()
+    await wrapper.get('.knowledge-children .item').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.knowledge-children .item').classes()).toContain('active')
+    expect(wrapper.get('[aria-label="知识库"]').classes()).not.toContain('active')
+    useNavStore().toggleCollapse(); await flushPromises()
+    expect(wrapper.get('[aria-label="知识库"]').classes()).toContain('active')
+    wrapper.unmount()
+  })
 
   it('项目收藏位于项目菜单下，取消收藏不跳转且保留其他收藏', async () => {
     const wrapper = await mountSideNav()

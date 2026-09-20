@@ -113,7 +113,7 @@ function onDropStatus(status: TaskStatus) {
       <div class="ptitle">TODO</div>
       <span class="ptip">跨项目任务汇总 · 任务归属于各自项目</span>
       <div class="spacer"></div>
-      <button class="btn-primary" @click="ui.openModal('task')">
+      <button class="btn-primary" @click="ui.openNewTask()">
         <i class="ri-add-line"></i>新建任务
       </button>
     </div>

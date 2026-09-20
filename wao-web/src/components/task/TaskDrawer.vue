@@ -45,6 +45,8 @@ const { decoTask } = useDeco()
 /** 复用任务已有的持久化自定义属性，不新增一套会漂移的验收数据模型。 */
 const ACCEPTANCE_FIELD_NAMES = ['成功条件', '验收证据', '端到端耗时', '异常与恢复', '通知结果'] as const
 
+const fullChildren = computed(() => data.tasks.filter(t => t.parentTaskId === ui.openTaskId))
+const parentTask = computed(() => task.value?.parentTaskId ? data.taskById(task.value.parentTaskId) : undefined)
 const task = computed(() => (ui.openTaskId ? data.taskById(ui.openTaskId) : undefined))
 const tv = computed(() => (task.value ? decoTask(task.value) : null))
 const acceptanceFieldsComplete = computed(() => Boolean(task.value)
@@ -1050,6 +1052,10 @@ async function uploadAttachment(event: Event) {
         <button type="button" @click="copyLocalTask">复制本机内容</button>
         <button type="button" @click="loadServerTask">放弃本机修改并载入服务器版</button>
         <pre v-if="viewingServerTask">{{ serverTaskText }}</pre>
+      </div>
+      <div v-if="!openSub && (parentTask || fullChildren.length)" class="task-hierarchy-links">
+        <div v-if="parentTask">父任务：<button @click="ui.openTask(parentTask.id)">#{{ parentTask.number ?? '…' }} {{ parentTask.title }}</button></div>
+        <div v-if="fullChildren.length">子任务：<button v-for="child in fullChildren" :key="child.id" @click="ui.openTask(child.id)">#{{ child.number ?? '…' }} {{ child.title }}</button></div>
       </div>
       <div class="dbody">
         <!-- 主区 -->
@@ -2891,4 +2897,6 @@ async function uploadAttachment(event: Event) {
 .side-comments .send { width: 34px; height: 32px; padding: 0; justify-content: center; flex-shrink: 0; }
 .side-comments .mention-menu { right: 40px; }
 .state-pill.sm { cursor: inherit; }
+.task-hierarchy-links { padding: 8px 24px; border-bottom: 1px solid var(--wao-line); font-size: 13px; }
+.task-hierarchy-links button { border: 0; background: none; color: var(--wao-primary-text); cursor: pointer; margin: 4px 8px 4px 0; text-align: left; }
 </style>
