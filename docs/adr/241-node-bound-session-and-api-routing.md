@@ -24,6 +24,8 @@ CSRF。主站注销后所有派生节点会话在下一次请求失效；通过�
 继续通过主站自己的 Cookie 访问 `/api/agent/**`，未接入节点会话。
 
 公共 Nginx 同时限制 Host、Origin、路径和方法，精确 credentialed CORS，不反射任意来源。
+`/api/edge/ready` 检查所连接数据库的 `read_only` 与 `super_read_only`，只读或不可达返回503，
+避免可读副本被当作权威会话库；该探针按来源限制为5次/秒、突发10次，业务请求不套用探针限额。
 它覆盖 Forwarded 系列头，只转发本机网关，不重试上游写请求。`WAO_EDGE_API_ENABLED=false`
 和 `WAO_EDGE_SESSION_ENABLED=false` 为默认值，浏览器还必须通过配置的 API 开关与发布 SHA 白名单。
 
