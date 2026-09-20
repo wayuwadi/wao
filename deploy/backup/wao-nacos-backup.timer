@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily embedded Nacos recovery snapshot
+
+[Timer]
+OnCalendar=*-*-* 03:50:00
+RandomizedDelaySec=120
+Persistent=true
+Unit=wao-nacos-backup.service
+
+[Install]
+WantedBy=timers.target

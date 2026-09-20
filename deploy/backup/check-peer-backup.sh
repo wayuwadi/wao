@@ -6,4 +6,4 @@ set -a
 set +a
 exec python3 "$(dirname "$0")/check-peer-backup.py" \
   "${WAO_PEER_SNAPSHOT_ROOT:-$HOME/backups/wao-peer}" \
-  --state "$HOME/.local/state/wao-peer-backup/alarm.json" "$@"
+  --state "${WAO_PEER_ALARM_STATE:-$HOME/.local/state/wao-peer-backup/alarm.json}" "$@"

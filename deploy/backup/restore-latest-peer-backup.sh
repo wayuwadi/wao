@@ -7,7 +7,7 @@ exec 9>"$root/.restore.lock"
 flock -n 9 || exit 1
 snapshot="$(find "$root" -mindepth 2 -maxdepth 2 -type f -name COMPLETE -printf '%h\n' | sort | tail -1)"
 [[ "$(basename "$snapshot")" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || exit 1
-if bash "$(dirname "$0")/verify-peer-restore.sh" "$snapshot" "$passphrase"; then
+if bash "${WAO_PEER_VERIFY_SCRIPT:-$(dirname "$0")/verify-peer-restore.sh}" "$snapshot" "$passphrase"; then
   date -u +%Y-%m-%dT%H:%M:%SZ >"$root/last-restore-success.tmp"
   mv "$root/last-restore-success.tmp" "$root/last-restore-success"
   rm -f "$root/RESTORE_FAILED"

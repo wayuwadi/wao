@@ -40,8 +40,11 @@ def main():
     parser.add_argument('root', type=Path)
     parser.add_argument('--state', required=True, type=Path)
     parser.add_argument('--check-only', action='store_true')
+    parser.add_argument('--label', default='')
     args = parser.parse_args()
     problem = health(args.root, dt.datetime.now(dt.timezone.utc))
+    if problem and args.label:
+        problem = '[' + args.label + '] ' + problem
     if not problem:
         if not args.check_only:
             args.state.unlink(missing_ok=True)
