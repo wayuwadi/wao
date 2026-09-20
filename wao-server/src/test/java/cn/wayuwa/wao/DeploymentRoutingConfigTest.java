@@ -284,8 +284,9 @@ class DeploymentRoutingConfigTest {
                 .contains("set-nginx-upstream-state.sh")
                 .contains("set_upstream_state slave down")
                 .contains("set_upstream_state master down")
-                .contains("require_shared_env_line 'REDIS_MASTER_HOST=linux2.wayuwa.cn'")
-                .contains("require_shared_env_line 'REDIS_SENTINEL_NODES=linux2.wayuwa.cn:26379,linux1.wayuwa.cn:26379'")
+                .contains("require_shared_env_line 'REDIS_MASTER_HOST=192.168.31.180'")
+                .contains("require_shared_env_line 'REDIS_SENTINEL_NODES=192.168.31.180:26379,192.168.2.180:26379,10.66.0.1:26379'")
+                .contains("^REDIS_HA_QUORUM=(2|4)$")
                 .contains("require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn'")
                 .contains("require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn'");
         assertThat(rollout.indexOf("prepare_cloud_routing >routing.log"))
