@@ -66,13 +66,23 @@ def promote(sql, receipt):
     require(current.get('Replicate_Wild_Do_Table') == 'wao.%', 'Unexpected replication scope')
     require(sql("SELECT account_locked FROM mysql.user WHERE User='wao_app' AND Host='%'") == 'N', 'Target application account unavailable')
     require(sql('SELECT WAIT_FOR_EXECUTED_GTID_SET(' + quote(receipt['gtid']) + ',30)') == '0', 'Target has not applied the fenced source barrier')
+    baseline = sql('SELECT @@global.gtid_executed')
+    # A provisioned replica can retain local bootstrap GTIDs (including DROP
+    # DATABASE) even when its current data is correct. AUTO_POSITION would replay
+    # those historical transactions back into the old source after promotion.
+    # Concurrent non-WAO transactions from the known source are safe to exclude.
+    source_history = ','.join(group.strip() for group in baseline.split(',')
+                              if group.strip().startswith(receipt['source_uuid'] + ':'))
+    require(sql('SELECT GTID_SUBTRACT(GTID_SUBTRACT(' + quote(baseline) + ',' +
+                quote(receipt['gtid']) + '),' + quote(source_history) + ')') == '',
+            'Replica has unaccounted local GTID history; reseed before promotion')
     sql('STOP REPLICA;')
     # Removing the old channel is deliberate: reboot must not restart a reverse
     # cycle. Existing data and GTID execution history are never reset or erased.
     sql('RESET REPLICA ALL; SET PERSIST super_read_only=OFF; SET PERSIST read_only=OFF;')
     require(sql('SELECT @@read_only,@@super_read_only') == '0\t0', 'Promotion did not persist')
     return dict(kind='wao-promoted', source_uuid=sql('SELECT @@server_uuid'),
-                previous_source_uuid=receipt['source_uuid'], fence_gtid=receipt['gtid'],
+                previous_source_uuid=receipt['source_uuid'], fence_gtid=receipt['gtid'], baseline_gtid=baseline,
                 promoted_utc=dt.datetime.now(dt.timezone.utc).isoformat())
 
 
@@ -81,6 +91,9 @@ def rejoin(sql, promoted, password, source_host='10.66.0.3'):
     require(sql('SELECT @@server_uuid') == promoted['previous_source_uuid'], 'This is not the fenced old source')
     require(sql("SELECT account_locked FROM mysql.user WHERE User='wao_app' AND Host='%'") == 'Y', 'Old application account must stay locked')
     require(not sql('SHOW REPLICA STATUS'), 'Existing replication channel requires manual review')
+    require(bool(promoted.get('baseline_gtid')), 'Missing pre-promotion GTID baseline; refuse historical replay')
+    require(sql('SELECT GTID_SUBSET(' + quote(promoted['baseline_gtid']) + ',@@global.gtid_executed)') == '1',
+            'Old source does not cover pre-promotion history; reseed instead of replaying it')
     require(password and len(password) <= 32, 'Invalid replication credential length')
     sql("CHANGE REPLICATION SOURCE TO SOURCE_HOST=" + quote(source_host) + ", SOURCE_PORT=3306, SOURCE_USER='wao_repl', SOURCE_PASSWORD="
         + quote(password) + ", SOURCE_AUTO_POSITION=1, GET_SOURCE_PUBLIC_KEY=1 FOR CHANNEL 'wao-return';"

@@ -79,6 +79,25 @@ try:
     assert sql(source,'INSERT INTO wao.marker VALUES(2);',user='wao_app',allow_fail=True)[0] != 0
     assert value(replica,"SELECT account_locked FROM mysql.user WHERE user='wao_app';") == 'N'
     value(source,'INSERT INTO tools.marker VALUES(1);')
+    # Reproduce a provisioned replica with historical, locally logged DDL.
+    # The disposable marker leaves equal current data but unsafe GTID history.
+    value(replica, 'SET GLOBAL super_read_only=OFF; CREATE TABLE wao.bootstrap_marker(id INT); DROP TABLE wao.bootstrap_marker; SET GLOBAL super_read_only=ON;')
+    try:
+        recovery.promote(lambda statement: value(replica, statement), receipt)
+    except RuntimeError as error:
+        assert 'local GTID history' in str(error)
+    else:
+        raise AssertionError('Replica-local history was allowed to replay into the old source')
+    assert value(replica, 'SELECT @@read_only,@@super_read_only') == '1\t1'
+    print('PASS: historical local DDL refuses promotion before altering the replica channel.', flush=True)
+    # This isolated, known CREATE/DROP pair has no remaining state. Acknowledge
+    # only that disposable pair to continue the clean-history integration test;
+    # production history is never skipped and requires a consistent reseed.
+    known_pair = value(replica, "SELECT GTID_SUBTRACT(@@global.gtid_executed,'" + receipt['gtid'] + "')")
+    missing_pair = value(source, "SELECT GTID_SUBTRACT('" + known_pair + "',@@global.gtid_executed)")
+    if missing_pair:
+        value(source, "SET @@GLOBAL.GTID_PURGED='+" + missing_pair + "'")
+    receipt = recovery.fence(lambda statement: value(source, statement))
     promoted = recovery.promote(lambda statement: value(replica, statement), receipt)
     sql(replica,'INSERT INTO wao.marker VALUES(2);',user='wao_app')
     print('PASS: account fence blocks old WAO writes while unrelated schema remains writable; replica caught up before promotion.',flush=True)
