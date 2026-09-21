@@ -56,3 +56,18 @@ SHA256SUMS 和 COMPLETE。没有 COMPLETE 的传输不算恢复点。
 - 未进行实际客户端接管、Nacos 升级、自动高可用、权限矩阵穷举或真实告警发送验收。
 
 首次人工验收不等于定时服务已启用；运行状态以 systemd 和独立新鲜度检查为准。
+
+## Nacos 暂时失联时恢复核心 WAO
+
+ADR-250 增加两机共同支持的私有环境项 `NACOS_DISCOVERY_ENABLED=false`。
+先保存两机原 `.env.secrets`，持有现有维护锁，再通过既有滚动发布入口重建应用和网关；
+保留 `WAO_SERVER_URI` 指向各自同机应用，不改成 `lb://`。数据库与 Redis 必须仍可用。
+核对两容器实际开关、健康检查、`/api/edge/ready` 和真实用户保存链路后，才报告核心业务恢复。
+
+需要指向已恢复且唯一活动的 Nacos 时设置 `NACOS_RECOVERY_ADDR`，不要修改同时被其他依赖使用的 `MASTER_PUBLIC_HOST`。
+旧 Nacos 无法确认隔离时，不启动并宣称两个活动实例可自动保持一致。恢复后逐台恢复发现并核对注册，避免同时重建两应用。
+
+只读验证工具：在对应节点具备现有 Docker 权限的环境运行
+`python3 deploy/scripts/verify-discovery-recovery.py master` 或 `slave`。
+它只创建无公开端口的临时应用/网关，以不可用 Nacos 地址加禁用发现配置验证启动和数据库就绪，
+不修改生产服务，不替代真实用户写入验收。
