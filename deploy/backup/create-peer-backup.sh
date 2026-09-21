@@ -19,9 +19,11 @@ flock -n 9 || { echo 'Peer backup already running.'; exit 1; }
 ssh_args=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10
   -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -i "$SSH_KEY" -o "UserKnownHostsFile=$KNOWN_HOSTS")
 peer() { ssh "${ssh_args[@]}" "$PEER_HOST" "$@"; }
-local_free="$(df -Pk "$BACKUP_ROOT" | awk 'NR==2 {print $4}')"
-peer_free="$(peer "df -Pk /home | awk 'NR==2 {print \$4}'")"
-(( local_free >= 12582912 && peer_free >= 12582912 )) || { echo 'Backup requires at least 12 GiB free on both nodes.' >&2; exit 1; }
+read -r local_total local_free < <(df -Pk "$BACKUP_ROOT" | awk 'NR==2 {print $2, $4}')
+read -r peer_total peer_free < <(peer "df -Pk /home | awk 'NR==2 {print \$2, \$4}'")
+(( local_free - 12582912 >= local_total / 5 && peer_free - 12582912 >= peer_total / 5 )) || {
+  echo 'Backup requires 12 GiB working headroom in addition to a 20% disk reserve on both nodes.' >&2; exit 1;
+}
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 staging="$(mktemp -d "$BACKUP_ROOT/.staging-$stamp.XXXXXX")"
 lock_pid=''
@@ -57,6 +59,8 @@ set -a
 set +a
 : "${DB_ROOT_PASS:?}" "${DB_NAME:?}"
 [[ "$DB_NAME" =~ ^[a-zA-Z0-9_]+$ ]] || exit 2
+databases=(wao tools wayuwa tkwork)
+database_filter="'wao','tools','wayuwa','tkwork'"
 export MYSQL_PWD="$DB_ROOT_PASS"
 mysql_args=(-uroot -h127.0.0.1 -P "${MYSQL_PORT:-3306}")
 # Keep a separate connection's instance backup lock during the logical dump.
@@ -74,44 +78,84 @@ for attempt in $(seq 1 35); do
   sleep 1
 done
 [[ "$lock_ready" == true ]] || { echo 'Could not acquire the MySQL DDL backup lock.' >&2; exit 1; }
-non_transactional="$(mysql "${mysql_args[@]}" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$DB_NAME' AND table_type='BASE TABLE' AND engine <> 'InnoDB'")"
+schema_count="$(mysql "${mysql_args[@]}" -N -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name IN ($database_filter)")"
+[[ "$schema_count" == 4 ]] || { echo 'One of the four approved databases is missing.' >&2; exit 1; }
+non_transactional="$(mysql "${mysql_args[@]}" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema IN ($database_filter) AND table_type='BASE TABLE' AND engine <> 'InnoDB'")"
 [[ "$non_transactional" == 0 ]] || { echo 'Nontransactional tables require a separate consistent backup strategy.' >&2; exit 1; }
-mysql "${mysql_args[@]}" -N -e "SELECT table_name FROM information_schema.tables WHERE table_schema='$DB_NAME' AND table_type='BASE TABLE' ORDER BY table_name" >"$staging/recovery/tables.txt"
+mysql "${mysql_args[@]}" -N -e "SELECT CONCAT(table_schema,'.',table_name) FROM information_schema.tables WHERE table_schema IN ($database_filter) AND table_type='BASE TABLE' ORDER BY table_schema,table_name" >"$staging/recovery/tables.txt"
+source_uuid="$(mysql "${mysql_args[@]}" -N -e 'SELECT @@server_uuid')"
 mysqldump "${mysql_args[@]}" --single-transaction --quick --skip-lock-tables --set-gtid-purged=OFF \
-  --routines --events --triggers --hex-blob --no-tablespaces "$DB_NAME" | gzip -1 >"$staging/recovery/wao.sql.gz"
+  --source-data=2 --routines --events --triggers --hex-blob --no-tablespaces \
+  --databases "${databases[@]}" | gzip -1 >"$staging/recovery/databases.sql.gz"
 kill -0 "$lock_pid" # A dropped lock connection invalidates this recovery point.
 printf 'UNLOCK INSTANCE;\n' >&8
 exec 8>&-
 wait "$lock_pid"
 lock_pid=''
 unset MYSQL_PWD DB_ROOT_PASS
-gzip -t "$staging/recovery/wao.sql.gz"
+gzip -t "$staging/recovery/databases.sql.gz"
+python3 - "$staging/recovery" "$source_uuid" <<'PY'
+import gzip, json, pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+with gzip.open(root / 'databases.sql.gz', 'rt') as dump:
+    for line in dump:
+        match = re.fullmatch(r"-- CHANGE REPLICATION SOURCE TO SOURCE_LOG_FILE='([A-Za-z0-9_.-]+)', SOURCE_LOG_POS=(\d+);\n", line)
+        if match:
+            (root / 'recovery-point.json').write_text(json.dumps({'source_uuid': sys.argv[2], 'file': match[1], 'position': int(match[2]), 'databases': ['wao','tools','wayuwa','tkwork']}))
+            break
+    else:
+        raise SystemExit('No consistent binary-log position in database dump')
+PY
 
 # Reuse a completed controller archive; do not stop Jenkins or JumpServer.
 jenkins_root="${JENKINS_BACKUP_ROOT:-/var/backups/jenkins}"
-jenkins_archive="$(find "$jenkins_root" -maxdepth 1 -name 'jenkins-home-*.tar.gz' -mmin -1560 -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
-[[ -n "$jenkins_archive" && -f "$jenkins_archive.sha256" ]] || { echo 'No verified Jenkins archive younger than 26 hours.' >&2; exit 1; }
-(cd "$jenkins_root"; sha256sum -c "$(basename "$jenkins_archive.sha256")")
-cp "$jenkins_archive" "$staging/recovery/jenkins-home.tar.gz"
-printf 'format=2\ncreated_utc=%s\ndatabase=%s\nsource=linux2-primary\n' "$stamp" "$DB_NAME" >"$staging/recovery/metadata.txt"
-(cd "$staging/recovery"; sha256sum *.gz tables.txt metadata.txt >SHA256SUMS)
+jenkins_archive=''
+if [[ -d "$jenkins_root" ]]; then
+  jenkins_archive="$(find "$jenkins_root" -maxdepth 1 -name 'jenkins-home-*.tar.gz' -mmin -1560 -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
+fi
+jenkins_status=weekly-not-scheduled
+if [[ "$(date -u +%u)" != "${JENKINS_PEER_WEEKDAY:-7}" ]]; then
+  echo 'Jenkins local backup remains daily; its peer recovery payload is included weekly to reserve database recovery space.'
+elif [[ -n "$jenkins_archive" && -f "$jenkins_archive.sha256" ]] && (cd "$jenkins_root"; sha256sum -c "$(basename "$jenkins_archive.sha256")"); then
+  cp "$jenkins_archive" "$staging/recovery/jenkins-home.tar.gz"
+  jenkins_status=included
+else
+  jenkins_status=unavailable
+  echo 'WARNING: Jenkins archive unavailable; the independent database backup will still be published.' >&2
+fi
+printf 'format=3\ncreated_utc=%s\ndatabases=wao,tools,wayuwa,tkwork\nsource=linux2-primary\njenkins=%s\n' "$stamp" "$jenkins_status" >"$staging/recovery/metadata.txt"
+(cd "$staging/recovery"; sha256sum *.gz *.json tables.txt metadata.txt >SHA256SUMS)
 tar -C "$staging" -cf - recovery | gpg --batch --yes --pinentry-mode loopback \
   --passphrase-file "$PASSPHRASE_FILE" --symmetric --cipher-algo AES256 --compress-algo none \
   --output "$staging/publish/recovery.tar.gpg"
-(cd "$staging/publish"; sha256sum recovery.tar.gpg >SHA256SUMS)
 printf '%s\n' "$stamp" >"$staging/publish/COMPLETE"
+cp "$staging/recovery/recovery-point.json" "$staging/publish/recovery-point.json"
+(cd "$staging/publish"; sha256sum recovery.tar.gpg recovery-point.json >SHA256SUMS)
 
 # Verify the remote bytes before publishing the immutable snapshot directory.
 # No rsync --delete: a deletion at the source never removes historical backups.
 peer "set -e; umask 077; mkdir -p '$PEER_ROOT'; test ! -e '$PEER_ROOT/$stamp'; mkdir '$PEER_ROOT/.incoming-$stamp'"
-tar -C "$staging/publish" -cf - recovery.tar.gpg SHA256SUMS COMPLETE | peer "tar -C '$PEER_ROOT/.incoming-$stamp' -xf -"
+tar -C "$staging/publish" -cf - recovery.tar.gpg SHA256SUMS COMPLETE recovery-point.json | peer "tar -C '$PEER_ROOT/.incoming-$stamp' -xf -"
 peer "set -e; cd '$PEER_ROOT/.incoming-$stamp'; sha256sum -c SHA256SUMS; mv '$PEER_ROOT/.incoming-$stamp' '$PEER_ROOT/$stamp'"
 mv "$staging/publish" "$BACKUP_ROOT/$stamp"
 printf '%s\n' "$stamp" >"$BACKUP_ROOT/last-success.tmp"
 mv "$BACKUP_ROOT/last-success.tmp" "$BACKUP_ROOT/last-success"
+if [[ "$jenkins_status" == unavailable ]]; then
+  printf '%s\n' "$stamp" >"$BACKUP_ROOT/JENKINS_PAYLOAD_MISSING"
+  peer "printf '%s\\n' '$stamp' > '$PEER_ROOT/JENKINS_PAYLOAD_MISSING'"
+elif [[ "$jenkins_status" == included ]]; then
+  printf '%s\n' "$stamp" >"$BACKUP_ROOT/latest-jenkins-snapshot.tmp"
+  mv "$BACKUP_ROOT/latest-jenkins-snapshot.tmp" "$BACKUP_ROOT/latest-jenkins-snapshot"
+  peer "printf '%s\\n' '$stamp' > '$PEER_ROOT/latest-jenkins-snapshot.tmp'; mv '$PEER_ROOT/latest-jenkins-snapshot.tmp' '$PEER_ROOT/latest-jenkins-snapshot'"
+  rm -f "$BACKUP_ROOT/JENKINS_PAYLOAD_MISSING"
+  peer "rm -f '$PEER_ROOT/JENKINS_PAYLOAD_MISSING'"
+fi
 echo "Verified peer backup: $stamp"
 # Only after a new copy has been verified, prune completed historical copies.
 # A failed transfer never removes the previous recovery point.
 retention_script="$(dirname "$0")/peer-retention.py"
 python3 "$retention_script" "$BACKUP_ROOT" --apply
 peer "python3 - '$PEER_ROOT' --apply" <"$retention_script"
+binlog_retention="$(dirname "$0")/binlog-retention.py"
+python3 "$binlog_retention" "$BACKUP_ROOT" --apply
+peer "python3 - '$PEER_ROOT' --apply" <"$binlog_retention"

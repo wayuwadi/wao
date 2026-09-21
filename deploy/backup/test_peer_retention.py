@@ -28,6 +28,10 @@ class RetentionTest(unittest.TestCase):
             self.assertNotIn(partial, expired)
             for path in expired:
                 self.assertLess(path.name, '20260913T000000Z')
+            protected = expired[-1]
+            (root / 'latest-jenkins-snapshot').write_text(protected.name)
+            self.assertNotIn(protected, module.expired_snapshots(root, now))
+            (root / 'latest-jenkins-snapshot').unlink()
             # Old snapshots must survive if fewer than seven are complete.
             for snapshot in sorted(root.iterdir(), reverse=True)[:7]:
                 (snapshot / 'COMPLETE').unlink()

@@ -25,7 +25,11 @@ def expired_snapshots(root: Path, now: dt.datetime) -> list[Path]:
             continue
         valid.append((created, path))
     valid.sort(reverse=True)
-    return [path for created, path in valid[7:] if now - created > dt.timedelta(days=7)]
+    # A missed weekly controller backup must not expire its last recovery copy.
+    pointer = root / 'latest-jenkins-snapshot'
+    protected = pointer.read_text().strip() if pointer.is_file() else ''
+    return [path for created, path in valid[7:]
+            if now - created > dt.timedelta(days=7) and path.name != protected]
 
 
 if __name__ == '__main__':

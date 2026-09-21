@@ -1,9 +1,9 @@
 [Unit]
-Description=Check peer backup freshness independently every 30 minutes
+Description=Check peer backup and binlog freshness independently every five minutes
 
 [Timer]
 OnBootSec=10m
-OnUnitActiveSec=30m
+OnUnitActiveSec=5m
 Persistent=true
 
 [Install]

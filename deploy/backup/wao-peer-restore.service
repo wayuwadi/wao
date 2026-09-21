@@ -6,5 +6,7 @@ Type=oneshot
 UMask=0077
 ExecStart=%h/.local/libexec/wao-backup/restore-latest-peer-backup.sh
 Nice=15
+MemoryMax=2G
+MemorySwapMax=0
 IOSchedulingClass=idle
 TimeoutStartSec=1h

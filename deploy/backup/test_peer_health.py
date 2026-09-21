@@ -24,10 +24,36 @@ class HealthTest(unittest.TestCase):
                 (snapshot / name).touch()
             with patch.object(module.shutil, 'disk_usage') as disk:
                 disk.return_value.free = 20 * 1024**3
+                disk.return_value.total = 90 * 1024**3
                 self.assertIsNone(module.health(root, now))
                 self.assertIsNotNone(module.health(root, now + dt.timedelta(hours=7)))
                 disk.return_value.free = 1024
                 self.assertIsNotNone(module.health(root, now))
+
+    def test_binlog_marker_cannot_hide_missing_or_stale_payload(self):
+        import json
+        now = dt.datetime(2026, 9, 20, tzinfo=dt.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshot = root / '20260920T000000Z'
+            snapshot.mkdir()
+            (snapshot / 'COMPLETE').write_text(snapshot.name)
+            for name in ('SHA256SUMS', 'recovery.tar.gpg'):
+                (snapshot / name).touch()
+            logs = root / 'binlogs'
+            logs.mkdir()
+            with patch.object(module.shutil, 'disk_usage') as disk:
+                disk.return_value.free = 30 * 1024**3
+                disk.return_value.total = 90 * 1024**3
+                self.assertIn('binlog', module.health(root, now))
+                state = dict(source_uuid='a'*36, file='mysql-bin.000001', captured_utc=now.isoformat(), completed_utc=now.isoformat())
+                (logs / 'last-success.json').write_text(json.dumps(state))
+                self.assertIn('binlog', module.health(root, now))
+                payload = logs / state['source_uuid'] / state['file']
+                payload.mkdir(parents=True)
+                (payload / 'COMPLETE').write_text(state['file'])
+                self.assertIsNone(module.health(root, now))
+                self.assertIn('binlog', module.health(root, now + dt.timedelta(minutes=11)))
 
 
 if __name__ == '__main__':
