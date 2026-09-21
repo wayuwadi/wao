@@ -144,3 +144,10 @@ MySQL、JumpServer 和部署恢复材料一起加密上传到 123 云盘。外�
 ## 完整桌面工作区客户端
 
 `wao-client-release` 使用独立的 `Jenkinsfile.client`，由 Linux2 构建 Windows NSIS，自有 Mac 节点构建通用包，Linux2 统一签名并发布。默认只做构建，双端和原有密钥就绪后显式勾选发布；不再触发客户端 GitHub Actions。参见 [客户端流水线](client/README.md)。
+
+
+### 成功与失败群通知的策略入口
+
+`notify-feishu.sh` 默认通过 `https://wao.wayuwa.cn/api/public/notification-settings/jenkins-{success|failure}` 读取门禁，与发布验收使用相同入口；可用 `WAO_NOTIFICATION_POLICY_URL` 覆盖。Linux2 不再提供宿主机 `127.0.0.1:8080` 服务，不能继续使用该旧地址，否则成功通知会因策略不可读而静默跳过，失败通知却仍能走故障兜底发送。
+
+成功和失败均使用现有 `FEISHU_COMMENT_WEBHOOK_URL`，遵守群通知总开关与沉默时段；成功还要求发布验证完整。诊断时以构建结尾的通知输出为准，不能将前部通知脚本单元测试打印的 delivered 当成真实发送记录。
