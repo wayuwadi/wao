@@ -164,4 +164,10 @@ ENV
   fi
 done
 
+: >"${log}"
+printf '%s\n' 'LINUX2_MYSQL_WRITER_HOST=10.66.0.2' 'LINUX2_MYSQL_WRITER_PORT=13306' >>"${project}/deploy/.env"
+WAO_QUIESCE_TEST_LOG="${log}" PATH="${fake_bin}:${PATH}" \
+  TMPDIR="${tmp_dir}" sh "${script_dir}/quiesce-wao-server.sh" master rollout-status "${project}"
+grep -Fq -- '--host=10.66.0.2 --port=13306 --user=wao_app wao' "${log}"
+
 printf 'schema quiescing scripts: ok\n'

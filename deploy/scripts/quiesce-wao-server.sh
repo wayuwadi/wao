@@ -50,7 +50,7 @@ if [ "${role}" = master ]; then
   case "${manage_master_infra}" in
     true) compose_profile="managed-infra" ;;
     false)
-      mysql_writer_host="${MYSQL_WRITER_HOST:-${MYSQL_HOST:-}}"
+      mysql_writer_host="${LINUX2_MYSQL_WRITER_HOST:-${MYSQL_WRITER_HOST:-${MYSQL_HOST:-}}}"
       : "${mysql_writer_host:?MYSQL_WRITER_HOST or MYSQL_HOST is required when MANAGE_MASTER_INFRA=false}"
       ;;
     *) echo 'MANAGE_MASTER_INFRA must be true or false.' >&2; exit 2 ;;
@@ -110,7 +110,7 @@ compose() {
 }
 
 database() {
-  if [ "${manage_master_infra}" = true ] && [ -z "${MYSQL_WRITER_HOST:-}" ]; then
+  if [ "${manage_master_infra}" = true ] && [ -z "${LINUX2_MYSQL_WRITER_HOST:-${MYSQL_WRITER_HOST:-}}" ]; then
     compose exec -T mysql-master sh -ec \
       'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot "$MYSQL_DATABASE" "$@"' \
       sh "$@"
@@ -134,7 +134,8 @@ database() {
       --env-file "${mysql_password_file}" \
       --entrypoint mysql mysql:9.7.0 \
       --protocol=TCP --connect-timeout=10 \
-      --host="${MYSQL_WRITER_HOST:-${MYSQL_HOST}}" --port="${MYSQL_WRITER_PORT:-${MYSQL_PORT:-3306}}" \
+      --host="${LINUX2_MYSQL_WRITER_HOST:-${MYSQL_WRITER_HOST:-${MYSQL_HOST}}}" \
+      --port="${LINUX2_MYSQL_WRITER_PORT:-${MYSQL_WRITER_PORT:-${MYSQL_PORT:-3306}}}" \
       --user="${DB_USER:-wao_app}" "${DB_NAME:-wao}" "$@" || database_status=$?
     cleanup_mysql_password_file
     return "${database_status}"

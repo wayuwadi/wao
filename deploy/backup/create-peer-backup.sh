@@ -56,6 +56,18 @@ if [[ -f /etc/my.cnf ]]; then
   tar -C /etc -czf "$staging/recovery/mysql-native-config.tar.gz" "${mysql_config_files[@]}"
 fi
 
+# Transport credentials are needed to restore Linux2's private writer path.
+# They never leave this 0700 staging directory before payload encryption.
+if [[ -f /etc/wao-mysql-recovery/tunnel.env ]]; then
+  (
+    . /etc/wao-mysql-recovery/tunnel.env
+    [[ "$SSH_KEY" == /* && "$KNOWN_HOSTS" == /* && -f "$SSH_KEY" && -f "$KNOWN_HOSTS" ]] || exit 1
+    tar -C / -czf "$staging/recovery/mysql-tunnel-config.tar.gz" -- \
+      etc/wao-mysql-recovery/tunnel.env etc/systemd/system/wao-mysql-primary-tunnel.service \
+      usr/local/lib/wao-network/start-mysql-primary-tunnel.sh "${SSH_KEY#/}" "${KNOWN_HOSTS#/}"
+  )
+fi
+
 # Runtime roles/epochs/auth live outside the deployment tree. These plaintext
 # archives remain in the private staging directory and are encrypted below.
 python3 "$PROJECT_ROOT/deploy/redis/export-durable-state.py" master >"$staging/recovery/linux2-redis-state.tar.gz"

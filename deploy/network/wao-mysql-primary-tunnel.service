@@ -1,0 +1,24 @@
+[Unit]
+Description=Private TCP transport from Linux2 to the selected WAO MySQL writer
+Wants=network-online.target
+After=network-online.target wg-quick@wg0.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+ExecStart=/usr/local/lib/wao-network/start-mysql-primary-tunnel.sh
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=128M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
