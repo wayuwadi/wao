@@ -44,6 +44,21 @@ class AutomationServiceTest {
     }
 
     @Test
+    void retiredSyncCannotBeResumedReauthorizedOrRun() {
+        for (String handler : List.of("feishu-chat-sync", "shared-chat-nightly-sync")) {
+            AutomationJobEntity retired = job("已暂停");
+            retired.setHandler(handler);
+            when(jobMapper.selectById("j1")).thenReturn(retired);
+            assertThatThrownBy(() -> service.resumeJob("j1")).hasMessageContaining("已停用");
+            assertThatThrownBy(() -> service.reauthJob("j1")).hasMessageContaining("已停用");
+            assertThatThrownBy(() -> service.runJob("j1", null)).hasMessageContaining("已停用");
+            service.executeScheduled(retired);
+        }
+        org.mockito.Mockito.verifyNoInteractions(runMapper);
+        verify(jobMapper, org.mockito.Mockito.never()).updateById(any(AutomationJobEntity.class));
+    }
+
+    @Test
     void createJobDefaultsToNormalStatusAndNoCron() {
         when(jobMapper.selectCount(null)).thenReturn(0L);
 

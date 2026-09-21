@@ -197,6 +197,7 @@ public class ChatReviewService {
      * @return 新运行 id
      */
     public String create(LocalDate startDate, LocalDate endDate, String focus, String memberId) {
+        chatSync.requireSyncAvailable();
         ResolvedConfig resolved = resolveConfig();
         ChatReviewConfigDto configured = resolved.view();
         if (!configured.configured()) throw new BadRequestException(configured.message());
@@ -273,6 +274,7 @@ public class ChatReviewService {
                     readMessageIds(failed.getSourceMessageIdsJson()), memberId, failed.getId(),
                     assistant.validateCapability(failed.getAiCapabilityId()), "MANUAL");
         }
+        chatSync.requireSyncAvailable();
         FeishuChatSyncConfigDto current = chatSync.config();
         if (!failed.getChatId().equals(current.chatId()) || !failed.getKbId().equals(current.kbId())) {
             throw new BadRequestException("飞书同步群聊或知识库已变更，请重新配置后发起新复盘");
@@ -301,6 +303,7 @@ public class ChatReviewService {
                     readMessageIds(original.getSourceMessageIdsJson()), memberId, null,
                     assistant.validateCapability(original.getAiCapabilityId()), "MANUAL");
         }
+        chatSync.requireSyncAvailable();
         FeishuChatSyncConfigDto current = chatSync.config();
         if (!original.getChatId().equals(current.chatId()) || !original.getKbId().equals(current.kbId())) {
             throw new BadRequestException("飞书同步群聊或知识库已变更，无法按旧报告快照再次运行");
@@ -409,6 +412,7 @@ public class ChatReviewService {
     }
 
     private void syncAndEnqueue(ChatReviewRunEntity run, String workerToken) {
+        chatSync.requireSyncAvailable();
         FeishuChatSyncConfigDto current = chatSync.config();
         if (!run.getChatId().equals(current.chatId()) || !run.getKbId().equals(current.kbId())) {
             throw new BadRequestException("飞书同步群聊或知识库已变更，本次复盘已停止");

@@ -17,7 +17,7 @@ import org.springframework.util.StringUtils;
 /**
  * 飞书个人快速收集的主动轮询入口。
  *
- * <p>现有群聊归档已具备读取目标群消息的真实应用权限。这里每 60 秒只读近两分钟，
+ * <p>现有群聊归档已具备读取目标群消息的真实应用权限。这里每十分钟读取近期消息兜底，
  * 并只交给收集服务“用户发送、精确 @ 当前应用机器人”的消息；已撤回消息则按 message_id 删除
  * 原任务。Linux / Windows 同时扫到也由持久事件状态保证幂等。回调链路仍保留，两种入口共用去重。
  */
@@ -25,15 +25,17 @@ import org.springframework.util.StringUtils;
 public class FeishuQuickCollectPollingScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(FeishuQuickCollectPollingScheduler.class);
-    private static final long LOOKBACK_SECONDS = 120;
+    private static final long LOOKBACK_SECONDS = 600;
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final FeishuQuickCollectService quickCollect;
     private final SharedChatSyncStateMapper state;
     private final String leaseOwner = UUID.randomUUID().toString().replace("-", "");
-    @Value("${wao.feishu.quick-collect-poll-ms:60000}")
-    private long pollMs = 60000;
+    @Value("${wao.feishu.quick-collect-poll-ms:600000}")
+    private long pollMs = 600000;
     private volatile String botOpenId;
+    private volatile String botAppId;
+    private int consecutiveFailures;
     private volatile boolean readyLogged;
 
     public FeishuQuickCollectPollingScheduler(SettingService settings, FeishuOpenApiClient feishu,
@@ -44,8 +46,8 @@ public class FeishuQuickCollectPollingScheduler {
         this.quickCollect = quickCollect;
     }
 
-    /** 定时读取新消息；单次失败保留旧水位，下次仍有最多两分钟的恢复窗口。 */
-    @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-poll-ms:60000}", initialDelay = 60000)
+    /** 定时读取新消息；单次失败保留旧水位并共享冷却，不自动补扫历史记录。 */
+    @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-poll-ms:600000}", initialDelay = 60000)
     public void poll() {
         boolean quickEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
         if (!quickEnabled) {
@@ -62,9 +64,15 @@ public class FeishuQuickCollectPollingScheduler {
         state.prepare("quick-realtime", appId + ":" + chatId, end);
         if (state.claimPolling("quick-realtime", leaseOwner, pollMs * 1000) != 1) return;
         Long cursor = state.cursor("quick-realtime");
-        long start = Math.max((cursor == null ? end : cursor) - 2, end - LOOKBACK_SECONDS);
+        long start = Math.max((cursor == null ? end - LOOKBACK_SECONDS : cursor) - 2,
+                end - Math.max(LOOKBACK_SECONDS, pollMs / 1000 + 120));
+        boolean deferred = false;
         try {
             String token = feishu.tenantAccessToken(appId, appSecret);
+            if (!appId.equals(botAppId)) {
+                botOpenId = null;
+                botAppId = appId;
+            }
             String currentBot = botOpenId;
             if (!StringUtils.hasText(currentBot)) {
                 currentBot = feishu.botOpenId(token);
@@ -94,12 +102,20 @@ public class FeishuQuickCollectPollingScheduler {
                 }
             }
             state.complete("quick-realtime", leaseOwner, end);
+            consecutiveFailures = 0;
         } catch (RuntimeException ex) {
-            botOpenId = null;
             readyLogged = false;
-            log.warn("飞书个人收集轮询失败：{}", ex.getMessage());
+            consecutiveFailures = Math.min(6, consecutiveFailures + 1);
+            long cooldown = Math.min(21600, 600L << (consecutiveFailures - 1));
+            if (cn.wayuwa.wao.feishu.FeishuApiException.monthlyQuotaExceeded(ex)) {
+                var now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
+                cooldown = java.time.Duration.between(now, now.toLocalDate().withDayOfMonth(1)
+                        .plusMonths(1).atStartOfDay(now.getZone())).getSeconds() + 60;
+            }
+            deferred = state.defer("quick-realtime", leaseOwner, cooldown) == 1;
+            log.warn("飞书个人收集轮询失败，冷却 {} 秒：{}", cooldown, ex.getMessage());
         } finally {
-            state.release("quick-realtime", leaseOwner);
+            if (!deferred) state.release("quick-realtime", leaseOwner);
         }
     }
 

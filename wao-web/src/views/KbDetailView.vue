@@ -1029,7 +1029,7 @@ async function saveKbSettings() {
       </div>
 
       <div v-if="kb.auto" class="sync-bar">
-        <div class="sync-title"><span class="sync-dot"></span>飞书群聊 · 每日自动同步沉淀</div>
+        <div class="sync-title"><span class="sync-dot"></span>飞书群聊 · 历史归档（同步已停用）</div>
         <div class="sync-sub">
           上次 今天 06:12 · 新增 12 条 ·
           <button class="link" @click="router.push('/automation')">查看自动化</button>

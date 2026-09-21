@@ -36,6 +36,8 @@ interface StoredDraft {
   updatedAt: string
 }
 
+const feishuSyncRetired = ref(true)
+
 const POLL_MS = 5_000
 const ACTIVE_STAGES: ChatReviewStage[] = ['WAITING', 'SYNCING', 'VERIFYING', 'ANALYZING']
 const STEPS: Array<{ stage: Exclude<ChatReviewStage, 'FAILED'>; label: string; hint: string }> = [
@@ -501,7 +503,7 @@ onBeforeUnmount(() => {
       <div>
         <span class="eyebrow"><i class="ri-chat-history-line"></i> SHARED CHAT REVIEW</span>
         <h1>娃与娃聊天复盘</h1>
-        <p>重新同步真实飞书聊天，只分析两位指定发言人，报告与来源双方共享。</p>
+        <p>飞书聊天同步已停用。历史报告仍可阅读；新的聊天复盘请在 WAO 原生聊天中发起。</p>
       </div>
       <button v-if="selectedReport" class="copy-button" type="button" @click="copyReport">
         <i class="ri-file-copy-line"></i><span>复制 Markdown</span>
@@ -516,7 +518,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="config-card">
+    <section v-if="!feishuSyncRetired" class="config-card">
       <div v-if="configLoading" class="state-inline">
         <i class="ri-loader-4-line spin"></i>正在读取群聊与发言人…
       </div>
@@ -614,7 +616,7 @@ onBeforeUnmount(() => {
       </template>
     </section>
 
-    <section class="request-card">
+    <section v-if="!feishuSyncRetired" class="request-card">
       <header class="section-head request-head">
         <div>
           <span>02 · 发起复盘</span>
@@ -718,7 +720,7 @@ onBeforeUnmount(() => {
         <b v-if="activeRun.failedDate">失败日期：{{ activeRun.failedDate }}</b>
       </div>
       <button
-        v-if="activeRun.stage === 'FAILED'"
+        v-if="activeRun.stage === 'FAILED' && activeRun.sourceKind === 'SHARED_CHAT'"
         class="primary-button retry-button"
         type="button"
         :disabled="!!retryingId"
@@ -779,7 +781,7 @@ onBeforeUnmount(() => {
                 <i class="ri-file-copy-line"></i>复制 Markdown
               </button>
               <button
-                v-if="selectedDetail.stage === 'SUCCEEDED'"
+                v-if="selectedDetail.stage === 'SUCCEEDED' && selectedDetail.sourceKind === 'SHARED_CHAT'"
                 type="button"
                 :disabled="runActive || submitting"
                 @click="runAgain(selectedDetail)"
@@ -822,6 +824,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               :disabled="runActive || !!retryingId"
+              v-if="selectedDetail.sourceKind === 'SHARED_CHAT'"
               @click="retry(selectedDetail)"
             >
               {{ retryingId === selectedDetail.id ? '重试中…' : '重试' }}
