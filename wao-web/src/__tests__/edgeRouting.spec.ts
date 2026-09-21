@@ -5,7 +5,7 @@ const origin = 'https://linux2.wayuwa.cn:9443'
 const sha = 'a'.repeat(40)
 function fixture() {
   let now = 1000
-  const config = { enabled: true, apiEnabled: true, apiWritesEnabled: true, forceCloud: false, allowedReleases: [sha], nodes: [{ origin, enabled: true }] }
+  const config = { enabled: true, apiEnabled: true, apiWritesEnabled: true, mediaEnabled: false, forceCloud: false, allowedReleases: [sha], nodes: [{ origin, enabled: true }] }
   const fetcher = vi.fn(async (url: string, _init: RequestInit) => {
     const body = url === '/_edge/routing.json' ? config : url.endsWith('/csrf') ? { data: { csrf: 'test-csrf' } }
       : url.endsWith('/tickets') ? { data: { ticket: 'test-ticket' } } : { data: { protocol: 1 } }
@@ -21,6 +21,20 @@ function fixture() {
 }
 
 describe('API 节点连接', () => {
+  it('媒体默认关闭；开启后首次上传先验证节点会话，其他写入仍不扩围', async () => {
+    const off = fixture()
+    expect(await off.routing.prepareUpload('/api/files')).toBeNull()
+    const on = fixture(); on.config.mediaEnabled = true
+    expect(await on.routing.prepareUpload('/api/files')).toMatchObject({ origin, csrf: 'test-csrf' })
+    expect(on.fetcher.mock.calls[on.fetcher.mock.calls.length - 1]?.[0]).toBe(`${origin}/api/edge/session`)
+    expect(on.routing.route('/api/images', 'post')?.origin).toBe(origin)
+    expect(on.routing.route('/api/files?id=one', 'get')?.origin).toBe(origin)
+    expect(on.routing.route('/api/files/file-one/preview', 'get')?.origin).toBe(origin)
+    for (const url of ['/api/files/one/download?ticket=secret', '/api/files/one', '/api/images/one/preview']) {
+      expect(on.routing.route(url, 'post')).toBeNull()
+    }
+  })
+
   it('先走云端，完成票据兑换并确认 host-only Cookie 后才允许业务直连', async () => {
     const f = fixture()
     await f.connected()

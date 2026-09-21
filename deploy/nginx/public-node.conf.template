@@ -28,10 +28,13 @@ server {
     }
     # Explicit allowlist: login/OAuth, Agent, runner and anonymous download tickets
     # keep their existing main-domain contracts. API rollout is disabled by default.
-    location ~ ^/api/(?:edge/(?:ready|exchange|session)$|(?:tasks|projects|areas|members|org|kbs|kb-groups|docs)(?:/|$)) {
+    location ~ ^/api/(?:edge/(?:ready|exchange|session)$|(?:images|files)$|files/[A-Za-z0-9_-]+/(?:preview|download|stream)$|(?:tasks|projects|areas|members|org|kbs|kb-groups|docs)(?:/|$)) {
         # Empty map keys leave business requests unaffected by the probe budget.
         limit_req zone=edge_probe burst=10 nodelay;
         limit_req_status 429;
+        limit_conn edge_upload_client 4;
+        limit_conn edge_upload_global 8;
+        limit_conn_status 429;
         if ($wao_edge_api_enabled != "true") { return 503; }
         if ($host != "${WAO_EDGE_HOST}") { return 421; }
         if ($http_origin != "https://wao.wayuwa.cn") { return 403; }
@@ -39,7 +42,8 @@ server {
         add_header Access-Control-Allow-Origin "https://wao.wayuwa.cn" always;
         add_header Access-Control-Allow-Credentials "true" always;
         add_header Access-Control-Allow-Methods "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "Content-Type, X-WAO-CSRF" always;
+        add_header Access-Control-Allow-Headers "Content-Type, X-WAO-CSRF, Range" always;
+        add_header Access-Control-Expose-Headers "Content-Disposition, Content-Range, Accept-Ranges, Content-Length" always;
         add_header Vary "Origin" always;
         add_header Cache-Control "no-store" always;
         if ($request_method = OPTIONS) { return 204; }
@@ -55,8 +59,12 @@ server {
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header Forwarded "";
         proxy_set_header Connection "";
+        proxy_buffering off;
+        # The edge cache is a 16 MiB tmpfs; stream up to 50 MiB uploads to the
+        # existing authenticated backend instead of filling this temp volume.
+        proxy_request_buffering off;
         proxy_connect_timeout 2s;
-        proxy_read_timeout 60s;
+        proxy_read_timeout 120s;
         proxy_next_upstream off;
         proxy_hide_header Access-Control-Allow-Origin;
         proxy_hide_header Access-Control-Allow-Credentials;
