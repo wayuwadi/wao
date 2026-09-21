@@ -721,12 +721,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
 }
 /* 四象限占据可用视口，列表分别滚动；不让某一格的长清单撑走其他象限。 */
-.page-stage:has(.todo-quadrant) {
+.page-stage:has(.quadrant-view) {
   flex: 1 1 0;
   min-height: 360px;
   align-items: stretch;
 }
-.page-body:has(.todo-quadrant) {
+.page-body:has(.quadrant-view) {
   display: flex;
   min-height: 0;
 }

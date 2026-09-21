@@ -5,12 +5,12 @@ import { usePreferenceStore } from '@/stores/preferences'
 import type { Priority } from '@/types'
 
 /**
- * 项目任务区的三种展示形态。
+ * 项目任务区的四种展示形态。
  *
  * <p>`group` 是按用户自定义分组看：一个项目里同时压着好几个 domain 的事时，
  * 状态看板帮不上忙，得按「这是哪一摊事」来分。
  */
-export type TaskView = 'list' | 'board' | 'group'
+export type TaskView = 'list' | 'board' | 'group' | 'quadrant'
 
 export interface DocumentTaskSeed {
   draftKey: string
@@ -32,7 +32,7 @@ const OWNER_FILTER_KEY = 'wao-proj-owner-filter-v1'
  * 每次都从列表开始只会让人多点一次。
  */
 function asTaskView(value: unknown): TaskView | null {
-  return value === 'list' || value === 'board' || value === 'group' ? value : null
+  return value === 'list' || value === 'board' || value === 'group' || value === 'quadrant' ? value : null
 }
 
 /**
