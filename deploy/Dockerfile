@@ -13,6 +13,7 @@ ENTRYPOINT ["tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf"]
 FROM maven:3.9.9-eclipse-temurin-17 AS build
 ARG MAVEN_MIRROR_URL=https://repo.maven.apache.org/maven2
 ENV MAVEN_MIRROR_URL=${MAVEN_MIRROR_URL}
+ENV MAVEN_OPTS="-Xmx2048m -XX:ActiveProcessorCount=2"
 WORKDIR /workspace
 COPY deploy/maven-settings.xml /root/.m2/settings.xml
 COPY pom.xml ./
