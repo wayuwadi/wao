@@ -42,6 +42,7 @@ Linux2 原生 mysqld 实际通过 `/etc/my.cnf` 启动，二进制是 `/www/serv
 
    等待 wao-return 的 IO/SQL 线程为 Yes、Source_UUID 与新主一致、wao.% 过滤存在、延迟归零。验证旧 wao_app 仍锁定；工具不自动解锁。
 5. 两节点共享部署环境原子设置 `MYSQL_WRITER_HOST=10.66.0.3`、`MYSQL_WRITER_PORT=3306`、`WAO_MYSQL_PRIMARY=linux1`。Linux2 共享环境是后续 Jenkins 发布的来源，不得遗漏它。
+   Jenkins 的 V77 发布状态检查和同步暂停操作也必须遵循 MYSQL_WRITER_HOST/PORT，不能继续按原生实例 MYSQL_HOST 访问被围栏旧库。用 `sh deploy/scripts/quiesce-wao-server.sh master rollout-status <Linux2项目目录>` 只读验证应返回 complete；不得为修复发布而解锁旧账号。
 6. 使用各节点原有不可变镜像 SHA，只重建 wao-server 与 wao-agent-server 的连接池。Nacos 地址不跟随数据库地址自动修改。若 Nacos 本身不可达，按其独立恢复流程设置，不猜测备用服务可用。
 7. 两节点应用健康、当前浏览器登录与任务真实保存/刷新、Agent 健康通过；验证 Linux1 写入、Linux2 回放。四库来源检查必须返回 `linux2-three-database-writer-and-verified-wao-replica`。
 8. 手工运行一次日志归档和新全量，异机验证后运行隔离恢复，再结束维护记录。恢复用户写入口，保留明确的主角色、原生过滤和账号围栏；无自动回切。
