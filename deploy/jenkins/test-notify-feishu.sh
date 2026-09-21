@@ -19,7 +19,13 @@ fi
 is_policy=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    */api/public/notification-settings/jenkins-*) is_policy=true ;;
+    */api/public/notification-settings/jenkins-*)
+      is_policy=true
+      if [ -n "${WAO_TEST_EXPECT_POLICY_URL:-}" ] && [ "$1" != "$WAO_TEST_EXPECT_POLICY_URL" ]; then
+        echo 'Unexpected notification policy URL' >&2
+        exit 22
+      fi
+      ;;
   esac
   if [ "$1" = --data ]; then
     shift
@@ -59,6 +65,7 @@ EOF
 PATH="$fixture/bin:$PATH" \
 WAO_TEST_PAYLOAD="$fixture/payload.json" \
 WAO_PIPELINE_RESULT=success \
+WAO_TEST_EXPECT_POLICY_URL=https://wao.wayuwa.cn/api/public/notification-settings/jenkins-success \
 WAO_MASTER_PROJECT_ROOT="$fixture/master" \
 WAO_RUN_TEMP="$fixture/run" \
 WAO_DEPLOY_REQUIRED=true \
@@ -92,6 +99,7 @@ EOF
 PATH="$fixture/bin:$PATH" \
 WAO_TEST_PAYLOAD="$fixture/payload.json" \
 WAO_PIPELINE_RESULT=failure \
+WAO_TEST_EXPECT_POLICY_URL=https://wao.wayuwa.cn/api/public/notification-settings/jenkins-failure \
 WAO_MASTER_PROJECT_ROOT="$fixture/master" \
 WAO_RUN_TEMP="$fixture/run" \
 WAO_DEPLOY_REQUIRED=true \
