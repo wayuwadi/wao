@@ -4,7 +4,7 @@ import os
 import subprocess
 
 
-def check(sql, writer, expected_host='10.66.0.3'):
+def check(sql, writer, expected_host='10.66.0.3', expected_port=3306):
     if sql('SELECT @@read_only,@@super_read_only,@@log_replica_updates') != '0\t0\t1':
         raise ValueError('Unexpected native backup source role or log_replica_updates disabled')
     locked = sql("SELECT account_locked FROM mysql.user WHERE User='wao_app' AND Host='%'")
@@ -18,6 +18,7 @@ def check(sql, writer, expected_host='10.66.0.3'):
     state = {line.split(':', 1)[0].strip(): line.split(':', 1)[1].strip()
              for line in raw.splitlines() if ':' in line}
     if not (state.get('Source_Host') == expected_host
+            and state.get('Source_Port') == str(expected_port)
             and state.get('Replica_IO_Running') == state.get('Replica_SQL_Running') == 'Yes'
             and state.get('Replicate_Wild_Do_Table') == 'wao.%'):
         raise ValueError('WAO return replication is not healthy')
@@ -47,7 +48,9 @@ def main():
         if result.returncode:
             raise ValueError('Could not verify authoritative WAO recovery source')
         return result.stdout.decode().strip()
-    print(check(sql, os.environ.get('WAO_MYSQL_PRIMARY', 'linux2')))
+    print(check(sql, os.environ.get('WAO_MYSQL_PRIMARY', 'linux2'),
+                expected_host=os.environ.get('MYSQL_RETURN_SOURCE_HOST', '10.66.0.3'),
+                expected_port=int(os.environ.get('MYSQL_RETURN_SOURCE_PORT', '3306'))))
 
 
 if __name__ == '__main__':

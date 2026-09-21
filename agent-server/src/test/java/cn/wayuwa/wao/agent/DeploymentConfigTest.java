@@ -82,8 +82,8 @@ class DeploymentConfigTest {
         String masterCompose = read("deploy/docker-compose-master.yml");
 
         assertThat(masterCompose)
-                .contains("MYSQL_HOST: ${MYSQL_WRITER_HOST:-${MYSQL_HOST:-mysql-master}}")
-                .contains("MYSQL_PORT: ${MYSQL_WRITER_PORT:-3306}")
+                .contains("MYSQL_HOST: ${LINUX2_MYSQL_WRITER_HOST:-${MYSQL_WRITER_HOST:-${MYSQL_HOST:-mysql-master}}}")
+                .contains("MYSQL_PORT: ${LINUX2_MYSQL_WRITER_PORT:-${MYSQL_WRITER_PORT:-3306}}")
                 .contains("host.docker.internal:host-gateway");
     }
 
