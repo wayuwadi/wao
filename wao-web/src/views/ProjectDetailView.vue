@@ -20,6 +20,7 @@ import type { AiEngine, TaskStatus } from '@/types'
 import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import ProjectAssetsPanel from '@/components/files/ProjectAssetsPanel.vue'
+import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import ProjectTaskRow from '@/components/task/ProjectTaskRow.vue'
@@ -54,7 +55,7 @@ const projTab = computed(() => {
 // 普通入口统一打开表格；显式视图链接及当前页面的手动切换仍由 URL 指定。
 const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
-  return q === 'list' || q === 'board' || q === 'group' ? q : 'list'
+  return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' ? q : 'list'
 })
 
 function setTab(t: string) {
@@ -78,7 +79,7 @@ watch(
 const settingsOpen = ref(false)
 const projectInfoOpen = ref(false)
 const projectMenuOpen = ref(false)
-/** 批量选择只在看板 / 分组视图提供；表格视图按用户要求去掉了。 */
+/** 批量选择在看板 / 分组 / 四象限视图提供；表格视图按用户要求去掉了。 */
 const batchSelectionOpen = ref(false)
 const columnPreferenceMemory = ref<Record<string, boolean>>({})
 function columnPreference(kind: string) {
@@ -261,6 +262,9 @@ function toggleSelection(id: string) {
     : [...selectedTaskIds.value, id]
 }
 const visibleTaskIds = computed(() => {
+  if (pdTaskView.value === 'quadrant') return allTasks.value
+    .filter((task) => showDone.value || task.status !== '已完成' || data.taskSaveState(task.id) === 'saving' || data.taskSaveState(task.id) === 'error')
+    .map((task) => task.id)
   if (pdTaskView.value === 'list') return tableSections.value.flatMap((section) => section.collapsed ? [] : [
     ...section.open, ...(section.doneOpen ? section.done : []),
   ]).map((task) => task.id)
@@ -550,7 +554,7 @@ watch(visibleTaskIds, (ids) => {
 
 <template>
   <div v-if="!pd" class="missing">项目不存在或已被移除。</div>
-  <div v-else class="detail" :class="{ 'selecting-tasks': pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length) }">
+  <div v-else class="detail" :class="{ 'detail-quadrant': projTab === '任务' && pdTaskView === 'quadrant', 'selecting-tasks': pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length) }">
 
     <div class="phead">
       <button class="back" aria-label="全部项目" title="全部项目" @click="router.push('/projects')"><i class="ri-arrow-left-line"></i></button>
@@ -584,7 +588,7 @@ watch(visibleTaskIds, (ids) => {
       </button>
       <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar">
         <div class="seg">
-          <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
+          <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
             <i :class="v[1]"></i>{{ v[0] }}
           </button>
         </div>
@@ -649,7 +653,7 @@ watch(visibleTaskIds, (ids) => {
     </div>
 
     <!-- 任务 -->
-    <div v-if="projTab === '任务'">
+    <div v-if="projTab === '任务'" class="project-task-content">
       <div v-if="data.taskLoadState === 'error'" class="task-scope" role="alert">
         任务加载失败，当前列表可能不完整，本机草稿已保留。{{ data.taskLoadError }}
         <button @click="data.hydrate()">重新加载任务</button>
@@ -660,7 +664,7 @@ watch(visibleTaskIds, (ids) => {
         <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
         <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
-      <!-- 表格视图不再提供批量选择；看板和分组视图仍可多选后复制 -->
+      <!-- 表格视图不再提供批量选择；看板、分组和四象限视图仍可多选后复制 -->
       <div v-if="pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length)" class="copy-selection-actions">
         <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
         <button v-if="selectedTaskIds.length" class="creator-filter-btn" @click="selectedTaskIds = []">清空选择</button>
@@ -938,6 +942,10 @@ watch(visibleTaskIds, (ids) => {
         </button>
       </div>
 
+      <TaskQuadrantView v-else-if="pdTaskView === 'quadrant'" :key="pid"
+        v-model:show-done="showDone" :tasks="allTasks" :project-id="pid"
+        :selected-ids="selectedTaskIds" :selection-mode="batchSelectionOpen || selectedTaskIds.length > 0"
+        @select="toggleSelection" />
       <div v-else class="board">
         <div
           v-for="col in visibleBoard"
@@ -1068,6 +1076,11 @@ watch(visibleTaskIds, (ids) => {
   margin: 0 auto;
   animation: waoFadeUp 0.25s ease;
 }
+.detail.detail-quadrant { display: flex; flex-direction: column; flex: 1; width: 100%; min-width: 0; min-height: 0; box-sizing: border-box; margin: 0; }
+.detail-quadrant > :not(.project-task-content) { flex-shrink: 0; }
+.detail-quadrant .project-task-content { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.detail-quadrant .project-task-content > :not(.quadrant-view) { flex-shrink: 0; }
+.detail-quadrant :deep(.copy-preview) { max-height: 25vh; overflow: auto; }
 .spacer {
   flex: 1;
 }

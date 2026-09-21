@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
+import { useSessionStore } from '@/stores/session'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
@@ -23,6 +25,54 @@ describe('项目页聚焦任务', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     seedDataStore(useDataStore())
+  })
+
+  it('项目四象限复用待办组件，筛选限制当前项目，新建预选项目与优先级', async () => {
+    const data = useDataStore()
+    const tasks = data.tasksByProject('p1')
+    const source = tasks[0]!
+    data.tasks = [
+      { ...source, id: 'inside', title: '项目内任务', project: 'p1', pr: 'P0', status: '待办', owner: 'wg', createdBy: 'wg', subs: [] },
+      { ...source, id: 'filtered', title: '筛选外任务', project: 'p1', pr: 'P1', status: '待办', owner: 'wd', createdBy: 'wd', subs: [] },
+      { ...source, id: 'outside', title: '项目外任务', project: 'p2', pr: 'P2', status: '待办', owner: 'wg', createdBy: 'wg', subs: [] },
+      { ...source, id: 'done', title: '已完成任务', project: 'p1', pr: 'P3', status: '已完成', owner: 'wg', createdBy: 'wg', subs: [] },
+    ]
+    useSessionStore().members = [
+      { id: 'wg', name: '娃哥', initial: '哥', color: '#446' },
+      { id: 'wd', name: '娃弟', initial: '弟', color: '#664' },
+    ] as ReturnType<typeof useSessionStore>['members']
+    await router.push('/projects/p1')
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    await wrapper.findAll('.seg-btn').find(button => button.text() === '四象限')!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.view).toBe('quadrant')
+    expect(wrapper.findComponent(TaskQuadrantView).exists()).toBe(true)
+    expect(wrapper.findAll('.quadrant')).toHaveLength(4)
+    expect(wrapper.findAll('.quadrant-title').map(node => node.text())).toEqual(['项目内任务', '筛选外任务'])
+    useUiStore().setOwnerFilter('p1', 'wg')
+    await flushPromises()
+    expect(wrapper.findAll('.quadrant-title').map(node => node.text())).toEqual(['项目内任务'])
+    useUiStore().setOwnerFilter('p1', '')
+    useUiStore().setCreatorFilter('p1', 'wg')
+    await flushPromises()
+    expect(wrapper.findAll('.quadrant-title').map(node => node.text())).toEqual(['项目内任务'])
+    await wrapper.get('[aria-label="在重要不紧急新建任务"]').trigger('click')
+    expect(useUiStore().modalProject).toBe('p1')
+    expect(useUiStore().modalPriority).toBe('P1')
+    await wrapper.get('.quadrant-toolbar button').trigger('click')
+    expect(wrapper.findAll('.quadrant-title').map(node => node.text())).toEqual(['项目内任务', '已完成任务'])
+    await wrapper.get('.batch-selection-toggle').trigger('click')
+    await wrapper.findAll('.copy-selection-actions button').find(button => button.text().startsWith('全选当前可见'))!.trigger('click')
+    expect(wrapper.get('.selection-count').text()).toContain('2')
+    await wrapper.get('.quadrant-toolbar button').trigger('click')
+    expect(wrapper.get('.selection-count').text()).toContain('1')
+    wrapper.unmount()
+    const refreshed = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(refreshed.findComponent(TaskQuadrantView).exists()).toBe(true)
+    expect(refreshed.findAll('.quadrant-title').map(node => node.text())).toEqual(['项目内任务'])
+    refreshed.unmount()
   })
 
   it('表格实际拖放形成任务树，折叠和移回顶层入口可用', async () => {

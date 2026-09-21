@@ -8,7 +8,7 @@ import { TASK_QUADRANTS } from '@/utils/taskQuadrants'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import type { Priority, Task } from '@/types'
 
-const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean }>()
+const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const ui = useUiStore()
@@ -64,7 +64,7 @@ function drop(priority: Priority) {
   if (id && props.tasks.some((task) => task.id === id)) void setPriority(id, priority)
 }
 function createTask(priority: Priority) {
-  ui.openModal('task')
+  ui.openModal('task', props.projectId ?? '')
   ui.modalPriority = priority
 }
 </script>
