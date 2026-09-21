@@ -1612,11 +1612,11 @@ export const useDataStore = defineStore('data', () => {
    * @param payload 新建任务负载
    * @return 即时本地任务和最终是否落库
    */
-  async function addTask(payload: NewTaskPayload): Promise<NewTaskResult> {
+  async function addTask(payload: NewTaskPayload, taskId = uid('t')): Promise<NewTaskResult> {
     const { desc = '', images = [], pdcaCycles = [], ...core } = payload
     const createdAt = nowIso()
     const local: Task = {
-      id: uid('t'), status: '待办', createdAt, createdBy: useSessionStore().userId, parts: [], desc, steps: [], subs: [], files: [],
+      id: taskId, status: '待办', createdAt, createdBy: useSessionStore().userId, parts: [], desc, steps: [], subs: [], files: [],
       docs: [], linkTasks: [], comments: [], custom: [], images,
       pdcaCycles,
       activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '创建了任务', time: createdAt, by: currentAuthor() }],

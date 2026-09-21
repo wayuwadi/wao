@@ -3,6 +3,7 @@ const MAIN = 'https://wao.wayuwa.cn'
 const TRUSTED = new Set(['https://linux1.wayuwa.cn:9443', 'https://linux2.wayuwa.cn:9443'])
 const BUSINESS = /^\/api\/(?:tasks|projects|areas|members|org|kbs|kb-groups|docs)(?:\/|\?|$)/
 const SAFE = new Set(['get', 'head'])
+const RECEIPT_WRITE = /^\/api\/tasks\/[^/?]+\/operations\/[0-9a-f-]{36}$/
 type Node = { origin: string; csrf: string; validUntil: number }
 type Routing = { enabled?: boolean; apiEnabled?: boolean; apiWritesEnabled?: boolean; forceCloud?: boolean; allowedReleases?: string[]; nodes?: { origin: string; enabled?: boolean }[] }
 
@@ -34,7 +35,7 @@ export class EdgeApiRouting {
     }
     const now = this.context.now()
     return this.configUntil > now && this.enabled() && this.selected && this.selected.validUntil > now
-      && (SAFE.has(method) || this.configuration?.apiWritesEnabled === true)
+      && (SAFE.has(method) || (method === 'put' && RECEIPT_WRITE.test(url) && this.configuration?.apiWritesEnabled === true))
       && this.configuration?.nodes?.some(node => node.enabled === true && node.origin === this.selected?.origin)
       && (this.cooldown.get(this.selected.origin) ?? 0) <= now ? this.selected : null
   }

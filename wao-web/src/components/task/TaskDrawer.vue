@@ -1078,7 +1078,7 @@ async function uploadAttachment(event: Event) {
           <div class="field">
             <div class="field-headline">
               <div class="field-label">描述</div>
-              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" />
+              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" :error-message="data.taskSaveError(task.id)" />
             </div>
             <MarkdownEditor
               v-model="subDesc"
@@ -1123,7 +1123,7 @@ async function uploadAttachment(event: Event) {
           <div class="field">
             <div class="field-headline">
               <div class="field-label">描述</div>
-              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" />
+              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" :error-message="data.taskSaveError(task.id)" />
             </div>
             <MarkdownEditor
               v-model="desc"

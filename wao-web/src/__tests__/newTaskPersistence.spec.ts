@@ -170,15 +170,15 @@ describe('新建任务的落库反馈', () => {
     await flushPromises()
     const firstId = putTask.mock.calls[0]![0]
     expect(putTask.mock.calls[0]![1]).toMatchObject({ title: '文档待办修改后标题', project: target.id, docs: ['d7'], desc: '完整选区\n\n来源文档：/kb/k3?doc=d7' })
-    expect(wrapper.get('[role="alert"]').text()).toContain('未保存')
+    expect(wrapper.get('[role="alert"]').text()).toContain('网络中断')
     expect(localStorage.getItem('wao-new-task-draft-v1')).toBe(original)
-    expect(localStorage.getItem('document-selection-test')).toContain('文档待办修改后标题')
+    expect(localStorage.getItem('document-selection-test:account:')).toContain('文档待办修改后标题')
     putTask.mockImplementationOnce(savedTask)
     await wrapper.get('.foot .btn-primary').trigger('click')
     await flushPromises()
     expect(putTask.mock.calls[1]![0]).toBe(firstId)
     expect(ui.openTaskId).toBeNull()
-    expect(localStorage.getItem('document-selection-test')).toBeNull()
+    expect(localStorage.getItem('document-selection-test:account:')).toBeNull()
     expect(localStorage.getItem('wao-new-task-draft-v1')).toBe(original)
     wrapper.unmount()
   })
@@ -204,7 +204,7 @@ describe('新建任务的落库反馈', () => {
     expect(wrapper.get('.title-input').element).toHaveProperty('value', '草稿保存失败仍保留')
     storage.mockRestore()
     await wrapper.get('[role="alert"] button').trigger('click')
-    expect(localStorage.getItem('blocked-document-draft')).toContain('完整原文')
+    expect(localStorage.getItem('blocked-document-draft:account:')).toContain('完整原文')
     wrapper.unmount()
   })
 
@@ -218,12 +218,12 @@ describe('新建任务的落库反馈', () => {
     await flushPromises()
 
     const alert = wrapper.get('[role="alert"]')
-    expect(alert.text()).toContain('未保存到服务器')
+    expect(alert.text()).toContain('网络中断')
     // 失败状态跟重试按钮都在手机贴底操作区里，不会滚到键盘后面。
     expect(alert.element.parentElement?.classList.contains('foot')).toBe(true)
     expect(wrapper.find('.title-input').element).toHaveProperty('value', '失败后仍可重试的任务')
     expect(wrapper.find('.foot .btn-primary').text()).toContain('重试创建')
-    expect(localStorage.getItem('wao-new-task-draft-v1')).toContain('失败后仍可重试的任务')
+    expect(localStorage.getItem('wao-new-task-draft-v1:account:')).toContain('失败后仍可重试的任务')
     expect(data.tasks).toHaveLength(before + 1)
 
     putTask.mockImplementationOnce(savedTask)
@@ -234,6 +234,39 @@ describe('新建任务的落库反馈', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(useToastHost().items.some((item) => item.text.includes('已创建'))).toBe(true)
     expect(useUiStore().openTaskId).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('弹窗重建后保留原任务标识，不把未确认任务创建第二遍', async () => {
+    putTask.mockRejectedValueOnce(new Error('保存结果待确认'))
+    let wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    await wrapper.get('.title-input').setValue('重开后继续确认')
+    await wrapper.get('.foot .btn-primary').trigger('click')
+    await flushPromises()
+    const firstId = putTask.mock.calls[0]![0]
+    const count = data.tasks.length
+    expect(firstId.length).toBeLessThanOrEqual(32)
+    wrapper.unmount()
+    wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(wrapper.get('.title-input').element).toHaveProperty('value', '重开后继续确认')
+    putTask.mockImplementationOnce(savedTask)
+    await wrapper.get('.foot .btn-primary').trigger('click')
+    await flushPromises()
+    expect(putTask.mock.calls[1]![0]).toBe(firstId)
+    expect(data.tasks).toHaveLength(count)
+    wrapper.unmount()
+  })
+
+  it('旧版无账号草稿保留原记录，明确恢复后才写入当前账号草稿', async () => {
+    const legacy = JSON.stringify({ title: '升级前的草稿', desc: '不能丢失的正文', project: 'p1' })
+    localStorage.setItem('wao-new-task-draft-v1', legacy)
+    const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(wrapper.get('.title-input').element).toHaveProperty('value', '')
+    await wrapper.get('.source-note button').trigger('click')
+    expect(wrapper.get('.title-input').element).toHaveProperty('value', '升级前的草稿')
+    expect(localStorage.getItem('wao-new-task-draft-v1')).toBe(legacy)
+    expect(localStorage.getItem('wao-new-task-draft-v1:account:')).toContain('不能丢失的正文')
+    expect(putTask).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

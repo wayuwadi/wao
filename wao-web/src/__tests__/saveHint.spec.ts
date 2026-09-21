@@ -24,7 +24,13 @@ describe('SaveHint（自动保存回执）', () => {
 
   it('失败时不谎报成功，明说内容留在本机', () => {
     const w = mount(SaveHint, { props: { failed: true, savedAt: AT } })
-    expect(w.text()).toContain('未保存')
+    expect(w.text()).toContain('保存尚未确认')
     expect(w.text()).not.toContain('自动保存成功')
+  })
+
+  it('回执未知时显示具体说明，不把超时说成确定未保存', () => {
+    const w = mount(SaveHint, { props: { failed: true, errorMessage: '保存结果待确认，原操作会先查询' } })
+    expect(w.text()).toContain('保存结果待确认')
+    expect(w.text()).not.toContain('未保存，')
   })
 })
