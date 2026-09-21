@@ -1,5 +1,5 @@
 import { reactive, ref, watch } from 'vue'
-import { taskDraftWindowId, readTaskDrafts, writeTaskDraft, removeTaskDraft } from '@/utils/taskDraftStorage'
+import { taskDraftWindowId, readTaskDrafts, writeTaskDraft, removeTaskDraft, isTaskDraftDeleted, markTaskDraftDeleted } from '@/utils/taskDraftStorage'
 import { defineStore } from 'pinia'
 import {
   apiAddTaskComment,
@@ -285,16 +285,26 @@ export const useDataStore = defineStore('data', () => {
     const taskRequest = fetchTasks()
       .then((loadedTasks) => {
         if (requestMember !== useSessionStore().userId) return loadedTasks
+        loadedTasks = loadedTasks.filter(task => !taskDeletionBlocked(task.id))
         const protectedIds = taskProtectedIds()
         mergeList(tasks.value, loadedTasks, protectedIds)
         rememberSubBases(loadedTasks, protectedIds)
         // 只叠加仍未收到服务端确认的本地草稿，避免刷新把刚输入的长文本吞掉。
         // 草稿里的 subtaskVersion 可能早于服务端已确认的版本，保存时由冲突合并兜底。
         for (const [id, draft] of Object.entries(taskDrafts.value)) {
+          if (taskDeletionBlocked(id)) { clearTaskDraft(id); continue }
+          const remoteTask = loadedTasks.find((task) => task.id === id)
+          if (!remoteTask && (draft.editVersion || draft.subtaskVersion || draft.number != null)) {
+            // 缺失也可能是权限撤销，保留本机副本但不放回任务列表或自动提交。
+            taskConflicts[id] = true
+            taskSaveStates[id] = 'error'
+            taskSaveErrors[id] = '任务已删除或不可访问，本机草稿已保留，不能自动恢复为任务'
+            tasks.value = tasks.value.filter(task => task.id !== id)
+            continue
+          }
           const current = tasks.value.find((task) => task.id === id)
           if (current) Object.assign(current, clone(draft))
           else tasks.value.unshift(clone(draft))
-          const remoteTask = loadedTasks.find((task) => task.id === id)
           if (remoteTask?.editVersion && !draft.editVersion) {
             taskConflicts[id] = true
             taskSaveStates[id] = 'error'
@@ -407,7 +417,7 @@ export const useDataStore = defineStore('data', () => {
       if (Array.isArray(p)) mergeList(projects.value, p)
       if (Array.isArray(t)) {
         const protectedIds = taskProtectedIds()
-        mergeList(tasks.value, t, protectedIds)
+        mergeList(tasks.value, t.filter(task => !taskDeletionBlocked(task.id)), protectedIds)
         rememberSubBases(t, protectedIds)
       }
     } catch {
@@ -1298,6 +1308,11 @@ export const useDataStore = defineStore('data', () => {
   const taskSaveErrors = reactive<Record<string, string>>({})
   const taskConflicts = reactive<Record<string, boolean>>({})
   const taskDraftErrors = reactive<Record<string, boolean>>({})
+  const deletingTaskIds = new Set<string>()
+  function taskDeletionBlocked(id: string) {
+    if (deletingTaskIds.has(id)) return true
+    try { return isTaskDraftDeleted(useSessionStore().userId, id) } catch { return false }
+  }
   /**
    * 每个任务最近一次与服务端一致的子任务快照（与本地 subtaskVersion 对应）。
    *
@@ -1385,6 +1400,7 @@ export const useDataStore = defineStore('data', () => {
   const lockedSubtaskIds = new Set<string>()
 
   async function drainTask(id: string): Promise<void> {
+    if (taskDeletionBlocked(id)) return
     if (taskConflicts[id] || lockedSubtaskIds.has(id)) return
     if (taskPersisting[id]) return
     const task = taskById(id)
@@ -1396,6 +1412,7 @@ export const useDataStore = defineStore('data', () => {
     try {
       const saved = await apiPutTask(id, snapshot)
       if (requestMember !== useSessionStore().userId) return
+      if (taskDeletionBlocked(id) || taskById(id) !== task) return
       // Merge only server-owned metadata even if another edit happened during this request.
       task.editVersion = saved.editVersion
       task.subtaskVersion = saved.subtaskVersion
@@ -1417,6 +1434,7 @@ export const useDataStore = defineStore('data', () => {
         storeTaskDraft(task)
       }
     } catch (error) {
+      if (requestMember !== useSessionStore().userId || taskDeletionBlocked(id) || taskById(id) !== task) return
       const conflict = (error as { status?: number })?.status === 409
       let rebased = false
       if (conflict && snapshot.editVersion) taskConflicts[id] = true
@@ -1431,7 +1449,7 @@ export const useDataStore = defineStore('data', () => {
       }
     } finally {
       taskPersisting[id] = false
-      if (!taskConflicts[id] && (taskPersistVersions[id] ?? 0) !== version) {
+      if (!taskDeletionBlocked(id) && !taskConflicts[id] && (taskPersistVersions[id] ?? 0) !== version) {
         taskSaveStates[id] = 'saving'
         void drainTask(id)
       }
@@ -1550,11 +1568,13 @@ export const useDataStore = defineStore('data', () => {
    * @return 是否删成功
    */
   async function deleteTask(id: string): Promise<boolean> {
+    if (deletingTaskIds.has(id)) return false
     const index = tasks.value.findIndex((t) => t.id === id)
     if (index < 0) return false
+    const member = useSessionStore().userId
+    deletingTaskIds.add(id)
+    clearTimeout(taskPersistTimers[id])
     const [removed] = tasks.value.splice(index, 1)
-    delete taskTouchedAt[id]
-    clearTaskDraft(id)
     const detachChildren = () => {
       for (const child of tasks.value.filter(task => task.parentTaskId === id)) {
         child.parentTaskId = null
@@ -1562,14 +1582,31 @@ export const useDataStore = defineStore('data', () => {
         if (taskSaveState(child.id) === 'saving') storeTaskDraft(child)
       }
     }
-    if (!apiLive.value) { detachChildren(); return true }
     try {
-      await apiDeleteTask(id)
+      // 当前窗口的写入先收口，DELETE 排在最后；跨窗口旧 PUT 由服务端永久编号拒绝。
+      while (taskPersisting[id]) await new Promise(resolve => window.setTimeout(resolve, 25))
+      if (member !== useSessionStore().userId) return false
+      if (apiLive.value || member || removed?.editVersion || removed?.subtaskVersion || removed?.number != null) {
+        try { await apiDeleteTask(id) }
+        catch (error) {
+          const status = (error as { status?: number; response?: { status?: number } })
+          if ((status.status ?? status.response?.status) !== 404) throw error
+        }
+      }
+      if (member !== useSessionStore().userId) return true
+      clearTaskDraft(id)
+      try { markTaskDraftDeleted(member, id) } catch { taskDraftErrors[id] = true }
+      delete taskTouchedAt[id]
+      delete taskConflicts[id]
+      delete taskSaveErrors[id]
+      delete taskSaveStates[id]
       detachChildren()
       return true
     } catch {
-      if (removed) tasks.value.splice(index, 0, removed)
+      if (member === useSessionStore().userId && removed) tasks.value.splice(index, 0, removed)
       return false
+    } finally {
+      deletingTaskIds.delete(id)
     }
   }
 
@@ -1749,6 +1786,7 @@ export const useDataStore = defineStore('data', () => {
 
   /** 把任务先落本地草稿，再以 600ms 去抖、严格串行的方式写透后端。 */
   function persistTask(id: string) {
+    if (taskDeletionBlocked(id)) return
     const t = taskById(id)
     if (!t) return
     storeTaskDraft(t)

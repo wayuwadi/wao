@@ -1,4 +1,4 @@
-import { readTaskDrafts, taskDraftWindowId } from '@/utils/taskDraftStorage'
+import { readTaskDrafts, taskDraftWindowId, writeTaskDraft } from '@/utils/taskDraftStorage'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSessionStore } from '@/stores/session'
@@ -56,6 +56,20 @@ describe('任务真实数据加载', () => {
     resolveAreas?.([])
     await reloading
     expect(data.taskById(result.task.id)?.title).toBe('不应丢失的新任务')
+  })
+
+  it('服务器已无记录的已保存草稿不复活为任务，也不自动重放', async () => {
+    writeTaskDraft('', taskDraftWindowId(), { ...TASKS[0]!, id: 'deleted', number: 1037, editVersion: 'old' })
+    const data = useDataStore()
+    fetchTasks.mockResolvedValue([])
+    const hydrating = data.hydrate()
+    await vi.waitFor(() => expect(data.taskLoadState).toBe('loaded'))
+    resolveAreas?.([])
+    await hydrating
+    await data.flushTask('deleted')
+    expect(data.taskById('deleted')).toBeUndefined()
+    expect(putTask).not.toHaveBeenCalled()
+    expect(readTaskDrafts('', taskDraftWindowId()).deleted).toBeDefined()
   })
 
   it('重新打开后恢复服务器尚无记录的草稿，仍用原 ID 重试', async () => {

@@ -11,6 +11,13 @@ function transport(): TaskWriteTransport {
 beforeEach(() => localStorage.clear())
 
 describe('持久任务操作回执', () => {
+  it('任务已删除的明确拒绝不当成网络未确认，也不再查回执重放', async () => {
+    const api = transport()
+    vi.mocked(api.write).mockRejectedValue(Object.assign(new Error('任务已删除'), { status: 404 }))
+    await expect(saveTaskWithReceipt(task, 'account-a', api, owner)).rejects.toThrow('任务已删除')
+    expect(api.lookup).not.toHaveBeenCalled()
+    expect(localStorage.getItem(taskWriteKey('account-a', task.id))).toBeNull()
+  })
   it('先写本机操作记录，再发送；收到服务端回执才清除', async () => {
     const api = transport()
     vi.mocked(api.write).mockImplementation(async (_id, operation) => {

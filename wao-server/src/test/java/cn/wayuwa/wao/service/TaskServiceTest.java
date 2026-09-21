@@ -35,8 +35,20 @@ class TaskServiceTest {
     private final MemberService members = mock(MemberService.class);
     private final ProjectService projects = mock(ProjectService.class);
     private final FeishuTaskNotifier taskNotifier = mock(FeishuTaskNotifier.class);
+    private final cn.wayuwa.wao.mapper.WorkItemNumberMapper numberMapper = mock(cn.wayuwa.wao.mapper.WorkItemNumberMapper.class);
     private final TaskService service = new TaskService(mapper, new ObjectMapper(),
-            notifier, taskNotifier, members, projects, new WorkItemNumberService(mock(cn.wayuwa.wao.mapper.WorkItemNumberMapper.class)));
+            notifier, taskNotifier, members, projects, new WorkItemNumberService(numberMapper));
+
+    @Test
+    void deletedTaskCannotBeRecreatedByVersionedOrLegacyDraft() {
+        assertThatThrownBy(() -> service.replace("t1", dtoWithoutCreator("t1").withEditVersion("old"), "wg"))
+                .hasMessageContaining("已删除");
+        when(numberMapper.find(List.of("t1/"))).thenReturn(List.of(
+                new cn.wayuwa.wao.mapper.WorkItemNumberMapper.Entry("t1/", 1037)));
+        assertThatThrownBy(() -> service.replace("t1", dtoWithoutCreator("t1"), "wg"))
+                .hasMessageContaining("已删除");
+        verify(mapper, never()).insert(any(TaskEntity.class));
+    }
 
     @org.junit.jupiter.api.BeforeEach
     void lockReadsCurrentRow() {

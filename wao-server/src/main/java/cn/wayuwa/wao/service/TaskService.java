@@ -209,6 +209,10 @@ public class TaskService {
     @org.springframework.transaction.annotation.Transactional
     public TaskDto replace(String id, TaskDto dto, String memberId) {
         TaskEntity previous = taskMapper.lockById(id);
+        if (previous == null && (dto.editVersion() != null || dto.subtaskVersion() != null
+                || dto.number() != null || numbers.wasTaskAllocated(id))) {
+            throw new NotFoundException("任务已删除或不存在，旧草稿不能重新创建任务");
+        }
         if (dto.subtaskVersion() != null || dto.editVersion() != null) {
             if (previous != null && dto.editVersion() != null && !dto.editVersion().equals(editVersion(previous)))
                 throw new cn.wayuwa.wao.common.ConflictException("任务内容已被其他窗口更新，请保留本机内容并查看服务器版本");
