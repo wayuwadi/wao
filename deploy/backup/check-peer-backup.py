@@ -28,10 +28,25 @@ def health(root: Path, now: dt.datetime) -> str | None:
                 continue
     if not dates or not 0 <= (now - max(dates)).total_seconds() <= 30 * 3600:
         return '两台 Linux 间的 WAO 备份超过 30 小时未成功，或尚无完整备份。请检查备份服务与节点连接。'
-    if shutil.disk_usage(root).free < 12 * 1024**3:
-        return 'WAO 备份节点剩余磁盘不足 12 GiB，下一次备份可能无法完成。'
+    disk = shutil.disk_usage(root)
+    if disk.free < max(12 * 1024**3, disk.total // 5):
+        return 'WAO 备份节点剩余磁盘低于 20% 或 12 GiB，需调整保留策略并保护恢复空间。'
+    if (root / 'binlogs').exists():
+        try:
+            state = json.loads((root / 'binlogs/last-success.json').read_text())
+            captured = dt.datetime.fromisoformat(state['captured_utc'].replace('Z', '+00:00'))
+            if not 0 <= (now - captured).total_seconds() <= 10 * 60:
+                raise ValueError('stale')
+            if not re.fullmatch(r'[0-9a-f-]{36}', state['source_uuid']) or not re.fullmatch(r'[A-Za-z0-9_-]+\.\d+', state['file']):
+                raise ValueError('invalid')
+            if not (root / 'binlogs' / state['source_uuid'] / state['file'] / 'COMPLETE').is_file():
+                raise ValueError('missing')
+        except (OSError, ValueError, KeyError, TypeError):
+            return 'MySQL 异机 binlog 归档超过 10 分钟未成功或归档不完整，不能继续承诺最近恢复点。'
     if (root / 'RESTORE_FAILED').exists():
         return 'WAO 最近一次隔离恢复演练失败。备份文件存在不代表可恢复，请检查 Linux1 恢复服务日志。'
+    if (root / 'JENKINS_PAYLOAD_MISSING').exists():
+        return '四库备份已独立产出，但计划内的 Jenkins 异机归档缺失，请检查控制器归档。'
     return None
 
 

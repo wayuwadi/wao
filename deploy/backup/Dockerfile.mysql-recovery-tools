@@ -1,0 +1,5 @@
+FROM mysql:9.7.0
+# Context is prepared by build-mysql-recovery-tools.sh from the verified official RPM.
+COPY mysqlbinlog /usr/local/bin/mysqlbinlog
+RUN mysqlbinlog --version
+ENTRYPOINT ["mysqlbinlog"]
