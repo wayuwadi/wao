@@ -1,0 +1,23 @@
+[Unit]
+Description=Independent cloud checks of WAO business readiness
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=true
+StateDirectory=wao-health-watch
+EnvironmentFile=/etc/wao-health-watch/notification.env
+ExecStart=/usr/bin/python3 /opt/wao-health-watch/health-watch.py
+MemoryMax=64M
+CPUQuota=25%
+TimeoutStartSec=35
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

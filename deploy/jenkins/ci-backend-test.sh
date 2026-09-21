@@ -45,10 +45,12 @@ test -S "$docker_socket"
 docker_socket_gid="$(stat -c %g "$docker_socket")"
 
 docker run --rm \
+  --cpus=2 --memory=4g --memory-swap=4g --pids-limit=512 \
   --user "$(id -u):$(id -g)" \
   --group-add "$docker_socket_gid" \
   --network host \
   -e MAVEN_CONFIG=/tmp/m2 \
+  -e 'JAVA_TOOL_OPTIONS=-Xmx1024m -XX:ActiveProcessorCount=2' \
   -v "$PWD:/workspace" \
   -v "$cache:/tmp/m2" \
   -v "$docker_socket:$docker_socket" \

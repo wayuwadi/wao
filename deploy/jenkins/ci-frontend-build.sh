@@ -20,6 +20,7 @@ run_npm() {
   project="$1"
   shift
   docker run --rm \
+    --cpus=2 --memory=4g --memory-swap=4g --pids-limit=512 \
     --user "$(id -u):$(id -g)" \
     -e HOME=/tmp/home \
     -e npm_config_cache=/tmp/npm-cache \
@@ -33,7 +34,7 @@ run_npm() {
 
 run_npm "$project" ci
 if [ "$run_tests" = true ]; then
-  run_npm "$project" run test:unit -- --run
+  run_npm "$project" run test:unit -- --run --maxWorkers=2
   if [ "$project" = wao-web ]; then run_npm "$project" run test:edge-static; fi
 fi
 if [ "$build_project" = true ]; then
