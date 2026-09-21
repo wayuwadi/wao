@@ -134,6 +134,29 @@ try:
     else:
         raise RuntimeError('Old source did not retain its filtered channel and account fence after restart')
     print('PASS: old source restart preserves WAO-only replication and the durable application account fence.',flush=True)
+    return_receipt = recovery.fence_linux1(lambda statement: value(replica, statement))
+    assert value(replica, 'SELECT @@read_only,@@super_read_only') == '1\t1'
+    returned = recovery.promote_linux2(lambda statement: value(source, statement), return_receipt)
+    assert returned['old_source_requires_reseed'] is True
+    sql(source, 'INSERT INTO wao.marker VALUES(3);', user='wao_app')
+    assert value(source, 'SELECT COUNT(*) FROM tools.marker') == '1'
+    assert sql(replica, 'INSERT INTO wao.marker VALUES(4);', user='wao_app', allow_fail=True)[0] != 0
+    assert value(source, 'SHOW REPLICA STATUS') == ''
+    assert value(source, 'SELECT COUNT(*) FROM wao.marker') == '3'
+    for name in (source, replica):
+        docker('restart', name)
+        for _ in range(60):
+            code, _ = sql(name, 'SELECT 1', allow_fail=True)
+            if not code:
+                break
+            time.sleep(2)
+        else:
+            raise RuntimeError('Reverse role restart timed out')
+    assert value(source, "SELECT account_locked FROM mysql.user WHERE User='wao_app' AND Host='%'") == 'N'
+    assert value(source, 'SHOW REPLICA STATUS') == ''
+    assert value(replica, 'SELECT @@read_only,@@super_read_only') == '1\t1'
+    assert value(replica, "SELECT account_locked FROM mysql.user WHERE User='wao_app' AND Host='%'") == 'Y'
+    print('PASS: separately approved reverse procedure fences Linux1 and promotes only the caught-up Linux2 WAO schema; old primary stays read-only and requires reseed.', flush=True)
 finally:
     for name in reversed(created):
         docker('rm','-fv',name)
