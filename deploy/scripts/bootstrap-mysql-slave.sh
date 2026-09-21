@@ -9,6 +9,11 @@ project_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
 env_file="${project_root}/deploy/.env"
 compose_file="${project_root}/deploy/docker-compose-slave.yml"
 secrets_file="${project_root}/deploy/.env.secrets"
+mysql_primary="$(sed -n 's/^WAO_MYSQL_PRIMARY=//p' "$env_file" | tr -d '\r')"
+test "${mysql_primary:-linux2}" = linux2 || {
+  echo 'Refusing replica bootstrap: Linux1 is the recorded MySQL writer.' >&2
+  exit 1
+}
 
 compose() {
   if [ -f "${secrets_file}" ]; then

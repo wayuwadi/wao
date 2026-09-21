@@ -48,6 +48,13 @@ mkdir -m 0700 "$staging/recovery" "$staging/publish"
 peer "set -e; test -d '$PEER_DEPLOY_ROOT'; tar -C '$PEER_DEPLOY_ROOT' --exclude='./backups' --exclude='./.public-ip' -czf - ." >"$staging/recovery/linux1-deploy.tar.gz"
 gzip -t "$staging/recovery/linux1-deploy.tar.gz"
 tar -C "$PROJECT_ROOT/deploy" --exclude='./backups' --exclude='./.public-ip' -czf "$staging/recovery/linux2-deploy.tar.gz" .
+if [[ -f /etc/my.cnf ]]; then
+  mysql_config_files=(my.cnf)
+  if [[ -f /etc/wao-mysql-recovery/return.cnf ]]; then
+    mysql_config_files+=(wao-mysql-recovery/return.cnf)
+  fi
+  tar -C /etc -czf "$staging/recovery/mysql-native-config.tar.gz" "${mysql_config_files[@]}"
+fi
 
 # Runtime roles/epochs/auth live outside the deployment tree. These plaintext
 # archives remain in the private staging directory and are encrypted below.
@@ -58,6 +65,7 @@ set -a
 . "$PROJECT_ROOT/deploy/.env"
 set +a
 : "${DB_ROOT_PASS:?}" "${DB_NAME:?}"
+backup_source="$(python3 "$(dirname "$0")/verify-backup-source.py")"
 [[ "$DB_NAME" =~ ^[a-zA-Z0-9_]+$ ]] || exit 2
 databases=(wao tools wayuwa tkwork)
 database_filter="'wao','tools','wayuwa','tkwork'"
@@ -123,7 +131,7 @@ else
   jenkins_status=unavailable
   echo 'WARNING: Jenkins archive unavailable; the independent database backup will still be published.' >&2
 fi
-printf 'format=3\ncreated_utc=%s\ndatabases=wao,tools,wayuwa,tkwork\nsource=linux2-primary\njenkins=%s\n' "$stamp" "$jenkins_status" >"$staging/recovery/metadata.txt"
+printf 'format=3\ncreated_utc=%s\ndatabases=wao,tools,wayuwa,tkwork\nsource=%s\njenkins=%s\n' "$stamp" "$backup_source" "$jenkins_status" >"$staging/recovery/metadata.txt"
 (cd "$staging/recovery"; sha256sum *.gz *.json tables.txt metadata.txt >SHA256SUMS)
 tar -C "$staging" -cf - recovery | gpg --batch --yes --pinentry-mode loopback \
   --passphrase-file "$PASSPHRASE_FILE" --symmetric --cipher-algo AES256 --compress-algo none \

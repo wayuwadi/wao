@@ -15,6 +15,7 @@ set -a
 . "$PROJECT_ROOT/deploy/.env"
 set +a
 export MYSQL_PWD="${DB_ROOT_PASS:?}"
+python3 "$(dirname "$0")/verify-backup-source.py"
 mysql_args=(-uroot -h127.0.0.1 -P "${MYSQL_PORT:-3306}")
 ssh_args=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -i "$SSH_KEY" -o "UserKnownHostsFile=$KNOWN_HOSTS")
 peer() { ssh -n "${ssh_args[@]}" "$PEER_HOST" "$@"; }
