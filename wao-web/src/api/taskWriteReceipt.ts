@@ -55,7 +55,7 @@ export async function saveTaskWithReceipt(
       return saved
     } catch (error) {
       // A definite validation/version rejection permits a corrected future operation.
-      if ([400, 409, 413, 422].includes(status(error) ?? 0)) { clear(operation.operation); throw error }
+      if ([400, 404, 409, 413, 422].includes(status(error) ?? 0)) { clear(operation.operation); throw error }
       if ([401, 403].includes(status(error) ?? 0) || account !== currentAccount()) throw error
       try {
         const saved = await lookup(operation.operation)

@@ -12,6 +12,11 @@ public class WorkItemNumberService {
     private final WorkItemNumberMapper mapper;
     public WorkItemNumberService(WorkItemNumberMapper mapper) { this.mapper = mapper; }
 
+    /** 永久编号在删除后保留，用于识别已存在过的任务，避免旧客户端重建。 */
+    public boolean wasTaskAllocated(String id) {
+        return !mapper.find(List.of(id + "/")).isEmpty();
+    }
+
     private String subId(TaskDto task, Step sub, int index) {
         return sub.id() == null || sub.id().isBlank() ? task.id() + "#" + index : sub.id();
     }
