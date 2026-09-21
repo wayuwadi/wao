@@ -143,8 +143,8 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8080
-      MYSQL_HOST: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}
-      MYSQL_PORT: 3306
+      MYSQL_HOST: ${MYSQL_WRITER_HOST:-${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}}
+      MYSQL_PORT: ${MYSQL_WRITER_PORT:-3306}
       DB_NAME: ${DB_NAME:-wao}
       DB_USER: ${DB_USER:-wao_app}
       DB_PASS: ${DB_PASS}
@@ -166,7 +166,8 @@ services:
       REDIS_PASS: ${REDIS_PASS}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}
-      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
+      NACOS_SERVER_ADDR: ${NACOS_RECOVERY_ADDR:-${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848}
+      NACOS_DISCOVERY_ENABLED: ${NACOS_DISCOVERY_ENABLED:-true}
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
@@ -230,8 +231,8 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8081
-      MYSQL_HOST: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}
-      MYSQL_PORT: 3306
+      MYSQL_HOST: ${MYSQL_WRITER_HOST:-${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}}
+      MYSQL_PORT: ${MYSQL_WRITER_PORT:-3306}
       DB_NAME: ${DB_NAME:-wao}
       DB_USER: ${DB_USER:-wao_app}
       DB_PASS: ${DB_PASS}
@@ -281,7 +282,8 @@ services:
       GATEWAY_SSL_PASS: ${GATEWAY_SSL_PASS}
       WAO_SERVER_URI: http://wao-server:8080
       WAO_AGENT_SERVER_URI: http://wao-agent-server:8081
-      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
+      NACOS_SERVER_ADDR: ${NACOS_RECOVERY_ADDR:-${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848}
+      NACOS_DISCOVERY_ENABLED: ${NACOS_DISCOVERY_ENABLED:-true}
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
