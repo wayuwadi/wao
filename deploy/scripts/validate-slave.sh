@@ -25,19 +25,32 @@ test -n "${mysql_id}${redis_id}${sentinel_id}${gateway_id}" || {
   exit 1
 }
 
+mysql_primary="$(sed -n 's/^WAO_MYSQL_PRIMARY=//p' "$env_file" | tr -d '\r')"
+mysql_primary="${mysql_primary:-linux2}"
+case "$mysql_primary" in linux1|linux2) ;; *) echo 'Unknown MySQL writer role'; exit 1 ;; esac
 mysql_status="$(docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -uroot --vertical -e "SHOW REPLICA STATUS"')"
+if [ "$mysql_primary" = linux2 ]; then
 printf '%s\n' "${mysql_status}" |
   grep -E 'Replica_IO_Running:|Replica_SQL_Running:|Seconds_Behind_Source:|Replicate_Wild_Do_Table:|Last_IO_Error:|Last_SQL_Error:' || true
 printf '%s\n' "${mysql_status}" | grep -q 'Replica_IO_Running: Yes'
 printf '%s\n' "${mysql_status}" | grep -q 'Replica_SQL_Running: Yes'
 printf '%s\n' "${mysql_status}" | grep -Eq 'Seconds_Behind_Source: (0|[1-9][0-9]*)'
 printf '%s\n' "${mysql_status}" | grep -Eq 'Replicate_Wild_Do_Table: wao\.%'
+else
+  test -z "$mysql_status" || { echo 'Promoted MySQL must not resume the previous replication channel.' >&2; exit 1; }
+  grep -Fxq 'MYSQL_WRITER_HOST=10.66.0.3' "$env_file" || exit 1
+fi
 
 mysql_variables="$(docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -N -uroot -e "SHOW VARIABLES WHERE Variable_name IN ( '\''server_id'\'', '\''read_only'\'', '\''super_read_only'\'', '\''gtid_mode'\'' )"')"
 printf '%s\n' "${mysql_variables}"
 printf '%s\n' "${mysql_variables}" | grep -Eq '^server_id[[:space:]]+2$'
-printf '%s\n' "${mysql_variables}" | grep -Eq '^read_only[[:space:]]+ON$'
-printf '%s\n' "${mysql_variables}" | grep -Eq '^super_read_only[[:space:]]+ON$'
+if [ "$mysql_primary" = linux2 ]; then
+  printf '%s\n' "${mysql_variables}" | grep -Eq '^read_only[[:space:]]+ON$'
+  printf '%s\n' "${mysql_variables}" | grep -Eq '^super_read_only[[:space:]]+ON$'
+else
+  printf '%s\n' "${mysql_variables}" | grep -Eq '^read_only[[:space:]]+OFF$'
+  printf '%s\n' "${mysql_variables}" | grep -Eq '^super_read_only[[:space:]]+OFF$'
+fi
 printf '%s\n' "${mysql_variables}" | grep -Eq '^gtid_mode[[:space:]]+ON$'
 
 application_schemas="$(docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -N -uroot -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME NOT IN ( '\''information_schema'\'', '\''mysql'\'', '\''performance_schema'\'', '\''sys'\'' ) ORDER BY SCHEMA_NAME"')"

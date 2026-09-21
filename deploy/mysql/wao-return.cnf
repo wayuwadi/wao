@@ -1,0 +1,3 @@
+[mysqld]
+# CHANGE REPLICATION FILTER alone is lost on restart. Limit this named channel.
+replicate-wild-do-table=wao-return:wao.%
