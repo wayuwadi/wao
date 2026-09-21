@@ -37,11 +37,16 @@ const NO_DUE = '不设置'
 const route = useRoute()
 const contextProject = ui.modalProject || (route?.name === 'project' ? String(route.params.id || '') : '')
 const source = ui.modalTaskSeed
-const DRAFT_KEY = source?.draftKey || (contextProject ? `wao-new-task-project-${contextProject}-draft-v1` : '') || (ui.modalPriority
+const LEGACY_DRAFT_KEY = source?.draftKey || (contextProject ? `wao-new-task-project-${contextProject}-draft-v1` : '') || (ui.modalPriority
   ? `wao-new-task-quadrant-${ui.modalPriority}-draft-v1` : 'wao-new-task-draft-v1')
+const draftAccount = session.account?.accountId ?? session.userId
+const DRAFT_KEY = `${LEGACY_DRAFT_KEY}:account:${draftAccount}`
+const legacyDraftAvailable = ref(false)
+try { legacyDraftAvailable.value = !!localStorage.getItem(LEGACY_DRAFT_KEY) } catch { /* Keep the current form usable. */ }
 type Draft = {
   title: string; project: string; owner: string; pr: Priority; due: string; desc: string
   scheduleMode: 'deadline' | 'range'; startAt: string; endAt: string
+  pendingTaskId?: string | null
 }
 function loadDraft(): Partial<Draft> {
   try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch { return {} }
@@ -105,7 +110,7 @@ const endAt = ref(ui.modalEndAt || draft.endAt || `${dueDate(due.value) || data.
 const desc = ref(draft.desc ?? source?.desc ?? '')
 const draftState = ref<'saving' | 'saved' | 'error'>('saved')
 const createState = ref<'idle' | 'submitting' | 'error'>('idle')
-const pendingTaskId = ref<string | null>(null)
+const pendingTaskId = ref<string | null>(draft.pendingTaskId ?? null)
 let draftTimer: ReturnType<typeof setTimeout> | null = null
 
 function saveDraft() {
@@ -116,12 +121,30 @@ function saveDraft() {
       title: title.value, project: project.value, owner: owner.value,
       pr: pr.value, due: due.value, desc: desc.value,
       scheduleMode: scheduleMode.value, startAt: startAt.value, endAt: endAt.value,
+      pendingTaskId: pendingTaskId.value,
     } satisfies Draft))
   } catch {
     draftState.value = 'error'
     return
   }
   draftTimer = setTimeout(() => (draftState.value = 'saved'), 180)
+}
+function restoreLegacyDraft() {
+  if (title.value || desc.value || pendingTaskId.value) return
+  try {
+    const old = JSON.parse(localStorage.getItem(LEGACY_DRAFT_KEY) || '{}') as Partial<Draft>
+    title.value = typeof old.title === 'string' ? old.title : ''
+    desc.value = typeof old.desc === 'string' ? old.desc : ''
+    if (typeof old.project === 'string' && openProjects.value.some(p => p.id === old.project)) project.value = old.project
+    if (typeof old.owner === 'string') owner.value = old.owner
+    if (old.pr && ['P0', 'P1', 'P2', 'P3'].includes(old.pr)) pr.value = old.pr
+    if (old.due && QUICK_DUES.includes(old.due)) due.value = old.due
+    if (old.scheduleMode === 'range') scheduleMode.value = 'range'
+    if (typeof old.startAt === 'string') startAt.value = old.startAt
+    if (typeof old.endAt === 'string') endAt.value = old.endAt
+    saveDraft()
+    legacyDraftAvailable.value = false
+  } catch { toast('旧版草稿无法读取，原记录仍保留', 'ri-error-warning-line') }
 }
 watch([title, project, owner, pr, due, desc, scheduleMode, startAt, endAt], saveDraft, { flush: 'sync', immediate: !!source })
 
@@ -155,6 +178,10 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 
 async function create() {
   if (createState.value === 'submitting') return
+  if ((session.account?.accountId ?? session.userId) !== draftAccount) {
+    toast('登录账号已变化，请切回原账号继续处理草稿', 'ri-error-warning-line')
+    return
+  }
   const name = title.value.trim()
   if (!name) return
   if (!project.value) {
@@ -176,20 +203,28 @@ async function create() {
   createState.value = 'submitting'
   let persisted = false
   let createdId = pendingTaskId.value
-  if (pendingTaskId.value) {
+  if (pendingTaskId.value && data.taskById(pendingTaskId.value)) {
     // 首次写入失败后复用同一条本地任务，不重复插入；失败后改过的内容也一起补写。
     data.patchTask(pendingTaskId.value, payload)
     await data.flushTask(pendingTaskId.value)
     persisted = data.taskSaveState(pendingTaskId.value) === 'saved'
   } else {
-    const result = await data.addTask(payload)
+    pendingTaskId.value ??= `t${crypto.randomUUID().replace(/-/g, '').slice(0, 31)}`
+    saveDraft()
+    if (draftState.value === 'error') {
+      createState.value = 'error'
+      toast('草稿无法写入本机，本次尚未创建，请保持弹窗打开', 'ri-error-warning-line')
+      return
+    }
+    const result = await data.addTask(payload, pendingTaskId.value)
     createdId = result.task.id
-    pendingTaskId.value = result.persisted ? null : result.task.id
+    pendingTaskId.value = result.task.id
+    saveDraft()
     persisted = result.persisted
   }
   if (!persisted) {
     createState.value = 'error'
-    toast('任务没有保存到服务器，请检查网络后重试', 'ri-error-warning-line')
+    toast(data.taskSaveError(pendingTaskId.value ?? '') || '保存尚未确认，输入已保留，请检查网络后重试', 'ri-error-warning-line')
     return
   }
   try { localStorage.removeItem(DRAFT_KEY) } catch { /* 服务器已确认保存，不阻止关闭表单。 */ }
@@ -235,6 +270,9 @@ useOverlayDismiss(() => true, requestClose)
       placeholder="任务标题，例如「整理证件盒 · 第 4 批」"
       @keydown.enter.prevent="create"
     />
+    <p v-if="legacyDraftAvailable" class="source-note">旧版草稿仍保存在此浏览器，因缺少账号标识未自动加载。
+      <button type="button" :disabled="!!title || !!desc || !!pendingTaskId" @click="restoreLegacyDraft">恢复旧版草稿</button>
+    </p>
 
     <p v-if="source" class="source-note">来自：<a v-if="source.sourceUrl" :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a><span v-else>{{ source.sourceTitle }}</span>。原文保留不变。</p>
     <div class="label">所属项目 <span v-if="source && !project" class="label-hint">请选择要存入的项目</span></div>
@@ -301,7 +339,7 @@ useOverlayDismiss(() => true, requestClose)
     </div>
 
     <div class="foot">
-      <span v-if="createState === 'error'" class="create-error" role="alert"><i class="ri-error-warning-line"></i>未保存到服务器，输入仍保留在当前窗口</span>
+      <span v-if="createState === 'error'" class="create-error" role="alert"><i class="ri-error-warning-line"></i>{{ data.taskSaveError(pendingTaskId ?? '') || '保存尚未确认，输入仍保留在当前窗口' }}</span>
       <span v-else-if="draftState === 'error'" class="draft-state" role="alert">草稿未能写入本机，请保持弹窗打开。<button type="button" @click="saveDraft">重试</button></span>
       <span v-else class="draft-state"><i :class="draftState === 'saving' ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ draftState === 'saving' ? '正在保存草稿' : '草稿已保存' }}</span>
       <div class="spacer"></div>

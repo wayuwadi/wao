@@ -9,6 +9,9 @@ import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { seedDataStore } from './helpers/seedDataStore'
 
+// Entry behavior does not depend on SVG asset loading (Windows file:///brand resolution).
+vi.mock('@/components/WaoLogo.vue', () => ({ default: { template: '<span />' } }))
+
 // 本文件只验证入口与表单外壳，不验证编辑器。模块级 mock 可阻止 AppLayout 静态导入
 // NewTaskModal 时在用例结束后继续解析 Tiptap，避免 CI 并行运行时发生环境销毁竞态。
 vi.mock('@/components/ui/MarkdownEditor.vue', () => ({

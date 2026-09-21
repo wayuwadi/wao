@@ -205,8 +205,24 @@ export async function apiPatchTask(id: string, payload: PatchTaskPayload): Promi
 
 /** 全量替换任务（本地变更后的写透）。 */
 export async function apiPutTask(id: string, task: Task): Promise<Task> {
-  const res = await http.put<ApiResponse<Task>>(`/api/tasks/${id}`, task)
-  return res.data.data
+  const { useSessionStore } = await import('@/stores/session')
+  const { saveTaskWithReceipt, taskWriteKey } = await import('./taskWriteReceipt')
+  const session = useSessionStore()
+  const account = session.account?.accountId ?? ''
+  if (task.id !== id) throw new Error('任务标识不一致')
+  const save = () => saveTaskWithReceipt(task, account, {
+    lookup: async (taskId, operation) => {
+      const res = await http.get<ApiResponse<import('./taskWriteReceipt').TaskWriteReceipt>>(
+        `/api/tasks/${encodeURIComponent(taskId)}/operations/${operation}`)
+      return res.data.data
+    },
+    write: async (taskId, operation, snapshot, accountId) => {
+      const res = await http.put<ApiResponse<Task>>(`/api/tasks/${encodeURIComponent(taskId)}/operations/${operation}`,
+        { accountId, task: snapshot })
+      return res.data.data
+    },
+  }, () => session.account?.accountId ?? '')
+  return navigator.locks ? navigator.locks.request(taskWriteKey(account, id), save) : save()
 }
 export const apiAddTaskComment = (id: string, text: string) =>
   post<Comment>(`/api/tasks/${id}/comments`, { text })

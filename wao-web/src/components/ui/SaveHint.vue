@@ -20,6 +20,8 @@ const props = defineProps<{
   savedAt?: string | null
   /** 上一次写透失败了。 */
   failed?: boolean
+  /** 无法确认服务端结果时显示具体回执，不把超时说成确定未保存。 */
+  errorMessage?: string
 }>()
 
 const okTime = computed(() => (props.savedAt ? clockTime(props.savedAt) : ''))
@@ -30,7 +32,7 @@ const okTime = computed(() => (props.savedAt ? clockTime(props.savedAt) : ''))
     <i class="ri-loader-4-line spin"></i>保存中…
   </span>
   <span v-else-if="failed" class="hint bad" :title="savedAt ? `上次保存成功于 ${absoluteTime(savedAt)}` : ''">
-    <i class="ri-error-warning-line"></i>未保存，内容已留在本机
+    <i class="ri-error-warning-line"></i>{{ errorMessage || '保存尚未确认，内容已留在本机' }}
   </span>
   <span v-else-if="okTime" class="hint ok" :title="absoluteTime(savedAt ?? '')">
     <i class="ri-checkbox-circle-line"></i>自动保存成功 {{ okTime }}

@@ -24,7 +24,9 @@ describe('API 节点连接', () => {
   it('先走云端，完成票据兑换并确认 host-only Cookie 后才允许业务直连', async () => {
     const f = fixture()
     await f.connected()
-    expect(f.routing.route('/api/tasks/one', 'patch')).toMatchObject({ origin, csrf: 'test-csrf' })
+    expect(f.routing.route('/api/tasks/one/operations/12345678-1234-4123-8123-123456789abc', 'put')).toMatchObject({ origin, csrf: 'test-csrf' })
+    expect(f.routing.route('/api/tasks/one', 'patch')).toBeNull()
+    expect(f.routing.route('/api/projects', 'post')).toBeNull()
     const calls = f.fetcher.mock.calls
     expect(calls.map(call => call[0])).toEqual(['/_edge/routing.json', `${origin}/api/edge/ready`, '/api/edge/csrf', '/api/edge/tickets', `${origin}/api/edge/exchange`, `${origin}/api/edge/session`])
   })
@@ -54,6 +56,7 @@ describe('API 节点连接', () => {
   it('写直连独立开关未开启时，读取直连但保存仍走主站', async () => {
     const f = fixture(); f.config.apiWritesEnabled = false; await f.connected()
     expect(f.routing.route('/api/tasks/one', 'patch')).toBeNull()
+    expect(f.routing.route('/api/tasks/one/operations/12345678-1234-4123-8123-123456789abc', 'put')).toBeNull()
     expect(f.routing.route('/api/docs/catalog', 'get')?.origin).toBe(origin)
   })
 
@@ -70,4 +73,3 @@ describe('API 节点连接', () => {
     expect(g.routing.route('/api/projects', 'get')).toBeNull()
   })
 })
-
