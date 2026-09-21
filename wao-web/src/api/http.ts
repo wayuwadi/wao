@@ -91,11 +91,13 @@ export async function* streamTextEvents(url: string, body: unknown): AsyncGenera
   throw new Error('回复连接提前结束，请重试；原问题已保留')
 }
 
-http.interceptors.request.use((config: RetriableRequestConfig) => {
+http.interceptors.request.use(async (config: RetriableRequestConfig) => {
   const url = config.url ?? ''
   if (/^\/api\/auth\//.test(url)) edgeApiRouting.reset()
   if (!config.waoEdgeFallback && !config.waoEdgeOrigin && (!config.baseURL || config.baseURL === '/')) {
-    const route = edgeApiRouting.route(url, config.method?.toLowerCase() ?? 'get')
+    const method = config.method?.toLowerCase() ?? 'get'
+    const route = method === 'post' && /^\/api\/(?:files|images)$/.test(url)
+      ? await edgeApiRouting.prepareUpload(url) : edgeApiRouting.route(url, method)
     if (route) {
       config.baseURL = route.origin
       config.waoEdgeOrigin = route.origin
