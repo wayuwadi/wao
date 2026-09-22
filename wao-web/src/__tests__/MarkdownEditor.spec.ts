@@ -230,6 +230,25 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('单元格多段正文保留结构并生成安全换行投影，重开后仍可编辑', async () => {
+    const w = await mountEditor({ modelValue: '', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const paragraph = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
+    e.commands.setContent({ type: 'doc', content: [{ type: 'table', content: [
+      { type: 'tableRow', content: [{ type: 'tableHeader', content: [paragraph('细节')] }] },
+      { type: 'tableRow', content: [{ type: 'tableCell', content: [paragraph('梳理清单'), paragraph('然后执行')] }] },
+    ] }] })
+    await nextTick()
+    const changes = w.emitted('content-change') as [{ document: RichDocNode; markdown: string }][]
+    const saved = changes.at(-1)![0]
+    expect(saved.markdown).toContain('梳理清单<br>然后执行')
+    expect(saved.markdown).not.toMatch(/<(?!(?:br\s*\/?>))/i)
+    const reopened = await mountEditor({ modelValue: saved.markdown, document: saved.document, advanced: true })
+    expect(reopened.findAll('td p').map(p => p.text())).toEqual(['梳理清单', '然后执行'])
+    reopened.unmount()
+    w.unmount()
+  })
+
   it('高级文档显示固定工具栏并把表格同时输出为 JSON 与 Markdown', async () => {
     const w = await mountEditor({ modelValue: '', allowH1: true, advanced: true })
     expect(w.find('.advanced-toolbar').exists()).toBe(true)

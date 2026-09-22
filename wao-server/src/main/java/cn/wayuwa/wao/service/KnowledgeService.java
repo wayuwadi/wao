@@ -1811,6 +1811,9 @@ public class KnowledgeService {
             throw new BadRequestException("文档正文包含不安全的链接或内嵌数据");
         }
         String proseMarkdown = markdown.replaceAll("(?s)```.*?```", "").replaceAll("`[^`]*`", "");
+        // Tiptap 表格的 Markdown 投影用无属性 <br> 表示单元格内换行。
+        // 只从校验副本移除该安全形式，保留正文及 JSON；带属性或其他 HTML 仍拒绝。
+        proseMarkdown = proseMarkdown.replaceAll("(?i)<br\\s*/?>", "");
         if (Pattern.compile("(?i)<\\s*/?\\s*[a-z][^>]*>").matcher(proseMarkdown).find()) {
             throw new BadRequestException("高级文档正文不接受原始 HTML");
         }
