@@ -70,15 +70,15 @@ public class DeepSeekBudgetService {
 
     /** 每次实际 HTTP 尝试前预占最坏输入输出预算；次数只统计、不限制。 */
     public Reservation reserve(DeepSeekPurpose purpose, long tokens) {
-        if (tokens < 1) throw new BadRequestException("DeepSeek 预算参数无效");
+        if (tokens < 1) throw new BadRequestException("付费 AI 预算参数无效");
         return transaction.execute(status -> {
             Policy current = policy(true);
-            if (!current.allows(purpose)) throw new BadRequestException("DeepSeek 未获准用于此功能，请在 AI 设置中显式开启");
+            if (!current.allows(purpose)) throw new BadRequestException("付费 AI 未获准用于此功能，请在 AI 设置中显式开启");
             LocalDate day = day();
             Long used = jdbc.queryForObject(
                     "SELECT COALESCE(SUM(budget_tokens),0) FROM deepseek_daily_usage WHERE usage_day=?", Long.class, day);
             if (tokens > current.dailyTokenLimit() - (used == null ? 0 : used))
-                throw new BadRequestException("DeepSeek 今日剩余额度不足以安全完成本次请求，请明日重试或调整每日上限");
+                throw new BadRequestException("付费 AI 今日剩余额度不足以安全完成本次请求，请明日重试或调整每日上限");
             jdbc.update("""
                     INSERT INTO deepseek_daily_usage(usage_day,purpose,budget_tokens,request_count) VALUES(?,?,?,1)
                     ON DUPLICATE KEY UPDATE budget_tokens=budget_tokens+VALUES(budget_tokens), request_count=request_count+1

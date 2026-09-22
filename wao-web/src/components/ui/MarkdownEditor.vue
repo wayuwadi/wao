@@ -666,7 +666,10 @@ async function startPolish() {
   await requestPolish(current)
 }
 
+const polishPreview = ref('')
+
 async function requestPolish(dialog: PolishDialog) {
+  polishPreview.value = ''
   dialog.startedAt ??= Date.now()
   polishMinimized.value = false
   dialog.requestId ??= newPolishRequestId()
@@ -680,6 +683,7 @@ async function requestPolish(dialog: PolishDialog) {
       requestId: dialog.requestId,
       isActive: () => polishMounted && polishDialog.value === dialog && polishSession?.userId === owner,
       onProgress: (job) => {
+        polishPreview.value = job.preview ?? ''
         dialog.progress = job.message
         dialog.failed = job.status === 'FAILED'
         persistPolish(dialog)
@@ -690,6 +694,7 @@ async function requestPolish(dialog: PolishDialog) {
     if (!dialog.polished) dialog.error = 'AI 没有返回可用内容，请重试'
   } catch (cause) {
     if (polishDialog.value !== dialog) return
+    polishPreview.value = ''
     dialog.error = cause instanceof Error ? cause.message : '润色失败，请重试'
   } finally {
     if (polishDialog.value === dialog) { dialog.loading = false; persistPolish(dialog) }
@@ -1982,12 +1987,13 @@ onBeforeUnmount(() => {
             <pre>{{ polishDialog.original }}</pre>
           </article>
           <article>
-            <div class="polish-card-title"><span>润色结果</span><em>确认后才会写入</em></div>
-            <div v-if="polishDialog.loading" class="polish-state">
+            <div class="polish-card-title"><span>润色结果</span><em>{{ polishDialog.loading && polishPreview ? '正在生成，完成后可替换' : '确认后才会写入' }}</em></div>
+            <pre v-if="polishDialog.loading && polishPreview">{{ polishPreview }}<span class="streaming-indicator"> ▍</span></pre>
+            <div v-if="polishDialog.loading && !polishPreview" class="polish-state">
               <PolishProgress :message="polishDialog.progress" :started-at="polishDialog.startedAt" />
             </div>
-            <pre v-else-if="polishDialog.polished">{{ polishDialog.polished }}</pre>
-            <div v-else class="polish-state">
+            <pre v-else-if="!polishDialog.loading && polishDialog.polished">{{ polishDialog.polished }}</pre>
+            <div v-else-if="!polishDialog.loading" class="polish-state">
               <i class="ri-quill-pen-line"></i><span>暂时没有候选内容</span>
             </div>
           </article>

@@ -505,9 +505,20 @@ public class AiAssistantService {
                 AiRunAccountDto account = selectedAccount(normalizeCapability(claimed.getAiCapabilityId()));
                 if (!isProviderApi(account)) throw new BadRequestException("所选 AI 配置不是可用的服务端 API");
                 String providerPrompt = withWebContext(claimed.getPromptText(), claimed.getWebContext());
-                String response = limit(deepSeekApi.complete(account.provider(), account.baseUrl(),
-                        account.apiKey(), account.model(), PROVIDER_SYSTEM_PROMPT, providerPrompt, DeepSeekPurpose.parse(claimed.getUsagePurpose())),
-                        RESULT_LIMIT);
+                DeepSeekPurpose purpose = DeepSeekPurpose.parse(claimed.getUsagePurpose());
+                long[] lastPreview = { 0L };
+                String response = purpose == DeepSeekPurpose.POLISH
+                        ? deepSeekApi.streamPolish(account.provider(), account.baseUrl(), account.apiKey(),
+                                account.model(), providerPrompt, partial -> {
+                                    long now = System.nanoTime();
+                                    if (lastPreview[0] == 0L || now - lastPreview[0] >= 250_000_000L) {
+                                        if (mapper.updateProviderPreview(claimed.getId(), claimToken, partial) != 1)
+                                            throw new BadRequestException("润色任务已结束");
+                                        lastPreview[0] = now;
+                                    }
+                                })
+                        : limit(deepSeekApi.complete(account.provider(), account.baseUrl(), account.apiKey(),
+                                account.model(), PROVIDER_SYSTEM_PROMPT, providerPrompt, purpose), RESULT_LIMIT);
                 if (mapper.completeProviderSucceeded(claimed.getId(), claimToken, response) == 1) {
                     claimed.setStatus("succeeded");
                     claimed.setResponseText(response);

@@ -21,6 +21,64 @@ class DeepSeekApiClientTest {
     private final DeepSeekBudgetService budget = org.mockito.Mockito.mock(DeepSeekBudgetService.class);
 
     @Test
+    void streamsOnlyContentAndSettlesFinalUsageOnceForGateway() {
+        RestClient.Builder builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/chat/completions"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stream\":true")))
+                .andRespond(withSuccess("""
+                        : keepalive
+                        data: {"choices":[{"delta":{"reasoning_content":"hidden"}}]}
+
+                        data: {"choices":[{"delta":{"content":"你好"}}]}
+
+                        data: {"choices":[{"delta":{"content":"，世界。"},"finish_reason":"stop"}]}
+
+                        data: {"choices":[],"usage":{"total_tokens":31}}
+
+                        data: [DONE]
+
+                        """, MediaType.TEXT_EVENT_STREAM));
+        var reservation = new DeepSeekBudgetService.Reservation(java.time.LocalDate.now(), DeepSeekPurpose.POLISH, 20000);
+        org.mockito.Mockito.when(budget.reserve(org.mockito.ArgumentMatchers.eq(DeepSeekPurpose.POLISH), org.mockito.ArgumentMatchers.anyLong())).thenReturn(reservation);
+        var previews = new java.util.ArrayList<String>();
+        var result = new DeepSeekApiClient(builder, budget).streamPolish("model_gateway", null, "test", "xingshi", "原文", previews::add);
+        assertThat(previews).containsExactly("你好", "你好，世界。");
+        assertThat(result).isEqualTo("你好，世界。");
+        org.mockito.Mockito.verify(budget).settle(reservation, 31);
+        server.verify();
+    }
+
+    @Test
+    void interruptedOrTruncatedStreamsNeverSucceedOrRetry() {
+        for (String ending : java.util.List.of("", "data: {\"choices\":[{\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n")) {
+            RestClient.Builder builder = RestClient.builder();
+            var server = MockRestServiceServer.bindTo(builder).build();
+            server.expect(requestTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/chat/completions"))
+                    .andRespond(withSuccess("data: {\"choices\":[{\"delta\":{\"content\":\"半篇\"}}]}\n\n" + ending, MediaType.TEXT_EVENT_STREAM));
+            assertThatThrownBy(() -> new DeepSeekApiClient(builder, budget).streamPolish("model_gateway", null, "test", "xingshi", "原文", ignored -> {}))
+                    .hasMessageContaining("未完整");
+            server.verify();
+        }
+        org.mockito.Mockito.verify(budget, org.mockito.Mockito.never()).settle(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    void gatewayDeniedPurposeCannotSendAnyCompletion() {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        org.mockito.Mockito.when(budget.reserve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenThrow(new BadRequestException("未获准"));
+        var client = new DeepSeekApiClient(builder, budget);
+        assertThat(client.allows("model_gateway", DeepSeekPurpose.UNKNOWN)).isFalse();
+        assertThatThrownBy(() -> client.complete("model_gateway", null, "test", "xingshi", "规则", "原文"))
+                .hasMessageContaining("未获准");
+        assertThatThrownBy(() -> client.streamPolish("model_gateway", null, "test", "xingshi", "原文", ignored -> {}))
+                .hasMessageContaining("未获准");
+        server.verify();
+    }
+
+    @Test
     void missingPurposeAndDeniedBudgetNeverSendHttp() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

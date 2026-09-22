@@ -23,6 +23,7 @@ const promptError = ref('')
 const originalText = ref('')
 const running = ref(false)
 const runProgress = ref('')
+const preview = ref('')
 const pendingJob = ref<{ requestId: string; original: string; failed?: boolean; startedAt?: number } | null>(null)
 function pendingKey() { return `wao-text-polish-pending-v1:${owner.value}` }
 function savePending() {
@@ -176,6 +177,7 @@ async function run() {
 }
 
 async function continueJob(version: number) {
+  preview.value = ''
   const pending = pendingJob.value
   if (!pending) return
   running.value = true
@@ -186,6 +188,7 @@ async function continueJob(version: number) {
       isActive: () => current(version),
       onProgress: job => {
         if (!current(version)) return
+        preview.value = job.preview ?? ''
         runProgress.value = job.message
         pending.failed = job.status === 'FAILED'
         savePending()
@@ -320,12 +323,13 @@ onBeforeUnmount(() => { generation++ })
               <span>润色后</span>
               <h2>可直接使用的结果</h2>
             </div>
-            <button v-if="result" class="copy-button" @click="copyResult">
+            <button v-if="result && !running" class="copy-button" @click="copyResult">
               <i :class="copyState === 'copied' ? 'ri-check-line' : 'ri-file-copy-line'"></i>
               {{ copyState === 'copied' ? '已复制' : copyState === 'error' ? '复制失败' : '复制' }}
             </button>
           </div>
-          <div v-if="running" class="result-empty active">
+          <div v-if="running && preview"><small>正在生成，完成后可复制</small><pre class="result-text">{{ preview }} ▍</pre></div>
+          <div v-else-if="running" class="result-empty active">
             <PolishProgress :message="runProgress" :started-at="pendingJob?.startedAt" />
             <span>可以切换页面，回来后继续查看结果。</span>
           </div>

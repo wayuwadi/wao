@@ -852,6 +852,33 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('流式半篇只预览，失败清除且始终保留原文', async () => {
+    let fail!: (reason: Error) => void
+    vi.mocked(polishDocumentText).mockImplementationOnce((_text, options) => {
+      options?.onProgress?.({ id: 'pj-stream', status: 'RUNNING', message: '正在生成', preview: '尚未完成的候选' })
+      return new Promise((_resolve, reject) => { fail = reject })
+    })
+    const source = '需要保持不变的原文。'
+    const w = await mountEditor({ modelValue: source, polishable: true })
+    const instance = w.vm as unknown as {
+      editor: { commands: { setTextSelection: (range: { from: number; to: number }) => void } }
+      startPolish: () => Promise<void>
+    }
+    instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
+    const pending = instance.startPolish()
+    await flushPromises()
+    expect(w.get('.polish-compare').text()).toContain('尚未完成的候选')
+    expect(w.get('.polish-apply').attributes('disabled')).toBeDefined()
+    expect(w.emitted('update:modelValue')).toBeFalsy()
+    fail(new Error('连接断开'))
+    await pending
+    await flushPromises()
+    expect(w.get('.polish-compare').text()).not.toContain('尚未完成的候选')
+    expect(w.get('.polish-apply').attributes('disabled')).toBeDefined()
+    expect(w.get('.md-body').text()).toContain(source)
+    w.unmount()
+  })
+
   it('处理中收起仍取回同一任务，完成后主动查看且不覆盖新输入', async () => {
     let finish!: (value: { polished: string }) => void
     vi.mocked(polishDocumentText).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))

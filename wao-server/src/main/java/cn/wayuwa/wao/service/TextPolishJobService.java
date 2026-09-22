@@ -65,8 +65,8 @@ public class TextPolishJobService {
         };
         TextPolishRecordDto record = "SUCCEEDED".equals(status) && "WORKSPACE".equals(job.kind())
                 ? polish.recordResult(job.aiRunId(), job.memberId(), job.promptSnapshot(), job.originalText(), run.response()) : null;
-        return new Result(job.id(), status, message, "SUCCEEDED".equals(status) ? run.response() : null, record);
+        return new Result(job.id(), status, message, "SUCCEEDED".equals(status) ? run.response() : null, record, "RUNNING".equals(status) ? run.response() : null);
     }
 
-    public record Result(String id, String status, String message, String polished, TextPolishRecordDto record) { }
+    public record Result(String id, String status, String message, String polished, TextPolishRecordDto record, String preview) { }
 }
