@@ -381,6 +381,42 @@ class KnowledgeServiceTest {
                 """.formatted(style)), "今日完成：\n\n1. 完成方案\n\n2. ");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"<br>", "<br/>", "<br />", "<BR>"})
+    void noteTablePreservesMultilineMarkdownAndStructuredContent(String lineBreak) throws Exception {
+        DocEntity existing = doc("note-table", KnowledgeService.NOTES_KB_ID, "kb-notes-wg");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        when(docMapper.selectList(any())).thenReturn(List.of(existing));
+        when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+        String markdown = "| 细节 |\n| --- |\n| 梳理清单" + lineBreak + lineBreak + "然后执行 |";
+        var document = new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"table","content":[
+                  {"type":"tableRow","content":[{"type":"tableHeader","content":[
+                    {"type":"paragraph","content":[{"type":"text","text":"细节"}]}]}]},
+                  {"type":"tableRow","content":[{"type":"tableCell","content":[
+                    {"type":"paragraph","content":[{"type":"text","text":"梳理清单"}]},
+                    {"type":"paragraph","content":[{"type":"text","text":"然后执行"}]}]}]}
+                ]}]}
+                """);
+        DocDto saved = service.updateDoc(existing.getId(), new PatchDocRequest(
+                null, null, new RichDocContentDto(1, document, markdown), null, null, 1));
+        assertThat(saved.content().markdown()).isEqualTo(markdown);
+        assertThat(saved.content().document()).isEqualTo(document);
+        verify(docMapper).updateIfRevision(existing, 1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"<br onclick='alert(1)'>", "<br style='color:red'>", "<br data-x='1'/>",
+            "<script>alert(1)</script>", "<img src=x onerror=alert(1)>", "<br><iframe src=x></iframe>"})
+    void tableLineBreakExceptionDoesNotAllowRawHtml(String html) {
+        DocEntity existing = doc("note-table", KnowledgeService.NOTES_KB_ID, "kb-notes-wg");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        assertThatThrownBy(() -> service.updateDoc(existing.getId(), new PatchDocRequest(
+                null, null, new RichDocContentDto(1, null, "| 细节 |\n| --- |\n| " + html + " |"), null, null, 1)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("原始 HTML");
+        verify(docMapper, never()).updateIfRevision(any(), anyInt());
+    }
+
     @Test
     void richDocumentRejectsExecutableUrlsAndStaleRevision() throws Exception {
         DocEntity existing = doc("d-rich", "k1", "f1");
