@@ -27,6 +27,7 @@ class AiAssistantRunMapperIntegrationTest {
                     id VARCHAR(32) PRIMARY KEY,
                     member_id VARCHAR(64) NULL,
                     ai_capability_id VARCHAR(32) NULL,
+                    usage_purpose VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
                     web_search_enabled BOOLEAN NOT NULL DEFAULT FALSE,
                     runner_id VARCHAR(32) NULL,
                     claim_token VARCHAR(64) NULL,
@@ -47,17 +48,21 @@ class AiAssistantRunMapperIntegrationTest {
     void insertReadOnlyQueuedPreservesTheRequestedQueueKindAndUsesDatabaseTime() {
         AiAssistantRunEntity ordinary = readOnlyRun("ordinary", "queued");
         AiAssistantRunEntity durable = readOnlyRun("durable", "secure_queued");
+        ordinary.setUsagePurpose("BACKGROUND");
+        durable.setUsagePurpose("POLISH");
 
         assertThat(mapper.insertReadOnlyQueued(ordinary)).isEqualTo(1);
         assertThat(mapper.insertReadOnlyQueued(durable)).isEqualTo(1);
 
         assertThat(rowWithCreatedAt("ordinary"))
                 .containsEntry("STATUS", "queued")
+                .containsEntry("USAGE_PURPOSE", "BACKGROUND")
                 .containsEntry("MEMBER_ID", "internal-test")
                 .containsEntry("PROMPT_TEXT", "请总结")
                 .doesNotContainValue(null);
         assertThat(rowWithCreatedAt("durable"))
                 .containsEntry("STATUS", "secure_queued")
+                .containsEntry("USAGE_PURPOSE", "POLISH")
                 .containsEntry("MEMBER_ID", "internal-test")
                 .containsEntry("PROMPT_TEXT", "请总结")
                 .doesNotContainValue(null);
@@ -196,7 +201,7 @@ class AiAssistantRunMapperIntegrationTest {
 
     private Map<String, Object> rowWithCreatedAt(String id) {
         return jdbc.queryForMap("""
-                SELECT status, member_id, prompt_text, created_at, updated_at
+                SELECT status, member_id, usage_purpose, prompt_text, created_at, updated_at
                   FROM ai_assistant_run WHERE id = ?
                 """, id);
     }
