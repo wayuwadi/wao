@@ -350,19 +350,18 @@ function pasteInto(el: Element, files: File[]) {
 }
 
 describe('HomeView AI 控制台', () => {
-  it('常态额度折叠但保留权益组件，展开后仍可查看原始详情', async () => {
+  it('额度权益默认常驻首页，独立于折叠的 AI Run 并可收起', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
     expect(wrapper.get('.quota-summary').text()).toContain('Codex 周剩余 38%')
-    expect(wrapper.get('#home-quota-details').isVisible()).toBe(false)
-    expect(wrapper.find('.codex-benefits').exists()).toBe(true)
+    expect(wrapper.get('#home-quota-details').isVisible()).toBe(true)
+    expect(wrapper.get('#home-ai-area').isVisible()).toBe(false)
+    expect(wrapper.find('.home-glance .codex-benefits').exists()).toBe(true)
     await wrapper.get('.quota-summary button').trigger('click')
-    expect((wrapper.get('#home-quota-details').element as HTMLElement).style.display).not.toBe('none')
-    expect(wrapper.get('.quota-summary button').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('#home-quota-details').attributes('style')).toContain('display: none')
     await wrapper.get('.quota-summary button').trigger('click')
-    expect(wrapper.get('#home-quota-details').isVisible()).toBe(false)
-    expect(wrapper.find('.codex-benefits').exists()).toBe(true)
+    expect(wrapper.get('#home-quota-details').isVisible()).toBe(true)
     wrapper.unmount()
   })
 
@@ -507,8 +506,8 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.text()).not.toContain('让剩余额度持续完善 WAO')
     expect(primary.find('.growth-coach').exists()).toBe(false)
     expect(fetchAiEvolution).toHaveBeenCalled()
-    expect(wrapper.find('.hero .weekly-quota').text()).toContain('Codex 周剩余额度')
-    expect(wrapper.find('.hero .weekly-quota').text()).toContain('38%')
+    expect(wrapper.find('.home-quota .weekly-quota').text()).toContain('Codex 周剩余额度')
+    expect(wrapper.find('.home-quota .weekly-quota').text()).toContain('38%')
     expect(wrapper.find('.console-quota').exists()).toBe(false)
     expect(wrapper.find('.hero-status').text()).toContain('执行 1 / 2')
     expect(wrapper.findAll('.hero-link').find(button => button.text().includes('查看 AI 详情'))!.text()).toContain('查看 AI 详情')

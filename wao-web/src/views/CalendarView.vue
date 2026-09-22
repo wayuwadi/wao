@@ -29,7 +29,7 @@ import {
 } from '@/api/importantDates'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
-import type { Task } from '@/types'
+import CalendarDayPlan from '@/components/calendar/CalendarDayPlan.vue'
 import AttendancePanel from '@/components/calendar/AttendancePanel.vue'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import { useWeatherStore } from '@/stores/weather'
@@ -78,6 +78,9 @@ const now = new Date(`${data.today}T00:00:00`)
 const calY = ref(now.getFullYear())
 const calM = ref(now.getMonth())
 const calD = ref(now.getDate())
+watch([calY, calM], ([year, month]) => {
+  calD.value = Math.min(calD.value, new Date(year, month + 1, 0).getDate())
+})
 const viewMode = ref<'year' | 'month' | 'week' | 'day'>('month')
 const attendanceMode = ref(localStorage.getItem(`wao-attendance-mode:${session.currentUser.id}`) === 'true')
 const attendanceDays = ref<AttendanceDay[]>([])
@@ -1088,41 +1091,30 @@ function continueCreateReminder() {
   startNewImportantDate(createPreset.day, createPreset.startAt?.slice(11, 16) || '09:00')
 }
 
-// ---------- 待安排任务：只收未排期与已逾期；按优先级、具体时间排序 ----------
-const showBacklog = ref(localStorage.getItem(`wao-calendar-backlog-visible:${session.currentUser.id}`) !== 'false')
-watch(showBacklog, (visible) => localStorage.setItem(`wao-calendar-backlog-visible:${session.currentUser.id}`, String(visible)))
-watch(() => session.currentUser.id, (memberId) => {
-  showBacklog.value = localStorage.getItem(`wao-calendar-backlog-visible:${memberId}`) !== 'false'
-})
-const backlogFilter = ref<'attention' | 'unplanned' | 'overdue'>('attention')
-const unfinishedForMember = computed(() =>
-  data.tasks.filter((t) => t.status !== '已完成' && t.owner === calendarMemberId.value))
-function isUnplanned(task: Task) {
-  return !task.due && !task.startAt
+// 考勤统计默认收起，数据仍持续供日历事件使用。
+const showAttendance = ref(false)
+watch(selectedAttendanceDate, (date) => { if (date) showAttendance.value = true })
+watch(() => session.currentUser.id, () => { showAttendance.value = false })
+const searchOpen = ref(false)
+const searchInput = ref<HTMLInputElement | null>(null)
+async function openSearch() {
+  searchOpen.value = true
+  await nextTick()
+  searchInput.value?.focus()
 }
-function isOverdue(task: Task) {
-  return !!task.due && task.due < data.today
+function closeSearch() {
+  calendarSearch.value = ''
+  searchOpen.value = false
+  searchInput.value?.blur()
 }
-const backlogCounts = computed(() => ({
-  attention: unfinishedForMember.value.filter((t) => isUnplanned(t) || isOverdue(t)).length,
-  unplanned: unfinishedForMember.value.filter(isUnplanned).length,
-  overdue: unfinishedForMember.value.filter(isOverdue).length,
-}))
-const backlog = computed(() => {
-  const priority = { P0: 0, P1: 1, P2: 2, P3: 3 }
-  return unfinishedForMember.value
-    .filter((t) => backlogFilter.value === 'unplanned'
-      ? isUnplanned(t)
-      : backlogFilter.value === 'overdue'
-        ? isOverdue(t)
-        : isUnplanned(t) || isOverdue(t))
-    .map((t) => ({
-      id: t.id, title: t.title, pr: t.pr,
-      when: t.startAt || t.due || '',
-      whenLabel: t.startAt ? t.startAt.replace('T', ' ') : t.due || '未排期',
-      projName: data.projectById(t.project)?.name ?? '未关联',
-    }))
-    .sort((a, b) => priority[a.pr] - priority[b.pr] || (a.when || '9999').localeCompare(b.when || '9999'))
+const selectedDate = computed({
+  get: () => `${calY.value}-${String(calM.value + 1).padStart(2, '0')}-${String(calD.value).padStart(2, '0')}`,
+  set: (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return
+    const [year, month, day] = value.split('-').map(Number)
+    if (!year || !month || !day) return
+    calY.value = year; calM.value = month - 1; calD.value = day
+  },
 })
 
 const dragTaskId = ref<string | null>(null)
@@ -1166,27 +1158,22 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
 </script>
 
 <template>
-  <div class="cal">
+  <div class="cal" :class="`cal-${viewMode}`">
     <div class="cal-top">
       <div class="cal-heading-row">
         <div class="cal-title">日历</div>
-        <div class="legend">
-          <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
-        </div>
         <span v-if="holidayState === 'loading'" class="holiday-status"><i class="ri-loader-4-line spin"></i>节假日加载中</span>
         <button v-else-if="holidayState === 'error'" class="holiday-status error" @click="loadHolidays"><i class="ri-refresh-line"></i>节假日加载失败 · 重试</button>
         <div class="spacer"></div>
         <div class="view-switch"><button :class="{ on: viewMode === 'year' }" @click="viewMode = 'year'">年</button><button :class="{ on: viewMode === 'month' }" @click="viewMode = 'month'">月</button><button :class="{ on: viewMode === 'week' }" @click="viewMode = 'week'">周</button><button :class="{ on: viewMode === 'day' }" @click="viewMode = 'day'">日</button></div>
-        <select v-model.number="calY" class="jump-select" title="快速切换年份"><option v-for="y in Array.from({ length: 21 }, (_, i) => now.getFullYear() - 10 + i)" :key="y" :value="y">{{ y }} 年</option></select>
-        <select v-if="viewMode !== 'year'" v-model.number="calM" class="jump-select" title="快速切换月份"><option v-for="m in 12" :key="m" :value="m - 1">{{ m }} 月</option></select>
-        <button class="nav-btn" @click="shift(-1)"><i class="ri-arrow-left-s-line"></i></button>
-        <button class="today-btn" @click="goToday">今天</button>
-        <button class="nav-btn" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
-      </div>
-      <div class="cal-control-row">
+        <div class="date-navigation" aria-label="日期导航">
+          <button class="nav-btn" aria-label="上一时间段" @click="shift(-1)"><i class="ri-arrow-left-s-line"></i></button>
+          <input v-model="selectedDate" class="date-picker" type="date" aria-label="选择日历日期" />
+          <button class="today-btn" @click="goToday">今天</button>
+          <button class="nav-btn" aria-label="下一时间段" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
+        </div>
         <label class="member-calendar"><i class="ri-user-line"></i><select v-model="calendarMemberId" title="选择要查看的成员日历"><option v-for="member in session.members" :key="member.id" :value="member.id">{{ member.id === session.currentUser.id ? `我的日历 · ${member.name}` : member.name }}</option></select></label>
-        <div class="calendar-search"><i class="ri-search-line"></i><input v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="calendarSearch = ''" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
-        <div class="spacer"></div>
+        <div class="calendar-search" :class="{ expanded: searchOpen || calendarSearch }" @focusout="!calendarSearch && (searchOpen = false)"><button class="search-toggle" type="button" aria-label="展开日历搜索" :aria-expanded="searchOpen || !!calendarSearch" @click="openSearch"><i class="ri-search-line"></i></button><input ref="searchInput" v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="closeSearch" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
         <details name="calendar-toolbar-menu" class="calendar-menu calendar-display-menu"><summary><i class="ri-eye-line"></i>显示</summary><div class="calendar-menu-popover">
           <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气与卦名</b><small>位置选择、分别显示或隐藏</small></span></button>
           <button class="work-week-visibility" :class="{ on: showWorkWeek }" type="button" @click="showWorkWeek = !showWorkWeek"><i :class="showWorkWeek ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>大小周标记</b><small>只控制日历显示，不关闭配置</small></span><em>{{ showWorkWeek ? '显示' : '隐藏' }}</em></button>
@@ -1210,16 +1197,11 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
       <div class="cal-card">
         <div class="cal-head">
           <div class="month-title">{{ viewMode === 'year' ? `${calY} 年` : viewMode === 'week' ? `${weekDays[0]?.label} - ${weekDays[6]?.label}` : viewMode === 'day' ? dayView[0]?.label : month.title }}</div>
-          <span class="cal-hint">任务、提醒事项、二十四节气、节假日与订阅日历合并显示</span>
+          <div class="legend">
+            <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
+          </div>
         </div>
-        <AttendancePanel
-          :active="attendanceMode"
-          :from="attendanceRange.from"
-          :to="attendanceRange.to"
-          :selected-date="selectedAttendanceDate"
-          @loaded="attendanceDays = $event"
-          @close-day="selectedAttendanceDate = null"
-        />
+        <CalendarDayPlan v-if="viewMode === 'day' && calendarMemberId === session.currentUser.id" :date="selectedDate" :today="data.today" />
         <div v-if="missingHolidayYears.length" class="holiday-source-warning">
           <i class="ri-information-line"></i>
           <span>{{ missingHolidayYears.map((year) => `${year.year} 年`).join('、') }}法定放假调休安排尚未收录；当前只显示可由历法确定的节日本日，不推测调休。</span>
@@ -1315,46 +1297,20 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
         <template v-else><div class="year-view"><button v-for="item in yearMonths" :key="item.index" class="year-month" @click="calM = item.index; selectMonth()"><b>{{ item.title }}</b><span>{{ item.count ? `${item.count} 项日程` : '暂无日程' }}</span></button></div></template>
       </div>
 
-      <!-- 未排期与已逾期任务 -->
-      <aside class="backlog" :class="{ folded: !showBacklog }">
-        <div class="bl-head">
-          <button class="bl-toggle" type="button" :aria-expanded="showBacklog" :aria-label="showBacklog ? '收起待安排任务' : `展开待安排任务，共 ${backlog.length} 项`" :title="showBacklog ? '收起待安排任务' : `展开待安排任务 · ${backlog.length} 项`" @click="showBacklog = !showBacklog">
-            <i class="ri-inbox-line"></i>
-            <span class="bl-title">待安排任务</span>
-            <span class="bl-count wao-tabular">{{ backlog.length }}</span>
-            <i class="bl-chev" :class="showBacklog ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'"></i>
-          </button>
+      <aside v-show="attendanceMode" class="attendance-sidebar" :class="{ folded: !showAttendance }">
+        <button class="attendance-sidebar-toggle" type="button" :aria-expanded="showAttendance" :aria-label="showAttendance ? '收起我的考勤' : '展开我的考勤'" :title="showAttendance ? '收起我的考勤' : '展开我的考勤'" @click="showAttendance = !showAttendance">
+          <i class="ri-calendar-check-line"></i><span>我的考勤</span><i :class="showAttendance ? 'ri-arrow-right-s-line' : 'ri-arrow-left-s-line'"></i>
+        </button>
+        <div v-show="showAttendance" class="attendance-sidebar-content">
+          <AttendancePanel
+            :active="attendanceMode"
+            :from="attendanceRange.from"
+            :to="attendanceRange.to"
+            :selected-date="selectedAttendanceDate"
+            @loaded="attendanceDays = $event"
+            @close-day="selectedAttendanceDate = null"
+          />
         </div>
-        <template v-if="showBacklog">
-          <label class="bl-filter">
-            <span class="compactible-control-label">筛选</span>
-            <select v-model="backlogFilter" aria-label="筛选待安排任务" title="筛选待安排任务">
-              <option value="attention">未排期 + 已逾期（{{ backlogCounts.attention }}）</option>
-              <option value="unplanned">仅未分配时间（{{ backlogCounts.unplanned }}）</option>
-              <option value="overdue">仅逾期未完成（{{ backlogCounts.overdue }}）</option>
-            </select>
-          </label>
-          <div class="bl-hint">按 P0–P3 排序；未排期任务可拖到日期格完成排期</div>
-          <div class="bl-list" role="region" aria-label="待安排任务列表" tabindex="0">
-          <div v-if="!backlog.length" class="bl-empty">当前筛选下没有待安排任务</div>
-          <div
-            v-for="t in backlog"
-            :key="t.id"
-            class="bl-item"
-            :class="{ dragging: dragTaskId === t.id }"
-            draggable="true"
-            @dragstart="onDragStart(t.id, $event)"
-            @dragend="onDragEnd"
-            @click="ui.openTask(t.id)"
-          >
-            <i class="ri-draggable bl-grip"></i>
-            <div class="bl-body">
-              <div class="bl-name">{{ t.title }}</div>
-              <div class="bl-sub">{{ t.pr }} · {{ t.whenLabel }} · {{ t.projName }}</div>
-            </div>
-          </div>
-          </div>
-        </template>
       </aside>
     </div>
 
@@ -1641,6 +1597,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
 .cal {
   padding: 16px 24px;
   height: 100%;
+  box-sizing: border-box;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1656,8 +1613,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
   display: grid;
   grid-template-columns: 54px repeat(7, minmax(110px, 1fr));
   min-width: 824px;
-  max-height: 680px;
-  overflow: auto;
+  overflow: visible;
   align-items: start;
 }
 .timeline.single {
@@ -1775,7 +1731,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
   border-radius: 12px;
   background: var(--wao-bg-card);
 }
-.cal-heading-row, .cal-control-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.cal-heading-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .cal-title {
   font-size: 20px;
   font-weight: 700;
@@ -2057,156 +2013,6 @@ button.holiday-status { cursor: pointer; }
   color: var(--wao-text-2);
 }
 
-.backlog {
-  width: 240px;
-  flex-shrink: 0;
-  background: var(--wao-bg-card);
-  border: 1px solid var(--wao-line);
-  border-radius: 12px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  transition: width .16s ease, padding .16s ease;
-}
-.bl-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.bl-head, .bl-filter, .bl-hint { flex-shrink: 0; }
-.backlog.folded {
-  width: 42px;
-  padding: 6px;
-}
-.backlog.folded .bl-toggle {
-  height: 30px;
-  justify-content: center;
-  padding: 0;
-}
-.backlog.folded .bl-title,
-.backlog.folded .bl-count,
-.backlog.folded .bl-chev {
-  display: none;
-}
-.bl-head {
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-.bl-toggle {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  border: none;
-  background: none;
-  cursor: pointer;
-  padding: 2px 4px;
-  font-size: 13px;
-  color: var(--wao-text-1);
-}
-.bl-toggle i {
-  font-size: 15px;
-  color: var(--wao-text-3);
-}
-.bl-filter {
-  margin: 7px 4px 2px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--wao-text-weak);
-  font-size: 10.5px;
-}
-.bl-filter select {
-  min-width: 0;
-  flex: 1;
-  height: 30px;
-  padding: 0 6px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 8px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-2);
-  font-size: 10.5px;
-}
-.bl-title {
-  font-weight: 600;
-}
-.bl-count {
-  font-size: 11.5px;
-  background: var(--wao-divider);
-  border-radius: 999px;
-  padding: 0 7px;
-  color: var(--wao-text-3);
-}
-.bl-chev {
-  margin-left: auto;
-}
-.bl-hint {
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
-  padding: 6px 4px 8px;
-  line-height: 1.5;
-}
-.bl-empty {
-  font-size: 12px;
-  color: var(--wao-text-weak);
-  padding: 12px 4px;
-  text-align: center;
-}
-.bl-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid var(--wao-line);
-  border-radius: 9px;
-  padding: 7px 8px;
-  margin-top: 6px;
-  cursor: grab;
-  background: var(--wao-bg-card);
-}
-.bl-item:hover {
-  border-color: var(--wao-line-control);
-  background: var(--wao-bg-sub);
-}
-.bl-item.dragging {
-  opacity: 0.45;
-}
-.bl-grip {
-  color: var(--wao-text-weak);
-  font-size: 14px;
-  flex-shrink: 0;
-}
-.bl-body {
-  min-width: 0;
-}
-.bl-name {
-  font-size: 12.5px;
-  color: var(--wao-text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.bl-sub {
-  font-size: 11px;
-  color: var(--wao-text-weak);
-  margin-top: 1px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-@media (max-width: 900px) {
-  .cal-body {
-    flex-direction: column-reverse;
-  }
-  .backlog {
-    max-height: 32dvh;
-    width: 100%;
-    position: static;
-  }
-  .backlog.folded {
-    width: 42px;
-    align-self: flex-end;
-  }
-}
 
 .cd-mask {
   position: fixed;
@@ -2537,9 +2343,8 @@ button.holiday-status { cursor: pointer; }
   .holiday-facts div { grid-template-columns: 58px 1fr; }
   .holiday-reminder-form .work-schedule-field { grid-template-columns: 1fr; }
   .important-date-body { padding-inline: 14px; }
-  .cal-heading-row, .cal-control-row { flex-wrap: wrap; }
-  .cal-control-row .spacer { display: none; }
-  .cal-control-row { position: relative; }
+  .cal-heading-row { flex-wrap: wrap; }
+  .cal-heading-row { position: relative; }
   .calendar-menu { position: static; }
   .calendar-menu-popover { top: calc(100% + 6px); left: 0; right: auto; width: 100%; box-sizing: border-box; max-height: 60dvh; overflow-y: auto; }
   .important-date-reminder-fields { grid-template-columns: 1fr; }
@@ -2548,5 +2353,54 @@ button.holiday-status { cursor: pointer; }
   .create-choice-grid { grid-template-columns: 1fr; }
   .lunar-date-fields { grid-template-columns: 1fr 1fr; }
   .calendar-search { width: 100%; }
+}
+/* 月视图均分剩余高度；时间轴只由 cal-card 滚动。 */
+.cal-month .cal-card { display: flex; flex-direction: column; overflow: hidden; }
+.cal-head, .dows, .holiday-source-warning { flex-shrink: 0; }
+.cal-head { gap: 12px; flex-wrap: wrap; padding: 9px 14px; }
+.cal-month .week { flex: 1; min-height: 0; }
+.cal-month .day { min-height: 0; display: flex; flex-direction: column; padding: 4px 6px; }
+.cal-month .day-events { min-height: 0; overflow-y: auto; }
+.cal-month .day-heading, .cal-month .work-week-mark, .cal-month .day-events > * { flex-shrink: 0; }
+.cal-heading-row { gap: 7px; }
+.cal-heading-row > .spacer { min-width: 0; }
+.member-calendar { max-width: 190px; }
+.member-calendar select { min-width: 0; width: 100%; }
+.date-navigation { display: flex; align-items: center; flex-shrink: 0; border: 1px solid var(--wao-line-control); border-radius: 8px; }
+.date-navigation button { border: 0; }
+.date-picker { width: 122px; height: 28px; padding: 0 3px; border: 0; color: var(--wao-text-2); background: transparent; font: inherit; font-size: 12px; }
+.calendar-search { flex-shrink: 0; width: 30px; }
+.search-toggle { position: relative; z-index: 2; width: 30px; height: 30px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
+.calendar-search > input { position: absolute; z-index: 1; right: 0; top: 0; width: 30px; opacity: 0; pointer-events: none; }
+.calendar-search:hover > input, .calendar-search:focus-within > input, .calendar-search.expanded > input { width: min(300px, calc(100vw - 64px)); opacity: 1; pointer-events: auto; padding-left: 10px; padding-right: 36px; box-shadow: var(--wao-shadow-modal); }
+.attendance-sidebar { flex: 0 0 340px; min-height: 0; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); display: flex; flex-direction: column; overflow: hidden; }
+.attendance-sidebar.folded { flex-basis: 38px; }
+.attendance-sidebar-toggle { display: flex; align-items: center; gap: 8px; flex-shrink: 0; width: 100%; min-height: 38px; padding: 8px 10px; border: 0; background: transparent; color: var(--wao-text-2); cursor: pointer; }
+.attendance-sidebar-toggle > i:last-child { margin-left: auto; }
+.attendance-sidebar.folded .attendance-sidebar-toggle > span, .attendance-sidebar.folded .attendance-sidebar-toggle > i:last-child { display: none; }
+.attendance-sidebar-content { min-height: 0; overflow-y: auto; }
+.attendance-sidebar :deep(.attendance-panel) { grid-template-columns: minmax(0, 1fr); }
+.attendance-sidebar :deep(.attendance-metrics), .attendance-sidebar :deep(.attendance-actions), .attendance-sidebar :deep(.attendance-goals), .attendance-sidebar :deep(.attendance-weeks) { grid-column: 1; grid-row: auto; }
+.attendance-sidebar :deep(.attendance-goals), .attendance-sidebar :deep(.attendance-weeks) { grid-template-columns: 1fr; }
+.attendance-sidebar :deep(.attendance-metrics) { gap: 14px; }
+.attendance-sidebar :deep(.attendance-actions) { flex-wrap: wrap; }
+.attendance-sidebar :deep(.attendance-history) { flex-wrap: wrap; }
+@media (max-width: 1100px) {
+  .cal-heading-row { flex-wrap: wrap; }
+  .cal-title { font-size: 17px; }
+  .cal-head .legend { display: none; }
+}
+@media (max-width: 900px) {
+  .cal-body { position: relative; }
+  .attendance-sidebar { position: absolute; z-index: 10; right: 0; top: 0; bottom: 0; width: min(340px, 100%); box-shadow: var(--wao-shadow-modal); }
+  .attendance-sidebar.folded { width: 38px; bottom: auto; box-shadow: none; }
+  .cal-month .day { padding: 3px; }
+  .cal-head { padding-right: 42px; }
+}
+@media (max-width: 640px) {
+  .calendar-search { position: static; }
+  .calendar-search > input { top: calc(100% + 6px); right: 0; }
+  .calendar-search:hover > input, .calendar-search:focus-within > input, .calendar-search.expanded > input { width: 100%; padding-right: 10px; }
+  .calendar-search-results { top: calc(100% + 40px); width: 100%; right: 0; box-sizing: border-box; }
 }
 </style>
