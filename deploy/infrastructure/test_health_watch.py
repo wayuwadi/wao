@@ -29,9 +29,24 @@ class WatchTests(unittest.TestCase):
         self.assertIsNone(message)
         _, _, message = watch.update(state, {'linux1': False}, 160 + 4 * 3600)
         self.assertIsNotNone(message)
-        _, problems, message = watch.update(state, {'linux1': True}, 300)
+        state, _, message = watch.update(state, {'linux1': True}, 300)
+        self.assertIsNone(message)
+        _, problems, message = watch.update(state, {'linux1': True}, 360)
         self.assertFalse(problems)
         self.assertIn('恢复', message)
+
+    def test_main_flapping_does_not_repeat_incident_notifications(self):
+        state = {'notified': ['linux1', 'linux2'], 'sent': 100,
+                 'failures': {'linux1': 2, 'linux2': 2}}
+        sent = []
+        for i, main in enumerate([False, False, True, False, False, True, False, False]):
+            state, problems, message = watch.update(
+                state, {'linux1': False, 'linux2': False, 'main': main}, 160 + 60 * i)
+            if message:
+                sent.append(message)
+                state.update(notified=problems, sent=state['checked'])
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(state['notified'], ['linux1', 'linux2', 'main'])
 
     def test_failed_delivery_is_retried_without_claiming_notified(self):
         with tempfile.TemporaryDirectory() as folder:

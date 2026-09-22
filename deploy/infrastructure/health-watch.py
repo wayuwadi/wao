@@ -54,17 +54,19 @@ def probe(url):
 
 
 def update(previous, results, now):
-    """Two consecutive failures alert; unchanged failures repeat only after 4h."""
+    """Remember notified targets for the entire incident, including flapping."""
     failures = {name: (previous.get('failures', {}).get(name, 0) + 1 if not good else 0)
                 for name, good in results.items()}
     problems = sorted(name for name, count in failures.items() if count >= 2)
     old = previous.get('notified', [])
+    successes = previous.get('successes', 0) + 1 if all(results.values()) else 0
     notification = None
-    if problems and (problems != old or now - previous.get('sent', 0) >= 4 * 3600):
+    if problems and (set(problems) - set(old) or now - previous.get('sent', 0) >= 4 * 3600):
         notification = '[WAO 基础设施告警] 就绪检查连续失败：' + ', '.join(problems) + '。请检查入口、应用与权威数据库；不会自动提升数据库。'
-    elif not problems and old and all(results.values()):
+        problems = sorted(set(problems) | set(old))
+    elif not problems and old and successes >= 2:
         notification = '[WAO 基础设施恢复] 三条入口的应用与权威数据库就绪检查均已恢复。'
-    state = {**previous, 'checked': now, 'failures': failures, 'healthy': results}
+    state = {**previous, 'checked': now, 'failures': failures, 'healthy': results, 'successes': successes}
     return state, problems, notification
 
 
