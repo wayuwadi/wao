@@ -7,7 +7,10 @@ config="${WAO_MYSQL_TUNNEL_CONFIG:-/etc/wao-mysql-recovery/tunnel.env}"
 : "${MYSQL_PRIMARY_SSH_HOST:?}" "${SSH_KEY:?}" "${KNOWN_HOSTS:?}"
 [[ "$MYSQL_PRIMARY_SSH_HOST" =~ ^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+$ ]] || exit 2
 [[ -f "$SSH_KEY" && -f "$KNOWN_HOSTS" ]] || exit 2
+host="${MYSQL_PRIMARY_SSH_HOST#*@}"
+endpoint="$(python3 "$(dirname "$0")/refresh-mesh-endpoint.py" --resolve "$host")"
 exec ssh -N -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+  -o "HostName=$endpoint" -o "HostKeyAlias=$host" \
   -o ExitOnForwardFailure=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
   -o ConnectTimeout=10 -i "$SSH_KEY" -o "UserKnownHostsFile=$KNOWN_HOSTS" \
   -L 127.0.0.1:13306:127.0.0.1:3306 \

@@ -133,7 +133,8 @@ def rejoin(sql, promoted, password, source_host='10.66.0.3'):
             'Old source does not cover pre-promotion history; reseed instead of replaying it')
     require(password and len(password) <= 32, 'Invalid replication credential length')
     sql("CHANGE REPLICATION SOURCE TO SOURCE_HOST=" + quote(source_host) + ", SOURCE_PORT=3306, SOURCE_USER='wao_repl', SOURCE_PASSWORD="
-        + quote(password) + ", SOURCE_AUTO_POSITION=1, GET_SOURCE_PUBLIC_KEY=1 FOR CHANNEL 'wao-return';"
+        + quote(password) + ", SOURCE_AUTO_POSITION=1, GET_SOURCE_PUBLIC_KEY=1, "
+        "SOURCE_CONNECT_RETRY=30, SOURCE_RETRY_COUNT=86400 FOR CHANNEL 'wao-return';"
         "CHANGE REPLICATION FILTER REPLICATE_WILD_DO_TABLE=('wao.%') FOR CHANNEL 'wao-return';"
         "START REPLICA FOR CHANNEL 'wao-return';")
     # Keep all other databases on the old instance writable. The durable WAO

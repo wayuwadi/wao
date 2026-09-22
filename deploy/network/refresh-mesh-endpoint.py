@@ -36,26 +36,31 @@ def replace_endpoint(config, public_key, endpoint):
 
 
 def resolve_ipv6(host):
+    # Router DNS can retain an obsolete global address after a WAN prefix change.
+    # Query the certificate-verified public resolver before accepting local cache.
+    query = urllib.parse.urlencode({'name': host, 'type': 'AAAA'})
     try:
-        answers = [row[4][0] for row in socket.getaddrinfo(host, 0, socket.AF_INET6, socket.SOCK_DGRAM)]
+        with urllib.request.urlopen('https://dns.alidns.com/resolve?' + query, timeout=8) as response:
+            result = json.load(response)
+        answers = [row['data'] for row in result.get('Answer', []) if row.get('type') == 28]
         select_ipv6(answers, '')
         return answers
     except (OSError, ValueError):
         pass
-    # The Linux1 desktop TUN can return synthetic DNS addresses. Only accept global
-    # IPv6 from a certificate-verified resolver; never replace the authenticated key.
-    query = urllib.parse.urlencode({'name': host, 'type': 'AAAA'})
-    with urllib.request.urlopen('https://dns.alidns.com/resolve?' + query, timeout=8) as response:
-        result = json.load(response)
-    answers = [row['data'] for row in result.get('Answer', []) if row.get('type') == 28]
+    answers = [row[4][0] for row in socket.getaddrinfo(host, 0, socket.AF_INET6, socket.SOCK_DGRAM)]
     select_ipv6(answers, '')
     return answers
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--role', choices=['linux1', 'linux2'], required=True)
+    choice = parser.add_mutually_exclusive_group(required=True)
+    choice.add_argument('--role', choices=['linux1', 'linux2'])
+    choice.add_argument('--resolve', choices=['linux1.wayuwa.cn', 'linux2.wayuwa.cn'])
     args = parser.parse_args()
+    if args.resolve:
+        print(select_ipv6(resolve_ipv6(args.resolve), ''))
+        return
     home = Path.home()
     root = home / '.config/wao-wireguard' if args.role == 'linux1' else Path('/etc/wao-node-mesh')
     metadata = root / 'public-topology.json'
