@@ -265,14 +265,14 @@ public class AiAssistantService {
      * @return {@code ai_assistant_run.id}
      */
     public String enqueueReadOnlyJob(String operationKey, String instruction) {
-        return enqueueReadOnlyJob(operationKey, instruction, defaultCapabilityId());
+        return enqueueReadOnlyJob(operationKey, instruction, defaultCapabilityId(DeepSeekPurpose.BACKGROUND));
     }
 
     /** 按调用方固定的能力把内部只读分析入队。 */
     public String enqueueReadOnlyJob(String operationKey, String instruction, String aiCapabilityId) {
         return enqueueReadOnlyJob(internalMemberId(operationKey), instruction,
                 "已有一项内部只读分析正在执行，请等待完成", true,
-                aiCapabilityId).getId();
+                aiCapabilityId, DeepSeekPurpose.BACKGROUND).getId();
     }
 
     /**
@@ -308,7 +308,7 @@ public class AiAssistantService {
         if (selectedText.length() > POLISH_TEXT_LIMIT) {
             throw new BadRequestException("一次最多润色 4000 字，请缩小选区后重试");
         }
-        var modelApi = accountService.defaultDocumentPolishAccount();
+        var modelApi = eligibleDefaultAccount(DeepSeekPurpose.POLISH);
         if (modelApi != null) {
             return deepSeekApi.polish(modelApi.provider(), modelApi.baseUrl(), modelApi.apiKey(),
                     modelApi.model(), selectedText);
@@ -342,12 +342,12 @@ public class AiAssistantService {
         if (!StringUtils.hasText(methodPrompt)) throw new BadRequestException("润色提示词不能为空");
         String systemPrompt = textPolishSystemPrompt();
         String material = textPolishMaterial(originalText, methodPrompt);
-        var modelApi = accountService.defaultDocumentPolishAccount();
+        var modelApi = eligibleDefaultAccount(DeepSeekPurpose.POLISH);
         String result = modelApi == null
                 ? executeReadOnlyJob(memberId, systemPrompt + "\n" + material,
                         "你已有一项 AI 问答或润色正在处理中，请稍后重试")
                 : deepSeekApi.complete(modelApi.provider(), modelApi.baseUrl(), modelApi.apiKey(),
-                        modelApi.model(), systemPrompt, material);
+                        modelApi.model(), systemPrompt, material, DeepSeekPurpose.POLISH);
         if (!StringUtils.hasText(result)) throw new BadRequestException("AI 没有返回有效润色结果");
         return result.trim();
     }
@@ -363,11 +363,11 @@ public class AiAssistantService {
     public String enqueueTextPolishJob(String operationKey, String originalText, String methodPrompt) {
         if (!StringUtils.hasText(originalText)) throw new BadRequestException("请先输入需要润色的原文");
         if (!StringUtils.hasText(methodPrompt)) throw new BadRequestException("润色提示词不能为空");
-        var modelApi = accountService.defaultDocumentPolishAccount();
+        var modelApi = eligibleDefaultAccount(DeepSeekPurpose.POLISH);
         String capabilityId = modelApi == null ? LOCAL_CODEX_CAPABILITY : modelApi.id();
-        return enqueueReadOnlyJob(operationKey,
+        return enqueueReadOnlyJob(internalMemberId(operationKey),
                 textPolishSystemPrompt() + "\n" + textPolishMaterial(originalText, methodPrompt),
-                capabilityId);
+                "已有一项润色正在执行，请等待完成", true, capabilityId, DeepSeekPurpose.POLISH).getId();
     }
 
     private static String textPolishSystemPrompt() {
@@ -394,7 +394,7 @@ public class AiAssistantService {
         AssistantStatusDto availability = status();
         if (!availability.configured()) throw new BadRequestException(availability.message());
         AiAssistantRunEntity queued = enqueueReadOnlyJob(memberId, instruction, activeMessage, false,
-                LOCAL_CODEX_CAPABILITY);
+                LOCAL_CODEX_CAPABILITY, DeepSeekPurpose.BACKGROUND);
         AiAssistantRunEntity result = waitForResult(queued.getId(), memberId);
         if ("succeeded".equals(result.getStatus()) && StringUtils.hasText(result.getResponseText())) {
             return result.getResponseText();
@@ -405,12 +405,14 @@ public class AiAssistantService {
 
     private AiAssistantRunEntity enqueueReadOnlyJob(
             String memberId, String instruction, String activeMessage, boolean durableNonBlocking,
-            String requestedCapabilityId) {
+            String requestedCapabilityId, DeepSeekPurpose purpose) {
         // 非阻塞业务不以某一瞬间的 Runner 在线状态决定是否入队。
         // 兼容节点上线后由 v2 claim 的脚本哈希门禁领取；超时清理则保证材料有界保留。
-        String capabilityId = normalizeCapability(requestedCapabilityId);
+        String capabilityId = StringUtils.hasText(requestedCapabilityId)
+                ? requestedCapabilityId.trim() : defaultCapabilityId(purpose);
         AiRunAccountDto account = selectedAccount(capabilityId);
         boolean providerApi = isProviderApi(account);
+        if (providerApi) deepSeekApi.requireAllowed(account.provider(), purpose);
         if (!providerApi && !runnerScripts.available()) {
             throw new BadRequestException("服务端安全只读 Runner 脚本不可用");
         }
@@ -424,6 +426,7 @@ public class AiAssistantService {
         run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
         run.setMemberId(memberId);
         run.setAiCapabilityId(capabilityId);
+        run.setUsagePurpose(purpose.name());
         run.setWebSearchEnabled(false);
         // 持久化业务编排使用 secure_* 状态，只由 v2 安全协议领取并按 60/30 分钟收口。
         // 同步页面包装仍在 5 分钟用户等待窗口内完成，Runner 也会在窗口前停止。
@@ -503,7 +506,7 @@ public class AiAssistantService {
                 if (!isProviderApi(account)) throw new BadRequestException("所选 AI 配置不是可用的服务端 API");
                 String providerPrompt = withWebContext(claimed.getPromptText(), claimed.getWebContext());
                 String response = limit(deepSeekApi.complete(account.provider(), account.baseUrl(),
-                        account.apiKey(), account.model(), PROVIDER_SYSTEM_PROMPT, providerPrompt),
+                        account.apiKey(), account.model(), PROVIDER_SYSTEM_PROMPT, providerPrompt, DeepSeekPurpose.parse(claimed.getUsagePurpose())),
                         RESULT_LIMIT);
                 if (mapper.completeProviderSucceeded(claimed.getId(), claimToken, response) == 1) {
                     claimed.setStatus("succeeded");
@@ -609,10 +612,13 @@ public class AiAssistantService {
 
     private AiAssistantRunEntity enqueue(AssistantChatRequest request, String memberId,
             String trustedContext, boolean includeAssets) {
-        String capabilityId = normalizeCapability(request.aiCapabilityId());
+        DeepSeekPurpose purpose = includeAssets ? DeepSeekPurpose.ASSISTANT : DeepSeekPurpose.TIANREN;
+        String capabilityId = StringUtils.hasText(request.aiCapabilityId())
+                ? request.aiCapabilityId().trim() : defaultCapabilityId(purpose);
         AssistantStatusDto availability = status(capabilityId);
         if (!availability.configured()) throw new BadRequestException(availability.message());
         AiRunAccountDto account = selectedAccount(capabilityId);
+        if (isProviderApi(account)) deepSeekApi.requireAllowed(account.provider(), purpose);
         long active = mapper.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
                 .eq(AiAssistantRunEntity::getMemberId, memberId)
                 .in(AiAssistantRunEntity::getStatus, ACTIVE));
@@ -622,6 +628,7 @@ public class AiAssistantService {
         run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
         run.setMemberId(memberId);
         run.setAiCapabilityId(capabilityId);
+        run.setUsagePurpose(purpose.name());
         boolean webSearchEnabled = includeAssets && !StringUtils.hasText(trustedContext);
         run.setWebSearchEnabled(webSearchEnabled);
         run.setStatus(isProviderApi(account)
@@ -735,15 +742,22 @@ public class AiAssistantService {
         }
     }
 
-    /** 未显式指定的页面能力与润色共用默认配置；删除 API 后回退本地 Codex。 */
-    public String defaultCapabilityId() {
-        var account = accountService.defaultDocumentPolishAccount();
+    /** 页面默认能力只使用获准用于页面问答的 API 配置。 */
+    public String defaultCapabilityId() { return defaultCapabilityId(DeepSeekPurpose.ASSISTANT); }
+
+    private String defaultCapabilityId(DeepSeekPurpose purpose) {
+        var account = eligibleDefaultAccount(purpose);
         return account == null ? LOCAL_CODEX_CAPABILITY : account.id();
+    }
+
+    private AiRunAccountDto eligibleDefaultAccount(DeepSeekPurpose purpose) {
+        var account = accountService.defaultDocumentPolishAccount();
+        return account != null && deepSeekApi.allows(account.provider(), purpose) ? account : null;
     }
 
     /** 给后台润色提供无凭据的等待原因；API 路径不要求 Runner 在线。 */
     public String polishQueueMessage() {
-        if (!LOCAL_CODEX_CAPABILITY.equals(defaultCapabilityId())) return "已提交，等待 AI 处理";
+        if (!LOCAL_CODEX_CAPABILITY.equals(defaultCapabilityId(DeepSeekPurpose.POLISH))) return "已提交，等待 AI 处理";
         AssistantStatusDto availability = status();
         return availability.configured() ? "已提交，等待空闲 AI 执行；可以离开后回来查看"
                 : availability.message() + "；任务已保留，恢复后会继续执行";

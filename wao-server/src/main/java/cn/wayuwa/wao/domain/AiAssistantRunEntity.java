@@ -15,6 +15,7 @@ public class AiAssistantRunEntity {
     private String id;
     private String memberId;
     private String aiCapabilityId;
+    private String usagePurpose;
     private Boolean webSearchEnabled;
     private String conversationId;
     private String userMessageId;
@@ -38,6 +39,9 @@ public class AiAssistantRunEntity {
     public void setId(String id) { this.id = id; }
     public String getMemberId() { return memberId; }
     public void setMemberId(String memberId) { this.memberId = memberId; }
+    public String getUsagePurpose() { return usagePurpose; }
+    public void setUsagePurpose(String usagePurpose) { this.usagePurpose = usagePurpose; }
+
     public String getAiCapabilityId() { return aiCapabilityId; }
     public void setAiCapabilityId(String aiCapabilityId) { this.aiCapabilityId = aiCapabilityId; }
     public Boolean getWebSearchEnabled() { return webSearchEnabled; }
