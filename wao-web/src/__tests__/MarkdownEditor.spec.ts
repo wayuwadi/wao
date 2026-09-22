@@ -240,7 +240,7 @@ describe('MarkdownEditor（所见即所得）', () => {
     ] }] })
     await nextTick()
     const changes = w.emitted('content-change') as [{ document: RichDocNode; markdown: string }][]
-    const saved = changes.at(-1)![0]
+    const saved = changes[changes.length - 1]![0]
     expect(saved.markdown).toContain('梳理清单<br>然后执行')
     expect(saved.markdown).not.toMatch(/<(?!(?:br\s*\/?>))/i)
     const reopened = await mountEditor({ modelValue: saved.markdown, document: saved.document, advanced: true })
