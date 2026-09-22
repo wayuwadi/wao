@@ -54,6 +54,14 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
             """)
     List<AiAssistantRunEntity> selectProviderQueued();
 
+    /** 流式候选仅供预览；旧 worker 和终态不允许覆盖。 */
+    @Update("""
+            UPDATE ai_assistant_run SET response_text = #{response}, updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id} AND claim_token = #{claimToken} AND status = 'provider_running'
+            """)
+    int updateProviderPreview(@Param("id") String id, @Param("claimToken") String claimToken,
+            @Param("response") String response);
+
     /** 服务端 Provider 只允许持有本次 claim token 的 worker 写入成功终态。 */
     @Update("""
             UPDATE ai_assistant_run

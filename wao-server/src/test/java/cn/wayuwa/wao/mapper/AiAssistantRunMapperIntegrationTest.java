@@ -45,6 +45,20 @@ class AiAssistantRunMapperIntegrationTest {
     }
 
     @Test
+    void previewRequiresCurrentClaimAndCannotOverwriteTerminalResult() {
+        var run = readOnlyRun("preview", "provider_queued");
+        run.setUsagePurpose("POLISH");
+        mapper.insertReadOnlyQueued(run);
+        assertThat(mapper.claimProviderQueued("preview", "current")).isEqualTo(1);
+        assertThat(mapper.updateProviderPreview("preview", "stale", "错误")).isZero();
+        assertThat(mapper.updateProviderPreview("preview", "current", "一部分")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT response_text FROM ai_assistant_run WHERE id = 'preview'", String.class)).isEqualTo("一部分");
+        assertThat(mapper.completeProviderSucceeded("preview", "current", "完整结果")).isEqualTo(1);
+        assertThat(mapper.updateProviderPreview("preview", "current", "迟到")).isZero();
+        assertThat(jdbc.queryForObject("SELECT response_text FROM ai_assistant_run WHERE id = 'preview'", String.class)).isEqualTo("完整结果");
+    }
+
+    @Test
     void insertReadOnlyQueuedPreservesTheRequestedQueueKindAndUsesDatabaseTime() {
         AiAssistantRunEntity ordinary = readOnlyRun("ordinary", "queued");
         AiAssistantRunEntity durable = readOnlyRun("durable", "secure_queued");

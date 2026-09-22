@@ -66,16 +66,16 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="deepseek-policy" aria-label="DeepSeek 使用范围与预算">
+  <section class="deepseek-policy" aria-label="付费 AI 使用范围与预算">
     <div class="policy-heading">
-      <div><h2>DeepSeek 使用范围与预算</h2><p>默认只用于润色。其他用途需显式开启；未登记的新功能一律禁止使用这把 Key。</p></div>
+      <div><h2>付费 AI 使用范围与预算</h2><p>默认只用于润色。其他用途需显式开启；未登记的新功能一律禁止使用这把 Key。</p></div>
       <button type="button" :disabled="loading || saving" @click="load">{{ loading ? '读取中…' : '刷新用量' }}</button>
     </div>
     <p v-if="error" role="alert" class="error">{{ error }} <button type="button" :disabled="loading || saving" @click="failedAction === 'save' ? save() : load()">重试</button></p>
     <form v-if="form" @submit.prevent="save">
       <fieldset :disabled="saving">
         <div class="policy-controls">
-          <label><input v-model="form.enabled" type="checkbox"> 允许使用 DeepSeek</label>
+          <label><input v-model="form.enabled" type="checkbox"> 允许使用 DeepSeek / 醒市网关</label>
           <label>每日 Token 上限 <input v-model.number="form.dailyTokenLimit" type="number" min="1" max="1000000000" step="1" required></label>
           <span>不限制调用次数 · 每日北京时间 00:00 重置</span>
         </div>
@@ -87,7 +87,7 @@ onMounted(load)
           </label>
         </div>
         <p>{{ snapshot?.day }} 预算占用 <strong>{{ format(total) }}</strong> / {{ format(snapshot?.policy.dailyTokenLimit ?? 0) }} Token</p>
-        <p class="hint">发送前预占输入与最大输出预算，成功后按实际用量结算。超时或未返回用量时保留预占；所有 DeepSeek 账号共享上限。关闭后不再发送新请求，已发送请求无法撤回。</p>
+        <p class="hint">发送前预占输入与最大输出预算，成功后按实际用量结算。超时或未返回用量时保留预占；所有 DeepSeek 与醒市网关账号共享上限。关闭后不再发送新请求，已发送请求无法撤回。</p>
         <footer><span>{{ saving ? '保存中…' : dirty ? '有未保存设置，草稿已保留' : saved ? '已保存' : '当前设置已生效' }}</span><button type="submit" :disabled="saving || !dirty">{{ saving ? '保存中…' : '保存设置' }}</button></footer>
       </fieldset>
     </form>

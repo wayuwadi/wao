@@ -47,6 +47,26 @@ describe('TextPolishView', () => {
     vi.mocked(runTextPolish).mockReset().mockResolvedValue(record)
   })
 
+  it('生成期间展示增量且不能复制半篇，完成后才提供结果', async () => {
+    let finish!: (value: TextPolishRecord) => void
+    vi.mocked(runTextPolish).mockImplementationOnce(async (_text, options) => {
+      options?.onProgress?.({ id: 'pj1', status: 'RUNNING', message: '正在生成', preview: '第一句话' })
+      return new Promise(resolve => { finish = resolve })
+    })
+    const wrapper = mount(TextPolishView)
+    await flushPromises()
+    await wrapper.get('[aria-label="待润色原文"]').setValue('原文')
+    await wrapper.get('.run-button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.result-text').text()).toContain('第一句话')
+    expect(wrapper.find('.copy-button').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="待润色原文"]').element).toHaveProperty('value', '原文')
+    finish(record)
+    await flushPromises()
+    expect(wrapper.get('.result-text').text()).toBe(record.polishedText)
+    expect(wrapper.find('.copy-button').exists()).toBe(true)
+  })
+
   it('网络错误后刷新沿用任务标识且不覆盖后来编辑的草稿', async () => {
     vi.mocked(runTextPolish).mockRejectedValueOnce(new Error('网络中断'))
     const first = mount(TextPolishView)

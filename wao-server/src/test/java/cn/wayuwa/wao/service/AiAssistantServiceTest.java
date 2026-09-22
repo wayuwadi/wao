@@ -612,6 +612,31 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void polishWorkerPublishesPreviewBeforeFinalCompletion() {
+        var run = assistantRun("provider_queued");
+        run.setAiCapabilityId("aa-gateway");
+        run.setUsagePurpose("POLISH");
+        run.setPromptText("原文");
+        var account = new AiRunAccountDto("aa-gateway", "model_gateway", "网关", "api_key", null,
+                "test", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "xingshi", "chat_completions");
+        when(mapper.selectProviderQueued()).thenReturn(List.of(run));
+        when(mapper.claimProviderQueued(eq("ac1"), anyString())).thenReturn(1);
+        when(mapper.selectById("ac1")).thenReturn(run);
+        when(accountService.assistantAccount("aa-gateway")).thenReturn(account);
+        when(mapper.updateProviderPreview(eq("ac1"), anyString(), eq("半篇"))).thenReturn(1);
+        when(deepSeekApi.streamPolish(eq("model_gateway"), anyString(), anyString(), anyString(), anyString(), any()))
+                .thenAnswer(invocation -> {
+                    java.util.function.Consumer<String> progress = invocation.getArgument(5);
+                    progress.accept("半篇");
+                    verify(mapper, never()).completeProviderSucceeded(anyString(), anyString(), anyString());
+                    return "完整";
+                });
+        service.processNextProviderRun();
+        verify(mapper).updateProviderPreview(eq("ac1"), anyString(), eq("半篇"));
+        verify(mapper).completeProviderSucceeded(eq("ac1"), anyString(), eq("完整"));
+    }
+
+    @Test
     void providerWorkerClaimsConfiguredDeepSeekAndPersistsOnlyTheFinalAnswer() {
         AiAssistantRunEntity run = assistantRun("provider_queued");
         run.setAiCapabilityId("aa-deepseek");
