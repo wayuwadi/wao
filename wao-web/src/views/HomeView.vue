@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import { AI_EXECUTION_MODE_DESCRIPTIONS } from '@/config/aiExecutionModes'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -83,7 +84,7 @@ const workflowsLoading = ref(false)
 const quotaOverview = ref<AiEvolutionOverview | null>(null)
 const quotaLoading = ref(true)
 const quotaError = ref(false)
-const quotaDetailsOpen = ref(false)
+const quotaDetailsOpen = ref(true)
 const benefitsAttention = ref('')
 const taskAutoRunPolicy = ref<AiTaskAutoRunPolicy | null>(null)
 const taskAutoRunEnabled = ref(true)
@@ -1273,17 +1274,8 @@ onBeforeUnmount(() => {
 <template>
   <div class="home" :class="{ 'run-list-view': runLayout === 'list' }">
     <div class="home-primary">
-      <HomeStartGuide />
-      <section class="ai-entry" aria-label="AI Run 实验功能">
-        <div><h2>AI Run <span>实验功能</span></h2><p>日常开发优先在本地电脑完成；需要体验自动执行时再展开。</p></div>
-        <button type="button" :aria-expanded="aiAreaOpen" aria-controls="home-ai-area" @click="aiAreaOpen = !aiAreaOpen">{{ aiAreaOpen ? '收起 AI Run' : '展开 AI Run' }}<span v-if="activeRuns.length"> · {{ activeRuns.length }} 项进行中</span></button>
-      </section>
-      <div id="home-ai-area" v-show="aiAreaOpen" class="ai-area">
-      <section id="home-ai-overview" class="hero" data-page-anchor="AI 控制中心">
-        <div class="hero-heading">
-          <div class="eyebrow">AI CONTROL CENTER</div>
-          <h1 class="slogan">AI 自动执行工作区</h1>
-        </div>
+      <section class="home-glance" aria-label="常用信息">
+        <div class="home-quota">
         <div class="quota-summary">
           <span role="status">{{ quotaError ? '额度读取失败' : quotaLoading && !quotaOverview ? '正在读取额度…' : heroWeeklyQuota ? `Codex 周剩余 ${heroWeeklyQuota.remainingPercent}%` : '暂无有效额度快照' }}</span>
           <button type="button" :aria-expanded="quotaDetailsOpen" aria-controls="home-quota-details" @click="quotaDetailsOpen = !quotaDetailsOpen">{{ quotaDetailsOpen ? '收起额度与权益' : '展开额度与权益' }}</button>
@@ -1299,6 +1291,20 @@ onBeforeUnmount(() => {
             <small>{{ heroWeeklyQuota ? resetText(heroWeeklyQuota.resetsAt) : '等待额度同步' }}</small>
           </div>
           <CodexBenefitsPanel compact :accounts="quotaOverview?.codexQuotas" @attention="benefitsAttention = $event" />
+        </div>
+        </div>
+        <div class="home-weather"><WeatherPanel surface="calendar" :date="data.today" toolbar /></div>
+      </section>
+      <HomeStartGuide />
+      <section class="ai-entry" aria-label="AI Run 实验功能">
+        <div><h2>AI Run <span>实验功能</span></h2><p>日常开发优先在本地电脑完成；需要体验自动执行时再展开。</p></div>
+        <button type="button" :aria-expanded="aiAreaOpen" aria-controls="home-ai-area" @click="aiAreaOpen = !aiAreaOpen">{{ aiAreaOpen ? '收起 AI Run' : '展开 AI Run' }}<span v-if="activeRuns.length"> · {{ activeRuns.length }} 项进行中</span></button>
+      </section>
+      <div id="home-ai-area" v-show="aiAreaOpen" class="ai-area">
+      <section id="home-ai-overview" class="hero" data-page-anchor="AI 控制中心">
+        <div class="hero-heading">
+          <div class="eyebrow">AI CONTROL CENTER</div>
+          <h1 class="slogan">AI 自动执行工作区</h1>
         </div>
         <div class="hero-status">
           <span><i class="signal-dot"></i>{{ onlineRunners.length }} 台在线</span>
@@ -3368,4 +3374,9 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .run-list-view .recent-main { grid-column: 1 / -1; grid-row: 2; }
   .run-list-view .recent-hover-action { grid-column: 2; grid-row: 1; }
 }
+.home-glance { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr); gap: 12px; }
+.home-quota { min-width: 0; border-radius: 12px; background: linear-gradient(115deg, #273371, #344293); padding: 14px 18px; display: grid; gap: 10px; }
+.home-weather { min-width: 0; padding: 12px 14px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); align-content: center; }
+.home-weather :deep(.weather-toolbar) { border: 0; margin: 0; padding: 0; flex-wrap: wrap; }
+@media (max-width: 800px) { .home-glance { grid-template-columns: 1fr; } .home-quota .hero-metrics { flex-wrap: wrap; } }
 </style>

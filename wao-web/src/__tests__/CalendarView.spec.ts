@@ -3,6 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import CalendarView from '@/views/CalendarView.vue'
+vi.mock('@/api/workdayRhythm', () => ({ fetchWorkdayRhythm: vi.fn(async () => ({ blocks: [] })) }))
 import { fetchAlternateWorkWeek, saveAlternateWorkWeek } from '@/api/workSchedule'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -144,7 +145,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     vi.mocked(fetchVault).mockReset().mockResolvedValue([])
   })
 
-  it('默认只看当前人，待安排清单只含未排期与已逾期任务并可集中筛选', async () => {
+  it('默认只看当前人，移除待安排清单并保留时间段创建', async () => {
     const data = useDataStore(pinia)
     const session = useSessionStore(pinia)
     const ui = useUiStore(pinia)
@@ -170,23 +171,10 @@ describe('日历成员隔离、清单与时间轴', () => {
     const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
 
-    const backlog = wrapper.findAll('.bl-item')
-    expect(backlog).toHaveLength(2)
-    expect(backlog[0]!.text()).toContain('我的未排期 P0')
-    expect(backlog[1]!.text()).toContain('我的逾期 P1')
+    expect(wrapper.find('.backlog').exists()).toBe(false)
     expect(wrapper.text()).toContain('我的已排期 P2')
     expect(wrapper.text()).not.toContain('他人的任务')
-
-    await wrapper.find('.bl-filter select').setValue('overdue')
-    expect(wrapper.findAll('.bl-item')).toHaveLength(1)
-    expect(wrapper.find('.bl-item').text()).toContain('我的逾期 P1')
-
-    await wrapper.find('.bl-toggle').trigger('click')
-    expect(wrapper.find('.backlog').classes()).toContain('folded')
-    expect(wrapper.find('.bl-toggle').attributes('aria-expanded')).toBe('false')
-    expect(wrapper.find('.bl-toggle').attributes('title')).toContain('1 项')
-    expect(localStorage.getItem('wao-calendar-backlog-visible:wg')).toBe('false')
-    await wrapper.find('.bl-toggle').trigger('click')
+    expect(wrapper.find('.attendance-sidebar').isVisible()).toBe(false)
 
     await wrapper.find('.view-switch button:last-child').trigger('click')
     const slots = wrapper.findAll('.time-day .time-slot')
@@ -200,6 +188,16 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(ui.modal).toBe('task')
     expect(ui.modalStartAt).toBe(`${data.today}T09:00`)
     expect(ui.modalEndAt).toBe(`${data.today}T11:00`)
+  })
+
+  it('合并日期选择后跨月自动收敛到有效日期，搜索可点击展开', async () => {
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    await wrapper.get('[aria-label="选择日历日期"]').setValue('2026-01-31')
+    await wrapper.get('[aria-label="下一时间段"]').trigger('click')
+    expect((wrapper.get('[aria-label="选择日历日期"]').element as HTMLInputElement).value).toBe('2026-02-28')
+    await wrapper.get('.search-toggle').trigger('click')
+    expect(wrapper.get('.search-toggle').attributes('aria-expanded')).toBe('true')
   })
 
   it('已完成任务保留在原日期，月视图和时间轴均以删除线显示', async () => {
@@ -570,6 +568,10 @@ describe('日历成员隔离、清单与时间轴', () => {
     await wrapper.find('.attendance-toggle').trigger('click')
     await flushPromises()
     expect(fetchAttendance).toHaveBeenCalled()
+    expect(wrapper.get('.attendance-sidebar').classes()).toContain('folded')
+    expect(wrapper.get('.attendance-sidebar-content').attributes('style')).toContain('display: none')
+    await wrapper.get('.attendance-sidebar-toggle').trigger('click')
+    expect(wrapper.get('.attendance-sidebar-toggle').attributes('aria-expanded')).toBe('true')
     expect(wrapper.text()).toContain('11.00 h')
     const attendanceEvents = wrapper.findAll('.event').map((event) => event.text())
     expect(attendanceEvents).toContain('09:00上班打卡')
