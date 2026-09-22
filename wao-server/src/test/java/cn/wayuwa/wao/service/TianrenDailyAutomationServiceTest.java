@@ -32,7 +32,7 @@ import org.springframework.transaction.PlatformTransactionManager;
     "DROP TABLE IF EXISTS member_preference",
     "CREATE TABLE member_preference(member_id VARCHAR(32),pref_key VARCHAR(128),pref_value CLOB,updated_at TIMESTAMP, PRIMARY KEY(member_id,pref_key))",
     "DROP TABLE IF EXISTS ai_assistant_run",
-    "CREATE TABLE ai_assistant_run(id VARCHAR(32) PRIMARY KEY,member_id VARCHAR(32),conversation_id VARCHAR(32),user_message_id VARCHAR(32),ai_capability_id VARCHAR(64),web_search_enabled BOOLEAN,status VARCHAR(32),runner_id VARCHAR(32),claim_token VARCHAR(64),prompt_text CLOB,web_context CLOB,response_text CLOB,error_text CLOB,created_at TIMESTAMP,updated_at TIMESTAMP,claimed_at TIMESTAMP,finished_at TIMESTAMP)"
+    "CREATE TABLE ai_assistant_run(id VARCHAR(32) PRIMARY KEY,member_id VARCHAR(32),conversation_id VARCHAR(32),user_message_id VARCHAR(32),ai_capability_id VARCHAR(64),usage_purpose VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',web_search_enabled BOOLEAN,status VARCHAR(32),runner_id VARCHAR(32),claim_token VARCHAR(64),prompt_text CLOB,web_context CLOB,response_text CLOB,error_text CLOB,created_at TIMESTAMP,updated_at TIMESTAMP,claimed_at TIMESTAMP,finished_at TIMESTAMP)"
 })
 class TianrenDailyAutomationServiceTest {
     @Autowired TianrenReadingService readings;
@@ -74,7 +74,7 @@ class TianrenDailyAutomationServiceTest {
             String member = call.getArgument(1);
             AiAssistantRunEntity run = new AiAssistantRunEntity();
             run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 20));
-            run.setMemberId(member); run.setStatus("queued"); run.setPromptText(call.getArgument(2));
+            run.setMemberId(member); run.setUsagePurpose("TIANREN"); run.setStatus("queued"); run.setPromptText(call.getArgument(2));
             run.setCreatedAt(LocalDateTime.now()); run.setUpdatedAt(LocalDateTime.now());
             conversations.enqueue(run, request.conversationId(), member, request.message());
             return run.getId();
