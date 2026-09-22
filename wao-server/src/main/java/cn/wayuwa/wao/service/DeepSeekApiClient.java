@@ -34,13 +34,15 @@ public class DeepSeekApiClient {
 
     private final RestClient restClient;
     private final RetrySleeper retrySleeper;
+    private final DeepSeekBudgetService budget;
 
     @Autowired
-    public DeepSeekApiClient(RestClient.Builder builder) {
-        this(builder, Thread::sleep);
+    public DeepSeekApiClient(RestClient.Builder builder, DeepSeekBudgetService budget) {
+        this(builder, Thread::sleep, budget);
     }
 
-    DeepSeekApiClient(RestClient.Builder builder, RetrySleeper retrySleeper) {
+    DeepSeekApiClient(RestClient.Builder builder, RetrySleeper retrySleeper, DeepSeekBudgetService budget) {
+        this.budget = budget;
         this.restClient = builder.build();
         this.retrySleeper = retrySleeper;
     }
@@ -57,6 +59,8 @@ public class DeepSeekApiClient {
      * @param raw 表单提交的 API 根地址
      */
     public String normalizeBaseUrl(String provider, String raw) {
+        if (!"deepseek".equals(provider) && !MODEL_GATEWAY_PROVIDER.equals(provider))
+            throw new BadRequestException("未登记的模型供应商");
         String expected = MODEL_GATEWAY_PROVIDER.equals(provider) ? MODEL_GATEWAY_BASE_URL : OFFICIAL_BASE_URL;
         String value = raw == null ? "" : raw.trim().replaceAll("/+$", "");
         if (!StringUtils.hasText(value)) value = expected;
@@ -111,7 +115,7 @@ public class DeepSeekApiClient {
                 "temperature", 0.3,
                 "max_tokens", 8192,
                 "stream", false);
-        return completion(provider, baseUrl, apiKey, body, true);
+        return completion(provider, baseUrl, apiKey, body, true, DeepSeekPurpose.POLISH);
     }
 
     /**
@@ -121,6 +125,12 @@ public class DeepSeekApiClient {
      */
     public String complete(String provider, String baseUrl, String apiKey, String model,
             String systemPrompt, String userPrompt) {
+        return complete(provider, baseUrl, apiKey, model, systemPrompt, userPrompt, DeepSeekPurpose.UNKNOWN);
+    }
+
+    /** 业务入口显式指定可信用途，未知或未获准用途在发送 HTTP 前拒绝。 */
+    public String complete(String provider, String baseUrl, String apiKey, String model,
+            String systemPrompt, String userPrompt, DeepSeekPurpose purpose) {
         validateCompletionModel(provider, model);
         Map<String, Object> body = Map.of(
                 "model", model,
@@ -131,7 +141,17 @@ public class DeepSeekApiClient {
                 "temperature", 0.2,
                 "max_tokens", 16384,
                 "stream", false);
-        return completion(provider, baseUrl, apiKey, body, false);
+        return completion(provider, baseUrl, apiKey, body, false, purpose);
+    }
+
+    /** 路由候选受用途白名单约束；网关保持既有行为，DeepSeek 发送时仍再次校验。 */
+    public boolean allows(String provider, DeepSeekPurpose purpose) {
+        return !"deepseek".equals(provider) || budget.allows(purpose);
+    }
+
+    /** 显式选择未获准 DeepSeek 功能时立即返回可理解的错误。 */
+    public void requireAllowed(String provider, DeepSeekPurpose purpose) {
+        if (!allows(provider, purpose)) throw new BadRequestException("DeepSeek 未获准用于此功能，请在 AI 设置中显式开启");
     }
 
     private static void validateCompletionModel(String provider, String model) {
@@ -144,19 +164,29 @@ public class DeepSeekApiClient {
     }
 
     private String completion(String provider, String baseUrl, String apiKey,
-            Map<String, Object> body, boolean polish) {
+            Map<String, Object> body, boolean polish, DeepSeekPurpose purpose) {
+        String url = normalizeBaseUrl(provider, baseUrl) + "/chat/completions";
+        long upperBound = body.get("messages").toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+                + 4096L + ((Number) body.get("max_tokens")).longValue();
         String label = providerLabel(provider);
         String failure = null;
         for (int attempt = 1; attempt <= MAX_COMPLETION_ATTEMPTS; attempt++) {
+            DeepSeekBudgetService.Reservation reservation = "deepseek".equals(provider)
+                    ? budget.reserve(purpose, upperBound) : null;
             try {
                 JsonNode json = restClient.post()
-                        .uri(normalizeBaseUrl(provider, baseUrl) + "/chat/completions")
+                        .uri(url)
                         .header("Authorization", "Bearer " + apiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .accept(MediaType.APPLICATION_JSON)
                         .body(body)
                         .retrieve()
                         .body(JsonNode.class);
+                if (reservation != null && json != null) {
+                    JsonNode usage = json.path("usage").path("total_tokens");
+                    if (usage.isIntegralNumber() && usage.canConvertToLong() && usage.longValue() >= 0)
+                        budget.settle(reservation, usage.longValue());
+                }
                 if (json == null) {
                     failure = label + "没有返回内容";
                 } else {
@@ -170,10 +200,10 @@ public class DeepSeekApiClient {
                     failure = label + (polish ? "没有返回有效润色结果" : "没有返回有效内容");
                 }
             } catch (RestClientResponseException exception) {
-                failure = label + (polish ? "润色失败：" : "请求失败：") + safeMessage(exception);
+                failure = label + (polish ? "润色失败：" : "请求失败：") + "上游调用失败，请检查连接或稍后重试";
                 if (!retryable(exception)) throw new BadRequestException(failure);
             } catch (RestClientException exception) {
-                failure = label + (polish ? "润色失败：" : "请求失败：") + safeMessage(exception);
+                failure = label + (polish ? "润色失败：" : "请求失败：") + "上游调用失败，请检查连接或稍后重试";
             }
             if (attempt < MAX_COMPLETION_ATTEMPTS) pauseBeforeRetry(label, attempt);
         }
@@ -211,7 +241,8 @@ public class DeepSeekApiClient {
     }
 
     private static String safeMessage(Exception ex) {
-        return StringUtils.hasText(ex.getMessage()) ? ex.getMessage() : "上游服务不可用";
+        return ex instanceof RestClientResponseException response
+                ? "上游返回 HTTP " + response.getStatusCode().value() : "上游服务不可用";
     }
 
     @FunctionalInterface
