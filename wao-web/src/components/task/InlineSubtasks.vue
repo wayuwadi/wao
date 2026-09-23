@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import TaskOrderStatus from './TaskOrderStatus.vue'
+import { useTaskOrderStore } from '@/stores/taskOrder'
+import { taskDropAfter } from '@/utils/taskDrop'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
@@ -31,13 +34,20 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'add-sub': [parentId: string | null]; 'close-add': [] }>()
 const data = useDataStore()
+const order = useTaskOrderStore()
+const orderScope = computed(() => `subs:${props.taskId}`)
+const draggingSub = ref<string | null>(null)
+const orderingOver = ref<{ id: string; after: boolean } | null>(null)
 const ui = useUiStore()
 const session = useSessionStore()
 const task = computed(() => data.taskById(props.taskId))
 const localHideDone = ref(false)
 const hidingDone = computed(() => (props.table ? props.hideDone === true : localHideDone.value))
 const rows = computed(() => {
-  const all = subtaskRows(props.taskId, task.value?.subs || [])
+  const subs = task.value?.subs || []
+  const keys = new Map(subs.map((sub, idx) => [sub, data.subKey(props.taskId, sub, idx)]))
+  const all = subtaskRows(props.taskId, order.sort(orderScope.value, subs, sub => keys.get(sub)!))
+    .map(row => ({ ...row, key: keys.get(row.sub)!, idx: subs.indexOf(row.sub) }))
   if (!props.parentId) return all
   const parent = all.find(row => row.key === props.parentId)
   if (!parent) return []
@@ -104,15 +114,23 @@ watch(() => [props.adding, props.addParentId], () => {
 })
 const doneCount = computed(() => rows.value.filter(row => row.sub.done).length)
 function drag(event: DragEvent, subId: string) {
+  draggingSub.value = subId
   event.dataTransfer?.setData(SUBTASK_DRAG_TYPE, JSON.stringify({ taskId: props.taskId, subId }))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
-async function drop(event: DragEvent, parentId?: string | null) {
-  const payload = readSubtaskDrag(event)
-  if (!payload) return
+function dragOver(event: DragEvent, id: string) {
+  orderingOver.value = draggingSub.value && draggingSub.value !== id ? { id, after: taskDropAfter(event) } : null
+}
+async function drop(event: DragEvent, targetId?: string | null) {
+  const payload = readSubtaskDrag(event), after = taskDropAfter(event)
+  draggingSub.value = null; orderingOver.value = null
+  if (!payload || !targetId || payload.subId === targetId) return
   localError.value = ''
-  try { await data.moveSubtask(payload.taskId, payload.subId, props.taskId, parentId) }
-  catch (error) { localError.value = error instanceof Error ? error.message : '移动失败，请重试' }
+  const source = data.subById(payload.taskId, payload.subId), target = data.subById(props.taskId, targetId)
+  if (payload.taskId !== props.taskId || !source || !target || (source.parentId || null) !== (target.parentId || null)) {
+    localError.value = '请在同一层级内调整顺序；更改归属请使用移动操作'; return
+  }
+  await order.move(orderScope.value, rows.value.map(row => row.key), payload.subId, targetId, after)
 }
 function member(id?: string | null) {
   return id ? session.memberById(id) : null
@@ -212,7 +230,8 @@ function add() {
 }
 </script>
 <template>
-  <tbody v-if="task && table" class="table-subs" @click.stop @dragstart.stop @dragover.prevent @drop.prevent.stop="drop($event, parentId)" :inert="data.movingSubtasks">
+  <tbody v-if="task && table" class="table-subs" @click.stop @dragstart.stop @dragover.prevent @drop.prevent.stop :inert="data.movingSubtasks">
+    <tr v-if="rows.length > 1"><td colspan="10"><TaskOrderStatus :scope="orderScope" /></td></tr>
     <tr v-if="localError"><td colspan="10"><small class="error" role="alert">{{ localError }}</small></td></tr>
     <template v-for="item in tableItems" :key="item.kind === 'row' ? data.subKey(taskId, item.row.sub, item.row.idx) : '__add'">
       <tr v-if="item.kind === 'add'" class="sub-add-row">
@@ -233,7 +252,7 @@ function add() {
       </tr>
       <tr
         v-else
-        class="inline-sub-row" :class="{ 'is-done': item.row.sub.done }" draggable="true" @dragstart.stop="drag($event, item.row.key)" @dragover.prevent.stop @drop.prevent.stop="drop($event, item.row.key)"
+        class="inline-sub-row" :class="{ 'is-done': item.row.sub.done, 'order-before': orderingOver?.id === item.row.key && !orderingOver.after, 'order-after': orderingOver?.id === item.row.key && orderingOver.after }" draggable="true" @dragstart.stop="drag($event, item.row.key)" @dragover.prevent.stop="dragOver($event, item.row.key)" @dragleave="orderingOver = null" @dragend="draggingSub = null; orderingOver = null" @drop.prevent.stop="drop($event, item.row.key)"
         @click="ui.openTask(taskId, item.row.key)"
       >
         <td class="sub-number wao-tabular">{{ item.row.sub.number ?? '…' }}</td>
@@ -337,8 +356,9 @@ function add() {
     class="inline-subs"
     aria-label="子任务"
     @click.stop
-    @dragstart.stop @dragover.prevent @drop.prevent.stop="drop($event, parentId)" :inert="data.movingSubtasks"
+    @dragstart.stop @dragover.prevent @drop.prevent.stop :inert="data.movingSubtasks"
   >
+    <TaskOrderStatus v-if="rows.length > 1" :scope="orderScope" />
     <div class="list-head">
       <span class="list-title">子任务</span>
       <span class="list-count wao-tabular">{{ doneCount }}/{{ rows.length }}</span>
@@ -356,9 +376,9 @@ function add() {
     <div
       v-for="{ sub, idx: index, key: subId, depth } in visibleRows"
       :key="data.subKey(taskId, sub, index)"
-      class="inline-sub" :class="{ 'is-done': sub.done }" :style="{ paddingLeft: `${8 + depth * 20}px` }" draggable="true" @dragstart.stop="drag($event, subId)" @dragover.prevent.stop @drop.prevent.stop="drop($event, subId)"
+      class="inline-sub" :class="{ 'is-done': sub.done, 'order-before': orderingOver?.id === subId && !orderingOver.after, 'order-after': orderingOver?.id === subId && orderingOver.after }" :style="{ paddingLeft: `${8 + depth * 20}px` }" draggable="true" @dragstart.stop="drag($event, subId)" @dragover.prevent.stop="dragOver($event, subId)" @dragleave="orderingOver = null" @dragend="draggingSub = null; orderingOver = null" @drop.prevent.stop="drop($event, subId)"
     >
-      <i class="ri-draggable grip" title="拖到另一条子任务上可调整层级"></i>
+      <i class="ri-draggable grip" title="拖拽调整个人顺序"></i>
       <WorkItemIcon kind="subtask" />
       <span class="number wao-tabular">{{ sub.number ?? '…' }}</span>
       <button class="sub-open" :class="{ done: sub.done }" :title="sub.text" @click="ui.openTask(taskId, subId)">{{ sub.text }}</button>
@@ -398,6 +418,8 @@ function add() {
   </section>
 </template>
 <style scoped>
+.order-before { box-shadow: inset 0 2px var(--wao-primary); }
+.order-after { box-shadow: inset 0 -2px var(--wao-primary); }
 .sub-priority { border: 0; border-radius: 4px; padding: 3px 6px; font-size: 11px; cursor: pointer; }
 button {
   border: 0;
