@@ -288,7 +288,10 @@ export interface Idea {
   updatedAt: string
 }
 
+export type WorkItemType = 'task' | 'requirement' | 'bug'
+
 export interface Task {
+  workItemType?: WorkItemType
   /** 完整任务的父任务；仅通过专用关系接口调整。 */
   parentTaskId?: string | null
   /** 完整编辑快照版本，原样回传；过期写入返回 409。 */
@@ -444,6 +447,7 @@ export interface Folder {
 }
 
 export interface KnowledgeBase {
+  directory?: Record<string, string>
   id: string
   name: string
   icon: string

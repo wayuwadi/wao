@@ -66,6 +66,30 @@ class TaskServiceTest {
         assertThat(saved.desc()).isEqualTo("desc");
     }
 
+    @Test
+    void workItemTypeSurvivesFullSaveCopiesAndLegacyClientUpdates() {
+        TaskEntity existing = todo();
+        existing.setDetailJson("{\"workItemType\":\"requirement\"}");
+        when(mapper.selectById("t1")).thenReturn(existing);
+        when(mapper.lockById("t1")).thenReturn(existing);
+        TaskDto read = service.get("t1");
+        assertThat(read.workItemType()).isEqualTo("requirement");
+        assertThat(read.withNumbers(12L, read.subs()).withParentTaskId("parent").withSubtaskVersion("s").withEditVersion("v").workItemType()).isEqualTo("requirement");
+        TaskDto saved = service.replace("t1", read.withWorkItemType("bug"), "wg");
+        assertThat(saved.workItemType()).isEqualTo("bug");
+        assertThat(service.replace("t1", read.withWorkItemType(null), "wg").workItemType()).isEqualTo("requirement");
+    }
+
+    @Test
+    void invalidWorkItemTypeIsRejectedBeforeWriting() {
+        TaskEntity existing = todo();
+        when(mapper.selectById("t1")).thenReturn(existing);
+        when(mapper.lockById("t1")).thenReturn(existing);
+        assertThatThrownBy(() -> service.replace("t1", service.get("t1").withWorkItemType("invalid"), "wg"))
+            .isInstanceOf(cn.wayuwa.wao.common.BadRequestException.class);
+        verify(mapper, never()).updateById(any(TaskEntity.class));
+    }
+
     private TaskEntity todo() {
         TaskEntity e = new TaskEntity();
         e.setId("t1");

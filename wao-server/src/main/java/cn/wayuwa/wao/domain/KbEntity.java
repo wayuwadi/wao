@@ -11,6 +11,12 @@ public class KbEntity {
 
     @TableId
     private String id;
+    @com.baomidou.mybatisplus.annotation.TableField(
+        insertStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER,
+        updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private String directoryJson;
+    public String getDirectoryJson() { return directoryJson; }
+    public void setDirectoryJson(String value) { directoryJson = value; }
     private String name;
     private String icon;
     private String color;

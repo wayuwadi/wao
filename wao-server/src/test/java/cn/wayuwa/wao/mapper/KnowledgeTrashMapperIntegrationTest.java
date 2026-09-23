@@ -27,7 +27,7 @@ class KnowledgeTrashMapperIntegrationTest {
         jdbc.execute("DROP TABLE IF EXISTS kb_folder");
         jdbc.execute("DROP TABLE IF EXISTS kb");
         jdbc.execute("""
-                CREATE TABLE kb (
+                CREATE TABLE kb (directory_json VARCHAR(100000),
                     id VARCHAR(32) PRIMARY KEY,
                     name VARCHAR(128) NOT NULL,
                     project_id VARCHAR(32),
@@ -36,7 +36,7 @@ class KnowledgeTrashMapperIntegrationTest {
                 )
                 """);
         jdbc.execute("""
-                CREATE TABLE doc (
+                CREATE TABLE doc (rev INT DEFAULT 1,
                     id VARCHAR(32) PRIMARY KEY,
                     kb_id VARCHAR(32) NOT NULL,
                     folder_id VARCHAR(32) NOT NULL,
@@ -55,6 +55,16 @@ class KnowledgeTrashMapperIntegrationTest {
                     cascade_del TINYINT NOT NULL DEFAULT 0
                 )
                 """);
+    }
+
+    @Test
+    void directoryMovePreservesBodyAndArchiveAndInvalidatesStaleRevisions() {
+        jdbc.update("INSERT INTO doc(id,kb_id,folder_id,title,rev,archived_at) VALUES ('d1','k1','f1','保留正文',7,CURRENT_TIMESTAMP)");
+        assertThat(docMapper.moveDirectoryFolder("other", "d1", "f2")).isZero();
+        assertThat(docMapper.moveDirectoryFolder("k1", "d1", "f2")).isEqualTo(1);
+        Map<String, Object> moved = jdbc.queryForMap("SELECT title,folder_id,rev,archived_at FROM doc WHERE id='d1'");
+        assertThat(moved).containsEntry("TITLE", "保留正文").containsEntry("FOLDER_ID", "f2").containsEntry("REV", 8);
+        assertThat(moved.get("ARCHIVED_AT")).isNotNull();
     }
 
     @Test

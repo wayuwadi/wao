@@ -83,6 +83,13 @@ public class KbController {
         return ApiResponse.ok(null);
     }
 
+    /** 移动混合目录节点，保留子树。 */
+    @PutMapping("/{id}/directory-parent")
+    public ApiResponse<KbDto> moveDirectoryNode(@PathVariable String id,
+            @RequestBody cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest request) {
+        return ApiResponse.ok(knowledge.moveDirectoryNode(id, request));
+    }
+
     /** 保存文档树拖拽后的完整顺序，也支持文档跨文件夹移动。 */
     @PutMapping("/{id}/document-order")
     public ApiResponse<Void> reorderDocs(@PathVariable String id, @RequestBody ReorderDocsRequest request) {
