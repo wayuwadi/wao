@@ -220,6 +220,11 @@ public class KnowledgeService {
         return toDto(kb, folders, docIdsByFolder(docs));
     }
 
+    /** 返回数据库中真实的项目关联，供跨成员入口校验历史知识库可见性。 */
+    public String projectIdForKb(String id) {
+        return requireKb(id).getProjectId();
+    }
+
     /** 新建知识库，默认自带一个「文档」文件夹。 */
     @Transactional
     public KbDto createKb(CreateKbRequest req) {
