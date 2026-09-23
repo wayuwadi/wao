@@ -89,6 +89,25 @@ function pasteHtmlInto(el: Element, html: string) {
 }
 
 describe('MarkdownEditor（所见即所得）', () => {
+  it('按正文统计字形并在静默载入、编辑与撤销时更新', async () => {
+    setActivePinia(createPinia())
+    const w = await mountEditor({ modelValue: '**你好** [AB](https://example.com) 👨‍👩‍👧‍👦\n\n![图片](https://example.com/a.png)' })
+    const count = () => w.get('[aria-label="当前正文字数"]').text()
+    expect(count()).toBe('5 字')
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.chain().setTextSelection(2).insertContent('！').run()
+    await nextTick()
+    expect(count()).toBe('6 字')
+    e.commands.undo()
+    await nextTick()
+    expect(count()).toBe('5 字')
+    await w.setProps({ modelValue: '新正文\n\n123' })
+    expect(count()).toBe('6 字')
+    await w.setProps({ modelValue: '', readonly: true })
+    expect(count()).toBe('0 字')
+    w.unmount()
+  })
+
   async function tableEditor() {
     const w = await mountEditor({ modelValue: '', advanced: true, linkControls: true })
     const instance = w.vm as unknown as { editor: Editor; shouldShowSelection: (context: unknown) => boolean }
