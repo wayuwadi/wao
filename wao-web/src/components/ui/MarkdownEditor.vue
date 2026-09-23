@@ -1913,7 +1913,9 @@ onBeforeUnmount(() => {
         <i class="ri-image-add-line"></i><span>图片</span>
       </button>
     </div>
-    <div class="character-count" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">{{ characterCount.toLocaleString('zh-CN') }} 字</div>
+    <Teleport :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
+      <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">{{ characterCount.toLocaleString('zh-CN') }} 字</div>
+    </Teleport>
     <div v-if="drawingsOpen" class="link-dialog-mask" @click.self="drawingsOpen = false">
       <section class="link-dialog drawing-dialog" role="dialog" aria-modal="true" aria-label="插入画板">
         <header><div><small>个人画板</small><h2>引用 Excalidraw 草图</h2></div><button type="button" aria-label="关闭" @click="drawingsOpen = false"><i class="ri-close-line"></i></button></header>
@@ -2052,7 +2054,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.character-count { position:sticky; bottom:0; z-index:1; width:fit-content; max-width:100%; margin-left:auto; padding:4px 8px; border-radius:4px; background:var(--wao-bg-card,#fff); color:var(--wao-text-muted,#646a73); font-size:12px; line-height:20px; font-variant-numeric:tabular-nums; }
+.character-count { position:sticky; bottom:0; z-index:1; flex-shrink:0; width:fit-content; max-width:100%; margin-left:auto; padding:4px 8px; border-radius:4px; background:var(--wao-bg-card,#fff); color:var(--wao-text-weak,#646a73); font-size:12px; line-height:20px; font-variant-numeric:tabular-nums; }
+.character-count.docked { position:static; padding:3px 16px; }
 .polish-resume {
   position: sticky;
   bottom: 12px;
