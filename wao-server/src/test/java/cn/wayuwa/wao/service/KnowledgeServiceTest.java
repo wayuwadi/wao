@@ -973,10 +973,29 @@ class KnowledgeServiceTest {
         assertThatThrownBy(() -> service.getKb("nope")).isInstanceOf(NotFoundException.class);
     }
 
+    @Test
+    void moveDirectoryFolderUnderDocumentPersistsMixedHierarchy() {
+        KbEntity library = kb("k1");
+        KbFolderEntity first = new KbFolderEntity(); first.setId("f1"); first.setKbId("k1");
+        KbFolderEntity second = new KbFolderEntity(); second.setId("f2"); second.setKbId("k1");
+        when(kbMapper.selectById("k1")).thenReturn(library);
+        when(kbMapper.selectByIdForUpdate("k1")).thenReturn(library);
+        when(kbMapper.updateDirectory(eq("k1"), any())).thenReturn(1);
+        when(folderMapper.selectList(any())).thenReturn(List.of(first, second));
+        when(docMapper.selectList(any())).thenReturn(List.of(doc("d1", "k1", "f1"), doc("d2", "k1", "f2")));
+        var saved = service.moveDirectoryNode("k1", new cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest("f:f2", "d:d1", ""));
+        assertThat(saved.directory()).containsEntry("f:f2", "d:d1").containsEntry("d:d2", "f:f2");
+        assertThatThrownBy(() -> service.moveDirectoryNode("k1", new cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest("f:f1", "d:d2", "")))
+            .isInstanceOf(cn.wayuwa.wao.common.BadRequestException.class);
+        assertThatThrownBy(() -> service.moveDirectoryNode("k1", new cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest("f:f2", "f:f1", "")))
+            .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+    }
+
     // ---------------- 回收站 ----------------
 
     @Test
     void deleteDocMovesItToTrashInsteadOfDroppingTheRow() {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
         DocEntity d = doc("d1", "k1", "f1");
         when(docMapper.selectById("d1")).thenReturn(d);
 

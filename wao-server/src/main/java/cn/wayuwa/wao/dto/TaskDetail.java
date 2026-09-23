@@ -26,7 +26,35 @@ public record TaskDetail(
         /** 按时间顺序保存的 PDCA 轮次；空列表表示这条任务未启用 PDCA。 */
         List<PdcaCycle> pdcaCycles,
         /** 关联的人工上传 HTML 托管页 id；历史任务缺省为空。 */
+        List<String> hostedPages, String workItemType) {
+    /** 兼容未携带工作项类型的历史调用。 */
+    public TaskDetail(List<String> parts,
+        List<Step> steps,
+        List<Step> subs,
+        List<FileRef> files,
+        List<String> docs,
+        List<TaskLink> linkTasks,
+        List<CommentDto> comments,
+        List<CustomProp> custom,
+        List<Activity> activity,
+        List<ImageRef> images,
+
+        String groupId,
+
+        String startAt,
+
+        String endAt,
+
+        List<PdcaCycle> pdcaCycles,
+
         List<String> hostedPages) {
+        this(parts, steps, subs, files, docs, linkTasks, comments, custom, activity, images, groupId, startAt, endAt, pdcaCycles, hostedPages, null);
+    }
+    /** 返回指定工作项类型的副本。 */
+    public TaskDetail withWorkItemType(String type) {
+        return new TaskDetail(parts, steps, subs, files, docs, linkTasks, comments, custom, activity, images, groupId, startAt, endAt, pdcaCycles, hostedPages, type);
+    }
+
 
     /** 兼容尚未引入 HTML 关联的既有调用。 */
     public TaskDetail(List<String> parts, List<Step> steps, List<Step> subs, List<FileRef> files,

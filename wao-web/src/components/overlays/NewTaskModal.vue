@@ -10,7 +10,7 @@ import { priorityMeta } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-import type { Priority } from '@/types'
+import type { Priority, WorkItemType } from '@/types'
 
 const data = useDataStore()
 const session = useSessionStore()
@@ -44,6 +44,7 @@ const DRAFT_KEY = `${LEGACY_DRAFT_KEY}:account:${draftAccount}`
 const legacyDraftAvailable = ref(false)
 try { legacyDraftAvailable.value = !!localStorage.getItem(LEGACY_DRAFT_KEY) } catch { /* Keep the current form usable. */ }
 type Draft = {
+  workItemType?: WorkItemType
   title: string; project: string; owner: string; pr: Priority; due: string; desc: string
   scheduleMode: 'deadline' | 'range'; startAt: string; endAt: string
   pendingTaskId?: string | null
@@ -96,6 +97,7 @@ watch(() => session.members, (members) => {
     owner.value = members.some(member => member.id === session.currentUser.id) ? session.currentUser.id : members[0]!.id
   }
 }, { immediate: true })
+const workItemType = ref<WorkItemType>(draft.workItemType ?? 'task')
 const pr = ref<Priority>(draft.pr ?? ui.modalPriority ?? 'P2')
 // 日历双击某天进来时，截止日直接锁定那一天，优先于草稿里存的快捷选项。
 // 草稿里的 ISO 日期（上次从日历带入的）没有对应 pill，回落到「不设置」。
@@ -119,7 +121,7 @@ function saveDraft() {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       title: title.value, project: project.value, owner: owner.value,
-      pr: pr.value, due: due.value, desc: desc.value,
+      workItemType: workItemType.value, pr: pr.value, due: due.value, desc: desc.value,
       scheduleMode: scheduleMode.value, startAt: startAt.value, endAt: endAt.value,
       pendingTaskId: pendingTaskId.value,
     } satisfies Draft))
@@ -146,7 +148,7 @@ function restoreLegacyDraft() {
     legacyDraftAvailable.value = false
   } catch { toast('旧版草稿无法读取，原记录仍保留', 'ri-error-warning-line') }
 }
-watch([title, project, owner, pr, due, desc, scheduleMode, startAt, endAt], saveDraft, { flush: 'sync', immediate: !!source })
+watch([title, project, owner, workItemType, pr, due, desc, scheduleMode, startAt, endAt], saveDraft, { flush: 'sync', immediate: !!source })
 
 onBeforeUnmount(() => { if (draftTimer) clearTimeout(draftTimer) })
 
@@ -193,7 +195,7 @@ async function create() {
     return
   }
   const payload = {
-    title: name, project: project.value, pr: pr.value, owner: owner.value,
+    title: name, project: project.value, workItemType: workItemType.value, pr: pr.value, owner: owner.value,
     due: scheduleMode.value === 'range' ? startAt.value.slice(0, 10) : dueDate(due.value),
     startAt: scheduleMode.value === 'range' ? startAt.value : null,
     endAt: scheduleMode.value === 'range' ? endAt.value : null,
@@ -292,6 +294,8 @@ useOverlayDismiss(() => true, requestClose)
       </button>
     </div>
 
+    <label class="label">工作项类型</label>
+    <select v-model="workItemType" aria-label="工作项类型" class="compact-select"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select>
     <div class="two-col">
       <div>
         <div class="label">负责人</div>

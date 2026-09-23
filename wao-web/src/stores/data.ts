@@ -1030,11 +1030,14 @@ export const useDataStore = defineStore('data', () => {
   }
 
   /** 重命名文件夹；apiLive 时写透后端。 */
-  function renameFolder(kbId: string, folderId: string, name: string) {
-    const folder = kbById(kbId)?.folders.find((f) => f.id === folderId)
-    if (!folder) return
-    folder.name = name
-    if (apiLive.value) apiRenameFolder(kbId, folderId, name).catch(() => {})
+  async function renameFolder(kbId: string, folderId: string, name: string): Promise<boolean> {
+    if (!kbById(kbId)?.folders.some(f => f.id === folderId)) return false
+    try {
+      if (apiLive.value) await apiRenameFolder(kbId, folderId, name)
+      const folder = kbById(kbId)?.folders.find(f => f.id === folderId)
+      if (folder) folder.name = name
+      return true
+    } catch { return false }
   }
 
   /** 删除文件夹（连同其下文档）—— 后端移入回收站。 */
@@ -1042,6 +1045,7 @@ export const useDataStore = defineStore('data', () => {
     const kb = kbById(kbId)
     const folder = kb?.folders.find((f) => f.id === folderId)
     if (!kb || !folder) return
+    if (apiLive.value) await apiDeleteFolder(kbId, folderId)
     folder.docs.forEach((docId) => delete docs[docId])
     const archivedInFolder = (archivedDocIds.value[kbId] ?? [])
       .filter((docId) => docs[docId]?.folderId === folderId)
@@ -1051,18 +1055,12 @@ export const useDataStore = defineStore('data', () => {
       [kbId]: (archivedDocIds.value[kbId] ?? []).filter((docId) => !archivedInFolder.includes(docId)),
     }
     kb.folders = kb.folders.filter((f) => f.id !== folderId)
-    if (apiLive.value) {
-      try {
-        await apiDeleteFolder(kbId, folderId)
-      } catch {
-        /* 后端删除失败时不回滚 */
-      }
-    }
     void refreshTrash()
   }
 
   /** 删除文档 —— 后端移入回收站，7 天内可恢复。 */
   async function deleteDoc(id: string) {
+    if (apiLive.value) await apiDeleteDoc(id)
     kbs.value.forEach((k) => k.folders.forEach((f) => (f.docs = f.docs.filter((d) => d !== id))))
     delete docs[id]
     archivedDocIds.value = Object.fromEntries(Object.entries(archivedDocIds.value)
@@ -1071,13 +1069,6 @@ export const useDataStore = defineStore('data', () => {
     docEdits.value = rest
     localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value))
     void removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
-    if (apiLive.value) {
-      try {
-        await apiDeleteDoc(id)
-      } catch {
-        /* 后端删除失败时不回滚 */
-      }
-    }
     void refreshTrash()
   }
 
@@ -1627,7 +1618,7 @@ export const useDataStore = defineStore('data', () => {
   /** 新建任务负载：核心字段 + 可选描述 / 内嵌图片 / 落点分组。 */
   type NewTaskPayload = Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'> &
     Pick<Task, 'desc' | 'images' | 'groupId' | 'startAt' | 'endAt'> &
-    Partial<Pick<Task, 'pdcaCycles' | 'docs'>>
+    Partial<Pick<Task, 'pdcaCycles' | 'docs' | 'workItemType'>>
 
   /** 新建任务的即时本地记录与最终落库结果。 */
   interface NewTaskResult {

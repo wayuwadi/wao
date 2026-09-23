@@ -130,7 +130,7 @@ function commitRename() {
           <i :class="expanded ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
         </button>
         <span v-else class="tree-spacer"></span>
-        <WorkItemIcon :kind="task.parentTaskId ? 'subtask' : 'task'" />
+        <WorkItemIcon :kind="task.workItemType || 'task'" />
         <input
           v-if="editingTitle"
           ref="titleInput"

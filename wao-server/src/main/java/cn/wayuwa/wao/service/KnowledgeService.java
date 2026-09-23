@@ -367,7 +367,19 @@ public class KnowledgeService {
      */
     @Transactional
     public void deleteFolder(String kbId, String folderId, String memberId) {
+        kbMapper.selectByIdForUpdate(kbId);
         KbFolderEntity folder = requireFolder(kbId, folderId);
+        List<KbFolderEntity> liveFolders = folderMapper.selectList(aliveFolders().eq(KbFolderEntity::getKbId, kbId));
+        List<DocEntity> liveDocs = docMapper.selectList(aliveDocs().eq(DocEntity::getKbId, kbId));
+        Map<String, String> links = directoryParents(requireKb(kbId), liveFolders, liveDocs);
+        for (KbFolderEntity child : liveFolders) {
+            String cursor = links.get("f:" + child.getId());
+            Set<String> seen = new HashSet<>();
+            while (cursor != null && !cursor.isEmpty() && seen.add(cursor)) {
+                if (cursor.equals("f:" + folderId)) throw new BadRequestException("请先移出子分组，再删除当前分组");
+                cursor = links.get(cursor);
+            }
+        }
         LocalDateTime now = LocalDateTime.now();
         folder.setDeletedAt(now);
         folder.setCascadeDel(false);
@@ -707,7 +719,8 @@ public class KnowledgeService {
      */
     @Transactional
     public void reorderDocs(String kbId, ReorderDocsRequest request) {
-        requireKb(kbId);
+        KbEntity orderingKb = requireKb(kbId);
+        if (!directoryOverrides(orderingKb).isEmpty()) throw new ConflictException("此知识库已使用多级目录，请刷新并通过目录节点移动");
         if (request == null || request.folders() == null) {
             throw new BadRequestException("文档顺序不能为空");
         }
@@ -1387,8 +1400,11 @@ public class KnowledgeService {
      * @param id       文档 id
      * @param memberId 操作人 member id
      */
+    @Transactional
     public void deleteDoc(String id, String memberId) {
         DocEntity e = requireDoc(id);
+        kbMapper.selectByIdForUpdate(e.getKbId());
+        requireNoNestedChildren(e.getKbId(), "d:" + id);
         markDocDeleted(e, LocalDateTime.now(), memberId, false);
     }
 
@@ -1399,8 +1415,11 @@ public class KnowledgeService {
      * @param memberId 操作人 member id
      * @return 已归档文档
      */
+    @Transactional
     public DocDto archiveDoc(String id, String memberId) {
         DocEntity e = requireDoc(id);
+        kbMapper.selectByIdForUpdate(e.getKbId());
+        requireNoNestedChildren(e.getKbId(), "d:" + id);
         if (e.getArchivedAt() == null) {
             LocalDateTime now = LocalDateTime.now();
             if (docMapper.markArchived(id, now, memberId) != 1) {
@@ -1645,13 +1664,73 @@ public class KnowledgeService {
                 Collectors.mapping(DocEntity::getId, Collectors.toList())));
     }
 
+    private Map<String, String> directoryOverrides(KbEntity kb) {
+        if (kb.getDirectoryJson() == null || kb.getDirectoryJson().isBlank()) return Map.of();
+        try { return json.readValue(kb.getDirectoryJson(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {}); }
+        catch (java.io.IOException ex) { throw new IllegalStateException("知识库目录数据无法读取", ex); }
+    }
+
+    private Map<String, String> directoryParents(KbEntity kb, List<KbFolderEntity> folders, List<DocEntity> docs) {
+        Map<String, String> parents = new java.util.LinkedHashMap<>();
+        for (KbFolderEntity folder : folders) parents.put("f:" + folder.getId(), "");
+        for (DocEntity doc : docs) parents.put("d:" + doc.getId(), "f:" + doc.getFolderId());
+        directoryOverrides(kb).forEach((node, parent) -> {
+            if (parents.containsKey(node) && (parent.isEmpty() || parents.containsKey(parent))) parents.put(node, parent);
+        });
+        return parents;
+    }
+
+    /** 原子移动分组或文档，保留整个子树，串行校验当前父级并拒绝循环与跨库引用。 */
+    @Transactional
+    public KbDto moveDirectoryNode(String kbId, cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest request) {
+        requireKb(kbId);
+        KbEntity kb = kbMapper.selectByIdForUpdate(kbId);
+        if (kb == null || kb.getDeletedAt() != null) throw new NotFoundException("知识库不存在");
+        List<KbFolderEntity> folders = folderMapper.selectList(aliveFolders().eq(KbFolderEntity::getKbId, kbId));
+        List<DocEntity> docs = docMapper.selectList(aliveDocs().eq(DocEntity::getKbId, kbId));
+        Map<String, String> parents = directoryParents(kb, folders, docs);
+        if (request == null || !parents.containsKey(request.node()) || request.parent() == null
+                || (!request.parent().isEmpty() && !parents.containsKey(request.parent()))) {
+            throw new BadRequestException("目录节点不存在或不属于当前知识库");
+        }
+        if (!Objects.equals(parents.get(request.node()), request.expectedParent())) {
+            throw new ConflictException("目录已在其他窗口移动，请刷新后重试");
+        }
+        parents.put(request.node(), request.parent());
+        KnowledgeDirectory.validate(parents);
+        if (docs.stream().anyMatch(doc -> doc.getArchivedAt() != null
+                && (("d:" + doc.getId()).equals(request.node()) || ("d:" + doc.getId()).equals(request.parent())))) {
+            throw new ConflictException("文档已归档，请刷新目录后重试");
+        }
+        for (DocEntity doc : docs) {
+            String folder = KnowledgeDirectory.folderOf("d:" + doc.getId(), parents);
+            if (!folder.equals(doc.getFolderId())) {
+                if (docMapper.moveDirectoryFolder(kbId, doc.getId(), folder) != 1) {
+                    throw new ConflictException("目录已变化，请刷新后重试");
+                }
+            }
+        }
+        String directory = write(parents);
+        if (kbMapper.updateDirectory(kbId, directory) != 1) throw new ConflictException("知识库已变化，请刷新后重试");
+        kb.setDirectoryJson(directory);
+        return getKb(kbId);
+    }
+
+    private void requireNoNestedChildren(String kbId, String node) {
+        KbEntity kb = requireKb(kbId);
+        Map<String, String> parents = directoryParents(kb,
+                folderMapper.selectList(aliveFolders().eq(KbFolderEntity::getKbId, kbId)),
+                docMapper.selectList(aliveDocs().eq(DocEntity::getKbId, kbId)));
+        if (parents.containsValue(node)) throw new BadRequestException("请先移出子分组或子文档，再删除或归档当前节点");
+    }
+
     private KbDto toDto(KbEntity kb, List<KbFolderEntity> folders, Map<String, List<String>> docIdsByFolder) {
         List<FolderDto> folderDtos = folders.stream()
                 .map(f -> new FolderDto(f.getId(), f.getName(), docIdsByFolder.getOrDefault(f.getId(), List.of())))
                 .toList();
         return new KbDto(kb.getId(), kb.getName(), kb.getIcon(), kb.getColor(), null,
                 kb.getAuto(), kb.getDescription(), folderDtos, kb.getGroupId(), kb.getPerm(),
-                Boolean.TRUE.equals(kb.getNotes()));
+                Boolean.TRUE.equals(kb.getNotes()), directoryOverrides(kb));
     }
 
     private DocDto toDto(DocEntity e) {

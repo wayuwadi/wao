@@ -38,7 +38,7 @@ CREATE TABLE personal_memory (
     updated_at TIMESTAMP NOT NULL
 );
 
-CREATE TABLE kb (
+CREATE TABLE kb (directory_json VARCHAR(100000),
     id VARCHAR(32) PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
     icon VARCHAR(64),

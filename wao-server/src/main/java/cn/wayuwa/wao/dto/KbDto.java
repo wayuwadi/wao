@@ -15,5 +15,9 @@ public record KbDto(
         String group,
         String perm,
         /** 是否为小记知识库：全局「新建小记」的默认落点，不可删除。 */
-        Boolean notes) {
+        Boolean notes, java.util.Map<String, String> directory) {
+    public KbDto(String id, String name, String icon, String color, String project, Boolean auto,
+            String desc, List<FolderDto> folders, String group, String perm, Boolean notes) {
+        this(id, name, icon, color, project, auto, desc, folders, group, perm, notes, java.util.Map.of());
+    }
 }

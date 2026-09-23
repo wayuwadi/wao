@@ -133,7 +133,7 @@ public class TaskService {
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                 List.of(new Activity("ri-add-line", "#9A9DA9", "创建了任务", now(), createdBy)),
                 nn(req.images()), StringUtils.hasText(req.groupId()) ? req.groupId() : null,
-                startAt, endAt, pdcaCycles);
+                startAt, endAt, pdcaCycles).withWorkItemType(workItemType(req.workItemType(), null));
         e.setDetailJson(write(detail));
         taskMapper.insert(e);
         announceCreated(e, createdBy);
@@ -190,7 +190,7 @@ public class TaskService {
 
         TaskDetail updated = new TaskDetail(d.parts(), d.steps(), d.subs(), d.files(), d.docs(),
                 d.linkTasks(), d.comments(), d.custom(), activity, d.images(), d.groupId(),
-                d.startAt(), d.endAt(), d.pdcaCycles(), d.hostedPages());
+                d.startAt(), d.endAt(), d.pdcaCycles(), d.hostedPages(), d.workItemType());
         e.setDetailJson(write(updated));
         taskMapper.updateById(e);
         announceCollecting(e, previousStatus, memberId);
@@ -263,7 +263,7 @@ public class TaskService {
         SubtaskTree.validate(dto.subs());
         TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
                 dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images(),
-                dto.groupId(), startAt, endAt, pdcaCycles, dto.hostedPages());
+                dto.groupId(), startAt, endAt, pdcaCycles, dto.hostedPages(), workItemType(dto.workItemType(), previous));
         e.setDetailJson(write(detail));
         if (previous == null) {
             taskMapper.insert(e);
@@ -603,7 +603,7 @@ public class TaskService {
         activity.add(0, edit(activityText, memberId));
         entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
                 detail.linkTasks(), comments, detail.custom(), activity, detail.images(), detail.groupId(),
-                detail.startAt(), detail.endAt(), detail.pdcaCycles(), detail.hostedPages())));
+                detail.startAt(), detail.endAt(), detail.pdcaCycles(), detail.hostedPages(), detail.workItemType())));
         taskMapper.updateById(entity);
     }
 
@@ -660,6 +660,15 @@ public class TaskService {
         return numbers.attach(List.of(rawDto(e))).get(0);
     }
 
+    private String workItemType(String requested, TaskEntity previous) {
+        String type = requested != null ? requested : previous == null ? "task" : parse(previous.getDetailJson()).workItemType();
+        if (type == null) return "task";
+        if (!java.util.Set.of("task", "requirement", "bug").contains(type)) {
+            throw new cn.wayuwa.wao.common.BadRequestException("工作项类型必须是需求、任务或缺陷");
+        }
+        return type;
+    }
+
     private TaskDto rawDto(TaskEntity e) {
         TaskDetail d = parse(e.getDetailJson());
         return new TaskDto(
@@ -670,7 +679,7 @@ public class TaskService {
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
                 d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()),
-                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs())).withEditVersion(editVersion(e)).withParentTaskId(e.getParentTaskId());
+                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs())).withEditVersion(editVersion(e)).withParentTaskId(e.getParentTaskId()).withWorkItemType(d.workItemType() == null ? "task" : d.workItemType());
     }
 
     /**
