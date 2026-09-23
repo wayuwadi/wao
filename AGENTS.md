@@ -96,6 +96,10 @@ https://wao.wayuwa.cn/api/share/tasks/<taskId>.md?openOnly=true
 - 不覆盖已有规格；需求变化通过新规格或 ADR 记录
 - 不修改已执行的 Flyway migration，数据库变更必须新增 migration
 
+## WAO 工作区 MCP 同步
+
+项目、任务或知识库的业务能力发生变化时，检查是否需要同步 `wao-server/src/main/java/cn/wayuwa/wao/service/WorkspaceMcpTools.java` 的工具定义、调用分发与权限测试，以及 `docs/specs/wao-workspace-mcp.md`。不要将新 Web API 自动暴露给旧令牌；以实时 `tools/list` 为 AI 客户端的可用能力依据。
+
 ## 体验验收原则
 
 - AI 在本地连接线上数据库完成真实用户链路验收，不能只以接口返回、编译通过或页面能打开代替验收；发布后的线上验收交由用户，不重复执行。

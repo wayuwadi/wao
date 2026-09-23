@@ -1,0 +1,46 @@
+package cn.wayuwa.wao.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import cn.wayuwa.wao.common.NotFoundException;
+import cn.wayuwa.wao.domain.WorkspaceMcpTokenEntity;
+import cn.wayuwa.wao.mapper.WorkspaceMcpTokenMapper;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+class WorkspaceMcpTokenServiceTest {
+    private final WorkspaceMcpTokenMapper mapper = mock(WorkspaceMcpTokenMapper.class);
+    private final WorkspaceMcpTokenService tokens = new WorkspaceMcpTokenService(mapper);
+
+    @Test
+    void storesOnlyDigestAndKeepsReadWriteScope() {
+        when(mapper.selectCount(any())).thenReturn(0L);
+        ArgumentCaptor<WorkspaceMcpTokenEntity> captured = ArgumentCaptor.forClass(WorkspaceMcpTokenEntity.class);
+
+        var created = tokens.create("wd", "本机 Codex", true);
+
+        verify(mapper).insert(captured.capture());
+        var row = captured.getValue();
+        assertThat(created.secret()).matches("wao_workspace_[A-Za-z0-9_-]{43}");
+        assertThat(row.getTokenHash()).matches("[0-9a-f]{64}").doesNotContain(created.secret());
+        assertThat(row.getCanWrite()).isTrue();
+        assertThat(created.token().tokenPrefix()).isEqualTo(created.secret().substring(0, 18));
+        when(mapper.selectOne(any())).thenReturn(row);
+        assertThat(tokens.authenticate(created.secret()).memberId()).isEqualTo("wd");
+        assertThat(tokens.authenticate(created.secret()).canWrite()).isTrue();
+        assertThat(tokens.authenticate("wao_mcp_old-memory-token")).isNull();
+    }
+
+    @Test
+    void neverRevokesAnotherMembersToken() {
+        var row = new WorkspaceMcpTokenEntity(); row.setId("t1"); row.setMemberId("wg");
+        when(mapper.selectById("t1")).thenReturn(row);
+        assertThatThrownBy(() -> tokens.revoke("wd", "t1"))
+                .isInstanceOf(NotFoundException.class);
+    }
+}

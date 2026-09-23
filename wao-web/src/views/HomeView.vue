@@ -37,6 +37,7 @@ import {
 } from '@/api/ai'
 import HomeStartGuide from '@/components/home/HomeStartGuide.vue'
 import HomeDailyWorkspace from '@/components/home/HomeDailyWorkspace.vue'
+import WorkspaceMcpConnectCard from '@/components/home/WorkspaceMcpConnectCard.vue'
 import CodexBenefitsPanel from '@/components/ai/CodexBenefitsPanel.vue'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
@@ -1299,6 +1300,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <HomeDailyWorkspace />
+      <WorkspaceMcpConnectCard />
       <HomeStartGuide />
       <section class="ai-entry" aria-label="AI Run 实验功能">
         <div><h2>AI Run <span>{{ activeRuns.length ? `${activeRuns.length} 项进行中` : '实验功能 · 按需展开' }}</span></h2><p v-if="aiAreaOpen">日常开发优先在本地电脑完成；需要体验自动执行时再展开。</p><p v-else-if="activeRuns.length">{{ activeRuns[0]?.taskTitle }} · {{ activeRuns[0]?.latestProgress || '查看运行进度' }}</p></div>
