@@ -98,6 +98,30 @@ public class FeishuWebhookNotifier {
         }
     }
 
+    /**
+     * 将重置卡增加事件投递到现有默认飞书群；其他系统通知仍保留站内路由。
+     * @param card 已确认的重置卡增加通知
+     * @return 飞书明确确认接收时为 true；关闭、缺少配置或失败时为 false，供调用方保留基线重试
+     */
+    public boolean notifyResetCardIncrease(Card card) {
+        if (!notificationSettings.allows(policy -> policy.automation())) return false;
+        try {
+            EffectiveTarget destination = target();
+            if (!destination.enabled() || destination.url() == null || destination.url().isBlank()) return false;
+            JsonNode response = rawCardClient.post().uri(destination.url()).contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("msg_type", "interactive", "card", card.toPayload()))
+                    .retrieve().body(JsonNode.class);
+            boolean accepted = response != null && (response.has("code") || response.has("StatusCode"))
+                    && response.path("code").asInt(response.path("StatusCode").asInt(-1)) == 0;
+            if (!accepted) log.warn("重置卡增加通知未获飞书确认，保留基线等待重试");
+            return accepted;
+        } catch (RuntimeException ex) {
+            // 不记录异常正文，避免 HTTP 错误包含 Webhook 凭据。
+            log.warn("重置卡增加通知投递失败，保留基线等待重试：{}", ex.getClass().getSimpleName());
+            return false;
+        }
+    }
+
     /** 原群目标已退休，所有系统通知进入 WAO 通知中心。 */
     public boolean notifyCard(String webhookId, Card card) {
         return notifyCard(card);

@@ -28,6 +28,39 @@ class FeishuWebhookNotifierTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"'{\"code\":0}',true", "'{\"StatusCode\":0}',true", "'{}',false", "'{\"code\":19001}',false"})
+    void resetCardIncreaseRequiresConfirmedFeishuDelivery(String response, boolean accepted) {
+        var webhooks = mock(FeishuWebhookConfigService.class);
+        var policy = mock(NotificationSettingsService.class);
+        when(policy.allows(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        when(webhooks.defaultTarget()).thenReturn(Optional.of(
+                new FeishuWebhookConfigService.NotificationTarget("fw1", "默认群", "https://open.feishu.test/hook", true)));
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://open.feishu.test/hook")).andExpect(method(POST))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("2 张 → 3 张")))
+                .andRespond(withSuccess(response, org.springframework.http.MediaType.APPLICATION_JSON));
+        var sender = new FeishuWebhookNotifier(mock(SettingService.class), webhooks, policy, builder, "", null);
+        assertThat(sender.notifyResetCardIncrease(FeishuWebhookNotifier.Card.simple(
+                "Codex 重置卡已增加", "green", "2 张 → 3 张"))).isEqualTo(accepted);
+        server.verify();
+    }
+
+    @Test
+    void resetCardIncreaseRespectsQuietAndDisabledTarget() {
+        var webhooks = mock(FeishuWebhookConfigService.class);
+        var policy = mock(NotificationSettingsService.class);
+        var sender = new FeishuWebhookNotifier(mock(SettingService.class), webhooks, policy, RestClient.builder(), "", null);
+        var card = FeishuWebhookNotifier.Card.simple("重置卡", "green", "2 张 → 3 张");
+        assertThat(sender.notifyResetCardIncrease(card)).isFalse();
+        verifyNoInteractions(webhooks);
+        when(policy.allows(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        when(webhooks.defaultTarget()).thenReturn(Optional.of(
+                new FeishuWebhookConfigService.NotificationTarget("fw1", "默认群", "https://open.feishu.test/hook", false)));
+        assertThat(sender.notifyResetCardIncrease(card)).isFalse();
+    }
+
     @Test
     void rawCardRequiresExplicitSuccessNotEmptyBody() throws Exception {
         RestClient.Builder builder = RestClient.builder();
