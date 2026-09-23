@@ -34,14 +34,15 @@ class QuotaRefreshNotificationServiceTest {
         resetState.setSnapshotJson("[{\"key\":\"reset-cards\",\"label\":\"可用重置卡\",\"remainingPercent\":123,\"resetsAt\":null}]");
         when(mapper.selectForUpdate("runner-account:wage@example.com:reset-cards")).thenReturn(resetState);
         when(notificationSettings.allows(any())).thenReturn(true);
-        when(notifier.notifyCard(any())).thenReturn(true);
+        when(notifier.notifyResetCardIncrease(any())).thenReturn(true);
         var base = report(20);
         var current = new RunnerCodexQuotaReport(base.accountEmail(), base.plan(), base.credits(), base.limits(),
                 new cn.wayuwa.wao.dto.CodexResetCreditsDto(125, List.of()));
         service.observeRunner("rn1", current);
         service.observeRunner("rn2", current);
         var card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
-        verify(notifier).notifyCard(card.capture());
+        verify(notifier).notifyResetCardIncrease(card.capture());
+        verify(notifier, never()).notifyCard(any());
         assertThat(card.getValue().title()).isEqualTo("Codex 重置卡已增加");
         assertThat(card.getValue().body()).contains("123 张 → 125 张").doesNotContain("125%");
     }
@@ -57,6 +58,25 @@ class QuotaRefreshNotificationServiceTest {
         assertThat(saved.getValue().getSnapshotJson())
                 .contains("\"remainingPercent\":80")
                 .doesNotContain("token");
+        verify(notifier, never()).notifyCard(any());
+    }
+
+    @Test
+    void failedResetCardDeliveryRetriesUntilFeishuConfirmsAndThenDeduplicates() {
+        var state = new QuotaRefreshNotificationStateEntity();
+        state.setSnapshotJson("[{\"key\":\"reset-cards\",\"label\":\"可用重置卡\",\"remainingPercent\":2,\"resetsAt\":null}]");
+        when(mapper.selectForUpdate("runner-account:wage@example.com:reset-cards")).thenReturn(state);
+        when(notificationSettings.allows(any())).thenReturn(true);
+        when(notifier.notifyResetCardIncrease(any())).thenReturn(false, true);
+        var base = report(20);
+        var current = new RunnerCodexQuotaReport(base.accountEmail(), base.plan(), base.credits(), base.limits(),
+                new cn.wayuwa.wao.dto.CodexResetCreditsDto(3, List.of()));
+        service.observeRunner("rn1", current);
+        assertThat(state.getSnapshotJson()).contains("\"remainingPercent\":2");
+        service.observeRunner("rn2", current);
+        assertThat(state.getSnapshotJson()).contains("\"remainingPercent\":3");
+        service.observeRunner("rn1", current);
+        verify(notifier, org.mockito.Mockito.times(2)).notifyResetCardIncrease(any());
         verify(notifier, never()).notifyCard(any());
     }
 
