@@ -15,6 +15,9 @@ import type { ModuleId } from '@/types'
 import type { RouteLocationNormalized } from 'vue-router'
 
 describe('侧边栏导航配置', () => {
+  it('知识库页签保留所选文档，切回后继续编辑同一篇', () => {
+    expect(tabFromRoute(router.resolve('/kb/kb-notes?doc=d1') as RouteLocationNormalized)?.path).toBe('/kb/kb-notes?doc=d1')
+  })
   it('首页后固定提供全量导航入口，默认侧栏只保留高频功能', () => {
     expect(NAV_GROUPS.find((group) => group.label === '')?.items).toEqual(['home', 'ai-sessions', 'chatgpt', 'notes', 'navigation'])
     expect(MODULES.navigation.path).toBe('/navigation')
