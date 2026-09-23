@@ -4,6 +4,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
+import { useTaskOrderStore } from '@/stores/taskOrder'
 import { seedDataStore } from './helpers/seedDataStore'
 import { apiPatchProject } from '@/api/board'
 
@@ -15,6 +17,11 @@ vi.mock('@/api/board', async (importOriginal) => ({
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
   fetchTaskAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
+}))
+vi.mock('@/api/favorites', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/favorites')>(),
+  fetchPreference: vi.fn().mockResolvedValue('[]'),
+  savePreference: vi.fn().mockResolvedValue(undefined),
 }))
 
 const router = createRouter({
@@ -144,7 +151,8 @@ describe('项目分组视图', () => {
     wrapper.unmount()
   })
 
-  it('reorders tasks when one group row is dropped onto another', async () => {
+  it('分组任务行拖放只调整当前成员顺序，不改共享任务顺序', async () => {
+    useSessionStore().account = { member: { id: 'wg' } } as never
     const wrapper = await mountGroupView()
     const before = data.tasksByProject('p1').filter((task) => task.status !== '已完成')
     expect(before.length).toBeGreaterThanOrEqual(2)
@@ -153,8 +161,11 @@ describe('项目分组视图', () => {
     await rows[1]!.trigger('dragstart')
     await rows[0]!.trigger('drop')
 
-    const after = data.tasksByProject('p1').filter((task) => task.status !== '已完成')
-    expect(after[0]!.id).toBe(before[1]!.id)
+    await flushPromises()
+    expect(wrapper.findAll('.grow')[0]!.text()).toContain(before[1]!.title)
+    expect(useTaskOrderStore().state('project:p1').ids[0]).toBe(before[1]!.id)
+    expect(data.tasksByProject('p1').filter((task) => task.status !== '已完成').map(task => task.id))
+      .toEqual(before.map(task => task.id))
     wrapper.unmount()
   })
 })

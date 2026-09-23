@@ -16,6 +16,11 @@ vi.mock('@/api/ai', () => ({
   fetchTaskAiRuns: vi.fn<() => Promise<never[]>>().mockResolvedValue([]),
   pauseAiRun: vi.fn<() => Promise<Record<string, never>>>().mockResolvedValue({}),
 }))
+vi.mock('@/api/favorites', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/favorites')>(),
+  fetchPreference: vi.fn().mockResolvedValue('[]'),
+  savePreference: vi.fn().mockResolvedValue(undefined),
+}))
 
 function makeRouter() {
   return createRouter({
@@ -173,7 +178,8 @@ describe('项目表格：本轮体验优化', () => {
     await row.get(`[aria-label="为 ${task.title} 添加子任务"]`).trigger('click')
     await flushPromises()
 
-    const subRows = wrapper.get('.table-subs').findAll('tr')
+    const subRows = wrapper.findAll('.table-subs')
+      .find(section => section.find('.sub-add-row').exists())!.findAll('tr.sub-add-row, tr.inline-sub-row')
     expect(subRows[0]!.classes()).toContain('sub-add-row')
     await wrapper.get('.sub-add-row input').setValue('新来的')
     await wrapper.get('.sub-add-row form').trigger('submit')

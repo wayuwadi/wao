@@ -7,10 +7,16 @@ import { useSessionStore } from '@/stores/session'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
+import { useTaskOrderStore } from '@/stores/taskOrder'
 import { seedDataStore } from './helpers/seedDataStore'
 import projectDetailSource from '@/views/ProjectDetailView.vue?raw'
 
 vi.mock('@/api/ai', () => ({ createAiRuns: vi.fn<() => Promise<never[]>>().mockResolvedValue([]) }))
+vi.mock('@/api/favorites', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/favorites')>(),
+  fetchPreference: vi.fn().mockResolvedValue('[]'),
+  savePreference: vi.fn().mockResolvedValue(undefined),
+}))
 
 const router = createRouter({
   history: createMemoryHistory(),
@@ -75,26 +81,25 @@ describe('项目页聚焦任务', () => {
     refreshed.unmount()
   })
 
-  it('表格实际拖放形成任务树，折叠和移回顶层入口可用', async () => {
+  it('表格拖放调整个人顺序，不改变任务树与共享任务顺序', async () => {
     const data = useDataStore(), tasks = data.tasksByProject('p1')
     const parent = tasks[0]!, child = tasks[1]!
-    const move = vi.spyOn(data, 'moveTask').mockImplementation(async (id, parentId) => { data.taskById(id)!.parentTaskId = parentId })
+    const sharedOrder = tasks.map(task => task.id)
+    useSessionStore().account = { member: { id: 'wg' } } as never
+    const move = vi.spyOn(data, 'moveTask')
     await router.push('/projects/p1?view=list')
     const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
     await flushPromises()
-    const children = () => wrapper.findAll('.task-row').filter(row => row.text().includes(child.title))
+    const rows = () => wrapper.findAll('.task-row')
     const transfer = { setData: vi.fn(), getData: () => '', effectAllowed: '' }
-    await children()[0]!.trigger('dragstart', { dataTransfer: transfer })
-    const parentRow = wrapper.findAll('.task-row').find(row => row.text().includes(parent.title))!
+    await rows().find(row => row.text().includes(child.title))!.trigger('dragstart', { dataTransfer: transfer })
+    const parentRow = rows().find(row => row.text().includes(parent.title))!
     await parentRow.trigger('drop', { dataTransfer: transfer, clientY: 0 }); await flushPromises()
-    expect(move).toHaveBeenCalledWith(child.id, parent.id)
-    const toggle = wrapper.get(`[aria-label="展开或收起 ${parent.title} 的子任务"]`)
-    expect(children()).toHaveLength(1)
-    await toggle.trigger('click'); expect(children()).toHaveLength(0)
-    await toggle.trigger('click'); expect(children()).toHaveLength(1)
-    await children()[0]!.get('[aria-label="移回顶层"]').trigger('click'); await flushPromises()
-    expect(move).toHaveBeenCalledWith(child.id, null)
-    expect(children()).toHaveLength(1)
+    expect(rows()[0]!.text()).toContain(child.title)
+    expect(useTaskOrderStore().state('project:p1').ids[0]).toBe(child.id)
+    expect(data.tasksByProject('p1').map(task => task.id)).toEqual(sharedOrder)
+    expect(child.parentTaskId ?? null).toBeNull()
+    expect(move).not.toHaveBeenCalled()
     wrapper.unmount(); move.mockRestore()
   })
 
