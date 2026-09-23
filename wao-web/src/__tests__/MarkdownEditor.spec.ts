@@ -108,6 +108,23 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('划选正文时显示选中字数，取消划选后恢复全文数字', async () => {
+    const w = await mountEditor({ modelValue: '中文 A 👨‍👩‍👧‍👦！' })
+    const count = () => w.get('[aria-label="当前正文字数"]').text()
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    expect(count()).toBe('5 字')
+    e.commands.setTextSelection({ from: 1, to: 3 })
+    await nextTick()
+    expect(count()).toBe('已选中 2 字 · 全文 5 字')
+    e.commands.setTextSelection({ from: 1, to: e.state.doc.content.size - 1 })
+    await nextTick()
+    expect(count()).toBe('已选中 5 字 · 全文 5 字')
+    e.commands.setTextSelection(1)
+    await nextTick()
+    expect(count()).toBe('5 字')
+    w.unmount()
+  })
+
   async function tableEditor() {
     const w = await mountEditor({ modelValue: '', advanced: true, linkControls: true })
     const instance = w.vm as unknown as { editor: Editor; shouldShowSelection: (context: unknown) => boolean }
@@ -293,14 +310,14 @@ describe('MarkdownEditor（所见即所得）', () => {
     host.querySelector<HTMLButtonElement>('button[title="粗体"]')!.click()
     await nextTick()
     expect(e.getHTML()).toContain('<strong>正文</strong>')
-    expect(host.querySelector('[aria-label="当前正文字数"]')?.textContent).toBe('2 字')
+    expect(host.querySelector('[aria-label="当前正文字数"]')?.textContent?.trim()).toBe('已选中 2 字 · 全文 2 字')
     await w.setProps({ readonly: true, modelValue: '正文更新' })
-    expect(host.querySelector('[aria-label="当前正文字数"]')?.textContent).toBe('4 字')
+    expect(host.querySelector('[aria-label="当前正文字数"]')?.textContent?.trim()).toBe('已选中 2 字 · 全文 4 字')
     expect(host.querySelector('.editor-tools')).toBeNull()
     await w.setProps({ readonly: false })
     await w.setProps({ toolbarTarget: null })
     expect(host.querySelector('[aria-label="当前正文字数"]')).toBeNull()
-    expect(w.get('[aria-label="当前正文字数"]').text()).toBe('4 字')
+    expect(w.get('[aria-label="当前正文字数"]').text()).toBe('已选中 2 字 · 全文 4 字')
     expect((w.vm as unknown as { editor: Editor }).editor).toBe(e)
     expect(w.find('.toolbar-toggle').exists()).toBe(true)
     expect(w.get('.advanced-toolbar').isVisible()).toBe(false)

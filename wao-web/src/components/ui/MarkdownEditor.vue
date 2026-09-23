@@ -490,6 +490,7 @@ const editor = useEditor({
 
 const selectionMenuEl = ref<HTMLElement | null>(null)
 const selectedText = ref('')
+const selectedCharacterCount = computed(() => countCharacters(selectedText.value))
 const selectionCanLink = ref(false)
 const selectionMenuParent = () => window.document.body
 const selectionDismissed = ref(false)
@@ -1914,7 +1915,9 @@ onBeforeUnmount(() => {
       </button>
     </div>
     <Teleport :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
-      <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">{{ characterCount.toLocaleString('zh-CN') }} 字</div>
+      <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
+        <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
+      </div>
     </Teleport>
     <div v-if="drawingsOpen" class="link-dialog-mask" @click.self="drawingsOpen = false">
       <section class="link-dialog drawing-dialog" role="dialog" aria-modal="true" aria-label="插入画板">
