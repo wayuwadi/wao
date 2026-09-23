@@ -338,7 +338,7 @@ function mountHome() {
   })
   const pinia = createPinia()
   const data = useDataStore(pinia)
-  return { data, router, pinia, wrapper: mount(HomeView, { global: { plugins: [pinia, router] } }) }
+  return { data, router, pinia, wrapper: mount(HomeView, { attachTo: document.body, global: { plugins: [pinia, router] } }) }
 }
 
 function pasteInto(el: Element, files: File[]) {
@@ -350,18 +350,18 @@ function pasteInto(el: Element, files: File[]) {
 }
 
 describe('HomeView AI 控制台', () => {
-  it('额度权益默认常驻首页，独立于折叠的 AI Run 并可收起', async () => {
+  it('额度摘要常驻首页，详情默认折叠且可展开', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
     expect(wrapper.get('.quota-summary').text()).toContain('Codex 周剩余 38%')
-    expect(wrapper.get('#home-quota-details').isVisible()).toBe(true)
+    expect(wrapper.get('#home-quota-details').isVisible()).toBe(false)
     expect(wrapper.get('#home-ai-area').isVisible()).toBe(false)
     expect(wrapper.find('.home-glance .codex-benefits').exists()).toBe(true)
     await wrapper.get('.quota-summary button').trigger('click')
-    expect(wrapper.get('#home-quota-details').attributes('style')).toContain('display: none')
-    await wrapper.get('.quota-summary button').trigger('click')
     expect(wrapper.get('#home-quota-details').isVisible()).toBe(true)
+    await wrapper.get('.quota-summary button').trigger('click')
+    expect(wrapper.get('#home-quota-details').isVisible()).toBe(false)
     wrapper.unmount()
   })
 

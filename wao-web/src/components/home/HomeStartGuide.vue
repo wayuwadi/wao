@@ -5,12 +5,12 @@ import { toast } from '@/composables/toast'
 import HomeParticleBackdrop from './HomeParticleBackdrop.vue'
 
 const session = useSessionStore()
-const collapsed = ref(false)
+const collapsed = ref(true)
 const key = (memberId: string) => `wao-home-start-collapsed:${memberId}`
 watch(() => session.userId, (memberId) => {
-  collapsed.value = false
+  collapsed.value = true
   if (!memberId) return
-  try { collapsed.value = localStorage.getItem(key(memberId)) === '1' }
+  try { collapsed.value = localStorage.getItem(key(memberId)) !== '0' }
   catch { /* 无法读取偏好时仍展示真实起步入口。 */ }
 }, { immediate: true })
 function toggle() {
@@ -35,7 +35,8 @@ const starts = [
 <template>
   <section class="start-guide" :class="{ 'is-collapsed': collapsed }" aria-labelledby="home-start-title">
     <header>
-      <div><h2 id="home-start-title">从一件小事开始</h2><p v-if="!collapsed">选一个起点，也可以收起引导，继续使用首页。</p></div>
+      <div><h2 id="home-start-title">{{ collapsed ? '快捷入口' : '从一件小事开始' }}</h2><p v-if="!collapsed">选一个起点，也可以收起引导，继续使用首页。</p></div>
+      <nav v-if="collapsed" aria-label="首页快捷入口"><RouterLink v-for="start in starts" :key="start.path" :to="start.path"><i :class="start.icon" />{{ start.title }}</RouterLink></nav>
       <button type="button" :aria-expanded="!collapsed" aria-controls="home-start-options" @click="toggle">{{ collapsed ? '展开起步引导' : '收起起步引导' }}</button>
     </header>
     <HomeParticleBackdrop :active="!collapsed" />
@@ -54,6 +55,7 @@ const starts = [
 .start-guide { position: relative; isolation: isolate; overflow: hidden; padding: 26px 24px 48px; border: 1px solid #164878; border-radius: 16px; background: radial-gradient(ellipse at 100% 100%, #20a9d4 0%, transparent 58%), linear-gradient(120deg, #061f51, #074a91); color: #fff; }
 .start-guide::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(#91c9ff08 1px, transparent 1px), linear-gradient(90deg, #91c9ff08 1px, transparent 1px); background-size: 48px 48px; }
 .start-guide.is-collapsed { padding: 18px 24px; }
+.start-guide.is-collapsed{padding:10px 16px;background:var(--wao-bg-card);border-color:var(--wao-line);color:var(--wao-text)}.is-collapsed::before{display:none}.is-collapsed header{flex-wrap:wrap}.is-collapsed header>div h2{font-size:13px;font-weight:500}.is-collapsed header button{background:transparent;border-color:var(--wao-line-control);color:var(--wao-text-2);font-size:12px;padding:5px 8px;margin-left:auto}.is-collapsed nav{display:flex;gap:18px;flex-wrap:wrap}.is-collapsed nav a{margin:0;font-size:12px;color:var(--wao-primary-text);gap:5px}.is-collapsed :is(a,button):focus-visible{outline-color:var(--wao-primary)}
 header { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 h2 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: 1px; }
 .is-collapsed h2 { font-size: 16px; }

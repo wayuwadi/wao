@@ -84,7 +84,6 @@ watch(
   },
 )
 onMounted(() => {
-  if (kb.value) tabs.setMeta(`kb:${kbId.value}`, { label: kb.value.name, icon: kb.value.icon })
   void knowledgeFavorites.load()
 })
 
@@ -92,6 +91,12 @@ onMounted(() => {
 const doc = computed(() => (docId.value && data.docById(docId.value)
   && data.docById(docId.value)?.bodyLoaded !== false ? data.docOf(docId.value) : null))
 const base = computed(() => doc.value?.base ?? null)
+// 同一知识库仍复用一个页签，标题和地址指向当前文档，避免与“小记”模块同名。
+watch([() => data.docs[docId.value ?? '']?.title, () => kb.value?.name, docId], () => {
+  if (!kb.value) return
+  const title = data.docs[docId.value ?? '']?.title
+  tabs.setMeta(`kb:${kbId.value}`, { label: docId.value ? title || '未命名文档' : kb.value.name, icon: kb.value.icon })
+}, { immediate: true })
 const archivedDocs = computed(() => data.archivedDocsOf(kbId.value))
 const currentArchived = computed(() => Boolean(docId.value && data.isDocArchived(docId.value)))
 

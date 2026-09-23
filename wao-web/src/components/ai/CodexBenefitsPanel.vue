@@ -5,7 +5,7 @@ import type { CodexQuotaAccount } from '@/api/ai'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { useSessionStore } from '@/stores/session'
 
-const emit = defineEmits<{ attention: [message: string] }>()
+const emit = defineEmits<{ attention: [message: string]; summary: [message: string] }>()
 const session = useSessionStore()
 const props = defineProps<{ compact?: boolean; accounts?: CodexQuotaAccount[] }>()
 const officialAccounts = computed(() => (props.accounts ?? []).filter(account => account.resetCredits))
@@ -26,6 +26,12 @@ const daysLeft = computed(() => saved.value.proExpiresOn ? benefitDaysLeft(saved
 const expiryLabel = computed(() => daysLeft.value === null ? '到期日未设置'
   : daysLeft.value < 0 ? `已到期 ${-daysLeft.value} 天`
     : daysLeft.value === 0 ? '今天到期' : `剩 ${daysLeft.value} 天`)
+watch(() => {
+  const cards = officialAccounts.value.length
+    ? officialAccounts.value.map(account => `${account.resetCredits!.availableCount} 张${account.fresh ? '' : '（历史快照）'}`).join(' / ')
+    : loaded.value && saved.value.resetCards !== null ? `${saved.value.resetCards} 张（手工）` : '未同步'
+  return `重置卡 ${cards} · Pro ${loaded.value ? expiryLabel.value : loading.value ? '读取中…' : '未读取'}`
+}, message => emit('summary', message), { immediate: true })
 // 折叠容器仍需提示错误、未完成编辑和手工记录的到期提醒。
 watch(() => error.value ? '权益记录需处理'
   : draftWarning.value ? '权益草稿需处理'
