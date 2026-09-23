@@ -48,6 +48,7 @@ import { rotateImage } from '@/utils/rotateImage'
 import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/editorSelectionTask'
 import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
 import { toast } from '@/composables/toast'
+import { countCharacters } from '@/utils/characterCount'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
 import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
@@ -361,6 +362,11 @@ function restorePolish() {
   } catch { /* 无效缓存不覆盖正文。 */ }
 }
 const editorReady = ref(!props.advanced)
+const characterCount = ref(0)
+function updateCharacterCount(e: Editor) {
+  // 从正文读取，避免把 Markdown 标记、图片地址和附件元数据计入创作量。
+  characterCount.value = countCharacters(e.state.doc.textContent)
+}
 const toolbarOpen = ref(false)
 
 const editor = useEditor({
@@ -453,9 +459,13 @@ const editor = useEditor({
     },
   },
   onCreate: ({ editor: e }) => nextTick(() => {
+    updateCharacterCount(e)
     editorReady.value = true
     if (props.autofocus && !props.readonly && !e.isDestroyed) e.commands.focus('start', { scrollIntoView: false })
   }),
+  onTransaction: ({ editor: e, transaction }) => {
+    if (transaction.docChanged) updateCharacterCount(e)
+  },
   onUpdate: ({ editor: e }) => {
     tableMenu.value = null
     selectionDismissed.value = false
@@ -1903,6 +1913,7 @@ onBeforeUnmount(() => {
         <i class="ri-image-add-line"></i><span>图片</span>
       </button>
     </div>
+    <div class="character-count" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">{{ characterCount.toLocaleString('zh-CN') }} 字</div>
     <div v-if="drawingsOpen" class="link-dialog-mask" @click.self="drawingsOpen = false">
       <section class="link-dialog drawing-dialog" role="dialog" aria-modal="true" aria-label="插入画板">
         <header><div><small>个人画板</small><h2>引用 Excalidraw 草图</h2></div><button type="button" aria-label="关闭" @click="drawingsOpen = false"><i class="ri-close-line"></i></button></header>
@@ -2041,6 +2052,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.character-count { position:sticky; bottom:0; z-index:1; width:fit-content; max-width:100%; margin-left:auto; padding:4px 8px; border-radius:4px; background:var(--wao-bg-card,#fff); color:var(--wao-text-muted,#646a73); font-size:12px; line-height:20px; font-variant-numeric:tabular-nums; }
 .polish-resume {
   position: sticky;
   bottom: 12px;
