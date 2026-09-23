@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import TaskOrderStatus from './TaskOrderStatus.vue'
+import { useTaskOrderStore } from '@/stores/taskOrder'
+import { taskDropAfter } from '@/utils/taskDrop'
 import { computed, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
@@ -11,6 +14,9 @@ import type { Priority, Task } from '@/types'
 const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
+const order = useTaskOrderStore()
+const orderScope = computed(() => props.projectId ? `project:${props.projectId}` : 'all')
+const orderingOver = ref<{ id: string; after: boolean } | null>(null)
 const ui = useUiStore()
 const { decoTask } = useDeco()
 const { begin, cancel, isSettling } = useSettle()
@@ -24,7 +30,7 @@ const busy = (id: string) => savingIds.value.includes(id) || data.taskSaveState(
 // 完成请求未落库或失败时仍留在原象限，始终提供重试入口。
 const sections = computed(() => TASK_QUADRANTS.map((quadrant) => ({
   ...quadrant,
-  tasks: props.tasks.filter((task) => task.pr === quadrant.priority && (props.showDone
+  tasks: order.sort(orderScope.value, props.tasks, t => t.id).filter((task) => task.pr === quadrant.priority && (props.showDone
     || task.status !== '已完成' || isSettling(task.id) || busy(task.id) || data.taskSaveState(task.id) === 'error'))
     .map(decoTask),
 })))
@@ -57,11 +63,19 @@ function startDrag(event: DragEvent, id: string) {
     event.dataTransfer.setData('text/plain', id)
   }
 }
-function endDrag() { dragId.value = null; dropTarget.value = null }
+function endDrag() { dragId.value = null; dropTarget.value = null; orderingOver.value = null }
 function drop(priority: Priority) {
   const id = dragId.value
   endDrag()
   if (id && props.tasks.some((task) => task.id === id)) void setPriority(id, priority)
+}
+async function dropOnTask(event: DragEvent, target: Task) {
+  const id = dragId.value, after = taskDropAfter(event)
+  endDrag()
+  const source = props.tasks.find(t => t.id === id)
+  if (!source || source.id === target.id || busy(source.id)) return
+  if (source.pr !== target.pr) await setPriority(source.id, target.pr)
+  await order.move(orderScope.value, props.tasks.map(t => t.id), source.id, target.id, after)
 }
 function createTask(priority: Priority) {
   ui.openModal('task', props.projectId ?? '')
@@ -72,7 +86,7 @@ function createTask(priority: Priority) {
 <template>
   <div class="quadrant-view">
     <div class="quadrant-toolbar">
-      <span><i class="ri-drag-move-2-line"></i>拖动任务调整象限</span>
+      <TaskOrderStatus :scope="orderScope" />
       <button v-if="doneCount" :aria-expanded="showDone" @click="emit('update:showDone', !showDone)">{{ showDone ? '收起' : '展开' }}已完成 · {{ doneCount }}</button>
     </div>
     <div class="quadrants" :class="{ expanded }">
@@ -92,8 +106,10 @@ function createTask(priority: Priority) {
         </header>
         <div class="quadrant-list" tabindex="0" :aria-label="`${section.label}任务列表`">
           <article v-for="task in section.tasks" :key="task.id" class="quadrant-task"
-            :class="{ done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id) }"
-            :draggable="!busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag">
+            :class="{ done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
+            :draggable="!busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag"
+            @dragover.prevent.stop="orderingOver = dragId && dragId !== task.id ? { id: task.id, after: taskDropAfter($event) } : null"
+            @dragleave="orderingOver = null" @drop.prevent.stop="dropOnTask($event, task)">
             <button v-if="selectionMode" class="quadrant-select" :aria-label="`选择任务 ${task.title}`" :aria-pressed="selectedIds.includes(task.id)"
               @click="emit('select', task.id)"><i :class="selectedIds.includes(task.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <button v-else class="quadrant-complete" :aria-label="`${task.status === '已完成' ? '重新打开' : '完成任务'} ${task.title}`"
@@ -130,6 +146,8 @@ function createTask(priority: Priority) {
 </template>
 
 <style scoped>
+.quadrant-task.order-before { box-shadow: inset 0 2px var(--wao-primary); }
+.quadrant-task.order-after { box-shadow: inset 0 -2px var(--wao-primary); }
 .quadrant-view { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .quadrant-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin: 4px 0 6px; font-size: 12px; color: var(--wao-text-weak); }
 .quadrant-toolbar > span { display: inline-flex; align-items: center; gap: 6px; }
