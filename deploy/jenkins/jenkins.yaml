@@ -167,7 +167,8 @@ jobs:
                 branch('*/main')
                 extensions {
                   cloneOptions {
-                    shallow(false)
+                    shallow(true)
+                    depth(1)
                     noTags(true)
                     honorRefspec(true)
                     timeout(20)
