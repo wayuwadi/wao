@@ -111,11 +111,10 @@ class DeploymentRoutingConfigTest {
         String pipeline = readFromRepository("Jenkinsfile");
 
         assertThat(pipeline)
-                .contains("env.WAO_FAILURE_STAGE = 'Validate release inputs'")
-                .contains("env.WAO_FAILURE_STAGE = 'Backend tests'")
-                .contains("env.WAO_FAILURE_STAGE = 'Build immutable release'")
-                .contains("env.WAO_FAILURE_STAGE = 'Deploy Linux slave, master and cloud'")
-                .contains("env.WAO_FAILURE_STAGE = 'Apply Jenkins controller configuration'")
+                .contains("env.WAO_FAILURE_STAGE = '确定发布范围'")
+                .contains("env.WAO_FAILURE_STAGE = '打包构建'")
+                .contains("env.WAO_FAILURE_STAGE = '部署并验收'")
+                .contains("env.WAO_FAILURE_STAGE = '同步运维配置'")
                 .contains("Jenkins 失败：${env.WAO_FAILURE_STAGE.trim()}")
                 .contains("github-status.sh failure \"$WAO_STATUS_DESCRIPTION\"");
     }

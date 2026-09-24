@@ -27,7 +27,7 @@ COPY wao-gateway/src wao-gateway/src
 COPY agent-server/src agent-server/src
 # Runner 脚本会被打包进 wao-server，后台一键分发更新到各执行电脑。
 COPY deploy/ai-runner/wao-ai-runner.py deploy/ai-runner/wao-ai-runner.py
-RUN mvn -B -pl wao-server,wao-gateway,agent-server -am package -DskipTests
+RUN mvn -B -pl wao-server,wao-gateway,agent-server -am package -Dmaven.test.skip=true
 
 FROM eclipse-temurin:17-jre-alpine AS runtime
 ARG ALPINE_MIRROR_HOST=dl-cdn.alpinelinux.org
