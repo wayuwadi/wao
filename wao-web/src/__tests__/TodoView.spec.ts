@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import TodoView from '@/views/TodoView.vue'
 import { useDataStore } from '@/stores/data'
@@ -60,6 +60,22 @@ describe('TodoView', () => {
     expect(wrapper.findAll('.seg-btn').map((button) => button.text())).toEqual(['列表', '看板', '四象限'])
     expect(wrapper.find('.pdca-view').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('PDCA')
+    wrapper.unmount()
+  })
+
+  it('列表与看板都能对命中的任务打开同一组右键操作', async () => {
+    const wrapper = mount(TodoView)
+    const row = wrapper.get('.trow')
+    const title = row.get('.trow-title').text()
+    await row.trigger('contextmenu', { clientX: 90, clientY: 90 })
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(`任务：${title}的操作`)
+    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('复制任务编号')
+    await wrapper.findAll('.seg-btn')[1]!.trigger('click')
+    const board = wrapper.findAll('.board-card').find(card => card.get('.bc-title').text() === title)!
+    await board.trigger('contextmenu')
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(`任务：${title}的操作`)
     wrapper.unmount()
   })
 
