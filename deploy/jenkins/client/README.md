@@ -48,3 +48,8 @@ Linux2 的 Jenkins 非登录服务不会继承维护用户的代理变量。Wind
 HTTP(S) 代理，否则使用既有 `127.0.0.1:7897` 出口，并把代理传入构建镜像及运行容器；这修复
 NSIS 工具从 GitHub 下载时的 TLS EOF，也避免 Rust 依赖绕过既有出口。迁移构建主机时需显式
 设置该主机的 `HTTP_PROXY` / `HTTPS_PROXY`，不要关闭 TLS 验证来绕过网络错误。
+
+正式发布用 Git 对象校验 `HEAD` 与此次 SCM 拉取的 `refs/remotes/origin/main` 完全一致，
+不依赖 Jenkins 插件可能返回完整 ref 或未注入的 `GIT_BRANCH` 字符串。缺少 main ref 或
+检出其他提交均拒绝发布。客户端不需要历史变更范围，SCM 只浅克隆 main 的一个提交，
+避免清理工作区后重新下载全部历史。
