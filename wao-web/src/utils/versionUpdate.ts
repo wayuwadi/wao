@@ -5,5 +5,6 @@ export interface WebUpdateEventDetail {
 }
 
 export function reloadToLatestVersion() {
-  window.location.reload()
+  // App owns the save barrier for tasks, forms and beforeunload guards.
+  window.dispatchEvent(new Event('wao-workspace-reload'))
 }

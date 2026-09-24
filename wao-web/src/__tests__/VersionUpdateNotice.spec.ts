@@ -15,39 +15,42 @@ afterEach(() => {
 })
 
 describe('新版本升级提示', () => {
-  it('收到真实版本事件后展示提示并由用户刷新', async () => {
+  it('收到版本事件后仅显示右上角通知，保留输入焦点，由用户决定更新', async () => {
     const wrapper = mount(VersionUpdateNotice, { attachTo: document.body })
+    const input = document.createElement('textarea')
+    input.value = '尚未保存的记录'
+    document.body.append(input)
+    input.focus()
 
     document.body.dispatchEvent(
       new CustomEvent(WEB_UPDATE_EVENT, { detail: { version: 'abc12345' } }),
     )
     await nextTick()
 
-    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!
-    expect(dialog.textContent).toContain('版本更新')
-    expect(dialog.textContent).toContain('检测到新版本已发布')
-    expect(document.activeElement?.textContent?.trim()).toBe('立即刷新')
+    const notice = document.body.querySelector<HTMLElement>('.version-update-notice')!
+    expect(notice.getAttribute('role')).toBe('status')
+    expect(notice.textContent).toContain('发现新版本')
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('尚未保存的记录')
+    expect(reloadToLatestVersion).not.toHaveBeenCalled()
 
-    document.body.querySelector<HTMLButtonElement>('.version-update-refresh')!.click()
+    notice.querySelector('button')!.click()
     expect(reloadToLatestVersion).toHaveBeenCalledOnce()
     wrapper.unmount()
   })
 
-  it('稍后提醒会隐藏同一版本，空版本事件不会误报', async () => {
+  it('重复版本事件不会叠加通知，空版本事件不会误报', async () => {
     const wrapper = mount(VersionUpdateNotice, { attachTo: document.body })
     const notify = (version?: string) =>
       document.body.dispatchEvent(new CustomEvent(WEB_UPDATE_EVENT, { detail: { version } }))
 
     notify('new-version')
     await nextTick()
-    document.body.querySelector<HTMLButtonElement>('.version-update-later')!.click()
-    await nextTick()
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-
     notify('new-version')
     notify('')
     await nextTick()
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelectorAll('.version-update-notice')).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -60,6 +63,6 @@ describe('新版本升级提示', () => {
     )
     await nextTick()
 
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.querySelector('.version-update-notice')).toBeNull()
   })
 })
