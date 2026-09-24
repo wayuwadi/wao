@@ -14,6 +14,8 @@ import {
   type WorkspaceSummary,
 } from '@/api/workspaces'
 import type { Project } from '@/types'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 
 const session = useSessionStore()
 let owner = session.userId
@@ -69,11 +71,17 @@ const visibleGroups = computed(() => {
     }))
     .filter((group) => !normalizedSearch.value || group.links.length > 0)
 })
+const workspaceResults = computed(() => visibleGroups.value.flatMap((group) => group.links))
+const { page: linkPage, pageCount: linkPageCount, visible: visibleLinks } = useClientPagination(workspaceResults, [search, activeId])
+const pagedGroups = computed(() => visibleGroups.value.map((group) => ({
+  ...group, links: group.links.filter((link) => visibleLinks.value.some((visible) => visible.id === link.id)),
+})).filter((group) => group.links.length || (!normalizedSearch.value && linkPageCount.value === 1)))
 const favoriteLinks = computed(() =>
   (active.value?.groups.flatMap((group) => group.links) ?? [])
     .filter((link) => link.favorite && matchesSearch(link))
     .sort((left, right) => left.order - right.order),
 )
+const { page: favoritePage, pageCount: favoritePageCount, visible: visibleFavorites } = useClientPagination(favoriteLinks, [search, activeId])
 const totalLinks = computed(
   () => active.value?.groups.reduce((sum, group) => sum + group.links.length, 0) ?? 0,
 )
@@ -546,7 +554,7 @@ onMounted(loadAll)
           </div>
           <div class="link-grid compact">
             <a
-              v-for="link in favoriteLinks"
+              v-for="link in visibleFavorites"
               :key="link.id"
               class="link-card"
               :href="link.url"
@@ -559,9 +567,10 @@ onMounted(loadAll)
               ><i class="ri-arrow-right-up-line open-icon"></i
             ></a>
           </div>
+          <WaoPagination v-if="favoritePageCount > 1" v-model:page="favoritePage" :page-count="favoritePageCount" :total="favoriteLinks.length" aria-label="常用收藏分页" />
         </section>
 
-        <section v-for="group in visibleGroups" :key="group.id" class="group-section">
+        <section v-for="group in pagedGroups" :key="group.id" class="group-section">
           <div class="section-title">
             <i :class="group.icon"></i>
             <h3>{{ group.name }}</h3>
@@ -587,6 +596,7 @@ onMounted(loadAll)
           </div>
           <div v-else-if="!search" class="group-empty">这个分组还没有链接</div>
         </section>
+        <WaoPagination v-if="linkPageCount > 1" v-model:page="linkPage" :page-count="linkPageCount" :total="workspaceResults.length" aria-label="链接空间查询结果分页" />
         <section v-if="search && !visibleGroups.length" class="state-card">
           <i class="ri-search-eye-line"></i><b>没有匹配“{{ search }}”的链接</b>
         </section>

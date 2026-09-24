@@ -13,12 +13,16 @@ import {
 import { toast } from '@/composables/toast'
 import { useSessionStore } from '@/stores/session'
 import { formatDecisionContent, parseDecisionContent } from '@/utils/decisionContent'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 
 const session = useSessionStore()
 const decisions = ref<MemoryDocument[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const query = ref('')
+const decisionResults = computed(() => decisions.value)
+const { page: decisionPage, pageCount: decisionPageCount, visible: visibleDecisions } = useClientPagination(decisionResults, [query])
 const editorOpen = ref(false)
 const editing = ref<MemoryDocument | null>(null)
 const saving = ref(false)
@@ -371,7 +375,7 @@ onMounted(load)
     </section>
 
     <section v-else class="decision-list" aria-live="polite">
-      <article v-for="item in decisions" :key="item.id" class="decision-card">
+      <article v-for="item in visibleDecisions" :key="item.id" class="decision-card">
         <header><div><span>确认决策 · v{{ item.revision.versionNo }}</span><h2>{{ item.revision.title }}</h2></div><i class="ri-route-line"></i></header>
         <dl>
           <template v-if="details(item).situation"><dt>何时适用</dt><dd>{{ details(item).situation }}</dd></template>
@@ -384,6 +388,8 @@ onMounted(load)
         </footer>
       </article>
     </section>
+
+    <WaoPagination v-if="!loading && !loadError && decisionPageCount > 1" v-model:page="decisionPage" :page-count="decisionPageCount" :total="decisions.length" aria-label="决策查询结果分页" />
 
     <Teleport to="body">
       <dialog ref="archiveDialog" class="archive-dialog" aria-labelledby="archive-title" aria-describedby="archive-description" @cancel.prevent="cancelArchive">

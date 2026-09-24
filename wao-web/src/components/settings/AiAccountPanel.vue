@@ -2,6 +2,8 @@
 import DeepSeekPolicyPanel from './DeepSeekPolicyPanel.vue'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { toast } from '@/composables/toast'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import {
   fetchAiAccounts, createAiAccount, updateAiAccount, deleteAiAccount, syncAiAccount,
   startAiAccountLogin, completeAiAccountLogin, fetchAiAccountLoginStatus,
@@ -90,6 +92,7 @@ const filteredAccounts = computed(() => {
     return providerOk && statusOk && searchOk
   })
 })
+const { page: accountPage, pageCount: accountPageCount, visible: visibleAccounts } = useClientPagination(filteredAccounts, [query, providerFilter, statusFilter])
 
 const login = ref<AiAccountLoginStart | null>(null)
 const loginProvider = ref<OAuthProvider | null>(null)
@@ -536,7 +539,7 @@ watch(() => true, load, { immediate: true })
       <div v-else-if="filteredAccounts.length === 0" class="empty-state"><i class="ri-search-eye-line"></i><b>没有符合筛选条件的账号</b></div>
       <div v-else class="account-grid">
         <article
-          v-for="account in filteredAccounts"
+          v-for="account in visibleAccounts"
           :key="account.id"
           class="account-card"
           :class="{
@@ -620,6 +623,7 @@ watch(() => true, load, { immediate: true })
           </div>
         </article>
       </div>
+      <WaoPagination v-if="loaded && accountPageCount > 1" v-model:page="accountPage" :page-count="accountPageCount" :total="filteredAccounts.length" aria-label="AI 账号查询结果分页" />
     </section>
 
     <section v-if="hasForm" class="editor-card">

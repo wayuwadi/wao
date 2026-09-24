@@ -12,6 +12,8 @@ import { useTabsStore } from '@/stores/tabs'
 import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import { readSubtaskDrag } from '@/utils/subtaskTree'
@@ -170,6 +172,8 @@ function onDropReorder(overId: string, event?: DragEvent) {
 }
 
 const pd = computed(() => (project.value ? decoProj(project.value) : null))
+const activity = computed(() => pd.value?.activity ?? [])
+const { page: activityPage, pageCount: activityPageCount, visible: visibleActivity } = useClientPagination(activity, [pid])
 const ptasks = computed(() => taskOrder.sort(orderScope.value, project.value ? data.tasksByProject(project.value.id) : [], t => t.id))
 const linkedDocs = computed(() => {
   const ids = new Set(ptasks.value.flatMap(task => [
@@ -1038,7 +1042,7 @@ watch(visibleTaskIds, (ids) => {
 
     <!-- 动态 -->
     <div v-else class="feed-card">
-      <div v-for="(ac, i) in pd.activity" :key="i" class="feed-row bordered">
+      <div v-for="(ac, i) in visibleActivity" :key="`${activityPage}-${i}`" class="feed-row bordered">
         <i :class="ac.icon" :style="{ color: ac.color }"></i>
         <div class="feed-main">
           <div class="feed-text lg">{{ ac.text }}</div>
@@ -1046,6 +1050,7 @@ watch(visibleTaskIds, (ids) => {
         </div>
       </div>
       <div v-if="!pd.activity.length" class="feed-empty">还没有动态——创建任务、完成任务、沉淀文档都会记录在这里。</div>
+      <WaoPagination v-if="activityPageCount > 1" v-model:page="activityPage" :page-count="activityPageCount" :total="activity.length" aria-label="项目动态分页" />
     </div>
 
     <ProjectSettingsModal

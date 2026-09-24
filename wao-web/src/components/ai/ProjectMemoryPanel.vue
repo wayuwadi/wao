@@ -6,6 +6,8 @@ import {
   type SaveProjectMemoryPayload,
 } from '@/api/projectMemories'
 import { toast } from '@/composables/toast'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import type { ProjectMemory, ProjectMemoryCategory } from '@/types'
 
 const props = defineProps<{ projectId: string }>()
@@ -16,6 +18,8 @@ const loading = ref(true)
 const loadError = ref('')
 const query = ref('')
 const category = ref('')
+const memoryResults = computed(() => items.value)
+const { page: memoryPage, pageCount: memoryPageCount, visible: visibleMemories } = useClientPagination(memoryResults, [query, category, () => props.projectId])
 const editorOpen = ref(false)
 const editingId = ref<string | null>(null)
 const saveState = ref<'idle' | 'draft' | 'saving' | 'saved' | 'error'>('idle')
@@ -43,7 +47,11 @@ async function load() {
   try {
     items.value = await fetchProjectMemories(props.projectId, query.value.trim(), category.value)
     const selected = typeof route.query.memory === 'string' ? route.query.memory : ''
-    if (selected) await nextTick(() => document.getElementById(`memory-${selected}`)?.scrollIntoView({ block: 'center' }))
+    if (selected) {
+      const index = items.value.findIndex((item) => item.id === selected)
+      if (index >= 0) memoryPage.value = Math.floor(index / 10) + 1
+      await nextTick(() => document.getElementById(`memory-${selected}`)?.scrollIntoView({ block: 'center' }))
+    }
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '工程记忆加载失败，请重试'
   } finally {
@@ -191,7 +199,7 @@ onMounted(load)
       <i class="ri-brain-line"></i><b>还没有已发布的项目记忆</b><span>AI 交付后只会生成候选，由负责人或管理员在记忆中心审核发布。</span>
     </div>
     <div v-else class="memory-list">
-      <article v-for="memory in items" :key="memory.id" :id="`memory-${memory.id}`" :class="{ selected: route.query.memory === memory.id }">
+      <article v-for="memory in visibleMemories" :key="memory.id" :id="`memory-${memory.id}`" :class="{ selected: route.query.memory === memory.id }">
         <div class="memory-head">
           <span class="category">{{ categoryLabel(memory.category) }}</span>
           <h3>{{ memory.title }}</h3>
@@ -215,6 +223,7 @@ onMounted(load)
         </div>
       </article>
     </div>
+    <WaoPagination v-if="!loading && !loadError && memoryPageCount > 1" v-model:page="memoryPage" :page-count="memoryPageCount" :total="items.length" aria-label="项目工程记忆分页" />
 
     <div v-if="editorOpen" class="editor-mask" @click.self="closeEditor">
       <section class="editor" role="dialog" aria-modal="true" aria-labelledby="memory-editor-title">
