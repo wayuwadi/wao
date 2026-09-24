@@ -261,15 +261,17 @@ onMounted(() => void loadPins())
       <section ref="notesList" class="notes-list" aria-label="小记清单">
         <div class="list-toolbar">
           <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"></label>
+          <button class="manage-tags-toggle" :aria-expanded="managingTags" @click="managingTags = !managingTags">管理标签</button>
           <label class="sort"><i class="ri-sort-desc"></i><select v-model="sort" aria-label="小记排序"><option value="updated">更新时间排序</option><option value="created">创建时间排序</option></select></label>
           <button class="refresh" :disabled="loading" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i class="ri-refresh-line"></i></button>
         </div>
         <div class="tags-toolbar" aria-label="按标签筛选">
-          <button class="tag-filter" :aria-pressed="selectedTag === ''" @click="selectedTag = ''">全部标签</button>
-          <button v-for="tag in availableTags" :key="tag" class="tag-filter" :aria-pressed="selectedTag === tag" @click="selectedTag = selectedTag === tag ? '' : tag">{{ tag }} <span>{{ tagCounts.get(tag) ?? 0 }}</span></button>
-          <button class="tag-filter" :aria-pressed="selectedTag === null" @click="selectedTag = selectedTag === null ? '' : null">无标签 <span>{{ notes.filter(note => !note.tags?.length).length }}</span></button>
+          <div class="tag-filter-scroll">
+            <button class="tag-filter" :aria-pressed="selectedTag === ''" @click="selectedTag = ''">全部标签</button>
+            <button v-for="tag in availableTags" :key="tag" class="tag-filter" :aria-pressed="selectedTag === tag" @click="selectedTag = selectedTag === tag ? '' : tag">{{ tag }} <span>{{ tagCounts.get(tag) ?? 0 }}</span></button>
+            <button class="tag-filter" :aria-pressed="selectedTag === null" @click="selectedTag = selectedTag === null ? '' : null">无标签 <span>{{ notes.filter(note => !note.tags?.length).length }}</span></button>
+          </div>
           <button class="new-tag-toggle" :aria-expanded="addingTag" @click="addingTag = !addingTag"><i class="ri-add-line"></i>新增标签</button>
-          <button :aria-expanded="managingTags" @click="managingTags = !managingTags">管理标签</button>
         </div>
         <div v-if="managingTags" class="new-tag-form" aria-label="标签管理">
           <select v-model="sourceTag" aria-label="待处理标签" :disabled="tagSaving"><option value="">选择标签</option><option v-for="tag in availableTags" :key="tag" :value="tag">{{ tag }}</option></select>
@@ -351,18 +353,21 @@ h1 i { color: #7a5cc6; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
 .notes-list { min-width: 0; padding: 16px 20px; border-left: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .list-toolbar, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
-.list-toolbar { flex-wrap: wrap; margin-bottom: 16px; gap: 8px; }
+.list-toolbar { flex-wrap: wrap; margin-bottom: 10px; gap: 8px; }
 button, a, select { color: var(--wao-text-3); font-size: 12px; }
 button { cursor: pointer; border: 0; border-radius: 7px; background: transparent; padding: 7px 9px; }
 button:hover, button[aria-pressed="true"] { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
 button:disabled { cursor: default; opacity: .5; }
-.search { margin-left: auto; flex: 1; min-width: 140px; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 7px 10px; gap: 6px; }
+.search { flex: 0 1 50%; min-width: 140px; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 7px 10px; gap: 6px; }
 input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: inherit; font-size: 12px; }
 .search:focus-within { border-color: var(--wao-primary); }
-.sort { gap: 3px; }
+.manage-tags-toggle { flex: none; white-space: nowrap; }
+.sort { gap: 3px; margin-left: auto; }
 select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-card); cursor: pointer; }
-.tags-toolbar { display: flex; gap: 7px; flex-wrap: wrap; max-height: 128px; overflow: auto; padding: 2px 0; }
-.tag-filter { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); max-width: 100%; overflow-wrap: anywhere; }
+.tags-toolbar { display: flex; align-items: flex-start; gap: 5px; min-width: 0; }
+.tags-toolbar button { flex: none; padding: 4px 7px; font-size: 11px; line-height: 1.3; white-space: nowrap; }
+.tag-filter-scroll { display: flex; gap: 5px; min-width: 0; overflow-x: auto; padding: 2px 0 5px; }
+.tag-filter { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); }
 .tag-filter span { color: var(--wao-text-faint); margin-left: 4px; }
 .new-tag-toggle { border: 1px dashed var(--wao-line-control); }
 .new-tag-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
@@ -370,7 +375,7 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .new-tag-form button { background: var(--wao-primary); color: white; }
 .new-tag-form .error { flex-basis: 100%; }
 .tag-status { font-size: 12px; color: var(--wao-text-faint); }
-.list-summary { display: flex; justify-content: space-between; gap: 10px; margin: 18px 0 12px; font-size: 11px; color: var(--wao-text-faint); }
+.list-summary { display: flex; justify-content: space-between; gap: 10px; margin: 9px 0 12px; font-size: 11px; color: var(--wao-text-faint); }
 .note-card { background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 20px 22px 10px; margin-bottom: 16px; }
 .note-card.highlighted, .note-card.editing { border-color: var(--wao-primary); }
 .note-card:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
@@ -416,7 +421,7 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
   .writing-pane :deep(.note-composer:not(.fullscreen)) { flex: 1; min-height: 0; max-height: none; }
   .notes-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 }
-@media (max-width: 1100px) { .notes-page { padding: 20px; } .notes-workspace { gap: 18px; grid-template-columns: minmax(280px, .9fr) minmax(300px, 1.1fr); } .notes-list { padding-left: 18px; } .search { order: 3; flex-basis: 100%; margin: 0; } .sort { margin-left: auto; } }
+@media (max-width: 1100px) { .notes-page { padding: 20px; } .notes-workspace { gap: 18px; grid-template-columns: minmax(280px, .9fr) minmax(300px, 1.1fr); } .notes-list { padding-left: 18px; } .search { flex: 1 1 50%; } }
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 16px 10px; } }
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 16px 12px 8px; } .sort { margin-left: 0; } .list-summary { flex-wrap: wrap; } }
 </style>
