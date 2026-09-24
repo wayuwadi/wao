@@ -115,6 +115,7 @@ jobs:
         }
         triggers {
           githubPush()
+          scm('H/5 * * * *')
         }
         definition {
           cpsScm {
