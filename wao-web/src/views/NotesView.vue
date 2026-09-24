@@ -3,6 +3,7 @@ import WeKnoraDocumentStatus from '@/components/weknora/WeKnoraDocumentStatus.vu
 import { useWeKnoraDocuments } from '@/composables/weknoraDocuments'
 import { useUiStore } from '@/stores/ui'
 import { chatShareLink, docShareUrl } from '@/utils/share'
+import { copyText } from '@/utils/clipboard'
 const ui = useUiStore()
 import { defineAsyncComponent, computed, nextTick, onMounted, ref, watch } from 'vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
@@ -217,7 +218,14 @@ onMounted(() => void loadPins())
           <div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" /></div>
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
           <WeKnoraDocumentStatus v-if="data.apiLive" :state="knowledgeSync.states.value[note.id]" :error="knowledgeSync.error.value" @retry="knowledgeSync.refresh" />
-          <div class="note-actions"><button @click="noteEditors.get(note.id)?.copyFormatted()">复制内容</button><button :disabled="!pinsReady || pinSaving" :aria-pressed="pinnedIds.includes(note.id)" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i>{{ pinnedIds.includes(note.id) ? '取消置顶' : '置顶' }}</button><button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button><button class="card-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button><RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink></div>
+          <div class="note-actions">
+            <button @click="noteEditors.get(note.id)?.copyFormatted()">复制内容</button>
+            <button :disabled="!pinsReady || pinSaving" :aria-pressed="pinnedIds.includes(note.id)" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i>{{ pinnedIds.includes(note.id) ? '取消置顶' : '置顶' }}</button>
+            <button @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-link"></i>复制分享链接</button>
+            <button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button>
+            <button class="card-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button>
+            <RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink>
+          </div>
           </template>
         </article>
         <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>

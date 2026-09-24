@@ -14,7 +14,9 @@ import { useUiStore } from '@/stores/ui'
 import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
+import { copyText } from '@/utils/clipboard'
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined) }))
 
 vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
 vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
@@ -35,6 +37,15 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('从小记卡片直接复制免登录只读分享页链接', async () => {
+    useDataStore().docs.old = doc('old', '要分享的小记')
+    const wrapper = await view()
+    const share = wrapper.findAll('[data-note-id="old"] .note-actions button').find(button => button.text().includes('复制分享链接'))
+    expect(share).toBeDefined()
+    await share!.trigger('click')
+    expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/s/d/old`, '公开分享链接已复制')
+    wrapper.unmount()
+  })
   it('置顶跨次加载恢复，保存失败保留原排序和编辑草稿', async () => {
     const data = useDataStore()
     data.docs.old = doc('old', '较早小记', '2026-09-01T08:00:00')
@@ -58,6 +69,7 @@ describe('小记集中记录空间', () => {
   })
   beforeEach(() => {
     vi.restoreAllMocks()
+    vi.mocked(copyText).mockClear()
     vi.mocked(apiPatchDoc).mockReset()
     vi.mocked(fetchNoteTags).mockResolvedValue([])
     vi.mocked(apiCreateNoteTag).mockReset()
