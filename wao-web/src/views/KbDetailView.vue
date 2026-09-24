@@ -833,6 +833,8 @@ function onDocScroll() {
 
 /** 分享菜单开关（文档与小记共用同一个入口）。 */
 const shareMenu = ref(false)
+const moreMenuOpen = ref(false)
+watch(docId, () => { moreMenuOpen.value = false })
 async function copyDocShare(kind: 'page' | 'md') {
   if (!docId.value) return
   const url = kind === 'md' ? docShareMarkdownUrl(docId.value) : docShareUrl(docId.value)
@@ -1090,13 +1092,14 @@ async function saveKbSettings() {
     <!-- 文档区 -->
     <div class="document-pane">
           <div v-if="doc" class="doc-bar">
-            <span class="ellip">{{ kb.name }}</span>
-            <i class="ri-arrow-right-s-line b-sep"></i>
-            <span class="ellip">{{ doc.title || '未命名文档' }}</span>
-            <span v-if="base?.auto" class="tag-auto">自动沉淀</span>
-            <span v-if="currentArchived" class="tag-archived">已归档</span>
-            <span class="document-save-status"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></span>
-            <div class="spacer"></div>
+            <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
+              <span class="ellip library-name">{{ kb.name }}</span>
+              <i class="ri-arrow-right-s-line b-sep"></i>
+              <span class="ellip document-name">{{ doc.title || '未命名文档' }}</span>
+              <span v-if="base?.auto" class="tag-auto">自动沉淀</span>
+              <span v-if="currentArchived" class="tag-archived">已归档</span>
+            </div>
+            <span v-if="saving || saveFailed || docSavedAt" class="document-save-status"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></span>
 
             <!-- 协同：只有此刻真的打开着这篇文档的人才会出现 -->
             <span class="collab">
@@ -1120,23 +1123,22 @@ async function saveKbSettings() {
               ><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span
             >
 
-            <label v-if="docId && !currentArchived" class="move-document">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
+            <label v-if="docId && !currentArchived" class="move-document bar-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
             <button ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
-            <WeKnoraDocumentStatus v-if="docId && data.apiLive" :state="knowledgeSync.states.value[docId]" :error="knowledgeSync.error.value" :dirty="data.docPending(docId)" @retry="knowledgeSync.refresh" />
+            <span v-if="docId && data.apiLive" class="bar-sync"><WeKnoraDocumentStatus :state="knowledgeSync.states.value[docId]" :error="knowledgeSync.error.value" :dirty="data.docPending(docId)" @retry="knowledgeSync.refresh" /></span>
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
-            <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
             <button
               v-if="docId"
-              class="icon-act"
+              class="icon-act bar-favorite"
               :class="{ faved: favorites.isFav('doc', docId) }"
               :title="favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单'"
               @click="favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"
             >
               <i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>
             </button>
-            <div class="share-wrap">
-              <button class="icon-act" title="复制分享链接" @click="shareMenu = !shareMenu">
+            <div class="share-wrap bar-share">
+              <button class="icon-act" title="复制分享链接" @click="moreMenuOpen = false; shareMenu = !shareMenu">
                 <i class="ri-links-line"></i>
               </button>
               <div v-if="shareMenu" class="menu-mask" @click="shareMenu = false"></div>
@@ -1156,21 +1158,21 @@ async function saveKbSettings() {
                 </button>
               </div>
             </div>
-            <button
-              v-if="docId"
-              class="icon-act"
-              :title="currentArchived ? '恢复到原文件夹' : '归档文档（长期保留）'"
-              @click="currentArchived ? unarchiveDoc(docId) : archiveDoc(docId)"
-            >
-              <i :class="currentArchived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'"></i>
-            </button>
-            <button
-              class="icon-act danger"
-              title="删除这篇文档（进回收站）"
-              @click="removeDoc(docId!)"
-            >
-              <i class="ri-delete-bin-line"></i>
-            </button>
+            <div class="doc-more-wrap" :class="{ 'has-save-error': saveFailed }">
+              <button class="icon-act" title="更多文档操作" aria-label="更多文档操作" :aria-expanded="moreMenuOpen" @click="shareMenu = false; moreMenuOpen = !moreMenuOpen"><i class="ri-more-2-fill"></i></button>
+              <div v-if="moreMenuOpen" class="menu-mask" @click="moreMenuOpen = false"></div>
+              <div v-if="moreMenuOpen" class="doc-more-menu" aria-label="更多文档操作">
+                <div v-if="saving || saveFailed || docSavedAt" class="more-save"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></div>
+                <div v-if="docId && data.apiLive" class="more-sync"><WeKnoraDocumentStatus :state="knowledgeSync.states.value[docId]" :error="knowledgeSync.error.value" :dirty="data.docPending(docId)" @retry="knowledgeSync.refresh" /></div>
+                <label v-if="docId && !currentArchived" class="move-document more-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="在更多菜单中移动当前文档到文件夹" @change="moveCurrentDoc($event); moreMenuOpen = false"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
+                <button @click="moreMenuOpen = false; openSaveTemplate()"><i class="ri-file-copy-2-line"></i>另存为模板</button>
+                <button v-if="docId" @click="moreMenuOpen = false; favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"><i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单' }}</button>
+                <button class="more-share" @click="moreMenuOpen = false; copyDocShare('page')"><i class="ri-links-line"></i>复制分享页链接</button>
+                <button class="more-share" @click="moreMenuOpen = false; copyDocShare('md')"><i class="ri-robot-2-line"></i>复制 Markdown 地址</button>
+                <button v-if="docId" @click="moreMenuOpen = false; currentArchived ? unarchiveDoc(docId) : archiveDoc(docId)"><i :class="currentArchived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'"></i>{{ currentArchived ? '恢复到原文件夹' : '归档文档' }}</button>
+                <button class="danger" @click="moreMenuOpen = false; removeDoc(docId!)"><i class="ri-delete-bin-line"></i>删除这篇文档</button>
+              </div>
+            </div>
           </div>
 
       <div ref="toolbarHost" class="document-toolbar"></div>
@@ -1372,7 +1374,7 @@ async function saveKbSettings() {
 </template>
 
 <style scoped>
-.document-save-status { flex: 0 0 185px; width: 185px; overflow: hidden; }
+.document-save-status { flex: 0 1 150px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .doc-info { color: var(--wao-text-weak); cursor: help; }
 .tree-search { padding: 6px 10px !important; }
@@ -1773,7 +1775,7 @@ async function saveKbSettings() {
   :is(.folder-row, .doc-row):is(:hover, :focus-within, :has(.resource-trigger[aria-expanded="true"])) :deep(.resource-trigger) { opacity: 1; pointer-events: auto; }
 }
 /* 文档区 */
-.document-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--wao-bg-card); }
+.document-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--wao-bg-card); container: document-pane / inline-size; }
 .document-pane > .doc-bar { flex: 0 0 auto; padding: 10px 16px; border-bottom: 1px solid var(--wao-divider); }
 .document-content { flex: 1; min-height: 0; position: relative; display: flex; }
 .document-toolbar { flex: 0 0 auto; }
@@ -1801,7 +1803,41 @@ async function saveKbSettings() {
   gap: 8px;
   font-size: 12px;
   color: var(--wao-text-weak);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.doc-location { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; gap: 8px; overflow: hidden; white-space: nowrap; }
+.doc-location .library-name { flex: 0 1 auto; max-width: 90px; }
+.doc-location .document-name { flex: 1 1 auto; min-width: 0; }
+.doc-location :is(.tag-auto, .tag-archived) { flex: none; }
+.doc-bar > :is(.collab, .realtime, .bar-move, .outline-toggle, .doc-info, .bar-sync, .save-retry, .bar-favorite, .bar-share, .doc-more-wrap) { flex-shrink: 0; }
+.bar-sync { display: inline-flex; max-width: 195px; min-width: 0; overflow: hidden; }
+.bar-sync :deep(.weknora-status) { flex-wrap: nowrap; white-space: nowrap; min-width: 0; }
+.bar-sync :deep(a) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-more-wrap { position: relative; }
+.doc-more-wrap.has-save-error > button { border-color: var(--wao-danger-strong); color: var(--wao-danger-strong); }
+.doc-more-menu { position: absolute; right: 0; top: 34px; z-index: 89; display: flex; flex-direction: column; gap: 2px; width: min(280px, calc(100vw - 24px)); max-height: min(70dvh, 440px); overflow-y: auto; padding: 6px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop-2); }
+.doc-more-menu > button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); font-size: 12px; text-align: left; cursor: pointer; }
+.doc-more-menu > button:hover { background: var(--wao-bg-hover); }
+.doc-more-menu > button.danger { color: var(--wao-danger-strong); }
+.doc-more-menu > :is(.more-save, .more-sync, .more-move) { padding: 7px 8px; }
+.doc-more-menu .more-move { justify-content: space-between; }
+.doc-more-menu .more-sync { border-bottom: 1px solid var(--wao-line); }
+.doc-more-menu :deep(.weknora-status) { gap: 6px; }
+.more-move, .more-share { display: none !important; }
+@container document-pane (max-width: 980px) {
+  .document-save-status, .doc-info, .bar-favorite, .bar-move { display: none; }
+  .more-move { display: flex !important; }
+  .doc-location .library-name { max-width: 60px; }
+}
+@container document-pane (max-width: 700px) {
+  .bar-sync, .realtime, .bar-share { display: none; }
+  .more-share { display: flex !important; }
+  .doc-location .library-name, .doc-location .b-sep { display: none; }
+}
+@container document-pane (max-width: 420px) {
+  .collab, .outline-toggle span { display: none; }
+  .icon-act.outline-toggle { width: 28px; padding: 0; }
 }
 .b-sep {
   font-size: 13px;
@@ -2257,7 +2293,6 @@ async function saveKbSettings() {
 }
 .tree-search { display: flex; align-items: center; gap: 6px; }
 .tree-search label { flex: 1; min-width: 0; }
-.doc-bar { flex-wrap: wrap; }
 
 /* 语雀式目录：缩进属于整行，展开位固定宽度，选中和拖放覆盖整行。 */
 .tree { padding: 4px 10px 8px; }
