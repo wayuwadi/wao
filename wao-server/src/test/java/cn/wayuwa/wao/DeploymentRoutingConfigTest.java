@@ -454,48 +454,45 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void offsiteBackupEncryptsCompleteLinuxRecoveryPointBeforeWebDavUpload() throws IOException {
-        String create = readFromRepository("deploy/backup/create-offsite-backup.sh");
-        String restore = readFromRepository("deploy/backup/restore-offsite-backup.sh");
+    void offsiteBackupUploadsVerifiedPeerSnapshotAndRestoresInIsolation() throws IOException {
+        String upload = readFromRepository("deploy/backup/upload-peer-offsite.sh");
+        String restore = readFromRepository("deploy/backup/restore-peer-offsite.sh");
         String service = readFromRepository("deploy/backup/wao-offsite-backup.service");
         String timer = readFromRepository("deploy/backup/wao-offsite-backup.timer");
         String updater = readFromRepository("deploy/jenkins/apply-controller-config.sh");
         String installer = readFromRepository("deploy/jenkins/install-controller.sh");
 
-        assertThat(create)
-                .contains("--single-transaction")
-                .contains("--set-gtid-purged=OFF")
-                .contains("--routines")
-                .contains("--events")
-                .contains("jenkins-home-*.tar.gz")
+        assertThat(upload)
+                .contains("$BACKUP_ROOT/last-success")
+                .contains("$snapshot/COMPLETE")
                 .contains("sha256sum -c")
-                .contains("jmsctl.sh\" stop")
-                .contains("jmsctl.sh\" start")
+                .contains("No verified peer snapshot from today")
                 .contains("--symmetric --cipher-algo AES256")
-                .contains("| split -d -a 4")
-                .contains("# Upload the manifest last")
-                .contains("[[ \"$remote_entry\" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]")
+                .contains("--offset \"$offset\" --length \"$length\"")
+                .contains("# The manifest is the commit marker")
                 .doesNotContain("WAO_BACKUP_WEBDAV_PASSWORD=");
         assertThat(restore)
-                .contains("Destination already exists and is not empty")
-                .contains("sha256sum -c parts")
-                .contains("--passphrase-file \"$passphrase_file\" --decrypt")
+                .contains("An empty destination directory is required")
+                .contains("sha256sum -c SHA256SUMS-cloud")
+                .contains("Peer archive checksum mismatch")
                 .contains("production was not modified");
         assertThat(service)
                 .contains("ConditionPathExists=/etc/wao-backup/webdav.env")
                 .contains("ConditionPathExists=/etc/wao-backup/encryption-passphrase")
+                .contains("ExecStart=/usr/local/lib/wao-backup/upload-peer-offsite.sh")
                 .contains("TimeoutStartSec=12h")
                 .contains("Restart=on-failure")
                 .contains("RestartSec=30m");
         assertThat(timer)
-                .contains("OnCalendar=*-*-* 03:30:00 Asia/Shanghai")
+                .contains("OnCalendar=*-*-* 05:00:00 Asia/Shanghai")
                 .contains("Persistent=true");
         assertThat(updater)
-                .contains("/host/usr/local/lib/wao-backup/create-offsite-backup.sh")
+                .contains("upload-peer-offsite.sh restore-peer-offsite.sh")
                 .contains("systemctl enable --now wao-offsite-backup.timer");
         assertThat(installer)
                 .contains("gnupg")
                 .contains("python3")
+                .contains("upload-peer-offsite.sh restore-peer-offsite.sh")
                 .contains("systemctl enable --now wao-offsite-backup.timer");
     }
 
