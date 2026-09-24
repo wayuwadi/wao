@@ -11,6 +11,7 @@ import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
+import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
 
@@ -41,6 +42,21 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 const data = useDataStore()
 const session = useSessionStore()
 const noteEditors = new Map<string, { copyFormatted: () => Promise<void> }>()
+const previewImage = ref<NotePreviewImage | null>(null)
+const lightbox = ref<HTMLElement | null>(null)
+let imageTrigger: HTMLElement | null = null
+async function openImage(image: NotePreviewImage, event: MouseEvent) {
+  imageTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  previewImage.value = image
+  await nextTick()
+  lightbox.value?.focus()
+}
+async function closeImage() {
+  previewImage.value = null
+  await nextTick()
+  imageTrigger?.focus()
+  imageTrigger = null
+}
 function setNoteEditor(id: string, value: unknown) { if (value) noteEditors.set(id, value as { copyFormatted: () => Promise<void> }); else noteEditors.delete(id) }
 const query = ref('')
 const sort = ref<'updated' | 'created'>('updated')
@@ -122,6 +138,7 @@ const matching = computed(() => {
 const retainedEdits = computed(() => notes.value.filter(note => editingIds.value.includes(note.id)
   && !matching.value.slice(0, limit.value).some(item => item.id === note.id)))
 const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
+const visibleImages = computed(() => new Map(visible.value.map(note => [note.id, notePreviewImages(resolvedRichContent(note))])))
 const knowledgeSync = useWeKnoraDocuments(() => data.apiLive ? visible.value.map(note => note.id) : [], () => visible.value.map(note => note.updated))
 const loading = computed(() => ['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
@@ -233,6 +250,12 @@ onMounted(() => void loadPins())
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
           <div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" /></div>
+          <div v-if="visibleImages.get(note.id)?.length" class="note-images" aria-label="小记图片">
+            <button v-for="(image, index) in visibleImages.get(note.id)" :key="`${index}:${image.src}`" type="button"
+              class="note-image-thumb" :aria-label="`查看第 ${index + 1} 张图片大图${image.alt ? `：${image.alt}` : ''}`" @click="openImage(image, $event)">
+              <img :src="image.src" :alt="image.alt" loading="lazy" decoding="async">
+            </button>
+          </div>
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
           <WeKnoraDocumentStatus v-if="data.apiLive" :state="knowledgeSync.states.value[note.id]" :error="knowledgeSync.error.value" @retry="knowledgeSync.refresh" />
           <div class="note-actions">
@@ -251,6 +274,13 @@ onMounted(() => void loadPins())
         <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>
       </section>
     </div>
+    <Teleport to="body">
+      <div v-if="previewImage" ref="lightbox" class="note-image-lightbox" role="dialog" aria-modal="true"
+        :aria-label="previewImage.alt || '小记图片预览'" tabindex="-1" @click.self="closeImage" @keydown.esc.stop="closeImage">
+        <button type="button" class="note-image-close" aria-label="关闭图片预览" @click="closeImage"><i class="ri-close-line"></i></button>
+        <img :src="previewImage.src" :alt="previewImage.alt">
+      </div>
+    </Teleport>
   </main>
 </template>
 
@@ -294,8 +324,16 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .saved { color: var(--wao-success-strong); margin-left: auto; }
 .note-body { overflow-wrap: anywhere; line-height: 1.8; font-size: 14px; max-height: 500px; overflow: auto; }
 .note-body :deep(p:first-child) { margin-top: 0; }
-.note-body :deep(img) { max-width: 100%; max-height: 300px; border-radius: 8px; }
+.note-body :deep(img.md-img) { display: none !important; }
 .note-body :deep(pre), .note-body :deep(table) { max-width: 100%; overflow: auto; }
+.note-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.note-image-thumb { width: 112px; height: 76px; padding: 4px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-sub); overflow: hidden; }
+.note-image-thumb:hover, .note-image-thumb:focus-visible { border-color: var(--wao-primary); outline: 2px solid var(--wao-primary); outline-offset: 1px; }
+.note-image-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.note-image-lightbox { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 32px; background: rgba(15, 18, 28, .82); cursor: zoom-out; }
+.note-image-lightbox img { max-width: min(96vw, 1600px); max-height: 90vh; object-fit: contain; border-radius: 8px; box-shadow: 0 18px 56px rgba(0, 0, 0, .38); cursor: default; }
+.note-image-close { position: fixed; top: 16px; right: 18px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .16); color: #fff; font-size: 20px; }
+.note-image-close:hover { background: rgba(255, 255, 255, .28); color: #fff; }
 .card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 14px; }
 .card-tags button { color: var(--wao-primary-text); overflow-wrap: anywhere; max-width: 100%; padding: 4px 7px; }
 .note-actions { margin-top: 14px; border-top: 1px solid var(--wao-line-control); padding-top: 6px; justify-content: space-between; }

@@ -161,6 +161,27 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
+  it('正文图片只在下方显示多张缩略图，点击后可看大图并关闭', async () => {
+    const note = doc('images', '有图小记')
+    note.content = { version: 1, markdown: '正文\n\n![图一](/api/images/one/raw)\n\n![图二](/api/images/two/raw)',
+      document: { type: 'doc', content: [
+        { type: 'paragraph', content: [{ type: 'text', text: '正文' }] },
+        { type: 'image', attrs: { src: '/api/images/one/raw', alt: '图一' } },
+        { type: 'image', attrs: { src: '/api/images/two/raw', alt: '图二' } },
+      ] } }
+    useDataStore().docs.images = note
+    const wrapper = await view()
+    const thumbs = wrapper.findAll('[data-note-id="images"] .note-image-thumb')
+    expect(thumbs).toHaveLength(2)
+    expect(thumbs.map(thumb => thumb.find('img').attributes('src'))).toEqual(['/api/images/one/raw', '/api/images/two/raw'])
+    await thumbs[1]!.trigger('click')
+    expect(document.body.querySelector('.note-image-lightbox img')?.getAttribute('src')).toBe('/api/images/two/raw')
+    document.body.querySelector<HTMLButtonElement>('.note-image-close')?.click()
+    await flushPromises()
+    expect(document.body.querySelector('.note-image-lightbox')).toBeNull()
+    wrapper.unmount()
+  })
+
   it('聚合历史小记并按时间倒序，正文搜索和标签筛选可以组合', async () => {
     const data = useDataStore()
     data.docs.a = { ...doc('a', '旧想法', '2026-09-06T08:00:00'), tags: ['历史'] }
