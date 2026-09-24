@@ -21,3 +21,20 @@
 合并版本改动到 main 后手动运行，勾选 `PUBLISH_CLIENT=true` 和 `BUILD_MACOS=true`。流水线检查所有版本文件一致及线上版本，双端完成后在 Linux2 签名，使用旧公钥验签，再复用 `wao-client/scripts/publish.sh` 的不可变文件和原子清单切换机制。最终重新下载全部公开文件比较 SHA-256。失败时查看具体阶段；上传前失败不会切换现有清单，上传后公开核对失败需人工检查通道，不能伪称没有外部变更。
 
 GitHub 的旧客户端 workflow 文件已移除；已有 `client-v*` / `client-check-*` 标签保留历史意义，不再触发构建。移动端和独立旧桌宠为其他工程，不在本次完整工作区客户端迁移范围。
+
+## 2026-09-24 迁移与打包修复
+
+Mac 构建必须指定 `--bundles app,dmg`。只选 `dmg` 时 Tauri 会清理临时 `.app`，导致后续
+`lipo` 校验及更新归档找不到应用；同时输出两种 bundle 后再做双架构、签名和版本校验。
+
+原签名私钥若只剩 GitHub Secret，使用 `client-signing-key-migration.yml` 完成一次性迁移：
+仅在 Linux2 以已有维护用户启动单次、无默认标签的 GitHub runner，唯一标签为
+`wao-key-migration-linux2-20260924`。手动从 main 触发后，Secret 通过 GitHub 的加密连接直接传到
+Linux2 临时文件，再安装到既定受限路径；不 checkout 代码、不上传制品、不打印密钥、不经 Mac。
+runner 使用 `--ephemeral --disableupdate --no-default-labels`，完成后确认注销并删除临时注册凭据。
+已有不同私钥时停止，不覆盖。正式签名阶段仍必须用已安装客户端的旧公钥验证签名。
+此作业只恢复既有凭据，不恢复 GitHub Actions 客户端构建；平时没有匹配执行节点，不能自动运行。
+
+Mac 节点 `wao-client-macos-wadi` 为当前用户桌面会话的专用入站节点，标签 `wao-client-macos`、
+一个 executor、exclusive 模式。通过已核验主机身份的 SSH loopback 隧道和 WebSocket 连接；
+节点 Secret 保存在本机用户私有目录，未安装开机常驻服务。正式构建前确认节点在线。
