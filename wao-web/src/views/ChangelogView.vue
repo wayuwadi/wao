@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { Button as AButton, Input as AInput } from 'ant-design-vue'
 import ChangelogCard from '@/components/changelog/ChangelogCard.vue'
 import { fetchChangelog } from '@/api/changelog'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import {
   CHANGELOG_CATEGORIES,
   type ChangelogCategory,
@@ -34,9 +36,10 @@ const filtered = computed(() => {
           .includes(search)),
   )
 })
+const { page: changePage, pageCount: changePageCount, visible: visibleChanges } = useClientPagination(filtered, [category, query, version])
 const months = computed(() => {
   const groups = new Map<string, ChangelogEntry[]>()
-  for (const entry of filtered.value) {
+  for (const entry of visibleChanges.value) {
     const key = entry.publishedOn.slice(0, 7)
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(entry)
@@ -167,7 +170,8 @@ onMounted(load)
             </div>
           </div>
         </section>
-        <p v-if="filtered.length" class="feed-end">
+        <WaoPagination v-if="changePageCount > 1" v-model:page="changePage" :page-count="changePageCount" :total="filtered.length" aria-label="更新日志查询结果分页" />
+        <p v-if="filtered.length && changePage === changePageCount" class="feed-end">
           每一点进步，都值得记录 <i class="ri-sparkling-line" aria-hidden="true"></i>
         </p>
       </section>

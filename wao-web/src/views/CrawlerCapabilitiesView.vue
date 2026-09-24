@@ -11,6 +11,8 @@ import {
   type SaveCrawlerCapability,
 } from '@/api/crawlerCapabilities'
 import { toast } from '@/composables/toast'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 
 interface EditorModel extends SaveCrawlerCapability {
   id: string | null
@@ -38,6 +40,7 @@ const filtered = computed(() => {
       .includes(keyword),
   )
 })
+const { page: capabilityPage, pageCount: capabilityPageCount, visible: visibleCapabilities } = useClientPagination(filtered, [query])
 
 const dirty = computed(() => !!editor.value && JSON.stringify(editor.value) !== initialEditor.value)
 const canSave = computed(
@@ -244,7 +247,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
       <i class="ri-search-eye-line"></i><b>没有匹配的能力</b><span>换一个关键词试试。</span>
     </section>
     <section v-else class="capability-grid">
-      <article v-for="item in filtered" :key="item.id" class="capability-card">
+      <article v-for="item in visibleCapabilities" :key="item.id" class="capability-card">
         <header>
           <span class="language">{{ languageLabel(item.language) }}</span>
           <span class="status" :class="{ enabled: item.enabled }">
@@ -266,6 +269,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
         </footer>
       </article>
     </section>
+    <WaoPagination v-if="!loading && !loadError && capabilityPageCount > 1" v-model:page="capabilityPage" :page-count="capabilityPageCount" :total="filtered.length" aria-label="爬虫能力查询结果分页" />
 
     <div v-if="editor" class="mask" @click.self="closeEditor">
       <form class="editor" @submit.prevent="save">

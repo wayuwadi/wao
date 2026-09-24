@@ -9,6 +9,8 @@ import { useNavStore } from '@/stores/nav'
 import { useTopShortcutsStore } from '@/stores/topShortcuts'
 import { useMenuDrag } from '@/composables/menuDrag'
 import { toast } from '@/composables/toast'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 const Governance = defineAsyncComponent(() => import('@/components/nav/NavigationGovernance.vue'))
 const route = useRoute()
 const router = useRouter()
@@ -60,6 +62,18 @@ const resultCount = computed(
     sections.value.reduce((n, section) => n + section.items.length, 0) +
     (dynamicVisible.value ? visibleApps.value.length + visibleLinks.value.length : 0),
 )
+const catalogResults = computed(() => [
+  ...sections.value.flatMap((section) => section.items.map((item) => `function:${item.id}`)),
+  ...(dynamicVisible.value ? visibleApps.value.map((app) => `app:${app.id}`) : []),
+  ...(dynamicVisible.value ? visibleLinks.value.map((link) => `link:${link.id}`) : []),
+])
+const { page: catalogPage, pageCount: catalogPageCount, visible: visibleCatalogResults } = useClientPagination(catalogResults, [query, selected])
+const pageKeys = computed(() => new Set(visibleCatalogResults.value))
+const pagedSections = computed(() => sections.value.map((section) => ({
+  ...section, items: section.items.filter((item) => pageKeys.value.has(`function:${item.id}`)),
+})).filter((section) => section.items.length))
+const pagedApps = computed(() => visibleApps.value.filter((app) => pageKeys.value.has(`app:${app.id}`)))
+const pagedLinks = computed(() => visibleLinks.value.filter((link) => pageKeys.value.has(`link:${link.id}`)))
 function open(id: NavItemId) {
   const meta = nav.itemMeta(id)
   if (!meta?.path) return
@@ -173,7 +187,7 @@ onMounted(() => {
           处理保存问题
         </button>
       </div>
-      <section v-for="section in sections" :key="section.id" class="catalog-section">
+      <section v-for="section in pagedSections" :key="section.id" class="catalog-section">
         <header>
           <div>
             <h2>{{ section.label }}</h2>
@@ -230,13 +244,13 @@ onMounted(() => {
           </article>
         </div>
       </section>
-      <section v-if="dynamicVisible && visibleApps.length" class="catalog-section">
+      <section v-if="dynamicVisible && pagedApps.length" class="catalog-section">
         <header>
           <h2>接入应用</h2>
-          <span>{{ visibleApps.length }} 个应用</span>
+          <span>{{ pagedApps.length }} 个应用</span>
         </header>
         <div class="function-list">
-          <article v-for="app in visibleApps" :key="app.id" class="function-row">
+          <article v-for="app in pagedApps" :key="app.id" class="function-row">
             <button
               v-if="customizing"
               class="drag"
@@ -273,14 +287,14 @@ onMounted(() => {
           </article>
         </div>
       </section>
-      <section v-if="dynamicVisible && visibleLinks.length" class="catalog-section">
+      <section v-if="dynamicVisible && pagedLinks.length" class="catalog-section">
         <header>
           <h2>我的快捷链接</h2>
           <span v-if="customizing">可拖到顶部收藏</span>
         </header>
         <div class="function-list">
           <button
-            v-for="link in visibleLinks"
+            v-for="link in pagedLinks"
             :key="link.id"
             class="link-row"
             :draggable="customizing"
@@ -307,6 +321,7 @@ onMounted(() => {
           </button>
         </div>
       </section>
+      <WaoPagination v-if="catalogPageCount > 1" v-model:page="catalogPage" :page-count="catalogPageCount" :total="resultCount" aria-label="功能与快捷链接查询结果分页" />
       <div v-if="!resultCount" class="empty">
         <i class="ri-search-line"></i>
         <h2>没有找到匹配入口</h2>

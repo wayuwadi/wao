@@ -19,6 +19,8 @@ import {
 import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
 import { toast } from '@/composables/toast'
 import { copyText } from '@/utils/clipboard'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 
 type Tab = 'accounts' | 'messages' | 'integration'
 interface Editor extends SaveAccountResource {
@@ -56,6 +58,10 @@ const filteredAccounts = computed(() => {
       .includes(needle),
   )
 })
+const accountResults = computed(() => filteredAccounts.value)
+const messageResults = computed(() => messages.value)
+const { page: accountPage, pageCount: accountPageCount, visible: visibleAccounts } = useClientPagination(accountResults, [query])
+const { page: messagePage, pageCount: messagePageCount, visible: visibleMessages } = useClientPagination(messageResults, [])
 const editorSnapshot = computed(() => (editor.value ? JSON.stringify(editor.value) : ''))
 const dirty = computed(() => !!editor.value && editorSnapshot.value !== baseline.value)
 const canSave = computed(
@@ -344,7 +350,7 @@ onMounted(load)
         <i class="ri-search-eye-line"></i><b>没有匹配的账号</b><span>换一个关键词试试。</span>
       </section>
       <section v-else class="account-grid">
-        <article v-for="item in filteredAccounts" :key="item.id" class="account-card">
+        <article v-for="item in visibleAccounts" :key="item.id" class="account-card">
           <header>
             <span class="platform">{{ item.platform }}</span>
             <span class="status" :class="{ enabled: item.enabled }">{{
@@ -389,6 +395,7 @@ onMounted(load)
           </footer>
         </article>
       </section>
+      <WaoPagination v-if="accountPageCount > 1" v-model:page="accountPage" :page-count="accountPageCount" :total="filteredAccounts.length" aria-label="账号资源查询结果分页" />
     </template>
 
     <template v-else-if="tab === 'messages'">
@@ -405,7 +412,7 @@ onMounted(load)
         <button type="button" @click="tab = 'integration'">前往接入设置</button>
       </section>
       <section v-else class="message-list">
-        <article v-for="message in messages" :key="message.id">
+        <article v-for="message in visibleMessages" :key="message.id">
           <div class="code" :class="{ missing: !message.code }">{{ message.code || '未识别' }}</div>
           <div class="message-main">
             <header>
@@ -441,6 +448,7 @@ onMounted(load)
           </div>
         </article>
       </section>
+      <WaoPagination v-if="messagePageCount > 1" v-model:page="messagePage" :page-count="messagePageCount" :total="messages.length" aria-label="验证码记录分页" />
     </template>
 
     <template v-else-if="integration">

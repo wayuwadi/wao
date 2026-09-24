@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
 import { computed, ref } from 'vue'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
@@ -36,9 +38,10 @@ const filteredProjects = computed(() => {
   }
   return list.slice().sort(sorts[sortBy.value]!)
 })
+const { page: projectPage, pageCount: projectPageCount, visible: visibleProjects } = useClientPagination(filteredProjects, [q, sortBy])
 
 const projGroups = computed(() => {
-  const list = filteredProjects.value
+  const list = visibleProjects.value
   let groups: { label: string; dot: string; items: Project[]; hide?: boolean }[]
   if (groupBy.value === '按领域') {
     groups = data.areas
@@ -163,6 +166,7 @@ function openProject(id: string) {
           <div>没有符合条件的项目——试试清除搜索</div>
         </div>
       </div>
+      <WaoPagination v-if="projectPageCount > 1" v-model:page="projectPage" :page-count="projectPageCount" :total="filteredProjects.length" aria-label="项目查询结果分页" />
     </template>
   </div>
 </template>

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import {
   appearancePhotoUrl,
   fetchAppearanceWorkspace,
@@ -121,6 +123,7 @@ const wardrobeItems = computed(() =>
     )
   }),
 )
+const { page: wardrobePage, pageCount: wardrobePageCount, visible: visibleWardrobe } = useClientPagination(wardrobeItems, [filterQuery, filterCategory, filterStatus])
 const categories = computed(() => [
   '全部',
   ...new Set([...suggestedCategories, ...workspace.value.garments.map((item) => item.category)]),
@@ -806,7 +809,7 @@ onBeforeUnmount(() => {
           <p>没有符合当前筛选的物品</p>
         </div>
         <div v-else class="garment-grid">
-          <article v-for="item in wardrobeItems" :key="item.id" class="garment-card">
+          <article v-for="item in visibleWardrobe" :key="item.id" class="garment-card">
             <div class="photo">
               <img
                 v-if="item.imageId"
@@ -844,6 +847,7 @@ onBeforeUnmount(() => {
             </div>
           </article>
         </div>
+        <WaoPagination v-if="wardrobePageCount > 1" v-model:page="wardrobePage" :page-count="wardrobePageCount" :total="wardrobeItems.length" aria-label="衣库查询结果分页" />
       </section>
 
       <section v-else-if="activeSection === 'outfits'" class="content-section">
