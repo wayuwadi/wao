@@ -355,6 +355,7 @@ prepare_cloud_routing() {
     deploy/nginx/wao.wayuwa.cn.conf.template \
     deploy/nginx/jms.wayuwa.cn.conf \
     deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
+    deploy/scripts/resolve-gateway-ipv4.sh \
     deploy/scripts/ensure-jumpserver-certificate.sh \
     deploy/scripts/set-nginx-upstream-state.sh \
     "wao-cloud:/tmp/" || return
@@ -365,6 +366,7 @@ prepare_cloud_routing() {
     install -m 0644 /tmp/jms.wayuwa.cn.conf /opt/wao/deploy/nginx/jms.wayuwa.cn.conf
     install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
     install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
+    install -m 0755 /tmp/resolve-gateway-ipv4.sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh
     install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
     install -m 0755 /tmp/ensure-jumpserver-certificate.sh /opt/wao/deploy/scripts/ensure-jumpserver-certificate.sh
     # 新主配置已经接管 /game 与 /insight；首次摘流也会渲染它，必须先移除旧片段，
@@ -422,6 +424,7 @@ deploy_cloud() {
     deploy/nginx/wao.wayuwa.cn.conf.template \
     deploy/nginx/jms.wayuwa.cn.conf \
     deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
+    deploy/scripts/resolve-gateway-ipv4.sh \
     deploy/scripts/ensure-jumpserver-certificate.sh \
     deploy/scripts/set-nginx-upstream-state.sh \
     "wao-cloud:/tmp/" || return
@@ -475,10 +478,11 @@ deploy_cloud() {
     install -m 0644 /tmp/jms.wayuwa.cn.conf /opt/wao/deploy/nginx/jms.wayuwa.cn.conf
     install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
     install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
+    install -m 0755 /tmp/resolve-gateway-ipv4.sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh
     install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
     install -m 0755 /tmp/ensure-jumpserver-certificate.sh /opt/wao/deploy/scripts/ensure-jumpserver-certificate.sh
     rm -f /tmp/wao.wayuwa.cn.conf.template /tmp/activate-nginx-config.sh \
-      /tmp/render-nginx-config.sh /tmp/set-nginx-upstream-state.sh \
+      /tmp/render-nginx-config.sh /tmp/resolve-gateway-ipv4.sh /tmp/set-nginx-upstream-state.sh \
       /tmp/jms.wayuwa.cn.conf /tmp/ensure-jumpserver-certificate.sh
     printf "%s\n" \
       "SHELL=/bin/sh" \
@@ -507,7 +511,7 @@ deploy_cloud() {
 gateway_ready_from_cloud() {
   gateway_host="$1"
   ssh -o ConnectTimeout=15 "wao-cloud" \
-    "curl -4 -kfsS --max-time 8 https://$gateway_host:9000/api/hello | grep -q '\"code\":0'"
+    "gateway_ip=\$(sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh '$gateway_host') && curl -4 -kfsS --max-time 8 https://\$gateway_ip:9000/api/hello | grep -q '\"code\":0'"
 }
 
 set_upstream_state() {
