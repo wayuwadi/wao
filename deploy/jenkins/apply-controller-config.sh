@@ -34,7 +34,8 @@ done
 needs_update deploy/jenkins/backup-controller.sh /usr/local/lib/wao-jenkins/backup-controller.sh
 needs_update deploy/jenkins/deploy-master-local.sh /usr/local/lib/wao-jenkins/deploy-master-local.sh
 for backup_script in \
-  configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh webdav_client.py \
+  configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
+  upload-peer-offsite.sh restore-peer-offsite.sh webdav_client.py \
   create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
   needs_update "deploy/backup/$backup_script" "/usr/local/lib/wao-backup/$backup_script"
 done
@@ -124,6 +125,7 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     install -d -m 0755 /host/usr/local/lib/wao-backup
     for backup_script in \
       configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
+      upload-peer-offsite.sh restore-peer-offsite.sh \
       create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
       cp "/workspace/deploy/backup/$backup_script" \
         "/host/usr/local/lib/wao-backup/$backup_script"
@@ -162,6 +164,8 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     chmod 0755 /host/usr/local/lib/wao-backup/configure-offsite-backup.sh \
       /host/usr/local/lib/wao-backup/create-offsite-backup.sh \
       /host/usr/local/lib/wao-backup/restore-offsite-backup.sh \
+      /host/usr/local/lib/wao-backup/upload-peer-offsite.sh \
+      /host/usr/local/lib/wao-backup/restore-peer-offsite.sh \
       /host/usr/local/lib/wao-backup/webdav_client.py
     chmod 0644 /host/etc/systemd/system/wao-offsite-backup.service \
       /host/etc/systemd/system/wao-offsite-backup.timer

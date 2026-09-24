@@ -48,5 +48,5 @@ systemctl enable --now wao-offsite-backup.timer
 systemctl start wao-offsite-backup.service
 systemctl --no-pager --full status wao-offsite-backup.service
 printf '%s\n' \
-  '123 云盘异地备份已配置并完成首份备份。' \
+  '123 云盘异地备份已配置，现有已验证的异机快照已上传。' \
   '请把加密口令另存到不依赖这两台 Linux 主机的密码管理器；丢失后备份无法恢复。'

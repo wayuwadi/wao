@@ -39,6 +39,7 @@ bash -n deploy/backup/verify-peer-restore.sh
 bash -n deploy/backup/check-peer-backup.sh
 bash -n deploy/backup/restore-latest-peer-backup.sh
 sh deploy/backup/test-offsite-backup.sh
+bash deploy/backup/test-peer-offsite.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
 python3 -m unittest deploy/jumpserver/test_verify_wao_ssh.py
 sh deploy/jumpserver/test-verify-assets.sh
@@ -74,7 +75,9 @@ done
 for script in \
   deploy/backup/configure-offsite-backup.sh \
   deploy/backup/create-offsite-backup.sh \
-  deploy/backup/restore-offsite-backup.sh; do
+  deploy/backup/restore-offsite-backup.sh \
+  deploy/backup/upload-peer-offsite.sh \
+  deploy/backup/restore-peer-offsite.sh; do
   bash -n "$script"
 done
 
