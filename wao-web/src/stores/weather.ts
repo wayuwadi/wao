@@ -68,6 +68,31 @@ export const useWeatherStore = defineStore('weather', () => {
     } catch (e) { if (request === version) { error.value = weatherErrorMessage(e, '保存失败，请重试'); keepDraft() } }
     finally { if (request === version) saving.value = false }
   }
+  async function setCalendarVisibility(field: 'calendarVisible' | 'readingsVisible', visible: boolean): Promise<boolean> {
+    if (!loaded.value || saving.value) return false
+    const request = version, previous = copy(prefs.value), hadDraft = dirty.value
+    const next = { ...previous, [field]: visible }
+    prefs.value = next
+    if (hadDraft) draft.value = { ...draft.value, [field]: visible }
+    else applyDraft(next)
+    saving.value = true; error.value = ''; message.value = ''
+    try {
+      await savePreference('weather-v1', JSON.stringify(next))
+      if (request !== version) return false
+      message.value = hadDraft ? '日历显示已保存；其他天气设置尚未保存' : '日历显示已保存'
+      if (field === 'calendarVisible') await refresh()
+      return true
+    } catch (e) {
+      if (request === version) {
+        prefs.value = previous
+        if (hadDraft) draft.value = { ...draft.value, [field]: previous[field] }
+        else applyDraft(previous)
+        error.value = weatherErrorMessage(e, '保存失败，请重试')
+        if (field === 'calendarVisible') await refresh()
+      }
+      return false
+    } finally { if (request === version) saving.value = false }
+  }
   async function refresh() {
     const request = ++forecastVersion, location = prefs.value.location
     forecast.value = null; stale.value = false; forecastError.value = ''; forecasting.value = false
@@ -98,5 +123,5 @@ export const useWeatherStore = defineStore('weather', () => {
       void load()
     }
   }, { immediate: true })
-  return { prefs, draft, query, loaded, loading, saving, dirty, error, message, forecasting, forecastError, forecast, stale, days, load, save, refresh, checkFreshness, resetDraft }
+  return { prefs, draft, query, loaded, loading, saving, dirty, error, message, forecasting, forecastError, forecast, stale, days, load, save, setCalendarVisibility, refresh, checkFreshness, resetDraft }
 })

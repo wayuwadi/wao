@@ -175,6 +175,8 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.text()).toContain('我的已排期 P2')
     expect(wrapper.text()).not.toContain('他人的任务')
     expect(wrapper.find('.attendance-sidebar').isVisible()).toBe(false)
+    expect(wrapper.find('.calendar-display-menu').exists()).toBe(false)
+    expect(wrapper.findAll('.calendar-visibility [role="switch"]')).toHaveLength(5)
 
     await wrapper.find('.view-switch button:last-child').trigger('click')
     const slots = wrapper.findAll('.time-day .time-slot')
@@ -244,7 +246,7 @@ describe('日历成员隔离、清单与时间轴', () => {
 
     await wrapper.find('.completed-toggle').trigger('click')
     expect(wrapper.findAll('.event.completed')).toHaveLength(0)
-    expect(wrapper.find('.completed-toggle').text()).toContain('显示已完成任务')
+    expect(wrapper.find('.completed-toggle').attributes('aria-checked')).toBe('false')
     await wrapper.find('.completed-toggle').trigger('click')
 
     await wrapper.findAll('.view-switch button')[3]!.trigger('click')
@@ -276,10 +278,9 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(marks).toContain('小周 · 双休')
     expect(marks).toContain('大周 · 周日上班')
 
-    await wrapper.find('.calendar-display-menu summary').trigger('click')
     await wrapper.find('.work-week-visibility').trigger('click')
     expect(wrapper.findAll('.work-week-mark')).toHaveLength(0)
-    expect(wrapper.find('.work-week-visibility').text()).toContain('隐藏')
+    expect(wrapper.find('.work-week-visibility').attributes('aria-checked')).toBe('false')
     expect(localStorage.getItem('wao-calendar-work-week-visible:wg')).toBe('false')
 
     await wrapper.find('.work-schedule').trigger('click')

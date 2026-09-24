@@ -266,6 +266,11 @@ function toggleAttendanceMode() {
   attendanceMode.value = !attendanceMode.value
 }
 
+async function toggleWeatherVisibility(field: 'calendarVisible' | 'readingsVisible') {
+  const saved = await weather.setCalendarVisibility(field, !weather.prefs[field])
+  if (!saved) toast(weather.error || '天气设置尚未读取，请稍后重试', 'ri-error-warning-line')
+}
+
 /** 拉取当前视图可见日期窗内的 CalDAV 订阅事件。 */
 async function loadEvents() {
   const { from, to } = visibleRange()
@@ -1161,7 +1166,14 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
   <div class="cal" :class="`cal-${viewMode}`">
     <div class="cal-top">
       <div class="cal-heading-row">
-        <div class="cal-title">日历</div>
+        <div class="calendar-visibility" role="group" aria-label="日历显示内容">
+          <button class="calendar-visibility-toggle" type="button" role="switch" aria-label="显示日历天气" :aria-checked="weather.prefs.calendarVisible" :disabled="!weather.loaded || weather.saving" title="显示或隐藏日历天气" @click="toggleWeatherVisibility('calendarVisible')"><span>天气</span><span class="visibility-track" aria-hidden="true"></span></button>
+          <button class="calendar-visibility-toggle" type="button" role="switch" aria-label="显示已保存卦名" :aria-checked="weather.prefs.readingsVisible" :disabled="!weather.loaded || weather.saving" title="显示或隐藏已保存卦名" @click="toggleWeatherVisibility('readingsVisible')"><span>卦名</span><span class="visibility-track" aria-hidden="true"></span></button>
+          <button class="calendar-visibility-toggle work-week-visibility" type="button" role="switch" aria-label="显示大小周标记" :aria-checked="showWorkWeek" title="只控制日历标记，不关闭大小周配置" @click="showWorkWeek = !showWorkWeek"><span>大小周</span><span class="visibility-track" aria-hidden="true"></span></button>
+          <button class="calendar-visibility-toggle attendance-toggle" type="button" role="switch" aria-label="显示我的考勤" :aria-checked="attendanceMode" title="显示或隐藏我的考勤" @click="toggleAttendanceMode"><span>考勤</span><span class="visibility-track" aria-hidden="true"></span></button>
+          <button class="calendar-visibility-toggle completed-toggle" type="button" role="switch" aria-label="显示已完成任务" :aria-checked="showCompletedTasks" title="显示或隐藏已完成任务" @click="showCompletedTasks = !showCompletedTasks"><span>已完成</span><span class="visibility-track" aria-hidden="true"></span></button>
+        </div>
+        <button v-if="!weather.loaded && weather.error" class="weather-visibility-retry" type="button" @click="weather.load()">天气设置读取失败 · 重试</button>
         <span v-if="holidayState === 'loading'" class="holiday-status"><i class="ri-loader-4-line spin"></i>节假日加载中</span>
         <button v-else-if="holidayState === 'error'" class="holiday-status error" @click="loadHolidays"><i class="ri-refresh-line"></i>节假日加载失败 · 重试</button>
         <div class="spacer"></div>
@@ -1174,13 +1186,8 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
         </div>
         <label class="member-calendar"><i class="ri-user-line"></i><select v-model="calendarMemberId" title="选择要查看的成员日历"><option v-for="member in session.members" :key="member.id" :value="member.id">{{ member.id === session.currentUser.id ? `我的日历 · ${member.name}` : member.name }}</option></select></label>
         <div class="calendar-search" :class="{ expanded: searchOpen || calendarSearch }" @focusout="!calendarSearch && (searchOpen = false)"><button class="search-toggle" type="button" aria-label="展开日历搜索" :aria-expanded="searchOpen || !!calendarSearch" @click="openSearch"><i class="ri-search-line"></i></button><input ref="searchInput" v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="closeSearch" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
-        <details name="calendar-toolbar-menu" class="calendar-menu calendar-display-menu"><summary><i class="ri-eye-line"></i>显示</summary><div class="calendar-menu-popover">
-          <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气与卦名</b><small>位置选择、分别显示或隐藏</small></span></button>
-          <button class="work-week-visibility" :class="{ on: showWorkWeek }" type="button" @click="showWorkWeek = !showWorkWeek"><i :class="showWorkWeek ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>大小周标记</b><small>只控制日历显示，不关闭配置</small></span><em>{{ showWorkWeek ? '显示' : '隐藏' }}</em></button>
-          <button class="attendance-toggle" :class="{ on: attendanceMode }" type="button" @click="toggleAttendanceMode"><i :class="attendanceMode ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>我的考勤</b><small>上下班、工时与异常</small></span><em>{{ attendanceMode ? '显示' : '隐藏' }}</em></button>
-          <button class="completed-toggle" :class="{ on: showCompletedTasks }" type="button" @click="showCompletedTasks = !showCompletedTasks"><i :class="showCompletedTasks ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>{{ showCompletedTasks ? '隐藏已完成任务' : '显示已完成任务' }}</b><small>保留或隐藏历史完成项</small></span><em>{{ showCompletedTasks ? '显示中' : '已隐藏' }}</em></button>
-        </div></details>
         <details name="calendar-toolbar-menu" class="calendar-menu calendar-settings-menu"><summary><i class="ri-settings-3-line"></i>日历设置</summary><div class="calendar-menu-popover">
+          <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气位置</b><small>选择或更换天气城市</small></span></button>
           <button class="holiday-settings-entry" type="button" @click="openHolidaySettings"><i class="ri-earth-line"></i><span><b>节日设置</b><small>{{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类国际节日</small></span></button>
           <button class="important-date-entry" type="button" @click="openImportantDateManager"><i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i><span><b>提醒事项</b><small>{{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}</small></span></button>
           <button class="caldav" type="button" @click="showCaldavConfig = true"><span class="cd-dot" :style="{ background: caldavState.dot }"></span><span><b>CalDAV</b><small>{{ caldavState.label }}</small></span></button>
@@ -1731,11 +1738,18 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
   border-radius: 12px;
   background: var(--wao-bg-card);
 }
-.cal-heading-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.cal-title {
-  font-size: 20px;
-  font-weight: 700;
-}
+.cal-heading-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-width: 0; }
+.calendar-visibility { display: flex; flex: 0 0 470px; max-width: 100%; min-width: 0; align-items: center; gap: 3px; overflow-x: auto; padding: 2px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); scrollbar-width: thin; }
+.calendar-visibility-toggle { display: inline-flex; flex: 1 0 88px; height: 26px; align-items: center; justify-content: space-between; gap: 4px; padding: 0 5px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-3); font-size: 11px; white-space: nowrap; cursor: pointer; }
+.calendar-visibility-toggle:hover { background: var(--wao-bg-hover); }
+.calendar-visibility-toggle[aria-checked="true"] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.calendar-visibility-toggle:disabled { opacity: .55; cursor: wait; }
+.calendar-visibility-toggle:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+.visibility-track { position: relative; flex: 0 0 24px; height: 14px; border-radius: 10px; background: var(--wao-text-weak); opacity: .65; transition: background .16s ease; }
+.visibility-track::after { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: #fff; content: ''; transition: transform .16s ease; }
+.calendar-visibility-toggle[aria-checked="true"] .visibility-track { background: var(--wao-primary); opacity: 1; }
+.calendar-visibility-toggle[aria-checked="true"] .visibility-track::after { transform: translateX(10px); }
+.weather-visibility-retry { border: 0; background: transparent; color: var(--wao-danger); font-size: 11px; cursor: pointer; }
 .legend {
   display: flex;
   gap: 12px;
@@ -2305,12 +2319,6 @@ button.holiday-status { cursor: pointer; }
 .important-date-empty b { color: var(--wao-text-2); font-size: 14px; }
 .important-date-empty span { font-size: 12px; }
 .important-date-empty button { margin-top: 8px; }
-.completed-toggle {
-  height: 30px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px;
-  border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card);
-  color: var(--wao-text-3); font-size: 11.5px; cursor: pointer;
-}
-.completed-toggle.on { color: var(--wao-primary-text); border-color: color-mix(in srgb, var(--wao-primary) 45%, var(--wao-line-control)); }
 .calendar-search { position: relative; width: min(240px, 100%); height: 30px; }
 .calendar-search > i { position: absolute; z-index: 1; left: 9px; top: 7px; color: var(--wao-text-weak); }
 .calendar-search > input { width: 100%; height: 30px; padding: 0 9px 0 28px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-1); }
@@ -2343,7 +2351,7 @@ button.holiday-status { cursor: pointer; }
   .holiday-facts div { grid-template-columns: 58px 1fr; }
   .holiday-reminder-form .work-schedule-field { grid-template-columns: 1fr; }
   .important-date-body { padding-inline: 14px; }
-  .cal-heading-row { flex-wrap: wrap; }
+  .calendar-visibility { flex-basis: 100%; }
   .cal-heading-row { position: relative; }
   .calendar-menu { position: static; }
   .calendar-menu-popover { top: calc(100% + 6px); left: 0; right: auto; width: 100%; box-sizing: border-box; max-height: 60dvh; overflow-y: auto; }
@@ -2386,8 +2394,6 @@ button.holiday-status { cursor: pointer; }
 .attendance-sidebar :deep(.attendance-actions) { flex-wrap: wrap; }
 .attendance-sidebar :deep(.attendance-history) { flex-wrap: wrap; }
 @media (max-width: 1100px) {
-  .cal-heading-row { flex-wrap: wrap; }
-  .cal-title { font-size: 17px; }
   .cal-head .legend { display: none; }
 }
 @media (max-width: 900px) {
