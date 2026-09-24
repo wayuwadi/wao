@@ -36,7 +36,7 @@ function bodyElement<T extends Element>(selector: string): T {
   return element
 }
 
-async function mountFloating(path = '/') {
+async function mountFloating(path = '/', showTrigger = true) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
@@ -46,6 +46,7 @@ async function mountFloating(path = '/') {
   const pinia = createPinia()
   const wrapper = mount(FloatingChat, {
     attachTo: document.body,
+    props: { showTrigger },
     global: { plugins: [pinia, router], stubs: { ChatView: ChatStub } },
   })
   wrappers.push(wrapper)
@@ -58,6 +59,13 @@ describe('悬浮聊天入口', () => {
     wrappers.forEach((wrapper) => wrapper.unmount())
     wrappers = []
     document.body.innerHTML = ''
+  })
+
+  it('隐藏普通页面入口，旧聊天地址仍可打开历史聊天', async () => {
+    const { ui } = await mountFloating('/?chat=1', false)
+    expect(document.body.querySelector('.chat-entry')).toBeNull()
+    expect(ui.chatOpen).toBe(true)
+    expect(bodyElement<HTMLElement>('#wao-floating-chat').textContent).toContain('共享聊天')
   })
 
   it('点击右上角入口打开，点击框外最小化且重新打开仍保留输入', async () => {

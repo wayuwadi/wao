@@ -1,4 +1,4 @@
-export type ConfigurableShortcutAction = 'new-task' | 'new-note' | 'chat'
+export type ConfigurableShortcutAction = 'new-task' | 'new-note'
 
 export interface ShortcutSettings {
   window: Record<ConfigurableShortcutAction, string>
@@ -12,12 +12,11 @@ export const SHORTCUT_ACTIONS: ReadonlyArray<{
 }> = [
   { id: 'new-task', label: '新建任务', description: '直接打开任务记录框' },
   { id: 'new-note', label: '打开小记', description: '进入小记并开始记录' },
-  { id: 'chat', label: '打开聊天', description: '打开团队聊天窗口' },
 ]
 
 export const DEFAULT_SHORTCUT_SETTINGS: ShortcutSettings = {
-  window: { 'new-task': 'Alt+Q', 'new-note': 'Alt+E', chat: 'Alt+F' },
-  global: { 'new-task': '', 'new-note': 'Alt+Shift+Y', chat: '' },
+  window: { 'new-task': 'Alt+Q', 'new-note': 'Alt+E' },
+  global: { 'new-task': '', 'new-note': 'Alt+Shift+Y' },
 }
 
 const ACTION_IDS = new Set(SHORTCUT_ACTIONS.map((item) => item.id))

@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { useUiStore } from '@/stores/ui'
-import { chatShareLink } from '@/utils/share'
-const ui = useUiStore()
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
@@ -621,13 +618,6 @@ function onFileSettingsSaved(settings: FileSettings) {
               @click="copyText(f.id ? fileShareUrl(f.id) : absoluteUrl(f.link), '已复制分享链接')"
             >
               <i class="ri-links-line"></i>复制链接
-            </button>
-            <button
-              v-if="f.id"
-              class="copy-btn"
-              @click="ui.shareToChat(chatShareLink(fileDisplayName(f), fileShareUrl(f.id)))"
-            >
-              <i class="ri-chat-forward-line"></i>分享到聊天
             </button>
             <button
               v-if="f.id"

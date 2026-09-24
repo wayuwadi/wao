@@ -5,7 +5,8 @@ import { ALL_QUICK_LINKS as DEFAULT_LINKS, type QuickLink } from '@/config/quick
 const PREF_KEY = 'quick-links'
 const PREF_VERSION = 2
 const MAX_LINKS = 20
-const REQUIRED_AFTER_LEGACY_MIGRATION = new Set(['wao-desktop-pet', 'wao-jenkins'])
+const REQUIRED_AFTER_LEGACY_MIGRATION = new Set(['wao-jenkins'])
+const RETIRED_LINK_IDS = new Set(['wao-desktop-pet'])
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const ICON_PATTERN = /^ri-[a-z0-9-]+$/
 
@@ -64,7 +65,7 @@ function isSafeUrl(value: string): boolean {
 export function canonicalizeQuickLinks(values: unknown[]): QuickLink[] {
   if (values.length > MAX_LINKS) throw new Error(`快捷链接不能超过 ${MAX_LINKS} 个`)
   const ids = new Set<string>()
-  return values.map((value) => {
+  return values.filter((value) => !RETIRED_LINK_IDS.has((value as QuickLink)?.id)).map((value) => {
     const link = normalizeLink(value)
     if (ids.has(link.id)) throw new Error(`快捷链接标识不能重复：${link.id}`)
     ids.add(link.id)
@@ -73,7 +74,7 @@ export function canonicalizeQuickLinks(values: unknown[]): QuickLink[] {
 }
 
 /**
- * 读取版本化偏好。旧数组只在首次迁移时补齐原有桌面入口和新的 Jenkins 入口；
+ * 读取版本化偏好。旧数组只在首次迁移时补齐 Jenkins 入口；
  * v2 中用户明确删除后的空列表或自定义列表会原样保留。
  */
 export function parseQuickLinksPreference(raw: string): QuickLink[] {

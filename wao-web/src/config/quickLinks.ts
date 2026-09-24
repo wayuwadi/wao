@@ -89,15 +89,6 @@ export const PRODUCT_LINKS: QuickLink[] = [
     openMode: 'NEW_PAGE',
     keywords: ['download', 'xiazai', 'android', 'ios', '客户端'],
   },
-  {
-    id: 'wao-desktop-pet',
-    label: 'WAO 桌面宠物',
-    subtitle: '下载 Windows / macOS 版本',
-    icon: 'ri-bear-smile-line',
-    url: '/desktop',
-    openMode: 'NEW_PAGE',
-    keywords: ['desktop', 'pet', 'windows', 'macos', 'zhuomian', 'chongwu', 'xiazai'],
-  },
 ]
 
 /** 新成员的默认快捷链接；成员保存后以服务端偏好为准。 */

@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { useUiStore } from '@/stores/ui'
-import { chatShareLink } from '@/utils/share'
-const ui = useUiStore()
 import { computed, onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
@@ -266,7 +263,6 @@ async function removePage(page: HostedPage) {
         <button @click="copyText(fileShareUrl(file.id!), '已复制公网分享链接')">
           <i class="ri-links-line"></i>分享
         </button>
-        <button v-if="file.id" @click="ui.shareToChat(chatShareLink(fileDisplayName(file), fileShareUrl(file.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button>
         <button v-if="file.id" title="重新上传文件" @click="replacement = { kind: 'file', id: file.id, name: fileDisplayName(file), url: fileShareUrl(file.id) }"><i class="ri-upload-2-line"></i>重新上传</button>
         <a :href="absoluteUrl(file.link)" title="下载"><i class="ri-download-2-line"></i></a>
         <button class="danger" @click="removeFile(file.id, fileDisplayName(file))">

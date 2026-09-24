@@ -16,7 +16,7 @@ import SubtaskProperties from '@/components/task/SubtaskProperties.vue'
 import WorkItemIcon from '@/components/task/WorkItemIcon.vue'
 import { AI_RUN_ENABLED, selectableTaskStatuses } from '@/config/features'
 import SaveHint from '@/components/ui/SaveHint.vue'
-import { chatShareLink, shareMarkdownUrl, shareUrl } from '@/utils/share'
+import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { createAiRuns, fetchTaskAiRuns, pauseAiRun } from '@/api/ai'
 import AiRunArchive from '@/components/ai/AiRunArchive.vue'
@@ -580,16 +580,6 @@ function deleteSub() {
 const shareOpenOnly = ref(false)
 const shareDoneCount = computed(() => (task.value?.subs ?? []).filter((s) => s.done).length)
 
-/** 把当前任务分享追加到聊天草稿，不离开任务编辑现场。 */
-function shareToChat() {
-  const t = task.value
-  if (!t) return
-  const sub = t.subs.find((item) => item.id === openSubId.value)
-  const title = (sub?.text || t.title).replace(/[\\[\]`*_<>]/g, ' ').replace(/\s+/g, ' ')
-  ui.shareToChat(chatShareLink(`${sub ? '子任务' : '任务'}：${title}`, shareUrl(t.id, openSubId.value, !sub && shareOpenOnly.value)))
-  menu.value = null
-}
-
 /** 复制当前上下文（任务或已展开的子任务）的分享链接。 */
 async function copyShare(kind: 'page' | 'md') {
   const t = task.value
@@ -1024,10 +1014,6 @@ async function uploadAttachment(event: Event) {
                 <em>过滤掉已完成的 {{ shareDoneCount }} 条{{ AI_RUN_ENABLED && dispatchedSubIds.size ? `和已单独派给 AI 的 ${dispatchedSubIds.size} 条` : '' }}，避免重复派工</em>
               </span>
             </label>
-            <button class="share-item" @click="shareToChat">
-              <i class="ri-chat-forward-line"></i>
-              <span class="share-main"><b>分享到聊天</b><em>放入聊天草稿，可补充说明后发送</em></span>
-            </button>
             <button class="share-item" @click="copyShare('page')">
               <i class="ri-external-link-line"></i>
               <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>

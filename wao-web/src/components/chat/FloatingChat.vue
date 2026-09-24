@@ -5,6 +5,8 @@ import ChatView from '@/views/ChatView.vue'
 import { useUiStore } from '@/stores/ui'
 import { useFloatingDrag } from '@/composables/floatingDrag'
 
+withDefaults(defineProps<{ showTrigger?: boolean }>(), { showTrigger: true })
+
 const route = useRoute()
 const ui = useUiStore()
 const trigger = ref<HTMLElement | null>(null)
@@ -67,6 +69,7 @@ onBeforeUnmount(() => {
 <template>
 
     <button
+      v-if="showTrigger"
       ref="trigger"
       class="chat-entry"
       :class="{ active: ui.chatOpen }"

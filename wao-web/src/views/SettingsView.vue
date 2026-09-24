@@ -45,11 +45,11 @@ const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(nu
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
   { label: '系统', icon: 'ri-settings-4-line', items: [['版本与更新', 'version'], ['网站信息 · 备案', 'site'], ['系统登录配置', 'login-settings'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['我的导航', 'navigation'], ['个人资料', 'profile'], ['账号与登录', 'account'], ['宠物设置', 'pet'], ['偏好', 'prefs']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['我的导航', 'navigation'], ['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs']] },
 ] as const
 
 const requestedTab = (route.query.tab as string) || 'members'
-const availableTabs = new Set<string>(NAV.flatMap((group) => group.items.map((item) => item[1])))
+const availableTabs = new Set<string>([...NAV.flatMap((group) => group.items.map((item) => item[1])), 'pet'])
 const normalizedTab = requestedTab === 'caldav'
   ? 'members'
   : requestedTab === 'quick-links'

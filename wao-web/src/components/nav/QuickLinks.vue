@@ -70,7 +70,7 @@ onBeforeUnmount(() => {
     <button
       ref="triggerRef"
       class="ql-trigger"
-      title="快捷链接（Jenkins、桌面宠物、GitHub…）"
+      title="快捷链接（Jenkins、GitHub…）"
       @click="toggle"
     >
       <i class="ri-links-line"></i>
