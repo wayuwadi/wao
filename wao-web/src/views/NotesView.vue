@@ -91,15 +91,27 @@ const creatingTag = ref(false)
 const tagError = ref('')
 const editingIds = ref<string[]>([])
 const deletingId = ref('')
+const confirmingDeleteId = ref('')
 const deleteError = ref<{ id: string; message: string } | null>(null)
 function closeEditing(id: string) { editingIds.value = editingIds.value.filter(item => item !== id) }
-async function deleteNote(id: string) {
+function toggleDeleteConfirmation(id: string) {
   if (deletingId.value) return
+  confirmingDeleteId.value = confirmingDeleteId.value === id ? '' : id
+  deleteError.value = null
+}
+function cancelDeleteOnEscape(id: string, event: KeyboardEvent) {
+  if (confirmingDeleteId.value !== id || deletingId.value) return
+  event.stopPropagation()
+  toggleDeleteConfirmation(id)
+}
+async function deleteNote(id: string) {
+  if (deletingId.value || confirmingDeleteId.value !== id) return
   if (!data.apiLive) { deleteError.value = { id, message: '服务尚未连接，小记未删除，请稍后重试。' }; return }
   deletingId.value = id
   deleteError.value = null
   try {
     await data.deleteDoc(id)
+    confirmingDeleteId.value = ''
     closeEditing(id)
     if (highlighted.value === id) highlighted.value = ''
     toast('小记已移入知识库回收站，7 天内可恢复', 'ri-delete-bin-line')
@@ -109,6 +121,7 @@ async function deleteNote(id: string) {
 }
 async function editNote(id: string, event?: MouseEvent) {
   if (event?.target instanceof Element && event.target.closest('a, button, input, select, textarea, summary, [contenteditable="true"]')) return
+  confirmingDeleteId.value = ''
   if (!editingIds.value.includes(id)) editingIds.value = [...editingIds.value, id]
   await nextTick()
   const card = Array.from(notesList.value?.querySelectorAll<HTMLElement>('[data-note-id]') ?? []).find(el => el.dataset.noteId === id)
@@ -145,6 +158,7 @@ const loading = computed(() => ['idle', 'loading'].includes(data.loadStates.docs
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
 watch([query, selectedTag, sort], () => {
   limit.value = PAGE_SIZE
+  confirmingDeleteId.value = ''
   notesList.value?.scrollTo?.({ top: 0 })
 })
 function onCreated(id: string) {
@@ -245,7 +259,7 @@ onMounted(() => void loadPins())
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
         <article v-for="note in visible" :key="note.id" class="note-card" :class="{ highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
           tabindex="0" title="双击在卡片内编辑，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 在卡片内编辑`"
-          @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)">
+          @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
           <NoteComposer v-if="editingIds.includes(note.id)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
@@ -265,11 +279,17 @@ onMounted(() => void loadPins())
             <button @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-link"></i>复制分享链接</button>
             <button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button>
             <button class="card-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button>
-            <button class="card-delete" :aria-label="`删除小记：${note.title}`" title="移入回收站，7 天内可恢复"
-              :disabled="!!deletingId || !data.apiLive" @click="deleteNote(note.id)"><i class="ri-delete-bin-line"></i>{{ deletingId === note.id ? '删除中…' : '删除' }}</button>
+            <button class="card-delete" :aria-label="`${confirmingDeleteId === note.id ? '取消删除' : '删除'}小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" :title="confirmingDeleteId === note.id ? '收起删除确认' : '移入回收站，7 天内可恢复'"
+              :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i :class="confirmingDeleteId === note.id ? 'ri-close-line' : 'ri-delete-bin-line'"></i>{{ deletingId === note.id ? '删除中…' : confirmingDeleteId === note.id ? '取消删除' : '删除' }}</button>
             <RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink>
           </div>
-          <p v-if="deleteError?.id === note.id" class="card-delete-error" role="alert">{{ deleteError.message }} <button @click="deleteNote(note.id)">重试删除</button></p>
+          <div v-if="confirmingDeleteId === note.id" class="card-delete-confirm" role="group" :aria-label="`确认删除小记：${note.title}`">
+            <span>将此小记移入回收站？7 天内可恢复。</span>
+            <span v-if="!data.apiLive" class="card-delete-offline">服务尚未连接，暂时不能删除。</span>
+            <button type="button" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)">取消</button>
+            <button type="button" class="card-delete-submit" :disabled="!!deletingId || !data.apiLive" @click="deleteNote(note.id)">{{ deletingId === note.id ? '删除中…' : '确认删除' }}</button>
+          </div>
+          <p v-if="deleteError?.id === note.id" class="card-delete-error" role="alert">{{ deleteError.message }}</p>
           </template>
         </article>
         <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>
@@ -345,8 +365,11 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .card-edit { display: inline-flex; gap: 4px; align-items: center; }
 .card-delete { display: inline-flex; gap: 4px; align-items: center; color: var(--wao-danger-strong); }
 .card-delete:hover { color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
+.card-delete-confirm { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--wao-danger-bg); color: var(--wao-text-2); font-size: 12px; }
+.card-delete-confirm span:first-child { margin-right: auto; }
+.card-delete-confirm button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); }
+.card-delete-confirm .card-delete-submit { border-color: var(--wao-danger-strong); color: var(--wao-danger-strong); font-weight: 600; }
 .card-delete-error { margin: 6px 0 0; color: var(--wao-danger-strong); font-size: 12px; }
-.card-delete-error button { color: inherit; text-decoration: underline; }
 .note-actions { flex-wrap: wrap; }
 .empty { text-align: center; padding: 36px 12px; color: var(--wao-text-faint); font-size: 13px; }
 .error { color: var(--wao-danger-strong); font-size: 12px; }
