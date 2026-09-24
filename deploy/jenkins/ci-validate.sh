@@ -29,6 +29,7 @@ sh deploy/jenkins/test-github-status.sh
 sh deploy/jenkins/test-backup-controller.sh
 python3 -m unittest deploy/ai-runner/test_linux2_tunnel.py
 python3 -m unittest deploy/backup/test_webdav_client.py
+python3 -m unittest deploy/backup/test_readable_content.py
 python3 -m unittest deploy/backup/test_peer_retention.py deploy/backup/test_peer_health.py
 python3 -m unittest deploy/scripts/test_node_dns_acme.py
 python3 -m unittest deploy/scripts/test_static_release.py
@@ -80,7 +81,8 @@ for script in \
   deploy/backup/create-offsite-backup.sh \
   deploy/backup/restore-offsite-backup.sh \
   deploy/backup/upload-peer-offsite.sh \
-  deploy/backup/restore-peer-offsite.sh; do
+  deploy/backup/restore-peer-offsite.sh \
+  deploy/backup/run-readable-content.sh; do
   bash -n "$script"
 done
 

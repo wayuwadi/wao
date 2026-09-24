@@ -1,33 +1,37 @@
-# WAO 123 云盘异地备份
+# WAO 123 云盘可读内容副本
 
-Linux2 每天 04:15 完成 Linux1 异机恢复快照后，05:00 将**同一份已验证快照**上传到 123 云盘，不再另做大型本地归档。快照包含 `wao`、`tools`、`wayuwa`、`tkwork` 四个数据库，以及两台机器的部署恢复材料；每周一次的快照还包含 Jenkins 恢复归档。个人知识库、小记、任务、图片和附件均存于 `wao` 数据库。
+Linux2 每天北京时间 05:00 把 WAO 中**所有成员当前未删除的知识库文档、小记和任务**导出到授权文件夹内的 `WAO-可读文件/`。正文为 UTF-8 `.txt`，按知识库、项目和标题组织；这些文件可以直接作为普通文本阅读。文档和任务引用到的、数据库里仍存在的图片及附件按原格式放在 `图片/`、`附件/`。根目录的 `开始阅读.txt` 列出各类数量和失效媒体引用数。
 
-上传任务沿用异机快照的加密归档，按每段最多 900 MB 流式上传，只额外将其解密密钥用独立的云端恢复口令加密，不在 Linux2 生成第二份大型文件。Linux2 和 Linux1 原有快照保留策略不变；123 云盘保留 30 天。云端成功上传的标志是最后写入的 `manifest.json`，每段都有 SHA-256 校验值。
+同步是单向的。脚本从 MySQL 只读导出，使用云端 `manifest.json` 的 SHA-256 比对：内容未变就不重传；新文件或改动文件在上传后校验远端大小，再抽样下载文本和媒体核对 SHA-256。需要覆盖的云端文件若已被手工改动，脚本会拒绝覆盖。标题变化或源记录删除后，只清理本脚本清单中的旧文件；若一次将删除超过旧清单的 20%，任务失败并保留云端文件。失效引用不妨碍其他内容导出，但计入清单。运行失败时不会把未完成同步写成成功清单。
 
-## 首次配置
+新目录没有 30 天的定时清理规则；它保存当前内容的一份持续更新的副本。源内容被删除或改名时，旧文件会按上述规则从新目录清理。
 
-在 123 云盘「工具中心 → 第三方挂载」中新建名为 `WAO Linux2 Backup` 的应用，只授权一个新的专用文件夹并授予读写权限。使用该应用生成的密码，不能使用云盘登录密码。WebDAV 地址以授权页面显示的值为准，通用地址为 `https://webdav.123pan.cn/webdav`。
+这是一份**方便浏览的内容副本**，没有数据库结构、权限、历史版本或全部服务器配置，不能用于恢复 WAO 服务。Linux1/Linux2 间原有的加密数据库恢复快照和 binlog 备份继续运行。123 云盘旧的 `WAO-backups/` 加密快照目前保留，恢复工具和口令也保留；新定时任务不再每天上传整份加密快照，且不会删除旧加密快照。个人生活记忆、统一记忆等其他模块不属于本次可读导出范围。
 
-在 Linux2 执行：
+## 配置与检查
+
+123 云盘 WebDAV 授权仍只允许访问专用文件夹；应用密码放在 Linux2 root-only `/etc/wao-backup/webdav.env`。仓库不保存凭据。首次配置执行：
 
 ```bash
 sudo /usr/local/lib/wao-backup/configure-offsite-backup.sh \
-  'https://webdav.123pan.cn/webdav' '<授权页面显示的用户名>' 'WAO-backups'
+  'https://webdav.123pan.cn/webdav' '<WebDAV 用户名>' 'WAO-backups'
 ```
 
-脚本在终端隐藏读取应用密码和至少 20 字符的独立云端恢复口令，检查 WebDAV，再上传最近一份已验证的异机快照。口令以 `0600` 权限保存在 `/etc/wao-backup`。**云端恢复口令必须另存到不依赖 Linux1、Linux2 和 123 云盘的密码管理器**；若两台机器都丢失，仅有云盘账号仍无法恢复加密数据。
+脚本隐藏读取 WebDAV 应用密码，验证授权后同步首次内容副本。已有 WebDAV 配置可直接运行：
 
 ```bash
+sudo /usr/local/lib/wao-backup/run-readable-content.sh --inventory
+sudo systemctl start wao-offsite-backup.service
+systemctl show wao-offsite-backup.service -p Result -p ExecMainStatus
 systemctl list-timers wao-offsite-backup.timer
-systemctl status wao-offsite-backup.service
-journalctl -u wao-offsite-backup.service --since today
 ```
 
-上传位置为授权文件夹内的 `WAO-backups/linux2/<UTC 时间>/`。若当天异机备份失败，云端仍保留上一恢复点，须先修复异机备份；不能把旧快照冒充新恢复点。
+`--inventory` 只读取数据库并输出数量，不上传。数据库连接来自现有 root-only 的 WAO 部署配置，不写入脚本或日志。
+首次上传若中断且源内容随后发生变化，可人工使用 `run-readable-content.sh --resume-initial` 续传；该选项在云端清单建立后会被拒绝，日常定时任务不会使用。
 
-## 恢复演练
+## 旧加密恢复点
 
-恢复脚本只解密到指定的空目录，不停止服务或覆盖生产：
+既有 `WAO-backups/linux2/<UTC 时间>/` 保持原样。若需要完整数据库恢复，继续使用：
 
 ```bash
 sudo /usr/local/lib/wao-backup/restore-peer-offsite.sh --list
@@ -35,4 +39,4 @@ sudo /usr/local/lib/wao-backup/restore-peer-offsite.sh \
   20260923T201855Z /var/tmp/wao-restore-drill
 ```
 
-脚本先下载文件，核对云端清单和原始快照的 SHA-256，再依次解开云端密钥及恢复归档。`recovery/databases.sql.gz` 中含四个数据库，可在隔离 MySQL 中验证；`recovery/tables.txt` 是备份时的表清单。生产恢复需要另行确认目标和切换步骤。
+恢复脚本只解密到指定空目录，不覆盖生产。云端恢复口令需保存在不依赖两台 Linux 主机的密码管理器。

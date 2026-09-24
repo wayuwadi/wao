@@ -35,7 +35,8 @@ needs_update deploy/jenkins/backup-controller.sh /usr/local/lib/wao-jenkins/back
 needs_update deploy/jenkins/deploy-master-local.sh /usr/local/lib/wao-jenkins/deploy-master-local.sh
 for backup_script in \
   configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
-  upload-peer-offsite.sh restore-peer-offsite.sh webdav_client.py \
+  upload-peer-offsite.sh restore-peer-offsite.sh run-readable-content.sh \
+  export-readable-content.py webdav_client.py \
   create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
   needs_update "deploy/backup/$backup_script" "/usr/local/lib/wao-backup/$backup_script"
 done
@@ -125,7 +126,7 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     install -d -m 0755 /host/usr/local/lib/wao-backup
     for backup_script in \
       configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
-      upload-peer-offsite.sh restore-peer-offsite.sh \
+      upload-peer-offsite.sh restore-peer-offsite.sh run-readable-content.sh \
       create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
       cp "/workspace/deploy/backup/$backup_script" \
         "/host/usr/local/lib/wao-backup/$backup_script"
@@ -136,6 +137,8 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     done
     cp /workspace/deploy/backup/webdav_client.py \
       /host/usr/local/lib/wao-backup/webdav_client.py
+    cp /workspace/deploy/backup/export-readable-content.py \
+      /host/usr/local/lib/wao-backup/export-readable-content.py
     cp /workspace/deploy/backup/wao-offsite-backup.service \
       /host/etc/systemd/system/wao-offsite-backup.service
     cp /workspace/deploy/backup/wao-offsite-backup.timer \
@@ -166,6 +169,8 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/usr/local/lib/wao-backup/restore-offsite-backup.sh \
       /host/usr/local/lib/wao-backup/upload-peer-offsite.sh \
       /host/usr/local/lib/wao-backup/restore-peer-offsite.sh \
+      /host/usr/local/lib/wao-backup/run-readable-content.sh \
+      /host/usr/local/lib/wao-backup/export-readable-content.py \
       /host/usr/local/lib/wao-backup/webdav_client.py
     chmod 0644 /host/etc/systemd/system/wao-offsite-backup.service \
       /host/etc/systemd/system/wao-offsite-backup.timer
