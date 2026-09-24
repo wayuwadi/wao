@@ -186,11 +186,14 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         :hide-toolbar="inline" :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
-        @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile" />
-    </div>
-    <div class="composer-tags">
-      <button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button>
-      <button class="add-tag" type="button" :disabled="saving" :aria-expanded="showTagPicker" @click="showTagPicker = !showTagPicker"><i class="ri-price-tag-3-line"></i> 添加标签</button>
+        @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">
+        <template #footer-tags>
+          <div class="composer-tags">
+            <button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button>
+            <button class="add-tag" type="button" :disabled="saving" :aria-expanded="showTagPicker" @click="showTagPicker = !showTagPicker"><i class="ri-price-tag-3-line"></i> 添加标签</button>
+          </div>
+        </template>
+      </MarkdownEditor>
     </div>
     <div v-if="showTagPicker" class="tag-picker" aria-label="选择小记标签">
       <button v-for="tag in choices" :key="tag" type="button" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" :aria-pressed="tags.includes(tag)" @click="toggleTag(tag)"># {{ tag }}</button>
@@ -239,12 +242,13 @@ button:disabled { opacity: .5; cursor: default; }
 .editor-space :deep(.md-editor-wrap) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .editor-space :deep(.md-body) { flex: 1; min-height: 0 !important; overflow: auto; display: flex; flex-direction: column; }
 .editor-space :deep(.tiptap) { flex: 1; cursor: text; }
-.editor-space :deep(.image-upload) { position: static; align-self: flex-end; flex-shrink: 0; margin-top: 6px; }
 .new-tag-form { display: flex; flex-wrap: wrap; gap: 7px; width: 100%; }
 .new-tag-form input { min-width: 0; flex: 1; border: 1px solid var(--wao-line-control); border-radius: 6px; padding: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); }
 .new-tag-form .error { width: 100%; }
 .editor-space :deep(.md-body) { overflow-wrap: anywhere; }
-.composer-tags, .tag-picker { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
+.composer-tags, .tag-picker { display: flex; gap: 7px; flex-wrap: wrap; }
+.composer-tags { min-width: 0; }
+.tag-picker { margin-top: 12px; }
 .composer-tags button, .tag-picker button { padding: 5px 8px; font-size: 12px; max-width: 100%; overflow-wrap: anywhere; }
 .tag-chip, .tag-picker button[aria-pressed="true"] { color: var(--wao-primary-text); background: var(--wao-bg-hover); }
 .tag-picker { padding: 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; max-height: 150px; overflow: auto; }

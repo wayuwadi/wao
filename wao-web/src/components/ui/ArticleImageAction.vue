@@ -140,13 +140,13 @@ onBeforeUnmount(() => { generation++ })
 </template>
 
 <style scoped>
-.article-image-action { display: inline-flex; align-items: center; gap: 4px; }
+.article-image-action { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .generate-image, .prompt-settings { height: 26px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 7px; border: 1px solid var(--wao-divider); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text-weak); font-size: 11px; cursor: pointer; }
 .generate-image:hover, .prompt-settings:hover { border-color: var(--wao-primary); color: var(--wao-primary-text); }
 .generate-image:disabled { opacity: .6; cursor: default; }
 .spin { animation: article-image-spin 1s linear infinite; }
 @keyframes article-image-spin { to { transform: rotate(360deg); } }
-.image-error { position: absolute; right: 0; bottom: 31px; max-width: min(320px, 80vw); padding: 5px 7px; border: 1px solid var(--wao-danger-strong); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-danger-strong); font-size: 11px; }
+.image-error { flex-basis: 100%; max-width: min(320px, 80vw); padding: 5px 7px; border: 1px solid var(--wao-danger-strong); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-danger-strong); font-size: 11px; overflow-wrap: anywhere; }
 .image-error button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
 .image-prompt-mask { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(12, 22, 45, .48); }
 .image-prompt-dialog { width: min(560px, 100%); max-height: min(90vh, 760px); overflow: auto; padding: 20px; border-radius: 12px; background: var(--wao-bg-card); color: var(--wao-text-1); box-shadow: 0 18px 55px rgba(0, 0, 0, .24); }

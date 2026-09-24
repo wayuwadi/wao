@@ -22,7 +22,7 @@ vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
 vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
 const Editor = defineComponent({
   props: ['modelValue', 'readonly'], emits: ['update:modelValue'],
-  template: '<textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  template: '<div><textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" /><slot name="footer-tags" /></div>',
 })
 function doc(id: string, text: string, created = '2026-09-07T08:00:00', author = 'wg'): Doc {
   return { id, title: text, author, created, updated: created, kbId: 'kb-notes', rev: 3,
