@@ -28,6 +28,7 @@ Linux1 安装 `verify-peer-restore.sh`、`prepare-peer-pitr.py`、`check-peer-ba
 
 成功全量目录必须包含 COMPLETE、SHA256SUMS、recovery.tar.gpg；新格式还包含恢复坐标 recovery-point.json。
 可信恢复以解密归档内受校验保护的坐标为准。binlogs/last-success.json 记录采集截止时间和传输完成时间，告警使用前者，避免慢传输掩盖陈旧数据。
+每轮归档仍逐项核对已完成日志在异机的 `COMPLETE` 标记，但通过一次 SSH 会话批量核对；缺失任何标记时整轮失败，不更新 `last-success.json`。避免保留日志增多后反复建连拖慢五分钟任务。
 没有最新全量及从其坐标开始的连续日志，不能声称可恢复到最新归档位置。
 
 Linux1 隔离验收：
