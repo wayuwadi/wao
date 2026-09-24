@@ -92,8 +92,7 @@ printf '%s\n' \
   'slave_status=not_started' 'slave_attempts=0' 'slave_detail=not_started' \
   'master_status=not_started' 'master_attempts=0' 'master_detail=not_started' \
   'cloud_status=not_started' 'cloud_detail=not_started' \
-  'verification_status=not_started' 'verification_detail=not_started' \
-  'early_status=not_started' >"$status_file"
+  'verification_status=not_started' 'verification_detail=not_started' >"$status_file"
 slave_deployed=false
 master_deployed=false
 master_drained=false
@@ -102,7 +101,6 @@ schema_rollout_complete=false
 linux_only_schema_rollout=false
 safe_slave_reachable=false
 slave_available=true
-early_browser_released=false
 safe_schema_rollout=false
 
 set_status() {
@@ -358,6 +356,7 @@ prepare_cloud_routing() {
     deploy/scripts/resolve-gateway-ipv4.sh \
     deploy/scripts/ensure-jumpserver-certificate.sh \
     deploy/scripts/set-nginx-upstream-state.sh \
+    deploy/infrastructure/health-watch.py \
     "wao-cloud:/tmp/" || return
   retry_remote "云前端路由" ssh -o ConnectTimeout=15 "wao-cloud" '
     set -eu
@@ -368,6 +367,8 @@ prepare_cloud_routing() {
     install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
     install -m 0755 /tmp/resolve-gateway-ipv4.sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh
     install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
+    install -d -m 0755 /opt/wao-health-watch
+    install -m 0644 /tmp/health-watch.py /opt/wao-health-watch/health-watch.py
     install -m 0755 /tmp/ensure-jumpserver-certificate.sh /opt/wao/deploy/scripts/ensure-jumpserver-certificate.sh
     # 新主配置已经接管 /game 与 /insight；首次摘流也会渲染它，必须先移除旧片段，
     # 否则 nginx -t 会因 duplicate location 拒绝摘流，永远到不了 deploy_cloud 的清理步骤。
@@ -603,30 +604,6 @@ deploy_browser_only() {
   set_status publish_completed_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
 }
 
-verify_first_node_public() {
-  local short_sha version_html index_html hello
-  short_sha="${WAO_GIT_SHA:0:7}"
-  # 公网普通 API 只能命中新 Linux1；主节点专属 API 仍需等待最终发布。
-  ssh -o ConnectTimeout=15 wao-cloud '
-    test -f /run/wao-nginx-upstreams/master.down &&
-    test ! -f /run/wao-nginx-upstreams/slave.down &&
-    sed -n "/^upstream wao_gateway {/,/^}/p" /etc/nginx/conf.d/wao.wayuwa.cn.conf |
-      grep -m1 "^[[:space:]]*server " | grep -q " down "
-  ' || return 1
-  gateway_ready_from_cloud "$SLAVE_HOST" || return 1
-  version_html="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 8 \
-    -H 'Cache-Control: no-cache' \
-    "https://wao.wayuwa.cn/pluginWebUpdateNotice/web_version_by_plugin.json?t=$(date +%s)")" || return 1
-  printf '%s' "$version_html" | grep -Eq \
-    "\"version\"[[:space:]]*:[[:space:]]*\"${short_sha}\"" || return 1
-  index_html="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 8 \
-    -H 'Cache-Control: no-cache' \
-    "https://wao.wayuwa.cn/index.html?t=$(date +%s)")" || return 1
-  printf '%s' "$index_html" | grep -Fq "data-v=\"${short_sha}\"" || return 1
-  hello="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 8 \
-    https://wao.wayuwa.cn/api/hello)" || return 1
-  printf '%s' "$hello" | grep -q '"code":0'
-}
 
 if [ "${WAO_WEB_ONLY:-false}" = true ]; then
   trap 'stop_availability_monitor; cleanup_deploy_inputs' EXIT HUP INT TERM
@@ -762,46 +739,9 @@ if ! install_master_deploy_helper; then
   exit 1
 fi
 
-# 常规完整发布先让 Linux1 独立承载普通公网流量，再切换新版网页。
-# 首台可验证是阶段性状态，不能替代 Linux2 和最终健康检查的成功结论。
-if [ "$slave_deployed" = true ] && [ "$safe_schema_rollout" != true ] \
-    && [ "$BOOTSTRAP_SLAVE" != true ] && [ "$ALLOW_SLAVE_OFFLINE" != true ]; then
-  set_upstream_state master down || exit 1
-  master_drained=true
-  if ! deploy_cloud true >cloud.log 2>&1; then
-    set_status cloud_status failed
-    set_status cloud_detail '首台发布后云端网页或 Nginx 切换失败'
-    printf '\n===== cloud =====\n'; cat cloud.log
-    exit 1
-  fi
-  set_status cloud_status success
-  set_status cloud_detail "$WAO_GIT_SHA"
-  printf '\n===== cloud =====\n'; cat cloud.log
-  first_node_check_attempt=1
-  until verify_first_node_public; do
-    if [ "$first_node_check_attempt" -ge 6 ]; then
-      set_status verification_status failed
-      set_status verification_detail '首台公网版本、路由或 API 连续检查失败'
-      # The old master is still healthy. Reopen it before the EXIT trap, so a
-      # failed readiness check cannot strand the next build on one node.
-      if gateway_ready_from_cloud "$MASTER_HOST" && set_upstream_state master up; then
-        master_drained=false
-      fi
-      exit 1
-    fi
-    echo "首台公网检查第 ${first_node_check_attempt} 次未通过；10 秒后重试。" >&2
-    first_node_check_attempt=$((first_node_check_attempt + 1))
-    sleep 10
-  done
-  early_browser_released=true
-  set_status early_status ready
-  set_status early_ready_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
-  echo 'Linux1 与新版公网网页已就绪；通知用户可先验证普通功能，Linux2 继续发布。'
-  WAO_PIPELINE_RESULT=ready deploy/jenkins/notify-feishu.sh || \
-    echo 'WARNING: 首台可验证通知发送失败；继续发布 Linux2。' >&2
-fi
-
-if [ "$safe_schema_rollout" != true ] && [ "$early_browser_released" != true ]; then
+# Linux1 先回流承载普通 API；保持旧版网页直到 Linux2 也已完成。
+# 固定在 Linux2 的入口在它替换容器时仍有短暂维护窗口。
+if [ "$safe_schema_rollout" != true ]; then
   set_upstream_state master down || exit 1
 fi
 master_drained=true
@@ -866,19 +806,15 @@ if ! verify_jumpserver_assets >"$jumpserver_verify_log" 2>&1; then
 fi
 cat "$jumpserver_verify_log"
 
-if [ "$early_browser_released" != true ]; then
-  if ! deploy_cloud >cloud.log 2>&1; then
-    set_status cloud_status failed
-    set_status cloud_detail '云端静态资源或 Nginx 发布失败'
-    printf '\n===== cloud =====\n'; cat cloud.log
-    exit 1
-  fi
-  set_status cloud_status success
-  set_status cloud_detail "$WAO_GIT_SHA"
+if ! deploy_cloud >cloud.log 2>&1; then
+  set_status cloud_status failed
+  set_status cloud_detail '云端静态资源或 Nginx 发布失败'
   printf '\n===== cloud =====\n'; cat cloud.log
-else
-  echo '新版网页已在首台就绪后发布；跳过重复云端上传。'
+  exit 1
 fi
+set_status cloud_status success
+set_status cloud_detail "$WAO_GIT_SHA"
+printf '\n===== cloud =====\n'; cat cloud.log
 
 # 云端安装会重新渲染 Nginx 文件，并继承安装前的摘流状态。安装完成后立即恢复
 # 已验证节点，不能只依赖 EXIT trap，否则控制器安全重启可能让成功发布停留在单节点状态。

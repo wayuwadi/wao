@@ -16,6 +16,8 @@ TARGETS = {
     'linux1': 'https://linux1.wayuwa.cn:9443/api/edge/ready',
     'linux2': 'https://linux2.wayuwa.cn:9443/api/edge/ready',
 }
+PLANNED_DRAIN_DIR = Path('/run/wao-nginx-upstreams')
+PLANNED_DRAIN_MAX_SECONDS = 2 * 3600
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -53,9 +55,22 @@ def probe(url):
         return False
 
 
-def update(previous, results, now):
+def planned_drains(now, runtime_dir=PLANNED_DRAIN_DIR):
+    """Ignore only recent, explicit Nginx drains; stale markers remain alertable."""
+    planned = set()
+    for node, target in (('master', 'linux2'), ('slave', 'linux1')):
+        try:
+            age = now - (runtime_dir / f'{node}.down').stat().st_mtime
+            if 0 <= age <= PLANNED_DRAIN_MAX_SECONDS:
+                planned.add(target)
+        except OSError:
+            pass
+    return planned
+
+
+def update(previous, results, now, planned=()):
     """Remember notified targets for the entire incident, including flapping."""
-    failures = {name: (previous.get('failures', {}).get(name, 0) + 1 if not good else 0)
+    failures = {name: (previous.get('failures', {}).get(name, 0) + 1 if not good and name not in planned else 0)
                 for name, good in results.items()}
     problems = sorted(name for name, count in failures.items() if count >= 2)
     old = previous.get('notified', [])
@@ -95,7 +110,8 @@ def main():
         previous = json.loads(args.state.read_text())
     except (OSError, ValueError):
         previous = {}
-    state, problems, message = update(previous, results, int(time.time()))
+    now = int(time.time())
+    state, problems, message = update(previous, results, now, planned_drains(now))
     failed_delivery = False
     if message:
         try:
