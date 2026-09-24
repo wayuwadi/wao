@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent } from 'vue'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import App from '@/App.vue'
+import { reloadToLatestVersion } from '@/utils/versionUpdate'
 const flush = vi.hoisted(() => vi.fn())
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('@/stores/data', () => ({ useDataStore: () => ({ flushWorkspace: flush }) }))
@@ -31,12 +32,27 @@ describe('刷新保存屏障', () => {
     const listener = vi.fn()
     window.addEventListener('wao-save-before-refresh', listener)
     const wrapper = mount(App, { global: { stubs: { RouterView: true, ToastHost: true, VersionUpdateNotice: true } } })
-    window.dispatchEvent(new Event('wao-workspace-reload'))
+    reloadToLatestVersion()
     await flushPromises()
     expect(flush).toHaveBeenCalledOnce()
     expect(listener).not.toHaveBeenCalled()
     expect(toast).toHaveBeenCalledWith(expect.stringContaining('保存失败'), 'ri-error-warning-line')
     wrapper.unmount()
     window.removeEventListener('wao-save-before-refresh', listener)
+  })
+  it('表单保存失败时停留在原页面并提示重试', async () => {
+    flush.mockResolvedValue(true)
+    const save = vi.fn().mockRejectedValue(new Error('表单保存失败'))
+    const component = defineComponent({ setup() { useSaveBeforeRefresh(save) }, template: '<textarea>未保存内容</textarea>' })
+    const app = mount(App, { global: { stubs: { RouterView: true, ToastHost: true, VersionUpdateNotice: true } } })
+    const editor = mount(component, { attachTo: document.body })
+    reloadToLatestVersion()
+    await flushPromises()
+    expect(save).toHaveBeenCalledOnce()
+    expect(flush).toHaveBeenCalledOnce()
+    expect(toast).toHaveBeenCalledWith('表单保存失败', 'ri-error-warning-line')
+    expect(editor.text()).toContain('未保存内容')
+    editor.unmount()
+    app.unmount()
   })
 })
