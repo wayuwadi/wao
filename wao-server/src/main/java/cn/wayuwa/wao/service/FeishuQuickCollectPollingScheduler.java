@@ -34,6 +34,7 @@ public class FeishuQuickCollectPollingScheduler {
     @Value("${wao.feishu.quick-collect-poll-ms:60000}")
     private long pollMs = 60000;
     private volatile String botOpenId;
+    private volatile long nextBotLookupAt;
     private volatile boolean readyLogged;
 
     public FeishuQuickCollectPollingScheduler(SettingService settings, FeishuOpenApiClient feishu,
@@ -66,9 +67,15 @@ public class FeishuQuickCollectPollingScheduler {
         try {
             String token = feishu.tenantAccessToken(appId, appSecret);
             String currentBot = botOpenId;
-            if (!StringUtils.hasText(currentBot)) {
-                currentBot = feishu.botOpenId(token);
-                botOpenId = currentBot;
+            if (!StringUtils.hasText(currentBot) && end >= nextBotLookupAt) {
+                try {
+                    currentBot = feishu.botOpenId(token);
+                    botOpenId = currentBot;
+                } catch (RuntimeException ex) {
+                    // 群自定义机器人有独立 @ 名称；旧应用的 Bot Info 失败不应阻断它们。
+                    nextBotLookupAt = end + 3600;
+                    log.warn("飞书旧机器人身份暂不可读，本轮继续识别专用机器人：{}", ex.getMessage());
+                }
             }
             List<FeishuMessage> messages = feishu.listMessages(token, chatId, start, end);
             if (!readyLogged) {
@@ -95,7 +102,6 @@ public class FeishuQuickCollectPollingScheduler {
             }
             state.complete("quick-realtime", leaseOwner, end);
         } catch (RuntimeException ex) {
-            botOpenId = null;
             readyLogged = false;
             log.warn("飞书个人收集轮询失败：{}", ex.getMessage());
         } finally {
@@ -106,6 +112,8 @@ public class FeishuQuickCollectPollingScheduler {
     static boolean eligible(FeishuMessage message, String botOpenId) {
         return message != null && "user".equals(message.senderType()) && !message.deleted()
                 && StringUtils.hasText(message.messageId())
-                && message.mentions().stream().anyMatch(mention -> botOpenId.equals(mention.openId()));
+                && message.mentions().stream().anyMatch(mention ->
+                        (StringUtils.hasText(botOpenId) && botOpenId.equals(mention.openId()))
+                                || "任务待办".equals(mention.name()) || "小记创作".equals(mention.name()));
     }
 }

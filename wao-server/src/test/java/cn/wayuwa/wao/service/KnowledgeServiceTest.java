@@ -1009,6 +1009,25 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void chatRecallDeletesOnlyNotesAndRecordsTheirAuthor() {
+        DocEntity note = doc("fn123", KnowledgeService.NOTES_KB_ID, "f1");
+        note.setAuthorId("wd");
+        when(docMapper.selectById("fn123")).thenReturn(note);
+        when(kbMapper.selectById(KnowledgeService.NOTES_KB_ID))
+                .thenReturn(kb(KnowledgeService.NOTES_KB_ID));
+
+        service.deleteNoteFromChat("fn123");
+
+        verify(docMapper).markDeleted(eq("fn123"), any(LocalDateTime.class), eq("wd"), eq(false));
+
+        DocEntity other = doc("d1", "k1", "f1");
+        when(docMapper.selectById("d1")).thenReturn(other);
+        assertThatThrownBy(() -> service.deleteNoteFromChat("d1"))
+                .isInstanceOf(BadRequestException.class);
+        verify(docMapper, never()).markDeleted(eq("d1"), any(), any(), anyBoolean());
+    }
+
+    @Test
     void deleteKbCascadesToFoldersAndDocsWithoutDroppingRows() {
         when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
         KbFolderEntity f = folder("f1", "k1");
