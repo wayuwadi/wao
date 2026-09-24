@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+python3 deploy/jenkins/test-controller-health.py
+
 sh deploy/scripts/test-render-nginx-config.sh
 sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-activate-nginx-config.sh
