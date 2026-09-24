@@ -2,6 +2,7 @@ package cn.wayuwa.wao.controller;
 
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.dto.ArticleImageJobDto;
 import cn.wayuwa.wao.dto.ArticleImageRequest;
 import cn.wayuwa.wao.service.ArticleImageService;
@@ -29,11 +30,17 @@ public class ArticleImageController {
     @PostMapping
     public ApiResponse<ArticleImageJobDto> start(@Valid @RequestBody ArticleImageRequest request,
             HttpServletRequest http) {
-        return ApiResponse.ok(service.start(currentMember.id(http), request));
+        return ApiResponse.ok(service.start(requireMember(http), request));
     }
 
     @GetMapping("/{runId}")
     public ApiResponse<ArticleImageJobDto> get(@PathVariable String runId, HttpServletRequest http) {
-        return ApiResponse.ok(service.get(currentMember.id(http), runId));
+        return ApiResponse.ok(service.get(requireMember(http), runId));
+    }
+
+    private String requireMember(HttpServletRequest http) {
+        String memberId = currentMember.id(http);
+        if (memberId == null) throw new UnauthorizedException("请先登录后再生成文章总览图");
+        return memberId;
     }
 }
