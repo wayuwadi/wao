@@ -17,7 +17,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, unquote, urljoin, urlsplit
 
 
 class WebDavError(RuntimeError):
@@ -45,6 +45,7 @@ class WebDavClient:
         if not parsed.hostname or parsed.query or parsed.fragment:
             raise WebDavError("Invalid WebDAV URL")
         self.scheme = parsed.scheme
+        self.allow_http = allow_http
         self.host = parsed.hostname
         self.port = parsed.port
         self.base_path = parsed.path.rstrip("/") or "/"
@@ -168,36 +169,60 @@ class WebDavClient:
 
     def download(self, remote_path: str, local_path: Path) -> None:
         target = self._target(remote_path)
+        origin = f"{self.scheme}://{self.host}"
+        if self.port is not None:
+            origin += f":{self.port}"
+        origin += target
         last_error: Exception | None = None
         for attempt in range(1, 5):
-            connection = self._connection()
             try:
-                connection.request(
-                    "GET",
-                    target,
-                    headers={
-                        "Authorization": self.authorization,
-                        "User-Agent": "WAO-Offsite-Backup/1",
-                    },
-                )
-                response = connection.getresponse()
-                if response.status != 200:
-                    detail = response.read(500).decode("utf-8", errors="replace")
-                    raise WebDavError(f"WebDAV GET failed with HTTP {response.status}: {detail}")
-                expected = response.getheader("Content-Length")
-                with local_path.open("wb") as target_file:
-                    while chunk := response.read(1024 * 1024):
-                        target_file.write(chunk)
-                if expected is not None and local_path.stat().st_size != int(expected):
-                    raise WebDavError(f"Downloaded size mismatch for {remote_path}")
-                return
+                current = origin
+                for redirect_count in range(5):
+                    parsed = urlsplit(current)
+                    if (parsed.scheme not in ({"http", "https"} if self.allow_http else {"https"})
+                            or not parsed.hostname or parsed.username or parsed.password or parsed.fragment):
+                        raise WebDavError("Unsafe WebDAV download redirect")
+                    if redirect_count == 0:
+                        connection = self._connection()
+                    elif parsed.scheme == "https":
+                        connection = http.client.HTTPSConnection(
+                            parsed.hostname, parsed.port, timeout=300,
+                            context=ssl.create_default_context(),
+                        )
+                    else:
+                        connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=300)
+                    try:
+                        request_target = parsed.path or "/"
+                        if parsed.query:
+                            request_target += "?" + parsed.query
+                        headers = {"User-Agent": "WAO-Offsite-Backup/1"}
+                        if redirect_count == 0:
+                            headers["Authorization"] = self.authorization
+                        connection.request("GET", request_target, headers=headers)
+                        response = connection.getresponse()
+                        if response.status in {301, 302, 303, 307, 308}:
+                            location = response.getheader("Location")
+                            response.read(2048)
+                            if not location or redirect_count == 4:
+                                raise WebDavError("WebDAV download redirected too many times")
+                            current = urljoin(current, location)
+                            continue
+                        if response.status != 200:
+                            raise WebDavError(f"WebDAV GET failed with HTTP {response.status}")
+                        expected = response.getheader("Content-Length")
+                        with local_path.open("wb") as target_file:
+                            while chunk := response.read(1024 * 1024):
+                                target_file.write(chunk)
+                        if expected is not None and local_path.stat().st_size != int(expected):
+                            raise WebDavError(f"Downloaded size mismatch for {remote_path}")
+                        return
+                    finally:
+                        connection.close()
             except (OSError, http.client.HTTPException, WebDavError) as exc:
                 last_error = exc
                 local_path.unlink(missing_ok=True)
                 if attempt < 4:
                     time.sleep(attempt * 2)
-            finally:
-                connection.close()
         raise WebDavError(str(last_error))
 
     def stat_size(self, remote_path: str, missing_ok: bool = False) -> int | None:
