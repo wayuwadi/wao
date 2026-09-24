@@ -83,6 +83,25 @@ describe('小记集中记录空间', () => {
     data.kbs = [{ id: 'kb-notes', name: '小记', notes: true, icon: '', color: '', desc: '', project: null, folders: [{ id: 'f', name: '小记', docs: [] }] }]
   })
 
+  it('清单删除失败保留小记和新建草稿，重试成功后移出清单', async () => {
+    const data = useDataStore()
+    data.docs.one = doc('one', '待删小记')
+    const remove = vi.spyOn(data, 'deleteDoc').mockRejectedValueOnce(new Error('暂时失败'))
+      .mockImplementationOnce(async id => { delete data.docs[id] })
+    const wrapper = await view()
+    await wrapper.find('textarea').setValue('正在写的新小记')
+    await wrapper.find('[data-note-id="one"] .card-delete').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-note-id="one"]').exists()).toBe(true)
+    expect(wrapper.find('[data-note-id="one"] [role="alert"]').text()).toContain('小记未改变')
+    await wrapper.find('[data-note-id="one"] .card-delete-error button').trigger('click')
+    await flushPromises()
+    expect(remove).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-note-id="one"]').exists()).toBe(false)
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正在写的新小记')
+    wrapper.unmount()
+  })
+
   it('每批展示十条，筛选和保存恢复首批且保留编辑草稿', async () => {
     const data = useDataStore()
     for (let i = 0; i < 24; i++) {
