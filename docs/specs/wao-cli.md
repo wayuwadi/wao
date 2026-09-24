@@ -42,3 +42,7 @@
 待验证写入 done=false；完成时 done=true 并清除细分状态，重新打开为未开始时 done=false。AI 默认只推进到待验证，已完成由用户验收决定。
 
 CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expected-subtask-version VERSION`。部署后必须先通过实时 tools/list 确认新工具可见；不得在旧服务尚未部署时猜测调用。
+
+## 参考图库（ADR-278）
+
+本次新增的收图和带图提问只面向浏览器会话及本地 Codex Runner：涉及二进制个人截图、按成员鉴权的原图和精确运行领取令牌。现有工作区 MCP 令牌不自动获得私有原图读取能力，因此本次不新增 `wao` 命令。出现明确的终端批量收图需求时，应先设计独立读写授权和二进制输入协议，再同步 CLI 与测试。

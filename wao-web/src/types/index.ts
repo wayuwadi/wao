@@ -32,6 +32,7 @@ export type ModuleId =
   | 'todo'
   | 'knowledge'
   | 'files'
+  | 'reference-images'
   | 'automation'
   | 'crawler-capabilities'
   | 'account-resources'

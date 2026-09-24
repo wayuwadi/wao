@@ -437,6 +437,16 @@ function renderMarkdown(text: string): string {
   return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
 }
 
+/** 只识别服务端追加的私有参考图路径；普通用户文字仍按纯文本展示。 */
+function userReferenceIds(content: string): string[] {
+  return [...content.matchAll(/!\[参考图\]\(\/api\/reference-images\/([a-f0-9]{32})\/raw\)/g)]
+    .map(match => match[1]).filter((id): id is string => !!id)
+}
+
+function userText(content: string): string {
+  return content.replace(/\n\n!\[参考图\]\(\/api\/reference-images\/[a-f0-9]{32}\/raw\)/g, '')
+}
+
 watch(() => props.modelValue || props.embedded, (value) => {
   open.value = Boolean(value)
   if (value) {
@@ -582,7 +592,13 @@ onBeforeUnmount(stopStatusRefresh)
                   <div v-if="message.role === 'assistant'" class="avatar"><i class="ri-robot-2-line"></i></div>
                   <div class="bubble">
                     <div v-if="message.role === 'assistant'" class="md" v-html="renderMarkdown(message.content)"></div>
-                    <pre v-else class="user-text">{{ message.content }}</pre>
+                    <template v-else>
+                      <pre class="user-text">{{ userText(message.content) }}</pre>
+                      <div v-if="userReferenceIds(message.content).length" class="user-reference-images">
+                        <img v-for="id in userReferenceIds(message.content)" :key="id"
+                          :src="`/api/reference-images/${id}/raw`" alt="本次提问的参考图" loading="lazy" />
+                      </div>
+                    </template>
                     <span v-if="message.streaming" class="cursor">▊</span>
                   </div>
                 </article>
@@ -869,6 +885,8 @@ onBeforeUnmount(stopStatusRefresh)
 .msg.user .bubble { padding: 10px 14px; border-radius: 14px 14px 4px 14px; background: var(--wao-primary); color: #fff; }
 .msg.assistant .bubble { padding: 3px 0; }
 .user-text { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+.user-reference-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.user-reference-images img { width: 112px; height: 88px; object-fit: contain; border-radius: 6px; background: var(--wao-bg-sub); }
 .cursor { display: inline-block; margin-left: 2px; color: var(--wao-primary-text); animation: blink 1s infinite; }
 .md :deep(p) { margin: 0 0 9px; }
 .md :deep(p:last-child) { margin-bottom: 0; }

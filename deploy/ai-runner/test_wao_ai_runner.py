@@ -982,6 +982,19 @@ class CodexAccountIsolationTest(unittest.TestCase):
         self.assertFalse((isolated_home / "config.toml").exists())
 
     @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
+    def test_reference_images_are_model_inputs_without_enabling_file_tools(self, invoke: Mock) -> None:
+        image = self.root / "reference.png"
+        image.write_bytes(b"\x89PNG\r\n\x1a\n")
+        RUNNER.run_codex("codex", self.root, "看这张图", "read-only", Mock(),
+                         {"PATH": "runner-path"}, codex_home=self.root / "reference-home",
+                         tools_disabled=True, image_paths=[image])
+        command = invoke.call_args.args[0]
+        self.assertIn("--image", command)
+        self.assertEqual(str(image), command[command.index("--image") + 1])
+        self.assertIn("tools.view_image=false", command)
+        self.assertLess(command.index("--image"), command.index("-"))
+
+    @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
     def test_isolated_analysis_can_reenable_web_search_without_other_tools(self, invoke: Mock) -> None:
         reporter = Mock()
         isolated_home = self.root / "research-home"
@@ -1725,6 +1738,19 @@ class LinuxCodexAssistantTest(unittest.TestCase):
             "/api/ai/runner/assistant-v2/ac-test/complete",
             {"claimToken": "attempt-new", "exitCode": 0, "response": "只读答复", "error": ""},
         )
+
+    @patch.object(RUNNER, "run_codex", return_value=(0, "已看到图片", None, {}))
+    def test_assistant_downloads_only_claimed_reference_images_and_cleans_them(self, run_codex: Mock) -> None:
+        api = Mock()
+        api.get_bytes.return_value = b"\x89PNG\r\n\x1a\nimage"
+        claim = {"runId": "ac-reference", "claimToken": "claim-1", "prompt": "参考此图",
+                 "mode": "ASSISTANT_IMAGES", "referenceImageIds": ["a" * 32]}
+        RUNNER.execute_assistant_claim(api, claim, self.root, "codex", "git")
+        endpoint = api.get_bytes.call_args.args[0]
+        self.assertIn("/assistant-v2/ac-reference/reference-images/0?", endpoint)
+        self.assertIn("claimToken=claim-1", endpoint)
+        self.assertEqual(1, len(run_codex.call_args.kwargs["image_paths"]))
+        self.assertFalse((self.root / ".wao-assistant" / "ac-reference").exists())
 
     @patch.object(RUNNER.time, "sleep")
     @patch.object(RUNNER, "run_codex")

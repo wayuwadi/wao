@@ -37,6 +37,7 @@ class AiAssistantServiceTest {
     private final AiAssistantAssetService assetService = mock(AiAssistantAssetService.class);
     private final RunnerScriptService runnerScripts = mock(RunnerScriptService.class);
     private final IdeaResearchService ideaResearchService = mock(IdeaResearchService.class);
+    private final ReferenceImageService referenceImages = mock(ReferenceImageService.class);
     private final AiAssistantService service;
 
     AiAssistantServiceTest() {
@@ -45,7 +46,7 @@ class AiAssistantServiceTest {
         when(runnerScripts.hash()).thenReturn("current-script-hash");
         service = new AiAssistantService(
                 mapper, runnerMapper, aiRunService, accountService, deepSeekApi,
-                conversationService, assetService, runnerScripts, ideaResearchService,
+                conversationService, assetService, runnerScripts, ideaResearchService, referenceImages,
                 Duration.ofMinutes(60), Duration.ofMinutes(30));
     }
 
@@ -735,6 +736,25 @@ class AiAssistantServiceTest {
                 .contains("只有确实掌握原句和具体篇名时才可短句引用并标明出处")
                 .contains("不是医疗诊断或治疗方案", "持续不适应咨询合格医务人员")
                 .contains("第 11 卦「泰」", "最近的疲惫");
+    }
+
+    @Test
+    void referenceImageBytesRequireCurrentRunnerAndExactClaimToken() {
+        AiAssistantRunEntity run = assistantRun("running");
+        run.setRunnerId("rn1");
+        run.setClaimToken("current-claim");
+        run.setReferenceImageIds("a".repeat(32));
+        when(aiRunService.authenticateRunner("runner-token")).thenReturn(runner("Linux", "codex"));
+        when(mapper.selectById("ac1")).thenReturn(run);
+        var content = new ReferenceImageService.Content("image/png", new byte[]{1, 2});
+        when(referenceImages.raw("wg", "a".repeat(32))).thenReturn(content);
+
+        assertThatThrownBy(() -> service.referenceImageForClaim("runner-token", "ac1", "old-claim", 0))
+                .isInstanceOf(cn.wayuwa.wao.common.UnauthorizedException.class);
+        assertThat(service.referenceImageForClaim("runner-token", "ac1", "current-claim", 0))
+                .isEqualTo(content);
+        assertThatThrownBy(() -> service.referenceImageForClaim("runner-token", "ac1", "current-claim", 1))
+                .isInstanceOf(cn.wayuwa.wao.common.NotFoundException.class);
     }
 
     private AiRunnerNodeEntity runner(String platform, String engines) {

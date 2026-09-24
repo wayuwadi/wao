@@ -433,6 +433,16 @@ public class AiRunController {
         return ApiResponse.ok(assistantService.claim(token));
     }
 
+    /** 带图问答只在精确领取令牌的运行期间向 Runner 传输原图。 */
+    @GetMapping("/runner/assistant-v2/{runId}/reference-images/{index}")
+    public ResponseEntity<byte[]> assistantReferenceImage(@RequestHeader(RUNNER_TOKEN) String token,
+            @PathVariable String runId, @PathVariable int index, @RequestParam String claimToken) {
+        var content = assistantService.referenceImageForClaim(token, runId, claimToken, index);
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(content.contentType()))
+                .cacheControl(CacheControl.noStore())
+                .header("X-Content-Type-Options", "nosniff").body(content.bytes());
+    }
+
     /** 本地 Codex 节点回传页面问答结果。 */
     @PostMapping("/runner/assistant-v2/{runId}/complete")
     public ApiResponse<Void> completeAssistant(@RequestHeader(RUNNER_TOKEN) String token,
