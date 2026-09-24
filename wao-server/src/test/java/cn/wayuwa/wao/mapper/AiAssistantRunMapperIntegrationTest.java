@@ -33,6 +33,7 @@ class AiAssistantRunMapperIntegrationTest {
                     claim_token VARCHAR(64) NULL,
                     status VARCHAR(32) NOT NULL,
                     prompt_text CLOB NULL,
+                    reference_image_ids VARCHAR(512) NULL,
                     web_context CLOB NULL,
                     response_text CLOB NULL,
                     error_text CLOB NULL,

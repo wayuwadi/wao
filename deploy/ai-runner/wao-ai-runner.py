@@ -1859,7 +1859,8 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         web_search_enabled: bool = False,
         model: str | None = None,
         reasoning_effort: str | None = None,
-        service_tier: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+        service_tier: str | None = None,
+        image_paths: list[Path] | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
     """跑一次 `codex exec --json`，返回退出码、最终答复、会话 id 和用量。"""
     result_file = worktree / ".wao-ai-result.txt"
     result_file.unlink(missing_ok=True)
@@ -1902,6 +1903,10 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
             restricted_tools.extend(["-c", 'web_search="disabled"'])
         exec_index = command.index("exec")
         command[exec_index + 1:exec_index + 1] = restricted_tools
+    if image_paths:
+        # --image 是模型输入附件，不开放读取 Runner 机器文件的 view_image 工具。
+        image_args = [part for path in image_paths for part in ("--image", str(path))]
+        command[-1:-1] = image_args
     run_environment = dict(environment or os.environ)
     if account:
         if codex_home is None:
@@ -2592,6 +2597,7 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
     assistant_mode = str(claim.get("mode") or "READ_ONLY")
     image_mode = assistant_mode == "ARTICLE_IMAGE"
     research_mode = assistant_mode == "IDEA_RESEARCH"
+    reference_mode = assistant_mode == "ASSISTANT_IMAGES"
     web_search_enabled = assistant_mode in {"ASSISTANT", "ASSISTANT_WEB_SEARCH", "IDEA_RESEARCH"}
     workspace_name = ".wao-idea-research" if research_mode else ".wao-assistant"
     worktree = root / workspace_name / run_id
@@ -2607,6 +2613,26 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
     try:
         worktree.mkdir(parents=True, exist_ok=True)
         run([git_command, "init", "-q"], worktree)
+        image_paths: list[Path] = []
+        if reference_mode:
+            image_ids = claim.get("referenceImageIds") or []
+            if not isinstance(image_ids, list) or not 1 <= len(image_ids) <= 4:
+                raise RuntimeError("带图问答缺少有效参考图清单")
+            for index, _ in enumerate(image_ids):
+                endpoint = (f"/api/ai/runner/assistant-v2/{run_id}/reference-images/{index}?"
+                            + urllib.parse.urlencode({"claimToken": claim_token}))
+                content = api.get_bytes(endpoint)
+                if not content or len(content) > 10 * 1024 * 1024:
+                    raise RuntimeError("参考图内容无效或超出 10MB")
+                suffix = (".png" if content.startswith(b"\x89PNG\r\n\x1a\n") else
+                          ".jpg" if content.startswith(b"\xff\xd8\xff") else
+                          ".gif" if content.startswith((b"GIF87a", b"GIF89a")) else
+                          ".webp" if content[:4] == b"RIFF" and content[8:12] == b"WEBP" else "")
+                if not suffix:
+                    raise RuntimeError("参考图格式无效")
+                path = worktree / f"reference-{index}{suffix}"
+                path.write_bytes(content)
+                image_paths.append(path)
         log(f"[{run_id}] 开始{'文章总览配图' if image_mode else '点子调研' if research_mode else '页面只读问答'}")
         max_attempts = 1 if image_mode else READ_ONLY_AI_MAX_ATTEMPTS
         for attempt in range(1, max_attempts + 1):
@@ -2619,7 +2645,8 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
                         codex_environment or cli_environment),
                     should_stop=lambda: time.monotonic() >= deadline,
                     account=claim.get("account"), codex_home=codex_home,
-                    tools_disabled=True, web_search_enabled=web_search_enabled)
+                    tools_disabled=True, web_search_enabled=web_search_enabled,
+                    image_paths=image_paths)
                 response = response.strip()
                 if exit_code == 0 and image_mode:
                     image = generated_article_png(codex_home)

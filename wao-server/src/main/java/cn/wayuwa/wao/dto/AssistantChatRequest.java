@@ -20,20 +20,27 @@ public record AssistantChatRequest(
         /** 可选：限定本次检索的资产类型、群聊、发言人、日期和项目。 */
         @Valid AssistantSourceFilter sourceFilter,
         /** 可选：本次固定使用的 AI 能力；省略时使用本地 Codex。 */
-        @Size(max = 64) String aiCapabilityId) {
+        @Size(max = 64) String aiCapabilityId,
+        /** 可选：当前成员私有参考图库中的原图，最多四张。 */
+        @Size(max = 4) List<@Pattern(regexp = "[a-f0-9]{32}") String> referenceImageIds) {
 
     public AssistantChatRequest(String message, List<ChatMessage> history, String pageContext) {
-        this(message, history, pageContext, null, null, null);
+        this(message, history, pageContext, null, null, null, null);
     }
 
     public AssistantChatRequest(String message, List<ChatMessage> history, String pageContext,
             String conversationId) {
-        this(message, history, pageContext, conversationId, null, null);
+        this(message, history, pageContext, conversationId, null, null, null);
     }
 
     public AssistantChatRequest(String message, List<ChatMessage> history, String pageContext,
             String conversationId, AssistantSourceFilter sourceFilter) {
-        this(message, history, pageContext, conversationId, sourceFilter, null);
+        this(message, history, pageContext, conversationId, sourceFilter, null, null);
+    }
+
+    public AssistantChatRequest(String message, List<ChatMessage> history, String pageContext,
+            String conversationId, AssistantSourceFilter sourceFilter, String aiCapabilityId) {
+        this(message, history, pageContext, conversationId, sourceFilter, aiCapabilityId, null);
     }
 
     public record ChatMessage(

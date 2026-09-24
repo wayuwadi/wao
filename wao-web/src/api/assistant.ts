@@ -130,6 +130,7 @@ export async function* streamChat(
   conversationId?: string,
   sourceFilter?: AssistantSourceFilter,
   aiCapabilityId?: string,
+  referenceImageIds?: string[],
 ): AsyncGenerator<string> {
   yield* streamTextEvents('/api/assistant/chat/stream', {
     message,
@@ -138,5 +139,6 @@ export async function* streamChat(
     conversationId,
     sourceFilter,
     aiCapabilityId,
+    referenceImageIds,
   })
 }

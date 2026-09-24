@@ -19,6 +19,7 @@ public class AiAssistantRunEntity {
     private Boolean webSearchEnabled;
     private String conversationId;
     private String userMessageId;
+    private String referenceImageIds;
     private String runnerId;
     private String claimToken;
     private String status;
@@ -50,6 +51,8 @@ public class AiAssistantRunEntity {
     public void setConversationId(String conversationId) { this.conversationId = conversationId; }
     public String getUserMessageId() { return userMessageId; }
     public void setUserMessageId(String userMessageId) { this.userMessageId = userMessageId; }
+    public String getReferenceImageIds() { return referenceImageIds; }
+    public void setReferenceImageIds(String referenceImageIds) { this.referenceImageIds = referenceImageIds; }
     public String getRunnerId() { return runnerId; }
     public void setRunnerId(String runnerId) { this.runnerId = runnerId; }
     public String getClaimToken() { return claimToken; }

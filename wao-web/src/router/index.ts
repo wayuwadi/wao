@@ -347,6 +347,12 @@ const router = createRouter({
           meta: { module: 'files', tabKind: 'module' },
         },
         {
+          path: 'reference-images',
+          name: 'reference-images',
+          component: () => import('@/views/ReferenceImagesView.vue'),
+          meta: { module: 'reference-images', tabKind: 'module' },
+        },
+        {
           path: 'automation',
           name: 'automation',
           component: () => import('@/views/AutomationView.vue'),

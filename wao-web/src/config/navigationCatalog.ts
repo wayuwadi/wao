@@ -84,6 +84,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   { id: 'weekly-report', description: '根据真实工作记录生成和保存周报。', keywords: ['总结'] },
   { id: 'life-review', description: '沿时间线回看重要经历、变化和结论。', keywords: ['人生'] },
   { id: 'knowledge', description: '按知识库、文件夹和文档组织长期资料。', keywords: ['文档'] },
+  { id: 'reference-images', description: '收集截图，选图并附一句需求交给 AI 参考。', keywords: ['素材库', '视觉库', '灵感', '图片', '截图', '参考图'] },
   {
     id: 'memory',
     description: '记下希望 AI 参考的偏好、背景和经验，管理共享记忆与 AI 读取权限。',
@@ -185,6 +186,7 @@ const DOMAINS: Array<{
     description: '资料、文件与可复用的经验。',
     ids: [
       'knowledge',
+      'reference-images',
       'memory',
       'files',
       'drawings',

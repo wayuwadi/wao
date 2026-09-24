@@ -155,6 +155,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
+  'reference-images': { id: 'reference-images', label: '参考图库', icon: 'ri-image-2-line', path: '/reference-images' },
   automation: {
     id: 'automation',
     label: '自动化',
@@ -436,6 +437,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
+      id: 'reference-images',
+      label: '参考图库',
+      icon: 'ri-image-2-line',
+      group: 'PERSONAL',
+      order: 32,
+      visible: true,
+    },
+    {
       id: 'english-learning',
       label: '英语训练',
       icon: 'ri-speak-line',
@@ -578,6 +587,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
   'workspaces',
   'memory',
   'knowledge',
+  'reference-images',
   'english-learning',
   'vocabulary',
   'drawings',
