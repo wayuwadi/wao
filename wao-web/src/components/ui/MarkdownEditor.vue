@@ -1918,16 +1918,30 @@ onBeforeUnmount(() => {
           <button v-if="upload.state === 'failed'" type="button" @click="pendingUploads = pendingUploads.filter((item) => item.id !== upload.id)">移除</button>
         </div>
       </div>
-      <div v-if="!readonly" class="image-actions">
-        <ArticleImageAction v-if="articleImageKey" :scope-key="articleImageKey"
-          :get-text="articleText" :insert-image="insertArticleImageAtStart" />
+      <div v-if="!readonly && !articleImageKey" class="image-actions">
         <button type="button" class="image-upload" title="从图册选择图片"
           aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
           <i class="ri-image-add-line"></i><span>图片</span>
         </button>
       </div>
     </div>
-    <Teleport :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
+    <div v-if="articleImageKey" class="article-footer" aria-label="文章编辑操作">
+      <div class="article-footer-left">
+        <div v-if="!readonly" class="article-image-actions">
+          <ArticleImageAction :scope-key="articleImageKey"
+            :get-text="articleText" :insert-image="insertArticleImageAtStart" />
+          <button type="button" class="image-upload" title="从图册选择图片"
+            aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
+            <i class="ri-image-add-line"></i><span>图片</span>
+          </button>
+        </div>
+        <slot name="footer-tags" />
+      </div>
+      <div class="character-count article-count" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
+        <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
+      </div>
+    </div>
+    <Teleport v-else :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
       <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
         <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
       </div>
@@ -2735,6 +2749,32 @@ onBeforeUnmount(() => {
   border: 1px solid transparent;
   border-radius: 9px;
   transition: border-color 0.12s;
+}
+.article-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 8px 0 0;
+}
+.article-footer-left,
+.article-image-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.article-footer-left {
+  flex: 1 1 auto;
+}
+.article-count {
+  position: static;
+  margin-left: auto;
+  padding-right: 0;
+  white-space: nowrap;
 }
 .image-actions {
   position: absolute;
