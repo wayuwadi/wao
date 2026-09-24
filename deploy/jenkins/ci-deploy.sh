@@ -28,7 +28,7 @@ export BOOTSTRAP_SLAVE ALLOW_SLAVE_OFFLINE WAO_BUILD_ATTEMPT
 umask 077
 install -d "$WAO_RUN_TEMP"
 test -f "$WAO_RUN_TEMP/wao-release.tgz"
-test -f "$WAO_RUN_TEMP/wao-images.tar.gz"
+if [ "${WAO_WEB_ONLY:-false}" != true ]; then test -f "$WAO_RUN_TEMP/wao-images.tar.gz"; fi
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12"
@@ -49,7 +49,7 @@ require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn' || exit 1
 require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn' || exit 1
 
 ln -sf "$WAO_RUN_TEMP/wao-release.tgz" wao-release.tgz
-ln -sf "$WAO_RUN_TEMP/wao-images.tar.gz" wao-images.tar.gz
+if [ "${WAO_WEB_ONLY:-false}" != true ]; then ln -sf "$WAO_RUN_TEMP/wao-images.tar.gz" wao-images.tar.gz; fi
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets" wao-secrets.env
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env" wao-shared.env
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12" wao-gateway.p12
@@ -532,6 +532,36 @@ cleanup_rollout() {
   restore_upstreams
   cleanup_deploy_inputs
 }
+
+# 前端快路径必须由本次完整变更范围确认，不能只信任一个外部环境开关。
+deploy_browser_only() {
+  [ "$BOOTSTRAP_SLAVE" = false ] && [ "$ALLOW_SLAVE_OFFLINE" = false ] || return 1
+  local plan
+  plan="$(sh deploy/jenkins/ci-change-plan.sh "$WAO_CHANGE_BASE" "$WAO_GIT_SHA")" || return 1
+  printf '%s\n' "$plan" | grep -qx 'WAO_WEB_ONLY=true' || return 1
+  gateway_ready_from_cloud "$MASTER_HOST" || return 1
+  gateway_ready_from_cloud "$SLAVE_HOST" || return 1
+  start_availability_monitor
+  deploy_cloud || { set_status cloud_status failed; return 1; }
+  gateway_ready_from_cloud "$MASTER_HOST" || return 1
+  gateway_ready_from_cloud "$SLAVE_HOST" || return 1
+  stop_availability_monitor
+  [ ! -s "$availability_failures" ] || return 1
+  set_status master_status success
+  set_status master_detail '浏览器发布，保留已验证健康的原后端版本'
+  set_status slave_status success
+  set_status slave_detail '浏览器发布，保留已验证健康的原后端版本'
+  set_status cloud_status success
+  set_status cloud_detail "$WAO_GIT_SHA"
+  set_status verification_status success
+  set_status verification_detail '静态制品已校验发布，双节点健康；继续执行公网版本与路由验收'
+}
+
+if [ "${WAO_WEB_ONLY:-false}" = true ]; then
+  trap 'stop_availability_monitor; cleanup_deploy_inputs' EXIT HUP INT TERM
+  deploy_browser_only || exit 1
+  exit 0
+fi
 
 # 是否需要 V77 维护窗口以主库持久状态为准，不依赖单次 push 的文件列表。
 # 这样 Jenkins 手工构建、失败重跑或人工中止后的下一次部署都会继续 fail-closed 流程。

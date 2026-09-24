@@ -90,12 +90,14 @@ pipeline {
                         returnStdout: true
                     ).trim()
                     def planLines = planOutput.readLines()
-                    if (planLines.size() != 6) {
+                    if (planLines.size() != 7) {
                         error("变更范围字段数量错误：${planLines.size()}")
                     }
                     planLines.each { line ->
                         if (line ==~ /WAO_DEPLOY_REQUIRED=(true|false)/) {
                             env.WAO_DEPLOY_REQUIRED = line.substring('WAO_DEPLOY_REQUIRED='.length())
+                        } else if (line ==~ /WAO_WEB_ONLY=(true|false)/) {
+                            env.WAO_WEB_ONLY = line.substring('WAO_WEB_ONLY='.length())
                         } else if (line ==~ /WAO_BACKEND_PROJECTS=[a-z,-]+/) {
                             env.WAO_BACKEND_PROJECTS = line.substring('WAO_BACKEND_PROJECTS='.length())
                         } else if (line ==~ /WAO_TEST_WAO_WEB=(true|false)/) {
@@ -110,9 +112,10 @@ pipeline {
                             error("无法解析变更范围：${line}")
                         }
                     }
+                    if (params.BOOTSTRAP_SLAVE || params.ALLOW_SLAVE_OFFLINE) { env.WAO_WEB_ONLY = 'false' }
                     echo "变更范围：${env.WAO_CHANGED_FILE_COUNT} 个文件；后端=${env.WAO_BACKEND_PROJECTS}；" +
                         "WAO Web 测试=${env.WAO_TEST_WAO_WEB}；Agent Web 测试=${env.WAO_TEST_AGENT_WEB}；" +
-                        "生产发布=${env.WAO_DEPLOY_REQUIRED}；批次提交=${env.WAO_BATCH_COMMIT_COUNT}"
+                        "仅浏览器发布=${env.WAO_WEB_ONLY}；生产发布=${env.WAO_DEPLOY_REQUIRED}；批次提交=${env.WAO_BATCH_COMMIT_COUNT}"
                 }
                 sh 'deploy/jenkins/ci-validate.sh'
             }
@@ -235,7 +238,7 @@ pipeline {
 
         stage('Apply Jenkins controller configuration') {
             when {
-                expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' }
+                expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' && env.WAO_WEB_ONLY != 'true' }
             }
             steps {
                 sh 'deploy/jenkins/apply-controller-config.sh'
@@ -269,7 +272,7 @@ pipeline {
                 }
             }
             sh 'WAO_PIPELINE_RESULT=success deploy/jenkins/notify-feishu.sh || true'
-            sh 'if [ "$DEPLOY_PRODUCTION" = true ] && [ "$WAO_DEPLOY_REQUIRED" = true ]; then deploy/jenkins/cleanup-images.sh; fi'
+            sh 'if [ "$DEPLOY_PRODUCTION" = true ] && [ "$WAO_DEPLOY_REQUIRED" = true ] && [ "$WAO_WEB_ONLY" != true ]; then deploy/jenkins/cleanup-images.sh; fi'
         }
         failure {
             script {
