@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Linux2's non-login Jenkins service does not inherit the operator's proxy.
+# Route dependency and NSIS downloads through its existing local egress.
+export HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-http://127.0.0.1:7897}}"
+export HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-$HTTP_PROXY}}"
+export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1}"
 root=$(pwd -P)
 image=wao-client-windows-builder:rust1.98.1-xwin0.23.1-node24.15.0
 cache="${JENKINS_HOME:-$HOME}/caches/wao-client-windows"
