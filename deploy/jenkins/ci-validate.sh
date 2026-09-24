@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+docker run --rm --cpus=2 --memory=1g --pids-limit=256 \
+  --user "$(id -u):$(id -g)" \
+  -v "$PWD:/workspace" -w /workspace/wao-cli \
+  node:24.15.0-bookworm-slim npm test
+
 python3 deploy/jenkins/test-controller-health.py
 
 sh deploy/scripts/test-render-nginx-config.sh
