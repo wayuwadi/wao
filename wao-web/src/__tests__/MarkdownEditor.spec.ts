@@ -11,12 +11,16 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useUiStore } from '@/stores/ui'
 import { loadRotationImage } from '@/api/imageRotation'
 import { rotateImage } from '@/utils/rotateImage'
+import { fetchPreference, savePreference } from '@/api/favorites'
+import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
 vi.mock('@/api/imageRotation', () => ({ loadRotationImage: vi.fn() }))
 vi.mock('@/utils/rotateImage', () => ({ rotateImage: vi.fn() }))
 
 vi.mock('@/api/assistant', () => ({
   polishDocumentText: vi.fn<(text: string) => Promise<{ polished: string }>>(),
 }))
+vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
+vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
 
 /** Tiptap 需要真实 DOM 与一帧时间来完成挂载。 */
 async function mountEditor(props: {
@@ -37,6 +41,7 @@ async function mountEditor(props: {
   linkControls?: boolean
   imageControls?: boolean
   advanced?: boolean
+  articleImageKey?: string
   compact?: boolean
   toolbarTarget?: HTMLElement | null
   document?: RichDocNode | null
@@ -59,6 +64,58 @@ async function mountEditor(props: {
   await new Promise((r) => setTimeout(r, 0))
   return w
 }
+
+describe('文章总览配图', () => {
+  it('根据正文生成图片并插入开头，保留原文', async () => {
+    vi.mocked(fetchPreference).mockResolvedValue('')
+    vi.mocked(startArticleImage).mockResolvedValue({ id: 'ac-image', status: 'QUEUED', message: '等待生成', imageUrl: null })
+    vi.mocked(fetchArticleImage).mockResolvedValue({ id: 'ac-image', status: 'SUCCEEDED', message: '已生成', imageUrl: '/api/images/img1/raw' })
+    const w = await mountEditor({ modelValue: '第一段。\n\n第二段。', articleImageKey: 'note:me:n1' })
+    await flushPromises()
+
+    await w.get('.generate-image').trigger('click')
+    await flushPromises()
+
+    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'))
+    const updates = w.emitted('update:modelValue') as [string][]
+    const latest = updates[updates.length - 1]?.[0]
+    expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw\)/)
+    expect(latest).toContain('第一段。')
+    expect(latest).toContain('第二段。')
+    w.unmount()
+  })
+
+  it('个人提示词可单独保存', async () => {
+    vi.mocked(fetchPreference).mockResolvedValue('自定义画面')
+    vi.mocked(savePreference).mockResolvedValue()
+    const w = await mountEditor({ modelValue: '正文', articleImageKey: 'document:me:d1' })
+    await flushPromises()
+    await w.get('.prompt-settings').trigger('click')
+    const input = document.body.querySelector<HTMLTextAreaElement>('.image-prompt-dialog textarea')
+    expect(input?.value).toBe('自定义画面')
+    if (!input) throw new Error('没有找到个人提示词输入框')
+    input.value = '另一种画面'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    document.body.querySelector<HTMLButtonElement>('.image-prompt-dialog button.primary')?.click()
+    await flushPromises()
+    expect(savePreference).toHaveBeenCalledWith('article-overview-image-prompt-v1', '另一种画面')
+    w.unmount()
+  })
+
+  it('再次生成时只替换已标记的首图', async () => {
+    const w = await mountEditor({ modelValue: '正文' })
+    const editor = w.vm as unknown as { insertArticleImageAtStart: (url: string) => boolean }
+    expect(editor.insertArticleImageAtStart('/api/images/first/raw')).toBe(true)
+    expect(editor.insertArticleImageAtStart('/api/images/second/raw')).toBe(true)
+    const updates = w.emitted('update:modelValue') as [string][]
+    const latest = updates[updates.length - 1]?.[0]
+    expect(latest).toContain('![文章总览图]')
+    expect(latest).toContain('/api/images/second/raw')
+    expect(latest).not.toContain('/api/images/first/raw')
+    expect(latest).toContain('正文')
+    w.unmount()
+  })
+})
 
 /**
  * jsdom 没有实现 DataTransfer，这里给 paste 事件挂一个最小替身。

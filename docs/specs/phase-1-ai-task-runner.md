@@ -114,7 +114,7 @@
   滚动发布时，旧 Runner 不调用 v2 且哈希不匹配，旧 API 不识别 v2；两端均 fail-closed，安全任务等待兼容节点或 DB 硬超时，不能落入旧协议或带工具执行。
 - 每次 v2 claim 生成新的 32 字符随机 `claimToken`，与 `runnerId` 一起写入 `ai_assistant_run`，并返回从安全执行硬超时扣除保护余量得到的 `maxRuntimeSeconds`（默认 1,740 秒）。Runner 必须用本地单调时钟计算截止时间；
   到期后终止 Codex 子进程，不使用可回拨的墙上时钟也不回传部分结果。complete 必须原样带回 token；服务端只在 `id + runner_id + claim_token + 当前执行中状态` 全部匹配时 CAS 接受成功或失败，终态清空 token，旧 attempt 迟到完成无法覆盖终态。
-- 页面助手和内部只读分析（包括聊天复盘）每次都在临时空 Git 仓库、独立临时 `CODEX_HOME` 与 `read-only` sandbox 中运行。Runner 调用 Codex 时必须同时使用
+- 页面助手和内部只读分析（包括聊天复盘）每次都在临时空 Git 仓库、独立临时 `CODEX_HOME` 与 `read-only` sandbox 中运行。文章配图沿用相同隔离和禁用项，只额外开放内置 `image_gen`；生成结果必须从本次隔离目录读取，见 [文章总览配图规格](article-overview-image.md) 与 [ADR-261](../adr/261-article-overview-image-with-linux-codex.md)。Runner 调用 Codex 时必须同时使用
   `--ephemeral`、`--ignore-rules`、`--disable shell_tool`、`--disable multi_agent`、`tools.view_image=false`，并在子进程环境中剥离
   `GH_TOKEN`、`GITHUB_TOKEN` 及同类 GitHub Token。只有普通页面问答和点子调研使用顶层 `--search`；内部只读分析、聊天复盘、文档润色和天人解读继续强制
   `web_search=disabled`。这些进程级约束才是阻断不可信正文读取本机、扩散工具、调用子代理或触达 GitHub 凭据的安全边界；提示中的“不可信引用”标签只是纵深防御。

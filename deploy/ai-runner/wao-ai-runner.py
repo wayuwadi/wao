@@ -2563,6 +2563,26 @@ def codex_auth_required(output: str) -> bool:
     ))
 
 
+def generated_article_png(codex_home: Path) -> Path:
+    """只接受本次隔离 CODEX_HOME 中 ImageGen 生成的唯一 PNG。"""
+    image_root = codex_home / "generated_images"
+    candidates = [path for path in image_root.rglob("*.png") if path.is_file() and not path.is_symlink()]
+    if len(candidates) != 1:
+        raise RuntimeError("ImageGen 没有生成唯一的 PNG 图片")
+    image = candidates[0]
+    if image.stat().st_size <= 24 or image.stat().st_size > MAX_RUN_REPORT_BYTES:
+        raise RuntimeError("ImageGen 图片为空或超过 10MB")
+    with image.open("rb") as stream:
+        header = stream.read(24)
+    if header[:8] != b"\x89PNG\r\n\x1a\n":
+        raise RuntimeError("ImageGen 结果不是 PNG 图片")
+    width = int.from_bytes(header[16:20], "big")
+    height = int.from_bytes(header[20:24], "big")
+    if not 1 <= width <= 4096 or not 1 <= height <= 4096:
+        raise RuntimeError("ImageGen 图片尺寸超出范围")
+    return image
+
+
 def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, executable: str,
         git_command: str, cli_environment: dict[str, str] | None = None,
         codex_environment: dict[str, str] | None = None) -> None:
@@ -2570,6 +2590,7 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
     run_id = claim["runId"]
     claim_token = str(claim.get("claimToken") or "")
     assistant_mode = str(claim.get("mode") or "READ_ONLY")
+    image_mode = assistant_mode == "ARTICLE_IMAGE"
     research_mode = assistant_mode == "IDEA_RESEARCH"
     web_search_enabled = assistant_mode in {"ASSISTANT", "ASSISTANT_WEB_SEARCH", "IDEA_RESEARCH"}
     workspace_name = ".wao-idea-research" if research_mode else ".wao-assistant"
@@ -2586,9 +2607,12 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
     try:
         worktree.mkdir(parents=True, exist_ok=True)
         run([git_command, "init", "-q"], worktree)
-        log(f"[{run_id}] 开始{'点子调研' if research_mode else '页面只读问答'}")
-        for attempt in range(1, READ_ONLY_AI_MAX_ATTEMPTS + 1):
+        log(f"[{run_id}] 开始{'文章总览配图' if image_mode else '点子调研' if research_mode else '页面只读问答'}")
+        max_attempts = 1 if image_mode else READ_ONLY_AI_MAX_ATTEMPTS
+        for attempt in range(1, max_attempts + 1):
             try:
+                if image_mode:
+                    shutil.rmtree(codex_home / "generated_images", ignore_errors=True)
                 exit_code, response, _, _ = run_codex(
                     executable, worktree, str(claim.get("prompt") or ""), "read-only",
                     NoopProgressReporter(), assistant_cli_environment(
@@ -2597,6 +2621,23 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
                     account=claim.get("account"), codex_home=codex_home,
                     tools_disabled=True, web_search_enabled=web_search_enabled)
                 response = response.strip()
+                if exit_code == 0 and image_mode:
+                    image = generated_article_png(codex_home)
+                    image_endpoint = (
+                        "/api/ai/runner/assistant-v2/" + run_id + "/image?" +
+                        urllib.parse.urlencode({"claimToken": claim_token}))
+                    # 滚动发布命中旧 API 时只重试同一领取令牌和同一文件，不重新生成图片。
+                    for upload_attempt in range(6):
+                        try:
+                            uploaded = api.post_file(image_endpoint, "image", image, "image/png")
+                            break
+                        except Exception:
+                            if upload_attempt == 5:
+                                raise
+                            time.sleep(2)
+                    response = str((uploaded or {}).get("url") or "")
+                    if not response.startswith("/api/images/") or not response.endswith("/raw"):
+                        raise RuntimeError("图床没有返回有效的图片地址")
                 if exit_code == 0 and response:
                     error = ""
                     break
@@ -2616,10 +2657,10 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
                 exit_code = 2
                 response = ""
                 error = f"Codex 执行异常（{type(exc).__name__}）"
-                log(f"[{run_id}] 页面问答第 {attempt}/{READ_ONLY_AI_MAX_ATTEMPTS} 次执行异常："
+                log(f"[{run_id}] 页面问答第 {attempt}/{max_attempts} 次执行异常："
                     f"{type(exc).__name__}")
-            if attempt < READ_ONLY_AI_MAX_ATTEMPTS:
-                log(f"[{run_id}] 页面只读 AI 第 {attempt}/{READ_ONLY_AI_MAX_ATTEMPTS} 次执行未完成，"
+            if attempt < max_attempts:
+                log(f"[{run_id}] 页面只读 AI 第 {attempt}/{max_attempts} 次执行未完成，"
                     "正在自动重试")
                 time.sleep(attempt)
     finally:

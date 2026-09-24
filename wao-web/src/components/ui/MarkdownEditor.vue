@@ -49,6 +49,7 @@ import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/ed
 import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
 import { toast } from '@/composables/toast'
 import { countCharacters } from '@/utils/characterCount'
+import ArticleImageAction from './ArticleImageAction.vue'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
 import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
@@ -122,6 +123,8 @@ const props = withDefaults(
     linkControls?: boolean
     /** 文档正文允许按比例或像素长宽调整图片。 */
     imageControls?: boolean
+    /** 小记或知识库文档的文章总览图入口；key 用于跨页面恢复生成任务。 */
+    articleImageKey?: string
     /** 知识库文档的完整工具栏、斜杠菜单和高级内容块。 */
     advanced?: boolean
     /** 小记使用紧凑工具栏，并隐藏需要进入完整文档继续编辑的重型内容块。 */
@@ -147,6 +150,7 @@ const props = withDefaults(
     taskable: false,
     linkControls: false,
     imageControls: false,
+    articleImageKey: '',
     advanced: false,
     compact: false,
     hideToolbar: false,
@@ -1619,6 +1623,18 @@ function onImagePicked(event: Event) {
   if (files.length) insertImages(files)
 }
 
+/** 将总览图放在当前正文最前面；重复生成时替换上一张总览图。 */
+function insertArticleImageAtStart(url: string): boolean {
+  const e = editor.value
+  if (!e || props.readonly || !/^\/api\/images\/[A-Za-z0-9_-]+\/raw$/.test(url)) return false
+  const first = e.state.doc.firstChild
+  const range = first?.type.name === 'image' && first.attrs.alt === '文章总览图'
+    ? { from: 0, to: first.nodeSize } : 0
+  return e.commands.insertContentAt(range, { type: 'image', attrs: { src: url, alt: '文章总览图' } })
+}
+
+function articleText(): string { return editor.value?.state.doc.textContent ?? '' }
+
 /**
  * 外部值回灌 —— 只在编辑器没有焦点时做。
  *
@@ -1902,17 +1918,14 @@ onBeforeUnmount(() => {
           <button v-if="upload.state === 'failed'" type="button" @click="pendingUploads = pendingUploads.filter((item) => item.id !== upload.id)">移除</button>
         </div>
       </div>
-      <button
-        v-if="!readonly"
-        type="button"
-        class="image-upload"
-        title="从图册选择图片"
-        aria-label="从图册选择图片"
-        @mousedown.prevent
-        @click="chooseImage"
-      >
-        <i class="ri-image-add-line"></i><span>图片</span>
-      </button>
+      <div v-if="!readonly" class="image-actions">
+        <ArticleImageAction v-if="articleImageKey" :scope-key="articleImageKey"
+          :get-text="articleText" :insert-image="insertArticleImageAtStart" />
+        <button type="button" class="image-upload" title="从图册选择图片"
+          aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
+          <i class="ri-image-add-line"></i><span>图片</span>
+        </button>
+      </div>
     </div>
     <Teleport :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
       <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
@@ -2723,11 +2736,16 @@ onBeforeUnmount(() => {
   border-radius: 9px;
   transition: border-color 0.12s;
 }
-.image-upload {
+.image-actions {
   position: absolute;
   right: 8px;
   bottom: 7px;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.image-upload {
   height: 26px;
   padding: 0 8px;
   display: inline-flex;
@@ -2747,7 +2765,7 @@ onBeforeUnmount(() => {
 .image-upload i {
   font-size: 13px;
 }
-.md.bare .image-upload {
+.md.bare .image-actions {
   right: 0;
 }
 .md:not(.ro) .md-body:hover {

@@ -1203,6 +1203,7 @@ async function saveKbSettings() {
               polishable
               link-controls
               image-controls
+              :article-image-key="`document:${session.currentUser.id}:${docId}`"
               placeholder="开始写作…输入 / 插入内容块，支持 Markdown 和粘贴截图"
               :min-height="360"
               :peers="peers"

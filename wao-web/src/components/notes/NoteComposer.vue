@@ -4,6 +4,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { apiCreateNoteTag, apiPatchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
+import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
 const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean }>()
@@ -116,7 +117,7 @@ async function save(asCopy = false) {
     if (props.note && !asCopy) {
       if (data.docPending(props.note.id)) throw new Error('这篇小记在文档页还有未保存编辑，请先完成保存')
       const saved = await apiPatchDoc(props.note.id, {
-        title: text.value.trim().split('\n')[0]!.replace(/^#+\s*/, '').slice(0, 80),
+        title: (firstMarkdownTextLine(text.value) || '未命名小记').slice(0, 80),
         content: rich, blocks: legacyProjection(rich), expectedRev: baseRev, tags: [...tags.value],
       })
       data.applyRemoteDoc(saved)
@@ -181,6 +182,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
       <MarkdownEditor :key="id" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls
+        :article-image-key="`note:${session.currentUser.id}:${id}`"
         :hide-toolbar="inline" :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
