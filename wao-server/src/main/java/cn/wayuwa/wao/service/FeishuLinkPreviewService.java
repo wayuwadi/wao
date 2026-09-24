@@ -11,6 +11,7 @@ import java.util.regex.Pattern;
 import cn.wayuwa.wao.dto.SharedDocDto;
 import cn.wayuwa.wao.dto.SharedTaskDto;
 import cn.wayuwa.wao.dto.SharedTianrenReadingDto;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -37,6 +38,8 @@ public class FeishuLinkPreviewService {
     private static final Pattern TIANREN_PAGE = Pattern.compile("^/s/tianren/([^/]+)/?$");
     private static final Pattern TIANREN_API = Pattern.compile("^/api/share/tianren/([^/]+)/?$");
     private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[([^]]*)]\\([^)]*\\)");
+    private static final Pattern NOTE_IMAGE = Pattern.compile("!\\[[^]]*]\\((/api/images/[A-Za-z0-9_-]+/raw)(?:\\s+[^)]*)?\\)");
+    private static final Pattern PUBLIC_IMAGE = Pattern.compile("^/api/images/[A-Za-z0-9_-]+/raw$");
     private static final Pattern MARKDOWN_LINK = Pattern.compile("\\[([^]]+)]\\([^)]*\\)");
     private static final Pattern HTML_TAG = Pattern.compile("<[^>]{0,500}>");
     private static final Pattern MARKDOWN_DECORATION = Pattern.compile("[`*_~#>|]+");
@@ -76,7 +79,7 @@ public class FeishuLinkPreviewService {
 
             Matcher doc = DOC_PAGE.matcher(path);
             if (!doc.matches()) doc = DOC_MARKDOWN.matcher(path);
-            if (doc.matches()) return docPreview(segment(doc.group(1)), requestedUrl);
+            if (doc.matches()) return docPreview(segment(doc.group(1)), requestedUrl, baseUrl);
 
             Matcher reading = TIANREN_PAGE.matcher(path);
             if (!reading.matches()) reading = TIANREN_API.matcher(path);
@@ -105,13 +108,60 @@ public class FeishuLinkPreviewService {
         return response(kind, task.title(), facts, plainText(task.desc(), 220), url, "打开任务", "blue");
     }
 
-    private Map<String, Object> docPreview(String docId, String url) {
+    private Map<String, Object> docPreview(String docId, String url, String baseUrl) {
         SharedDocDto doc = share.shareDoc(docId);
         String kind = doc.note() ? "WAO 小记" : "WAO 文档";
         String title = StringUtils.hasText(doc.title()) ? doc.title() : (doc.note() ? "未命名小记" : "未命名文档");
+        if (doc.note()) {
+            String image = firstNoteImage(doc);
+            String summary = plainText(MARKDOWN_IMAGE.matcher(doc.md()).replaceAll(""), 80);
+            return noteResponse(kind, title, summary, image == null ? null : baseUrl + image, url);
+        }
         List<String> facts = new ArrayList<>();
         addFact(facts, "更新于", doc.updated());
         return response(kind, title, facts, plainText(doc.md(), 240), url, "打开原文", "turquoise");
+    }
+
+    private static String firstNoteImage(SharedDocDto doc) {
+        JsonNode document = doc.content() == null ? null : doc.content().document();
+        if (document != null && "doc".equals(document.path("type").asText())) {
+            return firstImageNode(document);
+        }
+        Matcher image = NOTE_IMAGE.matcher(doc.md());
+        return image.find() ? image.group(1) : null;
+    }
+
+    private static String firstImageNode(JsonNode node) {
+        if ("image".equals(node.path("type").asText())) {
+            String src = node.path("attrs").path("src").asText("");
+            if (PUBLIC_IMAGE.matcher(src).matches()) return src;
+        }
+        for (JsonNode child : node.path("content")) {
+            String src = firstImageNode(child);
+            if (src != null) return src;
+        }
+        return null;
+    }
+
+    private static Map<String, Object> noteResponse(String kind, String title, String summary, String image,
+            String url) {
+        String safeTitle = plainText(title, 100);
+        List<Map<String, Object>> elements = new ArrayList<>();
+        if (image != null) {
+            elements.add(Map.of("tag", "div", "text", Map.of("tag", "lark_md",
+                    "content", "![小记配图](" + image + ")")));
+        }
+        if (StringUtils.hasText(summary)) elements.add(textElement(summary));
+        elements.add(Map.of("tag", "action", "actions", List.of(Map.of(
+                "tag", "button", "text", Map.of("tag", "plain_text", "content", "打开原文"),
+                "type", "primary", "url", url))));
+        String heading = kind + " · " + (StringUtils.hasText(safeTitle) ? safeTitle : "未命名小记");
+        return Map.of("inline", Map.of("i18n_title", Map.of("zh_cn", heading)),
+                "card", Map.of("type", "raw", "data", Map.of(
+                        "config", Map.of("wide_screen_mode", true),
+                        "header", Map.of("template", "turquoise",
+                                "title", Map.of("tag", "plain_text", "content", heading)),
+                        "elements", elements)));
     }
 
     private Map<String, Object> tianrenPreview(String token, String url) {
