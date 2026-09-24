@@ -9,7 +9,18 @@ export function directoryParents(kb: KnowledgeBase): Record<string, string> {
     parents[`f:${folder.id}`] = ''
     for (const id of folder.docs) parents[`d:${id}`] = `f:${folder.id}`
   }
-  for (const [node, parent] of Object.entries(kb.directory ?? {})) {
+  const overrides = kb.directory ?? {}
+  const order = kb.directoryOrder
+  if (order?.length) {
+    const ordered: Record<string, string> = {}
+    for (const node of new Set([...order, ...Object.keys(parents)])) {
+      if (!(node in parents)) continue
+      const parent = overrides[node]
+      ordered[node] = parent !== undefined && (!parent || parent in parents) ? parent : parents[node]!
+    }
+    return ordered
+  }
+  for (const [node, parent] of Object.entries(overrides)) {
     if (node in parents && (!parent || parent in parents)) parents[node] = parent
   }
   return parents

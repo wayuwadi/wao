@@ -527,5 +527,5 @@ export const apiMoveTask = (task: Task, parentTaskId: string | null) =>
   })
 
 /** 以当前父级作为并发前置条件，移动整个目录子树。 */
-export const apiMoveKnowledgeNode = (kbId: string, node: string, parent: string, expectedParent: string) =>
-  put<KnowledgeBase>(`/api/kbs/${kbId}/directory-parent`, { node, parent, expectedParent })
+export const apiMoveKnowledgeNode = (kbId: string, node: string, parent: string, expectedParent: string, beforeSibling?: string | null) =>
+  put<KnowledgeBase>(`/api/kbs/${kbId}/directory-parent`, { node, parent, expectedParent, beforeSibling })

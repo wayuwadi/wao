@@ -616,15 +616,50 @@ const currentFolderId = computed(
 )
 const mixedRows = computed(() => kb.value ? directoryRows(kb.value, id => data.docOf(id).title || '未命名文档', folderOpen, treeQuery.value) : [])
 const draggingNode = ref<string | null>(null)
+const dropTarget = ref<{ key: string; placement: 'before' | 'inside' | 'after' } | null>(null)
 const directoryError = ref('')
-let pendingMove: { kbId: string; node: string; parent: string; expectedParent: string } | null = null
+let pendingMove: { kbId: string; node: string; parent: string; expectedParent: string; beforeSibling?: string | null } | null = null
 function startNodeDrag(key: string, event: DragEvent) {
   draggingNode.value = key
+  dropTarget.value = null
   event.dataTransfer?.setData('application/x-wao-directory', key)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
-async function moveNode(parent: string, node = draggingNode.value) {
+function endNodeDrag() { draggingNode.value = null; dropTarget.value = null }
+function dragLeaveNode(key: string, event: DragEvent) {
+  if (dropTarget.value?.key === key && !(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) dropTarget.value = null
+}
+function dragOverNode(key: string, event: DragEvent) {
+  const node = draggingNode.value
+  if (!node || node === key || !kb.value || treeSaveState.value === 'saving') { dropTarget.value = null; return }
+  const row = event.currentTarget as HTMLElement
+  const ratio = (event.clientY - row.getBoundingClientRect().top) / row.getBoundingClientRect().height
+  const placement = ratio < .25 ? 'before' : ratio > .75 ? 'after' : 'inside'
+  const parents = directoryParents(kb.value)
+  const parent = placement === 'inside' ? key : parents[key] ?? ''
+  if (node.startsWith('d:') && !parent) { dropTarget.value = null; return }
+  let cursor = parent
+  while (cursor) {
+    if (cursor === node) { dropTarget.value = null; return }
+    cursor = parents[cursor] ?? ''
+  }
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dropTarget.value = { key, placement }
+}
+async function dropOnNode(key: string) {
+  const target = dropTarget.value
+  if (!target || target.key !== key || !kb.value) return
+  const parents = directoryParents(kb.value)
+  const parent = target.placement === 'inside' ? key : parents[key] ?? ''
+  const siblings = Object.keys(parents).filter(candidate => parents[candidate] === parent && candidate !== draggingNode.value)
+  const beforeSibling = target.placement === 'before' ? key
+    : target.placement === 'after' ? siblings[siblings.indexOf(key) + 1] ?? null : null
+  await moveNode(parent, draggingNode.value, beforeSibling)
+}
+async function moveNode(parent: string, node = draggingNode.value, beforeSibling?: string | null) {
   draggingNode.value = null
+  dropTarget.value = null
   if (!kb.value || !node || treeSaveState.value === 'saving') return
   const parents = directoryParents(kb.value)
   let cursor = parent
@@ -634,8 +669,8 @@ async function moveNode(parent: string, node = draggingNode.value) {
     visited.add(cursor)
     cursor = parents[cursor] ?? ''
   }
-  if (parents[node] === parent) return
-  pendingMove = { kbId: kb.value.id, node, parent, expectedParent: parents[node] ?? '' }
+  if (parents[node] === parent && beforeSibling === undefined) return
+  pendingMove = { kbId: kb.value.id, node, parent, expectedParent: parents[node] ?? '', beforeSibling }
   await persistNodeMove()
 }
 async function persistNodeMove() {
@@ -662,7 +697,7 @@ async function persistNodeMove() {
       }
     }
     const previousFolders = new Map(descendants.map(id => [id, data.docById(id)?.folderId]))
-    const saved = await apiMoveKnowledgeNode(targetKb.id, move.node, move.parent, move.expectedParent)
+    const saved = await apiMoveKnowledgeNode(targetKb.id, move.node, move.parent, move.expectedParent, move.beforeSibling)
     const currentKb = data.kbById(targetKb.id)
     if (currentKb) Object.assign(currentKb, saved)
     for (const folder of saved.folders) for (const id of folder.docs) {
@@ -1001,19 +1036,20 @@ async function saveKbSettings() {
       <p v-if="folderRenameError" role="alert">{{ folderRenameError }}</p>
       <div ref="treeElement" class="tree">
         <p v-if="directoryError" role="alert">{{ directoryError }}</p>
-        <div v-if="draggingNode?.startsWith('f:')" class="folder-empty" @dragover.prevent @drop.stop="moveNode('')">拖到这里移至根目录</div>
+        <div v-if="draggingNode?.startsWith('f:')" class="root-drop" @dragover.prevent @drop.prevent.stop="moveNode('', draggingNode, null)">拖到这里移至目录顶层</div>
         <p v-if="treeQuery.trim() && !mixedRows.length" class="folder-empty">没有匹配的文件夹或文档</p>
-        <div v-for="node in mixedRows" :key="node.key" :class="node.kind === 'folder' ? 'folder-row' : 'doc-row'"
-          :style="{ paddingLeft: `${node.depth * 16}px` }" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving'"
-          @dragstart="startNodeDrag(node.key, $event)" @dragend="draggingNode = null" @dragover.prevent @drop.stop="moveNode(node.key)">
-          <button v-if="node.hasChildren" class="icon-act" :aria-label="`展开或收起${node.title}`" :aria-expanded="folderOpen[node.key] !== false" @click="folderOpen[node.key] = folderOpen[node.key] === false"><i class="chev" :class="folderOpen[node.key] === false ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+        <div v-for="node in mixedRows" :key="node.key" class="directory-row" :class="[node.kind === 'folder' ? 'folder-row' : 'doc-row', { selected: docId === node.id, 'drag-source': draggingNode === node.key, 'drop-before': dropTarget?.key === node.key && dropTarget.placement === 'before', 'drop-inside': dropTarget?.key === node.key && dropTarget.placement === 'inside', 'drop-after': dropTarget?.key === node.key && dropTarget.placement === 'after' }]"
+          :style="{ '--node-depth': node.depth }" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving' && !treeQuery.trim()"
+          @dragstart="startNodeDrag(node.key, $event)" @dragend="endNodeDrag" @dragover="dragOverNode(node.key, $event)" @dragleave="dragLeaveNode(node.key, $event)" @drop.prevent.stop="dropOnNode(node.key)">
+          <button v-if="node.hasChildren" class="tree-caret" :aria-label="`展开或收起${node.title}`" :aria-expanded="folderOpen[node.key] !== false" @click="folderOpen[node.key] = folderOpen[node.key] === false"><i class="chev" :class="folderOpen[node.key] === false ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+          <span v-else class="tree-caret-spacer" aria-hidden="true"></span>
           <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
             @keydown.enter.prevent="!$event.isComposing && commitFolderName(node.id)" @keydown.esc.prevent="renamingFolder = null; folderRenameError = ''" @blur="commitFolderName(node.id)" />
           <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" :aria-expanded="node.kind === 'folder' ? folderOpen[node.key] !== false : undefined" :data-node="node.key" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (folderOpen[node.key] = folderOpen[node.key] === false) : selectDoc(node.id)">
             <span :class="node.kind === 'folder' ? 'folder-name' : 'doc-node-title'" :style="{ color: docId === node.id ? 'var(--wao-primary)' : undefined }">{{ node.title }}</span>
           </button>
-          <ResourceMenu :label="`${node.title}的更多操作`" :items="node.kind === 'folder' ? folderItems : docItems" @select="node.kind === 'folder' ? folderAction($event, node.id) : docAction($event, node.id)" />
-          <ResourceMenu :label="`在${node.title}新增内容`" icon="ri-add-line" :items="createItems" @select="createNested($event, node.key)" />
+          <div class="tree-row-actions"><ResourceMenu :label="`${node.title}的更多操作`" :items="node.kind === 'folder' ? folderItems : docItems" @select="node.kind === 'folder' ? folderAction($event, node.id) : docAction($event, node.id)" />
+          <ResourceMenu :label="`在${node.title}新增内容`" icon="ri-add-line" :items="createItems" @select="createNested($event, node.key)" /></div>
         </div>
 
         <section v-if="archivedDocs.length || archivedError || archivedLoading" class="archive-tree">
@@ -2220,5 +2256,71 @@ async function saveKbSettings() {
 .tree-search { display: flex; align-items: center; gap: 6px; }
 .tree-search label { flex: 1; min-width: 0; }
 .doc-bar { flex-wrap: wrap; }
+
+/* 语雀式目录：缩进属于整行，展开位固定宽度，选中和拖放覆盖整行。 */
+.tree { padding: 4px 10px 8px; }
+.directory-row {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 38px;
+  margin: 0;
+  padding: 0 4px 0 calc(4px + var(--node-depth) * 18px);
+  border-radius: 7px;
+  cursor: grab;
+}
+.directory-row:active { cursor: grabbing; }
+.directory-row:hover, .directory-row:focus-within { background: var(--wao-bg-hover); }
+.directory-row.selected, .directory-row.selected:hover { background: var(--wao-primary-soft); }
+.directory-row.drag-source { opacity: .4; }
+.tree-caret, .tree-caret-spacer { flex: 0 0 20px; width: 20px; height: 28px; }
+.tree-caret { display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+.tree-caret:hover { background: var(--wao-bg-hover-2); }
+.directory-row .folder-btn, .directory-row .doc-node {
+  flex: 1 1 auto;
+  height: 34px;
+  padding: 0 4px;
+  gap: 0;
+  text-align: left;
+  background: transparent;
+}
+.directory-row .folder-btn:hover, .directory-row .doc-node:hover,
+.directory-row .doc-node.on { background: transparent; }
+.directory-row .folder-name, .directory-row .doc-node-title { font-size: 13px; font-weight: 400; }
+.directory-row.selected .doc-node-title { font-weight: 600; }
+.tree-row-actions {
+  position: absolute;
+  right: 3px;
+  top: 4px;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding-left: 8px;
+  background: var(--wao-bg-hover);
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+}
+.directory-row.selected .tree-row-actions { background: var(--wao-primary-soft); }
+.directory-row:hover .tree-row-actions,
+.directory-row:focus-within .tree-row-actions,
+.directory-row:has(.resource-trigger[aria-expanded="true"]) .tree-row-actions { opacity: 1; pointer-events: auto; }
+.directory-row.drop-before::before, .directory-row.drop-after::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  left: calc(4px + var(--node-depth) * 18px);
+  right: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--wao-primary);
+}
+.directory-row.drop-before::before { top: 0; }
+.directory-row.drop-after::after { bottom: 0; }
+.directory-row.drop-inside { outline: 2px solid var(--wao-primary); outline-offset: -2px; background: var(--wao-primary-soft); }
+.root-drop { margin: 2px 0 6px; padding: 9px; border: 1px dashed var(--wao-primary); border-radius: 7px; color: var(--wao-primary-text); font-size: 12px; text-align: center; }
+@media (hover: none), (pointer: coarse) { .tree-row-actions { opacity: 1; pointer-events: auto; } }
 
 </style>
