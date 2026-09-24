@@ -1632,6 +1632,41 @@ class LinuxCodexAssistantTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
 
     @patch.object(RUNNER, "run_codex")
+    def test_article_image_uploads_only_isolated_generated_png(self, run_codex: Mock) -> None:
+        def generate(*_args: object, **kwargs: object) -> tuple[int, str, None, dict]:
+            image_root = Path(kwargs["codex_home"]) / "generated_images" / "session"
+            image_root.mkdir(parents=True)
+            header = b"\x89PNG\r\n\x1a\n" + bytes(8) + (1).to_bytes(4, "big") + (1).to_bytes(4, "big")
+            (image_root / "image.png").write_bytes(header + b"generated")
+            return 0, "/etc/passwd", None, {}
+
+        run_codex.side_effect = generate
+        api = Mock()
+        api.post_file.return_value = {"url": "/api/images/img1/raw"}
+        RUNNER.execute_assistant_claim(api, {"runId": "image1", "claimToken": "claim1",
+            "prompt": "生成总览图", "mode": "ARTICLE_IMAGE"}, self.root, "codex", "git")
+
+        self.assertEqual("read-only", run_codex.call_args.args[3])
+        self.assertTrue(run_codex.call_args.kwargs["tools_disabled"])
+        self.assertFalse(run_codex.call_args.kwargs["web_search_enabled"])
+        uploaded_path = api.post_file.call_args.args[2]
+        self.assertEqual("image.png", uploaded_path.name)
+        self.assertIn("claimToken=claim1", api.post_file.call_args.args[0])
+        self.assertEqual("/api/images/img1/raw", api.post.call_args.args[1]["response"])
+        self.assertFalse((self.root / ".wao-assistant-codex-homes" / "image1").exists())
+
+    @patch.object(RUNNER, "run_codex", return_value=(0, "/etc/passwd", None, {}))
+    def test_article_image_never_uploads_a_model_supplied_path(self, run_codex: Mock) -> None:
+        api = Mock()
+        RUNNER.execute_assistant_claim(api, {"runId": "image2", "claimToken": "claim2",
+            "prompt": "生成总览图", "mode": "ARTICLE_IMAGE"}, self.root, "codex", "git")
+
+        run_codex.assert_called_once()
+        api.post_file.assert_not_called()
+        self.assertEqual("", api.post.call_args.args[1]["response"])
+        self.assertNotEqual(0, api.post.call_args.args[1]["exitCode"])
+
+    @patch.object(RUNNER, "run_codex")
     def test_invalid_login_returns_safe_code_without_repeating_or_leaking_output(self, run_codex: Mock) -> None:
         run_codex.return_value = (1, "401 Unauthorized: invalidated oauth token PRIVATE-DETAIL", None, {})
         api = Mock()

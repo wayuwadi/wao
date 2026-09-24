@@ -194,6 +194,48 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void articleImageUsesLinuxOnlyAndRequiresUploadedImageBeforeCompletion() {
+        AiRunnerNodeEntity linux = runner("Linux 6.8", "codex");
+        when(runnerMapper.selectList(any())).thenReturn(List.of(linux));
+        String runId = service.enqueueArticleImageJob("wg", "文章正文", "横版总览图");
+        ArgumentCaptor<AiAssistantRunEntity> inserted = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(inserted.capture());
+        AiAssistantRunEntity run = inserted.getValue();
+        assertThat(run.getId()).isEqualTo(runId);
+        assertThat(run.getUsagePurpose()).isEqualTo("ARTICLE_IMAGE");
+        assertThat(run.getStatus()).isEqualTo("secure_queued");
+        assertThat(run.getPromptText()).contains("文章正文", "横版总览图", "只调用内置 image_gen");
+
+        run.setStatus("secure_queued");
+        when(mapper.selectList(any())).thenReturn(List.of(), List.of(run));
+        when(aiRunService.authenticateRunner("token")).thenReturn(linux);
+        when(mapper.claimQueued(eq(runId), eq("rn1"), anyString(), eq("secure_queued"), eq("secure_running")))
+                .thenAnswer(invocation -> {
+                    run.setStatus("secure_running");
+                    run.setRunnerId("rn1");
+                    run.setClaimToken(invocation.getArgument(2));
+                    return 1;
+                });
+        when(mapper.selectById(runId)).thenReturn(run);
+        AiAssistantClaimDto claim = service.claim("token");
+        assertThat(claim.mode()).isEqualTo("ARTICLE_IMAGE");
+        assertThat(claim.maxRuntimeSeconds()).isEqualTo(1740);
+
+        service.complete("token", runId, new CompleteAiAssistantRunRequest(
+                claim.claimToken(), 0, "/api/images/img1/raw", null));
+        verify(mapper).completeFailed(eq(runId), eq("rn1"), eq(claim.claimToken()),
+                eq("secure_running"), anyString());
+        verify(mapper, never()).completeSucceeded(eq(runId), anyString(), anyString(), anyString(), anyString());
+
+        run.setResponseText("/api/images/img1/raw");
+        when(mapper.completeSucceeded(eq(runId), eq("rn1"), eq(claim.claimToken()),
+                eq("secure_running"), eq("/api/images/img1/raw"))).thenReturn(1);
+        service.complete("token", runId, new CompleteAiAssistantRunRequest(
+                claim.claimToken(), 0, "/api/images/img1/raw", null));
+        assertThat(run.getStatus()).isEqualTo("succeeded");
+    }
+
+    @Test
     void completionClearsPromptAndStoresBoundedOutcome() {
         AiRunnerNodeEntity linux = runner("Linux 6.8", "codex");
         AiAssistantRunEntity run = assistantRun("running");
