@@ -505,7 +505,29 @@ deploy_cloud() {
 gateway_ready_from_cloud() {
   gateway_host="$1"
   ssh -o ConnectTimeout=15 "wao-cloud" \
-    "gateway_ip=\$(sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh '$gateway_host') && curl -4 -kfsS --max-time 8 --resolve '$gateway_host:9000:'\$gateway_ip https://$gateway_host:9000/api/hello | grep -q '\"code\":0'"
+    "gateway_ip=\$(sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh '$gateway_host') && response=\$(curl -4 -kfsS --max-time 8 --resolve '$gateway_host:9000:'\$gateway_ip https://$gateway_host:9000/api/edge/ready) && printf '%s' \"\$response\" | grep -Eq '\"code\"[[:space:]]*:[[:space:]]*0' && printf '%s' \"\$response\" | grep -Eq '\"protocol\"[[:space:]]*:[[:space:]]*1'"
+}
+
+public_ready() {
+  response="$(curl --fail --silent --show-error --max-time 8 \
+    https://wao.wayuwa.cn/api/edge/ready)" || return 1
+  printf '%s' "$response" | grep -Eq '"code"[[:space:]]*:[[:space:]]*0' &&
+    printf '%s' "$response" | grep -Eq '"protocol"[[:space:]]*:[[:space:]]*1'
+}
+
+# The database tunnel has failed after the previous release's one-shot /api/hello
+# checks. Keep checking the DB-backed route through the delayed failure window.
+verify_post_deploy_stability() {
+  sample=1
+  while [ "$sample" -le 9 ]; do
+    gateway_ready_from_cloud "$MASTER_HOST" || return 1
+    if [ "$slave_available" = true ]; then
+      gateway_ready_from_cloud "$SLAVE_HOST" || return 1
+    fi
+    public_ready || return 1
+    [ "$sample" -eq 9 ] || sleep 15
+    sample=$((sample + 1))
+  done
 }
 
 set_upstream_state() {
@@ -554,9 +576,8 @@ rm -f "$availability_stop"
 start_availability_monitor() {
   (
     while [ ! -f "$availability_stop" ]; do
-      if ! curl --fail --silent --show-error --max-time 8 --retry 2 --retry-delay 1 \
-          --retry-all-errors https://wao.wayuwa.cn/api/hello >/dev/null; then
-        date -u '+%Y-%m-%dT%H:%M:%SZ public /api/hello unavailable' >>"$availability_failures"
+      if ! public_ready; then
+        date -u '+%Y-%m-%dT%H:%M:%SZ public /api/edge/ready unavailable' >>"$availability_failures"
       fi
       sleep 2
     done
@@ -652,8 +673,7 @@ if [ "$safe_schema_rollout" != true ] && [ "$slave_available" = true ]; then
     exit 1
   }
   set_upstream_state master up || exit 1
-  curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
-    https://wao.wayuwa.cn/api/hello | grep -q '"code":0' || exit 1
+  public_ready || exit 1
   start_availability_monitor
 fi
 
@@ -694,8 +714,7 @@ fi
 
 set_upstream_state slave down || exit 1
 if [ "$safe_schema_rollout" != true ]; then
-  curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
-    https://wao.wayuwa.cn/api/hello | grep -q '"code":0'
+  public_ready || exit 1
 fi
 
 if [ "$slave_available" = true ]; then
@@ -825,14 +844,36 @@ else
   set_upstream_state slave down || true
 fi
 
-gateway_ready_from_cloud "$MASTER_HOST"
-sh "$WAO_MASTER_PROJECT_ROOT/deploy/scripts/validate-deployment-node.sh" master "$WAO_GIT_SHA"
+gateway_ready_from_cloud "$MASTER_HOST" || {
+  set_status verification_status failed
+  set_status verification_detail 'Linux2 数据库就绪检查失败'
+  exit 1
+}
+sh "$WAO_MASTER_PROJECT_ROOT/deploy/scripts/validate-deployment-node.sh" master "$WAO_GIT_SHA" || {
+  set_status verification_status failed
+  set_status verification_detail 'Linux2 最终节点验证失败'
+  exit 1
+}
 if [ "$slave_available" = true ]; then
-  gateway_ready_from_cloud "$SLAVE_HOST"
+  gateway_ready_from_cloud "$SLAVE_HOST" || {
+    set_status verification_status failed
+    set_status verification_detail 'Linux1 数据库就绪检查失败'
+    exit 1
+  }
   retry_remote "Linux1 从节点" slave_ssh "wao-slave" \
-    "sh deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'"
+    "sh deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'" || {
+      set_status verification_status failed
+      set_status verification_detail 'Linux1 最终节点验证失败'
+      exit 1
+    }
 fi
 
+if ! verify_post_deploy_stability; then
+  set_status verification_status failed
+  set_status verification_detail '发布后稳定窗口内数据库就绪检查失败'
+  echo '发布后稳定窗口内数据库就绪检查失败；不发送发布成功通知。'
+  exit 1
+fi
 stop_availability_monitor
 if [ -s "$availability_failures" ]; then
   set_status verification_status failed

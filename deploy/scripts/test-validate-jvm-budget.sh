@@ -20,7 +20,7 @@ case "$1" in
     if [ "$3" = sh ]; then
       if [ "$2" = wao-server ]; then echo "${TEST_SERVER_HEAP-1073741824}"
       else echo "${TEST_OTHER_HEAP-536870912}"; fi
-    else echo '{"code":0}'; fi ;;
+    else echo '{"code":0,"data":{"protocol":1}}'; fi ;;
   *) exit 2 ;;
 esac
 SH
