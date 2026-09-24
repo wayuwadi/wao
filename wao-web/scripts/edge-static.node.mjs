@@ -14,6 +14,75 @@ const digest = Buffer.from(await webcrypto.subtle.digest('SHA-256', asset)).toSt
 const manifest = { release: sha, files: { 'assets/app.js': { size: asset.length, sha256: digest } } }
 const config = { schema: 1, enabled: true, staticEnabled: true, forceCloud: false, allowedReleases: [sha], nodes: [{ origin: node, enabled: true }] }
 
+function privateMediaHarness(extra = {}) {
+  let account = 'account-a'
+  const h = harness({
+    config: { ...config, apiEnabled: true, mediaEnabled: true, forceCloud: false }, ...extra,
+    respond: async (url, options) => {
+      const custom = await extra.respond?.(url, options)
+      if (custom) return custom
+      if (url === '/api/edge/csrf') return Response.json({ data: { csrf: account } })
+      if (url === '/api/edge/tickets') return Response.json({ data: { ticket: 'single-use' } })
+      if (/\/api\/edge\/(ready|exchange|session)$/.test(url)) return Response.json({ data: {} })
+      if (url === node + '/api/files/sample/download') return new Response(account, {
+        headers: { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename=test.txt', 'Set-Cookie': 'do-not-forward' },
+      })
+    },
+  })
+  return { ...h, switchAccount: value => { account = value } }
+}
+
+test('private downloads get fresh root authority per request and never cache identity or cookies', async () => {
+  const h = privateMediaHarness()
+  const first = await h.request(origin + '/api/files/sample/download')
+  assert.equal(await first.text(), 'account-a')
+  assert.equal(first.headers.get('cache-control'), 'private, no-store')
+  assert.equal(first.headers.get('set-cookie'), null)
+  assert.match(first.headers.get('content-disposition'), /^attachment/)
+  h.switchAccount('account-b')
+  assert.equal(await (await h.request(origin + '/api/files/sample/download')).text(), 'account-b')
+  const tickets = h.calls.filter(call => call.url === '/api/edge/tickets')
+  assert.equal(tickets.length, 2)
+  assert.equal(tickets[1].options.headers['X-WAO-CSRF'], 'account-b')
+  assert.equal(h.calls.filter(call => call.url === origin + '/api/files/sample/download').length, 0)
+})
+
+test('private auth rejection stops immediately; ticket URLs and media writes stay untouched', async () => {
+  const h = privateMediaHarness({ respond: url => url === '/api/edge/csrf' ? new Response('', { status: 401 }) : null })
+  const response = await h.request(origin + '/api/files/sample/download')
+  assert.equal(response.status, 401)
+  assert.equal(h.calls.filter(call => call.url.startsWith(node) && !call.url.endsWith('/ready')).length, 0)
+  assert.equal(h.request(origin + '/api/files/sample/download?ticket=one'), undefined)
+  assert.equal(h.request(origin + '/api/files/sample/download', { method: 'POST' }), undefined)
+})
+
+test('media ranges preserve status and range headers without forwarding cookies', async () => {
+  const h = privateMediaHarness({ respond: (url, options) => {
+    if (!url.endsWith('/stream')) return null
+    assert.equal(options.headers.get('range'), 'bytes=2-4')
+    return new Response('234', { status: 206, headers: { 'Content-Type': 'video/mp4',
+      'Content-Range': 'bytes 2-4/10', 'Accept-Ranges': 'bytes', 'Content-Length': '3', 'Set-Cookie': 'private' } })
+  } })
+  const response = await h.request(origin + '/api/files/sample/stream', { headers: { Range: 'bytes=2-4' }, destination: 'video' })
+  assert.equal(response.status, 206)
+  assert.equal(response.headers.get('content-range'), 'bytes 2-4/10')
+  assert.equal(response.headers.get('set-cookie'), null)
+  assert.equal(await response.text(), '234')
+})
+
+test('unsafe inline downloads fall back once; body failures after headers never replay', async () => {
+  const unsafe = privateMediaHarness({ respond: url => url === node + '/api/files/sample/download'
+    ? new Response('<script>bad</script>', { headers: { 'Content-Type': 'text/html' } }) : null })
+  assert.equal(await (await unsafe.request(origin + '/api/files/sample/download')).text(), 'cloud same release')
+  assert.equal(unsafe.calls.filter(call => call.url === origin + '/api/files/sample/download').length, 1)
+  const broken = privateMediaHarness({ respond: url => url === node + '/api/files/sample/download'
+    ? new Response(new ReadableStream({ pull(controller) { controller.error(new Error('lost stream')) } }),
+      { headers: { 'Content-Disposition': 'attachment; filename=test.txt' } }) : null })
+  const response = await broken.request(origin + '/api/files/sample/download')
+  await assert.rejects(response.text(), /lost stream/)
+  assert.equal(broken.calls.filter(call => call.url === origin + '/api/files/sample/download').length, 0)
+})
+
 function harness(overrides = {}) {
   const listeners = new Map()
   const calls = []
@@ -23,6 +92,10 @@ function harness(overrides = {}) {
     calls.push({ url, options })
     if (url === '/_edge/routing.json') return Response.json(overrides.config || config)
     if (url.endsWith('/release-manifest.json')) return Response.json(overrides.manifest || manifest)
+    if (overrides.respond) {
+      const response = await overrides.respond(url, options)
+      if (response) return response
+    }
     if (url.startsWith(node)) {
       if (overrides.nodeFailure) throw new Error('Network unavailable')
       return new Response(overrides.corrupt ? 'wrong' : (overrides.body ?? asset), { headers: { 'content-type': overrides.contentType || 'text/javascript', 'set-cookie': 'must-not-forward' } })
@@ -30,7 +103,7 @@ function harness(overrides = {}) {
     return new Response('cloud same release', { headers: { 'content-type': 'text/javascript' } })
   }
   vm.runInNewContext(readFileSync(new URL('../public/edge-static-worker.js', import.meta.url), 'utf8'),
-    { self, fetch, URL, Response, Uint8Array, TextDecoder, AbortController, crypto: webcrypto, setTimeout, clearTimeout })
+    { self, fetch, URL, Response, Headers, ReadableStream, Uint8Array, TextDecoder, AbortController, crypto: webcrypto, setTimeout, clearTimeout })
   return {
     calls,
     request(url = origin + path, options = {}) {

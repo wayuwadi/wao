@@ -113,6 +113,7 @@ wao/
 ├── wao-web/       Vue 前端
 ├── wao-server/    Spring Boot 应用服务
 ├── wao-gateway/   Spring Cloud Gateway
+├── wao-cli/       连接工作区 MCP 的命令行工具
 ├── agent-web/     同仓交付的自媒体 Agent 前端
 ├── agent-server/  同仓交付、独立进程的 Agent 服务
 ├── deploy/        Compose、Nginx、证书、备份和部署脚本
@@ -122,6 +123,7 @@ wao/
 
 ## 文档入口
 
+- [WAO CLI](wao-cli/README.md)：安装 `wao` 命令、连接工作区令牌和操作项目、任务、知识库。
 - [WAO Design System / UX 规范](docs/ux/wao-design-system.md)：当前视觉变量、组件复用前提、页面状态和用户旅程验收基线。
 
 - [原版技术方案](docs/WAO系统技术架构方案.md)：用户提供的原始方案，原样归档，作为项目愿景和实施范围来源。

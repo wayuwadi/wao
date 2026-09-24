@@ -80,7 +80,7 @@ public class ShareService {
             Step s = subs.get(i);
             if (subKey(t.id(), s, i).equals(subId)) {
                 return new SharedTaskDto("sub", t.id(), subId, s.text(),
-                        s.done() ? "已完成" : "进行中".equals(s.status()) ? "进行中" : "未完成", null, null,
+                        "未开始".equals(s.statusLabel()) ? "未完成" : s.statusLabel(), null, null,
                         t.project(), projectName(t.project()), nz(s.desc()), nn(s.images()), List.of(), List.of());
             }
         }

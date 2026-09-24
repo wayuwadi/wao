@@ -1,4 +1,5 @@
 DROP TABLE IF EXISTS memory_access_token;
+DROP TABLE IF EXISTS workspace_mcp_token;
 DROP TABLE IF EXISTS personal_memory;
 DROP TABLE IF EXISTS doc;
 DROP TABLE IF EXISTS kb_folder;
@@ -22,6 +23,18 @@ CREATE TABLE memory_access_token (
     revoked_at TIMESTAMP NULL
 );
 
+CREATE TABLE workspace_mcp_token (
+    id VARCHAR(32) PRIMARY KEY,
+    member_id VARCHAR(32) NOT NULL,
+    name VARCHAR(80) NOT NULL,
+    token_prefix VARCHAR(20) NOT NULL,
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    can_write BOOLEAN NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    last_used_at TIMESTAMP NULL,
+    revoked_at TIMESTAMP NULL
+);
+
 CREATE TABLE personal_memory (
     id VARCHAR(32) PRIMARY KEY,
     member_id VARCHAR(32) NOT NULL,
@@ -38,7 +51,7 @@ CREATE TABLE personal_memory (
     updated_at TIMESTAMP NOT NULL
 );
 
-CREATE TABLE kb (
+CREATE TABLE kb (directory_json VARCHAR(100000),
     id VARCHAR(32) PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
     icon VARCHAR(64),
@@ -78,6 +91,7 @@ CREATE TABLE doc (
     created_at TIMESTAMP NULL,
     updated_at TIMESTAMP NULL,
     rev INT NOT NULL,
+    archived_at TIMESTAMP NULL,
     deleted_at TIMESTAMP NULL,
     deleted_by VARCHAR(32) NULL,
     cascade_del BOOLEAN NOT NULL

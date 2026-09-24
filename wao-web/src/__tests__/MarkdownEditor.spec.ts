@@ -11,12 +11,16 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useUiStore } from '@/stores/ui'
 import { loadRotationImage } from '@/api/imageRotation'
 import { rotateImage } from '@/utils/rotateImage'
+import { fetchPreference, savePreference } from '@/api/favorites'
+import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
 vi.mock('@/api/imageRotation', () => ({ loadRotationImage: vi.fn() }))
 vi.mock('@/utils/rotateImage', () => ({ rotateImage: vi.fn() }))
 
 vi.mock('@/api/assistant', () => ({
   polishDocumentText: vi.fn<(text: string) => Promise<{ polished: string }>>(),
 }))
+vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
+vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
 
 /** Tiptap 需要真实 DOM 与一帧时间来完成挂载。 */
 async function mountEditor(props: {
@@ -37,6 +41,7 @@ async function mountEditor(props: {
   linkControls?: boolean
   imageControls?: boolean
   advanced?: boolean
+  articleImageKey?: string
   compact?: boolean
   toolbarTarget?: HTMLElement | null
   document?: RichDocNode | null
@@ -59,6 +64,64 @@ async function mountEditor(props: {
   await new Promise((r) => setTimeout(r, 0))
   return w
 }
+
+describe('文章总览配图', () => {
+  it('根据正文生成图片并插入开头，保留原文', async () => {
+    vi.mocked(fetchPreference).mockResolvedValue('')
+    vi.mocked(startArticleImage).mockResolvedValue({ id: 'ac-image', status: 'QUEUED', message: '等待生成', imageUrl: null })
+    vi.mocked(fetchArticleImage).mockResolvedValue({ id: 'ac-image', status: 'SUCCEEDED', message: '已生成', imageUrl: '/api/images/img1/raw' })
+    const w = await mountEditor({ modelValue: '第一段。\n\n第二段。', articleImageKey: 'note:me:n1' })
+    await flushPromises()
+
+    await w.get('.generate-image').trigger('click')
+    await flushPromises()
+
+    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'))
+    const updates = w.emitted('update:modelValue') as [string][]
+    const latest = updates[updates.length - 1]?.[0]
+    expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw "wao-image-size:50%xauto"\)/)
+    expect(latest).toContain('第一段。')
+    expect(latest).toContain('第二段。')
+    const image = (w.vm as unknown as { editor: Editor }).editor.getJSON().content?.[0]
+    expect(image?.attrs).toMatchObject({ src: '/api/images/img1/raw', width: '50%', align: 'center' })
+    expect(w.get('.md-body img').attributes('style')).toContain('width: 50%')
+    expect(w.get('.md-body img').attributes('style')).toContain('margin-left: auto')
+    expect(latest).toContain('wao-image-size:50%xauto')
+    w.unmount()
+  })
+
+  it('个人提示词可单独保存', async () => {
+    vi.mocked(fetchPreference).mockResolvedValue('自定义画面')
+    vi.mocked(savePreference).mockResolvedValue()
+    const w = await mountEditor({ modelValue: '正文', articleImageKey: 'document:me:d1' })
+    await flushPromises()
+    await w.get('.prompt-settings').trigger('click')
+    const input = document.body.querySelector<HTMLTextAreaElement>('.image-prompt-dialog textarea')
+    expect(input?.value).toBe('自定义画面')
+    if (!input) throw new Error('没有找到个人提示词输入框')
+    input.value = '另一种画面'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    document.body.querySelector<HTMLButtonElement>('.image-prompt-dialog button.primary')?.click()
+    await flushPromises()
+    expect(savePreference).toHaveBeenCalledWith('article-overview-image-prompt-v1', '另一种画面')
+    w.unmount()
+  })
+
+  it('再次生成时只替换已标记的首图', async () => {
+    const w = await mountEditor({ modelValue: '正文' })
+    const editor = w.vm as unknown as { insertArticleImageAtStart: (url: string) => boolean }
+    expect(editor.insertArticleImageAtStart('/api/images/first/raw')).toBe(true)
+    expect(editor.insertArticleImageAtStart('/api/images/second/raw')).toBe(true)
+    const updates = w.emitted('update:modelValue') as [string][]
+    const latest = updates[updates.length - 1]?.[0]
+    expect(latest).toContain('![文章总览图]')
+    expect(latest).toContain('/api/images/second/raw')
+    expect(latest).not.toContain('/api/images/first/raw')
+    expect(latest).toContain('正文')
+    expect((w.vm as unknown as { editor: Editor }).editor.getJSON().content?.[0]?.attrs).toMatchObject({ width: '50%', align: 'center' })
+    w.unmount()
+  })
+})
 
 /**
  * jsdom 没有实现 DataTransfer，这里给 paste 事件挂一个最小替身。
@@ -89,6 +152,43 @@ function pasteHtmlInto(el: Element, html: string) {
 }
 
 describe('MarkdownEditor（所见即所得）', () => {
+  it('按正文统计字形并在静默载入、编辑与撤销时更新', async () => {
+    setActivePinia(createPinia())
+    const w = await mountEditor({ modelValue: '**你好** [AB](https://example.com) 👨‍👩‍👧‍👦\n\n![图片](https://example.com/a.png)' })
+    const count = () => w.get('[aria-label="当前正文字数"]').text()
+    expect(count()).toBe('5 字')
+    expect(w.emitted('character-count')?.slice(-1)[0]).toEqual([5])
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.chain().setTextSelection(2).insertContent('！').run()
+    await nextTick()
+    expect(count()).toBe('6 字')
+    e.commands.undo()
+    await nextTick()
+    expect(count()).toBe('5 字')
+    await w.setProps({ modelValue: '新正文\n\n123' })
+    expect(count()).toBe('6 字')
+    await w.setProps({ modelValue: '', readonly: true })
+    expect(count()).toBe('0 字')
+    w.unmount()
+  })
+
+  it('划选正文时显示选中字数，取消划选后恢复全文数字', async () => {
+    const w = await mountEditor({ modelValue: '中文 A 👨‍👩‍👧‍👦！' })
+    const count = () => w.get('[aria-label="当前正文字数"]').text()
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    expect(count()).toBe('5 字')
+    e.commands.setTextSelection({ from: 1, to: 3 })
+    await nextTick()
+    expect(count()).toBe('已选中 2 字 · 全文 5 字')
+    e.commands.setTextSelection({ from: 1, to: e.state.doc.content.size - 1 })
+    await nextTick()
+    expect(count()).toBe('已选中 5 字 · 全文 5 字')
+    e.commands.setTextSelection(1)
+    await nextTick()
+    expect(count()).toBe('5 字')
+    w.unmount()
+  })
+
   async function tableEditor() {
     const w = await mountEditor({ modelValue: '', advanced: true, linkControls: true })
     const instance = w.vm as unknown as { editor: Editor; shouldShowSelection: (context: unknown) => boolean }
@@ -114,6 +214,31 @@ describe('MarkdownEditor（所见即所得）', () => {
     expect(show()).toBe(true)
     await nextTick()
     expect(document.querySelectorAll('.selectedCell')).toHaveLength(2)
+    w.unmount()
+  })
+
+  it('整表选中后 Backspace 删除结构且可撤销，部分单元格不删除整表', async () => {
+    const { w, e, cells } = await tableEditor()
+    e.commands.setCellSelection({ anchorCell: cells[0]!, headCell: cells[1]! })
+    e.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(true)
+    e.commands.setCellSelection({ anchorCell: cells[0]!, headCell: cells[3]! })
+    e.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(false)
+    e.commands.undo()
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(true)
+    w.unmount()
+  })
+
+  it('单个表格光标也能从工具栏删除整个表格并撤销', async () => {
+    const { w, e, cells } = await tableEditor()
+    e.commands.setTextSelection(cells[0]! + 2)
+    await nextTick()
+    await vi.waitFor(() => expect(w.find('[aria-label="删除当前表格"]').exists()).toBe(true))
+    await w.get('[aria-label="删除当前表格"]').trigger('click')
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(false)
+    e.commands.undo()
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(true)
     w.unmount()
   })
 
@@ -230,6 +355,25 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('单元格多段正文保留结构并生成安全换行投影，重开后仍可编辑', async () => {
+    const w = await mountEditor({ modelValue: '', advanced: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const paragraph = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
+    e.commands.setContent({ type: 'doc', content: [{ type: 'table', content: [
+      { type: 'tableRow', content: [{ type: 'tableHeader', content: [paragraph('细节')] }] },
+      { type: 'tableRow', content: [{ type: 'tableCell', content: [paragraph('梳理清单'), paragraph('然后执行')] }] },
+    ] }] })
+    await nextTick()
+    const changes = w.emitted('content-change') as [{ document: RichDocNode; markdown: string }][]
+    const saved = changes[changes.length - 1]![0]
+    expect(saved.markdown).toContain('梳理清单<br>然后执行')
+    expect(saved.markdown).not.toMatch(/<(?!(?:br\s*\/?>))/i)
+    const reopened = await mountEditor({ modelValue: saved.markdown, document: saved.document, advanced: true })
+    expect(reopened.findAll('td p').map(p => p.text())).toEqual(['梳理清单', '然后执行'])
+    reopened.unmount()
+    w.unmount()
+  })
+
   it('高级文档显示固定工具栏并把表格同时输出为 JSON 与 Markdown', async () => {
     const w = await mountEditor({ modelValue: '', allowH1: true, advanced: true })
     expect(w.find('.advanced-toolbar').exists()).toBe(true)
@@ -255,7 +399,14 @@ describe('MarkdownEditor（所见即所得）', () => {
     host.querySelector<HTMLButtonElement>('button[title="粗体"]')!.click()
     await nextTick()
     expect(e.getHTML()).toContain('<strong>正文</strong>')
+    expect(host.querySelector('[aria-label="当前正文字数"]')?.textContent?.trim()).toBe('已选中 2 字 · 全文 2 字')
+    await w.setProps({ readonly: true, modelValue: '正文更新' })
+    expect(host.querySelector('[aria-label="当前正文字数"]')?.textContent?.trim()).toBe('已选中 2 字 · 全文 4 字')
+    expect(host.querySelector('.editor-tools')).toBeNull()
+    await w.setProps({ readonly: false })
     await w.setProps({ toolbarTarget: null })
+    expect(host.querySelector('[aria-label="当前正文字数"]')).toBeNull()
+    expect(w.get('[aria-label="当前正文字数"]').text()).toBe('已选中 2 字 · 全文 4 字')
     expect((w.vm as unknown as { editor: Editor }).editor).toBe(e)
     expect(w.find('.toolbar-toggle').exists()).toBe(true)
     expect(w.get('.advanced-toolbar').isVisible()).toBe(false)
@@ -830,6 +981,33 @@ describe('MarkdownEditor（所见即所得）', () => {
 
     expect(w.find('.peer-track').exists()).toBe(false)
     expect(w.find('.md').classes()).not.toContain('collab')
+    w.unmount()
+  })
+
+  it('流式半篇只预览，失败清除且始终保留原文', async () => {
+    let fail!: (reason: Error) => void
+    vi.mocked(polishDocumentText).mockImplementationOnce((_text, options) => {
+      options?.onProgress?.({ id: 'pj-stream', status: 'RUNNING', message: '正在生成', preview: '尚未完成的候选' })
+      return new Promise((_resolve, reject) => { fail = reject })
+    })
+    const source = '需要保持不变的原文。'
+    const w = await mountEditor({ modelValue: source, polishable: true })
+    const instance = w.vm as unknown as {
+      editor: { commands: { setTextSelection: (range: { from: number; to: number }) => void } }
+      startPolish: () => Promise<void>
+    }
+    instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
+    const pending = instance.startPolish()
+    await flushPromises()
+    expect(w.get('.polish-compare').text()).toContain('尚未完成的候选')
+    expect(w.get('.polish-apply').attributes('disabled')).toBeDefined()
+    expect(w.emitted('update:modelValue')).toBeFalsy()
+    fail(new Error('连接断开'))
+    await pending
+    await flushPromises()
+    expect(w.get('.polish-compare').text()).not.toContain('尚未完成的候选')
+    expect(w.get('.polish-apply').attributes('disabled')).toBeDefined()
+    expect(w.get('.md-body').text()).toContain(source)
     w.unmount()
   })
 

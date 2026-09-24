@@ -23,9 +23,7 @@ pipeline {
                         error('正式发布必须同时构建 Windows 和 Mac，不能用旧 Mac 包冒充新版本。')
                     }
                     if (params.PUBLISH_CLIENT) {
-                        if (!(env.GIT_BRANCH in ['origin/main', 'main'])) {
-                            error('正式发布只允许受信任的 main。')
-                        }
+                        sh 'bash deploy/jenkins/client/verify-main.sh'
                         sh 'test -s /etc/jenkins/secrets/tauri-updater.key || { echo "缺少原有 Tauri 更新签名私钥，请先恢复受限密钥文件。"; exit 1; }'
                     }
                     env.WAO_CLIENT_VERSION = sh(script: '''

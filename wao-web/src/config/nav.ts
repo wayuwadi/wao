@@ -754,7 +754,7 @@ export function tabFromRoute(route: RouteLocationNormalized): Tab | null {
       label: `知识库 ${id}`,
       labelPlaceholder: true,
       icon: 'ri-book-2-line',
-      path: route.path,
+      path: route.fullPath,
       closable: true,
     }
   }

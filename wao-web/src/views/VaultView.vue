@@ -5,6 +5,8 @@ import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import { useIsMobile } from '@/composables/viewport'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import type { VaultItem } from '@/types'
 
 const data = useDataStore()
@@ -30,7 +32,10 @@ const filtered = computed(() => items.value.filter((item) =>
   (groupId.value === 'all' || item.groupId === groupId.value) &&
   `${item.name} ${item.user} ${item.site}`.toLocaleLowerCase().includes(query.value.trim().toLocaleLowerCase()),
 ))
-const sel = computed(() => filtered.value.find((i) => i.id === selId.value) ?? filtered.value[0] ?? null)
+const { page: vaultPage, pageCount: vaultPageCount, visible: visibleItems } = useClientPagination(filtered, [groupId, query])
+watch(vaultPage, () => { selId.value = null })
+watch(query, () => { selId.value = null })
+const sel = computed(() => visibleItems.value.find((i) => i.id === selId.value) ?? visibleItems.value[0] ?? null)
 
 /**
  * 手机上详情是一页盖屏的抽屉，只有显式点过条目才打开。
@@ -198,9 +203,12 @@ async function saveItem() {
         note: formNote.value.trim(), secret: formSecret.value || undefined, groupId: formGroupId.value,
       })
       if (!updated) throw new Error('保存失败')
-      selId.value = editingId.value
       groupId.value = formGroupId.value
       query.value = ''
+      // Filtering and pagination watchers clear the selection on the next tick.
+      // Select the edited item only after those resets have finished.
+      await nextTick()
+      selId.value = editingId.value
       revealed.value = null
     } else {
       const item = await data.addVaultItem({
@@ -210,6 +218,7 @@ async function saveItem() {
       if (!item) throw new Error('保存失败，请重试')
       groupId.value = formGroupId.value
       query.value = ''
+      await nextTick()
       selId.value = item.id
     }
     itemOpen.value = false
@@ -293,7 +302,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
       </div>
 
       <div class="item-col">
-        <button v-for="it in filtered" :key="it.id" class="item-btn" :class="{ on: sel?.id === it.id }" @click="selId = it.id">
+        <button v-for="it in visibleItems" :key="it.id" class="item-btn" :class="{ on: sel?.id === it.id }" @click="selId = it.id">
           <div class="item-icon"><i :class="it.icon"></i></div>
           <div class="item-main">
             <div class="item-name">{{ it.name }}</div>
@@ -302,6 +311,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
           <i class="ri-arrow-right-s-line item-go"></i>
         </button>
         <div v-if="filtered.length === 0" class="empty">这个分组还没有条目</div>
+        <WaoPagination v-if="vaultPageCount > 1" v-model:page="vaultPage" :page-count="vaultPageCount" :total="filtered.length" aria-label="密码条目查询结果分页" />
       </div>
 
       <div v-if="detailOpen" class="detail-col" :class="{ 'detail-page': isMobile }">

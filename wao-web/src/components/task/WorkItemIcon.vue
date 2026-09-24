@@ -3,7 +3,7 @@
  * 工作项类型图标：主任务与子任务各一个，参照 ONES 的蓝底白标方块，
  * 列表、表格与详情弹框的面包屑共用这一份，保证同一类型处处长得一样。
  */
-withDefaults(defineProps<{ kind: 'task' | 'subtask'; size?: number }>(), { size: 16 })
+withDefaults(defineProps<{ kind: 'task' | 'subtask' | 'requirement' | 'bug'; size?: number }>(), { size: 16 })
 </script>
 
 <template>
@@ -11,11 +11,11 @@ withDefaults(defineProps<{ kind: 'task' | 'subtask'; size?: number }>(), { size:
     class="work-item-icon"
     :class="kind"
     :style="{ width: `${size}px`, height: `${size}px`, fontSize: `${Math.round(size * 0.72)}px` }"
-    :title="kind === 'task' ? '任务' : '子任务'"
-    :aria-label="kind === 'task' ? '任务' : '子任务'"
+    :title="{ task: '任务', subtask: '子任务', requirement: '需求', bug: '缺陷' }[kind]"
+    :aria-label="{ task: '任务', subtask: '子任务', requirement: '需求', bug: '缺陷' }[kind]"
     role="img"
   >
-    <i :class="kind === 'task' ? 'ri-checkbox-line' : 'ri-node-tree'"></i>
+    <i :class="{ task: 'ri-checkbox-line', subtask: 'ri-node-tree', requirement: 'ri-lightbulb-line', bug: 'ri-bug-line' }[kind]"></i>
   </span>
 </template>
 
@@ -35,4 +35,6 @@ withDefaults(defineProps<{ kind: 'task' | 'subtask'; size?: number }>(), { size:
 .work-item-icon.subtask {
   background: #4aa3f0;
 }
+.work-item-icon.requirement { background: #3b9a62; }
+.work-item-icon.bug { background: #dc5353; }
 </style>

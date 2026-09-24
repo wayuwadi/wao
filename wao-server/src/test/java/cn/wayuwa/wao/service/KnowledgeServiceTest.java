@@ -381,6 +381,42 @@ class KnowledgeServiceTest {
                 """.formatted(style)), "今日完成：\n\n1. 完成方案\n\n2. ");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"<br>", "<br/>", "<br />", "<BR>"})
+    void noteTablePreservesMultilineMarkdownAndStructuredContent(String lineBreak) throws Exception {
+        DocEntity existing = doc("note-table", KnowledgeService.NOTES_KB_ID, "kb-notes-wg");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        when(docMapper.selectList(any())).thenReturn(List.of(existing));
+        when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+        String markdown = "| 细节 |\n| --- |\n| 梳理清单" + lineBreak + lineBreak + "然后执行 |";
+        var document = new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"table","content":[
+                  {"type":"tableRow","content":[{"type":"tableHeader","content":[
+                    {"type":"paragraph","content":[{"type":"text","text":"细节"}]}]}]},
+                  {"type":"tableRow","content":[{"type":"tableCell","content":[
+                    {"type":"paragraph","content":[{"type":"text","text":"梳理清单"}]},
+                    {"type":"paragraph","content":[{"type":"text","text":"然后执行"}]}]}]}
+                ]}]}
+                """);
+        DocDto saved = service.updateDoc(existing.getId(), new PatchDocRequest(
+                null, null, new RichDocContentDto(1, document, markdown), null, null, 1));
+        assertThat(saved.content().markdown()).isEqualTo(markdown);
+        assertThat(saved.content().document()).isEqualTo(document);
+        verify(docMapper).updateIfRevision(existing, 1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"<br onclick='alert(1)'>", "<br style='color:red'>", "<br data-x='1'/>",
+            "<script>alert(1)</script>", "<img src=x onerror=alert(1)>", "<br><iframe src=x></iframe>"})
+    void tableLineBreakExceptionDoesNotAllowRawHtml(String html) {
+        DocEntity existing = doc("note-table", KnowledgeService.NOTES_KB_ID, "kb-notes-wg");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        assertThatThrownBy(() -> service.updateDoc(existing.getId(), new PatchDocRequest(
+                null, null, new RichDocContentDto(1, null, "| 细节 |\n| --- |\n| " + html + " |"), null, null, 1)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("原始 HTML");
+        verify(docMapper, never()).updateIfRevision(any(), anyInt());
+    }
+
     @Test
     void richDocumentRejectsExecutableUrlsAndStaleRevision() throws Exception {
         DocEntity existing = doc("d-rich", "k1", "f1");
@@ -937,10 +973,29 @@ class KnowledgeServiceTest {
         assertThatThrownBy(() -> service.getKb("nope")).isInstanceOf(NotFoundException.class);
     }
 
+    @Test
+    void moveDirectoryFolderUnderDocumentPersistsMixedHierarchy() {
+        KbEntity library = kb("k1");
+        KbFolderEntity first = new KbFolderEntity(); first.setId("f1"); first.setKbId("k1");
+        KbFolderEntity second = new KbFolderEntity(); second.setId("f2"); second.setKbId("k1");
+        when(kbMapper.selectById("k1")).thenReturn(library);
+        when(kbMapper.selectByIdForUpdate("k1")).thenReturn(library);
+        when(kbMapper.updateDirectory(eq("k1"), any())).thenReturn(1);
+        when(folderMapper.selectList(any())).thenReturn(List.of(first, second));
+        when(docMapper.selectList(any())).thenReturn(List.of(doc("d1", "k1", "f1"), doc("d2", "k1", "f2")));
+        var saved = service.moveDirectoryNode("k1", new cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest("f:f2", "d:d1", ""));
+        assertThat(saved.directory()).containsEntry("f:f2", "d:d1").containsEntry("d:d2", "f:f2");
+        assertThatThrownBy(() -> service.moveDirectoryNode("k1", new cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest("f:f1", "d:d2", "")))
+            .isInstanceOf(cn.wayuwa.wao.common.BadRequestException.class);
+        assertThatThrownBy(() -> service.moveDirectoryNode("k1", new cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest("f:f2", "f:f1", "")))
+            .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+    }
+
     // ---------------- 回收站 ----------------
 
     @Test
     void deleteDocMovesItToTrashInsteadOfDroppingTheRow() {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
         DocEntity d = doc("d1", "k1", "f1");
         when(docMapper.selectById("d1")).thenReturn(d);
 
@@ -951,6 +1006,25 @@ class KnowledgeServiceTest {
         assertThat(d.getCascadeDel()).isFalse();
         verify(docMapper).markDeleted(eq("d1"), any(LocalDateTime.class), eq("m1"), eq(false));
         verify(docMapper, never()).deleteById(any(java.io.Serializable.class));
+    }
+
+    @Test
+    void chatRecallDeletesOnlyNotesAndRecordsTheirAuthor() {
+        DocEntity note = doc("fn123", KnowledgeService.NOTES_KB_ID, "f1");
+        note.setAuthorId("wd");
+        when(docMapper.selectById("fn123")).thenReturn(note);
+        when(kbMapper.selectById(KnowledgeService.NOTES_KB_ID))
+                .thenReturn(kb(KnowledgeService.NOTES_KB_ID));
+
+        service.deleteNoteFromChat("fn123");
+
+        verify(docMapper).markDeleted(eq("fn123"), any(LocalDateTime.class), eq("wd"), eq(false));
+
+        DocEntity other = doc("d1", "k1", "f1");
+        when(docMapper.selectById("d1")).thenReturn(other);
+        assertThatThrownBy(() -> service.deleteNoteFromChat("d1"))
+                .isInstanceOf(BadRequestException.class);
+        verify(docMapper, never()).markDeleted(eq("d1"), any(), any(), anyBoolean());
     }
 
     @Test
@@ -1095,6 +1169,24 @@ class KnowledgeServiceTest {
         assertThat(dto.folderId()).isEqualTo("kb-notes-f");
         assertThat(dto.title()).isEqualTo("记一下：周四要交社保材料");
         assertThat(dto.author()).isEqualTo("m1");
+    }
+
+    @Test
+    void createNoteSkipsOverviewImageWhenDerivingTitle() {
+        KbEntity notes = kb("kb-notes");
+        notes.setNotes(true);
+        KbFolderEntity folder = folder("kb-notes-f", "kb-notes");
+        when(kbMapper.selectList(any())).thenReturn(List.of(notes));
+        when(folderMapper.selectList(any())).thenReturn(List.of(folder));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+
+        DocDto dto = service.createNote(new CreateNoteRequest(null, List.of(),
+                new RichDocContentDto(1, null,
+                        "![文章总览图](/api/images/overview.png)\n\n# 早起与写作\n记录想法")), "m1");
+
+        assertThat(dto.title()).startsWith("早起与写作");
+        assertThat(dto.title()).doesNotContain("/api/images");
     }
 
     @Test

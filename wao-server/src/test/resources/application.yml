@@ -35,6 +35,10 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  # Integration tests use partial H2 schemas; background jobs would retry
+  # missing tables throughout the suite and flood Jenkins logs.
+  scheduling:
+    enabled: false
   tianren:
     notification-scheduler-enabled: false
     daily-scheduler-enabled: false

@@ -71,4 +71,11 @@ describe("release artifacts", () => {
     expect(capability.remote).toBeUndefined();
     expect(capability.windows).toBeUndefined();
   });
+  it("places Mac workspace controls in the overlaid window titlebar", () => {
+    const config = JSON.parse(
+      readFileSync(resolve("src-tauri/tauri.macos.conf.json"), "utf8"),
+    );
+    const main = config.app.windows.find((window: { label: string }) => window.label === "main");
+    expect(main).toMatchObject({ decorations: true, transparent: true, titleBarStyle: "Overlay", hiddenTitle: true });
+  });
 });

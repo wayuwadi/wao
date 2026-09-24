@@ -954,7 +954,7 @@ async function uploadAttachment(event: Event) {
           </button>
           <i class="ri-arrow-right-s-line sep"></i>
           <button class="crumb-item" :class="{ current: !openSub }" :title="task.title" @click="backToTask">
-            <WorkItemIcon kind="task" /><span class="wao-tabular">#{{ task.number ?? '…' }}</span>
+            <WorkItemIcon :kind="task.workItemType || 'task'" /><span class="wao-tabular">#{{ task.number ?? '…' }}</span>
           </button>
           <template v-for="item in subChain" :key="item.id">
             <i class="ri-arrow-right-s-line sep"></i>
@@ -1117,7 +1117,7 @@ async function uploadAttachment(event: Event) {
         </div>
 
         <div v-else class="main">
-          <div class="type-line"><WorkItemIcon kind="task" :size="18" />任务</div>
+          <div class="type-line"><WorkItemIcon :kind="task.workItemType || 'task'" :size="18" /><select aria-label="工作项类型" :value="task.workItemType || 'task'" @change="data.patchTask(task.id, { workItemType: ($event.target as HTMLSelectElement).value as 'task' | 'requirement' | 'bug' }, '修改了工作项类型')"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select></div>
           <textarea ref="taskTitleArea" class="title-input" rows="1" :value="task.title" @input="editTitle"></textarea>
 
           <div class="field">
@@ -1232,7 +1232,7 @@ async function uploadAttachment(event: Event) {
           </div>
           <div class="prop-row">
             <span class="prop-key">所属任务</span>
-            <button class="proj-btn" :title="task.title" @click="backToTask"><WorkItemIcon kind="task" :size="14" /><span class="ellip">{{ task.title }}</span></button>
+            <button class="proj-btn" :title="task.title" @click="backToTask"><WorkItemIcon :kind="task.workItemType || 'task'" :size="14" /><span class="ellip">{{ task.title }}</span></button>
           </div>
           <SubtaskProperties :task-id="task.id" :sub-id="openSubId!" />
           <div class="prop-row">

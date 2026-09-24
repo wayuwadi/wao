@@ -18,10 +18,100 @@ import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.web.client.RestClient;
 
 class DeepSeekApiClientTest {
+    private final DeepSeekBudgetService budget = org.mockito.Mockito.mock(DeepSeekBudgetService.class);
+
+    @Test
+    void streamsOnlyContentAndSettlesFinalUsageOnceForGateway() {
+        RestClient.Builder builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/chat/completions"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stream\":true")))
+                .andRespond(withSuccess("""
+                        : keepalive
+                        data: {"choices":[{"delta":{"reasoning_content":"hidden"}}]}
+
+                        data: {"choices":[{"delta":{"content":"你好"}}]}
+
+                        data: {"choices":[{"delta":{"content":"，世界。"},"finish_reason":"stop"}]}
+
+                        data: {"choices":[],"usage":{"total_tokens":31}}
+
+                        data: [DONE]
+
+                        """, MediaType.TEXT_EVENT_STREAM));
+        var reservation = new DeepSeekBudgetService.Reservation(java.time.LocalDate.now(), DeepSeekPurpose.POLISH, 20000);
+        org.mockito.Mockito.when(budget.reserve(org.mockito.ArgumentMatchers.eq(DeepSeekPurpose.POLISH), org.mockito.ArgumentMatchers.anyLong())).thenReturn(reservation);
+        var previews = new java.util.ArrayList<String>();
+        var result = new DeepSeekApiClient(builder, budget).streamPolish("model_gateway", null, "test", "xingshi", "原文", previews::add);
+        assertThat(previews).containsExactly("你好", "你好，世界。");
+        assertThat(result).isEqualTo("你好，世界。");
+        org.mockito.Mockito.verify(budget).settle(reservation, 31);
+        server.verify();
+    }
+
+    @Test
+    void interruptedOrTruncatedStreamsNeverSucceedOrRetry() {
+        for (String ending : java.util.List.of("", "data: {\"choices\":[{\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n")) {
+            RestClient.Builder builder = RestClient.builder();
+            var server = MockRestServiceServer.bindTo(builder).build();
+            server.expect(requestTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/chat/completions"))
+                    .andRespond(withSuccess("data: {\"choices\":[{\"delta\":{\"content\":\"半篇\"}}]}\n\n" + ending, MediaType.TEXT_EVENT_STREAM));
+            assertThatThrownBy(() -> new DeepSeekApiClient(builder, budget).streamPolish("model_gateway", null, "test", "xingshi", "原文", ignored -> {}))
+                    .hasMessageContaining("未完整");
+            server.verify();
+        }
+        org.mockito.Mockito.verify(budget, org.mockito.Mockito.never()).settle(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    void gatewayDeniedPurposeCannotSendAnyCompletion() {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        org.mockito.Mockito.when(budget.reserve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenThrow(new BadRequestException("未获准"));
+        var client = new DeepSeekApiClient(builder, budget);
+        assertThat(client.allows("model_gateway", DeepSeekPurpose.UNKNOWN)).isFalse();
+        assertThatThrownBy(() -> client.complete("model_gateway", null, "test", "xingshi", "规则", "原文"))
+                .hasMessageContaining("未获准");
+        assertThatThrownBy(() -> client.streamPolish("model_gateway", null, "test", "xingshi", "原文", ignored -> {}))
+                .hasMessageContaining("未获准");
+        server.verify();
+    }
+
+    @Test
+    void missingPurposeAndDeniedBudgetNeverSendHttp() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        org.mockito.Mockito.when(budget.reserve(org.mockito.ArgumentMatchers.eq(DeepSeekPurpose.UNKNOWN), org.mockito.ArgumentMatchers.anyLong()))
+                .thenThrow(new BadRequestException("未获准"));
+        var client = new DeepSeekApiClient(builder, budget);
+        assertThatThrownBy(() -> client.complete("deepseek", null, "secret", "deepseek-v4-flash", "规则", "材料"))
+                .hasMessageContaining("未获准");
+        server.verify();
+    }
+
+    @Test
+    void chargesEveryRetryAndSettlesEvenTruncatedResponse() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                .andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                .andRespond(withSuccess("{\"usage\":{\"total_tokens\":90},\"choices\":[{\"finish_reason\":\"length\"}]}", MediaType.APPLICATION_JSON));
+        var reservation = new DeepSeekBudgetService.Reservation(java.time.LocalDate.now(), DeepSeekPurpose.POLISH, 10000);
+        org.mockito.Mockito.when(budget.reserve(org.mockito.ArgumentMatchers.eq(DeepSeekPurpose.POLISH), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(reservation);
+        var client = new DeepSeekApiClient(builder, ignored -> {}, budget);
+        assertThatThrownBy(() -> client.polish(null, "secret", "deepseek-v4-flash", "文字"))
+                .hasMessageContaining("截断");
+        org.mockito.Mockito.verify(budget, org.mockito.Mockito.times(2)).reserve(org.mockito.ArgumentMatchers.eq(DeepSeekPurpose.POLISH), org.mockito.ArgumentMatchers.anyLong());
+        org.mockito.Mockito.verify(budget).settle(reservation, 90);
+        server.verify();
+    }
 
     @Test
     void onlyAcceptsOfficialDeepSeekApiHost() {
-        DeepSeekApiClient client = new DeepSeekApiClient(RestClient.builder());
+        DeepSeekApiClient client = new DeepSeekApiClient(RestClient.builder(), budget);
 
         assertThat(client.normalizeBaseUrl(null)).isEqualTo("https://api.deepseek.com");
         assertThat(client.normalizeBaseUrl("https://api.deepseek.com/"))
@@ -33,7 +123,7 @@ class DeepSeekApiClientTest {
 
     @Test
     void modelGatewayOnlyAcceptsTheAssignedHttpsBasePath() {
-        DeepSeekApiClient client = new DeepSeekApiClient(RestClient.builder());
+        DeepSeekApiClient client = new DeepSeekApiClient(RestClient.builder(), budget);
 
         assertThat(client.normalizeBaseUrl("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/"))
                 .isEqualTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL);
@@ -57,7 +147,7 @@ class DeepSeekApiClientTest {
                         {"object":"list","data":[{"id":"deepseek-v4-pro"},{"id":"deepseek-v4-flash"}]}
                         """, MediaType.APPLICATION_JSON));
 
-        var models = new DeepSeekApiClient(builder).models(null, "token-test");
+        var models = new DeepSeekApiClient(builder, budget).models(null, "token-test");
 
         assertThat(models).containsExactly("deepseek-v4-flash", "deepseek-v4-pro");
         server.verify();
@@ -84,7 +174,7 @@ class DeepSeekApiClientTest {
                         {"choices":[{"finish_reason":"stop","message":{"content":"这段话表达得更流畅。"}}]}
                         """, MediaType.APPLICATION_JSON));
 
-        String result = new DeepSeekApiClient(builder).polish(
+        String result = new DeepSeekApiClient(builder, budget).polish(
                 null, "token-test", "deepseek-v4-flash", "这段话不太顺。");
 
         assertThat(result).isEqualTo("这段话表达得更流畅。");
@@ -100,7 +190,7 @@ class DeepSeekApiClientTest {
                         {"choices":[{"finish_reason":"length","message":{"content":"不完整"}}]}
                         """, MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> new DeepSeekApiClient(builder).polish(
+        assertThatThrownBy(() -> new DeepSeekApiClient(builder, budget).polish(
                 null, "token-test", "deepseek-v4-pro", "很长的原文"))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("被截断");
@@ -117,7 +207,7 @@ class DeepSeekApiClientTest {
                         {"choices":[{"finish_reason":"stop","message":{"content":"第三次生成成功"}}]}
                         """, MediaType.APPLICATION_JSON));
 
-        DeepSeekApiClient client = new DeepSeekApiClient(builder, ignored -> { });
+        DeepSeekApiClient client = new DeepSeekApiClient(builder, ignored -> { }, budget);
 
         assertThat(client.complete("deepseek", null, "token-test", "deepseek-v4-flash",
                 "系统规则", "只读材料")).isEqualTo("第三次生成成功");
@@ -131,12 +221,12 @@ class DeepSeekApiClientTest {
         server.expect(ExpectedCount.times(3), requestTo("https://api.deepseek.com/chat/completions"))
                 .andRespond(withStatus(HttpStatus.BAD_GATEWAY));
 
-        DeepSeekApiClient client = new DeepSeekApiClient(builder, ignored -> { });
+        DeepSeekApiClient client = new DeepSeekApiClient(builder, ignored -> { }, budget);
 
         assertThatThrownBy(() -> client.complete("deepseek", null, "token-test", "deepseek-v4-flash",
                 "系统规则", "只读材料"))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("502");
+                .hasMessageContaining("上游调用失败");
         server.verify();
     }
 
@@ -147,12 +237,12 @@ class DeepSeekApiClientTest {
         server.expect(requestTo("https://api.deepseek.com/chat/completions"))
                 .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
-        DeepSeekApiClient client = new DeepSeekApiClient(builder, ignored -> { });
+        DeepSeekApiClient client = new DeepSeekApiClient(builder, ignored -> { }, budget);
 
         assertThatThrownBy(() -> client.complete("deepseek", null, "token-test", "deepseek-v4-flash",
                 "系统规则", "只读材料"))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("401");
+                .hasMessageContaining("上游调用失败");
         server.verify();
     }
 
@@ -173,7 +263,7 @@ class DeepSeekApiClientTest {
                 .andRespond(withSuccess("""
                         {"choices":[{"finish_reason":"stop","message":{"content":"网关润色结果。"}}]}
                         """, MediaType.APPLICATION_JSON));
-        DeepSeekApiClient client = new DeepSeekApiClient(builder);
+        DeepSeekApiClient client = new DeepSeekApiClient(builder, budget);
 
         assertThat(client.models("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "gateway-token"))
                 .containsExactly("xingshi");

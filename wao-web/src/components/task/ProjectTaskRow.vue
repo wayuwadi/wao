@@ -26,7 +26,7 @@ const props = defineProps<{
   expanded: boolean
   depth?: number
   childTaskCount?: number
-  nestingOver?: boolean
+  orderSide?: 'before' | 'after'
   dragging: boolean
 }>()
 const emit = defineEmits<{ 'toggle-subs': []; open: []; completed: []; 'add-sub': []; detach: [] }>()
@@ -116,7 +116,7 @@ function commitRename() {
 </script>
 
 <template>
-  <tr class="task-row" :class="{ done: task.status === '已完成', dragging, 'nesting-over': nestingOver }" draggable="true" @click="emit('open')">
+  <tr class="task-row" :class="{ done: task.status === '已完成', dragging, 'order-before': orderSide === 'before', 'order-after': orderSide === 'after' }" draggable="true" @click="emit('open')">
     <td class="table-number wao-tabular">{{ task.number ?? '…' }}</td>
     <td>
       <div class="title-cell" :style="{ paddingLeft: `${(depth ?? 0) * 20}px` }">
@@ -130,7 +130,7 @@ function commitRename() {
           <i :class="expanded ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
         </button>
         <span v-else class="tree-spacer"></span>
-        <WorkItemIcon :kind="task.parentTaskId ? 'subtask' : 'task'" />
+        <WorkItemIcon :kind="task.workItemType || 'task'" />
         <input
           v-if="editingTitle"
           ref="titleInput"
@@ -149,7 +149,7 @@ function commitRename() {
             ><i class="ri-node-tree"></i>{{ doneSubs }}/{{ task.subs.length }}</span
           >
           <span v-if="childTaskCount" class="sub-count">{{ childTaskCount }} 个子任务</span>
-          <span v-if="nestingOver" class="sub-count">放开移为子任务</span>
+
           <span class="row-tools">
             <button v-if="task.parentTaskId" class="row-tool" title="移回顶层" aria-label="移回顶层" @click.stop="emit('detach')"><i class="ri-indent-decrease"></i></button>
             <button class="row-tool" title="修改标题" :aria-label="`修改 ${task.title} 的标题`" @click.stop="startRename"><i class="ri-pencil-line"></i></button>
@@ -478,5 +478,6 @@ function commitRename() {
     transform: rotate(360deg);
   }
 }
-.task-row.nesting-over td { background: var(--wao-primary-soft, var(--wao-bg-hover)); box-shadow: inset 0 -2px var(--wao-primary); }
+.task-row.order-before td { box-shadow: inset 0 2px var(--wao-primary); }
+.task-row.order-after td { box-shadow: inset 0 -2px var(--wao-primary); }
 </style>

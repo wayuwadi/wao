@@ -1,0 +1,10 @@
+[Unit]
+Description=Check WAO Jenkins runtime every two minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

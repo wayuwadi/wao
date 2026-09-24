@@ -14,13 +14,15 @@ import { useUiStore } from '@/stores/ui'
 import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
+import { copyText } from '@/utils/clipboard'
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined) }))
 
 vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
 vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
 const Editor = defineComponent({
   props: ['modelValue', 'readonly'], emits: ['update:modelValue'],
-  template: '<textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  template: '<div><textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" /><slot name="footer-tags" /></div>',
 })
 function doc(id: string, text: string, created = '2026-09-07T08:00:00', author = 'wg'): Doc {
   return { id, title: text, author, created, updated: created, kbId: 'kb-notes', rev: 3,
@@ -35,6 +37,15 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('从小记卡片直接复制免登录只读分享页链接', async () => {
+    useDataStore().docs.old = doc('old', '要分享的小记')
+    const wrapper = await view()
+    const share = wrapper.findAll('[data-note-id="old"] .note-actions button').find(button => button.text().includes('复制分享链接'))
+    expect(share).toBeDefined()
+    await share!.trigger('click')
+    expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/s/d/old`, '公开分享链接已复制')
+    wrapper.unmount()
+  })
   it('置顶跨次加载恢复，保存失败保留原排序和编辑草稿', async () => {
     const data = useDataStore()
     data.docs.old = doc('old', '较早小记', '2026-09-01T08:00:00')
@@ -58,6 +69,7 @@ describe('小记集中记录空间', () => {
   })
   beforeEach(() => {
     vi.restoreAllMocks()
+    vi.mocked(copyText).mockClear()
     vi.mocked(apiPatchDoc).mockReset()
     vi.mocked(fetchNoteTags).mockResolvedValue([])
     vi.mocked(apiCreateNoteTag).mockReset()
@@ -69,6 +81,35 @@ describe('小记集中记录空间', () => {
     data.loadStates.docs = 'loaded'
     data.loadStates.knowledge = 'loaded'
     data.kbs = [{ id: 'kb-notes', name: '小记', notes: true, icon: '', color: '', desc: '', project: null, folders: [{ id: 'f', name: '小记', docs: [] }] }]
+  })
+
+  it('清单删除失败保留小记和新建草稿，重试成功后移出清单', async () => {
+    const data = useDataStore()
+    data.docs.one = doc('one', '待删小记')
+    const remove = vi.spyOn(data, 'deleteDoc').mockRejectedValueOnce(new Error('暂时失败'))
+      .mockImplementationOnce(async id => { delete data.docs[id] })
+    const wrapper = await view()
+    await wrapper.find('textarea').setValue('正在写的新小记')
+    const browserConfirm = vi.spyOn(window, 'confirm')
+    await wrapper.find('[data-note-id="one"] .card-delete').trigger('click')
+    expect(remove).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-note-id="one"] .card-delete-confirm').text()).toContain('7 天内可恢复')
+    await wrapper.find('[data-note-id="one"] .card-delete-confirm button').trigger('click')
+    expect(wrapper.find('[data-note-id="one"] .card-delete-confirm').exists()).toBe(false)
+    expect(remove).not.toHaveBeenCalled()
+    await wrapper.find('[data-note-id="one"] .card-delete').trigger('click')
+    await wrapper.find('[data-note-id="one"] .card-delete-submit').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-note-id="one"]').exists()).toBe(true)
+    expect(wrapper.find('[data-note-id="one"] [role="alert"]').text()).toContain('小记未改变')
+    expect(wrapper.find('[data-note-id="one"] .card-delete-confirm').exists()).toBe(true)
+    await wrapper.find('[data-note-id="one"] .card-delete-submit').trigger('click')
+    await flushPromises()
+    expect(remove).toHaveBeenCalledTimes(2)
+    expect(browserConfirm).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-note-id="one"]').exists()).toBe(false)
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正在写的新小记')
+    wrapper.unmount()
   })
 
   it('每批展示十条，筛选和保存恢复首批且保留编辑草稿', async () => {
@@ -127,6 +168,50 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.find('.note-body ol ol li').text()).toBe('子项')
     expect(wrapper.find('.note-body .tiptap').attributes('contenteditable')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('阅读态把不含图片地址的字数放到卡片顶部，编辑态保留编辑器字数', async () => {
+    const note = doc('count', '正文ABC!')
+    note.content = { version: 1, markdown: '![图片](/api/images/one/raw)\n\n正文ABC!', document: {
+      type: 'doc', content: [
+        { type: 'image', attrs: { src: '/api/images/one/raw', alt: '图片' } },
+        { type: 'paragraph', content: [{ type: 'text', text: '正文ABC!' }] },
+      ],
+    } }
+    useDataStore().docs.count = note
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }] })
+    await router.push('/notes')
+    const wrapper = mount(NotesView, { global: { plugins: [router] } })
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(wrapper.find('.note-meta .note-count').text()).toBe('6 字')
+    expect(wrapper.find('.note-body [aria-label="当前正文字数"]').exists()).toBe(true)
+    await wrapper.find('.card-edit').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.note-meta .note-count').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="当前正文字数"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('正文图片只在下方显示多张缩略图，点击后可看大图并关闭', async () => {
+    const note = doc('images', '有图小记')
+    note.content = { version: 1, markdown: '正文\n\n![图一](/api/images/one/raw)\n\n![图二](/api/images/two/raw)',
+      document: { type: 'doc', content: [
+        { type: 'paragraph', content: [{ type: 'text', text: '正文' }] },
+        { type: 'image', attrs: { src: '/api/images/one/raw', alt: '图一' } },
+        { type: 'image', attrs: { src: '/api/images/two/raw', alt: '图二' } },
+      ] } }
+    useDataStore().docs.images = note
+    const wrapper = await view()
+    const thumbs = wrapper.findAll('[data-note-id="images"] .note-image-thumb')
+    expect(thumbs).toHaveLength(2)
+    expect(thumbs.map(thumb => thumb.find('img').attributes('src'))).toEqual(['/api/images/one/raw', '/api/images/two/raw'])
+    await thumbs[1]!.trigger('click')
+    expect(document.body.querySelector('.note-image-lightbox img')?.getAttribute('src')).toBe('/api/images/two/raw')
+    document.body.querySelector<HTMLButtonElement>('.note-image-close')?.click()
+    await flushPromises()
+    expect(document.body.querySelector('.note-image-lightbox')).toBeNull()
     wrapper.unmount()
   })
 

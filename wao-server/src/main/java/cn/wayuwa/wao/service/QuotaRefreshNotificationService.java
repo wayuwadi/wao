@@ -156,7 +156,8 @@ public class QuotaRefreshNotificationService {
                 resetCards ? "Codex 重置卡已增加" : "AI 额度已刷新", "green", List.of(List.of("账号", safeLabel(accountLabel))),
                 changes + "\n\n额度来自最新真实采样，可以继续安排需要消耗额度的任务。",
                 homeUrl == null ? null : "查看首页额度", homeUrl);
-        if (notifier.notifyCard(card)) updateBaseline(state, accountLabel, current);
+        boolean delivered = resetCards ? notifier.notifyResetCardIncrease(card) : notifier.notifyCard(card);
+        if (delivered) updateBaseline(state, accountLabel, current);
     }
 
     private void insertBaseline(String sourceKey, String accountLabel, List<QuotaPoint> points) {

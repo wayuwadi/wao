@@ -18,6 +18,11 @@ export MYSQL_PWD="${DB_ROOT_PASS:?}"
 python3 "$(dirname "$0")/verify-backup-source.py"
 mysql_args=(-uroot -h127.0.0.1 -P "${MYSQL_PORT:-3306}")
 ssh_args=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -i "$SSH_KEY" -o "UserKnownHostsFile=$KNOWN_HOSTS")
+peer_name="${PEER_HOST#*@}"
+if [[ "$peer_name" == linux1.wayuwa.cn || "$peer_name" == linux2.wayuwa.cn ]]; then
+  endpoint="$(python3 /usr/local/lib/wao-network/refresh-mesh-endpoint.py --resolve "$peer_name")"
+  ssh_args+=(-o "HostName=$endpoint" -o "HostKeyAlias=$peer_name")
+fi
 peer() { ssh -n "${ssh_args[@]}" "$PEER_HOST" "$@"; }
 peer_stream() { ssh "${ssh_args[@]}" "$PEER_HOST" "$@"; }
 [[ "$(mysql "${mysql_args[@]}" -N -e 'SELECT @@read_only + @@super_read_only')" == 0 ]] || { echo 'Configured binlog source is not writable; operator must verify the authoritative writer'; exit 1; }
@@ -38,11 +43,20 @@ captured_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mysql "${mysql_args[@]}" -e 'FLUSH BINARY LOGS'
 mysql "${mysql_args[@]}" -N -e 'SHOW BINARY LOGS' >"$temporary/logs"
 python3 "$(dirname "$0")/plan-peer-binlogs.py" "$BACKUP_ROOT" "$uuid" "$temporary/logs" >"$temporary/closed"
+# Keep checking every completed archive on the peer, but do it in one SSH
+# session. A separate connection for each retained binlog eventually makes
+# one five-minute run spend minutes on handshakes and fail on transient resets.
+: >"$temporary/already-complete"
 while read -r name size encrypted; do
   [[ "$name" =~ ^[A-Za-z0-9_-]+\.[0-9]+$ && "$size" =~ ^[0-9]+$ ]] || exit 2
   if [[ -f "$root/$name/COMPLETE" ]]; then
-    # Completed source archives are immutable; still verify the remote copy exists.
-    peer "test -f '$remote/$name/COMPLETE'" || exit 1
+    printf '%s\n' "$name" >>"$temporary/already-complete"
+  fi
+done <"$temporary/closed"
+peer_stream "set -e; cd '$remote'; while IFS= read -r name; do test -f \"\$name/COMPLETE\" || { echo \"Missing peer COMPLETE: \$name\" >&2; exit 1; }; done" <"$temporary/already-complete"
+while read -r name size encrypted; do
+  [[ "$name" =~ ^[A-Za-z0-9_-]+\.[0-9]+$ && "$size" =~ ^[0-9]+$ ]] || exit 2
+  if [[ -f "$root/$name/COMPLETE" ]]; then
     continue
   fi
   read -r total free < <(df -Pk "$root" | awk 'NR==2 {print $2,$4}')

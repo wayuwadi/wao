@@ -10,6 +10,8 @@ import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import { relativeTime } from '@/utils/time'
 import { useNow } from '@/composables/now'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import type { KnowledgeBase, TrashEntry } from '@/types'
 
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
@@ -85,6 +87,13 @@ const groups = computed(() => {
 })
 
 const visibleCount = computed(() => groups.value.reduce((total, group) => total + group.items.length, 0))
+const knowledgeResults = computed(() => groups.value.flatMap((group) => group.items))
+const { page: knowledgePage, pageCount: knowledgePageCount, visible: visibleKnowledge } = useClientPagination(knowledgeResults, [query, scope])
+const pagedGroups = computed(() => groups.value.map((group) => ({
+  ...group, items: group.items.filter((item) => visibleKnowledge.value.some((visible) => visible.id === item.id)),
+})))
+const trashResults = computed(() => data.trash)
+const { page: trashPage, pageCount: trashPageCount, visible: visibleTrash } = useClientPagination(trashResults, [])
 const filtering = computed(() => scope.value !== 'all' || !!query.value.trim())
 
 function openKb(id: string) {
@@ -236,7 +245,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
     </div>
 
 
-    <div v-for="g in groups" v-show="g.items.length || !filtering" :key="g.id" class="kgroup">
+    <div v-for="g in pagedGroups" v-show="g.items.length || (!filtering && knowledgePageCount === 1)" :key="g.id" class="kgroup">
       <div class="kgroup-head">
         <template v-if="!g.fixed && editGroupId === g.id">
           <input
@@ -287,6 +296,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
       </div>
       <div v-if="g.items.length === 0" class="kgroup-empty">这个分组还是空的——在知识库设置中可将知识库移入此分组</div>
     </div>
+    <WaoPagination v-if="knowledgePageCount > 1" v-model:page="knowledgePage" :page-count="knowledgePageCount" :total="visibleCount" aria-label="知识库查询结果分页" />
     <div v-if="filtering && visibleCount === 0" class="kb-filter-empty">
       <i class="ri-search-eye-line"></i>
       <b>没有匹配的真实资料</b>
@@ -374,7 +384,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
         </div>
         <div class="modal-body">
           <div v-if="!data.trash.length" class="trash-empty">回收站是空的。</div>
-          <div v-for="t in data.trash" :key="t.type + t.id" class="trash-row">
+          <div v-for="t in visibleTrash" :key="t.type + t.id" class="trash-row">
             <i :class="TRASH_ICON[t.type]" class="trash-icon"></i>
             <div class="trash-main">
               <div class="trash-name">{{ t.name }}</div>
@@ -383,6 +393,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
             <button class="mini-ghost" @click="restore(t)"><i class="ri-arrow-go-back-line"></i>恢复</button>
             <button class="mini-danger" title="立刻彻底删除" @click="purge(t)"><i class="ri-delete-bin-7-line"></i></button>
           </div>
+          <WaoPagination v-if="trashPageCount > 1" v-model:page="trashPage" :page-count="trashPageCount" :total="data.trash.length" aria-label="回收站分页" />
         </div>
       </div>
     </template>

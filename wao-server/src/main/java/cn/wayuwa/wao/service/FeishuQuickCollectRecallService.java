@@ -18,10 +18,13 @@ public class FeishuQuickCollectRecallService {
 
     private final FeishuQuickCollectEventMapper events;
     private final TaskService tasks;
+    private final KnowledgeService knowledge;
 
-    public FeishuQuickCollectRecallService(FeishuQuickCollectEventMapper events, TaskService tasks) {
+    public FeishuQuickCollectRecallService(FeishuQuickCollectEventMapper events, TaskService tasks,
+            KnowledgeService knowledge) {
         this.events = events;
         this.tasks = tasks;
+        this.knowledge = knowledge;
     }
 
     /**
@@ -67,7 +70,11 @@ public class FeishuQuickCollectRecallService {
         events.markRecallPending(key, now());
         FeishuQuickCollectEventEntity recalled = events.selectById(key);
         if (recalled != null && StringUtils.hasText(recalled.getTargetId())) {
-            tasks.deleteFromChat(recalled.getTargetId());
+            if ("NOTE".equals(recalled.getCaptureKind())) {
+                knowledge.deleteNoteFromChat(recalled.getTargetId());
+            } else {
+                tasks.deleteFromChat(recalled.getTargetId());
+            }
             events.completeRecall(key, now());
         }
         return true;

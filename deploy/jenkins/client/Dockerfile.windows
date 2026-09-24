@@ -11,5 +11,12 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && rustup target add x86_64-pc-windows-msvc \
     && cargo install --locked cargo-xwin --version 0.23.1
 
+# The Linux Tauri CLI resolves tray library metadata on the host even when
+# bundling a Windows target. Keep this layer after the expensive Rust tools.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libayatana-appindicator3-dev \
+    && pkg-config --exists ayatana-appindicator3-0.1 \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV CARGO_BUILD_JOBS=4
 WORKDIR /workspace/wao-client

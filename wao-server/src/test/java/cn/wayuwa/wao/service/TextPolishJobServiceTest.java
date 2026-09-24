@@ -16,6 +16,20 @@ class TextPolishJobServiceTest {
     private final String request = "0123456789abcdef0123456789abcdef";
     private final String id = "pj" + request;
 
+    @Test void partialOutputIsPreviewOnlyAndNeverEntersHistory() {
+        when(jobs.findOwned(id, "m1")).thenReturn(job("WORKSPACE"));
+        when(assistant.readOnlyJobResult(id, "ac1"))
+                .thenReturn(new AiAssistantService.ReadOnlyJobResult("ac1", "provider_running", "一部分", null))
+                .thenReturn(new AiAssistantService.ReadOnlyJobResult("ac1", "failed", "一部分", "断开"));
+        var running = service.get("m1", id);
+        assertThat(running.preview()).isEqualTo("一部分");
+        assertThat(running.polished()).isNull();
+        var failed = service.get("m1", id);
+        assertThat(failed.preview()).isNull();
+        assertThat(failed.polished()).isNull();
+        verifyNoInteractions(polish);
+    }
+
     @Test void submitsWithoutWaitingAndPreservesDocumentInstructions() {
         when(jobs.lockMember("m1")).thenReturn("m1");
         when(polish.prepare("m1", "原文")).thenReturn(new TextPolishService.PreparedPolish("原文", "用户方法"));

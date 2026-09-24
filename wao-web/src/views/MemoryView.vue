@@ -11,6 +11,8 @@ import {
 import { toast } from '@/composables/toast'
 import { useSessionStore } from '@/stores/session'
 import MemoryMcpPanel from '@/components/memory/MemoryMcpPanel.vue'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import type { AiRunner, Project } from '@/types'
 
 const route = useRoute()
@@ -66,6 +68,7 @@ const runners = ref<AiRunner[]>([])
 const machineId = ref(String(route.query.machine || ''))
 const applicationId = ref(String(route.query.application || ''))
 const memories = ref<MemoryDocument[]>([])
+const memoryResults = computed(() => memories.value)
 const loading = ref(true)
 const loadError = ref('')
 const query = ref('')
@@ -97,6 +100,7 @@ const scopeId = computed(() => {
   if (activeScope.value === 'machine') return machineId.value
   return applicationId.value
 })
+const { page: memoryPage, pageCount: memoryPageCount, visible: visibleMemories } = useClientPagination(memoryResults, [activeScope, scopeId, query, category, state])
 const categories = computed(() => categoryMap[activeScope.value])
 const selectedProject = computed(() => projects.value.find((item) => item.id === projectId.value))
 const selectedRunner = computed(() => runners.value.find((item) => item.id === machineId.value))
@@ -160,7 +164,11 @@ async function load() {
     memories.value = await fetchMemories({ scopeType: activeScope.value, scopeId: scopeId.value,
       query: query.value.trim() || undefined, category: category.value || undefined, state: state.value || undefined })
     const entry = String(route.query.entry || '')
-    if (entry) await nextTick(() => document.getElementById(`memory-${entry}`)?.scrollIntoView({ block: 'center' }))
+    if (entry) {
+      const index = memories.value.findIndex((item) => item.id === entry)
+      if (index >= 0) memoryPage.value = Math.floor(index / 10) + 1
+      await nextTick(() => document.getElementById(`memory-${entry}`)?.scrollIntoView({ block: 'center' }))
+    }
   } catch (error) { loadError.value = error instanceof Error ? error.message : '记忆读取失败，请重试' }
   finally { loading.value = false }
 }
@@ -330,7 +338,8 @@ onMounted(async () => {
     <section v-if="loading" class="state-card"><i class="ri-loader-4-line spin"></i>正在读取{{ currentScope.label }}记忆…</section>
     <section v-else-if="loadError" class="state-card error"><i class="ri-error-warning-line"></i>{{ loadError }}<button @click="load">重试</button></section>
     <section v-else-if="!memories.length" class="state-card"><i class="ri-inbox-archive-line"></i><b>当前范围还没有匹配记忆</b><span>{{ activeScope === 'personal' ? '记录稳定偏好、经历、职责或规划。' : ['machine','application'].includes(activeScope) ? 'Runner 只在发现真实本机记忆并成功生成报告后提交候选。' : '候选审核后才会进入 AI 上下文。' }}</span></section>
-    <section v-else class="memory-list"><article v-for="item in memories" :id="`memory-${item.id}`" :key="item.id" :class="{ highlighted: route.query.entry === item.id, candidate: item.revision.state === 'draft' }"><header><span class="category">{{ categoryLabel(item.category) }}</span><span class="status" :class="item.revision.state">{{ stateLabel(item) }}</span><button title="版本历史" @click="openVersions(item)"><i class="ri-history-line"></i></button></header><h2>{{ item.revision.title }}</h2><p>{{ item.revision.content }}</p><div v-if="item.revision.changeSummary" class="change"><i class="ri-git-commit-line"></i>{{ item.revision.changeSummary }}</div><div class="sources"><a v-for="source in item.revision.sources.filter((source) => source.url)" :key="source.url" :href="source.url" target="_blank"><i class="ri-links-line"></i>{{ source.type }}</a><span v-if="item.revision.authorType === 'ai'"><i class="ri-robot-2-line"></i>AI 候选</span><time>{{ formatTime(item.updatedAt) }}</time></div><footer><div v-if="item.revision.state === 'draft' && canReview"><button class="approve" :disabled="actionId === item.revision.id" @click="review(item, 'publish')">发布</button><button class="reject" :disabled="actionId === item.revision.id" @click="review(item, 'reject')">驳回</button></div><span v-else></span><div><button v-if="item.state !== 'archived'" @click="openEdit(item)"><i class="ri-edit-line"></i>修改记忆</button><button v-if="item.state !== 'archived' && (activeScope === 'personal' || canReview)" class="archive" @click="archive(item)"><i class="ri-archive-line"></i>废止</button></div></footer></article></section>
+    <section v-else class="memory-list"><article v-for="item in visibleMemories" :id="`memory-${item.id}`" :key="item.id" :class="{ highlighted: route.query.entry === item.id, candidate: item.revision.state === 'draft' }"><header><span class="category">{{ categoryLabel(item.category) }}</span><span class="status" :class="item.revision.state">{{ stateLabel(item) }}</span><button title="版本历史" @click="openVersions(item)"><i class="ri-history-line"></i></button></header><h2>{{ item.revision.title }}</h2><p>{{ item.revision.content }}</p><div v-if="item.revision.changeSummary" class="change"><i class="ri-git-commit-line"></i>{{ item.revision.changeSummary }}</div><div class="sources"><a v-for="source in item.revision.sources.filter((source) => source.url)" :key="source.url" :href="source.url" target="_blank"><i class="ri-links-line"></i>{{ source.type }}</a><span v-if="item.revision.authorType === 'ai'"><i class="ri-robot-2-line"></i>AI 候选</span><time>{{ formatTime(item.updatedAt) }}</time></div><footer><div v-if="item.revision.state === 'draft' && canReview"><button class="approve" :disabled="actionId === item.revision.id" @click="review(item, 'publish')">发布</button><button class="reject" :disabled="actionId === item.revision.id" @click="review(item, 'reject')">驳回</button></div><span v-else></span><div><button v-if="item.state !== 'archived'" @click="openEdit(item)"><i class="ri-edit-line"></i>修改记忆</button><button v-if="item.state !== 'archived' && (activeScope === 'personal' || canReview)" class="archive" @click="archive(item)"><i class="ri-archive-line"></i>废止</button></div></footer></article></section>
+    <WaoPagination v-if="!loading && !loadError && memoryPageCount > 1" v-model:page="memoryPage" :page-count="memoryPageCount" :total="memories.length" aria-label="记忆查询结果分页" />
 
     <div v-if="editorOpen" class="mask" @click.self="closeEditor"><section class="editor"><header><div><h2>{{ editing ? '修改记忆' : activeScope === 'personal' ? '记住一件事' : '提交记忆审核' }}</h2><p>{{ saveDestination }}<br />{{ saveEffect }}</p></div><button aria-label="关闭记忆编辑器" :disabled="saving" @click="closeEditor"><i class="ri-close-line"></i></button></header><div v-if="restored" class="draft">已恢复本机未保存草稿</div><div v-if="draftError" class="draft" role="alert">{{ draftError }}<button :disabled="saving" @click="persistDraft">重试保存草稿</button></div><label>分类<select :disabled="saving" v-model="form.category"><option v-for="item in categories" :key="item.value" :value="item.value">{{ item.label }}</option></select></label><label>标题<input :disabled="saving" v-model="form.title" maxlength="200" /></label><label>正文<textarea :disabled="saving" v-model="form.content" maxlength="20000" rows="9"></textarea><small>{{ form.content.length }} / 20000</small></label><details class="optional-fields" :open="!!editing"><summary>补充说明、来源和失效时间（选填）</summary><label>变更说明<input :disabled="saving" v-model="form.changeSummary" maxlength="1000" /></label><label>证据链接（每行一个）<textarea :disabled="saving" v-model="form.evidence" rows="3"></textarea></label><label>可选失效时间<input :disabled="saving" v-model="form.expiresAt" type="datetime-local" /></label></details><div v-if="saveError" class="save-error">{{ saveError }}。{{ draftSaved ? '草稿已保存在本机，可重试保存。' : '输入仍在当前页面，请勿刷新；可复制备份后重试。' }}</div><footer><span>{{ saving ? '保存中，请勿关闭…' : draftSaved ? '草稿已保存在本机' : draftError ? '草稿未保存，请保留此页面' : '输入后自动保存为本机草稿' }}</span><div><button :disabled="saving" @click="closeEditor">取消</button><button class="primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : activeScope === 'personal' ? '保存并生效' : '提交审核' }}</button></div></footer></section></div>
     <div v-if="versionsOpen" class="mask" @click.self="closeVersions"><section class="versions"><header><div><h2>版本历史</h2><p>{{ versionMemory?.revision.title }}</p></div><button aria-label="关闭版本历史" @click="closeVersions"><i class="ri-close-line"></i></button></header><div v-if="versionsLoading" class="version-state" role="status">正在读取版本历史…</div><div v-else-if="versionsError" class="version-state error" role="alert"><p>{{ versionsError }}</p><button @click="versionMemory && openVersions(versionMemory)">重试读取版本历史</button></div><div v-else-if="!versions.length" class="version-state">暂无版本记录</div><div v-else class="timeline"><article v-for="(version, index) in versions" :key="version.id"><span class="dot"></span><div><header><b>v{{ version.versionNo }} · {{ revisionStateLabel(version.state) }}</b><time>{{ formatTime(version.publishedAt || version.createdAt) }}</time></header><p v-if="version.changeSummary">{{ version.changeSummary }}</p><details><summary>查看该版正文</summary><h3>{{ version.title }}</h3><pre>{{ version.content }}</pre></details><details v-if="previousVersion(index)" class="diff"><summary>与 v{{ previousVersion(index)?.versionNo }} 对比</summary><div><section><b>旧版</b><pre>{{ previousVersion(index)?.content }}</pre></section><section><b>本版</b><pre>{{ version.content }}</pre></section></div></details><button v-if="!['draft','rejected'].includes(version.state) && version.id !== versionMemory?.currentPublishedRevisionId" @click="rollback(version)">以此版本创建新修订</button></div></article></div></section></div>

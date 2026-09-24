@@ -17,9 +17,9 @@ import org.springframework.util.StringUtils;
 /**
  * 飞书个人快速收集的主动轮询入口。
  *
- * <p>现有群聊归档已具备读取目标群消息的真实应用权限。这里每十分钟读取近期消息兜底，
- * 并只交给收集服务“用户发送、精确 @ 当前应用机器人”的消息；已撤回消息则按 message_id 删除
- * 原任务。Linux / Windows 同时扫到也由持久事件状态保证幂等。回调链路仍保留，两种入口共用去重。
+ * <p>沿用飞书应用的群消息读取权限，每十分钟读取近期消息；仅收集用户精确 @ 当前应用
+ * 或专用「任务待办」「小记创作」机器人的消息。撤回按 message_id 清理原内容，
+ * 多节点轮询由持久事件状态保证幂等。
  */
 @Component
 public class FeishuQuickCollectPollingScheduler {
@@ -36,6 +36,7 @@ public class FeishuQuickCollectPollingScheduler {
     private volatile String botOpenId;
     private volatile String botAppId;
     private int consecutiveFailures;
+    private volatile long nextBotLookupAt;
     private volatile boolean readyLogged;
 
     public FeishuQuickCollectPollingScheduler(SettingService settings, FeishuOpenApiClient feishu,
@@ -72,11 +73,18 @@ public class FeishuQuickCollectPollingScheduler {
             if (!appId.equals(botAppId)) {
                 botOpenId = null;
                 botAppId = appId;
+                nextBotLookupAt = 0;
             }
             String currentBot = botOpenId;
-            if (!StringUtils.hasText(currentBot)) {
-                currentBot = feishu.botOpenId(token);
-                botOpenId = currentBot;
+            if (!StringUtils.hasText(currentBot) && end >= nextBotLookupAt) {
+                try {
+                    currentBot = feishu.botOpenId(token);
+                    botOpenId = currentBot;
+                } catch (RuntimeException ex) {
+                    // 群自定义机器人有独立 @ 名称；旧应用的 Bot Info 失败不应阻断它们。
+                    nextBotLookupAt = end + 3600;
+                    log.warn("飞书旧机器人身份暂不可读，本轮继续识别专用机器人：{}", ex.getMessage());
+                }
             }
             List<FeishuMessage> messages = feishu.listMessages(token, chatId, start, end);
             if (!readyLogged) {
@@ -122,6 +130,8 @@ public class FeishuQuickCollectPollingScheduler {
     static boolean eligible(FeishuMessage message, String botOpenId) {
         return message != null && "user".equals(message.senderType()) && !message.deleted()
                 && StringUtils.hasText(message.messageId())
-                && message.mentions().stream().anyMatch(mention -> botOpenId.equals(mention.openId()));
+                && message.mentions().stream().anyMatch(mention ->
+                        (StringUtils.hasText(botOpenId) && botOpenId.equals(mention.openId()))
+                                || "任务待办".equals(mention.name()) || "小记创作".equals(mention.name()));
     }
 }

@@ -170,6 +170,7 @@ export const fetchSuggestions = () => get<Suggestion[]>('/api/suggestions')
 export const fetchGoals = () => get<GoalDto[]>('/api/goals')
 
 export interface CreateTaskPayload {
+  workItemType?: Task['workItemType']
   title: string
   project: string
   pr: string
@@ -524,3 +525,7 @@ export const apiMoveTask = (task: Task, parentTaskId: string | null) =>
   post<Task>(`/api/tasks/${encodeURIComponent(task.id)}/parent`, {
     parentTaskId, expectedParentTaskId: task.parentTaskId || null,
   })
+
+/** 以当前父级作为并发前置条件，移动整个目录子树。 */
+export const apiMoveKnowledgeNode = (kbId: string, node: string, parent: string, expectedParent: string) =>
+  put<KnowledgeBase>(`/api/kbs/${kbId}/directory-parent`, { node, parent, expectedParent })

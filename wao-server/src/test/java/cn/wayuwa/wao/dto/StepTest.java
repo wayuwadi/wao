@@ -12,6 +12,17 @@ class StepTest {
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
+    void pendingVerificationSurvivesStorageAndMoveWithoutCompleting() throws Exception {
+        Step step = json.readValue("{\"text\":\"待验收\",\"done\":false,\"id\":\"s1\",\"status\":\"待验证\"}", Step.class);
+        Step read = json.readValue(json.writeValueAsString(step), Step.class);
+        assertThat(read.statusLabel()).isEqualTo("待验证");
+        assertThat(read.done()).isFalse();
+        assertThat(read.with("s1", 8L, "parent").statusLabel()).isEqualTo("待验证");
+        Step completed = json.readValue("{\"text\":\"完成\",\"done\":true,\"status\":\"待验证\"}", Step.class);
+        assertThat(completed.statusLabel()).isEqualTo("已完成");
+    }
+
+    @Test
     void historicalSubtasksKeepTheirJsonAndVersionDigest() throws Exception {
         // 升级前落库的子任务快照：没有状态、创建人、关联文档、评论等新字段
         String stored = "[{\"text\":\"旧子任务\",\"done\":false,\"id\":\"s1\",\"desc\":\"\",\"images\":[],\"number\":3,"

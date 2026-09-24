@@ -9,6 +9,8 @@ import {
   type VocabularyEntry,
   type VocabularyState,
 } from '@/api/vocabulary'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 
 type Filter = 'ALL' | VocabularyState
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
@@ -49,6 +51,7 @@ const filteredEntries = computed(() => {
     )
   })
 })
+const { page: entryPage, pageCount: entryPageCount, visible: visibleEntries } = useClientPagination(filteredEntries, [search, filter])
 const learningCount = computed(
   () => entries.value.filter((entry) => entry.state === 'LEARNING').length,
 )
@@ -323,7 +326,7 @@ onMounted(loadEntries)
         </div>
         <div v-else class="entry-list">
           <button
-            v-for="entry in filteredEntries"
+            v-for="entry in visibleEntries"
             :key="entry.id"
             class="entry-row"
             :class="{ active: selectedId === entry.id }"
@@ -340,6 +343,7 @@ onMounted(loadEntries)
             }}</span>
           </button>
         </div>
+        <WaoPagination v-if="!loading && !loadError && entryPageCount > 1" v-model:page="entryPage" :page-count="entryPageCount" :total="filteredEntries.length" aria-label="词条查询结果分页" />
       </aside>
 
       <article v-if="selected" class="entry-detail">

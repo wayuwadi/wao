@@ -103,8 +103,8 @@ appearance:
 jobs:
   - script: >
       pipelineJob('wao-main-cd') {
-        description('WAO main: collect pushes for 300 seconds, test once, build immutable SHA images, deploy Linux1 slave → Linux2 master → cloud.')
-        quietPeriod(300)
+        description('WAO main: collect pushes for 60 seconds, test once, build immutable SHA images, deploy Linux1 slave → Linux2 master → cloud.')
+        quietPeriod(60)
         properties {
           githubProjectUrl('https://github.com/wayuwacn/wao/')
         }
@@ -115,6 +115,7 @@ jobs:
         }
         triggers {
           githubPush()
+          scm('H/5 * * * *')
         }
         definition {
           cpsScm {
@@ -145,6 +146,7 @@ jobs:
       }
   - script: >
       pipelineJob('wao-client-release') {
+        disabled(true)
         description('WAO 桌面客户端自建发布：Linux2 构建 Windows，Mac 节点构建通用包，Linux2 统一签名和原子发布。')
         quietPeriod(300)
         properties {
@@ -166,7 +168,8 @@ jobs:
                 branch('*/main')
                 extensions {
                   cloneOptions {
-                    shallow(false)
+                    shallow(true)
+                    depth(1)
                     noTags(true)
                     honorRefspec(true)
                     timeout(20)

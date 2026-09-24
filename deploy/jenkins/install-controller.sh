@@ -106,6 +106,10 @@ systemctl unmask jenkins.service >/dev/null
 install -d -m 0755 /etc/systemd/system/jenkins.service.d
 install -m 0644 "$script_dir/jenkins.yaml" /etc/jenkins/jenkins.yaml
 install -m 0644 "$script_dir/plugins.txt" /etc/jenkins/plugins.txt
+install -m 0755 "$script_dir/controller-health.py" /usr/local/lib/wao-jenkins/controller-health.py
+for unit in wao-jenkins-health.service wao-jenkins-health.timer; do
+  install -m 0644 "$script_dir/$unit" "/etc/systemd/system/$unit"
+done
 install -m 0755 "$script_dir/backup-controller.sh" /usr/local/lib/wao-jenkins/backup-controller.sh
 install -m 0755 "$script_dir/deploy-master-local.sh" /usr/local/lib/wao-jenkins/deploy-master-local.sh
 install -m 0644 "$script_dir/jenkins.service.override.conf" \
@@ -209,6 +213,7 @@ visudo -cf /etc/sudoers.d/wao-jenkins
 systemctl daemon-reload
 systemctl enable --now jenkins.service
 systemctl enable --now wao-jenkins-backup.timer
+systemctl enable --now wao-jenkins-health.timer
 systemctl enable --now wao-offsite-backup.timer
 systemctl enable --now wao-jenkins-webhook-tunnel.service
 

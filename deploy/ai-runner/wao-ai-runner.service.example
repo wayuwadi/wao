@@ -41,6 +41,12 @@ ExecStart=/usr/bin/python3 /home/用户名/path/to/wao/deploy/ai-runner/wao-ai-r
   --claude-command /home/用户名/.local/bin/claude
 Restart=always
 RestartSec=10
+CPUQuota=200%
+MemoryHigh=4G
+MemoryMax=6G
+TasksMax=1024
+Nice=10
+IOSchedulingClass=idle
 # 退出码 78 表示 WAO 后台已解除这台电脑的接入：令牌作废，重启也只会继续失败。
 RestartPreventExitStatus=78
 

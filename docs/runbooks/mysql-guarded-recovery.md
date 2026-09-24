@@ -49,6 +49,20 @@ Linux2 原生 mysqld 实际通过 `/etc/my.cnf` 启动，二进制是 `/www/serv
 
 ## 出错时
 
+### 当前 Linux1 写主的后续故障处置
+
+本次批准只覆盖 Linux2→Linux1，当前保持 Linux1 写主。以下反向步骤需要另一个明确维护窗口，不因脚本存在而自动执行：
+
+1. 暂停特权WAO写入并取得维护锁；确认Linux2返回副本与其他三个库健康、最新备份可恢复。
+2. 在Linux1执行 `fence-linux1 --state ~/.local/state/wao-mysql-recovery --maintenance-confirmed`。脚本锁定应用账号、结束连接，并持久设置全实例只读（Linux1此实例专用于WAO）。生成独立类型的围栏回执。
+3. 在两分钟内把回执送到Linux2，执行 `promote-linux2 --state /var/lib/wao-mysql-recovery --evidence <回执> --maintenance-confirmed`。它校验来源UUID、返回复制线程、过滤和GTID屏障；只删除wao-return通道并解锁本机WAO应用账号，不停其他三个库。
+4. 更新两机共享环境MYSQL_WRITER_HOST=10.66.0.2、MYSQL_WRITER_PORT=3306、WAO_MYSQL_PRIMARY=linux2，并删除LINUX2_MYSQL_WRITER_HOST/PORT与MYSQL_RETURN_SOURCE_HOST/PORT覆盖；否则应用仍会连接已围栏的Linux1通道。以实际不可变镜像逐台重建App/Agent连接池并验收真实登录/保存。
+5. Linux1保持账号锁定与只读，必须从Linux2新主一致性快照重新建立WAO副本；禁止直接AUTO_POSITION回接旧历史。提升回执明确标记old_source_requires_reseed，不调用原方向rejoin工具。副本重新校验之前报告数据保护降级。
+
+若Linux1整机离线，无法产生新在线围栏回执，工具会拒绝这种自动提升；必须取得物理隔离证据并由操作人核对最后GTID/潜在丢失范围，再制定应急恢复操作。不得伪造时间新鲜的回执、复用旧回执或把无法隔离当作已经隔离。离线灾难的人工耗时未实测，不承诺30分钟一定恢复。
+
+2026-09-21新增反向流程已在两个无生产网络、无生产卷的临时MySQL9.7实例通过：先完整执行原方向围栏/提升/返回复制，再围栏Linux1、追平并恢复Linux2 WAO写入；其他库标记保留，旧Linux1写入被拒绝，两端重启后账号锁与只读角色保持。整项实验41.473秒，临时容器/卷/网络已清理。这是工具隔离演练，未在生产执行反向切换。
+
 提升之前：若确认 Linux1 从未变为可写，可在独立核验后恢复原状态并解锁旧账号；不能仅依赖某个命令退出码。
 
 提升之后：优先修复新主和应用连接。不得直接把旧账号解锁、把地址改回旧主，或执行删除副本卷的 bootstrap。新主已接受写入时，回切必须重新围栏、追平并另行批准。

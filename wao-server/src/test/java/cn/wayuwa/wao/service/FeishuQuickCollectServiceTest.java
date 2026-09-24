@@ -29,6 +29,7 @@ import cn.wayuwa.wao.domain.AccountEntity;
 import cn.wayuwa.wao.domain.AccountIdentityEntity;
 import cn.wayuwa.wao.domain.FeishuQuickCollectEventEntity;
 import cn.wayuwa.wao.dto.ImageItemDto;
+import cn.wayuwa.wao.dto.CreateNoteRequest;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.feishu.FeishuApiException;
@@ -48,6 +49,7 @@ class FeishuQuickCollectServiceTest {
     private final SettingService settings = mock(SettingService.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
     private final TaskService tasks = mock(TaskService.class);
+    private final KnowledgeService knowledge = mock(KnowledgeService.class);
     private final ProjectService projects = mock(ProjectService.class);
     private final AccountMapper accounts = mock(AccountMapper.class);
     private final AccountIdentityMapper identities = mock(AccountIdentityMapper.class);
@@ -59,7 +61,7 @@ class FeishuQuickCollectServiceTest {
     private final FeishuQuickCollectRecallService recalls = mock(FeishuQuickCollectRecallService.class);
     private final FeishuLinkPreviewService linkPreviews = mock(FeishuLinkPreviewService.class);
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
-            settings, feishu, tasks, projects, accounts, identities, events, images, new ObjectMapper(), feedback,
+            settings, feishu, tasks, knowledge, projects, accounts, identities, events, images, new ObjectMapper(), feedback,
             reactionAiRuns, reactionPolicy, recalls, linkPreviews);
 
     private void enabled() {
@@ -328,6 +330,107 @@ class FeishuQuickCollectServiceTest {
 
         verify(tasks).createFromChat("p1", "记录XXX测试", "记录XXX测试", "wd",
                 FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
+    void dedicatedNoteBotCreatesANoteForTheRealSenderWithoutCreatingATask() {
+        enabled();
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_note", "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 今天想到一个新方向\\n先把灵感记下来\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "cli_note", "小记创作"))));
+
+        var request = org.mockito.ArgumentCaptor.forClass(CreateNoteRequest.class);
+        verify(knowledge).createNote(org.mockito.ArgumentMatchers.matches("fn[a-f0-9]{30}"),
+                request.capture(), eq("wd"));
+        assertThat(request.getValue().title()).isEqualTo("今天想到一个新方向");
+        assertThat(request.getValue().blocks().get(0).p())
+                .isEqualTo("今天想到一个新方向\n先把灵感记下来");
+        verify(events).finishUnlessRecalled(eq("message:om_note"), eq("CREATED"), eq("NOTE"),
+                org.mockito.ArgumentMatchers.matches("fn[a-f0-9]{30}"), any(), eq(null), any());
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void unboundSenderCannotCreateANoteUnderAnotherMembersName() {
+        enabled();
+        when(identities.findByProviderSubject("feishu", "ou_sender")).thenReturn(null);
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_unbound_note", "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 私人小记\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "cli_note", "小记创作"))));
+
+        verify(knowledge, never()).createNote(any(), any(), any());
+        verify(events).finishUnlessRecalled(eq("message:om_unbound_note"), eq("REJECTED"), eq("NOTE"),
+                eq(null), any(), eq("SENDER_NOT_BOUND"), any());
+    }
+
+    @Test
+    void duplicateNoteMessageIsIgnoredAndAnEditUpdatesTheSameNote() {
+        enabled();
+        AtomicReference<FeishuQuickCollectEventEntity> stored = new AtomicReference<>();
+        when(events.insert(any(FeishuQuickCollectEventEntity.class))).thenAnswer(invocation -> {
+            if (stored.get() != null) throw new DuplicateKeyException("duplicate");
+            stored.set(invocation.getArgument(0));
+            return 1;
+        });
+        when(events.selectById("message:om_note_edit")).thenAnswer(invocation -> stored.get());
+        when(events.claimChangedMessage(any(), any(), any(LocalDateTime.class))).thenReturn(1);
+        when(events.finishUnlessRecalled(any(), any(), any(), any(), any(), any(), any(LocalDateTime.class)))
+                .thenAnswer(invocation -> {
+                    var event = stored.get();
+                    event.setStatus(invocation.getArgument(1));
+                    event.setCaptureKind(invocation.getArgument(2));
+                    event.setTargetId(invocation.getArgument(3));
+                    event.setSourceFingerprint(invocation.getArgument(4));
+                    return 1;
+                });
+        FeishuMessage first = noteMessage("om_note_edit", "第一段");
+        FeishuMessage edited = noteMessage("om_note_edit", "更新后的内容");
+
+        service.collectPolled("oc_1", first);
+        service.collectPolled("oc_1", first);
+        service.collectPolled("oc_1", edited);
+
+        String id = stored.get().getTargetId();
+        verify(knowledge, org.mockito.Mockito.times(1)).createNote(eq(id),
+                org.mockito.ArgumentMatchers.argThat(req -> "第一段".equals(req.title())), eq("wd"));
+        verify(knowledge, org.mockito.Mockito.times(1)).createNote(eq(id),
+                org.mockito.ArgumentMatchers.argThat(req -> "更新后的内容".equals(req.title())), eq("wd"));
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    private static FeishuMessage noteMessage(String id, String text) {
+        return new FeishuMessage(id, "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 " + text + "\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "cli_note", "小记创作")));
+    }
+
+    @Test
+    void dedicatedTaskBotUsesTheConfiguredDefaultProjectAndSender() {
+        enabled();
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_task_bot", "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 整理发布清单\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "cli_task", "任务待办"))));
+
+        verify(tasks).createFromChat("p1", "整理发布清单", "整理发布清单", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+        verify(knowledge, never()).createNote(any(), any(), any());
+    }
+
+    @Test
+    void mentioningBothDedicatedBotsDoesNotGuessTheDestination() {
+        enabled();
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_two_bots", "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 @_user_2 内容\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "cli_task", "任务待办"),
+                        new FeishuMention("@_user_2", "cli_note", "小记创作"))));
+
+        verify(events, never()).insert(any(FeishuQuickCollectEventEntity.class));
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+        verify(knowledge, never()).createNote(any(), any(), any());
     }
 
     @Test

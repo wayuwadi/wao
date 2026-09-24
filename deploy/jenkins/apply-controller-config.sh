@@ -27,6 +27,10 @@ if ! cmp -s deploy/jenkins/plugins.txt /etc/jenkins/plugins.txt; then
   changed=true
   plugins_changed=true
 fi
+needs_update deploy/jenkins/controller-health.py /usr/local/lib/wao-jenkins/controller-health.py
+for unit in wao-jenkins-health.service wao-jenkins-health.timer; do
+  needs_update "deploy/jenkins/$unit" "/etc/systemd/system/$unit"
+done
 needs_update deploy/jenkins/backup-controller.sh /usr/local/lib/wao-jenkins/backup-controller.sh
 needs_update deploy/jenkins/deploy-master-local.sh /usr/local/lib/wao-jenkins/deploy-master-local.sh
 for backup_script in \
@@ -108,6 +112,10 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/etc/jenkins/secrets/github-known-hosts \
       /host/var/lib/jenkins/.ssh/known_hosts
     cp /workspace/deploy/jenkins/plugins.txt /host/etc/jenkins/plugins.txt
+    install -o 0 -g 0 -m 0755 /workspace/deploy/jenkins/controller-health.py /host/usr/local/lib/wao-jenkins/controller-health.py
+    for unit in wao-jenkins-health.service wao-jenkins-health.timer; do
+      install -o 0 -g 0 -m 0644 "/workspace/deploy/jenkins/$unit" "/host/etc/systemd/system/$unit"
+    done
     cp /workspace/deploy/jenkins/backup-controller.sh \
       /host/usr/local/lib/wao-jenkins/backup-controller.sh
     cp /workspace/deploy/jenkins/deploy-master-local.sh \
@@ -161,6 +169,8 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /usr/bin/systemctl daemon-reload
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl enable --now wao-offsite-backup.timer
+    chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
+      /usr/bin/systemctl enable --now wao-jenkins-health.timer
   '
 
 jenkins_base=''

@@ -57,6 +57,10 @@ public interface DocMapper extends BaseMapper<DocEntity> {
     })
     int updateTreeOrders(@Param("kbId") String kbId, @Param("docs") List<DocEntity> docs);
 
+    /** 目录移动仅改归属并递增版本，阻止旧正文快照恢复原文件夹；包含已归档文档。 */
+    @Update("UPDATE doc SET folder_id = #{folderId}, rev = COALESCE(rev, 0) + 1 WHERE id = #{id} AND kb_id = #{kbId} AND deleted_at IS NULL")
+    int moveDirectoryFolder(@Param("kbId") String kbId, @Param("id") String id, @Param("folderId") String folderId);
+
     /** 新客户端按正文 revision 原子保存；显式写 NULL，避免高级正文与旧块投影发生漂移。 */
     @Update("""
             UPDATE doc

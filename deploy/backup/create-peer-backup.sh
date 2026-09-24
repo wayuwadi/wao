@@ -18,6 +18,11 @@ exec 9>"$BACKUP_ROOT/.lock"
 flock -n 9 || { echo 'Peer backup already running.'; exit 1; }
 ssh_args=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10
   -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -i "$SSH_KEY" -o "UserKnownHostsFile=$KNOWN_HOSTS")
+peer_name="${PEER_HOST#*@}"
+if [[ "$peer_name" == linux1.wayuwa.cn || "$peer_name" == linux2.wayuwa.cn ]]; then
+  endpoint="$(python3 /usr/local/lib/wao-network/refresh-mesh-endpoint.py --resolve "$peer_name")"
+  ssh_args+=(-o "HostName=$endpoint" -o "HostKeyAlias=$peer_name")
+fi
 peer() { ssh "${ssh_args[@]}" "$PEER_HOST" "$@"; }
 read -r local_total local_free < <(df -Pk "$BACKUP_ROOT" | awk 'NR==2 {print $2, $4}')
 read -r peer_total peer_free < <(peer "df -Pk /home | awk 'NR==2 {print \$2, \$4}'")
@@ -64,7 +69,8 @@ if [[ -f /etc/wao-mysql-recovery/tunnel.env ]]; then
     [[ "$SSH_KEY" == /* && "$KNOWN_HOSTS" == /* && -f "$SSH_KEY" && -f "$KNOWN_HOSTS" ]] || exit 1
     tar -C / -czf "$staging/recovery/mysql-tunnel-config.tar.gz" -- \
       etc/wao-mysql-recovery/tunnel.env etc/systemd/system/wao-mysql-primary-tunnel.service \
-      usr/local/lib/wao-network/start-mysql-primary-tunnel.sh "${SSH_KEY#/}" "${KNOWN_HOSTS#/}"
+      usr/local/lib/wao-network/start-mysql-primary-tunnel.sh \
+      usr/local/lib/wao-network/refresh-mesh-endpoint.py "${SSH_KEY#/}" "${KNOWN_HOSTS#/}"
   )
 fi
 

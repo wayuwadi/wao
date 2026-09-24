@@ -48,6 +48,8 @@ import { rotateImage } from '@/utils/rotateImage'
 import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/editorSelectionTask'
 import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
 import { toast } from '@/composables/toast'
+import { countCharacters } from '@/utils/characterCount'
+import ArticleImageAction from './ArticleImageAction.vue'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
 import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
@@ -121,6 +123,8 @@ const props = withDefaults(
     linkControls?: boolean
     /** 文档正文允许按比例或像素长宽调整图片。 */
     imageControls?: boolean
+    /** 小记或知识库文档的文章总览图入口；key 用于跨页面恢复生成任务。 */
+    articleImageKey?: string
     /** 知识库文档的完整工具栏、斜杠菜单和高级内容块。 */
     advanced?: boolean
     /** 小记使用紧凑工具栏，并隐藏需要进入完整文档继续编辑的重型内容块。 */
@@ -146,6 +150,7 @@ const props = withDefaults(
     taskable: false,
     linkControls: false,
     imageControls: false,
+    articleImageKey: '',
     advanced: false,
     compact: false,
     hideToolbar: false,
@@ -162,6 +167,7 @@ const emit = defineEmits<{
   'caret-line': [line: number]
   'update:document': [value: RichDocNode]
   'content-change': [value: RichDocContent]
+  'character-count': [value: number]
   'upload-file': [file: File, done: (item: FileItem | null) => void]
   'add-task': [text: string]
   'task-opened': []
@@ -290,6 +296,24 @@ const DocumentImage = Image.extend({
  * Tab 留在编辑器内：列表项缩进 / 反缩进，普通段落插入一个真实制表符。
  * 返回 true 会阻止浏览器把焦点跳到编辑器后的“图片”按钮。
  */
+/** 整表选中时删除表格本身；局部选区仍沿用清空单元格的行为。 */
+const WholeTableDeletion = Extension.create({
+  name: 'wholeTableDeletion',
+  priority: 1100,
+  addKeyboardShortcuts() {
+    const remove = () => {
+      const selection = this.editor.state.selection
+      if (!this.editor.isEditable || !(selection instanceof CellSelection)
+        || !selection.isRowSelection() || !selection.isColSelection()) return false
+      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
+      const removed = this.editor.commands.deleteTable()
+      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
+      return removed
+    }
+    return { Backspace: remove, Delete: remove }
+  },
+})
+
 const TabIndent = Extension.create({
   name: 'tabIndent',
   addKeyboardShortcuts() {
@@ -361,6 +385,12 @@ function restorePolish() {
   } catch { /* 无效缓存不覆盖正文。 */ }
 }
 const editorReady = ref(!props.advanced)
+const characterCount = ref(0)
+function updateCharacterCount(e: Editor) {
+  // 从正文读取，避免把 Markdown 标记、图片地址和附件元数据计入创作量。
+  characterCount.value = countCharacters(e.state.doc.textContent)
+  emit('character-count', characterCount.value)
+}
 const toolbarOpen = ref(false)
 
 const editor = useEditor({
@@ -386,6 +416,7 @@ const editor = useEditor({
     Placeholder.configure({ placeholder: () => props.placeholder }),
     Markdown,
     TabIndent,
+    WholeTableDeletion,
     Underline,
     TextStyle,
     Color,
@@ -453,9 +484,13 @@ const editor = useEditor({
     },
   },
   onCreate: ({ editor: e }) => nextTick(() => {
+    updateCharacterCount(e)
     editorReady.value = true
     if (props.autofocus && !props.readonly && !e.isDestroyed) e.commands.focus('start', { scrollIntoView: false })
   }),
+  onTransaction: ({ editor: e, transaction }) => {
+    if (transaction.docChanged) updateCharacterCount(e)
+  },
   onUpdate: ({ editor: e }) => {
     tableMenu.value = null
     selectionDismissed.value = false
@@ -480,6 +515,7 @@ const editor = useEditor({
 
 const selectionMenuEl = ref<HTMLElement | null>(null)
 const selectedText = ref('')
+const selectedCharacterCount = computed(() => countCharacters(selectedText.value))
 const selectionCanLink = ref(false)
 const selectionMenuParent = () => window.document.body
 const selectionDismissed = ref(false)
@@ -666,7 +702,10 @@ async function startPolish() {
   await requestPolish(current)
 }
 
+const polishPreview = ref('')
+
 async function requestPolish(dialog: PolishDialog) {
+  polishPreview.value = ''
   dialog.startedAt ??= Date.now()
   polishMinimized.value = false
   dialog.requestId ??= newPolishRequestId()
@@ -680,6 +719,7 @@ async function requestPolish(dialog: PolishDialog) {
       requestId: dialog.requestId,
       isActive: () => polishMounted && polishDialog.value === dialog && polishSession?.userId === owner,
       onProgress: (job) => {
+        polishPreview.value = job.preview ?? ''
         dialog.progress = job.message
         dialog.failed = job.status === 'FAILED'
         persistPolish(dialog)
@@ -690,6 +730,7 @@ async function requestPolish(dialog: PolishDialog) {
     if (!dialog.polished) dialog.error = 'AI 没有返回可用内容，请重试'
   } catch (cause) {
     if (polishDialog.value !== dialog) return
+    polishPreview.value = ''
     dialog.error = cause instanceof Error ? cause.message : '润色失败，请重试'
   } finally {
     if (polishDialog.value === dialog) { dialog.loading = false; persistPolish(dialog) }
@@ -1603,6 +1644,18 @@ function onImagePicked(event: Event) {
   if (files.length) insertImages(files)
 }
 
+/** 将总览图放在当前正文最前面；重复生成时替换上一张总览图。 */
+function insertArticleImageAtStart(url: string): boolean {
+  const e = editor.value
+  if (!e || props.readonly || !/^\/api\/images\/[A-Za-z0-9_-]+\/raw$/.test(url)) return false
+  const first = e.state.doc.firstChild
+  const range = first?.type.name === 'image' && first.attrs.alt === '文章总览图'
+    ? { from: 0, to: first.nodeSize } : 0
+  return e.commands.insertContentAt(range, { type: 'image', attrs: { src: url, alt: '文章总览图', width: '50%', height: null, align: 'center' } })
+}
+
+function articleText(): string { return editor.value?.state.doc.textContent ?? '' }
+
 /**
  * 外部值回灌 —— 只在编辑器没有焦点时做。
  *
@@ -1741,6 +1794,7 @@ onBeforeUnmount(() => {
       <button type="button" title="链接" @click="toggleLinkFromToolbar"><i class="ri-link"></i></button>
       <button type="button" title="图片" @click="chooseImage"><i class="ri-image-add-line"></i></button>
       <button v-if="!compact" type="button" title="表格" @click="insertTable"><i class="ri-table-2"></i></button>
+      <button v-if="editor.isActive('table')" type="button" title="删除整个表格（可撤销）" aria-label="删除当前表格" @mousedown.prevent @click="runTableAction('deleteTable')"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>删除表格</span></button>
       <button type="button" title="更多内容块（输入 / 也可打开）" @click="toggleInsertMenu"><i class="ri-add-circle-line"></i></button>
       <button type="button" title="查找替换（Ctrl/⌘+F）" @click="findOpen = !findOpen"><i class="ri-search-line"></i></button>
       <button type="button" title="清除格式" @click="clearFormatting"><i class="ri-format-clear"></i></button>
@@ -1886,18 +1940,34 @@ onBeforeUnmount(() => {
           <button v-if="upload.state === 'failed'" type="button" @click="pendingUploads = pendingUploads.filter((item) => item.id !== upload.id)">移除</button>
         </div>
       </div>
-      <button
-        v-if="!readonly"
-        type="button"
-        class="image-upload"
-        title="从图册选择图片"
-        aria-label="从图册选择图片"
-        @mousedown.prevent
-        @click="chooseImage"
-      >
-        <i class="ri-image-add-line"></i><span>图片</span>
-      </button>
+      <div v-if="!readonly && !articleImageKey" class="image-actions">
+        <button type="button" class="image-upload" title="从图册选择图片"
+          aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
+          <i class="ri-image-add-line"></i><span>图片</span>
+        </button>
+      </div>
     </div>
+    <div v-if="articleImageKey" class="article-footer" aria-label="文章编辑操作">
+      <div class="article-footer-left">
+        <div v-if="!readonly" class="article-image-actions">
+          <ArticleImageAction :scope-key="articleImageKey"
+            :get-text="articleText" :insert-image="insertArticleImageAtStart" />
+          <button type="button" class="image-upload" title="从图册选择图片"
+            aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
+            <i class="ri-image-add-line"></i><span>图片</span>
+          </button>
+        </div>
+        <slot name="footer-tags" />
+      </div>
+      <div class="character-count article-count" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
+        <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
+      </div>
+    </div>
+    <Teleport v-else :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
+      <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
+        <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
+      </div>
+    </Teleport>
     <div v-if="drawingsOpen" class="link-dialog-mask" @click.self="drawingsOpen = false">
       <section class="link-dialog drawing-dialog" role="dialog" aria-modal="true" aria-label="插入画板">
         <header><div><small>个人画板</small><h2>引用 Excalidraw 草图</h2></div><button type="button" aria-label="关闭" @click="drawingsOpen = false"><i class="ri-close-line"></i></button></header>
@@ -1982,12 +2052,13 @@ onBeforeUnmount(() => {
             <pre>{{ polishDialog.original }}</pre>
           </article>
           <article>
-            <div class="polish-card-title"><span>润色结果</span><em>确认后才会写入</em></div>
-            <div v-if="polishDialog.loading" class="polish-state">
+            <div class="polish-card-title"><span>润色结果</span><em>{{ polishDialog.loading && polishPreview ? '正在生成，完成后可替换' : '确认后才会写入' }}</em></div>
+            <pre v-if="polishDialog.loading && polishPreview">{{ polishPreview }}<span class="streaming-indicator"> ▍</span></pre>
+            <div v-if="polishDialog.loading && !polishPreview" class="polish-state">
               <PolishProgress :message="polishDialog.progress" :started-at="polishDialog.startedAt" />
             </div>
-            <pre v-else-if="polishDialog.polished">{{ polishDialog.polished }}</pre>
-            <div v-else class="polish-state">
+            <pre v-else-if="!polishDialog.loading && polishDialog.polished">{{ polishDialog.polished }}</pre>
+            <div v-else-if="!polishDialog.loading" class="polish-state">
               <i class="ri-quill-pen-line"></i><span>暂时没有候选内容</span>
             </div>
           </article>
@@ -2035,6 +2106,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.character-count { position:sticky; bottom:0; z-index:1; flex-shrink:0; width:fit-content; max-width:100%; margin-left:auto; padding:4px 8px; border-radius:4px; background:var(--wao-bg-card,#fff); color:var(--wao-text-weak,#646a73); font-size:12px; line-height:20px; font-variant-numeric:tabular-nums; }
+.character-count.docked { position:static; padding:3px 16px; }
 .polish-resume {
   position: sticky;
   bottom: 12px;
@@ -2699,11 +2772,42 @@ onBeforeUnmount(() => {
   border-radius: 9px;
   transition: border-color 0.12s;
 }
-.image-upload {
+.article-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 8px 0 0;
+}
+.article-footer-left,
+.article-image-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.article-footer-left {
+  flex: 1 1 auto;
+}
+.article-count {
+  position: static;
+  margin-left: auto;
+  padding-right: 0;
+  white-space: nowrap;
+}
+.image-actions {
   position: absolute;
   right: 8px;
   bottom: 7px;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.image-upload {
   height: 26px;
   padding: 0 8px;
   display: inline-flex;
@@ -2723,7 +2827,7 @@ onBeforeUnmount(() => {
 .image-upload i {
   font-size: 13px;
 }
-.md.bare .image-upload {
+.md.bare .image-actions {
   right: 0;
 }
 .md:not(.ro) .md-body:hover {

@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import DeepSeekPolicyPanel from './DeepSeekPolicyPanel.vue'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { toast } from '@/composables/toast'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import {
   fetchAiAccounts, createAiAccount, updateAiAccount, deleteAiAccount, syncAiAccount,
   startAiAccountLogin, completeAiAccountLogin, fetchAiAccountLoginStatus,
@@ -89,6 +92,7 @@ const filteredAccounts = computed(() => {
     return providerOk && statusOk && searchOk
   })
 })
+const { page: accountPage, pageCount: accountPageCount, visible: visibleAccounts } = useClientPagination(filteredAccounts, [query, providerFilter, statusFilter])
 
 const login = ref<AiAccountLoginStart | null>(null)
 const loginProvider = ref<OAuthProvider | null>(null)
@@ -434,12 +438,14 @@ watch(() => true, load, { immediate: true })
       <div>
         <div class="eyebrow">AI ACCESS</div>
         <h1>AI 账号与 API</h1>
-        <p>集中管理并加密保存 AI 凭据。润色、卦象等默认共用最新启用的模型 API；没有 API 时使用 Codex，由在线执行节点处理。统一登录后各节点可共用授权。</p>
+        <p>集中管理并加密保存 AI 凭据。DeepSeek 与醒市网关默认仅用于润色，其他功能需在下方显式开启；未获准的默认调用使用 Codex。统一登录后各节点可共用授权。</p>
       </div>
       <button class="refresh-btn" :disabled="busy" @click="load">
         <i :class="busy ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ busy ? '读取中' : '刷新列表' }}
       </button>
     </header>
+
+    <DeepSeekPolicyPanel />
 
     <div class="oauth-grid">
       <article class="oauth-card codex">
@@ -533,7 +539,7 @@ watch(() => true, load, { immediate: true })
       <div v-else-if="filteredAccounts.length === 0" class="empty-state"><i class="ri-search-eye-line"></i><b>没有符合筛选条件的账号</b></div>
       <div v-else class="account-grid">
         <article
-          v-for="account in filteredAccounts"
+          v-for="account in visibleAccounts"
           :key="account.id"
           class="account-card"
           :class="{
@@ -617,6 +623,7 @@ watch(() => true, load, { immediate: true })
           </div>
         </article>
       </div>
+      <WaoPagination v-if="loaded && accountPageCount > 1" v-model:page="accountPage" :page-count="accountPageCount" :total="filteredAccounts.length" aria-label="AI 账号查询结果分页" />
     </section>
 
     <section v-if="hasForm" class="editor-card">

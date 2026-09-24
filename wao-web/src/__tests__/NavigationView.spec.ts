@@ -151,10 +151,15 @@ describe('全量导航页', () => {
 
     const { wrapper } = await mountNavigation()
     await wrapper.get('.domains button').trigger('click')
-    expect(wrapper.text()).toContain('游戏厅')
-    expect(wrapper.text()).toContain('记忆中心')
-    expect(wrapper.text()).toContain('隐藏应用')
-    expect(wrapper.text()).toContain('我的资料')
+    const seen = [wrapper.text()]
+    while (wrapper.get('button[aria-label="下一页"]').attributes('disabled') === undefined) {
+      await wrapper.get('button[aria-label="下一页"]').trigger('click')
+      seen.push(wrapper.text())
+    }
+    expect(seen.join(' ')).toContain('游戏厅')
+    expect(seen.join(' ')).toContain('记忆中心')
+    expect(seen.join(' ')).toContain('隐藏应用')
+    expect(seen.join(' ')).toContain('我的资料')
     await wrapper.get('.customize-toggle').trigger('click')
     expect(wrapper.text()).toContain('未固定')
     wrapper.unmount()
@@ -164,6 +169,7 @@ describe('全量导航页', () => {
     const before = NAVIGATION_CATALOG.map(section => section.items.map(item => item.id))
     const { wrapper, router } = await mountNavigation()
     await wrapper.get('.domains button').trigger('click')
+    await wrapper.findAll('.domains button').find(button => button.text().includes('AI 与自动化'))!.trigger('click')
     const ai = wrapper.findAll('.catalog-section').find(section => section.find('h2').text() === 'AI 与自动化')!
     const rows = ai.findAll('.function-row')
     expect(rows[rows.length - 1]!.text()).toContain('外部应用授权尚未开放')

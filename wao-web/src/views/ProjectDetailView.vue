@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { taskTreeRows, taskDropIsNesting } from '@/utils/taskHierarchy'
+import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
+import { useTaskOrderStore } from '@/stores/taskOrder'
+import { taskDropAfter } from '@/utils/taskDrop'
+import { taskTreeRows } from '@/utils/taskHierarchy'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
@@ -9,6 +12,8 @@ import { useTabsStore } from '@/stores/tabs'
 import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
+import { useClientPagination } from '@/composables/clientPagination'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import { readSubtaskDrag } from '@/utils/subtaskTree'
@@ -29,6 +34,7 @@ import { AI_RUN_ENABLED } from '@/config/features'
 const route = useRoute()
 const router = useRouter()
 const data = useDataStore()
+const taskOrder = useTaskOrderStore()
 const session = useSessionStore()
 const ui = useUiStore()
 const tabs = useTabsStore()
@@ -46,6 +52,7 @@ function toggleSubtasks(id: string) {
     : [...collapsedSubTasks.value, id]
 }
 const pid = computed(() => String(route.params.id))
+const orderScope = computed(() => `project:${pid.value}`)
 const project = computed(() => data.projectById(pid.value))
 // 「总览」标签页已下线：老链接归到任务。文件页签已经接入真实资产 id 后重新开放。
 const projTab = computed(() => {
@@ -156,16 +163,18 @@ function onDropReorder(overId: string, event?: DragEvent) {
   if (payload) {
     event?.preventDefault()
     event?.stopPropagation()
-    void data.moveSubtask(payload.taskId, payload.subId, overId).catch(error => toast(error.message, 'ri-error-warning-line'))
+    toast('请在子任务列表内调整顺序，更改归属请使用移动操作', 'ri-information-line')
     return
   }
   const id = dragId.value
   dragId.value = null
-  if (id) data.reorderTask(id, overId)
+  if (id) void taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), id, overId)
 }
 
 const pd = computed(() => (project.value ? decoProj(project.value) : null))
-const ptasks = computed(() => (project.value ? data.tasksByProject(project.value.id) : []))
+const activity = computed(() => pd.value?.activity ?? [])
+const { page: activityPage, pageCount: activityPageCount, visible: visibleActivity } = useClientPagination(activity, [pid])
+const ptasks = computed(() => taskOrder.sort(orderScope.value, project.value ? data.tasksByProject(project.value.id) : [], t => t.id))
 const linkedDocs = computed(() => {
   const ids = new Set(ptasks.value.flatMap(task => [
     ...(task.docs ?? []), ...task.subs.flatMap(sub => sub.docs ?? []),
@@ -223,7 +232,7 @@ const openTasks = computed(() => allTasks.value.filter((t) => !isFinished(t) || 
 const doneDesc = (a: { completedAt?: string | null; id: string }, b: { completedAt?: string | null; id: string }) =>
   (b.completedAt ?? '').localeCompare(a.completedAt ?? '') || b.id.localeCompare(a.id)
 const doneTasks = computed(() =>
-  allTasks.value.filter((t) => isFinished(t) && !isSettling(t.id)).sort(doneDesc))
+  taskOrder.sort(orderScope.value, allTasks.value.filter((t) => isFinished(t) && !isSettling(t.id)).sort(doneDesc), t => t.id))
 /** 「显示已完成的任务」开关。 */
 const showFinished = computed(() => showDone.value)
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
@@ -375,7 +384,7 @@ const groupSections = computed(() =>
     return {
       ...g,
       open: mine.filter((t) => !isFinished(t)),
-      done: mine.filter((t) => isFinished(t)).sort(doneDesc),
+      done: taskOrder.sort(orderScope.value, mine.filter((t) => isFinished(t)).sort(doneDesc), t => t.id),
       total: mine.length,
     }
   }),
@@ -488,10 +497,9 @@ const tableSections = computed(() => {
     doneOpen: showFinished.value,
   }))
 })
-const nestingOver = ref<string | null>(null)
+const orderingOver = ref<{ id: string; after: boolean } | null>(null)
 function onTableDragOver(id: string, event: DragEvent) {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  nestingOver.value = dragId.value && dragId.value !== id && taskDropIsNesting(event.clientY, rect.top, rect.height) ? id : null
+  orderingOver.value = dragId.value && dragId.value !== id ? { id, after: taskDropAfter(event) } : null
 }
 async function moveUnder(id: string, parentId: string | null) {
   try {
@@ -500,26 +508,17 @@ async function moveUnder(id: string, parentId: string | null) {
     toast(parentId ? '已移为子任务，内容与编号保持不变' : '已移回顶层', 'ri-node-tree')
   } catch (error) { toast(error instanceof Error ? error.message : '移动失败，请重试', 'ri-error-warning-line') }
 }
-async function onTableDrop(overId: string, sectionId: string, event: DragEvent) {
-  nestingOver.value = null
-  if (readSubtaskDrag(event)) return onDropReorder(overId, event)
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  if (dragId.value && dragId.value !== overId && taskDropIsNesting(event.clientY, rect.top, rect.height)) {
-    const id = dragId.value
-    dragId.value = null
-    void moveUnder(id, overId)
-  } else {
-    const id = dragId.value
-    dragId.value = null
-    const source = id ? data.taskById(id) : undefined, target = data.taskById(overId)
-    if (!source || !target || source.id === target.id) return
-    try {
-      if ((source.parentTaskId || null) !== (target.parentTaskId || null))
-        await data.moveTask(source.id, target.parentTaskId || null)
-      if (tableGrouped.value && !target.parentTaskId) data.moveTaskToGroup(source.id, sectionId)
-      data.reorderTask(source.id, overId)
-    } catch (error) { toast(error instanceof Error ? error.message : '移动失败', 'ri-error-warning-line') }
+async function onTableDrop(overId: string, _sectionId: string, event: DragEvent) {
+  orderingOver.value = null
+  if (readSubtaskDrag(event)) return
+  const id = dragId.value
+  dragId.value = null
+  const source = id ? data.taskById(id) : undefined, target = data.taskById(overId)
+  if (!source || !target || source.id === target.id) return
+  if ((source.parentTaskId || null) !== (target.parentTaskId || null)) {
+    toast('只能在同一层级内排序，拖拽不会更改父子关系', 'ri-information-line'); return
   }
+  await taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), source.id, overId, taskDropAfter(event))
 }
 function tableRows(section: typeof tableSections.value[number]) {
   const candidates = [...section.open, ...(section.doneOpen ? section.done : [])]
@@ -537,14 +536,14 @@ async function onDropGroup(groupId: string, overId?: string) {
   dragId.value = null
   if (!id) return
   try {
-    if (data.taskById(id)?.parentTaskId) await data.moveTask(id, null)
+    if (data.taskById(id)?.parentTaskId) { toast('请先通过移回顶层操作更改层级', 'ri-information-line'); return }
   } catch (error) {
     toast(error instanceof Error ? error.message : '移动失败', 'ri-error-warning-line')
     return
   }
   data.moveTaskToGroup(id, groupId)
   // 同组内落到某条任务上就是排序；空白处只改变分组，保持该组已有顺序。
-  if (overId && overId !== id) data.reorderTask(id, overId)
+  if (overId && overId !== id) void taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), id, overId)
 }
 watch(visibleTaskIds, (ids) => {
   selectedTaskIds.value = selectedTaskIds.value.filter((id) => ids.includes(id))
@@ -701,6 +700,7 @@ watch(visibleTaskIds, (ids) => {
       </div>
       <template v-if="pdTaskView === 'list'">
       <div class="task-list-card task-table-scroll">
+        <TaskOrderStatus :scope="orderScope" />
         <table class="project-task-table" aria-label="项目任务表格">
           <colgroup>
             <col style="width: 64px" />
@@ -782,7 +782,7 @@ watch(visibleTaskIds, (ids) => {
                     :task="t"
                     :depth="depth"
                     :child-task-count="childTaskCount(t.id)"
-                    :nesting-over="nestingOver === t.id"
+                    :order-side="orderingOver?.id === t.id ? (orderingOver.after ? 'after' : 'before') : undefined"
                     @detach="moveUnder(t.id, null)"
                     :groups="groups"
                     :group-id="groupIdOf(t)"
@@ -793,8 +793,8 @@ watch(visibleTaskIds, (ids) => {
                     @add-sub="startAddSub(t.id, null)"
                     @open="openTask(t.id)"
                     @dragstart="onDragStart(t.id, $event)"
-                    @dragend="dragId = null; nestingOver = null"
-                    @dragleave="nestingOver = null"
+                    @dragend="dragId = null; orderingOver = null"
+                    @dragleave="orderingOver = null"
                     @dragover.prevent="onTableDragOver(t.id, $event)"
                     @drop.prevent.stop="onTableDrop(t.id, section.id, $event)"
                   />
@@ -1042,7 +1042,7 @@ watch(visibleTaskIds, (ids) => {
 
     <!-- 动态 -->
     <div v-else class="feed-card">
-      <div v-for="(ac, i) in pd.activity" :key="i" class="feed-row bordered">
+      <div v-for="(ac, i) in visibleActivity" :key="`${activityPage}-${i}`" class="feed-row bordered">
         <i :class="ac.icon" :style="{ color: ac.color }"></i>
         <div class="feed-main">
           <div class="feed-text lg">{{ ac.text }}</div>
@@ -1050,6 +1050,7 @@ watch(visibleTaskIds, (ids) => {
         </div>
       </div>
       <div v-if="!pd.activity.length" class="feed-empty">还没有动态——创建任务、完成任务、沉淀文档都会记录在这里。</div>
+      <WaoPagination v-if="activityPageCount > 1" v-model:page="activityPage" :page-count="activityPageCount" :total="activity.length" aria-label="项目动态分页" />
     </div>
 
     <ProjectSettingsModal

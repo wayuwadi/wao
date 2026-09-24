@@ -1,4 +1,4 @@
-/* Only immutable public assets and existing public image GETs are eligible. */
+/* Public assets and explicit authenticated media GETs; no write replay or HTML hosting. */
 const ORIGINS = new Set(['https://linux1.wayuwa.cn:9443', 'https://linux2.wayuwa.cn:9443'])
 const MAX_ASSET_BYTES = 32 * 1024 * 1024
 let routing = null
@@ -110,8 +110,104 @@ self.addEventListener('fetch', (event) => {
   else {
     const image = publicImagePath(event.request)
     if (image) event.respondWith(routePublicImage(event.request, image))
+    else {
+      const file = privateFilePath(event.request)
+      if (file) event.respondWith(routePrivateFile(event.request, file))
+    }
   }
 })
+
+function privateFilePath(request) {
+  const url = new URL(request.url)
+  if (request.method !== 'GET' || url.origin !== self.location.origin || url.search
+      || !['', 'document', 'audio', 'video'].includes(request.destination)) return null
+  return /^\/api\/files\/[A-Za-z0-9_-]+\/(?:download|stream)$/.test(url.pathname) ? url.pathname : null
+}
+
+async function mediaSessionJson(url, options = {}, timeout = 4000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeout)
+  try {
+    const response = await fetch(url, { ...options, credentials: 'include', cache: 'no-store', redirect: 'error', signal: controller.signal })
+    if (!response.ok) throw Object.assign(new Error('Media session unavailable'), { auth: response.status === 401 || response.status === 403, status: response.status })
+    return await response.json()
+  } finally { clearTimeout(timer) }
+}
+
+function privateMediaResponse(response, controller, request, origin) {
+  const headers = new Headers({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' })
+  headers.set('X-WAO-Media-Route', new URL(origin).hostname)
+  for (const name of ['Content-Type', 'Content-Disposition', 'Content-Range', 'Accept-Ranges']) {
+    const value = response.headers.get(name)
+    if (value) headers.set(name, value)
+  }
+  // Stream bytes without materializing a 50 MiB attachment in worker memory.
+  // Once response headers have been delivered, failure ends this stream; never replay.
+  const reader = response.body?.getReader()
+  let size = 0
+  const timer = setTimeout(() => controller.abort(), 120_000)
+  const aborted = () => controller.abort()
+  request.signal?.addEventListener('abort', aborted, { once: true })
+  const cleanup = () => { clearTimeout(timer); request.signal?.removeEventListener('abort', aborted) }
+  if (!reader) { cleanup(); return new Response(null, { status: response.status, headers }) }
+  const body = new ReadableStream({
+    async pull(stream) {
+      try {
+        const result = await reader.read()
+        if (result.done) { cleanup(); stream.close(); return }
+        size += result.value.byteLength
+        if (size > 52 * 1024 * 1024) throw new Error('Media response exceeds upload limit')
+        stream.enqueue(result.value)
+      } catch (error) { cleanup(); controller.abort(); stream.error(error) }
+    },
+    cancel(reason) { cleanup(); controller.abort(); return reader.cancel(reason) },
+  })
+  return new Response(body, { status: response.status, headers })
+}
+
+async function routePrivateFile(request, path) {
+  const config = await getRouting()
+  if (config?.enabled !== true || config.apiEnabled !== true || config.mediaEnabled !== true || config.forceCloud !== false) return fetch(request)
+  for (const node of (Array.isArray(config.nodes) ? config.nodes : []).slice(0, 2)) {
+    if (node.enabled !== true || !ORIGINS.has(node.origin) || (cooldown.get(node.origin) || 0) > Date.now()) continue
+    let controller
+    try {
+      // Check connectivity cheaply before the longer database-backed file read.
+      await mediaSessionJson(`${node.origin}/api/edge/ready`, {}, 1500)
+      // Derive authority afresh for every media request. Never retain a user's
+      // ticket/CSRF/account in worker storage across logout or account switching.
+      const csrf = await mediaSessionJson('/api/edge/csrf')
+      const ticket = await mediaSessionJson('/api/edge/tickets', { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-WAO-CSRF': csrf.data.csrf },
+        body: JSON.stringify({ targetOrigin: node.origin }) })
+      await mediaSessionJson(`${node.origin}/api/edge/exchange`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket: ticket.data.ticket }) })
+      await mediaSessionJson(`${node.origin}/api/edge/session`)
+      controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 30_000)
+      let response
+      try {
+        const headers = new Headers()
+        if (request.headers.has('range')) headers.set('Range', request.headers.get('range'))
+        response = await fetch(`${node.origin}${path}`, { credentials: 'include', mode: 'cors', redirect: 'error',
+          cache: 'no-store', headers, signal: controller.signal })
+      } finally { clearTimeout(timer) }
+      if ([502, 503, 504].includes(response.status)) throw new Error('Node unavailable')
+      if (response.ok) {
+        const type = response.headers.get('content-type') || ''
+        if (path.endsWith('/download') && !/^attachment(?:;|$)/i.test(response.headers.get('content-disposition') || '')) throw new Error('Missing safe attachment disposition')
+        if (path.endsWith('/stream') && !/^(audio|video)\//i.test(type)) throw new Error('Not playable media')
+      }
+      return privateMediaResponse(response, controller, request, node.origin)
+    } catch (error) {
+      controller?.abort()
+      if (error.auth) return new Response(JSON.stringify({ code: error.status, message: '登录状态已过期，请重新登录' }),
+        { status: error.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' } })
+      cooldown.set(node.origin, Date.now() + 60_000)
+    }
+  }
+  return fetch(request)
+}
 
 function publicImagePath(request) {
   const url = new URL(request.url)

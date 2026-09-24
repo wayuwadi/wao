@@ -4,8 +4,10 @@ const TRUSTED = new Set(['https://linux1.wayuwa.cn:9443', 'https://linux2.wayuwa
 const BUSINESS = /^\/api\/(?:tasks|projects|areas|members|org|kbs|kb-groups|docs)(?:\/|\?|$)/
 const SAFE = new Set(['get', 'head'])
 const RECEIPT_WRITE = /^\/api\/tasks\/[^/?]+\/operations\/[0-9a-f-]{36}$/
+const MEDIA_UPLOAD = /^\/api\/(?:images|files)$/
+const MEDIA_READ = /^\/api\/(?:(?:images|files)(?:\?[^#]*)?|files\/[A-Za-z0-9_-]+\/preview)$/
 type Node = { origin: string; csrf: string; validUntil: number }
-type Routing = { enabled?: boolean; apiEnabled?: boolean; apiWritesEnabled?: boolean; forceCloud?: boolean; allowedReleases?: string[]; nodes?: { origin: string; enabled?: boolean }[] }
+type Routing = { enabled?: boolean; apiEnabled?: boolean; apiWritesEnabled?: boolean; mediaEnabled?: boolean; forceCloud?: boolean; allowedReleases?: string[]; nodes?: { origin: string; enabled?: boolean }[] }
 
 export class EdgeApiRouting {
   private selected: Node | null = null
@@ -27,7 +29,7 @@ export class EdgeApiRouting {
 
   /** Warm in the background: the first request can keep using the working cloud entry. */
   route(url: string, method: string): Node | null {
-    if (this.context.origin() !== MAIN || !this.context.release() || !BUSINESS.test(url)) return null
+    if (this.context.origin() !== MAIN || !this.context.release() || !(BUSINESS.test(url) || MEDIA_READ.test(url))) return null
     if (!['get', 'head', 'post', 'put', 'patch', 'delete'].includes(method)) return null
     if (!this.warming) {
       this.warming = this.warm().catch(() => { /* Fail closed to the existing cloud route. */ })
@@ -35,9 +37,18 @@ export class EdgeApiRouting {
     }
     const now = this.context.now()
     return this.configUntil > now && this.enabled() && this.selected && this.selected.validUntil > now
-      && (SAFE.has(method) || (method === 'put' && RECEIPT_WRITE.test(url) && this.configuration?.apiWritesEnabled === true))
+      && (BUSINESS.test(url)
+        ? (SAFE.has(method) || (method === 'put' && RECEIPT_WRITE.test(url) && this.configuration?.apiWritesEnabled === true))
+        : (this.configuration?.mediaEnabled === true && (SAFE.has(method) || (method === 'post' && MEDIA_UPLOAD.test(url)))))
       && this.configuration?.nodes?.some(node => node.enabled === true && node.origin === this.selected?.origin)
       && (this.cooldown.get(this.selected.origin) ?? 0) <= now ? this.selected : null
+  }
+
+  /** 上传第一次使用时等待连接准备；失败仍只发送一次，不重放文件正文。 */
+  async prepareUpload(url: string) {
+    this.route(url, 'post')
+    await this.warming
+    return this.route(url, 'post')
   }
 
   failed(origin: string) {

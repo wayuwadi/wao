@@ -9,6 +9,23 @@ spec.loader.exec_module(recovery)
 
 
 class PromotionSafetyTest(unittest.TestCase):
+    def test_rejoin_retains_fence_and_retries_beyond_a_dns_cache_outage(self):
+        commands = []
+        def sql(statement):
+            commands.append(statement)
+            if statement == 'SELECT @@server_uuid': return 'old'
+            if statement.startswith('SELECT account_locked'): return 'Y'
+            if statement.startswith('SHOW REPLICA STATUS'): return ''
+            if statement.startswith('SELECT GTID_SUBSET'): return '1'
+            return ''
+        recovery.rejoin(sql, dict(kind='wao-promoted', previous_source_uuid='old',
+                                  source_uuid='new', baseline_gtid='new:1'), 'fixture')
+        changes = [c for c in commands if c.startswith('CHANGE')]
+        self.assertEqual(len(changes), 1)
+        self.assertIn('SOURCE_CONNECT_RETRY=30, SOURCE_RETRY_COUNT=86400', changes[0])
+        self.assertIn("REPLICATE_WILD_DO_TABLE=('wao.%')", changes[0])
+        self.assertFalse(any('ACCOUNT UNLOCK' in c or 'RESET' in c for c in commands))
+
     def test_local_bootstrap_gtid_rejects_promotion_before_channel_reset(self):
         commands = []
         def sql(statement):
@@ -45,6 +62,26 @@ class PromotionSafetyTest(unittest.TestCase):
         parsed = recovery.status(lambda _: ' Source_UUID: a\n Last_SQL_Error: \n Replica_IO_Running: Yes\n')
         self.assertEqual(parsed['Last_SQL_Error'], '')
         self.assertEqual(parsed['Source_UUID'], 'a')
+
+    def test_reverse_rejects_wrong_evidence_without_touching_mysql(self):
+        with self.assertRaisesRegex(RuntimeError, 'Linux1 fence'):
+            recovery.promote_linux2(lambda _: self.fail('wrong receipt touched MySQL'), self.receipt())
+
+    def test_reverse_lag_never_unlocks_the_old_application_account(self):
+        receipt = self.receipt(); receipt['kind'] = 'wao-linux1-fence'
+        commands = []
+        def sql(statement):
+            commands.append(statement)
+            if statement.startswith('SELECT @@server_id'): return '1\t0\t0'
+            if statement.startswith('SELECT account_locked'): return 'Y'
+            if statement.startswith('SHOW REPLICA STATUS'):
+                return '\n'.join(['Source_UUID: '+'a'*36, 'Replica_IO_Running: Yes',
+                    'Replica_SQL_Running: Yes', 'Replicate_Wild_Do_Table: wao.%'])
+            if statement.startswith('SELECT WAIT_FOR'): return '1'
+            self.fail('Unexpected mutation: '+statement)
+        with self.assertRaisesRegex(RuntimeError, 'not applied'):
+            recovery.promote_linux2(sql, receipt)
+        self.assertFalse(any(c.startswith(('STOP', 'RESET', 'SET SESSION')) for c in commands))
 
     def receipt(self):
         return dict(kind='wao-account-fence', source_uuid='a'*36, gtid='a'*36+':1-3',

@@ -20,7 +20,12 @@ public record CreateTaskRequest(
         /** 日历时间段结束（{@code yyyy-MM-ddTHH:mm}）。 */
         String endAt,
         /** 可选的首轮 PDCA；为空列表表示创建普通任务。 */
-        List<PdcaCycle> pdcaCycles) {
+        List<PdcaCycle> pdcaCycles, String workItemType) {
+    public CreateTaskRequest(String title, String project, String pr, String owner, String due,
+            String desc, List<ImageRef> images, String groupId, String startAt, String endAt, List<PdcaCycle> pdcaCycles) {
+        this(title, project, pr, owner, due, desc, images, groupId, startAt, endAt, pdcaCycles, null);
+    }
+
 
     /** 兼容尚未引入 PDCA 的既有调用。 */
     public CreateTaskRequest(String title, String project, String pr, String owner, String due,

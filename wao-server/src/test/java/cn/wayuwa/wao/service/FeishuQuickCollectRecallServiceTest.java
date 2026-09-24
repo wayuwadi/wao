@@ -19,7 +19,22 @@ class FeishuQuickCollectRecallServiceTest {
 
     private final FeishuQuickCollectEventMapper events = mock(FeishuQuickCollectEventMapper.class);
     private final TaskService tasks = mock(TaskService.class);
-    private final FeishuQuickCollectRecallService service = new FeishuQuickCollectRecallService(events, tasks);
+    private final KnowledgeService knowledge = mock(KnowledgeService.class);
+    private final FeishuQuickCollectRecallService service = new FeishuQuickCollectRecallService(events, tasks, knowledge);
+
+    @Test
+    void recalledNoteDeletesOnlyItsLinkedNote() {
+        FeishuQuickCollectEventEntity event = event("om_note", "oc_chat", "fn123", "CREATED");
+        event.setCaptureKind("NOTE");
+        when(events.selectById("message:om_note")).thenReturn(event);
+        doAnswer(invocation -> { event.setStatus("RECALLING"); return 1; })
+                .when(events).markRecallPending(eq("message:om_note"), any());
+
+        assertThat(service.recall("ev-note", "om_note", "oc_chat")).isTrue();
+
+        verify(knowledge).deleteNoteFromChat("fn123");
+        verify(tasks, never()).deleteFromChat(any());
+    }
 
     @Test
     void linkedMessageIsMarkedRecalledAndItsTaskIsDeleted() {

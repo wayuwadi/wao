@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
+import { apiMoveKnowledgeNode, fetchDoc as fetchMovedDoc } from '@/api/board'
+import { directoryParents, directoryRows } from '@/utils/knowledgeDirectory'
 import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
 /**
  * 知识库详情：左边是文件夹 / 文档树，右边是文档本身。
@@ -68,6 +70,15 @@ function closeOutline() {
 const titleEl = ref<HTMLInputElement | null>(null)
 /** 正在重命名的文件夹 id。 */
 const renamingFolder = ref<string | null>(null)
+const folderNameDraft = ref('')
+const folderRenameSaving = ref(false)
+const folderRenameError = ref('')
+function startFolderRename(id: string) {
+  folderNameDraft.value = kb.value?.folders.find(folder => folder.id === id)?.name ?? ''
+  folderRenameError.value = ''
+  renamingFolder.value = id
+  nextTick(() => treeElement.value?.querySelector<HTMLInputElement>('.folder-input')?.select())
+}
 const archivedOpen = ref(false)
 const archivedLoading = ref(false)
 const archivedError = ref(false)
@@ -84,7 +95,6 @@ watch(
   },
 )
 onMounted(() => {
-  if (kb.value) tabs.setMeta(`kb:${kbId.value}`, { label: kb.value.name, icon: kb.value.icon })
   void knowledgeFavorites.load()
 })
 
@@ -92,6 +102,12 @@ onMounted(() => {
 const doc = computed(() => (docId.value && data.docById(docId.value)
   && data.docById(docId.value)?.bodyLoaded !== false ? data.docOf(docId.value) : null))
 const base = computed(() => doc.value?.base ?? null)
+// 同一知识库仍复用一个页签，标题和地址指向当前文档，避免与“小记”模块同名。
+watch([() => data.docs[docId.value ?? '']?.title, () => kb.value?.name, docId], () => {
+  if (!kb.value) return
+  const title = data.docs[docId.value ?? '']?.title
+  tabs.setMeta(`kb:${kbId.value}`, { label: docId.value ? title || '未命名文档' : kb.value.name, icon: kb.value.icon })
+}, { immediate: true })
 const archivedDocs = computed(() => data.archivedDocsOf(kbId.value))
 const currentArchived = computed(() => Boolean(docId.value && data.isDocArchived(docId.value)))
 
@@ -188,16 +204,13 @@ const activeToc = ref(0)
 function isOpen(fid: string) {
   return folderOpen[fid] !== false
 }
-function toggleFolder(fid: string) {
-  folderOpen[fid] = !isOpen(fid)
-}
-const allFoldersOpen = computed(() => !!kb.value?.folders.length && kb.value.folders.every(folder => isOpen(folder.id)))
+const allFoldersOpen = computed(() => !!kb.value?.folders.length && Object.keys(directoryParents(kb.value)).every(key => isOpen(key)))
 function resetFolderExpansion() {
   for (const id of Object.keys(folderOpen)) delete folderOpen[id]
 }
 function toggleAllFolders() {
   const expand = !allFoldersOpen.value
-  for (const folder of kb.value?.folders ?? []) folderOpen[folder.id] = expand
+  for (const key of Object.keys(kb.value ? directoryParents(kb.value) : {})) folderOpen[key] = expand
 }
 // 工作区会保留页签实例，重新进入该知识库时仍恢复全部展开。
 watch([() => tabs.activeKey, kbId], ([active, current], [previousActive, previousKb]) => {
@@ -205,7 +218,7 @@ watch([() => tabs.activeKey, kbId], ([active, current], [previousActive, previou
 })
 watch(
   [docId, () => kb.value?.folders.find(folder => folder.docs.includes(docId.value ?? ''))?.id],
-  ([, folderId]) => { if (folderId) folderOpen[folderId] = true },
+  ([, folderId]) => { if (folderId) folderOpen[`f:${folderId}`] = true },
   { immediate: true },
 )
 
@@ -271,7 +284,8 @@ async function createDocFrom(templateId?: string) {
   creatingDoc.value = false
   if (id) {
     newDocFolderId.value = null
-    folderOpen[folderId] = true
+    folderOpen[`f:${folderId}`] = true
+    if (newDocParent.value) { await moveNode(newDocParent.value, `d:${id}`); newDocParent.value = null }
     selectDoc(id)
     toast(templateId ? '已从模板创建文档' : '已创建空白文档', 'ri-file-add-line')
     // 新文档标题是空的，光标直接落在标题上，敲进去就是自己的标题
@@ -600,82 +614,91 @@ const treeElement = ref<HTMLElement | null>(null)
 const currentFolderId = computed(
   () => kb.value?.folders.find((folder) => folder.docs.includes(docId.value ?? ''))?.id ?? '',
 )
-function treeMatches(folderName: string, id: string) {
-  const query = treeQuery.value.trim().toLocaleLowerCase()
-  return (
-    !query ||
-    (folderName + ' ' + (data.docById(id)?.title ?? '')).toLocaleLowerCase().includes(query)
-  )
+const mixedRows = computed(() => kb.value ? directoryRows(kb.value, id => data.docOf(id).title || '未命名文档', folderOpen, treeQuery.value) : [])
+const draggingNode = ref<string | null>(null)
+const directoryError = ref('')
+let pendingMove: { kbId: string; node: string; parent: string; expectedParent: string } | null = null
+function startNodeDrag(key: string, event: DragEvent) {
+  draggingNode.value = key
+  event.dataTransfer?.setData('application/x-wao-directory', key)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
-const searchedFolders = computed(() =>
-  (kb.value?.folders ?? []).filter(
-    (folder) =>
-      !treeQuery.value.trim() ||
-      folder.name.toLocaleLowerCase().includes(treeQuery.value.trim().toLocaleLowerCase()) ||
-      folder.docs.some((id) => treeMatches(folder.name, id)),
-  ),
-)
+async function moveNode(parent: string, node = draggingNode.value) {
+  draggingNode.value = null
+  if (!kb.value || !node || treeSaveState.value === 'saving') return
+  const parents = directoryParents(kb.value)
+  let cursor = parent
+  const visited = new Set<string>()
+  while (cursor) {
+    if (cursor === node || visited.has(cursor)) { directoryError.value = '不能移动到自身或后代节点中'; return }
+    visited.add(cursor)
+    cursor = parents[cursor] ?? ''
+  }
+  if (parents[node] === parent) return
+  pendingMove = { kbId: kb.value.id, node, parent, expectedParent: parents[node] ?? '' }
+  await persistNodeMove()
+}
+async function persistNodeMove() {
+  if (!pendingMove) return
+  const move = { ...pendingMove }
+  const targetKb = data.kbById(move.kbId)
+  if (!targetKb) return
+  directoryError.value = ''
+  treeSaveState.value = 'saving'
+  try {
+    const parents = directoryParents(targetKb)
+    const descendants = Object.keys(parents).filter(key => {
+      const seen = new Set<string>()
+      let cursor = key
+      while (cursor && !seen.has(cursor)) {
+        if (cursor === move.node) return true
+        seen.add(cursor); cursor = parents[cursor] ?? ''
+      }
+      return false
+    }).filter(key => key.startsWith('d:')).map(key => key.slice(2))
+    for (const id of descendants) {
+      if (data.docPending(id) && (!(await data.persistDocNow(id)) || data.docPending(id))) {
+        throw new Error('请先完成文档保存，再重试移动目录')
+      }
+    }
+    const previousFolders = new Map(descendants.map(id => [id, data.docById(id)?.folderId]))
+    const saved = await apiMoveKnowledgeNode(targetKb.id, move.node, move.parent, move.expectedParent)
+    const currentKb = data.kbById(targetKb.id)
+    if (currentKb) Object.assign(currentKb, saved)
+    for (const folder of saved.folders) for (const id of folder.docs) {
+      const loaded = data.docById(id)
+      if (loaded) loaded.folderId = folder.id
+    }
+    folderOpen[move.parent] = true
+    treeSaveState.value = 'saved'
+    pendingMove = null
+    if (data.apiLive) await Promise.all(descendants.filter(id => previousFolders.get(id)
+      && previousFolders.get(id) !== data.docById(id)?.folderId).map(async id => {
+        try { data.applyRemoteDoc(await fetchMovedDoc(id)) } catch { /* 协同心跳继续刷新，保留本机正文。 */ }
+      }))
+  } catch {
+    treeSaveState.value = 'error'
+    directoryError.value = '目录移动未完成，请先确认文档已保存后重试；若其他窗口已移动请刷新后重新选择'
+  }
+}
 async function locateCurrentDoc() {
   treeQuery.value = ''
-  if (currentFolderId.value) folderOpen[currentFolderId.value] = true
+  let ancestor = kb.value ? directoryParents(kb.value)[`d:${docId.value}`] : ''
+  const visited = new Set<string>()
+  while (ancestor && !visited.has(ancestor)) { visited.add(ancestor); folderOpen[ancestor] = true; ancestor = kb.value ? directoryParents(kb.value)[ancestor] : '' }
   await nextTick()
-  treeElement.value?.querySelector('.doc-node.on')?.scrollIntoView({ block: 'nearest' })
+  treeElement.value?.querySelector(`[data-node="d:${docId.value}"]`)?.scrollIntoView({ block: 'nearest' })
 }
 async function moveCurrentDoc(event: Event) {
-  const target = (event.target as HTMLSelectElement).value
-  const folder = kb.value?.folders.find((folder) => folder.id === target)
-  if (!docId.value || !folder || target === currentFolderId.value) return
-  draggingDocId.value = docId.value
-  await dropDoc(target, folder.docs.length)
-  if (treeSaveState.value === 'saved') {
-    folderOpen[target] = true
-    await locateCurrentDoc()
-  }
+  if (docId.value) await moveNode(`f:${(event.target as HTMLSelectElement).value}`, `d:${docId.value}`)
   ;(event.target as HTMLSelectElement).value = currentFolderId.value
 }
 
-const draggingDocId = ref<string | null>(null)
 const treeSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
-let pendingOrder: { folderId: string; docIds: string[] }[] | null = null
-function startDocDrag(id: string, event: DragEvent) {
-  draggingDocId.value = id
-  event.dataTransfer?.setData('text/plain', id)
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-}
-function currentDocumentOrder() {
-  return (kb.value?.folders ?? []).map((folder) => ({ folderId: folder.id, docIds: [...folder.docs] }))
-}
-async function dropDoc(folderId: string, targetIndex: number) {
-  const movingId = draggingDocId.value
-  draggingDocId.value = null
-  if (!movingId || treeSaveState.value === 'saving') return
-  const orders = currentDocumentOrder()
-  const source = orders.find((order) => order.docIds.includes(movingId))
-  const target = orders.find((order) => order.folderId === folderId)
-  if (!source || !target) return
-  const sourceIndex = source.docIds.indexOf(movingId)
-  source.docIds.splice(sourceIndex, 1)
-  if (source === target && sourceIndex < targetIndex) targetIndex--
-  target.docIds.splice(Math.max(0, Math.min(targetIndex, target.docIds.length)), 0, movingId)
-  pendingOrder = orders
-  await persistDocumentOrder()
-}
-async function persistDocumentOrder() {
-  if (!pendingOrder) return
-  treeSaveState.value = 'saving'
-  const ok = await data.reorderDocs(kbId.value, pendingOrder)
-  treeSaveState.value = ok ? 'saved' : 'error'
-  if (ok) {
-    pendingOrder = null
-    window.setTimeout(() => {
-      if (treeSaveState.value === 'saved') treeSaveState.value = 'idle'
-    }, 1800)
-  }
-}
 async function addFolder() {
   const id = await data.addFolder(kbId.value)
   if (id) {
-    renamingFolder.value = id
+    startFolderRename(id)
     toast('已创建文件夹', 'ri-folder-add-line')
   } else {
     toast('文件夹没有保存到服务器，请重试', 'ri-error-warning-line')
@@ -684,10 +707,15 @@ async function addFolder() {
 function editTitle(e: Event) {
   if (docId.value) data.setDocEdit(docId.value, { title: (e.target as HTMLInputElement).value })
 }
-function commitFolderName(folderId: string, e: Event) {
-  const name = (e.target as HTMLInputElement).value.trim()
-  data.renameFolder(kbId.value, folderId, name || '新建文件夹')
-  renamingFolder.value = null
+async function commitFolderName(folderId: string) {
+  if (renamingFolder.value !== folderId || folderRenameSaving.value) return
+  const name = folderNameDraft.value.trim()
+  if (!name) { folderRenameError.value = '名称不能为空'; return }
+  folderRenameSaving.value = true
+  const saved = await data.renameFolder(kbId.value, folderId, name)
+  folderRenameSaving.value = false
+  if (saved) { renamingFolder.value = null; folderRenameError.value = '' }
+  else folderRenameError.value = '重命名失败，输入已保留，按回车重试'
 }
 async function removeFolder(folderId: string) {
   const folder = kb.value?.folders.find((f) => f.id === folderId)
@@ -695,7 +723,8 @@ async function removeFolder(folderId: string) {
   const archivedCount = archivedDocs.value.filter((item) => item.folderId === folderId).length
   if (!window.confirm(`删除文件夹「${folder.name}」及其中 ${folder.docs.length + archivedCount} 篇文档（含已归档）？删除后会进入回收站，7 天内可恢复。`)) return
   const gone = folder.docs.includes(docId.value ?? '')
-  await data.deleteFolder(kbId.value, folderId)
+  try { await data.deleteFolder(kbId.value, folderId) }
+  catch { toast('删除失败，请先移出子分组后重试，目录未改变', 'ri-error-warning-line'); return }
   if (gone) docId.value = firstDocId()
   toast(`已把「${folder.name}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
 }
@@ -721,7 +750,8 @@ async function removeKb() {
 async function removeDoc(id: string) {
   const title = data.docOf(id).title || '未命名文档'
   if (!window.confirm(`删除文档「${title}」？删除后会进入回收站，7 天内可恢复。`)) return
-  await data.deleteDoc(id)
+  try { await data.deleteDoc(id) }
+  catch { toast('删除失败，请先移出子节点后重试，文档未改变', 'ri-error-warning-line'); return }
   if (docId.value === id) docId.value = firstDocId()
   toast(`已把「${title}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
 }
@@ -869,8 +899,23 @@ function switchKb(event: Event) {
   flushCurrentDoc()
   void router.push(`/kb/${(event.target as HTMLSelectElement).value}`)
 }
-async function createAction(action: string, folderId?: string) {
+async function createNested(action: string, parent: string) {
+  if (creatingDoc.value || treeSaveState.value === 'saving' || !kb.value) return
+  if (action === 'folder') {
+    const id = await data.addFolder(kbId.value)
+    if (!id) { toast('分组创建失败，请重试', 'ri-error-warning-line'); return }
+    await moveNode(parent, `f:${id}`)
+    startFolderRename(id)
+    return
+  }
+  const folderId = parent.startsWith('f:') ? parent.slice(2) : kb.value.folders.find(f => f.docs.includes(parent.slice(2)))?.id
+  if (!folderId) return
+  await createAction(action, folderId, parent)
+}
+const newDocParent = ref<string | null>(null)
+async function createAction(action: string, folderId?: string, parent?: string) {
   if (creatingDoc.value) return
+  newDocParent.value = parent ?? null
   if (action === 'folder') { await addFolder(); return }
   const target = folderId || currentFolderId.value || kb.value?.folders[0]?.id || await data.addFolder(kbId.value)
   if (!target) { toast('创建目录失败，请重试', 'ri-error-warning-line'); return }
@@ -879,7 +924,7 @@ async function createAction(action: string, folderId?: string) {
   if (action === 'doc') await createDocFrom()
 }
 function folderAction(action: string, id: string) {
-  if (action === 'rename') renamingFolder.value = id
+  if (action === 'rename') startFolderRename(id)
   else if (action === 'delete') void removeFolder(id)
 }
 async function docAction(action: string, id: string) {
@@ -897,9 +942,8 @@ async function docAction(action: string, id: string) {
 }
 async function confirmMove() {
   if (!moveDocId.value || !moveFolderId.value) return
-  draggingDocId.value = moveDocId.value
-  await dropDoc(moveFolderId.value, kb.value?.folders.find((folder) => folder.id === moveFolderId.value)?.docs.length ?? 0)
-  if (treeSaveState.value === 'saved') { folderOpen[moveFolderId.value] = true; moveDocId.value = null }
+  await moveNode(`f:${moveFolderId.value}`, `d:${moveDocId.value}`)
+  if (treeSaveState.value === 'saved') { folderOpen[`f:${moveFolderId.value}`] = true; moveDocId.value = null }
 }
 function openKbIconSettings() {
   openKbSettings()
@@ -946,60 +990,30 @@ async function saveKbSettings() {
         <p v-if="creatingDoc" class="tree-save">正在创建文档…</p>
         <div v-if="treeSaveState !== 'idle'" class="tree-save" :class="treeSaveState">
           <i :class="treeSaveState === 'saving' ? 'ri-loader-4-line spin' : treeSaveState === 'error' ? 'ri-error-warning-line' : 'ri-check-line'"></i>
-          <span>{{ treeSaveState === 'saving' ? '正在保存顺序' : treeSaveState === 'error' ? '顺序保存失败' : '顺序已保存' }}</span>
-          <button v-if="treeSaveState === 'error'" @click="persistDocumentOrder">重试</button>
+          <span>{{ treeSaveState === 'saving' ? '正在保存目录' : treeSaveState === 'error' ? '目录保存失败' : '目录已保存' }}</span>
+          <button v-if="treeSaveState === 'error'" @click="persistNodeMove()">重试</button>
         </div>
       </div>
 
       <div class="tree-search"><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" /></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
       <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
       <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
+      <p v-if="folderRenameError" role="alert">{{ folderRenameError }}</p>
       <div ref="treeElement" class="tree">
-        <p v-if="treeQuery.trim() && !searchedFolders.length" class="folder-empty">没有匹配的文件夹或文档</p>
-        <div v-for="f in searchedFolders" :key="f.id">
-          <div class="folder-row" @dragover.prevent @drop="dropDoc(f.id, f.docs.length)">
-            <input
-              v-if="renamingFolder === f.id"
-              class="folder-input"
-              :value="f.name"
-              autofocus
-              @keydown.enter="commitFolderName(f.id, $event)"
-              @blur="commitFolderName(f.id, $event)"
-            />
-            <template v-else>
-              <button class="folder-btn" :aria-expanded="treeQuery.trim() ? true : isOpen(f.id)" @click="toggleFolder(f.id)">
-                <i
-                  :class="isOpen(f.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"
-                  class="chev"
-                ></i>
-                <span class="folder-name">{{ f.name }}</span>
-                <span class="folder-count wao-tabular">{{ f.docs.length }}</span>
-              </button>
-              <ResourceMenu :label="`${f.name}的更多操作`" :items="folderItems" @select="folderAction($event, f.id)" />
-              <ResourceMenu :label="`在${f.name}新增内容`" icon="ri-add-line" :items="createItems" @select="createAction($event, f.id)" />
-            </template>
-          </div>
-          <div v-if="treeQuery.trim() || isOpen(f.id)" class="doc-tree">
-            <div
-              v-for="(dId, index) in f.docs"
-              :key="dId"
-              v-show="treeMatches(f.name, dId)"
-              class="doc-row"
-              :class="{ dragging: draggingDocId === dId }"
-              draggable="true"
-              @dragstart="startDocDrag(dId, $event)"
-              @dragend="draggingDocId = null"
-              @dragover.prevent
-              @drop.stop="dropDoc(f.id, index)"
-            >
-              <button class="doc-node" :class="{ on: docId === dId }" @click="selectDoc(dId)">
-                <span class="doc-node-title">{{ data.docOf(dId).title || '未命名文档' }}</span>
-              </button>
-              <ResourceMenu :label="`${data.docOf(dId).title || '文档'}的更多操作`" :items="docItems" @select="docAction($event, dId)" />
-              <ResourceMenu label="在同一分组新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event, f.id)" />
-            </div>
-            <div v-if="!f.docs.length" class="folder-empty" @dragover.prevent @drop="dropDoc(f.id, 0)">还没有文档 —— 点右侧 + 新建，也可把文档拖到这里</div>
-          </div>
+        <p v-if="directoryError" role="alert">{{ directoryError }}</p>
+        <div v-if="draggingNode?.startsWith('f:')" class="folder-empty" @dragover.prevent @drop.stop="moveNode('')">拖到这里移至根目录</div>
+        <p v-if="treeQuery.trim() && !mixedRows.length" class="folder-empty">没有匹配的文件夹或文档</p>
+        <div v-for="node in mixedRows" :key="node.key" :class="node.kind === 'folder' ? 'folder-row' : 'doc-row'"
+          :style="{ paddingLeft: `${node.depth * 16}px` }" :draggable="renamingFolder !== node.id && treeSaveState !== 'saving'"
+          @dragstart="startNodeDrag(node.key, $event)" @dragend="draggingNode = null" @dragover.prevent @drop.stop="moveNode(node.key)">
+          <button v-if="node.hasChildren" class="icon-act" :aria-label="`展开或收起${node.title}`" :aria-expanded="folderOpen[node.key] !== false" @click="folderOpen[node.key] = folderOpen[node.key] === false"><i class="chev" :class="folderOpen[node.key] === false ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
+          <input v-if="node.kind === 'folder' && renamingFolder === node.id" class="folder-input" v-model="folderNameDraft" :disabled="folderRenameSaving"
+            @keydown.enter.prevent="!$event.isComposing && commitFolderName(node.id)" @keydown.esc.prevent="renamingFolder = null; folderRenameError = ''" @blur="commitFolderName(node.id)" />
+          <button v-else :class="[node.kind === 'folder' ? 'folder-btn' : 'doc-node', { on: docId === node.id }]" :title="node.title" :aria-label="node.title" :aria-expanded="node.kind === 'folder' ? folderOpen[node.key] !== false : undefined" :data-node="node.key" :style="{ minWidth: 0 }" @click="node.kind === 'folder' ? (folderOpen[node.key] = folderOpen[node.key] === false) : selectDoc(node.id)">
+            <span :class="node.kind === 'folder' ? 'folder-name' : 'doc-node-title'" :style="{ color: docId === node.id ? 'var(--wao-primary)' : undefined }">{{ node.title }}</span>
+          </button>
+          <ResourceMenu :label="`${node.title}的更多操作`" :items="node.kind === 'folder' ? folderItems : docItems" @select="node.kind === 'folder' ? folderAction($event, node.id) : docAction($event, node.id)" />
+          <ResourceMenu :label="`在${node.title}新增内容`" icon="ri-add-line" :items="createItems" @select="createNested($event, node.key)" />
         </div>
 
         <section v-if="archivedDocs.length || archivedError || archivedLoading" class="archive-tree">
@@ -1045,6 +1059,7 @@ async function saveKbSettings() {
             <span class="ellip">{{ doc.title || '未命名文档' }}</span>
             <span v-if="base?.auto" class="tag-auto">自动沉淀</span>
             <span v-if="currentArchived" class="tag-archived">已归档</span>
+            <span class="document-save-status"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></span>
             <div class="spacer"></div>
 
             <!-- 协同：只有此刻真的打开着这篇文档的人才会出现 -->
@@ -1072,7 +1087,6 @@ async function saveKbSettings() {
             <label v-if="docId && !currentArchived" class="move-document">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
             <button ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
-            <SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" />
             <WeKnoraDocumentStatus v-if="docId && data.apiLive" :state="knowledgeSync.states.value[docId]" :error="knowledgeSync.error.value" :dirty="data.docPending(docId)" @retry="knowledgeSync.refresh" />
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
             <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
@@ -1189,6 +1203,7 @@ async function saveKbSettings() {
               polishable
               link-controls
               image-controls
+              :article-image-key="`document:${session.currentUser.id}:${docId}`"
               placeholder="开始写作…输入 / 插入内容块，支持 Markdown 和粘贴截图"
               :min-height="360"
               :peers="peers"
@@ -1320,6 +1335,7 @@ async function saveKbSettings() {
 </template>
 
 <style scoped>
+.document-save-status { flex: 0 0 185px; width: 185px; overflow: hidden; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .doc-info { color: var(--wao-text-weak); cursor: help; }
 .tree-search { padding: 6px 10px !important; }

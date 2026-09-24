@@ -43,8 +43,9 @@ public class MemberPreferenceController {
         if (cn.wayuwa.wao.service.NavigationLayoutService.PREFERENCE_KEY.equals(key)) {
             throw new BadRequestException("请使用个人导航接口保存布局，以保护跨设备修改");
         }
-        if (value == null || value.length() > MAX_VALUE_LENGTH) {
-            throw new BadRequestException("偏好值不能为空且不超过 " + MAX_VALUE_LENGTH + " 字符");
+        int limit = key.startsWith("task-order-v1:") ? 60_000 : MAX_VALUE_LENGTH;
+        if (value == null || value.length() > limit) {
+            throw new BadRequestException("偏好值不能为空且不超过 " + limit + " 字符");
         }
         mapper.upsert(currentMember.idOr(http, FALLBACK_OWNER), key, value);
         return ApiResponse.ok(null);

@@ -11,12 +11,13 @@ import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
 import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
-import { apiPatchDocTemplate, fetchDocTemplates, fetchDoc } from '@/api/board'
+import { apiMoveKnowledgeNode, apiPatchDocTemplate, fetchDocTemplates, fetchDoc } from '@/api/board'
 
 vi.mock('@/api/board', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/board')>()
   return {
     ...actual,
+    apiMoveKnowledgeNode: vi.fn<typeof actual.apiMoveKnowledgeNode>(),
     fetchDoc: vi.fn<typeof actual.fetchDoc>(),
     fetchDocTemplates: vi.fn<typeof actual.fetchDocTemplates>(),
     apiPatchDocTemplate: vi.fn<typeof actual.apiPatchDocTemplate>(),
@@ -81,6 +82,29 @@ describe('知识库详情目录体验', () => {
     return wrapper
   }
 
+  it('重命名期间后台刷新不覆盖输入，失败保留草稿并可重试', async () => {
+    const wrapper = await mountView('/kb/k3')
+    const data = useDataStore(pinia)
+    const folder = data.kbById('k3')!.folders[0]!
+    const menu = wrapper.findAllComponents({ name: 'ResourceMenu' }).find(item => item.props('label') === `${folder.name}的更多操作`)!
+    menu.vm.$emit('select', 'rename')
+    await flushPromises()
+    await wrapper.get('.folder-input').setValue('尚未输入完成的新名称')
+    data.kbById('k3')!.folders = data.kbById('k3')!.folders.map(f => ({ ...f }))
+    await flushPromises()
+    expect((wrapper.get('.folder-input').element as HTMLInputElement).value).toBe('尚未输入完成的新名称')
+    const rename = vi.spyOn(data, 'renameFolder').mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    await wrapper.get('.folder-input').trigger('keydown', { key: 'Enter', isComposing: true })
+    expect(rename).not.toHaveBeenCalled()
+    await wrapper.get('.folder-input').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('重命名失败')
+    expect((wrapper.get('.folder-input').element as HTMLInputElement).value).toBe('尚未输入完成的新名称')
+    await wrapper.get('.folder-input').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.find('.folder-input').exists()).toBe(false)
+  })
+
   it('保存失败显示服务端原因，成功后撤下错误与重试入口', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     const data = useDataStore(pinia)
@@ -128,18 +152,18 @@ describe('知识库详情目录体验', () => {
   it('首次进入全部展开，一键收起展开不改变文档，重新进入恢复展开', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     expect(wrapper.findAll('.folder-row')).toHaveLength(2)
-    expect(wrapper.findAll('.doc-tree')).toHaveLength(2)
+    expect(wrapper.findAll('.tree .doc-node')).toHaveLength(2)
     await wrapper.get('[aria-label="折叠全部目录"]').trigger('click')
-    expect(wrapper.findAll('.doc-tree')).toHaveLength(0)
+    expect(wrapper.findAll('.tree .doc-node')).toHaveLength(0)
     expect(wrapper.vm.$router.currentRoute.value.query.doc).toBe('d7')
     await wrapper.get('[aria-label="展开全部目录"]').trigger('click')
-    expect(wrapper.findAll('.doc-tree')).toHaveLength(2)
+    expect(wrapper.findAll('.tree .doc-node')).toHaveLength(2)
     await wrapper.get('[aria-label="折叠全部目录"]').trigger('click')
     useTabsStore(pinia).activeKey = 'notes'
     await wrapper.vm.$nextTick()
     useTabsStore(pinia).activeKey = 'kb:k3'
     await wrapper.vm.$nextTick()
-    expect(wrapper.findAll('.doc-tree')).toHaveLength(2)
+    expect(wrapper.findAll('.tree .doc-node')).toHaveLength(2)
     wrapper.unmount()
   })
 
@@ -149,22 +173,28 @@ describe('知识库详情目录体验', () => {
     const target = data.kbById('k3')!.folders.find(folder => !folder.docs.includes('d7'))!
     const scrolling = HTMLElement.prototype.scrollIntoView
     HTMLElement.prototype.scrollIntoView = vi.fn()
-    const order = vi.spyOn(data, 'reorderDocs')
+    const order = vi.mocked(apiMoveKnowledgeNode).mockImplementation(async (_kb, node, parent) => {
+      const saved = JSON.parse(JSON.stringify(data.kbById('k3')!))
+      for (const folder of saved.folders) folder.docs = folder.docs.filter((id: string) => id !== node.slice(2))
+      saved.folders.find((f: { id: string }) => f.id === parent.slice(2)).docs.push(node.slice(2))
+      saved.directory = { [node]: parent }
+      return saved
+    })
     try {
       await wrapper.get('[aria-label="搜索本知识库文件夹和文档"]').setValue('卡片盒')
       expect(wrapper.findAll('.folder-row')).toHaveLength(1)
-      expect(wrapper.get('.doc-tree').text()).toContain('卡片盒笔记法')
+      expect(wrapper.get('.tree .doc-node').text()).toContain('卡片盒笔记法')
       await wrapper.get('[title="定位当前文档"]').trigger('click')
       await flushPromises()
       expect(wrapper.find('.doc-node.on').exists()).toBe(true)
       const original = (wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value
       await wrapper.get('[aria-label="移动当前文档到文件夹"]').setValue(target.id)
       await flushPromises()
-      expect(order).toHaveBeenCalledWith('k3', expect.arrayContaining([expect.objectContaining({ folderId: target.id, docIds: expect.arrayContaining(['d7']) })]))
+      expect(order).toHaveBeenCalledWith('k3', 'd:d7', `f:${target.id}`, expect.any(String))
       expect(data.kbById('k3')!.folders.find(folder => folder.id === target.id)?.docs).toContain('d7')
       expect((wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value).toBe(original)
       expect(wrapper.find('.doc-node.on').exists()).toBe(true)
-    } finally { HTMLElement.prototype.scrollIntoView = scrolling; order.mockRestore() }
+    } finally { HTMLElement.prototype.scrollIntoView = scrolling; order.mockReset() }
   })
 
   it('从文档选区创建待办时不继承知识库项目并保留完整原文，并隔离不同选区草稿', async () => {

@@ -5,7 +5,7 @@ import { Modal } from 'ant-design-vue'
 import { useWeatherStore } from '@/stores/weather'
 import { searchWeatherLocations, type WeatherLocation } from '@/api/weather'
 import { weatherAdvice, weatherName, weatherTemperature, weatherErrorMessage } from '@/utils/weather'
-const props = defineProps<{ surface: 'rhythm' | 'calendar'; date: string; toolbar?: boolean }>()
+const props = defineProps<{ surface: 'rhythm' | 'calendar'; date: string; toolbar?: boolean; glance?: boolean }>()
 const weather = useWeatherStore()
 const settingsOpen = ref(false), searching = ref(false), locating = ref(false), searched = ref(false), locationError = ref('')
 const locations = ref<WeatherLocation[]>([])
@@ -58,17 +58,17 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
 </script>
 
 <template>
-  <section class="weather-panel" :class="{ 'weather-compact': compact, 'weather-toolbar': toolbar }" aria-label="天气与卦名设置">
+  <section class="weather-panel" :class="{ 'weather-compact': compact, 'weather-toolbar': toolbar, 'weather-glance': glance }" aria-label="天气与卦名设置">
     <header><strong>天气<span v-if="weather.prefs.location"> · {{ weather.prefs.location.name }}</span></strong><span v-if="!visible">已隐藏</span><button type="button" @click="settingsOpen ? closeSettings() : openSettings()" :aria-expanded="settingsOpen">天气设置</button></header>
     <p v-if="weather.loading">正在读取天气设置…</p>
     <p v-if="weather.error" role="alert">{{ weather.error }} <button v-if="!weather.loaded" @click="weather.load">重新读取</button></p>
     <template v-if="visible && weather.loaded">
       <p v-if="!weather.prefs.location">选择城市或使用当前位置，查看天气和出行提醒。</p>
       <p v-else-if="weather.forecasting">正在更新预报…</p>
-      <p v-else-if="weather.forecastError || weather.stale" role="alert">{{ weather.forecastError || '预报已超过半小时，请更新后查看' }} <button @click="weather.refresh">重试更新</button></p>
+      <p v-else-if="weather.forecastError || weather.stale" role="alert" :title="weather.forecastError || '预报已超过半小时，请更新后查看'">{{ glance ? '天气暂不可用' : weather.forecastError || '预报已超过半小时，请更新后查看' }} <button @click="weather.refresh">{{ glance ? '重试' : '重试更新' }}</button></p>
       <template v-else-if="weather.forecast">
         <div v-if="compact" class="weather-two-days">
-          <span v-for="day in twoDays" :key="day.date" :title="day.forecast ? weatherAdvice(day.forecast) : ''">
+          <span v-for="day in glance ? twoDays.slice(0, 1) : twoDays" :key="day.date" :title="day.forecast ? weatherAdvice(day.forecast) : ''">
             <b>{{ day.label }}</b>
             <template v-if="day.forecast">{{ weatherName(day.forecast.code) }} · {{ weatherTemperature(day.forecast) }}</template>
             <template v-else>暂无预报</template>
@@ -115,4 +115,5 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}header strong{fle
 .weather-toolbar .weather-two-days { margin: 0; }
 .weather-toolbar header button, .weather-toolbar .weather-two-days button { border-color: var(--wao-line-control); }
 .weather-toolbar header strong { font-weight: 500; }
+.weather-glance.weather-toolbar.weather-compact{border:0!important;padding:0!important;gap:6px 12px;justify-content:flex-end}.weather-glance header strong{max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.weather-glance p{margin:0}.weather-glance header button{padding:2px 5px}.weather-glance .weather-two-days{gap:8px}@media(max-width:900px){.weather-glance.weather-toolbar.weather-compact{justify-content:flex-start;width:100%}}
 </style>

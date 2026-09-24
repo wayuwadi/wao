@@ -16,10 +16,10 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** 内部只读任务的起始时间由数据库统一签发，不信任节点本地时钟。 */
     @Insert("""
             INSERT INTO ai_assistant_run
-                (id, member_id, ai_capability_id, web_search_enabled, status, prompt_text,
+                (id, member_id, ai_capability_id, usage_purpose, web_search_enabled, status, prompt_text,
                  created_at, updated_at)
             VALUES
-                (#{id}, #{memberId}, #{aiCapabilityId}, #{webSearchEnabled}, #{status}, #{promptText},
+                (#{id}, #{memberId}, #{aiCapabilityId}, #{usagePurpose}, #{webSearchEnabled}, #{status}, #{promptText},
                  CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
             """)
     int insertReadOnlyQueued(AiAssistantRunEntity run);
@@ -53,6 +53,14 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
              LIMIT 8
             """)
     List<AiAssistantRunEntity> selectProviderQueued();
+
+    /** 流式候选仅供预览；旧 worker 和终态不允许覆盖。 */
+    @Update("""
+            UPDATE ai_assistant_run SET response_text = #{response}, updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id} AND claim_token = #{claimToken} AND status = 'provider_running'
+            """)
+    int updateProviderPreview(@Param("id") String id, @Param("claimToken") String claimToken,
+            @Param("response") String response);
 
     /** 服务端 Provider 只允许持有本次 claim token 的 worker 写入成功终态。 */
     @Update("""
@@ -143,6 +151,16 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
             @Param("claimToken") String claimToken, @Param("runningStatus") String runningStatus,
             @Param("response") String response);
 
+    /** 仅当前图片任务的领取节点可登记已上传到图床的结果。 */
+    @Update("""
+            UPDATE ai_assistant_run SET response_text = #{url}, updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id} AND runner_id = #{runnerId} AND claim_token = #{claimToken}
+               AND usage_purpose = 'ARTICLE_IMAGE' AND status = 'secure_running'
+               AND response_text IS NULL
+            """)
+    int attachArticleImage(@Param("id") String id, @Param("runnerId") String runnerId,
+            @Param("claimToken") String claimToken, @Param("url") String url);
+
     /** 只允许实际持有运行的 Runner 提交一次失败结果。 */
     @Update("""
             UPDATE ai_assistant_run
@@ -189,7 +207,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
             SELECT id
               FROM ai_assistant_run
              WHERE status = 'secure_queued'
-               AND member_id LIKE 'internal-%'
+               AND (member_id LIKE 'internal-%' OR usage_purpose = 'ARTICLE_IMAGE')
                AND created_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
              ORDER BY id
             """)
@@ -203,7 +221,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
              WHERE id = #{id}
                AND status = 'secure_queued'
-               AND member_id LIKE 'internal-%'
+               AND (member_id LIKE 'internal-%' OR usage_purpose = 'ARTICLE_IMAGE')
                AND created_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
             """)
     int expireReadOnlyQueuedById(@Param("id") String id,
@@ -215,7 +233,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
             SELECT id
               FROM ai_assistant_run
              WHERE status = 'secure_running'
-               AND member_id LIKE 'internal-%'
+               AND (member_id LIKE 'internal-%' OR usage_purpose = 'ARTICLE_IMAGE')
                AND claimed_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
              ORDER BY id
             """)
@@ -229,7 +247,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
              WHERE id = #{id}
                AND status = 'secure_running'
-               AND member_id LIKE 'internal-%'
+               AND (member_id LIKE 'internal-%' OR usage_purpose = 'ARTICLE_IMAGE')
                AND claimed_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
             """)
     int expireReadOnlyRunningById(@Param("id") String id,

@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+docker run --rm --cpus=2 --memory=1g --pids-limit=256 \
+  --user "$(id -u):$(id -g)" \
+  -v "$PWD:/workspace" -w /workspace/wao-cli \
+  node:24.15.0-bookworm-slim npm test
+
+python3 deploy/jenkins/test-controller-health.py
+
 sh deploy/scripts/test-render-nginx-config.sh
 sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-activate-nginx-config.sh
@@ -12,6 +19,7 @@ sh deploy/scripts/test-validate-jvm-budget.sh
 sh deploy/scripts/test-ensure-codex-egress.sh
 sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
+bash deploy/jenkins/test-browser-release.sh
 bash deploy/jenkins/test-slave-rollout-state.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
@@ -93,6 +101,16 @@ test -f wao-web/public/amer_demo_6/enhancements.css
 test -f wao-web/public/amer_demo_6/enhancements.js
 grep -q 'IT Risk Management v6' wao-web/public/amer_demo_6/app.js
 grep -q 'amer-risk-demo-v3' wao-web/public/amer_demo_6/app.js
+grep -q 'location = /amer_demo_7' deploy/nginx/wao.wayuwa.cn.conf.template
+grep -q 'location \^~ /amer_demo_7/' deploy/nginx/wao.wayuwa.cn.conf.template
+test -f wao-web/public/amer_demo_7/index.html
+test -f wao-web/public/amer_demo_7/styles.css
+test -f wao-web/public/amer_demo_7/app.js
+test -f wao-web/public/amer_demo_7/enhancements.css
+test -f wao-web/public/amer_demo_7/enhancements.js
+grep -q 'IT Risk Management v7' wao-web/public/amer_demo_7/app.js
+grep -q 'IT Risk Management v7' wao-web/public/amer_demo_7/enhancements.js
+grep -q 'amer-risk-demo-v3' wao-web/public/amer_demo_7/app.js
 grep -q 'location = /amer_demo_2' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'location \^~ /amer_demo_2/' deploy/nginx/wao.wayuwa.cn.conf.template
 test -f wao-web/public/amer_demo_2/index.html

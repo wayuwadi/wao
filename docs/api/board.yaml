@@ -882,13 +882,50 @@ paths:
     post: { summary: 按 AI 工具、指定电脑与并发限制领取下一条任务（重跑的任务会带上 previousFailure）, responses: { '200': { description: 无可领取任务时 data 为 null } } }
   /ai/runner/assistant-v2/claim:
     post:
-      summary: 具备精确打包脚本哈希的 Codex Runner 领取一条无工具页面助手或内部安全只读任务
+      summary: 具备精确打包脚本哈希的 Codex Runner 领取一条页面助手、内部安全只读或文章配图任务
       description: >
         独立 v2 协议；旧 assistant 路由不存在，滚动发布期间不回退。内部任务从 secure_queued CAS 为 secure_running。
         响应的 claimToken 是本次 attempt 唯一凭据；maxRuntimeSeconds 由服务端硬超时扣除保护余量下发，Runner 用单调时钟执行。
       responses:
         '200': { description: 返回 AiAssistantClaim；无任务或哈希能力门禁不通过时 data 为 null }
         '401': { description: 节点令牌无效 }
+  /assistant/article-images:
+    post:
+      summary: 当前成员按正文和个人画面提示词创建一张开篇总览图
+      description: 同一成员同时只允许一个活动任务；只由已更新的 Linux Codex Runner 使用内置 ImageGen 执行。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [articleText, visualPrompt]
+              properties:
+                articleText: { type: string, minLength: 1, maxLength: 60000 }
+                visualPrompt: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '200': { description: 返回 id、QUEUED 状态和提示 }
+        '400': { description: 输入无效、已有活动任务或兼容 Runner 不可用 }
+  /assistant/article-images/{runId}:
+    get:
+      summary: 当前成员查询自己的文章总览图任务
+      parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: '返回 QUEUED/RUNNING/SUCCEEDED/FAILED；成功时 imageUrl 为 /api/images/{id}/raw' }
+        '404': { description: 不存在或不属于当前成员 }
+  /ai/runner/assistant-v2/{runId}/image:
+    post:
+      summary: 持有当前领取令牌的 Linux Runner 上传本次 ImageGen PNG
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: string } }
+        - { name: claimToken, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { multipart/form-data: { schema: { type: object, required: [image], properties: { image: { type: string, format: binary } } } } }
+      responses:
+        '200': { description: 返回既有图床 URL，当前领取重复上传幂等返回相同 URL }
+        '400': { description: 图片格式、尺寸或大小无效 }
+        '401': { description: Runner 或领取令牌无效 }
   /ai/runner/assistant-v2/{runId}/complete:
     post:
       summary: Runner 用 attempt token 回传无工具问答或内部只读分析结果

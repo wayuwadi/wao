@@ -9,11 +9,12 @@ describe('持久润色请求', () => {
   it('短请求轮询到结果，不重复调用生成接口', async () => {
     vi.useFakeTimers()
     vi.mocked(http.post).mockResolvedValue(response('QUEUED'))
-    vi.mocked(http.get).mockResolvedValueOnce(response('RUNNING')).mockResolvedValueOnce(response('SUCCEEDED', { polished: '结果' }))
+    vi.mocked(http.get).mockResolvedValueOnce(response('RUNNING', { preview: '半篇' })).mockResolvedValueOnce(response('SUCCEEDED', { polished: '结果' }))
     const progress = vi.fn()
     const pending = waitForPolish('原文', 'DOCUMENT', { requestId: 'fixed', onProgress: progress })
     await vi.runAllTimersAsync()
     expect((await pending).polished).toBe('结果')
+    expect(progress.mock.calls[1]?.[0].preview).toBe('半篇')
     expect(http.post).toHaveBeenCalledTimes(1)
     expect(progress.mock.calls.map(([job]) => job.status)).toEqual(['QUEUED', 'RUNNING', 'SUCCEEDED'])
   })

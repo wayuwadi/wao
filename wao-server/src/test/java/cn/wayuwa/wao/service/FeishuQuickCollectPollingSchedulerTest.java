@@ -82,10 +82,33 @@ class FeishuQuickCollectPollingSchedulerTest {
                 message("om_1", "user", false, "ou_bot"), "ou_bot")).isTrue();
         assertThat(FeishuQuickCollectPollingScheduler.eligible(
                 message("om_2", "user", false, "ou_person"), "ou_bot")).isFalse();
+        assertThat(FeishuQuickCollectPollingScheduler.eligible(
+                namedMessage("om_note", "小记创作"), "ou_bot")).isTrue();
+        assertThat(FeishuQuickCollectPollingScheduler.eligible(
+                namedMessage("om_task", "任务待办"), "ou_bot")).isTrue();
+        assertThat(FeishuQuickCollectPollingScheduler.eligible(
+                namedMessage("om_person", "普通成员"), "ou_bot")).isFalse();
     }
 
     @Test
-    void realtimePollingDefaultsToSixtySecondsAndHasNoHistoricalSweep() throws Exception {
+    void dedicatedBotsStillCollectWhenLegacyBotInfoIsUnavailable() {
+        enabled();
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+        when(feishu.botOpenId("token")).thenThrow(new RuntimeException("bot info unavailable"));
+        FeishuMessage note = namedMessage("om_note", "小记创作");
+        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
+                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
+                .thenReturn(List.of(note));
+
+        scheduler.poll();
+
+        verify(quickCollect).collectPolled("oc_chat", note);
+        verify(state).complete(org.mockito.ArgumentMatchers.eq("quick-realtime"),
+                org.mockito.ArgumentMatchers.anyString(), anyLong());
+    }
+
+    @Test
+    void realtimePollingDefaultsToTenMinutesAndHasNoHistoricalSweep() throws Exception {
         Scheduled scheduled = FeishuQuickCollectPollingScheduler.class
                 .getDeclaredMethod("poll").getAnnotation(Scheduled.class);
 
@@ -107,6 +130,23 @@ class FeishuQuickCollectPollingSchedulerTest {
         verify(state, never()).release(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
         scheduler.poll();
         verify(feishu, org.mockito.Mockito.times(1)).botOpenId("token");
+    }
+
+    @Test
+    void changingAppRetriesBotLookupAfterPreviousLookupFailed() {
+        enabled();
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app", "new-app");
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("old-token");
+        when(feishu.tenantAccessToken("new-app", "secret")).thenReturn("new-token");
+        when(feishu.botOpenId("old-token")).thenThrow(new RuntimeException("bot info unavailable"));
+        when(feishu.botOpenId("new-token")).thenReturn("new-bot");
+        when(feishu.listMessages(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong())).thenReturn(List.of());
+
+        scheduler.poll();
+        scheduler.poll();
+
+        verify(feishu).botOpenId("new-token");
     }
 
     @Test
@@ -145,5 +185,11 @@ class FeishuQuickCollectPollingSchedulerTest {
         return new FeishuMessage(id, "ou_sender", senderType, "text",
                 "{\"text\":\"@_user_1 记录任务：整理周报\"}", 1L, deleted,
                 List.of(new FeishuMention("@_user_1", mentionedOpenId, "WAO")));
+    }
+
+    private static FeishuMessage namedMessage(String id, String mentionName) {
+        return new FeishuMessage(id, "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 记下来\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "bot-id", mentionName)));
     }
 }
