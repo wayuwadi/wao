@@ -208,8 +208,8 @@ V7 仍为纯前端模拟页面，沿用 `amer-risk-demo-v3` 浏览器存储键�
 
 主站 `main` 由 Linux 主节点上的 Jenkins 构建和发布，GitHub 只负责仓库、签名 Webhook 和提交状态。
 Jenkins 使用 Linux1、云节点两套独立 SSH 密钥与严格 `known_hosts`；生产 `.env`、`.env.secrets` 和网关证书
-以 Linux2 主节点私有部署目录为准。CD 一次构建带 Git SHA 标签的镜像，按 Linux1 → Linux2 → 云前端顺序
-滚动发布；两台应用节点均运行同一 SHA 且通过直连验证后才标记成功。首次重建从库时在 Jenkins 手工运行
+以 Linux2 主节点私有部署目录为准。CD 一次构建带 Git SHA 标签的镜像，常规发布先更新 Linux1 并切换新版网页与普通公网 API，通知可先验证，再更新 Linux2；
+两台应用节点均运行同一 SHA 且通过直连验证后才标记最终成功。特殊迁移、从库重建和离线发布仍在两台应用节点完成后切换云端。首次重建从库时在 Jenkins 手工运行
 `wao-main-cd` 并勾选 `BOOTSTRAP_SLAVE`，正常发布不得自动重置已有从库。安装与恢复见
 [Jenkins runbook](jenkins/README.md)，决策见 [ADR-099](../docs/adr/099-self-hosted-jenkins-delivery.md)。
 登录 WAO 后可从左下角「链接 → Jenkins」查看构建与部署记录；公网入口继承 WAO 成员身份，不再要求或分发

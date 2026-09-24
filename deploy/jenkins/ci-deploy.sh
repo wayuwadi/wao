@@ -92,7 +92,8 @@ printf '%s\n' \
   'slave_status=not_started' 'slave_attempts=0' 'slave_detail=not_started' \
   'master_status=not_started' 'master_attempts=0' 'master_detail=not_started' \
   'cloud_status=not_started' 'cloud_detail=not_started' \
-  'verification_status=not_started' 'verification_detail=not_started' >"$status_file"
+  'verification_status=not_started' 'verification_detail=not_started' \
+  'early_status=not_started' >"$status_file"
 slave_deployed=false
 master_deployed=false
 master_drained=false
@@ -101,6 +102,7 @@ schema_rollout_complete=false
 linux_only_schema_rollout=false
 safe_slave_reachable=false
 slave_available=true
+early_browser_released=false
 safe_schema_rollout=false
 
 set_status() {
@@ -374,6 +376,8 @@ prepare_cloud_routing() {
 }
 
 deploy_cloud() {
+  local master_gateway_state=''
+  if [ "${1:-false}" = true ]; then master_gateway_state=' down'; fi
   # Stage verified immutable assets before changing the public entry page.
   # A disabled/offline slave never receives an incomplete release advertisement.
   python3 deploy/scripts/static-release.py pack wao-web/dist "$WAO_RUN_TEMP/wao-static.tgz" "$WAO_GIT_SHA" || return
@@ -403,6 +407,7 @@ deploy_cloud() {
   test -n "$master_gateway_ipv4"
   test -n "$slave_gateway_ipv4"
   MASTER_GATEWAY_IPV4="$master_gateway_ipv4" SLAVE_GATEWAY_IPV4="$slave_gateway_ipv4" \
+    MASTER_GATEWAY_STATE="$master_gateway_state" \
     WAO_NGINX_RENDER_OUTPUT=wao-nginx.conf sh deploy/scripts/render-nginx-config.sh
   retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" '
     set -eu
@@ -597,6 +602,32 @@ deploy_browser_only() {
   set_status cloud_detail "$WAO_GIT_SHA"
   set_status verification_status success
   set_status verification_detail '静态制品已校验发布，双节点健康且公共入口持续可用'
+  set_status publish_completed_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
+}
+
+verify_first_node_public() {
+  local short_sha version_html index_html hello
+  short_sha="${WAO_GIT_SHA:0:7}"
+  # 公网普通 API 只能命中新 Linux1；主节点专属 API 仍需等待最终发布。
+  ssh -o ConnectTimeout=15 wao-cloud '
+    test -f /run/wao-nginx-upstreams/master.down &&
+    test ! -f /run/wao-nginx-upstreams/slave.down &&
+    sed -n "/^upstream wao_gateway {/,/^}/p" /etc/nginx/conf.d/wao.wayuwa.cn.conf |
+      grep -m1 "^[[:space:]]*server " | grep -q " down "
+  ' || return 1
+  gateway_ready_from_cloud "$SLAVE_HOST" || return 1
+  version_html="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 8 \
+    -H 'Cache-Control: no-cache' \
+    "https://wao.wayuwa.cn/pluginWebUpdateNotice/web_version_by_plugin.json?t=$(date +%s)")" || return 1
+  printf '%s' "$version_html" | grep -Eq \
+    "\"version\"[[:space:]]*:[[:space:]]*\"${short_sha}\"" || return 1
+  index_html="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 8 \
+    -H 'Cache-Control: no-cache' \
+    "https://wao.wayuwa.cn/index.html?t=$(date +%s)")" || return 1
+  printf '%s' "$index_html" | grep -Fq "data-v=\"${short_sha}\"" || return 1
+  hello="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 8 \
+    https://wao.wayuwa.cn/api/hello)" || return 1
+  printf '%s' "$hello" | grep -q '"code":0'
 }
 
 if [ "${WAO_WEB_ONLY:-false}" = true ]; then
@@ -724,7 +755,35 @@ if ! install_master_deploy_helper; then
   exit 1
 fi
 
-if [ "$safe_schema_rollout" != true ]; then
+# 常规完整发布先让 Linux1 独立承载普通公网流量，再切换新版网页。
+# 首台可验证是阶段性状态，不能替代 Linux2 和最终健康检查的成功结论。
+if [ "$slave_deployed" = true ] && [ "$safe_schema_rollout" != true ] \
+    && [ "$BOOTSTRAP_SLAVE" != true ] && [ "$ALLOW_SLAVE_OFFLINE" != true ]; then
+  set_upstream_state master down || exit 1
+  master_drained=true
+  if ! deploy_cloud true >cloud.log 2>&1; then
+    set_status cloud_status failed
+    set_status cloud_detail '首台发布后云端网页或 Nginx 切换失败'
+    printf '\n===== cloud =====\n'; cat cloud.log
+    exit 1
+  fi
+  set_status cloud_status success
+  set_status cloud_detail "$WAO_GIT_SHA"
+  printf '\n===== cloud =====\n'; cat cloud.log
+  if ! verify_first_node_public; then
+    set_status verification_status failed
+    set_status verification_detail '首台公网版本、路由或 API 检查失败'
+    exit 1
+  fi
+  early_browser_released=true
+  set_status early_status ready
+  set_status early_ready_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
+  echo 'Linux1 与新版公网网页已就绪；通知用户可先验证普通功能，Linux2 继续发布。'
+  WAO_PIPELINE_RESULT=ready deploy/jenkins/notify-feishu.sh || \
+    echo 'WARNING: 首台可验证通知发送失败；继续发布 Linux2。' >&2
+fi
+
+if [ "$safe_schema_rollout" != true ] && [ "$early_browser_released" != true ]; then
   set_upstream_state master down || exit 1
 fi
 master_drained=true
@@ -789,15 +848,19 @@ if ! verify_jumpserver_assets >"$jumpserver_verify_log" 2>&1; then
 fi
 cat "$jumpserver_verify_log"
 
-if ! deploy_cloud >cloud.log 2>&1; then
-  set_status cloud_status failed
-  set_status cloud_detail '云端静态资源或 Nginx 发布失败'
+if [ "$early_browser_released" != true ]; then
+  if ! deploy_cloud >cloud.log 2>&1; then
+    set_status cloud_status failed
+    set_status cloud_detail '云端静态资源或 Nginx 发布失败'
+    printf '\n===== cloud =====\n'; cat cloud.log
+    exit 1
+  fi
+  set_status cloud_status success
+  set_status cloud_detail "$WAO_GIT_SHA"
   printf '\n===== cloud =====\n'; cat cloud.log
-  exit 1
+else
+  echo '新版网页已在首台就绪后发布；跳过重复云端上传。'
 fi
-set_status cloud_status success
-set_status cloud_detail "$WAO_GIT_SHA"
-printf '\n===== cloud =====\n'; cat cloud.log
 
 # 云端安装会重新渲染 Nginx 文件，并继承安装前的摘流状态。安装完成后立即恢复
 # 已验证节点，不能只依赖 EXIT trap，否则控制器安全重启可能让成功发布停留在单节点状态。
@@ -830,6 +893,7 @@ if [ "$slave_available" = true ]; then
 else
   set_status verification_detail 'Linux1 已显式摘流；Linux2、云端与公共入口检查通过'
 fi
+set_status publish_completed_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
 trap - EXIT
 restore_upstreams
 cleanup_deploy_inputs

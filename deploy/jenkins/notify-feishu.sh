@@ -4,7 +4,7 @@ set -eu
 : "${WAO_PIPELINE_RESULT:?WAO_PIPELINE_RESULT is required}"
 
 case "$WAO_PIPELINE_RESULT" in
-  success|failure) ;;
+  ready|success|failure) ;;
   *) echo "Unsupported WAO_PIPELINE_RESULT: $WAO_PIPELINE_RESULT" >&2; exit 2 ;;
 esac
 
@@ -13,7 +13,9 @@ esac
 # Jenkins 位于 Linux2，应用不再暴露旧的宿主机 8080 端口；与发布验收共用公网入口。
 # 应用只公开最终门禁结论，不向 Jenkins 暴露完整系统设置。首次发布旧版本尚无此接口、
 # 或应用本身故障时必须 fail-open，避免真正的发布故障连最后一条告警也丢失。
-policy_url="${WAO_NOTIFICATION_POLICY_URL:-https://wao.wayuwa.cn/api/public/notification-settings/jenkins-${WAO_PIPELINE_RESULT}}"
+policy_result="$WAO_PIPELINE_RESULT"
+if [ "$policy_result" = ready ]; then policy_result=success; fi
+policy_url="${WAO_NOTIFICATION_POLICY_URL:-https://wao.wayuwa.cn/api/public/notification-settings/jenkins-${policy_result}}"
 policy_response="$(curl --fail --silent --show-error --max-time 3 "$policy_url" 2>/dev/null || true)"
 policy_allowed="$(printf '%s' "$policy_response" \
   | jq -r '.data.allowed | if . == true then "true" elif . == false then "false" else empty end' \
@@ -25,7 +27,7 @@ if [ "$policy_allowed" = false ]; then
 fi
 
 # 成功消息不需要故障兜底：策略不可读时保持静默；失败告警仍按既有规则 fail-open。
-if [ "$WAO_PIPELINE_RESULT" = success ] && [ "$policy_allowed" != true ]; then
+if [ "$WAO_PIPELINE_RESULT" != failure ] && [ "$policy_allowed" != true ]; then
   echo 'Jenkins success notification skipped: notification policy unavailable.'
   exit 0
 fi
@@ -66,12 +68,33 @@ cloud_status="$(read_status cloud_status not_started)"
 cloud_detail="$(read_status cloud_detail 无状态)"
 verification_status="$(read_status verification_status not_started)"
 verification_detail="$(read_status verification_detail 无状态)"
+early_status="$(read_status early_status not_started)"
+early_ready_at="$(read_status early_ready_at '')"
+publish_completed_at="$(read_status publish_completed_at '')"
+
+now_epoch="$(date +%s)"
+publish_time="$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
+case "${WAO_BUILD_STARTED_EPOCH:-}" in
+  ''|*[!0-9]*) elapsed_detail='' ;;
+  *)
+    if [ "$WAO_BUILD_STARTED_EPOCH" -le "$now_epoch" ]; then
+      elapsed_seconds=$((now_epoch - WAO_BUILD_STARTED_EPOCH))
+      elapsed_detail="从拉取代码起 $((elapsed_seconds / 60)) 分 $((elapsed_seconds % 60)) 秒"
+    else
+      elapsed_detail=''
+    fi
+    ;;
+esac
 
 pipeline_kind='生产发布'
 if [ "${WAO_DEPLOY_REQUIRED:-true}" != true ]; then
   pipeline_kind='验证（无需部署）'
 elif [ "${DEPLOY_PRODUCTION:-false}" != true ]; then
   pipeline_kind='影子构建（未部署）'
+fi
+if [ "$WAO_PIPELINE_RESULT" = success ] && [ "$pipeline_kind" = '生产发布' ] \
+    && [ -n "$publish_completed_at" ]; then
+  publish_time="$publish_completed_at"
 fi
 
 failure_stage="${WAO_FAILURE_STAGE:-构建或发布}"
@@ -99,11 +122,26 @@ fi
 if [ "${#failure_reason}" -gt 240 ]; then
   failure_reason="$(printf '%s' "$failure_reason" | cut -c1-240)…"
 fi
+if [ "$early_status" = ready ]; then
+  failure_reason="${failure_reason}；Linux1 已可验证，双节点发布尚未完成"
+fi
+
+time_label='发布时间'
+if [ "$WAO_PIPELINE_RESULT" = failure ]; then
+  time_label='失败时间'
+elif [ "$pipeline_kind" != '生产发布' ]; then
+  time_label='完成时间'
+fi
+time_detail="**${time_label}** ${publish_time}（北京时间）"
+if [ -n "$elapsed_detail" ]; then
+  time_detail="$(printf '%s\n**耗时** %s' "$time_detail" "$elapsed_detail")"
+fi
 
 run_url="https://wao.wayuwa.cn/jenkins/job/wao-main-cd/${BUILD_NUMBER:-}/"
 payload="$(jq -n \
   --arg title "WAO ${pipeline_kind} ❌ 失败" \
   --arg reason "$failure_reason" \
+  --arg time_detail "$time_detail" \
   --arg run_url "$run_url" \
   '{
     msg_type:"interactive",
@@ -111,7 +149,7 @@ payload="$(jq -n \
       config:{wide_screen_mode:true},
       header:{template:"red",title:{tag:"plain_text",content:$title}},
       elements:[
-        {tag:"div",text:{tag:"lark_md",content:("**失败原因**\n"+$reason)}},
+        {tag:"div",text:{tag:"lark_md",content:("**失败原因**\n"+$reason+"\n"+$time_detail)}},
         {tag:"action",actions:[
           {tag:"button",text:{tag:"plain_text",content:"查看 Jenkins 详情"},url:$run_url,type:"primary"}
         ]}
@@ -119,7 +157,26 @@ payload="$(jq -n \
     }
   }')"
 
-if [ "$WAO_PIPELINE_RESULT" = success ]; then
+if [ "$WAO_PIPELINE_RESULT" = ready ]; then
+  if [ "$pipeline_kind" != '生产发布' ] || [ "$slave_status" != success ] \
+      || [ "$cloud_status" != success ] || [ "$early_status" != ready ]; then
+    echo 'Jenkins first-node notification skipped: browser verification entry is incomplete.' >&2
+    exit 0
+  fi
+  first_time="${early_ready_at:-$publish_time}"
+  payload="$(jq -n --arg title 'WAO 首台发布完成 ⏳ 可先验证' \
+    --arg first_time "$first_time" --arg elapsed "$elapsed_detail" \
+    --arg run_url "$run_url" \
+    '{msg_type:"interactive",card:{config:{wide_screen_mode:true},
+      header:{template:"blue",title:{tag:"plain_text",content:$title}},
+      elements:[
+        {tag:"div",text:{tag:"lark_md",content:("**首台就绪时间** "+$first_time+"（北京时间）\nLinux1 与公网网页已更新；普通功能可从正式网址先验证。Linux2 专属功能仍在更新，双节点完成后会再通知。"+(if $elapsed == "" then "" else "\n**耗时** "+$elapsed end))}},
+        {tag:"action",actions:[
+          {tag:"button",text:{tag:"plain_text",content:"打开 WAO 验证"},url:"https://wao.wayuwa.cn/",type:"primary"},
+          {tag:"button",text:{tag:"plain_text",content:"查看 Jenkins 进度"},url:$run_url,type:"default"}
+        ]}
+      ]}}')"
+elif [ "$WAO_PIPELINE_RESULT" = success ]; then
   if [ "$pipeline_kind" = '生产发布' ]; then
     if [ "$slave_status" != success ] || [ "$master_status" != success ] || [ "$cloud_status" != success ] || [ "$verification_status" != success ]; then
       echo 'Jenkins success notification skipped: production verification is incomplete.' >&2
@@ -132,14 +189,15 @@ if [ "$WAO_PIPELINE_RESULT" = success ]; then
   # 卡片只放提交标题；详细改动、原因与验收留在 Git 历史。
   changes="$(printf '%s' "${WAO_COMMIT_MESSAGE:-无提交摘要}" | jq -R -s -r 'split("\n") | map(select(length > 0)) | .[:8] | map(.[0:100]) | join("\n")')"
   payload="$(jq -n --arg title "WAO ${pipeline_kind} ✅ 成功" \
-    --arg detail "$success_detail" --arg changes "$changes" --arg run_url "$run_url" \
+    --arg detail "$success_detail" --arg changes "$changes" \
+    --arg time_detail "$time_detail" --arg run_url "$run_url" \
     '{msg_type:"interactive",card:{config:{wide_screen_mode:true},
       header:{template:"green",title:{tag:"plain_text",content:$title}},
-      elements:[{tag:"div",text:{tag:"lark_md",content:($detail+"\n**本次改动**\n"+$changes)}},
+      elements:[{tag:"div",text:{tag:"lark_md",content:($detail+"\n"+$time_detail+"\n**本次改动**\n"+$changes)}},
         {tag:"action",actions:[{tag:"button",text:{tag:"plain_text",content:"查看 Jenkins 详情"},url:$run_url,type:"primary"}]}]}}')"
 fi
 
-response="$(curl --fail --silent --show-error -X POST "$webhook" \
+response="$(curl --fail --silent --show-error --max-time 10 -X POST "$webhook" \
   -H 'Content-Type: application/json' --data "$payload")"
 printf '%s' "$response" | jq -e '(.code // .StatusCode // 0) == 0' >/dev/null
 echo "Jenkins $WAO_PIPELINE_RESULT notification delivered."
