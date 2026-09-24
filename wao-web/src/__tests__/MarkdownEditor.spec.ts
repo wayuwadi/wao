@@ -157,6 +157,7 @@ describe('MarkdownEditor（所见即所得）', () => {
     const w = await mountEditor({ modelValue: '**你好** [AB](https://example.com) 👨‍👩‍👧‍👦\n\n![图片](https://example.com/a.png)' })
     const count = () => w.get('[aria-label="当前正文字数"]').text()
     expect(count()).toBe('5 字')
+    expect(w.emitted('character-count')?.slice(-1)[0]).toEqual([5])
     const e = (w.vm as unknown as { editor: Editor }).editor
     e.chain().setTextSelection(2).insertContent('！').run()
     await nextTick()

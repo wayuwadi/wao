@@ -42,6 +42,7 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 const data = useDataStore()
 const session = useSessionStore()
 const noteEditors = new Map<string, { copyFormatted: () => Promise<void> }>()
+const noteCounts = ref<Record<string, number>>({})
 const previewImage = ref<NotePreviewImage | null>(null)
 const lightbox = ref<HTMLElement | null>(null)
 let imageTrigger: HTMLElement | null = null
@@ -245,11 +246,11 @@ onMounted(() => void loadPins())
         <article v-for="note in visible" :key="note.id" class="note-card" :class="{ highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
           tabindex="0" title="双击在卡片内编辑，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 在卡片内编辑`"
           @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)">
-          <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span></div>
+          <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
           <NoteComposer v-if="editingIds.includes(note.id)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
-          <div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" /></div>
+          <div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" @character-count="noteCounts[note.id] = $event" /></div>
           <div v-if="visibleImages.get(note.id)?.length" class="note-images" aria-label="小记图片">
             <button v-for="(image, index) in visibleImages.get(note.id)" :key="`${index}:${image.src}`" type="button"
               class="note-image-thumb" :aria-label="`查看第 ${index + 1} 张图片大图${image.alt ? `：${image.alt}` : ''}`" @click="openImage(image, $event)">
@@ -320,11 +321,14 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .note-card.highlighted, .note-card.editing { border-color: var(--wao-primary); }
 .note-card:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
 .note-meta { font-size: 11px; color: var(--wao-text-faint); margin-bottom: 16px; flex-wrap: wrap; }
+.note-meta-trailing { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; white-space: nowrap; }
+.note-count { color: var(--wao-text-faint); font-variant-numeric: tabular-nums; }
 .author { color: var(--wao-text-2); font-size: 12px; font-weight: 600; }
 .saved { color: var(--wao-success-strong); margin-left: auto; }
 .note-body { overflow-wrap: anywhere; line-height: 1.8; font-size: 14px; max-height: 500px; overflow: auto; }
 .note-body :deep(p:first-child) { margin-top: 0; }
 .note-body :deep(img.md-img) { display: none !important; }
+.note-body :deep(.character-count) { display: none !important; }
 .note-body :deep(pre), .note-body :deep(table) { max-width: 100%; overflow: auto; }
 .note-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .note-image-thumb { width: 112px; height: 76px; padding: 4px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-sub); overflow: hidden; }

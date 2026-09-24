@@ -161,6 +161,29 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
+  it('阅读态把不含图片地址的字数放到卡片顶部，编辑态保留编辑器字数', async () => {
+    const note = doc('count', '正文ABC!')
+    note.content = { version: 1, markdown: '![图片](/api/images/one/raw)\n\n正文ABC!', document: {
+      type: 'doc', content: [
+        { type: 'image', attrs: { src: '/api/images/one/raw', alt: '图片' } },
+        { type: 'paragraph', content: [{ type: 'text', text: '正文ABC!' }] },
+      ],
+    } }
+    useDataStore().docs.count = note
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }] })
+    await router.push('/notes')
+    const wrapper = mount(NotesView, { global: { plugins: [router] } })
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(wrapper.find('.note-meta .note-count').text()).toBe('6 字')
+    expect(wrapper.find('.note-body [aria-label="当前正文字数"]').exists()).toBe(true)
+    await wrapper.find('.card-edit').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.note-meta .note-count').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="当前正文字数"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('正文图片只在下方显示多张缩略图，点击后可看大图并关闭', async () => {
     const note = doc('images', '有图小记')
     note.content = { version: 1, markdown: '正文\n\n![图一](/api/images/one/raw)\n\n![图二](/api/images/two/raw)',

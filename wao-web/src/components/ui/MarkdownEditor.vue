@@ -167,6 +167,7 @@ const emit = defineEmits<{
   'caret-line': [line: number]
   'update:document': [value: RichDocNode]
   'content-change': [value: RichDocContent]
+  'character-count': [value: number]
   'upload-file': [file: File, done: (item: FileItem | null) => void]
   'add-task': [text: string]
   'task-opened': []
@@ -370,6 +371,7 @@ const characterCount = ref(0)
 function updateCharacterCount(e: Editor) {
   // 从正文读取，避免把 Markdown 标记、图片地址和附件元数据计入创作量。
   characterCount.value = countCharacters(e.state.doc.textContent)
+  emit('character-count', characterCount.value)
 }
 const toolbarOpen = ref(false)
 
