@@ -75,6 +75,34 @@ describe('列表内子任务', () => {
     expect(wrapper.findAll('.sub-number').map((node) => node.text())).toEqual(['0'])
     wrapper.unmount()
   })
+  it.each([true, false])('待验证可保存并留在未完成视图，用户可完成后重新打开（table=%s）', async (table) => {
+    const data = useDataStore()
+    const task = data.tasks[0]!
+    task.subs = [{ id: 'verify-sub', text: '等待用户验收', done: false }]
+    const wrapper = mount(InlineSubtasks, { props: { taskId: task.id, table, hideDone: true }, attachTo: document.body })
+    await wrapper.get('.sub-state').trigger('click')
+    const choice = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(node => node.textContent?.trim() === '待验证')!
+    expect(choice).toBeTruthy()
+    choice.click()
+    await flushPromises()
+    await data.flushTask(task.id)
+    expect(task.subs[0]).toMatchObject({ done: false, status: '待验证' })
+    expect(apiPutTask).toHaveBeenLastCalledWith(task.id, expect.objectContaining({ subs: [expect.objectContaining({ id: 'verify-sub', done: false, status: '待验证' })] }))
+    expect(wrapper.get('.sub-state').text()).toBe('待验证')
+    wrapper.unmount()
+    const restored = mount(InlineSubtasks, { props: { taskId: task.id, table, hideDone: true } })
+    expect(restored.get('.sub-state').text()).toBe('待验证')
+    data.setSubState(task.id, 'verify-sub', '已完成')
+    await flushPromises()
+    if (!table) await restored.get('.done-switch').trigger('click')
+    expect(restored.find('.sub-state').exists()).toBe(false)
+    data.setSubState(task.id, 'verify-sub', '未开始')
+    await flushPromises()
+    expect(restored.get('.sub-state').text()).toBe('未开始')
+    expect(task.subs[0]).toMatchObject({ done: false, status: null })
+    restored.unmount()
+  })
+
   it('新子任务显示 P2，调整只保存子任务自己的优先级', async () => {
     const data = useDataStore()
     const task = data.tasks[0]!
