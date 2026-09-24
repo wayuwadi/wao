@@ -65,6 +65,26 @@ class WebDavHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        if self.normalized() == "/webdav/redirect.bin":
+            if not self.authorized():
+                return
+            self.send_response(302)
+            self.send_header(
+                "Location", f"http://127.0.0.1:{self.server.server_port}/cdn/redirect.bin?token=signed"
+            )
+            self.end_headers()
+            return
+        if self.normalized() == "/cdn/redirect.bin":
+            if self.headers.get("Authorization") is not None:
+                self.send_response(400)
+                self.end_headers()
+                return
+            payload = b"downloaded-from-signed-cdn"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         if not self.authorized():
             return
         payload = self.files.get(self.normalized())
@@ -181,6 +201,12 @@ class WebDavClientTest(unittest.TestCase):
     def test_remote_path_traversal_is_rejected(self):
         with self.assertRaises(webdav.WebDavError):
             self.client.ensure_dir("WAO-backups/../outside")
+
+    def test_download_follows_signed_redirect_without_forwarding_app_password(self):
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "download.bin"
+            self.client.download("redirect.bin", destination)
+            self.assertEqual(destination.read_bytes(), b"downloaded-from-signed-cdn")
 
 
 if __name__ == "__main__":
