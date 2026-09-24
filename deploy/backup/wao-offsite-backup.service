@@ -1,6 +1,6 @@
 [Unit]
-Description=Create and upload encrypted WAO offsite backup
-After=network-online.target docker.service wao-jenkins-backup.service
+Description=Upload verified WAO peer recovery snapshot to 123 Cloud Drive
+After=network-online.target wao-peer-backup.service
 Wants=network-online.target
 ConditionPathExists=/etc/wao-backup/webdav.env
 ConditionPathExists=/etc/wao-backup/encryption-passphrase
@@ -10,7 +10,7 @@ StartLimitBurst=3
 [Service]
 Type=oneshot
 UMask=0077
-ExecStart=/usr/local/lib/wao-backup/create-offsite-backup.sh
+ExecStart=/usr/local/lib/wao-backup/upload-peer-offsite.sh
 Nice=10
 IOSchedulingClass=idle
 TimeoutStartSec=12h

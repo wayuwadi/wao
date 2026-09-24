@@ -136,11 +136,12 @@ class WebDavClient:
                 attempts=2,
             )
 
-    def upload(self, local_path: Path, remote_path: str) -> None:
+    def upload(self, local_path: Path, remote_path: str, force: bool = False) -> None:
         expected_size = local_path.stat().st_size
-        existing_size = self.stat_size(remote_path, missing_ok=True)
-        if existing_size == expected_size:
-            return
+        if not force:
+            existing_size = self.stat_size(remote_path, missing_ok=True)
+            if existing_size == expected_size:
+                return
         self._request("PUT", remote_path, file_path=local_path, expected={200, 201, 204})
         actual_size = self.stat_size(remote_path)
         if actual_size != expected_size:
@@ -272,6 +273,7 @@ def main() -> int:
     upload = subparsers.add_parser("upload")
     upload.add_argument("local_path", type=Path)
     upload.add_argument("remote_path")
+    upload.add_argument("--force", action="store_true")
     download = subparsers.add_parser("download")
     download.add_argument("remote_path")
     download.add_argument("local_path", type=Path)
@@ -292,11 +294,11 @@ def main() -> int:
         elif args.command == "ensure-dir":
             client.ensure_dir(args.remote_path)
         elif args.command == "upload":
-            client.upload(args.local_path, args.remote_path)
+            client.upload(args.local_path, args.remote_path, force=args.force)
         elif args.command == "download":
             client.download(args.remote_path, args.local_path)
         elif args.command == "stat":
-            print(client.stat_size(args.remote_path))
+            print(client.stat_size(args.remote_path, missing_ok=True))
         elif args.command == "list-dirs":
             print("\n".join(client.list_dirs(args.remote_path)))
         elif args.command == "delete":

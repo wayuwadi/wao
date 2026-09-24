@@ -136,6 +136,7 @@ install -d -m 0700 /etc/wao-backup
 install -d -m 0755 /usr/local/lib/wao-backup
 for backup_script in \
   configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
+  upload-peer-offsite.sh restore-peer-offsite.sh \
   create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
   install -m 0755 "$script_dir/../backup/$backup_script" \
     "/usr/local/lib/wao-backup/$backup_script"
