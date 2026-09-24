@@ -31,6 +31,20 @@ class WorkspaceMcpToolsTest {
             new WorkspaceMcpTokenService.AuthenticatedToken("token", "wd", true);
 
     @Test
+    void subtaskStatusToolRequiresWriterAndSnapshotAndPassesMember() throws Exception {
+        assertThat(tools.list(true).toString()).contains("update_subtask_status", "expected_subtask_version");
+        assertThat(tools.list(false).toString()).doesNotContain("update_subtask_status");
+        var args = json.readTree("{\"task_id\":\"t1\",\"subtask_id\":\"s1\",\"status\":\"待验证\",\"expected_subtask_version\":\"version\"}");
+        var reader = new WorkspaceMcpTokenService.AuthenticatedToken("token", "wd", false);
+        assertThatThrownBy(() -> tools.call("update_subtask_status", args, reader)).hasMessageContaining("没有写权限");
+        verify(tasks, never()).updateSubtaskStatus(any(), any(), any(), any(), any());
+        tools.call("update_subtask_status", args, writer);
+        verify(tasks).updateSubtaskStatus("t1", "s1", "待验证", "version", "wd");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) args).remove("expected_subtask_version");
+        assertThatThrownBy(() -> tools.call("update_subtask_status", args, writer)).hasMessageContaining("expected_subtask_version");
+    }
+
+    @Test
     void unfinishedTaskListDefaultsToCurrentOwnerAndVisibleProjects() throws Exception {
         TaskDto mine = task("mine", "wd", "待办");
         TaskDto others = task("other", "wg", "待办");

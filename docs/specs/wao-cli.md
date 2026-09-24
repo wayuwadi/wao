@@ -19,6 +19,7 @@
 | 项目读取 | `list_projects`、`get_project` | `projects list`、`projects get ID` |
 | 项目写入 | `create_project`、`update_project` | `projects create`、`projects update ID` |
 | 任务读取 | `list_open_tasks`、`get_task` | `tasks open`、`tasks get ID` |
+| 子任务状态 | `update_subtask_status` | `subtasks status ID` |
 | 任务写入 | `create_task`、`update_task` | `tasks create`、`tasks update ID` |
 | 知识库读取 | `list_knowledge_bases`、`get_knowledge_base` | `knowledge list`、`knowledge get ID` |
 | 知识库写入 | `create_knowledge_base`、`update_knowledge_base`、`move_knowledge_node` | `knowledge create`、`knowledge update ID`、`knowledge move` |
@@ -30,6 +31,12 @@
 
 新增或修改业务服务、HTTP API、MCP 工具时，在同一个需求中审视对应用户操作是否需要 CLI。需要时维护服务端工具目录或适当的认证接口、CLI 子命令、此台账及权限和端到端测试；暂不适合开放时，在相关规格或 ADR 中写明原因和以后触发条件。通用 `tools call` 让新增 MCP 工具可立即被显式调用，但不能代替常用命令的可发现性、帮助文案与测试。不得用“所有 API 自动映射”替代逐项权限设计。
 
-## 子任务待验证兼容
+## 子任务状态修改（2026-09-24）
 
-`get_task` 返回的内嵌子任务 `status` 可为「待验证」，此时 `done=false`。`update_task` 仅修改主任务，不支持独立子任务写入；CLI 同样不开放该操作，避免绕过子任务并发保护或扩大令牌权限。新增写入能力时需同步工具、权限、冲突测试和 CLI。
+用户明确要求开放独立子任务状态更新，新增 `update_subtask_status`，只向现有可读写令牌开放；每次调用继续检查成员项目可见性，只读令牌不可调用。`update_task` 仍仅修改主任务。
+
+必填参数：`task_id`、`subtask_id`、`status`、`expected_subtask_version`。状态为未开始、进行中、待验证或已完成。先 `get_task` 读取 `subtaskVersion`，将其作为 expected_subtask_version。服务端在事务行锁内校验版本，只修改目标子任务的 done/status 并追加活动记录，保留其他字段。冲突时返回工具错误并要求重读，不自动重试；返回更新后的主任务及新版本。历史无 id 的子任务使用 taskId#下标。
+
+待验证写入 done=false；完成时 done=true 并清除细分状态，重新打开为未开始时 done=false。AI 默认只推进到待验证，已完成由用户验收决定。
+
+CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expected-subtask-version VERSION`。部署后必须先通过实时 tools/list 确认新工具可见；不得在旧服务尚未部署时猜测调用。

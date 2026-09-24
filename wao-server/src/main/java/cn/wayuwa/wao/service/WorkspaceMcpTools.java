@@ -59,6 +59,9 @@ public class WorkspaceMcpTools {
             add(list, "update_project", "更新项目", "修改项目名称、目标、领域或状态。", schema(req("project_id", 1, 64), opt("name", 1, 120), opt("goal", 0, 2000), opt("area", 0, 40), opt("status", 1, 20)), false);
             add(list, "create_task", "创建任务", "在可见项目内创建任务，负责人默认为当前成员；沿用 WAO 现有任务创建通知规则。", schema(req("project_id", 1, 64), req("title", 1, 200), opt("description", 0, 20000), opt("due", 0, 20), opt("work_item_type", 1, 20)), false);
             add(list, "update_task", "更新任务", "修改任务名称、描述、状态、优先级或截止日期。", schema(req("task_id", 1, 64), opt("title", 1, 200), opt("description", 0, 20000), opt("status", 1, 20), opt("priority", 1, 10), opt("due", 0, 20)), false);
+            ObjectNode subtaskSchema = schema(req("task_id", 1, 64), req("subtask_id", 1, 128), req("status", 1, 20), req("expected_subtask_version", 1, 64));
+            ((ObjectNode) subtaskSchema.path("properties").path("status")).set("enum", json.valueToTree(List.of("未开始", "进行中", "待验证", "已完成")));
+            add(list, "update_subtask_status", "修改子任务状态", "仅修改一个子任务的状态；必须先 get_task 获取 subtaskVersion，冲突时重新读取，不覆盖其他字段。", subtaskSchema, false);
             add(list, "create_knowledge_base", "创建知识库", "创建 WAO 独立知识库，按站内现有成员共享范围可见。", schema(req("name", 1, 120), opt("description", 0, 2000)), false);
             add(list, "update_knowledge_base", "更新知识库", "修改知识库名称或简介。", schema(req("kb_id", 1, 64), opt("name", 1, 120), opt("description", 0, 2000)), false);
             add(list, "create_folder", "创建文件夹", "在知识库根目录新建文件夹。", schema(req("kb_id", 1, 64), req("name", 1, 120)), false);
@@ -101,6 +104,9 @@ public class WorkspaceMcpTools {
                             status(arguments, "status", TASK_STATUSES), status(arguments, "priority", TASK_PRIORITIES),
                             null, optional(arguments, "description", 20000), null,
                             optional(arguments, "due", 20)), member);
+            case "update_subtask_status" -> tasks.updateSubtaskStatus(required(arguments, "task_id", 64),
+                    required(arguments, "subtask_id", 128), required(arguments, "status", 20),
+                    required(arguments, "expected_subtask_version", 64), member);
             case "create_knowledge_base" -> createKb(arguments);
             case "update_knowledge_base" -> updateKb(arguments, member);
             case "create_folder" -> knowledge.createFolder(accessibleKb(required(arguments, "kb_id", 64), member).id(),
