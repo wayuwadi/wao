@@ -72,6 +72,42 @@ class FeishuLinkPreviewServiceTest {
     }
 
     @Test
+    void notePreviewShowsPublicImageAndShortTextWithoutTimestampOrImageAlt() throws Exception {
+        var content = new cn.wayuwa.wao.dto.RichDocContentDto(1,
+                json.readTree("""
+                        {"type":"doc","content":[{"type":"image","attrs":{"src":"/api/images/cover_1/raw","alt":"文章总览图"}}]}
+                        """), "![文章总览图](/api/images/cover_1/raw)\n\n" + "小记正文".repeat(40));
+        when(share.shareDoc("note1")).thenReturn(new SharedDocDto(
+                "note1", "真实标题", true, "notes", "2026-09-24T22:32:41", content.markdown(), content));
+
+        JsonNode result = json.valueToTree(service.preview(event(BASE + "/s/d/note1"), BASE));
+        JsonNode elements = result.path("card").path("data").path("elements");
+
+        assertThat(result.path("inline").path("i18n_title").path("zh_cn").asText())
+                .isEqualTo("WAO 小记 · 真实标题");
+        assertThat(elements.get(0).path("text").path("content").asText())
+                .isEqualTo("![小记配图](" + BASE + "/api/images/cover_1/raw)");
+        assertThat(elements.get(1).path("text").path("content").asText())
+                .startsWith("小记正文").endsWith("…").hasSize(80);
+        assertThat(result.toString()).doesNotContain("文章总览图", "更新于", "2026-09-24T22:32:41");
+        assertThat(elements.get(2).path("actions").get(0).path("url").asText())
+                .isEqualTo(BASE + "/s/d/note1");
+    }
+
+    @Test
+    void noteImageFallsBackToLegacyMarkdownAndRejectsExternalSources() {
+        when(share.shareDoc("old")).thenReturn(new SharedDocDto("old", "旧小记", true, "notes", "",
+                "![外部](https://elsewhere.example/x.png)\n![配图](/api/images/old/raw)\n正文"));
+
+        JsonNode result = json.valueToTree(service.preview(event(BASE + "/api/share/docs/old.md"), BASE));
+
+        assertThat(result.path("card").path("data").path("elements").get(0)
+                .path("text").path("content").asText())
+                .isEqualTo("![小记配图](" + BASE + "/api/images/old/raw)");
+        assertThat(result.toString()).doesNotContain("elsewhere.example");
+    }
+
+    @Test
     void tianrenPreviewShowsRealHexagramsAndLatestPublicReflection() {
         var qian = new TianrenHexagramDto(1, "乾为天", "䷀",
                 new TianrenTrigramDto("乾", "天", "☰"), new TianrenTrigramDto("乾", "天", "☰"));
