@@ -6,8 +6,10 @@ import { after, before, test } from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { COMMANDS, argumentsForTool, formatOutput, run } from '../src/cli.js'
 import { createClient, endpoint } from '../src/client.js'
+import { normalizeWorkspaceToken, readToken } from '../src/auth.js'
 
 let server, url, lastCall
+const WORKSPACE_TOKEN = `wao_workspace_${'A'.repeat(43)}`
 const ALL_TOOLS = [
   { name: 'list_projects', inputSchema: { properties: {}, required: [] }, annotations: { readOnlyHint: true } },
   { name: 'list_open_tasks', inputSchema: { properties: { mine_only: { type: 'boolean' }, limit: { type: 'integer' }, project_id: { type: 'string' } }, required: [] }, annotations: { readOnlyHint: true } },
@@ -22,7 +24,7 @@ before(async () => {
     for await (const chunk of request) chunks.push(chunk)
     const body = JSON.parse(Buffer.concat(chunks).toString())
     response.setHeader('Content-Type', 'application/json')
-    if (request.headers.authorization !== 'Bearer good-token') {
+    if (!['Bearer good-token', `Bearer ${WORKSPACE_TOKEN}`].includes(request.headers.authorization)) {
       response.statusCode = 401
       response.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, error: { message: 'denied' } }))
       return
@@ -65,6 +67,26 @@ test('通用调用可使用服务端新增工具，无需更新 CLI 子命令', 
   assert.match(out.text, /hello/)
   await assert.rejects(() => run(['tools', 'call', 'future_tool', '--input', '{"value":"fail"}', '--url', url],
     { tokenProvider: async () => 'good-token', stdout: out.stream }), /业务规则拒绝/)
+})
+
+test('登录接受真实工作区令牌前缀和复制的完整连接说明', async () => {
+  const instruction = `请将以下 WAO MCP Server 添加到当前客户端。\nToken：${WORKSPACE_TOKEN}\n验证 tools/list。`
+  assert.equal(normalizeWorkspaceToken(WORKSPACE_TOKEN), WORKSPACE_TOKEN)
+  assert.equal(normalizeWorkspaceToken(instruction), WORKSPACE_TOKEN)
+  assert.throws(() => normalizeWorkspaceToken('请将以下 WAO MCP Server 添加到当前客户端。'), /wao_workspace_/)
+  assert.throws(() => normalizeWorkspaceToken(`wao_mcp_${'A'.repeat(43)}`), /记忆 MCP/)
+  let stored
+  await run(['auth', 'login', '--token-stdin', '--url', url], {
+    stdin: Readable.from([instruction]), stdout: output().stream,
+    tokenStore: async token => { stored = token },
+  })
+  assert.equal(stored, WORKSPACE_TOKEN)
+  const tty = Readable.from([Buffer.from('请将以下 WAO MCP Server 添加到当前客户端。\n'),
+    Buffer.from(`服务名称：WAO\nToken：${WORKSPACE_TOKEN}\n`)])
+  tty.isTTY = true
+  tty.setRawMode = () => {}
+  const entered = await readToken({ stdin: tty, stdout: output().stream })
+  assert.equal(normalizeWorkspaceToken(entered), WORKSPACE_TOKEN)
 })
 
 test('令牌失效、只读权限和参数错误均阻止调用', async () => {
