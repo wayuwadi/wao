@@ -16,4 +16,15 @@ describe('混合知识库目录', () => {
   it('新节点和已删除目标的历史关系不会导致文档消失', () => {
     expect(directoryRows({ ...kb, directory: { 'd:x': 'f:deleted' } }, id => id, {}, '').map(n => n.key)).toContain('d:x')
   })
+  it('完整目录快照使用显式顺序，旧关系快照仍按原有列表排序', () => {
+    const ordered = { ...kb, directory: { 'f:a': '', 'f:b': '', 'd:y': 'f:b', 'd:x': 'f:a' } }
+    expect(directoryRows(ordered, id => id, {}, '').map(n => n.key)).toEqual(['f:a', 'd:x', 'f:b', 'd:y'])
+    ordered.directory = { 'f:b': '', 'd:y': 'f:b', 'f:a': '', 'd:x': 'f:a' }
+    expect(directoryRows(ordered, id => id, {}, '').map(n => n.key)).toEqual(['f:a', 'd:x', 'f:b', 'd:y'])
+    ordered.directory = { 'd:x': 'f:a', 'd:y': 'f:b', 'f:a': '', 'f:b': '' }
+    expect(directoryRows({ ...ordered, directoryOrder: ['f:b', 'd:y', 'f:a', 'd:x'] }, id => id, {}, '').map(n => n.key))
+      .toEqual(['f:b', 'd:y', 'f:a', 'd:x'])
+    expect(directoryRows({ ...ordered, folders: [...ordered.folders, { id: 'c', name: '新分组', docs: [] }], directoryOrder: ['f:b', 'd:y', 'f:a', 'd:x'] }, id => id, {}, '').map(n => n.key))
+      .toEqual(['f:b', 'd:y', 'f:a', 'd:x', 'f:c'])
+  })
 })

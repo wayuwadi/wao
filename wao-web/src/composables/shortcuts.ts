@@ -84,7 +84,6 @@ export function useShortcuts() {
   function runConfiguredAction(action: ConfigurableShortcutAction) {
     if (action === 'new-task') ui.openModal('task')
     else if (action === 'new-note') ui.openModal('note')
-    else ui.openChat()
   }
 
   function onKey(e: KeyboardEvent) {

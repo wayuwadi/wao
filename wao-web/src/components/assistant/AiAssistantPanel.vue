@@ -20,8 +20,6 @@ import {
 } from '@/api/assistant'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { isDesktopWorkspace } from '@/utils/desktopWorkspace'
-import WaoWebPet from '@/components/assistant/WaoWebPet.vue'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 
@@ -696,7 +694,6 @@ onBeforeUnmount(stopStatusRefresh)
       </div>
     </Transition>
 
-    <WaoWebPet v-if="!isDesktopWorkspace() && !open && !embedded && router.currentRoute.value.name !== 'pet-world'" :assistant-status="assistantStatus" />
   </Teleport>
 </template>
 

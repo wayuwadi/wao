@@ -6,7 +6,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/composables/toast'
 import { useIsMobile } from '@/composables/viewport'
 import { useMenuDrag } from '@/composables/menuDrag'
-import { useUiStore } from '@/stores/ui'
 import { useNavStore } from '@/stores/nav'
 import { useSessionStore } from '@/stores/session'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -26,7 +25,6 @@ import QuickLinks from '@/components/nav/QuickLinks.vue'
 
 const emit = defineEmits<{ (e: 'open-search'): void }>()
 
-const ui = useUiStore()
 const nav = useNavStore()
 const session = useSessionStore()
 const favorites = useFavoritesStore()
@@ -238,20 +236,6 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
       }}<button @click="router.push('/settings?tab=navigation')">处理未保存的布局</button>
     </div>
     <nav ref="menuRef" class="menu" aria-label="模块导航">
-      <div v-if="desktopToolbar" class="items">
-        <button
-          class="item"
-          :class="{ active: ui.chatOpen, center: nav.collapsed }"
-          title="聊天"
-          data-chat-trigger
-          @click="ui.toggleChat()"
-        >
-          <i class="ri-chat-3-line"></i><span v-if="!nav.collapsed" class="item-label">聊天</span
-          ><span v-if="ui.chatUnreadCount" class="side-chat-unread">{{
-            ui.chatUnreadCount > 99 ? '99+' : ui.chatUnreadCount
-          }}</span>
-        </button>
-      </div>
       <template v-for="g in groups" :key="g.id">
         <button
           v-if="g.label && !nav.collapsed"

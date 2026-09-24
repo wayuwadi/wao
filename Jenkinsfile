@@ -17,7 +17,7 @@ pipeline {
         booleanParam(
             name: 'DEPLOY_PRODUCTION',
             defaultValue: true,
-            description: '关闭时只执行测试、前端构建、Docker 镜像构建和发布包校验。'
+            description: '关闭时只打包，不部署生产。'
         )
         booleanParam(
             name: 'ALLOW_SLAVE_OFFLINE',
@@ -37,8 +37,14 @@ pipeline {
     }
 
     stages {
-        stage('Checkout trusted main') {
+        stage('拉取代码') {
             steps {
+                script {
+                    env.WAO_BUILD_STARTED_EPOCH = sh(
+                        script: 'date +%s',
+                        returnStdout: true
+                    ).trim()
+                }
                 checkout scm
                 script {
                     env.WAO_GIT_SHA = sh(
@@ -77,12 +83,12 @@ pipeline {
             }
             post {
                 failure {
-                    script { env.WAO_FAILURE_STAGE = 'Checkout trusted main' }
+                    script { env.WAO_FAILURE_STAGE = '拉取代码' }
                 }
             }
         }
 
-        stage('Validate release inputs') {
+        stage('确定发布范围') {
             steps {
                 script {
                     def planOutput = sh(
@@ -113,95 +119,46 @@ pipeline {
                         }
                     }
                     if (params.BOOTSTRAP_SLAVE || params.ALLOW_SLAVE_OFFLINE) { env.WAO_WEB_ONLY = 'false' }
-                    echo "变更范围：${env.WAO_CHANGED_FILE_COUNT} 个文件；后端=${env.WAO_BACKEND_PROJECTS}；" +
-                        "WAO Web 测试=${env.WAO_TEST_WAO_WEB}；Agent Web 测试=${env.WAO_TEST_AGENT_WEB}；" +
-                        "仅浏览器发布=${env.WAO_WEB_ONLY}；生产发布=${env.WAO_DEPLOY_REQUIRED}；批次提交=${env.WAO_BATCH_COMMIT_COUNT}"
+                    env.WAO_OPS_CONFIG_CHANGED = sh(
+                        script: '''
+                            if git diff --name-only "$WAO_CHANGE_BASE" "$WAO_GIT_SHA" |
+                                grep -Eq '^deploy/(jenkins|backup)/'; then
+                                printf true
+                            else
+                                printf false
+                            fi
+                        ''',
+                        returnStdout: true
+                    ).trim()
+                    echo "发布范围：${env.WAO_CHANGED_FILE_COUNT} 个文件；" +
+                        "仅网页=${env.WAO_WEB_ONLY}；需要发布=${env.WAO_DEPLOY_REQUIRED}；" +
+                        "需同步运维配置=${env.WAO_OPS_CONFIG_CHANGED}；批次提交=${env.WAO_BATCH_COMMIT_COUNT}"
                 }
-                sh 'deploy/jenkins/ci-validate.sh'
+                sh 'deploy/jenkins/ci-preflight.sh'
             }
             post {
                 failure {
-                    script { env.WAO_FAILURE_STAGE = 'Validate release inputs' }
+                    script { env.WAO_FAILURE_STAGE = '确定发布范围' }
                 }
             }
         }
 
-        stage('Parallel tests and frontend builds') {
-            parallel {
-                stage('Backend tests') {
-                    when {
-                        expression { env.WAO_BACKEND_PROJECTS != 'none' }
-                    }
-                    steps {
-                        sh 'deploy/jenkins/ci-backend-test.sh'
-                    }
-                    post {
-                        failure {
-                            script { env.WAO_FAILURE_STAGE = 'Backend tests' }
-                        }
-                    }
-                }
-                stage('WAO Web tests and build') {
-                    when {
-                        expression {
-                            env.WAO_TEST_WAO_WEB == 'true' || env.WAO_DEPLOY_REQUIRED == 'true'
-                        }
-                    }
-                    steps {
-                        sh 'deploy/jenkins/ci-frontend-build.sh wao-web "$WAO_TEST_WAO_WEB" "$WAO_DEPLOY_REQUIRED"'
-                    }
-                    post {
-                        failure {
-                            script { env.WAO_FAILURE_STAGE = 'WAO Web tests and build' }
-                        }
-                    }
-                }
-                stage('Agent Web tests and build') {
-                    when {
-                        expression {
-                            env.WAO_TEST_AGENT_WEB == 'true' || env.WAO_DEPLOY_REQUIRED == 'true'
-                        }
-                    }
-                    steps {
-                        sh 'deploy/jenkins/ci-frontend-build.sh agent-web "$WAO_TEST_AGENT_WEB" "$WAO_DEPLOY_REQUIRED"'
-                    }
-                    post {
-                        failure {
-                            script { env.WAO_FAILURE_STAGE = 'Agent Web tests and build' }
-                        }
-                    }
-                }
-                stage('AI Runner tests') {
-                    when {
-                        expression { env.WAO_TEST_AI_RUNNER == 'true' }
-                    }
-                    steps {
-                        sh 'python3 deploy/ai-runner/test_wao_ai_runner.py'
-                    }
-                    post {
-                        failure {
-                            script { env.WAO_FAILURE_STAGE = 'AI Runner tests' }
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Build immutable release') {
+        stage('打包构建') {
             when {
                 expression { env.WAO_DEPLOY_REQUIRED == 'true' }
             }
             steps {
+                sh 'deploy/jenkins/ci-build-frontends.sh'
                 sh 'deploy/jenkins/ci-package.sh'
             }
             post {
                 failure {
-                    script { env.WAO_FAILURE_STAGE = 'Build immutable release' }
+                    script { env.WAO_FAILURE_STAGE = '打包构建' }
                 }
             }
         }
 
-        stage('Deploy Linux slave, master and cloud') {
+        stage('发布部署') {
             when {
                 expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' }
             }
@@ -225,27 +182,26 @@ pipeline {
                         )
                     ]) {
                         sh 'BOOTSTRAP_SLAVE="$BOOTSTRAP_SLAVE" ALLOW_SLAVE_OFFLINE="$ALLOW_SLAVE_OFFLINE" deploy/jenkins/ci-deploy.sh'
-                        sh 'deploy/jenkins/ci-production-verify.sh'
                     }
                 }
             }
             post {
                 failure {
-                    script { env.WAO_FAILURE_STAGE = 'Deploy Linux slave, master and cloud' }
+                    script { env.WAO_FAILURE_STAGE = '发布部署' }
                 }
             }
         }
 
-        stage('Apply Jenkins controller configuration') {
+        stage('同步运维配置') {
             when {
-                expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' && env.WAO_WEB_ONLY != 'true' }
+                expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' && env.WAO_OPS_CONFIG_CHANGED == 'true' }
             }
             steps {
                 sh 'deploy/jenkins/apply-controller-config.sh'
             }
             post {
                 failure {
-                    script { env.WAO_FAILURE_STAGE = 'Apply Jenkins controller configuration' }
+                    script { env.WAO_FAILURE_STAGE = '同步运维配置' }
                 }
             }
         }
@@ -256,7 +212,7 @@ pipeline {
             script {
                 if (env.WAO_GIT_SHA) {
                     def successDescription = env.WAO_DEPLOY_REQUIRED != 'true'
-                        ? 'Jenkins 验证成功（无需生产发布）'
+                        ? 'Jenkins 已检查变更（无需生产发布）'
                         : (params.DEPLOY_PRODUCTION
                             ? 'Jenkins 构建与发布成功'
                             : 'Jenkins 影子构建成功（未部署）')

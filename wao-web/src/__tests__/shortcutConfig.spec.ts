@@ -21,12 +21,10 @@ describe('可配置快捷键', () => {
 
   it('拒绝同一作用域重复并保留安全默认值', () => {
     const settings = cloneShortcutSettings()
-    settings.window.chat = settings.window['new-note']
+    settings.window['new-task'] = settings.window['new-note']
     expect(validateShortcutSettings(settings)).toContain('不能重复')
-    expect(
-      parseShortcutSettings({ window: { chat: 'bad key' }, global: { 'new-note': '' } }).window
-        .chat,
-    ).toBe('Alt+F')
+    expect(parseShortcutSettings({ window: { chat: 'Alt+F' }, global: { 'new-note': '' } }))
+      .not.toHaveProperty('window.chat')
     expect(parseShortcutSettings({ global: { 'new-note': '' } }).global['new-note']).toBe('')
   })
 })

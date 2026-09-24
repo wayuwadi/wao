@@ -4,6 +4,8 @@
 
 在终端和脚本中使用 `wao` 操作已获授权的 WAO 业务能力，并让 Codex 等 AI 可通过标准命令调用。首版直接使用工作区 MCP；认证与权限由服务端设备令牌决定，CLI 不绕过业务服务，也不因为新增 HTTP API 就自动开放新能力。
 
+人工托管 HTML 的存储兼容层只改变既有公开页面的浏览器运行方式，不新增 HTTP API、MCP 工具或 CLI 命令；CLI 当前不负责二进制 HTML 上传。
+
 ## 命令与契约
 
 - Node.js 22+；仓库内 `wao-cli` 包通过 `npm link` 提供 `wao` 命令。默认远程地址为 `https://wao.wayuwa.cn/api/mcp/workspace`。

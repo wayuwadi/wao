@@ -9,6 +9,7 @@ images_path="${5:?Image archive path is required}"
 image_tag="${6:?Image tag is required}"
 snapshot_path="${7:-}"
 target_root="${8:-${HOME}/deploy/wao}"
+image_manifest_path="${9:-}"
 
 case "${image_tag}" in
   *[!A-Za-z0-9_.-]*|'') echo 'Invalid image tag.' >&2; exit 2 ;;
@@ -23,12 +24,14 @@ esac
 
 for required_file in \
   "${archive_path}" "${private_env_path}" "${shared_env_path}" \
-  "${certificate_path}" "${images_path}"; do
+  "${certificate_path}"; do
   test -f "${required_file}" || {
     echo "Release input not found: ${required_file}" >&2
     exit 1
   }
 done
+if [ "${images_path}" != - ]; then test -f "${images_path}"; fi
+if [ -n "${image_manifest_path}" ]; then test -f "${image_manifest_path}"; fi
 if [ -n "${snapshot_path}" ]; then
   test -s "${snapshot_path}" || {
     echo "Replica snapshot not found or empty: ${snapshot_path}" >&2
@@ -57,7 +60,9 @@ flock -w 600 9 || {
 
 cleanup_inputs() {
   rm -f -- "${archive_path}" "${private_env_path}" "${shared_env_path}" \
-    "${certificate_path}" "${images_path}"
+    "${certificate_path}"
+  if [ "${images_path}" != - ]; then rm -f -- "${images_path}"; fi
+  if [ -n "${image_manifest_path}" ]; then rm -f -- "${image_manifest_path}"; fi
   if [ -n "${snapshot_path}" ]; then
     rm -f -- "${snapshot_path}"
   fi
@@ -70,14 +75,28 @@ trap 'exit 143' TERM
 # deploy/ contains private configuration, certificates and persistent backup data.
 # All other top-level entries belong to the immutable release and are replaced.
 tar -tzf "${archive_path}" >/dev/null
-gzip -t "${images_path}"
+if [ "${images_path}" != - ]; then gzip -t "${images_path}"; fi
+if [ "${images_path}" != - ]; then gzip -dc "${images_path}" | docker load; fi
+
+if [ -n "${image_manifest_path}" ]; then
+  test "$(wc -l <"${image_manifest_path}" | tr -d ' ')" = 7
+  for expected_image in \
+    "wao-server:${image_tag}" "wao-agent-server:${image_tag}" \
+    "wao-gateway:${image_tag}" "wao-codex-egress-proxy:${image_tag}" \
+    mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
+    manifest_id="$(awk -v image="${expected_image}" '$1 == image { print $2 }' "${image_manifest_path}")"
+    printf '%s' "${manifest_id}" | grep -Eq '^sha256:[0-9a-f]{64}$'
+    actual_id="$(docker image inspect --format '{{.Id}}' "${manifest_id}")"
+    test "${actual_id}" = "${manifest_id}"
+    docker tag "${manifest_id}" "${expected_image}"
+  done
+fi
+
 find "${target_root}" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +
 tar -xzf "${archive_path}" -C "${target_root}"
 install -m 0600 "${private_env_path}" "${target_root}/deploy/.env.secrets"
 install -m 0600 "${shared_env_path}" "${target_root}/deploy/.env"
 install -m 0600 "${certificate_path}" "${target_root}/deploy/certs/gateway.p12"
-
-gzip -dc "${images_path}" | docker load
 
 if [ -n "${snapshot_path}" ]; then
   sh "${target_root}/deploy/scripts/bootstrap-mysql-slave.sh" "${snapshot_path}"

@@ -63,7 +63,7 @@ describe('全局快捷键', () => {
     wrapper.unmount()
   })
 
-  it('默认组合键分别打开任务、小记快速记录和聊天', async () => {
+  it('默认组合键打开任务和小记，旧聊天快捷键不再触发', async () => {
     const wrapper = await mountHost()
     const ui = useUiStore()
 
@@ -76,7 +76,7 @@ describe('全局快捷键', () => {
     ui.closeModal()
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', altKey: true, cancelable: true }))
-    expect(ui.chatOpen).toBe(true)
+    expect(ui.chatOpen).toBe(false)
     wrapper.unmount()
   })
 })

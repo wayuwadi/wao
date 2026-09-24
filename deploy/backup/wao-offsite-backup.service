@@ -1,16 +1,15 @@
 [Unit]
-Description=Upload verified WAO peer recovery snapshot to 123 Cloud Drive
-After=network-online.target wao-peer-backup.service
+Description=Publish readable WAO documents and tasks to 123 Cloud Drive
+After=network-online.target
 Wants=network-online.target
 ConditionPathExists=/etc/wao-backup/webdav.env
-ConditionPathExists=/etc/wao-backup/encryption-passphrase
 StartLimitIntervalSec=3h
 StartLimitBurst=3
 
 [Service]
 Type=oneshot
 UMask=0077
-ExecStart=/usr/local/lib/wao-backup/upload-peer-offsite.sh
+ExecStart=/usr/local/lib/wao-backup/run-readable-content.sh
 Nice=10
 IOSchedulingClass=idle
 TimeoutStartSec=12h

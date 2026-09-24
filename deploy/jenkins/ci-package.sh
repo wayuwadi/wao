@@ -41,14 +41,15 @@ for image in mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
   pull_image "$image"
 done
 
-docker save \
-  "wao-server:$WAO_GIT_SHA" \
-  "wao-agent-server:$WAO_GIT_SHA" \
-  "wao-gateway:$WAO_GIT_SHA" \
-  "wao-codex-egress-proxy:$WAO_GIT_SHA" \
-  mysql:9.7.0 \
-  redis:7-alpine \
-  jeessy/ddns-go:v6.17.2 \
-  | gzip -1 >"$WAO_RUN_TEMP/wao-images.tar.gz"
-gzip -t "$WAO_RUN_TEMP/wao-images.tar.gz"
-chmod 0640 "$WAO_RUN_TEMP/wao-release.tgz" "$WAO_RUN_TEMP/wao-images.tar.gz"
+# 影子构建仍生成完整的可交付镜像包；生产发布则在部署阶段按 Linux1
+# 已有镜像 ID 选择缺少的部分，避免每次打包和上传同一批镜像。
+if [ "${DEPLOY_PRODUCTION:-true}" != true ]; then
+  docker save \
+    "wao-server:$WAO_GIT_SHA" "wao-agent-server:$WAO_GIT_SHA" \
+    "wao-gateway:$WAO_GIT_SHA" "wao-codex-egress-proxy:$WAO_GIT_SHA" \
+    mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2 \
+    | gzip -1 >"$WAO_RUN_TEMP/wao-images.tar.gz"
+  gzip -t "$WAO_RUN_TEMP/wao-images.tar.gz"
+  chmod 0640 "$WAO_RUN_TEMP/wao-images.tar.gz"
+fi
+chmod 0640 "$WAO_RUN_TEMP/wao-release.tgz"

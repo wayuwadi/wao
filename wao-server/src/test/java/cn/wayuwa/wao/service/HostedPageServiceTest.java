@@ -44,6 +44,22 @@ class HostedPageServiceTest {
         assertThat(rendered).contains("<title>新&lt;title&gt;</title>", "/api/pages/demo/icon").doesNotContain("旧标题", "old.png");
     }
 
+    @Test void manualDemoWrapsTheExactUploadedBytesForIsolatedExecution() {
+        var page = new HostedPageEntity();
+        page.setId("page-demo"); page.setSlug("demo"); page.setTitle("WAO 名称");
+        page.setSourceType("MANUAL_UPLOAD");
+        byte[] original = "<!doctype html><html><head><title>原始标题</title></head><body><script>localStorage.setItem('x','1')</script></body></html>"
+                .getBytes(StandardCharsets.UTF_8);
+        page.setHtmlContent(original);
+
+        String shell = new String(service.renderInteractive(page), StandardCharsets.UTF_8);
+        assertThat(service.isManualPage(page)).isTrue();
+        assertThat(shell).contains("<title>原始标题</title>", "sandbox=\"allow-scripts allow-forms allow-modals allow-popups\"")
+                .contains("wao.hosted-page.", "installDemoStorage")
+                .doesNotContain("<script>localStorage.setItem('x','1')</script>");
+        assertThat(shell).contains(java.util.Base64.getEncoder().encodeToString(original));
+    }
+
     @Test void rejectsInvalidSlugAndNonHtmlFile() {
         var text = new MockMultipartFile("html", "demo.txt", "text/plain", "ok".getBytes());
         assertThatThrownBy(() -> service.create(text, "bad/path", "标题", null, "wg")).isInstanceOf(BadRequestException.class);

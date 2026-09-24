@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { useUiStore } from '@/stores/ui'
-import { chatShareLink } from '@/utils/share'
-const ui = useUiStore()
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
@@ -625,13 +622,6 @@ function onFileSettingsSaved(settings: FileSettings) {
             <button
               v-if="f.id"
               class="copy-btn"
-              @click="ui.shareToChat(chatShareLink(fileDisplayName(f), fileShareUrl(f.id)))"
-            >
-              <i class="ri-chat-forward-line"></i>分享到聊天
-            </button>
-            <button
-              v-if="f.id"
-              class="copy-btn"
               title="重新上传文件"
               @click="
                 replacement = {
@@ -787,7 +777,7 @@ function onFileSettingsSaved(settings: FileSettings) {
           <button
             class="dl-btn"
             title="站内预览"
-            @click="preview = { kind: 'html', name: page.title, url: page.url }"
+            @click="preview = { kind: 'html', name: page.title, url: page.url, sourceType: page.sourceType }"
           >
             <i class="ri-eye-line"></i>
           </button>
@@ -820,10 +810,10 @@ function onFileSettingsSaved(settings: FileSettings) {
       <form class="page-dialog" @submit.prevent="savePage">
         <div class="dialog-title">{{ editingPage ? '修改托管网页' : '托管 HTML' }}</div>
         <label
-          >页面标题<input
+          >WAO 显示名称<input
             v-model="pageTitle"
             maxlength="200"
-            placeholder="显示在浏览器标签页"
+            placeholder="托管列表中的名称，浏览器标题以 HTML 原文为准"
             @input="pageTitleAuto = false"
         /></label>
         <label

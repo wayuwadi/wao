@@ -75,7 +75,7 @@ sudo sh deploy/scripts/install-docker-engine.sh
 docker info
 ```
 
-Jenkins 向 Linux1 的 `~/deploy/incoming` 发送 tar.gz 发布包、镜像归档、共享环境和 Gateway 证书，随后由 `install-release-linux.sh` 在部署锁内更新 `~/deploy/wao`。CD 开始发布前会验证专用 SSH 密钥、主机指纹和 Docker；任一检查失败时保持从节点 `down`、保留 Linux2 当前版本并将流水线判为失败。每个应用节点最多自动部署三次。Linux1 安装包是执行后即清理的一次性输入；远端会在目标 Git SHA 与节点健康检查通过后、SSH 关闭前写回精确成功标记。如果反向 SSH 通道在安装完成后断开，CD 以该标记确认完成；未收到标记时再执行完成态验收，只有验收也失败才重新上传并重试，避免把已成功的发布误判为失败。MySQL 从库只复制 `wao.%`，不会同步 Linux2 上的其他业务库。
+Jenkins 向 Linux1 的 `~/deploy/incoming` 发送 tar.gz 发布包、镜像版本清单、共享环境和 Gateway 证书；仅当 Linux1 缺少目标镜像 ID 时发送相应镜像的增量归档。`install-release-linux.sh` 在部署锁内核对清单并更新 `~/deploy/wao`。CD 开始发布前会验证专用 SSH 密钥、主机指纹和 Docker；任一检查失败时保持从节点 `down`、保留 Linux2 当前版本并将流水线判为失败。每个应用节点最多自动部署三次。Linux1 安装包是执行后即清理的一次性输入；远端会在目标 Git SHA 与节点健康检查通过后、SSH 关闭前写回精确成功标记。如果反向 SSH 通道在安装完成后断开，CD 以该标记确认完成；未收到标记时再执行完成态验收，只有验收也失败才重新上传并重试，避免把已成功的发布误判为失败。MySQL 从库只复制 `wao.%`，不会同步 Linux2 上的其他业务库。
 
 ## DDNS 与公网 IP 变化
 
@@ -141,10 +141,11 @@ sh ~/deploy/wao/deploy/scripts/validate-slave.sh
 
 如果主库已经清理了从库所需的早期 binlog，先用 `mysqldump --single-transaction --set-gtid-purged=ON` 生成当前 `wao` 快照，再执行 `bootstrap-mysql-slave.sh <快照.sql.gz>`。该脚本只重置从库 GTID，不修改主库业务数据。
 
-Linux1 的 `backup-mysql.sh` 可用于临时本地快照，但不再把尚未安装的 cron/systemd 描述成生产保障。正式备份由
-Linux2 的 `wao-offsite-backup.timer` 每天生成：WAO MySQL、Jenkins、JumpServer 与部署恢复材料先加密分片，
-再上传到 123 云盘，Linux2 本地保留 7 天、远端保留 30 天。首次专用 WebDAV 授权、真实上传和隔离恢复演练见
-[异地备份手册](backup/README.md)，决策边界见 [ADR-188](../docs/adr/188-encrypted-123-cloud-offsite-backup.md)。
+Linux1 的 `backup-mysql.sh` 可用于临时本地快照，但不再把尚未安装的 cron/systemd 描述成生产保障。Linux1/Linux2
+间的加密恢复快照与 binlog 归档继续按原定时运行。Linux2 的 `wao-offsite-backup.timer` 每天向 123 云盘更新一份可直接
+浏览的知识库、小记、任务及其引用媒体文件；仅传变化，不再每天上传整份加密数据库快照。旧云端加密恢复点保留。
+配置、范围和限制见 [123 云盘可读副本手册](backup/README.md)，变更决策见
+[ADR-276](../docs/adr/276-readable-123-cloud-content-copy.md)。
 
 最终入口应为：
 
@@ -208,8 +209,8 @@ V7 仍为纯前端模拟页面，沿用 `amer-risk-demo-v3` 浏览器存储键�
 
 主站 `main` 由 Linux 主节点上的 Jenkins 构建和发布，GitHub 只负责仓库、签名 Webhook 和提交状态。
 Jenkins 使用 Linux1、云节点两套独立 SSH 密钥与严格 `known_hosts`；生产 `.env`、`.env.secrets` 和网关证书
-以 Linux2 主节点私有部署目录为准。CD 一次构建带 Git SHA 标签的镜像，按 Linux1 → Linux2 → 云前端顺序
-滚动发布；两台应用节点均运行同一 SHA 且通过直连验证后才标记成功。首次重建从库时在 Jenkins 手工运行
+以 Linux2 主节点私有部署目录为准。CD 一次构建带 Git SHA 标签的镜像，常规发布先更新 Linux1 并切换新版网页与普通公网 API，通知可先验证，再更新 Linux2；
+两台应用节点均运行同一 SHA 且通过直连验证后才标记最终成功。特殊迁移、从库重建和离线发布仍在两台应用节点完成后切换云端。首次重建从库时在 Jenkins 手工运行
 `wao-main-cd` 并勾选 `BOOTSTRAP_SLAVE`，正常发布不得自动重置已有从库。安装与恢复见
 [Jenkins runbook](jenkins/README.md)，决策见 [ADR-099](../docs/adr/099-self-hosted-jenkins-delivery.md)。
 登录 WAO 后可从左下角「链接 → Jenkins」查看构建与部署记录；公网入口继承 WAO 成员身份，不再要求或分发

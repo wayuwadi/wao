@@ -359,7 +359,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           >
             <i class="ri-keyboard-line" aria-hidden="true"></i>
           </button>
-          <FloatingChat />
+          <FloatingChat :show-trigger="false" />
           <NotificationCenter />
         </div>
       </header>
@@ -402,20 +402,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     </button>
 
     <nav class="mobile-main-nav" aria-label="手机主入口">
-      <RouterLink to="/" :class="{ active: route.path === '/' && !ui.chatOpen }"
+      <RouterLink to="/" :class="{ active: route.path === '/' }"
         ><i class="ri-home-4-line"></i>首页</RouterLink
       >
-      <button
-        type="button"
-        data-chat-trigger
-        :class="{ active: ui.chatOpen }"
-        :aria-expanded="ui.chatOpen"
-        @click="ui.toggleChat()"
-      >
-        <i class="ri-chat-3-line"></i>聊天<span v-if="ui.chatUnreadCount" class="mobile-unread">{{
-          ui.chatUnreadCount > 99 ? '99+' : ui.chatUnreadCount
-        }}</span>
-      </button>
       <RouterLink to="/todo"><i class="ri-checkbox-multiple-line"></i>待办</RouterLink>
       <RouterLink to="/notes"><i class="ri-sticky-note-line"></i>小记</RouterLink>
     </nav>

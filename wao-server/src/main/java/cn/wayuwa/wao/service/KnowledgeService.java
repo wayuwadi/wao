@@ -1682,16 +1682,43 @@ public class KnowledgeService {
 
     private Map<String, String> directoryOverrides(KbEntity kb) {
         if (kb.getDirectoryJson() == null || kb.getDirectoryJson().isBlank()) return Map.of();
-        try { return json.readValue(kb.getDirectoryJson(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {}); }
+        try {
+            Map<String, String> raw = json.readValue(kb.getDirectoryJson(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
+            Map<String, String> links = new java.util.LinkedHashMap<>();
+            raw.forEach((key, value) -> { if (key.startsWith("f:") || key.startsWith("d:")) links.put(key, value); });
+            return links;
+        }
         catch (java.io.IOException ex) { throw new IllegalStateException("知识库目录数据无法读取", ex); }
+    }
+
+    private List<String> directoryOrder(KbEntity kb) {
+        if (kb.getDirectoryJson() == null || kb.getDirectoryJson().isBlank()) return List.of();
+        try {
+            Map<String, String> raw = json.readValue(kb.getDirectoryJson(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
+            String order = raw.get("__order");
+            return order == null || order.isBlank() ? List.of() : List.of(order.split(","));
+        } catch (java.io.IOException ex) { throw new IllegalStateException("知识库目录数据无法读取", ex); }
     }
 
     private Map<String, String> directoryParents(KbEntity kb, List<KbFolderEntity> folders, List<DocEntity> docs) {
         Map<String, String> parents = new java.util.LinkedHashMap<>();
         for (KbFolderEntity folder : folders) parents.put("f:" + folder.getId(), "");
         for (DocEntity doc : docs) parents.put("d:" + doc.getId(), "f:" + doc.getFolderId());
-        directoryOverrides(kb).forEach((node, parent) -> {
-            if (parents.containsKey(node) && (parent.isEmpty() || parents.containsKey(parent))) parents.put(node, parent);
+        Map<String, String> overrides = directoryOverrides(kb);
+        List<String> order = directoryOrder(kb);
+        if (!order.isEmpty()) {
+            Map<String, String> ordered = new java.util.LinkedHashMap<>();
+            java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>(order);
+            keys.addAll(parents.keySet());
+            for (String node : keys) {
+                if (!parents.containsKey(node)) continue;
+                String parent = overrides.get(node);
+                ordered.put(node, parent != null && (parent.isEmpty() || parents.containsKey(parent)) ? parent : parents.get(node));
+            }
+            return ordered;
+        }
+        overrides.forEach((node, parent) -> {
+            if (parents.containsKey(node) && parent != null && (parent.isEmpty() || parents.containsKey(parent))) parents.put(node, parent);
         });
         return parents;
     }
@@ -1712,8 +1739,22 @@ public class KnowledgeService {
         if (!Objects.equals(parents.get(request.node()), request.expectedParent())) {
             throw new ConflictException("目录已在其他窗口移动，请刷新后重试");
         }
+        String before = request.beforeSibling();
+        if (before != null && (!parents.containsKey(before) || before.equals(request.node())
+                || !Objects.equals(parents.get(before), request.parent()))) {
+            throw new BadRequestException("目标位置不在同一层目录中");
+        }
         parents.put(request.node(), request.parent());
         KnowledgeDirectory.validate(parents);
+        // LinkedHashMap 的重插入确定同级次序，避免文档与文件夹各自排序后重新交错。
+        Map<String, String> reordered = new java.util.LinkedHashMap<>();
+        parents.forEach((node, parent) -> {
+            if (node.equals(request.node())) return;
+            if (node.equals(before)) reordered.put(request.node(), request.parent());
+            reordered.put(node, parent);
+        });
+        if (!reordered.containsKey(request.node())) reordered.put(request.node(), request.parent());
+        parents = reordered;
         if (docs.stream().anyMatch(doc -> doc.getArchivedAt() != null
                 && (("d:" + doc.getId()).equals(request.node()) || ("d:" + doc.getId()).equals(request.parent())))) {
             throw new ConflictException("文档已归档，请刷新目录后重试");
@@ -1726,7 +1767,10 @@ public class KnowledgeService {
                 }
             }
         }
-        String directory = write(parents);
+        Map<String, String> snapshot = new java.util.LinkedHashMap<>(parents);
+        // MySQL JSON 对象会重排键；顺序须作为值单独保存，不能依赖对象键的序列化顺序。
+        snapshot.put("__order", String.join(",", parents.keySet()));
+        String directory = write(snapshot);
         if (kbMapper.updateDirectory(kbId, directory) != 1) throw new ConflictException("知识库已变化，请刷新后重试");
         kb.setDirectoryJson(directory);
         return getKb(kbId);
@@ -1746,7 +1790,7 @@ public class KnowledgeService {
                 .toList();
         return new KbDto(kb.getId(), kb.getName(), kb.getIcon(), kb.getColor(), null,
                 kb.getAuto(), kb.getDescription(), folderDtos, kb.getGroupId(), kb.getPerm(),
-                Boolean.TRUE.equals(kb.getNotes()), directoryOverrides(kb));
+                Boolean.TRUE.equals(kb.getNotes()), directoryOverrides(kb), directoryOrder(kb));
     }
 
     private DocDto toDto(DocEntity e) {

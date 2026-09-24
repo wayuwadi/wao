@@ -35,24 +35,26 @@ describe('左下角快捷链接配置', () => {
     document.body.innerHTML = ''
   })
 
-  it('默认提供桌面宠物和 Jenkins，不再依赖业务页面', () => {
+  it('默认提供 Jenkins，并移除桌面宠物快捷入口', () => {
     const links = parseQuickLinksPreference('')
     expect(links).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'wao-desktop-pet', url: '/desktop' }),
       expect.objectContaining({ id: 'wao-jenkins', url: '/jenkins/job/wao-main-cd/' }),
     ]))
+    expect(links.map((link) => link.id)).not.toContain('wao-desktop-pet')
   })
 
   it('旧数组配置只迁移一次，v2 中用户明确删除后不会恢复默认项', () => {
     const migrated = parseQuickLinksPreference(JSON.stringify([customLink]))
     expect(migrated.map((link) => link.id)).toEqual([
       'custom-docs',
-      'wao-desktop-pet',
       'wao-jenkins',
     ])
 
     const current = parseQuickLinksPreference(JSON.stringify({ version: 2, links: [customLink] }))
     expect(current.map((link) => link.id)).toEqual(['custom-docs'])
+    expect(parseQuickLinksPreference(JSON.stringify({ version: 2, links: [
+      { ...customLink, id: 'wao-desktop-pet' }, customLink,
+    ] })).map((link) => link.id)).toEqual(['custom-docs'])
     expect(parseQuickLinksPreference(JSON.stringify({
       version: 2,
       links: [{ ...customLink, openMode: undefined }],

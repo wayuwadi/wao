@@ -5,7 +5,8 @@ workspace="$(mktemp -d)"
 trap 'rm -rf "${workspace}"' EXIT HUP INT TERM
 project="${workspace}/project"
 mkdir -p "${project}/deploy/scripts" "${project}/deploy/nginx" "${workspace}/bin" "${workspace}/run"
-cp "${script_dir}/activate-nginx-config.sh" "${script_dir}/render-nginx-config.sh" "${project}/deploy/scripts/"
+cp "${script_dir}/activate-nginx-config.sh" "${script_dir}/render-nginx-config.sh" \
+  "${script_dir}/resolve-gateway-ipv4.sh" "${project}/deploy/scripts/"
 cp "${script_dir}/../nginx/wao.wayuwa.cn.conf.template" "${project}/deploy/nginx/"
 export WAO_NGINX_RUNTIME_DIR="${workspace}/run"
 export WAO_NGINX_FINAL_CONFIG="${workspace}/wao.conf"

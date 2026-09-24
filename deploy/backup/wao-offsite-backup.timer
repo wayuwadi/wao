@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily verified peer snapshot upload to 123 Cloud Drive
+Description=Daily readable WAO content export to 123 Cloud Drive
 
 [Timer]
 OnCalendar=*-*-* 05:00:00 Asia/Shanghai

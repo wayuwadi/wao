@@ -21,12 +21,15 @@ sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 bash deploy/jenkins/test-browser-release.sh
 bash deploy/jenkins/test-slave-rollout-state.sh
+bash deploy/jenkins/test-early-browser-release.sh
+bash deploy/jenkins/test-slave-image-selection.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
 sh deploy/jenkins/test-github-status.sh
 sh deploy/jenkins/test-backup-controller.sh
 python3 -m unittest deploy/ai-runner/test_linux2_tunnel.py
 python3 -m unittest deploy/backup/test_webdav_client.py
+python3 -m unittest deploy/backup/test_readable_content.py
 python3 -m unittest deploy/backup/test_peer_retention.py deploy/backup/test_peer_health.py
 python3 -m unittest deploy/scripts/test_node_dns_acme.py
 python3 -m unittest deploy/scripts/test_static_release.py
@@ -60,8 +63,8 @@ for script in \
   deploy/scripts/start-codex-vpn.sh \
   deploy/scripts/test-ensure-codex-egress.sh \
   deploy/scripts/install-release-linux.sh \
+  deploy/scripts/resolve-gateway-ipv4.sh \
   deploy/scripts/test-redis-sentinel-policy.sh \
-  deploy/jenkins/ci-deploy.sh \
   deploy/jenkins/resolve-batch-base.sh \
   deploy/jenkins/test-resolve-batch-base.sh \
   deploy/jenkins/notify-feishu.sh \
@@ -71,13 +74,15 @@ for script in \
   deploy/jenkins/deploy-master-local.sh; do
   sh -n "$script"
 done
+bash -n deploy/jenkins/ci-deploy.sh
 
 for script in \
   deploy/backup/configure-offsite-backup.sh \
   deploy/backup/create-offsite-backup.sh \
   deploy/backup/restore-offsite-backup.sh \
   deploy/backup/upload-peer-offsite.sh \
-  deploy/backup/restore-peer-offsite.sh; do
+  deploy/backup/restore-peer-offsite.sh \
+  deploy/backup/run-readable-content.sh; do
   bash -n "$script"
 done
 

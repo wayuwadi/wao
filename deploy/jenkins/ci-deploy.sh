@@ -28,7 +28,6 @@ export BOOTSTRAP_SLAVE ALLOW_SLAVE_OFFLINE WAO_BUILD_ATTEMPT
 umask 077
 install -d "$WAO_RUN_TEMP"
 test -f "$WAO_RUN_TEMP/wao-release.tgz"
-if [ "${WAO_WEB_ONLY:-false}" != true ]; then test -f "$WAO_RUN_TEMP/wao-images.tar.gz"; fi
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12"
@@ -49,7 +48,6 @@ require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn' || exit 1
 require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn' || exit 1
 
 ln -sf "$WAO_RUN_TEMP/wao-release.tgz" wao-release.tgz
-if [ "${WAO_WEB_ONLY:-false}" != true ]; then ln -sf "$WAO_RUN_TEMP/wao-images.tar.gz" wao-images.tar.gz; fi
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets" wao-secrets.env
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env" wao-shared.env
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12" wao-gateway.p12
@@ -83,7 +81,7 @@ EOF
 chmod 0600 "$WAO_SSH_CONFIG"
 
 cleanup_deploy_inputs() {
-  rm -f -- wao-release.tgz wao-images.tar.gz \
+  rm -f -- wao-release.tgz \
     wao-secrets.env wao-shared.env wao-gateway.p12 wao-bootstrap.sql.gz
 }
 trap cleanup_deploy_inputs EXIT HUP INT TERM
@@ -94,7 +92,8 @@ printf '%s\n' \
   'slave_status=not_started' 'slave_attempts=0' 'slave_detail=not_started' \
   'master_status=not_started' 'master_attempts=0' 'master_detail=not_started' \
   'cloud_status=not_started' 'cloud_detail=not_started' \
-  'verification_status=not_started' 'verification_detail=not_started' >"$status_file"
+  'verification_status=not_started' 'verification_detail=not_started' \
+  'early_status=not_started' >"$status_file"
 slave_deployed=false
 master_deployed=false
 master_drained=false
@@ -103,6 +102,7 @@ schema_rollout_complete=false
 linux_only_schema_rollout=false
 safe_slave_reachable=false
 slave_available=true
+early_browser_released=false
 safe_schema_rollout=false
 
 set_status() {
@@ -275,26 +275,70 @@ verify_jumpserver_assets() {
     --verify-jumpserver-assets "$WAO_MASTER_PROJECT_ROOT"
 }
 
+prepare_slave_images() {
+  local image image_id
+  local -a missing_images=()
+  local manifest="$WAO_RUN_TEMP/wao-image-manifest.txt"
+  local archive="$WAO_RUN_TEMP/wao-images.tar.gz"
+  : >"$manifest"
+  rm -f -- "$archive"
+  for image in \
+    "wao-server:$WAO_GIT_SHA" \
+    "wao-agent-server:$WAO_GIT_SHA" \
+    "wao-gateway:$WAO_GIT_SHA" \
+    "wao-codex-egress-proxy:$WAO_GIT_SHA" \
+    mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
+    image_id="$(docker image inspect --format '{{.Id}}' "$image")" || return 1
+    [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+    printf '%s %s\n' "$image" "$image_id" >>"$manifest"
+    if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 "wao-slave" \
+      "docker image inspect '$image_id' >/dev/null 2>&1"; then
+      missing_images+=("$image")
+    fi
+  done
+  if [ "${#missing_images[@]}" -eq 0 ]; then
+    echo 'Linux1 已有全部目标镜像，仅发送版本清单。'
+    return 0
+  fi
+  printf 'Linux1 缺少 %s 个镜像，生成增量归档。\n' "${#missing_images[@]}"
+  (set -o pipefail; docker save "${missing_images[@]}" | gzip -1 >"$archive") || return 1
+  gzip -t "$archive" || return 1
+  chmod 0640 "$archive"
+}
+
 deploy_slave() {
+  prepare_slave_images || return 1
   release_suffix="${BUILD_NUMBER}-${WAO_BUILD_ATTEMPT:-1}"
   remote_release="wao-release-${release_suffix}.tgz"
   remote_secrets="wao-secrets-${release_suffix}.env"
   remote_shared_env="wao-shared-${release_suffix}.env"
   remote_certificate="wao-gateway-${release_suffix}.p12"
   remote_images="wao-images-${release_suffix}.tar.gz"
+  remote_manifest="wao-image-manifest-${release_suffix}.txt"
   remote_snapshot="wao-bootstrap-${release_suffix}.sql.gz"
   remote_installer="install-release-linux-${release_suffix}.sh"
   remote_dir="deploy/incoming/${release_suffix}"
   retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
     "install -d -m 0700 '$remote_dir'" || return
   retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
-    wao-release.tgz wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz \
+    wao-release.tgz wao-secrets.env wao-shared.env wao-gateway.p12 \
+    "$WAO_RUN_TEMP/wao-image-manifest.txt" \
     "wao-slave:$remote_dir/" || return
+  remote_image_arg='-'
+  if [ -f "$WAO_RUN_TEMP/wao-images.tar.gz" ]; then
+    retry_remote "Linux1 增量镜像" slave_scp -o ConnectTimeout=15 \
+      "$WAO_RUN_TEMP/wao-images.tar.gz" "wao-slave:$remote_dir/" || return
+    remote_image_arg="$remote_dir/$remote_images"
+  fi
   retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
     deploy/scripts/install-release-linux.sh \
     "wao-slave:$remote_dir/$remote_installer" || return
   retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
-    "cd '$remote_dir' && mv wao-release.tgz '$remote_release' && mv wao-secrets.env '$remote_secrets' && mv wao-shared.env '$remote_shared_env' && mv wao-gateway.p12 '$remote_certificate' && mv wao-images.tar.gz '$remote_images'" || return
+    "cd '$remote_dir' && mv wao-release.tgz '$remote_release' && mv wao-secrets.env '$remote_secrets' && mv wao-shared.env '$remote_shared_env' && mv wao-gateway.p12 '$remote_certificate' && mv wao-image-manifest.txt '$remote_manifest'" || return
+  if [ "$remote_image_arg" != '-' ]; then
+    retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
+      "cd '$remote_dir' && mv wao-images.tar.gz '$remote_images'" || return
+  fi
   snapshot_argument=""
   if [ "$BOOTSTRAP_SLAVE" = true ]; then
     test -s wao-bootstrap.sql.gz || return 1
@@ -303,7 +347,7 @@ deploy_slave() {
     snapshot_argument="$remote_dir/$remote_snapshot"
   fi
   run_slave_installer \
-    "sh '$remote_dir/$remote_installer' '$remote_dir/$remote_release' '$remote_dir/$remote_secrets' '$remote_dir/$remote_shared_env' '$remote_dir/$remote_certificate' '$remote_dir/$remote_images' '$WAO_GIT_SHA' '$snapshot_argument'" || return
+    "sh '$remote_dir/$remote_installer' '$remote_dir/$remote_release' '$remote_dir/$remote_secrets' '$remote_dir/$remote_shared_env' '$remote_dir/$remote_certificate' '$remote_image_arg' '$WAO_GIT_SHA' '$snapshot_argument' '' '$remote_dir/$remote_manifest'" || return
 }
 
 prepare_cloud_routing() {
@@ -311,6 +355,7 @@ prepare_cloud_routing() {
     deploy/nginx/wao.wayuwa.cn.conf.template \
     deploy/nginx/jms.wayuwa.cn.conf \
     deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
+    deploy/scripts/resolve-gateway-ipv4.sh \
     deploy/scripts/ensure-jumpserver-certificate.sh \
     deploy/scripts/set-nginx-upstream-state.sh \
     "wao-cloud:/tmp/" || return
@@ -321,6 +366,7 @@ prepare_cloud_routing() {
     install -m 0644 /tmp/jms.wayuwa.cn.conf /opt/wao/deploy/nginx/jms.wayuwa.cn.conf
     install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
     install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
+    install -m 0755 /tmp/resolve-gateway-ipv4.sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh
     install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
     install -m 0755 /tmp/ensure-jumpserver-certificate.sh /opt/wao/deploy/scripts/ensure-jumpserver-certificate.sh
     # 新主配置已经接管 /game 与 /insight；首次摘流也会渲染它，必须先移除旧片段，
@@ -332,6 +378,8 @@ prepare_cloud_routing() {
 }
 
 deploy_cloud() {
+  local master_gateway_state=''
+  if [ "${1:-false}" = true ]; then master_gateway_state=' down'; fi
   # Stage verified immutable assets before changing the public entry page.
   # A disabled/offline slave never receives an incomplete release advertisement.
   python3 deploy/scripts/static-release.py pack wao-web/dist "$WAO_RUN_TEMP/wao-static.tgz" "$WAO_GIT_SHA" || return
@@ -353,15 +401,10 @@ deploy_cloud() {
     "python3 /tmp/static-release.py install /tmp/wao-static.tgz /var/www/wao/releases '$WAO_GIT_SHA'" || return
   retry_remote "静态路由清单" ssh -o ConnectTimeout=15 wao-cloud \
     "python3 /tmp/publish-static-routing.py /etc/wao-public-edge/routing.json '$WAO_GIT_SHA'" || return
-  resolve_ipv4() {
-    getent ahostsv4 "$1" | awk '$2 == "STREAM" { print $1; exit }'
-  }
-  master_gateway_ipv4="$(resolve_ipv4 "$MASTER_HOST")"
-  slave_gateway_ipv4="$(resolve_ipv4 "$SLAVE_HOST")"
-  test -n "$master_gateway_ipv4"
-  test -n "$slave_gateway_ipv4"
-  MASTER_GATEWAY_IPV4="$master_gateway_ipv4" SLAVE_GATEWAY_IPV4="$slave_gateway_ipv4" \
-    WAO_NGINX_RENDER_OUTPUT=wao-nginx.conf sh deploy/scripts/render-nginx-config.sh
+  # Render on the cloud host: its Linux1 name resolves to the reverse SSH
+  # tunnel. Rendering on Jenkins would write the unreachable public :9000 IP.
+  retry_remote "云端 Gateway 配置" ssh -o ConnectTimeout=15 wao-cloud \
+    "MASTER_GATEWAY_STATE='$master_gateway_state' WAO_NGINX_RENDER_OUTPUT=/tmp/wao-nginx.conf sh /opt/wao/deploy/scripts/render-nginx-config.sh" || return
   retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" '
     set -eu
     install -d /tmp/wao-dist /tmp/wao-agent-dist
@@ -370,11 +413,11 @@ deploy_cloud() {
   ' || return
   retry_remote "云前端" scp -o ConnectTimeout=15 -r wao-web/dist/. "wao-cloud:/tmp/wao-dist/" || return
   retry_remote "云前端" scp -o ConnectTimeout=15 -r agent-web/dist/. "wao-cloud:/tmp/wao-agent-dist/" || return
-  retry_remote "云前端" scp -o ConnectTimeout=15 wao-nginx.conf "wao-cloud:/tmp/wao-nginx.conf" || return
   retry_remote "云前端" scp -o ConnectTimeout=15 \
     deploy/nginx/wao.wayuwa.cn.conf.template \
     deploy/nginx/jms.wayuwa.cn.conf \
     deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
+    deploy/scripts/resolve-gateway-ipv4.sh \
     deploy/scripts/ensure-jumpserver-certificate.sh \
     deploy/scripts/set-nginx-upstream-state.sh \
     "wao-cloud:/tmp/" || return
@@ -428,10 +471,11 @@ deploy_cloud() {
     install -m 0644 /tmp/jms.wayuwa.cn.conf /opt/wao/deploy/nginx/jms.wayuwa.cn.conf
     install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
     install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
+    install -m 0755 /tmp/resolve-gateway-ipv4.sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh
     install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
     install -m 0755 /tmp/ensure-jumpserver-certificate.sh /opt/wao/deploy/scripts/ensure-jumpserver-certificate.sh
     rm -f /tmp/wao.wayuwa.cn.conf.template /tmp/activate-nginx-config.sh \
-      /tmp/render-nginx-config.sh /tmp/set-nginx-upstream-state.sh \
+      /tmp/render-nginx-config.sh /tmp/resolve-gateway-ipv4.sh /tmp/set-nginx-upstream-state.sh \
       /tmp/jms.wayuwa.cn.conf /tmp/ensure-jumpserver-certificate.sh
     printf "%s\n" \
       "SHELL=/bin/sh" \
@@ -460,7 +504,7 @@ deploy_cloud() {
 gateway_ready_from_cloud() {
   gateway_host="$1"
   ssh -o ConnectTimeout=15 "wao-cloud" \
-    "curl -4 -kfsS --max-time 8 https://$gateway_host:9000/api/hello | grep -q '\"code\":0'"
+    "gateway_ip=\$(sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh '$gateway_host') && curl -4 -kfsS --max-time 8 --resolve '$gateway_host:9000:'\$gateway_ip https://$gateway_host:9000/api/hello | grep -q '\"code\":0'"
 }
 
 set_upstream_state() {
@@ -539,6 +583,7 @@ deploy_browser_only() {
   local plan
   plan="$(sh deploy/jenkins/ci-change-plan.sh "$WAO_CHANGE_BASE" "$WAO_GIT_SHA")" || return 1
   printf '%s\n' "$plan" | grep -qx 'WAO_WEB_ONLY=true' || return 1
+  prepare_cloud_routing || return 1
   gateway_ready_from_cloud "$MASTER_HOST" || return 1
   gateway_ready_from_cloud "$SLAVE_HOST" || return 1
   start_availability_monitor
@@ -554,7 +599,33 @@ deploy_browser_only() {
   set_status cloud_status success
   set_status cloud_detail "$WAO_GIT_SHA"
   set_status verification_status success
-  set_status verification_detail '静态制品已校验发布，双节点健康；继续执行公网版本与路由验收'
+  set_status verification_detail '静态制品已校验发布，双节点健康且公共入口持续可用'
+  set_status publish_completed_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
+}
+
+verify_first_node_public() {
+  local short_sha version_html index_html hello
+  short_sha="${WAO_GIT_SHA:0:7}"
+  # 公网普通 API 只能命中新 Linux1；主节点专属 API 仍需等待最终发布。
+  ssh -o ConnectTimeout=15 wao-cloud '
+    test -f /run/wao-nginx-upstreams/master.down &&
+    test ! -f /run/wao-nginx-upstreams/slave.down &&
+    sed -n "/^upstream wao_gateway {/,/^}/p" /etc/nginx/conf.d/wao.wayuwa.cn.conf |
+      grep -m1 "^[[:space:]]*server " | grep -q " down "
+  ' || return 1
+  gateway_ready_from_cloud "$SLAVE_HOST" || return 1
+  version_html="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 8 \
+    -H 'Cache-Control: no-cache' \
+    "https://wao.wayuwa.cn/pluginWebUpdateNotice/web_version_by_plugin.json?t=$(date +%s)")" || return 1
+  printf '%s' "$version_html" | grep -Eq \
+    "\"version\"[[:space:]]*:[[:space:]]*\"${short_sha}\"" || return 1
+  index_html="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 8 \
+    -H 'Cache-Control: no-cache' \
+    "https://wao.wayuwa.cn/index.html?t=$(date +%s)")" || return 1
+  printf '%s' "$index_html" | grep -Fq "data-v=\"${short_sha}\"" || return 1
+  hello="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 8 \
+    https://wao.wayuwa.cn/api/hello)" || return 1
+  printf '%s' "$hello" | grep -q '"code":0'
 }
 
 if [ "${WAO_WEB_ONLY:-false}" = true ]; then
@@ -597,6 +668,15 @@ if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
 fi
 
 if [ "$safe_schema_rollout" != true ] && [ "$slave_available" = true ]; then
+  # A failed previous run may have left the old master drained. Never take the
+  # slave out of rotation until the master is healthy and serving again.
+  gateway_ready_from_cloud "$MASTER_HOST" || {
+    echo 'Linux2 Gateway 未就绪；不能摘流 Linux1。' >&2
+    exit 1
+  }
+  set_upstream_state master up || exit 1
+  curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
+    https://wao.wayuwa.cn/api/hello | grep -q '"code":0' || exit 1
   start_availability_monitor
 fi
 
@@ -682,7 +762,46 @@ if ! install_master_deploy_helper; then
   exit 1
 fi
 
-if [ "$safe_schema_rollout" != true ]; then
+# 常规完整发布先让 Linux1 独立承载普通公网流量，再切换新版网页。
+# 首台可验证是阶段性状态，不能替代 Linux2 和最终健康检查的成功结论。
+if [ "$slave_deployed" = true ] && [ "$safe_schema_rollout" != true ] \
+    && [ "$BOOTSTRAP_SLAVE" != true ] && [ "$ALLOW_SLAVE_OFFLINE" != true ]; then
+  set_upstream_state master down || exit 1
+  master_drained=true
+  if ! deploy_cloud true >cloud.log 2>&1; then
+    set_status cloud_status failed
+    set_status cloud_detail '首台发布后云端网页或 Nginx 切换失败'
+    printf '\n===== cloud =====\n'; cat cloud.log
+    exit 1
+  fi
+  set_status cloud_status success
+  set_status cloud_detail "$WAO_GIT_SHA"
+  printf '\n===== cloud =====\n'; cat cloud.log
+  first_node_check_attempt=1
+  until verify_first_node_public; do
+    if [ "$first_node_check_attempt" -ge 6 ]; then
+      set_status verification_status failed
+      set_status verification_detail '首台公网版本、路由或 API 连续检查失败'
+      # The old master is still healthy. Reopen it before the EXIT trap, so a
+      # failed readiness check cannot strand the next build on one node.
+      if gateway_ready_from_cloud "$MASTER_HOST" && set_upstream_state master up; then
+        master_drained=false
+      fi
+      exit 1
+    fi
+    echo "首台公网检查第 ${first_node_check_attempt} 次未通过；10 秒后重试。" >&2
+    first_node_check_attempt=$((first_node_check_attempt + 1))
+    sleep 10
+  done
+  early_browser_released=true
+  set_status early_status ready
+  set_status early_ready_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
+  echo 'Linux1 与新版公网网页已就绪；通知用户可先验证普通功能，Linux2 继续发布。'
+  WAO_PIPELINE_RESULT=ready deploy/jenkins/notify-feishu.sh || \
+    echo 'WARNING: 首台可验证通知发送失败；继续发布 Linux2。' >&2
+fi
+
+if [ "$safe_schema_rollout" != true ] && [ "$early_browser_released" != true ]; then
   set_upstream_state master down || exit 1
 fi
 master_drained=true
@@ -747,15 +866,19 @@ if ! verify_jumpserver_assets >"$jumpserver_verify_log" 2>&1; then
 fi
 cat "$jumpserver_verify_log"
 
-if ! deploy_cloud >cloud.log 2>&1; then
-  set_status cloud_status failed
-  set_status cloud_detail '云端静态资源或 Nginx 发布失败'
+if [ "$early_browser_released" != true ]; then
+  if ! deploy_cloud >cloud.log 2>&1; then
+    set_status cloud_status failed
+    set_status cloud_detail '云端静态资源或 Nginx 发布失败'
+    printf '\n===== cloud =====\n'; cat cloud.log
+    exit 1
+  fi
+  set_status cloud_status success
+  set_status cloud_detail "$WAO_GIT_SHA"
   printf '\n===== cloud =====\n'; cat cloud.log
-  exit 1
+else
+  echo '新版网页已在首台就绪后发布；跳过重复云端上传。'
 fi
-set_status cloud_status success
-set_status cloud_detail "$WAO_GIT_SHA"
-printf '\n===== cloud =====\n'; cat cloud.log
 
 # 云端安装会重新渲染 Nginx 文件，并继承安装前的摘流状态。安装完成后立即恢复
 # 已验证节点，不能只依赖 EXIT trap，否则控制器安全重启可能让成功发布停留在单节点状态。
@@ -788,6 +911,7 @@ if [ "$slave_available" = true ]; then
 else
   set_status verification_detail 'Linux1 已显式摘流；Linux2、云端与公共入口检查通过'
 fi
+set_status publish_completed_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
 trap - EXIT
 restore_upstreams
 cleanup_deploy_inputs

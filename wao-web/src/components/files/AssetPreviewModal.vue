@@ -9,6 +9,7 @@ export type AssetPreview = {
   name: string
   id?: string
   url?: string
+  sourceType?: string
 }
 
 const props = defineProps<{ asset: AssetPreview }>()
@@ -18,6 +19,9 @@ const loading = ref(false)
 const error = ref('')
 const markdown = ref('')
 const markdownHtml = computed(() => renderMarkdown(markdown.value))
+const htmlSandbox = computed(() => props.asset.sourceType === 'MANUAL_UPLOAD'
+  ? 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups'
+  : 'allow-scripts allow-modals allow-popups')
 
 async function load() {
   error.value = ''
@@ -70,7 +74,7 @@ watch(() => props.asset, load, { immediate: true })
         class="html-preview"
         :src="absoluteUrl(asset.url || '')"
         :title="asset.name"
-        sandbox="allow-scripts allow-modals allow-popups"
+        :sandbox="htmlSandbox"
       ></iframe>
     </section>
   </div>
