@@ -112,6 +112,14 @@ button {
   border-bottom: 1px solid var(--client-line);
   user-select: none;
 }
+.client.macos .toolbar {
+  /* Leave the native traffic lights clear while the toolbar fills the titlebar. */
+  padding-left: 88px;
+}
+.client.macos .brand,
+.client.macos .brand + .divider {
+  display: none;
+}
 .brand {
   display: flex;
   align-items: center;

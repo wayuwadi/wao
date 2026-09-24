@@ -58,9 +58,8 @@ fn workspace_size(size: LogicalSize<f64>, minimized: bool) -> Option<LogicalSize
     Some(LogicalSize::new(size.width, size.height - HEADER))
 }
 
-// Tauri's visible macOS titlebar uses a full-size content view. Its bounds
-// include the system titlebar, while the local shell is laid out below it.
-// Size the child from AppKit's unobscured content rect, in parent coordinates.
+// With an overlaid macOS titlebar, the shell's first HEADER points are inside
+// the titlebar. Keep the business WebView below that strip in parent coordinates.
 #[cfg(target_os = "macos")]
 fn macos_workspace_frame(
     bounds: objc2_foundation::NSRect,
@@ -85,8 +84,7 @@ fn resize_macos_workspace(view: &Webview) -> tauri::Result<()> {
         let (Some(parent), Some(window)) = (unsafe { view.superview() }, view.window()) else {
             return;
         };
-        let content = parent.convertRect_fromView(window.contentLayoutRect(), None);
-        if let Some(frame) = macos_workspace_frame(content, parent.isFlipped(), window.isMiniaturized()) {
+        if let Some(frame) = macos_workspace_frame(parent.bounds(), parent.isFlipped(), window.isMiniaturized()) {
             view.setFrame(frame);
         }
     })
@@ -713,8 +711,8 @@ async fn attach_workspace(app: tauri::AppHandle, webview: Webview) -> Result<(),
     let size = bounds.size.to_logical::<f64>(scale);
     #[cfg(target_os = "macos")]
     let position = {
-        // The shell already excludes the system titlebar. Match its origin
-        // before adding our toolbar so the first child frame is correct too.
+        // The local shell extends into the transparent titlebar. The child
+        // starts immediately below its toolbar, including on the first frame.
         let shell = bounds.position.to_logical::<f64>(scale);
         LogicalPosition::new(shell.x, shell.y + HEADER)
     };
@@ -1115,8 +1113,8 @@ mod tests {
     #[test]
     fn macos_workspace_stays_below_toolbar_in_current_content_bounds() {
         use objc2_foundation::{NSPoint, NSRect, NSSize};
-        // Normal, minimum, fullscreen and restored content sizes; the outer
-        // window/titlebar dimensions are deliberately absent from the input.
+        // Normal, minimum, fullscreen and restored parent-view bounds. With
+        // Overlay, these bounds include the transparent titlebar strip.
         for (width, height) in [(1100.0, 760.0), (800.0, 560.0), (1920.0, 1080.0), (1100.0, 732.0)] {
             for flipped in [false, true] {
                 let bounds = NSRect::new(NSPoint::new(7.0, 11.0), NSSize::new(width, height));
