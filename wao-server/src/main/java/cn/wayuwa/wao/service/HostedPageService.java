@@ -189,6 +189,12 @@ public class HostedPageService {
         return entity;
     }
 
+    /** 人工上传内容保持原文，通过隔离页面外壳兼容浏览器存储。 */
+    public byte[] renderInteractive(HostedPageEntity entity) { return HostedPageDemoRenderer.render(entity); }
+
+    /** 历史记录以稳定 ID 识别 AI 报告，避免把报告误用人工页面运行方式。 */
+    public boolean isManualPage(HostedPageEntity entity) { return MANUAL_UPLOAD.equals(sourceType(entity)); }
+
     /** 注入受控标题和 favicon 后返回 UTF-8 HTML。 */
     public byte[] render(HostedPageEntity entity) {
         String html = decode(entity.getHtmlContent());

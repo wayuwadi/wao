@@ -39,4 +39,19 @@ class HostedPageControllerTest {
         assertThat(response.getHeaders().getFirst("Content-Security-Policy")).contains("sandbox").doesNotContain("allow-same-origin");
         assertThat(response.getBody()).isEqualTo("new".getBytes());
     }
+
+    @Test void manualPageUsesTrustedShellWithoutSandboxResponseHeader() {
+        var pages = mock(HostedPageService.class);
+        var controller = new HostedPageController(pages, mock(CurrentMember.class), mock(ProjectService.class));
+        var page = new HostedPageEntity();
+        when(pages.publicPage("demo")).thenReturn(page);
+        when(pages.isManualPage(page)).thenReturn(true);
+        when(pages.renderInteractive(page)).thenReturn("trusted shell".getBytes());
+
+        var response = controller.page("demo");
+        assertThat(response.getHeaders().getFirst("Content-Security-Policy")).isEqualTo("frame-ancestors 'self'");
+        assertThat(response.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store");
+        assertThat(response.getBody()).isEqualTo("trusted shell".getBytes());
+        verify(pages, never()).render(page);
+    }
 }

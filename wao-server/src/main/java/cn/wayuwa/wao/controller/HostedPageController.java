@@ -81,6 +81,14 @@ public class HostedPageController {
     @GetMapping(value = "/pages/{slug}", produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<byte[]> page(@PathVariable String slug) {
         HostedPageEntity page = pages.publicPage(slug);
+        if (pages.isManualPage(page)) {
+            return ResponseEntity.ok()
+                    .contentType(new MediaType("text", "html", java.nio.charset.StandardCharsets.UTF_8))
+                    .cacheControl(CacheControl.noStore())
+                    .header("Content-Security-Policy", "frame-ancestors 'self'")
+                    .header("X-Content-Type-Options", "nosniff")
+                    .body(pages.renderInteractive(page));
+        }
         return ResponseEntity.ok().contentType(new MediaType("text", "html", java.nio.charset.StandardCharsets.UTF_8))
                 .cacheControl(CacheControl.noStore())
                 .header("Content-Security-Policy", "sandbox allow-scripts allow-modals allow-popups; default-src * data: blob: 'unsafe-inline' 'unsafe-eval';")
