@@ -28,14 +28,30 @@ assert args[:2] == ['--config', os.environ['WAO_BACKUP_CONFIG_DIR'] + '/webdav.e
 args = args[2:]
 if args[0] == '--allow-http': args = args[1:]
 command, *values = args
-if values and values[-1] == '--force': values.pop()
+force = '--force' in values
+if force: values.remove('--force')
+offset = 0
+length = None
+if '--offset' in values:
+    index = values.index('--offset')
+    offset = int(values[index + 1])
+    del values[index:index + 2]
+if '--length' in values:
+    index = values.index('--length')
+    length = int(values[index + 1])
+    del values[index:index + 2]
 root = pathlib.Path(os.environ['WAO_TEST_REMOTE_ROOT'])
 if command == 'ensure-dir':
     (root / values[0]).mkdir(parents=True, exist_ok=True)
 elif command == 'upload':
     target = root / values[1]
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(values[0], target)
+    if length is None:
+        shutil.copy2(values[0], target)
+    else:
+        with open(values[0], 'rb') as source:
+            source.seek(offset)
+            target.write_bytes(source.read(length))
 elif command == 'download':
     shutil.copy2(root / values[0], values[1])
 elif command == 'stat':
@@ -53,12 +69,14 @@ PY
 export WAO_BACKUP_TEST_MODE=true WAO_BACKUP_CONFIG_DIR="$root/config"
 export WAO_BACKUP_WEBDAV_CLIENT="$root/fake-webdav.py" WAO_TEST_REMOTE_ROOT="$root/remote"
 export WAO_BACKUP_ALLOW_INSECURE_HTTP=true
+export WAO_BACKUP_CHUNK_BYTES=100
 bash "$repo_root/deploy/backup/upload-peer-offsite.sh"
 test -f "$root/remote/WAO-backups/linux2/$stamp/manifest.json"
+test "$(find "$root/remote/WAO-backups/linux2/$stamp" -name 'recovery.tar.gpg.part-*' | wc -l)" -gt 1
 test ! -d "$root/peer/.offsite-$stamp"
 bash "$repo_root/deploy/backup/restore-peer-offsite.sh" "$stamp" "$root/restored"
 gzip -dc "$root/restored/recovery/database/wao.sql.gz" | grep -Fq 'CREATE TABLE note'
-printf 'Corruption' >>"$root/remote/WAO-backups/linux2/$stamp/recovery.tar.gpg"
+printf 'Corruption' >>"$root/remote/WAO-backups/linux2/$stamp/recovery.tar.gpg.part-0000"
 if bash "$repo_root/deploy/backup/restore-peer-offsite.sh" "$stamp" "$root/corrupt" >/dev/null 2>&1; then
   echo 'Corrupt offsite archive was accepted' >&2
   exit 1

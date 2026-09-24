@@ -78,6 +78,8 @@ class WebDavClient:
         *,
         body: bytes | None = None,
         file_path: Path | None = None,
+        file_offset: int = 0,
+        file_length: int | None = None,
         headers: dict[str, str] | None = None,
         directory: bool = False,
         expected: set[int],
@@ -97,15 +99,24 @@ class WebDavClient:
                 if headers:
                     request_headers.update(headers)
                 if file_path is not None:
-                    size = file_path.stat().st_size
+                    total = file_path.stat().st_size
+                    size = total - file_offset if file_length is None else file_length
+                    if file_offset < 0 or size < 0 or file_offset + size > total:
+                        raise ValueError("Invalid upload byte range")
                     connection.putrequest(method, target)
                     for key, value in request_headers.items():
                         connection.putheader(key, value)
                     connection.putheader("Content-Length", str(size))
                     connection.endheaders()
                     with file_path.open("rb") as source:
-                        while chunk := source.read(1024 * 1024):
+                        source.seek(file_offset)
+                        remaining = size
+                        while remaining:
+                            chunk = source.read(min(1024 * 1024, remaining))
+                            if not chunk:
+                                raise WebDavError("Source file became shorter during upload")
                             connection.send(chunk)
+                            remaining -= len(chunk)
                     response = connection.getresponse()
                 else:
                     connection.request(method, target, body=body, headers=request_headers)
@@ -136,13 +147,19 @@ class WebDavClient:
                 attempts=2,
             )
 
-    def upload(self, local_path: Path, remote_path: str, force: bool = False) -> None:
-        expected_size = local_path.stat().st_size
+    def upload(self, local_path: Path, remote_path: str, force: bool = False,
+               offset: int = 0, length: int | None = None) -> None:
+        total = local_path.stat().st_size
+        expected_size = total - offset if length is None else length
+        if offset < 0 or expected_size < 0 or offset + expected_size > total:
+            raise WebDavError("Invalid upload byte range")
         if not force:
             existing_size = self.stat_size(remote_path, missing_ok=True)
             if existing_size == expected_size:
                 return
-        self._request("PUT", remote_path, file_path=local_path, expected={200, 201, 204})
+        self._request("PUT", remote_path, file_path=local_path,
+                      file_offset=offset, file_length=expected_size,
+                      expected={200, 201, 204})
         actual_size = self.stat_size(remote_path)
         if actual_size != expected_size:
             raise WebDavError(
@@ -274,6 +291,8 @@ def main() -> int:
     upload.add_argument("local_path", type=Path)
     upload.add_argument("remote_path")
     upload.add_argument("--force", action="store_true")
+    upload.add_argument("--offset", type=int, default=0)
+    upload.add_argument("--length", type=int)
     download = subparsers.add_parser("download")
     download.add_argument("remote_path")
     download.add_argument("local_path", type=Path)
@@ -294,7 +313,8 @@ def main() -> int:
         elif args.command == "ensure-dir":
             client.ensure_dir(args.remote_path)
         elif args.command == "upload":
-            client.upload(args.local_path, args.remote_path, force=args.force)
+            client.upload(args.local_path, args.remote_path, force=args.force,
+                          offset=args.offset, length=args.length)
         elif args.command == "download":
             client.download(args.remote_path, args.local_path)
         elif args.command == "stat":
