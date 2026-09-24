@@ -84,7 +84,7 @@ if PATH="${tmp_dir}:${PATH}" \
   exit 1
 fi
 
-# A local tunnel in /etc/hosts must not become a public Nginx upstream.
+# The cloud host's local tunnel is the intended Linux1 Gateway route.
 cat >"${tmp_dir}/dig" <<'EOF'
 #!/bin/sh
 printf '%s\n' '198.51.100.21'
@@ -101,9 +101,9 @@ EOF
 PATH="${tmp_dir}:${PATH}" MASTER_PUBLIC_HOST=master.test SLAVE_PUBLIC_HOST=slave.test \
   WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/tunnel.conf" \
   sh "${script_dir}/render-nginx-config.sh"
-grep -q 'server 198.51.100.21:9000' "${tmp_dir}/tunnel.conf"
-if grep -q 'server 127.0.0.1:9000' "${tmp_dir}/tunnel.conf"; then
-  echo 'Local tunnel leaked into public Nginx upstream.' >&2
+grep -q 'server 127.0.0.1:9000' "${tmp_dir}/tunnel.conf"
+if grep -q 'server 198.51.100.21:9000' "${tmp_dir}/tunnel.conf"; then
+  echo 'Cloud Gateway must use its Linux1 tunnel rather than public DNS.' >&2
   exit 1
 fi
 
