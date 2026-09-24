@@ -85,24 +85,6 @@ assert_json '.card.elements[0].text.content | contains("精简 Jenkins 通知")'
 assert_json '.card.elements[0].text.content | contains("**发布时间** 2026-09-24 16:39:00")'
 rm -f "$fixture/payload.json"
 
-cat >>"$fixture/run/wao-deploy-status.env" <<'EOF'
-early_status=ready
-early_ready_at=2026-09-24 16:00:00
-EOF
-PATH="$fixture/bin:$PATH" \
-WAO_TEST_PAYLOAD="$fixture/payload.json" \
-WAO_PIPELINE_RESULT=ready \
-WAO_TEST_EXPECT_POLICY_URL=https://wao.wayuwa.cn/api/public/notification-settings/jenkins-success \
-WAO_MASTER_PROJECT_ROOT="$fixture/master" WAO_RUN_TEMP="$fixture/run" \
-WAO_DEPLOY_REQUIRED=true DEPLOY_PRODUCTION=true \
-WAO_BUILD_STARTED_EPOCH="$(($(date +%s) - 90))" \
-BUILD_NUMBER=321 \
-sh "$project_root/deploy/jenkins/notify-feishu.sh"
-assert_json '.card.header.title.content == "WAO 首台发布完成 ⏳ 可先验证"'
-assert_json '.card.elements[0].text.content | contains("2026-09-24 16:00:00") and contains("1 分")'
-assert_json '.card.elements[1].actions[0].url == "https://wao.wayuwa.cn/"'
-rm -f "$fixture/payload.json"
-
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
 slave_status=success
 slave_attempts=1

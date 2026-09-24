@@ -5,6 +5,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 import tempfile
 import json
+import os
 
 spec = importlib.util.spec_from_file_location('watch', Path(__file__).with_name('health-watch.py'))
 watch = importlib.util.module_from_spec(spec)
@@ -47,6 +48,33 @@ class WatchTests(unittest.TestCase):
                 state.update(notified=problems, sent=state['checked'])
         self.assertEqual(len(sent), 1)
         self.assertEqual(state['notified'], ['linux1', 'linux2', 'main'])
+
+    def test_recent_planned_drain_does_not_alert_but_stale_drain_does(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker = Path(folder) / 'slave.down'
+            marker.touch()
+            os.utime(marker, (100, 100))
+            self.assertEqual(watch.planned_drains(120, Path(folder)), {'linux1'})
+            state, _, message = watch.update({}, {'main': True, 'linux1': False, 'linux2': True},
+                                             120, {'linux1'})
+            self.assertIsNone(message)
+            self.assertEqual(state['failures']['linux1'], 0)
+            self.assertEqual(watch.planned_drains(100 + watch.PLANNED_DRAIN_MAX_SECONDS + 1,
+                                                  Path(folder)), set())
+            state, _, _ = watch.update(state, {'main': True, 'linux1': False, 'linux2': True},
+                                       2000)
+            _, problems, message = watch.update(state, {'main': True, 'linux1': False,
+                                                        'linux2': True}, 2060)
+            self.assertEqual(problems, ['linux1'])
+            self.assertIn('linux1', message)
+
+    def test_planned_node_does_not_hide_main_failure_or_send_false_recovery(self):
+        state = {'notified': ['linux1'], 'failures': {'linux1': 2}, 'successes': 0}
+        results = {'main': False, 'linux1': False, 'linux2': True}
+        state, _, _ = watch.update(state, results, 100, {'linux1'})
+        _, problems, message = watch.update(state, results, 160, {'linux1'})
+        self.assertIn('main', problems)
+        self.assertIn('main', message)
 
     def test_failed_delivery_is_retried_without_claiming_notified(self):
         with tempfile.TemporaryDirectory() as folder:
