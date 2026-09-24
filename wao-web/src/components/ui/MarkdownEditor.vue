@@ -50,6 +50,7 @@ import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
 import { toast } from '@/composables/toast'
 import { countCharacters } from '@/utils/characterCount'
 import ArticleImageAction from './ArticleImageAction.vue'
+import ImageCopyMenu from './ImageCopyMenu.vue'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
 import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
@@ -125,6 +126,7 @@ const props = withDefaults(
     imageControls?: boolean
     /** 小记或知识库文档的文章总览图入口；key 用于跨页面恢复生成任务。 */
     articleImageKey?: string
+    noteTitleOnImage?: boolean
     /** 知识库文档的完整工具栏、斜杠菜单和高级内容块。 */
     advanced?: boolean
     /** 小记使用紧凑工具栏，并隐藏需要进入完整文档继续编辑的重型内容块。 */
@@ -151,6 +153,7 @@ const props = withDefaults(
     linkControls: false,
     imageControls: false,
     articleImageKey: '',
+    noteTitleOnImage: false,
     advanced: false,
     compact: false,
     hideToolbar: false,
@@ -171,9 +174,17 @@ const emit = defineEmits<{
   'upload-file': [file: File, done: (item: FileItem | null) => void]
   'add-task': [text: string]
   'task-opened': []
+  'generated-title': [title: string]
 }>()
 
 const previewImage = ref<{ src: string; alt: string } | null>(null)
+const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
+function openImageMenu(event: MouseEvent) {
+  const target = event.target
+  if (!(target instanceof HTMLImageElement)) return
+  event.preventDefault()
+  imageMenu.value = { src: target.currentSrc || target.src, x: event.clientX, y: event.clientY }
+}
 
 type ImageDimension = number | `${number}%` | null
 
@@ -1654,6 +1665,11 @@ function insertArticleImageAtStart(url: string): boolean {
   return e.commands.insertContentAt(range, { type: 'image', attrs: { src: url, alt: '文章总览图', width: '50%', height: null, align: 'center' } })
 }
 
+function currentArticleImage(): string | null {
+  const first = editor.value?.state.doc.firstChild
+  return first?.type.name === 'image' && first.attrs.alt === '文章总览图' ? String(first.attrs.src) : null
+}
+
 function articleText(): string { return editor.value?.state.doc.textContent ?? '' }
 
 /**
@@ -1743,7 +1759,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0, bare }">
+  <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0, bare }" @contextmenu="openImageMenu">
+    <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
     <input
       ref="imagePicker"
       class="image-picker"
@@ -1951,7 +1968,8 @@ onBeforeUnmount(() => {
       <div class="article-footer-left">
         <div v-if="!readonly" class="article-image-actions">
           <ArticleImageAction :scope-key="articleImageKey"
-            :get-text="articleText" :insert-image="insertArticleImageAtStart" />
+            :get-text="articleText" :insert-image="insertArticleImageAtStart" :get-current-image="currentArticleImage"
+            :generate-title="noteTitleOnImage" @generated-title="emit('generated-title', $event)" />
           <button type="button" class="image-upload" title="从图册选择图片"
             aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
             <i class="ri-image-add-line"></i><span>图片</span>

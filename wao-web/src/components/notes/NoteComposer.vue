@@ -5,6 +5,7 @@ import { useSessionStore } from '@/stores/session'
 import { apiCreateNoteTag, apiPatchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
+import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
 const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean }>()
@@ -15,7 +16,7 @@ const session = useSessionStore()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}`
-type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[] }
+type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[]; generatedTitle?: string }
 let restored = false
 function readDraft(): Draft {
   try {
@@ -82,6 +83,7 @@ const taskSource = computed(() => ({
 }))
 const text = ref(initial.text)
 const content = ref<RichDocContent | undefined>(initial.content)
+const generatedTitle = ref(initial.generatedTitle ?? '')
 // 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
 const baseRev = initial.baseRev ?? props.note?.rev ?? 1
 const saving = ref(false)
@@ -92,11 +94,11 @@ const draftError = ref(false)
 const status = ref(restored ? '已恢复草稿，可继续记录' : '')
 let resetting = false
 const canSave = computed(() => !!text.value.trim() && !saving.value && !creatingTag.value && !props.loading)
-watch([text, content, tags], () => {
+watch([text, content, tags, generatedTitle], () => {
   if (resetting) return
   error.value = ''
   try {
-    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value } satisfies Draft))
+    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value, generatedTitle: generatedTitle.value } satisfies Draft))
     draftError.value = false
     status.value = '草稿已保存在此浏览器'
   } catch {
@@ -117,13 +119,13 @@ async function save(asCopy = false) {
     if (props.note && !asCopy) {
       if (data.docPending(props.note.id)) throw new Error('这篇小记在文档页还有未保存编辑，请先完成保存')
       const saved = await apiPatchDoc(props.note.id, {
-        title: (firstMarkdownTextLine(text.value) || '未命名小记').slice(0, 80),
+        title: (generatedTitle.value || props.note.title || firstMarkdownTextLine(text.value) || '未命名小记').slice(0, 80),
         content: rich, blocks: legacyProjection(rich), expectedRev: baseRev, tags: [...tags.value],
       })
       data.applyRemoteDoc(saved)
       savedId = saved.id
     } else {
-      savedId = await data.addNote(text.value, '', asCopy ? copyId : id.value, rich, [...tags.value])
+      savedId = await data.addNote(text.value, generatedTitle.value, asCopy ? copyId : id.value, rich, [...tags.value])
     }
     if (!savedId) throw new Error('正文为空，请先写点内容')
     try {
@@ -131,13 +133,22 @@ async function save(asCopy = false) {
       // 页面切走又回来时，新组件可能已经继续输入，旧请求不能清掉较新的草稿。
       if (!latest || (latest.id === id.value && latest.text === text.value
         && JSON.stringify(latest.content) === JSON.stringify(content.value)
-        && JSON.stringify(latest.tags ?? []) === JSON.stringify(tags.value))) localStorage.removeItem(draftKey)
+        && JSON.stringify(latest.tags ?? []) === JSON.stringify(tags.value)
+        && (latest.generatedTitle ?? '') === generatedTitle.value)) localStorage.removeItem(draftKey)
     } catch { /* 服务端保存已成功。 */ }
+    if (!props.note || asCopy) {
+      const saved = data.docById(savedId)
+      if (saved?.rev) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
+        title: !!generatedTitle.value,
+        image: rich.markdown.startsWith('![文章总览图]('),
+      })
+    }
     if (!props.note) {
       resetting = true
       text.value = ''
       content.value = undefined
       tags.value = []
+      generatedTitle.value = ''
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
     }
@@ -183,6 +194,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
       <MarkdownEditor :key="id" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls
         :article-image-key="`note:${session.currentUser.id}:${id}`"
+        note-title-on-image @generated-title="generatedTitle = $event"
         :hide-toolbar="inline" :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"

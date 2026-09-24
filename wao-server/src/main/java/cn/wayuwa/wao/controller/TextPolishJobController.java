@@ -30,6 +30,6 @@ public class TextPolishJobController {
     }
 
     public record Request(@NotBlank @Pattern(regexp = "[a-f0-9]{32}") String requestId,
-                          @NotBlank @Pattern(regexp = "DOCUMENT|WORKSPACE") String kind,
+                          @NotBlank @Pattern(regexp = "DOCUMENT|WORKSPACE|NOTE_TITLE") String kind,
                           @NotBlank @Size(max = 12000) String originalText) { }
 }

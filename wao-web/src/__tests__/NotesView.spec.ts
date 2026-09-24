@@ -214,7 +214,7 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('正文图片只在下方显示多张缩略图，点击后可看大图并关闭', async () => {
+  it('正文图片显示缩略图和大图，二者右键都可复制地址', async () => {
     const note = doc('images', '有图小记')
     note.content = { version: 1, markdown: '正文\n\n![图一](/api/images/one/raw)\n\n![图二](/api/images/two/raw)',
       document: { type: 'doc', content: [
@@ -227,8 +227,21 @@ describe('小记集中记录空间', () => {
     const thumbs = wrapper.findAll('[data-note-id="images"] .note-image-thumb')
     expect(thumbs).toHaveLength(2)
     expect(thumbs.map(thumb => thumb.find('img').attributes('src'))).toEqual(['/api/images/one/raw', '/api/images/two/raw'])
+    await thumbs[0]!.find('img').trigger('contextmenu', { clientX: 80, clientY: 80 })
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"][aria-label="图片操作"]')?.textContent).toContain('复制图片地址')
+    expect(document.body.querySelector('[role="menu"][aria-label^="小记："]')).toBeNull()
+    document.body.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="图片操作"] button')[1]?.click()
+    await flushPromises()
+    expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/api/images/one/raw`, '图片地址已复制')
     await thumbs[1]!.trigger('click')
     expect(document.body.querySelector('.note-image-lightbox img')?.getAttribute('src')).toBe('/api/images/two/raw')
+    document.body.querySelector('.note-image-lightbox img')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"][aria-label="图片操作"]')?.textContent).toContain('复制图片')
+    document.body.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="图片操作"] button')[1]?.click()
+    await flushPromises()
+    expect(copyText).toHaveBeenLastCalledWith(`${window.location.origin}/api/images/two/raw`, '图片地址已复制')
     document.body.querySelector<HTMLButtonElement>('.note-image-close')?.click()
     await flushPromises()
     expect(document.body.querySelector('.note-image-lightbox')).toBeNull()

@@ -121,6 +121,30 @@ describe('文章总览配图', () => {
     expect((w.vm as unknown as { editor: Editor }).editor.getJSON().content?.[0]?.attrs).toMatchObject({ width: '50%', align: 'center' })
     w.unmount()
   })
+
+  it('重新生成先预览，保留原图或确认替换由用户决定', async () => {
+    vi.mocked(fetchPreference).mockResolvedValue('')
+    vi.mocked(startArticleImage).mockResolvedValue({ id: 'ac-replace', status: 'QUEUED', message: '等待生成', imageUrl: null })
+    vi.mocked(fetchArticleImage).mockResolvedValue({ id: 'ac-replace', status: 'SUCCEEDED', message: '已生成', imageUrl: '/api/images/new/raw' })
+    const w = await mountEditor({ modelValue: '正文', articleImageKey: 'note:me:replace' })
+    const editor = w.vm as unknown as { insertArticleImageAtStart: (url: string) => boolean; editor: Editor }
+    expect(editor.insertArticleImageAtStart('/api/images/old/raw')).toBe(true)
+    await flushPromises()
+    await w.get('.generate-image').trigger('click')
+    await flushPromises()
+    expect(editor.editor.getJSON().content?.[0]?.attrs?.src).toBe('/api/images/old/raw')
+    expect(document.body.querySelector('.replacement-dialog')?.textContent).toContain('保留原图')
+    const buttons = document.body.querySelectorAll<HTMLButtonElement>('.replacement-dialog button')
+    buttons[0]?.click()
+    await flushPromises()
+    expect(editor.editor.getJSON().content?.[0]?.attrs?.src).toBe('/api/images/old/raw')
+    await w.get('.generate-image').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('.replacement-dialog button.primary')?.click()
+    await flushPromises()
+    expect(editor.editor.getJSON().content?.[0]?.attrs?.src).toBe('/api/images/new/raw')
+    w.unmount()
+  })
 })
 
 /**
