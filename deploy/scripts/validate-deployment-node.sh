@@ -70,9 +70,10 @@ for service in wao-server wao-agent-server wao-gateway; do
 done
 
 gateway_id="$(compose ps -q wao-gateway)"
-hello="$(run_docker exec "${gateway_id}" curl -kfsS https://127.0.0.1:9000/api/hello)"
-printf '%s' "${hello}" | grep -q '"code":0'
-printf 'gateway_api=%s\n' "${hello}"
+ready="$(run_docker exec "${gateway_id}" curl -kfsS --max-time 8 https://127.0.0.1:9000/api/edge/ready)"
+printf '%s' "${ready}" | grep -Eq '"code"[[:space:]]*:[[:space:]]*0'
+printf '%s' "${ready}" | grep -Eq '"protocol"[[:space:]]*:[[:space:]]*1'
+printf 'gateway_ready=%s\n' "${ready}"
 
 if [ "${role}" = slave ]; then
   sh "${project_root}/deploy/scripts/validate-slave.sh"
