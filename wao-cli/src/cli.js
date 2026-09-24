@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { createClient, endpoint } from './client.js'
-import { getToken, readToken, removeToken, storeToken } from './auth.js'
+import { getToken, normalizeWorkspaceToken, readToken, removeToken, storeToken } from './auth.js'
 
 // 子命令是人类友好的别名；参数定义和权限始终来自服务端 tools/list。
 export const COMMANDS = new Map([
@@ -167,7 +167,7 @@ export function formatOutput(value, mode = 'auto') {
 }
 
 export async function run(argv, { stdout = process.stdout, stdin = process.stdin,
-  tokenProvider = getToken, clientFactory = createClient } = {}) {
+  tokenProvider = getToken, clientFactory = createClient, tokenStore = storeToken } = {}) {
   const { rest, globals } = removeGlobalOptions(argv)
   const path = rest.slice(0, 2).join(' ')
   if (!rest.length || rest[0] === 'help' || rest[0] === '--help' || rest[0] === '-h') {
@@ -177,9 +177,9 @@ export async function run(argv, { stdout = process.stdout, stdin = process.stdin
   const url = endpoint(globals.url)
   if (path === 'auth login') {
     if (rest.length > 3 || (rest[2] && rest[2] !== '--token-stdin')) throw new Error('用法：wao auth login [--token-stdin]')
-    const token = await readToken({ stdin, stdout, fromStdin: rest[2] === '--token-stdin' })
+    const token = normalizeWorkspaceToken(await readToken({ stdin, stdout, fromStdin: rest[2] === '--token-stdin' }))
     await clientFactory({ url, token }).listTools()
-    await storeToken(token)
+    await tokenStore(token)
     stdout.write('工作区令牌已验证并存入 macOS 钥匙串。\n')
     return
   }

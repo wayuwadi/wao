@@ -6,7 +6,7 @@
 
 在仓库内执行 `cd wao-cli && npm link`，之后可在终端运行 `wao help`。无需安装第三方依赖。
 
-在 WAO 首页生成一枚**工作区**令牌。Mac 上运行 `wao auth login`，按提示粘贴令牌；CLI 先验证服务端，再将令牌存入 macOS 钥匙串。自动化脚本或其他系统可设置 `WAO_TOKEN` 环境变量；该变量优先于钥匙串。不要把令牌写进命令参数、Git 或脚本文件。`wao auth status` 可验证连接，`wao auth logout` 仅删除钥匙串中的令牌，不会吊销服务端令牌；吊销请在 WAO 页面完成。
+在 WAO 首页生成一枚**工作区**令牌，点击弹窗中的“复制令牌（用于 CLI）”。Mac 上运行 `wao auth login`，按提示粘贴以 `wao_workspace_` 开头的令牌；CLI 先验证服务端，再将令牌存入 macOS 钥匙串。也可粘贴包含唯一工作区令牌的完整连接说明。自动化脚本或其他系统可设置 `WAO_TOKEN` 环境变量；该变量优先于钥匙串。不要把令牌写进命令参数、Git 或脚本文件。`wao auth status` 可验证连接，`wao auth logout` 仅删除钥匙串中的令牌，不会吊销服务端令牌；吊销请在 WAO 页面完成。
 
 默认连接 `https://wao.wayuwa.cn/api/mcp/workspace`。自建环境可设置 `WAO_URL` 或对单次命令使用 `--url`。远程地址必须是 HTTPS，本机测试允许 HTTP。
 
