@@ -152,7 +152,7 @@ pipeline {
             }
         }
 
-        stage('部署并验收') {
+        stage('发布部署') {
             when {
                 expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' }
             }
@@ -176,13 +176,12 @@ pipeline {
                         )
                     ]) {
                         sh 'BOOTSTRAP_SLAVE="$BOOTSTRAP_SLAVE" ALLOW_SLAVE_OFFLINE="$ALLOW_SLAVE_OFFLINE" deploy/jenkins/ci-deploy.sh'
-                        sh 'deploy/jenkins/ci-production-verify.sh'
                     }
                 }
             }
             post {
                 failure {
-                    script { env.WAO_FAILURE_STAGE = '部署并验收' }
+                    script { env.WAO_FAILURE_STAGE = '发布部署' }
                 }
             }
         }

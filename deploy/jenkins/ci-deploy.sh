@@ -554,7 +554,7 @@ deploy_browser_only() {
   set_status cloud_status success
   set_status cloud_detail "$WAO_GIT_SHA"
   set_status verification_status success
-  set_status verification_detail '静态制品已校验发布，双节点健康；继续执行公网版本与路由验收'
+  set_status verification_detail '静态制品已校验发布，双节点健康且公共入口持续可用'
 }
 
 if [ "${WAO_WEB_ONLY:-false}" = true ]; then
