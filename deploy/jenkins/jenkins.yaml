@@ -146,6 +146,7 @@ jobs:
       }
   - script: >
       pipelineJob('wao-client-release') {
+        disabled(true)
         description('WAO 桌面客户端自建发布：Linux2 构建 Windows，Mac 节点构建通用包，Linux2 统一签名和原子发布。')
         quietPeriod(300)
         properties {
