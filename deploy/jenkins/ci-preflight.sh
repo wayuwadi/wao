@@ -22,8 +22,8 @@ for script in \
   deploy/jenkins/ci-build-frontends.sh \
   deploy/jenkins/ci-frontend-build.sh \
   deploy/jenkins/ci-package.sh \
-  deploy/jenkins/ci-deploy.sh \
   deploy/jenkins/ci-production-verify.sh; do
   sh -n "$script"
 done
+bash -n deploy/jenkins/ci-deploy.sh
 echo '发布输入和脚本语法检查通过。'

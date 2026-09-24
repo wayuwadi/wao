@@ -28,7 +28,6 @@ export BOOTSTRAP_SLAVE ALLOW_SLAVE_OFFLINE WAO_BUILD_ATTEMPT
 umask 077
 install -d "$WAO_RUN_TEMP"
 test -f "$WAO_RUN_TEMP/wao-release.tgz"
-if [ "${WAO_WEB_ONLY:-false}" != true ]; then test -f "$WAO_RUN_TEMP/wao-images.tar.gz"; fi
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12"
@@ -49,7 +48,6 @@ require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn' || exit 1
 require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn' || exit 1
 
 ln -sf "$WAO_RUN_TEMP/wao-release.tgz" wao-release.tgz
-if [ "${WAO_WEB_ONLY:-false}" != true ]; then ln -sf "$WAO_RUN_TEMP/wao-images.tar.gz" wao-images.tar.gz; fi
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets" wao-secrets.env
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env" wao-shared.env
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12" wao-gateway.p12
@@ -83,7 +81,7 @@ EOF
 chmod 0600 "$WAO_SSH_CONFIG"
 
 cleanup_deploy_inputs() {
-  rm -f -- wao-release.tgz wao-images.tar.gz \
+  rm -f -- wao-release.tgz \
     wao-secrets.env wao-shared.env wao-gateway.p12 wao-bootstrap.sql.gz
 }
 trap cleanup_deploy_inputs EXIT HUP INT TERM
@@ -275,26 +273,70 @@ verify_jumpserver_assets() {
     --verify-jumpserver-assets "$WAO_MASTER_PROJECT_ROOT"
 }
 
+prepare_slave_images() {
+  local image image_id
+  local -a missing_images=()
+  local manifest="$WAO_RUN_TEMP/wao-image-manifest.txt"
+  local archive="$WAO_RUN_TEMP/wao-images.tar.gz"
+  : >"$manifest"
+  rm -f -- "$archive"
+  for image in \
+    "wao-server:$WAO_GIT_SHA" \
+    "wao-agent-server:$WAO_GIT_SHA" \
+    "wao-gateway:$WAO_GIT_SHA" \
+    "wao-codex-egress-proxy:$WAO_GIT_SHA" \
+    mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
+    image_id="$(docker image inspect --format '{{.Id}}' "$image")" || return 1
+    [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+    printf '%s %s\n' "$image" "$image_id" >>"$manifest"
+    if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 "wao-slave" \
+      "docker image inspect '$image_id' >/dev/null 2>&1"; then
+      missing_images+=("$image")
+    fi
+  done
+  if [ "${#missing_images[@]}" -eq 0 ]; then
+    echo 'Linux1 已有全部目标镜像，仅发送版本清单。'
+    return 0
+  fi
+  printf 'Linux1 缺少 %s 个镜像，生成增量归档。\n' "${#missing_images[@]}"
+  (set -o pipefail; docker save "${missing_images[@]}" | gzip -1 >"$archive") || return 1
+  gzip -t "$archive" || return 1
+  chmod 0640 "$archive"
+}
+
 deploy_slave() {
+  prepare_slave_images || return 1
   release_suffix="${BUILD_NUMBER}-${WAO_BUILD_ATTEMPT:-1}"
   remote_release="wao-release-${release_suffix}.tgz"
   remote_secrets="wao-secrets-${release_suffix}.env"
   remote_shared_env="wao-shared-${release_suffix}.env"
   remote_certificate="wao-gateway-${release_suffix}.p12"
   remote_images="wao-images-${release_suffix}.tar.gz"
+  remote_manifest="wao-image-manifest-${release_suffix}.txt"
   remote_snapshot="wao-bootstrap-${release_suffix}.sql.gz"
   remote_installer="install-release-linux-${release_suffix}.sh"
   remote_dir="deploy/incoming/${release_suffix}"
   retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
     "install -d -m 0700 '$remote_dir'" || return
   retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
-    wao-release.tgz wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz \
+    wao-release.tgz wao-secrets.env wao-shared.env wao-gateway.p12 \
+    "$WAO_RUN_TEMP/wao-image-manifest.txt" \
     "wao-slave:$remote_dir/" || return
+  remote_image_arg='-'
+  if [ -f "$WAO_RUN_TEMP/wao-images.tar.gz" ]; then
+    retry_remote "Linux1 增量镜像" slave_scp -o ConnectTimeout=15 \
+      "$WAO_RUN_TEMP/wao-images.tar.gz" "wao-slave:$remote_dir/" || return
+    remote_image_arg="$remote_dir/$remote_images"
+  fi
   retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
     deploy/scripts/install-release-linux.sh \
     "wao-slave:$remote_dir/$remote_installer" || return
   retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
-    "cd '$remote_dir' && mv wao-release.tgz '$remote_release' && mv wao-secrets.env '$remote_secrets' && mv wao-shared.env '$remote_shared_env' && mv wao-gateway.p12 '$remote_certificate' && mv wao-images.tar.gz '$remote_images'" || return
+    "cd '$remote_dir' && mv wao-release.tgz '$remote_release' && mv wao-secrets.env '$remote_secrets' && mv wao-shared.env '$remote_shared_env' && mv wao-gateway.p12 '$remote_certificate' && mv wao-image-manifest.txt '$remote_manifest'" || return
+  if [ "$remote_image_arg" != '-' ]; then
+    retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
+      "cd '$remote_dir' && mv wao-images.tar.gz '$remote_images'" || return
+  fi
   snapshot_argument=""
   if [ "$BOOTSTRAP_SLAVE" = true ]; then
     test -s wao-bootstrap.sql.gz || return 1
@@ -303,7 +345,7 @@ deploy_slave() {
     snapshot_argument="$remote_dir/$remote_snapshot"
   fi
   run_slave_installer \
-    "sh '$remote_dir/$remote_installer' '$remote_dir/$remote_release' '$remote_dir/$remote_secrets' '$remote_dir/$remote_shared_env' '$remote_dir/$remote_certificate' '$remote_dir/$remote_images' '$WAO_GIT_SHA' '$snapshot_argument'" || return
+    "sh '$remote_dir/$remote_installer' '$remote_dir/$remote_release' '$remote_dir/$remote_secrets' '$remote_dir/$remote_shared_env' '$remote_dir/$remote_certificate' '$remote_image_arg' '$WAO_GIT_SHA' '$snapshot_argument' '' '$remote_dir/$remote_manifest'" || return
 }
 
 prepare_cloud_routing() {
