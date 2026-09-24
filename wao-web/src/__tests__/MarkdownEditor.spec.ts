@@ -79,9 +79,14 @@ describe('文章总览配图', () => {
     expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'))
     const updates = w.emitted('update:modelValue') as [string][]
     const latest = updates[updates.length - 1]?.[0]
-    expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw\)/)
+    expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw "wao-image-size:50%xauto"\)/)
     expect(latest).toContain('第一段。')
     expect(latest).toContain('第二段。')
+    const image = (w.vm as unknown as { editor: Editor }).editor.getJSON().content?.[0]
+    expect(image?.attrs).toMatchObject({ src: '/api/images/img1/raw', width: '50%', align: 'center' })
+    expect(w.get('.md-body img').attributes('style')).toContain('width: 50%')
+    expect(w.get('.md-body img').attributes('style')).toContain('margin-left: auto')
+    expect(latest).toContain('wao-image-size:50%xauto')
     w.unmount()
   })
 
@@ -113,6 +118,7 @@ describe('文章总览配图', () => {
     expect(latest).toContain('/api/images/second/raw')
     expect(latest).not.toContain('/api/images/first/raw')
     expect(latest).toContain('正文')
+    expect((w.vm as unknown as { editor: Editor }).editor.getJSON().content?.[0]?.attrs).toMatchObject({ width: '50%', align: 'center' })
     w.unmount()
   })
 })
