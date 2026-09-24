@@ -21,6 +21,7 @@ sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 bash deploy/jenkins/test-browser-release.sh
 bash deploy/jenkins/test-slave-rollout-state.sh
+bash deploy/jenkins/test-slave-image-selection.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
 sh deploy/jenkins/test-github-status.sh
@@ -61,7 +62,6 @@ for script in \
   deploy/scripts/test-ensure-codex-egress.sh \
   deploy/scripts/install-release-linux.sh \
   deploy/scripts/test-redis-sentinel-policy.sh \
-  deploy/jenkins/ci-deploy.sh \
   deploy/jenkins/resolve-batch-base.sh \
   deploy/jenkins/test-resolve-batch-base.sh \
   deploy/jenkins/notify-feishu.sh \
@@ -71,6 +71,7 @@ for script in \
   deploy/jenkins/deploy-master-local.sh; do
   sh -n "$script"
 done
+bash -n deploy/jenkins/ci-deploy.sh
 
 for script in \
   deploy/backup/configure-offsite-backup.sh \

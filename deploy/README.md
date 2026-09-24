@@ -75,7 +75,7 @@ sudo sh deploy/scripts/install-docker-engine.sh
 docker info
 ```
 
-Jenkins 向 Linux1 的 `~/deploy/incoming` 发送 tar.gz 发布包、镜像归档、共享环境和 Gateway 证书，随后由 `install-release-linux.sh` 在部署锁内更新 `~/deploy/wao`。CD 开始发布前会验证专用 SSH 密钥、主机指纹和 Docker；任一检查失败时保持从节点 `down`、保留 Linux2 当前版本并将流水线判为失败。每个应用节点最多自动部署三次。Linux1 安装包是执行后即清理的一次性输入；远端会在目标 Git SHA 与节点健康检查通过后、SSH 关闭前写回精确成功标记。如果反向 SSH 通道在安装完成后断开，CD 以该标记确认完成；未收到标记时再执行完成态验收，只有验收也失败才重新上传并重试，避免把已成功的发布误判为失败。MySQL 从库只复制 `wao.%`，不会同步 Linux2 上的其他业务库。
+Jenkins 向 Linux1 的 `~/deploy/incoming` 发送 tar.gz 发布包、镜像版本清单、共享环境和 Gateway 证书；仅当 Linux1 缺少目标镜像 ID 时发送相应镜像的增量归档。`install-release-linux.sh` 在部署锁内核对清单并更新 `~/deploy/wao`。CD 开始发布前会验证专用 SSH 密钥、主机指纹和 Docker；任一检查失败时保持从节点 `down`、保留 Linux2 当前版本并将流水线判为失败。每个应用节点最多自动部署三次。Linux1 安装包是执行后即清理的一次性输入；远端会在目标 Git SHA 与节点健康检查通过后、SSH 关闭前写回精确成功标记。如果反向 SSH 通道在安装完成后断开，CD 以该标记确认完成；未收到标记时再执行完成态验收，只有验收也失败才重新上传并重试，避免把已成功的发布误判为失败。MySQL 从库只复制 `wao.%`，不会同步 Linux2 上的其他业务库。
 
 ## DDNS 与公网 IP 变化
 

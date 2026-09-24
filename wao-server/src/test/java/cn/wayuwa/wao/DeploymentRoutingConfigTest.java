@@ -113,7 +113,7 @@ class DeploymentRoutingConfigTest {
         assertThat(pipeline)
                 .contains("env.WAO_FAILURE_STAGE = '确定发布范围'")
                 .contains("env.WAO_FAILURE_STAGE = '打包构建'")
-                .contains("env.WAO_FAILURE_STAGE = '部署并验收'")
+                .contains("env.WAO_FAILURE_STAGE = '发布部署'")
                 .contains("env.WAO_FAILURE_STAGE = '同步运维配置'")
                 .contains("Jenkins 失败：${env.WAO_FAILURE_STAGE.trim()}")
                 .contains("github-status.sh failure \"$WAO_STATUS_DESCRIPTION\"");
@@ -298,7 +298,9 @@ class DeploymentRoutingConfigTest {
                 .isLessThan(rollout.indexOf("set_upstream_state master up || exit 1",
                         rollout.indexOf("deploy_cloud >cloud.log")));
         assertThat(rollout)
-                .contains("wao-release.tgz wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz")
+                .contains("prepare_slave_images || return 1")
+                .contains("wao-image-manifest.txt")
+                .contains("Linux1 增量镜像")
                 .contains("sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh")
                 .doesNotContain("Prepare Linux Codex package")
                 .doesNotContain("codex-package-x86_64-unknown-linux-musl.tar.gz")
