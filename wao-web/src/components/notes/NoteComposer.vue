@@ -16,7 +16,7 @@ const session = useSessionStore()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}`
-type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[]; generatedTitle?: string }
+type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[]; generatedTitle?: string; autoPolish?: boolean }
 let restored = false
 function readDraft(): Draft {
   try {
@@ -84,6 +84,7 @@ const taskSource = computed(() => ({
 const text = ref(initial.text)
 const content = ref<RichDocContent | undefined>(initial.content)
 const generatedTitle = ref(initial.generatedTitle ?? '')
+const autoPolish = ref(initial.autoPolish !== false)
 // 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
 const baseRev = initial.baseRev ?? props.note?.rev ?? 1
 const saving = ref(false)
@@ -94,11 +95,11 @@ const draftError = ref(false)
 const status = ref(restored ? '已恢复草稿，可继续记录' : '')
 let resetting = false
 const canSave = computed(() => !!text.value.trim() && !saving.value && !creatingTag.value && !props.loading)
-watch([text, content, tags, generatedTitle], () => {
+watch([text, content, tags, generatedTitle, autoPolish], () => {
   if (resetting) return
   error.value = ''
   try {
-    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value, generatedTitle: generatedTitle.value } satisfies Draft))
+    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value, generatedTitle: generatedTitle.value, autoPolish: autoPolish.value } satisfies Draft))
     draftError.value = false
     status.value = '草稿已保存在此浏览器'
   } catch {
@@ -134,13 +135,15 @@ async function save(asCopy = false) {
       if (!latest || (latest.id === id.value && latest.text === text.value
         && JSON.stringify(latest.content) === JSON.stringify(content.value)
         && JSON.stringify(latest.tags ?? []) === JSON.stringify(tags.value)
-        && (latest.generatedTitle ?? '') === generatedTitle.value)) localStorage.removeItem(draftKey)
+        && (latest.generatedTitle ?? '') === generatedTitle.value
+        && (latest.autoPolish !== false) === autoPolish.value)) localStorage.removeItem(draftKey)
     } catch { /* 服务端保存已成功。 */ }
     if (!props.note || asCopy) {
       const saved = data.docById(savedId)
       if (saved?.rev) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
         title: !!generatedTitle.value,
         image: rich.markdown.startsWith('![文章总览图]('),
+        polishEnabled: autoPolish.value,
       })
     }
     if (!props.note) {
@@ -149,6 +152,7 @@ async function save(asCopy = false) {
       content.value = undefined
       tags.value = []
       generatedTitle.value = ''
+      autoPolish.value = true
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
     }
@@ -217,6 +221,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <span v-if="tags.length >= 20">每篇最多 20 个标签</span>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
+    <label v-if="!note" class="auto-polish-choice"><input v-model="autoPolish" type="checkbox" :disabled="saving">保存后自动润色正文</label>
     <div class="composer-footer">
       <span role="status" :class="{ error: draftError }">{{ saving ? '正在保存到服务器…' : status || 'Ctrl / ⌘ + Enter 保存' }}</span>
       <button v-if="note && conflicted" type="button" :disabled="!canSave" @click="save(true)">保留为新小记</button>
@@ -235,6 +240,8 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .composer-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .composer-heading i { color: var(--wao-primary-text); font-size: 20px; }
 .composer-footer > span { color: var(--wao-text-faint); font-size: 12px; }
+.auto-polish-choice { display:inline-flex; align-items:center; gap:6px; margin-top:9px; color:var(--wao-text-faint); font-size:12px; }
+.auto-polish-choice input { accent-color:var(--wao-primary); }
 .composer-footer { flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .composer-footer > span { flex: 1; min-width: 140px; }
 button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 8px; padding: 8px 13px; cursor: pointer; }

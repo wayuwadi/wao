@@ -27,7 +27,8 @@ public class TextPolishJobService {
     @Transactional
     public Result submit(String memberId, String requestId, String kind, String originalText) {
         if (requestId == null || !requestId.matches("[a-f0-9]{32}")) throw new BadRequestException("润色请求标识无效");
-        if (!"DOCUMENT".equals(kind) && !"WORKSPACE".equals(kind) && !"NOTE_TITLE".equals(kind))
+        if (!"DOCUMENT".equals(kind) && !"WORKSPACE".equals(kind)
+                && !"NOTE_TITLE".equals(kind) && !"NOTE_BODY".equals(kind))
             throw new BadRequestException("任务类型无效");
         if (jobs.lockMember(memberId) == null) throw new NotFoundException("成员不存在");
         String id = "pj" + requestId;
@@ -44,6 +45,8 @@ public class TextPolishJobService {
         if ("DOCUMENT".equals(kind) && original.length() > 4000) throw new BadRequestException("一次最多润色 4000 字");
         String method = switch (kind) {
             case "DOCUMENT" -> "改进表达的清晰度、流畅度与自然度，保留 Markdown 块结构，不增加标题或解释。";
+            case "NOTE_BODY" -> prepared.promptSnapshot() + "\n小记额外要求：删除口语化赘词和重复内容，"
+                    + "保留事实、数字、原意和 Markdown 链接与图片；不要添加原文没有的信息，只返回润色后的正文。";
             case "NOTE_TITLE" -> "从小记正文提炼一个准确、简短的中文标题";
             default -> prepared.promptSnapshot();
         };

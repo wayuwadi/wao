@@ -6,14 +6,15 @@ import { docShareUrl } from '@/utils/share'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
-import { defineAsyncComponent, computed, nextTick, onMounted, ref, watch } from 'vue'
+import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
+import type { Doc } from '@/types'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
-import { canRetryAutoNoteEnrichment, noteEnrichmentStatus, resumeAutoNoteEnrichment, retryAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
+import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus, notePolishVersions, retryAutoNoteEnrichment, startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
 
@@ -72,8 +73,20 @@ async function closeImage() {
 }
 function setNoteEditor(id: string, value: unknown) { if (value) noteEditors.set(id, value as { copyFormatted: () => Promise<void> }); else noteEditors.delete(id) }
 const query = ref('')
-const sort = ref<'updated' | 'created'>('updated')
+const sort = ref<'updatedDesc' | 'createdDesc' | 'updatedAsc'>('updatedDesc')
+const imageFilter = ref<'all' | 'yes' | 'no'>('all')
+const timeFilter = ref<'all' | 'today' | 'yesterday' | 'earlier'>('all')
+const filterOpen = ref(false)
+const filterControl = ref<HTMLElement>()
 const selectedTag = ref<string | null>('')
+const activeFilterCount = computed(() => Number(!!selectedTag.value || selectedTag.value === null)
+  + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc'))
+const filterSummary = computed(() => [selectedTag.value === null ? '无标签' : selectedTag.value ? `# ${selectedTag.value}` : '',
+  imageFilter.value === 'yes' ? '有图' : imageFilter.value === 'no' ? '无图' : '',
+  { today: '今天', yesterday: '昨天', earlier: '以前', all: '' }[timeFilter.value],
+  { updatedDesc: '最近更新', createdDesc: '最近创建', updatedAsc: '最早更新' }[sort.value]].filter(Boolean).join(' · '))
+function resetFilters() { selectedTag.value = ''; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc' }
+function onOutsideFilter(event: PointerEvent) { if (!filterControl.value?.contains(event.target as Node)) filterOpen.value = false }
 const tagNames = ref<string[]>([])
 const tagsLoading = ref(false)
 const tagsError = ref('')
@@ -142,6 +155,7 @@ async function deleteNote(id: string) {
   deleteError.value = null
   try {
     await data.deleteDoc(id)
+    discardAutoNoteEnrichment(session.currentUser.id, id)
     confirmingDeleteId.value = ''
     closeEditing(id)
     if (highlighted.value === id) highlighted.value = ''
@@ -166,7 +180,10 @@ const refreshError = ref('')
 const notes = computed(() => {
   const ids = new Set(data.kbs.filter(kb => kb.notes).map(kb => kb.id))
   return Object.values(data.docs).filter(doc => ids.has(doc.kbId ?? '') && !data.isDocArchived(doc.id))
-    .sort((a, b) => Number(pinnedIds.value.includes(b.id)) - Number(pinnedIds.value.includes(a.id)) || (Date.parse(b[sort.value]) || Date.parse(b.created) || 0) - (Date.parse(a[sort.value]) || Date.parse(a.created) || 0) || b.id.localeCompare(a.id))
+    .sort((a, b) => Number(pinnedIds.value.includes(b.id)) - Number(pinnedIds.value.includes(a.id))
+      || (sort.value === 'updatedAsc' ? 1 : -1) * ((Date.parse(a[sort.value === 'createdDesc' ? 'created' : 'updated']) || Date.parse(a.created) || 0)
+        - (Date.parse(b[sort.value === 'createdDesc' ? 'created' : 'updated']) || Date.parse(b.created) || 0))
+      || b.id.localeCompare(a.id))
 })
 const availableTags = computed(() => [...new Set([...tagNames.value, ...notes.value.flatMap(note => note.tags ?? [])])].sort((a, b) => a.localeCompare(b, 'zh-CN')))
 const tagCounts = computed(() => {
@@ -177,17 +194,49 @@ const tagCounts = computed(() => {
 const matching = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
   return notes.value.filter(doc => (selectedTag.value === null ? !doc.tags?.length : !selectedTag.value || doc.tags?.includes(selectedTag.value))
-    && (!needle || `${doc.title}\n${resolvedRichContent(doc).markdown}\n${(doc.tags ?? []).join(' ')}`.toLocaleLowerCase().includes(needle)))
+    && (imageFilter.value === 'all' || (notePreviewImages(resolvedRichContent(doc)).length > 0) === (imageFilter.value === 'yes'))
+    && inTimeRange(doc.updated, timeFilter.value)
+    && (!needle || `${doc.title}\n${resolvedRichContent(doc).markdown}\n${validPolish(doc)?.polishedMarkdown ?? ''}\n${(doc.tags ?? []).join(' ')}`.toLocaleLowerCase().includes(needle)))
 })
+function inTimeRange(value: string, range: typeof timeFilter.value) {
+  if (range === 'all') return true
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return range === 'earlier'
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1)
+  return range === 'today' ? date >= today : range === 'yesterday' ? date >= yesterday && date < today : date < yesterday
+}
+function validPolish(note: { id: string; blocks: Doc['blocks']; content?: Doc['content'] }) {
+  const version = notePolishVersions[note.id]
+  return version?.sourceMarkdown === resolvedRichContent(note).markdown ? version : null
+}
+const versions = ref<Record<string, 'polished' | 'original'>>({})
+function showPolished(note: Doc) { return !!validPolish(note) && versions.value[note.id] !== 'original' }
+function displayedMarkdown(note: Doc) { return showPolished(note) ? validPolish(note)!.polishedMarkdown : resolvedRichContent(note).markdown }
+function stageIcon(stage: 'title' | 'image' | 'polish') { return { title: 'T', image: '▧', polish: '✦' }[stage] }
+function stageLabel(stage: 'title' | 'image' | 'polish') { return { title: '标题', image: '配图', polish: '润色' }[stage] }
+function progressVisible(id: string) {
+  const steps = noteEnrichmentProgress[id]
+  return !!steps && !(steps.title === 'done' && steps.image === 'done' && (steps.polish === 'done' || steps.polish === 'skipped'))
+}
+function retryOrStart(note: Doc) {
+  if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) retryAutoNoteEnrichment(session.currentUser.id, note.id)
+  else if (note.rev) startAutoNoteEnrichment(session.currentUser.id, note.id, note.rev, { title: true, image: true })
+}
+function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish') {
+  if (noteEnrichmentProgress[note.id]?.[stage] === 'failed') retryOrStart(note)
+}
 // 筛选、分页或远端刷新不能卸载正在输入的卡片，尤其是浏览器草稿写入失败时。
 const retainedEdits = computed(() => notes.value.filter(note => editingIds.value.includes(note.id)
   && !matching.value.slice(0, limit.value).some(item => item.id === note.id)))
 const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
 const visibleImages = computed(() => new Map(visible.value.map(note => [note.id, notePreviewImages(resolvedRichContent(note))])))
+function coverImage(id: string) { return visibleImages.value.get(id)?.find(image => image.alt === '文章总览图') }
+function inlineImages(id: string) { return visibleImages.value.get(id)?.filter(image => image.alt !== '文章总览图') ?? [] }
 const knowledgeSync = useWeKnoraDocuments(() => data.apiLive ? visible.value.map(note => note.id) : [], () => visible.value.map(note => note.updated))
 const loading = computed(() => ['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
-watch([query, selectedTag, sort], () => {
+watch([query, selectedTag, sort, imageFilter, timeFilter], () => {
   limit.value = PAGE_SIZE
   confirmingDeleteId.value = ''
   notesList.value?.scrollTo?.({ top: 0 })
@@ -246,7 +295,9 @@ async function createTag() {
   finally { creatingTag.value = false }
 }
 onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
-onMounted(() => resumeAutoNoteEnrichment(session.currentUser.id))
+onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); window.addEventListener('pointerdown', onOutsideFilter) })
+onBeforeUnmount(() => window.removeEventListener('pointerdown', onOutsideFilter))
+watch(() => session.currentUser.id, memberId => { void initializeNoteWorkflow(memberId); versions.value = {} })
 onMounted(() => void loadPins())
 </script>
 
@@ -261,17 +312,17 @@ onMounted(() => void loadPins())
       <section ref="notesList" class="notes-list" aria-label="小记清单">
         <div class="list-toolbar">
           <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"></label>
-          <button class="manage-tags-toggle" :aria-expanded="managingTags" @click="managingTags = !managingTags">管理标签</button>
-          <label class="sort"><i class="ri-sort-desc"></i><select v-model="sort" aria-label="小记排序"><option value="updated">更新时间排序</option><option value="created">创建时间排序</option></select></label>
-          <button class="refresh" :disabled="loading" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i class="ri-refresh-line"></i></button>
-        </div>
-        <div class="tags-toolbar" aria-label="按标签筛选">
-          <div class="tag-filter-scroll">
-            <button class="tag-filter" :aria-pressed="selectedTag === ''" @click="selectedTag = ''">全部标签</button>
-            <button v-for="tag in availableTags" :key="tag" class="tag-filter" :aria-pressed="selectedTag === tag" @click="selectedTag = selectedTag === tag ? '' : tag">{{ tag }} <span>{{ tagCounts.get(tag) ?? 0 }}</span></button>
-            <button class="tag-filter" :aria-pressed="selectedTag === null" @click="selectedTag = selectedTag === null ? '' : null">无标签 <span>{{ notes.filter(note => !note.tags?.length).length }}</span></button>
+          <div ref="filterControl" class="filter-control">
+            <button class="filter-toggle" type="button" :aria-expanded="filterOpen" aria-controls="note-filter-panel" @click="filterOpen = !filterOpen"><i class="ri-equalizer-line"></i>筛选与排序<span v-if="activeFilterCount" class="filter-count">{{ activeFilterCount }}</span><i class="ri-arrow-down-s-line"></i></button>
+            <div v-if="filterOpen" id="note-filter-panel" class="filter-panel" role="group" aria-label="小记筛选与排序">
+              <div class="filter-group"><strong>标签</strong><div class="filter-options"><button type="button" :aria-pressed="selectedTag === ''" @click="selectedTag = ''">全部</button><button type="button" :aria-pressed="selectedTag === null" @click="selectedTag = null">无标签</button><button v-for="tag in availableTags" :key="tag" type="button" :aria-pressed="selectedTag === tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
+              <div class="filter-group"><strong>图片</strong><div class="filter-options"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'yes', label: '有图' }, { value: 'no', label: '无图' }]" :key="option.value" type="button" :aria-pressed="imageFilter === option.value" @click="imageFilter = option.value as typeof imageFilter">{{ option.label }}</button></div></div>
+              <div class="filter-group"><strong>更新时间</strong><div class="filter-options"><button v-for="option in [{ value: 'all', label: '不限' }, { value: 'today', label: '今天' }, { value: 'yesterday', label: '昨天' }, { value: 'earlier', label: '以前' }]" :key="option.value" type="button" :aria-pressed="timeFilter === option.value" @click="timeFilter = option.value as typeof timeFilter">{{ option.label }}</button></div></div>
+              <div class="filter-group"><strong>排序</strong><select v-model="sort" aria-label="小记排序"><option value="updatedDesc">最近更新</option><option value="createdDesc">最近创建</option><option value="updatedAsc">最早更新</option></select></div>
+              <div class="filter-footer"><button type="button" @click="addingTag = !addingTag; filterOpen = false">新增标签</button><button type="button" @click="managingTags = !managingTags; filterOpen = false">管理标签</button><button type="button" @click="resetFilters">清除筛选</button></div>
+            </div>
           </div>
-          <button class="new-tag-toggle" :aria-expanded="addingTag" @click="addingTag = !addingTag"><i class="ri-add-line"></i>新增标签</button>
+          <button class="refresh" :disabled="loading" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i class="ri-refresh-line"></i></button>
         </div>
         <div v-if="managingTags" class="new-tag-form" aria-label="标签管理">
           <select v-model="sourceTag" aria-label="待处理标签" :disabled="tagSaving"><option value="">选择标签</option><option v-for="tag in availableTags" :key="tag" :value="tag">{{ tag }}</option></select>
@@ -287,22 +338,27 @@ onMounted(() => void loadPins())
         <p v-if="tagsLoading" class="tag-status" role="status">正在读取标签…</p>
         <p v-if="pinError" class="error" role="alert">{{ pinError }}<button v-if="!pinsReady" @click="loadPins">重试读取置顶</button></p>
         <p v-if="tagsError" class="tag-status error" role="alert">{{ tagsError }}<button @click="loadTags">重试标签</button></p>
-        <div class="list-summary"><span>{{ selectedTag === null ? '无标签 · ' : selectedTag ? `# ${selectedTag} · ` : '' }}{{ matching.length }} 条小记</span><span>按{{ sort === 'updated' ? '更新' : '创建' }}时间从新到旧</span></div>
+        <div class="list-summary"><span>{{ matching.length }} 条小记</span><span>{{ filterSummary }}</span></div>
         <p v-if="loadError" class="empty error" role="alert">小记读取失败，已有内容和草稿仍保留。<button @click="reload">重试加载</button></p>
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
-        <p v-else-if="!loadError && !matching.length" class="empty">{{ query || selectedTag ? '没有找到相关小记，换个关键词或标签试试。' : '还没有小记，写下第一条想法吧。' }}</p>
+        <p v-else-if="!loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
         <article v-for="note in visible" :key="note.id" class="note-card" :class="{ highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
           tabindex="0" title="双击在卡片内编辑，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 在卡片内编辑`"
           @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
-          <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
-          <p v-if="noteEnrichmentStatus[note.id]" class="tag-status" role="status">{{ noteEnrichmentStatus[note.id] }} <button v-if="noteEnrichmentStatus[note.id]?.includes('未完成') && canRetryAutoNoteEnrichment(session.currentUser.id, note.id)" type="button" @click="retryAutoNoteEnrichment(session.currentUser.id, note.id)">重试</button></p>
+          <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
+            <div v-if="noteEnrichmentProgress[note.id]" class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出进度">
+              <button v-for="stage in (['title', 'image', 'polish'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage]}`" :title="`${stageLabel(stage)}：${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${noteEnrichmentProgress[note.id]?.[stage] === 'failed' ? '失败，点击重试' : noteEnrichmentProgress[note.id]?.[stage] === 'running' ? '正在处理' : noteEnrichmentProgress[note.id]?.[stage] === 'done' ? '已完成' : '等待处理'}`" :aria-disabled="noteEnrichmentProgress[note.id]?.[stage] !== 'failed'" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
+            </div>
+            <div v-if="validPolish(note)" class="version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(note)" @click="versions[note.id] = 'polished'">润色</button><button type="button" :aria-pressed="!showPolished(note)" @click="versions[note.id] = 'original'">原文</button></div>
+            <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
+          <p v-if="progressVisible(note.id) && noteEnrichmentStatus[note.id]" class="workflow-status" role="status">{{ noteEnrichmentStatus[note.id] }} <button v-if="canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成')" type="button" @click="retryOrStart(note)">重试</button></p>
           <NoteComposer v-if="editingIds.includes(note.id)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
-          <div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="resolvedRichContent(note).markdown || note.title" :document="resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" @character-count="noteCounts[note.id] = $event" /></div>
-          <div v-if="visibleImages.get(note.id)?.length" class="note-images" aria-label="小记图片">
-            <button v-for="(image, index) in visibleImages.get(note.id)" :key="`${index}:${image.src}`" type="button"
+          <div class="note-content" :class="{ 'has-cover': !!coverImage(note.id) }"><button v-if="coverImage(note.id)" type="button" class="note-cover note-image-thumb" aria-label="查看文章总览图" @click="openImage(coverImage(note.id)!, $event)"><img :src="coverImage(note.id)?.src" alt="文章总览图" loading="lazy"></button><div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="showPolished(note) ? undefined : resolvedRichContent(note).document" :readonly="true" bare advanced allow-h1 :min-height="0" @character-count="noteCounts[note.id] = $event" /></div></div>
+          <div v-if="inlineImages(note.id).length" class="note-images" aria-label="小记图片">
+            <button v-for="(image, index) in inlineImages(note.id)" :key="`${index}:${image.src}`" type="button"
               class="note-image-thumb" :aria-label="`查看第 ${index + 1} 张图片大图${image.alt ? `：${image.alt}` : ''}`" @click="openImage(image, $event)">
               <img :src="image.src" :alt="image.alt" loading="lazy" decoding="async">
             </button>
@@ -310,12 +366,6 @@ onMounted(() => void loadPins())
           <div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div>
           <WeKnoraDocumentStatus v-if="data.apiLive" :state="knowledgeSync.states.value[note.id]" :error="knowledgeSync.error.value" @retry="knowledgeSync.refresh" />
           <div class="note-actions">
-            <button @click="noteEditors.get(note.id)?.copyFormatted()">复制内容</button>
-            <button :disabled="!pinsReady || pinSaving" :aria-pressed="pinnedIds.includes(note.id)" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i>{{ pinnedIds.includes(note.id) ? '取消置顶' : '置顶' }}</button>
-            <button @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-link"></i>复制分享链接</button>
-            <button class="card-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button>
-            <button class="card-delete" :aria-label="`${confirmingDeleteId === note.id ? '取消删除' : '删除'}小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" :title="confirmingDeleteId === note.id ? '收起删除确认' : '移入回收站，7 天内可恢复'"
-              :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i :class="confirmingDeleteId === note.id ? 'ri-close-line' : 'ri-delete-bin-line'"></i>{{ deletingId === note.id ? '删除中…' : confirmingDeleteId === note.id ? '取消删除' : '删除' }}</button>
             <RouterLink :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }">完整文档 <i class="ri-arrow-right-up-line"></i></RouterLink>
           </div>
           <div v-if="confirmingDeleteId === note.id" class="card-delete-confirm" role="group" :aria-label="`确认删除小记：${note.title}`">
@@ -353,17 +403,26 @@ h1 i { color: #7a5cc6; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
 .notes-list { min-width: 0; padding: 16px 20px; border-left: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .list-toolbar, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
-.list-toolbar { flex-wrap: wrap; margin-bottom: 10px; gap: 8px; }
+.list-toolbar { margin-bottom: 8px; gap: 8px; }
 button, a, select { color: var(--wao-text-3); font-size: 12px; }
 button { cursor: pointer; border: 0; border-radius: 7px; background: transparent; padding: 7px 9px; }
 button:hover, button[aria-pressed="true"] { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
 button:disabled { cursor: default; opacity: .5; }
-.search { flex: 0 1 50%; min-width: 140px; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 7px 10px; gap: 6px; }
+.search { flex: 1 1 auto; min-width: 120px; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 7px 10px; gap: 6px; }
 input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: inherit; font-size: 12px; }
 .search:focus-within { border-color: var(--wao-primary); }
-.manage-tags-toggle { flex: none; white-space: nowrap; }
-.sort { gap: 3px; margin-left: auto; }
-select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-card); cursor: pointer; }
+.filter-control { position: relative; flex: none; }
+.filter-toggle { white-space: nowrap; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); }
+.filter-toggle i:first-child { margin-right: 5px; }
+.filter-count { display: inline-grid; place-items: center; width: 17px; height: 17px; margin: 0 4px; border-radius: 50%; background: var(--wao-primary); color: white; }
+.filter-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; width: min(340px, calc(100vw - 40px)); max-height: min(68vh, 550px); overflow-y: auto; padding: 15px; border: 1px solid var(--wao-line-control); border-radius: 12px; background: var(--wao-bg-card); box-shadow: 0 12px 38px rgba(30, 24, 55, .15); }
+.filter-group { display: grid; gap: 8px; margin-bottom: 14px; }
+.filter-group strong { color: var(--wao-text-2); font-size: 12px; }
+.filter-options { display: flex; gap: 6px; flex-wrap: wrap; }
+.filter-options button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-sub); }
+.filter-options button[aria-pressed="true"] { border-color: var(--wao-primary); background: var(--wao-bg-hover); color: var(--wao-primary-text); }
+.filter-group select { width: 100%; padding: 8px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-sub); color: var(--wao-text-2); }
+.filter-footer { display: flex; justify-content: space-between; border-top: 1px solid var(--wao-line); padding-top: 8px; }
 .tags-toolbar { display: flex; align-items: flex-start; gap: 5px; min-width: 0; }
 .tags-toolbar button { flex: none; padding: 4px 7px; font-size: 11px; line-height: 1.3; white-space: nowrap; }
 .tag-filter-scroll { display: flex; gap: 5px; min-width: 0; overflow-x: auto; padding: 2px 0 5px; }
@@ -376,14 +435,35 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .new-tag-form .error { flex-basis: 100%; }
 .tag-status { font-size: 12px; color: var(--wao-text-faint); }
 .list-summary { display: flex; justify-content: space-between; gap: 10px; margin: 9px 0 12px; font-size: 11px; color: var(--wao-text-faint); }
-.note-card { background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 20px 22px 10px; margin-bottom: 16px; }
+.note-card { background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 20px 22px 10px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
+.note-card:hover, .note-card:focus-within { border-color: var(--wao-primary); box-shadow: 0 10px 30px rgba(59, 47, 91, .1); transform: translateY(-2px); }
 .note-card.highlighted, .note-card.editing { border-color: var(--wao-primary); }
 .note-card:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
-.note-meta { font-size: 11px; color: var(--wao-text-faint); margin-bottom: 16px; flex-wrap: wrap; }
+.note-meta { font-size: 11px; color: var(--wao-text-faint); margin-bottom: 16px; flex-wrap: wrap; gap: 5px 9px; }
+.stage-list { display: inline-flex; align-items: center; gap: 4px; }
+.stage-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--wao-line-control); border-radius: 50%; font-size: 12px; font-weight: 700; }
+.stage-icon:disabled { opacity: 1; }
+.stage-done { color: #248455; border-color: #a6dac0; background: #effaf4; }
+.stage-running { color: #7453bd; border-color: #c6b4ef; background: #f5f0ff; animation: stage-pulse 1.5s infinite; }
+.stage-failed { color: var(--wao-danger-strong); border-color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
+.stage-skipped { opacity: .55 !important; }
+.stage-list-complete, .version-toggle, .card-quick-actions, .note-actions { opacity: 0; visibility: hidden; transition: opacity .16s; }
+.note-card:hover .stage-list-complete, .note-card:focus-within .stage-list-complete, .note-card:hover .version-toggle, .note-card:focus-within .version-toggle, .note-card:hover .card-quick-actions, .note-card:focus-within .card-quick-actions, .note-card:hover .note-actions, .note-card:focus-within .note-actions { opacity: 1; visibility: visible; }
+.version-toggle { display: inline-flex; gap: 2px; border-radius: 7px; background: var(--wao-bg-sub); }
+.version-toggle button { padding: 3px 6px; font-size: 11px; }
+.version-toggle button[aria-pressed="true"] { color: var(--wao-primary-text); background: var(--wao-bg-card); box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.card-quick-actions { display: inline-flex; gap: 2px; }
+.card-quick-actions button { padding: 3px; font-size: 14px; }
+.workflow-status { margin: -6px 0 12px; color: var(--wao-text-faint); font-size: 11px; }
+.workflow-status button { color: var(--wao-primary-text); text-decoration: underline; }
+@keyframes stage-pulse { 50% { box-shadow: 0 0 0 4px rgba(116,83,189,.14); } }
 .note-meta-trailing { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; white-space: nowrap; }
 .note-count { color: var(--wao-text-faint); font-variant-numeric: tabular-nums; }
 .author { color: var(--wao-text-2); font-size: 12px; font-weight: 600; }
 .saved { color: var(--wao-success-strong); margin-left: auto; }
+.note-content { display: flow-root; }
+.note-cover { float: right; width: clamp(76px, 20%, 108px); height: auto; aspect-ratio: 1.45; margin: 0 0 9px 12px; }
+.note-cover img { object-fit: cover; }
 .note-body { overflow-wrap: anywhere; line-height: 1.8; font-size: 14px; max-height: 500px; overflow: auto; }
 .note-body :deep(p:first-child) { margin-top: 0; }
 .note-body :deep(img.md-img) { display: none !important; }
@@ -399,7 +479,8 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
 .note-image-close:hover { background: rgba(255, 255, 255, .28); color: #fff; }
 .card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 14px; }
 .card-tags button { color: var(--wao-primary-text); overflow-wrap: anywhere; max-width: 100%; padding: 4px 7px; }
-.note-actions { margin-top: 14px; border-top: 1px solid var(--wao-line-control); padding-top: 6px; justify-content: space-between; }
+.note-actions { max-height: 0; margin: 0; padding: 0; border: 0; overflow: hidden; justify-content: flex-end; }
+.note-card:hover .note-actions, .note-card:focus-within .note-actions { max-height: 42px; margin-top: 8px; border-top: 1px solid var(--wao-line-control); padding-top: 4px; }
 .note-actions a { text-decoration: none; margin-left: auto; }
 .card-edit { display: inline-flex; gap: 4px; align-items: center; }
 .card-delete { display: inline-flex; gap: 4px; align-items: center; color: var(--wao-danger-strong); }
@@ -421,7 +502,9 @@ select { max-width: 130px; padding: 6px 0; border: 0; background: var(--wao-bg-c
   .writing-pane :deep(.note-composer:not(.fullscreen)) { flex: 1; min-height: 0; max-height: none; }
   .notes-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 }
-@media (max-width: 1100px) { .notes-page { padding: 20px; } .notes-workspace { gap: 18px; grid-template-columns: minmax(280px, .9fr) minmax(300px, 1.1fr); } .notes-list { padding-left: 18px; } .search { flex: 1 1 50%; } }
+@media (max-width: 1100px) { .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 16px 10px; } .search { flex: 1 1 50%; } }
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 16px 10px; } }
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 16px 12px 8px; } .sort { margin-left: 0; } .list-summary { flex-wrap: wrap; } }
+@media (hover: none) { .stage-list-complete, .version-toggle, .card-quick-actions, .note-actions { opacity: 1; visibility: visible; } .note-actions { max-height: 42px; margin-top: 8px; border-top: 1px solid var(--wao-line-control); padding-top: 4px; } .note-card:hover { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .note-card, .stage-icon { transition: none; animation: none; } }
 </style>

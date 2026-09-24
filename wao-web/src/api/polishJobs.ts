@@ -17,7 +17,7 @@ export interface PolishJobOptions {
 export const newPolishRequestId = () => crypto.randomUUID().replace(/-/g, '')
 
 /** POST 重试沿用请求标识，GET 只恢复已有任务；每个 HTTP 请求都有短超时。 */
-export async function waitForPolish(originalText: string, kind: 'DOCUMENT' | 'WORKSPACE' | 'NOTE_TITLE', options: PolishJobOptions = {}) {
+export async function waitForPolish(originalText: string, kind: 'DOCUMENT' | 'WORKSPACE' | 'NOTE_TITLE' | 'NOTE_BODY', options: PolishJobOptions = {}) {
   const requestId = options.requestId ?? newPolishRequestId()
   const read = async (request: Promise<{ data: ApiResponse<PolishJob> }>) => (await request).data.data
   let job = await read(http.post('/api/text-polish/jobs', { requestId, kind, originalText }))

@@ -15,8 +15,10 @@ import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { copyText } from '@/utils/clipboard'
+import { fetchNotePolishVersions } from '@/api/notePolishVersions'
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
 
 vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
 vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
@@ -27,6 +29,16 @@ const Editor = defineComponent({
 function doc(id: string, text: string, created = '2026-09-07T08:00:00', author = 'wg'): Doc {
   return { id, title: text, author, created, updated: created, kbId: 'kb-notes', rev: 3,
     folderId: 'f', blocks: [{ p: text }], links: [], backlinks: [] }
+}
+async function openFilters(wrapper: Awaited<ReturnType<typeof view>>) {
+  await wrapper.get('.filter-toggle').trigger('click')
+}
+async function requestDelete(wrapper: Awaited<ReturnType<typeof view>>, id: string) {
+  await wrapper.get(`[data-note-id="${id}"]`).trigger('contextmenu')
+  await flushPromises()
+  const action = [...document.body.querySelectorAll('[role="menu"] button')].find(button => button.textContent?.includes('移入回收站'))
+  action?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await flushPromises()
 }
 async function view() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }, { path: '/kb/:id', component: { template: '<div />' } }] })
@@ -60,7 +72,7 @@ describe('小记集中记录空间', () => {
   it('从小记卡片直接复制免登录只读分享页链接', async () => {
     useDataStore().docs.old = doc('old', '要分享的小记')
     const wrapper = await view()
-    const share = wrapper.findAll('[data-note-id="old"] .note-actions button').find(button => button.text().includes('复制分享链接'))
+    const share = wrapper.findAll('[data-note-id="old"] .card-quick-actions button').find(button => button.attributes('aria-label') === '复制分享链接')
     expect(share).toBeDefined()
     await share!.trigger('click')
     expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/s/d/old`, '公开分享链接已复制')
@@ -76,12 +88,12 @@ describe('小记集中记录空间', () => {
     expect(wrapper.find('.note-card').attributes('data-note-id')).toBe('old')
     await wrapper.find('textarea').setValue('未保存草稿')
     vi.mocked(savePreference).mockRejectedValueOnce(new Error('网络错误'))
-    await wrapper.find('[data-note-id="old"] .note-actions button[aria-pressed]').trigger('click')
+    await wrapper.find('[data-note-id="old"] .card-quick-actions button[aria-pressed]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('置顶保存失败')
     expect(wrapper.find('.note-card').attributes('data-note-id')).toBe('old')
     expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('未保存草稿')
-    await wrapper.find('[data-note-id="old"] .note-actions button[aria-pressed]').trigger('click')
+    await wrapper.find('[data-note-id="old"] .card-quick-actions button[aria-pressed]').trigger('click')
     await flushPromises()
     expect(savePreference).toHaveBeenLastCalledWith('note-pins-v1', '[]')
     expect(wrapper.find('.note-card').attributes('data-note-id')).toBe('new')
@@ -93,6 +105,7 @@ describe('小记集中记录空间', () => {
     vi.mocked(apiPatchDoc).mockReset()
     vi.mocked(fetchNoteTags).mockResolvedValue([])
     vi.mocked(apiCreateNoteTag).mockReset()
+    vi.mocked(fetchNotePolishVersions).mockResolvedValue([])
     localStorage.clear()
     setActivePinia(createPinia())
     useSessionStore().accept({ member: { id: 'wg', name: '娃哥', initial: '哥', color: '#4358d6', role: '成员' } } as never)
@@ -111,13 +124,13 @@ describe('小记集中记录空间', () => {
     const wrapper = await view()
     await wrapper.find('textarea').setValue('正在写的新小记')
     const browserConfirm = vi.spyOn(window, 'confirm')
-    await wrapper.find('[data-note-id="one"] .card-delete').trigger('click')
+    await requestDelete(wrapper, 'one')
     expect(remove).not.toHaveBeenCalled()
     expect(wrapper.find('[data-note-id="one"] .card-delete-confirm').text()).toContain('7 天内可恢复')
     await wrapper.find('[data-note-id="one"] .card-delete-confirm button').trigger('click')
     expect(wrapper.find('[data-note-id="one"] .card-delete-confirm').exists()).toBe(false)
     expect(remove).not.toHaveBeenCalled()
-    await wrapper.find('[data-note-id="one"] .card-delete').trigger('click')
+    await requestDelete(wrapper, 'one')
     await wrapper.find('[data-note-id="one"] .card-delete-submit').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-note-id="one"]').exists()).toBe(true)
@@ -147,7 +160,8 @@ describe('小记集中记录空间', () => {
     await wrapper.find('.load-more').trigger('click')
     expect(wrapper.findAll('.note-card')).toHaveLength(24)
     expect(wrapper.find('.load-more').exists()).toBe(false)
-    await wrapper.find('select').setValue('created')
+    await openFilters(wrapper)
+    await wrapper.find('[aria-label="小记排序"]').setValue('createdDesc')
     expect(wrapper.findAll('.note-card')).toHaveLength(10)
     await wrapper.find('input[type="search"]').setValue('记录 00')
     expect(wrapper.findAll('.note-card')).toHaveLength(1)
@@ -207,7 +221,7 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.find('.note-meta .note-count').text()).toBe('6 字')
     expect(wrapper.find('.note-body [aria-label="当前正文字数"]').exists()).toBe(true)
-    await wrapper.find('.card-edit').trigger('click')
+    await wrapper.find('.note-card').trigger('dblclick')
     await flushPromises()
     expect(wrapper.find('.note-meta .note-count').exists()).toBe(false)
     expect(wrapper.find('[aria-label="当前正文字数"]').exists()).toBe(true)
@@ -257,7 +271,8 @@ describe('小记集中记录空间', () => {
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['b', 'a'])
     await wrapper.find('input[type="search"]').setValue('发布')
     expect(wrapper.findAll('.note-card')).toHaveLength(1)
-    await wrapper.findAll('.tag-filter').find(button => button.text().startsWith('历史'))!.trigger('click')
+    await openFilters(wrapper)
+    await wrapper.findAll('.filter-options button').find(button => button.text().includes('历史'))!.trigger('click')
     expect(wrapper.text()).toContain('没有找到相关小记')
     wrapper.unmount()
   })
@@ -453,12 +468,13 @@ describe('小记集中记录空间', () => {
     const wrapper = await view()
     await flushPromises()
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['a', 'b'])
-    await wrapper.find('select').setValue('created')
+    await openFilters(wrapper)
+    await wrapper.find('[aria-label="小记排序"]').setValue('createdDesc')
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['b', 'a'])
-    await wrapper.findAll('.tag-filter').find(tag => tag.text().includes('工作'))!.trigger('click')
+    await wrapper.findAll('.filter-options button').find(tag => tag.text().includes('工作'))!.trigger('click')
     await wrapper.find('input[type="search"]').setValue('备忘')
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['a'])
-    await wrapper.find('.new-tag-toggle').trigger('click')
+    await wrapper.find('.filter-footer button').trigger('click')
     await wrapper.find('[aria-label="新标签名称"]').setValue('灵感')
     vi.mocked(apiCreateNoteTag).mockRejectedValueOnce(new Error('网关不可达')).mockResolvedValueOnce('灵感')
     await wrapper.find('.new-tag-form').trigger('submit')
@@ -467,7 +483,8 @@ describe('小记集中记录空间', () => {
     expect((wrapper.find('[aria-label="新标签名称"]').element as HTMLInputElement).value).toBe('灵感')
     await wrapper.find('.new-tag-form').trigger('submit')
     await flushPromises()
-    expect(wrapper.findAll('.tag-filter').some(tag => tag.text().includes('灵感'))).toBe(true)
+    await openFilters(wrapper)
+    expect(wrapper.findAll('.filter-options button').some(tag => tag.text().includes('灵感'))).toBe(true)
     expect(apiCreateNoteTag).toHaveBeenNthCalledWith(2, '灵感')
     wrapper.unmount()
   })
@@ -510,7 +527,7 @@ describe('小记集中记录空间', () => {
     await wrapper.get('.note-card textarea').setValue('卡片内尚未保存的修改')
     await wrapper.get('.note-card .note-composer').findAll('button').find(button => button.text() === '收起编辑')!.trigger('click')
     expect(wrapper.find('.note-card .note-composer').exists()).toBe(false)
-    await wrapper.get('.card-edit').trigger('click')
+    await wrapper.get('.note-card').trigger('dblclick')
     expect(wrapper.get<HTMLTextAreaElement>('.note-card textarea').element.value).toBe('卡片内尚未保存的修改')
     expect(wrapper.get('.writing-pane textarea').element).toBe(newEditor)
     wrapper.unmount()
@@ -522,7 +539,7 @@ describe('小记集中记录空间', () => {
     const wrapper = await view()
     await wrapper.get('.writing-pane textarea').setValue('左侧草稿')
     await wrapper.get('input[type="search"]').setValue('工作')
-    await wrapper.get('.card-edit').trigger('click')
+    await wrapper.get('.note-card').trigger('dblclick')
     await wrapper.get('.note-card textarea').setValue('工作修改')
     vi.mocked(apiPatchDoc).mockRejectedValueOnce(new Error('网关错误')).mockResolvedValueOnce({ ...doc('a', '工作修改'), rev: 4 })
     await wrapper.get('.note-card .save-note').trigger('click')
@@ -547,10 +564,10 @@ describe('小记集中记录空间', () => {
     data.docs.a = doc('a', '记录 A')
     data.docs.b = doc('b', '记录 B')
     const wrapper = await view()
-    await wrapper.get('[data-note-id="a"] .card-edit').trigger('click')
+    await wrapper.get('[data-note-id="a"]').trigger('dblclick')
     await wrapper.get('[data-note-id="a"] textarea').setValue('A 未保存')
     const editorA = wrapper.get('[data-note-id="a"] textarea').element
-    await wrapper.get('[data-note-id="b"] .card-edit').trigger('click')
+    await wrapper.get('[data-note-id="b"]').trigger('dblclick')
     await wrapper.get('[data-note-id="b"] textarea').setValue('B 未保存')
     const editorB = wrapper.get('[data-note-id="b"] textarea').element
     await wrapper.get('input[type="search"]').setValue('不匹配任何记录')
@@ -600,11 +617,36 @@ describe('小记集中记录空间', () => {
     expect(wrapper.text()).not.toContain('全部小记')
     expect(wrapper.text()).not.toContain('全部时间')
     expect(wrapper.find('[aria-label="按创建日期筛选"]').exists()).toBe(false)
-    const untagged = () => wrapper.findAll('.tag-filter').find(button => button.text().startsWith('无标签'))!
+    await openFilters(wrapper)
+    const untagged = () => wrapper.findAll('.filter-options button').find(button => button.text().startsWith('无标签'))!
     await untagged().trigger('click')
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['b'])
-    await untagged().trigger('click')
+    await wrapper.findAll('.filter-options button').find(button => button.text() === '全部')!.trigger('click')
     expect(wrapper.findAll('.note-card')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('润色与原文可切换，图片和更新时间筛选在同一面板', async () => {
+    const today = new Date().toISOString()
+    const source = '今天开会，然后就是决定明天发布。'
+    useDataStore().docs.a = {
+      ...doc('a', '今日有图', today), updated: today,
+      content: { version: 1, document: null, markdown: `![文章总览图](/api/images/a/raw)\n\n${source}` },
+    }
+    useDataStore().docs.b = doc('b', '以前无图', '2020-01-01T08:00:00')
+    vi.mocked(fetchNotePolishVersions).mockResolvedValue([{
+      docId: 'a', sourceMarkdown: `![文章总览图](/api/images/a/raw)\n\n${source}`,
+      polishedMarkdown: '会议决定明天发布。',
+    }])
+    const wrapper = await view()
+    await flushPromises()
+    expect(wrapper.get('[data-note-id="a"] .note-body textarea').attributes('value')).toBe('会议决定明天发布。')
+    await wrapper.get('[data-note-id="a"] .version-toggle button:last-child').trigger('click')
+    expect(wrapper.get('[data-note-id="a"] .note-body textarea').attributes('value')).toContain(source)
+    await openFilters(wrapper)
+    await wrapper.findAll('.filter-group')[1]!.findAll('button')[1]!.trigger('click')
+    await wrapper.findAll('.filter-group')[2]!.findAll('button')[1]!.trigger('click')
+    expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['a'])
     wrapper.unmount()
   })
 
