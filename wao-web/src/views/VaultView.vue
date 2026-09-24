@@ -203,9 +203,12 @@ async function saveItem() {
         note: formNote.value.trim(), secret: formSecret.value || undefined, groupId: formGroupId.value,
       })
       if (!updated) throw new Error('保存失败')
-      selId.value = editingId.value
       groupId.value = formGroupId.value
       query.value = ''
+      // Filtering and pagination watchers clear the selection on the next tick.
+      // Select the edited item only after those resets have finished.
+      await nextTick()
+      selId.value = editingId.value
       revealed.value = null
     } else {
       const item = await data.addVaultItem({
@@ -215,6 +218,7 @@ async function saveItem() {
       if (!item) throw new Error('保存失败，请重试')
       groupId.value = formGroupId.value
       query.value = ''
+      await nextTick()
       selId.value = item.id
     }
     itemOpen.value = false
