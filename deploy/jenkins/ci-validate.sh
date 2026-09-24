@@ -62,6 +62,7 @@ for script in \
   deploy/scripts/start-codex-vpn.sh \
   deploy/scripts/test-ensure-codex-egress.sh \
   deploy/scripts/install-release-linux.sh \
+  deploy/scripts/resolve-gateway-ipv4.sh \
   deploy/scripts/test-redis-sentinel-policy.sh \
   deploy/jenkins/resolve-batch-base.sh \
   deploy/jenkins/test-resolve-batch-base.sh \

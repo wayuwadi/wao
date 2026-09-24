@@ -14,8 +14,7 @@ SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}"
 output_path="${WAO_NGINX_RENDER_OUTPUT:-${deploy_dir}/nginx/wao.wayuwa.cn.conf}"
 
 resolve_ipv4() {
-  host="$1"
-  getent ahostsv4 "${host}" | awk '$2 == "STREAM" { print $1; exit }'
+  sh "${script_dir}/resolve-gateway-ipv4.sh" "$1"
 }
 
 MASTER_GATEWAY_IPV4="${MASTER_GATEWAY_IPV4:-$(resolve_ipv4 "${MASTER_PUBLIC_HOST}")}"

@@ -84,4 +84,27 @@ if PATH="${tmp_dir}:${PATH}" \
   exit 1
 fi
 
+# A local tunnel in /etc/hosts must not become a public Nginx upstream.
+cat >"${tmp_dir}/dig" <<'EOF'
+#!/bin/sh
+printf '%s\n' '198.51.100.21'
+EOF
+chmod 0755 "${tmp_dir}/dig"
+cat >"${tmp_dir}/getent" <<'EOF'
+#!/bin/sh
+case "$2" in
+  master.test) printf '203.0.113.10 STREAM master.test\n' ;;
+  slave.test) printf '127.0.0.1 STREAM slave.test\n' ;;
+  *) exit 1 ;;
+esac
+EOF
+PATH="${tmp_dir}:${PATH}" MASTER_PUBLIC_HOST=master.test SLAVE_PUBLIC_HOST=slave.test \
+  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/tunnel.conf" \
+  sh "${script_dir}/render-nginx-config.sh"
+grep -q 'server 198.51.100.21:9000' "${tmp_dir}/tunnel.conf"
+if grep -q 'server 127.0.0.1:9000' "${tmp_dir}/tunnel.conf"; then
+  echo 'Local tunnel leaked into public Nginx upstream.' >&2
+  exit 1
+fi
+
 echo 'Nginx IPv4 upstream rendering tests passed.'
