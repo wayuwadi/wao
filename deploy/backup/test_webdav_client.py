@@ -106,11 +106,18 @@ class WebDavHandler(BaseHTTPRequestHandler):
             path for path in sorted(self.directories) if path != parent and path.startswith(parent)
             and "/" not in path[len(parent):].rstrip("/")
         )
+        file_responses = [path for path in sorted(self.files)
+                          if path.startswith(parent) and "/" not in path[len(parent):]]
         body = ['<?xml version="1.0"?><multistatus xmlns="DAV:">']
         for path in responses:
             body.append(
                 f"<response><href>{path}</href><propstat><prop><resourcetype>"
                 "<collection/></resourcetype></prop></propstat></response>"
+            )
+        for path in file_responses:
+            body.append(
+                f"<response><href>{path}</href><propstat><prop><resourcetype/>"
+                "</prop></propstat></response>"
             )
         body.append("</multistatus>")
         payload = "".join(body).encode()
@@ -122,6 +129,13 @@ class WebDavHandler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         if not self.authorized():
+            return
+        file_path = self.normalized()
+        if file_path in self.files:
+            del self.files[file_path]
+            type(self).files = self.files
+            self.send_response(204)
+            self.end_headers()
             return
         prefix = self.normalized(directory=True)
         self.directories = {path for path in self.directories if not path.startswith(prefix)}
@@ -168,11 +182,14 @@ class WebDavClientTest(unittest.TestCase):
             self.assertEqual(
                 self.client.list_dirs("WAO-backups/linux2"), ["20260831T193000Z"]
             )
+            self.assertEqual(self.client.list_files("WAO-backups/linux2/20260831T193000Z"), ["part-0000"])
             destination = root / "download.bin"
             self.client.download(
                 "WAO-backups/linux2/20260831T193000Z/part-0000", destination
             )
             self.assertEqual(destination.read_bytes(), source.read_bytes())
+            self.client.delete_file("WAO-backups/linux2/20260831T193000Z/part-0000")
+            self.assertIsNone(self.client.stat_size("WAO-backups/linux2/20260831T193000Z/part-0000", missing_ok=True))
             self.client.delete("WAO-backups/linux2/20260831T193000Z")
             self.assertEqual(self.client.list_dirs("WAO-backups/linux2"), [])
 

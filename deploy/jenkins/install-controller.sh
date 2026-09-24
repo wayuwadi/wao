@@ -136,7 +136,7 @@ install -d -m 0700 /etc/wao-backup
 install -d -m 0755 /usr/local/lib/wao-backup
 for backup_script in \
   configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
-  upload-peer-offsite.sh restore-peer-offsite.sh \
+  upload-peer-offsite.sh restore-peer-offsite.sh run-readable-content.sh \
   create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
   install -m 0755 "$script_dir/../backup/$backup_script" \
     "/usr/local/lib/wao-backup/$backup_script"
@@ -146,6 +146,8 @@ for unit in wao-peer-backup.service wao-peer-backup.timer; do
 done
 install -m 0755 "$script_dir/../backup/webdav_client.py" \
   /usr/local/lib/wao-backup/webdav_client.py
+install -m 0755 "$script_dir/../backup/export-readable-content.py" \
+  /usr/local/lib/wao-backup/export-readable-content.py
 install -m 0644 "$script_dir/../backup/wao-offsite-backup.service" \
   /etc/systemd/system/wao-offsite-backup.service
 install -m 0644 "$script_dir/../backup/wao-offsite-backup.timer" \

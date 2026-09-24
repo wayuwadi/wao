@@ -141,10 +141,11 @@ sh ~/deploy/wao/deploy/scripts/validate-slave.sh
 
 如果主库已经清理了从库所需的早期 binlog，先用 `mysqldump --single-transaction --set-gtid-purged=ON` 生成当前 `wao` 快照，再执行 `bootstrap-mysql-slave.sh <快照.sql.gz>`。该脚本只重置从库 GTID，不修改主库业务数据。
 
-Linux1 的 `backup-mysql.sh` 可用于临时本地快照，但不再把尚未安装的 cron/systemd 描述成生产保障。正式备份由
-Linux2 的 `wao-offsite-backup.timer` 每天生成：WAO MySQL、Jenkins、JumpServer 与部署恢复材料先加密分片，
-再上传到 123 云盘，Linux2 本地保留 7 天、远端保留 30 天。首次专用 WebDAV 授权、真实上传和隔离恢复演练见
-[异地备份手册](backup/README.md)，决策边界见 [ADR-188](../docs/adr/188-encrypted-123-cloud-offsite-backup.md)。
+Linux1 的 `backup-mysql.sh` 可用于临时本地快照，但不再把尚未安装的 cron/systemd 描述成生产保障。Linux1/Linux2
+间的加密恢复快照与 binlog 归档继续按原定时运行。Linux2 的 `wao-offsite-backup.timer` 每天向 123 云盘更新一份可直接
+浏览的知识库、小记、任务及其引用媒体文件；仅传变化，不再每天上传整份加密数据库快照。旧云端加密恢复点保留。
+配置、范围和限制见 [123 云盘可读副本手册](backup/README.md)，变更决策见
+[ADR-276](../docs/adr/276-readable-123-cloud-content-copy.md)。
 
 最终入口应为：
 

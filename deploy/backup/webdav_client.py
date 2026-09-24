@@ -49,6 +49,7 @@ class WebDavClient:
         self.host = parsed.hostname
         self.port = parsed.port
         self.base_path = parsed.path.rstrip("/") or "/"
+        self._ensured_dirs: set[str] = set()
         token = base64.b64encode(f"{username}:{password}".encode()).decode("ascii")
         self.authorization = f"Basic {token}"
 
@@ -141,12 +142,16 @@ class WebDavClient:
         current: list[str] = []
         for part in (part for part in remote_path.strip("/").split("/") if part):
             current.append(part)
+            key = "/".join(current)
+            if key in self._ensured_dirs:
+                continue
             self._request(
                 "MKCOL",
-                "/".join(current),
+                key,
                 expected={201, 405},
                 attempts=2,
             )
+            self._ensured_dirs.add(key)
 
     def upload(self, local_path: Path, remote_path: str, force: bool = False,
                offset: int = 0, length: int | None = None) -> None:
@@ -281,8 +286,35 @@ class WebDavClient:
                 result.append(name)
         return sorted(set(result))
 
+    def list_files(self, remote_path: str) -> list[str]:
+        body = b'<?xml version="1.0"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+        _, _, payload = self._request(
+            "PROPFIND", remote_path, body=body,
+            headers={"Depth": "1", "Content-Type": "application/xml"},
+            directory=True, expected={207},
+        )
+        result: list[str] = []
+        root = ET.fromstring(payload)
+        requested = self._target(remote_path, directory=True).rstrip("/")
+        for response in root.findall("{DAV:}response"):
+            href = response.findtext("{DAV:}href", default="")
+            href_path = unquote(urlsplit(href).path).rstrip("/")
+            if href_path == unquote(requested):
+                continue
+            resource_type = response.find(".//{DAV:}resourcetype")
+            if resource_type is None or resource_type.find("{DAV:}collection") is not None:
+                continue
+            name = href_path.rsplit("/", 1)[-1]
+            if name and "/" not in name:
+                result.append(name)
+        return sorted(set(result))
+
     def delete(self, remote_path: str) -> None:
         self._request("DELETE", remote_path, expected={200, 202, 204, 404}, directory=True)
+        self._ensured_dirs.clear()
+
+    def delete_file(self, remote_path: str) -> None:
+        self._request("DELETE", remote_path, expected={200, 202, 204, 404})
 
 
 def build_client(config_path: Path, allow_http: bool) -> tuple[WebDavClient, dict[str, str]]:
