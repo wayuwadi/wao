@@ -53,4 +53,12 @@ public interface SharedChatSyncStateMapper {
              WHERE id = #{id} AND lease_owner = #{owner}
             """)
     int release(@Param("id") String id, @Param("owner") String owner);
+
+    /** 失败后的双节点共享冷却；保留水位，不允许另一节点立即重试。 */
+    @Update("""
+            UPDATE shared_chat_sync_state SET lease_owner = NULL,
+                lease_until = TIMESTAMPADD(SECOND, #{seconds}, CURRENT_TIMESTAMP(6))
+             WHERE id = #{id} AND lease_owner = #{owner}
+            """)
+    int defer(@Param("id") String id, @Param("owner") String owner, @Param("seconds") long seconds);
 }

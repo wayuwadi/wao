@@ -74,6 +74,14 @@ public class AutomationService {
         return jobs.stream().map(j -> toDto(j, runsByJob.getOrDefault(j.getId(), List.of()), memberNames)).toList();
     }
 
+    private static boolean retiredHandler(AutomationJobEntity job) {
+        return "feishu-chat-sync".equals(job.getHandler()) || "shared-chat-nightly-sync".equals(job.getHandler());
+    }
+
+    private static void requireActiveHandler(AutomationJobEntity job) {
+        if (retiredHandler(job)) throw new cn.wayuwa.wao.common.BadRequestException("飞书聊天记录同步已停用");
+    }
+
     /** 按 id 获取任务详情。 */
     public AutomationJobDto getJob(String id) {
         AutomationJobEntity e = requireJob(id);
@@ -154,6 +162,7 @@ public class AutomationService {
      */
     public AutomationJobDto runJob(String id, String executorId) {
         AutomationJobEntity e = requireJob(id);
+        requireActiveHandler(e);
         if ("待修复".equals(e.getStatus())) {
             recordRun(e, "失败 · 需要先重新授权", executorId, 0, null);
         } else {
@@ -175,6 +184,7 @@ public class AutomationService {
     /** 恢复已暂停的任务。 */
     public AutomationJobDto resumeJob(String id) {
         AutomationJobEntity e = requireJob(id);
+        requireActiveHandler(e);
         e.setStatus("正常");
         if (e.getCronExpr() != null) {
             e.setNextFireAt(computeNextFire(e.getCronExpr()));
@@ -186,6 +196,7 @@ public class AutomationService {
     /** 重新授权：把「待修复」任务恢复为「正常」。 */
     public AutomationJobDto reauthJob(String id) {
         AutomationJobEntity e = requireJob(id);
+        requireActiveHandler(e);
         e.setStatus("正常");
         if (e.getCronExpr() != null) {
             e.setNextFireAt(computeNextFire(e.getCronExpr()));
@@ -196,6 +207,7 @@ public class AutomationService {
 
     /** 供 {@link JobSchedulerService} 调用：按 Cron 到期自动执行一次，并推进下一次触发时间。 */
     public void executeScheduled(AutomationJobEntity e) {
+        if (retiredHandler(e)) return;
         LocalDateTime scheduledFireAt = e.getNextFireAt();
         LocalDateTime nextFireAt = computeNextFireAfter(e.getCronExpr(), scheduledFireAt);
         int claimed = jobMapper.update(null, new LambdaUpdateWrapper<AutomationJobEntity>()

@@ -34,7 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 飞书群聊消息同步知识库：每天 23:59 把当天 00:00–23:59 的群聊记录沉淀成一篇文档。
+ * 飞书任务收集共用配置与历史归档兼容服务；聊天记录同步已退役。
  *
  * <p>一天一篇，标题就是那一天（{@code 飞书群聊 · 2026-07-25}），同一天重复运行覆盖同一篇，
  * 不会在知识库里堆同名文档。发言人按配置里的 ID → 人名映射还原（娃哥 / 娃弟 / 机器人通知），
@@ -94,6 +94,11 @@ public class FeishuChatSyncService implements JobHandler {
     @Override
     public String execute(cn.wayuwa.wao.domain.AutomationJobEntity job, LocalDateTime scheduledFireAt) {
         return syncDay(scheduledFireAt == null ? null : scheduledFireAt.toLocalDate());
+    }
+
+    /** 已退役的归档与飞书复盘入口统一拒绝，保留历史数据。 */
+    public void requireSyncAvailable() {
+        throw new BadRequestException("飞书聊天记录同步已停用；请使用 WAO 原生聊天复盘");
     }
 
     /** 当前配置（App Secret 只回脱敏形态）。 */
@@ -199,58 +204,10 @@ public class FeishuChatSyncService implements JobHandler {
 
     private ChatSyncDayResult syncDayResult(LocalDate day, boolean notify,
             String expectedChatId, String expectedKbId, Runnable heartbeat) {
-        LocalDate target = day == null ? LocalDate.now(ZONE) : day;
-        SyncConfig snapshot = syncConfig();
-        String chatId = requiredValue(snapshot.chatId(), "请先选择要同步的群聊");
-        String kbId = requiredValue(snapshot.kbId(), "请先选择沉淀到哪个知识库");
-        if (hasText(expectedChatId) && !expectedChatId.equals(chatId)
-                || hasText(expectedKbId) && !expectedKbId.equals(kbId)) {
-            throw new BadRequestException("飞书同步群聊或知识库已变更，本次复盘已停止");
-        }
-        String monthFolder = target.getYear() + " 年 " + target.getMonthValue() + " 月";
-        String folderId = knowledge.ensureAutoFolder(kbId, monthFolder).getId();
-
-        // 当天 00:00:00 到 23:59:59，与「截止到今天早上零点到今天晚上 23:59」一致
-        long start = target.atStartOfDay(ZONE).toEpochSecond();
-        long end = target.atTime(LocalTime.of(23, 59, 59)).atZone(ZONE).toEpochSecond();
-
-        String token = token(snapshot);
-        // 以请求发起顺序签版；后发起的查询永远优先，失败烧号不影响正确性。
-        long archiveVersion = archiveVersions.nextVersion();
-        List<FeishuMessage> messages = feishu.listMessages(token, chatId, start, end);
-        heartbeat.run();
-        Map<String, String> names = senderNames(snapshot.senders());
-        String chatName = hasText(snapshot.chatName()) ? snapshot.chatName().trim() : "群聊";
-        List<DocBlockDto> blocks = render(token, target, messages, names, chatName, heartbeat);
-
-        String title = "飞书群聊 · " + target.format(DAY);
-        heartbeat.run();
-        assertCurrentTarget(chatId, kbId);
-        DocDto doc = knowledge.upsertAutoDoc(
-                kbId, folderId, title, blocks, chatId, target, archiveVersion);
-        assertCurrentTarget(chatId, kbId);
-        log.info("飞书群聊同步完成：{} 条消息写入文档 {}", messages.size(), doc.id());
-        if (notify) {
-            notifier.notifyCard(new FeishuWebhookNotifier.Card(
-                    "群聊记录已沉淀",
-                    "green",
-                    List.of(
-                            List.of("日期", target.format(DAY) + " 00:00–23:59"),
-                            List.of("群聊", chatName),
-                            List.of("消息", messages.size() + " 条")),
-                    null,
-                    "打开文档",
-                    "https://wao.wayuwa.cn/kb/" + kbId + "?doc=" + doc.id()));
-        }
-        return new ChatSyncDayResult(target, chatId, chatName, kbId, doc, List.copyOf(messages));
+        throw new BadRequestException("飞书聊天记录同步已停用；群内 @机器人保存任务仍可使用");
     }
 
-    private void assertCurrentTarget(String expectedChatId, String expectedKbId) {
-        SyncConfig current = syncConfig();
-        if (!expectedChatId.equals(current.chatId()) || !expectedKbId.equals(current.kbId())) {
-            throw new BadRequestException("飞书同步群聊或知识库已变更，本次复盘已停止");
-        }
-    }
+
 
     /**
      * 按天补录一段连续日期的群聊历史。
@@ -319,40 +276,7 @@ public class FeishuChatSyncService implements JobHandler {
     }
 
     /** 正文：一条消息一段，图片单独成段，按小时分节。 */
-    private List<DocBlockDto> render(String token, LocalDate day, List<FeishuMessage> messages,
-            Map<String, String> names, String chatName, Runnable heartbeat) {
-        List<DocBlockDto> blocks = new ArrayList<>();
-        blocks.add(block(day.format(DAY) + " 00:00–23:59 的群聊记录，由自动化每天 23:59 同步，"
-                + "手动编辑会在下次同步时被覆盖。", null, null, null));
-        if (messages.isEmpty()) {
-            blocks.add(paragraph("这一天群里没有消息。"));
-            return blocks;
-        }
-        String currentHour = "";
-        int processed = 0;
-        for (FeishuMessage m : messages) {
-            if (processed++ % 25 == 0) heartbeat.run();
-            if (m.deleted()) {
-                continue;
-            }
-            String time = Instant.ofEpochMilli(m.createTime()).atZone(ZONE).format(CLOCK);
-            String hour = time.substring(0, 2) + ":00";
-            if (!hour.equals(currentHour)) {
-                currentHour = hour;
-                blocks.add(heading(hour));
-            }
-            String who = names.getOrDefault(m.senderId(), shortId(m.senderId()));
-            // 多媒体也保留「时间 + 发言人 + 占位」，依旧不声称完成 OCR 或转写。
-            String text = reviewTextOf(m);
-            if (!text.isBlank()) {
-                blocks.add(paragraph("**" + time + " " + who + "**：" + text));
-            }
-            for (String url : imageUrls(token, m, chatName, heartbeat)) {
-                blocks.add(paragraph("![群聊图片](" + url + ")"));
-            }
-        }
-        return blocks;
-    }
+
 
     /** 把一条消息的 content JSON 渲染成一行纯文本；不认识的类型至少标出类型名。 */
     private String textOf(FeishuMessage m) {
@@ -418,45 +342,7 @@ public class FeishuChatSyncService implements JobHandler {
     }
 
     /** 消息里的图片：下载后转存图床，返回本地地址；下载或转存失败就跳过这一张。 */
-    private List<String> imageUrls(String token, FeishuMessage m, String chatName, Runnable heartbeat) {
-        List<String> keys = new ArrayList<>();
-        JsonNode content = readContent(m);
-        if ("image".equals(m.msgType())) {
-            String key = content.path("image_key").asText("");
-            if (!key.isBlank()) {
-                keys.add(key);
-            }
-        } else if ("post".equals(m.msgType())) {
-            for (JsonNode line : content.path("content")) {
-                for (JsonNode span : line) {
-                    if ("img".equals(span.path("tag").asText(""))) {
-                        String key = span.path("image_key").asText("");
-                        if (!key.isBlank()) {
-                            keys.add(key);
-                        }
-                    }
-                }
-            }
-        }
-        List<String> urls = new ArrayList<>();
-        for (String key : keys) {
-            heartbeat.run();
-            byte[] bytes = feishu.downloadImage(token, m.messageId(), key);
-            if (bytes == null || bytes.length == 0) {
-                log.warn("飞书群聊图片下载失败，已跳过：message={} key={}", m.messageId(), key);
-                continue;
-            }
-            try {
-                // 补录 / 重跑同一天时会再抓一遍同样的图，按内容去重，不在图床里堆重复副本。
-                ImageItemDto stored = images.store(bytes, "image/png", key + ".png",
-                        "飞书群聊 · " + chatName, true);
-                urls.add(stored.url());
-            } catch (RuntimeException ex) {
-                log.warn("飞书群聊图片转存图床失败，已跳过：{}", ex.getMessage());
-            }
-        }
-        return urls;
-    }
+
 
     private JsonNode readContent(FeishuMessage m) {
         try {
@@ -502,13 +388,7 @@ public class FeishuChatSyncService implements JobHandler {
         return feishu.tenantAccessToken(appId, appSecret);
     }
 
-    private String required(String key, String message) {
-        String value = settings.get(key);
-        if (value == null || value.isBlank()) {
-            throw new BadRequestException(message);
-        }
-        return value.trim();
-    }
+
 
     private SyncConfig syncConfig() {
         Map<String, String> values = settings.getAll(SYNC_CONFIG_KEYS);
@@ -535,24 +415,13 @@ public class FeishuChatSyncService implements JobHandler {
     }
 
     /** 没映射上的发言人：留一段可辨识的 ID，方便回配置页补上。 */
-    private static String shortId(String senderId) {
-        if (senderId == null || senderId.isBlank()) {
-            return "未知成员";
-        }
-        return senderId.length() <= 10 ? senderId : "成员 " + senderId.substring(senderId.length() - 6);
-    }
 
-    private static DocBlockDto paragraph(String text) {
-        return block(null, null, text, null);
-    }
 
-    private static DocBlockDto heading(String text) {
-        return block(null, text, null, null);
-    }
 
-    private static DocBlockDto block(String call, String h, String p, List<String> ul) {
-        return new DocBlockDto(call, h, p, ul, null);
-    }
+
+
+
+
 
     private static String trimmed(String value) {
         return value == null ? null : value.trim();

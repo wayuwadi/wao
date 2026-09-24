@@ -31,8 +31,8 @@ onMounted(refresh)
         <tbody><tr v-for="row in rows" :key="row.endpoint"><td>{{ row.endpoint }}</td><td>{{ row.requests.toLocaleString() }}</td><td>{{ total ? (row.requests / total * 100).toFixed(1) : '0.0' }}%</td></tr></tbody>
       </table>
     </div>
-    <p>后台成员身份转换与群聊同步复用 5 分钟成员缓存；快速收集默认每 60 秒读取近两分钟增量消息，不再回扫 24 小时历史。已配置的事件回调仍实时处理。</p>
-    <p>月额度由飞书租户统一管理，换应用不能增加总额度；额度不足请联系管理员核对官方用量与升级方案。</p>
+    <p>聊天记录同步已停用；快速收集每 10 分钟兜底读取近期消息，事件回调即时处理。失败后共享冷却，月额度超限则暂停轮询至下月。</p>
+    <p>请求次数不等于额度消耗：HTTP 4xx/5xx、认证接口及自定义机器人 Webhook 不计入月额度。月额度由飞书租户统一管理，换应用不能增加总额度；额度不足请联系管理员核对官方用量与升级方案。</p>
   </section>
 </template>
 

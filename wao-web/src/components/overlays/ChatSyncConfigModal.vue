@@ -1,11 +1,5 @@
 <script setup lang="ts">
-/**
- * 「飞书群聊消息同步知识库」的配置页。
- *
- * 填自建应用的 App ID / Secret → 选机器人所在的群 → 选沉淀到哪个知识库文件夹 →
- * 把群成员的飞书 ID 对上人名（娃哥 / 娃弟 / 机器人通知）。配置存服务端（密钥加密），
- * 之后每天 23:59 由自动化按计划跑；这里也能补录今天或一段历史日期。
- */
+/** 飞书任务收集配置；聊天归档已退役，保留共用凭据与群成员设置。 */
 import { onMounted, ref } from 'vue'
 import FeishuApiUsagePanel from '@/components/FeishuApiUsagePanel.vue'
 import { useDataStore } from '@/stores/data'
@@ -16,7 +10,6 @@ import {
   fetchFeishuChatMembers,
   fetchFeishuChats,
   fetchQuickCollectConfig,
-  runChatSync,
   saveChatSyncConfig,
   saveQuickCollectConfig,
   type ChatSyncConfig,
@@ -37,9 +30,6 @@ const appSecret = ref('')
 const chatId = ref('')
 const chatName = ref('')
 const kbId = ref('')
-const runDay = ref('')
-const historyStartDay = ref('')
-const historyEndDay = ref('')
 const senders = ref<FeishuSender[]>([])
 const chats = ref<FeishuChat[]>([])
 const chatsLoaded = ref(false)
@@ -123,7 +113,7 @@ function pickChat(c: FeishuChat) {
 /** 拉群成员并把没映射过的补进列表，用户只要把名字改成「娃哥」这种就行。 */
 async function loadMembers() {
   if (!chatId.value) {
-    toast('请先选择要同步的群聊')
+    toast('请先选择收集任务的群聊')
     return
   }
   busy.value = true
@@ -181,60 +171,19 @@ async function save() {
   busy.value = true
   try {
     await persist()
-    toast('飞书群聊同步配置已保存', 'ri-check-line')
+    toast('飞书任务收集配置已保存', 'ri-check-line')
   } catch (error) { toast(error instanceof Error ? error.message : '保存失败') }
   finally { busy.value = false }
 }
 
-async function runNow() {
-  busy.value = true
-  try {
-    await persist()
-    const result = await runChatSync(runDay.value ? { day: runDay.value } : undefined)
-    await data.refreshKnowledge()
-    toast(result, 'ri-check-line')
-  } catch (error) { toast(error instanceof Error ? error.message : '同步失败') }
-  finally { busy.value = false }
-}
-
-/** 近几小时仍按整天补录，防止局部消息覆盖当天完整归档。 */
-async function runRecentHours() {
-  const today = new Date().toISOString().slice(0, 10)
-  runDay.value = today
-  await runNow()
-}
-
-async function runThisMonthHistory() {
-  const now = new Date()
-  const end = new Date(now)
-  end.setDate(end.getDate() - 1)
-  historyStartDay.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-  historyEndDay.value = end.toISOString().slice(0, 10)
-  await runHistory()
-}
-
-async function runHistory() {
-  if (!historyStartDay.value || !historyEndDay.value) {
-    toast('请选择完整的历史起止日期')
-    return
-  }
-  busy.value = true
-  try {
-    await persist()
-    const result = await runChatSync({ startDay: historyStartDay.value, endDay: historyEndDay.value })
-    await data.refreshKnowledge()
-    toast(result, 'ri-check-line')
-  } catch (error) { toast(error instanceof Error ? error.message : '同步失败') }
-  finally { busy.value = false }
-}
 </script>
 
 <template>
   <div class="mask" @click="emit('close')"></div>
   <div class="modal">
     <div class="head">
-      <div class="title">飞书群聊同步知识库</div>
-      <span class="head-tip">每天 23:59 把当天 00:00 起的群聊记录写成一篇文档</span>
+      <div class="title">飞书任务收集</div>
+      <span class="head-tip">只收集 @机器人 的任务，不同步聊天记录</span>
       <div class="spacer"></div>
       <button class="close" @click="emit('close')"><i class="ri-close-line"></i></button>
     </div>
@@ -276,17 +225,6 @@ async function runHistory() {
       </div>
 
       <div class="section">
-        <div class="label">沉淀到</div>
-        <div class="two">
-          <select v-model="kbId" class="input">
-            <option value="">选择知识库</option>
-            <option v-for="k in data.kbs" :key="k.id" :value="k.id">{{ k.name }}</option>
-          </select>
-        </div>
-        <div class="tip">按同步日期自动归档到「YYYY 年 M 月」文件夹；一天一篇，同一天重复同步会覆盖同一篇，不会堆重复文档。</div>
-      </div>
-
-      <div class="section">
         <div class="label-row">
           <div class="label">发言人对应关系</div>
           <div class="spacer"></div>
@@ -313,7 +251,7 @@ async function runHistory() {
         <div class="tip">
           在群里 @ 机器人说「记录任务：…」、「记录想法：…」或直接说内容，会记入发言人自己的未排期任务列表。
           每个人需要先用同一飞书账号登录过 WAO；普通群聊不会被收集。
-          开启后 WAO 会用上方已授权的应用凭据主动读取新消息，通常 60 秒内完成；下方事件订阅可作为更低延迟的可选入口。
+          配置事件订阅后即时收集；每 10 分钟读取近期消息作为兜底。额度超限时暂停轮询至下月。
           撤回这条原消息时，对应任务也会自动删除。
           手机上直接用飞书的语音输入说完就发即可；发语音条我认不出来，会回一句提示让你转文字。
         </div>
@@ -324,8 +262,8 @@ async function runHistory() {
         <div class="event-requirement">
           <i class="ri-information-line"></i>
           <span>
-            WAO 会主动读取表情和撤回状态；订阅 <b>im.message.reaction.created_v1</b> 与
-            <b>im.message.recalled_v1</b> 并配置 Verification Token 或 Encrypt Key，可把人工派工和任务删除延迟进一步降到事件级。
+            请订阅 <b>im.message.receive_v1</b>、<b>im.message.reaction.created_v1</b> 与
+            <b>im.message.recalled_v1</b> 并配置 Verification Token 或 Encrypt Key，即可即时收集任务、处理派工和撤回。
           </span>
         </div>
         <div class="two">
@@ -392,22 +330,9 @@ async function runHistory() {
       </div>
 
       <div class="foot">
-        <label class="run-day"><span>运行日期</span><input v-model="runDay" class="input" type="date" /></label>
-        <button class="btn-ghost" :disabled="busy" @click="runNow"><i class="ri-play-line"></i>{{ runDay ? '同步指定日期' : '立即同步今天' }}</button>
         <div class="spacer"></div>
         <button class="btn-ghost" @click="emit('close')">取消</button>
         <button class="btn-primary" :disabled="busy" @click="save">保存配置</button>
-      </div>
-      <div class="history-run">
-        <div class="label">补录历史</div>
-        <div class="history-controls">
-          <button class="mini-btn" :disabled="busy" @click="runRecentHours"><i class="ri-time-line"></i>同步近几小时</button>
-          <button class="mini-btn" :disabled="busy" @click="runThisMonthHistory"><i class="ri-calendar-line"></i>同步本月历史</button>
-          <label class="run-day"><span>从</span><input v-model="historyStartDay" class="input" type="date" /></label>
-          <label class="run-day"><span>至</span><input v-model="historyEndDay" class="input" type="date" /></label>
-          <button class="mini-btn" :disabled="busy" @click="runHistory"><i class="ri-history-line"></i>同步全部历史</button>
-        </div>
-        <div class="tip">历史同步会逐日覆盖已有归档；“近几小时”会重刷当天完整记录，“全部历史”以这里填写的起止日期为准，一次最多 366 天。</div>
       </div>
     </template>
   </div>

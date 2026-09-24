@@ -328,7 +328,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await save() })
       </p>
       <p class="channel-hint">
         <i class="ri-information-line"></i>
-        今日节奏里显示的“WAO”群来自“自动化 → 飞书群聊同步知识库”的自建应用群列表，不是这里的自定义机器人 Webhook；两条真实通知通道分别维护。
+        今日节奏里显示的“WAO”群来自“自动化 → 飞书任务收集配置”的自建应用群列表，不是这里的自定义机器人 Webhook；两条真实通知通道分别维护。
       </p>
     </div>
   </section>

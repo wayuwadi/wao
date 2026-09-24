@@ -235,7 +235,7 @@ onMounted(async () => {
       <section v-else class="empty-report">
         <span><i class="ri-route-line"></i></span>
         <h2>{{ hasEvidence ? '真实资料已就绪' : '这个周期还没有可回顾的记录' }}</h2>
-        <p>{{ hasEvidence ? '生成后会保存为这个自然周期的长期档案，重新打开仍可阅读。' : '完成任务、与 WAO AI 对话或同步飞书聊天后再来，不会用演示内容填空。' }}</p>
+        <p>{{ hasEvidence ? '生成后会保存为这个自然周期的长期档案，重新打开仍可阅读。' : '完成任务或与 WAO AI 对话后再来，不会用演示内容填空。' }}</p>
         <button class="generate-button" :disabled="!canGenerate" @click="generate">
           <i :class="generating ? 'ri-loader-4-line spin' : 'ri-sparkling-2-line'"></i>{{ generating ? '正在阅读记录并形成回顾…' : '生成这段时间的回顾' }}
         </button>

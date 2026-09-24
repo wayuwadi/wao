@@ -108,13 +108,70 @@ class FeishuQuickCollectPollingSchedulerTest {
     }
 
     @Test
-    void realtimePollingDefaultsToSixtySecondsAndHasNoHistoricalSweep() throws Exception {
+    void realtimePollingDefaultsToTenMinutesAndHasNoHistoricalSweep() throws Exception {
         Scheduled scheduled = FeishuQuickCollectPollingScheduler.class
                 .getDeclaredMethod("poll").getAnnotation(Scheduled.class);
 
-        assertThat(scheduled.fixedDelayString()).contains(":60000}");
+        assertThat(scheduled.fixedDelayString()).contains(":600000}");
         assertThat(FeishuQuickCollectPollingScheduler.class.getDeclaredMethods())
                 .noneMatch(method -> method.getName().equals("pollEdits"));
+    }
+
+    @Test
+    void messageFailurePreservesBotIdentityAndSetsSharedCooldown() {
+        enabled();
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+        when(feishu.botOpenId("token")).thenReturn("bot");
+        when(state.defer(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), anyLong())).thenReturn(1);
+        when(feishu.listMessages(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), anyLong(), anyLong()))
+                .thenThrow(new RuntimeException("temporary")).thenReturn(List.of());
+        scheduler.poll();
+        verify(state).defer(org.mockito.ArgumentMatchers.eq("quick-realtime"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(600L));
+        verify(state, never()).release(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+        scheduler.poll();
+        verify(feishu, org.mockito.Mockito.times(1)).botOpenId("token");
+    }
+
+    @Test
+    void changingAppRetriesBotLookupAfterPreviousLookupFailed() {
+        enabled();
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app", "new-app");
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("old-token");
+        when(feishu.tenantAccessToken("new-app", "secret")).thenReturn("new-token");
+        when(feishu.botOpenId("old-token")).thenThrow(new RuntimeException("bot info unavailable"));
+        when(feishu.botOpenId("new-token")).thenReturn("new-bot");
+        when(feishu.listMessages(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong())).thenReturn(List.of());
+
+        scheduler.poll();
+        scheduler.poll();
+
+        verify(feishu).botOpenId("new-token");
+    }
+
+    @Test
+    void quotaFailureDefersUntilNextMonthWithoutReleasingLease() {
+        enabled();
+        var response = org.springframework.web.client.HttpClientErrorException.create(
+                org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "quota", org.springframework.http.HttpHeaders.EMPTY,
+                "{\"code\":99991403}".getBytes(java.nio.charset.StandardCharsets.UTF_8), java.nio.charset.StandardCharsets.UTF_8);
+        when(feishu.tenantAccessToken("app", "secret")).thenThrow(new cn.wayuwa.wao.feishu.FeishuApiException("failed", response));
+        when(state.defer(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), anyLong())).thenReturn(1);
+        scheduler.poll();
+        var seconds = org.mockito.ArgumentCaptor.forClass(Long.class);
+        verify(state).defer(org.mockito.ArgumentMatchers.eq("quick-realtime"), org.mockito.ArgumentMatchers.anyString(), seconds.capture());
+        var now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
+        long expected = java.time.Duration.between(now, now.toLocalDate().withDayOfMonth(1).plusMonths(1).atStartOfDay(now.getZone())).getSeconds() + 60;
+        assertThat(seconds.getValue()).isBetween(expected - 2, expected + 2);
+        verify(state, never()).release(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void structuredQuotaCodeIsRecognizedWithoutDependingOnMessage() {
+        assertThat(cn.wayuwa.wao.feishu.FeishuApiException.monthlyQuotaExceeded(
+                new cn.wayuwa.wao.feishu.FeishuApiException("changed text", 99991403))).isTrue();
+        assertThat(cn.wayuwa.wao.feishu.FeishuApiException.monthlyQuotaExceeded(
+                new cn.wayuwa.wao.feishu.FeishuApiException("99991403"))).isFalse();
     }
 
     private void enabled() {

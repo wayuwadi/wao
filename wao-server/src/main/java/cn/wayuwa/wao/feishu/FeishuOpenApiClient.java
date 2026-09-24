@@ -631,7 +631,7 @@ public class FeishuOpenApiClient {
         }
         int code = res.path("code").asInt(0);
         if (code != 0) {
-            throw new FeishuApiException("飞书接口返回错误 " + code + "：" + text(res, "msg"));
+            throw new FeishuApiException("飞书接口返回错误 " + code + "：" + text(res, "msg"), code);
         }
         return res.has("data") ? res.get("data") : res;
     }
