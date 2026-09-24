@@ -1413,6 +1413,17 @@ public class KnowledgeService {
         markDocDeleted(e, LocalDateTime.now(), memberId, false);
     }
 
+    /** 只允许撤回飞书原消息时删除它创建的小记，其他知识库文档不能走这条入口。 */
+    @Transactional
+    public void deleteNoteFromChat(String id) {
+        DocEntity note = docMapper.selectById(id);
+        if (note == null || note.getDeletedAt() != null) return;
+        if (!NOTES_KB_ID.equals(note.getKbId())) {
+            throw new BadRequestException("飞书收集目标不是小记");
+        }
+        deleteDoc(id, note.getAuthorId());
+    }
+
     /**
      * 归档文档：保留正文、链接和原目录位置，只把它移出普通列表与知识检索。
      *

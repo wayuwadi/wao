@@ -22,6 +22,8 @@ import cn.wayuwa.wao.domain.AccountEntity;
 import cn.wayuwa.wao.domain.AccountIdentityEntity;
 import cn.wayuwa.wao.domain.FeishuQuickCollectEventEntity;
 import cn.wayuwa.wao.dto.FeishuQuickCollectConfigDto;
+import cn.wayuwa.wao.dto.CreateNoteRequest;
+import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.SaveQuickCollectConfigRequest;
 import cn.wayuwa.wao.dto.TaskDto;
@@ -42,7 +44,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.util.HtmlUtils;
 
 /**
- * 群聊快速收集：在飞书群里 @机器人 说一句话，WAO 直接把它变成一条任务。
+ * 群聊快速收集：@任务机器人创建个人待办，@小记机器人创建本人小记。
  *
  * <p>存在的理由：想法是在聊天里冒出来的，稍纵即逝。打开网站、找项目、点新建、填表单这一串
  * 动作足以让人放弃记录，于是想法就丢了。@ 一下机器人是聊天里本来就会做的动作，成本近似为零。
@@ -65,6 +67,8 @@ public class FeishuQuickCollectService {
     private static final int TITLE_LIMIT = 40;
     /** 纯图片消息没有可诚实提取的文字时使用的稳定标题。 */
     private static final String IMAGE_ONLY_TITLE = "图片待办";
+    private static final String TASK_BOT_NAME = "任务待办";
+    private static final String NOTE_BOT_NAME = "小记创作";
     /** 飞书富文本偶尔把编辑器 HTML 放进 text 节点；标题必须只保留用户看见的文字。 */
     private static final Pattern HTML_BLOCK_BOUNDARY = Pattern.compile(
             "(?i)<\\s*/?\\s*(?:p|div|h[1-6]|li|ul|ol|blockquote)\\b[^>]*>|<\\s*br\\s*/?\\s*>");
@@ -80,6 +84,7 @@ public class FeishuQuickCollectService {
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final TaskService tasks;
+    private final KnowledgeService knowledge;
     private final ProjectService projects;
     private final AccountMapper accounts;
     private final AccountIdentityMapper identities;
@@ -93,7 +98,7 @@ public class FeishuQuickCollectService {
     private final FeishuLinkPreviewService linkPreviews;
     private final Map<String, Long> recentReactionChecks = new ConcurrentHashMap<>();
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
-            TaskService tasks, ProjectService projects, AccountMapper accounts,
+            TaskService tasks, KnowledgeService knowledge, ProjectService projects, AccountMapper accounts,
             AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
             ObjectMapper json, NotificationFeedbackService feedback,
             FeishuQuickCollectAiRunService reactionAiRuns, FeishuQuickCollectReactionPolicy reactionPolicy,
@@ -101,6 +106,7 @@ public class FeishuQuickCollectService {
         this.settings = settings;
         this.feishu = feishu;
         this.tasks = tasks;
+        this.knowledge = knowledge;
         this.projects = projects;
         this.accounts = accounts;
         this.identities = identities;
@@ -257,7 +263,8 @@ public class FeishuQuickCollectService {
         message.put("content", source.content());
         var mentions = message.putArray("mentions");
         source.mentions().forEach(mention -> mentions.addObject()
-                .put("key", mention.key()).put("name", mention.name()));
+                .put("key", mention.key()).put("name", mention.name())
+                .putObject("id").put("open_id", mention.openId()));
         collect(event, "");
     }
 
@@ -325,6 +332,8 @@ public class FeishuQuickCollectService {
         if (!message.path("mentions").isArray() || message.path("mentions").isEmpty()) {
             return;
         }
+        String botKind = botKind(message.path("mentions"));
+        if ("AMBIGUOUS".equals(botKind)) return;
         String messageId = message.path("message_id").asText("");
         String eventKey = eventKey(eventId, messageId, event);
         String type = message.path("message_type").asText("");
@@ -336,12 +345,14 @@ public class FeishuQuickCollectService {
         }
         if ("audio".equals(type)) {
             react(messageId, "ERROR");
-            finish(eventKey, "IGNORED", "TASK", null, fingerprint, null);
+            finish(eventKey, "IGNORED", botKind, null, fingerprint, null);
             return;
         }
         CaptureText capture;
         try {
-            capture = captureText(readableText(type, message));
+            String content = readableText(type, message);
+            capture = "NOTE".equals(botKind)
+                    ? new CaptureText("NOTE", content, "") : captureText(content);
         } catch (RuntimeException ex) {
             finish(eventKey, "FAILED", "TASK", null, null, abbreviated(ex.getMessage()));
             react(messageId, "ERROR");
@@ -361,10 +372,21 @@ public class FeishuQuickCollectService {
         try {
             if (claim == ClaimMode.UPDATE) {
                 FeishuQuickCollectEventEntity stored = events.selectById(eventKey);
-                TaskDto task = tasks.updateFromChat(stored.getTargetId(), title(capture.content()),
-                        capture.content(), memberId);
-                finish(eventKey, "UPDATED", capture.kind(), task.id(), fingerprint, null);
-                log.info("群聊个人收集：已从编辑后的飞书消息更新任务 {}", task.id());
+                if ("NOTE".equals(stored.getCaptureKind())) {
+                    knowledge.createNote(stored.getTargetId(), noteRequest(capture.content()), memberId);
+                    finish(eventKey, "UPDATED", "NOTE", stored.getTargetId(), fingerprint, null);
+                    log.info("群聊个人收集：已更新小记 {}", stored.getTargetId());
+                } else {
+                    TaskDto task = tasks.updateFromChat(stored.getTargetId(), title(capture.content()),
+                            capture.content(), memberId);
+                    finish(eventKey, "UPDATED", capture.kind(), task.id(), fingerprint, null);
+                    log.info("群聊个人收集：已从编辑后的飞书消息更新任务 {}", task.id());
+                }
+            } else if ("NOTE".equals(capture.kind())) {
+                String noteId = noteId(eventKey);
+                knowledge.createNote(noteId, noteRequest(capture.content()), memberId);
+                finish(eventKey, "CREATED", "NOTE", noteId, fingerprint, null);
+                log.info("群聊个人收集：已创建小记 {}", noteId);
             } else {
                 ProjectDto project = targetProject(memberId);
                 if (project == null) {
@@ -382,6 +404,33 @@ public class FeishuQuickCollectService {
             finish(eventKey, "FAILED", capture.kind(), null, null, abbreviated(ex.getMessage()));
             react(messageId, "ERROR");
             throw ex;
+        }
+    }
+
+    /** 两个群自定义机器人的真实 @ 元数据负责分流；同时 @ 两个时不猜用户意图。 */
+    static String botKind(JsonNode mentions) {
+        boolean task = false;
+        boolean note = false;
+        for (JsonNode mention : mentions) {
+            if (TASK_BOT_NAME.equals(mention.path("name").asText())) task = true;
+            if (NOTE_BOT_NAME.equals(mention.path("name").asText())) note = true;
+        }
+        return task && note ? "AMBIGUOUS" : note ? "NOTE" : "TASK";
+    }
+
+    private static CreateNoteRequest noteRequest(String content) {
+        String heading = title(content);
+        return new CreateNoteRequest(IMAGE_ONLY_TITLE.equals(heading) ? "图片小记" : heading,
+                List.of(new DocBlockDto(null, null, content, null, null)));
+    }
+
+    private static String noteId(String eventKey) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(eventKey.getBytes(StandardCharsets.UTF_8));
+            return "fn" + java.util.HexFormat.of().formatHex(digest).substring(0, 30);
+        } catch (Exception ex) {
+            throw new IllegalStateException("无法生成飞书小记 ID", ex);
         }
     }
 
@@ -446,7 +495,11 @@ public class FeishuQuickCollectService {
         if (latest != null && ("RECALLING".equals(latest.getStatus())
                 || "RECALLED".equals(latest.getStatus()))) {
             events.attachRecalledTarget(key, targetId, fingerprint, updatedAt);
-            tasks.deleteFromChat(targetId);
+            if ("NOTE".equals(kind)) {
+                knowledge.deleteNoteFromChat(targetId);
+            } else {
+                tasks.deleteFromChat(targetId);
+            }
             events.completeRecall(key, LocalDateTime.now(SHANGHAI));
         }
     }

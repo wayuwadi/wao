@@ -82,6 +82,29 @@ class FeishuQuickCollectPollingSchedulerTest {
                 message("om_1", "user", false, "ou_bot"), "ou_bot")).isTrue();
         assertThat(FeishuQuickCollectPollingScheduler.eligible(
                 message("om_2", "user", false, "ou_person"), "ou_bot")).isFalse();
+        assertThat(FeishuQuickCollectPollingScheduler.eligible(
+                namedMessage("om_note", "小记创作"), "ou_bot")).isTrue();
+        assertThat(FeishuQuickCollectPollingScheduler.eligible(
+                namedMessage("om_task", "任务待办"), "ou_bot")).isTrue();
+        assertThat(FeishuQuickCollectPollingScheduler.eligible(
+                namedMessage("om_person", "普通成员"), "ou_bot")).isFalse();
+    }
+
+    @Test
+    void dedicatedBotsStillCollectWhenLegacyBotInfoIsUnavailable() {
+        enabled();
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+        when(feishu.botOpenId("token")).thenThrow(new RuntimeException("bot info unavailable"));
+        FeishuMessage note = namedMessage("om_note", "小记创作");
+        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
+                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
+                .thenReturn(List.of(note));
+
+        scheduler.poll();
+
+        verify(quickCollect).collectPolled("oc_chat", note);
+        verify(state).complete(org.mockito.ArgumentMatchers.eq("quick-realtime"),
+                org.mockito.ArgumentMatchers.anyString(), anyLong());
     }
 
     @Test
@@ -105,5 +128,11 @@ class FeishuQuickCollectPollingSchedulerTest {
         return new FeishuMessage(id, "ou_sender", senderType, "text",
                 "{\"text\":\"@_user_1 记录任务：整理周报\"}", 1L, deleted,
                 List.of(new FeishuMention("@_user_1", mentionedOpenId, "WAO")));
+    }
+
+    private static FeishuMessage namedMessage(String id, String mentionName) {
+        return new FeishuMessage(id, "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 记下来\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "bot-id", mentionName)));
     }
 }

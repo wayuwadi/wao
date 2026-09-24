@@ -16,6 +16,7 @@ public interface FeishuQuickCollectEventMapper extends BaseMapper<FeishuQuickCol
     /** 按飞书原消息定位已经真实创建的任务，不从标题或正文猜测来源。 */
     @Select("SELECT * FROM feishu_quick_collect_event WHERE message_id = #{messageId} "
             + "AND target_id IS NOT NULL AND status IN ('CREATED', 'UPDATED') "
+            + "AND (capture_kind IS NULL OR capture_kind IN ('TASK', 'IDEA')) "
             + "ORDER BY created_at DESC LIMIT 1")
     FeishuQuickCollectEventEntity findCreatedByMessageId(@Param("messageId") String messageId);
 
