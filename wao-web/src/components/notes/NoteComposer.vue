@@ -4,6 +4,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { apiCreateNoteTag, apiPatchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
+import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
 const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean }>()
@@ -116,7 +117,7 @@ async function save(asCopy = false) {
     if (props.note && !asCopy) {
       if (data.docPending(props.note.id)) throw new Error('这篇小记在文档页还有未保存编辑，请先完成保存')
       const saved = await apiPatchDoc(props.note.id, {
-        title: text.value.trim().split('\n')[0]!.replace(/^#+\s*/, '').slice(0, 80),
+        title: (firstMarkdownTextLine(text.value) || '未命名小记').slice(0, 80),
         content: rich, blocks: legacyProjection(rich), expectedRev: baseRev, tags: [...tags.value],
       })
       data.applyRemoteDoc(saved)

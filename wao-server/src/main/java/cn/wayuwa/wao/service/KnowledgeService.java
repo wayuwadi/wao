@@ -2041,6 +2041,7 @@ public class KnowledgeService {
     private static String markdownPlainText(String markdown) {
         return markdown
                 .replaceAll("(?s)```.*?```", " ")
+                .replaceAll("!\\[[^]]*]\\([^)]*\\)", " ")
                 .replaceAll("!\\[[^]]*]|[>#*_`~|]", " ")
                 .replaceAll("\\[([^]]+)]\\([^)]*\\)", "$1")
                 .replaceAll("\\s+", " ").trim();

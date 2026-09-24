@@ -1153,6 +1153,24 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void createNoteSkipsOverviewImageWhenDerivingTitle() {
+        KbEntity notes = kb("kb-notes");
+        notes.setNotes(true);
+        KbFolderEntity folder = folder("kb-notes-f", "kb-notes");
+        when(kbMapper.selectList(any())).thenReturn(List.of(notes));
+        when(folderMapper.selectList(any())).thenReturn(List.of(folder));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+
+        DocDto dto = service.createNote(new CreateNoteRequest(null, List.of(),
+                new RichDocContentDto(1, null,
+                        "![文章总览图](/api/images/overview.png)\n\n# 早起与写作\n记录想法")), "m1");
+
+        assertThat(dto.title()).startsWith("早起与写作");
+        assertThat(dto.title()).doesNotContain("/api/images");
+    }
+
+    @Test
     void createNoteReusesTheFolderNamedAfterTheAuthor() {
         KbEntity notes = kb("kb-notes");
         notes.setNotes(true);

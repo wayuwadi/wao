@@ -1,4 +1,5 @@
 import { reactive, ref, watch } from 'vue'
+import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { taskDraftWindowId, readTaskDrafts, writeTaskDraft, removeTaskDraft, isTaskDraftDeleted, markTaskDraftDeleted } from '@/utils/taskDraftStorage'
 import { defineStore } from 'pinia'
 import {
@@ -966,7 +967,7 @@ export const useDataStore = defineStore('data', () => {
 
   /** 小记没填标题时，用正文首行当标题（与后端 titleFrom 口径一致）。 */
   function noteTitleOf(text: string): string {
-    const line = text.split('\n').map((l) => l.replace(/^[#>\-!\s]+/, '').trim()).find(Boolean)
+    const line = firstMarkdownTextLine(text)
     if (!line) return '未命名小记'
     return line.length > 30 ? line.slice(0, 30) + '…' : line
   }
