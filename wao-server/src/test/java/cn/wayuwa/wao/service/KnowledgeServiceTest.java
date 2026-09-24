@@ -991,6 +991,22 @@ class KnowledgeServiceTest {
             .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
     }
 
+    @Test
+    void reorderDirectorySiblingsPersistsOrderAndRejectsAnotherLevelAsAnchor() {
+        KbEntity library = kb("k1");
+        KbFolderEntity folder = new KbFolderEntity(); folder.setId("f1"); folder.setKbId("k1");
+        when(kbMapper.selectById("k1")).thenReturn(library);
+        when(kbMapper.selectByIdForUpdate("k1")).thenReturn(library);
+        when(kbMapper.updateDirectory(eq("k1"), any())).thenReturn(1);
+        when(folderMapper.selectList(any())).thenReturn(List.of(folder));
+        when(docMapper.selectList(any())).thenReturn(List.of(doc("d1", "k1", "f1"), doc("d2", "k1", "f1")));
+        service.moveDirectoryNode("k1", new cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest("d:d2", "f:f1", "f:f1", "d:d1"));
+        assertThat(service.getKb("k1").directoryOrder()).containsExactly("f:f1", "d:d2", "d:d1");
+        assertThatThrownBy(() -> service.moveDirectoryNode("k1",
+                new cn.wayuwa.wao.dto.MoveKnowledgeNodeRequest("d:d2", "f:f1", "f:f1", "f:f1")))
+                .isInstanceOf(cn.wayuwa.wao.common.BadRequestException.class);
+    }
+
     // ---------------- 回收站 ----------------
 
     @Test

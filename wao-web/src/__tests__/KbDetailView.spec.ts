@@ -190,7 +190,7 @@ describe('知识库详情目录体验', () => {
       const original = (wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value
       await wrapper.get('[aria-label="移动当前文档到文件夹"]').setValue(target.id)
       await flushPromises()
-      expect(order).toHaveBeenCalledWith('k3', 'd:d7', `f:${target.id}`, expect.any(String))
+      expect(order).toHaveBeenCalledWith('k3', 'd:d7', `f:${target.id}`, expect.any(String), undefined)
       expect(data.kbById('k3')!.folders.find(folder => folder.id === target.id)?.docs).toContain('d7')
       expect((wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value).toBe(original)
       expect(wrapper.find('.doc-node.on').exists()).toBe(true)
@@ -227,6 +227,26 @@ describe('知识库详情目录体验', () => {
     expect(folders[1]!.get('.chev').classes()).toContain('ri-arrow-down-s-line')
     expect(wrapper.get('.doc-node.on').text()).toContain('阅读笔记：卡片盒笔记法')
     wrapper.unmount()
+  })
+
+  it('拖到行上缘显示排序线并保存同层顺序', async () => {
+    const wrapper = await mountView('/kb/k3')
+    const data = useDataStore(pinia)
+    const saved = JSON.parse(JSON.stringify(data.kbById('k3')!))
+    saved.directory = { 'f:f5': '', 'd:d8': 'f:f5', 'f:f4': '', 'd:d7': 'f:f4' }
+    saved.directoryOrder = ['f:f5', 'd:d8', 'f:f4', 'd:d7']
+    const move = vi.mocked(apiMoveKnowledgeNode).mockResolvedValueOnce(saved)
+    const source = wrapper.findAll('.folder-row')[1]!
+    const target = wrapper.findAll('.folder-row')[0]!
+    vi.spyOn(target.element, 'getBoundingClientRect').mockReturnValue({ top: 100, height: 38 } as DOMRect)
+    await source.trigger('dragstart')
+    await target.trigger('dragover', { clientY: 102 })
+    expect(target.classes()).toContain('drop-before')
+    await target.trigger('drop')
+    await flushPromises()
+    expect(move).toHaveBeenCalledWith('k3', 'f:f5', '', '', 'f:f4')
+    expect(wrapper.findAll('.folder-row')[0]!.text()).toContain('学习笔记')
+    move.mockReset()
   })
 
   it('展示所有关联当前文档的可见任务，并能直接打开任务详情', async () => {

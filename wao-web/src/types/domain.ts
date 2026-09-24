@@ -448,6 +448,7 @@ export interface Folder {
 
 export interface KnowledgeBase {
   directory?: Record<string, string>
+  directoryOrder?: string[]
   id: string
   name: string
   icon: string
