@@ -200,6 +200,8 @@ watch(() => [route.name, route.meta.module, ...floatingTabs.keys], ensureVisible
 
 async function reloadAll() {
   await data.hydrate()
+  void import('@/utils/autoNoteEnrichment').then(({ resumeAutoNoteEnrichment }) =>
+    resumeAutoNoteEnrichment(session.currentUser.id))
   ensureVisibleHeavyDomains()
 }
 
@@ -292,6 +294,8 @@ onMounted(async () => {
   void preferences.load()
   // 接入真实 /api；任务域会独立暴露加载 / 失败状态，不用 fixtures 冒充用户数据。
   await data.hydrate()
+  void import('@/utils/autoNoteEnrichment').then(({ resumeAutoNoteEnrichment }) =>
+    resumeAutoNoteEnrichment(session.currentUser.id))
   openLocatedTask()
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))

@@ -2,15 +2,19 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { fetchArticleImage, startArticleImage, type ArticleImageJob } from '@/api/articleImages'
+import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
+import { waitForPolish } from '@/api/polishJobs'
 
 const props = defineProps<{
   scopeKey: string
   getText: () => string
   insertImage: (url: string) => boolean
+  getCurrentImage?: () => string | null
+  generateTitle?: boolean
 }>()
+const emit = defineEmits<{ 'generated-title': [title: string] }>()
 
-const PREFERENCE_KEY = 'article-overview-image-prompt-v1'
-const DEFAULT_ARTICLE_IMAGE_PROMPT = `请为这篇文章制作一张适合放在开头、分享时一眼能看懂的 16:9 横版总览图。先理解全文，提炼一个中心主题与最多 3–5 个重要观点，并用视觉关系、场景或图形把它们连接起来。画面简洁、有层次，中文只保留必要的短标题与关键词，手机上也清楚。不要逐段照搬文字，不添加文章没有的事实、数字、人物或结论，不要水印、品牌标志和无关装饰。`
+const PREFERENCE_KEY = ARTICLE_IMAGE_PREFERENCE_KEY
 
 const prompt = ref(DEFAULT_ARTICLE_IMAGE_PROMPT)
 const draftPrompt = ref(DEFAULT_ARTICLE_IMAGE_PROMPT)
@@ -21,6 +25,8 @@ const settingsOpen = ref(false)
 const busy = ref(false)
 const job = ref<ArticleImageJob | null>(null)
 const error = ref('')
+const replacement = ref<string | null>(null)
+const titleStatus = ref('')
 let generation = 0
 
 function storageKey() { return `wao-article-image-job-v1:${props.scopeKey}` }
@@ -70,6 +76,11 @@ async function waitForImage(id: string, current: number) {
     if (result.status === 'FAILED') { rememberJob(null); throw new Error(result.message) }
     if (result.status === 'SUCCEEDED') {
       if (!result.imageUrl) throw new Error('图床没有返回图片地址，请重试查询')
+      const existing = props.getCurrentImage?.()
+      if (existing && existing !== result.imageUrl) {
+        replacement.value = result.imageUrl
+        return
+      }
       if (!props.insertImage(result.imageUrl)) throw new Error('图片已生成，但编辑器暂不可用；点击继续插入')
       rememberJob(null)
       job.value = null
@@ -78,6 +89,17 @@ async function waitForImage(id: string, current: number) {
     await new Promise(resolve => setTimeout(resolve, 1800))
   }
   if (current === generation) throw new Error('仍在生成中，点击按钮可继续查询原任务')
+}
+function decideReplacement(accept: boolean) {
+  const url = replacement.value
+  if (!url) return
+  if (accept && !props.insertImage(url)) {
+    error.value = '图片已生成，但编辑器暂不可用；点击继续插入'
+    return
+  }
+  replacement.value = null
+  job.value = null
+  rememberJob(null)
 }
 async function generate() {
   if (busy.value || loadingPrompt.value || promptError.value) return
@@ -88,6 +110,15 @@ async function generate() {
   const current = ++generation
   busy.value = true
   error.value = ''
+  if (!oldId && props.generateTitle) {
+    titleStatus.value = '正在生成标题…'
+    void waitForPolish(text.slice(0, 12_000), 'NOTE_TITLE').then(result => {
+      const title = result.polished?.trim().slice(0, 30)
+      if (current !== generation || props.getText().trim() !== text) return
+      if (title) { emit('generated-title', title); titleStatus.value = `标题已生成：${title}` }
+      else titleStatus.value = '标题生成失败，可稍后重试'
+    }).catch(() => { if (current === generation) titleStatus.value = '标题生成失败，可稍后重试' })
+  }
   try {
     const id = oldId || (await startArticleImage(text, prompt.value)).id
     if (current !== generation) return
@@ -101,6 +132,7 @@ watch(() => props.scopeKey, () => {
   generation++
   busy.value = false
   job.value = null
+  replacement.value = null
   error.value = ''
   if (persistedJob()) void generate()
 })
@@ -123,7 +155,17 @@ onBeforeUnmount(() => { generation++ })
     <span v-if="error || promptError" class="image-error" role="alert">{{ error || promptError }}
       <button v-if="promptError" type="button" @click="loadPrompt">重试读取</button>
     </span>
+    <span v-if="titleStatus" class="title-status" role="status">{{ titleStatus }}</span>
     <Teleport to="body">
+      <div v-if="replacement" class="image-prompt-mask" @click.self="decideReplacement(false)">
+        <section class="image-prompt-dialog replacement-dialog" role="dialog" aria-modal="true" aria-label="确认替换总览图">
+          <h2>要替换原来的总览图吗？</h2>
+          <p>先看新图；选择保留原图时，正文不会改变。</p>
+          <img :src="replacement" alt="新生成的总览图预览">
+          <footer><button type="button" @click="decideReplacement(false)">保留原图</button>
+            <button class="primary" type="button" @click="decideReplacement(true)">替换为新图</button></footer>
+        </section>
+      </div>
       <div v-if="settingsOpen" class="image-prompt-mask" @click.self="settingsOpen = false">
         <section class="image-prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="image-prompt-title">
           <header><h2 id="image-prompt-title">个人配图提示词</h2><button type="button" aria-label="关闭" @click="settingsOpen = false"><i class="ri-close-line"></i></button></header>
@@ -160,4 +202,6 @@ onBeforeUnmount(() => { generation++ })
 .image-prompt-dialog button.primary { border-color: var(--wao-primary); background: var(--wao-primary); color: white; }
 .image-prompt-dialog button:disabled { opacity: .6; cursor: default; }
 .dialog-error { color: var(--wao-danger-strong); font-size: 12px; }
+.title-status { flex-basis: 100%; color: var(--wao-text-weak); font-size: 11px; }
+.replacement-dialog img { display: block; max-width: 100%; max-height: 55vh; margin: 12px auto; object-fit: contain; }
 </style>

@@ -12,6 +12,8 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
+import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
+import { canRetryAutoNoteEnrichment, noteEnrichmentStatus, resumeAutoNoteEnrichment, retryAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
 
@@ -47,6 +49,13 @@ const session = useSessionStore()
 const noteEditors = new Map<string, { copyFormatted: () => Promise<void> }>()
 const noteCounts = ref<Record<string, number>>({})
 const previewImage = ref<NotePreviewImage | null>(null)
+const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
+function openImageMenu(event: MouseEvent) {
+  const target = event.target
+  if (!(target instanceof HTMLImageElement) || !target.closest('.note-image-thumb, .note-image-lightbox')) return
+  event.preventDefault()
+  imageMenu.value = { src: target.currentSrc || target.src, x: event.clientX, y: event.clientY }
+}
 const lightbox = ref<HTMLElement | null>(null)
 let imageTrigger: HTMLElement | null = null
 async function openImage(image: NotePreviewImage, event: MouseEvent) {
@@ -237,11 +246,13 @@ async function createTag() {
   finally { creatingTag.value = false }
 }
 onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
+onMounted(() => resumeAutoNoteEnrichment(session.currentUser.id))
 onMounted(() => void loadPins())
 </script>
 
 <template>
-  <main class="notes-page">
+  <main class="notes-page" @contextmenu="openImageMenu">
+    <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
     <header class="page-heading"><div><h1><i class="ri-sticky-note-line"></i>小记</h1></div><span>{{ notes.length }} 条记录</span></header>
     <div class="notes-workspace">
       <aside class="writing-pane" aria-label="新建小记区">
@@ -283,6 +294,7 @@ onMounted(() => void loadPins())
           tabindex="0" title="双击在卡片内编辑，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 在卡片内编辑`"
           @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
+          <p v-if="noteEnrichmentStatus[note.id]" class="tag-status" role="status">{{ noteEnrichmentStatus[note.id] }} <button v-if="noteEnrichmentStatus[note.id]?.includes('未完成') && canRetryAutoNoteEnrichment(session.currentUser.id, note.id)" type="button" @click="retryAutoNoteEnrichment(session.currentUser.id, note.id)">重试</button></p>
           <NoteComposer v-if="editingIds.includes(note.id)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
@@ -319,7 +331,7 @@ onMounted(() => void loadPins())
     </div>
     <Teleport to="body">
       <div v-if="previewImage" ref="lightbox" class="note-image-lightbox" role="dialog" aria-modal="true"
-        :aria-label="previewImage.alt || '小记图片预览'" tabindex="-1" @click.self="closeImage" @keydown.esc.stop="closeImage">
+        :aria-label="previewImage.alt || '小记图片预览'" tabindex="-1" @click.self="closeImage" @keydown.esc.stop="closeImage" @contextmenu="openImageMenu">
         <button type="button" class="note-image-close" aria-label="关闭图片预览" @click="closeImage"><i class="ri-close-line"></i></button>
         <img :src="previewImage.src" :alt="previewImage.alt">
       </div>

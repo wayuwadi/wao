@@ -889,6 +889,30 @@ paths:
       responses:
         '200': { description: 返回 AiAssistantClaim；无任务或哈希能力门禁不通过时 data 为 null }
         '401': { description: 节点令牌无效 }
+  /text-polish/jobs:
+    post:
+      summary: 提交持久文本任务，支持小记标题生成
+      description: NOTE_TITLE 从已保存小记正文提炼单行标题；结果不进入润色历史。requestId 重试幂等。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, kind, originalText]
+              properties:
+                requestId: { type: string, pattern: '^[a-f0-9]{32}$' }
+                kind: { type: string, enum: [DOCUMENT, WORKSPACE, NOTE_TITLE] }
+                originalText: { type: string, minLength: 1, maxLength: 12000 }
+      responses:
+        '200': { description: 返回当前成员的任务 id、状态和成功时的标题或润色结果 }
+  /text-polish/jobs/{id}:
+    get:
+      summary: 查询当前成员自己的持久文本任务
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: 返回任务状态；NOTE_TITLE 成功时 polished 为生成的标题 }
+        '404': { description: 不存在或不属于当前成员 }
   /assistant/article-images:
     post:
       summary: 当前成员按正文和个人画面提示词创建一张开篇总览图

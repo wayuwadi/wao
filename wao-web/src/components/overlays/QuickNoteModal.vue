@@ -12,6 +12,7 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { toast } from '@/composables/toast'
 import type { RichDocContent } from '@/types'
+import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
@@ -113,6 +114,7 @@ async function save(open = false) {
     if (!id) throw new Error('小记正文为空')
     const doc = data.docById(id)
     localStorage.removeItem(draftKey)
+    if (data.apiLive && doc?.rev) startAutoNoteEnrichment(session.currentUser.id, id, doc.rev)
     ui.closeModal()
     toast(`已存进「${archiveName.value}」`, 'ri-sticky-note-line')
     if (open) router.push({ path: `/kb/${doc?.kbId ?? data.notesKb().id}`, query: { doc: id } })
