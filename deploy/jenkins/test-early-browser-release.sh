@@ -29,9 +29,12 @@ ALLOW_SLAVE_OFFLINE=false
 master_drained=false
 early_browser_released=false
 WAO_GIT_SHA=abcdef1234567890abcdef1234567890abcdef12
+MASTER_HOST=linux2.wayuwa.cn
 WAO_TEST_LOG="$LOG"
 export WAO_TEST_LOG
 set_upstream_state() { printf 'route:%s:%s\n' "$1" "$2" >>"$LOG"; }
+gateway_ready_from_cloud() { printf 'gateway:%s\n' "$1" >>"$LOG"; return "${GATEWAY_RESULT:-0}"; }
+sleep() { :; }
 deploy_cloud() { echo cloud >>"$LOG"; return "${CLOUD_RESULT:-0}"; }
 verify_first_node_public() { echo public_check >>"$LOG"; return "${CHECK_RESULT:-0}"; }
 set_status() { printf 'status:%s:%s\n' "$1" "$2" >>"$LOG"; }
@@ -61,6 +64,8 @@ grep -q '^ready=true drained=true$' "$fixture/ready.log"
 run_case bad_public_version 1 CHECK_RESULT=1
 ! grep -q '^notify:' "$fixture/bad_public_version.log"
 grep -q '^status:verification_status:failed$' "$fixture/bad_public_version.log"
+test "$(grep -c '^public_check$' "$fixture/bad_public_version.log")" -eq 6
+grep -q '^route:master:up$' "$fixture/bad_public_version.log"
 
 run_case migration 0 SCHEMA_ROLLOUT=true
 test "$(cat "$fixture/migration.log")" = 'ready=false drained=false'
@@ -94,5 +99,30 @@ if FIXTURE="$fixture" MARKER_MISSING=true bash "$fixture/verify-run.sh"; then
   echo 'Unpinned master routing must prevent first-node notification.' >&2
   exit 1
 fi
+
+awk '
+  /^if \[ "\$safe_schema_rollout" != true \] && \[ "\$slave_available" = true \]; then$/ { copy=1 }
+  /^# V77 首次引入带版本的飞书归档写入/ { exit }
+  copy { print }
+' "$script_dir/ci-deploy.sh" >"$fixture/preflight.sh"
+cat >"$fixture/preflight-run.sh" <<'SH'
+set -u
+safe_schema_rollout=false
+slave_available=true
+MASTER_HOST=linux2.wayuwa.cn
+gateway_ready_from_cloud() { [ "${MASTER_READY:-true}" = true ]; }
+set_upstream_state() { printf '%s:%s\n' "$1" "$2" >>"$LOG"; }
+curl() { printf '{"code":0}'; }
+start_availability_monitor() { echo monitor >>"$LOG"; }
+. "$FIXTURE/preflight.sh"
+SH
+FIXTURE="$fixture" LOG="$fixture/preflight-ready.log" bash "$fixture/preflight-run.sh"
+test "$(cat "$fixture/preflight-ready.log")" = "$(printf 'master:up\nmonitor')"
+if FIXTURE="$fixture" LOG="$fixture/preflight-unready.log" MASTER_READY=false \
+    bash "$fixture/preflight-run.sh" >"$fixture/preflight-unready.out" 2>&1; then
+  echo 'Unhealthy master must prevent rolling deployment.' >&2
+  exit 1
+fi
+test ! -s "$fixture/preflight-unready.log"
 
 echo 'First-node browser release ordering checks passed.'

@@ -670,6 +670,15 @@ if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
 fi
 
 if [ "$safe_schema_rollout" != true ] && [ "$slave_available" = true ]; then
+  # A failed previous run may have left the old master drained. Never take the
+  # slave out of rotation until the master is healthy and serving again.
+  gateway_ready_from_cloud "$MASTER_HOST" || {
+    echo 'Linux2 Gateway 未就绪；不能摘流 Linux1。' >&2
+    exit 1
+  }
+  set_upstream_state master up || exit 1
+  curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
+    https://wao.wayuwa.cn/api/hello | grep -q '"code":0' || exit 1
   start_availability_monitor
 fi
 
@@ -770,11 +779,22 @@ if [ "$slave_deployed" = true ] && [ "$safe_schema_rollout" != true ] \
   set_status cloud_status success
   set_status cloud_detail "$WAO_GIT_SHA"
   printf '\n===== cloud =====\n'; cat cloud.log
-  if ! verify_first_node_public; then
-    set_status verification_status failed
-    set_status verification_detail '首台公网版本、路由或 API 检查失败'
-    exit 1
-  fi
+  first_node_check_attempt=1
+  until verify_first_node_public; do
+    if [ "$first_node_check_attempt" -ge 6 ]; then
+      set_status verification_status failed
+      set_status verification_detail '首台公网版本、路由或 API 连续检查失败'
+      # The old master is still healthy. Reopen it before the EXIT trap, so a
+      # failed readiness check cannot strand the next build on one node.
+      if gateway_ready_from_cloud "$MASTER_HOST" && set_upstream_state master up; then
+        master_drained=false
+      fi
+      exit 1
+    fi
+    echo "首台公网检查第 ${first_node_check_attempt} 次未通过；10 秒后重试。" >&2
+    first_node_check_attempt=$((first_node_check_attempt + 1))
+    sleep 10
+  done
   early_browser_released=true
   set_status early_status ready
   set_status early_ready_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
