@@ -41,6 +41,16 @@ class ShareServiceTest {
     }
 
     @Test
+    void shareSubShowsPendingVerificationWithoutMarkingItComplete() {
+        TaskDto parent = mock(TaskDto.class);
+        when(parent.id()).thenReturn("t1");
+        when(parent.subs()).thenReturn(List.of(new Step("等待验收", false, "s1", "", List.of(), null,
+                null, null, null, "待验证", null, null, null, null)));
+        when(tasks.get("t1")).thenReturn(parent);
+        assertThat(service.shareSub("t1", "s1").status()).isEqualTo("待验证");
+    }
+
+    @Test
     void shareTaskIncludesSubtasksButNotInternalFields() {
         when(tasks.get("t1")).thenReturn(task());
         when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));

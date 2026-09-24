@@ -1912,9 +1912,9 @@ export const useDataStore = defineStore('data', () => {
   }
 
   /**
-   * 改子任务的三态：未开始 / 进行中 / 已完成。
+   * 改子任务的四态：未开始 / 进行中 / 待验证 / 已完成。
    *
-   * <p>完成与否仍写在 done 上（分享、通知、统计都只认它），「进行中」另记在 status 上。
+   * <p>完成与否仍写在 done 上（分享、通知、统计都只认它），「进行中」「待验证」另记在 status 上。
    *
    * @param taskId 所属任务 id
    * @param subId  子任务标识
@@ -1926,7 +1926,7 @@ export const useDataStore = defineStore('data', () => {
     const sub = subById(taskId, subId)
     if (!t || !sub || subtaskState(sub) === state) return
     sub.done = state === '已完成'
-    sub.status = state === '进行中' ? '进行中' : null
+    sub.status = state === '进行中' || state === '待验证' ? state : null
     logActivity(t, `将子任务「${sub.text}」改为${state}`)
     persistTask(taskId)
   }

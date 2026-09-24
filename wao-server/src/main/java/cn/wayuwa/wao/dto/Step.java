@@ -21,7 +21,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @param parentId 同一主任务内父子任务标识，空为根
  * @param owner 负责人成员标识
  * @param due 截止日期，格式 yyyy-MM-dd
- * @param status 未完成时的细分状态，目前只有「进行中」；空表示未开始
+ * @param status 未完成时的细分状态，支持「进行中」「待验证」；空表示未开始
  * @param createdBy 创建人成员标识
  * @param createdAt 创建时间（ISO 时间戳）
  * @param docs 关联的知识文档 id
@@ -62,10 +62,10 @@ public record Step(String text, boolean done, String id, String desc, List<Image
         return new Step(text, done, id, desc, images, number, parentId, owner, due, status, createdBy, createdAt, docs, comments, pr);
     }
 
-    /** 展示用状态：已完成 / 进行中 / 未开始。 */
+    /** 展示用状态：已完成 / 待验证 / 进行中 / 未开始。 */
     @JsonIgnore
     public String statusLabel() {
         if (done) return "已完成";
-        return "进行中".equals(status) ? "进行中" : "未开始";
+        return "进行中".equals(status) || "待验证".equals(status) ? status : "未开始";
     }
 }
