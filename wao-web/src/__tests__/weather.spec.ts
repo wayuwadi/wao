@@ -32,6 +32,25 @@ describe('真实天气与成员设置', () => {
     await store.save(); expect(store.prefs.location?.name).toBe('上海'); expect(store.message).toBe('天气设置已保存')
     expect(localStorage.getItem('wao-weather-draft-v1:weather-member')).toBeNull()
   })
+  it('工具栏开关只保存单项显示偏好，保留其他天气草稿；失败时回滚', async () => {
+    const store = useWeatherStore(); await flushPromises()
+    store.draft.location = city
+    expect(await store.setCalendarVisibility('calendarVisible', false)).toBe(true)
+    const calls = vi.mocked(api.savePreference).mock.calls
+    const saved = JSON.parse(calls[calls.length - 1]![1] as string)
+    expect(saved.location.name).toBe('武汉')
+    expect(saved.calendarVisible).toBe(false)
+    expect(store.prefs.calendarVisible).toBe(false)
+    expect(store.draft.location?.name).toBe('上海')
+    expect(store.draft.calendarVisible).toBe(false)
+    expect(store.dirty).toBe(true)
+
+    api.savePreference.mockRejectedValueOnce(new Error('保存失败'))
+    expect(await store.setCalendarVisibility('readingsVisible', false)).toBe(false)
+    expect(store.prefs.readingsVisible).toBe(true)
+    expect(store.draft.readingsVisible).toBe(true)
+    expect(store.error).toBe('保存失败')
+  })
   it('位置切换后旧请求不能覆盖新预报，过期预报不再进入日历', async () => {
     api.fetchPreference.mockResolvedValue(JSON.stringify(initial()))
     let finish!: (value: ReturnType<typeof forecast>) => void
