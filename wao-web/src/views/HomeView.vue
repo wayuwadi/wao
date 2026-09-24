@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { AI_EXECUTION_MODE_DESCRIPTIONS } from '@/config/aiExecutionModes'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -87,6 +88,30 @@ const quotaOverview = ref<AiEvolutionOverview | null>(null)
 const quotaLoading = ref(true)
 const quotaError = ref(false)
 const quotaDetailsOpen = ref(false)
+const quotaRegion = ref<HTMLElement | null>(null)
+const quotaPopover = ref<HTMLElement | null>(null)
+const quotaPopoverPosition = ref({ top: 0, left: 0 })
+useOverlayDismiss(() => quotaDetailsOpen.value, () => { quotaDetailsOpen.value = false })
+function updateQuotaPopoverPosition() {
+  if (!quotaRegion.value) return
+  const rect = quotaRegion.value.getBoundingClientRect()
+  if (quotaDetailsOpen.value && (rect.bottom < 0 || rect.top > window.innerHeight)) {
+    quotaDetailsOpen.value = false
+    return
+  }
+  const width = Math.min(360, window.innerWidth - 32)
+  quotaPopoverPosition.value = {
+    top: rect.bottom + 8,
+    left: Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16)),
+  }
+}
+function toggleQuotaDetails() {
+  if (!quotaDetailsOpen.value) updateQuotaPopoverPosition()
+  quotaDetailsOpen.value = !quotaDetailsOpen.value
+}
+function closeQuotaOnOutsideClick(event: PointerEvent) {
+  if (quotaDetailsOpen.value && !quotaRegion.value?.contains(event.target as Node) && !quotaPopover.value?.contains(event.target as Node)) quotaDetailsOpen.value = false
+}
 const benefitsSummary = ref('正在读取权益…')
 const benefitsAttention = ref('')
 const taskAutoRunPolicy = ref<AiTaskAutoRunPolicy | null>(null)
@@ -1255,6 +1280,9 @@ watch(taskAutoRunSettingsOpen, (open) => {
 })
 
 onMounted(() => {
+  document.addEventListener('pointerdown', closeQuotaOnOutsideClick)
+  document.addEventListener('scroll', updateQuotaPopoverPosition, true)
+  window.addEventListener('resize', updateQuotaPopoverPosition)
   restoreGoalDraft()
   void refreshWorkflows()
   void refreshGoalRunOptions()
@@ -1267,6 +1295,9 @@ onMounted(() => {
   if (route.query.console) revealAiArea()
 })
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeQuotaOnOutsideClick)
+  document.removeEventListener('scroll', updateQuotaPopoverPosition, true)
+  window.removeEventListener('resize', updateQuotaPopoverPosition)
   runtimePolling.stop()
   activityPolling.stop()
   overviewPolling.stop()
@@ -1277,28 +1308,35 @@ onBeforeUnmount(() => {
 <template>
   <div class="home" :class="{ 'run-list-view': runLayout === 'list' }">
     <div class="home-primary">
-      <header class="home-day"><div><h1>今天，从这里继续</h1><p>{{ new Date(`${data.today}T00:00:00+08:00`).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'long' }) }}</p></div><WeatherPanel surface="calendar" :date="data.today" toolbar glance /></header>
-      <section class="home-glance" aria-label="常用信息">
-        <div class="home-quota">
-        <div class="quota-summary">
-          <span role="status" :class="{ 'quota-low': heroWeeklyQuota && heroWeeklyQuota.remainingPercent < 20 }">{{ quotaError ? '额度读取失败' : quotaLoading && !quotaOverview ? '正在读取额度…' : heroWeeklyQuota ? `Codex 周剩余 ${heroWeeklyQuota.remainingPercent}%` : '暂无有效额度快照' }}</span>
-          <span class="benefits-summary">{{ benefitsSummary }}</span>
-          <button type="button" :aria-expanded="quotaDetailsOpen" aria-controls="home-quota-details" @click="quotaDetailsOpen = !quotaDetailsOpen">{{ quotaDetailsOpen ? '收起额度与权益' : '展开额度与权益' }}</button>
-        </div>
-        <p v-if="quotaError" class="quota-attention" role="alert">暂时无法确认当前额度；已有快照仅供参考。<button type="button" :disabled="quotaLoading" @click="refreshQuotaOverview">重试读取额度</button></p>
-        <p v-else-if="heroWeeklyQuota && heroWeeklyQuota.remainingPercent < 20" class="quota-attention" role="status">周额度偏低，长任务可能受限。</p>
-        <p v-if="benefitsAttention" class="quota-attention" role="status">{{ benefitsAttention }}，展开额度与权益查看。</p>
-        <div v-show="quotaDetailsOpen" id="home-quota-details" class="hero-metrics">
-          <div class="quota-card weekly-quota" :class="heroWeeklyQuota ? quotaClass(heroWeeklyQuota.remainingPercent) : ''"
-            :title="heroWeeklyQuota ? `Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}` : '周额度暂不可用'">
-            <span>Codex 周剩余额度</span>
-            <strong>{{ heroWeeklyQuota ? heroWeeklyQuota.remainingPercent : '—' }}<em v-if="heroWeeklyQuota">%</em></strong>
-            <small>{{ heroWeeklyQuota ? resetText(heroWeeklyQuota.resetsAt) : '等待额度同步' }}</small>
+      <header class="home-day">
+        <div class="home-day-title"><h1>今天，从这里继续</h1><p>{{ new Date(`${data.today}T00:00:00+08:00`).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'long' }) }}</p></div>
+        <div class="home-day-tools">
+          <div ref="quotaRegion" class="home-quota">
+            <button type="button" class="quota-trigger" :class="{ 'quota-low': heroWeeklyQuota && heroWeeklyQuota.remainingPercent < 20, 'quota-needs-attention': quotaError || !!benefitsAttention }" :aria-expanded="quotaDetailsOpen" aria-controls="home-quota-details" @click="toggleQuotaDetails">
+              <i class="ri-pie-chart-2-line" aria-hidden="true"></i>
+              <span role="status">{{ quotaError ? '额度读取失败' : quotaLoading && !quotaOverview ? '读取额度中…' : heroWeeklyQuota ? `Codex ${heroWeeklyQuota.remainingPercent}%` : '额度暂无快照' }}</span>
+              <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+            </button>
+            <Teleport to="body"><div v-show="quotaDetailsOpen" id="home-quota-details" ref="quotaPopover" class="quota-popover" :style="{ top: `${quotaPopoverPosition.top}px`, left: `${quotaPopoverPosition.left}px` }">
+              <div class="quota-popover-heading"><strong>Codex 额度与权益</strong><button type="button" aria-label="关闭额度详情" @click="quotaDetailsOpen = false"><i class="ri-close-line"></i></button></div>
+              <p v-if="quotaError" class="quota-attention" role="alert">暂时无法确认当前额度；已有快照仅供参考。<button type="button" :disabled="quotaLoading" @click="refreshQuotaOverview">重试读取额度</button></p>
+              <p v-else-if="heroWeeklyQuota && heroWeeklyQuota.remainingPercent < 20" class="quota-attention" role="status">周额度偏低，长任务可能受限。</p>
+              <p v-if="benefitsAttention" class="quota-attention" role="status">{{ benefitsAttention }}，请检查权益记录。</p>
+              <div class="hero-metrics">
+                <div class="quota-card weekly-quota" :class="heroWeeklyQuota ? quotaClass(heroWeeklyQuota.remainingPercent) : ''"
+                  :title="heroWeeklyQuota ? `Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}` : '周额度暂不可用'">
+                  <span>Codex 周剩余额度</span>
+                  <strong>{{ heroWeeklyQuota ? heroWeeklyQuota.remainingPercent : '—' }}<em v-if="heroWeeklyQuota">%</em></strong>
+                  <small>{{ heroWeeklyQuota ? resetText(heroWeeklyQuota.resetsAt) : '等待额度同步' }}</small>
+                </div>
+                <CodexBenefitsPanel compact :accounts="quotaOverview?.codexQuotas" @attention="benefitsAttention = $event" @summary="benefitsSummary = $event" />
+              </div>
+              <small class="quota-popover-summary">{{ benefitsSummary }}</small>
+            </div></Teleport>
           </div>
-          <CodexBenefitsPanel compact :accounts="quotaOverview?.codexQuotas" @attention="benefitsAttention = $event" @summary="benefitsSummary = $event" />
+          <WeatherPanel surface="calendar" :date="data.today" toolbar glance />
         </div>
-        </div>
-      </section>
+      </header>
       <HomeDailyWorkspace />
       <WorkspaceMcpConnectCard />
       <HomeStartGuide />
@@ -3380,10 +3418,34 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .run-list-view .recent-main { grid-column: 1 / -1; grid-row: 2; }
   .run-list-view .recent-hover-action { grid-column: 2; grid-row: 1; }
 }
-.home-glance { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-.home-quota { min-width: 0; border-radius: 12px; background: linear-gradient(115deg, #273371, #344293); padding: 14px 18px; display: grid; gap: 10px; }
-.home-weather { min-width: 0; padding: 12px 14px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); align-content: center; }
-.home-weather :deep(.weather-toolbar) { border: 0; margin: 0; padding: 0; flex-wrap: wrap; }
-@media (max-width: 800px) { .home-glance { grid-template-columns: 1fr; } .home-quota .hero-metrics { flex-wrap: wrap; } }
-.home-day{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px;min-width:0;padding:4px 0}.home-day h1{font-size:22px;font-weight:600;margin:0;color:var(--wao-text)}.home-day p{margin:6px 0 0;font-size:12px;color:var(--wao-text-3)}.home-day>div{flex-shrink:0;padding-left:28px}.home-quota{padding:11px 16px;gap:4px;background:var(--wao-bg-card);border:1px solid var(--wao-line);color:var(--wao-text)}.home-quota .quota-summary{justify-content:flex-start;color:var(--wao-text);gap:12px;flex-wrap:wrap}.home-quota .quota-summary>span:first-child{font-weight:600}.home-quota .quota-summary .benefits-summary{color:var(--wao-text-2);font-size:12px;font-weight:400}.home-quota .quota-summary button{margin-left:auto;color:var(--wao-primary-text);background:var(--wao-bg-sub);border-color:var(--wao-line-control);padding:5px 8px}.home-quota .quota-low{color:var(--wao-warning-strong)}.home-quota .quota-attention{color:var(--wao-warning-strong);margin:3px 0;font-size:11px}.home-quota .hero-metrics{background:linear-gradient(115deg,#273371,#344293);border-radius:8px;padding:12px;margin-top:8px}.ai-entry{padding:10px 16px}.ai-entry>div{min-width:0}.ai-entry p{max-width:700px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:900px){.home-day{align-items:flex-start;flex-wrap:wrap}.home-day h1{font-size:20px}.home-quota .quota-summary .benefits-summary{flex:1;min-width:160px}}
+.home-day { grid-column: 1 / -1; position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; padding: 4px 0; }
+.home-day-title { flex: none; padding-left: 28px; }
+.home-day h1 { font-size: 22px; font-weight: 600; margin: 0; color: var(--wao-text); }
+.home-day p { margin: 6px 0 0; font-size: 12px; color: var(--wao-text-3); }
+.home-day-tools { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.home-quota { flex: none; }
+.quota-trigger { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-primary-text); font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.quota-trigger:hover, .quota-trigger[aria-expanded="true"] { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
+.quota-trigger.quota-low, .quota-trigger.quota-needs-attention { color: var(--wao-warning-strong); border-color: var(--wao-warning-line); background: var(--wao-warning-bg); }
+.quota-trigger:focus-visible, .quota-popover button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.quota-popover { position: fixed; z-index: 1000; width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 580px); overflow: auto; padding: 14px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); box-shadow: 0 14px 40px #24345b26; color: var(--wao-text); }
+.quota-popover-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.quota-popover-heading strong { font-size: 14px; }
+.quota-popover-heading button { border: 0; background: transparent; color: var(--wao-text-2); font-size: 17px; cursor: pointer; }
+.quota-popover .quota-attention { color: var(--wao-warning-strong); margin: 9px 0 0; font-size: 11px; line-height: 1.5; }
+.quota-popover .quota-attention button { margin-left: 6px; padding: 3px 6px; border: 1px solid var(--wao-line-control); border-radius: 5px; background: var(--wao-bg-card); color: var(--wao-primary-text); cursor: pointer; }
+.quota-popover .hero-metrics { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; width: 100%; margin-top: 12px; padding: 12px; border-radius: 8px; background: linear-gradient(115deg, #273371, #344293); }
+.quota-popover .quota-card { width: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.quota-popover .quota-card strong { font-size: 26px; margin-top: 5px; }
+.quota-popover .quota-card strong em { font-size: 14px; }
+.quota-popover .quota-card small { max-width: none; font-size: 10px; }
+.quota-popover-summary { display: block; margin-top: 8px; font-size: 11px; color: var(--wao-text-2); }
+.ai-entry { padding: 10px 16px; }
+.ai-entry > div { min-width: 0; }
+.ai-entry p { max-width: 700px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) {
+  .home-day { align-items: flex-start; flex-wrap: wrap; }
+  .home-day h1 { font-size: 20px; }
+  .home-day-tools { width: 100%; justify-content: flex-start; }
+}
 </style>

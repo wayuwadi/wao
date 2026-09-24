@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia } from 'pinia'
 import HomeView from '@/views/HomeView.vue'
@@ -350,18 +350,20 @@ function pasteInto(el: Element, files: File[]) {
 }
 
 describe('HomeView AI 控制台', () => {
-  it('额度摘要常驻首页，详情默认折叠且可展开', async () => {
+  it('额度入口位于天气左侧，详情默认折叠且可收起', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
-    expect(wrapper.get('.quota-summary').text()).toContain('Codex 周剩余 38%')
-    expect(wrapper.get('#home-quota-details').isVisible()).toBe(false)
+    expect(wrapper.get('.home-day-tools').findAll(':scope > *')).toHaveLength(2)
+    expect(wrapper.get('.quota-trigger').text()).toContain('Codex 38%')
+    const details = new DOMWrapper(document.querySelector('#home-quota-details')!)
+    expect(details.isVisible()).toBe(false)
     expect(wrapper.get('#home-ai-area').isVisible()).toBe(false)
-    expect(wrapper.find('.home-glance .codex-benefits').exists()).toBe(true)
-    await wrapper.get('.quota-summary button').trigger('click')
-    expect(wrapper.get('#home-quota-details').isVisible()).toBe(true)
-    await wrapper.get('.quota-summary button').trigger('click')
-    expect(wrapper.get('#home-quota-details').isVisible()).toBe(false)
+    expect(details.find('.codex-benefits').exists()).toBe(true)
+    await wrapper.get('.quota-trigger').trigger('click')
+    expect(details.isVisible()).toBe(true)
+    await wrapper.get('.quota-trigger').trigger('click')
+    expect(details.isVisible()).toBe(false)
     wrapper.unmount()
   })
 
@@ -370,12 +372,14 @@ describe('HomeView AI 控制台', () => {
     vi.mocked(fetchAiEvolution).mockRejectedValueOnce(new Error('网络断开'))
     const { wrapper } = mountHome()
     await flushPromises()
-    expect(wrapper.get('.quota-summary').text()).toContain('额度读取失败')
-    expect(wrapper.get('.quota-attention[role="alert"]').text()).toContain('重试读取额度')
-    await wrapper.get('.quota-attention button').trigger('click')
+    expect(wrapper.get('.quota-trigger').text()).toContain('额度读取失败')
+    await wrapper.get('.quota-trigger').trigger('click')
+    const details = new DOMWrapper(document.querySelector('#home-quota-details')!)
+    expect(details.get('.quota-attention[role="alert"]').text()).toContain('重试读取额度')
+    await details.get('.quota-attention button').trigger('click')
     await flushPromises()
-    expect(wrapper.get('.quota-summary').text()).toContain('Codex 周剩余 38%')
-    expect(wrapper.find('.quota-attention[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('.quota-trigger').text()).toContain('Codex 38%')
+    expect(details.find('.quota-attention[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -506,8 +510,8 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.text()).not.toContain('让剩余额度持续完善 WAO')
     expect(primary.find('.growth-coach').exists()).toBe(false)
     expect(fetchAiEvolution).toHaveBeenCalled()
-    expect(wrapper.find('.home-quota .weekly-quota').text()).toContain('Codex 周剩余额度')
-    expect(wrapper.find('.home-quota .weekly-quota').text()).toContain('38%')
+    expect(document.querySelector('.quota-popover .weekly-quota')?.textContent).toContain('Codex 周剩余额度')
+    expect(document.querySelector('.quota-popover .weekly-quota')?.textContent).toContain('38%')
     expect(wrapper.find('.console-quota').exists()).toBe(false)
     expect(wrapper.find('.hero-status').text()).toContain('执行 1 / 2')
     expect(wrapper.findAll('.hero-link').find(button => button.text().includes('查看 AI 详情'))!.text()).toContain('查看 AI 详情')

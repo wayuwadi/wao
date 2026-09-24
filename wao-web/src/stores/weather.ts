@@ -96,7 +96,8 @@ export const useWeatherStore = defineStore('weather', () => {
   async function refresh() {
     const request = ++forecastVersion, location = prefs.value.location
     forecast.value = null; stale.value = false; forecastError.value = ''; forecasting.value = false
-    if (!location || (!prefs.value.rhythmVisible && !prefs.value.calendarVisible)) return
+    // 两个开关只控制日历和节奏页；首页的天气速览仍使用成员保存的位置。
+    if (!location) return
     forecasting.value = true
     try { const value = await fetchWeather(location); if (request === forecastVersion) { forecast.value = value; checkFreshness() } }
     catch (e) { if (request === forecastVersion) forecastError.value = weatherErrorMessage(e, '天气读取失败，请重试') }
