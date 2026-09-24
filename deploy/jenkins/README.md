@@ -99,15 +99,16 @@ sudo sh deploy/jenkins/verify-controller.sh
 ## 流水线
 
 `wao-main-cd` 会先等待 60 秒，把窗口内相邻的 main push 合并成一个批次；已有构建执行时，后续 push 继续由
-Jenkins 合并到唯一待执行项，不会中断正在进行的 migration 或滚动发布。`Jenkinsfile` 从 `main` 拉取最新代码，
-以线上前端真实版本作为批次基线并生成可审计的变更范围：只运行受影响 Maven 模块和前端的测试，
-后端、WAO Web、Agent Web 三路并行；运行时代码变更仍构建完整的四个 SHA 镜像和两个前端，并执行
-Linux1 从节点 → Linux2 主节点 → 云端严格滚动发布、线上验收、GitHub commit status 和飞书通知。纯文档提交只完成
-输入校验并明确通知“无需部署”；只改自动化测试时仅运行对应模块测试。两者都不生成制品或触碰生产节点。
-无法识别的新路径自动回退全量验证和发布。变更规划结果不在 Declarative `environment` 中预声明，避免 Jenkins
+Jenkins 合并到唯一待执行项，不会中断正在进行的 migration 或滚动发布。流水线页面统一显示中文阶段：
+「拉取代码 → 确定发布范围 → 打包构建 → 部署并验收」，只有 Jenkins 或备份等运维配置变更才出现「同步运维配置」。
+以线上前端真实版本作为批次基线并生成可审计的变更范围。主线 CD 只执行轻量输入检查、两个网页并行生产构建、
+需要时构建 SHA 镜像和源码包，再按 Linux1 从节点 → Linux2 主节点 → 云端严格滚动发布，并完成线上健康验收、
+GitHub commit status 和飞书通知。完整前后端及基础设施测试在开发和 PR 验证时执行，不占用生产发布流水线。
+纯文档或仅测试代码提交只检查输入并明确通知“无需部署”，不生成制品或触碰生产节点。
+无法识别的新路径自动回退完整打包和发布。变更规划结果不在 Declarative `environment` 中预声明，避免 Jenkins
 阻止运行时规划覆盖默认值；字段仍使用显式白名单赋值，不需要放宽 Groovy 沙箱或人工批准脚本签名。
 
-- `DEPLOY_PRODUCTION=false`：对需要发布的变更执行完整影子构建，不接触生产节点；纯文档仍只做校验。
+- `DEPLOY_PRODUCTION=false`：对需要发布的变更只打包，不接触生产节点；纯文档仍只检查输入。
 - `BOOTSTRAP_SLAVE=true`：显式生成 GTID 快照并重建 Linux1 从库；正常发布禁止开启。
 - `ALLOW_SLAVE_OFFLINE=true`：仅当 Linux1 在部署前预检不可达时，保持从节点摘流并继续发布 Linux2 与云端；
   Linux1 已通过预检后的任何部署失败仍然 fail-closed。不得与 `BOOTSTRAP_SLAVE` 同时开启。
@@ -119,7 +120,7 @@ Linux1 从节点 → Linux2 主节点 → 云端严格滚动发布、线上验�
   改判为失败。输入 SHA 或状态值不合法仍立即失败，以便暴露流水线配置错误。
 - 失败时 GitHub commit status 会写明失败阶段，方便没有 Jenkins UI 会话的自动任务先定位门禁；完整命令输出仍只
   保留在受 WAO 会话保护的 Jenkins 控制台，不把日志或凭据复制到公开状态描述。
-- 生产发布验证结束后，流水线会比较仓库内 JCasC、systemd override 和隧道 unit；有变化时只覆盖这三个
+- 仅本批次包含 Jenkins 或备份运维文件变更时，生产发布验收后才核对并同步配置。更新脚本会比较 JCasC、systemd override、隧道 unit 和备份文件；有变化时同步这些
   受版本控制的文件，执行 `daemon-reload`，再请求 Jenkins `safeRestart`。重启会等当前构建和通知结束，
   不会在部署中途杀掉控制器。
 - 重启后可用 `curl --head https://wao.wayuwa.cn/jenkins-health` 验证 `/jenkins` context path 已生效；该
@@ -155,5 +156,5 @@ MySQL、JumpServer 和部署恢复材料一起加密上传到 123 云盘。外�
 ## 浏览器快路径（ADR-265）
 
 只包含 `wao-web/`、`agent-web/` 和原有非运行文件白名单的发布批次设置 `WAO_WEB_ONLY=true`。
-保留前端测试、构建、三节点不可变静态资源与公网验收，后端保持原版运行，不导出镜像。
+保留前端构建、三节点不可变静态资源与公网验收，后端保持原版运行，不导出镜像。
 混合后端/部署改动、未知基线、从库重建或显式离线发布回退完整滚动发布。

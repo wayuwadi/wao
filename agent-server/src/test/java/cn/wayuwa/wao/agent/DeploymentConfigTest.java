@@ -93,6 +93,7 @@ class DeploymentConfigTest {
         String changePlan = read("deploy/jenkins/ci-change-plan.sh");
         String backendBuild = read("deploy/jenkins/ci-backend-test.sh");
         String frontendBuild = read("deploy/jenkins/ci-frontend-build.sh");
+        String browserBuild = read("deploy/jenkins/ci-build-frontends.sh");
         String rollout = read("deploy/jenkins/ci-deploy.sh");
         String verification = read("deploy/jenkins/ci-production-verify.sh");
 
@@ -110,10 +111,12 @@ class DeploymentConfigTest {
                 .contains("force_full_validation")
                 .contains("未登记路径一律回退全量");
         assertThat(pipeline)
-                .contains("Parallel tests and frontend builds")
+                .contains("stage('打包构建')")
                 .contains("env.WAO_DEPLOY_REQUIRED == 'true'")
-                .contains("ci-frontend-build.sh wao-web")
-                .contains("ci-frontend-build.sh agent-web");
+                .contains("ci-build-frontends.sh");
+        assertThat(browserBuild)
+                .contains("ci-frontend-build.sh wao-web false true")
+                .contains("ci-frontend-build.sh agent-web false true");
         assertThat(rollout)
                 .contains("agent-web/dist/.")
                 .contains("/var/www/wao-agent/dist");
