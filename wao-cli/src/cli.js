@@ -12,6 +12,7 @@ export const COMMANDS = new Map([
   ['tasks get', ['get_task', 'task_id']],
   ['tasks create', ['create_task']],
   ['tasks update', ['update_task', 'task_id']],
+  ['subtasks status', ['update_subtask_status', 'subtask_id']],
   ['knowledge list', ['list_knowledge_bases']],
   ['knowledge get', ['get_knowledge_base', 'kb_id']],
   ['knowledge create', ['create_knowledge_base']],
@@ -38,6 +39,7 @@ const HELP = `WAO 工作区 CLI
 常用命令：
   wao projects list | get ID | create | update ID
   wao tasks open | get ID | create | update ID
+  wao subtasks status ID --task-id TASK_ID --status 待验证 --expected-subtask-version VERSION
   wao knowledge list | get ID | create | update ID | move
   wao documents list KB_ID | get ID | create | update ID
   wao folders create | rename

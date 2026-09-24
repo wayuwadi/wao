@@ -7,3 +7,7 @@
 AI 从当前用户、本项目收集中任务开始执行时改为进行中，验证并提交 PR 后追加结论并改为待验证。部署交给 Jenkins；用户负责验收关闭。
 
 MCP 与 CLI：现有 update_task 支持主任务状态，get_task 返回内嵌子任务 status。当前工具没有独立子任务更新能力，本次不增加工具或扩大令牌权限；子任务状态在 Web 中操作，后续若开放独立子任务写入，需补齐权限和并发冲突校验及 CLI 命令。
+
+## 后续 MCP 扩展
+
+用户随后明确要求 MCP 可独立修改子任务状态，现提供 update_subtask_status 和 CLI subtasks status；具体参数、权限及版本冲突规则见 wao-workspace-mcp.md。上述初版不开放写入的限制由本节取代。

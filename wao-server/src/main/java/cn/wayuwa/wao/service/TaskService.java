@@ -140,6 +140,43 @@ public class TaskService {
         return toDto(e);
     }
 
+    /** 仅修改指定子任务状态；行锁与读取时的子任务版本共同防止覆盖并发编辑。 */
+    @org.springframework.transaction.annotation.Transactional
+    public TaskDto updateSubtaskStatus(String id, String subId, String status, String expectedVersion, String memberId) {
+        if (status == null || !Set.of("未开始", "进行中", "待验证", "已完成").contains(status))
+            throw new BadRequestException("子任务状态无效");
+        if (!StringUtils.hasText(expectedVersion)) throw new BadRequestException("需要 expected_subtask_version");
+        requireVisible(id, memberId);
+        TaskEntity entity = taskMapper.lockById(id);
+        if (entity == null) throw new NotFoundException("任务不存在");
+        requireProjectVisible(entity.getProjectId(), memberId);
+        if (!expectedVersion.equals(SubtaskTree.version(parse(entity.getDetailJson()).subs())))
+            throw new cn.wayuwa.wao.common.ConflictException("子任务已有更新，请重新读取后重试");
+        try {
+            var detail = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(entity.getDetailJson());
+            var subs = detail.path("subs");
+            for (int i = 0; i < subs.size(); i++) {
+                var sub = (com.fasterxml.jackson.databind.node.ObjectNode) subs.get(i);
+                String key = sub.path("id").asText("");
+                if (key.isBlank()) key = id + "#" + i;
+                if (!key.equals(subId)) continue;
+                sub.put("done", DONE.equals(status));
+                if ("进行中".equals(status) || "待验证".equals(status)) sub.put("status", status);
+                else sub.remove("status");
+                List<Activity> activity = new ArrayList<>(nn(parse(entity.getDetailJson()).activity()));
+                activity.add(0, edit("将子任务「" + sub.path("text").asText() + "」改为" + status, memberId));
+                detail.set("activity", json.valueToTree(activity));
+                String stored = json.writeValueAsString(detail);
+                taskMapper.updateDetail(id, stored);
+                entity.setDetailJson(stored);
+                return toDto(entity);
+            }
+            throw new NotFoundException("子任务不存在");
+        } catch (JsonProcessingException e) {
+            throw new BadRequestException("任务详情无法读取或保存，未修改子任务");
+        }
+    }
+
     /**
      * 局部更新任务；被修改的字段会写入活动时间线。
      *

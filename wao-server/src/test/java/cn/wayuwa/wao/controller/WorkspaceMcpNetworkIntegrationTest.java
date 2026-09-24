@@ -38,10 +38,10 @@ class WorkspaceMcpNetworkIntegrationTest {
         JsonNode readTools = body(post(readOnly.secret(), discover));
         assertThat(readTools.path("result").path("tools").findValuesAsText("name"))
                 .contains("list_open_tasks", "get_document")
-                .doesNotContain("create_task", "update_document");
+                .doesNotContain("create_task", "update_document", "update_subtask_status");
         JsonNode writeTools = body(post(writable.secret(), discover));
         assertThat(writeTools.path("result").path("tools").findValuesAsText("name"))
-                .contains("create_task", "update_document", "create_project");
+                .contains("create_task", "update_document", "create_project", "update_subtask_status");
         JsonNode knowledge = body(post(readOnly.secret(), """
                 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_knowledge_bases","arguments":{}}}
                 """));

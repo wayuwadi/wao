@@ -11,6 +11,7 @@ import { normalizeWorkspaceToken, readToken } from '../src/auth.js'
 let server, url, lastCall
 const WORKSPACE_TOKEN = `wao_workspace_${'A'.repeat(43)}`
 const ALL_TOOLS = [
+  { name: 'update_subtask_status', inputSchema: { properties: { task_id: { type: 'string' }, subtask_id: { type: 'string' }, status: { type: 'string' }, expected_subtask_version: { type: 'string' } }, required: ['task_id', 'subtask_id', 'status', 'expected_subtask_version'] }, annotations: { readOnlyHint: false } },
   { name: 'list_projects', inputSchema: { properties: {}, required: [] }, annotations: { readOnlyHint: true } },
   { name: 'list_open_tasks', inputSchema: { properties: { mine_only: { type: 'boolean' }, limit: { type: 'integer' }, project_id: { type: 'string' } }, required: [] }, annotations: { readOnlyHint: true } },
   { name: 'create_task', inputSchema: { properties: { project_id: { type: 'string' }, title: { type: 'string' } }, required: ['project_id', 'title'] }, annotations: { readOnlyHint: false } },
@@ -126,4 +127,11 @@ test('URL 和输出不会泄露令牌或接受远程明文 HTTP', async () => {
   const args = await argumentsForTool(['--mine-only', 'false'], null,
     { properties: { mine_only: { type: 'boolean' } }, required: [] })
   assert.deepEqual(args, { mine_only: false })
+})
+
+ test('子任务状态命令传递标识和快照，缺少快照时拒绝', async () => {
+  const args = ['subtasks', 'status', 's1', '--task-id', 't1', '--status', '待验证', '--url', url]
+  await assert.rejects(() => run(args, { tokenProvider: async () => 'good-token', stdout: output().stream }), /缺少必填字段/)
+  await run([...args, '--expected-subtask-version', 'v1'], { tokenProvider: async () => 'good-token', stdout: output().stream })
+  assert.deepEqual(lastCall, { name: 'update_subtask_status', arguments: { subtask_id: 's1', task_id: 't1', status: '待验证', expected_subtask_version: 'v1' } })
 })

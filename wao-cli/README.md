@@ -33,3 +33,5 @@ wao tools call list_open_tasks --input '{"limit":5}'
 ## 开发
 
 运行 `npm test` 验证 HTTP、权限、参数和输出行为。新业务 API 或服务的 CLI 覆盖检查见 [项目 skill](../.codex/skills/wao-cli-sync/SKILL.md) 与 [CLI 规格](../docs/specs/wao-cli.md)。
+
+子任务状态：先 `wao tasks get TASK_ID --output json` 获取 `subtaskVersion`，再执行 `wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expected-subtask-version VERSION`。工具须已由服务端 tools/list 返回，冲突时重新读取，不自动重试写入。

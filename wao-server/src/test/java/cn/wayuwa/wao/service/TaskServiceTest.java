@@ -40,6 +40,46 @@ class TaskServiceTest {
             notifier, taskNotifier, members, projects, new WorkItemNumberService(numberMapper));
 
     @Test
+    void subtaskStatusPreservesOtherFieldsAndRejectsStaleSnapshots() throws Exception {
+        TaskEntity entity = todo();
+        entity.setDetailJson("{\"customUnknown\":42,\"subs\":[{\"id\":\"s1\",\"text\":\"验收\",\"done\":false,\"desc\":\"保留正文\"},{\"id\":\"s2\",\"text\":\"其他\",\"done\":false}]}");
+        when(mapper.selectById("t1")).thenReturn(entity);
+        String version = service.get("t1", "wg").subtaskVersion();
+        TaskDto updated = service.updateSubtaskStatus("t1", "s1", "待验证", version, "wg");
+        assertThat(updated.subs().get(0).status()).isEqualTo("待验证");
+        assertThat(updated.subs().get(0).done()).isFalse();
+        assertThat(updated.subs().get(0).desc()).isEqualTo("保留正文");
+        assertThat(updated.subs().get(1).status()).isNull();
+        assertThat(updated.status()).isEqualTo("待办");
+        assertThat(new ObjectMapper().readTree(entity.getDetailJson()).path("customUnknown").asInt()).isEqualTo(42);
+        assertThatThrownBy(() -> service.updateSubtaskStatus("t1", "s1", "已完成", version, "wg"))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+        verify(mapper, times(1)).updateDetail(eq("t1"), any());
+        updated = service.updateSubtaskStatus("t1", "s1", "已完成", updated.subtaskVersion(), "wg");
+        assertThat(updated.subs().get(0).done()).isTrue();
+        updated = service.updateSubtaskStatus("t1", "s1", "未开始", updated.subtaskVersion(), "wg");
+        assertThat(updated.subs().get(0).status()).isNull();
+        assertThat(updated.subs().get(0).done()).isFalse();
+    }
+
+    @Test
+    void subtaskStatusRejectsInvalidMissingAndInvisibleTargets() {
+        TaskEntity entity = todo();
+        when(mapper.selectById("t1")).thenReturn(entity);
+        String version = service.get("t1", "wg").subtaskVersion();
+        assertThatThrownBy(() -> service.updateSubtaskStatus("t1", "absent", "待验证", version, "wg"))
+                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.updateSubtaskStatus("t1", "s1", "错误状态", version, "wg"))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.updateSubtaskStatus("t1", "s1", "待验证", "", "wg"))
+                .isInstanceOf(BadRequestException.class);
+        when(projects.get("p1", "wg")).thenThrow(new NotFoundException("不可见"));
+        assertThatThrownBy(() -> service.updateSubtaskStatus("t1", "s1", "待验证", version, "wg"))
+                .isInstanceOf(NotFoundException.class);
+        verify(mapper, never()).updateDetail(any(), any());
+    }
+
+    @Test
     void deletedTaskCannotBeRecreatedByVersionedOrLegacyDraft() {
         assertThatThrownBy(() -> service.replace("t1", dtoWithoutCreator("t1").withEditVersion("old"), "wg"))
                 .hasMessageContaining("已删除");
