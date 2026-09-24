@@ -39,6 +39,12 @@ pipeline {
     stages {
         stage('拉取代码') {
             steps {
+                script {
+                    env.WAO_BUILD_STARTED_EPOCH = sh(
+                        script: 'date +%s',
+                        returnStdout: true
+                    ).trim()
+                }
                 checkout scm
                 script {
                     env.WAO_GIT_SHA = sh(

@@ -292,6 +292,10 @@ class DeploymentRoutingConfigTest {
                 .isLessThan(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"));
         assertThat(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"))
                 .isLessThan(rollout.indexOf("retry_node_deploy Linux2 deploy_master master.log"));
+        assertThat(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"))
+                .isLessThan(rollout.indexOf("deploy_cloud true >cloud.log"));
+        assertThat(rollout.indexOf("deploy_cloud true >cloud.log"))
+                .isLessThan(rollout.indexOf("retry_node_deploy Linux2 deploy_master master.log"));
         assertThat(rollout.indexOf("retry_node_deploy Linux2 deploy_master master.log"))
                 .isLessThan(rollout.indexOf("deploy_cloud >cloud.log"));
         assertThat(rollout.indexOf("deploy_cloud >cloud.log"))

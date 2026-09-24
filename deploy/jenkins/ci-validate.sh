@@ -21,6 +21,7 @@ sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 bash deploy/jenkins/test-browser-release.sh
 bash deploy/jenkins/test-slave-rollout-state.sh
+bash deploy/jenkins/test-early-browser-release.sh
 bash deploy/jenkins/test-slave-image-selection.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
