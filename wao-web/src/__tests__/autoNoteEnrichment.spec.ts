@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { startAutoNoteEnrichment, noteEnrichmentStatus } from '@/utils/autoNoteEnrichment'
+import { startAutoNoteEnrichment, noteEnrichmentStatus, noteEnrichmentProgress, discardAutoNoteEnrichment, retryAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import { fetchDoc, apiPatchDoc } from '@/api/board'
 import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
 import { waitForPolish } from '@/api/polishJobs'
+import { saveNotePolishVersion } from '@/api/notePolishVersions'
 
 vi.mock('@/api/board', () => ({ fetchDoc: vi.fn(), apiPatchDoc: vi.fn() }))
 vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('') }))
 vi.mock('@/api/polishJobs', () => ({ newPolishRequestId: () => '0123456789abcdef0123456789abcdef', waitForPolish: vi.fn() }))
+vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
 vi.mock('@/stores/data', () => ({ useDataStore: () => ({ applyRemoteDoc: vi.fn(), docPending: vi.fn().mockReturnValue(false) }) }))
 
 const content = { version: 1 as const, document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '今天复盘打印流程' }] }] }, markdown: '今天复盘打印流程' }
@@ -19,17 +21,25 @@ describe('小记保存后自动生成', () => {
     localStorage.clear()
     delete noteEnrichmentStatus.n1
     vi.clearAllMocks()
+    vi.mocked(fetchDoc).mockReset()
+    vi.mocked(apiPatchDoc).mockReset()
+    vi.mocked(waitForPolish).mockReset()
+    vi.mocked(startArticleImage).mockReset()
+    vi.mocked(fetchArticleImage).mockReset()
+    vi.mocked(saveNotePolishVersion).mockReset()
   })
 
   it('先保存正文，再以版本条件写入标题和总览图', async () => {
     vi.mocked(fetchDoc).mockResolvedValueOnce(doc(1) as never)
       .mockResolvedValueOnce(doc(1) as never)
       .mockResolvedValueOnce(doc(2, '打印流程复盘') as never)
+      .mockResolvedValueOnce(doc(3, '打印流程复盘') as never)
     vi.mocked(apiPatchDoc).mockResolvedValueOnce(doc(2, '打印流程复盘') as never)
       .mockResolvedValueOnce(doc(3, '打印流程复盘') as never)
     vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj1', status: 'SUCCEEDED', message: '', polished: '打印流程复盘' })
     vi.mocked(startArticleImage).mockResolvedValue({ id: 'img-job', status: 'QUEUED', message: '', imageUrl: null })
     vi.mocked(fetchArticleImage).mockResolvedValue({ id: 'img-job', status: 'SUCCEEDED', message: '', imageUrl: '/api/images/img1/raw' })
+    vi.mocked(saveNotePolishVersion).mockResolvedValue({ docId: 'n1', sourceMarkdown: content.markdown, polishedMarkdown: '打印流程复盘' })
 
     startAutoNoteEnrichment('me', 'n1', 1)
     await flushPromises()
@@ -42,7 +52,9 @@ describe('小记保存后自动生成', () => {
         expect.objectContaining({ type: 'image', attrs: expect.objectContaining({ src: '/api/images/img1/raw' }) }),
       ]) }) }),
     }))
-    expect(noteEnrichmentStatus.n1).toBe('标题和配图已自动生成')
+    expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_BODY', expect.any(Object))
+    expect(saveNotePolishVersion).toHaveBeenCalledWith('n1', content.markdown, '打印流程复盘')
+    expect(noteEnrichmentStatus.n1).toBe('标题、配图和润色已完成')
     expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).toBeNull()
   })
 
@@ -59,5 +71,56 @@ describe('小记保存后自动生成', () => {
 
     expect(apiPatchDoc).not.toHaveBeenCalled()
     expect(noteEnrichmentStatus.n1).toContain('已被修改')
+  })
+
+  it('选择保留原文时只生成标题和配图', async () => {
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(apiPatchDoc).mockResolvedValueOnce(doc(2, '标题') as never)
+      .mockResolvedValueOnce(doc(3, '标题') as never)
+    vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj1', status: 'SUCCEEDED', message: '', polished: '标题' })
+    vi.mocked(startArticleImage).mockResolvedValue({ id: 'img-job', status: 'QUEUED', message: '', imageUrl: null })
+    vi.mocked(fetchArticleImage).mockResolvedValue({ id: 'img-job', status: 'SUCCEEDED', message: '', imageUrl: '/api/images/img1/raw' })
+    vi.mocked(fetchDoc).mockResolvedValueOnce(doc(1) as never)
+      .mockResolvedValueOnce(doc(1) as never)
+      .mockResolvedValueOnce(doc(2, '标题') as never)
+      .mockResolvedValueOnce(doc(2, '标题') as never)
+    startAutoNoteEnrichment('me', 'n1', 1, { polishEnabled: false })
+    await flushPromises()
+
+    expect(waitForPolish).toHaveBeenCalledTimes(1)
+    expect(noteEnrichmentProgress.n1?.polish).toBe('skipped')
+    expect(noteEnrichmentStatus.n1).toContain('保留原文')
+  })
+
+  it('删除小记时丢弃可恢复任务和卡片状态', async () => {
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(waitForPolish).mockRejectedValue(new Error('系统繁忙'))
+    startAutoNoteEnrichment('me', 'n1', 1)
+    await flushPromises()
+    expect(noteEnrichmentProgress.n1?.title).toBe('failed')
+
+    discardAutoNoteEnrichment('me', 'n1')
+
+    expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).toBeNull()
+    expect(noteEnrichmentProgress.n1).toBeUndefined()
+    expect(noteEnrichmentStatus.n1).toBeUndefined()
+  })
+
+  it('用户修改正文后重试读取新版本，不用旧版本覆盖', async () => {
+    vi.mocked(fetchDoc).mockResolvedValueOnce(doc(1) as never)
+      .mockResolvedValueOnce(doc(2) as never)
+      .mockResolvedValueOnce(doc(2) as never)
+      .mockResolvedValueOnce(doc(2) as never)
+    vi.mocked(waitForPolish).mockRejectedValueOnce(new Error('系统繁忙'))
+      .mockResolvedValue({ id: 'pj2', status: 'SUCCEEDED', message: '', polished: '新标题' })
+    vi.mocked(apiPatchDoc).mockResolvedValue(doc(3, '新标题') as never)
+    vi.mocked(startArticleImage).mockRejectedValue(new Error('配图暂不可用'))
+    startAutoNoteEnrichment('me', 'n1', 1)
+    await flushPromises()
+
+    await retryAutoNoteEnrichment('me', 'n1')
+    await flushPromises()
+
+    expect(apiPatchDoc).toHaveBeenCalledWith('n1', { title: '新标题', expectedRev: 2 })
   })
 })
