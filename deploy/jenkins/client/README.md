@@ -38,3 +38,13 @@ runner 使用 `--ephemeral --disableupdate --no-default-labels`，完成后确�
 Mac 节点 `wao-client-macos-wadi` 为当前用户桌面会话的专用入站节点，标签 `wao-client-macos`、
 一个 executor、exclusive 模式。通过已核验主机身份的 SSH loopback 隧道和 WebSocket 连接；
 节点 Secret 保存在本机用户私有目录，未安装开机常驻服务。正式构建前确认节点在线。
+
+Windows 交叉构建镜像同时安装 `pkg-config` 与 `libayatana-appindicator3-dev`：当前 Linux Tauri CLI
+在收集打包元数据时，即使目标为 Windows 仍查询宿主托盘库。仅有 NSIS、Clang 和 Windows SDK
+会在可执行文件编译成功后触发 `Can't detect any appindicator library`。构建镜像阶段验证
+`ayatana-appindicator3-0.1` 可由 pkg-config 解析，再用真实 Windows NSIS 打包验收。
+
+Linux2 的 Jenkins 非登录服务不会继承维护用户的代理变量。Windows 构建脚本优先沿用已设置的
+HTTP(S) 代理，否则使用既有 `127.0.0.1:7897` 出口，并把代理传入构建镜像及运行容器；这修复
+NSIS 工具从 GitHub 下载时的 TLS EOF，也避免 Rust 依赖绕过既有出口。迁移构建主机时需显式
+设置该主机的 `HTTP_PROXY` / `HTTPS_PROXY`，不要关闭 TLS 验证来绕过网络错误。
