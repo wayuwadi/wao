@@ -401,16 +401,10 @@ deploy_cloud() {
     "python3 /tmp/static-release.py install /tmp/wao-static.tgz /var/www/wao/releases '$WAO_GIT_SHA'" || return
   retry_remote "静态路由清单" ssh -o ConnectTimeout=15 wao-cloud \
     "python3 /tmp/publish-static-routing.py /etc/wao-public-edge/routing.json '$WAO_GIT_SHA'" || return
-  resolve_ipv4() {
-    getent ahostsv4 "$1" | awk '$2 == "STREAM" { print $1; exit }'
-  }
-  master_gateway_ipv4="$(resolve_ipv4 "$MASTER_HOST")"
-  slave_gateway_ipv4="$(resolve_ipv4 "$SLAVE_HOST")"
-  test -n "$master_gateway_ipv4"
-  test -n "$slave_gateway_ipv4"
-  MASTER_GATEWAY_IPV4="$master_gateway_ipv4" SLAVE_GATEWAY_IPV4="$slave_gateway_ipv4" \
-    MASTER_GATEWAY_STATE="$master_gateway_state" \
-    WAO_NGINX_RENDER_OUTPUT=wao-nginx.conf sh deploy/scripts/render-nginx-config.sh
+  # Render on the cloud host: its Linux1 name resolves to the reverse SSH
+  # tunnel. Rendering on Jenkins would write the unreachable public :9000 IP.
+  retry_remote "云端 Gateway 配置" ssh -o ConnectTimeout=15 wao-cloud \
+    "MASTER_GATEWAY_STATE='$master_gateway_state' WAO_NGINX_RENDER_OUTPUT=/tmp/wao-nginx.conf sh /opt/wao/deploy/scripts/render-nginx-config.sh" || return
   retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" '
     set -eu
     install -d /tmp/wao-dist /tmp/wao-agent-dist
@@ -419,7 +413,6 @@ deploy_cloud() {
   ' || return
   retry_remote "云前端" scp -o ConnectTimeout=15 -r wao-web/dist/. "wao-cloud:/tmp/wao-dist/" || return
   retry_remote "云前端" scp -o ConnectTimeout=15 -r agent-web/dist/. "wao-cloud:/tmp/wao-agent-dist/" || return
-  retry_remote "云前端" scp -o ConnectTimeout=15 wao-nginx.conf "wao-cloud:/tmp/wao-nginx.conf" || return
   retry_remote "云前端" scp -o ConnectTimeout=15 \
     deploy/nginx/wao.wayuwa.cn.conf.template \
     deploy/nginx/jms.wayuwa.cn.conf \
@@ -511,7 +504,7 @@ deploy_cloud() {
 gateway_ready_from_cloud() {
   gateway_host="$1"
   ssh -o ConnectTimeout=15 "wao-cloud" \
-    "gateway_ip=\$(sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh '$gateway_host') && curl -4 -kfsS --max-time 8 https://\$gateway_ip:9000/api/hello | grep -q '\"code\":0'"
+    "gateway_ip=\$(sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh '$gateway_host') && curl -4 -kfsS --max-time 8 --resolve '$gateway_host:9000:'\$gateway_ip https://$gateway_host:9000/api/hello | grep -q '\"code\":0'"
 }
 
 set_upstream_state() {
@@ -590,6 +583,7 @@ deploy_browser_only() {
   local plan
   plan="$(sh deploy/jenkins/ci-change-plan.sh "$WAO_CHANGE_BASE" "$WAO_GIT_SHA")" || return 1
   printf '%s\n' "$plan" | grep -qx 'WAO_WEB_ONLY=true' || return 1
+  prepare_cloud_routing || return 1
   gateway_ready_from_cloud "$MASTER_HOST" || return 1
   gateway_ready_from_cloud "$SLAVE_HOST" || return 1
   start_availability_monitor

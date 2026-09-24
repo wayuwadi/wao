@@ -16,6 +16,7 @@ SLAVE_HOST=slave
 availability_failures="$FIXTURE/failures"
 : >"$availability_failures"
 sh() { printf 'WAO_WEB_ONLY=%s\n' "${PLAN:-true}"; }
+prepare_cloud_routing() { echo routing >>"$LOG"; }
 gateway_ready_from_cloud() { echo "probe:$1" >>"$LOG"; [ "${PROBE_FAIL:-false}" != true ]; }
 start_availability_monitor() { echo start >>"$LOG"; }
 stop_availability_monitor() { echo stop >>"$LOG"; }
@@ -33,6 +34,7 @@ run_case() {
 run_case good success
 test "$(grep -c '^probe:' "$fixture/good.log")" = 4
 grep -qx 'publish' "$fixture/good.log"
+test "$(grep -nE '^(routing|publish)$' "$fixture/good.log" | cut -d: -f2)" = "$(printf 'routing\npublish')"
 grep -qx 'cloud_status:success' "$fixture/good.log"
 run_case mixed failure PLAN=false
 ! grep -q publish "$fixture/mixed.log"

@@ -33,7 +33,8 @@ export MASTER_PUBLIC_HOST SLAVE_PUBLIC_HOST
 gateway_ready() {
   host="$1"
   address="$(sh "${script_dir}/resolve-gateway-ipv4.sh" "$host")" || return 1
-  curl -4 -kfsS --max-time 5 "https://${address}:9000/api/hello" | grep -q '"code":0'
+  curl -4 -kfsS --max-time 5 --resolve "${host}:9000:${address}" \
+    "https://${host}:9000/api/hello" | grep -q '"code":0'
 }
 
 if { [ -z "${MASTER_GATEWAY_STATE}" ] && gateway_ready "${MASTER_PUBLIC_HOST}"; } ||
