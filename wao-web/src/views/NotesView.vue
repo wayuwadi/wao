@@ -2,7 +2,7 @@
 import WeKnoraDocumentStatus from '@/components/weknora/WeKnoraDocumentStatus.vue'
 import { useWeKnoraDocuments } from '@/composables/weknoraDocuments'
 import { useUiStore } from '@/stores/ui'
-import { chatShareLink, docShareUrl } from '@/utils/share'
+import { docShareUrl } from '@/utils/share'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
@@ -122,7 +122,6 @@ function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
     { id: 'edit', label: '编辑小记', run: () => editNote(id) },
     { id: 'copy', label: '复制内容', run: () => noteEditors.get(id)?.copyFormatted() },
     { id: 'link', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
-    { id: 'chat', label: '分享到聊天', run: () => ui.shareToChat(chatShareLink(note.title, docShareUrl(id))) },
     { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
     { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => toggleDeleteConfirmation(id) },
   ])
@@ -300,7 +299,6 @@ onMounted(() => void loadPins())
             <button @click="noteEditors.get(note.id)?.copyFormatted()">复制内容</button>
             <button :disabled="!pinsReady || pinSaving" :aria-pressed="pinnedIds.includes(note.id)" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i>{{ pinnedIds.includes(note.id) ? '取消置顶' : '置顶' }}</button>
             <button @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-link"></i>复制分享链接</button>
-            <button @click="ui.shareToChat(chatShareLink(note.title, docShareUrl(note.id)))"><i class="ri-chat-forward-line"></i>分享到聊天</button>
             <button class="card-edit" aria-label="编辑小记" @click="editNote(note.id)"><i class="ri-edit-line"></i>编辑</button>
             <button class="card-delete" :aria-label="`${confirmingDeleteId === note.id ? '取消删除' : '删除'}小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" :title="confirmingDeleteId === note.id ? '收起删除确认' : '移入回收站，7 天内可恢复'"
               :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i :class="confirmingDeleteId === note.id ? 'ri-close-line' : 'ri-delete-bin-line'"></i>{{ deletingId === note.id ? '删除中…' : confirmingDeleteId === note.id ? '取消删除' : '删除' }}</button>

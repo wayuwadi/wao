@@ -162,7 +162,8 @@ describe('设置页 Webhook 草稿路由保护', () => {
     useWebPetStore().loadState = 'loaded'
     localStorage.setItem('wao-web-pet-settings-draft-v1:pet-guard', JSON.stringify({ showTaskNotices: false }))
     window.confirm = vi.fn(() => false)
-    await wrapper.findAll('.snav-item').find(button => button.text() === '宠物设置')!.trigger('click')
+    expect(wrapper.findAll('.snav-item').some(button => button.text() === '宠物设置')).toBe(false)
+    await router.push('/settings?tab=pet')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/settings?tab=pet')
     expect(window.confirm).not.toHaveBeenCalled()
