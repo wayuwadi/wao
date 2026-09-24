@@ -103,8 +103,8 @@ appearance:
 jobs:
   - script: >
       pipelineJob('wao-main-cd') {
-        description('WAO main: collect pushes for 300 seconds, test once, build immutable SHA images, deploy Linux1 slave → Linux2 master → cloud.')
-        quietPeriod(300)
+        description('WAO main: collect pushes for 60 seconds, test once, build immutable SHA images, deploy Linux1 slave → Linux2 master → cloud.')
+        quietPeriod(60)
         properties {
           githubProjectUrl('https://github.com/wayuwacn/wao/')
         }

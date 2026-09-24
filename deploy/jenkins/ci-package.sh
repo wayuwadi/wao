@@ -8,6 +8,12 @@ umask 077
 install -d "$WAO_RUN_TEMP"
 git archive --format=tar.gz -o "$WAO_RUN_TEMP/wao-release.tgz" HEAD
 
+# 静态发布沿用不可变源码归档与前端产物，后端不变时不重复导出整套镜像。
+if [ "${WAO_WEB_ONLY:-false}" = true ]; then
+  echo 'Browser-only release: backend images unchanged.'
+  exit 0
+fi
+
 pull_image() {
   image="$1"
   attempt=1

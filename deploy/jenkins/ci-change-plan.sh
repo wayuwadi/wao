@@ -5,6 +5,7 @@ base="${1:-${WAO_CHANGE_BASE:-HEAD^}}"
 head="${2:-${WAO_CHANGE_HEAD:-HEAD}}"
 
 deploy_required=false
+web_only=true
 backend_projects=''
 test_wao_web=false
 test_agent_web=false
@@ -21,6 +22,7 @@ add_backend_project() {
 }
 
 force_full_validation() {
+  web_only=false
   force_full=true
   deploy_required=true
   test_wao_web=true
@@ -38,6 +40,10 @@ else
     while IFS= read -r path; do
       [ -n "$path" ] || continue
       changed_count=$((changed_count + 1))
+      case "$path" in
+        wao-web/*|agent-web/*|docs/*|*.md|.github/*) ;;
+        *) web_only=false ;;
+      esac
       case "$path" in
         docs/*|*.md|.github/*)
           # 文档和 GitHub 辅助流程不改变主站运行制品。
@@ -109,8 +115,11 @@ elif [ -z "$backend_projects" ]; then
   backend_projects=none
 fi
 
+if [ "$deploy_required" != true ]; then web_only=false; fi
+
 printf '%s\n' \
   "WAO_DEPLOY_REQUIRED=$deploy_required" \
+  "WAO_WEB_ONLY=$web_only" \
   "WAO_BACKEND_PROJECTS=$backend_projects" \
   "WAO_TEST_WAO_WEB=$test_wao_web" \
   "WAO_TEST_AGENT_WEB=$test_agent_web" \

@@ -40,7 +40,7 @@ WAO 是一个前后端分离的 Web 系统，采用 Spec-Driven Development。�
 1. 变更前先执行 `git switch main` 和 `git pull --ff-only origin main`，多人并行时避免基于旧代码工作。
 2. **一个需求或一个 BUG 一个 PR。** AI 先在本地开发，直接连接既有线上数据库完成与改动相称的测试和真实用户链路验收；通过后在功能分支上创建详细提交，push 分支、建 PR、合并 `main`，全程不必逐次征求用户同意。多条需求不合并进同一个 PR，一条需求也不拆成多个 PR。
 3. PR **不承担重复 CI 门禁**：Jenkins 只在 `main` 的 push 上跑，PR 上没有 checks 是预期行为，不是失败。合并前以本地验证为准——本地测试全绿且 `mergeable` 为 `MERGEABLE` 即可 Squash Merge 并删除源分支。
-4. `main` push 先进入 Jenkins 五分钟批处理窗口；窗口内多个需求提交合为一次 CD，已有发布运行时后续 push 也只保留一个待执行批次。每批构建最新 Git SHA 镜像，按 Linux1 从节点→Linux2 主节点→云前端/Nginx 严格滚动发布，批次内提交状态、双节点与线上健康检查通过后发送一次飞书通知（见 ADR-144、ADR-157）。
+4. `main` push 先进入 Jenkins 一分钟批处理窗口；窗口内多个需求提交合为一次 CD，已有发布运行时后续 push 也只保留一个待执行批次。纯浏览器变更使用不可变静态制品发布，保持后端运行；涉及后端或部署时构建最新 Git SHA 镜像，按 Linux1 从节点→Linux2 主节点→云前端/Nginx 严格滚动发布，批次内提交状态、双节点与线上健康检查通过后发送一次飞书通知（见 ADR-144、ADR-157）。
 5. push 前必须核对与 `main` 的冲突，**包括 git 不会报的语义冲突**：两边各自新建了同编号的 ADR 或同版本号的 Flyway migration，文件名不同所以 git 静默通过，但语义上撞车，必须重新编号。migration 撞号会让 Flyway 启动失败、整次部署回滚，`FlywayMigrationsTest` 会在 `mvn test` 里拦下这种情况——但 ADR 撞号仍然只能靠人核对。
 6. 本策略只放宽流程门禁，不放宽凭据和数据安全：真实 Secret 不得进入 Git；破坏性生产数据操作仍需明确授权；已执行的 migration 仍不可修改。
 7. **本地验收通过并合并 PR 后即完成 AI 交付。** 默认不等待 Jenkins、不轮询或创建发布回访、不做发布后的二次验收；线上验收由用户负责。交付说明包含本地验收结果、PR 和合并 SHA，不把“已合并”说成“已上线”。本地连接或验收受阻时明确报告缺项，不用发布后补验替代本地验收。只有用户另行要求跟进发布或排查线上问题时，才进入对应流程。具体流程使用 `.codex/skills/wao-dev-batch-delivery/SKILL.md`；ADR-232 取代 ADR-202 的强制发布跟进结束条件，Jenkins 批处理与自动健康检查保持原样。

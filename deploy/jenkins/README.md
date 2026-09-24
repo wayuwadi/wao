@@ -98,7 +98,7 @@ sudo sh deploy/jenkins/verify-controller.sh
 
 ## 流水线
 
-`wao-main-cd` 会先等待 300 秒，把窗口内相邻的 main push 合并成一个批次；已有构建执行时，后续 push 继续由
+`wao-main-cd` 会先等待 60 秒，把窗口内相邻的 main push 合并成一个批次；已有构建执行时，后续 push 继续由
 Jenkins 合并到唯一待执行项，不会中断正在进行的 migration 或滚动发布。`Jenkinsfile` 从 `main` 拉取最新代码，
 以线上前端真实版本作为批次基线并生成可审计的变更范围：只运行受影响 Maven 模块和前端的测试，
 后端、WAO Web、Agent Web 三路并行；运行时代码变更仍构建完整的四个 SHA 镜像和两个前端，并执行
@@ -151,3 +151,9 @@ MySQL、JumpServer 和部署恢复材料一起加密上传到 123 云盘。外�
 `notify-feishu.sh` 默认通过 `https://wao.wayuwa.cn/api/public/notification-settings/jenkins-{success|failure}` 读取门禁，与发布验收使用相同入口；可用 `WAO_NOTIFICATION_POLICY_URL` 覆盖。Linux2 不再提供宿主机 `127.0.0.1:8080` 服务，不能继续使用该旧地址，否则成功通知会因策略不可读而静默跳过，失败通知却仍能走故障兜底发送。
 
 成功和失败均使用现有 `FEISHU_COMMENT_WEBHOOK_URL`，遵守群通知总开关与沉默时段；成功还要求发布验证完整。诊断时以构建结尾的通知输出为准，不能将前部通知脚本单元测试打印的 delivered 当成真实发送记录。
+
+## 浏览器快路径（ADR-265）
+
+只包含 `wao-web/`、`agent-web/` 和原有非运行文件白名单的发布批次设置 `WAO_WEB_ONLY=true`。
+保留前端测试、构建、三节点不可变静态资源与公网验收，后端保持原版运行，不导出镜像。
+混合后端/部署改动、未知基线、从库重建或显式离线发布回退完整滚动发布。

@@ -29,6 +29,7 @@ git -C "$fixture" add docs/change.md
 git -C "$fixture" commit -qm docs
 plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
 assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
+assert_plan 'WAO_WEB_ONLY=false' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
 
 base="$(git -C "$fixture" rev-parse HEAD)"
@@ -38,6 +39,7 @@ git -C "$fixture" add wao-client
 git -C "$fixture" commit -qm desktop-client-only
 plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
 assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
+assert_plan 'WAO_WEB_ONLY=false' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
 assert_plan 'WAO_TEST_WAO_WEB=false' "$plan"
 assert_plan 'WAO_TEST_AGENT_WEB=false' "$plan"
@@ -50,6 +52,7 @@ git -C "$fixture" commit -qm server
 plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
 assert_plan 'WAO_DEPLOY_REQUIRED=true' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=wao-server' "$plan"
+assert_plan 'WAO_WEB_ONLY=false' "$plan"
 assert_plan 'WAO_TEST_WAO_WEB=false' "$plan"
 
 base="$(git -C "$fixture" rev-parse HEAD)"
@@ -62,6 +65,14 @@ plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
 assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
 assert_plan 'WAO_TEST_WAO_WEB=true' "$plan"
 assert_plan 'WAO_TEST_AGENT_WEB=true' "$plan"
+assert_plan 'WAO_WEB_ONLY=true' "$plan"
+
+# 同批次混入后端变更必须回到完整发布。
+printf 'server change\n' >>"$fixture/wao-server/src/main/java/Example.java"
+git -C "$fixture" add wao-server
+git -C "$fixture" commit -qm mixed-backend
+plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
+assert_plan 'WAO_WEB_ONLY=false' "$plan"
 
 base="$(git -C "$fixture" rev-parse HEAD)"
 mkdir -p "$fixture/wao-web/src/__tests__"
@@ -70,6 +81,7 @@ git -C "$fixture" add wao-web
 git -C "$fixture" commit -qm wao-web-test-only
 plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
 assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
+assert_plan 'WAO_WEB_ONLY=false' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
 assert_plan 'WAO_TEST_WAO_WEB=true' "$plan"
 assert_plan 'WAO_TEST_AGENT_WEB=false' "$plan"
@@ -82,6 +94,7 @@ git -C "$fixture" add agent-web
 git -C "$fixture" commit -qm agent-web-test-only
 plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
 assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
+assert_plan 'WAO_WEB_ONLY=false' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
 assert_plan 'WAO_TEST_WAO_WEB=false' "$plan"
 assert_plan 'WAO_TEST_AGENT_WEB=true' "$plan"
@@ -94,6 +107,7 @@ git -C "$fixture" add deploy/ai-runner
 git -C "$fixture" commit -qm ai-runner-test-only
 plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
 assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
+assert_plan 'WAO_WEB_ONLY=false' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
 assert_plan 'WAO_TEST_WAO_WEB=false' "$plan"
 assert_plan 'WAO_TEST_AGENT_WEB=false' "$plan"
@@ -106,11 +120,13 @@ git -C "$fixture" commit -qm pipeline
 plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
 assert_plan 'WAO_DEPLOY_REQUIRED=true' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=all' "$plan"
+assert_plan 'WAO_WEB_ONLY=false' "$plan"
 assert_plan 'WAO_TEST_WAO_WEB=true' "$plan"
 assert_plan 'WAO_TEST_AGENT_WEB=true' "$plan"
 
 plan="$(cd "$fixture" && sh "$planner" missing-ref HEAD)"
 assert_plan 'WAO_DEPLOY_REQUIRED=true' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=all' "$plan"
+assert_plan 'WAO_WEB_ONLY=false' "$plan"
 
 echo 'Jenkins change plan tests passed.'
