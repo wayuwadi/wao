@@ -174,7 +174,7 @@ async function saveHtml() {
     if (editingPage.value) {
       toast('WAO 显示名称已保存', 'ri-check-line')
     } else {
-      preview.value = { kind: 'html', name: page.title, url: page.url }
+      preview.value = { kind: 'html', name: page.title, url: page.url, sourceType: page.sourceType }
       toast('HTML 已归入项目并可站内预览', 'ri-html5-line')
     }
   } catch (cause) {
@@ -314,7 +314,7 @@ async function removePage(page: HostedPage) {
           <b>{{ page.title }}</b
           ><span>{{ page.fileName }} · {{ page.updatedAt }}</span>
         </div>
-        <button @click="preview = { kind: 'html', name: page.title, url: page.url }">
+        <button @click="preview = { kind: 'html', name: page.title, url: page.url, sourceType: page.sourceType }">
           <i class="ri-eye-line"></i>预览
         </button>
         <button @click="copyText(absoluteUrl(page.url), '已复制公网分享链接')">
@@ -337,7 +337,7 @@ async function removePage(page: HostedPage) {
         <p v-if="editingPage">
           修改后会同步到项目列表、站内预览和浏览器标题；HTML 内容和公网分享地址保持不变。
         </p>
-        <p v-else>页面会归入当前项目，并在受限 iframe 内站内预览；公网分享链接保持可用。</p>
+        <p v-else>页面会归入当前项目，在隔离窗口中运行；演示数据保存在当前浏览器，刷新后仍可恢复。</p>
         <label>WAO 显示名称<input v-model="htmlTitle" maxlength="200" autofocus /></label>
         <label v-if="!editingPage">分享链接后缀<input v-model="htmlSlug" maxlength="80" /></label>
         <div v-if="htmlFile" class="selected-file">

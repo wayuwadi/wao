@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳。
+已采纳；人工页面的存储兼容行为由 [ADR-270](270-manual-html-storage-compatibility.md) 后续调整。
 
 ## 上下文
 
