@@ -37,6 +37,26 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('卡片右键命中当前小记，删除仍需在原确认区确认', async () => {
+    useDataStore().docs.one = doc('one', '右键目标小记')
+    const wrapper = await view()
+    await wrapper.get('[data-note-id="one"]').trigger('contextmenu', { clientX: 200, clientY: 120 })
+    await flushPromises()
+    const menu = document.body.querySelector<HTMLElement>('[role="menu"][aria-label="小记：右键目标小记的操作"]')
+    expect(menu).not.toBeNull()
+    const link = [...(menu?.querySelectorAll('button') ?? [])].find(button => button.textContent?.includes('复制分享链接'))
+    link?.click()
+    await flushPromises()
+    expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/s/d/one`, '公开分享链接已复制')
+    await wrapper.get('[data-note-id="one"]').trigger('contextmenu')
+    await flushPromises()
+    const deleteAction = [...(document.body.querySelectorAll('[role="menu"] button'))].find(button => button.textContent?.includes('移入回收站'))
+    deleteAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.get('[data-note-id="one"] .card-delete-confirm').text()).toContain('7 天内可恢复')
+    expect(useDataStore().docs.one).toBeDefined()
+    wrapper.unmount()
+  })
   it('从小记卡片直接复制免登录只读分享页链接', async () => {
     useDataStore().docs.old = doc('old', '要分享的小记')
     const wrapper = await view()

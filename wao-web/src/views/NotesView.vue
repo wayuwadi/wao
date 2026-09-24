@@ -5,7 +5,7 @@ import { useUiStore } from '@/stores/ui'
 import { chatShareLink, docShareUrl } from '@/utils/share'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
-const ui = useUiStore()
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { defineAsyncComponent, computed, nextTick, onMounted, ref, watch } from 'vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useDataStore } from '@/stores/data'
@@ -14,6 +14,9 @@ import { resolvedRichContent } from '@/utils/richDoc'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
+
+const ui = useUiStore()
+const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 
 const pinnedIds = ref<string[]>([])
 const pinsReady = ref(false)
@@ -103,6 +106,26 @@ function cancelDeleteOnEscape(id: string, event: KeyboardEvent) {
   if (confirmingDeleteId.value !== id || deletingId.value) return
   event.stopPropagation()
   toggleDeleteConfirmation(id)
+}
+function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
+  const note = data.docById(id)
+  if (!note || editingIds.value.includes(id)) return
+  if (event instanceof KeyboardEvent) {
+    if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
+    event.preventDefault()
+  } else {
+    if (event.target instanceof Element && event.target.closest('a, button, input, textarea, img, [contenteditable="true"]')) return
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
+  }
+  contextMenu.value?.openAt(event, `小记：${note.title}`, [
+    { id: 'edit', label: '编辑小记', run: () => editNote(id) },
+    { id: 'copy', label: '复制内容', run: () => noteEditors.get(id)?.copyFormatted() },
+    { id: 'link', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
+    { id: 'chat', label: '分享到聊天', run: () => ui.shareToChat(chatShareLink(note.title, docShareUrl(id))) },
+    { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
+    { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => toggleDeleteConfirmation(id) },
+  ])
 }
 async function deleteNote(id: string) {
   if (deletingId.value || confirmingDeleteId.value !== id) return
@@ -259,7 +282,7 @@ onMounted(() => void loadPins())
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
         <article v-for="note in visible" :key="note.id" class="note-card" :class="{ highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
           tabindex="0" title="双击在卡片内编辑，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 在卡片内编辑`"
-          @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)">
+          @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>{{ sort === 'updated' ? '更新于' : '创建于' }} {{ timeLabel(note[sort] || note.created) }}</time><span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
           <NoteComposer v-if="editingIds.includes(note.id)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
@@ -293,6 +316,7 @@ onMounted(() => void loadPins())
           </template>
         </article>
         <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>
+        <ContextActionMenu ref="contextMenu" />
       </section>
     </div>
     <Teleport to="body">

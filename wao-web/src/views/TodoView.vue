@@ -9,11 +9,15 @@ import { TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import type { Task, TaskStatus } from '@/types'
 import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
+import { copyText } from '@/utils/clipboard'
+import { shareUrl } from '@/utils/share'
 import { readTodoTaskView, type TodoTaskView } from '@/utils/taskQuadrants'
 
 const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
+const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const { decoTask } = useDeco()
 
 const taskFilter = ref<'全部' | '我负责' | '我参与' | '等待他人'>('全部')
@@ -91,6 +95,24 @@ function toggleSelection(id: string) {
 
 function openTask(id: string) {
   ui.openTask(id)
+}
+function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
+  const task = data.taskById(id)
+  if (!task) return
+  if (event instanceof KeyboardEvent) {
+    if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
+    event.preventDefault()
+  } else {
+    if (event.target instanceof Element && event.target.closest('input, textarea, a, img, [contenteditable="true"]')) return
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
+  }
+  contextMenu.value?.openAt(event, `任务：${task.title}`, [
+    { id: 'open', label: '打开任务', run: () => openTask(id) },
+    { id: 'link', label: '复制分享链接', run: () => copyText(shareUrl(id), '任务分享链接已复制') },
+    { id: 'id', label: '复制任务编号', run: () => copyText(id, '任务编号已复制') },
+    { id: 'complete', label: task.status === '已完成' ? '重新打开任务' : '完成任务', separatorBefore: true, run: () => toggleTask(id) },
+  ])
 }
 
 // 看板拖拽改状态
@@ -172,7 +194,7 @@ function onDropStatus(status: TaskStatus) {
         </div>
         <div v-if="tg.collapsible && !showDone" class="tgroup-collapsed">已收起 {{ tg.items.length }} 项</div>
         <div v-else class="tlist">
-          <div v-for="t in tg.items" :key="t.id" class="trow" :class="{ settling: isSettling(t.id) }" @click="openTask(t.id)">
+          <div v-for="t in tg.items" :key="t.id" class="trow" :class="{ settling: isSettling(t.id) }" tabindex="0" :aria-label="`任务：${t.title}`" @click="openTask(t.id)" @keydown.enter.self.prevent="openTask(t.id)" @keydown="openTaskMenu($event, t.id)" @contextmenu="openTaskMenu($event, t.id)">
             <button class="task-select" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" title="完成 / 重新打开" @click.stop="toggleTask(t.id)">
               <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
@@ -183,6 +205,7 @@ function onDropStatus(status: TaskStatus) {
             <span class="pr" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
             <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
             <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
+            <button type="button" class="task-more" :aria-label="`更多任务操作：${t.title}`" aria-haspopup="menu" @click.stop="openTaskMenu($event, t.id)"><i class="ri-more-line"></i></button>
           </div>
         </div>
       </div>
@@ -212,10 +235,15 @@ function onDropStatus(status: TaskStatus) {
             v-for="t in col.items"
             :key="t.id"
             class="board-card"
+            :aria-label="`任务：${t.title}`"
             :class="{ dragging: dragId === t.id }"
             draggable="true"
             @click="openTask(t.id)"
+            @keydown.enter.self.prevent="openTask(t.id)"
+            @contextmenu="openTaskMenu($event, t.id)"
+            @keydown="openTaskMenu($event, t.id)"
             @dragstart="onDragStart(t.id)"
+            tabindex="0"
           >
             <button class="task-select" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
@@ -225,16 +253,20 @@ function onDropStatus(status: TaskStatus) {
               <span class="bc-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
               <span class="spacer"></span>
               <span class="owner-av small" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
+              <button type="button" class="task-more" :aria-label="`更多任务操作：${t.title}`" aria-haspopup="menu" @click.stop="openTaskMenu($event, t.id)"><i class="ri-more-line"></i></button>
             </div>
           </div>
         </div>
       </div>
     </div>
 
+    <ContextActionMenu ref="contextMenu" />
   </div>
 </template>
 
 <style scoped>
+.task-more { flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); cursor: pointer; }
+.task-more:hover, .task-more:focus-visible { background: var(--wao-bg-hover); }
 .copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
 .task-select { flex-shrink: 0; width: 28px; height: 28px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; }
 .task-select[aria-pressed='true'] { color: var(--wao-primary-text); background: var(--wao-primary-soft); }

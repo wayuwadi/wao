@@ -9,6 +9,9 @@ import { useDeco } from '@/composables/deco'
 import { useSettle } from '@/composables/completion'
 import { TASK_QUADRANTS } from '@/utils/taskQuadrants'
 import SaveHint from '@/components/ui/SaveHint.vue'
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
+import { copyText } from '@/utils/clipboard'
+import { shareUrl } from '@/utils/share'
 import type { Priority, Task } from '@/types'
 
 const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string }>()
@@ -18,6 +21,7 @@ const order = useTaskOrderStore()
 const orderScope = computed(() => props.projectId ? `project:${props.projectId}` : 'all')
 const orderingOver = ref<{ id: string; after: boolean } | null>(null)
 const ui = useUiStore()
+const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const { decoTask } = useDeco()
 const { begin, cancel, isSettling } = useSettle()
 const dragId = ref<string | null>(null)
@@ -81,6 +85,24 @@ function createTask(priority: Priority) {
   ui.openModal('task', props.projectId ?? '')
   ui.modalPriority = priority
 }
+function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
+  const task = data.taskById(id)
+  if (!task) return
+  if (event instanceof KeyboardEvent) {
+    if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
+    event.preventDefault()
+  } else {
+    if (event.target instanceof Element && event.target.closest('select, input, textarea, a, img, [contenteditable="true"]')) return
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
+  }
+  contextMenu.value?.openAt(event, `任务：${task.title}`, [
+    { id: 'open', label: '打开任务', run: () => ui.openTask(id) },
+    { id: 'link', label: '复制分享链接', run: () => copyText(shareUrl(id), '任务分享链接已复制') },
+    { id: 'id', label: '复制任务编号', run: () => copyText(id, '任务编号已复制') },
+    { id: 'complete', label: task.status === '已完成' ? '重新打开任务' : '完成任务', separatorBefore: true, disabled: busy(id), run: () => toggleComplete(id) },
+  ])
+}
 </script>
 
 <template>
@@ -106,6 +128,7 @@ function createTask(priority: Priority) {
         </header>
         <div class="quadrant-list" tabindex="0" :aria-label="`${section.label}任务列表`">
           <article v-for="task in section.tasks" :key="task.id" class="quadrant-task"
+            tabindex="0" :aria-label="`任务：${task.title}`" @keydown.enter.self.prevent="ui.openTask(task.id)" @keydown="openTaskMenu($event, task.id)" @contextmenu="openTaskMenu($event, task.id)"
             :class="{ done: task.status === '已完成', dragging: dragId === task.id, selected: selectedIds.includes(task.id), 'order-before': orderingOver?.id === task.id && !orderingOver.after, 'order-after': orderingOver?.id === task.id && orderingOver.after }"
             :draggable="!busy(task.id) && !selectionMode" @dragstart="startDrag($event, task.id)" @dragend="endDrag"
             @dragover.prevent.stop="orderingOver = dragId && dragId !== task.id ? { id: task.id, after: taskDropAfter($event) } : null"
@@ -133,6 +156,7 @@ function createTask(priority: Priority) {
                 <option v-for="option in TASK_QUADRANTS" :key="option.priority" :value="option.priority">{{ option.label }}</option>
               </select>
             </label>
+            <button type="button" class="quadrant-more" :aria-label="`更多任务操作：${task.title}`" aria-haspopup="menu" @click="openTaskMenu($event, task.id)"><i class="ri-more-line"></i></button>
           </article>
           <div v-if="!section.tasks.length" class="quadrant-empty">
             <i class="ri-checkbox-circle-line"></i>
@@ -142,10 +166,13 @@ function createTask(priority: Priority) {
         </div>
       </section>
     </div>
+    <ContextActionMenu ref="contextMenu" />
   </div>
 </template>
 
 <style scoped>
+.quadrant-more { flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); }
+.quadrant-more:hover, .quadrant-more:focus-visible { background: var(--wao-bg-hover); }
 .quadrant-task.order-before { box-shadow: inset 0 2px var(--wao-primary); }
 .quadrant-task.order-after { box-shadow: inset 0 -2px var(--wao-primary); }
 .quadrant-view { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }

@@ -31,6 +31,17 @@ describe('TODO 四象限', () => {
     return mount(TaskQuadrantView, { props: { tasks: useDataStore().tasks, selectedIds: [], showDone: false } })
   }
 
+  it('任务右键与可见更多入口打开命中任务的操作', async () => {
+    const wrapper = mountQuadrants()
+    await wrapper.get('article').trigger('contextmenu', { clientX: 140, clientY: 120 })
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe('任务：任务0的操作')
+    await wrapper.get('article .quadrant-more').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('复制任务编号')
+    wrapper.unmount()
+  })
+
   it('P0–P3 分别且唯一归属四个象限，截止日期不改变映射', () => {
     const data = useDataStore()
     data.tasks[0]!.due = '2099-01-01'

@@ -12,6 +12,9 @@ import { relativeTime } from '@/utils/time'
 import { useNow } from '@/composables/now'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
+import { copyText } from '@/utils/clipboard'
+import { absoluteUrl } from '@/utils/share'
 import type { KnowledgeBase, TrashEntry } from '@/types'
 
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
@@ -20,6 +23,7 @@ const data = useDataStore()
 const shortcuts = useTopShortcutsStore()
 const router = useRouter()
 const tabs = useTabsStore()
+const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const now = useNow()
 
 onMounted(() => {
@@ -98,6 +102,22 @@ const filtering = computed(() => scope.value !== 'all' || !!query.value.trim())
 
 function openKb(id: string) {
   router.push(tabs.tabs.find((tab) => tab.key === `kb:${id}`)?.path || `/kb/${id}`)
+}
+function openKbMenu(event: MouseEvent | KeyboardEvent, kb: KnowledgeBase) {
+  if (event instanceof KeyboardEvent) {
+    if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
+    event.preventDefault()
+  } else {
+    if (event.target instanceof Element && event.target.closest('button, a, input, textarea, img')) return
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
+  }
+  contextMenu.value?.openAt(event, `知识库：${kb.name}`, [
+    { id: 'open', label: '打开知识库', run: () => openKb(kb.id) },
+    { id: 'link', label: '复制站内链接', run: () => copyText(absoluteUrl(`/kb/${encodeURIComponent(kb.id)}`), '知识库链接已复制') },
+    { id: 'favorite', label: knowledgeFavorites.ids.includes(kb.id) ? '取消常用' : '添加为常用', disabled: knowledgeFavorites.saving, run: () => knowledgeFavorites.toggle(kb.id) },
+    { id: 'settings', label: '知识库设置', separatorBefore: true, run: () => openCfg(kb) },
+  ])
 }
 function openDoc(kbId: string, docId: string) {
   router.push({ path: `/kb/${kbId}`, query: { doc: docId } })
@@ -270,9 +290,14 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
           v-for="k in g.items"
           :key="k.id"
           class="kb-card"
+          tabindex="0"
+          :aria-label="`知识库：${k.name}`"
           draggable="true" @dragstart="shortcuts.start(resourceShortcut('kb', k.id, k.name), $event)" @dragend="shortcuts.end"
           :style="{ '--kb-cover': k.color }"
           @click="openKb(k.id)"
+          @keydown.enter.self.prevent="openKb(k.id)"
+          @keydown="openKbMenu($event, k)"
+          @contextmenu="openKbMenu($event, k)"
         >
           <div class="kb-cover">
             <div class="kb-icon" :style="{ background: isColoredKnowledgeIcon(k.icon) ? 'transparent' : k.color }"><i :class="k.icon"></i></div>
@@ -297,6 +322,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
       <div v-if="g.items.length === 0" class="kgroup-empty">这个分组还是空的——在知识库设置中可将知识库移入此分组</div>
     </div>
     <WaoPagination v-if="knowledgePageCount > 1" v-model:page="knowledgePage" :page-count="knowledgePageCount" :total="visibleCount" aria-label="知识库查询结果分页" />
+    <ContextActionMenu ref="contextMenu" />
     <div v-if="filtering && visibleCount === 0" class="kb-filter-empty">
       <i class="ri-search-eye-line"></i>
       <b>没有匹配的真实资料</b>
