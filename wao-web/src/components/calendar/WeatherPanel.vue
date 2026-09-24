@@ -4,7 +4,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Modal } from 'ant-design-vue'
 import { useWeatherStore } from '@/stores/weather'
 import { searchWeatherLocations, type WeatherLocation } from '@/api/weather'
-import { weatherAdvice, weatherName, weatherTemperature, weatherErrorMessage } from '@/utils/weather'
+import { weatherAdvice, weatherName, weatherTemperature, weatherErrorMessage, weatherGlance } from '@/utils/weather'
 const props = defineProps<{ surface: 'rhythm' | 'calendar'; date: string; toolbar?: boolean; glance?: boolean }>()
 const weather = useWeatherStore()
 const settingsOpen = ref(false), searching = ref(false), locating = ref(false), searched = ref(false), locationError = ref('')
@@ -19,6 +19,15 @@ const twoDays = computed(() => [0, 1].map(offset => {
   return { label: offset ? '明日' : '今日', date: key, forecast: weather.days.find(day => day.date === key) }
 }))
 const advice = computed(() => today.value ? weatherAdvice(today.value) : '')
+const glanceCondition = computed(() => today.value ? weatherGlance(today.value.code) : null)
+const glanceCity = computed(() => weather.prefs.location?.name.split(/\s*[·,，]\s*/)[0]?.trim() || '未设城市')
+const glanceLabel = computed(() => {
+  if (!weather.loaded) return weather.error ? '天气设置读取失败' : '天气读取中'
+  if (!weather.prefs.location) return '请设置城市'
+  if (weather.forecasting) return '更新中'
+  if (weather.forecastError || weather.stale) return '暂不可用'
+  return glanceCondition.value?.text || '暂无预报'
+})
 let sequence = 0, active = true, timer: ReturnType<typeof setInterval> | undefined
 watch(() => weather.query, () => { sequence++; locations.value = []; searched.value = false; searching.value = false; locating.value = false; locationError.value = '' })
 function openSettings() { settingsOpen.value = true }
@@ -59,16 +68,26 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
 
 <template>
   <section class="weather-panel" :class="{ 'weather-compact': compact, 'weather-toolbar': toolbar, 'weather-glance': glance }" aria-label="天气与卦名设置">
+    <template v-if="glance">
+      <div class="weather-glance-line" :title="weather.forecastError || weather.error || weather.prefs.location?.name || ''">
+        <span class="weather-glance-icon" aria-hidden="true">{{ glanceCondition && !weather.stale && !weather.forecastError ? glanceCondition.icon : '🌡️' }}</span>
+        <span role="status">{{ weather.loaded && weather.prefs.location ? `${glanceCity} · ${glanceLabel}` : glanceLabel }}</span>
+        <button v-if="weather.error && !weather.loaded" type="button" aria-label="重试读取天气设置" title="重试读取天气设置" @click="weather.load"><i class="ri-refresh-line" /></button>
+        <button v-if="weather.loaded && weather.prefs.location && (weather.forecastError || weather.stale)" type="button" aria-label="重试更新天气" title="重试更新天气" @click="weather.refresh"><i class="ri-refresh-line" /></button>
+        <button type="button" aria-label="天气设置" title="天气设置" :aria-expanded="settingsOpen" @click="settingsOpen ? closeSettings() : openSettings()"><i class="ri-settings-3-line" /></button>
+      </div>
+    </template>
+    <template v-else>
     <header><strong>天气<span v-if="weather.prefs.location"> · {{ weather.prefs.location.name }}</span></strong><span v-if="!visible">已隐藏</span><button type="button" @click="settingsOpen ? closeSettings() : openSettings()" :aria-expanded="settingsOpen">天气设置</button></header>
     <p v-if="weather.loading">正在读取天气设置…</p>
     <p v-if="weather.error" role="alert">{{ weather.error }} <button v-if="!weather.loaded" @click="weather.load">重新读取</button></p>
     <template v-if="visible && weather.loaded">
       <p v-if="!weather.prefs.location">选择城市或使用当前位置，查看天气和出行提醒。</p>
       <p v-else-if="weather.forecasting">正在更新预报…</p>
-      <p v-else-if="weather.forecastError || weather.stale" role="alert" :title="weather.forecastError || '预报已超过半小时，请更新后查看'">{{ glance ? '天气暂不可用' : weather.forecastError || '预报已超过半小时，请更新后查看' }} <button @click="weather.refresh">{{ glance ? '重试' : '重试更新' }}</button></p>
+      <p v-else-if="weather.forecastError || weather.stale" role="alert" :title="weather.forecastError || '预报已超过半小时，请更新后查看'">{{ weather.forecastError || '预报已超过半小时，请更新后查看' }} <button @click="weather.refresh">重试更新</button></p>
       <template v-else-if="weather.forecast">
         <div v-if="compact" class="weather-two-days">
-          <span v-for="day in glance ? twoDays.slice(0, 1) : twoDays" :key="day.date" :title="day.forecast ? weatherAdvice(day.forecast) : ''">
+          <span v-for="day in twoDays" :key="day.date" :title="day.forecast ? weatherAdvice(day.forecast) : ''">
             <b>{{ day.label }}</b>
             <template v-if="day.forecast">{{ weatherName(day.forecast.code) }} · {{ weatherTemperature(day.forecast) }}</template>
             <template v-else>暂无预报</template>
@@ -84,6 +103,7 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
         <small><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> · 未来 7 日预报（北京时间） · {{ new Date(weather.forecast.fetchedAt).toLocaleString('zh-CN') }} 获取 <button @click="weather.refresh">刷新天气</button></small>
         </template>
       </template>
+    </template>
     </template>
     <component :is="compact ? Modal : 'div'" v-if="settingsOpen" :open="settingsOpen" :footer="null" title="天气设置" @cancel="closeSettings">
     <form class="weather-settings" @submit.prevent="weather.save">
@@ -115,5 +135,11 @@ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}header strong{fle
 .weather-toolbar .weather-two-days { margin: 0; }
 .weather-toolbar header button, .weather-toolbar .weather-two-days button { border-color: var(--wao-line-control); }
 .weather-toolbar header strong { font-weight: 500; }
-.weather-glance.weather-toolbar.weather-compact{border:0!important;padding:0!important;gap:6px 12px;justify-content:flex-end}.weather-glance header strong{max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.weather-glance p{margin:0}.weather-glance header button{padding:2px 5px}.weather-glance .weather-two-days{gap:8px}@media(max-width:900px){.weather-glance.weather-toolbar.weather-compact{justify-content:flex-start;width:100%}}
+.weather-glance.weather-toolbar.weather-compact{border:0!important;padding:0!important;gap:0;justify-content:flex-end;max-width:100%}
+.weather-glance-line{display:flex;align-items:center;gap:5px;min-height:32px;min-width:0;white-space:nowrap;font-size:12px;color:var(--wao-text-2)}
+.weather-glance-line [role="status"]{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.weather-glance-icon{font-size:17px;line-height:1}
+.weather-glance-line button{padding:3px;border:0;background:transparent;color:var(--wao-text-3);font-size:13px}
+.weather-glance-line button:hover,.weather-glance-line button:focus-visible{color:var(--wao-primary-text)}
+@media(max-width:900px){.weather-glance.weather-toolbar.weather-compact{justify-content:flex-start;width:auto}}
 </style>

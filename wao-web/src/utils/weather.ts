@@ -16,6 +16,19 @@ export function weatherName(code: number | null) {
   if ([95, 96, 99].includes(code)) return '雷暴'
   return '天气状况未知'
 }
+/** 首页只展示预报代码能确定的天气，不把未知状态写成晴或有雨。 */
+export function weatherGlance(code: number | null): { icon: string; text: string } {
+  const name = weatherName(code)
+  if (name === '晴') return { icon: '☀️', text: '晴' }
+  if (name === '多云') return { icon: '⛅', text: '多云' }
+  if (name === '阴') return { icon: '☁️', text: '阴' }
+  if (name === '雾') return { icon: '🌫️', text: '有雾' }
+  if (name === '毛毛雨') return { icon: '🌦️', text: '有小雨' }
+  if (name === '雨' || name === '冻雨') return { icon: '🌧️', text: name === '雨' ? '有雨' : '有冻雨' }
+  if (name === '雪') return { icon: '🌨️', text: '有雪' }
+  if (name === '雷暴') return { icon: '⛈️', text: '有雷暴' }
+  return { icon: '🌡️', text: '天气未知' }
+}
 export function weatherAdvice(day: WeatherDay) {
   const name = weatherName(day.code), hints: string[] = []
   if (name === '雷暴') hints.push('有雷暴，留意当地预警并调整户外安排')

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { useWeatherStore, parseWeatherPreferences } from '@/stores/weather'
-import { weatherAdvice, weatherName } from '@/utils/weather'
+import { weatherAdvice, weatherName, weatherGlance } from '@/utils/weather'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 const api = vi.hoisted(() => ({ fetchPreference: vi.fn(), savePreference: vi.fn(), fetchWeather: vi.fn(), searchWeatherLocations: vi.fn() }))
 vi.mock('@/api/favorites', () => api)
@@ -66,6 +66,18 @@ describe('真实天气与成员设置', () => {
     expect(weatherAdvice({ date: '', code: null, low: null, high: null, rain: null, wind: null })).toBe('')
     expect(weatherAdvice({ date: '', code: 95, low: 0, high: 35, rain: 90, wind: 40 })).toContain('雷暴')
     expect(weatherAdvice({ date: '', code: 71, low: -2, high: 1, rain: 30, wind: 4 })).toContain('雨雪结冰')
+  })
+  it('首页天气独立于日历隐藏设置，只显示短城市、真实天气和图标', async () => {
+    api.fetchPreference.mockResolvedValue(JSON.stringify({ ...initial(), location: { ...city, name: '上海 · 上海 · 中国' }, rhythmVisible: false, calendarVisible: false }))
+    api.fetchWeather.mockResolvedValue({ fetchedAt: new Date().toISOString(), days: [{ ...forecast().days[0], code: 61 }] })
+    const wrapper = mount(WeatherPanel, { props: { surface: 'calendar', date: '2026-09-04', toolbar: true, glance: true } })
+    await flushPromises()
+    expect(api.fetchWeather).toHaveBeenCalled()
+    expect(wrapper.get('.weather-glance-line').text()).toContain('🌧️上海 · 有雨')
+    expect(wrapper.text()).not.toContain('已隐藏')
+    expect(wrapper.text()).not.toContain('中国')
+    expect(weatherGlance(null)).toEqual({ icon: '🌡️', text: '天气未知' })
+    wrapper.unmount()
   })
   it('拒绝定位时提示手选城市，失败不保存臆测位置', async () => {
     Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition: (_success: unknown, fail: () => void) => fail() } })
