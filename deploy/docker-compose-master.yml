@@ -159,7 +159,7 @@ services:
     networks: [wao]
 
   codex-vpn:
-    image: wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}
+    image: wao-codex-egress-proxy:${CODEX_EGRESS_IMAGE_TAG:-${WAO_IMAGE_TAG:-latest}}
     user: "${CODEX_MIHOMO_UID:-1000}:${CODEX_MIHOMO_GID:-1000}"
     entrypoint: ["/usr/local/bin/start-codex-vpn"]
     restart: unless-stopped
@@ -191,7 +191,7 @@ services:
       target: codex-egress-proxy
       args:
         ALPINE_MIRROR_HOST: ${ALPINE_MIRROR_HOST:-mirrors.aliyun.com}
-    image: wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}
+    image: wao-codex-egress-proxy:${CODEX_EGRESS_IMAGE_TAG:-${WAO_IMAGE_TAG:-latest}}
     restart: unless-stopped
     networks: [wao]
     depends_on:
@@ -297,9 +297,9 @@ services:
       - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 20
+      interval: 3s
+      timeout: 3s
+      retries: 100
       start_period: 45s
     deploy:
       resources:
@@ -346,9 +346,9 @@ services:
       - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/api/agent/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 20
+      interval: 3s
+      timeout: 3s
+      retries: 100
       start_period: 45s
     deploy:
       resources:
@@ -394,9 +394,9 @@ services:
       - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-kfsS", "https://127.0.0.1:9000/api/hello"]
-      interval: 15s
-      timeout: 5s
-      retries: 15
+      interval: 3s
+      timeout: 3s
+      retries: 75
       start_period: 30s
     deploy:
       resources:

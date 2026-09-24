@@ -38,7 +38,8 @@ docker build --target codex-egress-proxy -t "wao-codex-egress-proxy:$WAO_GIT_SHA
 # Linux1 生产从节点不能依赖 Docker Hub 在发布窗口内保持可达。把 Compose
 # 所需的固定第三方镜像和应用镜像一起打进不可变发布包。
 for image in mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
-  pull_image "$image"
+  # 已有本地副本时直接复用，避免每次打包都访问 Docker Hub；Linux1 按镜像 ID 对齐。
+  docker image inspect "$image" >/dev/null 2>&1 || pull_image "$image"
 done
 
 # 影子构建仍生成完整的可交付镜像包；生产发布则在部署阶段按 Linux1
