@@ -13,7 +13,8 @@ export const useTaskOrderStore = defineStore('task-order', () => {
   const key = (scope: string) => `task-order-v1:${scope}`
   const draftKey = (scope: string) => `${key(scope)}:${session.userId}`
   function state(scope: string): Order {
-    return states[scope] ??= { ids: [], loaded: false, loading: false, saving: false, dirty: false, error: '', revision: 0 }
+    states[scope] ??= { ids: [], loaded: false, loading: false, saving: false, dirty: false, error: '', revision: 0 }
+    return states[scope]!
   }
   function parse(value: string) {
     const ids: unknown = JSON.parse(value || '[]')

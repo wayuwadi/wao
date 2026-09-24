@@ -40,6 +40,11 @@ const draggingSub = ref<string | null>(null)
 const orderingOver = ref<{ id: string; after: boolean } | null>(null)
 const ui = useUiStore()
 const session = useSessionStore()
+const orderNotice = computed(() => {
+  const state = order.state(orderScope.value)
+  return state.loading || state.saving || state.error || state.dirty
+})
+watch(() => [orderScope.value, session.userId], () => { void order.load(orderScope.value) }, { immediate: true })
 const task = computed(() => data.taskById(props.taskId))
 const localHideDone = ref(false)
 const hidingDone = computed(() => (props.table ? props.hideDone === true : localHideDone.value))
@@ -231,7 +236,7 @@ function add() {
 </script>
 <template>
   <tbody v-if="task && table" class="table-subs" @click.stop @dragstart.stop @dragover.prevent @drop.prevent.stop :inert="data.movingSubtasks">
-    <tr v-if="rows.length > 1"><td colspan="10"><TaskOrderStatus :scope="orderScope" /></td></tr>
+    <tr v-if="rows.length > 1 && orderNotice"><td colspan="10"><TaskOrderStatus :scope="orderScope" /></td></tr>
     <tr v-if="localError"><td colspan="10"><small class="error" role="alert">{{ localError }}</small></td></tr>
     <template v-for="item in tableItems" :key="item.kind === 'row' ? data.subKey(taskId, item.row.sub, item.row.idx) : '__add'">
       <tr v-if="item.kind === 'add'" class="sub-add-row">
