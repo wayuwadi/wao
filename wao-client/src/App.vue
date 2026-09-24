@@ -322,7 +322,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="client" :data-theme="toolbar.theme">
+  <div class="client" :class="{ macos: platform === 'macOS' }" :data-theme="toolbar.theme">
     <header class="toolbar">
       <div class="brand" data-tauri-drag-region>
         <span class="edition" data-tauri-drag-region>WAO</span>

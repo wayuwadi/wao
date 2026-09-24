@@ -271,6 +271,8 @@ describe("desktop workspace preservation", () => {
     const wrapper = mount(App);
     await flushPromises();
     expect(wrapper.find(".window-controls").exists()).toBe(false);
+    expect(wrapper.get(".client").classes()).toContain("macos");
+    expect(wrapper.find('[aria-label="工作区快捷操作"]').exists()).toBe(true);
     mocks.handlers.get("shell-action")!({ payload: "quit" });
     await flushPromises();
     expect(wrapper.get('[role="alertdialog"]').text()).toContain("退出 WAO");

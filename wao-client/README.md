@@ -63,6 +63,8 @@ Windows 安装包位于 `src-tauri/target/release/bundle/nsis/`；Mac 通用安�
 
 macOS 的工作区与宠物使用 AppKit 保存屏幕位置和窗口尺寸，避免跨缩放屏幕重启后尺寸减半。首次采用该机制会使用默认布局，此后恢复原生保存的位置；正式版与开发宿主的记录相互隔离。
 
+Mac 窗口标题栏采用覆盖式布局：红黄绿按钮右侧是工作区导航与快捷操作，业务页面从这条操作区下方开始。用 `desktop:dev` 启动本地宿主检查外壳；需要用 Codex 的原生窗口检查工具验收时，可用 `npm run desktop:build -- --bundles app --config src-tauri/tauri.dev.conf.json` 构建独立的“WAO 开发宿主.app”，它不会替换已安装正式版，也没有发布签名。
+
 安装 Xcode Command Line Tools、Node.js 24 和 Rust，进入本目录：
 
 ```bash
