@@ -9,12 +9,11 @@ const status = computed(() => order.state(props.scope))
 watch(() => [props.scope, session.userId], () => { void order.load(props.scope) }, { immediate: true })
 </script>
 <template>
-  <div class="order-status" role="status">
+  <div v-if="status.loading || status.saving || status.error || status.dirty" class="order-status" role="status">
     <span v-if="status.loading">正在读取个人顺序…</span>
     <span v-else-if="status.saving">顺序保存中…</span>
     <span v-else-if="status.error" role="alert">{{ status.error }} <button @click="order.retry(scope)">重试</button></span>
     <span v-else-if="status.dirty">有未保存的个人顺序 <button @click="order.retry(scope)">继续保存</button></span>
-    <span v-else>拖拽调整个人顺序 · {{ status.ids.length ? '已保存，可跨设备恢复' : '不改变任务层级' }}</span>
   </div>
 </template>
 <style scoped>

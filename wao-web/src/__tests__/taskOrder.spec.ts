@@ -1,3 +1,4 @@
+import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -86,4 +87,16 @@ it('四象限同区排序保持优先级与父子关系', async () => {
   expect(wrapper.findAll('.quadrant-title').map(n=>n.text())).toEqual(['乙','甲'])
   expect(data.tasks.map(t=>t.pr)).toEqual(['P0','P0'])
   expect(move).not.toHaveBeenCalled();flush.mockRestore();wrapper.unmount()
+})
+
+it('排序保存后不占提示行，失败时仍显示重试入口', async () => {
+  const w = mount(TaskOrderStatus, { props: { scope: 'project:quiet' } })
+  await flushPromises()
+  await vi.waitFor(() => expect(w.find('[role="status"]').exists()).toBe(false))
+  const state = useTaskOrderStore().state('project:quiet')
+  state.error = '保存失败'
+  await flushPromises()
+  expect(w.text()).toContain('保存失败')
+  expect(w.get('button').text()).toBe('重试')
+  w.unmount()
 })

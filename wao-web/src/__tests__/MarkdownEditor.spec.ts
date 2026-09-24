@@ -217,6 +217,31 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('整表选中后 Backspace 删除结构且可撤销，部分单元格不删除整表', async () => {
+    const { w, e, cells } = await tableEditor()
+    e.commands.setCellSelection({ anchorCell: cells[0]!, headCell: cells[1]! })
+    e.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(true)
+    e.commands.setCellSelection({ anchorCell: cells[0]!, headCell: cells[3]! })
+    e.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(false)
+    e.commands.undo()
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(true)
+    w.unmount()
+  })
+
+  it('单个表格光标也能从工具栏删除整个表格并撤销', async () => {
+    const { w, e, cells } = await tableEditor()
+    e.commands.setTextSelection(cells[0]! + 2)
+    await nextTick()
+    await vi.waitFor(() => expect(w.find('[aria-label="删除当前表格"]').exists()).toBe(true))
+    await w.get('[aria-label="删除当前表格"]').trigger('click')
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(false)
+    e.commands.undo()
+    expect(e.getJSON().content?.some(node => node.type === 'table')).toBe(true)
+    w.unmount()
+  })
+
   it('右键命中另一个单元格，禁用不可合并和不可拆分操作；新增行可撤销', async () => {
     const { w, e, cells, show } = await tableEditor()
     e.commands.setTextSelection(cells[0]! + 2)

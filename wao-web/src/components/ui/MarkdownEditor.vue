@@ -296,6 +296,24 @@ const DocumentImage = Image.extend({
  * Tab 留在编辑器内：列表项缩进 / 反缩进，普通段落插入一个真实制表符。
  * 返回 true 会阻止浏览器把焦点跳到编辑器后的“图片”按钮。
  */
+/** 整表选中时删除表格本身；局部选区仍沿用清空单元格的行为。 */
+const WholeTableDeletion = Extension.create({
+  name: 'wholeTableDeletion',
+  priority: 1100,
+  addKeyboardShortcuts() {
+    const remove = () => {
+      const selection = this.editor.state.selection
+      if (!this.editor.isEditable || !(selection instanceof CellSelection)
+        || !selection.isRowSelection() || !selection.isColSelection()) return false
+      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
+      const removed = this.editor.commands.deleteTable()
+      this.editor.view.dispatch(closeHistory(this.editor.state.tr))
+      return removed
+    }
+    return { Backspace: remove, Delete: remove }
+  },
+})
+
 const TabIndent = Extension.create({
   name: 'tabIndent',
   addKeyboardShortcuts() {
@@ -398,6 +416,7 @@ const editor = useEditor({
     Placeholder.configure({ placeholder: () => props.placeholder }),
     Markdown,
     TabIndent,
+    WholeTableDeletion,
     Underline,
     TextStyle,
     Color,
@@ -1775,6 +1794,7 @@ onBeforeUnmount(() => {
       <button type="button" title="链接" @click="toggleLinkFromToolbar"><i class="ri-link"></i></button>
       <button type="button" title="图片" @click="chooseImage"><i class="ri-image-add-line"></i></button>
       <button v-if="!compact" type="button" title="表格" @click="insertTable"><i class="ri-table-2"></i></button>
+      <button v-if="editor.isActive('table')" type="button" title="删除整个表格（可撤销）" aria-label="删除当前表格" @mousedown.prevent @click="runTableAction('deleteTable')"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>删除表格</span></button>
       <button type="button" title="更多内容块（输入 / 也可打开）" @click="toggleInsertMenu"><i class="ri-add-circle-line"></i></button>
       <button type="button" title="查找替换（Ctrl/⌘+F）" @click="findOpen = !findOpen"><i class="ri-search-line"></i></button>
       <button type="button" title="清除格式" @click="clearFormatting"><i class="ri-format-clear"></i></button>
