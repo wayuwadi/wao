@@ -34,28 +34,55 @@ python3 - "$staging/manifest.json" "$stamp" <<'PY' >"$staging/SHA256SUMS-cloud"
 import json, re, sys
 from pathlib import Path
 manifest = json.loads(Path(sys.argv[1]).read_text())
-expected = {'recovery.tar.gpg', 'SHA256SUMS', 'COMPLETE', 'recovery-point.json', 'peer-passphrase.gpg'}
+static = {'SHA256SUMS', 'COMPLETE', 'recovery-point.json', 'peer-passphrase.gpg'}
 if manifest.get('formatVersion') != 2 or manifest.get('snapshot') != sys.argv[2]:
     raise SystemExit('Unexpected offsite snapshot format or timestamp')
 files = manifest.get('files')
-if not isinstance(files, list) or {item.get('name') for item in files} != expected or len(files) != len(expected):
+if not isinstance(files, list) or not all(isinstance(item, dict) for item in files):
+    raise SystemExit('Offsite snapshot file list is incomplete')
+names = [item.get('name') for item in files]
+chunks = sorted(name for name in names if isinstance(name, str) and re.fullmatch(r'recovery\.tar\.gpg\.part-[0-9]{4}', name))
+if not chunks or chunks != [f'recovery.tar.gpg.part-{i:04d}' for i in range(len(chunks))]:
+    raise SystemExit('Offsite archive chunks are incomplete')
+if set(names) != static | set(chunks) or len(names) != len(static) + len(chunks):
     raise SystemExit('Offsite snapshot file list is incomplete')
 for item in files:
     if not re.fullmatch('[0-9a-f]{64}', item.get('sha256', '')) or not isinstance(item.get('bytes'), int) or item['bytes'] < 1:
         raise SystemExit('Invalid offsite snapshot digest or size')
+    if item['name'] in chunks and item['bytes'] >= 1000000000:
+        raise SystemExit('Offsite archive chunk exceeds the size limit')
     print(f"{item['sha256']}  {item['name']}")
 PY
 while read -r _ name; do
   "${webdav[@]}" download "$remote/$name" "$staging/$name"
 done <"$staging/SHA256SUMS-cloud"
-(cd "$staging" && sha256sum -c SHA256SUMS-cloud && sha256sum -c SHA256SUMS)
+(cd "$staging" && sha256sum -c SHA256SUMS-cloud)
+python3 - "$staging" <<'PY'
+import hashlib, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+expected = {}
+for line in (root / 'SHA256SUMS').read_text().splitlines():
+    digest, name = line.split('  ', 1)
+    expected[name] = digest
+if set(expected) != {'recovery.tar.gpg', 'recovery-point.json'}:
+    raise SystemExit('Peer snapshot checksum list is unexpected')
+digest = hashlib.sha256()
+for part in sorted(root.glob('recovery.tar.gpg.part-*')):
+    with part.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+if digest.hexdigest() != expected['recovery.tar.gpg']:
+    raise SystemExit('Peer archive checksum mismatch')
+if hashlib.sha256((root / 'recovery-point.json').read_bytes()).hexdigest() != expected['recovery-point.json']:
+    raise SystemExit('Peer recovery point checksum mismatch')
+PY
 [[ "$(cat "$staging/COMPLETE")" == "$stamp" ]] || exit 1
 gpg --batch --yes --pinentry-mode loopback --passphrase-file "$cloud_passphrase" \
   --decrypt --output "$staging/peer-passphrase" "$staging/peer-passphrase.gpg"
 [[ -s "$staging/peer-passphrase" ]] || exit 1
-gpg --batch --yes --pinentry-mode loopback --passphrase-file "$staging/peer-passphrase" \
-  --decrypt "$staging/recovery.tar.gpg" | tar -tf - >/dev/null
-gpg --batch --yes --pinentry-mode loopback --passphrase-file "$staging/peer-passphrase" \
-  --decrypt "$staging/recovery.tar.gpg" | tar -xf - -C "$destination"
+cat "$staging"/recovery.tar.gpg.part-* | gpg --batch --yes --pinentry-mode loopback \
+  --passphrase-file "$staging/peer-passphrase" --decrypt | tar -tf - >/dev/null
+cat "$staging"/recovery.tar.gpg.part-* | gpg --batch --yes --pinentry-mode loopback \
+  --passphrase-file "$staging/peer-passphrase" --decrypt | tar -xf - -C "$destination"
 printf 'Offsite snapshot %s verified and extracted to %s; production was not modified.\n' \
   "$stamp" "$destination"

@@ -164,6 +164,20 @@ class WebDavClientTest(unittest.TestCase):
                 "app-password",
             )
 
+    def test_uploads_selected_byte_ranges_without_staging_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.bin"
+            source.write_bytes(b"abcdefghij")
+            self.client.ensure_dir("chunks")
+            self.client.upload(source, "chunks/part-0000", offset=0, length=4)
+            self.client.upload(source, "chunks/part-0001", offset=4, length=4)
+            self.client.upload(source, "chunks/part-0002", offset=8, length=2)
+            self.assertEqual(WebDavHandler.files["/webdav/chunks/part-0000"], b"abcd")
+            self.assertEqual(WebDavHandler.files["/webdav/chunks/part-0001"], b"efgh")
+            self.assertEqual(WebDavHandler.files["/webdav/chunks/part-0002"], b"ij")
+            with self.assertRaises(webdav.WebDavError):
+                self.client.upload(source, "chunks/bad", offset=9, length=2)
+
     def test_remote_path_traversal_is_rejected(self):
         with self.assertRaises(webdav.WebDavError):
             self.client.ensure_dir("WAO-backups/../outside")
