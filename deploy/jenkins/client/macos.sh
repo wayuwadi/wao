@@ -10,7 +10,7 @@ npm test
 npm run build
 cargo test --locked --manifest-path src-tauri/Cargo.toml
 rm -rf src-tauri/target/universal-apple-darwin/release/bundle
-npm run desktop:build -- --target universal-apple-darwin --bundles dmg
+npm run desktop:build -- --target universal-apple-darwin --bundles app,dmg
 bundle=src-tauri/target/universal-apple-darwin/release/bundle
 app="$bundle/macos/WAO.app"
 lipo "$app/Contents/MacOS/wao-client" -verify_arch x86_64 arm64
