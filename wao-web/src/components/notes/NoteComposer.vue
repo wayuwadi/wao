@@ -239,7 +239,6 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">
-        <template v-if="!note" #toolbar-options><div class="auto-enrichment-choices" role="group" aria-label="保存后自动整理"><label><input v-model="autoImage" type="checkbox" :disabled="saving">默认生图</label><label><input v-model="autoTitle" type="checkbox" :disabled="saving">生成标题</label><label><input v-model="autoPolish" type="checkbox" :disabled="saving">润色</label></div></template>
         <template v-if="!inline" #footer-tags>
           <div class="composer-tags">
             <button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button>
@@ -259,6 +258,11 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <span v-if="tags.length >= 20">每篇最多 20 个标签</span>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
+    <div v-if="!note" class="auto-enrichment-choices" role="group" aria-label="保存后自动生成选项">
+      <label><input v-model="autoTitle" type="checkbox" :disabled="saving">保存后自动生成标题</label>
+      <label><input v-model="autoPolish" type="checkbox" :disabled="saving">保存后自动润色正文</label>
+      <label><input v-model="autoImage" type="checkbox" :disabled="saving">保存后自动生成图片</label>
+    </div>
     <div class="composer-footer">
       <span role="status" :class="{ error: draftError }">{{ saving ? '正在保存到服务器…' : status || 'Ctrl / ⌘ + Enter 保存' }}</span>
       <button v-if="note && conflicted" type="button" :disabled="!canSave" @click="save(true)">保留为新小记</button>
@@ -304,7 +308,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .composer-image-lightbox img { max-width: min(96vw, 1600px); max-height: 90vh; object-fit: contain; }
 .composer-image-lightbox button { position: fixed; top: 16px; right: 18px; color: white; background: rgba(255,255,255,.16); }
 .composer-footer > span { color: var(--wao-text-faint); font-size: 12px; }
-.auto-enrichment-choices { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; color:var(--wao-text-faint); font-size:12px; }
+.auto-enrichment-choices { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin-top:10px; color:var(--wao-text-3); font-size:12px; }
 .auto-enrichment-choices label { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
 .auto-enrichment-choices input { accent-color:var(--wao-primary); }
 .composer-footer { flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
