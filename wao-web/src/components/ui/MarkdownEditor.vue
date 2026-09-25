@@ -985,6 +985,12 @@ function openActiveLink() {
 /** 可编辑区原生点击链接：阻止当前页跳转，选中整段供返回后编辑，并安全新开窗口。 */
 function onEditorContentClick(event: MouseEvent) {
   const target = event.target
+  // EditorContent 的外层会撑满编辑框。点击正文末尾以下的空白区域时，
+  // 也要把光标交给真正的 ProseMirror 编辑节点。
+  if (target === event.currentTarget && !props.readonly) {
+    editor.value?.chain().focus('end').run()
+    return
+  }
   const link = target instanceof Element ? target.closest<HTMLAnchorElement>('a[href]') : null
   const e = editor.value
   if (!props.linkControls || !link || !e) return
