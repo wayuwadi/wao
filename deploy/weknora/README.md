@@ -12,6 +12,12 @@ Linux2 数据根目录 `/opt/wao-weknora`；`upstream/` 保存该 tag 的运行�
 首次通过 WAO 菜单进入后建立 WeKnora 账号，在模型管理中配置对话和 Embedding API；OCR、Rerank 按需。
 不在 Git、终端日志或前端构建环境中写模型密钥。
 
+本地模型方案见 ADR-282。现有 Linux2 运行单元只承载 WeKnora；Ollama 在用户的 Mac 上运行，
+经 SSH 反向隧道和只监听 WeKnora Docker 网关的受限转发接入。Mac 关机、休眠或断网时，
+依赖本地模型的新文档向量化和「薇娜拉」问答会暂停；服务恢复后核对失败任务并重试。
+本机浏览器管理页为 `http://127.0.0.1:18782/`，只绑定回环地址，可管理 Ollama、隧道及已安装模型。
+不得将未认证的 Ollama HTTP 端口直接暴露到局域网或公网。
+
 升级先备份 PostgreSQL（pg_dump）、data-files 和 redis-data 卷及整个私有配置目录（含 AES/JWT 密钥）。
 停止写入后取得一致备份；通过加密 SSH 传输到 Linux1 的权限受限备份目录（文件 600，目录 700）。恢复在相同版本空环境中导入数据库、还原文件卷和私有配置，再启动。
 已迁移数据库的回退必须恢复配套备份，不仅是切回镜像。WAO 日常 CD 不自动升级这个运行单元。
@@ -19,8 +25,8 @@ Linux2 数据根目录 `/opt/wao-weknora`；`upstream/` 保存该 tag 的运行�
 
 管理入口为 `/apps/weknora?tab=sync`。同步在 WAO 应用中执行，通过 MySQL 命名锁跨节点串行，通过受限机器 API 操作 Linux2 的单个 WeKnora。
 
-先在 WeKnora 创建独立 Wiki-only 库，再在 Linux2 以 root 运行 `provision-sync-key.py --kb-id UUID --tenant-id ID --owner-id USER_UUID`。凭据仅授予该库读取和写入，明文留在 root 私有文件 `/opt/wao-weknora/upstream/weknora-sync.private.json`，不可提交 Git。上线 migration 后运行 `configure-wao-sync.py --owner-member-id MEMBER --modules docs,tasks,...` 首次初始化；已有配置不会被覆盖。
+先在 WeKnora 创建独立 Wiki 库（可同时启用向量索引），再在 Linux2 以 root 运行 `provision-sync-key.py --kb-id UUID --tenant-id ID --owner-id USER_UUID`。凭据仅授予该库读取和写入，明文留在 root 私有文件 `/opt/wao-weknora/upstream/weknora-sync.private.json`，不可提交 Git。上线 migration 后运行 `configure-wao-sync.py --owner-member-id MEMBER --modules docs,tasks,...` 首次初始化；已有配置不会被覆盖。既有库启用向量索引后，按 WeKnora 官方重解析 API 为原有文档建立向量，并核对实际向量维度与问答来源；仅切换模型配置不会回填旧文档。
 
-默认每天北京时间 02:00，每轮最多 20 篇变化内容。首次历史资料会分多轮，手动按钮可继续下一轮。传输成功与 Wiki 异步生成分别验收。首次创建结果不确定时先核对远端，不盲目重复 POST；uncertain 记录需结合远端和服务日志核对处理。
+默认每天北京时间 02:00，每轮最多 20 篇变化内容；实际计划时间以 WAO 内容同步页面为准。首次历史资料会分多轮，手动按钮可继续下一轮。传输成功、向量索引及 Wiki 异步生成分别验收。首次创建结果不确定时先核对远端，不盲目重复 POST；uncertain 记录需结合远端和服务日志核对处理。
 
 撤销时先在 WAO 暂停夜间计划，再在 WeKnora API 集成中撤销「WAO 内容同步」Key。不会删除源数据和手工知识文档。已有映射时不能直接改绑知识库。
