@@ -270,8 +270,8 @@ class DeploymentRoutingConfigTest {
         String probe = readFromRepository("deploy/scripts/probe-codex-egress.sh");
 
         assertThat(rollout)
-                .contains("WAO_NGINX_RENDER_OUTPUT=wao-nginx.conf sh deploy/scripts/render-nginx-config.sh")
-                .contains("scp -o ConnectTimeout=15 wao-nginx.conf")
+                .contains("WAO_NGINX_RENDER_OUTPUT=/tmp/wao-nginx.conf sh /opt/wao/deploy/scripts/render-nginx-config.sh")
+                .contains("install -m 0644 /tmp/wao-nginx.conf \"$final\"")
                 .contains("nginx -t");
         assertThat(verification)
                 .contains("/api/tianren/readings/today/interpret/stream")
@@ -281,26 +281,29 @@ class DeploymentRoutingConfigTest {
                 .contains("linux-vpn-master");
         assertThat(rollout)
                 .contains("set-nginx-upstream-state.sh")
-                .contains("set_upstream_state slave down")
-                .contains("set_upstream_state master down")
+                .contains("restore_upstreams || exit 1")
                 .contains("require_shared_env_line 'REDIS_MASTER_HOST=192.168.31.180'")
                 .contains("require_shared_env_line 'REDIS_SENTINEL_NODES=192.168.31.180:26379,192.168.2.180:26379,10.66.0.1:26379'")
                 .contains("^REDIS_HA_QUORUM=(2|4)$")
                 .contains("require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn'")
                 .contains("require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn'");
+        assertThat(rollout)
+                .contains("prepare_cloud_routing >routing.log")
+                .contains("run_node_job Linux1 deploy_slave slave.log")
+                .contains("run_node_job Linux2 deploy_master master.log")
+                .contains("run_stage_job cloud-stage.log")
+                .contains("wait \"$master_pid\"")
+                .contains("wait \"$stage_pid\"")
+                .contains("if ! activate_cloud >cloud.log")
+                .contains("if ! wait_until_ready public_ready");
         assertThat(rollout.indexOf("prepare_cloud_routing >routing.log"))
-                .isLessThan(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"));
-        assertThat(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"))
-                .isLessThan(rollout.indexOf("retry_node_deploy Linux2 deploy_master master.log"));
-        assertThat(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"))
-                .isLessThan(rollout.indexOf("deploy_cloud true >cloud.log"));
-        assertThat(rollout.indexOf("deploy_cloud true >cloud.log"))
-                .isLessThan(rollout.indexOf("retry_node_deploy Linux2 deploy_master master.log"));
-        assertThat(rollout.indexOf("retry_node_deploy Linux2 deploy_master master.log"))
-                .isLessThan(rollout.indexOf("deploy_cloud >cloud.log"));
-        assertThat(rollout.indexOf("deploy_cloud >cloud.log"))
-                .isLessThan(rollout.indexOf("set_upstream_state master up || exit 1",
-                        rollout.indexOf("deploy_cloud >cloud.log")));
+                .isLessThan(rollout.indexOf("run_node_job Linux2 deploy_master master.log"));
+        assertThat(rollout.indexOf("run_node_job Linux2 deploy_master master.log"))
+                .isLessThan(rollout.indexOf("record_node_result master master.log"));
+        assertThat(rollout.indexOf("record_node_result master master.log"))
+                .isLessThan(rollout.indexOf("if ! activate_cloud >cloud.log"));
+        assertThat(rollout.indexOf("if ! activate_cloud >cloud.log"))
+                .isLessThan(rollout.indexOf("restore_upstreams || exit 1"));
         assertThat(rollout)
                 .contains("prepare_slave_images || return 1")
                 .contains("wao-image-manifest.txt")
@@ -317,17 +320,15 @@ class DeploymentRoutingConfigTest {
                 .contains("WAO_IMAGE_TAG=\"$image_tag\" SKIP_IMAGE_BUILD=true");
         assertThat(rollout)
                 .doesNotContain("deploy_master >master.log 2>&1 &")
-                .contains("slave_deployed=false")
-                .contains("slave_deployed=true")
+                .contains("record_node_result master master.log")
+                .contains("record_node_result slave slave.log")
                 .contains("ALLOW_SLAVE_OFFLINE")
                 .contains("slave_available=false")
-                .contains("linux_only_schema_rollout=true")
+                .contains("if [ \"$master_result\" != success ] || [ \"$slave_result\" = failed ]; then")
                 .contains("set_status slave_status skipped")
                 .contains("Linux1 从节点预检不可达；保持摘流并按显式授权继续发布主节点与云端")
-                .contains("V77 完成标记和飞书同步保持暂停")
+                .contains("set_status verification_status success")
                 .contains("Linux1 从节点严格预检失败")
-                .contains("Linux1 从节点三次部署失败")
-                .contains("Linux2 主节点三次部署失败")
                 .contains("validate-deployment-node.sh")
                 .contains("start_availability_monitor")
                 .contains("Linux1、Linux2、云端与公共入口检查通过");
@@ -459,7 +460,7 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void offsiteBackupUploadsVerifiedPeerSnapshotAndRestoresInIsolation() throws IOException {
+    void offsiteBackupKeepsRecoveryScriptsAndSchedulesReadableExport() throws IOException {
         String upload = readFromRepository("deploy/backup/upload-peer-offsite.sh");
         String restore = readFromRepository("deploy/backup/restore-peer-offsite.sh");
         String service = readFromRepository("deploy/backup/wao-offsite-backup.service");
@@ -483,8 +484,7 @@ class DeploymentRoutingConfigTest {
                 .contains("production was not modified");
         assertThat(service)
                 .contains("ConditionPathExists=/etc/wao-backup/webdav.env")
-                .contains("ConditionPathExists=/etc/wao-backup/encryption-passphrase")
-                .contains("ExecStart=/usr/local/lib/wao-backup/upload-peer-offsite.sh")
+                .contains("ExecStart=/usr/local/lib/wao-backup/run-readable-content.sh")
                 .contains("TimeoutStartSec=12h")
                 .contains("Restart=on-failure")
                 .contains("RestartSec=30m");
@@ -611,7 +611,7 @@ class DeploymentRoutingConfigTest {
                 .contains("requested_skip_image_build=\"${SKIP_IMAGE_BUILD:-}\"")
                 .contains("SKIP_IMAGE_BUILD=\"${requested_skip_image_build}\"")
                 .contains("compose build codex-egress-proxy wao-server wao-agent-server wao-gateway")
-                .contains("compose up -d --force-recreate --wait codex-vpn codex-egress-proxy")
+                .contains("compose up -d --wait codex-vpn codex-egress-proxy")
                 .contains("diagnostic_services=\"codex-vpn codex-egress-proxy ${diagnostic_services}\"")
                 .contains("ensure-codex-egress.sh")
                 .doesNotContain("install-linux-codex.sh");
