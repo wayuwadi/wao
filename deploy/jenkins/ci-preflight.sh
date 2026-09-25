@@ -22,6 +22,7 @@ for script in \
   deploy/jenkins/ci-build-frontends.sh \
   deploy/jenkins/ci-build-release.sh \
   deploy/jenkins/ci-frontend-build.sh \
+  deploy/jenkins/cleanup-workspace.sh \
   deploy/jenkins/ci-package.sh \
   deploy/jenkins/ci-production-verify.sh; do
   sh -n "$script"

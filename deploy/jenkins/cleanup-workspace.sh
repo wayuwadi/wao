@@ -8,7 +8,6 @@ if [ -n "${WAO_RUN_TEMP:-}" ]; then
   esac
 fi
 
-# 精确删除当前工作区生成的依赖目录；发布源码由下一次 checkout 重新取得。
-for directory in wao-web/node_modules agent-web/node_modules; do
-  if [ -d "$directory" ]; then rm -rf -- "$directory"; fi
-done
+# node_modules is keyed to the package manifests and pinned Node image by
+# ci-frontend-build.sh. Retain it for the next trusted main build; npm ci
+# replaces it when the key changes.
