@@ -1,6 +1,12 @@
 package cn.wayuwa.wao.service;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -9,6 +15,11 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
@@ -202,6 +213,66 @@ public class ImageService {
         }
         return e;
     }
+
+    /** 小记列表读取轻量预览；原图字节保持不变，放大查看仍走 raw。 */
+    public Preview preview(String id) {
+        ImageBlobEntity image = raw(id);
+        byte[] original = image.getContent();
+        String type = image.getContentType();
+        if (original.length <= 220_000 || !("image/png".equals(type) || "image/jpeg".equals(type))) {
+            return new Preview(type, original);
+        }
+        try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(original))) {
+            if (input == null) return new Preview(type, original);
+            var readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) return new Preview(type, original);
+            ImageReader reader = readers.next();
+            BufferedImage decoded;
+            try {
+                reader.setInput(input, true, true);
+                int width = reader.getWidth(0), height = reader.getHeight(0);
+                if (width < 1 || height < 1 || (long) width * height > 16_000_000L) {
+                    return new Preview(type, original);
+                }
+                decoded = reader.read(0);
+            } finally {
+                reader.dispose();
+            }
+            double scale = Math.min(1.0, 768.0 / Math.max(decoded.getWidth(), decoded.getHeight()));
+            int width = Math.max(1, (int) Math.round(decoded.getWidth() * scale));
+            int height = Math.max(1, (int) Math.round(decoded.getHeight() * scale));
+            BufferedImage thumbnail = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            Graphics2D graphics = thumbnail.createGraphics();
+            try {
+                graphics.setColor(Color.WHITE);
+                graphics.fillRect(0, 0, width, height);
+                graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                graphics.drawImage(decoded, 0, 0, width, height, null);
+            } finally {
+                graphics.dispose();
+            }
+            var writers = ImageIO.getImageWritersByMIMEType("image/jpeg");
+            if (!writers.hasNext()) return new Preview(type, original);
+            ImageWriter writer = writers.next();
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            try (var imageOutput = ImageIO.createImageOutputStream(output)) {
+                writer.setOutput(imageOutput);
+                ImageWriteParam options = writer.getDefaultWriteParam();
+                options.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                options.setCompressionQuality(0.84f);
+                writer.write(null, new IIOImage(thumbnail, null, null), options);
+            } finally {
+                writer.dispose();
+            }
+            byte[] bytes = output.toByteArray();
+            return bytes.length < original.length ? new Preview("image/jpeg", bytes) : new Preview(type, original);
+        } catch (IOException | RuntimeException exception) {
+            // Unknown or damaged legacy images keep the existing raw-image behavior.
+            return new Preview(type, original);
+        }
+    }
+
+    public record Preview(String contentType, byte[] content) {}
 
     /**
      * 删除一张上传的图片。

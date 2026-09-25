@@ -19,7 +19,7 @@ import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { DragHandle } from '@tiptap/extension-drag-handle-vue-3'
 import StarterKit from '@tiptap/starter-kit'
-import Image from '@tiptap/extension-image'
+import Image, { type ImageOptions } from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Markdown } from '@tiptap/markdown'
@@ -49,6 +49,7 @@ import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/ed
 import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
 import { toast } from '@/composables/toast'
 import { countCharacters } from '@/utils/characterCount'
+import { notePreviewSource } from '@/utils/notePreviewImages'
 import ArticleImageAction from './ArticleImageAction.vue'
 import SelectionImageAction from './SelectionImageAction.vue'
 import ImageCopyMenu from './ImageCopyMenu.vue'
@@ -107,6 +108,8 @@ const props = withDefaults(
     minHeight?: number
     /** 只读展示，不可编辑。 */
     readonly?: boolean
+    /** 小记清单隐藏正文图片时，仍只请求轻量预览。 */
+    previewImages?: boolean
     /** 原地编辑首次挂载后将焦点交给正文。 */
     autofocus?: boolean
     /** 文档正文等沉浸场景不显示输入框边框与底色。 */
@@ -147,6 +150,7 @@ const props = withDefaults(
     placeholder: '写点什么…支持 Markdown 快捷输入',
     minHeight: 84,
     readonly: false,
+    previewImages: false,
     autofocus: false,
     bare: false,
     allowH1: false,
@@ -274,7 +278,10 @@ function imageStyle(attributes: Record<string, unknown>): string {
 }
 
 /** Tiptap 自带 Image 已有 width/height 属性；这里只补 Markdown 往返和百分比渲染。 */
-const DocumentImage = Image.extend({
+const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean }>({
+  addOptions() {
+    return { ...this.parent!(), previewImages: false }
+  },
   addAttributes() {
     return { ...this.parent?.(), align: { default: null } }
   },
@@ -296,6 +303,7 @@ const DocumentImage = Image.extend({
   },
   renderHTML({ HTMLAttributes }) {
     const attributes = { ...HTMLAttributes }
+    if (this.options.previewImages && typeof attributes.src === 'string') attributes.src = notePreviewSource(attributes.src)
     const style = imageStyle(attributes)
     delete attributes.width
     delete attributes.height
@@ -425,7 +433,7 @@ const editor = useEditor({
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
       },
     }),
-    DocumentImage.configure({ inline: false, HTMLAttributes: { class: 'md-img' } }),
+    DocumentImage.configure({ inline: false, previewImages: props.previewImages, HTMLAttributes: { class: 'md-img' } }),
     TaskList,
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: () => props.placeholder }),

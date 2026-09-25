@@ -66,6 +66,16 @@ public class ImageController {
                 .body(e.getContent());
     }
 
+    /** 列表用小图，按不可变图片 id 长期缓存；大图仍由 raw 提供。 */
+    @GetMapping("/{id}/preview")
+    public ResponseEntity<byte[]> preview(@PathVariable String id) {
+        ImageService.Preview image = images.preview(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(image.contentType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
+                .body(image.content());
+    }
+
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest request) {
         String projectId = images.raw(id).getProjectId();

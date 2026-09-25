@@ -3,6 +3,12 @@ import type { RichDocContent, RichDocNode } from '@/types'
 
 export interface NotePreviewImage { src: string; alt: string }
 
+/** Only WAO's immutable image URLs have a small list preview. */
+export function notePreviewSource(src: string): string {
+  return src.replace(/^(?:(https:\/\/wao\.wayuwa\.cn))?(\/api\/images\/[A-Za-z0-9_-]+)\/raw$/, (_match, origin: string | undefined, path: string) =>
+    `${origin ?? ''}${path}/preview`)
+}
+
 function imageSource(value: unknown): value is string {
   return typeof value === 'string' && (/^https?:\/\//i.test(value) || /^\/(?!\/)/.test(value))
 }
