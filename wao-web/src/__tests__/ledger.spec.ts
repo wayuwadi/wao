@@ -70,6 +70,16 @@ describe('账务本浏览器页面', () => {
     expect(wrapper.text()).toContain('到期应收')
   })
 
+  it('归类筛选后详情只显示筛选范围内的账目', async () => {
+    listBooks.mockResolvedValue([book])
+    getBook.mockResolvedValue({ ...detail, entries: [entry,
+      { ...entry, id: 'entry-2', title: '争议旧款', category: 'BAD' }] })
+    const wrapper = await mountLedger()
+    await wrapper.findAll('.filters button')[2]!.trigger('click')
+    expect(wrapper.find('.entry-detail h2').text()).toBe('争议旧款')
+    expect(wrapper.findAll('.entry-row')).toHaveLength(1)
+  })
+
   it('保存失败时保留输入和会话草稿以便重试', async () => {
     listBooks.mockResolvedValue([book])
     getBook.mockResolvedValue(detail)

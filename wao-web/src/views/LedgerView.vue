@@ -61,7 +61,8 @@ const visibleEntries = computed(() => entries.value.filter(item =>
   (category.value === 'ALL' || item.category === category.value) &&
   `${item.title} ${item.counterparty} ${item.evidence ?? ''}`.toLocaleLowerCase().includes(query.value.trim().toLocaleLowerCase()),
 ))
-const selected = computed(() => entries.value.find(item => item.id === selectedId.value) ?? visibleEntries.value[0] ?? null)
+const selected = computed(() => visibleEntries.value.find(item => item.id === selectedId.value)
+  ?? visibleEntries.value[0] ?? null)
 const editorDirty = computed(() => !!editor.value && JSON.stringify(editor.value) !== editorOriginal.value)
 const memberOptions = computed(() => session.members.filter(member =>
   member.id !== session.userId && !detail.value?.members.some(access => access.memberId === member.id),
@@ -90,6 +91,7 @@ const monthRows = computed(() => {
   }
   return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b))
 })
+watch([category, query], () => { detailOpen.value = false })
 
 async function refreshBooks(preferredId = bookId.value) {
   loading.value = true
