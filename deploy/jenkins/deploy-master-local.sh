@@ -16,6 +16,9 @@ cloud_user="${6:-root}"
 slave_address="${7:-linux1.wayuwa.cn}"
 cloud_address="${8:-8.136.152.131}"
 slave_port="${9:-22}"
+# 旧调用方不传时保持同步；Jenkins 仅在本批次改到对应目录时传 true（ADR-280）。
+sync_jumpserver="${10:-true}"
+sync_infrastructure="${11:-true}"
 
 case "$project_root" in ''|/) echo "Unsafe project root: $project_root" >&2; exit 2 ;; esac
 case "$image_tag" in *[!A-Za-z0-9_.-]*|'') echo 'Invalid image tag.' >&2; exit 2 ;; esac
@@ -37,10 +40,14 @@ setfacl -m u:jenkins:r "$project_root/deploy/.env.secrets"
 WAO_IMAGE_TAG="$image_tag" SKIP_IMAGE_BUILD=true \
   sh "$project_root/deploy/scripts/deploy-linux.sh" master
 sh "$project_root/deploy/scripts/validate-deployment-node.sh" master "$image_tag"
-JUMPSERVER_SLAVE_USER="$slave_user" JUMPSERVER_CLOUD_USER="$cloud_user" \
-  JUMPSERVER_SLAVE_ADDRESS="$slave_address" JUMPSERVER_CLOUD_ADDRESS="$cloud_address" \
-  JUMPSERVER_SLAVE_PORT="$slave_port" \
-  sh "$project_root/deploy/jumpserver/deploy.sh" "$project_root"
+if [ "$sync_jumpserver" != false ]; then
+  JUMPSERVER_SLAVE_USER="$slave_user" JUMPSERVER_CLOUD_USER="$cloud_user" \
+    JUMPSERVER_SLAVE_ADDRESS="$slave_address" JUMPSERVER_CLOUD_ADDRESS="$cloud_address" \
+    JUMPSERVER_SLAVE_PORT="$slave_port" \
+    sh "$project_root/deploy/jumpserver/deploy.sh" "$project_root"
+fi
 
 # Read-only inventory is independent of the application containers.
-sudo -n sh "$project_root/deploy/infrastructure/install.sh"
+if [ "$sync_infrastructure" != false ]; then
+  sudo -n sh "$project_root/deploy/infrastructure/install.sh"
+fi

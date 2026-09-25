@@ -77,10 +77,16 @@ Host wao-cloud
   IdentitiesOnly yes
   UserKnownHostsFile $CLOUD_KNOWN_HOSTS
   StrictHostKeyChecking yes
+  # 一次发布对云端有二十余次 SSH/SCP；复用同一条连接省去每次握手。
+  # Linux1 反向隧道会断线重连，不复用，避免一条失效主连接拖垮后续命令。
+  ControlMaster auto
+  ControlPath /tmp/wao-ci-%C
+  ControlPersist 120
 EOF
 chmod 0600 "$WAO_SSH_CONFIG"
 
 cleanup_deploy_inputs() {
+  command ssh -F "$WAO_SSH_CONFIG" -O exit wao-cloud >/dev/null 2>&1 || true
   rm -f -- wao-release.tgz \
     wao-secrets.env wao-shared.env wao-gateway.p12 wao-bootstrap.sql.gz
 }
@@ -93,15 +99,7 @@ printf '%s\n' \
   'master_status=not_started' 'master_attempts=0' 'master_detail=not_started' \
   'cloud_status=not_started' 'cloud_detail=not_started' \
   'verification_status=not_started' 'verification_detail=not_started' >"$status_file"
-slave_deployed=false
-master_deployed=false
-master_drained=false
-schema_quiesced=false
-schema_rollout_complete=false
-linux_only_schema_rollout=false
-safe_slave_reachable=false
 slave_available=true
-safe_schema_rollout=false
 
 set_status() {
   key="$1"
@@ -236,10 +234,22 @@ retry_node_deploy() {
 deploy_master() {
   sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
     "$WAO_MASTER_PROJECT_ROOT" wao-release.tgz wao-secrets.env "$WAO_GIT_SHA" \
-    "$SLAVE_USER" "$CLOUD_USER" "$SLAVE_SSH_HOST" "$CLOUD_HOST" "$SLAVE_SSH_PORT"
+    "$SLAVE_USER" "$CLOUD_USER" "$SLAVE_SSH_HOST" "$CLOUD_HOST" "$SLAVE_SSH_PORT" \
+    "$sync_jumpserver" "$sync_infrastructure"
+}
+
+# JumpServer 与基础设施清单与应用版本无关：只有本批次改到对应目录（或无法判定）时才重新同步验收。
+batch_changed() {
+  local changed
+  [ "$BOOTSTRAP_SLAVE" != true ] || return 0
+  changed="$(git diff --name-only "${WAO_CHANGE_BASE:-}" "$WAO_GIT_SHA" 2>/dev/null)" || return 0
+  printf '%s\n' "$changed" | grep -Eq "$1"
 }
 
 install_master_deploy_helper() {
+  if cmp -s deploy/jenkins/deploy-master-local.sh /usr/local/lib/wao-jenkins/deploy-master-local.sh; then
+    return 0
+  fi
   workspace="$(pwd -P)"
   docker run --rm --privileged --user 0 \
     -v /:/host -v "$workspace:/workspace:ro" \
@@ -274,7 +284,7 @@ verify_jumpserver_assets() {
 }
 
 prepare_slave_images() {
-  local image image_id
+  local image image_id present_ids
   local -a missing_images=()
   local manifest="$WAO_RUN_TEMP/wao-image-manifest.txt"
   local archive="$WAO_RUN_TEMP/wao-images.tar.gz"
@@ -289,11 +299,15 @@ prepare_slave_images() {
     image_id="$(docker image inspect --format '{{.Id}}' "$image")" || return 1
     [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
     printf '%s %s\n' "$image" "$image_id" >>"$manifest"
-    if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 "wao-slave" \
-      "docker image inspect '$image_id' >/dev/null 2>&1"; then
+  done
+  # 一次 SSH 列出 Linux1 已有的目标镜像 ID，避免经反向隧道逐个往返。
+  present_ids="$(slave_ssh -o BatchMode=yes -o ConnectTimeout=8 "wao-slave" \
+    "for id in $(awk '{ print $2 }' "$manifest" | tr '\n' ' '); do docker image inspect \"\$id\" >/dev/null 2>&1 && printf '%s\n' \"\$id\"; done; true")" || return 1
+  while read -r image image_id; do
+    if ! printf '%s\n' "$present_ids" | grep -Fqx "$image_id"; then
       missing_images+=("$image")
     fi
-  done
+  done <"$manifest"
   if [ "${#missing_images[@]}" -eq 0 ]; then
     echo 'Linux1 已有全部目标镜像，仅发送版本清单。'
     return 0
@@ -375,12 +389,23 @@ prepare_cloud_routing() {
     install -d -m 0755 /etc/nginx/wao-external-apps.d
     rm -f /etc/nginx/wao-external-apps.d/wao-game.conf \
       /etc/nginx/wao-external-apps.d/wao-insight.conf
-  '
+  ' || return
+  mark_deploy_window
+}
+
+# 云端独立监控在标记后一段时间内不告警（ADR-280）；开始与结束各刷新一次，
+# 覆盖并行替换期间及之后监控的两次连续失败判定。
+mark_deploy_window() {
+  ssh -o ConnectTimeout=15 "wao-cloud" \
+    'install -d -m 0755 /run/wao-nginx-upstreams && touch /run/wao-nginx-upstreams/deploying'
 }
 
 deploy_cloud() {
-  local master_gateway_state=''
-  if [ "${1:-false}" = true ]; then master_gateway_state=' down'; fi
+  stage_cloud && activate_cloud
+}
+
+# 只上传与安装不可变制品，不改变线上入口；可以和节点部署并行。
+stage_cloud() {
   # Stage verified immutable assets before changing the public entry page.
   # A disabled/offline slave never receives an incomplete release advertisement.
   python3 deploy/scripts/static-release.py pack wao-web/dist "$WAO_RUN_TEMP/wao-static.tgz" "$WAO_GIT_SHA" || return
@@ -400,12 +425,6 @@ deploy_cloud() {
     deploy/scripts/publish-static-routing.py wao-cloud:/tmp/ || return
   retry_remote "云静态校验" ssh -o ConnectTimeout=15 wao-cloud \
     "python3 /tmp/static-release.py install /tmp/wao-static.tgz /var/www/wao/releases '$WAO_GIT_SHA'" || return
-  retry_remote "静态路由清单" ssh -o ConnectTimeout=15 wao-cloud \
-    "python3 /tmp/publish-static-routing.py /etc/wao-public-edge/routing.json '$WAO_GIT_SHA'" || return
-  # Render on the cloud host: its Linux1 name resolves to the reverse SSH
-  # tunnel. Rendering on Jenkins would write the unreachable public :9000 IP.
-  retry_remote "云端 Gateway 配置" ssh -o ConnectTimeout=15 wao-cloud \
-    "MASTER_GATEWAY_STATE='$master_gateway_state' WAO_NGINX_RENDER_OUTPUT=/tmp/wao-nginx.conf sh /opt/wao/deploy/scripts/render-nginx-config.sh" || return
   retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" '
     set -eu
     install -d /tmp/wao-dist /tmp/wao-agent-dist
@@ -421,7 +440,17 @@ deploy_cloud() {
     deploy/scripts/resolve-gateway-ipv4.sh \
     deploy/scripts/ensure-jumpserver-certificate.sh \
     deploy/scripts/set-nginx-upstream-state.sh \
-    "wao-cloud:/tmp/" || return
+    "wao-cloud:/tmp/"
+}
+
+# 切换公网网页与 Nginx 配置；必须在两台应用节点都就绪后执行。
+activate_cloud() {
+  retry_remote "静态路由清单" ssh -o ConnectTimeout=15 wao-cloud \
+    "python3 /tmp/publish-static-routing.py /etc/wao-public-edge/routing.json '$WAO_GIT_SHA'" || return
+  # Render on the cloud host: its Linux1 name resolves to the reverse SSH
+  # tunnel. Rendering on Jenkins would write the unreachable public :9000 IP.
+  retry_remote "云端 Gateway 配置" ssh -o ConnectTimeout=15 wao-cloud \
+    "WAO_NGINX_RENDER_OUTPUT=/tmp/wao-nginx.conf sh /opt/wao/deploy/scripts/render-nginx-config.sh" || return
   retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" \
     "/bin/sh /tmp/ensure-jumpserver-certificate.sh $CLOUD_HOST" || return
   retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" '
@@ -515,18 +544,13 @@ public_ready() {
     printf '%s' "$response" | grep -Eq '"protocol"[[:space:]]*:[[:space:]]*1'
 }
 
-# The database tunnel has failed after the previous release's one-shot /api/hello
-# checks. Keep checking the DB-backed route through the delayed failure window.
-verify_post_deploy_stability() {
-  sample=1
-  while [ "$sample" -le 9 ]; do
-    gateway_ready_from_cloud "$MASTER_HOST" || return 1
-    if [ "$slave_available" = true ]; then
-      gateway_ready_from_cloud "$SLAVE_HOST" || return 1
-    fi
-    public_ready || return 1
-    [ "$sample" -eq 9 ] || sleep 15
-    sample=$((sample + 1))
+# 刚完成 Nginx reload 或容器替换时给入口几秒收敛；仍以数据库就绪路由为准（ADR-278）。
+wait_until_ready() {
+  local attempt=1
+  until "$@"; do
+    [ "$attempt" -lt 10 ] || return 1
+    attempt=$((attempt + 1))
+    sleep 2
   done
 }
 
@@ -542,29 +566,19 @@ quiesce_master() {
   sh deploy/scripts/quiesce-wao-server.sh master "$action" "$WAO_MASTER_PROJECT_ROOT"
 }
 
-quiesce_slave() {
-  action="$1"
-  retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
-    "sh deploy/wao-quiesce-server.sh slave '$action' \"\$HOME/deploy/wao\""
-}
-
+# 两台节点并行替换，不再逐台摘流（ADR-280）。只把失败或离线的节点留在摘流状态；
+# 目标已是 up 且无摘流标记时跳过，避免每次重渲染 Nginx 并等待旧 worker 退出。
 restore_upstreams() {
-  if [ "$slave_deployed" = true ]; then
-    set_upstream_state slave up >/dev/null 2>&1 || true
-  else
-    set_upstream_state slave down >/dev/null 2>&1 || true
-  fi
-  if [ "$schema_quiesced" = true ] && [ "$schema_rollout_complete" != true ]; then
-    if [ "$linux_only_schema_rollout" != true ]; then
-      set_upstream_state master down >/dev/null 2>&1 || true
-      return
-    fi
-  fi
-  if [ "$master_deployed" = true ] || [ "$master_drained" = false ]; then
-    set_upstream_state master up >/dev/null 2>&1 || true
-  else
-    set_upstream_state master down >/dev/null 2>&1 || true
-  fi
+  local master_state=up slave_state=up
+  [ "$master_result" != failed ] || master_state=down
+  if [ "$slave_available" != true ] || [ "$slave_result" = failed ]; then slave_state=down; fi
+  retry_remote "云前端路由" ssh -o ConnectTimeout=15 "wao-cloud" "
+    for pair in master:$master_state slave:$slave_state; do
+      node=\${pair%%:*}
+      state=\${pair#*:}
+      if [ \"\$state\" = up ] && [ ! -f \"/run/wao-nginx-upstreams/\$node.down\" ]; then continue; fi
+      /opt/wao/deploy/scripts/set-nginx-upstream-state.sh \"\$node\" \"\$state\" || exit 1
+    done"
 }
 
 availability_pid=''
@@ -595,8 +609,37 @@ stop_availability_monitor() {
 
 cleanup_rollout() {
   stop_availability_monitor
-  restore_upstreams
+  restore_upstreams >/dev/null 2>&1 || true
+  mark_deploy_window >/dev/null 2>&1 || true
   cleanup_deploy_inputs
+}
+
+run_node_job() {
+  local label="$1" deploy_function="$2" log_file="$3" result_file="$4" result=failed
+  if retry_node_deploy "$label" "$deploy_function" "$log_file" >/dev/null 2>&1; then result=success; fi
+  printf '%s %s\n' "$result" "${NODE_DEPLOY_ATTEMPTS:-0}" >"$result_file"
+}
+
+run_stage_job() {
+  local result=failed
+  if stage_cloud >"$1" 2>&1; then result=success; fi
+  printf '%s\n' "$result" >"$2"
+}
+
+# 读取后台节点任务结果写入 recorded_result，并同步飞书通知使用的状态文件。
+record_node_result() {
+  local node="$1" log_file="$2" result_file="$3" result=failed attempts=0
+  read -r result attempts <"$result_file" 2>/dev/null || true
+  printf '\n===== %s =====\n' "$node"; cat "$log_file" 2>/dev/null || true
+  set_status "${node}_attempts" "$attempts"
+  if [ "$result" = success ]; then
+    set_status "${node}_status" success
+    set_status "${node}_detail" "$WAO_GIT_SHA"
+  else
+    set_status "${node}_status" failed
+    set_status "${node}_detail" "$(tail -n 1 "$log_file" 2>/dev/null)"
+  fi
+  recorded_result="$result"
 }
 
 # 前端快路径必须由本次完整变更范围确认，不能只信任一个外部环境开关。
@@ -632,123 +675,41 @@ if [ "${WAO_WEB_ONLY:-false}" = true ]; then
   exit 0
 fi
 
-# 是否需要 V77 维护窗口以主库持久状态为准，不依赖单次 push 的文件列表。
-# 这样 Jenkins 手工构建、失败重跑或人工中止后的下一次部署都会继续 fail-closed 流程。
+# V77 的一次性维护窗口早已完成；并行快速发布不再实现该窗口，状态异常时 fail-closed。
 rollout_status_output="$(quiesce_master rollout-status)" || exit 1
 rollout_status="$(printf '%s\n' "$rollout_status_output" | tr -d '\r' | tail -n 1)"
-case "$rollout_status" in
-  complete) safe_schema_rollout=false ;;
-  required) safe_schema_rollout=true ;;
-  *) printf '无法识别 V77 发布状态：%s\n' "$rollout_status"; exit 1 ;;
-esac
+if [ "$rollout_status" != complete ]; then
+  printf 'V77 发布状态为 %s；并行快速发布不处理该维护窗口，拒绝发布。\n' "$rollout_status"
+  exit 1
+fi
+
+sync_jumpserver=false
+if batch_changed '^deploy/jumpserver/'; then sync_jumpserver=true; fi
+sync_infrastructure=false
+if batch_changed '^deploy/infrastructure/'; then sync_infrastructure=true; fi
 
 if ! prepare_cloud_routing >routing.log 2>&1; then
   printf '\n===== cloud routing =====\n'; cat routing.log
   exit 1
 fi
 
+master_result=pending
+slave_result=pending
 trap cleanup_rollout EXIT
 
 if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
     "wao-slave" 'docker info' >/dev/null; then
-  set_upstream_state slave down || true
   if [ "$ALLOW_SLAVE_OFFLINE" = true ]; then
     slave_available=false
     set_status slave_status skipped
     set_status slave_detail 'Linux1 预检不可达；已显式授权主节点单机发布'
     echo 'Linux1 从节点预检不可达；保持摘流并按显式授权继续发布主节点与云端。'
   else
+    slave_result=failed
     set_status slave_status failed
     set_status slave_detail 'SSH 或 Docker 预检失败'
     echo 'Linux1 从节点严格预检失败；Linux2 保持当前版本，本次发布失败。'
     exit 1
-  fi
-fi
-
-if [ "$safe_schema_rollout" != true ] && [ "$slave_available" = true ]; then
-  # A failed previous run may have left the old master drained. Never take the
-  # slave out of rotation until the master is healthy and serving again.
-  gateway_ready_from_cloud "$MASTER_HOST" || {
-    echo 'Linux2 Gateway 未就绪；不能摘流 Linux1。' >&2
-    exit 1
-  }
-  set_upstream_state master up || exit 1
-  public_ready || exit 1
-  start_availability_monitor
-fi
-
-# V77 首次引入带版本的飞书归档写入。旧二进制不认识新栅栏，因此该次 push
-# 用一次性维护窗口：先暂停定时同步、摘流并停掉所有在线旧 server，再允许新节点执行 migration。
-# 从节点离线且成员显式授权时保持 slave down 和同步暂停，但继续交付主节点；详见 ADR-100。
-if [ "$safe_schema_rollout" = true ]; then
-  echo '::notice title=V77 安全升级::暂停飞书定时同步并停止旧版 API 节点后再执行 migration。'
-  if ! set_upstream_state slave down || ! set_upstream_state master down; then
-    echo '无法为 V77 建立全量摘流窗口。'
-    exit 1
-  fi
-  if [ "$slave_available" = true ]; then
-    safe_slave_reachable=true
-    retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
-      deploy/scripts/quiesce-wao-server.sh \
-      "wao-slave:deploy/wao-quiesce-server.sh" || exit 1
-  else
-    echo 'Linux1 从节点离线；保持 slave 摘流和飞书同步暂停，本次继续升级 Linux2 与云端。'
-  fi
-  if ! quiesce_master pause-feishu-sync; then
-    echo '无法暂停飞书定时同步，V77 未开始。'
-    exit 1
-  fi
-  if [ "$safe_slave_reachable" = true ] && [ "$BOOTSTRAP_SLAVE" != true ] && ! quiesce_slave stop; then
-    quiesce_master restore-feishu-sync || true
-    echo '无法停止 Linux1 旧版 server，V77 未开始。'
-    exit 1
-  fi
-  if ! quiesce_master stop; then
-    if [ "$safe_slave_reachable" = true ]; then quiesce_slave start || true; fi
-    quiesce_master restore-feishu-sync || true
-    echo '无法停止 Linux 旧版 server，V77 未开始。'
-    exit 1
-  fi
-  schema_quiesced=true
-fi
-
-set_upstream_state slave down || exit 1
-if [ "$safe_schema_rollout" != true ]; then
-  public_ready || exit 1
-fi
-
-if [ "$slave_available" = true ]; then
-  if ! retry_node_deploy Linux1 deploy_slave slave.log; then
-    set_status slave_status failed
-    set_status slave_attempts "$NODE_DEPLOY_ATTEMPTS"
-    set_status slave_detail "$(tail -n 1 slave.log)"
-    set_upstream_state slave down || true
-    echo 'Linux1 从节点三次部署失败；Linux2 保持当前版本，本次发布严格失败。'
-    exit 1
-  fi
-  set_status slave_status success
-  set_status slave_attempts "$NODE_DEPLOY_ATTEMPTS"
-  set_status slave_detail "$WAO_GIT_SHA"
-  if ! gateway_ready_from_cloud "$SLAVE_HOST"; then
-    if [ "$ALLOW_SLAVE_OFFLINE" = true ]; then
-      slave_available=false
-      slave_deployed=false
-      set_status slave_status skipped
-      set_status slave_detail 'Linux1 已部署，但云节点无法直连 Gateway；保持摘流并继续主节点单机发布'
-      set_upstream_state slave down || true
-      echo 'Linux1 已部署且节点内验证通过，但云节点无法直连 Gateway；按显式授权保持摘流并继续发布。'
-    else
-      set_status slave_status failed
-      set_status slave_detail '云节点无法直连 Linux1 Gateway'
-      set_upstream_state slave down || true
-      exit 1
-    fi
-  else
-    # 安装函数在重试子 shell/管道内运行，变量赋值不会回到主流程。
-    # 云端回源也通过后才记录成功，避免收尾误摘流或恢复未就绪节点。
-    slave_deployed=true
-    set_upstream_state slave up || exit 1
-    echo 'Linux1 deployment completed and the node is back in the public upstream.'
   fi
 fi
 
@@ -758,74 +719,80 @@ if ! install_master_deploy_helper; then
   exit 1
 fi
 
-# Linux1 先回流承载普通 API；保持旧版网页直到 Linux2 也已完成。
-# 固定在 Linux2 的入口在它替换容器时仍有短暂维护窗口。
-if [ "$safe_schema_rollout" != true ]; then
-  set_upstream_state master down || exit 1
-fi
-master_drained=true
+# 自用系统优先发布速度（ADR-280）：两台节点同时替换容器，云端静态制品同时预传。
+# 替换期间公共入口会短暂不可用；网页入口仍在两台节点都就绪后才切换。
+echo "并行部署 Linux1、Linux2，并预传云端静态制品（JumpServer 同步=$sync_jumpserver，基础设施同步=$sync_infrastructure）。"
+run_node_job Linux2 deploy_master master.log "$WAO_RUN_TEMP/master.result" &
+master_pid=$!
+slave_pid=''
 if [ "$slave_available" = true ]; then
-  for probe in 1 2 3 4 5; do
-    hello="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
-      "https://wao.wayuwa.cn/api/hello?slave-rollout-probe=$probe")"
-    printf '%s' "$hello" | grep -q '"code":0'
-  done
+  run_node_job Linux1 deploy_slave slave.log "$WAO_RUN_TEMP/slave.result" &
+  slave_pid=$!
 fi
+run_stage_job cloud-stage.log "$WAO_RUN_TEMP/cloud-stage.result" &
+stage_pid=$!
+wait "$master_pid" || true
+if [ -n "$slave_pid" ]; then wait "$slave_pid" || true; fi
+wait "$stage_pid" || true
 
-if ! retry_node_deploy Linux2 deploy_master master.log; then
-  set_status master_status failed
-  set_status master_attempts "$NODE_DEPLOY_ATTEMPTS"
-  set_status master_detail "$(tail -n 1 master.log)"
-  set_upstream_state master down || true
-  echo 'Linux2 主节点三次部署失败；Linux1 继续承载请求，本次发布严格失败。'
+record_node_result master master.log "$WAO_RUN_TEMP/master.result"
+master_result="$recorded_result"
+if [ "$slave_available" = true ]; then
+  record_node_result slave slave.log "$WAO_RUN_TEMP/slave.result"
+  slave_result="$recorded_result"
+fi
+printf '\n===== cloud stage =====\n'; cat cloud-stage.log
+stage_result="$(cat "$WAO_RUN_TEMP/cloud-stage.result" 2>/dev/null || printf failed)"
+
+if [ "$master_result" != success ] || [ "$slave_result" = failed ]; then
+  echo "节点部署失败：Linux2=$master_result，Linux1=$slave_result；网页入口保持旧版本。"
   exit 1
 fi
-master_deployed=true
-set_status master_status success
-set_status master_attempts "$NODE_DEPLOY_ATTEMPTS"
-set_status master_detail "$WAO_GIT_SHA"
+if [ "$stage_result" != success ]; then
+  set_status cloud_status failed
+  set_status cloud_detail '云端静态制品预传失败'
+  exit 1
+fi
 
-if [ "$safe_schema_rollout" = true ]; then
-  if [ "$safe_slave_reachable" = true ]; then
-    if ! quiesce_master complete-v77-rollout; then
-      set_status master_status failed
-      set_status master_detail 'V77 完成标记或飞书同步恢复失败'
-      exit 1
-    fi
-    completed_status_output="$(quiesce_master rollout-status)" || exit 1
-    completed_status="$(printf '%s\n' "$completed_status_output" | tr -d '\r' | tail -n 1)"
-    if [ "$completed_status" != complete ]; then
-      set_status master_status failed
-      set_status master_detail 'V77 完成状态复核失败'
-      exit 1
-    fi
-    schema_rollout_complete=true
+if ! wait_until_ready gateway_ready_from_cloud "$MASTER_HOST"; then
+  master_result=failed
+  set_status master_status failed
+  set_status master_detail '云节点无法经 Linux2 Gateway 完成数据库就绪检查'
+  exit 1
+fi
+if [ "$slave_available" = true ] && ! wait_until_ready gateway_ready_from_cloud "$SLAVE_HOST"; then
+  if [ "$ALLOW_SLAVE_OFFLINE" = true ]; then
+    slave_available=false
+    set_status slave_status skipped
+    set_status slave_detail 'Linux1 已部署，但云节点无法直连 Gateway；保持摘流并继续主节点单机发布'
   else
-    linux_only_schema_rollout=true
-    echo 'Linux2 已单节点完成；Linux1 继续保持 down，V77 完成标记和飞书同步保持暂停。'
+    slave_result=failed
+    set_status slave_status failed
+    set_status slave_detail '云节点无法直连 Linux1 Gateway'
+    exit 1
   fi
 fi
-set_upstream_state master up || exit 1
-echo 'Linux deployment completed and the node is back in the public upstream.'
 
-if ! provision_jumpserver_asset_access; then
-  set_status master_status failed
-  set_status master_detail 'JumpServer 专用资产公钥安装失败'
-  exit 1
-fi
-jumpserver_verify_log="$WAO_RUN_TEMP/jumpserver-verify.log"
-if ! verify_jumpserver_assets >"$jumpserver_verify_log" 2>&1; then
+if [ "$sync_jumpserver" = true ]; then
+  if ! provision_jumpserver_asset_access; then
+    set_status master_status failed
+    set_status master_detail 'JumpServer 专用资产公钥安装失败'
+    exit 1
+  fi
+  jumpserver_verify_log="$WAO_RUN_TEMP/jumpserver-verify.log"
+  if ! verify_jumpserver_assets >"$jumpserver_verify_log" 2>&1; then
+    cat "$jumpserver_verify_log"
+    jumpserver_verify_detail="$(tail -n 1 "$jumpserver_verify_log" \
+      | tr '\r\n=' '   ' | cut -c1-300)"
+    set_status master_status failed
+    set_status master_detail \
+      "JumpServer 三节点 SSH、资产登记或 SSO 验收失败：${jumpserver_verify_detail:-无错误摘要}"
+    exit 1
+  fi
   cat "$jumpserver_verify_log"
-  jumpserver_verify_detail="$(tail -n 1 "$jumpserver_verify_log" \
-    | tr '\r\n=' '   ' | cut -c1-300)"
-  set_status master_status failed
-  set_status master_detail \
-    "JumpServer 三节点 SSH、资产登记或 SSO 验收失败：${jumpserver_verify_detail:-无错误摘要}"
-  exit 1
 fi
-cat "$jumpserver_verify_log"
 
-if ! deploy_cloud >cloud.log 2>&1; then
+if ! activate_cloud >cloud.log 2>&1; then
   set_status cloud_status failed
   set_status cloud_detail '云端静态资源或 Nginx 发布失败'
   printf '\n===== cloud =====\n'; cat cloud.log
@@ -835,51 +802,12 @@ set_status cloud_status success
 set_status cloud_detail "$WAO_GIT_SHA"
 printf '\n===== cloud =====\n'; cat cloud.log
 
-# 云端安装会重新渲染 Nginx 文件，并继承安装前的摘流状态。安装完成后立即恢复
-# 已验证节点，不能只依赖 EXIT trap，否则控制器安全重启可能让成功发布停留在单节点状态。
-set_upstream_state master up || exit 1
-if [ "$slave_available" = true ]; then
-  set_upstream_state slave up || exit 1
-else
-  set_upstream_state slave down || true
-fi
+# 云端安装会重新渲染 Nginx 文件；立即恢复已验证节点，不能只依赖 EXIT trap。
+restore_upstreams || exit 1
 
-gateway_ready_from_cloud "$MASTER_HOST" || {
+if ! wait_until_ready public_ready; then
   set_status verification_status failed
-  set_status verification_detail 'Linux2 数据库就绪检查失败'
-  exit 1
-}
-sh "$WAO_MASTER_PROJECT_ROOT/deploy/scripts/validate-deployment-node.sh" master "$WAO_GIT_SHA" || {
-  set_status verification_status failed
-  set_status verification_detail 'Linux2 最终节点验证失败'
-  exit 1
-}
-if [ "$slave_available" = true ]; then
-  gateway_ready_from_cloud "$SLAVE_HOST" || {
-    set_status verification_status failed
-    set_status verification_detail 'Linux1 数据库就绪检查失败'
-    exit 1
-  }
-  retry_remote "Linux1 从节点" slave_ssh "wao-slave" \
-    "sh deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'" || {
-      set_status verification_status failed
-      set_status verification_detail 'Linux1 最终节点验证失败'
-      exit 1
-    }
-fi
-
-if ! verify_post_deploy_stability; then
-  set_status verification_status failed
-  set_status verification_detail '发布后稳定窗口内数据库就绪检查失败'
-  echo '发布后稳定窗口内数据库就绪检查失败；不发送发布成功通知。'
-  exit 1
-fi
-stop_availability_monitor
-if [ -s "$availability_failures" ]; then
-  set_status verification_status failed
-  set_status verification_detail '滚动发布期间公共入口出现不可用采样'
-  cat "$availability_failures"
-  echo '滚动发布期间公共入口出现不可用采样。'
+  set_status verification_detail '公共入口数据库就绪检查失败'
   exit 1
 fi
 set_status verification_status success
@@ -890,5 +818,5 @@ else
 fi
 set_status publish_completed_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
 trap - EXIT
-restore_upstreams
+mark_deploy_window || true
 cleanup_deploy_inputs

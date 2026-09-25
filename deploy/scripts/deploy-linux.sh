@@ -57,6 +57,7 @@ run_docker() {
     sudo -n env \
       "NODE_PUBLIC_IP=${NODE_PUBLIC_IP:-}" \
       "WAO_IMAGE_TAG=${WAO_IMAGE_TAG:-}" \
+      "CODEX_EGRESS_IMAGE_TAG=${CODEX_EGRESS_IMAGE_TAG:-}" \
       docker "$@"
   else
     echo 'Docker is unavailable to the current user and passwordless sudo is not configured.' >&2
@@ -195,6 +196,19 @@ case "${SKIP_IMAGE_BUILD:-false}" in
   *) echo 'SKIP_IMAGE_BUILD must be true or false.' >&2; exit 2 ;;
 esac
 
+if [ "${role}" = "master" ]; then
+  # 出口代理镜像按 Git SHA 打标签，但内容很少变化。改用镜像内容标签，
+  # 内容不变时 Compose 配置不变，不再每次重建这对健康检查间隔 60 秒的容器（ADR-280）。
+  codex_image_id="$(run_docker image inspect --format '{{.Id}}' "wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}")"
+  case "${codex_image_id}" in
+    sha256:[0-9a-f]*) ;;
+    *) echo "Unexpected codex egress image id: ${codex_image_id}" >&2; exit 1 ;;
+  esac
+  CODEX_EGRESS_IMAGE_TAG="content-$(printf '%s' "${codex_image_id#sha256:}" | cut -c1-12)"
+  run_docker tag "${codex_image_id}" "wao-codex-egress-proxy:${CODEX_EGRESS_IMAGE_TAG}"
+  export CODEX_EGRESS_IMAGE_TAG
+fi
+
 start_services() {
   # 首次统一发布时，精确接管旧 Compose 项目的 Agent 容器。镜像已在上面标记为 rollback，
   # 媒体卷也通过显式 name 继续挂载，失败时仍可用统一 Compose 恢复。
@@ -203,9 +217,9 @@ start_services() {
   fi
   if [ "${role}" = "master" ]; then
     sh "${script_dir}/ensure-codex-egress.sh" || return 1
-    # The proxy tag is reused between releases. Force recreation so Docker does
-    # not keep a healthy container that still points at the previous image ID.
-    compose up -d --force-recreate --wait codex-vpn codex-egress-proxy || return 1
+    # The content tag changes whenever the image ID changes, so Compose
+    # recreates the proxy exactly when its image differs and keeps it otherwise.
+    compose up -d --wait codex-vpn codex-egress-proxy || return 1
   fi
   # Durable Redis/Sentinel state survives container recreation. Do not reset
   # elected roles or Sentinel identities during ordinary application releases.

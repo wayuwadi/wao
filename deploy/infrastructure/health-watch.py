@@ -18,6 +18,9 @@ TARGETS = {
 }
 PLANNED_DRAIN_DIR = Path('/run/wao-nginx-upstreams')
 PLANNED_DRAIN_MAX_SECONDS = 2 * 3600
+# Jenkins touches this marker when a release starts and again when it ends.
+# Parallel node replacement briefly takes every entry offline (ADR-280).
+DEPLOY_WINDOW_SECONDS = 10 * 60
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -57,6 +60,12 @@ def probe(url):
 
 def planned_drains(now, runtime_dir=PLANNED_DRAIN_DIR):
     """Ignore only recent, explicit Nginx drains; stale markers remain alertable."""
+    try:
+        age = now - (runtime_dir / 'deploying').stat().st_mtime
+        if 0 <= age <= DEPLOY_WINDOW_SECONDS:
+            return set(TARGETS)
+    except OSError:
+        pass
     planned = set()
     for node, target in (('master', 'linux2'), ('slave', 'linux1')):
         try:

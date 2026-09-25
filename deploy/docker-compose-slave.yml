@@ -204,9 +204,9 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 20
+      interval: 3s
+      timeout: 3s
+      retries: 100
       start_period: 45s
     deploy:
       resources:
@@ -251,9 +251,9 @@ services:
       - wao-agent-media:/var/lib/wao-agent/media
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/api/agent/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 20
+      interval: 3s
+      timeout: 3s
+      retries: 100
       start_period: 45s
     deploy:
       resources:
@@ -297,9 +297,9 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-kfsS", "https://127.0.0.1:9000/api/hello"]
-      interval: 15s
-      timeout: 5s
-      retries: 15
+      interval: 3s
+      timeout: 3s
+      retries: 75
       start_period: 30s
     deploy:
       resources:

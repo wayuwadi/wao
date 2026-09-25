@@ -49,6 +49,22 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual(state['notified'], ['linux1', 'linux2', 'main'])
 
+    def test_recent_release_window_silences_every_target_until_it_expires(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker = Path(folder) / 'deploying'
+            marker.touch()
+            os.utime(marker, (100, 100))
+            self.assertEqual(watch.planned_drains(100 + watch.DEPLOY_WINDOW_SECONDS, Path(folder)),
+                             {'main', 'linux1', 'linux2'})
+            self.assertEqual(watch.planned_drains(101 + watch.DEPLOY_WINDOW_SECONDS, Path(folder)), set())
+            state = {}
+            for now in (160, 220, 280):
+                state, problems, message = watch.update(
+                    state, {'main': False, 'linux1': False, 'linux2': False}, now,
+                    watch.planned_drains(now, Path(folder)))
+                self.assertFalse(problems)
+                self.assertIsNone(message)
+
     def test_recent_planned_drain_does_not_alert_but_stale_drain_does(self):
         with tempfile.TemporaryDirectory() as folder:
             marker = Path(folder) / 'slave.down'

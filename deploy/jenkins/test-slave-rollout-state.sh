@@ -5,67 +5,61 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 fixture="$(mktemp -d)"
 trap 'rm -rf -- "$fixture"' EXIT
 
-# Exercise the real retry pipeline, caller and cleanup together. No SSH, Docker
-# or production state is used; only the node installer and probes are stubbed.
-sed -n '/^retry_node_deploy() {$/,/^}$/p' "$script_dir/ci-deploy.sh" >"$fixture/functions.sh"
-sed -n '/^restore_upstreams() {$/,/^}$/p' "$script_dir/ci-deploy.sh" >>"$fixture/functions.sh"
-awk '
-  /^if \[ "\$slave_available" = true \]; then$/ { previous=$0; next }
-  /^  if ! retry_node_deploy Linux1 / { print previous; copy=1 }
-  /^if ! install_master_deploy_helper; then$/ { exit }
-  copy { print }
-' "$script_dir/ci-deploy.sh" >"$fixture/caller.sh"
-test -s "$fixture/caller.sh"
+# Exercise the real parallel job wrapper, result recording and upstream restore.
+# No SSH, Docker or production state is used; only installers and SSH are stubbed.
+for function in retry_node_deploy run_node_job record_node_result restore_upstreams; do
+  sed -n "/^${function}() {\$/,/^}\$/p" "$script_dir/ci-deploy.sh" >>"$fixture/functions.sh"
+done
+test "$(grep -c '() {$' "$fixture/functions.sh")" = 4
 
 cat >"$fixture/run.sh" <<'SH'
 set -u
 cd "$FIXTURE"
 . ./functions.sh
-slave_available=true
-slave_deployed=false
-master_deployed=true
-master_drained=false
-schema_quiesced=false
-schema_rollout_complete=false
-linux_only_schema_rollout=false
+WAO_RUN_TEMP="$FIXTURE"
 WAO_GIT_SHA=test-release
-SLAVE_HOST=test-slave
-ALLOW_SLAVE_OFFLINE="${ALLOW_OFFLINE:-false}"
-deploy_slave() { [ "${INSTALL_FAIL:-false}" != true ]; }
-gateway_ready_from_cloud() { [ "${PROBE_FAIL:-false}" != true ]; }
-set_status() { :; }
-set_upstream_state() { printf '%s %s\n' "$1" "$2" >>"$STATE_LOG"; }
+slave_available="${SLAVE_AVAILABLE:-true}"
+status_file="$FIXTURE/status.env"
+: >"$status_file"
+set_status() { printf '%s=%s\n' "$1" "$2" >>"$status_file"; }
+retry_remote() { shift; "$@"; }
+ssh() { printf '%s\n' "${@: -1}" >"$FIXTURE/remote.sh"; }
 sleep() { :; }
-trap restore_upstreams EXIT
-. ./caller.sh
-printf 'deployed=%s available=%s\n' "$slave_deployed" "$slave_available"
+deploy_master() { echo master-installed; [ "${MASTER_FAIL:-false}" != true ]; }
+deploy_slave() { echo slave-installed; [ "${SLAVE_FAIL:-false}" != true ]; }
+run_node_job Linux2 deploy_master master.log "$FIXTURE/master.result" &
+run_node_job Linux1 deploy_slave slave.log "$FIXTURE/slave.result" &
+wait
+record_node_result master master.log "$FIXTURE/master.result" >/dev/null
+master_result="$recorded_result"
+record_node_result slave slave.log "$FIXTURE/slave.result" >/dev/null
+slave_result="$recorded_result"
+restore_upstreams
+printf 'master=%s slave=%s\n' "$master_result" "$slave_result"
 SH
 
 run_case() {
-  local name="$1" expected_exit="$2" expected_state="$3"
-  shift 3
-  local status=0
-  env FIXTURE="$fixture" STATE_LOG="$fixture/$name.state" "$@" \
-    bash "$fixture/run.sh" >"$fixture/$name.log" 2>&1 || status=$?
-  if [ "$status" -ne "$expected_exit" ]; then
-    cat "$fixture/$name.log"
-    echo "$name: expected exit $expected_exit, got $status" >&2
-    exit 1
-  fi
-  actual="$(grep '^slave ' "$fixture/$name.state" | tail -n 1)"
-  test "$actual" = "slave $expected_state" || {
-    cat "$fixture/$name.state"
-    echo "$name: cleanup left $actual, expected slave $expected_state" >&2
+  local name="$1" expected="$2" master_state="$3" slave_state="$4"
+  shift 4
+  rm -f "$fixture"/*.result "$fixture/remote.sh"
+  env FIXTURE="$fixture" "$@" bash "$fixture/run.sh" >"$fixture/$name.log" 2>&1
+  grep -qx "$expected" "$fixture/$name.log" || { cat "$fixture/$name.log"; exit 1; }
+  grep -q "master:$master_state slave:$slave_state" "$fixture/remote.sh" || {
+    cat "$fixture/remote.sh"
+    echo "$name: expected master:$master_state slave:$slave_state" >&2
     exit 1
   }
 }
 
-run_case success 0 up
-grep -q 'deployed=true available=true' "$fixture/success.log"
-run_case installer_failure 1 down INSTALL_FAIL=true
-test "$(grep -c 'deployment attempt' "$fixture/installer_failure.log")" = 3
-run_case authorized_offline 0 down PROBE_FAIL=true ALLOW_OFFLINE=true
-grep -q 'deployed=false available=false' "$fixture/authorized_offline.log"
-run_case probe_failure 1 down PROBE_FAIL=true
-# A failed cloud probe must not be undone by cleanup, even after installation.
-echo 'Slave rollout state regression checks passed.'
+run_case success 'master=success slave=success' up up
+grep -qx 'slave_status=success' "$fixture/status.env"
+grep -qx 'master_attempts=1' "$fixture/status.env"
+run_case slave_failure 'master=success slave=failed' up down SLAVE_FAIL=true
+grep -qx 'slave_attempts=3' "$fixture/status.env"
+grep -qx 'slave_status=failed' "$fixture/status.env"
+run_case master_failure 'master=failed slave=success' down up MASTER_FAIL=true
+run_case authorized_offline 'master=success slave=success' up down SLAVE_AVAILABLE=false
+# Healthy nodes without a stale drain marker must not re-render Nginx.
+sh -n "$fixture/remote.sh"
+grep -q 'continue' "$fixture/remote.sh"
+echo 'Parallel node rollout state regression checks passed.'
