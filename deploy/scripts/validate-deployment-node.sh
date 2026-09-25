@@ -74,9 +74,20 @@ for service in wao-server wao-agent-server wao-gateway; do
 done
 
 gateway_id="$(compose ps -q wao-gateway)"
-ready="$(run_docker exec "${gateway_id}" curl -kfsS --max-time 8 https://127.0.0.1:9000/api/edge/ready)"
-printf '%s' "${ready}" | grep -Eq '"code"[[:space:]]*:[[:space:]]*0'
-printf '%s' "${ready}" | grep -Eq '"protocol"[[:space:]]*:[[:space:]]*1'
+ready=''
+for attempt in 1 2 3; do
+  if ready="$(run_docker exec "${gateway_id}" curl -kfsS --max-time 8 \
+      https://127.0.0.1:9000/api/edge/ready)" \
+      && printf '%s' "${ready}" | grep -Eq '"code"[[:space:]]*:[[:space:]]*0' \
+      && printf '%s' "${ready}" | grep -Eq '"protocol"[[:space:]]*:[[:space:]]*1'; then
+    break
+  fi
+  if [ "${attempt}" -eq 3 ]; then
+    echo 'Gateway database readiness failed after 3 attempts.' >&2
+    exit 1
+  fi
+  sleep 2
+done
 printf 'gateway_ready=%s\n' "${ready}"
 
 if [ "${role}" = slave ]; then

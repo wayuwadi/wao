@@ -53,7 +53,14 @@ case "$1" in
       *PrintFlagsFinal*)
         case "$2" in wao-server) echo 1073741824 ;; *) echo 536870912 ;; esac
         ;;
-      *) echo '{"code":0,"data":{"protocol":1}}' ;;
+      *)
+        if [ "${WAO_READY_ALWAYS_FAIL:-false}" = true ]; then exit 28; fi
+        if [ "${WAO_READY_FAIL_ONCE:-false}" = true ] && [ ! -f "$WAO_READY_TEST_MARKER" ]; then
+          touch "$WAO_READY_TEST_MARKER"
+          exit 28
+        fi
+        echo '{"code":0,"data":{"protocol":1}}'
+        ;;
     esac
     ;;
   *) exit 2 ;;
@@ -64,6 +71,18 @@ chmod +x "$fixture/bin/docker"
 PATH="$fixture/bin:$PATH" sh "$fixture/project/deploy/scripts/validate-deployment-node.sh" master current \
   >"$fixture/current.log"
 grep -q 'wao-server_image=wao-server:current content=' "$fixture/current.log"
+WAO_READY_FAIL_ONCE=true WAO_READY_TEST_MARKER="$fixture/first-ready-failed" \
+  PATH="$fixture/bin:$PATH" sh "$fixture/project/deploy/scripts/validate-deployment-node.sh" master current \
+  >"$fixture/retried.log"
+test -f "$fixture/first-ready-failed"
+grep -q 'gateway_ready=' "$fixture/retried.log"
+if WAO_READY_ALWAYS_FAIL=true PATH="$fixture/bin:$PATH" \
+  sh "$fixture/project/deploy/scripts/validate-deployment-node.sh" master current \
+    >"$fixture/unready.log" 2>&1; then
+  echo 'A persistently unready gateway passed validation.' >&2
+  exit 1
+fi
+grep -q 'Gateway database readiness failed after 3 attempts' "$fixture/unready.log"
 if PATH="$fixture/bin:$PATH" sh "$fixture/project/deploy/scripts/validate-deployment-node.sh" master stale \
     >"$fixture/stale.log" 2>&1; then
   echo 'A stale image passed release validation.' >&2
