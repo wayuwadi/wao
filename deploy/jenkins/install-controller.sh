@@ -152,6 +152,8 @@ install -m 0755 "$script_dir/../backup/verify-backup-source.py" \
   /usr/local/lib/wao-backup/verify-backup-source.py
 install -m 0755 "$script_dir/../storage/migrate_assets.py" \
   /usr/local/lib/wao-backup/migrate_assets.py
+install -m 0755 "$script_dir/../storage/reclaim_mysql_blobs.py" \
+  /usr/local/lib/wao-backup/reclaim_mysql_blobs.py
 install -m 0755 "$script_dir/../storage/export_object_backup.py" \
   /usr/local/lib/wao-backup/export_object_backup.py
 install -m 0755 "$script_dir/../storage/restore_object_backup.py" \

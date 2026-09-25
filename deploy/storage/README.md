@@ -8,6 +8,6 @@
 4. 先发布服务端兼容代码和 V166 migration，保持 `WAO_STORAGE_MODE=mysql`。确认两个节点都运行兼容代码后，在两节点私有环境中设置同一 bucket、key、region，分别把 endpoint 指向本机 WireGuard `http://10.66.0.2:3900` 与 `http://10.66.0.3:3900`。先设 `WAO_STORAGE_MODE=s3`、`WAO_STORAGE_RETAIN_MYSQL=true`，双写观察与回退通过后才可改为 `false`。旧 URL、权限和一次性下载票据必须逐项验证。
 5. 在 Linux2 使用专用 venv 安装 `requirements.txt`（部署复制为 `/usr/local/lib/wao-backup/storage-requirements.txt`）：`python3 -m venv /usr/local/lib/wao-backup/.venv`，再用该 venv 的 `pip install -r ...`。在私有运行环境中设置 `MYSQL_WRITER_HOST`、`MYSQL_WRITER_PORT` 指向当前 WAO 权威写主；Linux2 的 `MYSQL_HOST` 是原生返回副本，不能作为回填写入目标。`migrate_assets.py` 默认只读列出待迁移数；传 `--apply` 才复制对象并 CAS 标记，且会拒绝只读副本。每件均在回读后核对长度和 SHA-256。中断后直接重跑。`--verify-only` 全量检查对象与仍保留的 MySQL 原件一致。出现失败行不执行清理。
 6. S3 模式的 Linux2 加密离线备份先验证 `wao-return` 复制追平，再把私有 bucket 中的全部对象和 SHA-256 清单一同归档；缺少 venv 或复制落后会使备份明确失败。可读 WebDAV 导出在 MySQL 正文清理后从私有 bucket 读取并重新校验摘要。必须做一次对象备份的离线恢复演练。
-7. **不要直接把 `content` 清空。** 恢复备份和可读导出改造必须先实际通过，完成异地恢复演练，并取得生产数据清理授权；同时确认 Linux2 的 MySQL 复制恢复正常。清理须逐批、有快照、有回退、每批重跑全量对象检查和真实 URL 验收。
+7. **不要直接把 `content` 清空。** 恢复备份和可读导出改造必须先实际通过，完成异地恢复演练，并取得生产数据清理授权；同时确认 Linux2 的 MySQL 复制恢复正常、两台 WAO 服务均已切换 S3-only。`reclaim_mysql_blobs.py` 默认只读统计可清理行数和字节数；`--apply --backup-manifest <已独立恢复的清单> --limit 25` 才逐件核对 MySQL、S3 和备份清单，再以 CAS 清空旧正文。每批重跑全量对象检查、复制状态检查和真实 URL 验收。MySQL 表空间不会因为清空 BLOB 立即缩小磁盘文件；后续物理表重建须另行评估维护窗口。
 
 Garage 官方部署说明：[三节点集群](https://garagehq.deuxfleurs.fr/documentation/cookbook/real-world/)。
