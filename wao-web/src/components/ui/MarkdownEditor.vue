@@ -1852,6 +1852,7 @@ onBeforeUnmount(() => {
       <button type="button" title="查找替换（Ctrl/⌘+F）" @click="findOpen = !findOpen"><i class="ri-search-line"></i></button>
       <button type="button" title="清除格式" @click="clearFormatting"><i class="ri-format-clear"></i></button>
       <button type="button" title="快捷键帮助（Ctrl/⌘+/）" @click="helpOpen = true"><i class="ri-question-line"></i></button>
+      <template v-if="$slots['toolbar-options']"><span class="tool-sep"></span><slot name="toolbar-options" /></template>
     </div>
     </div>
     </Teleport>

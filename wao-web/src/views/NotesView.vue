@@ -219,7 +219,7 @@ function stageIcon(stage: 'title' | 'image' | 'polish') { return { title: 'T', i
 function stageLabel(stage: 'title' | 'image' | 'polish') { return { title: '标题', image: '配图', polish: '润色' }[stage] }
 function progressVisible(id: string) {
   const steps = noteEnrichmentProgress[id]
-  return !!steps && !(steps.title === 'done' && steps.image === 'done' && (steps.polish === 'done' || steps.polish === 'skipped'))
+  return !!steps && !((steps.title === 'done' || steps.title === 'skipped') && (steps.image === 'done' || steps.image === 'skipped') && (steps.polish === 'done' || steps.polish === 'skipped'))
 }
 function retryOrStart(note: Doc) {
   if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) retryAutoNoteEnrichment(session.currentUser.id, note.id)
@@ -349,7 +349,7 @@ onMounted(() => void loadPins())
           @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
             <div v-if="noteEnrichmentProgress[note.id]" class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出进度">
-              <button v-for="stage in (['title', 'image', 'polish'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage]}`" :title="`${stageLabel(stage)}：${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${noteEnrichmentProgress[note.id]?.[stage] === 'failed' ? '失败，点击重试' : noteEnrichmentProgress[note.id]?.[stage] === 'running' ? '正在处理' : noteEnrichmentProgress[note.id]?.[stage] === 'done' ? '已完成' : '等待处理'}`" :aria-disabled="noteEnrichmentProgress[note.id]?.[stage] !== 'failed'" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
+              <button v-for="stage in (['title', 'image', 'polish'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage]}`" :title="`${stageLabel(stage)}：${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-disabled="noteEnrichmentProgress[note.id]?.[stage] !== 'failed'" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
             </div>
             <WeKnoraDocumentStatus v-if="data.apiLive" compact :state="knowledgeSync.states.value[note.id]" :error="knowledgeSync.error.value" @retry="knowledgeSync.refresh" />
             <div v-if="validPolish(note)" class="version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(note)" @click="versions[note.id] = 'polished'">润色</button><button type="button" :aria-pressed="!showPolished(note)" @click="versions[note.id] = 'original'">原文</button></div>

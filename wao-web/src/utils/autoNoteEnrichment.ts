@@ -13,7 +13,9 @@ export type NoteWorkflowProgress = { title: Step; image: Step; polish: Step; mes
 type AutoJob = {
   memberId: string; docId: string; rev: number
   titleRequestId: string; titleDone: boolean
+  titleEnabled?: boolean
   imageJobId?: string; imageDone: boolean
+  imageEnabled?: boolean
   polishRequestId?: string; polishDone?: boolean; polishEnabled?: boolean
   titleTerminalFailed?: boolean; polishTerminalFailed?: boolean; error?: string
 }
@@ -50,8 +52,8 @@ function load(memberId: string, docId: string): AutoJob | null {
 function progress(job: AutoJob, stage?: 'title' | 'image' | 'polish', state?: Step) {
   if (!activeJob(job)) return
   const snapshot: NoteWorkflowProgress = noteEnrichmentProgress[job.docId] ?? {
-    title: job.titleDone ? 'done' : 'pending',
-    image: job.imageDone ? 'done' : 'pending',
+    title: job.titleEnabled === false ? 'skipped' : job.titleDone ? 'done' : 'pending',
+    image: job.imageEnabled === false ? 'skipped' : job.imageDone ? 'done' : 'pending',
     polish: job.polishEnabled === false ? 'skipped' : job.polishDone ? 'done' : 'pending',
   }
   if (stage && state) snapshot[stage] = state
@@ -60,10 +62,13 @@ function progress(job: AutoJob, stage?: 'title' | 'image' | 'polish', state?: St
 }
 function finish(job: AutoJob) {
   try { localStorage.removeItem(keyOf(job.memberId, job.docId)) } catch { /* 已完成，无需重试。 */ }
-  try { localStorage.setItem(`${COMPLETE_PREFIX}${job.memberId}:${job.docId}`, job.polishEnabled === false ? 'skipped' : 'done') } catch { /* 页面内状态仍可见。 */ }
+  try { localStorage.setItem(`${COMPLETE_PREFIX}${job.memberId}:${job.docId}`, JSON.stringify({ title: job.titleEnabled === false ? 'skipped' : 'done', image: job.imageEnabled === false ? 'skipped' : 'done', polish: job.polishEnabled === false ? 'skipped' : 'done' })) } catch { /* 页面内状态仍可见。 */ }
   if (!activeJob(job)) return
+  const completed = [job.titleEnabled !== false && '标题', job.imageEnabled !== false && '配图', job.polishEnabled !== false && '润色'].filter(Boolean)
+  const completedLabel = completed.length > 1 ? `${completed.slice(0, -1).join('、')}和${completed[completed.length - 1]}` : completed[0] || ''
   noteEnrichmentStatus[job.docId] = job.polishEnabled === false
-    ? '标题和配图已生成，已按选择保留原文' : '标题、配图和润色已完成'
+    ? `${completedLabel}已生成，已按选择保留原文`
+    : `${completedLabel}已完成`
   progress(job, 'polish', job.polishEnabled === false ? 'skipped' : 'done')
 }
 
@@ -84,11 +89,11 @@ async function run(job: AutoJob) {
     const source = await fetchDoc(job.docId)
     if (!activeJob(job)) return
     const articleText = noteTextForPolish(resolvedRichContent(source).markdown)
-    if (!articleText) throw new Error('正文为空，无法生成标题、配图和润色版')
+    if (!articleText) throw new Error('正文为空，无法自动整理')
     if (data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
       throw new Error('小记有未保存编辑，请保存后重试；自动结果不会覆盖草稿')
     }
-    if (!job.titleDone) {
+    if (job.titleEnabled !== false && !job.titleDone) {
       stage = 'title'
       progress(job, stage, 'running')
       noteEnrichmentStatus[job.docId] = '正在生成标题…'
@@ -113,7 +118,7 @@ async function run(job: AutoJob) {
       save(job)
       progress(job, stage, 'done')
     }
-    if (!job.imageDone) {
+    if (job.imageEnabled !== false && !job.imageDone) {
       stage = 'image'
       progress(job, stage, 'running')
       noteEnrichmentStatus[job.docId] = '正在生成配图…'
@@ -187,7 +192,7 @@ async function run(job: AutoJob) {
       save(job)
       progress(job, stage, 'done')
     }
-    if (job.titleDone && job.imageDone && (job.polishDone || job.polishEnabled === false)) finish(job)
+    if ((job.titleDone || job.titleEnabled === false) && (job.imageDone || job.imageEnabled === false) && (job.polishDone || job.polishEnabled === false)) finish(job)
   } catch (cause) {
     if (!activeJob(job)) return
     job.error = cause instanceof Error ? cause.message : '自动整理失败'
@@ -220,17 +225,17 @@ export async function initializeNoteWorkflow(memberId: string) {
   if (activeMember === memberId && generation === loadGeneration) resumeAutoNoteEnrichment(memberId)
 }
 
-/** 保存新小记或编辑完成后启动；标题、配图可按已有结果跳过，润色可逐篇关闭。 */
+/** 保存新小记或编辑完成后启动；已有结果与三项自动整理开关逐篇保留。 */
 export function startAutoNoteEnrichment(memberId: string, docId: string, rev: number,
-    completed: { title?: boolean; image?: boolean; polishEnabled?: boolean } = {}) {
+    completed: { title?: boolean; titleEnabled?: boolean; image?: boolean; imageEnabled?: boolean; polishEnabled?: boolean } = {}) {
   if (!memberId || load(memberId, docId)) return
   activateNoteWorkflowMember(memberId)
   discarded.delete(keyOf(memberId, docId))
   try { localStorage.removeItem(`${COMPLETE_PREFIX}${memberId}:${docId}`) } catch { /* 非关键状态。 */ }
   delete noteEnrichmentProgress[docId]
   const job: AutoJob = {
-    memberId, docId, rev, titleRequestId: newPolishRequestId(), titleDone: !!completed.title,
-    imageDone: !!completed.image, polishEnabled: completed.polishEnabled !== false,
+    memberId, docId, rev, titleRequestId: newPolishRequestId(), titleDone: !!completed.title, titleEnabled: completed.titleEnabled !== false,
+    imageDone: !!completed.image, imageEnabled: completed.imageEnabled !== false, polishEnabled: completed.polishEnabled !== false,
   }
   save(job)
   progress(job)
@@ -246,8 +251,13 @@ export function resumeAutoNoteEnrichment(memberId: string) {
       const key = localStorage.key(i)
       if (key?.startsWith(`${COMPLETE_PREFIX}${memberId}:`)) {
         const docId = key.slice(`${COMPLETE_PREFIX}${memberId}:`.length)
-        if (!noteEnrichmentProgress[docId]) noteEnrichmentProgress[docId] = {
-          title: 'done', image: 'done', polish: localStorage.getItem(key) === 'done' ? 'done' : 'skipped',
+        if (!noteEnrichmentProgress[docId]) {
+          const value = localStorage.getItem(key) || ''
+          const completed = value.startsWith('{') ? JSON.parse(value) as { title?: Step; image?: Step; polish?: Step } : null
+          noteEnrichmentProgress[docId] = {
+            title: completed?.title === 'skipped' ? 'skipped' : 'done', image: completed?.image === 'skipped' ? 'skipped' : 'done',
+            polish: (completed?.polish ?? value) === 'done' ? 'done' : 'skipped',
+          }
         }
       }
       if (!key?.startsWith(`${PREFIX}${memberId}:`)) continue
@@ -266,19 +276,19 @@ export async function retryAutoNoteEnrichment(memberId: string, docId: string) {
     if (!activeJob(job)) return
     if (latest.rev !== undefined && latest.rev !== job.rev) {
       job.rev = latest.rev
-      if (!job.titleDone) job.titleRequestId = newPolishRequestId()
-      if (!job.imageDone) job.imageJobId = undefined
+      if (job.titleEnabled !== false && !job.titleDone) job.titleRequestId = newPolishRequestId()
+      if (job.imageEnabled !== false && !job.imageDone) job.imageJobId = undefined
       if (!job.polishDone) job.polishRequestId = newPolishRequestId()
     }
   } catch {
     noteEnrichmentStatus[docId] = '读取小记失败，保存的内容未变；请再次重试'
     return
   }
-  if (!job.titleDone && (job.titleTerminalFailed || job.error?.includes('已被修改'))) job.titleRequestId = newPolishRequestId()
+  if (job.titleEnabled !== false && !job.titleDone && (job.titleTerminalFailed || job.error?.includes('已被修改'))) job.titleRequestId = newPolishRequestId()
   if (!job.polishDone && (job.polishTerminalFailed || job.error?.includes('已变化'))) job.polishRequestId = newPolishRequestId()
   job.error = undefined
   save(job)
-  progress(job, !job.titleDone ? 'title' : !job.imageDone ? 'image' : 'polish', 'pending')
+  progress(job, job.titleEnabled !== false && !job.titleDone ? 'title' : job.imageEnabled !== false && !job.imageDone ? 'image' : 'polish', 'pending')
   void run(job)
 }
 
