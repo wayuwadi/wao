@@ -469,6 +469,7 @@ describe('HomeView AI 控制台', () => {
     vi.useRealTimers()
     sessionStorage.clear()
     localStorage.clear()
+    delete (Element.prototype as { scrollIntoView?: Element['scrollIntoView'] }).scrollIntoView
   })
 
   it('首屏不再展示已要求删除的 AI 说明段落', async () => {
@@ -481,16 +482,29 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('AI Run 默认收起，展开和再次收起保留目标草稿', async () => {
+  it('普通首页隐藏底部入口，控制台直达链接仍可打开并保留目标草稿', async () => {
     vi.useFakeTimers()
-    const { wrapper } = mountHome()
+    const { wrapper, router } = mountHome()
     await flushPromises()
+    expect(wrapper.find('.start-guide').exists()).toBe(false)
+    expect(wrapper.find('.mcp-card').exists()).toBe(false)
+    expect(wrapper.find('.ai-entry').exists()).toBe(false)
     expect(wrapper.get('#home-ai-area').isVisible()).toBe(false)
     wrapper.findComponent(MarkdownEditor).vm.$emit('update:modelValue', '保留本地目标')
-    await wrapper.get('.ai-entry button').trigger('click')
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
+    await router.push('/?console=runs')
+    await flushPromises()
     expect((wrapper.get('#home-ai-area').element as HTMLElement).style.display).not.toBe('none')
     expect(wrapper.get('.ai-entry button').attributes('aria-expanded')).toBe('true')
     await wrapper.get('.ai-entry button').trigger('click')
+    expect(wrapper.get('#home-ai-area').isVisible()).toBe(false)
+    expect(wrapper.find('.ai-entry').exists()).toBe(false)
+    await router.push('/#ai-launcher')
+    await flushPromises()
+    expect(wrapper.get('#home-ai-area').isVisible()).toBe(true)
+    await router.push('/')
+    await flushPromises()
+    expect(wrapper.find('.ai-entry').exists()).toBe(false)
     expect(wrapper.get('#home-ai-area').isVisible()).toBe(false)
     expect(wrapper.find('.goal-launcher').exists()).toBe(true)
     expect(wrapper.findComponent(MarkdownEditor).props('modelValue')).toBe('保留本地目标')
