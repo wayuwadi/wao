@@ -405,12 +405,8 @@ deploy_cloud() {
 }
 
 # 只上传与安装不可变制品，不改变线上入口；可以和节点部署并行。
-stage_cloud() {
-  # Stage verified immutable assets before changing the public entry page.
+stage_slave_static() {
   # A disabled/offline slave never receives an incomplete release advertisement.
-  python3 deploy/scripts/static-release.py pack wao-web/dist "$WAO_RUN_TEMP/wao-static.tgz" "$WAO_GIT_SHA" || return
-  python3 deploy/scripts/static-release.py install "$WAO_RUN_TEMP/wao-static.tgz" \
-    "${JENKINS_HOME:-/var/lib/jenkins}/wao-static/releases" "$WAO_GIT_SHA" || return
   if [ "$slave_available" = true ]; then
     retry_remote "从节点静态目录" ssh -o ConnectTimeout=15 wao-slave \
       'install -d "$HOME/deploy/wao-public-edge/releases" "$HOME/deploy/wao-public-edge/incoming"' || return
@@ -420,6 +416,9 @@ stage_cloud() {
     retry_remote "从节点静态校验" ssh -o ConnectTimeout=15 wao-slave \
       "python3 deploy/wao-public-edge/incoming/static-release.py install deploy/wao-public-edge/incoming/wao-static.tgz deploy/wao-public-edge/releases '$WAO_GIT_SHA'" || return
   fi
+}
+
+stage_cloud_static() {
   retry_remote "云静态制品" scp -o ConnectTimeout=15 \
     "$WAO_RUN_TEMP/wao-static.tgz" deploy/scripts/static-release.py \
     deploy/scripts/publish-static-routing.py wao-cloud:/tmp/ || return
@@ -427,11 +426,9 @@ stage_cloud() {
     "python3 /tmp/static-release.py install /tmp/wao-static.tgz /var/www/wao/releases '$WAO_GIT_SHA'" || return
   retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" '
     set -eu
-    install -d /tmp/wao-dist /tmp/wao-agent-dist
-    find /tmp/wao-dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    install -d /tmp/wao-agent-dist
     find /tmp/wao-agent-dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
   ' || return
-  retry_remote "云前端" scp -o ConnectTimeout=15 -r wao-web/dist/. "wao-cloud:/tmp/wao-dist/" || return
   retry_remote "云前端" scp -o ConnectTimeout=15 -r agent-web/dist/. "wao-cloud:/tmp/wao-agent-dist/" || return
   retry_remote "云前端" scp -o ConnectTimeout=15 \
     deploy/nginx/wao.wayuwa.cn.conf.template \
@@ -441,6 +438,24 @@ stage_cloud() {
     deploy/scripts/ensure-jumpserver-certificate.sh \
     deploy/scripts/set-nginx-upstream-state.sh \
     "wao-cloud:/tmp/"
+}
+
+# 两台边缘节点使用同一份已校验静态归档；打包后并行传输，避免反向隧道
+# 与云端上传相互等待。公共入口仍由 activate_cloud 在应用就绪后切换。
+stage_cloud() {
+  local slave_pid cloud_pid slave_result=0 cloud_result=0
+  python3 deploy/scripts/static-release.py pack wao-web/dist "$WAO_RUN_TEMP/wao-static.tgz" "$WAO_GIT_SHA" || return
+  python3 deploy/scripts/static-release.py install "$WAO_RUN_TEMP/wao-static.tgz" \
+    "${JENKINS_HOME:-/var/lib/jenkins}/wao-static/releases" "$WAO_GIT_SHA" || return
+  (started_at="$(date +%s)"; stage_slave_static; result=$?;
+    printf 'slave-static elapsed=%ss result=%s\n' "$(($(date +%s) - started_at))" "$result";
+    exit "$result") & slave_pid=$!
+  (started_at="$(date +%s)"; stage_cloud_static; result=$?;
+    printf 'cloud-static elapsed=%ss result=%s\n' "$(($(date +%s) - started_at))" "$result";
+    exit "$result") & cloud_pid=$!
+  wait "$slave_pid" || slave_result=$?
+  wait "$cloud_pid" || cloud_result=$?
+  [ "$slave_result" -eq 0 ] && [ "$cloud_result" -eq 0 ]
 }
 
 # 切换公网网页与 Nginx 配置；必须在两台应用节点都就绪后执行。
@@ -516,8 +531,11 @@ activate_cloud() {
     install -d /var/www/wao/dist
     # Keep legacy hashed chunks for already-open pages. Publish entry HTML last.
     # Old immutable releases are retained until an explicit retention policy.
-    find /tmp/wao-dist -mindepth 1 -maxdepth 1 ! -name index.html -exec cp -a -- {} /var/www/wao/dist/ \;
-    install -m 0644 /tmp/wao-dist/index.html /var/www/wao/dist/.index.html.next
+    release_dir=/var/www/wao/releases/'"$WAO_GIT_SHA"'
+    test -f "$release_dir/index.html"
+    find "$release_dir" -mindepth 1 -maxdepth 1 ! -name index.html \
+      ! -name release-manifest.json -exec cp -a -- {} /var/www/wao/dist/ \;
+    install -m 0644 "$release_dir/index.html" /var/www/wao/dist/.index.html.next
     mv -f /var/www/wao/dist/.index.html.next /var/www/wao/dist/index.html
     install -d /var/www/wao-agent/dist
     find /var/www/wao-agent/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
