@@ -49,8 +49,7 @@ def provision(kb_id, tenant_id, owner_id, private_file):
         WHERE k.id='{kb_id}' AND k.tenant_id={int(tenant_id)}
         AND m.user_id='{owner_id}' AND m.role='owner'
         AND k.deleted_at IS NULL
-        AND (k.indexing_strategy->>'wiki_enabled')::boolean=true
-        AND (k.indexing_strategy->>'vector_enabled')::boolean=false)
+        AND (k.indexing_strategy->>'wiki_enabled')::boolean=true)
       THEN RAISE EXCEPTION 'Target / ownership / Wiki mode validation failed'; END IF;
     END $$;
     INSERT INTO tenant_api_keys(tenant_id,scope_type,name,key_hash,api_key,full_access,knowledge_base_ids,capabilities,created_at,updated_at)
