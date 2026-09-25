@@ -25,14 +25,15 @@ public class WeKnoraClient {
         this.json=json; this.base=base.replaceAll("/$", "");
         this.http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NEVER).build();
     }
-    /** 验证目标确为禁用向量、启用 Wiki 的独立知识库，返回不含凭据的状态。 */
+    /** 验证目标是启用 Wiki 的独立知识库，允许同时启用向量索引。 */
     public Map<String,Object> check(Connection c) {
         JsonNode kb=request(c,"GET","/knowledge-bases/"+c.kbId,null).path("data");
         if (!c.kbId.equals(kb.path("id").asText())) throw new IllegalArgumentException("目标知识库不可访问");
         JsonNode indexing=kb.path("indexing_strategy");
-        if (!indexing.path("wiki_enabled").asBoolean(false) || indexing.path("vector_enabled").asBoolean(false))
-            throw new IllegalArgumentException("当前同步需要独立的 Wiki-only 知识库，请关闭 RAG 并启用 Wiki");
-        return Map.of("name",kb.path("name").asText(),"id",c.kbId,"mode","Wiki-only");
+        if (!indexing.path("wiki_enabled").asBoolean(false))
+            throw new IllegalArgumentException("当前同步需要启用 Wiki 的独立知识库");
+        String mode=indexing.path("vector_enabled").asBoolean(false)?"Wiki+Vector":"Wiki-only";
+        return Map.of("name",kb.path("name").asText(),"id",c.kbId,"mode",mode);
     }
     /** 完整分页读取远端清单，异常或不完整分页必须失败关闭。 */
     public List<JsonNode> list(Connection c) {

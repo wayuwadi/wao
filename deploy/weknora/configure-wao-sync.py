@@ -25,8 +25,8 @@ def configure(owner, modules, private_file):
     request=urllib.request.Request('http://127.0.0.1:18780/api/v1/knowledge-bases/'+p['kbId'],headers={'X-API-Key':p['apiKey']})
     with urllib.request.urlopen(request,timeout=15) as response:
         kb=json.load(response)['data']
-    if not kb['indexing_strategy'].get('wiki_enabled') or kb['indexing_strategy'].get('vector_enabled'):
-        raise SystemExit('Target is not Wiki-only')
+    if not kb['indexing_strategy'].get('wiki_enabled'):
+        raise SystemExit('Target must enable Wiki')
     e=dict(x.split('=',1) for x in json.loads(subprocess.check_output(['docker','inspect','wao-master-wao-server-1']))[0]['Config']['Env'])
     vault_key=base64.b64decode(e.get('WAO_VAULT_KEY') or e.get('VAULT_KEY') or '')
     if len(vault_key)!=32:raise SystemExit('WAO vault key is missing')

@@ -14,9 +14,13 @@ class WeKnoraClientTest {
     private final WeKnoraClient.Connection connection=new WeKnoraClient.Connection("test-kb","test-key");
     @BeforeEach void setUp()throws Exception{server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);server.start();client=new WeKnoraClient(new ObjectMapper(),"http://127.0.0.1:"+server.getAddress().getPort());}
     @AfterEach void close(){server.stop(0);}
-    @Test void usesScopedKeyAndRealIndexingContract() {
-        server.createContext("/knowledge-bases/test-kb",e->{assertEquals("test-key",e.getRequestHeaders().getFirst("X-API-Key"));assertNull(e.getRequestHeaders().getFirst("Authorization"));byte[] b="{\"success\":true,\"data\":{\"id\":\"test-kb\",\"name\":\"同步库\",\"indexing_strategy\":{\"wiki_enabled\":true,\"vector_enabled\":false}}}".getBytes(StandardCharsets.UTF_8);e.sendResponseHeaders(200,b.length);e.getResponseBody().write(b);e.close();});
-        assertEquals("Wiki-only",client.check(connection).get("mode"));
+    @Test void acceptsWikiWithVectorIndexAndScopedKey() {
+        server.createContext("/knowledge-bases/test-kb",e->{assertEquals("test-key",e.getRequestHeaders().getFirst("X-API-Key"));assertNull(e.getRequestHeaders().getFirst("Authorization"));byte[] b="{\"success\":true,\"data\":{\"id\":\"test-kb\",\"name\":\"同步库\",\"indexing_strategy\":{\"wiki_enabled\":true,\"vector_enabled\":true}}}".getBytes(StandardCharsets.UTF_8);e.sendResponseHeaders(200,b.length);e.getResponseBody().write(b);e.close();});
+        assertEquals("Wiki+Vector",client.check(connection).get("mode"));
+    }
+    @Test void rejectsKnowledgeBaseWithoutWiki() {
+        server.createContext("/knowledge-bases/test-kb",e->{byte[] b="{\"success\":true,\"data\":{\"id\":\"test-kb\",\"name\":\"同步库\",\"indexing_strategy\":{\"wiki_enabled\":false,\"vector_enabled\":true}}}".getBytes(StandardCharsets.UTF_8);e.sendResponseHeaders(200,b.length);e.getResponseBody().write(b);e.close();});
+        assertThrows(IllegalArgumentException.class,()->client.check(connection));
     }
     @Test void ambiguousPostIsNotRetriedAndServerSecretsAreNotReturned() {
         AtomicInteger count=new AtomicInteger();
