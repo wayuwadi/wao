@@ -21,6 +21,8 @@ fi
 is_policy=false
 is_token=false
 is_image=false
+output_file=''
+write_out=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     */api/public/notification-settings/jenkins-*)
@@ -32,6 +34,11 @@ while [ "$#" -gt 0 ]; do
       ;;
     */auth/v3/tenant_access_token/internal) is_token=true ;;
     */im/v1/images) is_image=true ;;
+    --output|--write-out)
+      option="$1"
+      shift
+      if [ "$option" = --output ]; then output_file="$1"; else write_out="$1"; fi
+      ;;
     image=@*)
       image_path="${1#image=@}"
       image_path="${image_path%%;*}"
@@ -51,15 +58,26 @@ if [ "$is_policy" = true ]; then
   exit 0
 fi
 if [ "$is_token" = true ]; then
-  printf '%s' '{"code":0,"tenant_access_token":"test-token"}'
+  response='{"code":0,"tenant_access_token":"test-token"}'
+  status=200
+  if [ "${WAO_TEST_TOKEN_FAIL:-false}" = true ]; then
+    response='{"code":10003,"msg":"invalid credentials"}'
+    status=400
+  fi
+  if [ -n "$output_file" ]; then printf '%s' "$response" >"$output_file"; else printf '%s' "$response"; fi
+  if [ -n "$write_out" ]; then printf '%s' "$status"; fi
   exit 0
 fi
 if [ "$is_image" = true ]; then
+  status=200
   if [ "${WAO_TEST_IMAGE_UPLOAD_FAIL:-false}" = true ]; then
-    printf '%s' '{"code":234001,"msg":"failed"}'
+    response='{"code":99991672,"msg":"Access denied. One of the following scopes is required: [im:resource:upload, im:resource]"}'
+    status=400
   else
-    printf '%s' '{"code":0,"data":{"image_key":"img_test_release"}}'
+    response='{"code":0,"data":{"image_key":"img_test_release"}}'
   fi
+  if [ -n "$output_file" ]; then printf '%s' "$response" >"$output_file"; else printf '%s' "$response"; fi
+  if [ -n "$write_out" ]; then printf '%s' "$status"; fi
   exit 0
 fi
 if [ "${WAO_TEST_WEBHOOK_REJECT_IMAGE:-false}" = true ] \
@@ -233,10 +251,26 @@ PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
   WAO_PIPELINE_RESULT=success WAO_MASTER_PROJECT_ROOT="$fixture/master" \
   WAO_RUN_TEMP="$fixture/run" WAO_DEPLOY_REQUIRED=true DEPLOY_PRODUCTION=true \
   WAO_GIT_SHA=abcdef1234567890 WAO_COMMIT_MESSAGE='- fix(deploy): 修复发布结果判定' \
-  BUILD_NUMBER=324 sh "$project_root/deploy/jenkins/notify-feishu.sh"
+  BUILD_NUMBER=324 sh "$project_root/deploy/jenkins/notify-feishu.sh" \
+  2>"$fixture/image-error.log"
 assert_json '.card.header.title.content == "WAO 生产发布 ✅ 成功"'
 assert_json '.card.elements | length == 2'
 assert_json '.card.elements[1].actions | length == 1'
+grep -Fq 'HTTP 400, code 99991672' "$fixture/image-error.log"
+grep -Fq 'im:resource:upload or im:resource' "$fixture/image-error.log"
+! grep -Fq 'test-token' "$fixture/image-error.log"
+
+# 令牌接口返回 HTTP 400 时同样保留原通知，并只输出非敏感错误码。
+PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
+  WAO_TEST_TOKEN_FAIL=true WAO_PIPELINE_RESULT=success \
+  WAO_MASTER_PROJECT_ROOT="$fixture/master" WAO_RUN_TEMP="$fixture/run" \
+  WAO_DEPLOY_REQUIRED=true DEPLOY_PRODUCTION=true \
+  WAO_GIT_SHA=abcdef1234567890 WAO_COMMIT_MESSAGE='- fix(deploy): 修复发布结果判定' \
+  BUILD_NUMBER=326 sh "$project_root/deploy/jenkins/notify-feishu.sh" \
+  2>"$fixture/token-error.log"
+assert_json '.card.elements | length == 2'
+grep -Fq 'Feishu token request failed (HTTP 400, code 10003)' "$fixture/token-error.log"
+! grep -Fq 'cli_test_secret' "$fixture/token-error.log"
 
 # 飞书明确拒绝带图卡时，重试一次原成功卡；网络未知状态不在这里模拟。
 PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \

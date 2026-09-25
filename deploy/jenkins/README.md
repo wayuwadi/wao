@@ -157,6 +157,8 @@ MySQL、JumpServer 和部署恢复材料一起加密上传到 123 云盘。外�
 
 生产成功卡现在附一张批次发布图：从实际提交标题摘取最多三项改动，功能 scope 能在同一提交的浏览器路由找到时才写页面入口，并提供首个功能的直达按钮。纯修复/部署批次仍有图，但不虚构功能入口；无需部署、影子构建和失败卡保持原样。图片经既有 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 上传至飞书，使用 `image_key` 嵌入原 Webhook 成功卡。应用凭据或图片服务不可用时只发原文字卡，不能影响发布结论或失败告警。图片实际显示需在飞书客户端核对，Webhook 成功响应只能证明消息被接受。
 
+图片上传需要同一飞书自建应用具有 `im:resource:upload` 或 `im:resource` 权限，并将包含该权限的应用版本发布。2026-09-25 真实生产通知的令牌请求返回 HTTP 200 / code 0，图片上传返回 HTTP 400 / code 99991672；因此缺图时先看构建末尾的 `Feishu image upload failed (HTTP ..., code ...)`，不要把成功文字卡误认为图片已投递。通知日志只输出 HTTP 状态和飞书错误码，不输出应用凭据、令牌或完整响应。开通权限后，以一次真实成功构建及飞书群内图片显示为最终验收。
+
 渲染器使用随仓库交付的 Java 17 JAR 与子集化中文字体，Jenkins 主机已有的 Java 21 JRE 即可运行。修改 `ReleasePoster.java` 后用 JDK 17 或更新版本运行 `sh deploy/jenkins/build-release-poster.sh` 并同时提交更新后的 JAR；字体许可见 `deploy/jenkins/fonts/OFL.txt`。运行 `sh deploy/jenkins/test-notify-feishu.sh` 可在不发群消息的情况下检查图片生成、上传和降级路径。
 
 ## 浏览器快路径（ADR-265）
