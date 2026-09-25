@@ -298,7 +298,6 @@ prepare_slave_images() {
     "wao-server:$WAO_GIT_SHA" \
     "wao-agent-server:$WAO_GIT_SHA" \
     "wao-gateway:$WAO_GIT_SHA" \
-    "wao-codex-egress-proxy:$WAO_GIT_SHA" \
     mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
     image_id="$(docker image inspect --format '{{.Id}}' "$image")" || return 1
     [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1

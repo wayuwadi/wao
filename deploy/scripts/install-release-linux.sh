@@ -79,10 +79,10 @@ if [ "${images_path}" != - ]; then gzip -t "${images_path}"; fi
 if [ "${images_path}" != - ]; then gzip -dc "${images_path}" | docker load; fi
 
 if [ -n "${image_manifest_path}" ]; then
-  test "$(wc -l <"${image_manifest_path}" | tr -d ' ')" = 7
+  test "$(wc -l <"${image_manifest_path}" | tr -d ' ')" = 6
   for expected_image in \
     "wao-server:${image_tag}" "wao-agent-server:${image_tag}" \
-    "wao-gateway:${image_tag}" "wao-codex-egress-proxy:${image_tag}" \
+    "wao-gateway:${image_tag}" \
     mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
     manifest_id="$(awk -v image="${expected_image}" '$1 == image { print $2 }' "${image_manifest_path}")"
     printf '%s' "${manifest_id}" | grep -Eq '^sha256:[0-9a-f]{64}$'

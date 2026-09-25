@@ -74,7 +74,7 @@ image_id="sha256:$(printf '%064d' 1)"
 manifest="${input_root}/images.txt"
 for image in \
   wao-server:abc1234 wao-agent-server:abc1234 \
-  wao-gateway:abc1234 wao-codex-egress-proxy:abc1234 \
+  wao-gateway:abc1234 \
   mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
   printf '%s %s\n' "$image" "$image_id" >>"$manifest"
 done
@@ -88,7 +88,7 @@ PATH="${fake_bin}:${PATH}" WAO_INSTALL_TEST_LOG="${log_file}" \
     "${input_root}/shared.env" "${input_root}/gateway.p12" \
     - abc1234 '' "${target_root}" "$manifest"
 test ! -e "$manifest"
-test "$(grep -c '^docker tag ' "$log_file")" = 7
+test "$(grep -c '^docker tag ' "$log_file")" = 6
 test "$(grep -c '^docker load$' "$log_file")" = 1
 
 tar -czf "${input_root}/release.tgz" -C "${release_root}" .

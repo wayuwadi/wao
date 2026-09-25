@@ -64,7 +64,8 @@ SH
 FIXTURE="$fixture" bash "$fixture/run.sh"
 test "$(wc -l <"$fixture/ssh.log" | tr -d ' ')" = 1
 test ! -e "$fixture/wao-images.tar.gz"
-test "$(wc -l <"$fixture/wao-image-manifest.txt" | tr -d ' ')" = 7
+test "$(wc -l <"$fixture/wao-image-manifest.txt" | tr -d ' ')" = 6
+! grep -q 'wao-codex-egress-proxy' "$fixture/wao-image-manifest.txt"
 
 FIXTURE="$fixture" REUSE=true bash "$fixture/run.sh"
 test ! -e "$fixture/wao-images.tar.gz"
