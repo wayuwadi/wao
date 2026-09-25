@@ -317,8 +317,8 @@ button:disabled { opacity: .5; cursor: default; }
 .editor-space { flex: 1; min-height: 0; display: flex; }
 .editor-space :deep(.md) { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .editor-space :deep(.md-editor-wrap) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.editor-space :deep(.md-body) { flex: 1; min-height: 0 !important; overflow: auto; display: flex; flex-direction: column; }
-.editor-space :deep(.tiptap) { flex: 1; cursor: text; }
+.editor-space :deep(.md-body) { flex: 1 1 0; min-height: 0 !important; overflow: auto; display: flex; flex-direction: column; cursor: text; }
+.editor-space :deep(.tiptap) { flex: 1 0 auto; min-height: 100%; box-sizing: border-box; cursor: text; }
 .note-composer:not(.inline) .editor-space :deep(.article-footer button) { min-height: 34px; padding: 6px 10px; font-size: 12px; }
 .new-tag-form { display: flex; flex-wrap: wrap; gap: 7px; width: 100%; }
 .new-tag-form input { min-width: 0; flex: 1; border: 1px solid var(--wao-line-control); border-radius: 6px; padding: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); }

@@ -65,6 +65,18 @@ async function mountEditor(props: {
   return w
 }
 
+describe('编辑区空白处', () => {
+  it('点击正文下方空白处会聚焦可编辑节点', async () => {
+    const wrapper = await mountEditor({ modelValue: '' })
+    const body = wrapper.get('.md-body')
+    expect(document.activeElement).not.toBe(wrapper.get('.tiptap').element)
+    await body.trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(document.activeElement).toBe(wrapper.get('.tiptap').element)
+    wrapper.unmount()
+  })
+})
+
 describe('文章总览配图', () => {
   it('根据正文生成图片并插入开头，保留原文', async () => {
     vi.mocked(fetchPreference).mockResolvedValue('')
