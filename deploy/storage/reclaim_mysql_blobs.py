@@ -10,9 +10,11 @@ manifest before its MySQL body is cleared with a compare-and-set update.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 from pathlib import Path
+import subprocess
 
 from archive_original_png import verify_remote
 from migrate_assets import (TABLES, database, digest, object_client,
@@ -25,6 +27,24 @@ def load_manifest(path: Path, bucket: str) -> dict:
             or not isinstance(manifest.get("objects"), dict)):
         raise RuntimeError("Backup manifest is missing, invalid or from another bucket")
     return manifest["objects"]
+
+
+def acquire_asset_lock(path: Path):
+    handle = path.open("a")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise RuntimeError("An image maintenance or object backup run is active") from None
+    return handle
+
+
+def verify_backup_source() -> None:
+    result = subprocess.run(
+        ["python3", "/usr/local/lib/wao-backup/verify-backup-source.py"],
+        capture_output=True, check=False, timeout=45)
+    if result.returncode:
+        raise RuntimeError("WAO writer and return replica are not verified")
 
 
 def clear_one(db, client, bucket: str, backup: dict, table: str, asset_id: str,
@@ -86,6 +106,18 @@ def main() -> int:
                        or os.getenv("WAO_STORAGE_RETAIN_MYSQL") != "false"):
         parser.error("--apply requires S3-only runtime settings after both WAO nodes have switched")
 
+    lock = None
+    if args.apply:
+        lock = acquire_asset_lock(Path(os.getenv(
+            "WAO_IMAGE_BACKUP_LOCK_FILE", "/run/lock/wao-image-backup.lock")))
+    try:
+        return run(args)
+    finally:
+        if lock is not None:
+            lock.close()
+
+
+def run(args) -> int:
     db = database()
     try:
         with db.cursor() as cursor:
@@ -93,6 +125,8 @@ def main() -> int:
             role = cursor.fetchone()
         if args.apply and (role["read_only"] or role["super_read_only"]):
             raise RuntimeError("Refusing to clear a read-only MySQL replica")
+        if args.apply:
+            verify_backup_source()
         client = object_client() if args.apply else None
         bucket = required("WAO_STORAGE_BUCKET") if args.apply else ""
         backup = load_manifest(args.backup_manifest, bucket) if args.apply else {}

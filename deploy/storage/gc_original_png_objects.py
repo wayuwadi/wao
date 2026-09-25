@@ -9,7 +9,6 @@ readback of both the permanent original PNG archive and online WebP.
 from __future__ import annotations
 
 import argparse
-import fcntl
 from pathlib import Path
 import os
 import subprocess
@@ -20,22 +19,12 @@ from botocore.exceptions import ClientError
 from archive_original_png import archive_key, download_original
 from migrate_assets import (database, digest, object_client,
                             pixel_equivalent_png_webp, required)
-from reclaim_mysql_blobs import load_manifest
+from reclaim_mysql_blobs import acquire_asset_lock, load_manifest
 from webdav_client import build_client
 
 
 def missing_object(error: ClientError) -> bool:
     return error.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404
-
-
-def acquire_asset_lock(path: Path):
-    handle = path.open("a")
-    try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        handle.close()
-        raise RuntimeError("An image maintenance or object backup run is active") from None
-    return handle
 
 
 def gc_one(db, s3, bucket: str, backup: dict, webdav, passphrase: Path,

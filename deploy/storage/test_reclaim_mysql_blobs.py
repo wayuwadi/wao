@@ -1,15 +1,20 @@
 import io
 from hashlib import sha256
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
 from migrate_assets import lossless_webp
-from reclaim_mysql_blobs import clear_one
+from reclaim_mysql_blobs import clear_one, verify_backup_source
 
 
 class ReclaimSafetyTest(unittest.TestCase):
+    def test_rejects_unverified_writer_or_return_replica(self):
+        with patch("reclaim_mysql_blobs.subprocess.run", return_value=MagicMock(returncode=1)):
+            with self.assertRaisesRegex(RuntimeError, "not verified"):
+                verify_backup_source()
+
     def setUp(self):
         self.data = b"original image bytes"
         self.hash = sha256(self.data).hexdigest()
