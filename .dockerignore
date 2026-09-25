@@ -5,6 +5,7 @@
 **/target
 **/node_modules
 wao-web
+agent-web
 deploy/.env
 deploy/certs
 deploy/backups

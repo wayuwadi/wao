@@ -148,8 +148,7 @@ pipeline {
                 expression { env.WAO_DEPLOY_REQUIRED == 'true' }
             }
             steps {
-                sh 'deploy/jenkins/ci-build-frontends.sh'
-                sh 'deploy/jenkins/ci-package.sh'
+                sh 'deploy/jenkins/ci-build-release.sh'
             }
             post {
                 failure {
