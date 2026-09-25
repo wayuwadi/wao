@@ -42,7 +42,12 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(38);
+        assertThat(service.getRegistry().menus()).hasSize(39);
+        assertThat(service.getRegistry().menus()).filteredOn(menu -> "ledger".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("账务本");
+                    assertThat(menu.group()).isEqualTo("PERSONAL");
+                });
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "chatgpt".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("ChatGPT对话");
@@ -102,7 +107,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(38);
+        assertThat(service.getRegistry().menus()).hasSize(39);
     }
 
     @Test
@@ -145,9 +150,9 @@ class BuiltinMenuRegistryServiceTest {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY))
                 .thenReturn(new ObjectMapper().writeValueAsString(saved));
         var oldClient = new ArrayList<>(stored);
-        oldClient.removeIf(menu -> "pet-world".equals(menu.id()));
+        oldClient.removeIf(menu -> "pet-world".equals(menu.id()) || "ledger".equals(menu.id()));
         var restored = service.saveRegistry(new SaveBuiltinMenuRegistryRequest(oldClient));
-        assertThat(restored.menus()).hasSize(38);
+        assertThat(restored.menus()).hasSize(39);
         assertThat(restored.menus()).filteredOn(menu -> "pet-world".equals(menu.id())).singleElement().satisfies(menu -> {
             assertThat(menu.label()).isEqualTo("我的庭院");
             assertThat(menu.visible()).isTrue();
@@ -193,7 +198,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(38);
+        assertThat(upgraded.menus()).hasSize(39);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("工作台");

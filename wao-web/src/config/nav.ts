@@ -284,6 +284,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/workspaces',
   },
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
+  ledger: { id: 'ledger', label: '账务本', icon: 'ri-money-cny-circle-line', path: '/ledger' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
 export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
@@ -477,6 +478,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
+      id: 'ledger',
+      label: '账务本',
+      icon: 'ri-money-cny-circle-line',
+      group: 'PERSONAL',
+      order: 61,
+      visible: false,
+    },
+    {
       id: 'tianren',
       label: '天人一卦',
       icon: 'ri-compass-3-line',
@@ -592,6 +601,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
   'vocabulary',
   'drawings',
   'vault',
+  'ledger',
   'tianren',
 ]
 

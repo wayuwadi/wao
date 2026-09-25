@@ -63,6 +63,7 @@ export type ModuleId =
   | 'memory'
   | 'workspaces'
   | 'vault'
+  | 'ledger'
   | 'settings'
 
 /** 页签种类：模块页 / 项目详情 / 知识库详情。 */
