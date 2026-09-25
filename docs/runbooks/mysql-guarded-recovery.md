@@ -75,9 +75,21 @@ Linux2 在已切换后离线：WAO 可继续使用 Linux1，但另外三个库�
 
 2026-09-21 首次实机接管中，Linux1 本地初始化 GTID 被回放到已围栏的 Linux2，清空旧 WAO 副本表，随后回放会话表事务失败。Linux1 权威数据仍完整，其他三个库未停止。原隔离演练没有构造这种历史，不能据此证明实际初始化历史安全。
 
-处理时立即停止返回通道并保持旧 WAO 账号锁定，从新主生成 `--single-transaction --source-data=2 --set-gtid-purged=ON --databases wao` 一致性快照，校验传输 SHA-256 后仅恢复旧实例的 WAO 库。恢复必须完整成功，再计算快照 GTID 与旧实例已执行集的差集；仅确认已由完整快照涵盖的差集才能纳入已执行历史，随后恢复复制。不得跳过未知失败事务，不得清除整实例 GTID，也不得重置其他三个库。
+处理时立即停止返回通道并保持旧 WAO 账号锁定，从新主生成 `--single-transaction --source-data=2 --set-gtid-purged=COMMENTED --add-drop-database --databases wao` 一致性快照，校验传输 SHA-256 后仅恢复旧实例的 WAO 库。`COMMENTED` 保留快照 GTID 和恢复会话的 `sql_log_bin=0`，但不会自动把与现有三库写入历史重叠的整套 GTID 应用到 Linux2。恢复必须完整成功，再计算快照 GTID 与 Linux2 已执行集的差集；仅确认已由完整快照涵盖且目标尚未执行的差集才能追加到 `gtid_purged`，随后恢复复制。不得跳过未知失败事务，不得清除整实例 GTID，也不得重置其他三个库。
 
 修复后检查表数量、真实任务保存/刷新、返回通道双线程、复制屏障和账号围栏，重新生成四库全量并隔离恢复。副本受损到重建完成的区间不能承诺原连续日志具有完整 WAO 恢复能力，必须记录这段降级。补充测试必须包括“当前数据一致但存在本地 CREATE/DROP 历史”的负例。
+
+### 当前 Linux1 写主、Linux2 `wao-return` 停于 1062 的重建准备
+
+以下步骤在获批的生产数据操作窗口内执行；此前只允许备份、检查与隔离演练。Linux1 继续承担 WAO 写入，Linux2 的 `tools`、`wayuwa`、`tkwork` 继续服务。`mysqldump --source-data=2 --single-transaction` 在开始时会短暂取得全局读锁以记录一致坐标，须观察用户写入延迟；若无法迅速取得锁或出现明显业务影响则中止。[MySQL 9.7 mysqldump 文档](https://dev.mysql.com/doc/refman/9.7/en/mysqldump.html)
+
+1. 持有 Linux2 基础设施维护锁，暂停并发发布；分别确认 Linux1 权威 WAO 库、Linux2 另外三库与旧 WAO 副本的加密备份已在异机校验，且权威库和另外三库的隔离恢复实际成功。记录两端 UUID、`gtid_executed`、`gtid_purged`、通道来源/过滤/自动定位和三库表数，不把凭据写入操作记录。确认 Linux1 binlog 能保留到快照导入和追平结束。
+2. 在 Linux1 生成只含 `wao` 的新快照：`mysqldump --single-transaction --quick --source-data=2 --set-gtid-purged=COMMENTED --add-drop-database --routines --events --triggers --hex-blob --no-tablespaces --databases wao`。传输到 Linux2 私有目录后复核 SHA-256、gzip 完整性、注释中的快照 GTID 和 binlog 坐标；旧的无坐标保护副本不能代替本快照。快照缺少任何一项即中止。快照的 GTID 注释不自动执行。[MySQL 9.7 部分数据库转储说明](https://dev.mysql.com/doc/refman/9.7/en/mysqldump-sql-format.html)
+3. 仅停止 Linux2 `wao-return` 通道，确认旧 `wao_app` 仍锁定，其他三个库继续可读写。用快照自带的 `sql_log_bin=0` 会话导入整套 `wao`，包含明确的 `DROP DATABASE IF EXISTS wao`；不得删除其他库、重置整实例 GTID 或跳过出错事务。导入失败时维持通道停止并从独立备份制定恢复，不把不完整的 WAO 库宣称为副本。
+4. 从快照中提取一致时刻的 GTID 集合，在 Linux2 计算 `GTID_SUBTRACT(快照 GTID, @@GLOBAL.gtid_executed)`；人工核对差集只包含快照已覆盖且目标未执行的事务，再以 `+` 形式追加该差集到 `@@GLOBAL.gtid_purged`，差集为空则不修改。不能直接执行 mysqldump 的整套 GTID 注释，不能覆盖 Linux2 原有三库事务历史。[MySQL 9.7 gtid_purged 约束](https://dev.mysql.com/doc/refman/9.7/en/replication-options-gtids.html)
+5. 保持原来源、`wao.%` 过滤和 `SOURCE_AUTO_POSITION=1`，启动 `wao-return`。校验 IO/SQL 均为 Yes、来源 UUID 正确、`WAIT_FOR_EXECUTED_GTID_SET` 对当前写主屏障返回 0、延迟归零、WAO 表/关键行一致，且另外三库表数及读写身份未改变。随后重新生成正常四库加密备份，在异机校验并隔离恢复；全部通过后才允许对象存储迁移继续。若任一检查失败，停止在当前阶段，不执行 MySQL 正文清理。
+
+2026-09-26 只读现场核对：Linux2 `wao-return` 的 IO=Yes、SQL=No，首个失败 GTID 为 Linux1 UUID 的 `380012`；现场源/目标已执行集相减得到同一 UUID 的 `380012-539667`（会随新写入继续增长，不能当成正式快照坐标）。Linux1 当前 `binlog_expire_logs_seconds=2592000`，即 30 天，正式操作前仍须重新核对。隔离 MySQL 9.7 验证了在目标已有其他库本地事务时，追加不重叠 GTID 后原库行仍在、该 GTID 集进入 `gtid_executed`；`mysqldump --set-gtid-purged=COMMENTED --add-drop-database` 的只读格式检查也确认 `sql_log_bin=0` 位于 `DROP DATABASE` 前。以上不等于生产重建完成，也不替代新快照的 GTID 与恢复演练。
 
 ## 2026-09-21 实机前置验收
 
