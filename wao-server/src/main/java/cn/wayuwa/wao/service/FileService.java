@@ -135,7 +135,7 @@ public class FileService {
 
     /** 读取文件正文用于下载。 */
     public FileBlobEntity raw(String id) {
-        FileBlobEntity entity = mapper.selectById(id);
+        FileBlobEntity entity = mapper.findMeta(id);
         if (entity == null) throw new NotFoundException("文件不存在：" + id);
         if (entity.getObjectKey() != null && !entity.getObjectKey().isBlank()) {
             try {
@@ -146,14 +146,18 @@ public class FileService {
                     throw new IllegalStateException("Object bytes differ from file metadata");
                 }
                 entity.setContent(fetched);
+                return entity;
             }
             catch (RuntimeException exception) {
-                if (entity.getContent() == null) {
+                FileBlobEntity retained = mapper.selectById(id);
+                if (retained == null || retained.getContent() == null) {
                     throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文件存储暂不可用", exception);
                 }
+                return retained;
             }
         }
-        if (entity.getContent() == null) throw new NotFoundException("文件不存在：" + id);
+        entity = mapper.selectById(id);
+        if (entity == null || entity.getContent() == null) throw new NotFoundException("文件不存在：" + id);
         return entity;
     }
 

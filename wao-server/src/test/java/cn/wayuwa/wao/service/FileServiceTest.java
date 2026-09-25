@@ -56,10 +56,32 @@ class FileServiceTest {
         assertThat(saved.getValue().getContent()).isNull();
         assertThat(saved.getValue().getObjectKey()).startsWith("files/" + item.id() + "/");
         verify(objects).put(saved.getValue().getObjectKey(), bytes, "application/pdf");
-        when(mapper.selectById(item.id())).thenReturn(saved.getValue());
+        when(mapper.findMeta(item.id())).thenReturn(saved.getValue());
         when(objects.get(saved.getValue().getObjectKey())).thenReturn(bytes);
         assertThat(s3.raw(item.id()).getContent()).isEqualTo(bytes);
+        verify(mapper, never()).selectById(item.id());
         assertThat(item.link()).isEqualTo("/api/files/" + item.id() + "/download");
+    }
+
+    @Test
+    void s3ReadFallsBackToRetainedMysqlBytesOnlyWhenObjectReadFails() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        FileService s3 = new FileService(mapper, settings, objects);
+        FileBlobEntity metadata = new FileBlobEntity();
+        metadata.setId("f1");
+        metadata.setObjectKey("files/f1/hash");
+        FileBlobEntity retained = new FileBlobEntity();
+        retained.setId("f1");
+        retained.setContent("retained".getBytes());
+        when(mapper.findMeta("f1")).thenReturn(metadata);
+        when(mapper.selectById("f1")).thenReturn(retained);
+        when(objects.get(metadata.getObjectKey())).thenThrow(new IllegalStateException("offline"));
+
+        assertThat(s3.raw("f1").getContent()).isEqualTo("retained".getBytes());
+        retained.setContent(null);
+        assertThatThrownBy(() -> s3.raw("f1"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("503");
     }
 
     @Test
@@ -92,6 +114,7 @@ class FileServiceTest {
         stored.setByteSize(5L);
         stored.setObjectKey(metadata.getObjectKey());
         stored.setContent("12345".getBytes());
+        when(mapper.findMeta("f1")).thenReturn(metadata);
         when(mapper.selectById("f1")).thenReturn(stored);
         when(objects.getRange(metadata.getObjectKey(), 1, 3)).thenThrow(new IllegalStateException("offline"));
         when(objects.get(metadata.getObjectKey())).thenThrow(new IllegalStateException("offline"));
@@ -147,6 +170,7 @@ class FileServiceTest {
         assertThat(saved.getValue().getProjectId()).isEqualTo("p1");
         assertThat(item.projectId()).isEqualTo("p1");
 
+        when(mapper.findMeta(item.id())).thenReturn(saved.getValue());
         when(mapper.selectById(item.id())).thenReturn(saved.getValue());
         assertThat(service.preview(item.id()).content()).contains("# 验收", "内容");
     }
@@ -155,6 +179,7 @@ class FileServiceTest {
     void previewRejectsNonMarkdownAndInvalidUtf8() {
         FileBlobEntity text = new FileBlobEntity();
         text.setId("f1"); text.setName("说明.txt"); text.setContentType("text/plain"); text.setContent("ok".getBytes());
+        when(mapper.findMeta("f1")).thenReturn(text);
         when(mapper.selectById("f1")).thenReturn(text);
         assertThatThrownBy(() -> service.preview("f1")).isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Markdown");
