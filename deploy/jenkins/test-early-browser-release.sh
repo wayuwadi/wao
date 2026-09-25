@@ -21,5 +21,9 @@ test "$waited" -lt "$slave_ready"
 test "$slave_ready" -lt "$activate"
 # Staging must not flip the public routing manifest.
 ! sed -n '/^stage_cloud() {$/,/^}$/p' "$script" | rg -q 'publish-static-routing.py /etc'
+rg -q 'stage_slave_static &|stage_slave_static; result=' "$script"
+rg -q 'stage_cloud_static &|stage_cloud_static; result=' "$script"
+! rg -q 'scp .*wao-web/dist|/tmp/wao-dist' "$script"
+rg -q 'release_dir=/var/www/wao/releases/' "$script"
 ! rg -q 'WAO_PIPELINE_RESULT=ready|early_browser_released|verify_first_node_public' "$script"
 ! rg -q 'WAO_PIPELINE_RESULT.*ready|首台发布完成' "$notify"
