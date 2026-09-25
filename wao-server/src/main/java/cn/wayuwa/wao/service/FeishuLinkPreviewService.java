@@ -5,12 +5,17 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import cn.wayuwa.wao.domain.ImageBlobEntity;
 import cn.wayuwa.wao.dto.SharedDocDto;
 import cn.wayuwa.wao.dto.SharedTaskDto;
 import cn.wayuwa.wao.dto.SharedTianrenReadingDto;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,13 +50,22 @@ public class FeishuLinkPreviewService {
     private static final Pattern MARKDOWN_DECORATION = Pattern.compile("[`*_~#>|]+");
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
     private static final int MAX_SOURCE_CHARS = 4_000;
+    private static final long IMAGE_UPLOAD_WAIT_MILLIS = 1_800;
 
     private final ShareService share;
     private final TianrenReadingService tianren;
+    private final SettingService settings;
+    private final FeishuOpenApiClient feishu;
+    private final ImageService images;
+    private final Map<String, CompletableFuture<String>> imageKeys = new ConcurrentHashMap<>();
 
-    public FeishuLinkPreviewService(ShareService share, TianrenReadingService tianren) {
+    public FeishuLinkPreviewService(ShareService share, TianrenReadingService tianren,
+            SettingService settings, FeishuOpenApiClient feishu, ImageService images) {
         this.share = share;
         this.tianren = tianren;
+        this.settings = settings;
+        this.feishu = feishu;
+        this.images = images;
     }
 
     /**
@@ -79,7 +93,7 @@ public class FeishuLinkPreviewService {
 
             Matcher doc = DOC_PAGE.matcher(path);
             if (!doc.matches()) doc = DOC_MARKDOWN.matcher(path);
-            if (doc.matches()) return docPreview(segment(doc.group(1)), requestedUrl, baseUrl);
+            if (doc.matches()) return docPreview(segment(doc.group(1)), requestedUrl);
 
             Matcher reading = TIANREN_PAGE.matcher(path);
             if (!reading.matches()) reading = TIANREN_API.matcher(path);
@@ -108,14 +122,14 @@ public class FeishuLinkPreviewService {
         return response(kind, task.title(), facts, plainText(task.desc(), 220), url, "打开任务", "blue");
     }
 
-    private Map<String, Object> docPreview(String docId, String url, String baseUrl) {
+    private Map<String, Object> docPreview(String docId, String url) {
         SharedDocDto doc = share.shareDoc(docId);
         String kind = doc.note() ? "WAO 小记" : "WAO 文档";
         String title = StringUtils.hasText(doc.title()) ? doc.title() : (doc.note() ? "未命名小记" : "未命名文档");
         if (doc.note()) {
             String image = firstNoteImage(doc);
             String summary = plainText(MARKDOWN_IMAGE.matcher(doc.md()).replaceAll(""), 80);
-            return noteResponse(kind, title, summary, image == null ? null : baseUrl + image, url);
+            return noteResponse(kind, title, summary, image == null ? null : noteImageKey(image), url);
         }
         List<String> facts = new ArrayList<>();
         addFact(facts, "更新于", doc.updated());
@@ -143,13 +157,52 @@ public class FeishuLinkPreviewService {
         return null;
     }
 
-    private static Map<String, Object> noteResponse(String kind, String title, String summary, String image,
+    private String noteImageKey(String path) {
+        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+        String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
+        if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) return null;
+        String imageId = path.substring("/api/images/".length(), path.length() - "/raw".length());
+        String cacheKey = appId + ":" + imageId;
+        if (!imageKeys.containsKey(cacheKey) && imageKeys.size() >= 256) {
+            imageKeys.entrySet().removeIf(entry -> entry.getValue().isDone());
+            if (imageKeys.size() >= 256) return null;
+        }
+        CompletableFuture<String> upload = imageKeys.computeIfAbsent(cacheKey, ignored ->
+                CompletableFuture.supplyAsync(() -> {
+                    ImageBlobEntity image = images.raw(imageId);
+                    if (image.getContent() == null || image.getContent().length == 0
+                            || image.getContent().length > ImageService.MAX_BYTES
+                            || image.getContentType() == null
+                            || !image.getContentType().startsWith("image/")) {
+                        throw new IllegalArgumentException("小记配图格式无效");
+                    }
+                    String token = feishu.tenantAccessToken(appId, appSecret);
+                    return feishu.uploadMessageImage(token, image.getContent(), image.getContentType(),
+                            "note-preview.png");
+                }));
+        try {
+            return upload.get(IMAGE_UPLOAD_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException exception) {
+            // 回调要求三秒内响应；上传继续完成并缓存，下一次分享可直接复用。
+            log.warn("飞书小记配图上传未在预览预算内完成");
+            return null;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Exception exception) {
+            imageKeys.remove(cacheKey, upload);
+            log.warn("飞书小记配图上传失败：{}", exception.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    private static Map<String, Object> noteResponse(String kind, String title, String summary, String imageKey,
             String url) {
         String safeTitle = plainText(title, 100);
         List<Map<String, Object>> elements = new ArrayList<>();
-        if (image != null) {
-            elements.add(Map.of("tag", "div", "text", Map.of("tag", "lark_md",
-                    "content", "![小记配图](" + image + ")")));
+        if (imageKey != null) {
+            elements.add(Map.of("tag", "img", "img_key", imageKey,
+                    "alt", Map.of("tag", "plain_text", "content", "小记配图")));
         }
         if (StringUtils.hasText(summary)) elements.add(textElement(summary));
         elements.add(Map.of("tag", "action", "actions", List.of(Map.of(

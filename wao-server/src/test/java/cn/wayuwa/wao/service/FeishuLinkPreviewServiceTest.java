@@ -18,6 +18,8 @@ import cn.wayuwa.wao.dto.SharedTianrenReadingDto;
 import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TianrenHexagramDto;
 import cn.wayuwa.wao.dto.TianrenTrigramDto;
+import cn.wayuwa.wao.domain.ImageBlobEntity;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -27,7 +29,11 @@ class FeishuLinkPreviewServiceTest {
     private static final String BASE = "https://wao.example";
     private final ShareService share = mock(ShareService.class);
     private final TianrenReadingService tianren = mock(TianrenReadingService.class);
-    private final FeishuLinkPreviewService service = new FeishuLinkPreviewService(share, tianren);
+    private final SettingService settings = mock(SettingService.class);
+    private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
+    private final ImageService images = mock(ImageService.class);
+    private final FeishuLinkPreviewService service = new FeishuLinkPreviewService(
+            share, tianren, settings, feishu, images);
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
@@ -73,6 +79,7 @@ class FeishuLinkPreviewServiceTest {
 
     @Test
     void notePreviewShowsPublicImageAndShortTextWithoutTimestampOrImageAlt() throws Exception {
+        image("cover_1", "img_note_cover");
         var content = new cn.wayuwa.wao.dto.RichDocContentDto(1,
                 json.readTree("""
                         {"type":"doc","content":[{"type":"image","attrs":{"src":"/api/images/cover_1/raw","alt":"文章总览图"}}]}
@@ -85,8 +92,8 @@ class FeishuLinkPreviewServiceTest {
 
         assertThat(result.path("inline").path("i18n_title").path("zh_cn").asText())
                 .isEqualTo("WAO 小记 · 真实标题");
-        assertThat(elements.get(0).path("text").path("content").asText())
-                .isEqualTo("![小记配图](" + BASE + "/api/images/cover_1/raw)");
+        assertThat(elements.get(0).path("tag").asText()).isEqualTo("img");
+        assertThat(elements.get(0).path("img_key").asText()).isEqualTo("img_note_cover");
         assertThat(elements.get(1).path("text").path("content").asText())
                 .startsWith("小记正文").endsWith("…").hasSize(80);
         assertThat(result.toString()).doesNotContain("文章总览图", "更新于", "2026-09-24T22:32:41");
@@ -96,15 +103,30 @@ class FeishuLinkPreviewServiceTest {
 
     @Test
     void noteImageFallsBackToLegacyMarkdownAndRejectsExternalSources() {
+        image("old", "img_legacy_cover");
         when(share.shareDoc("old")).thenReturn(new SharedDocDto("old", "旧小记", true, "notes", "",
                 "![外部](https://elsewhere.example/x.png)\n![配图](/api/images/old/raw)\n正文"));
 
         JsonNode result = json.valueToTree(service.preview(event(BASE + "/api/share/docs/old.md"), BASE));
 
         assertThat(result.path("card").path("data").path("elements").get(0)
-                .path("text").path("content").asText())
-                .isEqualTo("![小记配图](" + BASE + "/api/images/old/raw)");
-        assertThat(result.toString()).doesNotContain("elsewhere.example");
+                .path("img_key").asText()).isEqualTo("img_legacy_cover");
+        assertThat(result.toString()).doesNotContain("elsewhere.example", "/api/images/old/raw");
+    }
+
+    @Test
+    void imageUploadFailureKeepsTextAndNeverShowsImageUrl() {
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app1");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret1");
+        when(images.raw("broken")).thenThrow(new IllegalStateException("图片暂不可用"));
+        when(share.shareDoc("broken-note")).thenReturn(new SharedDocDto("broken-note", "标题", true,
+                "notes", "", "![封面](/api/images/broken/raw)\n正文"));
+
+        JsonNode result = json.valueToTree(service.preview(event(BASE + "/s/d/broken-note"), BASE));
+
+        assertThat(result.path("card").path("data").path("elements").get(0)
+                .path("text").path("content").asText()).isEqualTo("正文");
+        assertThat(result.toString()).doesNotContain("broken/raw", "![", "图片暂不可用");
     }
 
     @Test
@@ -165,5 +187,17 @@ class FeishuLinkPreviewServiceTest {
 
     private JsonNode event(String url) {
         return json.createObjectNode().set("context", json.createObjectNode().put("url", url));
+    }
+
+    private void image(String id, String key) {
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app1");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret1");
+        ImageBlobEntity blob = new ImageBlobEntity();
+        blob.setContent(new byte[] {1, 2, 3});
+        blob.setContentType("image/png");
+        when(images.raw(id)).thenReturn(blob);
+        when(feishu.tenantAccessToken("app1", "secret1")).thenReturn("token1");
+        when(feishu.uploadMessageImage("token1", blob.getContent(), "image/png", "note-preview.png"))
+                .thenReturn(key);
     }
 }
