@@ -37,7 +37,7 @@ async function copyImage() {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
     toast('图片已复制', 'ri-file-copy-line')
   } catch {
-    toast('复制图片失败，请重试或复制图片地址', 'ri-error-warning-line')
+    toast('复制图片失败，请重试或复制图片地址', 'ri-error-warning-line', { duration: 6000 })
   }
 }
 
