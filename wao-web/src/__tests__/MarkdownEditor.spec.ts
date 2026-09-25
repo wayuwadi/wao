@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
 import { polishDocumentText } from '@/api/assistant'
 import type { RichDocNode } from '@/types'
 import type { Editor } from '@tiptap/core'
@@ -82,6 +83,9 @@ describe('文章总览配图', () => {
   it('小记只读正文不请求隐藏的原图', async () => {
     const wrapper = await mountEditor({ modelValue: '![文章总览图](/api/images/img1/raw)', readonly: true, previewImages: true })
     expect(wrapper.get('.md-body img').attributes('src')).toBe('/api/images/img1/preview')
+    expect(wrapper.get('.md-body img').attributes('data-full-src')).toBe('/api/images/img1/raw')
+    await wrapper.get('.md-body img').trigger('contextmenu')
+    expect(wrapper.getComponent(ImageCopyMenu).props('src')).toBe('/api/images/img1/raw')
     expect((wrapper.vm as unknown as { editor: Editor }).editor.getMarkdown()).toContain('/api/images/img1/raw')
     wrapper.unmount()
   })
