@@ -9,6 +9,7 @@ readback of both the permanent original PNG archive and online WebP.
 from __future__ import annotations
 
 import argparse
+import fcntl
 from pathlib import Path
 import os
 import subprocess
@@ -25,6 +26,16 @@ from webdav_client import build_client
 
 def missing_object(error: ClientError) -> bool:
     return error.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404
+
+
+def acquire_asset_lock(path: Path):
+    handle = path.open("a")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise RuntimeError("An image maintenance or object backup run is active") from None
+    return handle
 
 
 def gc_one(db, s3, bucket: str, backup: dict, webdav, passphrase: Path,
@@ -60,6 +71,13 @@ def gc_one(db, s3, bucket: str, backup: dict, webdav, passphrase: Path,
     if (len(webp) != row["object_byte_size"] or digest(webp) != webp_hash
             or not pixel_equivalent_png_webp(original, webp)):
         raise RuntimeError("Online WebP differs from original PNG pixels")
+    with db.cursor() as cursor:
+        cursor.execute("SELECT (SELECT COUNT(*) FROM image_blob WHERE object_key=%s "
+                       "OR preview_key=%s) + (SELECT COUNT(*) FROM file_blob "
+                       "WHERE object_key=%s) AS references",
+                       (original_key, original_key, original_key))
+        if cursor.fetchone()["references"]:
+            raise RuntimeError("Old PNG object is still referenced")
     try:
         old = s3.get_object(Bucket=bucket, Key=original_key)["Body"].read()
     except ClientError as exc:
@@ -118,60 +136,73 @@ def main() -> int:
         parser.error("--limit must be 1..100 and --min-age-days must be at least 7")
     if args.apply and (not args.confirm_approved_online_delete or not args.backup_manifest):
         parser.error("--apply requires explicit approval flag and restored --backup-manifest")
-    db = database()
+    lock = None
+    if args.apply:
+        if os.geteuid() != 0:
+            raise RuntimeError("Approved online object deletion must run as root")
+        lock = acquire_asset_lock(Path(os.getenv(
+            "WAO_IMAGE_BACKUP_LOCK_FILE", "/run/lock/wao-image-backup.lock")))
     try:
-        with db.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) AS eligible FROM image_blob "
-                           "WHERE content_type='image/png' AND object_content_type='image/webp' "
-                           "AND webp_activated_at <= UTC_TIMESTAMP(3) - INTERVAL %s DAY",
-                           (args.min_age_days,))
-            eligible = cursor.fetchone()["eligible"]
-            cursor.execute("SELECT id FROM image_blob WHERE content_type='image/png' "
-                           "AND object_content_type='image/webp' "
-                           "AND webp_activated_at <= UTC_TIMESTAMP(3) - INTERVAL %s DAY "
-                           "ORDER BY webp_activated_at, id LIMIT %s",
-                           (args.min_age_days, args.limit))
-            ids = [row["id"] for row in cursor.fetchall()]
-        print(f"original_png_gc: eligible={eligible}")
-        if not args.apply:
-            return 0
-        if os.getenv("WAO_STORAGE_MODE") != "s3":
-            raise RuntimeError("Refusing online object deletion outside S3 mode")
-        provenance = subprocess.run(
-            ["python3", "/usr/local/lib/wao-backup/verify-backup-source.py"],
-            capture_output=True, check=False, timeout=45)
-        if provenance.returncode:
-            raise RuntimeError("WAO writer and return replica are not verified")
-        with db.cursor() as cursor:
-            cursor.execute("SELECT @@read_only AS read_only, @@super_read_only AS super_read_only")
-            role = cursor.fetchone()
-        if role["read_only"] or role["super_read_only"]:
-            raise RuntimeError("Refusing online object deletion from a replica")
-        bucket = required("WAO_STORAGE_BUCKET")
-        backup = load_manifest(args.backup_manifest, bucket)
-        passphrase = Path(os.getenv("WAO_ORIGINAL_PASSPHRASE_FILE",
-                                 "/etc/wao-backup/encryption-passphrase"))
-        if not passphrase.is_file():
-            raise RuntimeError("Original archive passphrase is missing")
-        webdav, config = build_client(
-            Path(os.getenv("WAO_ORIGINAL_WEBDAV_CONFIG", "/etc/wao-backup/webdav.env")),
-            allow_http=False)
-        s3 = object_client()
-        remote_root = config.get("WAO_BACKUP_REMOTE_ROOT", "WAO-backups")
-        counts = {"deleted": 0, "already-removed": 0, "skipped": 0, "concurrent-change": 0}
-        failures = 0
-        for asset_id in ids:
-            try:
-                counts[gc_one(db, s3, bucket, backup, webdav, passphrase,
-                              remote_root, asset_id, args.min_age_days)] += 1
-            except Exception as exc:
-                failures += 1
-                print(f"FAIL {asset_id}: {type(exc).__name__}: {str(exc)[:120]}", file=sys.stderr)
-        print(f"original_png_gc: {counts}, failures={failures}")
-        return 1 if failures else 0
+        db = database()
+        try:
+            return run(db, args)
+        finally:
+            db.close()
     finally:
-        db.close()
+        if lock is not None:
+            lock.close()
 
+
+def run(db, args) -> int:
+    with db.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) AS eligible FROM image_blob "
+                       "WHERE content_type='image/png' AND object_content_type='image/webp' "
+                       "AND webp_activated_at <= UTC_TIMESTAMP(3) - INTERVAL %s DAY",
+                       (args.min_age_days,))
+        eligible = cursor.fetchone()["eligible"]
+        cursor.execute("SELECT id FROM image_blob WHERE content_type='image/png' "
+                       "AND object_content_type='image/webp' "
+                       "AND webp_activated_at <= UTC_TIMESTAMP(3) - INTERVAL %s DAY "
+                       "ORDER BY webp_activated_at, id LIMIT %s",
+                       (args.min_age_days, args.limit))
+        ids = [row["id"] for row in cursor.fetchall()]
+    print(f"original_png_gc: eligible={eligible}")
+    if not args.apply:
+        return 0
+    if os.getenv("WAO_STORAGE_MODE") != "s3":
+        raise RuntimeError("Refusing online object deletion outside S3 mode")
+    provenance = subprocess.run(
+        ["python3", "/usr/local/lib/wao-backup/verify-backup-source.py"],
+        capture_output=True, check=False, timeout=45)
+    if provenance.returncode:
+        raise RuntimeError("WAO writer and return replica are not verified")
+    with db.cursor() as cursor:
+        cursor.execute("SELECT @@read_only AS read_only, @@super_read_only AS super_read_only")
+        role = cursor.fetchone()
+    if role["read_only"] or role["super_read_only"]:
+        raise RuntimeError("Refusing online object deletion from a replica")
+    bucket = required("WAO_STORAGE_BUCKET")
+    backup = load_manifest(args.backup_manifest, bucket)
+    passphrase = Path(os.getenv("WAO_ORIGINAL_PASSPHRASE_FILE",
+                             "/etc/wao-backup/encryption-passphrase"))
+    if not passphrase.is_file():
+        raise RuntimeError("Original archive passphrase is missing")
+    webdav, config = build_client(
+        Path(os.getenv("WAO_ORIGINAL_WEBDAV_CONFIG", "/etc/wao-backup/webdav.env")),
+        allow_http=False)
+    s3 = object_client()
+    remote_root = config.get("WAO_BACKUP_REMOTE_ROOT", "WAO-backups")
+    counts = {"deleted": 0, "already-removed": 0, "skipped": 0, "concurrent-change": 0}
+    failures = 0
+    for asset_id in ids:
+        try:
+            counts[gc_one(db, s3, bucket, backup, webdav, passphrase,
+                          remote_root, asset_id, args.min_age_days)] += 1
+        except Exception as exc:
+            failures += 1
+            print(f"FAIL {asset_id}: {type(exc).__name__}: {str(exc)[:120]}", file=sys.stderr)
+    print(f"original_png_gc: {counts}, failures={failures}")
+    return 1 if failures else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

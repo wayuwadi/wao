@@ -1,17 +1,30 @@
 import io
 from hashlib import sha256
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import MagicMock, patch
 
 from botocore.exceptions import ClientError
 from PIL import Image
 
-from gc_original_png_objects import gc_one
+from gc_original_png_objects import acquire_asset_lock, gc_one
 from migrate_assets import lossless_webp
 
 
 class OriginalObjectGcTest(unittest.TestCase):
+    def test_gc_cannot_overlap_image_maintenance_or_backup(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "shared.lock"
+            first = acquire_asset_lock(path)
+            try:
+                with self.assertRaisesRegex(RuntimeError, "active"):
+                    acquire_asset_lock(path)
+            finally:
+                first.close()
+            again = acquire_asset_lock(path)
+            again.close()
+
     def setUp(self):
         image = Image.new("RGB", (400, 400), (30, 80, 120))
         for y in range(0, 400, 15):
@@ -34,7 +47,7 @@ class OriginalObjectGcTest(unittest.TestCase):
                     "original_archive_key": self.archive_key}
         self.db = MagicMock()
         self.cursor = self.db.cursor.return_value.__enter__.return_value
-        self.cursor.fetchone.side_effect = [self.row,
+        self.cursor.fetchone.side_effect = [self.row, {"references": 0},
                                             {"object_key": self.webp_key, "object_hash": webp_hash,
                                              "original_archive_key": self.archive_key},
                                             {"references": 0}]
@@ -61,12 +74,17 @@ class OriginalObjectGcTest(unittest.TestCase):
             self.call_gc({})
         self.s3.delete_object.assert_not_called()
 
+    def test_already_removed_original_requires_zero_references(self):
+        self.s3.get_object.side_effect = lambda Bucket, Key: (
+            {"Body": io.BytesIO(self.webp)} if Key == self.webp_key else
+            (_ for _ in ()).throw(ClientError(
+                {"Error": {"Code": "404"}, "ResponseMetadata": {"HTTPStatusCode": 404}},
+                "GetObject")))
+        self.assertEqual(self.call_gc(), "already-removed")
+        self.s3.delete_object.assert_not_called()
+
     def test_live_reference_keeps_original_online(self):
-        self.cursor.fetchone.side_effect = [self.row,
-                                            {"object_key": self.webp_key,
-                                             "object_hash": self.row["object_hash"],
-                                             "original_archive_key": self.archive_key},
-                                            {"references": 1}]
+        self.cursor.fetchone.side_effect = [self.row, {"references": 1}]
         with self.assertRaisesRegex(RuntimeError, "still referenced"):
             self.call_gc()
         self.s3.delete_object.assert_not_called()
