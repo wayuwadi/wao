@@ -50,6 +50,7 @@ import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
 import { toast } from '@/composables/toast'
 import { countCharacters } from '@/utils/characterCount'
 import ArticleImageAction from './ArticleImageAction.vue'
+import SelectionImageAction from './SelectionImageAction.vue'
 import ImageCopyMenu from './ImageCopyMenu.vue'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
@@ -126,6 +127,8 @@ const props = withDefaults(
     imageControls?: boolean
     /** 小记或知识库文档的文章总览图入口；key 用于跨页面恢复生成任务。 */
     articleImageKey?: string
+    /** 小记选中文字可生成图片，图片作为正文附件节点保存。 */
+    selectionImage?: boolean
     noteTitleOnImage?: boolean
     /** 知识库文档的完整工具栏、斜杠菜单和高级内容块。 */
     advanced?: boolean
@@ -153,6 +156,7 @@ const props = withDefaults(
     linkControls: false,
     imageControls: false,
     articleImageKey: '',
+    selectionImage: false,
     noteTitleOnImage: false,
     advanced: false,
     compact: false,
@@ -525,6 +529,7 @@ const editor = useEditor({
 })
 
 const selectionMenuEl = ref<HTMLElement | null>(null)
+const selectionImageAction = ref<InstanceType<typeof SelectionImageAction> | null>(null)
 const selectedText = ref('')
 const selectedCharacterCount = computed(() => countCharacters(selectedText.value))
 const selectionCanLink = ref(false)
@@ -648,6 +653,31 @@ function shouldShowSelection({ editor: e, from, to, state }: MenuContext) {
 
 const component = getCurrentInstance()
 const selectionActionsEnabled = computed(() => props.polishable || props.taskable)
+function startSelectionImage() {
+  const e = editor.value
+  if (!e || props.readonly || !props.selectionImage) return
+  const { from, to } = e.state.selection
+  if (from === to) return
+  selectionImageAction.value?.open(e.state.doc.textBetween(from, to, '\n').trim())
+}
+function insertSelectionImage(url: string) {
+  const e = editor.value
+  if (!e || e.isDestroyed || props.readonly) return false
+  // 图像节点仍随富文本保存；小记编辑和预览把全部图像集中显示在右侧。
+  return e.chain().insertContentAt(e.state.doc.content.size, { type: 'image', attrs: { src: url, alt: '选段生成图' } }).run()
+}
+function removeImageAt(index: number) {
+  const e = editor.value
+  if (!e || props.readonly || index < 0) return false
+  let seen = 0
+  let position = -1
+  let size = 0
+  e.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'image' && seen++ === index) { position = pos; size = node.nodeSize; return false }
+    return position < 0
+  })
+  return position >= 0 && e.commands.deleteRange({ from: position, to: position + size })
+}
 let preparingTask = false
 async function addSelectionTask() {
   const e = editor.value
@@ -1737,7 +1767,7 @@ async function copyFormatted() {
   const ok = await copyRichContent(e.getHTML(), e.getMarkdown())
   toast(ok ? '已复制，支持富文本与 Markdown 粘贴' : '复制失败，请手动选择复制', ok ? 'ri-file-copy-line' : 'ri-error-warning-line')
 }
-defineExpose({ clearSentContent, appendMarkdown, copyFormatted })
+defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
@@ -1844,7 +1874,7 @@ onBeforeUnmount(() => {
     <div class="md-editor-wrap">
       <!-- BubbleMenu 会把自己的根节点移出原位置；保留 Vue 管理的外壳，
            避免保存时切换 readonly 后 v-if 在已脱离 DOM 的节点上插入占位符。 -->
-      <div v-if="editor && (advanced || linkControls || polishable || taskable) && !readonly" class="bubble-menu-anchor">
+      <div v-if="editor && (advanced || linkControls || polishable || taskable || selectionImage) && !readonly" class="bubble-menu-anchor">
         <BubbleMenu
           :editor="editor"
           plugin-key="documentSelectionMenu"
@@ -1856,6 +1886,7 @@ onBeforeUnmount(() => {
           <div ref="selectionMenuEl" class="selection-menu" role="toolbar" :aria-label="multipleCells(editor) ? '选中单元格操作' : '选中文字操作'" @keydown.esc="hideSelectionMenu(); editor.commands.focus()">
             <button type="button" title="添加到待办" aria-label="添加到待办" v-if="selectionActionsEnabled && selectedText" class="selection-task" @mousedown.prevent @click="addSelectionTask"><i class="ri-checkbox-circle-line" aria-hidden="true"></i></button>
             <button type="button" title="润色选中文字" aria-label="润色选中文字" v-if="selectionActionsEnabled && selectedText" @mousedown.prevent @click="startPolish"><i class="ri-magic-line" aria-hidden="true"></i></button>
+            <button type="button" class="selection-generate" title="根据选中文字生图" aria-label="生图" v-if="selectionImage && selectedText" @mousedown.prevent @click="startSelectionImage"><i class="ri-image-add-line" aria-hidden="true"></i><span>生图</span></button>
             <button v-if="selectionCanLink" type="button" :title="linkSelectionActive ? '编辑链接' : '添加链接'" :aria-label="linkSelectionActive ? '编辑链接' : '添加链接'" @mousedown.prevent @click="openLinkEditor"><i class="ri-link" aria-hidden="true"></i></button>
             <button type="button" title="在新窗口打开链接" aria-label="在新窗口打开链接" v-if="selectionCanLink && linkSelectionActive" @mousedown.prevent @click="openActiveLink"><i class="ri-external-link-line" aria-hidden="true"></i></button>
             <button type="button" title="移除链接" aria-label="移除链接" v-if="selectionCanLink && linkSelectionActive" @mousedown.prevent @click="removeActiveLink"><i class="ri-link-unlink-m" aria-hidden="true"></i></button>
@@ -1981,6 +2012,7 @@ onBeforeUnmount(() => {
         <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
       </div>
     </div>
+    <SelectionImageAction v-if="selectionImage && articleImageKey && !readonly" ref="selectionImageAction" :scope-key="articleImageKey" :insert-image="insertSelectionImage" />
     <Teleport v-else :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
       <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
         <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
@@ -2252,6 +2284,7 @@ onBeforeUnmount(() => {
 .selection-menu { display: flex; align-items: center; gap: 1px; width: max-content; max-width: min(560px, calc(100vw - 24px)); overflow-x: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #747783 transparent; padding: 4px; border-radius: 9px; background: #292b35; color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.22); }
 .selection-menu button,.selection-language { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; height: 32px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: inherit; font-size: 16px; cursor: pointer; }
 .selection-menu button:hover,.selection-language:hover,.selection-menu button[aria-pressed="true"] { background: rgba(255,255,255,.16); }
+.selection-menu button.selection-generate { flex-basis: auto; width: auto; gap: 4px; padding: 0 8px; font-size: 12px; }
 .selection-menu :focus-visible { outline: 2px solid #9dbbff; outline-offset: -2px; }
 .selection-divider { flex: 0 0 1px; height: 17px; background: rgba(255,255,255,.22); margin: 0 4px; }
 .selection-language { position: relative; }

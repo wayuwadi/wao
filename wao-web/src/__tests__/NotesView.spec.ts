@@ -225,6 +225,7 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.find('.note-meta .note-count').exists()).toBe(false)
     expect(wrapper.find('[aria-label="当前正文字数"]').exists()).toBe(true)
+    expect(wrapper.find('.composer-image-rail img').attributes('src')).toBe('/api/images/one/raw')
     wrapper.unmount()
   })
 
@@ -240,6 +241,8 @@ describe('小记集中记录空间', () => {
     const wrapper = await view()
     const thumbs = wrapper.findAll('[data-note-id="images"] .note-image-thumb')
     expect(thumbs).toHaveLength(2)
+    expect(wrapper.find('[data-note-id="images"] .note-image-rail').text()).toContain('2 张')
+    expect(wrapper.find('[data-note-id="images"] .note-content.has-images').exists()).toBe(true)
     expect(thumbs.map(thumb => thumb.find('img').attributes('src'))).toEqual(['/api/images/one/raw', '/api/images/two/raw'])
     await thumbs[0]!.find('img').trigger('contextmenu', { clientX: 80, clientY: 80 })
     await flushPromises()
@@ -602,7 +605,9 @@ describe('小记集中记录空间', () => {
     useDataStore().docs.a = { ...doc('a', '键盘编辑的记录'), tags: ['工作'] }
     const wrapper = await view()
     await wrapper.find('.card-tags button').trigger('dblclick')
-    await wrapper.find('.note-actions a').trigger('dblclick')
+    await wrapper.find('.card-quick-actions .full-doc-icon').trigger('dblclick')
+    expect(wrapper.find('.note-actions').exists()).toBe(false)
+    expect(wrapper.find('.card-tags').element.parentElement?.classList.contains('note-heading')).toBe(true)
     expect(wrapper.find('.note-card .note-composer').exists()).toBe(false)
     await wrapper.find('.note-card').trigger('keydown', { key: 'Enter' })
     expect(wrapper.get<HTMLTextAreaElement>('.note-card textarea').element.value).toBe('键盘编辑的记录')
