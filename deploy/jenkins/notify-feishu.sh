@@ -162,16 +162,52 @@ if [ "$WAO_PIPELINE_RESULT" = success ]; then
   fi
   # 卡片只放提交标题；详细改动、原因与验收留在 Git 历史。
   changes="$(printf '%s' "${WAO_COMMIT_MESSAGE:-无提交摘要}" | jq -R -s -r 'split("\n") | map(select(length > 0)) | .[:8] | map(.[0:100]) | join("\n")')"
+  poster_key=''
+  feature_url=''
+  feature_label=''
+  if [ "$pipeline_kind" = '生产发布' ] && [ -n "${WAO_RUN_TEMP:-}" ]; then
+    first_feature="$(java -Dfile.encoding=UTF-8 \
+      -cp deploy/jenkins/lib/release-poster.jar ReleasePoster --describe \
+      wao-web/src/config/nav.ts "${WAO_COMMIT_MESSAGE:-}" \
+      | awk -F '\t' '$4 ~ /^https:\/\/wao\.wayuwa\.cn\// { print $2 "\t" $4; exit }')" || first_feature=''
+    if [ -n "$first_feature" ]; then
+      feature_label="$(printf '%s' "$first_feature" | cut -f1)"
+      feature_url="$(printf '%s' "$first_feature" | cut -f2)"
+    fi
+    poster_key="$(WAO_POSTER_OUTPUT="$WAO_RUN_TEMP/wao-release-poster.png" \
+      WAO_POSTER_TIME="$publish_time" WAO_POSTER_BUILD="${BUILD_NUMBER:-?}" \
+      WAO_POSTER_SHA="${WAO_GIT_SHA:-unknown}" \
+      sh deploy/jenkins/upload-release-poster.sh)" || {
+        # 图片服务不能改变已经通过的发布结论，也不能吞掉原有成功通知。
+        echo 'Jenkins release image unavailable; sending the original success card.' >&2
+        poster_key=''
+      }
+  fi
   payload="$(jq -n --arg title "WAO ${pipeline_kind} ✅ 成功" \
     --arg detail "$success_detail" --arg changes "$changes" \
     --arg time_detail "$time_detail" --arg run_url "$run_url" \
+    --arg poster_key "$poster_key" \
+    --arg feature_url "$feature_url" --arg feature_label "$feature_label" \
     '{msg_type:"interactive",card:{config:{wide_screen_mode:true},
       header:{template:"green",title:{tag:"plain_text",content:$title}},
-      elements:[{tag:"div",text:{tag:"lark_md",content:($detail+"\n"+$time_detail+"\n**本次改动**\n"+$changes)}},
-        {tag:"action",actions:[{tag:"button",text:{tag:"plain_text",content:"查看 Jenkins 详情"},url:$run_url,type:"primary"}]}]}}')"
+      elements:([{tag:"div",text:{tag:"lark_md",content:($detail+"\n"+$time_detail+"\n**本次改动**\n"+$changes)}}]
+        + (if $poster_key == "" then [] else [{tag:"img",img_key:$poster_key,
+            alt:{tag:"plain_text",content:"本次 WAO 发布的功能与入口"}}] end)
+        + [{tag:"action",actions:((if $feature_url == "" then [] else
+            [{tag:"button",text:{tag:"plain_text",content:("打开"+$feature_label)},url:$feature_url,type:"primary"}] end)
+            + [{tag:"button",text:{tag:"plain_text",content:"查看 Jenkins 详情"},url:$run_url,
+                type:(if $feature_url == "" then "primary" else "default" end)}])}])}}')"
 fi
 
 response="$(curl --fail --silent --show-error --max-time 10 -X POST "$webhook" \
   -H 'Content-Type: application/json' --data "$payload")"
+if [ "$WAO_PIPELINE_RESULT" = success ] && [ -n "${poster_key:-}" ] \
+    && ! printf '%s' "$response" | jq -e '(.code // .StatusCode // 0) == 0' >/dev/null; then
+  # 只有飞书明确拒绝带图卡片才重试；网络超时的结果未知，不能盲重试制造重复通知。
+  echo 'Jenkins image card rejected; retrying the original success card.' >&2
+  payload="$(printf '%s' "$payload" | jq '.card.elements |= map(select(.tag != "img"))')"
+  response="$(curl --fail --silent --show-error --max-time 10 -X POST "$webhook" \
+    -H 'Content-Type: application/json' --data "$payload")"
+fi
 printf '%s' "$response" | jq -e '(.code // .StatusCode // 0) == 0' >/dev/null
 echo "Jenkins $WAO_PIPELINE_RESULT notification delivered."

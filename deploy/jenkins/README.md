@@ -155,6 +155,10 @@ MySQL、JumpServer 和部署恢复材料一起加密上传到 123 云盘。外�
 
 成功和失败均使用现有 `FEISHU_COMMENT_WEBHOOK_URL`，遵守群通知总开关与沉默时段；成功还要求发布验证完整。诊断时以构建结尾的通知输出为准，不能将前部通知脚本单元测试打印的 delivered 当成真实发送记录。
 
+生产成功卡现在附一张批次发布图：从实际提交标题摘取最多三项改动，功能 scope 能在同一提交的浏览器路由找到时才写页面入口，并提供首个功能的直达按钮。纯修复/部署批次仍有图，但不虚构功能入口；无需部署、影子构建和失败卡保持原样。图片经既有 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 上传至飞书，使用 `image_key` 嵌入原 Webhook 成功卡。应用凭据或图片服务不可用时只发原文字卡，不能影响发布结论或失败告警。图片实际显示需在飞书客户端核对，Webhook 成功响应只能证明消息被接受。
+
+渲染器使用随仓库交付的 Java 17 JAR 与子集化中文字体，Jenkins 主机已有的 Java 21 JRE 即可运行。修改 `ReleasePoster.java` 后用 JDK 17 或更新版本运行 `sh deploy/jenkins/build-release-poster.sh` 并同时提交更新后的 JAR；字体许可见 `deploy/jenkins/fonts/OFL.txt`。运行 `sh deploy/jenkins/test-notify-feishu.sh` 可在不发群消息的情况下检查图片生成、上传和降级路径。
+
 ## 浏览器快路径（ADR-265）
 
 只包含 `wao-web/`、`agent-web/` 和原有非运行文件白名单的发布批次设置 `WAO_WEB_ONLY=true`。
