@@ -71,12 +71,17 @@ for script in \
   deploy/jenkins/resolve-batch-base.sh \
   deploy/jenkins/test-resolve-batch-base.sh \
   deploy/jenkins/notify-feishu.sh \
+  deploy/jenkins/upload-release-poster.sh \
+  deploy/jenkins/build-release-poster.sh \
   deploy/jenkins/test-notify-feishu.sh \
   deploy/jenkins/test-backup-controller.sh \
   deploy/jenkins/test-github-status.sh \
   deploy/jenkins/deploy-master-local.sh; do
   sh -n "$script"
 done
+test -s deploy/jenkins/fonts/WAO-Release-Sans.ttf
+test -s deploy/jenkins/fonts/OFL.txt
+test -s deploy/jenkins/lib/release-poster.jar
 bash -n deploy/jenkins/ci-deploy.sh
 
 for script in \

@@ -7,6 +7,8 @@ trap 'rm -rf -- "$fixture"' EXIT HUP INT TERM
 
 mkdir -p "$fixture/master/deploy" "$fixture/run" "$fixture/bin"
 printf '%s\n' 'FEISHU_COMMENT_WEBHOOK_URL=https://example.invalid/webhook' \
+  'FEISHU_APP_ID=cli_test_app' \
+  'FEISHU_APP_SECRET=cli_test_secret' \
   >"$fixture/master/deploy/.env.secrets"
 
 cat >"$fixture/bin/curl" <<'EOF'
@@ -17,6 +19,8 @@ if [ -n "${WAO_TEST_POLICY_RESPONSE:-}" ]; then
   exit 0
 fi
 is_policy=false
+is_token=false
+is_image=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
     */api/public/notification-settings/jenkins-*)
@@ -25,6 +29,15 @@ while [ "$#" -gt 0 ]; do
         echo 'Unexpected notification policy URL' >&2
         exit 22
       fi
+      ;;
+    */auth/v3/tenant_access_token/internal) is_token=true ;;
+    */im/v1/images) is_image=true ;;
+    image=@*)
+      image_path="${1#image=@}"
+      image_path="${image_path%%;*}"
+      test -s "$image_path"
+      test "$(od -An -tx1 -N8 "$image_path" | tr -d ' \n')" = 89504e470d0a1a0a
+      : >"$WAO_TEST_IMAGE_UPLOADED"
       ;;
   esac
   if [ "$1" = --data ]; then
@@ -35,6 +48,24 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$is_policy" = true ]; then
   printf '%s' '{"code":0,"data":{"allowed":true}}'
+  exit 0
+fi
+if [ "$is_token" = true ]; then
+  printf '%s' '{"code":0,"tenant_access_token":"test-token"}'
+  exit 0
+fi
+if [ "$is_image" = true ]; then
+  if [ "${WAO_TEST_IMAGE_UPLOAD_FAIL:-false}" = true ]; then
+    printf '%s' '{"code":234001,"msg":"failed"}'
+  else
+    printf '%s' '{"code":0,"data":{"image_key":"img_test_release"}}'
+  fi
+  exit 0
+fi
+if [ "${WAO_TEST_WEBHOOK_REJECT_IMAGE:-false}" = true ] \
+    && jq -e '[.card.elements[] | select(.tag == "img")] | length > 0' \
+      "$WAO_TEST_PAYLOAD" >/dev/null; then
+  printf '%s' '{"code":19024,"msg":"card image rejected"}'
   exit 0
 fi
 printf '%s' '{"code":0}'
@@ -65,6 +96,7 @@ EOF
 
 PATH="$fixture/bin:$PATH" \
 WAO_TEST_PAYLOAD="$fixture/payload.json" \
+WAO_TEST_IMAGE_UPLOADED="$fixture/uploaded" \
 WAO_PIPELINE_RESULT=success \
 WAO_TEST_EXPECT_POLICY_URL=https://wao.wayuwa.cn/api/public/notification-settings/jenkins-success \
 WAO_MASTER_PROJECT_ROOT="$fixture/master" \
@@ -73,7 +105,7 @@ WAO_DEPLOY_REQUIRED=true \
 DEPLOY_PRODUCTION=true \
 WAO_GIT_SHA=abcdef1234567890abcdef1234567890abcdef12 \
 WAO_BATCH_COMMIT_COUNT=2 \
-WAO_COMMIT_MESSAGE='- feat(task): 精简 AI Run 通知
+WAO_COMMIT_MESSAGE='- feat(reference-images): 建立截图即收的个人参考图库与带图 AI 提问
 - fix(deploy): 精简 Jenkins 通知' \
 BUILD_NUMBER=321 \
 sh "$project_root/deploy/jenkins/notify-feishu.sh"
@@ -83,6 +115,12 @@ assert_json '.card.header.template == "green"'
 assert_json '.card.elements[0].text.content | contains("双节点、云端与公共入口检查通过")'
 assert_json '.card.elements[0].text.content | contains("精简 Jenkins 通知")'
 assert_json '.card.elements[0].text.content | contains("**发布时间** 2026-09-24 16:39:00")'
+assert_json '.card.elements[1].tag == "img" and .card.elements[1].img_key == "img_test_release"'
+assert_json '.card.elements[2].actions[0].text.content == "打开参考图库"'
+assert_json '.card.elements[2].actions[0].url == "https://wao.wayuwa.cn/reference-images"'
+assert_json '.card.elements[2].actions[1].url == "https://wao.wayuwa.cn/jenkins/job/wao-main-cd/321/"'
+test -e "$fixture/uploaded"
+test -s "$fixture/run/wao-release-poster.png"
 rm -f "$fixture/payload.json"
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
@@ -181,5 +219,40 @@ PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
   sh "$project_root/deploy/jenkins/notify-feishu.sh"
 assert_json '.card.header.title.content == "WAO 验证（无需部署） ✅ 成功"'
 assert_json '.card.elements[0].text.content | contains("未发布到生产环境")'
+assert_json '.card.elements | length == 2'
+
+# 图片上传失败仍只发送一张原有成功卡；不会把已验收的生产发布改判失败。
+cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
+slave_status=success
+master_status=success
+cloud_status=success
+verification_status=success
+EOF
+PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
+  WAO_TEST_IMAGE_UPLOADED="$fixture/uploaded" WAO_TEST_IMAGE_UPLOAD_FAIL=true \
+  WAO_PIPELINE_RESULT=success WAO_MASTER_PROJECT_ROOT="$fixture/master" \
+  WAO_RUN_TEMP="$fixture/run" WAO_DEPLOY_REQUIRED=true DEPLOY_PRODUCTION=true \
+  WAO_GIT_SHA=abcdef1234567890 WAO_COMMIT_MESSAGE='- fix(deploy): 修复发布结果判定' \
+  BUILD_NUMBER=324 sh "$project_root/deploy/jenkins/notify-feishu.sh"
+assert_json '.card.header.title.content == "WAO 生产发布 ✅ 成功"'
+assert_json '.card.elements | length == 2'
+assert_json '.card.elements[1].actions | length == 1'
+
+# 飞书明确拒绝带图卡时，重试一次原成功卡；网络未知状态不在这里模拟。
+PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
+  WAO_TEST_IMAGE_UPLOADED="$fixture/uploaded" WAO_TEST_WEBHOOK_REJECT_IMAGE=true \
+  WAO_PIPELINE_RESULT=success WAO_MASTER_PROJECT_ROOT="$fixture/master" \
+  WAO_RUN_TEMP="$fixture/run" WAO_DEPLOY_REQUIRED=true DEPLOY_PRODUCTION=true \
+  WAO_GIT_SHA=abcdef1234567890 WAO_COMMIT_MESSAGE='- feat(reference-images): 收下参考截图' \
+  BUILD_NUMBER=325 sh "$project_root/deploy/jenkins/notify-feishu.sh"
+assert_json '.card.elements | length == 2'
+assert_json '.card.elements[1].actions[0].url == "https://wao.wayuwa.cn/reference-images"'
+
+poster_description="$(java -Dfile.encoding=UTF-8 \
+  -cp "$project_root/deploy/jenkins/lib/release-poster.jar" ReleasePoster --describe \
+  "$project_root/wao-web/src/config/nav.ts" \
+  '- feat(reference-images): 建立截图即收的个人参考图库与带图 AI 提问')"
+printf '%s' "$poster_description" | grep -Fq 'https://wao.wayuwa.cn/reference-images'
+printf '%s' "$poster_description" | grep -Fq '建立截图即收的个人参考图库与带图 AI 提问'
 
 echo 'Jenkins Feishu notification tests passed.'
