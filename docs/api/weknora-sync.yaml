@@ -29,7 +29,7 @@ paths:
                 time: {type: string, example: '02:00'}
                 revision: {type: integer}
       responses:
-        '200': {description: 已保存，已验证 Wiki-only 目标库可访问}
+        '200': {description: 已保存，已验证启用 Wiki 的目标库可访问；可同时启用向量索引}
         '409': {description: 版本冲突、同步正在执行或已有副本不允许改绑}
   /api/weknora-sync/run:
     post:
