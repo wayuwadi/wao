@@ -24,7 +24,7 @@ vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
 vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
 const Editor = defineComponent({
   props: ['modelValue', 'readonly'], emits: ['update:modelValue'],
-  template: '<div><textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" /><slot name="footer-tags" /></div>',
+  template: '<div><slot name="toolbar-options" /><textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" /><slot name="footer-tags" /></div>',
 })
 function doc(id: string, text: string, created = '2026-09-07T08:00:00', author = 'wg'): Doc {
   return { id, title: text, author, created, updated: created, kbId: 'kb-notes', rev: 3,
@@ -77,6 +77,25 @@ describe('小记集中记录空间', () => {
     await share!.trigger('click')
     expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/s/d/old`, '公开分享链接已复制')
     wrapper.unmount()
+  })
+  it('新小记默认不自动配图，勾选后草稿刷新仍保留选择', async () => {
+    const first = composer()
+    const options = first.get('.auto-enrichment-choices')
+    expect(options.element.previousElementSibling?.classList.contains('editor-space')).toBe(true)
+    expect(options.element.nextElementSibling?.classList.contains('composer-footer')).toBe(true)
+    expect(options.text()).toContain('保存后自动生成标题')
+    expect(options.text()).toContain('保存后自动润色正文')
+    expect(options.text()).toContain('保存后自动生成图片')
+    const image = first.get('.auto-enrichment-choices label:nth-child(3) input')
+    expect((image.element as HTMLInputElement).checked).toBe(false)
+    expect((first.get('.auto-enrichment-choices label:first-child input').element as HTMLInputElement).checked).toBe(true)
+    expect((first.get('.auto-enrichment-choices label:nth-child(2) input').element as HTMLInputElement).checked).toBe(true)
+    await image.setValue(true)
+    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).autoImage).toBe(true)
+    first.unmount()
+    const restored = composer()
+    expect((restored.get('.auto-enrichment-choices label:nth-child(3) input').element as HTMLInputElement).checked).toBe(true)
+    restored.unmount()
   })
   it('置顶跨次加载恢复，保存失败保留原排序和编辑草稿', async () => {
     const data = useDataStore()

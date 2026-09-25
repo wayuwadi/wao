@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { startAutoNoteEnrichment, noteEnrichmentStatus, noteEnrichmentProgress, discardAutoNoteEnrichment, retryAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
+import { startAutoNoteEnrichment, noteEnrichmentStatus, noteEnrichmentProgress, discardAutoNoteEnrichment, retryAutoNoteEnrichment, resumeAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import { fetchDoc, apiPatchDoc } from '@/api/board'
 import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
 import { waitForPolish } from '@/api/polishJobs'
@@ -90,6 +90,48 @@ describe('小记保存后自动生成', () => {
     expect(waitForPolish).toHaveBeenCalledTimes(1)
     expect(noteEnrichmentProgress.n1?.polish).toBe('skipped')
     expect(noteEnrichmentStatus.n1).toContain('保留原文')
+  })
+
+  it('未勾选自动配图时跳过图片任务，润色仍执行且刷新后保留跳过状态', async () => {
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj1', status: 'SUCCEEDED', message: '', polished: '整理后的正文' })
+    vi.mocked(saveNotePolishVersion).mockResolvedValue({ docId: 'n1', sourceMarkdown: content.markdown, polishedMarkdown: '整理后的正文' })
+
+    startAutoNoteEnrichment('me', 'n1', 1, { title: true, imageEnabled: false })
+    await flushPromises()
+
+    expect(startArticleImage).not.toHaveBeenCalled()
+    expect(waitForPolish).toHaveBeenCalledWith(content.markdown, 'NOTE_BODY', expect.any(Object))
+    expect(noteEnrichmentProgress.n1).toEqual(expect.objectContaining({ title: 'done', image: 'skipped', polish: 'done' }))
+    expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).toBeNull()
+    delete noteEnrichmentProgress.n1
+    resumeAutoNoteEnrichment('me')
+    expect(noteEnrichmentProgress.n1).toEqual({ title: 'done', image: 'skipped', polish: 'done' })
+  })
+
+  it('快速记录同时关闭配图和润色时不启动两种任务', async () => {
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    startAutoNoteEnrichment('me', 'n1', 1, { title: true, imageEnabled: false, polishEnabled: false })
+    await flushPromises()
+
+    expect(startArticleImage).not.toHaveBeenCalled()
+    expect(waitForPolish).not.toHaveBeenCalled()
+    expect(noteEnrichmentProgress.n1).toEqual(expect.objectContaining({ image: 'skipped', polish: 'skipped' }))
+  })
+
+  it('关闭自动标题时仍可单独润色，刷新后标题保持已跳过', async () => {
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj1', status: 'SUCCEEDED', message: '', polished: '润色后正文' })
+    vi.mocked(saveNotePolishVersion).mockResolvedValue({ docId: 'n1', sourceMarkdown: content.markdown, polishedMarkdown: '润色后正文' })
+    startAutoNoteEnrichment('me', 'n1', 1, { titleEnabled: false, imageEnabled: false })
+    await flushPromises()
+
+    expect(waitForPolish).toHaveBeenCalledTimes(1)
+    expect(waitForPolish).toHaveBeenCalledWith(content.markdown, 'NOTE_BODY', expect.any(Object))
+    expect(noteEnrichmentProgress).toHaveProperty('n1.title', 'skipped')
+    delete noteEnrichmentProgress.n1
+    resumeAutoNoteEnrichment('me')
+    expect(noteEnrichmentProgress).toHaveProperty('n1.title', 'skipped')
   })
 
   it('删除小记时丢弃可恢复任务和卡片状态', async () => {

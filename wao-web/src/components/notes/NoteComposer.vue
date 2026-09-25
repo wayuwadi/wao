@@ -19,7 +19,7 @@ const session = useSessionStore()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}`
-type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[]; generatedTitle?: string; autoPolish?: boolean }
+type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[]; generatedTitle?: string; autoTitle?: boolean; autoPolish?: boolean; autoImage?: boolean }
 let restored = false
 function readDraft(): Draft {
   try {
@@ -110,6 +110,8 @@ async function closeImage() {
   imageTrigger = null
 }
 const autoPolish = ref(initial.autoPolish !== false)
+const autoImage = ref(initial.autoImage === true)
+const autoTitle = ref(initial.autoTitle !== false)
 // 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
 const baseRev = initial.baseRev ?? props.note?.rev ?? 1
 const saving = ref(false)
@@ -120,11 +122,11 @@ const draftError = ref(false)
 const status = ref(restored ? '已恢复草稿，可继续记录' : '')
 let resetting = false
 const canSave = computed(() => !!text.value.trim() && !saving.value && !creatingTag.value && !props.loading)
-watch([text, content, tags, generatedTitle, autoPolish], () => {
+watch([text, content, tags, generatedTitle, autoTitle, autoPolish, autoImage], () => {
   if (resetting) return
   error.value = ''
   try {
-    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value, generatedTitle: generatedTitle.value, autoPolish: autoPolish.value } satisfies Draft))
+    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value, generatedTitle: generatedTitle.value, autoTitle: autoTitle.value, autoPolish: autoPolish.value, autoImage: autoImage.value } satisfies Draft))
     draftError.value = false
     status.value = '草稿已保存在此浏览器'
   } catch {
@@ -161,13 +163,17 @@ async function save(asCopy = false) {
         && JSON.stringify(latest.content) === JSON.stringify(content.value)
         && JSON.stringify(latest.tags ?? []) === JSON.stringify(tags.value)
         && (latest.generatedTitle ?? '') === generatedTitle.value
-        && (latest.autoPolish !== false) === autoPolish.value)) localStorage.removeItem(draftKey)
+        && (latest.autoPolish !== false) === autoPolish.value
+        && (latest.autoTitle !== false) === autoTitle.value
+        && (latest.autoImage === true) === autoImage.value)) localStorage.removeItem(draftKey)
     } catch { /* 服务端保存已成功。 */ }
     if (!props.note || asCopy) {
       const saved = data.docById(savedId)
-      if (saved?.rev) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
+      if (saved?.rev && (autoTitle.value || autoImage.value || autoPolish.value)) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
         title: !!generatedTitle.value,
+        titleEnabled: autoTitle.value,
         image: rich.markdown.startsWith('![文章总览图]('),
+        imageEnabled: autoImage.value,
         polishEnabled: autoPolish.value,
       })
     }
@@ -178,6 +184,8 @@ async function save(asCopy = false) {
       tags.value = []
       generatedTitle.value = ''
       autoPolish.value = true
+      autoImage.value = false
+      autoTitle.value = true
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
     }
@@ -250,7 +258,11 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <span v-if="tags.length >= 20">每篇最多 20 个标签</span>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
-    <label v-if="!note" class="auto-polish-choice"><input v-model="autoPolish" type="checkbox" :disabled="saving">保存后自动润色正文</label>
+    <div v-if="!note" class="auto-enrichment-choices" role="group" aria-label="保存后自动生成选项">
+      <label><input v-model="autoTitle" type="checkbox" :disabled="saving">保存后自动生成标题</label>
+      <label><input v-model="autoPolish" type="checkbox" :disabled="saving">保存后自动润色正文</label>
+      <label><input v-model="autoImage" type="checkbox" :disabled="saving">保存后自动生成图片</label>
+    </div>
     <div class="composer-footer">
       <span role="status" :class="{ error: draftError }">{{ saving ? '正在保存到服务器…' : status || 'Ctrl / ⌘ + Enter 保存' }}</span>
       <button v-if="note && conflicted" type="button" :disabled="!canSave" @click="save(true)">保留为新小记</button>
@@ -296,8 +308,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .composer-image-lightbox img { max-width: min(96vw, 1600px); max-height: 90vh; object-fit: contain; }
 .composer-image-lightbox button { position: fixed; top: 16px; right: 18px; color: white; background: rgba(255,255,255,.16); }
 .composer-footer > span { color: var(--wao-text-faint); font-size: 12px; }
-.auto-polish-choice { display:inline-flex; align-items:center; gap:6px; margin-top:9px; color:var(--wao-text-faint); font-size:12px; }
-.auto-polish-choice input { accent-color:var(--wao-primary); }
+.auto-enrichment-choices { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin-top:10px; color:var(--wao-text-3); font-size:12px; }
+.auto-enrichment-choices label { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+.auto-enrichment-choices input { accent-color:var(--wao-primary); }
 .composer-footer { flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .composer-footer > span { flex: 1; min-width: 140px; }
 button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
