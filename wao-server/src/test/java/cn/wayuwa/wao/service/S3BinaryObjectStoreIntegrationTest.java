@@ -19,6 +19,7 @@ class S3BinaryObjectStoreIntegrationTest {
                 System.getenv("WAO_STORAGE_SECRET_KEY"), true)) {
             store.put(key, bytes, "text/plain");
             assertThat(store.get(key)).isEqualTo(bytes);
+            assertThat(store.getRange(key, 4, 6)).isEqualTo("SDK".getBytes(StandardCharsets.UTF_8));
         }
     }
 }

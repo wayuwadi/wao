@@ -7,6 +7,7 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -154,6 +155,27 @@ public class FileService {
         }
         if (entity.getContent() == null) throw new NotFoundException("文件不存在：" + id);
         return entity;
+    }
+
+    /** Read an inclusive media range from S3 without downloading the full object on each seek. */
+    public byte[] readRange(FileBlobEntity metadata, long start, long end) {
+        Long size = metadata.getByteSize();
+        if (size == null || start < 0 || end < start || end >= size) {
+            throw new IllegalArgumentException("File range is out of bounds");
+        }
+        String key = metadata.getObjectKey();
+        if (key != null && !key.isBlank()) {
+            try {
+                byte[] part = objects.getRange(key, start, end);
+                if (part.length != end - start + 1) throw new IllegalStateException("Incomplete object range");
+                return part;
+            } catch (RuntimeException ignored) {
+                // A retained MySQL copy, or a full S3 read, can still serve this request.
+            }
+        }
+        byte[] full = raw(metadata.getId()).getContent();
+        if (full.length != size) throw new IllegalStateException("File length changed during range read");
+        return Arrays.copyOfRange(full, Math.toIntExact(start), Math.toIntExact(end + 1));
     }
 
     /**

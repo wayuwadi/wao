@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import org.mockito.ArgumentCaptor;
 
@@ -59,6 +60,43 @@ class FileServiceTest {
         when(objects.get(saved.getValue().getObjectKey())).thenReturn(bytes);
         assertThat(s3.raw(item.id()).getContent()).isEqualTo(bytes);
         assertThat(item.link()).isEqualTo("/api/files/" + item.id() + "/download");
+    }
+
+    @Test
+    void mediaRangeUsesS3PartialReadWithoutLoadingTheMysqlBlob() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        FileService s3 = new FileService(mapper, settings, objects);
+        FileBlobEntity metadata = new FileBlobEntity();
+        metadata.setId("f1");
+        metadata.setByteSize(100L);
+        metadata.setObjectKey("files/f1/immutable-hash");
+        when(objects.getRange(metadata.getObjectKey(), 10, 19)).thenReturn(new byte[10]);
+
+        assertThat(s3.readRange(metadata, 10, 19)).hasSize(10);
+
+        verify(objects).getRange(metadata.getObjectKey(), 10, 19);
+        verify(objects, never()).get(metadata.getObjectKey());
+        verify(mapper, never()).selectById("f1");
+    }
+
+    @Test
+    void mediaRangeFallsBackToRetainedMysqlCopyIfS3IsUnavailable() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        FileService s3 = new FileService(mapper, settings, objects);
+        FileBlobEntity metadata = new FileBlobEntity();
+        metadata.setId("f1");
+        metadata.setByteSize(5L);
+        metadata.setObjectKey("files/f1/immutable-hash");
+        FileBlobEntity stored = new FileBlobEntity();
+        stored.setId("f1");
+        stored.setByteSize(5L);
+        stored.setObjectKey(metadata.getObjectKey());
+        stored.setContent("12345".getBytes());
+        when(mapper.selectById("f1")).thenReturn(stored);
+        when(objects.getRange(metadata.getObjectKey(), 1, 3)).thenThrow(new IllegalStateException("offline"));
+        when(objects.get(metadata.getObjectKey())).thenThrow(new IllegalStateException("offline"));
+
+        assertThat(s3.readRange(metadata, 1, 3)).isEqualTo("234".getBytes());
     }
 
     @Test

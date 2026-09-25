@@ -62,5 +62,19 @@ public class S3BinaryObjectStore implements BinaryObjectStore, AutoCloseable {
         return client.getObjectAsBytes(GetObjectRequest.builder().bucket(bucket).key(key).build()).asByteArray();
     }
 
+    @Override public byte[] getRange(String key, long start, long end) {
+        if (start < 0 || end < start) throw new IllegalArgumentException("Invalid object range");
+        var result = client.getObjectAsBytes(GetObjectRequest.builder().bucket(bucket).key(key)
+                .range("bytes=" + start + "-" + end).build());
+        byte[] bytes = result.asByteArray();
+        String expectedHash = key.substring(key.lastIndexOf('/') + 1);
+        if (bytes.length != end - start + 1 || result.response().contentRange() == null
+                || !result.response().contentRange().startsWith("bytes " + start + "-" + end + "/")
+                || !expectedHash.equals(result.response().metadata().get("sha256"))) {
+            throw new IllegalStateException("S3 object range response is incomplete");
+        }
+        return bytes;
+    }
+
     @Override public void close() { client.close(); }
 }

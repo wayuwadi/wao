@@ -40,7 +40,8 @@ class FileControllerTest {
     @Test
     void streamReturnsRequestedAudioRangeForSeeking() {
         FileBlobEntity entity = audio("雨夜.mp3", "audio/mpeg", "0123456789");
-        when(files.raw("song-1")).thenReturn(entity);
+        when(files.metadata("song-1")).thenReturn(entity);
+        when(files.readRange(entity, 2, 5)).thenReturn("2345".getBytes(StandardCharsets.UTF_8));
 
         var response = controller.stream("song-1", "bytes=2-5");
 
@@ -53,7 +54,9 @@ class FileControllerTest {
 
     @Test
     void streamUnderstandsSuffixRangeAndRejectsOutOfBoundsRange() {
-        when(files.raw("song-1")).thenReturn(audio("雨夜.mp3", "application/octet-stream", "0123456789"));
+        FileBlobEntity entity = audio("雨夜.mp3", "application/octet-stream", "0123456789");
+        when(files.metadata("song-1")).thenReturn(entity);
+        when(files.readRange(entity, 7, 9)).thenReturn("789".getBytes(StandardCharsets.UTF_8));
 
         var suffix = controller.stream("song-1", "bytes=-3");
         var invalid = controller.stream("song-1", "bytes=99-");
@@ -101,6 +104,7 @@ class FileControllerTest {
         entity.setName(name);
         entity.setContentType(contentType);
         entity.setContent(body.getBytes(StandardCharsets.UTF_8));
+        entity.setByteSize((long) entity.getContent().length);
         return entity;
     }
     @Test

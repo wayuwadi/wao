@@ -13,7 +13,8 @@ public interface FileBlobMapper extends BaseMapper<FileBlobEntity> {
     @Select("SELECT id, name, display_name, content_type, byte_size, created_by, project_id, created_at FROM file_blob ORDER BY created_at DESC")
     List<FileBlobEntity> listMeta();
 
-    @Select("SELECT id, name, display_name, content_type, byte_size, created_by, project_id, created_at "
+    @Select("SELECT id, name, display_name, content_type, byte_size, created_by, project_id, "
+            + "object_key, content_hash, created_at "
             + "FROM file_blob WHERE id = #{id}")
     FileBlobEntity findMeta(@Param("id") String id);
 
