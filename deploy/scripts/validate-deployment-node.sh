@@ -34,6 +34,8 @@ run_docker() {
   fi
 }
 
+. "${script_dir}/image-content.sh"
+
 compose() {
   if [ -f "${project_root}/deploy/.env.secrets" ]; then
     run_docker compose --env-file "${env_file}" --env-file "${project_root}/deploy/.env.secrets" \
@@ -46,10 +48,12 @@ compose() {
 for service in wao-server wao-agent-server wao-gateway; do
   container_id="$(compose ps -q "${service}")"
   test -n "${container_id}" || { echo "Missing container for ${service}." >&2; exit 1; }
-  running_image="$(run_docker inspect --format '{{.Config.Image}}' "${container_id}")"
   expected_image="${service}:${expected_tag}"
-  test "${running_image}" = "${expected_image}" || {
-    echo "${service} runs ${running_image}; expected ${expected_image}." >&2
+  expected_fingerprint="$(image_content_fingerprint "${expected_image}")"
+  running_image_id="$(run_docker inspect --format '{{.Image}}' "${container_id}")"
+  running_fingerprint="$(image_content_fingerprint "${running_image_id}")"
+  test "${running_fingerprint}" = "${expected_fingerprint}" || {
+    echo "${service} runs content ${running_fingerprint}; expected ${expected_fingerprint}." >&2
     exit 1
   }
   health="$(run_docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_id}")"
@@ -65,7 +69,7 @@ for service in wao-server wao-agent-server wao-gateway; do
     echo "${service} JVM max heap is ${max_heap:-unknown}; expected ${expected_heap} bytes." >&2
     exit 1
   }
-  printf '%s_image=%s health=%s\n' "${service}" "${running_image}" "${health}"
+  printf '%s_image=%s content=%s health=%s\n' "${service}" "${expected_image}" "${running_fingerprint}" "${health}"
   printf '%s_max_heap_bytes=%s\n' "${service}" "${max_heap}"
 done
 
