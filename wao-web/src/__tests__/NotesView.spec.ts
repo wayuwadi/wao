@@ -284,7 +284,7 @@ describe('小记集中记录空间', () => {
     expect(thumbs).toHaveLength(2)
     expect(wrapper.find('[data-note-id="images"] .note-image-rail').text()).toContain('2 张')
     expect(wrapper.find('[data-note-id="images"] .note-content.has-images').exists()).toBe(true)
-    expect(thumbs.map(thumb => thumb.find('img').attributes('src'))).toEqual(['/api/images/one/raw', '/api/images/two/raw'])
+    expect(thumbs.map(thumb => thumb.find('img').attributes('src'))).toEqual(['/api/images/one/preview', '/api/images/two/preview'])
     await thumbs[0]!.find('img').trigger('contextmenu', { clientX: 80, clientY: 80 })
     await flushPromises()
     expect(document.body.querySelector('[role="menu"][aria-label="图片操作"]')?.textContent).toContain('复制图片地址')

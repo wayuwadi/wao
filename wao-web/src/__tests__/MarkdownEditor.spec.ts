@@ -26,6 +26,7 @@ vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticle
 async function mountEditor(props: {
   modelValue: string
   readonly?: boolean
+  previewImages?: boolean
   placeholder?: string
   allowH1?: boolean
   peers?: {
@@ -78,6 +79,12 @@ describe('编辑区空白处', () => {
 })
 
 describe('文章总览配图', () => {
+  it('小记只读正文不请求隐藏的原图', async () => {
+    const wrapper = await mountEditor({ modelValue: '![文章总览图](/api/images/img1/raw)', readonly: true, previewImages: true })
+    expect(wrapper.get('.md-body img').attributes('src')).toBe('/api/images/img1/preview')
+    expect((wrapper.vm as unknown as { editor: Editor }).editor.getMarkdown()).toContain('/api/images/img1/raw')
+    wrapper.unmount()
+  })
   it('根据正文生成图片并插入开头，保留原文', async () => {
     vi.mocked(fetchPreference).mockResolvedValue('')
     vi.mocked(startArticleImage).mockResolvedValue({ id: 'ac-image', status: 'QUEUED', message: '等待生成', imageUrl: null })

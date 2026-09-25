@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { notePreviewImages } from '@/utils/notePreviewImages'
+import { notePreviewImages, notePreviewSource } from '@/utils/notePreviewImages'
 
 describe('小记图片预览提取', () => {
+  it('图床小图使用预览地址，放大仍保留原图地址', () => {
+    expect(notePreviewSource('/api/images/img123/raw')).toBe('/api/images/img123/preview')
+    expect(notePreviewSource('https://wao.wayuwa.cn/api/images/img123/raw')).toBe('https://wao.wayuwa.cn/api/images/img123/preview')
+    expect(notePreviewSource('https://example.com/other.png')).toBe('https://example.com/other.png')
+  })
   it('优先读取富文本结构，保留嵌套和重复图片的顺序', () => {
     expect(notePreviewImages({ version: 1, markdown: '![旧图](/api/images/old/raw)', document: {
       type: 'doc', content: [

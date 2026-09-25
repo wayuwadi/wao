@@ -22,5 +22,7 @@ class ReferenceImageAuthTest {
 
         var publicRequest = new MockHttpServletRequest("GET", "/api/images/abc/raw");
         assertThat(interceptor.preHandle(publicRequest, new MockHttpServletResponse(), null)).isTrue();
+        var previewRequest = new MockHttpServletRequest("GET", "/api/images/abc/preview");
+        assertThat(interceptor.preHandle(previewRequest, new MockHttpServletResponse(), null)).isTrue();
     }
 }

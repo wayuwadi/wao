@@ -12,6 +12,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import javax.imageio.ImageIO;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
@@ -34,6 +39,30 @@ class ImageServiceTest {
 
     private void defaultLimit() {
         when(settings.get()).thenReturn(new FileSettingsDto(50, 10, true));
+    }
+
+    @Test
+    void previewShrinksLargePngWithoutChangingTheStoredOriginal() throws Exception {
+        BufferedImage source = new BufferedImage(1600, 900, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < source.getHeight(); y++) {
+            for (int x = 0; x < source.getWidth(); x++) {
+                source.setRGB(x, y, new Color(x % 256, y % 256, (x + y) % 256).getRGB());
+            }
+        }
+        ByteArrayOutputStream original = new ByteArrayOutputStream();
+        ImageIO.write(source, "png", original);
+        ImageBlobEntity image = new ImageBlobEntity();
+        image.setId("img1");
+        image.setContentType("image/png");
+        image.setContent(original.toByteArray());
+        when(mapper.selectById("img1")).thenReturn(image);
+
+        ImageService.Preview preview = service.preview("img1");
+
+        assertThat(preview.contentType()).isEqualTo("image/jpeg");
+        assertThat(preview.content().length).isLessThan(original.size());
+        assertThat(ImageIO.read(new ByteArrayInputStream(preview.content())).getWidth()).isEqualTo(768);
+        assertThat(service.raw("img1").getContent()).isEqualTo(original.toByteArray());
     }
 
     @Test
