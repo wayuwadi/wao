@@ -48,7 +48,12 @@ def optimize_one(db, s3, bucket: str, asset_id: str, archive_verifier=None) -> s
     if len(original) > 220_000 and not preview_key:
         thumbnail = preview(original, "image/png")
         if thumbnail is None:
-            return "preview-unavailable"
+            with db.cursor() as cursor:
+                cursor.execute("UPDATE image_blob SET lossless_webp_checked=TRUE "
+                               "WHERE id=%s AND object_key=%s AND original_archive_key=%s "
+                               "AND preview_key IS NULL AND lossless_webp_checked=FALSE",
+                               (asset_id, row["object_key"], row["original_archive_key"]))
+                return "preview-unavailable" if cursor.rowcount == 1 else "concurrent-change"
         thumbnail_hash = digest(thumbnail)
         preview_key = f"previews/{asset_id}/{thumbnail_hash}"
         ensure_object(s3, bucket, preview_key, thumbnail, "image/jpeg", thumbnail_hash)

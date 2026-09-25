@@ -59,7 +59,7 @@ def digest(data: bytes) -> str:
 
 
 def preview(data: bytes, mime: str) -> bytes | None:
-    if len(data) <= 220_000 or mime not in ("image/png", "image/jpeg"):
+    if len(data) <= 220_000 or mime not in ("image/png", "image/jpeg", "image/webp"):
         return None
     try:
         with Image.open(BytesIO(data)) as image:

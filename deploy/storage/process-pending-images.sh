@@ -43,6 +43,7 @@ done
 python=/usr/local/lib/wao-backup/.venv/bin/python
 script_root=/usr/local/lib/wao-backup
 [[ -x "$python" && -f "$script_root/migrate_assets.py" \
+    && -f "$script_root/backfill_previews.py" \
     && -f "$script_root/archive_original_png.py" \
     && -f "$script_root/optimize_png_webp.py" ]] || {
   echo 'Image maintenance runtime is incomplete.' >&2
@@ -67,5 +68,6 @@ else
 fi
 
 "$python" "$script_root/migrate_assets.py" "${arguments[@]}"
+"$python" "$script_root/backfill_previews.py" "${arguments[@]}"
 "$python" "$script_root/archive_original_png.py" "${arguments[@]}"
 "$python" "$script_root/optimize_png_webp.py" "${arguments[@]}"

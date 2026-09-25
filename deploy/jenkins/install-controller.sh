@@ -152,6 +152,8 @@ install -m 0755 "$script_dir/../backup/verify-backup-source.py" \
   /usr/local/lib/wao-backup/verify-backup-source.py
 install -m 0755 "$script_dir/../storage/migrate_assets.py" \
   /usr/local/lib/wao-backup/migrate_assets.py
+install -m 0755 "$script_dir/../storage/backfill_previews.py" \
+  /usr/local/lib/wao-backup/backfill_previews.py
 install -m 0755 "$script_dir/../storage/archive_original_png.py" \
   /usr/local/lib/wao-backup/archive_original_png.py
 install -m 0755 "$script_dir/../storage/optimize_png_webp.py" \

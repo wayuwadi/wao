@@ -1,7 +1,7 @@
 import io
 from hashlib import sha256
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from PIL import Image
 from botocore.exceptions import ClientError
@@ -58,6 +58,24 @@ class OptimizePngTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "archive must be verified"):
             optimize_one(self.db, self.s3, "private", "img1")
         self.assertEqual(self.cursor.execute.call_count, 1)
+
+    def test_large_png_without_useful_preview_is_checked_once(self):
+        image = Image.effect_noise((640, 480), 80).convert("RGB")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        original = buffer.getvalue()
+        self.assertGreater(len(original), 220_000)
+        content_hash = sha256(original).hexdigest()
+        row = self.cursor.fetchone.return_value
+        row.update({"byte_size": len(original), "content_hash": content_hash,
+                    "content": original, "object_key": "images/img1/" + content_hash,
+                    "original_archive_key": "WAO-backups/originals/png/" + content_hash[:2]
+                    + "/" + content_hash + ".png.gpg"})
+        self.objects[row["object_key"]] = original
+        with patch("optimize_png_webp.preview", return_value=None):
+            self.assertEqual(optimize_one(self.db, self.s3, "private", "img1",
+                                          lambda _key, _body: None), "preview-unavailable")
+        self.assertIn("lossless_webp_checked=TRUE", self.cursor.execute.call_args.args[0])
 
 
 if __name__ == "__main__":

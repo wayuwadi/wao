@@ -115,6 +115,7 @@ V3 的文件、图床、日历、日程、AI 建议、目标 fixtures 采用「�
 | dedupe_key | CHAR(64) NULL（V77） | 仅 `deduplicate = true` 的服务端转存写 SHA-256；唯一索引 `uk_image_blob_dedupe_key` |
 | created_at | DATETIME | 落库时间；索引支持图床倒序列表 |
 | object_key / preview_key | VARCHAR(255) NULL（V166） | 当前在线图片 / JPEG 展示变体的私有 S3 key，不直接暴露给浏览器 |
+| preview_checked | BOOLEAN（V166） | 已尝试生成轻量预览；无压缩收益时也标记，避免后台重复处理 |
 | object_content_type / object_byte_size / object_hash | VARCHAR(100) / BIGINT / CHAR(64) NULL（V166） | 当前在线对象的 MIME、长度与 SHA-256；PNG 优化后可与原始字段不同 |
 | original_archive_key | VARCHAR(255) NULL（V166） | 原 PNG 经过加密 WebDAV 上传、下载解密及摘要复核后的永久归档路径 |
 | lossless_webp_checked | BOOLEAN（V166） | 已尝试像素无损 WebP；转换无收益时也标记，避免后台重复压缩 |

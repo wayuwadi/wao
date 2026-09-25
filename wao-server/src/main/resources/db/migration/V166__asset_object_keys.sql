@@ -6,6 +6,7 @@ ALTER TABLE image_blob
     ADD COLUMN object_byte_size BIGINT NULL,
     ADD COLUMN object_hash CHAR(64) NULL,
     ADD COLUMN preview_key VARCHAR(255) NULL,
+    ADD COLUMN preview_checked BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN original_archive_key VARCHAR(255) NULL,
     ADD COLUMN lossless_webp_checked BOOLEAN NOT NULL DEFAULT FALSE,
     MODIFY COLUMN content LONGBLOB NULL,
