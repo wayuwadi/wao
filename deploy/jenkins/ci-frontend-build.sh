@@ -2,6 +2,7 @@
 set -eu
 
 cache="${JENKINS_HOME:-$HOME}/.npm"
+node_image='node:24.15.0-bookworm-slim'
 mkdir -p "$cache"
 
 project="${1:?frontend project is required}"
@@ -28,11 +29,31 @@ run_npm() {
     -v "$PWD:/workspace" \
     -v "$cache:/tmp/npm-cache" \
     -w "/workspace/$project" \
-    node:24.15.0-bookworm-slim \
+    "$node_image" \
     npm "$@"
 }
 
-run_npm "$project" ci
+# The job is single-threaded and only checks out trusted main. npm ci creates
+# a complete tree for each package lock; preserve that tree between builds and
+# rerun npm ci whenever either manifest or the pinned Node image changes.
+deps_key="$(
+  {
+    printf '%s\n' "$node_image"
+    git hash-object "$project/package.json" "$project/package-lock.json"
+  } | git hash-object --stdin
+)"
+deps_marker="$project/node_modules/.wao-install-key"
+installed_key="$(cat "$deps_marker" 2>/dev/null || true)"
+if [ "$installed_key" != "$deps_key" ] \
+    || [ ! -f "$project/node_modules/.package-lock.json" ] \
+    || [ ! -x "$project/node_modules/.bin/vite" ]; then
+  rm -f "$deps_marker"
+  run_npm "$project" ci
+  printf '%s\n' "$deps_key" >"$deps_marker.tmp.$$"
+  mv "$deps_marker.tmp.$$" "$deps_marker"
+else
+  printf '%s dependencies unchanged; reusing npm ci tree.\n' "$project"
+fi
 if [ "$run_tests" = true ]; then
   run_npm "$project" run test:unit -- --run --maxWorkers=2
   if [ "$project" = wao-web ]; then run_npm "$project" run test:edge-static; fi
