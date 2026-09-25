@@ -27,12 +27,14 @@ export function directoryParents(kb: KnowledgeBase): Record<string, string> {
 }
 
 /** 扁平化只用于渲染，完整父子关系始终保留；搜索显示命中节点及祖先路径。 */
-export function directoryRows(kb: KnowledgeBase, titleOf: (id: string) => string, open: Record<string, boolean>, query: string): DirectoryNode[] {
+export function directoryRows(kb: KnowledgeBase, titleOf: (id: string) => string, open: Record<string, boolean>, query: string, compareDocs?: (leftId: string, rightId: string) => number): DirectoryNode[] {
   const parents = directoryParents(kb)
   const nodes = Object.entries(parents).map(([key, parent]) => ({ key, parent, id: key.slice(2), kind: key.startsWith('f:') ? 'folder' as const : 'doc' as const,
     title: key.startsWith('f:') ? kb.folders.find(f => f.id === key.slice(2))?.name ?? '' : titleOf(key.slice(2)), depth: 0, hasChildren: false }))
   const children = new Map<string, DirectoryNode[]>()
   for (const node of nodes) children.set(node.parent, [...(children.get(node.parent) ?? []), node])
+  if (compareDocs) for (const siblings of children.values()) siblings.sort((left, right) =>
+    left.kind === 'doc' && right.kind === 'doc' ? compareDocs(left.id, right.id) : 0)
   const allowed = new Set<string>()
   const search = query.trim().toLocaleLowerCase()
   for (const node of nodes.filter(n => n.title.toLocaleLowerCase().includes(search))) {
