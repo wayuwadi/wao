@@ -54,11 +54,13 @@ def optimize_one(db, s3, bucket: str, asset_id: str, archive_verifier=None) -> s
     optimized = lossless_webp(original)
     if optimized is None:
         with db.cursor() as cursor:
-            cursor.execute("UPDATE image_blob SET lossless_webp_checked=TRUE, preview_key=%s "
+            cursor.execute("UPDATE image_blob SET lossless_webp_checked=TRUE, preview_key=%s, "
+                           "preview_checked=%s "
                            "WHERE id=%s AND object_key=%s AND original_archive_key=%s "
                            "AND preview_key <=> %s AND byte_size=%s AND content_hash=%s "
                            "AND lossless_webp_checked=FALSE",
-                           (preview_key, asset_id, row["object_key"], row["original_archive_key"],
+                           (preview_key, preview_key is not None, asset_id, row["object_key"],
+                            row["original_archive_key"],
                             row["preview_key"], len(original), original_hash))
             return "not-smaller" if cursor.rowcount == 1 else "concurrent-change"
     optimized_hash = digest(optimized)
@@ -69,12 +71,13 @@ def optimize_one(db, s3, bucket: str, asset_id: str, archive_verifier=None) -> s
         raise RuntimeError("Uploaded WebP differs from original PNG pixels")
     with db.cursor() as cursor:
         cursor.execute("UPDATE image_blob SET object_key=%s, object_content_type='image/webp', "
-                       "object_byte_size=%s, object_hash=%s, preview_key=%s, "
+                       "object_byte_size=%s, object_hash=%s, preview_key=%s, preview_checked=%s, "
                        "lossless_webp_checked=TRUE, webp_activated_at=UTC_TIMESTAMP(3) "
                        "WHERE id=%s AND object_key=%s AND original_archive_key=%s "
                        "AND preview_key <=> %s AND byte_size=%s AND content_hash=%s "
                        "AND lossless_webp_checked=FALSE",
-                       (key, len(optimized), optimized_hash, preview_key, asset_id, row["object_key"],
+                       (key, len(optimized), optimized_hash, preview_key, preview_key is not None,
+                        asset_id, row["object_key"],
                         row["original_archive_key"], row["preview_key"], len(original), original_hash))
         return "optimized" if cursor.rowcount == 1 else "concurrent-change"
 

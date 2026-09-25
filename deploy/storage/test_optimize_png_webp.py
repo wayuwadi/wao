@@ -69,6 +69,7 @@ class OptimizePngTest(unittest.TestCase):
         row = self.cursor.fetchone.return_value
         row.update({"byte_size": len(original), "content_hash": content_hash,
                     "content": original, "object_key": "images/img1/" + content_hash,
+                    "preview_checked": True,
                     "original_archive_key": "WAO-backups/originals/png/" + content_hash[:2]
                     + "/" + content_hash + ".png.gpg"})
         self.objects[row["object_key"]] = original
@@ -91,6 +92,7 @@ class OptimizePngTest(unittest.TestCase):
         row = self.cursor.fetchone.return_value
         row.update({"byte_size": len(original), "content_hash": content_hash,
                     "content": original, "object_key": "images/img1/" + content_hash,
+                    "preview_checked": True,
                     "original_archive_key": "WAO-backups/originals/png/" + content_hash[:2]
                     + "/" + content_hash + ".png.gpg"})
         self.objects[row["object_key"]] = original
@@ -100,7 +102,9 @@ class OptimizePngTest(unittest.TestCase):
                                           lambda _key, _body: None), "optimized")
         statement, parameters = self.cursor.execute.call_args.args
         self.assertIn("object_content_type='image/webp'", statement)
+        self.assertIn("preview_checked=%s", statement)
         self.assertIsNone(parameters[3])
+        self.assertFalse(parameters[4])
 
     def test_not_smaller_webp_keeps_generated_preview(self):
         image = Image.effect_noise((640, 480), 80).convert("RGB")
@@ -123,7 +127,8 @@ class OptimizePngTest(unittest.TestCase):
         statement, parameters = self.cursor.execute.call_args.args
         self.assertIn("preview_key=%s", statement)
         self.assertEqual(parameters[0], "previews/img1/" + sha256(thumbnail).hexdigest())
-        self.assertIsNone(parameters[4])
+        self.assertTrue(parameters[1])
+        self.assertIsNone(parameters[5])
 
 
 if __name__ == "__main__":
