@@ -314,7 +314,9 @@ public class SharedChatService {
     private ImageBlobEntity image(String imageId) {
         if (!StringUtils.hasText(imageId)) return null;
         ImageBlobEntity image = images.selectById(imageId.trim());
-        if (image == null || image.getContent() == null) throw new BadRequestException("所选截图不存在，请重新上传");
+        if (image == null || (image.getContent() == null && image.getObjectKey() == null)) {
+            throw new BadRequestException("所选截图不存在，请重新上传");
+        }
         return image;
     }
 

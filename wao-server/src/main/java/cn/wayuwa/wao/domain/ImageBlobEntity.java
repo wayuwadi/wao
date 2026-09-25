@@ -20,6 +20,8 @@ public class ImageBlobEntity {
     private String dedupeKey;
     private LocalDateTime createdAt;
     private byte[] content;
+    private String objectKey;
+    private String previewKey;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -41,4 +43,8 @@ public class ImageBlobEntity {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public byte[] getContent() { return content; }
     public void setContent(byte[] content) { this.content = content; }
+    public String getObjectKey() { return objectKey; }
+    public void setObjectKey(String objectKey) { this.objectKey = objectKey; }
+    public String getPreviewKey() { return previewKey; }
+    public void setPreviewKey(String previewKey) { this.previewKey = previewKey; }
 }

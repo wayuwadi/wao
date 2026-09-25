@@ -1,0 +1,21 @@
+[Unit]
+Description=WAO private Garage object store
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wao-garage
+Group=wao-garage
+Environment=GARAGE_CONFIG_FILE=/opt/wao-garage/garage.toml
+ExecStart=/opt/wao-garage/bin/garage server
+Restart=always
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/wao-garage/meta /opt/wao-garage/data
+
+[Install]
+WantedBy=multi-user.target

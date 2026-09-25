@@ -1,0 +1,15 @@
+# Generate a fresh 32-byte hex rpc_secret outside Git and use the same value on
+# all three nodes. Set 10.66.0.2 (Linux2), .3 (Linux1), or .1 (cloud) below.
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+metadata_auto_snapshot_interval = "6h"
+replication_factor = 3
+compression_level = 2
+rpc_bind_addr = "10.66.0.2:3901"
+rpc_public_addr = "10.66.0.2:3901"
+rpc_secret = "<generated-shared-secret>"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "10.66.0.2:3900"

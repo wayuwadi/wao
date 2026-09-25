@@ -139,6 +139,16 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/usr/local/lib/wao-backup/webdav_client.py
     cp /workspace/deploy/backup/export-readable-content.py \
       /host/usr/local/lib/wao-backup/export-readable-content.py
+    cp /workspace/deploy/backup/verify-backup-source.py \
+      /host/usr/local/lib/wao-backup/verify-backup-source.py
+    cp /workspace/deploy/storage/migrate_assets.py \
+      /host/usr/local/lib/wao-backup/migrate_assets.py
+    cp /workspace/deploy/storage/export_object_backup.py \
+      /host/usr/local/lib/wao-backup/export_object_backup.py
+    cp /workspace/deploy/storage/restore_object_backup.py \
+      /host/usr/local/lib/wao-backup/restore_object_backup.py
+    cp /workspace/deploy/storage/requirements.txt \
+      /host/usr/local/lib/wao-backup/storage-requirements.txt
     cp /workspace/deploy/backup/wao-offsite-backup.service \
       /host/etc/systemd/system/wao-offsite-backup.service
     cp /workspace/deploy/backup/wao-offsite-backup.timer \

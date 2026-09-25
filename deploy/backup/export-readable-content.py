@@ -196,13 +196,14 @@ def media_metadata(table: str, ids: set[str]) -> tuple[list[dict], int]:
     if not ids:
         return [], 0
     result = []
-    hash_expression = "COALESCE(NULLIF(content_hash,''),SHA2(content,256))" if table == "image_blob" else "SHA2(content,256)"
+    hash_expression = "COALESCE(NULLIF(content_hash,''),SHA2(content,256))"
     ordered = sorted(ids)
     for start in range(0, len(ordered), 100):
         chunk = ordered[start:start + 100]
         values = ",".join("'" + item + "'" for item in chunk)
         result.extend(rows("SELECT REPLACE(TO_BASE64(JSON_OBJECT('id',id,'name',name,'type',content_type,"
-                           f"'bytes',byte_size,'sha256',{hash_expression})),CHAR(10),'') FROM {table} "
+                           f"'bytes',byte_size,'sha256',{hash_expression},'objectKey',object_key,"
+                           f"'mysqlBody',content IS NOT NULL)),CHAR(10),'') FROM {table} "
                            f"WHERE id IN ({values}) ORDER BY id"))
     return result, len(ids - {item["id"] for item in result})
 
@@ -218,8 +219,21 @@ def media_path(kind: str, item: dict) -> str:
 def fetch_media(table: str, item: dict) -> bytes:
     if table not in {"image_blob", "file_blob"} or not SAFE_ID.fullmatch(item["id"]):
         raise ValueError("Invalid media ID")
-    raw = mysql(f"SELECT HEX(content) FROM {table} WHERE id='{item['id']}'", binary=True).strip()
-    data = bytes.fromhex(raw.decode("ascii"))
+    if item.get("mysqlBody"):
+        raw = mysql(f"SELECT HEX(content) FROM {table} WHERE id='{item['id']}'", binary=True).strip()
+        data = bytes.fromhex(raw.decode("ascii"))
+    elif item.get("objectKey"):
+        import boto3
+        from botocore.config import Config
+        client = boto3.client("s3", endpoint_url=os.environ["WAO_STORAGE_ENDPOINT"],
+                              region_name=os.environ.get("WAO_STORAGE_REGION", "garage"),
+                              aws_access_key_id=os.environ["WAO_STORAGE_ACCESS_KEY"],
+                              aws_secret_access_key=os.environ["WAO_STORAGE_SECRET_KEY"],
+                              config=Config(signature_version="s3v4", s3={"addressing_style": "path"}))
+        data = client.get_object(Bucket=os.environ["WAO_STORAGE_BUCKET"],
+                                 Key=item["objectKey"])["Body"].read()
+    else:
+        raise RuntimeError("Media has no MySQL body or object key")
     if len(data) != item["bytes"] or digest(data) != item["sha256"]:
         raise RuntimeError("Media changed during export")
     return data

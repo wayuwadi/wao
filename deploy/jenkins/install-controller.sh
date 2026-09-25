@@ -148,6 +148,16 @@ install -m 0755 "$script_dir/../backup/webdav_client.py" \
   /usr/local/lib/wao-backup/webdav_client.py
 install -m 0755 "$script_dir/../backup/export-readable-content.py" \
   /usr/local/lib/wao-backup/export-readable-content.py
+install -m 0755 "$script_dir/../backup/verify-backup-source.py" \
+  /usr/local/lib/wao-backup/verify-backup-source.py
+install -m 0755 "$script_dir/../storage/migrate_assets.py" \
+  /usr/local/lib/wao-backup/migrate_assets.py
+install -m 0755 "$script_dir/../storage/export_object_backup.py" \
+  /usr/local/lib/wao-backup/export_object_backup.py
+install -m 0755 "$script_dir/../storage/restore_object_backup.py" \
+  /usr/local/lib/wao-backup/restore_object_backup.py
+install -m 0644 "$script_dir/../storage/requirements.txt" \
+  /usr/local/lib/wao-backup/storage-requirements.txt
 install -m 0644 "$script_dir/../backup/wao-offsite-backup.service" \
   /etc/systemd/system/wao-offsite-backup.service
 install -m 0644 "$script_dir/../backup/wao-offsite-backup.timer" \

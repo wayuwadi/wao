@@ -33,4 +33,6 @@ esac
 export WAO_EXPORT_MYSQL_USER="$DB_USER"
 export MYSQL_PWD="$DB_PASS"
 unset DB_ROOT_PASS DB_PASS
-exec python3 /usr/local/lib/wao-backup/export-readable-content.py "$@"
+python_bin=/usr/local/lib/wao-backup/.venv/bin/python
+[[ -x "$python_bin" ]] || python_bin=python3
+exec "$python_bin" /usr/local/lib/wao-backup/export-readable-content.py "$@"

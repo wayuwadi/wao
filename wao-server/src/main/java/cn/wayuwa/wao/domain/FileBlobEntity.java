@@ -16,6 +16,8 @@ public class FileBlobEntity {
     private String projectId;
     private LocalDateTime createdAt;
     private byte[] content;
+    private String objectKey;
+    private String contentHash;
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
     public String getName() { return name; }
@@ -34,4 +36,8 @@ public class FileBlobEntity {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public byte[] getContent() { return content; }
     public void setContent(byte[] content) { this.content = content; }
+    public String getObjectKey() { return objectKey; }
+    public void setObjectKey(String objectKey) { this.objectKey = objectKey; }
+    public String getContentHash() { return contentHash; }
+    public void setContentHash(String contentHash) { this.contentHash = contentHash; }
 }

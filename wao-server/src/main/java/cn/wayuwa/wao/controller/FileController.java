@@ -92,7 +92,7 @@ public class FileController {
     /** 登录成员在站内预览 UTF-8 Markdown；HTML 继续走隔离托管页。 */
     @GetMapping("/{id}/preview")
     public ApiResponse<FilePreviewDto> preview(@PathVariable String id, HttpServletRequest request) {
-        FileBlobEntity entity = files.raw(id);
+        FileBlobEntity entity = files.metadata(id);
         requireAssetAccess(entity.getProjectId(), currentMember.id(request));
         return ApiResponse.ok(files.preview(id));
     }
@@ -183,7 +183,7 @@ public class FileController {
 
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest request) {
-        requireAssetAccess(files.raw(id).getProjectId(), currentMember.id(request));
+        requireAssetAccess(files.metadata(id).getProjectId(), currentMember.id(request));
         files.delete(id);
         return ApiResponse.ok(null);
     }

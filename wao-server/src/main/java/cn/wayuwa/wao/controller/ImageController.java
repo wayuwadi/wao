@@ -78,7 +78,7 @@ public class ImageController {
 
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest request) {
-        String projectId = images.raw(id).getProjectId();
+        String projectId = images.metadata(id).getProjectId();
         if (projectId != null) projects.requireAccess(projectId, currentMember.id(request));
         images.delete(id);
         return ApiResponse.ok(null);

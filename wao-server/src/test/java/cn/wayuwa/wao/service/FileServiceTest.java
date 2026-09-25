@@ -41,6 +41,46 @@ class FileServiceTest {
     }
 
     @Test
+    void s3UploadAndReadKeepPrivateDownloadContractWithoutMysqlBody() {
+        defaultLimit();
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        when(objects.writesEnabled()).thenReturn(true);
+        FileService s3 = new FileService(mapper, settings, objects);
+        byte[] bytes = "file-body".getBytes();
+
+        var item = s3.upload(new MockMultipartFile("file", "a.pdf", "application/pdf", bytes), "wg");
+
+        ArgumentCaptor<FileBlobEntity> saved = ArgumentCaptor.forClass(FileBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getContent()).isNull();
+        assertThat(saved.getValue().getObjectKey()).startsWith("files/" + item.id() + "/");
+        verify(objects).put(saved.getValue().getObjectKey(), bytes, "application/pdf");
+        when(mapper.selectById(item.id())).thenReturn(saved.getValue());
+        when(objects.get(saved.getValue().getObjectKey())).thenReturn(bytes);
+        assertThat(s3.raw(item.id()).getContent()).isEqualTo(bytes);
+        assertThat(item.link()).isEqualTo("/api/files/" + item.id() + "/download");
+    }
+
+    @Test
+    void dualWriteRetainsMysqlCopyIfObjectUploadFails() {
+        defaultLimit();
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        when(objects.writesEnabled()).thenReturn(true);
+        when(objects.retainMysqlCopy()).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalStateException("offline"))
+                .when(objects).put(org.mockito.ArgumentMatchers.anyString(), any(byte[].class),
+                        org.mockito.ArgumentMatchers.anyString());
+        FileService dual = new FileService(mapper, settings, objects);
+
+        dual.upload(new MockMultipartFile("file", "a.pdf", "application/pdf", new byte[] {8}), "wg");
+
+        ArgumentCaptor<FileBlobEntity> saved = ArgumentCaptor.forClass(FileBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getContent()).containsExactly(8);
+        assertThat(saved.getValue().getObjectKey()).isNull();
+    }
+
+    @Test
     void emptyFileIsRejected() {
         defaultLimit();
         var file = new MockMultipartFile("file", "empty.txt", "text/plain", new byte[0]);
@@ -116,13 +156,14 @@ class FileServiceTest {
         metadata.setProjectId("p1"); metadata.setCreatedBy("wg"); metadata.setByteSize(3L);
         when(mapper.findMeta("f1")).thenReturn(metadata);
         var bytes = "new".getBytes();
-        when(mapper.replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes)).thenReturn(1);
+        String hash = ImageService.sha256(bytes);
+        when(mapper.replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes, null, hash)).thenReturn(1);
         var result = service.replace("f1", new MockMultipartFile("file", "../new.pdf", "application/pdf", bytes));
         assertThat(result.id()).isEqualTo("f1");
         assertThat(result.projectId()).isEqualTo("p1");
         assertThat(result.displayName()).isEqualTo("保留名称");
         assertThat(result.link()).isEqualTo("/api/files/f1/download");
-        verify(mapper).replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes);
+        verify(mapper).replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes, null, hash);
         org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).insert(any(FileBlobEntity.class));
     }
 
@@ -142,7 +183,9 @@ class FileServiceTest {
                 .hasMessageContaining("1MB");
         org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).replaceContent(
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong(), any(byte[].class));
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test
