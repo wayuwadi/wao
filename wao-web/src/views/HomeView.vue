@@ -36,9 +36,7 @@ import {
   type AiActivityType,
   type ReviewableTask,
 } from '@/api/ai'
-import HomeStartGuide from '@/components/home/HomeStartGuide.vue'
 import HomeDailyWorkspace from '@/components/home/HomeDailyWorkspace.vue'
-import WorkspaceMcpConnectCard from '@/components/home/WorkspaceMcpConnectCard.vue'
 import CodexBenefitsPanel from '@/components/ai/CodexBenefitsPanel.vue'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
@@ -597,9 +595,10 @@ function revealAiArea() {
   void nextTick(() => document.querySelector(target)?.scrollIntoView({ block: 'start' }))
 }
 
-watch([() => route.query.console, () => route.hash], ([next]) => {
+watch([() => route.query.console, () => route.hash], ([next, hash]) => {
   view.value = consoleViewFromQuery(next)
-  if (next) revealAiArea()
+  if (next || hash === '#ai-launcher') revealAiArea()
+  else aiAreaOpen.value = false
 })
 
 watch(activeWorkflows, (next) => {
@@ -1338,9 +1337,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
       <HomeDailyWorkspace />
-      <WorkspaceMcpConnectCard />
-      <HomeStartGuide />
-      <section class="ai-entry" aria-label="AI Run 实验功能">
+      <section v-if="aiAreaOpen" class="ai-entry" aria-label="AI Run 实验功能">
         <div><h2>AI Run <span>{{ activeRuns.length ? `${activeRuns.length} 项进行中` : '实验功能 · 按需展开' }}</span></h2><p v-if="aiAreaOpen">日常开发优先在本地电脑完成；需要体验自动执行时再展开。</p><p v-else-if="activeRuns.length">{{ activeRuns[0]?.taskTitle }} · {{ activeRuns[0]?.latestProgress || '查看运行进度' }}</p></div>
         <button type="button" :aria-expanded="aiAreaOpen" aria-controls="home-ai-area" @click="aiAreaOpen = !aiAreaOpen">{{ aiAreaOpen ? '收起 AI Run' : '展开 AI Run' }}<span v-if="activeRuns.length"> · {{ activeRuns.length }} 项进行中</span></button>
       </section>
@@ -3339,7 +3336,6 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .hero h1.slogan { font-size: 22px; margin: 5px 0 0; }
 .hero-metrics { display: flex; align-items: flex-start; gap: 22px; width: 100%; }
 .hero-metrics > .codex-benefits { flex: 1; }
-.home-primary > :deep(.start-guide) { grid-column: 1 / -1; }
 .quota-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #e0e5ff; }
 .quota-summary button, .quota-attention button { border: 1px solid #ffffff40; border-radius: 6px; padding: 5px 8px; background: #ffffff12; color: inherit; font: inherit; cursor: pointer; }
 .quota-attention { margin: 0; font-size: 12px; line-height: 1.6; color: #ffe9a9; }
