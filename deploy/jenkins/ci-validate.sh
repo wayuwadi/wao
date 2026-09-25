@@ -21,6 +21,7 @@ sh deploy/scripts/test-validate-deployment-node.sh
 sh deploy/scripts/test-ensure-codex-egress.sh
 sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
+sh deploy/jenkins/test-ci-build-release.sh
 bash deploy/jenkins/test-browser-release.sh
 bash deploy/jenkins/test-post-deploy-readiness.sh
 bash deploy/jenkins/test-slave-rollout-state.sh
