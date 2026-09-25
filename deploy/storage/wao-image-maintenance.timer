@@ -1,0 +1,11 @@
+[Unit]
+Description=Process pending WAO image originals and variants
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=10m
+Unit=wao-image-maintenance.service
+
+[Install]
+WantedBy=timers.target

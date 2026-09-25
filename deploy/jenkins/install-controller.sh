@@ -156,6 +156,8 @@ install -m 0755 "$script_dir/../storage/archive_original_png.py" \
   /usr/local/lib/wao-backup/archive_original_png.py
 install -m 0755 "$script_dir/../storage/optimize_png_webp.py" \
   /usr/local/lib/wao-backup/optimize_png_webp.py
+install -m 0755 "$script_dir/../storage/process-pending-images.sh" \
+  /usr/local/lib/wao-backup/process-pending-images.sh
 install -m 0755 "$script_dir/../storage/reclaim_mysql_blobs.py" \
   /usr/local/lib/wao-backup/reclaim_mysql_blobs.py
 install -m 0755 "$script_dir/../storage/export_object_backup.py" \
@@ -168,6 +170,9 @@ install -m 0644 "$script_dir/../backup/wao-offsite-backup.service" \
   /etc/systemd/system/wao-offsite-backup.service
 install -m 0644 "$script_dir/../backup/wao-offsite-backup.timer" \
   /etc/systemd/system/wao-offsite-backup.timer
+for unit in wao-image-maintenance.service wao-image-maintenance.timer; do
+  install -m 0644 "$script_dir/../storage/$unit" "/etc/systemd/system/$unit"
+done
 
 cat >/etc/jenkins/tunnel-ssh-config <<EOF
 Host wao-cloud-webhook
@@ -234,6 +239,7 @@ systemctl enable --now jenkins.service
 systemctl enable --now wao-jenkins-backup.timer
 systemctl enable --now wao-jenkins-health.timer
 systemctl enable --now wao-offsite-backup.timer
+systemctl enable --now wao-image-maintenance.timer
 systemctl enable --now wao-jenkins-webhook-tunnel.service
 
 printf '%s\n' \

@@ -97,6 +97,12 @@ set +a
 : "${DB_ROOT_PASS:?DB_ROOT_PASS is required in deploy/.env}"
 : "${DB_NAME:?DB_NAME is required in deploy/.env}"
 if [[ "${WAO_STORAGE_MODE:-mysql}" == s3 ]]; then
+  asset_lock="${WAO_IMAGE_BACKUP_LOCK_FILE:-/run/lock/wao-image-backup.lock}"
+  exec 8>"$asset_lock"
+  flock -w 7200 8 || {
+    echo 'Timed out waiting for image maintenance before object backup.' >&2
+    exit 1
+  }
   source_check=/usr/local/lib/wao-backup/verify-backup-source.py
   [[ -f "$source_check" ]] || {
     echo 'WAO backup source verifier is missing.' >&2

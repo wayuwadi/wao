@@ -1,0 +1,13 @@
+[Unit]
+Description=Archive and optimize pending WAO images
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/wao-backup/webdav.env
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/lib/wao-backup/process-pending-images.sh --apply
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h
