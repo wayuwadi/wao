@@ -60,10 +60,12 @@ def optimize_one(db, s3, bucket: str, asset_id: str, archive_verifier=None) -> s
     optimized = lossless_webp(original)
     if optimized is None:
         with db.cursor() as cursor:
-            cursor.execute("UPDATE image_blob SET lossless_webp_checked=TRUE "
+            cursor.execute("UPDATE image_blob SET lossless_webp_checked=TRUE, preview_key=%s "
                            "WHERE id=%s AND object_key=%s AND original_archive_key=%s "
+                           "AND preview_key <=> %s AND byte_size=%s AND content_hash=%s "
                            "AND lossless_webp_checked=FALSE",
-                           (asset_id, row["object_key"], row["original_archive_key"]))
+                           (preview_key, asset_id, row["object_key"], row["original_archive_key"],
+                            row["preview_key"], len(original), original_hash))
             return "not-smaller" if cursor.rowcount == 1 else "concurrent-change"
     optimized_hash = digest(optimized)
     key = f"images/{asset_id}/{optimized_hash}"
