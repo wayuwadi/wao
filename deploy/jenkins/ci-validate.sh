@@ -28,6 +28,7 @@ bash deploy/jenkins/test-post-deploy-readiness.sh
 bash deploy/jenkins/test-slave-rollout-state.sh
 bash deploy/jenkins/test-early-browser-release.sh
 bash deploy/jenkins/test-slave-image-selection.sh
+bash deploy/jenkins/test-slave-release-transfer.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
 sh deploy/jenkins/test-github-status.sh
