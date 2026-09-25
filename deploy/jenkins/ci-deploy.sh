@@ -317,7 +317,7 @@ prepare_slave_images() {
   # 一次 SSH 同时查询精确镜像 ID 和运行内容标签。只有完整指纹一致才复用
   # Linux1 已有镜像；清单改写为远端真实 ID，安装器仍按 ID 验证并贴目标 SHA 标签。
   present_report="$(slave_ssh -o BatchMode=yes -o ConnectTimeout=8 "wao-slave" \
-    "for id in $(awk '{ print $2 }' "$desired" | tr '\n' ' '); do docker image inspect \"\$id\" >/dev/null 2>&1 && printf 'id %s\\n' \"\$id\"; done; for tag in $content_tags; do remote_id=\$(docker image inspect --format '{{.Id}}' \"\$tag\" 2>/dev/null) || continue; fp=\$(docker image inspect --format '{{.Os}}/{{.Architecture}} {{json .Config}} {{json .RootFS.Layers}}' \"\$tag\" | openssl dgst -sha256 -r | cut -d' ' -f1) || continue; printf 'content %s %s %s\\n' \"\$tag\" \"\$remote_id\" \"\$fp\"; done; true")" || return 1
+    "for id in $(awk '{ print $2 }' "$desired" | tr '\n' ' '); do docker image inspect \"\$id\" >/dev/null 2>&1 && printf 'id %s\\n' \"\$id\"; done; for tag in $content_tags; do remote_id=\$(docker image inspect --format '{{.Id}}' \"\$tag\" 2>/dev/null) || continue; content=\$(docker image inspect --format '{{.Os}}/{{.Architecture}} {{json .Config}} {{json .RootFS.Layers}}' \"\$tag\") || continue; fp=\$(printf '%s' \"\$content\" | openssl dgst -sha256 -r | cut -d' ' -f1) || continue; printf 'content %s %s %s\\n' \"\$tag\" \"\$remote_id\" \"\$fp\"; done; true")" || return 1
   while read -r image image_id fingerprint content_tag; do
     resolved_id="$image_id"
     if ! printf '%s\n' "$present_report" | grep -Fqx "id $image_id"; then

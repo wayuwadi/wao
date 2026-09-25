@@ -31,6 +31,24 @@ docker() {
 }
 slave_ssh() {
   printf '%s\n' "$*" >>"$FIXTURE/ssh.log"
+  if [ "${REMOTE_EVAL:-false}" = true ]; then
+    (
+      docker() {
+        if [ "$1" != image ] || [ "$2" != inspect ]; then return 1; fi
+        if [ "$3" != --format ]; then
+          [ "$3" != "sha256:$(printf '%064d' 1)" ]
+          return
+        fi
+        if [ "$4" = '{{.Id}}' ]; then
+          printf 'sha256:%064d\n' 3
+        else
+          printf 'linux/amd64 {"image":"%s"} ["layer"]\n' "${5%%:content-*}:abc1234"
+        fi
+      }
+      eval "${*: -1}"
+    )
+    return
+  fi
   while read -r image id fingerprint tag; do
     if [ "${MISSING:-false}" = true ] && [ "$image" = wao-server:abc1234 ]; then continue; fi
     if [ "${REUSE:-false}" = true ] && [ "$image" = wao-server:abc1234 ]; then
@@ -49,6 +67,10 @@ test ! -e "$fixture/wao-images.tar.gz"
 test "$(wc -l <"$fixture/wao-image-manifest.txt" | tr -d ' ')" = 7
 
 FIXTURE="$fixture" REUSE=true bash "$fixture/run.sh"
+test ! -e "$fixture/wao-images.tar.gz"
+grep -Fqx "wao-server:abc1234 sha256:$(printf '%064d' 3)" "$fixture/wao-image-manifest.txt"
+
+FIXTURE="$fixture" REMOTE_EVAL=true bash "$fixture/run.sh"
 test ! -e "$fixture/wao-images.tar.gz"
 grep -Fqx "wao-server:abc1234 sha256:$(printf '%064d' 3)" "$fixture/wao-image-manifest.txt"
 
