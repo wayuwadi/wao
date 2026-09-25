@@ -108,13 +108,16 @@ V3 的文件、图床、日历、日程、AI 建议、目标 fixtures 采用「�
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | VARCHAR(40) PK | 图片稳定 id，正文接口按此寻址 |
-| name / content_type | VARCHAR(255) / VARCHAR(100) | 安全文件名与 MIME 类型 |
-| byte_size | BIGINT | 图片字节数，单张最大 10MB |
+| name / content_type | VARCHAR(255) / VARCHAR(100) | 原始文件名与 MIME 类型；在线无损 WebP 使用独立的对象类型字段 |
+| byte_size | BIGINT | 原始图片字节数，单张最大 10MB |
 | source | VARCHAR(160) NULL | 来源描述，例如飞书群名或任务 |
 | content_hash | CHAR(64) NULL（V22） | 图片正文 SHA-256；`(content_hash, byte_size)` 普通索引支持写前查重 |
 | dedupe_key | CHAR(64) NULL（V77） | 仅 `deduplicate = true` 的服务端转存写 SHA-256；唯一索引 `uk_image_blob_dedupe_key` |
 | created_at | DATETIME | 落库时间；索引支持图床倒序列表 |
-| object_key / preview_key | VARCHAR(255) NULL（V166） | 私有 S3 原件 / JPEG 展示变体 key，不直接暴露给浏览器 |
+| object_key / preview_key | VARCHAR(255) NULL（V166） | 当前在线图片 / JPEG 展示变体的私有 S3 key，不直接暴露给浏览器 |
+| object_content_type / object_byte_size / object_hash | VARCHAR(100) / BIGINT / CHAR(64) NULL（V166） | 当前在线对象的 MIME、长度与 SHA-256；PNG 优化后可与原始字段不同 |
+| original_archive_key | VARCHAR(255) NULL（V166） | 原 PNG 经过加密 WebDAV 上传、下载解密及摘要复核后的永久归档路径 |
+| lossless_webp_checked | BOOLEAN（V166） | 已尝试像素无损 WebP；转换无收益时也标记，避免后台重复压缩 |
 | content | LONGBLOB NULL（V166） | 历史正文或双写回退副本；迁移校验和恢复演练前保留，列表不读取 |
 
 飞书聊天图片等服务端去重写入先按摘要与字节数查询；两个节点仍并发插入时，nullable 唯一键只允许一个 `dedupe_key` 获胜，冲突方按 key 读取并复用赢家 id，

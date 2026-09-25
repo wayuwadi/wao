@@ -5,7 +5,7 @@ import unittest
 from botocore.exceptions import ClientError
 from PIL import Image
 
-from migrate_assets import ensure_object, preview
+from migrate_assets import ensure_object, lossless_webp, pixel_equivalent_png_webp, preview
 
 
 class FakeS3:
@@ -55,6 +55,19 @@ class MigrationSafetyTest(unittest.TestCase):
         self.assertIsNotNone(smaller)
         self.assertLess(len(smaller), len(output.getvalue()))
         self.assertEqual(Image.open(io.BytesIO(smaller)).size, (768, 432))
+
+    def test_lossless_webp_preserves_every_pixel_including_transparent_rgb(self):
+        image = Image.new("RGBA", (128, 128))
+        for y in range(128):
+            for x in range(128):
+                image.putpixel((x, y), ((x * 17) % 256, (y * 19) % 256,
+                                        (x + y) % 256, 0 if x < 64 else 255))
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        optimized = lossless_webp(output.getvalue())
+        self.assertIsNotNone(optimized)
+        self.assertLess(len(optimized), len(output.getvalue()))
+        self.assertTrue(pixel_equivalent_png_webp(output.getvalue(), optimized))
 
 
 if __name__ == "__main__":

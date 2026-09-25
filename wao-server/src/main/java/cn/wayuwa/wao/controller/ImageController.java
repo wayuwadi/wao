@@ -56,23 +56,23 @@ public class ImageController {
         return ApiResponse.ok(images.upload(file, source, projectId));
     }
 
-    /** 直出图片正文；内容按 id 寻址且不可变，可长期缓存。 */
+    /** 直出全尺寸图片；无损优化可在同一 URL 切换 MIME，缓存须定期复核。 */
     @GetMapping("/{id}/raw")
     public ResponseEntity<byte[]> raw(@PathVariable String id) {
         ImageBlobEntity e = images.raw(id);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(e.getContentType()))
-                .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
+                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePublic())
                 .body(e.getContent());
     }
 
-    /** 列表用小图，按不可变图片 id 长期缓存；大图仍由 raw 提供。 */
+    /** 列表用小图；历史数据回填时同一 id 可增加预存变体。 */
     @GetMapping("/{id}/preview")
     public ResponseEntity<byte[]> preview(@PathVariable String id) {
         ImageService.Preview image = images.preview(id);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(image.contentType()))
-                .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
+                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePublic())
                 .body(image.content());
     }
 

@@ -21,7 +21,11 @@ public class ImageBlobEntity {
     private LocalDateTime createdAt;
     private byte[] content;
     private String objectKey;
+    private String objectContentType;
+    private Long objectByteSize;
+    private String objectHash;
     private String previewKey;
+    private String originalArchiveKey;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -45,6 +49,14 @@ public class ImageBlobEntity {
     public void setContent(byte[] content) { this.content = content; }
     public String getObjectKey() { return objectKey; }
     public void setObjectKey(String objectKey) { this.objectKey = objectKey; }
+    public String getObjectContentType() { return objectContentType; }
+    public void setObjectContentType(String objectContentType) { this.objectContentType = objectContentType; }
+    public Long getObjectByteSize() { return objectByteSize; }
+    public void setObjectByteSize(Long objectByteSize) { this.objectByteSize = objectByteSize; }
+    public String getObjectHash() { return objectHash; }
+    public void setObjectHash(String objectHash) { this.objectHash = objectHash; }
     public String getPreviewKey() { return previewKey; }
     public void setPreviewKey(String previewKey) { this.previewKey = previewKey; }
+    public String getOriginalArchiveKey() { return originalArchiveKey; }
+    public void setOriginalArchiveKey(String originalArchiveKey) { this.originalArchiveKey = originalArchiveKey; }
 }

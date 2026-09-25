@@ -143,6 +143,10 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/usr/local/lib/wao-backup/verify-backup-source.py
     cp /workspace/deploy/storage/migrate_assets.py \
       /host/usr/local/lib/wao-backup/migrate_assets.py
+    cp /workspace/deploy/storage/archive_original_png.py \
+      /host/usr/local/lib/wao-backup/archive_original_png.py
+    cp /workspace/deploy/storage/optimize_png_webp.py \
+      /host/usr/local/lib/wao-backup/optimize_png_webp.py
     cp /workspace/deploy/storage/reclaim_mysql_blobs.py \
       /host/usr/local/lib/wao-backup/reclaim_mysql_blobs.py
     cp /workspace/deploy/storage/export_object_backup.py \

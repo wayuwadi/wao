@@ -172,6 +172,9 @@ public class ImageService {
             try {
                 objects.put(key, content, type);
                 e.setObjectKey(key);
+                e.setObjectContentType(type);
+                e.setObjectByteSize((long) content.length);
+                e.setObjectHash(hash);
             } catch (RuntimeException exception) {
                 if (!objects.retainMysqlCopy()) {
                     throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "图片存储暂不可用", exception);
@@ -240,25 +243,32 @@ public class ImageService {
      * @throws NotFoundException 图片不存在时
      */
     public ImageBlobEntity raw(String id) {
-        ImageBlobEntity e = mapper.selectById(id);
+        ImageBlobEntity e = mapper.findMeta(id);
         if (e == null) {
             throw new NotFoundException("图片不存在：" + id);
         }
         if (e.getObjectKey() != null && !e.getObjectKey().isBlank()) {
             try {
                 byte[] fetched = objects.get(e.getObjectKey());
-                if ((e.getByteSize() != null && fetched.length != e.getByteSize())
-                        || (e.getContentHash() != null && !e.getContentHash().equals(sha256(fetched)))) {
+                Long expectedSize = e.getObjectByteSize() == null ? e.getByteSize() : e.getObjectByteSize();
+                String expectedHash = e.getObjectHash() == null ? e.getContentHash() : e.getObjectHash();
+                if ((expectedSize != null && fetched.length != expectedSize)
+                        || (expectedHash != null && !expectedHash.equals(sha256(fetched)))) {
                     throw new IllegalStateException("Object bytes differ from image metadata");
                 }
                 e.setContent(fetched);
+                if (e.getObjectContentType() != null) e.setContentType(e.getObjectContentType());
+                return e;
             } catch (RuntimeException exception) {
-                if (e.getContent() == null) {
+                ImageBlobEntity original = mapper.selectById(id);
+                if (original == null || original.getContent() == null) {
                     throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "图片存储暂不可用", exception);
                 }
+                return original;
             }
         }
-        if (e.getContent() == null) throw new NotFoundException("图片不存在：" + id);
+        e = mapper.selectById(id);
+        if (e == null || e.getContent() == null) throw new NotFoundException("图片不存在：" + id);
         return e;
     }
 

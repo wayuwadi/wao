@@ -17,11 +17,15 @@ KEY = re.compile(r"(?:images|files|previews)/[A-Za-z0-9_-]+/[0-9a-f]{64}\Z")
 def inventory(db) -> dict[str, tuple[int | None, str]]:
     result = {}
     with db.cursor() as cursor:
-        for table in ("image_blob", "file_blob"):
-            cursor.execute(f"SELECT object_key, byte_size, content_hash FROM {table} "
-                           "WHERE object_key IS NOT NULL")
-            for row in cursor.fetchall():
-                result[row["object_key"]] = (row["byte_size"], row["content_hash"])
+        cursor.execute("SELECT object_key, COALESCE(object_byte_size,byte_size) AS object_size, "
+                       "COALESCE(object_hash,content_hash) AS object_checksum FROM image_blob "
+                       "WHERE object_key IS NOT NULL")
+        for row in cursor.fetchall():
+            result[row["object_key"]] = (row["object_size"], row["object_checksum"])
+        cursor.execute("SELECT object_key, byte_size, content_hash FROM file_blob "
+                       "WHERE object_key IS NOT NULL")
+        for row in cursor.fetchall():
+            result[row["object_key"]] = (row["byte_size"], row["content_hash"])
         cursor.execute("SELECT preview_key FROM image_blob WHERE preview_key IS NOT NULL")
         for row in cursor.fetchall():
             key = row["preview_key"]

@@ -82,6 +82,42 @@ def preview(data: bytes, mime: str) -> bytes | None:
         return None
 
 
+def pixel_equivalent_png_webp(original: bytes, optimized: bytes) -> bool:
+    try:
+        with Image.open(BytesIO(original)) as source, Image.open(BytesIO(optimized)) as target:
+            if source.format != "PNG" or target.format != "WEBP" or source.size != target.size:
+                return False
+            if getattr(source, "n_frames", 1) != 1 or getattr(target, "n_frames", 1) != 1:
+                return False
+            if source.info.get("icc_profile") != target.info.get("icc_profile"):
+                return False
+            if source.width * source.height > Image.MAX_IMAGE_PIXELS:
+                return False
+            mode = "RGBA" if "A" in source.getbands() or "transparency" in source.info else "RGB"
+            return source.convert(mode).tobytes() == target.convert(mode).tobytes()
+    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
+        return False
+
+
+def lossless_webp(original: bytes) -> bytes | None:
+    try:
+        with Image.open(BytesIO(original)) as source:
+            if source.format != "PNG" or getattr(source, "n_frames", 1) != 1:
+                return None
+            if (source.width * source.height > Image.MAX_IMAGE_PIXELS
+                    or source.mode not in {"1", "L", "LA", "P", "RGB", "RGBA"}
+                    or source.info.get("exif")):
+                return None
+            mode = "RGBA" if "A" in source.getbands() or "transparency" in source.info else "RGB"
+            output = BytesIO()
+            source.convert(mode).save(output, format="WEBP", lossless=True, exact=True,
+                                      method=4, icc_profile=source.info.get("icc_profile", b""))
+            data = output.getvalue()
+        return data if len(data) < len(original) and pixel_equivalent_png_webp(original, data) else None
+    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
+        return None
+
+
 def ensure_object(client, bucket: str, key: str, data: bytes, mime: str, expected: str) -> None:
     try:
         head = client.head_object(Bucket=bucket, Key=key)
@@ -123,9 +159,11 @@ def migrate_row(db, client, bucket: str, table: str, asset_id: str) -> str:
             ensure_object(client, bucket, preview_key, smaller, "image/jpeg", preview_hash)
     with db.cursor() as cursor:
         if table == "image_blob":
-            cursor.execute("UPDATE image_blob SET object_key=%s, preview_key=%s, content_hash=%s "
+            cursor.execute("UPDATE image_blob SET object_key=%s, object_content_type=%s, "
+                           "object_byte_size=%s, object_hash=%s, preview_key=%s, content_hash=%s "
                            "WHERE id=%s AND object_key IS NULL AND byte_size=%s AND SHA2(content,256)=%s",
-                           (key, preview_key, content_hash, asset_id, len(data), content_hash))
+                           (key, row["content_type"], len(data), content_hash, preview_key,
+                            content_hash, asset_id, len(data), content_hash))
         else:
             cursor.execute("UPDATE file_blob SET object_key=%s, content_hash=%s "
                            "WHERE id=%s AND object_key IS NULL AND byte_size=%s AND SHA2(content,256)=%s",
@@ -135,16 +173,25 @@ def migrate_row(db, client, bucket: str, table: str, asset_id: str) -> str:
 
 def verify_row(db, client, bucket: str, table: str, asset_id: str) -> None:
     with db.cursor() as cursor:
-        cursor.execute(f"SELECT object_key, byte_size, content_hash, content FROM {table} WHERE id=%s",
+        extra = ", object_content_type, object_byte_size, object_hash" if table == "image_blob" else ""
+        cursor.execute(f"SELECT object_key, byte_size, content_hash, content{extra} "
+                       f"FROM {table} WHERE id=%s",
                        (asset_id,))
         row = cursor.fetchone()
     if not row or not row["object_key"] or not row["content_hash"]:
         raise RuntimeError("Missing key or checksum")
     downloaded = client.get_object(Bucket=bucket, Key=row["object_key"])["Body"].read()
-    if len(downloaded) != row["byte_size"] or digest(downloaded) != row["content_hash"]:
+    object_size = row.get("object_byte_size") or row["byte_size"]
+    object_hash = row.get("object_hash") or row["content_hash"]
+    if len(downloaded) != object_size or digest(downloaded) != object_hash:
         raise RuntimeError("Stored object does not match metadata")
-    if row["content"] is not None and downloaded != bytes(row["content"]):
-        raise RuntimeError("Object differs from retained MySQL bytes")
+    if row["content"] is not None:
+        original = bytes(row["content"])
+        if table == "image_blob" and row.get("object_content_type") == "image/webp":
+            if not pixel_equivalent_png_webp(original, downloaded):
+                raise RuntimeError("Optimized object differs from original PNG pixels")
+        elif downloaded != original:
+            raise RuntimeError("Object differs from retained MySQL bytes")
 
 
 def main() -> int:

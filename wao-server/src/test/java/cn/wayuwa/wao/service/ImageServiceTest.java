@@ -120,6 +120,7 @@ class ImageServiceTest {
         ImageService s3 = new ImageService(mapper, content, settings, objects);
         ImageBlobEntity image = new ImageBlobEntity();
         image.setId("img1"); image.setObjectKey("images/img1/key"); image.setContent(new byte[] {4});
+        when(mapper.findMeta("img1")).thenReturn(image);
         when(mapper.selectById("img1")).thenReturn(image);
         when(objects.get("images/img1/key")).thenThrow(new IllegalStateException("offline"));
         assertThat(s3.raw("img1").getContent()).containsExactly(4);
@@ -127,6 +128,31 @@ class ImageServiceTest {
         image.setContent(null);
         assertThatThrownBy(() -> s3.raw("img1")).isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("503");
+    }
+
+    @Test
+    void optimizedWebpUsesItsOwnChecksumAndMimeAtTheExistingRawUrl() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        ImageService s3 = new ImageService(mapper, content, settings, objects);
+        byte[] png = new byte[] {1, 2, 3};
+        byte[] webp = new byte[] {4, 5};
+        ImageBlobEntity image = new ImageBlobEntity();
+        image.setId("img1");
+        image.setContentType("image/png");
+        image.setByteSize((long) png.length);
+        image.setContentHash(ImageService.sha256(png));
+        image.setContent(png);
+        image.setObjectKey("images/img1/" + ImageService.sha256(webp));
+        image.setObjectContentType("image/webp");
+        image.setObjectByteSize((long) webp.length);
+        image.setObjectHash(ImageService.sha256(webp));
+        when(mapper.findMeta("img1")).thenReturn(image);
+        when(objects.get(image.getObjectKey())).thenReturn(webp);
+
+        ImageBlobEntity served = s3.raw("img1");
+        assertThat(served.getContent()).containsExactly(webp);
+        assertThat(served.getContentType()).isEqualTo("image/webp");
+        verify(mapper, never()).selectById("img1");
     }
 
     @Test

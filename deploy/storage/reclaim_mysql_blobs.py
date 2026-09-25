@@ -14,7 +14,9 @@ import json
 import os
 from pathlib import Path
 
-from migrate_assets import TABLES, database, digest, object_client, required
+from archive_original_png import verify_remote
+from migrate_assets import (TABLES, database, digest, object_client,
+                            pixel_equivalent_png_webp, required)
 
 
 def load_manifest(path: Path, bucket: str) -> dict:
@@ -25,24 +27,40 @@ def load_manifest(path: Path, bucket: str) -> dict:
     return manifest["objects"]
 
 
-def clear_one(db, client, bucket: str, backup: dict, table: str, asset_id: str) -> int:
+def clear_one(db, client, bucket: str, backup: dict, table: str, asset_id: str,
+              original_archive_verifier=None) -> int:
     if table not in TABLES:
         raise ValueError("Unexpected asset table")
     with db.cursor() as cursor:
-        cursor.execute(f"SELECT object_key, byte_size, content_hash, content FROM {table} "
+        extra = (", content_type, object_content_type, object_byte_size, object_hash, "
+                 "original_archive_key" if table == "image_blob" else "")
+        cursor.execute(f"SELECT object_key, byte_size, content_hash, content{extra} FROM {table} "
                        "WHERE id=%s AND object_key IS NOT NULL AND content IS NOT NULL", (asset_id,))
         row = cursor.fetchone()
     if not row:
         return 0
     key, size, expected, body = (row["object_key"], row["byte_size"], row["content_hash"],
                                  bytes(row["content"]))
-    if not expected or len(body) != size or digest(body) != expected or not key.endswith("/" + expected):
+    object_size = row.get("object_byte_size") or size
+    object_hash = row.get("object_hash") or expected
+    if not expected or len(body) != size or digest(body) != expected or not key.endswith("/" + object_hash):
         raise RuntimeError("MySQL body or object key differs from stored metadata")
+    if table == "image_blob" and row["content_type"] == "image/png":
+        archived = row["original_archive_key"]
+        if (not archived or not archived.endswith("/" + expected + ".png.gpg")
+                or original_archive_verifier is None):
+            raise RuntimeError("Original PNG must have an independently verified encrypted archive")
+        original_archive_verifier(archived, body)
     backed_up = backup.get(key)
-    if not backed_up or backed_up.get("bytes") != size or backed_up.get("sha256") != expected:
+    if not backed_up or backed_up.get("bytes") != object_size or backed_up.get("sha256") != object_hash:
         raise RuntimeError("Object is absent from the independently verified backup")
     object_bytes = client.get_object(Bucket=bucket, Key=key)["Body"].read()
-    if object_bytes != body:
+    if len(object_bytes) != object_size or digest(object_bytes) != object_hash:
+        raise RuntimeError("S3 object differs from metadata")
+    if table == "image_blob" and row["object_content_type"] == "image/webp":
+        if not pixel_equivalent_png_webp(body, object_bytes):
+            raise RuntimeError("Online WebP differs from original PNG pixels")
+    elif object_bytes != body:
         raise RuntimeError("S3 object differs from the MySQL original")
     with db.cursor() as cursor:
         cursor.execute(f"UPDATE {table} SET content=NULL WHERE id=%s AND object_key=%s "
@@ -78,6 +96,16 @@ def main() -> int:
         client = object_client() if args.apply else None
         bucket = required("WAO_STORAGE_BUCKET") if args.apply else ""
         backup = load_manifest(args.backup_manifest, bucket) if args.apply else {}
+        archive_verifier = None
+        if args.apply:
+            from webdav_client import build_client
+            config_path = Path(os.getenv("WAO_ORIGINAL_WEBDAV_CONFIG", "/etc/wao-backup/webdav.env"))
+            passphrase = Path(os.getenv("WAO_ORIGINAL_PASSPHRASE_FILE",
+                                     "/etc/wao-backup/encryption-passphrase"))
+            if not passphrase.is_file():
+                raise RuntimeError("Original archive passphrase is missing")
+            webdav, _ = build_client(config_path, allow_http=False)
+            archive_verifier = lambda key, body: verify_remote(webdav, key, body, passphrase)
         failed = 0
         for table in TABLES:
             with db.cursor() as cursor:
@@ -94,7 +122,7 @@ def main() -> int:
             cleared_bytes = 0
             for asset_id in ids:
                 try:
-                    size = clear_one(db, client, bucket, backup, table, asset_id)
+                    size = clear_one(db, client, bucket, backup, table, asset_id, archive_verifier)
                     cleared += bool(size)
                     cleared_bytes += size
                 except Exception as exc:
