@@ -615,22 +615,26 @@ cleanup_rollout() {
 }
 
 run_node_job() {
-  local label="$1" deploy_function="$2" log_file="$3" result_file="$4" result=failed
+  local label="$1" deploy_function="$2" log_file="$3" result_file="$4" result=failed started_at
+  started_at="$(date +%s)"
   if retry_node_deploy "$label" "$deploy_function" "$log_file" >/dev/null 2>&1; then result=success; fi
-  printf '%s %s\n' "$result" "${NODE_DEPLOY_ATTEMPTS:-0}" >"$result_file"
+  printf '%s %s %s\n' "$result" "${NODE_DEPLOY_ATTEMPTS:-0}" \
+    "$(($(date +%s) - started_at))" >"$result_file"
 }
 
 run_stage_job() {
-  local result=failed
+  local result=failed started_at
+  started_at="$(date +%s)"
   if stage_cloud >"$1" 2>&1; then result=success; fi
-  printf '%s\n' "$result" >"$2"
+  printf '%s %s\n' "$result" "$(($(date +%s) - started_at))" >"$2"
 }
 
 # 读取后台节点任务结果写入 recorded_result，并同步飞书通知使用的状态文件。
 record_node_result() {
-  local node="$1" log_file="$2" result_file="$3" result=failed attempts=0
-  read -r result attempts <"$result_file" 2>/dev/null || true
+  local node="$1" log_file="$2" result_file="$3" result=failed attempts=0 elapsed=unknown
+  read -r result attempts elapsed <"$result_file" 2>/dev/null || true
   printf '\n===== %s =====\n' "$node"; cat "$log_file" 2>/dev/null || true
+  printf '%s elapsed=%ss attempts=%s result=%s\n' "$node" "$elapsed" "$attempts" "$result"
   set_status "${node}_attempts" "$attempts"
   if [ "$result" = success ]; then
     set_status "${node}_status" success
@@ -742,7 +746,9 @@ if [ "$slave_available" = true ]; then
   slave_result="$recorded_result"
 fi
 printf '\n===== cloud stage =====\n'; cat cloud-stage.log
-stage_result="$(cat "$WAO_RUN_TEMP/cloud-stage.result" 2>/dev/null || printf failed)"
+stage_result=failed stage_elapsed=unknown
+read -r stage_result stage_elapsed <"$WAO_RUN_TEMP/cloud-stage.result" 2>/dev/null || true
+printf 'cloud-stage elapsed=%ss result=%s\n' "$stage_elapsed" "$stage_result"
 
 if [ "$master_result" != success ] || [ "$slave_result" = failed ]; then
   echo "节点部署失败：Linux2=$master_result，Linux1=$slave_result；网页入口保持旧版本。"

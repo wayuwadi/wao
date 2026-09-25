@@ -54,6 +54,8 @@ run_case() {
 run_case success 'master=success slave=success' up up
 grep -qx 'slave_status=success' "$fixture/status.env"
 grep -qx 'master_attempts=1' "$fixture/status.env"
+awk '$1 == "success" && $2 == 1 && $3 ~ /^[0-9]+$/ { ok = 1 } END { exit !ok }' \
+  "$fixture/master.result"
 run_case slave_failure 'master=success slave=failed' up down SLAVE_FAIL=true
 grep -qx 'slave_attempts=3' "$fixture/status.env"
 grep -qx 'slave_status=failed' "$fixture/status.env"
