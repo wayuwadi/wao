@@ -345,45 +345,30 @@ prepare_slave_images() {
 deploy_slave() {
   prepare_slave_images || return 1
   release_suffix="${BUILD_NUMBER}-${WAO_BUILD_ATTEMPT:-1}"
-  remote_release="wao-release-${release_suffix}.tgz"
-  remote_secrets="wao-secrets-${release_suffix}.env"
-  remote_shared_env="wao-shared-${release_suffix}.env"
-  remote_certificate="wao-gateway-${release_suffix}.p12"
-  remote_images="wao-images-${release_suffix}.tar.gz"
-  remote_manifest="wao-image-manifest-${release_suffix}.txt"
-  remote_snapshot="wao-bootstrap-${release_suffix}.sql.gz"
-  remote_installer="install-release-linux-${release_suffix}.sh"
   remote_dir="deploy/incoming/${release_suffix}"
   retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
     "install -d -m 0700 '$remote_dir'" || return
+  # remote_dir is unique per build attempt, so the original basenames cannot
+  # collide. Transfer the installer with the inputs in one SSH session.
   retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
     wao-release.tgz wao-secrets.env wao-shared.env wao-gateway.p12 \
-    "$WAO_RUN_TEMP/wao-image-manifest.txt" \
+    "$WAO_RUN_TEMP/wao-image-manifest.txt" deploy/scripts/install-release-linux.sh \
     "wao-slave:$remote_dir/" || return
   remote_image_arg='-'
   if [ -f "$WAO_RUN_TEMP/wao-images.tar.gz" ]; then
     retry_remote "Linux1 增量镜像" slave_scp -o ConnectTimeout=15 \
       "$WAO_RUN_TEMP/wao-images.tar.gz" "wao-slave:$remote_dir/" || return
-    remote_image_arg="$remote_dir/$remote_images"
-  fi
-  retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
-    deploy/scripts/install-release-linux.sh \
-    "wao-slave:$remote_dir/$remote_installer" || return
-  retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
-    "cd '$remote_dir' && mv wao-release.tgz '$remote_release' && mv wao-secrets.env '$remote_secrets' && mv wao-shared.env '$remote_shared_env' && mv wao-gateway.p12 '$remote_certificate' && mv wao-image-manifest.txt '$remote_manifest'" || return
-  if [ "$remote_image_arg" != '-' ]; then
-    retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
-      "cd '$remote_dir' && mv wao-images.tar.gz '$remote_images'" || return
+    remote_image_arg="$remote_dir/wao-images.tar.gz"
   fi
   snapshot_argument=""
   if [ "$BOOTSTRAP_SLAVE" = true ]; then
     test -s wao-bootstrap.sql.gz || return 1
     retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 wao-bootstrap.sql.gz \
-      "wao-slave:$remote_dir/$remote_snapshot" || return
-    snapshot_argument="$remote_dir/$remote_snapshot"
+      "wao-slave:$remote_dir/" || return
+    snapshot_argument="$remote_dir/wao-bootstrap.sql.gz"
   fi
   run_slave_installer \
-    "sh '$remote_dir/$remote_installer' '$remote_dir/$remote_release' '$remote_dir/$remote_secrets' '$remote_dir/$remote_shared_env' '$remote_dir/$remote_certificate' '$remote_image_arg' '$WAO_GIT_SHA' '$snapshot_argument' '' '$remote_dir/$remote_manifest'" || return
+    "sh '$remote_dir/install-release-linux.sh' '$remote_dir/wao-release.tgz' '$remote_dir/wao-secrets.env' '$remote_dir/wao-shared.env' '$remote_dir/wao-gateway.p12' '$remote_image_arg' '$WAO_GIT_SHA' '$snapshot_argument' '' '$remote_dir/wao-image-manifest.txt'" || return
 }
 
 prepare_cloud_routing() {
