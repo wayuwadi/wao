@@ -11,4 +11,6 @@
 7. S3 模式的 Linux2 加密离线备份先验证 `wao-return` 复制追平，再把私有 bucket 中的全部对象和 SHA-256 清单一同归档；缺少 venv 或复制落后会使备份明确失败。备份与图像批处理共用 `/run/lock/wao-image-backup.lock`：备份等待正在运行的批次结束，批处理遇到备份则跳过到下一小时，避免迁移写入跨越数据库快照和对象清单。可读 WebDAV 导出在 MySQL 正文清理后，从永久加密归档恢复原 PNG，其他文件从私有 bucket 读取并重新校验摘要。必须分别演练对象备份恢复和原 PNG 归档恢复。
 8. **不要直接把 `content` 清空。** 恢复备份和可读导出改造必须先实际通过，完成异地恢复演练，并取得生产数据清理授权；同时确认 Linux2 的 MySQL 复制恢复正常、两台 WAO 服务均已切换 S3-only。`reclaim_mysql_blobs.py` 默认只读统计可清理行数和字节数；`--apply --backup-manifest <已独立恢复的清单> --limit 25` 对 PNG 还会重新下载解密永久原件归档，并比较线上 WebP 像素，再以 CAS 清空旧正文。每批重跑全量对象检查、复制状态检查和真实 URL 验收。MySQL 表空间不会因为清空 BLOB 立即缩小磁盘文件；后续物理表重建须另行评估维护窗口。
 
+9. 无损 WebP 激活七天后，旧在线 PNG 才可进入清理候选。`gc_original_png_objects.py` 默认只读统计；实际删除必须单独取得生产数据授权，并显式提供 `--apply --confirm-approved-online-delete --backup-manifest <已独立恢复的清单>`。逐件复核永久归档原 PNG、像素一致的线上 WebP、已恢复备份中的 WebP 及数据库无引用后才删除旧在线对象；原件归档不删除。批量清理后再次统计 Garage 容量和验证旧 URL，备份保留期内的历史快照仍会暂时包含旧 PNG。
+
 Garage 官方部署说明：[三节点集群](https://garagehq.deuxfleurs.fr/documentation/cookbook/real-world/)。

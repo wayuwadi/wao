@@ -162,6 +162,8 @@ install -m 0755 "$script_dir/../storage/process-pending-images.sh" \
   /usr/local/lib/wao-backup/process-pending-images.sh
 install -m 0755 "$script_dir/../storage/reclaim_mysql_blobs.py" \
   /usr/local/lib/wao-backup/reclaim_mysql_blobs.py
+install -m 0755 "$script_dir/../storage/gc_original_png_objects.py" \
+  /usr/local/lib/wao-backup/gc_original_png_objects.py
 install -m 0755 "$script_dir/../storage/export_object_backup.py" \
   /usr/local/lib/wao-backup/export_object_backup.py
 install -m 0755 "$script_dir/../storage/restore_object_backup.py" \

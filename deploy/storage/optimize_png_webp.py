@@ -73,7 +73,8 @@ def optimize_one(db, s3, bucket: str, asset_id: str, archive_verifier=None) -> s
         raise RuntimeError("Uploaded WebP differs from original PNG pixels")
     with db.cursor() as cursor:
         cursor.execute("UPDATE image_blob SET object_key=%s, object_content_type='image/webp', "
-                       "object_byte_size=%s, object_hash=%s, preview_key=%s, lossless_webp_checked=TRUE "
+                       "object_byte_size=%s, object_hash=%s, preview_key=%s, "
+                       "lossless_webp_checked=TRUE, webp_activated_at=UTC_TIMESTAMP(3) "
                        "WHERE id=%s AND object_key=%s AND original_archive_key=%s "
                        "AND preview_key <=> %s AND byte_size=%s AND content_hash=%s "
                        "AND lossless_webp_checked=FALSE",

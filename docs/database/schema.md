@@ -119,6 +119,7 @@ V3 的文件、图床、日历、日程、AI 建议、目标 fixtures 采用「�
 | object_content_type / object_byte_size / object_hash | VARCHAR(100) / BIGINT / CHAR(64) NULL（V166） | 当前在线对象的 MIME、长度与 SHA-256；PNG 优化后可与原始字段不同 |
 | original_archive_key | VARCHAR(255) NULL（V166） | 原 PNG 经过加密 WebDAV 上传、下载解密及摘要复核后的永久归档路径 |
 | lossless_webp_checked | BOOLEAN（V166） | 已尝试像素无损 WebP；转换无收益时也标记，避免后台重复压缩 |
+| webp_activated_at | DATETIME(3) NULL（V166） | 在线 WebP 生效时间；旧 PNG 对象清理至少等待七天 |
 | content | LONGBLOB NULL（V166） | 历史正文或双写回退副本；迁移校验和恢复演练前保留，列表不读取 |
 
 飞书聊天图片等服务端去重写入先按摘要与字节数查询；两个节点仍并发插入时，nullable 唯一键只允许一个 `dedupe_key` 获胜，冲突方按 key 读取并复用赢家 id，

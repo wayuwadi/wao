@@ -153,6 +153,8 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/usr/local/lib/wao-backup/process-pending-images.sh
     cp /workspace/deploy/storage/reclaim_mysql_blobs.py \
       /host/usr/local/lib/wao-backup/reclaim_mysql_blobs.py
+    cp /workspace/deploy/storage/gc_original_png_objects.py \
+      /host/usr/local/lib/wao-backup/gc_original_png_objects.py
     cp /workspace/deploy/storage/export_object_backup.py \
       /host/usr/local/lib/wao-backup/export_object_backup.py
     cp /workspace/deploy/storage/restore_object_backup.py \

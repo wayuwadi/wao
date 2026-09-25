@@ -9,6 +9,7 @@ ALTER TABLE image_blob
     ADD COLUMN preview_checked BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN original_archive_key VARCHAR(255) NULL,
     ADD COLUMN lossless_webp_checked BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN webp_activated_at DATETIME(3) NULL,
     MODIFY COLUMN content LONGBLOB NULL,
     ALGORITHM=INPLACE,
     LOCK=NONE;
