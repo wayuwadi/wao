@@ -275,8 +275,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .inline-heading input:focus { outline: none; border-bottom-color: var(--wao-primary); }
 .new-generated-title input { width: 100%; margin-bottom: 8px; border: 0; border-bottom: 1px solid var(--wao-line-control); padding: 5px 0; background: transparent; color: var(--wao-text-1); font-size: 16px; font-weight: 600; }
 .inline-heading .tag-chip, .inline-heading .add-tag { padding: 3px 7px; font-size: 11px; }
+.composer-editor-layout { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .composer-editor-layout.has-images { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 14px; }
-.composer-editor-main { min-width: 0; }
+.composer-editor-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .composer-editor-layout.has-images .composer-editor-main :deep(img.md-img) { display: none !important; }
 .composer-image-rail { min-width: 0; padding-left: 12px; border-left: 1px solid var(--wao-line); }
 .rail-heading { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--wao-text-2); font-size: 11px; }
@@ -306,7 +307,7 @@ button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } }
 @media (max-width: 700px) { .composer-editor-layout.has-images { grid-template-columns: 1fr; } .composer-image-rail { border-left: 0; border-top: 1px solid var(--wao-line); padding: 10px 0 0; } .rail-images { grid-template-columns: repeat(3, minmax(0, 1fr)); } .rail-image-cell.cover { grid-column: auto; } .rail-image-cell.cover img { height: 62px; } }
 @media (hover: none) { .rail-remove { opacity: 1; } }
-.composer-footer > button { padding: 4px 9px; min-height: 28px; font-size: 12px; border-radius: 6px; }
+.composer-footer > button { min-height: 36px; padding: 7px 14px; font-size: 13px; border-radius: 7px; }
 </style>
 
 <style scoped>
@@ -332,5 +333,4 @@ button:disabled { opacity: .5; cursor: default; }
 .note-composer.fullscreen { position: fixed; inset: 0; z-index: 2100; border-radius: 0; padding: 24px max(24px, calc((100vw - 1100px) / 2)); height: 100dvh; }
 
 @media (max-width: 600px) { .note-composer.fullscreen { padding: 12px; } }
-.composer-footer > button { padding: 4px 9px; min-height: 28px; font-size: 12px; border-radius: 6px; }
 </style>
