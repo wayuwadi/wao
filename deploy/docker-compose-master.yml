@@ -218,7 +218,7 @@ services:
       args:
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
         ALPINE_MIRROR_HOST: ${ALPINE_MIRROR_HOST:-mirrors.aliyun.com}
-    image: wao-server:${WAO_IMAGE_TAG:-latest}
+    image: wao-server:${WAO_SERVER_IMAGE_TAG:-${WAO_IMAGE_TAG:-latest}}
     restart: unless-stopped
     ports:
       - "${MASTER_BIND_IP:-0.0.0.0}:8080:8080"
@@ -317,7 +317,7 @@ services:
       args:
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
         ALPINE_MIRROR_HOST: ${ALPINE_MIRROR_HOST:-mirrors.aliyun.com}
-    image: wao-agent-server:${WAO_IMAGE_TAG:-latest}
+    image: wao-agent-server:${WAO_AGENT_IMAGE_TAG:-${WAO_IMAGE_TAG:-latest}}
     restart: unless-stopped
     ports:
       - "${MASTER_BIND_IP:-0.0.0.0}:8081:8081"
@@ -366,7 +366,7 @@ services:
       args:
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
         ALPINE_MIRROR_HOST: ${ALPINE_MIRROR_HOST:-mirrors.aliyun.com}
-    image: wao-gateway:${WAO_IMAGE_TAG:-latest}
+    image: wao-gateway:${WAO_GATEWAY_IMAGE_TAG:-${WAO_IMAGE_TAG:-latest}}
     restart: unless-stopped
     ports:
       - "${MASTER_BIND_IP:-0.0.0.0}:9000:9000"

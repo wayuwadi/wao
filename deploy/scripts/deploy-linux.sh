@@ -58,12 +58,17 @@ run_docker() {
       "NODE_PUBLIC_IP=${NODE_PUBLIC_IP:-}" \
       "WAO_IMAGE_TAG=${WAO_IMAGE_TAG:-}" \
       "CODEX_EGRESS_IMAGE_TAG=${CODEX_EGRESS_IMAGE_TAG:-}" \
+      "WAO_SERVER_IMAGE_TAG=${WAO_SERVER_IMAGE_TAG:-}" \
+      "WAO_AGENT_IMAGE_TAG=${WAO_AGENT_IMAGE_TAG:-}" \
+      "WAO_GATEWAY_IMAGE_TAG=${WAO_GATEWAY_IMAGE_TAG:-}" \
       docker "$@"
   else
     echo 'Docker is unavailable to the current user and passwordless sudo is not configured.' >&2
     return 1
   fi
 }
+
+. "${script_dir}/image-content.sh"
 
 run_compose() {
   if [ -n "${compose_profile:-}" ]; then
@@ -196,16 +201,23 @@ case "${SKIP_IMAGE_BUILD:-false}" in
   *) echo 'SKIP_IMAGE_BUILD must be true or false.' >&2; exit 2 ;;
 esac
 
-if [ "${role}" = "master" ]; then
-  # 出口代理镜像按 Git SHA 打标签，但内容很少变化。改用镜像内容标签，
-  # 内容不变时 Compose 配置不变，不再每次重建这对健康检查间隔 60 秒的容器（ADR-280）。
-  codex_image_id="$(run_docker image inspect --format '{{.Id}}' "wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}")"
-  case "${codex_image_id}" in
-    sha256:[0-9a-f]*) ;;
-    *) echo "Unexpected codex egress image id: ${codex_image_id}" >&2; exit 1 ;;
+# Compose 对镜像标签的变化会重建容器。复用内容相同的应用镜像，避免每个 Git SHA
+# 都重启没有改动的服务；发布清单仍用 SHA 镜像标签校验目标内容。
+for service in wao-server wao-agent-server wao-gateway; do
+  content_tag="$(ensure_content_tag "$service" "${service}:${WAO_IMAGE_TAG:-latest}")"
+  case "${service}" in
+    wao-server) WAO_SERVER_IMAGE_TAG="${content_tag}" ;;
+    wao-agent-server) WAO_AGENT_IMAGE_TAG="${content_tag}" ;;
+    wao-gateway) WAO_GATEWAY_IMAGE_TAG="${content_tag}" ;;
   esac
-  CODEX_EGRESS_IMAGE_TAG="content-$(printf '%s' "${codex_image_id#sha256:}" | cut -c1-12)"
-  run_docker tag "${codex_image_id}" "wao-codex-egress-proxy:${CODEX_EGRESS_IMAGE_TAG}"
+done
+export WAO_SERVER_IMAGE_TAG WAO_AGENT_IMAGE_TAG WAO_GATEWAY_IMAGE_TAG
+
+if [ "${role}" = "master" ]; then
+  # 出口代理镜像按 Git SHA 打标签，但内容很少变化。改用镜像运行内容标签，
+  # 内容不变时 Compose 配置不变，不再每次重建这对健康检查间隔 60 秒的容器（ADR-280）。
+  CODEX_EGRESS_IMAGE_TAG="$(ensure_content_tag wao-codex-egress-proxy \
+    "wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}")"
   export CODEX_EGRESS_IMAGE_TAG
 fi
 
@@ -230,7 +242,10 @@ if ! start_services; then
   print_deployment_diagnostics
   if run_docker image inspect wao-server:rollback wao-agent-server:rollback wao-gateway:rollback >/dev/null 2>&1; then
     echo 'Deployment failed; restoring the previously running application images.' >&2
-    WAO_IMAGE_TAG=rollback compose up -d --no-build --no-deps --wait wao-server wao-agent-server wao-gateway
+    (
+      unset WAO_SERVER_IMAGE_TAG WAO_AGENT_IMAGE_TAG WAO_GATEWAY_IMAGE_TAG
+      WAO_IMAGE_TAG=rollback compose up -d --no-build --no-deps --wait wao-server wao-agent-server wao-gateway
+    )
   fi
   exit 1
 fi
