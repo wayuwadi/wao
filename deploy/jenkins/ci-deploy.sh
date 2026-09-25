@@ -284,12 +284,16 @@ verify_jumpserver_assets() {
 }
 
 prepare_slave_images() {
-  local image image_id present_ids
+  local image image_id fingerprint content_tag content_tags='' present_report resolved_id
   local -a missing_images=()
   local manifest="$WAO_RUN_TEMP/wao-image-manifest.txt"
+  local desired="$WAO_RUN_TEMP/wao-image-desired.txt"
   local archive="$WAO_RUN_TEMP/wao-images.tar.gz"
+  : >"$desired"
   : >"$manifest"
   rm -f -- "$archive"
+  run_docker() { docker "$@"; }
+  . deploy/scripts/image-content.sh
   for image in \
     "wao-server:$WAO_GIT_SHA" \
     "wao-agent-server:$WAO_GIT_SHA" \
@@ -298,16 +302,37 @@ prepare_slave_images() {
     mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
     image_id="$(docker image inspect --format '{{.Id}}' "$image")" || return 1
     [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
-    printf '%s %s\n' "$image" "$image_id" >>"$manifest"
+    fingerprint='-'
+    content_tag='-'
+    case "$image" in
+      wao-*)
+        fingerprint="$(image_content_fingerprint "$image")" || return 1
+        [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]] || return 1
+        content_tag="${image%%:*}:content-${fingerprint:0:12}"
+        content_tags="$content_tags $content_tag"
+        ;;
+    esac
+    printf '%s %s %s %s\n' "$image" "$image_id" "$fingerprint" "$content_tag" >>"$desired"
   done
-  # 一次 SSH 列出 Linux1 已有的目标镜像 ID，避免经反向隧道逐个往返。
-  present_ids="$(slave_ssh -o BatchMode=yes -o ConnectTimeout=8 "wao-slave" \
-    "for id in $(awk '{ print $2 }' "$manifest" | tr '\n' ' '); do docker image inspect \"\$id\" >/dev/null 2>&1 && printf '%s\n' \"\$id\"; done; true")" || return 1
-  while read -r image image_id; do
-    if ! printf '%s\n' "$present_ids" | grep -Fqx "$image_id"; then
-      missing_images+=("$image")
+  # 一次 SSH 同时查询精确镜像 ID 和运行内容标签。只有完整指纹一致才复用
+  # Linux1 已有镜像；清单改写为远端真实 ID，安装器仍按 ID 验证并贴目标 SHA 标签。
+  present_report="$(slave_ssh -o BatchMode=yes -o ConnectTimeout=8 "wao-slave" \
+    "for id in $(awk '{ print $2 }' "$desired" | tr '\n' ' '); do docker image inspect \"\$id\" >/dev/null 2>&1 && printf 'id %s\\n' \"\$id\"; done; for tag in $content_tags; do remote_id=\$(docker image inspect --format '{{.Id}}' \"\$tag\" 2>/dev/null) || continue; fp=\$(docker image inspect --format '{{.Os}}/{{.Architecture}} {{json .Config}} {{json .RootFS.Layers}}' \"\$tag\" | openssl dgst -sha256 -r | cut -d' ' -f1) || continue; printf 'content %s %s %s\\n' \"\$tag\" \"\$remote_id\" \"\$fp\"; done; true")" || return 1
+  while read -r image image_id fingerprint content_tag; do
+    resolved_id="$image_id"
+    if ! printf '%s\n' "$present_report" | grep -Fqx "id $image_id"; then
+      resolved_id=''
+      if [ "$content_tag" != '-' ]; then
+        resolved_id="$(printf '%s\n' "$present_report" | awk -v tag="$content_tag" -v fp="$fingerprint" \
+          '$1 == "content" && $2 == tag && $4 == fp { print $3; exit }')"
+      fi
     fi
-  done <"$manifest"
+    if [[ ! "$resolved_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+      missing_images+=("$image")
+      resolved_id="$image_id"
+    fi
+    printf '%s %s\n' "$image" "$resolved_id" >>"$manifest"
+  done <"$desired"
   if [ "${#missing_images[@]}" -eq 0 ]; then
     echo 'Linux1 已有全部目标镜像，仅发送版本清单。'
     return 0

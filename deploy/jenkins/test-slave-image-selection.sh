@@ -14,6 +14,10 @@ WAO_RUN_TEMP="$FIXTURE"
 WAO_GIT_SHA=abc1234
 docker() {
   if [ "$1" = image ] && [ "$2" = inspect ]; then
+    if [ "$4" != '{{.Id}}' ]; then
+      printf 'linux/amd64 {"image":"%s"} ["layer"]\n' "$5"
+      return
+    fi
     case "$5" in
       wao-server:*) printf 'sha256:%064d\n' 1 ;;
       *) printf 'sha256:%064d\n' 2 ;;
@@ -27,11 +31,14 @@ docker() {
 }
 slave_ssh() {
   printf '%s\n' "$*" >>"$FIXTURE/ssh.log"
-  # The remote side prints every image ID it already has, in one round trip.
-  grep -Eo 'sha256:[0-9a-f]{64}' <<<"$*" | sort -u | while read -r id; do
-    if [ "${MISSING:-false}" = true ] && [ "$id" = "sha256:$(printf '%064d' 1)" ]; then continue; fi
-    printf '%s\n' "$id"
-  done
+  while read -r image id fingerprint tag; do
+    if [ "${MISSING:-false}" = true ] && [ "$image" = wao-server:abc1234 ]; then continue; fi
+    if [ "${REUSE:-false}" = true ] && [ "$image" = wao-server:abc1234 ]; then
+      printf 'content %s sha256:%064d %s\n' "$tag" 3 "$fingerprint"
+      continue
+    fi
+    printf 'id %s\n' "$id"
+  done <"$FIXTURE/wao-image-desired.txt"
 }
 prepare_slave_images
 SH
@@ -40,6 +47,10 @@ FIXTURE="$fixture" bash "$fixture/run.sh"
 test "$(wc -l <"$fixture/ssh.log" | tr -d ' ')" = 1
 test ! -e "$fixture/wao-images.tar.gz"
 test "$(wc -l <"$fixture/wao-image-manifest.txt" | tr -d ' ')" = 7
+
+FIXTURE="$fixture" REUSE=true bash "$fixture/run.sh"
+test ! -e "$fixture/wao-images.tar.gz"
+grep -Fqx "wao-server:abc1234 sha256:$(printf '%064d' 3)" "$fixture/wao-image-manifest.txt"
 
 FIXTURE="$fixture" MISSING=true bash "$fixture/run.sh"
 gzip -t "$fixture/wao-images.tar.gz"
