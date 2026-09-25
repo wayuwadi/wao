@@ -29,7 +29,7 @@ public class FunctionHealthService {
             "action-plans", "appearance", "food", "workspaces", "weekly-report", "life-review",
             "knowledge", "memory", "english-learning", "vocabulary", "skills", "skill-connections",
             "drawings", "files", "automation", "crawler-capabilities", "account-resources", "text-polish", "data-center", "dashboard",
-            "system-reports", "request-monitoring", "infrastructure", "devices", "vault", "games", "tianren", "settings");
+            "system-reports", "request-monitoring", "infrastructure", "devices", "vault", "ledger", "games", "tianren", "settings");
     private static final Set<String> FEATURE_SET = Set.copyOf(FEATURES);
     private static final Map<String, String> SCOPE_FEATURE = Map.ofEntries(
             Map.entry("chatgpt", "chatgpt"), Map.entry("home", "home"), Map.entry("ai-sessions", "ai-sessions"), Map.entry("navigation", "navigation"), Map.entry("updates", "updates"),
@@ -53,7 +53,7 @@ public class FunctionHealthService {
             Map.entry("report", "system-reports"), Map.entry("monitoring", "request-monitoring"),
             Map.entry("infrastructure", "infrastructure"),
             Map.entry("http", "request-monitoring"), Map.entry("devices", "devices"),
-            Map.entry("vault", "vault"), Map.entry("games", "games"), Map.entry("tianren", "tianren"),
+            Map.entry("vault", "vault"), Map.entry("ledger", "ledger"), Map.entry("games", "games"), Map.entry("tianren", "tianren"),
             Map.entry("settings", "settings"));
 
     private final FunctionProductMapper products;

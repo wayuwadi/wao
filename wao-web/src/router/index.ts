@@ -462,6 +462,12 @@ const router = createRouter({
           meta: { module: 'vault', tabKind: 'module' },
         },
         {
+          path: 'ledger',
+          name: 'ledger',
+          component: () => import('@/views/LedgerView.vue'),
+          meta: { module: 'ledger', tabKind: 'module' },
+        },
+        {
           path: 'notification-settings',
           redirect: legacyNotificationSettingsRedirect,
         },

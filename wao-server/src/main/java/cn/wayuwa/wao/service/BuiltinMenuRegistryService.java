@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 43;
+    private static final int VERSION = 44;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -55,6 +55,7 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("vocabulary", "单词本", "ri-book-marked-line", "PERSONAL", 40, false, "TAB"),
             new BuiltinMenuConfigDto("drawings", "草图", "ri-draft-line", "PERSONAL", 50, false, "TAB"),
             new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 60, false, "TAB"),
+            new BuiltinMenuConfigDto("ledger", "账务本", "ri-money-cny-circle-line", "PERSONAL", 61, false, "TAB"),
             new BuiltinMenuConfigDto("tianren", "天人一卦", "ri-compass-3-line", "PERSONAL", 70, false, "TAB"),
             new BuiltinMenuConfigDto("data-center", "数据中心", "ri-database-2-line", "TOOLS", 3, true, "TAB"),
             new BuiltinMenuConfigDto("text-polish", "润色", "ri-magic-line", "TOOLS", 4, true, "TAB"),
@@ -108,10 +109,14 @@ public class BuiltinMenuRegistryService {
                         menu.id(), menu.label(), menu.icon(), menu.group(), menu.order(), menu.visible(),
                         menu.openMode(), storedPlacements.getOrDefault(menu.id(), "MENU")))
                 .toList();
-        // 旧页面尚无小世界字段时保留服务端该项，不能让其他菜单保存失败或覆盖新入口定制。
-        if (compatibleMenus != null && compatibleMenus.stream().noneMatch(menu -> menu != null && "pet-world".equals(menu.id()))) {
+        // 旧页面缺少新入口时沿用服务端定制，不能让旧页面保存覆盖新入口或整份菜单失败。
+        if (compatibleMenus != null) {
             compatibleMenus = new ArrayList<>(compatibleMenus);
-            compatibleMenus.add(storedMenus.stream().filter(menu -> "pet-world".equals(menu.id())).findFirst().orElseThrow());
+            for (String id : List.of("pet-world", "ledger")) {
+                if (compatibleMenus.stream().noneMatch(menu -> menu != null && id.equals(menu.id()))) {
+                    compatibleMenus.add(storedMenus.stream().filter(menu -> id.equals(menu.id())).findFirst().orElseThrow());
+                }
+            }
         }
         BuiltinMenuRegistryDto registry = new BuiltinMenuRegistryDto(VERSION, canonicalize(compatibleMenus, true));
         try {

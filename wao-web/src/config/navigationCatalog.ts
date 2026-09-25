@@ -148,6 +148,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     keywords: ['摄像头', '麦克风', '相机', '音频', '测试摄像头', '测试麦克风', '检测摄像头', '检测麦克风'],
   },
   { id: 'vault', description: '安全管理需要按需查看的账号资料。', keywords: ['密码'] },
+  { id: 'ledger', description: '和兄弟逐笔核对旧账、烂账与未来账，记录结算和到期安排。', keywords: ['账务', '记账', '财务规划', '明账'] },
   { id: 'games', description: '打开使用服务端真实存档的小游戏。', keywords: ['游戏'] },
   {
     id: 'pet-world',
@@ -230,6 +231,7 @@ const DOMAINS: Array<{
       'data-center',
       'account-resources',
       'vault',
+      'ledger',
       'devices',
     ],
   },
