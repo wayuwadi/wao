@@ -149,6 +149,21 @@ describe('知识库详情目录体验', () => {
     expect(wrapper.find('.library-home').exists()).toBe(true)
   })
 
+  it('小记知识库目录和首页默认按更新时间倒序，可切换正序', async () => {
+    const data = useDataStore(pinia)
+    data.kbById('kb-notes')!.folders[0]!.docs = ['d7', 'd8']
+    data.docs.d7!.updated = '2026-09-01T10:00:00Z'
+    data.docs.d8!.updated = '2026-09-20T10:00:00Z'
+    const wrapper = await mountView('/kb/kb-notes')
+    const titles = (selector: string) => wrapper.findAll(selector).map(node => node.text())
+    expect((wrapper.get('[aria-label="小记目录时间排序"]').element as HTMLSelectElement).value).toBe('desc')
+    expect(titles('.tree .doc-node')).toEqual([data.docs.d8!.title, data.docs.d7!.title])
+    expect(titles('.home-document-name')).toEqual([data.docs.d8!.title, data.docs.d7!.title])
+    await wrapper.get('[aria-label="小记目录时间排序"]').setValue('asc')
+    expect(titles('.tree .doc-node')).toEqual([data.docs.d7!.title, data.docs.d8!.title])
+    expect(titles('.home-document-name')).toEqual([data.docs.d7!.title, data.docs.d8!.title])
+  })
+
   it('首次进入全部展开，一键收起展开不改变文档，重新进入恢复展开', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     expect(wrapper.findAll('.folder-row')).toHaveLength(2)

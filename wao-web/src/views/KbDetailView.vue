@@ -610,11 +610,24 @@ async function removeTemplate(template: DocTemplate) {
 // ---- 文档树拖拽 ----
 
 const treeQuery = ref('')
+const noteTimeOrder = ref<'desc' | 'asc'>('desc')
+function compareNoteTime(leftId: string, rightId: string): number {
+  const timeOf = (id: string) => {
+    const item = data.docById(id)
+    const time = Date.parse(item?.updated || item?.created || '')
+    return Number.isNaN(time) ? 0 : time
+  }
+  const difference = timeOf(leftId) - timeOf(rightId)
+  return (noteTimeOrder.value === 'desc' ? -difference : difference) || leftId.localeCompare(rightId)
+}
+function homeDocIds(ids: string[]): string[] {
+  return kb.value?.notes ? [...ids].sort(compareNoteTime) : ids
+}
 const treeElement = ref<HTMLElement | null>(null)
 const currentFolderId = computed(
   () => kb.value?.folders.find((folder) => folder.docs.includes(docId.value ?? ''))?.id ?? '',
 )
-const mixedRows = computed(() => kb.value ? directoryRows(kb.value, id => data.docOf(id).title || '未命名文档', folderOpen, treeQuery.value) : [])
+const mixedRows = computed(() => kb.value ? directoryRows(kb.value, id => data.docOf(id).title || '未命名文档', folderOpen, treeQuery.value, kb.value.notes ? compareNoteTime : undefined) : [])
 const draggingNode = ref<string | null>(null)
 const dropTarget = ref<{ key: string; placement: 'before' | 'inside' | 'after' } | null>(null)
 const directoryError = ref('')
@@ -1034,7 +1047,7 @@ async function saveKbSettings() {
 
       <div class="tree-search"><label><i class="ri-search-line"></i><input v-model="treeQuery" type="search" aria-label="搜索本知识库文件夹和文档" placeholder="搜索文档" /></label><ResourceMenu label="新增内容" icon="ri-add-line" :items="createItems" @select="createAction($event)" /></div>
       <button class="library-home-link" :class="{ on: !docId }" @click="goHome"><i class="ri-home-4-line"></i>首页</button>
-      <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
+      <div class="directory-heading"><span><i class="ri-list-check"></i>目录</span><div class="directory-actions"><select v-if="kb.notes" v-model="noteTimeOrder" class="note-time-sort" aria-label="小记目录时间排序"><option value="desc">时间倒序</option><option value="asc">时间正序</option></select><button :disabled="!docId" title="定位当前文档" @click="locateCurrentDoc"><i class="ri-focus-3-line"></i></button><button :disabled="!kb.folders.length" :title="allFoldersOpen ? '折叠全部' : '展开全部'" :aria-label="allFoldersOpen ? '折叠全部目录' : '展开全部目录'" :aria-expanded="allFoldersOpen" @click="toggleAllFolders"><i :class="allFoldersOpen ? 'ri-collapse-diagonal-line' : 'ri-expand-diagonal-line'"></i></button></div></div>
       <p v-if="folderRenameError" role="alert">{{ folderRenameError }}</p>
       <div ref="treeElement" class="tree">
         <p v-if="directoryError" role="alert">{{ directoryError }}</p>
@@ -1187,7 +1200,7 @@ async function saveKbSettings() {
             <div v-else-if="!docTotal" class="doc-empty">从第一篇文档开始整理知识。<button class="library-star" @click="createAction('doc')">新建文档</button></div>
             <section v-for="folder in kb.folders" :key="folder.id" class="home-folder">
               <button class="home-folder-title" :aria-expanded="homeFolderOpen[folder.id] !== false" @click="homeFolderOpen[folder.id] = homeFolderOpen[folder.id] === false"><i :class="homeFolderOpen[folder.id] !== false ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>{{ folder.name }}</button>
-              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in folder.docs" :key="id" @click="selectDoc(id)"><span class="home-document-name" :title="data.docOf(id).title">{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time :title="absoluteTime(data.docById(id)?.updated ?? '')">{{ homeDocumentTime(data.docById(id)?.updated ?? '') }}</time></button></div>
+              <div v-if="homeFolderOpen[folder.id] !== false" class="home-documents"><button v-for="id in homeDocIds(folder.docs)" :key="id" @click="selectDoc(id)"><span class="home-document-name" :title="data.docOf(id).title">{{ data.docOf(id).title || '未命名文档' }}</span><span class="dot-leader"></span><time :title="absoluteTime(data.docById(id)?.updated ?? '')">{{ homeDocumentTime(data.docById(id)?.updated ?? '') }}</time></button></div>
             </section>
           </section>
           <template v-if="doc">
@@ -1390,6 +1403,7 @@ async function saveKbSettings() {
 .directory-heading > span { display: flex; align-items: center; gap: 10px; }
 .library-home-link { font-size: 14px; }
 .directory-actions { display: flex; align-items: center; gap: 8px; }
+.note-time-sort { max-width: 94px; min-width: 0; padding: 4px 2px; border: 1px solid var(--wao-line-control); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 11px; cursor: pointer; }
 .directory-heading button { border: 0; background: transparent; color: inherit; cursor: pointer; }
 /* 首页使用独立纸面与紧凑目录，不改变正文阅读宽度。 */
 .doc-scroll.library-home-scroll { background: var(--wao-bg-sub); }
