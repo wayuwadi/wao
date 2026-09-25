@@ -16,7 +16,7 @@ cloud_user="${6:-root}"
 slave_address="${7:-linux1.wayuwa.cn}"
 cloud_address="${8:-8.136.152.131}"
 slave_port="${9:-22}"
-# 旧调用方不传时保持同步；Jenkins 仅在本批次改到对应目录时传 true（ADR-279）。
+# 旧调用方不传时保持同步；Jenkins 仅在本批次改到对应目录时传 true（ADR-280）。
 sync_jumpserver="${10:-true}"
 sync_infrastructure="${11:-true}"
 

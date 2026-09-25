@@ -19,7 +19,7 @@ TARGETS = {
 PLANNED_DRAIN_DIR = Path('/run/wao-nginx-upstreams')
 PLANNED_DRAIN_MAX_SECONDS = 2 * 3600
 # Jenkins touches this marker when a release starts and again when it ends.
-# Parallel node replacement briefly takes every entry offline (ADR-279).
+# Parallel node replacement briefly takes every entry offline (ADR-280).
 DEPLOY_WINDOW_SECONDS = 10 * 60
 
 

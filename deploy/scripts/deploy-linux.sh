@@ -198,7 +198,7 @@ esac
 
 if [ "${role}" = "master" ]; then
   # 出口代理镜像按 Git SHA 打标签，但内容很少变化。改用镜像内容标签，
-  # 内容不变时 Compose 配置不变，不再每次重建这对健康检查间隔 60 秒的容器（ADR-279）。
+  # 内容不变时 Compose 配置不变，不再每次重建这对健康检查间隔 60 秒的容器（ADR-280）。
   codex_image_id="$(run_docker image inspect --format '{{.Id}}' "wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}")"
   case "${codex_image_id}" in
     sha256:[0-9a-f]*) ;;

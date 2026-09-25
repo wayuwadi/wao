@@ -393,7 +393,7 @@ prepare_cloud_routing() {
   mark_deploy_window
 }
 
-# 云端独立监控在标记后一段时间内不告警（ADR-279）；开始与结束各刷新一次，
+# 云端独立监控在标记后一段时间内不告警（ADR-280）；开始与结束各刷新一次，
 # 覆盖并行替换期间及之后监控的两次连续失败判定。
 mark_deploy_window() {
   ssh -o ConnectTimeout=15 "wao-cloud" \
@@ -566,7 +566,7 @@ quiesce_master() {
   sh deploy/scripts/quiesce-wao-server.sh master "$action" "$WAO_MASTER_PROJECT_ROOT"
 }
 
-# 两台节点并行替换，不再逐台摘流（ADR-279）。只把失败或离线的节点留在摘流状态；
+# 两台节点并行替换，不再逐台摘流（ADR-280）。只把失败或离线的节点留在摘流状态；
 # 目标已是 up 且无摘流标记时跳过，避免每次重渲染 Nginx 并等待旧 worker 退出。
 restore_upstreams() {
   local master_state=up slave_state=up
@@ -719,7 +719,7 @@ if ! install_master_deploy_helper; then
   exit 1
 fi
 
-# 自用系统优先发布速度（ADR-279）：两台节点同时替换容器，云端静态制品同时预传。
+# 自用系统优先发布速度（ADR-280）：两台节点同时替换容器，云端静态制品同时预传。
 # 替换期间公共入口会短暂不可用；网页入口仍在两台节点都就绪后才切换。
 echo "并行部署 Linux1、Linux2，并预传云端静态制品（JumpServer 同步=$sync_jumpserver，基础设施同步=$sync_infrastructure）。"
 run_node_job Linux2 deploy_master master.log "$WAO_RUN_TEMP/master.result" &
