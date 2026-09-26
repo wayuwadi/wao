@@ -140,7 +140,7 @@ describe('文章总览配图', () => {
     await flushPromises()
     await w.get('.prompt-settings').trigger('click')
     const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="image-prompt-title"]')!
-    expect(modal.querySelector('.model-choice select')?.value).toBe('gpt-6-luna')
+    expect(modal.querySelector<HTMLSelectElement>('.model-choice select')?.value).toBe('gpt-6-luna')
     expect(modal.textContent).toContain('标题文案提示词')
     expect(modal.textContent).toContain('正文润色提示词')
     expect(modal.textContent).toContain('图片生成提示词')
