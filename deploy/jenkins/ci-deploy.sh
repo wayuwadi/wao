@@ -22,8 +22,9 @@ fi
 
 BOOTSTRAP_SLAVE="${BOOTSTRAP_SLAVE:-false}"
 ALLOW_SLAVE_OFFLINE="${ALLOW_SLAVE_OFFLINE:-false}"
+ALLOW_MASTER_OFFLINE="${ALLOW_MASTER_OFFLINE:-false}"
 WAO_BUILD_ATTEMPT="${WAO_BUILD_ATTEMPT:-1}"
-export BOOTSTRAP_SLAVE ALLOW_SLAVE_OFFLINE WAO_BUILD_ATTEMPT
+export BOOTSTRAP_SLAVE ALLOW_SLAVE_OFFLINE ALLOW_MASTER_OFFLINE WAO_BUILD_ATTEMPT
 
 umask 077
 install -d "$WAO_RUN_TEMP"
@@ -677,7 +678,8 @@ record_node_result() {
 
 # 前端快路径必须由本次完整变更范围确认，不能只信任一个外部环境开关。
 deploy_browser_only() {
-  [ "$BOOTSTRAP_SLAVE" = false ] && [ "$ALLOW_SLAVE_OFFLINE" = false ] || return 1
+  [ "$BOOTSTRAP_SLAVE" = false ] && [ "$ALLOW_SLAVE_OFFLINE" = false ] &&
+    [ "$ALLOW_MASTER_OFFLINE" = false ] || return 1
   local plan
   plan="$(sh deploy/jenkins/ci-change-plan.sh "$WAO_CHANGE_BASE" "$WAO_GIT_SHA")" || return 1
   printf '%s\n' "$plan" | grep -qx 'WAO_WEB_ONLY=true' || return 1
@@ -721,6 +723,13 @@ if batch_changed '^deploy/jumpserver/'; then sync_jumpserver=true; fi
 sync_infrastructure=false
 if batch_changed '^deploy/infrastructure/'; then sync_infrastructure=true; fi
 
+if [ "$ALLOW_MASTER_OFFLINE" = true ] && {
+    [ "$BOOTSTRAP_SLAVE" = true ] || [ "$ALLOW_SLAVE_OFFLINE" = true ] ||
+    [ "$sync_jumpserver" = true ] || [ "$sync_infrastructure" = true ]; }; then
+  echo 'Linux2 单节点故障应急发布不能与从库重建、另一节点离线或主节点专属资产变更同时进行。' >&2
+  exit 1
+fi
+
 if ! prepare_cloud_routing >routing.log 2>&1; then
   printf '\n===== cloud routing =====\n'; cat routing.log
   exit 1
@@ -728,6 +737,8 @@ fi
 
 master_result=pending
 slave_result=pending
+master_degraded=false
+slave_degraded=false
 master_routable=false
 slave_routable=false
 trap cleanup_rollout EXIT
@@ -747,26 +758,58 @@ if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
   set_status slave_status failed
   set_status slave_detail 'Linux1 SSH 或 Docker 预检失败；仅按 Gateway 就绪结果保留路由'
 fi
+if [ "$ALLOW_SLAVE_OFFLINE" = true ] && [ "$slave_available" != true ]; then
+  [ "$master_routable" = true ] || {
+    echo 'Linux2 不健康，拒绝 Linux1 管理通道故障应急发布。' >&2; exit 1;
+  }
+  slave_degraded=true
+  slave_result=skipped
+  slave_routable=false
+  set_status slave_status skipped
+  set_status slave_detail 'Linux1 SSH/Docker 不可用；已摘流，恢复后须补齐同一版本'
+  restore_upstreams || exit 1
+  echo '已显式选择 Linux2 单节点应急发布；替换 Linux2 时可能短暂不可用。'
+fi
+if [ "$ALLOW_MASTER_OFFLINE" = true ] && [ "$master_routable" != true ]; then
+  if [ "$slave_routable" != true ] || [ "$slave_available" != true ]; then
+    echo 'Linux1 未同时通过 Gateway 与 SSH/Docker 预检，拒绝 Linux2 故障应急发布。' >&2
+    exit 1
+  fi
+  master_degraded=true
+  master_result=skipped
+  set_status master_status skipped
+  set_status master_detail 'Linux2 发布前数据库就绪失败；已摘流，待恢复后补齐版本'
+  echo '已显式选择 Linux1 单节点应急发布；Linux2 保持摘流，替换 Linux1 时可能短暂不可用。'
+fi
 start_availability_monitor
 
-if ! install_master_deploy_helper; then
-  set_status master_status failed
-  set_status master_detail '无法安装本次发布的 Linux2 部署助手'
-  exit 1
+if [ "$master_degraded" != true ] && ! install_master_deploy_helper; then
+  if [ "$ALLOW_MASTER_OFFLINE" != true ] || [ "$slave_available" != true ] ||
+    [ "$slave_routable" != true ]; then
+    set_status master_status failed
+    set_status master_detail '无法安装本次发布的 Linux2 部署助手'
+    exit 1
+  fi
+  master_degraded=true
+  master_result=skipped
+  master_routable=false
+  set_status master_status skipped
+  set_status master_detail 'Linux2 部署助手安装失败；Linux1 将独立发布并保持 Linux2 摘流'
+  restore_upstreams || exit 1
 fi
 
 rollout_slave() {
-  [ "$master_routable" = true ] || return 1
+  [ "$master_routable" = true ] || [ "$master_degraded" = true ] || return 1
   slave_routable=false
   restore_upstreams || return 1
-  wait_until_ready public_ready || return 1
+  if [ "$master_degraded" != true ]; then wait_until_ready public_ready || return 1; fi
   run_node_job Linux1 deploy_slave slave.log "$WAO_RUN_TEMP/slave.result"
   record_node_result slave slave.log "$WAO_RUN_TEMP/slave.result"
   slave_result="$recorded_result"
   if [ "$slave_result" != success ] || ! wait_until_ready gateway_ready_from_cloud "$SLAVE_HOST"; then
     slave_result=failed
     set_status slave_status failed
-    set_status slave_detail 'Linux1 部署或云端数据库就绪检查失败；保留 Linux2 当前版本'
+    set_status slave_detail 'Linux1 部署或云端数据库就绪检查失败；停止发布并保持故障节点摘流'
     return 1
   fi
   slave_routable=true
@@ -781,10 +824,10 @@ rollout_slave() {
 }
 
 rollout_master() {
-  [ "$slave_routable" = true ] || return 1
+  [ "$slave_routable" = true ] || [ "$slave_degraded" = true ] || return 1
   master_routable=false
   restore_upstreams || return 1
-  wait_until_ready public_ready || return 1
+  if [ "$slave_degraded" != true ]; then wait_until_ready public_ready || return 1; fi
   run_node_job Linux2 deploy_master master.log "$WAO_RUN_TEMP/master.result"
   record_node_result master master.log "$WAO_RUN_TEMP/master.result"
   master_result="$recorded_result"
@@ -807,15 +850,32 @@ rollout_master() {
 
 # 静态制品预传与节点滚动独立；任何时刻只重启一台应用。
 echo "逐节点发布 Linux1、Linux2，并预传云端静态制品（JumpServer 同步=$sync_jumpserver，基础设施同步=$sync_infrastructure）。"
-if [ "$slave_available" != true ] && [ "$slave_routable" != true ]; then
+if [ "$slave_available" != true ] && [ "$slave_routable" != true ] && [ "$slave_degraded" != true ]; then
   echo 'Linux1 不可达且未就绪；拒绝重启唯一健康的 Linux2。' >&2
   exit 1
 fi
 run_stage_job cloud-stage.log "$WAO_RUN_TEMP/cloud-stage.result" &
 stage_pid=$!
-if [ "$master_routable" = true ]; then
+if [ "$master_degraded" = true ]; then
+  rollout_slave || exit 1
+elif [ "$master_routable" = true ]; then
   if [ "$slave_available" = true ]; then rollout_slave || exit 1; fi
-  rollout_master || exit 1
+  if ! rollout_master; then
+    if [ "$ALLOW_MASTER_OFFLINE" != true ] || [ "$master_result" != failed ] ||
+      [ "$slave_result" != success ] || [ "$slave_routable" != true ]; then
+      exit 1
+    fi
+    # The same release is already verified on Linux1. Only a node-specific
+    # Linux2 failure may be bypassed; a broken public route still blocks.
+    restore_upstreams || exit 1
+    wait_until_ready gateway_ready_from_cloud "$SLAVE_HOST" || exit 1
+    wait_until_ready public_ready || exit 1
+    master_degraded=true
+    master_result=degraded
+    set_status master_status degraded
+    set_status master_detail 'Linux2 部署或就绪失败；Linux1 同版本已验证，Linux2 已摘流待补齐'
+    echo 'Linux2 发布失败，已按显式单节点应急选项继续使用已验证的 Linux1。'
+  fi
 else
   # Linux2 应用已不可用时，先修复它，不能重启唯一健康的 Linux1。
   rollout_master || exit 1
@@ -829,11 +889,12 @@ stage_result=failed stage_elapsed=unknown
 read -r stage_result stage_elapsed <"$WAO_RUN_TEMP/cloud-stage.result" 2>/dev/null || true
 printf 'cloud-stage elapsed=%ss result=%s\n' "$stage_elapsed" "$stage_result"
 
-if [ "$slave_available" != true ]; then
+if [ "$slave_available" != true ] && [ "$slave_degraded" != true ]; then
   echo 'Linux1 机器不可用；Linux2 已保持服务，完整后端发布不能重启唯一健康节点。'
   exit 1
 fi
-if [ "$master_result" != success ] || [ "$slave_result" != success ]; then
+if { [ "$master_result" != success ] && [ "$master_degraded" != true ]; } ||
+  { [ "$slave_result" != success ] && [ "$slave_degraded" != true ]; }; then
   echo "节点部署未完成：Linux2=$master_result，Linux1=$slave_result；网页入口保持旧版本。"
   exit 1
 fi
@@ -843,7 +904,7 @@ if [ "$stage_result" != success ]; then
   exit 1
 fi
 
-if ! wait_until_ready gateway_ready_from_cloud "$MASTER_HOST"; then
+if [ "$master_degraded" != true ] && ! wait_until_ready gateway_ready_from_cloud "$MASTER_HOST"; then
   master_result=failed
   master_routable=false
   set_status master_status failed
@@ -903,14 +964,18 @@ if ! wait_until_ready public_ready; then
   exit 1
 fi
 stop_availability_monitor
-if [ -s "$availability_failures" ]; then
+if [ -s "$availability_failures" ] && [ "$master_degraded" != true ] && [ "$slave_degraded" != true ]; then
   cat "$availability_failures"
   set_status verification_status failed
   set_status verification_detail '逐台发布期间公共入口出现数据库就绪失败采样'
   exit 1
 fi
 set_status verification_status success
-if [ "$slave_available" = true ]; then
+if [ "$master_degraded" = true ]; then
+  set_status verification_detail 'Linux1 单节点与公共入口已就绪；Linux2 已摘流待恢复，发布期间允许短暂中断'
+elif [ "$slave_degraded" = true ]; then
+  set_status verification_detail 'Linux2 单节点与公共入口已就绪；Linux1 已摘流待恢复，发布期间允许短暂中断'
+elif [ "$slave_available" = true ]; then
   set_status verification_detail 'Linux1、Linux2、云端与公共入口检查通过'
 else
   set_status verification_detail 'Linux1 已显式摘流；Linux2、云端与公共入口检查通过'

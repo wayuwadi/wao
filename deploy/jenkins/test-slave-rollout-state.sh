@@ -21,12 +21,15 @@ master_result=pending
 slave_result=pending
 master_routable="${MASTER_READY:-true}"
 slave_routable="${SLAVE_READY:-true}"
+master_degraded="${MASTER_DEGRADED:-false}"
+slave_degraded="${SLAVE_DEGRADED:-false}"
 retry_remote() { shift; "$@"; }
 ssh() {
   case "${@: -1}" in
     *'master:up slave:up'*) echo 'master:up slave:up' >>"$FIXTURE/routes" ;;
     *'master:up slave:down'*) echo 'master:up slave:down' >>"$FIXTURE/routes" ;;
     *'master:down slave:up'*) echo 'master:down slave:up' >>"$FIXTURE/routes" ;;
+    *'master:down slave:down'*) echo 'master:down slave:down' >>"$FIXTURE/routes" ;;
     *) return 1 ;;
   esac
 }
@@ -53,6 +56,8 @@ case "$CASE" in
   master_failure) rollout_slave && { if rollout_master; then exit 1; fi; } ;;
   master_initially_down) rollout_master && rollout_slave ;;
   only_master_healthy) if rollout_master; then exit 1; fi ;;
+  emergency_linux1) rollout_slave ;;
+  emergency_linux2) rollout_master ;;
 esac
 printf 'master=%s slave=%s\n' "$master_routable" "$slave_routable"
 SH
@@ -78,4 +83,8 @@ run_case master_failure 'master=false slave=true' 'Linux1,Linux2' \
 run_case master_initially_down 'master=true slave=true' 'Linux2,Linux1' \
   'master:down slave:up,master:up slave:up,master:up slave:down,master:up slave:up' MASTER_READY=false
 run_case only_master_healthy 'master=true slave=false' '' '' SLAVE_READY=false
+run_case emergency_linux1 'master=false slave=true' 'Linux1' \
+  'master:down slave:down,master:down slave:up' MASTER_READY=false MASTER_DEGRADED=true
+run_case emergency_linux2 'master=true slave=false' 'Linux2' \
+  'master:down slave:down,master:up slave:down' SLAVE_READY=false SLAVE_DEGRADED=true
 echo 'Rolling deployment availability checks passed.'
