@@ -251,6 +251,12 @@ const router = createRouter({
           meta: { module: 'action-plans', tabKind: 'module' },
         },
         {
+          path: 'personal-principles',
+          name: 'personal-principles',
+          component: () => import('@/views/PersonalPrinciplesView.vue'),
+          meta: { module: 'personal-principles', tabKind: 'module' },
+        },
+        {
           path: 'decisions',
           name: 'decisions',
           component: () => import('@/views/DecisionsView.vue'),

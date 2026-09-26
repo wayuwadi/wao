@@ -26,7 +26,7 @@ public class FunctionHealthService {
     private static final int WINDOW_DAYS = 30;
     private static final List<String> FEATURES = List.of(
             "home", "chatgpt", "ai-sessions", "navigation", "updates", "projects", "ideas", "decisions", "todo", "calendar", "workday-rhythm",
-            "action-plans", "appearance", "food", "workspaces", "weekly-report", "life-review",
+            "action-plans", "personal-principles", "appearance", "food", "workspaces", "weekly-report", "life-review",
             "knowledge", "memory", "english-learning", "vocabulary", "skills", "skill-connections",
             "drawings", "files", "automation", "crawler-capabilities", "account-resources", "text-polish", "data-center", "dashboard",
             "system-reports", "request-monitoring", "infrastructure", "devices", "vault", "ledger", "games", "tianren", "settings");
@@ -39,7 +39,7 @@ public class FunctionHealthService {
             Map.entry("decisions", "decisions"), Map.entry("todo", "todo"), Map.entry("calendar", "calendar"),
             Map.entry("rhythm", "workday-rhythm"), Map.entry("workday", "workday-rhythm"),
             Map.entry("workday-rhythm", "workday-rhythm"), Map.entry("action-plan", "action-plans"),
-            Map.entry("appearance", "appearance"), Map.entry("food", "food"),
+            Map.entry("personal-principles", "personal-principles"), Map.entry("appearance", "appearance"), Map.entry("food", "food"),
             Map.entry("workspace", "workspaces"), Map.entry("weekly-report", "weekly-report"),
             Map.entry("life-review", "life-review"), Map.entry("knowledge", "knowledge"),
             Map.entry("memory", "memory"), Map.entry("english", "english-learning"),
