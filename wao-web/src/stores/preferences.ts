@@ -8,6 +8,7 @@ export type ControlStyle = 'system' | 'minimal' | 'detailed'
 const KEYS = { weekStart: 'week-start', celebration: 'celebration' } as const
 const DEFAULT_PROJECT_KEY = 'default-project'
 const MUSIC_PLAYER_SETTINGS_KEY = 'music-player-settings-v1'
+const NOTE_FULLSCREEN_REMINDER_KEY = 'note-fullscreen-reminder-v1'
 const CONTROL_STYLE_KEY = 'control-style-v1'
 
 export interface MusicPlayerSettings {
@@ -18,6 +19,32 @@ export interface MusicPlayerSettings {
 const DEFAULT_MUSIC_PLAYER_SETTINGS: MusicPlayerSettings = {
   defaultOpen: false,
   launcherVisible: true,
+}
+
+export interface NoteFullscreenReminderSettings {
+  enabled: boolean
+  delayMinutes: 1 | 2 | 3 | 5 | 10 | 15
+}
+
+const DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS: NoteFullscreenReminderSettings = {
+  enabled: true,
+  delayMinutes: 1,
+}
+
+const NOTE_REMINDER_DELAYS: NoteFullscreenReminderSettings['delayMinutes'][] = [1, 2, 3, 5, 10, 15]
+
+function parseNoteFullscreenReminderSettings(value: string): NoteFullscreenReminderSettings {
+  try {
+    const parsed = JSON.parse(value) as Partial<NoteFullscreenReminderSettings>
+    return {
+      enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS.enabled,
+      delayMinutes: NOTE_REMINDER_DELAYS.includes(parsed.delayMinutes as NoteFullscreenReminderSettings['delayMinutes'])
+        ? parsed.delayMinutes as NoteFullscreenReminderSettings['delayMinutes']
+        : DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS.delayMinutes,
+    }
+  } catch {
+    return { ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS }
+  }
 }
 
 function parseMusicPlayerSettings(value: string): MusicPlayerSettings {
@@ -42,6 +69,7 @@ export const usePreferenceStore = defineStore('preferences', () => {
   const compactControls = computed(() => effectiveControlStyle.value === 'minimal')
   const musicPlayerDefaultOpen = ref(DEFAULT_MUSIC_PLAYER_SETTINGS.defaultOpen)
   const musicPlayerLauncherVisible = ref(DEFAULT_MUSIC_PLAYER_SETTINGS.launcherVisible)
+  const noteFullscreenReminder = ref<NoteFullscreenReminderSettings>({ ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS })
   const memberId = ref('')
   const loaded = ref(false)
   const loading = ref(false)
@@ -58,6 +86,7 @@ export const usePreferenceStore = defineStore('preferences', () => {
     controlStyle.value = 'system'
     musicPlayerDefaultOpen.value = DEFAULT_MUSIC_PLAYER_SETTINGS.defaultOpen
     musicPlayerLauncherVisible.value = DEFAULT_MUSIC_PLAYER_SETTINGS.launcherVisible
+    noteFullscreenReminder.value = { ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS }
     loaded.value = false
     loading.value = false
     loadError.value = ''
@@ -68,12 +97,13 @@ export const usePreferenceStore = defineStore('preferences', () => {
     loading.value = true
     loadError.value = ''
     try {
-      const [savedWeekStart, savedCelebration, savedDefaultProject, savedMusicPlayerSettings, savedControlStyle] = await Promise.all([
+      const [savedWeekStart, savedCelebration, savedDefaultProject, savedMusicPlayerSettings, savedControlStyle, savedNoteFullscreenReminder] = await Promise.all([
         fetchPreference(KEYS.weekStart),
         fetchPreference(KEYS.celebration),
         fetchPreference(DEFAULT_PROJECT_KEY),
         fetchPreference(MUSIC_PLAYER_SETTINGS_KEY),
         fetchPreference(CONTROL_STYLE_KEY),
+        fetchPreference(NOTE_FULLSCREEN_REMINDER_KEY),
       ])
       if (requestVersion !== loadVersion) return
       weekStart.value = valid(savedWeekStart, ['周一', '周日'], '周一')
@@ -83,6 +113,7 @@ export const usePreferenceStore = defineStore('preferences', () => {
       const musicPlayerSettings = parseMusicPlayerSettings(savedMusicPlayerSettings)
       musicPlayerDefaultOpen.value = musicPlayerSettings.defaultOpen
       musicPlayerLauncherVisible.value = musicPlayerSettings.launcherVisible
+      noteFullscreenReminder.value = parseNoteFullscreenReminderSettings(savedNoteFullscreenReminder)
     } catch (error) {
       if (requestVersion !== loadVersion) return
       loadError.value = error instanceof Error ? error.message : '个人偏好读取失败'
@@ -116,10 +147,20 @@ export const usePreferenceStore = defineStore('preferences', () => {
     musicPlayerLauncherVisible.value = settings.launcherVisible
     loadError.value = ''
   }
+  async function setNoteFullscreenReminder(settings: NoteFullscreenReminderSettings) {
+    const normalized: NoteFullscreenReminderSettings = {
+      enabled: settings.enabled,
+      delayMinutes: NOTE_REMINDER_DELAYS.includes(settings.delayMinutes) ? settings.delayMinutes : 1,
+    }
+    await savePreference(NOTE_FULLSCREEN_REMINDER_KEY, JSON.stringify(normalized))
+    noteFullscreenReminder.value = normalized
+    loadError.value = ''
+  }
   return {
     weekStart, celebration, defaultProject, controlStyle, effectiveControlStyle, compactControls,
     musicPlayerDefaultOpen, musicPlayerLauncherVisible,
+    noteFullscreenReminder,
     loaded, loading, loadError,
-    prepareForMember, load, setWeekStart, setCelebration, setDefaultProject, setControlStyle, setMusicPlayerSettings,
+    prepareForMember, load, setWeekStart, setCelebration, setDefaultProject, setControlStyle, setMusicPlayerSettings, setNoteFullscreenReminder,
   }
 })

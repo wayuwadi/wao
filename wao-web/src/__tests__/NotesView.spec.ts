@@ -10,6 +10,7 @@ import { polishDocumentText } from '@/api/assistant'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
+import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
 import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import type { Doc } from '@/types'
@@ -346,12 +347,15 @@ describe('小记集中记录空间', () => {
     const data = useDataStore()
     const add = vi.spyOn(data, 'addNote').mockRejectedValueOnce(new Error('网关错误')).mockResolvedValueOnce('legacy-note')
     const wrapper = composer()
+    await wrapper.find('.fullscreen-toggle').trigger('click')
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
+    expect(wrapper.classes()).toContain('fullscreen')
     expect(wrapper.find('[role="alert"]').text()).toContain('网关错误')
     expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toContain('不能丢')
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
+    expect(wrapper.classes()).not.toContain('fullscreen')
     expect(add.mock.calls.map(call => call[2])).toEqual(['legacy-note', 'legacy-note'])
     data.apiLive = false
     await wrapper.find('textarea').setValue('服务尚未连接')
@@ -477,6 +481,37 @@ describe('小记集中记录空间', () => {
     expect(wrapper.classes()).not.toContain('fullscreen')
     expect(wrapper.findAll('tr')).toHaveLength(rows + 1)
     wrapper.unmount()
+  })
+
+  it('有未保存正文时按个人间隔提醒进入全屏，进入全屏后停止提醒', async () => {
+    const preferences = usePreferenceStore()
+    preferences.loaded = true
+    preferences.noteFullscreenReminder = { enabled: true, delayMinutes: 1 }
+    vi.useFakeTimers()
+    const wrapper = mount(NoteComposer, { global: { stubs: { MarkdownEditor: Editor } } })
+    await wrapper.find('textarea').setValue('继续写下去的想法')
+    await vi.advanceTimersByTimeAsync(60_000)
+    await flushPromises()
+    expect(wrapper.find('.fullscreen-reminder').text()).toContain('来全屏专心创作')
+    await wrapper.findAll('.fullscreen-reminder button').find(button => button.text() === '稍后提醒')!.trigger('click')
+    expect(wrapper.find('.fullscreen-reminder').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(60_000)
+    await flushPromises()
+    expect(wrapper.find('.fullscreen-reminder').exists()).toBe(true)
+    await wrapper.find('[aria-label="关闭全屏提醒"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(wrapper.find('.fullscreen-reminder').exists()).toBe(false)
+    await wrapper.find('textarea').setValue('继续写下去的想法，再补一行')
+    await vi.advanceTimersByTimeAsync(60_000)
+    await flushPromises()
+    expect(wrapper.find('.fullscreen-reminder').exists()).toBe(true)
+    await wrapper.find('.fullscreen-reminder .reminder-enter').trigger('click')
+    expect(wrapper.classes()).toContain('fullscreen')
+    expect(wrapper.find('.fullscreen-reminder').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(wrapper.find('.fullscreen-reminder').exists()).toBe(false)
+    wrapper.unmount()
+    vi.useRealTimers()
   })
 
   it.each([false, true])('小记选区通用待办保留正文与草稿，正确区分已保存来源：%s', async saved => {

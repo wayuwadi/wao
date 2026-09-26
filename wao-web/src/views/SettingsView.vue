@@ -15,6 +15,7 @@ import {
   usePreferenceStore,
   type Celebration,
   type ControlStyle,
+  type NoteFullscreenReminderSettings,
   type WeekStart,
 } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
@@ -143,6 +144,9 @@ const lastPersonalPreferenceAttempt = ref<{ key: 'weekStart' | 'celebration'; va
 const musicPreferenceForm = reactive({ defaultOpen: false, launcherVisible: true })
 const musicPreferenceSaving = ref(false)
 const musicPreferenceError = ref('')
+const noteReminderForm = reactive<NoteFullscreenReminderSettings>({ enabled: true, delayMinutes: 1 })
+const noteReminderSaving = ref(false)
+const noteReminderError = ref('')
 
 watch(
   [() => preferences.loaded, () => preferences.controlStyle],
@@ -173,9 +177,20 @@ watch(
   { immediate: true },
 )
 
+watch(
+  [() => preferences.loaded, () => preferences.noteFullscreenReminder.enabled, () => preferences.noteFullscreenReminder.delayMinutes],
+  ([loaded, enabled, delayMinutes]) => {
+    if (!loaded || noteReminderSaving.value) return
+    noteReminderForm.enabled = enabled
+    noteReminderForm.delayMinutes = delayMinutes
+  },
+  { immediate: true },
+)
+
 async function reloadPreferences() {
   controlStyleError.value = ''
   musicPreferenceError.value = ''
+  noteReminderError.value = ''
   personalPreferenceError.value = ''
   await preferences.load(true)
   if (preferences.loadError) musicPreferenceError.value = preferences.loadError
@@ -241,6 +256,20 @@ async function saveMusicPreferences() {
     musicPreferenceError.value = error instanceof Error ? error.message : '音乐播放器偏好保存失败'
   } finally {
     musicPreferenceSaving.value = false
+  }
+}
+
+async function saveNoteReminderPreferences() {
+  if (noteReminderSaving.value) return
+  noteReminderSaving.value = true
+  noteReminderError.value = ''
+  try {
+    await preferences.setNoteFullscreenReminder({ ...noteReminderForm })
+    toast('小记全屏提醒设置已保存', 'ri-checkbox-circle-line')
+  } catch (error) {
+    noteReminderError.value = error instanceof Error ? error.message : '小记全屏提醒设置保存失败'
+  } finally {
+    noteReminderSaving.value = false
   }
 }
 
@@ -747,6 +776,56 @@ async function bindFeishu() {
                 <span>“默认打开”在下次进入 WAO 时应用；当前播放不会被中断。</span>
                 <button type="button" class="btn-primary" :disabled="musicPreferenceSaving" @click="saveMusicPreferences">
                   {{ musicPreferenceSaving ? '保存中…' : '保存播放器设置' }}
+                </button>
+              </div>
+            </template>
+          </div>
+          <div class="card thin note-reminder-preferences">
+            <div class="card-row wrap">
+              <div>
+                <div class="card-title">小记全屏提醒</div>
+                <div class="pref-desc">编辑内容一段时间未保存时，轻声提示进入全屏；只在小记编辑器内显示。</div>
+              </div>
+              <span v-if="noteReminderSaving" class="connected"><span class="c-dot"></span>保存中…</span>
+              <span v-else-if="preferences.loading || !preferences.loaded" class="connected"><span class="c-dot"></span>读取中…</span>
+              <span v-else-if="!preferences.loadError && !noteReminderError" class="connected"><span class="c-dot"></span>个人设置</span>
+            </div>
+            <div v-if="preferences.loadError || noteReminderError" class="preference-error" role="alert">
+              <span>{{ noteReminderError || preferences.loadError }}</span>
+              <button type="button" class="btn-ghost sm" :disabled="preferences.loading" @click="reloadPreferences">
+                {{ preferences.loading ? '重新读取中…' : '重新读取' }}
+              </button>
+              <button v-if="noteReminderError" type="button" class="btn-ghost sm" :disabled="noteReminderSaving" @click="saveNoteReminderPreferences">重试保存</button>
+            </div>
+            <div v-else-if="preferences.loading || !preferences.loaded" class="preference-loading" aria-live="polite">
+              <i class="ri-loader-4-line"></i>正在读取小记提醒偏好…
+            </div>
+            <template v-else>
+              <div class="pref-row">
+                <div class="pref-main">
+                  <div class="pref-name">启用未保存提醒</div>
+                  <div class="pref-desc">提醒会显示「进入全屏」「稍后提醒」和关闭操作。</div>
+                </div>
+                <button type="button" class="toggle" :class="{ on: noteReminderForm.enabled }" aria-label="启用小记全屏提醒" :aria-pressed="noteReminderForm.enabled" :disabled="noteReminderSaving" @click="noteReminderForm.enabled = !noteReminderForm.enabled"><span class="knob"></span></button>
+              </div>
+              <div class="pref-row">
+                <div class="pref-main">
+                  <div class="pref-name">提醒间隔</div>
+                  <div class="pref-desc">从最近一次编辑开始计时；保存后自动退出全屏。</div>
+                </div>
+                <select v-model.number="noteReminderForm.delayMinutes" class="value-select" aria-label="小记全屏提醒间隔" :disabled="noteReminderSaving || !noteReminderForm.enabled">
+                  <option :value="1">1 分钟</option>
+                  <option :value="2">2 分钟</option>
+                  <option :value="3">3 分钟</option>
+                  <option :value="5">5 分钟</option>
+                  <option :value="10">10 分钟</option>
+                  <option :value="15">15 分钟</option>
+                </select>
+              </div>
+              <div class="music-preference-actions">
+                <span>按当前成员跨设备保存；保存失败时当前设置草稿会保留。</span>
+                <button type="button" class="btn-primary" :disabled="noteReminderSaving" @click="saveNoteReminderPreferences">
+                  {{ noteReminderSaving ? '保存中…' : '保存提醒设置' }}
                 </button>
               </div>
             </template>

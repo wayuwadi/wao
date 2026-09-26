@@ -30,6 +30,30 @@ describe('成员级界面偏好', () => {
     expect(preferenceApi.fetchPreference).toHaveBeenCalledWith('control-style-v1')
   })
 
+  it('小记全屏提醒默认开启且间隔一分钟，并按成员级偏好保存', async () => {
+    const preferences = usePreferenceStore()
+    await preferences.load()
+
+    expect(preferences.noteFullscreenReminder).toEqual({ enabled: true, delayMinutes: 1 })
+    await preferences.setNoteFullscreenReminder({ enabled: false, delayMinutes: 5 })
+    expect(preferenceApi.savePreference).toHaveBeenCalledWith(
+      'note-fullscreen-reminder-v1', JSON.stringify({ enabled: false, delayMinutes: 5 }),
+    )
+    expect(preferences.noteFullscreenReminder).toEqual({ enabled: false, delayMinutes: 5 })
+
+    preferences.prepareForMember('another-member')
+    expect(preferences.noteFullscreenReminder).toEqual({ enabled: true, delayMinutes: 1 })
+  })
+
+  it('小记提醒偏好拒绝未知间隔并在读取失败值时回到安全默认', async () => {
+    preferenceApi.fetchPreference.mockImplementation((key: string) => Promise.resolve(
+      key === 'note-fullscreen-reminder-v1' ? JSON.stringify({ enabled: false, delayMinutes: 999 }) : '',
+    ))
+    const preferences = usePreferenceStore()
+    await preferences.load()
+    expect(preferences.noteFullscreenReminder).toEqual({ enabled: false, delayMinutes: 1 })
+  })
+
   it('读取并保存跨设备控件风格', async () => {
     preferenceApi.fetchPreference.mockImplementation((key: string) => Promise.resolve(
       key === 'control-style-v1' ? 'detailed' : '',
