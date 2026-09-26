@@ -250,6 +250,28 @@ describe('项目页聚焦任务', () => {
     wrapper.unmount()
   })
 
+  it('表格标题点击后在升序和降序间切换，并保留父子任务相邻', async () => {
+    const data = useDataStore()
+    const sample = data.tasksByProject('p1')[0]!
+    data.tasks = [
+      { ...sample, id: 'late', number: 30, title: '乙任务', parentTaskId: null, subs: [] },
+      { ...sample, id: 'early', number: 10, title: '甲任务', parentTaskId: null, subs: [] },
+      { ...sample, id: 'child', number: 20, title: '子任务', parentTaskId: 'early', subs: [] },
+    ]
+    await router.push('/projects/p1?view=list')
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    const titles = () => wrapper.findAll('.task-row .trow-title').map(node => node.text())
+    expect(wrapper.findAll('.project-task-table thead th')).toHaveLength(10)
+    await wrapper.get('[aria-label="按标题升序排序"]').trigger('click')
+    expect(wrapper.get('.project-task-table thead th:nth-child(2)').attributes('aria-sort')).toBe('ascending')
+    expect(titles()).toEqual(['甲任务', '子任务', '乙任务'])
+    await wrapper.get('[aria-label="按标题降序排序"]').trigger('click')
+    expect(wrapper.get('.project-task-table thead th:nth-child(2)').attributes('aria-sort')).toBe('descending')
+    expect(titles()).toEqual(['乙任务', '甲任务', '子任务'])
+    wrapper.unmount()
+  })
+
   it('项目看板卡片中的连续长文本不会撑出状态列', async () => {
     const data = useDataStore()
     const task = data.tasksByProject('p1')[0]!
