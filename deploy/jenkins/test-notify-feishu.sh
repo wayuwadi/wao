@@ -143,6 +143,30 @@ rm -f "$fixture/payload.json"
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
 slave_status=success
+master_status=skipped
+cloud_status=success
+verification_status=success
+verification_detail=Linux1 单节点与公共入口已就绪
+publish_completed_at=2026-09-27 07:30:00
+EOF
+
+PATH="$fixture/bin:$PATH" \
+WAO_TEST_PAYLOAD="$fixture/payload.json" \
+WAO_PIPELINE_RESULT=success \
+WAO_MASTER_PROJECT_ROOT="$fixture/master" \
+WAO_RUN_TEMP="$fixture/run" \
+WAO_DEPLOY_REQUIRED=true DEPLOY_PRODUCTION=true \
+WAO_GIT_SHA=abcdef1234567890abcdef1234567890abcdef12 \
+WAO_COMMIT_MESSAGE='- fix(deploy): 增加应急单节点发布' \
+BUILD_NUMBER=321 \
+sh "$project_root/deploy/jenkins/notify-feishu.sh"
+assert_json '.card.header.title.content == "WAO 生产发布 ⚠️ Linux1 单节点成功"'
+assert_json '.card.header.template == "orange"'
+assert_json '.card.elements[0].text.content | contains("Linux2 发布前不可用")'
+rm -f "$fixture/payload.json"
+
+cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
+slave_status=success
 slave_attempts=1
 slave_detail=abcdef12
 master_status=failed

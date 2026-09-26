@@ -69,6 +69,7 @@ for script in \
   deploy/scripts/start-codex-vpn.sh \
   deploy/scripts/test-ensure-codex-egress.sh \
   deploy/scripts/install-release-linux.sh \
+  deploy/scripts/emergency-publish-cloud.sh \
   deploy/scripts/resolve-gateway-ipv4.sh \
   deploy/scripts/test-redis-sentinel-policy.sh \
   deploy/jenkins/resolve-batch-base.sh \
@@ -86,6 +87,7 @@ test -s deploy/jenkins/fonts/WAO-Release-Sans.ttf
 test -s deploy/jenkins/fonts/OFL.txt
 test -s deploy/jenkins/lib/release-poster.jar
 bash -n deploy/jenkins/ci-deploy.sh
+bash -n deploy/scripts/emergency-release-linux1.sh
 
 for script in \
   deploy/backup/configure-offsite-backup.sh \
@@ -233,6 +235,17 @@ case "${ALLOW_SLAVE_OFFLINE:-false}" in
   true|false) ;;
   *) echo 'ALLOW_SLAVE_OFFLINE must be true or false.' >&2; exit 2 ;;
 esac
+
+case "${ALLOW_MASTER_OFFLINE:-false}" in
+  true|false) ;;
+  *) echo 'ALLOW_MASTER_OFFLINE must be true or false.' >&2; exit 2 ;;
+esac
+
+if [ "${ALLOW_MASTER_OFFLINE:-false}" = true ] &&
+   { [ "${ALLOW_SLAVE_OFFLINE:-false}" = true ] || [ "${BOOTSTRAP_SLAVE:-false}" = true ]; }; then
+  echo 'ALLOW_MASTER_OFFLINE cannot be combined with another emergency or bootstrap mode.' >&2
+  exit 2
+fi
 
 if [ "${BOOTSTRAP_SLAVE:-false}" = true ] && [ "${ALLOW_SLAVE_OFFLINE:-false}" = true ]; then
   echo 'BOOTSTRAP_SLAVE and ALLOW_SLAVE_OFFLINE cannot both be true.' >&2

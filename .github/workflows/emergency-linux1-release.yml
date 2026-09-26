@@ -1,0 +1,80 @@
+name: Emergency Linux1 browser release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full main SHA already built and validated on Linux1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wao-emergency-cloud-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check exact main release
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+      - name: Build and verify browser bundles
+        shell: bash
+        env:
+          WAO_GIT_SHA: ${{ inputs.release_sha }}
+          WAO_RUN_TEMP: ${{ runner.temp }}/wao-emergency-build
+        run: |
+          set -euo pipefail
+          deploy/jenkins/ci-build-frontends.sh
+          python3 deploy/scripts/static-release.py pack wao-web/dist \
+            "$WAO_RUN_TEMP/wao-static.tgz" "$WAO_GIT_SHA"
+      - name: Configure existing cloud deployment identity
+        shell: bash
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 0600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/known_hosts
+      - name: Publish through the cloud to the healthy Linux1 node
+        shell: bash
+        env:
+          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
+          CLOUD_USER: ${{ secrets.CLOUD_USER }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          WAO_RUN_TEMP: ${{ runner.temp }}/wao-emergency-build
+        run: |
+          set -euo pipefail
+          test -n "$CLOUD_HOST" && test -n "$CLOUD_USER"
+          stage="/tmp/wao-emergency-${GITHUB_RUN_ID}"
+          ssh "$CLOUD_USER@$CLOUD_HOST" "install -d -m 0700 '$stage/agent-dist'"
+          scp "$WAO_RUN_TEMP/wao-static.tgz" \
+            deploy/scripts/static-release.py deploy/scripts/publish-static-routing.py \
+            deploy/scripts/emergency-publish-cloud.sh \
+            deploy/scripts/resolve-gateway-ipv4.sh \
+            deploy/scripts/render-nginx-config.sh \
+            deploy/scripts/set-nginx-upstream-state.sh \
+            deploy/nginx/wao.wayuwa.cn.conf.template \
+            "$CLOUD_USER@$CLOUD_HOST:$stage/"
+          scp -r agent-web/dist/. "$CLOUD_USER@$CLOUD_HOST:$stage/agent-dist/"
+          ssh "$CLOUD_USER@$CLOUD_HOST" \
+            "sh '$stage/emergency-publish-cloud.sh' '$stage' '$RELEASE_SHA'"

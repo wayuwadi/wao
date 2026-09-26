@@ -151,12 +151,31 @@ payload="$(jq -n \
   }')"
 
 if [ "$WAO_PIPELINE_RESULT" = success ]; then
+  success_title="WAO ${pipeline_kind} ✅ 成功"
+  success_template=green
   if [ "$pipeline_kind" = '生产发布' ]; then
-    if [ "$slave_status" != success ] || [ "$master_status" != success ] || [ "$cloud_status" != success ] || [ "$verification_status" != success ]; then
+    if { [ "$slave_status" != success ] && [ "$slave_status" != skipped ]; } ||
+      [ "$cloud_status" != success ] || [ "$verification_status" != success ] ||
+      { [ "$master_status" != success ] && [ "$master_status" != skipped ] &&
+        [ "$master_status" != degraded ]; }; then
       echo 'Jenkins success notification skipped: production verification is incomplete.' >&2
       exit 0
     fi
-    success_detail='双节点、云端与公共入口检查通过'
+    if [ "$slave_status" = skipped ]; then
+      success_title='WAO 生产发布 ⚠️ Linux2 单节点成功'
+      success_template=orange
+      success_detail='Linux2 与公共入口已就绪；Linux1 已摘流，恢复后须补齐同一版本。'
+    elif [ "$master_status" = skipped ] || [ "$master_status" = degraded ]; then
+      success_title='WAO 生产发布 ⚠️ Linux1 单节点成功'
+      success_template=orange
+      if [ "$master_status" = degraded ]; then
+        success_detail='Linux1 与公共入口已就绪；Linux2 本次部署失败并已摘流，恢复后须补齐同一版本。'
+      else
+        success_detail='Linux1 与公共入口已就绪；Linux2 发布前不可用并已摘流，恢复后须补齐同一版本。'
+      fi
+    else
+      success_detail='双节点、云端与公共入口检查通过'
+    fi
   else
     success_detail='验证通过，本批次未发布到生产环境'
   fi
@@ -183,13 +202,13 @@ if [ "$WAO_PIPELINE_RESULT" = success ]; then
         poster_key=''
       }
   fi
-  payload="$(jq -n --arg title "WAO ${pipeline_kind} ✅ 成功" \
+  payload="$(jq -n --arg title "$success_title" --arg template "$success_template" \
     --arg detail "$success_detail" --arg changes "$changes" \
     --arg time_detail "$time_detail" --arg run_url "$run_url" \
     --arg poster_key "$poster_key" \
     --arg feature_url "$feature_url" --arg feature_label "$feature_label" \
     '{msg_type:"interactive",card:{config:{wide_screen_mode:true},
-      header:{template:"green",title:{tag:"plain_text",content:$title}},
+      header:{template:$template,title:{tag:"plain_text",content:$title}},
       elements:([{tag:"div",text:{tag:"lark_md",content:($detail+"\n"+$time_detail+"\n**本次改动**\n"+$changes)}}]
         + (if $poster_key == "" then [] else [{tag:"img",img_key:$poster_key,
             alt:{tag:"plain_text",content:"本次 WAO 发布的功能与入口"}}] end)

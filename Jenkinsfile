@@ -24,6 +24,11 @@ pipeline {
             defaultValue: false,
             description: '仅在 Linux1 预检不可达时保持从节点摘流并继续发布主节点与云端；从节点可达后的部署失败仍会阻断。'
         )
+        booleanParam(
+            name: 'ALLOW_MASTER_OFFLINE',
+            defaultValue: false,
+            description: '应急：仅当 Linux2 Gateway 发布前不就绪且 Linux1 健康时，允许短暂中断并发布 Linux1 与云端；Linux2 保持摘流，恢复后需补齐。'
+        )
     }
 
     environment {
@@ -118,7 +123,7 @@ pipeline {
                             error("无法解析变更范围：${line}")
                         }
                     }
-                    if (params.BOOTSTRAP_SLAVE || params.ALLOW_SLAVE_OFFLINE) { env.WAO_WEB_ONLY = 'false' }
+                    if (params.BOOTSTRAP_SLAVE || params.ALLOW_SLAVE_OFFLINE || params.ALLOW_MASTER_OFFLINE) { env.WAO_WEB_ONLY = 'false' }
                     env.WAO_OPS_CONFIG_CHANGED = sh(
                         script: '''
                             if git diff --name-only "$WAO_CHANGE_BASE" "$WAO_GIT_SHA" |
@@ -180,7 +185,7 @@ pipeline {
                             variable: 'CLOUD_KNOWN_HOSTS'
                         )
                     ]) {
-                        sh 'BOOTSTRAP_SLAVE="$BOOTSTRAP_SLAVE" ALLOW_SLAVE_OFFLINE="$ALLOW_SLAVE_OFFLINE" deploy/jenkins/ci-deploy.sh'
+                        sh 'BOOTSTRAP_SLAVE="$BOOTSTRAP_SLAVE" ALLOW_SLAVE_OFFLINE="$ALLOW_SLAVE_OFFLINE" ALLOW_MASTER_OFFLINE="$ALLOW_MASTER_OFFLINE" deploy/jenkins/ci-deploy.sh'
                     }
                 }
             }
@@ -210,11 +215,24 @@ pipeline {
         success {
             script {
                 if (env.WAO_GIT_SHA) {
-                    def successDescription = env.WAO_DEPLOY_REQUIRED != 'true'
-                        ? 'Jenkins 已检查变更（无需生产发布）'
-                        : (params.DEPLOY_PRODUCTION
-                            ? 'Jenkins 构建与发布成功'
-                            : 'Jenkins 影子构建成功（未部署）')
+                    def nodeStatus = (params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true')
+                        ? sh(script: '''
+                            if [ -f "$WAO_RUN_TEMP/wao-deploy-status.env" ]; then
+                              grep -E '^(master_status|slave_status)=' "$WAO_RUN_TEMP/wao-deploy-status.env"
+                            fi
+                        ''', returnStdout: true).trim()
+                        : ''
+                    def successDescription = 'Jenkins 构建与发布成功'
+                    if (env.WAO_DEPLOY_REQUIRED != 'true') {
+                        successDescription = 'Jenkins 已检查变更（无需生产发布）'
+                    } else if (!params.DEPLOY_PRODUCTION) {
+                        successDescription = 'Jenkins 影子构建成功（未部署）'
+                    } else if (nodeStatus.contains('master_status=skipped') ||
+                               nodeStatus.contains('master_status=degraded')) {
+                        successDescription = 'Jenkins 单节点发布成功：Linux1，Linux2 待同步'
+                    } else if (nodeStatus.contains('slave_status=skipped')) {
+                        successDescription = 'Jenkins 单节点发布成功：Linux2，Linux1 待同步'
+                    }
                     withCredentials([usernamePassword(
                         credentialsId: 'wao-github-pat',
                         usernameVariable: 'GITHUB_USER',
