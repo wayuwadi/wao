@@ -70,12 +70,12 @@ class TextPolishJobServiceTest {
 
     @Test void noteTitleUsesReadOnlyJobAndReturnsOneCleanLineWithoutPolishHistory() {
         when(jobs.lockMember("m1")).thenReturn("m1");
-        when(assistant.enqueueNoteTitleJob(id, "原文")).thenReturn("ac1");
+        when(assistant.enqueueNoteTitleJob(eq(id), eq("原文"), eq("从体验角度概括"), eq("gpt-6-sol"))).thenReturn("ac1");
         when(assistant.readOnlyJobResult(id, "ac1"))
                 .thenReturn(new AiAssistantService.ReadOnlyJobResult("ac1", "succeeded", "# “关于小记的想法”\n多余解释", null));
-        var result = service.submit("m1", request, "NOTE_TITLE", "原文");
+        var result = service.submit("m1", request, "NOTE_TITLE", "原文", "gpt-6-sol", "从体验角度概括", null);
         assertThat(result.polished()).isEqualTo("关于小记的想法");
-        verify(assistant).enqueueNoteTitleJob(id, "原文");
+        verify(assistant).enqueueNoteTitleJob(eq(id), eq("原文"), eq("从体验角度概括"), eq("gpt-6-sol"));
         verify(jobs).insert(argThat(job -> job.originalText().startsWith("sha256:") && !job.originalText().contains("原文")));
         verifyNoInteractions(polish);
         verify(polish, never()).recordResult(any(), any(), any(), any(), any());

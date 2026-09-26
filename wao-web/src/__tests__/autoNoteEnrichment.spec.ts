@@ -5,6 +5,7 @@ import { fetchDoc, apiPatchDoc } from '@/api/board'
 import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
 import { waitForPolish } from '@/api/polishJobs'
 import { saveNotePolishVersion } from '@/api/notePolishVersions'
+import { fetchPreference } from '@/api/favorites'
 
 vi.mock('@/api/board', () => ({ fetchDoc: vi.fn(), apiPatchDoc: vi.fn() }))
 vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
@@ -30,6 +31,8 @@ describe('小记保存后自动生成', () => {
   })
 
   it('先保存正文，再以版本条件写入标题和总览图', async () => {
+    vi.mocked(fetchPreference).mockResolvedValueOnce('gpt-6-sol').mockResolvedValueOnce('标题偏好')
+      .mockResolvedValueOnce('图片偏好').mockResolvedValueOnce('正文润色偏好')
     vi.mocked(fetchDoc).mockResolvedValueOnce(doc(1) as never)
       .mockResolvedValueOnce(doc(1) as never)
       .mockResolvedValueOnce(doc(2, '打印流程复盘') as never)
@@ -44,7 +47,8 @@ describe('小记保存后自动生成', () => {
     startAutoNoteEnrichment('me', 'n1', 1)
     await flushPromises()
 
-    expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_TITLE', expect.any(Object))
+    expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_TITLE', expect.objectContaining({ model: 'gpt-6-sol', titlePrompt: '标题偏好' }))
+    expect(startArticleImage).toHaveBeenCalledWith('今天复盘打印流程', '图片偏好', 'gpt-6-sol')
     expect(apiPatchDoc).toHaveBeenNthCalledWith(1, 'n1', { title: '打印流程复盘', expectedRev: 1 })
     expect(apiPatchDoc).toHaveBeenNthCalledWith(2, 'n1', expect.objectContaining({
       expectedRev: 2,
@@ -52,7 +56,7 @@ describe('小记保存后自动生成', () => {
         expect.objectContaining({ type: 'image', attrs: expect.objectContaining({ src: '/api/images/img1/raw' }) }),
       ]) }) }),
     }))
-    expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_BODY', expect.any(Object))
+    expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_BODY', expect.objectContaining({ model: 'gpt-6-sol', notePolishPrompt: '正文润色偏好' }))
     expect(saveNotePolishVersion).toHaveBeenCalledWith('n1', content.markdown, '打印流程复盘')
     expect(noteEnrichmentStatus.n1).toBe('标题、配图和润色已完成')
     expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).toBeNull()

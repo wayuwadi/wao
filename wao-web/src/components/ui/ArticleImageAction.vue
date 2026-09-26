@@ -4,6 +4,12 @@ import { fetchPreference, savePreference } from '@/api/favorites'
 import { fetchArticleImage, startArticleImage, type ArticleImageJob } from '@/api/articleImages'
 import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
 import { waitForPolish } from '@/api/polishJobs'
+import { fetchTextPolishWorkspace, saveTextPolishPrompt } from '@/api/textPolish'
+
+const NOTE_MODEL_KEY = 'note-ai-model-v1'
+const NOTE_TITLE_PROMPT_KEY = 'note-title-prompt-v1'
+const DEFAULT_NOTE_MODEL = 'gpt-6-luna'
+const DEFAULT_NOTE_TITLE_PROMPT = '标题准确概括这条小记的主题，简洁自然，方便以后搜索；只返回一个标题。'
 
 const props = defineProps<{
   scopeKey: string
@@ -18,6 +24,12 @@ const PREFERENCE_KEY = ARTICLE_IMAGE_PREFERENCE_KEY
 
 const prompt = ref(DEFAULT_ARTICLE_IMAGE_PROMPT)
 const draftPrompt = ref(DEFAULT_ARTICLE_IMAGE_PROMPT)
+const noteModel = ref(DEFAULT_NOTE_MODEL)
+const draftModel = ref(DEFAULT_NOTE_MODEL)
+const titlePrompt = ref(DEFAULT_NOTE_TITLE_PROMPT)
+const draftTitlePrompt = ref(DEFAULT_NOTE_TITLE_PROMPT)
+const polishPrompt = ref('')
+const draftPolishPrompt = ref('')
 const loadingPrompt = ref(true)
 const savingPrompt = ref(false)
 const promptError = ref('')
@@ -43,8 +55,19 @@ async function loadPrompt() {
   loadingPrompt.value = true
   promptError.value = ''
   try {
-    prompt.value = (await fetchPreference(PREFERENCE_KEY)).trim() || DEFAULT_ARTICLE_IMAGE_PROMPT
+    const [imageValue, modelValue, titleValue, workspace] = await Promise.all([
+      fetchPreference(PREFERENCE_KEY), fetchPreference(NOTE_MODEL_KEY),
+      props.generateTitle ? fetchPreference(NOTE_TITLE_PROMPT_KEY) : Promise.resolve(''),
+      props.generateTitle ? fetchTextPolishWorkspace() : Promise.resolve(null),
+    ])
+    prompt.value = imageValue.trim() || DEFAULT_ARTICLE_IMAGE_PROMPT
     draftPrompt.value = prompt.value
+    noteModel.value = modelValue.trim() || DEFAULT_NOTE_MODEL
+    draftModel.value = noteModel.value
+    titlePrompt.value = titleValue.trim() || DEFAULT_NOTE_TITLE_PROMPT
+    draftTitlePrompt.value = titlePrompt.value
+    polishPrompt.value = workspace?.prompt || ''
+    draftPolishPrompt.value = polishPrompt.value
   } catch {
     promptError.value = '暂时无法读取个人配图提示词，请重试'
   } finally { loadingPrompt.value = false }
@@ -56,14 +79,46 @@ async function savePrompt() {
   savingPrompt.value = true
   promptError.value = ''
   try {
-    await savePreference(PREFERENCE_KEY, next === DEFAULT_ARTICLE_IMAGE_PROMPT ? '' : next)
+    await savePromptValue(next)
     prompt.value = next
     settingsOpen.value = false
   } catch { promptError.value = '保存个人提示词失败，请重试' }
   finally { savingPrompt.value = false }
 }
+async function saveSettings() {
+  const image = draftPrompt.value.trim()
+  const title = draftTitlePrompt.value.trim()
+  const polish = draftPolishPrompt.value.trim()
+  if (!image || image.length > 4000 || (props.generateTitle && (!title || title.length > 4000 || !polish || polish.length > 4000))) {
+    promptError.value = '提示词不能为空，且每项最多 4000 字'; return
+  }
+  if (!['gpt-6-luna', 'gpt-6-sol', 'gpt-6-astra', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra'].includes(draftModel.value)) {
+    promptError.value = '请选择支持的 GPT 模型'; return
+  }
+  savingPrompt.value = true
+  promptError.value = ''
+  try {
+    await savePromptValue(image)
+    if (props.generateTitle) {
+      await Promise.all([savePreference(NOTE_MODEL_KEY, draftModel.value),
+        savePreference(NOTE_TITLE_PROMPT_KEY, title === DEFAULT_NOTE_TITLE_PROMPT ? '' : title),
+        saveTextPolishPrompt(polish)])
+    }
+    prompt.value = image; draftPrompt.value = image
+    noteModel.value = draftModel.value
+    titlePrompt.value = title; polishPrompt.value = polish
+    settingsOpen.value = false
+  } catch (cause) { promptError.value = cause instanceof Error ? cause.message : '设置保存失败，请重试' }
+  finally { savingPrompt.value = false }
+}
+async function savePromptValue(value: string) {
+  await savePreference(PREFERENCE_KEY, value === DEFAULT_ARTICLE_IMAGE_PROMPT ? '' : value)
+}
 function openSettings() {
   draftPrompt.value = prompt.value
+  draftModel.value = noteModel.value
+  draftTitlePrompt.value = titlePrompt.value
+  draftPolishPrompt.value = polishPrompt.value
   promptError.value = ''
   settingsOpen.value = true
 }
@@ -112,7 +167,9 @@ async function generate() {
   error.value = ''
   if (!oldId && props.generateTitle) {
     titleStatus.value = '正在生成标题…'
-    void waitForPolish(text.slice(0, 12_000), 'NOTE_TITLE').then(result => {
+    void waitForPolish(text.slice(0, 12_000), 'NOTE_TITLE', {
+      model: noteModel.value, titlePrompt: titlePrompt.value,
+    }).then(result => {
       const title = result.polished?.trim().slice(0, 30)
       if (current !== generation || props.getText().trim() !== text) return
       if (title) { emit('generated-title', title); titleStatus.value = `标题已生成：${title}` }
@@ -120,7 +177,7 @@ async function generate() {
     }).catch(() => { if (current === generation) titleStatus.value = '标题生成失败，可稍后重试' })
   }
   try {
-    const id = oldId || (await startArticleImage(text, prompt.value)).id
+      const id = oldId || (await startArticleImage(text, prompt.value, noteModel.value)).id
     if (current !== generation) return
     rememberJob(id)
     await waitForImage(id, current)
@@ -150,8 +207,8 @@ onBeforeUnmount(() => { generation++ })
       <i :class="busy ? 'ri-loader-4-line spin' : 'ri-sparkling-2-line'" aria-hidden="true"></i>
       <span>{{ busy ? '配图中' : persistedJob() ? '继续配图' : '总览配图' }}</span>
     </button>
-    <button class="prompt-settings" type="button" aria-label="修改个人配图提示词" title="修改个人配图提示词"
-      :disabled="loadingPrompt" @mousedown.prevent @click="openSettings"><i class="ri-settings-3-line" aria-hidden="true"></i></button>
+    <button class="prompt-settings" type="button" :aria-label="generateTitle ? '小记 AI 设置' : '修改个人配图提示词'" :title="generateTitle ? '小记 AI 设置' : '修改个人配图提示词'"
+      :disabled="loadingPrompt" @mousedown.prevent @click="openSettings"><i class="ri-settings-3-line" aria-hidden="true"></i><span v-if="generateTitle">设置</span></button>
     <span v-if="error || promptError" class="image-error" role="alert">{{ error || promptError }}
       <button v-if="promptError" type="button" @click="loadPrompt">重试读取</button>
     </span>
@@ -168,13 +225,17 @@ onBeforeUnmount(() => { generation++ })
       </div>
       <div v-if="settingsOpen" class="image-prompt-mask" @click.self="settingsOpen = false">
         <section class="image-prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="image-prompt-title">
-          <header><h2 id="image-prompt-title">个人配图提示词</h2><button type="button" aria-label="关闭" @click="settingsOpen = false"><i class="ri-close-line"></i></button></header>
-          <p>用于小记和文档的文章总览图；只影响你的账号。正文会在点击生成时单独提供给模型。</p>
-          <textarea v-model="draftPrompt" aria-label="个人配图提示词" maxlength="4000" rows="7"></textarea>
+          <header><h2 id="image-prompt-title">{{ generateTitle ? '小记 AI 设置' : '个人配图提示词' }}</h2><button type="button" aria-label="关闭" @click="settingsOpen = false"><i class="ri-close-line"></i></button></header>
+          <p>{{ generateTitle ? '这些设置只影响当前账号的小记自动整理与配图。原文始终保留。' : '用于文章总览图；只影响你的账号。正文会在点击生成时单独提供给模型。' }}</p>
+          <label v-if="generateTitle" class="model-choice"><span>标题、配图与润色模型</span><select v-model="draftModel"><option value="gpt-6-luna">GPT-6 Luna · 高频低成本</option><option value="gpt-6-sol">GPT-6 Sol · 均衡</option><option value="gpt-6-astra">GPT-6 Astra · 能力更强</option><option value="gpt-5.6-luna">GPT-5.6 Luna</option><option value="gpt-5.6-sol">GPT-5.6 Sol</option><option value="gpt-5.6-terra">GPT-5.6 Terra</option></select></label>
+          <label v-if="generateTitle" class="prompt-field"><span>标题文案提示词</span><textarea v-model="draftTitlePrompt" maxlength="4000" rows="3" /></label>
+          <label v-if="generateTitle" class="prompt-field"><span>正文润色提示词</span><textarea v-model="draftPolishPrompt" maxlength="4000" rows="5" /></label>
+          <label class="prompt-field"><span>图片生成提示词</span><textarea v-model="draftPrompt" maxlength="4000" rows="6" /></label>
           <span v-if="promptError" class="dialog-error" role="alert">{{ promptError }}</span>
-          <footer><button type="button" @click="draftPrompt = DEFAULT_ARTICLE_IMAGE_PROMPT">恢复默认</button>
+          <footer><button type="button" @click="draftPrompt = DEFAULT_ARTICLE_IMAGE_PROMPT">恢复图片默认</button>
+            <button v-if="generateTitle" type="button" @click="draftTitlePrompt = DEFAULT_NOTE_TITLE_PROMPT">恢复标题默认</button>
             <button type="button" @click="settingsOpen = false">取消</button>
-            <button class="primary" type="button" :disabled="savingPrompt || !draftPrompt.trim()" @click="savePrompt">{{ savingPrompt ? '保存中…' : '保存个人提示词' }}</button></footer>
+            <button class="primary" type="button" :disabled="savingPrompt || !draftPrompt.trim()" @click="generateTitle ? saveSettings() : savePrompt()">{{ savingPrompt ? '保存中…' : '保存设置' }}</button></footer>
         </section>
       </div>
     </Teleport>
@@ -196,6 +257,9 @@ onBeforeUnmount(() => { generation++ })
 .image-prompt-dialog header { justify-content: space-between; }
 .image-prompt-dialog h2 { margin: 0; font-size: 17px; }
 .image-prompt-dialog p { color: var(--wao-text-weak); font-size: 13px; }
+.model-choice, .prompt-field { display: grid; gap: 6px; margin: 12px 0; color: var(--wao-text-2); font-size: 12px; }
+.model-choice select { padding: 8px; border: 1px solid var(--wao-divider); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-1); }
+.prompt-field textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: 9px; border: 1px solid var(--wao-divider); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-1); font: inherit; line-height: 1.5; }
 .image-prompt-dialog textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: 10px; border: 1px solid var(--wao-divider); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-1); font: inherit; line-height: 1.6; }
 .image-prompt-dialog footer { justify-content: flex-end; flex-wrap: wrap; margin-top: 14px; }
 .image-prompt-dialog button { border: 1px solid var(--wao-divider); border-radius: 7px; padding: 6px 10px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }

@@ -22,6 +22,10 @@ type AutoJob = {
 
 const PREFIX = 'wao-note-auto-enrichment-v1:'
 const COMPLETE_PREFIX = 'wao-note-enrichment-complete-v1:'
+const MODEL_PREFERENCE_KEY = 'note-ai-model-v1'
+const TITLE_PROMPT_KEY = 'note-title-prompt-v1'
+const DEFAULT_NOTE_MODEL = 'gpt-6-luna'
+const DEFAULT_TITLE_PROMPT = '标题准确概括这条小记的主题，简洁自然，方便以后搜索；只返回一个标题。'
 const running = new Set<string>()
 const discarded = new Set<string>()
 let activeMember = ''
@@ -89,6 +93,14 @@ async function run(job: AutoJob) {
     const source = await fetchDoc(job.docId)
     if (!activeJob(job)) return
     const articleText = noteTextForPolish(resolvedRichContent(source).markdown)
+    const [modelValue, titlePromptValue, imagePromptValue, polishWorkspace] = await Promise.all([
+      fetchPreference(MODEL_PREFERENCE_KEY), fetchPreference(TITLE_PROMPT_KEY),
+      fetchPreference(ARTICLE_IMAGE_PREFERENCE_KEY), fetchPreference('text-polish.prompt.v1'),
+    ])
+    const model = modelValue.trim() || DEFAULT_NOTE_MODEL
+    const titlePrompt = titlePromptValue.trim() || DEFAULT_TITLE_PROMPT
+    const imagePrompt = imagePromptValue.trim() || DEFAULT_ARTICLE_IMAGE_PROMPT
+    const polishPrompt = polishWorkspace
     if (!articleText) throw new Error('正文为空，无法自动整理')
     if (data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
       throw new Error('小记有未保存编辑，请保存后重试；自动结果不会覆盖草稿')
@@ -98,6 +110,7 @@ async function run(job: AutoJob) {
       progress(job, stage, 'running')
       noteEnrichmentStatus[job.docId] = '正在生成标题…'
       const result = await waitForPolish(articleText.slice(0, 12_000), 'NOTE_TITLE', {
+        model, titlePrompt,
         requestId: job.titleRequestId,
         isActive: () => activeJob(job),
         onProgress: value => { if (value.status === 'FAILED') job.titleTerminalFailed = true },
@@ -123,9 +136,7 @@ async function run(job: AutoJob) {
       progress(job, stage, 'running')
       noteEnrichmentStatus[job.docId] = '正在生成配图…'
       if (!job.imageJobId) {
-        const preference = await fetchPreference(ARTICLE_IMAGE_PREFERENCE_KEY)
-        if (!activeJob(job)) return
-        const image = await startArticleImage(articleText.slice(0, 60_000), preference.trim() || DEFAULT_ARTICLE_IMAGE_PROMPT)
+        const image = await startArticleImage(articleText.slice(0, 60_000), imagePrompt, model)
         job.imageJobId = image.id
         save(job)
       }
@@ -178,6 +189,7 @@ async function run(job: AutoJob) {
       job.polishRequestId ??= newPolishRequestId()
       save(job)
       const result = await waitForPolish(originalText, 'NOTE_BODY', {
+        model, notePolishPrompt: polishPrompt,
         requestId: job.polishRequestId,
         isActive: () => activeJob(job),
         onProgress: value => { if (value.status === 'FAILED') job.polishTerminalFailed = true },

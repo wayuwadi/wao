@@ -1657,11 +1657,12 @@ class LinuxCodexAssistantTest(unittest.TestCase):
         api = Mock()
         api.post_file.return_value = {"url": "/api/images/img1/raw"}
         RUNNER.execute_assistant_claim(api, {"runId": "image1", "claimToken": "claim1",
-            "prompt": "生成总览图", "mode": "ARTICLE_IMAGE"}, self.root, "codex", "git")
+            "prompt": "生成总览图", "mode": "ARTICLE_IMAGE", "model": "gpt-6-luna"}, self.root, "codex", "git")
 
         self.assertEqual("read-only", run_codex.call_args.args[3])
         self.assertTrue(run_codex.call_args.kwargs["tools_disabled"])
         self.assertFalse(run_codex.call_args.kwargs["web_search_enabled"])
+        self.assertEqual("gpt-6-luna", run_codex.call_args.kwargs["model"])
         uploaded_path = api.post_file.call_args.args[2]
         self.assertEqual("image.png", uploaded_path.name)
         self.assertIn("claimToken=claim1", api.post_file.call_args.args[0])

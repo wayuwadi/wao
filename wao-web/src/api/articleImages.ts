@@ -7,9 +7,9 @@ export interface ArticleImageJob {
   imageUrl: string | null
 }
 
-export async function startArticleImage(articleText: string, visualPrompt: string): Promise<ArticleImageJob> {
+export async function startArticleImage(articleText: string, visualPrompt: string, model = 'gpt-6-luna'): Promise<ArticleImageJob> {
   const response = await http.post<ApiResponse<ArticleImageJob>>('/api/assistant/article-images', {
-    articleText, visualPrompt,
+    articleText, visualPrompt, model,
   })
   return response.data.data
 }
