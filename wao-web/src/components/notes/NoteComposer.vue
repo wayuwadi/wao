@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
+import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
 import { apiCreateNoteTag, apiPatchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
@@ -16,6 +17,7 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 const noteEditor = ref<{ removeImageAt: (index: number) => boolean } | null>(null)
 const data = useDataStore()
 const session = useSessionStore()
+const preferences = usePreferenceStore()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}`
@@ -33,6 +35,13 @@ function readDraft(): Draft {
   return { id: props.note?.id ?? crypto.randomUUID().replace(/-/g, ''), text: content?.markdown ?? '', content, baseRev: props.note?.rev, tags: props.note?.tags ?? [] }
 }
 const initial = readDraft()
+const savedContent = props.note ? resolvedRichContent(props.note) : { version: 1 as const, document: null, markdown: '' }
+const savedSnapshot = ref({
+  text: props.note ? savedContent.markdown : '',
+  document: savedContent.document,
+  tags: [...(props.note?.tags ?? [])],
+  title: props.note?.title ?? '',
+})
 const tags = ref<string[]>(initial.tags ?? [])
 const showTagPicker = ref(false)
 const newTag = ref('')
@@ -54,14 +63,56 @@ async function createTag() {
   finally { creatingTag.value = false }
 }
 const fullscreen = ref(false)
+const fullscreenReminderVisible = ref(false)
 const composerElement = ref<HTMLElement>()
+let fullscreenReminderTimer: ReturnType<typeof setTimeout> | undefined
+let fullscreenReminderDismissed = false
+
+function clearFullscreenReminderTimer() {
+  if (fullscreenReminderTimer) clearTimeout(fullscreenReminderTimer)
+  fullscreenReminderTimer = undefined
+}
+
+function scheduleFullscreenReminder() {
+  clearFullscreenReminderTimer()
+  const setting = preferences.noteFullscreenReminder
+  if (props.inline || !preferences.loaded || preferences.loadError || !setting.enabled
+      || !text.value.trim() || !dirty.value || fullscreen.value || fullscreenReminderDismissed) return
+  fullscreenReminderTimer = setTimeout(() => {
+    fullscreenReminderTimer = undefined
+    if (preferences.noteFullscreenReminder.enabled && dirty.value && text.value.trim() && !fullscreen.value) {
+      fullscreenReminderVisible.value = true
+    }
+  }, setting.delayMinutes * 60_000)
+}
+
+function enterFullscreen() {
+  fullscreenReminderVisible.value = false
+  clearFullscreenReminderTimer()
+  fullscreen.value = true
+}
+
+function remindLater() {
+  fullscreenReminderVisible.value = false
+  fullscreenReminderDismissed = false
+  scheduleFullscreenReminder()
+}
+
+function dismissFullscreenReminder() {
+  fullscreenReminderVisible.value = false
+  fullscreenReminderDismissed = true
+  clearFullscreenReminderTimer()
+}
 
 let previousOverflow: string | undefined
 watch(fullscreen, value => {
   if (value) { previousOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden' }
   else if (previousOverflow !== undefined) { document.body.style.overflow = previousOverflow; previousOverflow = undefined }
 })
-onBeforeUnmount(() => { if (previousOverflow !== undefined) document.body.style.overflow = previousOverflow })
+onBeforeUnmount(() => {
+  clearFullscreenReminderTimer()
+  if (previousOverflow !== undefined) document.body.style.overflow = previousOverflow
+})
 function editorKeys(event: KeyboardEvent) {
   if (!fullscreen.value) return
   if (event.key === 'Escape') { event.preventDefault(); fullscreen.value = false }
@@ -121,7 +172,22 @@ const copyId = crypto.randomUUID().replace(/-/g, '')
 const draftError = ref(false)
 const status = ref(restored ? '已恢复草稿，可继续记录' : '')
 let resetting = false
+const dirty = computed(() => text.value !== savedSnapshot.value.text
+  || JSON.stringify(content.value?.document ?? null) !== JSON.stringify(savedSnapshot.value.document ?? null)
+  || JSON.stringify(tags.value) !== JSON.stringify(savedSnapshot.value.tags)
+  || generatedTitle.value !== savedSnapshot.value.title)
 const canSave = computed(() => !!text.value.trim() && !saving.value && !creatingTag.value && !props.loading)
+watch(
+  [dirty, text, content, tags, generatedTitle, fullscreen, () => preferences.loaded,
+    () => preferences.loadError, () => preferences.noteFullscreenReminder.enabled,
+    () => preferences.noteFullscreenReminder.delayMinutes],
+  () => {
+    fullscreenReminderVisible.value = false
+    fullscreenReminderDismissed = false
+    scheduleFullscreenReminder()
+  },
+  { flush: 'post' },
+)
 watch([text, content, tags, generatedTitle, autoTitle, autoPolish, autoImage], () => {
   if (resetting) return
   error.value = ''
@@ -188,8 +254,19 @@ async function save(asCopy = false) {
       autoTitle.value = true
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
+      savedSnapshot.value = { text: '', document: null, tags: [], title: '' }
+    } else {
+      savedSnapshot.value = {
+        text: text.value,
+        document: content.value?.document ?? null,
+        tags: [...tags.value],
+        title: generatedTitle.value,
+      }
     }
     status.value = '已保存到服务器，清单已更新'
+    fullscreenReminderVisible.value = false
+    clearFullscreenReminderTimer()
+    fullscreen.value = false
     emit('saved', savedId)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '保存失败，请重试'
@@ -228,6 +305,11 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 <template>
   <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
     <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
+    <div v-if="fullscreenReminderVisible && !fullscreen" class="fullscreen-reminder" role="status" aria-live="polite">
+      <i class="ri-focus-3-line" aria-hidden="true"></i>
+      <div class="fullscreen-reminder-copy"><strong>已经写了一会儿，来全屏专心创作？</strong><span>全屏后正文和图片更舒展，当前内容与草稿会保留。</span></div>
+      <div class="fullscreen-reminder-actions"><button type="button" class="reminder-enter" @click="enterFullscreen">进入全屏</button><button type="button" @click="remindLater">稍后提醒</button><button type="button" aria-label="关闭全屏提醒" title="关闭提醒" @click="dismissFullscreenReminder"><i class="ri-close-line" aria-hidden="true"></i></button></div>
+    </div>
     <div v-if="!note && generatedTitle" class="new-generated-title"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="生成的小记标题"></div>
     <div v-if="inline && note" class="inline-heading"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="小记标题" :disabled="saving"><button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button><button class="add-tag" type="button" :disabled="saving" :aria-expanded="showTagPicker" @click="showTagPicker = !showTagPicker"><i class="ri-price-tag-3-line"></i> 添加标签</button></div>
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
@@ -281,6 +363,16 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .inline .composer-heading { flex-wrap: wrap; }
 .note-composer:focus-within { border-color: var(--wao-primary); }
 .composer-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.fullscreen-reminder { display:flex; align-items:center; gap:10px; margin:0 0 12px; padding:11px 12px; border:1px solid color-mix(in srgb, var(--wao-primary) 18%, var(--wao-line-control)); border-radius:10px; background:color-mix(in srgb, var(--wao-primary) 5%, var(--wao-bg-card)); color:var(--wao-text-2); }
+.fullscreen-reminder > i { flex:0 0 auto; color:var(--wao-primary-text); font-size:18px; }
+.fullscreen-reminder-copy { display:flex; min-width:0; flex:1; flex-direction:column; gap:3px; }
+.fullscreen-reminder-copy strong { color:var(--wao-text-1); font-size:13px; font-weight:600; }
+.fullscreen-reminder-copy span { color:var(--wao-text-3); font-size:12px; line-height:1.45; }
+.fullscreen-reminder-actions { display:flex; flex:0 0 auto; align-items:center; gap:4px; }
+.fullscreen-reminder-actions button { padding:6px 8px; border:0; background:transparent; color:var(--wao-text-3); font-size:12px; white-space:nowrap; }
+.fullscreen-reminder-actions .reminder-enter { border-radius:7px; background:var(--wao-primary); color:white; font-weight:600; }
+.fullscreen-reminder-actions button:hover { background:var(--wao-bg-hover); color:var(--wao-primary-text); }
+.fullscreen-reminder-actions .reminder-enter:hover { background:var(--wao-primary-hover); color:white; }
 .composer-heading i { color: var(--wao-primary-text); font-size: 20px; }
 .inline-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 0 0 12px; }
 .inline-heading input { flex: 0 1 300px; min-width: min(180px, 100%); border: 0; border-bottom: 1px solid transparent; padding: 3px 0; background: transparent; color: var(--wao-text-1); font-size: 17px; font-weight: 600; }
@@ -317,7 +409,7 @@ button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-car
 .save-note { background: var(--wao-primary); border-color: var(--wao-primary); color: white; font-weight: 600; }
 button:disabled { opacity: .5; cursor: default; }
 .error { color: var(--wao-danger-strong) !important; font-size: 12px; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } }
+@media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } .fullscreen-reminder { align-items:flex-start; gap:7px; padding:9px; } .fullscreen-reminder-copy strong { font-size:12px; } .fullscreen-reminder-copy span { font-size:11px; } .fullscreen-reminder-actions { flex-direction:column; align-items:stretch; gap:2px; } .fullscreen-reminder-actions button { padding:5px 6px; font-size:11px; } }
 @media (max-width: 700px) { .composer-editor-layout.has-images { grid-template-columns: 1fr; } .composer-image-rail { border-left: 0; border-top: 1px solid var(--wao-line); padding: 10px 0 0; } .rail-images { grid-template-columns: repeat(3, minmax(0, 1fr)); } .rail-image-cell.cover { grid-column: auto; } .rail-image-cell.cover img { height: 62px; } }
 @media (hover: none) { .rail-remove { opacity: 1; } }
 .composer-footer > button { min-height: 36px; padding: 7px 14px; font-size: 13px; border-radius: 7px; }
