@@ -6,7 +6,7 @@ import { apiCreateNoteTag, apiPatchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
-import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
+import { notePreviewImages, notePreviewSource, type NotePreviewImage } from '@/utils/notePreviewImages'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
@@ -232,7 +232,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     <div v-if="inline && note" class="inline-heading"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="小记标题" :disabled="saving"><button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button><button class="add-tag" type="button" :disabled="saving" :aria-expanded="showTagPicker" @click="showTagPicker = !showTagPicker"><i class="ri-price-tag-3-line"></i> 添加标签</button></div>
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
       <div class="composer-editor-layout" :class="{ 'has-images': editorImages.length }"><div class="composer-editor-main">
-      <MarkdownEditor :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls selection-image
+      <MarkdownEditor :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls selection-image preview-images
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         note-title-on-image @generated-title="generatedTitle = $event"
         :hide-toolbar="inline" :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : 1000"
@@ -246,7 +246,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
           </div>
         </template>
       </MarkdownEditor>
-      </div><aside v-if="editorImages.length" class="composer-image-rail" aria-label="小记图片总览"><div class="rail-heading">图片总览 <span>{{ editorImages.length }} 张</span></div><div class="rail-images"><div v-for="(image, index) in editorImages" :key="`${index}:${image.src}`" class="rail-image-cell" :class="{ cover: image.alt === '文章总览图' }"><button type="button" class="rail-image" :aria-label="`查看图片：${image.alt || `第 ${index + 1} 张`}`" @click="openImage(image, $event)" @contextmenu="openImageMenu(image.src, $event)"><img :src="image.src" :alt="image.alt" loading="lazy"><span>{{ image.alt || `图片 ${index + 1}` }}</span></button><button type="button" class="rail-remove" :disabled="saving" :aria-label="`移除图片：${image.alt || `第 ${index + 1} 张`}`" title="移除图片，可撤销" @click="noteEditor?.removeImageAt(index)"><i class="ri-close-line" aria-hidden="true"></i></button></div></div></aside></div>
+      </div><aside v-if="editorImages.length" class="composer-image-rail" aria-label="小记图片总览"><div class="rail-heading">图片总览 <span>{{ editorImages.length }} 张</span></div><div class="rail-images"><div v-for="(image, index) in editorImages" :key="`${index}:${image.src}`" class="rail-image-cell" :class="{ cover: image.alt === '文章总览图' }"><button type="button" class="rail-image" :aria-label="`查看图片：${image.alt || `第 ${index + 1} 张`}`" @click="openImage(image, $event)" @contextmenu="openImageMenu(image.src, $event)"><img :src="notePreviewSource(image.src)" :data-full-src="image.src" :alt="image.alt" loading="lazy" decoding="async"><span>{{ image.alt || `图片 ${index + 1}` }}</span></button><button type="button" class="rail-remove" :disabled="saving" :aria-label="`移除图片：${image.alt || `第 ${index + 1} 张`}`" title="移除图片，可撤销" @click="noteEditor?.removeImageAt(index)"><i class="ri-close-line" aria-hidden="true"></i></button></div></div></aside></div>
     </div>
     <div v-if="showTagPicker" class="tag-picker" aria-label="选择小记标签">
       <button v-for="tag in choices" :key="tag" type="button" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" :aria-pressed="tags.includes(tag)" @click="toggleTag(tag)"># {{ tag }}</button>

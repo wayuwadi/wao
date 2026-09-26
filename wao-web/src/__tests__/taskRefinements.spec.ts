@@ -54,6 +54,14 @@ describe('子任务树和移动', () => {
   })
 })
 describe('富文本剪贴板', () => {
+  it('小记预览图复制为原图地址', () => {
+    const html = portableClipboardHtml('<img src="/api/images/img1/preview" data-full-src="/api/images/img1/raw" alt="总览图">')
+    expect(html).toContain('/api/images/img1/raw')
+    expect(html).not.toContain('/api/images/img1/preview')
+    expect(html).not.toContain('data-full-src')
+    const untrusted = portableClipboardHtml('<img src="/api/images/img1/preview" data-full-src="javascript:alert(1)">')
+    expect(untrusted).not.toContain('javascript:')
+  })
   it('保留标题嵌套列表代码块，清除脚本', () => {
     const html = portableClipboardHtml('<h2>标题</h2><ol><li>父<ul><li>子</li></ul></li></ol><pre>a  b</pre><script>bad()</script>')
     expect(html).toContain('<h2>标题</h2>'); expect(html).toContain('list-style-type:decimal')

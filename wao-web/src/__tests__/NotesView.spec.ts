@@ -266,7 +266,10 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.find('.note-meta .note-count').exists()).toBe(false)
     expect(wrapper.find('[aria-label="当前正文字数"]').exists()).toBe(true)
-    expect(wrapper.find('.composer-image-rail img').attributes('src')).toBe('/api/images/one/raw')
+    expect(wrapper.find('.composer-image-rail img').attributes('src')).toBe('/api/images/one/preview')
+    await wrapper.find('.composer-image-rail .rail-image').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('.composer-image-lightbox img')?.getAttribute('src')).toBe('/api/images/one/raw')
     wrapper.unmount()
   })
 

@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify'
+import { notePreviewSource } from '@/utils/notePreviewImages'
 
 /** 跨应用复制不能依赖 WAO 的样式表；输出语义 HTML 与基础内联排版。 */
 export function portableClipboardHtml(html: string): string {
@@ -7,7 +8,14 @@ export function portableClipboardHtml(html: string): string {
   root.querySelectorAll('ul,ol').forEach((node) => node.setAttribute('style', `padding-left:24px;list-style-type:${node.tagName === 'OL' ? 'decimal' : 'disc'};margin:8px 0`))
   root.querySelectorAll('pre').forEach((node) => node.setAttribute('style', 'white-space:pre-wrap;font-family:monospace'))
   root.querySelectorAll('table,td,th').forEach((node) => node.setAttribute('style', 'border:1px solid #bbb;border-collapse:collapse;padding:6px'))
-  root.querySelectorAll('img').forEach((node) => { node.src = node.src; node.style.maxWidth = '100%' })
+  root.querySelectorAll('img').forEach((node) => {
+    const full = node.dataset.fullSrc
+    if (full && /^(?:https:\/\/wao\.wayuwa\.cn)?\/api\/images\/[A-Za-z0-9_-]+\/raw$/.test(full)
+      && node.getAttribute('src') === notePreviewSource(full)) node.setAttribute('src', full)
+    else node.src = node.src
+    node.removeAttribute('data-full-src')
+    node.style.maxWidth = '100%'
+  })
   return root.innerHTML
 }
 

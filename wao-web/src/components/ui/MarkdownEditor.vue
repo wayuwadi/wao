@@ -187,11 +187,14 @@ const emit = defineEmits<{
 
 const previewImage = ref<{ src: string; alt: string } | null>(null)
 const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
+function fullImageSource(image: HTMLImageElement): string {
+  return image.dataset.fullSrc || image.currentSrc || image.src
+}
 function openImageMenu(event: MouseEvent) {
   const target = event.target
   if (!(target instanceof HTMLImageElement)) return
   event.preventDefault()
-  imageMenu.value = { src: target.currentSrc || target.src, x: event.clientX, y: event.clientY }
+  imageMenu.value = { src: fullImageSource(target), x: event.clientX, y: event.clientY }
 }
 
 type ImageDimension = number | `${number}%` | null
@@ -303,7 +306,13 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean }>({
   },
   renderHTML({ HTMLAttributes }) {
     const attributes = { ...HTMLAttributes }
-    if (this.options.previewImages && typeof attributes.src === 'string') attributes.src = notePreviewSource(attributes.src)
+    if (this.options.previewImages && typeof attributes.src === 'string') {
+      const preview = notePreviewSource(attributes.src)
+      if (preview !== attributes.src) {
+        attributes['data-full-src'] = attributes.src
+        attributes.src = preview
+      }
+    }
     const style = imageStyle(attributes)
     delete attributes.width
     delete attributes.height
@@ -494,7 +503,7 @@ const editor = useEditor({
           editor.value?.chain().focus().setNodeSelection(pos).run()
           return true
         }
-        previewImage.value = { src: target.currentSrc || target.src, alt: target.alt }
+        previewImage.value = { src: fullImageSource(target), alt: target.alt }
         return true
       }
       return false
@@ -502,7 +511,7 @@ const editor = useEditor({
     handleDoubleClick: (_view, _pos, event) => {
       const target = event.target
       if (!(target instanceof HTMLImageElement)) return false
-      previewImage.value = { src: target.currentSrc || target.src, alt: target.alt }
+      previewImage.value = { src: fullImageSource(target), alt: target.alt }
       return true
     },
   },
