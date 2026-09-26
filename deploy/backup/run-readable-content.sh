@@ -9,6 +9,9 @@ flock -n 9 || { echo 'Another readable export is running.' >&2; exit 1; }
 : "${PROJECT_ROOT:?}"
 set -a
 . "$PROJECT_ROOT/deploy/.env"
+if [[ -f "$PROJECT_ROOT/deploy/.env.secrets" ]]; then
+  . "$PROJECT_ROOT/deploy/.env.secrets"
+fi
 set +a
 : "${DB_ROOT_PASS:?}" "${DB_USER:?}" "${DB_PASS:?}" "${WAO_MYSQL_PRIMARY:?}"
 # Linux2's native instance stays writable for three other databases even when

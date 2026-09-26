@@ -23,6 +23,9 @@ set -a
 # Generated deployment file with shell-safe values.
 # shellcheck disable=SC1090
 . "$project_root/deploy/.env"
+if [[ -f "$project_root/deploy/.env.secrets" ]]; then
+  . "$project_root/deploy/.env.secrets"
+fi
 set +a
 
 if [[ "${WAO_STORAGE_MODE:-mysql}" != s3 ]]; then
