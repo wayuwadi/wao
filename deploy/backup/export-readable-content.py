@@ -47,13 +47,26 @@ def digest(data: bytes) -> str:
 def mysql(sql: str, *, binary: bool = False) -> bytes:
     cmd = ["mysql", "--batch", "--raw", "--skip-column-names",
            "--default-character-set=utf8mb4", "--max-allowed-packet=128M",
-           "-uroot", "-h127.0.0.1",
-           "-P", os.environ.get("MYSQL_PORT", "3306"), "wao", "-e", sql]
+           "-u" + os.environ.get("WAO_EXPORT_MYSQL_USER", "root"),
+           "-h" + os.environ.get("WAO_EXPORT_MYSQL_HOST", "127.0.0.1"),
+           "-P", os.environ.get("WAO_EXPORT_MYSQL_PORT", "3306"), "wao", "-e", sql]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             check=False, timeout=600)
     if result.returncode:
         raise RuntimeError("MySQL read failed: " + result.stderr.decode(errors="replace")[:300])
     return result.stdout if binary else result.stdout
+
+
+def verify_source() -> None:
+    role = os.environ.get("WAO_EXPORT_PRIMARY")
+    local_uuid = os.environ.get("WAO_EXPORT_LOCAL_UUID")
+    if role not in {"linux1", "linux2"} or not local_uuid:
+        raise RuntimeError("WAO writer identity is unavailable")
+    fields = mysql("SELECT @@server_uuid,@@read_only,@@super_read_only").decode().strip().split("\t")
+    if len(fields) != 3 or fields[1:] != ["0", "0"]:
+        raise RuntimeError("WAO content source is not a writable MySQL writer")
+    if (role == "linux1" and fields[0] == local_uuid) or (role == "linux2" and fields[0] != local_uuid):
+        raise RuntimeError("WAO content source does not match the configured writer role")
 
 
 def rows(sql: str) -> list[dict]:
@@ -377,6 +390,7 @@ def main() -> int:
     parser.add_argument("--resume-initial", action="store_true",
                         help="overwrite stale files from an interrupted first upload")
     args = parser.parse_args()
+    verify_source()
     if args.inventory:
         texts, image_ids, file_ids, counts = wanted_content()
         images, missing_images = media_metadata("image_blob", image_ids)
