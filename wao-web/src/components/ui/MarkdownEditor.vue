@@ -1920,6 +1920,7 @@ onBeforeUnmount(() => {
             <button type="button" title="下划线" aria-label="下划线" :aria-pressed="editor.isActive('underline')" @mousedown.prevent @click="editor.chain().focus().toggleUnderline().run()"><i class="ri-underline" aria-hidden="true"></i></button>
             <button type="button" title="删除线" aria-label="删除线" :aria-pressed="editor.isActive('strike')" @mousedown.prevent @click="editor.chain().focus().toggleStrike().run()"><i class="ri-strikethrough" aria-hidden="true"></i></button>
             <button type="button" title="行内代码" aria-label="行内代码" :aria-pressed="editor.isActive('code')" @mousedown.prevent @click="editor.chain().focus().toggleCode().run()"><i class="ri-code-line" aria-hidden="true"></i></button>
+            <button type="button" class="selection-highlight" title="高亮背景颜色" aria-label="高亮背景颜色" :aria-pressed="editor.isActive('highlight')" @mousedown.prevent @click="editor.chain().focus().toggleHighlight({ color: '#fde2e2' }).run()"><i class="ri-mark-pen-line" aria-hidden="true"></i></button>
             <button type="button" title="清除格式" aria-label="清除格式"  @mousedown.prevent @click="clearFormatting"><i class="ri-format-clear" aria-hidden="true"></i></button>
             </template>
             <template v-if="advanced && multipleCells(editor)"><span class="selection-divider" aria-hidden="true"></span>

@@ -78,7 +78,7 @@ describe('小记集中记录空间', () => {
     expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/s/d/old`, '公开分享链接已复制')
     wrapper.unmount()
   })
-  it('新小记默认不自动配图，勾选后草稿刷新仍保留选择', async () => {
+  it('新小记默认自动配图，用户关闭后刷新仍保留选择', async () => {
     const first = composer()
     const options = first.get('.auto-enrichment-choices')
     expect(options.element.previousElementSibling?.classList.contains('editor-space')).toBe(true)
@@ -87,14 +87,14 @@ describe('小记集中记录空间', () => {
     expect(options.text()).toContain('保存后自动润色正文')
     expect(options.text()).toContain('保存后自动生成图片')
     const image = first.get('.auto-enrichment-choices label:nth-child(3) input')
-    expect((image.element as HTMLInputElement).checked).toBe(false)
+    expect((image.element as HTMLInputElement).checked).toBe(true)
     expect((first.get('.auto-enrichment-choices label:first-child input').element as HTMLInputElement).checked).toBe(true)
     expect((first.get('.auto-enrichment-choices label:nth-child(2) input').element as HTMLInputElement).checked).toBe(true)
-    await image.setValue(true)
-    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).autoImage).toBe(true)
+    await image.setValue(false)
+    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).autoImage).toBe(false)
     first.unmount()
     const restored = composer()
-    expect((restored.get('.auto-enrichment-choices label:nth-child(3) input').element as HTMLInputElement).checked).toBe(true)
+    expect((restored.get('.auto-enrichment-choices label:nth-child(3) input').element as HTMLInputElement).checked).toBe(false)
     restored.unmount()
   })
   it('分享图标右侧的红色删除入口需要二次确认，取消不会删除', async () => {
@@ -413,6 +413,7 @@ describe('小记集中记录空间', () => {
     expect(wrapper.findAll('.tiptap ol li')).toHaveLength(2)
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
+    expect(wrapper.find('.toolbar-toggle').exists()).toBe(false)
     expect(wrapper.find('.tiptap').attributes('contenteditable')).toBe('true')
     expect(wrapper.find('.tiptap').text()).toBe('')
     expect(wrapper.find('.save-note').attributes('disabled')).toBeDefined()
@@ -430,7 +431,7 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     const editor = wrapper.findComponent(MarkdownEditor)
     expect(editor.props()).toMatchObject({ advanced: true, compact: false, allowH1: true, polishable: true, linkControls: true, imageControls: true })
-    expect(editor.find('button[title="表格"]').exists()).toBe(true)
+    expect(editor.find('button[title="表格"]').exists()).toBe(false)
     const instance = editor.vm as unknown as { editor: TiptapEditor; startPolish: () => Promise<void> }
     instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
     await instance.startPolish()
@@ -459,8 +460,10 @@ describe('小记集中记录空间', () => {
     const wrapper = mount(NoteComposer, { attachTo: document.body })
     await vi.dynamicImportSettled()
     await flushPromises()
+    expect(wrapper.find('.toolbar-toggle').exists()).toBe(false)
     await wrapper.find('.fullscreen-toggle').trigger('click')
-    await wrapper.find('button[title="表格"]').trigger('click')
+    const instance = wrapper.findComponent(MarkdownEditor).vm as unknown as { editor: TiptapEditor }
+    instance.editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()
     const rows = wrapper.findAll('tr').length
     await wrapper.find('td').trigger('contextmenu', { clientX: 100, clientY: 100 })
     await flushPromises()
@@ -675,6 +678,41 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
+  it('作者筛选默认全部，可按作者过滤并随清除筛选恢复', async () => {
+    const data = useDataStore()
+    data.docs.a = doc('a', '娃哥的小记', '2026-09-07T08:00:00', 'wg')
+    data.docs.b = doc('b', '同伴的小记', '2026-09-08T08:00:00', 'wd')
+    const wrapper = await view()
+    await openFilters(wrapper)
+    const author = wrapper.get<HTMLSelectElement>('[aria-label="按作者筛选"]')
+    expect(author.element.value).toBe('')
+    expect(author.findAll('option').map(option => option.attributes('value'))).toContain('wd')
+    await author.setValue('wd')
+    expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['b'])
+    await wrapper.find('.filter-footer button:last-child').trigger('click')
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="按作者筛选"]').element.value).toBe('')
+    expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['b', 'a'])
+    wrapper.unmount()
+  })
+
+  it('小记列表滚动后显示回到顶部火箭，点击滚回列表开头', async () => {
+    const wrapper = await view()
+    const list = wrapper.get('.notes-list')
+    const element = list.element as HTMLElement
+    Object.defineProperties(element, {
+      scrollTop: { configurable: true, writable: true, value: 620 },
+      scrollHeight: { configurable: true, value: 1200 },
+      clientHeight: { configurable: true, value: 500 },
+    })
+    const scrollTo = vi.fn()
+    element.scrollTo = scrollTo
+    await list.trigger('scroll')
+    const backToTop = wrapper.get('[aria-label="回到顶部"]')
+    await backToTop.trigger('click')
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' })
+    wrapper.unmount()
+  })
+
   it('润色与原文可切换，图片和更新时间筛选在同一面板', async () => {
     const today = new Date().toISOString()
     const source = '今天开会，然后就是决定明天发布。'
@@ -693,8 +731,8 @@ describe('小记集中记录空间', () => {
     await wrapper.get('[data-note-id="a"] .version-toggle button:last-child').trigger('click')
     expect(wrapper.get('[data-note-id="a"] .note-body textarea').attributes('value')).toContain(source)
     await openFilters(wrapper)
-    await wrapper.findAll('.filter-group')[1]!.findAll('button')[1]!.trigger('click')
     await wrapper.findAll('.filter-group')[2]!.findAll('button')[1]!.trigger('click')
+    await wrapper.findAll('.filter-group')[3]!.findAll('button')[1]!.trigger('click')
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['a'])
     wrapper.unmount()
   })

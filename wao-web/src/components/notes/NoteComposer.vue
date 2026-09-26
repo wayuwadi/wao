@@ -110,7 +110,7 @@ async function closeImage() {
   imageTrigger = null
 }
 const autoPolish = ref(initial.autoPolish !== false)
-const autoImage = ref(initial.autoImage === true)
+const autoImage = ref(initial.autoImage !== false)
 const autoTitle = ref(initial.autoTitle !== false)
 // 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
 const baseRev = initial.baseRev ?? props.note?.rev ?? 1
@@ -165,7 +165,7 @@ async function save(asCopy = false) {
         && (latest.generatedTitle ?? '') === generatedTitle.value
         && (latest.autoPolish !== false) === autoPolish.value
         && (latest.autoTitle !== false) === autoTitle.value
-        && (latest.autoImage === true) === autoImage.value)) localStorage.removeItem(draftKey)
+        && (latest.autoImage !== false) === autoImage.value)) localStorage.removeItem(draftKey)
     } catch { /* 服务端保存已成功。 */ }
     if (!props.note || asCopy) {
       const saved = data.docById(savedId)
@@ -184,7 +184,7 @@ async function save(asCopy = false) {
       tags.value = []
       generatedTitle.value = ''
       autoPolish.value = true
-      autoImage.value = false
+      autoImage.value = true
       autoTitle.value = true
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
@@ -235,7 +235,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <MarkdownEditor :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls selection-image preview-images
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         note-title-on-image @generated-title="generatedTitle = $event"
-        :hide-toolbar="inline" :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : 1000"
+        hide-toolbar :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">

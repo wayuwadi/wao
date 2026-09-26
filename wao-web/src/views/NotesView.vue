@@ -77,16 +77,18 @@ const query = ref('')
 const sort = ref<'updatedDesc' | 'createdDesc' | 'updatedAsc'>('updatedDesc')
 const imageFilter = ref<'all' | 'yes' | 'no'>('all')
 const timeFilter = ref<'all' | 'today' | 'yesterday' | 'earlier'>('all')
+const selectedAuthor = ref('')
 const filterOpen = ref(false)
 const filterControl = ref<HTMLElement>()
 const selectedTag = ref<string | null>('')
 const activeFilterCount = computed(() => Number(!!selectedTag.value || selectedTag.value === null)
-  + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc'))
+  + Number(!!selectedAuthor.value) + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc'))
 const filterSummary = computed(() => [selectedTag.value === null ? '无标签' : selectedTag.value ? `# ${selectedTag.value}` : '',
+  selectedAuthor.value ? `作者：${authorName(selectedAuthor.value)}` : '',
   imageFilter.value === 'yes' ? '有图' : imageFilter.value === 'no' ? '无图' : '',
   { today: '今天', yesterday: '昨天', earlier: '以前', all: '' }[timeFilter.value],
   { updatedDesc: '最近更新', createdDesc: '最近创建', updatedAsc: '最早更新' }[sort.value]].filter(Boolean).join(' · '))
-function resetFilters() { selectedTag.value = ''; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc' }
+function resetFilters() { selectedTag.value = ''; selectedAuthor.value = ''; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc' }
 function onOutsideFilter(event: PointerEvent) { if (!filterControl.value?.contains(event.target as Node)) filterOpen.value = false }
 const tagNames = ref<string[]>([])
 const tagsLoading = ref(false)
@@ -178,6 +180,13 @@ const PAGE_SIZE = 10
 const limit = ref(PAGE_SIZE)
 const notesList = ref<HTMLElement>()
 const highlighted = ref('')
+const showBackToTop = ref(false)
+function onNotesScroll() { showBackToTop.value = window.scrollY > 480 || (notesList.value?.scrollTop ?? 0) > 480 }
+function backToTop() {
+  const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
+  if ((notesList.value?.scrollHeight ?? 0) > (notesList.value?.clientHeight ?? 0) + 1) notesList.value?.scrollTo({ top: 0, behavior })
+  else window.scrollTo({ top: 0, behavior })
+}
 const refreshError = ref('')
 const notes = computed(() => {
   const ids = new Set(data.kbs.filter(kb => kb.notes).map(kb => kb.id))
@@ -188,6 +197,9 @@ const notes = computed(() => {
       || b.id.localeCompare(a.id))
 })
 const availableTags = computed(() => [...new Set([...tagNames.value, ...notes.value.flatMap(note => note.tags ?? [])])].sort((a, b) => a.localeCompare(b, 'zh-CN')))
+const availableAuthors = computed(() => [...new Set(notes.value.map(note => note.author).filter(Boolean))]
+  .map(id => ({ id, name: authorName(id) }))
+  .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN') || a.id.localeCompare(b.id)))
 const tagCounts = computed(() => {
   const counts = new Map<string, number>()
   for (const note of notes.value) for (const tag of note.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
@@ -196,6 +208,7 @@ const tagCounts = computed(() => {
 const matching = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
   return notes.value.filter(doc => (selectedTag.value === null ? !doc.tags?.length : !selectedTag.value || doc.tags?.includes(selectedTag.value))
+    && (!selectedAuthor.value || doc.author === selectedAuthor.value)
     && (imageFilter.value === 'all' || (notePreviewImages(resolvedRichContent(doc)).length > 0) === (imageFilter.value === 'yes'))
     && inTimeRange(doc.updated, timeFilter.value)
     && (!needle || `${doc.title}\n${resolvedRichContent(doc).markdown}\n${validPolish(doc)?.polishedMarkdown ?? ''}\n${(doc.tags ?? []).join(' ')}`.toLocaleLowerCase().includes(needle)))
@@ -296,9 +309,9 @@ async function createTag() {
   } catch (cause) { tagError.value = cause instanceof Error ? cause.message : '标签保存失败，请重试' }
   finally { creatingTag.value = false }
 }
-onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
+onMounted(() => { void data.ensureDocsLoaded(); void loadTags(); window.addEventListener('scroll', onNotesScroll, { passive: true }) })
 onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); window.addEventListener('pointerdown', onOutsideFilter) })
-onBeforeUnmount(() => window.removeEventListener('pointerdown', onOutsideFilter))
+onBeforeUnmount(() => { window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('scroll', onNotesScroll) })
 watch(() => session.currentUser.id, memberId => { void initializeNoteWorkflow(memberId); versions.value = {} })
 onMounted(() => void loadPins())
 </script>
@@ -311,13 +324,14 @@ onMounted(() => void loadPins())
       <aside class="writing-pane" aria-label="新建小记区">
         <NoteComposer :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
       </aside>
-      <section ref="notesList" class="notes-list" aria-label="小记清单">
+      <section ref="notesList" class="notes-list" aria-label="小记清单" @scroll.passive="onNotesScroll">
         <div class="list-toolbar">
           <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"></label>
           <div ref="filterControl" class="filter-control">
             <button class="filter-toggle" type="button" :aria-expanded="filterOpen" aria-controls="note-filter-panel" @click="filterOpen = !filterOpen"><i class="ri-equalizer-line"></i>筛选与排序<span v-if="activeFilterCount" class="filter-count">{{ activeFilterCount }}</span><i class="ri-arrow-down-s-line"></i></button>
             <div v-if="filterOpen" id="note-filter-panel" class="filter-panel" role="group" aria-label="小记筛选与排序">
               <div class="filter-group"><strong>标签</strong><div class="filter-options"><button type="button" :aria-pressed="selectedTag === ''" @click="selectedTag = ''">全部</button><button type="button" :aria-pressed="selectedTag === null" @click="selectedTag = null">无标签</button><button v-for="tag in availableTags" :key="tag" type="button" :aria-pressed="selectedTag === tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
+              <div class="filter-group"><strong>作者</strong><select v-model="selectedAuthor" aria-label="按作者筛选"><option value="">全部作者</option><option v-for="author in availableAuthors" :key="author.id" :value="author.id">{{ author.name }}</option></select></div>
               <div class="filter-group"><strong>图片</strong><div class="filter-options"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'yes', label: '有图' }, { value: 'no', label: '无图' }]" :key="option.value" type="button" :aria-pressed="imageFilter === option.value" @click="imageFilter = option.value as typeof imageFilter">{{ option.label }}</button></div></div>
               <div class="filter-group"><strong>更新时间</strong><div class="filter-options"><button v-for="option in [{ value: 'all', label: '不限' }, { value: 'today', label: '今天' }, { value: 'yesterday', label: '昨天' }, { value: 'earlier', label: '以前' }]" :key="option.value" type="button" :aria-pressed="timeFilter === option.value" @click="timeFilter = option.value as typeof timeFilter">{{ option.label }}</button></div></div>
               <div class="filter-group"><strong>排序</strong><select v-model="sort" aria-label="小记排序"><option value="updatedDesc">最近更新</option><option value="createdDesc">最近创建</option><option value="updatedAsc">最早更新</option></select></div>
@@ -374,6 +388,7 @@ onMounted(() => void loadPins())
         <ContextActionMenu ref="contextMenu" />
       </section>
     </div>
+    <button v-if="showBackToTop" class="notes-back-top" type="button" aria-label="回到顶部" title="回到顶部" @click="backToTop"><i class="ri-rocket-2-line" aria-hidden="true"></i></button>
     <Teleport to="body">
       <div v-if="previewImage" ref="lightbox" class="note-image-lightbox" role="dialog" aria-modal="true"
         :aria-label="previewImage.alt || '小记图片预览'" tabindex="-1" @click.self="closeImage" @keydown.esc.stop="closeImage" @contextmenu="openImageMenu">
@@ -394,7 +409,7 @@ h1 i { color: #7a5cc6; }
 .notes-workspace { display: grid; grid-template-columns: minmax(300px, 0.85fr) minmax(360px, 1.15fr); gap: 28px; align-items: start; }
 .writing-pane { min-width: 0; position: sticky; top: 20px; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
-.notes-list { min-width: 0; padding: 16px 20px; border-left: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
+.notes-list { min-width: 0; padding: 24px 20px 40px; border-left: 1px solid var(--wao-line); background: var(--wao-bg-sub); scroll-padding-block: 24px; }
 .list-toolbar, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
 .list-toolbar { margin-bottom: 8px; gap: 8px; }
 button, a, select { color: var(--wao-text-3); font-size: 12px; }
@@ -492,6 +507,10 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .empty { text-align: center; padding: 36px 12px; color: var(--wao-text-faint); font-size: 13px; }
 .error { color: var(--wao-danger-strong); font-size: 12px; }
 .load-more { display: block; margin: 20px auto; }
+.notes-back-top { position: fixed; right: 28px; bottom: 28px; z-index: 30; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid color-mix(in srgb, var(--wao-primary) 24%, transparent); border-radius: 50%; background: color-mix(in srgb, var(--wao-bg-card) 88%, transparent); color: var(--wao-primary-text); box-shadow: 0 8px 24px rgba(40, 48, 90, .16); backdrop-filter: blur(10px); font-size: 20px; animation: notes-rocket-in .2s ease-out; }
+.notes-back-top:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(40, 48, 90, .22); }
+.notes-back-top:focus-visible { outline: 3px solid var(--wao-primary); outline-offset: 3px; }
+@keyframes notes-rocket-in { from { opacity: 0; transform: translateY(8px) scale(.86); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @media (min-width: 821px) {
   .notes-page { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px; }
   .page-heading { flex: none; }
@@ -500,10 +519,10 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .writing-pane :deep(.note-composer:not(.fullscreen)) { flex: 1; min-height: 0; max-height: none; }
   .notes-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 }
-@media (max-width: 1100px) { .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 16px 10px; } .search { flex: 1 1 50%; } }
-@media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 16px 10px; } }
+@media (max-width: 1100px) { .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } .search { flex: 1 1 50%; } }
+@media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 16px 12px 8px; } .sort { margin-left: 0; } .list-summary { flex-wrap: wrap; } }
 @media (max-width: 520px) { .note-content.has-images { grid-template-columns: 1fr; } .note-image-rail { border-left: 0; border-top: 1px solid var(--wao-line); padding: 10px 0 0; } .note-images { grid-template-columns: repeat(3, minmax(0, 1fr)); } .note-image-thumb.cover { grid-column: auto; } .note-image-thumb.cover img { height: 60px; } }
 @media (hover: none) { .stage-list-complete, .version-toggle, .card-quick-actions { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
-@media (prefers-reduced-motion: reduce) { .note-card, .stage-icon { transition: none; animation: none; } }
+@media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top { transition: none; animation: none; } }
 </style>
