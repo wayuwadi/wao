@@ -8,4 +8,7 @@ public record ArticleImageRequest(
         @NotBlank @Size(max = 60000) String articleText,
         @NotBlank @Size(max = 4000) String visualPrompt,
         @Size(max = 64) String model) {
+    public ArticleImageRequest(String articleText, String visualPrompt) {
+        this(articleText, visualPrompt, "gpt-6-luna");
+    }
 }

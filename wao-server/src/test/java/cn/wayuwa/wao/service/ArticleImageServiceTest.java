@@ -33,7 +33,7 @@ class ArticleImageServiceTest {
 
     @Test
     void startsForCurrentMemberAndHidesAnotherMembersJob() {
-        when(assistant.enqueueArticleImageJob("me", "正文", "画面偏好")).thenReturn("ac1");
+        when(assistant.enqueueArticleImageJob("me", "正文", "画面偏好", "gpt-6-luna")).thenReturn("ac1");
         assertThat(service.start("me", new ArticleImageRequest("正文", "画面偏好")).id()).isEqualTo("ac1");
         when(runs.selectById("ac1")).thenReturn(run());
         assertThatThrownBy(() -> service.get("another", "ac1")).isInstanceOf(NotFoundException.class);
