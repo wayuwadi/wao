@@ -27,6 +27,7 @@ class AiAssistantRunMapperIntegrationTest {
                     id VARCHAR(32) PRIMARY KEY,
                     member_id VARCHAR(64) NULL,
                     ai_capability_id VARCHAR(32) NULL,
+                    requested_model VARCHAR(64) NULL,
                     usage_purpose VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
                     web_search_enabled BOOLEAN NOT NULL DEFAULT FALSE,
                     runner_id VARCHAR(32) NULL,
