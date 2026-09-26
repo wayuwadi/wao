@@ -2193,7 +2193,7 @@ components:
       type: object
       required: [id, label, icon, group, order, visible, openMode]
       properties:
-        id: { type: string, enum: [home, notes, navigation, projects, updates, skills, skill-connections, todo, workday-rhythm, action-plans, decisions, appearance, food, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, data-center, text-polish, dashboard, automation, crawler-capabilities, account-resources, files, games, devices, request-monitoring] }
+        id: { type: string, enum: [home, notes, navigation, projects, updates, skills, skill-connections, todo, workday-rhythm, action-plans, personal-principles, decisions, appearance, food, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, data-center, text-polish, dashboard, automation, crawler-capabilities, account-resources, files, games, devices, request-monitoring] }
         label: { type: string, maxLength: 24 }
         icon: { type: string, description: Remix Icon 类名 }
         group: { type: string, enum: [ROOT, PUBLIC, PERSONAL, TOOLS] }

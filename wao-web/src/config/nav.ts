@@ -233,6 +233,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-footprint-line',
     path: '/action-plans',
   },
+  'personal-principles': {
+    id: 'personal-principles',
+    label: '我的准则',
+    icon: 'ri-shield-check-line',
+    path: '/personal-principles',
+  },
   decisions: {
     id: 'decisions',
     label: '决策管理',
@@ -364,6 +370,10 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       group: 'PERSONAL',
       order: 16,
       visible: true,
+    },
+    {
+      id: 'personal-principles', label: '我的准则', icon: 'ri-shield-check-line',
+      group: 'PERSONAL', order: 13, visible: true,
     },
     {
       id: 'appearance',
@@ -587,6 +597,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
   'todo',
   'workday-rhythm',
   'action-plans',
+  'personal-principles',
   'decisions',
   'appearance',
   'food',

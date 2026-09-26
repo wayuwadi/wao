@@ -61,6 +61,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     keywords: ['今天'],
   },
   { id: 'action-plans', description: '维护需要长期推进的行动计划和打卡。', keywords: ['计划'] },
+  { id: 'personal-principles', description: '多人制定准则，分别确认参与并记录自己的实践。', keywords: ['准则', '纪律', '红线', '建议'] },
   {
     id: 'decisions',
     description: '记录在相似情境中应如何选择，并保留决定依据。',
@@ -216,7 +217,7 @@ const DOMAINS: Array<{
     label: '生活',
     icon: 'ri-heart-line',
     description: '日常生活、个人回顾与休闲。',
-    ids: ['appearance', 'food', 'life-review', 'games', 'pet-world', 'tianren'],
+    ids: ['personal-principles', 'appearance', 'food', 'life-review', 'games', 'pet-world', 'tianren'],
   },
   {
     id: 'system',
