@@ -593,12 +593,11 @@ quiesce_master() {
   sh deploy/scripts/quiesce-wao-server.sh master "$action" "$WAO_MASTER_PROJECT_ROOT"
 }
 
-# 两台节点并行替换，不再逐台摘流（ADR-280）。只把失败或离线的节点留在摘流状态；
-# 目标已是 up 且无摘流标记时跳过，避免每次重渲染 Nginx 并等待旧 worker 退出。
+# 路由状态只由已验证的就绪结果决定，不能把尚未部署的 pending 当作健康。
 restore_upstreams() {
   local master_state=up slave_state=up
-  [ "$master_result" != failed ] || master_state=down
-  if [ "$slave_available" != true ] || [ "$slave_result" = failed ]; then slave_state=down; fi
+  [ "$master_routable" = true ] || master_state=down
+  [ "$slave_routable" = true ] || slave_state=down
   retry_remote "云前端路由" ssh -o ConnectTimeout=15 "wao-cloud" "
     for pair in master:$master_state slave:$slave_state; do
       node=\${pair%%:*}
@@ -636,7 +635,10 @@ stop_availability_monitor() {
 
 cleanup_rollout() {
   stop_availability_monitor
-  restore_upstreams >/dev/null 2>&1 || true
+  if [ -n "${stage_pid:-}" ]; then wait "$stage_pid" || true; fi
+  if ! restore_upstreams; then
+    echo '无法确认故障节点已从公网摘流；请检查云端 Nginx 路由。' >&2
+  fi
   mark_deploy_window >/dev/null 2>&1 || true
   cleanup_deploy_inputs
 }
@@ -726,23 +728,26 @@ fi
 
 master_result=pending
 slave_result=pending
+master_routable=false
+slave_routable=false
 trap cleanup_rollout EXIT
 
+# 先确认至少一台正在服务；单节点时不能重启唯一健康的应用。
+if wait_until_ready gateway_ready_from_cloud "$MASTER_HOST"; then master_routable=true; fi
+if wait_until_ready gateway_ready_from_cloud "$SLAVE_HOST"; then slave_routable=true; fi
+restore_upstreams || exit 1
+if [ "$master_routable" != true ] && [ "$slave_routable" != true ]; then
+  echo '两台 Gateway 均未通过数据库就绪检查；停止发布。' >&2
+  exit 1
+fi
 if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
     "wao-slave" 'docker info' >/dev/null; then
-  if [ "$ALLOW_SLAVE_OFFLINE" = true ]; then
-    slave_available=false
-    set_status slave_status skipped
-    set_status slave_detail 'Linux1 预检不可达；已显式授权主节点单机发布'
-    echo 'Linux1 从节点预检不可达；保持摘流并按显式授权继续发布主节点与云端。'
-  else
-    slave_result=failed
-    set_status slave_status failed
-    set_status slave_detail 'SSH 或 Docker 预检失败'
-    echo 'Linux1 从节点严格预检失败；Linux2 保持当前版本，本次发布失败。'
-    exit 1
-  fi
+  slave_available=false
+  slave_result=failed
+  set_status slave_status failed
+  set_status slave_detail 'Linux1 SSH 或 Docker 预检失败；仅按 Gateway 就绪结果保留路由'
 fi
+start_availability_monitor
 
 if ! install_master_deploy_helper; then
   set_status master_status failed
@@ -750,35 +755,86 @@ if ! install_master_deploy_helper; then
   exit 1
 fi
 
-# 自用系统优先发布速度（ADR-280）：两台节点同时替换容器，云端静态制品同时预传。
-# 替换期间公共入口会短暂不可用；网页入口仍在两台节点都就绪后才切换。
-echo "并行部署 Linux1、Linux2，并预传云端静态制品（JumpServer 同步=$sync_jumpserver，基础设施同步=$sync_infrastructure）。"
-run_node_job Linux2 deploy_master master.log "$WAO_RUN_TEMP/master.result" &
-master_pid=$!
-slave_pid=''
-if [ "$slave_available" = true ]; then
-  run_node_job Linux1 deploy_slave slave.log "$WAO_RUN_TEMP/slave.result" &
-  slave_pid=$!
+rollout_slave() {
+  [ "$master_routable" = true ] || return 1
+  slave_routable=false
+  restore_upstreams || return 1
+  wait_until_ready public_ready || return 1
+  run_node_job Linux1 deploy_slave slave.log "$WAO_RUN_TEMP/slave.result"
+  record_node_result slave slave.log "$WAO_RUN_TEMP/slave.result"
+  slave_result="$recorded_result"
+  if [ "$slave_result" != success ] || ! wait_until_ready gateway_ready_from_cloud "$SLAVE_HOST"; then
+    slave_result=failed
+    set_status slave_status failed
+    set_status slave_detail 'Linux1 部署或云端数据库就绪检查失败；保留 Linux2 当前版本'
+    return 1
+  fi
+  slave_routable=true
+  restore_upstreams || return 1
+  if ! wait_until_ready public_ready; then
+    slave_routable=false
+    restore_upstreams || true
+    set_status slave_status failed
+    set_status slave_detail 'Linux1 回流后公共入口数据库就绪检查失败，已重新摘流'
+    return 1
+  fi
+}
+
+rollout_master() {
+  [ "$slave_routable" = true ] || return 1
+  master_routable=false
+  restore_upstreams || return 1
+  wait_until_ready public_ready || return 1
+  run_node_job Linux2 deploy_master master.log "$WAO_RUN_TEMP/master.result"
+  record_node_result master master.log "$WAO_RUN_TEMP/master.result"
+  master_result="$recorded_result"
+  if [ "$master_result" != success ] || ! wait_until_ready gateway_ready_from_cloud "$MASTER_HOST"; then
+    master_result=failed
+    set_status master_status failed
+    set_status master_detail 'Linux2 部署或云端数据库就绪检查失败；Linux1 保持服务'
+    return 1
+  fi
+  master_routable=true
+  restore_upstreams || return 1
+  if ! wait_until_ready public_ready; then
+    master_routable=false
+    restore_upstreams || true
+    set_status master_status failed
+    set_status master_detail 'Linux2 回流后公共入口数据库就绪检查失败，已重新摘流'
+    return 1
+  fi
+}
+
+# 静态制品预传与节点滚动独立；任何时刻只重启一台应用。
+echo "逐节点发布 Linux1、Linux2，并预传云端静态制品（JumpServer 同步=$sync_jumpserver，基础设施同步=$sync_infrastructure）。"
+if [ "$slave_available" != true ] && [ "$slave_routable" != true ]; then
+  echo 'Linux1 不可达且未就绪；拒绝重启唯一健康的 Linux2。' >&2
+  exit 1
 fi
 run_stage_job cloud-stage.log "$WAO_RUN_TEMP/cloud-stage.result" &
 stage_pid=$!
-wait "$master_pid" || true
-if [ -n "$slave_pid" ]; then wait "$slave_pid" || true; fi
-wait "$stage_pid" || true
-
-record_node_result master master.log "$WAO_RUN_TEMP/master.result"
-master_result="$recorded_result"
-if [ "$slave_available" = true ]; then
-  record_node_result slave slave.log "$WAO_RUN_TEMP/slave.result"
-  slave_result="$recorded_result"
+if [ "$master_routable" = true ]; then
+  if [ "$slave_available" = true ]; then rollout_slave || exit 1; fi
+  rollout_master || exit 1
+else
+  # Linux2 应用已不可用时，先修复它，不能重启唯一健康的 Linux1。
+  rollout_master || exit 1
+  if [ "$slave_available" = true ]; then rollout_slave || exit 1; fi
 fi
+
+wait "$stage_pid" || true
+stage_pid=''
 printf '\n===== cloud stage =====\n'; cat cloud-stage.log
 stage_result=failed stage_elapsed=unknown
 read -r stage_result stage_elapsed <"$WAO_RUN_TEMP/cloud-stage.result" 2>/dev/null || true
 printf 'cloud-stage elapsed=%ss result=%s\n' "$stage_elapsed" "$stage_result"
 
-if [ "$master_result" != success ] || [ "$slave_result" = failed ]; then
-  echo "节点部署失败：Linux2=$master_result，Linux1=$slave_result；网页入口保持旧版本。"
+if [ "$slave_available" != true ]; then
+  echo 'Linux1 机器不可用；Linux2 已保持服务，完整后端发布不能重启唯一健康节点。'
+  exit 1
+fi
+if [ "$master_result" != success ] || [ "$slave_result" != success ]; then
+  echo "节点部署未完成：Linux2=$master_result，Linux1=$slave_result；网页入口保持旧版本。"
   exit 1
 fi
 if [ "$stage_result" != success ]; then
@@ -789,6 +845,7 @@ fi
 
 if ! wait_until_ready gateway_ready_from_cloud "$MASTER_HOST"; then
   master_result=failed
+  master_routable=false
   set_status master_status failed
   set_status master_detail '云节点无法经 Linux2 Gateway 完成数据库就绪检查'
   exit 1
@@ -796,10 +853,12 @@ fi
 if [ "$slave_available" = true ] && ! wait_until_ready gateway_ready_from_cloud "$SLAVE_HOST"; then
   if [ "$ALLOW_SLAVE_OFFLINE" = true ]; then
     slave_available=false
+    slave_routable=false
     set_status slave_status skipped
     set_status slave_detail 'Linux1 已部署，但云节点无法直连 Gateway；保持摘流并继续主节点单机发布'
   else
     slave_result=failed
+    slave_routable=false
     set_status slave_status failed
     set_status slave_detail '云节点无法直连 Linux1 Gateway'
     exit 1
@@ -841,6 +900,13 @@ restore_upstreams || exit 1
 if ! wait_until_ready public_ready; then
   set_status verification_status failed
   set_status verification_detail '公共入口数据库就绪检查失败'
+  exit 1
+fi
+stop_availability_monitor
+if [ -s "$availability_failures" ]; then
+  cat "$availability_failures"
+  set_status verification_status failed
+  set_status verification_detail '逐台发布期间公共入口出现数据库就绪失败采样'
   exit 1
 fi
 set_status verification_status success
