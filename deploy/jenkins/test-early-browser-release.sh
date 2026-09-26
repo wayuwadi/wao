@@ -5,20 +5,19 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 script="$script_dir/ci-deploy.sh"
 notify="$script_dir/notify-feishu.sh"
 
-# Both nodes deploy in parallel with immutable cloud staging; the browser entry
-# switches only after both node jobs finished and passed cloud readiness.
-line_of() { rg -n "$1" "$script" | head -n 1 | cut -d: -f1; }
-master_job="$(line_of '^run_node_job Linux2 deploy_master ')"
-slave_job="$(line_of '^  run_node_job Linux1 deploy_slave ')"
-stage_job="$(line_of '^run_stage_job ')"
-waited="$(line_of '^wait "\$master_pid"')"
-slave_ready="$(line_of 'wait_until_ready gateway_ready_from_cloud "\$SLAVE_HOST"')"
+# Immutable staging may overlap rolling deployment; the browser entry switches
+# only after both nodes have passed cloud readiness and staging has completed.
+line_of() { rg -n "$1" "$script" | tail -n 1 | cut -d: -f1; }
+stage_job="$(line_of '^run_stage_job cloud-stage.log ')"
+rollout="$(line_of '^if \[ "\$master_routable" = true \]; then')"
+waited="$(line_of '^wait "\$stage_pid"')"
+slave_ready="$(line_of '^if \[ "\$slave_available" = true \] && ! wait_until_ready gateway_ready_from_cloud')"
 activate="$(line_of '^if ! activate_cloud >cloud.log ')"
-test "$master_job" -lt "$waited"
-test "$slave_job" -lt "$waited"
-test "$stage_job" -lt "$waited"
+test "$stage_job" -lt "$rollout"
+test "$rollout" -lt "$waited"
 test "$waited" -lt "$slave_ready"
 test "$slave_ready" -lt "$activate"
+! rg -q '^run_node_job Linux[12].*&$' "$script"
 # Staging must not flip the public routing manifest.
 ! sed -n '/^stage_cloud() {$/,/^}$/p' "$script" | rg -q 'publish-static-routing.py /etc'
 rg -q 'stage_slave_static &|stage_slave_static; result=' "$script"

@@ -98,6 +98,20 @@ install -d -m 0755 "${runtime_dir}"
 exec 9>"${runtime_dir}/config.lock"
 flock -w 60 9 || { echo 'Timed out waiting for Nginx configuration lock.' >&2; exit 1; }
 touch "${lock_file}"
+previous_marker=absent
+[ ! -f "${runtime_dir}/${node}.down" ] || previous_marker=present
+config_saved=false
+restore_previous_state() {
+  if [ "${previous_marker}" = present ]; then
+    touch "${runtime_dir}/${node}.down"
+  else
+    rm -f "${runtime_dir}/${node}.down"
+  fi
+  if [ "${config_saved}" = true ] && [ -f "${previous_config}" ]; then
+    mv "${previous_config}" "${final_config}"
+  fi
+  rm -f "${pending_config}"
+}
 if [ "${state}" = down ]; then
   touch "${runtime_dir}/${node}.down"
 else
@@ -110,19 +124,32 @@ SLAVE_GATEWAY_STATE=''
 [ -f "${runtime_dir}/slave.down" ] && SLAVE_GATEWAY_STATE=' down'
 export MASTER_GATEWAY_STATE SLAVE_GATEWAY_STATE
 
-WAO_NGINX_RENDER_OUTPUT="${pending_config}" sh "${script_dir}/render-nginx-config.sh"
-cp "${final_config}" "${previous_config}"
-install -m 0644 "${pending_config}" "${final_config}"
+if ! WAO_NGINX_RENDER_OUTPUT="${pending_config}" sh "${script_dir}/render-nginx-config.sh"; then
+  restore_previous_state
+  exit 1
+fi
+if ! cp "${final_config}" "${previous_config}"; then
+  restore_previous_state
+  exit 1
+fi
+config_saved=true
+if ! install -m 0644 "${pending_config}" "${final_config}"; then
+  restore_previous_state
+  exit 1
+fi
 if ! nginx -t; then
-  mv "${previous_config}" "${final_config}"
-  rm -f "${pending_config}"
+  restore_previous_state
   nginx -t
   exit 1
 fi
-rm -f "${pending_config}" "${previous_config}"
 master_pid="$(nginx_master_pid)"
 old_workers="$(nginx_worker_pids "${master_pid}")"
-systemctl reload nginx
+if ! systemctl reload nginx; then
+  restore_previous_state
+  systemctl reload nginx || true
+  exit 1
+fi
+rm -f "${pending_config}" "${previous_config}"
 drain_reloaded_workers "${master_pid}" "${old_workers}"
 
 if [ ! -f "${runtime_dir}/master.down" ] && [ ! -f "${runtime_dir}/slave.down" ]; then

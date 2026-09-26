@@ -5,63 +5,77 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 fixture="$(mktemp -d)"
 trap 'rm -rf -- "$fixture"' EXIT
 
-# Exercise the real parallel job wrapper, result recording and upstream restore.
-# No SSH, Docker or production state is used; only installers and SSH are stubbed.
-for function in retry_node_deploy run_node_job record_node_result restore_upstreams; do
+for function in restore_upstreams rollout_slave rollout_master; do
   sed -n "/^${function}() {\$/,/^}\$/p" "$script_dir/ci-deploy.sh" >>"$fixture/functions.sh"
 done
-test "$(grep -c '() {$' "$fixture/functions.sh")" = 4
+test "$(grep -c '() {$' "$fixture/functions.sh")" = 3
 
 cat >"$fixture/run.sh" <<'SH'
 set -u
-cd "$FIXTURE"
-. ./functions.sh
+. "$FIXTURE/functions.sh"
 WAO_RUN_TEMP="$FIXTURE"
-WAO_GIT_SHA=test-release
-slave_available="${SLAVE_AVAILABLE:-true}"
-status_file="$FIXTURE/status.env"
-: >"$status_file"
-set_status() { printf '%s=%s\n' "$1" "$2" >>"$status_file"; }
+SLAVE_HOST=linux1
+MASTER_HOST=linux2
+recorded_result=pending
+master_result=pending
+slave_result=pending
+master_routable="${MASTER_READY:-true}"
+slave_routable="${SLAVE_READY:-true}"
 retry_remote() { shift; "$@"; }
-ssh() { printf '%s\n' "${@: -1}" >"$FIXTURE/remote.sh"; }
-sleep() { :; }
-deploy_master() { echo master-installed; [ "${MASTER_FAIL:-false}" != true ]; }
-deploy_slave() { echo slave-installed; [ "${SLAVE_FAIL:-false}" != true ]; }
-run_node_job Linux2 deploy_master master.log "$FIXTURE/master.result" &
-run_node_job Linux1 deploy_slave slave.log "$FIXTURE/slave.result" &
-wait
-record_node_result master master.log "$FIXTURE/master.result" >/dev/null
-master_result="$recorded_result"
-record_node_result slave slave.log "$FIXTURE/slave.result" >/dev/null
-slave_result="$recorded_result"
-restore_upstreams
-printf 'master=%s slave=%s\n' "$master_result" "$slave_result"
+ssh() {
+  case "${@: -1}" in
+    *'master:up slave:up'*) echo 'master:up slave:up' >>"$FIXTURE/routes" ;;
+    *'master:up slave:down'*) echo 'master:up slave:down' >>"$FIXTURE/routes" ;;
+    *'master:down slave:up'*) echo 'master:down slave:up' >>"$FIXTURE/routes" ;;
+    *) return 1 ;;
+  esac
+}
+set_status() { printf '%s=%s\n' "$1" "$2" >>"$FIXTURE/status"; }
+wait_until_ready() { "$@"; }
+public_ready() { return 0; }
+gateway_ready_from_cloud() {
+  case "$1" in
+    linux1) [ "${SLAVE_GATEWAY_FAIL:-false}" != true ] ;;
+    linux2) [ "${MASTER_GATEWAY_FAIL:-false}" != true ] ;;
+  esac
+}
+run_node_job() {
+  local result=success
+  if [ "$1" = Linux1 ] && [ "${SLAVE_DEPLOY_FAIL:-false}" = true ]; then result=failed; fi
+  if [ "$1" = Linux2 ] && [ "${MASTER_DEPLOY_FAIL:-false}" = true ]; then result=failed; fi
+  printf '%s 1 0\n' "$result" >"$4"
+  printf '%s\n' "$1" >>"$FIXTURE/jobs"
+}
+record_node_result() { read -r recorded_result _ <"$3"; }
+case "$CASE" in
+  healthy) rollout_slave && rollout_master ;;
+  slave_failure) if rollout_slave; then exit 1; fi ;;
+  master_failure) rollout_slave && { if rollout_master; then exit 1; fi; } ;;
+  master_initially_down) rollout_master && rollout_slave ;;
+  only_master_healthy) if rollout_master; then exit 1; fi ;;
+esac
+printf 'master=%s slave=%s\n' "$master_routable" "$slave_routable"
 SH
 
 run_case() {
-  local name="$1" expected="$2" master_state="$3" slave_state="$4"
+  local name="$1" expected="$2" jobs="$3" routes="$4"
   shift 4
-  rm -f "$fixture"/*.result "$fixture/remote.sh"
-  env FIXTURE="$fixture" "$@" bash "$fixture/run.sh" >"$fixture/$name.log" 2>&1
-  grep -qx "$expected" "$fixture/$name.log" || { cat "$fixture/$name.log"; exit 1; }
-  grep -q "master:$master_state slave:$slave_state" "$fixture/remote.sh" || {
-    cat "$fixture/remote.sh"
-    echo "$name: expected master:$master_state slave:$slave_state" >&2
-    exit 1
-  }
+  : >"$fixture/routes"
+  : >"$fixture/jobs"
+  : >"$fixture/status"
+  env FIXTURE="$fixture" CASE="$name" "$@" bash "$fixture/run.sh" >"$fixture/output"
+  grep -qx "$expected" "$fixture/output"
+  test "$(paste -sd, "$fixture/jobs")" = "$jobs"
+  test "$(paste -sd, "$fixture/routes")" = "$routes"
 }
 
-run_case success 'master=success slave=success' up up
-grep -qx 'slave_status=success' "$fixture/status.env"
-grep -qx 'master_attempts=1' "$fixture/status.env"
-awk '$1 == "success" && $2 == 1 && $3 ~ /^[0-9]+$/ { ok = 1 } END { exit !ok }' \
-  "$fixture/master.result"
-run_case slave_failure 'master=success slave=failed' up down SLAVE_FAIL=true
-grep -qx 'slave_attempts=3' "$fixture/status.env"
-grep -qx 'slave_status=failed' "$fixture/status.env"
-run_case master_failure 'master=failed slave=success' down up MASTER_FAIL=true
-run_case authorized_offline 'master=success slave=success' up down SLAVE_AVAILABLE=false
-# Healthy nodes without a stale drain marker must not re-render Nginx.
-sh -n "$fixture/remote.sh"
-grep -q 'continue' "$fixture/remote.sh"
-echo 'Parallel node rollout state regression checks passed.'
+run_case healthy 'master=true slave=true' 'Linux1,Linux2' \
+  'master:up slave:down,master:up slave:up,master:down slave:up,master:up slave:up'
+run_case slave_failure 'master=true slave=false' 'Linux1' \
+  'master:up slave:down' SLAVE_DEPLOY_FAIL=true
+run_case master_failure 'master=false slave=true' 'Linux1,Linux2' \
+  'master:up slave:down,master:up slave:up,master:down slave:up' MASTER_DEPLOY_FAIL=true
+run_case master_initially_down 'master=true slave=true' 'Linux2,Linux1' \
+  'master:down slave:up,master:up slave:up,master:up slave:down,master:up slave:up' MASTER_READY=false
+run_case only_master_healthy 'master=true slave=false' '' '' SLAVE_READY=false
+echo 'Rolling deployment availability checks passed.'
