@@ -12,6 +12,12 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface ImageBlobMapper extends BaseMapper<ImageBlobEntity> {
 
+    /** A single image row without binary content, for access checks. */
+    @Select("SELECT id, name, content_type, byte_size, source, project_id, content_hash, "
+            + "object_key, object_content_type, object_byte_size, object_hash, "
+            + "preview_key, original_archive_key, created_at FROM image_blob WHERE id = #{id}")
+    ImageBlobEntity findMeta(@Param("id") String id);
+
     /** 列出元数据，不含 {@code content}——图床列表不该把每张图的正文都读进内存。 */
     @Select("SELECT id, name, content_type, byte_size, source, project_id, content_hash, created_at "
             + "FROM image_blob ORDER BY created_at DESC")

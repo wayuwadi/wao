@@ -1,0 +1,16 @@
+name: wao-assets
+services:
+  garage:
+    image: wao-garage:v2.4.1-local
+    command: ["/garage", "server"]
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ${GARAGE_ROOT:?set GARAGE_ROOT}/garage.toml:/etc/garage.toml:ro
+      - ${GARAGE_ROOT:?set GARAGE_ROOT}/meta:/var/lib/garage/meta
+      - ${GARAGE_ROOT:?set GARAGE_ROOT}/data:/var/lib/garage/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

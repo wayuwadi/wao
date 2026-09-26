@@ -9,6 +9,9 @@ flock -n 9 || { echo 'Another readable export is running.' >&2; exit 1; }
 : "${PROJECT_ROOT:?}"
 set -a
 . "$PROJECT_ROOT/deploy/.env"
+if [[ -f "$PROJECT_ROOT/deploy/.env.secrets" ]]; then
+  . "$PROJECT_ROOT/deploy/.env.secrets"
+fi
 set +a
 : "${DB_ROOT_PASS:?}" "${DB_USER:?}" "${DB_PASS:?}" "${WAO_MYSQL_PRIMARY:?}"
 # Linux2's native instance stays writable for three other databases even when
@@ -33,4 +36,6 @@ esac
 export WAO_EXPORT_MYSQL_USER="$DB_USER"
 export MYSQL_PWD="$DB_PASS"
 unset DB_ROOT_PASS DB_PASS
-exec python3 /usr/local/lib/wao-backup/export-readable-content.py "$@"
+python_bin=/usr/local/lib/wao-backup/.venv/bin/python
+[[ -x "$python_bin" ]] || python_bin=python3
+exec "$python_bin" /usr/local/lib/wao-backup/export-readable-content.py "$@"

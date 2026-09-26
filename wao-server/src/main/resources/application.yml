@@ -64,6 +64,14 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  storage:
+    mode: ${WAO_STORAGE_MODE:mysql}
+    retain-mysql: ${WAO_STORAGE_RETAIN_MYSQL:true}
+    endpoint: ${WAO_STORAGE_ENDPOINT:}
+    region: ${WAO_STORAGE_REGION:garage}
+    bucket: ${WAO_STORAGE_BUCKET:}
+    access-key: ${WAO_STORAGE_ACCESS_KEY:}
+    secret-key: ${WAO_STORAGE_SECRET_KEY:}
   edge:
     session-enabled: ${WAO_EDGE_SESSION_ENABLED:false}
   system-report:

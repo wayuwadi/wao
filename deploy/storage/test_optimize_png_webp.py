@@ -1,0 +1,135 @@
+import io
+from hashlib import sha256
+import unittest
+from unittest.mock import MagicMock, patch
+
+from PIL import Image
+from botocore.exceptions import ClientError
+
+from optimize_png_webp import optimize_one
+
+
+class OptimizePngTest(unittest.TestCase):
+    def setUp(self):
+        image = Image.new("RGB", (400, 400), (30, 80, 120))
+        for y in range(0, 400, 15):
+            for x in range(0, 400, 15):
+                image.putpixel((x, y), (240, 70, 30))
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        self.original = buffer.getvalue()
+        self.hash = sha256(self.original).hexdigest()
+        self.key = "images/img1/" + self.hash
+        self.db = MagicMock()
+        self.cursor = self.db.cursor.return_value.__enter__.return_value
+        self.cursor.fetchone.return_value = {
+            "id": "img1", "content_type": "image/png", "byte_size": len(self.original),
+            "content_hash": self.hash, "content": self.original, "object_key": self.key,
+            "object_content_type": "image/png", "original_archive_key":
+            "WAO-backups/originals/png/" + self.hash[:2] + "/" + self.hash + ".png.gpg",
+            "preview_key": None, "lossless_webp_checked": False,
+        }
+        self.cursor.rowcount = 1
+        self.objects = {}
+        self.objects[self.key] = self.original
+        self.s3 = MagicMock()
+
+        def put(Bucket, Key, Body, ContentType, Metadata):
+            self.objects[Key] = Body
+
+        def get(Bucket, Key):
+            return {"Body": io.BytesIO(self.objects[Key])}
+
+        self.s3.put_object.side_effect = put
+        self.s3.get_object.side_effect = get
+        self.s3.head_object.side_effect = lambda Bucket, Key: (_ for _ in ()).throw(
+            ClientError({"Error": {"Code": "404"}, "ResponseMetadata": {"HTTPStatusCode": 404}},
+                        "HeadObject"))
+
+    def test_verified_archive_and_pixel_equal_webp_switch(self):
+        verified = []
+        self.assertEqual(optimize_one(self.db, self.s3, "private", "img1",
+                                      lambda key, body: verified.append((key, body))), "optimized")
+        self.assertEqual(verified[0][1], self.original)
+        self.assertIn("object_content_type='image/webp'", self.cursor.execute.call_args.args[0])
+        self.assertEqual(self.cursor.execute.call_count, 2)
+
+    def test_missing_archive_verifier_prevents_switch(self):
+        with self.assertRaisesRegex(RuntimeError, "archive must be verified"):
+            optimize_one(self.db, self.s3, "private", "img1")
+        self.assertEqual(self.cursor.execute.call_count, 1)
+
+    def test_large_png_without_useful_preview_still_attempts_webp(self):
+        image = Image.effect_noise((640, 480), 80).convert("RGB")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        original = buffer.getvalue()
+        self.assertGreater(len(original), 220_000)
+        content_hash = sha256(original).hexdigest()
+        row = self.cursor.fetchone.return_value
+        row.update({"byte_size": len(original), "content_hash": content_hash,
+                    "content": original, "object_key": "images/img1/" + content_hash,
+                    "preview_checked": True,
+                    "original_archive_key": "WAO-backups/originals/png/" + content_hash[:2]
+                    + "/" + content_hash + ".png.gpg"})
+        self.objects[row["object_key"]] = original
+        with patch("optimize_png_webp.preview", return_value=None), \
+                patch("optimize_png_webp.lossless_webp", return_value=None) as convert:
+            self.assertEqual(optimize_one(self.db, self.s3, "private", "img1",
+                                          lambda _key, _body: None), "not-smaller")
+        convert.assert_called_once_with(original)
+        self.assertIn("lossless_webp_checked=TRUE", self.cursor.execute.call_args.args[0])
+
+    def test_large_png_without_preview_can_switch_to_lossless_webp(self):
+        image = Image.effect_noise((640, 480), 80).convert("RGB")
+        png = io.BytesIO()
+        image.save(png, format="PNG")
+        original = png.getvalue()
+        self.assertGreater(len(original), 220_000)
+        webp = io.BytesIO()
+        image.save(webp, format="WEBP", lossless=True)
+        content_hash = sha256(original).hexdigest()
+        row = self.cursor.fetchone.return_value
+        row.update({"byte_size": len(original), "content_hash": content_hash,
+                    "content": original, "object_key": "images/img1/" + content_hash,
+                    "preview_checked": True,
+                    "original_archive_key": "WAO-backups/originals/png/" + content_hash[:2]
+                    + "/" + content_hash + ".png.gpg"})
+        self.objects[row["object_key"]] = original
+        with patch("optimize_png_webp.preview", return_value=None), \
+                patch("optimize_png_webp.lossless_webp", return_value=webp.getvalue()):
+            self.assertEqual(optimize_one(self.db, self.s3, "private", "img1",
+                                          lambda _key, _body: None), "optimized")
+        statement, parameters = self.cursor.execute.call_args.args
+        self.assertIn("object_content_type='image/webp'", statement)
+        self.assertIn("preview_checked=%s", statement)
+        self.assertIsNone(parameters[3])
+        self.assertFalse(parameters[4])
+
+    def test_not_smaller_webp_keeps_generated_preview(self):
+        image = Image.effect_noise((640, 480), 80).convert("RGB")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        original = buffer.getvalue()
+        self.assertGreater(len(original), 220_000)
+        content_hash = sha256(original).hexdigest()
+        row = self.cursor.fetchone.return_value
+        row.update({"byte_size": len(original), "content_hash": content_hash,
+                    "content": original, "object_key": "images/img1/" + content_hash,
+                    "original_archive_key": "WAO-backups/originals/png/" + content_hash[:2]
+                    + "/" + content_hash + ".png.gpg"})
+        self.objects[row["object_key"]] = original
+        thumbnail = b"small-jpeg-preview"
+        with patch("optimize_png_webp.preview", return_value=thumbnail), \
+                patch("optimize_png_webp.lossless_webp", return_value=None):
+            self.assertEqual(optimize_one(self.db, self.s3, "private", "img1",
+                                          lambda _key, _body: None), "not-smaller")
+        statement, parameters = self.cursor.execute.call_args.args
+        self.assertIn("preview_key=%s", statement)
+        self.assertEqual(parameters[0], "previews/img1/" + sha256(thumbnail).hexdigest())
+        self.assertTrue(parameters[1])
+        self.assertIsNone(parameters[5])
+
+
+if __name__ == "__main__":
+    unittest.main()

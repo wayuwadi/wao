@@ -1,7 +1,6 @@
 package cn.wayuwa.wao.controller;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -92,7 +91,7 @@ public class FileController {
     /** 登录成员在站内预览 UTF-8 Markdown；HTML 继续走隔离托管页。 */
     @GetMapping("/{id}/preview")
     public ApiResponse<FilePreviewDto> preview(@PathVariable String id, HttpServletRequest request) {
-        FileBlobEntity entity = files.raw(id);
+        FileBlobEntity entity = files.metadata(id);
         requireAssetAccess(entity.getProjectId(), currentMember.id(request));
         return ApiResponse.ok(files.preview(id));
     }
@@ -163,27 +162,28 @@ public class FileController {
     @GetMapping("/{id}/stream")
     public ResponseEntity<byte[]> stream(@PathVariable String id,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
-        FileBlobEntity entity = files.raw(id);
-        MediaType mediaType = playableMediaType(entity);
-        byte[] content = entity.getContent();
         if (rangeHeader == null || rangeHeader.isBlank()) {
-            return streamResponse(entity, mediaType, content, null);
+            FileBlobEntity entity = files.raw(id);
+            return streamResponse(entity, playableMediaType(entity), entity.getContent(), null);
         }
+        FileBlobEntity entity = files.metadata(id);
+        MediaType mediaType = playableMediaType(entity);
+        long total = entity.getByteSize() == null ? 0 : entity.getByteSize();
+        ByteRange range;
         try {
-            ByteRange range = parseRange(rangeHeader, content.length);
-            byte[] part = Arrays.copyOfRange(content, (int) range.start(), (int) range.end() + 1);
-            return streamResponse(entity, mediaType, part, range);
+            range = parseRange(rangeHeader, total);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-                    .header(HttpHeaders.CONTENT_RANGE, "bytes */" + content.length)
+                    .header(HttpHeaders.CONTENT_RANGE, "bytes */" + total)
                     .header(HttpHeaders.ACCEPT_RANGES, "bytes")
                     .build();
         }
+        return streamResponse(entity, mediaType, files.readRange(entity, range.start(), range.end()), range);
     }
 
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest request) {
-        requireAssetAccess(files.raw(id).getProjectId(), currentMember.id(request));
+        requireAssetAccess(files.metadata(id).getProjectId(), currentMember.id(request));
         files.delete(id);
         return ApiResponse.ok(null);
     }

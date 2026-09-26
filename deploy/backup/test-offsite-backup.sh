@@ -27,7 +27,7 @@ printf '%s\n' 'must-not-be-included' >"$project_root/deploy/backups/old.sql"
 printf '%s\n' 'jumpserver-config' >"$jumpserver_root/config/config.txt"
 printf '%s\n' 'jumpserver-data' >"$jumpserver_root/data/asset"
 
-jenkins_archive="$jenkins_root/jenkins-home-20260831T190000Z.tar.gz"
+jenkins_archive="$jenkins_root/jenkins-home-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 printf '%s\n' 'jenkins-state' | gzip -c >"$jenkins_archive"
 (cd "$jenkins_root" && sha256sum "$(basename "$jenkins_archive")" >"$(basename "$jenkins_archive").sha256")
 

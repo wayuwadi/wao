@@ -139,10 +139,35 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/usr/local/lib/wao-backup/webdav_client.py
     cp /workspace/deploy/backup/export-readable-content.py \
       /host/usr/local/lib/wao-backup/export-readable-content.py
+    cp /workspace/deploy/backup/verify-backup-source.py \
+      /host/usr/local/lib/wao-backup/verify-backup-source.py
+    cp /workspace/deploy/storage/migrate_assets.py \
+      /host/usr/local/lib/wao-backup/migrate_assets.py
+    cp /workspace/deploy/storage/backfill_previews.py \
+      /host/usr/local/lib/wao-backup/backfill_previews.py
+    cp /workspace/deploy/storage/archive_original_png.py \
+      /host/usr/local/lib/wao-backup/archive_original_png.py
+    cp /workspace/deploy/storage/optimize_png_webp.py \
+      /host/usr/local/lib/wao-backup/optimize_png_webp.py
+    cp /workspace/deploy/storage/process-pending-images.sh \
+      /host/usr/local/lib/wao-backup/process-pending-images.sh
+    cp /workspace/deploy/storage/reclaim_mysql_blobs.py \
+      /host/usr/local/lib/wao-backup/reclaim_mysql_blobs.py
+    cp /workspace/deploy/storage/gc_original_png_objects.py \
+      /host/usr/local/lib/wao-backup/gc_original_png_objects.py
+    cp /workspace/deploy/storage/export_object_backup.py \
+      /host/usr/local/lib/wao-backup/export_object_backup.py
+    cp /workspace/deploy/storage/restore_object_backup.py \
+      /host/usr/local/lib/wao-backup/restore_object_backup.py
+    cp /workspace/deploy/storage/requirements.txt \
+      /host/usr/local/lib/wao-backup/storage-requirements.txt
     cp /workspace/deploy/backup/wao-offsite-backup.service \
       /host/etc/systemd/system/wao-offsite-backup.service
     cp /workspace/deploy/backup/wao-offsite-backup.timer \
       /host/etc/systemd/system/wao-offsite-backup.timer
+    for unit in wao-image-maintenance.service wao-image-maintenance.timer; do
+      cp "/workspace/deploy/storage/$unit" "/host/etc/systemd/system/$unit"
+    done
     awk '\''/^Environment="(WAO_MASTER_PROJECT_ROOT|WAO_JENKINS_SCM_BRANCH|HTTP_PROXY|HTTPS_PROXY|NO_PROXY)=/'\'' \
       /host/etc/systemd/system/jenkins.service.d/override.conf >/tmp/wao-jenkins-dynamic.conf
     cp /workspace/deploy/jenkins/jenkins.service.override.conf \
@@ -158,7 +183,9 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     chown 0:0 /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
     chown -R 0:0 /host/usr/local/lib/wao-backup \
       /host/etc/systemd/system/wao-offsite-backup.service \
-      /host/etc/systemd/system/wao-offsite-backup.timer
+      /host/etc/systemd/system/wao-offsite-backup.timer \
+      /host/etc/systemd/system/wao-image-maintenance.service \
+      /host/etc/systemd/system/wao-image-maintenance.timer
     chmod 0644 /host/etc/jenkins/jenkins.yaml /host/etc/jenkins/plugins.txt \
       /host/etc/systemd/system/jenkins.service.d/override.conf \
       /host/etc/systemd/system/wao-jenkins-webhook-tunnel.service
@@ -171,13 +198,18 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/usr/local/lib/wao-backup/restore-peer-offsite.sh \
       /host/usr/local/lib/wao-backup/run-readable-content.sh \
       /host/usr/local/lib/wao-backup/export-readable-content.py \
-      /host/usr/local/lib/wao-backup/webdav_client.py
+      /host/usr/local/lib/wao-backup/webdav_client.py \
+      /host/usr/local/lib/wao-backup/process-pending-images.sh
     chmod 0644 /host/etc/systemd/system/wao-offsite-backup.service \
-      /host/etc/systemd/system/wao-offsite-backup.timer
+      /host/etc/systemd/system/wao-offsite-backup.timer \
+      /host/etc/systemd/system/wao-image-maintenance.service \
+      /host/etc/systemd/system/wao-image-maintenance.timer
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl daemon-reload
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl enable --now wao-offsite-backup.timer
+    chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
+      /usr/bin/systemctl enable --now wao-image-maintenance.timer
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl enable --now wao-jenkins-health.timer
   '

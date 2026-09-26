@@ -7,6 +7,7 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -18,6 +19,9 @@ import cn.wayuwa.wao.dto.FileItemDto;
 import cn.wayuwa.wao.dto.FilePreviewDto;
 import cn.wayuwa.wao.mapper.FileBlobMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 
 /** 通用文件的上传、元数据列表、下载和删除服务。 */
@@ -28,9 +32,16 @@ public class FileService {
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("M月d日 HH:mm");
     private final FileBlobMapper mapper;
     private final FileSettingsService settings;
+    private final BinaryObjectStore objects;
     public FileService(FileBlobMapper mapper, FileSettingsService settings) {
+        this(mapper, settings, new DisabledBinaryObjectStore());
+    }
+
+    @Autowired
+    public FileService(FileBlobMapper mapper, FileSettingsService settings, BinaryObjectStore objects) {
         this.mapper = mapper;
         this.settings = settings;
+        this.objects = objects;
     }
 
     /** 列出文件元数据，不把二进制正文加载进内存。 */
@@ -61,8 +72,25 @@ public class FileService {
         entity.setCreatedBy(memberId == null ? "未知成员" : memberId);
         entity.setProjectId(projectId);
         entity.setCreatedAt(LocalDateTime.now());
-        try { entity.setContent(file.getBytes()); }
+        byte[] bytes;
+        try { bytes = file.getBytes(); }
         catch (IOException ex) { throw new BadRequestException("读取上传文件失败，请重试"); }
+        entity.setByteSize((long) bytes.length);
+        entity.setContentHash(ImageService.sha256(bytes));
+        if (objects.writesEnabled()) {
+            String key = "files/" + entity.getId() + "/" + entity.getContentHash();
+            try {
+                objects.put(key, bytes, entity.getContentType());
+                entity.setObjectKey(key);
+            } catch (RuntimeException exception) {
+                if (!objects.retainMysqlCopy()) {
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文件存储暂不可用", exception);
+                }
+            }
+        }
+        if (!objects.writesEnabled() || objects.retainMysqlCopy()) {
+            entity.setContent(bytes);
+        }
         mapper.insert(entity);
         return toDto(entity);
     }
@@ -74,9 +102,26 @@ public class FileService {
         byte[] content;
         try { content = file.getBytes(); }
         catch (IOException ex) { throw new BadRequestException("读取上传文件失败，请重试"); }
+        int byteSize = content.length;
+        String contentHash = ImageService.sha256(content);
+        String type = file.getContentType() == null ? "application/octet-stream" : file.getContentType();
+        String key = null;
+        if (objects.writesEnabled()) {
+            String candidate = "files/" + id + "/" + contentHash;
+            try {
+                objects.put(candidate, content, type);
+                key = candidate;
+            } catch (RuntimeException exception) {
+                if (!objects.retainMysqlCopy()) {
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文件存储暂不可用", exception);
+                }
+            }
+            if (!objects.retainMysqlCopy()) content = null;
+        }
         if (mapper.replaceContent(id, safeName(file.getOriginalFilename()),
-                file.getContentType() == null ? "application/octet-stream" : file.getContentType(),
-                content.length, content) == 0) throw new NotFoundException("文件不存在：" + id);
+                type, byteSize, content, key, contentHash) == 0) {
+            throw new NotFoundException("文件不存在：" + id);
+        }
         return meta(id);
     }
 
@@ -90,9 +135,51 @@ public class FileService {
 
     /** 读取文件正文用于下载。 */
     public FileBlobEntity raw(String id) {
-        FileBlobEntity entity = mapper.selectById(id);
+        FileBlobEntity entity = mapper.findMeta(id);
+        if (entity == null) throw new NotFoundException("文件不存在：" + id);
+        if (entity.getObjectKey() != null && !entity.getObjectKey().isBlank()) {
+            try {
+                byte[] fetched = objects.get(entity.getObjectKey());
+                if ((entity.getByteSize() != null && fetched.length != entity.getByteSize())
+                        || (entity.getContentHash() != null
+                            && !entity.getContentHash().equals(ImageService.sha256(fetched)))) {
+                    throw new IllegalStateException("Object bytes differ from file metadata");
+                }
+                entity.setContent(fetched);
+                return entity;
+            }
+            catch (RuntimeException exception) {
+                FileBlobEntity retained = mapper.selectById(id);
+                if (retained == null || retained.getContent() == null) {
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "文件存储暂不可用", exception);
+                }
+                return retained;
+            }
+        }
+        entity = mapper.selectById(id);
         if (entity == null || entity.getContent() == null) throw new NotFoundException("文件不存在：" + id);
         return entity;
+    }
+
+    /** Read an inclusive media range from S3 without downloading the full object on each seek. */
+    public byte[] readRange(FileBlobEntity metadata, long start, long end) {
+        Long size = metadata.getByteSize();
+        if (size == null || start < 0 || end < start || end >= size) {
+            throw new IllegalArgumentException("File range is out of bounds");
+        }
+        String key = metadata.getObjectKey();
+        if (key != null && !key.isBlank()) {
+            try {
+                byte[] part = objects.getRange(key, start, end);
+                if (part.length != end - start + 1) throw new IllegalStateException("Incomplete object range");
+                return part;
+            } catch (RuntimeException ignored) {
+                // A retained MySQL copy, or a full S3 read, can still serve this request.
+            }
+        }
+        byte[] full = raw(metadata.getId()).getContent();
+        if (full.length != size) throw new IllegalStateException("File length changed during range read");
+        return Arrays.copyOfRange(full, Math.toIntExact(start), Math.toIntExact(end + 1));
     }
 
     /**

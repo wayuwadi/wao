@@ -148,10 +148,35 @@ install -m 0755 "$script_dir/../backup/webdav_client.py" \
   /usr/local/lib/wao-backup/webdav_client.py
 install -m 0755 "$script_dir/../backup/export-readable-content.py" \
   /usr/local/lib/wao-backup/export-readable-content.py
+install -m 0755 "$script_dir/../backup/verify-backup-source.py" \
+  /usr/local/lib/wao-backup/verify-backup-source.py
+install -m 0755 "$script_dir/../storage/migrate_assets.py" \
+  /usr/local/lib/wao-backup/migrate_assets.py
+install -m 0755 "$script_dir/../storage/backfill_previews.py" \
+  /usr/local/lib/wao-backup/backfill_previews.py
+install -m 0755 "$script_dir/../storage/archive_original_png.py" \
+  /usr/local/lib/wao-backup/archive_original_png.py
+install -m 0755 "$script_dir/../storage/optimize_png_webp.py" \
+  /usr/local/lib/wao-backup/optimize_png_webp.py
+install -m 0755 "$script_dir/../storage/process-pending-images.sh" \
+  /usr/local/lib/wao-backup/process-pending-images.sh
+install -m 0755 "$script_dir/../storage/reclaim_mysql_blobs.py" \
+  /usr/local/lib/wao-backup/reclaim_mysql_blobs.py
+install -m 0755 "$script_dir/../storage/gc_original_png_objects.py" \
+  /usr/local/lib/wao-backup/gc_original_png_objects.py
+install -m 0755 "$script_dir/../storage/export_object_backup.py" \
+  /usr/local/lib/wao-backup/export_object_backup.py
+install -m 0755 "$script_dir/../storage/restore_object_backup.py" \
+  /usr/local/lib/wao-backup/restore_object_backup.py
+install -m 0644 "$script_dir/../storage/requirements.txt" \
+  /usr/local/lib/wao-backup/storage-requirements.txt
 install -m 0644 "$script_dir/../backup/wao-offsite-backup.service" \
   /etc/systemd/system/wao-offsite-backup.service
 install -m 0644 "$script_dir/../backup/wao-offsite-backup.timer" \
   /etc/systemd/system/wao-offsite-backup.timer
+for unit in wao-image-maintenance.service wao-image-maintenance.timer; do
+  install -m 0644 "$script_dir/../storage/$unit" "/etc/systemd/system/$unit"
+done
 
 cat >/etc/jenkins/tunnel-ssh-config <<EOF
 Host wao-cloud-webhook
@@ -218,6 +243,7 @@ systemctl enable --now jenkins.service
 systemctl enable --now wao-jenkins-backup.timer
 systemctl enable --now wao-jenkins-health.timer
 systemctl enable --now wao-offsite-backup.timer
+systemctl enable --now wao-image-maintenance.timer
 systemctl enable --now wao-jenkins-webhook-tunnel.service
 
 printf '%s\n' \

@@ -103,18 +103,24 @@ V3 的文件、图床、日历、日程、AI 建议、目标 fixtures 采用「�
 读接口经 `ContentMapper`（`@Select payload`）+ `ContentService`（JSON 直通）返回，不为其定义 DTO。表：`file_item, image_item, calendar_event, schedule_item, suggestion, goal`。
 真实图片与文件上传已分别迁入下述 `image_blob`（V11）和 `file_blob`（V15）；其它 fixture 域的后续持久化仍由各自 spec / ADR 立项。
 
-### image_blob（V11 / V22 / V77）
+### image_blob（V11 / V22 / V77 / V166）
 
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | VARCHAR(40) PK | 图片稳定 id，正文接口按此寻址 |
-| name / content_type | VARCHAR(255) / VARCHAR(100) | 安全文件名与 MIME 类型 |
-| byte_size | BIGINT | 图片字节数，单张最大 10MB |
+| name / content_type | VARCHAR(255) / VARCHAR(100) | 原始文件名与 MIME 类型；在线无损 WebP 使用独立的对象类型字段 |
+| byte_size | BIGINT | 原始图片字节数，单张最大 10MB |
 | source | VARCHAR(160) NULL | 来源描述，例如飞书群名或任务 |
 | content_hash | CHAR(64) NULL（V22） | 图片正文 SHA-256；`(content_hash, byte_size)` 普通索引支持写前查重 |
 | dedupe_key | CHAR(64) NULL（V77） | 仅 `deduplicate = true` 的服务端转存写 SHA-256；唯一索引 `uk_image_blob_dedupe_key` |
 | created_at | DATETIME | 落库时间；索引支持图床倒序列表 |
-| content | LONGBLOB | 图片二进制正文；元数据列表不读取 |
+| object_key / preview_key | VARCHAR(255) NULL（V166） | 当前在线图片 / JPEG 展示变体的私有 S3 key，不直接暴露给浏览器 |
+| preview_checked | BOOLEAN（V166） | 已尝试生成轻量预览；无压缩收益时也标记，避免后台重复处理 |
+| object_content_type / object_byte_size / object_hash | VARCHAR(100) / BIGINT / CHAR(64) NULL（V166） | 当前在线对象的 MIME、长度与 SHA-256；PNG 优化后可与原始字段不同 |
+| original_archive_key | VARCHAR(255) NULL（V166） | 原 PNG 经过加密 WebDAV 上传、下载解密及摘要复核后的永久归档路径 |
+| lossless_webp_checked | BOOLEAN（V166） | 已尝试像素无损 WebP；转换无收益时也标记，避免后台重复压缩 |
+| webp_activated_at | DATETIME(3) NULL（V166） | 在线 WebP 生效时间；旧 PNG 对象清理至少等待七天 |
+| content | LONGBLOB NULL（V166） | 历史正文或双写回退副本；迁移校验和恢复演练前保留，列表不读取 |
 
 飞书聊天图片等服务端去重写入先按摘要与字节数查询；两个节点仍并发插入时，nullable 唯一键只允许一个 `dedupe_key` 获胜，冲突方按 key 读取并复用赢家 id，
 不会重复保存同一 LONGBLOB。普通图床上传始终令 `dedupe_key = NULL`，利用 MySQL 唯一索引允许多个 NULL 的语义继续保留相同图片的独立记录。
@@ -722,7 +728,8 @@ V135 为模板与每日实例增加 `CHECK / COUNTDOWN` 完成方式和固定时
 | name / display_name / content_type | VARCHAR | 安全原文件名、可空的 WAO 展示名与 MIME 类型；展示名为空时回退原文件名 |
 | byte_size | BIGINT | 字节数，单个文件最大 50MB |
 | created_by / created_at | VARCHAR / DATETIME(3) | 上传成员与上海时间 |
-| content | LONGBLOB | 文件二进制正文，列表查询不读取 |
+| object_key / content_hash | VARCHAR(255) / CHAR(64) NULL（V166） | 私有 S3 原件 key 与 SHA-256，旧 URL 由应用代理读取 |
+| content | LONGBLOB NULL（V166） | 历史正文或双写回退副本；清理前必须完成对象与备份恢复验收 |
 
 下载不落库：对外分享的是前端下载页 `/f/{id}`，答对一道人机校验题才换得到一张一次性票据（进程内存，120 秒有效、用完即废），下载接口只认票据或本人登录会话（见 ADR-020）。
 

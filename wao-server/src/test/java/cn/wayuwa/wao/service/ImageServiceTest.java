@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 class ImageServiceTest {
 
@@ -55,6 +56,7 @@ class ImageServiceTest {
         image.setId("img1");
         image.setContentType("image/png");
         image.setContent(original.toByteArray());
+        when(mapper.findMeta("img1")).thenReturn(image);
         when(mapper.selectById("img1")).thenReturn(image);
 
         ImageService.Preview preview = service.preview("img1");
@@ -63,6 +65,21 @@ class ImageServiceTest {
         assertThat(preview.content().length).isLessThan(original.size());
         assertThat(ImageIO.read(new ByteArrayInputStream(preview.content())).getWidth()).isEqualTo(768);
         assertThat(service.raw("img1").getContent()).isEqualTo(original.toByteArray());
+    }
+
+    @Test
+    void storedPreviewDoesNotFetchMysqlOriginal() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        ImageService s3 = new ImageService(mapper, content, settings, objects);
+        byte[] preview = new byte[] {1, 2, 3};
+        ImageBlobEntity image = new ImageBlobEntity();
+        image.setId("img1");
+        image.setPreviewKey("previews/img1/" + ImageService.sha256(preview));
+        when(mapper.findMeta("img1")).thenReturn(image);
+        when(objects.get(image.getPreviewKey())).thenReturn(preview);
+
+        assertThat(s3.preview("img1").content()).containsExactly(preview);
+        verify(mapper, never()).selectById("img1");
     }
 
     @Test
@@ -77,6 +94,83 @@ class ImageServiceTest {
         assertThat(dto.from()).isEqualTo("任务 · 整理证件盒");
         assertThat(dto.url()).isEqualTo("/api/images/" + dto.id() + "/raw");
         assertThat(dto.size()).isEqualTo("3 B");
+    }
+
+    @Test
+    void s3UploadStoresOnlyAKeyInMysqlAndKeepsTheExistingRawUrl() {
+        defaultLimit();
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        when(objects.writesEnabled()).thenReturn(true);
+        ImageService s3 = new ImageService(mapper, content, settings, objects);
+        byte[] bytes = new byte[] {1, 2, 3};
+
+        ImageItemDto item = s3.upload(new MockMultipartFile("file", "a.png", "image/png", bytes), "小记");
+
+        ArgumentCaptor<ImageBlobEntity> saved = ArgumentCaptor.forClass(ImageBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getContent()).isNull();
+        assertThat(saved.getValue().getObjectKey()).startsWith("images/" + item.id() + "/");
+        verify(objects).put(saved.getValue().getObjectKey(), bytes, "image/png");
+        assertThat(item.url()).isEqualTo("/api/images/" + item.id() + "/raw");
+    }
+
+    @Test
+    void s3ReadFallsBackToMysqlOnlyWhileHistoricalBytesRemain() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        ImageService s3 = new ImageService(mapper, content, settings, objects);
+        ImageBlobEntity image = new ImageBlobEntity();
+        image.setId("img1"); image.setObjectKey("images/img1/key"); image.setContent(new byte[] {4});
+        when(mapper.findMeta("img1")).thenReturn(image);
+        when(mapper.selectById("img1")).thenReturn(image);
+        when(objects.get("images/img1/key")).thenThrow(new IllegalStateException("offline"));
+        assertThat(s3.raw("img1").getContent()).containsExactly(4);
+
+        image.setContent(null);
+        assertThatThrownBy(() -> s3.raw("img1")).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("503");
+    }
+
+    @Test
+    void optimizedWebpUsesItsOwnChecksumAndMimeAtTheExistingRawUrl() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        ImageService s3 = new ImageService(mapper, content, settings, objects);
+        byte[] png = new byte[] {1, 2, 3};
+        byte[] webp = new byte[] {4, 5};
+        ImageBlobEntity image = new ImageBlobEntity();
+        image.setId("img1");
+        image.setContentType("image/png");
+        image.setByteSize((long) png.length);
+        image.setContentHash(ImageService.sha256(png));
+        image.setContent(png);
+        image.setObjectKey("images/img1/" + ImageService.sha256(webp));
+        image.setObjectContentType("image/webp");
+        image.setObjectByteSize((long) webp.length);
+        image.setObjectHash(ImageService.sha256(webp));
+        when(mapper.findMeta("img1")).thenReturn(image);
+        when(objects.get(image.getObjectKey())).thenReturn(webp);
+
+        ImageBlobEntity served = s3.raw("img1");
+        assertThat(served.getContent()).containsExactly(webp);
+        assertThat(served.getContentType()).isEqualTo("image/webp");
+        verify(mapper, never()).selectById("img1");
+    }
+
+    @Test
+    void dualWriteKeepsUploadWorkingWhenObjectStoreIsUnavailable() {
+        defaultLimit();
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        when(objects.writesEnabled()).thenReturn(true);
+        when(objects.retainMysqlCopy()).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalStateException("offline"))
+                .when(objects).put(anyString(), any(byte[].class), anyString());
+        ImageService dual = new ImageService(mapper, content, settings, objects);
+
+        dual.upload(new MockMultipartFile("file", "a.png", "image/png", new byte[] {7}), "小记");
+
+        ArgumentCaptor<ImageBlobEntity> saved = ArgumentCaptor.forClass(ImageBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getContent()).containsExactly(7);
+        assertThat(saved.getValue().getObjectKey()).isNull();
     }
 
     @Test

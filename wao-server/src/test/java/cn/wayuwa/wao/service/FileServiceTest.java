@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import org.mockito.ArgumentCaptor;
 
@@ -41,6 +42,106 @@ class FileServiceTest {
     }
 
     @Test
+    void s3UploadAndReadKeepPrivateDownloadContractWithoutMysqlBody() {
+        defaultLimit();
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        when(objects.writesEnabled()).thenReturn(true);
+        FileService s3 = new FileService(mapper, settings, objects);
+        byte[] bytes = "file-body".getBytes();
+
+        var item = s3.upload(new MockMultipartFile("file", "a.pdf", "application/pdf", bytes), "wg");
+
+        ArgumentCaptor<FileBlobEntity> saved = ArgumentCaptor.forClass(FileBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getContent()).isNull();
+        assertThat(saved.getValue().getObjectKey()).startsWith("files/" + item.id() + "/");
+        verify(objects).put(saved.getValue().getObjectKey(), bytes, "application/pdf");
+        when(mapper.findMeta(item.id())).thenReturn(saved.getValue());
+        when(objects.get(saved.getValue().getObjectKey())).thenReturn(bytes);
+        assertThat(s3.raw(item.id()).getContent()).isEqualTo(bytes);
+        verify(mapper, never()).selectById(item.id());
+        assertThat(item.link()).isEqualTo("/api/files/" + item.id() + "/download");
+    }
+
+    @Test
+    void s3ReadFallsBackToRetainedMysqlBytesOnlyWhenObjectReadFails() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        FileService s3 = new FileService(mapper, settings, objects);
+        FileBlobEntity metadata = new FileBlobEntity();
+        metadata.setId("f1");
+        metadata.setObjectKey("files/f1/hash");
+        FileBlobEntity retained = new FileBlobEntity();
+        retained.setId("f1");
+        retained.setContent("retained".getBytes());
+        when(mapper.findMeta("f1")).thenReturn(metadata);
+        when(mapper.selectById("f1")).thenReturn(retained);
+        when(objects.get(metadata.getObjectKey())).thenThrow(new IllegalStateException("offline"));
+
+        assertThat(s3.raw("f1").getContent()).isEqualTo("retained".getBytes());
+        retained.setContent(null);
+        assertThatThrownBy(() -> s3.raw("f1"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("503");
+    }
+
+    @Test
+    void mediaRangeUsesS3PartialReadWithoutLoadingTheMysqlBlob() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        FileService s3 = new FileService(mapper, settings, objects);
+        FileBlobEntity metadata = new FileBlobEntity();
+        metadata.setId("f1");
+        metadata.setByteSize(100L);
+        metadata.setObjectKey("files/f1/immutable-hash");
+        when(objects.getRange(metadata.getObjectKey(), 10, 19)).thenReturn(new byte[10]);
+
+        assertThat(s3.readRange(metadata, 10, 19)).hasSize(10);
+
+        verify(objects).getRange(metadata.getObjectKey(), 10, 19);
+        verify(objects, never()).get(metadata.getObjectKey());
+        verify(mapper, never()).selectById("f1");
+    }
+
+    @Test
+    void mediaRangeFallsBackToRetainedMysqlCopyIfS3IsUnavailable() {
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        FileService s3 = new FileService(mapper, settings, objects);
+        FileBlobEntity metadata = new FileBlobEntity();
+        metadata.setId("f1");
+        metadata.setByteSize(5L);
+        metadata.setObjectKey("files/f1/immutable-hash");
+        FileBlobEntity stored = new FileBlobEntity();
+        stored.setId("f1");
+        stored.setByteSize(5L);
+        stored.setObjectKey(metadata.getObjectKey());
+        stored.setContent("12345".getBytes());
+        when(mapper.findMeta("f1")).thenReturn(metadata);
+        when(mapper.selectById("f1")).thenReturn(stored);
+        when(objects.getRange(metadata.getObjectKey(), 1, 3)).thenThrow(new IllegalStateException("offline"));
+        when(objects.get(metadata.getObjectKey())).thenThrow(new IllegalStateException("offline"));
+
+        assertThat(s3.readRange(metadata, 1, 3)).isEqualTo("234".getBytes());
+    }
+
+    @Test
+    void dualWriteRetainsMysqlCopyIfObjectUploadFails() {
+        defaultLimit();
+        BinaryObjectStore objects = mock(BinaryObjectStore.class);
+        when(objects.writesEnabled()).thenReturn(true);
+        when(objects.retainMysqlCopy()).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalStateException("offline"))
+                .when(objects).put(org.mockito.ArgumentMatchers.anyString(), any(byte[].class),
+                        org.mockito.ArgumentMatchers.anyString());
+        FileService dual = new FileService(mapper, settings, objects);
+
+        dual.upload(new MockMultipartFile("file", "a.pdf", "application/pdf", new byte[] {8}), "wg");
+
+        ArgumentCaptor<FileBlobEntity> saved = ArgumentCaptor.forClass(FileBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getContent()).containsExactly(8);
+        assertThat(saved.getValue().getObjectKey()).isNull();
+    }
+
+    @Test
     void emptyFileIsRejected() {
         defaultLimit();
         var file = new MockMultipartFile("file", "empty.txt", "text/plain", new byte[0]);
@@ -69,6 +170,7 @@ class FileServiceTest {
         assertThat(saved.getValue().getProjectId()).isEqualTo("p1");
         assertThat(item.projectId()).isEqualTo("p1");
 
+        when(mapper.findMeta(item.id())).thenReturn(saved.getValue());
         when(mapper.selectById(item.id())).thenReturn(saved.getValue());
         assertThat(service.preview(item.id()).content()).contains("# 验收", "内容");
     }
@@ -77,6 +179,7 @@ class FileServiceTest {
     void previewRejectsNonMarkdownAndInvalidUtf8() {
         FileBlobEntity text = new FileBlobEntity();
         text.setId("f1"); text.setName("说明.txt"); text.setContentType("text/plain"); text.setContent("ok".getBytes());
+        when(mapper.findMeta("f1")).thenReturn(text);
         when(mapper.selectById("f1")).thenReturn(text);
         assertThatThrownBy(() -> service.preview("f1")).isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Markdown");
@@ -116,13 +219,14 @@ class FileServiceTest {
         metadata.setProjectId("p1"); metadata.setCreatedBy("wg"); metadata.setByteSize(3L);
         when(mapper.findMeta("f1")).thenReturn(metadata);
         var bytes = "new".getBytes();
-        when(mapper.replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes)).thenReturn(1);
+        String hash = ImageService.sha256(bytes);
+        when(mapper.replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes, null, hash)).thenReturn(1);
         var result = service.replace("f1", new MockMultipartFile("file", "../new.pdf", "application/pdf", bytes));
         assertThat(result.id()).isEqualTo("f1");
         assertThat(result.projectId()).isEqualTo("p1");
         assertThat(result.displayName()).isEqualTo("保留名称");
         assertThat(result.link()).isEqualTo("/api/files/f1/download");
-        verify(mapper).replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes);
+        verify(mapper).replaceContent("f1", "new.pdf", "application/pdf", 3L, bytes, null, hash);
         org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).insert(any(FileBlobEntity.class));
     }
 
@@ -142,7 +246,9 @@ class FileServiceTest {
                 .hasMessageContaining("1MB");
         org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).replaceContent(
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong(), any(byte[].class));
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test

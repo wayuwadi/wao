@@ -28,14 +28,16 @@ import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.mapper.ImageBlobMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 图床服务：上传、列出与取图。
  *
- * <p>图片正文存 MySQL 的 {@code image_blob}（见 V11 migration）。主从两个节点的
- * wao-server 都连主节点的 MySQL，所以图床实际就落在主节点上，且容器重建不丢图。
+ * <p>历史正文仍可从 MySQL 读取；新正文可存私有 S3 对象，元数据和旧 URL 保留在 MySQL。
  */
 @Service
 public class ImageService {
@@ -55,11 +57,19 @@ public class ImageService {
     private final ImageBlobMapper mapper;
     private final ContentService content;
     private final FileSettingsService settings;
+    private final BinaryObjectStore objects;
 
     public ImageService(ImageBlobMapper mapper, ContentService content, FileSettingsService settings) {
+        this(mapper, content, settings, new DisabledBinaryObjectStore());
+    }
+
+    @Autowired
+    public ImageService(ImageBlobMapper mapper, ContentService content, FileSettingsService settings,
+            BinaryObjectStore objects) {
         this.mapper = mapper;
         this.content = content;
         this.settings = settings;
+        this.objects = objects;
     }
 
     /**
@@ -157,7 +167,33 @@ public class ImageService {
         e.setContentHash(hash);
         e.setDedupeKey(deduplicate ? hash : null);
         e.setCreatedAt(LocalDateTime.now());
-        e.setContent(content);
+        if (objects.writesEnabled()) {
+            String key = "images/" + e.getId() + "/" + hash;
+            try {
+                objects.put(key, content, type);
+                e.setObjectKey(key);
+                e.setObjectContentType(type);
+                e.setObjectByteSize((long) content.length);
+                e.setObjectHash(hash);
+            } catch (RuntimeException exception) {
+                if (!objects.retainMysqlCopy()) {
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "图片存储暂不可用", exception);
+                }
+            }
+            if (e.getObjectKey() != null) {
+                Preview compressed = createPreview(type, content);
+                if (compressed.content() != content) {
+                    String previewKey = "previews/" + e.getId() + "/" + sha256(compressed.content());
+                    try {
+                        objects.put(previewKey, compressed.content(), compressed.contentType());
+                        e.setPreviewKey(previewKey);
+                    } catch (RuntimeException ignored) { /* The original can produce a preview on demand. */ }
+                }
+            }
+        }
+        if (!objects.writesEnabled() || objects.retainMysqlCopy()) {
+            e.setContent(content);
+        }
         try {
             mapper.insert(e);
         } catch (DuplicateKeyException exception) {
@@ -169,7 +205,7 @@ public class ImageService {
         return toDto(e);
     }
 
-    private static String sha256(byte[] content) {
+    static String sha256(byte[] content) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
         } catch (NoSuchAlgorithmException ex) {
@@ -207,18 +243,61 @@ public class ImageService {
      * @throws NotFoundException 图片不存在时
      */
     public ImageBlobEntity raw(String id) {
-        ImageBlobEntity e = mapper.selectById(id);
-        if (e == null || e.getContent() == null) {
+        ImageBlobEntity e = mapper.findMeta(id);
+        if (e == null) {
             throw new NotFoundException("图片不存在：" + id);
         }
+        if (e.getObjectKey() != null && !e.getObjectKey().isBlank()) {
+            try {
+                byte[] fetched = objects.get(e.getObjectKey());
+                Long expectedSize = e.getObjectByteSize() == null ? e.getByteSize() : e.getObjectByteSize();
+                String expectedHash = e.getObjectHash() == null ? e.getContentHash() : e.getObjectHash();
+                if ((expectedSize != null && fetched.length != expectedSize)
+                        || (expectedHash != null && !expectedHash.equals(sha256(fetched)))) {
+                    throw new IllegalStateException("Object bytes differ from image metadata");
+                }
+                e.setContent(fetched);
+                if (e.getObjectContentType() != null) e.setContentType(e.getObjectContentType());
+                return e;
+            } catch (RuntimeException exception) {
+                ImageBlobEntity original = mapper.selectById(id);
+                if (original == null || original.getContent() == null) {
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "图片存储暂不可用", exception);
+                }
+                return original;
+            }
+        }
+        e = mapper.selectById(id);
+        if (e == null || e.getContent() == null) throw new NotFoundException("图片不存在：" + id);
         return e;
+    }
+
+    /** Metadata for access checks without loading the original bytes. */
+    public ImageBlobEntity metadata(String id) {
+        ImageBlobEntity entity = mapper.findMeta(id);
+        if (entity == null) throw new NotFoundException("图片不存在：" + id);
+        return entity;
     }
 
     /** 小记列表读取轻量预览；原图字节保持不变，放大查看仍走 raw。 */
     public Preview preview(String id) {
+        ImageBlobEntity meta = mapper.findMeta(id);
+        if (meta == null) throw new NotFoundException("图片不存在：" + id);
+        if (meta.getPreviewKey() != null && !meta.getPreviewKey().isBlank()) {
+            try {
+                byte[] fetched = objects.get(meta.getPreviewKey());
+                if (!meta.getPreviewKey().endsWith("/" + sha256(fetched))) {
+                    throw new IllegalStateException("Preview checksum mismatch");
+                }
+                return new Preview("image/jpeg", fetched);
+            }
+            catch (RuntimeException ignored) { /* Fall back to the original. */ }
+        }
         ImageBlobEntity image = raw(id);
-        byte[] original = image.getContent();
-        String type = image.getContentType();
+        return createPreview(image.getContentType(), image.getContent());
+    }
+
+    private static Preview createPreview(String type, byte[] original) {
         if (original.length <= 220_000 || !("image/png".equals(type) || "image/jpeg".equals(type))) {
             return new Preview(type, original);
         }
