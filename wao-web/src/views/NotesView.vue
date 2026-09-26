@@ -178,6 +178,32 @@ const PAGE_SIZE = 10
 const limit = ref(PAGE_SIZE)
 const notesList = ref<HTMLElement>()
 const highlighted = ref('')
+const reading = ref(false)
+const readingIndex = ref(0)
+const readerNotes = computed(() => matching.value)
+const readingNote = computed(() => readerNotes.value[readingIndex.value] ?? null)
+function startReading(id?: string) {
+  const index = id ? readerNotes.value.findIndex(note => note.id === id) : 0
+  if (!readerNotes.value.length) return
+  readingIndex.value = Math.max(0, index)
+  reading.value = true
+}
+function stopReading() { reading.value = false }
+function moveReader(delta: number) {
+  if (!readerNotes.value.length) return
+  readingIndex.value = Math.min(readerNotes.value.length - 1, Math.max(0, readingIndex.value + delta))
+}
+function onReaderKeydown(event: KeyboardEvent) {
+  if (!reading.value) return
+  if (previewImage.value) return
+  const target = event.target
+  if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]')) return
+  if (event.key === 'Escape') { event.preventDefault(); stopReading(); return }
+  if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); moveReader(1); return }
+  if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(event.key)) { event.preventDefault(); moveReader(-1); return }
+  if (event.key === 'Home') { event.preventDefault(); readingIndex.value = 0 }
+  if (event.key === 'End') { event.preventDefault(); readingIndex.value = Math.max(0, readerNotes.value.length - 1) }
+}
 const refreshError = ref('')
 const notes = computed(() => {
   const ids = new Set(data.kbs.filter(kb => kb.notes).map(kb => kb.id))
@@ -297,8 +323,8 @@ async function createTag() {
   finally { creatingTag.value = false }
 }
 onMounted(() => { void data.ensureDocsLoaded(); void loadTags() })
-onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); window.addEventListener('pointerdown', onOutsideFilter) })
-onBeforeUnmount(() => window.removeEventListener('pointerdown', onOutsideFilter))
+onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); window.addEventListener('pointerdown', onOutsideFilter); window.addEventListener('keydown', onReaderKeydown) })
+onBeforeUnmount(() => { window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown) })
 watch(() => session.currentUser.id, memberId => { void initializeNoteWorkflow(memberId); versions.value = {} })
 onMounted(() => void loadPins())
 </script>
@@ -324,6 +350,7 @@ onMounted(() => void loadPins())
               <div class="filter-footer"><button type="button" @click="addingTag = !addingTag; filterOpen = false">新增标签</button><button type="button" @click="managingTags = !managingTags; filterOpen = false">管理标签</button><button type="button" @click="resetFilters">清除筛选</button></div>
             </div>
           </div>
+          <button class="reader-toggle" type="button" :disabled="!matching.length" @click="startReading()"><i class="ri-book-open-line"></i><span>阅读模式</span></button>
           <button class="refresh" :disabled="loading" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i class="ri-refresh-line"></i></button>
         </div>
         <div v-if="managingTags" class="new-tag-form" aria-label="标签管理">
@@ -345,9 +372,9 @@ onMounted(() => void loadPins())
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
-        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
-          tabindex="0" title="双击在卡片内编辑，键盘可按 Enter" :aria-label="`小记：${note.title}，双击或按 Enter 在卡片内编辑`"
-          @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="editNote(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
+        <article v-for="note in visible" :key="note.id" class="note-card fixed-height" :class="{ highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
+          tabindex="0" title="按 Enter 阅读，双击在卡片内编辑" :aria-label="`小记：${note.title}，按 Enter 开始阅读，双击编辑`"
+          @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
             <div v-if="noteEnrichmentProgress[note.id]" class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出进度">
               <button v-for="stage in (['title', 'image', 'polish'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage]}`" :title="`${stageLabel(stage)}：${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-disabled="noteEnrichmentProgress[note.id]?.[stage] !== 'failed'" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
@@ -359,8 +386,9 @@ onMounted(() => void loadPins())
           <NoteComposer v-if="editingIds.includes(note.id)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
-          <div v-if="displayTitle(note) || note.tags?.length" class="note-heading"><h2 v-if="displayTitle(note)">{{ note.title }}</h2><div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
+          <div class="note-heading"><h2>{{ note.title }}</h2><div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
           <div class="note-content" :class="{ 'has-images': imagesFor(note.id).length }"><div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="showPolished(note) ? undefined : resolvedRichContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="noteCounts[note.id] = $event" /></div><aside v-if="imagesFor(note.id).length" class="note-image-rail" aria-label="小记图片总览"><div class="rail-heading">图片总览 <span>{{ imagesFor(note.id).length }} 张</span></div><div class="note-images"><button v-for="(image, index) in imagesFor(note.id)" :key="`${index}:${image.src}`" type="button" class="note-image-thumb" :class="{ cover: image.alt === '文章总览图' }" :aria-label="`查看第 ${index + 1} 张图片大图${image.alt ? `：${image.alt}` : ''}`" @click="openImage(image, $event)"><img :src="notePreviewSource(image.src)" :data-full-src="image.src" :alt="image.alt" loading="lazy" decoding="async"><span>{{ image.alt || `图片 ${index + 1}` }}</span></button></div></aside></div>
+          <button class="note-read-action" type="button" @click="startReading(note.id)"><i class="ri-book-open-line"></i> 阅读</button>
           </template>
           <div v-if="confirmingDeleteId === note.id" class="card-delete-confirm" role="group" :aria-label="`确认删除小记：${note.title}`">
             <span>将此小记移入回收站？7 天内可恢复。{{ editingIds.includes(note.id) ? '当前未保存的编辑会丢失。' : '' }}</span>
@@ -375,6 +403,19 @@ onMounted(() => void loadPins())
       </section>
     </div>
     <Teleport to="body">
+      <div v-if="reading && readingNote" class="notes-reader" role="dialog" aria-modal="true" aria-label="小记阅读模式" @click.self="stopReading">
+        <header class="reader-topbar"><button type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line"></i></button><span>最近更新 · {{ readingIndex + 1 }} / {{ readerNotes.length }}</span><span class="reader-progress"><i :style="{ width: `${((readingIndex + 1) / readerNotes.length) * 100}%` }"></i></span></header>
+        <button class="reader-nav reader-prev" type="button" aria-label="上一篇小记（←）" :disabled="readingIndex === 0" @click="moveReader(-1)"><i class="ri-arrow-left-s-line"></i></button>
+        <article :key="readingNote.id" class="reader-page">
+          <div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
+          <h2>{{ readingNote.title }}</h2>
+          <div v-if="readingNote.tags?.length" class="reader-tags"><span v-for="tag in readingNote.tags" :key="tag"># {{ tag }}</span></div>
+          <div v-if="validPolish(readingNote)" class="reader-version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(readingNote)" @click="versions[readingNote.id] = 'polished'">润色版</button><button type="button" :aria-pressed="!showPolished(readingNote)" @click="versions[readingNote.id] = 'original'">原文</button></div>
+          <div class="reader-content" :class="{ 'has-images': notePreviewImages(resolvedRichContent(readingNote)).length }"><div class="reader-body"><MarkdownEditor :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="showPolished(readingNote) ? undefined : resolvedRichContent(readingNote).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" /></div><aside v-if="notePreviewImages(resolvedRichContent(readingNote)).length" class="reader-image-rail" aria-label="小记图片总览"><h3>图片总览 · {{ notePreviewImages(resolvedRichContent(readingNote)).length }} 张</h3><div><button v-for="(image, index) in notePreviewImages(resolvedRichContent(readingNote))" :key="`${index}:${image.src}`" type="button" @click="openImage(image, $event)"><img :src="notePreviewSource(image.src)" :alt="image.alt"><span>{{ image.alt || `图片 ${index + 1}` }}</span></button></div></aside></div>
+        </article>
+        <button class="reader-nav reader-next" type="button" aria-label="下一篇小记（→）" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)"><i class="ri-arrow-right-s-line"></i></button>
+        <footer class="reader-controls"><button type="button" :disabled="readingIndex === 0" @click="moveReader(-1)"><i class="ri-arrow-left-line"></i> 上一篇</button><span>方向键 / PageUp PageDown 翻页 · Esc 退出</span><button type="button" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇 <i class="ri-arrow-right-line"></i></button></footer>
+      </div>
       <div v-if="previewImage" ref="lightbox" class="note-image-lightbox" role="dialog" aria-modal="true"
         :aria-label="previewImage.alt || '小记图片预览'" tabindex="-1" @click.self="closeImage" @keydown.esc.stop="closeImage" @contextmenu="openImageMenu">
         <button type="button" class="note-image-close" aria-label="关闭图片预览" @click="closeImage"><i class="ri-close-line"></i></button>
@@ -428,7 +469,8 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .new-tag-form .error { flex-basis: 100%; }
 .tag-status { font-size: 12px; color: var(--wao-text-faint); }
 .list-summary { display: flex; justify-content: space-between; gap: 10px; margin: 9px 0 12px; font-size: 11px; color: var(--wao-text-faint); }
-.note-card { background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 20px 22px 10px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
+.note-card { position: relative; box-sizing: border-box; height: 300px; min-height: 300px; max-height: 300px; overflow: hidden; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 17px 19px 36px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
+.note-card.editing { height: auto; min-height: 300px; max-height: none; overflow: visible; }
 .note-card:hover, .note-card:focus-within { border-color: var(--wao-primary); box-shadow: 0 10px 30px rgba(59, 47, 91, .1); transform: translateY(-2px); }
 .note-card.highlighted, .note-card.editing { border-color: var(--wao-primary); }
 .note-card:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
@@ -457,10 +499,10 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-count { color: var(--wao-text-faint); font-variant-numeric: tabular-nums; }
 .author { color: var(--wao-text-2); font-size: 12px; font-weight: 600; }
 .saved { color: var(--wao-success-strong); margin-left: auto; }
-.note-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 9px; margin: 0 0 12px; }
-.note-heading h2 { margin: 0; color: var(--wao-text-1); font-size: 17px; line-height: 1.45; font-weight: 600; overflow-wrap: anywhere; }
+.note-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 9px; margin: 0 0 9px; max-height: 52px; overflow: hidden; }
+.note-heading h2 { margin: 0; color: var(--wao-text-1); font-size: 16px; line-height: 1.45; font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .note-content.has-images { display: grid; grid-template-columns: minmax(0, 1fr) 174px; gap: 14px; align-items: start; }
-.note-body { overflow-wrap: anywhere; line-height: 1.8; font-size: 14px; max-height: 500px; overflow: auto; }
+.note-body { min-height: 0; overflow-wrap: anywhere; line-height: 1.75; font-size: 13px; max-height: 170px; overflow: hidden; }
 .note-body :deep(p:first-child) { margin-top: 0; }
 .note-body :deep(img.md-img) { display: none !important; }
 .note-body :deep(.character-count) { display: none !important; }
@@ -492,6 +534,45 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .empty { text-align: center; padding: 36px 12px; color: var(--wao-text-faint); font-size: 13px; }
 .error { color: var(--wao-danger-strong); font-size: 12px; }
 .load-more { display: block; margin: 20px auto; }
+.reader-toggle { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); white-space: nowrap; }
+.reader-toggle i { margin-right: 5px; }
+.note-read-action { position: absolute; right: 13px; bottom: 8px; z-index: 1; padding: 5px 8px; background: var(--wao-bg-card); color: var(--wao-primary-text); border: 1px solid var(--wao-line-control); box-shadow: 0 2px 8px rgba(30,24,55,.08); }
+.note-read-action:hover { border-color: var(--wao-primary); }
+.note-card:not(:hover):not(:focus-within) .note-read-action { opacity: .76; }
+.notes-reader { position: fixed; inset: 0; z-index: 1150; display: grid; grid-template-rows: 52px minmax(0,1fr) 58px; padding: 0 90px; background: radial-gradient(ellipse at 50% 0%, rgba(103,82,177,.1), transparent 52%), var(--wao-bg-page); color: var(--wao-text-2); }
+.reader-topbar { display: flex; align-items: center; gap: 14px; max-width: 1100px; width: 100%; margin: auto; }
+.reader-topbar > button { width: 34px; height: 34px; display: grid; place-items: center; font-size: 19px; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); }
+.reader-topbar > span:nth-child(2) { color: var(--wao-text-faint); font-size: 12px; white-space: nowrap; }
+.reader-progress { flex: 1; height: 3px; overflow: hidden; border-radius: 9px; background: var(--wao-line-control); }
+.reader-progress i { display: block; height: 100%; border-radius: inherit; background: var(--wao-primary); transition: width .25s ease; }
+.reader-page { width: min(100%, 1100px); height: 100%; min-height: 0; overflow: auto; box-sizing: border-box; margin: 0 auto; padding: clamp(22px, 5vh, 56px) clamp(20px, 6vw, 86px); border: 1px solid var(--wao-line); border-radius: 20px; background: var(--wao-bg-card); box-shadow: 0 24px 80px rgba(37,29,60,.11); animation: reader-page-in .24s ease both; }
+.reader-meta { display: flex; align-items: center; gap: 12px; color: var(--wao-text-faint); font-size: 12px; }
+.reader-meta span:first-child { color: var(--wao-text-2); font-weight: 650; }
+.reader-page h2 { margin: 20px 0 10px; color: var(--wao-text-1); font-size: clamp(24px, 3vw, 36px); line-height: 1.3; }
+.reader-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 22px; }
+.reader-tags span { padding: 4px 9px; border-radius: 999px; background: var(--wao-bg-hover); color: var(--wao-primary-text); font-size: 11px; }
+.reader-version-toggle { display: inline-flex; gap: 2px; margin: 0 0 18px; padding: 3px; border-radius: 9px; background: var(--wao-bg-sub); }
+.reader-version-toggle button { padding: 5px 10px; }
+.reader-version-toggle button[aria-pressed="true"] { background: var(--wao-bg-card); color: var(--wao-primary-text); box-shadow: 0 1px 5px rgba(0,0,0,.1); }
+.reader-content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: start; }
+.reader-content.has-images { grid-template-columns: minmax(0, 1fr) minmax(190px, 240px); }
+.reader-body { min-width: 0; overflow-wrap: anywhere; font-size: 16px; line-height: 1.95; }
+.reader-body :deep(img.md-img) { display: none !important; }
+.reader-body :deep(pre), .reader-body :deep(table) { max-width: 100%; overflow: auto; }
+.reader-image-rail { position: sticky; top: 0; padding-left: 16px; border-left: 1px solid var(--wao-line); }
+.reader-image-rail h3 { margin: 0 0 9px; color: var(--wao-text-faint); font-size: 12px; font-weight: 550; }
+.reader-image-rail > div { display: grid; gap: 9px; }
+.reader-image-rail button { display: block; min-width: 0; padding: 5px; border: 1px solid var(--wao-line-control); background: var(--wao-bg-sub); text-align: left; }
+.reader-image-rail img { display: block; width: 100%; max-height: 170px; object-fit: contain; }
+.reader-image-rail button span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wao-text-faint); font-size: 11px; }
+.reader-nav { position: absolute; top: 50%; z-index: 2; width: 44px; height: 56px; display: grid; place-items: center; border: 1px solid var(--wao-line); background: var(--wao-bg-card); box-shadow: 0 6px 22px rgba(30,24,55,.1); font-size: 28px; transform: translateY(-50%); }
+.reader-nav:disabled { opacity: .25; }
+.reader-prev { left: 24px; }
+.reader-next { right: 24px; }
+.reader-controls { display: flex; align-items: center; justify-content: center; gap: 18px; width: min(100%, 1100px); margin: auto; }
+.reader-controls button { background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); }
+.reader-controls > span { color: var(--wao-text-faint); font-size: 11px; }
+@keyframes reader-page-in { from { opacity: .7; transform: translateX(12px) scale(.995); } to { opacity: 1; transform: translateX(0) scale(1); } }
 @media (min-width: 821px) {
   .notes-page { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px; }
   .page-heading { flex: none; }
@@ -502,8 +583,8 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 }
 @media (max-width: 1100px) { .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 16px 10px; } .search { flex: 1 1 50%; } }
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 16px 10px; } }
-@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 16px 12px 8px; } .sort { margin-left: 0; } .list-summary { flex-wrap: wrap; } }
+@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card:not(.editing) { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .list-summary { flex-wrap: wrap; } .notes-reader { grid-template-rows: 48px minmax(0,1fr) 54px; padding: 0 10px; } .reader-page { border-radius: 13px; padding: 20px 15px; } .reader-page h2 { margin-top: 14px; } .reader-content.has-images { grid-template-columns: minmax(0,1fr); } .reader-image-rail { position: static; padding: 12px 0 0; border-left: 0; border-top: 1px solid var(--wao-line); } .reader-image-rail > div { grid-template-columns: repeat(3,minmax(0,1fr)); } .reader-image-rail img { max-height: 90px; } .reader-nav { top: auto; bottom: 62px; width: 34px; height: 40px; transform: none; } .reader-prev { left: 13px; } .reader-next { right: 13px; } .reader-controls { gap: 8px; } .reader-controls > span { display: none; } }
 @media (max-width: 520px) { .note-content.has-images { grid-template-columns: 1fr; } .note-image-rail { border-left: 0; border-top: 1px solid var(--wao-line); padding: 10px 0 0; } .note-images { grid-template-columns: repeat(3, minmax(0, 1fr)); } .note-image-thumb.cover { grid-column: auto; } .note-image-thumb.cover img { height: 60px; } }
 @media (hover: none) { .stage-list-complete, .version-toggle, .card-quick-actions { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
-@media (prefers-reduced-motion: reduce) { .note-card, .stage-icon { transition: none; animation: none; } }
+@media (prefers-reduced-motion: reduce) { .note-card, .stage-icon { transition: none; animation: none; } .reader-page { animation: none; } .reader-progress i { transition: none; } }
 </style>

@@ -11,6 +11,9 @@ export interface PolishJob {
 }
 export interface PolishJobOptions {
   requestId?: string
+  model?: string
+  titlePrompt?: string
+  notePolishPrompt?: string
   onProgress?: (job: PolishJob) => void
   isActive?: () => boolean
 }
@@ -20,7 +23,8 @@ export const newPolishRequestId = () => crypto.randomUUID().replace(/-/g, '')
 export async function waitForPolish(originalText: string, kind: 'DOCUMENT' | 'WORKSPACE' | 'NOTE_TITLE' | 'NOTE_BODY', options: PolishJobOptions = {}) {
   const requestId = options.requestId ?? newPolishRequestId()
   const read = async (request: Promise<{ data: ApiResponse<PolishJob> }>) => (await request).data.data
-  let job = await read(http.post('/api/text-polish/jobs', { requestId, kind, originalText }))
+  let job = await read(http.post('/api/text-polish/jobs', { requestId, kind, originalText,
+    ...(kind === 'NOTE_TITLE' || kind === 'NOTE_BODY' ? { model: options.model, titlePrompt: options.titlePrompt, notePolishPrompt: options.notePolishPrompt } : {}) }))
   const startedAt = Date.now()
   const deadline = startedAt + 95 * 60_000
   while (true) {

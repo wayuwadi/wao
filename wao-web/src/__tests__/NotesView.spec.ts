@@ -645,16 +645,26 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('卡片支持键盘编辑，标签和文档链接双击不会误入编辑', async () => {
+  it('卡片展示标题并支持键盘阅读、方向键翻页和双击编辑', async () => {
     useDataStore().docs.a = { ...doc('a', '键盘编辑的记录'), tags: ['工作'] }
+    useDataStore().docs.b = doc('b', '下一篇记录', '2026-09-08T08:00:00')
     const wrapper = await view()
     await wrapper.find('.card-tags button').trigger('dblclick')
     await wrapper.find('.card-quick-actions .full-doc-icon').trigger('dblclick')
     expect(wrapper.find('.note-actions').exists()).toBe(false)
     expect(wrapper.find('.card-tags').element.parentElement?.classList.contains('note-heading')).toBe(true)
-    expect(wrapper.find('.note-card .note-composer').exists()).toBe(false)
-    await wrapper.find('.note-card').trigger('keydown', { key: 'Enter' })
-    expect(wrapper.get<HTMLTextAreaElement>('.note-card textarea').element.value).toBe('键盘编辑的记录')
+    expect(wrapper.get('[data-note-id="a"] h2').text()).toBe('键盘编辑的记录')
+    expect(wrapper.get('[data-note-id="a"]').classes()).toContain('fixed-height')
+    await wrapper.get('[data-note-id="b"]').trigger('keydown', { key: 'Enter' })
+    expect(document.body.querySelector('[role="dialog"][aria-label="小记阅读模式"] h2')?.textContent).toBe('下一篇记录')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"][aria-label="小记阅读模式"] h2')?.textContent).toBe('键盘编辑的记录')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.body.querySelector('[aria-label="小记阅读模式"]')).toBeNull()
+    await wrapper.get('[data-note-id="a"]').trigger('dblclick')
+    expect(wrapper.get<HTMLTextAreaElement>('[data-note-id="a"] textarea').element.value).toBe('键盘编辑的记录')
     wrapper.unmount()
   })
 

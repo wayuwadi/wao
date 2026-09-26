@@ -2645,6 +2645,7 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
                         codex_environment or cli_environment),
                     should_stop=lambda: time.monotonic() >= deadline,
                     account=claim.get("account"), codex_home=codex_home,
+                    model=claim.get("model"),
                     tools_disabled=True, web_search_enabled=web_search_enabled,
                     image_paths=image_paths)
                 response = response.strip()

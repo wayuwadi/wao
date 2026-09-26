@@ -204,6 +204,7 @@ class AiAssistantServiceTest {
         AiAssistantRunEntity run = inserted.getValue();
         assertThat(run.getId()).isEqualTo(runId);
         assertThat(run.getUsagePurpose()).isEqualTo("ARTICLE_IMAGE");
+        assertThat(run.getRequestedModel()).isEqualTo("gpt-6-luna");
         assertThat(run.getStatus()).isEqualTo("secure_queued");
         assertThat(run.getPromptText()).contains("文章正文", "横版总览图", "只调用内置 image_gen");
 
@@ -220,6 +221,7 @@ class AiAssistantServiceTest {
         when(mapper.selectById(runId)).thenReturn(run);
         AiAssistantClaimDto claim = service.claim("token");
         assertThat(claim.mode()).isEqualTo("ARTICLE_IMAGE");
+        assertThat(claim.model()).isEqualTo("gpt-6-luna");
         assertThat(claim.maxRuntimeSeconds()).isEqualTo(1740);
 
         service.complete("token", runId, new CompleteAiAssistantRunRequest(
@@ -234,6 +236,18 @@ class AiAssistantServiceTest {
         service.complete("token", runId, new CompleteAiAssistantRunRequest(
                 claim.claimToken(), 0, "/api/images/img1/raw", null));
         assertThat(run.getStatus()).isEqualTo("succeeded");
+    }
+
+    @Test
+    void articleImageSnapshotsConfiguredCodexModelAndRejectsUnknownModel() {
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("Linux 6.8", "codex")));
+        String id = service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "gpt-6-sol");
+        ArgumentCaptor<AiAssistantRunEntity> inserted = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(inserted.capture());
+        assertThat(inserted.getValue().getId()).isEqualTo(id);
+        assertThat(inserted.getValue().getRequestedModel()).isEqualTo("gpt-6-sol");
+        assertThatThrownBy(() -> service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "unknown"))
+                .hasMessageContaining("不在允许列表");
     }
 
     @Test

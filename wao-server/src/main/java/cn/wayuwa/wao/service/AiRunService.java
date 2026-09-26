@@ -112,7 +112,7 @@ public class AiRunService {
     /** 空闲自动派发使用独立通知卡片，避免与通用入队通知重复。 */
     static final String IDLE_AUTO_RUN_REQUESTED_BY = "system:idle-auto-run";
     private static final Set<String> CODEX_MODELS = Set.of(
-            "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
+            "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
     private static final Set<String> CODEX_REASONING_EFFORTS = Set.of("low", "medium", "high");
     private static final Set<String> EXECUTION_MODES = Set.of("direct", "plan", "goal");
     private static final Map<String, String> ENGINE_LABELS = Map.of("codex", "Codex", "claude", "Claude Code",
@@ -160,6 +160,8 @@ public class AiRunService {
         return new AiRunOptionsDto(
                 List.of(
                         new AiRunModelOptionDto("gpt-6-astra", "GPT-6 Astra", "复杂开发、长任务与持续迭代"),
+                        new AiRunModelOptionDto("gpt-6-sol", "GPT-6 Sol", "日常任务与均衡表现"),
+                        new AiRunModelOptionDto("gpt-6-luna", "GPT-6 Luna", "适合高频、成本敏感任务"),
                         new AiRunModelOptionDto("gpt-5.6-sol", "GPT-5.6 Sol", "保留上一代开发模型"),
                         new AiRunModelOptionDto("gpt-5.6-terra", "GPT-5.6 Terra", "兼顾能力与成本"),
                         new AiRunModelOptionDto("gpt-5.6-luna", "GPT-5.6 Luna", "适合高频、成本敏感任务")),

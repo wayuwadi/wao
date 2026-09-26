@@ -26,6 +26,13 @@ public class TextPolishJobService {
     /** 同一请求重复提交只返回原任务；任务与 AI 队列在一个事务中落库。 */
     @Transactional
     public Result submit(String memberId, String requestId, String kind, String originalText) {
+        return submit(memberId, requestId, kind, originalText, null, null, null);
+    }
+
+    /** 提交小记专用模型与标题方法；其余润色工作流仍沿用既有路由。 */
+    @Transactional
+    public Result submit(String memberId, String requestId, String kind, String originalText,
+            String requestedModel, String titlePrompt, String notePolishPrompt) {
         if (requestId == null || !requestId.matches("[a-f0-9]{32}")) throw new BadRequestException("润色请求标识无效");
         if (!"DOCUMENT".equals(kind) && !"WORKSPACE".equals(kind)
                 && !"NOTE_TITLE".equals(kind) && !"NOTE_BODY".equals(kind))
@@ -45,14 +52,18 @@ public class TextPolishJobService {
         if ("DOCUMENT".equals(kind) && original.length() > 4000) throw new BadRequestException("一次最多润色 4000 字");
         String method = switch (kind) {
             case "DOCUMENT" -> "改进表达的清晰度、流畅度与自然度，保留 Markdown 块结构，不增加标题或解释。";
-            case "NOTE_BODY" -> prepared.promptSnapshot() + "\n小记额外要求：删除口语化赘词和重复内容，"
+            case "NOTE_BODY" -> (notePolishPrompt == null || notePolishPrompt.isBlank()
+                    ? prepared.promptSnapshot() : notePolishPrompt.trim()) + "\n小记额外要求：删除口语化赘词和重复内容，"
                     + "保留事实、数字、原意和 Markdown 链接与图片；不要添加原文没有的信息，只返回润色后的正文。";
-            case "NOTE_TITLE" -> "从小记正文提炼一个准确、简短的中文标题";
+            case "NOTE_TITLE" -> titlePrompt == null || titlePrompt.isBlank()
+                    ? "从小记正文提炼一个准确、简短的中文标题" : titlePrompt.trim();
             default -> prepared.promptSnapshot();
         };
-        String runId = "NOTE_TITLE".equals(kind)
-                ? assistant.enqueueNoteTitleJob(id, original)
-                : assistant.enqueueTextPolishJob(id, original, method);
+        String runId = switch (kind) {
+            case "NOTE_TITLE" -> assistant.enqueueNoteTitleJob(id, original, method, requestedModel);
+            case "NOTE_BODY" -> assistant.enqueueNotePolishJob(id, original, method, requestedModel);
+            default -> assistant.enqueueTextPolishJob(id, original, method);
+        };
         Job job = new Job(id, memberId, kind, storedOriginal, method, runId, null);
         jobs.insert(job);
         return result(job);

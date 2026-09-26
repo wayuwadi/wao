@@ -892,7 +892,7 @@ paths:
   /text-polish/jobs:
     post:
       summary: 提交持久文本任务，支持小记标题生成
-      description: NOTE_TITLE 从已保存小记正文提炼单行标题；结果不进入润色历史。requestId 重试幂等。
+      description: NOTE_TITLE 从已保存小记正文提炼单行标题；小记标题和正文润色可携带成员选择的 GPT 模型与提示词，结果不进入润色历史。requestId 重试幂等。
       requestBody:
         required: true
         content:
@@ -904,6 +904,9 @@ paths:
                 requestId: { type: string, pattern: '^[a-f0-9]{32}$' }
                 kind: { type: string, enum: [DOCUMENT, WORKSPACE, NOTE_TITLE] }
                 originalText: { type: string, minLength: 1, maxLength: 12000 }
+                model: { type: string, enum: [gpt-6-luna, gpt-6-sol, gpt-6-astra, gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra] }
+                titlePrompt: { type: string, maxLength: 4000 }
+                notePolishPrompt: { type: string, maxLength: 4000 }
       responses:
         '200': { description: 返回当前成员的任务 id、状态和成功时的标题或润色结果 }
   /text-polish/jobs/{id}:
@@ -927,6 +930,7 @@ paths:
               properties:
                 articleText: { type: string, minLength: 1, maxLength: 60000 }
                 visualPrompt: { type: string, minLength: 1, maxLength: 4000 }
+                model: { type: string, enum: [gpt-6-luna, gpt-6-sol, gpt-6-astra, gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra], default: gpt-6-luna }
       responses:
         '200': { description: 返回 id、QUEUED 状态和提示 }
         '400': { description: 输入无效、已有活动任务或兼容 Runner 不可用 }

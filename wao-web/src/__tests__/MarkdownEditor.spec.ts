@@ -22,6 +22,7 @@ vi.mock('@/api/assistant', () => ({
 }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
 vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
+vi.mock('@/api/textPolish', () => ({ fetchTextPolishWorkspace: vi.fn().mockResolvedValue({ prompt: '默认正文润色方法', records: [] }), saveTextPolishPrompt: vi.fn().mockResolvedValue('默认正文润色方法') }))
 
 /** Tiptap 需要真实 DOM 与一帧时间来完成挂载。 */
 async function mountEditor(props: {
@@ -44,6 +45,7 @@ async function mountEditor(props: {
   imageControls?: boolean
   advanced?: boolean
   articleImageKey?: string
+  noteTitleOnImage?: boolean
   compact?: boolean
   toolbarTarget?: HTMLElement | null
   document?: RichDocNode | null
@@ -61,7 +63,7 @@ async function mountEditor(props: {
       value: () => ({ top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0, x: 0, y: 0 }),
     })
   }
-  const w = mount(MarkdownEditor, { props, attachTo: document.body })
+    const w = mount(MarkdownEditor, { props, attachTo: document.body })
   await nextTick()
   await new Promise((r) => setTimeout(r, 0))
   return w
@@ -99,7 +101,7 @@ describe('文章总览配图', () => {
     await w.get('.generate-image').trigger('click')
     await flushPromises()
 
-    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'))
+    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'), 'gpt-6-luna')
     const updates = w.emitted('update:modelValue') as [string][]
     const latest = updates[updates.length - 1]?.[0]
     expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw "wao-image-size:50%xauto"\)/)
@@ -127,6 +129,29 @@ describe('文章总览配图', () => {
     document.body.querySelector<HTMLButtonElement>('.image-prompt-dialog button.primary')?.click()
     await flushPromises()
     expect(savePreference).toHaveBeenCalledWith('article-overview-image-prompt-v1', '另一种画面')
+    w.unmount()
+  })
+
+  it('小记设置集中配置 GPT 模型及三类提示词并按成员偏好保存', async () => {
+    const { saveTextPolishPrompt } = await import('@/api/textPolish')
+    vi.mocked(fetchPreference).mockResolvedValue('')
+    vi.mocked(savePreference).mockResolvedValue()
+    const w = await mountEditor({ modelValue: '小记正文', articleImageKey: 'note:me:n1', noteTitleOnImage: true, allowH1: true })
+    await flushPromises()
+    await w.get('.prompt-settings').trigger('click')
+    const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="image-prompt-title"]')!
+    expect(modal.querySelector('.model-choice select')?.value).toBe('gpt-6-luna')
+    expect(modal.textContent).toContain('标题文案提示词')
+    expect(modal.textContent).toContain('正文润色提示词')
+    expect(modal.textContent).toContain('图片生成提示词')
+    const select = modal.querySelector<HTMLSelectElement>('.model-choice select')!
+    select.value = 'gpt-6-sol'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    const save = [...modal.querySelectorAll('button')].find(button => button.textContent?.includes('保存设置'))!
+    save.click()
+    await flushPromises()
+    expect(savePreference).toHaveBeenCalledWith('note-ai-model-v1', 'gpt-6-sol')
+    expect(saveTextPolishPrompt).toHaveBeenCalledWith('默认正文润色方法')
     w.unmount()
   })
 
