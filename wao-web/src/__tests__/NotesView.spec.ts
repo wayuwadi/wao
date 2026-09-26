@@ -683,6 +683,35 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
+  it('已保存小记卡片内可全屏编辑，保存失败保留全屏、成功后自动退出', async () => {
+    const note = { ...doc('inline-fullscreen', '原有正文'), tags: ['工作'] }
+    vi.mocked(apiPatchDoc).mockRejectedValueOnce(new Error('网络不可用'))
+      .mockResolvedValueOnce({ ...note, title: '修改后的正文', blocks: [{ p: '修改后的正文' }] })
+    const wrapper = mount(NoteComposer, {
+      props: { note, inline: true },
+      global: { stubs: { MarkdownEditor: Editor } },
+    })
+    await wrapper.find('textarea').setValue('修改后的正文')
+    const editorElement = wrapper.find('textarea').element
+    expect(wrapper.find('.inline-heading .fullscreen-toggle').attributes('aria-label')).toBe('全屏编辑')
+    expect(wrapper.find('.tag-chip').text()).toContain('工作')
+
+    await wrapper.find('.inline-heading .fullscreen-toggle').trigger('click')
+    expect(wrapper.classes()).toContain('fullscreen')
+    expect(wrapper.find('textarea').element).toBe(editorElement)
+    await wrapper.find('.save-note').trigger('click')
+    await flushPromises()
+    expect(wrapper.classes()).toContain('fullscreen')
+    expect(wrapper.find('[role="alert"]').text()).toContain('网络不可用')
+    expect(wrapper.find('textarea').element).toBe(editorElement)
+
+    await wrapper.find('.save-note').trigger('click')
+    await flushPromises()
+    expect(wrapper.classes()).not.toContain('fullscreen')
+    expect(apiPatchDoc).toHaveBeenCalledWith('inline-fullscreen', expect.objectContaining({ expectedRev: 3 }))
+    wrapper.unmount()
+  })
+
   it('卡片支持键盘编辑，标签和文档链接双击不会误入编辑', async () => {
     useDataStore().docs.a = { ...doc('a', '键盘编辑的记录'), tags: ['工作'] }
     const wrapper = await view()
