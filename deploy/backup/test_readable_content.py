@@ -35,6 +35,17 @@ class FakeWebDav:
 
 
 class ReadableContentTest(unittest.TestCase):
+    def test_source_check_rejects_stale_local_replica_and_read_only_writer(self):
+        with patch.dict(exporter.os.environ, {"WAO_EXPORT_PRIMARY": "linux1", "WAO_EXPORT_LOCAL_UUID": "local"}):
+            with patch.object(exporter, "mysql", return_value=b"local\t0\t0\n"):
+                with self.assertRaisesRegex(RuntimeError, "configured writer role"):
+                    exporter.verify_source()
+            with patch.object(exporter, "mysql", return_value=b"remote\t1\t1\n"):
+                with self.assertRaisesRegex(RuntimeError, "not a writable"):
+                    exporter.verify_source()
+            with patch.object(exporter, "mysql", return_value=b"remote\t0\t0\n"):
+                exporter.verify_source()
+
     def test_export_is_incremental_and_cleans_only_managed_stale_files(self):
         client = FakeWebDav()
         state = {"知识库与小记/小记/旧标题--d1.txt": b"old", "任务/项目/任务--t1.txt": b"task"}
