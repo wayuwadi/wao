@@ -44,9 +44,8 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   },
   {
     id: 'changelog',
-    preview: 'demo',
-    description: '示例预览：查看更新日志样式；真实交付请打开「更新日记」。',
-    keywords: ['Changelog', '更新日志', '版本', '订阅'],
+    description: '查看当前版本亮点，并按目标探索 WAO 的新旧全部功能。',
+    keywords: ['功能探索', '新功能', '版本', '更新介绍'],
   },
   {
     id: 'ideas',
@@ -61,7 +60,11 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     keywords: ['今天'],
   },
   { id: 'action-plans', description: '维护需要长期推进的行动计划和打卡。', keywords: ['计划'] },
-  { id: 'personal-principles', description: '多人制定准则，分别确认参与并记录自己的实践。', keywords: ['准则', '纪律', '红线', '建议'] },
+  {
+    id: 'personal-principles',
+    description: '多人制定准则，分别确认参与并记录自己的实践。',
+    keywords: ['准则', '纪律', '红线', '建议'],
+  },
   {
     id: 'decisions',
     description: '记录在相似情境中应如何选择，并保留决定依据。',
@@ -85,7 +88,11 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   { id: 'weekly-report', description: '根据真实工作记录生成和保存周报。', keywords: ['总结'] },
   { id: 'life-review', description: '沿时间线回看重要经历、变化和结论。', keywords: ['人生'] },
   { id: 'knowledge', description: '按知识库、文件夹和文档组织长期资料。', keywords: ['文档'] },
-  { id: 'reference-images', description: '收集截图，选图并附一句需求交给 AI 参考。', keywords: ['素材库', '视觉库', '灵感', '图片', '截图', '参考图'] },
+  {
+    id: 'reference-images',
+    description: '收集截图，选图并附一句需求交给 AI 参考。',
+    keywords: ['素材库', '视觉库', '灵感', '图片', '截图', '参考图'],
+  },
   {
     id: 'memory',
     description: '记下希望 AI 参考的偏好、背景和经验，管理共享记忆与 AI 读取权限。',
@@ -105,8 +112,16 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     keywords: ['应用', '连接'],
   },
   { id: 'drawings', description: '创建和整理草图。', keywords: ['画图'] },
-  { id: 'files', description: '管理真实文件、图片和分享地址。', keywords: ['文件库', '图片库', '图床', '上传', '上传文件', '上传图片', '分享文件'] },
-  { id: 'automation', description: '配置自动任务并查看运行结果。', keywords: ['流程', '定时任务', '自动任务', '自动化任务'] },
+  {
+    id: 'files',
+    description: '管理真实文件、图片和分享地址。',
+    keywords: ['文件库', '图片库', '图床', '上传', '上传文件', '上传图片', '分享文件'],
+  },
+  {
+    id: 'automation',
+    description: '配置自动任务并查看运行结果。',
+    keywords: ['流程', '定时任务', '自动任务', '自动化任务'],
+  },
   {
     id: 'crawler-capabilities',
     description: '集中管理后续自动化任务可引用的真实爬虫源码。',
@@ -146,10 +161,23 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   {
     id: 'devices',
     description: '检测本机摄像头和麦克风，并完成实时预览与连通调试。',
-    keywords: ['摄像头', '麦克风', '相机', '音频', '测试摄像头', '测试麦克风', '检测摄像头', '检测麦克风'],
+    keywords: [
+      '摄像头',
+      '麦克风',
+      '相机',
+      '音频',
+      '测试摄像头',
+      '测试麦克风',
+      '检测摄像头',
+      '检测麦克风',
+    ],
   },
   { id: 'vault', description: '安全管理需要按需查看的账号资料。', keywords: ['密码'] },
-  { id: 'ledger', description: '和兄弟逐笔核对旧账、烂账与未来账，记录结算和到期安排。', keywords: ['账务', '记账', '财务规划', '明账'] },
+  {
+    id: 'ledger',
+    description: '和兄弟逐笔核对旧账、烂账与未来账，记录结算和到期安排。',
+    keywords: ['账务', '记账', '财务规划', '明账'],
+  },
   { id: 'games', description: '打开使用服务端真实存档的小游戏。', keywords: ['游戏'] },
   {
     id: 'pet-world',
@@ -217,7 +245,15 @@ const DOMAINS: Array<{
     label: '生活',
     icon: 'ri-heart-line',
     description: '日常生活、个人回顾与休闲。',
-    ids: ['personal-principles', 'appearance', 'food', 'life-review', 'games', 'pet-world', 'tianren'],
+    ids: [
+      'personal-principles',
+      'appearance',
+      'food',
+      'life-review',
+      'games',
+      'pet-world',
+      'tianren',
+    ],
   },
   {
     id: 'system',

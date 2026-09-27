@@ -165,22 +165,29 @@ describe('全量导航页', () => {
     wrapper.unmount()
   })
 
-  it('把明确规划与示例放到同分类末尾，保留搜索和打开能力且不保存个人布局', async () => {
-    const before = NAVIGATION_CATALOG.map(section => section.items.map(item => item.id))
+  it('把明确规划放到同分类末尾，功能探索可搜索打开且不保存个人布局', async () => {
+    const before = NAVIGATION_CATALOG.map((section) => section.items.map((item) => item.id))
     const { wrapper, router } = await mountNavigation()
     await wrapper.get('.domains button').trigger('click')
-    await wrapper.findAll('.domains button').find(button => button.text().includes('AI 与自动化'))!.trigger('click')
-    const ai = wrapper.findAll('.catalog-section').find(section => section.find('h2').text() === 'AI 与自动化')!
+    await wrapper
+      .findAll('.domains button')
+      .find((button) => button.text().includes('AI 与自动化'))!
+      .trigger('click')
+    const ai = wrapper
+      .findAll('.catalog-section')
+      .find((section) => section.find('h2').text() === 'AI 与自动化')!
     const rows = ai.findAll('.function-row')
     expect(rows[rows.length - 1]!.text()).toContain('外部应用授权尚未开放')
     expect(rows[rows.length - 1]!.get('.maturity-label').text()).toBe('规划中')
     expect(rows[rows.length - 2]!.text()).toContain('真实爬虫源码')
-    expect(NAVIGATION_CATALOG.map(section => section.items.map(item => item.id))).toEqual(before)
-    await wrapper.get('.search input').setValue('示例')
-    expect(wrapper.get('.maturity-label').text()).toBe('示例预览')
+    expect(NAVIGATION_CATALOG.map((section) => section.items.map((item) => item.id))).toEqual(
+      before,
+    )
+    await wrapper.get('.search input').setValue('新功能')
+    expect(wrapper.find('.maturity-label').exists()).toBe(false)
     await wrapper.get('.function-open').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/changelog')
+    expect(router.currentRoute.value.path).toBe('/features')
     expect(saveNavigationLayout).not.toHaveBeenCalled()
     expect(saveBuiltinMenuRegistry).not.toHaveBeenCalled()
     wrapper.unmount()

@@ -20,6 +20,7 @@ import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import FloatingChat from '@/components/chat/FloatingChat.vue'
 import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
+import ReleaseHighlightsHost from '@/components/release/ReleaseHighlightsHost.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -32,7 +33,11 @@ import { useTheme } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useShortcuts } from '@/composables/shortcuts'
 import { useFunctionHealth } from '@/composables/functionHealth'
-import { hasDesktopToolbar, hasLegacyDesktopToolbar, mountDesktopToolbar } from '@/utils/desktopToolbar'
+import {
+  hasDesktopToolbar,
+  hasLegacyDesktopToolbar,
+  mountDesktopToolbar,
+} from '@/utils/desktopToolbar'
 import type { ModuleId } from '@/types'
 
 const desktopToolbar = hasDesktopToolbar()
@@ -61,6 +66,7 @@ const TRACKED_FEATURES = new Set([
   'ai-sessions',
   'chatgpt',
   'navigation',
+  'changelog',
   'updates',
   'projects',
   'ideas',
@@ -148,7 +154,10 @@ watch(
       tab.path = route.fullPath
       if (route.meta.tabKind === 'module' && route.meta.module) {
         const meta = nav.itemMeta(route.meta.module as ModuleId)
-        if (meta) { tab.label = meta.label; tab.icon = meta.icon }
+        if (meta) {
+          tab.label = meta.label
+          tab.icon = meta.icon
+        }
       }
       if (route.meta.tabKind === 'external') {
         const app = nav.externalAppById(String(route.params.appId))
@@ -188,7 +197,10 @@ function needsDocs() {
     route.name === 'kb' ||
     route.meta.module === 'knowledge' ||
     route.meta.module === 'notes' ||
-    floatingTabs.keys.some((key) => key.startsWith('proj:') || key.startsWith('kb:') || key === 'knowledge' || key === 'notes') ||
+    floatingTabs.keys.some(
+      (key) =>
+        key.startsWith('proj:') || key.startsWith('kb:') || key === 'knowledge' || key === 'notes',
+    ) ||
     !!ui.openTaskId ||
     ui.searchOpen
   )
@@ -196,12 +208,15 @@ function needsDocs() {
 function ensureVisibleHeavyDomains() {
   if (needsDocs()) void data.ensureDocsLoaded()
 }
-watch(() => [route.name, route.meta.module, ...floatingTabs.keys], ensureVisibleHeavyDomains, { immediate: true })
+watch(() => [route.name, route.meta.module, ...floatingTabs.keys], ensureVisibleHeavyDomains, {
+  immediate: true,
+})
 
 async function reloadAll() {
   await data.hydrate()
   void import('@/utils/autoNoteEnrichment').then(({ resumeAutoNoteEnrichment }) =>
-    resumeAutoNoteEnrichment(session.currentUser.id))
+    resumeAutoNoteEnrichment(session.currentUser.id),
+  )
   ensureVisibleHeavyDomains()
 }
 
@@ -295,7 +310,8 @@ onMounted(async () => {
   // 接入真实 /api；任务域会独立暴露加载 / 失败状态，不用 fixtures 冒充用户数据。
   await data.hydrate()
   void import('@/utils/autoNoteEnrichment').then(({ resumeAutoNoteEnrichment }) =>
-    resumeAutoNoteEnrichment(session.currentUser.id))
+    resumeAutoNoteEnrichment(session.currentUser.id),
+  )
   openLocatedTask()
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
@@ -320,7 +336,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :aria-expanded="!nav.collapsed"
           @click="nav.toggleCollapse"
         >
-          <i :class="nav.collapsed ? 'ri-menu-unfold-line' : 'ri-menu-fold-line'" aria-hidden="true"></i>
+          <i
+            :class="nav.collapsed ? 'ri-menu-unfold-line' : 'ri-menu-fold-line'"
+            aria-hidden="true"
+          ></i>
         </button>
         <NavigationContext class="crumb-a" :label="crumbA" />
         <template v-if="crumbB">
@@ -416,6 +435,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <Celebration v-if="ui.celebrating" />
     <!-- 音乐来自真实文件库，只挂在登录后的应用壳；切换页面时 audio 节点不会被路由销毁。 -->
     <MusicPlayer />
+    <ReleaseHighlightsHost />
   </div>
 </template>
 
@@ -423,8 +443,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .mobile-main-nav {
   display: none;
 }
-.legacy-desktop-shell .header { height: 32px; min-height: 32px; }
-.legacy-desktop-shell .quick-actions { display: none; }
+.legacy-desktop-shell .header {
+  height: 32px;
+  min-height: 32px;
+}
+.legacy-desktop-shell .quick-actions {
+  display: none;
+}
 .desktop-shell .header {
   background: var(--wao-bg-side);
   border-bottom: 0;
@@ -662,11 +687,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .bell i {
   font-size: 16px;
 }
-.content:has(.cal), .content:has(.drawings-page), .content:has(.vault) { overflow: hidden; }
-.page-stage:has(.drawings-page), .page-stage:has(.vault) { flex: 1 1 0; min-height: 0; align-items: stretch; overflow: hidden; }
-.page-body:has(.drawings-page), .page-body:has(.vault) { min-height: 0; overflow: hidden; }
-.page-stage:has(.cal) { flex: 1 1 0; min-height: 0; align-items: stretch; overflow: hidden; }
-.page-body:has(.cal) { min-height: 0; overflow: hidden; }
+.content:has(.cal),
+.content:has(.drawings-page),
+.content:has(.vault) {
+  overflow: hidden;
+}
+.page-stage:has(.drawings-page),
+.page-stage:has(.vault) {
+  flex: 1 1 0;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+.page-body:has(.drawings-page),
+.page-body:has(.vault) {
+  min-height: 0;
+  overflow: hidden;
+}
+.page-stage:has(.cal) {
+  flex: 1 1 0;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+.page-body:has(.cal) {
+  min-height: 0;
+  overflow: hidden;
+}
 .content {
   flex: 1;
   overflow-y: auto;

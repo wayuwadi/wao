@@ -107,8 +107,15 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
     openMode: 'NEW_PAGE',
   },
   {
-    id: 'weknora', label: 'WeKnora', icon: 'ri-book-open-line', group: 'PUBLIC', order: 35,
-    visible: true, appUrl: '/weknora/', healthUrl: '/api/external/weknora/health', openMode: 'TAB',
+    id: 'weknora',
+    label: 'WeKnora',
+    icon: 'ri-book-open-line',
+    group: 'PUBLIC',
+    order: 35,
+    visible: true,
+    appUrl: '/weknora/',
+    healthUrl: '/api/external/weknora/health',
+    openMode: 'TAB',
   },
   {
     id: 'jumpserver',
@@ -125,7 +132,12 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
 
 export const MODULES: Record<ModuleId, ModuleMeta> = {
   chatgpt: { id: 'chatgpt', label: 'ChatGPT对话', icon: 'ri-openai-line', path: '/chatgpt' },
-  'ai-sessions': { id: 'ai-sessions', label: 'AI 会话', icon: 'ri-chat-history-line', path: '/ai-sessions' },
+  'ai-sessions': {
+    id: 'ai-sessions',
+    label: 'AI 会话',
+    icon: 'ri-chat-history-line',
+    path: '/ai-sessions',
+  },
   notes: { id: 'notes', label: '小记', icon: 'ri-sticky-note-line', path: '/notes' },
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
   navigation: {
@@ -135,7 +147,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/navigation',
   },
   updates: { id: 'updates', label: '更新日记', icon: 'ri-history-line', path: '/updates' },
-  changelog: { id: 'changelog', label: '更新日志', icon: 'ri-megaphone-line', path: '/changelog' },
+  changelog: {
+    id: 'changelog',
+    label: '功能探索',
+    icon: 'ri-compass-discover-line',
+    path: '/features',
+  },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
   ideas: { id: 'ideas', label: '点子库', icon: 'ri-lightbulb-flash-line', path: '/ideas' },
   skills: {
@@ -155,7 +172,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
-  'reference-images': { id: 'reference-images', label: '参考图库', icon: 'ri-image-2-line', path: '/reference-images' },
+  'reference-images': {
+    id: 'reference-images',
+    label: '参考图库',
+    icon: 'ri-image-2-line',
+    path: '/reference-images',
+  },
   automation: {
     id: 'automation',
     label: '自动化',
@@ -175,8 +197,18 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/account-resources',
   },
   games: { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', path: '/games' },
-  'pet-world': { id: 'pet-world', label: '松风庭院', icon: 'ri-landscape-line', path: '/pet-world' },
-  infrastructure: { id: 'infrastructure', label: '基础设施', icon: 'ri-server-line', path: '/infrastructure' },
+  'pet-world': {
+    id: 'pet-world',
+    label: '松风庭院',
+    icon: 'ri-landscape-line',
+    path: '/pet-world',
+  },
+  infrastructure: {
+    id: 'infrastructure',
+    label: '基础设施',
+    icon: 'ri-server-line',
+    path: '/infrastructure',
+  },
   devices: {
     id: 'devices',
     label: '终端设备',
@@ -295,10 +327,31 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 }
 export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
   [
-    { id: 'chatgpt', label: 'ChatGPT对话', icon: 'ri-openai-line', group: 'ROOT', order: 13, visible: true },
-    { id: 'ai-sessions', label: 'AI 会话', icon: 'ri-chat-history-line', group: 'ROOT', order: 12, visible: true },
+    {
+      id: 'chatgpt',
+      label: 'ChatGPT对话',
+      icon: 'ri-openai-line',
+      group: 'ROOT',
+      order: 13,
+      visible: true,
+    },
+    {
+      id: 'ai-sessions',
+      label: 'AI 会话',
+      icon: 'ri-chat-history-line',
+      group: 'ROOT',
+      order: 12,
+      visible: true,
+    },
     { id: 'home', label: '首页', icon: 'ri-home-5-line', group: 'ROOT', order: 10, visible: true },
-    { id: 'notes', label: '小记', icon: 'ri-sticky-note-line', group: 'ROOT', order: 15, visible: true },
+    {
+      id: 'notes',
+      label: '小记',
+      icon: 'ri-sticky-note-line',
+      group: 'ROOT',
+      order: 15,
+      visible: true,
+    },
     {
       id: 'navigation',
       label: '全部功能',
@@ -333,8 +386,8 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     },
     {
       id: 'changelog',
-      label: '更新日志',
-      icon: 'ri-megaphone-line',
+      label: '功能探索',
+      icon: 'ri-compass-discover-line',
       group: 'PUBLIC',
       order: 14,
       visible: true,
@@ -372,8 +425,12 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
-      id: 'personal-principles', label: '我的准则', icon: 'ri-shield-check-line',
-      group: 'PERSONAL', order: 13, visible: true,
+      id: 'personal-principles',
+      label: '我的准则',
+      icon: 'ri-shield-check-line',
+      group: 'PERSONAL',
+      order: 13,
+      visible: true,
     },
     {
       id: 'appearance',
@@ -568,10 +625,21 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
-      id: 'pet-world', label: '松风庭院', icon: 'ri-landscape-line', group: 'TOOLS', order: 31, visible: false,
+      id: 'pet-world',
+      label: '松风庭院',
+      icon: 'ri-landscape-line',
+      group: 'TOOLS',
+      order: 31,
+      visible: false,
     },
     {
-      id: 'infrastructure', label: '基础设施', icon: 'ri-server-line', group: 'TOOLS', order: 34, visible: true, openMode: 'TAB',
+      id: 'infrastructure',
+      label: '基础设施',
+      icon: 'ri-server-line',
+      group: 'TOOLS',
+      order: 34,
+      visible: true,
+      openMode: 'TAB',
     },
     {
       id: 'devices',
