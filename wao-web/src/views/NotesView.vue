@@ -211,6 +211,7 @@ function backToTop() {
   else window.scrollTo({ top: 0, behavior })
 }
 const refreshError = ref('')
+const refreshing = ref(false)
 const notes = computed(() => {
   const ids = new Set(data.kbs.filter(kb => kb.notes).map(kb => kb.id))
   return Object.values(data.docs).filter(doc => ids.has(doc.kbId ?? '') && !data.isDocArchived(doc.id))
@@ -271,7 +272,7 @@ const retainedEdits = computed(() => notes.value.filter(note => editingIds.value
 const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
 const visibleImages = computed(() => new Map(visible.value.map(note => [note.id, notePreviewImages(resolvedRichContent(note))])))
 function imagesFor(id: string) { return visibleImages.value.get(id) ?? [] }
-const loading = computed(() => ['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge))
+const loading = computed(() => !refreshing.value && (['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge)))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
 watch([query, selectedTag, sort, imageFilter, timeFilter], () => {
   limit.value = PAGE_SIZE
@@ -297,16 +298,21 @@ function timeLabel(value: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 async function reload() {
+  if (refreshing.value) return
+  refreshing.value = true
   refreshError.value = ''
-  data.loadStates.knowledge = 'loading'
-  const [knowledge] = await Promise.allSettled([fetchKbs(), data.refreshDocs()])
-  if (knowledge.status === 'fulfilled') {
-    data.kbs = knowledge.value
-    data.loadStates.knowledge = 'loaded'
-    delete data.loadErrors.knowledge
-  } else {
-    data.loadStates.knowledge = 'error'
-    refreshError.value = '知识库读取失败，请重试'
+  try {
+    const [knowledge, docs] = await Promise.allSettled([fetchKbs(), data.refreshDocs()])
+    if (knowledge.status === 'fulfilled') {
+      data.kbs = knowledge.value
+      data.loadStates.knowledge = 'loaded'
+      delete data.loadErrors.knowledge
+    } else {
+      refreshError.value = '知识库读取失败，请重试'
+    }
+    if (docs.status === 'rejected' || !docs.value) refreshError.value ||= '小记读取失败，请重试'
+  } finally {
+    refreshing.value = false
   }
 }
 async function loadTags() {
@@ -361,7 +367,7 @@ onMounted(() => void loadPins())
             </div>
           </div>
           <button class="reader-toggle" type="button" :disabled="!matching.length" @click="startReading()"><i class="ri-book-open-line"></i><span>阅读模式</span></button>
-          <button class="refresh" :disabled="loading" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i class="ri-refresh-line"></i></button>
+          <button class="refresh" :disabled="loading || refreshing" :aria-busy="refreshing" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i :class="refreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i></button>
         </div>
         <div v-if="managingTags" class="new-tag-form" aria-label="标签管理">
           <select v-model="sourceTag" aria-label="待处理标签" :disabled="tagSaving"><option value="">选择标签</option><option v-for="tag in availableTags" :key="tag" :value="tag">{{ tag }}</option></select>

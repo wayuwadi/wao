@@ -12,7 +12,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
-import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
+import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc, fetchKbs } from '@/api/board'
 import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { copyText } from '@/utils/clipboard'
@@ -22,7 +22,7 @@ vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefi
 vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
 
 vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
-vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
+vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn(), fetchKbs: vi.fn() }))
 const Editor = defineComponent({
   props: ['modelValue', 'readonly'], emits: ['update:modelValue'],
   template: '<div><slot name="toolbar-options" /><textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" /><slot name="footer-tags" /></div>',
@@ -146,6 +146,7 @@ describe('小记集中记录空间', () => {
     vi.mocked(copyText).mockClear()
     vi.mocked(apiPatchDoc).mockReset()
     vi.mocked(fetchNoteTags).mockResolvedValue([])
+    vi.mocked(fetchKbs).mockReset()
     vi.mocked(apiCreateNoteTag).mockReset()
     vi.mocked(fetchNotePolishVersions).mockResolvedValue([])
     localStorage.clear()
@@ -156,6 +157,30 @@ describe('小记集中记录空间', () => {
     data.loadStates.docs = 'loaded'
     data.loadStates.knowledge = 'loaded'
     data.kbs = [{ id: 'kb-notes', name: '小记', notes: true, icon: '', color: '', desc: '', project: null, folders: [{ id: 'f', name: '小记', docs: [] }] }]
+    vi.mocked(fetchKbs).mockResolvedValue(data.kbs)
+  })
+
+  it('刷新清单时只有刷新按钮转圈，正文和草稿保持可见', async () => {
+    const data = useDataStore()
+    data.docs.one = doc('one', '已有小记')
+    let finish!: (value: boolean) => void
+    vi.spyOn(data, 'refreshDocs').mockImplementation(() => {
+      data.loadStates.docs = 'loading'
+      return new Promise(resolve => { finish = resolve })
+    })
+    const wrapper = await view()
+    await wrapper.find('textarea').setValue('未保存的输入')
+    await wrapper.get('[aria-label="刷新小记清单"]').trigger('click')
+    expect(wrapper.get('[aria-label="刷新小记清单"]').attributes('aria-busy')).toBe('true')
+    expect(wrapper.get('[aria-label="刷新小记清单"] i').classes()).toContain('spin')
+    expect(wrapper.find('[role="status"].empty').exists()).toBe(false)
+    expect(wrapper.get('[data-note-id="one"]').text()).toContain('已有小记')
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('未保存的输入')
+    data.loadStates.docs = 'loaded'
+    finish(true)
+    await flushPromises()
+    expect(wrapper.get('[aria-label="刷新小记清单"]').attributes('aria-busy')).toBe('false')
+    wrapper.unmount()
   })
 
   it('清单删除失败保留小记和新建草稿，重试成功后移出清单', async () => {
