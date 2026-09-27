@@ -23,7 +23,7 @@ sudo cat /var/backups/wao-cloud/binlogs/last-success.json
 
 `last-success` 只是文件完成标记。还要核对云端同名目录的 `SHA256SUMS`，并定期在隔离 MySQL 中完成解密、导入和业务数量校验。不要在生产 MySQL 里试恢复。
 
-退役节点相关的 `wao-public-certificate-sync.timer` 和 `wao-linux2-mesh-endpoint.timer` 保持禁用。Certbot 的 Linux1 证书 deploy hook 在 `WAO_DEPLOY_TOPOLOGY=linux2-only` 时直接跳过；Linux2 证书同步 timer 与 `wg-quick@wg0` 继续运行。旧证书文件及历史备份不删除。
+退役节点相关的 `wao-public-certificate-sync.timer` 和 `wao-linux2-mesh-endpoint.timer` 保持禁用。Certbot 的 Linux1 证书 deploy hook 在 `WAO_DEPLOY_TOPOLOGY=linux2-only` 时直接跳过；Linux2 证书同步 timer 与 `wg-quick@wg0` 继续运行。`wg0` 的运行态与配置仅保留云节点 `10.66.0.1/32`，退役 Linux1 的 `10.66.0.3/32` peer 已移除。旧 WireGuard 配置副本位于 `/etc/wireguard/wg0.conf.pre-linux2-only-20260927`，只供回滚核对；旧证书文件及历史备份不删除。
 
 Linux2 的 Nacos 隔离恢复验收指定本机应用容器提供只在内存中使用的认证信息：
 
