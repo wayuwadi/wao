@@ -298,8 +298,6 @@ services:
     depends_on:
       redis-master:
         condition: service_healthy
-      codex-egress-proxy:
-        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
