@@ -22,6 +22,7 @@ class AuthoritativeSnapshotTest(unittest.TestCase):
         docker = self.path / 'docker'
         docker.write_text('''#!/bin/sh
 case " $* " in
+  *" information_schema.tables "*) printf '2\\n' ;;
   *" mysqldump "*)
     printf '%s\\n' "-- MySQL dump" \
       "-- CHANGE REPLICATION SOURCE TO SOURCE_LOG_FILE='binlog.000001', SOURCE_LOG_POS=123;" \
@@ -51,6 +52,7 @@ esac
         inspected = subprocess.run(['python3', str(INSPECT), str(archive)],
                                    capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(inspected.stdout)['source_uuid'], UUID)
+        self.assertEqual(json.loads(inspected.stdout)['source_table_count'], 2)
         self.assertEqual(json.loads(inspected.stdout)['source_log_position'], 123)
 
     def test_wrong_role_and_read_only_source_fail_closed(self):
