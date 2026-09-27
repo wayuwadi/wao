@@ -29,7 +29,7 @@ PATH="${tmp_dir}:${PATH}" \
   WAO_NGINX_RENDER_OUTPUT="${rendered}" \
   sh "${script_dir}/render-nginx-config.sh"
 
-grep -q 'server 203.0.113.10:9000' "${rendered}"
+grep -q 'server 203.0.113.10:9000 backup max_fails=3' "${rendered}"
 grep -q 'server 198.51.100.20:9000' "${rendered}"
 grep -q 'log_format wao_ready_upstream' "${rendered}"
 grep -q 'access_log /var/log/nginx/access.log combined;' "${rendered}"
@@ -66,7 +66,7 @@ MASTER_GATEWAY_STATE=' down' \
   SLAVE_GATEWAY_IPV4='198.51.100.20' \
   WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/master-down.conf" \
   sh "${script_dir}/render-nginx-config.sh"
-grep -q 'server 203.0.113.10:9000 down max_fails=3' "${tmp_dir}/master-down.conf"
+grep -q 'server 203.0.113.10:9000 backup down max_fails=3' "${tmp_dir}/master-down.conf"
 grep -q 'server 198.51.100.20:9000 max_fails=3' "${tmp_dir}/master-down.conf"
 grep -q 'server 127.0.0.1:9000 backup max_fails=3' "${tmp_dir}/master-down.conf"
 

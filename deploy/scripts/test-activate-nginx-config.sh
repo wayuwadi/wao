@@ -46,11 +46,11 @@ printf '# previous\n' >"${WAO_NGINX_FINAL_CONFIG}"
 touch "${WAO_NGINX_RUNTIME_DIR}/slave.down" "${WAO_NGINX_RUNTIME_DIR}/deployment.lock"
 activate() { sh "${project}/deploy/scripts/activate-nginx-config.sh"; }
 activate
-grep -Fq 'server 203.0.113.10:9000 max_fails' "${WAO_NGINX_FINAL_CONFIG}"
+grep -Fq 'server 203.0.113.10:9000 backup max_fails' "${WAO_NGINX_FINAL_CONFIG}"
 grep -Fq 'server 198.51.100.20:9000 down' "${WAO_NGINX_FINAL_CONFIG}"
 printf '203.0.113.11\n' >"${workspace}/ip"
 activate
-grep -Fq 'server 203.0.113.11:9000 max_fails' "${WAO_NGINX_FINAL_CONFIG}"
+grep -Fq 'server 203.0.113.11:9000 backup max_fails' "${WAO_NGINX_FINAL_CONFIG}"
 grep -Fq 'server 198.51.100.20:9000 down' "${WAO_NGINX_FINAL_CONFIG}"
 activate
 test "$(wc -l <"${workspace}/reloads")" -eq 2
@@ -61,11 +61,11 @@ test "$(wc -l <"${workspace}/reloads")" -eq 2
   printf '203.0.113.12\n' >"${workspace}/ip"
   activate
 )
-grep -Fq 'server 203.0.113.11:9000 max_fails' "${WAO_NGINX_FINAL_CONFIG}"
+grep -Fq 'server 203.0.113.11:9000 backup max_fails' "${WAO_NGINX_FINAL_CONFIG}"
 # Failed validation must restore the working configuration and avoid a reload.
 touch "${workspace}/invalid"
 if activate; then echo 'Invalid config unexpectedly activated.' >&2; exit 1; fi
-grep -Fq 'server 203.0.113.11:9000 max_fails' "${WAO_NGINX_FINAL_CONFIG}"
+grep -Fq 'server 203.0.113.11:9000 backup max_fails' "${WAO_NGINX_FINAL_CONFIG}"
 test "$(wc -l <"${workspace}/reloads")" -eq 2
 rm "${workspace}/invalid"
 touch "${WAO_NGINX_RUNTIME_DIR}/master.down"
