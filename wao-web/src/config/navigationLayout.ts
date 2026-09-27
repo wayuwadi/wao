@@ -69,6 +69,7 @@ export function resolveLayoutGroups(
   const missing = [...new Set(entries.map((item) => item.group))].filter((id) => !known.has(id))
   return [...groups, ...missing.map((id) => ({ id, label: id }))].map((group) => ({
     ...group,
+    configuredMenuCount: entries.filter((item) => item.group === group.id && item.placement === 'MENU' && item.id !== 'chat').length,
     items: entries
       .filter(
         (item) =>
