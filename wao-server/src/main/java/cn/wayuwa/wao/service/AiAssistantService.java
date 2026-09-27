@@ -267,6 +267,12 @@ public class AiAssistantService {
     }
 
     public String enqueueArticleImageJob(String memberId, String articleText, String visualPrompt, String model) {
+        return enqueueArticleImageJob(memberId, articleText, visualPrompt, model, null);
+    }
+
+    /** 使用浏览器生成的稳定请求标识，避免响应丢失后重试创建重复图片任务。 */
+    public String enqueueArticleImageJob(String memberId, String articleText, String visualPrompt,
+            String model, String requestId) {
         if (!StringUtils.hasText(articleText) || articleText.length() > 60_000) {
             throw new BadRequestException("请提供 1–60000 字的正文后再生成总览图");
         }
@@ -274,18 +280,36 @@ public class AiAssistantService {
             throw new BadRequestException("配图提示词不能为空且不超过 4000 字");
         }
         String requestedModel = validateNoteModel(model);
+        String runId = null;
+        if (StringUtils.hasText(requestId)) {
+            String stableRequestId = requestId.trim().toLowerCase();
+            if (!stableRequestId.matches("[a-f0-9]{32}")) {
+                throw new BadRequestException("图片任务请求标识无效，请重新尝试");
+            }
+            runId = "ac" + stableRequestId;
+            AiAssistantRunEntity existing = mapper.selectById(runId);
+            if (existing != null) {
+                if (!memberId.equals(existing.getMemberId())
+                        || !ARTICLE_IMAGE_PURPOSE.equals(existing.getUsagePurpose())) {
+                    throw new BadRequestException("图片任务请求标识已被使用，请重新尝试");
+                }
+                return existing.getId();
+            }
+        }
         AssistantStatusDto availability = status(LOCAL_CODEX_CAPABILITY);
         if (!availability.configured()) throw new BadRequestException(availability.message());
         if (onlineCodexRunners().noneMatch(this::supportsArticleImage)) {
             throw new BadRequestException("生成图片需要已更新的 Linux Codex Runner 在线");
         }
+        // 图片互斥锁依赖队列终态；先按数据库时钟回收期限已过的遗留运行，再判断是否仍有有效任务。
+        expireReadOnlyJobs();
         long active = mapper.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
                 .eq(AiAssistantRunEntity::getMemberId, memberId)
                 .eq(AiAssistantRunEntity::getUsagePurpose, ARTICLE_IMAGE_PURPOSE)
                 .in(AiAssistantRunEntity::getStatus, ACTIVE));
         if (active > 0) throw new BadRequestException("已有一张总览图正在生成，请等待完成");
         AiAssistantRunEntity run = new AiAssistantRunEntity();
-        run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
+        run.setId(runId == null ? "ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24) : runId);
         run.setMemberId(memberId);
         run.setAiCapabilityId(LOCAL_CODEX_CAPABILITY);
         run.setRequestedModel(requestedModel);
