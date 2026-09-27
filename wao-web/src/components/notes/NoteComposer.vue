@@ -161,9 +161,9 @@ async function closeImage() {
   imageTrigger?.focus()
   imageTrigger = null
 }
-const autoPolish = ref(initial.autoPolish !== false)
-const autoImage = ref(initial.autoImage !== false)
-const autoTitle = ref(initial.autoTitle !== false)
+const autoPolish = ref(initial.autoPolish === true)
+const autoImage = ref(initial.autoImage === true)
+const autoTitle = ref(initial.autoTitle === true)
 // 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
 const baseRev = initial.baseRev ?? props.note?.rev ?? 1
 const saving = ref(false)
@@ -230,9 +230,9 @@ async function save(asCopy = false) {
         && JSON.stringify(latest.content) === JSON.stringify(content.value)
         && JSON.stringify(latest.tags ?? []) === JSON.stringify(tags.value)
         && (latest.generatedTitle ?? '') === generatedTitle.value
-        && (latest.autoPolish !== false) === autoPolish.value
-        && (latest.autoTitle !== false) === autoTitle.value
-        && (latest.autoImage !== false) === autoImage.value)) localStorage.removeItem(draftKey)
+        && (latest.autoPolish === true) === autoPolish.value
+        && (latest.autoTitle === true) === autoTitle.value
+        && (latest.autoImage === true) === autoImage.value)) localStorage.removeItem(draftKey)
     } catch { /* 服务端保存已成功。 */ }
     if (!props.note || asCopy) {
       const saved = data.docById(savedId)
@@ -250,9 +250,9 @@ async function save(asCopy = false) {
       content.value = undefined
       tags.value = []
       generatedTitle.value = ''
-      autoPolish.value = true
-      autoImage.value = true
-      autoTitle.value = true
+      autoPolish.value = false
+      autoImage.value = false
+      autoTitle.value = false
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
       savedSnapshot.value = { text: '', document: null, tags: [], title: '' }
