@@ -12,6 +12,7 @@ import {
 } from '@/api/noteMining'
 
 const emit = defineEmits<{ openNote: [id: string] }>()
+defineProps<{ compact?: boolean }>()
 const result = ref<NoteMiningResult>({ job: null, artifacts: [] })
 const loading = ref(true)
 const working = ref(false)
@@ -88,7 +89,7 @@ onBeforeUnmount(() => { alive = false })
 </script>
 
 <template>
-  <section class="mining-panel" aria-labelledby="note-mining-title">
+  <section class="mining-panel" :class="{ compact }" aria-labelledby="note-mining-title">
     <div class="mining-intro">
       <div class="eyebrow"><i class="ri-sparkling-2-line"></i> AI 挖掘小记</div>
       <h2 id="note-mining-title">让过去的小记，长出新的内容</h2>
@@ -162,6 +163,7 @@ onBeforeUnmount(() => { alive = false })
 
 <style scoped>
 .mining-panel { --mine-accent: #7357d8; display: grid; grid-template-columns: minmax(250px, .72fr) minmax(360px, 1.28fr); gap: 22px; padding: 20px; margin-bottom: 22px; border: 1px solid color-mix(in srgb, var(--mine-accent) 23%, var(--wao-line)); border-radius: 22px; background: linear-gradient(135deg, color-mix(in srgb, var(--mine-accent) 8%, var(--wao-bg-card)) 0%, var(--wao-bg-card) 48%); box-shadow: 0 12px 36px rgba(66, 47, 125, .08); }
+.mining-panel.compact { margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .mining-intro { display: flex; flex-direction: column; align-items: flex-start; padding: 4px 2px; }
 .eyebrow { color: var(--mine-accent); font-size: 12px; font-weight: 750; letter-spacing: .06em; }
 .mining-intro h2 { margin: 8px 0; font-size: clamp(20px, 2vw, 27px); line-height: 1.18; color: var(--wao-text); }
