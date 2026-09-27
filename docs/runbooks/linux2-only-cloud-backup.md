@@ -8,6 +8,8 @@
 - `wao-cloud-binlog.timer` 每 15 分钟归档已关闭的 binlog 到云端，检查源 UUID、文件连续性、长度与校验和。全量快照建立并验收后才能启用此 timer。
 - 本地目录是 `/var/backups/wao-cloud/`，云端是 `/var/backups/wao-linux2-only/scheduled/`。两端文件均保留；脚本没有自动删除逻辑。云盘空间不足时任务会失败，必须先核定保留期限并明确批准历史恢复点的删除范围。
 - `wao-cloud-backup-check.timer` 每小时核对本机快照、binlog 归档、云端完成标记和两端容量；持续故障沿用既有飞书备份告警通道，重复问题最多每四小时提醒一次。
+- `wao-nacos-backup.timer` 每日为嵌入式 Nacos 创建干净停机镜像，本地 `/var/backups/wao-cloud-nacos/` 与云端 `/var/backups/wao-linux2-only/scheduled-nacos/` 保存密文、SHA256SUMS 和 COMPLETE。服务使用 `cloud.env` 并关闭旧 peer 自动留存清理。备份时 Nacos 短暂重启；先核对容器恢复就绪，再核对密文远端校验。
+- `wao-weknora-backup.timer` 每日导出数据库、配置和数据卷，本地原始备份在 `/var/backups/wao-weknora/`，加密副本在 `/var/backups/wao-weknora-cloud/`，云端在 `/var/backups/wao-linux2-only/scheduled/weknora/`。备份时应用与前端短暂重启；远端 SHA-256 成功后才发布完成目录。
 - root-only `/etc/wao-backup/cloud.env` 保存路径与 SSH 身份位置，恢复口令在 `/etc/wao-backup/encryption-passphrase`，均不进入 Git、聊天或日志。独立的恢复口令副本应在离开 Linux2 的密码管理器中保管。
 
 ## 日常检查
@@ -20,6 +22,18 @@ sudo cat /var/backups/wao-cloud/binlogs/last-success.json
 ```
 
 `last-success` 只是文件完成标记。还要核对云端同名目录的 `SHA256SUMS`，并定期在隔离 MySQL 中完成解密、导入和业务数量校验。不要在生产 MySQL 里试恢复。
+
+退役节点相关的 `wao-public-certificate-sync.timer` 和 `wao-linux2-mesh-endpoint.timer` 保持禁用。Certbot 的 Linux1 证书 deploy hook 在 `WAO_DEPLOY_TOPOLOGY=linux2-only` 时直接跳过；Linux2 证书同步 timer 与 `wg-quick@wg0` 继续运行。旧证书文件及历史备份不删除。
+
+Linux2 的 Nacos 隔离恢复验收指定本机应用容器提供只在内存中使用的认证信息：
+
+```bash
+sudo /usr/local/lib/wao-backup/verify-nacos-recovery.sh \
+  /var/backups/wao-cloud-nacos/<UTC快照目录> \
+  /etc/wao-backup/encryption-passphrase wao-master-wao-server-1
+```
+
+2026-09-27 手工执行：Nacos 快照 `20260927T150154Z`、WeKnora 快照 `20260927T150251Z` 均在云端执行 SHA-256 校验通过；两项 systemd 服务结果为 success，Nacos 与 WeKnora 应用恢复运行。Nacos 在无网络隔离容器中恢复，通过认证核对 1 个命名空间、1 项配置，摘要 `819341034e1ee138407d5e3a1ce82f1599139d7f8b894d4f144c686dc8580e1e`。WeKnora 的压缩包校验通过，数据库归档可读取 652 项；尚未执行隔离导入。
 
 ## 隔离恢复
 
