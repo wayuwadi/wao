@@ -48,7 +48,7 @@ describe('小记保存后自动生成', () => {
     await flushPromises()
 
     expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_TITLE', expect.objectContaining({ model: 'gpt-6-sol', titlePrompt: '标题偏好' }))
-    expect(startArticleImage).toHaveBeenCalledWith('今天复盘打印流程', '图片偏好', 'gpt-6-sol')
+    expect(startArticleImage).toHaveBeenCalledWith('今天复盘打印流程', '图片偏好', 'gpt-6-sol', '0123456789abcdef0123456789abcdef')
     expect(apiPatchDoc).toHaveBeenNthCalledWith(1, 'n1', { title: '打印流程复盘', expectedRev: 1 })
     expect(apiPatchDoc).toHaveBeenNthCalledWith(2, 'n1', expect.objectContaining({
       expectedRev: 2,
@@ -94,6 +94,21 @@ describe('小记保存后自动生成', () => {
     expect(waitForPolish).toHaveBeenCalledTimes(1)
     expect(noteEnrichmentProgress.n1?.polish).toBe('skipped')
     expect(noteEnrichmentStatus.n1).toContain('保留原文')
+  })
+
+  it('标题阶段失败后仍继续配图和润色，并把失败阶段留给重试', async () => {
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(waitForPolish).mockRejectedValueOnce(new Error('Codex 执行失败（退出码 1）'))
+      .mockResolvedValueOnce({ id: 'pj2', status: 'SUCCEEDED', message: '', polished: '整理后的正文' })
+    vi.mocked(saveNotePolishVersion).mockResolvedValue({ docId: 'n1', sourceMarkdown: content.markdown, polishedMarkdown: '整理后的正文' })
+    startAutoNoteEnrichment('me', 'n1', 1, { imageEnabled: false })
+    await flushPromises()
+
+    expect(waitForPolish).toHaveBeenCalledTimes(2)
+    expect(waitForPolish).toHaveBeenNthCalledWith(1, content.markdown, 'NOTE_TITLE', expect.any(Object))
+    expect(waitForPolish).toHaveBeenNthCalledWith(2, content.markdown, 'NOTE_BODY', expect.any(Object))
+    expect(noteEnrichmentProgress.n1).toEqual(expect.objectContaining({ title: 'failed', polish: 'done', image: 'skipped' }))
+    expect(noteEnrichmentStatus.n1).toContain('标题：Codex 执行失败')
   })
 
   it('未勾选自动配图时跳过图片任务，润色仍执行且刷新后保留跳过状态', async () => {
@@ -154,6 +169,7 @@ describe('小记保存后自动生成', () => {
 
   it('用户修改正文后重试读取新版本，不用旧版本覆盖', async () => {
     vi.mocked(fetchDoc).mockResolvedValueOnce(doc(1) as never)
+      .mockResolvedValueOnce(doc(2) as never)
       .mockResolvedValueOnce(doc(2) as never)
       .mockResolvedValueOnce(doc(2) as never)
       .mockResolvedValueOnce(doc(2) as never)

@@ -33,10 +33,15 @@ class ArticleImageServiceTest {
 
     @Test
     void startsForCurrentMemberAndHidesAnotherMembersJob() {
-        when(assistant.enqueueArticleImageJob("me", "正文", "画面偏好", "gpt-6-luna")).thenReturn("ac1");
-        assertThat(service.start("me", new ArticleImageRequest("正文", "画面偏好")).id()).isEqualTo("ac1");
-        when(runs.selectById("ac1")).thenReturn(run());
+        when(assistant.enqueueArticleImageJob("me", "正文", "画面偏好", "gpt-6-luna", null)).thenReturn("ac1");
+        AiAssistantRunEntity queued = run();
+        queued.setMemberId("me");
+        queued.setStatus("secure_queued");
+        when(runs.selectById("ac1")).thenReturn(queued);
+        assertThat(service.start("me", new ArticleImageRequest("正文", "画面偏好")).status()).isEqualTo("QUEUED");
+        verify(assistant).enqueueArticleImageJob("me", "正文", "画面偏好", "gpt-6-luna", null);
         assertThatThrownBy(() -> service.get("another", "ac1")).isInstanceOf(NotFoundException.class);
+        queued.setStatus("secure_running");
         assertThat(service.get("me", "ac1").status()).isEqualTo("RUNNING");
     }
 

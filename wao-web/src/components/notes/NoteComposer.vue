@@ -363,6 +363,10 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .inline:not(.fullscreen) .editor-space { min-height: 160px; max-height: 460px; }
 .inline .composer-heading { flex-wrap: wrap; }
 .note-composer:focus-within { border-color: var(--wao-primary); }
+.note-composer:not(:focus-within) .auto-enrichment-choices { max-height: 0; margin-top: 0; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; }
+.auto-enrichment-choices { max-height: 48px; transition: max-height .18s ease, margin .18s ease, opacity .16s ease, visibility .16s; }
+.note-composer:not(:focus-within) :deep(.article-footer) { max-height: 0; padding-top: 0; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; }
+:deep(.article-footer) { max-height: 72px; transition: max-height .18s ease, padding .18s ease, opacity .16s ease, visibility .16s; }
 .composer-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .fullscreen-reminder { position:absolute; z-index:10; top:55px; right:12px; display:grid; grid-template-columns:28px minmax(0,1fr); gap:8px 10px; width:min(420px, calc(100% - 24px)); box-sizing:border-box; margin:0; padding:13px 14px; border:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); border-radius:13px; background:var(--wao-bg-card); color:var(--wao-text-2); box-shadow:0 14px 34px color-mix(in srgb, var(--wao-text-1) 14%, transparent); transform-origin:top right; animation:fullscreen-guide-enter .28s cubic-bezier(.2,.8,.2,1) both; }
 .fullscreen-reminder::before { content:""; position:absolute; top:-6px; right:17px; width:10px; height:10px; border-top:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); border-left:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); background:var(--wao-bg-card); transform:rotate(45deg); }

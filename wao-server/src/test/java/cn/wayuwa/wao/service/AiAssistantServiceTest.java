@@ -251,6 +251,29 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void articleImageRetryWithSameRequestIdReusesExistingRun() {
+        String requestId = "0123456789abcdef0123456789abcdef";
+        AiAssistantRunEntity existing = assistantRun("secure_queued");
+        existing.setId("ac" + requestId);
+        existing.setMemberId("wg");
+        existing.setUsagePurpose(AiAssistantService.ARTICLE_IMAGE_PURPOSE);
+        when(mapper.selectById("ac" + requestId)).thenReturn(existing);
+
+        String id = service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "gpt-6-luna", requestId);
+
+        assertThat(id).isEqualTo("ac" + requestId);
+        verify(mapper, never()).insertReadOnlyQueued(any());
+    }
+
+    @Test
+    void articleImageRequestIdMustBeOpaqueHexToken() {
+        assertThatThrownBy(() -> service.enqueueArticleImageJob("wg", "文章正文", "画面提示词",
+                "gpt-6-luna", "not-a-token"))
+                .isInstanceOf(cn.wayuwa.wao.common.BadRequestException.class)
+                .hasMessageContaining("请求标识无效");
+    }
+
+    @Test
     void completionClearsPromptAndStoresBoundedOutcome() {
         AiRunnerNodeEntity linux = runner("Linux 6.8", "codex");
         AiAssistantRunEntity run = assistantRun("running");
