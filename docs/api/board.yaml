@@ -891,8 +891,8 @@ paths:
         '401': { description: 节点令牌无效 }
   /text-polish/jobs:
     post:
-      summary: 提交持久文本任务，支持小记标题生成
-      description: NOTE_TITLE 从已保存小记正文提炼单行标题；小记标题和正文润色可携带成员选择的 GPT 模型与提示词，结果不进入润色历史。requestId 重试幂等。
+      summary: 提交持久文本任务，支持小记标题、正文润色和已有标签推荐
+      description: NOTE_TITLE 从已保存小记正文提炼单行标题；NOTE_TAGS 只从 allowedTags 与当前小记标签字典的交集中选择最多三个精确标签。小记辅助任务结果不进入润色历史，requestId 重试幂等。
       requestBody:
         required: true
         content:
@@ -902,19 +902,20 @@ paths:
               required: [requestId, kind, originalText]
               properties:
                 requestId: { type: string, pattern: '^[a-f0-9]{32}$' }
-                kind: { type: string, enum: [DOCUMENT, WORKSPACE, NOTE_TITLE] }
+                kind: { type: string, enum: [DOCUMENT, WORKSPACE, NOTE_TITLE, NOTE_BODY, NOTE_TAGS] }
                 originalText: { type: string, minLength: 1, maxLength: 12000 }
                 model: { type: string, enum: [gpt-6-luna, gpt-6-sol, gpt-6-astra, gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra] }
                 titlePrompt: { type: string, maxLength: 4000 }
                 notePolishPrompt: { type: string, maxLength: 4000 }
+                allowedTags: { type: array, maxItems: 100, items: { type: string, minLength: 1, maxLength: 32 }, description: NOTE_TAGS 候选标签；服务端仍按当前持久化小记标签字典二次过滤 }
       responses:
-        '200': { description: 返回当前成员的任务 id、状态和成功时的标题或润色结果 }
+        '200': { description: 返回当前成员的任务 id、状态和成功时的标题、润色文本或最多三个现有标签 }
   /text-polish/jobs/{id}:
     get:
       summary: 查询当前成员自己的持久文本任务
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses:
-        '200': { description: 返回任务状态；NOTE_TITLE 成功时 polished 为生成的标题 }
+        '200': { description: 返回任务状态；NOTE_TITLE 为标题，NOTE_TAGS 的 polished 只含成员现有标签 }
         '404': { description: 不存在或不属于当前成员 }
   /assistant/article-images:
     post:

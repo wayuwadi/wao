@@ -14,14 +14,14 @@ import type { Doc, FileItem, RichDocContent } from '@/types'
 const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean }>()
 const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string] }>()
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const noteEditor = ref<{ removeImageAt: (index: number) => boolean } | null>(null)
+const noteEditor = ref<{ removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean } | null>(null)
 const data = useDataStore()
 const session = useSessionStore()
 const preferences = usePreferenceStore()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}`
-type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[]; generatedTitle?: string; autoTitle?: boolean; autoPolish?: boolean; autoImage?: boolean }
+type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[]; generatedTitle?: string; autoTitle?: boolean; autoPolish?: boolean; autoImage?: boolean; autoTags?: boolean }
 let restored = false
 function readDraft(): Draft {
   try {
@@ -43,10 +43,20 @@ const savedSnapshot = ref({
   title: props.note?.title ?? '',
 })
 const tags = ref<string[]>(initial.tags ?? [])
-const showTagPicker = ref(false)
+const tagCreateOpen = ref(false)
 const newTag = ref('')
 const creatingTag = ref(false)
 const tagError = ref('')
+const tagUsageKey = `wao-note-tag-usage-v1:${session.currentUser.id}`
+type TagUsage = Record<string, { count: number; lastUsed: number }>
+function readTagUsage(): TagUsage {
+  try { return JSON.parse(localStorage.getItem(tagUsageKey) || '{}') as TagUsage } catch { return {} }
+}
+function recordTagUse(tag: string) {
+  const usage = readTagUsage(), previous = usage[tag] ?? { count: 0, lastUsed: 0 }
+  usage[tag] = { count: previous.count + 1, lastUsed: Date.now() }
+  try { localStorage.setItem(tagUsageKey, JSON.stringify(usage)) } catch { /* 不影响标签选择。 */ }
+}
 async function createTag() {
   if (creatingTag.value || saving.value || tags.value.length >= 20) return
   const name = newTag.value.trim()
@@ -57,10 +67,16 @@ async function createTag() {
     if (!data.apiLive) throw new Error('服务尚未连接，请稍后重试')
     const saved = await apiCreateNoteTag(name)
     if (!tags.value.includes(saved)) tags.value = [...tags.value, saved]
+    recordTagUse(saved)
     emit('tag-created', saved)
     newTag.value = ''
+    tagCreateOpen.value = false
   } catch (cause) { tagError.value = cause instanceof Error ? cause.message : '标签保存失败，请重试' }
   finally { creatingTag.value = false }
+}
+async function toggleTagCreate() {
+  tagCreateOpen.value = !tagCreateOpen.value
+  if (tagCreateOpen.value) { await nextTick(); composerElement.value?.querySelector<HTMLInputElement>('.inline-tag-create input')?.focus() }
 }
 const fullscreen = ref(false)
 const fullscreenReminderVisible = ref(false)
@@ -114,6 +130,7 @@ onBeforeUnmount(() => {
   if (previousOverflow !== undefined) document.body.style.overflow = previousOverflow
 })
 function editorKeys(event: KeyboardEvent) {
+  if (event.key === 'Escape' && tagSuggestionsOpen.value) { event.preventDefault(); tagSuggestionsOpen.value = false; return }
   if (!fullscreen.value) return
   if (event.key === 'Escape') { event.preventDefault(); fullscreen.value = false }
   if (event.key !== 'Tab') return
@@ -125,9 +142,36 @@ function editorKeys(event: KeyboardEvent) {
 function toggleTag(tag: string) {
   if (saving.value || creatingTag.value) return
   if (tags.value.includes(tag)) tags.value = tags.value.filter(item => item !== tag)
-  else if (tags.value.length < 20) tags.value = [...tags.value, tag]
+  else if (tags.value.length < 20) { tags.value = [...tags.value, tag]; recordTagUse(tag) }
 }
-const choices = computed(() => [...new Set([...(props.tagOptions ?? []), ...tags.value])])
+const choices = computed(() => {
+  const usage = readTagUsage()
+  return [...new Set([...(props.tagOptions ?? []), ...tags.value])].sort((a, b) =>
+    (usage[b]?.count ?? 0) - (usage[a]?.count ?? 0)
+    || (usage[b]?.lastUsed ?? 0) - (usage[a]?.lastUsed ?? 0)
+    || a.localeCompare(b, 'zh-CN'))
+})
+const quickChoices = computed(() => choices.value.slice(0, 6))
+const tagSuggestionsOpen = ref(false)
+const tagSuggestionStyle = ref<Record<string, string>>({})
+function onComposerEditorKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && tagSuggestionsOpen.value) { event.preventDefault(); tagSuggestionsOpen.value = false; return }
+  if (event.key !== '#') return
+  window.setTimeout(() => {
+    const selection = window.getSelection()
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null
+    const rect = range && typeof range.getBoundingClientRect === 'function' ? range.getBoundingClientRect() : null
+    const left = Math.max(12, Math.min((rect?.left ?? 20), window.innerWidth - 260))
+    const top = Math.min((rect?.bottom ?? 80) + 6, window.innerHeight - 220)
+    tagSuggestionStyle.value = { left: `${left}px`, top: `${top}px` }
+    tagSuggestionsOpen.value = true
+  }, 0)
+}
+function insertSuggestedTag(tag: string) {
+  noteEditor.value?.insertTextAtSelection?.(`#${tag} `, 1)
+  toggleTag(tag)
+  tagSuggestionsOpen.value = false
+}
 const id = ref(initial.id)
 const taskSource = computed(() => ({
   id: props.note?.id ?? id.value,
@@ -139,6 +183,9 @@ const text = ref(initial.text)
 const content = ref<RichDocContent | undefined>(initial.content)
 const generatedTitle = ref(initial.generatedTitle || props.note?.title || '')
 const editorImages = computed(() => notePreviewImages(content.value ?? { version: 1, document: null, markdown: text.value }))
+const railExpanded = ref(false)
+const visibleEditorImages = computed(() => railExpanded.value ? editorImages.value : editorImages.value.slice(0, 4))
+watch(editorImages, () => { railExpanded.value = false })
 const previewImage = ref<NotePreviewImage | null>(null)
 const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
 const lightbox = ref<HTMLElement | null>(null)
@@ -163,6 +210,7 @@ async function closeImage() {
 const autoPolish = ref(initial.autoPolish !== false)
 const autoImage = ref(initial.autoImage !== false)
 const autoTitle = ref(initial.autoTitle !== false)
+const autoTags = ref(initial.autoTags !== false)
 // 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
 const baseRev = initial.baseRev ?? props.note?.rev ?? 1
 const saving = ref(false)
@@ -188,11 +236,11 @@ watch(
   },
   { flush: 'post' },
 )
-watch([text, content, tags, generatedTitle, autoTitle, autoPolish, autoImage], () => {
+watch([text, content, tags, generatedTitle, autoTitle, autoPolish, autoImage, autoTags], () => {
   if (resetting) return
   error.value = ''
   try {
-    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value, generatedTitle: generatedTitle.value, autoTitle: autoTitle.value, autoPolish: autoPolish.value, autoImage: autoImage.value } satisfies Draft))
+    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value, generatedTitle: generatedTitle.value, autoTitle: autoTitle.value, autoPolish: autoPolish.value, autoImage: autoImage.value, autoTags: autoTags.value } satisfies Draft))
     draftError.value = false
     status.value = '草稿已保存在此浏览器'
   } catch {
@@ -231,16 +279,19 @@ async function save(asCopy = false) {
         && (latest.generatedTitle ?? '') === generatedTitle.value
         && (latest.autoPolish !== false) === autoPolish.value
         && (latest.autoTitle !== false) === autoTitle.value
-        && (latest.autoImage !== false) === autoImage.value)) localStorage.removeItem(draftKey)
+        && (latest.autoImage !== false) === autoImage.value
+        && (latest.autoTags !== false) === autoTags.value)) localStorage.removeItem(draftKey)
     } catch { /* 服务端保存已成功。 */ }
     if (!props.note || asCopy) {
       const saved = data.docById(savedId)
-      if (saved?.rev && (autoTitle.value || autoImage.value || autoPolish.value)) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
+      if (saved?.rev && (autoTitle.value || autoImage.value || autoPolish.value || autoTags.value)) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
         title: !!generatedTitle.value,
         titleEnabled: autoTitle.value,
         image: rich.markdown.startsWith('![文章总览图]('),
         imageEnabled: autoImage.value,
         polishEnabled: autoPolish.value,
+        tagsEnabled: autoTags.value,
+        allowedTags: [...new Set([...(props.tagOptions ?? []), ...tags.value])],
       })
     }
     if (!props.note) {
@@ -252,6 +303,7 @@ async function save(asCopy = false) {
       autoPolish.value = true
       autoImage.value = true
       autoTitle.value = true
+      autoTags.value = true
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
       savedSnapshot.value = { text: '', document: null, tags: [], title: '' }
@@ -311,8 +363,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <div class="fullscreen-reminder-actions"><button type="button" class="reminder-enter" @click="enterFullscreen">进入全屏</button><button type="button" @click="remindLater">稍后提醒</button><button type="button" aria-label="关闭全屏提醒" title="关闭提醒" @click="dismissFullscreenReminder"><i class="ri-close-line" aria-hidden="true"></i></button></div>
     </div>
     <div v-if="!note && generatedTitle" class="new-generated-title"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="生成的小记标题"></div>
-    <div v-if="inline && note" class="inline-heading"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="小记标题" :disabled="saving"><button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button><button class="add-tag" type="button" :disabled="saving" :aria-expanded="showTagPicker" @click="showTagPicker = !showTagPicker"><i class="ri-price-tag-3-line"></i> 添加标签</button><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
-    <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
+    <div v-if="fullscreen" class="fullscreen-quick-tags" aria-label="快捷标签"><span>常用标签</span><button v-for="tag in quickChoices" :key="tag" type="button" :class="{ selected: tags.includes(tag) }" :aria-pressed="tags.includes(tag)" :disabled="saving" @click="toggleTag(tag)"># {{ tag }}</button><span class="tag-hint">输入 # 可快速选择</span></div>
+    <div v-if="inline && note" class="inline-heading"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="小记标题" :disabled="saving"><button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button><button class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
+    <div class="editor-space" @keydown.capture.exact="onComposerEditorKeydown" @keydown.capture.shift.exact="onComposerEditorKeydown" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
       <div class="composer-editor-layout" :class="{ 'has-images': editorImages.length }"><div class="composer-editor-main">
       <MarkdownEditor :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls selection-image preview-images
         :article-image-key="`note:${session.currentUser.id}:${id}`"
@@ -324,26 +377,18 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         <template v-if="!inline" #footer-tags>
           <div class="composer-tags">
             <button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button>
-            <button class="add-tag" type="button" :disabled="saving" :aria-expanded="showTagPicker" @click="showTagPicker = !showTagPicker"><i class="ri-price-tag-3-line"></i> 添加标签</button>
+            <button class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span>
           </div>
         </template>
       </MarkdownEditor>
-      </div><aside v-if="editorImages.length" class="composer-image-rail" aria-label="小记图片总览"><div class="rail-heading">图片总览 <span>{{ editorImages.length }} 张</span></div><div class="rail-images"><div v-for="(image, index) in editorImages" :key="`${index}:${image.src}`" class="rail-image-cell" :class="{ cover: image.alt === '文章总览图' }"><button type="button" class="rail-image" :aria-label="`查看图片：${image.alt || `第 ${index + 1} 张`}`" @click="openImage(image, $event)" @contextmenu="openImageMenu(image.src, $event)"><img :src="notePreviewSource(image.src)" :data-full-src="image.src" :alt="image.alt" loading="lazy" decoding="async"><span>{{ image.alt || `图片 ${index + 1}` }}</span></button><button type="button" class="rail-remove" :disabled="saving" :aria-label="`移除图片：${image.alt || `第 ${index + 1} 张`}`" title="移除图片，可撤销" @click="noteEditor?.removeImageAt(index)"><i class="ri-close-line" aria-hidden="true"></i></button></div></div></aside></div>
-    </div>
-    <div v-if="showTagPicker" class="tag-picker" aria-label="选择小记标签">
-      <button v-for="tag in choices" :key="tag" type="button" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" :aria-pressed="tags.includes(tag)" @click="toggleTag(tag)"># {{ tag }}</button>
-      <form class="new-tag-form" @submit.prevent="createTag">
-        <input v-model="newTag" aria-label="编辑区新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag || tags.length >= 20">
-        <button type="submit" :disabled="saving || creatingTag || !newTag.trim() || tags.length >= 20">{{ creatingTag ? '正在保存…' : tagError ? '重试新增' : '新增标签' }}</button>
-        <span v-if="tagError" class="error" role="alert">{{ tagError }}</span>
-      </form>
-      <span v-if="tags.length >= 20">每篇最多 20 个标签</span>
+      </div><aside v-if="editorImages.length" class="composer-image-rail" aria-label="小记图片总览"><div class="rail-heading">图片总览 <span>{{ editorImages.length }} 张</span></div><div class="rail-images"><div v-for="(image, index) in visibleEditorImages" :key="`${index}:${image.src}`" class="rail-image-cell" :class="{ cover: image.alt === '文章总览图' }"><button type="button" class="rail-image" :aria-label="`查看图片：${image.alt || `第 ${index + 1} 张`}`" @click="openImage(image, $event)" @contextmenu="openImageMenu(image.src, $event)"><img :src="notePreviewSource(image.src)" :data-full-src="image.src" :alt="image.alt" loading="lazy" decoding="async"><span>{{ image.alt || `图片 ${index + 1}` }}</span></button><button type="button" class="rail-remove" :disabled="saving" :aria-label="`移除图片：${image.alt || `第 ${index + 1} 张`}`" title="移除图片，可撤销" @click="noteEditor?.removeImageAt(index)"><i class="ri-close-line" aria-hidden="true"></i></button></div><button v-if="editorImages.length > visibleEditorImages.length" class="rail-more" type="button" @click="railExpanded = true">其余 {{ editorImages.length - visibleEditorImages.length }} 张</button><button v-else-if="railExpanded && editorImages.length > 4" class="rail-more" type="button" @click="railExpanded = false">收起</button></div></aside></div>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
-    <div v-if="!note" class="auto-enrichment-choices" role="group" aria-label="保存后自动生成选项">
-      <label><input v-model="autoTitle" type="checkbox" :disabled="saving">保存后自动生成标题</label>
-      <label><input v-model="autoPolish" type="checkbox" :disabled="saving">保存后自动润色正文</label>
-      <label><input v-model="autoImage" type="checkbox" :disabled="saving">保存后自动生成图片</label>
+    <div v-if="!note" class="auto-enrichment-choices" role="group" aria-label="保存后自动处理">
+      <button type="button" class="auto-enrichment-toggle" role="switch" :aria-checked="autoTitle" aria-label="自动生成标题" title="保存后自动生成标题" :disabled="saving" @click="autoTitle = !autoTitle"><i class="ri-text" aria-hidden="true"></i><span class="auto-switch" :class="{ on: autoTitle }"></span></button>
+      <button type="button" class="auto-enrichment-toggle" role="switch" :aria-checked="autoPolish" aria-label="自动润色正文" title="保存后自动润色正文" :disabled="saving" @click="autoPolish = !autoPolish"><i class="ri-magic-line" aria-hidden="true"></i><span class="auto-switch" :class="{ on: autoPolish }"></span></button>
+      <button type="button" class="auto-enrichment-toggle" role="switch" :aria-checked="autoImage" aria-label="自动生成图片" title="保存后自动生成图片" :disabled="saving" @click="autoImage = !autoImage"><i class="ri-image-add-line" aria-hidden="true"></i><span class="auto-switch" :class="{ on: autoImage }"></span></button>
+      <button type="button" class="auto-enrichment-toggle" role="switch" :aria-checked="autoTags" aria-label="自动添加已有标签" title="保存时与标题、润色步骤一起，从已有标签中推荐 1–3 个" :disabled="saving" @click="autoTags = !autoTags"><i class="ri-price-tag-3-line" aria-hidden="true"></i><span class="auto-switch" :class="{ on: autoTags }"></span></button>
     </div>
     <div class="composer-footer">
       <span role="status" :class="{ error: draftError }">{{ saving ? '正在保存到服务器…' : status || 'Ctrl / ⌘ + Enter 保存' }}</span>
@@ -352,6 +397,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <button class="save-note" type="button" :disabled="!canSave" @click="save()">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
     </div>
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
+    <Teleport to="body"><div v-if="tagSuggestionsOpen" class="tag-suggestion-menu" role="listbox" aria-label="最近常用标签" :style="tagSuggestionStyle"><div>最近常用</div><button v-for="tag in choices.slice(0, 8)" :key="tag" type="button" role="option" :aria-selected="tags.includes(tag)" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" @mousedown.prevent @click="insertSuggestedTag(tag)"># {{ tag }}<span>{{ tags.includes(tag) ? '已选' : '' }}</span></button><small>按使用频次排序 · Esc 收起</small></div></Teleport>
     <Teleport to="body"><div v-if="previewImage" ref="lightbox" class="composer-image-lightbox" role="dialog" aria-modal="true" :aria-label="previewImage.alt || '小记图片预览'" tabindex="-1" @click.self="closeImage" @keydown.esc.stop="closeImage"><button type="button" aria-label="关闭图片预览" @click="closeImage"><i class="ri-close-line"></i></button><img :src="previewImage.src" :alt="previewImage.alt" @contextmenu="openImageMenu(previewImage.src, $event)"></div></Teleport>
   </section>
 </template>
@@ -382,10 +428,10 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .new-generated-title input { width: 100%; margin-bottom: 8px; border: 0; border-bottom: 1px solid var(--wao-line-control); padding: 5px 0; background: transparent; color: var(--wao-text-1); font-size: 16px; font-weight: 600; }
 .inline-heading .tag-chip, .inline-heading .add-tag { padding: 3px 7px; font-size: 11px; }
 .composer-editor-layout { display: flex; flex: 1; min-width: 0; min-height: 0; }
-.composer-editor-layout.has-images { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 14px; }
+.composer-editor-layout.has-images { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 14px; align-items: start; }
 .composer-editor-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .composer-editor-layout.has-images .composer-editor-main :deep(img.md-img) { display: none !important; }
-.composer-image-rail { min-width: 0; padding-left: 12px; border-left: 1px solid var(--wao-line); }
+.composer-image-rail { align-self: start; min-width: 0; padding-left: 12px; border-left: 1px solid var(--wao-line); }
 .rail-heading { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--wao-text-2); font-size: 11px; }
 .rail-heading span { color: var(--wao-text-faint); }
 .rail-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
@@ -398,13 +444,32 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .rail-image img { display: block; width: 100%; height: 62px; object-fit: contain; }
 .rail-image-cell.cover img { height: 94px; }
 .rail-image span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.rail-more { grid-column: 1 / -1; padding: 4px 6px; border: 0; color: var(--wao-text-weak); background: var(--wao-bg-sub); font-size: 10px; }
 .composer-image-lightbox { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; padding: 32px; background: rgba(15, 18, 28, .82); }
 .composer-image-lightbox img { max-width: min(96vw, 1600px); max-height: 90vh; object-fit: contain; }
 .composer-image-lightbox button { position: fixed; top: 16px; right: 18px; color: white; background: rgba(255,255,255,.16); }
 .composer-footer > span { color: var(--wao-text-faint); font-size: 12px; }
-.auto-enrichment-choices { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin-top:10px; color:var(--wao-text-3); font-size:12px; }
-.auto-enrichment-choices label { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
-.auto-enrichment-choices input { accent-color:var(--wao-primary); }
+.auto-enrichment-choices { display:flex; align-items:center; flex-wrap:wrap; gap:8px 13px; margin-top:10px; color:var(--wao-text-3); font-size:12px; }
+.auto-enrichment-toggle { display:inline-flex; align-items:center; gap:6px; padding:4px 3px; border:0; border-radius:7px; background:transparent; }
+.auto-enrichment-toggle:hover { background:var(--wao-bg-hover); }
+.auto-enrichment-toggle > i { color:var(--wao-text-weak); font-size:15px; }
+.auto-switch { position:relative; width:28px; height:16px; border-radius:10px; background:var(--wao-line-control); transition:background .16s ease; }
+.auto-switch::after { content:""; position:absolute; left:2px; top:2px; width:12px; height:12px; border-radius:50%; background:var(--wao-bg-card); box-shadow:0 1px 2px rgba(0,0,0,.18); transition:transform .16s ease; }
+.auto-switch.on { background:var(--wao-primary); }
+.auto-switch.on::after { transform:translateX(12px); }
+.fullscreen-quick-tags { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:0 0 10px; color:var(--wao-text-faint); font-size:11px; }
+.fullscreen-quick-tags > span:first-child { margin-right:3px; }
+.fullscreen-quick-tags button { padding:4px 8px; border-radius:16px; font-size:11px; }
+.fullscreen-quick-tags button.selected { color:var(--wao-primary-text); background:var(--wao-bg-hover); }
+.fullscreen-quick-tags .tag-hint { margin-left:auto; color:var(--wao-text-faint); opacity:.72; }
+.inline-tag-create { display:flex; align-items:center; gap:5px; width:min(250px,100%); margin:0 0 9px; }
+.inline-tag-create input { min-width:0; flex:1; border:1px solid var(--wao-line-control); border-radius:7px; padding:5px 8px; background:var(--wao-bg-card); color:var(--wao-text-2); font-size:12px; }
+.inline-tag-create button { min-width:30px; padding:4px 7px; }
+.inline-tag-create .error { flex-basis:100%; }
+.tag-suggestion-menu { position:fixed; z-index:2300; width:min(240px,calc(100vw - 24px)); max-height:min(260px,50vh); overflow:auto; padding:7px; border:1px solid var(--wao-line-control); border-radius:9px; background:var(--wao-bg-card); box-shadow:0 8px 26px rgba(30,24,55,.2); }
+.tag-suggestion-menu > div,.tag-suggestion-menu small { display:block; padding:5px 7px; color:var(--wao-text-faint); font-size:10px; }
+.tag-suggestion-menu button { display:flex; width:100%; justify-content:space-between; padding:7px 8px; border:0; background:transparent; text-align:left; font-size:12px; }
+.tag-suggestion-menu button:hover,.tag-suggestion-menu button[aria-selected="true"] { color:var(--wao-primary-text); background:var(--wao-bg-hover); }
 .composer-footer { flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .composer-footer > span { flex: 1; min-width: 140px; }
 button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
@@ -413,6 +478,7 @@ button:disabled { opacity: .5; cursor: default; }
 .error { color: var(--wao-danger-strong) !important; font-size: 12px; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } .fullscreen-reminder { align-items:flex-start; gap:7px; padding:9px; } .fullscreen-reminder-copy strong { font-size:12px; } .fullscreen-reminder-copy span { font-size:11px; } .fullscreen-reminder-actions { flex-direction:column; align-items:stretch; gap:2px; } .fullscreen-reminder-actions button { padding:5px 6px; font-size:11px; } }
 @media (max-width: 700px) { .composer-editor-layout.has-images { grid-template-columns: 1fr; } .composer-image-rail { border-left: 0; border-top: 1px solid var(--wao-line); padding: 10px 0 0; } .rail-images { grid-template-columns: repeat(3, minmax(0, 1fr)); } .rail-image-cell.cover { grid-column: auto; } .rail-image-cell.cover img { height: 62px; } }
+@media (prefers-reduced-motion: reduce) { .auto-switch,.auto-switch::after { transition:none; } }
 @media (hover: none) { .rail-remove { opacity: 1; } }
 .composer-footer > button { min-height: 36px; padding: 7px 14px; font-size: 13px; border-radius: 7px; }
 </style>

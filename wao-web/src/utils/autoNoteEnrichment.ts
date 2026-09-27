@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { fetchDoc, apiPatchDoc } from '@/api/board'
+import { fetchDoc, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import { fetchArticleImage, startArticleImage } from '@/api/articleImages'
 import { fetchPreference } from '@/api/favorites'
 import { newPolishRequestId, waitForPolish } from '@/api/polishJobs'
@@ -9,7 +9,7 @@ import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/ut
 import { cloneRichContent, legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 
 type Step = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
-export type NoteWorkflowProgress = { title: Step; image: Step; polish: Step; message?: string }
+export type NoteWorkflowProgress = { title: Step; image: Step; polish: Step; tags: Step; message?: string }
 type AutoJob = {
   memberId: string; docId: string; rev: number
   titleRequestId: string; titleDone: boolean
@@ -17,6 +17,7 @@ type AutoJob = {
   imageJobId?: string; imageDone: boolean
   imageEnabled?: boolean
   polishRequestId?: string; polishDone?: boolean; polishEnabled?: boolean
+  tagRequestId?: string; tagsDone?: boolean; tagsEnabled?: boolean; tagTerminalFailed?: boolean; allowedTags?: string[]
   titleTerminalFailed?: boolean; polishTerminalFailed?: boolean; error?: string
 }
 
@@ -53,12 +54,13 @@ function load(memberId: string, docId: string): AutoJob | null {
     return value?.memberId === memberId && value?.docId === docId ? value : null
   } catch { return null }
 }
-function progress(job: AutoJob, stage?: 'title' | 'image' | 'polish', state?: Step) {
+function progress(job: AutoJob, stage?: 'title' | 'image' | 'polish' | 'tags', state?: Step) {
   if (!activeJob(job)) return
   const snapshot: NoteWorkflowProgress = noteEnrichmentProgress[job.docId] ?? {
     title: job.titleEnabled === false ? 'skipped' : job.titleDone ? 'done' : 'pending',
     image: job.imageEnabled === false ? 'skipped' : job.imageDone ? 'done' : 'pending',
     polish: job.polishEnabled === false ? 'skipped' : job.polishDone ? 'done' : 'pending',
+    tags: job.tagsEnabled !== true ? 'skipped' : job.tagsDone ? 'done' : 'pending',
   }
   if (stage && state) snapshot[stage] = state
   snapshot.message = job.error
@@ -66,9 +68,9 @@ function progress(job: AutoJob, stage?: 'title' | 'image' | 'polish', state?: St
 }
 function finish(job: AutoJob) {
   try { localStorage.removeItem(keyOf(job.memberId, job.docId)) } catch { /* 已完成，无需重试。 */ }
-  try { localStorage.setItem(`${COMPLETE_PREFIX}${job.memberId}:${job.docId}`, JSON.stringify({ title: job.titleEnabled === false ? 'skipped' : 'done', image: job.imageEnabled === false ? 'skipped' : 'done', polish: job.polishEnabled === false ? 'skipped' : 'done' })) } catch { /* 页面内状态仍可见。 */ }
+  try { localStorage.setItem(`${COMPLETE_PREFIX}${job.memberId}:${job.docId}`, JSON.stringify({ title: job.titleEnabled === false ? 'skipped' : 'done', image: job.imageEnabled === false ? 'skipped' : 'done', polish: job.polishEnabled === false ? 'skipped' : 'done', tags: job.tagsEnabled === true ? 'done' : 'skipped' })) } catch { /* 页面内状态仍可见。 */ }
   if (!activeJob(job)) return
-  const completed = [job.titleEnabled !== false && '标题', job.imageEnabled !== false && '配图', job.polishEnabled !== false && '润色'].filter(Boolean)
+  const completed = [job.titleEnabled !== false && '标题', job.imageEnabled !== false && '配图', job.polishEnabled !== false && '润色', job.tagsEnabled === true && '标签'].filter(Boolean)
   const completedLabel = completed.length > 1 ? `${completed.slice(0, -1).join('、')}和${completed[completed.length - 1]}` : completed[0] || ''
   noteEnrichmentStatus[job.docId] = job.polishEnabled === false
     ? `${completedLabel}已生成，已按选择保留原文`
@@ -86,7 +88,7 @@ async function run(job: AutoJob) {
   if (running.has(key) || !activeJob(job)) return
   running.add(key)
   const data = useDataStore()
-  let stage: 'title' | 'image' | 'polish' = 'title'
+  let stage: 'title' | 'image' | 'polish' | 'tags' = 'title'
   try {
     job.error = undefined
     progress(job)
@@ -128,6 +130,45 @@ async function run(job: AutoJob) {
       job.rev = saved.rev ?? job.rev + 1
       job.titleDone = true
       job.titleTerminalFailed = false
+      save(job)
+      progress(job, stage, 'done')
+    }
+    if (job.tagsEnabled && !job.tagsDone) {
+      stage = 'tags'
+      progress(job, stage, 'running')
+      noteEnrichmentStatus[job.docId] = '正在推荐已有标签…'
+      const latest = await fetchDoc(job.docId)
+      if (!activeJob(job)) return
+      if (latest.rev !== job.rev || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
+        throw new Error('小记已被修改，标签推荐未写入；请保存后重试')
+      }
+      job.tagRequestId ??= newPolishRequestId()
+      save(job)
+      const result = await waitForPolish(articleText.slice(0, 12_000), 'NOTE_TAGS', {
+        model, allowedTags: job.allowedTags ?? [], requestId: job.tagRequestId,
+        isActive: () => activeJob(job),
+        onProgress: value => { if (value.status === 'FAILED') job.tagTerminalFailed = true },
+      })
+      const suggested = [...new Set((result.polished ?? '').split(/\r?\n/u).map(tag => tag.trim()).filter(tag => (job.allowedTags ?? []).includes(tag)))].slice(0, 3)
+      if (!activeJob(job)) return
+      if (suggested.length) {
+        const current = await fetchDoc(job.docId)
+        if (!activeJob(job)) return
+        if (current.rev !== job.rev || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
+          throw new Error('小记已被修改，标签推荐未写入；请保存后重试')
+        }
+        const existingTags = await fetchNoteTags()
+        const stillExisting = suggested.filter(tag => existingTags.includes(tag))
+        if (stillExisting.length) {
+          const nextTags = [...new Set([...(current.tags ?? []), ...stillExisting])].slice(0, 20)
+          const saved = await apiPatchDoc(job.docId, { tags: nextTags, expectedRev: job.rev })
+          if (!activeJob(job)) return
+          data.applyRemoteDoc(saved)
+          job.rev = saved.rev ?? job.rev + 1
+        }
+      }
+      job.tagsDone = true
+      job.tagTerminalFailed = false
       save(job)
       progress(job, stage, 'done')
     }
@@ -204,7 +245,7 @@ async function run(job: AutoJob) {
       save(job)
       progress(job, stage, 'done')
     }
-    if ((job.titleDone || job.titleEnabled === false) && (job.imageDone || job.imageEnabled === false) && (job.polishDone || job.polishEnabled === false)) finish(job)
+    if ((job.titleDone || job.titleEnabled === false) && (job.imageDone || job.imageEnabled === false) && (job.polishDone || job.polishEnabled === false) && (job.tagsDone || job.tagsEnabled !== true)) finish(job)
   } catch (cause) {
     if (!activeJob(job)) return
     job.error = cause instanceof Error ? cause.message : '自动整理失败'
@@ -239,7 +280,7 @@ export async function initializeNoteWorkflow(memberId: string) {
 
 /** 保存新小记或编辑完成后启动；已有结果与三项自动整理开关逐篇保留。 */
 export function startAutoNoteEnrichment(memberId: string, docId: string, rev: number,
-    completed: { title?: boolean; titleEnabled?: boolean; image?: boolean; imageEnabled?: boolean; polishEnabled?: boolean } = {}) {
+    completed: { title?: boolean; titleEnabled?: boolean; image?: boolean; imageEnabled?: boolean; polishEnabled?: boolean; tagsEnabled?: boolean; allowedTags?: string[] } = {}) {
   if (!memberId || load(memberId, docId)) return
   activateNoteWorkflowMember(memberId)
   discarded.delete(keyOf(memberId, docId))
@@ -248,6 +289,9 @@ export function startAutoNoteEnrichment(memberId: string, docId: string, rev: nu
   const job: AutoJob = {
     memberId, docId, rev, titleRequestId: newPolishRequestId(), titleDone: !!completed.title, titleEnabled: completed.titleEnabled !== false,
     imageDone: !!completed.image, imageEnabled: completed.imageEnabled !== false, polishEnabled: completed.polishEnabled !== false,
+    tagsEnabled: completed.tagsEnabled === true && (completed.allowedTags?.length ?? 0) > 0,
+    tagsDone: completed.tagsEnabled !== true || (completed.allowedTags?.length ?? 0) === 0,
+    allowedTags: completed.allowedTags?.slice(0, 100),
   }
   save(job)
   progress(job)
@@ -265,10 +309,10 @@ export function resumeAutoNoteEnrichment(memberId: string) {
         const docId = key.slice(`${COMPLETE_PREFIX}${memberId}:`.length)
         if (!noteEnrichmentProgress[docId]) {
           const value = localStorage.getItem(key) || ''
-          const completed = value.startsWith('{') ? JSON.parse(value) as { title?: Step; image?: Step; polish?: Step } : null
+          const completed = value.startsWith('{') ? JSON.parse(value) as { title?: Step; image?: Step; polish?: Step; tags?: Step } : null
           noteEnrichmentProgress[docId] = {
             title: completed?.title === 'skipped' ? 'skipped' : 'done', image: completed?.image === 'skipped' ? 'skipped' : 'done',
-            polish: (completed?.polish ?? value) === 'done' ? 'done' : 'skipped',
+            polish: (completed?.polish ?? value) === 'done' ? 'done' : 'skipped', tags: completed?.tags === 'done' ? 'done' : 'skipped',
           }
         }
       }
@@ -289,6 +333,7 @@ export async function retryAutoNoteEnrichment(memberId: string, docId: string) {
     if (latest.rev !== undefined && latest.rev !== job.rev) {
       job.rev = latest.rev
       if (job.titleEnabled !== false && !job.titleDone) job.titleRequestId = newPolishRequestId()
+      if (job.tagsEnabled === true && !job.tagsDone) job.tagRequestId = newPolishRequestId()
       if (job.imageEnabled !== false && !job.imageDone) job.imageJobId = undefined
       if (!job.polishDone) job.polishRequestId = newPolishRequestId()
     }
@@ -297,10 +342,11 @@ export async function retryAutoNoteEnrichment(memberId: string, docId: string) {
     return
   }
   if (job.titleEnabled !== false && !job.titleDone && (job.titleTerminalFailed || job.error?.includes('已被修改'))) job.titleRequestId = newPolishRequestId()
+  if (job.tagsEnabled === true && !job.tagsDone && (job.tagTerminalFailed || job.error?.includes('小记已被修改'))) job.tagRequestId = newPolishRequestId()
   if (!job.polishDone && (job.polishTerminalFailed || job.error?.includes('已变化'))) job.polishRequestId = newPolishRequestId()
   job.error = undefined
   save(job)
-  progress(job, job.titleEnabled !== false && !job.titleDone ? 'title' : job.imageEnabled !== false && !job.imageDone ? 'image' : 'polish', 'pending')
+  progress(job, job.titleEnabled !== false && !job.titleDone ? 'title' : job.tagsEnabled && !job.tagsDone ? 'tags' : job.imageEnabled !== false && !job.imageDone ? 'image' : 'polish', 'pending')
   void run(job)
 }
 
