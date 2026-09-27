@@ -21,7 +21,7 @@ import { toast } from '@/composables/toast'
 import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import { useFavoritesStore } from '@/stores/favorites'
-import type { AiEngine, TaskStatus } from '@/types'
+import type { AiEngine, Task, TaskStatus } from '@/types'
 import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import ProjectAssetsPanel from '@/components/files/ProjectAssetsPanel.vue'
@@ -109,6 +109,39 @@ function columnPreference(kind: string) {
 const showEmptyColumns = columnPreference('empty-columns-v1')
 /** 表格视图是否按任务分组分段展示（与「分组」视图共用同一份分组数据，可在表格里直接改）。 */
 const tableGrouped = columnPreference('table-grouped-v1')
+type TableSortColumn = 'number' | 'title' | 'group' | 'priority' | 'status' | 'owner' | 'creator' | 'created' | 'start' | 'due'
+const tableSort = ref<{ column: TableSortColumn; direction: 'asc' | 'desc' } | null>(null)
+function toggleTableSort(column: TableSortColumn) {
+  tableSort.value = { column, direction: tableSort.value?.column === column && tableSort.value.direction === 'asc' ? 'desc' : 'asc' }
+}
+function sortDirection(column: TableSortColumn) {
+  return tableSort.value?.column === column ? (tableSort.value.direction === 'asc' ? 'ascending' : 'descending') : 'none'
+}
+function tableSortValue(task: Task, column: TableSortColumn): string | number | null {
+  const memberName = (id?: string | null) => session.members.find(member => member.id === id)?.name ?? id ?? ''
+  switch (column) {
+    case 'number': return task.number ?? null
+    case 'title': return task.title
+    case 'group': return groups.value.find(group => group.id === groupIdOf(task))?.name ?? ''
+    case 'priority': return Number(task.pr.slice(1))
+    case 'status': return TASK_STATUSES.indexOf(task.status)
+    case 'owner': return memberName(task.owner)
+    case 'creator': return task.createdBy ? memberName(task.createdBy) : null
+    case 'created': return task.createdAt ?? null
+    case 'start': return task.startAt || task.start || null
+    case 'due': return task.due || null
+  }
+}
+function compareTableTasks(a: Task, b: Task) {
+  if (!tableSort.value) return 0
+  const { column, direction } = tableSort.value
+  const left = tableSortValue(a, column), right = tableSortValue(b, column)
+  if (left === null || left === '') return right === null || right === '' ? 0 : 1
+  if (right === null || right === '') return -1
+  const compared = typeof left === 'number' && typeof right === 'number'
+    ? left - right : String(left).localeCompare(String(right), 'zh-CN', { numeric: true })
+  return direction === 'asc' ? compared : -compared
+}
 /** 表格里正在录入子任务的位置：点行尾「+」才出现输入行，并且紧跟在要挂的那一行下面。 */
 const addingSub = ref<{ taskId: string; parentId: string | null } | null>(null)
 function startAddSub(taskId: string, parentId: string | null) {
@@ -489,13 +522,16 @@ const tableSections = computed(() => {
       doneOpen: showFinished.value,
     }]
   }
-  return groupSections.value.map((group) => ({
+  const sections = groupSections.value.map((group) => ({
     ...group,
     header: true,
     collapsed: collapsedGroups.value.includes(group.id),
     open: allTasks.value.filter((task) => groupIdOf(task) === group.id && (!isFinished(task) || isSettling(task.id))),
     doneOpen: showFinished.value,
   }))
+  return tableSort.value?.column === 'group'
+    ? sections.sort((a, b) => (tableSort.value!.direction === 'asc' ? 1 : -1) * a.name.localeCompare(b.name, 'zh-CN'))
+    : sections
 })
 const orderingOver = ref<{ id: string; after: boolean } | null>(null)
 function onTableDragOver(id: string, event: DragEvent) {
@@ -528,7 +564,7 @@ function tableRows(section: typeof tableSections.value[number]) {
     const parent = allTasks.value.find(t => t.id === candidates[i]!.parentTaskId)
     if (parent && !ids.has(parent.id)) { ids.add(parent.id); candidates.push(parent) }
   }
-  return taskTreeRows(candidates, collapsedSubTasks.value)
+  return taskTreeRows(tableSort.value ? candidates.sort(compareTableTasks) : candidates, collapsedSubTasks.value)
 }
 function childTaskCount(id: string) { return ptasks.value.filter(task => task.parentTaskId === id).length }
 async function onDropGroup(groupId: string, overId?: string) {
@@ -716,16 +752,20 @@ watch(visibleTaskIds, (ids) => {
           </colgroup>
           <thead>
             <tr>
-              <th scope="col">ID</th>
-              <th scope="col"><div class="table-title-heading">标题<button class="group-op" aria-label="快速新建任务" title="只输入标题新建任务" @click="startQuickAdd(tableGrouped ? groups[0]!.id : '__all')"><i class="ri-add-line"></i></button></div></th>
-              <th scope="col">分组</th>
-              <th scope="col">优先级</th>
-              <th scope="col">状态</th>
-              <th scope="col">负责人</th>
-              <th scope="col">创建者</th>
-              <th scope="col">创建日期</th>
-              <th scope="col">计划开始</th>
-              <th scope="col">截止日期</th>
+              <th v-for="column in ([
+                { key: 'number', label: 'ID' }, { key: 'title', label: '标题' },
+                { key: 'group', label: '分组' }, { key: 'priority', label: '优先级' },
+                { key: 'status', label: '状态' }, { key: 'owner', label: '负责人' },
+                { key: 'creator', label: '创建者' }, { key: 'created', label: '创建日期' },
+                { key: 'start', label: '计划开始' }, { key: 'due', label: '截止日期' },
+              ] as { key: TableSortColumn; label: string }[])" :key="column.key" scope="col" :aria-sort="sortDirection(column.key)">
+                <div class="table-title-heading">
+                  <button class="table-sort" type="button" :aria-label="`按${column.label}${sortDirection(column.key) === 'ascending' ? '降序' : '升序'}排序`" @click="toggleTableSort(column.key)">
+                    {{ column.label }}<i :class="sortDirection(column.key) === 'ascending' ? 'ri-arrow-up-line' : sortDirection(column.key) === 'descending' ? 'ri-arrow-down-line' : 'ri-expand-up-down-line'" aria-hidden="true"></i>
+                  </button>
+                  <button v-if="column.key === 'title'" class="group-op" aria-label="快速新建任务" title="只输入标题新建任务" @click="startQuickAdd(tableGrouped ? groups[0]!.id : '__all')"><i class="ri-add-line"></i></button>
+                </div>
+              </th>
             </tr>
           </thead>
           <template v-for="section in tableSections" :key="section.id">
@@ -2210,6 +2250,10 @@ watch(visibleTaskIds, (ids) => {
   font-weight: 500;
   color: var(--wao-text-weak);
 }
+.project-task-table .table-sort { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 2px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
+.project-task-table .table-sort:hover, .project-task-table .table-sort:focus-visible { color: var(--wao-primary-text); background: var(--wao-bg-hover); }
+.project-task-table .table-sort i { font-size: 12px; opacity: .55; }
+.project-task-table th[aria-sort="ascending"] .table-sort i, .project-task-table th[aria-sort="descending"] .table-sort i { opacity: 1; }
 .project-task-table :is(th, td) {
   padding: 5px 9px;
   border-right: 1px solid var(--wao-line);
