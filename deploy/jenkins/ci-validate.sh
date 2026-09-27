@@ -19,6 +19,7 @@ sh deploy/scripts/test-validate-jvm-budget.sh
 sh deploy/scripts/test-image-content.sh
 sh deploy/scripts/test-validate-deployment-node.sh
 sh deploy/scripts/test-ensure-codex-egress.sh
+sh deploy/scripts/test-deploy-optional-egress.sh
 sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 sh deploy/jenkins/test-ci-build-release.sh
