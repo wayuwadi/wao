@@ -6,7 +6,6 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { usePreferenceStore } from '@/stores/preferences'
-import { priorityMeta } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
@@ -91,14 +90,9 @@ watch(() => preferences.defaultProject, (value) => {
     project.value = value
   }
 })
-const owner = ref(draft.owner ?? session.currentUser.id)
-watch(() => session.members, (members) => {
-  if (members.length && !members.some(member => member.id === owner.value)) {
-    owner.value = members.some(member => member.id === session.currentUser.id) ? session.currentUser.id : members[0]!.id
-  }
-}, { immediate: true })
+const owner = ref(draft.pendingTaskId ? draft.owner || session.currentUser.id : session.currentUser.id)
 const workItemType = ref<WorkItemType>(draft.workItemType ?? 'task')
-const pr = ref<Priority>(draft.pr ?? ui.modalPriority ?? 'P2')
+const pr = ref<Priority>(draft.pendingTaskId ? draft.pr || ui.modalPriority || 'P2' : ui.modalPriority || 'P2')
 // 日历双击某天进来时，截止日直接锁定那一天，优先于草稿里存的快捷选项。
 // 草稿里的 ISO 日期（上次从日历带入的）没有对应 pill，回落到「不设置」。
 const QUICK_DUES = [NO_DUE, '今天', '明天', '周日', '下周一']
@@ -138,8 +132,6 @@ function restoreLegacyDraft() {
     title.value = typeof old.title === 'string' ? old.title : ''
     desc.value = typeof old.desc === 'string' ? old.desc : ''
     if (typeof old.project === 'string' && openProjects.value.some(p => p.id === old.project)) project.value = old.project
-    if (typeof old.owner === 'string') owner.value = old.owner
-    if (old.pr && ['P0', 'P1', 'P2', 'P3'].includes(old.pr)) pr.value = old.pr
     if (old.due && QUICK_DUES.includes(old.due)) due.value = old.due
     if (old.scheduleMode === 'range') scheduleMode.value = 'range'
     if (typeof old.startAt === 'string') startAt.value = old.startAt
@@ -264,12 +256,13 @@ useOverlayDismiss(() => true, requestClose)
       <div class="spacer"></div>
       <button class="close" :disabled="createState === 'submitting'" @click="requestClose"><i class="ri-close-line"></i></button>
     </div>
+    <div class="modal-body">
     <input
       ref="titleInput"
       v-model="title"
       class="title-input"
       enterkeyhint="done"
-      placeholder="任务标题，例如「整理证件盒 · 第 4 批」"
+      placeholder="要完成什么？例如：整理证件盒"
       @keydown.enter.prevent="create"
     />
     <p v-if="legacyDraftAvailable" class="source-note">旧版草稿仍保存在此浏览器，因缺少账号标识未自动加载。
@@ -277,49 +270,28 @@ useOverlayDismiss(() => true, requestClose)
     </p>
 
     <p v-if="source" class="source-note">来自：<a v-if="source.sourceUrl" :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a><span v-else>{{ source.sourceTitle }}</span>。原文保留不变。</p>
-    <div class="label">所属项目 <span v-if="source && !project" class="label-hint">请选择要存入的项目</span></div>
-    <div class="project-select-row">
-      <select v-model="project" @change="projectChosenByUser = true" aria-label="所属项目" class="compact-select">
-        <option value="" disabled>请选择所属项目</option>
+    <div class="meta-row">
+      <label class="meta-field"><span>项目</span><select v-model="project" @change="projectChosenByUser = true" aria-label="所属项目" class="compact-select">
+        <option value="" disabled>请选择项目</option>
         <option v-for="p in openProjects" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select>
+      </select></label>
+      <label class="meta-field type-field"><span>类型</span><select v-model="workItemType" aria-label="工作项类型" class="compact-select"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select></label>
       <button
         v-if="project"
-        class="pill default-project"
+        class="default-project"
         :class="{ on: preferences.defaultProject === project }"
         type="button"
+        :aria-label="preferences.defaultProject === project ? '当前默认项目' : '设为默认项目'"
+        :title="preferences.defaultProject === project ? '当前默认项目' : '设为默认项目'"
+        :disabled="preferences.defaultProject === project"
         @click="makeDefaultProject"
       >
-        <i class="ri-pushpin-line"></i>{{ preferences.defaultProject === project ? '默认项目' : '设为默认' }}
+        <i class="ri-pushpin-line"></i>
       </button>
     </div>
-
-    <label class="label">工作项类型</label>
-    <select v-model="workItemType" aria-label="工作项类型" class="compact-select"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select>
-    <div class="two-col">
-      <div>
-        <div class="label">负责人</div>
-        <select v-model="owner" aria-label="负责人" class="compact-select">
-          <option v-for="m in session.members" :key="m.id" :value="m.id">{{ m.name }}</option>
-        </select>
-      </div>
-      <div>
-        <div class="label">优先级</div>
-        <div class="seg-row">
-          <button
-            v-for="p in (['P0', 'P1', 'P2', 'P3'] as Priority[])"
-            :key="p"
-            class="seg pr"
-            :style="pr === p ? { background: priorityMeta(p).bg, color: priorityMeta(p).color, borderColor: priorityMeta(p).color } : {}"
-            @click="pr = p"
-          >
-            {{ p }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="label">时间安排</div>
+    <p v-if="source && !project" class="label-hint">请选择要存入的项目</p>
+    <details class="schedule-details" :open="!!ui.modalDue || !!ui.modalStartAt || undefined">
+      <summary><i class="ri-calendar-line" aria-hidden="true"></i>时间安排 <span>{{ scheduleMode === 'range' ? '时间段' : due === NO_DUE ? '未设置' : due }}</span></summary>
     <div class="schedule-switch">
       <button :class="{ on: scheduleMode === 'deadline' }" @click="scheduleMode = 'deadline'">截止日期</button>
       <button :class="{ on: scheduleMode === 'range' }" @click="scheduleMode = 'range'">时间段</button>
@@ -331,6 +303,7 @@ useOverlayDismiss(() => true, requestClose)
       <label><span>开始</span><input v-model="startAt" type="datetime-local" /></label>
       <label><span>结束</span><input v-model="endAt" type="datetime-local" /></label>
     </div>
+    </details>
 
     <div class="label">描述 <span class="label-hint">敲 ## 变标题、- 变列表；粘贴或拖入的截图会插在光标处</span></div>
     <div class="desc-wrap">
@@ -340,6 +313,7 @@ useOverlayDismiss(() => true, requestClose)
         :min-height="110"
         @upload-image="onUploadImage"
       />
+    </div>
     </div>
 
     <div class="foot">
@@ -357,7 +331,16 @@ useOverlayDismiss(() => true, requestClose)
 </template>
 
 <style scoped>
-.project-select-row { display: flex; gap: 8px; align-items: center; }
+.meta-row { display: flex; gap: 8px; align-items: end; margin-top: 12px; }
+.meta-field { display: grid; gap: 5px; min-width: 0; flex: 1; color: var(--wao-text-weak); font-size: 11px; }
+.type-field { flex: 0 0 110px; }
+.default-project { flex: none; height: 34px; width: 34px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; }
+.default-project.on { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
+.default-project:disabled { cursor: default; }
+.schedule-details { margin-top: 12px; padding: 9px 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; }
+.schedule-details summary { display: flex; align-items: center; gap: 7px; color: var(--wao-text-2); font-size: 12px; cursor: pointer; list-style: none; }
+.schedule-details summary::-webkit-details-marker { display: none; }
+.schedule-details summary span { margin-left: auto; color: var(--wao-text-faint); }
 .compact-select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text); }
 .source-note { margin: 8px 0 14px; font-size: 12px; line-height: 1.6; color: var(--wao-text-weak); overflow-wrap: anywhere; }
 .source-note a { color: var(--wao-primary-text); }
@@ -370,28 +353,33 @@ useOverlayDismiss(() => true, requestClose)
 }
 .modal {
   position: fixed;
-  top: 12vh;
+  top: 6dvh;
   /* 用 margin 居中而不是 transform：waoPop 动画也动 transform，
      两者叠在一起时居中位移会被覆盖，卡片先偏右出现再跳回中间。 */
   left: 0;
   right: 0;
   margin-inline: auto;
   width: min(540px, calc(100vw - 40px));
-  max-height: 76vh;
-  overflow-y: auto;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
   animation: waoPop 0.16s ease;
-  padding: 20px 22px;
+  padding: 0;
 }
+.modal-body { min-height: 0; overflow-y: auto; padding: 0 22px 18px; }
 .spacer {
   flex: 1;
 }
 .head {
   display: flex;
   align-items: center;
+  flex: none;
+  padding: 18px 22px 8px;
 }
 .title {
   font-size: 16px;
@@ -603,11 +591,17 @@ useOverlayDismiss(() => true, requestClose)
   justify-content: center;
 }
 .foot {
-  margin-top: 20px;
+  flex: none;
+  margin-top: 0;
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 64px;
+  padding: 10px 22px;
+  border-top: 1px solid var(--wao-divider);
+  background: var(--wao-bg-card);
 }
+.foot .create-error, .foot .draft-state { min-width: 0; overflow-wrap: anywhere; }
 .draft-state {
   font-size: 11.5px;
   color: var(--wao-success-strong);
@@ -672,16 +666,15 @@ useOverlayDismiss(() => true, requestClose)
     max-width: none;
     max-height: 92dvh;
     border-radius: 16px 16px 0 0;
-    padding: 14px 14px calc(10px + env(safe-area-inset-bottom));
+    padding: 0;
     animation: waoSheet 0.18s ease;
   }
   .head {
-    position: sticky;
-    top: -14px;
-    z-index: 2;
     background: var(--wao-bg-card);
-    padding: 4px 0 6px;
+    padding: 14px 14px 8px;
   }
+  .modal-body { padding: 0 14px 18px; }
+  .type-field { flex-basis: 94px; }
   /* 16px 是 iOS Safari 不自动放大页面的下限，比美观重要 */
   .title-input {
     height: 46px;
@@ -691,16 +684,11 @@ useOverlayDismiss(() => true, requestClose)
   .seg {
     height: 34px;
   }
-  .two-col { grid-template-columns: 1fr; gap: 10px; }
   .range-fields { grid-template-columns: 1fr; }
   .foot {
-    position: sticky;
-    bottom: calc(-10px - env(safe-area-inset-bottom));
-    z-index: 2;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 16px;
-    padding: 10px 0 calc(6px + env(safe-area-inset-bottom));
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
     background: var(--wao-bg-card);
     border-top: 1px solid var(--wao-divider);
   }
