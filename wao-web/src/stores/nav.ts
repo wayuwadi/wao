@@ -515,6 +515,32 @@ export const useNavStore = defineStore('nav', () => {
     await persistMenuRegistries(nextBuiltin, nextExternal)
   }
 
+  /** 创建成员自己的侧栏分组；菜单仍沿用已有目录，只变更个人展示布局。 */
+  async function createMenuGroup(label: string) {
+    const trimmed = label.trim()
+    if (!trimmed || trimmed.length > 24) throw new Error('分组名称不能为空且不超过 24 个字符')
+    const next = currentLayout()
+    if (next.groups.length >= 30) throw new Error('最多可以创建 30 个导航分组')
+    if (next.groups.some((group) => group.label.toLocaleLowerCase() === trimmed.toLocaleLowerCase())) {
+      throw new Error('已有同名分组，请换一个名称')
+    }
+    const id = `custom-${crypto.randomUUID().replace(/-/g, '')}`
+    next.groups.push({ id, label: trimmed })
+    await saveLayout(next)
+    return id
+  }
+
+  /** 隐藏分组内当前位于侧栏的菜单；可在「全部功能」中重新固定并保留原分组。 */
+  async function hideMenuGroup(groupId: string) {
+    const next = currentLayout()
+    const group = next.groups.find((item) => item.id === groupId)
+    if (!group || groupId === 'ROOT') throw new Error('该分组不能隐藏')
+    const items = next.items.filter((item) => item.group === groupId && item.placement === 'MENU' && item.visible)
+    if (!items.length) throw new Error('分组中没有显示在侧栏的菜单')
+    items.forEach((item) => { item.visible = false })
+    await saveLayout(next)
+  }
+
   /** 把菜单放到当前分组或停靠区的最前面，并立即持久化。 */
   async function pinMenu(id: NavItemId) {
     const configured = menuConfig(id)
@@ -634,6 +660,8 @@ export const useNavStore = defineStore('nav', () => {
     moveMenu,
     renameMenu,
     setMenuVisibility,
+    createMenuGroup,
+    hideMenuGroup,
     pinMenu,
     menuConfig,
     externalAppById,

@@ -344,4 +344,51 @@ describe('桌面侧栏直接维护菜单', () => {
     expect(wrapper.find('[title="日历"]').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('分组右键可新建分组，并从已有菜单目录加入功能', async () => {
+    const wrapper = await mountSideNav()
+    const personalGroup = wrapper.findAll('.group-label').find((item) => item.text().includes('个人'))!
+    await personalGroup.trigger('contextmenu', { clientX: 80, clientY: 100 })
+    expect([...document.querySelectorAll<HTMLButtonElement>('.menu-actions button')].map((button) => button.textContent?.trim()))
+      .toEqual(['新建分组', '添加已有菜单', '隐藏分组'])
+    document.querySelector<HTMLButtonElement>('.menu-actions button')!.click()
+    await flushPromises()
+
+    const input = document.querySelector<HTMLInputElement>('#new-nav-group-name')!
+    input.value = '创作'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector<HTMLFormElement>('.group-dialog')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(document.querySelector('.group-picker')?.textContent).toContain('添加菜单到「创作」')
+    const projectOption = [...document.querySelectorAll<HTMLButtonElement>('.group-picker-list > button')]
+      .find((button) => button.querySelector('span')?.textContent?.startsWith('项目'))!
+    projectOption.click()
+    await flushPromises()
+
+    const project = useNavStore().menuConfig('projects')!
+    expect(project).toMatchObject({ group: expect.stringMatching(/^custom-/), placement: 'MENU', visible: true })
+    expect(useNavStore().layoutGroups.find((group) => group.id === project.group)?.label).toBe('创作')
+    expect(wrapper.findAll('.group-label').some((item) => item.text().includes('创作'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('分组右键隐藏其侧栏菜单并保留布局以便从全部功能恢复', async () => {
+    const wrapper = await mountSideNav()
+    const nav = useNavStore()
+    const toolsGroup = wrapper.findAll('.group-label').find((item) => item.text().includes('工具'))!
+    await toolsGroup.trigger('contextmenu', { clientX: 80, clientY: 100 })
+    const hide = [...document.querySelectorAll<HTMLButtonElement>('.menu-actions button')]
+      .find((button) => button.textContent?.includes('隐藏分组'))!
+    hide.click()
+    await flushPromises()
+
+    expect(nav.builtinMenus.filter((item) => item.group === 'TOOLS' && item.placement === 'MENU').every((item) => !item.visible)).toBe(true)
+    expect(wrapper.findAll('.group-label').some((item) => item.text().includes('工具'))).toBe(false)
+    expect(nav.layoutGroups.some((group) => group.id === 'TOOLS')).toBe(true)
+    const calls = vi.mocked(saveNavigationLayout).mock.calls
+    const saved = calls[calls.length - 1]?.[1]
+    expect(saved?.items.some((item) => item.group === 'TOOLS' && item.visible === false)).toBe(true)
+    wrapper.unmount()
+  })
 })
