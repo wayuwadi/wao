@@ -217,7 +217,7 @@ pipeline {
                     def nodeStatus = (params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true')
                         ? sh(script: '''
                             if [ -f "$WAO_RUN_TEMP/wao-deploy-status.env" ]; then
-                              grep -E '^(master_status|slave_status)=' "$WAO_RUN_TEMP/wao-deploy-status.env"
+                              grep -E '^(topology|master_status|slave_status)=' "$WAO_RUN_TEMP/wao-deploy-status.env"
                             fi
                         ''', returnStdout: true).trim()
                         : ''
@@ -226,6 +226,10 @@ pipeline {
                         successDescription = 'Jenkins 已检查变更（无需生产发布）'
                     } else if (!params.DEPLOY_PRODUCTION) {
                         successDescription = 'Jenkins 影子构建成功（未部署）'
+                    } else if (nodeStatus.contains('topology=linux2-only') &&
+                               nodeStatus.contains('master_status=success') &&
+                               nodeStatus.contains('slave_status=skipped')) {
+                        successDescription = 'Jenkins Linux2 单节点发布成功（Linux1 已退役）'
                     } else if (nodeStatus.contains('master_status=skipped') ||
                                nodeStatus.contains('master_status=degraded')) {
                         successDescription = 'Jenkins 单节点发布成功：Linux1，Linux2 待同步'
