@@ -1,3 +1,14 @@
+map $uri $wao_ready_trace {
+    default 0;
+    /api/edge/ready 1;
+}
+
+# Log only the readiness route's selected upstream and timing. Keep the
+# ordinary access log as well; neither log includes query strings or cookies.
+log_format wao_ready_upstream 'time=$time_iso8601 client=$remote_addr status=$status '
+                              'upstream=$upstream_addr upstream_status=$upstream_status '
+                              'request_time=$request_time upstream_time=$upstream_response_time';
+
 upstream wao_gateway {
     least_conn;
     # DDNS 同时发布 AAAA 时，云节点可能没有 IPv6 出站路由；渲染阶段只写入已验证的 IPv4。
@@ -717,6 +728,8 @@ server {
     }
 
     location /api/ {
+        access_log /var/log/nginx/access.log combined;
+        access_log /var/log/nginx/wao-ready-upstream.log wao_ready_upstream if=$wao_ready_trace;
         proxy_pass https://wao_gateway;
         proxy_http_version 1.1;
         proxy_ssl_verify off;
