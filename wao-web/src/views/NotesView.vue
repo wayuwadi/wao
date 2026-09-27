@@ -181,6 +181,9 @@ const notesList = ref<HTMLElement>()
 const highlighted = ref('')
 const reading = ref(false)
 const readingIndex = ref(0)
+const miningOpen = ref(false)
+const miningDialog = ref<HTMLElement | null>(null)
+let miningTrigger: HTMLElement | null = null
 const readerNotes = computed(() => matching.value)
 const readingNote = computed(() => readerNotes.value[readingIndex.value] ?? null)
 function startReading(id?: string) {
@@ -190,11 +193,24 @@ function startReading(id?: string) {
   reading.value = true
 }
 async function openMiningSource(id: string) {
+  await closeMining()
   query.value = ''
   resetFilters()
   limit.value = Math.max(limit.value, notes.value.length)
   await nextTick()
   startReading(id)
+}
+async function openMining(event: MouseEvent) {
+  miningTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  miningOpen.value = true
+  await nextTick()
+  miningDialog.value?.focus()
+}
+async function closeMining() {
+  miningOpen.value = false
+  await nextTick()
+  miningTrigger?.focus()
+  miningTrigger = null
 }
 function stopReading() { reading.value = false }
 function moveReader(delta: number) {
@@ -202,6 +218,7 @@ function moveReader(delta: number) {
   readingIndex.value = Math.min(readerNotes.value.length - 1, Math.max(0, readingIndex.value + delta))
 }
 function onReaderKeydown(event: KeyboardEvent) {
+  if (miningOpen.value && event.key === 'Escape') { event.preventDefault(); void closeMining(); return }
   if (!reading.value || previewImage.value) return
   const target = event.target
   if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]')) return
@@ -356,7 +373,6 @@ onMounted(() => void loadPins())
   <main class="notes-page" @contextmenu="openImageMenu">
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
     <header class="page-heading"><div><h1><i class="ri-sticky-note-line"></i>小记</h1></div><span>{{ notes.length }} 条记录</span></header>
-    <NoteMiningPanel @open-note="openMiningSource" />
     <div class="notes-workspace">
       <aside class="writing-pane" aria-label="新建小记区">
         <NoteComposer :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
@@ -376,6 +392,7 @@ onMounted(() => void loadPins())
             </div>
           </div>
           <button class="reader-toggle" type="button" :disabled="!matching.length" @click="startReading()"><i class="ri-book-open-line"></i><span>阅读模式</span></button>
+          <button class="reader-toggle mining-toggle" type="button" aria-haspopup="dialog" :aria-expanded="miningOpen" @click="openMining"><i class="ri-sparkling-2-line"></i><span>AI 挖掘</span></button>
           <button class="refresh" :disabled="loading || refreshing" :aria-busy="refreshing" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i :class="refreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i></button>
         </div>
         <div v-if="managingTags" class="new-tag-form" aria-label="标签管理">
@@ -428,6 +445,12 @@ onMounted(() => void loadPins())
     </div>
     <button v-if="showBackToTop" class="notes-back-top" type="button" aria-label="回到顶部" title="回到顶部" @click="backToTop"><i class="ri-rocket-2-line" aria-hidden="true"></i></button>
     <Teleport to="body">
+      <div v-if="miningOpen" class="mining-modal-mask" @click.self="closeMining">
+        <section ref="miningDialog" class="mining-modal" role="dialog" aria-modal="true" aria-label="AI 挖掘小记" tabindex="-1">
+          <button class="mining-modal-close" type="button" aria-label="关闭 AI 挖掘" title="关闭（Esc）" @click="closeMining"><i class="ri-close-line"></i></button>
+          <NoteMiningPanel compact @open-note="openMiningSource" />
+        </section>
+      </div>
       <div v-if="reading && readingNote" class="notes-reader" role="dialog" aria-modal="true" aria-label="小记阅读模式" @click.self="stopReading">
         <header class="reader-topbar"><button type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line"></i></button><span>最近更新 · {{ readingIndex + 1 }} / {{ readerNotes.length }}</span><span class="reader-progress"><i :style="{ width: `${((readingIndex + 1) / readerNotes.length) * 100}%` }"></i></span></header>
         <button class="reader-nav reader-prev" type="button" aria-label="上一篇小记（←）" :disabled="readingIndex === 0" @click="moveReader(-1)"><i class="ri-arrow-left-s-line"></i></button>
@@ -561,6 +584,12 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .load-more { display: block; margin: 20px auto; }
 .reader-toggle { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); white-space: nowrap; }
 .reader-toggle i { margin-right: 5px; }
+.mining-toggle { color: var(--wao-primary-text); }
+.mining-modal-mask { position: fixed; inset: 0; z-index: 1160; display: grid; place-items: center; padding: 24px; background: rgba(24, 20, 38, .42); backdrop-filter: blur(5px); }
+.mining-modal { position: relative; width: min(980px, calc(100vw - 48px)); max-height: min(84dvh, 760px); overflow: auto; box-sizing: border-box; padding: 28px 20px 20px; border: 1px solid var(--wao-line); border-radius: 22px; background: var(--wao-bg-card); box-shadow: 0 28px 90px rgba(30, 24, 55, .24); outline: none; animation: mining-modal-in .18s ease-out; }
+.mining-modal:focus-visible { outline: 3px solid var(--wao-primary); outline-offset: 3px; }
+.mining-modal-close { position: sticky; z-index: 2; top: -18px; float: right; display: grid; place-items: center; width: 34px; height: 34px; margin: -10px -10px 0 0; padding: 0; border: 1px solid var(--wao-line-control); border-radius: 50%; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 19px; box-shadow: 0 3px 12px rgba(30, 24, 55, .1); }
+@keyframes mining-modal-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
 .note-read-action { position: absolute; right: 13px; bottom: 8px; z-index: 1; padding: 5px 8px; background: var(--wao-bg-card); color: var(--wao-primary-text); border: 1px solid var(--wao-line-control); box-shadow: 0 2px 8px rgba(30,24,55,.08); }
 .note-read-action:hover { border-color: var(--wao-primary); }
 .note-card:not(:hover):not(:focus-within) .note-read-action { opacity: .76; }
@@ -612,8 +641,8 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 }
 @media (max-width: 1100px) { .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } .search { flex: 1 1 50%; } }
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
-@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card:not(.editing) { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .list-summary { flex-wrap: wrap; } .notes-reader { grid-template-rows: 48px minmax(0,1fr) 54px; padding: 0 10px; } .reader-page { border-radius: 13px; padding: 20px 15px; } .reader-page h2 { margin-top: 14px; } .reader-content.has-images { grid-template-columns: minmax(0,1fr); } .reader-image-rail { position: static; padding: 12px 0 0; border-left: 0; border-top: 1px solid var(--wao-line); } .reader-image-rail > div { grid-template-columns: repeat(3,minmax(0,1fr)); } .reader-image-rail img { max-height: 90px; } .reader-nav { top: auto; bottom: 62px; width: 34px; height: 40px; transform: none; } .reader-prev { left: 13px; } .reader-next { right: 13px; } .reader-controls { gap: 8px; } .reader-controls > span { display: none; } }
+@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card:not(.editing) { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .mining-modal-mask { align-items: end; padding: 10px; } .mining-modal { width: 100%; max-height: calc(100dvh - 20px); padding: 24px 6px 10px; border-radius: 18px; } .mining-modal-close { margin-right: 4px; } .list-summary { flex-wrap: wrap; } .notes-reader { grid-template-rows: 48px minmax(0,1fr) 54px; padding: 0 10px; } .reader-page { border-radius: 13px; padding: 20px 15px; } .reader-page h2 { margin-top: 14px; } .reader-content.has-images { grid-template-columns: minmax(0,1fr); } .reader-image-rail { position: static; padding: 12px 0 0; border-left: 0; border-top: 1px solid var(--wao-line); } .reader-image-rail > div { grid-template-columns: repeat(3,minmax(0,1fr)); } .reader-image-rail img { max-height: 90px; } .reader-nav { top: auto; bottom: 62px; width: 34px; height: 40px; transform: none; } .reader-prev { left: 13px; } .reader-next { right: 13px; } .reader-controls { gap: 8px; } .reader-controls > span { display: none; } }
 @media (max-width: 520px) { .note-content.has-images { grid-template-columns: 1fr; } .note-image-rail { border-left: 0; border-top: 1px solid var(--wao-line); padding: 10px 0 0; } .note-images { grid-template-columns: repeat(3, minmax(0, 1fr)); } .note-image-thumb.cover { grid-column: auto; } .note-image-thumb.cover img { height: 60px; } }
 @media (hover: none) { .stage-list-complete, .version-toggle, .card-quick-actions { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
-@media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top { transition: none; animation: none; } .reader-page { animation: none; } .reader-progress i { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top, .mining-modal { transition: none; animation: none; } .reader-page { animation: none; } .reader-progress i { transition: none; } }
 </style>

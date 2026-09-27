@@ -50,6 +50,25 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('默认收起 AI 挖掘，并从阅读模式旁的按钮打开弹层', async () => {
+    useDataStore().docs.one = doc('one', '给工具栏留出空间')
+    const wrapper = await view()
+    document.body.appendChild(wrapper.element)
+    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).toBeNull()
+    const readerButton = wrapper.get('.reader-toggle:not(.mining-toggle)')
+    const miningButton = wrapper.get('.mining-toggle')
+    expect(readerButton.element.nextElementSibling).toBe(miningButton.element)
+    await miningButton.trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).not.toBeNull()
+    expect(document.activeElement).toBe(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]'))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).toBeNull()
+    expect(document.activeElement).toBe(miningButton.element)
+    wrapper.unmount()
+  })
+
   it('卡片右键命中当前小记，删除仍需在原确认区确认', async () => {
     useDataStore().docs.one = doc('one', '右键目标小记')
     const wrapper = await view()
