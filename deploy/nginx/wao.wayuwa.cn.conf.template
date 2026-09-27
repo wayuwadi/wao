@@ -521,6 +521,11 @@ server {
         return 308 /games;
     }
 
+    # 625 word 使用 WAO 隔离的单文件网页托管入口。
+    location = /625word {
+        return 302 /api/pages/625word;
+    }
+
     location = /insight {
         return 410;
     }
