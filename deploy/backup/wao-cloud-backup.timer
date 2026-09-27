@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly independent Linux2 four-database cloud backup
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+Persistent=false
+RandomizedDelaySec=5m
+Unit=wao-cloud-backup.service
+
+[Install]
+WantedBy=timers.target

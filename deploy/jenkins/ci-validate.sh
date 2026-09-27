@@ -93,6 +93,8 @@ test -s deploy/jenkins/fonts/OFL.txt
 test -s deploy/jenkins/lib/release-poster.jar
 bash -n deploy/jenkins/ci-deploy.sh
 bash -n deploy/scripts/emergency-release-linux1.sh
+bash -n deploy/backup/create-cloud-backup.sh
+bash -n deploy/backup/verify-cloud-backup.sh
 
 for script in \
   deploy/backup/configure-offsite-backup.sh \

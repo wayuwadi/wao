@@ -13,6 +13,14 @@ spec.loader.exec_module(watch)
 
 
 class WatchTests(unittest.TestCase):
+    def test_linux2_only_excludes_retired_linux1(self):
+        with tempfile.TemporaryDirectory() as folder:
+            topology = Path(folder) / 'topology'
+            topology.write_text('linux2-only\n')
+            self.assertEqual(set(watch.active_targets(topology)), {'main', 'linux2'})
+            topology.write_text('dual\n')
+            self.assertEqual(set(watch.active_targets(topology)), {'main', 'linux1', 'linux2'})
+
     def test_transient_failure_does_not_alert_and_recovery_resets_count(self):
         state, _, message = watch.update({}, {'linux1': False}, 100)
         self.assertIsNone(message)

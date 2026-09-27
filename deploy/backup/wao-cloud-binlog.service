@@ -1,0 +1,10 @@
+[Unit]
+Description=Archive closed Linux2 MySQL binlogs to cloud
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=WAO_PEER_BACKUP_CONFIG=/etc/wao-backup/cloud.env
+ExecStart=/usr/local/lib/wao-backup/archive-peer-binlogs.sh
+TimeoutStartSec=2h
