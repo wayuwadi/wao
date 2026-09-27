@@ -1,8 +1,10 @@
 # WAO Jenkins
 
-WAO 主站由 Linux2 主节点上的单节点 Jenkins LTS 构建和发布。Linux1 从节点只接收已经构建好的源码包、
-镜像归档和私有配置；阿里云托管静态前端、Nginx、受 WAO 会话保护的 Jenkins UI 入口和唯一公开的
-GitHub webhook 路由。
+WAO 主站由 Linux2 上的 Jenkins LTS 构建和发布。自 2026-09-27 起，Linux1 已退役；
+应用和写库只在 Linux2，阿里云托管静态前端、Nginx、受 WAO 会话保护的 Jenkins UI 入口和唯一公开的
+GitHub webhook 路由。当前拓扑、恢复记录与备份方案见 [ADR-291](../../docs/adr/291-linux2-only-deployment-and-wao-recovery.md)。
+
+以下一次性准备步骤记录了历史双节点安装过程，不应再为退役的 Linux1 配置 SSH 凭据或执行从库重建。
 
 ## 一次性准备
 
