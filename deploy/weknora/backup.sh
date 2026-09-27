@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Stop only the knowledge application while taking a consistent DB/files snapshot.
-set -eu
+set -Eeuo pipefail
 umask 077
 cd /opt/wao-weknora/upstream
 backup_root=/var/backups/wao-weknora
@@ -25,8 +25,28 @@ done
 restore
 trap - EXIT HUP INT TERM
 touch "$destination/complete"
-# The transport reuses the verified deployment identity without exporting its key.
-export RSYNC_RSH='sudo -n -u jenkins ssh -i /etc/jenkins/secrets/slave-ed25519 -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/jenkins/secrets/slave-known-hosts -o HostKeyAlias=linux1.wayuwa.cn -p 2201'
-$RSYNC_RSH wage@127.0.0.1 'umask 077; mkdir -p backups/wao-weknora'
-rsync -a --chmod=D700,F600 "$destination/" "wage@127.0.0.1:backups/wao-weknora/$stamp/"
+# Encrypt the completed local snapshot and publish only after remote SHA verification.
+. /etc/wao-backup/cloud.env
+: "${CLOUD_HOST:?}" "${CLOUD_ROOT:?}" "${SSH_KEY:?}" "${KNOWN_HOSTS:?}" "${PASSPHRASE_FILE:?}"
+cloud_root="$CLOUD_ROOT/weknora"
+encrypted_root=/var/backups/wao-weknora-cloud
+mkdir -p "$encrypted_root"
+stage=$(mktemp -d "$encrypted_root/.incoming-$stamp.XXXXXX")
+cleanup() { rm -rf -- "$stage"; }
+trap cleanup EXIT HUP INT TERM
+tar -C "$destination" -cf - database.dump config.tgz data-files.tgz redis-data.tgz complete |
+  gpg --batch --yes --pinentry-mode loopback --passphrase-file "$PASSPHRASE_FILE" \
+    --symmetric --cipher-algo AES256 --compress-algo none --output "$stage/recovery.tar.gpg"
+(cd "$stage" && sha256sum recovery.tar.gpg >SHA256SUMS)
+printf '%s\n' "$stamp" >"$stage/COMPLETE"
+ssh_cloud() {
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
+    -i "$SSH_KEY" -o "UserKnownHostsFile=$KNOWN_HOSTS" "$CLOUD_HOST" "$@"
+}
+ssh_cloud "set -e; umask 077; mkdir -p '$cloud_root'; test ! -e '$cloud_root/$stamp'; mkdir '$cloud_root/.incoming-$stamp'"
+tar -C "$stage" -cf - recovery.tar.gpg SHA256SUMS COMPLETE |
+  ssh_cloud "tar -C '$cloud_root/.incoming-$stamp' -xf -"
+ssh_cloud "set -e; cd '$cloud_root/.incoming-$stamp'; sha256sum -c SHA256SUMS; mv '$cloud_root/.incoming-$stamp' '$cloud_root/$stamp'"
+mv "$stage" "$encrypted_root/$stamp"
+trap - EXIT HUP INT TERM
 printf 'WeKnora backup completed: %s\n' "$stamp"

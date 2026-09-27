@@ -1,8 +1,8 @@
 [Unit]
-Description=Consistent WeKnora backup with Linux1 offsite copy
+Description=Consistent WeKnora backup with encrypted cloud copy
 After=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh /opt/wao-weknora/backup.sh
+ExecStart=/bin/bash /opt/wao-weknora/backup.sh
 UMask=0077
