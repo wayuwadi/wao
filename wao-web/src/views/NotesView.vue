@@ -6,6 +6,7 @@ import { toast } from '@/composables/toast'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
+import NoteMiningPanel from '@/components/notes/NoteMiningPanel.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
@@ -188,6 +189,13 @@ function startReading(id?: string) {
   readingIndex.value = Math.max(0, index)
   reading.value = true
 }
+async function openMiningSource(id: string) {
+  query.value = ''
+  resetFilters()
+  limit.value = Math.max(limit.value, notes.value.length)
+  await nextTick()
+  startReading(id)
+}
 function stopReading() { reading.value = false }
 function moveReader(delta: number) {
   if (!readerNotes.value.length) return
@@ -348,6 +356,7 @@ onMounted(() => void loadPins())
   <main class="notes-page" @contextmenu="openImageMenu">
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
     <header class="page-heading"><div><h1><i class="ri-sticky-note-line"></i>小记</h1></div><span>{{ notes.length }} 条记录</span></header>
+    <NoteMiningPanel @open-note="openMiningSource" />
     <div class="notes-workspace">
       <aside class="writing-pane" aria-label="新建小记区">
         <NoteComposer :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />

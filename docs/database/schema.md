@@ -1135,6 +1135,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V142__clock_out_reminder_workdays.sql`：将下班休息与打卡提醒迁到工作日执行器，保留每日计划点并按法定休息/调休事实发送或跳过（见 ADR-207）。
 - `V143__ai_run_conversation_text.sql`：为可持续恢复的 AI Run 保存会话文本。
 - `V144__product_update_diary.sql`：保存成功 AI Run 从 Git 提交提取的 SHA、scope、标题与提交时间，供更新日记按日期展示；从既有功能迭代事件迁入可证明的起始记录。
+- `V169__note_mining_content_artifacts.sql`：保存成员私有的小记挖掘任务、三类可解释内容候选及来源版本短摘录（见 ADR-288）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.7.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
@@ -1170,3 +1171,9 @@ V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库�
 ## 账务本（V165）
 
 `ledger_book` 记录创建者与账本名称；`ledger_book_member` 按账本赋予受邀成员 `EDITOR` 或 `VIEWER`，创建者隐含 `OWNER`。未受邀成员不能读取账本。`ledger_entry` 记录明账原始金额、旧账/烂账/未来账归类、应收/应付方向、核实状态、对方、日期、确认依据、争议和下一步，并以 `version` 做乐观并发校验。`ledger_settlement` 逐笔追加实际结算，未结金额按原始金额减结算合计计算；`ledger_entry_revision` 保存每次修改前后的完整快照和修改人。账目作废是状态变更，历史与结算记录保留。只有已确认账目的未结金额进入汇总。
+
+## 小记 AI 挖掘（V169）
+
+`note_mining_job` 保存成员私有的幂等任务、内部只读 AI 运行 id 及有界来源快照；快照只有文档 id、版本、标题和短摘录，不复制完整正文。`materialized_at` 表示结果已经独立保存，之后不再依赖 AI 运行历史。
+
+`note_mining_artifact` 保存 `INSIGHT`、`REMINDER`、`ARTICLE_SEED` 三类内容、生成理由及成员反馈。`REMINDER_DRAFT` 只表示本人选择的草稿，不代表已建立提醒规则。`note_mining_artifact_source` 以产物和文档 id 唯一关联来源版本与摘录；不对 `doc` 建外键，因此原文以后清理时仍保留本次生成所依据的最小快照。见 ADR-288。

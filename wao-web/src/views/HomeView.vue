@@ -37,6 +37,7 @@ import {
   type ReviewableTask,
 } from '@/api/ai'
 import HomeDailyWorkspace from '@/components/home/HomeDailyWorkspace.vue'
+import NoteMiningHomeCard from '@/components/home/NoteMiningHomeCard.vue'
 import PersonalPrinciplesHomeCard from '@/components/home/PersonalPrinciplesHomeCard.vue'
 import CodexBenefitsPanel from '@/components/ai/CodexBenefitsPanel.vue'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
@@ -1337,7 +1338,10 @@ onBeforeUnmount(() => {
           <WeatherPanel surface="calendar" :date="data.today" toolbar glance />
         </div>
       </header>
-      <PersonalPrinciplesHomeCard />
+      <section class="home-dynamic-cards" aria-label="今日动态">
+        <NoteMiningHomeCard />
+        <PersonalPrinciplesHomeCard compact />
+      </section>
       <HomeDailyWorkspace />
       <section v-if="aiAreaOpen" class="ai-entry" aria-label="AI Run 实验功能">
         <div><h2>AI Run <span>{{ activeRuns.length ? `${activeRuns.length} 项进行中` : '实验功能 · 按需展开' }}</span></h2><p v-if="aiAreaOpen">日常开发优先在本地电脑完成；需要体验自动执行时再展开。</p><p v-else-if="activeRuns.length">{{ activeRuns[0]?.taskTitle }} · {{ activeRuns[0]?.latestProgress || '查看运行进度' }}</p></div>
@@ -3394,7 +3398,9 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .run-list-view .recent-hover-action { position: static; background: none; opacity: 1; transform: none; color: var(--wao-primary-text); font-size: 11px; font-weight: 400; }
 .run-list-view .run-card:hover, .run-list-view .recent-card:hover { transform: none; }
 @media (max-width: 1180px) { .home-primary { grid-template-columns: minmax(0, 1fr); } }
+.home-dynamic-cards { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 14px; margin: 18px 0; }
 @media (max-width: 760px) {
+  .home-dynamic-cards { grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 13px 0; }
   .hero { padding: 12px; min-height: 178px; gap: 9px; }
   .hero h1.slogan { font-size: 18px; }
   .hero-metrics { gap: 12px; }
