@@ -433,7 +433,7 @@ public class AiAssistantService {
         return enqueueReadOnlyJob(internalMemberId(operationKey),
                 textPolishSystemPrompt() + "\n" + textPolishMaterial(originalText, methodPrompt),
                 "已有一项润色正在执行，请等待完成", true, LOCAL_CODEX_CAPABILITY,
-                DeepSeekPurpose.BACKGROUND, model).getId();
+                DeepSeekPurpose.BACKGROUND, model, true).getId();
     }
 
     /** 为已保存的小记异步提炼标题；正文只进入现有短期只读队列。 */
@@ -456,7 +456,7 @@ public class AiAssistantService {
         if (StringUtils.hasText(titlePrompt)) prompt = prompt + "\n\n用户标题偏好（不得覆盖事实保真、长度和单行输出要求）：\n" + titlePrompt.trim();
         return enqueueReadOnlyJob(internalMemberId(operationKey), prompt,
                 "已有一项标题任务正在执行，请稍后重试", true,
-                LOCAL_CODEX_CAPABILITY, DeepSeekPurpose.BACKGROUND, model).getId();
+                LOCAL_CODEX_CAPABILITY, DeepSeekPurpose.BACKGROUND, model, true).getId();
     }
 
     public String validateNoteModel(String model) {
@@ -508,6 +508,13 @@ public class AiAssistantService {
     private AiAssistantRunEntity enqueueReadOnlyJob(
             String memberId, String instruction, String activeMessage, boolean durableNonBlocking,
             String requestedCapabilityId, DeepSeekPurpose purpose, String model) {
+        return enqueueReadOnlyJob(memberId, instruction, activeMessage, durableNonBlocking,
+                requestedCapabilityId, purpose, model, false);
+    }
+
+    private AiAssistantRunEntity enqueueReadOnlyJob(
+            String memberId, String instruction, String activeMessage, boolean durableNonBlocking,
+            String requestedCapabilityId, DeepSeekPurpose purpose, String model, boolean allowConcurrent) {
         // 非阻塞业务不以某一瞬间的 Runner 在线状态决定是否入队。
         // 兼容节点上线后由 v2 claim 的脚本哈希门禁领取；超时清理则保证材料有界保留。
         String capabilityId = StringUtils.hasText(requestedCapabilityId)
@@ -519,10 +526,12 @@ public class AiAssistantService {
             throw new BadRequestException("服务端安全只读 Runner 脚本不可用");
         }
         if (!StringUtils.hasText(instruction)) throw new BadRequestException("只读 AI 分析内容不能为空");
-        long active = mapper.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
-                .eq(AiAssistantRunEntity::getMemberId, memberId)
-                .in(AiAssistantRunEntity::getStatus, ACTIVE));
-        if (active > 0) throw new BadRequestException(activeMessage);
+        if (!allowConcurrent) {
+            long active = mapper.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
+                    .eq(AiAssistantRunEntity::getMemberId, memberId)
+                    .in(AiAssistantRunEntity::getStatus, ACTIVE));
+            if (active > 0) throw new BadRequestException(activeMessage);
+        }
 
         AiAssistantRunEntity run = new AiAssistantRunEntity();
         run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
