@@ -401,9 +401,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <i class="ri-loader-4-line spin"></i>
           正在加载业务数据…
         </div>
-        <!-- 页面主体撑满剩余高度；复杂页面声明分区后，桌面左侧自动出现本页锚点。 -->
+        <!-- 页面主体撑满剩余高度；复杂页面可用本页锚点，首页留给主要内容。 -->
         <div class="page-stage">
-          <PageSectionNav :root="pageBodyRef" :scroll-container="contentRef" />
+          <PageSectionNav v-if="route.path !== '/'" :root="pageBodyRef" :scroll-container="contentRef" />
           <div ref="pageBodyRef" class="page-body">
             <TabWorkspace @assistant-target="assistantTarget = $event" />
             <!-- 只挂在受保护应用壳内；同一实例在常驻页面与浮层之间移动，保持接收中的回复。 -->

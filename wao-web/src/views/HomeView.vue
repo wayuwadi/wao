@@ -3420,10 +3420,10 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .home-day-title { flex: none; padding-left: 28px; }
 .home-day h1 { font-size: 22px; font-weight: 600; margin: 0; color: var(--wao-text); }
 .home-day p { margin: 6px 0 0; font-size: 12px; color: var(--wao-text-3); }
-.home-day-tools { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.home-day-tools { --home-day-control-height: 42px; --home-day-control-radius: 10px; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; min-width: 0; }
 .home-quick-glances { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .home-quota { flex: none; }
-.quota-trigger { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-primary-text); font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.quota-trigger { display: inline-flex; align-items: center; gap: 6px; height: var(--home-day-control-height); box-sizing: border-box; padding: 0 12px; border: 1px solid var(--wao-line-control); border-radius: var(--home-day-control-radius); background: var(--wao-bg-card); color: var(--wao-primary-text); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .quota-trigger:hover, .quota-trigger[aria-expanded="true"] { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
 .quota-trigger.quota-low, .quota-trigger.quota-needs-attention { color: var(--wao-warning-strong); border-color: var(--wao-warning-line); background: var(--wao-warning-bg); }
 .quota-trigger:focus-visible, .quota-popover button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
