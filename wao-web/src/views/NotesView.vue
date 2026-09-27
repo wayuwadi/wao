@@ -451,7 +451,7 @@ h1 i { color: #7a5cc6; }
 .notes-workspace { display: grid; grid-template-columns: minmax(300px, 0.85fr) minmax(360px, 1.15fr); gap: 28px; align-items: start; }
 .writing-pane { min-width: 0; position: sticky; top: 20px; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
-.notes-list { min-width: 0; padding: 24px 20px 40px; border-left: 1px solid var(--wao-line); background: var(--wao-bg-sub); scroll-padding-block: 24px; }
+.notes-list { min-width: 0; padding: 24px 20px 40px; border: 1px solid var(--wao-line); border-right: 0; border-bottom: 0; background: var(--wao-bg-sub); scroll-padding-block: 24px; }
 .list-toolbar, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
 .list-toolbar { margin-bottom: 8px; gap: 8px; }
 button, a, select { color: var(--wao-text-3); font-size: 12px; }
