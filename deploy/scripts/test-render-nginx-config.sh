@@ -31,6 +31,9 @@ PATH="${tmp_dir}:${PATH}" \
 
 grep -q 'server 203.0.113.10:9000' "${rendered}"
 grep -q 'server 198.51.100.20:9000' "${rendered}"
+grep -q 'log_format wao_ready_upstream' "${rendered}"
+grep -q 'access_log /var/log/nginx/access.log combined;' "${rendered}"
+grep -q 'access_log /var/log/nginx/wao-ready-upstream.log wao_ready_upstream if=\$wao_ready_trace;' "${rendered}"
 grep -q 'location = /game {' "${rendered}"
 grep -q 'return 308 /games;' "${rendered}"
 grep -q 'location = /insight {' "${rendered}"
