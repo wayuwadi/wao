@@ -40,13 +40,13 @@ onMounted(() => void load())
 
 <style scoped>
 .home-tianren { position: relative; }
-.tianren-link { display: inline-flex; align-items: center; gap: 9px; min-height: 38px; padding: 3px 10px; border: 1px solid var(--wao-line-control); border-radius: 9px; color: var(--wao-text); background: var(--wao-bg-card); text-decoration: none; transition: border-color .18s, background .18s; }
+.tianren-link { display: inline-flex; align-items: center; gap: 9px; height: var(--home-day-control-height, 42px); box-sizing: border-box; padding: 3px 12px; border: 1px solid var(--wao-line-control); border-radius: var(--home-day-control-radius, 10px); color: var(--wao-primary-text); background: var(--wao-bg-card); text-decoration: none; transition: border-color .18s, background .18s; }
 .tianren-link:hover { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
 .tianren-link:focus-visible, .tianren-retry:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .tianren-icon { color: var(--wao-primary); font-size: 19px; line-height: 1; }
 .tianren-copy { display: grid; gap: 2px; }
 .tianren-copy small { color: var(--wao-text-3); font-size: 10px; }
-.tianren-copy strong { font-size: 12px; font-weight: 650; }
-.tianren-symbol { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 7px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: 17px; }
+.tianren-copy strong { font-size: 13px; font-weight: 650; }
+.tianren-symbol { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 8px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: 17px; }
 .tianren-retry { position: absolute; top: calc(100% + 2px); right: 0; border: 0; background: transparent; color: var(--wao-primary-text); font-size: 11px; cursor: pointer; }
 </style>
