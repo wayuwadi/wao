@@ -3,6 +3,8 @@ upstream wao_gateway {
     # DDNS 同时发布 AAAA 时，云节点可能没有 IPv6 出站路由；渲染阶段只写入已验证的 IPv4。
     server ${MASTER_GATEWAY_IPV4}:9000${MASTER_GATEWAY_STATE} max_fails=3 fail_timeout=10s;
     server ${SLAVE_GATEWAY_IPV4}:9000${SLAVE_GATEWAY_STATE} max_fails=3 fail_timeout=10s;
+    # The reverse SSH tunnel remains available if both normal Gateway routes fail.
+    server ${SLAVE_GATEWAY_TUNNEL_IPV4}:9000 backup${SLAVE_GATEWAY_STATE} max_fails=3 fail_timeout=10s;
     keepalive 32;
 }
 

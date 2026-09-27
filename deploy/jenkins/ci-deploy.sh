@@ -562,7 +562,15 @@ activate_cloud() {
 gateway_ready_from_cloud() {
   gateway_host="$1"
   ssh -o ConnectTimeout=15 "wao-cloud" \
-    "gateway_ip=\$(sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh '$gateway_host') && response=\$(curl -4 -kfsS --max-time 8 --resolve '$gateway_host:9000:'\$gateway_ip https://$gateway_host:9000/api/edge/ready) && printf '%s' \"\$response\" | grep -Eq '\"code\"[[:space:]]*:[[:space:]]*0' && printf '%s' \"\$response\" | grep -Eq '\"protocol\"[[:space:]]*:[[:space:]]*1'"
+    "gateway_ip=\$(sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh '$gateway_host') || exit 1
+    gateway_ips=\$gateway_ip
+    if [ '$gateway_host' = linux1.wayuwa.cn ]; then gateway_ips=\"\$gateway_ips 127.0.0.1\"; fi
+    for ip in \$gateway_ips; do
+      response=\$(curl -4 -kfsS --max-time 8 --resolve '$gateway_host:9000:'\$ip https://$gateway_host:9000/api/edge/ready) || continue
+      printf '%s' \"\$response\" | grep -Eq '\"code\"[[:space:]]*:[[:space:]]*0' || continue
+      printf '%s' \"\$response\" | grep -Eq '\"protocol\"[[:space:]]*:[[:space:]]*1' && exit 0
+    done
+    exit 1"
 }
 
 public_ready() {

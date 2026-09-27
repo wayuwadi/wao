@@ -50,7 +50,7 @@ grep -q 'return 308 /amer_demo_7/;' "${rendered}"
 grep -A 3 'location \^~ /amer_demo_7/ {' "${rendered}" | grep -q 'try_files \$uri \$uri/ =404;'
 grep -A 3 'location \^~ /amer_demo_4/ {' "${rendered}" | grep -q 'try_files \$uri \$uri/ =404;'
 grep -A 4 'location = /downloads/desktop/client/WAO-macos-universal.dmg {' "${rendered}" | grep -q 'no-store'
-unexpected_upstreams="$(awk '$1 == "server" && $2 ~ /:9000/ && $2 !~ /^(203\.0\.113\.10|198\.51\.100\.20):9000/ { print }' "${rendered}")"
+unexpected_upstreams="$(awk '$1 == "server" && $2 ~ /:9000/ && $2 !~ /^(203\.0\.113\.10|198\.51\.100\.20|127\.0\.0\.1):9000/ { print }' "${rendered}")"
 if [ -n "${unexpected_upstreams}" ]; then
   echo 'Rendered Nginx upstreams must contain IPv4 literals only.' >&2
   printf '%s\n' "${unexpected_upstreams}" >&2
@@ -65,6 +65,16 @@ MASTER_GATEWAY_STATE=' down' \
   sh "${script_dir}/render-nginx-config.sh"
 grep -q 'server 203.0.113.10:9000 down max_fails=3' "${tmp_dir}/master-down.conf"
 grep -q 'server 198.51.100.20:9000 max_fails=3' "${tmp_dir}/master-down.conf"
+grep -q 'server 127.0.0.1:9000 backup max_fails=3' "${tmp_dir}/master-down.conf"
+
+MASTER_GATEWAY_STATE='' \
+  SLAVE_GATEWAY_STATE=' down' \
+  MASTER_GATEWAY_IPV4='203.0.113.10' \
+  SLAVE_GATEWAY_IPV4='198.51.100.20' \
+  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/slave-down.conf" \
+  sh "${script_dir}/render-nginx-config.sh"
+grep -q 'server 198.51.100.20:9000 down max_fails=3' "${tmp_dir}/slave-down.conf"
+grep -q 'server 127.0.0.1:9000 backup down max_fails=3' "${tmp_dir}/slave-down.conf"
 
 if MASTER_GATEWAY_STATE='invalid' \
   MASTER_GATEWAY_IPV4='203.0.113.10' \
@@ -84,7 +94,7 @@ if PATH="${tmp_dir}:${PATH}" \
   exit 1
 fi
 
-# The cloud host's local tunnel is the intended Linux1 Gateway route.
+# The cloud host uses WireGuard for Linux1 and retains the reverse tunnel as backup.
 cat >"${tmp_dir}/dig" <<'EOF'
 #!/bin/sh
 printf '%s\n' '198.51.100.21'
@@ -94,16 +104,24 @@ cat >"${tmp_dir}/getent" <<'EOF'
 #!/bin/sh
 case "$2" in
   master.test) printf '203.0.113.10 STREAM master.test\n' ;;
-  slave.test) printf '127.0.0.1 STREAM slave.test\n' ;;
+  linux1.wayuwa.cn) printf '127.0.0.1 STREAM linux1.wayuwa.cn\n' ;;
   *) exit 1 ;;
 esac
 EOF
-PATH="${tmp_dir}:${PATH}" MASTER_PUBLIC_HOST=master.test SLAVE_PUBLIC_HOST=slave.test \
+PATH="${tmp_dir}:${PATH}" MASTER_PUBLIC_HOST=master.test SLAVE_PUBLIC_HOST=linux1.wayuwa.cn \
   WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/tunnel.conf" \
   sh "${script_dir}/render-nginx-config.sh"
-grep -q 'server 127.0.0.1:9000' "${tmp_dir}/tunnel.conf"
+grep -q 'server 10.66.0.3:9000 max_fails=3' "${tmp_dir}/tunnel.conf"
+grep -q 'server 127.0.0.1:9000 backup max_fails=3' "${tmp_dir}/tunnel.conf"
 if grep -q 'server 198.51.100.21:9000' "${tmp_dir}/tunnel.conf"; then
-  echo 'Cloud Gateway must use its Linux1 tunnel rather than public DNS.' >&2
+  echo 'Cloud Gateway must use its private Linux1 routes rather than public DNS.' >&2
+  exit 1
+fi
+
+if SLAVE_GATEWAY_IPV4=127.0.0.1 \
+  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/duplicate.conf" \
+  sh "${script_dir}/render-nginx-config.sh" >/dev/null 2>&1; then
+  echo 'Linux1 primary and backup routes must differ.' >&2
   exit 1
 fi
 

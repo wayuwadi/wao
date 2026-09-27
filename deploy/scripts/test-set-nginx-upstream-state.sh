@@ -40,7 +40,7 @@ cat >"${fake_bin}/envsubst" <<'SH'
 python3 -c '
 import os, sys
 text = sys.stdin.read()
-for name in ("MASTER_GATEWAY_IPV4", "SLAVE_GATEWAY_IPV4", "MASTER_GATEWAY_STATE", "SLAVE_GATEWAY_STATE"):
+for name in ("MASTER_GATEWAY_IPV4", "SLAVE_GATEWAY_IPV4", "SLAVE_GATEWAY_TUNNEL_IPV4", "MASTER_GATEWAY_STATE", "SLAVE_GATEWAY_STATE"):
     text = text.replace("${" + name + "}", os.environ.get(name, ""))
 sys.stdout.write(text)
 '
@@ -97,6 +97,7 @@ WAO_NGINX_TEST_KILL_LOG="${kill_log}" \
 sh "${project}/deploy/scripts/set-nginx-upstream-state.sh" master down
 
 grep -Fq '203.0.113.10:9000 down' "${final_config}"
+grep -Fq '127.0.0.1:9000 backup max_fails' "${final_config}"
 
 if PATH="${fake_bin}:${PATH}" \
     MASTER_GATEWAY_IPV4=invalid SLAVE_GATEWAY_IPV4=198.51.100.20 \
