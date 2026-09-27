@@ -347,6 +347,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <div class="crumb-b">{{ crumbB }}</div>
         </template>
         <TopMenuBar />
+        <TabBar />
 
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
         <div class="quick-actions" :class="{ relocated: desktopToolbar }">
@@ -382,8 +383,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <NotificationCenter />
         </div>
       </header>
-
-      <TabBar />
 
       <div ref="contentRef" class="content">
         <div v-if="loadErrorMessages.length" class="data-status error" role="alert">
@@ -594,6 +593,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   padding: 0 16px;
   flex-shrink: 0;
 }
+.header :deep(.tabbar-shell) {
+  flex: 0 0 clamp(300px, 36vw, 560px);
+  width: clamp(300px, 36vw, 560px);
+  height: 38px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+.header :deep(.tabbar) {
+  padding: 0 4px;
+}
 .fold {
   width: 30px;
   height: 30px;
@@ -777,6 +787,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 
 @media (max-width: 760px) {
+  .header {
+    height: auto;
+    min-height: var(--wao-header-h);
+    flex-wrap: wrap;
+    overflow-x: auto;
+    padding: 0 8px;
+  }
+  .header :deep(.tabbar-shell) {
+    order: 10;
+    flex: 0 0 100%;
+    width: 100%;
+    height: var(--wao-tabbar-h);
+    margin: 0 -8px;
+  }
+  .header :deep(.tabbar) {
+    padding: 0 2px;
+  }
   .fab {
     position: fixed;
     right: 12px;
