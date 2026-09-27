@@ -44,7 +44,7 @@ async function requestDelete(wrapper: Awaited<ReturnType<typeof view>>, id: stri
 async function view() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }, { path: '/kb/:id', component: { template: '<div />' } }] })
   await router.push('/notes')
-  return mount(NotesView, { global: { plugins: [router], stubs: { MarkdownEditor: Editor } } })
+  return mount(NotesView, { global: { plugins: [router], stubs: { MarkdownEditor: Editor, NoteMiningPanel: true } } })
 }
 function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })

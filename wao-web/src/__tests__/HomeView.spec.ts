@@ -31,6 +31,8 @@ import {
 } from '@/api/ai'
 import { fetchWebhookEndpoints } from '@/api/system'
 
+vi.mock('@/api/noteMining', () => ({ fetchNoteMining: vi.fn().mockResolvedValue({ job: null, artifacts: [] }) }))
+
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
