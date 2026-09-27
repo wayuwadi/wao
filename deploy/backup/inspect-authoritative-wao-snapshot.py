@@ -15,8 +15,10 @@ def inspect(path: Path) -> dict:
         prefix,
     )
     source_uuid = re.search(rb'(?m)^-- WAO_SOURCE_UUID=([0-9a-f-]{36})$', prefix)
+    source_tables = re.search(rb'(?m)^-- WAO_SOURCE_TABLES=([0-9]+)$', prefix)
     checks = {
         'source_uuid': source_uuid is not None,
+        'source_tables': source_tables is not None and int(source_tables.group(1)) > 0,
         'source_coordinate': coordinate is not None,
         'commented_gtid': b'GTID_PURGED' in prefix,
         'wao_database_drop': b'DROP DATABASE IF EXISTS `wao`' in prefix,
@@ -27,6 +29,7 @@ def inspect(path: Path) -> dict:
     return {
         'database': 'wao',
         'source_uuid': source_uuid.group(1).decode('ascii'),
+        'source_table_count': int(source_tables.group(1)),
         'source_log_file': coordinate.group(1).decode('ascii'),
         'source_log_position': int(coordinate.group(2)),
         'gtid_comment_present': True,

@@ -25,11 +25,17 @@ read -r writer_uuid read_only super_read_only <<<"$state"
   echo 'Linux1 MySQL is not a verified writable source.' >&2; exit 1;
 }
 printf 'Verified Linux1 WAO writer UUID: %s\n' "$writer_uuid" >&2
+table_count="$(docker exec -e MYSQL_PWD "$container" mysql -uroot -N -e \
+  "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='wao' AND table_type='BASE TABLE'" 2>/dev/null)"
+[[ "$table_count" =~ ^[0-9]+$ ]] && (( table_count > 0 )) || {
+  echo 'Linux1 WAO table inventory is unavailable.' >&2; exit 1;
+}
 
 # Throttle the compressed bytes before they enter the WAN. The previous
 # uncompressed SQL stream saturated Linux1's uplink and delayed both Gateways.
 {
   printf -- '-- WAO_SOURCE_UUID=%s\n' "$writer_uuid"
+  printf -- '-- WAO_SOURCE_TABLES=%s\n' "$table_count"
   docker exec -e MYSQL_PWD "$container" mysqldump -uroot \
   --single-transaction --quick --source-data=2 --set-gtid-purged=COMMENTED \
   --add-drop-database --routines --events --triggers --hex-blob --no-tablespaces \

@@ -47,6 +47,7 @@ bash -n deploy/scripts/deploy-node-certificate.sh
 bash -n deploy/scripts/deploy-local-node-certificate.sh
 bash -n deploy/backup/create-peer-backup.sh
 bash -n deploy/backup/create-authoritative-wao-snapshot.sh deploy/backup/export-authoritative-wao-on-writer.sh
+bash -n deploy/backup/verify-authoritative-wao-restore.sh
 bash -n deploy/backup/verify-peer-restore.sh
 bash -n deploy/backup/check-peer-backup.sh
 bash -n deploy/backup/restore-latest-peer-backup.sh
