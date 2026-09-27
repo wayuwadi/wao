@@ -167,10 +167,12 @@ function revealDragEdge(event: DragEvent) {
     class="top-menu-bar"
     :class="{
       'has-items': hasItems,
+      'empty-target': !hasItems && !loading && !loadError,
       dragging,
       'drag-over': (!!dragId && dragOverId === 'top') || shortcutOver === 'top',
     }"
-    aria-label="顶部按钮区"
+    :aria-label="hasItems ? '顶部按钮区' : '顶部菜单停靠区，可拖入菜单、项目、知识库或快捷链接'"
+    :title="!hasItems && !loading && !loadError ? '将菜单、项目、知识库或快捷链接拖到这里' : undefined"
     :aria-busy="
       loading ||
       nav.menuMutationState === 'saving' ||
@@ -242,9 +244,9 @@ function revealDragEdge(event: DragEvent) {
           <i class="ri-close-line"></i>
         </button>
       </span>
-      <span v-if="!hasItems && !loading && !loadError" class="empty-hint">{{
-        dragging ? '松开后显示为按钮' : '拖动菜单、项目、知识库或快捷链接到这里'
-      }}</span>
+      <span v-if="!hasItems && !loading && !loadError" class="empty-target-indicator" aria-hidden="true">
+        <i :class="dragging ? 'ri-download-2-line' : 'ri-drag-move-2-line'"></i>
+      </span>
     </div>
     <button v-if="hasItems" class="scroll-button" aria-label="向右浏览顶部菜单" @click="scroll(1)">
       <i class="ri-arrow-right-s-line"></i>
@@ -301,6 +303,32 @@ function revealDragEdge(event: DragEvent) {
   border: 1px solid transparent;
   border-radius: 8px;
   overflow: hidden;
+}
+.top-menu-bar.empty-target {
+  flex: 0 0 32px;
+  min-width: 32px;
+  justify-content: center;
+  gap: 0;
+  color: var(--wao-text-faint);
+  cursor: default;
+}
+.top-menu-bar.empty-target .top-menu-list {
+  flex: 0 0 0;
+  width: 0;
+}
+.empty-target-indicator {
+  display: grid;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px dashed var(--wao-line-control);
+  border-radius: 7px;
+  font-size: 14px;
+}
+.top-menu-bar.dragging .empty-target-indicator {
+  border-color: var(--wao-primary);
+  color: var(--wao-primary-text);
 }
 .top-menu-bar.dragging {
   border: 1px dashed var(--wao-primary);
@@ -396,13 +424,6 @@ function revealDragEdge(event: DragEvent) {
 .scroll-button:hover {
   background: var(--wao-bg-hover-2);
 }
-.empty-hint {
-  font-size: 11px;
-  color: var(--wao-text-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .save-state,
 .retry {
   flex: none;
@@ -433,8 +454,13 @@ function revealDragEdge(event: DragEvent) {
   .top-menu-bar.has-items {
     flex: 0 0 140px;
   }
-  .empty-hint {
-    display: none;
+  .top-menu-bar.empty-target {
+    flex-basis: 26px;
+    min-width: 26px;
+  }
+  .empty-target-indicator {
+    width: 22px;
+    height: 22px;
   }
   .top-menu-item {
     height: 26px;

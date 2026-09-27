@@ -341,10 +341,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             aria-hidden="true"
           ></i>
         </button>
-        <NavigationContext class="crumb-a" :label="crumbA" />
-        <template v-if="crumbB">
-          <i class="ri-arrow-right-s-line crumb-sep"></i>
-          <div class="crumb-b">{{ crumbB }}</div>
+        <template v-if="desktopToolbar || legacyDesktopToolbar">
+          <NavigationContext class="crumb-a" :label="crumbA" />
+          <template v-if="crumbB">
+            <i class="ri-arrow-right-s-line crumb-sep"></i>
+            <div class="crumb-b">{{ crumbB }}</div>
+          </template>
         </template>
         <TopMenuBar />
         <TabBar />
@@ -594,8 +596,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   flex-shrink: 0;
 }
 .header :deep(.tabbar-shell) {
-  flex: 0 0 clamp(300px, 36vw, 560px);
-  width: clamp(300px, 36vw, 560px);
+  flex: 1 1 0;
+  width: auto;
+  min-width: min(300px, 100%);
   height: 38px;
   background: transparent;
   border: 0;
