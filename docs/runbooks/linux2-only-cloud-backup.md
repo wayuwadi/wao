@@ -33,7 +33,7 @@ sudo /usr/local/lib/wao-backup/verify-nacos-recovery.sh \
   /etc/wao-backup/encryption-passphrase wao-master-wao-server-1
 ```
 
-2026-09-27 手工执行：Nacos 快照 `20260927T150154Z`、WeKnora 快照 `20260927T150251Z` 均在云端执行 SHA-256 校验通过；两项 systemd 服务结果为 success，Nacos 与 WeKnora 应用恢复运行。Nacos 在无网络隔离容器中恢复，通过认证核对 1 个命名空间、1 项配置，摘要 `819341034e1ee138407d5e3a1ce82f1599139d7f8b894d4f144c686dc8580e1e`。WeKnora 的压缩包校验通过，数据库归档可读取 652 项；尚未执行隔离导入。
+2026-09-27 手工执行：Nacos 快照 `20260927T150154Z`、WeKnora 快照 `20260927T150251Z` 均在云端执行 SHA-256 校验通过；两项 systemd 服务结果为 success，Nacos 与 WeKnora 应用恢复运行。Nacos 在无网络隔离容器中恢复，通过认证核对 1 个命名空间、1 项配置，摘要 `819341034e1ee138407d5e3a1ce82f1599139d7f8b894d4f144c686dc8580e1e`。WeKnora 的压缩包校验通过，数据库归档可读取 652 项；同版本 `paradedb:v0.22.2-pg17` 在无网络临时容器中完成隔离导入，恢复出 66 张 `public` 业务表。镜像启动时先完成内置初始化，再将 `weknora` 测试库从 `template0` 重建，避免预置 `paradedb` schema 与归档冲突。临时容器和数据卷已清理；生产数据库未修改。
 
 ## 隔离恢复
 
