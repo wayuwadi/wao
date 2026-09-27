@@ -19,10 +19,11 @@ resolve_ipv4() {
 
 MASTER_GATEWAY_IPV4="${MASTER_GATEWAY_IPV4:-$(resolve_ipv4 "${MASTER_PUBLIC_HOST}")}"
 SLAVE_GATEWAY_IPV4="${SLAVE_GATEWAY_IPV4:-$(resolve_ipv4 "${SLAVE_PUBLIC_HOST}")}"
+SLAVE_GATEWAY_TUNNEL_IPV4="${SLAVE_GATEWAY_TUNNEL_IPV4:-127.0.0.1}"
 MASTER_GATEWAY_STATE="${MASTER_GATEWAY_STATE:-}"
 SLAVE_GATEWAY_STATE="${SLAVE_GATEWAY_STATE:-}"
 
-for value in "${MASTER_GATEWAY_IPV4}" "${SLAVE_GATEWAY_IPV4}"; do
+for value in "${MASTER_GATEWAY_IPV4}" "${SLAVE_GATEWAY_IPV4}" "${SLAVE_GATEWAY_TUNNEL_IPV4}"; do
   case "${value}" in
     ''|*[!0-9.]*)
       echo "Unable to resolve a valid IPv4 Gateway address." >&2
@@ -30,6 +31,10 @@ for value in "${MASTER_GATEWAY_IPV4}" "${SLAVE_GATEWAY_IPV4}"; do
       ;;
   esac
 done
+[ "${SLAVE_GATEWAY_IPV4}" != "${SLAVE_GATEWAY_TUNNEL_IPV4}" ] || {
+  echo 'Linux1 Gateway primary and tunnel backup must be distinct.' >&2
+  exit 1
+}
 
 for state in "${MASTER_GATEWAY_STATE}" "${SLAVE_GATEWAY_STATE}"; do
   case "${state}" in
@@ -38,9 +43,10 @@ for state in "${MASTER_GATEWAY_STATE}" "${SLAVE_GATEWAY_STATE}"; do
   esac
 done
 
-export MASTER_GATEWAY_IPV4 SLAVE_GATEWAY_IPV4 MASTER_GATEWAY_STATE SLAVE_GATEWAY_STATE
+export MASTER_GATEWAY_IPV4 SLAVE_GATEWAY_IPV4 SLAVE_GATEWAY_TUNNEL_IPV4 \
+  MASTER_GATEWAY_STATE SLAVE_GATEWAY_STATE
 
-envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4} ${MASTER_GATEWAY_STATE} ${SLAVE_GATEWAY_STATE}' \
+envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4} ${SLAVE_GATEWAY_TUNNEL_IPV4} ${MASTER_GATEWAY_STATE} ${SLAVE_GATEWAY_STATE}' \
   <"${deploy_dir}/nginx/wao.wayuwa.cn.conf.template" \
   >"${output_path}"
 
