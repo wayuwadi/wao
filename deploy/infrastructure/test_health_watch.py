@@ -30,11 +30,26 @@ class WatchTests(unittest.TestCase):
         self.assertIsNone(message)
         _, _, message = watch.update(state, {'linux1': False}, 160 + 4 * 3600)
         self.assertIsNotNone(message)
-        state, _, message = watch.update(state, {'linux1': True}, 300)
-        self.assertIsNone(message)
-        _, problems, message = watch.update(state, {'linux1': True}, 360)
+        for now in range(300, 300 + 60 * (watch.RECOVERY_SUCCESS_CHECKS - 1), 60):
+            state, _, message = watch.update(state, {'linux1': True}, now)
+            self.assertIsNone(message)
+        _, problems, message = watch.update(state, {'linux1': True},
+                                            300 + 60 * (watch.RECOVERY_SUCCESS_CHECKS - 1))
         self.assertFalse(problems)
         self.assertIn('恢复', message)
+
+    def test_short_recovery_keeps_one_flapping_incident_open(self):
+        state = {'notified': ['main'], 'sent': 160, 'failures': {'main': 2}}
+        for now in (220, 280, 340):
+            state, problems, message = watch.update(state, {'main': True}, now)
+            self.assertFalse(problems)
+            self.assertIsNone(message)
+            self.assertEqual(state['notified'], ['main'])
+        state, _, message = watch.update(state, {'main': False}, 400)
+        self.assertIsNone(message)
+        state, problems, message = watch.update(state, {'main': False}, 460)
+        self.assertEqual(problems, ['main'])
+        self.assertIsNone(message)
 
     def test_main_flapping_does_not_repeat_incident_notifications(self):
         state = {'notified': ['linux1', 'linux2'], 'sent': 100,

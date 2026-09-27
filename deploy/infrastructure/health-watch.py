@@ -21,6 +21,9 @@ PLANNED_DRAIN_MAX_SECONDS = 2 * 3600
 # Jenkins touches this marker when a release starts and again when it ends.
 # Parallel node replacement briefly takes every entry offline (ADR-280).
 DEPLOY_WINDOW_SECONDS = 10 * 60
+# The timer runs every minute. A short clean interval must not close a
+# flapping incident and cause a new Feishu alert for the same failure.
+RECOVERY_SUCCESS_CHECKS = 10
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -88,7 +91,7 @@ def update(previous, results, now, planned=()):
     if problems and (set(problems) - set(old) or now - previous.get('sent', 0) >= 4 * 3600):
         notification = '[WAO 基础设施告警] 就绪检查连续失败：' + ', '.join(problems) + '。请检查入口、应用与权威数据库；不会自动提升数据库。'
         problems = sorted(set(problems) | set(old))
-    elif not problems and old and successes >= 2:
+    elif not problems and old and successes >= RECOVERY_SUCCESS_CHECKS:
         notification = '[WAO 基础设施恢复] 三条入口的应用与权威数据库就绪检查均已恢复。'
     state = {**previous, 'checked': now, 'failures': failures, 'healthy': results, 'successes': successes}
     return state, problems, notification
