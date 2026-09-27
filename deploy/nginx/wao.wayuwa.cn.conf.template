@@ -12,12 +12,7 @@ log_format wao_ready_upstream 'time=$time_iso8601 client=$remote_addr status=$st
 upstream wao_gateway {
     least_conn;
     # DDNS 同时发布 AAAA 时，云节点可能没有 IPv6 出站路由；渲染阶段只写入已验证的 IPv4。
-    # Linux1 owns the WAO writer. Linux2 reaches that writer across the WAN,
-    # so serve routine traffic from Linux1 and retain Linux2 as failover.
-    server ${MASTER_GATEWAY_IPV4}:9000 backup${MASTER_GATEWAY_STATE} max_fails=3 fail_timeout=10s;
-    server ${SLAVE_GATEWAY_IPV4}:9000${SLAVE_GATEWAY_STATE} max_fails=3 fail_timeout=10s;
-    # Keep the independent Linux1 reverse tunnel as another fallback.
-    server ${SLAVE_GATEWAY_TUNNEL_IPV4}:9000 backup${SLAVE_GATEWAY_STATE} max_fails=3 fail_timeout=10s;
+${WAO_GATEWAY_SERVERS}
     keepalive 32;
 }
 

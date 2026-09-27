@@ -137,11 +137,16 @@ install -d -m 0755 /usr/local/lib/wao-backup
 for backup_script in \
   configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
   upload-peer-offsite.sh restore-peer-offsite.sh run-readable-content.sh \
-  create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
+  create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py \
+  create-cloud-backup.sh verify-cloud-backup.sh check-cloud-backup.py \
+  archive-peer-binlogs.sh plan-peer-binlogs.py; do
   install -m 0755 "$script_dir/../backup/$backup_script" \
     "/usr/local/lib/wao-backup/$backup_script"
 done
-for unit in wao-peer-backup.service wao-peer-backup.timer; do
+for unit in wao-peer-backup.service wao-peer-backup.timer \
+  wao-cloud-backup.service wao-cloud-backup.timer \
+  wao-cloud-binlog.service wao-cloud-binlog.timer \
+  wao-cloud-backup-check.service wao-cloud-backup-check.timer; do
   install -m 0644 "$script_dir/../backup/$unit" "/etc/systemd/system/$unit"
 done
 install -m 0755 "$script_dir/../backup/webdav_client.py" \
@@ -243,13 +248,14 @@ systemctl enable --now jenkins.service
 systemctl enable --now wao-jenkins-backup.timer
 systemctl enable --now wao-jenkins-health.timer
 systemctl enable --now wao-offsite-backup.timer
+if [ -s /etc/wao-backup/cloud.env ]; then
+  systemctl enable --now wao-cloud-backup.timer wao-cloud-binlog.timer wao-cloud-backup-check.timer
+fi
 systemctl enable --now wao-image-maintenance.timer
 systemctl enable --now wao-jenkins-webhook-tunnel.service
 
 printf '%s\n' \
   'Jenkins controller installed.' \
   'Open UI through: ssh -L 8081:127.0.0.1:8081 wadi@linux2.wayuwa.cn' \
-  'Linux1 slave authorization key:'
-cat "$secret_dir/slave-ed25519.pub"
-printf '%s\n' 'Cloud authorization key:'
+  'Cloud authorization key:'
 cat "$secret_dir/cloud-ed25519.pub"

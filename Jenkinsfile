@@ -12,7 +12,7 @@ pipeline {
         booleanParam(
             name: 'BOOTSTRAP_SLAVE',
             defaultValue: false,
-            description: '从 Linux2 主库生成 GTID 快照并重建 Linux1 从库。正常发布必须保持关闭。'
+            description: '历史双节点参数；Linux2 唯一节点拓扑会拒绝此操作。'
         )
         booleanParam(
             name: 'DEPLOY_PRODUCTION',
@@ -22,12 +22,12 @@ pipeline {
         booleanParam(
             name: 'ALLOW_SLAVE_OFFLINE',
             defaultValue: false,
-            description: '仅在 Linux1 预检不可达时保持从节点摘流并继续发布主节点与云端；从节点可达后的部署失败仍会阻断。'
+            description: '历史双节点应急参数；Linux2 唯一节点拓扑无需开启。'
         )
         booleanParam(
             name: 'ALLOW_MASTER_OFFLINE',
             defaultValue: false,
-            description: '应急：仅当 Linux2 Gateway 发布前不就绪且 Linux1 健康时，允许短暂中断并发布 Linux1 与云端；Linux2 保持摘流，恢复后需补齐。'
+            description: '历史双节点应急参数；Linux2 唯一节点拓扑会拒绝此操作。'
         )
     }
 
@@ -35,7 +35,7 @@ pipeline {
         WAO_RUN_TEMP = "${WORKSPACE}@tmp/wao-${BUILD_NUMBER}"
         MASTER_HOST = 'linux2.wayuwa.cn'
         SLAVE_HOST = 'linux1.wayuwa.cn'
-        // Linux1 主动回连 Linux2；Jenkins 只访问控制器本机的受限 loopback 转发。
+        // 保留历史双节点参数兼容旧构建；linux2-only 发布不会连接 Linux1。
         SLAVE_SSH_HOST = '127.0.0.1'
         SLAVE_SSH_PORT = '2201'
         CLOUD_HOST = '8.136.152.131'
@@ -167,8 +167,7 @@ pipeline {
                 expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' }
             }
             steps {
-                // 新 JCasC 凭据只能在当前构建结束后的 safeRestart 生效。Linux1 的控制器本地文件
-                // 已由安装脚本以 root:jenkins 0640 准备，直接绑定路径可让拓扑迁移的首个构建完成。
+                // 历史 Linux1 SSH 变量供旧双节点构建兼容；单节点脚本不会访问它。
                 withEnv([
                     'SLAVE_SSH_KEY=/etc/jenkins/secrets/slave-ed25519',
                     'SLAVE_KNOWN_HOSTS=/etc/jenkins/secrets/slave-known-hosts',

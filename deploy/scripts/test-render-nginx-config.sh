@@ -81,6 +81,17 @@ MASTER_GATEWAY_STATE='' \
 grep -q 'server 198.51.100.20:9000 down max_fails=3' "${tmp_dir}/slave-down.conf"
 grep -q 'server 127.0.0.1:9000 backup down max_fails=3' "${tmp_dir}/slave-down.conf"
 
+WAO_DEPLOY_TOPOLOGY=linux2-only \
+  MASTER_GATEWAY_IPV4='203.0.113.10' \
+  SLAVE_PUBLIC_HOST='missing.test' \
+  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/linux2-only.conf" \
+  sh "${script_dir}/render-nginx-config.sh"
+grep -q 'server 203.0.113.10:9000 max_fails=3' "${tmp_dir}/linux2-only.conf"
+if grep -A 6 '^upstream wao_gateway {' "${tmp_dir}/linux2-only.conf" | grep -Eq '198\.51\.100\.20|127\.0\.0\.1:9000|backup'; then
+  echo 'Linux2-only Gateway must not retain Linux1 routes.' >&2
+  exit 1
+fi
+
 if MASTER_GATEWAY_STATE='invalid' \
   MASTER_GATEWAY_IPV4='203.0.113.10' \
   SLAVE_GATEWAY_IPV4='198.51.100.20' \

@@ -11,11 +11,6 @@ fi
 : "${WAO_GIT_SHA:?WAO_GIT_SHA is required}"
 : "${WAO_RUN_TEMP:?WAO_RUN_TEMP is required}"
 : "${WAO_MASTER_PROJECT_ROOT:?WAO_MASTER_PROJECT_ROOT is required}"
-: "${SLAVE_SSH_KEY:?SLAVE_SSH_KEY is required}"
-: "${SLAVE_KNOWN_HOSTS:?SLAVE_KNOWN_HOSTS is required}"
-: "${SLAVE_USER:?SLAVE_USER is required}"
-: "${SLAVE_SSH_HOST:?SLAVE_SSH_HOST is required}"
-: "${SLAVE_SSH_PORT:?SLAVE_SSH_PORT is required}"
 : "${CLOUD_SSH_KEY:?CLOUD_SSH_KEY is required}"
 : "${CLOUD_KNOWN_HOSTS:?CLOUD_KNOWN_HOSTS is required}"
 : "${CLOUD_USER:?CLOUD_USER is required}"
@@ -33,6 +28,32 @@ test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12"
 
+WAO_DEPLOY_TOPOLOGY="$(sed -n 's/^WAO_DEPLOY_TOPOLOGY=//p' \
+  "$WAO_MASTER_PROJECT_ROOT/deploy/.env" | tail -n 1)"
+case "$WAO_DEPLOY_TOPOLOGY" in
+  linux2-only)
+    [ "$BOOTSTRAP_SLAVE" = false ] && [ "$ALLOW_MASTER_OFFLINE" = false ] || {
+      echo 'Linux2 唯一节点不能重建或依赖 Linux1。' >&2; exit 1;
+    }
+    ALLOW_SLAVE_OFFLINE=true
+    SLAVE_SSH_KEY="${SLAVE_SSH_KEY:-/dev/null}"
+    SLAVE_KNOWN_HOSTS="${SLAVE_KNOWN_HOSTS:-/dev/null}"
+    SLAVE_USER="${SLAVE_USER:-retired}"
+    SLAVE_SSH_HOST="${SLAVE_SSH_HOST:-127.0.0.1}"
+    SLAVE_SSH_PORT="${SLAVE_SSH_PORT:-22}"
+    SLAVE_HOST="${SLAVE_HOST:-retired}"
+    ;;
+  '')
+    : "${SLAVE_SSH_KEY:?SLAVE_SSH_KEY is required}"
+    : "${SLAVE_KNOWN_HOSTS:?SLAVE_KNOWN_HOSTS is required}"
+    : "${SLAVE_USER:?SLAVE_USER is required}"
+    : "${SLAVE_SSH_HOST:?SLAVE_SSH_HOST is required}"
+    : "${SLAVE_SSH_PORT:?SLAVE_SSH_PORT is required}"
+    ;;
+  *) echo "Unsupported WAO_DEPLOY_TOPOLOGY: $WAO_DEPLOY_TOPOLOGY" >&2; exit 1 ;;
+esac
+export ALLOW_SLAVE_OFFLINE
+
 require_shared_env_line() {
   expected="$1"
   if ! grep -Fqx "$expected" "$WAO_MASTER_PROJECT_ROOT/deploy/.env"; then
@@ -46,7 +67,9 @@ require_shared_env_line 'REDIS_SENTINEL_NODES=192.168.31.180:26379,192.168.2.180
 # 4 is the staged no-failover gate; 2 is enabled only after client acceptance.
 grep -Eq '^REDIS_HA_QUORUM=(2|4)$' "$WAO_MASTER_PROJECT_ROOT/deploy/.env" || exit 1
 require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn' || exit 1
-require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn' || exit 1
+if [ "$WAO_DEPLOY_TOPOLOGY" != linux2-only ]; then
+  require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn' || exit 1
+fi
 
 ln -sf "$WAO_RUN_TEMP/wao-release.tgz" wao-release.tgz
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets" wao-secrets.env
@@ -96,11 +119,13 @@ trap cleanup_deploy_inputs EXIT HUP INT TERM
 set -u
 status_file="$WAO_RUN_TEMP/wao-deploy-status.env"
 printf '%s\n' \
+  "topology=${WAO_DEPLOY_TOPOLOGY:-dual}" \
   'slave_status=not_started' 'slave_attempts=0' 'slave_detail=not_started' \
   'master_status=not_started' 'master_attempts=0' 'master_detail=not_started' \
   'cloud_status=not_started' 'cloud_detail=not_started' \
   'verification_status=not_started' 'verification_detail=not_started' >"$status_file"
 slave_available=true
+if [ "$WAO_DEPLOY_TOPOLOGY" = linux2-only ]; then slave_available=false; fi
 
 set_status() {
   key="$1"
@@ -373,6 +398,8 @@ deploy_slave() {
 }
 
 prepare_cloud_routing() {
+  retry_remote "云前端拓扑" ssh -o ConnectTimeout=15 "wao-cloud" \
+    "printf '%s\\n' '${WAO_DEPLOY_TOPOLOGY:-dual}' > /etc/wao-deploy-topology" || return
   retry_remote "云前端路由" scp -o ConnectTimeout=15 \
     deploy/nginx/wao.wayuwa.cn.conf.template \
     deploy/nginx/jms.wayuwa.cn.conf \
@@ -605,8 +632,14 @@ quiesce_master() {
 # 路由状态只由已验证的就绪结果决定，不能把尚未部署的 pending 当作健康。
 restore_upstreams() {
   local master_state=up slave_state=up
-  [ "$master_routable" = true ] || master_state=down
-  [ "$slave_routable" = true ] || slave_state=down
+  if [ "$WAO_DEPLOY_TOPOLOGY" = linux2-only ]; then
+    # Keep the sole upstream configured during an in-place restart. There is
+    # no alternate node to route to, and a rollback can recover this address.
+    slave_state=down
+  else
+    [ "$master_routable" = true ] || master_state=down
+    [ "$slave_routable" = true ] || slave_state=down
+  fi
   retry_remote "云前端路由" ssh -o ConnectTimeout=15 "wao-cloud" "
     for pair in master:$master_state slave:$slave_state; do
       node=\${pair%%:*}
@@ -686,28 +719,44 @@ record_node_result() {
 
 # 前端快路径必须由本次完整变更范围确认，不能只信任一个外部环境开关。
 deploy_browser_only() {
-  [ "$BOOTSTRAP_SLAVE" = false ] && [ "$ALLOW_SLAVE_OFFLINE" = false ] &&
-    [ "$ALLOW_MASTER_OFFLINE" = false ] || return 1
+  [ "$BOOTSTRAP_SLAVE" = false ] && [ "$ALLOW_MASTER_OFFLINE" = false ] || return 1
+  [ "$WAO_DEPLOY_TOPOLOGY" = linux2-only ] || [ "$ALLOW_SLAVE_OFFLINE" = false ] || return 1
   local plan
   plan="$(sh deploy/jenkins/ci-change-plan.sh "$WAO_CHANGE_BASE" "$WAO_GIT_SHA")" || return 1
   printf '%s\n' "$plan" | grep -qx 'WAO_WEB_ONLY=true' || return 1
   prepare_cloud_routing || return 1
+  if [ "$WAO_DEPLOY_TOPOLOGY" = linux2-only ]; then
+    set_upstream_state slave down || return 1
+  fi
   gateway_ready_from_cloud "$MASTER_HOST" || return 1
-  gateway_ready_from_cloud "$SLAVE_HOST" || return 1
+  if [ "$WAO_DEPLOY_TOPOLOGY" != linux2-only ]; then
+    gateway_ready_from_cloud "$SLAVE_HOST" || return 1
+  fi
   start_availability_monitor
   deploy_cloud || { set_status cloud_status failed; return 1; }
   gateway_ready_from_cloud "$MASTER_HOST" || return 1
-  gateway_ready_from_cloud "$SLAVE_HOST" || return 1
+  if [ "$WAO_DEPLOY_TOPOLOGY" != linux2-only ]; then
+    gateway_ready_from_cloud "$SLAVE_HOST" || return 1
+  fi
   stop_availability_monitor
   [ ! -s "$availability_failures" ] || return 1
   set_status master_status success
   set_status master_detail '浏览器发布，保留已验证健康的原后端版本'
-  set_status slave_status success
-  set_status slave_detail '浏览器发布，保留已验证健康的原后端版本'
+  if [ "$WAO_DEPLOY_TOPOLOGY" = linux2-only ]; then
+    set_status slave_status skipped
+    set_status slave_detail 'Linux1 已退役'
+  else
+    set_status slave_status success
+    set_status slave_detail '浏览器发布，保留已验证健康的原后端版本'
+  fi
   set_status cloud_status success
   set_status cloud_detail "$WAO_GIT_SHA"
   set_status verification_status success
-  set_status verification_detail '静态制品已校验发布，双节点健康且公共入口持续可用'
+  if [ "$WAO_DEPLOY_TOPOLOGY" = linux2-only ]; then
+    set_status verification_detail '静态制品已校验发布，Linux2 与公共入口持续可用'
+  else
+    set_status verification_detail '静态制品已校验发布，双节点健康且公共入口持续可用'
+  fi
   set_status publish_completed_at "$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
 }
 
@@ -753,20 +802,31 @@ trap cleanup_rollout EXIT
 
 # 先确认至少一台正在服务；单节点时不能重启唯一健康的应用。
 if wait_until_ready gateway_ready_from_cloud "$MASTER_HOST"; then master_routable=true; fi
-if wait_until_ready gateway_ready_from_cloud "$SLAVE_HOST"; then slave_routable=true; fi
+if [ "$WAO_DEPLOY_TOPOLOGY" != linux2-only ] &&
+    wait_until_ready gateway_ready_from_cloud "$SLAVE_HOST"; then slave_routable=true; fi
 restore_upstreams || exit 1
 if [ "$master_routable" != true ] && [ "$slave_routable" != true ]; then
-  echo '两台 Gateway 均未通过数据库就绪检查；停止发布。' >&2
+  echo '所有在役 Gateway 均未通过数据库就绪检查；停止发布。' >&2
   exit 1
 fi
-if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
+if [ "$WAO_DEPLOY_TOPOLOGY" != linux2-only ] &&
+    ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
     "wao-slave" 'docker info' >/dev/null; then
   slave_available=false
   slave_result=failed
   set_status slave_status failed
   set_status slave_detail 'Linux1 SSH 或 Docker 预检失败；仅按 Gateway 就绪结果保留路由'
 fi
-if [ "$ALLOW_SLAVE_OFFLINE" = true ] && [ "$slave_available" != true ]; then
+if [ "$WAO_DEPLOY_TOPOLOGY" = linux2-only ]; then
+  [ "$master_routable" = true ] || {
+    echo 'Linux2 唯一节点未就绪，拒绝发布。' >&2; exit 1;
+  }
+  slave_degraded=true
+  slave_result=skipped
+  set_status slave_status skipped
+  set_status slave_detail 'Linux1 已退役，Linux2 是唯一应用节点'
+  restore_upstreams || exit 1
+elif [ "$ALLOW_SLAVE_OFFLINE" = true ] && [ "$slave_available" != true ]; then
   [ "$master_routable" = true ] || {
     echo 'Linux2 不健康，拒绝 Linux1 管理通道故障应急发布。' >&2; exit 1;
   }
@@ -857,7 +917,7 @@ rollout_master() {
 }
 
 # 静态制品预传与节点滚动独立；任何时刻只重启一台应用。
-echo "逐节点发布 Linux1、Linux2，并预传云端静态制品（JumpServer 同步=$sync_jumpserver，基础设施同步=$sync_infrastructure）。"
+echo "发布拓扑=${WAO_DEPLOY_TOPOLOGY:-dual}；预传云端静态制品（JumpServer 同步=$sync_jumpserver，基础设施同步=$sync_infrastructure）。"
 if [ "$slave_available" != true ] && [ "$slave_routable" != true ] && [ "$slave_degraded" != true ]; then
   echo 'Linux1 不可达且未就绪；拒绝重启唯一健康的 Linux2。' >&2
   exit 1
@@ -982,7 +1042,11 @@ set_status verification_status success
 if [ "$master_degraded" = true ]; then
   set_status verification_detail 'Linux1 单节点与公共入口已就绪；Linux2 已摘流待恢复，发布期间允许短暂中断'
 elif [ "$slave_degraded" = true ]; then
-  set_status verification_detail 'Linux2 单节点与公共入口已就绪；Linux1 已摘流待恢复，发布期间允许短暂中断'
+  if [ "$WAO_DEPLOY_TOPOLOGY" = linux2-only ]; then
+    set_status verification_detail 'Linux2 唯一节点与公共入口已就绪；原地发布期间允许短暂中断'
+  else
+    set_status verification_detail 'Linux2 单节点与公共入口已就绪；Linux1 已摘流待恢复，发布期间允许短暂中断'
+  fi
 elif [ "$slave_available" = true ]; then
   set_status verification_detail 'Linux1、Linux2、云端与公共入口检查通过'
 else

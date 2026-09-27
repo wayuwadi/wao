@@ -16,6 +16,7 @@ set -u
 WAO_RUN_TEMP="$FIXTURE"
 SLAVE_HOST=linux1
 MASTER_HOST=linux2
+WAO_DEPLOY_TOPOLOGY="${TOPOLOGY:-dual}"
 recorded_result=pending
 master_result=pending
 slave_result=pending
@@ -58,6 +59,7 @@ case "$CASE" in
   only_master_healthy) if rollout_master; then exit 1; fi ;;
   emergency_linux1) rollout_slave ;;
   emergency_linux2) rollout_master ;;
+  linux2_only) rollout_master ;;
 esac
 printf 'master=%s slave=%s\n' "$master_routable" "$slave_routable"
 SH
@@ -87,4 +89,7 @@ run_case emergency_linux1 'master=false slave=true' 'Linux1' \
   'master:down slave:down,master:down slave:up' MASTER_READY=false MASTER_DEGRADED=true
 run_case emergency_linux2 'master=true slave=false' 'Linux2' \
   'master:down slave:down,master:up slave:down' SLAVE_READY=false SLAVE_DEGRADED=true
+run_case linux2_only 'master=true slave=false' 'Linux2' \
+  'master:up slave:down,master:up slave:down' \
+  TOPOLOGY=linux2-only SLAVE_READY=false SLAVE_DEGRADED=true
 echo 'Rolling deployment availability checks passed.'

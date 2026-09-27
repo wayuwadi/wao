@@ -103,15 +103,15 @@ appearance:
 jobs:
   - script: >
       pipelineJob('wao-main-cd') {
-        description('WAO main: collect pushes for 60 seconds, test once, build immutable SHA images, deploy Linux1 slave → Linux2 master → cloud.')
+        description('WAO main: collect pushes for 60 seconds, test once, build immutable SHA images, deploy Linux2 and cloud static assets. Linux1 is retired.')
         quietPeriod(60)
         properties {
           githubProjectUrl('https://github.com/wayuwacn/wao/')
         }
         parameters {
-          booleanParam('BOOTSTRAP_SLAVE', false, '仅显式启用时重建 Linux1 从库。')
+          booleanParam('BOOTSTRAP_SLAVE', false, '历史双节点参数；Linux2 唯一节点拓扑会拒绝。')
           booleanParam('DEPLOY_PRODUCTION', true, '关闭时只做完整影子构建，不触碰生产节点。')
-          booleanParam('ALLOW_SLAVE_OFFLINE', false, '仅在 Linux1 预检不可达时继续发布 Linux2 与云端。')
+          booleanParam('ALLOW_SLAVE_OFFLINE', false, '历史双节点应急参数；Linux2 唯一节点拓扑无需开启。')
         }
         triggers {
           githubPush()
