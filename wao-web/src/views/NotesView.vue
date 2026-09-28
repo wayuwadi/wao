@@ -520,6 +520,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-card { position: relative; box-sizing: border-box; height: 300px; min-height: 300px; max-height: 300px; overflow: hidden; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 17px 19px 36px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
 .note-card.editing { height: auto; min-height: 300px; max-height: none; overflow: visible; }
 .note-card:hover, .note-card:focus-within { border-color: var(--wao-primary); box-shadow: 0 10px 30px rgba(59, 47, 91, .1); transform: translateY(-2px); }
+.note-card.editing:hover, .note-card.editing:focus-within { transform: none; }
 .note-card.highlighted, .note-card.editing { border-color: var(--wao-primary); }
 .note-card:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
 .note-meta { font-size: 11px; color: var(--wao-text-faint); margin-bottom: 16px; flex-wrap: wrap; gap: 5px 9px; }
