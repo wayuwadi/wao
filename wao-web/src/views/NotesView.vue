@@ -117,10 +117,43 @@ const newTag = ref('')
 const creatingTag = ref(false)
 const tagError = ref('')
 const editingIds = ref<string[]>([])
+const expandedIds = ref<string[]>([])
 const deletingId = ref('')
 const confirmingDeleteId = ref('')
 const deleteError = ref<{ id: string; message: string } | null>(null)
 function closeEditing(id: string) { editingIds.value = editingIds.value.filter(item => item !== id) }
+let cardClickTimer: ReturnType<typeof window.setTimeout> | undefined
+let pendingCardClickId = ''
+function clearCardClickTimer() {
+  if (cardClickTimer !== undefined) window.clearTimeout(cardClickTimer)
+  cardClickTimer = undefined
+  pendingCardClickId = ''
+}
+function scheduleCardPreview(id: string, event: MouseEvent) {
+  if (editingIds.value.includes(id)) return
+  const target = event.target
+  if (target instanceof Element && target.closest('a, button, input, select, textarea, summary, img, [contenteditable="true"]')) return
+  const selection = window.getSelection()
+  if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
+  if (cardClickTimer !== undefined) {
+    const previousId = pendingCardClickId
+    clearCardClickTimer()
+    if (previousId === id) return
+    if (previousId) expandedIds.value = expandedIds.value.includes(previousId)
+      ? expandedIds.value.filter(item => item !== previousId)
+      : [...expandedIds.value, previousId]
+  }
+  pendingCardClickId = id
+  cardClickTimer = window.setTimeout(() => {
+    const clickedId = pendingCardClickId
+    cardClickTimer = undefined
+    pendingCardClickId = ''
+    if (!clickedId) return
+    expandedIds.value = expandedIds.value.includes(clickedId)
+      ? expandedIds.value.filter(item => item !== clickedId)
+      : [...expandedIds.value, clickedId]
+  }, 260)
+}
 function toggleDeleteConfirmation(id: string) {
   if (deletingId.value) return
   confirmingDeleteId.value = confirmingDeleteId.value === id ? '' : id
@@ -169,6 +202,7 @@ async function deleteNote(id: string) {
 }
 async function editNote(id: string, event?: MouseEvent) {
   if (event?.target instanceof Element && event.target.closest('a, button, input, select, textarea, summary, [contenteditable="true"]')) return
+  if (pendingCardClickId === id) clearCardClickTimer()
   confirmingDeleteId.value = ''
   if (!editingIds.value.includes(id)) editingIds.value = [...editingIds.value, id]
   await nextTick()
@@ -364,7 +398,7 @@ async function createTag() {
 }
 onMounted(() => { void data.ensureDocsLoaded(); void loadTags(); window.addEventListener('scroll', onNotesScroll, { passive: true }) })
 onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); window.addEventListener('pointerdown', onOutsideFilter); window.addEventListener('keydown', onReaderKeydown) })
-onBeforeUnmount(() => { window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
+onBeforeUnmount(() => { clearCardClickTimer(); window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
 watch(() => session.currentUser.id, memberId => { void initializeNoteWorkflow(memberId); versions.value = {} })
 onMounted(() => void loadPins())
 </script>
@@ -414,15 +448,15 @@ onMounted(() => void loadPins())
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
-        <article v-for="note in visible" :key="note.id" class="note-card fixed-height" :class="{ highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
-          tabindex="0" title="按 Enter 阅读，双击在卡片内编辑" :aria-label="`小记：${note.title}，按 Enter 开始阅读，双击编辑`"
-          @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
+        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': !expandedIds.includes(note.id) && !editingIds.includes(note.id), expanded: expandedIds.includes(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
+          tabindex="0" :aria-expanded="expandedIds.includes(note.id)" :title="expandedIds.includes(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑'" :aria-label="`小记：${note.title}，单击${expandedIds.includes(note.id) ? '收起' : '展开'}全文，按 Enter 开始阅读，双击编辑`"
+          @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
             <div v-if="noteEnrichmentProgress[note.id]" class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出进度">
               <button v-for="stage in (['title', 'image', 'polish'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage]}`" :title="`${stageLabel(stage)}：${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-disabled="noteEnrichmentProgress[note.id]?.[stage] !== 'failed'" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
             </div>
             <div v-if="validPolish(note)" class="version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(note)" @click="versions[note.id] = 'polished'">润色</button><button type="button" :aria-pressed="!showPolished(note)" @click="versions[note.id] = 'original'">原文</button></div>
-            <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-arrow-right-up-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
+            <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
           <p v-if="progressVisible(note.id) && noteEnrichmentStatus[note.id]" class="workflow-status" role="status">{{ noteEnrichmentStatus[note.id] }} <button v-if="canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成')" type="button" @click="retryOrStart(note)">重试</button></p>
           <NoteComposer v-if="editingIds.includes(note.id)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
@@ -517,8 +551,9 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .new-tag-form .error { flex-basis: 100%; }
 .tag-status { font-size: 12px; color: var(--wao-text-faint); }
 .list-summary { display: flex; justify-content: space-between; gap: 10px; margin: 9px 0 12px; font-size: 11px; color: var(--wao-text-faint); }
-.note-card { position: relative; box-sizing: border-box; height: 300px; min-height: 300px; max-height: 300px; overflow: hidden; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 17px 19px 36px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
-.note-card.editing { height: auto; min-height: 300px; max-height: none; overflow: visible; }
+.note-card { position: relative; box-sizing: border-box; min-height: 300px; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 17px 19px 36px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
+.note-card.fixed-height { height: 300px; max-height: 300px; overflow: hidden; }
+.note-card.expanded, .note-card.editing { height: auto; max-height: none; overflow: visible; }
 .note-card:hover, .note-card:focus-within { border-color: var(--wao-primary); box-shadow: 0 10px 30px rgba(59, 47, 91, .1); transform: translateY(-2px); }
 .note-card.editing:hover, .note-card.editing:focus-within { transform: none; }
 .note-card.highlighted, .note-card.editing { border-color: var(--wao-primary); }
@@ -549,10 +584,13 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-count { color: var(--wao-text-faint); font-variant-numeric: tabular-nums; }
 .author { color: var(--wao-text-2); font-size: 12px; font-weight: 600; }
 .saved { color: var(--wao-success-strong); margin-left: auto; }
-.note-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 9px; margin: 0 0 9px; max-height: 52px; overflow: hidden; }
-.note-heading h2 { margin: 0; color: var(--wao-text-1); font-size: 16px; line-height: 1.45; font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.note-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 9px; margin: 0 0 9px; }
+.note-card.fixed-height .note-heading { max-height: 52px; overflow: hidden; }
+.note-heading h2 { margin: 0; color: var(--wao-text-1); font-size: 16px; line-height: 1.45; font-weight: 600; overflow-wrap: anywhere; }
+.note-card.fixed-height .note-heading h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .note-content.has-images { display: grid; grid-template-columns: minmax(0, 1fr) 174px; gap: 14px; align-items: start; }
-.note-body { min-height: 0; overflow-wrap: anywhere; line-height: 1.75; font-size: 13px; max-height: 170px; overflow: hidden; }
+.note-body { min-height: 0; overflow-wrap: anywhere; line-height: 1.75; font-size: 13px; }
+.note-card.fixed-height .note-body { max-height: 170px; overflow: hidden; }
 .note-body :deep(p:first-child) { margin-top: 0; }
 .note-body :deep(img.md-img) { display: none !important; }
 .note-body :deep(.character-count) { display: none !important; }
@@ -596,6 +634,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-read-action:hover { border-color: var(--wao-primary); }
 .note-read-action { opacity: 0; visibility: hidden; transition: opacity .16s, visibility .16s; }
 .note-card:hover .note-read-action, .note-card:focus-within .note-read-action { opacity: 1; visibility: visible; }
+.note-card.expanded .note-read-action { position: static; display: block; width: fit-content; margin: 12px 0 0 auto; opacity: 1; visibility: visible; }
 .mining-toggle { opacity: 0; visibility: hidden; transition: opacity .16s, visibility .16s; }
 .notes-list:hover .mining-toggle, .notes-list:focus-within .mining-toggle { opacity: 1; visibility: visible; }
 .notes-reader { position: fixed; inset: 0; z-index: 1150; display: grid; grid-template-rows: 52px minmax(0,1fr) 58px; padding: 0 90px; background: radial-gradient(ellipse at 50% 0%, rgba(103,82,177,.1), transparent 52%), var(--wao-bg-page); color: var(--wao-text-2); }
@@ -646,7 +685,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 }
 @media (max-width: 1100px) { .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } .search { flex: 1 1 50%; } }
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
-@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card:not(.editing) { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .mining-modal-mask { align-items: end; padding: 10px; } .mining-modal { width: 100%; max-height: calc(100dvh - 20px); padding: 24px 6px 10px; border-radius: 18px; } .mining-modal-close { margin-right: 4px; } .list-summary { flex-wrap: wrap; } .notes-reader { grid-template-rows: 48px minmax(0,1fr) 54px; padding: 0 10px; } .reader-page { border-radius: 13px; padding: 20px 15px; } .reader-page h2 { margin-top: 14px; } .reader-content.has-images { grid-template-columns: minmax(0,1fr); } .reader-image-rail { position: static; padding: 12px 0 0; border-left: 0; border-top: 1px solid var(--wao-line); } .reader-image-rail > div { grid-template-columns: repeat(3,minmax(0,1fr)); } .reader-image-rail img { max-height: 90px; } .reader-nav { top: auto; bottom: 62px; width: 34px; height: 40px; transform: none; } .reader-prev { left: 13px; } .reader-next { right: 13px; } .reader-controls { gap: 8px; } .reader-controls > span { display: none; } }
+@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .mining-modal-mask { align-items: end; padding: 10px; } .mining-modal { width: 100%; max-height: calc(100dvh - 20px); padding: 24px 6px 10px; border-radius: 18px; } .mining-modal-close { margin-right: 4px; } .list-summary { flex-wrap: wrap; } .notes-reader { grid-template-rows: 48px minmax(0,1fr) 54px; padding: 0 10px; } .reader-page { border-radius: 13px; padding: 20px 15px; } .reader-page h2 { margin-top: 14px; } .reader-content.has-images { grid-template-columns: minmax(0,1fr); } .reader-image-rail { position: static; padding: 12px 0 0; border-left: 0; border-top: 1px solid var(--wao-line); } .reader-image-rail > div { grid-template-columns: repeat(3,minmax(0,1fr)); } .reader-image-rail img { max-height: 90px; } .reader-nav { top: auto; bottom: 62px; width: 34px; height: 40px; transform: none; } .reader-prev { left: 13px; } .reader-next { right: 13px; } .reader-controls { gap: 8px; } .reader-controls > span { display: none; } }
 @media (max-width: 520px) { .note-content.has-images { grid-template-columns: 1fr; } .note-image-rail { border-left: 0; border-top: 1px solid var(--wao-line); padding: 10px 0 0; } .note-images { grid-template-columns: repeat(3, minmax(0, 1fr)); } .note-image-thumb.cover { grid-column: auto; } .note-image-thumb.cover img { height: 60px; } }
 @media (hover: none) { .stage-list-complete, .version-toggle, .card-quick-actions, .note-read-action, .mining-toggle { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top, .mining-modal { transition: none; animation: none; } .reader-page { animation: none; } .reader-progress i { transition: none; } }
