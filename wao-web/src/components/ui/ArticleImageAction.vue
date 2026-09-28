@@ -227,7 +227,7 @@ onBeforeUnmount(() => { generation++ })
         <section class="image-prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="image-prompt-title">
           <header><h2 id="image-prompt-title">{{ generateTitle ? '小记 AI 设置' : '个人配图提示词' }}</h2><button type="button" aria-label="关闭" @click="settingsOpen = false"><i class="ri-close-line"></i></button></header>
           <p>{{ generateTitle ? '这些设置只影响当前账号的小记自动整理与配图。原文始终保留。' : '用于文章总览图；只影响你的账号。正文会在点击生成时单独提供给模型。' }}</p>
-          <label v-if="generateTitle" class="model-choice"><span>标题、配图与润色模型</span><select v-model="draftModel"><option value="gpt-5.6-sol">GPT-5.6 Sol · 均衡</option><option value="gpt-5.6-luna">GPT-5.6 Luna · 高频低成本</option><option value="gpt-5.6-terra">GPT-5.6 Terra</option></select></label>
+          <label v-if="generateTitle" class="model-choice"><span>标题、配图与润色模型</span><select v-model="draftModel"><option value="gpt-5.6-sol">GPT-5.6 Sol · 默认</option><option value="gpt-6-sol">GPT-6 Sol</option><option value="gpt-6-luna">GPT-6 Luna</option><option value="gpt-5.6-luna">GPT-5.6 Luna · 高频低成本</option><option value="gpt-5.6-terra">GPT-5.6 Terra</option></select></label>
           <label v-if="generateTitle" class="prompt-field"><span>标题文案提示词</span><textarea v-model="draftTitlePrompt" maxlength="4000" rows="3" /></label>
           <label v-if="generateTitle" class="prompt-field"><span>正文润色提示词</span><textarea v-model="draftPolishPrompt" maxlength="4000" rows="5" /></label>
           <label class="prompt-field"><span>图片生成提示词</span><textarea v-model="draftPrompt" maxlength="4000" rows="6" /></label>

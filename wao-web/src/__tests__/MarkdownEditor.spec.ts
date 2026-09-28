@@ -145,12 +145,12 @@ describe('文章总览配图', () => {
     expect(modal.textContent).toContain('正文润色提示词')
     expect(modal.textContent).toContain('图片生成提示词')
     const select = modal.querySelector<HTMLSelectElement>('.model-choice select')!
-    select.value = 'gpt-5.6-luna'
+    select.value = 'gpt-6-luna'
     select.dispatchEvent(new Event('change', { bubbles: true }))
     const save = [...modal.querySelectorAll('button')].find(button => button.textContent?.includes('保存设置'))!
     save.click()
     await flushPromises()
-    expect(savePreference).toHaveBeenCalledWith('note-ai-model-v1', 'gpt-5.6-luna')
+    expect(savePreference).toHaveBeenCalledWith('note-ai-model-v1', 'gpt-6-luna')
     expect(saveTextPolishPrompt).toHaveBeenCalledWith('默认正文润色方法')
     w.unmount()
   })
