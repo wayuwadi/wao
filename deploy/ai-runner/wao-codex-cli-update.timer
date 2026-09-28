@@ -1,0 +1,10 @@
+[Unit]
+Description=Update Codex CLI on WAO Linux2 daily
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+Unit=wao-codex-cli-update.service
+
+[Install]
+WantedBy=timers.target
