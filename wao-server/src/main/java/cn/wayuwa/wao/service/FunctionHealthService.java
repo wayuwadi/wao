@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -91,8 +92,9 @@ public class FunctionHealthService {
             states.put(product.getFeatureId(), product);
         }
         long recentTotal = summaries.values().stream().mapToLong(row -> value(row.getRecentOpens())).sum();
-        long activeFeatures = summaries.values().stream().filter(row -> value(row.getRecentOpens()) > 0).count();
-        double activeAverage = activeFeatures == 0 ? 0 : recentTotal / (double) activeFeatures;
+        List<Long> activeOpens = FEATURES.stream().map(summaries::get).filter(Objects::nonNull)
+                .map(row -> value(row.getRecentOpens())).filter(count -> count > 0).sorted().toList();
+        double activeMedian = median(activeOpens);
         List<FunctionHealthItemDto> items = FEATURES.stream().map(featureId -> {
             FunctionUsageSummary summary = summaries.get(featureId);
             FunctionProductEntity state = states.get(featureId);
@@ -101,7 +103,7 @@ public class FunctionHealthService {
             int iterationCount = state == null ? 0 : value(state.getIterationCount());
             int manual = state == null ? 0 : value(state.getManualAdjustment());
             int score = Math.max(1, Math.min(100, 1 + iterationCount + manual));
-            String[] insight = insight(recent, recentTotal, activeAverage, score);
+            String[] insight = insight(total, recent, activeMedian, score);
             return new FunctionHealthItemDto(featureId, score, iterationCount, manual, total, recent,
                     recentTotal == 0 ? 0 : recent * 100.0 / recentTotal,
                     summary == null ? null : summary.getLastOpenedAt(), insight[0], insight[1]);
@@ -136,14 +138,23 @@ public class FunctionHealthService {
         }
     }
 
-    private static String[] insight(long recent, long total, double average, int score) {
-        if (total == 0) return new String[] {"UNKNOWN", "统计刚启用，暂无真实使用记录"};
-        if (recent == 0) return new String[] {"LOW", "近 30 天未打开，建议检查入口、边界或是否应合并"};
-        if (recent < Math.max(2, average * 0.25)) return new String[] {"LOW", "近 30 天使用明显偏低，建议确认功能是否难找或重复"};
-        if (recent >= Math.max(5, average * 1.5) && score < 60) return new String[] {"HIGH", "使用较频繁但未到 60 分，优先缩短高频操作路径"};
+    private static String[] insight(long total, long recent, double median, int score) {
+        if (total == 0) return new String[] {"UNKNOWN", "真实使用样本不足；继续观察，暂不建议下线"};
+        if (recent == 0) return new String[] {"LOW", "当前账号近 30 天未打开；可先从个人导航移除。评估全站下线前，先核对其他成员使用和业务依赖"};
+        if (recent < Math.max(2, median * 0.25)) return new String[] {"LOW", "当前账号近 30 天使用偏低；先优化入口或说明、检查重复能力，再观察一个周期决定是否合并或下线"};
+        if (recent >= Math.max(5, median * 1.5) && score < 60) return new String[] {"HIGH", "当前账号使用较频繁但功能分未到 60，优先缩短高频操作路径"};
         if (score >= 90) return new String[] {"MATURE", "已达到 90 分，可评估制作独立功能介绍"};
         if (score >= 60) return new String[] {"STABLE", "已达到 60 分，可暂缓迭代并观察真实使用变化"};
         return new String[] {"NORMAL", "保持观察，后续提交会自动累计迭代分"};
+    }
+
+    private static double median(List<Long> sortedValues) {
+        int size = sortedValues.size();
+        if (size == 0) return 0;
+        int middle = size / 2;
+        return size % 2 == 0
+                ? (sortedValues.get(middle - 1) + sortedValues.get(middle)) / 2.0
+                : sortedValues.get(middle);
     }
 
     private static long value(Long value) { return value == null ? 0 : value; }

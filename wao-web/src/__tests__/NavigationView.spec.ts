@@ -245,10 +245,47 @@ describe('全量导航页', () => {
     expect(wrapper.text()).not.toContain('30 天真实打开')
     await router.replace('/navigation?view=governance')
     await flushPromises()
-    await vi.waitFor(() => expect(wrapper.text()).toContain('近 30 天真实打开'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('当前账号近 30 天真实打开'))
     expect(fetchFunctionHealth).toHaveBeenCalled()
     expect(wrapper.text()).toContain('40')
     expect(wrapper.text()).toContain('优先缩短高频操作路径')
+    wrapper.unmount()
+  })
+
+  it('功能治理默认按打开次数倒序，点击表头切换正序和倒序', async () => {
+    const item = {
+      score: 12,
+      iterationCount: 11,
+      manualAdjustment: 0,
+      totalOpens: 20,
+      recentShare: 25,
+      lastOpenedAt: '2026-08-31T09:00:00',
+      insightLevel: 'HIGH' as const,
+      insight: '使用较频繁但未到 60 分，优先缩短高频操作路径',
+    }
+    vi.mocked(fetchFunctionHealth).mockResolvedValue({
+      windowDays: 30,
+      generatedAt: '2026-08-31T10:00:00',
+      recentOpens: 15,
+      functions: [
+        { ...item, featureId: 'projects', recentOpens: 5 },
+        { ...item, featureId: 'games', recentOpens: 10 },
+      ],
+    })
+    const { router, wrapper } = await mountNavigation()
+    await router.replace('/navigation?view=governance')
+    await flushPromises()
+
+    const readOrder = () => wrapper.findAll('tbody tr').map((row) => row.attributes('data-feature-id'))
+    expect(readOrder()).toEqual(['games', 'projects'])
+    const sort = wrapper.get('.sort-trigger')
+    expect(sort.attributes('aria-label')).toContain('倒序')
+    await sort.trigger('click')
+    expect(wrapper.get('th[aria-sort="ascending"]')).toBeDefined()
+    expect(readOrder()).toEqual(['projects', 'games'])
+    await sort.trigger('click')
+    expect(wrapper.get('th[aria-sort="descending"]')).toBeDefined()
+    expect(readOrder()).toEqual(['games', 'projects'])
     wrapper.unmount()
   })
 

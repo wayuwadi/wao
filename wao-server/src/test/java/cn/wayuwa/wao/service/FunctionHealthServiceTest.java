@@ -38,6 +38,7 @@ class FunctionHealthServiceTest {
             assertThat(item.score()).isEqualTo(1);
             assertThat(item.recentOpens()).isZero();
             assertThat(item.insightLevel()).isEqualTo("UNKNOWN");
+            assertThat(item.insight()).contains("暂不建议下线");
         });
         verify(usage).summarize(eq("member-a"), any(LocalDateTime.class));
     }
@@ -54,7 +55,33 @@ class FunctionHealthServiceTest {
         assertThat(overview.recentOpens()).isEqualTo(41);
         assertThat(item(overview, "navigation").insightLevel()).isEqualTo("HIGH");
         assertThat(item(overview, "projects").insightLevel()).isEqualTo("LOW");
+        assertThat(item(overview, "projects").insight()).contains("优化入口", "是否合并或下线");
+        assertThat(item(overview, "navigation").insight()).contains("缩短高频操作路径");
         assertThat(item(overview, "navigation").recentShare()).isBetween(97.5, 97.6);
+    }
+
+    @Test
+    void zeroRecentUsageRecommendsPersonalHideAndCrossMemberReviewBeforeSunset() {
+        when(usage.summarize(eq("member-a"), any())).thenReturn(List.of(summary("projects", 12, 0)));
+        when(products.selectBatchIds(any())).thenReturn(List.of());
+
+        var item = item(service.overview("member-a"), "projects");
+
+        assertThat(item.insightLevel()).isEqualTo("LOW");
+        assertThat(item.insight()).contains("从个人导航移除", "核对其他成员使用和业务依赖");
+    }
+
+    @Test
+    void oneHighUsageFeatureDoesNotMakeEveryOtherFeatureLookLow() {
+        when(usage.summarize(eq("member-a"), any())).thenReturn(List.of(
+                summary("home", 20_000, 20_000), summary("calendar", 5, 5),
+                summary("games", 4, 4), summary("projects", 3, 3)));
+        when(products.selectBatchIds(any())).thenReturn(List.of());
+
+        var item = item(service.overview("member-a"), "projects");
+
+        assertThat(item.insightLevel()).isEqualTo("NORMAL");
+        assertThat(item.insight()).contains("保持观察");
     }
 
     @Test
