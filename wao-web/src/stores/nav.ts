@@ -531,14 +531,33 @@ export const useNavStore = defineStore('nav', () => {
   }
 
   /** 隐藏分组内当前位于侧栏的菜单；可在「全部功能」中重新固定并保留原分组。 */
+  function canHideMenuGroup(groupId: string) {
+    if (!groupId || groupId === 'ROOT') return false
+    const layout = currentLayout()
+    const group = layout.groups.find((item) => item.id === groupId)
+    if (!group) return false
+    if (layout.items.some((item) => item.group === groupId && item.placement === 'MENU' && item.visible)) {
+      return true
+    }
+    return groupId.startsWith('custom-') && !layout.items.some((item) => item.group === groupId)
+  }
+
   async function hideMenuGroup(groupId: string) {
     const next = currentLayout()
     const group = next.groups.find((item) => item.id === groupId)
     if (!group || groupId === 'ROOT') throw new Error('该分组不能隐藏')
     const items = next.items.filter((item) => item.group === groupId && item.placement === 'MENU' && item.visible)
-    if (!items.length) throw new Error('分组中没有显示在侧栏的菜单')
+    if (!items.length) {
+      if (!groupId.startsWith('custom-') || next.items.some((item) => item.group === groupId)) {
+        throw new Error('分组中没有可隐藏的侧栏菜单')
+      }
+      next.groups = next.groups.filter((item) => item.id !== groupId)
+      await saveLayout(next)
+      return 'removed-empty-group' as const
+    }
     items.forEach((item) => { item.visible = false })
     await saveLayout(next)
+    return 'hidden-menus' as const
   }
 
   /** 把菜单放到当前分组或停靠区的最前面，并立即持久化。 */
@@ -661,6 +680,7 @@ export const useNavStore = defineStore('nav', () => {
     renameMenu,
     setMenuVisibility,
     createMenuGroup,
+    canHideMenuGroup,
     hideMenuGroup,
     pinMenu,
     menuConfig,
