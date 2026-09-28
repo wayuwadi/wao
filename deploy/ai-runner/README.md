@@ -67,6 +67,22 @@ python3 deploy/ai-runner/wao-ai-runner.py \
 
 Linux 主节点上的 Codex CLI 和 Runner systemd 配置属于主机级依赖，由管理员独立安装和升级。
 CD 不再下载、上传、安装或重启 Codex CLI/Runner，避免业务发布被大文件传输和 AI 工具生命周期阻塞。
+Linux2 由 [`wao-codex-cli-update.timer`](wao-codex-cli-update.timer) 每天 04:15 执行一次
+[`wao-codex-cli-update.service`](wao-codex-cli-update.service)，直接从 npm 官方仓库安装
+`@openai/codex@latest` 到 `~/.local/share/wao-codex-cli`。Runner 的
+`~/.local/bin/codex` 指向该目录的 `node_modules/.bin/codex`；日常升级不重启 Runner，也不参与
+WAO Jenkins 发布。服务使用本机 `127.0.0.1:7897` 代理；代理或 npm 不可用时当次失败，
+次日自动再试，版本和错误可用 `systemctl --user status wao-codex-cli-update.service`、
+`journalctl --user -u wao-codex-cli-update.service` 查看。安装或停用定时任务：
+
+```bash
+install -Dm644 deploy/ai-runner/wao-codex-cli-update.service ~/.config/systemd/user/wao-codex-cli-update.service
+install -Dm644 deploy/ai-runner/wao-codex-cli-update.timer ~/.config/systemd/user/wao-codex-cli-update.timer
+systemctl --user daemon-reload
+systemctl --user enable --now wao-codex-cli-update.timer
+# 停用时：systemctl --user disable --now wao-codex-cli-update.timer
+```
+
 首次接入前需确认 `command -v codex` 可用，并在 Runner 启动参数或 systemd 环境中配置 `codex`
 能力和集中账号同步；节点身份仍必须通过 AI 控制台的一次性配对码建立。
 

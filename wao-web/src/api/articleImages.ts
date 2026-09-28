@@ -1,4 +1,5 @@
 import { http, type ApiResponse } from './http'
+import { DEFAULT_NOTE_MODEL } from '@/utils/noteAiModel'
 
 export interface ArticleImageJob {
   id: string
@@ -7,9 +8,9 @@ export interface ArticleImageJob {
   imageUrl: string | null
 }
 
-export async function startArticleImage(articleText: string, visualPrompt: string, model = 'gpt-6-luna'): Promise<ArticleImageJob> {
+export async function startArticleImage(articleText: string, visualPrompt: string, model = DEFAULT_NOTE_MODEL, requestId?: string): Promise<ArticleImageJob> {
   const response = await http.post<ApiResponse<ArticleImageJob>>('/api/assistant/article-images', {
-    articleText, visualPrompt, model,
+    articleText, visualPrompt, model, requestId,
   })
   return response.data.data
 }

@@ -3,6 +3,7 @@ set -Eeuo pipefail
 umask 077
 snapshot="${1:?Usage: verify-nacos-recovery.sh SNAPSHOT PASSPHRASE_FILE}"
 passphrase="${2:?Missing passphrase file}"
+credential_container="${3:-wao-slave-wao-server-1}"
 [[ -f "$snapshot/COMPLETE" && -s "$passphrase" ]]
 (cd "$snapshot"; sha256sum -c SHA256SUMS)
 stage="$(mktemp -d "${TMPDIR:-/tmp}/wao-nacos-restore.XXXXXX")"
@@ -48,7 +49,7 @@ for attempt in $(seq 1 90); do
 done
 [[ "$ready" == true ]] || { echo 'Isolated Nacos did not become ready.' >&2; exit 1; }
 python3 "$(dirname "$0")/nacos-recovery-inventory.py" --container "$container" \
-  --credential-container wao-slave-wao-server-1 >"$stage/restored-inventory.json"
+  --credential-container "$credential_container" >"$stage/restored-inventory.json"
 cmp "$stage/inventory.json" "$stage/restored-inventory.json"
 printf 'Restored inventory: '
 cat "$stage/restored-inventory.json"

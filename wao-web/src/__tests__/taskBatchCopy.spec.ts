@@ -115,17 +115,16 @@ describe('批量复制任务全文', () => {
     wrapper.unmount()
   })
 
-  it('TODO 可跨项目复制，选择不等于完成，过滤掉隐藏任务', async () => {
+  it('TODO 可按项目筛选且不提供批量选择', async () => {
     const data = useDataStore()
     const me = useSessionStore().currentUser.id
     data.tasks = data.tasks.slice(0, 2).map((task, index) => ({ ...task, owner: me, parts: [], project: `p${index + 1}`, status: '待办' }))
     const wrapper = mount(TodoView)
-    await wrapper.get('.copy-selection-actions button').trigger('click')
-    await wrapper.get('.copy-tasks').trigger('click')
-    expect(vi.mocked(copyToClipboard).mock.calls[0]![0]).toContain('任务清单（2 项）')
+    await wrapper.get('[aria-label="按项目筛选任务"]').setValue('p2')
+    expect(wrapper.findAll('.trow')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('批量选择')
+    expect(wrapper.text()).not.toContain('全选当前可见')
     expect(data.tasks.every((task) => task.status === '待办')).toBe(true)
-    await wrapper.findAll('.mt-toolbar > button').find((button) => button.text() === '我参与')!.trigger('click')
-    expect(wrapper.get('.copy-tasks').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 })

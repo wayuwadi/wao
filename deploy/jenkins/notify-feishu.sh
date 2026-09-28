@@ -59,6 +59,7 @@ read_status() {
 }
 
 slave_status="$(read_status slave_status not_started)"
+topology="$(read_status topology dual)"
 slave_detail="$(read_status slave_detail 无状态)"
 master_status="$(read_status master_status not_started)"
 master_detail="$(read_status master_detail 无状态)"
@@ -162,9 +163,14 @@ if [ "$WAO_PIPELINE_RESULT" = success ]; then
       exit 0
     fi
     if [ "$slave_status" = skipped ]; then
-      success_title='WAO 生产发布 ⚠️ Linux2 单节点成功'
-      success_template=orange
-      success_detail='Linux2 与公共入口已就绪；Linux1 已摘流，恢复后须补齐同一版本。'
+      if [ "$topology" = linux2-only ]; then
+        success_title='WAO 生产发布 ✅ Linux2 单节点成功'
+        success_detail='Linux2、云端静态制品与公共入口检查通过；Linux1 已正式退役。'
+      else
+        success_title='WAO 生产发布 ⚠️ Linux2 单节点成功'
+        success_template=orange
+        success_detail='Linux2 与公共入口已就绪；Linux1 已摘流，恢复后须补齐同一版本。'
+      fi
     elif [ "$master_status" = skipped ] || [ "$master_status" = degraded ]; then
       success_title='WAO 生产发布 ⚠️ Linux1 单节点成功'
       success_template=orange

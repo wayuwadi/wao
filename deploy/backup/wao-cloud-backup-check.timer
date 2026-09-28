@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Linux2 cloud backup every hour
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=wao-cloud-backup-check.service
+
+[Install]
+WantedBy=timers.target

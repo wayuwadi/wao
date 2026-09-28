@@ -1,0 +1,12 @@
+[Unit]
+Description=Update Codex CLI on WAO Linux2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HTTP_PROXY=http://127.0.0.1:7897
+Environment=HTTPS_PROXY=http://127.0.0.1:7897
+ExecStart=/usr/bin/npm install --prefix %h/.local/share/wao-codex-cli --save-exact --no-audit --no-fund --registry=https://registry.npmjs.org @openai/codex@latest
+ExecStartPost=%h/.local/share/wao-codex-cli/node_modules/.bin/codex --version
+TimeoutStartSec=10min

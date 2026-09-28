@@ -7,8 +7,13 @@ import jakarta.validation.constraints.Size;
 public record ArticleImageRequest(
         @NotBlank @Size(max = 60000) String articleText,
         @NotBlank @Size(max = 4000) String visualPrompt,
-        @Size(max = 64) String model) {
+        @Size(max = 64) String model,
+        @Size(max = 32) String requestId) {
     public ArticleImageRequest(String articleText, String visualPrompt) {
-        this(articleText, visualPrompt, "gpt-6-luna");
+        this(articleText, visualPrompt, "gpt-5.6-sol", null);
+    }
+
+    public ArticleImageRequest(String articleText, String visualPrompt, String model) {
+        this(articleText, visualPrompt, model, null);
     }
 }

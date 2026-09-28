@@ -10,6 +10,7 @@ import { RouterView, useRoute } from 'vue-router'
 const route = useRoute()
 import ToastHost from '@/components/ui/ToastHost.vue'
 import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
+import { rememberPendingReleaseVersion, type WorkspaceReloadDetail } from '@/utils/versionUpdate'
 const { effective } = useTheme()
 const componentTheme = computed(() => ({
   algorithm: effective.value === 'dark' ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
@@ -17,7 +18,7 @@ const componentTheme = computed(() => ({
 }))
 watch(() => useSessionStore().userId, clearToasts, { flush: 'sync' })
 let refreshing = false
-async function reloadWorkspace() {
+async function reloadWorkspace(rawEvent?: Event) {
   if (refreshing) return
   refreshing = true
   try {
@@ -37,6 +38,9 @@ async function reloadWorkspace() {
     const leave = new Event('beforeunload', { cancelable: true })
     if (!window.dispatchEvent(leave))
       throw new Error('当前编辑尚未保存，请处理页面中的保存提示后重试')
+    const targetVersion = (rawEvent as CustomEvent<WorkspaceReloadDetail> | undefined)?.detail
+      ?.targetVersion
+    if (targetVersion) rememberPendingReleaseVersion(targetVersion)
     window.location.reload()
   } catch (error) {
     toast(

@@ -16,11 +16,29 @@ TARGETS = {
     'linux1': 'https://linux1.wayuwa.cn:9443/api/edge/ready',
     'linux2': 'https://linux2.wayuwa.cn:9443/api/edge/ready',
 }
+TOPOLOGY_FILE = Path('/etc/wao-deploy-topology')
+
+
+def active_targets(topology_file=TOPOLOGY_FILE):
+    try:
+        topology = topology_file.read_text().strip()
+    except OSError:
+        topology = 'dual'
+    if topology == 'linux2-only':
+        return {name: url for name, url in TARGETS.items() if name != 'linux1'}
+    if topology != 'dual':
+        raise ValueError(f'Unsupported WAO deployment topology: {topology}')
+    return TARGETS
+
+
 PLANNED_DRAIN_DIR = Path('/run/wao-nginx-upstreams')
 PLANNED_DRAIN_MAX_SECONDS = 2 * 3600
 # Jenkins touches this marker when a release starts and again when it ends.
 # Parallel node replacement briefly takes every entry offline (ADR-280).
 DEPLOY_WINDOW_SECONDS = 10 * 60
+# The timer runs every minute. A short clean interval must not close a
+# flapping incident and cause a new Feishu alert for the same failure.
+RECOVERY_SUCCESS_CHECKS = 10
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -88,8 +106,8 @@ def update(previous, results, now, planned=()):
     if problems and (set(problems) - set(old) or now - previous.get('sent', 0) >= 4 * 3600):
         notification = '[WAO 基础设施告警] 就绪检查连续失败：' + ', '.join(problems) + '。请检查入口、应用与权威数据库；不会自动提升数据库。'
         problems = sorted(set(problems) | set(old))
-    elif not problems and old and successes >= 2:
-        notification = '[WAO 基础设施恢复] 三条入口的应用与权威数据库就绪检查均已恢复。'
+    elif not problems and old and successes >= RECOVERY_SUCCESS_CHECKS:
+        notification = '[WAO 基础设施恢复] 所有在役入口的应用与权威数据库就绪检查均已恢复。'
     state = {**previous, 'checked': now, 'failures': failures, 'healthy': results, 'successes': successes}
     return state, problems, notification
 
@@ -111,7 +129,8 @@ def main():
     parser.add_argument('--state', type=Path, default=Path('/var/lib/wao-health-watch/state.json'))
     parser.add_argument('--check-only', action='store_true')
     args = parser.parse_args()
-    results = {name: probe(url) for name, url in TARGETS.items()}
+    targets = active_targets()
+    results = {name: probe(url) for name, url in targets.items()}
     print(json.dumps(results))
     if args.check_only:
         return 0 if all(results.values()) else 1
@@ -119,6 +138,8 @@ def main():
         previous = json.loads(args.state.read_text())
     except (OSError, ValueError):
         previous = {}
+    # A retired node cannot remain an open incident or trigger a false recovery.
+    previous['notified'] = [name for name in previous.get('notified', []) if name in targets]
     now = int(time.time())
     state, problems, message = update(previous, results, now, planned_drains(now))
     failed_delivery = False

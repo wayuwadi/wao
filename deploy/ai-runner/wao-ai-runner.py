@@ -1926,8 +1926,9 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         session_id = event.get("thread_id") or event.get("session_id") or session_id
     result_text = (result_file.read_text(encoding="utf-8", errors="replace")
                    if result_file.exists() else output[-12000:])
-    if tools_disabled and exit_code != 0 and codex_auth_required(output):
-        result_text = "CODEX_AUTH_REQUIRED"
+    if tools_disabled and exit_code != 0:
+        result_text = ("CODEX_AUTH_REQUIRED" if codex_auth_required(output)
+                       else f"CODEX_FAILURE:{codex_failure_category(output)}")
     return exit_code, result_text, session_id, collect_usage(output, "codex")
 
 
@@ -2568,6 +2569,47 @@ def codex_auth_required(output: str) -> bool:
     ))
 
 
+def codex_failure_category(output: str) -> str:
+    """从 Codex 公开失败事件中提取有界类别，不记录提示词或原始错误正文。"""
+    for line in reversed(output.splitlines()):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "turn.failed":
+            continue
+        error = event.get("error") if isinstance(event.get("error"), dict) else {}
+        code = str(error.get("code") or "").lower()
+        message = str(error.get("message") or "").lower()
+        combined = f"{code} {message}"
+        if codex_auth_required(combined):
+            return "auth"
+        if any(marker in combined for marker in ("rate_limit", "rate limit", "quota", "usage limit", "429")):
+            return "rate_limit"
+        if any(marker in combined for marker in ("connection", "network", "dns", "proxy", "timeout",
+                "timed out", "error sending request", "failed to fetch", "connect error")):
+            return "network"
+        if any(marker in combined for marker in ("server_error", "internal_server_error", "500", "502", "503", "504")):
+            return "server"
+        if any(marker in combined for marker in ("tool unavailable", "not available in this mode", "unsupported tool")):
+            return "tool_unavailable"
+        return "upstream"
+    return "unknown"
+
+
+def codex_failure_message(category: str) -> str:
+    """将 Runner 可诊断类别映射为不包含上游原始文本的界面提示。"""
+    return {
+        "network": "上游网络连接失败",
+        "server": "上游服务暂时异常",
+        "rate_limit": "账号额度或频率限制",
+        "auth": "Codex 登录已失效",
+        "tool_unavailable": "当前 Codex 会话没有可用的配图工具",
+        "upstream": "上游执行失败",
+        "unknown": "未分类的上游错误",
+    }.get(category, "未分类的上游错误")
+
+
 def generated_article_png(codex_home: Path) -> Path:
     """只接受本次隔离 CODEX_HOME 中 ImageGen 生成的唯一 PNG。"""
     image_root = codex_home / "generated_images"
@@ -2605,6 +2647,7 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
     exit_code = -1
     response = ""
     error = ""
+    failure_category = "unknown"
     try:
         max_runtime_seconds = max(1, min(86_400, int(claim.get("maxRuntimeSeconds") or 1_740)))
     except (TypeError, ValueError):
@@ -2634,8 +2677,9 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
                 path.write_bytes(content)
                 image_paths.append(path)
         log(f"[{run_id}] 开始{'文章总览配图' if image_mode else '点子调研' if research_mode else '页面只读问答'}")
-        max_attempts = 1 if image_mode else READ_ONLY_AI_MAX_ATTEMPTS
+        max_attempts = 2 if image_mode else READ_ONLY_AI_MAX_ATTEMPTS
         for attempt in range(1, max_attempts + 1):
+            retryable_failure = True
             try:
                 if image_mode:
                     shutil.rmtree(codex_home / "generated_images", ignore_errors=True)
@@ -2675,11 +2719,18 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
                     error = "CODEX_AUTH_REQUIRED"
                     break
                 # 非零退出的部分 stdout 可能包含原对话或未完成报告，不回传、不持久化。
+                category = (response.partition(":")[2]
+                            if exit_code != 0 and response.startswith("CODEX_FAILURE:") else "unknown")
                 response = ""
                 if exit_code != 0:
-                    error = f"Codex 执行失败（退出码 {exit_code}）"
+                    failure_category = category
+                    error = f"Codex 执行失败（退出码 {exit_code}；{codex_failure_message(category)}）"
+                    log(f"[{run_id}] Codex 执行失败，退出码={exit_code}，诊断类型={category}")
+                    retryable_failure = (category in {"network", "server", "unknown"}
+                                         if image_mode else True)
                 else:
                     exit_code = 1
+                    failure_category = "unknown"
                     error = "Codex 没有返回文字答复"
             except Exception as exc:  # noqa: BLE001 - 单次 CLI 异常属于可恢复失败
                 exit_code = 2
@@ -2687,14 +2738,23 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
                 error = f"Codex 执行异常（{type(exc).__name__}）"
                 log(f"[{run_id}] 页面问答第 {attempt}/{max_attempts} 次执行异常："
                     f"{type(exc).__name__}")
-            if attempt < max_attempts:
+                failure_category = ("network" if isinstance(
+                    exc, (OSError, TimeoutError, urllib.error.URLError)) else "unknown")
+                retryable_failure = (isinstance(exc, (OSError, TimeoutError, urllib.error.URLError))
+                                     if image_mode else True)
+            if attempt < max_attempts and retryable_failure:
                 log(f"[{run_id}] 页面只读 AI 第 {attempt}/{max_attempts} 次执行未完成，"
                     "正在自动重试")
-                time.sleep(attempt)
+                time.sleep(min(8, 2 ** attempt))
     finally:
         try:
+            if image_mode and error and error != "CODEX_AUTH_REQUIRED":
+                log(f"[{run_id}] 文章总览配图任务终态失败：{error}")
+            completion_error = ("CODEX_AUTH_REQUIRED" if error == "CODEX_AUTH_REQUIRED" else
+                                f"CODEX_FAILURE:{failure_category}" if image_mode and error else
+                                error[-2000:])
             completion = {"claimToken": claim_token, "exitCode": exit_code,
-                          "response": response[-30000:], "error": error[-2000:]}
+                          "response": response[-30000:], "error": completion_error}
             # v2 路径与旧 API 隔离：滚动发布命中旧服务端时会 404，
             # 短暂重试直到请求落到新节点，不让旧 complete 逻辑吞掉 claim token。
             last_error: Exception | None = None

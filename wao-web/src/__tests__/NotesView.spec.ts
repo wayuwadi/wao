@@ -44,12 +44,31 @@ async function requestDelete(wrapper: Awaited<ReturnType<typeof view>>, id: stri
 async function view() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }, { path: '/kb/:id', component: { template: '<div />' } }] })
   await router.push('/notes')
-  return mount(NotesView, { global: { plugins: [router], stubs: { MarkdownEditor: Editor } } })
+  return mount(NotesView, { global: { plugins: [router], stubs: { MarkdownEditor: Editor, NoteMiningPanel: true } } })
 }
 function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('默认收起 AI 挖掘，并从阅读模式旁的按钮打开弹层', async () => {
+    useDataStore().docs.one = doc('one', '给工具栏留出空间')
+    const wrapper = await view()
+    document.body.appendChild(wrapper.element)
+    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).toBeNull()
+    const readerButton = wrapper.get('.reader-toggle:not(.mining-toggle)')
+    const miningButton = wrapper.get('.mining-toggle')
+    expect(readerButton.element.nextElementSibling).toBe(miningButton.element)
+    await miningButton.trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).not.toBeNull()
+    expect(document.activeElement).toBe(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]'))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).toBeNull()
+    expect(document.activeElement).toBe(miningButton.element)
+    wrapper.unmount()
+  })
+
   it('卡片右键命中当前小记，删除仍需在原确认区确认', async () => {
     useDataStore().docs.one = doc('one', '右键目标小记')
     const wrapper = await view()
@@ -70,6 +89,15 @@ describe('小记集中记录空间', () => {
     expect(useDataStore().docs.one).toBeDefined()
     wrapper.unmount()
   })
+  it('小记页显示当前成员今天新建的小记正文字符数', async () => {
+    const data = useDataStore()
+    const created = new Date().toISOString()
+    data.docs.today = doc('today', '正文 ABC', created)
+    data.docs.other = doc('other', '不计入', created, 'other')
+    const wrapper = await view()
+    expect(wrapper.get('.daily-note-count').text()).toContain('今日写字 5 字')
+    wrapper.unmount()
+  })
   it('从小记卡片直接复制免登录只读分享页链接', async () => {
     useDataStore().docs.old = doc('old', '要分享的小记')
     const wrapper = await view()
@@ -79,22 +107,40 @@ describe('小记集中记录空间', () => {
     expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/s/d/old`, '公开分享链接已复制')
     wrapper.unmount()
   })
-  it('新小记四项自动处理默认开启，用户关闭后草稿恢复保留选择', async () => {
+  it('新建页面不显示逐篇 AI 选项，保存后按成员默认能力自动整理', async () => {
+    const data = useDataStore()
+    const preferences = usePreferenceStore()
+    const start = vi.spyOn(await import('@/utils/autoNoteEnrichment'), 'startAutoNoteEnrichment').mockImplementation(() => {})
+    const add = vi.spyOn(data, 'addNote').mockImplementation(async (text, _title, id) => {
+      data.docs[id!] = doc(id!, text)
+      return id!
+    })
     const first = composer()
-    const options = first.get('.auto-enrichment-choices')
-    expect(options.element.previousElementSibling?.classList.contains('editor-space')).toBe(true)
-    expect(options.element.nextElementSibling?.classList.contains('composer-footer')).toBe(true)
-    expect(options.findAll('[role="switch"]')).toHaveLength(4)
-    expect(options.find('[aria-label="自动添加已有标签"]').attributes('title')).toContain('已有标签')
-    expect(options.findAll('[role="switch"]').every(button => button.attributes('aria-checked') === 'true')).toBe(true)
-    const image = first.get('.auto-enrichment-choices [aria-label="自动生成图片"]')
-    await image.trigger('click')
-    expect(image.attributes('aria-checked')).toBe('false')
-    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).autoImage).toBe(false)
+    expect(first.find('.auto-enrichment-choices').exists()).toBe(false)
+    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true })
+    await first.find('textarea').setValue('按默认 AI 能力整理')
+    await first.get('.save-note').trigger('click')
+    await flushPromises()
+    expect(add).toHaveBeenCalledOnce()
+    const savedId = add.mock.calls[0]![2]!
+    expect(start).toHaveBeenCalledWith('wg', savedId, 3, {
+      title: false,
+      titleEnabled: true,
+      image: false,
+      imageEnabled: true,
+      polishEnabled: true,
+      tagsEnabled: false,
+      allowedTags: [],
+    })
+    expect(localStorage.getItem(`wao-note-auto-enrichment-v1:wg:${add.mock.calls[0]![2]}`)).toBeNull()
+    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    await first.find('textarea').setValue('下一篇沿用默认 AI 能力')
+    const savedDraft = JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!)
+    expect(savedDraft).not.toHaveProperty('autoTitle')
+    expect(savedDraft).not.toHaveProperty('autoPolish')
+    expect(savedDraft).not.toHaveProperty('autoImage')
     first.unmount()
-    const restored = composer()
-    expect(restored.get('.auto-enrichment-choices [aria-label="自动生成图片"]').attributes('aria-checked')).toBe('false')
-    restored.unmount()
+    start.mockRestore()
   })
   it('分享图标右侧的红色删除入口需要二次确认，取消不会删除', async () => {
     const data = useDataStore()
@@ -516,8 +562,12 @@ describe('小记集中记录空间', () => {
     await vi.advanceTimersByTimeAsync(60_000)
     await flushPromises()
     expect(wrapper.find('.fullscreen-reminder').text()).toContain('来全屏专心创作')
+    expect(wrapper.classes()).toContain('reminder-active')
+    expect(wrapper.find('.composer-heading .fullscreen-toggle').attributes('aria-describedby'))
+      .toBe(wrapper.find('.fullscreen-reminder').attributes('id'))
     await wrapper.findAll('.fullscreen-reminder button').find(button => button.text() === '稍后提醒')!.trigger('click')
     expect(wrapper.find('.fullscreen-reminder').exists()).toBe(false)
+    expect(wrapper.classes()).not.toContain('reminder-active')
     await vi.advanceTimersByTimeAsync(60_000)
     await flushPromises()
     expect(wrapper.find('.fullscreen-reminder').exists()).toBe(true)
@@ -559,7 +609,7 @@ describe('小记集中记录空间', () => {
     expect(ui.modalTaskSeed?.draftKey).toContain(':wg:task-note:')
     expect(wrapper.classes()).not.toContain('fullscreen')
     expect(instance.editor.getJSON()).toEqual(before)
-    if (!saved) expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toContain(source)
+    expect(saved || localStorage.getItem('wao-quick-note-draft-v1:wg')?.includes(source)).toBeTruthy()
     const key = ui.modalTaskSeed?.draftKey
     ui.closeModal()
     instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })

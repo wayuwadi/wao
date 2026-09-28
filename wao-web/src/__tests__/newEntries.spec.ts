@@ -58,6 +58,7 @@ async function mountLayout() {
         NotificationCenter: true,
         FloatingChat: true,
         RouterView: true,
+        PageSectionNav: { template: '<div class="page-section-nav-stub" />' },
       },
     },
   })
@@ -107,6 +108,16 @@ describe('右上角新建入口', () => {
     await fab.trigger('click')
 
     expect(ui.modal).toBe('task')
+    wrapper.unmount()
+  })
+
+  it('首页隐藏本页目录，其他页面仍保留分区导航', async () => {
+    const wrapper = await mountLayout()
+    expect(wrapper.find('.page-section-nav-stub').exists()).toBe(false)
+
+    await wrapper.vm.$router.push('/projects/p1')
+    await flushPromises()
+    expect(wrapper.find('.page-section-nav-stub').exists()).toBe(true)
     wrapper.unmount()
   })
 })

@@ -95,12 +95,27 @@ const renameDraft = ref<{
   error: string
 } | null>(null)
 const contextMenu = ref<{
-  id: NavItemId
+  id: NavItemId | null
+  groupId: string | null
   x: number
   y: number
   busy: boolean
   error: string
 } | null>(null)
+const groupCreateDraft = ref<{ value: string; error: string; saving: boolean } | null>(null)
+const groupPicker = ref<{ groupId: string; error: string; savingId: NavItemId | null } | null>(null)
+const groupPickerLabel = computed(() => nav.layoutGroups.find((group) => group.id === groupPicker.value?.groupId)?.label ?? '')
+const groupPickerMenus = computed(() => {
+  const groupId = groupPicker.value?.groupId
+  if (!groupId) return []
+  return [
+    ...nav.builtinMenus
+      .filter((item) => item.id !== 'chat')
+      .map((item) => ({ id: item.id as NavItemId, label: nav.itemMeta(item.id as NavItemId)?.label ?? item.label, icon: item.icon, group: item.group, placement: item.placement ?? 'MENU', visible: item.visible })),
+    ...nav.externalApps.map((item) => ({ id: externalAppItemId(item.id) as NavItemId, label: nav.itemMeta(externalAppItemId(item.id) as NavItemId)?.label ?? item.label, icon: item.icon, group: item.group, placement: item.placement ?? 'MENU', visible: item.visible })),
+  ].filter((item) => item.group !== groupId || !item.visible || item.placement !== 'MENU')
+    .sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+})
 
 function openRename(event: MouseEvent, id: NavItemId) {
   if (isMobile.value) return
@@ -121,6 +136,7 @@ function openContextMenu(event: MouseEvent, id: NavItemId) {
   if (nav.collapsed || isMobile.value) return
   contextMenu.value = {
     id,
+    groupId: null,
     x: Math.min(event.clientX, window.innerWidth - 190),
     y: Math.min(event.clientY, window.innerHeight - 190),
     busy: false,
@@ -128,9 +144,21 @@ function openContextMenu(event: MouseEvent, id: NavItemId) {
   }
 }
 
+function openGroupContextMenu(event: MouseEvent, groupId: string) {
+  if (nav.collapsed || isMobile.value || groupId === 'ROOT') return
+  contextMenu.value = {
+    id: null,
+    groupId,
+    x: Math.min(event.clientX, window.innerWidth - 220),
+    y: Math.min(event.clientY, window.innerHeight - 150),
+    busy: false,
+    error: '',
+  }
+}
+
 function renameFromContext() {
   const menu = contextMenu.value
-  if (!menu) return
+  if (!menu?.id) return
   const event = { clientX: menu.x, clientY: menu.y } as MouseEvent
   contextMenu.value = null
   openRename(event, menu.id)
@@ -138,7 +166,7 @@ function renameFromContext() {
 
 async function mutateContext(action: 'hide' | 'pin') {
   const menu = contextMenu.value
-  if (!menu || menu.busy) return
+  if (!menu?.id || menu.busy) return
   menu.busy = true
   menu.error = ''
   try {
@@ -149,6 +177,62 @@ async function mutateContext(action: 'hide' | 'pin') {
   } catch (error) {
     menu.busy = false
     menu.error = error instanceof Error ? error.message : '菜单操作失败'
+  }
+}
+
+function createGroupFromContext() {
+  contextMenu.value = null
+  groupCreateDraft.value = { value: '', error: '', saving: false }
+}
+
+async function saveNewGroup() {
+  const draft = groupCreateDraft.value
+  if (!draft || draft.saving) return
+  draft.saving = true
+  draft.error = ''
+  try {
+    const groupId = await nav.createMenuGroup(draft.value)
+    groupCreateDraft.value = null
+    groupPicker.value = { groupId, error: '', savingId: null }
+    toast('分组已创建，选择要加入的已有菜单', 'ri-check-line')
+  } catch (error) {
+    draft.error = error instanceof Error ? error.message : '分组创建失败'
+    draft.saving = false
+  }
+}
+
+function openGroupPicker(groupId: string) {
+  contextMenu.value = null
+  groupPicker.value = { groupId, error: '', savingId: null }
+}
+
+async function addMenuToGroup(id: NavItemId) {
+  const picker = groupPicker.value
+  if (!picker || picker.savingId) return
+  picker.savingId = id
+  picker.error = ''
+  try {
+    await nav.moveMenu(id, 'MENU', picker.groupId)
+    toast('菜单已加入分组', 'ri-check-line')
+  } catch (error) {
+    picker.error = error instanceof Error ? error.message : '菜单移动失败'
+  } finally {
+    if (groupPicker.value) groupPicker.value.savingId = null
+  }
+}
+
+async function hideGroupFromContext() {
+  const menu = contextMenu.value
+  if (!menu?.groupId || menu.busy) return
+  menu.busy = true
+  menu.error = ''
+  try {
+    await nav.hideMenuGroup(menu.groupId)
+    toast('分组已隐藏，可在“全部功能”→“自定义导航”中重新固定菜单恢复', 'ri-check-line')
+    contextMenu.value = null
+  } catch (error) {
+    menu.busy = false
+    menu.error = error instanceof Error ? error.message : '分组隐藏失败'
   }
 }
 
@@ -238,21 +322,22 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     <nav ref="menuRef" class="menu" aria-label="模块导航">
       <template v-for="g in groups" :key="g.id">
         <button
-          v-if="g.label && !nav.collapsed"
+          v-if="g.label && !nav.collapsed && (g.items.length || !g.configuredMenuCount)"
           class="group-label"
-          :title="isMobile ? g.label : '折叠 / 展开分组'"
+          :title="isMobile ? g.label : '点击折叠 / 展开，右键管理分组'"
           @dragover.prevent="onDragOver(g.items[0] ?? 'dock')"
           @drop.prevent="onDrop('MENU', g.id)"
+          @contextmenu.prevent.stop="openGroupContextMenu($event, g.id)"
           @click="!isMobile && nav.toggleGroup(g.id)"
         >
           {{ desktopToolbar && g.id === 'PUBLIC' && g.label === '公共' ? '协作' : g.label }}
           <i :class="nav.isFolded(g.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>
         </button>
-        <div v-else-if="g.label && nav.collapsed" class="group-gap"></div>
+        <div v-else-if="g.label && nav.collapsed && (g.items.length || !g.configuredMenuCount)" class="group-gap"></div>
 
         <!-- 手机没有分组展开按钮，必须始终展示全部可见模块，不能复用桌面的折叠状态。 -->
         <div
-          v-if="isMobile || !nav.isFolded(g.id) || nav.collapsed"
+          v-if="(g.items.length || !g.configuredMenuCount) && (isMobile || !nav.isFolded(g.id) || nav.collapsed)"
           class="items"
           @dragover.prevent
           @drop.prevent="onDrop('MENU', g.id)"
@@ -406,6 +491,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           class="menu-actions"
           :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
         >
+          <template v-if="contextMenu.id">
           <button type="button" :disabled="contextMenu.busy" @click="renameFromContext">
             <i class="ri-edit-line"></i>重命名
           </button>
@@ -420,8 +506,42 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           >
             <i class="ri-eye-off-line"></i>隐藏
           </button>
+          </template>
+          <template v-else-if="contextMenu.groupId">
+            <button type="button" :disabled="contextMenu.busy || !nav.canMoveMenus" @click="createGroupFromContext">
+              <i class="ri-folder-add-line"></i>新建分组
+            </button>
+            <button type="button" :disabled="contextMenu.busy || !nav.canMoveMenus" @click="openGroupPicker(contextMenu.groupId!)">
+              <i class="ri-add-line"></i>添加已有菜单
+            </button>
+            <button type="button" class="danger" :disabled="contextMenu.busy || !nav.canMoveMenus || !groups.find((group) => group.id === contextMenu?.groupId)?.items.length" @click="hideGroupFromContext">
+              <i class="ri-eye-off-line"></i>隐藏分组
+            </button>
+          </template>
           <p v-if="contextMenu.error" role="alert">{{ contextMenu.error }}，可重试。</p>
         </div>
+      </div>
+      <div v-if="groupCreateDraft" class="group-dialog-mask" @mousedown.self="groupCreateDraft = null" @contextmenu.prevent>
+        <form class="group-dialog" role="dialog" aria-modal="true" aria-labelledby="new-nav-group-title" @submit.prevent="saveNewGroup">
+          <h2 id="new-nav-group-title">新建菜单分组</h2>
+          <label for="new-nav-group-name">分组名称</label>
+          <input id="new-nav-group-name" v-model="groupCreateDraft.value" maxlength="24" autofocus :disabled="groupCreateDraft.saving" placeholder="例如：创作" />
+          <p v-if="groupCreateDraft.error" role="alert">{{ groupCreateDraft.error }}</p>
+          <div><button type="button" :disabled="groupCreateDraft.saving" @click="groupCreateDraft = null">取消</button><button type="submit" class="primary" :disabled="groupCreateDraft.saving || !groupCreateDraft.value.trim()">{{ groupCreateDraft.saving ? '正在保存…' : '创建分组' }}</button></div>
+        </form>
+      </div>
+      <div v-if="groupPicker" class="group-dialog-mask" @mousedown.self="groupPicker = null" @contextmenu.prevent>
+        <section class="group-dialog group-picker" role="dialog" aria-modal="true" aria-labelledby="group-picker-title">
+          <div class="group-picker-heading"><h2 id="group-picker-title">添加菜单到「{{ groupPickerLabel }}」</h2><button type="button" aria-label="关闭" @click="groupPicker = null"><i class="ri-close-line"></i></button></div>
+          <p>选择已有功能加入此分组；菜单会从原位置移到侧栏。</p>
+          <div class="group-picker-list">
+            <button v-for="item in groupPickerMenus" :key="item.id" type="button" :disabled="!!groupPicker.savingId" @click="addMenuToGroup(item.id)">
+              <i :class="item.icon"></i><span>{{ item.label }}<small>{{ !item.visible ? '当前已隐藏' : item.placement === 'MENU' ? `当前分组：${nav.layoutGroups.find((group) => group.id === item.group)?.label ?? item.group}` : item.placement === 'TOP' ? '当前位于顶部菜单' : '当前位于底部停靠' }}</small></span><b>{{ groupPicker.savingId === item.id ? '移动中…' : '加入' }}</b>
+            </button>
+            <p v-if="!groupPickerMenus.length" class="group-picker-empty">所有菜单都已在此分组。</p>
+          </div>
+          <p v-if="groupPicker.error" class="group-picker-error" role="alert">{{ groupPicker.error }}，可重试。</p>
+        </section>
       </div>
       <div
         v-if="renameDraft"
@@ -795,11 +915,36 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   }
 }
 .menu-action-mask,
-.rename-mask {
+.rename-mask,
+.group-dialog-mask {
   position: fixed;
   z-index: 1300;
   inset: 0;
 }
+.group-dialog-mask { z-index: 1310; display: grid; place-items: center; padding: 18px; background: rgba(14, 18, 32, .38); }
+.group-dialog { width: min(420px, 100%); max-height: min(78dvh, 680px); box-sizing: border-box; padding: 18px; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 14px; background: var(--wao-bg-card); color: var(--wao-text); box-shadow: var(--wao-shadow-pop-2); }
+.group-dialog h2 { margin: 0 0 14px; color: var(--wao-text); font-size: 16px; }
+.group-dialog > label { display: block; margin-bottom: 7px; color: var(--wao-text-2); font-size: 12px; font-weight: 600; }
+.group-dialog > input { width: 100%; height: 38px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-page); color: var(--wao-text); outline: none; }
+.group-dialog > input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 2px var(--wao-primary-soft); }
+.group-dialog > p { margin: 9px 0 0; color: var(--wao-text-weak); font-size: 12px; line-height: 1.5; }
+.group-dialog > p[role='alert'], .group-picker-error { color: var(--wao-danger-strong); }
+.group-dialog > div:not(.group-picker-heading) { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.group-dialog > div > button { min-height: 34px; padding: 0 12px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
+.group-dialog > div > button.primary { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
+.group-dialog button:disabled { opacity: .58; cursor: wait; }
+.group-picker-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.group-picker-heading h2 { margin: 0; }
+.group-picker-heading button { width: 30px; height: 30px; flex: none; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text-3); cursor: pointer; }
+.group-picker-heading button:hover { background: var(--wao-bg-hover-2); }
+.group-picker-list { display: grid; gap: 4px; max-height: min(52dvh, 430px); margin-top: 12px; overflow-y: auto; }
+.group-picker-list > button { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 7px 9px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--wao-text-2); text-align: left; cursor: pointer; }
+.group-picker-list > button:hover:not(:disabled) { border-color: var(--wao-line); background: var(--wao-bg-hover-2); }
+.group-picker-list > button > i { width: 20px; color: var(--wao-primary-text); text-align: center; }
+.group-picker-list > button > span { display: grid; flex: 1; gap: 2px; min-width: 0; font-size: 13px; }
+.group-picker-list small { overflow: hidden; color: var(--wao-text-weak); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.group-picker-list b { color: var(--wao-primary-text); font-size: 11px; font-weight: 500; }
+.group-picker-empty { padding: 20px 0; color: var(--wao-text-weak); font-size: 12px; text-align: center; }
 .menu-actions {
   position: fixed;
   width: 170px;

@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Linux2 cloud backup freshness and capacity
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/home/wadi/桌面/deploy/wao/deploy/.env.secrets
+ExecStart=/usr/local/lib/wao-backup/check-cloud-backup.py
+TimeoutStartSec=90

@@ -38,8 +38,9 @@ public class ArticleImageService {
 
     /** 提交生成任务，不覆盖正在编辑的正文。 */
     public ArticleImageJobDto start(String memberId, ArticleImageRequest request) {
-        String id = assistant.enqueueArticleImageJob(memberId, request.articleText(), request.visualPrompt(), request.model());
-        return new ArticleImageJobDto(id, "QUEUED", "等待本地 Codex 生成图片", null);
+        String id = assistant.enqueueArticleImageJob(memberId, request.articleText(), request.visualPrompt(),
+                request.model(), request.requestId());
+        return get(memberId, id);
     }
 
     /** 只向任务发起人返回状态和已入图床的图片地址。 */

@@ -6,7 +6,7 @@ import { reloadToLatestVersion, WEB_UPDATE_EVENT } from '@/utils/versionUpdate'
 
 vi.mock('@/utils/versionUpdate', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/utils/versionUpdate')>()
-  return { ...original, reloadToLatestVersion: vi.fn<() => void>() }
+  return { ...original, reloadToLatestVersion: vi.fn<(version?: string) => void>() }
 })
 
 afterEach(() => {
@@ -36,7 +36,7 @@ describe('新版本升级提示', () => {
     expect(reloadToLatestVersion).not.toHaveBeenCalled()
 
     notice.querySelector('button')!.click()
-    expect(reloadToLatestVersion).toHaveBeenCalledOnce()
+    expect(reloadToLatestVersion).toHaveBeenCalledWith('abc12345')
     wrapper.unmount()
   })
 

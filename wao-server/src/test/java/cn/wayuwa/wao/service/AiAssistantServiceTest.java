@@ -204,7 +204,7 @@ class AiAssistantServiceTest {
         AiAssistantRunEntity run = inserted.getValue();
         assertThat(run.getId()).isEqualTo(runId);
         assertThat(run.getUsagePurpose()).isEqualTo("ARTICLE_IMAGE");
-        assertThat(run.getRequestedModel()).isEqualTo("gpt-6-luna");
+        assertThat(run.getRequestedModel()).isEqualTo("gpt-5.6-sol");
         assertThat(run.getStatus()).isEqualTo("secure_queued");
         assertThat(run.getPromptText()).contains("文章正文", "横版总览图", "只调用内置 image_gen");
 
@@ -221,7 +221,7 @@ class AiAssistantServiceTest {
         when(mapper.selectById(runId)).thenReturn(run);
         AiAssistantClaimDto claim = service.claim("token");
         assertThat(claim.mode()).isEqualTo("ARTICLE_IMAGE");
-        assertThat(claim.model()).isEqualTo("gpt-6-luna");
+        assertThat(claim.model()).isEqualTo("gpt-5.6-sol");
         assertThat(claim.maxRuntimeSeconds()).isEqualTo(1740);
 
         service.complete("token", runId, new CompleteAiAssistantRunRequest(
@@ -248,6 +248,44 @@ class AiAssistantServiceTest {
         assertThat(inserted.getValue().getRequestedModel()).isEqualTo("gpt-6-sol");
         assertThatThrownBy(() -> service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "unknown"))
                 .hasMessageContaining("不在允许列表");
+    }
+
+    @Test
+    void articleImageRetryWithSameRequestIdReusesExistingRun() {
+        String requestId = "0123456789abcdef0123456789abcdef";
+        AiAssistantRunEntity existing = assistantRun("secure_queued");
+        existing.setId(requestId);
+        existing.setMemberId("wg");
+        existing.setUsagePurpose(AiAssistantService.ARTICLE_IMAGE_PURPOSE);
+        when(mapper.selectById(requestId)).thenReturn(existing);
+
+        String id = service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "gpt-6-luna", requestId);
+
+        assertThat(id).isEqualTo(requestId);
+        assertThat(id).hasSize(32);
+        verify(mapper, never()).insertReadOnlyQueued(any());
+    }
+
+    @Test
+    void articleImageStableRequestIdFitsRunPrimaryKey() {
+        String requestId = "0123456789abcdef0123456789abcdef";
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("Linux 6.8", "codex")));
+        when(mapper.selectById(requestId)).thenReturn(null);
+
+        String id = service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "gpt-6-luna", requestId);
+
+        ArgumentCaptor<AiAssistantRunEntity> inserted = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(inserted.capture());
+        assertThat(id).isEqualTo(requestId);
+        assertThat(inserted.getValue().getId()).hasSize(32).isEqualTo(requestId);
+    }
+
+    @Test
+    void articleImageRequestIdMustBeOpaqueHexToken() {
+        assertThatThrownBy(() -> service.enqueueArticleImageJob("wg", "文章正文", "画面提示词",
+                "gpt-6-luna", "not-a-token"))
+                .isInstanceOf(cn.wayuwa.wao.common.BadRequestException.class)
+                .hasMessageContaining("请求标识无效");
     }
 
     @Test

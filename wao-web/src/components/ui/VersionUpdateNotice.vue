@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { reloadToLatestVersion, WEB_UPDATE_EVENT, type WebUpdateEventDetail } from '@/utils/versionUpdate'
+import {
+  reloadToLatestVersion,
+  WEB_UPDATE_EVENT,
+  type WebUpdateEventDetail,
+} from '@/utils/versionUpdate'
 
 const availableVersion = ref('')
 
@@ -19,7 +23,11 @@ onUnmounted(() => document.body.removeEventListener(WEB_UPDATE_EVENT, handleUpda
     <aside v-if="availableVersion" class="version-update-notice" role="status" aria-live="polite">
       <i class="ri-notification-3-fill" aria-hidden="true"></i>
       <span>发现新版本</span>
-      <button type="button" :aria-label="`保存当前内容并更新到版本 ${availableVersion}`" @click="reloadToLatestVersion">
+      <button
+        type="button"
+        :aria-label="`保存当前内容并更新到版本 ${availableVersion}`"
+        @click="reloadToLatestVersion(availableVersion)"
+      >
         保存并更新
       </button>
     </aside>

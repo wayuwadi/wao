@@ -21,7 +21,7 @@ const preferences = usePreferenceStore()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}`
-type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[]; generatedTitle?: string; autoTitle?: boolean; autoPolish?: boolean; autoImage?: boolean; autoTags?: boolean }
+type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; tags?: string[]; generatedTitle?: string }
 let restored = false
 function readDraft(): Draft {
   try {
@@ -173,6 +173,7 @@ function insertSuggestedTag(tag: string) {
   tagSuggestionsOpen.value = false
 }
 const id = ref(initial.id)
+const fullscreenReminderId = computed(() => `note-fullscreen-guide-${id.value}`)
 const taskSource = computed(() => ({
   id: props.note?.id ?? id.value,
   title: props.note?.title || '未保存小记',
@@ -207,10 +208,6 @@ async function closeImage() {
   imageTrigger?.focus()
   imageTrigger = null
 }
-const autoPolish = ref(initial.autoPolish !== false)
-const autoImage = ref(initial.autoImage !== false)
-const autoTitle = ref(initial.autoTitle !== false)
-const autoTags = ref(initial.autoTags !== false)
 // 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
 const baseRev = initial.baseRev ?? props.note?.rev ?? 1
 const saving = ref(false)
@@ -236,11 +233,11 @@ watch(
   },
   { flush: 'post' },
 )
-watch([text, content, tags, generatedTitle, autoTitle, autoPolish, autoImage, autoTags], () => {
+watch([text, content, tags, generatedTitle], () => {
   if (resetting) return
   error.value = ''
   try {
-    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value, generatedTitle: generatedTitle.value, autoTitle: autoTitle.value, autoPolish: autoPolish.value, autoImage: autoImage.value, autoTags: autoTags.value } satisfies Draft))
+    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev, tags: tags.value, generatedTitle: generatedTitle.value } satisfies Draft))
     draftError.value = false
     status.value = '草稿已保存在此浏览器'
   } catch {
@@ -276,22 +273,20 @@ async function save(asCopy = false) {
       if (!latest || (latest.id === id.value && latest.text === text.value
         && JSON.stringify(latest.content) === JSON.stringify(content.value)
         && JSON.stringify(latest.tags ?? []) === JSON.stringify(tags.value)
-        && (latest.generatedTitle ?? '') === generatedTitle.value
-        && (latest.autoPolish !== false) === autoPolish.value
-        && (latest.autoTitle !== false) === autoTitle.value
-        && (latest.autoImage !== false) === autoImage.value
-        && (latest.autoTags !== false) === autoTags.value)) localStorage.removeItem(draftKey)
+        && (latest.generatedTitle ?? '') === generatedTitle.value)) localStorage.removeItem(draftKey)
     } catch { /* 服务端保存已成功。 */ }
     if (!props.note || asCopy) {
       const saved = data.docById(savedId)
-      if (saved?.rev && (autoTitle.value || autoImage.value || autoPolish.value || autoTags.value)) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
+      const aiDefaults = preferences.noteAiDefaults
+      const allowedTags = [...new Set([...(props.tagOptions ?? []), ...tags.value])]
+      if (saved?.rev && (aiDefaults.title || aiDefaults.image || aiDefaults.polish || allowedTags.length > 0)) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
         title: !!generatedTitle.value,
-        titleEnabled: autoTitle.value,
+        titleEnabled: aiDefaults.title,
         image: rich.markdown.startsWith('![文章总览图]('),
-        imageEnabled: autoImage.value,
-        polishEnabled: autoPolish.value,
-        tagsEnabled: autoTags.value,
-        allowedTags: [...new Set([...(props.tagOptions ?? []), ...tags.value])],
+        imageEnabled: aiDefaults.image,
+        polishEnabled: aiDefaults.polish,
+        tagsEnabled: allowedTags.length > 0,
+        allowedTags,
       })
     }
     if (!props.note) {
@@ -300,10 +295,6 @@ async function save(asCopy = false) {
       content.value = undefined
       tags.value = []
       generatedTitle.value = ''
-      autoPolish.value = true
-      autoImage.value = true
-      autoTitle.value = true
-      autoTags.value = true
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
       savedSnapshot.value = { text: '', document: null, tags: [], title: '' }
@@ -326,6 +317,8 @@ async function save(asCopy = false) {
     saving.value = false
   }
 }
+
+defineExpose({ save, dirty })
 
 async function uploadImage(file: File, done: (url: string | null, name: string) => void) {
   try {
@@ -355,9 +348,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </script>
 
 <template>
-  <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
-    <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
-    <div v-if="fullscreenReminderVisible && !fullscreen" class="fullscreen-reminder" role="status" aria-live="polite">
+  <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline, 'reminder-active': fullscreenReminderVisible && !fullscreen }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
+    <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" :aria-describedby="fullscreenReminderVisible && !fullscreen ? fullscreenReminderId : undefined" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
+    <div v-if="fullscreenReminderVisible && !fullscreen" :id="fullscreenReminderId" class="fullscreen-reminder" role="status" aria-live="polite">
       <i class="ri-focus-3-line" aria-hidden="true"></i>
       <div class="fullscreen-reminder-copy"><strong>已经写了一会儿，来全屏专心创作？</strong><span>全屏后正文和图片更舒展，当前内容与草稿会保留。</span></div>
       <div class="fullscreen-reminder-actions"><button type="button" class="reminder-enter" @click="enterFullscreen">进入全屏</button><button type="button" @click="remindLater">稍后提醒</button><button type="button" aria-label="关闭全屏提醒" title="关闭提醒" @click="dismissFullscreenReminder"><i class="ri-close-line" aria-hidden="true"></i></button></div>
@@ -384,12 +377,6 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       </div><aside v-if="editorImages.length" class="composer-image-rail" aria-label="小记图片总览"><div class="rail-heading">图片总览 <span>{{ editorImages.length }} 张</span></div><div class="rail-images"><div v-for="(image, index) in visibleEditorImages" :key="`${index}:${image.src}`" class="rail-image-cell" :class="{ cover: image.alt === '文章总览图' }"><button type="button" class="rail-image" :aria-label="`查看图片：${image.alt || `第 ${index + 1} 张`}`" @click="openImage(image, $event)" @contextmenu="openImageMenu(image.src, $event)"><img :src="notePreviewSource(image.src)" :data-full-src="image.src" :alt="image.alt" loading="lazy" decoding="async"><span>{{ image.alt || `图片 ${index + 1}` }}</span></button><button type="button" class="rail-remove" :disabled="saving" :aria-label="`移除图片：${image.alt || `第 ${index + 1} 张`}`" title="移除图片，可撤销" @click="noteEditor?.removeImageAt(index)"><i class="ri-close-line" aria-hidden="true"></i></button></div><button v-if="editorImages.length > visibleEditorImages.length" class="rail-more" type="button" @click="railExpanded = true">其余 {{ editorImages.length - visibleEditorImages.length }} 张</button><button v-else-if="railExpanded && editorImages.length > 4" class="rail-more" type="button" @click="railExpanded = false">收起</button></div></aside></div>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
-    <div v-if="!note" class="auto-enrichment-choices" role="group" aria-label="保存后自动处理">
-      <button type="button" class="auto-enrichment-toggle" role="switch" :aria-checked="autoTitle" aria-label="自动生成标题" title="保存后自动生成标题" :disabled="saving" @click="autoTitle = !autoTitle"><i class="ri-text" aria-hidden="true"></i><span class="auto-switch" :class="{ on: autoTitle }"></span></button>
-      <button type="button" class="auto-enrichment-toggle" role="switch" :aria-checked="autoPolish" aria-label="自动润色正文" title="保存后自动润色正文" :disabled="saving" @click="autoPolish = !autoPolish"><i class="ri-magic-line" aria-hidden="true"></i><span class="auto-switch" :class="{ on: autoPolish }"></span></button>
-      <button type="button" class="auto-enrichment-toggle" role="switch" :aria-checked="autoImage" aria-label="自动生成图片" title="保存后自动生成图片" :disabled="saving" @click="autoImage = !autoImage"><i class="ri-image-add-line" aria-hidden="true"></i><span class="auto-switch" :class="{ on: autoImage }"></span></button>
-      <button type="button" class="auto-enrichment-toggle" role="switch" :aria-checked="autoTags" aria-label="自动添加已有标签" title="保存时与标题、润色步骤一起，从已有标签中推荐 1–3 个" :disabled="saving" @click="autoTags = !autoTags"><i class="ri-price-tag-3-line" aria-hidden="true"></i><span class="auto-switch" :class="{ on: autoTags }"></span></button>
-    </div>
     <div class="composer-footer">
       <span role="status" :class="{ error: draftError }">{{ saving ? '正在保存到服务器…' : status || 'Ctrl / ⌘ + Enter 保存' }}</span>
       <button v-if="note && conflicted" type="button" :disabled="!canSave" @click="save(true)">保留为新小记</button>
@@ -403,22 +390,32 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </template>
 
 <style scoped>
-.note-composer { display: flex; flex-direction: column; min-width: 0; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 14px; padding: 18px; background: var(--wao-bg-card); }
+.note-composer { position: relative; display: flex; flex-direction: column; min-width: 0; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 14px; padding: 18px; background: var(--wao-bg-card); }
 .note-composer.inline:not(.fullscreen) { padding: 0; border: 0; border-radius: 0; }
 .inline:not(.fullscreen) .editor-space { min-height: 160px; max-height: 460px; }
 .inline .composer-heading { flex-wrap: wrap; }
 .note-composer:focus-within { border-color: var(--wao-primary); }
+.note-composer:not(:focus-within) :deep(.article-footer) { max-height: 0; padding-top: 0; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; }
+:deep(.article-footer) { max-height: 72px; transition: max-height .18s ease, padding .18s ease, opacity .16s ease, visibility .16s; }
 .composer-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.fullscreen-reminder { display:flex; align-items:center; gap:10px; margin:0 0 12px; padding:11px 12px; border:1px solid color-mix(in srgb, var(--wao-primary) 18%, var(--wao-line-control)); border-radius:10px; background:color-mix(in srgb, var(--wao-primary) 5%, var(--wao-bg-card)); color:var(--wao-text-2); }
-.fullscreen-reminder > i { flex:0 0 auto; color:var(--wao-primary-text); font-size:18px; }
-.fullscreen-reminder-copy { display:flex; min-width:0; flex:1; flex-direction:column; gap:3px; }
+.fullscreen-reminder { position:absolute; z-index:10; top:55px; right:12px; display:grid; grid-template-columns:28px minmax(0,1fr); gap:8px 10px; width:min(420px, calc(100% - 24px)); box-sizing:border-box; margin:0; padding:13px 14px; border:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); border-radius:13px; background:var(--wao-bg-card); color:var(--wao-text-2); box-shadow:0 14px 34px color-mix(in srgb, var(--wao-text-1) 14%, transparent); transform-origin:top right; animation:fullscreen-guide-enter .28s cubic-bezier(.2,.8,.2,1) both; }
+.fullscreen-reminder::before { content:""; position:absolute; top:-6px; right:17px; width:10px; height:10px; border-top:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); border-left:1px solid color-mix(in srgb, var(--wao-primary) 24%, var(--wao-line-control)); background:var(--wao-bg-card); transform:rotate(45deg); }
+.fullscreen-reminder > i { display:grid; width:28px; height:28px; place-items:center; border-radius:50%; background:color-mix(in srgb, var(--wao-primary) 12%, var(--wao-bg-card)); color:var(--wao-primary-text); font-size:17px; animation:fullscreen-guide-spark 2.4s ease-in-out 2; }
+.fullscreen-reminder-copy { display:flex; min-width:0; flex-direction:column; gap:3px; }
 .fullscreen-reminder-copy strong { color:var(--wao-text-1); font-size:13px; font-weight:600; }
 .fullscreen-reminder-copy span { color:var(--wao-text-3); font-size:12px; line-height:1.45; }
-.fullscreen-reminder-actions { display:flex; flex:0 0 auto; align-items:center; gap:4px; }
+.fullscreen-reminder-actions { grid-column:2; display:flex; align-items:center; flex-wrap:wrap; gap:5px; }
 .fullscreen-reminder-actions button { padding:6px 8px; border:0; background:transparent; color:var(--wao-text-3); font-size:12px; white-space:nowrap; }
 .fullscreen-reminder-actions .reminder-enter { border-radius:7px; background:var(--wao-primary); color:white; font-weight:600; }
 .fullscreen-reminder-actions button:hover { background:var(--wao-bg-hover); color:var(--wao-primary-text); }
 .fullscreen-reminder-actions .reminder-enter:hover { background:var(--wao-primary-hover); color:white; }
+.composer-heading .fullscreen-toggle { position:relative; }
+.reminder-active .composer-heading .fullscreen-toggle { z-index:11; color:var(--wao-primary-text); background:color-mix(in srgb, var(--wao-primary) 9%, var(--wao-bg-card)); }
+.reminder-active .composer-heading .fullscreen-toggle::after { content:""; position:absolute; inset:-4px; border:1px solid color-mix(in srgb, var(--wao-primary) 62%, transparent); border-radius:10px; pointer-events:none; animation:fullscreen-guide-pulse 1.35s ease-out 3; }
+@keyframes fullscreen-guide-enter { from { opacity:0; transform:translateY(-5px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
+@keyframes fullscreen-guide-spark { 0%,100% { transform:rotate(0) scale(1); } 35% { transform:rotate(-12deg) scale(1.08); } 70% { transform:rotate(8deg) scale(1); } }
+@keyframes fullscreen-guide-pulse { 0% { opacity:.85; transform:scale(.92); } 100% { opacity:0; transform:scale(1.22); } }
+@media (prefers-reduced-motion: reduce) { .fullscreen-reminder, .fullscreen-reminder > i, .reminder-active .composer-heading .fullscreen-toggle::after { animation:none; } }
 .composer-heading i { color: var(--wao-primary-text); font-size: 20px; }
 .inline-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 0 0 12px; }
 .inline-heading .fullscreen-toggle { flex: 0 0 auto; margin-left: auto; padding: 4px 7px; border: 0; color: var(--wao-text-3); }
@@ -449,34 +446,13 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .composer-image-lightbox img { max-width: min(96vw, 1600px); max-height: 90vh; object-fit: contain; }
 .composer-image-lightbox button { position: fixed; top: 16px; right: 18px; color: white; background: rgba(255,255,255,.16); }
 .composer-footer > span { color: var(--wao-text-faint); font-size: 12px; }
-.auto-enrichment-choices { display:flex; align-items:center; flex-wrap:wrap; gap:8px 13px; margin-top:10px; color:var(--wao-text-3); font-size:12px; }
-.auto-enrichment-toggle { display:inline-flex; align-items:center; gap:6px; padding:4px 3px; border:0; border-radius:7px; background:transparent; }
-.auto-enrichment-toggle:hover { background:var(--wao-bg-hover); }
-.auto-enrichment-toggle > i { color:var(--wao-text-weak); font-size:15px; }
-.auto-switch { position:relative; width:28px; height:16px; border-radius:10px; background:var(--wao-line-control); transition:background .16s ease; }
-.auto-switch::after { content:""; position:absolute; left:2px; top:2px; width:12px; height:12px; border-radius:50%; background:var(--wao-bg-card); box-shadow:0 1px 2px rgba(0,0,0,.18); transition:transform .16s ease; }
-.auto-switch.on { background:var(--wao-primary); }
-.auto-switch.on::after { transform:translateX(12px); }
-.fullscreen-quick-tags { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:0 0 10px; color:var(--wao-text-faint); font-size:11px; }
-.fullscreen-quick-tags > span:first-child { margin-right:3px; }
-.fullscreen-quick-tags button { padding:4px 8px; border-radius:16px; font-size:11px; }
-.fullscreen-quick-tags button.selected { color:var(--wao-primary-text); background:var(--wao-bg-hover); }
-.fullscreen-quick-tags .tag-hint { margin-left:auto; color:var(--wao-text-faint); opacity:.72; }
-.inline-tag-create { display:flex; align-items:center; gap:5px; width:min(250px,100%); margin:0 0 9px; }
-.inline-tag-create input { min-width:0; flex:1; border:1px solid var(--wao-line-control); border-radius:7px; padding:5px 8px; background:var(--wao-bg-card); color:var(--wao-text-2); font-size:12px; }
-.inline-tag-create button { min-width:30px; padding:4px 7px; }
-.inline-tag-create .error { flex-basis:100%; }
-.tag-suggestion-menu { position:fixed; z-index:2300; width:min(240px,calc(100vw - 24px)); max-height:min(260px,50vh); overflow:auto; padding:7px; border:1px solid var(--wao-line-control); border-radius:9px; background:var(--wao-bg-card); box-shadow:0 8px 26px rgba(30,24,55,.2); }
-.tag-suggestion-menu > div,.tag-suggestion-menu small { display:block; padding:5px 7px; color:var(--wao-text-faint); font-size:10px; }
-.tag-suggestion-menu button { display:flex; width:100%; justify-content:space-between; padding:7px 8px; border:0; background:transparent; text-align:left; font-size:12px; }
-.tag-suggestion-menu button:hover,.tag-suggestion-menu button[aria-selected="true"] { color:var(--wao-primary-text); background:var(--wao-bg-hover); }
 .composer-footer { flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .composer-footer > span { flex: 1; min-width: 140px; }
 button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
 .save-note { background: var(--wao-primary); border-color: var(--wao-primary); color: white; font-weight: 600; }
 button:disabled { opacity: .5; cursor: default; }
 .error { color: var(--wao-danger-strong) !important; font-size: 12px; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } .fullscreen-reminder { align-items:flex-start; gap:7px; padding:9px; } .fullscreen-reminder-copy strong { font-size:12px; } .fullscreen-reminder-copy span { font-size:11px; } .fullscreen-reminder-actions { flex-direction:column; align-items:stretch; gap:2px; } .fullscreen-reminder-actions button { padding:5px 6px; font-size:11px; } }
+@media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } .fullscreen-reminder { top:49px; right:8px; width:calc(100% - 16px); gap:7px 8px; padding:10px 11px; } .fullscreen-reminder::before { right:15px; } .fullscreen-reminder-copy strong { font-size:12px; } .fullscreen-reminder-copy span { font-size:11px; } .fullscreen-reminder-actions { gap:4px; } .fullscreen-reminder-actions button { padding:5px 6px; font-size:11px; } }
 @media (max-width: 700px) { .composer-editor-layout.has-images { grid-template-columns: 1fr; } .composer-image-rail { border-left: 0; border-top: 1px solid var(--wao-line); padding: 10px 0 0; } .rail-images { grid-template-columns: repeat(3, minmax(0, 1fr)); } .rail-image-cell.cover { grid-column: auto; } .rail-image-cell.cover img { height: 62px; } }
 @media (prefers-reduced-motion: reduce) { .auto-switch,.auto-switch::after { transition:none; } }
 @media (hover: none) { .rail-remove { opacity: 1; } }

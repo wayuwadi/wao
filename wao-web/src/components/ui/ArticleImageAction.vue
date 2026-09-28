@@ -5,10 +5,10 @@ import { fetchArticleImage, startArticleImage, type ArticleImageJob } from '@/ap
 import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
 import { waitForPolish } from '@/api/polishJobs'
 import { fetchTextPolishWorkspace, saveTextPolishPrompt } from '@/api/textPolish'
+import { DEFAULT_NOTE_MODEL, resolveNoteModel } from '@/utils/noteAiModel'
 
 const NOTE_MODEL_KEY = 'note-ai-model-v1'
 const NOTE_TITLE_PROMPT_KEY = 'note-title-prompt-v1'
-const DEFAULT_NOTE_MODEL = 'gpt-6-luna'
 const DEFAULT_NOTE_TITLE_PROMPT = '标题准确概括这条小记的主题，简洁自然，方便以后搜索；只返回一个标题。'
 
 const props = defineProps<{
@@ -62,7 +62,7 @@ async function loadPrompt() {
     ])
     prompt.value = imageValue.trim() || DEFAULT_ARTICLE_IMAGE_PROMPT
     draftPrompt.value = prompt.value
-    noteModel.value = modelValue.trim() || DEFAULT_NOTE_MODEL
+    noteModel.value = resolveNoteModel(modelValue)
     draftModel.value = noteModel.value
     titlePrompt.value = titleValue.trim() || DEFAULT_NOTE_TITLE_PROMPT
     draftTitlePrompt.value = titlePrompt.value
@@ -92,7 +92,7 @@ async function saveSettings() {
   if (!image || image.length > 4000 || (props.generateTitle && (!title || title.length > 4000 || !polish || polish.length > 4000))) {
     promptError.value = '提示词不能为空，且每项最多 4000 字'; return
   }
-  if (!['gpt-6-luna', 'gpt-6-sol', 'gpt-6-astra', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra'].includes(draftModel.value)) {
+  if (resolveNoteModel(draftModel.value) !== draftModel.value) {
     promptError.value = '请选择支持的 GPT 模型'; return
   }
   savingPrompt.value = true
@@ -227,7 +227,7 @@ onBeforeUnmount(() => { generation++ })
         <section class="image-prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="image-prompt-title">
           <header><h2 id="image-prompt-title">{{ generateTitle ? '小记 AI 设置' : '个人配图提示词' }}</h2><button type="button" aria-label="关闭" @click="settingsOpen = false"><i class="ri-close-line"></i></button></header>
           <p>{{ generateTitle ? '这些设置只影响当前账号的小记自动整理与配图。原文始终保留。' : '用于文章总览图；只影响你的账号。正文会在点击生成时单独提供给模型。' }}</p>
-          <label v-if="generateTitle" class="model-choice"><span>标题、配图与润色模型</span><select v-model="draftModel"><option value="gpt-6-luna">GPT-6 Luna · 高频低成本</option><option value="gpt-6-sol">GPT-6 Sol · 均衡</option><option value="gpt-6-astra">GPT-6 Astra · 能力更强</option><option value="gpt-5.6-luna">GPT-5.6 Luna</option><option value="gpt-5.6-sol">GPT-5.6 Sol</option><option value="gpt-5.6-terra">GPT-5.6 Terra</option></select></label>
+          <label v-if="generateTitle" class="model-choice"><span>标题、配图与润色模型</span><select v-model="draftModel"><option value="gpt-5.6-sol">GPT-5.6 Sol · 默认</option><option value="gpt-6-sol">GPT-6 Sol</option><option value="gpt-6-luna">GPT-6 Luna</option><option value="gpt-5.6-luna">GPT-5.6 Luna · 高频低成本</option><option value="gpt-5.6-terra">GPT-5.6 Terra</option></select></label>
           <label v-if="generateTitle" class="prompt-field"><span>标题文案提示词</span><textarea v-model="draftTitlePrompt" maxlength="4000" rows="3" /></label>
           <label v-if="generateTitle" class="prompt-field"><span>正文润色提示词</span><textarea v-model="draftPolishPrompt" maxlength="4000" rows="5" /></label>
           <label class="prompt-field"><span>图片生成提示词</span><textarea v-model="draftPrompt" maxlength="4000" rows="6" /></label>
