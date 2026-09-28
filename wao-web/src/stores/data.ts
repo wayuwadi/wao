@@ -941,12 +941,13 @@ export const useDataStore = defineStore('data', () => {
    * @param noteId 草稿持有的稳定文档 id；重试时沿用，避免重复创建
    * @return 新建的文档 id；正文与标题都为空时返回 null
    */
-  async function addNote(text: string, title = '', noteId?: string, rich?: RichDocContent, tags?: string[]): Promise<string | null> {
+  async function addNote(text: string, title = '', noteId?: string, rich?: RichDocContent, tags?: string[],
+    ai?: { autoTitle: boolean; autoImage: boolean; autoPolish: boolean }): Promise<string | null> {
     const content = rich ?? { version: 1 as const, document: null, markdown: text }
     const blocks = legacyProjection(content)
     if (!blocks.length && !content.document?.content?.length && !title.trim()) return null
     if (apiLive.value) {
-      const d = await apiCreateNote(noteId ?? uid('d'), { title: title.trim(), blocks, content, ...(tags ? { tags } : {}) })
+      const d = await apiCreateNote(noteId ?? uid('d'), { title: title.trim(), blocks, content, ...(tags ? { tags } : {}), ...(ai ?? {}) })
       docs[d.id] = d
       const kb = kbs.value.find((k) => k.id === d.kbId) ?? notesKb()
       const folder = noteFolderOf(kb, d.folderId)

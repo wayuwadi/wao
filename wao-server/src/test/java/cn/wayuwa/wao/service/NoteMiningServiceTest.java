@@ -14,7 +14,12 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import cn.wayuwa.wao.domain.DocEntity;
+import cn.wayuwa.wao.dto.ArticleImageJobDto;
+import cn.wayuwa.wao.dto.ArticleImageRequest;
 import cn.wayuwa.wao.mapper.NoteMiningMapper;
+import cn.wayuwa.wao.mapper.NoteMiningVisualMapper;
+import cn.wayuwa.wao.mapper.NoteMiningVisualMapper.Visual;
+import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import cn.wayuwa.wao.mapper.NoteMiningMapper.Artifact;
 import cn.wayuwa.wao.mapper.NoteMiningMapper.Job;
 import cn.wayuwa.wao.mapper.NoteMiningMapper.Source;
@@ -28,8 +33,11 @@ class NoteMiningServiceTest {
     private static final String REQUEST = "0123456789abcdef0123456789abcdef";
     private static final String JOB_ID = "nm" + REQUEST;
     private final NoteMiningMapper mapper = mock(NoteMiningMapper.class);
+    private final NoteMiningVisualMapper visuals = mock(NoteMiningVisualMapper.class);
     private final AiAssistantService assistant = mock(AiAssistantService.class);
-    private final NoteMiningService service = new NoteMiningService(mapper, assistant, new ObjectMapper());
+    private final ArticleImageService images = mock(ArticleImageService.class);
+    private final MemberPreferenceMapper preferences = mock(MemberPreferenceMapper.class);
+    private final NoteMiningService service = new NoteMiningService(mapper, visuals, assistant, images, preferences, new ObjectMapper());
 
     @Test void requiresTwoMeaningfulNotesBeforeStarting() {
         when(mapper.lockMember("m1")).thenReturn("m1");
@@ -81,6 +89,10 @@ class NoteMiningServiceTest {
                   {"type":"INSIGHT","content":"洞察","rationale":"反复出现","sourceIndexes":[1,2]},
                   {"type":"REMINDER","content":"喝口水吧","rationale":"容易忘记","sourceIndexes":[1]},
                   {"type":"ARTICLE_SEED","content":"身体发出的信号","rationale":"可展开","sourceIndexes":[2]}
+                ],"visualIdeas":[
+                  {"lens":"PROGRESS","caption":"两次观察之间的变化","rationale":"两篇都提到身体感受","sourceIndexes":[1,2]},
+                  {"lens":"REFRAME","caption":"换个角度看","rationale":"不同时间的记录可对照","sourceIndexes":[1,2]},
+                  {"lens":"NEXT_STEP","caption":"下次继续观察","rationale":"从夜间记录出发","sourceIndexes":[2]}
                 ]}
                 """, null));
 
@@ -92,6 +104,58 @@ class NoteMiningServiceTest {
         verify(mapper).markMaterialized(JOB_ID);
         verify(mapper, times(3)).insertArtifact(any());
         verify(mapper, times(4)).insertSource(any());
+        ArgumentCaptor<Visual> visualCaptor = ArgumentCaptor.forClass(Visual.class);
+        verify(visuals, times(3)).insert(visualCaptor.capture());
+        assertThat(visualCaptor.getAllValues()).extracting(Visual::lens)
+                .containsExactly("PROGRESS", "REFRAME", "NEXT_STEP");
+        assertThat(visualCaptor.getAllValues().get(0).sourceIndexesJson()).isEqualTo("[0,1]");
+    }
+
+    @Test void ignoresVisualsWithoutRealSourcesInsteadOfInventingAttribution() {
+        String snapshot = "[{\"id\":\"d1\",\"title\":\"一\",\"rev\":1,\"excerpt\":\"甲\"},"
+                + "{\"id\":\"d2\",\"title\":\"二\",\"rev\":1,\"excerpt\":\"乙\"}]";
+        Job job = new Job(JOB_ID, "m1", snapshot, 2, "air1", null, null, LocalDateTime.now());
+        when(mapper.lockOwnedJob(JOB_ID, "m1")).thenReturn(job);
+        when(mapper.findOwnedJob(JOB_ID, "m1")).thenReturn(job);
+        when(assistant.readOnlyJobResult(JOB_ID, "air1")).thenReturn(new AiAssistantService.ReadOnlyJobResult(
+                "air1", "succeeded", """
+                {"artifacts":[
+                  {"type":"INSIGHT","content":"甲","rationale":"甲","sourceIndexes":[1]},
+                  {"type":"REMINDER","content":"乙","rationale":"乙","sourceIndexes":[2]},
+                  {"type":"ARTICLE_SEED","content":"甲乙","rationale":"甲乙","sourceIndexes":[1,2]}],
+                 "visualIdeas":[
+                  {"lens":"PROGRESS","caption":"甲","rationale":"甲","sourceIndexes":[99]},
+                  {"lens":"REFRAME","caption":"乙","rationale":"乙","sourceIndexes":[2]},
+                  {"lens":"NEXT_STEP","caption":"甲乙","rationale":"甲乙","sourceIndexes":[1,2]}]}
+                """, null));
+        service.get("m1", JOB_ID);
+        verify(visuals, never()).insert(any());
+    }
+
+    @Test void anotherMemberCannotRetryPrivateVisual() {
+        assertThatThrownBy(() -> service.retryVisual("m2", JOB_ID, "PROGRESS"))
+                .hasMessageContaining("不存在");
+        verifyNoInteractions(visuals, images);
+    }
+
+    @Test void usesMembersExistingModelAndOnlyGroundedExcerptsForOneImage() {
+        String snapshot = "[{\"id\":\"d1\",\"title\":\"晨间\",\"rev\":3,\"excerpt\":\"忘记喝水\"},"
+                + "{\"id\":\"d2\",\"title\":\"夜间\",\"rev\":4,\"excerpt\":\"眼睛酸涩\"}]";
+        Job job = new Job(JOB_ID, "m1", snapshot, 2, "air1", LocalDateTime.now(), null, LocalDateTime.now());
+        Visual visual = new Visual(JOB_ID, "m1", "PROGRESS", "两次记录的变化", "两篇内容可比较",
+                "[0,1]", null, null, "PENDING", null, "CANDIDATE", null, null);
+        when(visuals.lock(JOB_ID, "PROGRESS")).thenReturn(visual);
+        when(mapper.findOwnedJob(JOB_ID, "m1")).thenReturn(job);
+        when(preferences.find("m1", "note-ai-model-v1")).thenReturn("gpt-6-sol");
+        when(images.start(eq("m1"), any())).thenReturn(new ArticleImageJobDto("run1", "QUEUED", "等待", null));
+
+        service.advanceVisual(JOB_ID, "PROGRESS");
+
+        ArgumentCaptor<ArticleImageRequest> request = ArgumentCaptor.forClass(ArticleImageRequest.class);
+        verify(images).start(eq("m1"), request.capture());
+        assertThat(request.getValue().model()).isEqualTo("gpt-6-sol");
+        assertThat(request.getValue().articleText()).contains("晨间：忘记喝水", "夜间：眼睛酸涩");
+        verify(visuals).updateImage(JOB_ID, "m1", "PROGRESS", "RUNNING", "run1", null, null);
     }
 
     @Test void completedJobsRemainReadableWithoutDependingOnExpiredAiRun() {

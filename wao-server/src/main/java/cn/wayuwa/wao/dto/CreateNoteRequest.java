@@ -8,11 +8,15 @@ import java.util.List;
  * @param title  标题，留空时由正文首行推导
  * @param blocks 正文块
  */
-public record CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content, List<String> tags) {
+public record CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content,
+        List<String> tags, Boolean autoTitle, Boolean autoImage, Boolean autoPolish) {
+    public CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content, List<String> tags) {
+        this(title, blocks, content, tags, null, null, null);
+    }
     public CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content) {
-        this(title, blocks, content, null);
+        this(title, blocks, content, null, null, null, null);
     }
     public CreateNoteRequest(String title, List<DocBlockDto> blocks) {
-        this(title, blocks, null);
+        this(title, blocks, null, null, null, null, null);
     }
 }

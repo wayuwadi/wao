@@ -42,6 +42,13 @@ public interface NoteMiningMapper {
             """)
     Job latestJob(@Param("memberId") String memberId);
 
+    @Select("""
+            SELECT id,member_id,source_snapshot_json,source_count,ai_run_id,materialized_at,error_message,created_at
+              FROM note_mining_job WHERE materialized_at IS NULL AND error_message IS NULL
+             ORDER BY created_at LIMIT #{limit}
+            """)
+    List<Job> pendingJobs(@Param("limit") int limit);
+
     @Insert("""
             INSERT INTO note_mining_job(id,member_id,source_snapshot_json,source_count,ai_run_id)
             VALUES(#{id},#{memberId},#{sourceSnapshotJson},#{sourceCount},#{aiRunId})

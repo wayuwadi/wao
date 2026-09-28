@@ -3,6 +3,8 @@ import { http, type ApiResponse } from './http'
 export type NoteMiningStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
 export type NoteMiningArtifactType = 'INSIGHT' | 'REMINDER' | 'ARTICLE_SEED'
 export type NoteMiningFeedback = 'CANDIDATE' | 'SAVED' | 'NOT_ACCURATE' | 'REMINDER_DRAFT'
+export type NoteMiningVisualLens = 'PROGRESS' | 'REFRAME' | 'NEXT_STEP'
+export type NoteMiningVisualStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED'
 
 export interface NoteMiningSource {
   docId: string
@@ -21,6 +23,17 @@ export interface NoteMiningArtifact {
   createdAt: string
 }
 
+export interface NoteMiningVisual {
+  lens: NoteMiningVisualLens
+  caption: string
+  rationale: string
+  imageUrl: string | null
+  status: NoteMiningVisualStatus
+  errorMessage: string | null
+  feedbackStatus: 'CANDIDATE' | 'SAVED' | 'NOT_ACCURATE'
+  sources: NoteMiningSource[]
+}
+
 export interface NoteMiningResult {
   job: null | {
     id: string
@@ -30,6 +43,7 @@ export interface NoteMiningResult {
     createdAt: string
   }
   artifacts: NoteMiningArtifact[]
+  visuals?: NoteMiningVisual[]
 }
 
 const unwrap = async <T>(request: Promise<{ data: ApiResponse<T> }>) => (await request).data.data
@@ -41,6 +55,10 @@ export const startNoteMining = (requestId = newNoteMiningRequestId()) =>
   unwrap<NoteMiningResult>(http.post('/api/note-mining/runs', { requestId }))
 export const feedbackNoteMiningArtifact = (id: string, status: Exclude<NoteMiningFeedback, 'CANDIDATE'>) =>
   unwrap<NoteMiningArtifact>(http.post(`/api/note-mining/artifacts/${id}/feedback`, { status }))
+export const retryNoteMiningVisual = (jobId: string, lens: NoteMiningVisualLens) =>
+  unwrap<NoteMiningVisual>(http.post(`/api/note-mining/runs/${jobId}/visuals/${lens}/retry`))
+export const feedbackNoteMiningVisual = (jobId: string, lens: NoteMiningVisualLens, status: 'SAVED' | 'NOT_ACCURATE') =>
+  unwrap<NoteMiningVisual>(http.post(`/api/note-mining/runs/${jobId}/visuals/${lens}/feedback`, { status }))
 
 export async function waitForNoteMining(
   initial: NoteMiningResult,
