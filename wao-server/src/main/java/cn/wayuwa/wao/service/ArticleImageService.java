@@ -43,6 +43,13 @@ public class ArticleImageService {
         return get(memberId, id);
     }
 
+    /** 仅供服务端持久小记工作流入队；普通浏览器图片请求仍受单任务限制。 */
+    ArticleImageJobDto startNoteWorkflow(String memberId, ArticleImageRequest request) {
+        String id = assistant.enqueueNoteWorkflowArticleImageJob(memberId, request.articleText(), request.visualPrompt(),
+                request.model(), request.requestId());
+        return get(memberId, id);
+    }
+
     /** 只向任务发起人返回状态和已入图床的图片地址。 */
     public ArticleImageJobDto get(String memberId, String runId) {
         AiAssistantRunEntity run = runs.selectById(runId);

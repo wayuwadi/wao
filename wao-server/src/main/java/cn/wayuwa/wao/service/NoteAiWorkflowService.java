@@ -88,7 +88,7 @@ public class NoteAiWorkflowService {
         return status(reset);
     }
 
-    /** 每次只推进一个阶段；行锁使两个应用节点不会重复入队。 */
+    /** 推进符合成员并发偏好的阶段；工作流行锁防止重复入队和条件写回冲突。 */
     @Transactional
     public void advance(String docId) {
         Workflow workflow = workflows.lock(docId);
@@ -106,15 +106,71 @@ public class NoteAiWorkflowService {
         }
         // 标签等元信息可独立保存；正文与标题没有变化时沿用当前版本继续 CAS。
         if (doc.rev() != workflow.baseRev()) workflow = workflow.withRev(doc.rev());
-        if (active(workflow.titleStatus())) { workflows.update(advanceTitle(workflow, doc)); return; }
-        // 先把独立的文字润色任务入队，图片占用成员槽位时也能并行完成文本生成。
-        // 润色结果待图片阶段结束后再保存，以最终 Markdown 作为阅读版本来源。
-        if (active(workflow.polishStatus()) && workflow.polishJobId() == null) {
-            workflows.update(advancePolish(workflow, doc));
+        int capacity = executionCapacity(workflow.memberId());
+        if (capacity == 1) {
+            if (active(workflow.titleStatus())) { advanceStage(workflow, "title"); return; }
+            if (active(workflow.imageStatus())) { advanceStage(workflow, "image"); return; }
+            if (active(workflow.polishStatus())) advanceStage(workflow, "polish");
             return;
         }
-        if (active(workflow.imageStatus())) { workflows.update(advanceImage(workflow, doc)); return; }
-        if (active(workflow.polishStatus())) workflows.update(advancePolish(workflow, doc));
+
+        // 先续查已经入队的阶段，再按标题、配图、润色的顺序填充空闲槽位。
+        // 三个阶段可同时运行；润色版本会以图片写回后的最终 Markdown 保存。
+        for (String stage : List.of("title", "image", "polish")) {
+            String status = stageStatus(workflow, stage);
+            if (!active(status)) continue;
+            boolean alreadyQueued = RUNNING.equals(status) && stageJobId(workflow, stage) != null;
+            if (!alreadyQueued && workflows.countRunningStages(workflow.memberId()) >= capacity) continue;
+            workflow = advanceStage(workflow, stage);
+        }
+    }
+
+    private Workflow advanceStage(Workflow workflow, String stage) {
+        DocDto current = ownedNote(workflow);
+        if (current == null || current.content() == null) {
+            Workflow failed = failRemaining(workflow, "小记已删除或不属于原作者");
+            workflows.update(failed);
+            return failed;
+        }
+        Workflow advanced = switch (stage) {
+            case "title" -> advanceTitle(workflow, current);
+            case "image" -> advanceImage(workflow, current);
+            case "polish" -> advancePolish(workflow, current);
+            default -> workflow;
+        };
+        workflows.update(advanced);
+        return advanced;
+    }
+
+    private int executionCapacity(String memberId) {
+        String saved = preferences.find(memberId, "note-ai-defaults-v1");
+        if (!StringUtils.hasText(saved)) return 3;
+        try {
+            JsonNode settings = json.readTree(saved);
+            if ("serial".equals(settings.path("executionMode").asText())) return 1;
+            int configured = settings.path("maxConcurrent").asInt(3);
+            return configured >= 1 && configured <= 5 ? configured : 3;
+        } catch (Exception ignored) {
+            return 3;
+        }
+    }
+
+    private static String stageStatus(Workflow workflow, String stage) {
+        return switch (stage) {
+            case "title" -> workflow.titleStatus();
+            case "image" -> workflow.imageStatus();
+            case "polish" -> workflow.polishStatus();
+            default -> SKIPPED;
+        };
+    }
+
+    private static String stageJobId(Workflow workflow, String stage) {
+        return switch (stage) {
+            case "title" -> workflow.titleJobId();
+            case "image" -> workflow.imageRunId();
+            case "polish" -> workflow.polishJobId();
+            default -> null;
+        };
     }
 
     /** 阶段调用回滚后单独保存失败状态，下一阶段仍可继续。 */
@@ -160,7 +216,7 @@ public class NoteAiWorkflowService {
         try {
             String runId = workflow.imageRunId();
             if (runId == null) {
-                var started = imageJobs.start(workflow.memberId(), new ArticleImageRequest(
+                var started = imageJobs.startNoteWorkflow(workflow.memberId(), new ArticleImageRequest(
                         limit(markdown, 60_000), imagePrompt(workflow.memberId()), model(workflow.memberId()),
                         requestId()));
                 return workflow.withImage(RUNNING, started.id(), workflow.baseRev(), workflow.sourceMarkdownHash(), null);

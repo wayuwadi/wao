@@ -148,12 +148,14 @@ const musicPreferenceError = ref('')
 const noteReminderForm = reactive<NoteFullscreenReminderSettings>({ enabled: true, delayMinutes: 1 })
 const noteReminderSaving = ref(false)
 const noteReminderError = ref('')
-const noteAiDefaultsForm = reactive<NoteAiDefaults>({ title: true, polish: true, image: true })
+const noteAiDefaultsForm = reactive<NoteAiDefaults>({ ...preferences.noteAiDefaults })
 const noteAiDefaultsSaving = ref(false)
 const noteAiDefaultsError = ref('')
 const noteAiDefaultsDirty = computed(() => noteAiDefaultsForm.title !== preferences.noteAiDefaults.title
   || noteAiDefaultsForm.polish !== preferences.noteAiDefaults.polish
-  || noteAiDefaultsForm.image !== preferences.noteAiDefaults.image)
+  || noteAiDefaultsForm.image !== preferences.noteAiDefaults.image
+  || noteAiDefaultsForm.executionMode !== preferences.noteAiDefaults.executionMode
+  || noteAiDefaultsForm.maxConcurrent !== preferences.noteAiDefaults.maxConcurrent)
 
 watch(
   [() => preferences.loaded, () => preferences.controlStyle],
@@ -195,12 +197,16 @@ watch(
 )
 
 watch(
-  [() => preferences.loaded, () => preferences.noteAiDefaults.title, () => preferences.noteAiDefaults.polish, () => preferences.noteAiDefaults.image],
-  ([loaded, title, polish, image]) => {
+  [() => preferences.loaded, () => preferences.noteAiDefaults.title, () => preferences.noteAiDefaults.polish,
+    () => preferences.noteAiDefaults.image, () => preferences.noteAiDefaults.executionMode,
+    () => preferences.noteAiDefaults.maxConcurrent],
+  ([loaded, title, polish, image, executionMode, maxConcurrent]) => {
     if (!loaded || noteAiDefaultsSaving.value) return
     noteAiDefaultsForm.title = title
     noteAiDefaultsForm.polish = polish
     noteAiDefaultsForm.image = image
+    noteAiDefaultsForm.executionMode = executionMode
+    noteAiDefaultsForm.maxConcurrent = maxConcurrent
   },
   { immediate: true },
 )
@@ -906,8 +912,27 @@ async function bindFeishu() {
                 </div>
                 <button type="button" class="toggle" :class="{ on: noteAiDefaultsForm.image }" aria-label="小记保存后生成配图" :aria-pressed="noteAiDefaultsForm.image" :disabled="noteAiDefaultsSaving" @click="noteAiDefaultsForm.image = !noteAiDefaultsForm.image"><span class="knob"></span></button>
               </div>
+              <div class="pref-row">
+                <div class="pref-main">
+                  <div class="pref-name">整理执行方式</div>
+                  <div class="pref-desc">并行会同时启动标题、润色、配图及符合条件的标签推荐；串行会逐项完成。</div>
+                </div>
+                <select v-model="noteAiDefaultsForm.executionMode" class="pref-select" aria-label="小记 AI 整理执行方式" :disabled="noteAiDefaultsSaving">
+                  <option value="parallel">并行</option>
+                  <option value="serial">串行</option>
+                </select>
+              </div>
+              <div class="pref-row" :class="{ muted: noteAiDefaultsForm.executionMode === 'serial' }">
+                <div class="pref-main">
+                  <div class="pref-name">同时生成数量</div>
+                  <div class="pref-desc">当前浏览器中的多个小记共享并发上限；串行模式下固定为 1。</div>
+                </div>
+                <select v-model.number="noteAiDefaultsForm.maxConcurrent" class="pref-select" aria-label="小记 AI 同时生成数量" :disabled="noteAiDefaultsSaving || noteAiDefaultsForm.executionMode === 'serial'">
+                  <option v-for="count in [1, 2, 3, 4, 5]" :key="count" :value="count">{{ count }} 项</option>
+                </select>
+              </div>
               <div class="music-preference-actions">
-                <span>三项默认开启，按当前成员跨设备保存；新建小记时无需逐篇选择。</span>
+                <span>设置按当前成员跨设备保存；当前浏览器中的小记共用并发上限。</span>
                 <button type="button" class="btn-primary" :disabled="noteAiDefaultsSaving || !noteAiDefaultsDirty" @click="saveNoteAiDefaults">
                   {{ noteAiDefaultsSaving ? '保存中…' : '保存小记 AI 设置' }}
                 </button>
@@ -1439,6 +1464,15 @@ async function bindFeishu() {
   font-size: 12px;
   color: var(--wao-text-weak);
 }
+.pref-select {
+  min-width: 112px;
+  padding: 7px 10px;
+  color: var(--wao-text);
+  background: var(--wao-surface);
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+}
+.pref-row.muted .pref-main { opacity: .58; }
 .value-btn {
   height: 29px;
   padding: 0 12px;

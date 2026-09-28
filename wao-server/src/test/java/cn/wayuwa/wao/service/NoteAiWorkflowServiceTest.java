@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.dto.CreateNoteRequest;
+import cn.wayuwa.wao.dto.ArticleImageJobDto;
 import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.RichDocContentDto;
 import cn.wayuwa.wao.mapper.DocMapper;
@@ -90,7 +91,7 @@ class NoteAiWorkflowServiceTest {
         assertThat(updated.getValue().titleStatus()).isEqualTo("SKIPPED");
     }
 
-    @Test void polishTextStartsBeforeTheImageSlotBecomesAvailable() {
+    @Test void defaultParallelModeStartsSelectedStagesTogether() {
         String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。";
         service.beginIfRequested("m1", note("m1", 1, body),
                 new CreateNoteRequest(null, List.of(), null, null, false, true, true));
@@ -103,15 +104,72 @@ class NoteAiWorkflowServiceTest {
         when(knowledge.getDoc("d1")).thenReturn(note("m1", 1, body));
         when(textJobs.submit(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new TextPolishJobService.Result("job1", "PENDING", null, null, null, null));
+        when(images.startNoteWorkflow(any(), any())).thenReturn(new ArticleImageJobDto("image1", "QUEUED", "等待生成", null));
 
         service.advance("d1");
 
+        verify(textJobs, org.mockito.Mockito.times(2)).submit(any(), any(), any(), any(), any(), any(), any());
+        verify(images).startNoteWorkflow(any(), any());
         ArgumentCaptor<Workflow> updated = ArgumentCaptor.forClass(Workflow.class);
-        verify(workflows).update(updated.capture());
-        assertThat(updated.getValue().polishStatus()).isEqualTo("RUNNING");
-        assertThat(updated.getValue().polishJobId()).isEqualTo("job1");
-        assertThat(updated.getValue().imageStatus()).isEqualTo("PENDING");
+        verify(workflows, org.mockito.Mockito.times(3)).update(updated.capture());
+        Workflow finalState = updated.getAllValues().get(2);
+        assertThat(finalState.titleStatus()).isEqualTo("RUNNING");
+        assertThat(finalState.imageStatus()).isEqualTo("RUNNING");
+        assertThat(finalState.polishStatus()).isEqualTo("RUNNING");
+    }
+
+    @Test void parallelModeRespectsTheSavedPerMemberConcurrencyLimit() {
+        String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。";
+        Workflow workflow = pendingAll("d1", "m1");
+        when(workflows.lock("d1")).thenReturn(workflow);
+        when(workflows.countRunningStages("m1")).thenReturn(0, 1, 2);
+        when(preferences.find("m1", "note-ai-defaults-v1"))
+                .thenReturn("{\"executionMode\":\"parallel\",\"maxConcurrent\":2}");
+        DocEntity entity = new DocEntity();
+        entity.setId("d1"); entity.setAuthorId("m1"); entity.setKbId(KnowledgeService.NOTES_KB_ID);
+        when(docs.selectById("d1")).thenReturn(entity);
+        when(knowledge.getDoc("d1")).thenReturn(note("m1", 1, body));
+        when(textJobs.submit(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TextPolishJobService.Result("job1", "PENDING", null, null, null, null));
+        when(images.startNoteWorkflow(any(), any())).thenReturn(new ArticleImageJobDto("image1", "QUEUED", "等待生成", null));
+
+        service.advance("d1");
+
+        verify(textJobs).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_TITLE"), any(), any(), any(), any());
+        verify(images).startNoteWorkflow(any(), any());
+        verify(textJobs, never()).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_BODY"), any(), any(), any(), any());
+    }
+
+    @Test void serialPreferenceStartsOnlyTheFirstSelectedStage() {
+        String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。";
+        Workflow workflow = pendingAll("d1", "m1");
+        when(workflows.lock("d1")).thenReturn(workflow);
+        when(preferences.find("m1", "note-ai-defaults-v1"))
+                .thenReturn("{\"executionMode\":\"serial\",\"maxConcurrent\":5}");
+        DocEntity entity = new DocEntity();
+        entity.setId("d1"); entity.setAuthorId("m1"); entity.setKbId(KnowledgeService.NOTES_KB_ID);
+        when(docs.selectById("d1")).thenReturn(entity);
+        when(knowledge.getDoc("d1")).thenReturn(note("m1", 1, body));
+        when(textJobs.submit(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TextPolishJobService.Result("job1", "PENDING", null, null, null, null));
+
+        service.advance("d1");
+
+        verify(textJobs).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_TITLE"), any(), any(), any(), any());
         verify(images, never()).start(any(), any());
+        verify(textJobs, never()).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_BODY"), any(), any(), any(), any());
+    }
+
+    private static Workflow pendingAll(String docId, String memberId) {
+        return new Workflow(docId, memberId, 1, "原题", digestForTest("今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。"),
+                "PENDING", null, "PENDING", null, "PENDING", null, null, null, null);
+    }
+
+    private static String digestForTest(String text) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
     }
 
     @Test void failedStageDoesNotSilentlyCancelLaterSelectedStages() {

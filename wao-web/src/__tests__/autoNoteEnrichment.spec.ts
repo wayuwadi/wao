@@ -38,7 +38,7 @@ describe('小记保存后自动生成', () => {
     vi.mocked(fetchDoc).mockResolvedValueOnce(doc(1) as never)
       .mockResolvedValueOnce(doc(1) as never)
       .mockResolvedValueOnce(doc(2, '打印流程复盘') as never)
-      .mockResolvedValueOnce(doc(2, '打印流程复盘') as never)
+      .mockResolvedValueOnce(doc(3, '打印流程复盘') as never)
     vi.mocked(apiPatchDoc).mockResolvedValueOnce(doc(2, '打印流程复盘') as never)
       .mockResolvedValueOnce(doc(3, '打印流程复盘') as never)
     vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj1', status: 'SUCCEEDED', message: '', polished: '打印流程复盘' })
@@ -62,6 +62,84 @@ describe('小记保存后自动生成', () => {
     expect(saveNotePolishVersion).toHaveBeenCalledWith('n1', content.markdown, '打印流程复盘')
     expect(noteEnrichmentStatus.n1).toBe('标题、配图和润色已完成')
     expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).toBeNull()
+  })
+
+  it('默认并行启动标题、配图和润色，不等待前一项生成结束', async () => {
+    let resolveTitle!: (value: { id: string; status: 'SUCCEEDED'; message: string; polished: string }) => void
+    let resolveBody!: (value: { id: string; status: 'SUCCEEDED'; message: string; polished: string }) => void
+    let resolveImage!: (value: { id: string; status: 'SUCCEEDED'; message: string; imageUrl: string }) => void
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(waitForPolish).mockImplementation((_text, kind) => new Promise(resolve => {
+      if (kind === 'NOTE_TITLE') resolveTitle = resolve as typeof resolveTitle
+      else resolveBody = resolve as typeof resolveBody
+    }))
+    vi.mocked(startArticleImage).mockResolvedValue({ id: 'img-job', status: 'QUEUED', message: '', imageUrl: null })
+    vi.mocked(fetchArticleImage).mockImplementation(() => new Promise(resolve => { resolveImage = resolve as typeof resolveImage }))
+
+    startAutoNoteEnrichment('me', 'n1', 1)
+    await flushPromises()
+
+    expect(vi.mocked(waitForPolish).mock.calls.map(call => call[1])).toEqual(['NOTE_TITLE', 'NOTE_BODY'])
+    expect(startArticleImage).toHaveBeenCalledTimes(1)
+    expect(noteEnrichmentProgress.n1).toEqual({ title: 'running', image: 'running', polish: 'running', tags: 'skipped' })
+
+    discardAutoNoteEnrichment('me', 'n1')
+    resolveTitle({ id: 'title', status: 'SUCCEEDED', message: '', polished: '标题' })
+    resolveBody({ id: 'body', status: 'SUCCEEDED', message: '', polished: '润色版' })
+    resolveImage({ id: 'img-job', status: 'SUCCEEDED', message: '', imageUrl: '/api/images/img1/raw' })
+    await flushPromises()
+  })
+
+  it('多个小记共享个人设置的并发上限', async () => {
+    const resolvers: Array<(value: { id: string; status: 'SUCCEEDED'; message: string; polished: string }) => void> = []
+    vi.mocked(fetchPreference).mockImplementation(async key => key === 'note-ai-defaults-v1'
+      ? JSON.stringify({ executionMode: 'parallel', maxConcurrent: 2 }) : '')
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(apiPatchDoc).mockResolvedValue(doc(2, '生成标题') as never)
+    vi.mocked(waitForPolish).mockImplementation(() => new Promise(resolve => { resolvers.push(resolve as typeof resolvers[number]) }))
+
+    startAutoNoteEnrichment('me', 'n1', 1, { imageEnabled: false })
+    startAutoNoteEnrichment('me', 'n2', 1, { imageEnabled: false })
+    await flushPromises()
+    expect(waitForPolish).toHaveBeenCalledTimes(2)
+
+    const titleResult = { id: 'title', status: 'SUCCEEDED' as const, message: '', polished: '生成标题' }
+    resolvers.shift()?.(titleResult)
+    resolvers.shift()?.(titleResult)
+    await flushPromises()
+    expect(waitForPolish).toHaveBeenCalledTimes(4)
+
+    discardAutoNoteEnrichment('me', 'n1')
+    discardAutoNoteEnrichment('me', 'n2')
+    const bodyResult = { id: 'body', status: 'SUCCEEDED' as const, message: '', polished: '润色正文' }
+    for (const resolve of resolvers) resolve(bodyResult)
+    await flushPromises()
+    expect(waitForPolish).toHaveBeenCalledTimes(4)
+  })
+
+  it('串行模式会等当前阶段完成后再启动下一篇小记', async () => {
+    const resolvers: Array<(value: { id: string; status: 'SUCCEEDED'; message: string; polished: string }) => void> = []
+    let latest = doc(1)
+    vi.mocked(fetchPreference).mockImplementation(async key => key === 'note-ai-defaults-v1'
+      ? JSON.stringify({ executionMode: 'serial', maxConcurrent: 5 }) : '')
+    vi.mocked(fetchDoc).mockImplementation(async () => latest as never)
+    vi.mocked(apiPatchDoc).mockImplementation(async (_id, patch) => {
+      latest = { ...latest, rev: latest.rev + 1, title: patch.title ?? latest.title }
+      return latest as never
+    })
+    vi.mocked(waitForPolish).mockImplementation(() => new Promise(resolve => { resolvers.push(resolve as typeof resolvers[number]) }))
+
+    startAutoNoteEnrichment('me', 'n1', 1, { imageEnabled: false, polishEnabled: false })
+    startAutoNoteEnrichment('me', 'n2', 1, { imageEnabled: false, polishEnabled: false })
+    await flushPromises()
+    expect(waitForPolish).toHaveBeenCalledTimes(1)
+
+    resolvers.shift()?.({ id: 'title-1', status: 'SUCCEEDED', message: '', polished: '标题一' })
+    await flushPromises()
+    expect(waitForPolish).toHaveBeenCalledTimes(2)
+    discardAutoNoteEnrichment('me', 'n2')
+    resolvers.shift()?.({ id: 'title-2', status: 'SUCCEEDED', message: '', polished: '标题二' })
+    await flushPromises()
   })
 
   it('编辑版本变化时不会覆盖用户的新正文和原图', async () => {

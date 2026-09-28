@@ -274,6 +274,17 @@ public class AiAssistantService {
     /** 使用浏览器生成的稳定请求标识，避免响应丢失后重试创建重复图片任务。 */
     public String enqueueArticleImageJob(String memberId, String articleText, String visualPrompt,
             String model, String requestId) {
+        return enqueueArticleImageJob(memberId, articleText, visualPrompt, model, requestId, false);
+    }
+
+    /** 服务端持久小记工作流可并发排队；该授权不由浏览器请求参数控制。 */
+    String enqueueNoteWorkflowArticleImageJob(String memberId, String articleText, String visualPrompt,
+            String model, String requestId) {
+        return enqueueArticleImageJob(memberId, articleText, visualPrompt, model, requestId, true);
+    }
+
+    private String enqueueArticleImageJob(String memberId, String articleText, String visualPrompt,
+            String model, String requestId, boolean allowConcurrentNoteWorkflow) {
         if (!StringUtils.hasText(articleText) || articleText.length() > 60_000) {
             throw new BadRequestException("请提供 1–60000 字的正文后再生成总览图");
         }
@@ -303,13 +314,15 @@ public class AiAssistantService {
         if (onlineCodexRunners().noneMatch(this::supportsArticleImage)) {
             throw new BadRequestException("生成图片需要已更新的 Linux Codex Runner 在线");
         }
-        // 图片互斥锁依赖队列终态；先按数据库时钟回收期限已过的遗留运行，再判断是否仍有有效任务。
+        // 先按数据库时钟回收期限已过的遗留运行，再判断是否允许持久小记工作流并发排队。
         expireReadOnlyJobs();
-        long active = mapper.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
-                .eq(AiAssistantRunEntity::getMemberId, memberId)
-                .eq(AiAssistantRunEntity::getUsagePurpose, ARTICLE_IMAGE_PURPOSE)
-                .in(AiAssistantRunEntity::getStatus, ACTIVE));
-        if (active > 0) throw new BadRequestException("已有一张总览图正在生成，请等待完成");
+        if (!allowConcurrentNoteWorkflow) {
+            long active = mapper.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
+                    .eq(AiAssistantRunEntity::getMemberId, memberId)
+                    .eq(AiAssistantRunEntity::getUsagePurpose, ARTICLE_IMAGE_PURPOSE)
+                    .in(AiAssistantRunEntity::getStatus, ACTIVE));
+            if (active > 0) throw new BadRequestException("已有一张总览图正在生成，请等待完成");
+        }
         AiAssistantRunEntity run = new AiAssistantRunEntity();
         run.setId(runId == null ? "ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24) : runId);
         run.setMemberId(memberId);

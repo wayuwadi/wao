@@ -116,7 +116,7 @@ describe('小记集中记录空间', () => {
     })
     const first = composer()
     expect(first.find('.auto-enrichment-choices').exists()).toBe(false)
-    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true })
+    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 3 })
     await first.find('textarea').setValue('按默认 AI 能力整理')
     await first.get('.save-note').trigger('click')
     await flushPromises()
