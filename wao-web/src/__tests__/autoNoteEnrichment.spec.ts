@@ -117,7 +117,7 @@ describe('小记保存后自动生成', () => {
     expect(startArticleImage).toHaveBeenCalledTimes(2)
     expect(startArticleImage).toHaveBeenNthCalledWith(1, '今天复盘打印流程', expect.any(String), 'gpt-5.6-sol', '0123456789abcdef0123456789abcdef')
     expect(startArticleImage).toHaveBeenNthCalledWith(2, '今天复盘打印流程', expect.any(String), 'gpt-5.6-sol', '0123456789abcdef0123456789abcdef')
-    expect(noteEnrichmentStatus.n1).toContain('已完成')
+    expect(noteEnrichmentStatus.n1).toContain('已按选择保留原文')
     vi.useRealTimers()
   })
 

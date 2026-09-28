@@ -9,6 +9,7 @@ const KEYS = { weekStart: 'week-start', celebration: 'celebration' } as const
 const DEFAULT_PROJECT_KEY = 'default-project'
 const MUSIC_PLAYER_SETTINGS_KEY = 'music-player-settings-v1'
 const NOTE_FULLSCREEN_REMINDER_KEY = 'note-fullscreen-reminder-v1'
+const NOTE_AI_DEFAULTS_KEY = 'note-ai-defaults-v1'
 const CONTROL_STYLE_KEY = 'control-style-v1'
 
 export interface MusicPlayerSettings {
@@ -26,10 +27,18 @@ export interface NoteFullscreenReminderSettings {
   delayMinutes: 1 | 2 | 3 | 5 | 10 | 15
 }
 
+export interface NoteAiDefaults {
+  title: boolean
+  polish: boolean
+  image: boolean
+}
+
 const DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS: NoteFullscreenReminderSettings = {
   enabled: true,
   delayMinutes: 1,
 }
+
+const DEFAULT_NOTE_AI_DEFAULTS: NoteAiDefaults = { title: true, polish: true, image: true }
 
 const NOTE_REMINDER_DELAYS: NoteFullscreenReminderSettings['delayMinutes'][] = [1, 2, 3, 5, 10, 15]
 
@@ -44,6 +53,19 @@ function parseNoteFullscreenReminderSettings(value: string): NoteFullscreenRemin
     }
   } catch {
     return { ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS }
+  }
+}
+
+function parseNoteAiDefaults(value: string): NoteAiDefaults {
+  try {
+    const parsed = JSON.parse(value) as Partial<NoteAiDefaults>
+    return {
+      title: typeof parsed.title === 'boolean' ? parsed.title : DEFAULT_NOTE_AI_DEFAULTS.title,
+      polish: typeof parsed.polish === 'boolean' ? parsed.polish : DEFAULT_NOTE_AI_DEFAULTS.polish,
+      image: typeof parsed.image === 'boolean' ? parsed.image : DEFAULT_NOTE_AI_DEFAULTS.image,
+    }
+  } catch {
+    return { ...DEFAULT_NOTE_AI_DEFAULTS }
   }
 }
 
@@ -70,6 +92,7 @@ export const usePreferenceStore = defineStore('preferences', () => {
   const musicPlayerDefaultOpen = ref(DEFAULT_MUSIC_PLAYER_SETTINGS.defaultOpen)
   const musicPlayerLauncherVisible = ref(DEFAULT_MUSIC_PLAYER_SETTINGS.launcherVisible)
   const noteFullscreenReminder = ref<NoteFullscreenReminderSettings>({ ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS })
+  const noteAiDefaults = ref<NoteAiDefaults>({ ...DEFAULT_NOTE_AI_DEFAULTS })
   const memberId = ref('')
   const loaded = ref(false)
   const loading = ref(false)
@@ -87,6 +110,7 @@ export const usePreferenceStore = defineStore('preferences', () => {
     musicPlayerDefaultOpen.value = DEFAULT_MUSIC_PLAYER_SETTINGS.defaultOpen
     musicPlayerLauncherVisible.value = DEFAULT_MUSIC_PLAYER_SETTINGS.launcherVisible
     noteFullscreenReminder.value = { ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS }
+    noteAiDefaults.value = { ...DEFAULT_NOTE_AI_DEFAULTS }
     loaded.value = false
     loading.value = false
     loadError.value = ''
@@ -97,13 +121,14 @@ export const usePreferenceStore = defineStore('preferences', () => {
     loading.value = true
     loadError.value = ''
     try {
-      const [savedWeekStart, savedCelebration, savedDefaultProject, savedMusicPlayerSettings, savedControlStyle, savedNoteFullscreenReminder] = await Promise.all([
+      const [savedWeekStart, savedCelebration, savedDefaultProject, savedMusicPlayerSettings, savedControlStyle, savedNoteFullscreenReminder, savedNoteAiDefaults] = await Promise.all([
         fetchPreference(KEYS.weekStart),
         fetchPreference(KEYS.celebration),
         fetchPreference(DEFAULT_PROJECT_KEY),
         fetchPreference(MUSIC_PLAYER_SETTINGS_KEY),
         fetchPreference(CONTROL_STYLE_KEY),
         fetchPreference(NOTE_FULLSCREEN_REMINDER_KEY),
+        fetchPreference(NOTE_AI_DEFAULTS_KEY),
       ])
       if (requestVersion !== loadVersion) return
       weekStart.value = valid(savedWeekStart, ['周一', '周日'], '周一')
@@ -114,6 +139,7 @@ export const usePreferenceStore = defineStore('preferences', () => {
       musicPlayerDefaultOpen.value = musicPlayerSettings.defaultOpen
       musicPlayerLauncherVisible.value = musicPlayerSettings.launcherVisible
       noteFullscreenReminder.value = parseNoteFullscreenReminderSettings(savedNoteFullscreenReminder)
+      noteAiDefaults.value = parseNoteAiDefaults(savedNoteAiDefaults)
     } catch (error) {
       if (requestVersion !== loadVersion) return
       loadError.value = error instanceof Error ? error.message : '个人偏好读取失败'
@@ -156,11 +182,17 @@ export const usePreferenceStore = defineStore('preferences', () => {
     noteFullscreenReminder.value = normalized
     loadError.value = ''
   }
+  async function setNoteAiDefaults(settings: NoteAiDefaults) {
+    const normalized: NoteAiDefaults = { title: settings.title, polish: settings.polish, image: settings.image }
+    await savePreference(NOTE_AI_DEFAULTS_KEY, JSON.stringify(normalized))
+    noteAiDefaults.value = normalized
+    loadError.value = ''
+  }
   return {
     weekStart, celebration, defaultProject, controlStyle, effectiveControlStyle, compactControls,
     musicPlayerDefaultOpen, musicPlayerLauncherVisible,
-    noteFullscreenReminder,
+    noteFullscreenReminder, noteAiDefaults,
     loaded, loading, loadError,
-    prepareForMember, load, setWeekStart, setCelebration, setDefaultProject, setControlStyle, setMusicPlayerSettings, setNoteFullscreenReminder,
+    prepareForMember, load, setWeekStart, setCelebration, setDefaultProject, setControlStyle, setMusicPlayerSettings, setNoteFullscreenReminder, setNoteAiDefaults,
   }
 })

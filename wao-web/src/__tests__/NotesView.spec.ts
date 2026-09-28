@@ -107,38 +107,38 @@ describe('小记集中记录空间', () => {
     expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/s/d/old`, '公开分享链接已复制')
     wrapper.unmount()
   })
-  it('新小记三项默认关闭，用户勾选后刷新保留选择，保存后恢复关闭', async () => {
+  it('新建页面不显示逐篇 AI 选项，保存后按成员默认能力自动整理', async () => {
     const data = useDataStore()
+    const preferences = usePreferenceStore()
+    const start = vi.spyOn(await import('@/utils/autoNoteEnrichment'), 'startAutoNoteEnrichment').mockImplementation(() => {})
     const add = vi.spyOn(data, 'addNote').mockImplementation(async (text, _title, id) => {
       data.docs[id!] = doc(id!, text)
       return id!
     })
     const first = composer()
-    const options = first.get('.auto-enrichment-choices')
-    expect(options.element.previousElementSibling?.classList.contains('editor-space')).toBe(true)
-    expect(options.element.nextElementSibling?.classList.contains('composer-footer')).toBe(true)
-    expect(options.text()).toContain('保存后自动生成标题')
-    expect(options.text()).toContain('保存后自动润色正文')
-    expect(options.text()).toContain('保存后自动生成图片')
-    const image = first.get('.auto-enrichment-choices label:nth-child(3) input')
-    expect((image.element as HTMLInputElement).checked).toBe(false)
-    expect((first.get('.auto-enrichment-choices label:first-child input').element as HTMLInputElement).checked).toBe(false)
-    expect((first.get('.auto-enrichment-choices label:nth-child(2) input').element as HTMLInputElement).checked).toBe(false)
-    await first.find('textarea').setValue('只保存正文')
+    expect(first.find('.auto-enrichment-choices').exists()).toBe(false)
+    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true })
+    await first.find('textarea').setValue('按默认 AI 能力整理')
     await first.get('.save-note').trigger('click')
     await flushPromises()
     expect(add).toHaveBeenCalledOnce()
+    const savedId = add.mock.calls[0]![2]!
+    expect(start).toHaveBeenCalledWith('wg', savedId, 3, {
+      title: false,
+      titleEnabled: true,
+      image: false,
+      imageEnabled: true,
+      polishEnabled: true,
+    })
     expect(localStorage.getItem(`wao-note-auto-enrichment-v1:wg:${add.mock.calls[0]![2]}`)).toBeNull()
     expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
-    expect((image.element as HTMLInputElement).checked).toBe(false)
-    await first.find('textarea').setValue('这次选择生成图片')
-    await image.setValue(true)
-    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).autoImage).toBe(true)
+    await first.find('textarea').setValue('下一篇沿用默认 AI 能力')
+    const savedDraft = JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!)
+    expect(savedDraft).not.toHaveProperty('autoTitle')
+    expect(savedDraft).not.toHaveProperty('autoPolish')
+    expect(savedDraft).not.toHaveProperty('autoImage')
     first.unmount()
-    const restored = composer()
-    expect((restored.get('.auto-enrichment-choices label:nth-child(3) input').element as HTMLInputElement).checked).toBe(true)
-    expect((restored.get('.auto-enrichment-choices label:first-child input').element as HTMLInputElement).checked).toBe(false)
-    restored.unmount()
+    start.mockRestore()
   })
   it('分享图标右侧的红色删除入口需要二次确认，取消不会删除', async () => {
     const data = useDataStore()
