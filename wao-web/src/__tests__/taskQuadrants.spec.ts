@@ -124,7 +124,7 @@ describe('TODO 四象限', () => {
     wrapper.unmount()
   })
 
-  it('完成默认收起，展开后可选择，收起和筛选清除隐藏选择', async () => {
+  it('完成默认收起，展开后可见；筛选后只保留匹配任务', async () => {
     const data = useDataStore()
     data.tasks[0]!.status = '已完成'
     localStorage.setItem('wao-todo-view-v1', 'quadrant')
@@ -132,14 +132,11 @@ describe('TODO 四象限', () => {
     expect(wrapper.findAll('article')).toHaveLength(3)
     await wrapper.get('.quadrant-toolbar button').trigger('click')
     expect(wrapper.findAll('article')).toHaveLength(4)
-    await wrapper.findAll('.mt-toolbar > button').find((button) => button.text() === '批量选择')!.trigger('click')
-    await wrapper.get('.copy-selection-actions button').trigger('click')
-    expect(wrapper.get('.copy-tasks').text()).toContain('· 4')
+    expect(wrapper.text()).not.toContain('批量选择')
+    expect(wrapper.text()).not.toContain('全选当前可见')
     await wrapper.get('.quadrant-toolbar button').trigger('click')
-    expect(wrapper.get('.copy-tasks').text()).toContain('· 3')
     await wrapper.findAll('.mt-toolbar > button').find((button) => button.text() === '我参与')!.trigger('click')
     expect(wrapper.findAll('.quadrant-empty')).toHaveLength(4)
-    expect(wrapper.get('.copy-tasks').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 
