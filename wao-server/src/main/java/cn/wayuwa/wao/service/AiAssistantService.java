@@ -31,8 +31,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /** 页面 AI 助手队列：由在线的本地 Codex Runner 以只读权限完成问答。 */
 @Service
 public class AiAssistantService {
-    public static final Set<String> NOTE_CODEX_MODELS = Set.of("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
-    private static final Set<String> LEGACY_NOTE_MODELS = Set.of("gpt-6-astra", "gpt-6-sol", "gpt-6-luna");
+    public static final Set<String> NOTE_CODEX_MODELS = Set.of("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-sol", "gpt-6-luna");
+    private static final Set<String> LEGACY_NOTE_MODELS = Set.of("gpt-6-astra");
     private static final String DEFAULT_NOTE_MODEL = "gpt-5.6-sol";
 
     private static final String QUEUED = "queued";
@@ -485,10 +485,10 @@ public class AiAssistantService {
                 LOCAL_CODEX_CAPABILITY, DeepSeekPurpose.BACKGROUND, model).getId();
     }
 
-    /** 校验小记模型，并将旧网页保存的不可用 GPT-6 选择转到可用模型。 */
+    /** 校验小记模型，并将未验证配图能力的旧模型选择转到默认模型。 */
     public String validateNoteModel(String model) {
         String value = StringUtils.hasText(model) ? model.trim() : DEFAULT_NOTE_MODEL;
-        // 旧网页或已保存的 GPT-6 偏好仍可提交；当前 ChatGPT 登录态会拒绝这些模型。
+        // 旧网页可能继续提交 Astra；其配图能力尚未验证，按默认模型执行。
         if (LEGACY_NOTE_MODELS.contains(value)) return DEFAULT_NOTE_MODEL;
         if (!NOTE_CODEX_MODELS.contains(value)) throw new BadRequestException("小记模型不在允许列表中");
         return value;

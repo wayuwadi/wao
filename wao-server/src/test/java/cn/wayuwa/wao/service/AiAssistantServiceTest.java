@@ -245,7 +245,7 @@ class AiAssistantServiceTest {
         ArgumentCaptor<AiAssistantRunEntity> inserted = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
         verify(mapper).insertReadOnlyQueued(inserted.capture());
         assertThat(inserted.getValue().getId()).isEqualTo(id);
-        assertThat(inserted.getValue().getRequestedModel()).isEqualTo("gpt-5.6-sol");
+        assertThat(inserted.getValue().getRequestedModel()).isEqualTo("gpt-6-sol");
         assertThatThrownBy(() -> service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "unknown"))
                 .hasMessageContaining("不在允许列表");
     }
