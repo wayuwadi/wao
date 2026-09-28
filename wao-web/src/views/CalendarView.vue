@@ -70,6 +70,7 @@ const preferences = usePreferenceStore()
 const router = useRouter()
 const weather = useWeatherStore()
 const weatherPanel = ref<InstanceType<typeof WeatherPanel> | null>(null)
+const attendancePanel = ref<InstanceType<typeof AttendancePanel> | null>(null)
 const calendarReadings = ref<TianrenReading[]>([])
 const readingsLoading = ref(false), readingsError = ref('')
 let readingsSequence = 0
@@ -1173,6 +1174,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <button class="calendar-visibility-toggle attendance-toggle" type="button" role="switch" aria-label="显示我的考勤" :aria-checked="attendanceMode" title="显示或隐藏我的考勤" @click="toggleAttendanceMode"><span>考勤</span><span class="visibility-track" aria-hidden="true"></span></button>
           <button class="calendar-visibility-toggle completed-toggle" type="button" role="switch" aria-label="显示已完成任务" :aria-checked="showCompletedTasks" title="显示或隐藏已完成任务" @click="showCompletedTasks = !showCompletedTasks"><span>已完成</span><span class="visibility-track" aria-hidden="true"></span></button>
         </div>
+        <button v-if="attendanceMode" class="attendance-resync" type="button" :disabled="!attendancePanel?.canSync" :title="attendancePanel?.canSync ? '重新同步当前范围的 Moka 考勤' : '启用 Moka 考勤并等待当前同步完成后即可重试'" @click="attendancePanel?.sync()"><i :class="attendancePanel?.syncing ? 'ri-loader-4-line spinning' : 'ri-refresh-line'"></i>{{ attendancePanel?.syncing ? '同步中…' : '重新同步' }}</button>
         <button v-if="!weather.loaded && weather.error" class="weather-visibility-retry" type="button" @click="weather.load()">天气设置读取失败 · 重试</button>
         <span v-if="holidayState === 'loading'" class="holiday-status"><i class="ri-loader-4-line spin"></i>节假日加载中</span>
         <button v-else-if="holidayState === 'error'" class="holiday-status error" @click="loadHolidays"><i class="ri-refresh-line"></i>节假日加载失败 · 重试</button>
@@ -1310,6 +1312,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
         </button>
         <div v-show="showAttendance" class="attendance-sidebar-content">
           <AttendancePanel
+            ref="attendancePanel"
             :active="attendanceMode"
             :from="attendanceRange.from"
             :to="attendanceRange.to"
@@ -1745,6 +1748,8 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
 .calendar-visibility-toggle[aria-checked="true"] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
 .calendar-visibility-toggle:disabled { opacity: .55; cursor: wait; }
 .calendar-visibility-toggle:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+.attendance-resync { display: inline-flex; flex: 0 0 auto; height: 26px; align-items: center; gap: 4px; padding: 0 8px; border: 1px solid var(--wao-line-control); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 11px; white-space: nowrap; cursor: pointer; }
+.attendance-resync:disabled { opacity: .55; cursor: wait; }
 .visibility-track { position: relative; flex: 0 0 24px; height: 14px; border-radius: 10px; background: var(--wao-text-weak); opacity: .65; transition: background .16s ease; }
 .visibility-track::after { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: #fff; content: ''; transition: transform .16s ease; }
 .calendar-visibility-toggle[aria-checked="true"] .visibility-track { background: var(--wao-primary); opacity: 1; }
