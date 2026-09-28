@@ -15,6 +15,7 @@ import {
   usePreferenceStore,
   type Celebration,
   type ControlStyle,
+  type NoteAiDefaults,
   type NoteFullscreenReminderSettings,
   type WeekStart,
 } from '@/stores/preferences'
@@ -147,6 +148,12 @@ const musicPreferenceError = ref('')
 const noteReminderForm = reactive<NoteFullscreenReminderSettings>({ enabled: true, delayMinutes: 1 })
 const noteReminderSaving = ref(false)
 const noteReminderError = ref('')
+const noteAiDefaultsForm = reactive<NoteAiDefaults>({ title: true, polish: true, image: true })
+const noteAiDefaultsSaving = ref(false)
+const noteAiDefaultsError = ref('')
+const noteAiDefaultsDirty = computed(() => noteAiDefaultsForm.title !== preferences.noteAiDefaults.title
+  || noteAiDefaultsForm.polish !== preferences.noteAiDefaults.polish
+  || noteAiDefaultsForm.image !== preferences.noteAiDefaults.image)
 
 watch(
   [() => preferences.loaded, () => preferences.controlStyle],
@@ -187,10 +194,22 @@ watch(
   { immediate: true },
 )
 
+watch(
+  [() => preferences.loaded, () => preferences.noteAiDefaults.title, () => preferences.noteAiDefaults.polish, () => preferences.noteAiDefaults.image],
+  ([loaded, title, polish, image]) => {
+    if (!loaded || noteAiDefaultsSaving.value) return
+    noteAiDefaultsForm.title = title
+    noteAiDefaultsForm.polish = polish
+    noteAiDefaultsForm.image = image
+  },
+  { immediate: true },
+)
+
 async function reloadPreferences() {
   controlStyleError.value = ''
   musicPreferenceError.value = ''
   noteReminderError.value = ''
+  noteAiDefaultsError.value = ''
   personalPreferenceError.value = ''
   await preferences.load(true)
   if (preferences.loadError) musicPreferenceError.value = preferences.loadError
@@ -270,6 +289,20 @@ async function saveNoteReminderPreferences() {
     noteReminderError.value = error instanceof Error ? error.message : '小记全屏提醒设置保存失败'
   } finally {
     noteReminderSaving.value = false
+  }
+}
+
+async function saveNoteAiDefaults() {
+  if (noteAiDefaultsSaving.value) return
+  noteAiDefaultsSaving.value = true
+  noteAiDefaultsError.value = ''
+  try {
+    await preferences.setNoteAiDefaults({ ...noteAiDefaultsForm })
+    toast('小记 AI 默认能力已保存', 'ri-checkbox-circle-line')
+  } catch (error) {
+    noteAiDefaultsError.value = error instanceof Error ? error.message : '小记 AI 默认能力保存失败'
+  } finally {
+    noteAiDefaultsSaving.value = false
   }
 }
 
@@ -830,6 +863,57 @@ async function bindFeishu() {
               </div>
             </template>
           </div>
+          <div class="card thin note-ai-defaults-preferences">
+            <div class="card-row wrap">
+              <div>
+                <div class="card-title">小记 AI 默认能力</div>
+                <div class="pref-desc">新建小记保存后自动执行所选整理；结果仍可在小记中查看、保留或重试。</div>
+              </div>
+              <span v-if="noteAiDefaultsSaving" class="connected"><span class="c-dot"></span>保存中…</span>
+              <span v-else-if="preferences.loading || !preferences.loaded" class="connected"><span class="c-dot"></span>读取中…</span>
+              <span v-else-if="noteAiDefaultsDirty" class="connected" aria-live="polite"><span class="c-dot"></span>有未保存更改</span>
+              <span v-else-if="!preferences.loadError && !noteAiDefaultsError" class="connected"><span class="c-dot"></span>按当前成员保存</span>
+            </div>
+            <div v-if="preferences.loadError || noteAiDefaultsError" class="preference-error" role="alert">
+              <span>{{ noteAiDefaultsError || preferences.loadError }}</span>
+              <button type="button" class="btn-ghost sm" :disabled="preferences.loading" @click="reloadPreferences">
+                {{ preferences.loading ? '重新读取中…' : '重新读取' }}
+              </button>
+              <button v-if="noteAiDefaultsError" type="button" class="btn-ghost sm" :disabled="noteAiDefaultsSaving" @click="saveNoteAiDefaults">重试保存</button>
+            </div>
+            <div v-else-if="preferences.loading || !preferences.loaded" class="preference-loading" aria-live="polite">
+              <i class="ri-loader-4-line"></i>正在读取小记 AI 默认能力…
+            </div>
+            <template v-else>
+              <div class="pref-row">
+                <div class="pref-main">
+                  <div class="pref-name">保存后生成标题</div>
+                  <div class="pref-desc">依据小记正文生成标题；已有标题会保留。</div>
+                </div>
+                <button type="button" class="toggle" :class="{ on: noteAiDefaultsForm.title }" aria-label="小记保存后生成标题" :aria-pressed="noteAiDefaultsForm.title" :disabled="noteAiDefaultsSaving" @click="noteAiDefaultsForm.title = !noteAiDefaultsForm.title"><span class="knob"></span></button>
+              </div>
+              <div class="pref-row">
+                <div class="pref-main">
+                  <div class="pref-name">保存后润色正文</div>
+                  <div class="pref-desc">保留原文，另存润色版供对照阅读。</div>
+                </div>
+                <button type="button" class="toggle" :class="{ on: noteAiDefaultsForm.polish }" aria-label="小记保存后润色正文" :aria-pressed="noteAiDefaultsForm.polish" :disabled="noteAiDefaultsSaving" @click="noteAiDefaultsForm.polish = !noteAiDefaultsForm.polish"><span class="knob"></span></button>
+              </div>
+              <div class="pref-row">
+                <div class="pref-main">
+                  <div class="pref-name">保存后生成配图</div>
+                  <div class="pref-desc">仅新建小记时自动生成；编辑已有小记不会自动换图。</div>
+                </div>
+                <button type="button" class="toggle" :class="{ on: noteAiDefaultsForm.image }" aria-label="小记保存后生成配图" :aria-pressed="noteAiDefaultsForm.image" :disabled="noteAiDefaultsSaving" @click="noteAiDefaultsForm.image = !noteAiDefaultsForm.image"><span class="knob"></span></button>
+              </div>
+              <div class="music-preference-actions">
+                <span>三项默认开启，按当前成员跨设备保存；新建小记时无需逐篇选择。</span>
+                <button type="button" class="btn-primary" :disabled="noteAiDefaultsSaving || !noteAiDefaultsDirty" @click="saveNoteAiDefaults">
+                  {{ noteAiDefaultsSaving ? '保存中…' : '保存小记 AI 设置' }}
+                </button>
+              </div>
+            </template>
+          </div>
         </template>
 
       </div>
@@ -1086,6 +1170,7 @@ async function bindFeishu() {
 .member-account-form .form-error { grid-column: 1 / -1; color: var(--wao-danger); font-size: 12px; }
 .profile-form { grid-template-columns: 1fr 120px auto; margin: 14px 0; }
 .music-preferences { margin-top: 14px; }
+.note-ai-defaults-preferences { margin-top: 14px; }
 .control-style-preferences { margin-bottom: 14px; }
 .control-style-options { margin-top: 13px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .control-style-options button { min-width: 0; padding: 11px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text-3); cursor: pointer; display: flex; align-items: flex-start; gap: 8px; text-align: left; }

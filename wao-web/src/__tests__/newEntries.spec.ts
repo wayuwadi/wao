@@ -6,6 +6,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
 import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { seedDataStore } from './helpers/seedDataStore'
 
@@ -57,6 +58,7 @@ async function mountLayout() {
         NotificationCenter: true,
         FloatingChat: true,
         RouterView: true,
+        PageSectionNav: { template: '<div class="page-section-nav-stub" />' },
       },
     },
   })
@@ -108,6 +110,16 @@ describe('右上角新建入口', () => {
     expect(ui.modal).toBe('task')
     wrapper.unmount()
   })
+
+  it('首页隐藏本页目录，其他页面仍保留分区导航', async () => {
+    const wrapper = await mountLayout()
+    expect(wrapper.find('.page-section-nav-stub').exists()).toBe(false)
+
+    await wrapper.vm.$router.push('/projects/p1')
+    await flushPromises()
+    expect(wrapper.find('.page-section-nav-stub').exists()).toBe(true)
+    wrapper.unmount()
+  })
 })
 
 describe('新建任务的所属项目', () => {
@@ -140,6 +152,10 @@ describe('新建任务的所属项目', () => {
     })
 
     expect(wrapper.get('[aria-label="所属项目"]').element).toHaveProperty('value', fixtureProject.id)
+    expect(wrapper.find('[aria-label="负责人"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="优先级"]').exists()).toBe(false)
+    expect(wrapper.get('.schedule-details').attributes('open')).toBeUndefined()
+    expect(wrapper.get('.foot').element.parentElement).toBe(wrapper.get('.modal').element)
 
     data.projects = [realProject]
     await flushPromises()
@@ -163,6 +179,8 @@ describe('新建任务的所属项目', () => {
 
     expect(data.tasks).toHaveLength(before + 1)
     expect(data.tasks[0]!.pdcaCycles).toEqual([])
+    expect(data.tasks[0]!.pr).toBe('P2')
+    expect(data.tasks[0]!.owner).toBe(useSessionStore().currentUser.id)
     expect(data.tasks[0]!.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     wrapper.unmount()
   })

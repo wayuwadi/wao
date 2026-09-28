@@ -544,4 +544,22 @@ class FlywayMigrationsTest {
                 .contains("handler = 'workday-feishu-notification'")
                 .contains("schedule_label = '工作日 18:00'");
     }
+
+    @Test
+    void noteMiningKeepsArtifactsTraceableWithoutCouplingSnapshotsToLiveDocs() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V169__note_mining_content_artifacts.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE note_mining_job")
+                .contains("source_snapshot_json JSON NOT NULL")
+                .contains("CREATE TABLE note_mining_artifact")
+                .contains("'INSIGHT', 'REMINDER', 'ARTICLE_SEED'")
+                .contains("CREATE TABLE note_mining_artifact_source")
+                .contains("doc_rev INT NOT NULL", "excerpt VARCHAR(500) NOT NULL")
+                .doesNotContain("fk_note_mining_source_doc");
+    }
 }

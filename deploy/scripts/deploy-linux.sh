@@ -228,10 +228,23 @@ start_services() {
     run_docker rm -f "${legacy_agent_id}" >/dev/null || return 1
   fi
   if [ "${role}" = "master" ]; then
-    sh "${script_dir}/ensure-codex-egress.sh" || return 1
-    # The content tag changes whenever the image ID changes, so Compose
-    # recreates the proxy exactly when its image differs and keeps it otherwise.
-    compose up -d --wait codex-vpn codex-egress-proxy || return 1
+    # Keep the application deploy independent of the external Codex route.
+    # The production verification probes that route and reports its failure.
+    core_services='redis-master sentinel-master wao-server wao-agent-server wao-gateway'
+    if [ "${MANAGE_MASTER_INFRA:-true}" = true ]; then
+      core_services="mysql-master nacos nacos-init-admin ddns-go ${core_services}"
+    fi
+    compose up -d --wait ${core_services} || return 1
+    if sh "${script_dir}/ensure-codex-egress.sh"; then
+      # --no-deps avoids blocking proxy creation on VPN health. Both retain
+      # their real end-to-end healthchecks for the post-deploy probe.
+      if ! compose up -d --no-deps codex-vpn codex-egress-proxy; then
+        echo 'WARNING: Codex egress startup failed; WAO business services remain deployed.' >&2
+      fi
+    else
+      echo 'WARNING: Codex egress configuration is invalid; WAO business services remain deployed.' >&2
+    fi
+    return 0
   fi
   # Durable Redis/Sentinel state survives container recreation. Do not reset
   # elected roles or Sentinel identities during ordinary application releases.

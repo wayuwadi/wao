@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { fetchPersonalPrinciples, type PersonalPrinciple } from '@/api/personalPrinciples'
 import { useSessionStore } from '@/stores/session'
 
+defineProps<{ compact?: boolean }>()
 const session = useSessionStore()
 const items = ref<PersonalPrinciple[]>([])
 const loading = ref(true)
@@ -73,7 +74,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="principle-home-card" aria-label="准则自留地">
+  <section class="principle-home-card" :class="{ compact }" aria-label="准则自留地">
     <div class="mini-scene" aria-hidden="true">
       <span class="scene-halo" /><span class="scene-sheet back" /><span
         class="scene-sheet middle"
@@ -222,6 +223,18 @@ onUnmounted(() => {
   background: #f1f4ff;
   transform: translateX(2px);
 }
+.principle-home-card.compact {
+  grid-column: auto;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 11px;
+  min-height: 150px;
+  margin: 0;
+  padding: 14px;
+}
+.compact .mini-scene { width: 70px; height: 74px; transform: scale(.82); }
+.compact .mini-copy strong { font-size: 15px; margin-top: 7px; }
+.compact .mini-copy p { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.compact .mini-open { grid-column: 2; justify-self: start; padding: 7px 10px; font-size: 11px; }
 @media (max-width: 760px) {
   .principle-home-card {
     grid-template-columns: 62px minmax(0, 1fr);

@@ -1,0 +1,10 @@
+[Unit]
+Description=Archive Linux2 MySQL binlogs every fifteen minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=wao-cloud-binlog.service
+
+[Install]
+WantedBy=timers.target

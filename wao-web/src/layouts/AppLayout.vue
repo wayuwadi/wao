@@ -20,6 +20,7 @@ import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import FloatingChat from '@/components/chat/FloatingChat.vue'
 import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
+import ReleaseHighlightsHost from '@/components/release/ReleaseHighlightsHost.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -32,7 +33,11 @@ import { useTheme } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useShortcuts } from '@/composables/shortcuts'
 import { useFunctionHealth } from '@/composables/functionHealth'
-import { hasDesktopToolbar, hasLegacyDesktopToolbar, mountDesktopToolbar } from '@/utils/desktopToolbar'
+import {
+  hasDesktopToolbar,
+  hasLegacyDesktopToolbar,
+  mountDesktopToolbar,
+} from '@/utils/desktopToolbar'
 import type { ModuleId } from '@/types'
 
 const desktopToolbar = hasDesktopToolbar()
@@ -61,6 +66,7 @@ const TRACKED_FEATURES = new Set([
   'ai-sessions',
   'chatgpt',
   'navigation',
+  'changelog',
   'updates',
   'projects',
   'ideas',
@@ -148,7 +154,10 @@ watch(
       tab.path = route.fullPath
       if (route.meta.tabKind === 'module' && route.meta.module) {
         const meta = nav.itemMeta(route.meta.module as ModuleId)
-        if (meta) { tab.label = meta.label; tab.icon = meta.icon }
+        if (meta) {
+          tab.label = meta.label
+          tab.icon = meta.icon
+        }
       }
       if (route.meta.tabKind === 'external') {
         const app = nav.externalAppById(String(route.params.appId))
@@ -188,7 +197,10 @@ function needsDocs() {
     route.name === 'kb' ||
     route.meta.module === 'knowledge' ||
     route.meta.module === 'notes' ||
-    floatingTabs.keys.some((key) => key.startsWith('proj:') || key.startsWith('kb:') || key === 'knowledge' || key === 'notes') ||
+    floatingTabs.keys.some(
+      (key) =>
+        key.startsWith('proj:') || key.startsWith('kb:') || key === 'knowledge' || key === 'notes',
+    ) ||
     !!ui.openTaskId ||
     ui.searchOpen
   )
@@ -196,12 +208,15 @@ function needsDocs() {
 function ensureVisibleHeavyDomains() {
   if (needsDocs()) void data.ensureDocsLoaded()
 }
-watch(() => [route.name, route.meta.module, ...floatingTabs.keys], ensureVisibleHeavyDomains, { immediate: true })
+watch(() => [route.name, route.meta.module, ...floatingTabs.keys], ensureVisibleHeavyDomains, {
+  immediate: true,
+})
 
 async function reloadAll() {
   await data.hydrate()
   void import('@/utils/autoNoteEnrichment').then(({ resumeAutoNoteEnrichment }) =>
-    resumeAutoNoteEnrichment(session.currentUser.id))
+    resumeAutoNoteEnrichment(session.currentUser.id),
+  )
   ensureVisibleHeavyDomains()
 }
 
@@ -295,7 +310,8 @@ onMounted(async () => {
   // 接入真实 /api；任务域会独立暴露加载 / 失败状态，不用 fixtures 冒充用户数据。
   await data.hydrate()
   void import('@/utils/autoNoteEnrichment').then(({ resumeAutoNoteEnrichment }) =>
-    resumeAutoNoteEnrichment(session.currentUser.id))
+    resumeAutoNoteEnrichment(session.currentUser.id),
+  )
   openLocatedTask()
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
@@ -320,14 +336,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :aria-expanded="!nav.collapsed"
           @click="nav.toggleCollapse"
         >
-          <i :class="nav.collapsed ? 'ri-menu-unfold-line' : 'ri-menu-fold-line'" aria-hidden="true"></i>
+          <i
+            :class="nav.collapsed ? 'ri-menu-unfold-line' : 'ri-menu-fold-line'"
+            aria-hidden="true"
+          ></i>
         </button>
-        <NavigationContext class="crumb-a" :label="crumbA" />
-        <template v-if="crumbB">
-          <i class="ri-arrow-right-s-line crumb-sep"></i>
-          <div class="crumb-b">{{ crumbB }}</div>
+        <template v-if="desktopToolbar || legacyDesktopToolbar">
+          <NavigationContext class="crumb-a" :label="crumbA" />
+          <template v-if="crumbB">
+            <i class="ri-arrow-right-s-line crumb-sep"></i>
+            <div class="crumb-b">{{ crumbB }}</div>
+          </template>
         </template>
         <TopMenuBar />
+        <TabBar />
 
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
         <div class="quick-actions" :class="{ relocated: desktopToolbar }">
@@ -364,8 +386,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </div>
       </header>
 
-      <TabBar />
-
       <div ref="contentRef" class="content">
         <div v-if="loadErrorMessages.length" class="data-status error" role="alert">
           <i class="ri-error-warning-line"></i>
@@ -381,9 +401,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <i class="ri-loader-4-line spin"></i>
           正在加载业务数据…
         </div>
-        <!-- 页面主体撑满剩余高度；复杂页面声明分区后，桌面左侧自动出现本页锚点。 -->
+        <!-- 页面主体撑满剩余高度；复杂页面可用本页锚点，首页留给主要内容。 -->
         <div class="page-stage">
-          <PageSectionNav :root="pageBodyRef" :scroll-container="contentRef" />
+          <PageSectionNav v-if="route.path !== '/'" :root="pageBodyRef" :scroll-container="contentRef" />
           <div ref="pageBodyRef" class="page-body">
             <TabWorkspace @assistant-target="assistantTarget = $event" />
             <!-- 只挂在受保护应用壳内；同一实例在常驻页面与浮层之间移动，保持接收中的回复。 -->
@@ -416,6 +436,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <Celebration v-if="ui.celebrating" />
     <!-- 音乐来自真实文件库，只挂在登录后的应用壳；切换页面时 audio 节点不会被路由销毁。 -->
     <MusicPlayer />
+    <ReleaseHighlightsHost />
   </div>
 </template>
 
@@ -423,8 +444,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .mobile-main-nav {
   display: none;
 }
-.legacy-desktop-shell .header { height: 32px; min-height: 32px; }
-.legacy-desktop-shell .quick-actions { display: none; }
+.legacy-desktop-shell .header {
+  height: 32px;
+  min-height: 32px;
+}
+.legacy-desktop-shell .quick-actions {
+  display: none;
+}
 .desktop-shell .header {
   background: var(--wao-bg-side);
   border-bottom: 0;
@@ -569,6 +595,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   padding: 0 16px;
   flex-shrink: 0;
 }
+.header :deep(.tabbar-shell) {
+  flex: 1 1 0;
+  width: auto;
+  min-width: min(300px, 100%);
+  height: 38px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+.header :deep(.tabbar) {
+  padding: 0 4px;
+}
 .fold {
   width: 30px;
   height: 30px;
@@ -662,11 +700,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .bell i {
   font-size: 16px;
 }
-.content:has(.cal), .content:has(.drawings-page), .content:has(.vault) { overflow: hidden; }
-.page-stage:has(.drawings-page), .page-stage:has(.vault) { flex: 1 1 0; min-height: 0; align-items: stretch; overflow: hidden; }
-.page-body:has(.drawings-page), .page-body:has(.vault) { min-height: 0; overflow: hidden; }
-.page-stage:has(.cal) { flex: 1 1 0; min-height: 0; align-items: stretch; overflow: hidden; }
-.page-body:has(.cal) { min-height: 0; overflow: hidden; }
+.content:has(.cal),
+.content:has(.drawings-page),
+.content:has(.vault) {
+  overflow: hidden;
+}
+.page-stage:has(.drawings-page),
+.page-stage:has(.vault) {
+  flex: 1 1 0;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+.page-body:has(.drawings-page),
+.page-body:has(.vault) {
+  min-height: 0;
+  overflow: hidden;
+}
+.page-stage:has(.cal) {
+  flex: 1 1 0;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+.page-body:has(.cal) {
+  min-height: 0;
+  overflow: hidden;
+}
 .content {
   flex: 1;
   overflow-y: auto;
@@ -730,6 +790,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 
 @media (max-width: 760px) {
+  .header {
+    height: auto;
+    min-height: var(--wao-header-h);
+    flex-wrap: wrap;
+    overflow-x: auto;
+    padding: 0 8px;
+  }
+  .header :deep(.tabbar-shell) {
+    order: 10;
+    flex: 0 0 100%;
+    width: 100%;
+    height: var(--wao-tabbar-h);
+    margin: 0 -8px;
+  }
+  .header :deep(.tabbar) {
+    padding: 0 2px;
+  }
   .fab {
     position: fixed;
     right: 12px;

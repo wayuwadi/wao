@@ -142,6 +142,25 @@ test -s "$fixture/run/wao-release-poster.png"
 rm -f "$fixture/payload.json"
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
+topology=linux2-only
+slave_status=skipped
+slave_detail=Linux1 已退役
+master_status=success
+cloud_status=success
+verification_status=success
+publish_completed_at=2026-09-27 22:00:00
+EOF
+PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
+  WAO_PIPELINE_RESULT=success WAO_MASTER_PROJECT_ROOT="$fixture/master" \
+  WAO_RUN_TEMP="$fixture/run" WAO_DEPLOY_REQUIRED=true DEPLOY_PRODUCTION=true \
+  WAO_GIT_SHA=abcdef1234567890 WAO_COMMIT_MESSAGE='- fix(deploy): Linux2 单节点发布' \
+  BUILD_NUMBER=327 sh "$project_root/deploy/jenkins/notify-feishu.sh"
+assert_json '.card.header.title.content == "WAO 生产发布 ✅ Linux2 单节点成功"'
+assert_json '.card.header.template == "green"'
+assert_json '.card.elements[0].text.content | contains("Linux1 已正式退役")'
+rm -f "$fixture/payload.json"
+
+cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
 slave_status=success
 master_status=skipped
 cloud_status=success

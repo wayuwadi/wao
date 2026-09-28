@@ -1,0 +1,9 @@
+[Unit]
+Description=Create and verify Linux2 four-database encrypted cloud backup
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/wao-backup/create-cloud-backup.sh
+TimeoutStartSec=4h

@@ -5,6 +5,9 @@ if [[ "${RENEWED_LINEAGE:-}" == /etc/letsencrypt/live/wao-linux2-public ]]; then
   exec /etc/wao-node-tls/deploy-local-node-certificate.sh
 fi
 [[ "${RENEWED_LINEAGE:-}" == /etc/letsencrypt/live/wao-linux1-public ]] || exit 0
+if grep -qs '^WAO_DEPLOY_TOPOLOGY=linux2-only$' /home/wadi/桌面/deploy/wao/deploy/.env; then
+  exit 0
+fi
 release="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 peer=wage@linux1.wayuwa.cn
 root=/home/wage/.config/wao-public-tls

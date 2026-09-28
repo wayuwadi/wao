@@ -14,17 +14,18 @@ export interface PolishJobOptions {
   model?: string
   titlePrompt?: string
   notePolishPrompt?: string
+  allowedTags?: string[]
   onProgress?: (job: PolishJob) => void
   isActive?: () => boolean
 }
 export const newPolishRequestId = () => crypto.randomUUID().replace(/-/g, '')
 
 /** POST 重试沿用请求标识，GET 只恢复已有任务；每个 HTTP 请求都有短超时。 */
-export async function waitForPolish(originalText: string, kind: 'DOCUMENT' | 'WORKSPACE' | 'NOTE_TITLE' | 'NOTE_BODY', options: PolishJobOptions = {}) {
+export async function waitForPolish(originalText: string, kind: 'DOCUMENT' | 'WORKSPACE' | 'NOTE_TITLE' | 'NOTE_BODY' | 'NOTE_TAGS', options: PolishJobOptions = {}) {
   const requestId = options.requestId ?? newPolishRequestId()
   const read = async (request: Promise<{ data: ApiResponse<PolishJob> }>) => (await request).data.data
   let job = await read(http.post('/api/text-polish/jobs', { requestId, kind, originalText,
-    ...(kind === 'NOTE_TITLE' || kind === 'NOTE_BODY' ? { model: options.model, titlePrompt: options.titlePrompt, notePolishPrompt: options.notePolishPrompt } : {}) }))
+    ...(kind === 'NOTE_TITLE' || kind === 'NOTE_BODY' || kind === 'NOTE_TAGS' ? { model: options.model, titlePrompt: options.titlePrompt, notePolishPrompt: options.notePolishPrompt, allowedTags: options.allowedTags } : {}) }))
   const startedAt = Date.now()
   const deadline = startedAt + 95 * 60_000
   while (true) {

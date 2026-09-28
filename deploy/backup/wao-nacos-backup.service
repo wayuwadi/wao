@@ -1,9 +1,11 @@
 [Unit]
-Description=Encrypted peer backup of cleanly stopped embedded Nacos
+Description=Encrypted cloud backup of cleanly stopped embedded Nacos
 After=docker.service network-online.target
 
 [Service]
 Type=oneshot
+Environment=WAO_PEER_BACKUP_CONFIG=/etc/wao-backup/cloud.env
+Environment=WAO_BACKUP_APPLY_RETENTION=no
 ExecStart=/usr/local/lib/wao-backup/create-nacos-recovery.sh
 TimeoutStartSec=40min
 Nice=10

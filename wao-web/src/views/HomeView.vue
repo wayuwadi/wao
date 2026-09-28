@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
+import HomeBoardHero from '@/components/home/HomeBoardHero.vue'
+import HomeTianrenGlance from '@/components/home/HomeTianrenGlance.vue'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { AI_EXECUTION_MODE_DESCRIPTIONS } from '@/config/aiExecutionModes'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -36,8 +38,6 @@ import {
   type AiActivityType,
   type ReviewableTask,
 } from '@/api/ai'
-import HomeDailyWorkspace from '@/components/home/HomeDailyWorkspace.vue'
-import PersonalPrinciplesHomeCard from '@/components/home/PersonalPrinciplesHomeCard.vue'
 import CodexBenefitsPanel from '@/components/ai/CodexBenefitsPanel.vue'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
@@ -1309,8 +1309,8 @@ onBeforeUnmount(() => {
   <div class="home" :class="{ 'run-list-view': runLayout === 'list' }">
     <div class="home-primary">
       <header class="home-day">
-        <div class="home-day-title"><h1>今天，从这里继续</h1><p>{{ new Date(`${data.today}T00:00:00+08:00`).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'long' }) }}</p></div>
         <div class="home-day-tools">
+          <div class="home-quick-glances">
           <div ref="quotaRegion" class="home-quota">
             <button type="button" class="quota-trigger" :class="{ 'quota-low': heroWeeklyQuota && heroWeeklyQuota.remainingPercent < 20, 'quota-needs-attention': quotaError || !!benefitsAttention }" :aria-expanded="quotaDetailsOpen" aria-controls="home-quota-details" @click="toggleQuotaDetails">
               <i class="ri-pie-chart-2-line" aria-hidden="true"></i>
@@ -1334,11 +1334,12 @@ onBeforeUnmount(() => {
               <small class="quota-popover-summary">{{ benefitsSummary }}</small>
             </div></Teleport>
           </div>
+          <HomeTianrenGlance />
+          </div>
           <WeatherPanel surface="calendar" :date="data.today" toolbar glance />
         </div>
       </header>
-      <PersonalPrinciplesHomeCard />
-      <HomeDailyWorkspace />
+      <HomeBoardHero />
       <section v-if="aiAreaOpen" class="ai-entry" aria-label="AI Run 实验功能">
         <div><h2>AI Run <span>{{ activeRuns.length ? `${activeRuns.length} 项进行中` : '实验功能 · 按需展开' }}</span></h2><p v-if="aiAreaOpen">日常开发优先在本地电脑完成；需要体验自动执行时再展开。</p><p v-else-if="activeRuns.length">{{ activeRuns[0]?.taskTitle }} · {{ activeRuns[0]?.latestProgress || '查看运行进度' }}</p></div>
         <button type="button" :aria-expanded="aiAreaOpen" aria-controls="home-ai-area" @click="aiAreaOpen = !aiAreaOpen">{{ aiAreaOpen ? '收起 AI Run' : '展开 AI Run' }}<span v-if="activeRuns.length"> · {{ activeRuns.length }} 项进行中</span></button>
@@ -2486,7 +2487,7 @@ onBeforeUnmount(() => {
 }
 .home > * { order: 2; }
 .home [data-page-anchor] { scroll-margin-top: 16px; }
-.home-primary { order: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.home-primary { order: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .hero {
   min-height: 118px;
   padding: 18px 22px;
@@ -3332,7 +3333,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 /* 已确认的紧凑首页：详情按需展开，列表与原卡片共用内容和操作。 */
-.home-primary { grid-template-columns: minmax(0, .9fr) minmax(0, 1.2fr); gap: 14px; align-items: start; }
+.home-primary { grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: stretch; }
 .hero { min-width: 0; min-height: 196px; padding: 16px 20px; display: flex; flex-direction: column; align-items: stretch; gap: 12px; box-shadow: none; }
 .hero > div:first-child { flex: none; }
 .hero h1.slogan { font-size: 22px; margin: 5px 0 0; }
@@ -3393,7 +3394,6 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .run-list-view .recent-main small { grid-column: 1 / -1; }
 .run-list-view .recent-hover-action { position: static; background: none; opacity: 1; transform: none; color: var(--wao-primary-text); font-size: 11px; font-weight: 400; }
 .run-list-view .run-card:hover, .run-list-view .recent-card:hover { transform: none; }
-@media (max-width: 1180px) { .home-primary { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) {
   .hero { padding: 12px; min-height: 178px; gap: 9px; }
   .hero h1.slogan { font-size: 18px; }
@@ -3416,13 +3416,14 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .run-list-view .recent-main { grid-column: 1 / -1; grid-row: 2; }
   .run-list-view .recent-hover-action { grid-column: 2; grid-row: 1; }
 }
-.home-day { grid-column: 1 / -1; position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; padding: 4px 0; }
+.home-day { grid-column: 1 / -1; position: relative; z-index: 2; display: flex; align-items: center; justify-content: flex-end; gap: 16px; min-width: 0; padding: 0; }
 .home-day-title { flex: none; padding-left: 28px; }
 .home-day h1 { font-size: 22px; font-weight: 600; margin: 0; color: var(--wao-text); }
 .home-day p { margin: 6px 0 0; font-size: 12px; color: var(--wao-text-3); }
-.home-day-tools { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.home-day-tools { --home-day-control-height: 42px; --home-day-control-radius: 10px; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.home-quick-glances { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .home-quota { flex: none; }
-.quota-trigger { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-primary-text); font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.quota-trigger { display: inline-flex; align-items: center; gap: 6px; height: var(--home-day-control-height); box-sizing: border-box; padding: 0 12px; border: 1px solid var(--wao-line-control); border-radius: var(--home-day-control-radius); background: var(--wao-bg-card); color: var(--wao-primary-text); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .quota-trigger:hover, .quota-trigger[aria-expanded="true"] { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
 .quota-trigger.quota-low, .quota-trigger.quota-needs-attention { color: var(--wao-warning-strong); border-color: var(--wao-warning-line); background: var(--wao-warning-bg); }
 .quota-trigger:focus-visible, .quota-popover button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
@@ -3442,8 +3443,11 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .ai-entry > div { min-width: 0; }
 .ai-entry p { max-width: 700px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 900px) {
-  .home-day { align-items: flex-start; flex-wrap: wrap; }
-  .home-day h1 { font-size: 20px; }
-  .home-day-tools { width: 100%; justify-content: flex-start; }
+  .home-day { justify-content: flex-start; }
+  .home-day-tools { width: 100%; justify-content: space-between; }
+}
+@media (max-width: 520px) {
+  .home { padding: 10px 12px 24px; }
+  .home-day-tools { align-items: flex-start; flex-direction: column; }
 }
 </style>

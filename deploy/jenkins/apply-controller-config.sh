@@ -37,10 +37,15 @@ for backup_script in \
   configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
   upload-peer-offsite.sh restore-peer-offsite.sh run-readable-content.sh \
   export-readable-content.py webdav_client.py \
-  create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
+  create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py \
+  create-cloud-backup.sh verify-cloud-backup.sh check-cloud-backup.py \
+  archive-peer-binlogs.sh plan-peer-binlogs.py; do
   needs_update "deploy/backup/$backup_script" "/usr/local/lib/wao-backup/$backup_script"
 done
-for unit in wao-peer-backup.service wao-peer-backup.timer; do
+for unit in wao-peer-backup.service wao-peer-backup.timer \
+  wao-cloud-backup.service wao-cloud-backup.timer \
+  wao-cloud-binlog.service wao-cloud-binlog.timer \
+  wao-cloud-backup-check.service wao-cloud-backup-check.timer; do
   needs_update "deploy/backup/$unit" "/etc/systemd/system/$unit"
 done
 needs_update deploy/backup/wao-offsite-backup.service \
@@ -127,12 +132,17 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     for backup_script in \
       configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
       upload-peer-offsite.sh restore-peer-offsite.sh run-readable-content.sh \
-      create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py; do
+      create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py \
+      create-cloud-backup.sh verify-cloud-backup.sh check-cloud-backup.py \
+      archive-peer-binlogs.sh plan-peer-binlogs.py; do
       cp "/workspace/deploy/backup/$backup_script" \
         "/host/usr/local/lib/wao-backup/$backup_script"
       chmod 0755 "/host/usr/local/lib/wao-backup/$backup_script"
     done
-    for unit in wao-peer-backup.service wao-peer-backup.timer; do
+    for unit in wao-peer-backup.service wao-peer-backup.timer \
+      wao-cloud-backup.service wao-cloud-backup.timer \
+      wao-cloud-binlog.service wao-cloud-binlog.timer \
+      wao-cloud-backup-check.service wao-cloud-backup-check.timer; do
       install -o 0 -g 0 -m 0644 "/workspace/deploy/backup/$unit" "/host/etc/systemd/system/$unit"
     done
     cp /workspace/deploy/backup/webdav_client.py \
@@ -208,6 +218,10 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /usr/bin/systemctl daemon-reload
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl enable --now wao-offsite-backup.timer
+    if test -s /host/etc/wao-backup/cloud.env; then
+      chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
+        /usr/bin/systemctl enable --now wao-cloud-backup.timer wao-cloud-binlog.timer wao-cloud-backup-check.timer
+    fi
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl enable --now wao-image-maintenance.timer
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \

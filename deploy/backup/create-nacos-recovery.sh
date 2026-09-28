@@ -90,6 +90,8 @@ tar -C "$stage/publish" -cf - recovery.tar.gpg SHA256SUMS COMPLETE | peer "tar -
 peer "set -e; cd '$remote/.incoming-$stamp'; sha256sum -c SHA256SUMS; mv '$remote/.incoming-$stamp' '$remote/$stamp'"
 mv "$stage/publish" "$root/$stamp"
 echo "Verified encrypted Nacos peer snapshot: $stamp; isolated restore still required."
-retention="$(dirname "$0")/peer-retention.py"
-python3 "$retention" "$root" --apply
-peer "python3 - '$remote' --apply" <"$retention"
+if [[ "${WAO_BACKUP_APPLY_RETENTION:-yes}" == yes ]]; then
+  retention="$(dirname "$0")/peer-retention.py"
+  python3 "$retention" "$root" --apply
+  peer "python3 - '$remote' --apply" <"$retention"
+fi

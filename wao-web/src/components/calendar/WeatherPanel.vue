@@ -10,6 +10,7 @@ const weather = useWeatherStore()
 const settingsOpen = ref(false), searching = ref(false), locating = ref(false), searched = ref(false), locationError = ref('')
 const locations = ref<WeatherLocation[]>([])
 const visible = computed(() => props.surface === 'rhythm' ? weather.prefs.rhythmVisible : weather.prefs.calendarVisible)
+const showPanel = computed(() => props.surface !== 'calendar' || !props.toolbar || visible.value)
 const today = computed(() => weather.days.find(day => day.date === props.date))
 const compact = computed(() => props.surface === 'rhythm' || props.toolbar)
 const twoDays = computed(() => [0, 1].map(offset => {
@@ -67,7 +68,7 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
 </script>
 
 <template>
-  <section class="weather-panel" :class="{ 'weather-compact': compact, 'weather-toolbar': toolbar, 'weather-glance': glance }" aria-label="天气与卦名设置">
+  <section v-if="showPanel" class="weather-panel" :class="{ 'weather-compact': compact, 'weather-toolbar': toolbar, 'weather-glance': glance }" aria-label="天气与卦名设置">
     <template v-if="glance">
       <div class="weather-glance-line" :title="weather.forecastError || weather.error || weather.prefs.location?.name || ''">
         <span class="weather-glance-icon" aria-hidden="true">{{ glanceCondition && !weather.stale && !weather.forecastError ? glanceCondition.icon : '🌡️' }}</span>
@@ -105,7 +106,8 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
       </template>
     </template>
     </template>
-    <component :is="compact ? Modal : 'div'" v-if="settingsOpen" :open="settingsOpen" :footer="null" title="天气设置" @cancel="closeSettings">
+  </section>
+  <component :is="compact ? Modal : 'div'" v-if="settingsOpen" :open="settingsOpen" :footer="null" title="天气设置" @cancel="closeSettings">
     <form class="weather-settings" @submit.prevent="weather.save">
       <fieldset :disabled="weather.saving || !weather.loaded">
         <legend>位置与显示</legend>
@@ -120,8 +122,7 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
     </form>
     <p v-if="weather.message" role="status">{{ weather.message }}</p>
     <p v-if="compact && weather.error" role="alert">{{ weather.error }}</p>
-    </component>
-  </section>
+  </component>
 </template>
 
 <style scoped>

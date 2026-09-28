@@ -12,7 +12,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
-import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
+import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc, fetchKbs } from '@/api/board'
 import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { copyText } from '@/utils/clipboard'
@@ -22,7 +22,7 @@ vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefi
 vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
 
 vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
-vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
+vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn(), fetchKbs: vi.fn() }))
 const Editor = defineComponent({
   props: ['modelValue', 'readonly'], emits: ['update:modelValue'],
   template: '<div><slot name="toolbar-options" /><textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" /><slot name="footer-tags" /></div>',
@@ -44,12 +44,31 @@ async function requestDelete(wrapper: Awaited<ReturnType<typeof view>>, id: stri
 async function view() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }, { path: '/kb/:id', component: { template: '<div />' } }] })
   await router.push('/notes')
-  return mount(NotesView, { global: { plugins: [router], stubs: { MarkdownEditor: Editor } } })
+  return mount(NotesView, { global: { plugins: [router], stubs: { MarkdownEditor: Editor, NoteMiningPanel: true } } })
 }
 function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('默认收起 AI 挖掘，并从阅读模式旁的按钮打开弹层', async () => {
+    useDataStore().docs.one = doc('one', '给工具栏留出空间')
+    const wrapper = await view()
+    document.body.appendChild(wrapper.element)
+    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).toBeNull()
+    const readerButton = wrapper.get('.reader-toggle:not(.mining-toggle)')
+    const miningButton = wrapper.get('.mining-toggle')
+    expect(readerButton.element.nextElementSibling).toBe(miningButton.element)
+    await miningButton.trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).not.toBeNull()
+    expect(document.activeElement).toBe(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]'))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).toBeNull()
+    expect(document.activeElement).toBe(miningButton.element)
+    wrapper.unmount()
+  })
+
   it('卡片右键命中当前小记，删除仍需在原确认区确认', async () => {
     useDataStore().docs.one = doc('one', '右键目标小记')
     const wrapper = await view()
@@ -70,6 +89,15 @@ describe('小记集中记录空间', () => {
     expect(useDataStore().docs.one).toBeDefined()
     wrapper.unmount()
   })
+  it('小记页显示当前成员今天新建的小记正文字符数', async () => {
+    const data = useDataStore()
+    const created = new Date().toISOString()
+    data.docs.today = doc('today', '正文 ABC', created)
+    data.docs.other = doc('other', '不计入', created, 'other')
+    const wrapper = await view()
+    expect(wrapper.get('.daily-note-count').text()).toContain('今日写字 5 字')
+    wrapper.unmount()
+  })
   it('从小记卡片直接复制免登录只读分享页链接', async () => {
     useDataStore().docs.old = doc('old', '要分享的小记')
     const wrapper = await view()
@@ -79,24 +107,40 @@ describe('小记集中记录空间', () => {
     expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/s/d/old`, '公开分享链接已复制')
     wrapper.unmount()
   })
-  it('新小记默认自动配图，用户关闭后刷新仍保留选择', async () => {
+  it('新建页面不显示逐篇 AI 选项，保存后按成员默认能力自动整理', async () => {
+    const data = useDataStore()
+    const preferences = usePreferenceStore()
+    const start = vi.spyOn(await import('@/utils/autoNoteEnrichment'), 'startAutoNoteEnrichment').mockImplementation(() => {})
+    const add = vi.spyOn(data, 'addNote').mockImplementation(async (text, _title, id) => {
+      data.docs[id!] = doc(id!, text)
+      return id!
+    })
     const first = composer()
-    const options = first.get('.auto-enrichment-choices')
-    expect(options.element.previousElementSibling?.classList.contains('editor-space')).toBe(true)
-    expect(options.element.nextElementSibling?.classList.contains('composer-footer')).toBe(true)
-    expect(options.text()).toContain('保存后自动生成标题')
-    expect(options.text()).toContain('保存后自动润色正文')
-    expect(options.text()).toContain('保存后自动生成图片')
-    const image = first.get('.auto-enrichment-choices label:nth-child(3) input')
-    expect((image.element as HTMLInputElement).checked).toBe(true)
-    expect((first.get('.auto-enrichment-choices label:first-child input').element as HTMLInputElement).checked).toBe(true)
-    expect((first.get('.auto-enrichment-choices label:nth-child(2) input').element as HTMLInputElement).checked).toBe(true)
-    await image.setValue(false)
-    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).autoImage).toBe(false)
+    expect(first.find('.auto-enrichment-choices').exists()).toBe(false)
+    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true })
+    await first.find('textarea').setValue('按默认 AI 能力整理')
+    await first.get('.save-note').trigger('click')
+    await flushPromises()
+    expect(add).toHaveBeenCalledOnce()
+    const savedId = add.mock.calls[0]![2]!
+    expect(start).toHaveBeenCalledWith('wg', savedId, 3, {
+      title: false,
+      titleEnabled: true,
+      image: false,
+      imageEnabled: true,
+      polishEnabled: true,
+      tagsEnabled: false,
+      allowedTags: [],
+    })
+    expect(localStorage.getItem(`wao-note-auto-enrichment-v1:wg:${add.mock.calls[0]![2]}`)).toBeNull()
+    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    await first.find('textarea').setValue('下一篇沿用默认 AI 能力')
+    const savedDraft = JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!)
+    expect(savedDraft).not.toHaveProperty('autoTitle')
+    expect(savedDraft).not.toHaveProperty('autoPolish')
+    expect(savedDraft).not.toHaveProperty('autoImage')
     first.unmount()
-    const restored = composer()
-    expect((restored.get('.auto-enrichment-choices label:nth-child(3) input').element as HTMLInputElement).checked).toBe(false)
-    restored.unmount()
+    start.mockRestore()
   })
   it('分享图标右侧的红色删除入口需要二次确认，取消不会删除', async () => {
     const data = useDataStore()
@@ -146,6 +190,7 @@ describe('小记集中记录空间', () => {
     vi.mocked(copyText).mockClear()
     vi.mocked(apiPatchDoc).mockReset()
     vi.mocked(fetchNoteTags).mockResolvedValue([])
+    vi.mocked(fetchKbs).mockReset()
     vi.mocked(apiCreateNoteTag).mockReset()
     vi.mocked(fetchNotePolishVersions).mockResolvedValue([])
     localStorage.clear()
@@ -156,6 +201,30 @@ describe('小记集中记录空间', () => {
     data.loadStates.docs = 'loaded'
     data.loadStates.knowledge = 'loaded'
     data.kbs = [{ id: 'kb-notes', name: '小记', notes: true, icon: '', color: '', desc: '', project: null, folders: [{ id: 'f', name: '小记', docs: [] }] }]
+    vi.mocked(fetchKbs).mockResolvedValue(data.kbs)
+  })
+
+  it('刷新清单时只有刷新按钮转圈，正文和草稿保持可见', async () => {
+    const data = useDataStore()
+    data.docs.one = doc('one', '已有小记')
+    let finish!: (value: boolean) => void
+    vi.spyOn(data, 'refreshDocs').mockImplementation(() => {
+      data.loadStates.docs = 'loading'
+      return new Promise(resolve => { finish = resolve })
+    })
+    const wrapper = await view()
+    await wrapper.find('textarea').setValue('未保存的输入')
+    await wrapper.get('[aria-label="刷新小记清单"]').trigger('click')
+    expect(wrapper.get('[aria-label="刷新小记清单"]').attributes('aria-busy')).toBe('true')
+    expect(wrapper.get('[aria-label="刷新小记清单"] i').classes()).toContain('spin')
+    expect(wrapper.find('[role="status"].empty').exists()).toBe(false)
+    expect(wrapper.get('[data-note-id="one"]').text()).toContain('已有小记')
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('未保存的输入')
+    data.loadStates.docs = 'loaded'
+    finish(true)
+    await flushPromises()
+    expect(wrapper.get('[aria-label="刷新小记清单"]').attributes('aria-busy')).toBe('false')
+    wrapper.unmount()
   })
 
   it('清单删除失败保留小记和新建草稿，重试成功后移出清单', async () => {
@@ -218,13 +287,13 @@ describe('小记集中记录空间', () => {
     const wrapper = composer()
     await wrapper.find('textarea').setValue('正文保留')
     await wrapper.find('.add-tag').trigger('click')
-    await wrapper.find('[aria-label="编辑区新标签名称"]').setValue('新分类')
+    await wrapper.find('[aria-label="新标签名称"]').setValue('新分类')
     vi.mocked(apiCreateNoteTag).mockRejectedValueOnce(new Error('暂时离线')).mockResolvedValueOnce('新分类')
-    await wrapper.find('.new-tag-form').trigger('submit')
+    await wrapper.find('.inline-tag-create button').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.new-tag-form').text()).toContain('重试新增')
+    expect(wrapper.find('.inline-tag-create [role="alert"]').text()).toContain('暂时离线')
     expect(wrapper.find('.tag-chip').exists()).toBe(false)
-    await wrapper.find('.new-tag-form').trigger('submit')
+    await wrapper.find('.inline-tag-create button').trigger('click')
     await flushPromises()
     expect(wrapper.find('.tag-chip').text()).toContain('新分类')
     expect(wrapper.emitted('tag-created')).toEqual([['新分类']])
@@ -493,8 +562,12 @@ describe('小记集中记录空间', () => {
     await vi.advanceTimersByTimeAsync(60_000)
     await flushPromises()
     expect(wrapper.find('.fullscreen-reminder').text()).toContain('来全屏专心创作')
+    expect(wrapper.classes()).toContain('reminder-active')
+    expect(wrapper.find('.composer-heading .fullscreen-toggle').attributes('aria-describedby'))
+      .toBe(wrapper.find('.fullscreen-reminder').attributes('id'))
     await wrapper.findAll('.fullscreen-reminder button').find(button => button.text() === '稍后提醒')!.trigger('click')
     expect(wrapper.find('.fullscreen-reminder').exists()).toBe(false)
+    expect(wrapper.classes()).not.toContain('reminder-active')
     await vi.advanceTimersByTimeAsync(60_000)
     await flushPromises()
     expect(wrapper.find('.fullscreen-reminder').exists()).toBe(true)
@@ -536,7 +609,7 @@ describe('小记集中记录空间', () => {
     expect(ui.modalTaskSeed?.draftKey).toContain(':wg:task-note:')
     expect(wrapper.classes()).not.toContain('fullscreen')
     expect(instance.editor.getJSON()).toEqual(before)
-    if (!saved) expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toContain(source)
+    expect(saved || localStorage.getItem('wao-quick-note-draft-v1:wg')?.includes(source)).toBeTruthy()
     const key = ui.modalTaskSeed?.draftKey
     ui.closeModal()
     instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
@@ -560,12 +633,12 @@ describe('小记集中记录空间', () => {
     await wrapper.find('input[type="search"]').setValue('备忘')
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['a'])
     await wrapper.find('.filter-footer button').trigger('click')
-    await wrapper.find('[aria-label="新标签名称"]').setValue('灵感')
+    await wrapper.find('.new-tag-form input').setValue('灵感')
     vi.mocked(apiCreateNoteTag).mockRejectedValueOnce(new Error('网关不可达')).mockResolvedValueOnce('灵感')
     await wrapper.find('.new-tag-form').trigger('submit')
     await flushPromises()
     expect(wrapper.find('.new-tag-form').text()).toContain('重试新增')
-    expect((wrapper.find('[aria-label="新标签名称"]').element as HTMLInputElement).value).toBe('灵感')
+    expect((wrapper.find('.new-tag-form input').element as HTMLInputElement).value).toBe('灵感')
     await wrapper.find('.new-tag-form').trigger('submit')
     await flushPromises()
     await openFilters(wrapper)
@@ -578,10 +651,9 @@ describe('小记集中记录空间', () => {
     const add = vi.spyOn(useDataStore(), 'addNote').mockResolvedValue('tagged-note')
     const first = mount(NoteComposer, { props: { tagOptions: ['灵感'] }, global: { stubs: { MarkdownEditor: Editor } } })
     await first.find('textarea').setValue('全屏仍在的想法')
-    await first.find('.add-tag').trigger('click')
-    await first.find('.tag-picker button').trigger('click')
-    const editorElement = first.find('textarea').element
     await first.find('.fullscreen-toggle').trigger('click')
+    await first.find('.fullscreen-quick-tags button').trigger('click')
+    const editorElement = first.find('textarea').element
     expect(first.classes()).toContain('fullscreen')
     expect(first.find('textarea').element).toBe(editorElement)
     await first.trigger('keydown', { key: 'Escape' })
@@ -695,9 +767,11 @@ describe('小记集中记录空间', () => {
     const editorElement = wrapper.find('textarea').element
     expect(wrapper.find('.inline-heading .fullscreen-toggle').attributes('aria-label')).toBe('全屏编辑')
     expect(wrapper.find('.tag-chip').text()).toContain('工作')
+    expect(wrapper.find('.fullscreen-quick-tags').exists()).toBe(false)
 
     await wrapper.find('.inline-heading .fullscreen-toggle').trigger('click')
     expect(wrapper.classes()).toContain('fullscreen')
+    expect(wrapper.find('.fullscreen-quick-tags').text()).toContain('常用标签')
     expect(wrapper.find('textarea').element).toBe(editorElement)
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
@@ -712,7 +786,7 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('卡片展示标题并支持键盘阅读、方向键翻页和双击编辑', async () => {
+  it('卡片展示标题并支持键盘阅读、左右翻篇和上下滚动', async () => {
     useDataStore().docs.a = { ...doc('a', '键盘编辑的记录'), tags: ['工作'] }
     useDataStore().docs.b = doc('b', '下一篇记录', '2026-09-08T08:00:00')
     const wrapper = await view()
@@ -723,6 +797,12 @@ describe('小记集中记录空间', () => {
     expect(wrapper.get('[data-note-id="a"] h2').text()).toBe('键盘编辑的记录')
     expect(wrapper.get('[data-note-id="a"]').classes()).toContain('fixed-height')
     await wrapper.get('[data-note-id="b"]').trigger('keydown', { key: 'Enter' })
+    expect(document.body.querySelector('[role="dialog"][aria-label="小记阅读模式"] h2')?.textContent).toBe('下一篇记录')
+    const readerPage = document.querySelector<HTMLElement>('.reader-page')!
+    Object.defineProperty(readerPage, 'scrollBy', { value: vi.fn(), configurable: true })
+    const scrollBy = vi.spyOn(readerPage, 'scrollBy').mockImplementation(() => {})
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(scrollBy).toHaveBeenCalled()
     expect(document.body.querySelector('[role="dialog"][aria-label="小记阅读模式"] h2')?.textContent).toBe('下一篇记录')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     await flushPromises()
@@ -750,6 +830,22 @@ describe('小记集中记录空间', () => {
     await wrapper.findAll('.filter-options button').find(button => button.text() === '全部')!.trigger('click')
     expect(wrapper.findAll('.note-card')).toHaveLength(2)
     wrapper.unmount()
+  })
+
+  it('刷新小记页恢复上次筛选与排序', async () => {
+    useDataStore().docs.a = { ...doc('a', '创作记录', '2026-09-05T08:00:00'), tags: ['创作'] }
+    useDataStore().docs.b = { ...doc('b', '计划记录', '2026-09-07T08:00:00'), tags: ['计划'] }
+    const first = await view()
+    await openFilters(first)
+    await first.get('[aria-label="小记排序"]').setValue('createdDesc')
+    await first.findAll('.filter-options button').find(button => button.text().includes('创作'))!.trigger('click')
+    expect(localStorage.getItem('wao-note-list-preferences-v1:wg')).toContain('createdDesc')
+    first.unmount()
+    const restored = await view()
+    await openFilters(restored)
+    expect((restored.get('[aria-label="小记排序"]').element as HTMLSelectElement).value).toBe('createdDesc')
+    expect(restored.findAll('.filter-options button').find(button => button.text().includes('创作'))!.attributes('aria-pressed')).toBe('true')
+    restored.unmount()
   })
 
   it('作者筛选默认全部，可按作者过滤并随清除筛选恢复', async () => {
@@ -808,6 +904,20 @@ describe('小记集中记录空间', () => {
     await wrapper.findAll('.filter-group')[2]!.findAll('button')[1]!.trigger('click')
     await wrapper.findAll('.filter-group')[3]!.findAll('button')[1]!.trigger('click')
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['a'])
+    wrapper.unmount()
+  })
+
+  it('正文输入井号唤起最近常用标签，并将选择加入标签', async () => {
+    localStorage.setItem('wao-note-tag-usage-v1:wg', JSON.stringify({ 高频: { count: 6, lastUsed: 1 }, 最近: { count: 3, lastUsed: 99 } }))
+    const wrapper = mount(NoteComposer, { props: { tagOptions: ['最近', '高频'] }, global: { stubs: { MarkdownEditor: Editor } }, attachTo: document.body })
+    await wrapper.find('textarea').trigger('keydown', { key: '#' })
+    await new Promise(resolve => window.setTimeout(resolve, 5))
+    const menu = document.body.querySelector('.tag-suggestion-menu')
+    expect(menu?.textContent).toContain('最近常用')
+    expect(menu?.querySelector('button')?.textContent).toContain('高频')
+    menu?.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find('.tag-chip').text()).toContain('高频')
     wrapper.unmount()
   })
 

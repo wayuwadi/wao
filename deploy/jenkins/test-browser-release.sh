@@ -9,6 +9,8 @@ set -eu
 source "$FIXTURE/function.sh"
 BOOTSTRAP_SLAVE="${BOOTSTRAP:-false}"
 ALLOW_SLAVE_OFFLINE=false
+ALLOW_MASTER_OFFLINE=false
+WAO_DEPLOY_TOPOLOGY="${TOPOLOGY:-dual}"
 WAO_CHANGE_BASE=base
 WAO_GIT_SHA=target
 MASTER_HOST=master
@@ -17,6 +19,7 @@ availability_failures="$FIXTURE/failures"
 : >"$availability_failures"
 sh() { printf 'WAO_WEB_ONLY=%s\n' "${PLAN:-true}"; }
 prepare_cloud_routing() { echo routing >>"$LOG"; }
+set_upstream_state() { echo "upstream:$1:$2" >>"$LOG"; }
 gateway_ready_from_cloud() { echo "probe:$1" >>"$LOG"; [ "${PROBE_FAIL:-false}" != true ]; }
 start_availability_monitor() { echo start >>"$LOG"; }
 stop_availability_monitor() { echo stop >>"$LOG"; }
@@ -33,6 +36,10 @@ run_case() {
 }
 run_case good success
 test "$(grep -c '^probe:' "$fixture/good.log")" = 4
+run_case linux2_only success TOPOLOGY=linux2-only
+test "$(grep -c '^probe:' "$fixture/linux2_only.log")" = 2
+grep -qx 'upstream:slave:down' "$fixture/linux2_only.log"
+grep -qx 'slave_status:skipped' "$fixture/linux2_only.log"
 grep -qx 'publish' "$fixture/good.log"
 test "$(grep -nE '^(routing|publish)$' "$fixture/good.log" | cut -d: -f2)" = "$(printf 'routing\npublish')"
 grep -qx 'cloud_status:success' "$fixture/good.log"

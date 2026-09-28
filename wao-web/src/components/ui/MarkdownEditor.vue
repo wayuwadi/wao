@@ -26,6 +26,7 @@ import { Markdown } from '@tiptap/markdown'
 import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
 import { TableKit } from '@tiptap/extension-table'
 import { CellSelection } from '@tiptap/pm/tables'
+import { Plugin } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { Mathematics } from '@tiptap/extension-mathematics'
@@ -59,6 +60,27 @@ import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, M
 
 const lowlight = createLowlight(common)
 const PASTE_COLORS = new Set(['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0', '#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe'])
+
+/** 合并相邻的默认有序列表，确保在列表前插入新条目后原条目自动顺延。 */
+const OrderedListContinuation = Extension.create({
+  name: 'orderedListContinuation',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      appendTransaction: (transactions, _oldState, newState) => {
+        if (!transactions.some(transaction => transaction.docChanged)) return null
+        let joinPosition: number | null = null
+        newState.doc.descendants((node, position, parent, index) => {
+          if (joinPosition !== null || node.type.name !== 'orderedList' || !parent || index >= parent.childCount - 1) return
+          const next = parent.child(index + 1)
+          if (next.type === node.type && node.attrs.start === 1 && next.attrs.start === 1 && node.attrs.type === next.attrs.type) {
+            joinPosition = position + node.nodeSize
+          }
+        })
+        return joinPosition === null ? null : newState.tr.join(joinPosition)
+      },
+    })]
+  },
+})
 
 /** 清理 Word / 飞书粘贴 HTML：保留语义标签，去掉脚本、事件、任意样式和危险 URL。 */
 function sanitizePastedHtml(source: string): string {
@@ -430,6 +452,7 @@ const editor = useEditor({
   contentType: props.document ? 'json' : 'markdown',
   editable: !props.readonly,
   extensions: [
+    OrderedListContinuation,
     StarterKit.configure({
       // 只有知识库文档开放 h1；描述场景仍限制成 h2–h4，避免压过页面标题。
       heading: { levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] },
@@ -495,6 +518,7 @@ const editor = useEditor({
     handleDrop: (_view, event) => consumeImages((event as DragEvent).dataTransfer),
     handleClick: (_view, pos, event) => {
       const target = event.target
+      imageMenuRequested.value = target instanceof HTMLImageElement && props.imageControls && !props.readonly
       if (target instanceof HTMLImageElement) {
         if (props.imageControls && !props.readonly) {
           // 用户在尺寸输入框或“应用”上操作后，ProseMirror 仍保留原来的
@@ -516,6 +540,7 @@ const editor = useEditor({
     },
   },
   onCreate: ({ editor: e }) => nextTick(() => {
+    imageMenuRequested.value = false
     updateCharacterCount(e)
     editorReady.value = true
     if (props.autofocus && !props.readonly && !e.isDestroyed) e.commands.focus('start', { scrollIntoView: false })
@@ -695,6 +720,13 @@ function removeImageAt(index: number) {
   })
   return position >= 0 && e.commands.deleteRange({ from: position, to: position + size })
 }
+function insertTextAtSelection(value: string, deleteBefore = 0) {
+  const instance = editor.value
+  if (!instance) return false
+  const cursor = instance.state.selection.from
+  const from = Math.max(1, cursor - Math.max(0, deleteBefore))
+  return instance.chain().focus().insertContentAt({ from, to: cursor }, value).run()
+}
 let preparingTask = false
 async function addSelectionTask() {
   const e = editor.value
@@ -872,6 +904,7 @@ const imageAltInput = ref('')
 const imageTitleInput = ref('')
 const selectedImageScale = ref<number | null>(null)
 const imageSizeError = ref('')
+const imageMenuRequested = ref(false)
 
 function syncSelectionControls(e: Editor) {
   const { from, to } = e.state.selection
@@ -900,7 +933,12 @@ function shouldShowLink({ editor: e, from, to, state }: MenuContext) {
 }
 
 function shouldShowImage({ editor: e }: MenuContext) {
-  return props.imageControls && !props.readonly && e.isActive('image')
+  return props.imageControls && !props.readonly && imageMenuRequested.value && e.isActive('image')
+}
+
+function closeImageToolbar() {
+  imageMenuRequested.value = false
+  editor.value?.commands.blur()
 }
 
 function openLinkEditor() {
@@ -1431,6 +1469,9 @@ function toggleInsertMenu(event?: MouseEvent) {
 
 function onEditorKeydown(event: KeyboardEvent) {
   if (event.isComposing || composing.value) return
+  if (props.imageControls && !props.readonly && ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp'].includes(event.key)) {
+    imageMenuRequested.value = true
+  }
   if (event.key === 'Escape') {
     closeTableMenu()
     hideSelectionMenu()
@@ -1790,7 +1831,7 @@ async function copyFormatted() {
   const ok = await copyRichContent(e.getHTML(), e.getMarkdown())
   toast(ok ? '已复制，支持富文本与 Markdown 粘贴' : '复制失败，请手动选择复制', ok ? 'ri-file-copy-line' : 'ri-error-warning-line')
 }
-defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt })
+defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
@@ -1941,6 +1982,10 @@ onBeforeUnmount(() => {
           :options="{ placement: 'bottom', offset: 8 }"
         >
           <form class="image-size-toolbar" aria-label="调整图片大小" @submit.prevent="applyImageDimensions">
+            <header class="image-toolbar-heading">
+              <span><b>图片设置</b><small>选中图片时显示 · 点击图片外关闭</small></span>
+              <button type="button" aria-label="关闭图片设置" title="关闭图片设置" @mousedown.prevent @click="closeImageToolbar"><i class="ri-close-line" aria-hidden="true"></i></button>
+            </header>
             <div class="image-scale-options">
               <button
                 v-for="percent in IMAGE_SCALES"
@@ -2422,7 +2467,17 @@ onBeforeUnmount(() => {
 .image-size-toolbar {
   width: min(390px, calc(100vw - 20px));
   padding: 9px;
+  animation: image-toolbar-in .14s ease-out;
+  transform-origin: top center;
 }
+.image-toolbar-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 6px; }
+.image-toolbar-heading span { display:grid; gap:2px; }
+.image-toolbar-heading b { font-size:11px; font-weight:650; }
+.image-toolbar-heading small { color:rgba(255,255,255,.62); font-size:9px; }
+.image-toolbar-heading button { display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; border-radius:6px; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; }
+.image-toolbar-heading button:hover { background:rgba(255,255,255,.16); }
+@keyframes image-toolbar-in { from { opacity:0; transform:translateY(-3px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .image-size-toolbar { animation: none; } }
 .image-scale-options,
 .image-pixel-fields,
 .image-size-actions {

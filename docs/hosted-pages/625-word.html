@@ -1,0 +1,184 @@
+<!doctype html>
+<!--
+Word data adapted from kelvinn/the-625-list:
+https://github.com/kelvinn/the-625-list
+MIT License, Copyright (c) 2022 Kelvin Nicholson.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f7f5f0"><title>625 word · 我的单词本</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,"PingFang SC",sans-serif;color:#23362b;background:#f7f7f3}*{box-sizing:border-box}body{margin:0}button,input,textarea{font:inherit}button{cursor:pointer}[hidden]{display:none!important}
+.shell{max-width:1160px;margin:auto;padding:28px 20px 65px}.hero{padding:36px 42px;border-radius:26px;background:#1c4435;color:white;position:relative;overflow:hidden}.hero:after{content:"Aa";position:absolute;right:24px;top:-65px;font:700 230px Georgia,serif;color:#ffffff09;pointer-events:none}.eyebrow{font-size:12px;letter-spacing:.18em;color:#bcd7c3;font-weight:750;text-transform:uppercase}.hero h1{font:700 clamp(44px,7vw,76px)/1 Georgia,serif;margin:14px 0}.hero h1 span{color:#b9df90}.hero p{max-width:640px;line-height:1.6;color:#dbe9dc}.stats{display:flex;align-items:end;gap:20px;flex-wrap:wrap;margin-top:22px;position:relative;z-index:1}.stats div{min-width:80px}.stats b{display:block;font:700 31px Georgia,serif}.stats small{color:#d8e7d8;font-size:12px}.stats button{margin-left:auto;border:0;border-radius:11px;background:#b9df90;color:#1e4730;padding:11px 18px;font-weight:750}.stats button:disabled{opacity:.55;cursor:default}.bar{height:7px;background:#ffffff30;border-radius:10px;margin-top:18px;overflow:hidden}.bar i{display:block;width:0;height:100%;background:#b9df90;border-radius:10px;transition:width .2s}
+.panel{margin-top:19px;padding:23px;background:white;border:1px solid #e2e9df;border-radius:18px}.panel h2{font-size:20px;margin:0 0 5px}.panel p{font-size:13px;color:#647267;margin:0;line-height:1.5}.add-form{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:17px}.add-form label{display:grid;gap:6px;flex:1 1 180px;font-size:12px;color:#536258}.add-form input,.search,.note-field textarea{border:1px solid #d5ded4;border-radius:10px;background:white;color:#23362b;padding:11px 13px;outline:none}.add-form input:focus,.search:focus,.note-field textarea:focus{border-color:#4d9063;box-shadow:0 0 0 3px #4d906326}.primary{border:0;border-radius:10px;background:#2f6b49;color:white;padding:12px 17px;font-weight:700}.primary:disabled{opacity:.55}.status{min-height:16px;margin-top:10px!important;color:#2e6544!important}.status.error{color:#a94431!important}.notice{padding:12px 15px;background:#fff0e9;border-radius:10px;color:#9c4935;font-size:13px;margin:14px 0}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:22px 0 12px}.search{height:45px;flex:1 1 220px}.filters{display:flex;gap:3px;padding:4px;border-radius:12px;background:#e9efe8}.filters button{border:0;border-radius:9px;background:transparent;color:#526456;padding:9px 13px}.filters button.active{background:white;color:#285c3c;box-shadow:0 1px 5px #183b2115;font-weight:700}.info{display:flex;justify-content:space-between;gap:12px;color:#66766a;font-size:13px;margin:0 1px 12px}.info a,.footer a{color:#2d6947}.list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.word{display:flex;align-items:center;gap:12px;min-height:77px;padding:12px 14px;border:1px solid #e2e8df;border-radius:13px;background:white}.word:hover{border-color:#acc8ae}.word.done{background:#f5f9f3}.word input{width:22px;height:22px;accent-color:#317348;flex:none;cursor:pointer}.word .index{width:33px;color:#98a699;font-size:11px;flex:none}.word .content{display:grid;gap:3px;min-width:0;flex:1}.word .en{font:700 20px Georgia,serif;overflow-wrap:anywhere}.word .zh{font-size:14px;color:#536358}.word .detail{font-size:11px;color:#7a927d}.actions{display:flex;gap:5px;flex:none}.actions button{border:0;border-radius:8px;padding:8px;background:#ebf3e9;color:#32634a;font-size:12px}.actions .review-button{background:#2f6b49;color:white}.empty{grid-column:1/-1;border:1px dashed #d3dfd1;background:white;border-radius:14px;padding:45px 20px;text-align:center;color:#637267}.footer{font-size:12px;color:#748177;line-height:1.65;margin-top:26px}
+.overlay{position:fixed;inset:0;display:grid;place-items:center;padding:18px;background:#11261bb8;z-index:20}.dialog{position:relative;width:min(570px,100%);max-height:calc(100vh - 36px);overflow:auto;border-radius:21px;padding:30px;background:white}.dialog .eyebrow{color:#6d9577}.dialog h2{font:700 clamp(35px,6vw,58px) Georgia,serif;margin:14px 0 20px}.dialog p{line-height:1.6;color:#617064}.close{position:absolute;right:16px;top:11px;border:0;background:transparent;color:#78877a;font-size:28px}.answer{border-radius:13px;background:#f0f6ed;padding:17px;margin:17px 0}.answer strong{font-size:25px}.grades{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.grades button{border:1px solid #cfe1c9;border-radius:11px;background:#f5faf2;color:#275d3c;padding:11px 5px;font-weight:700}.grades button:first-child{background:#fff2ed;color:#a14d35;border-color:#f0d5c8}.grades small{display:block;font-size:11px;font-weight:400;margin-top:3px}.note-field{display:grid;gap:6px;font-size:13px;color:#536458}.note-field textarea{width:100%;resize:vertical;line-height:1.5}.history{border-top:1px solid #e4ebe3;margin-top:18px;padding-top:12px;font-size:12px;color:#69796c}.history div{padding:5px 0}
+@media(max-width:700px){.shell{padding:12px 12px 45px}.hero{padding:27px 24px}.stats{gap:14px}.stats b{font-size:27px}.stats button{margin-left:0}.add-form label,.add-form .primary{width:100%}.filters{width:100%;display:grid;grid-template-columns:repeat(4,1fr)}.filters button{padding:8px 3px;font-size:12px}.list{grid-template-columns:1fr}.word{gap:9px}.word .en{font-size:18px}.grades{grid-template-columns:repeat(2,1fr)}.dialog{padding:27px 20px}.info{display:block}.info span{display:block;margin-top:5px}}@media(prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style></head><body>
+<main class="shell"><header class="hero"><div class="eyebrow">WAO · English wordbook</div><h1>625 word<span>.</span></h1><p>勾选已经会的词，它会从待学列表消失。复习时先回忆，再看答案，并记录这次记忆的情况。源清单实际包含 612 条词条，重复词按原行保留。</p><div class="stats"><div><b id="learned">0</b><small>已会</small></div><div><b id="remaining">612</b><small>待学</small></div><div><b id="due-count">0</b><small>待复习</small></div><button type="button" id="start-review">开始复习 →</button></div><div class="bar" role="progressbar" aria-label="学习进度" aria-valuemin="0" aria-valuemax="612" aria-valuenow="0" id="progress"><i id="fill"></i></div></header>
+<section class="panel" aria-label="新增词汇"><h2>新增词汇</h2><p>写下今天遇到的英文和中文意思。输入草稿保存在当前浏览器。</p><form class="add-form" id="add-form"><label>英文<input id="new-en" maxlength="128" autocomplete="off" required placeholder="例如 resilient"></label><label>中文释义<input id="new-zh" maxlength="500" autocomplete="off" required placeholder="例如 有韧性的"></label><button type="submit" class="primary">加入单词本</button></form><p class="status" id="status" role="status"></p></section>
+<div class="toolbar"><input class="search" id="search" type="search" aria-label="搜索英文或中文" placeholder="搜索英文或中文…"><div class="filters" role="group" aria-label="筛选词汇"><button type="button" class="active" data-filter="todo">待学</button><button type="button" data-filter="due">待复习</button><button type="button" data-filter="done">已会</button><button type="button" data-filter="all">全部</button></div></div><div class="info"><span id="shown"></span><span>来源：<a href="https://github.com/kelvinn/the-625-list/blob/master/625-words-fluent-forever-output.csv" target="_blank" rel="noopener noreferrer">the-625-list</a></span></div><p class="notice" id="storage-note" hidden>当前浏览器无法保存记录，刷新后改动可能丢失。</p><section class="list" id="list" aria-label="英汉词汇"></section><p class="footer">学习记录保存在当前浏览器设备中，换设备不会自动同步。复习采用主动回忆与间隔安排，具体天数按你的自评调整；它不是适合所有人的固定曲线。方法参考 <a href="https://pubmed.ncbi.nlm.nih.gov/26173288/" target="_blank" rel="noopener noreferrer">学习方法研究综述</a>。</p></main>
+<div class="overlay" id="review-overlay" hidden><section class="dialog" role="dialog" aria-modal="true" aria-label="复习词卡"><button class="close" type="button" data-close="review" aria-label="关闭复习">×</button><div class="eyebrow">主动回忆 · <span id="review-left"></span></div><h2 id="review-en" lang="en"></h2><p id="review-prompt">先在心里说出中文意思，再看答案。</p><button type="button" class="primary" id="reveal">显示答案</button><div id="review-revealed" hidden><div class="answer"><strong id="review-zh"></strong><p id="review-note"></p></div><p>刚才回忆得怎么样？</p><div class="grades"><button type="button" data-grade="again">忘记了<small>10 分钟后</small></button><button type="button" data-grade="hard">有点难<small>较短间隔</small></button><button type="button" data-grade="good">记住了<small>正常间隔</small></button><button type="button" data-grade="easy">很轻松<small>较长间隔</small></button></div></div></section></div>
+<div class="overlay" id="note-overlay" hidden><section class="dialog" role="dialog" aria-modal="true" aria-label="词卡笔记"><button class="close" type="button" data-close="note" aria-label="关闭笔记">×</button><h2 id="note-en" lang="en"></h2><p id="note-zh"></p><label class="note-field">例句、联想或使用场景<textarea id="note-text" rows="4" maxlength="2000"></textarea></label><button type="button" class="primary" id="save-note">保存笔记</button><div class="history"><strong>最近复习</strong><div id="history-list"></div></div></section></div>
+<script>
+const WORDS=[["one","一个"],["two","两个"],["three","三"],["four","四"],["five","五"],["six","六"],["seven","七"],["eight","八"],["nine","九"],["ten","十"],["eleven","十一"],["twelve","十二"],["thirteen","十三"],["fourteen","十四"],["fifteen","十五"],["sixteen","十六"],["seventeen","十七"],["eighteen","十八"],["nineteen","十九"],["twenty","二十"],["twenty-one","二十一"],["twenty-two","二十二"],["twenty-three","二十三"],["thirty-one","三十一"],["thirty-two","三十二"],["forty-one","四十一"],["forty-two","四十二"],["fifty","五十"],["fifty-one","五十一"],["fifty-two","五十二"],["sixty","六十"],["sixty-one","六十一"],["sixty-two","六十二"],["seventy","七十"],["seventy-one","七十一"],["seventy-two","七十二"],["eighty","八十"],["eighty-one","八十一"],["eighty-two","八十二"],["ninety","九十"],["ninety-one","九十一"],["ninety-two","九十二"],["one hundred","一百"],["one hundred one","一百零一"],["one hundred two","一百零二"],["one hundred ten","一百一十"],["one hundred eleven","一百一十一"],["one thousand","一千"],["ten thousand","1 万"],["ten thousand","1 万"],["one hundred thousand","10 万"],["first","第一"],["second","第二次"],["third","第三"],["fortieth","第四十"],["fourth","第四"],["fifth","第五"],["adjective","形容词"],["adult","成人"],["afternoon","下午"],["air","空气"],["airport","机场"],["alive","活着"],["animal","动物"],["apartment","公寓"],["apple","苹果"],["April","四月"],["arm","手臂"],["army","军队"],["attack","攻击"],["August","八月"],["baby","宝贝"],["back","背部；后面"],["bad","坏"],["bag","袋"],["ball","球"],["banana","香蕉"],["band","乐队"],["bank","银行"],["bar","酒吧"],["bathroom","浴室"],["beach","海滩"],["beard","胡子"],["beat","节拍"],["beautiful","美丽"],["bed","床"],["bedroom","卧室"],["beef","牛肉"],["beer","啤酒"],["bend","折弯"],["beverage","饮料"],["bicycle","自行车"],["big","大"],["bill","账单；钞票"],["billion","十亿"],["bird","鸟"],["black","黑色"],["blind","失明的"],["blood","血液"],["blue","蓝色"],["boat","小船"],["body","身体"],["bone","骨"],["book","书"],["bottle","瓶"],["bottom","底部"],["box","盒子"],["boy","男孩"],["brain","脑"],["bread","面包"],["break","休息"],["breakfast","早餐"],["bridge","桥梁"],["brother","哥哥"],["brown","棕色"],["build","建造"],["building","建筑物"],["burn","燃烧；烫伤"],["bus","公共汽车"],["buy","购买"],["cake","蛋糕"],["call","打电话；呼叫"],["camera","相机"],["camp","营地"],["car","汽车"],["card","卡"],["carry","携带"],["cat","猫"],["catch","抓到"],["ceiling","天花板"],["cell phone","手机"],["centimeter","厘米"],["chair","椅子"],["cheap","便宜"],["cheese","奶酪"],["chicken","鸡"],["child","儿童"],["church","教堂"],["circle","圈子"],["city","城市"],["clay","粘土"],["clean","清洁"],["clock","时钟"],["close","关闭"],["clothing","服装"],["club","俱乐部"],["coat","外套"],["coffee","咖啡"],["cold","冷；感冒"],["color","颜色"],["computer","计算机"],["computer program","计算机程序"],["consonant","辅音"],["contract","合同"],["cook","做饭；厨师"],["cool","凉爽的；很酷"],["copper","铜"],["corn","玉米"],["corner","角落"],["count","计数"],["country","国家"],["court","法院"],["cow","母牛"],["crowd","人群"],["cry","哭"],["cup","杯"],["curved","弯曲"],["cut","切"],["dance","舞蹈"],["dark","黑暗"],["dark blue","深蓝色"],["date","日期"],["daughter","女儿"],["day","一天"],["dead","死"],["deaf","失聪的"],["death","死亡"],["December","十二月"],["deep","深"],["diamond","钻石"],["die","死亡"],["dig","挖"],["dinner","晚餐"],["direction","方向"],["dirty","脏"],["disease","疾病"],["doctor","医生"],["dog","狗"],["dollar","美元"],["door","门"],["dot","点"],["down","向下"],["draw","画"],["dream","梦想"],["dress","连衣裙；穿衣"],["drink","喝；饮料"],["drive","驾驶"],["drug","药物"],["dry","干"],["dust","灰尘"],["ear","耳朵"],["Earth","地球"],["east","东"],["eat","吃"],["edge","边缘"],["egg","鸡蛋"],["election","选举"],["energy","能源"],["engine","引擎"],["evening","晚上"],["exercise","锻炼"],["expensive","贵"],["explode","爆炸"],["eye","眼睛"],["face","脸"],["fall","落下；秋天"],["family","家庭"],["famous","著名"],["fan","风扇"],["farm","农场"],["fast","快速"],["father","父亲"],["February","二月"],["feed","喂养"],["female","女性"],["fight","战斗"],["find","查找"],["finger","手指"],["fire","火"],["fish","鱼"],["flat","平"],["floor","地板"],["flower","花"],["fly","飞"],["follow","跟随"],["food","食品"],["foot","脚"],["forest","森林"],["fork","叉子"],["Friday","星期五"],["friend","朋友"],["front","前面"],["game","游戏"],["garden","花园"],["gasoline","汽油"],["gift","礼物"],["girl","女孩"],["glass","玻璃"],["go","去"],["God","上帝；神"],["gold","黄金"],["good","好"],["grandfather","祖父"],["grandmother","祖母"],["grass","草"],["gray","灰色"],["green","绿色"],["ground","地面"],["grow","成长"],["gun","枪"],["hair","头发"],["half","一半"],["hand","手"],["hang","悬挂"],["happy","快乐"],["hard","硬"],["hat","帽子"],["he","他"],["head","头"],["healthy","健康"],["heart","心"],["heat","热"],["heaven","天堂"],["heavy","重"],["hell","地狱"],["high","高"],["hill","小山"],["hole","孔"],["horse","马"],["hospital","医院"],["hot","热"],["hotel","酒店"],["hour","小时"],["house","房子"],["human","人类"],["husband","丈夫"],["I","我"],["ice","冰"],["image","图像"],["inch","英寸"],["injury","损伤"],["inside","里面"],["island","岛屿"],["it","它"],["January","一月"],["job","工作"],["juice","果汁"],["July","七月"],["jump","跳"],["June","六月"],["key","钥匙"],["kill","杀"],["kilogram","公斤"],["king","国王"],["kiss","吻"],["kitchen","厨房"],["knee","膝盖"],["knife","刀"],["lake","湖"],["lamp","灯"],["laptop","笔记本电脑"],["large","大"],["laugh","笑"],["lawyer","律师"],["leaf","叶"],["learn","学习"],["left","左"],["leg","腿部"],["lemon","柠檬"],["letter","信；字母"],["library","图书馆"],["lie down","躺下来"],["lift","举起；电梯"],["light","光"],["light blue","浅蓝色"],["lip","嘴唇"],["listen","听"],["location","位置"],["lock","锁"],["long","长"],["loose","松散"],["lose","失去"],["loud","大声"],["love","爱"],["low","低"],["lunch","午餐"],["magazine","杂志"],["male","男性"],["man","男子"],["map","地图"],["March","3 月"],["market","市场"],["marriage","婚姻"],["marry","结婚"],["material","材料"],["math","数学"],["May","五月"],["mean","意思是"],["medicine","药；医学"],["melt","融化"],["metal","金属"],["meter","米"],["milk","牛奶"],["million","一百万"],["minute","分钟"],["Monday","星期一"],["money","钱"],["month","月"],["moon","月亮"],["morning","早上"],["mother","母亲"],["mountain","山"],["mouse","老鼠；鼠标"],["mouth","嘴"],["movie","电影"],["murder","谋杀"],["music","音乐"],["musical instrument","乐器"],["narrow","狭窄的"],["nature","自然"],["neck","颈部"],["needle","针"],["neighbor","邻居"],["network","网络"],["new","新的"],["newspaper","报纸"],["nice","很好"],["night","晚上"],["no","没有"],["north","北"],["nose","鼻子"],["note","笔记；便条"],["noun","名词"],["November","十一月"],["nuclear","核"],["number","数量"],["ocean","海洋"],["October","十月"],["office","办公室"],["oil","石油"],["old","老"],["old","老"],["open","打开"],["orange","橙色"],["outside","外面"],["page","页面"],["pain","疼痛"],["paint","油漆"],["pants","裤子"],["paper","纸张"],["parent","父母之一"],["park","公园"],["pass by","经过"],["patient","病人"],["pattern","模式"],["pay","支付"],["peace","和平"],["pen","钢笔"],["pencil","铅笔"],["person","人"],["photograph","照片"],["piece","片"],["pig","猪"],["pink","粉红色的"],["plane","飞机"],["plant","植物"],["plastic","塑料"],["plate","板"],["play","玩；表演"],["player","球员"],["pocket","口袋"],["poison","毒药"],["police","警察"],["pool","游泳池"],["poor","贫穷的"],["pork","猪肉"],["pound","英镑"],["pray","祈祷"],["president","主席"],["price","价格"],["priest","牧师"],["prison","监狱"],["pull","拉"],["push","推"],["queen","女王"],["quiet","安静的"],["radio","电台"],["rain","雨"],["red","红色"],["relationship","关系"],["religion","宗教"],["restaurant","餐厅"],["rice","大米"],["rich","富有的"],["right","右；正确；权利"],["ring","戒指"],["river","河"],["roof","屋顶"],["room","房间"],["root","根"],["run","跑"],["sad","悲伤"],["salt","盐"],["sand","沙子"],["Saturday","星期六"],["school","学校"],["science","科学"],["screen","屏幕"],["sea","海"],["season","季节"],["second","秒"],["secretary","秘书"],["seed","种子"],["sell","出售"],["September","九月"],["shake","摇"],["shallow","浅"],["she","她"],["ship","船舶"],["shirt","衬衫"],["shoes","鞋子"],["short","短"],["short","短"],["shoulder","肩膀"],["sick","生病"],["side","侧"],["sign","标志"],["silver","银"],["sing","唱歌"],["sister","姐姐"],["sit","坐"],["skin","皮肤"],["skirt","裙子"],["sky","天空"],["sleep","睡眠"],["slow","缓慢"],["small","小"],["smile","微笑"],["snow","雪"],["soap","肥皂"],["soft","软"],["soil","土壤"],["soldier","士兵"],["son","儿子"],["song","歌"],["sound","声音"],["soup","汤"],["south","南"],["spoon","勺子"],["sport","体育"],["spring","春天"],["square","正方形；广场"],["stain","污渍"],["stand","站立"],["star","星星"],["stone","石头"],["stop","停止"],["store","商店"],["straight","直"],["street","街道"],["strong","强"],["student","学生"],["sugar","糖"],["suit","西装"],["summer","夏季"],["sun","太阳"],["Sunday","星期日"],["sweat","汗"],["swim","游泳"],["T-shirt","T 恤"],["table","桌子"],["tall","高"],["tall","高"],["taste","味道"],["tea","茶"],["teach","教"],["teacher","老师"],["team","团队"],["teardrop","泪珠"],["technology","技术"],["telephone","电话"],["television","电视"],["temperature","温度"],["theater","剧场"],["they","他们"],["thick","厚的"],["thin","薄"],["think","思考"],["throw","投掷"],["Thursday","星期四"],["ticket","票"],["tight","紧"],["time","时间"],["tire","轮胎"],["to clean","要清洁"],["to hear","听到"],["to light","点燃"],["to mix","混合"],["to see","看"],["to shoot","射击"],["to speak","发言"],["to watch","观看"],["to win","要赢"],["toe","脚趾"],["tongue","舌头"],["tool","工具"],["tooth","牙齿"],["top","顶部"],["touch","触摸"],["town","小镇"],["train","火车"],["train station","火车站"],["transportation","运输"],["tree","树"],["truck","卡车"],["Tuesday","星期二"],["turn","转弯；轮到"],["ugly","丑陋"],["university","大学"],["up","向上"],["valley","山谷"],["verb","动词"],["victim","受害者"],["voice","声音"],["vowel","元音"],["waiter","服务员"],["wake up","醒来"],["walk","步行"],["wall","墙"],["war","战争"],["warm","温暖"],["wash","洗"],["water","水"],["wave","波"],["we","我们"],["weak","弱"],["wear","穿；佩戴"],["wedding","婚礼"],["Wednesday","星期三"],["week","周"],["weight","重量"],["west","西"],["wet","湿的"],["white","白色"],["wide","宽"],["wife","妻子"],["wind","风"],["window","窗户"],["wine","葡萄酒"],["wing","翼"],["winter","冬天"],["woman","女人"],["wood","木材"],["work","工作"],["world","世界"],["write","写"],["yard","院子"],["year","一年"],["yellow","黄色"],["yes","是的"],["you","你"],["young","年轻"]];
+const LEGACY_KEY='wao-625-word-v1';
+const DATA_KEY='wao-625-wordbook-v2';
+const DRAFT_KEY='wao-625-wordbook-new-draft';
+const $=id=>document.getElementById(id);
+const state={custom:[],progress:{},notes:{},history:{}};
+let filter='todo',reviewId=null,noteId=null;
+const storageNote=$('storage-note');
+function report(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
+function persist(){
+ try{
+  localStorage.setItem(DATA_KEY,JSON.stringify(state));
+  localStorage.setItem(LEGACY_KEY,JSON.stringify(Object.keys(state.progress).filter(id=>id.startsWith('s:')&&state.progress[id]?.known).map(id=>Number(id.slice(2))).sort((a,b)=>a-b)));
+  storageNote.hidden=true;return true;
+ }catch{storageNote.hidden=false;report('保存失败；请检查浏览器存储空间或权限。',true);return false;}
+}
+function load(){
+ try{
+  const saved=JSON.parse(localStorage.getItem(DATA_KEY)||'null');
+  if(saved&&typeof saved==='object'){
+   if(Array.isArray(saved.custom))state.custom=saved.custom.filter(item=>item&&typeof item.id==='string'&&typeof item.en==='string'&&typeof item.zh==='string');
+   for(const key of ['progress','notes','history'])if(saved[key]&&typeof saved[key]==='object'&&!Array.isArray(saved[key]))state[key]=saved[key];
+  }
+  const old=JSON.parse(localStorage.getItem(LEGACY_KEY)||'[]');
+  let migrated=false;
+  if(Array.isArray(old))for(const index of old){
+   if(Number.isInteger(index)&&index>=0&&index<WORDS.length&&!state.progress['s:'+index]){
+    state.progress['s:'+index]={known:true,reps:0,interval:1,ease:2.5,due:Date.now(),count:0};migrated=true;
+   }
+  }
+  if(migrated)persist();
+  const draft=JSON.parse(localStorage.getItem(DRAFT_KEY)||'null');
+  if(draft&&typeof draft==='object'){$('new-en').value=String(draft.en||'');$('new-zh').value=String(draft.zh||'');}
+ }catch{storageNote.hidden=false;}
+}
+function cards(){return [
+ ...WORDS.map(([en,zh],index)=>({id:'s:'+index,en,zh,index})),
+ ...state.custom.map((item,index)=>({...item,index:WORDS.length+index}))
+];}
+function known(card){return Boolean(state.progress[card.id]?.known);}
+function due(card){const progress=state.progress[card.id];return Boolean(progress?.known&&Number.isFinite(progress.due)&&progress.due<=Date.now());}
+function formatDate(value){return new Date(value).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});}
+function showProgress(){
+ const all=cards(),done=all.filter(known).length,todo=all.length-done,ready=all.filter(due).length;
+ $('learned').textContent=done;$('remaining').textContent=todo;$('due-count').textContent=ready;
+ $('start-review').disabled=!ready;$('start-review').textContent=ready?'开始复习 →':'现在没有待复习词';
+ $('progress').setAttribute('aria-valuemax',all.length);$('progress').setAttribute('aria-valuenow',done);
+ $('fill').style.width=(all.length?done/all.length*100:0)+'%';
+}
+function render(){
+ const query=$('search').value.trim().toLocaleLowerCase();
+ const visible=cards().filter(card=>{
+  if(filter==='todo'&&known(card))return false;
+  if(filter==='done'&&!known(card))return false;
+  if(filter==='due'&&!due(card))return false;
+  return !query||card.en.toLocaleLowerCase().includes(query)||card.zh.toLocaleLowerCase().includes(query)||(state.notes[card.id]||'').toLocaleLowerCase().includes(query);
+ });
+ const fragment=document.createDocumentFragment();
+ for(const card of visible){
+  const row=document.createElement('article');row.className='word'+(known(card)?' done':'');
+  const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=known(card);checkbox.setAttribute('aria-label','标记 '+card.en+' 为已会');
+  checkbox.addEventListener('change',()=>{
+   if(checkbox.checked)state.progress[card.id]={known:true,reps:0,interval:1,ease:2.5,due:Date.now()+86400000,count:0};
+   else delete state.progress[card.id];
+   persist();render();
+  });
+  const number=document.createElement('span');number.className='index';number.textContent=card.id.startsWith('s:')?String(card.index+1).padStart(3,'0'):'NEW';
+  const content=document.createElement('div');content.className='content';
+  const en=document.createElement('strong');en.className='en';en.lang='en';en.textContent=card.en;
+  const zh=document.createElement('span');zh.className='zh';zh.textContent=card.zh;content.append(en,zh);
+  if(known(card)){const detail=document.createElement('small');detail.className='detail';detail.textContent=due(card)?'现在待复习':'下次 '+formatDate(state.progress[card.id].due);content.append(detail);}
+  const actions=document.createElement('div');actions.className='actions';
+  const notes=document.createElement('button');notes.type='button';notes.textContent='笔记';notes.setAttribute('aria-label','查看 '+card.en+' 的笔记和复习记录');notes.addEventListener('click',()=>openNote(card.id));actions.append(notes);
+  if(known(card)){const review=document.createElement('button');review.type='button';review.className='review-button';review.textContent=due(card)?'复习':'提前复习';review.addEventListener('click',()=>startReview(card.id));actions.append(review);}
+  row.append(checkbox,number,content,actions);fragment.append(row);
+ }
+ const list=$('list');list.replaceChildren(fragment);
+ if(!visible.length){const empty=document.createElement('div');empty.className='empty';empty.textContent=filter==='due'?'现在没有到期词卡。':filter==='todo'&&!query?'待学词已经清空，去复习巩固吧。':'没有匹配的词汇。';list.append(empty);}
+ $('shown').textContent=`显示 ${visible.length} / ${cards().length} 条`;
+ showProgress();
+}
+function nextSchedule(grade,previous,now){
+ let reps=previous.reps||0,interval=previous.interval||0,ease=previous.ease||2.5;
+ if(grade==='again')return {known:true,reps:0,interval:0,ease:Math.max(1.3,ease-.2),due:now+600000,count:(previous.count||0)+1};
+ if(grade==='hard'){interval=Math.max(1,Math.ceil(Math.max(1,interval)*1.2));ease=Math.max(1.3,ease-.15);reps=Math.max(1,reps);}
+ if(grade==='good'){interval=reps===0?(interval===0?1:3):reps===1?6:Math.max(2,Math.round(Math.max(1,interval)*ease));reps++;}
+ if(grade==='easy'){interval=reps===0?4:Math.max(2,Math.round(Math.max(1,interval)*ease*1.3));ease=Math.min(3,ease+.15);reps++;}
+ interval=Math.min(interval,365);
+ return {known:true,reps,interval,ease:Math.round(ease*100)/100,due:now+interval*86400000,count:(previous.count||0)+1};
+}
+function startReview(id){
+ const card=cards().find(item=>item.id===(id||cards().find(due)?.id));
+ if(!card||!known(card)||(!id&&!due(card)))return;
+ reviewId=card.id;$('review-en').textContent=card.en;$('review-zh').textContent=card.zh;
+ $('review-note').textContent=state.notes[card.id]||'';$('review-note').hidden=!state.notes[card.id];
+ $('review-left').textContent=cards().filter(due).length+' 张待复习';
+ $('review-prompt').hidden=false;$('reveal').hidden=false;$('review-revealed').hidden=true;$('review-overlay').hidden=false;$('reveal').focus();
+}
+function closeReview(){$('review-overlay').hidden=true;reviewId=null;}
+function gradeReview(grade){
+ if(!reviewId||$('review-revealed').hidden||!['again','hard','good','easy'].includes(grade))return;
+ const now=Date.now(),previous=state.progress[reviewId];
+ state.progress[reviewId]=nextSchedule(grade,previous,now);
+ const history=Array.isArray(state.history[reviewId])?state.history[reviewId]:[];
+ history.unshift({grade,at:now,next:state.progress[reviewId].due});state.history[reviewId]=history.slice(0,20);
+ const finished=reviewId;persist();render();
+ const next=cards().find(card=>card.id!==finished&&due(card));
+ if(next)startReview(next.id);else{closeReview();report('本轮到期词卡已复习完成。');}
+}
+function openNote(id){
+ const card=cards().find(item=>item.id===id);if(!card)return;
+ noteId=id;$('note-en').textContent=card.en;$('note-zh').textContent=card.zh;
+ let draft=null;try{draft=localStorage.getItem('wao-625-note-draft:'+id);}catch{}
+ $('note-text').value=draft!==null?draft:(state.notes[id]||'');
+ const history=$('history-list');history.replaceChildren();
+ const entries=Array.isArray(state.history[id])?state.history[id]:[];
+ if(!entries.length){const line=document.createElement('div');line.textContent='还没有复习记录';history.append(line);}
+ else for(const item of entries){const line=document.createElement('div');line.textContent=`${formatDate(item.at)} · ${{again:'忘记了',hard:'有点难',good:'记住了',easy:'很轻松'}[item.grade]||item.grade} · 下次 ${formatDate(item.next)}`;history.append(line);}
+ $('note-overlay').hidden=false;$('note-text').focus();
+}
+function closeNote(){$('note-overlay').hidden=true;noteId=null;}
+load();render();
+$('search').addEventListener('input',render);
+document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{filter=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach(item=>item.classList.toggle('active',item===button));render();}));
+for(const id of ['new-en','new-zh'])$(id).addEventListener('input',()=>{try{localStorage.setItem(DRAFT_KEY,JSON.stringify({en:$('new-en').value,zh:$('new-zh').value}));}catch{storageNote.hidden=false;}});
+$('add-form').addEventListener('submit',event=>{
+ event.preventDefault();const en=$('new-en').value.trim().replace(/\s+/g,' '),zh=$('new-zh').value.trim();
+ if(!/[A-Za-z]/.test(en)||!zh){report('请输入含英文字母的词汇和中文释义。',true);return;}
+ if(cards().some(card=>card.en.toLocaleLowerCase()===en.toLocaleLowerCase())){report('这个词已经在单词本中，可搜索后补充笔记。',true);return;}
+ state.custom.push({id:'c:'+Date.now().toString(36)+Math.random().toString(36).slice(2),en,zh});
+ persist();$('new-en').value='';$('new-zh').value='';try{localStorage.removeItem(DRAFT_KEY);}catch{}
+ filter='todo';document.querySelectorAll('[data-filter]').forEach(button=>button.classList.toggle('active',button.dataset.filter==='todo'));
+ $('search').value='';render();report('已添加“'+en+'”。');
+});
+$('start-review').addEventListener('click',()=>startReview());
+$('reveal').addEventListener('click',()=>{$('review-prompt').hidden=true;$('reveal').hidden=true;$('review-revealed').hidden=false;});
+document.querySelectorAll('[data-grade]').forEach(button=>button.addEventListener('click',()=>gradeReview(button.dataset.grade)));
+document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>button.dataset.close==='review'?closeReview():closeNote()));
+$('review-overlay').addEventListener('click',event=>{if(event.target===$('review-overlay'))closeReview();});
+$('note-overlay').addEventListener('click',event=>{if(event.target===$('note-overlay'))closeNote();});
+$('note-text').addEventListener('input',()=>{if(noteId)try{localStorage.setItem('wao-625-note-draft:'+noteId,$('note-text').value);}catch{storageNote.hidden=false;}});
+$('save-note').addEventListener('click',()=>{if(!noteId)return;state.notes[noteId]=$('note-text').value.trim();if(persist()){try{localStorage.removeItem('wao-625-note-draft:'+noteId);}catch{}closeNote();render();report('笔记已保存。');}});
+window.addEventListener('keydown',event=>{if(event.key==='Escape'){closeReview();closeNote();}});
+setInterval(()=>render(),60000);
+</script></body></html>
