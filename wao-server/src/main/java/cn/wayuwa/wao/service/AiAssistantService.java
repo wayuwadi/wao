@@ -727,6 +727,7 @@ public class AiAssistantService {
         // Runner 回传字段属于不可信输入；失败时不持久化可能夹带的部分对话或模型输出。
         String error = succeeded ? null : "CODEX_AUTH_REQUIRED".equals(request.error())
                 ? "Codex 登录已失效，请在 AI 账号中重新登录，或在执行电脑恢复登录后重试"
+                : imageRun ? articleImageFailure(request.exitCode(), request.error())
                 : assistantFailure(request.exitCode());
         int updated;
         if (succeeded && WEB_SEARCH_RUNNING.equals(run.getStatus())) {
@@ -1034,6 +1035,21 @@ public class AiAssistantService {
         return exitCode == 0
                 ? "Codex 没有返回文字答复"
                 : "Codex 执行失败（退出码 " + exitCode + "），请检查 Runner 后重试";
+    }
+
+    private static String articleImageFailure(int exitCode, String runnerError) {
+        String category = runnerError != null && runnerError.startsWith("CODEX_FAILURE:")
+                ? runnerError.substring("CODEX_FAILURE:".length()) : "";
+        String detail = switch (category) {
+            case "network" -> "上游网络连接失败，请检查 Runner 网络后重试";
+            case "server" -> "上游服务暂时异常，请稍后重试";
+            case "rate_limit" -> "Codex 账号额度或频率受限，请恢复额度后重试";
+            case "tool_unavailable" -> "当前 Codex 会话没有可用的配图工具，请更新 Runner 后重试";
+            case "upstream" -> "Codex 上游执行失败，请查看 Runner 状态后重试";
+            case "unknown" -> "Codex 未返回可识别的失败原因，请检查 Runner 后重试";
+            default -> "请检查 Runner 后重试";
+        };
+        return "Codex 配图执行失败（退出码 " + exitCode + "）：" + detail;
     }
 
     private static String limit(String value, int max) {

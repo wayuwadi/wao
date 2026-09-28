@@ -276,6 +276,8 @@ async function save(asCopy = false) {
   }
 }
 
+defineExpose({ save, dirty })
+
 async function uploadImage(file: File, done: (url: string | null, name: string) => void) {
   try {
     if (!data.apiLive) throw new Error('服务尚未连接，请稍后重试上传')

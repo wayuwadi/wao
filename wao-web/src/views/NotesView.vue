@@ -48,6 +48,9 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 const data = useDataStore()
 const session = useSessionStore()
 const noteEditors = new Map<string, { copyFormatted: () => Promise<void> }>()
+type NoteComposerHandle = { dirty: boolean; save: () => Promise<void> }
+const noteComposers = new Map<string, NoteComposerHandle>()
+const retryingEnrichment = ref<string[]>([])
 const noteCounts = ref<Record<string, number>>({})
 const previewImage = ref<NotePreviewImage | null>(null)
 const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
@@ -72,6 +75,11 @@ async function closeImage() {
   imageTrigger = null
 }
 function setNoteEditor(id: string, value: unknown) { if (value) noteEditors.set(id, value as { copyFormatted: () => Promise<void> }); else noteEditors.delete(id) }
+function setNoteComposer(id: string, value: unknown) {
+  const composer = value as NoteComposerHandle | null
+  if (composer?.save) noteComposers.set(id, composer)
+  else noteComposers.delete(id)
+}
 const query = ref('')
 const sort = ref<'updatedDesc' | 'createdDesc' | 'updatedAsc'>('updatedDesc')
 const imageFilter = ref<'all' | 'yes' | 'no'>('all')
@@ -318,9 +326,24 @@ function progressVisible(id: string) {
   const steps = noteEnrichmentProgress[id]
   return !!steps && !((steps.title === 'done' || steps.title === 'skipped') && (steps.image === 'done' || steps.image === 'skipped') && (steps.polish === 'done' || steps.polish === 'skipped'))
 }
-function retryOrStart(note: Doc) {
-  if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) retryAutoNoteEnrichment(session.currentUser.id, note.id)
-  else if (note.rev) startAutoNoteEnrichment(session.currentUser.id, note.id, note.rev, { title: true, image: true })
+async function retryOrStart(note: Doc) {
+  if (retryingEnrichment.value.includes(note.id)) return
+  retryingEnrichment.value = [...retryingEnrichment.value, note.id]
+  try {
+    const composer = noteComposers.get(note.id)
+    if (composer?.dirty) {
+      noteEnrichmentStatus[note.id] = '正在保存小记修改，再继续重试…'
+      await composer.save()
+      if (composer.dirty) {
+        noteEnrichmentStatus[note.id] = '自动整理未完成：小记修改尚未保存，请先处理保存提示后重试'
+        return
+      }
+    }
+    if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) await retryAutoNoteEnrichment(session.currentUser.id, note.id)
+    else if (note.rev) startAutoNoteEnrichment(session.currentUser.id, note.id, note.rev, { title: true, image: true })
+  } finally {
+    retryingEnrichment.value = retryingEnrichment.value.filter(id => id !== note.id)
+  }
 }
 function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish') {
   if (noteEnrichmentProgress[note.id]?.[stage] === 'failed') retryOrStart(note)
@@ -457,8 +480,8 @@ onMounted(() => void loadPins())
             </div>
             <div v-if="validPolish(note)" class="version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(note)" @click="versions[note.id] = 'polished'">润色</button><button type="button" :aria-pressed="!showPolished(note)" @click="versions[note.id] = 'original'">原文</button></div>
             <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
-          <p v-if="progressVisible(note.id) && noteEnrichmentStatus[note.id]" class="workflow-status" role="status">{{ noteEnrichmentStatus[note.id] }} <button v-if="canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成')" type="button" @click="retryOrStart(note)">重试</button></p>
-          <NoteComposer v-if="editingIds.includes(note.id)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
+          <p v-if="progressVisible(note.id) && noteEnrichmentStatus[note.id]" class="workflow-status" role="status">{{ noteEnrichmentStatus[note.id] }} <button v-if="canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成')" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '保存并重试中…' : editingIds.includes(note.id) ? '保存并重试' : '重试' }}</button></p>
+          <NoteComposer v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
           <div class="note-heading"><h2>{{ note.title }}</h2><div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
