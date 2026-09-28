@@ -518,6 +518,7 @@ const editor = useEditor({
     handleDrop: (_view, event) => consumeImages((event as DragEvent).dataTransfer),
     handleClick: (_view, pos, event) => {
       const target = event.target
+      imageMenuRequested.value = target instanceof HTMLImageElement && props.imageControls && !props.readonly
       if (target instanceof HTMLImageElement) {
         if (props.imageControls && !props.readonly) {
           // 用户在尺寸输入框或“应用”上操作后，ProseMirror 仍保留原来的
@@ -539,6 +540,7 @@ const editor = useEditor({
     },
   },
   onCreate: ({ editor: e }) => nextTick(() => {
+    imageMenuRequested.value = false
     updateCharacterCount(e)
     editorReady.value = true
     if (props.autofocus && !props.readonly && !e.isDestroyed) e.commands.focus('start', { scrollIntoView: false })
@@ -895,6 +897,7 @@ const imageAltInput = ref('')
 const imageTitleInput = ref('')
 const selectedImageScale = ref<number | null>(null)
 const imageSizeError = ref('')
+const imageMenuRequested = ref(false)
 
 function syncSelectionControls(e: Editor) {
   const { from, to } = e.state.selection
@@ -923,7 +926,12 @@ function shouldShowLink({ editor: e, from, to, state }: MenuContext) {
 }
 
 function shouldShowImage({ editor: e }: MenuContext) {
-  return props.imageControls && !props.readonly && e.isActive('image')
+  return props.imageControls && !props.readonly && imageMenuRequested.value && e.isActive('image')
+}
+
+function closeImageToolbar() {
+  imageMenuRequested.value = false
+  editor.value?.commands.blur()
 }
 
 function openLinkEditor() {
@@ -1454,6 +1462,9 @@ function toggleInsertMenu(event?: MouseEvent) {
 
 function onEditorKeydown(event: KeyboardEvent) {
   if (event.isComposing || composing.value) return
+  if (props.imageControls && !props.readonly && ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp'].includes(event.key)) {
+    imageMenuRequested.value = true
+  }
   if (event.key === 'Escape') {
     closeTableMenu()
     hideSelectionMenu()
@@ -1966,7 +1977,7 @@ onBeforeUnmount(() => {
           <form class="image-size-toolbar" aria-label="调整图片大小" @submit.prevent="applyImageDimensions">
             <header class="image-toolbar-heading">
               <span><b>图片设置</b><small>选中图片时显示 · 点击图片外关闭</small></span>
-              <button type="button" aria-label="关闭图片设置" title="关闭图片设置" @mousedown.prevent @click="editor?.commands.blur()"><i class="ri-close-line" aria-hidden="true"></i></button>
+              <button type="button" aria-label="关闭图片设置" title="关闭图片设置" @mousedown.prevent @click="closeImageToolbar"><i class="ri-close-line" aria-hidden="true"></i></button>
             </header>
             <div class="image-scale-options">
               <button
