@@ -254,15 +254,30 @@ class AiAssistantServiceTest {
     void articleImageRetryWithSameRequestIdReusesExistingRun() {
         String requestId = "0123456789abcdef0123456789abcdef";
         AiAssistantRunEntity existing = assistantRun("secure_queued");
-        existing.setId("ac" + requestId);
+        existing.setId(requestId);
         existing.setMemberId("wg");
         existing.setUsagePurpose(AiAssistantService.ARTICLE_IMAGE_PURPOSE);
-        when(mapper.selectById("ac" + requestId)).thenReturn(existing);
+        when(mapper.selectById(requestId)).thenReturn(existing);
 
         String id = service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "gpt-6-luna", requestId);
 
-        assertThat(id).isEqualTo("ac" + requestId);
+        assertThat(id).isEqualTo(requestId);
+        assertThat(id).hasSize(32);
         verify(mapper, never()).insertReadOnlyQueued(any());
+    }
+
+    @Test
+    void articleImageStableRequestIdFitsRunPrimaryKey() {
+        String requestId = "0123456789abcdef0123456789abcdef";
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("Linux 6.8", "codex")));
+        when(mapper.selectById(requestId)).thenReturn(null);
+
+        String id = service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "gpt-6-luna", requestId);
+
+        ArgumentCaptor<AiAssistantRunEntity> inserted = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(inserted.capture());
+        assertThat(id).isEqualTo(requestId);
+        assertThat(inserted.getValue().getId()).hasSize(32).isEqualTo(requestId);
     }
 
     @Test

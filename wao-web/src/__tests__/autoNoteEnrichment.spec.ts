@@ -19,6 +19,7 @@ const doc = (rev: number, title = '今天复盘打印流程') => ({ id: 'n1', re
 
 describe('小记保存后自动生成', () => {
   beforeEach(() => {
+    vi.useRealTimers()
     localStorage.clear()
     delete noteEnrichmentStatus.n1
     vi.clearAllMocks()
@@ -94,6 +95,30 @@ describe('小记保存后自动生成', () => {
     expect(waitForPolish).toHaveBeenCalledTimes(1)
     expect(noteEnrichmentProgress.n1?.polish).toBe('skipped')
     expect(noteEnrichmentStatus.n1).toContain('保留原文')
+  })
+
+  it('并发恢复导致请求占用时用同一请求号接续配图任务', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(startArticleImage)
+      .mockRejectedValueOnce(new Error('数据刚刚被其他请求占用，请刷新后重试'))
+      .mockResolvedValueOnce({ id: 'img-job', status: 'QUEUED', message: '', imageUrl: null })
+    vi.mocked(fetchArticleImage).mockResolvedValue({ id: 'img-job', status: 'SUCCEEDED', message: '', imageUrl: '/api/images/img1/raw' })
+    vi.mocked(apiPatchDoc).mockResolvedValue(doc(2) as never)
+
+    startAutoNoteEnrichment('me', 'n1', 1, { titleEnabled: false, polishEnabled: false })
+    await flushPromises()
+    expect(startArticleImage).toHaveBeenCalledTimes(1)
+    expect(noteEnrichmentStatus.n1).toContain('其他页面接续')
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    await flushPromises()
+
+    expect(startArticleImage).toHaveBeenCalledTimes(2)
+    expect(startArticleImage).toHaveBeenNthCalledWith(1, '今天复盘打印流程', expect.any(String), 'gpt-6-luna', '0123456789abcdef0123456789abcdef')
+    expect(startArticleImage).toHaveBeenNthCalledWith(2, '今天复盘打印流程', expect.any(String), 'gpt-6-luna', '0123456789abcdef0123456789abcdef')
+    expect(noteEnrichmentStatus.n1).toContain('已完成')
+    vi.useRealTimers()
   })
 
   it('标题阶段失败后仍继续配图和润色，并把失败阶段留给重试', async () => {

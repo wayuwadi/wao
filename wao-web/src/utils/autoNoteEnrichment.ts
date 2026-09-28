@@ -160,8 +160,14 @@ async function run(job: AutoJob) {
             save(job)
           } catch (cause) {
             const message = cause instanceof Error ? cause.message : '配图任务提交失败'
-            if (!message.includes('已有一张总览图正在生成')) throw cause
-            noteEnrichmentStatus[job.docId] = '另一张总览图正在生成，空出后会自动继续…'
+            const slotOccupied = message.includes('已有一张总览图正在生成')
+            const concurrentInsert = message.includes('数据刚刚被其他请求占用')
+            if (!slotOccupied && !concurrentInsert) throw cause
+            // 多个页面可能同时恢复同一条自动整理记录。保留同一个请求号重试，
+            // 让服务端接回先成功写入的图片任务，而不是把唯一键竞争显示成失败。
+            noteEnrichmentStatus[job.docId] = slotOccupied
+              ? '另一张总览图正在生成，空出后会自动继续…'
+              : '图片任务正在由其他页面接续，稍后自动恢复…'
             await new Promise(resolve => setTimeout(resolve, retryDelay))
             retryDelay = Math.min(60_000, retryDelay * 2)
           }

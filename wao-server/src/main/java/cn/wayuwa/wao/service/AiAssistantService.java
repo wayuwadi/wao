@@ -286,7 +286,8 @@ public class AiAssistantService {
             if (!stableRequestId.matches("[a-f0-9]{32}")) {
                 throw new BadRequestException("图片任务请求标识无效，请重新尝试");
             }
-            runId = "ac" + stableRequestId;
+            // ai_assistant_run.id 为 VARCHAR(32)，32 位请求号不可再追加前缀。
+            runId = stableRequestId;
             AiAssistantRunEntity existing = mapper.selectById(runId);
             if (existing != null) {
                 if (!memberId.equals(existing.getMemberId())
