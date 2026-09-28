@@ -31,8 +31,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /** 页面 AI 助手队列：由在线的本地 Codex Runner 以只读权限完成问答。 */
 @Service
 public class AiAssistantService {
-    public static final Set<String> NOTE_CODEX_MODELS = Set.of("gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
-            "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
+    public static final Set<String> NOTE_CODEX_MODELS = Set.of("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
+    private static final Set<String> LEGACY_NOTE_MODELS = Set.of("gpt-6-astra", "gpt-6-sol", "gpt-6-luna");
+    private static final String DEFAULT_NOTE_MODEL = "gpt-5.6-sol";
 
     private static final String QUEUED = "queued";
     private static final String RUNNING = "running";
@@ -263,7 +264,7 @@ public class AiAssistantService {
 
     /** 用成员已登录的本地 Codex 排队生成一张文章总览图；正文不进入聊天记录。 */
     public String enqueueArticleImageJob(String memberId, String articleText, String visualPrompt) {
-        return enqueueArticleImageJob(memberId, articleText, visualPrompt, "gpt-6-luna");
+        return enqueueArticleImageJob(memberId, articleText, visualPrompt, DEFAULT_NOTE_MODEL);
     }
 
     public String enqueueArticleImageJob(String memberId, String articleText, String visualPrompt, String model) {
@@ -463,7 +464,7 @@ public class AiAssistantService {
 
     /** 为已保存的小记异步提炼标题；正文只进入现有短期只读队列。 */
     public String enqueueNoteTitleJob(String operationKey, String originalText) {
-        return enqueueNoteTitleJob(operationKey, originalText, "", "gpt-6-luna");
+        return enqueueNoteTitleJob(operationKey, originalText, "", DEFAULT_NOTE_MODEL);
     }
 
     public String enqueueNoteTitleJob(String operationKey, String originalText, String titlePrompt, String model) {
@@ -484,8 +485,11 @@ public class AiAssistantService {
                 LOCAL_CODEX_CAPABILITY, DeepSeekPurpose.BACKGROUND, model).getId();
     }
 
+    /** 校验小记模型，并将旧网页保存的不可用 GPT-6 选择转到可用模型。 */
     public String validateNoteModel(String model) {
-        String value = StringUtils.hasText(model) ? model.trim() : "gpt-6-luna";
+        String value = StringUtils.hasText(model) ? model.trim() : DEFAULT_NOTE_MODEL;
+        // 旧网页或已保存的 GPT-6 偏好仍可提交；当前 ChatGPT 登录态会拒绝这些模型。
+        if (LEGACY_NOTE_MODELS.contains(value)) return DEFAULT_NOTE_MODEL;
         if (!NOTE_CODEX_MODELS.contains(value)) throw new BadRequestException("小记模型不在允许列表中");
         return value;
     }

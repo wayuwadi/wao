@@ -48,8 +48,8 @@ describe('小记保存后自动生成', () => {
     startAutoNoteEnrichment('me', 'n1', 1)
     await flushPromises()
 
-    expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_TITLE', expect.objectContaining({ model: 'gpt-6-sol', titlePrompt: '标题偏好' }))
-    expect(startArticleImage).toHaveBeenCalledWith('今天复盘打印流程', '图片偏好', 'gpt-6-sol', '0123456789abcdef0123456789abcdef')
+    expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_TITLE', expect.objectContaining({ model: 'gpt-5.6-sol', titlePrompt: '标题偏好' }))
+    expect(startArticleImage).toHaveBeenCalledWith('今天复盘打印流程', '图片偏好', 'gpt-5.6-sol', '0123456789abcdef0123456789abcdef')
     expect(apiPatchDoc).toHaveBeenNthCalledWith(1, 'n1', { title: '打印流程复盘', expectedRev: 1 })
     expect(apiPatchDoc).toHaveBeenNthCalledWith(2, 'n1', expect.objectContaining({
       expectedRev: 2,
@@ -57,7 +57,7 @@ describe('小记保存后自动生成', () => {
         expect.objectContaining({ type: 'image', attrs: expect.objectContaining({ src: '/api/images/img1/raw' }) }),
       ]) }) }),
     }))
-    expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_BODY', expect.objectContaining({ model: 'gpt-6-sol', notePolishPrompt: '正文润色偏好' }))
+    expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_BODY', expect.objectContaining({ model: 'gpt-5.6-sol', notePolishPrompt: '正文润色偏好' }))
     expect(saveNotePolishVersion).toHaveBeenCalledWith('n1', content.markdown, '打印流程复盘')
     expect(noteEnrichmentStatus.n1).toBe('标题、配图和润色已完成')
     expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).toBeNull()
@@ -115,8 +115,8 @@ describe('小记保存后自动生成', () => {
     await flushPromises()
 
     expect(startArticleImage).toHaveBeenCalledTimes(2)
-    expect(startArticleImage).toHaveBeenNthCalledWith(1, '今天复盘打印流程', expect.any(String), 'gpt-6-luna', '0123456789abcdef0123456789abcdef')
-    expect(startArticleImage).toHaveBeenNthCalledWith(2, '今天复盘打印流程', expect.any(String), 'gpt-6-luna', '0123456789abcdef0123456789abcdef')
+    expect(startArticleImage).toHaveBeenNthCalledWith(1, '今天复盘打印流程', expect.any(String), 'gpt-5.6-sol', '0123456789abcdef0123456789abcdef')
+    expect(startArticleImage).toHaveBeenNthCalledWith(2, '今天复盘打印流程', expect.any(String), 'gpt-5.6-sol', '0123456789abcdef0123456789abcdef')
     expect(noteEnrichmentStatus.n1).toContain('已完成')
     vi.useRealTimers()
   })
