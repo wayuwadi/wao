@@ -89,6 +89,15 @@ describe('小记集中记录空间', () => {
     expect(useDataStore().docs.one).toBeDefined()
     wrapper.unmount()
   })
+  it('小记页显示当前成员今天新建的小记正文字符数', async () => {
+    const data = useDataStore()
+    const created = new Date().toISOString()
+    data.docs.today = doc('today', '正文 ABC', created)
+    data.docs.other = doc('other', '不计入', created, 'other')
+    const wrapper = await view()
+    expect(wrapper.get('.daily-note-count').text()).toContain('今日写字 5 字')
+    wrapper.unmount()
+  })
   it('从小记卡片直接复制免登录只读分享页链接', async () => {
     useDataStore().docs.old = doc('old', '要分享的小记')
     const wrapper = await view()
@@ -598,7 +607,7 @@ describe('小记集中记录空间', () => {
     expect(ui.modalTaskSeed?.draftKey).toContain(':wg:task-note:')
     expect(wrapper.classes()).not.toContain('fullscreen')
     expect(instance.editor.getJSON()).toEqual(before)
-    if (!saved) expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toContain(source)
+    expect(saved || localStorage.getItem('wao-quick-note-draft-v1:wg')?.includes(source)).toBeTruthy()
     const key = ui.modalTaskSeed?.draftKey
     ui.closeModal()
     instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })

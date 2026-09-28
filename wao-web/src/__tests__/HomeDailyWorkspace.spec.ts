@@ -3,7 +3,6 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import HomeDailyWorkspace from '@/components/home/HomeDailyWorkspace.vue'
-import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { seedDataStore } from './helpers/seedDataStore'
@@ -121,6 +120,20 @@ it('最近创作过滤其他作者及自动归档，按更新时间排序并统�
   await wrapper.findAll('.writing-row')[0]!.trigger('click')
   await flushPromises()
   expect(router.currentRoute.value.fullPath).toBe('/kb/kb-notes?doc=newer')
+  wrapper.unmount()
+})
+it('今日输入只统计本人今天新建的小记正文字符，排除空白、格式标记和图片地址', async () => {
+  const data = setup()
+  data.kbs = [{ ...data.kbs[0]!, id: 'kb-notes', notes: true }]
+  data.docs = {
+    today: doc('today', { content: { version: 1, document: null, markdown: '**你好** 👨‍👩‍👧‍👦 ![封面](/api/images/x/raw)\nA' } }),
+    old: doc('old', { created: '2026-09-22T10:00:00+08:00' }),
+    other: doc('other', { author: 'other' }),
+    automatic: doc('automatic', { auto: true }),
+  }
+  const { wrapper } = await render()
+  expect(wrapper.get('.writing-count-main strong').text()).toBe('4 字')
+  expect(wrapper.get('.writing-count-card').text()).toContain('今日新建小记正文字符')
   wrapper.unmount()
 })
 it('未知正文不显示零字，读取失败可重试，正文返回后显示真实字数', async () => {

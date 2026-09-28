@@ -8,6 +8,7 @@ import { relativeTime } from '@/utils/time'
 import { resolvedRichContent } from '@/utils/richDoc'
 import { renderMarkdown } from '@/utils/markdown'
 import { countCharacters } from '@/utils/characterCount'
+import { noteCharactersCreatedOn } from '@/utils/noteDailyCharacters'
 import type { Doc, RichDocNode } from '@/types'
 
 const data = useDataStore(),
@@ -29,6 +30,14 @@ const todayTasks = computed(() =>
       (a, b) => a.due.localeCompare(b.due) || a.pr.localeCompare(b.pr) || a.id.localeCompare(b.id),
     ),
 )
+const noteDocs = computed(() => {
+  const noteKbIds = new Set(data.kbs.filter(kb => kb.notes).map(kb => kb.id))
+  return Object.values(data.docs).filter(doc => noteKbIds.has(doc.kbId ?? '')
+    && !doc.auto && !data.isDocArchived(doc.id))
+})
+const todayNoteCharacters = computed(() => noteCharactersCreatedOn(
+  noteDocs.value, session.currentUser.id, today.value,
+))
 const recentDocs = computed(() =>
   Object.values(data.docs)
     .filter(
@@ -226,6 +235,17 @@ const writings = computed(() =>
         暂时没有未完成的项目，<RouterLink to="/projects">去项目列表看看</RouterLink>。
       </p>
     </section>
+    <section class="daily-card writing-count-card" aria-labelledby="home-writing-count-title">
+      <div class="writing-count-icon"><i class="ri-quill-pen-line" aria-hidden="true" /></div>
+      <div class="writing-count-main">
+        <h2 id="home-writing-count-title">今日输入</h2>
+        <p v-if="data.loadErrors.docs || data.loadErrors.knowledge" class="writing-count-state" role="alert">读取失败 · <button @click="data.loadErrors.knowledge ? data.hydrate() : data.refreshDocs()">重试</button></p>
+        <p v-else-if="docsLoading || ['idle', 'loading'].includes(data.loadStates.knowledge)" class="writing-count-state" role="status">正在统计…</p>
+        <strong v-else>{{ todayNoteCharacters.toLocaleString('zh-CN') }}<small> 字</small></strong>
+        <span>今日新建小记正文字符</span>
+      </div>
+      <RouterLink to="/notes" class="writing-count-link" aria-label="打开小记">查看小记 <i class="ri-arrow-right-s-line" /></RouterLink>
+    </section>
   </div>
 </template>
 
@@ -243,6 +263,23 @@ const writings = computed(() =>
   background: var(--wao-bg-card);
   overflow: hidden;
 }
+.writing-count-card {
+  min-height: 160px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, var(--wao-bg-card), color-mix(in srgb, var(--wao-primary) 5%, var(--wao-bg-card)));
+}
+.writing-count-icon { width: 42px; height: 42px; flex: none; display: grid; place-items: center; border-radius: 12px; background: color-mix(in srgb, var(--wao-primary) 10%, transparent); color: var(--wao-primary-text); font-size: 20px; }
+.writing-count-main { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.writing-count-main h2 { margin: 0; color: var(--wao-text-2); font-size: 13px; font-weight: 500; }
+.writing-count-main > strong { color: var(--wao-text); font-size: 30px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.writing-count-main > strong small { color: var(--wao-text-2); font-size: 13px; font-weight: 500; }
+.writing-count-main > span { color: var(--wao-text-faint); font-size: 11px; }
+.writing-count-state { margin: 0; color: var(--wao-text-2); font-size: 12px; }
+.writing-count-state button { padding: 0; border: 0; background: transparent; color: var(--wao-primary-text); }
+.writing-count-link { margin-left: auto; align-self: flex-end; font-size: 11px; white-space: nowrap; }
 .daily-card header {
   display: flex;
   align-items: center;
@@ -451,6 +488,7 @@ button:focus-visible {
   .empty {
     min-height: 150px;
   }
+  .writing-count-card { min-height: 132px; }
 }
 @media (max-width: 480px) {
   .daily-card header {

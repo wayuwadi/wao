@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useUiStore } from '@/stores/ui'
 import { docShareUrl } from '@/utils/share'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
@@ -11,14 +10,14 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
 import { notePreviewImages, notePreviewSource, type NotePreviewImage } from '@/utils/notePreviewImages'
-import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import type { Doc } from '@/types'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
 import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus, notePolishVersions, retryAutoNoteEnrichment, startAutoNoteEnrichment, startNoteEnrichmentStage } from '@/utils/autoNoteEnrichment'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
+import { useNow } from '@/composables/now'
+import { noteCharactersCreatedOn, shanghaiDateKey } from '@/utils/noteDailyCharacters'
 
-const ui = useUiStore()
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 
 const pinnedIds = ref<string[]>([])
@@ -47,6 +46,7 @@ async function togglePin(id: string) {
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const data = useDataStore()
 const session = useSessionStore()
+const now = useNow()
 const noteEditors = new Map<string, { copyFormatted: () => Promise<void> }>()
 type NoteComposerHandle = { dirty: boolean; save: () => Promise<void> }
 const noteComposers = new Map<string, NoteComposerHandle>()
@@ -293,15 +293,16 @@ const notes = computed(() => {
         - (Date.parse(b[sort.value === 'createdDesc' ? 'created' : 'updated']) || Date.parse(b.created) || 0))
       || b.id.localeCompare(a.id))
 })
+const todayCharacters = computed(() => noteCharactersCreatedOn(
+  notes.value, session.currentUser.id, shanghaiDateKey(now.value),
+))
+const todayCountError = computed(() => data.loadErrors.docs || data.loadErrors.knowledge)
+const todayCountLoading = computed(() => !todayCountError.value
+  && (['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge)))
 const availableTags = computed(() => [...new Set([...tagNames.value, ...notes.value.flatMap(note => note.tags ?? [])])].sort((a, b) => a.localeCompare(b, 'zh-CN')))
 const availableAuthors = computed(() => [...new Set(notes.value.map(note => note.author).filter(Boolean))]
   .map(id => ({ id, name: authorName(id) }))
   .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN') || a.id.localeCompare(b.id)))
-const tagCounts = computed(() => {
-  const counts = new Map<string, number>()
-  for (const note of notes.value) for (const tag of note.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
-  return counts
-})
 const matching = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
   return notes.value.filter(doc => (selectedTag.value === null ? !doc.tags?.length : !selectedTag.value || doc.tags?.includes(selectedTag.value))
@@ -325,7 +326,6 @@ function validPolish(note: { id: string; blocks: Doc['blocks']; content?: Doc['c
 const versions = ref<Record<string, 'polished' | 'original'>>({})
 function showPolished(note: Doc) { return !!validPolish(note) && versions.value[note.id] !== 'original' }
 function displayedMarkdown(note: Doc) { return showPolished(note) ? validPolish(note)!.polishedMarkdown : resolvedRichContent(note).markdown }
-function displayTitle(note: Doc) { return note.title.trim() !== firstMarkdownTextLine(resolvedRichContent(note).markdown).trim() }
 function stageIcon(stage: 'title' | 'image' | 'polish') { return { title: 'T', image: '▧', polish: '✦' }[stage] }
 function stageLabel(stage: 'title' | 'image' | 'polish') { return { title: '标题', image: '配图', polish: '润色' }[stage] }
 function progressVisible(id: string) {
@@ -470,7 +470,7 @@ onMounted(() => void loadPins())
 <template>
   <main class="notes-page" @contextmenu="openImageMenu">
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
-    <header class="page-heading"><div><h1><i class="ri-sticky-note-line"></i>小记</h1></div><span>{{ notes.length }} 条记录</span></header>
+    <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i>今日写字 {{ todayCharacters.toLocaleString('zh-CN') }} 字</span></div><span>{{ notes.length }} 条记录</span></header>
     <div class="notes-workspace">
       <aside class="writing-pane" aria-label="新建小记区">
         <NoteComposer :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
@@ -574,6 +574,12 @@ onMounted(() => void loadPins())
 <style scoped>
 .notes-page { width: 100%; max-width: none; margin: 0 auto; padding: 12px 28px 24px; box-sizing: border-box; color: var(--wao-text-2); }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.heading-title { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.daily-note-count { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--wao-line); border-radius: 8px; color: var(--wao-text-2); background: var(--wao-bg-card); font-size: 12px; white-space: nowrap; }
+.daily-note-count i { color: var(--wao-primary-text); }
+.daily-note-count.error { color: var(--wao-danger-text, #b42318); }
+.daily-note-count.error i { color: inherit; }
+.daily-note-count button { border: 0; padding: 0; background: transparent; color: var(--wao-primary-text); font: inherit; text-decoration: underline; }
 h1 { display: flex; gap: 10px; align-items: center; font-size: 18px; margin: 0; color: var(--wao-text); }
 h1 i { color: #7a5cc6; }
 .page-heading p { margin: 0; color: var(--wao-text-faint); font-size: 13px; }
@@ -743,6 +749,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 @media (min-width: 821px) {
   .notes-page { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px; }
   .page-heading { flex: none; }
+  .heading-title { gap: 8px; flex-wrap: wrap; }
   .notes-workspace { flex: 1; min-height: 0; align-items: stretch; overflow: hidden; }
   .writing-pane { position: static; min-height: 0; display: flex; flex-direction: column; overflow: auto; overscroll-behavior: contain; }
   .writing-pane :deep(.note-composer:not(.fullscreen)) { flex: 1; min-height: 0; max-height: none; }
