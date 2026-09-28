@@ -325,14 +325,12 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.find('.note-meta .note-count').exists()).toBe(false)
     expect(wrapper.find('[aria-label="当前正文字数"]').exists()).toBe(true)
-    expect(wrapper.find('.composer-image-rail img').attributes('src')).toBe('/api/images/one/preview')
-    await wrapper.find('.composer-image-rail .rail-image').trigger('click')
-    await flushPromises()
-    expect(document.body.querySelector('.composer-image-lightbox img')?.getAttribute('src')).toBe('/api/images/one/raw')
+    expect(wrapper.find('.composer-editor-main img.md-img').attributes('src')).toBe('/api/images/one/preview')
+    expect(wrapper.find('.composer-image-rail').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('正文图片显示缩略图和大图，二者右键都可复制地址', async () => {
+  it('正文图片保留原位置并可查看大图，右键可复制地址', async () => {
     const note = doc('images', '有图小记')
     note.content = { version: 1, markdown: '正文\n\n![图一](/api/images/one/raw)\n\n![图二](/api/images/two/raw)',
       document: { type: 'doc', content: [
@@ -341,20 +339,23 @@ describe('小记集中记录空间', () => {
         { type: 'image', attrs: { src: '/api/images/two/raw', alt: '图二' } },
       ] } }
     useDataStore().docs.images = note
-    const wrapper = await view()
-    const thumbs = wrapper.findAll('[data-note-id="images"] .note-image-thumb')
-    expect(thumbs).toHaveLength(2)
-    expect(wrapper.find('[data-note-id="images"] .note-image-rail').text()).toContain('2 张')
-    expect(wrapper.find('[data-note-id="images"] .note-content.has-images').exists()).toBe(true)
-    expect(thumbs.map(thumb => thumb.find('img').attributes('src'))).toEqual(['/api/images/one/preview', '/api/images/two/preview'])
-    await thumbs[0]!.find('img').trigger('contextmenu', { clientX: 80, clientY: 80 })
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }] })
+    await router.push('/notes')
+    const wrapper = mount(NotesView, { global: { plugins: [router], stubs: { NoteMiningPanel: true } } })
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    const images = wrapper.findAll('[data-note-id="images"] .note-body img.md-img')
+    expect(images).toHaveLength(2)
+    expect(wrapper.find('[data-note-id="images"] .note-image-rail').exists()).toBe(false)
+    expect(images.map(image => image.attributes('src'))).toEqual(['/api/images/one/preview', '/api/images/two/preview'])
+    await images[0]!.trigger('contextmenu', { clientX: 80, clientY: 80 })
     await flushPromises()
     expect(document.body.querySelector('[role="menu"][aria-label="图片操作"]')?.textContent).toContain('复制图片地址')
     expect(document.body.querySelector('[role="menu"][aria-label^="小记："]')).toBeNull()
     document.body.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="图片操作"] button')[1]?.click()
     await flushPromises()
     expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/api/images/one/raw`, '图片地址已复制')
-    await thumbs[1]!.trigger('click')
+    await images[1]!.trigger('click')
     expect(document.body.querySelector('.note-image-lightbox img')?.getAttribute('src')).toBe('/api/images/two/raw')
     document.body.querySelector('.note-image-lightbox img')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     await flushPromises()
