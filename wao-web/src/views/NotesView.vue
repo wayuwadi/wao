@@ -14,7 +14,7 @@ import { notePreviewImages, notePreviewSource, type NotePreviewImage } from '@/u
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import type { Doc } from '@/types'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
-import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus, notePolishVersions, retryAutoNoteEnrichment, startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
+import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus, notePolishVersions, retryAutoNoteEnrichment, startAutoNoteEnrichment, startNoteEnrichmentStage } from '@/utils/autoNoteEnrichment'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
 
@@ -330,7 +330,7 @@ function stageIcon(stage: 'title' | 'image' | 'polish') { return { title: 'T', i
 function stageLabel(stage: 'title' | 'image' | 'polish') { return { title: '标题', image: '配图', polish: '润色' }[stage] }
 function progressVisible(id: string) {
   const steps = noteEnrichmentProgress[id]
-  return !!steps && !((steps.title === 'done' || steps.title === 'skipped') && (steps.image === 'done' || steps.image === 'skipped') && (steps.polish === 'done' || steps.polish === 'skipped'))
+  return !steps || !((steps.title === 'done' || steps.title === 'skipped') && (steps.image === 'done' || steps.image === 'skipped') && (steps.polish === 'done' || steps.polish === 'skipped'))
 }
 function hasPendingNoteDraft(note: Doc) {
   const key = `wao-note-edit-v1:${session.currentUser.id}:${note.id}`
@@ -350,7 +350,7 @@ function hasPendingNoteDraft(note: Doc) {
     return true
   } catch { return true /* 无法确认内容相同时保留草稿。 */ }
 }
-async function retryOrStart(note: Doc) {
+async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish') {
   if (retryingEnrichment.value.includes(note.id)) return
   retryingEnrichment.value = [...retryingEnrichment.value, note.id]
   try {
@@ -372,15 +372,22 @@ async function retryOrStart(note: Doc) {
       noteEnrichmentStatus[note.id] = '自动整理未完成：本地草稿尚未保存，请先在编辑卡片中保存后重试'
       return
     }
+    if (stage && noteEnrichmentProgress[note.id]?.[stage] !== 'failed') {
+      const latest = data.docById(note.id) ?? note
+      if (latest.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, latest.rev, stage)
+      return
+    }
     noteEnrichmentStatus[note.id] = '正在重试未完成的自动整理…'
     if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) await retryAutoNoteEnrichment(session.currentUser.id, note.id)
+    else if (stage && note.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, note.rev, stage)
     else if (note.rev) startAutoNoteEnrichment(session.currentUser.id, note.id, note.rev, { title: true, image: true })
   } finally {
     retryingEnrichment.value = retryingEnrichment.value.filter(id => id !== note.id)
   }
 }
 function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish') {
-  if (noteEnrichmentProgress[note.id]?.[stage] === 'failed') retryOrStart(note)
+  if (noteEnrichmentProgress[note.id]?.[stage] === 'running') return
+  void retryOrStart(note, stage)
 }
 // 筛选、分页或远端刷新不能卸载正在输入的卡片，尤其是浏览器草稿写入失败时。
 const retainedEdits = computed(() => notes.value.filter(note => editingIds.value.includes(note.id)
@@ -509,8 +516,8 @@ onMounted(() => void loadPins())
           tabindex="0" :aria-expanded="expandedIds.includes(note.id)" :title="expandedIds.includes(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑'" :aria-label="`小记：${note.title}，单击${expandedIds.includes(note.id) ? '收起' : '展开'}全文，按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
-            <div v-if="noteEnrichmentProgress[note.id]" class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出进度">
-              <button v-for="stage in (['title', 'image', 'polish'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage]}`" :title="`${stageLabel(stage)}：${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${{ done: '已完成', running: '正在处理', pending: '等待处理', failed: '失败，点击重试', skipped: '已跳过' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-disabled="noteEnrichmentProgress[note.id]?.[stage] !== 'failed'" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
+            <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出与按需操作">
+              <button v-for="stage in (['title', 'image', 'polish'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage] || 'pending'}`" :disabled="retryingEnrichment.includes(note.id) || noteEnrichmentProgress[note.id]?.[stage] === 'running'" :title="`${stageLabel(stage)}：${{ done: '已完成，点击重新生成', running: '正在处理', pending: '未生成，点击开始', failed: '失败，点击重试', skipped: '未启用，点击开始' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${{ done: '已完成，点击重新生成', running: '正在处理', pending: '未生成，点击开始', failed: '失败，点击重试', skipped: '未启用，点击开始' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
             </div>
             <div v-if="validPolish(note)" class="version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(note)" @click="versions[note.id] = 'polished'">润色</button><button type="button" :aria-pressed="!showPolished(note)" @click="versions[note.id] = 'original'">原文</button></div>
             <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
@@ -618,11 +625,13 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-meta { font-size: 11px; color: var(--wao-text-faint); margin-bottom: 16px; flex-wrap: wrap; gap: 5px 9px; }
 .stage-list { display: inline-flex; align-items: center; gap: 4px; }
 .stage-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--wao-line-control); border-radius: 50%; font-size: 12px; font-weight: 700; }
-.stage-icon:disabled { opacity: 1; }
+.stage-icon:not(:disabled) { cursor: pointer; }
+.stage-icon:not(:disabled):hover, .stage-icon:not(:disabled):focus-visible { border-color: var(--wao-primary); color: var(--wao-primary-text); outline: none; box-shadow: 0 0 0 2px var(--wao-bg-hover); }
+.stage-pending, .stage-skipped { color: var(--wao-text-2); background: var(--wao-bg-card); }
 .stage-done { color: #248455; border-color: #a6dac0; background: #effaf4; }
 .stage-running { color: #7453bd; border-color: #c6b4ef; background: #f5f0ff; animation: stage-pulse 1.5s infinite; }
 .stage-failed { color: var(--wao-danger-strong); border-color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
-.stage-skipped { opacity: .55 !important; }
+.stage-skipped { opacity: 1; }
 .stage-list-complete, .version-toggle { opacity: 0; visibility: hidden; transition: opacity .16s; }
 .note-card:hover .stage-list-complete, .note-card:focus-within .stage-list-complete, .note-card:hover .version-toggle, .note-card:focus-within .version-toggle { opacity: 1; visibility: visible; }
 .version-toggle { display: inline-flex; gap: 2px; border-radius: 7px; background: var(--wao-bg-sub); }
@@ -647,7 +656,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-card.fixed-height .note-heading h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .note-content.has-images { display: grid; grid-template-columns: minmax(0, 1fr) 174px; gap: 14px; align-items: start; }
 .note-body { min-height: 0; overflow-wrap: anywhere; line-height: 1.75; font-size: 13px; }
-.note-card.fixed-height .note-body { max-height: 170px; overflow: hidden; }
+.note-card.fixed-height .note-body { max-height: 170px; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent); }
 .note-body :deep(p:first-child) { margin-top: 0; }
 .note-body :deep(img.md-img) { display: none !important; }
 .note-body :deep(.character-count) { display: none !important; }

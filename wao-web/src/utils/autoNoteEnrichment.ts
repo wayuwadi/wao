@@ -314,6 +314,39 @@ export function startAutoNoteEnrichment(memberId: string, docId: string, rev: nu
   void run(job)
 }
 
+/** 从小记卡片启动单项生成；历史小记没有自动整理记录时也可按需使用。 */
+export function startNoteEnrichmentStage(memberId: string, docId: string, rev: number,
+    stage: 'title' | 'image' | 'polish') {
+  if (!memberId || !docId || running.has(keyOf(memberId, docId))) return
+  activateNoteWorkflowMember(memberId)
+  const key = keyOf(memberId, docId)
+  discarded.delete(key)
+  let job = load(memberId, docId)
+  if (!job) {
+    job = {
+      memberId, docId, rev, titleRequestId: newPolishRequestId(), titleDone: false,
+      titleEnabled: stage === 'title', imageDone: false, imageEnabled: stage === 'image',
+      polishDone: false, polishEnabled: stage === 'polish',
+    }
+  } else {
+    job.rev = rev || job.rev
+    if (stage === 'title') {
+      job.titleEnabled = true; job.titleDone = false; job.titleTerminalFailed = false
+      job.titleRequestId = newPolishRequestId()
+    } else if (stage === 'image') {
+      job.imageEnabled = true; job.imageDone = false; job.imageJobId = undefined; job.imageRequestId = undefined
+    } else {
+      job.polishEnabled = true; job.polishDone = false; job.polishTerminalFailed = false
+      job.polishRequestId = newPolishRequestId()
+    }
+  }
+  try { localStorage.removeItem(`${COMPLETE_PREFIX}${memberId}:${docId}`) } catch { /* 非关键状态。 */ }
+  save(job)
+  progress(job, stage, 'pending')
+  noteEnrichmentStatus[docId] = `正在启动${stage === 'title' ? '标题生成' : stage === 'image' ? '配图生成' : '正文润色'}…`
+  void run(job)
+}
+
 /** 页面刷新后继续读取已有任务，不重复提交生成请求。 */
 export function resumeAutoNoteEnrichment(memberId: string) {
   if (!memberId) return
