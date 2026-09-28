@@ -184,6 +184,48 @@ async function run(job: AutoJob) {
       save(job)
       progress(job, stage, 'done')
     }
+    if (job.polishEnabled !== false && !job.polishDone) {
+      stage = 'polish'
+      progress(job, stage, 'running')
+      noteEnrichmentStatus[job.docId] = '正在润色文案…'
+      const latest = await fetchDoc(job.docId)
+      if (!activeJob(job)) return
+      if (latest.rev !== job.rev || data.docPending(job.docId)
+          || hasUnsavedEdit(job.memberId, job.docId)) {
+        throw new Error('小记正文已变化，旧润色任务不会覆盖新内容；请重试')
+      }
+      const sourceMarkdown = resolvedRichContent(latest).markdown
+      const originalText = noteTextForPolish(sourceMarkdown)
+      if (originalText.length > 12_000) throw new Error('正文超过单次润色的 12000 字上限，请分段处理')
+      job.polishRequestId ??= newPolishRequestId()
+      save(job)
+      try {
+        const result = await waitForPolish(originalText, 'NOTE_BODY', {
+          model, notePolishPrompt: polishPrompt,
+          requestId: job.polishRequestId,
+          isActive: () => activeJob(job),
+          onProgress: value => { if (value.status === 'FAILED') job.polishTerminalFailed = true },
+        })
+        if (!result.polished?.trim()) throw new Error('AI 未返回可用润色正文')
+        if (!activeJob(job)) return
+        const version = await saveNotePolishVersion(job.docId, sourceMarkdown, result.polished)
+        if (!activeJob(job)) return
+        notePolishVersions[job.docId] = version
+        job.polishDone = true
+        job.polishTerminalFailed = false
+        save(job)
+        progress(job, stage, 'done')
+      } catch (cause) {
+        if (!activeJob(job)) return
+        job.polishTerminalFailed = true
+        const message = cause instanceof Error ? cause.message : '文案润色失败'
+        stageErrors.push(`润色：${message}`)
+        job.error = stageErrors.join('；')
+        save(job)
+        progress(job, stage, 'failed')
+      }
+    }
+    // 文字润色先独立提交并取得结果，避免单张总览图的串行限制挡住其它小记的润色。
     if (job.imageEnabled !== false && !job.imageDone) {
       stage = 'image'
       progress(job, stage, 'running')
@@ -253,47 +295,6 @@ async function run(job: AutoJob) {
         const message = cause instanceof Error ? cause.message : '配图生成失败'
         if (/已被修改|有未保存编辑/.test(message)) throw cause
         stageErrors.push(`配图：${message}`)
-        job.error = stageErrors.join('；')
-        save(job)
-        progress(job, stage, 'failed')
-      }
-    }
-    if (job.polishEnabled !== false && !job.polishDone) {
-      stage = 'polish'
-      progress(job, stage, 'running')
-      noteEnrichmentStatus[job.docId] = '正在润色文案…'
-      const latest = await fetchDoc(job.docId)
-      if (!activeJob(job)) return
-      if (latest.rev !== job.rev || data.docPending(job.docId)
-          || hasUnsavedEdit(job.memberId, job.docId)) {
-        throw new Error('小记正文已变化，旧润色任务不会覆盖新内容；请重试')
-      }
-      const sourceMarkdown = resolvedRichContent(latest).markdown
-      const originalText = noteTextForPolish(sourceMarkdown)
-      if (originalText.length > 12_000) throw new Error('正文超过单次润色的 12000 字上限，请分段处理')
-      job.polishRequestId ??= newPolishRequestId()
-      save(job)
-      try {
-        const result = await waitForPolish(originalText, 'NOTE_BODY', {
-          model, notePolishPrompt: polishPrompt,
-          requestId: job.polishRequestId,
-          isActive: () => activeJob(job),
-          onProgress: value => { if (value.status === 'FAILED') job.polishTerminalFailed = true },
-        })
-        if (!result.polished?.trim()) throw new Error('AI 未返回可用润色正文')
-        if (!activeJob(job)) return
-        const version = await saveNotePolishVersion(job.docId, sourceMarkdown, result.polished)
-        if (!activeJob(job)) return
-        notePolishVersions[job.docId] = version
-        job.polishDone = true
-        job.polishTerminalFailed = false
-        save(job)
-        progress(job, stage, 'done')
-      } catch (cause) {
-        if (!activeJob(job)) return
-        job.polishTerminalFailed = true
-        const message = cause instanceof Error ? cause.message : '文案润色失败'
-        stageErrors.push(`润色：${message}`)
         job.error = stageErrors.join('；')
         save(job)
         progress(job, stage, 'failed')

@@ -38,7 +38,7 @@ describe('小记保存后自动生成', () => {
     vi.mocked(fetchDoc).mockResolvedValueOnce(doc(1) as never)
       .mockResolvedValueOnce(doc(1) as never)
       .mockResolvedValueOnce(doc(2, '打印流程复盘') as never)
-      .mockResolvedValueOnce(doc(3, '打印流程复盘') as never)
+      .mockResolvedValueOnce(doc(2, '打印流程复盘') as never)
     vi.mocked(apiPatchDoc).mockResolvedValueOnce(doc(2, '打印流程复盘') as never)
       .mockResolvedValueOnce(doc(3, '打印流程复盘') as never)
     vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj1', status: 'SUCCEEDED', message: '', polished: '打印流程复盘' })

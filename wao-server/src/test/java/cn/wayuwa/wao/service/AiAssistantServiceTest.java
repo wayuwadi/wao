@@ -68,6 +68,20 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void notePolishJobsCanQueueAlongsideOtherActiveRuns() {
+        when(mapper.selectCount(any())).thenReturn(1L);
+
+        String first = service.enqueueNotePolishJob("note-1", "第一篇", "保留原意", "gpt-6-luna");
+        String second = service.enqueueNotePolishJob("note-2", "第二篇", "保留原意", "gpt-6-luna");
+
+        assertThat(first).isNotEqualTo(second);
+        verify(mapper, org.mockito.Mockito.times(2)).insertReadOnlyQueued(any(AiAssistantRunEntity.class));
+        assertThatThrownBy(() -> service.enqueueReadOnlyJob("other", "常规分析"))
+                .isInstanceOf(cn.wayuwa.wao.common.BadRequestException.class)
+                .hasMessageContaining("已有一项内部只读分析");
+    }
+
+    @Test
     void unifiedDefaultRoutesReadOnlyJobsToApiAndFallsBackAfterRemoval() {
         AiRunAccountDto api = new AiRunAccountDto("aa1", "deepseek", "默认模型", "api_key",
                 null, "test-value", "https://api.deepseek.com", "deepseek-chat", "chat_completions");
