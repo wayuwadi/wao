@@ -121,7 +121,7 @@
 - 页面选择 DeepSeek 或受信模型网关时，assistant-v2 Runner 先以 `ASSISTANT_WEB_SEARCH` 生成最多 20,000 字、带公开 URL 的有界联网材料，再 CAS 转入
   `provider_queued`，由用户选定的 Provider 生成最终答复；不能把最终回答偷偷换成本地 Codex。联网材料在终态与完整提示一起清除，任一阶段失败不静默降级。
 - 任一强制开关不被当前 Codex CLI 识别时，该只读任务必须失败关闭；Runner 不得删去开关后重试、切换到可用工具的旧模式或继承开发任务权限。Codex 非零退出时不得回传
-  stdout 或最后消息中的部分答案，只回传稳定失败类别与退出码；服务端只保存有界稳定错误，不保存部分 `response_text`。Runner 在尝试 v2 完成回传后进入 `finally`，无论成功、非零、单调超时或回传失败都清理临时仓库与 `CODEX_HOME`。
+  stdout 或最后消息中的部分答案，只回传稳定失败类别与退出码；服务端只保存有界稳定错误，不保存部分 `response_text`。Runner 对文章配图的 Codex 失败事件只回传固定错误类别，并对网络、服务异常和未知错误最多自动重试一次；认证、额度与工具不可用错误不重试。Runner 在尝试 v2 完成回传后进入 `finally`，无论成功、非零、单调超时或回传失败都清理临时仓库与 `CODEX_HOME`。
 - Runner / 服务端验收覆盖 `secure_queued / secure_running`、无兼容 Runner 在线时仍可入队并由 60 分钟 DB 超时收口、精确 bundled-script hash 能力门禁、旧 Runner / 旧 API 滚动发布 fail-closed、旧 v1 路由 404 且不回退、v2 `claimToken / maxRuntimeSeconds`、单调截止和全路径临时目录清理。
   另需验证旧 `claimToken` 迟到完成更新 0 行，后台在没有任何结果查询时仍会清理安全排队 / 执行超时、清空提示与 token，安全执行不会被 3 分钟 JVM stale requeue，且 DB 硬超时与正常完成竞争时不覆盖先到终态。
 - 内部只读队列与聊天复盘的数据库集成测试使用与生产一致的 `mysql:9.7.0` Testcontainers：Docker 可用时覆盖 Flyway V1–V81、全局活动唯一约束、lease、归档身份与 CAS、
