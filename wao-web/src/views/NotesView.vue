@@ -122,7 +122,7 @@ const deletingId = ref('')
 const confirmingDeleteId = ref('')
 const deleteError = ref<{ id: string; message: string } | null>(null)
 function closeEditing(id: string) { editingIds.value = editingIds.value.filter(item => item !== id) }
-let cardClickTimer: ReturnType<typeof window.setTimeout> | undefined
+let cardClickTimer: number | undefined
 let pendingCardClickId = ''
 function clearCardClickTimer() {
   if (cardClickTimer !== undefined) window.clearTimeout(cardClickTimer)
