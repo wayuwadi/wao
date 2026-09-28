@@ -326,11 +326,34 @@ function progressVisible(id: string) {
   const steps = noteEnrichmentProgress[id]
   return !!steps && !((steps.title === 'done' || steps.title === 'skipped') && (steps.image === 'done' || steps.image === 'skipped') && (steps.polish === 'done' || steps.polish === 'skipped'))
 }
+function hasPendingNoteDraft(note: Doc) {
+  const key = `wao-note-edit-v1:${session.currentUser.id}:${note.id}`
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === null) return false
+    const draft = JSON.parse(raw) as { id?: string; text?: string; content?: Doc['content']; tags?: string[]; generatedTitle?: string }
+    const saved = resolvedRichContent(note)
+    // 旧浏览器留下的草稿若与服务端完全一致，不应永久挡住失败任务重试。
+    if (draft.id === note.id && draft.text === saved.markdown
+        && JSON.stringify(draft.content?.document ?? null) === JSON.stringify(saved.document ?? null)
+        && JSON.stringify(draft.tags ?? []) === JSON.stringify(note.tags ?? [])
+        && (draft.generatedTitle || note.title) === note.title) {
+      localStorage.removeItem(key)
+      return false
+    }
+    return true
+  } catch { return true /* 无法确认内容相同时保留草稿。 */ }
+}
 async function retryOrStart(note: Doc) {
   if (retryingEnrichment.value.includes(note.id)) return
   retryingEnrichment.value = [...retryingEnrichment.value, note.id]
   try {
     const composer = noteComposers.get(note.id)
+    if (!composer && hasPendingNoteDraft(note)) {
+      await editNote(note.id)
+      noteEnrichmentStatus[note.id] = '自动整理未完成：已打开本地草稿，请确认并保存后再次重试'
+      return
+    }
     if (composer?.dirty) {
       noteEnrichmentStatus[note.id] = '正在保存小记修改，再继续重试…'
       await composer.save()
@@ -339,6 +362,11 @@ async function retryOrStart(note: Doc) {
         return
       }
     }
+    if (hasPendingNoteDraft(data.docById(note.id) ?? note)) {
+      noteEnrichmentStatus[note.id] = '自动整理未完成：本地草稿尚未保存，请先在编辑卡片中保存后重试'
+      return
+    }
+    noteEnrichmentStatus[note.id] = '正在重试未完成的自动整理…'
     if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) await retryAutoNoteEnrichment(session.currentUser.id, note.id)
     else if (note.rev) startAutoNoteEnrichment(session.currentUser.id, note.id, note.rev, { title: true, image: true })
   } finally {
