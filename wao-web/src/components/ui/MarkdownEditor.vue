@@ -26,6 +26,7 @@ import { Markdown } from '@tiptap/markdown'
 import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
 import { TableKit } from '@tiptap/extension-table'
 import { CellSelection } from '@tiptap/pm/tables'
+import { Plugin } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { Mathematics } from '@tiptap/extension-mathematics'
@@ -59,6 +60,27 @@ import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, M
 
 const lowlight = createLowlight(common)
 const PASTE_COLORS = new Set(['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0', '#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe'])
+
+/** 合并相邻的默认有序列表，确保在列表前插入新条目后原条目自动顺延。 */
+const OrderedListContinuation = Extension.create({
+  name: 'orderedListContinuation',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      appendTransaction: (transactions, _oldState, newState) => {
+        if (!transactions.some(transaction => transaction.docChanged)) return null
+        let joinPosition: number | null = null
+        newState.doc.descendants((node, position, parent, index) => {
+          if (joinPosition !== null || node.type.name !== 'orderedList' || !parent || index >= parent.childCount - 1) return
+          const next = parent.child(index + 1)
+          if (next.type === node.type && node.attrs.start === 1 && next.attrs.start === 1 && node.attrs.type === next.attrs.type) {
+            joinPosition = position + node.nodeSize
+          }
+        })
+        return joinPosition === null ? null : newState.tr.join(joinPosition)
+      },
+    })]
+  },
+})
 
 /** 清理 Word / 飞书粘贴 HTML：保留语义标签，去掉脚本、事件、任意样式和危险 URL。 */
 function sanitizePastedHtml(source: string): string {
@@ -430,6 +452,7 @@ const editor = useEditor({
   contentType: props.document ? 'json' : 'markdown',
   editable: !props.readonly,
   extensions: [
+    OrderedListContinuation,
     StarterKit.configure({
       // 只有知识库文档开放 h1；描述场景仍限制成 h2–h4，避免压过页面标题。
       heading: { levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] },
