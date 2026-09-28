@@ -1964,6 +1964,10 @@ onBeforeUnmount(() => {
           :options="{ placement: 'bottom', offset: 8 }"
         >
           <form class="image-size-toolbar" aria-label="调整图片大小" @submit.prevent="applyImageDimensions">
+            <header class="image-toolbar-heading">
+              <span><b>图片设置</b><small>选中图片时显示 · 点击图片外关闭</small></span>
+              <button type="button" aria-label="关闭图片设置" title="关闭图片设置" @mousedown.prevent @click="editor?.commands.blur()"><i class="ri-close-line" aria-hidden="true"></i></button>
+            </header>
             <div class="image-scale-options">
               <button
                 v-for="percent in IMAGE_SCALES"
@@ -2445,7 +2449,17 @@ onBeforeUnmount(() => {
 .image-size-toolbar {
   width: min(390px, calc(100vw - 20px));
   padding: 9px;
+  animation: image-toolbar-in .14s ease-out;
+  transform-origin: top center;
 }
+.image-toolbar-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 6px; }
+.image-toolbar-heading span { display:grid; gap:2px; }
+.image-toolbar-heading b { font-size:11px; font-weight:650; }
+.image-toolbar-heading small { color:rgba(255,255,255,.62); font-size:9px; }
+.image-toolbar-heading button { display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; border-radius:6px; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; }
+.image-toolbar-heading button:hover { background:rgba(255,255,255,.16); }
+@keyframes image-toolbar-in { from { opacity:0; transform:translateY(-3px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .image-size-toolbar { animation: none; } }
 .image-scale-options,
 .image-pixel-fields,
 .image-size-actions {
