@@ -162,6 +162,12 @@ function scheduleCardPreview(id: string, event: MouseEvent) {
       : [...expandedIds.value, clickedId]
   }, 260)
 }
+function toggleNotePreview(id: string) {
+  clearCardClickTimer()
+  expandedIds.value = expandedIds.value.includes(id)
+    ? expandedIds.value.filter(item => item !== id)
+    : [...expandedIds.value, id]
+}
 function toggleDeleteConfirmation(id: string) {
   if (deletingId.value) return
   confirmingDeleteId.value = confirmingDeleteId.value === id ? '' : id
@@ -514,7 +520,7 @@ onMounted(() => void loadPins())
           <template v-else>
           <div class="note-heading"><h2>{{ note.title }}</h2><div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
           <div class="note-content" :class="{ 'has-images': imagesFor(note.id).length }"><div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="showPolished(note) ? undefined : resolvedRichContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="noteCounts[note.id] = $event" /></div><aside v-if="imagesFor(note.id).length" class="note-image-rail" aria-label="小记图片总览"><div class="rail-heading">图片总览 <span>{{ imagesFor(note.id).length }} 张</span></div><div class="note-images"><button v-for="(image, index) in imagesFor(note.id)" :key="`${index}:${image.src}`" type="button" class="note-image-thumb" :class="{ cover: image.alt === '文章总览图' }" :aria-label="`查看第 ${index + 1} 张图片大图${image.alt ? `：${image.alt}` : ''}`" @click="openImage(image, $event)"><img :src="notePreviewSource(image.src)" :data-full-src="image.src" :alt="image.alt" loading="lazy" decoding="async"><span>{{ image.alt || `图片 ${index + 1}` }}</span></button></div></aside></div>
-          <button class="note-read-action" type="button" @click="startReading(note.id)"><i class="ri-book-open-line"></i> 阅读</button>
+          <button class="note-read-action" type="button" :aria-expanded="expandedIds.includes(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="expandedIds.includes(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ expandedIds.includes(note.id) ? '收起全文' : '展开全文' }}</button>
           </template>
           <div v-if="confirmingDeleteId === note.id" class="card-delete-confirm" role="group" :aria-label="`确认删除小记：${note.title}`">
             <span>将此小记移入回收站？7 天内可恢复。{{ editingIds.includes(note.id) ? '当前未保存的编辑会丢失。' : '' }}</span>
@@ -681,11 +687,10 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .mining-modal:focus-visible { outline: 3px solid var(--wao-primary); outline-offset: 3px; }
 .mining-modal-close { position: sticky; z-index: 2; top: -18px; float: right; display: grid; place-items: center; width: 34px; height: 34px; margin: -10px -10px 0 0; padding: 0; border: 1px solid var(--wao-line-control); border-radius: 50%; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 19px; box-shadow: 0 3px 12px rgba(30, 24, 55, .1); }
 @keyframes mining-modal-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
-.note-read-action { position: absolute; right: 13px; bottom: 8px; z-index: 1; padding: 5px 8px; background: var(--wao-bg-card); color: var(--wao-primary-text); border: 1px solid var(--wao-line-control); box-shadow: 0 2px 8px rgba(30,24,55,.08); }
+.note-read-action { position: absolute; right: 13px; bottom: 8px; z-index: 1; display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; background: var(--wao-bg-card); color: var(--wao-primary-text); border: 1px solid var(--wao-line-control); box-shadow: 0 2px 8px rgba(30,24,55,.08); }
 .note-read-action:hover { border-color: var(--wao-primary); }
-.note-read-action { opacity: 0; visibility: hidden; transition: opacity .16s, visibility .16s; }
-.note-card:hover .note-read-action, .note-card:focus-within .note-read-action { opacity: 1; visibility: visible; }
-.note-card.expanded .note-read-action { position: static; display: block; width: fit-content; margin: 12px 0 0 auto; opacity: 1; visibility: visible; }
+.note-read-action { transition: border-color .16s, background-color .16s; }
+.note-card.expanded .note-read-action { position: static; display: inline-flex; width: fit-content; margin: 12px 0 0 auto; }
 .mining-toggle { opacity: 0; visibility: hidden; transition: opacity .16s, visibility .16s; }
 .notes-list:hover .mining-toggle, .notes-list:focus-within .mining-toggle { opacity: 1; visibility: visible; }
 .notes-reader { position: fixed; inset: 0; z-index: 1150; display: grid; grid-template-rows: 52px minmax(0,1fr) 58px; padding: 0 90px; background: radial-gradient(ellipse at 50% 0%, rgba(103,82,177,.1), transparent 52%), var(--wao-bg-page); color: var(--wao-text-2); }
