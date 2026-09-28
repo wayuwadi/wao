@@ -88,6 +88,25 @@ const selectedAuthor = ref('')
 const filterOpen = ref(false)
 const filterControl = ref<HTMLElement>()
 const selectedTag = ref<string | null>('')
+const noteListPreferenceKey = `wao-note-list-preferences-v1:${session.currentUser.id}`
+const noteListPreferenceLoaded = ref(false)
+function restoreNoteListPreferences() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(noteListPreferenceKey) || 'null') as Partial<{ sort: string; imageFilter: string; timeFilter: string; selectedAuthor: string; selectedTag: string | null }> | null
+    if (saved?.sort && ['updatedDesc', 'createdDesc', 'updatedAsc'].includes(saved.sort)) sort.value = saved.sort as typeof sort.value
+    if (saved?.imageFilter && ['all', 'yes', 'no'].includes(saved.imageFilter)) imageFilter.value = saved.imageFilter as typeof imageFilter.value
+    if (saved?.timeFilter && ['all', 'today', 'yesterday', 'earlier'].includes(saved.timeFilter)) timeFilter.value = saved.timeFilter as typeof timeFilter.value
+    if (typeof saved?.selectedAuthor === 'string') selectedAuthor.value = saved.selectedAuthor
+    if (saved?.selectedTag === null || typeof saved?.selectedTag === 'string') selectedTag.value = saved.selectedTag
+  } catch { /* 忽略损坏的列表偏好，使用默认筛选。 */ }
+  noteListPreferenceLoaded.value = true
+}
+restoreNoteListPreferences()
+watch([sort, imageFilter, timeFilter, selectedAuthor, selectedTag], () => {
+  if (!noteListPreferenceLoaded.value) return
+  try { localStorage.setItem(noteListPreferenceKey, JSON.stringify({ sort: sort.value, imageFilter: imageFilter.value, timeFilter: timeFilter.value, selectedAuthor: selectedAuthor.value, selectedTag: selectedTag.value })) }
+  catch { /* 偏好无法持久化时仍可在当前页面使用筛选。 */ }
+}, { flush: 'sync' })
 const activeFilterCount = computed(() => Number(!!selectedTag.value || selectedTag.value === null)
   + Number(!!selectedAuthor.value) + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc'))
 const filterSummary = computed(() => [selectedTag.value === null ? '无标签' : selectedTag.value ? `# ${selectedTag.value}` : '',
@@ -229,6 +248,7 @@ const notesList = ref<HTMLElement>()
 const highlighted = ref('')
 const reading = ref(false)
 const readingIndex = ref(0)
+const readerPage = ref<HTMLElement | null>(null)
 const miningOpen = ref(false)
 const miningDialog = ref<HTMLElement | null>(null)
 let miningTrigger: HTMLElement | null = null
@@ -271,8 +291,18 @@ function onReaderKeydown(event: KeyboardEvent) {
   const target = event.target
   if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]')) return
   if (event.key === 'Escape') { event.preventDefault(); stopReading(); return }
-  if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); moveReader(1); return }
-  if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(event.key)) { event.preventDefault(); moveReader(-1); return }
+  if (event.key === 'ArrowRight') { event.preventDefault(); moveReader(1); return }
+  if (event.key === 'ArrowLeft') { event.preventDefault(); moveReader(-1); return }
+  if (['ArrowDown', 'PageDown', ' '].includes(event.key)) {
+    event.preventDefault()
+    readerPage.value?.scrollBy({ top: Math.max(96, readerPage.value.clientHeight * (event.key === 'ArrowDown' ? .35 : .82)), behavior: 'smooth' })
+    return
+  }
+  if (['ArrowUp', 'PageUp'].includes(event.key)) {
+    event.preventDefault()
+    readerPage.value?.scrollBy({ top: -Math.max(96, readerPage.value.clientHeight * (event.key === 'ArrowUp' ? .35 : .82)), behavior: 'smooth' })
+    return
+  }
   if (event.key === 'Home') { event.preventDefault(); readingIndex.value = 0 }
   if (event.key === 'End') { event.preventDefault(); readingIndex.value = Math.max(0, readerNotes.value.length - 1) }
 }
@@ -326,11 +356,11 @@ function validPolish(note: { id: string; blocks: Doc['blocks']; content?: Doc['c
 const versions = ref<Record<string, 'polished' | 'original'>>({})
 function showPolished(note: Doc) { return !!validPolish(note) && versions.value[note.id] !== 'original' }
 function displayedMarkdown(note: Doc) { return showPolished(note) ? validPolish(note)!.polishedMarkdown : resolvedRichContent(note).markdown }
-function stageIcon(stage: 'title' | 'image' | 'polish') { return { title: 'T', image: '▧', polish: '✦' }[stage] }
-function stageLabel(stage: 'title' | 'image' | 'polish') { return { title: '标题', image: '配图', polish: '润色' }[stage] }
+function stageIcon(stage: 'title' | 'image' | 'polish' | 'tags') { return { title: 'T', image: '▧', polish: '✦', tags: '#' }[stage] }
+function stageLabel(stage: 'title' | 'image' | 'polish' | 'tags') { return { title: '标题', image: '配图', polish: '润色', tags: '标签' }[stage] }
 function progressVisible(id: string) {
   const steps = noteEnrichmentProgress[id]
-  return !steps || !((steps.title === 'done' || steps.title === 'skipped') && (steps.image === 'done' || steps.image === 'skipped') && (steps.polish === 'done' || steps.polish === 'skipped'))
+  return !steps || !((steps.title === 'done' || steps.title === 'skipped') && (steps.image === 'done' || steps.image === 'skipped') && (steps.polish === 'done' || steps.polish === 'skipped') && (steps.tags === 'done' || steps.tags === 'skipped'))
 }
 function hasPendingNoteDraft(note: Doc) {
   const key = `wao-note-edit-v1:${session.currentUser.id}:${note.id}`
@@ -350,7 +380,7 @@ function hasPendingNoteDraft(note: Doc) {
     return true
   } catch { return true /* 无法确认内容相同时保留草稿。 */ }
 }
-async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish') {
+async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 'tags') {
   if (retryingEnrichment.value.includes(note.id)) return
   retryingEnrichment.value = [...retryingEnrichment.value, note.id]
   try {
@@ -374,18 +404,18 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish') {
     }
     if (stage && noteEnrichmentProgress[note.id]?.[stage] !== 'failed') {
       const latest = data.docById(note.id) ?? note
-      if (latest.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, latest.rev, stage)
+      if (latest.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, latest.rev, stage, availableTags.value)
       return
     }
     noteEnrichmentStatus[note.id] = '正在重试未完成的自动整理…'
     if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) await retryAutoNoteEnrichment(session.currentUser.id, note.id)
-    else if (stage && note.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, note.rev, stage)
+    else if (stage && note.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, note.rev, stage, availableTags.value)
     else if (note.rev) startAutoNoteEnrichment(session.currentUser.id, note.id, note.rev, { title: true, image: true })
   } finally {
     retryingEnrichment.value = retryingEnrichment.value.filter(id => id !== note.id)
   }
 }
-function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish') {
+function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish' | 'tags') {
   if (noteEnrichmentProgress[note.id]?.[stage] === 'running') return
   void retryOrStart(note, stage)
 }
@@ -517,7 +547,7 @@ onMounted(() => void loadPins())
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出与按需操作">
-              <button v-for="stage in (['title', 'image', 'polish'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage] || 'pending'}`" :disabled="retryingEnrichment.includes(note.id) || noteEnrichmentProgress[note.id]?.[stage] === 'running'" :title="`${stageLabel(stage)}：${{ done: '已完成，点击重新生成', running: '正在处理', pending: '未生成，点击开始', failed: '失败，点击重试', skipped: '未启用，点击开始' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${{ done: '已完成，点击重新生成', running: '正在处理', pending: '未生成，点击开始', failed: '失败，点击重试', skipped: '未启用，点击开始' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
+              <button v-for="stage in (['title', 'image', 'polish', 'tags'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage] || 'pending'}`" :disabled="retryingEnrichment.includes(note.id) || noteEnrichmentProgress[note.id]?.[stage] === 'running'" :title="`${stageLabel(stage)}：${{ done: '已完成，点击重新生成', running: '正在处理', pending: '未生成，点击开始', failed: '失败，点击重试', skipped: '未启用，点击开始' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${{ done: '已完成，点击重新生成', running: '正在处理', pending: '未生成，点击开始', failed: '失败，点击重试', skipped: '未启用，点击开始' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
             </div>
             <div v-if="validPolish(note)" class="version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(note)" @click="versions[note.id] = 'polished'">润色</button><button type="button" :aria-pressed="!showPolished(note)" @click="versions[note.id] = 'original'">原文</button></div>
             <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
@@ -552,7 +582,7 @@ onMounted(() => void loadPins())
       <div v-if="reading && readingNote" class="notes-reader" role="dialog" aria-modal="true" aria-label="小记阅读模式" @click.self="stopReading">
         <header class="reader-topbar"><button type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line"></i></button><span>最近更新 · {{ readingIndex + 1 }} / {{ readerNotes.length }}</span><span class="reader-progress"><i :style="{ width: `${((readingIndex + 1) / readerNotes.length) * 100}%` }"></i></span></header>
         <button class="reader-nav reader-prev" type="button" aria-label="上一篇小记（←）" :disabled="readingIndex === 0" @click="moveReader(-1)"><i class="ri-arrow-left-s-line"></i></button>
-        <article :key="readingNote.id" class="reader-page">
+        <article :key="readingNote.id" ref="readerPage" class="reader-page">
           <div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
           <h2>{{ readingNote.title }}</h2>
           <div v-if="readingNote.tags?.length" class="reader-tags"><span v-for="tag in readingNote.tags" :key="tag"># {{ tag }}</span></div>
@@ -560,7 +590,7 @@ onMounted(() => void loadPins())
           <div class="reader-content" :class="{ 'has-images': notePreviewImages(resolvedRichContent(readingNote)).length }"><div class="reader-body"><MarkdownEditor :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="showPolished(readingNote) ? undefined : resolvedRichContent(readingNote).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" /></div><aside v-if="notePreviewImages(resolvedRichContent(readingNote)).length" class="reader-image-rail" aria-label="小记图片总览"><h3>图片总览 · {{ notePreviewImages(resolvedRichContent(readingNote)).length }} 张</h3><div><button v-for="(image, index) in notePreviewImages(resolvedRichContent(readingNote))" :key="`${index}:${image.src}`" type="button" @click="openImage(image, $event)"><img :src="notePreviewSource(image.src)" :alt="image.alt"><span>{{ image.alt || `图片 ${index + 1}` }}</span></button></div></aside></div>
         </article>
         <button class="reader-nav reader-next" type="button" aria-label="下一篇小记（→）" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)"><i class="ri-arrow-right-s-line"></i></button>
-        <footer class="reader-controls"><button type="button" :disabled="readingIndex === 0" @click="moveReader(-1)"><i class="ri-arrow-left-line"></i> 上一篇</button><span>方向键 / PageUp PageDown 翻页 · Esc 退出</span><button type="button" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇 <i class="ri-arrow-right-line"></i></button></footer>
+        <footer class="reader-controls"><button type="button" :disabled="readingIndex === 0" @click="moveReader(-1)"><i class="ri-arrow-left-line"></i> 上一篇</button><span>← → 切换小记 · ↑ ↓ 滚动正文 · Esc 退出</span><button type="button" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇 <i class="ri-arrow-right-line"></i></button></footer>
       </div>
       <div v-if="previewImage" ref="lightbox" class="note-image-lightbox" role="dialog" aria-modal="true"
         :aria-label="previewImage.alt || '小记图片预览'" tabindex="-1" @click.self="closeImage" @keydown.esc.stop="closeImage" @contextmenu="openImageMenu">

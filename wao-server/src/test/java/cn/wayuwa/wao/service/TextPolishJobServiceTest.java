@@ -7,12 +7,14 @@ import static org.mockito.Mockito.*;
 import cn.wayuwa.wao.mapper.TextPolishJobMapper;
 import cn.wayuwa.wao.mapper.TextPolishJobMapper.Job;
 import org.junit.jupiter.api.Test;
+import java.util.List;
 
 class TextPolishJobServiceTest {
     private final TextPolishJobMapper jobs = mock(TextPolishJobMapper.class);
     private final TextPolishService polish = mock(TextPolishService.class);
     private final AiAssistantService assistant = mock(AiAssistantService.class);
-    private final TextPolishJobService service = new TextPolishJobService(jobs, polish, assistant);
+    private final NoteTagService noteTags = mock(NoteTagService.class);
+    private final TextPolishJobService service = new TextPolishJobService(jobs, polish, assistant, noteTags);
     private final String request = "0123456789abcdef0123456789abcdef";
     private final String id = "pj" + request;
 
@@ -79,6 +81,37 @@ class TextPolishJobServiceTest {
         verify(jobs).insert(argThat(job -> job.originalText().startsWith("sha256:") && !job.originalText().contains("原文")));
         verifyNoInteractions(polish);
         verify(polish, never()).recordResult(any(), any(), any(), any(), any());
+    }
+
+    @Test void noteTagsOnlyReturnsUpToThreeExactExistingTags() {
+        when(jobs.lockMember("m1")).thenReturn("m1");
+        when(noteTags.list()).thenReturn(List.of("创作", "计划", "复盘", "灵感"));
+        when(assistant.enqueueNoteTagsJob(eq(id), eq("一段正文"), anyString(), eq("gpt-6-luna"))).thenReturn("ac1");
+        when(assistant.readOnlyJobResult(id, "ac1")).thenReturn(new AiAssistantService.ReadOnlyJobResult(
+                "ac1", "succeeded", "计划\n新建标签\n# 创作\n复盘\n灵感", null));
+        var result = service.submit("m1", request, "NOTE_TAGS", "一段正文", "gpt-6-luna", null, null,
+                List.of("创作", "计划", "复盘", "灵感"));
+        assertThat(result.polished()).isEqualTo("计划\n创作\n复盘");
+        verify(assistant).enqueueNoteTagsJob(eq(id), eq("一段正文"), contains("灵感"), eq("gpt-6-luna"));
+        verify(jobs).insert(argThat(job -> job.originalText().startsWith("sha256:") && job.promptSnapshot().contains("allowed_tags_json")));
+        verifyNoInteractions(polish);
+    }
+
+    @Test void noteTagsRejectEmptyExistingTagList() {
+        when(jobs.lockMember("m1")).thenReturn("m1");
+        when(noteTags.list()).thenReturn(List.of());
+        assertThatThrownBy(() -> service.submit("m1", request, "NOTE_TAGS", "一段正文", "gpt-6-luna", null, null, List.of()))
+                .hasMessageContaining("已有标签");
+        verify(assistant, never()).enqueueNoteTagsJob(any(), any(), any(), any());
+    }
+
+    @Test void noteTagsIgnoreClientValuesThatAreNotPersistedTags() {
+        when(jobs.lockMember("m1")).thenReturn("m1");
+        when(noteTags.list()).thenReturn(List.of("创作"));
+        when(assistant.enqueueNoteTagsJob(eq(id), eq("一段正文"), contains("创作"), eq("gpt-6-luna"))).thenReturn("ac1");
+        when(assistant.readOnlyJobResult(id, "ac1")).thenReturn(new AiAssistantService.ReadOnlyJobResult("ac1", "secure_queued", null, null));
+        service.submit("m1", request, "NOTE_TAGS", "一段正文", "gpt-6-luna", null, null, List.of("创作", "客户端伪造"));
+        verify(assistant).enqueueNoteTagsJob(eq(id), eq("一段正文"), eq("[\"创作\"]"), eq("gpt-6-luna"));
     }
 
     private Job job(String kind) { return new Job(id, "m1", kind, "原文", "方法", "ac1", null); }

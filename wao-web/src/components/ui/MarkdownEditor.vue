@@ -720,6 +720,13 @@ function removeImageAt(index: number) {
   })
   return position >= 0 && e.commands.deleteRange({ from: position, to: position + size })
 }
+function insertTextAtSelection(value: string, deleteBefore = 0) {
+  const instance = editor.value
+  if (!instance) return false
+  const cursor = instance.state.selection.from
+  const from = Math.max(1, cursor - Math.max(0, deleteBefore))
+  return instance.chain().focus().insertContentAt({ from, to: cursor }, value).run()
+}
 let preparingTask = false
 async function addSelectionTask() {
   const e = editor.value
@@ -1824,7 +1831,7 @@ async function copyFormatted() {
   const ok = await copyRichContent(e.getHTML(), e.getMarkdown())
   toast(ok ? '已复制，支持富文本与 Markdown 粘贴' : '复制失败，请手动选择复制', ok ? 'ri-file-copy-line' : 'ri-error-warning-line')
 }
-defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt })
+defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(

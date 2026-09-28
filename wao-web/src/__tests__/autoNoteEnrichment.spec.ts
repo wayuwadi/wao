@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { startAutoNoteEnrichment, noteEnrichmentStatus, noteEnrichmentProgress, discardAutoNoteEnrichment, retryAutoNoteEnrichment, resumeAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
-import { fetchDoc, apiPatchDoc } from '@/api/board'
+import { fetchDoc, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
 import { waitForPolish } from '@/api/polishJobs'
 import { saveNotePolishVersion } from '@/api/notePolishVersions'
 import { fetchPreference } from '@/api/favorites'
 
-vi.mock('@/api/board', () => ({ fetchDoc: vi.fn(), apiPatchDoc: vi.fn() }))
+vi.mock('@/api/board', () => ({ fetchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiPatchDoc: vi.fn() }))
 vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('') }))
 vi.mock('@/api/polishJobs', () => ({ newPolishRequestId: () => '0123456789abcdef0123456789abcdef', waitForPolish: vi.fn() }))
@@ -25,6 +25,7 @@ describe('小记保存后自动生成', () => {
     vi.clearAllMocks()
     vi.mocked(fetchDoc).mockReset()
     vi.mocked(apiPatchDoc).mockReset()
+    vi.mocked(fetchNoteTags).mockReset().mockResolvedValue([])
     vi.mocked(waitForPolish).mockReset()
     vi.mocked(startArticleImage).mockReset()
     vi.mocked(fetchArticleImage).mockReset()
@@ -150,7 +151,7 @@ describe('小记保存后自动生成', () => {
     expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).toBeNull()
     delete noteEnrichmentProgress.n1
     resumeAutoNoteEnrichment('me')
-    expect(noteEnrichmentProgress.n1).toEqual({ title: 'done', image: 'skipped', polish: 'done' })
+    expect(noteEnrichmentProgress.n1).toEqual({ title: 'done', image: 'skipped', polish: 'done', tags: 'skipped' })
   })
 
   it('快速记录同时关闭配图和润色时不启动两种任务', async () => {
@@ -161,6 +162,21 @@ describe('小记保存后自动生成', () => {
     expect(startArticleImage).not.toHaveBeenCalled()
     expect(waitForPolish).not.toHaveBeenCalled()
     expect(noteEnrichmentProgress.n1).toEqual(expect.objectContaining({ image: 'skipped', polish: 'skipped' }))
+  })
+
+  it('自动标签任务只写入仍存在的旧标签并保留原有标签', async () => {
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(fetchNoteTags).mockResolvedValue(['创作', '计划'])
+    vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj1', status: 'SUCCEEDED', message: '', polished: '创作\n客户端伪造\n计划' })
+    vi.mocked(apiPatchDoc).mockResolvedValue(doc(2) as never)
+    startAutoNoteEnrichment('me', 'n1', 1, {
+      titleEnabled: false, imageEnabled: false, polishEnabled: false,
+      tagsEnabled: true, allowedTags: ['创作', '计划'],
+    })
+    await flushPromises()
+    expect(waitForPolish).toHaveBeenCalledWith(content.markdown, 'NOTE_TAGS', expect.objectContaining({ allowedTags: ['创作', '计划'] }))
+    expect(apiPatchDoc).toHaveBeenCalledWith('n1', expect.objectContaining({ tags: ['创作', '计划'], expectedRev: 1 }))
+    expect(noteEnrichmentProgress.n1?.tags).toBe('done')
   })
 
   it('关闭自动标题时仍可单独润色，刷新后标题保持已跳过', async () => {
