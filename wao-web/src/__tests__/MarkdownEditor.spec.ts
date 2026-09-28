@@ -101,7 +101,7 @@ describe('文章总览配图', () => {
     await w.get('.generate-image').trigger('click')
     await flushPromises()
 
-    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'), 'gpt-6-luna')
+    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'), 'gpt-5.6-sol')
     const updates = w.emitted('update:modelValue') as [string][]
     const latest = updates[updates.length - 1]?.[0]
     expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw "wao-image-size:50%xauto"\)/)
@@ -140,17 +140,17 @@ describe('文章总览配图', () => {
     await flushPromises()
     await w.get('.prompt-settings').trigger('click')
     const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="image-prompt-title"]')!
-    expect(modal.querySelector<HTMLSelectElement>('.model-choice select')?.value).toBe('gpt-6-luna')
+    expect(modal.querySelector<HTMLSelectElement>('.model-choice select')?.value).toBe('gpt-5.6-sol')
     expect(modal.textContent).toContain('标题文案提示词')
     expect(modal.textContent).toContain('正文润色提示词')
     expect(modal.textContent).toContain('图片生成提示词')
     const select = modal.querySelector<HTMLSelectElement>('.model-choice select')!
-    select.value = 'gpt-6-sol'
+    select.value = 'gpt-5.6-luna'
     select.dispatchEvent(new Event('change', { bubbles: true }))
     const save = [...modal.querySelectorAll('button')].find(button => button.textContent?.includes('保存设置'))!
     save.click()
     await flushPromises()
-    expect(savePreference).toHaveBeenCalledWith('note-ai-model-v1', 'gpt-6-sol')
+    expect(savePreference).toHaveBeenCalledWith('note-ai-model-v1', 'gpt-5.6-luna')
     expect(saveTextPolishPrompt).toHaveBeenCalledWith('默认正文润色方法')
     w.unmount()
   })

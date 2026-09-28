@@ -7,6 +7,7 @@ import { fetchNotePolishVersions, saveNotePolishVersion, type NotePolishVersion 
 import { useDataStore } from '@/stores/data'
 import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
 import { cloneRichContent, legacyProjection, resolvedRichContent } from '@/utils/richDoc'
+import { resolveNoteModel } from '@/utils/noteAiModel'
 
 type Step = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
 export type NoteWorkflowProgress = { title: Step; image: Step; polish: Step; message?: string }
@@ -24,7 +25,6 @@ const PREFIX = 'wao-note-auto-enrichment-v1:'
 const COMPLETE_PREFIX = 'wao-note-enrichment-complete-v1:'
 const MODEL_PREFERENCE_KEY = 'note-ai-model-v1'
 const TITLE_PROMPT_KEY = 'note-title-prompt-v1'
-const DEFAULT_NOTE_MODEL = 'gpt-6-luna'
 const DEFAULT_TITLE_PROMPT = '标题准确概括这条小记的主题，简洁自然，方便以后搜索；只返回一个标题。'
 const running = new Set<string>()
 const discarded = new Set<string>()
@@ -98,7 +98,7 @@ async function run(job: AutoJob) {
       fetchPreference(MODEL_PREFERENCE_KEY), fetchPreference(TITLE_PROMPT_KEY),
       fetchPreference(ARTICLE_IMAGE_PREFERENCE_KEY), fetchPreference('text-polish.prompt.v1'),
     ])
-    const model = modelValue.trim() || DEFAULT_NOTE_MODEL
+    const model = resolveNoteModel(modelValue)
     const titlePrompt = titlePromptValue.trim() || DEFAULT_TITLE_PROMPT
     const imagePrompt = imagePromptValue.trim() || DEFAULT_ARTICLE_IMAGE_PROMPT
     const polishPrompt = polishWorkspace
