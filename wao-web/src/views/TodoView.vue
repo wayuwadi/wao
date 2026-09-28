@@ -7,7 +7,6 @@ import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
 import { TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import type { Task, TaskStatus } from '@/types'
-import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { copyText } from '@/utils/clipboard'
@@ -21,6 +20,7 @@ const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const { decoTask } = useDeco()
 
 const taskFilter = ref<'全部' | '我负责' | '我参与' | '等待他人'>('全部')
+const projectFilter = ref('all')
 const taskView = ref<TodoTaskView>(readTodoTaskView())
 watch(taskView, (view) => {
   try { localStorage.setItem('wao-todo-view-v1', view) } catch { /* 存储不可用不阻断视图 */ }
@@ -33,6 +33,8 @@ const myList = computed(() => {
   if (taskFilter.value === '我负责') list = list.filter((t) => t.owner === me)
   if (taskFilter.value === '我参与') list = list.filter((t) => t.parts.includes(me))
   if (taskFilter.value === '等待他人') list = list.filter((t) => t.waiting)
+  if (projectFilter.value === 'unassigned') list = list.filter((t) => !t.project)
+  else if (projectFilter.value !== 'all') list = list.filter((t) => t.project === projectFilter.value)
   return list
 })
 
@@ -77,22 +79,6 @@ const boardCols = computed(() =>
 )
 
 const tasksEmpty = computed(() => taskGroups.value.length === 0)
-const selectedTaskIds = ref<string[]>([])
-const quadrantSelectionMode = ref(false)
-const selectionMode = computed(() => taskView.value !== 'quadrant' || quadrantSelectionMode.value)
-function toggleQuadrantSelection() {
-  quadrantSelectionMode.value = !quadrantSelectionMode.value
-  if (!quadrantSelectionMode.value) selectedTaskIds.value = []
-}
-const visibleTaskIds = computed(() => myList.value.filter((task) => task.status !== '已完成'
-  || showDone.value || (taskView.value === 'list' && isSettling(task.id))).map((task) => task.id))
-const selectedCopyTasks = computed(() => myList.value.filter((task) => selectedTaskIds.value.includes(task.id)))
-watch(visibleTaskIds, (ids) => { selectedTaskIds.value = selectedTaskIds.value.filter((id) => ids.includes(id)) })
-function toggleSelection(id: string) {
-  selectedTaskIds.value = selectedTaskIds.value.includes(id)
-    ? selectedTaskIds.value.filter((value) => value !== id) : [...selectedTaskIds.value, id]
-}
-
 function openTask(id: string) {
   ui.openTask(id)
 }
@@ -150,8 +136,12 @@ function onDropStatus(status: TaskStatus) {
       >
         {{ c }}
       </button>
+      <select v-model="projectFilter" class="project-filter" aria-label="按项目筛选任务">
+        <option value="all">全部项目</option>
+        <option v-for="project in data.projects" :key="project.id" :value="project.id">{{ project.name }}</option>
+        <option value="unassigned">未关联项目</option>
+      </select>
       <div class="spacer"></div>
-      <button v-if="taskView === 'quadrant'" class="chip" :aria-pressed="quadrantSelectionMode" @click="toggleQuadrantSelection">{{ quadrantSelectionMode ? '退出批量选择' : '批量选择' }}</button>
       <div class="seg">
         <button
           v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)"
@@ -164,12 +154,6 @@ function onDropStatus(status: TaskStatus) {
         </button>
       </div>
     </div>
-
-    <div v-if="data.taskLoadState === 'loaded' && selectionMode" class="copy-selection-actions">
-      <button class="chip" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
-      <button v-if="selectedTaskIds.length" class="chip" @click="selectedTaskIds = []">清空选择</button>
-    </div>
-    <TaskBatchCopy v-if="data.taskLoadState === 'loaded' && selectionMode" :tasks="selectedCopyTasks" />
 
     <div v-if="data.taskLoadState === 'loading'" class="task-state" role="status" aria-live="polite">
       <i class="ri-loader-4-line spinning"></i>
@@ -195,7 +179,6 @@ function onDropStatus(status: TaskStatus) {
         <div v-if="tg.collapsible && !showDone" class="tgroup-collapsed">已收起 {{ tg.items.length }} 项</div>
         <div v-else class="tlist">
           <div v-for="t in tg.items" :key="t.id" class="trow" :class="{ settling: isSettling(t.id) }" tabindex="0" :aria-label="`任务：${t.title}`" @click="openTask(t.id)" @keydown.enter.self.prevent="openTask(t.id)" @keydown="openTaskMenu($event, t.id)" @contextmenu="openTaskMenu($event, t.id)">
-            <button class="task-select" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" title="完成 / 重新打开" @click.stop="toggleTask(t.id)">
               <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
             </button>
@@ -212,7 +195,7 @@ function onDropStatus(status: TaskStatus) {
       <div v-if="tasksEmpty" class="empty simple">这个筛选下没有任务</div>
     </template>
 
-    <TaskQuadrantView v-else-if="taskView === 'quadrant'" v-model:show-done="showDone" :tasks="myList" :selected-ids="quadrantSelectionMode ? selectedTaskIds : []" :selection-mode="quadrantSelectionMode" @select="toggleSelection" />
+    <TaskQuadrantView v-else-if="taskView === 'quadrant'" v-model:show-done="showDone" :tasks="myList" :selected-ids="[]" />
 
     <div v-else class="board">
       <div
@@ -245,7 +228,6 @@ function onDropStatus(status: TaskStatus) {
             @dragstart="onDragStart(t.id)"
             tabindex="0"
           >
-            <button class="task-select" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
             <div class="bc-proj"><span class="proj-dot" :style="{ background: t.projColor }"></span><span class="ellip">{{ t.projName }}</span></div>
             <div class="bc-foot">
@@ -267,9 +249,6 @@ function onDropStatus(status: TaskStatus) {
 <style scoped>
 .task-more { flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); cursor: pointer; }
 .task-more:hover, .task-more:focus-visible { background: var(--wao-bg-hover); }
-.copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
-.task-select { flex-shrink: 0; width: 28px; height: 28px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; }
-.task-select[aria-pressed='true'] { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
 .todo {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);
@@ -370,6 +349,16 @@ function onDropStatus(status: TaskStatus) {
   color: var(--wao-primary-text);
   border-color: var(--wao-primary-line);
   font-weight: 600;
+}
+.project-filter {
+  max-width: min(220px, 100%);
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 999px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-3);
+  font-size: 12.5px;
 }
 
 .empty {
