@@ -12,6 +12,8 @@ let version = 0
 
 const focus = computed(() => result.value.artifacts.find(item => item.type === 'INSIGHT' && item.feedbackStatus !== 'NOT_ACCURATE')
   ?? result.value.artifacts.find(item => item.feedbackStatus !== 'NOT_ACCURATE') ?? null)
+const visual = computed(() => result.value.visuals?.find(item => item.status === 'DONE' && item.feedbackStatus === 'SAVED')
+  ?? result.value.visuals?.find(item => item.status === 'DONE' && item.feedbackStatus !== 'NOT_ACCURATE') ?? null)
 const running = computed(() => ['QUEUED', 'RUNNING'].includes(result.value.job?.status ?? ''))
 const title = computed(() => {
   if (loading.value) return '正在翻阅近期小记…'
@@ -43,19 +45,21 @@ onUnmounted(() => { if (timer) clearInterval(timer); version++ })
 <template>
   <section class="mining-home-card" aria-label="AI 挖掘小记">
     <div class="signal-scene" aria-hidden="true">
-      <span class="note note-a"></span><span class="note note-b"></span><span class="thread"></span>
-      <i class="ri-sparkling-2-line"></i>
+      <img v-if="visual?.imageUrl" class="visual-preview" :src="visual.imageUrl" alt="">
+      <template v-else><span class="note note-a"></span><span class="note note-b"></span><span class="thread"></span>
+        <i class="ri-sparkling-2-line"></i></template>
     </div>
     <div class="mining-copy">
       <div class="kicker"><span class="pulse"></span> AI 挖掘小记 <span>/</span> 内容正在生长</div>
       <strong>{{ title }}</strong>
       <p v-if="error">{{ error }}{{ focus ? ' · 仍显示上次结果' : '' }} · <button type="button" @click="load">重试</button></p>
       <p v-else-if="running">基于 {{ result.job?.sourceCount }} 篇小记分析中；可以继续做别的事。</p>
+      <p v-else-if="visual">{{ visual.caption }} · {{ visual.sources.length }} 条来源可回看</p>
       <p v-else-if="focus">{{ focus.rationale }} · {{ focus.sources.length }} 条来源可回看</p>
       <p v-else>从近期小记中创造洞察、提醒草稿和文章种子；原文始终保留。</p>
     </div>
     <a class="open-mining" href="/notes">
-      {{ focus ? '查看内容' : running ? '查看进度' : '开始挖掘' }} <i class="ri-arrow-right-line"></i>
+      {{ focus || visual ? '查看内容' : running ? '查看进度' : '开始挖掘' }} <i class="ri-arrow-right-line"></i>
     </a>
   </section>
 </template>
@@ -64,6 +68,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); version++ })
 .mining-home-card { min-width: 0; min-height: 150px; display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 16px 20px 16px 12px; color: #302b47; border: 1px solid #e2d9fa; border-radius: 18px; background: radial-gradient(circle at 10% 40%, #f0eaff 0, #faf8ff 42%, #fff 75%); position: relative; overflow: hidden; }
 .mining-home-card:before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: linear-gradient(#7958da, #c595e8); }
 .signal-scene { position: relative; width: 90px; height: 94px; display: grid; place-items: center; }
+.visual-preview { width: 90px; height: 94px; object-fit: cover; border-radius: 10px; }
 .note { position: absolute; width: 43px; height: 52px; border: 1px solid #cbbbea; border-radius: 9px; background: #fff; box-shadow: 0 9px 18px #4d327226; }
 .note-a { transform: translate(-16px, 7px) rotate(-12deg); }
 .note-b { transform: translate(16px, -5px) rotate(11deg); background: #eee8fc; }

@@ -4,7 +4,12 @@ import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.dto.NoteMiningDto;
+import cn.wayuwa.wao.dto.ArticleImageRequest;
+import cn.wayuwa.wao.dto.ArticleImageJobDto;
 import cn.wayuwa.wao.mapper.NoteMiningMapper;
+import cn.wayuwa.wao.mapper.NoteMiningVisualMapper;
+import cn.wayuwa.wao.mapper.NoteMiningVisualMapper.Visual;
+import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import cn.wayuwa.wao.mapper.NoteMiningMapper.Artifact;
 import cn.wayuwa.wao.mapper.NoteMiningMapper.Job;
 import cn.wayuwa.wao.mapper.NoteMiningMapper.Source;
@@ -28,13 +33,20 @@ public class NoteMiningService {
     private static final int NOTE_LIMIT = 12;
     private static final int MATERIAL_LIMIT = 12_000;
     private static final Set<String> TYPES = Set.of("INSIGHT", "REMINDER", "ARTICLE_SEED");
+    private static final Set<String> LENSES = Set.of("PROGRESS", "REFRAME", "NEXT_STEP");
     private static final Set<String> FEEDBACK = Set.of("SAVED", "NOT_ACCURATE", "REMINDER_DRAFT");
     private final NoteMiningMapper mapper;
+    private final NoteMiningVisualMapper visuals;
     private final AiAssistantService assistant;
+    private final ArticleImageService images;
+    private final MemberPreferenceMapper preferences;
     private final ObjectMapper json;
 
-    public NoteMiningService(NoteMiningMapper mapper, AiAssistantService assistant, ObjectMapper json) {
-        this.mapper = mapper; this.assistant = assistant; this.json = json;
+    public NoteMiningService(NoteMiningMapper mapper, NoteMiningVisualMapper visuals,
+            AiAssistantService assistant, ArticleImageService images,
+            MemberPreferenceMapper preferences, ObjectMapper json) {
+        this.mapper = mapper; this.visuals = visuals; this.assistant = assistant; this.images = images;
+        this.preferences = preferences; this.json = json;
     }
 
     /** 返回当前成员最近一次挖掘及已物化内容；没有运行时返回空工作区。 */
@@ -42,7 +54,7 @@ public class NoteMiningService {
     public NoteMiningDto latest(String memberId) {
         Job job = mapper.latestJob(memberId);
         if (job != null) job = mapper.lockOwnedJob(job.id(), memberId);
-        return job == null ? new NoteMiningDto(null, List.of()) : result(job);
+        return job == null ? new NoteMiningDto(null, List.of(), List.of()) : result(job);
     }
 
     /** 以客户端稳定请求标识幂等启动一次近期小记挖掘。 */
@@ -83,6 +95,71 @@ public class NoteMiningService {
         return dto(artifact);
     }
 
+    /** 逐张续跑当前成员的小记启发图，复用已有的图片队列。 */
+    @Transactional
+    public void advanceVisual(String jobId, String lens) {
+        Visual visual = visuals.lock(jobId, lens);
+        if (visual == null || !LENSES.contains(lens)) return;
+        if ("PENDING".equals(visual.status())) {
+            Job job = mapper.findOwnedJob(jobId, visual.memberId());
+            if (job == null || job.materializedAt() == null) return;
+            String sources = visualDto(visual, job).sources().stream()
+                    .map(source -> source.title() + "：" + source.excerpt())
+                    .reduce((left, right) -> left + "\n" + right).orElse("");
+            String visualPrompt = switch (lens) {
+                case "PROGRESS" -> "用含蓄、具体的视觉隐喻表现一段时间里的积累或变化。";
+                case "REFRAME" -> "用另一种视角的视觉隐喻表现这条有来源的观察。";
+                default -> "用开放、可尝试的视觉隐喻表现下一步，不画成既定事实。";
+            };
+            try {
+                ArticleImageJobDto image = images.start(visual.memberId(), new ArticleImageRequest(
+                        "判断：" + visual.caption() + "\n理由：" + visual.rationale() + "\n小记摘录：\n" + sources,
+                        visualPrompt + " 不出现可识别的真人、文字、数字；只绘制象征性画面。",
+                        preferences.find(visual.memberId(), "note-ai-model-v1"),
+                        UUID.randomUUID().toString().replace("-", "")));
+                visuals.updateImage(jobId, visual.memberId(), lens, "RUNNING", image.id(), null, null);
+            } catch (BadRequestException ex) {
+                if (ex.getMessage() != null && ex.getMessage().contains("已有一张总览图正在生成")) return;
+                visuals.updateImage(jobId, visual.memberId(), lens, "FAILED", null, null,
+                        limit(ex.getMessage() == null ? "生成图片失败" : ex.getMessage(), 500));
+            }
+        } else if ("RUNNING".equals(visual.status())) {
+            ArticleImageJobDto image = images.get(visual.memberId(), visual.imageRunId());
+            if ("SUCCEEDED".equals(image.status())) {
+                visuals.updateImage(jobId, visual.memberId(), lens, "DONE", image.id(), image.imageUrl(), null);
+            } else if ("FAILED".equals(image.status())) {
+                visuals.updateImage(jobId, visual.memberId(), lens, "FAILED", image.id(), null,
+                        limit(image.message(), 500));
+            }
+        }
+    }
+
+    /** 仅允许图像所属成员重试失败的一张，已成功的图不重复生成。 */
+    @Transactional
+    public NoteMiningDto.Visual retryVisual(String memberId, String jobId, String lens) {
+        Job job = mapper.lockOwnedJob(jobId, memberId);
+        if (job == null) throw new NotFoundException("小记挖掘任务不存在");
+        Visual visual = visuals.lock(jobId, lens);
+        if (visual == null || !memberId.equals(visual.memberId())) throw new NotFoundException("小记启发图不存在");
+        if (!"FAILED".equals(visual.status())) throw new BadRequestException("只有失败的图片可以重试");
+        visuals.updateImage(jobId, memberId, lens, "PENDING", null, null, null);
+        return visualDto(visuals.lock(jobId, lens), job);
+    }
+
+    /** 保存本人对单张启发图的取舍，不改动小记原文。 */
+    @Transactional
+    public NoteMiningDto.Visual feedbackVisual(String memberId, String jobId, String lens, String feedback) {
+        if (!Set.of("SAVED", "NOT_ACCURATE").contains(feedback)) throw new BadRequestException("图片反馈类型无效");
+        Job job = mapper.findOwnedJob(jobId, memberId);
+        Visual visual = visuals.lock(jobId, lens);
+        if (job == null || visual == null || !memberId.equals(visual.memberId())) {
+            throw new NotFoundException("小记启发图不存在");
+        }
+        if (!"DONE".equals(visual.status())) throw new BadRequestException("图片尚未生成完成");
+        visuals.updateFeedback(jobId, lens, memberId, feedback);
+        return visualDto(visuals.lock(jobId, lens), job);
+    }
+
     private NoteMiningDto result(Job job) {
         String status;
         String message;
@@ -110,7 +187,11 @@ public class NoteMiningService {
         List<NoteMiningDto.Artifact> artifacts = "SUCCEEDED".equals(status)
                 ? mapper.artifacts(job.id(), job.memberId()).stream().map(this::dto).toList() : List.of();
         LocalDateTime createdAt = fresh == null ? job.createdAt() : fresh.createdAt();
-        return new NoteMiningDto(new NoteMiningDto.Job(job.id(), status, message, job.sourceCount(), createdAt), artifacts);
+        List<NoteMiningDto.Visual> visualResults = "SUCCEEDED".equals(status)
+                ? visuals.list(job.id(), job.memberId()).stream().map(value -> visualDto(value, job)).toList()
+                : List.of();
+        return new NoteMiningDto(new NoteMiningDto.Job(job.id(), status, message, job.sourceCount(), createdAt),
+                artifacts, visualResults);
     }
 
     private void materialize(Job job, String response) {
@@ -150,7 +231,50 @@ public class NoteMiningService {
                 mapper.insertSource(new Source(artifactId, source.id(), source.rev(), source.title(), source.excerpt(), ord++));
             }
         }
+        JsonNode visualIdeas = root.path("visualIdeas");
+        if (visualIdeas.isArray() && visualIdeas.size() == 3) {
+            Set<String> lenses = new java.util.HashSet<>();
+            Set<String> captions = new java.util.HashSet<>();
+            List<Visual> valid = new ArrayList<>();
+            for (JsonNode value : visualIdeas) {
+                String lens = value.path("lens").asText();
+                String caption = limit(value.path("caption").asText().trim(), 500);
+                String rationale = limit(value.path("rationale").asText().trim(), 1000);
+                if (!LENSES.contains(lens) || !lenses.add(lens) || caption.isBlank() || rationale.isBlank()
+                        || !captions.add(caption.replaceAll("\\s+", ""))) break;
+                List<Integer> indexes = new ArrayList<>();
+                for (JsonNode index : value.path("sourceIndexes")) {
+                    int candidateIndex = index.asInt(-1) - 1;
+                    if (candidateIndex < 0 || candidateIndex >= snapshots.size() || indexes.contains(candidateIndex)) continue;
+                    indexes.add(candidateIndex);
+                }
+                if (indexes.isEmpty() || indexes.size() > 4 || ("PROGRESS".equals(lens) && indexes.size() < 2)) break;
+                valid.add(new Visual(job.id(), job.memberId(), lens, caption, rationale,
+                        writeJson(indexes), null, null, "PENDING", null, "CANDIDATE", null, null));
+            }
+            if (valid.size() == 3 && lenses.equals(LENSES)) valid.forEach(visuals::insert);
+        }
         mapper.markMaterialized(job.id());
+    }
+
+    private NoteMiningDto.Visual visualDto(Visual value, Job job) {
+        List<Snapshot> snapshots = readSnapshots(job.sourceSnapshotJson());
+        List<NoteMiningDto.Source> sources = new ArrayList<>();
+        try {
+            for (JsonNode index : json.readTree(value.sourceIndexesJson())) {
+                int i = index.asInt(-1);
+                if (i < 0 || i >= snapshots.size()) continue;
+                Snapshot source = snapshots.get(i);
+                sources.add(new NoteMiningDto.Source(source.id(), source.rev(), source.title(), source.excerpt()));
+            }
+        } catch (JsonProcessingException ex) { throw new IllegalStateException("小记图像来源快照损坏", ex); }
+        return new NoteMiningDto.Visual(value.lens(), value.caption(), value.rationale(), value.imageUrl(),
+                value.status(), value.errorMessage(), value.feedbackStatus(), sources);
+    }
+
+    private String writeJson(Object value) {
+        try { return json.writeValueAsString(value); }
+        catch (JsonProcessingException ex) { throw new IllegalStateException("小记图像来源无法保存", ex); }
     }
 
     private NoteMiningDto.Artifact dto(Artifact artifact) {
@@ -201,7 +325,13 @@ public class NoteMiningService {
                 每条必须给出简短理由和 1–4 个真实 sourceIndexes。只返回合法 JSON，不要 Markdown 围栏：
                 {"artifacts":[{"type":"INSIGHT","content":"...","rationale":"...","sourceIndexes":[1,2]},
                 {"type":"REMINDER","content":"...","rationale":"...","sourceIndexes":[1]},
-                {"type":"ARTICLE_SEED","content":"...","rationale":"...","sourceIndexes":[1,3]}]}
+                {"type":"ARTICLE_SEED","content":"...","rationale":"...","sourceIndexes":[1,3]}],
+                "visualIdeas":[{"lens":"PROGRESS","caption":"...","rationale":"...","sourceIndexes":[1,2]},
+                {"lens":"REFRAME","caption":"...","rationale":"...","sourceIndexes":[1,3]},
+                {"lens":"NEXT_STEP","caption":"...","rationale":"...","sourceIndexes":[2,3]}]}
+                只有三种视角都能从真实小记找到不同且有用的判断时才返回三条 visualIdeas；否则返回空数组。
+                每条 caption 应是一句可供本人判断的观察，rationale 指出所依据的变化或联系。图片只会把观察转成象征性画面，
+                不要求材料中已有照片；不要推测两位成员共享小记，也不要为了凑三张图重复同一结论。
                 <note_sources_json>
                 %s
                 </note_sources_json>

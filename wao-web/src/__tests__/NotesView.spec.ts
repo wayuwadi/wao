@@ -110,7 +110,6 @@ describe('小记集中记录空间', () => {
   it('新建页面不显示逐篇 AI 选项，保存后按成员默认能力自动整理', async () => {
     const data = useDataStore()
     const preferences = usePreferenceStore()
-    const start = vi.spyOn(await import('@/utils/autoNoteEnrichment'), 'startAutoNoteEnrichment').mockImplementation(() => {})
     const add = vi.spyOn(data, 'addNote').mockImplementation(async (text, _title, id) => {
       data.docs[id!] = doc(id!, text)
       return id!
@@ -122,16 +121,7 @@ describe('小记集中记录空间', () => {
     await first.get('.save-note').trigger('click')
     await flushPromises()
     expect(add).toHaveBeenCalledOnce()
-    const savedId = add.mock.calls[0]![2]!
-    expect(start).toHaveBeenCalledWith('wg', savedId, 3, {
-      title: false,
-      titleEnabled: true,
-      image: false,
-      imageEnabled: true,
-      polishEnabled: true,
-      tagsEnabled: false,
-      allowedTags: [],
-    })
+    expect(add.mock.calls[0]![5]).toEqual({ autoTitle: true, autoImage: true, autoPolish: true })
     expect(localStorage.getItem(`wao-note-auto-enrichment-v1:wg:${add.mock.calls[0]![2]}`)).toBeNull()
     expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
     await first.find('textarea').setValue('下一篇沿用默认 AI 能力')
@@ -140,7 +130,6 @@ describe('小记集中记录空间', () => {
     expect(savedDraft).not.toHaveProperty('autoPolish')
     expect(savedDraft).not.toHaveProperty('autoImage')
     first.unmount()
-    start.mockRestore()
   })
   it('分享图标右侧的红色删除入口需要二次确认，取消不会删除', async () => {
     const data = useDataStore()

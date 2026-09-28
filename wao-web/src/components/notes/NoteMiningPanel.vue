@@ -2,40 +2,78 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   feedbackNoteMiningArtifact,
+  feedbackNoteMiningVisual,
   fetchNoteMining,
   newNoteMiningRequestId,
   startNoteMining,
+  retryNoteMiningVisual,
   waitForNoteMining,
   type NoteMiningArtifactType,
   type NoteMiningFeedback,
   type NoteMiningResult,
+  type NoteMiningVisual,
+  type NoteMiningVisualLens,
 } from '@/api/noteMining'
 
 const emit = defineEmits<{ openNote: [id: string] }>()
 defineProps<{ compact?: boolean }>()
-const result = ref<NoteMiningResult>({ job: null, artifacts: [] })
+const result = ref<NoteMiningResult>({ job: null, artifacts: [], visuals: [] })
 const loading = ref(true)
 const working = ref(false)
 const error = ref('')
 const activeType = ref<NoteMiningArtifactType>('INSIGHT')
 const feedbackSaving = ref('')
+const visualSaving = ref('')
 let alive = true
 let requestId = ''
+let visualTimer: ReturnType<typeof setInterval> | undefined
 
 const artifact = computed(() => result.value.artifacts.find(item => item.type === activeType.value)
   ?? result.value.artifacts[0] ?? null)
+const visualItems = computed(() => result.value.visuals ?? [])
 const running = computed(() => ['QUEUED', 'RUNNING'].includes(result.value.job?.status ?? ''))
 const typeMeta: Record<NoteMiningArtifactType, { label: string; icon: string }> = {
   INSIGHT: { label: '洞察', icon: 'ri-sparkling-2-line' },
   REMINDER: { label: '提醒草稿', icon: 'ri-notification-3-line' },
   ARTICLE_SEED: { label: '文章种子', icon: 'ri-quill-pen-line' },
 }
+const lensMeta: Record<NoteMiningVisualLens, string> = {
+  PROGRESS: '看见积累', REFRAME: '换个角度', NEXT_STEP: '下一步',
+}
 
 function update(next: NoteMiningResult) {
-  result.value = next
+  result.value = { ...next, visuals: next.visuals ?? [] }
   if (!next.artifacts.some(item => item.type === activeType.value) && next.artifacts[0]) {
     activeType.value = next.artifacts[0].type
   }
+}
+
+async function refreshVisuals() {
+  if (!alive || !result.value.job || !visualItems.value.some(item => ['PENDING', 'RUNNING'].includes(item.status))) return
+  try { update(await fetchNoteMining()) }
+  catch { /* 图片状态可在下次打开时继续读取，避免覆盖已有结果。 */ }
+}
+
+function replaceVisual(updated: NoteMiningVisual) {
+  result.value = { ...result.value, visuals: visualItems.value.map(item => item.lens === updated.lens ? updated : item) }
+}
+
+async function retryVisual(lens: NoteMiningVisualLens) {
+  if (!result.value.job || visualSaving.value) return
+  visualSaving.value = lens
+  error.value = ''
+  try { replaceVisual(await retryNoteMiningVisual(result.value.job.id, lens)) }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : '图片重试失败' }
+  finally { visualSaving.value = '' }
+}
+
+async function sendVisualFeedback(lens: NoteMiningVisualLens, status: 'SAVED' | 'NOT_ACCURATE') {
+  if (!result.value.job || visualSaving.value) return
+  visualSaving.value = lens
+  error.value = ''
+  try { replaceVisual(await feedbackNoteMiningVisual(result.value.job.id, lens, status)) }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : '图片反馈没有保存' }
+  finally { visualSaving.value = '' }
 }
 
 async function continuePolling(next: NoteMiningResult) {
@@ -84,8 +122,8 @@ async function sendFeedback(status: Exclude<NoteMiningFeedback, 'CANDIDATE'>) {
   finally { feedbackSaving.value = '' }
 }
 
-onMounted(load)
-onBeforeUnmount(() => { alive = false })
+onMounted(() => { void load(); visualTimer = setInterval(() => { void refreshVisuals() }, 8_000) })
+onBeforeUnmount(() => { alive = false; if (visualTimer) clearInterval(visualTimer) })
 </script>
 
 <template>
@@ -158,12 +196,52 @@ onBeforeUnmount(() => { alive = false })
         <p v-if="error" class="inline-error">{{ error }}</p>
       </template>
     </div>
+    <div v-if="visualItems.length" class="visual-group">
+      <div class="visual-heading"><strong>来自这些小记的三种画面</strong><span>每张图可单独判断；不会写回原文</span></div>
+      <div class="visual-grid">
+        <article v-for="visual in visualItems" :key="visual.lens" class="visual-card">
+          <div class="visual-title"><span>{{ lensMeta[visual.lens] }}</span><strong>{{ visual.caption }}</strong></div>
+          <div v-if="visual.status === 'DONE' && visual.imageUrl" class="visual-image"><img :src="visual.imageUrl" :alt="visual.caption" loading="lazy"></div>
+          <div v-else class="visual-placeholder" :class="{ failed: visual.status === 'FAILED' }">
+            <i :class="visual.status === 'FAILED' ? 'ri-error-warning-line' : 'ri-loader-4-line spinning'"></i>
+            <span>{{ visual.status === 'FAILED' ? visual.errorMessage || '图片生成失败' : visual.status === 'PENDING' ? '等待生成图片' : '正在生成图片' }}</span>
+            <button v-if="visual.status === 'FAILED'" type="button" :disabled="!!visualSaving" @click="retryVisual(visual.lens)">重试这张</button>
+          </div>
+          <p class="visual-rationale">{{ visual.rationale }}</p>
+          <div class="visual-sources"><span>依据</span><button v-for="source in visual.sources" :key="`${visual.lens}-${source.docId}`" type="button" :title="source.excerpt" @click="emit('openNote', source.docId)">{{ source.title }} · v{{ source.docRev }}</button></div>
+          <div v-if="visual.status === 'DONE'" class="visual-actions">
+            <button type="button" :class="{ selected: visual.feedbackStatus === 'SAVED' }" :disabled="!!visualSaving" @click="sendVisualFeedback(visual.lens, 'SAVED')">{{ visual.feedbackStatus === 'SAVED' ? '已留下' : '留下这张' }}</button>
+            <button type="button" :class="{ selected: visual.feedbackStatus === 'NOT_ACCURATE' }" :disabled="!!visualSaving" @click="sendVisualFeedback(visual.lens, 'NOT_ACCURATE')">{{ visual.feedbackStatus === 'NOT_ACCURATE' ? '已标记不准确' : '不准确' }}</button>
+          </div>
+        </article>
+      </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
 .mining-panel { --mine-accent: #7357d8; display: grid; grid-template-columns: minmax(250px, .72fr) minmax(360px, 1.28fr); gap: 22px; padding: 20px; margin-bottom: 22px; border: 1px solid color-mix(in srgb, var(--mine-accent) 23%, var(--wao-line)); border-radius: 22px; background: linear-gradient(135deg, color-mix(in srgb, var(--mine-accent) 8%, var(--wao-bg-card)) 0%, var(--wao-bg-card) 48%); box-shadow: 0 12px 36px rgba(66, 47, 125, .08); }
 .mining-panel.compact { margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.visual-group { grid-column: 1 / -1; min-width: 0; border-top: 1px solid var(--wao-line); padding-top: 16px; }
+.visual-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.visual-heading strong { color: var(--wao-text); font-size: 15px; }
+.visual-heading span { color: var(--wao-text-faint); font-size: 11px; }
+.visual-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.visual-card { min-width: 0; border: 1px solid var(--wao-line); border-radius: 13px; padding: 10px; background: var(--wao-bg-card); }
+.visual-title { min-height: 57px; display: flex; flex-direction: column; gap: 4px; }
+.visual-title span { font-size: 11px; color: var(--mine-accent); font-weight: 700; }
+.visual-title strong { color: var(--wao-text); font-size: 13px; line-height: 1.4; }
+.visual-image, .visual-placeholder { width: 100%; aspect-ratio: 4 / 3; border-radius: 9px; overflow: hidden; }
+.visual-image img { width: 100%; height: 100%; object-fit: cover; }
+.visual-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 10px; text-align: center; background: color-mix(in srgb, var(--mine-accent) 7%, var(--wao-bg-card)); color: var(--wao-text-muted); font-size: 11px; }
+.visual-placeholder.failed { color: var(--wao-danger, #b33c48); }
+.visual-placeholder button { border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); cursor: pointer; padding: 4px 8px; }
+.visual-rationale { margin: 9px 0; color: var(--wao-text-muted); font-size: 11px; line-height: 1.5; }
+.visual-sources { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 10px; color: var(--wao-text-faint); }
+.visual-sources button { border: 1px solid var(--wao-line); border-radius: 99px; padding: 3px 6px; color: var(--wao-text-muted); background: transparent; cursor: pointer; font-size: 10px; }
+.visual-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.visual-actions button { border: 1px solid var(--wao-line); border-radius: 7px; padding: 4px 7px; color: var(--wao-text-muted); background: transparent; cursor: pointer; font-size: 10px; }
+.visual-actions button.selected { color: var(--mine-accent); border-color: var(--mine-accent); }
 .mining-intro { display: flex; flex-direction: column; align-items: flex-start; padding: 4px 2px; }
 .eyebrow { color: var(--mine-accent); font-size: 12px; font-weight: 750; letter-spacing: .06em; }
 .mining-intro h2 { margin: 8px 0; font-size: clamp(20px, 2vw, 27px); line-height: 1.18; color: var(--wao-text); }
@@ -201,6 +279,6 @@ onBeforeUnmount(() => { alive = false })
 .spinning { display: inline-block; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes breathe { 50% { transform: scale(1.08); } }
-@media (max-width: 820px) { .mining-panel { grid-template-columns: 1fr; padding: 16px; } .mining-result { min-height: 190px; } }
+@media (max-width: 820px) { .mining-panel { grid-template-columns: 1fr; padding: 16px; } .mining-result { min-height: 190px; } .visual-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .spinning, .orbit { animation: none; } }
 </style>

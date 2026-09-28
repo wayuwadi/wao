@@ -17,6 +17,7 @@ import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fet
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { useNow } from '@/composables/now'
 import { noteCharactersCreatedOn, shanghaiDateKey } from '@/utils/noteDailyCharacters'
+import { fetchNoteAiWorkflows, retryNoteAiWorkflow, type NoteAiWorkflowStatus } from '@/api/noteAiWorkflows'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 
@@ -51,6 +52,25 @@ const noteEditors = new Map<string, { copyFormatted: () => Promise<void> }>()
 type NoteComposerHandle = { dirty: boolean; save: () => Promise<void> }
 const noteComposers = new Map<string, NoteComposerHandle>()
 const retryingEnrichment = ref<string[]>([])
+const serverWorkflows = ref<Record<string, NoteAiWorkflowStatus>>({})
+let workflowTimer: ReturnType<typeof setInterval> | undefined
+async function loadServerWorkflows() {
+  if (!session.currentUser.id) { serverWorkflows.value = {}; return }
+  const memberId = session.currentUser.id
+  try {
+    const values = await fetchNoteAiWorkflows()
+    if (memberId !== session.currentUser.id) return
+    const previous = serverWorkflows.value
+    serverWorkflows.value = Object.fromEntries(values.map(value => [value.docId, value]))
+    if (values.some(value => ['title', 'image', 'polish'].some(stage => {
+      const key = stage as 'title' | 'image' | 'polish'
+      return value[key] === 'DONE' && previous[value.docId]?.[key] !== 'DONE'
+    }))) {
+      void data.refreshDocs()
+      void initializeNoteWorkflow(memberId)
+    }
+  } catch { /* 保留已显示的阶段状态，下一轮自动重读。 */ }
+}
 const noteCounts = ref<Record<string, number>>({})
 const previewImage = ref<NotePreviewImage | null>(null)
 const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
@@ -358,9 +378,45 @@ function showPolished(note: Doc) { return !!validPolish(note) && versions.value[
 function displayedMarkdown(note: Doc) { return showPolished(note) ? validPolish(note)!.polishedMarkdown : resolvedRichContent(note).markdown }
 function stageIcon(stage: 'title' | 'image' | 'polish' | 'tags') { return { title: 'T', image: '▧', polish: '✦', tags: '#' }[stage] }
 function stageLabel(stage: 'title' | 'image' | 'polish' | 'tags') { return { title: '标题', image: '配图', polish: '润色', tags: '标签' }[stage] }
+function workflowProgress(id: string) {
+  const server = serverWorkflows.value[id]
+  if (!server) return noteEnrichmentProgress[id]
+  const state = (value: NoteAiWorkflowStatus['title']) => value.toLowerCase() as 'pending' | 'running' | 'done' | 'failed' | 'skipped'
+  const local = noteEnrichmentProgress[id]
+  const combined = { title: state(server.title), image: state(server.image), polish: state(server.polish), tags: local?.tags ?? 'pending' }
+  for (const stage of ['title', 'image', 'polish'] as const) {
+    if ((combined[stage] === 'done' || combined[stage] === 'skipped')
+        && (local?.[stage] === 'running' || local?.[stage] === 'failed')) combined[stage] = local[stage]
+  }
+  return combined
+}
 function progressVisible(id: string) {
-  const steps = noteEnrichmentProgress[id]
+  const steps = workflowProgress(id)
   return !steps || !((steps.title === 'done' || steps.title === 'skipped') && (steps.image === 'done' || steps.image === 'skipped') && (steps.polish === 'done' || steps.polish === 'skipped') && (steps.tags === 'done' || steps.tags === 'skipped'))
+}
+function stageDisabled(id: string, stage: 'title' | 'image' | 'polish' | 'tags') {
+  if (stage === 'tags') return retryingEnrichment.value.includes(id) || workflowProgress(id)?.tags === 'running'
+  return retryingEnrichment.value.includes(id) || workflowProgress(id)?.[stage] === 'running'
+    || !!serverWorkflows.value[id] && ['PENDING', 'RUNNING'].includes(serverWorkflows.value[id]![stage])
+}
+function stageActionText(id: string, stage: 'title' | 'image' | 'polish' | 'tags') {
+  const value = workflowProgress(id)?.[stage]
+  if (value === 'done') return '已完成，点击重新生成'
+  if (value === 'running') return '正在处理'
+  if (value === 'failed') return '失败，点击重试'
+  if (stage !== 'tags' && serverWorkflows.value[id] && ['PENDING', 'RUNNING'].includes(serverWorkflows.value[id]![stage])) return '等待后台处理'
+  return '未生成，点击开始'
+}
+function serverFailed(id: string) {
+  const server = serverWorkflows.value[id]
+  return !!server && (server.title === 'FAILED' || server.image === 'FAILED' || server.polish === 'FAILED')
+}
+function workflowMessage(id: string) {
+  const server = serverWorkflows.value[id]
+  if (!server) return noteEnrichmentStatus[id]
+  if (serverFailed(id)) return server.message || '自动整理有步骤失败，请重试'
+  if (['PENDING', 'RUNNING'].some(status => Object.values(server).includes(status))) return '后台自动整理中，关闭页面后仍会继续'
+  return noteEnrichmentStatus[id]
 }
 function hasPendingNoteDraft(note: Doc) {
   const key = `wao-note-edit-v1:${session.currentUser.id}:${note.id}`
@@ -402,13 +458,21 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
       noteEnrichmentStatus[note.id] = '自动整理未完成：本地草稿尚未保存，请先在编辑卡片中保存后重试'
       return
     }
-    if (stage && noteEnrichmentProgress[note.id]?.[stage] !== 'failed') {
+    if (stage && stage !== 'tags' && serverWorkflows.value[note.id]?.[stage] === 'FAILED') {
+      serverWorkflows.value[note.id] = await retryNoteAiWorkflow(note.id)
+      noteEnrichmentStatus[note.id] = '后台已接续失败步骤，关闭页面后仍会继续'
+      return
+    }
+    if (stage && workflowProgress(note.id)?.[stage] !== 'failed') {
       const latest = data.docById(note.id) ?? note
       if (latest.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, latest.rev, stage, availableTags.value)
       return
     }
     noteEnrichmentStatus[note.id] = '正在重试未完成的自动整理…'
-    if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) await retryAutoNoteEnrichment(session.currentUser.id, note.id)
+    if (!stage && serverFailed(note.id)) {
+      serverWorkflows.value[note.id] = await retryNoteAiWorkflow(note.id)
+      noteEnrichmentStatus[note.id] = '后台已接续失败步骤，关闭页面后仍会继续'
+    } else if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) await retryAutoNoteEnrichment(session.currentUser.id, note.id)
     else if (stage && note.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, note.rev, stage, availableTags.value)
     else if (note.rev) startAutoNoteEnrichment(session.currentUser.id, note.id, note.rev, { title: true, image: true })
   } finally {
@@ -416,7 +480,7 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
   }
 }
 function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish' | 'tags') {
-  if (noteEnrichmentProgress[note.id]?.[stage] === 'running') return
+  if (stageDisabled(note.id, stage)) return
   void retryOrStart(note, stage)
 }
 // 筛选、分页或远端刷新不能卸载正在输入的卡片，尤其是浏览器草稿写入失败时。
@@ -438,6 +502,7 @@ function onCreated(id: string) {
   limit.value = PAGE_SIZE
   highlighted.value = id
   notesList.value?.scrollTo?.({ top: 0 })
+  void loadServerWorkflows()
 }
 function onEdited(sourceId: string, savedId: string) {
   closeEditing(sourceId)
@@ -491,9 +556,9 @@ async function createTag() {
   finally { creatingTag.value = false }
 }
 onMounted(() => { void data.ensureDocsLoaded(); void loadTags(); window.addEventListener('scroll', onNotesScroll, { passive: true }) })
-onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); window.addEventListener('pointerdown', onOutsideFilter); window.addEventListener('keydown', onReaderKeydown) })
-onBeforeUnmount(() => { clearCardClickTimer(); window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
-watch(() => session.currentUser.id, memberId => { void initializeNoteWorkflow(memberId); versions.value = {} })
+onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); void loadServerWorkflows(); workflowTimer = setInterval(() => { if (!document.hidden) void loadServerWorkflows() }, 20_000); window.addEventListener('pointerdown', onOutsideFilter); window.addEventListener('keydown', onReaderKeydown) })
+onBeforeUnmount(() => { clearCardClickTimer(); if (workflowTimer) clearInterval(workflowTimer); window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
+watch(() => session.currentUser.id, memberId => { serverWorkflows.value = {}; void initializeNoteWorkflow(memberId); void loadServerWorkflows(); versions.value = {} })
 onMounted(() => void loadPins())
 </script>
 
@@ -547,11 +612,11 @@ onMounted(() => void loadPins())
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出与按需操作">
-              <button v-for="stage in (['title', 'image', 'polish', 'tags'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${noteEnrichmentProgress[note.id]?.[stage] || 'pending'}`" :disabled="retryingEnrichment.includes(note.id) || noteEnrichmentProgress[note.id]?.[stage] === 'running'" :title="`${stageLabel(stage)}：${{ done: '已完成，点击重新生成', running: '正在处理', pending: '未生成，点击开始', failed: '失败，点击重试', skipped: '未启用，点击开始' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" :aria-label="`${stageLabel(stage)}${{ done: '已完成，点击重新生成', running: '正在处理', pending: '未生成，点击开始', failed: '失败，点击重试', skipped: '未启用，点击开始' }[noteEnrichmentProgress[note.id]?.[stage] || 'pending']}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
+              <button v-for="stage in (['title', 'image', 'polish', 'tags'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
             </div>
             <div v-if="validPolish(note)" class="version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(note)" @click="versions[note.id] = 'polished'">润色</button><button type="button" :aria-pressed="!showPolished(note)" @click="versions[note.id] = 'original'">原文</button></div>
             <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
-          <p v-if="progressVisible(note.id) && noteEnrichmentStatus[note.id]" class="workflow-status" role="status">{{ noteEnrichmentStatus[note.id] }} <button v-if="canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成')" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '保存并重试中…' : editingIds.includes(note.id) ? '保存并重试' : '重试' }}</button></p>
+            <p v-if="progressVisible(note.id) && workflowMessage(note.id)" class="workflow-status" role="status">{{ workflowMessage(note.id) }} <button v-if="serverFailed(note.id) || canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成')" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '保存并重试中…' : editingIds.includes(note.id) ? '保存并重试' : '重试' }}</button></p>
           <NoteComposer v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>

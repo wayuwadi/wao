@@ -569,6 +569,15 @@ paths:
       parameters: [ { name: id, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,32}$' } } ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateNoteRequest' } } } }
       responses: { '200': { description: 已创建或返回同一篇小记 }, '400': { description: 文档 ID 不合法或已被其他文档占用 } }
+  /docs/notes/ai-workflows:
+    get:
+      summary: 读取当前成员已明确勾选的小记后台整理阶段状态
+      responses: { '200': { description: 返回本人最多 200 篇小记的标题、配图、润色状态；不包含正文 } }
+  /docs/notes/ai-workflows/{docId}/retry:
+    post:
+      summary: 以本人当前已保存的小记版本重试失败阶段，已完成阶段不重复生成
+      parameters: [ { name: docId, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: 返回重置后的本人阶段状态 }, '404': { description: 任务不存在或不属于当前成员 } }
   /doc-templates:
     get:
       summary: 当前登录成员的文档模板列表
@@ -1949,6 +1958,9 @@ components:
           description: 可选；与 templateId 互斥，随新文档原子写入
           items: { $ref: '#/components/schemas/DocTemplateBlock' }
         content: { $ref: '#/components/schemas/RichDocContent' }
+        autoTitle: { type: boolean, description: 按成员当前小记 AI 偏好启用标题生成；缺省不启动 }
+        autoImage: { type: boolean, description: 按成员当前小记 AI 偏好启用总览图生成；缺省不启动 }
+        autoPolish: { type: boolean, description: 按成员当前小记 AI 偏好启用润色版本生成；缺省不启动 }
     PatchDocRequest:
       type: object
       properties:

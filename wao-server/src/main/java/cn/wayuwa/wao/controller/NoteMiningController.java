@@ -48,6 +48,19 @@ public class NoteMiningController {
         return ApiResponse.ok(service.feedback(member.idOr(request, "unknown"), id, body.status()));
     }
 
+    @PostMapping("/runs/{id}/visuals/{lens}/retry")
+    public ApiResponse<NoteMiningDto.Visual> retryVisual(@PathVariable String id, @PathVariable String lens,
+            HttpServletRequest request) {
+        return ApiResponse.ok(service.retryVisual(member.idOr(request, "unknown"), id, lens));
+    }
+
+    @PostMapping("/runs/{id}/visuals/{lens}/feedback")
+    public ApiResponse<NoteMiningDto.Visual> feedbackVisual(@PathVariable String id, @PathVariable String lens,
+            @Valid @RequestBody VisualFeedbackRequest body, HttpServletRequest request) {
+        return ApiResponse.ok(service.feedbackVisual(member.idOr(request, "unknown"), id, lens, body.status()));
+    }
+
     public record StartRequest(@NotBlank @Pattern(regexp = "[a-f0-9]{32}") String requestId) { }
     public record FeedbackRequest(@NotBlank @Pattern(regexp = "SAVED|NOT_ACCURATE|REMINDER_DRAFT") String status) { }
+    public record VisualFeedbackRequest(@NotBlank @Pattern(regexp = "SAVED|NOT_ACCURATE") String status) { }
 }

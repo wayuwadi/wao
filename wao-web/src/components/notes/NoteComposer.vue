@@ -264,7 +264,12 @@ async function save(asCopy = false) {
       data.applyRemoteDoc(saved)
       savedId = saved.id
     } else {
-      savedId = await data.addNote(text.value, generatedTitle.value, asCopy ? copyId : id.value, rich, [...tags.value])
+      const aiDefaults = preferences.noteAiDefaults
+      savedId = await data.addNote(text.value, generatedTitle.value, asCopy ? copyId : id.value, rich, [...tags.value], {
+        autoTitle: aiDefaults.title && !generatedTitle.value.trim(),
+        autoImage: aiDefaults.image,
+        autoPolish: aiDefaults.polish,
+      })
     }
     if (!savedId) throw new Error('正文为空，请先写点内容')
     try {
@@ -277,15 +282,12 @@ async function save(asCopy = false) {
     } catch { /* 服务端保存已成功。 */ }
     if (!props.note || asCopy) {
       const saved = data.docById(savedId)
-      const aiDefaults = preferences.noteAiDefaults
       const allowedTags = [...new Set([...(props.tagOptions ?? []), ...tags.value])]
-      if (saved?.rev && (aiDefaults.title || aiDefaults.image || aiDefaults.polish || allowedTags.length > 0)) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
-        title: !!generatedTitle.value,
-        titleEnabled: aiDefaults.title,
-        image: rich.markdown.startsWith('![文章总览图]('),
-        imageEnabled: aiDefaults.image,
-        polishEnabled: aiDefaults.polish,
-        tagsEnabled: allowedTags.length > 0,
+      if (saved?.rev && allowedTags.length > 0) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
+        titleEnabled: false,
+        imageEnabled: false,
+        polishEnabled: false,
+        tagsEnabled: true,
         allowedTags,
       })
     }

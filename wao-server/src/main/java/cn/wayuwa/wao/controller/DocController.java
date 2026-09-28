@@ -13,6 +13,9 @@ import cn.wayuwa.wao.dto.DocPresenceRequest;
 import cn.wayuwa.wao.dto.PatchDocRequest;
 import cn.wayuwa.wao.service.DocPresenceService;
 import cn.wayuwa.wao.service.KnowledgeService;
+import cn.wayuwa.wao.service.NoteAiWorkflowService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -34,15 +37,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/docs")
 public class DocController {
+    private static final Logger log = LoggerFactory.getLogger(DocController.class);
 
     private final KnowledgeService knowledge;
+    private final NoteAiWorkflowService noteAi;
     private final DocPresenceService presence;
     private final CurrentMember currentMember;
 
-    public DocController(KnowledgeService knowledge, DocPresenceService presence, CurrentMember currentMember) {
+    public DocController(KnowledgeService knowledge, DocPresenceService presence, CurrentMember currentMember,
+            NoteAiWorkflowService noteAi) {
         this.knowledge = knowledge;
         this.presence = presence;
         this.currentMember = currentMember;
+        this.noteAi = noteAi;
     }
 
     @GetMapping
@@ -75,7 +82,10 @@ public class DocController {
     /** 新建一条小记：不需要选知识库，直接落到小记知识库。 */
     @PostMapping("/notes")
     public ApiResponse<DocDto> createNote(@RequestBody CreateNoteRequest request, HttpServletRequest http) {
-        return ApiResponse.ok(knowledge.createNote(request, currentMember.id(http)));
+        String memberId = currentMember.id(http);
+        DocDto saved = knowledge.createNote(request, memberId);
+        scheduleNoteAi(memberId, saved, request);
+        return ApiResponse.ok(saved);
     }
 
     /**
@@ -84,7 +94,18 @@ public class DocController {
     @PutMapping("/notes/{id}")
     public ApiResponse<DocDto> putNote(@PathVariable String id, @RequestBody CreateNoteRequest request,
             HttpServletRequest http) {
-        return ApiResponse.ok(knowledge.createNote(id, request, currentMember.id(http)));
+        String memberId = currentMember.id(http);
+        DocDto saved = knowledge.createNote(id, request, memberId);
+        scheduleNoteAi(memberId, saved, request);
+        return ApiResponse.ok(saved);
+    }
+
+    private void scheduleNoteAi(String memberId, DocDto saved, CreateNoteRequest request) {
+        try { noteAi.beginIfRequested(memberId, saved, request); }
+        catch (RuntimeException ex) {
+            // 正文已经保存成功；AI 调度异常不能让幂等重试误报正文保存失败。
+            log.warn("小记已保存但自动整理未能入队：{}", saved.id(), ex);
+        }
     }
 
     @PatchMapping("/{id}")
