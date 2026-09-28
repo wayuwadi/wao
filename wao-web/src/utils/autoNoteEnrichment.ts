@@ -5,6 +5,7 @@ import { fetchPreference } from '@/api/favorites'
 import { newPolishRequestId, waitForPolish } from '@/api/polishJobs'
 import { fetchNotePolishVersions, saveNotePolishVersion, type NotePolishVersion } from '@/api/notePolishVersions'
 import { useDataStore } from '@/stores/data'
+import type { NoteAiDefaults } from '@/stores/preferences'
 import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
 import { cloneRichContent, legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { resolveNoteModel } from '@/utils/noteAiModel'
@@ -28,6 +29,9 @@ const MODEL_PREFERENCE_KEY = 'note-ai-model-v1'
 const TITLE_PROMPT_KEY = 'note-title-prompt-v1'
 const DEFAULT_TITLE_PROMPT = '标题准确概括这条小记的主题，简洁自然，方便以后搜索；只返回一个标题。'
 const running = new Set<string>()
+const documentWrites = new Map<string, Promise<void>>()
+type ScheduledTask = { run: () => Promise<unknown>; resolve: (value?: unknown) => void; reject: (error: unknown) => void }
+const stageQueues = new Map<string, { active: number; capacity: number; queue: ScheduledTask[] }>()
 const discarded = new Set<string>()
 let activeMember = ''
 let loadGeneration = 0
@@ -83,6 +87,60 @@ export function noteTextForPolish(markdown: string): string {
   return markdown.replace(/^!\[文章总览图\]\([^\n]+\)\s*/u, '').trim()
 }
 
+function readExecutionSettings(value: string): Pick<NoteAiDefaults, 'executionMode' | 'maxConcurrent'> {
+  try {
+    const parsed = JSON.parse(value) as Partial<NoteAiDefaults>
+    return {
+      executionMode: parsed.executionMode === 'serial' ? 'serial' : 'parallel',
+      maxConcurrent: [1, 2, 3, 4, 5].includes(parsed.maxConcurrent as number)
+        ? parsed.maxConcurrent as NoteAiDefaults['maxConcurrent'] : 3,
+    }
+  } catch { return { executionMode: 'parallel', maxConcurrent: 3 } }
+}
+
+function drainStageQueue(memberId: string) {
+  const scheduler = stageQueues.get(memberId)
+  if (!scheduler) return
+  while (scheduler.active < scheduler.capacity && scheduler.queue.length) {
+    const task = scheduler.queue.shift()!
+    scheduler.active++
+    void task.run().then(task.resolve, task.reject).finally(() => {
+      scheduler.active--
+      drainStageQueue(memberId)
+    })
+  }
+}
+
+function scheduleStage<T>(memberId: string, settings: Pick<NoteAiDefaults, 'executionMode' | 'maxConcurrent'>,
+    task: () => Promise<T>): Promise<T> {
+  let scheduler = stageQueues.get(memberId)
+  if (!scheduler) {
+    scheduler = { active: 0, capacity: 1, queue: [] }
+    stageQueues.set(memberId, scheduler)
+  }
+  scheduler.capacity = settings.executionMode === 'serial' ? 1 : settings.maxConcurrent
+  const result = new Promise<T>((resolve, reject) => {
+    scheduler!.queue.push({ run: task, resolve: value => resolve(value as T), reject })
+  })
+  drainStageQueue(memberId)
+  return result
+}
+
+async function serializeDocumentWrite<T>(job: AutoJob, task: () => Promise<T>): Promise<T> {
+  const key = keyOf(job.memberId, job.docId)
+  const previous = documentWrites.get(key) ?? Promise.resolve()
+  let release!: () => void
+  const lock = new Promise<void>(resolve => { release = resolve })
+  const queued = previous.then(() => lock)
+  documentWrites.set(key, queued)
+  await previous
+  try { return await task() }
+  finally {
+    release()
+    if (documentWrites.get(key) === queued) documentWrites.delete(key)
+  }
+}
+
 async function run(job: AutoJob) {
   const key = keyOf(job.memberId, job.docId)
   if (running.has(key) || !activeJob(job)) return
@@ -90,27 +148,31 @@ async function run(job: AutoJob) {
   const data = useDataStore()
   let stage: 'title' | 'image' | 'polish' | 'tags' = 'title'
   const stageErrors: string[] = []
+  let polishOutput: string | undefined
   try {
     job.error = undefined
     progress(job)
     const source = await fetchDoc(job.docId)
     if (!activeJob(job)) return
     const articleText = noteTextForPolish(resolvedRichContent(source).markdown)
-    const [modelValue, titlePromptValue, imagePromptValue, polishWorkspace] = await Promise.all([
+    const [modelValue, titlePromptValue, imagePromptValue, polishWorkspace, executionValue] = await Promise.all([
       fetchPreference(MODEL_PREFERENCE_KEY), fetchPreference(TITLE_PROMPT_KEY),
       fetchPreference(ARTICLE_IMAGE_PREFERENCE_KEY), fetchPreference('text-polish.prompt.v1'),
+      fetchPreference('note-ai-defaults-v1'),
     ])
     const model = resolveNoteModel(modelValue)
     const titlePrompt = titlePromptValue.trim() || DEFAULT_TITLE_PROMPT
     const imagePrompt = imagePromptValue.trim() || DEFAULT_ARTICLE_IMAGE_PROMPT
     const polishPrompt = polishWorkspace
+    const execution = readExecutionSettings(executionValue)
     if (!articleText) throw new Error('正文为空，无法自动整理')
     if (data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
       throw new Error('小记有未保存编辑，请保存后重试；自动结果不会覆盖草稿')
     }
-    if (job.titleEnabled !== false && !job.titleDone) {
-      stage = 'title'
-      progress(job, stage, 'running')
+    let conflicted = false
+    const runTitle = async () => {
+      if (!activeJob(job)) return
+      progress(job, 'title', 'running')
       noteEnrichmentStatus[job.docId] = '正在生成标题…'
       try {
         const result = await waitForPolish(articleText.slice(0, 12_000), 'NOTE_TITLE', {
@@ -121,114 +183,83 @@ async function run(job: AutoJob) {
         })
         const title = result.polished?.trim().slice(0, 30)
         if (!title) throw new Error('AI 未返回可用标题')
-        const latest = await fetchDoc(job.docId)
-        if (!activeJob(job)) return
-        if (latest.rev !== job.rev || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
-          throw new Error('小记已被修改，自动标题未覆盖现有内容；请重试')
-        }
-        const saved = await apiPatchDoc(job.docId, { title, expectedRev: job.rev })
-        if (!activeJob(job)) return
-        data.applyRemoteDoc(saved)
-        job.rev = saved.rev ?? job.rev + 1
+        await serializeDocumentWrite(job, async () => {
+          if (conflicted || !activeJob(job)) return
+          const latest = await fetchDoc(job.docId)
+          if (!activeJob(job)) return
+          if (latest.rev !== job.rev || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
+            throw new Error('小记已被修改，自动标题未覆盖现有内容；请重试')
+          }
+          const saved = await apiPatchDoc(job.docId, { title, expectedRev: job.rev })
+          if (!activeJob(job)) return
+          data.applyRemoteDoc(saved)
+          job.rev = saved.rev ?? job.rev + 1
+        })
+        if (!activeJob(job) || conflicted) return
         job.titleDone = true
         job.titleTerminalFailed = false
         save(job)
-        progress(job, stage, 'done')
+        progress(job, 'title', 'done')
       } catch (cause) {
         if (!activeJob(job)) return
         job.titleTerminalFailed = true
         const message = cause instanceof Error ? cause.message : '标题生成失败'
-        if (/已被修改|有未保存编辑/.test(message)) throw cause
+        if (/已被修改|有未保存编辑/.test(message)) conflicted = true
         stageErrors.push(`标题：${message}`)
         job.error = stageErrors.join('；')
         save(job)
-        progress(job, stage, 'failed')
+        progress(job, 'title', 'failed')
       }
     }
-    if (job.tagsEnabled && !job.tagsDone) {
+    const runTags = async () => {
+      if (!activeJob(job)) return
       stage = 'tags'
-      progress(job, stage, 'running')
+      progress(job, 'tags', 'running')
       noteEnrichmentStatus[job.docId] = '正在推荐已有标签…'
-      const latest = await fetchDoc(job.docId)
-      if (!activeJob(job)) return
-      if (latest.rev !== job.rev || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
-        throw new Error('小记已被修改，标签推荐未写入；请保存后重试')
-      }
-      job.tagRequestId ??= newPolishRequestId()
-      save(job)
-      const result = await waitForPolish(articleText.slice(0, 12_000), 'NOTE_TAGS', {
-        model, allowedTags: job.allowedTags ?? [], requestId: job.tagRequestId,
-        isActive: () => activeJob(job),
-        onProgress: value => { if (value.status === 'FAILED') job.tagTerminalFailed = true },
-      })
-      const suggested = [...new Set((result.polished ?? '').split(/\r?\n/u).map(tag => tag.trim()).filter(tag => (job.allowedTags ?? []).includes(tag)))].slice(0, 3)
-      if (!activeJob(job)) return
-      if (suggested.length) {
-        const current = await fetchDoc(job.docId)
+      try {
+        job.tagRequestId ??= newPolishRequestId()
+        save(job)
+        const result = await waitForPolish(articleText.slice(0, 12_000), 'NOTE_TAGS', {
+          model, allowedTags: job.allowedTags ?? [], requestId: job.tagRequestId,
+          isActive: () => activeJob(job),
+          onProgress: value => { if (value.status === 'FAILED') job.tagTerminalFailed = true },
+        })
+        const suggested = [...new Set((result.polished ?? '').split(/\r?\n/u).map(tag => tag.trim()).filter(tag => (job.allowedTags ?? []).includes(tag)))].slice(0, 3)
         if (!activeJob(job)) return
-        if (current.rev !== job.rev || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
-          throw new Error('小记已被修改，标签推荐未写入；请保存后重试')
-        }
-        const existingTags = await fetchNoteTags()
-        const stillExisting = suggested.filter(tag => existingTags.includes(tag))
-        if (stillExisting.length) {
-          const nextTags = [...new Set([...(current.tags ?? []), ...stillExisting])].slice(0, 20)
+        if (suggested.length) await serializeDocumentWrite(job, async () => {
+          if (conflicted || !activeJob(job)) return
+          const latest = await fetchDoc(job.docId)
+          if (!activeJob(job)) return
+          if (latest.rev !== job.rev || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
+            throw new Error('小记已被修改，标签推荐未写入；请保存后重试')
+          }
+          const existingTags = await fetchNoteTags()
+          const stillExisting = suggested.filter(tag => existingTags.includes(tag))
+          if (!stillExisting.length) return
+          const nextTags = [...new Set([...(latest.tags ?? []), ...stillExisting])].slice(0, 20)
           const saved = await apiPatchDoc(job.docId, { tags: nextTags, expectedRev: job.rev })
           if (!activeJob(job)) return
           data.applyRemoteDoc(saved)
           job.rev = saved.rev ?? job.rev + 1
-        }
-      }
-      job.tagsDone = true
-      job.tagTerminalFailed = false
-      save(job)
-      progress(job, stage, 'done')
-    }
-    if (job.polishEnabled !== false && !job.polishDone) {
-      stage = 'polish'
-      progress(job, stage, 'running')
-      noteEnrichmentStatus[job.docId] = '正在润色文案…'
-      const latest = await fetchDoc(job.docId)
-      if (!activeJob(job)) return
-      if (latest.rev !== job.rev || data.docPending(job.docId)
-          || hasUnsavedEdit(job.memberId, job.docId)) {
-        throw new Error('小记正文已变化，旧润色任务不会覆盖新内容；请重试')
-      }
-      const sourceMarkdown = resolvedRichContent(latest).markdown
-      const originalText = noteTextForPolish(sourceMarkdown)
-      if (originalText.length > 12_000) throw new Error('正文超过单次润色的 12000 字上限，请分段处理')
-      job.polishRequestId ??= newPolishRequestId()
-      save(job)
-      try {
-        const result = await waitForPolish(originalText, 'NOTE_BODY', {
-          model, notePolishPrompt: polishPrompt,
-          requestId: job.polishRequestId,
-          isActive: () => activeJob(job),
-          onProgress: value => { if (value.status === 'FAILED') job.polishTerminalFailed = true },
         })
-        if (!result.polished?.trim()) throw new Error('AI 未返回可用润色正文')
         if (!activeJob(job)) return
-        const version = await saveNotePolishVersion(job.docId, sourceMarkdown, result.polished)
-        if (!activeJob(job)) return
-        notePolishVersions[job.docId] = version
-        job.polishDone = true
-        job.polishTerminalFailed = false
+        job.tagsDone = true
+        job.tagTerminalFailed = false
         save(job)
-        progress(job, stage, 'done')
+        progress(job, 'tags', 'done')
       } catch (cause) {
         if (!activeJob(job)) return
-        job.polishTerminalFailed = true
-        const message = cause instanceof Error ? cause.message : '文案润色失败'
-        stageErrors.push(`润色：${message}`)
+        const message = cause instanceof Error ? cause.message : '标签推荐失败'
+        if (/已被修改|有未保存编辑/.test(message)) conflicted = true
+        stageErrors.push(`标签：${message}`)
         job.error = stageErrors.join('；')
         save(job)
-        progress(job, stage, 'failed')
+        progress(job, 'tags', 'failed')
       }
     }
-    // 文字润色先独立提交并取得结果，避免单张总览图的串行限制挡住其它小记的润色。
-    if (job.imageEnabled !== false && !job.imageDone) {
-      stage = 'image'
-      progress(job, stage, 'running')
+    const runImage = async () => {
+      if (!activeJob(job)) return
+      progress(job, 'image', 'running')
       noteEnrichmentStatus[job.docId] = '正在生成配图…'
       try {
         const startDeadline = Date.now() + 60 * 60_000
@@ -246,8 +277,6 @@ async function run(job: AutoJob) {
             const slotOccupied = message.includes('已有一张总览图正在生成')
             const concurrentInsert = message.includes('数据刚刚被其他请求占用')
             if (!slotOccupied && !concurrentInsert) throw cause
-            // 多个页面可能同时恢复同一条自动整理记录。保留同一个请求号重试，
-            // 让服务端接回先成功写入的图片任务，而不是把唯一键竞争显示成失败。
             noteEnrichmentStatus[job.docId] = slotOccupied
               ? '另一张总览图正在生成，空出后会自动继续…'
               : '图片任务正在由其他页面接续，稍后自动恢复…'
@@ -267,24 +296,28 @@ async function run(job: AutoJob) {
           }
           if (result.status === 'SUCCEEDED') {
             if (!result.imageUrl) throw new Error('生成任务没有返回图片地址')
-            const latest = await fetchDoc(job.docId)
-            if (!activeJob(job)) return
-            if (latest.rev !== job.rev || data.docPending(job.docId)
-                || hasUnsavedEdit(job.memberId, job.docId)) {
-              throw new Error('小记已被修改或有未保存编辑，新图未自动覆盖；请重试')
-            }
-            const content = cloneRichContent(resolvedRichContent(latest))
-            const imageNode = { type: 'image', attrs: { src: result.imageUrl, alt: '文章总览图', width: '50%', height: null, align: 'center' } }
-            if (content.document?.type === 'doc') content.document.content = [imageNode, ...(content.document.content ?? [])]
-            content.markdown = `![文章总览图](${result.imageUrl} "wao-image-size:50%xauto")\n\n${content.markdown}`
-            const saved = await apiPatchDoc(job.docId, { content, blocks: legacyProjection(content), expectedRev: job.rev })
-            if (!activeJob(job)) return
-            data.applyRemoteDoc(saved)
-            job.rev = saved.rev ?? job.rev + 1
+            await serializeDocumentWrite(job, async () => {
+              if (conflicted || !activeJob(job)) return
+              const latest = await fetchDoc(job.docId)
+              if (!activeJob(job)) return
+              if (latest.rev !== job.rev || data.docPending(job.docId)
+                  || hasUnsavedEdit(job.memberId, job.docId)) {
+                throw new Error('小记已被修改或有未保存编辑，新图未自动覆盖；请重试')
+              }
+              const content = cloneRichContent(resolvedRichContent(latest))
+              const imageNode = { type: 'image', attrs: { src: result.imageUrl, alt: '文章总览图', width: '50%', height: null, align: 'center' } }
+              if (content.document?.type === 'doc') content.document.content = [imageNode, ...(content.document.content ?? [])]
+              content.markdown = `![文章总览图](${result.imageUrl} "wao-image-size:50%xauto")\n\n${content.markdown}`
+              const saved = await apiPatchDoc(job.docId, { content, blocks: legacyProjection(content), expectedRev: job.rev })
+              if (!activeJob(job)) return
+              data.applyRemoteDoc(saved)
+              job.rev = saved.rev ?? job.rev + 1
+            })
+            if (!activeJob(job) || conflicted) return
             job.imageDone = true
             job.imageRequestId = undefined
             save(job)
-            progress(job, stage, 'done')
+            progress(job, 'image', 'done')
             break
           }
           await new Promise(resolve => setTimeout(resolve, 1800))
@@ -297,10 +330,70 @@ async function run(job: AutoJob) {
         stageErrors.push(`配图：${message}`)
         job.error = stageErrors.join('；')
         save(job)
-        progress(job, stage, 'failed')
+        progress(job, 'image', 'failed')
       }
     }
-    if ((job.titleDone || job.titleEnabled === false) && (job.imageDone || job.imageEnabled === false) && (job.polishDone || job.polishEnabled === false) && (job.tagsDone || job.tagsEnabled !== true)) finish(job)
+    const runPolish = async () => {
+      if (!activeJob(job)) return
+      progress(job, 'polish', 'running')
+      noteEnrichmentStatus[job.docId] = '正在润色文案…'
+      try {
+        if (articleText.length > 12_000) throw new Error('正文超过单次润色的 12000 字上限，请分段处理')
+        job.polishRequestId ??= newPolishRequestId()
+        save(job)
+        const result = await waitForPolish(articleText, 'NOTE_BODY', {
+          model, notePolishPrompt: polishPrompt,
+          requestId: job.polishRequestId,
+          isActive: () => activeJob(job),
+          onProgress: value => { if (value.status === 'FAILED') job.polishTerminalFailed = true },
+        })
+        if (!result.polished?.trim()) throw new Error('AI 未返回可用润色正文')
+        if (!activeJob(job)) return
+        polishOutput = result.polished
+        job.polishTerminalFailed = false
+      } catch (cause) {
+        if (!activeJob(job)) return
+        job.polishTerminalFailed = true
+        const message = cause instanceof Error ? cause.message : '文案润色失败'
+        stageErrors.push(`润色：${message}`)
+        job.error = stageErrors.join('；')
+        save(job)
+        progress(job, 'polish', 'failed')
+      }
+    }
+    const stages = [
+      job.titleEnabled !== false && !job.titleDone ? scheduleStage(job.memberId, execution, runTitle) : Promise.resolve(),
+      job.tagsEnabled === true && !job.tagsDone ? scheduleStage(job.memberId, execution, runTags) : Promise.resolve(),
+      job.imageEnabled !== false && !job.imageDone ? scheduleStage(job.memberId, execution, runImage) : Promise.resolve(),
+      job.polishEnabled !== false && !job.polishDone ? scheduleStage(job.memberId, execution, runPolish) : Promise.resolve(),
+    ]
+    const stageResults = await Promise.allSettled(stages)
+    const rejectedStage = stageResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (rejectedStage) throw rejectedStage.reason
+    if (!activeJob(job)) return
+    if (conflicted) throw new Error('小记已被修改，自动结果未覆盖现有内容；请重试')
+    if (polishOutput && job.polishEnabled !== false && !job.polishDone) {
+      stage = 'polish'
+      const version = await serializeDocumentWrite(job, async () => {
+        const latest = await fetchDoc(job.docId)
+        if (!activeJob(job)) return null
+        if (latest.rev !== job.rev || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
+          throw new Error('小记正文已变化，旧润色任务不会覆盖新内容；请重试')
+        }
+        const sourceMarkdown = resolvedRichContent(latest).markdown
+        if (noteTextForPolish(sourceMarkdown) !== articleText) throw new Error('小记正文已变化，旧润色任务不会覆盖新内容；请重试')
+        return saveNotePolishVersion(job.docId, sourceMarkdown, polishOutput!)
+      })
+      if (!activeJob(job)) return
+      if (!version) return
+        notePolishVersions[job.docId] = version
+        job.polishDone = true
+        job.polishTerminalFailed = false
+        save(job)
+        progress(job, stage, 'done')
+    }
+    if ((job.titleDone || job.titleEnabled === false) && (job.imageDone || job.imageEnabled === false)
+        && (job.polishDone || job.polishEnabled === false) && (job.tagsDone || job.tagsEnabled !== true)) finish(job)
     else if (stageErrors.length) {
       job.error = stageErrors.join('；')
       save(job)

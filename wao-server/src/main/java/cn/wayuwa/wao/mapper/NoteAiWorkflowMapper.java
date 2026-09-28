@@ -43,6 +43,14 @@ public interface NoteAiWorkflowMapper {
             """)
     List<String> pendingDocIds(@Param("limit") int limit);
 
+    /** 统计成员已经入队、占用生成并发额度的小记 AI 阶段。 */
+    @Select("""
+            SELECT COALESCE(SUM(title_status='RUNNING') + SUM(image_status='RUNNING')
+                         + SUM(polish_status='RUNNING'), 0)
+              FROM note_ai_workflow WHERE member_id=#{memberId}
+            """)
+    int countRunningStages(@Param("memberId") String memberId);
+
     @Update("""
             UPDATE note_ai_workflow SET base_rev=#{baseRev}, original_title=#{originalTitle},
               source_markdown_hash=#{sourceMarkdownHash}, title_status=#{titleStatus},

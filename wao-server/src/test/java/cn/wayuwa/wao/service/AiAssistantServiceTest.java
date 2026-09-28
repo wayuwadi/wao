@@ -253,6 +253,41 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void noteTitlePolishAndImagesCanBeQueuedWhileAnotherNoteStageIsActive() {
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("Linux 6.8", "codex")));
+        when(mapper.selectCount(any())).thenReturn(1L);
+
+        service.enqueueNoteTitleJob("note-title-1", "第一条小记正文", "", "gpt-6-sol");
+        service.enqueueNotePolishJob("note-polish-2", "第二条小记正文", "保留事实", "gpt-6-sol");
+        service.enqueueNoteWorkflowArticleImageJob("wg", "第一条小记正文", "配图一", "gpt-6-sol",
+                "0123456789abcdef0123456789abcdef");
+        service.enqueueNoteWorkflowArticleImageJob("wg", "第二条小记正文", "配图二", "gpt-6-sol",
+                "1123456789abcdef0123456789abcdef");
+
+        verify(mapper, org.mockito.Mockito.times(4)).insertReadOnlyQueued(any(AiAssistantRunEntity.class));
+        verify(mapper, never()).selectCount(any());
+    }
+
+    @Test
+    void manualArticleImageStillKeepsItsSingleActiveTaskGuard() {
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("Linux 6.8", "codex")));
+        when(mapper.selectCount(any())).thenReturn(1L);
+
+        assertThatThrownBy(() -> service.enqueueArticleImageJob("wg", "文档正文", "总览图提示词"))
+                .hasMessageContaining("已有一张总览图正在生成");
+    }
+
+    @Test
+    void manualArticleImageKeepsItsSingleTaskGuardEvenWithAStableRequestId() {
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("Linux 6.8", "codex")));
+        when(mapper.selectCount(any())).thenReturn(1L);
+
+        assertThatThrownBy(() -> service.enqueueArticleImageJob("wg", "文档正文", "总览图提示词", "gpt-6-sol",
+                "0123456789abcdef0123456789abcdef"))
+                .hasMessageContaining("已有一张总览图正在生成");
+    }
+
+    @Test
     void articleImageSnapshotsConfiguredCodexModelAndRejectsUnknownModel() {
         when(runnerMapper.selectList(any())).thenReturn(List.of(runner("Linux 6.8", "codex")));
         String id = service.enqueueArticleImageJob("wg", "文章正文", "画面提示词", "gpt-6-sol");

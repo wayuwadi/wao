@@ -35,21 +35,43 @@ describe('成员级界面偏好', () => {
     await preferences.load()
 
     expect(preferences.noteFullscreenReminder).toEqual({ enabled: true, delayMinutes: 1 })
-    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true })
+    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 3 })
     await preferences.setNoteFullscreenReminder({ enabled: false, delayMinutes: 5 })
     expect(preferenceApi.savePreference).toHaveBeenCalledWith(
       'note-fullscreen-reminder-v1', JSON.stringify({ enabled: false, delayMinutes: 5 }),
     )
     expect(preferences.noteFullscreenReminder).toEqual({ enabled: false, delayMinutes: 5 })
-    await preferences.setNoteAiDefaults({ title: false, polish: true, image: false })
+    await preferences.setNoteAiDefaults({ title: false, polish: true, image: false, executionMode: 'serial', maxConcurrent: 4 })
     expect(preferenceApi.savePreference).toHaveBeenCalledWith(
-      'note-ai-defaults-v1', JSON.stringify({ title: false, polish: true, image: false }),
+      'note-ai-defaults-v1', JSON.stringify({ title: false, polish: true, image: false, executionMode: 'serial', maxConcurrent: 4 }),
     )
-    expect(preferences.noteAiDefaults).toEqual({ title: false, polish: true, image: false })
+    expect(preferences.noteAiDefaults).toEqual({ title: false, polish: true, image: false, executionMode: 'serial', maxConcurrent: 4 })
 
     preferences.prepareForMember('another-member')
     expect(preferences.noteFullscreenReminder).toEqual({ enabled: true, delayMinutes: 1 })
-    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true })
+    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 3 })
+  })
+
+  it('读取旧小记偏好时补齐并行默认值，且保留有效并发设置', async () => {
+    preferenceApi.fetchPreference.mockImplementation((key: string) => Promise.resolve(
+      key === 'note-ai-defaults-v1'
+        ? JSON.stringify({ title: true, polish: false, image: true, executionMode: 'serial', maxConcurrent: 5 })
+        : '',
+    ))
+    const preferences = usePreferenceStore()
+    await preferences.load()
+    expect(preferences.noteAiDefaults).toEqual({
+      title: true, polish: false, image: true, executionMode: 'serial', maxConcurrent: 5,
+    })
+
+    preferenceApi.fetchPreference.mockImplementation((key: string) => Promise.resolve(
+      key === 'note-ai-defaults-v1' ? JSON.stringify({ title: false, polish: true, image: true }) : '',
+    ))
+    preferences.prepareForMember('member-with-legacy-settings')
+    await preferences.load()
+    expect(preferences.noteAiDefaults).toEqual({
+      title: false, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 3,
+    })
   })
 
 

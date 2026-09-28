@@ -31,6 +31,8 @@ export interface NoteAiDefaults {
   title: boolean
   polish: boolean
   image: boolean
+  executionMode: 'parallel' | 'serial'
+  maxConcurrent: 1 | 2 | 3 | 4 | 5
 }
 
 const DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS: NoteFullscreenReminderSettings = {
@@ -38,7 +40,9 @@ const DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS: NoteFullscreenReminderSettings 
   delayMinutes: 1,
 }
 
-const DEFAULT_NOTE_AI_DEFAULTS: NoteAiDefaults = { title: true, polish: true, image: true }
+const DEFAULT_NOTE_AI_DEFAULTS: NoteAiDefaults = {
+  title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 3,
+}
 
 const NOTE_REMINDER_DELAYS: NoteFullscreenReminderSettings['delayMinutes'][] = [1, 2, 3, 5, 10, 15]
 
@@ -63,6 +67,10 @@ function parseNoteAiDefaults(value: string): NoteAiDefaults {
       title: typeof parsed.title === 'boolean' ? parsed.title : DEFAULT_NOTE_AI_DEFAULTS.title,
       polish: typeof parsed.polish === 'boolean' ? parsed.polish : DEFAULT_NOTE_AI_DEFAULTS.polish,
       image: typeof parsed.image === 'boolean' ? parsed.image : DEFAULT_NOTE_AI_DEFAULTS.image,
+      executionMode: parsed.executionMode === 'serial' ? 'serial' : DEFAULT_NOTE_AI_DEFAULTS.executionMode,
+      maxConcurrent: [1, 2, 3, 4, 5].includes(parsed.maxConcurrent as number)
+        ? parsed.maxConcurrent as NoteAiDefaults['maxConcurrent']
+        : DEFAULT_NOTE_AI_DEFAULTS.maxConcurrent,
     }
   } catch {
     return { ...DEFAULT_NOTE_AI_DEFAULTS }
@@ -183,7 +191,13 @@ export const usePreferenceStore = defineStore('preferences', () => {
     loadError.value = ''
   }
   async function setNoteAiDefaults(settings: NoteAiDefaults) {
-    const normalized: NoteAiDefaults = { title: settings.title, polish: settings.polish, image: settings.image }
+    const normalized: NoteAiDefaults = {
+      title: settings.title,
+      polish: settings.polish,
+      image: settings.image,
+      executionMode: settings.executionMode === 'serial' ? 'serial' : 'parallel',
+      maxConcurrent: [1, 2, 3, 4, 5].includes(settings.maxConcurrent) ? settings.maxConcurrent : 3,
+    }
     await savePreference(NOTE_AI_DEFAULTS_KEY, JSON.stringify(normalized))
     noteAiDefaults.value = normalized
     loadError.value = ''
