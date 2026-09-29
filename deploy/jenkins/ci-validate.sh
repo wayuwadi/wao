@@ -21,6 +21,7 @@ sh deploy/jenkins/test-ci-build-release.sh
 sh deploy/jenkins/test-frontend-dependency-cache.sh
 bash deploy/jenkins/test-browser-release.sh
 bash deploy/jenkins/test-post-deploy-readiness.sh
+bash deploy/jenkins/test-single-node-availability.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
 sh deploy/jenkins/test-github-status.sh
