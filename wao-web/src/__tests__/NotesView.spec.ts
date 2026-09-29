@@ -330,13 +330,13 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('正文图片保留原位置并可查看大图，右键可复制地址', async () => {
+  it('小记卡片将 AI 与用户正文图片放到侧栏，阅读模式恢复原位置并可查看大图', async () => {
     const note = doc('images', '有图小记')
-    note.content = { version: 1, markdown: '正文\n\n![图一](/api/images/one/raw)\n\n![图二](/api/images/two/raw)',
+    note.content = { version: 1, markdown: '正文\n\n![用户配图](/api/images/one/raw)\n\n![AI 自动生成配图](/api/images/two/raw)',
       document: { type: 'doc', content: [
         { type: 'paragraph', content: [{ type: 'text', text: '正文' }] },
-        { type: 'image', attrs: { src: '/api/images/one/raw', alt: '图一' } },
-        { type: 'image', attrs: { src: '/api/images/two/raw', alt: '图二' } },
+        { type: 'image', attrs: { src: '/api/images/one/raw', alt: '用户配图' } },
+        { type: 'image', attrs: { src: '/api/images/two/raw', alt: 'AI 自动生成配图' } },
       ] } }
     useDataStore().docs.images = note
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }] })
@@ -344,18 +344,31 @@ describe('小记集中记录空间', () => {
     const wrapper = mount(NotesView, { global: { plugins: [router], stubs: { NoteMiningPanel: true } } })
     await vi.dynamicImportSettled()
     await flushPromises()
-    const images = wrapper.findAll('[data-note-id="images"] .note-body img.md-img')
-    expect(images).toHaveLength(2)
-    expect(wrapper.find('[data-note-id="images"] .note-image-rail').exists()).toBe(false)
-    expect(images.map(image => image.attributes('src'))).toEqual(['/api/images/one/preview', '/api/images/two/preview'])
-    await images[0]!.trigger('contextmenu', { clientX: 80, clientY: 80 })
+    const card = wrapper.get('[data-note-id="images"]')
+    expect(card.find('.note-body').text()).toContain('正文')
+    const thumbnails = card.findAll('.note-images img')
+    expect(thumbnails).toHaveLength(2)
+    expect(thumbnails.map(image => image.attributes('src'))).toEqual(['/api/images/one/preview', '/api/images/two/preview'])
+    await card.find('.note-images button').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"][aria-label="小记阅读模式"]')).not.toBeNull()
+    const readerImages = document.body.querySelectorAll<HTMLImageElement>('.reader-body img.md-img')
+    expect(readerImages).toHaveLength(2)
+    expect([...readerImages].map(image => image.getAttribute('src'))).toEqual(['/api/images/one/preview', '/api/images/two/preview'])
+    readerImages[0]!.click()
+    await flushPromises()
+    expect(document.body.querySelector('.note-image-lightbox img')?.getAttribute('src')).toBe('/api/images/one/raw')
+    document.body.querySelector('.note-image-lightbox img')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 80, clientY: 80 }))
     await flushPromises()
     expect(document.body.querySelector('[role="menu"][aria-label="图片操作"]')?.textContent).toContain('复制图片地址')
     expect(document.body.querySelector('[role="menu"][aria-label^="小记："]')).toBeNull()
     document.body.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="图片操作"] button')[1]?.click()
     await flushPromises()
     expect(copyText).toHaveBeenCalledWith(`${window.location.origin}/api/images/one/raw`, '图片地址已复制')
-    await images[1]!.trigger('click')
+    document.body.querySelector<HTMLButtonElement>('.note-image-close')?.click()
+    await flushPromises()
+    readerImages[1]!.click()
+    await flushPromises()
     expect(document.body.querySelector('.note-image-lightbox img')?.getAttribute('src')).toBe('/api/images/two/raw')
     document.body.querySelector('.note-image-lightbox img')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     await flushPromises()
