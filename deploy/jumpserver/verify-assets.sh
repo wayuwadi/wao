@@ -25,20 +25,16 @@ verify_ssh() {
 }
 
 verify_ssh 'Linux master' "$WAO_JMS_MASTER_USER" "$WAO_JMS_MASTER_ADDRESS"
-verify_ssh 'Linux slave' "$WAO_JMS_SLAVE_USER" "$WAO_JMS_SLAVE_ADDRESS" "$WAO_JMS_SLAVE_PORT"
 verify_ssh 'Cloud ingress' "$WAO_JMS_CLOUD_USER" "$WAO_JMS_CLOUD_ADDRESS"
 
 sudo -n install -m 0600 "$known_hosts" "$state_root/data/core/data/bootstrap/asset-known-hosts"
 sudo -n docker exec \
   -e "WAO_JMS_MASTER_ADDRESS=$WAO_JMS_MASTER_ADDRESS" \
   -e "WAO_JMS_MASTER_USER=$WAO_JMS_MASTER_USER" \
-  -e "WAO_JMS_SLAVE_ADDRESS=$WAO_JMS_SLAVE_ADDRESS" \
-  -e "WAO_JMS_SLAVE_PORT=$WAO_JMS_SLAVE_PORT" \
-  -e "WAO_JMS_SLAVE_VIA_MASTER=$WAO_JMS_SLAVE_VIA_MASTER" \
   -i jms_core sh -c \
   'python /opt/jumpserver/apps/manage.py shell < /opt/jumpserver/data/bootstrap/verify_wao_access.py'
 sudo -n docker exec -i jms_core sh -c \
   'python /opt/jumpserver/apps/manage.py shell < /opt/jumpserver/data/bootstrap/verify_wao_ssh.py'
 sudo -n docker exec -i jms_core sh -c \
   'python /opt/jumpserver/apps/manage.py shell < /opt/jumpserver/data/bootstrap/verify_wao_sso.py'
-echo 'JumpServer three-host inventory, accounts, grants, and WAO SSO session verified.'
+echo 'JumpServer Linux2/cloud inventory, accounts, grants, and WAO SSO session verified.'

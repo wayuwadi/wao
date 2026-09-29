@@ -42,5 +42,5 @@ def verify_asset(asset):
 
 
 with tmp_to_org(Organization.default()):
-    for name in ("WAO Linux 主节点", "WAO Linux 从节点", "WAO 阿里云入口"):
+    for name in ("WAO Linux 主节点", "WAO 阿里云入口"):
         verify_asset(Host.objects.get(name=name, is_active=True))

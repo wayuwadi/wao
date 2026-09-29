@@ -1,5 +1,7 @@
 # Phase 1：AI Run 批量部署与交付阶段
 
+> 部署说明：本文所述三节点发布属于形成时的历史拓扑；当前 Jenkins 部署路径以 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 为准。
+
 对应任务：`t1787823484656`（关于 AI 任务后的部署和流程的优化）。决策见
 [ADR-144](../adr/144-batched-ai-run-delivery.md)。
 

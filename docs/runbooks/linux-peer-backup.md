@@ -1,5 +1,7 @@
 # 两台 Linux 独立历史备份
 
+> 历史操作手册：Linux1 peer 定时任务和通道已停用。保留备份快照，不要按本文安装或重启任务；当前恢复路径见 [Linux2 单节点异地加密备份](linux2-only-cloud-backup.md) 与 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md)。
+
 123 WebDAV 尚未开通，按 2026-09-20 用户决定，当前先完成 Linux2 → Linux1 的恢复快照。
 这份快照同时包含两台机器的配置；MySQL 复制不算备份，不从在线副本的数据目录复制文件。
 

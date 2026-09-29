@@ -26,11 +26,11 @@ run_case() (
 )
 
 run_case master true codex-vpn
-grep -Fq 'up -d --wait mysql-master nacos nacos-init-admin ddns-go redis-master sentinel-master wao-server wao-agent-server wao-gateway' "${test_dir}/calls"
+grep -Fq 'up -d --wait mysql-master nacos nacos-init-admin ddns-go redis-master wao-server wao-agent-server wao-gateway' "${test_dir}/calls"
 grep -Fq 'up -d --no-deps codex-vpn codex-egress-proxy' "${test_dir}/calls"
 
 run_case master false codex-vpn
-grep -Fq 'up -d --wait redis-master sentinel-master wao-server wao-agent-server wao-gateway' "${test_dir}/calls"
+grep -Fq 'up -d --wait redis-master wao-server wao-agent-server wao-gateway' "${test_dir}/calls"
 if grep -Fq 'mysql-master' "${test_dir}/calls"; then
   echo 'External infrastructure mode must not start managed MySQL.' >&2
   exit 1
@@ -45,6 +45,10 @@ if grep -Fq 'codex-vpn' "${test_dir}/calls"; then
   exit 1
 fi
 
-run_case slave false unused
-grep -Fxq 'up -d --wait' "${test_dir}/calls"
+if run_case retired false unused >"${test_dir}/retired.out" 2>&1; then
+  echo 'A retired deployment role must not be accepted.' >&2
+  exit 1
+fi
+grep -Fq 'Only the Linux2 deployment role is supported.' "${test_dir}/retired.out"
+test ! -s "${test_dir}/calls"
 echo 'Optional Codex egress deployment tests passed.'

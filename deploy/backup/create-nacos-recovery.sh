@@ -7,6 +7,11 @@ umask 077
 [[ "$BACKUP_ROOT" =~ ^/[a-zA-Z0-9_/-]+$ && "$BACKUP_ROOT" != / ]] || exit 2
 [[ "$PEER_ROOT" =~ ^/[a-zA-Z0-9_/-]+$ && "$PEER_ROOT" != / ]] || exit 2
 [[ "$PEER_HOST" =~ ^[a-zA-Z0-9_.@-]+$ && "$PEER_HOST" != -* ]] || exit 2
+peer_name="${PEER_HOST#*@}"
+[[ "$peer_name" != linux1.wayuwa.cn && "$peer_name" != 10.66.0.3 ]] || {
+  echo 'Linux1 is retired and cannot be used as a Nacos backup destination.' >&2
+  exit 1
+}
 container=nacos
 root="${BACKUP_ROOT}-nacos"
 remote="${PEER_ROOT}-nacos"

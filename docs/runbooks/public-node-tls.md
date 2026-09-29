@@ -1,5 +1,7 @@
 # Linux 公网 HTTPS 基础入口
 
+> 历史运维记录：本文的 Linux1 公网证书转发流程已停用。Linux2 本机证书续期和云端公共入口按当前部署文档维护，不要安装本文的 Linux1 hook。
+
 本单元只解决可信证书、端口可达和证书更新，不改变 WAO 用户业务路由。当前入口
 `https://linux1.wayuwa.cn:9443/_edge/health` 返回 `businessRoutingEnabled=false`，其他路径返回 404。
 不能把探针通过说成已绕过云机承载 WAO 全部业务；静态版本发布、认证、跨域和降级必须另行验收。

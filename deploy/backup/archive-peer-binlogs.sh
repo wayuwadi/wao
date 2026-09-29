@@ -7,6 +7,11 @@ umask 077
 [[ "$BACKUP_ROOT" == /* && "$BACKUP_ROOT" != / && "$BACKUP_ROOT" != *..* ]] || exit 2
 [[ "$PEER_ROOT" =~ ^/[a-zA-Z0-9_/-]+$ && "$PEER_ROOT" != / && "$PEER_ROOT" != *..* ]] || exit 2
 [[ "$PEER_HOST" =~ ^[a-zA-Z0-9_.@-]+$ && "$PEER_HOST" != -* ]] || exit 2
+peer_name="${PEER_HOST#*@}"
+[[ "$peer_name" != linux1.wayuwa.cn && "$peer_name" != 10.66.0.3 ]] || {
+  echo 'Linux1 is retired and cannot be used as a binlog archive destination.' >&2
+  exit 1
+}
 [[ -s "$PASSPHRASE_FILE" ]] || exit 1
 install -d -m 0700 "$BACKUP_ROOT/binlogs"
 exec 9>"$BACKUP_ROOT/binlogs/.lock"
@@ -18,11 +23,6 @@ export MYSQL_PWD="${DB_ROOT_PASS:?}"
 python3 "$(dirname "$0")/verify-backup-source.py"
 mysql_args=(-uroot -h127.0.0.1 -P "${MYSQL_PORT:-3306}")
 ssh_args=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -i "$SSH_KEY" -o "UserKnownHostsFile=$KNOWN_HOSTS")
-peer_name="${PEER_HOST#*@}"
-if [[ "$peer_name" == linux1.wayuwa.cn || "$peer_name" == linux2.wayuwa.cn ]]; then
-  endpoint="$(python3 /usr/local/lib/wao-network/refresh-mesh-endpoint.py --resolve "$peer_name")"
-  ssh_args+=(-o "HostName=$endpoint" -o "HostKeyAlias=$peer_name")
-fi
 peer() { ssh -n "${ssh_args[@]}" "$PEER_HOST" "$@"; }
 peer_stream() { ssh "${ssh_args[@]}" "$PEER_HOST" "$@"; }
 [[ "$(mysql "${mysql_args[@]}" -N -e 'SELECT @@read_only + @@super_read_only')" == 0 ]] || { echo 'Configured binlog source is not writable; operator must verify the authoritative writer'; exit 1; }

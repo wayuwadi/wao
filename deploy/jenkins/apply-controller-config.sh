@@ -35,15 +35,12 @@ needs_update deploy/jenkins/backup-controller.sh /usr/local/lib/wao-jenkins/back
 needs_update deploy/jenkins/deploy-master-local.sh /usr/local/lib/wao-jenkins/deploy-master-local.sh
 for backup_script in \
   configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
-  upload-peer-offsite.sh restore-peer-offsite.sh run-readable-content.sh \
-  export-readable-content.py webdav_client.py \
-  create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py \
+  run-readable-content.sh export-readable-content.py webdav_client.py \
   create-cloud-backup.sh verify-cloud-backup.sh check-cloud-backup.py \
-  archive-peer-binlogs.sh plan-peer-binlogs.py; do
+  verify-backup-source.py; do
   needs_update "deploy/backup/$backup_script" "/usr/local/lib/wao-backup/$backup_script"
 done
-for unit in wao-peer-backup.service wao-peer-backup.timer \
-  wao-cloud-backup.service wao-cloud-backup.timer \
+for unit in wao-cloud-backup.service wao-cloud-backup.timer \
   wao-cloud-binlog.service wao-cloud-binlog.timer \
   wao-cloud-backup-check.service wao-cloud-backup-check.timer; do
   needs_update "deploy/backup/$unit" "/etc/systemd/system/$unit"
@@ -131,16 +128,14 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     install -d -m 0755 /host/usr/local/lib/wao-backup
     for backup_script in \
       configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
-      upload-peer-offsite.sh restore-peer-offsite.sh run-readable-content.sh \
-      create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py \
+      run-readable-content.sh \
       create-cloud-backup.sh verify-cloud-backup.sh check-cloud-backup.py \
-      archive-peer-binlogs.sh plan-peer-binlogs.py; do
+      export-readable-content.py webdav_client.py verify-backup-source.py; do
       cp "/workspace/deploy/backup/$backup_script" \
         "/host/usr/local/lib/wao-backup/$backup_script"
       chmod 0755 "/host/usr/local/lib/wao-backup/$backup_script"
     done
-    for unit in wao-peer-backup.service wao-peer-backup.timer \
-      wao-cloud-backup.service wao-cloud-backup.timer \
+    for unit in wao-cloud-backup.service wao-cloud-backup.timer \
       wao-cloud-binlog.service wao-cloud-binlog.timer \
       wao-cloud-backup-check.service wao-cloud-backup-check.timer; do
       install -o 0 -g 0 -m 0644 "/workspace/deploy/backup/$unit" "/host/etc/systemd/system/$unit"
@@ -204,8 +199,6 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     chmod 0755 /host/usr/local/lib/wao-backup/configure-offsite-backup.sh \
       /host/usr/local/lib/wao-backup/create-offsite-backup.sh \
       /host/usr/local/lib/wao-backup/restore-offsite-backup.sh \
-      /host/usr/local/lib/wao-backup/upload-peer-offsite.sh \
-      /host/usr/local/lib/wao-backup/restore-peer-offsite.sh \
       /host/usr/local/lib/wao-backup/run-readable-content.sh \
       /host/usr/local/lib/wao-backup/export-readable-content.py \
       /host/usr/local/lib/wao-backup/webdav_client.py \
@@ -216,6 +209,18 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/etc/systemd/system/wao-image-maintenance.timer
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl daemon-reload
+    for retired_unit in \
+      wao-peer-backup.timer wao-peer-binlog.timer wao-peer-backup-check.timer \
+      wao-peer-restore.timer wao-mysql-primary-tunnel.service \
+      wao-linux2-mesh-endpoint.timer wao-public-certificate-sync.timer \
+      wao-nacos-backup-check.timer wao-nacos-backup-check.service \
+      wao-nacos-restore.timer wao-nacos-restore.service; do
+      if chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
+          /usr/bin/systemctl cat "$retired_unit" >/dev/null 2>&1; then
+        chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
+          /usr/bin/systemctl disable --now "$retired_unit"
+      fi
+    done
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl enable --now wao-offsite-backup.timer
     if test -s /host/etc/wao-backup/cloud.env; then

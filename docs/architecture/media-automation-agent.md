@@ -11,12 +11,9 @@ flowchart LR
     U["已登录浏览器 WAO_SESSION"] --> N["云 Nginx"]
     N -->|/| WW["WAO Web"]
     WW -->|iframe /agent/| AW["Agent Web 独立目录"]
-    N -->|/api/agent/**| GM["Linux Gateway"]
-    N -->|/api/agent/**| GS["Linux1 Gateway"]
-    GM --> AM["Linux Agent Server"]
-    GS --> AS["Linux1 Agent Server"]
-    AM --> DB["WAO MySQL 主库"]
-    AS --> DB
+    N -->|/api/agent/**| G["Linux2 Gateway"]
+    G --> A["Linux2 Agent Server"]
+    A --> DB["WAO MySQL 主库"]
     DB --- ID["account/member/SPRING_SESSION"]
     DB --- AD["agent_* 业务表"]
 ```
@@ -55,7 +52,7 @@ Agent 与 WAO 共用 `wao` schema，以便直接恢复 Session 和账号；Agent
 
 ## 统一部署与运行隔离
 
-- Linux2 主节点与 Linux1 从节点：WAO Compose 同时管理 `wao-server`、`wao-agent-server` 与 `wao-gateway`，Agent 媒体继续使用节点本地持久卷。
+- Linux2 是唯一应用节点：WAO Compose 管理 `wao-server`、`wao-agent-server` 与 `wao-gateway`，Agent 媒体继续使用节点本地持久卷。
 - 云前端节点：同一 workflow 分别替换 `/var/www/wao/dist` 和 `/var/www/wao-agent/dist`，路径保持不变。
 - Agent 与主服务分别做健康检查、使用独立进程；发布失败时同一批镜像整体回滚，避免前后端契约错版。
 

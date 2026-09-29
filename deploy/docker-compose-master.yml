@@ -67,40 +67,6 @@ services:
     logging: *default-logging
     networks: [wao]
 
-  sentinel-master:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "${MASTER_BIND_IP:-0.0.0.0}:26379:26379"
-    environment:
-      REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
-      REDIS_PASS: ${REDIS_PASS}
-    command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
-    volumes:
-      - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro
-      - sentinel-master-data:/data
-    depends_on:
-      redis-master:
-        condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "redis-cli --no-auth-warning -p 26379 -a $$REDIS_PASS ping | grep PONG",
-        ]
-      interval: 10s
-      timeout: 3s
-      retries: 15
-    pids_limit: 64
-    deploy:
-      resources:
-        limits:
-          cpus: "0.25"
-          memory: 128M
-          pids: 64
-    logging: *default-logging
-    networks: [wao]
-
   nacos:
     image: nacos/nacos-server:v2.4.3
     profiles: ["managed-infra"]
@@ -253,8 +219,8 @@ services:
       NETEASE_MUSIC_BRAND: ${NETEASE_MUSIC_BRAND:-}
       NETEASE_MUSIC_MODEL: ${NETEASE_MUSIC_MODEL:-}
       REDIS_PASS: ${REDIS_PASS}
-      REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
-      REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}
+      REDIS_HOST: redis-master
+      REDIS_PORT: 6379
       NACOS_SERVER_ADDR: ${NACOS_RECOVERY_ADDR:-${NACOS_SERVER_ADDR:-nacos:8848}}
       NACOS_DISCOVERY_ENABLED: ${NACOS_DISCOVERY_ENABLED:-true}
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
@@ -414,9 +380,6 @@ services:
 volumes:
   mysql-master-data:
   redis-master-data:
-  sentinel-master-data:
-    name: wao-master_sentinel-master-data
-    external: true
   nacos-data:
   ddns-go-data:
   wao-agent-media:

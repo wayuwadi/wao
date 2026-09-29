@@ -12,9 +12,6 @@ case "$2" in
   master.test)
     printf '%s\n' '203.0.113.10 STREAM master.test' '203.0.113.10 DGRAM master.test'
     ;;
-  slave.test)
-    printf '%s\n' '198.51.100.20 STREAM slave.test' '198.51.100.20 DGRAM slave.test'
-    ;;
   *)
     exit 2
     ;;
@@ -25,12 +22,14 @@ chmod 0755 "${tmp_dir}/getent"
 rendered="${tmp_dir}/wao.conf"
 PATH="${tmp_dir}:${PATH}" \
   MASTER_PUBLIC_HOST='master.test' \
-  SLAVE_PUBLIC_HOST='slave.test' \
   WAO_NGINX_RENDER_OUTPUT="${rendered}" \
   sh "${script_dir}/render-nginx-config.sh"
 
-grep -q 'server 203.0.113.10:9000 backup max_fails=3' "${rendered}"
-grep -q 'server 198.51.100.20:9000' "${rendered}"
+grep -q 'server 203.0.113.10:9000 max_fails=3' "${rendered}"
+if grep -A 5 '^upstream wao_gateway {' "${rendered}" | grep -Eq 'backup|SLAVE_GATEWAY|10\.66\.0\.3'; then
+  echo 'Rendered Gateway upstream must contain only the Linux2 address.' >&2
+  exit 1
+fi
 grep -q 'log_format wao_ready_upstream' "${rendered}"
 grep -q 'access_log /var/log/nginx/access.log combined;' "${rendered}"
 grep -q 'access_log /var/log/nginx/wao-ready-upstream.log wao_ready_upstream if=\$wao_ready_trace;' "${rendered}"
@@ -62,82 +61,11 @@ if [ -n "${unexpected_upstreams}" ]; then
   exit 1
 fi
 
-MASTER_GATEWAY_STATE=' down' \
-  SLAVE_GATEWAY_STATE='' \
-  MASTER_GATEWAY_IPV4='203.0.113.10' \
-  SLAVE_GATEWAY_IPV4='198.51.100.20' \
-  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/master-down.conf" \
-  sh "${script_dir}/render-nginx-config.sh"
-grep -q 'server 203.0.113.10:9000 backup down max_fails=3' "${tmp_dir}/master-down.conf"
-grep -q 'server 198.51.100.20:9000 max_fails=3' "${tmp_dir}/master-down.conf"
-grep -q 'server 127.0.0.1:9000 backup max_fails=3' "${tmp_dir}/master-down.conf"
-
-MASTER_GATEWAY_STATE='' \
-  SLAVE_GATEWAY_STATE=' down' \
-  MASTER_GATEWAY_IPV4='203.0.113.10' \
-  SLAVE_GATEWAY_IPV4='198.51.100.20' \
-  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/slave-down.conf" \
-  sh "${script_dir}/render-nginx-config.sh"
-grep -q 'server 198.51.100.20:9000 down max_fails=3' "${tmp_dir}/slave-down.conf"
-grep -q 'server 127.0.0.1:9000 backup down max_fails=3' "${tmp_dir}/slave-down.conf"
-
-WAO_DEPLOY_TOPOLOGY=linux2-only \
-  MASTER_GATEWAY_IPV4='203.0.113.10' \
-  SLAVE_PUBLIC_HOST='missing.test' \
-  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/linux2-only.conf" \
-  sh "${script_dir}/render-nginx-config.sh"
-grep -q 'server 203.0.113.10:9000 max_fails=3' "${tmp_dir}/linux2-only.conf"
-if grep -A 6 '^upstream wao_gateway {' "${tmp_dir}/linux2-only.conf" | grep -Eq '198\.51\.100\.20|127\.0\.0\.1:9000|backup'; then
-  echo 'Linux2-only Gateway must not retain Linux1 routes.' >&2
-  exit 1
-fi
-
-if MASTER_GATEWAY_STATE='invalid' \
-  MASTER_GATEWAY_IPV4='203.0.113.10' \
-  SLAVE_GATEWAY_IPV4='198.51.100.20' \
-  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/invalid-state.conf" \
-  sh "${script_dir}/render-nginx-config.sh" >/dev/null 2>&1; then
-  echo 'Rendering must reject an invalid Gateway state.' >&2
-  exit 1
-fi
-
 if PATH="${tmp_dir}:${PATH}" \
   MASTER_PUBLIC_HOST='missing.test' \
-  SLAVE_PUBLIC_HOST='slave.test' \
   WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/missing.conf" \
   sh "${script_dir}/render-nginx-config.sh" >/dev/null 2>&1; then
   echo 'Rendering must fail when a Gateway has no IPv4 address.' >&2
-  exit 1
-fi
-
-# The cloud host uses WireGuard for Linux1 and retains the reverse tunnel as backup.
-cat >"${tmp_dir}/dig" <<'EOF'
-#!/bin/sh
-printf '%s\n' '198.51.100.21'
-EOF
-chmod 0755 "${tmp_dir}/dig"
-cat >"${tmp_dir}/getent" <<'EOF'
-#!/bin/sh
-case "$2" in
-  master.test) printf '203.0.113.10 STREAM master.test\n' ;;
-  linux1.wayuwa.cn) printf '127.0.0.1 STREAM linux1.wayuwa.cn\n' ;;
-  *) exit 1 ;;
-esac
-EOF
-PATH="${tmp_dir}:${PATH}" MASTER_PUBLIC_HOST=master.test SLAVE_PUBLIC_HOST=linux1.wayuwa.cn \
-  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/tunnel.conf" \
-  sh "${script_dir}/render-nginx-config.sh"
-grep -q 'server 10.66.0.3:9000 max_fails=3' "${tmp_dir}/tunnel.conf"
-grep -q 'server 127.0.0.1:9000 backup max_fails=3' "${tmp_dir}/tunnel.conf"
-if grep -q 'server 198.51.100.21:9000' "${tmp_dir}/tunnel.conf"; then
-  echo 'Cloud Gateway must use its private Linux1 routes rather than public DNS.' >&2
-  exit 1
-fi
-
-if SLAVE_GATEWAY_IPV4=127.0.0.1 \
-  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/duplicate.conf" \
-  sh "${script_dir}/render-nginx-config.sh" >/dev/null 2>&1; then
-  echo 'Linux1 primary and backup routes must differ.' >&2
   exit 1
 fi
 

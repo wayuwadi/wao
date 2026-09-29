@@ -50,7 +50,7 @@ class ArticleImageServiceTest {
         AiAssistantRunEntity run = run();
         when(runs.selectById("ac1")).thenReturn(run);
         AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
-        runner.setId("linux1");
+        runner.setId("linux2");
         when(aiRuns.authenticateRunner("token")).thenReturn(runner);
         byte[] png = png();
         MockMultipartFile file = new MockMultipartFile("image", "generated.png", "image/png", png);
@@ -62,9 +62,9 @@ class ArticleImageServiceTest {
         when(images.store(eq(png), eq("image/png"), eq("文章总览图.png"), any()))
                 .thenReturn(new ImageItemDto("img1", "文章总览图.png", "1 KB", "今天", "总览图",
                         "/api/images/img1/raw", "#fff", "#eee"));
-        when(runs.attachArticleImage("ac1", "linux1", "claim", "/api/images/img1/raw")).thenReturn(1);
+        when(runs.attachArticleImage("ac1", "linux2", "claim", "/api/images/img1/raw")).thenReturn(1);
         assertThat(service.upload("token", "ac1", "claim", file)).isEqualTo("/api/images/img1/raw");
-        verify(runs).attachArticleImage("ac1", "linux1", "claim", "/api/images/img1/raw");
+        verify(runs).attachArticleImage("ac1", "linux2", "claim", "/api/images/img1/raw");
 
         run.setResponseText("/api/images/img1/raw");
         assertThat(service.upload("token", "ac1", "claim", file)).isEqualTo("/api/images/img1/raw");
@@ -75,7 +75,7 @@ class ArticleImageServiceTest {
     void rejectsNonPngAndRemovesAnOrphanWhenClaimChanges() {
         when(runs.selectById("ac1")).thenReturn(run());
         AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
-        runner.setId("linux1");
+        runner.setId("linux2");
         when(aiRuns.authenticateRunner("token")).thenReturn(runner);
         assertThatThrownBy(() -> service.upload("token", "ac1", "claim",
                 new MockMultipartFile("image", "fake.png", "image/png", new byte[32])))
@@ -94,7 +94,7 @@ class ArticleImageServiceTest {
         run.setMemberId("me");
         run.setUsagePurpose(AiAssistantService.ARTICLE_IMAGE_PURPOSE);
         run.setStatus("secure_running");
-        run.setRunnerId("linux1");
+        run.setRunnerId("linux2");
         run.setClaimToken("claim");
         return run;
     }

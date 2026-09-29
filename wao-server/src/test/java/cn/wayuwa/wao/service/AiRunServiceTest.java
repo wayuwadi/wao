@@ -1257,7 +1257,7 @@ class AiRunServiceTest {
         when(runMapper.selectList(any())).thenReturn(List.of(first, second));
         when(runMapper.selectCount(any())).thenReturn(0L);
         when(configMapper.selectById("p1")).thenReturn(config("p1"));
-        when(runnerMapper.selectList(null)).thenReturn(List.of(runner("rn-linux1", "Linux1", "codex")));
+        when(runnerMapper.selectList(null)).thenReturn(List.of(runner("rn-linux2", "Linux2", "codex")));
         when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "任务一"));
         when(taskMapper.selectById("t2")).thenReturn(task("t2", "p1", "任务二"));
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(
@@ -1306,7 +1306,7 @@ class AiRunServiceTest {
         run.setTaskId(taskId);
         run.setProjectId("p1");
         run.setEngine("codex");
-        run.setRunnerId("rn-linux1");
+        run.setRunnerId("rn-linux2");
         run.setStatus("failed");
         run.setCreatedAt(createdAt);
         run.setPromptUrl("https://wao.example/api/share/tasks/" + taskId + ".md");

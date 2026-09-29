@@ -1,5 +1,7 @@
 # Phase 1：JumpServer 统一资源入口与 WAO 登录
 
+> 说明：本规划形成于 Linux1 退役之前。当前 JumpServer 资产与授权范围以 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 及现行 JumpServer 部署代码为准；本文中的 Linux1 资源要求不再适用。
+
 对应任务：`t1787813213986`（在现有资源上部署 JumpServer，并纳管 WAO 当前节点）、`t1787837409518`
 （授予娃哥、娃弟资产权限）、`t17878875673552`（修复独立登录静态资源与 WAO
 页签嵌入）、`t17881367537180`（修复证书与 WAO 免密入口回归）。

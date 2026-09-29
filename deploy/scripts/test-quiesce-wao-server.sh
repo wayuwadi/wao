@@ -13,7 +13,6 @@ mkdir -p "${project}/deploy" "${fake_bin}" "${tmp_dir}"
 : >"${project}/deploy/.env"
 : >"${project}/deploy/.env.secrets"
 : >"${project}/deploy/docker-compose-master.yml"
-: >"${project}/deploy/docker-compose-slave.yml"
 
 cat >"${fake_bin}/docker" <<'SH'
 #!/bin/sh
@@ -51,11 +50,6 @@ chmod +x "${fake_bin}/docker"
 cat >"${project}/deploy/.env" <<'ENV'
 MANAGE_MASTER_INFRA=true
 ENV
-
-WAO_QUIESCE_TEST_LOG="${log}" PATH="${fake_bin}:${PATH}" \
-  sh "${script_dir}/quiesce-wao-server.sh" slave stop "${project}"
-grep -Fq 'compose --env-file deploy/.env --env-file deploy/.env.secrets' "${log}"
-grep -Fq 'stop --timeout 30 wao-server' "${log}"
 
 WAO_QUIESCE_TEST_LOG="${log}" PATH="${fake_bin}:${PATH}" \
   sh "${script_dir}/quiesce-wao-server.sh" master pause-feishu-sync "${project}"
@@ -151,13 +145,13 @@ for managed in false true; do
 MANAGE_MASTER_INFRA=$managed
 MYSQL_HOST=old-fenced-host.invalid
 MYSQL_PORT=4407
-MYSQL_WRITER_HOST=10.66.0.3
+MYSQL_WRITER_HOST=10.66.0.2
 MYSQL_WRITER_PORT=3308
 DB_PASS=writer-test-secret-must-not-leak
 ENV
   WAO_QUIESCE_TEST_LOG="${log}" PATH="${fake_bin}:${PATH}" \
     TMPDIR="${tmp_dir}" sh "${script_dir}/quiesce-wao-server.sh" master rollout-status "${project}"
-  grep -Fq -- '--host=10.66.0.3 --port=3308 --user=wao_app wao' "${log}"
+  grep -Fq -- '--host=10.66.0.2 --port=3308 --user=wao_app wao' "${log}"
   if grep -Eq 'old-fenced-host|exec -T mysql-master|writer-test-secret' "${log}"; then
     echo 'Explicit authoritative writer must override local/managed database without leaking credentials' >&2
     exit 1

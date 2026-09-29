@@ -7,7 +7,7 @@ import { edgeBootstrapHtml } from './edge-build.mjs'
 
 const sha = 'a'.repeat(40)
 const origin = 'https://wao.wayuwa.cn'
-const node = 'https://linux1.wayuwa.cn:9443'
+const node = 'https://linux2.wayuwa.cn:9443'
 const path = `/releases/${sha}/assets/app.js`
 const asset = new TextEncoder().encode('export const value = 42')
 const digest = Buffer.from(await webcrypto.subtle.digest('SHA-256', asset)).toString('hex')
@@ -122,7 +122,7 @@ test('public asset goes directly to a node without cookies and retains same-orig
   assert.equal(await response.text(), new TextDecoder().decode(asset))
   assert.equal(response.url, '')
   assert.equal(response.headers.get('set-cookie'), null)
-  assert.equal(response.headers.get('x-wao-static-route'), 'linux1.wayuwa.cn')
+  assert.equal(response.headers.get('x-wao-static-route'), 'linux2.wayuwa.cn')
   assert.equal(h.calls.at(-1).options.credentials, 'omit')
 })
 
@@ -130,7 +130,7 @@ test('public in-page images route anonymously while the original URL remains unc
   const h = harness({ config: { ...config, publicImagesEnabled: true }, contentType: 'image/png' })
   const response = await h.request(origin + '/api/images/img123/raw', { destination: 'image' })
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), asset)
-  assert.equal(response.headers.get('x-wao-image-route'), 'linux1.wayuwa.cn')
+  assert.equal(response.headers.get('x-wao-image-route'), 'linux2.wayuwa.cn')
   assert.equal(response.headers.get('set-cookie'), null)
   assert.equal(response.url, '')
   assert.equal(h.calls.at(-1).options.credentials, 'omit')

@@ -22,7 +22,7 @@ class NodeTicketMysqlAcceptanceTest {
         var transaction = new TransactionTemplate(new DataSourceTransactionManager(ds));
         String hash = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "");
         String root = UUID.randomUUID().toString();
-        var ticket = new NodeTicketStore.Ticket(root, "node-ticket-acceptance", "https://linux1.wayuwa.cn:9443");
+        var ticket = new NodeTicketStore.Ticket(root, "node-ticket-acceptance", "https://linux2.wayuwa.cn:9443");
         long now = System.currentTimeMillis();
         var pool = Executors.newFixedThreadPool(8);
         try {

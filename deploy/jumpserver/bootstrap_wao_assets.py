@@ -15,8 +15,11 @@ from users.models import User, UserGroup
 AUTHORIZED_MEMBER_NAMES = {"娃哥", "娃弟"}
 AUTHORIZED_GROUP_NAME = "WAO 基础设施维护者"
 SSH_PERMISSION_NAME = "WAO 双人 SSH 管理"
+RETIRED_LINUX_ASSET_NAME = "WAO Linux 从节点"
 RETIRED_WINDOWS_ASSET_NAME = "WAO Windows 从节点"
 RETIRED_RDP_PERMISSION_NAME = "WAO 双人 Windows 图形管理"
+RETIRED_GATEWAY_NAME = "WAO Linux2 隧道网关"
+RETIRED_ZONE_NAME = "WAO Linux1 反向隧道"
 
 
 def required(name):
@@ -34,43 +37,24 @@ if not private_key.startswith("-----BEGIN OPENSSH PRIVATE KEY-----"):
 
 assets = [
     ("WAO Linux 主节点", required("WAO_JMS_MASTER_ADDRESS"), required("WAO_JMS_MASTER_USER")),
-    ("WAO Linux 从节点", required("WAO_JMS_SLAVE_ADDRESS"), required("WAO_JMS_SLAVE_USER")),
     ("WAO 阿里云入口", required("WAO_JMS_CLOUD_ADDRESS"), required("WAO_JMS_CLOUD_USER")),
 ]
-slave_port = int(required("WAO_JMS_SLAVE_PORT"))
-if not 1 <= slave_port <= 65535:
-    raise RuntimeError("Invalid slave SSH port")
-slave_via_master = required("WAO_JMS_SLAVE_VIA_MASTER") == "true"
-gateway_name = "WAO Linux2 隧道网关"
 
 with tmp_to_org(Organization.default()):
     node, _ = Node.org_root().get_or_create_child("WAO 基础设施")
     platform = Platform.objects.filter(name="Linux", category="host", type="linux").first()
     if platform is None:
         raise RuntimeError("JumpServer Linux host platform is unavailable")
-    slave_zone = None
-    if slave_via_master:
-        if not platform.gateway_enabled:
-            raise RuntimeError("Linux platform does not support SSH gateways")
-        slave_zone, _ = Zone.objects.update_or_create(
-            name="WAO Linux1 反向隧道", defaults={"comment": "经 Linux2 访问既有 loopback SSH 隧道。"},
-        )
-        gateway, _ = Gateway.objects.update_or_create(
-            name=gateway_name,
-            defaults={"address": required("WAO_JMS_MASTER_ADDRESS"),
-                      "platform": Gateway.default_platform(), "zone": slave_zone,
-                      "is_active": True},
-        )
-        Protocol.objects.update_or_create(asset=gateway, name="ssh", defaults={"port": 22})
-        Account.objects.update_or_create(
-            asset=gateway, name="wao-jumpserver",
-            defaults={"username": required("WAO_JMS_MASTER_USER"), "secret_type": "ssh_key",
-                      "secret": private_key, "privileged": True, "is_active": True},
-        )
-        # 网关仅用于既有从节点的传输，不加入用户可登录的三项资产授权。
-        gateway.nodes.set([])
-    else:
-        Gateway.objects.filter(name=gateway_name).update(is_active=False)
+    # The former Linux1 SSH route is retained only as inactive audit history.
+    for gateway in Gateway.objects.filter(name=RETIRED_GATEWAY_NAME):
+        gateway.is_active = False
+        gateway.save(update_fields=["is_active"])
+        Account.objects.filter(asset=gateway).update(is_active=False)
+    for zone in Zone.objects.filter(name=RETIRED_ZONE_NAME):
+        for gateway in zone.gateways.all():
+            gateway.is_active = False
+            gateway.save(update_fields=["is_active"])
+            Account.objects.filter(asset=gateway).update(is_active=False)
     registered_assets = {}
     ssh_usernames = set()
     for name, address, username in assets:
@@ -80,13 +64,13 @@ with tmp_to_org(Organization.default()):
                 "address": address,
                 "platform": platform,
                 "is_active": True,
-                "zone": slave_zone if name == "WAO Linux 从节点" else None,
+                "zone": None,
                 "comment": "由 WAO 主发布链路纳管；账号使用独立 SSH 密钥。",
             },
         )
         asset.nodes.set([node])
         Protocol.objects.update_or_create(
-            asset=asset, name="ssh", defaults={"port": slave_port if name == "WAO Linux 从节点" else 22}
+            asset=asset, name="ssh", defaults={"port": 22}
         )
         Account.objects.update_or_create(
             asset=asset,
@@ -103,8 +87,22 @@ with tmp_to_org(Organization.default()):
         registered_assets[name] = asset
         ssh_usernames.add(username)
 
-    if len(registered_assets) != 3:
+    if len(registered_assets) != 2:
         raise RuntimeError("WAO assets were not fully registered")
+
+    retired_linux_asset = Host.objects.filter(name=RETIRED_LINUX_ASSET_NAME).first()
+    if retired_linux_asset is not None:
+        retired_linux_asset.is_active = False
+        retired_linux_asset.zone = None
+        retired_linux_asset.comment = "历史 Linux1 资产已退役；不再纳入 WAO 运维授权。"
+        retired_linux_asset.save(update_fields=["is_active", "zone", "comment"])
+        retired_linux_asset.nodes.set([])
+        Account.objects.filter(asset=retired_linux_asset).update(is_active=False)
+        for permission in AssetPermission.objects.filter(assets=retired_linux_asset).distinct():
+            permission.assets.remove(retired_linux_asset)
+            if not permission.assets.exists():
+                permission.is_active = False
+                permission.save(update_fields=["is_active"])
 
     authorized_users = list(User.objects.filter(
         username__startswith="wao_",
@@ -137,7 +135,7 @@ with tmp_to_org(Organization.default()):
             **permission_defaults,
             "accounts": sorted(ssh_usernames),
             "protocols": ["ssh"],
-            "comment": "娃哥、娃弟使用 JumpServer 专用 SSH 密钥管理三台 WAO 主机。",
+            "comment": "娃哥、娃弟使用 JumpServer 专用 SSH 密钥管理 Linux2 与云入口。",
         },
     )
     # JumpServer v4.10.19 的权限缓存信号不能处理 clear() 发送的 pk_set=None；
@@ -150,7 +148,7 @@ with tmp_to_org(Organization.default()):
     retired_asset = Host.objects.filter(name=RETIRED_WINDOWS_ASSET_NAME).first()
     if retired_asset is not None:
         retired_asset.is_active = False
-        retired_asset.comment = "Windows1 已重装为 Linux1；该历史资产已退役。"
+        retired_asset.comment = "历史 Windows 节点资产已退役。"
         retired_asset.save(update_fields=["is_active", "comment"])
         retired_asset.nodes.set([])
         Account.objects.filter(asset=retired_asset).update(is_active=False)
@@ -160,11 +158,11 @@ with tmp_to_org(Organization.default()):
     ).first()
     if retired_rdp_permission is not None:
         retired_rdp_permission.is_active = False
-        retired_rdp_permission.comment = "Windows1 已退役；Linux1 仅使用 SSH。"
+        retired_rdp_permission.comment = "历史 Windows 图形管理权限已退役。"
         retired_rdp_permission.save(update_fields=["is_active", "comment"])
         retired_rdp_permission.users.set([])
         retired_rdp_permission.user_groups.set([])
         retired_rdp_permission.assets.set([])
         retired_rdp_permission.nodes.set([])
 
-print("WAO JumpServer Linux assets and dual-member SSH grants registered")
+print("WAO JumpServer Linux2/cloud assets and dual-member SSH grants registered")

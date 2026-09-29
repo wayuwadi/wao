@@ -9,51 +9,31 @@ docker run --rm --cpus=2 --memory=1g --pids-limit=256 \
 python3 deploy/jenkins/test-controller-health.py
 
 sh deploy/scripts/test-render-nginx-config.sh
-sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-activate-nginx-config.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
-sh deploy/scripts/test-linux-slave-availability.sh
-sh deploy/scripts/test-redis-sentinel-policy.sh
-python3 deploy/redis/test_private_ha.py
 sh deploy/scripts/test-validate-jvm-budget.sh
 sh deploy/scripts/test-image-content.sh
 sh deploy/scripts/test-validate-deployment-node.sh
 sh deploy/scripts/test-ensure-codex-egress.sh
 sh deploy/scripts/test-deploy-optional-egress.sh
-sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 sh deploy/jenkins/test-ci-build-release.sh
 sh deploy/jenkins/test-frontend-dependency-cache.sh
 bash deploy/jenkins/test-browser-release.sh
 bash deploy/jenkins/test-post-deploy-readiness.sh
-bash deploy/jenkins/test-slave-rollout-state.sh
-bash deploy/jenkins/test-early-browser-release.sh
-bash deploy/jenkins/test-slave-image-selection.sh
-bash deploy/jenkins/test-slave-release-transfer.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
 sh deploy/jenkins/test-github-status.sh
 sh deploy/jenkins/test-backup-controller.sh
-python3 -m unittest deploy/ai-runner/test_linux2_tunnel.py
 python3 -m unittest deploy/backup/test_webdav_client.py
 python3 -m unittest deploy/backup/test_readable_content.py
-python3 -m unittest deploy/backup/test_peer_retention.py deploy/backup/test_peer_health.py
-python3 -m unittest deploy/backup/test_authoritative_wao_snapshot.py
 python3 -m unittest deploy/infrastructure/test_health_watch.py
 python3 -m unittest deploy/scripts/test_node_dns_acme.py
 python3 -m unittest deploy/scripts/test_static_release.py
 python3 -m unittest deploy/scripts/test_static_routing.py
-bash -n deploy/scripts/node-dns-acme-remote.sh
 bash -n deploy/scripts/deploy-node-certificate.sh
 bash -n deploy/scripts/deploy-local-node-certificate.sh
-bash -n deploy/backup/create-peer-backup.sh
-bash -n deploy/backup/create-authoritative-wao-snapshot.sh deploy/backup/export-authoritative-wao-on-writer.sh
-bash -n deploy/backup/verify-authoritative-wao-restore.sh
-bash -n deploy/backup/verify-peer-restore.sh
-bash -n deploy/backup/check-peer-backup.sh
-bash -n deploy/backup/restore-latest-peer-backup.sh
 sh deploy/backup/test-offsite-backup.sh
-bash deploy/backup/test-peer-offsite.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
 python3 -m unittest deploy/jumpserver/test_verify_wao_ssh.py
 sh deploy/jumpserver/test-verify-assets.sh
@@ -73,10 +53,7 @@ for script in \
   deploy/scripts/healthcheck-codex-egress.sh \
   deploy/scripts/start-codex-vpn.sh \
   deploy/scripts/test-ensure-codex-egress.sh \
-  deploy/scripts/install-release-linux.sh \
-  deploy/scripts/emergency-publish-cloud.sh \
   deploy/scripts/resolve-gateway-ipv4.sh \
-  deploy/scripts/test-redis-sentinel-policy.sh \
   deploy/jenkins/resolve-batch-base.sh \
   deploy/jenkins/test-resolve-batch-base.sh \
   deploy/jenkins/notify-feishu.sh \
@@ -92,7 +69,6 @@ test -s deploy/jenkins/fonts/WAO-Release-Sans.ttf
 test -s deploy/jenkins/fonts/OFL.txt
 test -s deploy/jenkins/lib/release-poster.jar
 bash -n deploy/jenkins/ci-deploy.sh
-bash -n deploy/scripts/emergency-release-linux1.sh
 bash -n deploy/backup/create-cloud-backup.sh
 bash -n deploy/backup/verify-cloud-backup.sh
 
@@ -100,8 +76,6 @@ for script in \
   deploy/backup/configure-offsite-backup.sh \
   deploy/backup/create-offsite-backup.sh \
   deploy/backup/restore-offsite-backup.sh \
-  deploy/backup/upload-peer-offsite.sh \
-  deploy/backup/restore-peer-offsite.sh \
   deploy/backup/run-readable-content.sh; do
   bash -n "$script"
 done
@@ -228,33 +202,7 @@ test -n "${WAO_GIT_SHA:-}"
 printf '%s' "$WAO_GIT_SHA" | grep -Eq '^[0-9a-f]{40}$'
 test -n "${WAO_RUN_TEMP:-}"
 
-case "${BOOTSTRAP_SLAVE:-false}" in
-  true|false) ;;
-  *) echo 'BOOTSTRAP_SLAVE must be true or false.' >&2; exit 2 ;;
-esac
-
 case "${DEPLOY_PRODUCTION:-false}" in
   true|false) ;;
   *) echo 'DEPLOY_PRODUCTION must be true or false.' >&2; exit 2 ;;
 esac
-
-case "${ALLOW_SLAVE_OFFLINE:-false}" in
-  true|false) ;;
-  *) echo 'ALLOW_SLAVE_OFFLINE must be true or false.' >&2; exit 2 ;;
-esac
-
-case "${ALLOW_MASTER_OFFLINE:-false}" in
-  true|false) ;;
-  *) echo 'ALLOW_MASTER_OFFLINE must be true or false.' >&2; exit 2 ;;
-esac
-
-if [ "${ALLOW_MASTER_OFFLINE:-false}" = true ] &&
-   { [ "${ALLOW_SLAVE_OFFLINE:-false}" = true ] || [ "${BOOTSTRAP_SLAVE:-false}" = true ]; }; then
-  echo 'ALLOW_MASTER_OFFLINE cannot be combined with another emergency or bootstrap mode.' >&2
-  exit 2
-fi
-
-if [ "${BOOTSTRAP_SLAVE:-false}" = true ] && [ "${ALLOW_SLAVE_OFFLINE:-false}" = true ]; then
-  echo 'BOOTSTRAP_SLAVE and ALLOW_SLAVE_OFFLINE cannot both be true.' >&2
-  exit 2
-fi

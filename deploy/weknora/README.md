@@ -21,7 +21,7 @@ Linux2 数据根目录 `/opt/wao-weknora`；`upstream/` 保存该 tag 的运行�
 薇娜拉实际检索「薇娜拉 · 知识库与小记」派生库：它只镜像 WAO 已成功同步的原始知识库与小记，不含重复原文很多的 Codex 工作记录。完整的「WAO 同步知识库」仍保留所有已同步资料及其向量。Mac 登录后及之后每小时，`cn.wayuwa.wao-weknora-repair` LaunchAgent 在本地 Ollama 与受限隧道可用时重试失败的嵌入任务、按来源标识和正文指纹幂等更新派生库，并核对薇娜拉的检索范围。临时操作密钥在 Linux2 生成并于调用结束吊销；本机不保存 WeKnora 密钥。宿主机专用的脚本和 LaunchAgent 配置放在本机 `weknora-local/` 与 `~/Library/Application Support/WAO-WeKnora/`，不进入仓库。
 
 升级先备份 PostgreSQL（pg_dump）、data-files 和 redis-data 卷及整个私有配置目录（含 AES/JWT 密钥）。
-停止写入后取得一致备份；通过加密 SSH 传输到 Linux1 的权限受限备份目录（文件 600，目录 700）。恢复在相同版本空环境中导入数据库、还原文件卷和私有配置，再启动。
+停止写入后取得一致备份；通过加密 SSH 传输到云端受限备份目录（文件 600，目录 700）。恢复在相同版本空环境中导入数据库、还原文件卷和私有配置，再启动。当前备份边界见 [Linux2 单节点异地备份手册](../../docs/runbooks/linux2-only-cloud-backup.md)。
 已迁移数据库的回退必须恢复配套备份，不仅是切回镜像。WAO 日常 CD 不自动升级这个运行单元。
 # WAO 内容同步运维补充
 

@@ -1,5 +1,7 @@
 # 2026-09-20 业务超时与 JVM 容器内存越界
 
+> 历史事故记录：本文中的 Linux1 健康检查与双节点处置不再适用。当前部署与恢复边界见 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md)。
+
 ## 已确认的故障
 
 Linux2 运行 `wao-server:2e4b61c`，容器内存限制 2 GiB，镜像入口使用

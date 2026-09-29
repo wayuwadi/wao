@@ -28,8 +28,7 @@ class VerifySshTest(unittest.TestCase):
         functions = ast.Module(body=[n for n in tree.body if isinstance(n, ast.FunctionDef)], type_ignores=[])
         exec(compile(functions, "verify_wao_ssh.py", "exec"), namespace)
         self.verify = namespace["verify_asset"]
-        self.gateway = self.asset("Linux2", "linux2.example", 22)
-        self.slave = self.asset("Linux1", "127.0.0.1", 2201, self.gateway)
+        self.master = self.asset("Linux2", "linux2.example", 22)
 
     @staticmethod
     def asset(name, address, port, gateway=None):
@@ -39,7 +38,7 @@ class VerifySshTest(unittest.TestCase):
                                get_protocol_port=lambda protocol: port)
 
     def test_direct_route_uses_saved_account_and_strict_known_hosts(self):
-        self.verify(self.gateway)
+        self.verify(self.master)
         client = self.clients[0]
         self.assertEqual(client.connect.call_args.args, ("linux2.example",))
         options = client.connect.call_args.kwargs
@@ -50,51 +49,48 @@ class VerifySshTest(unittest.TestCase):
         client.set_missing_host_key_policy.assert_called_once_with(self.paramiko.RejectPolicy.return_value)
         client.__exit__.assert_called_once()
 
-    def test_loopback_slave_connects_through_saved_gateway(self):
-        self.verify(self.slave)
-        gateway, slave = self.clients
-        opener = gateway.get_transport.return_value.open_channel
-        self.assertEqual(opener.call_args.args[0:2], ("direct-tcpip", ("127.0.0.1", 2201)))
-        self.assertEqual(slave.connect.call_args.kwargs["port"], 2201)
-        self.assertIs(slave.connect.call_args.kwargs["sock"], opener.return_value.__enter__.return_value)
-        slave.__exit__.assert_called_once()
-        gateway.__exit__.assert_called_once()
+    def test_cloud_route_uses_direct_ssh(self):
+        cloud = self.asset("Cloud", "cloud.example", 22)
+        self.verify(cloud)
+        client = self.clients[0]
+        self.assertEqual(client.connect.call_args.args, ("cloud.example",))
+        self.assertEqual(client.connect.call_args.kwargs["port"], 22)
+        self.assertIsNone(client.connect.call_args.kwargs["sock"])
 
     def test_direct_nonstandard_port_is_preserved(self):
-        self.verify(self.asset("Direct", "slave.example", 2223))
+        self.verify(self.asset("Direct", "cloud.example", 2223))
         self.assertEqual(self.clients[0].connect.call_args.kwargs["port"], 2223)
         self.assertIsNone(self.clients[0].connect.call_args.kwargs["sock"])
 
     def test_password_account_is_rejected(self):
-        self.slave.accounts.get.return_value.secret_type = "password"
+        self.master.accounts.get.return_value.secret_type = "password"
         with self.assertRaisesRegex(RuntimeError, "Dedicated SSH key"):
-            self.verify(self.slave)
-        self.assertEqual(len(self.clients), 1)
-        self.clients[0].__exit__.assert_called_once()
+            self.verify(self.master)
+        self.assertEqual(len(self.clients), 0)
 
-    def test_gateway_failure_cannot_report_success(self):
+    def test_ssh_failure_cannot_report_success(self):
         client = MagicMock()
         client.__enter__.return_value = client
         client.connect.side_effect = OSError("gateway refused")
         self.paramiko.SSHClient.side_effect = None
         self.paramiko.SSHClient.return_value = client
         with redirect_stdout(StringIO()) as output, self.assertRaises(OSError):
-            self.verify(self.slave)
+            self.verify(self.master)
         self.assertEqual(output.getvalue(), "")
         client.__exit__.assert_called_once()
 
-    def test_target_key_or_connection_failure_closes_gateway(self):
+    def test_target_key_or_connection_failure_closes_client(self):
         original = self.paramiko.SSHClient.side_effect
 
         def factory():
             client = original()
-            if len(self.clients) == 2:
+            if len(self.clients) == 1:
                 client.connect.side_effect = OSError("target host key mismatch")
             return client
 
         self.paramiko.SSHClient.side_effect = factory
         with redirect_stdout(StringIO()) as output, self.assertRaises(OSError):
-            self.verify(self.slave)
+            self.verify(self.master)
         self.assertEqual(output.getvalue(), "")
         for client in self.clients:
             client.__exit__.assert_called_once()
@@ -109,7 +105,7 @@ class VerifySshTest(unittest.TestCase):
 
         self.paramiko.SSHClient.side_effect = factory
         with self.assertRaisesRegex(RuntimeError, "SSH command failed"):
-            self.verify(self.gateway)
+            self.verify(self.master)
 
 
 if __name__ == "__main__":

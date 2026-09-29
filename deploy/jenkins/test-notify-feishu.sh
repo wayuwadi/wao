@@ -99,16 +99,13 @@ assert_json() {
 }
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
-slave_status=success
-slave_attempts=1
-slave_detail=abc1234
-master_status=success
-master_attempts=1
-master_detail=abc1234
+linux2_status=success
+linux2_attempts=1
+linux2_detail=abc1234
 cloud_status=success
 cloud_detail=abc1234
 verification_status=success
-verification_detail=双节点、云端与公共入口检查通过
+verification_detail=Linux2、云端静态制品与公共入口检查通过
 publish_completed_at=2026-09-24 16:39:00
 EOF
 
@@ -130,7 +127,7 @@ sh "$project_root/deploy/jenkins/notify-feishu.sh"
 
 assert_json '.card.header.title.content == "WAO 生产发布 ✅ 成功"'
 assert_json '.card.header.template == "green"'
-assert_json '.card.elements[0].text.content | contains("双节点、云端与公共入口检查通过")'
+assert_json '.card.elements[0].text.content | contains("Linux2、云端静态制品与公共入口检查通过")'
 assert_json '.card.elements[0].text.content | contains("精简 Jenkins 通知")'
 assert_json '.card.elements[0].text.content | contains("**发布时间** 2026-09-24 16:39:00")'
 assert_json '.card.elements[1].tag == "img" and .card.elements[1].img_key == "img_test_release"'
@@ -142,10 +139,7 @@ test -s "$fixture/run/wao-release-poster.png"
 rm -f "$fixture/payload.json"
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
-topology=linux2-only
-slave_status=skipped
-slave_detail=Linux1 已退役
-master_status=success
+linux2_status=success
 cloud_status=success
 verification_status=success
 publish_completed_at=2026-09-27 22:00:00
@@ -157,40 +151,14 @@ PATH="$fixture/bin:$PATH" WAO_TEST_PAYLOAD="$fixture/payload.json" \
   BUILD_NUMBER=327 sh "$project_root/deploy/jenkins/notify-feishu.sh"
 assert_json '.card.header.title.content == "WAO 生产发布 ✅ Linux2 单节点成功"'
 assert_json '.card.header.template == "green"'
-assert_json '.card.elements[0].text.content | contains("Linux1 已正式退役")'
+assert_json '.card.elements[0].text.content | contains("Linux2、云端静态制品与公共入口检查通过")'
+assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("Linux1") | not'
 rm -f "$fixture/payload.json"
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
-slave_status=success
-master_status=skipped
-cloud_status=success
-verification_status=success
-verification_detail=Linux1 单节点与公共入口已就绪
-publish_completed_at=2026-09-27 07:30:00
-EOF
-
-PATH="$fixture/bin:$PATH" \
-WAO_TEST_PAYLOAD="$fixture/payload.json" \
-WAO_PIPELINE_RESULT=success \
-WAO_MASTER_PROJECT_ROOT="$fixture/master" \
-WAO_RUN_TEMP="$fixture/run" \
-WAO_DEPLOY_REQUIRED=true DEPLOY_PRODUCTION=true \
-WAO_GIT_SHA=abcdef1234567890abcdef1234567890abcdef12 \
-WAO_COMMIT_MESSAGE='- fix(deploy): 增加应急单节点发布' \
-BUILD_NUMBER=321 \
-sh "$project_root/deploy/jenkins/notify-feishu.sh"
-assert_json '.card.header.title.content == "WAO 生产发布 ⚠️ Linux1 单节点成功"'
-assert_json '.card.header.template == "orange"'
-assert_json '.card.elements[0].text.content | contains("Linux2 发布前不可用")'
-rm -f "$fixture/payload.json"
-
-cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
-slave_status=success
-slave_attempts=1
-slave_detail=abcdef12
-master_status=failed
-master_attempts=3
-master_detail=健康检查未通过
+linux2_status=failed
+linux2_attempts=3
+linux2_detail=健康检查未通过
 cloud_status=not_started
 cloud_detail=not_started
 verification_status=not_started
@@ -205,7 +173,7 @@ WAO_MASTER_PROJECT_ROOT="$fixture/master" \
 WAO_RUN_TEMP="$fixture/run" \
 WAO_DEPLOY_REQUIRED=true \
 DEPLOY_PRODUCTION=true \
-WAO_FAILURE_STAGE='Deploy Linux slave, master and cloud' \
+WAO_FAILURE_STAGE='Deploy Linux2 and cloud' \
 WAO_GIT_SHA=abcdef1234567890abcdef1234567890abcdef12 \
 WAO_BATCH_COMMIT_COUNT=1 \
 WAO_COMMIT_MESSAGE='- feat(task): 精简通知' \
@@ -214,18 +182,15 @@ sh "$project_root/deploy/jenkins/notify-feishu.sh"
 
 assert_json '.card.header.title.content == "WAO 生产发布 ❌ 失败"'
 assert_json '.card.elements | length == 2'
-assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("三节点滚动发布：健康检查未通过")'
+assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("Linux2 与云端发布：健康检查未通过")'
 assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("**本次改动**") | not'
 assert_json '.card.elements[1].actions[0].text.content == "查看 Jenkins 详情"'
 assert_json '.card.elements[1].actions[0].url == "https://wao.wayuwa.cn/jenkins/job/wao-main-cd/322/"'
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
-slave_status=not_started
-slave_attempts=0
-slave_detail=not_started
-master_status=not_started
-master_attempts=0
-master_detail=not_started
+linux2_status=not_started
+linux2_attempts=0
+linux2_detail=not_started
 cloud_status=not_started
 cloud_detail=not_started
 verification_status=not_started
@@ -284,8 +249,7 @@ assert_json '.card.elements | length == 2'
 
 # 图片上传失败仍只发送一张原有成功卡；不会把已验收的生产发布改判失败。
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
-slave_status=success
-master_status=success
+linux2_status=success
 cloud_status=success
 verification_status=success
 EOF

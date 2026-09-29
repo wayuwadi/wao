@@ -1,5 +1,7 @@
 # Phase 1：任务驱动的 AI Run
 
+> 说明：本规格形成于 Linux1 退役之前。当前有效 Runner 与发布目标以 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 为准；本文中的 Linux1 隧道场景不再作为运行条件。
+
 ## 用户路径
 
 0. 用户也可在首页 AI 控制台只写一句目标，选择已启用的项目工作流和本次执行电脑；Codex 工作流还可在

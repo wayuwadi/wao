@@ -2,7 +2,6 @@
 set -eu
 
 MASTER_PUBLIC_HOST="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}"
-SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}"
 
 check_gateway() {
   name="$1"
@@ -32,6 +31,5 @@ check_gateway() {
 }
 
 failed=0
-check_gateway master "${MASTER_PUBLIC_HOST}" || failed=1
-check_gateway slave "${SLAVE_PUBLIC_HOST}" || failed=1
+check_gateway linux2 "${MASTER_PUBLIC_HOST}" || failed=1
 exit "${failed}"

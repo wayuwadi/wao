@@ -8,46 +8,18 @@ spec.loader.exec_module(source)
 
 
 class SourceTest(unittest.TestCase):
-    def test_private_transport_still_checks_port_uuid_and_gtid(self):
-        def sql(statement, upstream=False):
-            if statement.startswith('SELECT @@read_only'): return '0\t0\t1'
-            if statement.startswith('SELECT account_locked'): return 'Y'
-            if statement.startswith('SHOW REPLICA'):
-                return '\n'.join(['Source_Host: 127.0.0.1', 'Source_Port: 13306', 'Source_UUID: writer',
-                    'Replica_IO_Running: Yes', 'Replica_SQL_Running: Yes',
-                    'Replicate_Wild_Do_Table: wao.%', 'Seconds_Behind_Source: 0'])
-            if upstream: return 'writer\twriter:1-3'
-            if statement.startswith('SELECT WAIT_FOR'): return '0'
-            self.fail('unexpected query')
-        self.assertIn('verified-wao-replica', source.check(sql, 'linux1', '127.0.0.1', 13306))
-        with self.assertRaisesRegex(ValueError, 'not healthy'):
-            source.check(sql, 'linux1', '127.0.0.1', 3306)
+    def test_linux2_is_the_only_current_writer(self):
+        values = iter(['0\t0\t1', 'N'])
+        self.assertEqual(
+            source.check(lambda _: next(values), 'linux2'),
+            'linux2-four-database-writer',
+        )
 
-    def test_fenced_original_writer_is_not_claimed_current(self):
-        values = iter(['0\t0\t1', 'Y'])
-        with self.assertRaisesRegex(ValueError, 'fenced'):
-            source.check(lambda _: next(values), 'linux2')
-
-    def test_promoted_topology_requires_applied_barrier(self):
-        for waited in ('0', '1'):
-            def sql(statement, upstream=False):
-                if statement.startswith('SELECT @@read_only'):
-                    return '0\t0\t1'
-                if statement.startswith('SELECT account_locked'):
-                    return 'Y'
-                if statement.startswith('SHOW REPLICA'):
-                    return '\n'.join(['Source_Host: 10.66.0.3', 'Source_Port: 3306', 'Source_UUID: new', 'Replica_IO_Running: Yes',
-                        'Replica_SQL_Running: Yes', 'Replicate_Wild_Do_Table: wao.%', 'Seconds_Behind_Source: 0'])
-                if upstream:
-                    return 'new\tnew:1-3'
-                if statement.startswith('SELECT WAIT_FOR'):
-                    return waited
-                self.fail('unexpected query')
-            if waited == '0':
-                self.assertIn('verified-wao-replica', source.check(sql, 'linux1'))
-            else:
-                with self.assertRaisesRegex(ValueError, 'barrier'):
-                    source.check(sql, 'linux1')
+    def test_other_writer_or_locked_account_is_rejected(self):
+        for writer, locked in [('linux1', 'N'), ('linux2', 'Y')]:
+            values = iter(['0\t0\t1', locked])
+            with self.assertRaises(ValueError):
+                source.check(lambda _: next(values), writer)
 
 
 if __name__ == '__main__':

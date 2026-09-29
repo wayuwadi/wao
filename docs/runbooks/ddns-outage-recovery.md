@@ -1,5 +1,7 @@
 # 家庭地址变化后的 WAO 恢复
 
+> 历史记录：本文处理 Linux1 与双节点私网故障，已由 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 取代。Linux1 DDNS、隧道和旧恢复步骤已退役，不要照本文执行。
+
 2026-09-22 修复记录：Linux1 独立 cron DDNS 脚本先查询 IPv4，失败就退出，跳过 AAAA。桌面 VPN 的假 IP DNS和虚拟网卡路由又干扰出口探测。公网前缀变化后，两机 WireGuard、数据库 SSH 通道和备份连接持续使用旧地址。
 
 ## 持续更新

@@ -10,34 +10,15 @@ pipeline {
 
     parameters {
         booleanParam(
-            name: 'BOOTSTRAP_SLAVE',
-            defaultValue: false,
-            description: '历史双节点参数；Linux2 唯一节点拓扑会拒绝此操作。'
-        )
-        booleanParam(
             name: 'DEPLOY_PRODUCTION',
             defaultValue: true,
             description: '关闭时只打包，不部署生产。'
-        )
-        booleanParam(
-            name: 'ALLOW_SLAVE_OFFLINE',
-            defaultValue: false,
-            description: '历史双节点应急参数；Linux2 唯一节点拓扑无需开启。'
-        )
-        booleanParam(
-            name: 'ALLOW_MASTER_OFFLINE',
-            defaultValue: false,
-            description: '历史双节点应急参数；Linux2 唯一节点拓扑会拒绝此操作。'
         )
     }
 
     environment {
         WAO_RUN_TEMP = "${WORKSPACE}@tmp/wao-${BUILD_NUMBER}"
-        MASTER_HOST = 'linux2.wayuwa.cn'
-        SLAVE_HOST = 'linux1.wayuwa.cn'
-        // 保留历史双节点参数兼容旧构建；linux2-only 发布不会连接 Linux1。
-        SLAVE_SSH_HOST = '127.0.0.1'
-        SLAVE_SSH_PORT = '2201'
+        LINUX2_HOST = 'linux2.wayuwa.cn'
         CLOUD_HOST = '8.136.152.131'
     }
 
@@ -123,7 +104,6 @@ pipeline {
                             error("无法解析变更范围：${line}")
                         }
                     }
-                    if (params.BOOTSTRAP_SLAVE || params.ALLOW_SLAVE_OFFLINE || params.ALLOW_MASTER_OFFLINE) { env.WAO_WEB_ONLY = 'false' }
                     env.WAO_OPS_CONFIG_CHANGED = sh(
                         script: '''
                             if git diff --name-only "$WAO_CHANGE_BASE" "$WAO_GIT_SHA" |
@@ -167,25 +147,18 @@ pipeline {
                 expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' }
             }
             steps {
-                // 历史 Linux1 SSH 变量供旧双节点构建兼容；单节点脚本不会访问它。
-                withEnv([
-                    'SLAVE_SSH_KEY=/etc/jenkins/secrets/slave-ed25519',
-                    'SLAVE_KNOWN_HOSTS=/etc/jenkins/secrets/slave-known-hosts',
-                    'SLAVE_USER=wage'
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'wao-cloud-ssh',
+                        keyFileVariable: 'CLOUD_SSH_KEY',
+                        usernameVariable: 'CLOUD_USER'
+                    ),
+                    file(
+                        credentialsId: 'wao-cloud-known-hosts',
+                        variable: 'CLOUD_KNOWN_HOSTS'
+                    )
                 ]) {
-                    withCredentials([
-                        sshUserPrivateKey(
-                            credentialsId: 'wao-cloud-ssh',
-                            keyFileVariable: 'CLOUD_SSH_KEY',
-                            usernameVariable: 'CLOUD_USER'
-                        ),
-                        file(
-                            credentialsId: 'wao-cloud-known-hosts',
-                            variable: 'CLOUD_KNOWN_HOSTS'
-                        )
-                    ]) {
-                        sh 'BOOTSTRAP_SLAVE="$BOOTSTRAP_SLAVE" ALLOW_SLAVE_OFFLINE="$ALLOW_SLAVE_OFFLINE" ALLOW_MASTER_OFFLINE="$ALLOW_MASTER_OFFLINE" deploy/jenkins/ci-deploy.sh'
-                    }
+                    sh 'deploy/jenkins/ci-deploy.sh'
                 }
             }
             post {
@@ -217,7 +190,7 @@ pipeline {
                     def nodeStatus = (params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true')
                         ? sh(script: '''
                             if [ -f "$WAO_RUN_TEMP/wao-deploy-status.env" ]; then
-                              grep -E '^(topology|master_status|slave_status)=' "$WAO_RUN_TEMP/wao-deploy-status.env"
+                              grep -E '^(linux2_status|cloud_status|verification_status)=' "$WAO_RUN_TEMP/wao-deploy-status.env"
                             fi
                         ''', returnStdout: true).trim()
                         : ''
@@ -226,15 +199,10 @@ pipeline {
                         successDescription = 'Jenkins 已检查变更（无需生产发布）'
                     } else if (!params.DEPLOY_PRODUCTION) {
                         successDescription = 'Jenkins 影子构建成功（未部署）'
-                    } else if (nodeStatus.contains('topology=linux2-only') &&
-                               nodeStatus.contains('master_status=success') &&
-                               nodeStatus.contains('slave_status=skipped')) {
-                        successDescription = 'Jenkins Linux2 单节点发布成功（Linux1 已退役）'
-                    } else if (nodeStatus.contains('master_status=skipped') ||
-                               nodeStatus.contains('master_status=degraded')) {
-                        successDescription = 'Jenkins 单节点发布成功：Linux1，Linux2 待同步'
-                    } else if (nodeStatus.contains('slave_status=skipped')) {
-                        successDescription = 'Jenkins 单节点发布成功：Linux2，Linux1 待同步'
+                    } else if (nodeStatus.contains('linux2_status=success') &&
+                               nodeStatus.contains('cloud_status=success') &&
+                               nodeStatus.contains('verification_status=success')) {
+                        successDescription = 'Jenkins Linux2 与云端发布成功'
                     }
                     withCredentials([usernamePassword(
                         credentialsId: 'wao-github-pat',

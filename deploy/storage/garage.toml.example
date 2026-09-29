@@ -1,5 +1,6 @@
-# Generate a fresh 32-byte hex rpc_secret outside Git and use the same value on
-# all three nodes. Set 10.66.0.2 (Linux2), .3 (Linux1), or .1 (cloud) below.
+# HISTORICAL THREE-NODE EXAMPLE: Linux1 is retired. Do not deploy this example
+# or copy its replication factor and node addresses. See deploy/storage/README.md.
+# Generate a fresh 32-byte hex rpc_secret outside Git before any approved deployment.
 metadata_dir = "/var/lib/garage/meta"
 data_dir = "/var/lib/garage/data"
 db_engine = "sqlite"

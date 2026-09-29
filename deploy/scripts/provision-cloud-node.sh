@@ -41,7 +41,6 @@ printf '%s\n' '#!/bin/sh' 'set -eu' 'nginx -t' 'systemctl reload nginx' >"${rene
 chmod 0755 "${renewal_hook}"
 
 sh "${script_dir}/activate-nginx-config.sh"
-chmod 0755 "${script_dir}/set-nginx-upstream-state.sh"
 systemctl enable nginx
 cron_file='/etc/cron.d/wao-health'
 printf '%s\n' \

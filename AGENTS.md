@@ -101,7 +101,7 @@ https://wao.wayuwa.cn/api/share/tasks/<taskId>.md?openOnly=true
 
 ## 当前进度
 
-- Phase 0 代码与本地纵向链路已完成；三节点实机上线正在执行，清单见 `docs/runbooks/phase-0-rollout.md`。
+- Phase 0 代码与本地纵向链路已完成，Linux2 单节点生产切换已完成；当前拓扑和恢复边界见 ADR-291 与 `docs/runbooks/linux2-only-cloud-backup.md`。
 - Phase 1 规格准备中：业务架构放 `docs/business/`，ER 图和字段字典放 `docs/database/`，通过 PR 评审后开始实现。
 
 ## 禁止事项

@@ -7,23 +7,17 @@ sed -n '/^deploy_browser_only() {$/,/^}$/p' "$root/deploy/jenkins/ci-deploy.sh" 
 cat >"$fixture/run.sh" <<'SH'
 set -eu
 source "$FIXTURE/function.sh"
-BOOTSTRAP_SLAVE="${BOOTSTRAP:-false}"
-ALLOW_SLAVE_OFFLINE=false
-ALLOW_MASTER_OFFLINE=false
-WAO_DEPLOY_TOPOLOGY="${TOPOLOGY:-dual}"
 WAO_CHANGE_BASE=base
 WAO_GIT_SHA=target
-MASTER_HOST=master
-SLAVE_HOST=slave
 availability_failures="$FIXTURE/failures"
 : >"$availability_failures"
 sh() { printf 'WAO_WEB_ONLY=%s\n' "${PLAN:-true}"; }
-prepare_cloud_routing() { echo routing >>"$LOG"; }
-set_upstream_state() { echo "upstream:$1:$2" >>"$LOG"; }
-gateway_ready_from_cloud() { echo "probe:$1" >>"$LOG"; [ "${PROBE_FAIL:-false}" != true ]; }
-start_availability_monitor() { echo start >>"$LOG"; }
-stop_availability_monitor() { echo stop >>"$LOG"; }
-deploy_cloud() { echo publish >>"$LOG"; [ "${PUBLISH_FAIL:-false}" != true ]; }
+prepare_cloud_routing() { echo routing >>"$LOG"; [ "${ROUTING_FAIL:-false}" != true ]; }
+wait_until_ready() { "$@"; }
+gateway_ready_from_cloud() { echo gateway_probe >>"$LOG"; [ "${PROBE_FAIL:-false}" != true ]; }
+start_availability_monitor() { echo monitor_start >>"$LOG"; }
+stage_cloud() { echo stage >>"$LOG"; [ "${STAGE_FAIL:-false}" != true ]; }
+publish_release() { echo publish >>"$LOG"; [ "${PUBLISH_FAIL:-false}" != true ]; }
 set_status() { echo "$1:$2" >>"$LOG"; }
 deploy_browser_only
 SH
@@ -31,24 +25,27 @@ run_case() {
   local name="$1" expected="$2" actual=0
   shift 2
   : >"$fixture/$name.log"
-  env FIXTURE="$fixture" LOG="$fixture/$name.log" "$@" bash "$fixture/run.sh" || actual=$?
+  (
+    export FIXTURE="$fixture" LOG="$fixture/$name.log"
+    for variable in "$@"; do export "$variable"; done
+    bash "$fixture/run.sh"
+  ) || actual=$?
   if [[ "$expected" = success ]]; then test "$actual" = 0; else test "$actual" != 0; fi
 }
 run_case good success
-test "$(grep -c '^probe:' "$fixture/good.log")" = 4
-run_case linux2_only success TOPOLOGY=linux2-only
-test "$(grep -c '^probe:' "$fixture/linux2_only.log")" = 2
-grep -qx 'upstream:slave:down' "$fixture/linux2_only.log"
-grep -qx 'slave_status:skipped' "$fixture/linux2_only.log"
-grep -qx 'publish' "$fixture/good.log"
-test "$(grep -nE '^(routing|publish)$' "$fixture/good.log" | cut -d: -f2)" = "$(printf 'routing\npublish')"
-grep -qx 'cloud_status:success' "$fixture/good.log"
+grep -qx routing "$fixture/good.log"
+grep -qx gateway_probe "$fixture/good.log"
+grep -qx stage "$fixture/good.log"
+grep -qx publish "$fixture/good.log"
+grep -qx 'linux2_status:success' "$fixture/good.log"
 run_case mixed failure PLAN=false
 ! grep -q publish "$fixture/mixed.log"
-run_case bootstrap failure BOOTSTRAP=true
-! grep -q publish "$fixture/bootstrap.log"
+run_case routing_failure failure ROUTING_FAIL=true
+! grep -q stage "$fixture/routing_failure.log"
 run_case unhealthy failure PROBE_FAIL=true
-! grep -q publish "$fixture/unhealthy.log"
-run_case upload_failure failure PUBLISH_FAIL=true
-! grep -q 'cloud_status:success' "$fixture/upload_failure.log"
-echo 'Browser release guard and failure tests passed.'
+! grep -q stage "$fixture/unhealthy.log"
+run_case stage_failure failure STAGE_FAIL=true
+! grep -q 'linux2_status:success' "$fixture/stage_failure.log"
+run_case publish_failure failure PUBLISH_FAIL=true
+! grep -q 'linux2_status:success' "$fixture/publish_failure.log"
+echo 'Linux2-only browser release guard checks passed.'

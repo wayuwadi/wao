@@ -20,17 +20,8 @@ runtime_dir="${WAO_NGINX_RUNTIME_DIR:-/run/wao-nginx-upstreams}"
 install -d -m 0755 "${runtime_dir}"
 exec 9>"${runtime_dir}/config.lock"
 flock -n 9 || exit 0
-MASTER_GATEWAY_STATE=''
-SLAVE_GATEWAY_STATE=''
-[ -f "${runtime_dir}/master.down" ] && MASTER_GATEWAY_STATE=' down'
-[ -f "${runtime_dir}/slave.down" ] && SLAVE_GATEWAY_STATE=' down'
-topology="${WAO_DEPLOY_TOPOLOGY:-$(cat /etc/wao-deploy-topology 2>/dev/null || true)}"
-if [ "$topology" = linux2-only ]; then SLAVE_GATEWAY_STATE=' down'; fi
-export MASTER_GATEWAY_STATE SLAVE_GATEWAY_STATE
-
 MASTER_PUBLIC_HOST="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}"
-SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}"
-export MASTER_PUBLIC_HOST SLAVE_PUBLIC_HOST
+export MASTER_PUBLIC_HOST
 
 gateway_ready() {
   host="$1"
@@ -39,8 +30,7 @@ gateway_ready() {
     "https://${host}:9000/api/hello" | grep -q '"code":0'
 }
 
-if { [ -z "${MASTER_GATEWAY_STATE}" ] && gateway_ready "${MASTER_PUBLIC_HOST}"; } ||
-   { [ "$topology" != linux2-only ] && [ -z "${SLAVE_GATEWAY_STATE}" ] && gateway_ready "${SLAVE_PUBLIC_HOST}"; }; then
+if gateway_ready "${MASTER_PUBLIC_HOST}"; then
   # 外部应用路由由独立仓库维护；目录必须先存在，Nginx 才能安全加载通用 include。
   install -d -m 0755 "${external_apps_dir}"
   sh "${script_dir}/render-nginx-config.sh"

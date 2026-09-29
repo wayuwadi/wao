@@ -1,66 +1,41 @@
 # WAO 架构基线
 
-## 目标
+## 当前拓扑
 
-Phase 0 建立一条最小但真实的纵向链路：Vue 页面请求 `/api/hello`，开发环境由 Vite 代理到 `:9000`，生产环境由云 Nginx 代理到双节点 Gateway；每个 Gateway 优先访问同机 `wao-server`，由云 Nginx 在节点层完成故障转移。两个应用实例仍注册到 Nacos，供注册状态、扩容和后续服务治理使用。
+自 [ADR-291](adr/291-linux2-only-deployment-and-wao-recovery.md) 采用后，Linux2 是唯一 Linux 部署节点。云服务器提供 HTTPS、Nginx、浏览器静态制品和异地加密备份。当前应用没有第二个 Linux 节点提供故障转移。
 
-## 组件与端口
-
-| 组件           |      端口 | 部署位置   |
-| -------------- | --------: | ---------- |
-| Vue 开发服务器 |      5173 | 开发机     |
-| WAO Server     |      8080 | 主、从节点 |
-| WAO Gateway    |      9000 | 主、从节点 |
-| Nacos 2.4.3    | 8848/9848 | 主节点     |
-| MySQL 9        |      3306 | 主、从节点 |
-| Redis 7        |      6379 | 主、从节点 |
-| Redis Sentinel |     26379 | 主、从节点 |
-| DDNS-Go        |      9876 | 主、从节点 |
-| Nginx          |    80/443 | 云服务器   |
-| JumpServer CE  |     18080 | 主节点回环 |
-| JMS SSH 隧道端 |     18082 | 云节点回环 |
+| 组件 | 位置 | 说明 |
+| --- | --- | --- |
+| Vue 前端 | 云服务器 | Nginx 托管不可变静态制品 |
+| WAO Server、Agent、Gateway | Linux2 | Docker Compose 本机部署 |
+| MySQL | Linux2 | WAO 写主和应用同节点 |
+| Redis | Linux2 | 应用容器直连本机服务，当前无 Sentinel 自动切换 |
+| Nacos | Linux2 | 服务注册与基础配置 |
+| Nginx/TLS | 云服务器 | 静态入口、API 反向代理和公开就绪检查 |
+| Jenkins | Linux2 | 主分支批处理构建与发布 |
+| JumpServer | Linux2 与云服务器 | 只纳管当前两个维护目标 |
 
 ## 请求链路
 
-```mermaid
-flowchart LR
-    Browser["浏览器"] --> Nginx["云 Nginx / 静态文件"]
-    Nginx -->|"HTTPS /api/*"| Gateway1["Linux Gateway"]
-    Nginx -->|"HTTPS /api/*"| Gateway2["Linux1 Gateway"]
-    Gateway1 -->|"本机容器网络"| Server1["Linux WAO Server"]
-    Gateway2 -->|"本机容器网络"| Server2["Linux1 WAO Server"]
-    Server1 -.注册.-> Nacos["Nacos"]
-    Server2 -.注册.-> Nacos
-    Server1 --> MySQL[("MySQL 主库")]
-    Server2 --> MySQL
-    Server1 --> Redis[("Redis Sentinel")]
-    Server2 --> Redis
-    Browser -->|"HTTPS jms.wayuwa.cn"| JmsNginx["云 Nginx"]
-    JmsNginx -->|"反向 SSH 隧道"| JumpServer["JumpServer CE"]
-    JumpServer -->|"专用 SSH 密钥"| Server1
-    JumpServer -->|"专用 SSH 密钥"| Server2
-```
+浏览器 → 云服务器 Nginx / 静态文件 → Linux2 Gateway → 同机 WAO Server → Linux2 MySQL 与 Redis。
 
-## 环境策略
+Jenkins 在 Linux2 构建，并将网页静态制品发布到云端；后端制品在 Linux2 本机更新。
 
-- `dev`：使用本机 Docker 基础设施；Swagger 开启；Nacos 可关闭鉴权。
-- `prod`：敏感值来自环境变量；Swagger 关闭；跨节点通过公网地址和 DDNS 域名通信。
-- 前端生产制品直接由云 Nginx 托管，不运行 Node.js 进程。
-- Linux1 使用原生 Ubuntu Docker Engine，作为 Linux2 的 MySQL/Redis 从节点、第二套应用节点、开发机与 AI Runner；开发工作区 `~/workspace/wao` 与生产目录 `~/deploy/wao` 分离。
-- 主、从节点检测公网 IPv4 变化并刷新 Nacos 注册；云 Nginx 定期重载以重新解析 DDNS 上游。
+## 发布和可用性
 
-## 版本决策
-
-方案要求 Spring Boot 3 与 Nacos 2.x。Phase 0 使用 Spring Boot 3.2.4、Spring Cloud 2023.0.1、Spring Cloud Alibaba 2023.0.1.0 和 Nacos 2.4.3。升级必须先新增 ADR 并完成兼容性验证。
+- 纯浏览器变更只切换云端静态制品；后端版本保持不变。
+- 后端变更原地更新 Linux2，发布窗口内可能短暂中断。
+- 云 Nginx 只有一个 WAO Gateway 上游；失败时保留最后一个有效配置，不将流量切换到离线主机。
+- Jenkins 成功状态以 Linux2 Gateway、云端静态资源和公共 /api/edge/ready 通过为条件。
+- 监控目标为公共入口和 Linux2；JumpServer 当前只授权 Linux2 与云入口。
 
 ## 网络与凭据边界
 
-- Git 只保存 `.env.example`；真实值进入各服务器私有 `deploy/.env` 或 GitHub Secrets。
-- 根据 ADR-005，当前接受 SSH、Gateway、MySQL、Redis、Nacos、Sentinel 与 DDNS-Go 按路由器/安全组规则公网可达，不使用覆盖网络。
-- 用户入口只开放 `https://wao.wayuwa.cn`；Gateway 回源使用 TLS，SSH 使用专用部署密钥与固定主机密钥校验。
-- Redis 副本和两个 Sentinel 宣告公网可解析主机名，避免跨主机发现到容器内网地址。双 Sentinel 不承诺整机故障下的自动切换；可靠自动故障转移需要新增独立第三仲裁节点。
-- 密码库按成员归属：`/api/vault/*` 一律只在当前登录成员自己的分组范围内工作，别人的分组按不存在处理（ADR-024）。
-- Gateway 使用同机 `wao-server:8080`，避免服务发现结果依赖家庭路由器的 8080 回环；云 Nginx 的上游健康检查验证 `/api/hello` 全链路，而不只验证 Gateway 进程。
-- 正式生产前必须重新评估端口白名单、数据库链路加密、SSH 防爆破和私网/VPN。
-- JumpServer 使用独立 PostgreSQL、Redis 和持久目录，不复用 WAO 数据服务；公网只暴露云节点的
-  `jms.wayuwa.cn`。WAO 短时一次性票据只负责身份建立，资产授权继续由 JumpServer 管理（ADR-143）。
+- 私有值来自 Linux2 私有 deploy/.env、deploy/.env.secrets、Jenkins Secret 文件或系统凭据存储。
+- 云端只保存其运行所需的 Nginx、证书及加密备份材料；应用数据库继续在 Linux2。
+- 对象存储 Garage 的三节点布局受 Linux1 退役影响，必须独立执行数据布局迁移和恢复验证；在该决策完成前不能把旧三节点示例当作当前运行拓扑。
+- 备份恢复依据 [Linux2 单节点异地备份手册](runbooks/linux2-only-cloud-backup.md) 与 [ADR-291](adr/291-linux2-only-deployment-and-wao-recovery.md)。
+
+## 兼容性基线
+
+Spring Boot 3.2.4、Spring Cloud 2023.0.1、Spring Cloud Alibaba 2023.0.1.0、Nacos 2.4.3。升级需新增 ADR 并完成兼容性验证。
