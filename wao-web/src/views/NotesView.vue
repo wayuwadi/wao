@@ -633,7 +633,7 @@ onMounted(() => void loadPins())
           <div class="note-heading"><h2>{{ note.title }}</h2><div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
           <div class="note-content" :class="{ 'has-images': notePreviews.get(note.id)?.length }" @click="openInlineImage">
             <div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="showPolished(note) ? undefined : resolvedRichContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="noteCounts[note.id] = $event" /></div>
-            <aside v-if="notePreviews.get(note.id)?.length" class="note-images" aria-label="小记图片总览">
+            <aside v-if="notePreviews.get(note.id)?.length" class="note-images" :class="{ expanded: expandedIds.includes(note.id) }" aria-label="小记图片总览">
               <span>图片总览 <b>{{ notePreviews.get(note.id)?.length }} 张</b></span>
               <button v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image" type="button" :title="image.alt || `全屏阅读图片 ${index + 1}`" @click.stop="startReading(note.id)">
                 <img :src="notePreviewSource(image.src)" :alt="image.alt || `小记图片 ${index + 1}`" loading="lazy">
@@ -775,10 +775,12 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-card.fixed-height .note-heading h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .note-content { min-width: 0; }
 .note-content.has-images { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 24%); gap: 12px; align-items: start; }
+.note-card.expanded .note-content.has-images { align-items: stretch; }
 .note-body { min-height: 0; overflow-wrap: anywhere; line-height: 1.75; font-size: 13px; }
 .note-card.fixed-height .note-body { max-height: 170px; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent); }
 .note-body :deep(img.md-img) { display: none; }
 .note-images { min-width: 0; max-height: 170px; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 7px; padding-left: 10px; border-left: 1px solid var(--wao-line-control); }
+.note-images.expanded { max-height: none; overflow: visible; }
 .note-images > span { display: flex; justify-content: space-between; gap: 5px; color: var(--wao-text-faint); font-size: 10px; }
 .note-images b { font-weight: 400; white-space: nowrap; }
 .note-image { overflow: hidden; padding: 0; border: 1px solid var(--wao-line-control); background: var(--wao-bg-sub); }
