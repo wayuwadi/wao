@@ -6,6 +6,7 @@ import { useSessionStore } from '@/stores/session'
 import { mountFeishuQr } from '@/utils/feishuQr'
 import { feishuInAppLogin, isInFeishu } from '@/utils/feishuInApp'
 import { useLoginSound } from '@/composables/useLoginSound'
+import { loginGreetings, useLoginGreetings } from '@/composables/useLoginGreetings'
 import LoginCrew from '@/components/login/LoginCrew.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
 
@@ -13,9 +14,7 @@ const route = useRoute(),
   router = useRouter(),
   session = useSessionStore()
 const method = ref<'feishu' | 'email'>('feishu')
-const mode = ref<'login' | 'register'>('login')
-const name = ref(''),
-  email = ref(''),
+const email = ref(''),
   password = ref('')
 const busy = ref(false),
   error = ref(''),
@@ -26,6 +25,15 @@ const inAppTrying = ref(isInFeishu()),
 const dialog = ref<HTMLDialogElement | null>(null)
 const opened = ref(false)
 const { enabled, unavailable, toggle, play } = useLoginSound()
+const { active, sounding, greet, dismiss } = useLoginGreetings(enabled, (index) =>
+  play('buddy', index),
+)
+const viewportHeight = ref(0),
+  viewportTop = ref(0)
+function measureViewport() {
+  viewportHeight.value = window.visualViewport?.height ?? window.innerHeight
+  viewportTop.value = window.visualViewport?.offsetTop ?? 0
+}
 let unmountQr: (() => void) | undefined
 let qrGeneration = 0
 let disposed = false
@@ -50,9 +58,9 @@ async function loadQr() {
     if (active()) qrError.value = '飞书二维码暂时加载失败，请重试或使用下方授权登录。'
   }
 }
-async function openAuth(nextMode: 'login' | 'register' = 'login') {
-  mode.value = nextMode
-  method.value = nextMode === 'register' ? 'email' : 'feishu'
+async function openAuth() {
+  dismiss()
+  method.value = 'feishu'
   error.value = ''
   opened.value = true
   await nextTick()
@@ -66,18 +74,12 @@ function onClose() {
 function closeAuth() {
   if (!busy.value) dialog.value?.close()
 }
-function switchMode() {
-  if (busy.value) return
-  mode.value = mode.value === 'login' ? 'register' : 'login'
-  error.value = ''
-}
 async function switchMethod(next: 'feishu' | 'email') {
   if (busy.value) return
   stopQr()
   method.value = next
   error.value = ''
   if (next === 'feishu') {
-    mode.value = 'login'
     await loadQr()
   }
 }
@@ -99,9 +101,7 @@ async function submitEmail() {
   error.value = ''
   busy.value = true
   try {
-    if (mode.value === 'register')
-      await session.emailRegister(name.value, email.value, password.value)
-    else await session.emailLogin(email.value, password.value)
+    await session.emailLogin(email.value, password.value)
     password.value = ''
     const soundDuration = play('success')
     if (soundDuration) await new Promise((resolve) => window.setTimeout(resolve, soundDuration))
@@ -114,9 +114,14 @@ async function submitEmail() {
   }
 }
 function buttonSound(event: MouseEvent) {
-  if ((event.target as Element).closest('button:not(.sound-toggle)')) play('click')
+  if (!sounding.value && (event.target as Element).closest('button:not(.sound-toggle)'))
+    play('click')
 }
 onMounted(async () => {
+  measureViewport()
+  window.visualViewport?.addEventListener('resize', measureViewport)
+  window.visualViewport?.addEventListener('scroll', measureViewport)
+  window.addEventListener('resize', measureViewport)
   if (!inAppTrying.value) return
   await openAuth()
   try {
@@ -138,11 +143,25 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   disposed = true
+  window.visualViewport?.removeEventListener('resize', measureViewport)
+  window.visualViewport?.removeEventListener('scroll', measureViewport)
+  window.removeEventListener('resize', measureViewport)
   stopQr()
 })
 </script>
 <template>
-  <main class="login-stage" @click="buttonSound">
+  <main
+    class="login-stage"
+    @click="buttonSound"
+    :style="
+      viewportHeight
+        ? {
+            '--login-viewport-height': `${viewportHeight}px`,
+            '--login-viewport-top': `${viewportTop}px`,
+          }
+        : undefined
+    "
+  >
     <div class="grid" aria-hidden="true"></div>
     <header>
       <div class="brand" aria-label="WAO">
@@ -151,25 +170,32 @@ onBeforeUnmount(() => {
       <div class="right">
         <button class="quiet sound-toggle" :aria-pressed="enabled" @click="toggle">
           {{ unavailable ? '音效暂不可用' : enabled ? '♫ 音效已开启' : '♫ 开启音效' }}</button
-        ><button class="quiet header-login" @click="openAuth()">登录 ↗</button>
+        ><button class="quiet header-login" @click="openAuth()">登录 WAO ↗</button>
       </div>
     </header>
-    <section class="hero">
-      <p class="eyebrow">A LITTLE IDEA. A LITTLE ACTION. A LITTLE WOW.</p>
-      <h1>把想法，<br />变成 <em>WOW.</em></h1>
-      <p class="sub">记录灵感，安排每一天。<br />和 AI 一起，让想做的事真正发生。</p>
-      <div class="actions">
-        <button class="primary" @click="openAuth()">登录 WAO ↗</button
-        ><button class="secondary" @click="openAuth('register')">创建账号</button>
+    <div class="stage-content">
+      <section class="hero">
+        <p class="eyebrow">A LITTLE IDEA. A LITTLE ACTION. A LITTLE WOW.</p>
+        <h1>把想法，<br />变成 <em>WOW.</em></h1>
+        <p class="sub">记录灵感，安排每一天。<br />和 AI 一起，让想做的事真正发生。</p>
+      </section>
+      <div class="crew">
+        <div class="greeting-space">
+          <p
+            v-if="active !== null"
+            class="greeting-bubble"
+            :class="{ sounding }"
+            :style="{ '--anchor': loginGreetings[active]!.anchor + '%' }"
+            role="status"
+          >
+            {{ loginGreetings[active]!.text }}
+          </p>
+          <p v-else class="crew-hint">
+            {{ enabled ? '掠过或轻点伙伴，听一声轻响' : '掠过或轻点伙伴，打个招呼' }}
+          </p>
+        </div>
+        <LoginCrew :active="active" @greet="greet" />
       </div>
-      <p class="hint">飞书 · 邮箱，继续你的每一个好想法</p>
-    </section>
-    <div class="crew">
-      <p class="caption">开启音效，点点我们 ↙</p>
-      <LoginCrew @sound="play('buddy', $event)" />
-    </div>
-    <div class="bottom">
-      <span>WAO · WAYUWA ALL IN ONE</span><span class="phrase">✳ 给每个想法，一个发生的地方。</span>
     </div>
     <SiteFooter class="login-footer" />
     <dialog
@@ -184,7 +210,7 @@ onBeforeUnmount(() => {
           ×
         </button>
         <span class="tiny">WAO / LET'S MAKE IT HAPPEN</span>
-        <h2 id="auth-title">{{ mode === 'register' ? '创建 WAO 账号' : '欢迎回到 WAO' }}</h2>
+        <h2 id="auth-title">欢迎回到 WAO</h2>
         <p class="product-summary">安排待办、整理资料，与 AI 一起完成任务。</p>
         <template v-if="method === 'feishu'">
           <template v-if="inAppTrying">
@@ -220,18 +246,8 @@ onBeforeUnmount(() => {
         </template>
 
         <template v-else>
-          <p class="subtitle">
-            {{ mode === 'login' ? '使用邮箱密码登录' : '创建一个新的 WAO 账号' }}
-          </p>
+          <p class="subtitle">使用邮箱密码登录</p>
           <form :aria-busy="busy" class="email-form" @submit.prevent="submitEmail">
-            <label v-if="mode === 'register'"
-              >显示名称<input
-                :disabled="busy"
-                v-model.trim="name"
-                autocomplete="name"
-                required
-                placeholder="其他成员看到的名字"
-            /></label>
             <label
               >邮箱<input
                 :disabled="busy"
@@ -246,27 +262,14 @@ onBeforeUnmount(() => {
                 :disabled="busy"
                 v-model="password"
                 type="password"
-                :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
+                autocomplete="current-password"
                 minlength="8"
                 required
-                :placeholder="mode === 'register' ? '设置密码（至少 8 位）' : '输入账号密码'"
+                placeholder="输入账号密码"
             /></label>
             <div v-if="error" class="error" role="alert">{{ error }}</div>
-            <button class="primary" :disabled="busy">
-              {{
-                busy
-                  ? mode === 'login'
-                    ? '正在登录…'
-                    : '正在创建账号…'
-                  : mode === 'login'
-                    ? '登录'
-                    : '创建账号'
-              }}
-            </button>
+            <button class="primary" :disabled="busy">{{ busy ? '正在登录…' : '登录' }}</button>
           </form>
-          <button class="switch" type="button" :disabled="busy" @click="switchMode">
-            {{ mode === 'login' ? '没有账号？使用邮箱注册' : '已有账号？返回登录' }}
-          </button>
         </template>
 
         <div class="other-methods">
@@ -299,19 +302,68 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .login-stage {
-  color-scheme: dark;
-  --pink: #ff36aa;
-  --bg: #090a0c;
-  --muted: #99999f;
-}
-* {
   box-sizing: border-box;
-}
-.login-stage {
-  margin: 0;
-  background: var(--bg);
+  --pink: #ff36aa;
+  color-scheme: dark;
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(4px, 1.5dvh, 16px);
+  padding: clamp(10px, 2.5dvh, 28px) clamp(16px, 4.2vw, 64px) max(8px, env(safe-area-inset-bottom));
+  overflow: hidden;
+  isolation: isolate;
+  background: #090a0c;
   color: #f8f7f4;
   font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.login-stage * {
+  box-sizing: border-box;
+}
+.grid {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(#ffffff09 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff09 1px, transparent 1px);
+  background-size: 90px 90px;
+  mask-image: radial-gradient(ellipse at 50% 48%, transparent 18%, #000 85%);
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 32px;
+  font-weight: 950;
+  letter-spacing: -3px;
+  line-height: 1;
+}
+.brand b {
+  color: var(--pink);
+}
+.brand span {
+  padding-left: 15px;
+  border-left: 1px solid #3a3a3e;
+  color: #a4a4aa;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 2px;
+  line-height: 1.6;
+}
+.right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 button,
 input {
@@ -319,13 +371,6 @@ input {
 }
 button {
   cursor: pointer;
-}
-button:focus-visible,
-input:focus-visible {
-  outline: 3px solid #74efdb;
-  outline-offset: 5px;
-}
-button {
   transition:
     transform 0.2s,
     background 0.2s;
@@ -333,366 +378,150 @@ button {
 button:hover {
   transform: translateY(-2px);
 }
-.login-stage {
-  position: relative;
-  min-height: 100svh;
-  overflow: hidden;
-  isolation: isolate;
-  display: flex;
-  flex-direction: column;
-}
-.grid {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background-image:
-    linear-gradient(#ffffff09 1px, transparent 1px),
-    linear-gradient(90deg, #ffffff09 1px, transparent 1px);
-  background-size: 90px 90px;
-  mask-image: radial-gradient(ellipse at 50% 48%, transparent 18%, #000 85%);
-  transform: perspective(600px) rotateX(12deg) scale(1.12);
-}
-.login-stage:after {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  background: radial-gradient(ellipse at 50% 88%, #59315621, transparent 45%);
-}
-header {
-  padding: 28px 4.2%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-.brand {
-  font-size: 32px;
-  letter-spacing: -3px;
-  font-weight: 1000;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.brand b {
-  color: var(--pink);
-}
-.brand span {
-  font-size: 10px;
-  letter-spacing: 2px;
-  font-weight: 400;
-  color: #a4a4aa;
-  border-left: 1px solid #3a3a3e;
-  padding-left: 15px;
-  line-height: 1.6;
-}
-.right {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-.preview {
-  font-size: 11px;
-  letter-spacing: 1px;
-  color: #aaa;
-}
-.dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  background: #83ebd0;
-  border-radius: 50%;
-  margin-right: 7px;
-}
-.quiet {
-  border: 1px solid #3b3b40;
-  color: #eee;
-  background: #161619;
-  border-radius: 30px;
-  padding: 10px 22px;
-  font-size: 13px;
-}
-.hero {
-  text-align: center;
-  padding: 35px 20px 0;
-  z-index: 1;
-}
-.eyebrow {
-  font-size: 11px;
-  letter-spacing: 4px;
-  color: #b5b0b8;
-  margin: 0 0 22px;
-}
-.hero h1 {
-  font-size: clamp(48px, 6.8vw, 104px);
-  letter-spacing: -5px;
-  line-height: 1.13;
-  margin: 0;
-  font-weight: 950;
-}
-.hero h1 em {
-  font-family: Arial, sans-serif;
-  font-weight: 1000;
-  display: inline-block;
-  color: var(--pink);
-  transform: rotate(-6deg);
-  letter-spacing: -7px;
-  position: relative;
-  font-style: italic;
-}
-.hero h1 em:after {
-  content: '';
-  position: absolute;
-  bottom: -7px;
-  left: 7%;
-  width: 85%;
-  height: 6px;
-  background: var(--pink);
-  border-radius: 100%;
-  transform: rotate(-3deg);
-}
-.sub {
-  font-size: 15px;
-  line-height: 1.8;
-  color: #aaa7af;
-  margin: 29px 0 25px;
-}
-.actions {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-}
-.primary,
-.secondary {
-  border-radius: 40px;
-  padding: 15px 36px;
-  font-weight: 700;
-  font-size: 15px;
-  min-width: 174px;
-  border: 1px solid var(--pink);
-}
-.primary {
-  background: var(--pink);
-  color: #fff;
-}
-.primary:hover {
-  background: #ff59ba;
-  box-shadow: 0 8px 30px #ff36aa26;
-}
-.secondary {
-  background: #161016;
-  color: #ff65bf;
-}
-.hint {
-  font-size: 11px;
-  color: #77757d;
-  margin: 15px 0 0;
-}
-.crew {
-  width: min(100%, 1000px);
-  margin: 20px auto 0;
-  position: relative;
-}
-.crew svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-}
-.buddy {
-  transition: transform 0.3s;
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-  cursor: default;
-}
-.buddy:hover {
-  transform: translateY(-10px) rotate(-3deg);
-}
-.label {
-  font-size: 10px;
-  fill: #9a969e;
-  letter-spacing: 3px;
-}
-.bottom {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: auto;
-  padding: 18px 4.2% 23px;
-  color: #737179;
-  font-size: 10px;
-  letter-spacing: 1px;
-}
-.bottom .phrase {
-  color: #aaa6b1;
-}
-.spark {
-  color: #e5f284;
-}
-.caption {
-  position: absolute;
-  right: 6%;
-  top: 12%;
-  font-size: 11px;
-  color: #a4a0aa;
-  transform: rotate(8deg);
-}
-@media (min-width: 1500px) {
-  .hero {
-    padding-top: 55px;
-  }
-  .crew {
-    width: 1100px;
-    margin-top: 30px;
-  }
-}
-@media (max-width: 700px) {
-  header {
-    padding: 23px;
-  }
-  .brand {
-    font-size: 28px;
-  }
-  .brand span {
-    display: none;
-  }
-  .right {
-    gap: 8px;
-  }
-  .header-login {
-    display: none;
-  }
-  .quiet {
-    padding: 8px 14px;
-  }
-  .preview {
-    font-size: 9px;
-    max-width: 65px;
-    line-height: 1.5;
-  }
-  .hero {
-    padding-top: 50px;
-  }
-  .hero h1 {
-    font-size: 54px;
-    letter-spacing: -3px;
-  }
-  .hero h1 em {
-    letter-spacing: -4px;
-  }
-  .eyebrow {
-    font-size: 9px;
-    letter-spacing: 2px;
-  }
-  .sub {
-    font-size: 13px;
-    max-width: 280px;
-    margin: 27px auto 24px;
-  }
-  .primary,
-  .secondary {
-    min-width: 140px;
-    padding: 14px 22px;
-  }
-  .crew {
-    width: 520px;
-    max-width: none;
-    margin: 37px 0 0;
-    left: 50%;
-    transform: translateX(-50%);
-    align-self: auto;
-  }
-  .caption {
-    display: none;
-  }
-  .bottom {
-    font-size: 9px;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    padding: 25px 15px;
-    gap: 9px;
-  }
-  .hero {
-    flex: 1;
-  }
-  .hint {
-    font-size: 10px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *:before,
-  *:after {
-    transition: none !important;
-    animation: none !important;
-  }
-}
-@media (min-width: 701px) and (max-height: 800px) {
-  header {
-    padding-top: 20px;
-    padding-bottom: 20px;
-  }
-  .hero {
-    padding-top: 12px;
-  }
-  .hero h1 {
-    font-size: 70px;
-  }
-  .eyebrow {
-    margin-bottom: 15px;
-  }
-  .sub {
-    margin: 20px 0;
-  }
-  .crew {
-    width: 800px;
-    margin-top: 5px;
-  }
-  .bottom {
-    padding-top: 8px;
-    padding-bottom: 14px;
-  }
-  .hint {
-    margin-top: 12px;
-  }
-}
-
-.login-stage {
-  position: fixed;
-  inset: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  min-height: 0;
-  color-scheme: dark;
-  --pink: #ff36aa;
-  --bg: #090a0c;
-  --muted: #99999f;
-}
-.login-stage * {
-  box-sizing: border-box;
-}
 button:disabled {
   opacity: 0.55;
   cursor: wait;
   transform: none;
 }
-.login-footer {
-  color: #95909b;
-  padding: 6px 16px 14px;
-  min-height: 28px;
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #74efdb;
+  outline-offset: 3px;
 }
-.bottom {
-  padding-bottom: 7px;
+.quiet {
+  border: 1px solid #514753;
+  border-radius: 30px;
+  color: #eee;
+  background: #161619;
+  padding: 10px 18px;
+  font-size: 13px;
+  white-space: nowrap;
 }
-.crew {
+.header-login {
+  background: var(--pink);
+  border-color: var(--pink);
+  color: white;
+  font-weight: 700;
+}
+.stage-content {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2dvh, 24px);
+  width: min(1100px, 100%);
+  margin-inline: auto;
+}
+.hero {
+  text-align: center;
   flex-shrink: 0;
 }
-.hint {
-  color: #a09aa5;
+.eyebrow {
+  font-size: clamp(9px, 1.4dvh, 11px);
+  letter-spacing: 3px;
+  color: #b5b0b8;
+  margin: 0 0 clamp(8px, 2dvh, 22px);
 }
-.caption {
+.hero h1 {
+  font-size: clamp(30px, min(7.5vw, 11dvh), 104px);
+  letter-spacing: -4px;
+  line-height: 1.12;
   margin: 0;
+  font-weight: 950;
+}
+.hero h1 em {
+  display: inline-block;
+  position: relative;
+  color: var(--pink);
+  transform: rotate(-6deg);
+  font-weight: 1000;
+  font-style: italic;
+  letter-spacing: -5px;
+}
+.hero h1 em:after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 7%;
+  width: 85%;
+  height: 5px;
+  background: var(--pink);
+  border-radius: 100%;
+  transform: rotate(-3deg);
+}
+.sub {
+  color: #b7b0bd;
+  font-size: clamp(11px, 1.9dvh, 15px);
+  line-height: 1.7;
+  margin: clamp(14px, 3dvh, 32px) 0 0;
+}
+.crew {
+  position: relative;
+  --crew-height: min(38dvh, 34vw);
+  --greeting-height: 42px;
+  width: min(100%, 1000px, calc((var(--crew-height) - var(--greeting-height)) * 2.7096774));
+  height: var(--crew-height);
+  min-height: 0;
+  flex-shrink: 1;
+  display: flex;
+  flex-direction: column;
+}
+.crew :deep(svg) {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+}
+.greeting-space {
+  position: relative;
+  height: var(--greeting-height);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+.crew-hint {
+  margin: 0;
+  color: #b6aebe;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.greeting-bubble {
+  --bubble-width: 240px;
+  position: absolute;
+  left: clamp(0px, calc(var(--anchor) - var(--bubble-width) / 2), calc(100% - var(--bubble-width)));
+  width: var(--bubble-width);
+  max-width: 100%;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid #796374;
+  border-radius: 15px;
+  background: #261b28;
+  color: #ffe6f5;
+  font-size: 13px;
+  text-align: center;
+  box-shadow: 0 8px 30px #0005;
+  pointer-events: none;
+}
+.greeting-bubble.sounding {
+  border-color: #ff72bf;
+  box-shadow: 0 0 18px #ff36aa26;
+}
+.login-footer {
+  min-height: 0;
+  padding: 0;
+  color: #aaa1b0;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.primary {
+  border: 1px solid var(--pink);
+  border-radius: 30px;
+  padding: 13px 25px;
+  background: var(--pink);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
 }
 .auth-dialog {
   color-scheme: dark;
@@ -850,46 +679,127 @@ button:disabled {
 .auth-dialog:focus {
   outline: none;
 }
+
+.auth-dialog {
+  position: fixed;
+  inset: auto;
+  left: 50%;
+  top: calc(var(--login-viewport-top, 0px) + var(--login-viewport-height, 100dvh) / 2);
+  transform: translate(-50%, -50%);
+  margin: 0;
+  max-height: calc(var(--login-viewport-height, 100dvh) - 24px);
+  overscroll-behavior: contain;
+}
 @media (max-width: 700px) {
-  .crew {
-    width: min(490px, 125vw);
+  .brand {
+    font-size: 28px;
+    gap: 8px;
   }
-  .bottom {
-    padding-bottom: 8px;
+  .brand span {
+    display: none;
+  }
+  .right {
+    gap: 8px;
+  }
+  .quiet {
+    padding: 9px 12px;
+    font-size: 12px;
+  }
+  .hero h1 {
+    font-size: clamp(30px, min(14vw, 11dvh), 64px);
+    letter-spacing: -3px;
+  }
+  .eyebrow {
+    letter-spacing: 1.5px;
+    font-size: 9px;
+  }
+  .crew {
+    --crew-height: min(34dvh, 44vw);
+  }
+  .greeting-bubble {
+    --bubble-width: 210px;
+    font-size: 12px;
   }
   .card {
     padding: 26px 22px;
   }
-  .hero {
-    flex: 0;
+  .login-footer {
+    font-size: 9px;
+    line-height: 1.4;
   }
+  .login-stage :deep(.site-footer) {
+    padding: 0;
+  }
+  .sub {
+    font-size: 13px;
+  }
+}
+@media (max-height: 480px) {
   .login-stage {
-    gap: 0;
+    padding-top: 8px;
+    gap: 4px;
+  }
+  .brand {
+    font-size: 25px;
+  }
+  .brand span {
+    display: none;
+  }
+  .quiet {
+    padding: 7px 12px;
+    font-size: 11px;
+  }
+  .eyebrow {
+    display: none;
+  }
+  .hero h1 {
+    font-size: clamp(24px, 9dvh, 42px);
+    letter-spacing: -2px;
+  }
+  .hero h1 br {
+    display: none;
+  }
+  .hero h1 em {
+    letter-spacing: -2px;
+  }
+  .hero h1 em:after {
+    height: 3px;
+    bottom: -3px;
+  }
+  .sub {
+    margin-top: 10px;
+    font-size: 11px;
+  }
+  .sub br {
+    display: none;
+  }
+  .stage-content {
+    gap: 4px;
   }
   .crew {
-    margin-top: auto;
-    padding-top: 32px;
+    --crew-height: 42dvh;
+    --greeting-height: 30px;
+  }
+  .crew-hint {
+    font-size: 9px;
+  }
+  .greeting-bubble {
+    padding: 4px 8px;
+    font-size: 11px;
   }
   .login-footer {
     font-size: 9px;
   }
 }
-@media (min-width: 701px) and (max-height: 800px) {
-  .crew {
-    width: 720px;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    transition: none !important;
+    animation: none !important;
   }
-  .hero h1 {
-    font-size: 64px;
-  }
-  .bottom {
-    margin-top: auto;
-    font-size: 9px;
-  }
-  .sub {
-    margin: 15px 0;
-  }
-  .hero {
-    padding-top: 6px;
+  button:hover {
+    transform: none;
   }
 }
 </style>

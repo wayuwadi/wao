@@ -30,7 +30,7 @@ async function setup() {
   return { router, session: useSessionStore(pinia) }
 }
 async function open() {
-  await wrapper.get('.actions .primary').trigger('click')
+  await wrapper.get('.header-login').trigger('click')
   await flushPromises()
 }
 async function email() {
@@ -55,6 +55,8 @@ afterEach(() => {
 describe('舞台登录与认证生命周期', () => {
   it('初始静音且不加载二维码，打开后仅提供飞书和邮箱', async () => {
     await setup()
+    expect(wrapper.findAll('.header-login')).toHaveLength(1)
+    expect(wrapper.text()).not.toMatch(/创建账号|创建 WAO 账号|注册/)
     expect(mountFeishuQr).not.toHaveBeenCalled()
     expect(wrapper.get('.sound-toggle').attributes('aria-pressed')).toBe('false')
     await open()
@@ -63,10 +65,46 @@ describe('舞台登录与认证生命周期', () => {
     expect(wrapper.text()).not.toContain('微信')
     expect(wrapper.get('dialog').attributes()).toHaveProperty('open')
   })
+  it('鼠标掠过、键盘聚焦与触摸点击显示问候，静音不创建音频', async () => {
+    const AudioMock = vi.fn()
+    vi.stubGlobal('Audio', AudioMock)
+    await setup()
+    const buddies = wrapper.findAll('.buddy')
+    await buddies[0]!.trigger('pointerenter', { pointerType: 'mouse' })
+    expect(wrapper.get('[role=status]').text()).toBe('嘿，有新点子吗？')
+    await buddies[1]!.trigger('pointerenter', { pointerType: 'touch' })
+    expect(wrapper.get('[role=status]').text()).toBe('嘿，有新点子吗？')
+    await buddies[1]!.trigger('click')
+    expect(wrapper.get('[role=status]').text()).toBe('今天有什么想记下的？')
+    await buddies[2]!.trigger('focus')
+    expect(wrapper.get('[role=status]').text()).toBe('准备好了，一起开工！')
+    expect(AudioMock).not.toHaveBeenCalled()
+    await open()
+    expect(wrapper.find('.greeting-bubble').exists()).toBe(false)
+    vi.unstubAllGlobals()
+  })
+  it('可视视口缩小时更新弹窗尺寸并在卸载时解绑', async () => {
+    const viewport = Object.assign(new EventTarget(), { height: 400, offsetTop: 0 })
+    const remove = vi.spyOn(viewport, 'removeEventListener')
+    vi.stubGlobal('visualViewport', viewport)
+    await setup()
+    viewport.height = 260
+    viewport.offsetTop = 80
+    viewport.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    const style = (wrapper.get('.login-stage').element as HTMLElement).style
+    expect(style.getPropertyValue('--login-viewport-height')).toBe('260px')
+    expect(style.getPropertyValue('--login-viewport-top')).toBe('80px')
+    wrapper.unmount()
+    expect(remove).toHaveBeenCalledWith('resize', expect.any(Function))
+    expect(remove).toHaveBeenCalledWith('scroll', expect.any(Function))
+    vi.unstubAllGlobals()
+  })
   it('关闭、重新打开与切换方式保留本页邮箱输入', async () => {
     await setup()
     await open()
     await email()
+    expect(wrapper.text()).not.toMatch(/创建账号|注册/)
     await wrapper.get('input[type=email]').setValue('draft@example.com')
     await wrapper.get('input[type=password]').setValue('draft-password')
     await wrapper.get('.close').trigger('click')
