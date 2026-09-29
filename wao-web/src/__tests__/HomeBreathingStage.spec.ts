@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import HomeBreathingStage from '@/components/home/HomeBreathingStage.vue'
 import { useSessionStore } from '@/stores/session'
+import { useTheme } from '@/composables/theme'
 import type { AuthSession } from '@/api/auth'
 
 function setup(member = 'breathing-user-a') {
@@ -24,6 +25,7 @@ function create(member?: string) {
 beforeEach(() => {
   vi.useFakeTimers()
   localStorage.clear()
+  useTheme().setTheme('light')
 })
 afterEach(() => {
   mounted.forEach((w) => w.unmount())
@@ -33,11 +35,11 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('首页呼吸练习', () => {
-  it('默认静默；场景和日夜偏好按成员隔离，换号终止练习', async () => {
+  it('默认静默；场景偏好按成员隔离且不影响全站主题，换号终止练习', async () => {
     const { wrapper, session } = create()
     expect(wrapper.classes()).toContain('idle')
     expect(wrapper.get('#galaxy').isVisible()).toBe(false)
-    await wrapper.get('[aria-label="切换日间模式"]').trigger('click')
+    expect(wrapper.find('[aria-label="切换日间模式"]').exists()).toBe(false)
     expect(wrapper.classes()).toContain('day')
     await wrapper.get('[aria-label="调整画面与呼吸"]').trigger('click')
     await wrapper.findAll('.variant')[1]!.trigger('click')
@@ -47,12 +49,29 @@ describe('首页呼吸练习', () => {
     session.account = { member: { id: 'breathing-user-b' } } as AuthSession
     await flushPromises()
     expect(wrapper.classes()).toContain('idle')
-    expect(wrapper.classes()).not.toContain('day')
+    expect(wrapper.classes()).toContain('day')
     expect(wrapper.get('.ambient').classes()).toContain('halo')
     session.account = { member: { id: 'breathing-user-a' } } as AuthSession
     await flushPromises()
     expect(wrapper.classes()).toContain('day')
     expect(wrapper.get('.ambient').classes()).toContain('horizon')
+  })
+  it('跟随全站明暗切换，忽略旧独立主题且不中断正在进行的呼吸', async () => {
+    localStorage.setItem('wao-home-breathing:breathing-user-a', JSON.stringify({ theme: 'night', sound: false }))
+    const { wrapper } = create()
+    expect(wrapper.classes()).toContain('day')
+    await wrapper.get('.primary').trigger('click')
+    await vi.advanceTimersByTimeAsync(3000)
+    const time = wrapper.get('.timer').text()
+    useTheme().setTheme('dark')
+    await flushPromises()
+    expect(wrapper.classes()).not.toContain('day')
+    expect(wrapper.classes()).toContain('running')
+    expect(wrapper.get('.timer').text()).toBe(time)
+    useTheme().setTheme('light')
+    await flushPromises()
+    expect(wrapper.classes()).toContain('day')
+    expect(wrapper.get('.timer').text()).toBe(time)
   })
   it('自定义非法时长不可开始；暂停时计时与相位都保持', async () => {
     const { wrapper } = create()

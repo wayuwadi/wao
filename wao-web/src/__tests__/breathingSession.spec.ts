@@ -36,7 +36,7 @@ describe('呼吸计时', () => {
 })
 
 describe('呼吸偏好边界', () => {
-  it('损坏存储退回夜间静默且星河关闭', () => {
+  it('损坏存储退回静默且星河关闭', () => {
     for (const value of [null, '{broken', 'null', '42'])
       expect(readBreathingPreferences(value)).toEqual(breathingDefaults)
   })
@@ -53,11 +53,12 @@ describe('呼吸偏好边界', () => {
         color: 'blue',
       }),
     )
+    expect(prefs).not.toHaveProperty('theme')
+    expect(readBreathingPreferences(JSON.stringify({ theme: 'night' }))).not.toHaveProperty('theme')
     expect(prefs).toMatchObject({
       minutes: 180,
       inhale: 2,
       exhale: 6,
-      theme: 'night',
       scene: 'halo',
       galaxy: false,
       words: false,
