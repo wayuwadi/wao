@@ -29,6 +29,10 @@ apply-controller-config.sh 随主发布同步 Jenkins 配置，并停用残留�
 
 主分支 Jenkins 流水线由 `Jenkinsfile` 控制，始终执行发布范围判定和 `ci-preflight.sh`；按条件执行 `ci-build-release.sh`、`ci-deploy.sh`，以及运维配置同步。PR 不配置重复 Jenkins 门禁，改动按受影响范围完成本地静态检查及相称测试；发布后的线上业务验收由用户负责。
 
+## JumpServer 资产密钥安装
+
+发布批次变更 deploy/jumpserver/ 时，流水线会安装 JumpServer 专用公钥。Linux2 上的公钥由 sudoers 白名单中的 deploy-master-local.sh 以 wadi 身份、在解包新版本后安装；流水线不能直接通过 sudo 执行仓库脚本。
+
 ## 关联手册
 
 - [Linux2 单节点异地备份与恢复](../../docs/runbooks/linux2-only-cloud-backup.md)
