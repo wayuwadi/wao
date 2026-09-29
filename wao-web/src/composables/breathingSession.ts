@@ -35,7 +35,6 @@ export class BreathingSession {
 }
 
 export interface BreathingPreferences {
-  theme: 'night' | 'day'
   scene: 'halo' | 'horizon' | 'blank'
   color: 'gold' | 'sage' | 'blue'
   glow: number
@@ -48,7 +47,6 @@ export interface BreathingPreferences {
   minutes: number
 }
 export const breathingDefaults: BreathingPreferences = {
-  theme: 'night',
   scene: 'halo',
   color: 'gold',
   glow: 65,
@@ -79,7 +77,6 @@ export function readBreathingPreferences(value: string | null): BreathingPrefere
       if (typeof n === 'number' && Number.isFinite(n)) prefs[key] = Math.max(min, Math.min(max, n))
     }
     prefs.minutes = Math.round(prefs.minutes)
-    if (saved.theme === 'day' || saved.theme === 'night') prefs.theme = saved.theme
     if (saved.scene === 'halo' || saved.scene === 'horizon' || saved.scene === 'blank')
       prefs.scene = saved.scene
     if (saved.color === 'gold' || saved.color === 'sage' || saved.color === 'blue')

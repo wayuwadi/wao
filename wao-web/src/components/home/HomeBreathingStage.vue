@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
+import { useTheme } from '@/composables/theme'
 import {
   BreathingSession,
   breathingDefaults,
@@ -8,6 +9,7 @@ import {
 } from '@/composables/breathingSession'
 
 const account = useSessionStore()
+const theme = useTheme()
 const root = ref<HTMLElement>()
 const content = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
@@ -137,7 +139,7 @@ function reset() {
   Object.assign(prefs, breathingDefaults)
   minutesInput.value = '15'
   custom.value = false
-  tell('已恢复夜间、余晖光晕与 15 分钟')
+  tell('已恢复余晖光晕与 15 分钟')
 }
 function chime() {
   if (!audio || audio.state !== 'running') return false
@@ -411,7 +413,7 @@ onBeforeUnmount(() => {
   <section
     ref="root"
     class="breathing-stage"
-    :class="[timer.state, { day: prefs.theme === 'day', quiet, 'no-guide': !prefs.guide }]"
+    :class="[timer.state, { day: theme.effective.value === 'light', quiet, 'no-guide': !prefs.guide }]"
     :style="{ '--accent': colors[prefs.color], '--strength': prefs.glow / 100 }"
     tabindex="-1"
     aria-label="一呼一吸"
@@ -436,15 +438,6 @@ onBeforeUnmount(() => {
           "
         >
           首页信息</button
-        ><button
-          class="icon"
-          :aria-label="prefs.theme === 'night' ? '切换日间模式' : '切换夜间模式'"
-          @click="prefs.theme = prefs.theme === 'night' ? 'day' : 'night'"
-        >
-          <i
-            :class="prefs.theme === 'night' ? 'ri-sun-line' : 'ri-moon-line'"
-            aria-hidden="true"
-          ></i></button
         ><button
           class="icon"
           :aria-label="fullscreen ? '退出全屏' : '进入全屏'"
