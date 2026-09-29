@@ -105,7 +105,6 @@ provision_jumpserver_asset_access() {
   local public_key="$WAO_MASTER_PROJECT_ROOT/deploy/.jumpserver-asset-key.pub"
   test -s "$public_key"
 
-  sudo -n -u wadi sh "$WAO_MASTER_PROJECT_ROOT/deploy/jumpserver/install-public-key.sh" "$public_key" || return
   retry_remote '云入口' scp -o ConnectTimeout=15 \
     "$public_key" deploy/jumpserver/install-public-key.sh wao-cloud:/tmp/ || return
   retry_remote '云入口' ssh -o ConnectTimeout=15 wao-cloud \

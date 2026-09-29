@@ -34,6 +34,13 @@ sh "$project_root/deploy/jumpserver/ensure-sso-secret.sh" "$project_root/deploy/
 # same private configuration without broadening access for other users.
 setfacl -m u:jenkins:r "$project_root/deploy/.env.secrets"
 
+# Linux2 只允许 Jenkins 通过此部署助手切换到 wadi。装机密钥应由该受限
+# 助手在解包新版本后安装，不能从流水线直接 sudo 执行仓库中的任意脚本。
+if [ "$sync_jumpserver" != false ]; then
+  sh "$project_root/deploy/jumpserver/install-public-key.sh" \
+    "$project_root/deploy/.jumpserver-asset-key.pub"
+fi
+
 WAO_IMAGE_TAG="$image_tag" SKIP_IMAGE_BUILD=true \
   sh "$project_root/deploy/scripts/deploy-linux.sh" master
 sh "$project_root/deploy/scripts/validate-deployment-node.sh" master "$image_tag"
