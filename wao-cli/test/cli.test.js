@@ -3,12 +3,14 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { Readable } from 'node:stream'
 import { after, before, test } from 'node:test'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { COMMANDS, argumentsForTool, formatOutput, run } from '../src/cli.js'
-import { createClient, endpoint } from '../src/client.js'
-import { normalizeWorkspaceToken, readToken } from '../src/auth.js'
+import { createClient, endpoint, hostedPageUrl } from '../src/client.js'
+import { getToken, normalizeWorkspaceToken, readToken, removeToken, storeToken } from '../src/auth.js'
 
-let server, url, lastCall
+let server, url, lastCall, hostedCalls, uploadedMultipart
 const WORKSPACE_TOKEN = `wao_workspace_${'A'.repeat(43)}`
 const ALL_TOOLS = [
   { name: 'update_subtask_status', inputSchema: { properties: { task_id: { type: 'string' }, subtask_id: { type: 'string' }, status: { type: 'string' }, expected_subtask_version: { type: 'string' } }, required: ['task_id', 'subtask_id', 'status', 'expected_subtask_version'] }, annotations: { readOnlyHint: false } },
@@ -20,10 +22,43 @@ const ALL_TOOLS = [
 ]
 
 before(async () => {
+  hostedCalls = []
   server = createServer(async (request, response) => {
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
-    const body = JSON.parse(Buffer.concat(chunks).toString())
+    const raw = Buffer.concat(chunks)
+    const target = new URL(request.url, 'http://localhost')
+    if (request.method === 'GET' && target.pathname === '/api/hosted-pages/publish-access') {
+      hostedCalls.push({ kind: 'preflight', authorization: request.headers.authorization, projectId: target.searchParams.get('projectId') })
+      response.setHeader('Content-Type', 'application/json')
+      if (request.headers.authorization === 'Bearer html-token') response.end(JSON.stringify({ code: 0, data: true }))
+      else if (request.headers.authorization === 'Bearer no-publish-token') {
+        response.statusCode = 403
+        response.end(JSON.stringify({ code: 403, message: 'no publish scope' }))
+      } else {
+        response.statusCode = 401
+        response.end(JSON.stringify({ code: 401, message: 'unauthorized' }))
+      }
+      return
+    }
+    if (request.method === 'POST' && target.pathname === '/api/hosted-pages') {
+      hostedCalls.push({ kind: 'publish', authorization: request.headers.authorization, contentType: request.headers['content-type'] })
+      uploadedMultipart = raw
+      response.setHeader('Content-Type', 'application/json')
+      if (request.headers.authorization !== 'Bearer html-token') {
+        response.statusCode = 403
+        response.end(JSON.stringify({ code: 403, message: 'no publish scope' }))
+      } else response.end(JSON.stringify({ code: 0, data: { slug: 'demo', url: '/api/pages/demo' } }))
+      return
+    }
+    if (request.method === 'GET' && target.pathname === '/api/pages/demo') {
+      hostedCalls.push({ kind: 'anonymous', authorization: request.headers.authorization })
+      const encoded = Buffer.from('<!doctype html><title>demo</title>').toString('base64')
+      response.setHeader('Content-Type', 'text/html; charset=UTF-8')
+      response.end(`<!doctype html><script>const encodedHtml = '${encoded}';</script>`)
+      return
+    }
+    const body = JSON.parse(raw.toString())
     response.setHeader('Content-Type', 'application/json')
     if (!['Bearer good-token', `Bearer ${WORKSPACE_TOKEN}`].includes(request.headers.authorization)) {
       response.statusCode = 401
@@ -58,6 +93,76 @@ test('通过真实 HTTP 请求列出工具并调用常用子命令', async () =>
     { tokenProvider: async () => 'good-token', stdout: out.stream })
   assert.deepEqual(lastCall, { name: 'list_open_tasks', arguments: { mine_only: false, limit: 10, project_id: 'p1' } })
   assert.deepEqual(JSON.parse(out.text), lastCall.arguments)
+})
+
+test('托管页发布需显式授权，上传后匿名核对同一份 HTML 字节', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'wao-cli-'))
+  const file = join(folder, 'share.html')
+  const html = '<!doctype html><title>demo</title>'
+  try {
+    await writeFile(file, html, 'utf8')
+    hostedCalls = []
+    uploadedMultipart = null
+    const out = output()
+    await run(['pages', 'publish', '--file', file, '--title', '分享稿', '--slug', 'demo', '--project-id', 'p1', '--yes', '--url', url], {
+      tokenProvider: async () => 'html-token', stdout: out.stream,
+    })
+    assert.match(out.text, /http:\/\/127\.0\.0\.1:\d+\/api\/pages\/demo/)
+    assert.match(out.text, /匿名访问核验通过/)
+    assert.deepEqual(hostedCalls.map(call => call.kind), ['preflight', 'publish', 'anonymous'])
+    assert.equal(hostedCalls[0].authorization, 'Bearer html-token')
+    assert.equal(hostedCalls[0].projectId, 'p1')
+    assert.equal(hostedCalls[1].authorization, 'Bearer html-token')
+    assert.match(hostedCalls[1].contentType, /^multipart\/form-data; boundary=/)
+    assert.equal(hostedCalls[2].authorization, undefined)
+    assert.ok(uploadedMultipart.includes(Buffer.from(html)))
+  } finally { await rm(folder, { recursive: true, force: true }) }
+})
+
+test('缺少发布范围、未确认或无效 UTF-8 时不创建页面', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'wao-cli-'))
+  const file = join(folder, 'share.html')
+  try {
+    await writeFile(file, '<html>ok</html>', 'utf8')
+    hostedCalls = []
+    await assert.rejects(() => run(['pages', 'publish', '--file', file, '--title', '分享稿', '--slug', 'demo', '--yes', '--url', url], {
+      tokenProvider: async () => 'no-publish-token', stdout: output().stream,
+    }), /没有发布 HTML 页面权限/)
+    assert.deepEqual(hostedCalls.map(call => call.kind), ['preflight'])
+
+    hostedCalls = []
+    await assert.rejects(() => run(['pages', 'publish', '--file', file, '--title', '分享稿', '--slug', 'demo', '--url', url], {
+      tokenProvider: async () => 'html-token', stdout: output().stream, stdin: Readable.from([]),
+    }), /公开发布需要交互确认/)
+    assert.deepEqual(hostedCalls.map(call => call.kind), ['preflight'])
+
+    hostedCalls = []
+    await writeFile(file, Buffer.from([0xff, 0xfe]))
+    await assert.rejects(() => run(['pages', 'publish', '--file', file, '--title', '分享稿', '--slug', 'demo', '--yes', '--url', url], {
+      tokenProvider: async () => 'html-token', stdout: output().stream,
+    }), /有效的 UTF-8/)
+    assert.deepEqual(hostedCalls, [])
+  } finally { await rm(folder, { recursive: true, force: true }) }
+})
+
+test('Windows DPAPI 凭据将令牌经 stdin 传递，不拼入 PowerShell 命令', async () => {
+  const calls = []
+  const runner = async (script, input = '') => {
+    calls.push({ script, input })
+    return script.includes('Unprotect') ? WORKSPACE_TOKEN : ''
+  }
+  assert.equal(await getToken({ platform: 'win32', env: {}, windowsRunner: runner }), WORKSPACE_TOKEN)
+  await storeToken(WORKSPACE_TOKEN, { platform: 'win32', windowsRunner: runner })
+  await removeToken({ platform: 'win32', windowsRunner: runner })
+  assert.equal(calls.length, 3)
+  assert.match(calls[0].script, /DataProtectionScope.*CurrentUser/)
+  assert.ok(calls[0].script.includes('\n'))
+  assert.match(calls[0].script, /Unprotect/)
+  assert.match(calls[1].script, /Protect/)
+  assert.equal(calls[1].input, WORKSPACE_TOKEN)
+  assert.ok(calls.every(call => !call.script.includes(WORKSPACE_TOKEN)))
+  assert.match(calls[2].script, /Remove-Item/)
+  assert.equal(calls[2].input, '')
 })
 
 test('通用调用可使用服务端新增工具，无需更新 CLI 子命令', async () => {
@@ -123,6 +228,7 @@ test('命令表覆盖服务端工作区 MCP 工具目录', async () => {
 test('URL 和输出不会泄露令牌或接受远程明文 HTTP', async () => {
   assert.throws(() => endpoint('http://wao.example/api/mcp/workspace'), /HTTPS/)
   assert.throws(() => endpoint('https://token@wao.example/api/mcp/workspace'), /不得包含账号/)
+  assert.throws(() => hostedPageUrl(url, { slug: 'demo', url: 'https://evil.example/api/pages/demo' }), /不匹配/)
   assert.match(formatOutput([{ id: 'p1', name: '项目' }]), /项目/)
   const args = await argumentsForTool(['--mine-only', 'false'], null,
     { properties: { mine_only: { type: 'boolean' } }, required: [] })

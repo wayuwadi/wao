@@ -40,6 +40,13 @@ public class WorkspaceMcpTokenService {
     /** 为已登录成员签发一枚仅显示一次明文的设备令牌。 */
     @Transactional
     public CreatedWorkspaceMcpTokenDto create(String memberId, String requestedName, boolean canWrite) {
+        return create(memberId, requestedName, canWrite, false);
+    }
+
+    /** 为当前成员签发一枚仅显示一次、可选允许发布托管 HTML 的工作区令牌。 */
+    @Transactional
+    public CreatedWorkspaceMcpTokenDto create(String memberId, String requestedName, boolean canWrite,
+            boolean canPublishHostedPage) {
         String name = requestedName == null ? "" : requestedName.trim();
         if (name.isEmpty() || name.length() > 80) throw new BadRequestException("设备名称长度必须在 1 到 80 字符之间");
         long active = mapper.selectCount(new LambdaQueryWrapper<WorkspaceMcpTokenEntity>()
@@ -52,7 +59,8 @@ public class WorkspaceMcpTokenService {
         row.setId(UUID.randomUUID().toString().replace("-", ""));
         row.setMemberId(memberId); row.setName(name);
         row.setTokenPrefix(secret.substring(0, 18)); row.setTokenHash(hash(secret));
-        row.setCanWrite(canWrite); row.setCreatedAt(LocalDateTime.now());
+        row.setCanWrite(canWrite); row.setCanPublishHostedPage(canPublishHostedPage);
+        row.setCreatedAt(LocalDateTime.now());
         mapper.insert(row);
         return new CreatedWorkspaceMcpTokenDto(toDto(row), secret);
     }
@@ -77,14 +85,21 @@ public class WorkspaceMcpTokenService {
         if (row.getLastUsedAt() == null || row.getLastUsedAt().isBefore(now.minusMinutes(1))) {
             row.setLastUsedAt(now); mapper.updateById(row);
         }
-        return new AuthenticatedToken(row.getId(), row.getMemberId(), Boolean.TRUE.equals(row.getCanWrite()));
+        return new AuthenticatedToken(row.getId(), row.getMemberId(), Boolean.TRUE.equals(row.getCanWrite()),
+                Boolean.TRUE.equals(row.getCanPublishHostedPage()));
     }
 
-    public record AuthenticatedToken(String tokenId, String memberId, boolean canWrite) { }
+    public record AuthenticatedToken(String tokenId, String memberId, boolean canWrite,
+            boolean canPublishHostedPage) {
+        public AuthenticatedToken(String tokenId, String memberId, boolean canWrite) {
+            this(tokenId, memberId, canWrite, false);
+        }
+    }
 
     private WorkspaceMcpTokenDto toDto(WorkspaceMcpTokenEntity row) {
         return new WorkspaceMcpTokenDto(row.getId(), row.getName(), row.getTokenPrefix(),
-                Boolean.TRUE.equals(row.getCanWrite()), row.getCreatedAt(), row.getLastUsedAt());
+                Boolean.TRUE.equals(row.getCanWrite()), Boolean.TRUE.equals(row.getCanPublishHostedPage()),
+                row.getCreatedAt(), row.getLastUsedAt());
     }
 
     private static String hash(String value) {

@@ -16,6 +16,8 @@ const canWrite = ref(true)
 const secret = ref('')
 const tokenCopied = ref(false)
 const issuedCanWrite = ref(false)
+const canPublishHostedPage = ref(false)
+const issuedCanPublishHostedPage = ref(false)
 const endpoint = computed(() => `${window.location.origin}/api/mcp/workspace`)
 const instruction = computed(() => `请将以下 WAO MCP Server 添加到当前 MCP Client，并完成连接验证。
 
@@ -29,7 +31,7 @@ Token：${secret.value}
 - 优先使用客户端的 Bearer Token 配置项，仅填入 Token 值；如需通过请求头配置，使用 Authorization: Bearer <Token>。
 - 使用当前客户端支持的安全凭据配置，不得将 Token 写入项目代码、版本库或日志，也不要在回复中重复展示完整 Token。
 - 如果无法自动配置，请提供适配当前客户端的配置片段、文件位置和生效方式；配置片段中的 Token 使用占位符。
-- 这枚令牌${issuedCanWrite.value ? '可读写' : '只读'}，不得尝试调用超出 tools/list 实际返回的工具。
+- 这枚令牌${issuedCanWrite.value ? '可读写' : '只读'}${issuedCanPublishHostedPage.value ? '，并可发布 HTML 页面' : ''}，不得尝试调用超出 tools/list 实际返回的工具。
 
 配置完成后，请连接服务并调用 tools/list 验证，报告连接结果和实际可用工具。
 
@@ -67,10 +69,11 @@ async function generate() {
   tokenCopied.value = false
   try {
     const name = `首页快捷连接 · ${new Date().toLocaleString('zh-CN', { hour12: false })}`
-    const created = await createWorkspaceMcpToken(name, canWrite.value)
+    const created = await createWorkspaceMcpToken(name, canWrite.value, canPublishHostedPage.value)
     tokens.value.unshift(created.token)
     secret.value = created.secret
     issuedCanWrite.value = created.token.canWrite
+    issuedCanPublishHostedPage.value = created.token.canPublishHostedPage
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '生成连接令牌失败' }
   finally { busy.value = false }
 }
@@ -112,10 +115,11 @@ async function revoke(token: WorkspaceMcpToken) {
       <header><div><span class="eyebrow">WAO MCP</span><h2 id="workspace-mcp-title">连接 AI 客户端</h2></div><button type="button" aria-label="关闭" @click="close"><i class="ri-close-line"></i></button></header>
       <p>每台设备用独立令牌。令牌仅在创建时显示一次，关闭窗口后只能重新生成；可随时在这里吊销。知识库沿用 WAO 当前的成员共享范围。</p>
       <label class="permission"><input v-model="canWrite" type="checkbox" :disabled="busy || !!secret" /><span><b>允许 AI 写入</b><small>可创建和更新项目、任务、知识库与文档。关闭后只提供读取工具。</small></span></label>
+      <label class="permission"><input v-model="canPublishHostedPage" type="checkbox" :disabled="busy || !!secret" /><span><b>允许发布 HTML 页面</b><small>可通过 WAO CLI 发布 UTF-8 单文件 HTML，最大 10 MB。不会因此获得修改或删除页面的权限；已有令牌不会自动获得此权限。</small></span></label>
       <button type="button" class="primary generate" :disabled="busy" @click="generate">{{ busy ? '生成中…' : '生成连接指令' }}</button>
       <p v-if="error" role="alert" class="error">{{ error }}</p>
       <div v-if="secret" class="instruction"><strong>仅此一次显示完整令牌</strong><p>连接 WAO CLI 时只复制令牌；连接其他 AI 客户端可复制完整指令。请勿发到公开对话或提交到代码仓库。</p><textarea readonly :value="instruction" aria-label="WAO MCP 连接指令" /><div class="instruction-actions"><button type="button" class="primary" @click="copyToken">{{ tokenCopied ? '令牌已复制' : '复制令牌（用于 CLI）' }}</button><button type="button" @click="copyInstruction">复制授权指令</button></div></div>
-      <div class="existing"><h3>已创建的连接</h3><span v-if="loading">正在读取…</span><span v-else-if="!tokens.length">暂无连接</span><div v-for="token in tokens" :key="token.id" class="token"><div><b>{{ token.name }}</b><small>{{ token.canWrite ? '可读写' : '只读' }} · {{ token.tokenPrefix }}••••</small></div><button type="button" :disabled="busy" @click="revoke(token)">吊销</button></div></div>
+      <div class="existing"><h3>已创建的连接</h3><span v-if="loading">正在读取…</span><span v-else-if="!tokens.length">暂无连接</span><div v-for="token in tokens" :key="token.id" class="token"><div><b>{{ token.name }}</b><small>{{ token.canWrite ? '可读写' : '只读' }}{{ token.canPublishHostedPage ? ' · 可发布 HTML' : '' }} · {{ token.tokenPrefix }}••••</small></div><button type="button" :disabled="busy" @click="revoke(token)">吊销</button></div></div>
     </section>
   </div>
 </template>

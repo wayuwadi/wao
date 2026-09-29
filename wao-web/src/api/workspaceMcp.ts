@@ -5,6 +5,7 @@ export interface WorkspaceMcpToken {
   name: string
   tokenPrefix: string
   canWrite: boolean
+  canPublishHostedPage: boolean
   createdAt: string
   lastUsedAt?: string
 }
@@ -21,8 +22,8 @@ async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
 export const fetchWorkspaceMcpTokens = () =>
   data<WorkspaceMcpToken[]>(http.get('/api/workspace-mcp/tokens'))
 
-export const createWorkspaceMcpToken = (name: string, canWrite: boolean) =>
-  data<CreatedWorkspaceMcpToken>(http.post('/api/workspace-mcp/tokens', { name, canWrite }))
+export const createWorkspaceMcpToken = (name: string, canWrite: boolean, canPublishHostedPage = false) =>
+  data<CreatedWorkspaceMcpToken>(http.post('/api/workspace-mcp/tokens', { name, canWrite, canPublishHostedPage }))
 
 export const revokeWorkspaceMcpToken = (id: string) =>
   http.delete(`/api/workspace-mcp/tokens/${encodeURIComponent(id)}`)
