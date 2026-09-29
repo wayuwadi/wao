@@ -14,6 +14,17 @@ describe('飞书二维码', () => {
     delete window.QRLogin
   })
 
+  it('请求取消后不创建二维码或覆盖现有容器', async () => {
+    const container = document.createElement('div')
+    container.id = 'feishu-qr'
+    container.textContent = '新请求占位'
+    document.body.appendChild(container)
+    window.QRLogin = vi.fn()
+    await expect(mountFeishuQr('feishu-qr', () => false)).rejects.toThrow('二维码请求已取消')
+    expect(window.QRLogin).not.toHaveBeenCalled()
+    expect(container.textContent).toBe('新请求占位')
+  })
+
   it('创建 iframe 前移除加载占位，避免二维码被裁掉', async () => {
     const container = document.createElement('div')
     container.id = 'feishu-qr'

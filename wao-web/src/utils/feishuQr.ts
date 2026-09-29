@@ -1,6 +1,7 @@
 import { getFeishuAuthorizationUrl } from '@/api/feishu'
 
-const SDK_URL = 'https://sf3-cn.feishucdn.com/obj/feishu-static/lark/passport/qrcode/LarkSSOSDKWebQRCode-1.0.2.js'
+const SDK_URL =
+  'https://sf3-cn.feishucdn.com/obj/feishu-static/lark/passport/qrcode/LarkSSOSDKWebQRCode-1.0.2.js'
 
 interface FeishuQrInstance {
   matchOrigin(origin: string): boolean
@@ -31,18 +32,23 @@ function loadSdk() {
     script.src = SDK_URL
     script.async = true
     script.onload = () => resolve()
-    script.onerror = () => reject(new Error('飞书二维码组件加载失败，请改用飞书授权登录。'))
+    script.onerror = () => {
+      sdkPromise = null
+      script.remove()
+      reject(new Error('飞书二维码组件加载失败，请改用飞书授权登录。'))
+    }
     document.head.appendChild(script)
   })
   return sdkPromise
 }
 
 /** 在指定容器创建飞书官方二维码，并返回清理函数。 */
-export async function mountFeishuQr(containerId: string) {
+export async function mountFeishuQr(containerId: string, isActive: () => boolean = () => true) {
   const authorizationUrl = await getFeishuAuthorizationUrl('qr')
   await loadSdk()
   if (!window.QRLogin) throw new Error('飞书二维码组件不可用，请改用飞书授权登录。')
 
+  if (!isActive()) throw new Error('二维码请求已取消。')
   const container = document.getElementById(containerId)
   if (!container) throw new Error('飞书二维码容器不存在。')
   // 官方 SDK 采用 appendChild 插入 iframe；必须先移除加载占位，否则二维码会被追加到
@@ -66,13 +72,15 @@ export async function mountFeishuQr(containerId: string) {
     frame.style.transform = `scale(${scale})`
   }
   fitFrame()
-  const resizeObserver = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(fitFrame)
+  const resizeObserver =
+    typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(fitFrame)
   resizeObserver?.observe(container)
   const onMessage = (event: MessageEvent) => {
     if (!qr.matchOrigin(event.origin) || (qr.matchData && !qr.matchData(event.data))) return
-    const temporaryCode = typeof event.data === 'string'
-      ? event.data
-      : (event.data as { tmp_code?: string } | null)?.tmp_code
+    const temporaryCode =
+      typeof event.data === 'string'
+        ? event.data
+        : (event.data as { tmp_code?: string } | null)?.tmp_code
     if (!temporaryCode) return
     window.location.assign(`${authorizationUrl}&tmp_code=${encodeURIComponent(temporaryCode)}`)
   }
