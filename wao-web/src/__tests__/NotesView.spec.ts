@@ -46,6 +46,12 @@ async function view() {
   await router.push('/notes')
   return mount(NotesView, { global: { plugins: [router], stubs: { MarkdownEditor: Editor, NoteMiningPanel: true } } })
 }
+async function setNoteBodyHeight(wrapper: Awaited<ReturnType<typeof view>>, id: string, height: number) {
+  const body = wrapper.get(`[data-note-id="${id}"] .note-body`).element
+  Object.defineProperty(body, 'scrollHeight', { configurable: true, value: height })
+  window.dispatchEvent(new Event('resize'))
+  await flushPromises()
+}
 function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
@@ -393,6 +399,7 @@ describe('小记集中记录空间', () => {
     useDataStore().docs[note.id] = note
     const wrapper = await view()
     const card = wrapper.get(`[data-note-id="${note.id}"]`)
+    await setNoteBodyHeight(wrapper, note.id, 220)
     const imageRail = card.get('.note-images')
 
     expect(card.classes()).toContain('fixed-height')
@@ -404,6 +411,37 @@ describe('小记集中记录空间', () => {
     await card.get('.note-read-action').trigger('click')
     expect(card.classes()).toContain('fixed-height')
     expect(imageRail.classes()).not.toContain('expanded')
+    wrapper.unmount()
+  })
+
+  it('短小记自然收高且不显示展开入口，正文超出后才启用折叠', async () => {
+    const note = doc('short-preview', '先写小记再复制到飞书聊天')
+    note.content = { version: 1, markdown: '你现在写东西时，会先把想说的话记在小记上，再发到飞书吗？\n\n我想试试每天先把要聊的内容写在小记上，再复制到飞书上。', document: {
+      type: 'doc', content: [
+        { type: 'paragraph', content: [{ type: 'text', text: '你现在写东西时，会先把想说的话记在小记上，再发到飞书吗？' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: '我想试试每天先把要聊的内容写在小记上，再复制到飞书上。' }] },
+      ],
+    } }
+    useDataStore().docs[note.id] = note
+    const wrapper = await view()
+    const card = wrapper.get(`[data-note-id="${note.id}"]`)
+    await flushPromises()
+
+    expect(card.classes()).not.toContain('fixed-height')
+    expect(card.find('.note-read-action').exists()).toBe(false)
+    await card.trigger('click')
+    expect(card.classes()).not.toContain('expanded')
+
+    await setNoteBodyHeight(wrapper, note.id, 220)
+    expect(card.classes()).toContain('fixed-height')
+    expect(card.get('.note-read-action').text()).toContain('展开全文')
+    await card.get('.note-read-action').trigger('click')
+    expect(card.classes()).toContain('expanded')
+
+    await setNoteBodyHeight(wrapper, note.id, 80)
+    expect(card.classes()).not.toContain('fixed-height')
+    expect(card.classes()).not.toContain('expanded')
+    expect(card.find('.note-read-action').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -823,7 +861,8 @@ describe('小记集中记录空间', () => {
     expect(wrapper.find('.note-actions').exists()).toBe(false)
     expect(wrapper.find('.card-tags').element.parentElement?.classList.contains('note-heading')).toBe(true)
     expect(wrapper.get('[data-note-id="a"] h2').text()).toBe('键盘编辑的记录')
-    expect(wrapper.get('[data-note-id="a"]').classes()).toContain('fixed-height')
+    expect(wrapper.get('[data-note-id="a"]').classes()).not.toContain('fixed-height')
+    expect(wrapper.find('[data-note-id="a"] .note-read-action').exists()).toBe(false)
     await wrapper.get('[data-note-id="b"]').trigger('keydown', { key: 'Enter' })
     expect(document.body.querySelector('[role="dialog"][aria-label="小记阅读模式"] h2')?.textContent).toBe('下一篇记录')
     const readerPage = document.querySelector<HTMLElement>('.reader-page')!

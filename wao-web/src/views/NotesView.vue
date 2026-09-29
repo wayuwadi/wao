@@ -72,6 +72,45 @@ async function loadServerWorkflows() {
   } catch { /* 保留已显示的阶段状态，下一轮自动重读。 */ }
 }
 const noteCounts = ref<Record<string, number>>({})
+const notePreviewOverflowIds = ref<string[]>([])
+const notePreviewBodies = new Map<string, HTMLElement>()
+const notePreviewBodyIds = new WeakMap<HTMLElement, string>()
+let notePreviewResizeObserver: ResizeObserver | undefined
+const NOTE_PREVIEW_BODY_MAX_HEIGHT = 170
+function isNotePreviewExpandable(id: string) { return notePreviewOverflowIds.value.includes(id) }
+function isNotePreviewExpanded(id: string) { return isNotePreviewExpandable(id) && expandedIds.value.includes(id) }
+function measureNotePreview(id: string) {
+  const body = notePreviewBodies.get(id)
+  if (!body) return
+  const shouldCollapse = body.scrollHeight > NOTE_PREVIEW_BODY_MAX_HEIGHT
+  const currentlyExpandable = isNotePreviewExpandable(id)
+  if (currentlyExpandable === shouldCollapse) return
+  notePreviewOverflowIds.value = shouldCollapse
+    ? [...notePreviewOverflowIds.value, id]
+    : notePreviewOverflowIds.value.filter(item => item !== id)
+  if (!shouldCollapse) expandedIds.value = expandedIds.value.filter(item => item !== id)
+}
+function scheduleNotePreviewMeasure(id: string) { void nextTick(() => measureNotePreview(id)) }
+function setNotePreviewBody(id: string, value: unknown) {
+  const previous = notePreviewBodies.get(id)
+  const body = value instanceof HTMLElement ? value : null
+  if (previous && previous !== body) notePreviewResizeObserver?.unobserve(previous)
+  if (!body) {
+    notePreviewBodies.delete(id)
+    return
+  }
+  notePreviewBodies.set(id, body)
+  notePreviewBodyIds.set(body, id)
+  notePreviewResizeObserver?.observe(body)
+  scheduleNotePreviewMeasure(id)
+}
+function onNoteCharacterCount(id: string, count: number) {
+  noteCounts.value[id] = count
+  scheduleNotePreviewMeasure(id)
+}
+function measureAllNotePreviews() {
+  for (const id of notePreviewBodies.keys()) measureNotePreview(id)
+}
 const previewImage = ref<NotePreviewImage | null>(null)
 const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
 function openImageMenu(event: MouseEvent) {
@@ -191,16 +230,17 @@ function scheduleCardPreview(id: string, event: MouseEvent) {
     const previousId = pendingCardClickId
     clearCardClickTimer()
     if (previousId === id) return
-    if (previousId) expandedIds.value = expandedIds.value.includes(previousId)
+    if (previousId && isNotePreviewExpandable(previousId)) expandedIds.value = expandedIds.value.includes(previousId)
       ? expandedIds.value.filter(item => item !== previousId)
       : [...expandedIds.value, previousId]
   }
+  if (!isNotePreviewExpandable(id)) return
   pendingCardClickId = id
   cardClickTimer = window.setTimeout(() => {
     const clickedId = pendingCardClickId
     cardClickTimer = undefined
     pendingCardClickId = ''
-    if (!clickedId) return
+    if (!clickedId || !isNotePreviewExpandable(clickedId)) return
     expandedIds.value = expandedIds.value.includes(clickedId)
       ? expandedIds.value.filter(item => item !== clickedId)
       : [...expandedIds.value, clickedId]
@@ -208,6 +248,7 @@ function scheduleCardPreview(id: string, event: MouseEvent) {
 }
 function toggleNotePreview(id: string) {
   clearCardClickTimer()
+  if (!isNotePreviewExpandable(id)) return
   expandedIds.value = expandedIds.value.includes(id)
     ? expandedIds.value.filter(item => item !== id)
     : [...expandedIds.value, id]
@@ -565,9 +606,23 @@ async function createTag() {
   } catch (cause) { tagError.value = cause instanceof Error ? cause.message : '标签保存失败，请重试' }
   finally { creatingTag.value = false }
 }
-onMounted(() => { void data.ensureDocsLoaded(); void loadTags(); window.addEventListener('scroll', onNotesScroll, { passive: true }) })
+onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined') {
+    notePreviewResizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const id = notePreviewBodyIds.get(entry.target as HTMLElement)
+        if (id) measureNotePreview(id)
+      }
+    })
+    for (const body of notePreviewBodies.values()) notePreviewResizeObserver.observe(body)
+  }
+  window.addEventListener('resize', measureAllNotePreviews)
+  void data.ensureDocsLoaded()
+  void loadTags()
+  window.addEventListener('scroll', onNotesScroll, { passive: true })
+})
 onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); void loadServerWorkflows(); workflowTimer = setInterval(() => { if (!document.hidden) void loadServerWorkflows() }, 20_000); window.addEventListener('pointerdown', onOutsideFilter); window.addEventListener('keydown', onReaderKeydown) })
-onBeforeUnmount(() => { clearCardClickTimer(); if (workflowTimer) clearInterval(workflowTimer); window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
+onBeforeUnmount(() => { clearCardClickTimer(); notePreviewResizeObserver?.disconnect(); window.removeEventListener('resize', measureAllNotePreviews); if (workflowTimer) clearInterval(workflowTimer); window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
 watch(() => session.currentUser.id, memberId => { serverWorkflows.value = {}; void initializeNoteWorkflow(memberId); void loadServerWorkflows(); versions.value = {} })
 onMounted(() => void loadPins())
 </script>
@@ -617,8 +672,8 @@ onMounted(() => void loadPins())
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
-        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': !expandedIds.includes(note.id) && !editingIds.includes(note.id), expanded: expandedIds.includes(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
-          tabindex="0" :aria-expanded="expandedIds.includes(note.id)" :title="expandedIds.includes(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑'" :aria-label="`小记：${note.title}，单击${expandedIds.includes(note.id) ? '收起' : '展开'}全文，按 Enter 开始阅读，双击编辑`"
+        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
+          tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出与按需操作">
@@ -632,15 +687,15 @@ onMounted(() => void loadPins())
           <template v-else>
           <div class="note-heading"><h2>{{ note.title }}</h2><div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
           <div class="note-content" :class="{ 'has-images': notePreviews.get(note.id)?.length }" @click="openInlineImage">
-            <div class="note-body"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="showPolished(note) ? undefined : resolvedRichContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="noteCounts[note.id] = $event" /></div>
-            <aside v-if="notePreviews.get(note.id)?.length" class="note-images" :class="{ expanded: expandedIds.includes(note.id) }" aria-label="小记图片总览">
+            <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="showPolished(note) ? undefined : resolvedRichContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
+            <aside v-if="notePreviews.get(note.id)?.length" class="note-images" :class="{ expanded: isNotePreviewExpanded(note.id) }" aria-label="小记图片总览">
               <span>图片总览 <b>{{ notePreviews.get(note.id)?.length }} 张</b></span>
               <button v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image" type="button" :title="image.alt || `全屏阅读图片 ${index + 1}`" @click.stop="startReading(note.id)">
                 <img :src="notePreviewSource(image.src)" :alt="image.alt || `小记图片 ${index + 1}`" loading="lazy">
               </button>
             </aside>
           </div>
-          <button class="note-read-action" type="button" :aria-expanded="expandedIds.includes(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="expandedIds.includes(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ expandedIds.includes(note.id) ? '收起全文' : '展开全文' }}</button>
+          <button v-if="isNotePreviewExpandable(note.id)" class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button>
           </template>
           <div v-if="confirmingDeleteId === note.id" class="card-delete-confirm" role="group" :aria-label="`确认删除小记：${note.title}`">
             <span>将此小记移入回收站？7 天内可恢复。{{ editingIds.includes(note.id) ? '当前未保存的编辑会丢失。' : '' }}</span>
@@ -734,8 +789,8 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .new-tag-form .error { flex-basis: 100%; }
 .tag-status { font-size: 12px; color: var(--wao-text-faint); }
 .list-summary { display: flex; justify-content: space-between; gap: 10px; margin: 9px 0 12px; font-size: 11px; color: var(--wao-text-faint); }
-.note-card { position: relative; box-sizing: border-box; min-height: 300px; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 17px 19px 36px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
-.note-card.fixed-height { height: 300px; max-height: 300px; overflow: hidden; }
+.note-card { position: relative; box-sizing: border-box; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 17px 19px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
+.note-card.fixed-height { min-height: 300px; height: 300px; max-height: 300px; overflow: hidden; padding-bottom: 36px; }
 .note-card.expanded, .note-card.editing { height: auto; max-height: none; overflow: visible; }
 .note-card:hover, .note-card:focus-within { border-color: var(--wao-primary); box-shadow: 0 10px 30px rgba(59, 47, 91, .1); transform: translateY(-2px); }
 .note-card.editing:hover, .note-card.editing:focus-within { transform: none; }
@@ -862,7 +917,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 }
 @media (max-width: 1100px) { .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } .search { flex: 1 1 50%; } }
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
-@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .mining-modal-mask { align-items: end; padding: 10px; } .mining-modal { width: 100%; max-height: calc(100dvh - 20px); padding: 24px 6px 10px; border-radius: 18px; } .mining-modal-close { margin-right: 4px; } .list-summary { flex-wrap: wrap; } .notes-reader { grid-template-rows: 48px minmax(0,1fr) 54px; padding: 0 10px; } .reader-page { border-radius: 13px; padding: 20px 15px; } .reader-page h2 { margin-top: 14px; } .reader-nav { top: auto; bottom: 62px; width: 34px; height: 40px; transform: none; } .reader-prev { left: 13px; } .reader-next { right: 13px; } .reader-controls { gap: 8px; } .reader-controls > span { display: none; } }
+@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 14px 12px 16px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .mining-modal-mask { align-items: end; padding: 10px; } .mining-modal { width: 100%; max-height: calc(100dvh - 20px); padding: 24px 6px 10px; border-radius: 18px; } .mining-modal-close { margin-right: 4px; } .list-summary { flex-wrap: wrap; } .notes-reader { grid-template-rows: 48px minmax(0,1fr) 54px; padding: 0 10px; } .reader-page { border-radius: 13px; padding: 20px 15px; } .reader-page h2 { margin-top: 14px; } .reader-nav { top: auto; bottom: 62px; width: 34px; height: 40px; transform: none; } .reader-prev { left: 13px; } .reader-next { right: 13px; } .reader-controls { gap: 8px; } .reader-controls > span { display: none; } }
 @media (max-width: 600px) { .note-content.has-images { grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; } .note-images { max-height: 150px; padding-left: 7px; } }
 @media (hover: none) { .stage-list-complete, .version-toggle, .card-quick-actions, .note-read-action, .mining-toggle { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top, .mining-modal { transition: none; animation: none; } .reader-page { animation: none; } .reader-progress i { transition: none; } }
