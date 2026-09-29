@@ -60,6 +60,47 @@ class WorkspaceMcpNetworkIntegrationTest {
         assertThat(post(writable.secret(), discover).statusCode()).isEqualTo(200);
     }
 
+    @Test
+    void htmlPublishRequiresItsOwnScopeAndDoesNotRequireBrowserSessionForBearerPreflight() throws Exception {
+        var ordinary = tokens.create("wd", "普通工作区令牌", false);
+        var publisher = tokens.create("wd", "HTML 发布令牌", false, true);
+
+        assertThat(get("/api/hosted-pages/publish-access", ordinary.secret()).statusCode()).isEqualTo(403);
+        HttpResponse<String> allowed = get("/api/hosted-pages/publish-access", publisher.secret());
+        assertThat(allowed.statusCode()).isEqualTo(200);
+        assertThat(json.readTree(allowed.body()).path("data").asBoolean()).isTrue();
+        assertThat(get("/api/hosted-pages/publish-access", null).statusCode()).isEqualTo(401);
+
+        assertThat(publish(ordinary.secret()).statusCode()).isEqualTo(403);
+        assertThat(publish(null).statusCode()).isEqualTo(401);
+    }
+
+    private HttpResponse<String> get(String path, String secret) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + path));
+        if (secret != null) request.header("Authorization", "Bearer " + secret);
+        return HttpClient.newHttpClient().send(request.GET().build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> publish(String secret) throws Exception {
+        String boundary = "wao-test-boundary";
+        String content = "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"html\"; filename=\"demo.html\"\r\n"
+                + "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+                + "<html>demo</html>\r\n"
+                + "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"slug\"\r\n\r\ndemo\r\n"
+                + "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"title\"\r\n\r\nDemo\r\n"
+                + "--" + boundary + "--\r\n";
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/hosted-pages"))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary);
+        if (secret != null) request.header("Authorization", "Bearer " + secret);
+        return HttpClient.newHttpClient().send(request.POST(HttpRequest.BodyPublishers.ofString(content)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> post(String secret, String payload) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + "/api/mcp/workspace"))

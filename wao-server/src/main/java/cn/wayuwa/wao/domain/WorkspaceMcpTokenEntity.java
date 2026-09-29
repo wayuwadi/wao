@@ -13,6 +13,7 @@ public class WorkspaceMcpTokenEntity {
     private String tokenPrefix;
     private String tokenHash;
     private Boolean canWrite;
+    private Boolean canPublishHostedPage;
     private LocalDateTime createdAt;
     private LocalDateTime lastUsedAt;
     private LocalDateTime revokedAt;
@@ -29,6 +30,8 @@ public class WorkspaceMcpTokenEntity {
     public void setTokenHash(String value) { tokenHash = value; }
     public Boolean getCanWrite() { return canWrite; }
     public void setCanWrite(Boolean value) { canWrite = value; }
+    public Boolean getCanPublishHostedPage() { return canPublishHostedPage; }
+    public void setCanPublishHostedPage(Boolean value) { canPublishHostedPage = value; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime value) { createdAt = value; }
     public LocalDateTime getLastUsedAt() { return lastUsedAt; }

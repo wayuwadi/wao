@@ -30,6 +30,7 @@ CREATE TABLE workspace_mcp_token (
     token_prefix VARCHAR(20) NOT NULL,
     token_hash CHAR(64) NOT NULL UNIQUE,
     can_write BOOLEAN NOT NULL,
+    can_publish_hosted_page BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL,
     last_used_at TIMESTAMP NULL,
     revoked_at TIMESTAMP NULL

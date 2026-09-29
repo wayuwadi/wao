@@ -29,11 +29,31 @@ class WorkspaceMcpTokenServiceTest {
         assertThat(created.secret()).matches("wao_workspace_[A-Za-z0-9_-]{43}");
         assertThat(row.getTokenHash()).matches("[0-9a-f]{64}").doesNotContain(created.secret());
         assertThat(row.getCanWrite()).isTrue();
+        assertThat(row.getCanPublishHostedPage()).isFalse();
         assertThat(created.token().tokenPrefix()).isEqualTo(created.secret().substring(0, 18));
+        assertThat(created.token().canPublishHostedPage()).isFalse();
         when(mapper.selectOne(any())).thenReturn(row);
         assertThat(tokens.authenticate(created.secret()).memberId()).isEqualTo("wd");
         assertThat(tokens.authenticate(created.secret()).canWrite()).isTrue();
+        assertThat(tokens.authenticate(created.secret()).canPublishHostedPage()).isFalse();
         assertThat(tokens.authenticate("wao_mcp_old-memory-token")).isNull();
+    }
+
+    @Test
+    void persistsHostedPagePermissionOnlyWhenExplicitlyRequested() {
+        when(mapper.selectCount(any())).thenReturn(0L);
+        ArgumentCaptor<WorkspaceMcpTokenEntity> captured = ArgumentCaptor.forClass(WorkspaceMcpTokenEntity.class);
+
+        var created = tokens.create("wd", "发布机", false, true);
+
+        verify(mapper).insert(captured.capture());
+        assertThat(captured.getValue().getCanWrite()).isFalse();
+        assertThat(captured.getValue().getCanPublishHostedPage()).isTrue();
+        assertThat(created.token().canPublishHostedPage()).isTrue();
+        when(mapper.selectOne(any())).thenReturn(captured.getValue());
+        var authenticated = tokens.authenticate(created.secret());
+        assertThat(authenticated.canWrite()).isFalse();
+        assertThat(authenticated.canPublishHostedPage()).isTrue();
     }
 
     @Test
