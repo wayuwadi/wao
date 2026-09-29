@@ -89,7 +89,7 @@ paths:
         - in: path
           name: provider
           required: true
-          schema: { type: string, enum: [email, feishu, wechat] }
+          schema: { type: string, enum: [email, feishu] }
       responses:
         "200": { description: 解绑成功 }
         "400": { description: 解绑后将没有可用登录方式 }

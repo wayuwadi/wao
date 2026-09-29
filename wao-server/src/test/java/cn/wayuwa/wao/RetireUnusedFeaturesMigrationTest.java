@@ -27,6 +27,8 @@ class RetireUnusedFeaturesMigrationTest {
                 + " last_memory_collection_attempt_at TIMESTAMP, last_memory_collected_at TIMESTAMP,"
                 + " last_memory_collection_error VARCHAR(1000))");
         jdbc.execute("CREATE TABLE system_setting (cfg_key VARCHAR(128) PRIMARY KEY)");
+        jdbc.execute("CREATE TABLE account_identity (id VARCHAR(36) PRIMARY KEY, provider VARCHAR(16))");
+        jdbc.execute("CREATE TABLE account_login_event (id VARCHAR(36) PRIMARY KEY, provider VARCHAR(16))");
         jdbc.update("INSERT INTO memory_document VALUES ('project','project','convention'),"
                 + "('decision','personal','decision'),('personal','personal','context'),"
                 + "('machine','machine','context')");
@@ -35,6 +37,8 @@ class RetireUnusedFeaturesMigrationTest {
         jdbc.update("INSERT INTO kb_folder VALUES ('old','kb-memory')");
         jdbc.update("INSERT INTO doc VALUES ('old','kb-memory'),('normal','normal')");
         jdbc.update("INSERT INTO system_setting VALUES ('auth.wechat-official.token'),('other')");
+        jdbc.update("INSERT INTO account_identity VALUES ('wechat','wechat'),('email','email'),('feishu','feishu')");
+        jdbc.update("INSERT INTO account_login_event VALUES ('wechat-login','wechat'),('feishu-login','feishu')");
 
         Path migration = Path.of("src/main/resources/db/migration/V172__retire_unused_standalone_features.sql");
         try (Connection connection = source.getConnection()) {
@@ -47,5 +51,9 @@ class RetireUnusedFeaturesMigrationTest {
         assertThat(jdbc.queryForList("SELECT id FROM kb", String.class)).containsExactly("normal");
         assertThat(jdbc.queryForList("SELECT id FROM doc", String.class)).containsExactly("normal");
         assertThat(jdbc.queryForList("SELECT cfg_key FROM system_setting", String.class)).containsExactly("other");
+        assertThat(jdbc.queryForList("SELECT id FROM account_identity ORDER BY id", String.class))
+                .containsExactly("email", "feishu");
+        assertThat(jdbc.queryForList("SELECT id FROM account_login_event", String.class))
+                .containsExactly("feishu-login");
     }
 }

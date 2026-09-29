@@ -35,7 +35,7 @@ erDiagram
 
 ## 表与字段字典
 
-账号、身份与共享会话表见 [ADR-016](../adr/016-unified-account-and-session.md) 和 `V12__account_auth.sql`。`account` 关联唯一成员；`account_identity` 以 `(provider, provider_subject)` 保证外部身份唯一，并由 `V86__feishu_union_identity.sql` 增加 `(provider, provider_union_subject)` 唯一约束，用于飞书跨应用身份；`password_credential` 保存 BCrypt 哈希、失败次数和锁定时间；`SPRING_SESSION*` 保存跨节点 HttpOnly 会话。
+账号、身份与共享会话表见 [ADR-016](../adr/016-unified-account-and-session.md) 和 `V12__account_auth.sql`。`account` 关联唯一成员；`account_identity` 以 `(provider, provider_subject)` 保证外部身份唯一，并由 `V86__feishu_union_identity.sql` 增加 `(provider, provider_union_subject)` 唯一约束，用于飞书跨应用身份；`V172__retire_unused_standalone_features.sql` 删除微信历史身份和登录事件，当前只保留邮箱与飞书身份。`password_credential` 保存 BCrypt 哈希、失败次数和锁定时间；`SPRING_SESSION*` 保存跨节点 HttpOnly 会话。
 
 `account_login_event`（V111）从通知中心发布后逐次记录成功登录，只保存账号、成员、登录方式与毫秒级时间，供
 最近 7/30 天真实登录频率使用；不记录失败尝试、IP、设备、浏览器、邮箱或外部身份标识，历史次数不回填。

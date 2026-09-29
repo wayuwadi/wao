@@ -1,7 +1,7 @@
 import { http, type ApiResponse } from './http'
 
 export interface AccountIdentity {
-  provider: 'email' | 'feishu' | 'wechat'
+  provider: 'email' | 'feishu'
   email: string | null
   displayName: string
 }

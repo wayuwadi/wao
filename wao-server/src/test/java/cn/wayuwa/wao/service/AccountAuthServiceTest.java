@@ -72,21 +72,6 @@ class AccountAuthServiceTest {
     }
 
     @Test
-    void resolvesOfficialAccountOpenIdThroughLegacyWechatUnionSubject() {
-        AccountIdentityEntity identity = identity("wechat", "union-same-person", "acc-wg");
-        when(identities.findByProviderSubject("wechat", "union-same-person")).thenReturn(identity);
-        when(accounts.selectById("acc-wg")).thenReturn(account("acc-wg", "wg"));
-        when(members.selectById("wg")).thenReturn(member("wg", "娃哥"));
-        when(identities.findByAccountId("acc-wg")).thenReturn(List.of(identity));
-
-        var result = service.resolveExternal(new ExternalIdentityProfile(
-                "wechat", "official:wx-app:openid-1", null, "娃哥", null, "union-same-person"), null, false);
-
-        assertThat(result.session().member().id()).isEqualTo("wg");
-        assertThat(identity.getProviderUnionSubject()).isEqualTo("union-same-person");
-    }
-
-    @Test
     void successfulFeishuLoginBackfillsUnionIdOnExistingIdentity() {
         AccountIdentityEntity identity = identity("feishu", "ou_login_app", "acc-wg");
         when(identities.findByProviderSubject("feishu", "ou_login_app")).thenReturn(identity);
@@ -103,11 +88,11 @@ class AccountAuthServiceTest {
 
     @Test
     void refusesToLinkIdentityAlreadyOwnedByAnotherAccount() {
-        when(identities.findByProviderSubject("wechat", "union-1"))
-                .thenReturn(identity("wechat", "union-1", "acc-wd"));
+        when(identities.findByProviderSubject("feishu", "ou_other"))
+                .thenReturn(identity("feishu", "ou_other", "acc-wd"));
 
         assertThatThrownBy(() -> service.resolveExternal(
-                new ExternalIdentityProfile("wechat", "union-1", null, "娃弟", null), "acc-wg", true))
+                new ExternalIdentityProfile("feishu", "ou_other", null, "娃弟", null), "acc-wg", true))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("另一个 WAO 账号");
     }
@@ -120,7 +105,7 @@ class AccountAuthServiceTest {
         when(identities.findByAccountId("acc-wg")).thenReturn(List.of(identity("email", "wg@example.com", "acc-wg")));
 
         service.resolveExternal(new ExternalIdentityProfile(
-                "wechat", "wechat-wg", null, "娃哥", null), "acc-wg", true);
+                "feishu", "ou_wg", null, "娃哥", null), "acc-wg", true);
 
         verify(loginEvents, org.mockito.Mockito.never())
                 .insert(org.mockito.ArgumentMatchers.<AccountLoginEventEntity>any());

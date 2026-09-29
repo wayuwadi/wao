@@ -89,7 +89,7 @@ const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' }
 const profileForm = reactive({ name: '', initial: '' })
 const accountBusy = ref(false)
 const identities = computed(() => session.account?.identities ?? [])
-const providerNames: Record<string, string> = { email: '邮箱密码', feishu: '飞书', wechat: '微信' }
+const providerNames: Record<string, string> = { email: '邮箱密码', feishu: '飞书' }
 const hasIdentity = (provider: string) => identities.value.some((identity) => identity.provider === provider)
 const emailIdentity = computed(() => identities.value.find((identity) => identity.provider === 'email'))
 const joinedAt = computed(() => {
@@ -632,7 +632,7 @@ async function bindFeishu() {
           <div class="card">
             <div class="card-title">已绑定的登录方式</div>
             <div v-for="identity in identities" :key="identity.provider" class="mem-row">
-              <span class="identity-icon"><i :class="identity.provider === 'feishu' ? 'ri-feishu-line' : identity.provider === 'wechat' ? 'ri-wechat-fill' : 'ri-mail-line'"></i></span>
+              <span class="identity-icon"><i :class="identity.provider === 'feishu' ? 'ri-feishu-line' : 'ri-mail-line'"></i></span>
               <span class="mem-name">{{ providerNames[identity.provider] ?? identity.provider }}<span class="dim">{{ identity.email || identity.displayName }}</span></span>
               <button class="revoke" :disabled="identities.length === 1 || accountBusy" @click="unlink(identity.provider)">解绑</button>
             </div>

@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 
-/** 一个账号绑定的邮箱、飞书或微信身份。 */
+/** 一个账号绑定的邮箱或飞书身份。 */
 @TableName("account_identity")
 public class AccountIdentityEntity {
     @TableId

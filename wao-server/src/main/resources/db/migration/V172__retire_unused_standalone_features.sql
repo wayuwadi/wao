@@ -67,3 +67,7 @@ DELETE FROM system_setting WHERE cfg_key IN (
     'auth.wechat-official.app-secret',
     'auth.wechat-official.token'
 );
+
+-- 微信登录下线后删除其历史绑定和专属登录事件；账号、成员及其他登录方式保留。
+DELETE FROM account_login_event WHERE provider = 'wechat';
+DELETE FROM account_identity WHERE provider = 'wechat';
