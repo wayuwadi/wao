@@ -94,8 +94,12 @@ public class WeKnoraSourceService {
     }
     /** 拒绝未登记的模块，不能通过客户端传入表名或 SQL。 */
     public static void validateModules(List<String> modules) {
-        if (modules == null || modules.isEmpty() || modules.stream().anyMatch(id -> DEFINITIONS.stream().noneMatch(d -> d.id.equals(id))))
+        if (modules == null || modules.isEmpty() || modules.stream().anyMatch(id -> !supportsModule(id)))
             throw new IllegalArgumentException("请选择已支持的同步范围");
+    }
+    /** 读取旧同步配置时只保留仍有真实数据源的模块。 */
+    public static boolean supportsModule(String id) {
+        return id != null && DEFINITIONS.stream().anyMatch(d -> d.id.equals(id));
     }
     private static Object[] args(Definition d,String owner) { return java.util.Collections.nCopies((int)d.where.chars().filter(c -> c=='?').count(), owner).toArray(); }
     /** 稳定分段保留全部正文，指纹不包含导出时刻。 */

@@ -20,6 +20,10 @@ class WeKnoraSyncServiceTest {
         assertFalse(WeKnoraSyncService.retiredSource("project-memory:active:1"));
         assertFalse(WeKnoraSyncService.retiredSource("docs:active:1"));
     }
+    @Test void storedRetiredModulesDoNotBreakActiveSources() {
+        config.put("modules_json","[\"docs\",\"memory\",\"workspaces\",\"assistant\"]");
+        assertEquals(List.of("docs","assistant"),ReflectionTestUtils.invokeMethod(service,"modules",config));
+    }
     final JdbcTemplate db=mock(JdbcTemplate.class);
     final WeKnoraSourceService source=mock(WeKnoraSourceService.class);
     final WeKnoraClient client=mock(WeKnoraClient.class);
@@ -90,6 +94,25 @@ class WeKnoraSyncServiceTest {
         verify(client,never()).delete(any(),any());
         verify(client).write(any(),isNull(),eq(document));
     }
+    @Test void knowledgeRunAlsoRemovesRetiredSourcesWithoutDeletingChat() {
+        config.put("modules_json","[\"docs\",\"memory\",\"chat\"]");
+        when(db.queryForList("SELECT source_key,remote_id,content_hash,status FROM weknora_sync_item")).thenReturn(List.of(
+            Map.of("source_key","workspaces:old:1","remote_id","old-remote","status","synced"),
+            Map.of("source_key","chat:day:1","remote_id","chat-remote","status","synced")));
+        when(client.list(any())).thenReturn(List.of());
+        when(client.write(any(),isNull(),eq(document))).thenReturn(remote());
+        ReflectionTestUtils.invokeMethod(service,"synchronize","run-1",config,lock,true);
+        verify(client).delete(any(),eq("old-remote"));
+        verify(client,never()).delete(any(),eq("chat-remote"));
+    }
+    @Test void obsoleteOnlyConfigurationCanRemoveItsTrackedCopies() {
+        config.put("modules_json","[\"memory\",\"workspaces\"]");
+        tracked(Map.of("source_key","workspaces:old:1","remote_id","old-remote","status","synced"));
+        when(client.list(any())).thenReturn(List.of());
+        run();
+        verify(source,never()).snapshot(anyString(),anyList());
+        verify(client).delete(any(),eq("old-remote"));
+    }
     @Test void knowledgeChangeDetectionIgnoresOtherModulesAndUnchangedContent() {
         var record=new HashMap<String,Object>(Map.of("source_key",document.key(),"module_id","docs","content_hash",document.hash(),"status","synced","parse_status","completed","summary_status","completed"));
         var other=Map.<String,Object>of("source_key","chat:old:1","module_id","chat");
@@ -98,6 +121,8 @@ class WeKnoraSyncServiceTest {
         assertTrue(WeKnoraSyncService.knowledgeChanged(List.of(document),List.of(record),List.of("docs"),true));
         assertTrue(WeKnoraSyncService.knowledgeChanged(List.of(),List.of(record),List.of("docs"),true));
         assertFalse(WeKnoraSyncService.knowledgeChanged(List.of(),List.of(record),List.of("docs"),false));
+        assertTrue(WeKnoraSyncService.knowledgeChanged(List.of(document),List.of(record,
+            Map.of("source_key","workspaces:old:1","module_id","workspaces")),List.of("docs"),false));
     }
     @Test void stateRequiresCurrentHashAndEveryLongDocumentPart() {
         var record=new HashMap<String,Object>(Map.of("content_hash",document.hash(),"desired_hash",document.hash(),"status","synced","parse_status","completed","summary_status","completed"));

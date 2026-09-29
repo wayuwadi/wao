@@ -211,14 +211,14 @@ public class WeKnoraSyncService {
     private String queueKnowledgeRun(Map<String,Object> config) {
         if(config==null || !liveSyncEnabled())return null;
         List<String> selected=modules(config).stream().filter(KNOWLEDGE_MODULES::contains).toList();
-        if(selected.isEmpty())return null;
         long now=System.currentTimeMillis(),last=0;
         try { last=Long.parseLong(setting(LIVE_CHECK)); } catch(NumberFormatException ignored) { }
         if(now-last<60_000)return null;
         setting(LIVE_CHECK,Long.toString(now));
         try {
-            var snapshot=sources.snapshot((String)config.get("owner_member_id"),selected);
             var tracked=db.queryForList("SELECT source_key,module_id,content_hash,status,parse_status,summary_status FROM weknora_sync_item");
+            var snapshot=selected.isEmpty()?List.<WeKnoraSourceService.Source>of()
+                :sources.snapshot((String)config.get("owner_member_id"),selected);
             if(!knowledgeChanged(snapshot,tracked,selected,flag(config.get("sync_deletes"))))return null;
         } catch(Exception ex) {
             db.update("INSERT INTO weknora_sync_run(id,trigger_type,status,started_at,finished_at,message) VALUES(?,'knowledge','failed',NOW(3),NOW(3),?)",
@@ -229,6 +229,7 @@ public class WeKnoraSyncService {
     }
     static boolean knowledgeChanged(List<WeKnoraSourceService.Source> snapshot,List<Map<String,Object>> tracked,
                                     List<String> selected,boolean deletes) {
+        if(tracked.stream().anyMatch(t->retiredSource((String)t.get("source_key"))))return true;
         Map<String,Map<String,Object>> byKey=new HashMap<>();
         tracked.stream().filter(t->selected.contains(t.get("module_id"))).forEach(t->byKey.put((String)t.get("source_key"),t));
         for(var source:snapshot) {
@@ -245,8 +246,8 @@ public class WeKnoraSyncService {
     private void synchronize(String runId,Map<String,Object> config,Connection lock,boolean knowledgeOnly) throws Exception {
         var connection=connection(config);client.check(connection);
         var selected=knowledgeOnly?modules(config).stream().filter(KNOWLEDGE_MODULES::contains).toList():modules(config);
-        if(selected.isEmpty()) { db.update("UPDATE weknora_sync_run SET status='completed',finished_at=NOW(3),message='及时同步范围已取消' WHERE id=?",runId);return; }
-        List<WeKnoraSourceService.Source> snapshot=sources.snapshot((String)config.get("owner_member_id"),selected);
+        List<WeKnoraSourceService.Source> snapshot=selected.isEmpty()?List.of()
+            :sources.snapshot((String)config.get("owner_member_id"),selected);
         var remote=client.list(connection);
         Map<String,JsonNode> byId=new HashMap<>(),byTitle=new HashMap<>();
         for(var r:remote){
@@ -255,8 +256,13 @@ public class WeKnoraSyncService {
             if(!marker.isBlank() && byTitle.put(marker,r)!=null)throw new IllegalStateException("远端存在重复来源副本，请先检查后再同步");}
         Map<String,Map<String,Object>> tracked=new HashMap<>();
         db.queryForList("SELECT source_key,remote_id,content_hash,status FROM weknora_sync_item").stream()
-            .filter(i->!knowledgeOnly || selected.contains(((String)i.get("source_key")).split(":",2)[0]))
+            .filter(i->!knowledgeOnly || selected.contains(((String)i.get("source_key")).split(":",2)[0])
+                || retiredSource((String)i.get("source_key")))
             .forEach(i->tracked.put((String)i.get("source_key"),i));
+        if(selected.isEmpty() && tracked.keySet().stream().noneMatch(WeKnoraSyncService::retiredSource)) {
+            db.update("UPDATE weknora_sync_run SET status='completed',finished_at=NOW(3),message='当前同步范围已取消' WHERE id=?",runId);
+            return;
+        }
         Set<String> alive=new HashSet<>();int uploaded=0,skipped=0,removed=0,remaining=0,failed=0,operations=0,deleteOperations=0;
         int limit=((Number)config.get("batch_limit")).intValue();
         // Fair retries: a failing early item must not starve every subsequent source.
@@ -287,10 +293,11 @@ public class WeKnoraSyncService {
             updateCounts(runId,uploaded,skipped,removed,remaining,failed);
         }
 
-        if(flag(config.get("sync_deletes")) || tracked.keySet().stream().anyMatch(WeKnoraSyncService::retiredSource)) {
+        if((flag(config.get("sync_deletes")) && !selected.isEmpty())
+                || tracked.keySet().stream().anyMatch(WeKnoraSyncService::retiredSource)) {
             for(var entry:tracked.entrySet()) {
                 if(alive.contains(entry.getKey()))continue;
-                if(!flag(config.get("sync_deletes")) && !retiredSource(entry.getKey()))continue;
+                if((!flag(config.get("sync_deletes")) || selected.isEmpty()) && !retiredSource(entry.getKey()))continue;
                 if(deleteOperations>=limit){remaining++;continue;}deleteOperations++;assertLock(lock);
                 String remoteId=(String)entry.getValue().get("remote_id");
                 try {
@@ -323,7 +330,12 @@ public class WeKnoraSyncService {
     private String active() {var r=db.queryForList("SELECT id FROM weknora_sync_run WHERE status IN ('queued','running') ORDER BY created_at LIMIT 1",String.class);return r.isEmpty()?null:r.get(0);}
     private Map<String,Object> config(){var r=db.queryForList("SELECT id,owner_member_id,kb_id,api_key_cipher,api_key_nonce,modules_json,batch_limit,sync_deletes,revision FROM weknora_sync_config WHERE id='default'");return r.isEmpty()?null:r.get(0);}
     private WeKnoraClient.Connection connection(Map<String,Object> c){return new WeKnoraClient.Connection((String)c.get("kb_id"),crypto.decrypt((byte[])c.get("api_key_cipher"),(byte[])c.get("api_key_nonce")));}
-    private List<String> modules(Map<String,Object> c){try{return json.readValue((String)c.get("modules_json"),new TypeReference<>(){});}catch(Exception ex){throw new IllegalStateException("同步范围配置损坏");}}
+    private List<String> modules(Map<String,Object> c){
+        try {
+            List<String> stored=json.readValue((String)c.get("modules_json"),new TypeReference<>(){});
+            return stored.stream().filter(WeKnoraSourceService::supportsModule).distinct().toList();
+        } catch(Exception ex){throw new IllegalStateException("同步范围配置损坏");}
+    }
     private String write(Object v){try{return json.writeValueAsString(v);}catch(Exception ex){throw new IllegalArgumentException("同步配置无法保存");}}
     private static boolean flag(Object v){return Boolean.TRUE.equals(v) || v instanceof Number n && n.intValue()!=0;}
     static String safeError(Exception ex){if(ex instanceof WeKnoraClient.ApiFailure || ex instanceof IllegalArgumentException || ex instanceof IllegalStateException){String m=Objects.toString(ex.getMessage(),"同步失败");return m.substring(0,Math.min(240,m.length()));}return "同步失败（"+ex.getClass().getSimpleName()+"），请检查服务与数据源";}
