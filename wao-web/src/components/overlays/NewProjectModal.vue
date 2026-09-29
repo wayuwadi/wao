@@ -4,10 +4,13 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
+import { useProjectListLayoutStore } from '@/stores/projectListLayout'
 import { toast } from '@/composables/toast'
+import { onBeforeUnmount } from 'vue'
 
 const data = useDataStore()
 const ui = useUiStore()
+const projectLayout = useProjectListLayoutStore()
 const router = useRouter()
 
 const name = ref('')
@@ -28,6 +31,7 @@ async function create() {
   const p = await data.addProject({
     name: name.value.trim(), area: area.value, goal: goal.value.trim(), visAll: vis.value === '全部成员可见',
   })
+  await projectLayout.consumeCreateGroupTarget(p.id)
   ui.closeModal()
   toast(`项目「${p.name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
@@ -42,6 +46,7 @@ async function requestClose() {
   else ui.closeModal()
 }
 useOverlayDismiss(() => true, requestClose)
+onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
 </script>
 
 <template>
