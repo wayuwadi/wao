@@ -560,6 +560,17 @@ V121 会把集中账号已有的最新真实额度补成首条基线，未知额
 | token_hash | CHAR(64) UNIQUE | `wao_mcp_...` 高熵令牌的 SHA-256 摘要；数据库不保存明文 |
 | created_at / last_used_at / revoked_at | DATETIME | 创建、最近成功认证和吊销时间 |
 
+### workspace_mcp_token（V161、V171）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id / member_id | VARCHAR(32) | 令牌与签发成员；接口按当前成员限制管理 |
+| name / token_prefix | VARCHAR | 设备用途和可辨识前缀；列表不返回明文 |
+| token_hash | CHAR(64) UNIQUE | 工作区令牌 SHA-256 摘要 |
+| can_write | BOOLEAN | MCP 工具写入权限 |
+| can_publish_hosted_page | BOOLEAN NOT NULL DEFAULT FALSE | 独立的 CLI 托管 HTML 发布权限；旧令牌默认关闭 |
+| created_at / last_used_at / revoked_at | DATETIME | 创建、最近成功认证和吊销时间 |
+
 V70 同时种下固定 `kb-memory / kb-memory-f` 的“共享记忆”知识库与文件夹。它保留为历史协作资料；从 V73
 开始 MCP 的个人记忆读写迁移到按成员隔离的 `personal_memory`，不再向固定共享库写入，见 ADR-082。
 

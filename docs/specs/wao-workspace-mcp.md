@@ -4,7 +4,7 @@
 
 WAO 首页提供“生成连接指令”。当前登录成员点击后，服务端签发独立的工作区 MCP Bearer 令牌，页面仅本次显示完整令牌，并生成可直接发给 MCP Client 的中文连接说明。说明包含 Streamable HTTP 地址、Bearer 配置、安全存储要求、`tools/list` 连接验证及只根据实际工具推荐场景的约束。历史个人记忆令牌不自动获得工作区权限。
 
-工作区地址为 `https://wao.wayuwa.cn/api/mcp/workspace`。浏览器以 WAO 会话访问 `/api/workspace-mcp/tokens` 来列出、签发和吊销令牌；MCP 请求仅接受独立 Bearer，不接受浏览器 Cookie 代替。每枚令牌可设为只读或可读写，创建后不能扩大权限，吊销立即生效。只保存随机令牌的 SHA-256 摘要，明文不进日志、数据库和后续列表响应。
+工作区地址为 `https://wao.wayuwa.cn/api/mcp/workspace`。浏览器以 WAO 会话访问 `/api/workspace-mcp/tokens` 来列出、签发和吊销令牌；MCP 请求仅接受独立 Bearer，不接受浏览器 Cookie 代替。每枚令牌可设为只读或可读写，并可独立选择是否允许通过 WAO CLI 发布托管 HTML；页面发布授权默认关闭，创建后不能扩大权限，吊销立即生效。HTML 发布权限只允许新建页面，不开放已有页面列表、修改或删除，也不改变 MCP `tools/list`。只保存随机令牌的 SHA-256 摘要，明文不进日志、数据库和后续列表响应。
 
 ## 首批工具
 

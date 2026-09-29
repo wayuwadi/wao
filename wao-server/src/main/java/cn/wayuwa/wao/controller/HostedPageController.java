@@ -3,10 +3,14 @@ package cn.wayuwa.wao.controller;
 import java.util.List;
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.common.ForbiddenException;
+import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.domain.HostedPageEntity;
 import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.service.HostedPageService;
 import cn.wayuwa.wao.service.ProjectService;
+import cn.wayuwa.wao.service.WorkspaceMcpTokenService;
+import cn.wayuwa.wao.service.WorkspaceMcpTokenService.AuthenticatedToken;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -17,6 +21,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,8 +34,11 @@ public class HostedPageController {
     private final HostedPageService pages;
     private final CurrentMember currentMember;
     private final ProjectService projects;
-    public HostedPageController(HostedPageService pages, CurrentMember currentMember, ProjectService projects) {
+    private final WorkspaceMcpTokenService workspaceTokens;
+    public HostedPageController(HostedPageService pages, CurrentMember currentMember, ProjectService projects,
+            WorkspaceMcpTokenService workspaceTokens) {
         this.pages = pages; this.currentMember = currentMember; this.projects = projects;
+        this.workspaceTokens = workspaceTokens;
     }
 
     @GetMapping("/hosted-pages")
@@ -45,10 +53,41 @@ public class HostedPageController {
     @PostMapping(value = "/hosted-pages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<HostedPageDto> create(@RequestParam MultipartFile html, @RequestParam String slug,
             @RequestParam String title, @RequestParam(required = false) MultipartFile icon,
-            @RequestParam(required = false) String projectId, HttpServletRequest request) {
-        String memberId = currentMember.id(request);
+            @RequestParam(required = false) String projectId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+            HttpServletRequest request) {
+        String memberId = createMember(authorization, request);
         if (projectId != null) projects.requireAccess(projectId, memberId);
         return ApiResponse.ok(pages.create(html, slug, title, icon, memberId, projectId));
+    }
+
+    @GetMapping("/hosted-pages/publish-access")
+    public ApiResponse<Boolean> publishAccess(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+            @RequestParam(required = false) String projectId) {
+        AuthenticatedToken token = requireHostedPagePublisher(authorization);
+        if (projectId != null) projects.requireAccess(projectId, token.memberId());
+        return ApiResponse.ok(true);
+    }
+
+    private String createMember(String authorization, HttpServletRequest request) {
+        if (authorization != null) return requireHostedPagePublisher(authorization).memberId();
+        String memberId = currentMember.id(request);
+        if (memberId == null || memberId.isBlank()) throw new UnauthorizedException("登录已过期，请重新登录");
+        return memberId;
+    }
+
+    private AuthenticatedToken requireHostedPagePublisher(String authorization) {
+        if (authorization == null || authorization.length() < 8
+                || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            throw new UnauthorizedException("工作区令牌无效或已吊销");
+        }
+        AuthenticatedToken token = workspaceTokens.authenticate(authorization.substring(7).trim());
+        if (token == null) throw new UnauthorizedException("工作区令牌无效或已吊销");
+        if (!token.canPublishHostedPage()) {
+            throw new ForbiddenException("此工作区令牌未获 HTML 页面发布权限，请重新生成并开启该权限");
+        }
+        return token;
     }
 
     @PutMapping(value = "/hosted-pages/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
