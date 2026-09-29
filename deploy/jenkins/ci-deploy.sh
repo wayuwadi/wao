@@ -370,7 +370,7 @@ deploy_browser_only() {
 sync_jumpserver=false
 batch_changed '^deploy/jumpserver/' && sync_jumpserver=true
 sync_infrastructure=false
-batch_changed '^deploy/infrastructure/' && sync_infrastructure=true
+batch_changed '^deploy/infrastructure/retire-overview.sh$' && sync_infrastructure=true
 
 if [ "${WAO_WEB_ONLY:-false}" = true ]; then
   trap 'stop_availability_monitor; cleanup_deploy_inputs' EXIT HUP INT TERM

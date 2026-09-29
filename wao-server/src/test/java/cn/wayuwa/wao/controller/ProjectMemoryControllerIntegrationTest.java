@@ -85,6 +85,7 @@ class ProjectMemoryControllerIntegrationTest {
     private void publishLatestDraft(String memoryId) throws Exception {
         String revisionId = jdbc.queryForObject("SELECT id FROM memory_revision WHERE memory_id = ? AND state = 'draft' ORDER BY version_no DESC LIMIT 1",
                 String.class, memoryId);
-        mvc.perform(post("/api/memory-revisions/{id}/publish", revisionId)).andExpect(status().isOk());
+        mvc.perform(post("/api/projects/p1/memories/candidates/{id}/publish", revisionId))
+                .andExpect(status().isOk());
     }
 }

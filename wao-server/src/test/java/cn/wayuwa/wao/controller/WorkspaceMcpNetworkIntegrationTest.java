@@ -18,7 +18,7 @@ import org.springframework.test.context.jdbc.Sql;
 /** 真实 HTTP 链路覆盖初始化、工具发现、只读隔离与立即吊销。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "spring.datasource.url=jdbc:h2:mem:workspacemcpnetwork;DB_CLOSE_DELAY=-1;MODE=MySQL")
-@Sql("/memory-mcp-schema.sql")
+@Sql("/workspace-mcp-schema.sql")
 class WorkspaceMcpNetworkIntegrationTest {
     @Autowired private WorkspaceMcpTokenService tokens;
     @Autowired private ObjectMapper json;
@@ -47,7 +47,7 @@ class WorkspaceMcpNetworkIntegrationTest {
                 """));
         assertThat(knowledge.path("result").path("isError").asBoolean()).isFalse();
         assertThat(knowledge.path("result").path("structuredContent").path("data").findValuesAsText("id"))
-                .contains("kb-memory");
+                .contains("kb-project");
         JsonNode denied = body(post(readOnly.secret(), """
                 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"create_project","arguments":{"name":"不应创建"}}}
                 """));

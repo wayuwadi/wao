@@ -50,16 +50,6 @@ public class AccountAuthController {
         return ApiResponse.ok(auth.session(requireAccount(request)));
     }
 
-    /** Nginx 基础设施只读接口的管理员准入检查。 */
-    @GetMapping("/auth/infrastructure")
-    public ApiResponse<Void> infrastructure(HttpServletRequest request, HttpServletResponse response) {
-        AuthSessionDto current = auth.session(requireAccount(request));
-        if (!isAdmin(current.member().role())) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        }
-        return ApiResponse.ok(null);
-    }
-
     @GetMapping("/auth/jenkins")
     public ApiResponse<Void> jenkins(HttpServletRequest request, HttpServletResponse response) {
         AuthSessionDto current = auth.session(requireAccount(request));

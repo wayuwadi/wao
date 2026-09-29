@@ -17,57 +17,43 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 44;
+    private static final int VERSION = 45;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
     private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK", "TOP");
     /** 导航中心上线后，旧版默认可见但非每日使用的入口收进全量目录；用户改名、换组或调序的定制不覆盖。 */
     private static final Set<String> COMPACT_ON_UPGRADE = Set.of(
-            "skills", "skill-connections", "action-plans", "weekly-report", "life-review", "workspaces",
-            "english-learning", "vocabulary", "drawings", "vault", "tianren", "dashboard", "automation",
-            "files", "games", "request-monitoring");
+            "skills", "skill-connections", "life-review", "drawings", "vault", "tianren",
+            "dashboard", "automation", "files", "request-monitoring");
     /** 已融合进其它模块的旧入口；读取旧注册表时忽略，不能因此丢掉用户的其它菜单定制。 */
-    private static final Set<String> RETIRED_IDS = Set.of("ideas", "chat", "chat-reviews", "system-reports");
+    private static final Set<String> RETIRED_IDS = Set.of(
+            "ideas", "chat", "chat-reviews", "system-reports",
+            "personal-principles", "crawler-capabilities", "account-resources", "infrastructure",
+            "ledger", "english-learning", "vocabulary", "food", "weekly-report", "devices",
+            "games", "data-center", "chatgpt", "appearance", "memory", "ai-sessions",
+            "updates", "action-plans", "workspaces");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
-            new BuiltinMenuConfigDto("chatgpt", "ChatGPT对话", "ri-openai-line", "ROOT", 13, true, "TAB"),
-            new BuiltinMenuConfigDto("ai-sessions", "AI 会话", "ri-chat-history-line", "ROOT", 12, true, "TAB"),
             new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true, "TAB"),
             new BuiltinMenuConfigDto("notes", "小记", "ri-sticky-note-line", "ROOT", 15, true, "TAB"),
             new BuiltinMenuConfigDto("navigation", "工作台", "ri-compass-discover-line", "ROOT", 20, true, "TAB"),
             new BuiltinMenuConfigDto("projects", "项目", "ri-stack-line", "PUBLIC", 10, true, "TAB"),
-            new BuiltinMenuConfigDto("updates", "更新日记", "ri-history-line", "PUBLIC", 11, true, "TAB"),
             new BuiltinMenuConfigDto("skills", "WAO-HUB", "ri-sparkling-2-line", "PUBLIC", 12, false, "TAB"),
             new BuiltinMenuConfigDto("skill-connections", "Skill 接入", "ri-apps-2-line", "PUBLIC", 13, false, "TAB"),
             new BuiltinMenuConfigDto("todo", "待办", "ri-checkbox-multiple-line", "PERSONAL", 10, true, "TAB"),
             new BuiltinMenuConfigDto("workday-rhythm", "今日节奏", "ri-timer-flash-line", "PERSONAL", 12, true, "TAB"),
-            new BuiltinMenuConfigDto("action-plans", "行动计划", "ri-footprint-line", "PERSONAL", 15, false, "TAB"),
             new BuiltinMenuConfigDto("decisions", "决策管理", "ri-route-line", "PERSONAL", 16, true, "TAB"),
-            new BuiltinMenuConfigDto("appearance", "电子衣库", "ri-shirt-line", "PERSONAL", 17, true, "TAB"),
-            new BuiltinMenuConfigDto("food", "饮食管理", "ri-restaurant-2-line", "PERSONAL", 18, true, "TAB"),
             new BuiltinMenuConfigDto("calendar", "日历", "ri-calendar-2-line", "PERSONAL", 20, true, "TAB"),
-            new BuiltinMenuConfigDto("weekly-report", "周报生成", "ri-file-list-3-line", "PERSONAL", 25, false, "TAB"),
             new BuiltinMenuConfigDto("life-review", "人生回顾", "ri-route-line", "PERSONAL", 27, false, "TAB"),
-            new BuiltinMenuConfigDto("workspaces", "工作台", "ri-layout-grid-line", "PERSONAL", 28, false, "TAB"),
-            new BuiltinMenuConfigDto("memory", "个人记忆", "ri-brain-line", "PERSONAL", 29, true, "TAB"),
             new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true, "TAB"),
-            new BuiltinMenuConfigDto("english-learning", "英语训练", "ri-speak-line", "PERSONAL", 35, false, "TAB"),
-            new BuiltinMenuConfigDto("vocabulary", "单词本", "ri-book-marked-line", "PERSONAL", 40, false, "TAB"),
             new BuiltinMenuConfigDto("drawings", "草图", "ri-draft-line", "PERSONAL", 50, false, "TAB"),
             new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 60, false, "TAB"),
-            new BuiltinMenuConfigDto("ledger", "账务本", "ri-money-cny-circle-line", "PERSONAL", 61, false, "TAB"),
             new BuiltinMenuConfigDto("tianren", "天人一卦", "ri-compass-3-line", "PERSONAL", 70, false, "TAB"),
-            new BuiltinMenuConfigDto("data-center", "数据中心", "ri-database-2-line", "TOOLS", 3, true, "TAB"),
             new BuiltinMenuConfigDto("text-polish", "润色", "ri-magic-line", "TOOLS", 4, true, "TAB"),
             new BuiltinMenuConfigDto("dashboard", "使用统计", "ri-bar-chart-box-line", "TOOLS", 5, false, "TAB"),
             new BuiltinMenuConfigDto("automation", "自动化", "ri-flashlight-line", "TOOLS", 10, false, "TAB"),
-            new BuiltinMenuConfigDto("crawler-capabilities", "爬虫能力", "ri-code-box-line", "TOOLS", 15, true, "TAB"),
-            new BuiltinMenuConfigDto("account-resources", "账号资源库", "ri-contacts-book-2-line", "TOOLS", 16, true, "TAB"),
             new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, false, "TAB"),
-            new BuiltinMenuConfigDto("games", "游戏厅", "ri-gamepad-line", "TOOLS", 30, false, "TAB"),
             new BuiltinMenuConfigDto("pet-world", "松风庭院", "ri-landscape-line", "TOOLS", 31, false, "TAB"),
-            new BuiltinMenuConfigDto("infrastructure", "基础设施", "ri-server-line", "TOOLS", 34, true, "TAB"),
-            new BuiltinMenuConfigDto("devices", "终端设备", "ri-webcam-line", "TOOLS", 35, true, "TAB"),
             new BuiltinMenuConfigDto("request-monitoring", "请求监控", "ri-pulse-line", "TOOLS", 40, false, "TAB"));
     private static final Map<String, BuiltinMenuConfigDto> BY_ID = DEFAULTS.stream()
             .collect(java.util.stream.Collectors.toUnmodifiableMap(BuiltinMenuConfigDto::id, item -> item));
@@ -89,7 +75,6 @@ public class BuiltinMenuRegistryService {
             List<BuiltinMenuConfigDto> menus = canonicalize(stored.menus(), false);
             if (stored.version() < 25) menus = applyWorkbenchDefault(menus);
             if (stored.version() < 37) menus = applyCompactDefaults(menus);
-            if (stored.version() < 36) menus = applyElectronicWardrobeDefault(menus);
             if (stored.version() < 42) menus = menus.stream().map(menu ->
                     "skills".equals(menu.id()) && "Skill 市场".equals(menu.label())
                     ? new BuiltinMenuConfigDto(menu.id(), "WAO-HUB", menu.icon(), menu.group(), menu.order(), menu.visible(), menu.openMode(), menu.placement()) : menu).toList();
@@ -108,11 +93,12 @@ public class BuiltinMenuRegistryService {
                 .map(menu -> menu == null || menu.placement() != null ? menu : new BuiltinMenuConfigDto(
                         menu.id(), menu.label(), menu.icon(), menu.group(), menu.order(), menu.visible(),
                         menu.openMode(), storedPlacements.getOrDefault(menu.id(), "MENU")))
+                .filter(menu -> menu == null || !RETIRED_IDS.contains(menu.id()))
                 .toList();
         // 旧页面缺少新入口时沿用服务端定制，不能让旧页面保存覆盖新入口或整份菜单失败。
         if (compatibleMenus != null) {
             compatibleMenus = new ArrayList<>(compatibleMenus);
-            for (String id : List.of("pet-world", "ledger")) {
+            for (String id : List.of("pet-world")) {
                 if (compatibleMenus.stream().noneMatch(menu -> menu != null && id.equals(menu.id()))) {
                     compatibleMenus.add(storedMenus.stream().filter(menu -> id.equals(menu.id())).findFirst().orElseThrow());
                 }
@@ -190,15 +176,4 @@ public class BuiltinMenuRegistryService {
         }).toList();
     }
 
-    /** V36 只把未经定制的旧“形象管理”改名为“电子衣库”，继续保留稳定 id 和用户自定义入口。 */
-    private List<BuiltinMenuConfigDto> applyElectronicWardrobeDefault(List<BuiltinMenuConfigDto> menus) {
-        return menus.stream().map(menu -> {
-            if (!"appearance".equals(menu.id()) || !"形象管理".equals(menu.label())
-                    || !"ri-shirt-line".equals(menu.icon()) || !"PERSONAL".equals(menu.group())
-                    || menu.order() != 17 || !menu.visible() || !"TAB".equals(menu.openMode())) {
-                return menu;
-            }
-            return BY_ID.get("appearance");
-        }).toList();
-    }
 }

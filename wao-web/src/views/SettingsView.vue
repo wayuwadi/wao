@@ -5,7 +5,6 @@ import { useSessionStore } from '@/stores/session'
 import { toast } from '@/composables/toast'
 import { apiCreateAccount, updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
-import { startWechatLogin } from '@/api/wechat'
 import {
   fetchNetworkOutageWindow, fetchSiteInfo,
   saveNetworkOutageWindow, saveSiteInfo,
@@ -26,7 +25,6 @@ import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
-import LoginSettingsPanel from '@/components/settings/LoginSettingsPanel.vue'
 import NotificationSettingsPanel from '@/components/settings/NotificationSettingsPanel.vue'
 import ProjectNotificationSettingsPanel from '@/components/settings/ProjectNotificationSettingsPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
@@ -41,20 +39,17 @@ const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
-const loginSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['版本与更新', 'version'], ['网站信息 · 备案', 'site'], ['系统登录配置', 'login-settings'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['版本与更新', 'version'], ['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['我的导航', 'navigation'], ['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs']] },
 ] as const
 
 const requestedTab = (route.query.tab as string) || 'members'
 const availableTabs = new Set<string>([...NAV.flatMap((group) => group.items.map((item) => item[1])), 'pet'])
-const normalizedTab = requestedTab === 'caldav'
-  ? 'members'
-  : requestedTab === 'quick-links'
+const normalizedTab = requestedTab === 'quick-links'
     ? 'navigation'
     : requestedTab
 const tab = ref<string>(availableTabs.has(normalizedTab) ? normalizedTab : 'members')
@@ -69,7 +64,7 @@ function selectTab(next: string) {
 watch(
   () => route.query.tab,
   (value) => {
-    const requested = value === 'quick-links' ? 'navigation' : value === 'caldav' ? 'members' : (value ?? 'members')
+    const requested = value === 'quick-links' ? 'navigation' : (value ?? 'members')
     if (typeof requested === 'string' && availableTabs.has(requested)) tab.value = requested
   },
 )
@@ -86,8 +81,6 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
   if (tab.value === 'notifications' && notificationSettingsPanel.value
       && !notificationSettingsPanel.value.confirmLeave()) return false
   if (tab.value === 'pet' && webPetPanel.value && !webPetPanel.value.confirmLeave()) return false
-  if (tab.value === 'login-settings' && loginSettingsPanel.value
-      && !loginSettingsPanel.value.confirmLeave()) return false
   return tab.value !== 'wao-ai-capabilities' || !waoAiCapabilitiesPanel.value
     || waoAiCapabilitiesPanel.value.confirmLeave()
 })
@@ -96,7 +89,7 @@ const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' }
 const profileForm = reactive({ name: '', initial: '' })
 const accountBusy = ref(false)
 const identities = computed(() => session.account?.identities ?? [])
-const providerNames: Record<string, string> = { email: '邮箱密码', feishu: '飞书', wechat: '微信' }
+const providerNames: Record<string, string> = { email: '邮箱密码', feishu: '飞书' }
 const hasIdentity = (provider: string) => identities.value.some((identity) => identity.provider === provider)
 const emailIdentity = computed(() => identities.value.find((identity) => identity.provider === 'email'))
 const joinedAt = computed(() => {
@@ -423,8 +416,6 @@ async function logout() {
       && !navigationPanel.value.confirmLeave()) return
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
   if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return
-  if (tab.value === 'login-settings' && loginSettingsPanel.value
-      && !loginSettingsPanel.value.confirmLeave()) return
   if (tab.value === 'notifications' && notificationSettingsPanel.value
       && !notificationSettingsPanel.value.confirmLeave()) return
   await session.logout()
@@ -455,10 +446,6 @@ async function unlink(provider: string) {
   try { session.accept(await unlinkIdentity(provider)); toast(`已解绑${providerNames[provider] ?? provider}`) }
   catch (error) { toast(error instanceof Error ? error.message : '解绑失败') }
   finally { accountBusy.value = false }
-}
-async function bindWechat() {
-  try { await startWechatLogin('link') }
-  catch (error) { toast(error instanceof Error ? error.message : '微信登录暂不可用') }
 }
 async function bindFeishu() {
   try { await startFeishuLogin('link') }
@@ -554,11 +541,6 @@ async function bindFeishu() {
           </div>
         </template>
 
-        <!-- 系统 · 登录配置 -->
-        <template v-else-if="tab === 'login-settings'">
-          <LoginSettingsPanel ref="loginSettingsPanel" />
-        </template>
-
         <!-- 系统 · 断网时段 -->
         <template v-else-if="tab === 'network-outage'">
           <div class="s-h1">断网时段</div>
@@ -650,18 +632,16 @@ async function bindFeishu() {
           <div class="card">
             <div class="card-title">已绑定的登录方式</div>
             <div v-for="identity in identities" :key="identity.provider" class="mem-row">
-              <span class="identity-icon"><i :class="identity.provider === 'feishu' ? 'ri-feishu-line' : identity.provider === 'wechat' ? 'ri-wechat-fill' : 'ri-mail-line'"></i></span>
+              <span class="identity-icon"><i :class="identity.provider === 'feishu' ? 'ri-feishu-line' : 'ri-mail-line'"></i></span>
               <span class="mem-name">{{ providerNames[identity.provider] ?? identity.provider }}<span class="dim">{{ identity.email || identity.displayName }}</span></span>
               <button class="revoke" :disabled="identities.length === 1 || accountBusy" @click="unlink(identity.provider)">解绑</button>
             </div>
-            <div class="hint">至少保留一种登录方式。新绑定的飞书、微信或邮箱都会进入当前的 {{ session.currentUser.name }} 账号。</div>
+            <div class="hint">至少保留一种登录方式。新绑定的飞书或邮箱都会进入当前的 {{ session.currentUser.name }} 账号。</div>
           </div>
           <div class="card">
             <div class="card-title">绑定第三方账号</div>
             <div class="bind-actions">
               <button v-if="!hasIdentity('feishu')" class="btn-ghost" @click="bindFeishu"><i class="ri-feishu-line"></i>绑定飞书</button>
-              <button v-if="!hasIdentity('wechat')" class="btn-ghost" @click="bindWechat"><i class="ri-wechat-fill"></i>绑定微信</button>
-              <span v-if="hasIdentity('feishu') && hasIdentity('wechat')" class="hint">飞书和微信均已绑定，无需重复操作。</span>
             </div>
           </div>
           <div class="card">

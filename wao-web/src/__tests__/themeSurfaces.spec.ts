@@ -24,17 +24,12 @@ describe('夜间模式表面', () => {
   it('独立视觉页面复用主题表面 token', () => {
     const marketLayout = source('../layouts/SkillMarketLayout.vue')
     const desktopDownload = source('../views/DesktopDownloadView.vue')
-    const workspaces = source('../views/WorkspacesView.vue')
 
     expect(marketLayout).toContain(":root[data-theme='dark']")
     expect(marketLayout).toMatch(/\.market-card\{background:var\(--market-card\)/)
     expect(desktopDownload).toMatch(
       /\.download-grid article \{[^}]*background: var\(--wao-bg-card\)/,
     )
-    expect(workspaces).toMatch(
-      /\.workspace-page \{[\s\S]*?background: linear-gradient\([^;]*var\(--wao-bg-page\)/,
-    )
-    expect(workspaces).toMatch(/\.create-modal \{[\s\S]*?background: var\(--wao-bg-card\)/)
   })
 
   it('画板工具随主题切换且不改写用户画布背景', () => {

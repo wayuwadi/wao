@@ -118,7 +118,7 @@ it('启用状态不表示运行成功，并可进入已提交任务的真实执�
   expect(wrapper.text()).toContain('已提交执行')
   await wrapper.get('.job-name').trigger('click')
   expect(wrapper.get('.grid-aoruns .mini').text()).toBe('已提交执行')
-  expect(wrapper.get('a.result-link').attributes('href')).toBe('/ai-sessions?session=run-123')
+  expect(wrapper.get('a.result-link').attributes('href')).toBe('/?console=runs&run=run-123')
   expect(wrapper.text()).toContain('触发记录：成功 · 已创建 AI Run run-123')
   wrapper.unmount()
 })

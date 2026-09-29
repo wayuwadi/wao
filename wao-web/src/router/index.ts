@@ -2,11 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue'
 import { useSessionStore } from '@/stores/session'
 
-export function legacyMemorySettingsRedirect(tab: unknown) {
-  if (!['memory-mcp', 'api'].includes(String(tab || ''))) return
-  return { path: '/memories', query: { section: 'mcp' }, replace: true } as const
-}
-
 export function legacyNotificationSettingsRedirect() {
   return { path: '/settings', query: { tab: 'notifications' }, replace: true } as const
 }
@@ -31,12 +26,6 @@ const router = createRouter({
       path: '/auth/feishu/callback',
       name: 'feishu-callback',
       component: () => import('@/views/FeishuCallbackView.vue'),
-      meta: { public: true },
-    },
-    {
-      path: '/auth/wechat/callback',
-      name: 'wechat-callback',
-      component: () => import('@/views/WechatCallbackView.vue'),
       meta: { public: true },
     },
     {
@@ -166,28 +155,10 @@ const router = createRouter({
           meta: { module: 'home', tabKind: 'module' },
         },
         {
-          path: 'chatgpt',
-          name: 'chatgpt',
-          component: () => import('@/views/ChatGptView.vue'),
-          meta: { module: 'chatgpt', tabKind: 'module' },
-        },
-        {
-          path: 'ai-sessions',
-          name: 'ai-sessions',
-          component: () => import('@/views/AiSessionsView.vue'),
-          meta: { module: 'ai-sessions', tabKind: 'module' },
-        },
-        {
           path: 'navigation',
           name: 'navigation',
           component: () => import('@/views/NavigationView.vue'),
           meta: { module: 'navigation', tabKind: 'module' },
-        },
-        {
-          path: 'updates',
-          name: 'updates',
-          component: () => import('@/views/UpdateDiaryView.vue'),
-          meta: { module: 'updates', tabKind: 'module' },
         },
         {
           path: 'features',
@@ -277,46 +248,16 @@ const router = createRouter({
           meta: { module: 'todo', tabKind: 'module' },
         },
         {
-          path: 'action-plans',
-          name: 'action-plans',
-          component: () => import('@/views/ActionPlansView.vue'),
-          meta: { module: 'action-plans', tabKind: 'module' },
-        },
-        {
-          path: 'personal-principles',
-          name: 'personal-principles',
-          component: () => import('@/views/PersonalPrinciplesView.vue'),
-          meta: { module: 'personal-principles', tabKind: 'module' },
-        },
-        {
           path: 'decisions',
           name: 'decisions',
           component: () => import('@/views/DecisionsView.vue'),
           meta: { module: 'decisions', tabKind: 'module' },
         },
         {
-          path: 'appearance',
-          name: 'appearance',
-          component: () => import('@/views/AppearanceView.vue'),
-          meta: { module: 'appearance', tabKind: 'module' },
-        },
-        {
-          path: 'food',
-          name: 'food',
-          component: () => import('@/views/FoodView.vue'),
-          meta: { module: 'food', tabKind: 'module' },
-        },
-        {
           path: 'workday-rhythm',
           name: 'workday-rhythm',
           component: () => import('@/views/WorkdayRhythmView.vue'),
           meta: { module: 'workday-rhythm', tabKind: 'module' },
-        },
-        {
-          path: 'weekly-report',
-          name: 'weekly-report',
-          component: () => import('@/views/WeeklyReportView.vue'),
-          meta: { module: 'weekly-report', tabKind: 'module' },
         },
         {
           path: 'life-review',
@@ -363,22 +304,6 @@ const router = createRouter({
           meta: { module: 'knowledge', tabKind: 'kb' },
         },
         {
-          path: 'memory',
-          redirect: { path: '/memories', query: { scope: 'personal' } },
-        },
-        {
-          path: 'memories',
-          name: 'memory',
-          component: () => import('@/views/MemoryView.vue'),
-          meta: { module: 'memory', tabKind: 'module' },
-        },
-        {
-          path: 'workspaces',
-          name: 'workspaces',
-          component: () => import('@/views/WorkspacesView.vue'),
-          meta: { module: 'workspaces', tabKind: 'module' },
-        },
-        {
           path: 'files',
           name: 'files',
           component: () => import('@/views/FilesView.vue'),
@@ -397,40 +322,10 @@ const router = createRouter({
           meta: { module: 'automation', tabKind: 'module' },
         },
         {
-          path: 'crawler-capabilities',
-          name: 'crawler-capabilities',
-          component: () => import('@/views/CrawlerCapabilitiesView.vue'),
-          meta: { module: 'crawler-capabilities', tabKind: 'module' },
-        },
-        {
-          path: 'account-resources',
-          name: 'account-resources',
-          component: () => import('@/views/AccountResourcesView.vue'),
-          meta: { module: 'account-resources', tabKind: 'module' },
-        },
-        {
-          path: 'games',
-          name: 'games',
-          component: () => import('@/views/GamesView.vue'),
-          meta: { module: 'games', tabKind: 'module' },
-        },
-        {
           path: 'pet-world',
           name: 'pet-world',
           component: () => import('@/views/PetWorldView.vue'),
           meta: { module: 'pet-world', tabKind: 'module' },
-        },
-        {
-          path: 'infrastructure',
-          name: 'infrastructure',
-          component: () => import('@/views/InfrastructureView.vue'),
-          meta: { module: 'infrastructure', tabKind: 'module' },
-        },
-        {
-          path: 'devices',
-          name: 'devices',
-          component: () => import('@/views/DevicesView.vue'),
-          meta: { module: 'devices', tabKind: 'module' },
         },
         {
           path: 'request-monitoring',
@@ -439,28 +334,10 @@ const router = createRouter({
           meta: { module: 'request-monitoring', tabKind: 'module' },
         },
         {
-          path: 'data-center',
-          name: 'data-center',
-          component: () => import('@/views/DataCenterView.vue'),
-          meta: { module: 'data-center', tabKind: 'module' },
-        },
-        {
           path: 'text-polish',
           name: 'text-polish',
           component: () => import('@/views/TextPolishView.vue'),
           meta: { module: 'text-polish', tabKind: 'module' },
-        },
-        {
-          path: 'english-learning',
-          name: 'english-learning',
-          component: () => import('@/views/EnglishLearningView.vue'),
-          meta: { module: 'english-learning', tabKind: 'module' },
-        },
-        {
-          path: 'vocabulary',
-          name: 'vocabulary',
-          component: () => import('@/views/VocabularyView.vue'),
-          meta: { module: 'vocabulary', tabKind: 'module' },
         },
         {
           path: 'drawings',
@@ -500,12 +377,6 @@ const router = createRouter({
           meta: { module: 'vault', tabKind: 'module' },
         },
         {
-          path: 'ledger',
-          name: 'ledger',
-          component: () => import('@/views/LedgerView.vue'),
-          meta: { module: 'ledger', tabKind: 'module' },
-        },
-        {
           path: 'notification-settings',
           redirect: legacyNotificationSettingsRedirect,
         },
@@ -513,7 +384,6 @@ const router = createRouter({
           path: 'settings',
           name: 'settings',
           component: () => import('@/views/SettingsView.vue'),
-          beforeEnter: (to) => legacyMemorySettingsRedirect(to.query.tab) || true,
           meta: { module: 'settings', tabKind: 'module' },
         },
       ],

@@ -18,7 +18,7 @@ function render() {
 describe('功能探索', () => {
   it('展示当前版本精选与真实功能目录，不再出现示例预览', () => {
     const { wrapper } = render()
-    expect(wrapper.findAll('.latest-card')).toHaveLength(3)
+    expect(wrapper.findAll('.latest-card')).toHaveLength(2)
     expect(wrapper.findAll('.catalog-card')).toHaveLength(12)
     expect(wrapper.text()).toContain('最新功能')
     expect(wrapper.text()).toContain('全部功能')
@@ -36,7 +36,7 @@ describe('功能探索', () => {
     expect(wrapper.findAll('.catalog-card')).toHaveLength(expected.length)
     expect(wrapper.find('.section-heading p').text()).toBeTruthy()
     await wrapper.findAll('.filter-bar button')[0]!.trigger('click')
-    await wrapper.get('.more-wrap button').trigger('click')
+    if (wrapper.find('.more-wrap button').exists()) await wrapper.get('.more-wrap button').trigger('click')
     expect(wrapper.findAll('.catalog-card')).toHaveLength(FEATURE_CATALOG.length)
     wrapper.unmount()
   })

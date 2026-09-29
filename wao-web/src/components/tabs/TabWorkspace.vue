@@ -3,8 +3,6 @@ import {
   computed,
   markRaw,
   onBeforeUnmount,
-  onMounted,
-  onUpdated,
   shallowReactive,
   watch,
 } from 'vue'
@@ -24,17 +22,6 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 const windows = useFloatingTabsStore()
-const emit = defineEmits<{ assistantTarget: [element: HTMLElement | null] }>()
-function updateAssistantTarget() {
-  emit(
-    'assistantTarget',
-    active.value === 'chatgpt' || windows.keys.includes('chatgpt')
-      ? document.getElementById('chatgpt-workspace')
-      : null,
-  )
-}
-onMounted(updateAssistantTarget)
-onUpdated(updateAssistantTarget)
 onBeforeUnmount(() => {
   windows.keys = []
   windows.front = ''

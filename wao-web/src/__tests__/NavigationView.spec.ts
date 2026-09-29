@@ -127,7 +127,7 @@ describe('全量导航页', () => {
       recentOpens: 40,
       functions: [
         {
-          featureId: 'games',
+          featureId: 'calendar',
           score: 12,
           iterationCount: 11,
           manualAdjustment: 0,
@@ -145,7 +145,7 @@ describe('全量导航页', () => {
   it('完整目录覆盖所有非兼容模块，且不受侧栏显隐影响', async () => {
     const catalogIds = NAVIGATION_CATALOG.flatMap((section) => section.items.map((item) => item.id))
     const expected = Object.keys(MODULES).filter(
-      (id) => !['navigation', 'chat', 'chat-reviews'].includes(id),
+      (id) => !['navigation', 'chat', 'chat-reviews', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions', 'updates', 'action-plans', 'workspaces'].includes(id),
     )
     expect(new Set(catalogIds)).toEqual(new Set(expected))
 
@@ -156,8 +156,8 @@ describe('全量导航页', () => {
       await wrapper.get('button[aria-label="下一页"]').trigger('click')
       seen.push(wrapper.text())
     }
-    expect(seen.join(' ')).toContain('游戏厅')
-    expect(seen.join(' ')).toContain('记忆中心')
+    expect(seen.join(' ')).not.toContain('游戏厅')
+    expect(seen.join(' ')).not.toContain('记忆中心')
     expect(seen.join(' ')).toContain('隐藏应用')
     expect(seen.join(' ')).toContain('我的资料')
     await wrapper.get('.customize-toggle').trigger('click')
@@ -179,7 +179,7 @@ describe('全量导航页', () => {
     const rows = ai.findAll('.function-row')
     expect(rows[rows.length - 1]!.text()).toContain('外部应用授权尚未开放')
     expect(rows[rows.length - 1]!.get('.maturity-label').text()).toBe('规划中')
-    expect(rows[rows.length - 2]!.text()).toContain('真实爬虫源码')
+    expect(rows[rows.length - 2]!.text()).toContain('WAO-HUB')
     expect(NAVIGATION_CATALOG.map((section) => section.items.map((item) => item.id))).toEqual(
       before,
     )
@@ -193,21 +193,12 @@ describe('全量导航页', () => {
     wrapper.unmount()
   })
 
-  it('可搜索 Codex 记忆入口，并打开侧栏已隐藏的真实模块和应用', async () => {
+  it('下线功能无法搜索，隐藏的外部应用仍可打开', async () => {
     const { router, wrapper } = await mountNavigation()
-    await wrapper.get('.search input').setValue('文件库')
-    expect(wrapper.findAll('.function-row')).toHaveLength(1)
-    expect(wrapper.get('.function-row').text()).toContain('文件与图床')
     await wrapper.get('.search input').setValue('Codex MCP')
-    expect(wrapper.findAll('.function-row')).toHaveLength(1)
-    expect(wrapper.get('.function-row').text()).toContain('记忆中心')
-
+    expect(wrapper.findAll('.function-row')).toHaveLength(0)
     await wrapper.get('.search input').setValue('游戏厅')
-    await wrapper.get('.function-open').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/games')
-
-    await router.push('/navigation')
+    expect(wrapper.findAll('.function-row')).toHaveLength(0)
     await wrapper.get('.search input').setValue('隐藏应用')
     await wrapper.get('.function-open').trigger('click')
     await flushPromises()
@@ -269,7 +260,7 @@ describe('全量导航页', () => {
       recentOpens: 15,
       functions: [
         { ...item, featureId: 'projects', recentOpens: 5 },
-        { ...item, featureId: 'games', recentOpens: 10 },
+        { ...item, featureId: 'calendar', recentOpens: 10 },
       ],
     })
     const { router, wrapper } = await mountNavigation()
@@ -277,15 +268,15 @@ describe('全量导航页', () => {
     await flushPromises()
 
     const readOrder = () => wrapper.findAll('tbody tr').map((row) => row.attributes('data-feature-id'))
-    expect(readOrder()).toEqual(['games', 'projects'])
+    expect(readOrder()).toEqual(['calendar', 'projects'])
     const sort = wrapper.get('.sort-trigger')
     expect(sort.attributes('aria-label')).toContain('倒序')
     await sort.trigger('click')
     expect(wrapper.get('th[aria-sort="ascending"]')).toBeDefined()
-    expect(readOrder()).toEqual(['projects', 'games'])
+    expect(readOrder()).toEqual(['projects', 'calendar'])
     await sort.trigger('click')
     expect(wrapper.get('th[aria-sort="descending"]')).toBeDefined()
-    expect(readOrder()).toEqual(['games', 'projects'])
+    expect(readOrder()).toEqual(['calendar', 'projects'])
     wrapper.unmount()
   })
 
@@ -328,10 +319,10 @@ describe('全量导航页', () => {
     wrapper.unmount()
   })
 
-  it('旧工作台名称可找到链接空间，整理入口直达个人菜单设置', async () => {
+  it('整理入口直达个人菜单设置', async () => {
     const { router, wrapper } = await mountNavigation()
-    await wrapper.get('.search input').setValue('工作台')
-    expect(wrapper.text()).toContain('链接空间')
+    await wrapper.get('.search input').setValue('日历')
+    expect(wrapper.text()).toContain('日历')
     expect(wrapper.find('.position').exists()).toBe(false)
     expect(wrapper.find('.drag').exists()).toBe(false)
     await wrapper.get('.customize-toggle').trigger('click')
@@ -339,7 +330,7 @@ describe('全量导航页', () => {
     expect(wrapper.text()).toContain('每次调整会自动保存')
     await wrapper.get('.customize-toggle').trigger('click')
     expect(wrapper.find('.position').exists()).toBe(false)
-    expect((wrapper.get('.search input').element as HTMLInputElement).value).toBe('工作台')
+    expect((wrapper.get('.search input').element as HTMLInputElement).value).toBe('日历')
     expect(saveNavigationLayout).not.toHaveBeenCalled()
     await wrapper.get('.customize-toggle').trigger('click')
     await wrapper.get('.more-settings').trigger('click')

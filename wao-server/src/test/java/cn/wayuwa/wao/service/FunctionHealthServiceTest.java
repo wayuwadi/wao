@@ -33,7 +33,8 @@ class FunctionHealthServiceTest {
 
         assertThat(overview.recentOpens()).isZero();
         assertThat(overview.functions()).extracting("featureId")
-                .contains("crawler-capabilities", "account-resources", "infrastructure");
+                .contains("projects", "decisions", "automation")
+                .doesNotContain("crawler-capabilities", "account-resources", "infrastructure");
         assertThat(overview.functions()).allSatisfy(item -> {
             assertThat(item.score()).isEqualTo(1);
             assertThat(item.recentOpens()).isZero();
@@ -99,28 +100,7 @@ class FunctionHealthServiceTest {
         verify(products, never()).incrementIteration("deploy");
     }
 
-    @Test
-    void crawlerScopeMapsToCrawlerCapabilityFeature() {
-        when(iterations.insertIgnore("run-crawler", "crawler-capabilities", "crawler-sha",
-                "feat(crawler): 新增爬虫能力管理")).thenReturn(1);
 
-        service.recordIterations("run-crawler", List.of(new FunctionIterationInput(
-                "crawler-sha", "crawler", "feat(crawler): 新增爬虫能力管理")));
-
-        verify(products).incrementIteration("crawler-capabilities");
-    }
-
-    @Test
-    void updateDiaryScopeMapsToItsFeature() {
-        when(iterations.insertIgnore("run-updates", "updates", "updates-sha",
-                "feat(updates): 新增更新日记")).thenReturn(1);
-
-        service.recordIterations("run-updates", List.of(new FunctionIterationInput(
-                "updates-sha", "updates", "feat(updates): 新增更新日记")));
-
-        verify(products).ensure("updates");
-        verify(products).incrementIteration("updates");
-    }
 
     @Test
     void manualAdjustmentOnlyAcceptsOnePoint() {

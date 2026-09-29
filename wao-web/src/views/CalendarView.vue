@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
-import { computed, defineAsyncComponent, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
-import { fetchCaldavAccounts, fetchCaldavEvents, type CaldavAccount, type CaldavEvent } from '@/api/caldav'
 import { fetchAlternateWorkWeek, saveAlternateWorkWeek } from '@/api/workSchedule'
 import {
   fetchHolidayEvents,
@@ -43,9 +42,8 @@ import {
   type AlternateWorkWeekSchedule,
 } from '@/utils/workSchedule'
 // 配置面板打开才需要，不进日历页首屏包。
-const CaldavPanel = defineAsyncComponent(() => import('@/components/calendar/CaldavPanel.vue'))
 
-/** 日历格子里的一条事件（任务截止 / 里程碑 / CalDAV / 考勤）。 */
+/** 日历格子里的一条事件（任务截止 / 里程碑 / 考勤）。 */
 interface CalEvt {
   date: string
   title: string
@@ -194,9 +192,7 @@ async function submitWorkSchedule() {
   }
 }
 
-// ---------- 外部 CalDAV + 内置节假日 ----------
-const accounts = ref<CaldavAccount[]>([])
-const caldavEvents = ref<CaldavEvent[]>([])
+// ---------- 内置节假日 ----------
 const holidayEvents = ref<HolidayEvent[]>([])
 const holidayYears = ref<HolidayYearSource[]>([])
 const holidayState = ref<'loading' | 'ready' | 'error'>('loading')
@@ -210,22 +206,6 @@ const importantDateChannelHint = ref('正在读取飞书提醒通道状态…')
 const importantDateGroupChannelAvailable = ref(false)
 const importantDateGroupChannelHint = ref('正在读取 WAO 提醒通道状态…')
 let importantDateRequestSequence = 0
-
-const caldavState = computed(() => {
-  if (!accounts.value.length) return { label: '接入 CalDAV 日历', dot: '#9A9DA9' }
-  const bad = accounts.value.some((a) => a.status === 'error')
-  return bad
-    ? { label: 'CalDAV 同步异常', dot: '#D9634C' }
-    : { label: 'CalDAV 已连接', dot: '#2C8A5B' }
-})
-
-async function loadCaldav() {
-  try {
-    accounts.value = await fetchCaldavAccounts()
-  } catch {
-    accounts.value = []
-  }
-}
 
 /** 当前视图真实可见的日期窗，年视图覆盖完整自然年。 */
 function visibleRange() {
@@ -270,16 +250,6 @@ function toggleAttendanceMode() {
 async function toggleWeatherVisibility(field: 'calendarVisible' | 'readingsVisible') {
   const saved = await weather.setCalendarVisibility(field, !weather.prefs[field])
   if (!saved) toast(weather.error || '天气设置尚未读取，请稍后重试', 'ri-error-warning-line')
-}
-
-/** 拉取当前视图可见日期窗内的 CalDAV 订阅事件。 */
-async function loadEvents() {
-  const { from, to } = visibleRange()
-  try {
-    caldavEvents.value = await fetchCaldavEvents(iso(from), iso(to))
-  } catch {
-    caldavEvents.value = []
-  }
 }
 
 /** 拉取内置节假日；序号避免快速翻页时旧响应覆盖新日期窗。 */
@@ -327,7 +297,6 @@ async function loadImportantDates() {
 }
 
 function loadCalendarSources() {
-  loadEvents()
   loadHolidays()
   loadImportantDates()
   loadCalendarReadings()
@@ -353,14 +322,13 @@ function iso(d: Date) {
 }
 
 onMounted(() => {
-  loadCaldav()
   loadWorkSchedule()
   loadHolidaySettings()
   loadCalendarSources()
 })
 watch([calY, calM, calD, viewMode, () => preferences.weekStart], loadCalendarSources)
 
-// ---------- 图例：固定来源 + 每个启用的订阅日历 ----------
+// ---------- 图例：固定来源 ----------
 const legend = computed(() => {
   const items = [
     { label: '任务截止', color: '#4358D6' },
@@ -378,11 +346,6 @@ const legend = computed(() => {
     items.push({ label: '提醒事项', color: '#D0527F' })
   }
   if (attendanceMode.value) items.push({ label: '我的考勤', color: '#2C8A5B' })
-  for (const a of accounts.value) {
-    for (const c of a.calendars) {
-      if (c.enabled) items.push({ label: c.name, color: c.color })
-    }
-  }
   return items
 })
 
@@ -417,17 +380,6 @@ const events = computed<CalEvt[]>(() => {
     p.msDates.forEach((d, i) => {
       const name = p.milestones[i]?.name
       if (d && name) evs.push({ date: d, title: `里程碑 · ${name}`, color: '#B9821F', kind: '里程碑', sourceLabel: p.name, go: () => router.push(`/projects/${p.id}`) })
-    })
-  })
-  caldavEvents.value.forEach((e) => {
-    evs.push({
-      date: e.start.slice(0, 10),
-      title: e.summary || '（无标题）',
-      color: e.color,
-      time: e.allDay ? '' : e.start.slice(11, 16),
-      endTime: e.allDay ? '' : e.end?.slice(11, 16),
-      kind: 'CalDAV',
-      sourceLabel: e.calendarName,
     })
   })
   holidayEvents.value.forEach((holiday) => {
@@ -1059,18 +1011,6 @@ function importantDateReminderLabel(value: FamilyImportantDate) {
   return `${before} ${value.reminderTime} ${target}提醒`
 }
 
-// ---------- CalDAV 配置浮层：账户是个人维度，就近在日历页里配置 ----------
-const showCaldavConfig = ref(false)
-const caldavPanel = ref<InstanceType<typeof CaldavPanel> | null>(null)
-async function closeCaldav() {
-  if (await caldavPanel.value?.prepareClose() === false) return
-  showCaldavConfig.value = false
-}
-function onCaldavChanged() {
-  loadCaldav()
-  loadEvents()
-}
-
 const showCreateChoice = ref(false)
 const createPreset = reactive({ day: data.today, startAt: '', endAt: '' })
 
@@ -1158,7 +1098,6 @@ useOverlayDismiss(() => showWorkScheduleConfig.value, closeWorkScheduleConfig)
 useOverlayDismiss(() => showHolidaySettings.value, closeHolidaySettings)
 useOverlayDismiss(() => !!activeHoliday.value, closeHolidayDetail)
 useOverlayDismiss(() => showImportantDates.value, closeImportantDateManager)
-useOverlayDismiss(() => showCaldavConfig.value, closeCaldav)
 useOverlayDismiss(() => !!searchPreview.value, () => { searchPreview.value = null })
 useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value = false })
 </script>
@@ -1192,7 +1131,6 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气位置</b><small>选择或更换天气城市</small></span></button>
           <button class="holiday-settings-entry" type="button" @click="openHolidaySettings"><i class="ri-earth-line"></i><span><b>节日设置</b><small>{{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类国际节日</small></span></button>
           <button class="important-date-entry" type="button" @click="openImportantDateManager"><i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i><span><b>提醒事项</b><small>{{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}</small></span></button>
-          <button class="caldav" type="button" @click="showCaldavConfig = true"><span class="cd-dot" :style="{ background: caldavState.dot }"></span><span><b>CalDAV</b><small>{{ caldavState.label }}</small></span></button>
           <button class="work-schedule" type="button" @click="openWorkScheduleConfig"><span class="cd-dot" :style="{ background: workScheduleState.dot }"></span><span><b>大小周配置</b><small>{{ workScheduleState.label }}</small></span></button>
         </div></details>
       </div>
@@ -1349,21 +1287,6 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <div v-if="searchPreview.time"><dt>时间</dt><dd>{{ searchPreview.time }}<template v-if="searchPreview.endTime">–{{ searchPreview.endTime }}</template></dd></div>
           <div v-if="searchPreview.sourceLabel"><dt>来源</dt><dd>{{ searchPreview.sourceLabel }}</dd></div>
         </dl>
-      </div>
-    </template>
-
-    <!-- CalDAV 配置浮层 -->
-    <template v-if="showCaldavConfig">
-      <div class="cd-mask" @click="closeCaldav"></div>
-      <div class="cd-modal">
-        <div class="cd-head">
-          <div class="cd-title">日历账户 · CalDAV</div>
-          <div class="spacer"></div>
-          <button class="cd-close" @click="closeCaldav"><i class="ri-close-line"></i></button>
-        </div>
-        <div class="cd-body">
-          <CaldavPanel ref="caldavPanel" @changed="onCaldavChanged" />
-        </div>
       </div>
     </template>
 

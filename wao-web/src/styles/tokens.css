@@ -57,8 +57,6 @@
   --wao-area-family: #b9821f;
   --wao-area-finance: #7a5cc6;
   --wao-area-growth: #c05d8e;
-  --wao-caldav-home: #0e8c8c;
-  --wao-caldav-work: #c05d8e;
 
   /* 优先级色（复用语义对） */
   --wao-p0: #d65454;
@@ -174,8 +172,6 @@
   --wao-area-family: #d4a34d;
   --wao-area-finance: #9678e0;
   --wao-area-growth: #d47aa3;
-  --wao-caldav-home: #2ea8a8;
-  --wao-caldav-work: #d47aa3;
 
   /* 优先级色 */
   --wao-p0: #e86e6e;

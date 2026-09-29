@@ -78,7 +78,6 @@ for demo_path in amer_demo_3 amer_demo_4; do
   test "$(curl --silent --output /dev/null --write-out '%{http_code}' "https://wao.wayuwa.cn/$demo_path")" = 308
   test "$(curl --silent --output /dev/null --write-out '%{http_code}' "https://wao.wayuwa.cn/$demo_path/not-found.js")" = 404
 done
-test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/game/)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = 410
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins/)" = 401
@@ -119,8 +118,6 @@ test "$(header_value /api/settings/ai-accounts X-WAO-API-Route)" = linux-vpn-mas
 test "$(header_value /api/ai/runner/accounts X-WAO-API-Route)" = linux-vpn-master
 test "$(header_value /api/ai/runner/assistant-v2/claim X-WAO-API-Route)" = linux-vpn-master
 test "$(header_value /api/tianren/readings/today/interpret/stream X-WAO-API-Route)" = linux-vpn-master
-test "$(header_value /api/auth/wechat/official/sessions X-WAO-API-Route)" = wechat-official-master
-test "$(header_value /api/settings/login/wechat-official/verify X-WAO-API-Route)" = wechat-official-master
 test "$(header_value /api/auth/jumpserver X-WAO-API-Route)" = linux-jumpserver-sso
 test "$(header_value /api/external/jumpserver/health X-WAO-API-Route)" = jumpserver-health-tunnel
 test "$(header_value /pluginWebUpdateNotice/web_version_by_plugin.json Cache-Control)" = \

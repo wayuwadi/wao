@@ -192,7 +192,7 @@ describe('AiAssistantPanel', () => {
 
     expect(streamChat).toHaveBeenCalledWith(
       '之前预算怎么说的？', [], undefined, 'cv1', expect.objectContaining({
-        assetTypes: ['memory', 'chat', 'knowledge', 'project', 'task'],
+        assetTypes: ['chat', 'knowledge', 'project', 'task'],
         chatIds: ['oc_chat'],
         senders: ['娃哥'],
         dateFrom: '2026-07-01',

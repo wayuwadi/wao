@@ -3,8 +3,10 @@ package cn.wayuwa.wao.controller;
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.ProjectMemoryDto;
+import cn.wayuwa.wao.dto.MemoryDocumentDto;
 import cn.wayuwa.wao.dto.SaveProjectMemoryRequest;
 import cn.wayuwa.wao.service.ProjectMemoryService;
+import cn.wayuwa.wao.service.UnifiedMemoryService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -23,11 +25,36 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/projects/{projectId}/memories")
 public class ProjectMemoryController {
     private final ProjectMemoryService memories;
+    private final UnifiedMemoryService unified;
     private final CurrentMember currentMember;
 
-    public ProjectMemoryController(ProjectMemoryService memories, CurrentMember currentMember) {
+    public ProjectMemoryController(ProjectMemoryService memories, UnifiedMemoryService unified,
+            CurrentMember currentMember) {
         this.memories = memories;
+        this.unified = unified;
         this.currentMember = currentMember;
+    }
+
+    /** 查看当前项目待审核的 AI 工程记忆。 */
+    @GetMapping("/candidates")
+    public ApiResponse<List<MemoryDocumentDto>> candidates(@PathVariable String projectId,
+            HttpServletRequest http) {
+        return ApiResponse.ok(unified.list(currentMember.idOr(http, "wg"), "project", projectId,
+                null, null, "draft"));
+    }
+
+    /** 项目负责人或管理员审核发布候选。 */
+    @PostMapping("/candidates/{revisionId}/publish")
+    public ApiResponse<MemoryDocumentDto> publishCandidate(@PathVariable String projectId,
+            @PathVariable String revisionId, HttpServletRequest http) {
+        return ApiResponse.ok(unified.publishProjectCandidate(currentMember.idOr(http, "wg"), projectId, revisionId));
+    }
+
+    /** 项目负责人或管理员驳回候选。 */
+    @PostMapping("/candidates/{revisionId}/reject")
+    public ApiResponse<MemoryDocumentDto> rejectCandidate(@PathVariable String projectId,
+            @PathVariable String revisionId, HttpServletRequest http) {
+        return ApiResponse.ok(unified.rejectProjectCandidate(currentMember.idOr(http, "wg"), projectId, revisionId));
     }
 
     @GetMapping

@@ -10,7 +10,7 @@ const weather = useWeatherStore()
 const settingsOpen = ref(false), searching = ref(false), locating = ref(false), searched = ref(false), locationError = ref('')
 const locations = ref<WeatherLocation[]>([])
 const visible = computed(() => props.surface === 'rhythm' ? weather.prefs.rhythmVisible : weather.prefs.calendarVisible)
-const showPanel = computed(() => props.surface !== 'calendar' || !props.toolbar || visible.value)
+const showPanel = computed(() => props.glance || props.surface !== 'calendar' || !props.toolbar || visible.value)
 const today = computed(() => weather.days.find(day => day.date === props.date))
 const compact = computed(() => props.surface === 'rhythm' || props.toolbar)
 const twoDays = computed(() => [0, 1].map(offset => {

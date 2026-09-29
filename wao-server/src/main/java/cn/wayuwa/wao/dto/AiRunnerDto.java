@@ -22,11 +22,6 @@ public record AiRunnerDto(
         Boolean scriptUpToDate,
         /** 后台已下发脚本更新、该电脑还没完成自更新重启。 */
         boolean updateRequested,
-        boolean memoryCollectionEnabled,
-        boolean memoryCollectionDue,
-        String lastMemoryCollectionAttemptAt,
-        String lastMemoryCollectedAt,
-        String lastMemoryCollectionError,
         Integer cpuCores,
         Double cpuUsagePercent,
         Long memoryTotalBytes,
@@ -39,14 +34,10 @@ public record AiRunnerDto(
     public AiRunnerDto(String id, String name, String platform, List<String> engines,
             int maxConcurrency, Integer configuredMaxConcurrency, int activeRuns, boolean online,
             String lastSeenAt, String wakeMac, String wakeHost, int wakePort, boolean wakeConfigured,
-            String lastWakeRequestedAt, Boolean scriptUpToDate, boolean updateRequested,
-            boolean memoryCollectionEnabled, boolean memoryCollectionDue,
-            String lastMemoryCollectionAttemptAt, String lastMemoryCollectedAt,
-            String lastMemoryCollectionError) {
+            String lastWakeRequestedAt, Boolean scriptUpToDate, boolean updateRequested) {
         this(id, name, platform, engines, maxConcurrency, configuredMaxConcurrency, activeRuns, online,
                 lastSeenAt, wakeMac, wakeHost, wakePort, wakeConfigured, lastWakeRequestedAt,
-                scriptUpToDate, updateRequested, memoryCollectionEnabled, memoryCollectionDue,
-                lastMemoryCollectionAttemptAt, lastMemoryCollectedAt, lastMemoryCollectionError,
+                scriptUpToDate, updateRequested,
                 null, null, null, null, null, null, null, null);
     }
 }

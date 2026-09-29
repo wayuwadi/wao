@@ -8,22 +8,41 @@ info:
 servers:
   - url: /api
 paths:
-  /update-diary:
+  /decisions:
     get:
-      summary: 按有成功功能交付的日期读取 WAO 更新日记
-      parameters:
-        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
-        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 31, default: 12 } }
-      responses:
-        '200':
-          description: 只含 feat、fix、perf 功能结果；没有更新的日期不返回
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - { $ref: '#/components/schemas/ApiResponse' }
-                  - type: object
-                    properties: { data: { $ref: '#/components/schemas/UpdateDiaryPage' } }
+      summary: 列出当前成员已发布的个人决策
+      parameters: [{ name: query, in: query, required: false, schema: { type: string } }]
+      responses: { '200': { description: 仅返回当前成员的决策 } }
+    post:
+      summary: 新建并立即发布当前成员的个人决策
+      description: 服务端固定为当前成员的 personal/decision 范围，不采信请求中的范围和分类。
+      responses: { '200': { description: 返回已发布决策及版本 }, '400': { description: 内容不合法 } }
+  /decisions/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      summary: 读取当前成员的一条决策
+      parameters: [{ name: revision, in: query, required: false, schema: { type: string } }]
+      responses: { '200': { description: 决策及指定版本 }, '404': { description: 决策不存在或不属于当前成员 } }
+  /decisions/{id}/revisions:
+    post:
+      summary: 基于 baseRevisionId 修订当前成员的决策
+      responses: { '200': { description: 返回新版本 }, '404': { description: 决策不存在或不属于当前成员 }, '409': { description: 基础版本已过期 } }
+  /decisions/{id}/archive:
+    post:
+      summary: 废止当前成员的决策
+      responses: { '200': { description: 已废止 }, '404': { description: 决策不存在或不属于当前成员 } }
+  /projects/{projectId}/memories/candidates:
+    get:
+      summary: 查看当前项目待审核的 AI 工程记忆
+      responses: { '200': { description: 项目候选列表 }, '403': { description: 无项目访问权限 } }
+  /projects/{projectId}/memories/candidates/{revisionId}/publish:
+    post:
+      summary: 项目负责人或管理员发布工程记忆候选
+      responses: { '200': { description: 返回已发布版本 }, '403': { description: 无发布权限 }, '404': { description: 候选不属于该项目 }, '409': { description: 基础版本已变化 } }
+  /projects/{projectId}/memories/candidates/{revisionId}/reject:
+    post:
+      summary: 项目负责人或管理员驳回工程记忆候选
+      responses: { '200': { description: 返回已驳回版本 }, '403': { description: 无审核权限 }, '404': { description: 候选不属于该项目 } }
   /ideas:
     get:
       summary: 列出团队全部点子
@@ -63,59 +82,6 @@ paths:
     post:
       summary: 把存量独立点子无损归并到项目并生成历史文档
       responses: { '200': { description: 归并后的项目 }, '404': { description: 点子或指定项目不存在 } }
-  /workspaces:
-    get:
-      summary: 按最近更新时间列出当前成员自己的工作空间
-      responses: { '200': { description: 空间摘要列表，不包含其他成员数据 } }
-    post:
-      summary: 创建当前成员的工作空间和空的默认分组
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/CreateWorkspaceRequest' } } }
-      responses: { '200': { description: 新空间完整快照 }, '400': { description: 名称或项目关联不合法 } }
-  /workspaces/{workspaceId}:
-    parameters:
-      - { name: workspaceId, in: path, required: true, schema: { type: string } }
-    get:
-      summary: 读取当前成员一个工作空间的完整快照
-      responses: { '200': { description: 空间与分组链接 }, '404': { description: 空间不存在或不属于当前成员 } }
-    put:
-      summary: 原子保存当前成员一个工作空间的完整快照
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/SaveWorkspaceRequest' } } }
-      responses: { '200': { description: 服务端规整后的完整快照 }, '400': { description: 超出数量、字段或 URL 安全限制 }, '404': { description: 空间不存在或不属于当前成员 } }
-    delete:
-      summary: 删除当前成员的工作空间，不访问链接指向的系统
-      responses: { '200': { description: 已删除 }, '404': { description: 空间不存在或不属于当前成员 } }
-  /action-plans:
-    get:
-      summary: 按日期读取当前成员的行动计划和真实打卡投影
-      parameters: [{ name: date, in: query, required: false, schema: { type: string, format: date } }]
-      responses: { '200': { description: 当前成员私有计划列表 } }
-    post:
-      summary: 新建当前成员私有行动计划
-      responses: { '200': { description: 已创建计划 }, '400': { description: 日期、行动或提醒设置不合法 } }
-  /action-plans/{planId}:
-    put:
-      summary: 调整计划和当前行动版本，保留历史打卡
-      parameters: [{ name: planId, in: path, required: true, schema: { type: string } }]
-      responses: { '200': { description: 已保存计划 }, '404': { description: 计划不存在或不属于当前成员 } }
-  /action-plans/{planId}/status:
-    patch:
-      summary: 完成或重新开始计划
-      parameters:
-        - { name: planId, in: path, required: true, schema: { type: string } }
-        - { name: completed, in: query, required: true, schema: { type: boolean } }
-      responses: { '200': { description: 状态已更新 } }
-  /action-plans/{planId}/items/{itemId}/checkins/{date}:
-    post:
-      summary: 切换某日一条已安排行动的真实打卡
-      responses: { '200': { description: 已返回更新后计划 }, '400': { description: 未来日期或当天未安排 } }
-  /action-plans/{planId}/notes/{date}:
-    put:
-      summary: 自动保存或清空某日事实复盘
-      responses: { '200': { description: 已返回更新后计划 } }
   /assistant/status:
     get:
       summary: 指定只读 AI 能力是否真实可用
@@ -217,90 +183,6 @@ paths:
         - { name: size, in: query, schema: { type: integer, minimum: 8, maximum: 50, default: 20 } }
       responses:
         '200': { description: 功能开发、AI 巡检与聊天复盘按结束时间统一排序，按类型和结果返回真实总数与分页信息 }
-  /memory/tokens:
-    get:
-      summary: 列出当前成员有效的 Codex 记忆 MCP 设备令牌元数据
-      responses:
-        '200': { description: 不含摘要和完整令牌的设备列表 }
-    post:
-      summary: 为当前成员签发一枚只显示一次明文的 MCP 设备令牌
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties: { name: { type: string, minLength: 1, maxLength: 80 } }
-      responses:
-        '200': { description: 令牌元数据与仅本次返回的 secret }
-        '400': { description: 名称不合法或有效令牌已达到十枚 }
-  /memory/entries:
-    get:
-      summary: 按当前成员列出个人记忆，不返回附件二进制
-      parameters:
-        - { name: query, in: query, required: false, schema: { type: string, maxLength: 500 } }
-        - { name: category, in: query, required: false, schema: { type: string } }
-      responses: { '200': { description: 最多 300 条当前成员自己的个人记忆 } }
-    post:
-      summary: 当前成员人工保存一条文字记忆
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/SavePersonalMemory' } } }
-      responses: { '200': { description: 已保存，captureMode=manual、mediaType=text } }
-  /memory/entries/upload:
-    post:
-      summary: 当前成员人工保存一份真实多模态原件及说明
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [category, file]
-              properties:
-                title: { type: string, maxLength: 120, description: 为空时使用安全文件名 }
-                content: { type: string, maxLength: 20000 }
-                category: { type: string, enum: [preference, responsibility, plan, decision, context, experience] }
-                file: { type: string, format: binary, description: 单个不超过 50MB }
-      responses: { '200': { description: 已保存原件与元数据 }, '400': { description: 文件为空、超限或分类不支持 } }
-  /memory/entries/{memoryId}:
-    patch:
-      summary: 修改当前成员记忆的标题、说明和分类，附件原件保持不变
-      parameters: [{ name: memoryId, in: path, required: true, schema: { type: string } }]
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/SavePersonalMemory' } } }
-      responses: { '200': { description: 已更新 }, '404': { description: 记忆不存在或不属于当前成员 } }
-    delete:
-      summary: 删除当前成员记忆及附件原件
-      parameters: [{ name: memoryId, in: path, required: true, schema: { type: string } }]
-      responses: { '200': { description: 已删除 }, '404': { description: 记忆不存在或不属于当前成员 } }
-  /memory/entries/{memoryId}/attachment:
-    get:
-      summary: 下载当前成员记忆的附件原件
-      parameters: [{ name: memoryId, in: path, required: true, schema: { type: string } }]
-      responses:
-        '200': { description: 真实附件字节 }
-        '404': { description: 记忆/附件不存在或不属于当前成员 }
-  /memory/tokens/{tokenId}:
-    delete:
-      summary: 吊销当前成员的一枚 Codex 记忆 MCP 设备令牌
-      parameters: [{ name: tokenId, in: path, required: true, schema: { type: string } }]
-      responses:
-        '200': { description: 已吊销 }
-        '404': { description: 令牌不存在或不属于当前成员 }
-  /mcp:
-    post:
-      summary: Codex 个人记忆的无状态 Streamable HTTP MCP JSON-RPC 端点
-      security: [{ memoryBearer: [] }]
-      requestBody:
-        required: true
-        content: { application/json: { schema: { type: object, description: MCP JSON-RPC 请求 } } }
-      responses:
-        '200': { description: MCP JSON-RPC 结果；支持 initialize、ping、tools/list、tools/call }
-        '202': { description: MCP notification 已接受 }
-        '401': { description: 记忆令牌缺失、无效或已吊销 }
   /daily-guidance:
     get:
       summary: 读取当前成员今天已保存的情境建议或真实可用状态
@@ -1185,55 +1067,6 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/BuiltinMenuRegistry' } } }
       responses: { '200': { description: OK }, '400': { description: 菜单数量、标识或字段不合法 } }
-  /games/number-merge:
-    get:
-      summary: 读取当前成员的数字熔炉活动存档、长期统计和最近八局；首次进入自动开局
-      responses:
-        '200':
-          description: 当前完整游戏快照
-          content: { application/json: { schema: { $ref: '#/components/schemas/NumberMergeGame' } } }
-  /games/number-merge/move:
-    post:
-      summary: 由服务端沿指定方向合并、计分、随机出牌并保存
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/GameMoveRequest' } } }
-      responses: { '200': { description: 移动后的快照 }, '400': { description: 方向不合法 }, '409': { description: 存档已在另一页面更新 } }
-  /games/number-merge/undo:
-    post:
-      summary: 撤销最近一次有效移动
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/GameRevisionRequest' } } }
-      responses: { '200': { description: 撤销后的快照 }, '409': { description: 存档已在另一页面更新 } }
-  /games/number-merge/restart:
-    post:
-      summary: 归档走过的当前棋盘并开始新一局
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/GameRevisionRequest' } } }
-      responses: { '200': { description: 新一局快照 }, '409': { description: 存档已在另一页面更新 } }
-  /games/memory-match:
-    get:
-      summary: 读取当前成员的服务端权威记忆翻牌牌局；首次进入自动洗牌
-      responses:
-        '200':
-          description: 当前完整牌局快照
-          content: { application/json: { schema: { $ref: '#/components/schemas/MemoryMatchGame' } } }
-  /games/memory-match/flip:
-    post:
-      summary: 由服务端翻牌、判断配对、计步并保存当前牌局
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/MemoryMatchFlipRequest' } } }
-      responses: { '200': { description: 翻牌后的权威快照 }, '400': { description: 位置或状态不合法 }, '409': { description: 牌局已在另一页面更新 } }
-  /games/memory-match/restart:
-    post:
-      summary: 保留最佳步数并开始新的服务端牌序
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/GameRevisionRequest' } } }
-      responses: { '200': { description: 新一局快照 }, '409': { description: 牌局已在另一页面更新 } }
   /public/site-info:
     get:
       summary: 免登录读取网站公开信息，供登录页、分享页与页脚展示
@@ -1547,33 +1380,7 @@ paths:
   /suggestions: { get: { summary: AI 建议列表, responses: { '200': { description: OK } } } }
   /goals: { get: { summary: 目标胶囊列表, responses: { '200': { description: OK } } } }
 components:
-  securitySchemes:
-    memoryBearer:
-      type: http
-      scheme: bearer
-      bearerFormat: wao_mcp
   schemas:
-    UpdateDiaryEntry:
-      type: object
-      required: [scope, kind, title]
-      properties:
-        scope: { type: string, description: Git Conventional Commit 的具体 scope }
-        kind: { type: string, enum: [FEATURE, FIX, PERFORMANCE] }
-        title: { type: string, description: 已移除提交语法和合并编号的用户可读结果 }
-    UpdateDiaryDay:
-      type: object
-      required: [date, entries]
-      properties:
-        date: { type: string, format: date, description: 产品更新日期；新记录采用 Git 提交日期，迁入基线沿用既有成功事件日期 }
-        entries: { type: array, minItems: 1, items: { $ref: '#/components/schemas/UpdateDiaryEntry' } }
-    UpdateDiaryPage:
-      type: object
-      required: [days, totalDays, page, size]
-      properties:
-        days: { type: array, items: { $ref: '#/components/schemas/UpdateDiaryDay' } }
-        totalDays: { type: integer, format: int64, minimum: 0 }
-        page: { type: integer, minimum: 1 }
-        size: { type: integer, minimum: 1, maximum: 31 }
     ReviewableTask:
       type: object
       required: [taskId, title, projectId, projectName, priority, taskStatus, action]
@@ -1589,41 +1396,6 @@ components:
         deliveryStage: { type: string, nullable: true }
         resultPreview: { type: string, nullable: true, description: 最近运行结果摘要的首行，不伪造缺失内容 }
         finishedAt: { type: string, format: date-time, nullable: true }
-    WorkspaceLink:
-      type: object
-      required: [id, title, url, description, environment, icon, order, favorite]
-      properties:
-        id: { type: string, maxLength: 32 }
-        title: { type: string, minLength: 1, maxLength: 100 }
-        url: { type: string, maxLength: 2048, description: 仅允许无账号密码的 http / https 地址 }
-        description: { type: string, maxLength: 300 }
-        environment: { type: string, maxLength: 30 }
-        icon: { type: string, pattern: '^ri-[a-z0-9-]+$' }
-        order: { type: integer, minimum: 0 }
-        favorite: { type: boolean }
-    WorkspaceGroup:
-      type: object
-      required: [id, name, icon, order, links]
-      properties:
-        id: { type: string, maxLength: 32 }
-        name: { type: string, minLength: 1, maxLength: 40 }
-        icon: { type: string, pattern: '^ri-[a-z0-9-]+$' }
-        order: { type: integer, minimum: 0 }
-        links: { type: array, items: { $ref: '#/components/schemas/WorkspaceLink' } }
-    CreateWorkspaceRequest:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string, minLength: 1, maxLength: 60 }
-        description: { type: string, maxLength: 400 }
-        projectId: { type: string, maxLength: 32, nullable: true, description: 必须是当前成员可见项目 }
-    SaveWorkspaceRequest:
-      allOf:
-        - { $ref: '#/components/schemas/CreateWorkspaceRequest' }
-        - type: object
-          required: [groups]
-          properties:
-            groups: { type: array, maxItems: 12, items: { $ref: '#/components/schemas/WorkspaceGroup' } }
     AssistantChatRequest:
       type: object
       required: [message]
@@ -2216,7 +1988,7 @@ components:
       type: object
       required: [id, label, icon, group, order, visible, openMode]
       properties:
-        id: { type: string, enum: [home, notes, navigation, projects, updates, skills, skill-connections, todo, workday-rhythm, action-plans, personal-principles, decisions, appearance, food, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, data-center, text-polish, dashboard, automation, crawler-capabilities, account-resources, files, games, devices, request-monitoring] }
+        id: { type: string, enum: [home, notes, navigation, projects, skills, skill-connections, todo, workday-rhythm, decisions, calendar, life-review, knowledge, drawings, vault, tianren, text-polish, dashboard, automation, files, pet-world, request-monitoring] }
         label: { type: string, maxLength: 24 }
         icon: { type: string, description: Remix Icon 类名 }
         group: { type: string, enum: [ROOT, PUBLIC, PERSONAL, TOOLS] }
@@ -2229,98 +2001,7 @@ components:
       required: [version, menus]
       properties:
         version: { type: integer, minimum: 1 }
-        menus: { type: array, minItems: 34, maxItems: 34, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
-    SavePersonalMemory:
-      type: object
-      required: [title, content, category]
-      properties:
-        title: { type: string, minLength: 1, maxLength: 120 }
-        content: { type: string, maxLength: 20000 }
-        category: { type: string, enum: [preference, responsibility, plan, decision, context, experience] }
-    PersonalMemory:
-      allOf:
-        - { $ref: '#/components/schemas/SavePersonalMemory' }
-        - type: object
-          required: [id, captureMode, mediaType, createdAt, updatedAt]
-          properties:
-            id: { type: string }
-            captureMode: { type: string, enum: [manual, ai] }
-            mediaType: { type: string, enum: [text, image, audio, video, file] }
-            fileName: { type: string, nullable: true }
-            contentType: { type: string, nullable: true }
-            byteSize: { type: integer, format: int64, nullable: true }
-            downloadUrl: { type: string, nullable: true }
-            createdAt: { type: string, format: date-time }
-            updatedAt: { type: string, format: date-time }
-    GameMoveRequest:
-      type: object
-      required: [direction, revision]
-      properties:
-        direction: { type: string, enum: [UP, DOWN, LEFT, RIGHT] }
-        revision: { type: integer, minimum: 0 }
-    GameRevisionRequest:
-      type: object
-      required: [revision]
-      properties:
-        revision: { type: integer, minimum: 0 }
-    MemoryMatchFlipRequest:
-      type: object
-      required: [index, revision]
-      properties:
-        index: { type: integer, minimum: 0, maximum: 15 }
-        revision: { type: integer, minimum: 0 }
-    MemoryMatchGame:
-      type: object
-      required: [cards, matched, revealed, steps, finished, revision, updatedAt]
-      properties:
-        cards:
-          type: array
-          minItems: 16
-          maxItems: 16
-          description: 未翻开位置为 null，避免向浏览器泄露隐藏牌面
-          items: { type: integer, nullable: true, minimum: 0, maximum: 7 }
-        matched: { type: array, items: { type: integer, minimum: 0, maximum: 15 } }
-        revealed: { type: array, items: { type: integer, minimum: 0, maximum: 15 } }
-        steps: { type: integer, minimum: 0 }
-        bestSteps: { type: integer, nullable: true, minimum: 8 }
-        finished: { type: boolean }
-        revision: { type: integer, minimum: 0 }
-        updatedAt: { type: string, format: date-time }
-    GameRunRecord:
-      type: object
-      required: [id, score, highestTile, moves, outcome, startedAt, endedAt]
-      properties:
-        id: { type: string }
-        score: { type: integer, format: int64 }
-        highestTile: { type: integer }
-        moves: { type: integer }
-        outcome: { type: string, enum: [WON, GAME_OVER, RESTARTED] }
-        startedAt: { type: string, format: date-time }
-        endedAt: { type: string, format: date-time }
-    NumberMergeStats:
-      type: object
-      required: [bestScore, highestTile, gamesPlayed, totalMoves, wins]
-      properties:
-        bestScore: { type: integer, format: int64 }
-        highestTile: { type: integer }
-        gamesPlayed: { type: integer, format: int64 }
-        totalMoves: { type: integer, format: int64 }
-        wins: { type: integer, format: int64 }
-    NumberMergeGame:
-      type: object
-      required: [board, score, moves, won, gameOver, canUndo, revision, startedAt, updatedAt, stats, recentRuns]
-      properties:
-        board: { type: array, minItems: 16, maxItems: 16, items: { type: integer, minimum: 0 } }
-        score: { type: integer, format: int64 }
-        moves: { type: integer, minimum: 0 }
-        won: { type: boolean }
-        gameOver: { type: boolean }
-        canUndo: { type: boolean }
-        revision: { type: integer, minimum: 0 }
-        startedAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-        stats: { $ref: '#/components/schemas/NumberMergeStats' }
-        recentRuns: { type: array, maxItems: 8, items: { $ref: '#/components/schemas/GameRunRecord' } }
+        menus: { type: array, minItems: 21, maxItems: 21, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
     FeishuSender:
       type: object
       description: 发言人映射，把飞书 open_id 对上 WAO 里显示的人名

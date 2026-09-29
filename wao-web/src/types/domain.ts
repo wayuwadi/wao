@@ -618,11 +618,6 @@ export interface AiRunner {
   scriptUpToDate?: boolean | null
   /** 后台已下发脚本更新、该电脑还没完成自更新重启。 */
   updateRequested?: boolean
-  memoryCollectionEnabled?: boolean
-  memoryCollectionDue?: boolean
-  lastMemoryCollectionAttemptAt?: string | null
-  lastMemoryCollectedAt?: string | null
-  lastMemoryCollectionError?: string | null
   cpuCores?: number | null
   cpuUsagePercent?: number | null
   memoryTotalBytes?: number | null

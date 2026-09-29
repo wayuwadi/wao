@@ -9,12 +9,12 @@ import {
   fetchMemory,
   reviseMemory,
   type MemoryDocument,
-} from '@/api/unifiedMemories'
+} from '@/api/decisions'
 import { formatDecisionContent, parseDecisionContent } from '@/utils/decisionContent'
 
 vi.mock('@/stores/session', async () => { const { reactive } = await import('vue'); const session = reactive({ userId: 'member-1' }); return { useSessionStore: () => session } })
-vi.mock('@/api/unifiedMemories', async () => {
-  const actual = await vi.importActual<typeof import('@/api/unifiedMemories')>('@/api/unifiedMemories')
+vi.mock('@/api/decisions', async () => {
+  const actual = await vi.importActual<typeof import('@/api/decisions')>('@/api/decisions')
   return {
     ...actual,
     fetchMemory: vi.fn<typeof actual.fetchMemory>(),
@@ -85,9 +85,7 @@ describe('DecisionsView', () => {
     const wrapper = view()
     await flushPromises()
 
-    expect(fetchMemories).toHaveBeenCalledWith({
-      scopeType: 'personal', scopeId: 'member-1', category: 'decision', state: 'active', query: undefined,
-    })
+    expect(fetchMemories).toHaveBeenCalledWith({ query: undefined })
     expect(wrapper.text()).toContain('去武汉的出行方式')
     expect(wrapper.text()).toContain('优先坐傍晚的高铁')
     expect(wrapper.text()).toContain('避免消耗一整晚')

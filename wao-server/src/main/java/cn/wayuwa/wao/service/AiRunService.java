@@ -151,7 +151,6 @@ public class AiRunService {
     private final ProjectMemoryService projectMemories;
     private final AiSkillCapabilityService skillCapabilities;
     private final FunctionHealthService functionHealth;
-    private final UpdateDiaryService updateDiary;
     private final FeishuAiRunReactionNotifier runReactions;
     private final SettingService settings;
 
@@ -193,7 +192,6 @@ public class AiRunService {
             RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages,
             ImageService images, CodexQuotaService codexQuotas, ProjectMemoryService projectMemories,
             AiSkillCapabilityService skillCapabilities, FunctionHealthService functionHealth,
-            UpdateDiaryService updateDiary,
             FeishuAiRunReactionNotifier runReactions,
             SettingService settings) {
         this.configMapper = configMapper;
@@ -213,7 +211,6 @@ public class AiRunService {
         this.projectMemories = projectMemories;
         this.skillCapabilities = skillCapabilities;
         this.functionHealth = functionHealth;
-        this.updateDiary = updateDiary;
         this.runReactions = runReactions;
         this.settings = settings;
     }
@@ -410,23 +407,10 @@ public class AiRunService {
                         StringUtils.hasText(r.getWakeMac()) && StringUtils.hasText(r.getWakeHost()),
                         r.getLastWakeRequestedAt() == null ? null : r.getLastWakeRequestedAt().toString(),
                         scriptUpToDate(r), r.getUpdateRequestedAt() != null,
-                        !Boolean.FALSE.equals(r.getMemoryCollectionEnabled()), memoryCollectionDue(r),
-                        time(r.getLastMemoryCollectionAttemptAt()), time(r.getLastMemoryCollectedAt()),
-                        r.getLastMemoryCollectionError(), r.getCpuCores(), r.getCpuUsagePercent(),
+                        r.getCpuCores(), r.getCpuUsagePercent(),
                         r.getMemoryTotalBytes(), r.getMemoryAvailableBytes(), r.getDiskTotalBytes(),
                         r.getDiskFreeBytes(), r.getDiskRoot(), time(r.getSystemMetricsCollectedAt())))
                 .toList();
-    }
-
-    private boolean memoryCollectionDue(AiRunnerNodeEntity runner) {
-        if (Boolean.FALSE.equals(runner.getMemoryCollectionEnabled()) || !engines(runner).contains("codex")) return false;
-        LocalDateTime now = LocalDateTime.now();
-        if (runner.getLastMemoryCollectionAttemptAt() == null) return true;
-        if (StringUtils.hasText(runner.getLastMemoryCollectionError())) {
-            return runner.getLastMemoryCollectionAttemptAt().isBefore(now.minusHours(6));
-        }
-        return runner.getLastMemoryCollectedAt() == null
-                || runner.getLastMemoryCollectedAt().isBefore(now.minusHours(24));
     }
 
     private static String time(LocalDateTime value) {
@@ -1616,7 +1600,6 @@ public class AiRunService {
         if (verifiedMemoryCompletion(exitCode, request.resultSummary())) {
             projectMemories.persistCandidates(run, request.projectMemoryCandidates());
             functionHealth.recordIterations(runId, request.functionIterations());
-            updateDiary.recordVerifiedCommits(runId, request.functionIterations());
         }
         setTaskStatuses(run, exitCode == 0 ? "待验证" : "进行中");
         runnerMapper.touchLastSeenAt(runner.getId());

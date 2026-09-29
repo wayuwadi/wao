@@ -7,6 +7,9 @@ import type { ProjectMemory } from '@/types'
 
 const memoryApi = vi.hoisted(() => ({
   fetchProjectMemories: vi.fn(),
+  fetchProjectMemoryCandidates: vi.fn(),
+  publishProjectMemoryCandidate: vi.fn(),
+  rejectProjectMemoryCandidate: vi.fn(),
   createProjectMemory: vi.fn(),
   updateProjectMemory: vi.fn(),
   deleteProjectMemory: vi.fn(),
@@ -41,6 +44,9 @@ describe('项目工程记忆', () => {
     localStorage.clear()
     vi.clearAllMocks()
     memoryApi.fetchProjectMemories.mockResolvedValue([])
+    memoryApi.fetchProjectMemoryCandidates.mockResolvedValue([])
+    memoryApi.publishProjectMemoryCandidate.mockResolvedValue(undefined)
+    memoryApi.rejectProjectMemoryCandidate.mockResolvedValue(undefined)
     memoryApi.createProjectMemory.mockResolvedValue(sample)
     memoryApi.updateProjectMemory.mockResolvedValue(sample)
     memoryApi.deleteProjectMemory.mockResolvedValue(undefined)
@@ -50,14 +56,18 @@ describe('项目工程记忆', () => {
     const { wrapper } = await mountPanel()
 
     expect(wrapper.text()).toContain('还没有已发布的项目记忆')
-    expect(wrapper.text()).toContain('个人生活记忆仍严格私有')
+    expect(wrapper.text()).toContain('AI 交付后生成的候选可在下方审核')
   })
 
-  it('深链到统一记忆中心的当前项目范围', async () => {
+  it('在项目中审核 AI 工程记忆候选', async () => {
+    memoryApi.fetchProjectMemoryCandidates.mockResolvedValueOnce([{
+      id: 'm1', revision: { id: 'r1', title: '已验证命令', content: 'mvn test' },
+    }])
     const { wrapper } = await mountPanel()
-    const link = wrapper.get('a.primary')
-    expect(link.attributes('href')).toContain('/memories?scope=project&project=p1')
-    expect(wrapper.text()).toContain('AI 交付后只会生成候选')
+    expect(wrapper.text()).toContain('待审核候选（1）')
+    await wrapper.get('.candidate-actions .primary').trigger('click')
+    await flushPromises()
+    expect(memoryApi.publishProjectMemoryCandidate).toHaveBeenCalledWith('p1', 'r1')
   })
 
   it('删除失败保留记录并提供无需二次确认的重试入口', async () => {

@@ -27,7 +27,7 @@ class JdbcNodeTicketStoreTest {
         String hash = "a".repeat(64);
         var ticket = new NodeTicketStore.Ticket(UUID.randomUUID().toString(), "account-one", "https://linux2.wayuwa.cn:9443");
         store.insert(hash, ticket, 1000, 61000);
-        assertNull(store.consume(hash, "https://linux2.wayuwa.cn:9443", 1001));
+        assertNull(store.consume(hash, "https://other.wayuwa.cn:9443", 1001));
         assertNull(store.consume(hash, ticket.targetOrigin(), 61000));
         assertEquals(1, store.recentCount(ticket.rootSessionId(), 1000));
         var pool = Executors.newFixedThreadPool(8);

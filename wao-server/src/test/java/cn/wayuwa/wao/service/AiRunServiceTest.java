@@ -74,13 +74,11 @@ class AiRunServiceTest {
     private final ProjectMemoryService projectMemories = mock(ProjectMemoryService.class);
     private final AiSkillCapabilityService skillCapabilities = mock(AiSkillCapabilityService.class);
     private final FunctionHealthService functionHealth = mock(FunctionHealthService.class);
-    private final UpdateDiaryService updateDiary = mock(UpdateDiaryService.class);
     private final FeishuAiRunReactionNotifier runReactions = mock(FeishuAiRunReactionNotifier.class);
     private final SettingService settings = mock(SettingService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
             tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories, skillCapabilities, functionHealth,
-            updateDiary,
             runReactions, settings);
 
     @BeforeEach
@@ -1878,7 +1876,7 @@ class AiRunServiceTest {
     }
 
     @Test
-    void onlyVerifiedSuccessRecordsGitCommitsForHealthAndUpdateDiary() {
+    void onlyVerifiedSuccessRecordsGitCommitsForHealth() {
         runningRun();
         var iterations = List.of(new FunctionIterationInput("sha-1", "updates",
                 "feat(updates): 新增更新日记", "2026-09-08T10:30:00+08:00"));
@@ -1888,7 +1886,6 @@ class AiRunServiceTest {
                 null, null, null, null, null, null, List.of(), iterations, List.of()));
 
         verify(functionHealth).recordIterations("ar1", iterations);
-        verify(updateDiary).recordVerifiedCommits("ar1", iterations);
     }
 
     @Test
@@ -1902,7 +1899,6 @@ class AiRunServiceTest {
                         null, null, null, null, null, candidates));
 
         verify(projectMemories, never()).persistCandidates(any(), any());
-        verify(updateDiary, never()).recordVerifiedCommits(any(), any());
     }
 
     @Test

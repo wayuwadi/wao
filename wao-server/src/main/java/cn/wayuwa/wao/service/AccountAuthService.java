@@ -129,7 +129,7 @@ public class AccountAuthService {
     public ExternalResolution resolveExternal(ExternalIdentityProfile profile, String currentAccountId,
                                               boolean linkRequested) {
         AccountIdentityEntity existing = identityMapper.findByProviderSubject(profile.provider(), profile.subject());
-        AccountIdentityEntity byUnion = findByUnionOrLegacySubject(profile);
+        AccountIdentityEntity byUnion = findByUnionSubject(profile);
         if (existing == null) {
             existing = byUnion;
         } else if (byUnion != null && !existing.getAccountId().equals(byUnion.getAccountId())) {
@@ -312,7 +312,7 @@ public class AccountAuthService {
         AccountIdentityEntity byAccount = identityMapper.findByAccountProvider(accountId, profile.provider());
         if (byAccount != null) throw new ConflictException("当前账号已经绑定该类型的登录方式");
         if (StringUtils.hasText(profile.unionSubject())) {
-            AccountIdentityEntity byUnion = findByUnionOrLegacySubject(profile);
+            AccountIdentityEntity byUnion = findByUnionSubject(profile);
             if (byUnion != null && !byUnion.getAccountId().equals(accountId)) {
                 throw new ConflictException("该第三方身份已经绑定到另一个 WAO 账号");
             }
@@ -390,13 +390,9 @@ public class AccountAuthService {
         identityMapper.updateById(identity);
     }
 
-    private AccountIdentityEntity findByUnionOrLegacySubject(ExternalIdentityProfile profile) {
+    private AccountIdentityEntity findByUnionSubject(ExternalIdentityProfile profile) {
         if (!StringUtils.hasText(profile.unionSubject())) return null;
-        AccountIdentityEntity byUnion = identityMapper.findByProviderUnionSubject(
-                profile.provider(), profile.unionSubject());
-        // 微信网站应用的旧记录曾把 Union ID 直接存进 provider_subject；公众号登录需要兼容复用。
-        return byUnion != null ? byUnion
-                : identityMapper.findByProviderSubject(profile.provider(), profile.unionSubject());
+        return identityMapper.findByProviderUnionSubject(profile.provider(), profile.unionSubject());
     }
 
     /** 登录成功后同步最新的跨应用身份，但不用空值覆盖已有 Union ID。 */
