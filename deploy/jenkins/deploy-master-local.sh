@@ -48,11 +48,11 @@ sh "$project_root/deploy/scripts/validate-deployment-node.sh" master "$image_tag
 # Stop the former Sentinel process only after the direct Linux2 Redis client
 # has passed its application readiness check. Keep its named volume for
 # recovery inspection; this command does not remove persistent Redis state.
-sentinel_ids="$(docker ps -aq \
+sentinel_ids="$(sudo -n docker ps -aq \
   --filter label=com.docker.compose.project=wao-master \
   --filter label=com.docker.compose.service=sentinel-master)"
 for sentinel_id in $sentinel_ids; do
-  docker rm -f "$sentinel_id"
+  sudo -n docker rm -f "$sentinel_id"
 done
 
 if [ "$sync_jumpserver" != false ]; then
