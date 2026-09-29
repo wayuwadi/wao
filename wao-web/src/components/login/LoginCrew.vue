@@ -1,9 +1,10 @@
 <script setup lang="ts">
-const emit = defineEmits<{ sound: [index: number] }>()
+defineProps<{ active?: number | null }>()
+const emit = defineEmits<{ greet: [index: number] }>()
 </script>
 <template>
   <svg
-    viewBox="0 0 1000 310"
+    viewBox="70 0 840 310"
     role="group"
     aria-label="五位原创 WAO 伙伴：灵感星星、记录小本、AI 助手、行动闪电、资料方块"
   >
@@ -22,9 +23,12 @@ const emit = defineEmits<{ sound: [index: number] }>()
       role="button"
       tabindex="0"
       aria-label="灵感：留住每个一闪而过的念头"
-      @click="emit('sound', 0)"
-      @keydown.enter.prevent="emit('sound', 0)"
-      @keydown.space.prevent="emit('sound', 0)"
+      :class="{ greeting: active === 0 }"
+      @pointerenter="$event.pointerType === 'mouse' && emit('greet', 0)"
+      @focus="emit('greet', 0)"
+      @click="emit('greet', 0)"
+      @keydown.enter.prevent="emit('greet', 0)"
+      @keydown.space.prevent="emit('greet', 0)"
     >
       <title>灵感：留住每个一闪而过的念头</title>
       <path
@@ -69,9 +73,12 @@ const emit = defineEmits<{ sound: [index: number] }>()
       role="button"
       tabindex="0"
       aria-label="记录：随时记下，慢慢长大"
-      @click="emit('sound', 1)"
-      @keydown.enter.prevent="emit('sound', 1)"
-      @keydown.space.prevent="emit('sound', 1)"
+      :class="{ greeting: active === 1 }"
+      @pointerenter="$event.pointerType === 'mouse' && emit('greet', 1)"
+      @focus="emit('greet', 1)"
+      @click="emit('greet', 1)"
+      @keydown.enter.prevent="emit('greet', 1)"
+      @keydown.space.prevent="emit('greet', 1)"
     >
       <title>记录：随时记下，慢慢长大</title>
       <path
@@ -115,9 +122,12 @@ const emit = defineEmits<{ sound: [index: number] }>()
       role="button"
       tabindex="0"
       aria-label="AI 伙伴：一起拆解目标，开始行动"
-      @click="emit('sound', 2)"
-      @keydown.enter.prevent="emit('sound', 2)"
-      @keydown.space.prevent="emit('sound', 2)"
+      :class="{ greeting: active === 2 }"
+      @pointerenter="$event.pointerType === 'mouse' && emit('greet', 2)"
+      @focus="emit('greet', 2)"
+      @click="emit('greet', 2)"
+      @keydown.enter.prevent="emit('greet', 2)"
+      @keydown.space.prevent="emit('greet', 2)"
     >
       <title>AI 伙伴：一起拆解目标，开始行动</title>
       <path
@@ -153,9 +163,12 @@ const emit = defineEmits<{ sound: [index: number] }>()
       role="button"
       tabindex="0"
       aria-label="行动：让好想法真正发生"
-      @click="emit('sound', 3)"
-      @keydown.enter.prevent="emit('sound', 3)"
-      @keydown.space.prevent="emit('sound', 3)"
+      :class="{ greeting: active === 3 }"
+      @pointerenter="$event.pointerType === 'mouse' && emit('greet', 3)"
+      @focus="emit('greet', 3)"
+      @click="emit('greet', 3)"
+      @keydown.enter.prevent="emit('greet', 3)"
+      @keydown.space.prevent="emit('greet', 3)"
     >
       <title>行动：让好想法真正发生</title>
       <path
@@ -189,9 +202,12 @@ const emit = defineEmits<{ sound: [index: number] }>()
       role="button"
       tabindex="0"
       aria-label="资料：让积累随时可用"
-      @click="emit('sound', 4)"
-      @keydown.enter.prevent="emit('sound', 4)"
-      @keydown.space.prevent="emit('sound', 4)"
+      :class="{ greeting: active === 4 }"
+      @pointerenter="$event.pointerType === 'mouse' && emit('greet', 4)"
+      @focus="emit('greet', 4)"
+      @click="emit('greet', 4)"
+      @keydown.enter.prevent="emit('greet', 4)"
+      @keydown.space.prevent="emit('greet', 4)"
     >
       <title>资料：让积累随时可用</title>
       <path
@@ -242,6 +258,7 @@ svg {
   transform-origin: 50% 100%;
   cursor: pointer;
 }
+.buddy.greeting,
 .buddy:hover,
 .buddy:focus-visible {
   transform: translateY(-8px) rotate(-3deg);
@@ -257,6 +274,7 @@ svg {
   .buddy {
     transition: none;
   }
+  .buddy.greeting,
   .buddy:hover,
   .buddy:focus-visible {
     transform: none;
