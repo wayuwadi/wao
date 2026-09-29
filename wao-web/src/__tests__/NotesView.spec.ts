@@ -382,6 +382,31 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
+  it('展开全文时同步展开右侧图片栏，收起后恢复图片栏滚动限制', async () => {
+    const note = doc('expanded-images', '长文小记')
+    note.content = { version: 1, markdown: '正文\n\n![配图](/api/images/one/raw)', document: {
+      type: 'doc', content: [
+        { type: 'paragraph', content: [{ type: 'text', text: '正文' }] },
+        { type: 'image', attrs: { src: '/api/images/one/raw', alt: '配图' } },
+      ],
+    } }
+    useDataStore().docs[note.id] = note
+    const wrapper = await view()
+    const card = wrapper.get(`[data-note-id="${note.id}"]`)
+    const imageRail = card.get('.note-images')
+
+    expect(card.classes()).toContain('fixed-height')
+    expect(imageRail.classes()).not.toContain('expanded')
+    await card.get('.note-read-action').trigger('click')
+    expect(card.classes()).toContain('expanded')
+    expect(imageRail.classes()).toContain('expanded')
+
+    await card.get('.note-read-action').trigger('click')
+    expect(card.classes()).toContain('fixed-height')
+    expect(imageRail.classes()).not.toContain('expanded')
+    wrapper.unmount()
+  })
+
   it('聚合历史小记并按时间倒序，正文搜索和标签筛选可以组合', async () => {
     const data = useDataStore()
     data.docs.a = { ...doc('a', '旧想法', '2026-09-06T08:00:00'), tags: ['历史'] }
