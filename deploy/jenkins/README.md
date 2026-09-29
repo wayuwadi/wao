@@ -27,7 +27,7 @@ apply-controller-config.sh 随主发布同步 Jenkins 配置，并停用残留�
 
 ## 部署验证
 
-完整验证流程由 Jenkins 入口调用 deploy/jenkins/ci-validate.sh。改动应按影响范围完成静态检查及相称的本地验证；发布后的线上验收由用户负责。
+主分支 Jenkins 流水线由 `Jenkinsfile` 控制，始终执行发布范围判定和 `ci-preflight.sh`；按条件执行 `ci-build-release.sh`、`ci-deploy.sh`，以及运维配置同步。PR 不配置重复 Jenkins 门禁，改动按受影响范围完成本地静态检查及相称测试；发布后的线上业务验收由用户负责。
 
 ## 关联手册
 
