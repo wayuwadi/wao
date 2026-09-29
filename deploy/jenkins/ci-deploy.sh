@@ -378,9 +378,6 @@ if [ "${WAO_WEB_ONLY:-false}" = true ]; then
   exit $?
 fi
 
-if [ "$sync_jumpserver" = true ]; then
-  provision_jumpserver_asset_access || exit 1
-fi
 prepare_cloud_routing || exit 1
 if ! wait_until_ready gateway_ready_from_cloud; then
   echo 'Linux2 Gateway 未通过数据库就绪检查；拒绝原地发布。' >&2
@@ -433,6 +430,14 @@ if ! retire_cloud_sentinel; then
 fi
 
 if [ "$sync_jumpserver" = true ]; then
+  # Linux2 deployment may create or rotate the persistent JumpServer key.
+  # Publish the resulting public key to the cloud only after that deployment,
+  # so verification uses the same key on both assets.
+  if ! provision_jumpserver_asset_access; then
+    set_status linux2_status failed
+    set_status linux2_detail 'JumpServer 云入口 SSH 授权失败'
+    exit 1
+  fi
   jumpserver_verify_log="$WAO_RUN_TEMP/jumpserver-verify.log"
   if ! verify_jumpserver_assets >"$jumpserver_verify_log" 2>&1; then
     cat "$jumpserver_verify_log"
