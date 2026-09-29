@@ -105,7 +105,7 @@ class VerifySshTest(unittest.TestCase):
 
         self.paramiko.SSHClient.side_effect = factory
         with self.assertRaisesRegex(RuntimeError, "SSH command failed"):
-            self.verify(self.gateway)
+            self.verify(self.master)
 
 
 if __name__ == "__main__":

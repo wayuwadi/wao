@@ -4,13 +4,15 @@ root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/deploy/scripts" "$tmp/bin"
-cp "$root/deploy/scripts/validate-deployment-node.sh" "$tmp/deploy/scripts/"
+cp "$root/deploy/scripts/validate-deployment-node.sh" \
+  "$root/deploy/scripts/image-content.sh" "$tmp/deploy/scripts/"
 touch "$tmp/deploy/.env" "$tmp/deploy/docker-compose-master.yml"
 cat > "$tmp/bin/docker" <<'SH'
 #!/bin/sh
 case "$1" in
   info) exit 0 ;;
   compose) for arg in "$@"; do last="$arg"; done; echo "$last" ;;
+  image) echo 'linux/amd64 {"Config":{"Env":["PATH=/usr/local/bin"]}} ["sha256:layer"]' ;;
   inspect)
     case "$3" in
       *Config.Image*) echo "$4:test" ;;
