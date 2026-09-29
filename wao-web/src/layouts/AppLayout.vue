@@ -21,7 +21,7 @@ import NotificationCenter from '@/components/notifications/NotificationCenter.vu
 import FloatingChat from '@/components/chat/FloatingChat.vue'
 import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
 import ReleaseHighlightsHost from '@/components/release/ReleaseHighlightsHost.vue'
-import { externalAppItemId, tabFromRoute } from '@/config/nav'
+import { externalAppItemId, RETIRED_MODULE_IDS, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
 import { useFloatingTabsStore } from '@/stores/floatingTabs'
@@ -53,7 +53,6 @@ const router = useRouter()
 const nav = useNavStore()
 const tabs = useTabsStore()
 const floatingTabs = useFloatingTabsStore()
-const assistantTarget = ref<HTMLElement | null>(null)
 const ui = useUiStore()
 const data = useDataStore()
 const preferences = usePreferenceStore()
@@ -99,7 +98,7 @@ const TRACKED_FEATURES = new Set([
   'games',
   'tianren',
   'settings',
-])
+].filter((id) => !RETIRED_MODULE_IDS.has(id as ModuleId)))
 const contentRef = ref<HTMLElement | null>(null)
 const pageBodyRef = ref<HTMLElement | null>(null)
 
@@ -405,11 +404,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <div class="page-stage">
           <PageSectionNav v-if="route.path !== '/'" :root="pageBodyRef" :scroll-container="contentRef" />
           <div ref="pageBodyRef" class="page-body">
-            <TabWorkspace @assistant-target="assistantTarget = $event" />
-            <!-- 只挂在受保护应用壳内；同一实例在常驻页面与浮层之间移动，保持接收中的回复。 -->
-            <Teleport :to="assistantTarget || 'body'" :disabled="!assistantTarget">
-              <AiAssistantPanel v-model="ui.assistantOpen" :embedded="!!assistantTarget" />
-            </Teleport>
+            <TabWorkspace />
+            <AiAssistantPanel v-model="ui.assistantOpen" />
           </div>
         </div>
         <SiteFooter reserve-mobile-actions />
@@ -747,16 +743,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .page-stage > .page-body {
   width: auto;
   flex: 1 1 0;
-}
-.page-stage:has(#chatgpt-workspace) {
-  flex: 1 1 0;
-  min-height: 420px;
-  align-items: stretch;
-}
-.page-body:has(#chatgpt-workspace) {
-  position: relative;
-  display: flex;
-  min-height: 0;
 }
 @media (min-width: 821px) {
   .content:has(.notes-page) {

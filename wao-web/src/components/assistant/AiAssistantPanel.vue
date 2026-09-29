@@ -93,7 +93,7 @@ const sourceFilter = reactive<{
   dateFrom: string
   dateTo: string
   projectIds: string[]
-}>({ assetTypes: ['memory', 'chat', 'knowledge', 'project', 'task'], chatIds: [], senders: [], dateFrom: '', dateTo: '', projectIds: [] })
+}>({ assetTypes: ['chat', 'knowledge', 'project', 'task'], chatIds: [], senders: [], dateFrom: '', dateTo: '', projectIds: [] })
 const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查本地 Codex…' })
 const capabilities = ref<AiCapability[]>([])
 function initialCapability() {
@@ -116,7 +116,6 @@ const QUICK_COMMANDS = [
 ]
 
 const ASSET_TYPES: Array<{ id: AssistantAssetType; name: string; icon: string }> = [
-  { id: 'memory', name: '个人记忆', icon: 'ri-brain-line' },
   { id: 'chat', name: '群聊', icon: 'ri-chat-3-line' },
   { id: 'knowledge', name: '知识库', icon: 'ri-book-open-line' },
   { id: 'project', name: '项目', icon: 'ri-stack-line' },
@@ -231,7 +230,7 @@ function toggleFilterValue(values: string[], value: string) {
 }
 
 function resetSourceFilter() {
-  sourceFilter.assetTypes.splice(0, sourceFilter.assetTypes.length, 'memory', 'chat', 'knowledge', 'project', 'task')
+  sourceFilter.assetTypes.splice(0, sourceFilter.assetTypes.length, 'chat', 'knowledge', 'project', 'task')
   sourceFilter.chatIds.splice(0)
   sourceFilter.senders.splice(0)
   sourceFilter.projectIds.splice(0)

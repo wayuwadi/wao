@@ -1,7 +1,6 @@
 package cn.wayuwa.wao.common;
 
 import cn.wayuwa.wao.auth.FeishuLoginException;
-import cn.wayuwa.wao.auth.WechatLoginException;
 import cn.wayuwa.wao.feishu.FeishuApiException;
 import cn.wayuwa.wao.service.NeteaseMusicApiException;
 import java.util.Optional;
@@ -92,13 +91,6 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleFeishuLogin(FeishuLoginException exception) {
         log.warn("Feishu login failed: {}", exception.getMessage());
         return ApiResponse.fail(50201, exception.getMessage());
-    }
-
-    @ExceptionHandler(WechatLoginException.class)
-    @ResponseStatus(HttpStatus.BAD_GATEWAY)
-    public ApiResponse<Void> handleWechatLogin(WechatLoginException exception) {
-        log.warn("Wechat login failed: {}", exception.getMessage());
-        return ApiResponse.fail(50202, exception.getMessage());
     }
 
     @ExceptionHandler(FeishuApiException.class)

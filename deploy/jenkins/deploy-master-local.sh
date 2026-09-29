@@ -60,7 +60,7 @@ if [ "$sync_jumpserver" != false ]; then
     sh "$project_root/deploy/jumpserver/deploy.sh" "$project_root"
 fi
 
-# Read-only inventory is independent of the application containers.
+# 一次性退役基础设施清单采集器；保留发布健康监控。
 if [ "$sync_infrastructure" != false ]; then
-  sudo -n sh "$project_root/deploy/infrastructure/install.sh"
+  sudo -n sh "$project_root/deploy/infrastructure/retire-overview.sh"
 fi

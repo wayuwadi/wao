@@ -551,7 +551,7 @@ onBeforeUnmount(() => {
 
 function goProjects() { router.push('/projects') }
 function goHome() { router.push('/') }
-function goRuns() { router.push('/ai-sessions') }
+function goRuns() { router.push({ path: '/', query: { console: 'runs' } }) }
 </script>
 
 <template>

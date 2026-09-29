@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 import {
   archiveMemory,
   createMemory,
@@ -9,7 +8,7 @@ import {
   reviseMemory,
   type MemoryDocument,
   type SaveMemoryPayload,
-} from '@/api/unifiedMemories'
+} from '@/api/decisions'
 import { toast } from '@/composables/toast'
 import { useSessionStore } from '@/stores/session'
 import { formatDecisionContent, parseDecisionContent } from '@/utils/decisionContent'
@@ -165,13 +164,7 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const result = await fetchMemories({
-      scopeType: 'personal',
-      scopeId: session.userId,
-      category: 'decision',
-      state: 'active',
-      query: requestedQuery || undefined,
-    })
+    const result = await fetchMemories({ query: requestedQuery || undefined })
     if (!isCurrent() || sequence !== loadSequence || requestedQuery !== query.value.trim()) return
     decisions.value = result
   } catch (error) {
@@ -360,7 +353,6 @@ onMounted(load)
     </div>
     <section class="toolbar">
       <label class="search"><i class="ri-search-line"></i><input v-model="query" placeholder="搜索情境、决定或原因" /></label>
-      <RouterLink to="/memories?scope=personal" class="memory-link"><i class="ri-history-line"></i>在记忆中心查看完整版本</RouterLink>
     </section>
 
     <section v-if="loading" class="state-card"><i class="ri-loader-4-line spin"></i><span>正在读取你的决策…</span></section>

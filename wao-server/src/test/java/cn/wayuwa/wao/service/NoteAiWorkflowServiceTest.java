@@ -92,9 +92,9 @@ class NoteAiWorkflowServiceTest {
     }
 
     @Test void defaultParallelModeStartsSelectedStagesTogether() {
-        String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。";
+        String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2);
         service.beginIfRequested("m1", note("m1", 1, body),
-                new CreateNoteRequest(null, List.of(), null, null, false, true, true));
+                new CreateNoteRequest(null, List.of(), null, null, true, true, true));
         ArgumentCaptor<Workflow> inserted = ArgumentCaptor.forClass(Workflow.class);
         verify(workflows).insertIfAbsent(inserted.capture());
         when(workflows.lock("d1")).thenReturn(inserted.getValue());
@@ -119,7 +119,7 @@ class NoteAiWorkflowServiceTest {
     }
 
     @Test void parallelModeRespectsTheSavedPerMemberConcurrencyLimit() {
-        String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。";
+        String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2);
         Workflow workflow = pendingAll("d1", "m1");
         when(workflows.lock("d1")).thenReturn(workflow);
         when(workflows.countRunningStages("m1")).thenReturn(0, 1, 2);
@@ -141,7 +141,7 @@ class NoteAiWorkflowServiceTest {
     }
 
     @Test void serialPreferenceStartsOnlyTheFirstSelectedStage() {
-        String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。";
+        String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2);
         Workflow workflow = pendingAll("d1", "m1");
         when(workflows.lock("d1")).thenReturn(workflow);
         when(preferences.find("m1", "note-ai-defaults-v1"))
@@ -161,7 +161,7 @@ class NoteAiWorkflowServiceTest {
     }
 
     private static Workflow pendingAll(String docId, String memberId) {
-        return new Workflow(docId, memberId, 1, "原题", digestForTest("今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。"),
+        return new Workflow(docId, memberId, 1, "原题", digestForTest("今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2)),
                 "PENDING", null, "PENDING", null, "PENDING", null, null, null, null);
     }
 

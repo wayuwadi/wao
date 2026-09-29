@@ -25,36 +25,31 @@ import org.springframework.util.StringUtils;
 @Service
 public class FunctionHealthService {
     private static final int WINDOW_DAYS = 30;
+    private static final Set<String> RETIRED_FEATURES = Set.of(
+            "personal-principles", "crawler-capabilities", "account-resources", "infrastructure",
+            "ledger", "english-learning", "vocabulary", "food", "weekly-report", "devices",
+            "games", "data-center", "chatgpt", "appearance", "memory", "ai-sessions",
+            "updates", "action-plans", "workspaces");
     private static final List<String> FEATURES = List.of(
-            "home", "chatgpt", "ai-sessions", "navigation", "updates", "projects", "ideas", "decisions", "todo", "calendar", "workday-rhythm",
-            "action-plans", "personal-principles", "appearance", "food", "workspaces", "weekly-report", "life-review",
-            "knowledge", "memory", "english-learning", "vocabulary", "skills", "skill-connections",
-            "drawings", "files", "automation", "crawler-capabilities", "account-resources", "text-polish", "data-center", "dashboard",
-            "system-reports", "request-monitoring", "infrastructure", "devices", "vault", "ledger", "games", "tianren", "settings");
+            "home", "navigation", "projects", "ideas", "decisions", "todo", "calendar", "workday-rhythm",
+            "life-review", "knowledge", "skills", "skill-connections", "drawings", "files", "automation",
+            "text-polish", "dashboard", "system-reports", "request-monitoring", "vault", "tianren", "settings");
     private static final Set<String> FEATURE_SET = Set.copyOf(FEATURES);
     private static final Map<String, String> SCOPE_FEATURE = Map.ofEntries(
-            Map.entry("chatgpt", "chatgpt"), Map.entry("home", "home"), Map.entry("ai-sessions", "ai-sessions"), Map.entry("navigation", "navigation"), Map.entry("updates", "updates"),
+            Map.entry("home", "home"), Map.entry("navigation", "navigation"),
             Map.entry("project", "projects"), Map.entry("projects", "projects"),
             Map.entry("task", "projects"), Map.entry("tasks", "projects"),
             Map.entry("ideas", "ideas"), Map.entry("decision", "decisions"),
             Map.entry("decisions", "decisions"), Map.entry("todo", "todo"), Map.entry("calendar", "calendar"),
             Map.entry("rhythm", "workday-rhythm"), Map.entry("workday", "workday-rhythm"),
-            Map.entry("workday-rhythm", "workday-rhythm"), Map.entry("action-plan", "action-plans"),
-            Map.entry("personal-principles", "personal-principles"), Map.entry("appearance", "appearance"), Map.entry("food", "food"),
-            Map.entry("workspace", "workspaces"), Map.entry("weekly-report", "weekly-report"),
-            Map.entry("life-review", "life-review"), Map.entry("knowledge", "knowledge"),
-            Map.entry("memory", "memory"), Map.entry("english", "english-learning"),
-            Map.entry("vocabulary", "vocabulary"), Map.entry("skill-market", "skills"),
+            Map.entry("workday-rhythm", "workday-rhythm"),
+            Map.entry("life-review", "life-review"), Map.entry("knowledge", "knowledge"), Map.entry("skill-market", "skills"),
             Map.entry("skills", "skills"), Map.entry("skill-connections", "skill-connections"),
             Map.entry("drawings", "drawings"), Map.entry("files", "files"),
-            Map.entry("automation", "automation"), Map.entry("crawler", "crawler-capabilities"),
-            Map.entry("crawler-capabilities", "crawler-capabilities"), Map.entry("polish", "text-polish"),
-            Map.entry("account-resources", "account-resources"),
-            Map.entry("data-center", "data-center"), Map.entry("dashboard", "dashboard"),
+            Map.entry("automation", "automation"), Map.entry("polish", "text-polish"), Map.entry("dashboard", "dashboard"),
             Map.entry("report", "system-reports"), Map.entry("monitoring", "request-monitoring"),
-            Map.entry("infrastructure", "infrastructure"),
-            Map.entry("http", "request-monitoring"), Map.entry("devices", "devices"),
-            Map.entry("vault", "vault"), Map.entry("ledger", "ledger"), Map.entry("games", "games"), Map.entry("tianren", "tianren"),
+            Map.entry("http", "request-monitoring"),
+            Map.entry("vault", "vault"), Map.entry("tianren", "tianren"),
             Map.entry("settings", "settings"));
 
     private final FunctionProductMapper products;
@@ -85,7 +80,7 @@ public class FunctionHealthService {
         LocalDateTime now = LocalDateTime.now();
         Map<String, FunctionUsageSummary> summaries = new LinkedHashMap<>();
         for (FunctionUsageSummary row : usage.summarize(memberId, now.minusDays(WINDOW_DAYS))) {
-            summaries.put(row.getFeatureId(), row);
+            if (FEATURE_SET.contains(row.getFeatureId())) summaries.put(row.getFeatureId(), row);
         }
         Map<String, FunctionProductEntity> states = new LinkedHashMap<>();
         for (FunctionProductEntity product : products.selectBatchIds(FEATURES)) {
@@ -129,7 +124,7 @@ public class FunctionHealthService {
         for (FunctionIterationInput input : inputs.stream().limit(50).toList()) {
             if (input == null || !StringUtils.hasText(input.commitSha()) || !StringUtils.hasText(input.scope())) continue;
             String featureId = SCOPE_FEATURE.get(input.scope().trim().toLowerCase(Locale.ROOT));
-            if (featureId == null) continue;
+            if (featureId == null || RETIRED_FEATURES.contains(featureId)) continue;
             products.ensure(featureId);
             String subject = StringUtils.hasText(input.subject()) ? input.subject().trim() : input.scope().trim();
             if (iterations.insertIgnore(runId, featureId, limit(input.commitSha(), 64), limit(subject, 255)) == 1) {

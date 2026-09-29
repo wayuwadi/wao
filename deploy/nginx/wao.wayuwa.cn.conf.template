@@ -179,28 +179,6 @@ server {
         add_header X-WAO-API-Route jumpserver-health-tunnel always;
     }
 
-    location = /_wao_infrastructure_auth {
-        internal;
-        proxy_pass https://wao_gateway/api/auth/infrastructure;
-        proxy_ssl_verify off;
-        proxy_pass_request_body off;
-        proxy_set_header Content-Length "";
-        proxy_set_header Cookie $http_cookie;
-        proxy_set_header Host $host;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 10s;
-    }
-    location = /api/infrastructure/overview {
-        auth_request /_wao_infrastructure_auth;
-        limit_except GET { deny all; }
-        proxy_pass http://127.0.0.1:18782/overview;
-        proxy_set_header Cookie "";
-        proxy_set_header Authorization "";
-        proxy_connect_timeout 3s;
-        proxy_read_timeout 15s;
-        add_header Cache-Control "no-store" always;
-    }
-
     # WeKnora uses an isolated runtime on Linux2. Every entry, API and file
     # request must pass WAO authentication before reaching that runtime.
     location = /_wao_weknora_auth {
@@ -506,15 +484,6 @@ server {
         add_header Cache-Control "no-cache";
     }
 
-    # 旧游戏入口收敛到 WAO 原生游戏厅；无真实接口的 Insight 明确退役。
-    location = /game {
-        return 308 /games;
-    }
-
-    location ^~ /game/ {
-        return 308 /games;
-    }
-
     # 625 word 使用 WAO 隔离的单文件网页托管入口。
     location = /625word {
         return 302 /api/pages/625word;
@@ -622,26 +591,6 @@ server {
         add_header X-WAO-API-Route dual-gateway-ai-long always;
     }
 
-    # 周报生成只写入短期只读分析队列，最长等待五分钟；POST 不允许超时后自动重放。
-    location = /api/weekly-report/generate {
-        proxy_pass https://wao_gateway;
-        proxy_http_version 1.1;
-        proxy_ssl_verify off;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 330s;
-        proxy_send_timeout 120s;
-        proxy_next_upstream off;
-        add_header X-Content-Type-Options nosniff always;
-        add_header Referrer-Policy strict-origin-when-cross-origin always;
-        add_header X-Frame-Options SAMEORIGIN always;
-        add_header X-WAO-API-Route dual-gateway-ai-long always;
-    }
-
     # 人生回顾生成复用本地 Codex 五分钟只读队列；POST 不允许超时后自动重放。
     location = /api/life-reviews/generate {
         proxy_pass https://wao_gateway;
@@ -681,27 +630,6 @@ server {
         add_header Referrer-Policy strict-origin-when-cross-origin always;
         add_header X-Frame-Options SAMEORIGIN always;
         add_header X-WAO-API-Route dual-gateway-ai always;
-    }
-
-    # 微信公众号令牌受出口 IP 白名单约束；认证、回调和配置验证统一固定到 Linux 主节点，
-    # 避免双节点轮流要求不同白名单。配置读取与保存仍走共享数据库和普通双节点。
-    location ~ ^/api/(?:auth/wechat/official(?:/|$)|settings/login/wechat-official/verify$) {
-        proxy_pass https://wao_ai_gateway;
-        proxy_http_version 1.1;
-        proxy_ssl_verify off;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 30s;
-        proxy_send_timeout 30s;
-        proxy_next_upstream off;
-        add_header X-Content-Type-Options nosniff always;
-        add_header Referrer-Policy strict-origin-when-cross-origin always;
-        add_header X-Frame-Options SAMEORIGIN always;
-        add_header X-WAO-API-Route wechat-official-master always;
     }
 
     # 只有会读取集中凭据或访问供应商的接口固定到 Linux VPN 出口。AI 入队、目标创建、状态轮询、

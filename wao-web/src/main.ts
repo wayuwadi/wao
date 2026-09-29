@@ -9,9 +9,11 @@ import './styles/knowledge-icons.css'
 import './assets/base.css'
 import { useTheme } from './composables/theme'
 import { installPreloadErrorRecovery } from './utils/preloadErrorRecovery'
+import { retireUnusedStorage } from './utils/retireUnusedStorage'
 
 // 分包失败只提示手动恢复，避免节点切换导致页面刷新并丢失未保存输入。
 installPreloadErrorRecovery()
+retireUnusedStorage()
 if (location.pathname === '/desktop-pet') document.documentElement.classList.add('desktop-pet-surface')
 const app = createApp(App)
 

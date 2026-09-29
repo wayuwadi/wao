@@ -4,6 +4,7 @@ import {
   DEFAULT_EXTERNAL_APPS,
   DEFAULT_BUILTIN_MENUS,
   MODULES,
+  RETIRED_MODULE_IDS,
   PERSONAL_ITEMS,
   externalAppIdFromItem,
   externalAppItemId,
@@ -124,6 +125,7 @@ export const useNavStore = defineStore('nav', () => {
           item.id !== 'settings' &&
           item.id !== 'chat' &&
           item.id !== 'chat-reviews' &&
+          !RETIRED_MODULE_IDS.has(item.id as ModuleId) &&
           !known.has(item.id as BuiltinMenuConfig['id']),
       )
       .map(
@@ -307,7 +309,9 @@ export const useNavStore = defineStore('nav', () => {
         ])
         if (token !== generation) return
         const parsed = personal.layout ? validateNavigationLayout(personal.layout) : null
-        globalBuiltin.value = builtin.menus.map(normalizeBuiltinMenu)
+        globalBuiltin.value = builtin.menus
+          .filter((menu) => !RETIRED_MODULE_IDS.has(menu.id))
+          .map(normalizeBuiltinMenu)
         globalExternal.value = external.apps.map(normalizeExternalApp)
         personalLayout.value = parsed
         layoutRevision.value = personal.revision
@@ -345,7 +349,9 @@ export const useNavStore = defineStore('nav', () => {
   }
 
   function applyBuiltinMenus(menus: BuiltinMenuConfig[]) {
-    globalBuiltin.value = menus.map(normalizeBuiltinMenu)
+    globalBuiltin.value = menus
+      .filter((menu) => !RETIRED_MODULE_IDS.has(menu.id))
+      .map(normalizeBuiltinMenu)
     builtinMenusState.value = 'loaded'
     builtinMenusError.value = ''
     rebuildLayout()

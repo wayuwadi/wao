@@ -187,19 +187,6 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void wechatOfficialAuthenticationUsesOneWhitelistedMasterEgress() throws IOException {
-        String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
-        String location = section(nginx,
-                "location ~ ^/api/(?:auth/wechat/official", "\n    }");
-
-        assertThat(location)
-                .contains("settings/login/wechat-official/verify$")
-                .contains("proxy_pass https://wao_ai_gateway;")
-                .contains("proxy_next_upstream off;")
-                .contains("X-WAO-API-Route wechat-official-master always;");
-    }
-
-    @Test
     void aiOrchestrationReadsAndWritesUseBothGateways() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String orchestrationLocation = section(nginx,
@@ -439,8 +426,6 @@ class DeploymentRoutingConfigTest {
                 "prepare_cloud_routing() {", "\n}\n\nstage_cloud_static() {");
 
         assertThat(nginx)
-                .contains("location = /game {")
-                .contains("return 308 /games;")
                 .contains("location = /insight {")
                 .contains("return 410;")
                 .contains("include /etc/nginx/wao-external-apps.d/*.conf;");

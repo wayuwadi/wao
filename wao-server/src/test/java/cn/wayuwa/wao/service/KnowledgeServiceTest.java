@@ -472,27 +472,6 @@ class KnowledgeServiceTest {
     }
 
     @Test
-    void sharedMemoryBecomesAVisibleEditableKnowledgeDocument() {
-        when(kbMapper.selectById(KnowledgeService.MEMORY_KB_ID))
-                .thenReturn(kb(KnowledgeService.MEMORY_KB_ID));
-        when(folderMapper.selectById(KnowledgeService.MEMORY_FOLDER_ID))
-                .thenReturn(folder(KnowledgeService.MEMORY_FOLDER_ID, KnowledgeService.MEMORY_KB_ID));
-        when(docMapper.selectCount(any())).thenReturn(0L);
-        when(docMapper.selectList(any())).thenReturn(List.of());
-
-        DocDto dto = service.createSharedMemory("已确认的工作职责", "负责 WAO 产品与交付。", "responsibility", "wg");
-
-        assertThat(dto.id()).hasSize(32).startsWith("m");
-        assertThat(dto.kbId()).isEqualTo(KnowledgeService.MEMORY_KB_ID);
-        assertThat(dto.folderId()).isEqualTo(KnowledgeService.MEMORY_FOLDER_ID);
-        assertThat(dto.author()).isEqualTo("wg");
-        assertThat(dto.blocks()).extracting(DocBlockDto::call, DocBlockDto::p)
-                .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("由 Codex 通过 WAO 记忆 MCP 保存 · 分类：responsibility", null),
-                        org.assertj.core.groups.Tuple.tuple(null, "负责 WAO 产品与交付。"));
-    }
-
-    @Test
     void createDocInLegacyProjectKbDoesNotInheritProject() {
         KbEntity projectKb = kb("k1");
         projectKb.setProjectId("p1");

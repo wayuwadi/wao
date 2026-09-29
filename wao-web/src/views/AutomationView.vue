@@ -388,7 +388,7 @@ onMounted(() => {
             <a
               v-if="rn.aiRunId"
               class="result-link"
-              :href="`/ai-sessions?session=${encodeURIComponent(rn.aiRunId)}`"
+              :href="`/?console=runs&run=${encodeURIComponent(rn.aiRunId)}`"
               @click.stop
               >查看执行结果</a
             >
@@ -479,7 +479,7 @@ onMounted(() => {
               <a
                 v-if="r.aiRunId"
                 class="result-link"
-                :href="`/ai-sessions?session=${encodeURIComponent(r.aiRunId)}`"
+                :href="`/?console=runs&run=${encodeURIComponent(r.aiRunId)}`"
                 >查看执行结果</a
               >
             </div>

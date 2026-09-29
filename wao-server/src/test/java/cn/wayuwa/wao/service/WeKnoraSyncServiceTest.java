@@ -14,6 +14,12 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 class WeKnoraSyncServiceTest {
+    @Test void retiredSourcesAreLimitedToRemovedModules() {
+        assertTrue(WeKnoraSyncService.retiredSource("memory:old:1"));
+        assertTrue(WeKnoraSyncService.retiredSource("calendar:event:1"));
+        assertFalse(WeKnoraSyncService.retiredSource("project-memory:active:1"));
+        assertFalse(WeKnoraSyncService.retiredSource("docs:active:1"));
+    }
     final JdbcTemplate db=mock(JdbcTemplate.class);
     final WeKnoraSourceService source=mock(WeKnoraSourceService.class);
     final WeKnoraClient client=mock(WeKnoraClient.class);

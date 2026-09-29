@@ -69,8 +69,9 @@ describe('真实天气与成员设置', () => {
   })
   it('首页天气独立于日历隐藏设置，只显示短城市、真实天气和图标', async () => {
     api.fetchPreference.mockResolvedValue(JSON.stringify({ ...initial(), location: { ...city, name: '上海 · 上海 · 中国' }, rhythmVisible: false, calendarVisible: false }))
-    api.fetchWeather.mockResolvedValue({ fetchedAt: new Date().toISOString(), days: [{ ...forecast().days[0], code: 61 }] })
-    const wrapper = mount(WeatherPanel, { props: { surface: 'calendar', date: '2026-09-04', toolbar: true, glance: true } })
+    const today = new Date().toISOString().slice(0, 10)
+    api.fetchWeather.mockResolvedValue({ fetchedAt: new Date().toISOString(), days: [{ ...forecast().days[0], date: today, code: 61 }] })
+    const wrapper = mount(WeatherPanel, { props: { surface: 'calendar', date: today, toolbar: true, glance: true } })
     await flushPromises()
     expect(api.fetchWeather).toHaveBeenCalled()
     expect(wrapper.get('.weather-glance-line').text()).toContain('🌧️上海 · 有雨')

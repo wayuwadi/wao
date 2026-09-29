@@ -1,5 +1,5 @@
 import type { ModuleId } from '@/types'
-import { MODULES, type NavItemId } from './nav'
+import { MODULES, RETIRED_MODULE_IDS, type NavItemId } from './nav'
 import type { NavigationLayout } from './navigationLayout'
 
 export type NavigationCatalogModuleId = Exclude<ModuleId, 'navigation' | 'chat' | 'chat-reviews'>
@@ -23,24 +23,9 @@ export interface NavigationCatalogSection {
  */
 const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   {
-    id: 'chatgpt',
-    description: '直接提问、继续日常对话，聊天记录保存在个人历史中。',
-    keywords: ['ChatGPT', '问答', '聊天'],
-  },
-  {
-    id: 'ai-sessions',
-    description: '创建 AI 任务、查看执行结果，或继续已有任务的对话。',
-    keywords: ['Codex', 'session', 'AI Run', 'AiRun', '会话', 'AI任务', 'AI 任务', '执行历史'],
-  },
-  {
     id: 'projects',
-    description: '管理项目、任务、成员和 AI 工作流。',
-    keywords: ['任务', '团队'],
-  },
-  {
-    id: 'updates',
-    description: '按时间线查看 WAO 已经完成并验收的功能变化。',
-    keywords: ['更新', '日记', '版本', '发布'],
+    description: '管理项目、任务、成员和 AI 工作流，查看执行结果。',
+    keywords: ['任务', '团队', 'AI任务', 'AI 任务', 'AI Run', '执行历史'],
   },
   {
     id: 'changelog',
@@ -59,33 +44,11 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     description: '规划工作日节奏，并记录每天的真实完成情况。',
     keywords: ['今天'],
   },
-  { id: 'action-plans', description: '维护需要长期推进的行动计划和打卡。', keywords: ['计划'] },
-  {
-    id: 'personal-principles',
-    description: '多人制定准则，分别确认参与并记录自己的实践。',
-    keywords: ['准则', '纪律', '红线', '建议'],
-  },
   {
     id: 'decisions',
     description: '记录在相似情境中应如何选择，并保留决定依据。',
     keywords: ['决定', '选择', '经验'],
   },
-  {
-    id: 'appearance',
-    description: '管理个人电子衣库、实拍、穿搭、个人档案和穿着复盘。',
-    keywords: ['衣服', '上衣', '裤子', '鞋子', '外套', '床品', '床单被罩', '搭配', '衣柜'],
-  },
-  {
-    id: 'food',
-    description: '安排工作日与休息日三餐，记录实际饮食、餐后感受和备餐事项。',
-    keywords: ['三餐', '吃饭', '备餐', '黄帝内经'],
-  },
-  {
-    id: 'workspaces',
-    description: '整理个人项目常用链接与工作资料。',
-    keywords: ['链接', '空间'],
-  },
-  { id: 'weekly-report', description: '根据真实工作记录生成和保存周报。', keywords: ['总结'] },
   { id: 'life-review', description: '沿时间线回看重要经历、变化和结论。', keywords: ['人生'] },
   { id: 'knowledge', description: '按知识库、文件夹和文档组织长期资料。', keywords: ['文档'] },
   {
@@ -93,13 +56,6 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     description: '收集截图，选图并附一句需求交给 AI 参考。',
     keywords: ['素材库', '视觉库', '灵感', '图片', '截图', '参考图'],
   },
-  {
-    id: 'memory',
-    description: '记下希望 AI 参考的偏好、背景和经验，管理共享记忆与 AI 读取权限。',
-    keywords: ['mcp', 'codex', '上下文'],
-  },
-  { id: 'english-learning', description: '使用真实学习材料完成英语训练。', keywords: ['英语'] },
-  { id: 'vocabulary', description: '收集单词、释义和复习进度。', keywords: ['背词'] },
   {
     id: 'skills',
     description: '在 WAO-HUB 发现 Skill，创造、上传和分享宠物。',
@@ -123,24 +79,9 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     keywords: ['流程', '定时任务', '自动任务', '自动化任务'],
   },
   {
-    id: 'crawler-capabilities',
-    description: '集中管理后续自动化任务可引用的真实爬虫源码。',
-    keywords: ['爬虫', '脚本', '采集'],
-  },
-  {
-    id: 'account-resources',
-    description: '集中管理团队共用的平台账号、登录手机号和短信验证码。',
-    keywords: ['账号', '共享账号', '团队账号', '平台账号', '手机号', '验证码', '短信'],
-  },
-  {
     id: 'text-polish',
     description: '用可编辑的方法提示词润色长文，并回看每次前后对照。',
     keywords: ['润色', '改写', '表达'],
-  },
-  {
-    id: 'data-center',
-    description: '盘点 WAO 已保存的数据、记录量、最近写入时间与采集边界。',
-    keywords: ['数据源', '目录', '采集'],
   },
   {
     id: 'dashboard',
@@ -153,32 +94,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     description: '检查接口请求、性能与失败情况。',
     keywords: ['监控', '性能'],
   },
-  {
-    id: 'infrastructure',
-    description: '查看三台服务器的资源余量、部署应用与历史趋势。',
-    keywords: ['基础设施', '服务器', 'Linux', 'Jenkins', 'JumpServer', 'WeKnora', '磁盘', '内存'],
-  },
-  {
-    id: 'devices',
-    description: '检测本机摄像头和麦克风，并完成实时预览与连通调试。',
-    keywords: [
-      '摄像头',
-      '麦克风',
-      '相机',
-      '音频',
-      '测试摄像头',
-      '测试麦克风',
-      '检测摄像头',
-      '检测麦克风',
-    ],
-  },
   { id: 'vault', description: '安全管理需要按需查看的账号资料。', keywords: ['密码'] },
-  {
-    id: 'ledger',
-    description: '和兄弟逐笔核对旧账、烂账与未来账，记录结算和到期安排。',
-    keywords: ['账务', '记账', '财务规划', '明账'],
-  },
-  { id: 'games', description: '打开使用服务端真实存档的小游戏。', keywords: ['游戏'] },
   {
     id: 'pet-world',
     description: '和张三丰一起探索松风庭院，位置保存在本浏览器。',
@@ -207,7 +123,7 @@ const DOMAINS: Array<{
     label: '项目',
     icon: 'ri-stack-line',
     description: '推进项目，回顾行动与成果。',
-    ids: ['projects', 'action-plans', 'weekly-report', 'workspaces', 'ideas'],
+    ids: ['projects', 'ideas'],
   },
   {
     id: 'knowledge',
@@ -217,12 +133,9 @@ const DOMAINS: Array<{
     ids: [
       'knowledge',
       'reference-images',
-      'memory',
       'files',
       'drawings',
       'decisions',
-      'english-learning',
-      'vocabulary',
     ],
   },
   {
@@ -231,13 +144,10 @@ const DOMAINS: Array<{
     icon: 'ri-sparkling-line',
     description: '对话、执行与自动化工作。',
     ids: [
-      'chatgpt',
-      'ai-sessions',
       'text-polish',
       'automation',
       'skills',
       'skill-connections',
-      'crawler-capabilities',
     ],
   },
   {
@@ -246,11 +156,7 @@ const DOMAINS: Array<{
     icon: 'ri-heart-line',
     description: '日常生活、个人回顾与休闲。',
     ids: [
-      'personal-principles',
-      'appearance',
-      'food',
       'life-review',
-      'games',
       'pet-world',
       'tianren',
     ],
@@ -261,15 +167,10 @@ const DOMAINS: Array<{
     icon: 'ri-server-line',
     description: '账号资源、服务运行与数据。',
     ids: [
-      'infrastructure',
       'dashboard',
       'request-monitoring',
       'system-reports',
-      'data-center',
-      'account-resources',
       'vault',
-      'ledger',
-      'devices',
     ],
   },
   {
@@ -277,13 +178,13 @@ const DOMAINS: Array<{
     label: '设置与帮助',
     icon: 'ri-settings-3-line',
     description: '个人偏好与产品更新。',
-    ids: ['settings', 'updates', 'changelog'],
+    ids: ['settings', 'changelog'],
   },
 ]
 const details = new Map(CATALOG_DETAILS.map((item) => [item.id, item]))
 export const NAVIGATION_CATALOG: NavigationCatalogSection[] = DOMAINS.map((domain) => ({
   ...domain,
-  items: domain.ids.map(
+  items: domain.ids.filter((id) => !RETIRED_MODULE_IDS.has(id)).map(
     (id) =>
       details.get(id) ?? {
         id,

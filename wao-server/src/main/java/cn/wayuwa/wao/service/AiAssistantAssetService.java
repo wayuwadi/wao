@@ -18,7 +18,6 @@ import java.util.regex.Pattern;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.domain.KbEntity;
-import cn.wayuwa.wao.domain.PersonalMemoryEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AssistantSourceFilter;
@@ -28,7 +27,6 @@ import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.FeishuSenderDto;
 import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
-import cn.wayuwa.wao.mapper.PersonalMemoryMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -57,17 +55,15 @@ public class AiAssistantAssetService {
     private final KbMapper kbMapper;
     private final ProjectMapper projectMapper;
     private final TaskMapper taskMapper;
-    private final PersonalMemoryMapper memoryMapper;
     private final ObjectMapper json;
 
     public AiAssistantAssetService(SettingService settings, DocMapper docMapper, KbMapper kbMapper,
-            ProjectMapper projectMapper, TaskMapper taskMapper, PersonalMemoryMapper memoryMapper, ObjectMapper json) {
+            ProjectMapper projectMapper, TaskMapper taskMapper, ObjectMapper json) {
         this.settings = settings;
         this.docMapper = docMapper;
         this.kbMapper = kbMapper;
         this.projectMapper = projectMapper;
         this.taskMapper = taskMapper;
-        this.memoryMapper = memoryMapper;
         this.json = json;
     }
 
@@ -110,13 +106,10 @@ public class AiAssistantAssetService {
         return relevantAssets(question, requestedFilter, null);
     }
 
-    /** 按当前成员补入其个人记忆；成员为空的组织级调用绝不读取个人域。 */
+    /** 在授权范围内选取可供助手引用的资料。 */
     public String relevantAssets(String question, AssistantSourceFilter requestedFilter, String memberId) {
         Filter filter = normalize(requestedFilter);
         List<Source> candidates = new ArrayList<>();
-        if (filter.types().contains(AssetType.MEMORY) && StringUtils.hasText(memberId)) {
-            addMemorySources(candidates, memberId);
-        }
         if (filter.types().contains(AssetType.CHAT)) addChatSources(candidates, filter);
         if (filter.types().contains(AssetType.KNOWLEDGE)) {
             addKnowledgeSources(candidates, filter, knowledgeBases());
@@ -280,20 +273,6 @@ public class AiAssistantAssetService {
             String base = StringUtils.hasText(task.getProjectId()) ? "/projects/" + task.getProjectId() : "/projects";
             out.add(source(AssetType.TASK, text(task.getTitle(), "未命名任务"), base + "?task=" + task.getId(),
                     content, task.getCompletedAt()));
-        }
-    }
-
-    private void addMemorySources(List<Source> out, String memberId) {
-        for (PersonalMemoryEntity memory : memoryMapper.selectList(
-                new LambdaQueryWrapper<PersonalMemoryEntity>()
-                        .eq(PersonalMemoryEntity::getMemberId, memberId)
-                        .orderByDesc(PersonalMemoryEntity::getUpdatedAt)
-                        .last("LIMIT 300"))) {
-            String content = lines("分类：" + memory.getCategory(), "采集：" + memory.getCaptureMode(),
-                    "媒体：" + memory.getMediaType(), memory.getContent(),
-                    StringUtils.hasText(memory.getFileName()) ? "原件：" + memory.getFileName() : null);
-            out.add(source(AssetType.MEMORY, text(memory.getTitle(), "未命名个人记忆"),
-                    "/memory?entry=" + memory.getId(), content, memory.getUpdatedAt()));
         }
     }
 
@@ -496,7 +475,7 @@ public class AiAssistantAssetService {
     }
 
     private enum AssetType {
-        MEMORY("memory"), CHAT("chat"), KNOWLEDGE("knowledge"), PROJECT("project"), TASK("task");
+        CHAT("chat"), KNOWLEDGE("knowledge"), PROJECT("project"), TASK("task");
 
         private final String value;
 

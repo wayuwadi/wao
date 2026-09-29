@@ -133,14 +133,6 @@ const commands = computed<Command[]>(() => {
       action: () => navigate('/vault'),
     },
     {
-      id: 'nav-ledger',
-      title: '账务本',
-      subtitle: '兄弟明账与到期计划',
-      icon: 'ri-money-cny-circle-line',
-      keywords: ['ledger', '账务', '记账', '财务规划'],
-      action: () => navigate('/ledger'),
-    },
-    {
       id: 'nav-drawings',
       title: '草图',
       subtitle: '个人 Excalidraw 画布',

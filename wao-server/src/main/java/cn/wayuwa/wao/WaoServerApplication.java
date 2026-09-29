@@ -6,15 +6,12 @@ import cn.wayuwa.wao.auth.FeishuLoginProperties;
 import cn.wayuwa.wao.auth.AuthProperties;
 import cn.wayuwa.wao.auth.JumpServerSsoProperties;
 import cn.wayuwa.wao.config.NeteaseMusicProperties;
-import cn.wayuwa.wao.auth.WechatLoginProperties;
-import cn.wayuwa.wao.auth.WechatOfficialAccountProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-@EnableConfigurationProperties({FeishuLoginProperties.class, WechatLoginProperties.class,
-        WechatOfficialAccountProperties.class, AuthProperties.class, JumpServerSsoProperties.class,
+@EnableConfigurationProperties({FeishuLoginProperties.class, AuthProperties.class, JumpServerSsoProperties.class,
         NeteaseMusicProperties.class})
 public class WaoServerApplication {
 

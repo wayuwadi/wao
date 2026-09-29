@@ -87,7 +87,6 @@ grep -Fq "frame-ancestors 'self' https://wao.wayuwa.cn" deploy/nginx/jms.wayuwa.
 ! grep -Fq 'add_header X-Frame-Options SAMEORIGIN' deploy/nginx/jms.wayuwa.cn.conf
 grep -q 'location = /api/auth/jumpserver' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'X-WAO-API-Route linux-jumpserver-sso' deploy/nginx/wao.wayuwa.cn.conf.template
-grep -q 'X-WAO-API-Route wechat-official-master' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'location = /api/external/jumpserver/health' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'location = /amer_demo_1' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'location \^~ /amer_demo_1/' deploy/nginx/wao.wayuwa.cn.conf.template

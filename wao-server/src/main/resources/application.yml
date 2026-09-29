@@ -140,22 +140,6 @@ feishu:
     frontend-url: ${FEISHU_FRONTEND_URL:http://localhost:5173}
     open-api-base-url: ${FEISHU_OPEN_API_BASE_URL:https://open.feishu.cn}
 
-wechat:
-  login:
-    enabled: ${WECHAT_LOGIN_ENABLED:false}
-    app-id: ${WECHAT_APP_ID:}
-    app-secret: ${WECHAT_APP_SECRET:}
-    redirect-uri: ${WECHAT_REDIRECT_URI:https://wao.wayuwa.cn/api/auth/wechat/callback}
-    frontend-url: ${WECHAT_FRONTEND_URL:https://wao.wayuwa.cn}
-    open-api-base-url: ${WECHAT_OPEN_API_BASE_URL:https://api.weixin.qq.com}
-    authorize-base-url: ${WECHAT_AUTHORIZE_BASE_URL:https://open.weixin.qq.com}
-  official-account:
-    enabled: ${WECHAT_OFFICIAL_LOGIN_ENABLED:false}
-    app-id: ${WECHAT_OFFICIAL_APP_ID:}
-    app-secret: ${WECHAT_OFFICIAL_APP_SECRET:}
-    token: ${WECHAT_OFFICIAL_TOKEN:}
-    api-base-url: ${WECHAT_OFFICIAL_API_BASE_URL:https://api.weixin.qq.com}
-    qr-base-url: ${WECHAT_OFFICIAL_QR_BASE_URL:https://mp.weixin.qq.com}
 
 netease:
   music:

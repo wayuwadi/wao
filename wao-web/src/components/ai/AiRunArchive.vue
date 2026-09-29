@@ -152,7 +152,6 @@ async function continueRun(runId: string) {
           <span><i class="ri-chat-history-line"></i>原会话 · {{ run.runnerName || '原执行电脑' }}</span>
           <code>{{ run.sessionId }}</code>
           <button @click="copySession(run.sessionId)">复制 ID</button>
-          <a :href="`/ai-sessions?session=${encodeURIComponent(run.id)}`">在 AI 会话中打开 ↗</a>
           <small>继续对话会恢复此会话；本地接续需在原电脑使用同一 Codex 配置目录。</small>
         </div>
         <AiRunDeliverySteps v-if="run.deliveryStage" :stage="run.deliveryStage" />

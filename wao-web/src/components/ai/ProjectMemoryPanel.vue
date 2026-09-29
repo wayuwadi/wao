@@ -2,18 +2,23 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  createProjectMemory, deleteProjectMemory, fetchProjectMemories, updateProjectMemory,
+  createProjectMemory, deleteProjectMemory, fetchProjectMemories, fetchProjectMemoryCandidates,
+  publishProjectMemoryCandidate, rejectProjectMemoryCandidate, updateProjectMemory,
   type SaveProjectMemoryPayload,
 } from '@/api/projectMemories'
 import { toast } from '@/composables/toast'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 import type { ProjectMemory, ProjectMemoryCategory } from '@/types'
+import type { MemoryDocument } from '@/api/decisions'
 
 const props = defineProps<{ projectId: string }>()
 const router = useRouter()
 const route = useRoute()
 const items = ref<ProjectMemory[]>([])
+const candidates = ref<MemoryDocument[]>([])
+const reviewBusy = ref('')
+const reviewError = ref('')
 const loading = ref(true)
 const loadError = ref('')
 const query = ref('')
@@ -45,7 +50,12 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    items.value = await fetchProjectMemories(props.projectId, query.value.trim(), category.value)
+    const [published, pending] = await Promise.all([
+      fetchProjectMemories(props.projectId, query.value.trim(), category.value),
+      fetchProjectMemoryCandidates(props.projectId),
+    ])
+    items.value = published
+    candidates.value = pending
     const selected = typeof route.query.memory === 'string' ? route.query.memory : ''
     if (selected) {
       const index = items.value.findIndex((item) => item.id === selected)
@@ -56,6 +66,22 @@ async function load() {
     loadError.value = error instanceof Error ? error.message : '工程记忆加载失败，请重试'
   } finally {
     loading.value = false
+  }
+}
+
+async function review(candidate: MemoryDocument, decision: 'publish' | 'reject') {
+  if (reviewBusy.value) return
+  reviewBusy.value = candidate.id
+  reviewError.value = ''
+  try {
+    if (decision === 'publish') await publishProjectMemoryCandidate(props.projectId, candidate.revision.id)
+    else await rejectProjectMemoryCandidate(props.projectId, candidate.revision.id)
+    await load()
+    toast(decision === 'publish' ? '工程记忆已发布' : '候选已驳回')
+  } catch (error) {
+    reviewError.value = error instanceof Error ? error.message : '审核失败，请重试'
+  } finally {
+    reviewBusy.value = ''
   }
 }
 
@@ -177,9 +203,8 @@ onMounted(load)
     <header class="memory-toolbar">
       <div>
         <h2>项目工程记忆</h2>
-        <p>只保存可复用、已验证的项目经验；个人生活记忆仍严格私有。</p>
+        <p>只保存可复用、已验证的项目经验；AI 候选在此审核发布。</p>
       </div>
-      <RouterLink class="primary" :to="{ path: '/memories', query: { scope: 'project', project: props.projectId } }"><i class="ri-external-link-line"></i>打开记忆中心</RouterLink>
     </header>
 
     <div class="filters">
@@ -196,7 +221,7 @@ onMounted(load)
       <i class="ri-error-warning-line"></i><span>{{ loadError }}</span><button @click="load">重试</button>
     </div>
     <div v-else-if="!items.length" class="empty">
-      <i class="ri-brain-line"></i><b>还没有已发布的项目记忆</b><span>AI 交付后只会生成候选，由负责人或管理员在记忆中心审核发布。</span>
+      <i class="ri-brain-line"></i><b>还没有已发布的项目记忆</b><span>AI 交付后生成的候选可在下方审核。</span>
     </div>
     <div v-else class="memory-list">
       <article v-for="memory in visibleMemories" :key="memory.id" :id="`memory-${memory.id}`" :class="{ selected: route.query.memory === memory.id }">
@@ -225,6 +250,19 @@ onMounted(load)
     </div>
     <WaoPagination v-if="!loading && !loadError && memoryPageCount > 1" v-model:page="memoryPage" :page-count="memoryPageCount" :total="items.length" aria-label="项目工程记忆分页" />
 
+    <section v-if="!loading && !loadError && candidates.length" class="candidate-list" aria-label="待审核工程记忆">
+      <h3>待审核候选（{{ candidates.length }}）</h3>
+      <article v-for="candidate in candidates" :key="candidate.id">
+        <b>{{ candidate.revision.title }}</b>
+        <p>{{ candidate.revision.content }}</p>
+        <div class="candidate-actions">
+          <button class="primary" :disabled="!!reviewBusy" @click="review(candidate, 'publish')">{{ reviewBusy === candidate.id ? '处理中…' : '审核发布' }}</button>
+          <button class="secondary" :disabled="!!reviewBusy" @click="review(candidate, 'reject')">驳回</button>
+        </div>
+      </article>
+      <p v-if="reviewError" class="inline-error" role="alert">{{ reviewError }}</p>
+    </section>
+
     <div v-if="editorOpen" class="editor-mask" @click.self="closeEditor">
       <section class="editor" role="dialog" aria-modal="true" aria-labelledby="memory-editor-title">
         <header><div><h2 id="memory-editor-title">{{ editingId ? '编辑工程记忆' : '新增工程记忆' }}</h2><p>保存后由项目授权成员共享。</p></div><button aria-label="关闭" @click="closeEditor"><i class="ri-close-line"></i></button></header>
@@ -246,5 +284,10 @@ onMounted(load)
 
 <style scoped>
 .memory-panel { margin-top: 14px; }.memory-toolbar,.memory-head,.filters,.memory-links,.editor header,.editor footer { display:flex;align-items:center; }.memory-toolbar { justify-content:space-between;gap:16px; }.memory-toolbar h2,.editor h2 { margin:0;font-size:16px; }.memory-toolbar p,.editor header p { margin:4px 0 0;color:var(--wao-text-weak);font-size:12px; }.primary,.secondary,.memory-links button,.memory-links a { border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;text-decoration:none; }.primary { min-height:34px;padding:0 13px;border:0;background:var(--wao-primary);color:#fff; }.secondary { min-height:34px;padding:0 12px;border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-2); }.filters { margin-top:14px;gap:8px; }.filters label { flex:1;min-width:180px;display:flex;align-items:center;gap:7px;border:1px solid var(--wao-line-control);background:var(--wao-bg-card);border-radius:9px;padding:0 10px; }.filters input { width:100%;height:34px;border:0;outline:0;background:transparent; }.filters select,.editor select,.editor input,.editor textarea { border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text);border-radius:8px;outline:0;font:inherit; }.filters select { height:36px;padding:0 10px; }.state,.empty { margin-top:12px;min-height:170px;border:1px solid var(--wao-line);border-radius:13px;background:var(--wao-bg-card);display:flex;align-items:center;justify-content:center;gap:8px;color:var(--wao-text-weak);font-size:13px; }.state.error { color:var(--wao-danger-strong); }.state button { border:0;background:none;color:var(--wao-primary-text);cursor:pointer; }.empty { flex-direction:column; }.empty>i { font-size:28px;color:var(--wao-primary-text); }.empty b { color:var(--wao-text); }.memory-list { margin-top:12px;display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr)); }.memory-list article { min-width:0;border:1px solid var(--wao-line);border-radius:13px;background:var(--wao-bg-card);padding:15px; }.memory-list article.selected { border-color:var(--wao-primary);box-shadow:0 0 0 3px var(--wao-primary-soft); }.memory-head { gap:7px; }.memory-head h3 { min-width:0;flex:1;margin:0;font-size:14px;overflow-wrap:anywhere; }.category { flex:none;padding:2px 7px;border-radius:99px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:10px; }.memory-head button,.editor header>button { width:28px;height:28px;border:0;border-radius:7px;background:transparent;color:var(--wao-text-weak);cursor:pointer; }.memory-head button:hover { background:var(--wao-bg-hover); }.memory-head .danger:hover { color:var(--wao-danger-strong); }.memory-list article>p { margin:10px 0;color:var(--wao-text-2);font-size:12.5px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere; }.memory-links { gap:8px;flex-wrap:wrap; }.memory-links button,.memory-links a { padding:0;border:0;background:none;color:var(--wao-primary-text);font-size:11px; }.memory-links time { margin-left:auto;color:var(--wao-text-faint);font-size:10px; }.inline-error { margin-top:9px;color:var(--wao-danger-strong);font-size:11px; }.editor-mask { position:fixed;inset:0;z-index:90;background:rgba(25,27,38,.42);display:grid;place-items:center;padding:14px; }.editor { width:min(620px,100%);max-height:calc(100dvh - 28px);overflow:auto;box-sizing:border-box;border-radius:15px;background:var(--wao-bg-card);box-shadow:var(--wao-shadow-lg);padding:20px; }.editor header { justify-content:space-between;margin-bottom:14px; }.editor label { display:grid;gap:6px;margin-top:11px;color:var(--wao-text-2);font-size:12px; }.editor select,.editor input,.editor textarea { box-sizing:border-box;width:100%;padding:9px 10px;resize:vertical; }.editor footer { justify-content:flex-end;gap:8px;margin-top:14px; }.save-status { min-height:22px;margin-top:9px;color:var(--wao-text-weak);font-size:11px; }.save-status span { display:flex;align-items:center;gap:5px; }.save-status.error { color:var(--wao-danger-strong); }.save-status.saved { color:var(--wao-success); }.spin { animation:spin .9s linear infinite; }@keyframes spin{to{transform:rotate(360deg)}}
+.candidate-list { margin-top: 18px; display: grid; gap: 10px; }
+.candidate-list h3 { margin: 0; font-size: 14px; }
+.candidate-list article { padding: 14px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); }
+.candidate-list article p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--wao-text-2); }
+.candidate-actions { display: flex; gap: 8px; }
 @media(max-width:700px){.memory-toolbar{align-items:flex-start;}.memory-toolbar .primary{flex:none;}.filters{align-items:stretch;flex-wrap:wrap;}.filters label{flex-basis:100%;}.filters select,.filters>.secondary{flex:1;}.memory-list{grid-template-columns:1fr;}.editor{padding:16px 14px;}.memory-links time{width:100%;margin-left:0;}}
 </style>

@@ -19,7 +19,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class WeKnoraSyncService {
     public static final String HANDLER="weknora-content-sync", JOB_ID="weknora-content-sync";
-    static final Set<String> KNOWLEDGE_MODULES=Set.of("docs","memory","personal-memory","project-memory");
+    static final Set<String> KNOWLEDGE_MODULES=Set.of("docs","project-memory");
+    private static final Set<String> RETIRED_SOURCE_MODULES=Set.of(
+        "memory","personal-memory","workspaces","plans","plan-items","plan-notes",
+        "english","vocabulary","calendar","food","appearance","checkins");
     private static final String LIVE_SETTING="weknora-sync-live-enabled", LIVE_CHECK="weknora-sync-live-check";
     public record Settings(String kbId,String apiKey,List<String> modules,int batchLimit,boolean syncDeletes,
                            boolean enabled,String time,int revision,Boolean liveSync) {
@@ -284,9 +287,10 @@ public class WeKnoraSyncService {
             updateCounts(runId,uploaded,skipped,removed,remaining,failed);
         }
 
-        if(flag(config.get("sync_deletes"))) {
+        if(flag(config.get("sync_deletes")) || tracked.keySet().stream().anyMatch(WeKnoraSyncService::retiredSource)) {
             for(var entry:tracked.entrySet()) {
                 if(alive.contains(entry.getKey()))continue;
+                if(!flag(config.get("sync_deletes")) && !retiredSource(entry.getKey()))continue;
                 if(deleteOperations>=limit){remaining++;continue;}deleteOperations++;assertLock(lock);
                 String remoteId=(String)entry.getValue().get("remote_id");
                 try {
@@ -305,6 +309,9 @@ public class WeKnoraSyncService {
             "已提交 "+uploaded+"，未变化 "+skipped+"，移除 "+removed+"，待下轮 "+remaining+"；Wiki 由 WeKnora 异步处理",runId);
     }
     private static String stage(JsonNode n,String key) {String s=n.path(key).asText("");return s.matches("[a-z_]{0,32}")?s:"unknown";}
+    static boolean retiredSource(String key) {
+        return RETIRED_SOURCE_MODULES.contains(key.split(":", 2)[0]);
+    }
     static String marker(String title) {
         var m=java.util.regex.Pattern.compile("\\[wao-sync:([0-9a-f]{24})\\]$").matcher(title);
         return m.find()?m.group(1):"";

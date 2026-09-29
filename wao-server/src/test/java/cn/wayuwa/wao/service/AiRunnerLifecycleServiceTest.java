@@ -62,8 +62,7 @@ class AiRunnerLifecycleServiceTest {
     @Test
     void manualRemovalStillNotifies() {
         AiRunnerDto runner = new AiRunnerDto("rn1", "娃哥 Windows 电脑", "windows", List.of("codex"),
-                1, null, 0, false, null, null, null, 9, false, null, true, false,
-                true, true, null, null, null);
+                1, null, 0, false, null, null, null, 9, false, null, true, false);
 
         service.notifyRemoved(runner);
 

@@ -152,6 +152,15 @@ const goalReasoningEffort = ref('')
 const launchingGoal = ref(false)
 const goalImageUploads = ref(0)
 const selectedRun = ref<AiRun | null>(null)
+watch(() => route.query.run, async (value) => {
+  if (typeof value !== 'string' || !value) return
+  try {
+    selectedRun.value = await fetchAiRun(value)
+    revealAiArea()
+  } catch {
+    toast('执行记录读取失败，请在 AI 控制台重试。')
+  }
+}, { immediate: true })
 const runHistoryOpen = ref(false)
 const runHistory = ref<AiActivity[]>([])
 const runHistoryLoading = ref(false)
@@ -1362,7 +1371,6 @@ onBeforeUnmount(() => {
             </span>
           </div>
           <div class="hero-links">
-            <button class="hero-link" type="button" @click="router.push('/ai-sessions')"><i class="ri-chat-history-line"></i>打开 AI 会话</button>
             <button class="hero-link" type="button" @click="router.push('/dashboard')"><i class="ri-line-chart-line"></i>查看 AI 详情</button>
             <button class="hero-link" type="button" @click="router.push('/system-reports')"><i class="ri-bar-chart-box-line"></i>查看系统报告</button>
           </div>
@@ -2422,7 +2430,6 @@ onBeforeUnmount(() => {
               <i :class="batchRerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ batchRerunning ? '正在重跑…' : '一键重跑同原因任务' }}
             </button>
             <button class="secondary" @click="openRun(selectedRun)">打开对应任务</button>
-            <button class="primary" @click="router.push({ path: '/ai-sessions', query: { session: selectedRun.id } }); selectedRun = null">打开会话继续聊</button>
           </div>
         </footer>
       </section>

@@ -17,6 +17,13 @@ export type MenuGroupCode = string
 export type BuiltinMenuGroupCode = 'ROOT' | MenuGroupCode
 export type ExternalAppItemId = `external:${string}`
 export type NavItemId = ModuleId | ExternalAppItemId
+/** 已全站下线的独立功能；旧个人布局和历史页签不得使入口重新出现。 */
+export const RETIRED_MODULE_IDS = new Set<ModuleId>([
+  'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
+  'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices',
+  'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
+  'updates', 'action-plans', 'workspaces',
+])
 export type MobileActionItemId = 'action:note'
 export type MobileNavItemId = NavItemId | MobileActionItemId
 
@@ -327,22 +334,6 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 }
 export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
   [
-    {
-      id: 'chatgpt',
-      label: 'ChatGPT对话',
-      icon: 'ri-openai-line',
-      group: 'ROOT',
-      order: 13,
-      visible: true,
-    },
-    {
-      id: 'ai-sessions',
-      label: 'AI 会话',
-      icon: 'ri-chat-history-line',
-      group: 'ROOT',
-      order: 12,
-      visible: true,
-    },
     { id: 'home', label: '首页', icon: 'ri-home-5-line', group: 'ROOT', order: 10, visible: true },
     {
       id: 'notes',
@@ -366,14 +357,6 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-stack-line',
       group: 'PUBLIC',
       order: 10,
-      visible: true,
-    },
-    {
-      id: 'updates',
-      label: '更新日记',
-      icon: 'ri-history-line',
-      group: 'PUBLIC',
-      order: 11,
       visible: true,
     },
     {
@@ -409,43 +392,11 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
-      id: 'action-plans',
-      label: '行动计划',
-      icon: 'ri-footprint-line',
-      group: 'PERSONAL',
-      order: 15,
-      visible: false,
-    },
-    {
       id: 'decisions',
       label: '决策管理',
       icon: 'ri-route-line',
       group: 'PERSONAL',
       order: 16,
-      visible: true,
-    },
-    {
-      id: 'personal-principles',
-      label: '我的准则',
-      icon: 'ri-shield-check-line',
-      group: 'PERSONAL',
-      order: 13,
-      visible: true,
-    },
-    {
-      id: 'appearance',
-      label: '电子衣库',
-      icon: 'ri-shirt-line',
-      group: 'PERSONAL',
-      order: 17,
-      visible: true,
-    },
-    {
-      id: 'food',
-      label: '饮食管理',
-      icon: 'ri-restaurant-2-line',
-      group: 'PERSONAL',
-      order: 18,
       visible: true,
     },
     {
@@ -465,35 +416,11 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
-      id: 'weekly-report',
-      label: '周报生成',
-      icon: 'ri-file-list-3-line',
-      group: 'PERSONAL',
-      order: 25,
-      visible: false,
-    },
-    {
       id: 'life-review',
       label: '人生回顾',
       icon: 'ri-route-line',
       group: 'PERSONAL',
       order: 27,
-      visible: false,
-    },
-    {
-      id: 'memory',
-      label: '记忆中心',
-      icon: 'ri-brain-line',
-      group: 'PERSONAL',
-      order: 29,
-      visible: true,
-    },
-    {
-      id: 'workspaces',
-      label: '链接空间',
-      icon: 'ri-layout-grid-line',
-      group: 'PERSONAL',
-      order: 28,
       visible: false,
     },
     {
@@ -513,22 +440,6 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
-      id: 'english-learning',
-      label: '英语训练',
-      icon: 'ri-speak-line',
-      group: 'PERSONAL',
-      order: 35,
-      visible: false,
-    },
-    {
-      id: 'vocabulary',
-      label: '单词本',
-      icon: 'ri-book-marked-line',
-      group: 'PERSONAL',
-      order: 40,
-      visible: false,
-    },
-    {
       id: 'drawings',
       label: '草图',
       icon: 'ri-draft-line',
@@ -545,28 +456,12 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
-      id: 'ledger',
-      label: '账务本',
-      icon: 'ri-money-cny-circle-line',
-      group: 'PERSONAL',
-      order: 61,
-      visible: false,
-    },
-    {
       id: 'tianren',
       label: '天人一卦',
       icon: 'ri-compass-3-line',
       group: 'PERSONAL',
       order: 70,
       visible: false,
-    },
-    {
-      id: 'data-center',
-      label: '数据中心',
-      icon: 'ri-database-2-line',
-      group: 'TOOLS',
-      order: 3,
-      visible: true,
     },
     {
       id: 'text-polish',
@@ -593,35 +488,11 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
-      id: 'crawler-capabilities',
-      label: '爬虫能力',
-      icon: 'ri-code-box-line',
-      group: 'TOOLS',
-      order: 15,
-      visible: true,
-    },
-    {
-      id: 'account-resources',
-      label: '账号资源库',
-      icon: 'ri-contacts-book-2-line',
-      group: 'TOOLS',
-      order: 16,
-      visible: true,
-    },
-    {
       id: 'files',
       label: '文件与图床',
       icon: 'ri-hard-drive-2-line',
       group: 'TOOLS',
       order: 20,
-      visible: false,
-    },
-    {
-      id: 'games',
-      label: '游戏厅',
-      icon: 'ri-gamepad-line',
-      group: 'TOOLS',
-      order: 30,
       visible: false,
     },
     {
@@ -633,23 +504,6 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
-      id: 'infrastructure',
-      label: '基础设施',
-      icon: 'ri-server-line',
-      group: 'TOOLS',
-      order: 34,
-      visible: true,
-      openMode: 'TAB',
-    },
-    {
-      id: 'devices',
-      label: '终端设备',
-      icon: 'ri-webcam-line',
-      group: 'TOOLS',
-      order: 35,
-      visible: true,
-    },
-    {
       id: 'request-monitoring',
       label: '请求监控',
       icon: 'ri-pulse-line',
@@ -658,7 +512,8 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
   ] as Omit<BuiltinMenuConfig, 'openMode'>[]
-).map((menu) => ({ ...menu, openMode: 'TAB' }))
+).filter((menu) => !RETIRED_MODULE_IDS.has(menu.id))
+  .map((menu) => ({ ...menu, openMode: 'TAB' }))
 
 /** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
 export const PERSONAL_ITEMS: ModuleId[] = [
@@ -738,7 +593,8 @@ export function resolveNavGroups(
       }))
     : BASE_NAV_GROUPS.map((group) => ({
         label: group.label,
-        items: (group.label === '个人' ? [...personalOrder] : [...group.items]) as NavItemId[],
+        items: (group.label === '个人' ? personalOrder : group.items)
+          .filter((id) => !RETIRED_MODULE_IDS.has(id)) as NavItemId[],
       }))
 
   for (const target of groups) {
@@ -804,6 +660,7 @@ export function isMobileNavItemId(value: unknown): value is MobileNavItemId {
     value === 'action:note' ||
     (typeof value === 'string' &&
       value !== 'chat' &&
+      !RETIRED_MODULE_IDS.has(value as ModuleId) &&
       (value.startsWith('external:') || Object.prototype.hasOwnProperty.call(MODULES, value)))
   )
 }

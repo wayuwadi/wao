@@ -63,64 +63,6 @@ paths:
       description: 返回 HTML；刷新不会再次兑换授权码，无结果或结果过期时展示授权入口。禁止缓存及向外传递来源地址。
       responses:
         "200": { description: 个人授权结果或授权入口，不改变 WAO 登录身份 }
-  /api/auth/wechat/authorize:
-    get:
-      summary: 获取微信开放平台网站应用扫码授权地址
-      responses:
-        "200": { description: 返回 authorizationUrl }
-        "502": { description: 微信网站应用尚未配置 }
-  /api/auth/wechat/exchange:
-    post:
-      summary: 交换微信授权码并登录、绑定或进入成员认领
-      responses:
-        "200": { description: 返回统一账号或待认领结果 }
-  /api/auth/wechat/official/sessions:
-    post:
-      summary: 创建微信公众号带参二维码和四位验证码登录会话
-      responses:
-        "200": { description: 返回五分钟有效的二维码、验证码、会话 id 和过期时间 }
-        "502": { description: 认证公众号未配置或微信官方接口不可用 }
-  /api/auth/wechat/official/sessions/{sessionId}:
-    get:
-      summary: 轮询当前浏览器发起的公众号扫码与验证码状态
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema: { type: string }
-      responses:
-        "200": { description: 返回 WAITING_SCAN、WAITING_CODE、COMPLETED 或 EXPIRED，完成时签发 WAO 会话 }
-        "401": { description: 会话不属于当前浏览器 }
-  /api/auth/wechat/official/callback:
-    get:
-      summary: 验证微信公众号服务器地址签名并回显 echostr
-      responses:
-        "200": { description: 签名有效 }
-        "401": { description: 签名无效 }
-    post:
-      summary: 接收已验签的公众号扫码、关注和文本验证码 XML 消息
-      responses:
-        "200": { description: 返回微信公众号被动回复 XML 或 success }
-        "401": { description: 签名无效 }
-  /api/settings/login/wechat-official:
-    get:
-      summary: 读取系统级微信公众号登录配置，密钥只返回脱敏状态
-      responses:
-        "200": { description: 返回开关、App ID、密钥脱敏值、完整状态与回调路径 }
-        "401": { description: 未登录 }
-    put:
-      summary: 保存微信公众号登录配置并立即用于后续登录会话
-      responses:
-        "200": { description: 已加密保存并返回脱敏配置 }
-        "400": { description: 启用时缺少 App ID、App Secret 或回调 Token }
-        "401": { description: 未登录 }
-  /api/settings/login/wechat-official/verify:
-    post:
-      summary: 通过微信稳定版令牌接口验证当前公众号凭据与主节点出口 IP 白名单
-      responses:
-        "200": { description: 微信真实接口验证通过并预热共享 access token }
-        "401": { description: 未登录 }
-        "502": { description: 返回精确的 App ID、App Secret、账号权限或出口 IP 白名单诊断 }
   /api/account/email:
     put:
       summary: 为当前账号绑定邮箱并设置或修改密码

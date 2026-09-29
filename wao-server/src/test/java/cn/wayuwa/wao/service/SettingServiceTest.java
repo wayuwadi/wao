@@ -62,19 +62,6 @@ class SettingServiceTest {
     }
 
     @Test
-    void wechatOfficialCredentialsAreEncryptedAtRest() {
-        Map<String, SystemSettingEntity> rows = backedByMemory();
-
-        service.put(SettingService.WECHAT_OFFICIAL_APP_SECRET, "wechat-app-secret");
-        service.put(SettingService.WECHAT_OFFICIAL_TOKEN, "wechat-callback-token");
-
-        assertThat(rows.get(SettingService.WECHAT_OFFICIAL_APP_SECRET).getCfgValue())
-                .startsWith("enc:").doesNotContain("wechat-app-secret");
-        assertThat(rows.get(SettingService.WECHAT_OFFICIAL_TOKEN).getCfgValue())
-                .startsWith("enc:").doesNotContain("wechat-callback-token");
-    }
-
-    @Test
     void putNullKeepsExistingValue() {
         backedByMemory();
         service.put(SettingService.CHAT_SYNC_APP_SECRET, "keep-me");

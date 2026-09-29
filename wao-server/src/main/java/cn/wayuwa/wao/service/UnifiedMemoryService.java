@@ -3,30 +3,22 @@ package cn.wayuwa.wao.service;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.common.NotFoundException;
-import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
-import cn.wayuwa.wao.domain.MemoryAttachmentEntity;
 import cn.wayuwa.wao.domain.MemoryDocumentEntity;
 import cn.wayuwa.wao.domain.MemoryOutboxEntity;
 import cn.wayuwa.wao.domain.MemoryRevisionEntity;
 import cn.wayuwa.wao.domain.MemorySourceEntity;
-import cn.wayuwa.wao.domain.MemoryUsageLogEntity;
-import cn.wayuwa.wao.domain.OrgEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.ProjectMemoryEntity;
 import cn.wayuwa.wao.dto.MemoryDocumentDto;
 import cn.wayuwa.wao.dto.MemoryRevisionDto;
 import cn.wayuwa.wao.dto.MemorySourceDto;
 import cn.wayuwa.wao.dto.SaveMemoryRequest;
-import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
 import cn.wayuwa.wao.mapper.MemberMapper;
-import cn.wayuwa.wao.mapper.MemoryAttachmentMapper;
 import cn.wayuwa.wao.mapper.MemoryDocumentMapper;
 import cn.wayuwa.wao.mapper.MemoryOutboxMapper;
 import cn.wayuwa.wao.mapper.MemoryRevisionMapper;
 import cn.wayuwa.wao.mapper.MemorySourceMapper;
-import cn.wayuwa.wao.mapper.MemoryUsageLogMapper;
-import cn.wayuwa.wao.mapper.OrgMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.ProjectMemoryMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -37,7 +29,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -55,22 +46,16 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-/** 个人、组织、项目、机器和应用范围共用的版本化记忆领域服务。 */
+/** 决策与项目工程记忆共用的版本化存储服务。 */
 @Service
 public class UnifiedMemoryService {
-    private static final Logger log = LoggerFactory.getLogger(UnifiedMemoryService.class);
     public static final int MAX_SEARCH_RESULTS = 5;
     public static final int MAX_SEARCH_CHARS = 10_000;
-    public static final Set<String> SCOPES = Set.of("personal", "organization", "project", "machine", "application");
+    public static final Set<String> SCOPES = Set.of("personal", "project");
     private static final Map<String, Set<String>> CATEGORIES = Map.of(
-            "personal", Set.of("preference", "responsibility", "plan", "decision", "context", "experience"),
-            "organization", Set.of("decision", "policy", "standard", "glossary", "responsibility", "context"),
-            "project", Set.of("decision", "convention", "pitfall", "verification", "operation", "context"),
-            "machine", Set.of("decision", "convention", "pitfall", "verification", "operation", "context"),
-            "application", Set.of("decision", "convention", "pitfall", "verification", "operation", "context"));
+            "personal", Set.of("decision"),
+            "project", Set.of("decision", "convention", "pitfall", "verification", "operation", "context"));
     private static final Pattern WORD = Pattern.compile("[\\p{IsHan}]{2,}|[A-Za-z0-9_./-]{2,}");
     private static final Pattern SENSITIVE = Pattern.compile(
             "(?is)(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
@@ -82,32 +67,24 @@ public class UnifiedMemoryService {
     private final MemoryDocumentMapper documents;
     private final MemoryRevisionMapper revisions;
     private final MemorySourceMapper sources;
-    private final MemoryAttachmentMapper attachments;
     private final MemoryOutboxMapper outbox;
-    private final MemoryUsageLogMapper usage;
     private final MemberMapper members;
-    private final OrgMapper orgs;
     private final ProjectMapper projects;
-    private final AiRunnerNodeMapper runners;
     private final ProjectMemoryMapper projectMemories;
     private final ProjectService projectService;
     private final ObjectMapper json;
 
     public UnifiedMemoryService(MemoryDocumentMapper documents, MemoryRevisionMapper revisions,
-            MemorySourceMapper sources, MemoryAttachmentMapper attachments,
-            MemoryOutboxMapper outbox, MemoryUsageLogMapper usage,
-            MemberMapper members, OrgMapper orgs, ProjectMapper projects, AiRunnerNodeMapper runners,
+            MemorySourceMapper sources,
+            MemoryOutboxMapper outbox,
+            MemberMapper members, ProjectMapper projects,
             ProjectMemoryMapper projectMemories, ProjectService projectService, ObjectMapper json) {
         this.documents = documents;
         this.revisions = revisions;
         this.sources = sources;
-        this.attachments = attachments;
         this.outbox = outbox;
-        this.usage = usage;
         this.members = members;
-        this.orgs = orgs;
         this.projects = projects;
-        this.runners = runners;
         this.projectMemories = projectMemories;
         this.projectService = projectService;
         this.json = json;
@@ -160,7 +137,7 @@ public class UnifiedMemoryService {
                 .stream().map(this::revisionDto).toList();
     }
 
-    /** 新建记忆：个人域立即发布，组织和项目域形成待审核草稿。 */
+    /** 新建决策立即发布，项目工程记忆形成待审核草稿。 */
     @Transactional
     public MemoryDocumentDto create(String memberId, SaveMemoryRequest request, String authorType) {
         Scope scope = scope(memberId, request.scopeType(), request.scopeId());
@@ -205,40 +182,6 @@ public class UnifiedMemoryService {
         return dto(document, revision);
     }
 
-    /** Runner 的受控内部入口：机器或应用报告只形成候选，不接收原始本机文件。 */
-    @Transactional
-    public MemoryDocumentDto createCollectedCandidate(String memoryId, String runnerId, String scopeType,
-            String scopeId, String category, String title, String content) {
-        String type = normalizeScope(scopeType);
-        if (!Set.of("machine", "application").contains(type)) {
-            throw new BadRequestException("自动采集只支持机器或应用记忆");
-        }
-        SaveMemoryRequest request = new SaveMemoryRequest(type, scopeId, category, title, content,
-                "Runner 定时整理本机 Codex 记忆后生成", List.of(), null, null);
-        Normalized input = normalize(type, request);
-        LocalDateTime now = LocalDateTime.now();
-        MemoryDocumentEntity document = StringUtils.hasText(memoryId) ? requireDocument(memoryId) : null;
-        if (document == null) {
-            document = new MemoryDocumentEntity();
-            document.setId(newId("md")); document.setScopeType(type); document.setScopeId(scopeId);
-            document.setCategory(input.category()); document.setState("draft"); document.setCreatedBy("ai");
-            document.setCreatedAt(now); document.setUpdatedAt(now); documents.insert(document);
-        } else {
-            if (!type.equals(document.getScopeType()) || !scopeId.equals(document.getScopeId())) {
-                throw new BadRequestException("采集文档范围与既有映射不一致");
-            }
-            document.setCategory(input.category()); document.setState("draft"); document.setUpdatedAt(now);
-            documents.updateById(document);
-        }
-        MemoryRevisionEntity revision = buildRevision(document, nextVersion(document.getId()),
-                document.getCurrentPublishedRevisionId(), input, "ai", "ai", now);
-        revisions.insert(revision);
-        insertInternalSource(revision.getId(), "runner", runnerId, now);
-        if ("application".equals(type)) insertInternalSource(revision.getId(), "application", scopeId, now);
-        event("memory.collection.candidate.created", document.getId(), revision.getId(), now);
-        return dto(document, revision);
-    }
-
     /** 基于当前发布版本创建新修订；过期 baseRevisionId 会得到 409。 */
     @Transactional
     public MemoryDocumentDto revise(String memberId, String memoryId, SaveMemoryRequest request, String authorType) {
@@ -269,7 +212,25 @@ public class UnifiedMemoryService {
         return dto(document, revision);
     }
 
-    /** 将候选发布为当前正式版本；只允许现有组织管理员或项目负责人。 */
+    /** 将指定项目候选发布为当前正式版本。 */
+    public MemoryDocumentDto publishProjectCandidate(String memberId, String projectId, String revisionId) {
+        MemoryRevisionEntity revision = revisions.selectById(revisionId);
+        MemoryDocumentEntity document = revision == null ? null : documents.selectById(revision.getMemoryId());
+        if (document == null || !"project".equals(document.getScopeType())
+                || !projectId.equals(document.getScopeId())) throw new NotFoundException("项目候选不存在");
+        return publish(memberId, revisionId);
+    }
+
+    /** 驳回指定项目的候选；项目范围由服务端核对。 */
+    public MemoryDocumentDto rejectProjectCandidate(String memberId, String projectId, String revisionId) {
+        MemoryRevisionEntity revision = revisions.selectById(revisionId);
+        MemoryDocumentEntity document = revision == null ? null : documents.selectById(revision.getMemoryId());
+        if (document == null || !"project".equals(document.getScopeType())
+                || !projectId.equals(document.getScopeId())) throw new NotFoundException("项目候选不存在");
+        return reject(memberId, revisionId);
+    }
+
+    /** 将候选发布为当前正式版本；只允许项目负责人或管理员。 */
     @Transactional
     public MemoryDocumentDto publish(String memberId, String revisionId) {
         MemoryRevisionEntity revision = revisions.selectById(revisionId);
@@ -328,54 +289,6 @@ public class UnifiedMemoryService {
         event("memory.archived", document.getId(), document.getCurrentPublishedRevisionId(), now);
     }
 
-    /** 兼容个人旧入口：以旧 id 同步成新的正式版本，并可带入真实附件。 */
-    @Transactional
-    public void mirrorPersonal(String memoryId, String memberId, String category, String title, String content,
-            String authorType, String fileName, String contentType, Long byteSize, byte[] fileContent) {
-        mirrorPublished(memoryId, "personal", memberId, category, title, content, authorType,
-                memberId, List.of(), fileName, contentType, byteSize, fileContent);
-    }
-
-    /** 兼容已发布的历史项目记录；只有审核发布路径应在新功能中调用。 */
-    @Transactional
-    public void mirrorPublishedProject(String memoryId, String projectId, String category, String title,
-            String content, String createdBy, List<String> evidenceLinks) {
-        mirrorPublished(memoryId, "project", projectId, category, title, content,
-                "ai".equals(createdBy) ? "ai" : "human", createdBy, evidenceLinks,
-                null, null, null, null);
-    }
-
-    private void mirrorPublished(String memoryId, String scopeType, String scopeId, String category,
-            String title, String content, String authorType, String createdBy, List<String> evidenceLinks,
-            String fileName, String contentType, Long byteSize, byte[] fileContent) {
-        SaveMemoryRequest request = new SaveMemoryRequest(scopeType, scopeId, category, title,
-                StringUtils.hasText(content) ? content : "（仅保存附件原件）", "从兼容入口同步",
-                evidenceLinks, null, null);
-        Normalized input = normalize(scopeType, request);
-        LocalDateTime now = LocalDateTime.now();
-        MemoryDocumentEntity document = documents.selectById(memoryId);
-        if (document == null) {
-            document = new MemoryDocumentEntity(); document.setId(memoryId); document.setScopeType(scopeType);
-            document.setScopeId(scopeId); document.setCategory(category); document.setState("active");
-            document.setCreatedBy(createdBy); document.setCreatedAt(now); document.setUpdatedAt(now);
-            documents.insert(document);
-        }
-        MemoryRevisionEntity revision = buildRevision(document, nextVersion(memoryId),
-                document.getCurrentPublishedRevisionId(), input, createdBy, authorType, now);
-        publishRevision(document, revision, createdBy, now);
-        insertSources(revision, input.evidenceLinks(), now);
-        if (fileContent != null && StringUtils.hasText(fileName)) {
-            MemoryAttachmentEntity attachment = new MemoryAttachmentEntity();
-            attachment.setId(newId("ma")); attachment.setRevisionId(revision.getId());
-            attachment.setFileName(fileName); attachment.setContentType(StringUtils.hasText(contentType)
-                    ? contentType : "application/octet-stream");
-            attachment.setByteSize(byteSize == null ? (long) fileContent.length : byteSize);
-            attachment.setFileContent(fileContent); attachment.setCreatedAt(now); attachments.insert(attachment);
-        }
-        if ("project".equals(scopeType)) syncPublishedProject(document, revision, createdBy, now);
-        event("memory.compatibility.mirrored", document.getId(), revision.getId(), now);
-    }
-
     private void syncPublishedProject(MemoryDocumentEntity document, MemoryRevisionEntity revision,
             String publisher, LocalDateTime now) {
         ProjectMemoryEntity legacy = projectMemories.selectById(document.getId());
@@ -431,21 +344,6 @@ public class UnifiedMemoryService {
             chars += revision.getTitle().length() + revision.getContentMd().length();
         }
         return result;
-    }
-
-    /** 记录不含正文的 MCP/Runner 使用数据，用于真实效率基线。 */
-    public void audit(String tokenId, String memberId, String client, String scopeType, String scopeId,
-            String action, boolean success, int resultCount, long startedNanos, String errorCode) {
-        try {
-            MemoryUsageLogEntity row = new MemoryUsageLogEntity();
-            row.setId(newId("mu")); row.setTokenId(tokenId); row.setMemberId(memberId); row.setClientType(client);
-            row.setScopeType(scopeType); row.setScopeId(scopeId); row.setActionName(action); row.setSuccess(success);
-            row.setResultCount(resultCount); row.setLatencyMs(Duration.ofNanos(System.nanoTime() - startedNanos).toMillis());
-            row.setErrorCode(errorCode); row.setCreatedAt(LocalDateTime.now()); usage.insert(row);
-        } catch (RuntimeException exception) {
-            // 审计是辅助数据；失败不能把已经成功提交的权威正文伪装成失败并诱发客户端重复写入。
-            log.warn("Unified memory usage audit failed: scope={}, action={}", scopeType, action, exception);
-        }
     }
 
     /** 验证一条 outbox 的聚合指针后标记完成；失败留给下一轮重试。 */
@@ -572,30 +470,6 @@ public class UnifiedMemoryService {
             if (StringUtils.hasText(requestedId) && !memberId.equals(requestedId)) throw new NotFoundException("记忆范围不存在");
             return new Scope(type, memberId);
         }
-        if ("organization".equals(type)) {
-            OrgEntity org = orgs.selectList(null).stream().findFirst().orElseThrow(() -> new NotFoundException("组织不存在"));
-            if (StringUtils.hasText(requestedId) && !org.getId().equals(requestedId)) throw new NotFoundException("记忆范围不存在");
-            if (members.selectById(memberId) == null) throw new NotFoundException("记忆范围不存在");
-            return new Scope(type, org.getId());
-        }
-        if ("machine".equals(type)) {
-            if (!StringUtils.hasText(requestedId) || runners.selectById(requestedId) == null) {
-                throw new NotFoundException("记忆范围不存在");
-            }
-            if (members.selectById(memberId) == null) throw new NotFoundException("记忆范围不存在");
-            return new Scope(type, requestedId);
-        }
-        if ("application".equals(type)) {
-            String application = text(requestedId).trim().toLowerCase(Locale.ROOT);
-            if (application.isEmpty() || !application.matches("[a-z0-9][a-z0-9_-]{0,63}")) {
-                throw new NotFoundException("记忆范围不存在");
-            }
-            boolean available = runners.selectList(null).stream().anyMatch(runner ->
-                    ("," + text(runner.getEngines()).toLowerCase(Locale.ROOT).replace(" ", "") + ",")
-                            .contains("," + application + ","));
-            if (!available || members.selectById(memberId) == null) throw new NotFoundException("记忆范围不存在");
-            return new Scope(type, application);
-        }
         if (!StringUtils.hasText(requestedId)) throw new BadRequestException("项目记忆必须指定项目");
         projectService.requireAccess(requestedId, memberId);
         return new Scope(type, requestedId);
@@ -605,8 +479,6 @@ public class UnifiedMemoryService {
         scope(memberId, document.getScopeType(), document.getScopeId());
         MemberEntity member = members.selectById(memberId);
         boolean admin = member != null && ("管理员".equals(member.getRole()) || "超级管理员".equals(member.getRole()));
-        if ("organization".equals(document.getScopeType()) && admin) return;
-        if (Set.of("machine", "application").contains(document.getScopeType()) && admin) return;
         if ("project".equals(document.getScopeType())) {
             ProjectEntity project = projects.selectById(document.getScopeId());
             if (admin || project != null && memberId.equals(project.getOwnerId())) return;

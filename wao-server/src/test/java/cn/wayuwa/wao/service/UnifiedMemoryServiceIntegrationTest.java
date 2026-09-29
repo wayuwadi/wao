@@ -30,34 +30,28 @@ class UnifiedMemoryServiceIntegrationTest {
 
     @Test
     void publishesPersonalImmediatelyAndRejectsStaleRevisionWithoutLosingCurrentVersion() {
-        var created = memories.create("wg", request("personal", "wg", "preference", "输出偏好", "先给结论。", null), "human");
+        var created = memories.create("wg", request("personal", "wg", "decision", "输出偏好", "先给结论。", null), "human");
         assertThat(created.revision().state()).isEqualTo("published");
         assertThat(memories.searchPublished("wg", "personal", "wg", "输出偏好")).hasSize(1);
 
-        var revised = memories.revise("wg", created.id(), request("personal", "wg", "preference",
+        var revised = memories.revise("wg", created.id(), request("personal", "wg", "decision",
                 "输出偏好", "先给结论，再补证据。", created.currentPublishedRevisionId()), "human");
         assertThat(revised.revision().versionNo()).isEqualTo(2);
-        assertThatThrownBy(() -> memories.revise("wg", created.id(), request("personal", "wg", "preference",
+        assertThatThrownBy(() -> memories.revise("wg", created.id(), request("personal", "wg", "decision",
                 "过期设备草稿", "不应覆盖。", created.currentPublishedRevisionId()), "human"))
                 .isInstanceOf(ConflictException.class);
         assertThat(memories.get("wg", created.id(), null).revision().content()).contains("再补证据");
     }
 
     @Test
-    void hidesCandidateAndExpiredMemoryAndEnforcesScopeAndSensitiveFilter() {
-        var candidate = memories.create("wg", request("organization", "o1", "policy",
-                "发布规范", "发布前必须完成验收。", null), "human");
-        assertThat(memories.searchPublished("wg", "organization", "o1", "发布规范")).isEmpty();
-        memories.publish("wg", candidate.revision().id());
-        assertThat(memories.searchPublished("wg", "organization", "o1", "发布规范")).hasSize(1);
-
-        var expired = new SaveMemoryRequest("personal", "wg", "context", "旧上下文", "已经过期的事实。",
+    void expiresDecisionsAndEnforcesScopeAndSensitiveFilter() {
+        var expired = new SaveMemoryRequest("personal", "wg", "decision", "旧上下文", "已经过期的事实。",
                 "测试失效", List.of(), LocalDateTime.now().minusMinutes(1), null);
         memories.create("wg", expired, "human");
         assertThat(memories.searchPublished("wg", "personal", "wg", "过期事实")).isEmpty();
         assertThatThrownBy(() -> memories.list("wg", "personal", "someone-else", null, null, null))
                 .isInstanceOf(NotFoundException.class);
-        assertThatThrownBy(() -> memories.create("wg", request("personal", "wg", "context",
+        assertThatThrownBy(() -> memories.create("wg", request("personal", "wg", "decision",
                 "凭据", "api_key=abcdefghijk12345", null), "human"))
                 .isInstanceOf(BadRequestException.class);
     }
@@ -65,7 +59,7 @@ class UnifiedMemoryServiceIntegrationTest {
     @Test
     void boundsPublishedSearchToFiveResultsAndTenThousandCharacters() {
         for (int index = 0; index < 6; index++) {
-            memories.create("wg", request("personal", "wg", "context", "性能基线 " + index,
+            memories.create("wg", request("personal", "wg", "decision", "性能基线 " + index,
                     "统一检索 " + "正文".repeat(1_300), null), "human");
         }
         var found = memories.searchPublished("wg", "personal", "wg", "统一检索");

@@ -82,10 +82,6 @@ public class KnowledgeService {
 
     /** 小记知识库固定 id（migration 里种下，各节点判等用）。 */
     public static final String NOTES_KB_ID = "kb-notes";
-    /** Codex MCP 主动沉淀稳定信息的共享记忆知识库。 */
-    public static final String MEMORY_KB_ID = "kb-memory";
-    /** 共享记忆知识库的固定文件夹。 */
-    public static final String MEMORY_FOLDER_ID = "kb-memory-f";
     /** 点子库自动沉淀调研、方案与验证资产的团队共享知识库。 */
     public static final String IDEA_ASSET_KB_ID = "kb-idea-assets";
     /** 聊天复盘成功报告的共享知识库。 */
@@ -289,10 +285,8 @@ public class KnowledgeService {
     @Transactional
     public void deleteKb(String id, String memberId) {
         KbEntity kb = requireKb(id);
-        if (Boolean.TRUE.equals(kb.getNotes()) || MEMORY_KB_ID.equals(kb.getId())) {
-            throw new BadRequestException(MEMORY_KB_ID.equals(kb.getId())
-                    ? "共享记忆知识库是 Codex MCP 的持久化落点，不能整库删除"
-                    : "小记知识库是「新建小记」的默认落点，不能删除");
+        if (Boolean.TRUE.equals(kb.getNotes())) {
+            throw new BadRequestException("小记知识库是「新建小记」的默认落点，不能删除");
         }
         LocalDateTime now = LocalDateTime.now();
         kb.setDeletedAt(now);
@@ -1125,29 +1119,6 @@ public class KnowledgeService {
 
     private DocDto insertDoc(String kbId, String folderId, String title, String author, List<DocBlockDto> blocks) {
         return insertDoc(kbId, folderId, title, author, blocks, List.of());
-    }
-
-    /**
-     * 把 Codex 判断为稳定且值得长期复用的信息写入共享记忆知识库。
-     *
-     * <p>每次保存产生一篇可见、可编辑、可删除的真实文档，不在隐藏表里积累不可核对的模型记忆。
-     *
-     * @param title    记忆标题
-     * @param content  已经整理过的事实正文
-     * @param category 偏好、职责、规划、决策或上下文分类
-     * @param author   MCP 令牌所属成员
-     * @return 新建文档
-     */
-    @Transactional
-    public DocDto createSharedMemory(String title, String content, String category, String author) {
-        requireKb(MEMORY_KB_ID);
-        requireFolder(MEMORY_KB_ID, MEMORY_FOLDER_ID);
-        String id = "m" + UUID.randomUUID().toString().replace("-", "").substring(0, 31);
-        List<DocBlockDto> blocks = List.of(
-                new DocBlockDto("由 Codex 通过 WAO 记忆 MCP 保存 · 分类：" + category,
-                        null, null, null, null),
-                new DocBlockDto(null, null, content.trim(), null, null));
-        return insertDoc(id, MEMORY_KB_ID, MEMORY_FOLDER_ID, title.trim(), author, blocks);
     }
 
     private DocDto insertDoc(String kbId, String folderId, String title, String author, List<DocBlockDto> blocks,

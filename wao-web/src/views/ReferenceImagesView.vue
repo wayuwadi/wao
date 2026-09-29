@@ -180,7 +180,6 @@ onMounted(() => {
       <h2>{{ sendError ? '提问未完成' : 'AI 的回答' }}</h2>
       <p v-if="sendError" class="error" role="alert">{{ sendError }} <button type="button" @click="ask">重试</button></p>
       <div v-if="answer" class="answer-text">{{ answer }}</div>
-      <button v-if="conversationId" class="secondary-button" type="button" @click="router.push('/chatgpt')">打开 AI 对话历史</button>
     </section>
   </main>
 </template>
