@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
-import HomeBoardHero from '@/components/home/HomeBoardHero.vue'
+import HomeBreathingStage from '@/components/home/HomeBreathingStage.vue'
 import HomeTianrenGlance from '@/components/home/HomeTianrenGlance.vue'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { AI_EXECUTION_MODE_DESCRIPTIONS } from '@/config/aiExecutionModes'
@@ -1308,7 +1308,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="home" :class="{ 'run-list-view': runLayout === 'list' }">
     <div class="home-primary">
-      <header class="home-day">
+      <HomeBreathingStage v-if="!aiAreaOpen"><template #information><header class="home-day">
         <div class="home-day-tools">
           <div class="home-quick-glances">
           <div ref="quotaRegion" class="home-quota">
@@ -1338,8 +1338,7 @@ onBeforeUnmount(() => {
           </div>
           <WeatherPanel surface="calendar" :date="data.today" toolbar glance />
         </div>
-      </header>
-      <HomeBoardHero />
+      </header></template></HomeBreathingStage>
       <section v-if="aiAreaOpen" class="ai-entry" aria-label="AI Run 实验功能">
         <div><h2>AI Run <span>{{ activeRuns.length ? `${activeRuns.length} 项进行中` : '实验功能 · 按需展开' }}</span></h2><p v-if="aiAreaOpen">日常开发优先在本地电脑完成；需要体验自动执行时再展开。</p><p v-else-if="activeRuns.length">{{ activeRuns[0]?.taskTitle }} · {{ activeRuns[0]?.latestProgress || '查看运行进度' }}</p></div>
         <button type="button" :aria-expanded="aiAreaOpen" aria-controls="home-ai-area" @click="aiAreaOpen = !aiAreaOpen">{{ aiAreaOpen ? '收起 AI Run' : '展开 AI Run' }}<span v-if="activeRuns.length"> · {{ activeRuns.length }} 项进行中</span></button>
