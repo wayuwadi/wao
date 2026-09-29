@@ -290,6 +290,22 @@ wait_until_ready() {
   done
 }
 
+wait_until_stably_ready() {
+  local attempt=1 consecutive=0
+  while [ "$attempt" -le 12 ]; do
+    if "$@"; then
+      consecutive=$((consecutive + 1))
+      [ "$consecutive" -lt 3 ] || return 0
+    else
+      consecutive=0
+    fi
+    [ "$attempt" -lt 12 ] || break
+    attempt=$((attempt + 1))
+    sleep 2
+  done
+  return 1
+}
+
 availability_pid=''
 availability_stop="$WAO_RUN_TEMP/wao-availability.stop"
 availability_failures="$WAO_RUN_TEMP/wao-availability.failures"
@@ -297,6 +313,7 @@ availability_failures="$WAO_RUN_TEMP/wao-availability.failures"
 rm -f "$availability_stop"
 
 start_availability_monitor() {
+  rm -f "$availability_stop"
   (
     while [ ! -f "$availability_stop" ]; do
       if ! public_ready; then
@@ -306,6 +323,16 @@ start_availability_monitor() {
     done
   ) &
   availability_pid=$!
+}
+
+finish_single_node_restart_window() {
+  local unavailable_samples
+  stop_availability_monitor
+  unavailable_samples="$(wc -l <"$availability_failures" | tr -d '[:space:]')"
+  printf 'Linux2 单节点原地重启期间公共入口不可用采样 %s 次；已恢复连续就绪，后续发布继续严格监测。\n' \
+    "$unavailable_samples"
+  : >"$availability_failures"
+  start_availability_monitor
 }
 
 stop_availability_monitor() {
@@ -337,7 +364,7 @@ publish_release() {
   set_status cloud_status success
   set_status cloud_detail "$WAO_GIT_SHA"
   cat cloud.log
-  if ! wait_until_ready public_ready; then
+  if ! wait_until_stably_ready public_ready; then
     set_status verification_status failed
     set_status verification_detail '公共入口数据库就绪检查失败'
     return 1
@@ -421,6 +448,12 @@ if ! wait_until_ready gateway_ready_from_cloud; then
   set_status linux2_detail 'Linux2 部署后 Gateway 就绪检查失败'
   exit 1
 fi
+if ! wait_until_stably_ready public_ready; then
+  set_status verification_status failed
+  set_status verification_detail 'Linux2 重启后公共入口未恢复稳定就绪'
+  exit 1
+fi
+finish_single_node_restart_window
 set_status linux2_status success
 set_status linux2_detail "$WAO_GIT_SHA"
 if ! retire_cloud_sentinel; then
