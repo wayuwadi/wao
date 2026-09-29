@@ -60,12 +60,12 @@ def mysql(sql: str, *, binary: bool = False) -> bytes:
 def verify_source() -> None:
     role = os.environ.get("WAO_EXPORT_PRIMARY")
     local_uuid = os.environ.get("WAO_EXPORT_LOCAL_UUID")
-    if role not in {"linux1", "linux2"} or not local_uuid:
+    if role != "linux2" or not local_uuid:
         raise RuntimeError("WAO writer identity is unavailable")
     fields = mysql("SELECT @@server_uuid,@@read_only,@@super_read_only").decode().strip().split("\t")
     if len(fields) != 3 or fields[1:] != ["0", "0"]:
         raise RuntimeError("WAO content source is not a writable MySQL writer")
-    if (role == "linux1" and fields[0] == local_uuid) or (role == "linux2" and fields[0] != local_uuid):
+    if fields[0] != local_uuid:
         raise RuntimeError("WAO content source does not match the configured writer role")
 
 

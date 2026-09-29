@@ -1,16 +1,17 @@
 # 独立维护入口
 
+Linux1 已退役。当前仓库授权脚本只允许通过云端跳板转发到 Linux2；下文中的 Linux1 别名不再是有效目标，也不应重新配置。
+
 ## 当前电脑使用
 
 ```powershell
-ssh linux1-recovery
 ssh linux2-recovery
 ```
 
 这两个本机别名通过 `wao-cloud-recovery` 跳板，连接目标私网 SSH。
 配置位于用户 `.ssh/wao-recovery-config`，由既有 `.ssh/config` 顶部 Include 引入。
 云机专用主机公钥文件为 `.ssh/wao-recovery-known-hosts`；目标 Linux 使用已有主机身份。
-原有 `linux1-wage` 别名仍可使用。
+只使用 `linux2-recovery` 维护当前 Linux2。不要将已退役的 Linux1 别名改指到其他主机。
 
 ## 安装到云机
 
@@ -38,4 +39,4 @@ python3 install-recovery-access.py operator.pub
 撤销单个操作人：管理员从云机 `/home/wao-recovery/.ssh/authorized_keys` 删除对应公钥行，随后验证新连接被拒绝。
 撤销整个入口：先保留可信管理员会话，清空专用账号授权，移除主配置末尾的 WAO Include，执行 `sshd -t` 成功后 reload SSH。
 不要用过期整份备份覆盖后来变更的 SSH 配置；原配置备份保存在 root 专用 `/etc/wao-recovery-access`。
-本机移除该 Include 和三个别名即可停用本地入口，无需改动原有 Linux1 隧道。
+本机移除该 Include 和当前恢复别名即可停用本地入口。

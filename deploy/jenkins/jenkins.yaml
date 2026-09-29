@@ -53,20 +53,6 @@ credentials:
               description: GitHub push webhook HMAC secret
           - basicSSHUserPrivateKey:
               scope: GLOBAL
-              id: wao-slave-ssh
-              username: wage
-              description: Jenkins deployment key for the Linux1 slave node
-              privateKeySource:
-                directEntry:
-                  privateKey: "${readFile:/etc/jenkins/secrets/slave-ed25519}"
-          - file:
-              scope: GLOBAL
-              id: wao-slave-known-hosts
-              fileName: slave-known-hosts
-              secretBytes: "${readFileBase64:/etc/jenkins/secrets/slave-known-hosts}"
-              description: Verified Linux1 SSH host keys
-          - basicSSHUserPrivateKey:
-              scope: GLOBAL
               id: wao-cloud-ssh
               username: root
               description: Jenkins deployment key for the WAO cloud ingress
@@ -103,15 +89,13 @@ appearance:
 jobs:
   - script: >
       pipelineJob('wao-main-cd') {
-        description('WAO main: collect pushes for 60 seconds, test once, build immutable SHA images, deploy Linux2 and cloud static assets. Linux1 is retired.')
+        description('WAO main: collect pushes for 60 seconds, test once, build immutable SHA images, deploy Linux2 and cloud static assets.')
         quietPeriod(60)
         properties {
           githubProjectUrl('https://github.com/wayuwacn/wao/')
         }
         parameters {
-          booleanParam('BOOTSTRAP_SLAVE', false, '历史双节点参数；Linux2 唯一节点拓扑会拒绝。')
           booleanParam('DEPLOY_PRODUCTION', true, '关闭时只做完整影子构建，不触碰生产节点。')
-          booleanParam('ALLOW_SLAVE_OFFLINE', false, '历史双节点应急参数；Linux2 唯一节点拓扑无需开启。')
         }
         triggers {
           githubPush()

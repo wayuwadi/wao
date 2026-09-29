@@ -35,7 +35,7 @@ if [ -n "$jenkins_proxy_port" ]; then
   fi
   HTTP_PROXY="http://127.0.0.1:${jenkins_proxy_port}"
   HTTPS_PROXY="$HTTP_PROXY"
-  NO_PROXY='127.0.0.1,localhost,linux2.wayuwa.cn,linux1.wayuwa.cn,8.136.152.131'
+  NO_PROXY='127.0.0.1,localhost,linux2.wayuwa.cn,8.136.152.131'
   http_proxy="$HTTP_PROXY"
   https_proxy="$HTTPS_PROXY"
   no_proxy="$NO_PROXY"
@@ -73,10 +73,9 @@ generate_key() {
 generate_secret "$secret_dir/admin-password"
 generate_secret "$secret_dir/github-webhook-secret"
 generate_key "$secret_dir/github-scm-ed25519"
-generate_key "$secret_dir/slave-ed25519"
 generate_key "$secret_dir/cloud-ed25519"
 
-for required in github-pat github-known-hosts slave-known-hosts cloud-known-hosts; do
+for required in github-pat github-known-hosts cloud-known-hosts; do
   if [ ! -s "$secret_dir/$required" ]; then
     printf 'Missing %s. Follow deploy/jenkins/README.md before installation.\n' \
       "$secret_dir/$required" >&2
@@ -122,7 +121,7 @@ if [ -n "$jenkins_proxy_port" ]; then
   printf '%s\n' \
     "Environment=\"HTTP_PROXY=http://127.0.0.1:${jenkins_proxy_port}\"" \
     "Environment=\"HTTPS_PROXY=http://127.0.0.1:${jenkins_proxy_port}\"" \
-    'Environment="NO_PROXY=127.0.0.1,localhost,linux2.wayuwa.cn,linux1.wayuwa.cn,8.136.152.131"' \
+    'Environment="NO_PROXY=127.0.0.1,localhost,linux2.wayuwa.cn,8.136.152.131"' \
     >>/etc/systemd/system/jenkins.service.d/override.conf
 fi
 
@@ -136,15 +135,13 @@ install -d -m 0700 /etc/wao-backup
 install -d -m 0755 /usr/local/lib/wao-backup
 for backup_script in \
   configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh \
-  upload-peer-offsite.sh restore-peer-offsite.sh run-readable-content.sh \
-  create-peer-backup.sh verify-peer-restore.sh peer-retention.py check-peer-backup.py \
+  run-readable-content.sh \
   create-cloud-backup.sh verify-cloud-backup.sh check-cloud-backup.py \
-  archive-peer-binlogs.sh plan-peer-binlogs.py; do
+  export-readable-content.py webdav_client.py verify-backup-source.py; do
   install -m 0755 "$script_dir/../backup/$backup_script" \
     "/usr/local/lib/wao-backup/$backup_script"
 done
-for unit in wao-peer-backup.service wao-peer-backup.timer \
-  wao-cloud-backup.service wao-cloud-backup.timer \
+for unit in wao-cloud-backup.service wao-cloud-backup.timer \
   wao-cloud-binlog.service wao-cloud-binlog.timer \
   wao-cloud-backup-check.service wao-cloud-backup-check.timer; do
   install -m 0644 "$script_dir/../backup/$unit" "/etc/systemd/system/$unit"
@@ -244,6 +241,16 @@ chmod 0440 /etc/sudoers.d/wao-jenkins
 visudo -cf /etc/sudoers.d/wao-jenkins
 
 systemctl daemon-reload
+for retired_unit in \
+  wao-peer-backup.timer wao-peer-binlog.timer wao-peer-backup-check.timer \
+  wao-peer-restore.timer wao-mysql-primary-tunnel.service \
+  wao-linux2-mesh-endpoint.timer wao-public-certificate-sync.timer \
+  wao-nacos-backup-check.timer wao-nacos-backup-check.service \
+  wao-nacos-restore.timer wao-nacos-restore.service; do
+  if systemctl cat "$retired_unit" >/dev/null 2>&1; then
+    systemctl disable --now "$retired_unit"
+  fi
+done
 systemctl enable --now jenkins.service
 systemctl enable --now wao-jenkins-backup.timer
 systemctl enable --now wao-jenkins-health.timer

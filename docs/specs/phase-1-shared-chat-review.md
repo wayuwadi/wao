@@ -1,5 +1,7 @@
 # Phase 1：娃与娃聊天复盘
 
+> 部署说明：本文 V77 首次发布步骤中的双节点摘流与 Linux1 检查是历史迁移约束，当前发布拓扑以 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 为准；共享调度的数据库去重约束仍适用于未来多实例运行。
+
 决策见 [ADR-088](../adr/088-shared-chat-review-workflow.md)，聊天融合入口与共享消息范围见
 [ADR-130](../adr/130-integrated-shared-chat-review-and-polish.md)，右上角悬浮交互见
 [ADR-154](../adr/154-floating-shared-chat-entry.md)。

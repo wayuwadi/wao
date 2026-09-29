@@ -54,12 +54,12 @@ class NodeSessionBridgeTest {
     }
 
     @Test void ticketIsOpaqueHashedShortLivedAndCannotReplay() {
-        var grant = bridge.issue(main, "https://linux1.wayuwa.cn:9443");
+        var grant = bridge.issue(main, "https://linux2.wayuwa.cn:9443");
         assertEquals(43, grant.ticket().length());
         assertNotEquals(main.getSession().getId(), grant.ticket());
         assertEquals(clock.millis() + 60_000, grant.expiresAt());
         assertFalse(tickets.values.containsKey(grant.ticket()));
-        var node = request("linux1.wayuwa.cn", 9443, "POST");
+        var node = request("linux2.wayuwa.cn", 9443, "POST");
         bridge.exchange(node, grant.ticket());
         assertEquals(main.getSession().getId(), node.getSession().getAttribute(NodeSessionBridge.ROOT_SESSION));
         assertNotEquals(main.getSession().getId(), node.getSession().getId());
@@ -70,34 +70,35 @@ class NodeSessionBridgeTest {
     }
 
     @Test void wrongTargetExpiryAndLogoutRejectExchange() {
-        var grant = bridge.issue(main, "https://linux1.wayuwa.cn:9443");
-        assertThrows(UnauthorizedException.class, () -> bridge.exchange(request("linux2.wayuwa.cn", 9443, "POST"), grant.ticket()));
+        var grant = bridge.issue(main, "https://linux2.wayuwa.cn:9443");
+        assertThrows(ForbiddenException.class, () -> bridge.exchange(request("linux2.wayuwa.cn", 9444, "POST"), grant.ticket()));
         clock.now = clock.now.plusSeconds(60);
-        assertThrows(UnauthorizedException.class, () -> bridge.exchange(request("linux1.wayuwa.cn", 9443, "POST"), grant.ticket()));
-        var next = bridge.issue(main, "https://linux1.wayuwa.cn:9443");
+        assertThrows(UnauthorizedException.class, () -> bridge.exchange(request("linux2.wayuwa.cn", 9443, "POST"), grant.ticket()));
+        var next = bridge.issue(main, "https://linux2.wayuwa.cn:9443");
         authority.deleteById(main.getSession().getId());
-        assertThrows(UnauthorizedException.class, () -> bridge.exchange(request("linux1.wayuwa.cn", 9443, "POST"), next.ticket()));
+        assertThrows(UnauthorizedException.class, () -> bridge.exchange(request("linux2.wayuwa.cn", 9443, "POST"), next.ticket()));
     }
 
     @Test void originAndCsrfAreRequiredAndUnknownTargetsAreRejected() {
         main.removeHeader("Origin");
-        assertThrows(ForbiddenException.class, () -> bridge.issue(main, "https://linux1.wayuwa.cn:9443"));
+        assertThrows(ForbiddenException.class, () -> bridge.issue(main, "https://linux2.wayuwa.cn:9443"));
         main.addHeader("Origin", "https://untrusted.wayuwa.cn");
-        assertThrows(ForbiddenException.class, () -> bridge.issue(main, "https://linux1.wayuwa.cn:9443"));
+        assertThrows(ForbiddenException.class, () -> bridge.issue(main, "https://linux2.wayuwa.cn:9443"));
         main.removeHeader("Origin"); main.addHeader("Origin", NodeSessionBridge.MAIN_ORIGIN);
         main.removeHeader("X-WAO-CSRF");
-        assertThrows(ForbiddenException.class, () -> bridge.issue(main, "https://linux1.wayuwa.cn:9443"));
+        assertThrows(ForbiddenException.class, () -> bridge.issue(main, "https://linux2.wayuwa.cn:9443"));
         main.addHeader("X-WAO-CSRF", csrf);
         assertThrows(ForbiddenException.class, () -> bridge.issue(main, "https://attacker.invalid"));
-        var grant = bridge.issue(main, "https://linux1.wayuwa.cn:9443");
-        var bad = request("linux1.wayuwa.cn", 9443, "POST"); bad.removeHeader("Origin");
+        assertThrows(ForbiddenException.class, () -> bridge.issue(main, "https://linux1.wayuwa.cn:9443"));
+        var grant = bridge.issue(main, "https://linux2.wayuwa.cn:9443");
+        var bad = request("linux2.wayuwa.cn", 9443, "POST"); bad.removeHeader("Origin");
         assertThrows(ForbiddenException.class, () -> bridge.exchange(bad, grant.ticket()));
         bad.addHeader("Origin", NodeSessionBridge.MAIN_ORIGIN);
         bridge.exchange(bad, grant.ticket());
     }
 
     @Test void boundWritesNeedCsrfAndRevocationInvalidatesEveryNode() {
-        var one = bind("linux1.wayuwa.cn");
+        var one = bind("linux2.wayuwa.cn");
         var two = bind("linux2.wayuwa.cn");
         assertThrows(ForbiddenException.class, () -> bridge.currentAccount(one, one.getSession()));
         one.addHeader("X-WAO-CSRF", csrf);
@@ -109,28 +110,28 @@ class NodeSessionBridgeTest {
     }
 
     @Test void copiedBindingCannotChangeAccountOrTarget() {
-        var node = bind("linux1.wayuwa.cn"); node.setMethod("GET");
-        node.setServerName("linux2.wayuwa.cn");
+        var node = bind("linux2.wayuwa.cn"); node.setMethod("GET");
+        node.setServerName("attacker.invalid");
         assertThrows(ForbiddenException.class, () -> bridge.currentAccount(node, node.getSession()));
-        node.setServerName("linux1.wayuwa.cn");
+        node.setServerName("linux2.wayuwa.cn");
         node.getSession().setAttribute(NodeSessionBridge.NODE_ACCOUNT, "another-account");
         assertNull(bridge.currentAccount(node, node.getSession()));
     }
 
     @Test void nodeCannotIssueTicketsOrReplaceAuthorityAndParallelRedeemHasOneWinner() throws Exception {
-        var node = bind("linux1.wayuwa.cn");
+        var node = bind("linux2.wayuwa.cn");
         assertThrows(ForbiddenException.class, () -> bridge.csrf(node));
-        var grant = bridge.issue(main, "https://linux1.wayuwa.cn:9443");
-        var same = request("linux1.wayuwa.cn", 9443, "POST"); same.setSession((MockHttpSession) main.getSession());
+        var grant = bridge.issue(main, "https://linux2.wayuwa.cn:9443");
+        var same = request("linux2.wayuwa.cn", 9443, "POST"); same.setSession((MockHttpSession) main.getSession());
         assertThrows(ForbiddenException.class, () -> bridge.exchange(same, grant.ticket()));
         assertNotNull(main.getSession().getAttribute(NodeSessionBridge.ACCOUNT));
-        var concurrent = bridge.issue(main, "https://linux1.wayuwa.cn:9443");
+        var concurrent = bridge.issue(main, "https://linux2.wayuwa.cn:9443");
         var wins = new java.util.concurrent.atomic.AtomicInteger();
         var pool = java.util.concurrent.Executors.newFixedThreadPool(8);
         try {
             var jobs = new java.util.ArrayList<java.util.concurrent.Callable<Void>>();
             for (int i = 0; i < 8; i++) jobs.add(() -> {
-                try { bridge.exchange(request("linux1.wayuwa.cn", 9443, "POST"), concurrent.ticket()); wins.incrementAndGet(); }
+                try { bridge.exchange(request("linux2.wayuwa.cn", 9443, "POST"), concurrent.ticket()); wins.incrementAndGet(); }
                 catch (UnauthorizedException expected) { }
                 return null;
             });

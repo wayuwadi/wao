@@ -44,7 +44,7 @@ describe('基础设施页面状态', () => {
   })
   it('从摘要切换节点，清除旧搜索并聚焦待核对服务', async () => {
     const data = sample()
-    data.nodes.push({ ...data.nodes[0]!, id: 'linux1', name: 'Linux1', services: [{ ...data.nodes[0]!.services[0]!, name: 'needs-review', status: 'Up (unhealthy)' }] })
+    data.nodes.push({ ...data.nodes[0]!, id: 'cloud', name: '云服务器', role: 'HTTPS入口', services: [{ ...data.nodes[0]!.services[0]!, name: 'needs-review', status: 'Up (unhealthy)' }] })
     vi.mocked(apiInfrastructureOverview).mockResolvedValue(data)
     const w=view(); await flushPromises()
     await w.get('input').setValue('旧搜索')

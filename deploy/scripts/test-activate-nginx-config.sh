@@ -13,7 +13,7 @@ export WAO_NGINX_FINAL_CONFIG="${workspace}/wao.conf"
 export WAO_NGINX_PENDING_CONFIG="${workspace}/pending.conf"
 export WAO_NGINX_BOOTSTRAP_CONFIG="${workspace}/bootstrap.conf"
 export WAO_NGINX_EXTERNAL_APPS_DIR="${workspace}/apps"
-export MASTER_PUBLIC_HOST=master.test SLAVE_PUBLIC_HOST=slave.test
+export MASTER_PUBLIC_HOST=master.test
 export WAO_TEST_DIR="${workspace}"
 export PATH="${workspace}/bin:${PATH}"
 cat >"${workspace}/bin/id" <<'SH'
@@ -24,12 +24,12 @@ cat >"${workspace}/bin/getent" <<'SH'
 #!/bin/sh
 case "$2" in
 master.test) printf '%s STREAM master.test\n' "$(cat "$WAO_TEST_DIR/ip")" ;;
-slave.test) printf '198.51.100.20 STREAM slave.test\n' ;;
 *) exit 1 ;;
 esac
 SH
 cat >"${workspace}/bin/curl" <<'SH'
 #!/bin/sh
+if [ -f "$WAO_TEST_DIR/unready" ]; then exit 1; fi
 printf '{"code":0}\n'
 SH
 cat >"${workspace}/bin/nginx" <<'SH'
@@ -43,15 +43,13 @@ SH
 chmod +x "${workspace}/bin/"*
 printf '203.0.113.10\n' >"${workspace}/ip"
 printf '# previous\n' >"${WAO_NGINX_FINAL_CONFIG}"
-touch "${WAO_NGINX_RUNTIME_DIR}/slave.down" "${WAO_NGINX_RUNTIME_DIR}/deployment.lock"
 activate() { sh "${project}/deploy/scripts/activate-nginx-config.sh"; }
 activate
-grep -Fq 'server 203.0.113.10:9000 backup max_fails' "${WAO_NGINX_FINAL_CONFIG}"
-grep -Fq 'server 198.51.100.20:9000 down' "${WAO_NGINX_FINAL_CONFIG}"
+grep -Fq 'server 203.0.113.10:9000 max_fails' "${WAO_NGINX_FINAL_CONFIG}"
+! grep -Eq 'backup|SLAVE_GATEWAY|10\.66\.0\.3' "${WAO_NGINX_FINAL_CONFIG}"
 printf '203.0.113.11\n' >"${workspace}/ip"
 activate
-grep -Fq 'server 203.0.113.11:9000 backup max_fails' "${WAO_NGINX_FINAL_CONFIG}"
-grep -Fq 'server 198.51.100.20:9000 down' "${WAO_NGINX_FINAL_CONFIG}"
+grep -Fq 'server 203.0.113.11:9000 max_fails' "${WAO_NGINX_FINAL_CONFIG}"
 activate
 test "$(wc -l <"${workspace}/reloads")" -eq 2
 # An active state change owns the same lock; automatic refresh must defer.
@@ -61,14 +59,15 @@ test "$(wc -l <"${workspace}/reloads")" -eq 2
   printf '203.0.113.12\n' >"${workspace}/ip"
   activate
 )
-grep -Fq 'server 203.0.113.11:9000 backup max_fails' "${WAO_NGINX_FINAL_CONFIG}"
+grep -Fq 'server 203.0.113.11:9000 max_fails' "${WAO_NGINX_FINAL_CONFIG}"
 # Failed validation must restore the working configuration and avoid a reload.
 touch "${workspace}/invalid"
 if activate; then echo 'Invalid config unexpectedly activated.' >&2; exit 1; fi
 grep -Fq 'server 203.0.113.11:9000 backup max_fails' "${WAO_NGINX_FINAL_CONFIG}"
 test "$(wc -l <"${workspace}/reloads")" -eq 2
 rm "${workspace}/invalid"
-touch "${WAO_NGINX_RUNTIME_DIR}/master.down"
+touch "${workspace}/unready"
 activate
 test "$(wc -l <"${workspace}/reloads")" -eq 2
-printf 'DDNS refresh preserves drained nodes and serializes config writes.\n'
+grep -Fq 'server 203.0.113.11:9000 max_fails' "${WAO_NGINX_FINAL_CONFIG}"
+printf 'Single Linux2 Gateway refresh, locking, and last-known-good config passed.\n'

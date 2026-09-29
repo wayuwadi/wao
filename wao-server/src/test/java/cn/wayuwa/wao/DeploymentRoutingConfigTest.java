@@ -137,7 +137,6 @@ class DeploymentRoutingConfigTest {
         String gateway = readFromRepository("wao-gateway/src/main/resources/application.yml");
         String localGateway = readFromRepository("wao-gateway/src/main/resources/application-local.yml");
         String masterCompose = readFromRepository("deploy/docker-compose-master.yml");
-        String slaveCompose = readFromRepository("deploy/docker-compose-slave.yml");
 
         assertThat(nginx)
                 .contains("location /agent/")
@@ -155,13 +154,6 @@ class DeploymentRoutingConfigTest {
                 .contains("WAO_AI_EVOLUTION_SCHEDULER_ENABLED: \"false\"")
                 .contains("WAO_DAILY_GUIDANCE_WARMUP_ENABLED: \"true\"");
         assertThat(masterCompose).contains("WAO_LIFE_REVIEW_SCHEDULER_ENABLED: \"true\"");
-        assertThat(slaveCompose)
-                .contains("wao-agent-server:")
-                .contains("target: agent-runtime")
-                .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081")
-                .contains("--max-allowed-packet=1G")
-                .doesNotContain("WAO_DAILY_GUIDANCE_WARMUP_ENABLED");
-        assertThat(slaveCompose).doesNotContain("WAO_LIFE_REVIEW_SCHEDULER_ENABLED");
     }
 
     @Test
@@ -261,90 +253,33 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void deploymentPublishesNginxConfigAndProbesOpenAiInsideMasterContainer() throws IOException {
+    void deploymentPublishesSingleLinux2GatewayAndCloudAssets() throws IOException {
         String pipeline = readFromRepository("Jenkinsfile");
-        String casc = readFromRepository("deploy/jenkins/jenkins.yaml");
         String rollout = readFromRepository("deploy/jenkins/ci-deploy.sh");
         String verification = readFromRepository("deploy/jenkins/ci-production-verify.sh");
         String localDeploy = readFromRepository("deploy/jenkins/deploy-master-local.sh");
         String probe = readFromRepository("deploy/scripts/probe-codex-egress.sh");
 
         assertThat(rollout)
-                .contains("WAO_NGINX_RENDER_OUTPUT=/tmp/wao-nginx.conf sh /opt/wao/deploy/scripts/render-nginx-config.sh")
-                .contains("install -m 0644 /tmp/wao-nginx.conf \"$final\"")
-                .contains("nginx -t");
+                .contains("linux2_status=not_started")
+                .contains("stage_cloud")
+                .contains("set_status verification_status success")
+                .contains("Linux2、云端静态制品与公共入口检查通过")
+                .doesNotContain("linux1.wayuwa.cn", "SLAVE_HOST", "slave_status", "BOOTSTRAP_SLAVE");
+        assertThat(pipeline)
+                .contains("LINUX2_HOST = 'linux2.wayuwa.cn'")
+                .contains("credentialsId: 'wao-cloud-ssh'")
+                .doesNotContain("linux1.wayuwa.cn", "SLAVE_SSH", "ALLOW_SLAVE_OFFLINE", "BOOTSTRAP_SLAVE");
+        assertThat(localDeploy)
+                .contains("setfacl -m u:jenkins:r \"$project_root/deploy/.env.secrets\"")
+                .contains("WAO_IMAGE_TAG=\"$image_tag\" SKIP_IMAGE_BUILD=true")
+                .doesNotContain("linux1.wayuwa.cn", "JUMPSERVER_SLAVE");
         assertThat(verification)
                 .contains("/api/tianren/readings/today/interpret/stream")
                 .contains("probe-codex-egress.sh")
                 .contains("dual-gateway-ai")
                 .contains("/api/ai/runner/accounts")
                 .contains("linux-vpn-master");
-        assertThat(rollout)
-                .contains("set-nginx-upstream-state.sh")
-                .contains("restore_upstreams || exit 1")
-                .contains("require_shared_env_line 'REDIS_MASTER_HOST=192.168.31.180'")
-                .contains("require_shared_env_line 'REDIS_SENTINEL_NODES=192.168.31.180:26379,192.168.2.180:26379,10.66.0.1:26379'")
-                .contains("^REDIS_HA_QUORUM=(2|4)$")
-                .contains("require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn'")
-                .contains("require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn'");
-        assertThat(rollout)
-                .contains("prepare_cloud_routing >routing.log")
-                .contains("run_node_job Linux1 deploy_slave slave.log")
-                .contains("run_node_job Linux2 deploy_master master.log")
-                .contains("run_stage_job cloud-stage.log")
-                .contains("wait \"$master_pid\"")
-                .contains("wait \"$stage_pid\"")
-                .contains("if ! activate_cloud >cloud.log")
-                .contains("if ! wait_until_ready public_ready");
-        assertThat(rollout.indexOf("prepare_cloud_routing >routing.log"))
-                .isLessThan(rollout.indexOf("run_node_job Linux2 deploy_master master.log"));
-        assertThat(rollout.indexOf("run_node_job Linux2 deploy_master master.log"))
-                .isLessThan(rollout.indexOf("record_node_result master master.log"));
-        assertThat(rollout.indexOf("record_node_result master master.log"))
-                .isLessThan(rollout.indexOf("if ! activate_cloud >cloud.log"));
-        assertThat(rollout.indexOf("if ! activate_cloud >cloud.log"))
-                .isLessThan(rollout.indexOf("restore_upstreams || exit 1"));
-        assertThat(rollout)
-                .contains("prepare_slave_images || return 1")
-                .contains("wao-image-manifest.txt")
-                .contains("Linux1 增量镜像")
-                .contains("sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh")
-                .doesNotContain("Prepare Linux Codex package")
-                .doesNotContain("codex-package-x86_64-unknown-linux-musl.tar.gz")
-                .doesNotContain("upload_master_resumable")
-                .doesNotContain("WAO_CODEX_PACKAGE")
-                .doesNotContain("WAO_CODEX_CHECKSUMS")
-                .doesNotContain("wao-windows", "powershell.exe", "BOOTSTRAP_WINDOWS");
-        assertThat(localDeploy)
-                .contains("setfacl -m u:jenkins:r \"$project_root/deploy/.env.secrets\"")
-                .contains("WAO_IMAGE_TAG=\"$image_tag\" SKIP_IMAGE_BUILD=true");
-        assertThat(rollout)
-                .doesNotContain("deploy_master >master.log 2>&1 &")
-                .contains("record_node_result master master.log")
-                .contains("record_node_result slave slave.log")
-                .contains("ALLOW_SLAVE_OFFLINE")
-                .contains("slave_available=false")
-                .contains("if [ \"$master_result\" != success ] || [ \"$slave_result\" = failed ]; then")
-                .contains("set_status slave_status skipped")
-                .contains("Linux1 从节点预检不可达；保持摘流并按显式授权继续发布主节点与云端")
-                .contains("set_status verification_status success")
-                .contains("Linux1 从节点严格预检失败")
-                .contains("validate-deployment-node.sh")
-                .contains("start_availability_monitor")
-                .contains("Linux1、Linux2、云端与公共入口检查通过");
-        assertThat(pipeline)
-                .contains("SLAVE_SSH_KEY=/etc/jenkins/secrets/slave-ed25519")
-                .contains("SLAVE_KNOWN_HOSTS=/etc/jenkins/secrets/slave-known-hosts")
-                .contains("SLAVE_USER=wage")
-                .contains("credentialsId: 'wao-cloud-ssh'")
-                .contains("name: 'ALLOW_SLAVE_OFFLINE'")
-                .contains("disableConcurrentBuilds(abortPrevious: false)")
-                .doesNotContain("credentialsId: 'wao-slave-ssh'", "wao-windows-ssh",
-                        "BOOTSTRAP_WINDOWS", "ALLOW_WINDOWS_OFFLINE");
-        assertThat(casc)
-                .contains("id: wao-slave-ssh")
-                .contains("id: wao-slave-known-hosts")
-                .doesNotContain("wao-windows-ssh", "windows-known-hosts");
         assertThat(probe)
                 .contains("elif sudo -n docker info")
                 .contains("sudo -n docker \"$@\"")
@@ -357,9 +292,8 @@ class DeploymentRoutingConfigTest {
                 .contains("--connect-timeout 10 --max-time 30")
                 .contains("https://chatgpt.com/backend-api/wham/usage")
                 .contains("case \"${status}\" in")
-                .contains("200|401)");
+                .contains("200|401");
     }
-
     @Test
     void jenkinsUiUsesWaoSessionIdentityWithRoleBasedJenkinsAuthorization() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
@@ -460,28 +394,22 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void offsiteBackupKeepsRecoveryScriptsAndSchedulesReadableExport() throws IOException {
-        String upload = readFromRepository("deploy/backup/upload-peer-offsite.sh");
-        String restore = readFromRepository("deploy/backup/restore-peer-offsite.sh");
+    void readableExportUsesOnlyTheLinux2WriterAndRemainsScheduled() throws IOException {
+        String wrapper = readFromRepository("deploy/backup/run-readable-content.sh");
+        String exporter = readFromRepository("deploy/backup/export-readable-content.py");
         String service = readFromRepository("deploy/backup/wao-offsite-backup.service");
         String timer = readFromRepository("deploy/backup/wao-offsite-backup.timer");
         String updater = readFromRepository("deploy/jenkins/apply-controller-config.sh");
         String installer = readFromRepository("deploy/jenkins/install-controller.sh");
 
-        assertThat(upload)
-                .contains("$BACKUP_ROOT/last-success")
-                .contains("$snapshot/COMPLETE")
-                .contains("sha256sum -c")
-                .contains("No verified peer snapshot from today")
-                .contains("--symmetric --cipher-algo AES256")
-                .contains("--offset \"$offset\" --length \"$length\"")
-                .contains("# The manifest is the commit marker")
-                .doesNotContain("WAO_BACKUP_WEBDAV_PASSWORD=");
-        assertThat(restore)
-                .contains("An empty destination directory is required")
-                .contains("sha256sum -c SHA256SUMS-cloud")
-                .contains("Peer archive checksum mismatch")
-                .contains("production was not modified");
+        assertThat(wrapper)
+                .contains("Readable export requires the Linux2 WAO writer.")
+                .contains("export WAO_EXPORT_MYSQL_HOST=127.0.0.1")
+                .doesNotContain("linux1", "10.66.0.3");
+        assertThat(exporter)
+                .contains("role != \"linux2\"")
+                .contains("if fields[0] != local_uuid")
+                .doesNotContain("linux1", "10.66.0.3");
         assertThat(service)
                 .contains("ConditionPathExists=/etc/wao-backup/webdav.env")
                 .contains("ExecStart=/usr/local/lib/wao-backup/run-readable-content.sh")
@@ -492,12 +420,13 @@ class DeploymentRoutingConfigTest {
                 .contains("OnCalendar=*-*-* 05:00:00 Asia/Shanghai")
                 .contains("Persistent=true");
         assertThat(updater)
-                .contains("upload-peer-offsite.sh restore-peer-offsite.sh")
+                .contains("run-readable-content.sh")
+                .contains("export-readable-content.py")
                 .contains("systemctl enable --now wao-offsite-backup.timer");
         assertThat(installer)
-                .contains("gnupg")
                 .contains("python3")
-                .contains("upload-peer-offsite.sh restore-peer-offsite.sh")
+                .contains("run-readable-content.sh")
+                .contains("export-readable-content.py")
                 .contains("systemctl enable --now wao-offsite-backup.timer");
     }
 
@@ -507,7 +436,7 @@ class DeploymentRoutingConfigTest {
         String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");
         String rollout = readFromRepository("deploy/jenkins/ci-deploy.sh");
         String routingPreparation = section(rollout,
-                "prepare_cloud_routing() {", "\n}\n\ndeploy_cloud() {");
+                "prepare_cloud_routing() {", "\n}\n\nstage_cloud_static() {");
 
         assertThat(nginx)
                 .contains("location = /game {")
@@ -530,42 +459,21 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void automaticDdnsReloadPreservesDrainedGatewaysUnderTheSharedLock() throws IOException {
+    void nginxUsesOnlyTheLinux2GatewayUpstream() throws IOException {
         String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");
-        String stateScript = readFromRepository("deploy/scripts/set-nginx-upstream-state.sh");
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
+        String renderer = readFromRepository("deploy/scripts/render-nginx-config.sh");
 
         assertThat(activation)
                 .contains("flock -n 9")
-                .contains("MASTER_GATEWAY_STATE=' down'")
-                .contains("SLAVE_GATEWAY_STATE=' down'")
-                .doesNotContain("automatic DDNS activation is deferred");
-        assertThat(stateScript).contains("flock -w 60 9");
-        assertThat(stateScript)
-                .contains("MASTER_GATEWAY_STATE=' down'")
-                .contains("SLAVE_GATEWAY_STATE=' down'")
-                .contains("systemctl reload nginx")
-                .contains("rm -f \"${lock_file}\"");
+                .contains("MASTER_PUBLIC_HOST")
+                .doesNotContain("SLAVE_GATEWAY");
+        assertThat(renderer)
+                .contains("server ${MASTER_GATEWAY_IPV4}:9000")
+                .doesNotContain("SLAVE_GATEWAY", "MASTER_GATEWAY_STATE");
         assertThat(nginx)
-                .contains("${MASTER_GATEWAY_IPV4}:9000${MASTER_GATEWAY_STATE}")
-                .contains("${SLAVE_GATEWAY_IPV4}:9000${SLAVE_GATEWAY_STATE}");
-    }
-
-    @Test
-    void jenkinsUsesTheLinux1ReverseSshTunnelWithoutChangingItsPublicIdentity() throws IOException {
-        String pipeline = readFromRepository("Jenkinsfile");
-        String deployment = readFromRepository("deploy/jenkins/ci-deploy.sh");
-
-        assertThat(pipeline)
-                .contains("SLAVE_HOST = 'linux1.wayuwa.cn'")
-                .contains("SLAVE_SSH_HOST = '127.0.0.1'")
-                .contains("SLAVE_SSH_PORT = '2201'");
-        assertThat(deployment)
-                .contains(": \"${SLAVE_SSH_HOST:?SLAVE_SSH_HOST is required}\"")
-                .contains(": \"${SLAVE_SSH_PORT:?SLAVE_SSH_PORT is required}\"")
-                .contains("HostName $SLAVE_SSH_HOST")
-                .contains("Port $SLAVE_SSH_PORT")
-                .contains("HostKeyAlias $SLAVE_HOST");
+                .contains("${WAO_GATEWAY_SERVERS}")
+                .doesNotContain("SLAVE_GATEWAY");
     }
 
     @Test
@@ -611,7 +519,7 @@ class DeploymentRoutingConfigTest {
                 .contains("requested_skip_image_build=\"${SKIP_IMAGE_BUILD:-}\"")
                 .contains("SKIP_IMAGE_BUILD=\"${requested_skip_image_build}\"")
                 .contains("compose build codex-egress-proxy wao-server wao-agent-server wao-gateway")
-                .contains("compose up -d --wait codex-vpn codex-egress-proxy")
+                .contains("compose up -d --no-deps codex-vpn codex-egress-proxy")
                 .contains("diagnostic_services=\"codex-vpn codex-egress-proxy ${diagnostic_services}\"")
                 .contains("ensure-codex-egress.sh")
                 .doesNotContain("install-linux-codex.sh");
@@ -621,19 +529,6 @@ class DeploymentRoutingConfigTest {
                 .contains("ConnectPort 443")
                 .contains("Upstream http codex-vpn:7897")
                 .doesNotContain("Allow 0.0.0.0/0");
-    }
-
-    @Test
-    void windowsDeploymentRecoversADeadWslDockerDaemonBeforeFailingTheRelease() throws IOException {
-        String windowsDeploy = readFromRepository("deploy/scripts/deploy-windows.ps1");
-
-        assertThat(windowsDeploy)
-                .contains("while ($deployAttempt -le 2)")
-                .contains("Get-Service -Name 'WslService', 'LxssManager'")
-                .contains("Restart-Service -InputObject $wslService -Force")
-                .contains("wsl.exe --shutdown")
-                .contains("Start-Sleep -Seconds 10")
-                .contains("failed after restarting the distribution");
     }
 
     private static String readFromRepository(String relative) throws IOException {

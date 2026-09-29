@@ -24,14 +24,14 @@ function gatewayError(config: InternalAxiosRequestConfig, status: number) {
 describe('HTTP 网关短暂故障自愈', () => {
   it('文件上传先建立节点会话，携带CSRF且响应丢失不重发正文', async () => {
     const prepared = vi.spyOn(edgeApiRouting, 'prepareUpload').mockResolvedValue({
-      origin: 'https://linux1.wayuwa.cn:9443', csrf: 'upload-csrf', validUntil: Infinity,
+      origin: 'https://linux2.wayuwa.cn:9443', csrf: 'upload-csrf', validUntil: Infinity,
     })
     vi.spyOn(edgeApiRouting, 'failed').mockImplementation(() => {})
     let attempts = 0
     const body = new FormData(); body.append('file', new Blob(['sample']), 'sample.txt')
     await expect(http.post('/api/files', body, { adapter: async config => {
       attempts++
-      expect(config.baseURL).toBe('https://linux1.wayuwa.cn:9443')
+      expect(config.baseURL).toBe('https://linux2.wayuwa.cn:9443')
       expect(config.headers.get('X-WAO-CSRF')).toBe('upload-csrf')
       expect(config.data).toBe(body)
       throw new AxiosError('lost response', 'ERR_NETWORK', config)

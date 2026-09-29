@@ -9,7 +9,6 @@ env_file="${deploy_dir}/.env"
 
 case "${role}" in
   master) compose_file="${deploy_dir}/docker-compose-master.yml" ;;
-  slave) compose_file="${deploy_dir}/docker-compose-slave.yml" ;;
   *) echo "Unknown role: ${role}" >&2; exit 2 ;;
 esac
 
@@ -136,10 +135,7 @@ if [ "${GATEWAY_SSL_ENABLED:-true}" = "true" ]; then
 fi
 
 detect_public_ipv4() {
-  case "${role}" in
-    master) host="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}" ;;
-    slave) host="${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}" ;;
-  esac
+  host="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}"
   getent ahostsv4 "${host}" 2>/dev/null | awk '$2 == "STREAM" { print $1; exit }'
 }
 
@@ -230,7 +226,7 @@ start_services() {
   if [ "${role}" = "master" ]; then
     # Keep the application deploy independent of the external Codex route.
     # The production verification probes that route and reports its failure.
-    core_services='redis-master sentinel-master wao-server wao-agent-server wao-gateway'
+    core_services='redis-master wao-server wao-agent-server wao-gateway'
     if [ "${MANAGE_MASTER_INFRA:-true}" = true ]; then
       core_services="mysql-master nacos nacos-init-admin ddns-go ${core_services}"
     fi
@@ -246,9 +242,8 @@ start_services() {
     fi
     return 0
   fi
-  # Durable Redis/Sentinel state survives container recreation. Do not reset
-  # elected roles or Sentinel identities during ordinary application releases.
-  compose up -d --wait
+  echo 'Only the Linux2 deployment role is supported.' >&2
+  return 2
 }
 
 if ! start_services; then

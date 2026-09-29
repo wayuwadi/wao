@@ -36,5 +36,19 @@ class RoutingTest(unittest.TestCase):
             with self.assertRaises(ValueError): routing.publish(path, 'a' * 40)
             self.assertEqual('{"schema":1,"enabled":"true"}', path.read_text())
 
+    def test_retired_node_is_removed_while_linux2_route_is_preserved(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / 'routing.json'
+            path.write_text(json.dumps({
+                'schema': 1, 'enabled': True, 'staticEnabled': True, 'forceCloud': False,
+                'allowedReleases': [], 'nodes': [
+                    {'origin': 'https://linux1.wayuwa.cn:9443', 'enabled': False},
+                    {'origin': 'https://linux2.wayuwa.cn:9443', 'enabled': True},
+                ],
+            }))
+            routing.publish(path, 'a' * 40)
+            data = json.loads(path.read_text())
+            self.assertEqual([{'origin': 'https://linux2.wayuwa.cn:9443', 'enabled': True}], data['nodes'])
+
 
 if __name__ == '__main__': unittest.main()

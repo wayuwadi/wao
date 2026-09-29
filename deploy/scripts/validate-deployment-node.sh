@@ -1,17 +1,14 @@
 #!/bin/sh
 set -eu
 
-role="${1:?Usage: validate-deployment-node.sh <master|slave> EXPECTED_IMAGE_TAG}"
-expected_tag="${2:?Usage: validate-deployment-node.sh <master|slave> EXPECTED_IMAGE_TAG}"
+role="${1:?Usage: validate-deployment-node.sh master EXPECTED_IMAGE_TAG}"
+expected_tag="${2:?Usage: validate-deployment-node.sh master EXPECTED_IMAGE_TAG}"
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 project_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
 env_file="${project_root}/deploy/.env"
 
-case "${role}" in
-  master) compose_file="${project_root}/deploy/docker-compose-master.yml" ;;
-  slave) compose_file="${project_root}/deploy/docker-compose-slave.yml" ;;
-  *) echo "Unknown role: ${role}" >&2; exit 2 ;;
-esac
+test "${role}" = master || { echo "Unknown deployment role: ${role}" >&2; exit 2; }
+compose_file="${project_root}/deploy/docker-compose-master.yml"
 
 test -f "${env_file}" || { echo "Missing ${env_file}" >&2; exit 1; }
 case "${expected_tag}" in
@@ -89,7 +86,3 @@ for attempt in 1 2 3; do
   sleep 2
 done
 printf 'gateway_ready=%s\n' "${ready}"
-
-if [ "${role}" = slave ]; then
-  sh "${project_root}/deploy/scripts/validate-slave.sh"
-fi

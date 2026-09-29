@@ -1,5 +1,7 @@
 # Phase 0 实机上线清单
 
+> 历史上线记录：本文记录的 Linux1 从节点、双节点复制与发布步骤已由 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 取代。当前操作见 [部署说明](../../deploy/README.md) 和 [Linux2 单节点异地加密备份](linux2-only-cloud-backup.md)；不要重放本文旧步骤。
+
 ## 已完成
 
 - Java 17 多模块、Gateway、Nacos、Vue 3 前端与 Hello API 纵向切片。

@@ -1,6 +1,5 @@
 param(
     [string]$MasterPublicHost = 'linux2.wayuwa.cn',
-    [string]$SlavePublicHost = 'linux1.wayuwa.cn',
 
     [string]$OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.env')
 )
@@ -49,11 +48,7 @@ $values = [ordered]@{
     # MySQL 9 replication protocol accepts at most 32 password characters.
     MYSQL_REPLICATION_PASSWORD   = (New-MySqlReplicationSecret)
     REDIS_PASS                   = (New-RandomSecret)
-    REDIS_MASTER_NAME            = 'wao-master'
-    REDIS_MASTER_HOST            = $MasterPublicHost
-    REDIS_SENTINEL_NODES         = "${MasterPublicHost}:26379,${SlavePublicHost}:26379"
     MASTER_PUBLIC_HOST           = $MasterPublicHost
-    SLAVE_PUBLIC_HOST            = $SlavePublicHost
     MASTER_BIND_IP               = '0.0.0.0'
     MYSQL_HOST                   = 'mysql-master'
     MANAGE_MASTER_INFRA          = 'true'
@@ -76,4 +71,4 @@ New-Item -ItemType Directory -Path $parent -Force | Out-Null
 )
 
 Write-Host "Created private deployment configuration at $destination"
-Write-Host 'Copy this same file to deploy/.env on the Linux2 master and Linux1 replica over an authenticated encrypted channel.'
+Write-Host 'Copy this file to deploy/.env on Linux2 over an authenticated encrypted channel.'

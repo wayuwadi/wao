@@ -58,11 +58,8 @@ read_status() {
   printf '%s' "${value:-$fallback}"
 }
 
-slave_status="$(read_status slave_status not_started)"
-topology="$(read_status topology dual)"
-slave_detail="$(read_status slave_detail 无状态)"
-master_status="$(read_status master_status not_started)"
-master_detail="$(read_status master_detail 无状态)"
+linux2_status="$(read_status linux2_status not_started)"
+linux2_detail="$(read_status linux2_detail 无状态)"
 cloud_status="$(read_status cloud_status not_started)"
 cloud_detail="$(read_status cloud_detail 无状态)"
 verification_status="$(read_status verification_status not_started)"
@@ -103,12 +100,11 @@ case "$failure_stage" in
   'Agent Web tests and build') failure_stage='Agent Web 测试与构建' ;;
   'AI Runner tests') failure_stage='AI Runner 测试' ;;
   'Build immutable release') failure_stage='不可变制品构建' ;;
-  'Deploy Linux slave, master and cloud') failure_stage='三节点滚动发布' ;;
+  'Deploy Linux2 and cloud') failure_stage='Linux2 与云端发布' ;;
   'Apply Jenkins controller configuration') failure_stage='Jenkins 控制器配置' ;;
 esac
 failure_detail=''
-if [ "$slave_status" = failed ]; then failure_detail="$slave_detail";
-elif [ "$master_status" = failed ]; then failure_detail="$master_detail";
+if [ "$linux2_status" = failed ]; then failure_detail="$linux2_detail";
 elif [ "$cloud_status" = failed ]; then failure_detail="$cloud_detail";
 elif [ "$verification_status" = failed ]; then failure_detail="$verification_detail";
 fi
@@ -155,33 +151,12 @@ if [ "$WAO_PIPELINE_RESULT" = success ]; then
   success_title="WAO ${pipeline_kind} ✅ 成功"
   success_template=green
   if [ "$pipeline_kind" = '生产发布' ]; then
-    if { [ "$slave_status" != success ] && [ "$slave_status" != skipped ]; } ||
-      [ "$cloud_status" != success ] || [ "$verification_status" != success ] ||
-      { [ "$master_status" != success ] && [ "$master_status" != skipped ] &&
-        [ "$master_status" != degraded ]; }; then
+    if [ "$linux2_status" != success ] || [ "$cloud_status" != success ] ||
+      [ "$verification_status" != success ]; then
       echo 'Jenkins success notification skipped: production verification is incomplete.' >&2
       exit 0
     fi
-    if [ "$slave_status" = skipped ]; then
-      if [ "$topology" = linux2-only ]; then
-        success_title='WAO 生产发布 ✅ Linux2 单节点成功'
-        success_detail='Linux2、云端静态制品与公共入口检查通过；Linux1 已正式退役。'
-      else
-        success_title='WAO 生产发布 ⚠️ Linux2 单节点成功'
-        success_template=orange
-        success_detail='Linux2 与公共入口已就绪；Linux1 已摘流，恢复后须补齐同一版本。'
-      fi
-    elif [ "$master_status" = skipped ] || [ "$master_status" = degraded ]; then
-      success_title='WAO 生产发布 ⚠️ Linux1 单节点成功'
-      success_template=orange
-      if [ "$master_status" = degraded ]; then
-        success_detail='Linux1 与公共入口已就绪；Linux2 本次部署失败并已摘流，恢复后须补齐同一版本。'
-      else
-        success_detail='Linux1 与公共入口已就绪；Linux2 发布前不可用并已摘流，恢复后须补齐同一版本。'
-      fi
-    else
-      success_detail='双节点、云端与公共入口检查通过'
-    fi
+    success_detail='Linux2、云端静态制品与公共入口检查通过'
   else
     success_detail='验证通过，本批次未发布到生产环境'
   fi

@@ -11,14 +11,11 @@ project_root="${1:?project root is required}"
 release_archive="${2:?release archive is required}"
 private_env="${3:?private env is required}"
 image_tag="${4:?image tag is required}"
-slave_user="${5:-wage}"
-cloud_user="${6:-root}"
-slave_address="${7:-linux1.wayuwa.cn}"
-cloud_address="${8:-8.136.152.131}"
-slave_port="${9:-22}"
-# 旧调用方不传时保持同步；Jenkins 仅在本批次改到对应目录时传 true（ADR-280）。
-sync_jumpserver="${10:-true}"
-sync_infrastructure="${11:-true}"
+cloud_user="${5:-root}"
+cloud_address="${6:-8.136.152.131}"
+# Jenkins 仅在本批次改到对应目录时传 true（ADR-280）。
+sync_jumpserver="${7:-true}"
+sync_infrastructure="${8:-true}"
 
 case "$project_root" in ''|/) echo "Unsafe project root: $project_root" >&2; exit 2 ;; esac
 case "$image_tag" in *[!A-Za-z0-9_.-]*|'') echo 'Invalid image tag.' >&2; exit 2 ;; esac
@@ -40,10 +37,19 @@ setfacl -m u:jenkins:r "$project_root/deploy/.env.secrets"
 WAO_IMAGE_TAG="$image_tag" SKIP_IMAGE_BUILD=true \
   sh "$project_root/deploy/scripts/deploy-linux.sh" master
 sh "$project_root/deploy/scripts/validate-deployment-node.sh" master "$image_tag"
+
+# Stop the former Sentinel process only after the direct Linux2 Redis client
+# has passed its application readiness check. Keep its named volume for
+# recovery inspection; this command does not remove persistent Redis state.
+sentinel_ids="$(docker ps -aq \
+  --filter label=com.docker.compose.project=wao-master \
+  --filter label=com.docker.compose.service=sentinel-master)"
+for sentinel_id in $sentinel_ids; do
+  docker rm -f "$sentinel_id"
+done
+
 if [ "$sync_jumpserver" != false ]; then
-  JUMPSERVER_SLAVE_USER="$slave_user" JUMPSERVER_CLOUD_USER="$cloud_user" \
-    JUMPSERVER_SLAVE_ADDRESS="$slave_address" JUMPSERVER_CLOUD_ADDRESS="$cloud_address" \
-    JUMPSERVER_SLAVE_PORT="$slave_port" \
+  JUMPSERVER_CLOUD_USER="$cloud_user" JUMPSERVER_CLOUD_ADDRESS="$cloud_address" \
     sh "$project_root/deploy/jumpserver/deploy.sh" "$project_root"
 fi
 

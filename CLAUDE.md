@@ -47,7 +47,7 @@ npm run build                     # type-check + 生产构建
 
 - `local`：不依赖 Docker、MySQL、Redis、Nacos，用于五分钟起本地纵向链路 Demo。
 - `dev`：连本机 Docker 基础设施（`docker compose -f docker-compose-dev.yml up -d`），Swagger 开启，Nacos 可关鉴权。
-- `prod`：敏感值全部来自环境变量（节点私有 `deploy/.env` / GitHub Secrets），Swagger 关闭，跨节点走公网/DDNS。
+- `prod`：敏感值全部来自环境变量（节点私有 `deploy/.env` / GitHub Secrets），Swagger 关闭；WAO 后端部署在 Linux2，云端只托管静态制品并提供公网入口。
 
 ## 架构大图
 
@@ -57,9 +57,9 @@ npm run build                     # type-check + 生产构建
 - `wao-server/`（Spring Boot，:8080）：业务应用。统一返回 `ApiResponse<T>`（`code == 0` 为成功），异常由 `common/GlobalExceptionHandler` 收敛；API 路径前缀 `/api/`，包名 `cn.wayuwa.wao.*`。
 - `wao-gateway/`（Spring Cloud Gateway，:9000）：入口网关。`RequestIdFilter`（order -200）为每个请求注入 / 回写 `X-Request-Id`。
 
-请求链路：`浏览器 → 云 Nginx（静态托管 + HTTPS）→ Gateway → 同机 wao-server`。关键约定：**每个 Gateway 只路由到同机 `wao-server:8080`**（见 ADR-006），节点级故障转移由云 Nginx 完成；两个 App 实例仍注册到 Nacos，仅用于注册状态与后续服务治理，不用于 Gateway 选址。
+请求链路：`浏览器 → 云 Nginx（静态托管 + HTTPS）→ Linux2 Gateway → 同机 wao-server`。关键约定：**Gateway 只路由到同机 `wao-server:8080`**（见 ADR-006）；当前只有 Linux2 一个应用节点，没有节点级自动故障转移。
 
-生产为三节点：云服务器（Nginx/TLS/前端）、Linux2 主节点、Linux1 原生 Linux 从节点。部署编排见 `deploy/`（`docker-compose-master.yml`、`docker-compose-slave.yml`、`scripts/`），运维细节见 `deploy/README.md` 与 `docs/runbooks/phase-0-rollout.md`。
+生产由 Linux2（WAO 应用、数据库与 Jenkins）和云端（静态制品、TLS 与 Nginx 公共入口）组成。Linux1 已退役。当前部署入口是 `deploy/docker-compose-master.yml` 与 `deploy/jenkins/`；运维细节见 `deploy/README.md`、[单节点备份手册](docs/runbooks/linux2-only-cloud-backup.md) 和 [ADR-291](docs/adr/291-linux2-only-deployment-and-wao-recovery.md)。Garage 迁移方案尚未确定，旧三节点示例不作为当前操作步骤。
 
 ## Claude 特定约定
 

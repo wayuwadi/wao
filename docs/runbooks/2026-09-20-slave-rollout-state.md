@@ -1,5 +1,7 @@
 # Linux1 发布后再次摘流
 
+> 历史故障记录：本文及其中的双节点发布测试已退役，仅供追溯；当前发布流程见 [部署说明](../../deploy/README.md) 与 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md)。
+
 2026-09-20 实机观察：两个应用节点已运行同一版本，Linux1 复制及健康正常，
 Jenkins 日志先显示 `Gateway slave is up`，成功结束后云端又留下 `slave.down`。
 

@@ -9,10 +9,8 @@ server:
 spring:
   data:
     redis:
-      sentinel:
-        master: ${REDIS_MASTER_NAME:wao-master}
-        nodes: ${REDIS_SENTINEL_NODES}
-        password: ${REDIS_PASS}
+      host: ${REDIS_HOST:redis-master}
+      port: ${REDIS_PORT:6379}
       password: ${REDIS_PASS}
   cloud:
     nacos:

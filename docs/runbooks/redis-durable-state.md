@@ -1,5 +1,7 @@
 # Redis 持久拓扑迁移与恢复
 
+> 历史迁移记录：本文针对旧双 Redis / Sentinel 拓扑。Linux1 已退役，当前 Redis 部署边界以 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 与 [架构说明](../architecture.md) 为准；不要照本文启动旧 Sentinel 节点。
+
 适用范围：WAO 原有两 Redis、两 Sentinel；不涉及 JumpServer、WeKnora 或其他 Redis。
 
 ## 迁移顺序

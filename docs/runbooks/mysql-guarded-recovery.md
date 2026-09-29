@@ -1,5 +1,7 @@
 # WAO MySQL 受控接管操作单
 
+> 历史操作手册：本文描述 Linux1 写主与双向接管流程。Linux1 已退役，相关提升/围栏工具不再是当前恢复方案；请遵循 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 与 [Linux2 单节点异地加密备份](linux2-only-cloud-backup.md)。不要执行本文命令。
+
 2026-09-21 接管后状态：Linux1 为 WAO 写主；Linux2 原生实例继续写其他三个库，并以 wao-return 接收 WAO 副本，旧 wao_app 保持锁定。下文提升步骤仅适用于原始“Linux2 写主、Linux1 只读副本”状态，不能在当前角色上重复执行。脚本不是自动选主器，不能因为检测到 Linux2 不通就执行提升。
 
 ## 操作前必须具备

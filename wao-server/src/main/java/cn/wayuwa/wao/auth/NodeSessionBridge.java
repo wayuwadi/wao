@@ -30,7 +30,7 @@ public class NodeSessionBridge {
     static final String NODE_ACCOUNT = "wao.edgeAccountId";
     static final String CSRF = "wao.edgeCsrf";
     static final String MAIN_ORIGIN = "https://wao.wayuwa.cn";
-    static final Set<String> NODE_ORIGINS = Set.of("https://linux1.wayuwa.cn:9443", "https://linux2.wayuwa.cn:9443");
+    static final Set<String> NODE_ORIGINS = Set.of("https://linux2.wayuwa.cn:9443");
     private final NodeTicketStore tickets;
     private final SessionRepository<? extends Session> authority;
     private final Clock clock;

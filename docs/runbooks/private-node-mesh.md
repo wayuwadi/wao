@@ -1,5 +1,7 @@
 # 三节点私网运行与恢复
 
+> 历史运维手册：Linux1 peer 与相关 endpoint、MySQL 隧道已退役。不要按本文重建三节点私网；当前拓扑与恢复边界见 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md)。
+
 Linux1配置：`~/.config/wao-wireguard/`，目录0700、私钥和wg-wao.conf为0600。
 工具镜像`wao-wireguard-tools:1`。`interface.sh`对应仓库linux1-mesh-interface.sh。
 用户单元wao-private-mesh.service保持接口，wao-private-mesh-endpoint.timer每分钟更新端点。

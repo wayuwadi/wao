@@ -14,7 +14,6 @@ def publish(path, release):
     path = Path(path)
     default = dict(schema=1, enabled=False, staticEnabled=False, forceCloud=True,
                    allowedReleases=[], nodes=[
-                       dict(origin='https://linux1.wayuwa.cn:9443', enabled=False),
                        dict(origin='https://linux2.wayuwa.cn:9443', enabled=False)])
     data = json.loads(path.read_text()) if path.exists() else default
     if data.get('schema') != 1 or any(type(data.get(k)) is not bool for k in ('enabled', 'staticEnabled', 'forceCloud')):
@@ -22,6 +21,14 @@ def publish(path, release):
     previous = data.get('allowedReleases')
     if not isinstance(previous, list) or any(not isinstance(v, str) or not re.fullmatch(r'[0-9a-f]{40}', v) for v in previous):
         raise ValueError('Invalid release allowlist')
+    nodes = data.get('nodes', default['nodes'])
+    if not isinstance(nodes, list) or any(not isinstance(node, dict) or not isinstance(node.get('origin'), str)
+                                          for node in nodes):
+        raise ValueError('Invalid edge node list')
+    data['nodes'] = [node for node in nodes
+                     if node['origin'] != 'https://linux1.wayuwa.cn:9443']
+    if not any(node['origin'] == 'https://linux2.wayuwa.cn:9443' for node in data['nodes']):
+        data['nodes'].append(dict(origin='https://linux2.wayuwa.cn:9443', enabled=False))
     data['allowedReleases'] = list(dict.fromkeys([release, *previous]))[:4]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o755)

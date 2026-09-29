@@ -1,5 +1,7 @@
 # Redis 私网三 Sentinel 运维
 
+> 历史运维手册：本文的多 Sentinel / 双 Redis 操作依赖已退役的 Linux1。当前部署不使用该故障转移流程；请以 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 为准。
+
 相关决定：ADR-244、245、246。所有命令在有现有Docker管理权限的对应Linux运行；不打印配置或凭据。
 
 ## 分阶段部署

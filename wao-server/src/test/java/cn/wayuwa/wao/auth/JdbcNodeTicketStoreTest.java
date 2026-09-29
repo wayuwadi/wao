@@ -25,7 +25,7 @@ class JdbcNodeTicketStoreTest {
         var store = new JdbcNodeTicketStore(jdbc);
         var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         String hash = "a".repeat(64);
-        var ticket = new NodeTicketStore.Ticket(UUID.randomUUID().toString(), "account-one", "https://linux1.wayuwa.cn:9443");
+        var ticket = new NodeTicketStore.Ticket(UUID.randomUUID().toString(), "account-one", "https://linux2.wayuwa.cn:9443");
         store.insert(hash, ticket, 1000, 61000);
         assertNull(store.consume(hash, "https://linux2.wayuwa.cn:9443", 1001));
         assertNull(store.consume(hash, ticket.targetOrigin(), 61000));

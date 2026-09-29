@@ -94,6 +94,7 @@ class DeploymentConfigTest {
         String backendBuild = read("deploy/jenkins/ci-backend-test.sh");
         String frontendBuild = read("deploy/jenkins/ci-frontend-build.sh");
         String browserBuild = read("deploy/jenkins/ci-build-frontends.sh");
+        String releaseBuild = read("deploy/jenkins/ci-build-release.sh");
         String rollout = read("deploy/jenkins/ci-deploy.sh");
         String verification = read("deploy/jenkins/ci-production-verify.sh");
 
@@ -113,10 +114,13 @@ class DeploymentConfigTest {
         assertThat(pipeline)
                 .contains("stage('打包构建')")
                 .contains("env.WAO_DEPLOY_REQUIRED == 'true'")
-                .contains("ci-build-frontends.sh");
+                .contains("ci-build-release.sh");
         assertThat(browserBuild)
                 .contains("ci-frontend-build.sh wao-web false true")
                 .contains("ci-frontend-build.sh agent-web false true");
+        assertThat(releaseBuild)
+                .contains("ci-build-frontends.sh")
+                .contains("ci-package.sh");
         assertThat(rollout)
                 .contains("agent-web/dist/.")
                 .contains("/var/www/wao-agent/dist");
@@ -140,22 +144,15 @@ class DeploymentConfigTest {
     }
 
     @Test
-    void bothNodesKeepMediaOnTheirOwnVolumeAndShareTheCredentialKey() throws IOException {
+    void linux2KeepsMediaOnItsOwnVolumeAndUsesTheCredentialKey() throws IOException {
         String master = read("deploy/docker-compose-master.yml");
-        String slave = read("deploy/docker-compose-slave.yml");
 
-        for (String compose : List.of(master, slave)) {
-            assertThat(compose)
-                    .contains("AGENT_MEDIA_DIR: /var/lib/wao-agent/media")
-                    .contains("wao-agent-media:/var/lib/wao-agent/media")
-                    // 两台节点必须用同一把密钥，否则另一台解不开已落库的平台令牌。
-                    // 必须带默认值：节点 .env 还没有这个变量时 compose 不该注入空串并让容器起不来。
-                    .contains("AGENT_CREDENTIAL_KEY: ${AGENT_CREDENTIAL_KEY:-}");
-        }
+        assertThat(master)
+                .contains("AGENT_MEDIA_DIR: /var/lib/wao-agent/media")
+                .contains("wao-agent-media:/var/lib/wao-agent/media")
+                .contains("AGENT_CREDENTIAL_KEY: ${AGENT_CREDENTIAL_KEY:-}");
         assertThat(master).contains("AGENT_NODE_ID: ${AGENT_NODE_ID:-master}");
-        assertThat(slave).contains("AGENT_NODE_ID: ${AGENT_NODE_ID:-slave}");
         assertThat(master).contains("name: wao-agent-master_wao-agent-media");
-        assertThat(slave).contains("name: wao-agent-slave_wao-agent-media");
     }
 
     @Test
@@ -177,12 +174,11 @@ class DeploymentConfigTest {
     void retiredVideoApiIsNotExposedOrConfigured() throws IOException {
         String common = read("agent-server/src/main/resources/application.yml");
         String master = read("deploy/docker-compose-master.yml");
-        String slave = read("deploy/docker-compose-slave.yml");
         String pipeline = read("Jenkinsfile");
         String rollout = read("deploy/jenkins/ci-deploy.sh");
         String nginx = read("deploy/nginx/wao.wayuwa.cn.conf.template");
 
-        assertThat(List.of(common, master, slave, pipeline, rollout))
+        assertThat(List.of(common, master, pipeline, rollout))
                 .allSatisfy(config -> assertThat(config).doesNotContain("AGENT_VIDEO_"));
         assertThat(nginx)
                 .doesNotContain("/api/agent/videos", "linux-vpn-master-video");

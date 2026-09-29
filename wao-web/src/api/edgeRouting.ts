@@ -1,6 +1,6 @@
 /** Browser-only route selection. Credentials and tickets remain in memory. */
 const MAIN = 'https://wao.wayuwa.cn'
-const TRUSTED = new Set(['https://linux1.wayuwa.cn:9443', 'https://linux2.wayuwa.cn:9443'])
+const TRUSTED = new Set(['https://linux2.wayuwa.cn:9443'])
 const BUSINESS = /^\/api\/(?:tasks|projects|areas|members|org|kbs|kb-groups|docs)(?:\/|\?|$)/
 const SAFE = new Set(['get', 'head'])
 const RECEIPT_WRITE = /^\/api\/tasks\/[^/?]+\/operations\/[0-9a-f-]{36}$/

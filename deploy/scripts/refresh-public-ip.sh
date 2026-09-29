@@ -1,10 +1,9 @@
 #!/bin/sh
 set -eu
 
-role="${1:?Usage: refresh-public-ip.sh <master|slave>}"
+role="${1:?Usage: refresh-public-ip.sh master}"
 case "${role}" in
   master) compose_name='docker-compose-master.yml' ;;
-  slave) compose_name='docker-compose-slave.yml' ;;
   *) echo "Unknown role: ${role}" >&2; exit 2 ;;
 esac
 
@@ -20,10 +19,7 @@ set -a
 . "${env_file}"
 set +a
 
-case "${role}" in
-  master) public_host="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}" ;;
-  slave) public_host="${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}" ;;
-esac
+public_host="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}"
 
 current_ip="$(getent ahostsv4 "${public_host}" 2>/dev/null | awk '$2 == "STREAM" { print $1; exit }')"
 if [ -z "${current_ip}" ]; then

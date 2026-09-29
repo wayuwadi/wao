@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Certbot DNS-01 hook, restricted to the two WAO public node names."""
+"""Certbot DNS-01 hook, restricted to the current Linux2 public node."""
 import base64
 import datetime as dt
 import hashlib
@@ -16,7 +16,7 @@ import uuid
 
 
 def api(action, **parameters):
-    credentials = Path(os.environ.get('WAO_DNS_CREDENTIALS', '~/.config/linux1-ddns/credentials')).expanduser()
+    credentials = Path(os.environ.get('WAO_DNS_CREDENTIALS', '~/.config/wao-node-acme/credentials')).expanduser()
     values = {}
     for line in credentials.read_text().splitlines():
         if '=' in line and not line.lstrip().startswith('#'):
@@ -45,7 +45,7 @@ def main():
     os.umask(0o077)
     domain = os.environ['CERTBOT_DOMAIN']
     token = os.environ['CERTBOT_VALIDATION']
-    if domain not in ('linux1.wayuwa.cn', 'linux2.wayuwa.cn'):
+    if domain != 'linux2.wayuwa.cn':
         raise ValueError('Unexpected certificate domain')
     rr = '_acme-challenge.' + domain.split('.')[0]
     root = Path('~/.local/state/wao-node-acme').expanduser()

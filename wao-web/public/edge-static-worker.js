@@ -1,5 +1,5 @@
 /* Public assets and explicit authenticated media GETs; no write replay or HTML hosting. */
-const ORIGINS = new Set(['https://linux1.wayuwa.cn:9443', 'https://linux2.wayuwa.cn:9443'])
+const ORIGINS = new Set(['https://linux2.wayuwa.cn:9443'])
 const MAX_ASSET_BYTES = 32 * 1024 * 1024
 let routing = null
 let routingUntil = 0

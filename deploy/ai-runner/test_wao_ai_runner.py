@@ -486,7 +486,7 @@ class RunnerConcurrencyTest(unittest.TestCase):
 
 
 class CodexEgressTest(unittest.TestCase):
-    """Linux1 只给 Codex 复用代理，并在无首事件时释放任务槽位。"""
+    """验证 Codex 出口代理与运行槽位释放行为。"""
 
     def test_codex_proxy_does_not_mutate_shared_runner_environment(self) -> None:
         shared = {"PATH": "runner-path", "GH_TOKEN": "github-token"}

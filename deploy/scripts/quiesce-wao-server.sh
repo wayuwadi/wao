@@ -1,26 +1,17 @@
 #!/bin/sh
 set -eu
 
-role="${1:?Usage: quiesce-wao-server.sh ROLE ACTION [PROJECT_ROOT]}"
+role="${1:?Usage: quiesce-wao-server.sh master ACTION [PROJECT_ROOT]}"
 action="${2:?Usage: quiesce-wao-server.sh ROLE ACTION [PROJECT_ROOT]}"
 project_root="${3:-}"
 
-case "${role}" in
-  master)
-    compose_file="deploy/docker-compose-master.yml"
-    compose_profile=""
-    if [ -z "${project_root}" ]; then
-      desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf '%s' "${HOME}/Desktop")"
-      project_root="${desktop_dir}/deploy/wao"
-    fi
-    ;;
-  slave)
-    compose_file="deploy/docker-compose-slave.yml"
-    compose_profile=""
-    : "${project_root:=${HOME}/deploy/wao}"
-    ;;
-  *) printf 'Unknown role: %s\n' "${role}" >&2; exit 2 ;;
-esac
+test "${role}" = master || { printf 'Unknown deployment role: %s\n' "${role}" >&2; exit 2; }
+compose_file="deploy/docker-compose-master.yml"
+compose_profile=""
+if [ -z "${project_root}" ]; then
+  desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf '%s' "${HOME}/Desktop")"
+  project_root="${desktop_dir}/deploy/wao"
+fi
 
 case "${project_root}" in
   ''|/) printf 'Unsafe project root: %s\n' "${project_root}" >&2; exit 2 ;;
@@ -150,7 +141,6 @@ case "${action}" in
     compose up -d --no-build --wait wao-server
     ;;
   pause-feishu-sync)
-    test "${role}" = master || { echo 'Only the master can pause the shared job.' >&2; exit 2; }
     pause_output="$(database --batch --skip-column-names <<'SQL'
 START TRANSACTION;
 INSERT IGNORE INTO system_setting (cfg_key, cfg_value, updated_at)
@@ -180,7 +170,6 @@ SQL
     }
     ;;
   rollout-status)
-    test "${role}" = master || { echo 'Only the master can inspect the shared rollout.' >&2; exit 2; }
     database --batch --skip-column-names <<'SQL'
 SELECT CASE
          WHEN EXISTS (
@@ -195,7 +184,6 @@ SELECT CASE
 SQL
     ;;
   restore-feishu-sync)
-    test "${role}" = master || { echo 'Only the master can restore the shared job.' >&2; exit 2; }
     database <<'SQL'
 UPDATE automation_job AS job
 JOIN system_setting AS saved
@@ -206,7 +194,6 @@ DELETE FROM system_setting WHERE cfg_key = 'deployment.v77.feishu-sync-status';
 SQL
     ;;
   complete-v77-rollout)
-    test "${role}" = master || { echo 'Only the master can complete the shared rollout.' >&2; exit 2; }
     completion_output="$(database --batch --skip-column-names <<'SQL'
 START TRANSACTION;
 SET @migration_count = (

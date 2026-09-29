@@ -11,7 +11,7 @@ case "$state" in pending|success|failure|error) ;; *) exit 2 ;; esac
 if [ "$state" = failure ] && [ -n "${WAO_RUN_TEMP:-}" ]; then
   status_file="$WAO_RUN_TEMP/wao-deploy-status.env"
   if [ -f "$status_file" ]; then
-    for prefix in slave master cloud verification; do
+    for prefix in linux2 cloud verification; do
       status="$(sed -n "s/^${prefix}_status=//p" "$status_file" | tail -n 1)"
       if [ "$status" = failed ]; then
         detail="$(sed -n "s/^${prefix}_detail=//p" "$status_file" | tail -n 1)"

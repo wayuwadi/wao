@@ -9,8 +9,8 @@ WAO 是一个由 AI 协作开发的前后端分离系统，采用 Spec-Driven De
 | 后端与网关       | 已完成 | Java 17、Spring Boot 3、Gateway、Nacos 2.x、统一响应和异常处理   |
 | 前端脚手架       | 已完成 | Vue 3、Vite、TypeScript、Pinia、Vue Router 4、Ant Design Vue     |
 | 本地 Demo        | 可运行 | 使用 `local` Profile，不依赖 Docker、MySQL、Redis 或 Nacos       |
-| 生产部署代码     | 已完成 | 双节点 Compose、MySQL 主从、Redis Sentinel、云 Nginx、TLS、CI/CD |
-| 三节点实机上线   | 已完成 | 云前端/HTTPS、Linux2 主节点与 Linux1 从节点组成主从环境          |
+| 生产部署代码     | 已完成 | Linux2 单节点 Compose、云 Nginx、TLS、CI/CD 与异地加密备份      |
+| 单节点实机上线   | 已完成 | Linux2 应用与数据库、云端静态制品及公共入口已完成验收           |
 | Phase 1 业务功能 | 待规格 | 需要设计稿、ER 模型和业务 API 契约                               |
 
 ## 技术栈
@@ -18,7 +18,7 @@ WAO 是一个由 AI 协作开发的前后端分离系统，采用 Spec-Driven De
 - Web：Vue 3、Vite、TypeScript、Ant Design Vue、Pinia、Vue Router 4
 - Server：Java 17、Spring Boot 3、MyBatis-Plus、Flyway
 - Gateway：Spring Cloud Gateway、Nacos 2.4.3
-- Data：MySQL 9.7、Redis 7 Sentinel
+- Data：MySQL 9.7、Redis 7
 - Delivery：Docker Compose、Nginx、Linux 自建 Jenkins、公网 DDNS
 
 ## 五分钟启动 Demo（无需 Docker）
@@ -59,9 +59,9 @@ Invoke-RestMethod http://localhost:9000/api/hello
 
 当前 Demo 是 Phase 0 的系统状态页，用于验证真实前后端链路；它不是尚未导入的 `WAO Life OS v3` 设计稿成品。
 
-## 双 Linux 生产节点
+## 生产部署
 
-生产环境使用两台原生 Linux：`linux2.wayuwa.cn` 作为主节点和 Jenkins 控制器，`linux1.wayuwa.cn` 作为从节点、开发机与 AI Runner。两台应用节点运行同一 Git SHA 的 Linux 容器；MySQL 使用 GTID 主从复制，Redis 使用主从复制和双 Sentinel。旧 Windows1 已重装为 Linux1，不再使用 WSL2、PowerShell 发布或 RDP 运维链路。
+自 2026-09-27 起，Linux2 是 WAO 唯一 Linux 部署节点，也是 Jenkins 控制器；云端负责静态制品、HTTPS 与公共 Nginx 入口。Linux1 已退役，现行流水线不再连接或探测它。Linux2 原地发布可能短暂中断，异地加密恢复链见 [单节点备份手册](docs/runbooks/linux2-only-cloud-backup.md) 与 [ADR-291](docs/adr/291-linux2-only-deployment-and-wao-recovery.md)。Garage 的旧三节点配置仍待单独决定迁移方案，见 [对象存储说明](deploy/storage/README.md)；不要照旧示例调整在线布局。
 
 ## 完整开发环境
 
@@ -133,7 +133,7 @@ wao/
 - [Phase 0 规格](docs/specs/phase-0.md)：当前纵向切片的验收标准。
 - [Hello API 契约](docs/api/hello.yaml)：OpenAPI 3.0 定义。
 - [Hello 页面规格](docs/pages/hello.md)：页面行为与状态说明。
-- [实机上线清单](docs/runbooks/phase-0-rollout.md)：三节点当前状态、复现步骤与验收项。
+- [历史实机上线记录](docs/runbooks/phase-0-rollout.md)：保留退役前的部署证据，不是当前操作步骤。
 - [部署手册](deploy/README.md)：环境变量、证书、DDNS、备份和 CI/CD。
 - [公网直连决策](docs/adr/005-public-ddns-network.md)：不使用 Tailscale 后的网络与风险边界。
 - [贡献指南](CONTRIBUTING.md)：小伙伴拉取代码、提交业务架构/ER 图及发起 PR 的规则。

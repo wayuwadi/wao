@@ -47,10 +47,13 @@ def main():
     os.chown(sshdir, account.pw_uid, account.pw_gid)
     authorized = sshdir / "authorized_keys"
     previous = authorized.read_text() if authorized.exists() else ""
-    row = 'restrict,port-forwarding,permitopen="10.66.0.3:22",permitopen="10.66.0.2:22" ' + key
-    if row not in previous.splitlines():
-        with authorized.open("a") as output:
-            output.write(("\n" if previous and not previous.endswith("\n") else "") + row + "\n")
+    row = 'restrict,port-forwarding,permitopen="10.66.0.2:22" ' + key
+    retired_row = 'restrict,port-forwarding,permitopen="10.66.0.3:22",permitopen="10.66.0.2:22" ' + key
+    rows = [row if existing == retired_row else existing for existing in previous.splitlines()]
+    if row not in rows:
+        rows.append(row)
+    if rows != previous.splitlines():
+        authorized.write_text("\n".join(rows) + "\n")
     os.chmod(authorized, 0o600)
     os.chown(authorized, account.pw_uid, account.pw_gid)
     main_config = Path("/etc/ssh/sshd_config")
@@ -68,7 +71,7 @@ def main():
     effective = subprocess.check_output(["/usr/sbin/sshd", "-T", "-f", str(candidate),
                                          "-C", f"user={USER},host=recovery-client,addr=127.0.0.1"], text=True)
     for required in ["passwordauthentication no", "authenticationmethods publickey", "maxsessions 0",
-                     "allowtcpforwarding local", "permitopen 10.66.0.3:22 10.66.0.2:22"]:
+                     "allowtcpforwarding local", "permitopen 10.66.0.2:22"]:
         if required not in effective.splitlines():
             raise RuntimeError("Effective SSH policy did not match the restricted design")
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")

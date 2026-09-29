@@ -1,5 +1,7 @@
 # 四库异机备份与指定位置恢复
 
+> 历史操作手册：本文依赖 Linux1 peer、反向复制和旧恢复工具，已由 [Linux2 单节点异地加密备份](linux2-only-cloud-backup.md) 与 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 取代。不要安装或启用本文中的 Linux1 步骤。
+
 当前写入源是 Linux2 原生 MySQL 9.7，范围为 wao、tools、wayuwa、tkwork。Linux1 在线复制仍只含 wao。
 
 ## 安装与回退

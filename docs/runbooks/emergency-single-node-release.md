@@ -1,18 +1,16 @@
-# WAO 单节点应急发布
+# WAO 单节点发布故障处理
 
-仅在节点机器或管理通道故障、构建代码本身已通过验证时使用。正常发布继续由 Jenkins 双节点滚动完成。一次只选择一个路径，发布中不要并发触发 Jenkins 与 GitHub Actions。
+自 ADR-291 生效后，Linux2 是唯一 Linux 应用节点；云端托管静态制品和公共 Nginx 入口。Linux1 不再是可部署或可接管节点。本手册仅说明当前发布边界，不提供绕过 Jenkins 的手工发布流程。
 
-## Jenkins 仍可用
+## Jenkins 发布失败
 
-- Linux2 不可用而 Linux1 健康：手动运行 `wao-main-cd`，选择目标 `main`，设置 `ALLOW_MASTER_OFFLINE=true`，保持 `BOOTSTRAP_SLAVE=false`、`ALLOW_SLAVE_OFFLINE=false`。若 Linux2 是安装后失败，流水线会在 Linux1 同 SHA 已通过安装和云端就绪验证后继续；Linux1 失败则停止。
-- Linux1 SSH/Docker 不可用而 Linux2 健康：设置 `ALLOW_SLAVE_OFFLINE=true`。Linux1 将保持摘流，Linux2 原地更新可能短暂中断。
-- 验收 Jenkins 单节点状态、公共 `/api/edge/ready`、`/version.json` 与首页 `data-v` 的 SHA。飞书卡片应写明单节点，不显示双节点成功。
+1. 以 Jenkins 阶段状态和日志定位失败发生在 Linux2 应用、云端静态制品还是公共入口检查。
+2. Linux2 部署失败时，流水线会尝试恢复之前的应用镜像；确认 Linux2 容器健康和 /api/edge/ready 后再重试发布。
+3. 云端或入口阶段失败时，修复该阶段报告的问题后重试。不要将未通过公共就绪检查的发布标记为成功。
+4. 浏览器静态资源专用发布仍依赖 Linux2 当前后端就绪，不会切换到备用应用节点。
 
-## Jenkins 不可用，使用 Linux1 控制台
+## Linux2 或数据库不可用
 
-1. 在 Linux1 准备**独立于** `~/deploy/wao` 的私有仓库 checkout。使用既有 GitHub 访问方式获取最新 `origin/main`；不要发送或写入密码、Token、私钥到命令或日志。确认 `git status --short` 为空，`git rev-parse HEAD` 与 `git rev-parse origin/main` 都是目标完整 SHA。
-2. 在 checkout 根目录运行 `bash deploy/scripts/emergency-release-linux1.sh <完整 SHA>`。脚本会在 Linux1 用 Docker 运行后端与前端测试、前端类型检查和镜像构建，再复用现有私有环境文件调用安装器，验证三项应用镜像、容器健康和数据库就绪。只有打印 `WAO_LINUX1_EMERGENCY_RELEASE_VERIFIED=<SHA>` 才进入下一步。安装器会保存应用原镜像用于故障回滚，不清理线上数据库。
-3. 在 GitHub Actions 手动运行 `Emergency Linux1 browser release`，输入上一步的完整 SHA。托管 runner 会重新确认它就是当前 `main`，构建两个网页，使用既有云端 SSH 身份上传不可变静态制品，并在云端检查 Linux1 直接就绪后切换入口，摘流尚未同步该版本的 Linux2。
-4. 仅当工作流打印 `WAO_EMERGENCY_PUBLIC_RELEASE_VERIFIED=<SHA>`，且浏览器打开 WAO、`/api/edge/ready` 成功、公开版本对应目标 SHA 时，报告新版本可用。Linux2 恢复后重新发布同一 `main` SHA 到两节点并检查版本一致。
+当前没有第二台应用节点可接管流量。先依据 [Linux2 单节点异地加密备份](linux2-only-cloud-backup.md) 与 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md) 检查恢复点、数据范围及恢复门槛，再恢复 Linux2 服务。不要把旧 peer 快照、123 云盘可读副本或已退役 Linux1 描述成可用接管路径。
 
-如果 Linux1 没有可读取私有仓库的既有访问方式，需要先由用户在 Linux1 控制台完成安全登录；不要把私有凭据复制到本机或对话。若云端 SSH 密钥的权限或已安装 Nginx 路由与预期不符，工作流会失败并保留旧静态页；先修复具体环境问题再重试。
+发布完成通知以 Jenkins 阶段证据为准，分别报告 Linux2、云端制品和公共入口状态；代码合并不代表生产已发布。

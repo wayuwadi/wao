@@ -1,5 +1,7 @@
 # 节点会话与 API 直连验收
 
+> 历史验收记录：本文的 Linux1 节点会话与双节点数据对比是退役前证据，不是当前节点或登录路径。当前拓扑见 [ADR-291](../adr/291-linux2-only-deployment-and-wao-recovery.md)。
+
 ## 本地与真实数据
 
 - 本地 Java17 应用连接既有 MySQL9.7，关闭定时任务、Nacos 注册和系统报告调度；监听仅本机回环。

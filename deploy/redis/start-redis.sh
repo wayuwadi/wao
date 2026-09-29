@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Runtime topology belongs to Redis/Sentinel, not the release environment.
+# Redis starts only from the durable local configuration; releases never infer its role.
 state=/data/wao-runtime/redis.conf
 if [ ! -s "$state" ] || [ -L "$state" ]; then
   echo 'Redis durable state is absent; prepare or restore it before starting. No role was assumed.' >&2

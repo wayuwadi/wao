@@ -153,8 +153,7 @@ server {
         proxy_send_timeout 300s;
     }
 
-    # JumpServer SSO tickets are signed only on the Linux node that owns the
-    # matching private deployment secret. Do not send this endpoint to the slave.
+    # JumpServer SSO tickets are signed on Linux2, which owns the private deployment secret.
     location = /api/auth/jumpserver {
         proxy_pass https://wao_ai_gateway;
         proxy_http_version 1.1;

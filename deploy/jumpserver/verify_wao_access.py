@@ -1,9 +1,7 @@
 """Fail-closed production verification for WAO JumpServer asset access."""
 
-import os
-
 from accounts.models import Account
-from assets.models import Host
+from assets.models import Gateway, Host, Zone
 from orgs.models import Organization
 from orgs.utils import tmp_to_org
 from perms.models import ActionChoices, AssetPermission
@@ -12,7 +10,6 @@ from users.models import User, UserGroup
 
 ASSET_NAMES = {
     "WAO Linux 主节点",
-    "WAO Linux 从节点",
     "WAO 阿里云入口",
 }
 AUTHORIZED_MEMBER_NAMES = {"娃哥", "娃弟"}
@@ -20,6 +17,9 @@ AUTHORIZED_GROUP_NAME = "WAO 基础设施维护者"
 SSH_PERMISSION_NAME = "WAO 双人 SSH 管理"
 RETIRED_WINDOWS_ASSET_NAME = "WAO Windows 从节点"
 RETIRED_RDP_PERMISSION_NAME = "WAO 双人 Windows 图形管理"
+RETIRED_LINUX_ASSET_NAME = "WAO Linux 从节点"
+RETIRED_GATEWAY_NAME = "WAO Linux2 隧道网关"
+RETIRED_ZONE_NAME = "WAO Linux1 反向隧道"
 
 
 def require(condition, message):
@@ -34,24 +34,17 @@ with tmp_to_org(Organization.default()):
     for asset in assets.values():
         accounts = Account.objects.filter(asset=asset, name="wao-jumpserver", is_active=True)
         require(accounts.count() == 1, "Dedicated account is missing for " + asset.name)
-        port = int(os.environ["WAO_JMS_SLAVE_PORT"]) if asset.name == "WAO Linux 从节点" else 22
-        ssh = asset.protocols.filter(name="ssh", port=port)
+        ssh = asset.protocols.filter(name="ssh", port=22)
         require(ssh.count() == 1, "SSH protocol is invalid for " + asset.name)
 
-    slave = assets["WAO Linux 从节点"]
-    require(slave.address == os.environ["WAO_JMS_SLAVE_ADDRESS"], "Slave SSH address is stale")
-    if os.environ["WAO_JMS_SLAVE_VIA_MASTER"] == "true":
-        require(slave.zone is not None, "Slave tunnel zone is missing")
-        gateways = list(slave.zone.active_gateways)
-        require(len(gateways) == 1, "Slave tunnel must have exactly one gateway")
-        gateway = gateways[0]
-        require(gateway.name == "WAO Linux2 隧道网关"
-                and gateway.address == os.environ["WAO_JMS_MASTER_ADDRESS"]
-                and gateway.username == os.environ["WAO_JMS_MASTER_USER"]
-                and int(gateway.port) == 22, "Slave tunnel gateway is invalid")
-        require(slave.gateway is not None, "Slave platform cannot use its gateway")
-    else:
-        require(slave.zone is None, "Direct slave retains a stale gateway")
+    require(not Host.objects.filter(name=RETIRED_LINUX_ASSET_NAME, is_active=True).exists(),
+            "Retired Linux asset is still active")
+    require(not Account.objects.filter(asset__name=RETIRED_LINUX_ASSET_NAME, is_active=True).exists(),
+            "Retired Linux account is still active")
+    require(not Gateway.objects.filter(name=RETIRED_GATEWAY_NAME, is_active=True).exists(),
+            "Retired tunnel gateway is still active")
+    require(not Zone.objects.filter(name=RETIRED_ZONE_NAME, gateways__is_active=True).exists(),
+            "Retired tunnel zone still has an active gateway")
 
     users = list(User.objects.filter(
         username__startswith="wao_",
@@ -103,4 +96,4 @@ with tmp_to_org(Organization.default()):
         "Retired Windows RDP permission is still active",
     )
 
-print("WAO JumpServer asset access verification passed")
+print("WAO JumpServer Linux2/cloud asset access verification passed")

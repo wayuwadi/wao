@@ -13,28 +13,13 @@ import urllib.parse
 
 TARGETS = {
     'main': 'https://wao.wayuwa.cn/api/edge/ready',
-    'linux1': 'https://linux1.wayuwa.cn:9443/api/edge/ready',
     'linux2': 'https://linux2.wayuwa.cn:9443/api/edge/ready',
 }
-TOPOLOGY_FILE = Path('/etc/wao-deploy-topology')
-
-
-def active_targets(topology_file=TOPOLOGY_FILE):
-    try:
-        topology = topology_file.read_text().strip()
-    except OSError:
-        topology = 'dual'
-    if topology == 'linux2-only':
-        return {name: url for name, url in TARGETS.items() if name != 'linux1'}
-    if topology != 'dual':
-        raise ValueError(f'Unsupported WAO deployment topology: {topology}')
-    return TARGETS
 
 
 PLANNED_DRAIN_DIR = Path('/run/wao-nginx-upstreams')
 PLANNED_DRAIN_MAX_SECONDS = 2 * 3600
-# Jenkins touches this marker when a release starts and again when it ends.
-# Parallel node replacement briefly takes every entry offline (ADR-280).
+# Jenkins touches this marker when the Linux2 application is replaced in place.
 DEPLOY_WINDOW_SECONDS = 10 * 60
 # The timer runs every minute. A short clean interval must not close a
 # flapping incident and cause a new Feishu alert for the same failure.
@@ -47,14 +32,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def probe(url):
-    # Cloud's legacy /etc/hosts maps Linux1 to its local reverse tunnel. Query
-    # public DNS for this public-port probe, while curl still checks hostname TLS.
     try:
         host = urllib.parse.urlsplit(url).hostname
         command = ['curl', '--silent', '--fail', '--max-time', '4', '--connect-timeout', '2',
                    '--max-filesize', '4096', '--proto', '=https',
                    '-H', 'Origin: https://wao.wayuwa.cn']
-        if host in ('linux1.wayuwa.cn', 'linux2.wayuwa.cn'):
+        if host == 'linux2.wayuwa.cn':
             answer = subprocess.run(['dig', '+time=2', '+tries=1', '+short', 'A', host, '@223.5.5.5'],
                                     capture_output=True, text=True, timeout=3, check=True)
             addresses = []
@@ -77,22 +60,14 @@ def probe(url):
 
 
 def planned_drains(now, runtime_dir=PLANNED_DRAIN_DIR):
-    """Ignore only recent, explicit Nginx drains; stale markers remain alertable."""
+    """Ignore all probes only during a recent, explicit single-node release."""
     try:
         age = now - (runtime_dir / 'deploying').stat().st_mtime
         if 0 <= age <= DEPLOY_WINDOW_SECONDS:
             return set(TARGETS)
     except OSError:
         pass
-    planned = set()
-    for node, target in (('master', 'linux2'), ('slave', 'linux1')):
-        try:
-            age = now - (runtime_dir / f'{node}.down').stat().st_mtime
-            if 0 <= age <= PLANNED_DRAIN_MAX_SECONDS:
-                planned.add(target)
-        except OSError:
-            pass
-    return planned
+    return set()
 
 
 def update(previous, results, now, planned=()):
@@ -129,7 +104,7 @@ def main():
     parser.add_argument('--state', type=Path, default=Path('/var/lib/wao-health-watch/state.json'))
     parser.add_argument('--check-only', action='store_true')
     args = parser.parse_args()
-    targets = active_targets()
+    targets = TARGETS
     results = {name: probe(url) for name, url in targets.items()}
     print(json.dumps(results))
     if args.check_only:
@@ -138,7 +113,6 @@ def main():
         previous = json.loads(args.state.read_text())
     except (OSError, ValueError):
         previous = {}
-    # A retired node cannot remain an open incident or trigger a false recovery.
     previous['notified'] = [name for name in previous.get('notified', []) if name in targets]
     now = int(time.time())
     state, problems, message = update(previous, results, now, planned_drains(now))

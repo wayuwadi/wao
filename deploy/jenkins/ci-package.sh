@@ -35,15 +35,14 @@ docker build --target agent-runtime -t "wao-agent-server:$WAO_GIT_SHA" -f deploy
 docker build --target gateway-runtime -t "wao-gateway:$WAO_GIT_SHA" -f deploy/Dockerfile .
 docker build --target codex-egress-proxy -t "wao-codex-egress-proxy:$WAO_GIT_SHA" -f deploy/Dockerfile .
 
-# Linux1 生产从节点不能依赖 Docker Hub 在发布窗口内保持可达。把 Compose
-# 所需的固定第三方镜像和应用镜像一起打进不可变发布包。
+# Linux2 可能无法在发布窗口内稳定访问 Docker Hub。把 Compose 所需的固定
+# 第三方镜像和应用镜像一起打进不可变发布包。
 for image in mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
-  # 已有本地副本时直接复用，避免每次打包都访问 Docker Hub；Linux1 按镜像 ID 对齐。
+  # 已有本地副本时直接复用，避免每次打包都访问 Docker Hub。
   docker image inspect "$image" >/dev/null 2>&1 || pull_image "$image"
 done
 
-# 影子构建仍生成完整的可交付镜像包；生产发布则在部署阶段按 Linux1
-# 已有镜像 ID 选择缺少的部分，避免每次打包和上传同一批镜像。
+# 影子构建与生产发布都打包完整镜像集，由当前 Linux2 部署步骤导入。
 if [ "${DEPLOY_PRODUCTION:-true}" != true ]; then
   docker save \
     "wao-server:$WAO_GIT_SHA" "wao-agent-server:$WAO_GIT_SHA" \
