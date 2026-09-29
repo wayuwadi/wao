@@ -33,4 +33,7 @@ JDK 或 Jenkins 升级需要检查新 JVM 已加载，空闲时安全重启并�
 Linux2 当前生成的 `.jumpserver-asset-key.pub` 更新云入口授权后才运行 `verify-assets.sh`。JumpServer
 持久密钥可能在部署时首次生成；提前同步旧公钥会导致 Linux2 验收通过、云入口认证失败。
 
+若 Linux2 与云入口 SSH 均通过、随后出现 Django `Cannot resolve keyword`，检查验收脚本是否把模型属性当作 ORM
+关系字段。JumpServer 4.10.19 的 `Zone.gateways` 是实例属性；查询该 Zone 下活动网关应过滤 `Gateway.zone`。
+
 2026-09-24 故障的证据和恢复边界见 ADR-262。

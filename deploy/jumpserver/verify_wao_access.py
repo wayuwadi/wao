@@ -1,7 +1,7 @@
 """Fail-closed production verification for WAO JumpServer asset access."""
 
 from accounts.models import Account
-from assets.models import Gateway, Host, Zone
+from assets.models import Gateway, Host
 from orgs.models import Organization
 from orgs.utils import tmp_to_org
 from perms.models import ActionChoices, AssetPermission
@@ -43,7 +43,7 @@ with tmp_to_org(Organization.default()):
             "Retired Linux account is still active")
     require(not Gateway.objects.filter(name=RETIRED_GATEWAY_NAME, is_active=True).exists(),
             "Retired tunnel gateway is still active")
-    require(not Zone.objects.filter(name=RETIRED_ZONE_NAME, gateways__is_active=True).exists(),
+    require(not Gateway.objects.filter(zone__name=RETIRED_ZONE_NAME, is_active=True).exists(),
             "Retired tunnel zone still has an active gateway")
 
     users = list(User.objects.filter(
