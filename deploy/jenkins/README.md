@@ -31,7 +31,7 @@ apply-controller-config.sh 随主发布同步 Jenkins 配置，并停用残留�
 
 ## JumpServer 资产密钥安装
 
-发布批次变更 deploy/jumpserver/ 时，流水线会安装 JumpServer 专用公钥。Linux2 上的公钥由 sudoers 白名单中的 deploy-master-local.sh 以 wadi 身份、在解包新版本后安装；流水线不能直接通过 sudo 执行仓库脚本。
+发布批次变更 deploy/jumpserver/ 时，Linux2 部署助手先生成或确认 JumpServer 持久资产密钥，并将当前公钥同步到云入口；流水线随后验收两台资产的 SSH 连接。这个顺序保证首次生成或轮换的密钥在两台资产上一致。Linux2 上的公钥由 sudoers 白名单中的 deploy-master-local.sh 以 wadi 身份、在解包新版本后安装；流水线不能直接通过 sudo 执行仓库脚本。
 
 ## 关联手册
 

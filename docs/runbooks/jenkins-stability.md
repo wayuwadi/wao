@@ -29,4 +29,8 @@ JDK 或 Jenkins 升级需要检查新 JVM 已加载，空闲时安全重启并�
 探针异常进入 journal 和状态文件，尚未接入独立外部告警。后续若接入，必须覆盖探针自身停止、
 主机失联及提交超过预期未构建，并明确通知渠道和去重策略。
 
+发布涉及 `deploy/jumpserver/` 且失败在资产 SSH 验收时，检查 Linux2 部署是否已完成，再确认流水线用
+Linux2 当前生成的 `.jumpserver-asset-key.pub` 更新云入口授权后才运行 `verify-assets.sh`。JumpServer
+持久密钥可能在部署时首次生成；提前同步旧公钥会导致 Linux2 验收通过、云入口认证失败。
+
 2026-09-24 故障的证据和恢复边界见 ADR-262。
