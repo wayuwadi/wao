@@ -227,8 +227,13 @@ async function hideGroupFromContext() {
   menu.busy = true
   menu.error = ''
   try {
-    await nav.hideMenuGroup(menu.groupId)
-    toast('分组已隐藏，可在“全部功能”→“自定义导航”中重新固定菜单恢复', 'ri-check-line')
+    const result = await nav.hideMenuGroup(menu.groupId)
+    toast(
+      result === 'removed-empty-group'
+        ? '空分组已移除'
+        : '分组已隐藏，可在“全部功能”→“自定义导航”中重新固定菜单恢复',
+      'ri-check-line',
+    )
     contextMenu.value = null
   } catch (error) {
     menu.busy = false
@@ -514,7 +519,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             <button type="button" :disabled="contextMenu.busy || !nav.canMoveMenus" @click="openGroupPicker(contextMenu.groupId!)">
               <i class="ri-add-line"></i>添加已有菜单
             </button>
-            <button type="button" class="danger" :disabled="contextMenu.busy || !nav.canMoveMenus || !groups.find((group) => group.id === contextMenu?.groupId)?.items.length" @click="hideGroupFromContext">
+            <button type="button" class="danger" :disabled="contextMenu.busy || !nav.canMoveMenus || !nav.canHideMenuGroup(contextMenu.groupId!)" @click="hideGroupFromContext">
               <i class="ri-eye-off-line"></i>隐藏分组
             </button>
           </template>
