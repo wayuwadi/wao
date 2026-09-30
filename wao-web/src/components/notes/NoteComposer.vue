@@ -252,7 +252,7 @@ async function save(asCopy = false) {
     if (props.note && !asCopy) {
       if (data.docPending(props.note.id)) throw new Error('这篇小记在文档页还有未保存编辑，请先完成保存')
       const latest = await fetchDoc(props.note.id)
-      if (restored && initial.baseRev != null && initial.baseRev !== openedRev) {
+      if (restored && (initial.baseRev == null || initial.baseRev !== openedRev)) {
         throw new Error('文档已在其他窗口更新，恢复的旧草稿需先核对；正文仍在')
       }
       const latestRev = latest.rev ?? 1

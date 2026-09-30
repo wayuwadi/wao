@@ -521,6 +521,19 @@ describe('小记集中记录空间', () => {
     second.unmount()
   })
 
+  it('没有版本号的旧浏览器草稿不能按当前服务器版本盲写', async () => {
+    const note = doc('legacy-draft', '服务器正文')
+    useDataStore().docs[note.id] = note
+    localStorage.setItem('wao-note-edit-v1:wg:legacy-draft', JSON.stringify({ id: note.id, text: '旧草稿新输入' }))
+    const wrapper = composer(note)
+    await wrapper.find('.save-note').trigger('click')
+    await flushPromises()
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').text()).toContain('恢复的旧草稿需先核对')
+    expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('旧草稿新输入')
+    wrapper.unmount()
+  })
+
   it('编辑草稿与后台标题、总览图预览并存，保存时合入 AI 产物', async () => {
     const base = doc('ai-note', '原文')
     base.content = { version: 1, markdown: '原文', document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '原文' }] }] } }
@@ -540,7 +553,7 @@ describe('小记集中记录空间', () => {
     expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('原文，继续写')
     expect(wrapper.get('.saved-preview').text()).toContain('与上方未保存的编辑草稿独立')
     expect(wrapper.get<HTMLTextAreaElement>('.saved-preview textarea').element.value).toContain('![文章总览图]')
-    notePolishVersions[base.id] = { docId: base.id, sourceMarkdown: remote.content.markdown, polishedMarkdown: 'AI 润色版' }
+    notePolishVersions[base.id] = { docId: base.id, sourceMarkdown: remote.content!.markdown, polishedMarkdown: 'AI 润色版' }
     await flushPromises()
     expect(wrapper.get<HTMLTextAreaElement>('.saved-preview textarea').element.value).toBe('AI 润色版')
     expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('原文，继续写')
