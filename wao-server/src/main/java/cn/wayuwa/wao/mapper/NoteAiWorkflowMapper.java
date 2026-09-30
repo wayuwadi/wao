@@ -70,6 +70,11 @@ public interface NoteAiWorkflowMapper {
                     titleStatus, titleJobId, imageStatus, imageRunId, polishStatus, polishJobId,
                     lastError, createdAt, updatedAt);
         }
+        public Workflow withContent(int rev, String hash) {
+            return new Workflow(docId, memberId, rev, originalTitle, hash,
+                    titleStatus, titleJobId, imageStatus, imageRunId, polishStatus, polishJobId,
+                    lastError, createdAt, updatedAt);
+        }
         public Workflow withTitle(String status, String jobId, int rev, String title, String error) {
             return new Workflow(docId, memberId, rev, title, sourceMarkdownHash, status, jobId,
                     imageStatus, imageRunId, polishStatus, polishJobId, error, createdAt, updatedAt);

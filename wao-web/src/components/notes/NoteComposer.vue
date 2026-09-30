@@ -6,13 +6,13 @@ import { useSessionStore } from '@/stores/session'
 import { apiCreateNoteTag, apiPatchDoc, fetchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { rebaseNoteDraft } from '@/utils/rebaseNoteDraft'
-import { notePolishVersions } from '@/utils/autoNoteEnrichment'
+import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
-const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean }>()
-const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string] }>()
+const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string }>()
+const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string]; 'draft-change': [draft: NoteDraftSnapshot | null] }>()
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const noteEditor = ref<{ removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean } | null>(null)
 const data = useDataStore()
@@ -32,18 +32,18 @@ function readDraft(): Draft {
       return saved
     }
   } catch { /* 无可恢复的草稿。 */ }
-  const content = props.note ? resolvedRichContent(props.note) : undefined
+  const content = props.note ? latestNoteContent(props.note) : undefined
   return { id: props.note?.id ?? crypto.randomUUID().replace(/-/g, ''), text: content?.markdown ?? '', content, baseRev: props.note?.rev, tags: props.note?.tags ?? [] }
 }
 const initial = readDraft()
-const savedContent = props.note ? resolvedRichContent(props.note) : { version: 1 as const, document: null, markdown: '' }
+const savedContent = props.note ? latestNoteContent(props.note) : { version: 1 as const, document: null, markdown: '' }
 const savedSnapshot = ref({
   text: props.note ? savedContent.markdown : '',
   document: savedContent.document,
   tags: [...(props.note?.tags ?? [])],
   title: props.note?.title ?? '',
 })
-const tags = ref<string[]>(initial.tags ?? [])
+const tags = ref<string[]>(initial.tags ?? props.note?.tags ?? [])
 const tagCreateOpen = ref(false)
 const newTag = ref('')
 const creatingTag = ref(false)
@@ -184,7 +184,7 @@ const taskSource = computed(() => ({
 const text = ref(initial.text)
 const content = ref<RichDocContent | undefined>(initial.content)
 const generatedTitle = ref(initial.generatedTitle || props.note?.title || '')
-// 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
+// 保留开始编辑时的快照，后台元信息可合并，本次输入优先。
 let baseRev = initial.baseRev ?? props.note?.rev ?? 1
 const restoredBase = initial.baseNote
 const validRestoredBase = restoredBase && typeof restoredBase.title === 'string'
@@ -198,22 +198,8 @@ let baseNote = props.note && (!restored || initial.baseRev != null && initial.ba
 } : restored && initial.baseRev != null && validRestoredBase ? {
   ...restoredBase, blocks: legacyProjection(restoredBase.content),
 } : null
-const conflictDoc = ref<Doc | null>(null)
-const savedPreviewOpen = ref(!!props.note && !!props.inline)
-const savedPreviewVersion = ref<'polished' | 'original'>('polished')
-const savedPreviewContent = computed(() => conflictDoc.value ? resolvedRichContent(conflictDoc.value)
-  : props.note ? resolvedRichContent(props.note) : null)
-const savedPolish = computed(() => {
-  if (!props.note || !savedPreviewContent.value) return null
-  const version = notePolishVersions[props.note.id]
-  return version?.sourceMarkdown === savedPreviewContent.value.markdown ? version : null
-})
-const savedPreviewMarkdown = computed(() => savedPreviewVersion.value === 'polished' && savedPolish.value
-  ? savedPolish.value.polishedMarkdown : savedPreviewContent.value?.markdown ?? '')
 const saving = ref(false)
 const error = ref('')
-const conflicted = computed(() => /其他窗口更新|版本冲突/.test(error.value))
-const copyId = crypto.randomUUID().replace(/-/g, '')
 const draftError = ref(false)
 const status = ref(restored ? '已恢复草稿，可继续记录' : '')
 let resetting = false
@@ -236,6 +222,13 @@ watch(
 watch([text, content, tags, generatedTitle], () => {
   if (resetting) return
   error.value = ''
+  if (props.note && !dirty.value) {
+    try { localStorage.removeItem(draftKey) } catch { /* 服务器中已有相同内容。 */ }
+    status.value = '已保存，可继续编辑'
+    draftError.value = false
+    emit('draft-change', null)
+    return
+  }
   try {
     localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev,
       baseNote: baseNote ? { title: baseNote.title, tags: baseNote.tags, content: baseNote.content } : undefined,
@@ -246,15 +239,27 @@ watch([text, content, tags, generatedTitle], () => {
     draftError.value = true
     status.value = '浏览器草稿保存失败，请保持页面打开并重试保存'
   }
+  if (props.note) emit('draft-change', dirty.value ? {
+    content: content.value?.markdown === text.value ? content.value : { version: 1, document: null, markdown: text.value },
+    title: baseNote?.title === generatedTitle.value ? undefined : generatedTitle.value,
+    tags: JSON.stringify(baseNote?.tags) === JSON.stringify(tags.value) ? undefined : [...tags.value],
+  } : null)
 }, { flush: 'sync' })
 
-function showSaveConflict(latest: Doc) {
-  conflictDoc.value = latest
-  savedPreviewOpen.value = true
-  savedPreviewVersion.value = 'original'
-}
+watch(() => props.note ? { note: props.note, rich: latestNoteContent(props.note) } : null, latest => {
+  if (!latest || dirty.value || saving.value) return
+  resetting = true
+  text.value = latest.rich.markdown
+  content.value = latest.rich
+  tags.value = [...(latest.note.tags ?? [])]
+  generatedTitle.value = latest.note.title
+  savedSnapshot.value = { text: text.value, document: latest.rich.document, tags: [...tags.value], title: generatedTitle.value }
+  baseRev = latest.note.rev ?? baseRev
+  baseNote = { ...latest.note, tags: [...(latest.note.tags ?? [])], content: latest.rich }
+  resetting = false
+}, { flush: 'sync' })
 
-async function save(asCopy = false, reviewedRev?: number) {
+async function save() {
   if (!canSave.value) return
   saving.value = true
   error.value = ''
@@ -264,32 +269,35 @@ async function save(asCopy = false, reviewedRev?: number) {
     // 模型文字已变化而结构化回调尚未到达时，以当前可见输入为准。
     const rich = content.value?.markdown === text.value
       ? content.value : { version: 1 as const, document: null, markdown: text.value }
+    const submitted = { text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value }
     let savedId: string | null
-    if (props.note && !asCopy) {
+    if (props.note) {
       if (data.docPending(props.note.id)) throw new Error('这篇小记在文档页还有未保存编辑，请先完成保存')
-      const latest = await fetchDoc(props.note.id)
-      const latestRev = latest.rev ?? 1
-      const explicitlyReviewed = reviewedRev != null && reviewedRev === latestRev
-      const draftValues = { title: generatedTitle.value, tags: [...tags.value], content: rich }
-      const merged = reviewedRev != null ? explicitlyReviewed ? draftValues : null
-        : baseNote && (latestRev === baseRev ? draftValues : rebaseNoteDraft(baseNote, latest, draftValues))
-      if (!merged) {
-        showSaveConflict(latest)
-        throw new Error('文档已在其他窗口更新，请核对已保存预览，再选择用当前编辑保存本篇或保留为新小记')
+      let saved: Doc | undefined
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const latest = await fetchDoc(props.note.id)
+        const latestRev = latest.rev ?? 1
+        const merged = rebaseNoteDraft(baseNote, { ...latest, content: latestNoteContent(latest) },
+          { title: submitted.title, tags: submitted.tags, content: rich })
+        try {
+          saved = await apiPatchDoc(props.note.id, {
+            title: (merged.title || latest.title || firstMarkdownTextLine(submitted.text) || '未命名小记').slice(0, 80),
+            content: merged.content, blocks: legacyProjection(merged.content), expectedRev: latestRev, tags: merged.tags,
+          })
+          break
+        } catch (cause) {
+          if (!(cause instanceof Error) || !/其他窗口更新|版本冲突/.test(cause.message)) throw cause
+          if (attempt === 2) throw new Error('小记仍在更新，最新输入已保留，请稍后重试保存')
+        }
       }
-      const saved = await apiPatchDoc(props.note.id, {
-        title: (merged.title || latest.title || firstMarkdownTextLine(text.value) || '未命名小记').slice(0, 80),
-        content: merged.content, blocks: legacyProjection(merged.content), expectedRev: latestRev,
-        tags: merged.tags,
-      })
+      if (!saved) throw new Error('保存未完成，请重试')
       data.applyRemoteDoc(saved)
       baseRev = saved.rev ?? baseRev
       baseNote = { title: saved.title, tags: [...(saved.tags ?? [])], blocks: saved.blocks, content: resolvedRichContent(saved) }
-      conflictDoc.value = null
       savedId = saved.id
     } else {
       const aiDefaults = preferences.noteAiDefaults
-      savedId = await data.addNote(text.value, generatedTitle.value, asCopy ? copyId : id.value, rich, [...tags.value], {
+      savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags, {
         autoTitle: aiDefaults.title && !generatedTitle.value.trim(),
         autoImage: aiDefaults.image,
         autoPolish: aiDefaults.polish,
@@ -299,12 +307,17 @@ async function save(asCopy = false, reviewedRev?: number) {
     try {
       const latest = JSON.parse(localStorage.getItem(draftKey) || 'null') as Draft | null
       // 页面切走又回来时，新组件可能已经继续输入，旧请求不能清掉较新的草稿。
-      if (!latest || (latest.id === id.value && latest.text === text.value
-        && JSON.stringify(latest.content) === JSON.stringify(content.value)
-        && JSON.stringify(latest.tags ?? []) === JSON.stringify(tags.value)
-        && (latest.generatedTitle ?? '') === generatedTitle.value)) localStorage.removeItem(draftKey)
+      if (!latest || (latest.id === id.value && latest.text === submitted.text
+        && JSON.stringify(latest.content) === JSON.stringify(submitted.content)
+        && JSON.stringify(latest.tags ?? []) === JSON.stringify(submitted.tags)
+        && (latest.generatedTitle ?? '') === submitted.title)) localStorage.removeItem(draftKey)
     } catch { /* 服务端保存已成功。 */ }
-    if (!props.note || asCopy) {
+    if (text.value !== submitted.text || JSON.stringify(tags.value) !== JSON.stringify(submitted.tags)
+        || generatedTitle.value !== submitted.title) {
+      status.value = '已保存提交内容 · 最新输入已保留，待保存'
+      return
+    }
+    if (!props.note) {
       const saved = data.docById(savedId)
       const allowedTags = [...new Set([...(props.tagOptions ?? []), ...tags.value])]
       if (saved?.rev && allowedTags.length > 0) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
@@ -341,15 +354,13 @@ async function save(asCopy = false, reviewedRev?: number) {
       }
     }
     status.value = '已保存到服务器，清单已更新'
+    if (props.note) emit('draft-change', null)
     fullscreenReminderVisible.value = false
     clearFullscreenReminderTimer()
     fullscreen.value = false
     emit('saved', savedId)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '保存失败，请重试'
-    if (props.note && !asCopy && /其他窗口更新|版本冲突/.test(error.value) && !conflictDoc.value) {
-      try { showSaveConflict(await fetchDoc(props.note.id)) } catch { /* 保留原保存错误和草稿。 */ }
-    }
   } finally {
     saving.value = false
   }
@@ -413,22 +424,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       </MarkdownEditor>
       </div></div>
     </div>
-    <aside v-if="note && (inline || conflictDoc)" class="saved-preview" aria-label="已保存小记预览">
-      <header><strong>已保存预览</strong><span>与上方未保存的编辑草稿独立</span><button type="button" :aria-expanded="savedPreviewOpen" @click="savedPreviewOpen = !savedPreviewOpen">{{ savedPreviewOpen ? '收起预览' : '展开预览' }}</button></header>
-      <div v-if="savedPreviewOpen" class="saved-preview-body">
-        <div class="saved-preview-meta"><strong>{{ (conflictDoc ?? note).title }}</strong><span v-for="tag in (conflictDoc ?? note).tags" :key="tag"># {{ tag }}</span></div>
-        <div v-if="savedPolish" class="saved-preview-versions" role="group" aria-label="已保存预览版本"><button type="button" :aria-pressed="savedPreviewVersion === 'polished'" @click="savedPreviewVersion = 'polished'">AI 润色</button><button type="button" :aria-pressed="savedPreviewVersion === 'original'" @click="savedPreviewVersion = 'original'">已保存原文</button></div>
-        <MarkdownEditor :model-value="savedPreviewMarkdown" :document="savedPreviewVersion === 'polished' && savedPolish ? undefined : savedPreviewContent?.document" readonly bare advanced allow-h1 preview-images :min-height="0" />
-      </div>
-    </aside>
-    <div v-if="note && conflictDoc" class="save-conflict-resolution" role="group" aria-label="核对并保存小记">
-      <p>请核对上方最新已保存预览。确认后会用当前编辑替换这篇小记的已保存内容；若期间版本再变化，会再次提示核对。</p>
-      <button type="button" :disabled="!canSave" @click="save(false, conflictDoc.rev ?? 1)">用当前编辑保存本篇</button>
-    </div>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
     <div class="composer-footer">
-      <span role="status" :class="{ error: draftError }">{{ saving ? '正在保存到服务器…' : status || 'Ctrl / ⌘ + Enter 保存' }}</span>
-      <button v-if="note && (conflicted || conflictDoc)" type="button" :disabled="!canSave" @click="save(true)">保留为新小记</button>
+      <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : 'Ctrl / ⌘ + Enter 保存') }}</span>
       <button v-if="note" type="button" :disabled="saving" @click="emit('close')">收起编辑</button>
       <button class="save-note" type="button" :disabled="!canSave" @click="save()">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
     </div>
@@ -440,18 +438,6 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .note-composer { position: relative; display: flex; flex-direction: column; min-width: 0; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 14px; padding: 18px; background: var(--wao-bg-card); }
 .note-composer.inline:not(.fullscreen) { padding: 0; border: 0; border-radius: 0; }
 .inline:not(.fullscreen) .editor-space { min-height: 160px; max-height: 460px; }
-.saved-preview { margin-top: 12px; border: 1px solid var(--wao-line-control); border-radius: 10px; background: var(--wao-bg-card); }
-.saved-preview header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12px; color: var(--wao-text-3); }
-.saved-preview header strong { color: var(--wao-text-1); }
-.saved-preview header span { flex: 1; }
-.saved-preview button { border: 0; background: transparent; color: var(--wao-primary-text); cursor: pointer; }
-.saved-preview-body { max-height: 260px; overflow: auto; border-top: 1px solid var(--wao-line-control); padding: 8px 10px; }
-.saved-preview-versions { display: flex; gap: 8px; margin-bottom: 8px; font-size: 12px; }
-.saved-preview-versions button[aria-pressed="true"] { font-weight: 700; text-decoration: underline; }
-.saved-preview-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 9px; margin-bottom: 8px; font-size: 12px; color: var(--wao-text-2); }
-.save-conflict-resolution { margin-top: 10px; padding: 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; font-size: 12px; }
-.save-conflict-resolution p { margin: 0 0 8px; color: var(--wao-text-2); line-height: 1.6; }
-.save-conflict-resolution button { border: 1px solid var(--wao-primary); border-radius: 7px; padding: 7px 9px; background: var(--wao-bg-card); color: var(--wao-primary-text); }
 .inline .composer-heading { flex-wrap: wrap; }
 .note-composer:focus-within { border-color: var(--wao-primary); }
 .note-composer:not(:focus-within) :deep(.article-footer) { max-height: 0; padding-top: 0; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; }

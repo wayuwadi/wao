@@ -540,7 +540,7 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('恢复草稿遇到正文冲突可核对后保存本篇，并能继续编辑反复保存', async () => {
+  it('恢复草稿自动保存本篇，并能继续编辑反复保存', async () => {
     const note = doc('edit-note', '原文')
     const data = useDataStore()
     data.docs[note.id] = note
@@ -549,15 +549,8 @@ describe('小记集中记录空间', () => {
     first.unmount()
     data.docs[note.id] = { ...doc(note.id, '另一窗口正文'), rev: 5 }
     const second = composer(data.docs[note.id])
-    await second.find('.save-note').trigger('click')
-    await flushPromises()
-    expect(apiPatchDoc).not.toHaveBeenCalled()
-    expect(second.find('[role="alert"]').text()).toContain('请核对已保存预览')
-    expect(second.text()).toContain('保留为新小记')
-    expect(second.get('.saved-preview textarea').attributes('value')).toBe('另一窗口正文')
-    expect(localStorage.getItem('wao-note-edit-v1:wg:edit-note')).toContain('修改后的正文')
     vi.mocked(apiPatchDoc).mockResolvedValueOnce({ ...note, blocks: [{ p: '修改后的正文' }], rev: 6 })
-    await second.get('.save-conflict-resolution button').trigger('click')
+    await second.find('.save-note').trigger('click')
     await flushPromises()
     expect(apiPatchDoc).toHaveBeenCalledWith(note.id, expect.objectContaining({ expectedRev: 5 }))
     expect(second.find('.save-conflict-resolution').exists()).toBe(false)
@@ -572,24 +565,20 @@ describe('小记集中记录空间', () => {
     second.unmount()
   })
 
-  it('没有版本号的旧浏览器草稿不能按当前服务器版本盲写', async () => {
+  it('没有版本号的旧浏览器草稿可自动按最新版本保存，竞争写入自动重试', async () => {
     const note = doc('legacy-draft', '服务器正文')
     useDataStore().docs[note.id] = note
     localStorage.setItem('wao-note-edit-v1:wg:legacy-draft', JSON.stringify({ id: note.id, text: '旧草稿新输入' }))
     const wrapper = composer(note)
+    vi.mocked(apiPatchDoc).mockImplementationOnce(async () => {
+      useDataStore().docs[note.id] = { ...note, rev: 4 }
+      throw new Error('文档已在其他窗口更新')
+    }).mockResolvedValueOnce({ ...note, blocks: [{ p: '旧草稿新输入' }], rev: 5 })
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
-    expect(apiPatchDoc).not.toHaveBeenCalled()
-    expect(wrapper.find('[role="alert"]').text()).toContain('请核对已保存预览')
-    expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('旧草稿新输入')
-    useDataStore().docs[note.id] = { ...note, rev: 4 }
-    await wrapper.get('.save-conflict-resolution button').trigger('click')
-    await flushPromises()
-    expect(apiPatchDoc).not.toHaveBeenCalled()
-    vi.mocked(apiPatchDoc).mockResolvedValueOnce({ ...note, blocks: [{ p: '旧草稿新输入' }], rev: 5 })
-    await wrapper.get('.save-conflict-resolution button').trigger('click')
-    await flushPromises()
-    expect(apiPatchDoc).toHaveBeenCalledWith(note.id, expect.objectContaining({ expectedRev: 4 }))
+    expect(apiPatchDoc).toHaveBeenCalledTimes(2)
+    expect(apiPatchDoc).toHaveBeenLastCalledWith(note.id, expect.objectContaining({ expectedRev: 4,
+      content: expect.objectContaining({ markdown: '旧草稿新输入' }) }))
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -612,7 +601,7 @@ describe('小记集中记录空间', () => {
     restored.unmount()
   })
 
-  it('编辑草稿与后台标题、总览图预览并存，保存时合入 AI 产物', async () => {
+  it('续写期间 AI 到达保持唯一编辑正文，保存时合入标题和配图', async () => {
     const base = doc('ai-note', '原文')
     base.content = { version: 1, markdown: '原文', document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '原文' }] }] } }
     const remote: Doc = { ...base, rev: 5, title: 'AI 标题', content: {
@@ -629,14 +618,11 @@ describe('小记集中记录空间', () => {
     data.docs[base.id] = remote
     await wrapper.setProps({ note: remote })
     expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('原文，继续写')
-    expect(wrapper.get('.saved-preview').text()).toContain('与上方未保存的编辑草稿独立')
-    expect(wrapper.get<HTMLTextAreaElement>('.saved-preview textarea').element.value).toContain('![文章总览图]')
+    expect(wrapper.find('.saved-preview').exists()).toBe(false)
+    expect(wrapper.findAll('textarea')).toHaveLength(1)
     notePolishVersions[base.id] = { docId: base.id, sourceMarkdown: remote.content!.markdown, polishedMarkdown: 'AI 润色版' }
     await flushPromises()
-    expect(wrapper.get<HTMLTextAreaElement>('.saved-preview textarea').element.value).toBe('AI 润色版')
     expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('原文，继续写')
-    await wrapper.get('.saved-preview-versions button:last-child').trigger('click')
-    expect(wrapper.get<HTMLTextAreaElement>('.saved-preview textarea').element.value).toContain('![文章总览图]')
     vi.mocked(fetchDoc).mockResolvedValue(remote)
     vi.mocked(apiPatchDoc).mockImplementation(async (_id, payload) => ({ ...remote, rev: 6,
       title: payload.title!, content: payload.content!, tags: payload.tags! }))
@@ -646,8 +632,53 @@ describe('小记集中记录空间', () => {
       title: 'AI 标题', expectedRev: 5,
       content: expect.objectContaining({ markdown: expect.stringContaining('原文，继续写') }),
     }))
-    expect(data.docs[base.id]!.content?.markdown).toContain('![文章总览图]')
     expect(data.docs[base.id]!.content?.markdown).toContain('原文，继续写')
+    expect(data.docs[base.id]!.content?.markdown).toContain('![文章总览图]')
+    wrapper.unmount()
+  })
+
+  it('没有续写时自动同步最新 AI 正文，有续写时保持输入与唯一编辑区', async () => {
+    const note = doc('ai-sync', '原始正文')
+    const wrapper = composer(note)
+    notePolishVersions[note.id] = { docId: note.id, sourceMarkdown: '原始正文', polishedMarkdown: '最新润色正文' }
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('最新润色正文')
+    await wrapper.find('textarea').setValue('最新润色正文，再继续写')
+    await wrapper.setProps({ note: { ...doc(note.id, '迟到的 AI 正文'), rev: 8 } })
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('最新润色正文，再继续写')
+    expect(wrapper.findAll('textarea')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('连续版本竞争有限重试，失败仍保留最新草稿', async () => {
+    const note = doc('busy-note', '原始正文')
+    useDataStore().docs[note.id] = note
+    const wrapper = composer(note)
+    await wrapper.find('textarea').setValue('最新续写正文')
+    vi.mocked(apiPatchDoc).mockRejectedValue(new Error('文档已在其他窗口更新'))
+    await wrapper.find('.save-note').trigger('click')
+    await flushPromises()
+    expect(apiPatchDoc).toHaveBeenCalledTimes(3)
+    expect(wrapper.get('[role="alert"]').text()).toContain('最新输入已保留')
+    expect(localStorage.getItem('wao-note-edit-v1:wg:busy-note')).toContain('最新续写正文')
+    expect(wrapper.find('.saved-preview').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('收起后的预览仍显示最新草稿，后台刷新和重新编辑不丢续写', async () => {
+    const data = useDataStore()
+    data.docs.one = doc('one', '保存的正文')
+    const wrapper = await view()
+    await wrapper.get('[data-note-id="one"]').trigger('dblclick')
+    await wrapper.get('[data-note-id="one"] .note-composer textarea').setValue('当前最新续写')
+    await wrapper.get('[data-note-id="one"] .note-composer').findAll('button').find(button => button.text() === '收起编辑')!.trigger('click')
+    expect(wrapper.get('[data-note-id="one"] .note-body textarea').attributes('value')).toBe('当前最新续写')
+    data.docs.one = { ...doc('one', '后台旧 AI 正文'), rev: 6 }
+    await flushPromises()
+    expect(wrapper.get('[data-note-id="one"] .note-body textarea').attributes('value')).toBe('当前最新续写')
+    expect(wrapper.get('[data-note-id="one"] .workflow-status').text()).toContain('有修改待保存')
+    await wrapper.get('[data-note-id="one"]').trigger('dblclick')
+    expect(wrapper.get<HTMLTextAreaElement>('[data-note-id="one"] .note-composer textarea').element.value).toBe('当前最新续写')
     wrapper.unmount()
   })
 
@@ -926,10 +957,11 @@ describe('小记集中记录空间', () => {
     data.docs.a = { ...doc('a', '服务器更新'), rev: 7 }
     await flushPromises()
     expect(wrapper.get<HTMLTextAreaElement>('[data-note-id="a"] textarea').element.value).toBe('A 未保存')
+    vi.mocked(apiPatchDoc).mockImplementationOnce(async (_id, payload) => ({ ...data.docs.a!, rev: 8, content: payload.content }))
     await wrapper.get('[data-note-id="a"] .save-note').trigger('click')
     await flushPromises()
-    expect(apiPatchDoc).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-note-id="a"] [role="alert"]').text()).toContain('请核对已保存预览')
+    expect(apiPatchDoc).toHaveBeenCalledWith('a', expect.objectContaining({ expectedRev: 7,
+      content: expect.objectContaining({ markdown: 'A 未保存' }) }))
     expect(wrapper.get<HTMLTextAreaElement>('[data-note-id="b"] textarea').element.value).toBe('B 未保存')
     wrapper.unmount()
   })
@@ -1077,7 +1109,7 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('润色与原文可切换，图片和更新时间筛选在同一面板', async () => {
+  it('润色自动成为唯一内容且再次编辑一致，保留总览图和筛选', async () => {
     const today = new Date().toISOString()
     const source = '今天开会，然后就是决定明天发布。'
     useDataStore().docs.a = {
@@ -1091,9 +1123,12 @@ describe('小记集中记录空间', () => {
     }])
     const wrapper = await view()
     await flushPromises()
-    expect(wrapper.get('[data-note-id="a"] .note-body textarea').attributes('value')).toBe('会议决定明天发布。')
-    await wrapper.get('[data-note-id="a"] .version-toggle button:last-child').trigger('click')
-    expect(wrapper.get('[data-note-id="a"] .note-body textarea').attributes('value')).toContain(source)
+    expect(wrapper.get('[data-note-id="a"] .note-body textarea').attributes('value')).toContain('会议决定明天发布。')
+    expect(wrapper.get('[data-note-id="a"] .note-body textarea').attributes('value')).toContain('![文章总览图]')
+    expect(wrapper.find('.version-toggle').exists()).toBe(false)
+    await wrapper.get('[data-note-id="a"]').trigger('dblclick')
+    expect(wrapper.get<HTMLTextAreaElement>('[data-note-id="a"] .note-composer textarea').element.value).toContain('会议决定明天发布。')
+    await wrapper.get('[data-note-id="a"] .note-composer').findAll('button').find(button => button.text() === '收起编辑')!.trigger('click')
     await openFilters(wrapper)
     await wrapper.findAll('.filter-group')[2]!.findAll('button')[1]!.trigger('click')
     await wrapper.findAll('.filter-group')[3]!.findAll('button')[1]!.trigger('click')
