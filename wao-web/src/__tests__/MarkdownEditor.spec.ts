@@ -43,6 +43,8 @@ async function mountEditor(props: {
   taskable?: boolean
   linkControls?: boolean
   imageControls?: boolean
+  selectionImage?: boolean
+  menuZIndex?: number
   advanced?: boolean
   articleImageKey?: string
   noteTitleOnImage?: boolean
@@ -991,6 +993,29 @@ describe('MarkdownEditor（所见即所得）', () => {
     instance.editor.commands.setTextSelection({ from: 1, to: 8 })
     await instance.addSelectionTask()
     expect(w.emitted('task-opened')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('全屏选区工具栏显示在小记全屏层上方，并保留润色与生图入口', async () => {
+    setActivePinia(createPinia())
+    const w = await mountEditor({
+      modelValue: '选中这一段来润色和生图',
+      advanced: true,
+      polishable: true,
+      selectionImage: true,
+      articleImageKey: 'note:me:fullscreen',
+      menuZIndex: 2200,
+    })
+    const editor = (w.vm as unknown as { editor: Editor }).editor
+    editor.view.focus()
+    editor.commands.setTextSelection({ from: 1, to: 8 })
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 300))
+
+    const menu = w.findAllComponents(BubbleMenu)[0]!
+    expect(menu.attributes('style')).toContain('z-index: 2200')
+    expect(document.querySelector('[aria-label="润色选中文字"]')).not.toBeNull()
+    expect(document.querySelector('[aria-label="生图"]')).not.toBeNull()
     w.unmount()
   })
 

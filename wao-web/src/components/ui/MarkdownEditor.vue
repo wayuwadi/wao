@@ -1943,7 +1943,7 @@ onBeforeUnmount(() => {
         <BubbleMenu
           :editor="editor"
           plugin-key="documentSelectionMenu"
-          style="z-index: 40"
+          :style="{ zIndex: menuZIndex }"
           :append-to="selectionMenuParent"
           :should-show="shouldShowSelection"
           :options="{ strategy: 'fixed', placement: 'top', offset: 8, flip: true, shift: { padding: 8 } }"
