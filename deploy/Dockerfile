@@ -44,8 +44,8 @@ ENV JAVA_TOOL_OPTIONS="-Xms128m -Xmx512m"
 ENTRYPOINT ["java", "-XX:+UseG1GC", "-XX:+HeapDumpOnOutOfMemoryError", "-XX:HeapDumpPath=/tmp/heapdump.hprof", "-jar", "app.jar"]
 
 FROM runtime AS server-runtime
-# The application container has a 2 GiB limit, including all non-heap memory.
-ENV JAVA_TOOL_OPTIONS="-Xms256m -Xmx1024m"
+# The application container has a 3 GiB limit; 200 MiB dual-write files are materialized in memory.
+ENV JAVA_TOOL_OPTIONS="-Xms256m -Xmx2048m"
 COPY --from=build /workspace/wao-server/target/wao-server-*.jar app.jar
 EXPOSE 8080
 

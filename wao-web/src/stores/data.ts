@@ -2068,8 +2068,8 @@ export const useDataStore = defineStore('data', () => {
     return { name, url }
   }
 
-  /** 浏览器基础设施硬上限 50MB；服务端还会按文件与图床设置执行更低的真实上限。 */
-  const MAX_FILE_BYTES = 50 * 1024 * 1024
+  /** 普通文件业务硬上限 200MiB；服务端还会按文件与图床设置执行更低的真实上限。 */
+  const MAX_FILE_BYTES = 200 * 1024 * 1024
   async function refreshFiles(): Promise<boolean> {
     if (!apiLive.value) {
       fileLoadState.value = 'error'

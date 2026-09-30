@@ -10,7 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class FileSettingsService {
 
-    static final int DEFAULT_FILE_MAX_MB = 50;
+    static final int DEFAULT_FILE_MAX_MB = 200;
+    static final int MAX_FILE_MAX_MB = 200;
     static final int DEFAULT_IMAGE_MAX_MB = 10;
 
     private final SettingService settings;
@@ -22,7 +23,7 @@ public class FileSettingsService {
     /** 返回当前真实生效的上传限制与公开下载验证码开关。 */
     public FileSettingsDto get() {
         return new FileSettingsDto(
-                bounded(SettingService.FILE_UPLOAD_MAX_MB, DEFAULT_FILE_MAX_MB, 1, 50),
+                bounded(SettingService.FILE_UPLOAD_MAX_MB, DEFAULT_FILE_MAX_MB, 1, MAX_FILE_MAX_MB),
                 bounded(SettingService.IMAGE_UPLOAD_MAX_MB, DEFAULT_IMAGE_MAX_MB, 1, 10),
                 enabled());
     }
@@ -30,7 +31,7 @@ public class FileSettingsService {
     /** 在一个事务里保存三项设置，避免请求读取到新旧混合配置。 */
     @Transactional
     public FileSettingsDto save(SaveFileSettingsRequest request) {
-        if (request.fileMaxMb() < 1 || request.fileMaxMb() > 50
+        if (request.fileMaxMb() < 1 || request.fileMaxMb() > MAX_FILE_MAX_MB
                 || request.imageMaxMb() < 1 || request.imageMaxMb() > 10) {
             throw new BadRequestException("文件上传上限超出当前部署支持范围");
         }

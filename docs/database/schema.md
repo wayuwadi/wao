@@ -739,7 +739,7 @@ V135 为模板与每日实例增加 `CHECK / COUNTDOWN` 完成方式和固定时
 |---|---|---|
 | id | VARCHAR(64) PK | 文件 id |
 | name / display_name / content_type | VARCHAR | 安全原文件名、可空的 WAO 展示名与 MIME 类型；展示名为空时回退原文件名 |
-| byte_size | BIGINT | 字节数，单个文件最大 50MB |
+| byte_size | BIGINT | 字节数，当前普通文件业务上限最大 200MB；请求体部署基线为 1GB |
 | created_by / created_at | VARCHAR / DATETIME(3) | 上传成员与上海时间 |
 | object_key / content_hash | VARCHAR(255) / CHAR(64) NULL（V166） | 私有 S3 原件 key 与 SHA-256，旧 URL 由应用代理读取 |
 | content | LONGBLOB NULL（V166） | 历史正文或双写回退副本；清理前必须完成对象与备份恢复验收 |

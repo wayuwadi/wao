@@ -425,7 +425,7 @@ async function uploadMusic(event: Event) {
     await selectTrack(firstUploaded, false)
     toast(`已添加 ${uploaded} 首音乐`, 'ri-music-2-line')
   }
-  if (failed) uploadError.value = `${failed} 个文件上传失败、格式不支持或超过当前文件库上限（最高 50MB）`
+  if (failed) uploadError.value = `${failed} 个文件上传失败、格式不支持或超过当前文件库上限（最高 200MB）`
 }
 
 onMounted(() => {

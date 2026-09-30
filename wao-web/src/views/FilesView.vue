@@ -32,7 +32,7 @@ const pageHtmlDragging = ref(false)
 const pageIconDragging = ref(false)
 const settingsOpen = ref(false)
 const fileSettings = ref<FileSettings>({
-  fileMaxMb: 50,
+  fileMaxMb: 200,
   imageMaxMb: 10,
   downloadCaptchaEnabled: true,
 })
