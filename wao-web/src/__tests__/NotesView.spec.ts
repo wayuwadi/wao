@@ -12,17 +12,18 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
-import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc, fetchKbs } from '@/api/board'
+import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc, fetchDoc, fetchKbs } from '@/api/board'
 import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { copyText } from '@/utils/clipboard'
 import { fetchNotePolishVersions } from '@/api/notePolishVersions'
+import { notePolishVersions } from '@/utils/autoNoteEnrichment'
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
 
 vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
-vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn(), fetchKbs: vi.fn() }))
+vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn(), fetchKbs: vi.fn() }))
 const Editor = defineComponent({
   props: ['modelValue', 'readonly'], emits: ['update:modelValue'],
   template: '<div><slot name="toolbar-options" /><textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" /><slot name="footer-tags" /></div>',
@@ -184,6 +185,7 @@ describe('小记集中记录空间', () => {
     vi.restoreAllMocks()
     vi.mocked(copyText).mockClear()
     vi.mocked(apiPatchDoc).mockReset()
+    vi.mocked(fetchDoc).mockImplementation(async id => useDataStore().docById(id)!)
     vi.mocked(fetchNoteTags).mockResolvedValue([])
     vi.mocked(fetchKbs).mockReset()
     vi.mocked(apiCreateNoteTag).mockReset()
@@ -501,7 +503,7 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('编辑恢复草稿时保留原始版本，冲突不覆盖正文，成功才更新列表', async () => {
+  it('恢复旧草稿时保留原始版本，不用新版本盲写覆盖', async () => {
     const note = doc('edit-note', '原文')
     const data = useDataStore()
     data.docs[note.id] = note
@@ -509,19 +511,53 @@ describe('小记集中记录空间', () => {
     await first.find('textarea').setValue('修改后的正文')
     first.unmount()
     const second = composer({ ...note, rev: 5 })
-    vi.mocked(apiPatchDoc).mockRejectedValueOnce(new Error('文档版本冲突')).mockResolvedValueOnce(doc('edit-note', '修改后的正文'))
     await second.find('.save-note').trigger('click')
     await flushPromises()
-    expect(apiPatchDoc).toHaveBeenCalledWith('edit-note', expect.objectContaining({ expectedRev: 3 }))
-    expect(second.find('[role="alert"]').text()).toContain('版本冲突')
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    expect(second.find('[role="alert"]').text()).toContain('恢复的旧草稿需先核对')
     expect(second.text()).toContain('保留为新小记')
     expect(data.docs[note.id]!.title).toBe('原文')
     expect(localStorage.getItem('wao-note-edit-v1:wg:edit-note')).toContain('修改后的正文')
-    await second.find('.save-note').trigger('click')
-    await flushPromises()
-    expect(data.docs[note.id]!.title).toBe('修改后的正文')
-    expect(localStorage.getItem('wao-note-edit-v1:wg:edit-note')).toBeNull()
     second.unmount()
+  })
+
+  it('编辑草稿与后台标题、总览图预览并存，保存时合入 AI 产物', async () => {
+    const base = doc('ai-note', '原文')
+    base.content = { version: 1, markdown: '原文', document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '原文' }] }] } }
+    const remote: Doc = { ...base, rev: 5, title: 'AI 标题', content: {
+      version: 1, markdown: '![文章总览图](/api/images/a/raw "wao-image-size:50%xauto")\n\n原文',
+      document: { type: 'doc', content: [
+        { type: 'image', attrs: { src: '/api/images/a/raw', alt: '文章总览图' } },
+        ...base.content.document!.content!,
+      ] },
+    } }
+    const data = useDataStore()
+    data.docs[base.id] = base
+    const wrapper = mount(NoteComposer, { props: { note: base, inline: true }, global: { stubs: { MarkdownEditor: Editor } } })
+    await wrapper.find('textarea').setValue('原文，继续写')
+    data.docs[base.id] = remote
+    await wrapper.setProps({ note: remote })
+    expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('原文，继续写')
+    expect(wrapper.get('.saved-preview').text()).toContain('与上方未保存的编辑草稿独立')
+    expect(wrapper.get<HTMLTextAreaElement>('.saved-preview textarea').element.value).toContain('![文章总览图]')
+    notePolishVersions[base.id] = { docId: base.id, sourceMarkdown: remote.content.markdown, polishedMarkdown: 'AI 润色版' }
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('.saved-preview textarea').element.value).toBe('AI 润色版')
+    expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('原文，继续写')
+    await wrapper.get('.saved-preview-versions button:last-child').trigger('click')
+    expect(wrapper.get<HTMLTextAreaElement>('.saved-preview textarea').element.value).toContain('![文章总览图]')
+    vi.mocked(fetchDoc).mockResolvedValue(remote)
+    vi.mocked(apiPatchDoc).mockImplementation(async (_id, payload) => ({ ...remote, rev: 6,
+      title: payload.title!, content: payload.content!, tags: payload.tags! }))
+    await wrapper.find('.save-note').trigger('click')
+    await flushPromises()
+    expect(apiPatchDoc).toHaveBeenCalledWith(base.id, expect.objectContaining({
+      title: 'AI 标题', expectedRev: 5,
+      content: expect.objectContaining({ markdown: expect.stringContaining('原文，继续写') }),
+    }))
+    expect(data.docs[base.id]!.content?.markdown).toContain('![文章总览图]')
+    expect(data.docs[base.id]!.content?.markdown).toContain('原文，继续写')
+    wrapper.unmount()
   })
 
   it('草稿存储异常明确提示，请求期间禁止重复提交，旧请求不清理新草稿', async () => {
@@ -799,11 +835,10 @@ describe('小记集中记录空间', () => {
     data.docs.a = { ...doc('a', '服务器更新'), rev: 7 }
     await flushPromises()
     expect(wrapper.get<HTMLTextAreaElement>('[data-note-id="a"] textarea').element.value).toBe('A 未保存')
-    vi.mocked(apiPatchDoc).mockRejectedValueOnce(new Error('文档版本冲突'))
     await wrapper.get('[data-note-id="a"] .save-note').trigger('click')
     await flushPromises()
-    expect(apiPatchDoc).toHaveBeenCalledWith('a', expect.objectContaining({ expectedRev: 3 }))
-    expect(wrapper.get('[data-note-id="a"] [role="alert"]').text()).toContain('版本冲突')
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-note-id="a"] [role="alert"]').text()).toContain('正文或同一字段发生冲突')
     expect(wrapper.get<HTMLTextAreaElement>('[data-note-id="b"] textarea').element.value).toBe('B 未保存')
     wrapper.unmount()
   })
@@ -823,6 +858,7 @@ describe('小记集中记录空间', () => {
 
   it('已保存小记卡片内可全屏编辑，保存失败保留全屏、成功后自动退出', async () => {
     const note = { ...doc('inline-fullscreen', '原有正文'), tags: ['工作'] }
+    useDataStore().docs[note.id] = note
     vi.mocked(apiPatchDoc).mockRejectedValueOnce(new Error('网络不可用'))
       .mockResolvedValueOnce({ ...note, title: '修改后的正文', blocks: [{ p: '修改后的正文' }] })
     const wrapper = mount(NoteComposer, {

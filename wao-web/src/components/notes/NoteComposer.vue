@@ -3,8 +3,10 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch }
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
-import { apiCreateNoteTag, apiPatchDoc } from '@/api/board'
+import { apiCreateNoteTag, apiPatchDoc, fetchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
+import { rebaseNoteDraft } from '@/utils/rebaseNoteDraft'
+import { notePolishVersions } from '@/utils/autoNoteEnrichment'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import type { Doc, FileItem, RichDocContent } from '@/types'
@@ -182,7 +184,24 @@ const text = ref(initial.text)
 const content = ref<RichDocContent | undefined>(initial.content)
 const generatedTitle = ref(initial.generatedTitle || props.note?.title || '')
 // 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
-const baseRev = initial.baseRev ?? props.note?.rev ?? 1
+let baseRev = initial.baseRev ?? props.note?.rev ?? 1
+const openedRev = props.note?.rev
+let baseNote = props.note ? {
+  title: props.note.title,
+  tags: [...(props.note.tags ?? [])],
+  blocks: props.note.blocks,
+  content: savedContent,
+} : null
+const savedPreviewOpen = ref(!!props.note && !!props.inline)
+const savedPreviewVersion = ref<'polished' | 'original'>('polished')
+const savedPreviewContent = computed(() => props.note ? resolvedRichContent(props.note) : null)
+const savedPolish = computed(() => {
+  if (!props.note || !savedPreviewContent.value) return null
+  const version = notePolishVersions[props.note.id]
+  return version?.sourceMarkdown === savedPreviewContent.value.markdown ? version : null
+})
+const savedPreviewMarkdown = computed(() => savedPreviewVersion.value === 'polished' && savedPolish.value
+  ? savedPolish.value.polishedMarkdown : savedPreviewContent.value?.markdown ?? '')
 const saving = ref(false)
 const error = ref('')
 const conflicted = computed(() => /其他窗口更新|版本冲突/.test(error.value))
@@ -226,15 +245,31 @@ async function save(asCopy = false) {
   try {
     // 初始化未完成或服务不可达时，不能落成内存小记并提示成功。
     if (!data.apiLive) throw new Error('服务尚未连接，请稍后重试；输入内容已保留')
-    const rich = content.value ?? { version: 1 as const, document: null, markdown: text.value }
+    // 模型文字已变化而结构化回调尚未到达时，以当前可见输入为准。
+    const rich = content.value?.markdown === text.value
+      ? content.value : { version: 1 as const, document: null, markdown: text.value }
     let savedId: string | null
     if (props.note && !asCopy) {
       if (data.docPending(props.note.id)) throw new Error('这篇小记在文档页还有未保存编辑，请先完成保存')
+      const latest = await fetchDoc(props.note.id)
+      if (restored && initial.baseRev != null && initial.baseRev !== openedRev) {
+        throw new Error('文档已在其他窗口更新，恢复的旧草稿需先核对；正文仍在')
+      }
+      const latestRev = latest.rev ?? 1
+      const merged = latestRev === baseRev
+        ? { title: generatedTitle.value, tags: [...tags.value], content: rich }
+        : baseNote && rebaseNoteDraft(baseNote, latest, {
+          title: generatedTitle.value, tags: [...tags.value], content: rich,
+        })
+      if (!merged) throw new Error('文档已在其他窗口更新，正文或同一字段发生冲突；请核对后保留为新小记')
       const saved = await apiPatchDoc(props.note.id, {
-        title: (generatedTitle.value || props.note.title || firstMarkdownTextLine(text.value) || '未命名小记').slice(0, 80),
-        content: rich, blocks: legacyProjection(rich), expectedRev: baseRev, tags: [...tags.value],
+        title: (merged.title || latest.title || firstMarkdownTextLine(text.value) || '未命名小记').slice(0, 80),
+        content: merged.content, blocks: legacyProjection(merged.content), expectedRev: latestRev,
+        tags: merged.tags,
       })
       data.applyRemoteDoc(saved)
+      baseRev = saved.rev ?? baseRev
+      baseNote = { title: saved.title, tags: [...(saved.tags ?? [])], blocks: saved.blocks, content: resolvedRichContent(saved) }
       savedId = saved.id
     } else {
       const aiDefaults = preferences.noteAiDefaults
@@ -274,11 +309,19 @@ async function save(asCopy = false) {
       resetting = false
       savedSnapshot.value = { text: '', document: null, tags: [], title: '' }
     } else {
+      const saved = data.docById(savedId) ?? props.note
+      const savedRich = resolvedRichContent(saved)
+      resetting = true
+      text.value = savedRich.markdown
+      content.value = savedRich
+      tags.value = [...(saved.tags ?? [])]
+      generatedTitle.value = saved.title
+      resetting = false
       savedSnapshot.value = {
-        text: text.value,
-        document: content.value?.document ?? null,
+        text: savedRich.markdown,
+        document: savedRich.document,
         tags: [...tags.value],
-        title: generatedTitle.value,
+        title: saved.title,
       }
     }
     status.value = '已保存到服务器，清单已更新'
@@ -351,6 +394,13 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       </MarkdownEditor>
       </div></div>
     </div>
+    <aside v-if="inline && note" class="saved-preview" aria-label="已保存小记预览">
+      <header><strong>已保存预览</strong><span>与上方未保存的编辑草稿独立</span><button type="button" :aria-expanded="savedPreviewOpen" @click="savedPreviewOpen = !savedPreviewOpen">{{ savedPreviewOpen ? '收起预览' : '展开预览' }}</button></header>
+      <div v-if="savedPreviewOpen" class="saved-preview-body">
+        <div v-if="savedPolish" class="saved-preview-versions" role="group" aria-label="已保存预览版本"><button type="button" :aria-pressed="savedPreviewVersion === 'polished'" @click="savedPreviewVersion = 'polished'">AI 润色</button><button type="button" :aria-pressed="savedPreviewVersion === 'original'" @click="savedPreviewVersion = 'original'">已保存原文</button></div>
+        <MarkdownEditor :model-value="savedPreviewMarkdown" :document="savedPreviewVersion === 'polished' && savedPolish ? undefined : savedPreviewContent?.document" readonly bare advanced allow-h1 preview-images :min-height="0" />
+      </div>
+    </aside>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
     <div class="composer-footer">
       <span role="status" :class="{ error: draftError }">{{ saving ? '正在保存到服务器…' : status || 'Ctrl / ⌘ + Enter 保存' }}</span>
@@ -366,6 +416,14 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .note-composer { position: relative; display: flex; flex-direction: column; min-width: 0; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 14px; padding: 18px; background: var(--wao-bg-card); }
 .note-composer.inline:not(.fullscreen) { padding: 0; border: 0; border-radius: 0; }
 .inline:not(.fullscreen) .editor-space { min-height: 160px; max-height: 460px; }
+.saved-preview { margin-top: 12px; border: 1px solid var(--wao-line-control); border-radius: 10px; background: var(--wao-bg-card); }
+.saved-preview header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12px; color: var(--wao-text-3); }
+.saved-preview header strong { color: var(--wao-text-1); }
+.saved-preview header span { flex: 1; }
+.saved-preview button { border: 0; background: transparent; color: var(--wao-primary-text); cursor: pointer; }
+.saved-preview-body { max-height: 260px; overflow: auto; border-top: 1px solid var(--wao-line-control); padding: 8px 10px; }
+.saved-preview-versions { display: flex; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+.saved-preview-versions button[aria-pressed="true"] { font-weight: 700; text-decoration: underline; }
 .inline .composer-heading { flex-wrap: wrap; }
 .note-composer:focus-within { border-color: var(--wao-primary); }
 .note-composer:not(:focus-within) :deep(.article-footer) { max-height: 0; padding-top: 0; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; }
