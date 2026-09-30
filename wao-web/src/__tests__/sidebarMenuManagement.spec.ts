@@ -30,8 +30,8 @@ import {
 vi.mock('@/components/WaoLogo.vue', () => ({ default: { template: '<span />' } }))
 
 vi.mock('@/api/navigationLayout', () => ({
-  fetchNavigationLayout: vi.fn(),
-  saveNavigationLayout: vi.fn(),
+  fetchNavigationLayout: vi.fn<typeof fetchNavigationLayout>(),
+  saveNavigationLayout: vi.fn<typeof saveNavigationLayout>(),
 }))
 
 vi.mock('@/api/system', () => ({
@@ -224,7 +224,7 @@ describe('桌面侧栏直接维护菜单', () => {
   it('侧栏拖到顶部形成可点击按钮，并可排序、移到底部和拖回侧栏', async () => {
     const wrapper = await mountSideNav(true)
     const nav = useNavStore()
-    const transfer = { setData: vi.fn(), effectAllowed: '' }
+    const transfer = { setData: vi.fn<(format: string, data: string) => void>(), effectAllowed: '' }
     await wrapper.get('.items [title="项目"]').trigger('dragstart', { dataTransfer: transfer })
     await wrapper.get('.top-menu-bar').trigger('drop')
     await flushPromises()
@@ -360,16 +360,35 @@ describe('桌面侧栏直接维护菜单', () => {
     document.querySelector<HTMLFormElement>('.group-dialog')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
-    expect(document.querySelector('.group-picker')?.textContent).toContain('添加菜单到「创作」')
-    const projectOption = [...document.querySelectorAll<HTMLButtonElement>('.group-picker-list > button')]
-      .find((button) => button.querySelector('span')?.textContent?.startsWith('项目'))!
+    expect(document.querySelector('.group-picker')?.textContent).toContain('「创作」')
+    const projectOption = document.querySelector<HTMLInputElement>('.group-picker-list input[aria-label="项目"]')!
     projectOption.click()
+    await flushPromises()
+    expect(useNavStore().menuConfig('projects')?.group).not.toMatch(/^custom-/)
+    document.querySelector<HTMLButtonElement>('.picker-submit')!.click()
     await flushPromises()
 
     const project = useNavStore().menuConfig('projects')!
     expect(project).toMatchObject({ group: expect.stringMatching(/^custom-/), placement: 'MENU', visible: true })
     expect(useNavStore().layoutGroups.find((group) => group.id === project.group)?.label).toBe('创作')
     expect(wrapper.findAll('.group-label').some((item) => item.text().includes('创作'))).toBe(true)
+    expect(document.querySelector('.group-picker')).toBeNull()
+    expect((document.activeElement as HTMLElement).dataset.groupId).toBe(project.group)
+    wrapper.unmount()
+  })
+
+  it('分组右键添加菜单打开搜索弹窗，取消后恢复分组焦点', async () => {
+    const wrapper = await mountSideNav()
+    const group = wrapper.get('.group-label[data-group-id="TOOLS"]')
+    await group.trigger('contextmenu', { clientX: 80, clientY: 100 })
+    document.querySelectorAll<HTMLButtonElement>('.menu-actions button')[1]!.click()
+    await flushPromises()
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('搜索菜单')
+    document.querySelector<HTMLButtonElement>('.picker-cancel')!.click()
+    await flushPromises()
+    expect(document.querySelector('.group-picker')).toBeNull()
+    expect(document.activeElement).toBe(group.element)
+    expect(saveNavigationLayout).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

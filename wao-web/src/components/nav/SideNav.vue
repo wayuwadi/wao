@@ -22,6 +22,7 @@ const tabs = useTabsStore()
 const knowledgeFavorites = useKnowledgeFavoritesStore()
 const favoriteKbs = computed(() => data.kbs.filter((kb) => knowledgeFavorites.ids.includes(kb.id)))
 import QuickLinks from '@/components/nav/QuickLinks.vue'
+import MenuGroupPicker from '@/components/nav/MenuGroupPicker.vue'
 
 const emit = defineEmits<{ (e: 'open-search'): void }>()
 
@@ -103,19 +104,8 @@ const contextMenu = ref<{
   error: string
 } | null>(null)
 const groupCreateDraft = ref<{ value: string; error: string; saving: boolean } | null>(null)
-const groupPicker = ref<{ groupId: string; error: string; savingId: NavItemId | null } | null>(null)
-const groupPickerLabel = computed(() => nav.layoutGroups.find((group) => group.id === groupPicker.value?.groupId)?.label ?? '')
-const groupPickerMenus = computed(() => {
-  const groupId = groupPicker.value?.groupId
-  if (!groupId) return []
-  return [
-    ...nav.builtinMenus
-      .filter((item) => item.id !== 'chat')
-      .map((item) => ({ id: item.id as NavItemId, label: nav.itemMeta(item.id as NavItemId)?.label ?? item.label, icon: item.icon, group: item.group, placement: item.placement ?? 'MENU', visible: item.visible })),
-    ...nav.externalApps.map((item) => ({ id: externalAppItemId(item.id) as NavItemId, label: nav.itemMeta(externalAppItemId(item.id) as NavItemId)?.label ?? item.label, icon: item.icon, group: item.group, placement: item.placement ?? 'MENU', visible: item.visible })),
-  ].filter((item) => item.group !== groupId || !item.visible || item.placement !== 'MENU')
-    .sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
-})
+const groupPicker = ref<string | null>(null)
+watch(() => session.userId, () => { groupPicker.value = null })
 
 function openRename(event: MouseEvent, id: NavItemId) {
   if (isMobile.value) return
@@ -193,7 +183,7 @@ async function saveNewGroup() {
   try {
     const groupId = await nav.createMenuGroup(draft.value)
     groupCreateDraft.value = null
-    groupPicker.value = { groupId, error: '', savingId: null }
+    openGroupPicker(groupId)
     toast('分组已创建，选择要加入的已有菜单', 'ri-check-line')
   } catch (error) {
     draft.error = error instanceof Error ? error.message : '分组创建失败'
@@ -203,22 +193,17 @@ async function saveNewGroup() {
 
 function openGroupPicker(groupId: string) {
   contextMenu.value = null
-  groupPicker.value = { groupId, error: '', savingId: null }
+  groupPicker.value = groupId
 }
 
-async function addMenuToGroup(id: NavItemId) {
-  const picker = groupPicker.value
-  if (!picker || picker.savingId) return
-  picker.savingId = id
-  picker.error = ''
-  try {
-    await nav.moveMenu(id, 'MENU', picker.groupId)
-    toast('菜单已加入分组', 'ri-check-line')
-  } catch (error) {
-    picker.error = error instanceof Error ? error.message : '菜单移动失败'
-  } finally {
-    if (groupPicker.value) groupPicker.value.savingId = null
-  }
+function closeGroupPicker() {
+  const groupId = groupPicker.value
+  groupPicker.value = null
+  void nextTick(() => {
+    const trigger = [...(menuRef.value?.querySelectorAll<HTMLButtonElement>('.group-label') ?? [])]
+      .find((button) => button.dataset.groupId === groupId)
+    trigger?.focus()
+  })
 }
 
 async function hideGroupFromContext() {
@@ -329,6 +314,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
         <button
           v-if="g.label && !nav.collapsed && (g.items.length || !g.configuredMenuCount)"
           class="group-label"
+          :data-group-id="g.id"
           :title="isMobile ? g.label : '点击折叠 / 展开，右键管理分组'"
           @dragover.prevent="onDragOver(g.items[0] ?? 'dock')"
           @drop.prevent="onDrop('MENU', g.id)"
@@ -535,19 +521,6 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           <div><button type="button" :disabled="groupCreateDraft.saving" @click="groupCreateDraft = null">取消</button><button type="submit" class="primary" :disabled="groupCreateDraft.saving || !groupCreateDraft.value.trim()">{{ groupCreateDraft.saving ? '正在保存…' : '创建分组' }}</button></div>
         </form>
       </div>
-      <div v-if="groupPicker" class="group-dialog-mask" @mousedown.self="groupPicker = null" @contextmenu.prevent>
-        <section class="group-dialog group-picker" role="dialog" aria-modal="true" aria-labelledby="group-picker-title">
-          <div class="group-picker-heading"><h2 id="group-picker-title">添加菜单到「{{ groupPickerLabel }}」</h2><button type="button" aria-label="关闭" @click="groupPicker = null"><i class="ri-close-line"></i></button></div>
-          <p>选择已有功能加入此分组；菜单会从原位置移到侧栏。</p>
-          <div class="group-picker-list">
-            <button v-for="item in groupPickerMenus" :key="item.id" type="button" :disabled="!!groupPicker.savingId" @click="addMenuToGroup(item.id)">
-              <i :class="item.icon"></i><span>{{ item.label }}<small>{{ !item.visible ? '当前已隐藏' : item.placement === 'MENU' ? `当前分组：${nav.layoutGroups.find((group) => group.id === item.group)?.label ?? item.group}` : item.placement === 'TOP' ? '当前位于顶部菜单' : '当前位于底部停靠' }}</small></span><b>{{ groupPicker.savingId === item.id ? '移动中…' : '加入' }}</b>
-            </button>
-            <p v-if="!groupPickerMenus.length" class="group-picker-empty">所有菜单都已在此分组。</p>
-          </div>
-          <p v-if="groupPicker.error" class="group-picker-error" role="alert">{{ groupPicker.error }}，可重试。</p>
-        </section>
-      </div>
       <div
         v-if="renameDraft"
         class="rename-mask"
@@ -577,6 +550,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
         </form>
       </div>
     </Teleport>
+    <MenuGroupPicker v-if="groupPicker" :group-id="groupPicker" @close="closeGroupPicker" />
   </aside>
 </template>
 
@@ -933,23 +907,11 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 .group-dialog > input { width: 100%; height: 38px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-page); color: var(--wao-text); outline: none; }
 .group-dialog > input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 2px var(--wao-primary-soft); }
 .group-dialog > p { margin: 9px 0 0; color: var(--wao-text-weak); font-size: 12px; line-height: 1.5; }
-.group-dialog > p[role='alert'], .group-picker-error { color: var(--wao-danger-strong); }
-.group-dialog > div:not(.group-picker-heading) { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.group-dialog > p[role='alert'] { color: var(--wao-danger-strong); }
+.group-dialog > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .group-dialog > div > button { min-height: 34px; padding: 0 12px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
 .group-dialog > div > button.primary { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
 .group-dialog button:disabled { opacity: .58; cursor: wait; }
-.group-picker-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.group-picker-heading h2 { margin: 0; }
-.group-picker-heading button { width: 30px; height: 30px; flex: none; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text-3); cursor: pointer; }
-.group-picker-heading button:hover { background: var(--wao-bg-hover-2); }
-.group-picker-list { display: grid; gap: 4px; max-height: min(52dvh, 430px); margin-top: 12px; overflow-y: auto; }
-.group-picker-list > button { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 7px 9px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--wao-text-2); text-align: left; cursor: pointer; }
-.group-picker-list > button:hover:not(:disabled) { border-color: var(--wao-line); background: var(--wao-bg-hover-2); }
-.group-picker-list > button > i { width: 20px; color: var(--wao-primary-text); text-align: center; }
-.group-picker-list > button > span { display: grid; flex: 1; gap: 2px; min-width: 0; font-size: 13px; }
-.group-picker-list small { overflow: hidden; color: var(--wao-text-weak); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.group-picker-list b { color: var(--wao-primary-text); font-size: 11px; font-weight: 500; }
-.group-picker-empty { padding: 20px 0; color: var(--wao-text-weak); font-size: 12px; text-align: center; }
 .menu-actions {
   position: fixed;
   width: 170px;
