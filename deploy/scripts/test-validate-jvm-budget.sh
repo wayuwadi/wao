@@ -20,7 +20,7 @@ case "$1" in
     esac ;;
   exec)
     if [ "$3" = sh ]; then
-      if [ "$2" = wao-server ]; then echo "${TEST_SERVER_HEAP-1073741824}"
+      if [ "$2" = wao-server ]; then echo "${TEST_SERVER_HEAP-2147483648}"
       else echo "${TEST_OTHER_HEAP-536870912}"; fi
     else echo '{"code":0,"data":{"protocol":1}}'; fi ;;
   *) exit 2 ;;
@@ -29,8 +29,8 @@ SH
 chmod +x "$tmp/bin/docker"
 export PATH="$tmp/bin:$PATH"
 sh "$tmp/deploy/scripts/validate-deployment-node.sh" master test > "$tmp/result"
-grep -q 'wao-server_max_heap_bytes=1073741824' "$tmp/result"
-for invalid in 24461180928 2147483648 ''; do
+grep -q 'wao-server_max_heap_bytes=2147483648' "$tmp/result"
+for invalid in 24461180928 1073741824 ''; do
   if TEST_SERVER_HEAP="$invalid" sh "$tmp/deploy/scripts/validate-deployment-node.sh" master test > "$tmp/result" 2>&1; then
     echo "Unsafe or unknown application heap accepted: $invalid" >&2; exit 1
   fi

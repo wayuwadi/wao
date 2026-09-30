@@ -51,7 +51,7 @@ case "$1" in
   exec)
     case "$*" in
       *PrintFlagsFinal*)
-        case "$2" in wao-server) echo 1073741824 ;; *) echo 536870912 ;; esac
+        case "$2" in wao-server) echo 2147483648 ;; *) echo 536870912 ;; esac
         ;;
       *)
         if [ "${WAO_READY_ALWAYS_FAIL:-false}" = true ]; then exit 28; fi

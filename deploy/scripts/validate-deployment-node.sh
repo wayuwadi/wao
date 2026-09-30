@@ -59,7 +59,7 @@ for service in wao-server wao-agent-server wao-gateway; do
   # Read effective JVM flags with the same image environment used at startup.
   max_heap="$(run_docker exec "${container_id}" sh -c 'java -XX:+PrintFlagsFinal -version 2>/dev/null | awk '\''$2 == "MaxHeapSize" { print $4 }'\''')"
   case "${service}" in
-    wao-server) expected_heap=1073741824 ;;
+    wao-server) expected_heap=2147483648 ;;
     *) expected_heap=536870912 ;;
   esac
   test "${max_heap}" = "${expected_heap}" || {
