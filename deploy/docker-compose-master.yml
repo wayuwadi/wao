@@ -267,7 +267,7 @@ services:
       resources:
         limits:
           cpus: "4.0"
-          memory: 2G
+          memory: 3G
     logging: *default-logging
     networks: [wao]
 

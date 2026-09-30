@@ -64,7 +64,7 @@ export const toggleSharedChatReaction = (id: string, emojiType: string) =>
 
 export const uploadSharedChatImage = (file: File) => apiUploadImage(file, 'WAO 聊天')
 
-/** 聊天文件存入真实组织文件库，沿用 50MB 限额和登录鉴权。 */
+/** 聊天文件存入真实组织文件库，沿用 200MB 限额和登录鉴权。 */
 export const uploadSharedChatFile = (file: File) => apiUploadFile(file)
 
 export const editSharedChatMessage = (id: string, content: string, expectedContent: string) =>

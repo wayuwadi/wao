@@ -160,6 +160,19 @@ class FileServiceTest {
     }
 
     @Test
+    void rejectsFileAboveTwoHundredMbBeforeReadingItsBody() throws Exception {
+        when(settings.get()).thenReturn(new FileSettingsDto(200, 10, true));
+        var file = mock(org.springframework.web.multipart.MultipartFile.class);
+        when(file.isEmpty()).thenReturn(false);
+        when(file.getSize()).thenReturn(200L * 1024 * 1024 + 1);
+
+        assertThatThrownBy(() -> service.upload(file, "wg"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("200MB");
+        verify(file, never()).getBytes();
+    }
+
+    @Test
     void projectUploadKeepsProjectClassificationAndMarkdownPreviewUsesUtf8() {
         defaultLimit();
         var file = new MockMultipartFile("file", "报告.md", "text/markdown", "# 验收\n内容".getBytes());

@@ -10,7 +10,7 @@ const emit = defineEmits<{
 }>()
 
 const form = reactive<FileSettings>({
-  fileMaxMb: 50,
+  fileMaxMb: 200,
   imageMaxMb: 10,
   downloadCaptchaEnabled: true,
 })
@@ -36,8 +36,8 @@ async function load() {
 
 async function save() {
   if (saving.value || !loaded.value) return
-  if (!Number.isInteger(form.fileMaxMb) || form.fileMaxMb < 1 || form.fileMaxMb > 50 || !Number.isInteger(form.imageMaxMb) || form.imageMaxMb < 1 || form.imageMaxMb > 10) {
-    error.value = '请输入有效上传上限：普通文件 1–50MB，图片 1–10MB'
+  if (!Number.isInteger(form.fileMaxMb) || form.fileMaxMb < 1 || form.fileMaxMb > 200 || !Number.isInteger(form.imageMaxMb) || form.imageMaxMb < 1 || form.imageMaxMb > 10) {
+    error.value = '请输入有效上传上限：普通文件 1–200MB，图片 1–10MB'
     return
   }
   saving.value = true
@@ -87,11 +87,11 @@ useOverlayDismiss(() => true, close)
           <label>
             <span>普通文件上传上限</span>
             <div>
-              <input v-model.number="form.fileMaxMb" type="number" min="1" max="50" required /><b
+              <input v-model.number="form.fileMaxMb" type="number" min="1" max="200" required /><b
                 >MB</b
               >
             </div>
-            <small>1–50MB，不能超过当前网关与服务端的 50MB 部署基线。</small>
+            <small>1–200MB；网关与服务端请求体基线为 1GB。</small>
           </label>
           <label>
             <span>图床单图上传上限</span>

@@ -33,7 +33,11 @@ fi
 grep -q 'log_format wao_ready_upstream' "${rendered}"
 grep -q 'access_log /var/log/nginx/access.log combined;' "${rendered}"
 grep -q 'access_log /var/log/nginx/wao-ready-upstream.log wao_ready_upstream if=\$wao_ready_trace;' "${rendered}"
-grep -q 'location = /game {' "${rendered}"
+if grep -q 'location = /game {' "${rendered}"; then
+  echo 'Retired game route must not be restored.' >&2
+  exit 1
+fi
+grep -q 'client_max_body_size 1030m;' "${rendered}"
 grep -q 'location = /625word {' "${rendered}"
 grep -q 'return 302 /api/pages/625word;' "${rendered}"
 grep -q 'location = /insight {' "${rendered}"

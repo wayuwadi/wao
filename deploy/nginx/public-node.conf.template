@@ -47,7 +47,7 @@ server {
         add_header Vary "Origin" always;
         add_header Cache-Control "no-store" always;
         if ($request_method = OPTIONS) { return 204; }
-        client_max_body_size 52m;
+        client_max_body_size 1030m;
         proxy_pass ${WAO_EDGE_GATEWAY_SCHEME}://${WAO_EDGE_GATEWAY};
         # Existing gateway uses a self-signed certificate on the local host only.
         proxy_ssl_verify off;
@@ -60,7 +60,7 @@ server {
         proxy_set_header Forwarded "";
         proxy_set_header Connection "";
         proxy_buffering off;
-        # The edge cache is a 16 MiB tmpfs; stream up to 50 MiB uploads to the
+        # The edge cache is a 16 MiB tmpfs; stream large uploads to the
         # existing authenticated backend instead of filling this temp volume.
         proxy_request_buffering off;
         proxy_connect_timeout 2s;

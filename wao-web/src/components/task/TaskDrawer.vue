@@ -914,7 +914,7 @@ async function uploadAttachment(event: Event) {
   input.value = ''
   const t = task.value
   if (!file || !t || attachmentUploading.value) return
-  if (file.size > data.MAX_FILE_BYTES) return toast('文件超过 50MB，无法上传', 'ri-error-warning-line')
+  if (file.size > data.MAX_FILE_BYTES) return toast('文件超过 200MB，无法上传', 'ri-error-warning-line')
   attachmentUploading.value = true
   try {
     const uploaded = await data.uploadFile(file)

@@ -879,7 +879,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 }
 async function onUploadFile(file: File, done: (item: FileItem | null) => void) {
   if (file.size > data.MAX_FILE_BYTES) {
-    toast('文件超过 50MB，已跳过', 'ri-error-warning-line')
+    toast('文件超过 200MB，已跳过', 'ri-error-warning-line')
     done(null)
     return
   }

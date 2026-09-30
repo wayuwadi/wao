@@ -24,9 +24,9 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   servlet:
     multipart:
-      # 通用文件上限 50MB，图床仍由 ImageService 单独限制为 10MB
-      max-file-size: 50MB
-      max-request-size: 52MB
+      # 部署请求体基线为 1GiB；普通文件业务上限 200MiB，图床仍为 10MiB
+      max-file-size: 1GB
+      max-request-size: 1030MB
   jackson:
     time-zone: Asia/Shanghai
     parser:

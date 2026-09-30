@@ -254,8 +254,8 @@ async function uploadAttachment(event: Event) {
   const file = input.files?.[0]
   if (!file || uploadingFile.value) return
   sendError.value = ''
-  if (file.size > 50 * 1024 * 1024) {
-    sendError.value = '文件超过 50MB，请压缩后重试'
+  if (file.size > 200 * 1024 * 1024) {
+    sendError.value = '文件超过 200MB，请压缩后重试'
     input.value = ''
     return
   }

@@ -1147,7 +1147,7 @@ paths:
       parameters: [ { name: projectId, in: query, required: false, schema: { type: string }, description: 指定时只返回该可见项目的文件 } ]
       responses: { '200': { description: OK }, '404': { description: 项目不存在或不可见 } }
     post:
-      summary: 上传通用文件（单个不超过系统设置，且最大 50MB）
+      summary: 上传通用文件（单个不超过系统设置，且最大 200MB）
       requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary }, projectId: { type: string, nullable: true } } } } } }
       responses: { '200': { description: 返回带直链的文件项 }, '400': { description: 空文件或超过限制 } }
   /files/{id}/meta:
@@ -1937,7 +1937,7 @@ components:
       type: object
       required: [fileMaxMb, imageMaxMb, downloadCaptchaEnabled]
       properties:
-        fileMaxMb: { type: integer, minimum: 1, maximum: 50 }
+        fileMaxMb: { type: integer, minimum: 1, maximum: 200 }
         imageMaxMb: { type: integer, minimum: 1, maximum: 10 }
         downloadCaptchaEnabled: { type: boolean, description: 只控制算术题；下载页与一次性票据始终启用 }
     HttpPerformanceInspectionConfig:
