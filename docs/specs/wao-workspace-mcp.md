@@ -40,3 +40,7 @@ WAO 首页提供“生成连接指令”。当前登录成员点击后，服务�
 待验证写入 done=false；完成时 done=true 并清除细分状态，重新打开为未开始时 done=false。AI 默认只推进到待验证，已完成由用户验收决定。
 
 CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expected-subtask-version VERSION`。部署后必须先通过实时 tools/list 确认新工具可见；不得在旧服务尚未部署时猜测调用。
+
+## 小记最新正文（2026-09-30）
+
+浏览器最新正文交互见 `notes-single-latest-content.md`。后台润色以源正文与文档版本条件写回；浏览器保存触发的自动续跑不新增工作区工具，不改变令牌可见能力、文档写入权限或冲突语义。

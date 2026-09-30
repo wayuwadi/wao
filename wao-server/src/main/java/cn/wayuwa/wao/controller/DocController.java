@@ -109,8 +109,12 @@ public class DocController {
     }
 
     @PatchMapping("/{id}")
-    public ApiResponse<DocDto> patch(@PathVariable String id, @RequestBody PatchDocRequest request) {
-        return ApiResponse.ok(knowledge.updateDoc(id, request));
+    public ApiResponse<DocDto> patch(@PathVariable String id, @RequestBody PatchDocRequest request,
+            HttpServletRequest http) {
+        DocDto saved = knowledge.updateDoc(id, request);
+        try { noteAi.refreshAfterSave(currentMember.id(http), saved.id()); }
+        catch (RuntimeException ex) { log.warn("小记已保存但最新正文整理未能入队：{}", saved.id(), ex); }
+        return ApiResponse.ok(saved);
     }
 
     /** 把一次性文档移出日常文档树并长期保留。 */

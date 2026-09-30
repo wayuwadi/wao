@@ -12,7 +12,8 @@ import { resolvedRichContent } from '@/utils/richDoc'
 import { notePreviewImages, notePreviewSource, type NotePreviewImage } from '@/utils/notePreviewImages'
 import type { Doc } from '@/types'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
-import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus, notePolishVersions, retryAutoNoteEnrichment, startAutoNoteEnrichment, startNoteEnrichmentStage } from '@/utils/autoNoteEnrichment'
+import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus, retryAutoNoteEnrichment, startAutoNoteEnrichment, startNoteEnrichmentStage } from '@/utils/autoNoteEnrichment'
+import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { useNow } from '@/composables/now'
@@ -208,6 +209,14 @@ const newTag = ref('')
 const creatingTag = ref(false)
 const tagError = ref('')
 const editingIds = ref<string[]>([])
+const noteDrafts = ref<Record<string, NoteDraftSnapshot>>({})
+function displayedContent(note: Doc) { return noteDrafts.value[note.id]?.content ?? latestNoteContent(note) }
+function displayedTitle(note: Doc) { return noteDrafts.value[note.id]?.title ?? note.title }
+function displayedTags(note: Doc) { return noteDrafts.value[note.id]?.tags ?? note.tags ?? [] }
+function onDraftChange(id: string, draft: NoteDraftSnapshot | null) {
+  if (draft) noteDrafts.value[id] = draft
+  else delete noteDrafts.value[id]
+}
 const expandedIds = ref<string[]>([])
 const deletingId = ref('')
 const confirmingDeleteId = ref('')
@@ -453,9 +462,9 @@ const matching = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
   return notes.value.filter(doc => (selectedTag.value === null ? !doc.tags?.length : !selectedTag.value || doc.tags?.includes(selectedTag.value))
     && (!selectedAuthor.value || doc.author === selectedAuthor.value)
-    && (imageFilter.value === 'all' || (notePreviewImages(resolvedRichContent(doc)).length > 0) === (imageFilter.value === 'yes'))
+    && (imageFilter.value === 'all' || (notePreviewImages(displayedContent(doc)).length > 0) === (imageFilter.value === 'yes'))
     && inTimeRange(doc.updated, timeFilter.value)
-    && (!needle || `${doc.title}\n${resolvedRichContent(doc).markdown}\n${validPolish(doc)?.polishedMarkdown ?? ''}\n${(doc.tags ?? []).join(' ')}`.toLocaleLowerCase().includes(needle)))
+    && (!needle || `${displayedTitle(doc)}\n${displayedMarkdown(doc)}\n${displayedTags(doc).join(' ')}`.toLocaleLowerCase().includes(needle)))
 })
 function inTimeRange(value: string, range: typeof timeFilter.value) {
   if (range === 'all') return true
@@ -465,18 +474,9 @@ function inTimeRange(value: string, range: typeof timeFilter.value) {
   const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1)
   return range === 'today' ? date >= today : range === 'yesterday' ? date >= yesterday && date < today : date < yesterday
 }
-function validPolish(note: { id: string; blocks: Doc['blocks']; content?: Doc['content'] }) {
-  const version = notePolishVersions[note.id]
-  return version?.sourceMarkdown === resolvedRichContent(note).markdown ? version : null
-}
-const versions = ref<Record<string, 'polished' | 'original'>>({})
-function showPolished(note: Doc) { return !!validPolish(note) && versions.value[note.id] !== 'original' }
-function displayedMarkdown(note: Doc) { return showPolished(note) ? validPolish(note)!.polishedMarkdown : resolvedRichContent(note).markdown }
+function displayedMarkdown(note: Doc) { return displayedContent(note).markdown }
 function cardImages(note: Doc): NotePreviewImage[] {
-  const content = resolvedRichContent(note)
-  return notePreviewImages(showPolished(note)
-    ? { ...content, document: null, markdown: displayedMarkdown(note) }
-    : content)
+  return notePreviewImages(displayedContent(note))
 }
 function stageIcon(stage: 'title' | 'image' | 'polish' | 'tags') { return { title: 'T', image: '▧', polish: '✦', tags: '#' }[stage] }
 function stageLabel(stage: 'title' | 'image' | 'polish' | 'tags') { return { title: '标题', image: '配图', polish: '润色', tags: '标签' }[stage] }
@@ -606,10 +606,10 @@ function onCreated(id: string) {
   void loadServerWorkflows()
 }
 function onEdited(sourceId: string, savedId: string) {
+  delete noteDrafts.value[sourceId]
   closeEditing(sourceId)
   highlighted.value = savedId
-  // 冲突另存副本时展示新记录；普通修改保留当前筛选和滚动位置。
-  if (sourceId !== savedId) onCreated(savedId)
+  void loadServerWorkflows()
 }
 function authorName(id: string) { return session.members.find(member => member.id === id)?.name || '成员' }
 function timeLabel(value: string) {
@@ -677,7 +677,23 @@ onMounted(() => {
 })
 onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); void loadServerWorkflows(); workflowTimer = setInterval(() => { if (!document.hidden) void loadServerWorkflows() }, 20_000); window.addEventListener('pointerdown', onOutsideFilter); window.addEventListener('keydown', onReaderKeydown) })
 onBeforeUnmount(() => { clearCardClickTimer(); notePreviewResizeObserver?.disconnect(); window.removeEventListener('resize', measureAllNotePreviews); window.removeEventListener('resize', positionDeleteConfirmation); document.removeEventListener('scroll', positionDeleteConfirmation, true); window.removeEventListener('pointerdown', onOutsideDeleteConfirmation); window.removeEventListener('keydown', onDeleteConfirmationKeydown); if (workflowTimer) clearInterval(workflowTimer); window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
-watch(() => session.currentUser.id, memberId => { serverWorkflows.value = {}; void initializeNoteWorkflow(memberId); void loadServerWorkflows(); versions.value = {} })
+watch(() => session.currentUser.id, memberId => { serverWorkflows.value = {}; void initializeNoteWorkflow(memberId); void loadServerWorkflows() })
+watch([() => session.currentUser.id, notes], ([memberId, values], previous) => {
+  if (previous?.[0] !== memberId) noteDrafts.value = {}
+  for (const note of values) {
+    if (editingIds.value.includes(note.id)) continue
+    try {
+      const draft = JSON.parse(localStorage.getItem(`wao-note-edit-v1:${memberId}:${note.id}`) || 'null')
+      if (draft?.id === note.id && typeof draft.text === 'string') {
+        noteDrafts.value[note.id] = {
+          content: draft.content?.markdown === draft.text ? draft.content : { version: 1, document: null, markdown: draft.text },
+          title: typeof draft.generatedTitle === 'string' && draft.generatedTitle !== draft.baseNote?.title ? draft.generatedTitle : undefined,
+          tags: Array.isArray(draft.tags) && JSON.stringify(draft.tags) !== JSON.stringify(draft.baseNote?.tags) ? draft.tags : undefined,
+        }
+      }
+    } catch { /* 无有效草稿时使用服务器正文。 */ }
+  }
+}, { immediate: true })
 onMounted(() => void loadPins())
 </script>
 
@@ -733,15 +749,14 @@ onMounted(() => void loadPins())
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出与按需操作">
               <button v-for="stage in (['title', 'image', 'polish', 'tags'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
             </div>
-            <div v-if="validPolish(note)" class="version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(note)" @click="versions[note.id] = 'polished'">润色</button><button type="button" :aria-pressed="!showPolished(note)" @click="versions[note.id] = 'original'">原文</button></div>
             <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-controls="confirmingDeleteId === note.id ? `note-delete-confirm-${note.id}` : undefined" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
-            <p v-if="progressVisible(note.id) && workflowMessage(note.id)" class="workflow-status" role="status">{{ workflowMessage(note.id) }} <button v-if="serverFailed(note.id) || canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成')" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '保存并重试中…' : editingIds.includes(note.id) ? '保存并重试' : '重试' }}</button></p>
-          <NoteComposer v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
-            @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
+            <p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id) && workflowMessage(note.id))" class="workflow-status" role="status">{{ noteDrafts[note.id] ? '草稿已保护 · 有修改待保存' : workflowMessage(note.id) }} <button v-if="!noteDrafts[note.id] && (serverFailed(note.id) || canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成'))" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '重试中…' : '重试' }}</button></p>
+          <NoteComposer v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags" :workflow-message="workflowMessage(note.id)"
+            @tag-created="tagNames = [...new Set([...tagNames, $event])]" @draft-change="onDraftChange(note.id, $event)" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
-          <div class="note-heading"><h2>{{ note.title }}</h2><div v-if="note.tags?.length" class="card-tags"><button v-for="tag in note.tags" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
+          <div class="note-heading"><h2>{{ displayedTitle(note) }}</h2><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
           <div class="note-content" :class="{ 'has-images': notePreviews.get(note.id)?.length }" @click="openInlineImage">
-            <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="showPolished(note) ? undefined : resolvedRichContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
+            <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
             <aside v-if="notePreviews.get(note.id)?.length" class="note-images" :class="{ expanded: isNotePreviewExpanded(note.id) }" aria-label="小记图片总览">
               <span>图片总览 <b>{{ notePreviews.get(note.id)?.length }} 张</b></span>
               <button v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image" type="button" :title="image.alt || `全屏阅读图片 ${index + 1}`" @click.stop="startReading(note.id)">
@@ -776,10 +791,9 @@ onMounted(() => void loadPins())
         <button class="reader-nav reader-prev" type="button" aria-label="上一篇小记（←）" :disabled="readingIndex === 0" @click="moveReader(-1)"><i class="ri-arrow-left-s-line"></i></button>
         <article :key="readingNote.id" ref="readerPage" class="reader-page">
           <div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
-          <h2>{{ readingNote.title }}</h2>
-          <div v-if="readingNote.tags?.length" class="reader-tags"><span v-for="tag in readingNote.tags" :key="tag"># {{ tag }}</span></div>
-          <div v-if="validPolish(readingNote)" class="reader-version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(readingNote)" @click="versions[readingNote.id] = 'polished'">润色版</button><button type="button" :aria-pressed="!showPolished(readingNote)" @click="versions[readingNote.id] = 'original'">原文</button></div>
-          <div class="reader-content" @click="openInlineImage"><div class="reader-body"><MarkdownEditor :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="showPolished(readingNote) ? undefined : resolvedRichContent(readingNote).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" /></div></div>
+          <h2>{{ displayedTitle(readingNote) }}</h2>
+          <div v-if="displayedTags(readingNote).length" class="reader-tags"><span v-for="tag in displayedTags(readingNote)" :key="tag"># {{ tag }}</span></div>
+          <div class="reader-content" @click="openInlineImage"><div class="reader-body"><MarkdownEditor :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" /></div></div>
         </article>
         <button class="reader-nav reader-next" type="button" aria-label="下一篇小记（→）" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)"><i class="ri-arrow-right-s-line"></i></button>
         <footer class="reader-controls"><button type="button" :disabled="readingIndex === 0" @click="moveReader(-1)"><i class="ri-arrow-left-line"></i> 上一篇</button><span>← → 切换小记 · ↑ ↓ 滚动正文 · Esc 退出</span><button type="button" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇 <i class="ri-arrow-right-line"></i></button></footer>
@@ -861,11 +875,8 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .stage-running { color: #7453bd; border-color: #c6b4ef; background: #f5f0ff; animation: stage-pulse 1.5s infinite; }
 .stage-failed { color: var(--wao-danger-strong); border-color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
 .stage-skipped { opacity: 1; }
-.stage-list-complete, .version-toggle { opacity: 0; visibility: hidden; transition: opacity .16s; }
-.note-card:hover .stage-list-complete, .note-card:focus-within .stage-list-complete, .note-card:hover .version-toggle, .note-card:focus-within .version-toggle { opacity: 1; visibility: visible; }
-.version-toggle { display: inline-flex; gap: 2px; border-radius: 7px; background: var(--wao-bg-sub); }
-.version-toggle button { padding: 3px 6px; font-size: 11px; }
-.version-toggle button[aria-pressed="true"] { color: var(--wao-primary-text); background: var(--wao-bg-card); box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.stage-list-complete { opacity: 0; visibility: hidden; transition: opacity .16s; }
+.note-card:hover .stage-list-complete, .note-card:focus-within .stage-list-complete { opacity: 1; visibility: visible; }
 .card-quick-actions { display: inline-flex; gap: 2px; opacity: 0; visibility: hidden; transition: opacity .16s, visibility .16s; }
 .note-card:hover .card-quick-actions, .note-card:focus-within .card-quick-actions { opacity: 1; visibility: visible; }
 .note-card.delete-confirming .card-quick-actions { opacity: 1; visibility: visible; }
@@ -944,9 +955,6 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-page h2 { margin: 20px 0 10px; color: var(--wao-text-1); font-size: clamp(24px, 3vw, 36px); line-height: 1.3; }
 .reader-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 22px; }
 .reader-tags span { padding: 4px 9px; border-radius: 999px; background: var(--wao-bg-hover); color: var(--wao-primary-text); font-size: 11px; }
-.reader-version-toggle { display: inline-flex; gap: 2px; margin: 0 0 18px; padding: 3px; border-radius: 9px; background: var(--wao-bg-sub); }
-.reader-version-toggle button { padding: 5px 10px; }
-.reader-version-toggle button[aria-pressed="true"] { background: var(--wao-bg-card); color: var(--wao-primary-text); box-shadow: 0 1px 5px rgba(0,0,0,.1); }
 .reader-content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: start; }
 .reader-body { min-width: 0; overflow-wrap: anywhere; font-size: 16px; line-height: 1.95; }
 .reader-body :deep(img.md-img) { max-height: min(62vh, 560px); object-fit: contain; cursor: zoom-in; }
@@ -976,6 +984,6 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 14px 12px 16px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .mining-modal-mask { align-items: end; padding: 10px; } .mining-modal { width: 100%; max-height: calc(100dvh - 20px); padding: 24px 6px 10px; border-radius: 18px; } .mining-modal-close { margin-right: 4px; } .list-summary { flex-wrap: wrap; } .notes-reader { grid-template-rows: 48px minmax(0,1fr) 54px; padding: 0 10px; } .reader-page { border-radius: 13px; padding: 20px 15px; } .reader-page h2 { margin-top: 14px; } .reader-nav { top: auto; bottom: 62px; width: 34px; height: 40px; transform: none; } .reader-prev { left: 13px; } .reader-next { right: 13px; } .reader-controls { gap: 8px; } .reader-controls > span { display: none; } }
 @media (max-width: 600px) { .note-content.has-images { grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; } .note-images { max-height: 150px; padding-left: 7px; } }
-@media (hover: none) { .stage-list-complete, .version-toggle, .card-quick-actions, .note-read-action, .mining-toggle { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
+@media (hover: none) { .stage-list-complete, .card-quick-actions, .note-read-action, .mining-toggle { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top, .mining-modal { transition: none; animation: none; } .reader-page { animation: none; } .reader-progress i { transition: none; } }
 </style>

@@ -421,7 +421,7 @@ paths:
       responses: { '200': { description: OK }, '404': { description: 不存在 } }
     patch:
       summary: 局部更新文档（标题 / 正文 / 出链 / 所在文件夹）
-      description: 新编辑器携带 expectedRev 并以数据库 CAS 保存；冲突返回 409且不覆盖服务器正文。content 存在时是事实源，只有 blocks 时清空旧高级快照
+      description: 新编辑器携带 expectedRev 并以数据库 CAS 保存；冲突返回 409且不覆盖服务器正文。content 存在时是事实源，只有 blocks 时清空旧高级快照。本人小记正文变化后按已选择的后台 AI 工作流自动整理最新正文，旧任务失效；完成的标题和配图不重复生成，AI 调度失败不改变正文保存成功结果。
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PatchDocRequest' } } } }
       responses: { '200': { description: OK }, '404': { description: 不存在 }, '409': { description: 文档已由其他窗口更新 } }

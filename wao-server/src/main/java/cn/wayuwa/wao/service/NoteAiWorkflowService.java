@@ -69,13 +69,44 @@ public class NoteAiWorkflowService {
         return workflows.listOwned(memberId).stream().map(this::status).toList();
     }
 
+    /** 本人保存新正文后自动废弃旧阶段任务，按既有选择整理最新内容。 */
+    @Transactional
+    public void refreshAfterSave(String memberId, String docId) {
+        Workflow workflow = workflows.lock(docId);
+        if (workflow == null || !Objects.equals(workflow.memberId(), memberId)) return;
+        DocDto doc = ownedNote(workflow);
+        if (doc == null || doc.content() == null || doc.rev() == null) return;
+        if (!digest(doc.content().markdown()).equals(workflow.sourceMarkdownHash())
+                || !Objects.equals(doc.title(), workflow.originalTitle())) {
+            workflows.update(forLatestContent(workflow, doc));
+        }
+    }
+
+    private Workflow forLatestContent(Workflow w, DocDto doc) {
+        boolean bodyChanged = !digest(doc.content().markdown()).equals(w.sourceMarkdownHash());
+        boolean titleChanged = !Objects.equals(doc.title(), w.originalTitle());
+        String title = titleChanged && (active(w.titleStatus()) || FAILED.equals(w.titleStatus())) ? SKIPPED
+                : bodyChanged && (active(w.titleStatus()) || FAILED.equals(w.titleStatus())) ? PENDING : w.titleStatus();
+        String image = bodyChanged && (active(w.imageStatus()) || FAILED.equals(w.imageStatus())) ? PENDING : w.imageStatus();
+        String polish = bodyChanged && !SKIPPED.equals(w.polishStatus()) ? PENDING : w.polishStatus();
+        return new Workflow(w.docId(), w.memberId(), doc.rev(), doc.title(), digest(doc.content().markdown()),
+                title, titleChanged || bodyChanged && PENDING.equals(title) ? null : w.titleJobId(),
+                image, bodyChanged && PENDING.equals(image) ? null : w.imageRunId(),
+                polish, bodyChanged && PENDING.equals(polish) ? null : w.polishJobId(),
+                null, w.createdAt(), w.updatedAt());
+    }
+
     /** 失败后以当前已保存正文重新尝试失败阶段；完成阶段不重复消耗额度。 */
     @Transactional
     public Status retry(String memberId, String docId) {
         Workflow workflow = workflows.lock(docId);
         if (workflow == null || !workflow.memberId().equals(memberId)) throw new NotFoundException("小记自动整理任务不存在");
         DocDto doc = ownedNote(workflow);
-        if (doc == null || doc.content() == null) throw new NotFoundException("小记已不可用");
+        if (doc == null || doc.content() == null || doc.rev() == null) throw new NotFoundException("小记已不可用");
+        if (!digest(doc.content().markdown()).equals(workflow.sourceMarkdownHash())
+                || !Objects.equals(doc.title(), workflow.originalTitle())) {
+            workflow = forLatestContent(workflow, doc);
+        }
         String title = FAILED.equals(workflow.titleStatus()) ? PENDING : workflow.titleStatus();
         String image = FAILED.equals(workflow.imageStatus()) ? PENDING : workflow.imageStatus();
         String polish = FAILED.equals(workflow.polishStatus()) ? PENDING : workflow.polishStatus();
@@ -94,14 +125,14 @@ public class NoteAiWorkflowService {
         Workflow workflow = workflows.lock(docId);
         if (workflow == null) return;
         DocDto doc = ownedNote(workflow);
-        if (doc == null || doc.content() == null) {
+        if (doc == null || doc.content() == null || doc.rev() == null) {
             workflows.update(failRemaining(workflow, "小记已删除或不属于原作者"));
             return;
         }
         String markdown = doc.content().markdown();
-        if (doc.rev() == null || !digest(markdown).equals(workflow.sourceMarkdownHash())
+        if (!digest(markdown).equals(workflow.sourceMarkdownHash())
                 || !Objects.equals(doc.title(), workflow.originalTitle())) {
-            workflows.update(failRemaining(workflow, "小记已由成员修改；旧 AI 结果不会覆盖新版本，可手动重试"));
+            workflows.update(forLatestContent(workflow, doc));
             return;
         }
         // 标签等元信息可独立保存；正文与标题没有变化时沿用当前版本继续 CAS。
@@ -249,9 +280,14 @@ public class NoteAiWorkflowService {
         if ("FAILED".equals(result.status())) return workflow.withPolish(FAILED, jobId, result.message());
         if (!"SUCCEEDED".equals(result.status())) return workflow;
         if (!StringUtils.hasText(result.polished())) return workflow.withPolish(FAILED, jobId, "AI 未返回可用润色版本");
+        String cover = markdown.startsWith("![文章总览图](")
+                ? markdown.substring(0, markdown.indexOf('\n') + 1) + "\n" : "";
+        String polished = cover + result.polished().replaceFirst("^!\\[文章总览图]\\([^\\n]+\\)\\s*", "").strip();
         polishVersions.save(workflow.memberId(), workflow.docId(),
-                new SaveNotePolishVersionRequest(markdown, result.polished()));
-        return workflow.withPolish(DONE, jobId, null);
+                new SaveNotePolishVersionRequest(markdown, polished));
+        DocDto saved = knowledge.updateDoc(doc.id(), new PatchDocRequest(null, null,
+                new RichDocContentDto(1, null, polished), null, null, workflow.baseRev()));
+        return workflow.withPolish(DONE, jobId, null).withContent(saved.rev(), digest(polished));
     }
 
     private RichDocContentDto withCover(RichDocContentDto original, String url) {

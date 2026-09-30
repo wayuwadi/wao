@@ -64,10 +64,13 @@ class NoteAiWorkflowServiceTest {
 
         ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
         verify(workflows).update(saved.capture());
-        assertThat(saved.getValue().titleStatus()).isEqualTo("FAILED");
-        assertThat(saved.getValue().imageStatus()).isEqualTo("FAILED");
-        assertThat(saved.getValue().polishStatus()).isEqualTo("FAILED");
+        assertThat(saved.getValue().titleStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().imageStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().polishStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().titleJobId()).isNull();
+        assertThat(saved.getValue().baseRev()).isEqualTo(2);
         verify(knowledge, never()).updateDoc(any(), any());
+        verify(textJobs, never()).get(any(), any());
         verify(textJobs, never()).submit(any(), any(), any(), any(), any(), any(), any());
         verify(images, never()).start(any(), any());
     }
@@ -190,5 +193,80 @@ class NoteAiWorkflowServiceTest {
         return new DocDto("d1", "原题", author, null, null, false, List.of(), List.of(),
                 new RichDocContentDto(1, null, markdown), List.of(), KnowledgeService.NOTES_KB_ID,
                 null, rev);
+    }
+
+    @Test void saveLatestBodyRestartsPolishAndPreservesCompletedTitleAndImage() {
+        Workflow w = new Workflow("d1", "m1", 1, "原题", digestForTest("旧正文"),
+                "DONE", "title1", "DONE", "image1", "DONE", "oldPolish", null, null, null);
+        when(workflows.lock("d1")).thenReturn(w);
+        owned(note("m1", 4, "旧正文加上刚刚继续写的新内容。"));
+        service.refreshAfterSave("m1", "d1");
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().polishStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().polishJobId()).isNull();
+        assertThat(saved.getValue().sourceMarkdownHash()).isEqualTo(digestForTest("旧正文加上刚刚继续写的新内容。"));
+        assertThat(saved.getValue().titleStatus()).isEqualTo("DONE");
+        assertThat(saved.getValue().imageStatus()).isEqualTo("DONE");
+    }
+
+    @Test void otherMemberCannotRestartAndUnselectedStagesStaySkipped() {
+        Workflow w = new Workflow("d1", "m1", 1, "原题", "oldhash", "RUNNING", "oldTitle",
+                "SKIPPED", null, "SKIPPED", null, null, null, null);
+        when(workflows.lock("d1")).thenReturn(w);
+        service.refreshAfterSave("m2", "d1");
+        verify(workflows, never()).update(any());
+        DocDto body = note("m1", 4, "本人最新正文");
+        owned(new DocDto(body.id(), "本人最新标题", body.author(), null, null, false, List.of(), List.of(),
+                body.content(), List.of(), KnowledgeService.NOTES_KB_ID, null, 4));
+        service.refreshAfterSave("m1", "d1");
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().titleStatus()).isEqualTo("SKIPPED");
+        assertThat(saved.getValue().imageStatus()).isEqualTo("SKIPPED");
+        assertThat(saved.getValue().polishStatus()).isEqualTo("SKIPPED");
+    }
+
+    @Test void polishWritesSingleLatestBodyWithCoverAndTracksItsNewRevision() {
+        String cover = "![文章总览图](/api/images/cover/raw)\n\n";
+        String original = "今天记录了一段值得保留的经历，先明确项目的目标，然后列出行动计划，并且继续观察结果。";
+        String source = cover + original;
+        Workflow w = new Workflow("d1", "m1", 4, "原题", digestForTest(source), "DONE", "title1",
+                "DONE", "image1", "RUNNING", "polish1", null, null, null);
+        when(workflows.lock("d1")).thenReturn(w);
+        owned(note("m1", 4, source));
+        when(textJobs.get("m1", "polish1")).thenReturn(new TextPolishJobService.Result("polish1", "SUCCEEDED",
+                null, "今天明确了项目目标，并列出行动计划，接下来持续观察执行结果。", null, null));
+        String finalBody = cover + "今天明确了项目目标，并列出行动计划，接下来持续观察执行结果。";
+        when(knowledge.updateDoc(any(), any())).thenReturn(note("m1", 5, finalBody));
+        service.advance("d1");
+        ArgumentCaptor<cn.wayuwa.wao.dto.PatchDocRequest> patch = ArgumentCaptor.forClass(cn.wayuwa.wao.dto.PatchDocRequest.class);
+        verify(knowledge).updateDoc(org.mockito.ArgumentMatchers.eq("d1"), patch.capture());
+        assertThat(patch.getValue().expectedRev()).isEqualTo(4);
+        assertThat(patch.getValue().content().markdown()).isEqualTo(finalBody);
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().polishStatus()).isEqualTo("DONE");
+        assertThat(saved.getValue().baseRev()).isEqualTo(5);
+        assertThat(saved.getValue().sourceMarkdownHash()).isEqualTo(digestForTest(finalBody));
+    }
+
+    private void owned(DocDto doc) {
+        DocEntity entity = new DocEntity();
+        entity.setId(doc.id()); entity.setAuthorId(doc.author()); entity.setKbId(doc.kbId());
+        when(docs.selectById(doc.id())).thenReturn(entity);
+        when(knowledge.getDoc(doc.id())).thenReturn(doc);
+    }
+
+    @Test void retryAfterBodyChangesCannotReuseOldRunningPolishResult() {
+        when(workflows.lock("d1")).thenReturn(new Workflow("d1", "m1", 1, "原题", "oldhash",
+                "DONE", "title1", "DONE", "image1", "RUNNING", "stalePolish", null, null, null));
+        owned(note("m1", 4, "本人最新输入，不可由旧正文的润色结果覆盖。"));
+        service.retry("m1", "d1");
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().polishStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().polishJobId()).isNull();
+        assertThat(saved.getValue().baseRev()).isEqualTo(4);
     }
 }

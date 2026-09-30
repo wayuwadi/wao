@@ -29,10 +29,18 @@ describe('小记草稿与后台 AI 更新合并', () => {
     expect(merged?.content.document?.content?.[1]?.content?.[0]?.text).toBe('原文，继续写')
   })
 
-  it('远端正文改写或双方更改标题时保留冲突', () => {
+  it('远端正文改写或双方更改标题时自动采用本次输入', () => {
     const base = note('原文')
     const draft = { title: '我的标题', tags: [], content: content('原文，继续写') }
-    expect(rebaseNoteDraft(base, note('另一处改写'), draft)).toBeNull()
-    expect(rebaseNoteDraft(base, note('原文', '另一处标题'), draft)).toBeNull()
+    expect(rebaseNoteDraft(base, note('另一处改写'), draft)).toMatchObject(draft)
+    expect(rebaseNoteDraft(base, note('原文', '另一处标题'), draft)?.title).toBe('我的标题')
+  })
+
+  it('未修改的字段沿用最新服务器内容，历史无基线草稿仍可保存', () => {
+    const base = note('原文')
+    const remote = note('AI 最新正文', 'AI 最新标题', ['计划'])
+    expect(rebaseNoteDraft(base, remote, { title: base.title, tags: [], content: base.content! }))
+      .toMatchObject({ title: remote.title, tags: ['计划'], content: remote.content })
+    expect(rebaseNoteDraft(null, remote, { title: '旧草稿标题', tags: [], content: content('续写') })?.content.markdown).toBe('续写')
   })
 })
