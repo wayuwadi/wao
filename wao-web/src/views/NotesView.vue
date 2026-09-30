@@ -212,6 +212,51 @@ const expandedIds = ref<string[]>([])
 const deletingId = ref('')
 const confirmingDeleteId = ref('')
 const deleteError = ref<{ id: string; message: string } | null>(null)
+const deleteConfirmation = ref<HTMLElement | null>(null)
+const deleteButtons = new Map<string, HTMLElement>()
+const deleteConfirmationStyle = ref<Record<string, string>>({ visibility: 'hidden' })
+function setDeleteConfirmation(value: unknown) { deleteConfirmation.value = value instanceof HTMLElement ? value : null }
+function setDeleteButton(id: string, value: unknown) {
+  if (value instanceof HTMLElement) deleteButtons.set(id, value)
+  else deleteButtons.delete(id)
+}
+function positionDeleteConfirmation() {
+  const anchor = deleteButtons.get(confirmingDeleteId.value)
+  const panel = deleteConfirmation.value
+  if (!anchor || !panel) return
+  const rect = anchor.getBoundingClientRect()
+  const width = Math.min(320, window.innerWidth - 24)
+  const height = panel.getBoundingClientRect().height
+  const below = rect.bottom + 8
+  const top = below + height <= window.innerHeight - 12 ? below : rect.top - height - 8
+  deleteConfirmationStyle.value = {
+    width: `${width}px`,
+    left: `${Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12))}px`,
+    top: `${Math.max(12, Math.min(top, window.innerHeight - height - 12))}px`,
+  }
+}
+function closeDeleteConfirmation(restoreFocus = false) {
+  if (deletingId.value) return
+  const anchor = deleteButtons.get(confirmingDeleteId.value)
+  confirmingDeleteId.value = ''
+  if (restoreFocus) anchor?.focus({ preventScroll: true })
+}
+function onOutsideDeleteConfirmation(event: PointerEvent) {
+  const target = event.target as Node | null
+  if (!target || !confirmingDeleteId.value || deleteConfirmation.value?.contains(target)
+      || deleteButtons.get(confirmingDeleteId.value)?.contains(target)) return
+  closeDeleteConfirmation()
+}
+function onDeleteConfirmationKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && confirmingDeleteId.value && !deletingId.value) {
+    event.preventDefault()
+    closeDeleteConfirmation(true)
+  }
+}
+watch([confirmingDeleteId, deleteError, deletingId], async () => {
+  await nextTick()
+  positionDeleteConfirmation()
+})
 function closeEditing(id: string) { editingIds.value = editingIds.value.filter(item => item !== id) }
 let cardClickTimer: number | undefined
 let pendingCardClickId = ''
@@ -253,10 +298,15 @@ function toggleNotePreview(id: string) {
     ? expandedIds.value.filter(item => item !== id)
     : [...expandedIds.value, id]
 }
-function toggleDeleteConfirmation(id: string) {
+async function toggleDeleteConfirmation(id: string) {
   if (deletingId.value) return
-  confirmingDeleteId.value = confirmingDeleteId.value === id ? '' : id
+  if (confirmingDeleteId.value === id) { closeDeleteConfirmation(true); return }
+  deleteConfirmationStyle.value = { visibility: 'hidden', width: `${Math.min(320, window.innerWidth - 24)}px` }
+  confirmingDeleteId.value = id
   deleteError.value = null
+  await nextTick()
+  positionDeleteConfirmation()
+  deleteConfirmation.value?.querySelector<HTMLButtonElement>('.card-delete-cancel')?.focus({ preventScroll: true })
 }
 function cancelDeleteOnEscape(id: string, event: KeyboardEvent) {
   if (confirmingDeleteId.value !== id || deletingId.value) return
@@ -617,12 +667,16 @@ onMounted(() => {
     for (const body of notePreviewBodies.values()) notePreviewResizeObserver.observe(body)
   }
   window.addEventListener('resize', measureAllNotePreviews)
+  window.addEventListener('resize', positionDeleteConfirmation)
+  document.addEventListener('scroll', positionDeleteConfirmation, true)
+  window.addEventListener('pointerdown', onOutsideDeleteConfirmation)
+  window.addEventListener('keydown', onDeleteConfirmationKeydown)
   void data.ensureDocsLoaded()
   void loadTags()
   window.addEventListener('scroll', onNotesScroll, { passive: true })
 })
 onMounted(() => { void initializeNoteWorkflow(session.currentUser.id); void loadServerWorkflows(); workflowTimer = setInterval(() => { if (!document.hidden) void loadServerWorkflows() }, 20_000); window.addEventListener('pointerdown', onOutsideFilter); window.addEventListener('keydown', onReaderKeydown) })
-onBeforeUnmount(() => { clearCardClickTimer(); notePreviewResizeObserver?.disconnect(); window.removeEventListener('resize', measureAllNotePreviews); if (workflowTimer) clearInterval(workflowTimer); window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
+onBeforeUnmount(() => { clearCardClickTimer(); notePreviewResizeObserver?.disconnect(); window.removeEventListener('resize', measureAllNotePreviews); window.removeEventListener('resize', positionDeleteConfirmation); document.removeEventListener('scroll', positionDeleteConfirmation, true); window.removeEventListener('pointerdown', onOutsideDeleteConfirmation); window.removeEventListener('keydown', onDeleteConfirmationKeydown); if (workflowTimer) clearInterval(workflowTimer); window.removeEventListener('pointerdown', onOutsideFilter); window.removeEventListener('keydown', onReaderKeydown); window.removeEventListener('scroll', onNotesScroll) })
 watch(() => session.currentUser.id, memberId => { serverWorkflows.value = {}; void initializeNoteWorkflow(memberId); void loadServerWorkflows(); versions.value = {} })
 onMounted(() => void loadPins())
 </script>
@@ -672,7 +726,7 @@ onMounted(() => void loadPins())
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
-        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id) }" :data-note-id="note.id"
+        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id }" :data-note-id="note.id"
           tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
@@ -680,7 +734,7 @@ onMounted(() => void loadPins())
               <button v-for="stage in (['title', 'image', 'polish', 'tags'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
             </div>
             <div v-if="validPolish(note)" class="version-toggle" role="group" aria-label="阅读版本"><button type="button" :aria-pressed="showPolished(note)" @click="versions[note.id] = 'polished'">润色</button><button type="button" :aria-pressed="!showPolished(note)" @click="versions[note.id] = 'original'">原文</button></div>
-            <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
+            <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-controls="confirmingDeleteId === note.id ? `note-delete-confirm-${note.id}` : undefined" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
             <p v-if="progressVisible(note.id) && workflowMessage(note.id)" class="workflow-status" role="status">{{ workflowMessage(note.id) }} <button v-if="serverFailed(note.id) || canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成')" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '保存并重试中…' : editingIds.includes(note.id) ? '保存并重试' : '重试' }}</button></p>
           <NoteComposer v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
@@ -697,13 +751,13 @@ onMounted(() => void loadPins())
           </div>
           <button v-if="isNotePreviewExpandable(note.id)" class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button>
           </template>
-          <div v-if="confirmingDeleteId === note.id" class="card-delete-confirm" role="group" :aria-label="`确认删除小记：${note.title}`">
+          <Teleport to="body"><div v-if="confirmingDeleteId === note.id" :ref="setDeleteConfirmation" :id="`note-delete-confirm-${note.id}`" class="card-delete-confirm" :data-delete-note-id="note.id" :style="deleteConfirmationStyle" role="dialog" :aria-label="`确认删除小记：${note.title}`">
             <span>将此小记移入回收站？7 天内可恢复。{{ editingIds.includes(note.id) ? '当前未保存的编辑会丢失。' : '' }}</span>
             <span v-if="!data.apiLive" class="card-delete-offline">服务尚未连接，暂时不能删除。</span>
-            <button type="button" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)">取消</button>
-            <button type="button" class="card-delete-submit" :disabled="!!deletingId || !data.apiLive" @click="deleteNote(note.id)">{{ deletingId === note.id ? '删除中…' : '确认删除' }}</button>
-          </div>
-          <p v-if="deleteError?.id === note.id" class="card-delete-error" role="alert">{{ deleteError.message }}</p>
+            <p v-if="deleteError?.id === note.id" class="card-delete-error" role="alert">{{ deleteError.message }}</p>
+            <div class="card-delete-actions"><button type="button" class="card-delete-cancel" :disabled="!!deletingId" @click="closeDeleteConfirmation(true)">取消</button>
+            <button type="button" class="card-delete-submit" :disabled="!!deletingId || !data.apiLive" @click="deleteNote(note.id)">{{ deletingId === note.id ? '删除中…' : '确认删除' }}</button></div>
+          </div></Teleport>
         </article>
         <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>
         <ContextActionMenu ref="contextMenu" />
@@ -794,6 +848,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-card.expanded, .note-card.editing { height: auto; max-height: none; overflow: visible; }
 .note-card:hover, .note-card:focus-within { border-color: var(--wao-primary); box-shadow: 0 10px 30px rgba(59, 47, 91, .1); transform: translateY(-2px); }
 .note-card.editing:hover, .note-card.editing:focus-within { transform: none; }
+.note-card.delete-confirming { transform: none; transition: border-color .18s, box-shadow .18s; }
 .note-card.highlighted, .note-card.editing { border-color: var(--wao-primary); }
 .note-card:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
 .note-meta { font-size: 11px; color: var(--wao-text-faint); margin-bottom: 16px; flex-wrap: wrap; gap: 5px 9px; }
@@ -813,6 +868,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .version-toggle button[aria-pressed="true"] { color: var(--wao-primary-text); background: var(--wao-bg-card); box-shadow: 0 1px 4px rgba(0,0,0,.1); }
 .card-quick-actions { display: inline-flex; gap: 2px; opacity: 0; visibility: hidden; transition: opacity .16s, visibility .16s; }
 .note-card:hover .card-quick-actions, .note-card:focus-within .card-quick-actions { opacity: 1; visibility: visible; }
+.note-card.delete-confirming .card-quick-actions { opacity: 1; visibility: visible; }
 .card-quick-actions button, .card-quick-actions .full-doc-icon { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 3px; border-radius: 6px; font-size: 14px; text-decoration: none; }
 .card-quick-actions .card-delete-icon { color: var(--wao-danger-strong); }
 .card-quick-actions .card-delete-icon:hover, .card-quick-actions .card-delete-icon[aria-expanded="true"] { color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
@@ -853,8 +909,9 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .card-edit { display: inline-flex; gap: 4px; align-items: center; }
 .card-delete { display: inline-flex; gap: 4px; align-items: center; color: var(--wao-danger-strong); }
 .card-delete:hover { color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
-.card-delete-confirm { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--wao-danger-bg); color: var(--wao-text-2); font-size: 12px; }
-.card-delete-confirm span:first-child { margin-right: auto; }
+.card-delete-confirm { position: fixed; z-index: 2300; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; max-height: calc(100dvh - 24px); overflow: auto; padding: 14px; border: 1px solid var(--wao-line-control); border-radius: 12px; background: var(--wao-bg-card); box-shadow: 0 12px 36px rgba(37,29,60,.18); color: var(--wao-text-2); font-size: 12px; line-height: 1.6; white-space: normal; }
+.card-delete-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.card-delete-offline { color: var(--wao-danger-strong); }
 .card-delete-confirm button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); }
 .card-delete-confirm .card-delete-submit { border-color: var(--wao-danger-strong); color: var(--wao-danger-strong); font-weight: 600; }
 .card-delete-error { margin: 6px 0 0; color: var(--wao-danger-strong); font-size: 12px; }

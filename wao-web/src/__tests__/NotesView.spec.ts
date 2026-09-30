@@ -1,5 +1,5 @@
 import { defineComponent } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -35,6 +35,7 @@ function doc(id: string, text: string, created = '2026-09-07T08:00:00', author =
 async function openFilters(wrapper: Awaited<ReturnType<typeof view>>) {
   await wrapper.get('.filter-toggle').trigger('click')
 }
+function deletePanel(id = 'one') { return new DOMWrapper(document.body).find(`[data-delete-note-id="${id}"]`) }
 async function requestDelete(wrapper: Awaited<ReturnType<typeof view>>, id: string) {
   await wrapper.get(`[data-note-id="${id}"]`).trigger('contextmenu')
   await flushPromises()
@@ -92,7 +93,7 @@ describe('小记集中记录空间', () => {
     const deleteAction = [...(document.body.querySelectorAll('[role="menu"] button'))].find(button => button.textContent?.includes('移入回收站'))
     deleteAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flushPromises()
-    expect(wrapper.get('[data-note-id="one"] .card-delete-confirm').text()).toContain('7 天内可恢复')
+    expect(deletePanel().text()).toContain('7 天内可恢复')
     expect(useDataStore().docs.one).toBeDefined()
     wrapper.unmount()
   })
@@ -150,14 +151,50 @@ describe('小记集中记录空间', () => {
     const trigger = actions.get('.card-delete-icon')
     await trigger.trigger('click')
     expect(remove).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-note-id="one"] .card-delete-confirm').text()).toContain('7 天内可恢复')
-    await wrapper.get('[data-note-id="one"] .card-delete-confirm button').trigger('click')
+    expect(deletePanel().text()).toContain('7 天内可恢复')
+    await deletePanel().get('button').trigger('click')
     expect(remove).not.toHaveBeenCalled()
     await trigger.trigger('click')
-    await wrapper.get('[data-note-id="one"] .card-delete-submit').trigger('click')
+    await deletePanel().get('.card-delete-submit').trigger('click')
     await flushPromises()
     expect(remove).toHaveBeenCalledWith('one')
     expect(wrapper.find('[data-note-id="one"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('折叠卡片的删除确认锚定按钮并脱离卡片裁切，Esc 返回按钮焦点', async () => {
+    useDataStore().docs.one = doc('one', '很长的小记')
+    const wrapper = await view()
+    document.body.appendChild(wrapper.element)
+    await setNoteBodyHeight(wrapper, 'one', 400)
+    const card = wrapper.get('[data-note-id="one"]')
+    const trigger = card.get('.card-delete-icon')
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue({
+      left: 800, right: 824, top: 100, bottom: 124, width: 24, height: 24, x: 800, y: 100, toJSON: () => ({}),
+    })
+    await trigger.trigger('click')
+    await flushPromises()
+    const panel = deletePanel()
+    expect(card.classes()).toContain('fixed-height')
+    expect(card.find('.card-delete-confirm').exists()).toBe(false)
+    expect(panel.element.parentElement).toBe(document.body)
+    expect(panel.attributes('style')).toContain('left: 504px')
+    expect(panel.attributes('style')).toContain('top: 132px')
+    expect(panel.attributes('style')).not.toContain('visibility: hidden')
+    expect(panel.text()).toContain('7 天内可恢复')
+    vi.spyOn(panel.element, 'getBoundingClientRect').mockReturnValue({
+      left: 504, right: 824, top: 132, bottom: 312, width: 320, height: 180, x: 504, y: 132, toJSON: () => ({}),
+    })
+    vi.mocked(trigger.element.getBoundingClientRect).mockReturnValue({
+      left: 800, right: 824, top: 680, bottom: 704, width: 24, height: 24, x: 800, y: 680, toJSON: () => ({}),
+    })
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    expect(panel.attributes('style')).toContain('top: 492px')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(deletePanel().exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
     wrapper.unmount()
   })
   it('置顶跨次加载恢复，保存失败保留原排序和编辑草稿', async () => {
@@ -234,17 +271,17 @@ describe('小记集中记录空间', () => {
     const browserConfirm = vi.spyOn(window, 'confirm')
     await requestDelete(wrapper, 'one')
     expect(remove).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-note-id="one"] .card-delete-confirm').text()).toContain('7 天内可恢复')
-    await wrapper.find('[data-note-id="one"] .card-delete-confirm button').trigger('click')
-    expect(wrapper.find('[data-note-id="one"] .card-delete-confirm').exists()).toBe(false)
+    expect(deletePanel().text()).toContain('7 天内可恢复')
+    await deletePanel().get('button').trigger('click')
+    expect(deletePanel().exists()).toBe(false)
     expect(remove).not.toHaveBeenCalled()
     await requestDelete(wrapper, 'one')
-    await wrapper.find('[data-note-id="one"] .card-delete-submit').trigger('click')
+    await deletePanel().get('.card-delete-submit').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-note-id="one"]').exists()).toBe(true)
-    expect(wrapper.find('[data-note-id="one"] [role="alert"]').text()).toContain('小记未改变')
-    expect(wrapper.find('[data-note-id="one"] .card-delete-confirm').exists()).toBe(true)
-    await wrapper.find('[data-note-id="one"] .card-delete-submit').trigger('click')
+    expect(deletePanel().get('[role="alert"]').text()).toContain('小记未改变')
+    expect(deletePanel().exists()).toBe(true)
+    await deletePanel().get('.card-delete-submit').trigger('click')
     await flushPromises()
     expect(remove).toHaveBeenCalledTimes(2)
     expect(browserConfirm).not.toHaveBeenCalled()
@@ -503,21 +540,35 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('恢复旧草稿时保留原始版本，不用新版本盲写覆盖', async () => {
+  it('恢复草稿遇到正文冲突可核对后保存本篇，并能继续编辑反复保存', async () => {
     const note = doc('edit-note', '原文')
     const data = useDataStore()
     data.docs[note.id] = note
     const first = composer(note)
     await first.find('textarea').setValue('修改后的正文')
     first.unmount()
-    const second = composer({ ...note, rev: 5 })
+    data.docs[note.id] = { ...doc(note.id, '另一窗口正文'), rev: 5 }
+    const second = composer(data.docs[note.id])
     await second.find('.save-note').trigger('click')
     await flushPromises()
     expect(apiPatchDoc).not.toHaveBeenCalled()
-    expect(second.find('[role="alert"]').text()).toContain('恢复的旧草稿需先核对')
+    expect(second.find('[role="alert"]').text()).toContain('请核对已保存预览')
     expect(second.text()).toContain('保留为新小记')
-    expect(data.docs[note.id]!.title).toBe('原文')
+    expect(second.get('.saved-preview textarea').attributes('value')).toBe('另一窗口正文')
     expect(localStorage.getItem('wao-note-edit-v1:wg:edit-note')).toContain('修改后的正文')
+    vi.mocked(apiPatchDoc).mockResolvedValueOnce({ ...note, blocks: [{ p: '修改后的正文' }], rev: 6 })
+    await second.get('.save-conflict-resolution button').trigger('click')
+    await flushPromises()
+    expect(apiPatchDoc).toHaveBeenCalledWith(note.id, expect.objectContaining({ expectedRev: 5 }))
+    expect(second.find('.save-conflict-resolution').exists()).toBe(false)
+    expect(localStorage.getItem('wao-note-edit-v1:wg:edit-note')).toBeNull()
+    await second.find('textarea').setValue('保存后再继续写')
+    vi.mocked(apiPatchDoc).mockResolvedValueOnce({ ...note, blocks: [{ p: '保存后再继续写' }], rev: 7 })
+    await second.find('.save-note').trigger('click')
+    await flushPromises()
+    expect(apiPatchDoc).toHaveBeenLastCalledWith(note.id, expect.objectContaining({ expectedRev: 6,
+      content: expect.objectContaining({ markdown: '保存后再继续写' }) }))
+    expect(second.find('[role="alert"]').exists()).toBe(false)
     second.unmount()
   })
 
@@ -529,9 +580,36 @@ describe('小记集中记录空间', () => {
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
     expect(apiPatchDoc).not.toHaveBeenCalled()
-    expect(wrapper.find('[role="alert"]').text()).toContain('恢复的旧草稿需先核对')
+    expect(wrapper.find('[role="alert"]').text()).toContain('请核对已保存预览')
     expect(wrapper.find<HTMLTextAreaElement>('textarea').element.value).toBe('旧草稿新输入')
+    useDataStore().docs[note.id] = { ...note, rev: 4 }
+    await wrapper.get('.save-conflict-resolution button').trigger('click')
+    await flushPromises()
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    vi.mocked(apiPatchDoc).mockResolvedValueOnce({ ...note, blocks: [{ p: '旧草稿新输入' }], rev: 5 })
+    await wrapper.get('.save-conflict-resolution button').trigger('click')
+    await flushPromises()
+    expect(apiPatchDoc).toHaveBeenCalledWith(note.id, expect.objectContaining({ expectedRev: 4 }))
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('恢复的草稿携带原始快照时能合入后台 AI 标题并正常保存', async () => {
+    const note = doc('restored-ai', '原文')
+    useDataStore().docs[note.id] = note
+    const first = composer(note)
+    await first.find('textarea').setValue('原文，继续输入')
+    first.unmount()
+    const latest = { ...note, title: 'AI 新标题', rev: 5 }
+    useDataStore().docs[note.id] = latest
+    vi.mocked(apiPatchDoc).mockResolvedValueOnce({ ...latest, blocks: [{ p: '原文，继续输入' }], rev: 6 })
+    const restored = composer(latest)
+    await restored.find('.save-note').trigger('click')
+    await flushPromises()
+    expect(apiPatchDoc).toHaveBeenCalledWith(note.id, expect.objectContaining({ title: 'AI 新标题', expectedRev: 5,
+      content: expect.objectContaining({ markdown: '原文，继续输入' }) }))
+    expect(restored.find('[role="alert"]').exists()).toBe(false)
+    restored.unmount()
   })
 
   it('编辑草稿与后台标题、总览图预览并存，保存时合入 AI 产物', async () => {
@@ -851,7 +929,7 @@ describe('小记集中记录空间', () => {
     await wrapper.get('[data-note-id="a"] .save-note').trigger('click')
     await flushPromises()
     expect(apiPatchDoc).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-note-id="a"] [role="alert"]').text()).toContain('正文或同一字段发生冲突')
+    expect(wrapper.get('[data-note-id="a"] [role="alert"]').text()).toContain('请核对已保存预览')
     expect(wrapper.get<HTMLTextAreaElement>('[data-note-id="b"] textarea').element.value).toBe('B 未保存')
     wrapper.unmount()
   })
