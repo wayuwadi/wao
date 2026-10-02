@@ -27,7 +27,10 @@ class DecisionControllerIntegrationTest {
         mvc.perform(get("/api/ai/runner/accounts")).andExpect(status().isGone());
         mvc.perform(post("/api/ai/runner/assistant-v2/claim")).andExpect(status().isGone());
         mvc.perform(post("/api/ai/runner/assistant-v2/old/image")).andExpect(status().isGone());
-        mvc.perform(post("/api/assistant/article-images")).andExpect(status().isNotFound());
+        // 浏览器配图恢复，但不向匿名调用开放；Runner 上传仍维持上面的 410。
+        mvc.perform(post("/api/assistant/article-images").contentType("application/json")
+                .content("{\"articleText\":\"合成正文\",\"visualPrompt\":\"简洁插画\"}"))
+                .andExpect(status().isUnauthorized());
     }
     @Test void retiredWeKnoraCannotSyncOrReadConfiguration() throws Exception {
         mvc.perform(get("/api/weknora-sync")).andExpect(status().isNotFound());

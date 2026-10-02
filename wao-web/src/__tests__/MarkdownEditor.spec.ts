@@ -128,6 +128,23 @@ describe('编辑区空白处', () => {
 })
 
 describe('文章总览配图', () => {
+  it('迟到总览图插入和替换映射原光标，不跳到图片或覆盖新输入', async () => {
+    const w = await mountEditor({ modelValue: '正在输入的新内容。' })
+    const vm = w.vm as unknown as { editor: Editor; insertArticleImageAtStart: (url: string) => boolean }
+    vm.editor.commands.setTextSelection(6)
+    const previous = vm.editor.state.selection.$from.parentOffset
+    expect(vm.insertArticleImageAtStart('/api/images/late/raw')).toBe(true)
+    expect(vm.editor.state.selection.$from.parent.textContent).toBe('正在输入的新内容。')
+    expect(vm.editor.state.selection.$from.parentOffset).toBe(previous)
+    vm.editor.commands.insertContent('继续写')
+    const updated = vm.editor.state.doc.textContent
+    const nextOffset = vm.editor.state.selection.$from.parentOffset
+    expect(vm.insertArticleImageAtStart('/api/images/replacement/raw')).toBe(true)
+    expect(vm.editor.state.doc.textContent).toBe(updated)
+    expect(vm.editor.state.selection.$from.parentOffset).toBe(nextOffset)
+    expect(vm.editor.state.selection.$from.parent.type.name).toBe('paragraph')
+    w.unmount()
+  })
   it('小记只读正文不请求隐藏的原图', async () => {
     const wrapper = await mountEditor({ modelValue: '![文章总览图](/api/images/img1/raw)', readonly: true, previewImages: true })
     expect(wrapper.get('.md-body img').attributes('src')).toBe('/api/images/img1/preview')
@@ -147,7 +164,7 @@ describe('文章总览配图', () => {
     await w.get('.generate-image').trigger('click')
     await flushPromises()
 
-    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'), 'gpt-5.6-sol')
+    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'), 'gpt-6-astra')
     const updates = w.emitted('update:modelValue') as [string][]
     const latest = updates[updates.length - 1]?.[0]
     expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw "wao-image-size:50%xauto"\)/)
@@ -186,7 +203,7 @@ describe('文章总览配图', () => {
     await flushPromises()
     await w.get('.prompt-settings').trigger('click')
     const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="image-prompt-title"]')!
-    expect(modal.querySelector<HTMLSelectElement>('.model-choice select')?.value).toBe('gpt-5.6-sol')
+    expect(modal.querySelector<HTMLSelectElement>('.model-choice select')?.value).toBe('gpt-6-astra')
     expect(modal.textContent).toContain('标题文案提示词')
     expect(modal.textContent).toContain('正文润色提示词')
     expect(modal.textContent).toContain('图片生成提示词')

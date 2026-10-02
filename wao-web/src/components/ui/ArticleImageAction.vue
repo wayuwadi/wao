@@ -171,7 +171,8 @@ async function generate() {
       model: noteModel.value, titlePrompt: titlePrompt.value,
     }).then(result => {
       const title = result.polished?.trim().slice(0, 30)
-      if (current !== generation || props.getText().trim() !== text) return
+      if (current !== generation) return
+      if (props.getText().trim() !== text) { titleStatus.value = '正文已更新，保留当前标题'; return }
       if (title) { emit('generated-title', title); titleStatus.value = `标题已生成：${title}` }
       else titleStatus.value = '标题生成失败，可稍后重试'
     }).catch(() => { if (current === generation) titleStatus.value = '标题生成失败，可稍后重试' })
@@ -191,7 +192,7 @@ watch(() => props.scopeKey, () => {
   job.value = null
   replacement.value = null
   error.value = ''
-
+  if (persistedJob()) void generate()
 })
 onMounted(async () => {
   await loadPrompt()
@@ -200,7 +201,13 @@ onBeforeUnmount(() => { generation++ })
 </script>
 
 <template>
-  <div v-if="generateTitle" class="article-image-action">
+  <div class="article-image-action">
+    <button class="generate-image" type="button" :disabled="busy || loadingPrompt || !!promptError"
+      :title="busy ? job?.message || '正在生成文章总览图' : '根据全文生成一张总览图并插到开头'"
+      @mousedown.prevent @click="generate">
+      <i :class="busy ? 'ri-loader-4-line spin' : 'ri-sparkling-2-line'" aria-hidden="true"></i>
+      <span>{{ busy ? '配图中' : persistedJob() ? '继续配图' : '总览配图' }}</span>
+    </button>
     <button class="prompt-settings" type="button" :aria-label="generateTitle ? '小记 AI 设置' : '修改个人配图提示词'" :title="generateTitle ? '小记 AI 设置' : '修改个人配图提示词'"
       :disabled="loadingPrompt" @mousedown.prevent @click="openSettings"><i class="ri-settings-3-line" aria-hidden="true"></i><span v-if="generateTitle">设置</span></button>
     <span v-if="error || promptError" class="image-error" role="alert">{{ error || promptError }}
@@ -220,11 +227,13 @@ onBeforeUnmount(() => { generation++ })
       <div v-if="settingsOpen" class="image-prompt-mask" @click.self="settingsOpen = false">
         <section class="image-prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="image-prompt-title">
           <header><h2 id="image-prompt-title">{{ generateTitle ? '小记 AI 设置' : '个人配图提示词' }}</h2><button type="button" aria-label="关闭" @click="settingsOpen = false"><i class="ri-close-line"></i></button></header>
-          <p>{{ generateTitle ? '这些设置只影响当前账号的小记标题与 API 润色。原文始终保留。' : '用于文章总览图；只影响你的账号。正文会在点击生成时单独提供给模型。' }}</p>
+          <p>{{ generateTitle ? '这些设置只影响当前账号的小记标题、配图与润色。本机 AI 使用已有 Codex 登录；失败可重试，保留当前内容。' : '用于文章总览图；只影响你的账号。正文会在点击生成时单独提供给模型。' }}</p>
+          <label v-if="generateTitle" class="model-choice"><span>标题、配图与润色模型</span><select v-model="draftModel"><option value="gpt-6-astra">GPT-6 Astra · 默认</option><option value="gpt-5.6-sol">GPT-5.6 Sol</option><option value="gpt-6-sol">GPT-6 Sol</option><option value="gpt-6-luna">GPT-6 Luna</option><option value="gpt-5.6-luna">GPT-5.6 Luna · 高频低成本</option><option value="gpt-5.6-terra">GPT-5.6 Terra</option></select></label>
           <label v-if="generateTitle" class="prompt-field"><span>标题文案提示词</span><textarea v-model="draftTitlePrompt" maxlength="4000" rows="3" /></label>
           <label v-if="generateTitle" class="prompt-field"><span>正文润色提示词</span><textarea v-model="draftPolishPrompt" maxlength="4000" rows="5" /></label>
+          <label class="prompt-field"><span>图片生成提示词</span><textarea v-model="draftPrompt" maxlength="4000" rows="6" /></label>
           <span v-if="promptError" class="dialog-error" role="alert">{{ promptError }}</span>
-          <footer>
+          <footer><button type="button" @click="draftPrompt = DEFAULT_ARTICLE_IMAGE_PROMPT">恢复图片默认</button>
             <button v-if="generateTitle" type="button" @click="draftTitlePrompt = DEFAULT_NOTE_TITLE_PROMPT">恢复标题默认</button>
             <button type="button" @click="settingsOpen = false">取消</button>
             <button class="primary" type="button" :disabled="savingPrompt || !draftPrompt.trim()" @click="generateTitle ? saveSettings() : savePrompt()">{{ savingPrompt ? '保存中…' : '保存设置' }}</button></footer>

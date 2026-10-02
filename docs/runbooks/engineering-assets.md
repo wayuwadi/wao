@@ -76,3 +76,5 @@ python3 deploy/scripts/compare-performance.py /实际路径/before.json /实际�
 - 性能工具现有样本可用来建立后续可比较基线，但尚未提供线上容量或端到端延迟结论。
 
 - [图片 Tab 缩进回归](editor-image-tab-regression.md)：选图缩进、反缩进、撤销、Markdown 往返与真实保存刷新步骤。
+
+- [本机小记 AI 启用与回归](local-note-ai.md)：产品主入口运行脚本、隔离队列、PNG 归属、恢复与真实浏览器验收。

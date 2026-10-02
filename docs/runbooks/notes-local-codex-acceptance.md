@@ -2,7 +2,7 @@
 
 用于没有服务端 AI 账号时，复用已登录的本机 Codex CLI，检查浏览器 → 小记保存 → 持久工作流 → 真实 AI → 条件回写 → 浏览器恢复。
 
-这是独立的 **test classpath 验收入口**，不是生产 AI 路由。生产仍遵循 ADR-304，Runner 的端点、节点、凭据和安装器保持下线；不新增 API Key，不把 ChatGPT 登录信息复制进 WAO。入口固定使用 `gpt-6-astra`、ChatGPT 登录、只读沙箱，禁用 shell、子代理和网页搜索。仅使用明确标注的合成材料。
+这是独立的 **test classpath 验收入口**，不是日常 AI 路由。日常主入口参见 ADR-306 与[本机小记 AI](local-note-ai.md)，不需要测试替身。Runner 的端点、节点、凭据和安装器保持下线；不新增 API Key，不把 ChatGPT 登录信息复制进 WAO。入口固定使用 `gpt-6-astra`、ChatGPT 登录、只读沙箱，禁用 shell、子代理和网页搜索。仅使用明确标注的合成材料。
 
 ## 启动
 

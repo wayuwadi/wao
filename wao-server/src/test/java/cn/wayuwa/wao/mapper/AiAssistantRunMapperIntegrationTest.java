@@ -47,6 +47,27 @@ class AiAssistantRunMapperIntegrationTest {
     }
 
     @Test
+    void localQueueRecoveryRevokesOnlyItsOwnRunningClaims() {
+        for (String id : java.util.List.of("mine", "queued", "other", "legacy", "api")) {
+            var run = readOnlyRun(id, "secure_queued");
+            run.setUsagePurpose("POLISH");
+            run.setAiCapabilityId(switch (id) { case "mine", "queued" -> "local-notes-one"; case "other" -> "local-notes-two"; case "legacy" -> "local-codex"; default -> "provider"; });
+            mapper.insertReadOnlyQueued(run);
+            if (!id.equals("queued")) assertThat(mapper.claimQueued(id, null, "claim-" + id, "secure_queued", "provider_running")).isEqualTo(1);
+        }
+        assertThat(mapper.selectLocalNoteQueued("local-notes-one")).extracting(AiAssistantRunEntity::getId).containsExactly("queued");
+        assertThat(mapper.recoverLocalNoteRuns("local-notes-one")).isEqualTo(1);
+        assertThat(mapper.completeProviderSucceeded("mine", "claim-mine", "迟到结果")).isZero();
+        assertThat(row("mine")).containsEntry("STATUS", "failed").containsEntry("CLAIM_TOKEN", null);
+        assertThat(row("queued")).containsEntry("STATUS", "secure_queued");
+        for (String id : java.util.List.of("other", "legacy", "api")) assertThat(row(id)).containsEntry("STATUS", "provider_running");
+        assertThat(mapper.claimQueued("queued", null, "first", "secure_queued", "provider_running")).isEqualTo(1);
+        assertThat(mapper.claimQueued("queued", null, "duplicate", "secure_queued", "provider_running")).isZero();
+        assertThat(mapper.completeProviderSucceeded("queued", "first", "结果")).isEqualTo(1);
+        assertThat(mapper.completeProviderSucceeded("queued", "first", "重复结果")).isZero();
+    }
+
+    @Test
     void previewRequiresCurrentClaimAndCannotOverwriteTerminalResult() {
         var run = readOnlyRun("preview", "provider_queued");
         run.setUsagePurpose("POLISH");

@@ -51,6 +51,29 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void enabledLocalNotesRouteTextAndImagesWithoutRevivingRunnerOrApiFallback() {
+        var local = mock(LocalNoteAiService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "localNotes", local);
+        when(local.enabled()).thenReturn(true);
+        when(local.capabilityId()).thenReturn("local-notes-test");
+        service.enqueueNoteTitleJob("title", "合成正文");
+        service.enqueueNotePolishJob("polish", "合成正文", "保留事实", null);
+        service.enqueueNoteTagsJob("tags", "合成正文", "[\"工作\"]", null);
+        verify(local, org.mockito.Mockito.times(3)).enqueue(anyString(), anyString(), anyString(), eq("gpt-6-astra"));
+        service.enqueueArticleImageJob("member", "合成正文", "合成配图", "gpt-6-astra");
+        var captured = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(captured.capture());
+        assertThat(captured.getValue().getAiCapabilityId()).isEqualTo("local-notes-test");
+        assertThat(captured.getValue().getRequestedModel()).isEqualTo("gpt-6-astra");
+        assertThat(service.status("local-codex").configured()).isFalse();
+        org.mockito.Mockito.verifyNoInteractions(runnerMapper, accountService);
+        org.mockito.Mockito.doThrow(new cn.wayuwa.wao.common.BadRequestException("本机不可用"))
+                .when(local).enqueue(anyString(), anyString(), anyString(), anyString());
+        assertThatThrownBy(() -> service.enqueueNoteTitleJob("retry", "合成正文")).hasMessageContaining("本机不可用");
+        org.mockito.Mockito.verifyNoInteractions(accountService);
+    }
+
+    @Test
     void unifiedDefaultRoutesReadOnlyJobsToApiAndFallsBackAfterRemoval() {
         AiRunAccountDto api = new AiRunAccountDto("aa1", "deepseek", "默认模型", "api_key",
                 null, "test-value", "https://api.deepseek.com", "deepseek-chat", "chat_completions");

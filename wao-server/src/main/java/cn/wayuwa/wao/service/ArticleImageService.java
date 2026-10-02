@@ -62,7 +62,7 @@ public class ArticleImageService {
                     run.getResponseText());
             case "failed" -> new ArticleImageJobDto(runId, "FAILED",
                     StringUtils.hasText(run.getErrorText()) ? run.getErrorText() : "生成图片失败，请重试", null);
-            case "running", "secure_running" -> new ArticleImageJobDto(runId, "RUNNING",
+            case "running", "secure_running", "provider_running" -> new ArticleImageJobDto(runId, "RUNNING",
                     "正在生成文章总览图…", null);
             default -> new ArticleImageJobDto(runId, "QUEUED", "等待本地 Codex 生成图片", null);
         };
@@ -87,6 +87,17 @@ public class ArticleImageService {
         byte[] bytes;
         try { bytes = file.getBytes(); }
         catch (IOException exception) { throw new BadRequestException("读取生成图片失败，请重试"); }
+        validatePng(bytes);
+        ImageItemDto image = images.store(bytes, "image/png", "文章总览图.png", "文章总览图 · " + runId);
+        if (runs.attachArticleImage(runId, runnerId, claimToken, image.url()) != 1) {
+            images.delete(image.id());
+            throw new BadRequestException("图片任务已经由其他节点处理，请重试");
+        }
+        return image.url();
+    }
+    /** 本机执行与历史上传共用 PNG 校验，不接受伪图片或解码尺寸膨胀。 */
+    static void validatePng(byte[] bytes) {
+        if (bytes == null || bytes.length > ImageService.MAX_BYTES) throw new BadRequestException("生成图片为空或超过 10MB");
         if (bytes.length < 24) throw new BadRequestException("生成结果不是有效的 PNG 图片");
         for (int i = 0; i < PNG_SIGNATURE.length; i++) {
             if (bytes[i] != PNG_SIGNATURE[i]) throw new BadRequestException("生成结果不是有效的 PNG 图片");
@@ -104,11 +115,6 @@ public class ArticleImageService {
         } catch (IOException exception) {
             throw new BadRequestException("生成结果不是有效的 PNG 图片");
         }
-        ImageItemDto image = images.store(bytes, "image/png", "文章总览图.png", "文章总览图 · " + runId);
-        if (runs.attachArticleImage(runId, runnerId, claimToken, image.url()) != 1) {
-            images.delete(image.id());
-            throw new BadRequestException("图片任务已经由其他节点处理，请重试");
-        }
-        return image.url();
     }
+
 }
