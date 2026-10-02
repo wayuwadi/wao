@@ -248,12 +248,6 @@ const router = createRouter({
           meta: { module: 'todo', tabKind: 'module' },
         },
         {
-          path: 'workday-rhythm',
-          name: 'workday-rhythm',
-          component: () => import('@/views/WorkdayRhythmView.vue'),
-          meta: { module: 'workday-rhythm', tabKind: 'module' },
-        },
-        {
           path: 'life-review',
           name: 'life-review',
           component: () => import('@/views/LifeReviewView.vue'),

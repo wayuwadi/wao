@@ -71,3 +71,6 @@ export const fetchSharedTianrenReading = (token: string) =>
 export async function* streamTianrenInterpretation(focus: string): AsyncGenerator<string> {
   yield* streamTextEvents('/api/tianren/readings/today/interpret/stream', { focus })
 }
+
+/** 下线节奏仪表盘后，卦象仍沿用既有成员通知偏好。 */
+export { fetchPreference as fetchTianrenPreference, savePreference as saveTianrenPreference } from './favorites'

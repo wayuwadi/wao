@@ -116,7 +116,7 @@ onUnmounted(() => { active = false; sequence++; if (timer) clearInterval(timer) 
         <small>定位需浏览器授权；仅用约公里精度的位置获取天气。城市名称来自 <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a>。</small>
         <p v-if="locationError" role="alert">{{ locationError }}</p><p v-else-if="searched && !locations.length">未找到城市，可换用拼音或更完整的城市名。</p>
         <div class="weather-results"><button v-for="location in locations" :key="`${location.latitude}:${location.longitude}`" type="button" @click="weather.draft.location = location">{{ location.name }}</button></div>
-        <div class="weather-switches"><label><input type="checkbox" v-model="weather.draft.rhythmVisible" />今日节奏显示天气</label><label><input type="checkbox" v-model="weather.draft.calendarVisible" />日历显示天气</label><label><input type="checkbox" v-model="weather.draft.readingsVisible" />日历显示已保存卦名</label></div>
+        <div class="weather-switches"><label><input type="checkbox" v-model="weather.draft.calendarVisible" />日历显示天气</label><label><input type="checkbox" v-model="weather.draft.readingsVisible" />日历显示已保存卦名</label></div>
         <button type="submit" :disabled="!weather.dirty || searching || locating">{{ weather.saving ? '保存中…' : weather.error ? '重试保存天气设置' : '保存天气设置' }}</button><button type="button" :disabled="!weather.dirty" @click="weather.resetDraft">恢复已保存设置</button>
       </fieldset>
     </form>

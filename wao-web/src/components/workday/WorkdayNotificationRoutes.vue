@@ -13,7 +13,7 @@ import {
   type WorkdayRhythmEnergyNotification,
 } from '@/utils/workdayRhythm'
 
-const props = defineProps<{ modelValue: WorkdayRhythmEnergyNotification; disabled?: boolean }>()
+const props = defineProps<{ modelValue: WorkdayRhythmEnergyNotification; disabled?: boolean; onlyTianren?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: WorkdayRhythmEnergyNotification] }>()
 const chats = ref<FeishuChat[]>([])
 const webhooks = ref<FeishuWebhookEndpoint[]>([])
@@ -126,7 +126,7 @@ onMounted(refresh)
     <header>
       <div>
         <h3>通知群设置</h3>
-        <p>三类通知分别选群，互不影响；保存后跨设备生效。</p>
+        <p>{{ onlyTianren ? '卦象通知保存后跨设备生效。' : '三类通知分别选群，互不影响；保存后跨设备生效。' }}</p>
       </div>
       <label class="toggle-field"
         ><input
@@ -138,7 +138,7 @@ onMounted(refresh)
       >
     </header>
     <p v-if="!modelValue.enabled" class="muted">当前暂停全部行动通知，已选的群会保留。</p>
-    <article v-for="route in routes" :key="route.kind" :data-notification-kind="route.kind">
+    <article v-for="route in routes.filter((item) => !onlyTianren || item.kind === 'tianren')" :key="route.kind" :data-notification-kind="route.kind">
       <div class="route-heading">
         <h4>{{ route.title }}</h4>
         <label

@@ -39,7 +39,7 @@ describe('侧边栏导航配置', () => {
     const retired = ['personal-principles', 'crawler-capabilities', 'account-resources',
       'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report',
       'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
-      'updates', 'action-plans', 'workspaces', 'decisions']
+      'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm']
     const menus = DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)
     const groups = NAV_GROUPS.flatMap((group) => group.items)
     for (const id of retired) {
@@ -292,12 +292,6 @@ describe('侧边栏导航配置', () => {
 
 
 
-  it('今日节奏默认位于个人组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('workday-rhythm')
-    const route = router.getRoutes().find((item) => item.name === 'workday-rhythm')
-    expect(route?.path).toBe('/workday-rhythm')
-    expect(route?.meta.module).toBe('workday-rhythm')
-  })
 
   it('人生回顾默认位于个人组并使用原生模块路由', () => {
     expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('life-review')

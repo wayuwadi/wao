@@ -26,6 +26,7 @@ import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
 import NotificationSettingsPanel from '@/components/settings/NotificationSettingsPanel.vue'
+import TianrenNotificationSettingsPanel from '@/components/settings/TianrenNotificationSettingsPanel.vue'
 import ProjectNotificationSettingsPanel from '@/components/settings/ProjectNotificationSettingsPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 
@@ -39,6 +40,7 @@ const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
+const tianrenNotificationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
@@ -78,6 +80,7 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
   if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return false
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
+  if (tab.value === 'notifications' && tianrenNotificationPanel.value && !tianrenNotificationPanel.value.confirmLeave()) return false
   if (tab.value === 'notifications' && notificationSettingsPanel.value
       && !notificationSettingsPanel.value.confirmLeave()) return false
   if (tab.value === 'pet' && webPetPanel.value && !webPetPanel.value.confirmLeave()) return false
@@ -579,6 +582,7 @@ async function bindFeishu() {
           <div class="notification-settings-stack">
             <NotificationSettingsPanel ref="notificationSettingsPanel" />
             <ProjectNotificationSettingsPanel />
+            <TianrenNotificationSettingsPanel ref="tianrenNotificationPanel" />
           </div>
         </template>
 

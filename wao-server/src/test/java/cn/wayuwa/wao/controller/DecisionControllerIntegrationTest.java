@@ -14,6 +14,9 @@ import org.springframework.test.web.servlet.MockMvc;
 class DecisionControllerIntegrationTest {
     @Autowired private MockMvc mvc;
     @Test void retiredRoutesCannotReadOrWrite() throws Exception {
+        mvc.perform(get("/api/workday-rhythm/dashboard")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/workday-rhythm/focus/pending")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/workday-rhythm/energy-notifications")).andExpect(status().isNotFound());
         mvc.perform(get("/api/decisions")).andExpect(status().isNotFound());
         mvc.perform(post("/api/decisions")).andExpect(status().isNotFound());
         mvc.perform(post("/api/decisions/old/revisions")).andExpect(status().isNotFound());
