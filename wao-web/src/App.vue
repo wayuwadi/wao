@@ -6,11 +6,13 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { toast, clearToasts } from '@/composables/toast'
-import { RouterView, useRoute } from 'vue-router'
-const route = useRoute()
+import { RouterView } from 'vue-router'
 import ToastHost from '@/components/ui/ToastHost.vue'
-import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
-import { rememberPendingReleaseVersion, type WorkspaceReloadDetail } from '@/utils/versionUpdate'
+import {
+  rememberPendingReleaseVersion,
+  reportWorkspaceReloadState,
+  type WorkspaceReloadDetail,
+} from '@/utils/versionUpdate'
 const { effective } = useTheme()
 const componentTheme = computed(() => ({
   algorithm: effective.value === 'dark' ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
@@ -21,6 +23,7 @@ let refreshing = false
 async function reloadWorkspace(rawEvent?: Event) {
   if (refreshing) return
   refreshing = true
+  reportWorkspaceReloadState({ state: 'saving' })
   try {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     await nextTick()
@@ -41,8 +44,13 @@ async function reloadWorkspace(rawEvent?: Event) {
     const targetVersion = (rawEvent as CustomEvent<WorkspaceReloadDetail> | undefined)?.detail
       ?.targetVersion
     if (targetVersion) rememberPendingReleaseVersion(targetVersion)
+    reportWorkspaceReloadState({ state: 'reloading' })
     window.location.reload()
   } catch (error) {
+    reportWorkspaceReloadState({
+      state: 'failed',
+      message: error instanceof Error ? error.message : '保存失败，当前内容已保留',
+    })
     toast(
       error instanceof Error ? error.message : '保存失败，当前内容已保留',
       'ri-error-warning-line',
@@ -89,6 +97,5 @@ onBeforeUnmount(() => {
   <ConfigProvider :theme="componentTheme">
     <RouterView />
     <ToastHost />
-    <VersionUpdateNotice v-if="route?.path !== '/desktop-pet'" />
   </ConfigProvider>
 </template>

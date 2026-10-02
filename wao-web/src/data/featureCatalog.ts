@@ -1,10 +1,18 @@
 import type { FeatureCatalogEntry, ReleaseEdition } from '@/types/featureExplorer'
+import currentRelease from './currentRelease.json'
 
 /**
  * 功能名称、图标和路由仍以 MODULES 为权威；这里只补充面向成员的介绍文案与展示分组。
  * 收录项必须已经存在真实浏览器路由，不能用规划中的能力填充目录。
  */
 export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
+  {
+    id: 'home',
+    category: 'life',
+    summary: '卦象与 Codex 信息集中查看，留一点空白再开始。',
+    description: '查看今日卦象、Codex 周剩余额度、Pro 到期与重置卡；从首页进入呼吸休息空间。',
+    tone: 'blue',
+  },
   {
     id: 'changelog',
     category: 'system',
@@ -74,26 +82,4 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
 ]
 
 /** 当前前端制品携带的精选说明；只有 id 变化时才会成为新的自动介绍批次。 */
-export const CURRENT_RELEASE: ReleaseEdition = {
-  id: 'release-highlights-feature-explorer-v1',
-  publishedOn: '2026-09-27',
-  title: '这次，WAO 更容易被看懂了',
-  intro:
-    '先用一分钟看看最值得关注的变化，再回到自己的工作。你可以随时跳过，也能从“版本与更新”重新打开。',
-  highlights: [
-    {
-      featureId: 'changelog',
-      eyebrow: '功能探索',
-      title: '新功能、旧功能，一处看全',
-      summary: '最新变化放在前面，全部能力按目标分类；每张卡片都说明它能帮你完成什么。',
-      points: ['从本次更新继续探索全部功能', '功能名称、图标和路由复用真实功能地图'],
-    },
-    {
-      featureId: 'notes',
-      eyebrow: '小记',
-      title: '写着写着，空间自然变大',
-      summary: '长内容可以进入全屏继续写；保存成功后自然回到原位置，失败时保留现场和草稿。',
-      points: ['原文和草稿始终保留', '窄屏也有完整编辑空间'],
-    },
-  ],
-}
+export const CURRENT_RELEASE = currentRelease as ReleaseEdition

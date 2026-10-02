@@ -1,4 +1,5 @@
 export const WEB_UPDATE_EVENT = 'plugin_web_update_notice'
+export const WORKSPACE_RELOAD_STATE_EVENT = 'wao-workspace-reload-state'
 export const OPEN_RELEASE_HIGHLIGHTS_EVENT = 'wao-open-release-highlights'
 const PENDING_RELEASE_VERSION_KEY = 'wao-pending-release-highlights-version'
 
@@ -8,6 +9,15 @@ export interface WebUpdateEventDetail {
 
 export interface WorkspaceReloadDetail {
   targetVersion?: string
+}
+
+export interface WorkspaceReloadState {
+  state: 'saving' | 'reloading' | 'failed'
+  message?: string
+}
+
+export function reportWorkspaceReloadState(detail: WorkspaceReloadState) {
+  window.dispatchEvent(new CustomEvent(WORKSPACE_RELOAD_STATE_EVENT, { detail }))
 }
 
 export function reloadToLatestVersion(targetVersion?: string) {

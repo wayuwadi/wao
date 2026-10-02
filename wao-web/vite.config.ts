@@ -6,6 +6,9 @@ import { webUpdateNotice } from '@plugin-web-update-notification/vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
 // @ts-expect-error Build-only JavaScript helper, exercised through node:test.
 import { edgeBuildPlugin } from './scripts/edge-build.mjs'
+// @ts-expect-error Build-only JavaScript helper, exercised through node:test.
+import { releaseHighlightsPlugin } from './scripts/release-highlights.mjs'
+import currentRelease from './src/data/currentRelease.json'
 
 const buildCommitSha = process.env.WAO_GIT_SHA?.trim()
 const buildVersion = buildCommitSha ? buildCommitSha.slice(0, 7) : undefined
@@ -29,6 +32,7 @@ export default defineConfig({
       logVersion: false,
     }),
     edgeBuildPlugin(buildCommitSha),
+    releaseHighlightsPlugin(currentRelease),
   ],
   // Excalidraw 用该常量在 React / Preact 运行时间选择；WAO 使用 React 岛。
   define: {
