@@ -113,7 +113,6 @@ describe('侧边栏导航配置', () => {
     expect(publicGroup?.items).toEqual([
       'projects',
       'changelog',
-      externalAppItemId('weknora'),
     ])
     expect(router.resolve('/media-agent').meta.module).toBeUndefined()
     const route = router.getRoutes().find((item) => item.name === 'external-app')

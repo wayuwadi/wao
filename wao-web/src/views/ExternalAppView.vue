@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiExternalAppHealth } from '@/api/agent'
-import WeKnoraSyncPanel from '@/components/weknora/WeKnoraSyncPanel.vue'
 import { useNavStore } from '@/stores/nav'
 
 type State = 'checking' | 'loading' | 'ready' | 'error' | 'missing'
@@ -83,15 +82,13 @@ onMounted(() => nav.loadExternalApps())
         <span>{{ state === 'ready' ? `「${app?.label ?? '应用'}」页面已载入` : state === 'error' ? '应用不可用' : state === 'missing' ? '应用未注册' : '正在连接应用' }}</span>
       </div>
       <div class="actions">
-        <button v-if="appId === 'weknora'" type="button" @click="router.replace({ query: route.query.tab === 'sync' ? {} : { tab: 'sync' } })">{{ route.query.tab === 'sync' ? '打开知识库' : '内容同步' }}</button>
         <button v-if="app" type="button" @click="loadApp"><i class="ri-refresh-line"></i>重新加载</button>
         <a v-if="app" :href="app.appUrl" target="_blank" rel="noopener"><i class="ri-external-link-line"></i>新窗口打开</a>
       </div>
     </div>
 
-    <p v-if="app && route.query.tab !== 'sync'" class="embed-help" role="status">{{ slow ? '加载时间较长。可以继续等待、重新加载，或在新窗口打开。' : '若页面空白、提示登录或无法显示，请在新窗口打开；页面载入不代表应用已登录或可用。' }}</p>
-    <WeKnoraSyncPanel v-if="appId === 'weknora' && route.query.tab === 'sync'" />
-    <div v-else class="external-frame-wrap">
+    <p v-if="app" class="embed-help" role="status">{{ slow ? '加载时间较长。可以继续等待、重新加载，或在新窗口打开。' : '若页面空白、提示登录或无法显示，请在新窗口打开；页面载入不代表应用已登录或可用。' }}</p>
+    <div class="external-frame-wrap">
       <iframe
         v-if="app && (state === 'loading' || state === 'ready')"
         :key="frameKey"
@@ -105,10 +102,10 @@ onMounted(() => nav.loadExternalApps())
       <div v-if="state === 'checking' || (state === 'loading' && !slow)" class="state-card overlay" role="status">
         <span class="spinner"></span>
         <strong>正在打开{{ app?.label ? `「${app.label}」` : '外部应用' }}</strong>
-        <p>{{ appId === 'weknora' ? '首次使用需建立 WeKnora 账号；Wiki 模式只需配置对话模型 API。' : '正在加载应用，请稍候。' }}</p>
+        <p>正在加载应用，请稍候。</p>
       </div>
 
-      <div v-else-if="state === 'missing'" class="state-card">
+      <div v-if="state === 'missing'" class="state-card">
         <i class="ri-apps-2-line"></i>
         <strong>这个外部应用尚未注册</strong>
         <p>应用标识：{{ appId }}</p>

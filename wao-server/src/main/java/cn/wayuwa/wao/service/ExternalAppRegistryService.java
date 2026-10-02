@@ -43,7 +43,7 @@ public class ExternalAppRegistryService {
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
     private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK", "TOP");
-    private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight", "media-agent", "jumpserver");
+    private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight", "media-agent", "jumpserver", "weknora");
 
     private final SettingService settings;
     private final ObjectMapper json;
@@ -76,10 +76,6 @@ public class ExternalAppRegistryService {
             if (stored.version() < GETNOTE_INTRODUCED_VERSION
                     && requests.stream().noneMatch(app -> GETNOTE_ID.equals(app.id()))) {
                 requests.add(getNoteRequest());
-            }
-            if (stored.version() < 8 && requests.stream().noneMatch(app -> "weknora".equals(app.id()))) {
-                requests.add(new SaveExternalAppConfigRequest("weknora", "WeKnora", "ri-book-open-line",
-                        "PUBLIC", 35, true, "/weknora/", "/api/external/weknora/health", "TAB"));
             }
             return new ExternalAppRegistryDto(REGISTRY_VERSION, activeApps(canonicalize(requests)));
         } catch (JsonProcessingException | IllegalArgumentException | NullPointerException exception) {
@@ -181,9 +177,7 @@ public class ExternalAppRegistryService {
     }
 
     private List<ExternalAppConfigDto> defaultApps() {
-        return activeApps(List.of(getNoteApp(),
-                new ExternalAppConfigDto("weknora", "WeKnora", "ri-book-open-line", "PUBLIC", 35,
-                        true, "/weknora/", "/api/external/weknora/health", "TAB")));
+        return activeApps(List.of(getNoteApp()));
     }
 
     private static ExternalAppConfigDto getNoteApp() {

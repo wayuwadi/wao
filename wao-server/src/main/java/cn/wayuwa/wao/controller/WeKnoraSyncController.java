@@ -9,7 +9,6 @@ import java.util.List;
 import org.springframework.web.bind.annotation.*;
 
 /** 共享同步中心：所有已登录成员可查看并触发，只有管理员可改连接设置；密钥不会返回前端或进入日志。 */
-@RestController
 @RequestMapping("/api/weknora-sync")
 public class WeKnoraSyncController {
     private final WeKnoraSyncService sync;

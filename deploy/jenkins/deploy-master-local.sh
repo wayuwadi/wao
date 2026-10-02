@@ -44,6 +44,7 @@ done
 
 sudo -n sh "$project_root/deploy/jumpserver/retire.sh"
 sudo -n sh "$project_root/deploy/ai-runner/retire-linux.sh"
+sudo -n sh "$project_root/deploy/weknora/retire.sh"
 
 # 一次性退役基础设施清单采集器；保留发布健康监控。
 if [ "$sync_infrastructure" != false ]; then

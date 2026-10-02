@@ -45,7 +45,7 @@ class AutomationServiceTest {
 
     @Test
     void retiredSyncCannotBeResumedReauthorizedOrRun() {
-        for (String handler : List.of("feishu-chat-sync", "shared-chat-nightly-sync", "http-performance-ai-run")) {
+        for (String handler : List.of("feishu-chat-sync", "shared-chat-nightly-sync", "http-performance-ai-run", "weknora-content-sync")) {
             AutomationJobEntity retired = job("已暂停");
             retired.setHandler(handler);
             when(jobMapper.selectById("j1")).thenReturn(retired);

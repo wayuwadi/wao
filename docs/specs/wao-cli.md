@@ -87,3 +87,5 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 2026-10-02：项目与任务 AI Run 已下线（ADR-303），不提供派工、续跑或队列查询 CLI / MCP 命令；历史业务数据保留。
 
 2026-10-02：WAO Runner 配对和执行协议已下线（ADR-304），工作区 MCP / CLI 无专属命令。获准的服务端 AI API 保留，旧 Runner 账号不再属于可执行能力。
+
+2026-10-02：WeKnora 及派生同步退役（ADR-305）。工作区 MCP / CLI 不提供同步配置或执行能力，WAO 原生知识库命令保留。

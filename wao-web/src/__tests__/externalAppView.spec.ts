@@ -10,15 +10,18 @@ vi.mock('@/api/agent', () => ({
   apiExternalAppHealth: vi.fn<(url: string) => Promise<void>>(),
 }))
 vi.mock('@/api/system', () => ({
+  fetchBuiltinMenuRegistry: vi.fn().mockResolvedValue({ version: 1, menus: [] }),
   fetchExternalAppRegistry: vi.fn<() => Promise<ExternalAppRegistry>>().mockResolvedValue({
     version: 1,
-    apps: DEFAULT_EXTERNAL_APPS,
+    apps: [{ id: 'custom-studio', label: '资料工具', icon: 'ri-apps-2-line', group: 'PUBLIC', order: 1, visible: true, appUrl: '/studio/', healthUrl: '/api/studio/health', openMode: 'TAB' }],
   }),
 }))
 
+vi.mock('@/api/navigationLayout', () => ({ fetchNavigationLayout: vi.fn().mockResolvedValue({ revision: 'none', layout: null }) }))
+
 const health = vi.mocked(apiExternalAppHealth)
 
-async function mountApp(id = 'media-agent') {
+async function mountApp(id = 'custom-studio') {
   const pinia = createPinia()
   setActivePinia(pinia)
   const router = createRouter({
@@ -39,13 +42,13 @@ describe('ExternalAppView', () => {
     health.mockResolvedValue()
     const wrapper = await mountApp()
 
-    expect(health).toHaveBeenCalledWith('/api/agent/health')
+    expect(health).toHaveBeenCalledWith('/api/studio/health')
     const frame = wrapper.get('iframe')
-    expect(frame.attributes('src')).toBe('/agent/')
-    expect(frame.attributes('title')).toBe('自媒体 Agent')
+    expect(frame.attributes('src')).toBe('/studio/')
+    expect(frame.attributes('title')).toBe('资料工具')
 
     await frame.trigger('load')
-    expect(wrapper.text()).toContain('「自媒体 Agent」页面已载入')
+    expect(wrapper.text()).toContain('「资料工具」页面已载入')
   })
 
   it('服务不可用时保留失败说明、重试和新窗口入口', async () => {
@@ -54,7 +57,7 @@ describe('ExternalAppView', () => {
 
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.text()).toContain('连接超时')
-    expect(wrapper.get('a').attributes('href')).toBe('/agent/')
+    expect(wrapper.get('a').attributes('href')).toBe('/studio/')
     expect(wrapper.get('.state-card button').text()).toBe('重试')
   })
 })
