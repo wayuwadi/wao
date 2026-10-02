@@ -49,6 +49,33 @@ const reading: TianrenReading = {
 }
 
 describe('TianrenView', () => {
+  it('页签切换保留关注点，重新解读失败恢复上份内容且不允许生成时切换日期', async () => {
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue({ ...reading, conversationId: 'cv1' })
+    vi.mocked(fetchTianrenHistory).mockResolvedValue([reading, { ...reading, id: 'past', date: '2026-08-09' }])
+    vi.mocked(fetchAssistantConversation).mockResolvedValue({ conversation: { id: 'cv1', title: '解读', updatedAt: '' }, messages: [{ id: 'm1', role: 'assistant', content: '上次已经保存的解读', createdAt: '' }] })
+    let fail!: () => void
+    vi.mocked(streamTianrenInterpretation).mockImplementation(async function* () {
+      yield '尚未完成的新内容'
+      await new Promise<void>((_, reject) => { fail = () => reject(new Error('生成中断')) })
+    })
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('textarea').setValue('保留这句话')
+    await wrapper.findAll('.content-tabs button')[1]!.trigger('click')
+    expect(wrapper.get('#tianren-reading').isVisible()).toBe(false)
+    expect(wrapper.get('#tianren-structure').isVisible()).toBe(true)
+    await wrapper.findAll('.content-tabs button')[0]!.trigger('click')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('保留这句话')
+    await wrapper.get('.interpret-button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLButtonElement>('.history-row').element.disabled).toBe(true)
+    fail()
+    await flushPromises()
+    expect(wrapper.get('.markdown').text()).toContain('上次已经保存的解读')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('保留这句话')
+    expect(wrapper.text()).toContain('生成中断')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     localStorage.clear()
     vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })

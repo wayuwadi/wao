@@ -7,6 +7,13 @@ import currentRelease from './currentRelease.json'
  */
 export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
   {
+    id: 'tianren',
+    category: 'life',
+    summary: '首页先预览，再展开今日卦象与解读。',
+    description: '查看真实卦象、已保存的 AI 解读和往日记录；关注点自动保存为本机草稿。',
+    tone: 'violet',
+  },
+  {
     id: 'home',
     category: 'life',
     summary: '卦象与 Codex 信息集中查看，留一点空白再开始。',

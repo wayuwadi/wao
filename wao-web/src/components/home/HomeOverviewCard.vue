@@ -12,6 +12,7 @@ const session = useSessionStore()
 const region = ref<HTMLElement>()
 const closeButton = ref<HTMLButtonElement>()
 const open = ref(false)
+const tianren = ref<InstanceType<typeof HomeTianrenGlance>>()
 const accounts = ref<CodexQuotaAccount[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -73,6 +74,7 @@ watch(() => session.userId, () => {
   void load()
 }, { immediate: true })
 async function showDetails(event: MouseEvent) {
+  tianren.value?.close()
   if (open.value) { close(); return }
   opener = event.currentTarget as HTMLElement
   open.value = true
@@ -111,7 +113,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="region" class="home-overview">
     <section class="overview-card" aria-label="今日卦象与 Codex 统计">
-      <HomeTianrenGlance integrated />
+      <HomeTianrenGlance :key="session.userId" ref="tianren" integrated @preview="close(false)" />
       <button class="overview-metric" type="button" :aria-expanded="open" aria-controls="home-codex-details" @click="showDetails">
         <span class="metric-label"><i class="ri-pie-chart-2-line" aria-hidden="true"></i>Codex 周剩余</span>
         <span class="metric-value" :class="{ attention: error || weekly.some(item => item.remaining < 20) }">{{ quotaValue }}</span>
