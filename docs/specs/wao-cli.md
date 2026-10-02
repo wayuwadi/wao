@@ -89,3 +89,8 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 2026-10-02：WAO Runner 配对和执行协议已下线（ADR-304），工作区 MCP / CLI 无专属命令。获准的服务端 AI API 保留，旧 Runner 账号不再属于可执行能力。
 
 2026-10-02：WeKnora 及派生同步退役（ADR-305）。工作区 MCP / CLI 不提供同步配置或执行能力，WAO 原生知识库命令保留。
+
+
+### 2026-10-02 图片 Tab 缩进边界
+
+浏览器选中图片的键盘缩进只扩展既有文档内容的安全排版属性 `image.attrs.indent`（0–8），不增加独立业务操作。现有文档读写、分享和权限沿用；CLI/MCP 不新增命令或扩大令牌权限。若以后提供通用结构化排版编辑命令，再统一评估。

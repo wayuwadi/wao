@@ -26,7 +26,7 @@ import { Markdown } from '@tiptap/markdown'
 import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
 import { TableKit } from '@tiptap/extension-table'
 import { CellSelection } from '@tiptap/pm/tables'
-import { Plugin } from '@tiptap/pm/state'
+import { NodeSelection, Plugin } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { Mathematics } from '@tiptap/extension-mathematics'
@@ -239,26 +239,31 @@ function parseImageDimension(value: unknown): ImageDimension {
   return parsed > 0 && parsed <= 4000 ? parsed : null
 }
 
+function imageIndent(value: unknown): number {
+  const n = Number(value)
+  return Number.isInteger(n) && n >= 0 && n <= 8 ? n : 0
+}
+
 function decodeImageTitle(value: unknown) {
   const title = typeof value === 'string' ? value : ''
   if (!title.startsWith(IMAGE_SIZE_PREFIX)) {
-    return { title: title || null, width: null as ImageDimension, height: null as ImageDimension }
+    return { title: title || null, width: null as ImageDimension, height: null as ImageDimension, indent: 0 }
   }
-  const match = /^wao-image-size:([^x;]+)x([^;]+)(?:;title=(.*))?$/.exec(title)
-  if (!match) return { title: null, width: null as ImageDimension, height: null as ImageDimension }
+  const match = /^wao-image-size:([^x;]+)x([^;]+)(?:;indent=([1-8]))?(?:;title=(.*))?$/.exec(title)
+  if (!match) return { title: null, width: null as ImageDimension, height: null as ImageDimension, indent: 0 }
   const width = match[1] === 'auto' ? null : parseImageDimension(match[1])
   const height = match[2] === 'auto' ? null : parseImageDimension(match[2])
   const valid = (typeof width === 'string' && height == null)
-    || (typeof width !== 'string' && typeof height !== 'string' && (width != null || height != null))
+    || (typeof width !== 'string' && typeof height !== 'string' && (width != null || height != null || !!match[3]))
   if ((match[1] !== 'auto' && width == null)
     || (match[2] !== 'auto' && height == null)
     || !valid) {
-    return { title: null, width: null as ImageDimension, height: null as ImageDimension }
+    return { title: null, width: null as ImageDimension, height: null as ImageDimension, indent: 0 }
   }
   let originalTitle: string | null = null
-  if (match[3]) {
+  if (match[4]) {
     try {
-      originalTitle = decodeURIComponent(match[3])
+      originalTitle = decodeURIComponent(match[4])
     } catch {
       originalTitle = null
     }
@@ -267,26 +272,30 @@ function decodeImageTitle(value: unknown) {
     title: originalTitle,
     width,
     height,
+    indent: imageIndent(match[3]),
   }
 }
 
-function encodeImageTitle(width: unknown, height: unknown, title: unknown): string {
+function encodeImageTitle(width: unknown, height: unknown, title: unknown, indent: unknown): string {
+  const level = imageIndent(indent)
   const safeWidth = parseImageDimension(width)
   const safeHeight = parseImageDimension(height)
   const originalTitle = typeof title === 'string' ? title : ''
-  if (safeWidth == null && safeHeight == null) return originalTitle
+  if (safeWidth == null && safeHeight == null && !level) return originalTitle
   if (typeof safeHeight === 'string' || (typeof safeWidth === 'string' && safeHeight != null)) {
     return originalTitle
   }
   const suffix = originalTitle ? `;title=${encodeURIComponent(originalTitle)}` : ''
-  return `${IMAGE_SIZE_PREFIX}${safeWidth ?? 'auto'}x${safeHeight ?? 'auto'}${suffix}`
+  return `${IMAGE_SIZE_PREFIX}${safeWidth ?? 'auto'}x${safeHeight ?? 'auto'}${level ? `;indent=${level}` : ''}${suffix}`
 }
 
 function imageStyle(attributes: Record<string, unknown>): string {
   const width = parseImageDimension(attributes.width)
   const height = parseImageDimension(attributes.height)
   const styles: string[] = []
-  if (attributes.align === 'center') styles.push('margin-left:auto', 'margin-right:auto')
+  const indent = imageIndent(attributes.indent) * 24
+  if (indent) styles.push(`margin-left:min(${indent}px,50%)`, 'margin-right:auto', `max-width:calc(100% - min(${indent}px,50%))`)
+  else if (attributes.align === 'center') styles.push('margin-left:auto', 'margin-right:auto')
   else if (attributes.align === 'right') styles.push('margin-left:auto', 'margin-right:0')
   else if (attributes.align === 'left') styles.push('margin-left:0', 'margin-right:auto')
   if (typeof width === 'string') {
@@ -308,7 +317,10 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean }>({
     return { ...this.parent!(), previewImages: false }
   },
   addAttributes() {
-    return { ...this.parent?.(), align: { default: null } }
+    return { ...this.parent?.(), align: { default: null }, indent: { default: 0,
+      parseHTML: (element: HTMLElement) => imageIndent(element.getAttribute('data-image-indent')),
+      renderHTML: (attrs: Record<string, unknown>) => ({ 'data-image-indent': imageIndent(attrs.indent) }),
+    } }
   },
   parseMarkdown: (token, helpers) => {
     const size = decodeImageTitle(token.title)
@@ -318,12 +330,13 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean }>({
       title: size.title,
       width: size.width,
       height: size.height,
+      indent: size.indent,
     })
   },
   renderMarkdown: (node) => {
     const src = node.attrs?.src ?? ''
     const alt = node.attrs?.alt ?? ''
-    const title = encodeImageTitle(node.attrs?.width, node.attrs?.height, node.attrs?.title)
+    const title = encodeImageTitle(node.attrs?.width, node.attrs?.height, node.attrs?.title, node.attrs?.indent)
     return title ? `![${alt}](${src} "${title}")` : `![${alt}](${src})`
   },
   renderHTML({ HTMLAttributes }) {
@@ -335,7 +348,7 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean }>({
         attributes.src = preview
       }
     }
-    const style = imageStyle(attributes)
+    const style = imageStyle({ ...attributes, indent: attributes['data-image-indent'] })
     delete attributes.width
     delete attributes.height
     delete attributes.style
@@ -368,17 +381,34 @@ const WholeTableDeletion = Extension.create({
   },
 })
 
+function indentImage(editor: Editor, direction: number): boolean {
+  const selection = editor.state.selection
+  if (!(selection instanceof NodeSelection)) return false
+  // 原子节点绝不能落入 insertContent，否则选中内容会被制表符替换。
+  if (selection.node.type.name !== 'image' || !editor.isEditable) return true
+  const indent = Math.max(0, Math.min(8, imageIndent(selection.node.attrs.indent) + direction))
+  if (indent === imageIndent(selection.node.attrs.indent)) return true
+  const tr = closeHistory(editor.state.tr).setNodeMarkup(selection.from, undefined, { ...selection.node.attrs, indent })
+  tr.setSelection(NodeSelection.create(tr.doc, selection.from))
+  editor.view.dispatch(tr)
+  editor.view.dispatch(closeHistory(editor.state.tr))
+  return true
+}
+
 const TabIndent = Extension.create({
   name: 'tabIndent',
+  priority: 1100,
   addKeyboardShortcuts() {
     return {
       Tab: () => {
+        if (indentImage(this.editor, 1)) return true
         if (this.editor.isActive('table') || this.editor.isActive('codeBlock')) return false
         if (this.editor.isActive('taskItem')) return this.editor.commands.sinkListItem('taskItem') || true
         if (this.editor.isActive('listItem')) return this.editor.commands.sinkListItem('listItem') || true
         return this.editor.commands.insertContent('\t') || true
       },
       'Shift-Tab': () => {
+        if (indentImage(this.editor, -1)) return true
         if (this.editor.isActive('table') || this.editor.isActive('codeBlock')) return false
         if (this.editor.isActive('taskItem')) return this.editor.commands.liftListItem('taskItem') || true
         if (this.editor.isActive('listItem')) return this.editor.commands.liftListItem('listItem') || true
@@ -524,7 +554,9 @@ const editor = useEditor({
           // 用户在尺寸输入框或“应用”上操作后，ProseMirror 仍保留原来的
           // NodeSelection，但浏览器焦点已离开编辑器。此时只重复设置相同选区不会产生
           // 可让 BubbleMenu 重新显示的状态变化，所以点击图片时必须同时取回焦点。
-          editor.value?.chain().focus().setNodeSelection(pos).run()
+          // 坐标推导的 pos 可能落在紧邻图片的空段落；以被点击节点自身定位。
+          const imagePos = _view.posAtDOM(target, 0)
+          editor.value?.chain().focus().setNodeSelection(imagePos).run()
           return true
         }
         previewImage.value = { src: fullImageSource(target), alt: target.alt }
@@ -2105,7 +2137,7 @@ onBeforeUnmount(() => {
           <span><b>Ctrl/⌘ + U</b><small>下划线</small></span><span><b>Ctrl/⌘ + K</b><small>添加或编辑链接</small></span>
           <span><b>Ctrl/⌘ + Z</b><small>撤销</small></span><span><b>Ctrl/⌘ + Shift + Z</b><small>重做</small></span>
           <span><b>Ctrl/⌘ + F</b><small>查找与替换</small></span><span><b>/</b><small>插入内容块</small></span>
-          <span><b>Tab / Shift + Tab</b><small>列表缩进 / 减少缩进</small></span><span><b>Ctrl/⌘ + /</b><small>打开本帮助</small></span>
+          <span><b>Tab / Shift + Tab</b><small>列表或选中图片缩进 / 减少缩进</small></span><span><b>Ctrl/⌘ + /</b><small>打开本帮助</small></span>
         </div>
       </section>
     </div>

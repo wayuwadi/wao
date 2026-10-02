@@ -350,6 +350,44 @@ class KnowledgeServiceTest {
         verify(docMapper, never()).updateIfRevision(any(), anyInt());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "1", "8"})
+    void imageIndentSavesAndReloads(String indent) throws Exception {
+        DocEntity existing = doc("d-image", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+        var content = imageIndentContent("image", indent);
+        var saved = service.updateDoc(existing.getId(), new PatchDocRequest(null, List.of(), content, null, null, 1));
+        assertThat(saved.content()).isEqualTo(content);
+        assertThat(new ObjectMapper().readTree(existing.getContentJson())).isEqualTo(content.document());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-1", "9", "1.5", "null", "true", "{}", "[]", "2147483648", "\"1\""})
+    void imageIndentRejectsInvalidValue(String indent) throws Exception {
+        DocEntity existing = doc("d-image", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        assertThatThrownBy(() -> service.updateDoc(existing.getId(),
+                new PatchDocRequest(null, null, imageIndentContent("image", indent), null, null, 1)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("图片缩进");
+        verify(docMapper, never()).updateIfRevision(any(), anyInt());
+    }
+
+    @Test
+    void imageIndentDoesNotBroadenOtherNodes() throws Exception {
+        DocEntity existing = doc("d-image", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        assertThatThrownBy(() -> service.updateDoc(existing.getId(),
+                new PatchDocRequest(null, null, imageIndentContent("paragraph", "1"), null, null, 1)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("不支持的节点属性");
+    }
+
+    private RichDocContentDto imageIndentContent(String type, String indent) throws Exception {
+        return new RichDocContentDto(1, new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"%s","attrs":{"indent":%s,"src":"/api/images/test/raw"}}]}
+                """.formatted(type, indent)), "![验收图](/api/images/test/raw)");
+    }
+
     @Test
     void listTypeAttributeDoesNotBroadenOtherNodesOrMarks() throws Exception {
         DocEntity existing = doc("d-list", "k1", "f1");
