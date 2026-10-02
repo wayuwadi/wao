@@ -272,7 +272,7 @@ onMounted(() => {
           <span class="sync-dot"></span>{{ syncText }}
         </div>
         <TianrenNotificationStatus v-if="reading" :reading-id="reading.id" :interpreting="interpreting" />
-        <RouterLink v-else class="notification-settings" to="/workday-rhythm">
+        <RouterLink v-else class="notification-settings" to="/settings?tab=notifications#tianren-notifications">
           <i class="ri-settings-3-line"></i> 配置通知群
         </RouterLink>
       </div>

@@ -82,25 +82,14 @@ class BuiltinMenuRegistryServiceTest {
     }
 
     @Test
-    void petWorldSurvivesOldClientSaveAndReload() throws Exception {
+    void retiredPetWorldCannotReturnThroughOldRegistry() throws Exception {
         var stored = new ArrayList<>(service.getRegistry().menus());
-        var world = stored.stream().filter(menu -> "pet-world".equals(menu.id())).findFirst().orElseThrow();
-        stored.set(stored.indexOf(world), new BuiltinMenuConfigDto(
-                world.id(), "我的庭院", world.icon(), world.group(), 9, true, "TAB", "TOP"));
-        var saved = service.saveRegistry(new SaveBuiltinMenuRegistryRequest(stored));
-        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY))
-                .thenReturn(new ObjectMapper().writeValueAsString(saved));
-        var oldClient = new ArrayList<>(stored);
-        oldClient.removeIf(menu -> "pet-world".equals(menu.id()));
-        var restored = service.saveRegistry(new SaveBuiltinMenuRegistryRequest(oldClient));
-        assertThat(restored.menus()).filteredOn(menu -> "pet-world".equals(menu.id())).singleElement().satisfies(menu -> {
-            assertThat(menu.label()).isEqualTo("我的庭院");
-            assertThat(menu.visible()).isTrue();
-            assertThat(menu.placement()).isEqualTo("TOP");
-        });
-        oldClient.removeIf(menu -> "home".equals(menu.id()));
-        assertThatThrownBy(() -> service.saveRegistry(new SaveBuiltinMenuRegistryRequest(oldClient)))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("数量");
+        stored.add(new BuiltinMenuConfigDto("pet-world", "我的庭院", "ri-landscape-line", "TOOLS", 9, true, "TAB", "TOP"));
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(new ObjectMapper().writeValueAsString(
+                new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(43, stored)));
+        assertThat(service.getRegistry().menus()).noneMatch(menu -> "pet-world".equals(menu.id()));
+        assertThat(service.saveRegistry(new SaveBuiltinMenuRegistryRequest(stored)).menus())
+                .noneMatch(menu -> "pet-world".equals(menu.id()));
     }
 
     @Test

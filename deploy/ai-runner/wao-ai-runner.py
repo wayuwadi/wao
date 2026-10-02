@@ -2947,6 +2947,8 @@ def resolve_runtime_concurrency(status: Any, current: int) -> int:
 
 
 def main() -> int:
+    print("WAO Runner 已下线；保留本地配置与会话，不再配对或执行。")
+    return EXIT_PAIRING_REVOKED
     args = parse_args()
     args.max_concurrency = max(1, min(MAX_RUNNER_CONCURRENCY, args.max_concurrency))
     runtime_concurrency = args.max_concurrency

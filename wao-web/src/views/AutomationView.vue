@@ -45,7 +45,7 @@ function stMeta(a: AutomationJob) {
 }
 
 const jobs = computed(() =>
-  data.autos.filter(a => !['feishu-chat-sync', 'shared-chat-nightly-sync'].includes(a.handler ?? '')).map((a) => {
+  data.autos.filter(a => !['feishu-chat-sync', 'shared-chat-nightly-sync', 'http-performance-ai-run', 'weknora-content-sync'].includes(a.handler ?? '')).map((a) => {
     const st = stMeta(a)
     const dots = a.runs
       .map((r) => ({
@@ -385,13 +385,6 @@ onMounted(() => {
           <div>
             <span class="mini" :style="{ background: rn.bg, color: rn.color }">{{ rn.label }}</span>
             <div class="result-detail">触发记录：{{ rn.result }}</div>
-            <a
-              v-if="rn.aiRunId"
-              class="result-link"
-              :href="`/?console=runs&run=${encodeURIComponent(rn.aiRunId)}`"
-              @click.stop
-              >查看执行结果</a
-            >
           </div>
         </div>
         <WaoPagination
@@ -476,12 +469,6 @@ onMounted(() => {
             <div>
               <span class="mini" :style="{ background: r.bg, color: r.color }">{{ r.label }}</span>
               <div class="result-detail">触发记录：{{ r.result }}</div>
-              <a
-                v-if="r.aiRunId"
-                class="result-link"
-                :href="`/?console=runs&run=${encodeURIComponent(r.aiRunId)}`"
-                >查看执行结果</a
-              >
             </div>
           </div>
         </div>

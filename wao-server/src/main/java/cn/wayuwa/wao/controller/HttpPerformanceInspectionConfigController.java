@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 内置 HTTP 性能巡检自动任务的专用配置接口。 */
-@RestController
 @RequestMapping("/api/jobs/job-http-performance-ai-run/config")
 public class HttpPerformanceInspectionConfigController {
 

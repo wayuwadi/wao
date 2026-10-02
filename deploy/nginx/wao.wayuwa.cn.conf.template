@@ -154,138 +154,23 @@ server {
     }
 
     # JumpServer SSO tickets are signed on Linux2, which owns the private deployment secret.
-    location = /api/auth/jumpserver {
-        proxy_pass https://wao_ai_gateway;
-        proxy_http_version 1.1;
-        proxy_ssl_verify off;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_next_upstream off;
-        add_header X-WAO-API-Route linux-jumpserver-sso always;
-    }
+    location = /api/auth/jumpserver { return 410; }
 
     # Same-origin health probe for the configurable external-app view. Browsers
     # must not depend on cross-origin CORS support from JumpServer itself.
-    location = /api/external/jumpserver/health {
-        proxy_pass http://127.0.0.1:18082/api/health/;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host jms.wayuwa.cn;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 10s;
-        add_header X-WAO-API-Route jumpserver-health-tunnel always;
-    }
+    location = /api/external/jumpserver/health { return 410; }
 
-    # WeKnora uses an isolated runtime on Linux2. Every entry, API and file
-    # request must pass WAO authentication before reaching that runtime.
-    location = /_wao_weknora_auth {
-        internal;
-        proxy_pass https://wao_gateway/api/auth/session;
-        proxy_ssl_verify off;
-        proxy_pass_request_body off;
-        # The session endpoint returns JSON; an SSE client's Accept header
-        # must not cause Spring content negotiation to reject this subrequest.
-        proxy_set_header Accept "application/json";
-        proxy_set_header Content-Length "";
-        proxy_set_header Cookie $http_cookie;
-        proxy_set_header Host $host;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 10s;
-    }
-    # Machine ingestion is independent from browser sessions. Only official
-    # knowledge routes are exposed; a scoped WeKnora API key authenticates each call.
-    location ~ "^/api/weknora-machine/(knowledge-bases/[0-9a-fA-F-]{36}(/knowledge(/manual)?)?|knowledge/(manual/)?[0-9a-fA-F-]{36})$" {
-        if ($http_x_api_key = "") { return 401; }
-        limit_except GET POST PUT DELETE { deny all; }
-        rewrite ^/api/weknora-machine/(.*)$ /api/v1/$1 break;
-        proxy_pass http://127.0.0.1:18781;
-        proxy_set_header Authorization "";
-        proxy_set_header Cookie "";
-        proxy_set_header Host $host;
-        proxy_set_header X-API-Key $http_x_api_key;
-        proxy_set_header Connection "";
-        proxy_http_version 1.1;
-        proxy_read_timeout 50s;
-        client_max_body_size 1m;
-        add_header Cache-Control "no-store" always;
-    }
-    location /api/weknora-machine/ { return 404; }
-    location = /weknora { return 308 /weknora/; }
-    location ^~ /weknora/ {
-        auth_request /_wao_weknora_auth;
-        proxy_pass http://127.0.0.1:18781/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header Connection "";
-        proxy_buffering off;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        client_max_body_size 50m;
-        add_header Cache-Control "no-store" always;
-    }
-    location ^~ /api/v1/ {
-        auth_request /_wao_weknora_auth;
-        proxy_pass http://127.0.0.1:18781;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header Connection "";
-        proxy_buffering off;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        client_max_body_size 50m;
-        add_header Cache-Control "no-store" always;
-    }
+    # WeKnora 已退役；保留 WAO 本身的 /files 页面。
+    location = /weknora { return 410; }
+    location ^~ /weknora/ { return 410; }
+    location ^~ /api/v1/ { return 410; }
+    location ^~ /api/weknora-machine/ { return 410; }
+    location = /api/external/weknora/health { return 410; }
     location = /files {
-        # Preserve WAO's native /files page; WeKnora legacy downloads always carry file_path.
-        if ($arg_file_path = "") { rewrite ^ /index.html last; }
-        auth_request /_wao_weknora_auth;
-        proxy_pass http://127.0.0.1:18781;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header Connection "";
-        proxy_buffering off;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        client_max_body_size 50m;
-        add_header Cache-Control "no-store" always;
+        if ($arg_file_path != "") { return 410; }
+        rewrite ^ /index.html last;
     }
-    location ^~ /r/ {
-        auth_request /_wao_weknora_auth;
-        proxy_pass http://127.0.0.1:18781;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header Connection "";
-        proxy_buffering off;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        client_max_body_size 50m;
-        add_header Cache-Control "no-store" always;
-    }
-    location = /api/external/weknora/health {
-        auth_request /_wao_weknora_auth;
-        proxy_pass http://127.0.0.1:18781/api/v1/auth/config;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header Connection "";
-        proxy_buffering off;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        client_max_body_size 50m;
-        add_header Cache-Control "no-store" always;
-    }
+    location ^~ /r/ { return 410; }
 
     root /var/www/wao/dist;
     index index.html;
@@ -393,27 +278,11 @@ server {
         add_header X-Content-Type-Options nosniff always;
     }
 
-    location = /agent {
-        return 301 /agent/;
-    }
-
-    # Agent 与 WAO 同仓发布，但静态目录继续隔离，便于独立加载和故障隔离。
-    location /agent/ {
-        alias /var/www/wao-agent/dist/;
-        try_files $uri $uri/ /agent/index.html;
-    }
-
-    location /agent/assets/ {
-        alias /var/www/wao-agent/dist/assets/;
-        try_files $uri =404;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    location = /agent/index.html {
-        alias /var/www/wao-agent/dist/index.html;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-    }
+    # WAO Agent 已退役，历史静态地址与专属 API 明确返回 410。
+    location = /agent { return 410; }
+    location ^~ /agent/ { return 410; }
+    location = /api/agent { return 410; }
+    location ^~ /api/agent/ { return 410; }
 
     # Amer 风险管理演示是随主站制品发布的独立静态页面；精确前缀避免落入 WAO SPA。
     location = /amer_demo_1 {
@@ -526,49 +395,9 @@ server {
     }
 
     # 内容素材的上传、列表和预览固定到 Linux 主节点，确保编辑器读取上传时使用同一媒体卷。
-    location ^~ /api/agent/publish/media {
-        proxy_pass https://wao_ai_gateway;
-        proxy_http_version 1.1;
-        proxy_ssl_verify off;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 330s;
-        proxy_send_timeout 330s;
-        proxy_next_upstream off;
-        client_max_body_size 320m;
-        proxy_request_buffering off;
-        add_header X-Content-Type-Options nosniff always;
-        add_header Referrer-Policy strict-origin-when-cross-origin always;
-        add_header X-Frame-Options SAMEORIGIN always;
-        add_header X-WAO-API-Route linux-master-agent-media always;
-    }
 
     # 视频工作流的 WebM 上传、回放和元数据固定到 Linux 主节点，确保同一媒体卷可见。
     # 浏览器本地实时编码约三分钟；这里只传文件，不调用模型，也不允许写请求被自动重放。
-    location ^~ /api/agent/video-workflow {
-        proxy_pass https://wao_ai_gateway;
-        proxy_http_version 1.1;
-        proxy_ssl_verify off;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 330s;
-        proxy_send_timeout 330s;
-        proxy_next_upstream off;
-        client_max_body_size 320m;
-        proxy_request_buffering off;
-        add_header X-Content-Type-Options nosniff always;
-        add_header Referrer-Policy strict-origin-when-cross-origin always;
-        add_header X-Frame-Options SAMEORIGIN always;
-        add_header X-WAO-API-Route linux-master-video-workflow always;
-    }
 
     # 每日情境建议同样复用本地 Codex 五分钟只读队列；POST 生成不能在超时后自动重放。
     # GET 也走同一精确路径，延长读取上限不会触发模型调用。
@@ -635,7 +464,9 @@ server {
     # 只有会读取集中凭据或访问供应商的接口固定到 Linux VPN 出口。AI 入队、目标创建、状态轮询、
     # Runner 心跳和结果回传都是共享数据库操作，继续走下方双节点 upstream，避免主节点发布时整条链路 502。
     # 天人解读是长连接专用链路，按 ADR-047 保持 Linux 主节点和 330 秒超时。
-    location ~ ^/api/(settings/ai-accounts(?:/|$)|ai/runner/(?:accounts|claim|assistant-v2/claim)(?:/|$)|tianren/readings/today/interpret(?:/|$)) {
+    location ~ ^/api/ai/(runner|runners)(/|$) { return 410; }
+
+    location ~ ^/api/(settings/ai-accounts(?:/|$)|tianren/readings/today/interpret(?:/|$)) {
         proxy_pass https://wao_ai_gateway;
         proxy_http_version 1.1;
         proxy_ssl_verify off;

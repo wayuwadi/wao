@@ -27,7 +27,6 @@ public class ArticleImageController {
         this.currentMember = currentMember;
     }
 
-    @PostMapping
     public ApiResponse<ArticleImageJobDto> start(@Valid @RequestBody ArticleImageRequest request,
             HttpServletRequest http) {
         return ApiResponse.ok(service.start(requireMember(http), request));

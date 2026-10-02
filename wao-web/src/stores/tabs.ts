@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Tab, ModuleId } from '@/types'
-import { externalAppItemId, externalAppPath, moduleTab, MODULES, RETIRED_MODULE_IDS } from '@/config/nav'
+import { externalAppItemId, externalAppPath, moduleTab, MODULES, RETIRED_MODULE_IDS, RETIRED_EXTERNAL_APP_IDS } from '@/config/nav'
 
 /**
  * 页签 store：多页签栏的可视化路由栈。
@@ -13,7 +13,7 @@ import { externalAppItemId, externalAppPath, moduleTab, MODULES, RETIRED_MODULE_
 const TABS_KEY = 'wao-tabs-v1'
 
 /** 已下线的模块页签：老浏览器里存着的记录要在加载时丢掉，否则会留下一个点不开的死页签。 */
-const RETIRED_TAB_KEYS = new Set<string>(['whiteboard', 'trash', 'chat', ...RETIRED_MODULE_IDS])
+const RETIRED_TAB_KEYS = new Set<string>(['whiteboard', 'trash', 'chat', 'mediaAgent', ...RETIRED_MODULE_IDS, ...[...RETIRED_EXTERNAL_APP_IDS].map(externalAppItemId)])
 
 interface Persisted {
   tabs: Tab[]

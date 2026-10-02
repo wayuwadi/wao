@@ -249,12 +249,6 @@ const router = createRouter({
           meta: { module: 'todo', tabKind: 'module' },
         },
         {
-          path: 'workday-rhythm',
-          name: 'workday-rhythm',
-          component: () => import('@/views/WorkdayRhythmView.vue'),
-          meta: { module: 'workday-rhythm', tabKind: 'module' },
-        },
-        {
           path: 'life-review',
           name: 'life-review',
           component: () => import('@/views/LifeReviewView.vue'),
@@ -317,12 +311,6 @@ const router = createRouter({
           meta: { module: 'automation', tabKind: 'module' },
         },
         {
-          path: 'pet-world',
-          name: 'pet-world',
-          component: () => import('@/views/PetWorldView.vue'),
-          meta: { module: 'pet-world', tabKind: 'module' },
-        },
-        {
           path: 'request-monitoring',
           name: 'request-monitoring',
           component: () => import('@/views/RequestMonitoringView.vue'),
@@ -352,7 +340,10 @@ const router = createRouter({
           component: () => import('@/views/DashboardView.vue'),
           meta: { module: 'dashboard', tabKind: 'module' },
         },
-        { path: 'media-agent', redirect: '/apps/media-agent' },
+        { path: 'media-agent', component: () => import('@/views/NotFoundView.vue') },
+        { path: 'apps/media-agent', component: () => import('@/views/NotFoundView.vue') },
+        { path: 'apps/weknora', component: () => import('@/views/NotFoundView.vue') },
+        { path: 'apps/jumpserver', component: () => import('@/views/NotFoundView.vue') },
         {
           path: 'apps/:appId',
           name: 'external-app',

@@ -16,7 +16,6 @@ import Celebration from '@/components/overlays/CelebrationOverlay.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
 import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
-import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import FloatingChat from '@/components/chat/FloatingChat.vue'
 import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
@@ -432,8 +431,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <GlobalSearch v-if="ui.searchOpen" />
     <ShortcutsHelp v-if="ui.helpOpen" />
     <Celebration v-if="ui.celebrating" />
-    <!-- 音乐来自真实文件库，只挂在登录后的应用壳；切换页面时 audio 节点不会被路由销毁。 -->
-    <MusicPlayer />
     <ReleaseHighlightsHost />
   </div>
 </template>

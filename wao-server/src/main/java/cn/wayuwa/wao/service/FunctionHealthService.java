@@ -29,9 +29,9 @@ public class FunctionHealthService {
             "personal-principles", "crawler-capabilities", "account-resources", "infrastructure",
             "ledger", "english-learning", "vocabulary", "food", "weekly-report", "devices",
             "games", "data-center", "chatgpt", "appearance", "memory", "ai-sessions",
-            "updates", "action-plans", "workspaces", "decisions");
+            "updates", "action-plans", "workspaces", "decisions", "workday-rhythm", "pet-world");
     private static final List<String> FEATURES = List.of(
-            "home", "navigation", "projects", "ideas", "todo", "calendar", "workday-rhythm",
+            "home", "navigation", "projects", "ideas", "todo", "calendar",
             "life-review", "knowledge", "skills", "skill-connections", "drawings", "files", "automation",
             "text-polish", "dashboard", "system-reports", "request-monitoring", "vault", "tianren", "settings");
     private static final Set<String> FEATURE_SET = Set.copyOf(FEATURES);

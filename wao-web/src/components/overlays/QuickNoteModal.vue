@@ -13,6 +13,7 @@ import { useUiStore } from '@/stores/ui'
 import { toast } from '@/composables/toast'
 import type { RichDocContent } from '@/types'
 import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
+import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
@@ -31,7 +32,7 @@ function newNoteId(): string {
 const draftKey = `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}`
 function loadDraft(): QuickNoteDraft {
   try {
-    const saved = JSON.parse(localStorage.getItem(draftKey) || '{}') as Partial<QuickNoteDraft>
+    const saved = JSON.parse(readNoteDraft(draftKey) || '{}') as Partial<QuickNoteDraft>
     if (typeof saved.id === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(saved.id)
         && typeof saved.text === 'string') {
       return { id: saved.id, text: saved.text, content: saved.content }
@@ -46,7 +47,7 @@ const draft = loadDraft()
 const noteId = ref(draft.id)
 const text = ref(draft.text)
 const content = ref<RichDocContent | null>(draft.content ?? null)
-const draftState = ref<'idle' | 'saving' | 'saved'>(draft.text ? 'saved' : 'idle')
+const draftState = ref<'idle' | 'saving' | 'saved' | 'error'>(draft.text ? 'saved' : 'idle')
 const saveState = ref<'idle' | 'submitting' | 'error'>('idle')
 const saveError = ref('')
 const editorWrap = ref<HTMLElement | null>(null)
@@ -59,15 +60,19 @@ const archiveName = computed(() => session.currentUser.id && session.currentUser
 watch([text, content], ([value]) => {
   saveState.value = 'idle'
   saveError.value = ''
-  if (!value) {
-    localStorage.removeItem(draftKey)
-    draftState.value = 'idle'
-    return
-  }
-  draftState.value = 'saving'
-  localStorage.setItem(draftKey, JSON.stringify({ id: noteId.value, text: value, content: content.value ?? undefined } satisfies QuickNoteDraft))
   if (draftTimer) clearTimeout(draftTimer)
-  draftTimer = setTimeout(() => (draftState.value = 'saved'), 180)
+  try {
+    if (!value) {
+      removeNoteDraft(draftKey)
+      draftState.value = 'idle'
+      return
+    }
+    draftState.value = 'saving'
+    writeNoteDraft(draftKey, JSON.stringify({ id: noteId.value, text: value, content: content.value ?? undefined } satisfies QuickNoteDraft))
+    draftTimer = setTimeout(() => (draftState.value = 'saved'), 180)
+  } catch {
+    draftState.value = 'error'
+  }
 }, { flush: 'sync' })
 
 function onContentChange(value: RichDocContent) {
@@ -108,12 +113,14 @@ async function save(open = false) {
   saveState.value = 'submitting'
   saveError.value = ''
   try {
+    let submittedDraft: string | null = null
+    try { submittedDraft = readNoteDraft(draftKey) } catch { /* 本机存储失败仍可提交内存中的正文。 */ }
     const id = content.value
       ? await data.addNote(text.value, '', noteId.value, content.value)
       : await data.addNote(text.value, '', noteId.value)
     if (!id) throw new Error('小记正文为空')
     const doc = data.docById(id)
-    localStorage.removeItem(draftKey)
+    try { removeNoteDraft(draftKey, submittedDraft) } catch { /* 服务端已保存，不误报正文保存失败。 */ }
     if (data.apiLive && doc?.rev) startAutoNoteEnrichment(session.currentUser.id, id, doc.rev)
     ui.closeModal()
     toast(`已存进「${archiveName.value}」`, 'ri-sticky-note-line')
@@ -158,6 +165,7 @@ function requestClose() {
 
     <div class="foot">
       <span v-if="saveState === 'error'" class="save-error" role="alert" :title="saveError"><i class="ri-error-warning-line"></i>未保存到服务器，草稿仍在</span>
+      <span v-else-if="draftState === 'error'" class="draft-state" role="alert">浏览器草稿保存失败，请保持弹窗打开并保存到服务器</span>
       <span v-else-if="draftState !== 'idle'" class="draft-state"><i :class="draftState === 'saving' ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ draftState === 'saving' ? '正在保存草稿' : '草稿已保存' }}</span>
       <span v-else class="foot-tip">⌘/Ctrl + Enter 保存</span>
       <div class="spacer"></div>

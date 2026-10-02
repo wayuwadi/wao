@@ -22,8 +22,9 @@ export const RETIRED_MODULE_IDS = new Set<ModuleId>([
   'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
   'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices',
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
-  'updates', 'action-plans', 'workspaces', 'decisions',
+  'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world',
 ])
+export const RETIRED_EXTERNAL_APP_IDS = new Set(['media-agent', 'jumpserver', 'weknora'])
 export type MobileActionItemId = 'action:note'
 export type MobileNavItemId = NavItemId | MobileActionItemId
 
@@ -92,17 +93,6 @@ export function normalizeBuiltinMenu(menu: BuiltinMenuConfig): BuiltinMenuConfig
 
 export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
   {
-    id: 'media-agent',
-    label: '自媒体 Agent',
-    icon: 'ri-sparkling-2-line',
-    group: 'PUBLIC',
-    order: 30,
-    visible: true,
-    appUrl: '/agent/',
-    healthUrl: '/api/agent/health',
-    openMode: 'TAB',
-  },
-  {
     id: 'getnote',
     label: '得到大脑',
     icon: 'ri-video-upload-line',
@@ -111,28 +101,6 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
     visible: true,
     appUrl: 'https://www.biji.com/',
     healthUrl: '',
-    openMode: 'NEW_PAGE',
-  },
-  {
-    id: 'weknora',
-    label: 'WeKnora',
-    icon: 'ri-book-open-line',
-    group: 'PUBLIC',
-    order: 35,
-    visible: true,
-    appUrl: '/weknora/',
-    healthUrl: '/api/external/weknora/health',
-    openMode: 'TAB',
-  },
-  {
-    id: 'jumpserver',
-    label: '资源管理',
-    icon: 'ri-server-line',
-    group: 'TOOLS',
-    order: 15,
-    visible: true,
-    appUrl: '/api/auth/jumpserver',
-    healthUrl: '/api/external/jumpserver/health',
     openMode: 'NEW_PAGE',
   },
 ]
@@ -661,6 +629,7 @@ export function isMobileNavItemId(value: unknown): value is MobileNavItemId {
     (typeof value === 'string' &&
       value !== 'chat' &&
       !RETIRED_MODULE_IDS.has(value as ModuleId) &&
+      !RETIRED_EXTERNAL_APP_IDS.has(value.replace(/^external:/, '')) &&
       (value.startsWith('external:') || Object.prototype.hasOwnProperty.call(MODULES, value)))
   )
 }

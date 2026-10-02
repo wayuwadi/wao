@@ -551,7 +551,6 @@ onBeforeUnmount(() => {
 
 function goProjects() { router.push('/projects') }
 function goHome() { router.push('/') }
-function goRuns() { router.push({ path: '/', query: { console: 'runs' } }) }
 </script>
 
 <template>
@@ -581,9 +580,9 @@ function goRuns() { router.push({ path: '/', query: { console: 'runs' } }) }
         <li v-if="summary.activeRuns">当前有 {{ summary.activeRuns }} 次运行排队或执行中，可先查看进度。</li>
         <li v-if="summary.failedThisWeek">本周创建的运行中，有 {{ summary.failedThisWeek }} 次失败；查看失败原因与已有产物后再决定是否重试。</li>
         <li v-if="recentRuns > recordedRuns">近 30 天有 {{ recentRuns - recordedRuns }} 次运行尚未回传用量；当前 Token 总量并不完整，不代表这些运行没有消耗。</li>
-        <li v-if="!summary.totalRuns">还没有 AI 运行记录，可先从首页表达一个目标。</li>
+        <li v-if="!summary.totalRuns">暂无历史 AI 运行记录。</li>
       </ul>
-      <div class="guidance-actions"><button class="ghost-btn" @click="goRuns">查看 AI 运行</button><button class="ghost-btn" @click="goHome">打开首页</button></div>
+      <div class="guidance-actions"><button class="ghost-btn" @click="goHome">打开首页</button></div>
       <p>下方建议附有证据；样本不足时先补齐观察，不据此直接调整模型或比较效率。</p>
     </section>
 

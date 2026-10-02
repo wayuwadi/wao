@@ -5,7 +5,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /** 仅由指定节点轮询；数据库状态仍提供跨节点原子抢占保护。 */
-@Component
 @ConditionalOnProperty(name = "wao.ai.task-auto-run.scheduler-enabled", havingValue = "true")
 public class AiTaskAutoRunScheduler {
 

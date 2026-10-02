@@ -18,6 +18,7 @@ import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fet
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { useNow } from '@/composables/now'
 import { noteCharactersCreatedOn, shanghaiDateKey } from '@/utils/noteDailyCharacters'
+import { readNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 import { fetchNoteAiWorkflows, retryNoteAiWorkflow, type NoteAiWorkflowStatus } from '@/api/noteAiWorkflows'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
@@ -349,7 +350,7 @@ async function deleteNote(id: string) {
   try {
     await data.deleteDoc(id)
     discardAutoNoteEnrichment(session.currentUser.id, id)
-    try { localStorage.removeItem(`wao-note-edit-v1:${session.currentUser.id}:${id}`) } catch { /* 文档已进入回收站。 */ }
+    try { removeNoteDraft(`wao-note-edit-v1:${session.currentUser.id}:${id}`) } catch { /* 文档已进入回收站。 */ }
     confirmingDeleteId.value = ''
     closeEditing(id)
     if (highlighted.value === id) highlighted.value = ''
@@ -523,7 +524,7 @@ function workflowMessage(id: string) {
 function hasPendingNoteDraft(note: Doc) {
   const key = `wao-note-edit-v1:${session.currentUser.id}:${note.id}`
   try {
-    const raw = localStorage.getItem(key)
+    const raw = readNoteDraft(key)
     if (raw === null) return false
     const draft = JSON.parse(raw) as { id?: string; text?: string; content?: Doc['content']; tags?: string[]; generatedTitle?: string }
     const saved = resolvedRichContent(note)
@@ -532,7 +533,7 @@ function hasPendingNoteDraft(note: Doc) {
         && JSON.stringify(draft.content?.document ?? null) === JSON.stringify(saved.document ?? null)
         && JSON.stringify(draft.tags ?? []) === JSON.stringify(note.tags ?? [])
         && (draft.generatedTitle || note.title) === note.title) {
-      localStorage.removeItem(key)
+      removeNoteDraft(key, raw)
       return false
     }
     return true
@@ -683,7 +684,7 @@ watch([() => session.currentUser.id, notes], ([memberId, values], previous) => {
   for (const note of values) {
     if (editingIds.value.includes(note.id)) continue
     try {
-      const draft = JSON.parse(localStorage.getItem(`wao-note-edit-v1:${memberId}:${note.id}`) || 'null')
+      const draft = JSON.parse(readNoteDraft(`wao-note-edit-v1:${memberId}:${note.id}`) || 'null')
       if (draft?.id === note.id && typeof draft.text === 'string') {
         noteDrafts.value[note.id] = {
           content: draft.content?.markdown === draft.text ? draft.content : { version: 1, document: null, markdown: draft.text },
@@ -747,7 +748,7 @@ onMounted(() => void loadPins())
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出与按需操作">
-              <button v-for="stage in (['title', 'image', 'polish', 'tags'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
+              <button v-for="stage in (['title', 'polish', 'tags'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
             </div>
             <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-controls="confirmingDeleteId === note.id ? `note-delete-confirm-${note.id}` : undefined" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
             <p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id) && workflowMessage(note.id))" class="workflow-status" role="status">{{ noteDrafts[note.id] ? '草稿已保护 · 有修改待保存' : workflowMessage(note.id) }} <button v-if="!noteDrafts[note.id] && (serverFailed(note.id) || canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成'))" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '重试中…' : '重试' }}</button></p>

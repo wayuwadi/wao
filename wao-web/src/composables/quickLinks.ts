@@ -6,7 +6,7 @@ const PREF_KEY = 'quick-links'
 const PREF_VERSION = 2
 const MAX_LINKS = 20
 const REQUIRED_AFTER_LEGACY_MIGRATION = new Set(['wao-jenkins'])
-const RETIRED_LINK_IDS = new Set(['wao-desktop-pet'])
+const RETIRED_LINK_IDS = new Set(['wao-desktop-pet', 'gh-wao-agent'])
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const ICON_PATTERN = /^ri-[a-z0-9-]+$/
 

@@ -5,7 +5,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /** 每分钟尝试抢占到期检查；实际检查间隔由数据库单例状态控制为十五分钟。 */
-@Component
 @ConditionalOnProperty(name = "wao.ai.evolution.scheduler-enabled", havingValue = "true")
 public class AiEvolutionScheduler {
 

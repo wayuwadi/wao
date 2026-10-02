@@ -438,7 +438,7 @@ watch(() => true, load, { immediate: true })
       <div>
         <div class="eyebrow">AI ACCESS</div>
         <h1>AI 账号与 API</h1>
-        <p>集中管理并加密保存 AI 凭据。DeepSeek 与醒市网关默认仅用于润色，其他功能需在下方显式开启；未获准的默认调用使用 Codex。统一登录后各节点可共用授权。</p>
+        <p>集中管理并加密保存 AI 凭据。DeepSeek 与醒市网关默认仅用于润色，其他功能需在下方显式开启。执行能力仅使用服务端 API；历史账号配置仍保留。</p>
       </div>
       <button class="refresh-btn" :disabled="busy" @click="load">
         <i :class="busy ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ busy ? '读取中' : '刷新列表' }}
@@ -446,31 +446,6 @@ watch(() => true, load, { immediate: true })
     </header>
 
     <DeepSeekPolicyPanel />
-
-    <div class="oauth-grid">
-      <article class="oauth-card codex">
-        <div class="provider-mark"><i class="ri-openai-fill"></i></div>
-        <div class="oauth-copy">
-          <div class="oauth-title"><b>Codex OAuth</b><span>推荐</span></div>
-          <p>使用 ChatGPT / Codex 账号登录，WAO 自动生成可下发给 Runner 的官方认证文件。</p>
-        </div>
-        <button :disabled="loginStarting !== null || login !== null" @click="beginLogin('codex')">
-          <i :class="loginStarting === 'codex' ? 'ri-loader-4-line spin' : 'ri-login-circle-line'"></i>
-          {{ loginStarting === 'codex' ? '正在打开…' : '使用 Codex 账号登录' }}
-        </button>
-      </article>
-      <article class="oauth-card claude">
-        <div class="provider-mark"><i class="ri-claude-fill"></i></div>
-        <div class="oauth-copy">
-          <div class="oauth-title"><b>Claude OAuth</b><span>支持额度</span></div>
-          <p>使用 Anthropic 账号登录，自动续期凭据并展示当前最紧张的额度窗口。</p>
-        </div>
-        <button :disabled="loginStarting !== null || login !== null" @click="beginLogin('claude')">
-          <i :class="loginStarting === 'claude' ? 'ri-loader-4-line spin' : 'ri-login-circle-line'"></i>
-          {{ loginStarting === 'claude' ? '正在打开…' : '使用 Claude 账号登录' }}
-        </button>
-      </article>
-    </div>
 
     <div v-if="login" class="login-panel">
       <div class="login-icon"><i :class="loginProvider === 'codex' ? 'ri-openai-fill' : 'ri-claude-fill'"></i></div>
@@ -508,10 +483,8 @@ watch(() => true, load, { immediate: true })
       <div class="manager-head">
         <div><h2>认证与端点</h2><span>{{ accounts.length }}</span></div>
         <div class="manager-actions">
-          <button class="ghost" :disabled="hasForm" @click="openAdd('credentials')"><i class="ri-file-upload-line"></i>导入凭据</button>
           <button class="gateway-btn" :disabled="hasForm" @click="openAdd('model_gateway')"><i class="ri-route-line"></i>添加模型网关</button>
           <button class="deepseek-btn" :disabled="hasForm" @click="openAdd('deepseek')"><i class="ri-sparkling-2-line"></i>添加 DeepSeek</button>
-          <button class="primary" :disabled="hasForm" @click="openAdd('custom')"><i class="ri-add-line"></i>添加自定义 API</button>
         </div>
       </div>
 
@@ -660,7 +633,7 @@ watch(() => true, load, { immediate: true })
       <section class="confirm-card" role="alertdialog" aria-labelledby="delete-account-title">
         <div class="confirm-icon"><i class="ri-delete-bin-6-line"></i></div>
         <h2 id="delete-account-title">删除这个账号？</h2>
-        <p>“{{ pendingDelete.label }}”的集中凭据和配置会被删除，Runner 本地原有登录态不受影响。</p>
+        <p>“{{ pendingDelete.label }}”的集中凭据和配置会被删除，历史本地登录文件不会由此删除。</p>
         <div><button class="ghost" :disabled="deletingId !== null" @click="pendingDelete = null">取消</button><button class="danger-btn" :disabled="deletingId !== null" @click="remove(pendingDelete.id)">{{ deletingId ? '删除中…' : '确认删除' }}</button></div>
       </section>
     </div>

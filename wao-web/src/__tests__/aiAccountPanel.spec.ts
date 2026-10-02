@@ -46,6 +46,15 @@ function account(patch: Partial<AiAccount> = {}): AiAccount {
 }
 
 describe('AiAccountPanel', () => {
+  it('仅提供服务端 API 添加，不再登录或导入 Runner 凭据', async () => {
+    fetchAiAccounts.mockResolvedValue([])
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+    expect(wrapper.text()).not.toMatch(/使用 Codex 账号登录|使用 Claude 账号登录|导入凭据|添加自定义 API/)
+    expect(wrapper.text()).toContain('添加 DeepSeek')
+    expect(startAiAccountLogin).not.toHaveBeenCalled()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubGlobal('open', vi.fn())
@@ -152,84 +161,9 @@ describe('AiAccountPanel', () => {
     expect(wrapper.find('.quota-details').text()).toContain('Qoder 暂无公开的额度查询 API')
   })
 
-  it('点登录后打开授权页并显示回填授权码的输入框', async () => {
-    fetchAiAccounts.mockResolvedValue([])
-    startAiAccountLogin.mockResolvedValue({
-      state: 'st-1',
-      authorizeUrl: 'https://claude.com/cai/oauth/authorize?x=1',
-      expiresAt: '2026-07-28T13:40:00',
-      hint: '完成授权后复制授权码',
-      flow: 'authorization_code', userCode: null, pollIntervalSeconds: 0,
-    })
 
-    const wrapper = mount(AiAccountPanel)
-    await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text().includes('使用 Claude 账号登录'))!.trigger('click')
-    await flushPromises()
 
-    expect(window.open).toHaveBeenCalledWith(
-      'https://claude.com/cai/oauth/authorize?x=1', '_blank', 'noopener')
-    expect(wrapper.find('.login-actions input').exists()).toBe(true)
-    expect(wrapper.text()).toContain('完成授权后复制授权码')
-  })
 
-  it('授权码为空时不调用完成登录接口', async () => {
-    fetchAiAccounts.mockResolvedValue([])
-    startAiAccountLogin.mockResolvedValue({
-      state: 'st-1', authorizeUrl: 'https://example.invalid/a', expiresAt: '', hint: '',
-      flow: 'authorization_code', userCode: null, pollIntervalSeconds: 0,
-    })
-
-    const wrapper = mount(AiAccountPanel)
-    await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text().includes('使用 Claude 账号登录'))!.trigger('click')
-    await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text().includes('完成登录'))!.trigger('click')
-    await flushPromises()
-
-    expect(completeAiAccountLogin).not.toHaveBeenCalled()
-  })
-
-  it('Codex 使用设备码并自动查询，不再要求回填 localhost 地址', async () => {
-    fetchAiAccounts.mockResolvedValue([])
-    startAiAccountLogin.mockResolvedValue({
-      state: 'st-codex',
-      authorizeUrl: 'https://auth.openai.com/codex/device',
-      expiresAt: '2026-07-28T13:40:00',
-      hint: '在 OpenAI 官方页面登录并确认下方一次性短码',
-      flow: 'device_code', userCode: 'ABCD-EFGH', pollIntervalSeconds: 300,
-    })
-    fetchAiAccountLoginStatus.mockResolvedValue({ status: 'pending', message: '等待授权', account: null })
-    const wrapper = mount(AiAccountPanel)
-    await flushPromises()
-
-    await wrapper.findAll('button').find((button) => button.text().includes('使用 Codex 账号登录'))!.trigger('click')
-    await flushPromises()
-
-    expect(startAiAccountLogin).toHaveBeenCalledWith('codex')
-    expect(window.open).toHaveBeenCalledWith('https://auth.openai.com/codex/device', '_blank', 'noopener')
-    expect(wrapper.find('.login-actions input').exists()).toBe(false)
-    expect(wrapper.find('.device-code').text()).toContain('ABCD-EFGH')
-    expect(wrapper.text()).not.toContain('localhost')
-
-    await wrapper.findAll('button').find((button) => button.text().includes('立即检查'))!.trigger('click')
-    await flushPromises()
-    expect(fetchAiAccountLoginStatus).toHaveBeenCalledWith('st-codex')
-    wrapper.unmount()
-  })
-
-  it('自定义 API 表单提供 Base URL、Responses 模型和 API Key', async () => {
-    fetchAiAccounts.mockResolvedValue([])
-    const wrapper = mount(AiAccountPanel)
-    await flushPromises()
-
-    await wrapper.findAll('button').find((button) => button.text().includes('添加自定义 API'))!.trigger('click')
-
-    expect(wrapper.find('input[placeholder="https://proxy.example.com/v1"]').exists()).toBe(true)
-    expect(wrapper.find('input[placeholder="gpt-5.4"]').exists()).toBe(true)
-    expect(wrapper.find('input[type="password"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('OpenAI Responses')
-  })
 
   it('DeepSeek 配置可选择官方模型并以密码框管理 Token', async () => {
     fetchAiAccounts.mockResolvedValue([])

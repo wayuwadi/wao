@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { fetchAiRun } from '@/api/ai'
 import { fetchAutomationJob } from '@/api/board'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
-import type { AiRun, AutomationJob, JobRun } from '@/types'
+import type { AutomationJob, JobRun } from '@/types'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -15,9 +14,6 @@ const error = ref('')
 const page = ref(1)
 const dialogElement = ref<HTMLElement | null>(null)
 const selected = ref<JobRun | null>(null)
-const linkedAiRun = ref<AiRun | null>(null)
-const detailLoading = ref(false)
-const detailError = ref('')
 
 const runs = computed(() =>
   (job.value?.runs ?? [])
@@ -62,38 +58,8 @@ async function load() {
 
 async function openDetail(run: JobRun) {
   selected.value = run
-  linkedAiRun.value = null
-  detailError.value = ''
   await nextTick()
   dialogElement.value?.scrollTo?.({ top: 0 })
-  if (!run.aiRunId) return
-  await loadLinkedAiRun(run.aiRunId)
-}
-
-async function loadLinkedAiRun(aiRunId: string) {
-  detailLoading.value = true
-  detailError.value = ''
-  try {
-    linkedAiRun.value = await fetchAiRun(aiRunId)
-  } catch (cause) {
-    detailError.value = cause instanceof Error ? cause.message : 'AI Run 详情读取失败，请重试'
-  } finally {
-    detailLoading.value = false
-  }
-}
-
-function aiRunDuration(run: AiRun) {
-  if (!run.startedAt || !run.finishedAt) return '未结束'
-  const milliseconds = Date.parse(run.finishedAt) - Date.parse(run.startedAt)
-  if (!Number.isFinite(milliseconds) || milliseconds < 0) return '未记录'
-  return formatDurationMs(milliseconds)
-}
-
-function aiRunStatus(run: AiRun) {
-  if (run.status === 'succeeded') return '运行成功'
-  if (run.status === 'failed') return '运行失败'
-  if (run.status === 'cancelled') return '已取消'
-  return '仍在运行'
 }
 
 function duration(run: JobRun) {
@@ -162,25 +128,7 @@ onMounted(load)
           <section class="result-block"><b>自动化结果</b><p>{{ selected.result }}</p></section>
         </section>
 
-        <div v-if="detailLoading" class="detail-state"><i class="ri-loader-4-line spin"></i>正在读取 AI Run 详情…</div>
-        <div v-else-if="detailError" class="detail-state error" role="alert">
-          <span>{{ detailError }}</span>
-          <button type="button" @click="loadLinkedAiRun(selected.aiRunId!)">重新读取</button>
-        </div>
-        <section v-else-if="linkedAiRun" class="ai-run-detail">
-          <header><div><small>真实 AI RUN</small><h3>{{ linkedAiRun.taskTitle }}</h3></div><strong>{{ aiRunStatus(linkedAiRun) }}</strong></header>
-          <dl>
-            <div><dt>项目</dt><dd>{{ linkedAiRun.projectName }}</dd></div>
-            <div><dt>AI 工具</dt><dd>{{ linkedAiRun.engine }}</dd></div>
-            <div><dt>执行电脑</dt><dd>{{ linkedAiRun.runnerName || '尚未分配' }}</dd></div>
-            <div><dt>运行耗时</dt><dd>{{ aiRunDuration(linkedAiRun) }}</dd></div>
-            <div><dt>Token</dt><dd>{{ linkedAiRun.usage?.recorded ? linkedAiRun.usage.totalTokens.toLocaleString() : '未记录' }}</dd></div>
-            <div><dt>退出码</dt><dd>{{ linkedAiRun.exitCode ?? '未结束' }}</dd></div>
-          </dl>
-          <section class="result-block"><b>{{ linkedAiRun.status === 'failed' ? '失败原因' : '运行结果' }}</b><p>{{ linkedAiRun.resultSummary || 'AI 尚未回传最终摘要。' }}</p></section>
-          <a v-if="linkedAiRun.reportUrl" :href="linkedAiRun.reportUrl" target="_blank" rel="noopener">打开验收报告<i class="ri-external-link-line"></i></a>
-        </section>
-        <div v-else class="detail-state muted"><i class="ri-information-line"></i>本次巡检未创建 AI Run，以上自动化结果就是完整事实。</div>
+        <div class="detail-state muted"><i class="ri-information-line"></i>执行功能已下线，历史触发记录保留。</div>
       </template>
       <template v-else>
         <div class="statistics" aria-label="AI 巡检统计">

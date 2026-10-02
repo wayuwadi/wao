@@ -1,12 +1,7 @@
 import { TASK_STATUSES } from '@/utils/domain'
 import type { TaskStatus } from '@/types'
 
-/**
- * AI Run 在任务 / 项目里的入口开关。
- *
- * <p>用户要求先下线任务里的 AI Run：入口全部隐藏，代码与接口原样保留，改回 true 即恢复。
- * 首页 AI 控制中心不受此开关影响。
- */
+/** 项目和任务的 AI Run 已永久下线；历史状态继续可读，不提供新的执行入口。 */
 export const AI_RUN_ENABLED = false
 
 /**

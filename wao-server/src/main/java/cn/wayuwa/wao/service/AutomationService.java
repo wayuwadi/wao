@@ -75,11 +75,11 @@ public class AutomationService {
     }
 
     private static boolean retiredHandler(AutomationJobEntity job) {
-        return "feishu-chat-sync".equals(job.getHandler()) || "shared-chat-nightly-sync".equals(job.getHandler());
+        return "feishu-chat-sync".equals(job.getHandler()) || "shared-chat-nightly-sync".equals(job.getHandler()) || "http-performance-ai-run".equals(job.getHandler()) || "weknora-content-sync".equals(job.getHandler());
     }
 
     private static void requireActiveHandler(AutomationJobEntity job) {
-        if (retiredHandler(job)) throw new cn.wayuwa.wao.common.BadRequestException("飞书聊天记录同步已停用");
+        if (retiredHandler(job)) throw new cn.wayuwa.wao.common.BadRequestException("该自动化执行器已下线");
     }
 
     /** 按 id 获取任务详情。 */

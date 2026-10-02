@@ -310,13 +310,11 @@ describe('RequestMonitoringView', () => {
     )
   })
 
-  it('从监控页直接触发现有真实巡检任务', async () => {
+  it('监控保留历史但不再启动或配置 AI 巡检', async () => {
     const wrapper = mount(RequestMonitoringView)
     await flushPromises()
-
-    await wrapper.find('.inspection-button').trigger('click')
-    await flushPromises()
-
-    expect(apiRunJob).toHaveBeenCalledWith('job-http-performance-ai-run')
+    expect(wrapper.find('.inspection-button').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('巡检设置')
+    expect(apiRunJob).not.toHaveBeenCalled()
   })
 })

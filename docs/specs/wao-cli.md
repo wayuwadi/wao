@@ -26,6 +26,8 @@ CLI 支持通过独立授权的现有托管页 API 发布一个公开 HTML 页�
 
 ## 当前覆盖
 
+音乐功能已按 ADR-300 下线，播放器与网易云专属 API 不再提供。CLI 与工作区 MCP 原本没有专属音乐能力，本次不新增替代命令；通用文件资产及其音视频流读取保留。
+
 | 领域 | MCP 工具 | CLI 子命令 |
 | --- | --- | --- |
 | 项目读取 | `list_projects`、`get_project` | `projects list`、`projects get ID` |
@@ -81,3 +83,9 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 ## 小记最新正文自动整理
 
 `notes-single-latest-content.md` 统一浏览器编辑、预览和后台润色写回；本人通过现有文档 PATCH 保存后，既有工作流自动续跑最新正文。本次不增加终端操作或扩大 MCP 令牌权限；终端批量润色仍需带源版本和独立授权的业务命令，届时重新评估 CLI。
+
+2026-10-02：项目与任务 AI Run 已下线（ADR-303），不提供派工、续跑或队列查询 CLI / MCP 命令；历史业务数据保留。
+
+2026-10-02：WAO Runner 配对和执行协议已下线（ADR-304），工作区 MCP / CLI 无专属命令。获准的服务端 AI API 保留，旧 Runner 账号不再属于可执行能力。
+
+2026-10-02：WeKnora 及派生同步退役（ADR-305）。工作区 MCP / CLI 不提供同步配置或执行能力，WAO 原生知识库命令保留。

@@ -24,8 +24,8 @@ function mountView(autos: AutomationJob[] = []) {
 
 function job(runs = 0): AutomationJob {
   return {
-    id: 'job-http-performance-ai-run',
-    name: 'HTTP 请求性能夜间 AI 巡检',
+    id: 'active-job',
+    name: '现有业务自动化',
     icon: 'ri-speed-up-line',
     schedule: '每日 06:30',
     status: '正常',
@@ -34,7 +34,7 @@ function job(runs = 0): AutomationJob {
     source: '',
     target: '',
     steps: [],
-    handler: 'http-performance-ai-run',
+    handler: 'active-handler',
     runs: Array.from({ length: runs }, (_, index) => ({
       time: `8月${26 - index}日 06:30`,
       executor: '定时任务',
@@ -102,14 +102,16 @@ describe('AutomationView 导航', () => {
     expect(wrapper.get('.grid-aoruns.row').text()).toContain('—')
   })
 
-  it('HTTP性能巡检任务显示真实配置入口', async () => {
-    const wrapper = mountView([job()])
-    await wrapper.find('.op[title="配置"]').trigger('click')
-    expect(wrapper.find('.http-config').exists()).toBe(true)
+  it('退役的 HTTP AI 巡检不提供启用和执行入口', () => {
+    const retired = { ...job(), handler: 'http-performance-ai-run' }
+    const wrapper = mountView([retired])
+    expect(wrapper.find('.job-name').exists()).toBe(false)
+    expect(wrapper.find('[title="配置"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })
 
-it('启用状态不表示运行成功，并可进入已提交任务的真实执行结果', async () => {
+it('历史提交记录不冒充成功，也不链接已下线的控制台', async () => {
   const item = job(1)
   item.runs[0]!.aiRunId = 'run-123'
   item.runs[0]!.result = '成功 · 已创建 AI Run run-123'
@@ -118,7 +120,7 @@ it('启用状态不表示运行成功，并可进入已提交任务的真实执�
   expect(wrapper.text()).toContain('已提交执行')
   await wrapper.get('.job-name').trigger('click')
   expect(wrapper.get('.grid-aoruns .mini').text()).toBe('已提交执行')
-  expect(wrapper.get('a.result-link').attributes('href')).toBe('/?console=runs&run=run-123')
+  expect(wrapper.find('a.result-link').exists()).toBe(false)
   expect(wrapper.text()).toContain('触发记录：成功 · 已创建 AI Run run-123')
   wrapper.unmount()
 })

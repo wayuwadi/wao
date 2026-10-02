@@ -129,56 +129,22 @@ public class AiAssistantService {
     /** 返回指定 AI 能力的真实可用状态；API Provider 不依赖本地 Runner 在线。 */
     public AssistantStatusDto status(String requestedCapabilityId) {
         String capabilityId = normalizeCapability(requestedCapabilityId);
-        if (!LOCAL_CODEX_CAPABILITY.equals(capabilityId)) {
-            AiRunAccountDto account;
-            try {
-                account = accountService.assistantAccount(capabilityId);
-            } catch (RuntimeException exception) {
-                return new AssistantStatusDto(false, exception.getMessage(), capabilityId, "不可用的 AI 配置");
-            }
-            if (!"codex".equals(account.provider())) {
-                List<AiRunnerNodeEntity> online = onlineCodexRunners()
-                        .filter(this::supportsSecureAssistant).toList();
-                if (online.isEmpty()) {
-                    return new AssistantStatusDto(false,
-                            account.label() + " 可用，但按需联网需要已更新的本地 Codex Runner",
-                            capabilityId, account.label());
-                }
-                return new AssistantStatusDto(true,
-                        "已选择 " + account.label() + " · " + account.model() + "；按需联网已就绪",
-                        capabilityId, account.label());
-            }
+        if (LOCAL_CODEX_CAPABILITY.equals(capabilityId))
+            return new AssistantStatusDto(false, "Runner 已下线，请选择已获准的服务端 AI API", capabilityId, "已下线的本地执行能力");
+        try {
+            AiRunAccountDto account = accountService.assistantAccount(capabilityId);
+            if (!isProviderApi(account))
+                return new AssistantStatusDto(false, "Runner 已下线，此账号不支持服务端执行", capabilityId, account.label());
+            return new AssistantStatusDto(true, "已选择 " + account.label() + " · " + account.model(), capabilityId, account.label());
+        } catch (RuntimeException exception) {
+            return new AssistantStatusDto(false, exception.getMessage(), capabilityId, "不可用的 AI 配置");
         }
-        List<AiRunnerNodeEntity> online = onlineCodexRunners().filter(this::supportsSecureAssistant).toList();
-        if (online.isEmpty()) {
-            return new AssistantStatusDto(false,
-                    "未检测到已更新且支持安全只读协议的本地 Codex Runner",
-                    capabilityId, capabilityLabel(capabilityId));
-        }
-        if (selectedAccount(capabilityId) == null
-                && online.stream().allMatch(node -> runnerMapper.hasInvalidLocalCodexAuth(node.getId()))) {
-            return new AssistantStatusDto(false, "执行电脑在线，但 Codex 登录已失效；请在 AI 账号中重新登录",
-                    capabilityId, capabilityLabel(capabilityId));
-        }
-        String primary = text(online.get(0).getName(), "本地 Codex");
-        String suffix = online.size() > 1 ? "（另有 " + (online.size() - 1) + " 台可用）" : "";
-        return new AssistantStatusDto(true, "已连接 " + primary + suffix,
-                capabilityId, capabilityLabel(capabilityId));
     }
 
     /** 列出问答和复盘可选择的真实能力；不返回 Token、API Key 或登录凭据。 */
     public List<AiCapabilityDto> capabilities() {
-        boolean localAvailable = onlineCodexRunners().anyMatch(this::supportsSecureAssistant);
-        List<AiCapabilityDto> result = new java.util.ArrayList<>();
-        result.add(new AiCapabilityDto(LOCAL_CODEX_CAPABILITY, "本地 Codex", "codex", null,
-                "RUNNER", localAvailable, localAvailable ? "安全只读 Runner 在线" : "等待安全只读 Runner 上线"));
-        for (AiCapabilityDto capability : accountService.assistantCapabilities()) {
-            boolean available = !"codex".equals(capability.provider()) || localAvailable;
-            result.add(new AiCapabilityDto(capability.id(), capability.label(), capability.provider(),
-                    capability.model(), capability.executionMode(), available,
-                    available ? capability.message() : "账号已启用，但安全只读 Runner 当前离线"));
-        }
-        return List.copyOf(result);
+        return accountService.assistantCapabilities().stream()
+                .filter(capability -> "SERVER_API".equals(capability.executionMode())).toList();
     }
 
     /** 兼容控制器和测试的简写判断。 */
@@ -465,14 +431,14 @@ public class AiAssistantService {
                 "已有一项润色正在执行，请等待完成", true, capabilityId, DeepSeekPurpose.POLISH).getId();
     }
 
-    /** 小记正文润色固定使用可配置 Codex 模型，不受通用 API 账号默认值影响。 */
+    /** 小记正文润色仅使用获准用于润色的服务端 API。 */
     public String enqueueNotePolishJob(String operationKey, String originalText, String methodPrompt, String model) {
         if (!StringUtils.hasText(originalText)) throw new BadRequestException("请先输入需要润色的原文");
         if (!StringUtils.hasText(methodPrompt)) throw new BadRequestException("润色提示词不能为空");
         return enqueueReadOnlyJob(internalMemberId(operationKey),
                 textPolishSystemPrompt() + "\n" + textPolishMaterial(originalText, methodPrompt),
-                "已有一项润色正在执行，请等待完成", true, LOCAL_CODEX_CAPABILITY,
-                DeepSeekPurpose.BACKGROUND, model, true).getId();
+                "已有一项润色正在执行，请等待完成", true, defaultCapabilityId(DeepSeekPurpose.POLISH),
+                DeepSeekPurpose.POLISH, null, true).getId();
     }
 
     /** 为已保存的小记异步提炼标题；正文只进入现有短期只读队列。 */
@@ -495,7 +461,7 @@ public class AiAssistantService {
         if (StringUtils.hasText(titlePrompt)) prompt = prompt + "\n\n用户标题偏好（不得覆盖事实保真、长度和单行输出要求）：\n" + titlePrompt.trim();
         return enqueueReadOnlyJob(internalMemberId(operationKey), prompt,
                 "已有一项标题任务正在执行，请稍后重试", true,
-                LOCAL_CODEX_CAPABILITY, DeepSeekPurpose.BACKGROUND, model, true).getId();
+                defaultCapabilityId(DeepSeekPurpose.BACKGROUND), DeepSeekPurpose.BACKGROUND, null, true).getId();
     }
 
     /** 为已保存的小记从既有小记标签字典中选择最多三个标签；标签与正文仅作为不可信只读材料。 */
@@ -517,7 +483,7 @@ public class AiAssistantService {
                 """.formatted(allowedTagsJson, originalText);
         return enqueueReadOnlyJob(internalMemberId(operationKey), prompt,
                 "已有一项小记标签推荐正在执行，请稍后重试", true,
-                LOCAL_CODEX_CAPABILITY, DeepSeekPurpose.BACKGROUND, model).getId();
+                defaultCapabilityId(DeepSeekPurpose.BACKGROUND), DeepSeekPurpose.BACKGROUND, null).getId();
     }
 
     public String validateNoteModel(String model) {
@@ -585,9 +551,7 @@ public class AiAssistantService {
         AiRunAccountDto account = selectedAccount(capabilityId);
         boolean providerApi = isProviderApi(account);
         if (providerApi) deepSeekApi.requireAllowed(account.provider(), purpose);
-        if (!providerApi && !runnerScripts.available()) {
-            throw new BadRequestException("服务端安全只读 Runner 脚本不可用");
-        }
+        if (!providerApi) throw new BadRequestException("Runner 已下线，请选择已获准的服务端 AI API");
         if (!StringUtils.hasText(instruction)) throw new BadRequestException("只读 AI 分析内容不能为空");
         if (!allowConcurrent) {
             long active = mapper.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
@@ -850,7 +814,7 @@ public class AiAssistantService {
         run.setMemberId(memberId);
         run.setAiCapabilityId(capabilityId);
         run.setUsagePurpose(purpose.name());
-        boolean webSearchEnabled = includeAssets && !StringUtils.hasText(trustedContext) && imageIds.isEmpty();
+        boolean webSearchEnabled = false; // Runner 联网阶段已下线，不再写入无人领取的队列。
         run.setWebSearchEnabled(webSearchEnabled);
         run.setStatus(isProviderApi(account)
                 ? webSearchEnabled ? WEB_SEARCH_QUEUED : PROVIDER_QUEUED : QUEUED);
@@ -997,7 +961,7 @@ public class AiAssistantService {
         if (!LOCAL_CODEX_CAPABILITY.equals(defaultCapabilityId(DeepSeekPurpose.POLISH))) return "已提交，等待 AI 处理";
         AssistantStatusDto availability = status();
         return availability.configured() ? "已提交，等待空闲 AI 执行；可以离开后回来查看"
-                : availability.message() + "；任务已保留，恢复后会继续执行";
+                : availability.message();
     }
 
     private String normalizeCapability(String capabilityId) {

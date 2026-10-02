@@ -31,7 +31,6 @@ pull_image() {
 }
 
 docker build --target server-runtime -t "wao-server:$WAO_GIT_SHA" -f deploy/Dockerfile .
-docker build --target agent-runtime -t "wao-agent-server:$WAO_GIT_SHA" -f deploy/Dockerfile .
 docker build --target gateway-runtime -t "wao-gateway:$WAO_GIT_SHA" -f deploy/Dockerfile .
 docker build --target codex-egress-proxy -t "wao-codex-egress-proxy:$WAO_GIT_SHA" -f deploy/Dockerfile .
 
@@ -45,7 +44,7 @@ done
 # 影子构建与生产发布都打包完整镜像集，由当前 Linux2 部署步骤导入。
 if [ "${DEPLOY_PRODUCTION:-true}" != true ]; then
   docker save \
-    "wao-server:$WAO_GIT_SHA" "wao-agent-server:$WAO_GIT_SHA" \
+    "wao-server:$WAO_GIT_SHA" \
     "wao-gateway:$WAO_GIT_SHA" "wao-codex-egress-proxy:$WAO_GIT_SHA" \
     mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2 \
     | gzip -1 >"$WAO_RUN_TEMP/wao-images.tar.gz"
