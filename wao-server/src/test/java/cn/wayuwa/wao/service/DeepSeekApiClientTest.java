@@ -21,6 +21,29 @@ class DeepSeekApiClientTest {
     private final DeepSeekBudgetService budget = org.mockito.Mockito.mock(DeepSeekBudgetService.class);
 
     @Test
+    void connectionBreakAfterPartialStreamFailsWithoutAutomaticPaidRetry() {
+        RestClient.Builder builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        byte[] partial = "data: {\"choices\":[{\"delta\":{\"content\":\"半篇\"}}]}\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var stream = new java.io.ByteArrayInputStream(partial) {
+            @Override public synchronized int read(byte[] bytes, int offset, int length) {
+                if (available() == 0) throw new org.springframework.web.client.ResourceAccessException("合成断网");
+                return super.read(bytes, offset, length);
+            }
+        };
+        server.expect(ExpectedCount.once(), requestTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/chat/completions"))
+                .andRespond(request -> new org.springframework.mock.http.client.MockClientHttpResponse(stream, HttpStatus.OK));
+        var previews = new java.util.ArrayList<String>();
+        assertThatThrownBy(() -> new DeepSeekApiClient(builder, budget).streamPolish(
+                "model_gateway", null, "synthetic", "xingshi", "合成验收正文", previews::add))
+                .hasMessageContaining("连接中断").hasMessageContaining("原文已保留");
+        assertThat(previews).containsExactly("半篇");
+        org.mockito.Mockito.verify(budget, org.mockito.Mockito.times(1)).reserve(
+                org.mockito.ArgumentMatchers.eq(DeepSeekPurpose.POLISH), org.mockito.ArgumentMatchers.anyLong());
+        server.verify();
+    }
+
+    @Test
     void streamsOnlyContentAndSettlesFinalUsageOnceForGateway() {
         RestClient.Builder builder = RestClient.builder();
         var server = MockRestServiceServer.bindTo(builder).build();

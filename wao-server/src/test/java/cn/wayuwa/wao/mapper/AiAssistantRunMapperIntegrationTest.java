@@ -202,6 +202,32 @@ class AiAssistantRunMapperIntegrationTest {
         insert(id, "queued", updatedAt);
     }
 
+    @Test
+    void providerNoteClaimIsExclusiveAndDuplicateCallbacksCannotChangeSuccess() {
+        insert("note-once", "provider_queued", LocalDateTime.now());
+        assertThat(mapper.claimProviderQueued("note-once", "first")).isEqualTo(1);
+        assertThat(mapper.claimProviderQueued("note-once", "duplicate")).isZero();
+        assertThat(mapper.completeProviderSucceeded("note-once", "first", "完整正文")).isEqualTo(1);
+        assertThat(mapper.completeProviderSucceeded("note-once", "first", "重复回调")).isZero();
+        assertThat(mapper.completeProviderFailed("note-once", "first", "迟到失败")).isZero();
+        assertThat(mapper.updateProviderPreview("note-once", "first", "迟到预览")).isZero();
+        assertThat(mapper.failActive("note-once", "迟到超时")).isZero();
+        assertThat(row("note-once")).containsEntry("STATUS", "succeeded").containsEntry("RESPONSE_TEXT", "完整正文");
+    }
+
+    @Test
+    void providerFailureClearsPartialOutputAndCannotBeRevivedByOldWorker() {
+        insert("note-failed", "provider_queued", LocalDateTime.now());
+        mapper.claimProviderQueued("note-failed", "old-worker");
+        assertThat(mapper.updateProviderPreview("note-failed", "old-worker", "半篇")).isEqualTo(1);
+        assertThat(mapper.completeProviderFailed("note-failed", "old-worker", "连接中断，请重试")).isEqualTo(1);
+        assertThat(mapper.completeProviderSucceeded("note-failed", "old-worker", "迟到结果")).isZero();
+        assertThat(mapper.claimProviderQueued("note-failed", "new-worker")).isZero();
+        assertThat(jdbc.queryForMap("SELECT status, prompt_text, response_text, claim_token FROM ai_assistant_run WHERE id = 'note-failed'"))
+                .containsEntry("STATUS", "failed").containsEntry("PROMPT_TEXT", null)
+                .containsEntry("RESPONSE_TEXT", null).containsEntry("CLAIM_TOKEN", null);
+    }
+
     private void insert(String id, String status, LocalDateTime updatedAt) {
         jdbc.update("""
                 INSERT INTO ai_assistant_run (id, status, prompt_text, updated_at)

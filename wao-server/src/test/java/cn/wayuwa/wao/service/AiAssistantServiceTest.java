@@ -505,6 +505,58 @@ class AiAssistantServiceTest {
         return runner;
     }
 
+    @Test
+    void noteBodyUsesAuthorizedProviderWithoutRetiredRunnerQueue() {
+        var account = new AiRunAccountDto("aa-gateway", "model_gateway", "网关", "api_key", null,
+                "test", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "xingshi", "chat_completions");
+        when(accountService.defaultDocumentPolishAccount()).thenReturn(account);
+        when(accountService.assistantAccount("aa-gateway")).thenReturn(account);
+        service.enqueueNotePolishJob("synthetic-note", "预算 120 元，不购买额外服务。", "保持事实", null);
+        ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(queued.capture());
+        assertThat(queued.getValue().getStatus()).isEqualTo("provider_queued");
+        assertThat(queued.getValue().getUsagePurpose()).isEqualTo("POLISH");
+        assertThat(queued.getValue().getPromptText()).contains("120", "不购买额外服务");
+        verify(deepSeekApi).requireAllowed("model_gateway", DeepSeekPurpose.POLISH);
+    }
+
+    @Test
+    void lostProviderClaimDoesNotCallModelOrCreateAnotherRun() {
+        when(mapper.selectProviderQueued()).thenReturn(List.of(assistantRun("provider_queued")));
+        when(mapper.claimProviderQueued(eq("ac1"), anyString())).thenReturn(0);
+        assertThat(service.processNextProviderRun()).isFalse();
+        verify(deepSeekApi, never()).streamPolish(any(), any(), any(), any(), any(), any());
+        verify(deepSeekApi, never()).complete(any(), any(), any(), any(), any(), any(), any());
+        verify(mapper, never()).insertReadOnlyQueued(any());
+    }
+
+    @Test
+    void providerStreamFailureAndLateSuccessCannotPublishHistory() {
+        var run = assistantRun("provider_queued");
+        run.setAiCapabilityId("aa-gateway");
+        run.setUsagePurpose("POLISH");
+        var account = new AiRunAccountDto("aa-gateway", "model_gateway", "网关", "api_key", null,
+                "test", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "xingshi", "chat_completions");
+        when(mapper.selectProviderQueued()).thenReturn(List.of(run));
+        when(mapper.claimProviderQueued(eq("ac1"), anyString())).thenReturn(1);
+        when(mapper.selectById("ac1")).thenReturn(run);
+        when(accountService.assistantAccount("aa-gateway")).thenReturn(account);
+        when(mapper.updateProviderPreview(eq("ac1"), anyString(), eq("半篇"))).thenReturn(1);
+        when(deepSeekApi.streamPolish(any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            java.util.function.Consumer<String> progress = invocation.getArgument(5);
+            progress.accept("半篇");
+            throw new cn.wayuwa.wao.common.BadRequestException("润色连接中断，请重试；原文已保留");
+        });
+        service.processNextProviderRun();
+        verify(mapper).completeProviderFailed(eq("ac1"), anyString(), contains("原文已保留"));
+        verify(mapper, never()).completeProviderSucceeded(any(), any(), any());
+        org.mockito.Mockito.doReturn("迟到的完整结果").when(deepSeekApi).streamPolish(any(), any(), any(), any(), any(), any());
+        // 模拟数据库已超时终止，旧 worker 的终态 CAS 失败。
+        when(mapper.completeProviderSucceeded(eq("ac1"), anyString(), anyString())).thenReturn(0);
+        service.processNextProviderRun();
+        verify(conversationService, never()).appendAssistantReply(any(), any());
+    }
+
     private AiAssistantRunEntity assistantRun(String status) {
         AiAssistantRunEntity run = new AiAssistantRunEntity();
         run.setId("ac1");
