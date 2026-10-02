@@ -79,6 +79,7 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins/)" = 401
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/api/auth/jumpserver)" = 410
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/weknora/)" = 410
 
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST https://wao.wayuwa.cn/api/ai/runner/heartbeat)" = 410
 

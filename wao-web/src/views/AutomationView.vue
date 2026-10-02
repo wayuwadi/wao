@@ -45,7 +45,7 @@ function stMeta(a: AutomationJob) {
 }
 
 const jobs = computed(() =>
-  data.autos.filter(a => !['feishu-chat-sync', 'shared-chat-nightly-sync', 'http-performance-ai-run'].includes(a.handler ?? '')).map((a) => {
+  data.autos.filter(a => !['feishu-chat-sync', 'shared-chat-nightly-sync', 'http-performance-ai-run', 'weknora-content-sync'].includes(a.handler ?? '')).map((a) => {
     const st = stMeta(a)
     const dots = a.runs
       .map((r) => ({

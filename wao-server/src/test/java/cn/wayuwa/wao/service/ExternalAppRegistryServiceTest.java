@@ -41,7 +41,7 @@ class ExternalAppRegistryServiceTest {
     @Test
     void defaultsExcludeRetiredAgent() {
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("getnote", "weknora");
+                .containsExactly("getnote");
     }
 
     @Test
@@ -73,7 +73,7 @@ class ExternalAppRegistryServiceTest {
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(stored);
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("custom-studio", "getnote", "weknora");
+                .containsExactly("custom-studio", "getnote");
         assertThat(service.getRegistry().apps().get(0).openMode()).isEqualTo("TAB");
     }
 
@@ -86,30 +86,23 @@ class ExternalAppRegistryServiceTest {
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(3, List.of(mediaAgent))));
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("custom-studio", "getnote", "weknora");
+                .containsExactly("custom-studio", "getnote");
 
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(4, List.of(mediaAgent))));
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("custom-studio", "weknora");
+                .containsExactly("custom-studio");
 
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(5, List.of(mediaAgent))));
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("custom-studio", "weknora");
+                .containsExactly("custom-studio");
     }
 
     @Test
-    void introducesWeKnoraForExistingUsersAndHonorsRemovalAfterUpgrade() throws Exception {
-        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
-                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(7, List.of())));
-        assertThat(service.getRegistry().apps()).singleElement().satisfies(app -> {
-            assertThat(app.id()).isEqualTo("weknora");
-            assertThat(app.appUrl()).isEqualTo("/weknora/");
-            assertThat(app.openMode()).isEqualTo("TAB");
-        });
-        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
-                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(8, List.of())));
+    void oldWeKnoraRegistryCannotRestoreRetiredApplication() throws Exception {
+        var old = new ExternalAppConfigDto("weknora", "资料", "ri-book-open-line", "PUBLIC", 35, true, "/weknora/", "", "TAB");
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(7, List.of(old))));
         assertThat(service.getRegistry().apps()).isEmpty();
     }
 

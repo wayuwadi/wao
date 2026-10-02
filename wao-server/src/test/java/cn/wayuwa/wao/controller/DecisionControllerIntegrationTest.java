@@ -29,6 +29,12 @@ class DecisionControllerIntegrationTest {
         mvc.perform(post("/api/ai/runner/assistant-v2/old/image")).andExpect(status().isGone());
         mvc.perform(post("/api/assistant/article-images")).andExpect(status().isNotFound());
     }
+    @Test void retiredWeKnoraCannotSyncOrReadConfiguration() throws Exception {
+        mvc.perform(get("/api/weknora-sync")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/weknora-sync/run")).andExpect(status().isNotFound());
+        mvc.perform(put("/api/weknora-sync")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/weknora-sync/documents?ids=old")).andExpect(status().isNotFound());
+    }
     @Test void retiredRoutesCannotReadOrWrite() throws Exception {
         mvc.perform(get("/api/workday-rhythm/dashboard")).andExpect(status().isNotFound());
         mvc.perform(get("/api/workday-rhythm/focus/pending")).andExpect(status().isNotFound());

@@ -24,7 +24,7 @@ export const RETIRED_MODULE_IDS = new Set<ModuleId>([
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
   'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world',
 ])
-export const RETIRED_EXTERNAL_APP_IDS = new Set(['media-agent', 'jumpserver'])
+export const RETIRED_EXTERNAL_APP_IDS = new Set(['media-agent', 'jumpserver', 'weknora'])
 export type MobileActionItemId = 'action:note'
 export type MobileNavItemId = NavItemId | MobileActionItemId
 
@@ -102,17 +102,6 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
     appUrl: 'https://www.biji.com/',
     healthUrl: '',
     openMode: 'NEW_PAGE',
-  },
-  {
-    id: 'weknora',
-    label: 'WeKnora',
-    icon: 'ri-book-open-line',
-    group: 'PUBLIC',
-    order: 35,
-    visible: true,
-    appUrl: '/weknora/',
-    healthUrl: '/api/external/weknora/health',
-    openMode: 'TAB',
   },
 ]
 

@@ -27,8 +27,6 @@ import { useNow } from '@/composables/now'
 import ResourceMenu from '@/components/ui/ResourceMenu.vue'
 import { useKnowledgeFavoritesStore } from '@/stores/knowledgeFavorites'
 import SaveHint from '@/components/ui/SaveHint.vue'
-import WeKnoraDocumentStatus from '@/components/weknora/WeKnoraDocumentStatus.vue'
-import { useWeKnoraDocuments } from '@/composables/weknoraDocuments'
 import { useFavoritesStore } from '@/stores/favorites'
 import {
   apiPatchKb,
@@ -149,7 +147,6 @@ const saveFailed = computed(() => currentSaveState.value?.failed ?? false)
 const docSavedAt = computed(() =>
   docId.value ? data.saveState(`doc:${docId.value}`).savedAt : null,
 )
-const knowledgeSync = useWeKnoraDocuments(() => data.apiLive && docId.value ? [docId.value] : [], () => docSavedAt.value)
 const createdLabel = computed(() =>
   base.value?.created ? relativeTime(base.value.created, now.value) : '—',
 )
@@ -1139,7 +1136,6 @@ async function saveKbSettings() {
             <label v-if="docId && !currentArchived" class="move-document bar-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="移动当前文档到文件夹" @change="moveCurrentDoc"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
             <button ref="outlineTrigger" class="icon-act outline-toggle" title="文档大纲" aria-label="文档大纲" :aria-expanded="tocOpen" @click="tocOpen = !tocOpen"><i class="ri-layout-right-line"></i><span>大纲</span></button>
             <span class="doc-info" :title="`${author.name} · 创建于 ${absoluteTime(base?.created ?? '')} · 更新于 ${absoluteTime(base?.updated ?? '')}`"><i class="ri-information-line"></i><span class="sr-only">{{ author.name }} · 创建于 {{ createdLabel }} · 更新于 {{ updatedLabel }}</span></span>
-            <span v-if="docId && data.apiLive" class="bar-sync"><WeKnoraDocumentStatus :state="knowledgeSync.states.value[docId]" :error="knowledgeSync.error.value" :dirty="data.docPending(docId)" @retry="knowledgeSync.refresh" /></span>
             <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
             <button
               v-if="docId"
@@ -1176,7 +1172,6 @@ async function saveKbSettings() {
               <div v-if="moreMenuOpen" class="menu-mask" @click="moreMenuOpen = false"></div>
               <div v-if="moreMenuOpen" class="doc-more-menu" aria-label="更多文档操作">
                 <div v-if="saving || saveFailed || docSavedAt" class="more-save"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></div>
-                <div v-if="docId && data.apiLive" class="more-sync"><WeKnoraDocumentStatus :state="knowledgeSync.states.value[docId]" :error="knowledgeSync.error.value" :dirty="data.docPending(docId)" @retry="knowledgeSync.refresh" /></div>
                 <label v-if="docId && !currentArchived" class="move-document more-move">移动到<select :value="currentFolderId" :disabled="treeSaveState === 'saving'" aria-label="在更多菜单中移动当前文档到文件夹" @change="moveCurrentDoc($event); moreMenuOpen = false"><option v-for="folder in kb.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
                 <button @click="moreMenuOpen = false; openSaveTemplate()"><i class="ri-file-copy-2-line"></i>另存为模板</button>
                 <button v-if="docId" @click="moreMenuOpen = false; favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"><i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>{{ favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单' }}</button>

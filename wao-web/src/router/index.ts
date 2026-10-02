@@ -341,6 +341,7 @@ const router = createRouter({
         },
         { path: 'media-agent', component: () => import('@/views/NotFoundView.vue') },
         { path: 'apps/media-agent', component: () => import('@/views/NotFoundView.vue') },
+        { path: 'apps/weknora', component: () => import('@/views/NotFoundView.vue') },
         { path: 'apps/jumpserver', component: () => import('@/views/NotFoundView.vue') },
         {
           path: 'apps/:appId',

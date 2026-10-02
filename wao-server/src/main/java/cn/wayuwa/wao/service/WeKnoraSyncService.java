@@ -170,7 +170,6 @@ public class WeKnoraSyncService {
         });
     }
     /** 独立线程推进持久化队列，避免占用既有业务调度线程。 */
-    @Scheduled(fixedDelay=5000,initialDelay=30000)
     public void advance() {
         if (!running.compareAndSet(false,true))return;
         executor.execute(() -> { try { work(); } finally { running.set(false); } });
