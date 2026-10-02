@@ -1,6 +1,8 @@
 # 小记正文 AI 执行与恢复回归
 
-当前链路：`NoteComposer` 保存选择 → `NoteAiWorkflowService` → `TextPolishJobService` 的 `NOTE_BODY` → `AiAssistantService` 的 `provider_queued/provider_running` → 获准的服务端 API → 来源摘要及文档版本条件回写。
+未启用本机执行时的链路：`NoteComposer` 保存选择 → `NoteAiWorkflowService` → `TextPolishJobService` 的 `NOTE_BODY` → `AiAssistantService` 的 `provider_queued/provider_running` → 获准的服务端 API → 来源摘要及文档版本条件回写。
+
+ADR-306 增加了[本机小记产品执行路径](local-note-ai.md)：显式启用时，标题、正文、标签和配图进入本机实例队列，由现有 ChatGPT 登录的 Codex 执行；失败不回退付费 API。聚合命令同时检查本机队列、图片归属及旧协议退役。
 
 ADR-303/304 已下线项目 AI Run 和 Runner。小记正文保留服务端 API 润色；不再检查或恢复旧 Runner，不能将历史助手协议测试通过当作当前链路可用。没有服务端 AI 账号时，可按[本机 Codex 真实验收](notes-local-codex-acceptance.md)使用现有 ChatGPT 登录验证本机小记；须分别报告本机适配器与生产 Provider 的边界。
 
@@ -49,4 +51,4 @@ python deploy/scripts/test_notes_ai_regression.py
 4. 核对失败原因和原文恢复，再精确软删除本轮验收小记。原始正文、业务标识和截图留本机受控目录。
 5. 发布独立核对 Jenkins 构建、检出 SHA 的覆盖关系、版本和健康。本工具通过不能替代真实模型、MySQL 或发布验收。
 
-本项只新增测试和证据工具，不改变业务服务、HTTP、MCP 或 CLI 能力，不扩大现有令牌权限，不需要部署运行制品。
+原回归资产 PR 仅包含测试和证据工具；后续 ADR-306 的本机执行出口是产品行为变更，需按其单独验收与部署记录判断可用性。

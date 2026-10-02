@@ -1788,7 +1788,7 @@ function insertArticleImageAtStart(url: string): boolean {
   const first = e.state.doc.firstChild
   const range = first?.type.name === 'image' && first.attrs.alt === '文章总览图'
     ? { from: 0, to: first.nodeSize } : 0
-  return e.commands.insertContentAt(range, { type: 'image', attrs: { src: url, alt: '文章总览图', width: '50%', height: null, align: 'center' } })
+  return e.commands.insertContentAt(range, { type: 'image', attrs: { src: url, alt: '文章总览图', width: '50%', height: null, align: 'center' } }, { updateSelection: false })
 }
 
 function currentArticleImage(): string | null {

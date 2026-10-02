@@ -22,6 +22,7 @@ import cn.wayuwa.wao.mapper.AiAssistantRunMapper;
 import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,9 +32,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /** 页面 AI 助手队列：由在线的本地 Codex Runner 以只读权限完成问答。 */
 @Service
 public class AiAssistantService {
-    public static final Set<String> NOTE_CODEX_MODELS = Set.of("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-sol", "gpt-6-luna");
-    private static final Set<String> LEGACY_NOTE_MODELS = Set.of("gpt-6-astra");
-    private static final String DEFAULT_NOTE_MODEL = "gpt-5.6-sol";
+    public static final Set<String> NOTE_CODEX_MODELS = Set.of("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-sol", "gpt-6-luna");
+    private static final String DEFAULT_NOTE_MODEL = "gpt-6-astra";
 
     private static final String QUEUED = "queued";
     private static final String RUNNING = "running";
@@ -83,6 +83,9 @@ public class AiAssistantService {
             “今日调养提示”可从作息、日常饮食或情志中选择与当日最相关的两到三点，只给低风险、温和、可停止的生活观察。
             “边界提醒”每次都要说明内容属于传统文化学习与自我观察，不是医疗诊断或治疗方案；持续不适应咨询合格医务人员。
             """;
+
+    @Autowired(required = false)
+    private LocalNoteAiService localNotes;
 
     private final AiAssistantRunMapper mapper;
     private final AiRunnerNodeMapper runnerMapper;
@@ -275,11 +278,8 @@ public class AiAssistantService {
                 return existing.getId();
             }
         }
-        AssistantStatusDto availability = status(LOCAL_CODEX_CAPABILITY);
-        if (!availability.configured()) throw new BadRequestException(availability.message());
-        if (onlineCodexRunners().noneMatch(this::supportsArticleImage)) {
-            throw new BadRequestException("生成图片需要已更新的 Linux Codex Runner 在线");
-        }
+        if (localNotes == null) throw new BadRequestException("本机小记 AI 尚未启用，请配置本机 Codex");
+        localNotes.requireAvailable();
         // 先按数据库时钟回收期限已过的遗留运行，再判断是否允许持久小记工作流并发排队。
         expireReadOnlyJobs();
         if (!allowConcurrentNoteWorkflow) {
@@ -292,7 +292,7 @@ public class AiAssistantService {
         AiAssistantRunEntity run = new AiAssistantRunEntity();
         run.setId(runId == null ? "ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24) : runId);
         run.setMemberId(memberId);
-        run.setAiCapabilityId(LOCAL_CODEX_CAPABILITY);
+        run.setAiCapabilityId(localNotes.capabilityId());
         run.setRequestedModel(requestedModel);
         run.setUsagePurpose(ARTICLE_IMAGE_PURPOSE);
         run.setWebSearchEnabled(false);
@@ -431,10 +431,13 @@ public class AiAssistantService {
                 "已有一项润色正在执行，请等待完成", true, capabilityId, DeepSeekPurpose.POLISH).getId();
     }
 
-    /** 小记正文润色仅使用获准用于润色的服务端 API。 */
+    /** 小记正文优先使用显式启用的本机 Codex；未启用时保留获准 API 的既有路径。 */
     public String enqueueNotePolishJob(String operationKey, String originalText, String methodPrompt, String model) {
         if (!StringUtils.hasText(originalText)) throw new BadRequestException("请先输入需要润色的原文");
         if (!StringUtils.hasText(methodPrompt)) throw new BadRequestException("润色提示词不能为空");
+        if (localNotes != null && localNotes.enabled()) return localNotes.enqueue(internalMemberId(operationKey),
+                textPolishSystemPrompt() + "\n" + textPolishMaterial(originalText, methodPrompt),
+                DeepSeekPurpose.POLISH.name(), validateNoteModel(model));
         return enqueueReadOnlyJob(internalMemberId(operationKey),
                 textPolishSystemPrompt() + "\n" + textPolishMaterial(originalText, methodPrompt),
                 "已有一项润色正在执行，请等待完成", true, defaultCapabilityId(DeepSeekPurpose.POLISH),
@@ -459,6 +462,8 @@ public class AiAssistantService {
                 </note_text>
                 """.formatted(originalText);
         if (StringUtils.hasText(titlePrompt)) prompt = prompt + "\n\n用户标题偏好（不得覆盖事实保真、长度和单行输出要求）：\n" + titlePrompt.trim();
+        if (localNotes != null && localNotes.enabled()) return localNotes.enqueue(internalMemberId(operationKey),
+                prompt, DeepSeekPurpose.BACKGROUND.name(), validateNoteModel(model));
         return enqueueReadOnlyJob(internalMemberId(operationKey), prompt,
                 "已有一项标题任务正在执行，请稍后重试", true,
                 defaultCapabilityId(DeepSeekPurpose.BACKGROUND), DeepSeekPurpose.BACKGROUND, null, true).getId();
@@ -481,6 +486,8 @@ public class AiAssistantService {
                 %s
                 </note_text>
                 """.formatted(allowedTagsJson, originalText);
+        if (localNotes != null && localNotes.enabled()) return localNotes.enqueue(internalMemberId(operationKey),
+                prompt, DeepSeekPurpose.BACKGROUND.name(), validateNoteModel(model));
         return enqueueReadOnlyJob(internalMemberId(operationKey), prompt,
                 "已有一项小记标签推荐正在执行，请稍后重试", true,
                 defaultCapabilityId(DeepSeekPurpose.BACKGROUND), DeepSeekPurpose.BACKGROUND, null).getId();
@@ -488,8 +495,6 @@ public class AiAssistantService {
 
     public String validateNoteModel(String model) {
         String value = StringUtils.hasText(model) ? model.trim() : DEFAULT_NOTE_MODEL;
-        // 旧网页可能继续提交 Astra；其配图能力尚未验证，按默认模型执行。
-        if (LEGACY_NOTE_MODELS.contains(value)) return DEFAULT_NOTE_MODEL;
         if (!NOTE_CODEX_MODELS.contains(value)) throw new BadRequestException("小记模型不在允许列表中");
         return value;
     }

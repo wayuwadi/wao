@@ -10,7 +10,7 @@ public record ArticleImageRequest(
         @Size(max = 64) String model,
         @Size(max = 32) String requestId) {
     public ArticleImageRequest(String articleText, String visualPrompt) {
-        this(articleText, visualPrompt, "gpt-5.6-sol", null);
+        this(articleText, visualPrompt, "gpt-6-astra", null);
     }
 
     public ArticleImageRequest(String articleText, String visualPrompt, String model) {

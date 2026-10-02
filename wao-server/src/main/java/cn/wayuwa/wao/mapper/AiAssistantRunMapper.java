@@ -253,4 +253,27 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     int expireReadOnlyRunningById(@Param("id") String id,
             @Param("timeoutSeconds") long timeoutSeconds,
             @Param("reason") String reason);
+    /** 只消费当前本机小记执行实例的队列，不领取旧 Runner 或服务端 API 任务。 */
+    @Select("SELECT * FROM ai_assistant_run WHERE ai_capability_id=#{capability} AND status='secure_queued' ORDER BY created_at LIMIT 8")
+    List<AiAssistantRunEntity> selectLocalNoteQueued(@Param("capability") String capability);
+
+    /** 同一执行目录持有独占锁后回收中断任务；不自动重做已经调用过的模型。 */
+    @Update("""
+            UPDATE ai_assistant_run SET status='failed', response_text=NULL, prompt_text=NULL,
+                   claim_token=NULL, error_text='本机 AI 服务中断；原文已保留，请点击重试',
+                   finished_at=CURRENT_TIMESTAMP(6), updated_at=CURRENT_TIMESTAMP(6)
+             WHERE ai_capability_id=#{capability} AND status='provider_running'
+            """)
+    int recoverLocalNoteRuns(@Param("capability") String capability);
+
+    /** 本机排队有界收口，避免停机期间积累的旧输入无限等待。 */
+    @Update("""
+            UPDATE ai_assistant_run SET status='failed', response_text=NULL, prompt_text=NULL,
+                   claim_token=NULL, error_text='本机 AI 排队超时；原文已保留，请点击重试',
+                   finished_at=CURRENT_TIMESTAMP(6), updated_at=CURRENT_TIMESTAMP(6)
+             WHERE ai_capability_id=#{capability} AND status='secure_queued'
+               AND created_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL 60 MINUTE)
+            """)
+    int expireLocalNoteQueue(@Param("capability") String capability);
+
 }

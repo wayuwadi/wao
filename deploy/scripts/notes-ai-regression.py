@@ -20,6 +20,11 @@ SUITES = (
     'cn.wayuwa.wao.mapper.AiAssistantRunMapperIntegrationTest',
     'cn.wayuwa.wao.service.DeepSeekApiClientTest',
     'cn.wayuwa.wao.FlywayMigrationsTest',
+    'cn.wayuwa.wao.service.LocalNoteAiServiceTest',
+    'cn.wayuwa.wao.service.LocalNoteCodexProcessTest',
+    'cn.wayuwa.wao.service.ArticleImageServiceTest',
+    'cn.wayuwa.wao.controller.ArticleImageControllerTest',
+    'cn.wayuwa.wao.controller.DecisionControllerIntegrationTest',
 )
 
 
@@ -43,7 +48,7 @@ def main():
         datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ-') + uuid.uuid4().hex[:8])
     output.mkdir(parents=True)
     report = {'startedAt': datetime.now(timezone.utc).isoformat(), 'status': 'failed',
-              'scope': 'isolated-note-body-only', 'realAiVerified': False,
+              'scope': 'isolated-note-ai-text-and-images', 'realAiVerified': False,
               'deploymentVerified': False, 'steps': []}
     env = os.environ.copy()
     env['PYTHONIOENCODING'] = 'utf-8'

@@ -815,7 +815,7 @@ async function bindFeishu() {
               <div class="pref-row">
                 <div class="pref-main">
                   <div class="pref-name">保存后润色正文</div>
-                  <div class="pref-desc">保留原文，另存润色版供对照阅读。</div>
+                  <div class="pref-desc">整理为一份最新正文；继续输入时保留本地草稿，失败可重试。</div>
                 </div>
                 <button type="button" class="toggle" :class="{ on: noteAiDefaultsForm.polish }" aria-label="小记保存后润色正文" :aria-pressed="noteAiDefaultsForm.polish" :disabled="noteAiDefaultsSaving" @click="noteAiDefaultsForm.polish = !noteAiDefaultsForm.polish"><span class="knob"></span></button>
               </div>
@@ -829,7 +829,7 @@ async function bindFeishu() {
               <div class="pref-row">
                 <div class="pref-main">
                   <div class="pref-name">整理执行方式</div>
-                  <div class="pref-desc">并行会同时启动标题、润色、配图及符合条件的标签推荐；串行会逐项完成。</div>
+                  <div class="pref-desc">并行允许多个阶段排队，实际执行受服务可用能力限制；串行会逐项完成。</div>
                 </div>
                 <select v-model="noteAiDefaultsForm.executionMode" class="pref-select" aria-label="小记 AI 整理执行方式" :disabled="noteAiDefaultsSaving">
                   <option value="parallel">并行</option>
@@ -839,14 +839,14 @@ async function bindFeishu() {
               <div class="pref-row" :class="{ muted: noteAiDefaultsForm.executionMode === 'serial' }">
                 <div class="pref-main">
                   <div class="pref-name">同时生成数量</div>
-                  <div class="pref-desc">当前浏览器中的多个小记共享并发上限；串行模式下固定为 1。</div>
+                  <div class="pref-desc">同一成员的多个小记共享并发上限；串行模式下固定为 1。</div>
                 </div>
                 <select v-model.number="noteAiDefaultsForm.maxConcurrent" class="pref-select" aria-label="小记 AI 同时生成数量" :disabled="noteAiDefaultsSaving || noteAiDefaultsForm.executionMode === 'serial'">
                   <option v-for="count in [1, 2, 3, 4, 5]" :key="count" :value="count">{{ count }} 项</option>
                 </select>
               </div>
               <div class="preference-actions">
-                <span>设置按当前成员跨设备保存；当前浏览器中的小记共用并发上限。</span>
+                <span>设置按当前成员跨设备保存；同一成员的小记共用并发上限。</span>
                 <button type="button" class="btn-primary" :disabled="noteAiDefaultsSaving || !noteAiDefaultsDirty" @click="saveNoteAiDefaults">
                   {{ noteAiDefaultsSaving ? '保存中…' : '保存小记 AI 设置' }}
                 </button>
