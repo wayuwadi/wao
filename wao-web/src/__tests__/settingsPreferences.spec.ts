@@ -21,7 +21,7 @@ describe('设置页成员偏好', () => {
     preferenceApi.savePreference.mockResolvedValue(undefined)
   })
 
-  it('保存默认开合和入口显隐到当前成员偏好', async () => {
+  it('个人偏好页不再提供音乐入口，并保留小记提醒与 AI 设置', async () => {
     const preferences = usePreferenceStore()
     await preferences.load()
     const router = createRouter({
@@ -32,22 +32,11 @@ describe('设置页成员偏好', () => {
     await router.isReady()
 
     const wrapper = mount(SettingsView, { global: { plugins: [router] } })
-    const toggles = wrapper.findAll('.music-preferences .toggle')
-    expect(toggles).toHaveLength(2)
-    expect(toggles[0]!.attributes('aria-pressed')).toBe('false')
-    expect(toggles[1]!.attributes('aria-pressed')).toBe('true')
-
-    await toggles[0]!.trigger('click')
-    await toggles[1]!.trigger('click')
-    await wrapper.get('.music-preference-actions .btn-primary').trigger('click')
-    await flushPromises()
-
-    expect(preferenceApi.savePreference).toHaveBeenCalledWith(
-      'music-player-settings-v1',
-      JSON.stringify({ defaultOpen: true, launcherVisible: false }),
-    )
-    expect(preferences.musicPlayerDefaultOpen).toBe(true)
-    expect(preferences.musicPlayerLauncherVisible).toBe(false)
+    expect(wrapper.text()).not.toContain('音乐播放器')
+    expect(wrapper.text()).not.toContain('显示播放器入口')
+    expect(wrapper.find('.note-reminder-preferences').exists()).toBe(true)
+    expect(wrapper.find('.note-ai-defaults-preferences').exists()).toBe(true)
+    expect(preferenceApi.fetchPreference).not.toHaveBeenCalledWith('music-player-settings-v1')
   })
 
   it('可切换极简与详细控件风格并跨设备保存', async () => {

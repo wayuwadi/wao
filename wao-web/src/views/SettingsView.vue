@@ -138,9 +138,6 @@ const personalPreferenceSaving = ref<'weekStart' | 'celebration' | ''>('')
 const personalPreferenceError = ref('')
 const lastPersonalPreferenceAttempt = ref<{ key: 'weekStart' | 'celebration'; value: WeekStart | Celebration } | null>(null)
 
-const musicPreferenceForm = reactive({ defaultOpen: false, launcherVisible: true })
-const musicPreferenceSaving = ref(false)
-const musicPreferenceError = ref('')
 const noteReminderForm = reactive<NoteFullscreenReminderSettings>({ enabled: true, delayMinutes: 1 })
 const noteReminderSaving = ref(false)
 const noteReminderError = ref('')
@@ -173,16 +170,6 @@ watch(
 )
 
 watch(
-  [() => preferences.loaded, () => preferences.musicPlayerDefaultOpen, () => preferences.musicPlayerLauncherVisible],
-  ([loaded, defaultOpen, launcherVisible]) => {
-    if (!loaded || musicPreferenceSaving.value) return
-    musicPreferenceForm.defaultOpen = defaultOpen
-    musicPreferenceForm.launcherVisible = launcherVisible
-  },
-  { immediate: true },
-)
-
-watch(
   [() => preferences.loaded, () => preferences.noteFullscreenReminder.enabled, () => preferences.noteFullscreenReminder.delayMinutes],
   ([loaded, enabled, delayMinutes]) => {
     if (!loaded || noteReminderSaving.value) return
@@ -209,12 +196,10 @@ watch(
 
 async function reloadPreferences() {
   controlStyleError.value = ''
-  musicPreferenceError.value = ''
   noteReminderError.value = ''
   noteAiDefaultsError.value = ''
   personalPreferenceError.value = ''
   await preferences.load(true)
-  if (preferences.loadError) musicPreferenceError.value = preferences.loadError
 }
 
 async function savePersonalPreference(
@@ -264,19 +249,6 @@ async function saveControlStyle(style: ControlStyle) {
     controlStyleError.value = error instanceof Error ? error.message : '界面控件风格保存失败'
   } finally {
     controlStyleSaving.value = false
-  }
-}
-
-async function saveMusicPreferences() {
-  musicPreferenceSaving.value = true
-  musicPreferenceError.value = ''
-  try {
-    await preferences.setMusicPlayerSettings({ ...musicPreferenceForm })
-    toast('音乐播放器偏好已保存', 'ri-checkbox-circle-line')
-  } catch (error) {
-    musicPreferenceError.value = error instanceof Error ? error.message : '音乐播放器偏好保存失败'
-  } finally {
-    musicPreferenceSaving.value = false
   }
 }
 
@@ -761,48 +733,6 @@ async function bindFeishu() {
             </div>
             <div class="hint language-boundary">界面当前仅提供完整的简体中文版本；没有可用的第二套翻译前不展示无效的语言切换。</div>
           </div>
-          <div class="card thin music-preferences">
-            <div class="card-row wrap">
-              <div>
-                <div class="card-title">音乐播放器</div>
-                <div class="pref-desc">设置按当前成员保存，换设备登录后仍会生效。</div>
-              </div>
-              <span v-if="musicPreferenceSaving" class="connected"><span class="c-dot"></span>保存中…</span>
-              <span v-else-if="preferences.loading || !preferences.loaded" class="connected"><span class="c-dot"></span>读取中…</span>
-              <span v-else-if="!preferences.loadError && !musicPreferenceError" class="connected"><span class="c-dot"></span>已读取个人偏好</span>
-            </div>
-            <div v-if="preferences.loadError || musicPreferenceError" class="preference-error" role="alert">
-              <span>{{ musicPreferenceError || preferences.loadError }}</span>
-              <button type="button" class="btn-ghost sm" :disabled="preferences.loading" @click="reloadPreferences">
-                {{ preferences.loading ? '重新读取中…' : '重新读取' }}
-              </button>
-            </div>
-            <div v-else-if="preferences.loading || !preferences.loaded" class="preference-loading" aria-live="polite">
-              <i class="ri-loader-4-line"></i>正在读取当前成员的播放器偏好…
-            </div>
-            <template v-else>
-              <div class="pref-row">
-                <div class="pref-main">
-                  <div class="pref-name">登录后默认打开</div>
-                  <div class="pref-desc">关闭时只显示右下角入口，不会自动弹出播放器面板。</div>
-                </div>
-                <button type="button" class="toggle" :class="{ on: musicPreferenceForm.defaultOpen }" aria-label="登录后默认打开播放器" :aria-pressed="musicPreferenceForm.defaultOpen" :disabled="musicPreferenceSaving" @click="musicPreferenceForm.defaultOpen = !musicPreferenceForm.defaultOpen"><span class="knob"></span></button>
-              </div>
-              <div class="pref-row">
-                <div class="pref-main">
-                  <div class="pref-name">显示播放器入口</div>
-                  <div class="pref-desc">关闭后隐藏右下角音乐按钮；需要恢复时返回此页开启。</div>
-                </div>
-                <button type="button" class="toggle" :class="{ on: musicPreferenceForm.launcherVisible }" aria-label="显示播放器入口" :aria-pressed="musicPreferenceForm.launcherVisible" :disabled="musicPreferenceSaving" @click="musicPreferenceForm.launcherVisible = !musicPreferenceForm.launcherVisible"><span class="knob"></span></button>
-              </div>
-              <div class="music-preference-actions">
-                <span>“默认打开”在下次进入 WAO 时应用；当前播放不会被中断。</span>
-                <button type="button" class="btn-primary" :disabled="musicPreferenceSaving" @click="saveMusicPreferences">
-                  {{ musicPreferenceSaving ? '保存中…' : '保存播放器设置' }}
-                </button>
-              </div>
-            </template>
-          </div>
           <div class="card thin note-reminder-preferences">
             <div class="card-row wrap">
               <div>
@@ -845,7 +775,7 @@ async function bindFeishu() {
                   <option :value="15">15 分钟</option>
                 </select>
               </div>
-              <div class="music-preference-actions">
+              <div class="preference-actions">
                 <span>按当前成员跨设备保存；保存失败时当前设置草稿会保留。</span>
                 <button type="button" class="btn-primary" :disabled="noteReminderSaving" @click="saveNoteReminderPreferences">
                   {{ noteReminderSaving ? '保存中…' : '保存提醒设置' }}
@@ -915,7 +845,7 @@ async function bindFeishu() {
                   <option v-for="count in [1, 2, 3, 4, 5]" :key="count" :value="count">{{ count }} 项</option>
                 </select>
               </div>
-              <div class="music-preference-actions">
+              <div class="preference-actions">
                 <span>设置按当前成员跨设备保存；当前浏览器中的小记共用并发上限。</span>
                 <button type="button" class="btn-primary" :disabled="noteAiDefaultsSaving || !noteAiDefaultsDirty" @click="saveNoteAiDefaults">
                   {{ noteAiDefaultsSaving ? '保存中…' : '保存小记 AI 设置' }}
@@ -1178,7 +1108,6 @@ async function bindFeishu() {
 .member-account-actions { display: flex; gap: 8px; }
 .member-account-form .form-error { grid-column: 1 / -1; color: var(--wao-danger); font-size: 12px; }
 .profile-form { grid-template-columns: 1fr 120px auto; margin: 14px 0; }
-.music-preferences { margin-top: 14px; }
 .note-ai-defaults-preferences { margin-top: 14px; }
 .control-style-preferences { margin-bottom: 14px; }
 .control-style-options { margin-top: 13px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
@@ -1193,7 +1122,7 @@ async function bindFeishu() {
 .preference-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0 2px; color: var(--wao-danger); font-size: 12.5px; }
 .preference-loading { display: flex; align-items: center; gap: 7px; padding: 16px 0 2px; color: var(--wao-text-weak); font-size: 12.5px; }
 .preference-loading i { animation: preference-spin 1s linear infinite; }
-.music-preference-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 14px; color: var(--wao-text-weak); font-size: 12px; }
+.preference-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 14px; color: var(--wao-text-weak); font-size: 12px; }
 @keyframes preference-spin { to { transform: rotate(360deg); } }
 .toggle:disabled { opacity: .55; cursor: not-allowed; }
 .btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
@@ -1674,9 +1603,9 @@ async function bindFeishu() {
   .snav-title, .snav-group, .snav-foot { display: none; }
   .snav-items { flex-direction: row; width: max-content; }
   .snav-item { height: 34px; padding: 0 10px; white-space: nowrap; }
-  .music-preference-actions { align-items: stretch; flex-direction: column; }
+  .preference-actions { align-items: stretch; flex-direction: column; }
   .control-style-options { grid-template-columns: 1fr; }
-  .music-preference-actions .btn-primary { justify-content: center; }
+  .preference-actions .btn-primary { justify-content: center; }
   .spane { overflow: visible; }
   .scontent { padding: 16px 12px 28px; }
   .card { padding: 14px; }
