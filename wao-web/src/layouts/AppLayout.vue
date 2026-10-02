@@ -20,6 +20,7 @@ import NotificationCenter from '@/components/notifications/NotificationCenter.vu
 import FloatingChat from '@/components/chat/FloatingChat.vue'
 import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
 import ReleaseHighlightsHost from '@/components/release/ReleaseHighlightsHost.vue'
+import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
 import { externalAppItemId, RETIRED_MODULE_IDS, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -383,6 +384,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           </button>
           <FloatingChat :show-trigger="false" />
           <NotificationCenter />
+          <VersionUpdateNotice />
         </div>
       </header>
 
