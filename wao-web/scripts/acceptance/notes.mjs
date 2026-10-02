@@ -10,6 +10,7 @@ const repository = realpathSync(resolve(import.meta.dirname, '../../..'))
 const PREFIX = 'WAO 验收 · 小记回归 · '
 export const NOTE_STEPS = ['新建与独立源持久化', '连续保存与重新编辑', '失败收起刷新恢复与重试',
   '多窗口竞争保留本次输入与远端标题', '保存中状态与重复操作保护', '窄屏错误与重试可见', '精确软删除与双源刷新确认']
+const SAME_ORIGIN_STEP = '同源独立页签草稿与保存失败恢复'
 
 export function privateDirectory(path) {
   const absolute = resolve(path)
@@ -76,7 +77,7 @@ export class NotesRegression {
     throw new Error('可见正文与预期不一致，保留现场')
   }
   async record(name) {
-    if (!NOTE_STEPS.includes(name)) throw new Error('未知步骤')
+    if (![...NOTE_STEPS, SAME_ORIGIN_STEP].includes(name)) throw new Error('未知步骤')
     const screenshot = `${String(this.report.steps.length + 1).padStart(2, '0')}.png`
     write(resolve(this.outputDir, screenshot), await this.tab.screenshot({ fullPage: false }))
     this.report.steps.push({ name, status: 'passed', at: new Date().toISOString(), screenshot })
@@ -189,6 +190,29 @@ export class NotesRegression {
     await this.saved()
     clearFault(this.faultFile); await this.persisted(this.text('延迟保存'))
     return this.record(NOTE_STEPS[4])
+  }
+  /** 额外场景：传入独立打开、同源同账号的页签；不模拟浏览器存储。 */
+  async sameOriginDrafts(otherTab) {
+    const url = new URL(await otherTab.url())
+    if (otherTab.id === this.tab.id || url.origin !== this.report.baseURL || url.pathname !== '/notes')
+      throw new Error('需要独立打开的同源小记页签')
+    // 第三页签可能早于本轮创建；先刷新真实清单再定位精确 ID。
+    await otherTab.reload()
+    await this.ready(otherTab); await this.filterToRun(otherTab)
+    await this.open(); await this.open(otherTab)
+    const first = this.text('同源第一页独有 A'), second = this.text('同源第二页独有 B')
+    await this.editor().fill(first); await this.editor(otherTab).fill(second)
+    await this.tab.reload(); await this.open(); await this.checkText(this.editor(), first)
+    await otherTab.reload(); await this.open(otherTab); await this.checkText(this.editor(otherTab), second)
+    await this.save(); await this.persisted(first); await this.checkText(this.editor(otherTab), second)
+    this.fault('fail')
+    await this.note(otherTab).getByRole('button', { name: '保存修改', exact: true }).click()
+    await this.note(otherTab).getByRole('button', { name: '重试保存', exact: true }).waitFor({ state: 'visible' })
+    await otherTab.reload(); await this.open(otherTab); await this.checkText(this.editor(otherTab), second)
+    clearFault(this.faultFile); await this.save(otherTab); await this.persisted(second)
+    await this.tab.reload(); await this.note().waitFor({ state: 'visible' })
+    await this.checkText(this.note().getByRole('textbox'), second)
+    return this.record(SAME_ORIGIN_STEP)
   }
   /** 调用前通过浏览器 viewport 能力设置为 390px；调用后由调用者还原。 */
   async narrowFailure() {

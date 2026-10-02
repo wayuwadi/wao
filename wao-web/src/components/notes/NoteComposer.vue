@@ -7,6 +7,7 @@ import { apiCreateNoteTag, apiPatchDoc, fetchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { rebaseNoteDraft } from '@/utils/rebaseNoteDraft'
 import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
+import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import type { Doc, FileItem, RichDocContent } from '@/types'
@@ -26,7 +27,7 @@ type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: num
 let restored = false
 function readDraft(): Draft {
   try {
-    const saved = JSON.parse(localStorage.getItem(draftKey) || 'null') as Draft | null
+    const saved = JSON.parse(readNoteDraft(draftKey) || 'null') as Draft | null
     if (saved && /^[A-Za-z0-9_-]{1,32}$/.test(saved.id) && typeof saved.text === 'string') {
       restored = true
       return saved
@@ -223,14 +224,14 @@ watch([text, content, tags, generatedTitle], () => {
   if (resetting) return
   error.value = ''
   if (props.note && !dirty.value) {
-    try { localStorage.removeItem(draftKey) } catch { /* 服务器中已有相同内容。 */ }
+    try { removeNoteDraft(draftKey) } catch { /* 服务器中已有相同内容。 */ }
     status.value = '已保存，可继续编辑'
     draftError.value = false
     emit('draft-change', null)
     return
   }
   try {
-    localStorage.setItem(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev,
+    writeNoteDraft(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev,
       baseNote: baseNote ? { title: baseNote.title, tags: baseNote.tags, content: baseNote.content } : undefined,
       tags: tags.value, generatedTitle: generatedTitle.value } satisfies Draft))
     draftError.value = false
@@ -305,12 +306,13 @@ async function save() {
     }
     if (!savedId) throw new Error('正文为空，请先写点内容')
     try {
-      const latest = JSON.parse(localStorage.getItem(draftKey) || 'null') as Draft | null
+      const raw = readNoteDraft(draftKey)
+      const latest = JSON.parse(raw || 'null') as Draft | null
       // 页面切走又回来时，新组件可能已经继续输入，旧请求不能清掉较新的草稿。
       if (!latest || (latest.id === id.value && latest.text === submitted.text
         && JSON.stringify(latest.content) === JSON.stringify(submitted.content)
         && JSON.stringify(latest.tags ?? []) === JSON.stringify(submitted.tags)
-        && (latest.generatedTitle ?? '') === submitted.title)) localStorage.removeItem(draftKey)
+        && (latest.generatedTitle ?? '') === submitted.title)) removeNoteDraft(draftKey, raw)
     } catch { /* 服务端保存已成功。 */ }
     if (text.value !== submitted.text || JSON.stringify(tags.value) !== JSON.stringify(submitted.tags)
         || generatedTitle.value !== submitted.title) {

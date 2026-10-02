@@ -1,3 +1,4 @@
+import { readNoteDraft } from '@/utils/noteDraftStorage'
 import { defineComponent } from 'vue'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -131,9 +132,9 @@ describe('小记集中记录空间', () => {
     expect(add).toHaveBeenCalledOnce()
     expect(add.mock.calls[0]![5]).toEqual({ autoTitle: true, autoImage: true, autoPolish: true })
     expect(localStorage.getItem(`wao-note-auto-enrichment-v1:wg:${add.mock.calls[0]![2]}`)).toBeNull()
-    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
     await first.find('textarea').setValue('下一篇沿用默认 AI 能力')
-    const savedDraft = JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!)
+    const savedDraft = JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!)
     expect(savedDraft).not.toHaveProperty('autoTitle')
     expect(savedDraft).not.toHaveProperty('autoPolish')
     expect(savedDraft).not.toHaveProperty('autoImage')
@@ -228,6 +229,7 @@ describe('小记集中记录空间', () => {
     vi.mocked(apiCreateNoteTag).mockReset()
     vi.mocked(fetchNotePolishVersions).mockResolvedValue([])
     localStorage.clear()
+    sessionStorage.clear()
     setActivePinia(createPinia())
     useSessionStore().accept({ member: { id: 'wg', name: '娃哥', initial: '哥', color: '#4358d6', role: '成员' } } as never)
     const data = useDataStore()
@@ -331,7 +333,7 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.find('.tag-chip').text()).toContain('新分类')
     expect(wrapper.emitted('tag-created')).toEqual([['新分类']])
-    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).tags).toEqual(['新分类'])
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).tags).toEqual(['新分类'])
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正文保留')
     wrapper.unmount()
   })
@@ -505,14 +507,14 @@ describe('小记集中记录空间', () => {
     const wrapper = await view()
     await wrapper.find('input[type="search"]').setValue('找不到的词')
     await wrapper.find('textarea').setValue('即时显示的想法')
-    const original = JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).id
+    const original = JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).id
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
     expect((wrapper.find('.note-card textarea').element as HTMLTextAreaElement).value).toBe('即时显示的想法')
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
-    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
     await wrapper.find('textarea').setValue('第二条')
-    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).id).not.toBe(original)
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).id).not.toBe(original)
     wrapper.unmount()
   })
 
@@ -526,7 +528,7 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.classes()).toContain('fullscreen')
     expect(wrapper.find('[role="alert"]').text()).toContain('网关错误')
-    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toContain('不能丢')
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toContain('不能丢')
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
     expect(wrapper.classes()).not.toContain('fullscreen')
@@ -554,7 +556,7 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(apiPatchDoc).toHaveBeenCalledWith(note.id, expect.objectContaining({ expectedRev: 5 }))
     expect(second.find('.save-conflict-resolution').exists()).toBe(false)
-    expect(localStorage.getItem('wao-note-edit-v1:wg:edit-note')).toBeNull()
+    expect(readNoteDraft('wao-note-edit-v1:wg:edit-note')).toBeNull()
     await second.find('textarea').setValue('保存后再继续写')
     vi.mocked(apiPatchDoc).mockResolvedValueOnce({ ...note, blocks: [{ p: '保存后再继续写' }], rev: 7 })
     await second.find('.save-note').trigger('click')
@@ -563,6 +565,19 @@ describe('小记集中记录空间', () => {
       content: expect.objectContaining({ markdown: '保存后再继续写' }) }))
     expect(second.find('[role="alert"]').exists()).toBe(false)
     second.unmount()
+  })
+
+  it('另一页签覆盖旧共享键后，本页签收起重开仍恢复自己的输入', async () => {
+    const note = doc('same-origin', '已保存基线')
+    useDataStore().docs[note.id] = note
+    const first = composer(note)
+    await first.find('textarea').setValue('第一页独有输入 A')
+    // 兼容仍打开的旧客户端：它会写入之前共用的 localStorage 键。
+    localStorage.setItem('wao-note-edit-v1:wg:same-origin', JSON.stringify({ id: note.id, text: '另一页签输入 B' }))
+    first.unmount()
+    const restored = composer(note)
+    expect(restored.get<HTMLTextAreaElement>('textarea').element.value).toBe('第一页独有输入 A')
+    restored.unmount()
   })
 
   it('没有版本号的旧浏览器草稿可自动按最新版本保存，竞争写入自动重试', async () => {
@@ -660,7 +675,7 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(apiPatchDoc).toHaveBeenCalledTimes(3)
     expect(wrapper.get('[role="alert"]').text()).toContain('最新输入已保留')
-    expect(localStorage.getItem('wao-note-edit-v1:wg:busy-note')).toContain('最新续写正文')
+    expect(readNoteDraft('wao-note-edit-v1:wg:busy-note')).toContain('最新续写正文')
     expect(wrapper.find('.saved-preview').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -714,7 +729,7 @@ describe('小记集中记录空间', () => {
     expect(wrapper.find('.tiptap').attributes('contenteditable')).toBe('true')
     expect(wrapper.find('.tiptap').text()).toBe('')
     expect(wrapper.find('.save-note').attributes('disabled')).toBeDefined()
-    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
     expect(wrapper.emitted('saved')).toEqual([['real-editor']])
     wrapper.unmount()
   })
@@ -740,7 +755,7 @@ describe('小记集中记录空间', () => {
     }))
     expect(wrapper.find('.tiptap').text()).toBe(source)
     await wrapper.find('.polish-apply').trigger('click')
-    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).text).toContain('更加自然')
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).text).toContain('更加自然')
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()
     const rich = add.mock.calls[0]![3]!
@@ -769,7 +784,7 @@ describe('小记集中记录空间', () => {
     Array.from(menu.querySelectorAll('button')).find(button => button.textContent === '向下插入行')!.click()
     await flushPromises()
     expect(wrapper.findAll('tr')).toHaveLength(rows + 1)
-    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).content.document).toBeTruthy()
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).content.document).toBeTruthy()
     await wrapper.trigger('keydown', { key: 'Escape' })
     expect(wrapper.classes()).not.toContain('fullscreen')
     expect(wrapper.findAll('tr')).toHaveLength(rows + 1)
@@ -833,7 +848,7 @@ describe('小记集中记录空间', () => {
     expect(ui.modalTaskSeed?.draftKey).toContain(':wg:task-note:')
     expect(wrapper.classes()).not.toContain('fullscreen')
     expect(instance.editor.getJSON()).toEqual(before)
-    expect(saved || localStorage.getItem('wao-quick-note-draft-v1:wg')?.includes(source)).toBeTruthy()
+    expect(saved || readNoteDraft('wao-quick-note-draft-v1:wg')?.includes(source)).toBeTruthy()
     const key = ui.modalTaskSeed?.draftKey
     ui.closeModal()
     instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
@@ -882,7 +897,7 @@ describe('小记集中记录空间', () => {
     expect(first.find('textarea').element).toBe(editorElement)
     await first.trigger('keydown', { key: 'Escape' })
     expect(first.classes()).not.toContain('fullscreen')
-    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).tags).toEqual(['灵感'])
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).tags).toEqual(['灵感'])
     first.unmount()
     const second = composer()
     expect((second.find('textarea').element as HTMLTextAreaElement).value).toBe('全屏仍在的想法')
@@ -890,7 +905,7 @@ describe('小记集中记录空间', () => {
     await second.find('.save-note').trigger('click')
     await flushPromises()
     expect(add.mock.calls[0]![4]).toEqual(['灵感'])
-    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
     second.unmount()
   })
 
@@ -936,7 +951,7 @@ describe('小记集中记录空间', () => {
     expect(wrapper.get('.note-card .saved').text()).toBe('已保存')
     expect(wrapper.get<HTMLInputElement>('input[type="search"]').element.value).toBe('工作')
     expect(wrapper.get<HTMLTextAreaElement>('.writing-pane textarea').element.value).toBe('左侧草稿')
-    expect(localStorage.getItem('wao-note-edit-v1:wg:a')).toBeNull()
+    expect(readNoteDraft('wao-note-edit-v1:wg:a')).toBeNull()
     wrapper.unmount()
   })
 

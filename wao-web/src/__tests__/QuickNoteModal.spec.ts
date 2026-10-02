@@ -1,3 +1,4 @@
+import { readNoteDraft } from '@/utils/noteDraftStorage'
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -42,6 +43,7 @@ function login(id: string, name: string) {
 describe('新建小记弹窗', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     setActivePinia(createPinia())
     login('wg', '娃哥')
   })
@@ -50,7 +52,7 @@ describe('新建小记弹窗', () => {
     const first = await mountModal()
     await first.find('.editor-stub').setValue('刚想到的发布检查清单')
 
-    const stored = JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg') || '{}')
+    const stored = JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg') || '{}')
     expect(stored.text).toBe('刚想到的发布检查清单')
     expect(stored.id).toMatch(/^[a-f0-9]{32}$/)
     expect(first.text()).toContain('小记 / 娃哥')
@@ -61,6 +63,16 @@ describe('新建小记弹窗', () => {
       .toBe('刚想到的发布检查清单')
     expect(reopened.text()).toContain('草稿已保存')
     reopened.unmount()
+  })
+
+  it('页签草稿持久化失败时明确提示，保留内存输入供服务器保存', async () => {
+    const wrapper = await mountModal()
+    const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    await wrapper.find('.editor-stub').setValue('存储失败也不能丢的输入')
+    expect(wrapper.get('[role="alert"]').text()).toContain('浏览器草稿保存失败')
+    expect(wrapper.get<HTMLTextAreaElement>('.editor-stub').element.value).toBe('存储失败也不能丢的输入')
+    fail.mockRestore()
+    wrapper.unmount()
   })
 
   it('不同成员使用各自的草稿，不会互相看到正文', async () => {
@@ -74,7 +86,7 @@ describe('新建小记弹窗', () => {
 
     expect((second.find('.editor-stub').element as HTMLTextAreaElement).value).toBe('')
     expect(second.text()).toContain('小记 / 娃弟')
-    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toContain('娃哥的草稿')
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toContain('娃哥的草稿')
     second.unmount()
   })
 
@@ -87,7 +99,7 @@ describe('新建小记弹窗', () => {
       .mockResolvedValueOnce('saved-note')
     const wrapper = await mountModal()
     await wrapper.find('.editor-stub').setValue('绝不能丢的正文')
-    const stableId = JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg') || '{}').id
+    const stableId = JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg') || '{}').id
 
     await wrapper.find('.btn-primary').trigger('click')
     await flushPromises()
@@ -95,7 +107,7 @@ describe('新建小记弹窗', () => {
     expect(ui.modal).toBe('note')
     expect(wrapper.find('[role="alert"]').text()).toContain('未保存到服务器，草稿仍在')
     expect(wrapper.find('.btn-primary').text()).toContain('重试保存')
-    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toContain('绝不能丢的正文')
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toContain('绝不能丢的正文')
 
     await wrapper.find('.btn-primary').trigger('click')
     await flushPromises()
@@ -103,7 +115,7 @@ describe('新建小记弹窗', () => {
     expect(addNote).toHaveBeenNthCalledWith(1, '绝不能丢的正文', '', stableId)
     expect(addNote).toHaveBeenNthCalledWith(2, '绝不能丢的正文', '', stableId)
     expect(ui.modal).toBeNull()
-    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
     wrapper.unmount()
   })
 
@@ -156,7 +168,7 @@ describe('新建小记弹窗', () => {
     expect(wrapper.find('.mask').exists()).toBe(false)
     expect(wrapper.text()).toBe('弹窗已关闭')
     expect(router.currentRoute.value.query.doc).toBe('editor-lifecycle-note')
-    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
     wrapper.unmount()
   })
 })
