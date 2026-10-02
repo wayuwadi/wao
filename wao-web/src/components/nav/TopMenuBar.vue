@@ -313,8 +313,10 @@ function revealDragEdge(event: DragEvent) {
   cursor: default;
 }
 .top-menu-bar.empty-target .top-menu-list {
-  flex: 0 0 0;
-  width: 0;
+  flex: 0 0 24px;
+  width: 24px;
+  padding: 0;
+  overflow: visible;
 }
 .empty-target-indicator {
   display: grid;
