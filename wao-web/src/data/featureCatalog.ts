@@ -58,13 +58,6 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
     tone: 'rose',
   },
   {
-    id: 'pet-world',
-    category: 'life',
-    summary: '在高频工具之外，留一点轻松陪伴。',
-    description: '进入松风庭院查看和互动；动效会尊重设备能力和减少动效偏好。',
-    tone: 'mint',
-  },
-  {
     id: 'automation',
     category: 'system',
     summary: '让重复任务按计划运行并保留结果。',

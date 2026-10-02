@@ -32,7 +32,7 @@ public class BuiltinMenuRegistryService {
             "personal-principles", "crawler-capabilities", "account-resources", "infrastructure",
             "ledger", "english-learning", "vocabulary", "food", "weekly-report", "devices",
             "games", "data-center", "chatgpt", "appearance", "memory", "ai-sessions",
-            "updates", "action-plans", "workspaces", "decisions", "workday-rhythm");
+            "updates", "action-plans", "workspaces", "decisions", "workday-rhythm", "pet-world");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
             new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true, "TAB"),
             new BuiltinMenuConfigDto("notes", "小记", "ri-sticky-note-line", "ROOT", 15, true, "TAB"),
@@ -51,7 +51,6 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("dashboard", "使用统计", "ri-bar-chart-box-line", "TOOLS", 5, false, "TAB"),
             new BuiltinMenuConfigDto("automation", "自动化", "ri-flashlight-line", "TOOLS", 10, false, "TAB"),
             new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, false, "TAB"),
-            new BuiltinMenuConfigDto("pet-world", "松风庭院", "ri-landscape-line", "TOOLS", 31, false, "TAB"),
             new BuiltinMenuConfigDto("request-monitoring", "请求监控", "ri-pulse-line", "TOOLS", 40, false, "TAB"));
     private static final Map<String, BuiltinMenuConfigDto> BY_ID = DEFAULTS.stream()
             .collect(java.util.stream.Collectors.toUnmodifiableMap(BuiltinMenuConfigDto::id, item -> item));
@@ -93,15 +92,6 @@ public class BuiltinMenuRegistryService {
                         menu.openMode(), storedPlacements.getOrDefault(menu.id(), "MENU")))
                 .filter(menu -> menu == null || !RETIRED_IDS.contains(menu.id()))
                 .toList();
-        // 旧页面缺少新入口时沿用服务端定制，不能让旧页面保存覆盖新入口或整份菜单失败。
-        if (compatibleMenus != null) {
-            compatibleMenus = new ArrayList<>(compatibleMenus);
-            for (String id : List.of("pet-world")) {
-                if (compatibleMenus.stream().noneMatch(menu -> menu != null && id.equals(menu.id()))) {
-                    compatibleMenus.add(storedMenus.stream().filter(menu -> id.equals(menu.id())).findFirst().orElseThrow());
-                }
-            }
-        }
         BuiltinMenuRegistryDto registry = new BuiltinMenuRegistryDto(VERSION, canonicalize(compatibleMenus, true));
         try {
             settings.put(SettingService.BUILTIN_MENU_REGISTRY, json.writeValueAsString(registry));

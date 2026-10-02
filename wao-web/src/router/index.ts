@@ -310,12 +310,6 @@ const router = createRouter({
           meta: { module: 'automation', tabKind: 'module' },
         },
         {
-          path: 'pet-world',
-          name: 'pet-world',
-          component: () => import('@/views/PetWorldView.vue'),
-          meta: { module: 'pet-world', tabKind: 'module' },
-        },
-        {
           path: 'request-monitoring',
           name: 'request-monitoring',
           component: () => import('@/views/RequestMonitoringView.vue'),

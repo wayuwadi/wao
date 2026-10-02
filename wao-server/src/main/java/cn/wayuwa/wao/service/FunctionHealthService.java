@@ -29,7 +29,7 @@ public class FunctionHealthService {
             "personal-principles", "crawler-capabilities", "account-resources", "infrastructure",
             "ledger", "english-learning", "vocabulary", "food", "weekly-report", "devices",
             "games", "data-center", "chatgpt", "appearance", "memory", "ai-sessions",
-            "updates", "action-plans", "workspaces", "decisions", "workday-rhythm");
+            "updates", "action-plans", "workspaces", "decisions", "workday-rhythm", "pet-world");
     private static final List<String> FEATURES = List.of(
             "home", "navigation", "projects", "ideas", "todo", "calendar",
             "life-review", "knowledge", "skills", "skill-connections", "drawings", "files", "automation",
