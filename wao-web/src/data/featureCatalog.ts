@@ -51,13 +51,6 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
     tone: 'blue',
   },
   {
-    id: 'workday-rhythm',
-    category: 'planning',
-    summary: '安排今天、保持节奏，也为一天留下复盘。',
-    description: '围绕当天的重点、承诺和回顾组织工作，而不是堆积一张静态清单。',
-    tone: 'mint',
-  },
-  {
     id: 'calendar',
     category: 'life',
     summary: '查看重要日期、安排与经过授权的提醒。',

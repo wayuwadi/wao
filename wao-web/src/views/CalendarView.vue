@@ -28,7 +28,6 @@ import {
 } from '@/api/importantDates'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
-import CalendarDayPlan from '@/components/calendar/CalendarDayPlan.vue'
 import AttendancePanel from '@/components/calendar/AttendancePanel.vue'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import { useWeatherStore } from '@/stores/weather'
@@ -1148,7 +1147,6 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
             <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
           </div>
         </div>
-        <CalendarDayPlan v-if="viewMode === 'day' && calendarMemberId === session.currentUser.id" :date="selectedDate" :today="data.today" />
         <div v-if="missingHolidayYears.length" class="holiday-source-warning">
           <i class="ri-information-line"></i>
           <span>{{ missingHolidayYears.map((year) => `${year.year} 年`).join('、') }}法定放假调休安排尚未收录；当前只显示可由历法确定的节日本日，不推测调休。</span>
