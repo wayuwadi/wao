@@ -541,7 +541,8 @@ public class AiAssistantService {
                 requestedCapabilityId, purpose, model, false);
     }
 
-    private AiAssistantRunEntity enqueueReadOnlyJob(
+    /** 保留统一提示词构造；测试类路径可替换执行出口，生产仍校验获准的 API 账号。 */
+    protected AiAssistantRunEntity enqueueReadOnlyJob(
             String memberId, String instruction, String activeMessage, boolean durableNonBlocking,
             String requestedCapabilityId, DeepSeekPurpose purpose, String model, boolean allowConcurrent) {
         // 非阻塞业务不以某一瞬间的 Runner 在线状态决定是否入队。

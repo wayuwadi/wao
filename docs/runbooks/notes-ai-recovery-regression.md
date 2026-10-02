@@ -2,7 +2,7 @@
 
 当前链路：`NoteComposer` 保存选择 → `NoteAiWorkflowService` → `TextPolishJobService` 的 `NOTE_BODY` → `AiAssistantService` 的 `provider_queued/provider_running` → 获准的服务端 API → 来源摘要及文档版本条件回写。
 
-ADR-303/304 已下线项目 AI Run 和 Runner。小记正文保留服务端 API 润色；不再检查或恢复旧 Runner，不能将历史助手协议测试通过当作当前链路可用。
+ADR-303/304 已下线项目 AI Run 和 Runner。小记正文保留服务端 API 润色；不再检查或恢复旧 Runner，不能将历史助手协议测试通过当作当前链路可用。没有服务端 AI 账号时，可按[本机 Codex 真实验收](notes-local-codex-acceptance.md)使用现有 ChatGPT 登录验证本机小记；须分别报告本机适配器与生产 Provider 的边界。
 
 ## 一条命令
 
