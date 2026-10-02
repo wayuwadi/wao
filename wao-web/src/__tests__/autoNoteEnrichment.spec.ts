@@ -257,6 +257,33 @@ describe('小记保存后自动生成', () => {
     expect(noteEnrichmentProgress.n1?.tags).toBe('done')
   })
 
+  it.each([
+    ['标签：请求内容已改变，请创建新的润色任务', '0123456789abcdef0123456789abcdef'],
+    ['标签：网络连接中断，请重试', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
+  ])('版本已被其他阶段推进后重试标签：%s', async (error, expectedRequestId) => {
+    const docId = 'n-tag-request-retry'
+    delete noteEnrichmentProgress[docId]
+    localStorage.setItem(`wao-note-auto-enrichment-v1:me:${docId}`, JSON.stringify({
+      memberId: 'me', docId, rev: 2, titleRequestId: 'old-title', titleDone: true,
+      imageDone: true, polishDone: true, tagsDone: false, tagsEnabled: true,
+      allowedTags: ['计划'], tagRequestId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', error,
+    }))
+    vi.mocked(fetchDoc).mockResolvedValue({ ...doc(2), tags: ['原有标签'] } as never)
+    vi.mocked(fetchNoteTags).mockResolvedValue(['计划', '原有标签'])
+    vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj-retry', status: 'SUCCEEDED', message: '', polished: '计划' })
+    vi.mocked(apiPatchDoc).mockResolvedValue(doc(3) as never)
+
+    await retryAutoNoteEnrichment('me', docId)
+    await flushPromises()
+
+    expect(waitForPolish).toHaveBeenCalledTimes(1)
+    expect(waitForPolish).toHaveBeenCalledWith(content.markdown, 'NOTE_TAGS', expect.objectContaining({ requestId: expectedRequestId }))
+    expect(apiPatchDoc).toHaveBeenCalledWith(docId, { tags: ['原有标签', '计划'], expectedRev: 2 })
+    expect(startArticleImage).not.toHaveBeenCalled()
+    expect(noteEnrichmentProgress[docId]?.tags).toBe('done')
+    expect(localStorage.getItem(`wao-note-auto-enrichment-v1:me:${docId}`)).toBeNull()
+  })
+
   it('关闭自动标题时仍可单独润色，刷新后标题保持已跳过', async () => {
     vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
     vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj1', status: 'SUCCEEDED', message: '', polished: '润色后正文' })

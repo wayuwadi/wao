@@ -534,7 +534,10 @@ export async function retryAutoNoteEnrichment(memberId: string, docId: string) {
     return
   }
   if (job.titleEnabled !== false && !job.titleDone && (job.titleTerminalFailed || job.error?.includes('已被修改'))) job.titleRequestId = newPolishRequestId()
-  if (job.tagsEnabled === true && !job.tagsDone && (job.tagTerminalFailed || job.error?.includes('小记已被修改'))) job.tagRequestId = newPolishRequestId()
+  // 其他阶段可能已推进 job.rev；服务端明确拒绝了旧输入时仍需换号。
+  // 仅处理标签的明确拒绝，网络中断继续查询原任务，完成的其他阶段不重做。
+  if (job.tagsEnabled === true && !job.tagsDone && (job.tagTerminalFailed || job.error?.includes('小记已被修改')
+    || job.error?.includes('标签：请求内容已改变'))) job.tagRequestId = newPolishRequestId()
   if (!job.polishDone && (job.polishTerminalFailed || job.error?.includes('已变化'))) job.polishRequestId = newPolishRequestId()
   if (job.imageEnabled !== false && !job.imageDone && job.error?.includes('FAILED')) { job.imageJobId = undefined; job.imageRequestId = undefined }
   job.error = undefined
