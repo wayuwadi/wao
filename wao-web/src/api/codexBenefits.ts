@@ -5,6 +5,16 @@ export interface CodexBenefits {
   proExpiresOn: string | null
 }
 
+/** 首页摘要只展示已保存值，编辑草稿仍由权益面板持有。 */
+export interface CodexBenefitsSnapshot {
+  saved: CodexBenefits
+  loading: boolean
+  loaded: boolean
+  error: string
+  daysLeft: number | null
+  expiryLabel: string
+}
+
 const KEY = 'codex-benefits-v1'
 export const emptyCodexBenefits = (): CodexBenefits => ({ resetCards: null, proExpiresOn: null })
 

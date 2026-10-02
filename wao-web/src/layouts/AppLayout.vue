@@ -354,11 +354,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
         <div class="quick-actions" :class="{ relocated: desktopToolbar }">
           <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
-          <button class="plus" data-desktop-action="new-task" @click="ui.openNewTask()">
-            <i class="ri-checkbox-circle-line"></i>新建任务
+          <button class="plus" data-desktop-action="new-task" aria-label="新建任务" title="新建任务" @click="ui.openNewTask()">
+            <i class="ri-checkbox-circle-line" aria-hidden="true"></i><span class="action-label">新建任务</span>
           </button>
-          <button class="plus ghost" data-desktop-action="new-note" @click="newNote">
-            <i class="ri-sticky-note-line"></i>新建小记
+          <button class="plus ghost" data-desktop-action="new-note" aria-label="新建小记" title="新建小记" @click="newNote">
+            <i class="ri-sticky-note-line" aria-hidden="true"></i><span class="action-label">新建小记</span>
           </button>
 
           <button
@@ -523,7 +523,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
 }
 .quick-actions {
-  display: contents;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+}
+.quick-actions > * {
+  flex-shrink: 0;
 }
 .quick-actions.relocated {
   display: none;
@@ -535,6 +542,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   background: var(--wao-bg-page);
 }
 .main {
+  container: app-main / inline-size;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -580,7 +588,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
 }
 .header {
-  overflow-x: auto;
   height: var(--wao-header-h);
   background: var(--wao-bg-card);
   border-bottom: 1px solid var(--wao-line);
@@ -593,7 +600,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .header :deep(.tabbar-shell) {
   flex: 1 1 0;
   width: auto;
-  min-width: min(300px, 100%);
+  min-width: 160px;
   height: 38px;
   background: transparent;
   border: 0;
@@ -637,7 +644,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.header > :not(.top-menu-bar) {
+.header > :not(.top-menu-bar):not(.tabbar-shell) {
   flex-shrink: 0;
 }
 .crumb-b {
@@ -645,6 +652,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .plus {
+  white-space: nowrap;
+  flex: none;
   height: 32px;
   padding: 0 12px;
   background: var(--wao-primary);
@@ -775,20 +784,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 
 @media (max-width: 760px) {
-  .header {
-    height: auto;
-    min-height: var(--wao-header-h);
-    flex-wrap: wrap;
-    overflow-x: auto;
-    padding: 0 8px;
-  }
-  .header :deep(.tabbar-shell) {
-    order: 10;
-    flex: 0 0 100%;
-    width: 100%;
-    height: var(--wao-tabbar-h);
-    margin: 0 -8px;
-  }
   .header :deep(.tabbar) {
     padding: 0 2px;
   }
@@ -824,17 +819,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     height: 100%;
     min-width: 0;
     padding-bottom: 0;
-  }
-  .header {
-    height: var(--wao-header-h);
-    gap: 2px;
-    padding: 0 4px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-  }
-  .header::-webkit-scrollbar {
-    display: none;
   }
   .crumb-sep,
   .crumb-b {
@@ -885,4 +869,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 <style scoped>
 .rest-link { flex:none; padding:8px; color:var(--wao-text-weak); font-size:12px; white-space:nowrap; }
+
+/* 侧栏也占据空间：依据正文区宽度换行，而非仅看浏览器视口。 */
+@container app-main (max-width: 900px) {
+  .header { height: auto; min-height: var(--wao-header-h); flex-wrap: wrap; gap: 6px; padding: 6px 12px 0; }
+  .header :deep(.tabbar-shell) { order: 10; flex: 0 0 100%; width: 100%; min-width: 0; height: 38px; margin: 0; border-top: 1px solid var(--wao-line); border-radius: 0; }
+  .header :deep(.top-menu-bar.has-items) { flex: 1 1 120px; min-width: 0; }
+}
+@container app-main (max-width: 560px) {
+  .header { gap: 4px; padding: 4px 6px 0; }
+  .quick-actions { gap: 4px; }
+  .plus, .plus.ghost, .fold, .bell { width: 32px; min-width: 32px; height: 32px; padding: 0; flex: 0 0 32px; justify-content: center; }
+  .plus .action-label { display: none; }
+  .plus i, .fold i, .bell i { font-size: 16px; }
+  .header :deep(.top-menu-bar.empty-target) { flex-basis: 26px; min-width: 26px; }
+  .header :deep(.top-menu-bar.has-items) { flex-basis: 100px; }
+}
 </style>

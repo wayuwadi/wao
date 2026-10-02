@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { benefitDaysLeft, emptyCodexBenefits, fetchCodexBenefits, saveCodexBenefits, validBenefitDate } from '@/api/codexBenefits'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
+import { benefitDaysLeft, emptyCodexBenefits, fetchCodexBenefits, saveCodexBenefits, validBenefitDate, type CodexBenefitsSnapshot } from '@/api/codexBenefits'
 import type { CodexQuotaAccount } from '@/api/ai'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { useSessionStore } from '@/stores/session'
 
-const emit = defineEmits<{ attention: [message: string]; summary: [message: string] }>()
+const emit = defineEmits<{ attention: [message: string]; summary: [message: string]; snapshot: [value: CodexBenefitsSnapshot] }>()
 const session = useSessionStore()
-const props = defineProps<{ compact?: boolean; accounts?: CodexQuotaAccount[] }>()
+const props = defineProps<{ compact?: boolean; neutral?: boolean; accounts?: CodexQuotaAccount[] }>()
 const officialAccounts = computed(() => (props.accounts ?? []).filter(account => account.resetCredits))
 const saved = ref(emptyCodexBenefits())
 const loading = ref(true)
@@ -26,6 +26,10 @@ const daysLeft = computed(() => saved.value.proExpiresOn ? benefitDaysLeft(saved
 const expiryLabel = computed(() => daysLeft.value === null ? '到期日未设置'
   : daysLeft.value < 0 ? `已到期 ${-daysLeft.value} 天`
     : daysLeft.value === 0 ? '今天到期' : `剩 ${daysLeft.value} 天`)
+watchEffect(() => emit('snapshot', {
+  saved: { ...saved.value }, loading: loading.value, loaded: loaded.value,
+  error: error.value, daysLeft: daysLeft.value, expiryLabel: expiryLabel.value,
+}))
 watch(() => {
   const cards = officialAccounts.value.length
     ? officialAccounts.value.map(account => `${account.resetCredits!.availableCount} 张${account.fresh ? '' : '（历史快照）'}`).join(' / ')
@@ -131,7 +135,7 @@ onBeforeUnmount(() => refreshPoller.stop())
 </script>
 
 <template>
-  <section class="codex-benefits" :class="{ compact }" aria-label="我的 Codex 权益">
+  <section class="codex-benefits" :class="{ compact, neutral }" aria-label="我的 Codex 权益">
     <header><span>我的 Codex 权益</span><button type="button" :disabled="!loaded || saving" aria-label="编辑 Codex 权益" @click="openEditor"><i class="ri-edit-line"></i>编辑</button></header>
     <p v-if="loading" role="status">正在读取权益…</p>
     <template v-else-if="loaded">
@@ -187,5 +191,10 @@ footer { justify-content: flex-end; font-size: 11px; }
 .compact .benefit-editor, .compact .benefit-error, .compact > p:not(.benefit-countdown) { grid-column: 1 / -1; }
 .compact .benefit-editor { order: 4; }
 .compact > [role] { order: 5; }
+.neutral { color: var(--wao-text); border-color: var(--wao-line); }
+.neutral header, .neutral .benefit-line span, .neutral p { color: var(--wao-text-2); }
+.neutral button { color: var(--wao-primary-text); border-color: var(--wao-line-control); background: var(--wao-bg-card); }
+.neutral button:hover:not(:disabled) { background: var(--wao-primary-soft); }
+.neutral .benefit-error, .neutral .benefit-countdown.soon { color: var(--wao-warning-text, var(--wao-primary-text)); }
 @media (max-width: 520px) { .compact { column-gap: 12px; } .compact .benefit-line b { font-size: 17px; } .compact .benefit-line:nth-of-type(2) b { font-size: 12px; } }
 </style>

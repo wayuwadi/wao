@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
-import HomeTianrenGlance from '@/components/home/HomeTianrenGlance.vue'
+import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
 import { useDataStore } from '@/stores/data'
 const data = useDataStore()
 </script>
@@ -10,7 +10,7 @@ const data = useDataStore()
   <main class="home">
     <section class="home-rest-welcome">
       <header class="home-day">
-        <HomeTianrenGlance />
+        <HomeOverviewCard />
         <WeatherPanel surface="calendar" :date="data.today" toolbar glance />
       </header>
       <div class="home-rest-copy">
