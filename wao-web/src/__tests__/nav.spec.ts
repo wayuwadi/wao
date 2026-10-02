@@ -10,11 +10,18 @@ import {
   resolveDockItems,
   tabFromRoute,
 } from '@/config/nav'
+import { matchesFunction } from '@/config/navigationCatalog'
 import router from '@/router'
 import type { ModuleId } from '@/types'
 import type { RouteLocationNormalized } from 'vue-router'
 
 describe('侧边栏导航配置', () => {
+  it('项目目录不宣传已下线的自动执行能力', () => {
+    expect(matchesFunction('projects', '项目', 'AI Run')).toBe(false)
+    expect(matchesFunction('projects', '项目', 'AI 工作流')).toBe(false)
+    expect(matchesFunction('projects', '项目', '任务')).toBe(true)
+  })
+
   it('知识库页签保留所选文档，切回后继续编辑同一篇', () => {
     expect(
       tabFromRoute(router.resolve('/kb/kb-notes?doc=d1') as RouteLocationNormalized)?.path,

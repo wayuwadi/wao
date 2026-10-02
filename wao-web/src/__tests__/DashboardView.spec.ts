@@ -276,7 +276,8 @@ describe('DashboardView AI 用量面板', () => {
     expect(wrapper.html().indexOf('insight-card')).toBeLessThan(wrapper.html().indexOf('chart-row quota-row'))
     await wrapper.get('.guidance-actions button').trigger('click'); await flushPromises()
     expect(wrapper.vm.$router.currentRoute.value.path).toBe('/')
-    expect(wrapper.vm.$router.currentRoute.value.query.console).toBe('runs')
+    expect(wrapper.vm.$router.currentRoute.value.query.console).toBeUndefined()
+    expect(wrapper.text()).not.toContain('查看 AI 运行')
     wrapper.unmount()
   })
 

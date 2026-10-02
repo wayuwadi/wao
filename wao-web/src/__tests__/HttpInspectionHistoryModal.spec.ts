@@ -82,7 +82,7 @@ describe('HttpInspectionHistoryModal', () => {
     expect(wrapper.findAll('.run-list > button')).toHaveLength(1)
   })
 
-  it('展示真实汇总统计并可点开关联 AI Run 的详情和用量', async () => {
+  it('保留真实汇总和触发记录，不再读取下线后的执行详情', async () => {
     vi.mocked(fetchAutomationJob).mockResolvedValue(job([
       { id: 'r1', time: '今天 06:30', executor: '定时任务',
         result: '成功 · 已创建 AI Run ar1', aiRunId: 'ar1', durationMs: 1200 },
@@ -115,9 +115,9 @@ describe('HttpInspectionHistoryModal', () => {
     await wrapper.find('.run-list > button').trigger('click')
     await flushPromises()
 
-    expect(fetchAiRun).toHaveBeenCalledWith('ar1')
+    expect(fetchAiRun).not.toHaveBeenCalled()
     expect(wrapper.find('.run-detail').text()).toContain('ar1')
-    expect(wrapper.find('.ai-run-detail').text()).toContain('完成 2 个接口治理')
-    expect(wrapper.find('.ai-run-detail').text()).toContain('150')
+    expect(wrapper.find('.ai-run-detail').exists()).toBe(false)
+    expect(wrapper.text()).toContain('执行功能已下线')
   })
 })

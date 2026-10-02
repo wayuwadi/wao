@@ -24,8 +24,8 @@ export interface NavigationCatalogSection {
 const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   {
     id: 'projects',
-    description: '管理项目、任务、成员和 AI 工作流，查看执行结果。',
-    keywords: ['任务', '团队', 'AI任务', 'AI 任务', 'AI Run', '执行历史'],
+    description: '管理项目、任务和成员，记录进展与验收结果。',
+    keywords: ['任务', '团队', '进展', '验收'],
   },
   {
     id: 'changelog',
