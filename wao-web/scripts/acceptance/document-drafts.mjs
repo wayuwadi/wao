@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync, realpathSync, renameSync, rmSync } from 'node:fs'
-import { resolve, relative, isAbsolute, dirname } from 'node:path'
+import { resolve, relative, isAbsolute, dirname, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -30,7 +30,7 @@ function outsideRepository(path) {
   mkdirSync(absolute, { recursive: true, mode: 0o700 })
   const actual = realpathSync(absolute)
   const rel = relative(repository, actual)
-  if (!rel || (!(rel === '..' || rel.startsWith('../')) && !isAbsolute(rel))) throw new Error('验收产物必须保存在仓库外')
+  if (!rel || (!(rel === '..' || rel.startsWith(`..${sep}`)) && !isAbsolute(rel))) throw new Error('验收产物必须保存在仓库外')
   return actual
 }
 
