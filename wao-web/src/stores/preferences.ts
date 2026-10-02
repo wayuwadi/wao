@@ -7,20 +7,9 @@ export type Celebration = '细腻纸屑' | '关闭'
 export type ControlStyle = 'system' | 'minimal' | 'detailed'
 const KEYS = { weekStart: 'week-start', celebration: 'celebration' } as const
 const DEFAULT_PROJECT_KEY = 'default-project'
-const MUSIC_PLAYER_SETTINGS_KEY = 'music-player-settings-v1'
 const NOTE_FULLSCREEN_REMINDER_KEY = 'note-fullscreen-reminder-v1'
 const NOTE_AI_DEFAULTS_KEY = 'note-ai-defaults-v1'
 const CONTROL_STYLE_KEY = 'control-style-v1'
-
-export interface MusicPlayerSettings {
-  defaultOpen: boolean
-  launcherVisible: boolean
-}
-
-const DEFAULT_MUSIC_PLAYER_SETTINGS: MusicPlayerSettings = {
-  defaultOpen: false,
-  launcherVisible: true,
-}
 
 export interface NoteFullscreenReminderSettings {
   enabled: boolean
@@ -77,18 +66,6 @@ function parseNoteAiDefaults(value: string): NoteAiDefaults {
   }
 }
 
-function parseMusicPlayerSettings(value: string): MusicPlayerSettings {
-  try {
-    const parsed = JSON.parse(value) as Partial<MusicPlayerSettings>
-    return {
-      defaultOpen: typeof parsed.defaultOpen === 'boolean' ? parsed.defaultOpen : false,
-      launcherVisible: typeof parsed.launcherVisible === 'boolean' ? parsed.launcherVisible : true,
-    }
-  } catch {
-    return { ...DEFAULT_MUSIC_PLAYER_SETTINGS }
-  }
-}
-
 /** 登录成员的界面偏好：服务端存储，读取后立即作用到页面。 */
 export const usePreferenceStore = defineStore('preferences', () => {
   const weekStart = ref<WeekStart>('周一')
@@ -97,8 +74,6 @@ export const usePreferenceStore = defineStore('preferences', () => {
   const controlStyle = ref<ControlStyle>('system')
   const effectiveControlStyle = computed(() => controlStyle.value === 'detailed' ? 'detailed' : 'minimal')
   const compactControls = computed(() => effectiveControlStyle.value === 'minimal')
-  const musicPlayerDefaultOpen = ref(DEFAULT_MUSIC_PLAYER_SETTINGS.defaultOpen)
-  const musicPlayerLauncherVisible = ref(DEFAULT_MUSIC_PLAYER_SETTINGS.launcherVisible)
   const noteFullscreenReminder = ref<NoteFullscreenReminderSettings>({ ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS })
   const noteAiDefaults = ref<NoteAiDefaults>({ ...DEFAULT_NOTE_AI_DEFAULTS })
   const memberId = ref('')
@@ -115,8 +90,6 @@ export const usePreferenceStore = defineStore('preferences', () => {
     celebration.value = '细腻纸屑'
     defaultProject.value = ''
     controlStyle.value = 'system'
-    musicPlayerDefaultOpen.value = DEFAULT_MUSIC_PLAYER_SETTINGS.defaultOpen
-    musicPlayerLauncherVisible.value = DEFAULT_MUSIC_PLAYER_SETTINGS.launcherVisible
     noteFullscreenReminder.value = { ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS }
     noteAiDefaults.value = { ...DEFAULT_NOTE_AI_DEFAULTS }
     loaded.value = false
@@ -129,11 +102,10 @@ export const usePreferenceStore = defineStore('preferences', () => {
     loading.value = true
     loadError.value = ''
     try {
-      const [savedWeekStart, savedCelebration, savedDefaultProject, savedMusicPlayerSettings, savedControlStyle, savedNoteFullscreenReminder, savedNoteAiDefaults] = await Promise.all([
+      const [savedWeekStart, savedCelebration, savedDefaultProject, savedControlStyle, savedNoteFullscreenReminder, savedNoteAiDefaults] = await Promise.all([
         fetchPreference(KEYS.weekStart),
         fetchPreference(KEYS.celebration),
         fetchPreference(DEFAULT_PROJECT_KEY),
-        fetchPreference(MUSIC_PLAYER_SETTINGS_KEY),
         fetchPreference(CONTROL_STYLE_KEY),
         fetchPreference(NOTE_FULLSCREEN_REMINDER_KEY),
         fetchPreference(NOTE_AI_DEFAULTS_KEY),
@@ -143,9 +115,6 @@ export const usePreferenceStore = defineStore('preferences', () => {
       celebration.value = valid(savedCelebration, ['细腻纸屑', '关闭'], '细腻纸屑')
       defaultProject.value = savedDefaultProject
       controlStyle.value = valid(savedControlStyle, ['system', 'minimal', 'detailed'], 'system')
-      const musicPlayerSettings = parseMusicPlayerSettings(savedMusicPlayerSettings)
-      musicPlayerDefaultOpen.value = musicPlayerSettings.defaultOpen
-      musicPlayerLauncherVisible.value = musicPlayerSettings.launcherVisible
       noteFullscreenReminder.value = parseNoteFullscreenReminderSettings(savedNoteFullscreenReminder)
       noteAiDefaults.value = parseNoteAiDefaults(savedNoteAiDefaults)
     } catch (error) {
@@ -175,12 +144,6 @@ export const usePreferenceStore = defineStore('preferences', () => {
     controlStyle.value = value
     loadError.value = ''
   }
-  async function setMusicPlayerSettings(settings: MusicPlayerSettings) {
-    await savePreference(MUSIC_PLAYER_SETTINGS_KEY, JSON.stringify(settings))
-    musicPlayerDefaultOpen.value = settings.defaultOpen
-    musicPlayerLauncherVisible.value = settings.launcherVisible
-    loadError.value = ''
-  }
   async function setNoteFullscreenReminder(settings: NoteFullscreenReminderSettings) {
     const normalized: NoteFullscreenReminderSettings = {
       enabled: settings.enabled,
@@ -204,9 +167,8 @@ export const usePreferenceStore = defineStore('preferences', () => {
   }
   return {
     weekStart, celebration, defaultProject, controlStyle, effectiveControlStyle, compactControls,
-    musicPlayerDefaultOpen, musicPlayerLauncherVisible,
     noteFullscreenReminder, noteAiDefaults,
     loaded, loading, loadError,
-    prepareForMember, load, setWeekStart, setCelebration, setDefaultProject, setControlStyle, setMusicPlayerSettings, setNoteFullscreenReminder, setNoteAiDefaults,
+    prepareForMember, load, setWeekStart, setCelebration, setDefaultProject, setControlStyle, setNoteFullscreenReminder, setNoteAiDefaults,
   }
 })

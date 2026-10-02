@@ -2,7 +2,6 @@ package cn.wayuwa.wao.common;
 
 import cn.wayuwa.wao.auth.FeishuLoginException;
 import cn.wayuwa.wao.feishu.FeishuApiException;
-import cn.wayuwa.wao.service.NeteaseMusicApiException;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,13 +103,6 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleFeishuApi(FeishuApiException exception) {
         log.warn("Feishu open API call failed: {}", exception.getMessage());
         return ApiResponse.fail(50203, exception.getMessage());
-    }
-
-    @ExceptionHandler(NeteaseMusicApiException.class)
-    @ResponseStatus(HttpStatus.BAD_GATEWAY)
-    public ApiResponse<Void> handleNeteaseMusicApi(NeteaseMusicApiException exception) {
-        log.warn("NetEase Music open API call failed: code={}, message={}", exception.code(), exception.getMessage());
-        return ApiResponse.fail(50204, exception.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

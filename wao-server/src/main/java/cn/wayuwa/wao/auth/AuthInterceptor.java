@@ -42,8 +42,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || path.equals("/api/codex-archive/status") || path.equals("/api/codex-archive/batches")
                 || path.startsWith("/api/public/") || path.equals("/api/mcp")
                 || path.equals("/api/mcp/workspace")
-                || path.startsWith("/api/ai/runner/") || path.equals("/api/feishu/events")
-                || path.equals("/api/music/netease/callback")) return true;
+                || path.startsWith("/api/ai/runner/") || path.equals("/api/feishu/events")) return true;
         // 下载确认页要在未登录状态下拿到文件名、出题并兑换票据；下载接口自身再校验票据或会话。
         if ("POST".equals(request.getMethod())
                 && (path.matches("/api/files/[^/]+/challenge") || path.matches("/api/files/[^/]+/ticket"))) return true;
