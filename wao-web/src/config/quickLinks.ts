@@ -27,15 +27,6 @@ export const GITHUB_REPOS: QuickLink[] = [
     openMode: 'NEW_PAGE',
     keywords: ['github', 'cangku', 'repo', 'wao'],
   },
-  {
-    id: 'gh-wao-agent',
-    label: 'WAO Agent 仓库',
-    subtitle: 'wayuwacn/wao-agent',
-    icon: 'ri-git-repository-line',
-    url: 'https://github.com/wayuwacn/wao-agent',
-    openMode: 'NEW_PAGE',
-    keywords: ['github', 'agent', 'cangku', 'repo'],
-  },
 ]
 
 /** 运维 / 基础设施快捷入口。 */

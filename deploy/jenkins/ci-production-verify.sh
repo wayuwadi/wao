@@ -37,10 +37,7 @@ notification_policy="$(curl --fail --silent --show-error --retry 6 --retry-delay
 printf '%s' "$notification_policy" \
   | jq -e '.code == 0 and (.data.allowed | type == "boolean") and (.data.reason | type == "string")' >/dev/null
 
-agent_health="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/api/agent/health)"
-printf '%s' "$agent_health" | grep -q '"status":"UP"'
-require_public_content https://wao.wayuwa.cn/agent/ 'id="app"'
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://wao.wayuwa.cn/agent/)" = 410
 amer_demo="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/amer_demo_1/)"
 printf '%s' "$amer_demo" | grep -q '<title>IT 安全风险管理 Demo</title>'

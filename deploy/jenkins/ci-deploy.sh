@@ -185,12 +185,6 @@ stage_cloud_static() {
     deploy/scripts/publish-static-routing.py wao-cloud:/tmp/ || return
   retry_remote '云端静态制品校验' ssh -o ConnectTimeout=15 wao-cloud \
     "python3 /tmp/static-release.py install /tmp/wao-static.tgz /var/www/wao/releases '$WAO_GIT_SHA'" || return
-  retry_remote '云端 Agent 静态制品' ssh -o ConnectTimeout=15 wao-cloud '
-    set -eu
-    install -d /tmp/wao-agent-dist
-    find /tmp/wao-agent-dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-  ' || return
-  retry_remote '云端 Agent 静态制品' scp -o ConnectTimeout=15 -r agent-web/dist/. wao-cloud:/tmp/wao-agent-dist/ || return
   retry_remote '云端 Nginx 配置' scp -o ConnectTimeout=15 \
     deploy/nginx/wao.wayuwa.cn.conf.template deploy/nginx/jms.wayuwa.cn.conf \
     deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
@@ -252,13 +246,8 @@ activate_cloud() {
       ! -name release-manifest.json -exec cp -a -- {} /var/www/wao/dist/ \\;
     install -m 0644 \"\$release_dir/index.html\" /var/www/wao/dist/.index.html.next
     mv -f /var/www/wao/dist/.index.html.next /var/www/wao/dist/index.html
-    install -d /var/www/wao-agent/dist
-    find /var/www/wao-agent/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-    cp -a /tmp/wao-agent-dist/. /var/www/wao-agent/dist/
     systemctl reload nginx
     rm -f /tmp/publish-static-routing.py /tmp/static-release.py /tmp/wao-static.tgz
-    find /tmp/wao-agent-dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-    rmdir /tmp/wao-agent-dist 2>/dev/null || true
   "
 }
 

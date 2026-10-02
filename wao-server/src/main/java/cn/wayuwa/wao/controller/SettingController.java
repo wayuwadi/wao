@@ -135,17 +135,6 @@ public class SettingController {
         return ApiResponse.ok(siteInfo(settings));
     }
 
-    @GetMapping("/navigation/media-agent")
-    public ApiResponse<MediaAgentMenuConfigDto> mediaAgentMenu() {
-        return ApiResponse.ok(externalApps.getLegacyMediaAgentMenu());
-    }
-
-    @PutMapping("/navigation/media-agent")
-    public ApiResponse<MediaAgentMenuConfigDto> saveMediaAgentMenu(
-            @Valid @RequestBody SaveMediaAgentMenuConfigRequest request) {
-        return ApiResponse.ok(externalApps.saveLegacyMediaAgentMenu(request));
-    }
-
     @GetMapping("/navigation/external-apps")
     public ApiResponse<ExternalAppRegistryDto> externalAppRegistry() {
         return ApiResponse.ok(externalApps.getRegistry());

@@ -393,27 +393,11 @@ server {
         add_header X-Content-Type-Options nosniff always;
     }
 
-    location = /agent {
-        return 301 /agent/;
-    }
-
-    # Agent 与 WAO 同仓发布，但静态目录继续隔离，便于独立加载和故障隔离。
-    location /agent/ {
-        alias /var/www/wao-agent/dist/;
-        try_files $uri $uri/ /agent/index.html;
-    }
-
-    location /agent/assets/ {
-        alias /var/www/wao-agent/dist/assets/;
-        try_files $uri =404;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    location = /agent/index.html {
-        alias /var/www/wao-agent/dist/index.html;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-    }
+    # WAO Agent 已退役，历史静态地址与专属 API 明确返回 410。
+    location = /agent { return 410; }
+    location ^~ /agent/ { return 410; }
+    location = /api/agent { return 410; }
+    location ^~ /api/agent/ { return 410; }
 
     # Amer 风险管理演示是随主站制品发布的独立静态页面；精确前缀避免落入 WAO SPA。
     location = /amer_demo_1 {
@@ -526,49 +510,9 @@ server {
     }
 
     # 内容素材的上传、列表和预览固定到 Linux 主节点，确保编辑器读取上传时使用同一媒体卷。
-    location ^~ /api/agent/publish/media {
-        proxy_pass https://wao_ai_gateway;
-        proxy_http_version 1.1;
-        proxy_ssl_verify off;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 330s;
-        proxy_send_timeout 330s;
-        proxy_next_upstream off;
-        client_max_body_size 320m;
-        proxy_request_buffering off;
-        add_header X-Content-Type-Options nosniff always;
-        add_header Referrer-Policy strict-origin-when-cross-origin always;
-        add_header X-Frame-Options SAMEORIGIN always;
-        add_header X-WAO-API-Route linux-master-agent-media always;
-    }
 
     # 视频工作流的 WebM 上传、回放和元数据固定到 Linux 主节点，确保同一媒体卷可见。
     # 浏览器本地实时编码约三分钟；这里只传文件，不调用模型，也不允许写请求被自动重放。
-    location ^~ /api/agent/video-workflow {
-        proxy_pass https://wao_ai_gateway;
-        proxy_http_version 1.1;
-        proxy_ssl_verify off;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 330s;
-        proxy_send_timeout 330s;
-        proxy_next_upstream off;
-        client_max_body_size 320m;
-        proxy_request_buffering off;
-        add_header X-Content-Type-Options nosniff always;
-        add_header Referrer-Policy strict-origin-when-cross-origin always;
-        add_header X-Frame-Options SAMEORIGIN always;
-        add_header X-WAO-API-Route linux-master-video-workflow always;
-    }
 
     # 每日情境建议同样复用本地 Codex 五分钟只读队列；POST 生成不能在超时后自动重放。
     # GET 也走同一精确路径，延长读取上限不会触发模型调用。

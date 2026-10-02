@@ -24,6 +24,7 @@ export const RETIRED_MODULE_IDS = new Set<ModuleId>([
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
   'updates', 'action-plans', 'workspaces', 'decisions',
 ])
+export const RETIRED_EXTERNAL_APP_IDS = new Set(['media-agent'])
 export type MobileActionItemId = 'action:note'
 export type MobileNavItemId = NavItemId | MobileActionItemId
 
@@ -91,17 +92,6 @@ export function normalizeBuiltinMenu(menu: BuiltinMenuConfig): BuiltinMenuConfig
 }
 
 export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
-  {
-    id: 'media-agent',
-    label: '自媒体 Agent',
-    icon: 'ri-sparkling-2-line',
-    group: 'PUBLIC',
-    order: 30,
-    visible: true,
-    appUrl: '/agent/',
-    healthUrl: '/api/agent/health',
-    openMode: 'TAB',
-  },
   {
     id: 'getnote',
     label: '得到大脑',
@@ -661,6 +651,7 @@ export function isMobileNavItemId(value: unknown): value is MobileNavItemId {
     (typeof value === 'string' &&
       value !== 'chat' &&
       !RETIRED_MODULE_IDS.has(value as ModuleId) &&
+      !RETIRED_EXTERNAL_APP_IDS.has(value.replace(/^external:/, '')) &&
       (value.startsWith('external:') || Object.prototype.hasOwnProperty.call(MODULES, value)))
   )
 }

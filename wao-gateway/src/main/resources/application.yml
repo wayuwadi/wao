@@ -26,10 +26,6 @@ spring:
         port: ${GATEWAY_PORT:9000}
     gateway:
       routes:
-        - id: wao-agent-api
-          uri: ${WAO_AGENT_SERVER_URI:http://wao-agent-server:8081}
-          predicates:
-            - Path=/api/agent/**
         - id: wao-server-api
           uri: ${WAO_SERVER_URI:lb://wao-server}
           predicates:

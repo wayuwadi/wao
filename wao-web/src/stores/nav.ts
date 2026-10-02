@@ -5,6 +5,7 @@ import {
   DEFAULT_BUILTIN_MENUS,
   MODULES,
   RETIRED_MODULE_IDS,
+  RETIRED_EXTERNAL_APP_IDS,
   PERSONAL_ITEMS,
   externalAppIdFromItem,
   externalAppItemId,
@@ -157,7 +158,7 @@ export const useNavStore = defineStore('nav', () => {
         ...own,
       } as BuiltinMenuConfig)
     })
-    externalApps.value = globalExternal.value.map((app) => {
+    externalApps.value = globalExternal.value.filter((app) => !RETIRED_EXTERNAL_APP_IDS.has(app.id)).map((app) => {
       const own = overrides.get(externalAppItemId(app.id))
       return normalizeExternalApp({
         ...app,
