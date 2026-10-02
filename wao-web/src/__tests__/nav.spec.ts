@@ -69,12 +69,7 @@ describe('侧边栏导航配置', () => {
       appUrl: 'https://www.biji.com/',
       openMode: 'NEW_PAGE',
     })
-    expect(DEFAULT_EXTERNAL_APPS.find((app) => app.id === 'jumpserver')).toMatchObject({
-      label: '资源管理',
-      appUrl: '/api/auth/jumpserver',
-      healthUrl: '/api/external/jumpserver/health',
-      openMode: 'NEW_PAGE',
-    })
+    expect(DEFAULT_EXTERNAL_APPS.find((app) => app.id === 'jumpserver')).toBeUndefined()
   })
 
   it('Skill 市场同时保留公开路由和 WAO 页签路由', () => {

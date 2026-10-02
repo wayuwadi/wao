@@ -36,13 +36,10 @@ public class AccountAuthController {
 
     private final AccountAuthService auth;
     private final AuthSessionManager sessions;
-    private final JumpServerSsoService jumpServerSso;
 
-    public AccountAuthController(AccountAuthService auth, AuthSessionManager sessions,
-                                 JumpServerSsoService jumpServerSso) {
+    public AccountAuthController(AccountAuthService auth, AuthSessionManager sessions) {
         this.auth = auth;
         this.sessions = sessions;
-        this.jumpServerSso = jumpServerSso;
     }
 
     @GetMapping("/auth/session")
@@ -59,12 +56,6 @@ public class AccountAuthController {
                 : JENKINS_MEMBER_GROUP;
         response.setHeader(JENKINS_GROUPS_HEADER, groups);
         return ApiResponse.ok(null);
-    }
-
-    @GetMapping("/auth/jumpserver")
-    public void jumpServer(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        AuthSessionDto current = auth.session(requireAccount(request));
-        response.sendRedirect(jumpServerSso.loginUrl(current));
     }
 
     @PostMapping("/auth/email/register")

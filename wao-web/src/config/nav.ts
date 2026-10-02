@@ -24,7 +24,7 @@ export const RETIRED_MODULE_IDS = new Set<ModuleId>([
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
   'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm',
 ])
-export const RETIRED_EXTERNAL_APP_IDS = new Set(['media-agent'])
+export const RETIRED_EXTERNAL_APP_IDS = new Set(['media-agent', 'jumpserver'])
 export type MobileActionItemId = 'action:note'
 export type MobileNavItemId = NavItemId | MobileActionItemId
 
@@ -113,17 +113,6 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
     appUrl: '/weknora/',
     healthUrl: '/api/external/weknora/health',
     openMode: 'TAB',
-  },
-  {
-    id: 'jumpserver',
-    label: '资源管理',
-    icon: 'ri-server-line',
-    group: 'TOOLS',
-    order: 15,
-    visible: true,
-    appUrl: '/api/auth/jumpserver',
-    healthUrl: '/api/external/jumpserver/health',
-    openMode: 'NEW_PAGE',
   },
 ]
 

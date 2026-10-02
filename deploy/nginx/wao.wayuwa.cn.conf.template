@@ -154,30 +154,11 @@ server {
     }
 
     # JumpServer SSO tickets are signed on Linux2, which owns the private deployment secret.
-    location = /api/auth/jumpserver {
-        proxy_pass https://wao_ai_gateway;
-        proxy_http_version 1.1;
-        proxy_ssl_verify off;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_next_upstream off;
-        add_header X-WAO-API-Route linux-jumpserver-sso always;
-    }
+    location = /api/auth/jumpserver { return 410; }
 
     # Same-origin health probe for the configurable external-app view. Browsers
     # must not depend on cross-origin CORS support from JumpServer itself.
-    location = /api/external/jumpserver/health {
-        proxy_pass http://127.0.0.1:18082/api/health/;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host jms.wayuwa.cn;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 10s;
-        add_header X-WAO-API-Route jumpserver-health-tunnel always;
-    }
+    location = /api/external/jumpserver/health { return 410; }
 
     # WeKnora uses an isolated runtime on Linux2. Every entry, API and file
     # request must pass WAO authentication before reaching that runtime.
