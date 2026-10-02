@@ -51,6 +51,17 @@ describe('renderMarkdown', () => {
     expect(rawStyle).not.toContain('style=')
   })
 
+  it('图片缩进仅接受 1–8 级，兼容无尺寸图片和标题', () => {
+    const html = renderMarkdown('![图](/api/images/test/raw "wao-image-size:autoxauto;indent=2;title=hello")')
+    expect(html).toContain('margin-left:min(48px,50%)')
+    expect(html).toContain('max-width:calc(100% - min(48px,50%))')
+    expect(html).toContain('title="hello"')
+    expect(html).not.toContain('nullpx')
+    for (const invalid of ['0', '9', '-1', '1.5', '1;position=fixed']) {
+      expect(renderMarkdown(`![图](/api/images/test/raw "wao-image-size:autoxauto;indent=${invalid}")`)).not.toContain('style=')
+    }
+  })
+
   it('空内容返回空串', () => {
     expect(renderMarkdown('')).toBe('')
     expect(renderMarkdown('   ')).toBe('')

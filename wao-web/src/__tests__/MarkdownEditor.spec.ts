@@ -71,6 +71,50 @@ async function mountEditor(props: {
   return w
 }
 
+describe('图片 Tab 缩进', () => {
+  it('点击正文后的图片不误选相邻空段落，连续缩进有界且不丢图', async () => {
+    const w = await mountEditor({ modelValue: '前文\n\n![图](/api/images/tab-test/raw)\n\n后文', imageControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const click = new MouseEvent('click', { bubbles: true })
+    Object.defineProperty(click, 'target', { value: w.get('.md-body img').element })
+    e.view.someProp('handleClick', handler => handler(e.view, e.state.doc.content.size - 1, click))
+    for (let i = 0; i < 10; i++) await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.getJSON().content?.find(n => n.type === 'image')?.attrs?.indent).toBe(8)
+    expect(w.findAll('.md-body img')).toHaveLength(1)
+    expect(e.getMarkdown()).toContain('前文')
+    expect(e.getMarkdown()).toContain('后文')
+    const markdown = e.getMarkdown()
+    for (let i = 0; i < 10; i++) await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON().content?.find(n => n.type === 'image')?.attrs?.indent).toBe(0)
+    w.unmount()
+    const restored = await mountEditor({ modelValue: markdown })
+    expect(restored.get('.md-body img').attributes('data-image-indent')).toBe('8')
+    restored.unmount()
+  })
+
+  it('选中图片后 Tab 只改变缩进，支持反缩进、撤销和 Markdown 往返', async () => {
+    const w = await mountEditor({ modelValue: '![验收图](/api/images/tab-test/raw "wao-image-size:50%xauto;title=%E6%A0%87%E9%A2%98")\n\n保留后文', imageControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setNodeSelection(0)
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(w.findAll('.md-body img')).toHaveLength(1)
+    expect(e.getJSON().content?.[0]?.attrs).toMatchObject({ src: '/api/images/tab-test/raw', indent: 1, width: '50%', title: '标题' })
+    expect(e.state.selection.from).toBe(0)
+    expect(w.get('.md-body img').attributes('data-image-indent')).toBe('1')
+    const markdown = e.getMarkdown()
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON().content?.[0]?.attrs?.indent).toBe(0)
+    e.commands.undo()
+    expect(e.getJSON().content?.[0]?.attrs?.indent).toBe(1)
+    expect(e.getMarkdown()).toContain('保留后文')
+    w.unmount()
+    const restored = await mountEditor({ modelValue: markdown, readonly: true })
+    expect(restored.get('.md-body img').attributes('data-image-indent')).toBe('1')
+    expect(restored.get('.md-body img').attributes('src')).toBe('/api/images/tab-test/raw')
+    restored.unmount()
+  })
+})
+
 describe('编辑区空白处', () => {
   it('点击正文下方空白处会聚焦可编辑节点', async () => {
     const wrapper = await mountEditor({ modelValue: '' })

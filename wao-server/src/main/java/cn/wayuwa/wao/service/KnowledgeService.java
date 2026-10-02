@@ -1983,6 +1983,14 @@ public class KnowledgeService {
                 }
                 return;
             }
+            if ("image".equals(nodeType) && "indent".equals(entry.getKey())) {
+                JsonNode indent = entry.getValue();
+                if (!indent.isIntegralNumber() || !indent.canConvertToInt()
+                        || indent.intValue() < 0 || indent.intValue() > 8) {
+                    throw new BadRequestException("图片缩进必须为 0–8 级整数");
+                }
+                return;
+            }
             if (!RICH_ATTRS.contains(entry.getKey())) {
                 throw new BadRequestException("文档包含不支持的节点属性：" + entry.getKey());
             }

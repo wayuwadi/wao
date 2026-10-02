@@ -74,3 +74,5 @@ python3 deploy/scripts/compare-performance.py /实际路径/before.json /实际�
 - 四组历史 ADR 重号的仓库内引用已做[精确归属审计与链接澄清](adr-duplicate-references.md)；历史编号仍保留，后续重编号需要核对正文和外部引用，不能只改文件名。
 - 一次较早的新建请求未取得文档 ID，测试知识库中的一篇未命名文档归属尚待核对，未擅自删除。
 - 性能工具现有样本可用来建立后续可比较基线，但尚未提供线上容量或端到端延迟结论。
+
+- [图片 Tab 缩进回归](editor-image-tab-regression.md)：选图缩进、反缩进、撤销、Markdown 往返与真实保存刷新步骤。

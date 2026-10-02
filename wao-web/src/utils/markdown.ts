@@ -39,7 +39,7 @@ function imagePixelDimension(value: string): number | null {
  * 原始 Markdown 的 style 从不进入这里，因而不能借图片 title 注入任意样式。
  */
 function safeImageSize(title: string): { style: string; title: string | null } | null {
-  const match = /^wao-image-size:([^x;]+)x([^;]+)(?:;title=(.*))?$/.exec(title)
+  const match = /^wao-image-size:([^x;]+)x([^;]+)(?:;indent=([1-8]))?(?:;title=(.*))?$/.exec(title)
   if (!match) return null
   const widthValue = match[1]!
   const heightValue = match[2]!
@@ -51,19 +51,23 @@ function safeImageSize(title: string): { style: string; title: string | null } |
     const height = heightValue === 'auto' ? null : imagePixelDimension(heightValue)
     if ((widthValue !== 'auto' && width == null)
       || (heightValue !== 'auto' && height == null)
-      || (width == null && height == null)) return null
+      || (width == null && height == null && !match[3])) return null
     if (width != null && height != null) {
       style = `width:${width}px;aspect-ratio:${width}/${height};height:auto;object-fit:contain`
     } else if (width != null) {
       style = `width:${width}px;height:auto`
-    } else {
+    } else if (height != null) {
       style = `height:${height}px;width:auto`
     }
   }
-  let originalTitle: string | null = null
   if (match[3]) {
+    const indent = Number(match[3]) * 24
+    style += `${style ? ';' : ''}margin-left:min(${indent}px,50%);margin-right:auto;max-width:calc(100% - min(${indent}px,50%))`
+  }
+  let originalTitle: string | null = null
+  if (match[4]) {
     try {
-      originalTitle = decodeURIComponent(match[3])
+      originalTitle = decodeURIComponent(match[4])
     } catch {
       originalTitle = null
     }
