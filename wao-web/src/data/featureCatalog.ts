@@ -58,13 +58,6 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
     tone: 'mint',
   },
   {
-    id: 'decisions',
-    category: 'planning',
-    summary: '把关键选择、依据与后续结果留在一起。',
-    description: '记录决策背景和结论，多人修改时保留版本冲突保护。',
-    tone: 'amber',
-  },
-  {
     id: 'calendar',
     category: 'life',
     summary: '查看重要日期、安排与经过授权的提醒。',

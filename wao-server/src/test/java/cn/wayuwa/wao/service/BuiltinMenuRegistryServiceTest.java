@@ -43,7 +43,7 @@ class BuiltinMenuRegistryServiceTest {
     void missingOrBrokenConfigFallsBackToActiveBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
         var menus = service.getRegistry().menus();
-        assertThat(menus).anyMatch(menu -> "decisions".equals(menu.id()))
+        assertThat(menus).noneMatch(menu -> "decisions".equals(menu.id()))
                 .anyMatch(menu -> "projects".equals(menu.id()))
                 .noneMatch(menu -> java.util.Set.of("chatgpt", "ai-sessions", "ledger", "updates",
                         "appearance", "food", "devices", "crawler-capabilities", "account-resources")
