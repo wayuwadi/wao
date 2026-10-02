@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(() => {
   wrapper?.unmount()
 })
-async function setup(target: string, claim = false) {
+async function setup(target: string, claim = false, exchange?: Promise<AuthResolution>) {
   saveAuthHandoff(
     target,
     { mode: 'breathing', total: 60000, remaining: 41000, inhale: 4, exhale: 6 },
@@ -36,15 +36,27 @@ async function setup(target: string, claim = false) {
   await router.push('/auth/feishu/callback?code=once&state=matching')
   const pinia = createPinia(),
     session = useSessionStore(pinia)
-  vi.mocked(exchangeFeishuCode).mockResolvedValue({
+  const resolution = {
     claimRequired: claim,
     session: claim ? undefined : { member: { id: 'm' } },
-  } as AuthResolution)
+  } as AuthResolution
+  vi.mocked(exchangeFeishuCode).mockImplementation(() => exchange ?? Promise.resolve(resolution))
   wrapper = mount(FeishuCallbackView, { global: { plugins: [pinia, router] } })
   await flushPromises()
   return { router, session }
 }
 describe('飞书回调返回意图', () => {
+  it('离开回调页后不接收迟到结果或抢回用户导航', async () => {
+    let resolve!: (value: AuthResolution) => void
+    const exchange = new Promise<AuthResolution>((done) => { resolve = done })
+    const { router, session } = await setup('/breathe', false, exchange)
+    wrapper.unmount()
+    await router.push('/todo')
+    resolve({ claimRequired: false, session: { member: { id: 'm' } } } as AuthResolution)
+    await flushPromises()
+    expect(session.authed).toBe(false)
+    expect(router.currentRoute.value.path).toBe('/todo')
+  })
   it('公共来源回到休息区，只提供暂停快照', async () => {
     const { router, session } = await setup('/breathe')
     expect(session.authed).toBe(true)

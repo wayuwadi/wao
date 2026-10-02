@@ -170,6 +170,31 @@ describe('舞台登录与认证生命周期', () => {
     expect(cleanup).toHaveBeenCalledOnce()
     expect(wrapper.find('#feishu-qr').exists()).toBe(false)
   })
+  it('离开页面后邮箱登录完成也不抢回导航', async () => {
+    const { session, router } = await setup('/login?redirect=/notes')
+    await email()
+    let resolve!: () => void
+    vi.spyOn(session, 'emailLogin').mockImplementationOnce(() => new Promise<void>((done) => {
+      resolve = done
+    }))
+    await wrapper.get('form').trigger('submit')
+    wrapper.unmount()
+    await router.push('/breathe')
+    resolve()
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/breathe')
+  })
+  it('离开页面后取消迟到的飞书授权跳转，也不保存快照', async () => {
+    const { router } = await setup()
+    await open()
+    await wrapper.get('.authorization-cta').trigger('click')
+    const beforeNavigate = vi.mocked(startFeishuLogin).mock.calls[0]![1]!
+    wrapper.unmount()
+    await router.push('/notes')
+    expect(beforeNavigate('https://auth.example/?state=late')).toBe(false)
+    expect(sessionStorage.length).toBe(0)
+    expect(router.currentRoute.value.path).toBe('/notes')
+  })
   it('二维码和授权失败可见且可以重试', async () => {
     await setup()
     vi.mocked(mountFeishuQr).mockRejectedValueOnce(new Error('offline'))

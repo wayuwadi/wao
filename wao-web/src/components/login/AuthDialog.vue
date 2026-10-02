@@ -71,6 +71,7 @@ async function openAuth() {
   error.value = ''
   opened.value = true
   await nextTick()
+  if (disposed || !opened.value) return
   dialog.value?.showModal()
   if (isInFeishu()) await tryInApp()
   else await loadQr()
@@ -98,7 +99,10 @@ async function authorizeFeishu() {
   authorizationBusy.value = true
   inAppError.value = ''
   try {
-    await startFeishuLogin('authorization', props.beforeNavigate)
+    await startFeishuLogin('authorization', (url) => {
+      if (disposed || !opened.value) return false
+      props.beforeNavigate(url)
+    })
   } catch (reason) {
     inAppError.value =
       `暂时无法连接飞书，请重试或使用邮箱登录。${reason instanceof Error ? reason.message : ''}`
@@ -113,6 +117,7 @@ async function submitEmail() {
   try {
     await session.emailLogin(email.value, password.value)
     password.value = ''
+    if (disposed || !opened.value) return
     dialog.value?.close()
     emit('authenticated')
     if (props.target !== '/breathe') await router.replace(safeAuthTarget(props.target))
@@ -135,6 +140,7 @@ async function tryInApp() {
     if (disposed || !opened.value) return
     if (resolution) {
       await session.acceptResolution(resolution)
+      if (disposed || !opened.value) return
       if (resolution.claimRequired) { emit('claim'); await router.replace('/auth/claim') }
       else {
         dialog.value?.close()
