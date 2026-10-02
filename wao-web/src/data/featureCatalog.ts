@@ -17,7 +17,7 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
     id: 'projects',
     category: 'ai',
     summary: '目标、任务、成员与交付结果集中协作。',
-    description: '把一个目标拆成任务，关联 AI 运行和验收结果，让进展与责任保持清楚。',
+    description: '把一个目标拆成任务，记录进展和验收结果，让进展与责任保持清楚。',
     tone: 'mint',
     recommended: true,
   },

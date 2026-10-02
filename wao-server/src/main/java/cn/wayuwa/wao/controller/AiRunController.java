@@ -110,56 +110,47 @@ public class AiRunController {
         this.taskReviews = taskReviews;
     }
 
-    @GetMapping("/projects/{projectId}/config")
     public ApiResponse<AiProjectConfigDto> config(@PathVariable String projectId) {
         return ApiResponse.ok(service.getConfig(projectId));
     }
 
-    @PutMapping("/projects/{projectId}/config")
     public ApiResponse<AiProjectConfigDto> saveConfig(@PathVariable String projectId,
             @RequestBody SaveAiProjectConfigRequest request) {
         return ApiResponse.ok(service.saveConfig(projectId, request));
     }
 
     /** 返回市场当前可供项目启用的 Codex Skill。 */
-    @GetMapping("/skills/available")
     public ApiResponse<List<AiSkillCapabilityDto>> availableSkills() {
         return ApiResponse.ok(skillCapabilities.available());
     }
 
     /** 返回 WAO 应用默认装配的固定审核 Skill。 */
-    @GetMapping("/application-skills")
     public ApiResponse<List<AiSkillCapabilityDto>> applicationSkills() {
         return ApiResponse.ok(skillCapabilities.waoApplicationSkills());
     }
 
     /** 管理员整体保存 WAO 应用默认 Skill；变化只影响之后新建的运行。 */
-    @PutMapping("/application-skills")
     public ApiResponse<List<AiSkillCapabilityDto>> saveApplicationSkills(
             @Valid @RequestBody SaveWaoApplicationSkillsRequest request, HttpServletRequest http) {
         return ApiResponse.ok(skillCapabilities.saveWaoApplicationSkills(request.versionIds(), currentMember.id(http)));
     }
 
     /** 返回项目固定启用的审核 Skill 版本。 */
-    @GetMapping("/projects/{projectId}/skills")
     public ApiResponse<List<AiSkillCapabilityDto>> projectSkills(@PathVariable String projectId) {
         return ApiResponse.ok(skillCapabilities.projectSkills(projectId));
     }
 
     /** 整体保存项目 Skill 绑定；升级只影响之后新建的运行。 */
-    @PutMapping("/projects/{projectId}/skills")
     public ApiResponse<List<AiSkillCapabilityDto>> saveProjectSkills(@PathVariable String projectId,
             @Valid @RequestBody SaveProjectSkillsRequest request, HttpServletRequest http) {
         return ApiResponse.ok(skillCapabilities.saveProjectSkills(projectId, request.versionIds(), currentMember.id(http)));
     }
 
-    @GetMapping("/workflows")
     public ApiResponse<List<AiWorkflowDto>> workflows() {
         return ApiResponse.ok(service.listWorkflows());
     }
 
     /** 删除工作流配置；历史运行记录保留，项目仍存在时可重新接入。 */
-    @DeleteMapping("/workflows/{projectId}")
     public ApiResponse<Void> deleteWorkflow(@PathVariable String projectId) {
         service.deleteWorkflow(projectId);
         return ApiResponse.ok(null);
@@ -213,7 +204,6 @@ public class AiRunController {
         return ApiResponse.ok(wakeService.wake(runnerId));
     }
 
-    @PostMapping("/runs")
     public ApiResponse<List<AiRunDto>> enqueue(@Valid @RequestBody CreateAiRunsRequest request,
             HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
@@ -224,26 +214,22 @@ public class AiRunController {
     }
 
     /** 返回 AI Run 选择器可用的后台受控模型参数。 */
-    @GetMapping("/run-options")
     public ApiResponse<cn.wayuwa.wao.dto.AiRunOptionsDto> runOptions() {
         return ApiResponse.ok(service.runOptions());
     }
 
     /** 保存后续新建 Codex 运行首次打开时使用的默认执行模式。 */
-    @PutMapping("/run-options")
     public ApiResponse<cn.wayuwa.wao.dto.AiRunOptionsDto> saveRunOptions(
             @Valid @RequestBody SaveAiRunOptionsRequest request) {
         return ApiResponse.ok(service.saveDefaultExecutionMode(request.defaultExecutionMode()));
     }
 
     /** 首页读取“空闲后执行最早待办”的开关、阈值和最近检查结果。 */
-    @GetMapping("/task-auto-run")
     public ApiResponse<AiTaskAutoRunPolicyDto> taskAutoRunPolicy() {
         return ApiResponse.ok(taskAutoRunService.overview());
     }
 
     /** 保存自动派发策略；调度器会在下一轮按新设置重新检查。 */
-    @PutMapping("/task-auto-run")
     public ApiResponse<AiTaskAutoRunPolicyDto> saveTaskAutoRunPolicy(
             @Valid @RequestBody SaveAiTaskAutoRunPolicyRequest request) {
         taskAutoRunService.save(request.enabled(), request.idleHours(), request.batchSize(), request.projectId(),
@@ -252,7 +238,6 @@ public class AiRunController {
     }
 
     /** 把一句目标转成任务，并交给用户本次选择的执行电脑或自动分配。 */
-    @PostMapping("/goals")
     public ApiResponse<AiRunDto> launchGoal(@Valid @RequestBody LaunchAutonomousGoalRequest request,
             HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
@@ -261,13 +246,11 @@ public class AiRunController {
     }
 
     /** 首页额度驱动的自主进化状态与可直接执行的建议清单。 */
-    @GetMapping("/evolution")
     public ApiResponse<AiEvolutionOverviewDto> evolution() {
         return ApiResponse.ok(evolutionService.overview());
     }
 
     /** 保存自主进化触发间隔与单次任务数，并让新配置立即进入调度检查。 */
-    @PutMapping("/evolution/schedule")
     public ApiResponse<AiEvolutionOverviewDto> saveEvolutionSchedule(
             @Valid @RequestBody SaveAiEvolutionScheduleRequest request) {
         evolutionService.saveSchedule(request.intervalHours(), request.batchSize());
@@ -275,13 +258,11 @@ public class AiRunController {
     }
 
     /** 从真实知识库与飞书同步归档重新挖掘最多五条候选任务。 */
-    @PostMapping("/evolution/suggestions/refresh")
     public ApiResponse<List<AiEvolutionSuggestionDto>> refreshEvolutionSuggestions() {
         return ApiResponse.ok(evolutionService.refreshSuggestions());
     }
 
     /** 一键把一条已持久化的真实资产建议交给选中的 AI 工作流。 */
-    @PostMapping("/evolution/suggestions/{suggestionId}/launch")
     public ApiResponse<AiRunDto> launchSuggestion(@PathVariable String suggestionId,
             @Valid @RequestBody LaunchEvolutionSuggestionRequest request, HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
@@ -289,26 +270,22 @@ public class AiRunController {
                 currentMember.id(http), baseUrl));
     }
 
-    @GetMapping("/runs")
     public ApiResponse<List<AiRunDto>> runs(@RequestParam(defaultValue = "false") boolean active) {
         return ApiResponse.ok(service.listRuns(active));
     }
 
     /** 首页集中读取当前成员需要验收或基于报错重跑的任务。 */
-    @GetMapping("/reviewable-tasks")
     public ApiResponse<List<ReviewableTaskDto>> reviewableTasks(HttpServletRequest http) {
         return ApiResponse.ok(taskReviews.list(currentMember.idOr(http, "wg")));
     }
 
     /** 已结束运行的完整分页历史；首页只取八条，用户主动打开时才读取。 */
     /** 按需补读原会话较早的公开消息。 */
-    @GetMapping("/runs/{runId}/conversation")
     public ApiResponse<cn.wayuwa.wao.dto.AiRunProgressPageDto> conversation(
             @PathVariable String runId, @RequestParam(required = false) String before) {
         return ApiResponse.ok(service.conversation(runId, before));
     }
 
-    @GetMapping("/runs/history")
     public ApiResponse<AiRunPageDto> runHistory(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -316,13 +293,11 @@ public class AiRunController {
     }
 
     /** 统一活动列表点开功能开发时读取原有完整运行详情。 */
-    @GetMapping("/runs/{runId}")
     public ApiResponse<AiRunDto> runDetail(@PathVariable String runId) {
         return ApiResponse.ok(service.runDetail(runId));
     }
 
     /** 兼容预览历史任务中遗留的 Base64 图片，不让编码正文进入运行列表响应。 */
-    @GetMapping("/runs/{runId}/images/{imageIndex}")
     public ResponseEntity<byte[]> runPreviewImage(@PathVariable String runId, @PathVariable int imageIndex) {
         AiRunImageContent image = service.runPreviewImage(runId, imageIndex);
         return ResponseEntity.ok()
@@ -333,14 +308,12 @@ public class AiRunController {
     }
 
     /** 基于一次失败运行重新排队，AI 会拿到上次的报错继续修。 */
-    @PostMapping("/runs/{runId}/rerun")
     public ApiResponse<AiRunDto> rerun(@PathVariable String runId, HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return ApiResponse.ok(service.rerun(runId, currentMember.idOr(http, "unknown"), baseUrl));
     }
 
     /** 按服务端识别的同一基础设施故障批量恢复，前端不参与拼接筛选条件。 */
-    @PostMapping("/runs/{runId}/rerun-same-failure")
     public ApiResponse<AiRunBatchRerunDto> rerunSameFailure(
             @PathVariable String runId, HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
@@ -348,7 +321,6 @@ public class AiRunController {
                 runId, currentMember.idOr(http, "unknown"), baseUrl));
     }
 
-    @PostMapping("/runs/{runId}/continue")
     public ApiResponse<AiRunDto> continueRun(@PathVariable String runId,
             @Valid @RequestBody ContinueAiRunRequest request, HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
@@ -357,12 +329,10 @@ public class AiRunController {
     }
 
     /** 暂停尚未结束的 AI 运行；执行节点会在下一次取消检查时停止本地 CLI。 */
-    @PostMapping("/runs/{runId}/pause")
     public ApiResponse<AiRunDto> pause(@PathVariable String runId) {
         return ApiResponse.ok(service.pause(runId));
     }
 
-    @GetMapping("/tasks/{taskId}/runs")
     public ApiResponse<List<AiRunDto>> taskRuns(@PathVariable String taskId) {
         return ApiResponse.ok(service.listTaskRuns(taskId));
     }
@@ -402,7 +372,6 @@ public class AiRunController {
         return ApiResponse.ok(aiAccountService.enabledCredentials());
     }
 
-    @PostMapping("/runner/claim")
     public ApiResponse<AiRunnerClaimDto> claim(@RequestHeader(RUNNER_TOKEN) String token) {
         return ApiResponse.ok(service.claim(token));
     }

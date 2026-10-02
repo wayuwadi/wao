@@ -68,7 +68,6 @@ public class ShareController {
     }
 
     /** 一次合并 AI Run 的公开只读 Markdown；任务边界和用户选择顺序由服务端持久关系保证。 */
-    @GetMapping("/ai-runs/{id}.md")
     public ResponseEntity<byte[]> runMarkdown(
             @PathVariable String id,
             @RequestParam(defaultValue = "false") boolean openOnly) {

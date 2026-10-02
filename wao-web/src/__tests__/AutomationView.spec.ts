@@ -24,8 +24,8 @@ function mountView(autos: AutomationJob[] = []) {
 
 function job(runs = 0): AutomationJob {
   return {
-    id: 'job-http-performance-ai-run',
-    name: 'HTTP 请求性能夜间 AI 巡检',
+    id: 'active-job',
+    name: '现有业务自动化',
     icon: 'ri-speed-up-line',
     schedule: '每日 06:30',
     status: '正常',
@@ -34,7 +34,7 @@ function job(runs = 0): AutomationJob {
     source: '',
     target: '',
     steps: [],
-    handler: 'http-performance-ai-run',
+    handler: 'active-handler',
     runs: Array.from({ length: runs }, (_, index) => ({
       time: `8月${26 - index}日 06:30`,
       executor: '定时任务',
@@ -102,10 +102,12 @@ describe('AutomationView 导航', () => {
     expect(wrapper.get('.grid-aoruns.row').text()).toContain('—')
   })
 
-  it('HTTP性能巡检任务显示真实配置入口', async () => {
-    const wrapper = mountView([job()])
-    await wrapper.find('.op[title="配置"]').trigger('click')
-    expect(wrapper.find('.http-config').exists()).toBe(true)
+  it('退役的 HTTP AI 巡检不提供启用和执行入口', () => {
+    const retired = { ...job(), handler: 'http-performance-ai-run' }
+    const wrapper = mountView([retired])
+    expect(wrapper.find('.job-name').exists()).toBe(false)
+    expect(wrapper.find('[title="配置"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })
 

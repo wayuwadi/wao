@@ -67,24 +67,8 @@ public class FeishuQuickCollectAiRunService {
      */
     @Transactional
     public boolean trigger(JsonNode body, String baseUrl) {
-        if (!"im.message.reaction.created_v1".equals(body.path("header").path("event_type").asText(""))) {
-            return false;
-        }
-        JsonNode event = body.path("event");
-        if (!"user".equals(event.path("operator_type").asText(""))
-                || !reactionPolicy.triggerEmoji()
-                        .equals(event.path("reaction_type").path("emoji_type").asText(""))) {
-            return false;
-        }
-        String messageId = event.path("message_id").asText("");
-        JsonNode userIds = event.path("user_id");
-        String operatorOpenId = userIds.path("open_id").asText("");
-        String operatorUnionId = userIds.path("union_id").asText("");
-        String eventId = body.path("header").path("event_id").asText("");
-        return dispatch(messageId, operatorOpenId, operatorUnionId, eventId,
-                eventKey(eventId, messageId,
-                        StringUtils.hasText(operatorOpenId) ? operatorOpenId : operatorUnionId,
-                        event.path("action_time").asText("")), baseUrl);
+        // AI Run 已下线：保留快速收集，不再消费表情为派工动作。
+        return false;
     }
 
     /**
@@ -97,14 +81,7 @@ public class FeishuQuickCollectAiRunService {
      */
     @Transactional
     public boolean triggerPolled(String messageId, FeishuMessageReaction reaction, String baseUrl) {
-        if (reaction == null || !"user".equals(reaction.operatorType())
-                || !reactionPolicy.triggerEmoji().equals(reaction.emojiType())) {
-            return false;
-        }
-        String key = StringUtils.hasText(reaction.reactionId())
-                ? "reaction-id:" + reaction.reactionId()
-                : eventKey("", messageId, reaction.operatorUnionId(), reaction.actionTime());
-        return dispatch(messageId, "", reaction.operatorUnionId(), "", key, baseUrl);
+        return false;
     }
 
     /** 是否已经为这条原消息消费过一次人工派工，供轮询入口避免无意义外部请求。 */

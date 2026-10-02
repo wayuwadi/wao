@@ -176,13 +176,6 @@ onMounted(load)
         <p>浏览器端到端实测，包含当前网络、网关与服务端的完整等待时间。</p>
       </div>
       <div class="actions">
-        <button class="inspection-button" :disabled="startingInspection" @click="startInspection">
-          <i :class="startingInspection ? 'ri-loader-4-line spin' : 'ri-rocket-line'"></i>
-          {{ startingInspection ? '启动中' : '启动 AI 巡检' }}
-        </button>
-        <button class="secondary-button" @click="configOpen = true">
-          <i class="ri-settings-3-line"></i>巡检设置
-        </button>
         <button class="secondary-button history-button" @click="historyOpen = true">
           <i class="ri-history-line"></i>巡检历史
         </button>
@@ -369,7 +362,6 @@ onMounted(load)
         </div>
       </template>
     </template>
-    <HttpPerformanceConfigModal v-if="configOpen" @close="configOpen = false" />
     <HttpInspectionHistoryModal v-if="historyOpen" @close="historyOpen = false" />
   </main>
 </template>

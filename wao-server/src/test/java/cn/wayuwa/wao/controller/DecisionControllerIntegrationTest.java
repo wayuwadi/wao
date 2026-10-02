@@ -13,6 +13,14 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 class DecisionControllerIntegrationTest {
     @Autowired private MockMvc mvc;
+    @Test void projectRunCannotBeConfiguredLaunchedOrClaimed() throws Exception {
+        mvc.perform(get("/api/ai/workflows")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/ai/projects/old/config")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/ai/runs")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/ai/goals")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/ai/runner/claim")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/share/ai-runs/old.md")).andExpect(status().isNotFound());
+    }
     @Test void retiredRoutesCannotReadOrWrite() throws Exception {
         mvc.perform(get("/api/workday-rhythm/dashboard")).andExpect(status().isNotFound());
         mvc.perform(get("/api/workday-rhythm/focus/pending")).andExpect(status().isNotFound());
