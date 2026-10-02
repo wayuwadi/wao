@@ -6,8 +6,17 @@ import {
   BreathingSession,
   breathingDefaults,
   readBreathingPreferences,
+  breathingPreferenceKey,
+  readPracticeSnapshot,
+  type PracticeMode,
+  type PracticeSnapshot,
 } from '@/composables/breathingSession'
 
+const emit = defineEmits<{ workspace: [] }>()
+const mode = ref<PracticeMode>('breathing')
+const pendingMode = ref<PracticeMode | null>(null)
+let retainForAuth = false
+const modeName = computed(() => (mode.value === 'sitting' ? '静坐' : '呼吸'))
 const account = useSessionStore()
 const theme = useTheme()
 const root = ref<HTMLElement>()
@@ -21,7 +30,6 @@ const prefs = reactive({ ...breathingDefaults })
 const timer = reactive(new BreathingSession())
 const now = ref(Date.now())
 const panel = ref(false)
-const info = ref(false)
 const quiet = ref(false)
 const complete = ref(false)
 const custom = ref(false)
@@ -86,12 +94,14 @@ const expansion = computed(() => {
 })
 const label = computed(() =>
   idle.value
-    ? '此刻，静下来'
+    ? '留一点空白，再开始。'
     : timer.state === 'paused'
-      ? '歇一会儿'
-      : inhaling.value
-        ? '吸气'
-        : '呼气',
+      ? '安心停一会儿'
+      : mode.value === 'sitting'
+        ? '只是安静坐着'
+        : inhaling.value
+          ? '吸气'
+          : '呼气',
 )
 let interval: ReturnType<typeof setInterval> | undefined
 let hideTimeout: ReturnType<typeof setTimeout> | undefined
@@ -109,8 +119,7 @@ function wake() {
   quiet.value = false
   clearTimeout(hideTimeout)
   hideTimeout = setTimeout(() => {
-    if (!panel.value && !info.value && !root.value?.querySelector(':focus-visible'))
-      quiet.value = true
+    if (!panel.value && !root.value?.querySelector(':focus-visible')) quiet.value = true
   }, 5000)
 }
 function tell(text: string) {
@@ -122,11 +131,13 @@ function tell(text: string) {
 }
 async function setPanel(value: boolean) {
   panel.value = value
-  info.value = false
   wake()
   await nextTick()
   ;(value ? closeButton.value : settingsButton.value)?.focus()
 }
+function toggleCustom() { custom.value = !custom.value; minutesInput.value = String(prefs.minutes) }
+function chooseRhythm(inhale: number, exhale: number) { prefs.inhale = inhale; prefs.exhale = exhale }
+function goWorkspace() { void closeComplete(); emit('workspace') }
 function chooseMinutes(value: number) {
   prefs.minutes = value
   minutesInput.value = String(value)
@@ -142,25 +153,29 @@ function reset() {
   tell('已恢复余晖光晕与 15 分钟')
 }
 function chime() {
-  if (!audio || audio.state !== 'running') return false
-  const t = audio.currentTime
-  for (const [frequency, volume] of [
-    [528, 0.11],
-    [792, 0.025],
-    [1056, 0.012],
-  ] as const) {
-    const oscillator = audio.createOscillator(),
-      gain = audio.createGain()
-    oscillator.frequency.value = frequency
-    gain.gain.setValueAtTime(0, t)
-    gain.gain.linearRampToValueAtTime(volume, t + 0.08)
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.2)
-    oscillator.connect(gain)
-    gain.connect(audio.destination)
-    oscillator.start(t)
-    oscillator.stop(t + 3.3)
+  try {
+    if (!audio || audio.state !== 'running') return false
+    const t = audio.currentTime
+    for (const [frequency, volume] of [
+      [528, 0.11],
+      [792, 0.025],
+      [1056, 0.012],
+    ] as const) {
+      const oscillator = audio.createOscillator(),
+        gain = audio.createGain()
+      oscillator.frequency.value = frequency
+      gain.gain.setValueAtTime(0, t)
+      gain.gain.linearRampToValueAtTime(volume, t + 0.08)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.2)
+      oscillator.connect(gain)
+      gain.connect(audio.destination)
+      oscillator.start(t)
+      oscillator.stop(t + 3.3)
+    }
+    return true
+  } catch {
+    return false
   }
-  return true
 }
 async function unlockAudio() {
   try {
@@ -202,7 +217,7 @@ async function start(isDemo = false) {
   Object.assign(breath, { inhale: prefs.inhale, exhale: prefs.exhale })
   now.value = Date.now()
   timer.start(isDemo ? 10000 : prefs.minutes * 60000, now.value)
-  panel.value = info.value = custom.value = false
+  panel.value = custom.value = false
   wake()
   syncAnimation()
 }
@@ -218,22 +233,27 @@ function pauseOrResume() {
       return
     }
     timer.pause(now.value)
-  } else timer.resume(now.value)
+  } else {
+    timer.resume(now.value)
+    if (prefs.sound)
+      void unlockAudio().then((ready) => {
+        if (!disposed && !ready) tell('声音暂不可用，本次保留页面结束提醒')
+      })
+  }
   syncAnimation()
   wake()
 }
 function stop() {
-  timer.stop()
-  syncAnimation()
-  tell('已结束本次计时，回到静默')
+  if (idle.value) return
+  void finish(false)
 }
-async function finish() {
-  if (timer.state !== 'running') return
+async function finish(natural = true) {
+  if (idle.value) return
   timer.stop()
   syncAnimation()
-  panel.value = info.value = false
+  panel.value = false
   complete.value = true
-  if (prefs.sound && !chime()) tell('本次已结束；浏览器未能播放提示音')
+  if (natural && prefs.sound && !chime()) tell('本次已结束；浏览器未能播放提示音')
   await nextTick()
   doneButton.value?.focus()
   wake()
@@ -307,24 +327,29 @@ async function toggleFullscreen() {
 }
 function updateFullscreen() {
   fullscreen.value = document.fullscreenElement === root.value
-  info.value = false
 }
 function updateMotion() {
   reduced.value = media?.matches ?? false
 }
 function keydown(event: KeyboardEvent) {
   wake()
-  if (complete.value) {
-    if (event.key === 'Escape') void closeComplete()
+  if (complete.value || pendingMode.value) {
+    if (event.key === 'Escape') {
+      if (pendingMode.value) void cancelMode()
+      else void closeComplete()
+    }
     if (event.key === 'Tab') {
+      const buttons = Array.from(
+        root.value?.querySelectorAll<HTMLButtonElement>('.overlay button') ?? [],
+      )
+      const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
       event.preventDefault()
-      doneButton.value?.focus()
+      buttons[(index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]?.focus()
     }
     return
   }
   if (event.key === 'Escape') {
     if (panel.value) void setPanel(false)
-    info.value = false
   }
   if ((event.target as HTMLElement)?.closest('input,button,textarea,[contenteditable=true]')) return
   if (event.code === 'Space') {
@@ -335,18 +360,20 @@ function keydown(event: KeyboardEvent) {
 }
 watch(
   () => account.userId,
-  (member) => {
+  (member, previous) => {
     audioAttempt++
     starting.value = false
-    timer.stop()
+    if (!(retainForAuth && !previous && member)) {
+      timer.stop()
+      pendingMode.value = null
+    }
+    retainForAuth = false
     complete.value = false
     loadingPrefs = true
     try {
       Object.assign(
         prefs,
-        readBreathingPreferences(
-          member ? localStorage.getItem(`wao-home-breathing:${member}`) : null,
-        ),
+        readBreathingPreferences(localStorage.getItem(breathingPreferenceKey(member))),
       )
       storageError.value = false
     } catch {
@@ -362,9 +389,9 @@ watch(
 watch(
   prefs,
   () => {
-    if (loadingPrefs || !account.userId) return
+    if (loadingPrefs) return
     try {
-      localStorage.setItem(`wao-home-breathing:${account.userId}`, JSON.stringify(prefs))
+      localStorage.setItem(breathingPreferenceKey(account.userId), JSON.stringify(prefs))
       storageError.value = false
     } catch {
       storageError.value = true
@@ -376,6 +403,86 @@ watch(
   () => [prefs.galaxy, prefs.color],
   () => nextTick(drawGalaxy),
 )
+function releaseAudio() {
+  const previous = audio
+  audio = undefined
+  void previous?.close().catch(() => {})
+}
+watch(
+  () => prefs.sound,
+  (enabled) => {
+    if (!enabled) releaseAudio()
+    else if (!loadingPrefs)
+      void unlockAudio().then((ready) => {
+        if (!disposed && !ready) tell('声音暂不可用，本次保留页面结束提醒')
+      })
+  },
+  { flush: 'sync' },
+)
+function snapshot(): PracticeSnapshot | null {
+  if (idle.value || timer.left(Date.now()) <= 0) return null
+  return {
+    mode: mode.value,
+    total: timer.total,
+    remaining: timer.left(Date.now()),
+    inhale: breath.inhale,
+    exhale: breath.exhale,
+  }
+}
+function pauseForAuth() {
+  retainForAuth = true
+  audioAttempt++
+  starting.value = false
+  now.value = Date.now()
+  if (timer.state === 'running') {
+    if (timer.left(now.value) <= 0) {
+      void finish()
+      return
+    }
+    timer.pause(now.value)
+  }
+  panel.value = false
+  complete.value = false
+  syncAnimation()
+  releaseAudio()
+}
+function restore(value: PracticeSnapshot) {
+  const saved = readPracticeSnapshot(value)
+  if (!saved) return
+  mode.value = saved.mode
+  Object.assign(breath, { inhale: saved.inhale, exhale: saved.exhale })
+  timer.restore(saved.total, saved.remaining)
+  now.value = Date.now()
+  tell('已保留本次练习，请准备好后主动继续')
+}
+async function chooseMode(next: PracticeMode) {
+  if (next === mode.value) return
+  if (idle.value) {
+    mode.value = next
+    return
+  }
+  now.value = Date.now()
+  timer.pause(now.value)
+  syncAnimation()
+  pendingMode.value = next
+  await nextTick()
+  root.value?.querySelector<HTMLButtonElement>('.overlay button')?.focus()
+}
+async function cancelMode() {
+  pendingMode.value = null
+  await nextTick()
+  startButton.value?.focus()
+}
+function confirmMode() {
+  if (!pendingMode.value) return
+  mode.value = pendingMode.value
+  timer.stop()
+  void cancelMode()
+}
+function cancelAuthRetention() {
+  retainForAuth = false
+}
+defineExpose({ pauseForAuth, cancelAuthRetention, snapshot, restore, tell })
 onMounted(() => {
   media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
   updateMotion()
@@ -413,153 +520,189 @@ onBeforeUnmount(() => {
   <section
     ref="root"
     class="breathing-stage"
-    :class="[timer.state, { day: theme.effective.value === 'light', quiet, 'no-guide': !prefs.guide }]"
+    :class="[
+      timer.state,
+      {
+        day: theme.effective.value === 'light',
+        sitting: mode === 'sitting',
+        'no-guide': !prefs.guide,
+      },
+    ]"
     :style="{ '--accent': colors[prefs.color], '--strength': prefs.glow / 100 }"
     tabindex="-1"
     aria-label="一呼一吸"
-    @pointermove="wake"
-    @pointerdown="wake"
     @keydown="keydown"
   >
-    <div ref="content" class="stage-content" :inert="complete">
-      <div class="scene" aria-hidden="true">
-        <div class="ambient" :class="prefs.scene"></div>
-        <canvas ref="canvas" id="galaxy" v-show="prefs.galaxy"></canvas>
-      </div>
-      <header class="brand"><strong>WAO</strong><i></i><span>一呼一吸</span></header>
-      <div class="top-right">
-        <button
-          v-if="!fullscreen"
-          class="text-button"
-          :aria-expanded="info"
-          aria-controls="home-breathing-info"
-          @click="
-            info = !info; panel = false
-          "
+    <div class="scene" aria-hidden="true">
+      <div class="ambient" :class="prefs.scene"></div>
+      <canvas ref="canvas" id="galaxy" v-show="prefs.galaxy"></canvas>
+    </div>
+    <div ref="content" class="stage-content" :inert="complete || !!pendingMode">
+      <header class="entry-header">
+        <a class="entry-brand" href="/breathe" aria-label="WAO 一呼一吸首页"
+          >WAO <span>· 一呼一吸</span></a
         >
-          首页信息</button
-        ><button
-          class="icon"
-          :aria-label="fullscreen ? '退出全屏' : '进入全屏'"
-          @click="toggleFullscreen"
-        >
-          <i class="ri-fullscreen-line" aria-hidden="true"></i>
-        </button>
-      </div>
-      <div v-show="info" id="home-breathing-info" class="home-info">
-        <slot name="information" />
-      </div>
-      <div class="center">
-        <div
-          class="orb"
-          :style="{
-            '--scale': reduced ? 1 : 0.78 + expansion * 0.26,
-            '--light': ((0.45 + expansion * 0.55) * prefs.glow) / 65,
-          }"
-          aria-hidden="true"
-        >
-          <div class="orb-light"></div>
-          <div class="orb-ring"></div>
-        </div>
-        <div class="center-copy">
-          <p class="eyebrow">
-            {{ idle ? '留 一 点 空 白' : demo ? '十 秒 体 验' : '只 跟 随 此 刻' }}
-          </p>
-          <h1 class="phase">{{ label }}</h1>
-          <p class="phase-sub">
-            {{
-              idle
-                ? '不必急着开始'
-                : timer.state === 'paused'
-                  ? '计时已暂停'
-                  : inhaling
-                    ? '慢慢舒展'
-                    : '轻轻回落'
-            }}
-          </p>
-        </div>
-      </div>
-      <div v-show="prefs.words" class="slogan">
-        娃有多大胆，AI有多大产。<br /><span>未来已来。</span>
-      </div>
-      <section class="dock" aria-label="冥想计时">
-        <div v-if="idle" class="duration" role="group" aria-label="本次时长">
+        <div class="entry-tools">
           <button
-            v-for="m in [5, 15, 30]"
-            :key="m"
-            class="chip"
-            :aria-pressed="prefs.minutes === m"
-            @click="chooseMinutes(m)"
+            class="icon"
+            :aria-label="`主题：${theme.mode.value === 'system' ? '跟随系统' : theme.mode.value === 'dark' ? '夜间' : '日间'}，点击切换`"
+            @click="theme.toggleTheme"
           >
-            {{ m }} 分钟</button
+            <i
+              :class="theme.effective.value === 'dark' ? 'ri-moon-line' : 'ri-sun-line'"
+              aria-hidden="true"
+            ></i>
+          </button>
+          <button
+            class="icon sound-toggle"
+            :aria-pressed="prefs.sound"
+            :aria-label="prefs.sound ? '关闭结束提示音' : '开启结束提示音'"
+            @click="prefs.sound = !prefs.sound"
+          >
+            <i
+              :class="prefs.sound ? 'ri-volume-up-line' : 'ri-volume-mute-line'"
+              aria-hidden="true"
+            ></i>
+          </button>
+          <slot name="account" />
+        </div>
+      </header>
+      <div class="practice-main">
+        <div class="focus-scene">
+          <div
+            class="orb"
+            :style="{
+              '--scale': idle || reduced || mode === 'sitting' ? 1 : 0.78 + expansion * 0.26,
+              '--light':
+                idle || mode === 'sitting' ? 0.55 : ((0.45 + expansion * 0.55) * prefs.glow) / 65,
+            }"
+            aria-hidden="true"
+          >
+            <div class="orb-light"></div>
+            <div class="orb-ring"></div>
+          </div>
+          <div class="center-copy">
+            <p class="eyebrow">
+              {{
+                idle
+                  ? '停 下 来 · 回 到 当 下'
+                  : demo
+                    ? '十 秒 提 醒 体 验'
+                    : mode === 'sitting'
+                      ? '自 然 呼 吸 · 无 需 跟 随'
+                      : '一 呼 · 一 吸'
+              }}
+            </p>
+            <h1 class="phase">{{ label }}</h1>
+            <p class="phase-sub">
+              {{
+                idle
+                  ? '不必急着开始'
+                  : timer.state === 'paused'
+                    ? '进度已保留，准备好后再继续'
+                    : mode === 'sitting'
+                      ? '让念头来去，不必做些什么'
+                      : inhaling
+                        ? '慢慢舒展'
+                        : '轻轻回落'
+              }}
+            </p>
+          </div>
+        </div>
+        <p v-if="idle && prefs.words" class="entry-copy">跟随一呼一吸，或者只是安静待一会儿。</p>
+        <section class="dock" aria-label="练习计时">
+          <div class="mode-picker" role="group" aria-label="练习模式">
+            <button :aria-pressed="mode === 'breathing'" @click="chooseMode('breathing')">
+              呼吸</button
+            ><button :aria-pressed="mode === 'sitting'" @click="chooseMode('sitting')">静坐</button>
+          </div>
+          <div v-if="idle" class="duration" role="group" aria-label="本次时长">
+            <button
+              v-for="m in [1, 5, 15, 30]"
+              :key="m"
+              class="chip"
+              :aria-pressed="!custom && prefs.minutes === m"
+              @click="chooseMinutes(m)"
+            >
+              {{ m }} 分钟</button
+            ><button
+              class="chip"
+              :aria-expanded="custom"
+              @click="toggleCustom"
+            >
+              自定义
+            </button>
+          </div>
+          <label v-if="idle && custom" class="custom-time"
+            >本次时长<input
+              v-model="minutesInput"
+              type="number"
+              min="1"
+              max="180"
+              step="1"
+              :aria-invalid="!validMinutes"
+              @input="editMinutes"
+            />分钟</label
+          >
+          <p v-if="idle && custom && !validMinutes" class="error" role="alert">
+            请输入 1–180 的整数分钟
+          </p>
+          <div v-if="!idle" class="session-bar">
+            <div class="timer" role="timer" aria-label="剩余练习时间">
+              <b>{{ remaining }}</b
+              >{{ timer.state === 'paused' ? '已暂停' : '剩余' }}
+            </div>
+            <div class="progress">
+              <i :style="{ '--progress': `${100 * (1 - left / timer.total)}%` }"></i>
+            </div>
+          </div>
+          <div class="actions">
+            <button
+              ref="startButton"
+              class="primary"
+              :disabled="starting || (idle && custom && !validMinutes)"
+              @click="pauseOrResume"
+            >
+              {{
+                starting
+                  ? '准备中…'
+                  : idle
+                    ? `开始${modeName} · ${prefs.minutes} 分钟`
+                    : timer.state === 'paused'
+                      ? `继续${modeName}`
+                      : '暂停'
+              }}</button
+            ><button v-if="!idle" class="text-button" @click="stop">结束本次</button>
+          </div>
+          <p class="bottom-note">
+            <template v-if="mode === 'breathing'"
+              >吸 {{ idle ? prefs.inhale : breath.inhale }} 秒 · 呼
+              {{ idle ? prefs.exhale : breath.exhale }} 秒 · </template
+            >{{ prefs.sound ? '结束时一声轻响' : '结束时页面提醒' }}
+          </p>
+        </section>
+      </div>
+      <div class="entry-bottom">
+        <div class="companions"><slot v-if="idle" name="companions" /></div>
+        <div class="scene-actions">
+          <button class="text-button" @click="toggleFullscreen">
+            {{ fullscreen ? '退出全屏' : '全屏停留' }}</button
           ><button
-            class="chip"
-            :aria-expanded="custom"
-            @click="
-              custom = !custom; minutesInput = String(prefs.minutes)
-            "
+            ref="settingsButton"
+            class="text-button"
+            aria-label="调整画面与呼吸"
+            :aria-expanded="panel"
+            aria-controls="breathing-settings"
+            @click="setPanel(!panel)"
           >
-            自定义
+            画面与节奏 <i class="ri-equalizer-line" aria-hidden="true"></i>
           </button>
         </div>
-        <label v-if="idle && custom" class="custom-time"
-          >本次时长
-          <input
-            v-model="minutesInput"
-            type="number"
-            min="1"
-            max="180"
-            step="1"
-            :aria-invalid="!validMinutes"
-            @input="editMinutes"
-          />
-          分钟</label
-        >
-        <p v-if="idle && custom && !validMinutes" class="error" role="alert">
-          请输入 1–180 的整数分钟
-        </p>
-        <div v-if="!idle" class="session-bar">
-          <div class="timer">
-            <b>{{ remaining }}</b
-            >{{ timer.state === 'paused' ? '已暂停' : '剩余' }}
-          </div>
-          <div class="progress">
-            <i :style="{ '--progress': `${100 * (1 - left / timer.total)}%` }"></i>
-          </div>
-        </div>
-        <div class="actions">
-          <button
-            ref="startButton"
-            class="primary"
-            :disabled="starting || (idle && custom && !validMinutes)"
-            @click="pauseOrResume"
-          >
-            {{
-              starting
-                ? '准备中…'
-                : idle
-                  ? `开始 · ${prefs.minutes} 分钟`
-                  : timer.state === 'paused'
-                    ? '继续呼吸'
-                    : '暂停'
-            }}</button
-          ><button v-if="!idle" class="text-button" @click="stop">结束本次</button>
-        </div>
-        <p class="bottom-note">
-          吸 {{ prefs.inhale }} 秒 · 呼 {{ prefs.exhale }} 秒 /
-          {{ prefs.sound ? '结束时一声轻响' : '结束时页面提醒' }}
-        </p>
-      </section>
-      <button
-        ref="settingsButton"
-        class="icon settings-trigger"
-        aria-label="调整画面与呼吸"
-        :aria-expanded="panel"
-        aria-controls="breathing-settings"
-        @click="setPanel(!panel)"
-      >
-        <i class="ri-equalizer-line" aria-hidden="true"></i>
-      </button>
+      </div>
+      <p v-if="storageError" class="storage-notice" role="alert">
+        本机暂时无法保存偏好，本次设置仍可使用。
+      </p>
+      <slot name="footer" />
       <section v-if="panel" id="breathing-settings" class="panel" aria-label="让这里更像你">
         <div class="panel-head">
           <h2>让这里更像你</h2>
@@ -614,9 +757,7 @@ onBeforeUnmount(() => {
             class="chip"
             :disabled="!idle"
             :aria-pressed="prefs.inhale === r.inhale && prefs.exhale === r.exhale"
-            @click="
-              prefs.inhale = r.inhale; prefs.exhale = r.exhale
-            "
+            @click="chooseRhythm(r.inhale, r.exhale)"
           >
             吸 {{ r.inhale }} · 呼 {{ r.exhale }}
           </button>
@@ -651,7 +792,7 @@ onBeforeUnmount(() => {
           {{
             storageError
               ? '本机暂时无法保存偏好，当前设置仍可使用。'
-              : '偏好按当前账号保存在此浏览器。离开首页或刷新后结束计时，返回静默。'
+              : '访客与成员偏好分别保存在此浏览器。离开空间或刷新后结束计时，返回静默。'
           }}
         </p>
         <p v-if="reduced" class="description">
@@ -664,27 +805,41 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
-    <div v-if="complete" class="overlay">
+    <div v-if="complete || pendingMode" class="overlay">
       <section
         class="dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="breathing-done-title"
-        aria-describedby="breathing-done-text"
       >
-        <div class="seal">✓</div>
-        <p class="eyebrow">回 到 当 下</p>
-        <h2 id="breathing-done-title">本次呼吸已结束</h2>
-        <p id="breathing-done-text">
-          {{
-            demo ? '10 秒体验' : `${Math.round(timer.total / 60000)} 分钟呼吸`
-          }}已结束。让呼吸回到自然，想停留多久都可以。
-        </p>
-        <button ref="doneButton" class="primary" @click="closeComplete">回到静默</button>
+        <template v-if="pendingMode"
+          ><p class="eyebrow">进 度 已 暂 停</p>
+          <h2 id="breathing-done-title">结束本次，切换模式？</h2>
+          <p>还剩 {{ remaining }}。切换会结束当前{{ modeName }}，你也可以保留进度。</p>
+          <button ref="doneButton" class="primary" @click="cancelMode">保留本次练习</button
+          ><button class="text-button" @click="confirmMode">结束并切换</button></template
+        >
+        <template v-else
+          ><div class="seal">✓</div>
+          <p class="eyebrow">把 这 份 从 容 · 带 回 日 常</p>
+          <h2 id="breathing-done-title">本次{{ modeName }}已结束</h2>
+          <p>
+            {{
+              demo ? '10 秒体验已结束。' : '这一段留白，属于你。'
+            }}让呼吸回到自然，想停留多久都可以。
+          </p>
+          <button ref="doneButton" class="primary" @click="closeComplete">再待一会儿</button
+          ><button
+            class="text-button"
+            @click="goWorkspace"
+          >
+            进入工作空间 ↗
+          </button></template
+        >
       </section>
     </div>
     <div v-if="notice" class="toast" role="status">{{ notice }}</div>
-    <span class="sr" role="status">{{ complete ? '本次呼吸已结束' : '' }}</span>
+    <span class="sr" role="status">{{ complete ? `本次${modeName}已结束` : '' }}</span>
   </section>
 </template>
 
@@ -1546,11 +1701,338 @@ input[type='range'] {
   }
 }
 @container (max-width: 340px) {
-  .duration { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
-  .dock { width: calc(100% - 32px); }
-  .settings-trigger { left: 20px; right: auto; }
-  .phase { font-size: 17px; letter-spacing: 6px; }
-  .slogan { font-size: 8px; letter-spacing: 0; }
-  .brand { display: none; }
+  .duration {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+  .dock {
+    width: calc(100% - 32px);
+  }
+  .settings-trigger {
+    left: 20px;
+    right: auto;
+  }
+  .phase {
+    font-size: 17px;
+    letter-spacing: 6px;
+  }
+  .slogan {
+    font-size: 8px;
+    letter-spacing: 0;
+  }
+  .brand {
+    display: none;
+  }
+}
+</style>
+
+<style scoped>
+.breathing-stage {
+  min-height: 100dvh;
+  height: auto;
+  border-radius: 0;
+  overflow: clip;
+  --muted: #a39b8d;
+}
+.breathing-stage.day {
+  --muted: #777064;
+}
+.stage-content {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 26px 42px 10px;
+}
+.entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  z-index: 2;
+}
+.entry-brand {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 18px;
+  letter-spacing: 3px;
+  white-space: nowrap;
+}
+.entry-brand span {
+  font-size: 13px;
+  letter-spacing: 2px;
+}
+.entry-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.practice-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 0 22px;
+}
+.focus-scene {
+  position: relative;
+  width: 100%;
+  height: clamp(220px, 35dvh, 360px);
+  display: grid;
+  place-items: center;
+}
+.orb {
+  top: 50%;
+  width: 260px;
+  height: 260px;
+  min-width: 0;
+  min-height: 0;
+  opacity: 0.55;
+}
+.running .orb,
+.paused .orb {
+  opacity: 1;
+}
+.idle .orb-ring {
+  border-color: rgba(var(--accent), 0.1);
+}
+.idle .orb-ring:after {
+  inset: 18px;
+}
+.center-copy {
+  top: 50%;
+  white-space: normal;
+  width: 100%;
+}
+.phase,
+.idle .phase {
+  font-size: clamp(22px, 3vw, 34px);
+  letter-spacing: 3px;
+  text-indent: 0;
+  font-weight: 300;
+  line-height: 1.5;
+}
+.phase-sub {
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+.entry-copy {
+  color: var(--muted);
+  font-size: 12px;
+  margin: -8px 0 28px;
+  text-align: center;
+  line-height: 1.8;
+}
+.dock {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: 100%;
+  gap: 18px;
+}
+.mode-picker {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 30px;
+}
+.mode-picker button {
+  background: transparent;
+  padding: 9px 30px;
+  border-radius: 24px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mode-picker button[aria-pressed='true'] {
+  color: var(--text);
+  background: rgba(var(--accent), 0.12);
+}
+.duration {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.timer b {
+  font-size: 28px;
+}
+.no-guide.sitting .center-copy {
+  visibility: visible;
+}
+.entry-bottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 84px;
+}
+.companions {
+  width: 190px;
+}
+.scene-actions {
+  display: flex;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+.storage-notice {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.panel {
+  position: fixed;
+  top: 82px;
+  bottom: 26px;
+  z-index: 10;
+}
+.overlay {
+  position: fixed;
+  overflow: auto;
+  padding: 18px 0;
+}
+.dialog {
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+}
+.dialog button {
+  display: block;
+  margin: 12px auto 0;
+}
+.toast {
+  position: fixed;
+}
+@media (max-width: 600px) {
+  .stage-content {
+    padding: 20px 18px 8px;
+  }
+  .entry-header {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .entry-brand {
+    font-size: 15px;
+    letter-spacing: 2px;
+  }
+  .entry-brand span {
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+  .entry-tools {
+    gap: 6px;
+    margin-left: auto;
+  }
+  .entry-tools .icon {
+    width: 32px;
+    height: 32px;
+  }
+  .focus-scene {
+    height: 240px;
+  }
+  .orb {
+    width: 210px;
+    height: 210px;
+    top: 50%;
+  }
+  .center-copy {
+    top: 50%;
+  }
+  .entry-copy {
+    font-size: 11px;
+    margin: 0 0 24px;
+  }
+  .dock {
+    bottom: auto;
+    gap: 16px;
+  }
+  .chip {
+    padding: 8px 11px;
+  }
+  .entry-bottom {
+    min-height: 72px;
+    gap: 0;
+  }
+  .companions {
+    width: 130px;
+  }
+  .scene-actions .text-button {
+    padding: 10px 7px;
+    font-size: 10px;
+  }
+  .panel {
+    top: 72px;
+    bottom: 20px;
+  }
+  .bottom-note {
+    font-size: 10px;
+  }
+}
+@media (max-width: 380px) {
+  .entry-header {
+    justify-content: center;
+  }
+  .entry-tools {
+    margin: 0;
+  }
+  .entry-bottom {
+    flex-direction: column;
+    align-items: center;
+  }
+  .scene-actions {
+    align-self: center;
+  }
+}
+@media (max-height: 600px) {
+  .focus-scene {
+    height: 180px;
+  }
+  .orb {
+    width: 170px;
+    height: 170px;
+  }
+  .entry-copy {
+    margin: 0 0 16px;
+  }
+  .dock {
+    gap: 12px;
+  }
+  .companions {
+    display: none;
+  }
+  .entry-bottom {
+    min-height: 36px;
+    justify-content: flex-end;
+  }
+  .practice-main {
+    padding: 10px 0;
+  }
+}
+.breathing-stage:fullscreen {
+  overflow: auto;
+}
+@container (max-width:340px) {
+  .duration {
+    display: flex;
+  }
+  .dock {
+    width: 100%;
+  }
+}
+</style>
+<style scoped>
+@media (max-height: 500px) and (min-width: 601px) {
+  .stage-content { padding: 14px 24px 6px; }
+  .practice-main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 10px 0; }
+  .focus-scene { height: 175px; }
+  .entry-copy { display: none; }
+  .dock { grid-column: 2; grid-row: 1; gap: 10px; }
+  .phase, .idle .phase { font-size: 23px; }
+  .eyebrow { margin-bottom: 12px; }
+  .duration { gap: 5px; }
+  .chip { padding: 8px 10px; }
+  .entry-bottom { min-height: 24px; }
 }
 </style>

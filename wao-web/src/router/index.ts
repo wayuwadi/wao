@@ -17,7 +17,8 @@ const router = createRouter({
       meta: { public: true },
     },
     {
-      path: '/login',
+      path: '/breathe',
+      alias: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
       meta: { public: true },
@@ -402,9 +403,6 @@ router.beforeEach(async (to) => {
   }
   if (!to.meta.public && !session.authed) {
     return { name: 'login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : undefined }
-  }
-  if (to.name === 'login' && session.authed) {
-    return { path: (to.query.redirect as string) || '/' }
   }
   return true
 })

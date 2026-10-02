@@ -15,15 +15,16 @@ vi.mock('@/api/system', () => ({
 }))
 
 let wrapper: VueWrapper
-async function setup() {
+async function setup(path = '/login') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/login', component: LoginView },
+      { path: '/breathe', component: LoginView },
       { path: '/notes', component: { template: '<p>小记</p>' } },
     ],
   })
-  await router.push('/login?redirect=/notes')
+  await router.push(path)
   const pinia = createPinia()
   wrapper = mount(LoginView, { attachTo: document.body, global: { plugins: [pinia, router] } })
   await flushPromises()
@@ -39,6 +40,8 @@ async function email() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
+  sessionStorage.clear()
   vi.mocked(mountFeishuQr).mockResolvedValue(() => {})
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute('open', '')
@@ -71,13 +74,13 @@ describe('舞台登录与认证生命周期', () => {
     await setup()
     const buddies = wrapper.findAll('.buddy')
     await buddies[0]!.trigger('pointerenter', { pointerType: 'mouse' })
-    expect(wrapper.get('[role=status]').text()).toBe('嘿，有新点子吗？')
+    expect(wrapper.get('[role=status]').text()).toBe('此刻，不用急着有答案。')
     await buddies[1]!.trigger('pointerenter', { pointerType: 'touch' })
-    expect(wrapper.get('[role=status]').text()).toBe('嘿，有新点子吗？')
+    expect(wrapper.get('[role=status]').text()).toBe('此刻，不用急着有答案。')
     await buddies[1]!.trigger('click')
-    expect(wrapper.get('[role=status]').text()).toBe('今天有什么想记下的？')
+    expect(wrapper.get('[role=status]').text()).toBe('给自己留一点空白。')
     await buddies[2]!.trigger('focus')
-    expect(wrapper.get('[role=status]').text()).toBe('准备好了，一起开工！')
+    expect(wrapper.get('[role=status]').text()).toBe('准备好时，我们再出发。')
     expect(AudioMock).not.toHaveBeenCalled()
     await open()
     expect(wrapper.find('.greeting-bubble').exists()).toBe(false)
@@ -92,7 +95,7 @@ describe('舞台登录与认证生命周期', () => {
     viewport.offsetTop = 80
     viewport.dispatchEvent(new Event('resize'))
     await flushPromises()
-    const style = (wrapper.get('.login-stage').element as HTMLElement).style
+    const style = (wrapper.get('dialog').element as HTMLElement).style
     expect(style.getPropertyValue('--login-viewport-height')).toBe('260px')
     expect(style.getPropertyValue('--login-viewport-top')).toBe('80px')
     wrapper.unmount()
@@ -118,7 +121,7 @@ describe('舞台登录与认证生命周期', () => {
     )
   })
   it('失败保留表单，成功回到原目标；提交期间禁止重复提交和关闭', async () => {
-    const { session, router } = await setup()
+    const { session, router } = await setup('/login?redirect=/notes')
     await open()
     await email()
     await wrapper.get('input[type=email]').setValue('test@example.com')
@@ -179,5 +182,32 @@ describe('舞台登录与认证生命周期', () => {
     await wrapper.get('.authorization-cta').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('暂时无法连接飞书')
+  })
+  it('公共空间中真实状态接收流程保持练习暂停，不导航且不持久化密码', async () => {
+    const { session, router } = await setup()
+    await wrapper.get('.duration button').trigger('click')
+    await wrapper.get('.actions .primary').trigger('click')
+    await open()
+    expect(wrapper.get('.breathing-stage').classes()).toContain('paused')
+    const remaining = wrapper.get('.timer').text()
+    await email()
+    await wrapper.get('input[type=email]').setValue('test@example.com')
+    await wrapper.get('input[type=password]').setValue('private-password')
+    vi.spyOn(session, 'emailLogin').mockImplementation(async () => {
+      session.accept({
+        accountId: 'account',
+        member: { id: 'member', name: '成员', initial: '成', color: '#aaa', role: '成员' },
+        identities: [],
+        createdAt: '',
+      })
+    })
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(wrapper.get('.breathing-stage').classes()).toContain('paused')
+    expect(wrapper.get('.timer').text()).toBe(remaining)
+    expect(wrapper.get('.header-login').text()).toContain('进入工作空间')
+    expect(JSON.stringify(localStorage)).not.toContain('private-password')
+    expect(JSON.stringify(sessionStorage)).not.toContain('private-password')
   })
 })

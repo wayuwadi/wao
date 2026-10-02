@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
-import HomeBreathingStage from '@/components/home/HomeBreathingStage.vue'
 import HomeTianrenGlance from '@/components/home/HomeTianrenGlance.vue'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { AI_EXECUTION_MODE_DESCRIPTIONS } from '@/config/aiExecutionModes'
@@ -1317,7 +1316,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="home" :class="{ 'run-list-view': runLayout === 'list' }">
     <div class="home-primary">
-      <HomeBreathingStage v-if="!aiAreaOpen"><template #information><header class="home-day">
+      <section v-if="!aiAreaOpen" class="home-rest-welcome"><div class="home-rest-copy"><p>WAO · 工作空间</p><h1>从容开始，专注一件事。</h1><RouterLink to="/breathe">休息一下 · 一呼一吸 ↗</RouterLink></div><header class="home-day">
         <div class="home-day-tools">
           <div class="home-quick-glances">
           <div ref="quotaRegion" class="home-quota">
@@ -1347,7 +1346,7 @@ onBeforeUnmount(() => {
           </div>
           <WeatherPanel surface="calendar" :date="data.today" toolbar glance />
         </div>
-      </header></template></HomeBreathingStage>
+      </header></section>
       <section v-if="aiAreaOpen" class="ai-entry" aria-label="AI Run 实验功能">
         <div><h2>AI Run <span>{{ activeRuns.length ? `${activeRuns.length} 项进行中` : '实验功能 · 按需展开' }}</span></h2><p v-if="aiAreaOpen">日常开发优先在本地电脑完成；需要体验自动执行时再展开。</p><p v-else-if="activeRuns.length">{{ activeRuns[0]?.taskTitle }} · {{ activeRuns[0]?.latestProgress || '查看运行进度' }}</p></div>
         <button type="button" :aria-expanded="aiAreaOpen" aria-controls="home-ai-area" @click="aiAreaOpen = !aiAreaOpen">{{ aiAreaOpen ? '收起 AI Run' : '展开 AI Run' }}<span v-if="activeRuns.length"> · {{ activeRuns.length }} 项进行中</span></button>
@@ -3456,4 +3455,11 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .home { padding: 10px 12px 24px; }
   .home-day-tools { align-items: flex-start; flex-direction: column; }
 }
+</style>
+
+<style scoped>
+.home-rest-welcome { min-height:260px; padding:32px; border:1px solid var(--wao-line); border-radius:16px; background:var(--wao-bg-card); display:flex; flex-direction:column; justify-content:space-between; gap:30px; }
+.home-rest-copy p { color:var(--wao-text-weak); font-size:12px; }
+.home-rest-copy h1 { font-size:clamp(20px,3vw,30px); font-weight:500; }
+.home-rest-copy a { color:var(--wao-primary-text); }
 </style>
