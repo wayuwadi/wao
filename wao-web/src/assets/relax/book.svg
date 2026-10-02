@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="249 111 161 162"><g>
+      <title>记录：随时记下，慢慢长大</title>
+      <path d="m303 222-4 33h-16m69-33 4 33h17" stroke="#9880e1" stroke-width="13" stroke-linecap="round" fill="none" />
+      <path d="m286 171-25 29m107-28 19-20 16 8" stroke="#bba5fb" stroke-width="12" stroke-linecap="round" fill="none" />
+      <g transform="rotate(-7 329 180)">
+        <rect x="283" y="121" width="93" height="117" rx="20" fill="#ad94ee" />
+        <path d="M300 125v109" stroke="#d8c9ff" stroke-width="3" />
+        <path d="M277 144h13m-13 20h13m-13 20h13m-13 20h13" stroke="#ded4fa" stroke-width="5" stroke-linecap="round" />
+        <rect x="315" y="135" width="42" height="6" rx="3" fill="#ddd0ff" />
+        <ellipse cx="322" cy="177" rx="5" ry="7" fill="#342549" />
+        <ellipse cx="349" cy="177" rx="5" ry="7" fill="#342549" />
+        <path d="M326 196q10 9 19-2" stroke="#342549" stroke-width="3" fill="none" stroke-linecap="round" />
+      </g>
+      </g>
+    </svg>
