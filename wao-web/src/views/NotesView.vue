@@ -18,6 +18,7 @@ import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fet
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { useNow } from '@/composables/now'
 import { noteCharactersCreatedOn, shanghaiDateKey } from '@/utils/noteDailyCharacters'
+import { readNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 import { fetchNoteAiWorkflows, retryNoteAiWorkflow, type NoteAiWorkflowStatus } from '@/api/noteAiWorkflows'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
@@ -349,7 +350,7 @@ async function deleteNote(id: string) {
   try {
     await data.deleteDoc(id)
     discardAutoNoteEnrichment(session.currentUser.id, id)
-    try { localStorage.removeItem(`wao-note-edit-v1:${session.currentUser.id}:${id}`) } catch { /* 文档已进入回收站。 */ }
+    try { removeNoteDraft(`wao-note-edit-v1:${session.currentUser.id}:${id}`) } catch { /* 文档已进入回收站。 */ }
     confirmingDeleteId.value = ''
     closeEditing(id)
     if (highlighted.value === id) highlighted.value = ''
@@ -523,7 +524,7 @@ function workflowMessage(id: string) {
 function hasPendingNoteDraft(note: Doc) {
   const key = `wao-note-edit-v1:${session.currentUser.id}:${note.id}`
   try {
-    const raw = localStorage.getItem(key)
+    const raw = readNoteDraft(key)
     if (raw === null) return false
     const draft = JSON.parse(raw) as { id?: string; text?: string; content?: Doc['content']; tags?: string[]; generatedTitle?: string }
     const saved = resolvedRichContent(note)
@@ -532,7 +533,7 @@ function hasPendingNoteDraft(note: Doc) {
         && JSON.stringify(draft.content?.document ?? null) === JSON.stringify(saved.document ?? null)
         && JSON.stringify(draft.tags ?? []) === JSON.stringify(note.tags ?? [])
         && (draft.generatedTitle || note.title) === note.title) {
-      localStorage.removeItem(key)
+      removeNoteDraft(key, raw)
       return false
     }
     return true
@@ -683,7 +684,7 @@ watch([() => session.currentUser.id, notes], ([memberId, values], previous) => {
   for (const note of values) {
     if (editingIds.value.includes(note.id)) continue
     try {
-      const draft = JSON.parse(localStorage.getItem(`wao-note-edit-v1:${memberId}:${note.id}`) || 'null')
+      const draft = JSON.parse(readNoteDraft(`wao-note-edit-v1:${memberId}:${note.id}`) || 'null')
       if (draft?.id === note.id && typeof draft.text === 'string') {
         noteDrafts.value[note.id] = {
           content: draft.content?.markdown === draft.text ? draft.content : { version: 1, document: null, markdown: draft.text },

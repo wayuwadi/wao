@@ -31,6 +31,8 @@ await run.consecutiveSaves()
 await run.failureRecovery()
 await run.competingWrites()
 await run.savingProtection()
+// 另独立打开同源同账号的 /notes 页签，执行页签隔离专项：
+await run.sameOriginDrafts(sameOriginTab)
 ```
 
 逐项执行、观察结果，单次工具调用留足约 50 秒。任何实际步骤失败调用 `await run.finish(false, error)`，清除故障并保存失败报告；重新验证创建新实例，不把旧失败报告改成通过。不要重复提交已在服务端成功但观察超时的操作。
@@ -61,6 +63,6 @@ await run.finish(true)
 
 - 原始报告与 PNG 默认在仓库外系统临时目录 `wao-notes-regression/<runId>/`，报告带基线 SHA、工作区是否有改动、步骤与清理状态。需长期保留时复制到受控本机私有目录；Windows 的文件 `mode` 不等于 NTFS ACL。
 - 只提交脱敏结论，不提交截图、精确业务 ID、会话、凭据或真实私有正文。合成内容带“合成验收”标记。
-- 该工具验证真实存储和本地浏览器恢复；两源隔离了本地草稿，**没有验证同源多页签草稿互相覆盖**。迟到 AI 的实际生成、光标位置、真实 Runner 重启及服务端重复回调也不在此工具通过声明内，分别需要组件/队列测试和可用执行环境。
+- 基础 7 类步骤之外，`sameOriginDrafts` 额外验证同源独立页签各自刷新恢复、一方保存不清除另一方，以及第二页签失败恢复。修改页签草稿时必须执行此专项并检查报告中的专项通过项；仅基础套件通过不代表专项已执行。浏览器“复制页签”会复制 sessionStorage，不在独立打开页签的通过声明内。迟到 AI 的实际生成、光标位置、真实 Runner 重启及服务端重复回调也需要组件/队列测试和可用执行环境。
 - 配置了真实 AI 的账号保存可能按已有偏好入队；确认预算与环境再运行。工具不切换模型，不配置供应商或付费 API，不修改个人 AI 偏好。
 - 不修改用户已确认的小记单份正文体验，也不新增业务 API、CLI 或 MCP 权限。
