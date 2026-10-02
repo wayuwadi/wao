@@ -523,7 +523,7 @@ onBeforeUnmount(() => {
     :class="[
       timer.state,
       {
-        day: theme.effective.value === 'light',
+        day: theme.mode.value === 'light',
         sitting: mode === 'sitting',
         'no-guide': !prefs.guide,
       },
@@ -545,11 +545,11 @@ onBeforeUnmount(() => {
         <div class="entry-tools">
           <button
             class="icon"
-            :aria-label="`主题：${theme.mode.value === 'system' ? '跟随系统' : theme.mode.value === 'dark' ? '夜间' : '日间'}，点击切换`"
+            :aria-label="`主题：${theme.mode.value === 'system' ? '默认夜间' : theme.mode.value === 'dark' ? '夜间' : '日间'}，点击切换`"
             @click="theme.toggleTheme"
           >
             <i
-              :class="theme.effective.value === 'dark' ? 'ri-moon-line' : 'ri-sun-line'"
+              :class="theme.mode.value === 'light' ? 'ri-sun-line' : 'ri-moon-line'"
               aria-hidden="true"
             ></i>
           </button>
@@ -572,9 +572,8 @@ onBeforeUnmount(() => {
           <div
             class="orb"
             :style="{
-              '--scale': idle || reduced || mode === 'sitting' ? 1 : 0.78 + expansion * 0.26,
-              '--light':
-                idle || mode === 'sitting' ? 0.55 : ((0.45 + expansion * 0.55) * prefs.glow) / 65,
+              '--scale': idle || reduced || mode === 'sitting' ? 1 : 0.94 + expansion * 0.1,
+              '--light': prefs.glow / 100,
             }"
             aria-hidden="true"
           >
@@ -846,11 +845,12 @@ onBeforeUnmount(() => {
 <style scoped>
 .breathing-stage {
   color-scheme: dark;
-  --bg: #080b0d;
-  --text: #d4c9b8;
-  --muted: #817e76;
-  --line: #d1be9622;
-  --panel: #121719f5;
+  --bg: #090a0c;
+  --text: #e5e5e8;
+  --muted: #a1a1aa;
+  --line: #ffffff24;
+  --panel: #17171b;
+  --selected: #ffffff0b;
   --accent: 206, 163, 106;
   --strength: 0.65;
   font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
@@ -862,17 +862,16 @@ onBeforeUnmount(() => {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  transition:
-    background 1s,
-    color 0.7s;
+  transition: none;
 }
 .breathing-stage.day {
   color-scheme: light;
-  --bg: #f2f0e9;
-  --text: #514d44;
-  --muted: #8b8579;
-  --line: #61573c24;
-  --panel: #faf9f3f5;
+  --bg: #ededf0;
+  --text: #34343b;
+  --muted: #666670;
+  --line: #25253024;
+  --panel: #f7f7f9;
+  --selected: #25253009;
 }
 button,
 input {
@@ -909,7 +908,7 @@ button:disabled {
 .ambient {
   position: absolute;
   inset: 0;
-  opacity: var(--strength);
+  opacity: calc(var(--strength) * 0.3);
   transition: opacity 1s;
 }
 .ambient:before,
@@ -1733,10 +1732,10 @@ input[type='range'] {
   height: auto;
   border-radius: 0;
   overflow: clip;
-  --muted: #a39b8d;
+  --muted: #a1a1aa;
 }
 .breathing-stage.day {
-  --muted: #777064;
+  --muted: #666670;
 }
 .stage-content {
   position: relative;
@@ -1801,6 +1800,20 @@ input[type='range'] {
 .idle .orb-ring:after {
   inset: 18px;
 }
+.orb-light {
+  background: radial-gradient(circle, rgba(var(--accent), 0.035), transparent 60%);
+}
+.orb-ring {
+  box-shadow: none;
+}
+.duration button[aria-pressed='true'],
+.primary {
+  border-color: var(--line);
+  background: var(--selected);
+}
+.primary:hover {
+  background: #ffffff14;
+}
 .center-copy {
   top: 50%;
   white-space: normal;
@@ -1849,7 +1862,7 @@ input[type='range'] {
 }
 .mode-picker button[aria-pressed='true'] {
   color: var(--text);
-  background: rgba(var(--accent), 0.12);
+  background: var(--selected);
 }
 .duration {
   display: flex;

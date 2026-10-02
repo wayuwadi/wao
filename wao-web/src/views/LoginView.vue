@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
+import { useTheme } from '@/composables/theme'
 import HomeBreathingStage from '@/components/home/HomeBreathingStage.vue'
 import AuthDialog from '@/components/login/AuthDialog.vue'
 import LoginCrew from '@/components/login/LoginCrew.vue'
@@ -11,6 +12,7 @@ import { consumeAuthPractice, safeAuthTarget, saveAuthHandoff, setInAppAuthTarge
 const session = useSessionStore(),
   route = useRoute(),
   router = useRouter()
+const theme = useTheme()
 const stage = ref<InstanceType<typeof HomeBreathingStage>>()
 const auth = ref<InstanceType<typeof AuthDialog>>()
 const target = ref('/breathe')
@@ -57,7 +59,7 @@ onMounted(async () => {
 })
 </script>
 <template>
-  <main class="login-stage">
+  <main class="login-stage" :data-entry-theme="theme.mode.value === 'light' ? 'light' : 'dark'">
     <HomeBreathingStage ref="stage" @workspace="enterWorkspace">
       <template #account
         ><button class="header-login" @click="session.authed ? enterWorkspace() : openAuth()">
@@ -88,8 +90,8 @@ onMounted(async () => {
   min-height: 100dvh;
 }
 .header-login {
-  border: 1px solid rgba(168, 141, 96, 0.4);
-  background: rgba(168, 141, 96, 0.12);
+  border: 1px solid currentColor;
+  background: transparent;
   color: inherit;
   border-radius: 24px;
   padding: 10px 18px;
@@ -99,7 +101,7 @@ onMounted(async () => {
   white-space: nowrap;
 }
 .header-login:focus-visible {
-  outline: 2px solid #a98b60;
+  outline: 2px solid currentColor;
   outline-offset: 3px;
 }
 .quiet-crew {

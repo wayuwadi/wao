@@ -447,7 +447,7 @@ onBeforeUnmount(() => {
 }
 
 .auth-dialog {
-  --wao-primary-text: #8c714b;
+  --wao-primary-text: #666273;
   color: var(--wao-text);
 }
 .card :is(p, label, .tiny, .close, .other-methods) {
@@ -462,7 +462,7 @@ button {
 }
 button:focus-visible,
 input:focus-visible {
-  outline: 2px solid #a98b60;
+  outline: 2px solid #a7a2b4;
   outline-offset: 3px;
 }
 .authorization-cta {
@@ -485,8 +485,8 @@ input:focus-visible {
 }
 </style>
 <style scoped>
-.auth-dialog { background: #faf9f3; color: #514d44; border-color: #d4c9b8; --wao-text: #514d44; --wao-text-weak: #777064; --wao-bg-page: #f2f0e9; --wao-line: #d4c9b8; }
-:global([data-theme='dark']) .auth-dialog { background: #121719; color: #d4c9b8; border-color: #554c3c; --wao-text: #d4c9b8; --wao-text-weak: #a39b8d; --wao-bg-page: #080b0d; --wao-line: #554c3c; }
+.auth-dialog { color-scheme: light; background: #f7f7f9; color: #34343b; border-color: #d1d1d8; --wao-text: #34343b; --wao-text-weak: #666670; --wao-bg-page: #ededf0; --wao-line: #d1d1d8; }
+:global(.login-stage[data-entry-theme='dark']) .auth-dialog { color-scheme: dark; background: #17171b; color: #e5e5e8; border-color: #38383f; --wao-text: #e5e5e8; --wao-text-weak: #a1a1aa; --wao-bg-page: #090a0c; --wao-line: #38383f; }
 .other-methods button { background: var(--wao-bg-page); color: var(--wao-text); border-color: var(--wao-line); }
 .email-form input { border-color: var(--wao-line); }
 </style>
