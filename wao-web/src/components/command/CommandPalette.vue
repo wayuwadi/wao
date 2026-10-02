@@ -6,7 +6,6 @@ import { useTheme, type ThemeMode } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { quickLinkPath } from '@/config/quickLinks'
 import { toast } from '@/composables/toast'
-import { createAiPairCode, fetchAiRunners, wakeAiRunner } from '@/api/ai'
 
 interface Command {
   id: string
@@ -55,41 +54,15 @@ function setTheme(mode: ThemeMode) {
   close()
 }
 
-async function pairCode() {
-  try {
-    const { code, expiresAt } = await createAiPairCode()
-    toast(`配对码 ${code}（有效期至 ${new Date(expiresAt).toLocaleTimeString()}）`, 'ri-key-2-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '生成配对码失败', 'ri-error-warning-line')
-  }
-  close()
-}
-
-async function wakeRunner() {
-  close()
-  toast('正在唤醒所有执行电脑…', 'ri-computer-line')
-  try {
-    const runners = await fetchAiRunners()
-    if (!runners.length) {
-      toast('当前没有已注册的执行电脑', 'ri-error-warning-line')
-      return
-    }
-    await Promise.all(runners.map((r) => wakeAiRunner(r.id)))
-    toast('唤醒请求已发送', 'ri-check-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '唤醒失败', 'ri-error-warning-line')
-  }
-}
-
 const commands = computed<Command[]>(() => {
   const list: Command[] = [
     // 页面导航
     {
       id: 'nav-home',
-      title: 'AI 控制台',
-      subtitle: '查看运行状态与执行电脑',
+      title: '首页',
+      subtitle: '呼吸、天气与今日一卦',
       icon: 'ri-pulse-line',
-      keywords: ['ai', 'console', 'home', 'yunxing', 'zhuangtai'],
+      keywords: ['home', '首页', '呼吸', '天气'],
       action: () => navigate('/'),
     },
     {
@@ -190,22 +163,6 @@ const commands = computed<Command[]>(() => {
         void router.push('/notes')
         close()
       },
-    },
-    {
-      id: 'action-pair',
-      title: '生成 Runner 配对码',
-      subtitle: '为新的执行电脑生成配对码',
-      icon: 'ri-key-2-line',
-      keywords: ['pair', 'peidui', 'runner'],
-      action: pairCode,
-    },
-    {
-      id: 'action-wake',
-      title: '唤醒执行电脑',
-      subtitle: '向所有 Runner 发送唤醒请求',
-      icon: 'ri-computer-line',
-      keywords: ['wake', 'huanxing', 'runner'],
-      action: wakeRunner,
     },
     {
       id: 'action-assistant',

@@ -111,7 +111,7 @@ describe('AutomationView 导航', () => {
   })
 })
 
-it('启用状态不表示运行成功，并可进入已提交任务的真实执行结果', async () => {
+it('历史提交记录不冒充成功，也不链接已下线的控制台', async () => {
   const item = job(1)
   item.runs[0]!.aiRunId = 'run-123'
   item.runs[0]!.result = '成功 · 已创建 AI Run run-123'
@@ -120,7 +120,7 @@ it('启用状态不表示运行成功，并可进入已提交任务的真实执�
   expect(wrapper.text()).toContain('已提交执行')
   await wrapper.get('.job-name').trigger('click')
   expect(wrapper.get('.grid-aoruns .mini').text()).toBe('已提交执行')
-  expect(wrapper.get('a.result-link').attributes('href')).toBe('/?console=runs&run=run-123')
+  expect(wrapper.find('a.result-link').exists()).toBe(false)
   expect(wrapper.text()).toContain('触发记录：成功 · 已创建 AI Run run-123')
   wrapper.unmount()
 })
