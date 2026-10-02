@@ -43,7 +43,7 @@ function loadSdk() {
 }
 
 /** 在指定容器创建飞书官方二维码，并返回清理函数。 */
-export async function mountFeishuQr(containerId: string, isActive: () => boolean = () => true) {
+export async function mountFeishuQr(containerId: string, isActive: () => boolean = () => true, beforeNavigate?: (url: string) => void | boolean) {
   const authorizationUrl = await getFeishuAuthorizationUrl('qr')
   await loadSdk()
   if (!window.QRLogin) throw new Error('飞书二维码组件不可用，请改用飞书授权登录。')
@@ -76,12 +76,14 @@ export async function mountFeishuQr(containerId: string, isActive: () => boolean
     typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(fitFrame)
   resizeObserver?.observe(container)
   const onMessage = (event: MessageEvent) => {
+    if (!isActive()) return
     if (!qr.matchOrigin(event.origin) || (qr.matchData && !qr.matchData(event.data))) return
     const temporaryCode =
       typeof event.data === 'string'
         ? event.data
         : (event.data as { tmp_code?: string } | null)?.tmp_code
     if (!temporaryCode) return
+    if (beforeNavigate?.(authorizationUrl) === false) return
     window.location.assign(`${authorizationUrl}&tmp_code=${encodeURIComponent(temporaryCode)}`)
   }
   window.addEventListener('message', onMessage)

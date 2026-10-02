@@ -8,8 +8,10 @@ export async function getFeishuAuthorizationUrl(scene: FeishuScene) {
   return response.data.data.authorizationUrl
 }
 
-export async function startFeishuLogin(scene: FeishuScene) {
-  window.location.assign(await getFeishuAuthorizationUrl(scene))
+export async function startFeishuLogin(scene: FeishuScene, beforeNavigate?: (url: string) => void | boolean) {
+  const url = await getFeishuAuthorizationUrl(scene)
+  if (beforeNavigate?.(url) === false) return
+  window.location.assign(url)
 }
 
 export async function exchangeFeishuCode(code: string, state: string) {

@@ -53,7 +53,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function acceptResolution(resolution: AuthResolution) {
-    if (resolution.session) { accept(resolution.session); await refreshDirectory() }
+    if (resolution.session) { accept(resolution.session) }
     else if (resolution.claimRequired) pendingClaim.value = resolution
   }
 
@@ -62,7 +62,7 @@ export const useSessionStore = defineStore('session', () => {
     if (!initializePromise) {
       connectionError.value = ''
       initializePromise = getSession()
-        .then(async (value) => { accept(value); await refreshDirectory() })
+        .then((value) => { accept(value) })
         .catch((error: unknown) => {
           const status = (error as { status?: number; response?: { status?: number } })?.status
             ?? (error as { response?: { status?: number } })?.response?.status
@@ -80,17 +80,14 @@ export const useSessionStore = defineStore('session', () => {
 
   async function emailLogin(email: string, password: string) {
     accept(await loginWithEmail(email, password))
-    await refreshDirectory()
   }
 
   async function emailRegister(name: string, email: string, password: string) {
     accept(await registerWithEmail(name, email, password))
-    await refreshDirectory()
   }
 
   async function claim(memberId: string) {
     accept(await claimMember(memberId))
-    await refreshDirectory()
   }
 
   async function logout() {

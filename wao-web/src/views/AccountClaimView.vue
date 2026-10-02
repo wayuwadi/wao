@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 
+import { authReturnTarget } from '@/composables/breathingAuth'
+
 const session = useSessionStore()
 const router = useRouter()
 const busy = ref(false)
@@ -11,7 +13,7 @@ const error = ref('')
 async function choose(memberId: string) {
   busy.value = true
   error.value = ''
-  try { await session.claim(memberId); await router.replace('/') }
+  try { await session.claim(memberId); await router.replace(authReturnTarget()) }
   catch (reason) { error.value = reason instanceof Error ? reason.message : '账号认领失败，请重试。' }
   finally { busy.value = false }
 }

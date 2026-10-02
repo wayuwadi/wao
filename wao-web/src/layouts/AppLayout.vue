@@ -304,6 +304,7 @@ watch(() => route.query.task, openLocatedTask)
 
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
+  void session.refreshDirectory()
   void preferences.load()
   // 接入真实 /api；任务域会独立暴露加载 / 失败状态，不用 fixtures 冒充用户数据。
   await data.hydrate()
@@ -347,6 +348,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           </template>
         </template>
         <TopMenuBar />
+        <RouterLink class="rest-link" to="/breathe" aria-label="休息一下，打开一呼一吸">休息一下</RouterLink>
         <TabBar />
 
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
@@ -879,4 +881,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     font-size: 10px;
   }
 }
+</style>
+
+<style scoped>
+.rest-link { flex:none; padding:8px; color:var(--wao-text-weak); font-size:12px; white-space:nowrap; }
 </style>

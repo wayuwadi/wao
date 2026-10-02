@@ -32,6 +32,54 @@ export class BreathingSession {
     this.state = 'idle'
     this.remaining = 0
   }
+  restore(total: number, remaining: number) {
+    if (
+      !Number.isFinite(total) ||
+      !Number.isFinite(remaining) ||
+      total <= 0 ||
+      remaining <= 0 ||
+      remaining > total
+    )
+      return
+    this.total = total
+    this.remaining = remaining
+    this.state = 'paused'
+  }
+}
+
+export type PracticeMode = 'breathing' | 'sitting'
+export interface PracticeSnapshot {
+  mode: PracticeMode
+  total: number
+  remaining: number
+  inhale: number
+  exhale: number
+}
+export function readPracticeSnapshot(value: unknown): PracticeSnapshot | null {
+  if (!value || typeof value !== 'object') return null
+  const p = value as PracticeSnapshot
+  if (p.mode !== 'breathing' && p.mode !== 'sitting') return null
+  if (
+    ![p.total, p.remaining, p.inhale, p.exhale].every(Number.isFinite) ||
+    p.total > 180 * 60_000 ||
+    p.remaining <= 0 ||
+    p.remaining > p.total ||
+    p.inhale < 2 ||
+    p.inhale > 6 ||
+    p.exhale < 2 ||
+    p.exhale > 8
+  )
+    return null
+  return {
+    mode: p.mode,
+    total: p.total,
+    remaining: p.remaining,
+    inhale: p.inhale,
+    exhale: p.exhale,
+  }
+}
+export function breathingPreferenceKey(member: string) {
+  return member ? `wao-home-breathing:${member}` : 'wao-breathing-guest:v1'
 }
 
 export interface BreathingPreferences {
@@ -53,7 +101,7 @@ export const breathingDefaults: BreathingPreferences = {
   galaxy: false,
   words: true,
   guide: true,
-  sound: true,
+  sound: false,
   inhale: 4,
   exhale: 6,
   minutes: 15,
