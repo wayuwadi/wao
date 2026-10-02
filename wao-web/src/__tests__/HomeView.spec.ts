@@ -5,6 +5,7 @@ import HomeView from '@/views/HomeView.vue'
 
 vi.mock('@/components/home/HomeBreathingStage.vue', () => ({ default: { template: '<section aria-label="呼吸练习"><slot name="information" /></section>' } }))
 vi.mock('@/components/home/HomeTianrenGlance.vue', () => ({ default: { template: '<span>今日一卦</span>' } }))
+vi.mock('@/api/codexMemberships', () => ({ fetchCodexMemberships: vi.fn().mockResolvedValue([]) }))
 vi.mock('@/components/calendar/WeatherPanel.vue', () => ({ default: { template: '<span>天气</span>' } }))
 vi.mock('@/api/ai', () => ({ fetchAiRuns: vi.fn(), fetchAiRunners: vi.fn(), fetchAiWorkflows: vi.fn() }))
 
