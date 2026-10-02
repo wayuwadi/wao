@@ -64,20 +64,17 @@ public class AiAccountController {
     }
 
     /** 发起 OAuth 登录，返回让用户在浏览器里打开的授权地址。 */
-    @PostMapping("/login/start")
     public ApiResponse<AiAccountLoginStartDto> startLogin(@Valid @RequestBody StartAiAccountLoginRequest request,
             HttpServletRequest http) {
         return ApiResponse.ok(service.startLogin(request, currentMember.idOr(http, "unknown")));
     }
 
     /** 回填授权码完成登录，直接返回建好的账号。 */
-    @PostMapping("/login/complete")
     public ApiResponse<AiAccountDto> completeLogin(@Valid @RequestBody CompleteAiAccountLoginRequest request) {
         return ApiResponse.ok(service.completeLogin(request));
     }
 
     /** 查询 Codex 设备码授权状态；授权完成时直接返回新建账号。 */
-    @GetMapping("/login/{state}/status")
     public ApiResponse<AiAccountLoginStatusDto> loginStatus(@PathVariable String state) {
         return ApiResponse.ok(service.loginStatus(state));
     }

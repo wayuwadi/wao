@@ -560,7 +560,9 @@ server {
     # 只有会读取集中凭据或访问供应商的接口固定到 Linux VPN 出口。AI 入队、目标创建、状态轮询、
     # Runner 心跳和结果回传都是共享数据库操作，继续走下方双节点 upstream，避免主节点发布时整条链路 502。
     # 天人解读是长连接专用链路，按 ADR-047 保持 Linux 主节点和 330 秒超时。
-    location ~ ^/api/(settings/ai-accounts(?:/|$)|ai/runner/(?:accounts|claim|assistant-v2/claim)(?:/|$)|tianren/readings/today/interpret(?:/|$)) {
+    location ~ ^/api/ai/(runner|runners)(/|$) { return 410; }
+
+    location ~ ^/api/(settings/ai-accounts(?:/|$)|tianren/readings/today/interpret(?:/|$)) {
         proxy_pass https://wao_ai_gateway;
         proxy_http_version 1.1;
         proxy_ssl_verify off;

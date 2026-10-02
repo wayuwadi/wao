@@ -80,6 +80,8 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins/)" = 401
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/api/auth/jumpserver)" = 410
 
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST https://wao.wayuwa.cn/api/ai/runner/heartbeat)" = 410
+
 header_value() {
   path="$1"
   header="$2"
@@ -91,8 +93,6 @@ header_value() {
 test "$(header_value /api/ai/workflows X-WAO-API-Route)" = dual-gateway-ai
 test "$(header_value /api/ai/goals X-WAO-API-Route)" = dual-gateway-ai
 test "$(header_value /api/settings/ai-accounts X-WAO-API-Route)" = linux-vpn-master
-test "$(header_value /api/ai/runner/accounts X-WAO-API-Route)" = linux-vpn-master
-test "$(header_value /api/ai/runner/assistant-v2/claim X-WAO-API-Route)" = linux-vpn-master
 test "$(header_value /api/tianren/readings/today/interpret/stream X-WAO-API-Route)" = linux-vpn-master
 test "$(header_value /pluginWebUpdateNotice/web_version_by_plugin.json Cache-Control)" = \
   'no-cache, no-store, must-revalidate'

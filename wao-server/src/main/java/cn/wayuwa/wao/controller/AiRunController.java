@@ -73,7 +73,6 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import org.springframework.web.multipart.MultipartFile;
 
 /** AI Run 页面配置、队列和本地执行节点协议。 */
-@RestController
 @RequestMapping("/api/ai")
 public class AiRunController {
 

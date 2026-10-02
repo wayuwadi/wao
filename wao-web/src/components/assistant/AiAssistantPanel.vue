@@ -94,7 +94,7 @@ const sourceFilter = reactive<{
   dateTo: string
   projectIds: string[]
 }>({ assetTypes: ['chat', 'knowledge', 'project', 'task'], chatIds: [], senders: [], dateFrom: '', dateTo: '', projectIds: [] })
-const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查本地 Codex…' })
+const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查 AI API…' })
 const capabilities = ref<AiCapability[]>([])
 function initialCapability() {
   try { return localStorage.getItem('wao-assistant-capability-v1') || '' } catch { return '' }
@@ -190,13 +190,13 @@ async function loadStatus() {
 
 async function loadCapabilities() {
   try {
-    capabilities.value = await fetchAiCapabilities()
+    capabilities.value = (await fetchAiCapabilities()).filter(item => item.executionMode === 'SERVER_API')
     if (capabilityId.value && !capabilities.value.some((item) => item.id === capabilityId.value)) {
       capabilityId.value = ''
     }
   } catch {
-    capabilities.value = [{ id: 'local-codex', label: '本地 Codex', provider: 'codex',
-      executionMode: 'RUNNER', available: false, message: '能力列表读取失败' }]
+    capabilities.value = []
+    assistantStatus.value = { configured: false, message: '能力列表读取失败，请重试' }
   }
 }
 
