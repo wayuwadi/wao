@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, existsSync, symlinkSync, writeFileSync, mkdirSync, statSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, existsSync, symlinkSync, linkSync, writeFileSync, mkdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { DocumentDraftRegression } from './document-drafts.mjs'
@@ -59,24 +59,28 @@ test('产物目录即使通过符号链接回到仓库也被拒绝', () => {
   const directory = mkdtempSync(join(tmpdir(), 'wao-draft-symlink-test-'))
   try {
     const link = join(directory, 'repo')
-    symlinkSync(resolve(import.meta.dirname, '../../..'), link)
+    // Windows 目录 junction 不需要额外的符号链接权限，也必须经过 realpath 防护。
+    symlinkSync(resolve(import.meta.dirname, '../../..'), link, process.platform === 'win32' ? 'junction' : 'dir')
     assert.throws(() => new DocumentDraftRegression({}, { baseURL: 'http://127.0.0.1:5231',
       kbPath: '/kb/acceptance', kbName: '测试', outputDir: link }), /仓库外/)
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
 
-test('报告原子替换已有文件链接，不改写链接目标并保持私有权限', () => {
+test('报告原子替换已有文件链接，不改写链接目标；POSIX 保持私有权限', () => {
   const directory = mkdtempSync(join(tmpdir(), 'wao-draft-atomic-test-'))
   try {
     const target = join(directory, 'untouched.txt')
     const outputDir = join(directory, 'report')
     mkdirSync(outputDir)
     writeFileSync(target, '保持原样')
-    symlinkSync(target, join(outputDir, 'report.json'))
+    // Windows 普通用户可创建硬链接；两种链接都可证明原子替换不会沿链接改写目标。
+    if (process.platform === 'win32') linkSync(target, join(outputDir, 'report.json'))
+    else symlinkSync(target, join(outputDir, 'report.json'))
     const run = new DocumentDraftRegression({}, { baseURL: 'http://127.0.0.1:5231',
       kbPath: '/kb/acceptance', kbName: '测试', outputDir, faultFile: join(directory, 'fault.json') })
     assert.equal(readFileSync(target, 'utf8'), '保持原样')
     assert.equal(JSON.parse(readFileSync(join(outputDir, 'report.json'), 'utf8')).runId, run.runId)
-    assert.equal(statSync(join(outputDir, 'report.json')).mode & 0o777, 0o600)
+    // Windows 的 POSIX mode 不表达 NTFS ACL，不能用 0600 声称验证了 Windows 权限。
+    if (process.platform !== 'win32') assert.equal(statSync(join(outputDir, 'report.json')).mode & 0o777, 0o600)
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
