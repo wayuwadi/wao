@@ -7,11 +7,11 @@ import { useSessionStore } from '@/stores/session'
 import { mountFeishuQr } from '@/utils/feishuQr'
 import { startFeishuLogin } from '@/api/feishu'
 
-vi.mock('@/utils/feishuQr', () => ({ mountFeishuQr: vi.fn().mockResolvedValue(() => {}) }))
-vi.mock('@/utils/feishuInApp', () => ({ isInFeishu: () => false, feishuInAppLogin: vi.fn() }))
-vi.mock('@/api/feishu', () => ({ startFeishuLogin: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/utils/feishuQr', () => ({ mountFeishuQr: vi.fn<typeof mountFeishuQr>().mockResolvedValue(() => {}) }))
+vi.mock('@/utils/feishuInApp', () => ({ isInFeishu: () => false, feishuInAppLogin: vi.fn<() => Promise<null>>() }))
+vi.mock('@/api/feishu', () => ({ startFeishuLogin: vi.fn<typeof startFeishuLogin>().mockResolvedValue(undefined) }))
 vi.mock('@/api/system', () => ({
-  fetchPublicSiteInfo: vi.fn().mockResolvedValue({ siteName: 'WAO' }),
+  fetchPublicSiteInfo: vi.fn<() => Promise<{ siteName: string }>>().mockResolvedValue({ siteName: 'WAO' }),
 }))
 
 let wrapper: VueWrapper
@@ -69,7 +69,7 @@ describe('舞台登录与认证生命周期', () => {
     expect(wrapper.get('dialog').attributes()).toHaveProperty('open')
   })
   it('鼠标掠过、键盘聚焦与触摸点击显示问候，静音不创建音频', async () => {
-    const AudioMock = vi.fn()
+    const AudioMock = vi.fn<() => void>()
     vi.stubGlobal('Audio', AudioMock)
     await setup()
     const buddies = wrapper.findAll('.buddy')
@@ -164,7 +164,7 @@ describe('舞台登录与认证生命周期', () => {
     const active = vi.mocked(mountFeishuQr).mock.calls[0]![1]!
     await email()
     expect(active()).toBe(false)
-    const cleanup = vi.fn()
+    const cleanup = vi.fn<() => void>()
     resolve(cleanup)
     await flushPromises()
     expect(cleanup).toHaveBeenCalledOnce()

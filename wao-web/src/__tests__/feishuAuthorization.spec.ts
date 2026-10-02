@@ -2,16 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startFeishuLogin } from '@/api/feishu'
 import { http } from '@/api/http'
 
-vi.mock('@/api/http', () => ({ http: { get: vi.fn() } }))
+vi.mock('@/api/http', () => ({ http: { get: vi.fn<typeof http.get>() } }))
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks() })
 
 describe('飞书离站授权', () => {
   it('请求结束后再次确认页面仍需要授权，取消时不离站', async () => {
-    const assign = vi.fn()
+    const assign = vi.fn<(url: string) => void>()
     vi.stubGlobal('window', { location: { assign } })
     const authorizationUrl = 'https://auth.example/?state=one'
     vi.mocked(http.get).mockResolvedValue({ data: { data: { authorizationUrl } } })
-    const beforeNavigate = vi.fn(() => false)
+    const beforeNavigate = vi.fn<(url: string) => boolean>(() => false)
     await startFeishuLogin('authorization', beforeNavigate)
     expect(beforeNavigate).toHaveBeenCalledWith(authorizationUrl)
     expect(assign).not.toHaveBeenCalled()
