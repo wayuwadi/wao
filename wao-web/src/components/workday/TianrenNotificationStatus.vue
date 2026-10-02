@@ -132,7 +132,7 @@ onBeforeUnmount(() => { disposed = true; generation++; clearTimer(); document.re
         </button>
         <button type="button" :disabled="loading || retrying" @click="refresh(true)">{{ loading ? '读取中…' : '刷新状态' }}</button>
       </div>
-      <small v-if="notification?.state === 'DISABLED' || notification?.state === 'CONFIGURATION_REQUIRED'">在今日节奏 → 调整节奏 → 通知中开启「卦象解读完成后发群」。</small>
+      <small v-if="notification?.state === 'DISABLED' || notification?.state === 'CONFIGURATION_REQUIRED'">在设置 → 通知中配置卦象通知。</small>
     </section>
   </div>
 </template>
