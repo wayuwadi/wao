@@ -22,7 +22,7 @@ export const RETIRED_MODULE_IDS = new Set<ModuleId>([
   'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
   'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices',
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
-  'updates', 'action-plans', 'workspaces',
+  'updates', 'action-plans', 'workspaces', 'decisions',
 ])
 export type MobileActionItemId = 'action:note'
 export type MobileNavItemId = NavItemId | MobileActionItemId

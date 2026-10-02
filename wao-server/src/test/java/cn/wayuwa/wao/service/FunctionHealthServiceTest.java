@@ -33,7 +33,7 @@ class FunctionHealthServiceTest {
 
         assertThat(overview.recentOpens()).isZero();
         assertThat(overview.functions()).extracting("featureId")
-                .contains("projects", "decisions", "automation")
+                .contains("projects", "automation")
                 .doesNotContain("crawler-capabilities", "account-resources", "infrastructure");
         assertThat(overview.functions()).allSatisfy(item -> {
             assertThat(item.score()).isEqualTo(1);

@@ -248,12 +248,6 @@ const router = createRouter({
           meta: { module: 'todo', tabKind: 'module' },
         },
         {
-          path: 'decisions',
-          name: 'decisions',
-          component: () => import('@/views/DecisionsView.vue'),
-          meta: { module: 'decisions', tabKind: 'module' },
-        },
-        {
           path: 'workday-rhythm',
           name: 'workday-rhythm',
           component: () => import('@/views/WorkdayRhythmView.vue'),

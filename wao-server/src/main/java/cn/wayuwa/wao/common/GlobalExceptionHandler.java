@@ -21,6 +21,12 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleMissingRoute(org.springframework.web.servlet.resource.NoResourceFoundException exception) {
+        return ApiResponse.fail(40400, "接口不存在或功能已下线");
+    }
+
     @ExceptionHandler(NotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleNotFound(NotFoundException exception) {

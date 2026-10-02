@@ -39,7 +39,7 @@ describe('侧边栏导航配置', () => {
     const retired = ['personal-principles', 'crawler-capabilities', 'account-resources',
       'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report',
       'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
-      'updates', 'action-plans', 'workspaces']
+      'updates', 'action-plans', 'workspaces', 'decisions']
     const menus = DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)
     const groups = NAV_GROUPS.flatMap((group) => group.items)
     for (const id of retired) {
@@ -283,22 +283,6 @@ describe('侧边栏导航配置', () => {
 
 
 
-  it('决策管理默认位于个人组并使用独立页面', () => {
-    expect(MODULES.decisions).toMatchObject({
-      label: '决策管理',
-      path: '/decisions',
-    })
-    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'decisions')).toMatchObject({
-      group: 'PERSONAL',
-      visible: true,
-      openMode: 'TAB',
-    })
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('decisions')
-    expect(router.resolve('/decisions').meta).toMatchObject({
-      module: 'decisions',
-      tabKind: 'module',
-    })
-  })
 
   it('草图默认位于个人组并使用原生模块路由', () => {
     expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('drawings')
