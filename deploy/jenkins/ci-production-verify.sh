@@ -78,28 +78,7 @@ done
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = 410
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins/)" = 401
-test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/api/auth/jumpserver)" = 401
-
-jumpserver_health="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
-  https://jms.wayuwa.cn/api/health/)"
-printf '%s' "$jumpserver_health" | grep -q '"status":true'
-jumpserver_certificate="$WAO_RUN_TEMP/jumpserver-certificate.pem"
-openssl s_client -connect jms.wayuwa.cn:443 -servername jms.wayuwa.cn </dev/null 2>/dev/null \
-  | openssl x509 -out "$jumpserver_certificate"
-openssl x509 -in "$jumpserver_certificate" -noout -checkhost jms.wayuwa.cn >/dev/null
-openssl x509 -in "$jumpserver_certificate" -noout -checkend 1209600 >/dev/null
-echo 'JumpServer public TLS certificate covers jms.wayuwa.cn and remains valid for at least 14 days.'
-jumpserver_login_static="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://jms.wayuwa.cn/static/js/jquery-3.6.1.min.js)"
-printf '%s' "$jumpserver_login_static" | grep -q 'jQuery'
-jumpserver_headers="$(curl --fail --silent --show-error --head --retry 6 --retry-delay 5 \
-  --retry-all-errors https://jms.wayuwa.cn/ui/)"
-! printf '%s\n' "$jumpserver_headers" | grep -qi '^X-Frame-Options:'
-printf '%s\n' "$jumpserver_headers" | grep -Fqi \
-  "Content-Security-Policy: frame-ancestors 'self' https://wao.wayuwa.cn"
-same_origin_jumpserver_health="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/api/external/jumpserver/health)"
-printf '%s' "$same_origin_jumpserver_health" | grep -q '"status":true'
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/api/auth/jumpserver)" = 410
 
 header_value() {
   path="$1"
@@ -115,8 +94,6 @@ test "$(header_value /api/settings/ai-accounts X-WAO-API-Route)" = linux-vpn-mas
 test "$(header_value /api/ai/runner/accounts X-WAO-API-Route)" = linux-vpn-master
 test "$(header_value /api/ai/runner/assistant-v2/claim X-WAO-API-Route)" = linux-vpn-master
 test "$(header_value /api/tianren/readings/today/interpret/stream X-WAO-API-Route)" = linux-vpn-master
-test "$(header_value /api/auth/jumpserver X-WAO-API-Route)" = linux-jumpserver-sso
-test "$(header_value /api/external/jumpserver/health X-WAO-API-Route)" = jumpserver-health-tunnel
 test "$(header_value /pluginWebUpdateNotice/web_version_by_plugin.json Cache-Control)" = \
   'no-cache, no-store, must-revalidate'
 

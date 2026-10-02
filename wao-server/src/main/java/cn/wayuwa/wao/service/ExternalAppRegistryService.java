@@ -43,7 +43,7 @@ public class ExternalAppRegistryService {
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
     private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK", "TOP");
-    private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight", "media-agent");
+    private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight", "media-agent", "jumpserver");
 
     private final SettingService settings;
     private final ObjectMapper json;
@@ -76,10 +76,6 @@ public class ExternalAppRegistryService {
             if (stored.version() < GETNOTE_INTRODUCED_VERSION
                     && requests.stream().noneMatch(app -> GETNOTE_ID.equals(app.id()))) {
                 requests.add(getNoteRequest());
-            }
-            if (stored.version() < JUMPSERVER_INTRODUCED_VERSION
-                    && requests.stream().noneMatch(app -> JUMPSERVER_ID.equals(app.id()))) {
-                requests.add(jumpServerRequest());
             }
             if (stored.version() < 8 && requests.stream().noneMatch(app -> "weknora".equals(app.id()))) {
                 requests.add(new SaveExternalAppConfigRequest("weknora", "WeKnora", "ri-book-open-line",
@@ -156,12 +152,6 @@ public class ExternalAppRegistryService {
             }
             String appUrl = validateUrl(request.appUrl(), "应用入口", false);
             String healthUrl = validateUrl(request.healthUrl(), "健康检查地址", true);
-            // JumpServer 是带 WAO 身份交换的系统入口，不能被历史注册表值降级成直达密码页。
-            // 名称、分组、排序、显隐和打开方式仍由成员自行配置。
-            if (JUMPSERVER_ID.equals(id)) {
-                appUrl = JUMPSERVER_APP_URL;
-                healthUrl = JUMPSERVER_HEALTH_URL;
-            }
             apps.add(new ExternalAppConfigDto(
                     id,
                     label,
@@ -191,7 +181,7 @@ public class ExternalAppRegistryService {
     }
 
     private List<ExternalAppConfigDto> defaultApps() {
-        return activeApps(List.of(getNoteApp(), jumpServerApp(),
+        return activeApps(List.of(getNoteApp(),
                 new ExternalAppConfigDto("weknora", "WeKnora", "ri-book-open-line", "PUBLIC", 35,
                         true, "/weknora/", "/api/external/weknora/health", "TAB")));
     }
@@ -211,26 +201,6 @@ public class ExternalAppRegistryService {
 
     private static SaveExternalAppConfigRequest getNoteRequest() {
         ExternalAppConfigDto app = getNoteApp();
-        return new SaveExternalAppConfigRequest(
-                app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(),
-                app.appUrl(), app.healthUrl(), app.openMode());
-    }
-
-    private static ExternalAppConfigDto jumpServerApp() {
-        return new ExternalAppConfigDto(
-                JUMPSERVER_ID,
-                "资源管理",
-                "ri-server-line",
-                "TOOLS",
-                15,
-                true,
-                JUMPSERVER_APP_URL,
-                JUMPSERVER_HEALTH_URL,
-                "NEW_PAGE");
-    }
-
-    private static SaveExternalAppConfigRequest jumpServerRequest() {
-        ExternalAppConfigDto app = jumpServerApp();
         return new SaveExternalAppConfigRequest(
                 app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(),
                 app.appUrl(), app.healthUrl(), app.openMode());

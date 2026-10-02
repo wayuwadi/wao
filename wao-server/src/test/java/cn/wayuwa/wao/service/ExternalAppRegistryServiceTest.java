@@ -41,7 +41,7 @@ class ExternalAppRegistryServiceTest {
     @Test
     void defaultsExcludeRetiredAgent() {
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("getnote", "jumpserver", "weknora");
+                .containsExactly("getnote", "weknora");
     }
 
     @Test
@@ -73,7 +73,7 @@ class ExternalAppRegistryServiceTest {
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(stored);
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("custom-studio", "getnote", "jumpserver", "weknora");
+                .containsExactly("custom-studio", "getnote", "weknora");
         assertThat(service.getRegistry().apps().get(0).openMode()).isEqualTo("TAB");
     }
 
@@ -86,12 +86,12 @@ class ExternalAppRegistryServiceTest {
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(3, List.of(mediaAgent))));
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("custom-studio", "getnote", "jumpserver", "weknora");
+                .containsExactly("custom-studio", "getnote", "weknora");
 
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(4, List.of(mediaAgent))));
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("custom-studio", "jumpserver", "weknora");
+                .containsExactly("custom-studio", "weknora");
 
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(5, List.of(mediaAgent))));
@@ -130,39 +130,13 @@ class ExternalAppRegistryServiceTest {
     }
 
     @Test
-    void repairsHistoricalJumpServerDirectUrlWithoutOverwritingMenuPreferences() throws Exception {
-        var direct = new ExternalAppConfigDto(
-                "jumpserver", "我的主机", "ri-server-line", "PERSONAL", 7, false,
-                "https://jms.wayuwa.cn/", "https://jms.wayuwa.cn/api/health/", "TAB", "DOCK");
-        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
-                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(6, List.of(direct))));
-
-        assertThat(service.getRegistry()).satisfies(registry -> {
-            assertThat(registry.version()).isEqualTo(8);
-            assertThat(registry.apps()).filteredOn(app -> "jumpserver".equals(app.id())).singleElement().satisfies(app -> {
-                assertThat(app.label()).isEqualTo("我的主机");
-                assertThat(app.group()).isEqualTo("PERSONAL");
-                assertThat(app.order()).isEqualTo(7);
-                assertThat(app.visible()).isFalse();
-                assertThat(app.openMode()).isEqualTo("TAB");
-                assertThat(app.placement()).isEqualTo("DOCK");
-                assertThat(app.appUrl()).isEqualTo("/api/auth/jumpserver");
-                assertThat(app.healthUrl()).isEqualTo("/api/external/jumpserver/health");
-            });
-        });
-    }
-
-    @Test
-    void keepsJumpServerIdentityExchangeEndpointWhenRegistryIsSaved() {
-        var direct = new SaveExternalAppConfigRequest(
-                "jumpserver", "资源管理", "ri-server-line", "TOOLS", 15, true,
-                "https://jms.wayuwa.cn/", "https://jms.wayuwa.cn/api/health/", "NEW_PAGE");
-
-        assertThat(service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(direct))).apps())
-                .singleElement().satisfies(app -> {
-                    assertThat(app.appUrl()).isEqualTo("/api/auth/jumpserver");
-                    assertThat(app.healthUrl()).isEqualTo("/api/external/jumpserver/health");
-                });
+    void retiredJumpServerCannotReturnThroughSaveOrOldRegistry() throws Exception {
+        var old = app("jumpserver", "资源管理", "https://jms.wayuwa.cn/", "");
+        assertThat(service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(old))).apps()).isEmpty();
+        var stored = new ExternalAppRegistryDto(8, List.of(new ExternalAppConfigDto(
+                "jumpserver", "资源管理", "ri-server-line", "TOOLS", 1, true, "https://jms.wayuwa.cn/", "", "TAB")));
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(json.writeValueAsString(stored));
+        assertThat(service.getRegistry().apps()).isEmpty();
     }
 
     @ParameterizedTest

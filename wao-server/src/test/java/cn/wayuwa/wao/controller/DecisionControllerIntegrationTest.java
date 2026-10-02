@@ -17,6 +17,7 @@ class DecisionControllerIntegrationTest {
         mvc.perform(get("/api/workday-rhythm/dashboard")).andExpect(status().isNotFound());
         mvc.perform(get("/api/workday-rhythm/focus/pending")).andExpect(status().isNotFound());
         mvc.perform(post("/api/workday-rhythm/energy-notifications")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/auth/jumpserver")).andExpect(status().isNotFound());
         mvc.perform(get("/api/decisions")).andExpect(status().isNotFound());
         mvc.perform(post("/api/decisions")).andExpect(status().isNotFound());
         mvc.perform(post("/api/decisions/old/revisions")).andExpect(status().isNotFound());

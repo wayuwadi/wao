@@ -101,21 +101,6 @@ install_linux2_deploy_helper() {
     '
 }
 
-provision_jumpserver_asset_access() {
-  local public_key="$WAO_MASTER_PROJECT_ROOT/deploy/.jumpserver-asset-key.pub"
-  test -s "$public_key"
-
-  retry_remote '云入口' scp -o ConnectTimeout=15 \
-    "$public_key" deploy/jumpserver/install-public-key.sh wao-cloud:/tmp/ || return
-  retry_remote '云入口' ssh -o ConnectTimeout=15 wao-cloud \
-    'sh /tmp/install-public-key.sh /tmp/.jumpserver-asset-key.pub'
-}
-
-verify_jumpserver_assets() {
-  sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
-    --verify-jumpserver-assets "$WAO_MASTER_PROJECT_ROOT"
-}
-
 deploy_linux2() {
   sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
     "$WAO_MASTER_PROJECT_ROOT" wao-release.tgz wao-secrets.env "$WAO_GIT_SHA" \
@@ -156,7 +141,7 @@ prepare_cloud_routing() {
   retry_remote '云端路由配置' scp -o ConnectTimeout=15 \
     deploy/nginx/wao.wayuwa.cn.conf.template deploy/nginx/jms.wayuwa.cn.conf \
     deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
-    deploy/scripts/resolve-gateway-ipv4.sh deploy/scripts/ensure-jumpserver-certificate.sh \
+    deploy/scripts/resolve-gateway-ipv4.sh \
     deploy/infrastructure/health-watch.py wao-cloud:/tmp/ || return
   retry_remote '云端路由配置' ssh -o ConnectTimeout=15 wao-cloud '
     set -eu
@@ -166,11 +151,10 @@ prepare_cloud_routing() {
     install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
     install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
     install -m 0755 /tmp/resolve-gateway-ipv4.sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh
-    install -m 0755 /tmp/ensure-jumpserver-certificate.sh /opt/wao/deploy/scripts/ensure-jumpserver-certificate.sh
     install -m 0644 /tmp/health-watch.py /opt/wao-health-watch/health-watch.py
     rm -f /tmp/wao.wayuwa.cn.conf.template /tmp/jms.wayuwa.cn.conf \
       /tmp/activate-nginx-config.sh /tmp/render-nginx-config.sh \
-      /tmp/resolve-gateway-ipv4.sh /tmp/ensure-jumpserver-certificate.sh /tmp/health-watch.py
+      /tmp/resolve-gateway-ipv4.sh /tmp/health-watch.py
     install -d -m 0755 /etc/nginx/wao-external-apps.d
     rm -f /etc/nginx/wao-external-apps.d/wao-game.conf \
       /etc/nginx/wao-external-apps.d/wao-insight.conf
@@ -188,7 +172,7 @@ stage_cloud_static() {
   retry_remote '云端 Nginx 配置' scp -o ConnectTimeout=15 \
     deploy/nginx/wao.wayuwa.cn.conf.template deploy/nginx/jms.wayuwa.cn.conf \
     deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
-    deploy/scripts/resolve-gateway-ipv4.sh deploy/scripts/ensure-jumpserver-certificate.sh \
+    deploy/scripts/resolve-gateway-ipv4.sh \
     wao-cloud:/tmp/
 }
 
@@ -204,8 +188,6 @@ activate_cloud() {
     "python3 /tmp/publish-static-routing.py /etc/wao-public-edge/routing.json '$WAO_GIT_SHA'" || return
   retry_remote '云端 Gateway 配置' ssh -o ConnectTimeout=15 wao-cloud \
     'WAO_NGINX_RENDER_OUTPUT=/tmp/wao-nginx.conf sh /opt/wao/deploy/scripts/render-nginx-config.sh' || return
-  retry_remote '云端证书' ssh -o ConnectTimeout=15 wao-cloud \
-    "/bin/sh /tmp/ensure-jumpserver-certificate.sh $CLOUD_HOST" || return
   retry_remote '云端静态发布' ssh -o ConnectTimeout=15 wao-cloud "
     set -eu
     final=/etc/nginx/conf.d/wao.wayuwa.cn.conf
@@ -231,10 +213,8 @@ activate_cloud() {
     install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
     install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
     install -m 0755 /tmp/resolve-gateway-ipv4.sh /opt/wao/deploy/scripts/resolve-gateway-ipv4.sh
-    install -m 0755 /tmp/ensure-jumpserver-certificate.sh /opt/wao/deploy/scripts/ensure-jumpserver-certificate.sh
     rm -f /tmp/wao.wayuwa.cn.conf.template /tmp/activate-nginx-config.sh \
-      /tmp/render-nginx-config.sh /tmp/resolve-gateway-ipv4.sh /tmp/jms.wayuwa.cn.conf \
-      /tmp/ensure-jumpserver-certificate.sh
+      /tmp/render-nginx-config.sh /tmp/resolve-gateway-ipv4.sh /tmp/jms.wayuwa.cn.conf
     printf '%s\\n' 'SHELL=/bin/sh' 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \\
       '* * * * * root /opt/wao/deploy/scripts/activate-nginx-config.sh >/dev/null 2>&1' \\
       >/etc/cron.d/wao-nginx-ddns-reload
@@ -384,7 +364,6 @@ deploy_browser_only() {
 }
 
 sync_jumpserver=false
-batch_changed '^deploy/jumpserver/' && sync_jumpserver=true
 sync_infrastructure=false
 batch_changed '^deploy/infrastructure/retire-overview.sh$' && sync_infrastructure=true
 
@@ -449,25 +428,6 @@ if ! retire_cloud_sentinel; then
   set_status linux2_status failed
   set_status linux2_detail 'Linux2 已更新，但云端旧 Redis Sentinel 未能停用'
   exit 1
-fi
-
-if [ "$sync_jumpserver" = true ]; then
-  # Linux2 deployment may create or rotate the persistent JumpServer key.
-  # Publish the resulting public key to the cloud only after that deployment,
-  # so verification uses the same key on both assets.
-  if ! provision_jumpserver_asset_access; then
-    set_status linux2_status failed
-    set_status linux2_detail 'JumpServer 云入口 SSH 授权失败'
-    exit 1
-  fi
-  jumpserver_verify_log="$WAO_RUN_TEMP/jumpserver-verify.log"
-  if ! verify_jumpserver_assets >"$jumpserver_verify_log" 2>&1; then
-    cat "$jumpserver_verify_log"
-    set_status linux2_status failed
-    set_status linux2_detail "JumpServer Linux2/云入口验收失败：$(tail -n 1 "$jumpserver_verify_log" | tr '\r\n=' '   ' | cut -c1-300)"
-    exit 1
-  fi
-  cat "$jumpserver_verify_log"
 fi
 
 publish_release || exit 1
