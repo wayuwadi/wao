@@ -486,7 +486,7 @@ input:focus-visible {
 </style>
 <style scoped>
 .auth-dialog { color-scheme: light; background: #f7f7f9; color: #34343b; border-color: #d1d1d8; --wao-text: #34343b; --wao-text-weak: #666670; --wao-bg-page: #ededf0; --wao-line: #d1d1d8; }
-:global(.login-stage[data-entry-theme='dark']) .auth-dialog { color-scheme: dark; background: #17171b; color: #e5e5e8; border-color: #38383f; --wao-text: #e5e5e8; --wao-text-weak: #a1a1aa; --wao-bg-page: #090a0c; --wao-line: #38383f; }
+:global(.login-stage[data-entry-theme='dark'] .auth-dialog) { color-scheme: dark; background: #17171b; color: #e5e5e8; border-color: #38383f; --wao-text: #e5e5e8; --wao-text-weak: #a1a1aa; --wao-bg-page: #090a0c; --wao-line: #38383f; }
 .other-methods button { background: var(--wao-bg-page); color: var(--wao-text); border-color: var(--wao-line); }
 .email-form input { border-color: var(--wao-line); }
 </style>

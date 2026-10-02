@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { useTheme } from '@/composables/theme'
+import WorldScene from '@/components/relax/WorldScene.vue'
+import { worldById, type WorldId } from '@/components/relax/worlds'
 import {
   BreathingSession,
   breathingDefaults,
@@ -12,6 +14,7 @@ import {
   type PracticeSnapshot,
 } from '@/composables/breathingSession'
 
+const props = defineProps<{ world?: WorldId; story?: string }>()
 const emit = defineEmits<{ workspace: [] }>()
 const mode = ref<PracticeMode>('breathing')
 const pendingMode = ref<PracticeMode | null>(null)
@@ -94,7 +97,9 @@ const expansion = computed(() => {
 })
 const label = computed(() =>
   idle.value
-    ? '留一点空白，再开始。'
+    ? props.world
+      ? worldById(props.world).title
+      : '留一点空白，再开始。'
     : timer.state === 'paused'
       ? '安心停一会儿'
       : mode.value === 'sitting'
@@ -135,9 +140,18 @@ async function setPanel(value: boolean) {
   await nextTick()
   ;(value ? closeButton.value : settingsButton.value)?.focus()
 }
-function toggleCustom() { custom.value = !custom.value; minutesInput.value = String(prefs.minutes) }
-function chooseRhythm(inhale: number, exhale: number) { prefs.inhale = inhale; prefs.exhale = exhale }
-function goWorkspace() { void closeComplete(); emit('workspace') }
+function toggleCustom() {
+  custom.value = !custom.value
+  minutesInput.value = String(prefs.minutes)
+}
+function chooseRhythm(inhale: number, exhale: number) {
+  prefs.inhale = inhale
+  prefs.exhale = exhale
+}
+function goWorkspace() {
+  void closeComplete()
+  emit('workspace')
+}
 function chooseMinutes(value: number) {
   prefs.minutes = value
   minutesInput.value = String(value)
@@ -482,7 +496,11 @@ function confirmMode() {
 function cancelAuthRetention() {
   retainForAuth = false
 }
-defineExpose({ pauseForAuth, cancelAuthRetention, snapshot, restore, tell })
+function pauseForPlay() {
+  pauseForAuth()
+  cancelAuthRetention()
+}
+defineExpose({ pauseForAuth, pauseForPlay, cancelAuthRetention, snapshot, restore, tell })
 onMounted(() => {
   media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
   updateMotion()
@@ -522,6 +540,7 @@ onBeforeUnmount(() => {
     class="breathing-stage"
     :class="[
       timer.state,
+      props.world ? 'world-stage' : '',
       {
         day: theme.mode.value === 'light',
         sitting: mode === 'sitting',
@@ -608,7 +627,12 @@ onBeforeUnmount(() => {
             </p>
           </div>
         </div>
-        <p v-if="idle && prefs.words" class="entry-copy">跟随一呼一吸，或者只是安静待一会儿。</p>
+        <WorldScene v-if="idle && props.world" :world="props.world" :story="props.story" />
+        <p v-if="idle && prefs.words" class="entry-copy">
+          {{
+            props.world ? worldById(props.world).subtitle : '跟随一呼一吸，或者只是安静待一会儿。'
+          }}
+        </p>
         <section class="dock" aria-label="练习计时">
           <div class="mode-picker" role="group" aria-label="练习模式">
             <button :aria-pressed="mode === 'breathing'" @click="chooseMode('breathing')">
@@ -624,13 +648,7 @@ onBeforeUnmount(() => {
               @click="chooseMinutes(m)"
             >
               {{ m }} 分钟</button
-            ><button
-              class="chip"
-              :aria-expanded="custom"
-              @click="toggleCustom"
-            >
-              自定义
-            </button>
+            ><button class="chip" :aria-expanded="custom" @click="toggleCustom">自定义</button>
           </div>
           <label v-if="idle && custom" class="custom-time"
             >本次时长<input
@@ -828,12 +846,7 @@ onBeforeUnmount(() => {
             }}让呼吸回到自然，想停留多久都可以。
           </p>
           <button ref="doneButton" class="primary" @click="closeComplete">再待一会儿</button
-          ><button
-            class="text-button"
-            @click="goWorkspace"
-          >
-            进入工作空间 ↗
-          </button></template
+          ><button class="text-button" @click="goWorkspace">进入工作空间 ↗</button></template
         >
       </section>
     </div>
@@ -2037,15 +2050,41 @@ input[type='range'] {
 </style>
 <style scoped>
 @media (max-height: 500px) and (min-width: 601px) {
-  .stage-content { padding: 14px 24px 6px; }
-  .practice-main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 10px 0; }
-  .focus-scene { height: 175px; }
-  .entry-copy { display: none; }
-  .dock { grid-column: 2; grid-row: 1; gap: 10px; }
-  .phase, .idle .phase { font-size: 23px; }
-  .eyebrow { margin-bottom: 12px; }
-  .duration { gap: 5px; }
-  .chip { padding: 8px 10px; }
-  .entry-bottom { min-height: 24px; }
+  .stage-content {
+    padding: 14px 24px 6px;
+  }
+  .practice-main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 10px 0;
+  }
+  .focus-scene {
+    height: 175px;
+  }
+  .entry-copy {
+    display: none;
+  }
+  .dock {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 10px;
+  }
+  .phase,
+  .idle .phase {
+    font-size: 23px;
+  }
+  .eyebrow {
+    margin-bottom: 12px;
+  }
+  .duration {
+    gap: 5px;
+  }
+  .chip {
+    padding: 8px 10px;
+  }
+  .entry-bottom {
+    min-height: 24px;
+  }
 }
 </style>

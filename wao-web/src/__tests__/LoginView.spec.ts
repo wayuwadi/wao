@@ -7,11 +7,20 @@ import { useSessionStore } from '@/stores/session'
 import { mountFeishuQr } from '@/utils/feishuQr'
 import { startFeishuLogin } from '@/api/feishu'
 
-vi.mock('@/utils/feishuQr', () => ({ mountFeishuQr: vi.fn<typeof mountFeishuQr>().mockResolvedValue(() => {}) }))
-vi.mock('@/utils/feishuInApp', () => ({ isInFeishu: () => false, feishuInAppLogin: vi.fn<() => Promise<null>>() }))
-vi.mock('@/api/feishu', () => ({ startFeishuLogin: vi.fn<typeof startFeishuLogin>().mockResolvedValue(undefined) }))
+vi.mock('@/utils/feishuQr', () => ({
+  mountFeishuQr: vi.fn<typeof mountFeishuQr>().mockResolvedValue(() => {}),
+}))
+vi.mock('@/utils/feishuInApp', () => ({
+  isInFeishu: () => false,
+  feishuInAppLogin: vi.fn<() => Promise<null>>(),
+}))
+vi.mock('@/api/feishu', () => ({
+  startFeishuLogin: vi.fn<typeof startFeishuLogin>().mockResolvedValue(undefined),
+}))
 vi.mock('@/api/system', () => ({
-  fetchPublicSiteInfo: vi.fn<() => Promise<{ siteName: string }>>().mockResolvedValue({ siteName: 'WAO' }),
+  fetchPublicSiteInfo: vi
+    .fn<() => Promise<{ siteName: string }>>()
+    .mockResolvedValue({ siteName: 'WAO' }),
 }))
 
 let wrapper: VueWrapper
@@ -72,15 +81,15 @@ describe('舞台登录与认证生命周期', () => {
     const AudioMock = vi.fn<() => void>()
     vi.stubGlobal('Audio', AudioMock)
     await setup()
-    const buddies = wrapper.findAll('.buddy')
+    const buddies = wrapper.findAll('.world-crew button')
     await buddies[0]!.trigger('pointerenter', { pointerType: 'mouse' })
-    expect(wrapper.get('[role=status]').text()).toBe('此刻，不用急着有答案。')
+    expect(wrapper.get('.world-greeting').text()).toBe('脑袋放空，灵感才有地方蹦进来。')
     await buddies[1]!.trigger('pointerenter', { pointerType: 'touch' })
-    expect(wrapper.get('[role=status]').text()).toBe('此刻，不用急着有答案。')
+    expect(wrapper.get('.world-greeting').text()).toBe('脑袋放空，灵感才有地方蹦进来。')
     await buddies[1]!.trigger('click')
-    expect(wrapper.get('[role=status]').text()).toBe('给自己留一点空白。')
+    expect(wrapper.get('.world-greeting').text()).toBe('这一页，允许空白。')
     await buddies[2]!.trigger('focus')
-    expect(wrapper.get('[role=status]').text()).toBe('准备好时，我们再出发。')
+    expect(wrapper.get('.world-greeting').text()).toBe('电量不足？一起充个电。')
     expect(AudioMock).not.toHaveBeenCalled()
     await open()
     expect(wrapper.find('.greeting-bubble').exists()).toBe(false)
@@ -174,9 +183,12 @@ describe('舞台登录与认证生命周期', () => {
     const { session, router } = await setup('/login?redirect=/notes')
     await email()
     let resolve!: () => void
-    vi.spyOn(session, 'emailLogin').mockImplementationOnce(() => new Promise<void>((done) => {
-      resolve = done
-    }))
+    vi.spyOn(session, 'emailLogin').mockImplementationOnce(
+      () =>
+        new Promise<void>((done) => {
+          resolve = done
+        }),
+    )
     await wrapper.get('form').trigger('submit')
     wrapper.unmount()
     await router.push('/breathe')
