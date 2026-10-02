@@ -16,7 +16,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /** 把项目负责人的真实 HTTP 指标快照交给 WAO 项目的开发 AI Run。 */
-@Component
 public class HttpPerformanceAiRunJobHandler implements JobHandler {
 
     static final String HANDLER_NAME = "http-performance-ai-run";

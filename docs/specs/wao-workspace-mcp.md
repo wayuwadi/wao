@@ -44,3 +44,5 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 ## 小记最新正文（2026-09-30）
 
 浏览器最新正文交互见 `notes-single-latest-content.md`。后台润色以源正文与文档版本条件写回；浏览器保存触发的自动续跑不新增工作区工具，不改变令牌可见能力、文档写入权限或冲突语义。
+
+2026-10-02：项目 AI Run 退役（ADR-303）；现有工作区工具没有派工或 Runner 协议能力，不新增工具或扩大令牌权限。

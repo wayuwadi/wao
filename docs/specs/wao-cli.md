@@ -83,3 +83,5 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 ## 小记最新正文自动整理
 
 `notes-single-latest-content.md` 统一浏览器编辑、预览和后台润色写回；本人通过现有文档 PATCH 保存后，既有工作流自动续跑最新正文。本次不增加终端操作或扩大 MCP 令牌权限；终端批量润色仍需带源版本和独立授权的业务命令，届时重新评估 CLI。
+
+2026-10-02：项目与任务 AI Run 已下线（ADR-303），不提供派工、续跑或队列查询 CLI / MCP 命令；历史业务数据保留。
