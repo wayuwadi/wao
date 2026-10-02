@@ -18,8 +18,16 @@ class DecisionControllerIntegrationTest {
         mvc.perform(get("/api/ai/projects/old/config")).andExpect(status().isNotFound());
         mvc.perform(post("/api/ai/runs")).andExpect(status().isNotFound());
         mvc.perform(post("/api/ai/goals")).andExpect(status().isNotFound());
-        mvc.perform(post("/api/ai/runner/claim")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/ai/runner/claim")).andExpect(status().isGone());
         mvc.perform(get("/api/share/ai-runs/old.md")).andExpect(status().isNotFound());
+    }
+    @Test void runnerCannotPairClaimReadCredentialsOrUpload() throws Exception {
+        mvc.perform(post("/api/ai/runner/pair")).andExpect(status().isGone());
+        mvc.perform(post("/api/ai/runner/heartbeat")).andExpect(status().isGone());
+        mvc.perform(get("/api/ai/runner/accounts")).andExpect(status().isGone());
+        mvc.perform(post("/api/ai/runner/assistant-v2/claim")).andExpect(status().isGone());
+        mvc.perform(post("/api/ai/runner/assistant-v2/old/image")).andExpect(status().isGone());
+        mvc.perform(post("/api/assistant/article-images")).andExpect(status().isNotFound());
     }
     @Test void retiredRoutesCannotReadOrWrite() throws Exception {
         mvc.perform(get("/api/workday-rhythm/dashboard")).andExpect(status().isNotFound());

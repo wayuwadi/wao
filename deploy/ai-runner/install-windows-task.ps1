@@ -12,6 +12,8 @@ param(
     [string]$ClaudeCommand = '',
     [string]$QoderCommand = ''
 )
+throw "WAO Runner 已下线，不再安装或启动计划任务。"
+
 
 $ErrorActionPreference = 'Stop'
 $runnerPath = Join-Path $PSScriptRoot 'wao-ai-runner.py'

@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /** 本地 Runner 的总览图回传接口，复用领取令牌与图床。 */
-@RestController
 @RequestMapping("/api/ai/runner/assistant-v2")
 public class ArticleImageRunnerController {
     private final ArticleImageService service;
