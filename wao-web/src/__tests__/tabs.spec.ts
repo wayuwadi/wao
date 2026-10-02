@@ -17,6 +17,17 @@ describe('tabs store', () => {
     setActivePinia(createPinia())
   })
 
+  it('丢弃已退役 Agent 的新旧历史页签', () => {
+    localStorage.setItem('wao-tabs-v1', JSON.stringify({tabs: [
+      { key: 'mediaAgent', path: '/media-agent', label: '旧助手' },
+      { key: 'external:media-agent', path: '/apps/media-agent', label: '助手' },
+      proj('p1'),
+    ], activeKey: 'external:media-agent'}))
+    const tabs = useTabsStore()
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home', 'proj:p1'])
+    expect(tabs.activeKey).toBe('home')
+  })
+
   it('seeds a pinned home tab', () => {
     const tabs = useTabsStore()
     expect(tabs.tabs[0]?.key).toBe('home')

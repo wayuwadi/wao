@@ -63,7 +63,7 @@ describe('侧边栏导航配置', () => {
     expect(externalIds).toEqual(externalIds.filter((id) => /^external:[a-z0-9-]+$/.test(id)))
     expect(missingModules).toEqual([])
     expect(DEFAULT_BUILTIN_MENUS.every((menu) => menu.openMode === 'TAB')).toBe(true)
-    expect(DEFAULT_EXTERNAL_APPS.find((app) => app.id === 'media-agent')?.openMode).toBe('TAB')
+    expect(DEFAULT_EXTERNAL_APPS.find((app) => app.id === 'media-agent')).toBeUndefined()
     expect(DEFAULT_EXTERNAL_APPS.find((app) => app.id === 'getnote')).toMatchObject({
       label: '得到大脑',
       appUrl: 'https://www.biji.com/',
@@ -113,17 +113,14 @@ describe('侧边栏导航配置', () => {
   })
 
 
-  it('公共组保留兼容模块顺序，自媒体 Agent 保留旧地址重定向', () => {
+  it('公共组保留活跃应用且 Agent 旧地址不恢复功能', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
     expect(publicGroup?.items).toEqual([
       'projects',
       'changelog',
-      externalAppItemId('media-agent'),
       externalAppItemId('weknora'),
     ])
-    expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
-      '/apps/media-agent',
-    )
+    expect(router.resolve('/media-agent').meta.module).toBeUndefined()
     const route = router.getRoutes().find((item) => item.name === 'external-app')
     expect(route?.path).toBe('/apps/:appId')
     expect(route?.meta.tabKind).toBe('external')
@@ -209,7 +206,7 @@ describe('侧边栏导航配置', () => {
       },
     ])
 
-    expect(groups.find((group) => group.label === '个人')?.items).toContain(externalAppItemId('media-agent'))
+    expect(groups.find((group) => group.label === '个人')?.items).toContain(externalAppItemId('getnote'))
     expect(groups.flatMap((group) => group.items)).not.toContain('games')
     expect(groups.find((group) => group.label === '工具')?.items[0]).toBe(
       externalAppItemId('data-studio'),
@@ -222,14 +219,14 @@ describe('侧边栏导航配置', () => {
       menu.id === 'projects' ? { ...menu, placement: 'DOCK' as const, order: 20 } : menu,
     )
     const external = DEFAULT_EXTERNAL_APPS.map((app) =>
-      app.id === 'media-agent' ? { ...app, placement: 'DOCK' as const, order: 10 } : app,
+      app.id === 'getnote' ? { ...app, placement: 'DOCK' as const, order: 10 } : app,
     )
 
     const groups = resolveNavGroups(PERSONAL_ITEMS, external, builtin)
     expect(groups.flatMap((group) => group.items)).not.toContain('projects')
-    expect(groups.flatMap((group) => group.items)).not.toContain(externalAppItemId('media-agent'))
+    expect(groups.flatMap((group) => group.items)).not.toContain(externalAppItemId('getnote'))
     expect(resolveDockItems(external, builtin)).toEqual([
-      externalAppItemId('media-agent'),
+      externalAppItemId('getnote'),
       'projects',
     ])
   })

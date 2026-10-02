@@ -42,7 +42,7 @@ compose() {
   fi
 }
 
-for service in wao-server wao-agent-server wao-gateway; do
+for service in wao-server wao-gateway; do
   container_id="$(compose ps -q "${service}")"
   test -n "${container_id}" || { echo "Missing container for ${service}." >&2; exit 1; }
   expected_image="${service}:${expected_tag}"

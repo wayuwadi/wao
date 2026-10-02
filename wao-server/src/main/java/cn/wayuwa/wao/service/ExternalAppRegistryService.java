@@ -43,7 +43,7 @@ public class ExternalAppRegistryService {
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
     private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK", "TOP");
-    private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight");
+    private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight", "media-agent");
 
     private final SettingService settings;
     private final ObjectMapper json;
@@ -113,55 +113,6 @@ public class ExternalAppRegistryService {
         return apps.stream()
                 .filter(app -> !RETIRED_INTERNAL_APP_IDS.contains(app.id()))
                 .toList();
-    }
-
-    /**
-     * 兼容旧前端读取单个 Agent 菜单配置。
-     *
-     * @return media-agent 当前的菜单字段；已删除时回退旧键默认值
-     */
-    public MediaAgentMenuConfigDto getLegacyMediaAgentMenu() {
-        ExternalAppConfigDto app = getRegistry().apps().stream()
-                .filter(item -> MEDIA_AGENT_ID.equals(item.id()))
-                .findFirst()
-                .orElseGet(this::legacyMediaAgent);
-        return new MediaAgentMenuConfigDto(app.label(), app.group(), app.order(), app.visible());
-    }
-
-    /**
-     * 兼容旧前端保存 Agent 菜单字段，同时保留新注册表中的图标和应用地址。
-     *
-     * @param request 旧版四字段菜单表单
-     * @return 保存后的旧版响应
-     */
-    public MediaAgentMenuConfigDto saveLegacyMediaAgentMenu(SaveMediaAgentMenuConfigRequest request) {
-        List<ExternalAppConfigDto> apps = new ArrayList<>(getRegistry().apps());
-        int index = -1;
-        for (int i = 0; i < apps.size(); i++) {
-            if (MEDIA_AGENT_ID.equals(apps.get(i).id())) {
-                index = i;
-                break;
-            }
-        }
-        ExternalAppConfigDto current = index >= 0 ? apps.get(index) : legacyMediaAgent();
-        ExternalAppConfigDto updated = new ExternalAppConfigDto(
-                MEDIA_AGENT_ID,
-                request.label().trim(),
-                current.icon(),
-                request.group(),
-                request.order(),
-                request.visible(),
-                current.appUrl(),
-                current.healthUrl(),
-                current.openMode(),
-                current.placement());
-        if (index >= 0) {
-            apps.set(index, updated);
-        } else {
-            apps.add(updated);
-        }
-        store(apps);
-        return new MediaAgentMenuConfigDto(updated.label(), updated.group(), updated.order(), updated.visible());
     }
 
     private List<ExternalAppConfigDto> canonicalize(List<SaveExternalAppConfigRequest> requests) {
@@ -239,28 +190,10 @@ public class ExternalAppRegistryService {
         }
     }
 
-    private ExternalAppConfigDto legacyMediaAgent() {
-        String group = settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, DEFAULT_MEDIA_AGENT_GROUP);
-        if (!("PUBLIC".equals(group) || "PERSONAL".equals(group) || "TOOLS".equals(group))) {
-            group = DEFAULT_MEDIA_AGENT_GROUP;
-        }
-        return new ExternalAppConfigDto(
-                MEDIA_AGENT_ID,
-                settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, DEFAULT_MEDIA_AGENT_LABEL),
-                "ri-sparkling-2-line",
-                group,
-                parseOrder(settings.get(
-                        SettingService.MEDIA_AGENT_MENU_ORDER, String.valueOf(DEFAULT_MEDIA_AGENT_ORDER))),
-                !"false".equalsIgnoreCase(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")),
-                "/agent/",
-                "/api/agent/health",
-                "TAB");
-    }
-
     private List<ExternalAppConfigDto> defaultApps() {
-        return List.of(legacyMediaAgent(), getNoteApp(), jumpServerApp(),
+        return activeApps(List.of(getNoteApp(), jumpServerApp(),
                 new ExternalAppConfigDto("weknora", "WeKnora", "ri-book-open-line", "PUBLIC", 35,
-                        true, "/weknora/", "/api/external/weknora/health", "TAB"));
+                        true, "/weknora/", "/api/external/weknora/health", "TAB")));
     }
 
     private static ExternalAppConfigDto getNoteApp() {

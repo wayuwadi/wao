@@ -58,7 +58,6 @@ run_docker() {
       "WAO_IMAGE_TAG=${WAO_IMAGE_TAG:-}" \
       "CODEX_EGRESS_IMAGE_TAG=${CODEX_EGRESS_IMAGE_TAG:-}" \
       "WAO_SERVER_IMAGE_TAG=${WAO_SERVER_IMAGE_TAG:-}" \
-      "WAO_AGENT_IMAGE_TAG=${WAO_AGENT_IMAGE_TAG:-}" \
       "WAO_GATEWAY_IMAGE_TAG=${WAO_GATEWAY_IMAGE_TAG:-}" \
       docker "$@"
   else
@@ -94,7 +93,7 @@ compose() {
 print_deployment_diagnostics() {
   echo 'Deployment health check failed; collecting the failed containers before rollback.' >&2
   compose ps -a >&2 || true
-  diagnostic_services="wao-server wao-agent-server wao-gateway"
+  diagnostic_services="wao-server wao-gateway"
   if [ "${role}" = "master" ]; then
     diagnostic_services="codex-vpn codex-egress-proxy ${diagnostic_services}"
   fi
@@ -153,20 +152,7 @@ export NODE_PUBLIC_IP
 
 compose config >/dev/null
 
-legacy_agent_project="wao-agent-${role}"
-legacy_agent_id="$(run_docker ps -aq \
-  --filter "label=com.docker.compose.project=${legacy_agent_project}" \
-  --filter 'label=com.docker.compose.service=wao-agent-server' | head -n 1)"
-if [ -n "${legacy_agent_id}" ]; then
-  legacy_agent_image="$(run_docker inspect --format '{{.Image}}' "${legacy_agent_id}")"
-  if run_docker image inspect "${legacy_agent_image}" >/dev/null 2>&1; then
-    run_docker tag "${legacy_agent_image}" wao-agent-server:rollback
-  else
-    echo "Skipping rollback tag for legacy Agent; image ${legacy_agent_image} is no longer present." >&2
-  fi
-fi
-
-for service in wao-server wao-agent-server wao-gateway; do
+for service in wao-server wao-gateway; do
   container_id="$(compose ps -q "${service}")"
   if [ -n "${container_id}" ]; then
     image_id="$(run_docker inspect --format '{{.Image}}' "${container_id}")"
@@ -179,7 +165,7 @@ for service in wao-server wao-agent-server wao-gateway; do
 done
 case "${SKIP_IMAGE_BUILD:-false}" in
   true)
-    required_images="wao-server:${WAO_IMAGE_TAG:-latest} wao-agent-server:${WAO_IMAGE_TAG:-latest} wao-gateway:${WAO_IMAGE_TAG:-latest}"
+    required_images="wao-server:${WAO_IMAGE_TAG:-latest} wao-gateway:${WAO_IMAGE_TAG:-latest}"
     if [ "${role}" = "master" ]; then
       required_images="wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest} ${required_images}"
     fi
@@ -189,9 +175,9 @@ case "${SKIP_IMAGE_BUILD:-false}" in
     ;;
   false)
     if [ "${role}" = "master" ]; then
-      compose build codex-egress-proxy wao-server wao-agent-server wao-gateway
+      compose build codex-egress-proxy wao-server wao-gateway
     else
-      compose build wao-server wao-agent-server wao-gateway
+      compose build wao-server wao-gateway
     fi
     ;;
   *) echo 'SKIP_IMAGE_BUILD must be true or false.' >&2; exit 2 ;;
@@ -199,15 +185,14 @@ esac
 
 # Compose 对镜像标签的变化会重建容器。复用内容相同的应用镜像，避免每个 Git SHA
 # 都重启没有改动的服务；发布清单仍用 SHA 镜像标签校验目标内容。
-for service in wao-server wao-agent-server wao-gateway; do
+for service in wao-server wao-gateway; do
   content_tag="$(ensure_content_tag "$service" "${service}:${WAO_IMAGE_TAG:-latest}")"
   case "${service}" in
     wao-server) WAO_SERVER_IMAGE_TAG="${content_tag}" ;;
-    wao-agent-server) WAO_AGENT_IMAGE_TAG="${content_tag}" ;;
     wao-gateway) WAO_GATEWAY_IMAGE_TAG="${content_tag}" ;;
   esac
 done
-export WAO_SERVER_IMAGE_TAG WAO_AGENT_IMAGE_TAG WAO_GATEWAY_IMAGE_TAG
+export WAO_SERVER_IMAGE_TAG WAO_GATEWAY_IMAGE_TAG
 
 if [ "${role}" = "master" ]; then
   # 出口代理镜像按 Git SHA 打标签，但内容很少变化。改用镜像运行内容标签，
@@ -218,15 +203,10 @@ if [ "${role}" = "master" ]; then
 fi
 
 start_services() {
-  # 首次统一发布时，精确接管旧 Compose 项目的 Agent 容器。镜像已在上面标记为 rollback，
-  # 媒体卷也通过显式 name 继续挂载，失败时仍可用统一 Compose 恢复。
-  if [ -n "${legacy_agent_id}" ]; then
-    run_docker rm -f "${legacy_agent_id}" >/dev/null || return 1
-  fi
   if [ "${role}" = "master" ]; then
     # Keep the application deploy independent of the external Codex route.
     # The production verification probes that route and reports its failure.
-    core_services='redis-master wao-server wao-agent-server wao-gateway'
+    core_services='redis-master wao-server wao-gateway'
     if [ "${MANAGE_MASTER_INFRA:-true}" = true ]; then
       core_services="mysql-master nacos nacos-init-admin ddns-go ${core_services}"
     fi
@@ -248,15 +228,20 @@ start_services() {
 
 if ! start_services; then
   print_deployment_diagnostics
-  if run_docker image inspect wao-server:rollback wao-agent-server:rollback wao-gateway:rollback >/dev/null 2>&1; then
+  if run_docker image inspect wao-server:rollback wao-gateway:rollback >/dev/null 2>&1; then
     echo 'Deployment failed; restoring the previously running application images.' >&2
     (
-      unset WAO_SERVER_IMAGE_TAG WAO_AGENT_IMAGE_TAG WAO_GATEWAY_IMAGE_TAG
-      WAO_IMAGE_TAG=rollback compose up -d --no-build --no-deps --wait wao-server wao-agent-server wao-gateway
+      unset WAO_SERVER_IMAGE_TAG WAO_GATEWAY_IMAGE_TAG
+      WAO_IMAGE_TAG=rollback compose up -d --no-build --no-deps --wait wao-server wao-gateway
     )
   fi
   exit 1
 fi
+# 精确停用既有 Agent 容器，保留容器、媒体卷和数据库；常规发布不再启动它。
+for retired_project in wao-master wao-agent-master; do
+  retired_ids="$(run_docker ps -q --filter "label=com.docker.compose.project=$retired_project" --filter 'label=com.docker.compose.service=wao-agent-server')"
+  for retired_id in $retired_ids; do run_docker update --restart=no "$retired_id" >/dev/null; run_docker stop "$retired_id" >/dev/null; done
+done
 compose ps
 
 printf '%s\n' "${NODE_PUBLIC_IP}" >"${deploy_dir}/.public-ip"

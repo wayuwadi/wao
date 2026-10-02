@@ -70,15 +70,6 @@ class SettingControllerTest {
                 .hasMessageContaining("HTTP");
     }
 
-    @Test
-    void mediaAgentCompatibilityEndpointDelegatesToRegistry() {
-        var expected = new MediaAgentMenuConfigDto("内容助手", "TOOLS", 5, false);
-        when(externalApps.getLegacyMediaAgentMenu()).thenReturn(expected);
-
-        var result = controller.mediaAgentMenu().data();
-
-        assertThat(result).isEqualTo(expected);
-    }
 
     @Test
     void externalAppRegistryEndpointDelegatesToRegistryService() {

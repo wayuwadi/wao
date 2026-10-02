@@ -351,7 +351,8 @@ const router = createRouter({
           component: () => import('@/views/DashboardView.vue'),
           meta: { module: 'dashboard', tabKind: 'module' },
         },
-        { path: 'media-agent', redirect: '/apps/media-agent' },
+        { path: 'media-agent', component: () => import('@/views/NotFoundView.vue') },
+        { path: 'apps/media-agent', component: () => import('@/views/NotFoundView.vue') },
         {
           path: 'apps/:appId',
           name: 'external-app',

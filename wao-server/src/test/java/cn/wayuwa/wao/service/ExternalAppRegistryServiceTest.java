@@ -28,50 +28,26 @@ class ExternalAppRegistryServiceTest {
     private final ExternalAppRegistryService service = new ExternalAppRegistryService(settings, json);
 
     @Test
-    void firstReadMigratesExistingMediaAgentMenuWithoutWriting() {
-        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(null);
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, "自媒体 Agent")).thenReturn("内容助手");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, "PUBLIC")).thenReturn("TOOLS");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_ORDER, "20")).thenReturn("5");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")).thenReturn("false");
+    void retiredAgentCannotReturnThroughOldRegistryOrSave() throws Exception {
+        var old = app("media-agent", "旧助手", "/agent/", "/api/agent/health");
+        var saved = service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(old)));
+        assertThat(saved.apps()).isEmpty();
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(
+                json.writeValueAsString(new ExternalAppRegistryDto(8, List.of(
+                        new ExternalAppConfigDto("media-agent", "旧助手", "ri-apps-2-line", "PUBLIC", 1, true, "/agent/", "", "TAB")))));
+        assertThat(service.getRegistry().apps()).isEmpty();
+    }
 
-        var registry = service.getRegistry();
-
-        assertThat(registry.version()).isEqualTo(8);
-        assertThat(registry.apps()).hasSize(4);
-        assertThat(registry.apps().get(0)).satisfies(app -> {
-            assertThat(app.id()).isEqualTo("media-agent");
-            assertThat(app.label()).isEqualTo("内容助手");
-            assertThat(app.group()).isEqualTo("TOOLS");
-            assertThat(app.order()).isEqualTo(5);
-            assertThat(app.visible()).isFalse();
-            assertThat(app.appUrl()).isEqualTo("/agent/");
-            assertThat(app.healthUrl()).isEqualTo("/api/agent/health");
-            assertThat(app.openMode()).isEqualTo("TAB");
-            assertThat(app.placement()).isEqualTo("MENU");
-        });
-        assertThat(registry.apps().get(1)).satisfies(app -> {
-            assertThat(app.id()).isEqualTo("getnote");
-            assertThat(app.label()).isEqualTo("得到大脑");
-            assertThat(app.group()).isEqualTo("TOOLS");
-            assertThat(app.appUrl()).isEqualTo("https://www.biji.com/");
-            assertThat(app.healthUrl()).isEmpty();
-            assertThat(app.openMode()).isEqualTo("NEW_PAGE");
-        });
-        assertThat(registry.apps().get(2)).satisfies(app -> {
-            assertThat(app.id()).isEqualTo("jumpserver");
-            assertThat(app.label()).isEqualTo("资源管理");
-            assertThat(app.group()).isEqualTo("TOOLS");
-            assertThat(app.appUrl()).isEqualTo("/api/auth/jumpserver");
-            assertThat(app.healthUrl()).isEqualTo("/api/external/jumpserver/health");
-            assertThat(app.openMode()).isEqualTo("NEW_PAGE");
-        });
+    @Test
+    void defaultsExcludeRetiredAgent() {
+        assertThat(service.getRegistry().apps()).extracting("id")
+                .containsExactly("getnote", "jumpserver", "weknora");
     }
 
     @Test
     void savesAndReadsMultipleApplications() {
         var request = new SaveExternalAppRegistryRequest(List.of(
-                app("media-agent", "自媒体 Agent", "/agent/", "/api/agent/health"),
+                app("custom-studio", "自媒体 Agent", "/studio/", "/api/studio/health"),
                 app("wao-insight", "群聊洞察", "/insight/", "/api/insight/health"),
                 app("data-studio", "数据工作台", "https://studio.example.com/", "")));
 
@@ -82,45 +58,45 @@ class ExternalAppRegistryServiceTest {
         verify(settings).put(eq(SettingService.EXTERNAL_APP_REGISTRY), jsonCaptor.capture());
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(jsonCaptor.getValue());
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "data-studio");
+                .containsExactly("custom-studio", "data-studio");
     }
 
     @Test
     void filtersRetiredInsightFromPersistedRegistry() throws Exception {
         String stored = json.writeValueAsString(new ExternalAppRegistryDto(1, List.of(
                 new ExternalAppConfigDto(
-                        "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
-                        "/agent/", "/api/agent/health", null),
+                        "custom-studio", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
+                        "/studio/", "/api/studio/health", null),
                 new ExternalAppConfigDto(
                         "wao-insight", "群聊洞察", "ri-bubble-chart-line", "PUBLIC", 25, true,
                         "/insight/", "/api/insight/health", null))));
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(stored);
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "getnote", "jumpserver", "weknora");
+                .containsExactly("custom-studio", "getnote", "jumpserver", "weknora");
         assertThat(service.getRegistry().apps().get(0).openMode()).isEqualTo("TAB");
     }
 
     @Test
     void upgradesVersionThreeRegistryOnceAndRespectsLaterRemoval() throws Exception {
         var mediaAgent = new ExternalAppConfigDto(
-                "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
-                "/agent/", "/api/agent/health", "TAB");
+                "custom-studio", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
+                "/studio/", "/api/studio/health", "TAB");
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(3, List.of(mediaAgent))));
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "getnote", "jumpserver", "weknora");
+                .containsExactly("custom-studio", "getnote", "jumpserver", "weknora");
 
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(4, List.of(mediaAgent))));
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "jumpserver", "weknora");
+                .containsExactly("custom-studio", "jumpserver", "weknora");
 
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(5, List.of(mediaAgent))));
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "weknora");
+                .containsExactly("custom-studio", "weknora");
     }
 
     @Test
@@ -199,11 +175,11 @@ class ExternalAppRegistryServiceTest {
                 .singleElement().satisfies(app -> assertThat(app.placement()).isEqualTo(placement));
 
         var legacy = new ExternalAppConfigDto(
-                "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
-                "/agent/", "/api/agent/health", "TAB", null);
+                "custom-studio", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
+                "/studio/", "/api/studio/health", "TAB", null);
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(5, List.of(legacy))));
-        assertThat(service.getRegistry().apps()).filteredOn(app -> "media-agent".equals(app.id())).singleElement()
+        assertThat(service.getRegistry().apps()).filteredOn(app -> "custom-studio".equals(app.id())).singleElement()
                 .satisfies(app -> assertThat(app.placement()).isEqualTo("MENU"));
 
         var invalid = new SaveExternalAppConfigRequest(
@@ -217,8 +193,8 @@ class ExternalAppRegistryServiceTest {
     @Test
     void oldClientSaveWithoutPlacementPreservesDockedApplication() throws Exception {
         var stored = new ExternalAppConfigDto(
-                "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
-                "/agent/", "/api/agent/health", "TAB", "DOCK");
+                "custom-studio", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
+                "/studio/", "/api/studio/health", "TAB", "DOCK");
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(6, List.of(stored))));
         var oldClient = new SaveExternalAppConfigRequest(
@@ -229,22 +205,6 @@ class ExternalAppRegistryServiceTest {
                 .singleElement().satisfies(app -> assertThat(app.placement()).isEqualTo("DOCK"));
     }
 
-    @Test
-    void legacyMediaAgentUpdatePreservesOpenMode() throws Exception {
-        var stored = new ExternalAppRegistryDto(3, List.of(new ExternalAppConfigDto(
-                "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
-                "/agent/", "/api/agent/health", "NEW_PAGE")));
-        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(json.writeValueAsString(stored));
-        clearInvocations(settings);
-
-        service.saveLegacyMediaAgentMenu(new SaveMediaAgentMenuConfigRequest("内容助手", "TOOLS", 5, true));
-
-        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
-        verify(settings).put(eq(SettingService.EXTERNAL_APP_REGISTRY), payload.capture());
-        assertThat(json.readValue(payload.getValue(), ExternalAppRegistryDto.class).apps())
-                .filteredOn(app -> "media-agent".equals(app.id()))
-                .singleElement().satisfies(app -> assertThat(app.openMode()).isEqualTo("NEW_PAGE"));
-    }
 
     @Test
     void rejectsDuplicateIdsAndUnsafeUrls() {
