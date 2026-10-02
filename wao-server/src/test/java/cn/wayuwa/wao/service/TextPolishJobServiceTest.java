@@ -32,6 +32,23 @@ class TextPolishJobServiceTest {
         verifyNoInteractions(polish);
     }
 
+    @Test void failedNoteBodyKeepsOriginalForRetryAndNeverReturnsPartialOutput() {
+        Job saved = job("NOTE_BODY");
+        when(jobs.findOwned(id, "m1")).thenReturn(saved);
+        for (String terminal : List.of("failed", "cancelled")) {
+            when(assistant.readOnlyJobResult(id, "ac1"))
+                    .thenReturn(new AiAssistantService.ReadOnlyJobResult("ac1", terminal, "不可发布的部分结果", null));
+            var result = service.get("m1", id);
+            assertThat(result.status()).isEqualTo("FAILED");
+            assertThat(result.message()).contains("重试", "原文已保留");
+            assertThat(result.polished()).isNull();
+            assertThat(result.preview()).isNull();
+            assertThat(saved.originalText()).isEqualTo("原文");
+        }
+        verify(jobs, never()).insert(any());
+        verifyNoInteractions(polish);
+    }
+
     @Test void submitsWithoutWaitingAndPreservesDocumentInstructions() {
         when(jobs.lockMember("m1")).thenReturn("m1");
         when(polish.prepare("m1", "原文")).thenReturn(new TextPolishService.PreparedPolish("原文", "用户方法"));
