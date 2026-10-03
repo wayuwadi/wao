@@ -13,7 +13,7 @@ import shutil
 import tempfile
 
 GAME_MANIFEST = 'game-manifest.json'
-KNOWN_GAMES = {'dino'}
+KNOWN_GAMES = {'dino', 'rift'}
 
 
 def static_tool():

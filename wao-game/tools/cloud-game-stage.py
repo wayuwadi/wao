@@ -53,17 +53,18 @@ def main():
     p.add_argument('action',choices=['stage','activate'])
     p.add_argument('--runtime',type=Path,required=True)
     p.add_argument('--version',type=checked_sha,required=True)
+    p.add_argument('--game',choices=['dino','rift'],default='dino')
     p.add_argument('--archive',type=Path,required=True)
     p.add_argument('--expected-catalog',type=int,required=True)
     args=p.parse_args(); runtime=args.runtime.resolve(); state=coordinator(runtime,args.version)
-    previous=checked_sha(state['previousSha']); version=args.version
+    previous=checked_sha(state['previousSha']); version=args.version; game=args.game
     if args.expected_catalog<0: raise ValueError('Invalid expected catalog revision')
     transport=load('authorized_cloud_transport',runtime/'cloud_access.py')
     remote=f'/root/wao-game-releases/{version}'
     invocations=[]
     def run(script,name):
         coordinator(runtime,version)
-        invocation=transport.cloud_run(script,'wao-dino-'+name+'-'+version[:8],timeout=90)
+        invocation=transport.cloud_run(script,'wao-'+game+'-'+name+'-'+version[:8],timeout=90)
         invocations.append(invocation)
         deadline=time.monotonic()+110
         while time.monotonic()<deadline:
@@ -78,19 +79,19 @@ def main():
     root=Path(__file__).resolve().parents[2]
     if args.action=='stage':
         run(f"set -eu; test \"$(readlink /var/www/wao/windows1-dev/dist)\" = /var/www/wao/releases/{previous}; echo current-frontend-matched",'guard')
-        files={'game-dino.tgz':args.archive,'game-release.py':Path(__file__).with_name('game-release.py'),'game-routing.py':Path(__file__).with_name('game-routing.py'),'static-release.py':root/'deploy/scripts/static-release.py'}
+        files={f'game-{game}.tgz':args.archive,'game-release.py':Path(__file__).with_name('game-release.py'),'game-routing.py':Path(__file__).with_name('game-routing.py'),'static-release.py':root/'deploy/scripts/static-release.py'}
         for name,path in files.items():
             data=path.read_bytes()
             for offset in range(0,len(data),6000):
                 chunk=data[offset:offset+6000]
                 run(chunk_script(remote+'/'+name,chunk,offset,hashlib.sha256(data[:offset+len(chunk)]).hexdigest()),name.replace('.','-')+'-'+str(offset))
             run(f"set -eu; echo '{hashlib.sha256(data).hexdigest()}  {remote}/{name}' | sha256sum -c -",name.replace('.','-')+'-verify')
-        run(f"python3 {remote}/game-release.py install {remote}/game-dino.tgz /var/www/wao/play-assets dino {version}",'install')
+        run(f"python3 {remote}/game-release.py install {remote}/game-{game}.tgz /var/www/wao/play-assets {game} {version}",'install')
     else:
         # Existing gateway configuration is preserved byte-for-byte outside the marked game block.
         run(f"""set -eu
 test "$(readlink /var/www/wao/windows1-dev/dist)" = /var/www/wao/releases/{previous}
-python3 {remote}/game-release.py verify /var/www/wao/play-assets dino {version}
+python3 {remote}/game-release.py verify /var/www/wao/play-assets {game} {version}
 python3 - <<'PY'
 from pathlib import Path
 import json
@@ -107,15 +108,22 @@ PY
 python3 {remote}/game-routing.py /etc/nginx/conf.d/wao.wayuwa.cn.conf {remote}/nginx-with-games.conf
 cp {remote}/nginx-with-games.conf /etc/nginx/conf.d/wao.wayuwa.cn.conf
 if ! nginx -t; then cp {remote}/nginx-before-games.conf /etc/nginx/conf.d/wao.wayuwa.cn.conf; exit 1; fi
-if ! python3 {remote}/game-release.py activate /var/www/wao/play-assets dino {version} --expected-revision {args.expected_catalog}; then
+# Install the additive route before exposing a new catalog pointer. A failed
+# reload must never advertise an entry whose assets are still inaccessible.
+if ! systemctl reload nginx; then
   cp {remote}/nginx-before-games.conf /etc/nginx/conf.d/wao.wayuwa.cn.conf
+  nginx -t && systemctl reload nginx
   exit 1
 fi
-systemctl reload nginx
+if ! python3 {remote}/game-release.py activate /var/www/wao/play-assets {game} {version} --expected-revision {args.expected_catalog}; then
+  cp {remote}/nginx-before-games.conf /etc/nginx/conf.d/wao.wayuwa.cn.conf
+  nginx -t && systemctl reload nginx
+  exit 1
+fi
 echo game-route-and-catalog-active
 """,'activate')
-    report={'action':args.action,'version':version,'previousFrontend':previous,'invocations':invocations,'backendChanged':False,'newCredentials':False}
-    (runtime/f'dino-{args.action}-{version}.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+    report={'game':game,'action':args.action,'version':version,'previousFrontend':previous,'invocations':invocations,'backendChanged':False,'newCredentials':False}
+    (runtime/f'{game}-{args.action}-{version}.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
     print(json.dumps(report),flush=True)
 
 if __name__=='__main__': main()

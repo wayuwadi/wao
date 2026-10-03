@@ -8,7 +8,7 @@ import {
   type MemoryRecord,
 } from "../../host/memory";
 import { freshMemory } from "./save";
-const record = (): MemoryRecord => ({
+const record = (): MemoryRecord<"dino"> => ({
   gameId: "dino",
   rulesVersion: 1,
   savedAt: new Date().toISOString(),
@@ -31,7 +31,7 @@ describe("本机记忆事务（模拟 IndexedDB，不冒充浏览器验收）", 
     expect((await store.backups())[0]?.original).toEqual(draft);
     expect(await store.all()).toEqual([disk]);
     await store.replace([draft], { dino: 1 });
-    expect((await store.all())[0]?.payload.practiceComplete).toBe(true);
+    expect((await store.all()).find(r => r.gameId === "dino")?.payload.practiceComplete).toBe(true);
   });
   it("账号无关；关闭重开保留，导出到独立存储后继续", async () => {
     const a = new IDBFactory(),
@@ -46,9 +46,9 @@ describe("本机记忆事务（模拟 IndexedDB，不冒充浏览器验收）", 
     const parsed = parseMemory(exportMemory(await reopened.all()));
     const other = new MemoryStore(new IDBFactory());
     await other.replace(parsed.games, { dino: 0 });
-    expect((await other.all())[0]?.payload.practiceComplete).toBe(true);
+    expect((await other.all()).find(r => r.gameId === "dino")?.payload.practiceComplete).toBe(true);
     const next = await other.save(
-      { ...parsed.games[0]!.payload, best: 52, totalDistance: 52, runs: 1 },
+      { ...parsed.games.find(r => r.gameId === "dino")!.payload, best: 52, totalDistance: 52, runs: 1 },
       1,
     );
     expect(next.revision).toBe(2);

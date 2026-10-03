@@ -16,10 +16,10 @@ def fetch(url, limit=32 * 1024 * 1024):
 
 def verify(origin, games, version=None):
     catalog = json.loads(fetch(origin + '/play-assets/catalog.json', 1024 * 1024))
-    if catalog.get('protocol') != 1 or 'dino' not in catalog.get('games', {}):
+    if catalog.get('protocol') != 1 or not isinstance(catalog.get('games'), dict):
         raise ValueError('Public game catalog not ready')
     evidence = []
-    for game in games or ['dino']:
+    for game in games or sorted(catalog['games']):
         if not re.fullmatch(r'[a-z][a-z0-9-]{0,31}', game): raise ValueError('Invalid game ID')
         pointer = catalog['games'][game]
         sha = pointer['version']

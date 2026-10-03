@@ -1,16 +1,17 @@
-import { computed, inject, ref, type InjectionKey } from "vue";
-import { freshMemory, isDinoMemory, type DinoMemory } from "../games/dino/save";
+import { computed, inject, ref, shallowRef, type InjectionKey } from "vue";
+import { games, clonePayload, type GameId, type GameMemories } from "./registry";
 import {
   exportMemory,
+  validateRecord,
   MemoryError,
   MemoryStore,
   type Backup,
   type MemoryRecord,
 } from "./memory";
 
-export function createGameMemory(memoryStore?: MemoryStore) {
+export function createGameMemory<G extends GameId = "dino">(memoryStore?: MemoryStore, gameId: G = "dino" as G) {
   // 页面会话独立于 WAO 账号，切游戏不丢仅本次草稿；刷新后重新读取本机档。
-  const draft = ref(freshMemory()),
+  const draft = shallowRef<GameMemories[G]>(games[gameId].fresh() as GameMemories[G]),
     revision = ref(0),
     savedAt = ref(new Date().toISOString());
   const mode = ref<"local" | "session">("local"),
@@ -29,17 +30,18 @@ export function createGameMemory(memoryStore?: MemoryStore) {
   function database() {
     return (store ??= new MemoryStore());
   }
-  function current(): MemoryRecord {
-    return {
-      gameId: "dino",
+  function current(): MemoryRecord & { gameId: G; payload: GameMemories[G] } {
+    return validateRecord({
+      gameId,
       rulesVersion: 1,
       savedAt: savedAt.value,
       revision: revision.value,
-      payload: { ...draft.value },
-    };
+      payload: clonePayload(draft.value),
+    }) as MemoryRecord & { gameId: G; payload: GameMemories[G] };
   }
   function accept(record: MemoryRecord | undefined) {
-    draft.value = record ? { ...record.payload } : freshMemory();
+    if (record && record.gameId !== gameId) throw new MemoryError("invalid", "游戏标识不匹配，原进度未修改。");
+    draft.value = (record ? clonePayload(record.payload) : games[gameId].fresh()) as GameMemories[G];
     revision.value = record?.revision ?? 0;
     savedAt.value = record?.savedAt ?? new Date().toISOString();
     dirty.value = false;
@@ -57,7 +59,7 @@ export function createGameMemory(memoryStore?: MemoryStore) {
     if (initialized) return;
     initializing ??= (async () => {
       try {
-        accept((await database().all()).find((r) => r.gameId === "dino"));
+        accept((await database().all()).find((r) => r.gameId === gameId));
         status.value = "saved";
       } catch (e) {
         report(e);
@@ -68,7 +70,7 @@ export function createGameMemory(memoryStore?: MemoryStore) {
         channel.onmessage = (e) => {
           if (
             mode.value === "local" &&
-            e.data?.gameId === "dino" &&
+            e.data?.gameId === gameId &&
             Number.isSafeInteger(e.data.revision) &&
             e.data.revision > revision.value
           ) {
@@ -82,7 +84,7 @@ export function createGameMemory(memoryStore?: MemoryStore) {
     await initializing;
   }
   function notify() {
-    channel?.postMessage({ gameId: "dino", revision: revision.value });
+    channel?.postMessage({ gameId, revision: revision.value });
   }
   async function save() {
     if (writing) return writing;
@@ -102,10 +104,10 @@ export function createGameMemory(memoryStore?: MemoryStore) {
         status.value !== "error"
       ) {
         const version = generation,
-          payload = { ...draft.value };
+          payload = clonePayload(draft.value);
         status.value = "saving";
         try {
-          const saved = await database().save(payload, revision.value);
+          const saved = await database().save(payload, revision.value, gameId);
           revision.value = saved.revision;
           savedAt.value = saved.savedAt;
           dirty.value = generation !== version;
@@ -122,9 +124,9 @@ export function createGameMemory(memoryStore?: MemoryStore) {
     });
     return writing;
   }
-  function update(payload: DinoMemory) {
-    if (!isDinoMemory(payload)) return;
-    draft.value = { ...payload };
+  function update(payload: unknown) {
+    if (!games[gameId].validate(payload)) return;
+    draft.value = clonePayload(payload) as GameMemories[G];
     dirty.value = true;
     generation++;
     savedAt.value = new Date().toISOString();
@@ -134,7 +136,7 @@ export function createGameMemory(memoryStore?: MemoryStore) {
   async function retry() {
     await writing;
     try {
-      const stored = (await database().all()).find((r) => r.gameId === "dino");
+      const stored = (await database().all()).find((r) => r.gameId === gameId);
       if ((stored?.revision ?? 0) !== revision.value)
         throw new MemoryError(
           "conflict",
@@ -166,18 +168,20 @@ export function createGameMemory(memoryStore?: MemoryStore) {
   }
   async function previewCurrentDisk() {
     await writing;
-    return (await database().all()).find((r) => r.gameId === "dino");
+    return (await database().all()).find((r) => r.gameId === gameId);
   }
   async function replace(
     record: MemoryRecord,
     expected: number,
     toLocal = mode.value === "local",
   ) {
+    if (record.gameId !== gameId) throw new MemoryError("invalid", "游戏标识不匹配，原进度未修改。");
+    record = validateRecord(record);
     await writing;
     if (toLocal) {
       try {
         const saved = (
-          await database().replace([record], { dino: expected })
+          await database().replace([record], { [gameId]: expected }, true, [current()])
         )[0]!;
         accept(saved);
         mode.value = "local";
@@ -200,10 +204,20 @@ export function createGameMemory(memoryStore?: MemoryStore) {
     }
   }
   async function backups() {
-    const disk = await database().backups();
+    const disk = (await database().backups()).filter(b => b.original.gameId === gameId);
     return [...inMemoryBackups.value, ...disk].sort((a, b) =>
       b.backedUpAt.localeCompare(a.backedUpAt),
     );
+  }
+  function acceptImported(record: MemoryRecord, toLocal: boolean) {
+    record = validateRecord(record);
+    if (record.gameId !== gameId) throw new MemoryError("invalid", "游戏标识不匹配。");
+    if (!toLocal) inMemoryBackups.value.unshift({ id: crypto.randomUUID(), original: current(), backedUpAt: new Date().toISOString() });
+    accept(record);
+    mode.value = toLocal ? "local" : "session";
+    status.value = toLocal ? "saved" : "session";
+    message.value = "";
+    if (toLocal) notify();
   }
 
   const text = computed(() =>
@@ -218,6 +232,9 @@ export function createGameMemory(memoryStore?: MemoryStore) {
             : message.value,
   );
   return {
+    gameId,
+    acceptImported,
+    commitBatch: (records: MemoryRecord[], expected: Partial<Record<GameId, number>>, drafts: MemoryRecord[]) => database().replace(records, expected, true, drafts),
     draft,
     revision,
     mode,
@@ -240,9 +257,11 @@ export function createGameMemory(memoryStore?: MemoryStore) {
 
 export const gameMemoryKey: InjectionKey<ReturnType<typeof createGameMemory>> =
   Symbol("wao-game-memory");
-let pageMemory: ReturnType<typeof createGameMemory> | undefined;
-export function useGameMemory() {
-  return (
-    inject(gameMemoryKey, undefined) ?? (pageMemory ??= createGameMemory())
-  );
+const pageMemories = new Map<GameId, ReturnType<typeof createGameMemory<GameId>>>();
+export function useGameMemory(gameId: GameId = "dino") {
+  const injected = inject(gameMemoryKey, undefined);
+  if (injected?.gameId === gameId) return injected;
+  let memory = pageMemories.get(gameId);
+  if (!memory) { memory = createGameMemory(undefined, gameId); pageMemories.set(gameId, memory); }
+  return memory;
 }

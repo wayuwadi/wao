@@ -6,7 +6,11 @@
     "dev:dino": "vite --config games/dino/vite.config.ts",
     "build:dino": "vue-tsc --noEmit -p games/dino/tsconfig.json && vite build --config games/dino/vite.config.ts",
     "test:dino": "vitest run --config games/dino/vite.config.ts",
-    "lint:dino": "oxlint games/dino host protocol --deny-warnings"
+    "lint:dino": "oxlint games/dino host protocol --deny-warnings",
+    "dev:rift": "vite --config games/rift/vite.config.ts",
+    "build:rift": "vue-tsc --noEmit -p games/rift/tsconfig.json && vite build --config games/rift/vite.config.ts",
+    "test:rift": "vitest run --config games/rift/vite.config.ts",
+    "lint:rift": "oxlint games/rift --deny-warnings"
   },
   "dependencies": {
     "vue": "3.5.40"

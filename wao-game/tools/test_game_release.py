@@ -59,6 +59,21 @@ class GameArtifactsTest(unittest.TestCase):
             release.activate(self.target, 'dino', self.a, 1)
         self.assertEqual((self.target / 'catalog.json').read_bytes(), original)
 
+    def test_rift_publish_and_rollback_preserves_live_dino(self):
+        self.pack_install(self.a)
+        first = release.activate(self.target, 'dino', self.a, 0)
+        original = (self.target / 'dino' / self.a / 'assets/game.js').read_bytes()
+        for version in [self.a, self.b]:
+            archive = self.root / f'rift-{version}.tgz'
+            release.pack(self.source, archive, 'rift', version)
+            release.install(archive, self.target, 'rift', version)
+        release.activate(self.target, 'rift', self.a, 1)
+        release.activate(self.target, 'rift', self.b, 2)
+        result = release.activate(self.target, 'rift', self.a, 3)
+        self.assertEqual(result['games']['dino'], first['games']['dino'])
+        self.assertEqual((self.target / 'dino' / self.a / 'assets/game.js').read_bytes(), original)
+        self.assertTrue((self.target / 'rift' / self.b / 'index.html').exists())
+
     def test_damaged_and_extra_assets_refuse_activation(self):
         self.pack_install(self.a)
         asset = self.target / 'dino' / self.a / 'assets/game.js'

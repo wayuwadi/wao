@@ -7,23 +7,26 @@ import {
   ref,
   watch,
 } from "vue";
-import { childEvent, envelope, type ParentCommand } from "../protocol/dino";
+import { childEvent, envelope, type ParentCommand } from "../protocol/host";
 import {
   FILE_LIMIT,
+  exportMemory,
   parseMemory,
   summary,
   type Backup,
   type MemoryRecord,
 } from "./memory";
 import { useGameMemory } from "./useGameMemory";
+import { games, clonePayload, type GameId } from "./registry";
 
 const props = withDefaults(
-  defineProps<{ active: boolean; theme?: "light" | "dark"; source?: string }>(),
-  { theme: "light" },
+  defineProps<{ active: boolean; gameId?: GameId; theme?: "light" | "dark"; source?: string }>(),
+  { theme: "light", gameId: "dino" },
 );
 const emit = defineEmits<{ leave: []; immersion: [active: boolean]; memoryPanel: [active: boolean] }>();
-const memory = useGameMemory(),
-  frame = ref<HTMLIFrameElement>(),
+const memories = { dino: useGameMemory("dino"), rift: useGameMemory("rift") };
+const memory = memories[props.gameId], game = games[props.gameId];
+const frame = ref<HTMLIFrameElement>(),
   source = ref(""),
   instance = ref(crypto.randomUUID());
 const loadError = ref(""),
@@ -35,6 +38,7 @@ const fileInput = ref<HTMLInputElement>(),
   feedback = ref(""),
   pending = ref<{
     record: MemoryRecord;
+    additional?: { record: MemoryRecord; original?: MemoryRecord; expected: number }[];
     original?: MemoryRecord;
     expected: number;
     toLocal: boolean;
@@ -57,7 +61,7 @@ const url = computed(() =>
 );
 function send(event: ParentCommand) {
   frame.value?.contentWindow?.postMessage(
-    envelope(event, instance.value, ++seq),
+    envelope(event, instance.value, ++seq, props.gameId),
     location.origin,
   );
 }
@@ -107,7 +111,7 @@ async function load() {
       });
       if (!response.ok) throw new Error("游戏制品尚未就绪，请稍后重试。");
       const catalog = await response.json(),
-        game = catalog.games?.dino;
+        game = catalog.games?.[props.gameId];
       if (
         catalog.protocol !== 1 ||
         !game ||
@@ -116,7 +120,7 @@ async function load() {
         game.rulesVersion !== 1
       )
         throw new Error("游戏清单与当前页面不兼容。");
-      source.value = `/play-assets/dino/${game.version}/index.html`;
+      source.value = `/play-assets/${props.gameId}/${game.version}/index.html`;
     }
     resetFrame();
   } catch (e) {
@@ -127,7 +131,7 @@ function receive(e: MessageEvent) {
   if (
     e.origin !== location.origin ||
     e.source !== frame.value?.contentWindow ||
-    !childEvent(e.data, instance.value) ||
+    !childEvent(e.data, instance.value, props.gameId) ||
     e.data.seq <= received
   )
     return;
@@ -139,7 +143,7 @@ function receive(e: MessageEvent) {
     send({
       type: "init",
       payload: {
-        memory: { ...memory.draft.value },
+        memory: clonePayload(memory.draft.value),
         theme: props.theme,
         mode: memory.mode.value,
       },
@@ -171,20 +175,21 @@ function closeMemory() {
   feedback.value = "";
   section.value?.querySelector<HTMLButtonElement>(".memory-open")?.focus();
 }
-function download(all = false) {
+async function download(all = false) {
   try {
-    const blob = new Blob([memory.exportCurrent()], {
+    const records = all ? await Promise.all(Object.values(memories).map(async m => { await m.initialize(); return m.current(); })) : [memory.current()];
+    const blob = new Blob([exportMemory(records)], {
         type: "application/json",
       }),
       href = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = href;
-    a.download = `wao-${all ? "all-games" : "dino"}-memory-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `wao-${all ? "all-games" : props.gameId}-memory-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(href), 1000);
     feedback.value = all
-      ? "已导出全部已开放游戏（当前为恐龙荒野）。从纪录与解锁继续，不恢复半局。"
-      : "已导出恐龙荒野记忆。从纪录与解锁继续，不恢复半局。";
+      ? "已导出全部已开放游戏：恐龙荒野、裂隙远征。"
+      : `已导出${game.name}记忆。${game.restore}。`;
   } catch (e) {
     feedback.value = e instanceof Error ? e.message : "导出失败，请重试。";
   }
@@ -195,9 +200,11 @@ async function prepare(
   toLocal = memory.mode.value === "local",
 ) {
   feedback.value = "";
+  const target = memories[record.gameId];
+  await target.initialize();
   const original = toLocal
-    ? await memory.previewCurrentDisk()
-    : memory.current();
+    ? await target.previewCurrentDisk()
+    : target.current();
   pending.value = {
     record,
     original,
@@ -210,17 +217,28 @@ async function selectFile(e: Event) {
   const input = e.target as HTMLInputElement,
     file = input.files?.[0];
   input.value = "";
-  if (!file) return;
+  if (!file || busy.value) return;
+  busy.value = true;
   feedback.value = "";
   pending.value = undefined;
   try {
     if (file.size > FILE_LIMIT) throw new Error("文件超过 10 MiB，未导入。");
     const parsed = parseMemory(await file.text());
-    await prepare(parsed.games[0]!, "导入恐龙荒野记忆");
+    const records = parsed.games;
+    const toLocal = memory.mode.value === "local";
+    const entries = [];
+    for (const record of records) {
+      const target = memories[record.gameId]; await target.initialize();
+      const original = toLocal ? await target.previewCurrentDisk() : target.current();
+      entries.push({ record, original, expected: original?.revision ?? 0 });
+    }
+    pending.value = { ...entries[0]!, additional: entries.slice(1), toLocal,
+      title: records.length > 1 ? "导入全部游戏记忆" : `导入${games[records[0]!.gameId].name}记忆` };
   } catch (e) {
+    pending.value = undefined;
     feedback.value =
       e instanceof Error ? e.message : "导入失败，原进度未修改。";
-  }
+  } finally { busy.value = false; }
 }
 async function confirmImport() {
   const item = pending.value;
@@ -228,7 +246,15 @@ async function confirmImport() {
   busy.value = true;
   try {
     if (item.readOnly) await memory.readOther(item.expected);
-    else await memory.replace(item.record, item.expected, item.toLocal);
+    else {
+      const entries = [item, ...(item.additional ?? [])];
+      for (const entry of entries) await memories[entry.record.gameId].flush();
+      const records = entries.map(e => e.record);
+      const saved = item.toLocal ? await memory.commitBatch(records,
+        Object.fromEntries(entries.map(e => [e.record.gameId, e.expected])),
+        entries.map(e => memories[e.record.gameId].current())) : records;
+      for (const record of saved) memories[record.gameId].acceptImported(record, item.toLocal);
+    }
     resetFrame();
     pending.value = undefined;
     backups.value = await memory.backups();
@@ -363,11 +389,11 @@ onBeforeUnmount(() => {
     ref="section"
     class="game-host"
     :class="{ immersive }"
-    aria-label="恐龙荒野游戏容器"
+    :aria-label="`${game.name}游戏容器`"
     @keydown="key"
   >
     <header class="host-bar" :inert="panel">
-      <span>荒野来信 <small>跳过烦恼，跑进晚风。</small></span>
+      <span>{{ game.letter }} <small>{{ game.tagline }}</small></span>
       <div>
         <button class="memory-open" @click="openMemory">游戏记忆</button
         ><button @click="immerse">
@@ -381,13 +407,13 @@ onBeforeUnmount(() => {
       ><button @click="download()">导出记忆</button>
     </div>
     <div v-else class="frame-wrap" :inert="panel">
-      <p v-if="!loaded" class="loading">正在打开荒野…</p>
+      <p v-if="!loaded" class="loading">正在打开{{ game.name }}…</p>
       <iframe
         v-if="source"
         :key="instance"
         ref="frame"
         :src="url"
-        title="恐龙荒野"
+        :title="game.name"
         allow="autoplay 'self'"
         referrerpolicy="same-origin"
       />
@@ -401,7 +427,7 @@ onBeforeUnmount(() => {
         @click="openMemory"
       >
         处理记忆</button
-      ><small>保存纪录与解锁 · 不恢复未结束的一局</small>
+      ><small>{{ game.restore }}</small>
     </footer>
     <section
       v-if="panel"
@@ -450,7 +476,7 @@ onBeforeUnmount(() => {
         />
       </div>
       <p class="note">
-        导出的是可恢复的游戏存档。短局从永久纪录继续，不保存正在空中的位置。目前全部游戏导出包含已开放的恐龙荒野。
+        导出的是可恢复的游戏存档。恐龙保留纪录，裂隙保留成长和房间检查点；全部导出包含两款游戏。
       </p>
       <div
         v-if="
@@ -465,19 +491,24 @@ onBeforeUnmount(() => {
       <div v-if="pending" class="import-preview">
         <h3>{{ pending.title }}</h3>
         <p>
-          恐龙荒野 · {{ new Date(pending.record.savedAt).toLocaleString() }}
+          {{ games[pending.record.gameId].name }} · {{ new Date(pending.record.savedAt).toLocaleString() }}
         </p>
         <strong>{{ summary(pending.record) }}</strong>
         <p v-if="pending.original">
-          将替换：{{ summary(pending.original) }}。原档先备份，可在下方恢复。
+          将替换：{{ summary(pending.original) }}。原档先备份，可在对应游戏的记忆面板恢复。
         </p>
-        <p v-else>本机尚无恐龙荒野记忆。</p>
+        <p v-else>本机尚无{{ games[pending.record.gameId].name }}记忆。</p>
+        <div v-for="entry in pending.additional" :key="entry.record.gameId">
+          <p>{{ games[entry.record.gameId].name }} · {{ new Date(entry.record.savedAt).toLocaleString() }}</p>
+          <strong>{{ summary(entry.record) }}</strong>
+          <p v-if="entry.original">将替换：{{ summary(entry.original) }}。原档先备份。</p>
+        </div>
         <p>
           {{
             pending.readOnly
               ? "保留本机版本；先备份本页草稿，再读取另一页进度。"
               : pending.toLocal
-                ? "确认后写入本机。"
+                ? "确认后将预览中的全部游戏写入本机；任何一款冲突时全部取消。"
                 : "仅恢复到本次游玩，不写入本机。"
           }}
         </p>

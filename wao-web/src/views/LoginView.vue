@@ -18,17 +18,23 @@ import RelaxGames from '@/components/relax/RelaxGames.vue'
 import '@/components/relax/relax.css'
 const GameHost = defineAsyncComponent(() => import('../../../wao-game/host/GameHost.vue'))
 const gameImmersive = ref(false), gameMemoryOpen = ref(false)
+const moreMenu = ref<HTMLDetailsElement>(), styleMenu = ref<HTMLDetailsElement>()
+function closeMenus() {
+  if (moreMenu.value) moreMenu.value.open = false
+  if (styleMenu.value) styleMenu.value.open = false
+}
 const selectedPage = ref('home'),
   pageStyle = ref<WorldId>('theater')
 const pages = [
   { id: 'dino', name: '恐龙荒野', color: '#ec6660' },
-  { id: 'arcade', name: '五人摸鱼冒险', color: '#eb973e' },
+  { id: 'rift', name: '裂隙远征', color: '#eb973e' },
   { id: 'orbit', name: '把伙伴送回家', color: '#c8a126' },
   { id: 'club', name: '今天怎么躺', color: '#62a873' },
   { id: 'gallery', name: '影子有点不对劲', color: '#41a9b3' },
   { id: 'journal', name: '今天贴点什么', color: '#627be0' },
 ]
-const gameSource = import.meta.env.DEV ? '/play-assets/dev/dino/index.html' : undefined
+const isolatedGame = computed(() => selectedPage.value === 'dino' || selectedPage.value === 'rift' ? selectedPage.value : undefined)
+const gameSource = computed(() => import.meta.env.DEV && isolatedGame.value ? `/play-assets/dev/${isolatedGame.value}/index.html` : undefined)
 const session = useSessionStore(),
   route = useRoute(),
   router = useRouter()
@@ -51,12 +57,14 @@ function visibility() {
 }
 function chooseWorld(id: WorldId) {
   pageStyle.value = id
+  closeMenus()
 }
 function choosePage(id: string) {
   if (id !== 'home' && !pages.some((p) => p.id === id)) return
+  closeMenus()
   if (id !== 'home') stage.value?.pauseForPlay()
   selectedPage.value = id
-  if (id !== 'home' && id !== 'dino') progress.value.world = id as WorldId
+  if (id !== 'home' && id !== 'dino' && id !== 'rift') progress.value.world = id as WorldId
 }
 function meditate() {
   choosePage('home')
@@ -141,7 +149,8 @@ onMounted(async () => {
       {
         'relax-light': theme.effective.value === 'light',
         'breathing-home': selectedPage === 'home',
-        'dino-page': selectedPage === 'dino',
+        'dino-page': !!isolatedGame,
+        'rift-page': selectedPage === 'rift',
       },
     ]"
     :data-entry-theme="theme.effective.value"
@@ -169,9 +178,9 @@ onMounted(async () => {
         <option value="home">纯呼吸</option>
         <option v-for="page in pages" :key="page.id" :value="page.id">{{ page.name }}</option>
       </select>
-      <details class="page-more">
+      <details ref="moreMenu" class="page-more">
         <summary>更多</summary>
-        <div>
+        <div @click="closeMenus">
           <button @click="meditate">静坐</button><button @click="theme.toggleTheme">切换明暗</button
           ><button class="header-login" @click="session.authed ? enterWorkspace() : openAuth()">
             {{ session.authed ? '进入工作空间' : '登录 WAO' }}</button
@@ -187,7 +196,7 @@ onMounted(async () => {
       @workspace="enterWorkspace"
     />
     <section v-if="selectedPage !== 'home'" class="rainbow-play">
-      <details class="style-picker" :inert="gameImmersive || gameMemoryOpen">
+      <details ref="styleMenu" class="style-picker" :inert="gameImmersive || gameMemoryOpen">
         <summary>页面风格 · {{ worlds.find((w) => w.id === pageStyle)?.name }}</summary>
         <div>
           <button
@@ -201,7 +210,9 @@ onMounted(async () => {
         </div>
       </details>
       <GameHost
-        v-if="selectedPage === 'dino'"
+        v-if="isolatedGame"
+        :key="isolatedGame"
+        :game-id="isolatedGame"
         @immersion="gameImmersive = $event"
         @memory-panel="gameMemoryOpen = $event"
         :active="gamesActive"
@@ -216,7 +227,7 @@ onMounted(async () => {
         :active="gamesActive"
         @story="progress.anecdote = $event"
       />
-      <div v-if="selectedPage !== 'dino'" class="legacy-status" role="status">
+      <div v-if="!isolatedGame" class="legacy-status" role="status">
         <span v-if="saveStatus === 'loading'">读取旧游戏进度…</span
         ><span v-else-if="saveStatus === 'saving'">保存中…</span
         ><span v-else-if="saveStatus === 'saved'"
@@ -272,6 +283,9 @@ onMounted(async () => {
     font-size: 9px;
   }
 }
+.rift-page { --game-accent: #d97a35; background: #fff4df; }
+.rift-page[data-entry-theme='dark'] { background: #382d34; }
+.rift-page :deep(.game-host) { border-color: #e7c69c; background: #fff4df; color: #714b36; }
 </style>
 
 <style scoped>
@@ -487,4 +501,7 @@ summary:focus-visible {
     max-width: 200px;
   }
 }
+.rift-page { --game-accent: #d97a35; background: #fff4df; }
+.rift-page[data-entry-theme='dark'] { background: #382d34; }
+.rift-page :deep(.game-host) { border-color: #e7c69c; background: #fff4df; color: #714b36; }
 </style>

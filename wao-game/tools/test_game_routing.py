@@ -23,6 +23,8 @@ class RoutingTest(unittest.TestCase):
         self.assertTrue(line.endswith('" {'))
         expression=shlex.split(line)[2]
         self.assertIsNotNone(re.fullmatch(expression,'/play-assets/dino/'+'a'*40+'/assets/index-one.js'))
+        self.assertIsNotNone(re.fullmatch(expression,'/play-assets/rift/'+'a'*40+'/index.html'))
+        self.assertIsNone(re.fullmatch(expression,'/play-assets/unregistered/'+'a'*40+'/index.html'))
         for path in ['/play-assets/dino/'+'a'*39+'/index.html','/play-assets/dino/'+'a'*40+'/secret.txt','/play-assets/dino/'+'a'*40+'/../index.html']:
             self.assertIsNone(re.fullmatch(expression,path))
         template=Path(__file__).resolve().parents[2]/'deploy/nginx/wao.wayuwa.cn.conf.template'
