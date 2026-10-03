@@ -75,7 +75,7 @@ describe('项目关键词查找', () => {
     expect(search.findAll('.search-task')).toHaveLength(2)
     useUiStore().setOwnerFilter('p1', 'wg'); useUiStore().setCreatorFilter('p1', 'wg'); await flushPromises()
     expect(search.findAll('.search-task')).toHaveLength(1)
-    expect(search.text()).toContain('2 项被负责人或创建人筛选排除')
+    expect(search.text()).toContain('2 项被快捷条件或人员筛选排除')
     useUiStore().setCreatorFilter('p1', 'wd'); await flushPromises()
     expect(search.text()).toContain('当前范围没有结果')
     await search.findAll('button').find(b => b.text().includes('清除筛选'))!.trigger('click')

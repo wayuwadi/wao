@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { PROJECT_ACTION_FILTERS, matchesProjectAction, type ProjectActionFilter } from '@/utils/projectActionFilters'
+import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
 import ProjectTaskSearch from '@/components/task/ProjectTaskSearch.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
@@ -55,8 +57,9 @@ function toggleSubtasks(id: string) {
 }
 const pid = computed(() => String(route.params.id))
 const searchText = ref('')
+const actionFilter = ref<ProjectActionFilter>('all')
 const searchQuery = computed(() => searchText.value.trim())
-watch(pid, () => { searchText.value = '' })
+watch(pid, () => { searchText.value = ''; actionFilter.value = 'all' })
 const orderScope = computed(() => `project:${pid.value}`)
 const project = computed(() => data.projectById(pid.value))
 // 「总览」标签页已下线：老链接归到任务。文件页签已经接入真实资产 id 后重新开放。
@@ -276,12 +279,20 @@ const ownsTask = (task: { owner: string; subs: { owner?: string | null }[] }, ow
   task.owner === owner || task.subs.some((sub) => sub.owner === owner)
 const allTasks = computed(() => creatorTasks.value
   .filter((task) => !effectiveOwner.value || ownsTask(task, effectiveOwner.value))
+  .filter(task => matchesProjectAction(task, actionFilter.value, data.today))
   .map(decoTask))
 /**
  * 真正收尾的任务：主任务已完成且子任务全部完成。主任务点了完成、子任务还有没做完的，
  * 仍算进行中的事，留在列表里展示，不跟着收进「已完成」。
  */
-const filteredCompletion = computed(() => projectCompletion(allTasks.value))
+const actionCounts = computed(() => Object.fromEntries(PROJECT_ACTION_FILTERS.map(filter => [filter.id,
+  ptasks.value.filter(task => matchesProjectAction(task, filter.id, data.today)).length])))
+const activeActionLabel = computed(() => PROJECT_ACTION_FILTERS.find(filter => filter.id === actionFilter.value)?.label ?? '')
+const resultTasks = computed(() => searchQuery.value
+  ? searchProjectTasks(allTasks.value, searchQuery.value).map(match => match.task) : allTasks.value)
+const filteredCompletion = computed(() => projectCompletion(resultTasks.value))
+function clearTaskFilters() { actionFilter.value = 'all'; ownerFilter.value = null; creatorFilter.value = null }
+
 const openTasks = computed(() => allTasks.value.filter((t) => !isFinished(t) || isSettling(t.id)))
 /** 已完成倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
 const doneDesc = (a: { completedAt?: string | null; id: string }, b: { completedAt?: string | null; id: string }) =>
@@ -730,6 +741,16 @@ watch(visibleTaskIds, (ids) => {
       </template>
     </div>
 
+    <div v-if="projTab === '任务'" class="project-action-filters" role="group" aria-label="需要处理事项快捷筛选">
+      <span class="action-count-scope">项目计数</span>
+      <button :aria-pressed="actionFilter === 'all'" @click="actionFilter = 'all'">全部</button>
+      <button v-for="filter in PROJECT_ACTION_FILTERS" :key="filter.id" :aria-pressed="actionFilter === filter.id"
+        :disabled="tasksUnavailable" :title="`${filter.label}的项目任务总数；与负责人、创建人和关键词组合筛选`"
+        @click="actionFilter = actionFilter === filter.id ? 'all' : filter.id">
+        {{ filter.label }} <span class="wao-tabular">{{ tasksUnavailable ? '—' : actionCounts[filter.id] }}</span>
+      </button>
+    </div>
+
     <!-- 任务 -->
     <div v-if="projTab === '任务'" class="project-task-content">
       <div v-if="data.taskLoadState === 'error'" class="task-scope" role="alert">
@@ -737,13 +758,14 @@ watch(visibleTaskIds, (ids) => {
         <button @click="data.hydrate()">重新加载任务</button>
       </div>
       <div v-else-if="data.taskLoadState === 'loading'" class="task-scope" role="status">正在加载任务，已显示的任务和本机草稿会继续保留。</div>
-      <div v-if="effectiveCreator || effectiveOwner" class="task-scope" role="status">
-        当前仅显示{{ effectiveOwner ? ` ${activeOwnerName} 负责的` : '' }}{{ effectiveCreator ? ` ${activeCreatorName} 创建的` : '' }}任务
-        <template v-if="!tasksUnavailable"> · 筛选内未收尾 {{ filteredCompletion.open }}／共 {{ allTasks.length }} 项任务（项目共 {{ ptasks.length }} 项；任务按全部子项判定收尾）</template>
+      <div v-if="effectiveCreator || effectiveOwner || actionFilter !== 'all'" class="task-scope" role="status">
+        当前仅显示{{ effectiveOwner ? ` ${activeOwnerName} 负责的` : '' }}{{ effectiveCreator ? ` ${activeCreatorName} 创建的` : '' }}{{ activeActionLabel ? ` ${activeActionLabel}的` : '' }}任务
+        <template v-if="!tasksUnavailable"> · 筛选内未收尾 {{ filteredCompletion.open }}／共 {{ resultTasks.length }} 项任务（项目共 {{ ptasks.length }} 项；任务按全部子项判定收尾）</template>
+        <button v-if="actionFilter !== 'all'" @click="actionFilter = 'all'">清除快捷筛选</button>
         <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
         <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
-      <ProjectTaskSearch v-if="searchQuery" :query="searchQuery" :tasks="ptasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="ownerFilter = null; creatorFilter = null" />
+      <ProjectTaskSearch v-if="searchQuery" :query="searchQuery" :tasks="ptasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="clearTaskFilters" />
       <!-- 保持普通视图挂载，清除查找后恢复原有行内输入、展开和排序。 -->
       <div v-show="!searchQuery && !hideTaskViews" class="project-normal-tasks">
       <!-- 表格视图不再提供批量选择；看板、分组和四象限视图仍可多选后复制 -->
@@ -913,7 +935,7 @@ watch(visibleTaskIds, (ids) => {
                     : data.taskLoadState === 'loading'
                     ? '正在加载任务…'
                     : ptasks.length
-                    ? '当前筛选没有任务，换个负责人或创建人再看'
+                    ? '当前筛选没有任务，请调整快捷条件、负责人或创建人'
                     : '还没有任务——点右上角「新建任务」开始拆解'
                 }}
               </td>
@@ -1021,7 +1043,7 @@ watch(visibleTaskIds, (ids) => {
             </div>
           </template>
 
-          <div v-if="!g.total" class="group-empty">{{ tasksUnavailable ? '暂时无法确认这个分组是否为空' : effectiveOwner || effectiveCreator ? '当前筛选下这个分组没有任务，可在上方清除人员筛选' : '点右上角的「+」往这里加第一条任务' }}</div>
+          <div v-if="!g.total" class="group-empty">{{ tasksUnavailable ? '暂时无法确认这个分组是否为空' : effectiveOwner || effectiveCreator || actionFilter !== 'all' ? '当前筛选下这个分组没有任务，可在上方清除筛选' : '点右上角的「+」往这里加第一条任务' }}</div>
           </div>
         </div>
 
@@ -1153,6 +1175,13 @@ watch(visibleTaskIds, (ids) => {
 </template>
 
 <style scoped>
+.project-action-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 12px; }
+.action-count-scope { color: var(--wao-text-2); margin-right: 3px; }
+.project-action-filters button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 6px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
+.project-action-filters button[aria-pressed="true"] { background: var(--wao-primary-soft); border-color: var(--wao-primary); color: var(--wao-primary-text); }
+.project-action-filters button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.project-action-filters button:disabled { opacity: .65; cursor: wait; }
+
 .project-search-bar { display:flex; align-items:center; gap:8px; min-width:0; padding:6px 0; }
 .project-search-bar input { width:320px; max-width:100%; min-width:0; padding:6px 10px; border:1px solid var(--wao-line); border-radius:8px; color:var(--wao-text); background:var(--wao-bg-card); font:inherit; font-size:12px; }
 .project-search-bar button { flex-shrink:0; border:0; background:none; color:var(--wao-primary-text); cursor:pointer; }
