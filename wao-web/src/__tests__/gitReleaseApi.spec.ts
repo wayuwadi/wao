@@ -8,6 +8,7 @@ describe('提交档案版本边界', () => {
   it('接受当前制品并保留真实提交标题', async () => {
     vi.mocked(axios.get).mockResolvedValue({ data: { buildSha: sha, commits: [item] } })
     expect((await fetchGitReleaseHistory(sha)).commits[0]).toEqual(item)
+    expect(axios.get).toHaveBeenLastCalledWith(`${import.meta.env.BASE_URL}assets/git-history.json`, { timeout: 10000 })
   })
   it.each([
     { buildSha: 'b'.repeat(40), commits: [item] },

@@ -28,7 +28,9 @@ test('真实 Git：无精选改动的文档提交也更新版本，未合并分�
     assert.throws(() => readGitRelease(cwd, first.history.buildSha, input), /缺少构建/)
     let asset
     gitReleasePlugin(latest).generateBundle.call({ emitFile: x => { asset = x } })
-    assert.equal(asset.fileName, 'git-history.json')
+    // 生产不可变路径仅开放 assets/ 与 release-manifest.json。
+    assert.match(`/releases/${latest.history.buildSha}/${asset.fileName}`, /^\/releases\/[0-9a-f]{40}\/(?:assets\/[^.][^\\?]*|release-manifest\.json)$/)
+    assert.equal(asset.fileName, 'assets/git-history.json')
     assert.deepEqual(JSON.parse(asset.source), latest.history)
   } finally { assert.equal(resolve(dirname(cwd)), resolve(tmpdir())); rmSync(cwd, { recursive: true, force: true }) }
 })
