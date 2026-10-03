@@ -1,5 +1,11 @@
 /** 将说明写入已有的不缓存版本清单，避免旧页面拿自身说明冒充新版本。 */
-export function releaseHighlightsPlugin(edition) {
+export function releaseHighlightsPlugin(edition, history) {
+  if (history) {
+    const ids = history.map(item => item.id)
+    if (new Set(ids).size !== ids.length) throw new Error('更新档案存在重复批次')
+    if (!history.some(item => JSON.stringify(item) === JSON.stringify(edition)))
+      throw new Error('请将本次更新完整加入 releaseHistory.json，并保留历史记录')
+  }
   return {
     name: 'wao-release-highlights',
     apply: 'build',

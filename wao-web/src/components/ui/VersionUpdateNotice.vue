@@ -254,6 +254,7 @@ onBeforeUnmount(() => {
             }}
           </p>
           <div class="panel-actions">
+            <RouterLink class="text-button" :to="{ path: '/features', hash: '#recent-updates' }" @click="close(false)">最近更新</RouterLink>
             <button type="button" class="later" @click="close()">
               {{ availableVersion ? '稍后' : '收起' }}
             </button>
@@ -435,6 +436,7 @@ footer {
   flex-wrap: wrap;
 }
 .panel-actions button,
+.panel-actions a,
 .explore-link {
   display: inline-flex;
   align-items: center;

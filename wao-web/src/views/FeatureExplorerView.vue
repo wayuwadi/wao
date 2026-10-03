@@ -2,12 +2,13 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { MODULES } from '@/config/nav'
-import { CURRENT_RELEASE, FEATURE_CATALOG } from '@/data/featureCatalog'
+import { FEATURE_CATALOG } from '@/data/featureCatalog'
 import {
   FEATURE_CATEGORIES,
   type FeatureCatalogEntry,
   type FeatureCategory,
 } from '@/types/featureExplorer'
+import ReleaseHistory from '@/components/release/ReleaseHistory.vue'
 import { openReleaseHighlights } from '@/utils/versionUpdate'
 
 const router = useRouter()
@@ -15,11 +16,6 @@ const category = ref<FeatureCategory | 'all'>('all')
 const expanded = ref(false)
 const selected = ref<FeatureCatalogEntry | null>(null)
 
-const catalogById = new Map(FEATURE_CATALOG.map((item) => [item.id, item]))
-const latest = CURRENT_RELEASE.highlights.flatMap((highlight) => {
-  const feature = catalogById.get(highlight.featureId)
-  return feature ? [{ highlight, feature }] : []
-})
 const filtered = computed(() =>
   FEATURE_CATALOG.filter((item) => category.value === 'all' || item.category === category.value),
 )
@@ -58,42 +54,12 @@ async function openFeature(item: FeatureCatalogEntry) {
       </p>
       <div class="hero-actions">
         <a class="primary" href="#all-features">浏览全部功能</a>
-        <button type="button" @click="openReleaseHighlights">只看本次更新</button>
+        <a href="#recent-updates">回顾最近更新</a>
+        <button type="button" @click="openReleaseHighlights">本次更新</button>
       </div>
     </header>
 
-    <section class="feature-section" aria-labelledby="latest-title">
-      <div class="section-heading">
-        <div>
-          <small>JUST SHIPPED</small>
-          <h2 id="latest-title">最新功能</h2>
-        </div>
-        <p>来自当前浏览器版本的精选亮点。只有真正进入当前前端制品的内容才会在这里出现。</p>
-      </div>
-      <div class="latest-grid">
-        <article
-          v-for="{ highlight, feature } in latest"
-          :key="highlight.featureId"
-          class="latest-card"
-          tabindex="0"
-          role="button"
-          :aria-label="`了解${MODULES[feature.id].label}`"
-          @click="openDetail(feature)"
-          @keydown.enter="openDetail(feature)"
-          @keydown.space.prevent="openDetail(feature)"
-        >
-          <div class="latest-visual" :data-tone="feature.tone">
-            <span class="orbit"></span><i :class="MODULES[feature.id].icon"></i>
-          </div>
-          <div class="latest-copy">
-            <span class="feature-tag new">NEW · {{ categoryLabel(feature.category) }}</span>
-            <h3>{{ highlight.title }}</h3>
-            <p>{{ highlight.summary }}</p>
-            <span class="learn">了解更多 <i class="ri-arrow-right-line"></i></span>
-          </div>
-        </article>
-      </div>
-    </section>
+    <ReleaseHistory />
 
     <div id="all-features" class="catalog-wrap">
       <section class="feature-section" aria-labelledby="catalog-title">
@@ -293,6 +259,7 @@ async function openFeature(item: FeatureCatalogEntry) {
 .hero-actions {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 25px;
 }
@@ -345,62 +312,6 @@ async function openFeature(item: FeatureCatalogEntry) {
   line-height: 1.65;
   text-align: right;
 }
-.latest-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-.latest-card {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--wao-line);
-  border-radius: 25px;
-  background: var(--wao-bg-card);
-  cursor: pointer;
-  transition:
-    transform 0.28s ease,
-    box-shadow 0.28s ease;
-}
-.latest-card:hover {
-  transform: translateY(-7px);
-  box-shadow: 0 24px 55px rgb(37 47 42 / 13%);
-}
-.latest-visual {
-  position: relative;
-  display: grid;
-  place-items: center;
-  height: 248px;
-  overflow: hidden;
-  background: var(--tone);
-}
-.latest-visual .orbit {
-  position: absolute;
-  width: 210px;
-  height: 210px;
-  border: 1px solid color-mix(in srgb, var(--wao-primary) 22%, transparent);
-  border-radius: 42% 58% 55% 45%;
-  transform: rotate(18deg);
-  transition: transform 1s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.latest-card:hover .orbit {
-  transform: rotate(42deg) scale(1.05);
-}
-.latest-visual > i {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 110px;
-  height: 110px;
-  border-radius: 32px;
-  background: rgb(255 255 255 / 78%);
-  box-shadow: 0 22px 42px rgb(46 48 80 / 16%);
-  color: var(--tone-ink);
-  font-size: 42px;
-  transform: rotate(-4deg);
-}
-.latest-copy {
-  padding: 23px 24px 26px;
-}
 .feature-tag {
   display: inline-flex;
   padding: 5px 8px;
@@ -408,31 +319,6 @@ async function openFeature(item: FeatureCatalogEntry) {
   background: var(--wao-bg-hover-2);
   color: var(--wao-text-3);
   font-size: 9px;
-  font-weight: 850;
-}
-.feature-tag.new {
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary-text);
-}
-.latest-copy h3 {
-  margin: 14px 0 8px;
-  font-size: 22px;
-  letter-spacing: -0.035em;
-}
-.latest-copy p {
-  min-height: 62px;
-  margin: 0;
-  color: var(--wao-text-3);
-  font-size: 12px;
-  line-height: 1.7;
-}
-.learn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 17px;
-  color: var(--wao-primary-text);
-  font-size: 11px;
   font-weight: 850;
 }
 [data-tone='violet'] {
@@ -734,12 +620,8 @@ a:focus-visible {
   outline-offset: 3px;
 }
 @media (max-width: 900px) {
-  .latest-grid,
   .recommended-grid {
     grid-template-columns: 1fr;
-  }
-  .latest-visual {
-    height: 210px;
   }
   .catalog-grid {
     grid-template-columns: repeat(2, 1fr);
