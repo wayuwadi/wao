@@ -20,5 +20,15 @@ class PlanTest(unittest.TestCase):
         self.assertFalse(value['buildWeb'])
     def test_unknown_game_fails_closed(self):
         with self.assertRaises(ValueError): module.plan(['wao-game/games/unknown/main.ts'])
+    def test_second_game_reuses_first_artifact(self):
+        value = module.plan(['wao-game/games/rift/engine.ts','wao-game/protocol/rift.ts','wao-game/host/registry.ts'])
+        self.assertEqual(value['buildGames'], ['rift'])
+        self.assertEqual(value['testGames'], ['dino', 'rift'])
+        self.assertTrue(value['buildWeb'])
+        before={'dependencies':{'vue':'3.5.40'},'scripts':{'build:dino':'old'}}
+        after={'dependencies':{'vue':'3.5.40'},'scripts':{'build:dino':'old','build:rift':'new','test:rift':'test'}}
+        value=module.plan(['wao-game/package.json','wao-game/tools/game-routing.py'],package_before=before,package_after=after)
+        self.assertEqual(value['buildGames'], ['rift'])
+        self.assertEqual(module.plan(['wao-game/protocol/host.ts'])['buildGames'], [])
 
 if __name__ == '__main__': unittest.main()

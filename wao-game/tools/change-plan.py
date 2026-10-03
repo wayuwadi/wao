@@ -4,10 +4,10 @@ import argparse
 import json
 import subprocess
 
-GAMES = ('dino',)
+GAMES = ('dino', 'rift')
 
 
-def plan(paths, full=False):
+def plan(paths, full=False, package_before=None, package_after=None):
     build, test = set(), set()
     web = full
     reasons = []
@@ -28,13 +28,36 @@ def plan(paths, full=False):
             if not path.endswith('.test.ts'):
                 build.add(game)
             # The host validates this schema; importing it does not load rendering/runtime.
-            if path.endswith('/save.ts'):
+            if path.endswith('/save.ts') or path == 'wao-game/games/rift/catalog.ts':
                 web = True
-        elif path.startswith('wao-game/protocol/') or path in ('wao-game/package.json', 'wao-game/package-lock.json'):
+        elif path.startswith('wao-game/protocol/'):
+            web = True
+            game = path.rsplit('/', 1)[-1].removesuffix('.ts')
+            if game in GAMES:
+                build.add(game); test.add(game)
+            elif game == 'host':
+                test.update(GAMES)
+            else:
+                build.update(GAMES); test.update(GAMES)
+        elif path == 'wao-game/package.json':
+            if package_before is not None and package_after is not None and {k:v for k,v in package_before.items() if k != 'scripts'} == {k:v for k,v in package_after.items() if k != 'scripts'}:
+                before, after = package_before.get('scripts', {}), package_after.get('scripts', {})
+                for script in set(before) | set(after):
+                    if before.get(script) == after.get(script): continue
+                    target = script.split(':')[-1]
+                    if target not in GAMES:
+                        web = True; build.update(GAMES); test.update(GAMES)
+                    else:
+                        test.add(target)
+                        if script.startswith(('build:', 'dev:')): build.add(target)
+            else:
+                web = True; build.update(GAMES); test.update(GAMES)
+        elif path == 'wao-game/package-lock.json':
             web = True; build.update(GAMES); test.update(GAMES)
         elif path.startswith('wao-game/tools/'):
-            # Repackage/verify affected tool outputs, using the same immutable artifact contract.
-            build.update(GAMES); test.update(GAMES)
+            # Packaging/routing changes do not change game source bytes.
+            # All artifact tests run independently; a host release applies routing.
+            web = True; test.update(GAMES)
         elif path == 'wao-game/.gitignore':
             continue
         elif path.startswith('wao-game/'):
@@ -52,13 +75,24 @@ def main():
     parser.add_argument('base'); parser.add_argument('head')
     parser.add_argument('--field', choices=['buildWeb', 'buildGames', 'testGames'])
     parser.add_argument('--full-web', action='store_true')
+    parser.add_argument('--release-batch', action='store_true')
     args = parser.parse_args()
     try:
         paths = subprocess.check_output(['git', 'diff', '--name-only', args.base, args.head], text=True).splitlines()
-        result = plan(paths)
+        before = after = None
+        if 'wao-game/package.json' in paths:
+            try:
+                before = json.loads(subprocess.check_output(['git', 'show', args.base + ':wao-game/package.json'], text=True))
+                after = json.loads(subprocess.check_output(['git', 'show', args.head + ':wao-game/package.json'], text=True))
+            except (subprocess.CalledProcessError, json.JSONDecodeError): pass
+        result = plan(paths, package_before=before, package_after=after)
     except subprocess.CalledProcessError:
         result = plan([], full=True)
     if args.full_web:
+        result['buildWeb'] = True
+    if args.release_batch and not result['buildGames']:
+        # Preserve ADR-311 for docs/tests/web batches. An actual game-only
+        # artifact update keeps the web SHA/history paired with its old bytes.
         result['buildWeb'] = True
     value = result.get(args.field) if args.field else result
     print(' '.join(value) if isinstance(value, list) else str(value).lower() if isinstance(value, bool) else json.dumps(value))

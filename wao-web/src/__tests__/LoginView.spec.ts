@@ -114,6 +114,21 @@ describe('舞台登录与认证生命周期', () => {
     expect(remove).toHaveBeenCalledWith('scroll', expect.any(Function))
     vi.unstubAllGlobals()
   })
+  it('选中静坐、游戏或布局后关闭菜单，避免残留菜单挡住游戏控制', async () => {
+    await setup('/breathe')
+    const menu = wrapper.get<HTMLDetailsElement>('.page-more')
+    menu.element.open = true
+    await wrapper.findAll('.page-more button').find(b => b.text() === '静坐')!.trigger('click')
+    expect(menu.element.open).toBe(false)
+    menu.element.open = true
+    await wrapper.findAll('.rainbow-tabs button').find(b => b.text() === '把伙伴送回家')!.trigger('click')
+    expect(menu.element.open).toBe(false)
+    const styles = wrapper.get<HTMLDetailsElement>('.style-picker')
+    styles.element.open = true
+    await styles.findAll('button').find(b => b.text() === '涂鸦手账')!.trigger('click')
+    expect(styles.element.open).toBe(false)
+    expect(wrapper.get('main').classes()).toContain('world-journal')
+  })
   it('关闭、重新打开与切换方式保留本页邮箱输入', async () => {
     await setup()
     await open()

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 game="${1:?game or install is required}"
-case "$game" in install|dino|test:dino) ;; *) echo 'Unknown game build target' >&2; exit 2 ;; esac
+case "$game" in install|dino|rift|test:dino|test:rift) ;; *) echo 'Unknown game build target' >&2; exit 2 ;; esac
 cache="${JENKINS_HOME:-$HOME}/.npm"
 mkdir -p "$cache"
 image='node:24.15.0-bookworm-slim'
@@ -18,6 +18,6 @@ if [ "$(cat "$marker" 2>/dev/null || true)" != "$key" ] || [ ! -x wao-game/node_
 fi
 case "$game" in
   install) ;;
-  test:dino) run_npm run test:dino; run_npm run lint:dino ;;
-  dino) run_npm run build:dino ;;
+  test:*) target="${game#test:}"; run_npm run "test:$target"; run_npm run "lint:$target" ;;
+  dino|rift) run_npm run "build:$game" ;;
 esac

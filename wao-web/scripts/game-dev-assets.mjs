@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 /** 本地验收只读取已独立构建的游戏，不把游戏实现并入主站构建。 */
 export function gameAssetsDevPlugin() {
-  const root = fileURLToPath(new URL('../../wao-game/dist/dino/', import.meta.url))
+  const gamesRoot = fileURLToPath(new URL('../../wao-game/dist/', import.meta.url))
   return {
     name: 'wao-game-dev-assets',
     apply: 'serve',
@@ -14,7 +14,8 @@ export function gameAssetsDevPlugin() {
         res.setHeader('Cache-Control', 'no-store')
         res.end(await readFile(new URL('../../wao-game/games/dino/narrow.html', import.meta.url)))
       })
-      server.middlewares.use('/play-assets/dev/dino', async (req, res) => {
+      for (const gameId of ['dino', 'rift']) server.middlewares.use(`/play-assets/dev/${gameId}`, async (req, res) => {
+        const root = resolve(gamesRoot, gameId)
         try {
           const requestPath = decodeURIComponent((req.url ?? '/').split('?')[0])
           const path = resolve(root, '.' + (requestPath === '/' ? '/index.html' : requestPath))
@@ -42,7 +43,7 @@ export function gameAssetsDevPlugin() {
           res.end(await readFile(path))
         } catch {
           res.statusCode = 404
-          res.end('Run npm run build:dino in wao-game first')
+          res.end(`Run npm run build:${gameId} in wao-game first`)
         }
       })
     },

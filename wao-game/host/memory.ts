@@ -1,13 +1,14 @@
-import { isDinoMemory, type DinoMemory } from "../games/dino/save";
-
-export type GameId = "dino";
-export type MemoryRecord = {
-  gameId: GameId;
+import { games, isGameId, clonePayload, type GameId, type GameMemories } from "./registry";
+import { chapters, heroNames } from "../games/rift/catalog";
+import { level } from "../games/rift/save";
+export type { GameId } from "./registry";
+export type MemoryRecord<G extends GameId = GameId> = { [K in G]: {
+  gameId: K;
   rulesVersion: 1;
   savedAt: string;
   revision: number;
-  payload: DinoMemory;
-};
+  payload: GameMemories[K];
+} }[G];
 export type MemoryFile = {
   format: "wao-game-memory";
   formatVersion: 1;
@@ -54,7 +55,7 @@ export function validateRecord(v: unknown): MemoryRecord {
     !fields(v, ["gameId", "rulesVersion", "savedAt", "revision", "payload"])
   )
     fail();
-  if (v.gameId !== "dino")
+  if (!isGameId(v.gameId))
     throw new MemoryError(
       "version",
       "该游戏记忆尚不受当前版本支持，请使用对应正式版本。",
@@ -68,16 +69,16 @@ export function validateRecord(v: unknown): MemoryRecord {
     !date(v.savedAt) ||
     !Number.isSafeInteger(v.revision) ||
     (v.revision as number) < 0 ||
-    !isDinoMemory(v.payload)
+    !games[v.gameId].validate(v.payload)
   )
     fail();
   return {
-    gameId: "dino",
+    gameId: v.gameId,
     rulesVersion: 1,
     savedAt: v.savedAt as string,
     revision: v.revision as number,
-    payload: { ...v.payload },
-  };
+    payload: clonePayload(v.payload),
+  } as MemoryRecord;
 }
 export function parseMemory(text: string): MemoryFile {
   if (new TextEncoder().encode(text).byteLength > FILE_LIMIT)
@@ -136,6 +137,11 @@ export function exportMemory(games: MemoryRecord[]): string {
   return text;
 }
 export function summary(record: MemoryRecord) {
+  if (record.gameId === "rift") {
+    const p = record.payload;
+    const checkpoint = p.checkpoint ? chapters[p.checkpoint.chapter]!.rooms[p.checkpoint.room] : "营地";
+    return `${heroNames[p.selected]} Lv.${level(p.heroes[p.selected].xp)} · 已通关 ${p.chapterWins.filter(n => n > 0).length}/3章 · ${checkpoint} · ${p.owned.length}件装备`;
+  }
   const p = record.payload;
   return `最远 ${p.best} 米 · ${p.runs} 局 · 千米通关 ${p.sprintWins} 次${p.practiceComplete ? " · 已完成练习" : ""}`;
 }
@@ -240,15 +246,15 @@ export class MemoryStore {
       throw storageError(e);
     }
   }
-  async save(payload: DinoMemory, expectedRevision: number) {
-    const input: MemoryRecord = {
-      gameId: "dino",
+  async save<G extends GameId = "dino">(payload: GameMemories[G], expectedRevision: number, gameId: G = "dino" as G) {
+    const input = validateRecord({
+      gameId,
       rulesVersion: 1,
       revision: 0,
       savedAt: new Date().toISOString(),
       payload,
-    };
-    return (await this.replace([input], { dino: expectedRevision }, false))[0]!;
+    });
+    return (await this.replace([input], { [gameId]: expectedRevision }, false))[0]! as MemoryRecord<G>;
   }
   /** 读取另一页前先持久化本页草稿；备份失败时不丢弃草稿。 */
   async readWithBackup(
@@ -263,7 +269,7 @@ export class MemoryStore {
         let result: MemoryRecord | undefined, error: unknown;
         tx.onabort = () => reject(storageError(error ?? tx.error));
         tx.oncomplete = () => resolve(result);
-        const request = tx.objectStore("games").get("dino");
+        const request = tx.objectStore("games").get(original.gameId);
         request.onsuccess = () => {
           try {
             result = request.result
@@ -293,9 +299,11 @@ export class MemoryStore {
     records: MemoryRecord[],
     expected: Partial<Record<GameId, number>>,
     backup = true,
+    draftsToBackup: MemoryRecord[] = [],
   ): Promise<MemoryRecord[]> {
     // 导入前验证全部，失败时尚未启动写事务。
     const checked = records.map(validateRecord);
+    const drafts = draftsToBackup.map(validateRecord);
     if (
       !checked.length ||
       new Set(checked.map((r) => r.gameId)).size !== checked.length
@@ -314,6 +322,9 @@ export class MemoryStore {
         request.onsuccess = () => {
           try {
             const existing: MemoryRecord[] = request.result.map(validateRecord);
+            for (const original of drafts) tx.objectStore("backups").add({
+              id: crypto.randomUUID(), original, backedUpAt: new Date().toISOString(),
+            } satisfies Backup);
             result = checked.map((record) => {
               const previous = existing.find((r) => r.gameId === record.gameId);
               if ((previous?.revision ?? 0) !== expected[record.gameId])

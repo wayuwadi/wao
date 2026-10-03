@@ -13,7 +13,7 @@
 1. `game-release.py pack wao-game/dist/dino OUT.tgz dino SHA` 生成兼容性记录与逐文件 SHA256。
 2. `game-release.py install OUT.tgz ROOT dino SHA` 先临时目录校验，再安装不可变 `ROOT/dino/SHA`。
 3. `game-release.py activate ROOT dino SHA --expected-revision REV` 验证并只切换本款。revision 不符必须停下，读取协调记录，不覆盖。
-4. `verify-public.py dino SHA --origin https://wao.wayuwa.cn` 验证公开清单、兼容版本与全部游戏文件哈希。
+4. `verify-public.py --games dino --version SHA --origin https://wao.wayuwa.cn` 验证公开清单、兼容版本与全部游戏文件哈希。
 5. 回滚用同一 activate 命令指向已保留旧 SHA，并使用刚读取的 revision；不要直接复制旧 catalog 覆盖其他游戏。旧页面继续固定旧 URL，新进入游戏才使用新指针。读档规则需兼容。
 
 ## 当前临时通道
@@ -29,5 +29,17 @@
 ## 本地演练证据
 
 `test_ci_composition.py` 用真实 Git 差异和打包器驱动流水线，外部构建/SSH动作明确替身：覆盖游戏、主站、容器三种范围及主站/游戏分离激活。它不是云端发布证据。`test_game_release.py` 覆盖损坏、不可变路径、CAS、其他游戏指针和回滚。
+
+## 第二款与后续独立更新
+
+当前注册 `dino` 和 `rift`。上述pack/install/activate命令的游戏参数可用rift；`cloud-game-stage.py --game rift`使用独立包名与报告名。发布rift不重建、不替换dino版本目录或指针。未传`verify-public.py --games`时核验清单所有已注册游戏；不同版本分别传各自预期SHA，不能把主站SHA强套旧游戏。
+
+rift新增开发/构建脚本不视为依赖变化；包依赖或lock变化则扩大全部游戏验证和构建。共享host只构建主站并测试已注册游戏，游戏逻辑仅构建本款；host引用的catalog/save元数据变更同时构建主站。主站单独发布复用现有游戏制品。测试文件不引起游戏重新打包。
+
+云路由新增采用“备份配置→nginx -t→重载新增路由→CAS激活单款catalog”；重载失败恢复旧配置且不切catalog，catalog冲突也恢复配置。不能先暴露新catalog再验证路由重载成功。`test_cloud_game_stage.py`覆盖成功与三种失败控制流，不冒充云端实机操作。
+
+裂隙本地正式包只有index和哈希资源，host.html/narrow.html/故障注入与性能采样为开发验收专用。构建及公开加载尺寸、最终版本和发布时间记录在`docs/validation/breathe-rift-v1.md`。
+
+ADR-312补充主站Git记录边界：纯游戏制品更新保留原主站SHA与其档案，不为记录更新重建主站；游戏版本由各自manifest/catalog追溯。其他主站/文档/纯测试批次仍按ADR-311刷新主站记录；下一次主站发布收录此前所有游戏提交。`--release-batch`落实此区分，显式`--full-web`仍供确需全主站构建使用。
 
 本地生产静态预览已在40个f与40个e的明确fixture版本之间切换；旧页面保持旧URL，新页面读新版本，真实跑局后回滚仍保留3局纪录与2份备份。见首款验收文档。最终公网版本与实际耗时须在上线后补记。
