@@ -333,7 +333,7 @@ watch([calY, calM, calD, viewMode, () => preferences.weekStart], loadCalendarSou
 // ---------- 图例：固定来源 ----------
 const legend = computed(() => {
   const items = [
-    { label: '执行安排', color: '#4358D6' },
+    { label: '执行安排', color: '#6957E6' },
     { label: '任务截止', color: '#B9821F' },
     { label: '里程碑', color: '#B9821F' },
     { label: '中国节假日', color: '#D9634C' },
@@ -370,7 +370,7 @@ const events = computed<CalEvt[]>(() => {
     .forEach((t) => taskCalendarEntries(t, `${calY.value - 1}-12-01`, `${calY.value + 1}-01-31`).forEach(entry => evs.push({
       ...entry,
       title: `${entry.label} · ${t.title}` + (t.status === '已完成' && !isTaskFinished(t) ? ' · 仍有 ' + t.subs.filter(sub => !sub.done).length + ' 项子项未收尾' : ''),
-      color: entry.deadline ? '#B9821F' : '#4358D6',
+      color: entry.deadline ? '#B9821F' : '#6957E6',
       completed: isTaskFinished(t),
       taskId: t.id,
       kind: '任务',
@@ -1142,13 +1142,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
     </div>
     <div class="cal-top">
       <div class="cal-heading-row">
-        <div class="calendar-visibility" role="group" aria-label="日历显示内容">
-          <button class="calendar-visibility-toggle" type="button" role="switch" aria-label="显示日历天气" :aria-checked="weather.prefs.calendarVisible" :disabled="!weather.loaded || weather.saving" title="显示或隐藏日历天气" @click="toggleWeatherVisibility('calendarVisible')"><span>天气</span><span class="visibility-track" aria-hidden="true"></span></button>
-          <button class="calendar-visibility-toggle" type="button" role="switch" aria-label="显示已保存卦名" :aria-checked="weather.prefs.readingsVisible" :disabled="!weather.loaded || weather.saving" title="显示或隐藏已保存卦名" @click="toggleWeatherVisibility('readingsVisible')"><span>卦名</span><span class="visibility-track" aria-hidden="true"></span></button>
-          <button class="calendar-visibility-toggle work-week-visibility" type="button" role="switch" aria-label="显示大小周标记" :aria-checked="showWorkWeek" title="只控制日历标记，不关闭大小周配置" @click="showWorkWeek = !showWorkWeek"><span>大小周</span><span class="visibility-track" aria-hidden="true"></span></button>
-          <button class="calendar-visibility-toggle attendance-toggle" type="button" role="switch" aria-label="显示我的考勤" :aria-checked="attendanceMode" title="显示或隐藏我的考勤" @click="toggleAttendanceMode"><span>考勤</span><span class="visibility-track" aria-hidden="true"></span></button>
-          <button class="calendar-visibility-toggle completed-toggle" type="button" role="switch" aria-label="显示已完成任务" :aria-checked="showCompletedTasks" title="显示或隐藏已完成任务" @click="showCompletedTasks = !showCompletedTasks"><span>已完成</span><span class="visibility-track" aria-hidden="true"></span></button>
-        </div>
+        <button class="calendar-visibility-toggle completed-toggle" type="button" role="switch" aria-label="显示已完成任务" :aria-checked="showCompletedTasks" title="显示或隐藏已完成任务" @click="showCompletedTasks = !showCompletedTasks"><span>已完成</span><span class="visibility-track" aria-hidden="true"></span></button>
         <button v-if="attendanceMode" class="attendance-resync" type="button" :disabled="!attendancePanel?.canSync" :title="attendancePanel?.canSync ? '重新同步当前范围的 Moka 考勤' : '启用 Moka 考勤并等待当前同步完成后即可重试'" @click="attendancePanel?.sync()"><i :class="attendancePanel?.syncing ? 'ri-loader-4-line spinning' : 'ri-refresh-line'"></i>{{ attendancePanel?.syncing ? '同步中…' : '重新同步' }}</button>
         <button v-if="!weather.loaded && weather.error" class="weather-visibility-retry" type="button" @click="weather.load()">天气设置读取失败 · 重试</button>
         <span v-if="holidayState === 'loading'" class="holiday-status"><i class="ri-loader-4-line spin"></i>节假日加载中</span>
@@ -1170,7 +1164,18 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <button class="work-schedule" type="button" @click="openWorkScheduleConfig"><span class="cd-dot" :style="{ background: workScheduleState.dot }"></span><span><b>大小周配置</b><small>{{ workScheduleState.label }}</small></span></button>
         </div></details>
       </div>
-      <WeatherPanel ref="weatherPanel" surface="calendar" :date="data.today" toolbar />
+      <details class="calendar-auxiliary">
+        <summary>天气与辅助信息<i class="ri-arrow-down-s-line" aria-hidden="true"></i><span v-if="weather.error || (weather.prefs.calendarVisible && (weather.forecastError || weather.stale))" class="auxiliary-status" role="status">天气暂不可用 · 展开重试</span><span v-else-if="weather.forecasting" class="auxiliary-status" role="status">正在更新天气…</span></summary>
+        <div class="calendar-auxiliary-content">
+          <div class="calendar-visibility" role="group" aria-label="日历显示内容">
+            <button class="calendar-visibility-toggle" type="button" role="switch" aria-label="显示日历天气" :aria-checked="weather.prefs.calendarVisible" :disabled="!weather.loaded || weather.saving" title="显示或隐藏日历天气" @click="toggleWeatherVisibility('calendarVisible')"><span>天气</span><span class="visibility-track" aria-hidden="true"></span></button>
+            <button class="calendar-visibility-toggle" type="button" role="switch" aria-label="显示已保存卦名" :aria-checked="weather.prefs.readingsVisible" :disabled="!weather.loaded || weather.saving" title="显示或隐藏已保存卦名" @click="toggleWeatherVisibility('readingsVisible')"><span>卦名</span><span class="visibility-track" aria-hidden="true"></span></button>
+            <button class="calendar-visibility-toggle work-week-visibility" type="button" role="switch" aria-label="显示大小周标记" :aria-checked="showWorkWeek" title="只控制日历标记，不关闭大小周配置" @click="showWorkWeek = !showWorkWeek"><span>大小周</span><span class="visibility-track" aria-hidden="true"></span></button>
+            <button class="calendar-visibility-toggle attendance-toggle" type="button" role="switch" aria-label="显示我的考勤" :aria-checked="attendanceMode" title="显示或隐藏我的考勤" @click="toggleAttendanceMode"><span>考勤</span><span class="visibility-track" aria-hidden="true"></span></button>
+          </div>
+        <WeatherPanel ref="weatherPanel" surface="calendar" :date="data.today" toolbar />
+        </div>
+      </details>
     </div>
 
 
@@ -1219,7 +1224,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
                 v-for="(ev, ei) in dy.items"
                 :key="ei"
                 class="event"
-                :class="{ completed: ev.completed }"
+                :class="{ completed: ev.completed, 'task-execution': ev.taskId && !ev.deadline, 'task-deadline': ev.taskId && ev.deadline }"
                 :title="(ev.time ? `${ev.time} ${ev.title}` : ev.title) + (ev.taskId ? '（拖动只调整执行安排）' : '')"
                 :draggable="!!ev.taskId"
                 @click="ev.go?.()"
@@ -1264,7 +1269,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
                 v-for="(event, eventIndex) in day.items.filter((item) => item.time)"
                 :key="eventIndex"
                 class="timeline-event"
-                :class="{ completed: event.completed }"
+                :class="{ completed: event.completed, 'task-execution': event.taskId && !event.deadline, 'task-deadline': event.taskId && event.deadline }"
                 :style="eventStyle(event)"
                 @mousedown.stop
                 @click="event.go?.()"
@@ -1273,7 +1278,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
                 <span>{{ event.title }}</span>
               </button>
               <div v-if="day.items.some((item) => !item.time)" class="all-day-strip">
-                <button v-for="(event, eventIndex) in day.items.filter((item) => !item.time)" :key="eventIndex" :class="{ completed: event.completed }" @click="event.go?.()">{{ event.title }}</button>
+                <button v-for="(event, eventIndex) in day.items.filter((item) => !item.time)" :key="eventIndex" :class="{ completed: event.completed, 'task-execution': event.taskId && !event.deadline, 'task-deadline': event.taskId && event.deadline }" @click="event.go?.()">{{ event.title }}</button>
               </div>
             </div>
           </div>
@@ -1702,7 +1707,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
   background: var(--wao-bg-card);
 }
 .cal-heading-row { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-width: 0; }
-.calendar-visibility { display: flex; flex: 0 0 470px; max-width: 100%; min-width: 0; align-items: center; gap: 3px; overflow-x: auto; padding: 2px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); scrollbar-width: thin; }
+.calendar-visibility { display: flex; flex: 0 0 380px; max-width: 100%; min-width: 0; align-items: center; gap: 3px; overflow-x: auto; padding: 2px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); scrollbar-width: thin; }
 .calendar-visibility-toggle { display: inline-flex; flex: 1 0 88px; height: 26px; align-items: center; justify-content: space-between; gap: 4px; padding: 0 5px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-3); font-size: 11px; white-space: nowrap; cursor: pointer; }
 .calendar-visibility-toggle:hover { background: var(--wao-bg-hover); }
 .calendar-visibility-toggle[aria-checked="true"] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
@@ -2395,4 +2400,24 @@ button.holiday-status { cursor: pointer; }
 }
 .schedule-feedback { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--wao-bg-soft); font-size: 12px; }
 .schedule-feedback button { border: 1px solid var(--wao-border); border-radius: 6px; background: var(--wao-bg); padding: 5px 8px; cursor: pointer; }
+
+/* 折叠只影响布局，不修改已保存的显示偏好。 */
+.completed-toggle { flex: 0 0 88px; border: 1px solid var(--wao-line-control); }
+.calendar-auxiliary { margin-top: 6px; }
+.calendar-auxiliary > summary { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 30px; color: var(--wao-text-3); font-size: 12px; cursor: pointer; list-style: none; }
+.calendar-auxiliary > summary::-webkit-details-marker { display: none; }
+.calendar-auxiliary[open] > summary i { transform: rotate(180deg); }
+.auxiliary-status { color: var(--wao-text-weak); font-size: 11px; }
+.calendar-auxiliary-content { padding: 6px 0; }
+.calendar-auxiliary .calendar-visibility { width: min(380px, 100%); box-sizing: border-box; }
+.calendar-auxiliary > summary:focus-visible, .event:focus-visible, .timeline-event:focus-visible, .all-day-strip button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.event.task-execution, .all-day-strip .task-execution { border-left: 3px solid #6957E6; background: color-mix(in srgb, #6957E6 10%, var(--wao-bg-card)); color: var(--wao-text-2); }
+.event.task-deadline, .all-day-strip .task-deadline { border-left: 3px dashed #B9821F; background: color-mix(in srgb, #B9821F 12%, var(--wao-bg-card)); color: var(--wao-text-2); }
+.timeline-event.task-deadline { border-left-style: dashed; }
+@media (max-width: 600px) {
+  .calendar-auxiliary > summary, .calendar-visibility-toggle { min-height: 40px; }
+  .calendar-auxiliary .calendar-visibility { flex-wrap: wrap; }
+  .calendar-visibility-toggle { flex-basis: 140px; }
+  .completed-toggle { flex-basis: 88px; }
+}
 </style>
