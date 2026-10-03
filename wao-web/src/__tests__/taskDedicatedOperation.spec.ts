@@ -16,7 +16,7 @@ describe('专用任务事务与全文草稿共存',()=>{
   it('读取期间继续输入不能被成功操作的服务器快照覆盖',async()=>{
     const {data,task}=setup();let finish!:(result:{task:Task})=>void
     vi.mocked(apiGetTask).mockResolvedValue({...task,title:'服务器标题',editVersion:'v2'})
-    const job=data.runTaskOperation(task.id,()=>new Promise(resolve=>{finish=resolve}))
+    const job=data.runTaskOperation(task.id,()=>new Promise<{task:Task}>(resolve=>{finish=resolve}))
     await Promise.resolve();await Promise.resolve();await Promise.resolve()
     data.patchTask(task.id,{title:'请求期间新输入'});finish({task:{...task,editVersion:'v2'}})
     await job;expect(task.title).toBe('请求期间新输入')
