@@ -9,6 +9,7 @@ import type { NoteAiDefaults } from '@/stores/preferences'
 import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
 import { cloneRichContent, legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { resolveNoteModel } from '@/utils/noteAiModel'
+import { readNoteDraft } from '@/utils/noteDraftStorage'
 
 type Step = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
 export type NoteWorkflowProgress = { title: Step; image: Step; polish: Step; tags: Step; message?: string }
@@ -46,7 +47,8 @@ const current = (memberId: string) => !activeMember || activeMember === memberId
 const activeJob = (job: AutoJob) => current(job.memberId) && !discarded.has(keyOf(job.memberId, job.docId))
 
 function hasUnsavedEdit(memberId: string, docId: string): boolean {
-  try { return localStorage.getItem(`wao-note-edit-v1:${memberId}:${docId}`) !== null } catch { return false }
+  try { return readNoteDraft(`wao-note-edit-v1:${memberId}:${docId}`) !== null }
+  catch { return true /* 无法读取草稿时不能把未知当作没有编辑。 */ }
 }
 function save(job: AutoJob) {
   if (discarded.has(keyOf(job.memberId, job.docId))) return

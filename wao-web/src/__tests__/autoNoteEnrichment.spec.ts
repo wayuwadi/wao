@@ -6,6 +6,7 @@ import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
 import { waitForPolish } from '@/api/polishJobs'
 import { saveNotePolishVersion } from '@/api/notePolishVersions'
 import { fetchPreference } from '@/api/favorites'
+import { readNoteDraft, writeNoteDraft } from '@/utils/noteDraftStorage'
 
 vi.mock('@/api/board', () => ({ fetchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiPatchDoc: vi.fn() }))
 vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
@@ -21,6 +22,7 @@ describe('小记保存后自动生成', () => {
   beforeEach(() => {
     vi.useRealTimers()
     localStorage.clear()
+    sessionStorage.clear()
     delete noteEnrichmentStatus.n1
     vi.clearAllMocks()
     vi.mocked(fetchDoc).mockReset()
@@ -331,4 +333,63 @@ describe('小记保存后自动生成', () => {
 
     expect(apiPatchDoc).toHaveBeenCalledWith('n1', { title: '新标题', expectedRev: 2 })
   })
+})
+
+
+describe('AI 迟到结果与页签草稿', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.clearAllMocks()
+    localStorage.clear()
+    sessionStorage.clear()
+    vi.mocked(fetchPreference).mockResolvedValue('')
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(apiPatchDoc).mockResolvedValue(doc(2) as never)
+    vi.mocked(fetchNoteTags).mockResolvedValue(['思考'])
+    delete noteEnrichmentStatus.n1
+  })
+
+  it.each(['title', 'image', 'polish', 'tags'] as const)('%s 完成前继续输入时，不写回也不清除当前页签草稿', async stage => {
+    let complete!: () => void
+    vi.mocked(waitForPolish).mockImplementation(() => new Promise(resolve => {
+      complete = () => resolve({ id: 'late', status: 'SUCCEEDED', message: '', polished: stage === 'tags' ? '思考' : 'AI 结果' })
+    }))
+    vi.mocked(startArticleImage).mockResolvedValue({ id: 'late-image', status: 'QUEUED', message: '', imageUrl: null })
+    vi.mocked(fetchArticleImage).mockImplementation(() => new Promise(resolve => {
+      complete = () => resolve({ id: 'late-image', status: 'SUCCEEDED', message: '', imageUrl: '/api/images/late/raw' })
+    }))
+    startAutoNoteEnrichment('me', 'n1', 1, {
+      titleEnabled: stage === 'title', imageEnabled: stage === 'image',
+      polishEnabled: stage === 'polish', tagsEnabled: stage === 'tags', allowedTags: ['思考'],
+    })
+    await flushPromises()
+    expect(complete).toBeTypeOf('function')
+    const key = 'wao-note-edit-v1:me:n1'
+    const draft = JSON.stringify({ id: 'n1', text: '仍在输入的新正文', generatedTitle: '手写标题', tags: ['思考'] })
+    writeNoteDraft(key, draft)
+    expect(localStorage.getItem(key)).toBeNull()
+    complete()
+    await flushPromises()
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    expect(saveNotePolishVersion).not.toHaveBeenCalled()
+    expect(readNoteDraft(key)).toBe(draft)
+    expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).not.toBeNull()
+    expect(noteEnrichmentStatus.n1).toMatch(/未保存|已被修改|正文已变化/)
+    discardAutoNoteEnrichment('me', 'n1')
+  })
+  it('无法读取草稿时保留任务和输入，不把存储异常当作允许回写', async () => {
+    const original = Storage.prototype.getItem
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function(this: Storage, key: string) {
+      if (key.startsWith('wao-note-edit-v1:')) throw new Error('storage unavailable')
+      return original.call(this, key)
+    })
+    startAutoNoteEnrichment('me', 'n1', 1, { imageEnabled: false, polishEnabled: false })
+    await flushPromises()
+    expect(waitForPolish).not.toHaveBeenCalled()
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    expect(noteEnrichmentStatus.n1).toContain('未保存编辑')
+    expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).not.toBeNull()
+    discardAutoNoteEnrichment('me', 'n1')
+  })
+
 })
