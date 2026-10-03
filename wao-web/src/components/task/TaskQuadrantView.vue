@@ -13,6 +13,7 @@ import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { copyText } from '@/utils/clipboard'
 import { shareUrl } from '@/utils/share'
 import type { Priority, Task } from '@/types'
+import { isTaskFinished } from '@/utils/projectCompletion'
 
 const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean; selectionMode?: boolean; projectId?: string }>()
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
@@ -29,13 +30,14 @@ const dropTarget = ref<Priority | null>(null)
 const expanded = ref<Priority | null>(null)
 const savingIds = ref<string[]>([])
 const touchedIds = ref<string[]>([])
-const doneCount = computed(() => props.tasks.filter((task) => task.status === '已完成').length)
+const finished = (task: Task) => props.projectId ? isTaskFinished(task) : task.status === '已完成'
+const doneCount = computed(() => props.tasks.filter(finished).length)
 const busy = (id: string) => savingIds.value.includes(id) || data.taskSaveState(id) === 'saving'
 // 完成请求未落库或失败时仍留在原象限，始终提供重试入口。
 const sections = computed(() => TASK_QUADRANTS.map((quadrant) => ({
   ...quadrant,
   tasks: order.sort(orderScope.value, props.tasks, t => t.id).filter((task) => task.pr === quadrant.priority && (props.showDone
-    || task.status !== '已完成' || isSettling(task.id) || busy(task.id) || data.taskSaveState(task.id) === 'error'))
+    || !finished(task) || isSettling(task.id) || busy(task.id) || data.taskSaveState(task.id) === 'error'))
     .map(decoTask),
 })))
 async function save(id: string, change?: () => void) {
@@ -139,6 +141,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="quadrant-task-body">
               <button class="quadrant-title" :title="task.title" :draggable="!busy(task.id) && !selectionMode" @click="ui.openTask(task.id)">{{ task.title }}</button>
+              <span v-if="projectId && task.unfinishedSubCount" class="save-hint">仍有 {{ task.unfinishedSubCount }} 项子项未收尾</span>
               <div class="quadrant-meta">
                 <span v-if="task.due" class="quadrant-due" :style="{ color: task.dueColor }">{{ task.dueStr }}</span>
                 <span v-if="task.status !== '待办' && task.status !== '已完成'" class="quadrant-status">{{ task.status }}</span>

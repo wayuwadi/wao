@@ -10,6 +10,7 @@ import { useSessionStore } from '@/stores/session'
 import { useProjectListLayoutStore } from '@/stores/projectListLayout'
 import { useDeco } from '@/composables/deco'
 import type { Project } from '@/types'
+import { projectCompletion } from '@/utils/projectCompletion'
 
 const data = useDataStore()
 const ui = useUiStore()
@@ -66,7 +67,8 @@ const filteredProjects = computed(() => {
   )
   const sorts: Record<string, (a: Project, b: Project) => number> = {
     按截止日期: (a, b) => (a.due || '9').localeCompare(b.due || '9'),
-    按进度: (a, b) => b.progress - a.progress,
+    按进度: (a, b) => (projectCompletion(data.tasksByProject(b.id)).completionRate ?? -1)
+      - (projectCompletion(data.tasksByProject(a.id)).completionRate ?? -1),
     按名称: (a, b) => a.name.localeCompare(b.name, 'zh'),
   }
   if (sortBy.value === '手动排序') {
@@ -316,7 +318,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="drop-wrap">
           <button class="tool-btn" :disabled="!layout.state.loaded" @click="openDrop = openDrop === 'sort' ? null : 'sort'">
-            <i class="ri-arrow-up-down-line"></i>{{ sortBy }}<i class="ri-arrow-down-s-line chev"></i>
+            <i class="ri-arrow-up-down-line"></i>{{ sortBy === '按进度' ? '按任务收尾率' : sortBy }}<i class="ri-arrow-down-s-line chev"></i>
           </button>
           <div v-if="openDrop === 'sort'" class="drop-menu">
             <button
@@ -325,7 +327,7 @@ onBeforeUnmount(() => {
               class="drop-item"
               @click="(layout.setSort(o), (openDrop = null))"
             >
-              <span>{{ o }}</span><i v-if="o === sortBy" class="ri-check-line"></i>
+              <span>{{ o === '按进度' ? '按任务收尾率' : o }}</span><i v-if="o === sortBy" class="ri-check-line"></i>
             </button>
           </div>
         </div>
@@ -377,16 +379,15 @@ onBeforeUnmount(() => {
               </div>
               <div class="pc-goal">{{ p.goalShort }}</div>
               <div class="pc-meta">
-                <span class="pc-m"><i class="ri-checkbox-circle-line"></i>{{ p.taskOpen }} / {{ p.taskTotal }} 项任务</span>
+                <span class="pc-m" :title="'任务实体各计一次；主任务已完成但内嵌子项未全部完成时仍未收尾。'"><i class="ri-checkbox-circle-line"></i>{{ data.taskLoadState === 'loaded' ? p.completionLabel : data.taskLoadState === 'error' ? '任务计数读取失败' : '任务计数加载中…' }}</span>
                 <span class="pc-m" :style="{ color: p.dueColor }"><i class="ri-calendar-line"></i>{{ p.dueStr }}</span>
                 <span class="spacer"></span>
                 <span class="pc-avs">
                   <span v-for="(mv, i) in p.memberAvs" :key="i" class="pc-av" :style="{ background: mv.color }">{{ mv.initial }}</span>
                 </span>
               </div>
-              <div class="pc-prog">
-                <span class="pc-bar"><span class="pc-fill" :style="{ width: p.pct + '%', background: p.progColor }"></span></span>
-                <b class="wao-tabular">{{ p.pct }}%</b>
+              <div v-if="data.taskLoadState === 'loaded' && p.completion.subTotal" class="pc-m" title="内嵌清单子项单独计数，不加入任务总数；包括全部层级。">
+                内嵌子项未收尾 {{ p.completion.subOpen }}／共 {{ p.completion.subTotal }} 项
               </div>
             </div>
           </div>
@@ -770,28 +771,6 @@ onBeforeUnmount(() => {
   border: 1.5px solid #fff;
   margin-left: -5px;
 }
-.pc-prog {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.pc-bar {
-  flex: 1;
-  height: 5px;
-  border-radius: 99px;
-  background: var(--wao-divider);
-  overflow: hidden;
-}
-.pc-fill {
-  display: block;
-  height: 100%;
-  border-radius: 99px;
-}
-.pc-prog b {
-  font-size: 11.5px;
-  color: var(--wao-text-3);
-}
-
 .empty {
   margin-top: 14px;
   padding: 44px;
