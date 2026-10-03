@@ -50,6 +50,35 @@ describe('TodoView', () => {
     wrapper.unmount()
   })
 
+  it('五种日期分组保持筛选与完成折叠，今天执行但以后截止不混组', async () => {
+    data.today = '2026-10-03'
+    const base = data.tasks[0]!
+    data.tasks = [
+      { ...base, id: 'late', title: '逾期等待', due: '2026-10-02', waiting: '等待同事', status: '待办', owner: 'wg', parts: [] },
+      { ...base, id: 'today', title: '今日到期', due: '2026-10-03', status: '待办', owner: 'wg', parts: [] },
+      { ...base, id: 'week', title: '周日到期', due: '2026-10-04', status: '待验证', owner: 'wg', parts: [] },
+      { ...base, id: 'later', title: '未来截止今天执行', due: '2026-10-05', start: '2026-10-03', status: '待办', owner: 'wg', parts: [] },
+      { ...base, id: 'none', title: '无截止有安排', due: '', start: '2026-10-03', status: '待办', owner: 'other', parts: ['wg'] },
+      { ...base, id: 'done', title: '已收尾', due: '', status: '已完成', subs: [], owner: 'wg', parts: [] },
+    ] as typeof data.tasks
+    const w = mount(TodoView)
+    expect(w.findAll('.tgroup-label').map(el => el.text())).toEqual(['逾期', '今天到期', '本周到期', '以后到期', '无截止日期', '已完成'])
+    expect(w.findAll('.tgroup').find(el => el.text().includes('以后到期'))!.text()).toContain('今天执行')
+    expect(w.findAll('.trow')).toHaveLength(5)
+    await w.findAll('.chip').find(el => el.text() === '等待他人')!.trigger('click')
+    expect(w.findAll('.tgroup-label').map(el => el.text())).toEqual(['逾期'])
+    await w.get('select.project-filter').setValue('unassigned')
+    expect(w.text()).toContain('这个筛选下没有任务')
+    await w.get('select.project-filter').setValue('all')
+    await w.findAll('.chip').find(el => el.text() === '我参与')!.trigger('click')
+    expect(w.findAll('.tgroup-label').map(el => el.text())).toEqual(['无截止日期'])
+    for (const index of [1, 2]) {
+      await w.findAll('.seg-btn')[index]!.trigger('click'); await flushPromises()
+      expect(w.text()).toContain('今天执行')
+    }
+    w.unmount()
+  })
+
   it('真实任务未返回时只显示加载状态，不展示启动 fixtures', () => {
     data.taskLoadState = 'loading'
     const fixtureTitle = data.tasks[0]!.title

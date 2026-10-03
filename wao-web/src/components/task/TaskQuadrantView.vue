@@ -142,6 +142,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
             <div class="quadrant-task-body">
               <button class="quadrant-title" :title="task.title" :draggable="!busy(task.id) && !selectionMode" @click="ui.openTask(task.id)">{{ task.title }}</button>
               <span v-if="task.unfinishedSubCount" class="save-hint">仍有 {{ task.unfinishedSubCount }} 项子项未收尾</span>
+              <span v-if="task.executionLabel" class="quadrant-execution">{{ task.executionLabel }}</span>
               <div class="quadrant-meta">
                 <span v-if="task.due" class="quadrant-due" :style="{ color: task.dueColor }">{{ task.dueStr }}</span>
                 <span v-if="task.status !== '待办' && task.status !== '已完成'" class="quadrant-status">{{ task.status }}</span>
@@ -211,6 +212,7 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--quadrant-color);
 .quadrant-title:hover { color: var(--wao-primary-text); }
 .done .quadrant-title { text-decoration: line-through; color: var(--wao-text-weak); }
 .quadrant-meta { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 11px; line-height: 18px; color: var(--wao-text-weak); }
+.quadrant-execution { font-size: 11px; color: var(--wao-primary-text); overflow-wrap: anywhere; }
 .quadrant-due, .quadrant-status { flex-shrink: 0; }
 .quadrant-project { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quadrant-project i { margin-right: 3px; }

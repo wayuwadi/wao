@@ -1,3 +1,4 @@
+import { taskExecutionLabel } from '@/utils/taskSchedule'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { dueInfo, priorityMeta, statusMeta } from '@/utils/domain'
@@ -34,6 +35,7 @@ export function useDeco() {
       stBg: st.bg,
       stColor: st.color,
       dueStr: due.label,
+      executionLabel: taskExecutionLabel(t, data.today),
       dueColor: due.color,
       ownerName: owner.name,
       ownerColor: owner.color,
