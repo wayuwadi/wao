@@ -3,6 +3,7 @@ import { createCompanionModels } from './companionModels'
 import { boundCompanion, companionLayout, stepCompanion } from './companionMotion'
 import { stepPlayBall, type PlayBall } from './companionPlay'
 import { ACTIVITY_SECONDS, activityPose, companionActivities, type CompanionActivity } from './companionActivities'
+import { bubblePose } from './companionBubble'
 
 interface Options {
   host: HTMLElement
@@ -47,6 +48,34 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   let suppressClickUntil = 0
   const softness = pets.map(() => ({ value: 1, velocity: 0 }))
   const strokes = pets.map(() => ({ x: 0, y: 0, seen: false }))
+  const bubbleGeometry = new THREE.SphereGeometry(1, 12, 8)
+  const rimGeometry = new THREE.RingGeometry(0.86, 1, 20)
+  const bubbles = pets.map((_, index) => {
+    const group = new THREE.Object3D()
+    group.name = `companion-bubbles-${index}`
+    const material = new THREE.MeshStandardMaterial({ color: [0xb7eeff, 0xffefab, 0xf8c4ee, 0xe3f6b4][index], roughness: 0.18, metalness: 0.12, transparent: true, opacity: 0.75, depthWrite: false })
+    const rimMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false })
+    for (let j = 0; j < 24; j++) {
+      const orb = new THREE.Mesh(bubbleGeometry, material)
+      const ring = new THREE.Mesh(rimGeometry, rimMaterial)
+      ring.position.z = 0.55
+      orb.add(ring)
+      group.add(orb)
+    }
+    group.visible = false
+    scene.add(group)
+    return { group, material, rimMaterial }
+  })
+  const flights: ({ start: number; x: number; y: number } | null)[] = pets.map(() => null)
+  function clearFlights() {
+    pets.forEach((p, i) => {
+      if (flights[i]) { p.x = p.homeX; p.y = p.homeY; p.vx = p.vy = 0 }
+      flights[i] = null
+      p.group.visible = true
+      p.group.scale.setScalar(p.size)
+      bubbles[i]!.group.visible = false
+    })
+  }
   function clearPlay() { ball = null; toy.visible = false; currentActivity = null }
   function resetBlinks() {
     pets.forEach((p, i) => {
@@ -99,6 +128,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   }
   function layout() {
     clearPlay()
+    clearFlights()
     const initial = !width
     width = host.clientWidth
     height = host.clientHeight
@@ -137,6 +167,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   }
   function play(x = 0, y = height / 2 - 24) {
     if (resting() || !runnable() || !width || !height) return false
+    clearFlights()
     currentActivity = { kind: 'ball', start: performance.now() }
     ball = { x: Math.max(-width / 2 + 11, Math.min(width / 2 - 11, x)), y: Math.max(-height / 2 + 11, Math.min(height / 2 - 11, y)), vx: x > 0 ? -150 : 150, vy: 110, age: 0 }
     ballStartedAt = performance.now()
@@ -152,7 +183,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     play(v.x, v.y)
   }) as EventListener)
   listen(document, 'keydown', ((e: KeyboardEvent) => {
-    if (e.key === 'Escape' && currentActivity) { clearPlay(); wake() }
+    if (e.key === 'Escape' && (currentActivity || flights.some(Boolean))) { clearPlay(); clearFlights(); wake() }
   }) as EventListener)
   function release(cancelled = false) {
     if (!drag) return
@@ -179,7 +210,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   }
   targets.forEach((el, index) => {
     listen(el, 'pointerdown', ((e: PointerEvent) => {
-      if (drag || e.button !== 0) return
+      if (drag || flights[index] || e.button !== 0) return
       const p = pets[index]!,
         v = point(e)
       if (currentActivity) {
@@ -237,7 +268,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     }) as EventListener)
     listen(el, 'pointercancel', (() => release(true)) as EventListener)
     listen(el, 'lostpointercapture', (() => release(true)) as EventListener)
-    // 捕获阶段阻止拖动结束后的合成点击；普通轻点由 Vue 打开活动菜单。
+    // 捕获阶段阻止拖动结束后的合成点击；普通轻点由 Vue 触发升空。
     const blockDragClick = (e: MouseEvent) => { if (e.detail > 0 && performance.now() < suppressClickUntil) { e.preventDefault(); e.stopImmediatePropagation() } }
     el.addEventListener('click', blockDragClick, true)
     cleanup.push(() => el.removeEventListener('click', blockDragClick, true))
@@ -265,6 +296,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   }) as EventListener)
   function stop() {
     clearPlay()
+    clearFlights()
     cancelAnimationFrame(raf)
     raf = 0
     last = 0
@@ -359,6 +391,34 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
         eye.position.x = (j === 0 ? -0.5 : 0.5) + gaze * 0.18
         eye.scale.y = 0.17 * lid
       })
+      const flight = flights[i]
+      if (flight) {
+        const motion = bubblePose((time - flight.start) / 1000)
+        const top = height / 2 - p.size * 1.65
+        if (motion.done) {
+          flights[i] = null
+          p.x = p.homeX; p.y = p.homeY; p.vx = p.vy = 0
+          p.group.position.set(p.homeX, p.homeY, 0)
+          p.group.scale.setScalar(p.size)
+          p.group.visible = true
+          bubbles[i]!.group.visible = false
+        } else {
+          p.group.position.set(motion.returning ? p.homeX : flight.x + Math.sin(motion.rise * Math.PI * 2) * p.size * 0.12,
+            motion.returning ? p.homeY : flight.y + (top - flight.y) * motion.rise, 100)
+          p.group.scale.setScalar(p.size * motion.scale)
+          p.group.visible = motion.scale > 0.001
+          const foam = bubbles[i]!
+          foam.group.visible = motion.bubbles
+          foam.group.position.set(flight.x, top, 120)
+          foam.material.opacity = (1 - motion.burst) * 0.72
+          foam.rimMaterial.opacity = (1 - motion.burst) * 0.85
+          foam.group.children.forEach((orb, j) => {
+            const angle = j * 2.39996, spread = p.size * (0.15 + Math.sqrt(j / 24) * (0.55 + motion.burst * 0.8))
+            orb.position.set(Math.cos(angle) * spread, Math.sin(angle) * spread - motion.burst ** 2 * p.size * 0.35, j * 0.1)
+            orb.scale.setScalar(p.size * (0.055 + (j % 5) * 0.026) * (1 + motion.burst * 0.45))
+          })
+        }
+      }
       syncTarget(i)
     })
     renderer.render(scene, camera)
@@ -399,6 +459,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   }) as EventListener)
   function reset() {
     clearPlay()
+    clearFlights()
     release(true)
     pets.forEach((p) => {
       p.x = p.homeX
@@ -410,10 +471,22 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   layout()
   return {
     play,
+    pop(index: number) {
+      if (resting() || !runnable() || !pets[index]) return false
+      if (flights[index]) return true
+      clearPlay()
+      const p = pets[index]!
+      flights[index] = { start: performance.now(), x: p.group.position.x, y: p.group.position.y }
+      p.action = 0
+      p.vx = p.vy = 0
+      wake()
+      return true
+    },
     activity(kind: CompanionActivity) {
       if (kind === 'ball') return play()
       if (resting() || !runnable()) return false
       clearPlay()
+      clearFlights()
       currentActivity = { kind, start: performance.now() }
       announce(2, companionActivities.find(a => a.id === kind)!.greeting)
       wake()

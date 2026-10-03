@@ -12,12 +12,10 @@ const data = useDataStore()
 const companions = ref<InstanceType<typeof HomeCompanions>>()
 const menu = ref<InstanceType<typeof ContextActionMenu>>()
 function actions(event: MouseEvent | KeyboardEvent, _index?: number) {
-  const anchor = event instanceof MouseEvent && event.detail === 0 && event.type === 'click'
-    && event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined
   void menu.value?.openAt(event, '一起放松十五秒', [
     ...companionActivities.map(activity => ({ id: activity.id, label: activity.label, run: () => companions.value?.perform(activity.id) })),
     { id: 'quiet', label: companionQuiet.value ? '唤醒伙伴' : '现在安静下来', run: () => companions.value?.toggleQuiet() },
-  ], anchor)
+  ])
 }
 function blankMenu(event: MouseEvent) {
   if (!(event.target instanceof Element) || event.target.closest('a,button,input,textarea,[contenteditable],select,[role="dialog"]') || window.getSelection()?.toString()) return
@@ -40,7 +38,7 @@ function blankMenu(event: MouseEvent) {
           <RouterLink class="rest-entrance" to="/breathe">休息一下 <span aria-hidden="true">↗</span></RouterLink>
           <RouterLink class="rest-entrance" to="/features">功能探索 <span aria-hidden="true">↗</span></RouterLink>
         </div>
-        <small class="play-hint">点一下伙伴，或在空白处右键，一起放松十五秒。</small>
+        <small class="play-hint">点一下伙伴，让它变成泡泡。右键，一起放松十五秒。</small>
       </div>
       <div class="home-companion-space"><HomeCompanions ref="companions" @menu="actions" /></div>
     </section>
@@ -50,9 +48,9 @@ function blankMenu(event: MouseEvent) {
 </template>
 
 <style scoped>
-.home { min-height: 100%; }
+.home { height: 100%; min-width: 0; display: flex; }
 .home-day { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.home-rest-welcome { padding: 24px 28px 0; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; overflow: hidden; }
+.home-rest-welcome { flex: 1; min-width: 0; padding: 24px 28px 0; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); grid-template-rows: auto minmax(350px, 1fr); gap: 24px; overflow: hidden; }
 .home-day { grid-column: 1 / -1; }
 .home-rest-copy { align-self: center; min-width: 0; padding-bottom: 28px; }
 .home-companion-space { position: relative; min-width: 0; min-height: 350px; margin-right: -28px; }
@@ -62,6 +60,6 @@ function blankMenu(event: MouseEvent) {
 .play-hint { display:block; margin-top:12px; color:var(--wao-text-weak); font-size:12px; }
 .rest-entrance { background:var(--wao-bg-card); cursor:pointer; font:inherit; display: inline-block; flex: none; white-space: nowrap; padding: 10px 16px; border: 1px solid var(--wao-line); border-radius: 24px; color: var(--wao-text); text-decoration: none; }
 .rest-entrance:focus-visible { outline: 2px solid var(--wao-primary-text); outline-offset: 4px; }
-@media (max-width: 1100px) { .home-rest-welcome { grid-template-columns: minmax(0, 1fr); } .home-rest-copy { padding-bottom: 0; } .home-companion-space { min-height: 280px; margin-inline: -28px; } }
+@media (max-width: 1100px) { .home-rest-welcome { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(280px, 1fr); } .home-rest-copy { padding-bottom: 0; } .home-companion-space { min-height: 280px; margin-inline: -28px; } }
 @media (max-width: 600px) { .home-rest-welcome { padding: 20px 20px 0; } .home-companion-space { margin-inline: -20px; } }
 </style>
