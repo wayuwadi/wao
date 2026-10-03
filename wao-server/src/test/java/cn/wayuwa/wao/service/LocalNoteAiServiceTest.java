@@ -44,6 +44,25 @@ class LocalNoteAiServiceTest {
         verifyNoInteractions(runs, images);
     }
 
+    @Test void failingWorkflowAndFailureRecordingDoNotPreventAnotherDocumentFromAdvancing() {
+        var workflow = mock(NoteAiWorkflowService.class);
+        @SuppressWarnings("unchecked")
+        var provider = (ObjectProvider<NoteAiWorkflowService>) mock(ObjectProvider.class);
+        when(provider.getObject()).thenReturn(workflow);
+        var failure = new IllegalStateException("阶段失败");
+        doThrow(failure).when(workflow).advance("first");
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("暂时不可写"))
+                .when(workflow).failAdvance("first", failure);
+        environment.withProperty("wao.ai.local-notes.document-ids", "first,second");
+        var worker = new LocalNoteAiService(runs, images, mock(NoteAiWorkflowMapper.class), provider, environment);
+
+        ReflectionTestUtils.invokeMethod(worker, "advanceWorkflows");
+
+        verify(workflow).failAdvance("first", failure);
+        verify(workflow).advance("second");
+        verify(workflow, never()).failAdvance(eq("second"), any());
+    }
+
     @Test void foreignAndDuplicateClaimsNeverInvokeCodex() throws Exception {
         var run = run(); run.setAiCapabilityId("local-codex");
         assertThat(service.process(run)).isFalse();
