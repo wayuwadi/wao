@@ -10,6 +10,7 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
   if (!value || typeof value !== 'object') return null
   const edition = value as Record<string, unknown>
   if (
+    (edition.attention !== undefined && edition.attention !== 'feature' && edition.attention !== 'maintenance') ||
     !text(edition.id, 160) ||
     !text(edition.publishedOn, 30) ||
     !text(edition.title, 160) ||
@@ -42,6 +43,7 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
     })
   }
   return {
+    ...(edition.attention ? { attention: edition.attention as 'feature' | 'maintenance' } : {}),
     id: edition.id,
     publishedOn: edition.publishedOn,
     title: edition.title,
