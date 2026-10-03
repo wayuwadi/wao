@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { projectCompletionLabel } from '@/utils/projectCompletion'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { fetchSearchDocuments, fetchKbs } from '@/api/board'
+import { useSessionStore } from '@/stores/session'
+import { contentHit, documentSearchText } from '@/utils/contentSearch'
+import type { Doc, KnowledgeBase } from '@/types'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
@@ -13,15 +17,44 @@ const data = useDataStore()
 const ui = useUiStore()
 const router = useRouter()
 
+const session = useSessionStore()
 const q = ref('')
+const composing = ref(false)
+const searchDocs = ref<Doc[]>([])
+const searchKbs = ref<KnowledgeBase[]>([])
+const documentState = ref<'loading' | 'loaded' | 'error'>('loading')
+const documentLimit = ref(50)
+let request = 0
+async function loadDocuments() {
+  const generation = ++request, member = session.userId
+  documentState.value = 'loading'; searchDocs.value = []; searchKbs.value = []
+  try {
+    const [docs, kbs] = await Promise.all([fetchSearchDocuments(), fetchKbs()])
+    if (generation !== request || member !== session.userId) return
+    if (docs.some(doc => doc.bodyLoaded === false)) throw new Error('正文读取不完整')
+    searchDocs.value = docs; searchKbs.value = kbs; documentState.value = 'loaded'
+  } catch { if (generation === request) documentState.value = 'error' }
+}
+watch(() => session.userId, loadDocuments, { immediate: true })
+onBeforeUnmount(() => { request++ })
+const documentMatches = computed(() => {
+  if (documentState.value !== 'loaded') return []
+  const query = q.value.trim()
+  return searchDocs.value.flatMap(doc => {
+    const kb = searchKbs.value.find(k => k.folders.some(f => f.docs.includes(doc.id)))
+    if (!kb) return []
+    const titleHit = contentHit(doc.title, query), bodyHit = contentHit(documentSearchText(doc), query)
+    return query && !titleHit && !bodyHit ? [] : [{ doc, kb, hit: titleHit || bodyHit, field: titleHit ? '标题' : '正文' }]
+  })
+})
 const activeResult = ref(0)
 watch(q, () => {
   activeResult.value = 0
+  documentLimit.value = 50
 })
 const inputEl = ref<HTMLInputElement | null>(null)
 onMounted(() => {
   void nav.loadMenus()
-  void data.ensureDocsLoaded()
   void nextTick(() => inputEl.value?.focus())
 })
 
@@ -30,17 +63,12 @@ interface Item {
   iconColor: string
   title: string
   sub: string
+  snippet?: ReturnType<typeof contentHit>
   go: () => void
 }
 
 function close() {
   ui.closeSearch()
-}
-function openDoc(id: string) {
-  const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
-  close()
-  if (k) router.push({ path: `/kb/${k.id}`, query: { doc: id } })
-  else router.push('/knowledge')
 }
 
 const groups = computed(() => {
@@ -109,20 +137,18 @@ const groups = computed(() => {
         ui.openTask(t.id, matchedSub?.id)
       },
     }))
-  const ds = Object.values(data.docs)
-    .filter((d) => !data.isDocArchived(d.id))
-    .filter((d) => !kw || d.title.toLowerCase().includes(kw))
-    .slice(0, 4)
-    .map<Item>((d) => ({
-      icon: d.auto ? 'ri-flashlight-line' : 'ri-file-text-line',
-      iconColor: '#7A5CC6',
-      title: d.title,
-      sub: `更新于 ${d.updated}`,
-      go: () => openDoc(d.id),
-    }))
+  const ds = documentMatches.value.slice(0, kw ? documentLimit.value : 4).map<Item>(({ doc, kb, hit, field }) => ({
+    icon: kb.notes ? 'ri-sticky-note-line' : 'ri-file-text-line', iconColor: '#7A5CC6', title: doc.title,
+    sub: `${kb.notes ? '小记' : '文档'} · ${kb.name} · ${kw ? `${field}命中` : '最近更新'}`, snippet: hit,
+    go: () => {
+      close()
+      void router.push({ path: kb.notes ? '/notes' : `/kb/${kb.id}`,
+        query: { [kb.notes ? 'note' : 'doc']: doc.id, find: q.value.trim(), findRequest: String(Date.now()), match: field === '标题' ? 'title' : 'body' } })
+    },
+  }))
   if (ps.length) gs.push({ label: '项目', items: ps })
   if (ts.length) gs.push({ label: '任务', items: ts })
-  if (ds.length) gs.push({ label: '文档', items: ds })
+  if (ds.length) gs.push({ label: `小记与文档（${documentMatches.value.length} 条）`, items: ds })
   return gs
 })
 
@@ -131,7 +157,8 @@ function moveResult(direction: number) {
   const count = results.value.length
   if (count) activeResult.value = (activeResult.value + direction + count) % count
 }
-function openSelected() {
+function openSelected(event: KeyboardEvent) {
+  if (composing.value || event.isComposing) return
   results.value[activeResult.value]?.go()
 }
 </script>
@@ -144,16 +171,20 @@ function openSelected() {
       <input
         ref="inputEl"
         v-model="q"
-        @keydown.down.prevent="moveResult(1)"
-        @keydown.up.prevent="moveResult(-1)"
+        @compositionstart="composing = true"
+        @compositionend="composing = false"
+        @keydown.down.prevent="!composing && moveResult(1)"
+        @keydown.up.prevent="!composing && moveResult(-1)"
         @keydown.enter.prevent="openSelected"
-        placeholder="搜索功能、项目、任务、文档…"
+        placeholder="搜索功能、项目、任务、小记、文档正文…"
       />
       <span class="kbd">Esc</span>
     </div>
     <div v-if="nav.layoutError" class="g-label" role="alert">
       {{ nav.layoutError }} <button @click="nav.loadMenus(true)">重试导航</button>
     </div>
+    <p v-if="documentState === 'loading'" class="g-label" role="status">正在读取可访问的小记与文档全文…</p>
+    <p v-else-if="documentState === 'error'" class="g-label" role="alert">小记与文档读取失败，尚不能确认是否有匹配。<button @click="loadDocuments">重试正文读取</button></p>
     <div class="results">
       <template v-for="g in groups" :key="g.label">
         <div class="g-label">{{ g.label }}</div>
@@ -168,14 +199,16 @@ function openSelected() {
           <span class="r-main">
             <span class="r-title">{{ it.title }}</span>
             <span class="r-sub">{{ it.sub }}</span>
+            <span v-if="it.snippet" class="r-snippet">{{ it.snippet.before }}<mark>{{ it.snippet.match }}</mark>{{ it.snippet.after }}</span>
           </span>
           <i class="ri-corner-down-left-line enter"></i>
         </button>
       </template>
-      <div v-if="groups.length === 0" class="empty">没有匹配结果——换个关键词试试</div>
+      <button v-if="q.trim() && documentMatches.length > documentLimit" class="g-label" @click="documentLimit += 50">显示更多内容（还有 {{ documentMatches.length - documentLimit }} 条）</button>
+      <div v-if="groups.length === 0 && documentState === 'loaded'" class="empty">没有匹配结果——换个关键词试试</div>
     </div>
     <div class="footer">
-      <span class="try">功能支持原名、别名与用途；也可搜索项目、任务和文档</span>
+      <span class="try">正文检索已保存的小记与文档，不含归档与回收站；编辑草稿保持不变</span>
     </div>
   </div>
 </template>
@@ -304,4 +337,6 @@ function openSelected() {
   font-size: 11.5px;
   color: var(--wao-text-faint);
 }
+.r-snippet { font-size: 12px; color: var(--wao-text-weak); white-space: pre-wrap; overflow-wrap: anywhere; }
+.r-snippet mark { background: #fff0ae; color: #604a08; }
 </style>
