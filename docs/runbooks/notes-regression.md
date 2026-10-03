@@ -90,3 +90,5 @@ npm run test:unit -- --run src/__tests__/noteDraftStorage.spec.ts src/__tests__/
 ## 手动 AI 阶段状态
 
 短正文自动跳过后按需生成、继续重做另一阶段及刷新恢复，按 [手动状态验收](../validation/notes-manual-ai-progress-2026-10-03.md) 执行。自动规则与手动成功的合并边界见 [规格](../specs/notes-manual-ai-progress.md)。
+
+标签推荐期间只更新并保存标题，返回后应继续完成并保留新标题；正文、标签或未保存输入变化仍需阻止旧结果。命令及实际并发步骤见 [标签标题并发验收](../validation/notes-tag-title-concurrency-2026-10-03.md)。

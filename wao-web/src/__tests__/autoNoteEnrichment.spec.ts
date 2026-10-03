@@ -273,6 +273,54 @@ describe('小记保存后自动生成', () => {
     expect(noteEnrichmentProgress.n1?.tags).toBe('done')
   })
 
+  it('后台只更新标题时标签沿用最新版本写入且不覆盖标题', async () => {
+    vi.mocked(fetchDoc).mockResolvedValueOnce({ ...doc(1), tags: ['创作'] } as never)
+      .mockResolvedValue({ ...doc(2, '后台生成的新标题'), tags: ['创作'] } as never)
+    vi.mocked(fetchNoteTags).mockResolvedValue(['创作', '计划'])
+    vi.mocked(waitForPolish).mockResolvedValue({ id: 'tags', status: 'SUCCEEDED', message: '', polished: '计划' })
+    vi.mocked(apiPatchDoc).mockResolvedValue({ ...doc(3, '后台生成的新标题'), tags: ['创作', '计划'] } as never)
+    startAutoNoteEnrichment('me', 'n1', 1, {
+      titleEnabled: false, imageEnabled: false, polishEnabled: false,
+      tagsEnabled: true, allowedTags: ['计划'],
+    })
+    await flushPromises()
+    expect(apiPatchDoc).toHaveBeenCalledWith('n1', { tags: ['创作', '计划'], expectedRev: 2 })
+    expect(noteEnrichmentProgress.n1?.tags).toBe('done')
+  })
+
+  it.each(['正文', '标签'] as const)('标签返回前%s已改变时保留用户修改', async changed => {
+    vi.mocked(fetchDoc).mockResolvedValueOnce(doc(1) as never).mockResolvedValue({
+      ...doc(2, '新标题'),
+      ...(changed === '正文' ? { content: { ...content, markdown: '用户已保存的新正文' } } : { tags: ['用户标签'] }),
+    } as never)
+    vi.mocked(fetchNoteTags).mockResolvedValue(['计划'])
+    vi.mocked(waitForPolish).mockResolvedValue({ id: 'tags', status: 'SUCCEEDED', message: '', polished: '计划' })
+    startAutoNoteEnrichment('me', 'n1', 1, {
+      titleEnabled: false, imageEnabled: false, polishEnabled: false, tagsEnabled: true, allowedTags: ['计划'],
+    })
+    await flushPromises()
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    expect(noteEnrichmentProgress.n1?.tags).toBe('failed')
+  })
+
+  it('等待可用标签列表时开始输入仍阻止迟到写入', async () => {
+    let finishTags!: (tags: string[]) => void
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(fetchNoteTags).mockImplementation(() => new Promise(resolve => { finishTags = resolve }))
+    vi.mocked(waitForPolish).mockResolvedValue({ id: 'tags', status: 'SUCCEEDED', message: '', polished: '计划' })
+    startAutoNoteEnrichment('me', 'n1', 1, {
+      titleEnabled: false, imageEnabled: false, polishEnabled: false, tagsEnabled: true, allowedTags: ['计划'],
+    })
+    await flushPromises()
+    const draft = JSON.stringify({ id: 'n1', text: '刚开始输入的内容' })
+    writeNoteDraft('wao-note-edit-v1:me:n1', draft)
+    finishTags(['计划'])
+    await flushPromises()
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    expect(readNoteDraft('wao-note-edit-v1:me:n1')).toBe(draft)
+    expect(noteEnrichmentProgress.n1?.tags).toBe('failed')
+  })
+
   it.each([
     ['标签：请求内容已改变，请创建新的润色任务', '0123456789abcdef0123456789abcdef'],
     ['标签：网络连接中断，请重试', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
