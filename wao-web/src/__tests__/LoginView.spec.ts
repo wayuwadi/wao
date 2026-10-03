@@ -68,6 +68,8 @@ describe('舞台登录与认证生命周期', () => {
   it('初始静音且不加载二维码，打开后仅提供飞书和邮箱', async () => {
     await setup()
     expect(wrapper.findAll('.header-login')).toHaveLength(1)
+    expect(wrapper.find('.page-more .header-login').exists()).toBe(false)
+    expect(wrapper.get('.header-actions > .header-login').text()).toContain('登录 WAO')
     expect(wrapper.text()).not.toMatch(/创建账号|创建 WAO 账号|注册/)
     expect(mountFeishuQr).not.toHaveBeenCalled()
     expect(wrapper.get('.sound-toggle').attributes('aria-pressed')).toBe('false')
