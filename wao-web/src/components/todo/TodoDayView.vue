@@ -11,6 +11,7 @@ import { PreviousTodoWriteRecovered, saveTodoWithReceipt, writeDayNote, type Day
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import TaskSchedulePopover from './TaskSchedulePopover.vue'
+import DailyRoutineSection from './DailyRoutineSection.vue'
 
 const props = defineProps<{ date: string }>()
 const emit = defineEmits<{ 'update:date': [date: string]; all: [] }>()
@@ -116,6 +117,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
     <template v-else-if="day">
       <p v-if="day.historyCoverage === 'BEFORE_BASELINE'" class="coverage" role="status">这一天早于可靠记录起点。可查看有依据的小记，不根据当前状态补造任务历史。</p>
       <div class="day-overview"><span>{{ day.summary.plannedCount }} 件安排</span><span>{{ day.summary.finishedCount }} 件完成记录</span><span>{{ day.summary.stepDoneCount }} 项步骤完成</span><span>{{ day.summary.noteCount }} 条记录</span><span v-if="days.states[date] === 'loading'" role="status">正在刷新…</span></div>
+      <DailyRoutineSection :date="date" />
       <div v-if="!day.tasks.length" class="day-empty">{{ past ? '这一天还没有可靠的任务记录' : '这一天还没有安排，写下一件想做的事' }}</div>
       <article v-for="(entry, index) in day.tasks" :key="entry.task.id" class="day-task">
         <span class="task-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="day-task-main">
