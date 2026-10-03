@@ -11,7 +11,7 @@
 | B1 自动标题、配图、润色及按需标签 | 完整长正文关闭页面后全部完成，重新打开与按需标签通过 | 见 notes-workflow-stage-failure-2026-10-03.md，实际本机 Astra 与真实 PNG | 本地真实通过 |
 | B2 超时、中断重启、迟到结果、重复操作 | 既有本机真实故障和队列 CAS 回归；阶段异常与事务回滚回归已补；30篇等待阻挡结果回写已复现修复 | PR #1082 已发布 503995bd；多篇队列见 notes-workflow-queue-progress-2026-10-03.md | 已有针对性证据 |
 | B3 修改或删除后的旧任务 | 真实 Astra 标题及标签在删除后完成，记录仍已删除且内容与版本不变；正文改变与归档前置保护、删除后 CAS 已补回归 | 见 notes-deleted-late-results-2026-10-03.md；模型完成不等于结果采用，归档仅隔离测试 | 本地真实删除通过，无产品修改 |
-| C1 状态、历史失败和重试 | 手动完成状态 PR #1085 已发布；未解决原因被清空已修复；标签与独立标题版本冲突已修复并真实验收；历史 Runner 指引待查 | 见 notes-manual-ai-progress-2026-10-03.md、notes-workflow-error-retention-2026-10-03.md、notes-tag-title-concurrency-2026-10-03.md；继续历史指引 | 部分通过 |
+| C1 状态、历史失败和重试 | 手动完成状态、未解决失败原因、标签独立标题并发均已修复交付；历史 Runner 指引已替换为 Codex 恢复办法，诊断与原记录保留 | 见 notes-manual-ai-progress-2026-10-03.md、notes-workflow-error-retention-2026-10-03.md、notes-tag-title-concurrency-2026-10-03.md、notes-legacy-recovery-guidance-2026-10-03.md | 各项本地验证通过，发布终态逐项记录 |
 | C2 排队和实际执行提示 | 串行分支绕过成员上限已复现修复；工作流 RUNNING 包含队列与结果待回写 | 真实两篇标题依次提交、完成、刷新通过，见 notes-serial-member-limit-2026-10-03.md | 本地真实通过 |
 | C3 图片及窄屏 | PR #1060/#1062 真实图片缩进、撤销、保存刷新与 390px 通过 | 复用证据，变更涉及对应操作时补验 | 已有证据 |
 | D 工程资产和发布 | 已有体检、真实回归和聚合报告；昨晚前后端版本已发布 | 每项保留可执行命令、PR、合并 SHA、准确发布结果及未验证项 | 持续维护 |

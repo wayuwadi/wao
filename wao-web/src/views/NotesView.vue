@@ -22,6 +22,7 @@ import { useNow } from '@/composables/now'
 import { noteCharactersCreatedOn, shanghaiDateKey } from '@/utils/noteDailyCharacters'
 import { readNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 import { fetchNoteAiWorkflows, retryNoteAiWorkflow, type NoteAiWorkflowStatus } from '@/api/noteAiWorkflows'
+import { noteAiRecoveryMessage } from '@/utils/noteAiRecoveryMessage'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 
@@ -521,10 +522,10 @@ function serverFailed(id: string) {
 }
 function workflowMessage(id: string) {
   const server = serverWorkflows.value[id]
-  if (!server) return noteEnrichmentStatus[id]
-  if (serverFailed(id)) return server.message || '自动整理有步骤失败，请重试'
+  if (!server) return noteAiRecoveryMessage(noteEnrichmentStatus[id])
+  if (serverFailed(id)) return noteAiRecoveryMessage(server.message || '自动整理有步骤失败，请重试')
   if (['PENDING', 'RUNNING'].some(status => Object.values(server).includes(status))) return '后台自动整理中，关闭页面后仍会继续'
-  return noteEnrichmentStatus[id]
+  return noteAiRecoveryMessage(noteEnrichmentStatus[id])
 }
 function hasPendingNoteDraft(note: Doc) {
   const key = `wao-note-edit-v1:${session.currentUser.id}:${note.id}`
