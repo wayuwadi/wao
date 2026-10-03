@@ -30,6 +30,8 @@ import org.springframework.stereotype.Service;
 /** 小记、算卦和业务助手共用的本机执行出口，不依赖 Runner。默认关闭，按主机显式启用。 */
 @Service
 public class LocalNoteAiService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private org.springframework.beans.factory.ObjectProvider<NoteAiManagedService> managedNotes;
     private static final Logger log = LoggerFactory.getLogger(LocalNoteAiService.class);
     private final AiAssistantRunMapper runs;
     private final ImageService images;
@@ -154,6 +156,10 @@ public class LocalNoteAiService {
                 || runs.claimQueued(run.getId(), null, claim, "secure_queued", "provider_running") != 1) return false;
         String orphanImageId = null;
         try {
+        if(managedNotes != null && !managedNotes.getObject().mayStart(run.getId())) {
+            runs.completeProviderFailed(run.getId(),claim,"自动阶段已关闭或来源更新；未执行模型，原内容保留");
+            return true;
+        }
             String model = run.getRequestedModel() == null ? "gpt-6-astra" : run.getRequestedModel();
             long seconds = environment.getProperty("wao.ai.local-notes.timeout-seconds", Long.class, 300L);
             if (seconds < 1 || seconds > 900) throw new IllegalStateException("本机 AI 超时配置必须为 1–900 秒");

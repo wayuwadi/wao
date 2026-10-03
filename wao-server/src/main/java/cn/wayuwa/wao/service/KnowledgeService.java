@@ -76,6 +76,21 @@ import org.springframework.util.StringUtils;
  */
 @Service
 public class KnowledgeService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    @org.springframework.context.annotation.Lazy
+    private NoteAiManagedService noteAiManaged;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private cn.wayuwa.wao.auth.CurrentMember noteMember;
+    private String noteActor() {
+        if(NoteAiManagedService.actor()!=null)return NoteAiManagedService.actor();
+        var attrs=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        return noteMember != null && attrs instanceof org.springframework.web.context.request.ServletRequestAttributes request ? noteMember.id(request.getRequest()) : null;
+    }
+    private DocDto noteSaved(DocDto doc,String actor,String title,CreateNoteRequest selection) {
+        if(noteAiManaged!=null)noteAiManaged.saved(doc,actor,title,selection);
+        return doc;
+    }
+
 
     /** 回收站保留天数：删除后 7 天内可恢复，之后自动彻底删除。 */
     public static final int TRASH_DAYS = 7;
@@ -479,6 +494,7 @@ public class KnowledgeService {
      */
     @Transactional
     public DocDto createDoc(CreateDocRequest req, String author) {
+        if(noteAiManaged!=null&&author!=null&&NOTES_KB_ID.equals(req.kbId()))noteAiManaged.lockActor(author);
         KbEntity kb = requireKb(req.kbId());
         KbFolderEntity folder = requireFolder(req.kbId(), req.folderId());
         List<DocLinkDto> links = List.of();
@@ -502,7 +518,7 @@ public class KnowledgeService {
             blocks = templateBlocks(template);
             content = richContentOf(template);
         }
-        return insertDoc(req.kbId(), folder.getId(), req.title(), author, blocks, content, links);
+        return noteSaved(insertDoc(req.kbId(), folder.getId(), req.title(), author, blocks, content, links),author,req.title(),null);
     }
 
     /**
@@ -792,6 +808,7 @@ public class KnowledgeService {
         }
         List<String> tags = req.tags() == null ? null : NoteTagService.normalize(req.tags());
         String resolvedAuthor = blankOr(author, "wg");
+        if(noteAiManaged!=null&&author!=null)noteAiManaged.lockActor(author);
         DocEntity existing = docMapper.selectById(id);
         if (existing != null) {
             if (existing.getDeletedAt() != null || !NOTES_KB_ID.equals(existing.getKbId())
@@ -816,7 +833,7 @@ public class KnowledgeService {
                 existing.setUpdatedAt(LocalDateTime.now());
                 docMapper.updateContentSnapshot(existing);
             }
-            return toDto(existing);
+            return noteSaved(toDto(existing),author,req.title(),req);
         }
         KbEntity kb = notesKb();
         KbFolderEntity folder = authorFolder(kb.getId(), author);
@@ -825,7 +842,13 @@ public class KnowledgeService {
         DocDto doc = insertDoc(id, kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(content, blocks)),
                 author, blocks, content, List.of(), tags);
         announceNote(kb.getId(), doc, author);
-        return doc;
+        return noteSaved(doc,author,req.title(),req);
+    }
+
+    /** AI 派生写入仍遵守正文版本校验，但不创建新的用户保存轮次。 */
+    @Transactional
+    public DocDto updateDerivedNote(String id, PatchDocRequest req) {
+        return NoteAiManagedService.derivedWrite(() -> updateDoc(id, req));
     }
 
     /** 新建小记后同步到飞书群；通知失败只记日志，不影响创建结果。 */
@@ -1276,7 +1299,11 @@ public class KnowledgeService {
     }
 
     /** 局部更新文档：标题 / 正文块 / 出链 / 所在文件夹。正文或标题变化时版本号 +1。 */
+    @Transactional
     public DocDto updateDoc(String id, PatchDocRequest req) {
+        // 成员锁先于文档写锁，和调度写回保持一致，防止相互等待。
+        String actor=noteActor();
+        if(noteAiManaged!=null&&actor!=null&&!NoteAiManagedService.derived())noteAiManaged.lockActor(actor);
         DocEntity e = requireDoc(id);
         if (e.getAutoSyncScope() != null && !e.getAutoSyncScope().isBlank() && e.getAutoSyncDate() != null
                 && e.getAutoSyncVersion() != null) {
@@ -1329,7 +1356,7 @@ public class KnowledgeService {
         } else {
             docMapper.updateContentSnapshot(e);
         }
-        return toDto(e);
+        return noteSaved(toDto(e),noteActor(),req.title(),null);
     }
 
     private DocDto updateVersionedArchive(DocEntity e, PatchDocRequest req) {

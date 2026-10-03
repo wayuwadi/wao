@@ -22,6 +22,8 @@ public class MemberPreferenceController {
     private static final String FALLBACK_OWNER = "wg";
     private static final int MAX_VALUE_LENGTH = 4000;
 
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private cn.wayuwa.wao.service.NoteAiSettingsService noteSettings;
     private final MemberPreferenceMapper mapper;
     private final CurrentMember currentMember;
 
@@ -48,7 +50,8 @@ public class MemberPreferenceController {
         if (value == null || value.length() > limit) {
             throw new BadRequestException("偏好值不能为空且不超过 " + limit + " 字符");
         }
-        mapper.upsert(currentMember.idOr(http, FALLBACK_OWNER), key, value);
+        if (noteSettings != null && cn.wayuwa.wao.service.NoteAiSettingsService.KEYS.contains(key)) noteSettings.saveLegacy(currentMember.id(http), key, value);
+        else mapper.upsert(currentMember.idOr(http, FALLBACK_OWNER), key, value);
         return ApiResponse.ok(null);
     }
 }

@@ -38,7 +38,9 @@ public interface NoteAiWorkflowMapper {
     @Select("""
             SELECT doc_id FROM note_ai_workflow
              WHERE title_status IN ('PENDING','RUNNING') OR image_status IN ('PENDING','RUNNING')
-                OR polish_status IN ('PENDING','RUNNING')
+                OR polish_status IN ('PENDING','RUNNING') OR EXISTS (
+                    SELECT 1 FROM note_ai_stage_attempt a
+                    WHERE a.doc_id=note_ai_workflow.doc_id AND a.state IN ('PENDING','RUNNING'))
              ORDER BY CASE WHEN title_status='RUNNING' OR image_status='RUNNING' OR polish_status='RUNNING'
                            THEN 0 ELSE 1 END,
                       updated_at, doc_id LIMIT #{limit}

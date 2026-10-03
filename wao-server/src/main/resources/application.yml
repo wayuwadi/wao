@@ -42,6 +42,8 @@ spring:
       password: ${REDIS_PASS:}
       timeout: 3s
   flyway:
+    # 并行新增迁移可低于当前最大版本，默认校验和校验保持有效。
+    out-of-order: true
     enabled: ${FLYWAY_ENABLED:true}
     locations: classpath:db/migration
     baseline-on-migrate: true

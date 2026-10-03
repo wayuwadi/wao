@@ -121,7 +121,6 @@ async function save(open = false) {
     if (!id) throw new Error('小记正文为空')
     const doc = data.docById(id)
     try { removeNoteDraft(draftKey, submittedDraft) } catch { /* 服务端已保存，不误报正文保存失败。 */ }
-    if (data.apiLive && doc?.rev) startAutoNoteEnrichment(session.currentUser.id, id, doc.rev)
     ui.closeModal()
     toast(`已存进「${archiveName.value}」`, 'ri-sticky-note-line')
     if (open) router.push({ path: `/kb/${doc?.kbId ?? data.notesKb().id}`, query: { doc: id } })

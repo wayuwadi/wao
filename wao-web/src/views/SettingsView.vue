@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NoteAiSettingsForm from '@/components/notes/NoteAiSettingsForm.vue'
 import { computed, onUnmounted, reactive, ref, watch, watchEffect } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
@@ -796,76 +797,7 @@ async function bindFeishu() {
               </div>
             </template>
           </div>
-          <div class="card thin note-ai-defaults-preferences">
-            <div class="card-row wrap">
-              <div>
-                <div class="card-title">小记 AI 默认能力</div>
-                <div class="pref-desc">新建小记保存后自动执行所选整理；结果仍可在小记中查看、保留或重试。</div>
-              </div>
-              <span v-if="noteAiDefaultsSaving" class="connected"><span class="c-dot"></span>保存中…</span>
-              <span v-else-if="preferences.loading || !preferences.loaded" class="connected"><span class="c-dot"></span>读取中…</span>
-              <span v-else-if="noteAiDefaultsDirty" class="connected" aria-live="polite"><span class="c-dot"></span>有未保存更改</span>
-              <span v-else-if="!preferences.loadError && !noteAiDefaultsError" class="connected"><span class="c-dot"></span>按当前成员保存</span>
-            </div>
-            <div v-if="preferences.loadError || noteAiDefaultsError" class="preference-error" role="alert">
-              <span>{{ noteAiDefaultsError || preferences.loadError }}</span>
-              <button type="button" class="btn-ghost sm" :disabled="preferences.loading" @click="reloadPreferences">
-                {{ preferences.loading ? '重新读取中…' : '重新读取' }}
-              </button>
-              <button v-if="noteAiDefaultsError" type="button" class="btn-ghost sm" :disabled="noteAiDefaultsSaving" @click="saveNoteAiDefaults">重试保存</button>
-            </div>
-            <div v-else-if="preferences.loading || !preferences.loaded" class="preference-loading" aria-live="polite">
-              <i class="ri-loader-4-line"></i>正在读取小记 AI 默认能力…
-            </div>
-            <template v-else>
-              <div class="pref-row">
-                <div class="pref-main">
-                  <div class="pref-name">保存后生成标题</div>
-                  <div class="pref-desc">依据小记正文生成标题；已有标题会保留。</div>
-                </div>
-                <button type="button" class="toggle" :class="{ on: noteAiDefaultsForm.title }" aria-label="小记保存后生成标题" :aria-pressed="noteAiDefaultsForm.title" :disabled="noteAiDefaultsSaving" @click="noteAiDefaultsForm.title = !noteAiDefaultsForm.title"><span class="knob"></span></button>
-              </div>
-              <div class="pref-row">
-                <div class="pref-main">
-                  <div class="pref-name">保存后润色正文</div>
-                  <div class="pref-desc">整理为一份最新正文；继续输入时保留本地草稿，失败可重试。</div>
-                </div>
-                <button type="button" class="toggle" :class="{ on: noteAiDefaultsForm.polish }" aria-label="小记保存后润色正文" :aria-pressed="noteAiDefaultsForm.polish" :disabled="noteAiDefaultsSaving" @click="noteAiDefaultsForm.polish = !noteAiDefaultsForm.polish"><span class="knob"></span></button>
-              </div>
-              <div class="pref-row">
-                <div class="pref-main">
-                  <div class="pref-name">保存后生成配图</div>
-                  <div class="pref-desc">仅新建小记时自动生成；编辑已有小记不会自动换图。</div>
-                </div>
-                <button type="button" class="toggle" :class="{ on: noteAiDefaultsForm.image }" aria-label="小记保存后生成配图" :aria-pressed="noteAiDefaultsForm.image" :disabled="noteAiDefaultsSaving" @click="noteAiDefaultsForm.image = !noteAiDefaultsForm.image"><span class="knob"></span></button>
-              </div>
-              <div class="pref-row">
-                <div class="pref-main">
-                  <div class="pref-name">整理执行方式</div>
-                  <div class="pref-desc">并行允许多个阶段排队，实际执行受服务可用能力限制；串行会逐项完成。</div>
-                </div>
-                <select v-model="noteAiDefaultsForm.executionMode" class="pref-select" aria-label="小记 AI 整理执行方式" :disabled="noteAiDefaultsSaving">
-                  <option value="parallel">并行</option>
-                  <option value="serial">串行</option>
-                </select>
-              </div>
-              <div class="pref-row" :class="{ muted: noteAiDefaultsForm.executionMode === 'serial' }">
-                <div class="pref-main">
-                  <div class="pref-name">同时整理上限</div>
-                  <div class="pref-desc">统计已排队和处理中的步骤；本机 Codex 逐项执行，串行模式固定为 1。</div>
-                </div>
-                <select v-model.number="noteAiConcurrentDisplay" class="pref-select" aria-label="小记 AI 同时整理上限" :disabled="noteAiDefaultsSaving || noteAiDefaultsForm.executionMode === 'serial'">
-                  <option v-for="count in [1, 2, 3, 4, 5]" :key="count" :value="count">{{ count }} 项</option>
-                </select>
-              </div>
-              <div class="preference-actions">
-                <span>多个小记共享此上限；切换设置不会中断已经提交的任务。</span>
-                <button type="button" class="btn-primary" :disabled="noteAiDefaultsSaving || !noteAiDefaultsDirty" @click="saveNoteAiDefaults">
-                  {{ noteAiDefaultsSaving ? '保存中…' : '保存小记 AI 设置' }}
-                </button>
-              </div>
-            </template>
-          </div>
+          <div class="card thin note-ai-defaults-preferences"><h3>小记 AI 设置</h3><NoteAiSettingsForm /></div>
         </template>
 
       </div>

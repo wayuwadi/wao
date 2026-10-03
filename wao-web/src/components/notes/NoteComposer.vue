@@ -319,12 +319,8 @@ async function save(explicit = false) {
       baseNote = { title: saved.title, tags: [...(saved.tags ?? [])], blocks: saved.blocks, content: resolvedRichContent(saved) }
       savedId = saved.id
     } else {
-      const aiDefaults = preferences.noteAiDefaults
-      savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags, {
-        autoTitle: aiDefaults.title && !generatedTitle.value.trim(),
-        autoImage: aiDefaults.image,
-        autoPolish: aiDefaults.polish,
-      })
+      savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags)
+
     }
     if (!savedId) throw new Error('正文为空，请先写点内容')
     try {

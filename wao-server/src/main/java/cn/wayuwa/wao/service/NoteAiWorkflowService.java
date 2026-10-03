@@ -32,6 +32,8 @@ import org.springframework.util.StringUtils;
 /** 让新小记的标题、总览图和润色在浏览器关闭后仍能安全续跑。 */
 @Service
 public class NoteAiWorkflowService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private NoteAiManagedService managed;
     private static final String PENDING = "PENDING", RUNNING = "RUNNING", DONE = "DONE";
     private static final String FAILED = "FAILED", SKIPPED = "SKIPPED";
     private static final String DEFAULT_IMAGE_PROMPT = "为这篇小记制作简洁的16:9象征性总览图。只表达原文已有主题；不编造人物、数字或事实，不绘制大段文字。";
@@ -54,6 +56,7 @@ public class NoteAiWorkflowService {
     /** 在小记保存响应返回前持久化本篇明确的自动选择；旧客户端不被静默开启。 */
     @Transactional
     public void beginIfRequested(String memberId, DocDto doc, CreateNoteRequest request) {
+        if (managed != null) return;
         if (!Boolean.TRUE.equals(request.autoTitle()) && !Boolean.TRUE.equals(request.autoImage())
                 && !Boolean.TRUE.equals(request.autoPolish())) return;
         if (memberId == null || !Objects.equals(memberId, doc.author())
@@ -68,12 +71,14 @@ public class NoteAiWorkflowService {
 
     /** 返回当前成员的真实阶段状态，不携带正文或其他成员数据。 */
     public List<Status> list(String memberId) {
-        return workflows.listOwned(memberId).stream().map(this::status).toList();
+        var owned=workflows.listOwned(memberId).stream().map(w -> managed != null && managed.managed(w.docId()) ? managed.status(w.docId(), memberId) : status(w)).filter(Objects::nonNull);
+        return managed==null?owned.toList():java.util.stream.Stream.concat(owned,managed.sharedStatuses(memberId).stream()).toList();
     }
 
     /** 本人保存新正文后自动废弃旧阶段任务，按既有选择整理最新内容。 */
     @Transactional
     public void refreshAfterSave(String memberId, String docId) {
+        if (managed != null && managed.managed(docId)) return;
         Workflow workflow = workflows.lock(docId);
         if (workflow == null || !Objects.equals(workflow.memberId(), memberId)) return;
         DocDto doc = ownedNote(workflow);
@@ -101,6 +106,7 @@ public class NoteAiWorkflowService {
     /** 失败后以当前已保存正文重新尝试失败阶段；完成阶段不重复消耗额度。 */
     @Transactional
     public Status retry(String memberId, String docId) {
+        if (managed != null) return managed.retry(memberId, docId);
         Workflow workflow = workflows.lock(docId);
         if (workflow == null || !workflow.memberId().equals(memberId)) throw new NotFoundException("小记自动整理任务不存在");
         DocDto doc = ownedNote(workflow);
@@ -124,6 +130,7 @@ public class NoteAiWorkflowService {
     /** 推进符合成员并发偏好的阶段；工作流行锁防止重复入队和条件写回冲突。 */
     @Transactional
     public void advance(String docId) {
+        if (managed != null) { managed.advance(docId); return; }
         Workflow workflow = workflows.lock(docId);
         if (workflow == null) return;
         Workflow original = workflow;
@@ -213,6 +220,7 @@ public class NoteAiWorkflowService {
     /** 阶段事务回滚后只标记实际失败阶段；并发重试、版本冲突及数据库恢复不被迟到错误覆盖。 */
     @Transactional
     public void failAdvance(String docId, RuntimeException error) {
+        if (managed != null && managed.managed(docId)) { managed.failed(docId,error); return; }
         if (!(error instanceof StageFailure failure) || !docId.equals(failure.original.docId())) return;
         for (Throwable cause = failure.getCause(); cause != null; cause = cause.getCause()) {
             if (cause instanceof org.springframework.dao.DataAccessException || cause instanceof ConflictException) return;
@@ -358,5 +366,8 @@ public class NoteAiWorkflowService {
     private Status status(Workflow w) {
         return new Status(w.docId(), w.titleStatus(), w.imageStatus(), w.polishStatus(), w.lastError());
     }
-    public record Status(String docId, String title, String image, String polish, String message) { }
+    public record StageDetail(String reasonCode, String message, boolean retryable, String action, String jobId, int sourceVersion) { }
+    public record Status(String docId, String title, String image, String polish, String message, java.util.Map<String,StageDetail> stages) {
+        public Status(String docId,String title,String image,String polish,String message) { this(docId,title,image,polish,message,java.util.Map.of()); }
+    }
 }
