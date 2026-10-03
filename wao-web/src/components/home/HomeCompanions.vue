@@ -3,6 +3,7 @@ import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import { companionEditing, companionQuiet as quiet, setCompanionQuiet } from '@/composables/quietCompanions'
 import type { createCompanionScene } from './companionScene'
 
+const emit = defineEmits<{ menu: [event: MouseEvent | KeyboardEvent, index: number] }>()
 const host = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
 const canvasKey = ref(0)
@@ -61,6 +62,11 @@ function toggleQuiet() {
   message.value = ''
 }
 watch([quiet, companionEditing], ([silent, editing]) => { controller?.setQuiet(silent || editing); message.value = '' })
+async function dance(index?: number) {
+  if (quiet.value) { toggleQuiet(); await nextTick() }
+  if (!controller?.dance(index)) say('收到邀请啦，今天轻轻摇摆就好。', 12, 12)
+}
+defineExpose({ dance, toggleQuiet, quiet })
 onMounted(load)
 onActivated(() => {
   active = true
@@ -90,8 +96,11 @@ onBeforeUnmount(() => {
       class="companion-target"
       :class="`companion-${index}`"
       :aria-label="`和${name}互动`"
-      :title="`${name}：轻点回应，拖动后松手回到原位`"
+      :title="`${name}：轻点回应，拖动后归位；右键或 Shift+F10 打开互动菜单`"
       :style="{ '--index': index }"
+      @contextmenu.stop.prevent="emit('menu', $event, index)"
+      @keydown.shift.f10.prevent.stop="emit('menu', $event, index)"
+      @keydown.contextmenu.prevent.stop="emit('menu', $event, index)"
       @click="!ready && say('慢慢来，我在呢。')"
     >
       <span class="companion-fallback" aria-hidden="true"

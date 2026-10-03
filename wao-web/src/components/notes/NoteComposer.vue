@@ -14,7 +14,7 @@ import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
-const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: 'floating'; compact?: boolean; active?: boolean }>(), { active: true })
+const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: 'floating' | 'home'; compact?: boolean; active?: boolean }>(), { active: true })
 const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string]; 'draft-change': [draft: NoteDraftSnapshot | null]; 'saving-change': [saving: boolean]; 'fullscreen-change': [fullscreen: boolean] }>()
 const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
@@ -26,7 +26,7 @@ const session = useSessionStore()
 const preferences = usePreferenceStore()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
-  : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}${props.draftScope === 'floating' ? ':floating' : ''}`
+  : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}${props.draftScope ? ':' + props.draftScope : ''}`
 type DraftBase = { title: string; tags: string[]; content: RichDocContent }
 type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string }
 let restored = false
