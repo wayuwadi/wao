@@ -96,6 +96,39 @@ describe('新建任务的落库反馈', () => {
     expect(task.subs[0]).toMatchObject({ text: '新子任务', number: 2 })
   })
 
+  it('非模态浮层收起与Esc只保留草稿，重开不丢标题且不创建任务', async () => {
+    const ui = useUiStore(); ui.openNewTask()
+    let w = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(w.find('.mask').exists()).toBe(false)
+    expect(w.get('[role="dialog"]').attributes('aria-modal')).toBeUndefined()
+    await w.get('.title-input').setValue('浮层草稿保持')
+    await w.get('.close').trigger('click')
+    expect(ui.modal).toBeNull()
+    expect(putTask).not.toHaveBeenCalled()
+    w.unmount(); ui.openNewTask()
+    w = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(w.get('.title-input').element).toHaveProperty('value', '浮层草稿保持')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(ui.modal).toBeNull()
+    expect(putTask).not.toHaveBeenCalled()
+    w.unmount()
+  })
+
+  it('草稿存储失败时不能通过关闭或切换小记丢失内存输入', async () => {
+    const ui = useUiStore(); ui.openNewTask()
+    const w = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    await w.get('.title-input').setValue('尚未持久化的输入')
+    await w.get('.close').trigger('click')
+    ui.openModal('note'); ui.closeModal()
+    expect(ui.modal).toBe('task')
+    expect(w.get('.title-input').element).toHaveProperty('value', '尚未持久化的输入')
+    blocked.mockRestore()
+    await w.get('.close').trigger('click')
+    expect(ui.modal).toBeNull()
+    w.unmount()
+  })
+
   it('截止日期默认不设置，不再自动落在今天', async () => {
     putTask.mockImplementation((id, task) => savedTask(id, task))
     const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
@@ -140,6 +173,8 @@ describe('新建任务的落库反馈', () => {
     expect(wrapper.find('.foot .btn-primary').text()).toContain('正在创建')
     expect(wrapper.find('.foot .btn-primary').attributes()).toHaveProperty('disabled')
     expect(wrapper.find('.close').attributes()).toHaveProperty('disabled')
+    useUiStore().openModal('note'); useUiStore().closeModal()
+    expect(useUiStore().modal).toBe('task')
     expect(useToastHost().items.some((item) => item.text.includes('已创建'))).toBe(false)
 
     confirm({ ...data.tasks[0]! })

@@ -15,6 +15,7 @@ const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
 const preferences = usePreferenceStore()
+const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
 
 /**
  * 快捷截止选项按真实「今天」推算：今天 / 明天 / 本周日 / 下周一；ISO 日期（日历双击带入）原样返回。
@@ -107,6 +108,9 @@ const desc = ref(draft.desc ?? source?.desc ?? '')
 const draftState = ref<'saving' | 'saved' | 'error'>('saved')
 const createState = ref<'idle' | 'submitting' | 'error'>('idle')
 const pendingTaskId = ref<string | null>(draft.pendingTaskId ?? null)
+watch([createState, draftState], () => {
+  ui.taskComposerLocked = createState.value === 'submitting' || draftState.value === 'error'
+}, { flush: 'sync' })
 let draftTimer: ReturnType<typeof setTimeout> | null = null
 
 function saveDraft() {
@@ -142,7 +146,7 @@ function restoreLegacyDraft() {
 }
 watch([title, project, owner, workItemType, pr, due, desc, scheduleMode, start, startAt, endAt], saveDraft, { flush: 'sync', immediate: !!source })
 
-onBeforeUnmount(() => { if (draftTimer) clearTimeout(draftTimer) })
+onBeforeUnmount(() => { if (draftTimer) clearTimeout(draftTimer); ui.taskComposerLocked = false })
 
 /**
  * 打开就把光标放进标题框。
@@ -227,6 +231,7 @@ async function create() {
     return
   }
   try { localStorage.removeItem(DRAFT_KEY) } catch { /* 服务器已确认保存，不阻止关闭表单。 */ }
+  ui.taskComposerLocked = false
   ui.closeModal()
   if (createdId && ui.modalOpenTaskAfterCreate) ui.openTask(createdId)
   toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
@@ -243,23 +248,23 @@ async function makeDefaultProject() {
   }
 }
 
-/** 写入正在飞行时不允许误关弹窗；失败后仍可关闭，草稿和本地任务都会保留。 */
-async function requestClose() {
+/** 收起只保存草稿；只有明确提交才创建任务，存储失败时保留当前表单。 */
+function requestClose() {
   if (createState.value === 'submitting') return
-  if (title.value.trim()) await create()
-  else if (desc.value.trim()) toast('请填写标题后保存，正文已保留', 'ri-information-line')
-  else ui.closeModal()
+  saveDraft()
+  if (draftState.value === 'error') return
+  ui.closeModal()
+  void nextTick(() => returnFocus?.isConnected && returnFocus.focus())
 }
 useOverlayDismiss(() => true, requestClose)
 </script>
 
 <template>
-  <div class="mask" @click="requestClose"></div>
-  <div class="modal task">
+  <div class="modal task quick-task-popover" role="dialog" :aria-label="source ? '添加到待办' : '新建任务'">
     <div class="head">
       <div class="title">{{ source ? '添加到待办' : '新建任务' }}</div>
       <div class="spacer"></div>
-      <button class="close" :disabled="createState === 'submitting'" @click="requestClose"><i class="ri-close-line"></i></button>
+      <button class="close" type="button" aria-label="收起任务，保留草稿" :disabled="createState === 'submitting'" @click="requestClose"><i class="ri-close-line"></i></button>
     </div>
     <div class="modal-body">
     <input
@@ -331,7 +336,7 @@ useOverlayDismiss(() => true, requestClose)
       <span v-else-if="draftState === 'error'" class="draft-state" role="alert">草稿未能写入本机，请保持弹窗打开。<button type="button" @click="saveDraft">重试</button></span>
       <span v-else class="draft-state"><i :class="draftState === 'saving' ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ draftState === 'saving' ? '正在保存草稿' : '草稿已保存' }}</span>
       <div class="spacer"></div>
-      <button class="btn-ghost" :disabled="createState === 'submitting'" @click="requestClose">完成并关闭</button>
+      <button class="btn-ghost" :disabled="createState === 'submitting'" @click="requestClose">收起</button>
       <button class="btn-primary" :disabled="!title.trim() || createState === 'submitting'" @click="create">
         <i v-if="createState === 'submitting'" class="ri-loader-4-line spin"></i>
         {{ createState === 'submitting' ? '正在创建' : createState === 'error' ? '重试创建' : '创建任务' }}
@@ -354,34 +359,25 @@ useOverlayDismiss(() => true, requestClose)
 .compact-select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text); }
 .source-note { margin: 8px 0 14px; font-size: 12px; line-height: 1.6; color: var(--wao-text-weak); overflow-wrap: anywhere; }
 .source-note a { color: var(--wao-primary-text); }
-.mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(23, 25, 35, 0.32);
-  z-index: 100;
-  animation: waoFade 0.15s ease;
-}
 .modal {
   position: fixed;
-  top: 6dvh;
-  /* 用 margin 居中而不是 transform：waoPop 动画也动 transform，
-     两者叠在一起时居中位移会被覆盖，卡片先偏右出现再跳回中间。 */
-  left: 0;
-  right: 0;
-  margin-inline: auto;
-  width: min(540px, calc(100vw - 40px));
-  max-height: 88dvh;
+  top: 64px;
+  left: auto;
+  right: 16px;
+  box-sizing: border-box;
+  width: min(460px, calc(100vw - 24px));
+  max-height: calc(100dvh - 80px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--wao-bg-card);
   border-radius: 14px;
-  z-index: 101;
+  z-index: 1100;
+  border: 1px solid var(--wao-line-control);
   box-shadow: var(--wao-shadow-modal);
-  animation: waoPop 0.16s ease;
   padding: 0;
 }
-.modal-body { min-height: 0; overflow-y: auto; padding: 0 22px 18px; }
+.modal-body { min-height: 0; overflow-y: auto; padding: 0 14px 14px; }
 .spacer {
   flex: 1;
 }
@@ -389,7 +385,7 @@ useOverlayDismiss(() => true, requestClose)
   display: flex;
   align-items: center;
   flex: none;
-  padding: 18px 22px 8px;
+  padding: 14px 14px 8px;
 }
 .title {
   font-size: 16px;
@@ -607,7 +603,7 @@ useOverlayDismiss(() => true, requestClose)
   align-items: center;
   gap: 10px;
   min-height: 64px;
-  padding: 10px 22px;
+  padding: 10px 14px;
   border-top: 1px solid var(--wao-divider);
   background: var(--wao-bg-card);
 }
@@ -665,20 +661,14 @@ useOverlayDismiss(() => true, requestClose)
 .btn-primary:hover:not(:disabled) {
   background: var(--wao-primary-hover);
 }
-/* 手机：改成从底部升起的整页表单。
-   居中弹窗在手机上会被键盘顶得只剩一条缝，标题框还常常被推到屏幕外；
-   贴底之后，输入框始终在键盘正上方，创建按钮固定在拇指够得到的地方。 */
+/* 与快速小记一致：窄屏留出边距，内容区滚动，操作区保持可见。 */
 @media (max-width: 760px) {
   .modal {
-    top: auto;
-    bottom: 0;
-    width: 100%;
-    max-width: none;
-    max-height: 92dvh;
-    border-radius: 16px 16px 0 0;
-    padding: 0;
-    animation: waoSheet 0.18s ease;
+    top: 12px;
+    right: 12px;
+    max-height: calc(100dvh - 24px);
   }
+  .close { width: 44px; height: 44px; }
   .head {
     background: var(--wao-bg-card);
     padding: 14px 14px 8px;
@@ -707,8 +697,5 @@ useOverlayDismiss(() => true, requestClose)
   .create-error { width: 100%; }
   .btn-ghost,
   .btn-primary { flex: 1; height: 44px; font-size: 14px; }
-}
-@keyframes waoSheet {
-  from { transform: translateY(24px); opacity: 0.6; }
 }
 </style>
