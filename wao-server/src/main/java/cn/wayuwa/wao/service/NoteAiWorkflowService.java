@@ -95,7 +95,7 @@ public class NoteAiWorkflowService {
                 title, titleChanged || bodyChanged && PENDING.equals(title) ? null : w.titleJobId(),
                 image, bodyChanged && PENDING.equals(image) ? null : w.imageRunId(),
                 polish, bodyChanged && PENDING.equals(polish) ? null : w.polishJobId(),
-                null, w.createdAt(), w.updatedAt());
+                w.errorAfter(title, image, polish, null), w.createdAt(), w.updatedAt());
     }
 
     /** 失败后以当前已保存正文重新尝试失败阶段；完成阶段不重复消耗额度。 */

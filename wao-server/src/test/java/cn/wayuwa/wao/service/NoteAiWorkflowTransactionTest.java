@@ -80,9 +80,18 @@ class NoteAiWorkflowTransactionTest {
             assertThat(failed.imageStatus()).isEqualTo("FAILED");
             assertThat(failed.polishStatus()).isEqualTo("PENDING");
             assertThat(failed.lastError()).contains("配图", "重试");
+            doReturn(new TextPolishJobService.Result("resumed-text", "QUEUED", null, null, null, null))
+                    .when(text).submit(any(), any(), any(), any(), any(), any(), any());
+            transaction.executeWithoutResult(status -> service.advance("synthetic"));
+            var progressed = transaction.execute(status -> mapper.lock("synthetic"));
+            assertThat(progressed.titleStatus()).isEqualTo("RUNNING");
+            assertThat(progressed.polishStatus()).isEqualTo("RUNNING");
+            assertThat(progressed.imageStatus()).isEqualTo("FAILED");
+            assertThat(progressed.lastError()).isEqualTo(failed.lastError());
             transaction.executeWithoutResult(status -> service.retry("member", "synthetic"));
             var retried = transaction.execute(status -> mapper.lock("synthetic"));
             assertThat(retried.imageStatus()).isEqualTo("PENDING");
+            assertThat(retried.lastError()).isNull();
             transaction.executeWithoutResult(status -> service.failAdvance("synthetic", (RuntimeException) error));
             assertThat(transaction.<Workflow>execute(status -> mapper.lock("synthetic"))).isEqualTo(retried);
         } finally { jdbc.execute("SHUTDOWN"); }

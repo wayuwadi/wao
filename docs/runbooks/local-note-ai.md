@@ -55,3 +55,5 @@ npm run test:unit -- --run src/__tests__/MarkdownEditor.spec.ts src/__tests__/No
 - 公网是否更新由正常部署证据判断；本地通过与 PR 合并不能写成已上线。
 
 阶段提交或回写异常的收口规则见 [阶段异常恢复](../specs/notes-workflow-stage-failure.md)。`python deploy/scripts/notes-ai-regression.py` 已包括 `NoteAiWorkflowTransactionTest`：只使用进程内 H2 验证先回滚再记录失败，以及重试不受旧错误覆盖。真实页面另按上面的步骤验收，不用隔离测试代替。
+
+失败后其他阶段继续处理、或只编辑标题时，未解决的失败原因应保持可见；重试后才清除。检查与边界见 [失败原因保留验收](../validation/notes-workflow-error-retention-2026-10-03.md)。聚合命令同时验证保留、重试清除及部分失败解除后的提示，不需单独调用模型。

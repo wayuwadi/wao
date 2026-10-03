@@ -101,6 +101,8 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 
 小记阶段异常恢复沿用已有成员状态和重试接口，新增的失败快照保护只在服务内部使用，不新增终端操作、MCP 工具或令牌权限，见 [阶段异常恢复](notes-workflow-stage-failure.md)。
 
+小记失败原因保留仅调整既有状态响应的 message 持久化语义，没有新增可操作能力，不新增 CLI / MCP；见 [未解决失败原因](notes-workflow-error-retention.md)。
+
 ADR-308 将天人一卦既有浏览器解读接入同一本机执行器，新增本人只读执行状态。现有 MCP 没有私有算卦权限，不增加 CLI 命令或扩大旧令牌；终端能力需另行设计成员授权和幂等语义，见 [天人一卦本机执行](tianren-local-codex.md)。
 
 ADR-306 恢复浏览器小记配图，以显式配置的本机 Codex 执行标题、润色、标签和 PNG 生成。服务主机的进程调用不是新的终端业务权限；沿用登录成员 HTTP API，不添加 Runner、MCP 或 CLI 领取 / 回调能力，不扩大旧令牌权限。终端批量处理仍需独立范围与版本条件设计。
