@@ -12,6 +12,7 @@ describe('TodoView', () => {
 
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
     seedDataStore(data)

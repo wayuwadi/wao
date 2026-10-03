@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, toRefs, watch } from 'vue'
+import { useBrowsingState, validPage } from '@/composables/browsingState'
 import { fetchGitReleaseHistory, type GitReleaseHistory } from '@/api/version'
 import { CURRENT_RELEASE } from '@/data/featureCatalog'
 import ExplorerPagination from './ExplorerPagination.vue'
 const records = ref<GitReleaseHistory | null>(null)
 const loading = ref(false)
 const error = ref('')
-const page = ref(1)
+const { page } = toRefs(useBrowsingState('git-history', { page: 1 }, { page: validPage }))
+watch([page, records], () => { if (records.value) page.value = Math.min(page.value, Math.max(1, Math.ceil(records.value.commits.length / 6))) })
 const sha = CURRENT_RELEASE.id.replace(/^git-release-/, '')
 const visible = computed(
   () => records.value?.commits.slice((page.value - 1) * 6, page.value * 6) ?? [],
@@ -17,6 +19,7 @@ async function load() {
   error.value = ''
   try {
     records.value = await fetchGitReleaseHistory(sha)
+    page.value = Math.min(page.value, Math.max(1, Math.ceil(records.value.commits.length / 6)))
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '读取失败，请重试'
   } finally {

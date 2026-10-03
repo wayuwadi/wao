@@ -1,9 +1,10 @@
+import { createPinia, setActivePinia } from 'pinia'
 vi.mock('ant-design-vue', () => ({
   Modal: { props: ['open'], template: '<div v-if="open" role="dialog"><slot /></div>' },
 }))
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import ReleaseHistory from '@/components/release/ReleaseHistory.vue'
 import { CURRENT_RELEASE, RELEASE_HISTORY } from '@/data/featureCatalog'
 import { MODULES } from '@/config/nav'
@@ -57,3 +58,5 @@ describe('最近更新档案', () => {
     wrapper.unmount()
   })
 })
+
+beforeEach(() => { sessionStorage.clear(); setActivePinia(createPinia()) })

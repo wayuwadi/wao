@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRefs, watch } from 'vue'
+import { useBrowsingState, validPage, oneOf } from '@/composables/browsingState'
 import { Modal } from 'ant-design-vue'
 import { useRoute } from 'vue-router'
 import GitCommitHistory from './GitCommitHistory.vue'
@@ -7,11 +8,12 @@ import ExplorerPagination from './ExplorerPagination.vue'
 import ReleaseEditionContent from './ReleaseEditionContent.vue'
 import { CURRENT_RELEASE, RELEASE_HISTORY } from '@/data/featureCatalog'
 import type { ReleaseEdition } from '@/types/featureExplorer'
-const mode = ref<'curated' | 'commits'>('curated')
-const page = ref(1)
-const loadedCommits = ref(false)
+const { mode, page } = toRefs(useBrowsingState('release-history', { mode: 'curated' as 'curated' | 'commits', page: 1 }, { mode: oneOf('curated', 'commits'), page: validPage }))
+const loadedCommits = ref(mode.value === 'commits')
+watch(mode, value => { if (value === 'commits') loadedCommits.value = true })
 const selected = ref<ReleaseEdition | null>(null)
 const editions = RELEASE_HISTORY.filter((item) => item.id !== CURRENT_RELEASE.id)
+watch(page, () => { page.value = Math.min(page.value, Math.max(1, Math.ceil(editions.length / 3))) }, { immediate: true })
 const visible = computed(() => editions.slice((page.value - 1) * 3, page.value * 3))
 function selectMode(value: 'curated' | 'commits') {
   mode.value = value

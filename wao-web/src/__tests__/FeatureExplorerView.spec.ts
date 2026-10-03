@@ -1,9 +1,11 @@
+import { useSessionStore } from '@/stores/session'
+import { createPinia, setActivePinia } from 'pinia'
 vi.mock('ant-design-vue', () => ({
   Modal: { props: ['open'], template: '<div v-if="open" role="dialog"><slot /></div>' },
 }))
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FeatureExplorerView from '@/views/FeatureExplorerView.vue'
 import { FEATURE_CATALOG } from '@/data/featureCatalog'
 const Modal = { props: ['open'], template: '<div v-if="open" role="dialog"><slot /></div>' }
@@ -79,4 +81,22 @@ describe('功能探索', () => {
     wrapper.unmount()
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: old })
   })
+})
+
+beforeEach(() => { sessionStorage.clear(); setActivePinia(createPinia()) })
+
+it('卸载后重建恢复分类与页码，明确深链覆盖记住的 Tab', async () => {
+  useSessionStore().accept({ accountId: 'a', member: { id: 'a', name: 'a', initial: 'a', color: '', role: '' }, identities: [], createdAt: '' })
+  const first = await render()
+  await first.wrapper.get('#all-features [aria-label="下一页"]').trigger('click')
+  const title = first.wrapper.get('.catalog-card h3').text()
+  await first.wrapper.get('#explorer-tab-recent-updates').trigger('click'); await flushPromises()
+  first.wrapper.unmount()
+  const restored = await render()
+  expect(restored.wrapper.get('#explorer-tab-recent-updates').attributes('aria-selected')).toBe('true')
+  restored.wrapper.unmount()
+  const linked = await render('#all-features')
+  expect(linked.wrapper.get('#explorer-tab-all-features').attributes('aria-selected')).toBe('true')
+  expect(linked.wrapper.get('.catalog-card h3').text()).toBe(title)
+  linked.wrapper.unmount()
 })

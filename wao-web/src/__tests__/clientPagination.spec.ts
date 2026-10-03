@@ -26,4 +26,15 @@ describe('client result pagination', () => {
     expect(page.value).toBe(2)
     expect(visible.value).toEqual([11])
   })
+  it('恢复页码先等待数据与布局，加载后校正，主动筛选才重置', async () => {
+    const all = ref<number[]>([]), ready = ref(false), saved = ref(3), query = ref('')
+    const { page } = useClientPagination(computed(() => all.value), [query], 10, { page: saved, ready: () => ready.value })
+    expect(page.value).toBe(3)
+    all.value = Array.from({ length: 35 }, (_, index) => index); query.value = 'restored'; ready.value = true
+    await nextTick(); expect(page.value).toBe(3)
+    all.value = [1]; await nextTick(); expect(page.value).toBe(1)
+    all.value = Array.from({ length: 35 }, (_, index) => index); saved.value = 3
+    await nextTick(); query.value = 'new'; await nextTick(); expect(page.value).toBe(1)
+  })
+
 })

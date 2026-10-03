@@ -1,3 +1,4 @@
+import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -39,3 +40,5 @@ describe('自动提交记录', () => {
     wrapper.unmount()
   })
 })
+
+beforeEach(() => { sessionStorage.clear(); setActivePinia(createPinia()) })

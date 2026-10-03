@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRefs, watch } from 'vue'
+import { useBrowsingState, validSearch, validPage } from '@/composables/browsingState'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -25,7 +26,7 @@ const { decoProj } = useDeco()
 if (route.query.view === 'mytasks') router.replace('/todo')
 
 // ---------- 项目视图 ----------
-const q = ref('')
+const { q, projectPage } = toRefs(useBrowsingState('projects', { q: '', projectPage: 1 }, { q: validSearch, projectPage: validPage }))
 // 项目状态已下线：项目只看任务推进，不再手工标「进行中 / 有风险」。
 const groupBy = computed(() => layout.state.grouping)
 const sortBy = computed(() => layout.state.sort)
@@ -76,7 +77,7 @@ const filteredProjects = computed(() => {
   }
   return list.slice().sort(sorts[sortBy.value]!)
 })
-const { page: projectPage, pageCount: projectPageCount, visible: visibleProjects } = useClientPagination(filteredProjects, [q, sortBy])
+const { pageCount: projectPageCount, visible: visibleProjects } = useClientPagination(filteredProjects, [q, sortBy], 10, { page: projectPage, ready: () => data.loadStates.projects === 'loaded' && layout.state.loaded })
 
 const projGroups = computed(() => {
   const list = visibleProjects.value

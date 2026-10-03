@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRefs, watch } from 'vue'
+import { useBrowsingState, oneOf, validSearch } from '@/composables/browsingState'
 import { TODO_DUE_GROUPS, todoDueGroup } from '@/utils/todoDueGroups'
 import { isTaskFinished } from '@/utils/projectCompletion'
 import { useDataStore } from '@/stores/data'
@@ -13,7 +14,7 @@ import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { copyText } from '@/utils/clipboard'
 import { shareUrl } from '@/utils/share'
-import { readTodoTaskView, type TodoTaskView } from '@/utils/taskQuadrants'
+import { type TodoTaskView } from '@/utils/taskQuadrants'
 
 const data = useDataStore()
 const session = useSessionStore()
@@ -21,12 +22,12 @@ const ui = useUiStore()
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const { decoTask } = useDeco()
 
-const taskFilter = ref<'全部' | '我负责' | '我参与' | '等待他人'>('全部')
-const projectFilter = ref('all')
-const taskView = ref<TodoTaskView>(readTodoTaskView())
-watch(taskView, (view) => {
-  try { localStorage.setItem('wao-todo-view-v1', view) } catch { /* 存储不可用不阻断视图 */ }
-})
+const { taskFilter, projectFilter, taskView, showDone } = toRefs(useBrowsingState('todo', {
+  taskFilter: '全部' as '全部' | '我负责' | '我参与' | '等待他人', projectFilter: 'all', taskView: 'list' as TodoTaskView, showDone: false as boolean,
+}, { taskFilter: oneOf('全部', '我负责', '我参与', '等待他人'), projectFilter: validSearch, taskView: oneOf('list', 'board', 'quadrant'), showDone: value => typeof value === 'boolean' }))
+watch([() => data.loadStates.projects, () => data.projects.map(project => project.id), projectFilter], () => {
+  if (data.loadStates.projects === 'loaded' && !['all', 'unassigned'].includes(projectFilter.value) && !data.projects.some(project => project.id === projectFilter.value)) projectFilter.value = 'all'
+}, { immediate: true })
 
 const myList = computed(() => {
   const me = session.currentUser.id
@@ -41,7 +42,6 @@ const myList = computed(() => {
 })
 
 // 已完成默认收起，点分组标题展开；勾完成后先原地停留 3 秒再归到「已完成」里。
-const showDone = ref(false)
 const { toggle: toggleTask, isSettling } = useCompletionSettle()
 
 /** 已完成任务倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
