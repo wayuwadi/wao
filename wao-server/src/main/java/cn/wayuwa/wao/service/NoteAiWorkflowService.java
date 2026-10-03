@@ -141,14 +141,8 @@ public class NoteAiWorkflowService {
         // 标签等元信息可独立保存；正文与标题没有变化时沿用当前版本继续 CAS。
         if (doc.rev() != workflow.baseRev()) workflow = workflow.withRev(doc.rev());
         int capacity = executionCapacity(workflow.memberId());
-        if (capacity == 1) {
-            if (active(workflow.titleStatus())) { advanceStage(workflow, "title", original); return; }
-            if (active(workflow.imageStatus())) { advanceStage(workflow, "image", original); return; }
-            if (active(workflow.polishStatus())) advanceStage(workflow, "polish", original);
-            return;
-        }
-
-        // 先续查已经入队的阶段，再按标题、配图、润色的顺序填充空闲槽位。
+        // 串行与并行均共享成员槽位；切换为串行后仍续查先前已入队的阶段。
+        // 按标题、配图、润色的顺序填充空闲槽位。
         // 三个阶段可同时运行；润色版本会以图片写回后的最终 Markdown 保存。
         for (String stage : List.of("title", "image", "polish")) {
             String status = stageStatus(workflow, stage);

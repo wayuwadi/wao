@@ -17,7 +17,8 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,7 +28,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /** 真实状态表与调度批次验证队列继续推进，模型与文档出口隔离，不连接共享库。 */
 class NoteAiWorkflowQueueTest {
-    @Test void thirtyOlderWaitingNotesCannotHideCompletedJobsAndHoldAllMemberSlots() throws Exception {
+    @ParameterizedTest @ValueSource(ints = {1, 3})
+    void waitingNotesReleaseCompletedJobsAndRespectSharedMemberCapacity(int capacity) throws Exception {
         var ds = new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
         var jdbc = new JdbcTemplate(ds);
         jdbc.execute("""
@@ -48,7 +50,7 @@ class NoteAiWorkflowQueueTest {
         var transaction = new TransactionTemplate(new DataSourceTransactionManager(ds));
         String body = "合成排队验收：三项已经完成，其他三十篇正在等待释放入队名额。";
         String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(body.getBytes(StandardCharsets.UTF_8)));
-        for (int i = 0; i < 33; i++) {
+        for (int i = 0; i < 30 + capacity; i++) {
             boolean running = i >= 30;
             mapper.insertIfAbsent(new Workflow("note" + i, "member", 1, "合成标题", hash,
                     running ? "RUNNING" : "PENDING", running ? "job" + i : null,
@@ -71,20 +73,23 @@ class NoteAiWorkflowQueueTest {
                 call.getArgument(1), "SUCCEEDED", null, "合成已完成", null, null));
         when(text.submit(any(), any(), any(), any(), any(), any(), any())).thenAnswer(call ->
                 new TextPolishJobService.Result(UUID.randomUUID().toString(), "QUEUED", null, null, null, null));
+        var preferences = mock(MemberPreferenceMapper.class);
+        if (capacity == 1) when(preferences.find("member", "note-ai-defaults-v1"))
+                .thenReturn("{\"executionMode\":\"serial\",\"maxConcurrent\":3}");
         var service = new NoteAiWorkflowService(mapper, docs, knowledge, text, mock(ArticleImageService.class),
-                mock(NotePolishVersionService.class), mock(MemberPreferenceMapper.class), new ObjectMapper());
+                mock(NotePolishVersionService.class), preferences, new ObjectMapper());
         try {
-            assertThat(mapper.countRunningStages("member")).isEqualTo(3);
+            assertThat(mapper.countRunningStages("member")).isEqualTo(capacity);
             var batch = mapper.pendingDocIds(30);
             for (String id : batch) transaction.executeWithoutResult(status -> service.advance(id));
-            for (int i = 30; i < 33; i++) {
+            for (int i = 30; i < 30 + capacity; i++) {
                 String id = "note" + i;
                 assertThat(transaction.execute(status -> mapper.lock(id)).titleStatus()).as(id).isEqualTo("DONE");
             }
-            // 已完成的三项释放槽位，等待者继续入队且不超过原有上限。
-            verify(text, times(3)).get(eq("member"), any());
-            verify(text, times(3)).submit(any(), any(), any(), any(), any(), any(), any());
-            assertThat(mapper.countRunningStages("member")).isEqualTo(3);
+            // 已完成项释放槽位，多个小记的等待者共用成员上限。
+            verify(text, times(capacity)).get(eq("member"), any());
+            verify(text, times(capacity)).submit(any(), any(), any(), any(), any(), any(), any());
+            assertThat(mapper.countRunningStages("member")).isEqualTo(capacity);
         } finally { jdbc.execute("SHUTDOWN"); }
     }
 

@@ -172,6 +172,7 @@ class NoteAiWorkflowServiceTest {
         String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2);
         Workflow workflow = pendingAll("d1", "m1");
         when(workflows.lock("d1")).thenReturn(workflow);
+        when(workflows.countRunningStages("m1")).thenReturn(0, 1);
         when(preferences.find("m1", "note-ai-defaults-v1"))
                 .thenReturn("{\"executionMode\":\"serial\",\"maxConcurrent\":5}");
         DocEntity entity = new DocEntity();
@@ -184,8 +185,23 @@ class NoteAiWorkflowServiceTest {
         service.advance("d1");
 
         verify(textJobs).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_TITLE"), any(), any(), any(), any());
-        verify(images, never()).start(any(), any());
+        verify(images, never()).startNoteWorkflow(any(), any());
         verify(textJobs, never()).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_BODY"), any(), any(), any(), any());
+    }
+
+    @Test void switchingToSerialStillReadsAlreadyQueuedStagesWhileOtherNotesHoldTheSlot() {
+        Workflow w = pendingAll("d1", "m1").withImage("RUNNING", "image1", 1,
+                digestForTest(failureBody()), null);
+        when(workflows.lock("d1")).thenReturn(w);
+        when(workflows.countRunningStages("m1")).thenReturn(2);
+        when(preferences.find("m1", "note-ai-defaults-v1"))
+                .thenReturn("{\"executionMode\":\"serial\"}");
+        owned(note("m1", 1, failureBody()));
+        when(images.get("m1", "image1")).thenReturn(new ArticleImageJobDto("image1", "RUNNING", "处理中", null));
+        service.advance("d1");
+        verify(images).get("m1", "image1");
+        verify(textJobs, never()).submit(any(), any(), any(), any(), any(), any(), any());
+        verify(images, never()).startNoteWorkflow(any(), any());
     }
 
     private static Workflow pendingAll(String docId, String memberId) {
