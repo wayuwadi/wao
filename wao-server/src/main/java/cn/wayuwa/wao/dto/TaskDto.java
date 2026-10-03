@@ -38,7 +38,30 @@ public record TaskDto(
         String createdAt,
         /** 关联的人工上传 HTML 托管页 id；历史任务缺省为空。 */
         List<String> hostedPages,
-        /** 服务端分配的永久编号，从 0 开始。 */ Long number, String subtaskVersion, String editVersion, String parentTaskId, String workItemType) {
+        /** 服务端分配的永久编号，从 0 开始。 */ Long number, String subtaskVersion, String editVersion, String parentTaskId, String workItemType,
+        /** 粗粒度执行时段，仅与无精确时间的 start 并存。 */ String schedulePeriod) {
+    /** 兼容未携带粗粒度排时的历史构造。 */
+    public TaskDto(String id, String title, String project, String status, String pr, String owner,
+            List<String> parts, String start, String due, String waiting, String desc,
+            List<Step> steps, List<Step> subs, List<FileRef> files, List<String> docs,
+            List<TaskLink> linkTasks, List<CommentDto> comments, List<CustomProp> custom,
+            List<Activity> activity, List<ImageRef> images, String createdBy, String completedAt,
+            String groupId, String startAt, String endAt, List<PdcaCycle> pdcaCycles, String createdAt,
+            List<String> hostedPages, Long number, String subtaskVersion, String editVersion,
+            String parentTaskId, String workItemType) {
+        this(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs,
+                files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt,
+                groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion,
+                editVersion, parentTaskId, workItemType, null);
+    }
+
+    /** 保留全部任务内容，仅替换排时字段。 */
+    public TaskDto withSchedule(String newStart, String newStartAt, String newEndAt, String period) {
+        return new TaskDto(id, title, project, status, pr, owner, parts, newStart, due, waiting, desc,
+                steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy,
+                completedAt, groupId, newStartAt, newEndAt, pdcaCycles, createdAt, hostedPages,
+                number, subtaskVersion, editVersion, parentTaskId, workItemType, period);
+    }
     /** 兼容未携带工作项类型的历史调用。 */
     public TaskDto(String id,
         String title,
@@ -79,7 +102,7 @@ public record TaskDto(
     }
     /** 返回指定工作项类型的副本。 */
     public TaskDto withWorkItemType(String type) {
-        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion, editVersion, parentTaskId, type);
+        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion, editVersion, parentTaskId, type, schedulePeriod);
     }
 
 
@@ -96,7 +119,7 @@ public record TaskDto(
 
     /** 父子关系由专用接口维护，普通全文保存不接受覆盖。 */
     public TaskDto withParentTaskId(String parent) {
-        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion, editVersion, parent, workItemType);
+        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion, editVersion, parent, workItemType, schedulePeriod);
     }
 
     /** 兼容仅携带子任务版本的既有调用。 */
@@ -151,12 +174,12 @@ public record TaskDto(
 
     /** 返回携带完整编辑快照前置条件的副本。 */
     public TaskDto withEditVersion(String version) {
-        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion, version, parentTaskId, workItemType);
+        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion, version, parentTaskId, workItemType, schedulePeriod);
     }
 
     /** 返回携带子任务保存前置条件的副本。 */
     public TaskDto withSubtaskVersion(String version) {
-        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, version, editVersion, parentTaskId, workItemType);
+        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, version, editVersion, parentTaskId, workItemType, schedulePeriod);
     }
 
     /** 兼容尚未引入固定编号的调用；外部编号一律由服务端重算。 */
@@ -172,7 +195,7 @@ public record TaskDto(
 
     /** 返回带服务端编号与规范子任务身份的副本。 */
     public TaskDto withNumbers(Long number, List<Step> subs) {
-        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion, editVersion, parentTaskId, workItemType);
+        return new TaskDto(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs, files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt, groupId, startAt, endAt, pdcaCycles, createdAt, hostedPages, number, subtaskVersion, editVersion, parentTaskId, workItemType, schedulePeriod);
     }
 
     /** 兼容尚未引入 HTML 关联的既有调用。 */

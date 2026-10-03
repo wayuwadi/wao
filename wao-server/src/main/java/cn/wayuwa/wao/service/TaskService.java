@@ -44,6 +44,8 @@ public class TaskService {
     private final MemberService members;
     private final ProjectService projects;
     private final WorkItemNumberService numbers;
+    @org.springframework.beans.factory.annotation.Autowired
+    private TodoHistoryService todoHistory;
 
     public TaskService(TaskMapper taskMapper, ObjectMapper json, FeishuCommentNotifier commentNotifier,
             FeishuTaskNotifier taskNotifier, MemberService members, ProjectService projects, WorkItemNumberService numbers) {
@@ -111,6 +113,7 @@ public class TaskService {
      * @param createdBy 当前创建人的成员 id；历史兼容调用可为空
      * @return 创建后的任务
      */
+    @org.springframework.transaction.annotation.Transactional
     public TaskDto create(CreateTaskRequest req, String createdBy) {
         requireProjectVisible(req.project(), createdBy);
         TaskEntity e = new TaskEntity();
@@ -136,6 +139,7 @@ public class TaskService {
                 startAt, endAt, pdcaCycles).withWorkItemType(workItemType(req.workItemType(), null));
         e.setDetailJson(write(detail));
         taskMapper.insert(e);
+        recordTodo(null, e, createdBy, "CREATED", null);
         announceCreated(e, createdBy);
         return toDto(e);
     }
@@ -152,6 +156,7 @@ public class TaskService {
         requireProjectVisible(entity.getProjectId(), memberId);
         if (!expectedVersion.equals(SubtaskTree.version(parse(entity.getDetailJson()).subs())))
             throw new cn.wayuwa.wao.common.ConflictException("子任务已有更新，请重新读取后重试");
+        TaskEntity before = historyCopy(entity);
         try {
             var detail = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(entity.getDetailJson());
             var subs = detail.path("subs");
@@ -169,6 +174,7 @@ public class TaskService {
                 String stored = json.writeValueAsString(detail);
                 taskMapper.updateDetail(id, stored);
                 entity.setDetailJson(stored);
+                recordTodo(before, entity, memberId, "STEP_CHANGED", null);
                 return toDto(entity);
             }
             throw new NotFoundException("子任务不存在");
@@ -186,8 +192,12 @@ public class TaskService {
      * @return 更新后的任务
      * @throws NotFoundException 任务不存在时
      */
+    @org.springframework.transaction.annotation.Transactional
     public TaskDto patch(String id, PatchTaskRequest req, String memberId) {
-        TaskEntity e = requireVisible(id, memberId);
+        requireVisible(id, memberId);
+        TaskEntity e = taskMapper.lockById(id);
+        if (e == null) throw new NotFoundException("任务不存在");
+        TaskEntity before = historyCopy(e);
         String previousStatus = e.getStatus();
         TaskDetail d = parse(e.getDetailJson());
         List<Activity> activity = new ArrayList<>(nn(d.activity()));
@@ -227,9 +237,11 @@ public class TaskService {
 
         TaskDetail updated = new TaskDetail(d.parts(), d.steps(), d.subs(), d.files(), d.docs(),
                 d.linkTasks(), d.comments(), d.custom(), activity, d.images(), d.groupId(),
-                d.startAt(), d.endAt(), d.pdcaCycles(), d.hostedPages(), d.workItemType());
+                d.startAt(), d.endAt(), d.pdcaCycles(), d.hostedPages(), d.workItemType(),
+                StringUtils.hasText(e.getStartDate()) && !StringUtils.hasText(d.startAt()) ? d.schedulePeriod() : null);
         e.setDetailJson(write(updated));
         taskMapper.updateById(e);
+        recordTodo(before, e, memberId, "TASK_CHANGED", null);
         announceCollecting(e, previousStatus, memberId);
         announceStatusChanged(e, previousStatus, memberId);
         return toDto(e);
@@ -300,13 +312,16 @@ public class TaskService {
         SubtaskTree.validate(dto.subs());
         TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
                 dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images(),
-                dto.groupId(), startAt, endAt, pdcaCycles, dto.hostedPages(), workItemType(dto.workItemType(), previous));
+                dto.groupId(), startAt, endAt, pdcaCycles, dto.hostedPages(), workItemType(dto.workItemType(), previous),
+                compatiblePeriod(dto, previous, startAt));
         e.setDetailJson(write(detail));
         if (previous == null) {
             taskMapper.insert(e);
+            recordTodo(null, e, memberId, "CREATED", null);
             announceCreated(e, memberId);
         } else {
             taskMapper.updateById(e);
+            recordTodo(previous, e, memberId, "TASK_CHANGED", null);
             announceNewSubs(e, previous, dto.subs(), memberId);
         }
         announceCollecting(e, previousStatus, memberId);
@@ -329,6 +344,7 @@ public class TaskService {
         if (!COLLECTING.equals(entity.getStatus()) || COLLECTING.equals(previousStatus)) {
             return;
         }
+        afterCommit(() -> {
         try {
             taskNotifier.notifyCollecting(entity.getId(), entity.getProjectId(), entity.getTitle(),
                     projectName(entity.getProjectId()), entity.getDescription(), taskNotifier.feishuOpenId(memberId));
@@ -336,16 +352,19 @@ public class TaskService {
             // 通知失败不该让状态改不动：状态已经落库，群里没收到最多是少一次提醒
             LOG.warn("任务进入收集中的飞书通知发送失败：{}", ex.getMessage());
         }
+        });
     }
 
     /** 新建任务后同步到飞书群；通知失败只记日志，不影响创建结果。 */
     private void announceCreated(TaskEntity entity, String creatorId) {
+        afterCommit(() -> {
         try {
             taskNotifier.notifyTaskCreated(entity.getId(), entity.getProjectId(), entity.getTitle(),
                     projectName(entity.getProjectId()), memberName(creatorId), entity.getDescription());
         } catch (RuntimeException ex) {
             LOG.warn("新建任务的飞书通知发送失败：{}", ex.getMessage());
         }
+        });
     }
 
     /**
@@ -357,12 +376,14 @@ public class TaskService {
                 || COLLECTING.equals(entity.getStatus()) || previousStatus == null) {
             return;
         }
+        afterCommit(() -> {
         try {
             taskNotifier.notifyStatusChanged(entity.getId(), entity.getProjectId(), entity.getTitle(),
                     projectName(entity.getProjectId()), previousStatus, entity.getStatus(), memberName(memberId));
         } catch (RuntimeException ex) {
             LOG.warn("任务状态变化的飞书通知发送失败：{}", ex.getMessage());
         }
+        });
     }
 
     /**
@@ -387,6 +408,7 @@ public class TaskService {
         if (added.isEmpty()) {
             return;
         }
+        afterCommit(() -> {
         try {
             taskNotifier.notifySubtasksAdded(entity.getId(), entity.getProjectId(), entity.getTitle(),
                     projectName(entity.getProjectId()), added, memberName(memberId),
@@ -394,6 +416,7 @@ public class TaskService {
         } catch (RuntimeException ex) {
             LOG.warn("新增子任务的飞书通知发送失败：{}", ex.getMessage());
         }
+        });
     }
 
     /**
@@ -449,6 +472,7 @@ public class TaskService {
      * @param source    标签值，例如「群聊快速收集」
      * @return 创建出来的任务
      */
+    @org.springframework.transaction.annotation.Transactional
     public TaskDto createFromChat(String projectId, String title, String desc, String ownerId, String source) {
         requireProjectVisible(projectId, ownerId);
         TaskEntity e = new TaskEntity();
@@ -470,6 +494,7 @@ public class TaskService {
                 List.of(), null);
         e.setDetailJson(write(detail));
         taskMapper.insert(e);
+        recordTodo(null, e, ownerId, "CREATED", null);
         return toDto(e);
     }
 
@@ -485,15 +510,19 @@ public class TaskService {
      * @param ownerId 原飞书发言人对应的成员 id，用于校验任务可见性
      * @return 更新后的任务
      */
+    @org.springframework.transaction.annotation.Transactional
     public TaskDto updateFromChat(String id, String title, String desc, String ownerId) {
         TaskEntity e = requireVisible(id, ownerId);
+        TaskEntity before = historyCopy(e);
         String nextTitle = title == null ? "" : title.trim();
         String nextDescription = desc == null ? "" : desc;
         if (nextTitle.equals(e.getTitle()) && nextDescription.equals(nz(e.getDescription()))) {
             return toDto(e);
         }
         taskMapper.updateChatSourceFields(id, nextTitle, nextDescription);
-        return toDto(require(id));
+        TaskEntity updated = require(id);
+        recordTodo(before, updated, ownerId, "TASK_CHANGED", null);
+        return toDto(updated);
     }
 
     /**
@@ -592,9 +621,11 @@ public class TaskService {
      * @param memberId 当前登录成员 id
      * @throws NotFoundException 任务不存在或所属项目对当前成员不可见时
      */
+    @org.springframework.transaction.annotation.Transactional
     public void delete(String id, String memberId) {
-        requireVisible(id, memberId);
+        TaskEntity previous = requireVisible(id, memberId);
         taskMapper.deleteById(id);
+        recordTodo(previous, null, memberId, "DELETED", null);
     }
 
     /**
@@ -605,8 +636,13 @@ public class TaskService {
      * @param id 快速收集事件记录的任务 id
      * @return 本次是否实际删除了一条任务
      */
+    @org.springframework.transaction.annotation.Transactional
     public boolean deleteFromChat(String id) {
-        return StringUtils.hasText(id) && taskMapper.deleteById(id) > 0;
+        if (!StringUtils.hasText(id)) return false;
+        TaskEntity previous = taskMapper.selectById(id);
+        if (taskMapper.deleteById(id) == 0) return false;
+        if (previous != null) recordTodo(previous, null, previous.getOwnerId(), "DELETED", null);
+        return true;
     }
 
     /** 评论定位：优先按 id，老评论（没有 id）回落到下标。 */
@@ -640,12 +676,43 @@ public class TaskService {
         activity.add(0, edit(activityText, memberId));
         entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
                 detail.linkTasks(), comments, detail.custom(), activity, detail.images(), detail.groupId(),
-                detail.startAt(), detail.endAt(), detail.pdcaCycles(), detail.hostedPages(), detail.workItemType())));
+                detail.startAt(), detail.endAt(), detail.pdcaCycles(), detail.hostedPages(), detail.workItemType(), detail.schedulePeriod())));
         taskMapper.updateById(entity);
     }
 
     private static String blankOr(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private TaskEntity historyCopy(TaskEntity entity) {
+        return todoHistory == null ? null : todoHistory.copy(entity);
+    }
+
+    private void recordTodo(TaskEntity before, TaskEntity after, String actor, String type, String operationId) {
+        if (todoHistory != null) todoHistory.record(before, after, actor, type, operationId);
+    }
+
+    private static void afterCommit(Runnable callback) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+            callback.run();
+            return;
+        }
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCommit() { callback.run(); }
+                });
+    }
+
+    private String compatiblePeriod(TaskDto incoming, TaskEntity previous, String startAt) {
+        // A legacy full save that explicitly switches to exact time or clears the date wins over stale period data.
+        if (!StringUtils.hasText(incoming.start()) || StringUtils.hasText(startAt)) return null;
+        String period = incoming.schedulePeriod();
+        if (period == null && previous != null) {
+            period = parse(previous.getDetailJson()).schedulePeriod();
+        }
+        if (period != null && !Set.of("MORNING", "AFTERNOON", "EVENING").contains(period))
+            throw new BadRequestException("执行时段无效");
+        return period;
     }
 
     private TaskEntity require(String id) {
@@ -716,7 +783,7 @@ public class TaskService {
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
                 d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()),
-                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs())).withEditVersion(editVersion(e)).withParentTaskId(e.getParentTaskId()).withWorkItemType(d.workItemType() == null ? "task" : d.workItemType());
+                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages())).withSubtaskVersion(SubtaskTree.version(d.subs())).withEditVersion(editVersion(e)).withParentTaskId(e.getParentTaskId()).withWorkItemType(d.workItemType() == null ? "task" : d.workItemType()).withSchedule(e.getStartDate(), d.startAt(), d.endAt(), d.schedulePeriod());
     }
 
     /**

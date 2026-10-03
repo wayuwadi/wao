@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class TaskHierarchyService {
     private final TaskMapper mapper;
     private final TaskService tasks;
+    @org.springframework.beans.factory.annotation.Autowired
+    private TodoHistoryService todoHistory;
     public TaskHierarchyService(TaskMapper mapper, TaskService tasks) { this.mapper = mapper; this.tasks = tasks; }
 
     /** 同项目内原子调整父任务；校验权限、旧关系和环，null 表示移回顶层。 */
@@ -41,6 +43,11 @@ public class TaskHierarchyService {
             }
         }
         mapper.updateParent(id, parent);
+        if (todoHistory != null) {
+            TaskEntity after = todoHistory.copy(current);
+            after.setParentTaskId(parent);
+            todoHistory.record(current, after, memberId, "HIERARCHY_CHANGED", null);
+        }
         return tasks.get(id, memberId);
     }
     private static String blank(String value) { return value == null || value.isBlank() ? null : value; }

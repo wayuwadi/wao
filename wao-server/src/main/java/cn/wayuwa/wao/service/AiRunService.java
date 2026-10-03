@@ -83,6 +83,8 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @Service
 public class AiRunService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private TodoHistoryService todoHistory;
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(AiRunService.class);
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -2064,10 +2066,12 @@ public class AiRunService {
     private void setTaskStatus(String taskId, String status) {
         TaskEntity task = taskMapper.selectById(taskId);
         if (task == null) return;
+        TaskEntity before = todoHistory == null ? null : todoHistory.copy(task);
         task.setStatus(status);
         // 已完成的任务被重新派给 AI 时，旧的完成时间不再成立
         if (!TaskService.DONE.equals(status)) task.setCompletedAt(null);
         taskMapper.updateById(task);
+        if (todoHistory != null) todoHistory.record(before, task, null, "TASK_CHANGED", null);
     }
 
     private long countRuns(LambdaQueryWrapper<AiTaskRunEntity> query) {

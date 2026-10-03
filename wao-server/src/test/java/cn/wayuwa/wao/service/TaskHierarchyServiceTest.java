@@ -15,7 +15,7 @@ class TaskHierarchyServiceTest {
     final TaskHierarchyService service = new TaskHierarchyService(mapper, tasks);
     TaskEntity row(String id, String parent) {
         TaskEntity row = new TaskEntity(); row.setId(id); row.setProjectId("p"); row.setParentTaskId(parent);
-        row.setDescription("正文"); row.setDetailJson("{\"files\":[{\"id\":\"file\"}],\"custom\":[1],\"subs\":[{\"id\":\"s\"}]}");
+        row.setDescription("正文"); row.setDetailJson("{\"files\":[{\"id\":\"file\"}],\"custom\":[1],\"subs\":[{\"id\":\"s\"}],\"schedulePeriod\":\"EVENING\"}");
         TaskDto dto = mock(TaskDto.class); when(dto.project()).thenReturn("p"); when(dto.id()).thenReturn(id);
         when(tasks.get(id, "member")).thenReturn(dto);
         return row;

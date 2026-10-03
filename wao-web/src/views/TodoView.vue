@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, toRefs, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import TodoDayView from '@/components/todo/TodoDayView.vue'
 import { useBrowsingState, oneOf, validSearch } from '@/composables/browsingState'
 import { TODO_DUE_GROUPS, todoDueGroup } from '@/utils/todoDueGroups'
 import { isTaskFinished } from '@/utils/projectCompletion'
@@ -19,6 +21,13 @@ import { type TodoTaskView } from '@/utils/taskQuadrants'
 const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
+const route = useRoute()
+const { workspace, selectedDay } = toRefs(useBrowsingState('todo-workspace', { workspace: 'day', selectedDay: data.today }, {
+  workspace: oneOf('day', 'all'), selectedDay: value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)),
+}))
+watch(() => route?.query.date, date => {
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date))) { selectedDay.value = date; workspace.value = 'day' }
+}, { immediate: true })
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const { decoTask } = useDeco()
 
@@ -107,14 +116,16 @@ function onDropStatus(status: TaskStatus) {
 <template>
   <div class="todo" :class="{ 'todo-quadrant': taskView === 'quadrant' }">
     <div class="ptop">
-      <div class="ptitle">TODO</div>
-      <span class="ptip">跨项目任务汇总 · 任务归属于各自项目</span>
+      <div class="ptitle">待办</div>
+      <span class="ptip">按天安排与回看 · 任务归属于各自项目</span>
       <button class="btn-primary" @click="ui.openNewTask()">
         <i class="ri-add-line"></i>新建任务
       </button>
     </div>
 
-    <div class="mt-toolbar">
+    <nav class="workspace-switch" aria-label="待办视图"><button type="button" :aria-pressed="workspace === 'day'" @click="workspace = 'day'">按天</button><button type="button" :aria-pressed="workspace === 'all'" @click="workspace = 'all'">全部待办</button></nav>
+    <TodoDayView v-if="workspace === 'day'" v-model:date="selectedDay" @all="workspace = 'all'" />
+    <div v-if="workspace === 'all'" class="mt-toolbar">
       <button
         v-for="c in (['全部', '我负责', '我参与', '等待他人'] as const)"
         :key="c"
@@ -142,20 +153,20 @@ function onDropStatus(status: TaskStatus) {
       </div>
     </div>
 
-    <div v-if="data.taskLoadState === 'loading'" class="task-state" role="status" aria-live="polite">
+    <div v-if="workspace === 'all' && data.taskLoadState === 'loading'" class="task-state" role="status" aria-live="polite">
       <i class="ri-loader-4-line spinning"></i>
       <b>正在加载中</b>
       <span>正在读取你的真实任务…</span>
     </div>
 
-    <div v-else-if="data.taskLoadState === 'error'" class="task-state error" role="alert">
+    <div v-else-if="workspace === 'all' && data.taskLoadState === 'error'" class="task-state error" role="alert">
       <i class="ri-wifi-off-line"></i>
       <b>任务暂时没有加载出来</b>
       <span>{{ data.taskLoadError }}</span>
       <button class="btn-primary" @click="data.hydrate()"><i class="ri-refresh-line"></i>重新加载</button>
     </div>
 
-    <template v-else-if="taskView === 'list'">
+    <template v-else-if="workspace === 'all' && taskView === 'list'">
       <div v-for="tg in taskGroups" :key="tg.label" class="tgroup">
         <div class="tgroup-head" :class="{ clickable: tg.collapsible }" @click="tg.collapsible && (showDone = !showDone)">
           <i v-if="tg.collapsible" class="tgroup-chev" :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
@@ -188,9 +199,9 @@ function onDropStatus(status: TaskStatus) {
       <div v-if="tasksEmpty" class="empty simple">这个筛选下没有任务</div>
     </template>
 
-    <TaskQuadrantView v-else-if="taskView === 'quadrant'" v-model:show-done="showDone" :tasks="myList" :selected-ids="[]" />
+    <TaskQuadrantView v-else-if="workspace === 'all' && taskView === 'quadrant'" v-model:show-done="showDone" :tasks="myList" :selected-ids="[]" />
 
-    <div v-else class="board">
+    <div v-else-if="workspace === 'all'" class="board">
       <div
         v-for="col in boardCols"
         :key="col.label"
@@ -242,6 +253,7 @@ function onDropStatus(status: TaskStatus) {
 </template>
 
 <style scoped>
+.workspace-switch{display:flex;gap:5px;margin:14px 0}.workspace-switch button{border:0;border-radius:8px;background:transparent;color:var(--wao-text-2);padding:8px 14px;cursor:pointer}.workspace-switch button[aria-pressed="true"]{background:var(--wao-bg-hover);color:var(--wao-primary);font-weight:600}@media(max-width:600px){.workspace-switch button{min-height:44px}}
 .execution-label { color: var(--wao-primary-text); font-size: 11px; overflow-wrap: anywhere; }
 .task-more { flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); cursor: pointer; }
 .task-more:hover, .task-more:focus-visible { background: var(--wao-bg-hover); }

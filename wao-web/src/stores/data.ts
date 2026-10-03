@@ -1,4 +1,5 @@
 import { reactive, ref, watch } from 'vue'
+import { PreviousTodoWriteRecovered } from '@/api/dayWorkspace'
 import { cancelCompanionResponse, captureCompanionTicket, respondWithCompanion, type CompanionTicket } from '@/composables/quietCompanions'
 import { isTaskFinished } from '@/utils/projectCompletion'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
@@ -1484,6 +1485,66 @@ export const useDataStore = defineStore('data', () => {
     while (taskPersisting[id]) await new Promise((resolve) => window.setTimeout(resolve, 25))
   }
 
+  const taskOperationChains = new Map<string, Promise<unknown>>()
+  /** 专用事务与全文写入共用任务锁，迟到响应只合并请求期间未编辑的字段。 */
+  async function runTaskOperation<T extends { task: Task | null }>(id: string, mutate: (base: Task) => Promise<T>): Promise<T> {
+    const previous = taskOperationChains.get(id) ?? Promise.resolve()
+    const job = previous.catch(() => undefined).then(async () => {
+      if (taskSaveState(id) === 'saving' || taskDrafts.value[id] || taskPersisting[id]) await flushTask(id)
+      if (taskConflicts[id] || taskSaveState(id) === 'error') throw new Error('任务有未保存或冲突的输入，请先在任务详情中处理')
+      const task = taskById(id)
+      if (!task?.editVersion || !apiLive.value) throw new Error('任务尚未确认保存，请重试')
+      const member = useSessionStore().userId
+      const base = clone(task)
+      const version = taskPersistVersions[id] ?? 0
+      taskPersisting[id] = true
+      try {
+        let recovered: PreviousTodoWriteRecovered<T> | null = null
+        let result: T
+        try { result = await mutate(base) }
+        catch (cause) {
+          if (!(cause instanceof PreviousTodoWriteRecovered)) {
+            const status = (cause as { status?: number; response?: { status?: number } })?.status ?? (cause as { response?: { status?: number } })?.response?.status
+            // A rejected dedicated operation wrote nothing. Refresh only a clean
+            // task, leaving any input made during the request for the usual CAS flow.
+            if (status === 409 && (taskPersistVersions[id] ?? 0) === version && !taskDrafts.value[id]) {
+              const remote = await apiGetTask(id).catch(() => null)
+              if (remote && member === useSessionStore().userId && taskById(id) === task
+                && (taskPersistVersions[id] ?? 0) === version && !taskDrafts.value[id]) {
+                Object.assign(task, remote)
+                taskSubBases[id] = clone(remote.subs ?? [])
+              }
+            }
+            throw cause
+          }
+          recovered = cause as PreviousTodoWriteRecovered<T>
+          result = recovered.result
+        }
+        if (member !== useSessionStore().userId || taskById(id) !== task) throw new Error('成员已切换，原保存结果仍可查询')
+        if (result.task) {
+          // A receipt is an immutable result, possibly older than later remote edits.
+          const remote = await apiGetTask(id).catch(() => result.task!)
+          if (member !== useSessionStore().userId || taskById(id) !== task) throw new Error('成员已切换，原保存结果仍可查询')
+          const fields: Partial<Task> = {}
+          for (const key of Object.keys(remote) as (keyof Task)[]) {
+            if (JSON.stringify(task[key]) === JSON.stringify(base[key])) Object.assign(fields, { [key]: remote[key] })
+          }
+          Object.assign(task, fields, { editVersion: remote.editVersion, subtaskVersion: remote.subtaskVersion })
+          taskSubBases[id] = clone(remote.subs ?? [])
+          taskTouchedAt[id] = Date.now()
+          if ((taskPersistVersions[id] ?? 0) !== version) storeTaskDraft(task)
+        }
+        if (recovered) throw recovered
+        return result
+      } finally {
+        taskPersisting[id] = false
+        if (member === useSessionStore().userId && (taskPersistVersions[id] ?? 0) !== version) void drainTask(id)
+      }
+    })
+    taskOperationChains.set(id, job)
+    try { return await job } finally { if (taskOperationChains.get(id) === job) taskOperationChains.delete(id) }
+  }
+
   /** 刷新工作区前等待所有任务、文档写入；失败保留页面与草稿。 */
   async function flushWorkspace(): Promise<boolean> {
     const taskIds = Object.keys(taskDrafts.value)
@@ -2457,7 +2518,7 @@ export const useDataStore = defineStore('data', () => {
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     ensureDocsLoaded, refreshDocs, ensureDocLoaded, docLoadErrors,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
-    taskDraftErrors, useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
+    taskDraftErrors, useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, runTaskOperation, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     movingTask, moveTask, movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, replaceFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,

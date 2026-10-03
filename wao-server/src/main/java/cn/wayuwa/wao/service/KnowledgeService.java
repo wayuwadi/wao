@@ -830,6 +830,7 @@ public class KnowledgeService {
 
     /** 新建小记后同步到飞书群；通知失败只记日志，不影响创建结果。 */
     private void announceNote(String kbId, DocDto doc, String author) {
+        Runnable notification = () -> {
         try {
             MemberEntity member = author == null || author.isBlank() ? null : memberMapper.selectById(author);
             taskNotifier.notifyNoteCreated(kbId, doc.id(), doc.title(),
@@ -837,6 +838,13 @@ public class KnowledgeService {
         } catch (RuntimeException ex) {
             LOG.warn("新建小记的飞书通知发送失败：{}", ex.getMessage());
         }
+        };
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { notification.run(); }
+                    });
+        } else notification.run();
     }
 
     /**

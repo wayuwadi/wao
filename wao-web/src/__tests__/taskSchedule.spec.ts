@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { moveTaskSchedule, taskCalendarEntries } from '@/utils/taskSchedule'
 
 describe('执行安排与截止', () => {
+  it('粗粒度安排移动保留时段，日历不伪造时刻', () => {
+    expect(moveTaskSchedule({ start: '2026-10-03', schedulePeriod: 'EVENING' }, '2026-10-04')).toEqual({ start: '2026-10-04', startAt: null, endAt: null, schedulePeriod: 'EVENING' })
+    expect(taskCalendarEntries({ start: '2026-10-03', schedulePeriod: 'MORNING', due: '' }, '2026-10-03', '2026-10-03')).toEqual([{ date: '2026-10-03', label: '执行（早晨）', deadline: false }])
+  })
   const from = '2026-09-01', to = '2027-01-31'
   it('全天移动只填开始，不发明时间或截止', () => {
     expect(moveTaskSchedule({ start: '' }, '2026-10-08')).toEqual({ start: '2026-10-08', startAt: null, endAt: null })

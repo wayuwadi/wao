@@ -18,6 +18,8 @@ public class SubtaskMoveService {
     private final TaskService tasks;
     private final WorkItemNumberMapper numbers;
     private final ObjectMapper json;
+    @org.springframework.beans.factory.annotation.Autowired
+    private TodoHistoryService todoHistory;
     public SubtaskMoveService(TaskMapper mapper, TaskService tasks, WorkItemNumberMapper numbers, ObjectMapper json) {
         this.mapper = mapper; this.tasks = tasks; this.numbers = numbers; this.json = json;
     }
@@ -36,6 +38,8 @@ public class SubtaskMoveService {
         tasks.get(targetId, memberId);
         if (mapper.countUnfinishedRuns(sourceId, targetId) > 0) throw new BadRequestException("任务仍有未结束的 AI 执行，请结束后再移动子任务");
         TaskEntity source = locked.get(sourceId), target = locked.get(targetId);
+        TaskEntity sourceBefore = todoHistory == null ? null : todoHistory.copy(source);
+        TaskEntity targetBefore = todoHistory == null || sourceId.equals(targetId) ? null : todoHistory.copy(target);
         List<Step> from = readSubs(source), to = sourceId.equals(targetId) ? from : readSubs(target);
         if (!from.equals(normalize(sourceId, request.expectedSourceSubs())) || !to.equals(normalize(targetId, request.expectedTargetSubs())))
             throw new BadRequestException("子任务已有更新，请刷新后重试；未移动任何内容");
@@ -58,6 +62,10 @@ public class SubtaskMoveService {
             writeSubs(target, to);
             for (String id : moving) numbers.move(sourceId + "/" + id, targetId + "/" + id);
         }
+        if (todoHistory != null) {
+            todoHistory.record(sourceBefore, source, memberId, "STEP_MOVED", null);
+            if (targetBefore != null) todoHistory.record(targetBefore, target, memberId, "STEP_MOVED", null);
+        }
         return sourceId.equals(targetId) ? List.of(tasks.get(sourceId, memberId))
                 : List.of(tasks.get(sourceId, memberId), tasks.get(targetId, memberId));
     }
@@ -71,6 +79,7 @@ public class SubtaskMoveService {
             ObjectNode detail = (ObjectNode) json.readTree(task.getDetailJson());
             detail.set("subs", json.valueToTree(subs));
             mapper.updateDetail(task.getId(), json.writeValueAsString(detail));
+            task.setDetailJson(json.writeValueAsString(detail));
         } catch (Exception e) { throw new BadRequestException("保存移动失败，已回滚"); }
     }
     private static String blank(String value) { return value == null || value.isBlank() ? null : value; }

@@ -258,6 +258,53 @@ class TaskServiceTest {
     }
 
     @Test
+    void patchAndSubtaskStatusKeepCoarsePeriodUntilStartIsExplicitlyCleared() {
+        TaskEntity entity = todo();
+        entity.setStartDate("2026-10-03");
+        entity.setDetailJson("{\"schedulePeriod\":\"EVENING\",\"subs\":[{\"id\":\"s1\",\"text\":\"检查\",\"done\":false}]}");
+        when(mapper.selectById("t1")).thenReturn(entity);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+
+        TaskDto patched = service.patch("t1",
+                new PatchTaskRequest("改标题", null, null, null, null, null, "2026-10-10"), "wg");
+        assertThat(patched.schedulePeriod()).isEqualTo("EVENING");
+        assertThat(patched.due()).isEqualTo("2026-10-10");
+        TaskDto updatedSub = service.updateSubtaskStatus("t1", "s1", "已完成",
+                patched.subtaskVersion(), "wg");
+        assertThat(updatedSub.schedulePeriod()).isEqualTo("EVENING");
+
+        TaskDto cleared = service.patch("t1",
+                new PatchTaskRequest(null, null, null, null, null, "", null), "wg");
+        assertThat(cleared.start()).isEmpty();
+        assertThat(cleared.schedulePeriod()).isNull();
+        assertThat(cleared.due()).isEqualTo("2026-10-10");
+    }
+
+    @Test
+    void legacyFullSavePreservesCoarsePeriodButExactTimeAndClearedDateRemoveIt() {
+        TaskEntity entity = todo();
+        entity.setStartDate("2026-10-03");
+        entity.setDetailJson("{\"schedulePeriod\":\"EVENING\",\"subs\":[]}");
+        when(mapper.selectById("t1")).thenReturn(entity);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+        TaskDto read = service.get("t1", "wg");
+        TaskDto oldClient = read.withSchedule(read.start(), null, null, null);
+
+        TaskDto legacySaved = service.replace("t1", oldClient, "wg");
+        assertThat(legacySaved.schedulePeriod()).isEqualTo("EVENING");
+        assertThat(legacySaved.due()).isEqualTo(read.due());
+        TaskDto exactSaved = service.replace("t1", oldClient.withSchedule(read.start(),
+                "2026-10-03T19:00", "2026-10-03T20:00", "EVENING"), "wg");
+        assertThat(exactSaved.schedulePeriod()).isNull();
+        assertThat(exactSaved.startAt()).isEqualTo("2026-10-03T19:00");
+        TaskDto cleared = service.replace("t1", oldClient.withSchedule("", null, null, null), "wg");
+        assertThat(cleared.schedulePeriod()).isNull();
+        assertThat(cleared.due()).isEqualTo(read.due());
+        assertThatThrownBy(() -> service.replace("t1", oldClient.withSchedule(read.start(),
+                null, null, "MIDNIGHT"), "wg")).isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
     void chatCollectedTaskCarriesTheSourceTag() {
         when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
 

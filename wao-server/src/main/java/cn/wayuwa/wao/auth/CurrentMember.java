@@ -37,6 +37,11 @@ public class CurrentMember {
         return account == null ? null : account.getMemberId();
     }
 
+    /** 返回当前会话的账号 id，供操作回执按账号隔离。 */
+    public String accountId(HttpServletRequest request) {
+        return sessions.currentAccountId(request);
+    }
+
     /**
      * 返回当前登录成员 id，未登录时回落到给定值。
      *
