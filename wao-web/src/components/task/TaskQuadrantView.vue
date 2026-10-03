@@ -30,7 +30,7 @@ const dropTarget = ref<Priority | null>(null)
 const expanded = ref<Priority | null>(null)
 const savingIds = ref<string[]>([])
 const touchedIds = ref<string[]>([])
-const finished = (task: Task) => props.projectId ? isTaskFinished(task) : task.status === '已完成'
+const finished = isTaskFinished
 const doneCount = computed(() => props.tasks.filter(finished).length)
 const busy = (id: string) => savingIds.value.includes(id) || data.taskSaveState(id) === 'saving'
 // 完成请求未落库或失败时仍留在原象限，始终提供重试入口。
@@ -141,7 +141,7 @@ function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string) {
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="quadrant-task-body">
               <button class="quadrant-title" :title="task.title" :draggable="!busy(task.id) && !selectionMode" @click="ui.openTask(task.id)">{{ task.title }}</button>
-              <span v-if="projectId && task.unfinishedSubCount" class="save-hint">仍有 {{ task.unfinishedSubCount }} 项子项未收尾</span>
+              <span v-if="task.unfinishedSubCount" class="save-hint">仍有 {{ task.unfinishedSubCount }} 项子项未收尾</span>
               <div class="quadrant-meta">
                 <span v-if="task.due" class="quadrant-due" :style="{ color: task.dueColor }">{{ task.dueStr }}</span>
                 <span v-if="task.status !== '待办' && task.status !== '已完成'" class="quadrant-status">{{ task.status }}</span>
