@@ -107,6 +107,24 @@ describe('新建任务的落库反馈', () => {
     wrapper.unmount()
   })
 
+  it('日历预设全天安排不填截止，新建时段仍保留独立截止', async () => {
+    const ui = useUiStore()
+    ui.openModal('task'); ui.modalScheduleDate = '2026-10-07'
+    putTask.mockImplementation(savedTask)
+    let w = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    await w.get('.title-input').setValue('无截止的全天安排')
+    await w.get('.foot .btn-primary').trigger('click'); await flushPromises()
+    expect(data.tasks[0]).toMatchObject({ start: '2026-10-07', due: '', startAt: null, endAt: null })
+    w.unmount()
+    ui.openModal('task', '', '', '2026-10-07T23:00', '2026-10-08T02:00')
+    w = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    await w.get('.title-input').setValue('周三执行周五截止')
+    await w.get('[aria-label="截止日期"]').setValue('2026-10-09')
+    await w.get('.foot .btn-primary').trigger('click'); await flushPromises()
+    expect(data.tasks[0]).toMatchObject({ start: '2026-10-07', due: '2026-10-09', startAt: '2026-10-07T23:00', endAt: '2026-10-08T02:00' })
+    w.unmount()
+  })
+
   it('右上角新建等待服务端确认，再打开详情', async () => {
     useUiStore().openNewTask()
     let confirm!: (task: Task) => void

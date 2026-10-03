@@ -6,6 +6,17 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { localOrigin, matchesFault, writeFault, readFault, clearFault, faultMiddleware, SAVE_FAILURE } from './faults.mjs'
 
+test('任务故障只命中指定任务的保存，不阻断版本读取或其他任务', () => {
+  const fault = { taskId: 't_acceptance' }
+  for (const url of ['/api/tasks/t_acceptance', '/api/tasks/t_acceptance/operations/op_123']) {
+    assert.equal(matchesFault({ method: 'PUT', url }, fault), true)
+    assert.equal(matchesFault({ method: 'GET', url }, fault), false)
+  }
+  for (const url of ['/api/tasks/t_acceptance_other', '/api/tasks/t_acceptance/subtasks', '/api/tasks/t_acceptance/operations/x/y']) {
+    assert.equal(matchesFault({ method: 'PUT', url }, fault), false)
+  }
+})
+
 test('项目保存故障严格限于指定 ID 的 PATCH，不影响任务或其他项目', () => {
   const fault = { projectId: 'p_acceptance' }
   assert.equal(matchesFault({ method: 'PATCH', url: '/api/projects/p_acceptance' }, fault), true)

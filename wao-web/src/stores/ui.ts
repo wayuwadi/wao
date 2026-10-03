@@ -88,6 +88,7 @@ export const useUiStore = defineStore('ui', () => {
   const modalPriority = ref<Priority | null>(null) // 四象限入口的默认优先级
   const modalTaskSeed = ref<DocumentTaskSeed | null>(null)
   const modalDue = ref<string>('') // 新建任务时预设的截止日期（ISO，日历双击带入）
+  const modalScheduleDate = ref<string>('')
   const modalStartAt = ref<string>('') // 日/周时间轴框选后的开始时间
   const modalEndAt = ref<string>('') // 日/周时间轴框选后的结束时间
 
@@ -135,6 +136,7 @@ export const useUiStore = defineStore('ui', () => {
     modal.value = kind
     modalProject.value = presetProject
     modalDue.value = presetDue
+    modalScheduleDate.value = ''
     modalStartAt.value = presetStartAt
     modalEndAt.value = presetEndAt
   }
@@ -259,7 +261,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    openTaskId, openTaskSubId, modalOpenTaskAfterCreate, modal, modalProject, modalPriority, modalTaskSeed, modalDue, modalStartAt, modalEndAt,
+    openTaskId, openTaskSubId, modalOpenTaskAfterCreate, modal, modalProject, modalPriority, modalTaskSeed, modalDue, modalScheduleDate, modalStartAt, modalEndAt,
     searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft,
     chatOpen, chatDraft, chatDraftRequestVersion, chatUnreadCount, chatLatestUnread, chatRefreshVersion, shareToChat, consumeChatDraft, chatReviewId, chatReviewRequestVersion, taskViews,
     openTask, closeTask, openNewTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,

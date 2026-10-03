@@ -18,7 +18,7 @@ const preferences = usePreferenceStore()
 
 /**
  * 快捷截止选项按真实「今天」推算：今天 / 明天 / 本周日 / 下周一；ISO 日期（日历双击带入）原样返回。
- * 「不设置」返回空串——没选截止日期就不排期，不再默认落在今天。
+ * 「不设置」返回空串；截止日期与执行安排独立。
  */
 function dueDate(label: string): string {
   if (label === NO_DUE) return ''
@@ -45,7 +45,7 @@ try { legacyDraftAvailable.value = !!localStorage.getItem(LEGACY_DRAFT_KEY) } ca
 type Draft = {
   workItemType?: WorkItemType
   title: string; project: string; owner: string; pr: Priority; due: string; desc: string
-  scheduleMode: 'deadline' | 'range'; startAt: string; endAt: string
+  scheduleMode: 'deadline' | 'date' | 'range'; start?: string; startAt: string; endAt: string
   pendingTaskId?: string | null
 }
 function loadDraft(): Partial<Draft> {
@@ -93,14 +93,14 @@ watch(() => preferences.defaultProject, (value) => {
 const owner = ref(draft.pendingTaskId ? draft.owner || session.currentUser.id : session.currentUser.id)
 const workItemType = ref<WorkItemType>(draft.workItemType ?? 'task')
 const pr = ref<Priority>(draft.pendingTaskId ? draft.pr || ui.modalPriority || 'P2' : ui.modalPriority || 'P2')
-// 日历双击某天进来时，截止日直接锁定那一天，优先于草稿里存的快捷选项。
-// 草稿里的 ISO 日期（上次从日历带入的）没有对应 pill，回落到「不设置」。
+// 只有明确的截止预设才带入此字段；日历使用独立执行安排预设。
 const QUICK_DUES = [NO_DUE, '今天', '明天', '周日', '下周一']
-const due = ref(ui.modalDue || (QUICK_DUES.includes(draft.due ?? '') ? draft.due! : NO_DUE))
+const due = ref(ui.modalDue || draft.due || NO_DUE)
 const dueOptions = computed(() => (ui.modalDue ? [ui.modalDue, ...QUICK_DUES] : QUICK_DUES))
-const scheduleMode = ref<'deadline' | 'range'>(
-  ui.modalStartAt ? 'range' : draft.scheduleMode === 'range' ? 'range' : 'deadline',
+const scheduleMode = ref<'deadline' | 'date' | 'range'>(
+  ui.modalStartAt ? 'range' : ui.modalScheduleDate ? 'date' : draft.scheduleMode || 'deadline',
 )
+const start = ref(ui.modalScheduleDate || draft.start || '')
 const startAt = ref(ui.modalStartAt || draft.startAt || `${dueDate(due.value) || data.today}T09:00`)
 const endAt = ref(ui.modalEndAt || draft.endAt || `${dueDate(due.value) || data.today}T10:00`)
 const desc = ref(draft.desc ?? source?.desc ?? '')
@@ -116,7 +116,7 @@ function saveDraft() {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       title: title.value, project: project.value, owner: owner.value,
       workItemType: workItemType.value, pr: pr.value, due: due.value, desc: desc.value,
-      scheduleMode: scheduleMode.value, startAt: startAt.value, endAt: endAt.value,
+      scheduleMode: scheduleMode.value, start: start.value, startAt: startAt.value, endAt: endAt.value,
       pendingTaskId: pendingTaskId.value,
     } satisfies Draft))
   } catch {
@@ -140,7 +140,7 @@ function restoreLegacyDraft() {
     legacyDraftAvailable.value = false
   } catch { toast('旧版草稿无法读取，原记录仍保留', 'ri-error-warning-line') }
 }
-watch([title, project, owner, workItemType, pr, due, desc, scheduleMode, startAt, endAt], saveDraft, { flush: 'sync', immediate: !!source })
+watch([title, project, owner, workItemType, pr, due, desc, scheduleMode, start, startAt, endAt], saveDraft, { flush: 'sync', immediate: !!source })
 
 onBeforeUnmount(() => { if (draftTimer) clearTimeout(draftTimer) })
 
@@ -186,9 +186,14 @@ async function create() {
     toast('结束时间必须晚于开始时间', 'ri-error-warning-line')
     return
   }
+  if (scheduleMode.value === 'date' && !start.value) {
+    toast('请选择执行日期，或选择不安排', 'ri-error-warning-line')
+    return
+  }
   const payload = {
     title: name, project: project.value, workItemType: workItemType.value, pr: pr.value, owner: owner.value,
-    due: scheduleMode.value === 'range' ? startAt.value.slice(0, 10) : dueDate(due.value),
+    due: dueDate(due.value),
+    start: scheduleMode.value === 'range' ? startAt.value.slice(0, 10) : scheduleMode.value === 'date' ? start.value : '',
     startAt: scheduleMode.value === 'range' ? startAt.value : null,
     endAt: scheduleMode.value === 'range' ? endAt.value : null,
     desc: desc.value.trim(), images: [],
@@ -290,19 +295,24 @@ useOverlayDismiss(() => true, requestClose)
       </button>
     </div>
     <p v-if="source && !project" class="label-hint">请选择要存入的项目</p>
-    <details class="schedule-details" :open="!!ui.modalDue || !!ui.modalStartAt || undefined">
-      <summary><i class="ri-calendar-line" aria-hidden="true"></i>时间安排 <span>{{ scheduleMode === 'range' ? '时间段' : due === NO_DUE ? '未设置' : due }}</span></summary>
-    <div class="schedule-switch">
-      <button :class="{ on: scheduleMode === 'deadline' }" @click="scheduleMode = 'deadline'">截止日期</button>
-      <button :class="{ on: scheduleMode === 'range' }" @click="scheduleMode = 'range'">时间段</button>
-    </div>
-    <div v-if="scheduleMode === 'deadline'" class="pills">
-      <button v-for="d in dueOptions" :key="d" class="pill sq" :class="{ on: due === d }" @click="due = d">{{ d }}</button>
-    </div>
-    <div v-else class="range-fields">
-      <label><span>开始</span><input v-model="startAt" type="datetime-local" /></label>
-      <label><span>结束</span><input v-model="endAt" type="datetime-local" /></label>
-    </div>
+    <details class="schedule-details" :open="!!ui.modalScheduleDate || !!ui.modalDue || !!ui.modalStartAt || undefined">
+      <summary><i class="ri-calendar-line" aria-hidden="true"></i>时间安排 <span>{{ scheduleMode === 'range' ? '执行时段' : scheduleMode === 'date' ? '执行日期' : '未安排' }} · {{ due === NO_DUE ? '无截止日期' : due }}</span></summary>
+      <div class="label">截止日期</div>
+      <div class="pills">
+        <button v-for="d in dueOptions" :key="d" class="pill sq" :class="{ on: due === d }" @click="due = d">{{ d }}</button>
+        <input aria-label="截止日期" type="date" :value="dueDate(due)" @change="due = ($event.target as HTMLInputElement).value || NO_DUE" />
+      </div>
+      <div class="label">执行安排 · 不改变截止</div>
+      <div class="schedule-switch">
+        <button :class="{ on: scheduleMode === 'deadline' }" @click="scheduleMode = 'deadline'">不安排</button>
+        <button :class="{ on: scheduleMode === 'date' }" @click="scheduleMode = 'date'">指定日期</button>
+        <button :class="{ on: scheduleMode === 'range' }" @click="scheduleMode = 'range'">时间段</button>
+      </div>
+      <label v-if="scheduleMode === 'date'">执行日期（不指定时间）<input v-model="start" aria-label="执行日期" type="date" /></label>
+      <div v-if="scheduleMode === 'range'" class="range-fields">
+        <label><span>开始</span><input v-model="startAt" type="datetime-local" /></label>
+        <label><span>结束</span><input v-model="endAt" type="datetime-local" /></label>
+      </div>
     </details>
 
     <div class="label">描述 <span class="label-hint">敲 ## 变标题、- 变列表；粘贴或拖入的截图会插在光标处</span></div>
