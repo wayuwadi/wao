@@ -41,6 +41,9 @@ class KnowledgeTrashMapperIntegrationTest {
                     kb_id VARCHAR(32) NOT NULL,
                     folder_id VARCHAR(32) NOT NULL,
                     title VARCHAR(256) NOT NULL,
+                    blocks_json VARCHAR(10000), content_json VARCHAR(10000), content_markdown VARCHAR(10000),
+                    content_version INT, links_json VARCHAR(10000), tags_json VARCHAR(10000), updated_at TIMESTAMP,
+                    deleted_by VARCHAR(32), cascade_del TINYINT DEFAULT 0,
                     deleted_at TIMESTAMP NULL,
                     archived_at TIMESTAMP NULL,
                     archived_by VARCHAR(32) NULL
@@ -55,6 +58,22 @@ class KnowledgeTrashMapperIntegrationTest {
                     cascade_del TINYINT NOT NULL DEFAULT 0
                 )
                 """);
+    }
+
+    @Test
+    void deletedNoteRejectsLateCasEvenWhenDeletionKeepsTheRevision() {
+        jdbc.update("INSERT INTO doc(id,kb_id,folder_id,title,rev,content_markdown) VALUES ('n1','notes','f1','原题',3,'本人原文')");
+        var stale = new cn.wayuwa.wao.domain.DocEntity();
+        stale.setId("n1"); stale.setFolderId("f1"); stale.setTitle("迟到标题");
+        stale.setContentMarkdown("迟到正文"); stale.setRev(4);
+        LocalDateTime deletedAt = LocalDateTime.of(2026, 10, 3, 13, 0);
+        assertThat(docMapper.markDeleted("n1", deletedAt, "member", false)).isEqualTo(1);
+        assertThat(docMapper.updateIfRevision(stale, 3)).isZero();
+        assertThat(docMapper.selectAliveRevision("n1")).isNull();
+        var persisted = jdbc.queryForMap("SELECT title,content_markdown,rev,deleted_at FROM doc WHERE id='n1'");
+        assertThat(persisted).containsEntry("TITLE", "原题").containsEntry("CONTENT_MARKDOWN", "本人原文")
+                .containsEntry("REV", 3);
+        assertThat(persisted.get("DELETED_AT")).isNotNull();
     }
 
     @Test

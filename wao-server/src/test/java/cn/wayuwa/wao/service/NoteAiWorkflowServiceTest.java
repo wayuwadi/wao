@@ -19,6 +19,8 @@ import cn.wayuwa.wao.mapper.NoteAiWorkflowMapper.Workflow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 
 class NoteAiWorkflowServiceTest {
@@ -31,6 +33,54 @@ class NoteAiWorkflowServiceTest {
     private final MemberPreferenceMapper preferences = mock(MemberPreferenceMapper.class);
     private final NoteAiWorkflowService service = new NoteAiWorkflowService(
             workflows, docs, knowledge, textJobs, images, polish, preferences, new ObjectMapper());
+
+    @ParameterizedTest
+    @CsvSource({"deleted,false", "archived,false", "deleted,true", "archived,true"})
+    void unavailableNoteStopsQueuedStagesBeforeReadingLateResults(String state, boolean betweenReads) {
+        Workflow w = pendingAll("d1", "m1").withTitle("DONE", "title1", 1, "原题", null)
+                .withImage("RUNNING", "image1", 1, digestForTest(failureBody()), null)
+                .withPolish("RUNNING", "polish1", null);
+        when(workflows.lock("d1")).thenReturn(w);
+        DocEntity alive = new DocEntity();
+        alive.setId("d1"); alive.setAuthorId("m1"); alive.setKbId(KnowledgeService.NOTES_KB_ID);
+        DocEntity unavailable = new DocEntity();
+        unavailable.setId("d1"); unavailable.setAuthorId("m1"); unavailable.setKbId(KnowledgeService.NOTES_KB_ID);
+        if ("deleted".equals(state)) unavailable.setDeletedAt(java.time.LocalDateTime.now());
+        else unavailable.setArchivedAt(java.time.LocalDateTime.now());
+        if (betweenReads) {
+            when(docs.selectById("d1")).thenReturn(alive, unavailable);
+            when(knowledge.getDoc("d1")).thenReturn(note("m1", 1, failureBody()));
+        } else when(docs.selectById("d1")).thenReturn(unavailable);
+
+        service.advance("d1");
+
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows, org.mockito.Mockito.atLeastOnce()).update(saved.capture());
+        assertThat(saved.getValue().titleStatus()).isEqualTo("DONE");
+        assertThat(saved.getValue().imageStatus()).isEqualTo("FAILED");
+        assertThat(saved.getValue().polishStatus()).isEqualTo("FAILED");
+        org.mockito.Mockito.verifyNoInteractions(textJobs, images, polish);
+        verify(knowledge, never()).updateDoc(any(), any());
+    }
+
+    @Test void changedBodyInvalidatesEveryOldRunningResultBeforePolling() {
+        Workflow w = pendingAll("d1", "m1").withTitle("RUNNING", "title1", 1, "原题", null)
+                .withImage("RUNNING", "image1", 1, digestForTest(failureBody()), null)
+                .withPolish("RUNNING", "polish1", null);
+        when(workflows.lock("d1")).thenReturn(w);
+        owned(note("m1", 2, "本人保存的新正文，旧标题、配图和润色都不可覆盖。"));
+        service.advance("d1");
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().titleJobId()).isNull();
+        assertThat(saved.getValue().imageRunId()).isNull();
+        assertThat(saved.getValue().polishJobId()).isNull();
+        assertThat(saved.getValue().titleStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().imageStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().polishStatus()).isEqualTo("PENDING");
+        org.mockito.Mockito.verifyNoInteractions(textJobs, images, polish);
+        verify(knowledge, never()).updateDoc(any(), any());
+    }
 
     @Test void localWorkerRecordsStageSubmissionFailureInsteadOfLeavingItPending() {
         String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2);
