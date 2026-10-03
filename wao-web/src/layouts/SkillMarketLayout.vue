@@ -18,7 +18,7 @@ function login() { router.push({ path: '/login', query: { redirect: router.curre
     <header class="market-header">
       <RouterLink v-if="!embedded" class="market-brand" :to="marketRoutes.path()"><WaoLogo wordmark /><b>Skill 市场</b></RouterLink>
       <strong v-else class="market-section-title">Skill 市场</strong>
-      <nav>
+      <nav aria-label="技能市场导航" tabindex="0">
         <RouterLink to="/hub">WAO-HUB</RouterLink>
         <RouterLink to="/pets">Pet 仓库</RouterLink>
         <RouterLink :to="marketRoutes.path()">发现 Skill</RouterLink>
@@ -48,4 +48,14 @@ function login() { router.push({ path: '/login', query: { redirect: router.curre
 .market-title{margin:0;font-size:34px;letter-spacing:-1px}.market-lead{color:var(--market-sub);line-height:1.8;margin:10px 0 0}.market-card{background:var(--market-card);border:1px solid var(--market-line);border-radius:18px;box-shadow:var(--wao-shadow-card-hover-2)}
 .market-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--market-line);background:var(--market-card);color:var(--market-ink);height:40px;padding:0 16px;border-radius:10px;text-decoration:none;cursor:pointer;font-weight:650}.market-button.primary{background:var(--market-blue);border-color:var(--market-blue);color:#fff}.market-button.danger{color:var(--wao-danger-strong);border-color:var(--wao-danger-line)}.market-button:disabled{opacity:.48;cursor:not-allowed}.market-input,.market-select,.market-textarea{width:100%;border:1px solid var(--market-line);background:var(--market-card);border-radius:10px;padding:10px 12px;color:var(--market-ink);font:inherit;outline:none}.market-input:focus,.market-select:focus,.market-textarea:focus{border-color:var(--market-blue);box-shadow:0 0 0 3px var(--market-soft)}.market-textarea{min-height:100px;resize:vertical}.market-label{display:grid;gap:7px;font-size:13px;font-weight:700}.market-muted{color:var(--market-sub)}.market-error{padding:12px 14px;border-radius:10px;background:var(--market-danger);color:var(--wao-danger-strong);font-size:13px}.market-empty{text-align:center;padding:60px 24px;color:var(--market-sub)}
 @media(max-width:720px){.market-header{height:auto;min-height:60px;padding:10px 14px;align-items:flex-start}.market-brand b{display:none}.market-header nav{width:100%;justify-content:flex-end}.market-header nav a,.login-button{padding:8px 9px;font-size:12px}.market-main{width:calc(100% - 20px);padding:26px 0 50px}.market-title{font-size:27px}}
+.market-header nav { min-width: 0; }
+.market-header nav > * { flex-shrink: 0; }
+@media (max-width: 720px) {
+  .market-header, .market-shell.embedded .market-header { height: auto; padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+  .market-header nav { flex: 1 1 100%; justify-content: flex-start; }
+}
+@container app-main (max-width: 640px) {
+  .market-shell.embedded .market-header { height: auto; padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+  .market-shell.embedded .market-header nav { flex: 1 1 100%; justify-content: flex-start; }
+}
 </style>

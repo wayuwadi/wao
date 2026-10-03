@@ -1140,9 +1140,10 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
     <p v-if="readingsLoading" class="holiday-status">正在读取已保存卦名…</p>
     <p v-else-if="readingsError" class="holiday-status error" role="alert">{{ readingsError }} <button @click="loadCalendarReadings">重试读取卦名</button></p>
     <div class="cal-body">
-      <div class="cal-card">
+      <div class="cal-card" tabindex="0" aria-label="日历内容，可滚动查看">
         <div class="cal-head">
           <div class="month-title">{{ viewMode === 'year' ? `${calY} 年` : viewMode === 'week' ? `${weekDays[0]?.label} - ${weekDays[6]?.label}` : viewMode === 'day' ? dayView[0]?.label : month.title }}</div>
+          <small v-if="viewMode === 'month'" class="calendar-scroll-hint">左右滑动查看日期，上下滑动查看各周</small>
           <div class="legend">
             <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
           </div>
@@ -1662,7 +1663,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
   border-radius: 12px;
   background: var(--wao-bg-card);
 }
-.cal-heading-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-width: 0; }
+.cal-heading-row { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 9px; min-width: 0; }
 .calendar-visibility { display: flex; flex: 0 0 470px; max-width: 100%; min-width: 0; align-items: center; gap: 3px; overflow-x: auto; padding: 2px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); scrollbar-width: thin; }
 .calendar-visibility-toggle { display: inline-flex; flex: 1 0 88px; height: 26px; align-items: center; justify-content: space-between; gap: 4px; padding: 0 5px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-3); font-size: 11px; white-space: nowrap; cursor: pointer; }
 .calendar-visibility-toggle:hover { background: var(--wao-bg-hover); }
@@ -2334,5 +2335,24 @@ button.holiday-status { cursor: pointer; }
   .calendar-search > input { top: calc(100% + 6px); right: 0; }
   .calendar-search:hover > input, .calendar-search:focus-within > input, .calendar-search.expanded > input { width: 100%; padding-right: 10px; }
   .calendar-search-results { top: calc(100% + 40px); width: 100%; right: 0; box-sizing: border-box; }
+}
+.calendar-scroll-hint { display: none; }
+.cal-month .cal-card { overflow: auto; }
+.cal-month .week { flex: 1 0 96px; min-height: 96px; }
+.cal-month .day { min-height: 96px; }
+@container app-main (max-width: 640px) {
+  .cal { overflow-y: auto; }
+  .cal-top { flex-shrink: 0; }
+  .cal-body { flex: 0 0 420px; min-height: 420px; }
+  .cal-month .dows, .cal-month .week { min-width: 490px; }
+  .cal-month .week { flex: 0 0 auto; min-height: 96px; }
+  .calendar-scroll-hint { display: block; color: var(--wao-text-weak); font-size: 10px; font-weight: 400; }
+}
+@container app-main (max-width: 340px) {
+  .date-navigation { display: grid; grid-template-columns: 26px minmax(0, 1fr) 26px; width: 100%; min-width: 0; }
+  .date-picker { width: 100%; min-width: 0; }
+  .date-navigation .today-btn { grid-row: 2; grid-column: 1 / -1; }
+  .date-navigation .nav-btn:last-child { grid-row: 1; grid-column: 3; }
+  .member-calendar { max-width: 100%; }
 }
 </style>
