@@ -281,7 +281,6 @@ onBeforeUnmount(() => {
     <div class="ptop">
       <div class="ptitle">项目</div>
       <span class="ptip">{{ filteredProjects.length }} 个项目 · 软件项目与人生大事都值得正式立项</span>
-      <div class="spacer"></div>
       <button class="btn-primary" :disabled="data.loadStates.projects !== 'loaded' || !layout.state.loaded" @click="startCreateProject()">
         <i class="ri-add-line"></i>新建项目
       </button>
@@ -302,7 +301,6 @@ onBeforeUnmount(() => {
     <!-- 项目视图 -->
     <template v-else>
       <div class="toolbar">
-        <div class="spacer"></div>
         <div v-if="openDrop" class="drop-mask" @click="openDrop = null"></div>
         <div class="search">
           <i class="ri-search-line"></i>
@@ -529,6 +527,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   flex-wrap: wrap;
 }
+.toolbar .drop-menu { left: 0; right: auto; }
 .drop-mask {
   position: fixed;
   inset: 0;
