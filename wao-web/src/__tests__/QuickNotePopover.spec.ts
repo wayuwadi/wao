@@ -16,6 +16,28 @@ beforeEach(() => {
   useDataStore().apiLive = true
 })
 describe('原地快速小记', () => {
+  it('刷新屏障保存已收起的浮层草稿，失败阻断且重试沿用同一条小记', async () => {
+    const add = vi.spyOn(useDataStore(), 'addNote').mockRejectedValueOnce(new Error('离线，无法保存')).mockResolvedValueOnce('saved-note')
+    const wrapper = mount(QuickNotePopover, { ...options, props: { open:true } })
+    await flushPromises()
+    await wrapper.findComponent(NoteComposer).get('textarea').setValue('更新前必须保存的内容')
+    await wrapper.setProps({ open:false })
+    function barrier() {
+      const requests: Promise<unknown>[] = []
+      window.dispatchEvent(new CustomEvent('wao-save-before-refresh', { detail: { waitUntil:(request:Promise<unknown>) => requests.push(request) } }))
+      return Promise.all(requests)
+    }
+    await expect(barrier()).rejects.toThrow('离线，无法保存')
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg:floating')).toContain('更新前必须保存的内容')
+    await barrier()
+    expect(add.mock.calls[0]![2]).toBe(add.mock.calls[1]![2])
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg:floating')).toBeNull()
+    await barrier()
+    expect(add).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+    await barrier()
+    expect(add).toHaveBeenCalledTimes(2)
+  })
   it('独立于小记页新建草稿，收起及重新挂载都恢复自己的内容', async () => {
     const page = mount(NoteComposer, options)
     await flushPromises()
