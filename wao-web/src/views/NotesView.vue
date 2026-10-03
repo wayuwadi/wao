@@ -26,6 +26,7 @@ import { fetchNoteAiWorkflows, retryNoteAiWorkflow, type NoteAiWorkflowStatus } 
 import { noteAiRecoveryMessage } from '@/utils/noteAiRecoveryMessage'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
+const writingOpen = ref(true)
 
 const pinnedIds = ref<string[]>([])
 const pinsReady = ref(false)
@@ -865,8 +866,9 @@ onMounted(() => void loadPins())
   <main class="notes-page" @contextmenu="openImageMenu">
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
     <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i>今日写字 {{ todayCharacters.toLocaleString('zh-CN') }} 字</span></div><span>{{ notes.length }} 条记录</span></header>
-    <div class="notes-workspace">
-      <aside class="writing-pane" aria-label="新建小记区">
+    <button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button>
+    <div class="notes-workspace" :class="{ 'writing-collapsed': !writingOpen }">
+      <aside v-show="writingOpen" id="notes-writing-pane" class="writing-pane" aria-label="新建小记区">
         <NoteComposer :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
       </aside>
       <section ref="notesList" class="notes-list" aria-label="小记清单" @scroll.passive="onNotesScroll">
@@ -991,7 +993,11 @@ h1 { display: flex; flex: none; white-space: nowrap; gap: 10px; align-items: cen
 h1 i { color: #7a5cc6; }
 .page-heading p { margin: 0; color: var(--wao-text-faint); font-size: 13px; }
 .page-heading > span { color: var(--wao-text-faint); white-space: nowrap; font-size: 12px; }
-.notes-workspace { display: grid; grid-template-columns: minmax(300px, 0.85fr) minmax(360px, 1.15fr); gap: 28px; align-items: start; }
+.writing-toggle { align-self: flex-start; margin: 0 0 10px; border: 1px solid var(--wao-line-control); }
+.writing-toggle i { margin-right: 6px; }
+.notes-workspace { display: grid; grid-template-columns: clamp(240px, 30%, 360px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.notes-workspace.writing-collapsed { grid-template-columns: minmax(0, 1fr); }
+.writing-collapsed .notes-list { border-left: 0; }
 .writing-pane { min-width: 0; position: sticky; top: 20px; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
 .notes-list { min-width: 0; padding: 24px 20px 40px; border: 1px solid var(--wao-line); border-right: 0; border-bottom: 0; background: var(--wao-bg-sub); scroll-padding-block: 24px; }
@@ -1123,7 +1129,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-layout-actions button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); white-space: nowrap; }
 .reader-mode-switch button { border-color: transparent; background: transparent; font-size: 12px; }
 .reader-mode-switch button[aria-pressed='true'] { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
-.reader-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr); position: relative; }
+.reader-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 204px minmax(0, 1fr); position: relative; }
 .reader-full .reader-layout { grid-template-columns: minmax(0, 1fr); }
 .reader-full .reader-directory { display: none; }
 .reader-directory { min-width: 0; overflow: auto; background: var(--wao-bg-sub); border-right: 1px solid var(--wao-line); padding: 16px 12px; }
@@ -1136,7 +1142,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-directory nav small { display: block; color: var(--wao-text-faint); font-size: 11px; margin-top: 8px; }
 .reader-main { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .reader-page { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.reader-article { width: min(100%, 900px); box-sizing: border-box; margin: 0 auto; padding: clamp(22px, 5vh, 50px) clamp(20px, 5vw, 70px); }
+.reader-article { width: min(100%, 1360px); box-sizing: border-box; margin: 0; padding: 28px clamp(24px, 2vw, 32px); }
 .reader-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--wao-text-faint); font-size: 12px; }
 .reader-meta span:first-child { color: var(--wao-text-2); font-weight: 650; }
 .reader-page h2 { margin: 20px 0 10px; color: var(--wao-text-1); font-size: clamp(24px, 3vw, 34px); line-height: 1.4; overflow-wrap: anywhere; }

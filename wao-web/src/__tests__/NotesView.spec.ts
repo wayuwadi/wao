@@ -61,6 +61,19 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('收起记录区保留编辑器和输入，恢复后继续原草稿', async () => {
+    const wrapper = await view(document.body)
+    const editor = wrapper.find('textarea')
+    await editor.setValue('空间调整验收：收起后继续写')
+    await wrapper.get('.writing-toggle').trigger('click')
+    expect(wrapper.get('#notes-writing-pane').isVisible()).toBe(false)
+    expect(wrapper.get('.writing-toggle').attributes('aria-expanded')).toBe('false')
+    await wrapper.get('.writing-toggle').trigger('click')
+    expect(wrapper.find('textarea').element).toBe(editor.element)
+    expect((editor.element as HTMLTextAreaElement).value).toBe('空间调整验收：收起后继续写')
+    expect(wrapper.get('#notes-writing-pane').isVisible()).toBe(true)
+    wrapper.unmount()
+  })
   it.each(['server', 'browser'] as const)('%s 历史失败保留超时原因并指向本机 Codex', async source => {
     useDataStore().docs.one = doc('one', '合成历史错误验收')
     const message = '只读 AI 任务排队超时，请检查本地 Runner 后重试'
