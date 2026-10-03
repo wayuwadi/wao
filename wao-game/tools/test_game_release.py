@@ -107,6 +107,23 @@ class GameArtifactsTest(unittest.TestCase):
             self.assertEqual((self.target / game / self.a / 'assets/game.js').read_text(), '/* original test artifact */')
         self.assertTrue((self.target / 'starfield' / self.b / 'index.html').exists())
 
+    def test_fourth_game_activation_and_rollback_preserves_three(self):
+        snapshots={}
+        for revision,game in enumerate(['dino','rift','starfield']):
+            archive=self.root/f'{game}.tgz'
+            release.pack(self.source,archive,game,self.a)
+            release.install(archive,self.target,game,self.a)
+            snapshots[game]=release.activate(self.target,game,self.a,revision)['games'][game]
+        for revision,version in enumerate([self.a,self.b],3):
+            archive=self.root/f'beasts-{version}.tgz'
+            release.pack(self.source,archive,'beasts',version)
+            release.install(archive,self.target,'beasts',version)
+            release.activate(self.target,'beasts',version,revision)
+        catalog=release.activate(self.target,'beasts',self.a,5)
+        self.assertEqual(catalog['revision'],6)
+        for game,entry in snapshots.items(): self.assertEqual(catalog['games'][game],entry)
+        self.assertTrue((self.target/'beasts'/self.b/'index.html').exists())
+
     def test_invalid_game_manifest_does_not_poison_immutable_path(self):
         archive = self.root / 'bad.tgz'
         release.pack(self.source, archive, 'dino', self.a)

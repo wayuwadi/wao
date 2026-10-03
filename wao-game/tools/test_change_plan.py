@@ -18,12 +18,20 @@ class PlanTest(unittest.TestCase):
         value = module.plan(['wao-game/games/dino/engine.test.ts', 'wao-game/demos/overall.html'])
         self.assertEqual(value['testGames'], ['dino']); self.assertEqual(value['buildGames'], [])
         self.assertFalse(value['buildWeb'])
+    def test_fourth_game_real_schema_consumers(self):
+        for leaf in ['save.ts','catalog.ts','model.ts']:
+            result=module.plan(['wao-game/games/beasts/'+leaf])
+            self.assertTrue(result['buildWeb'])
+            self.assertEqual(result['buildGames'],['beasts'])
+        result=module.plan(['wao-game/games/beasts/engine.ts'])
+        self.assertFalse(result['buildWeb'])
+        self.assertEqual(result['buildGames'],['beasts'])
     def test_unknown_game_fails_closed(self):
         with self.assertRaises(ValueError): module.plan(['wao-game/games/unknown/main.ts'])
     def test_second_game_reuses_first_artifact(self):
         value = module.plan(['wao-game/games/rift/engine.ts','wao-game/protocol/rift.ts','wao-game/host/registry.ts'])
         self.assertEqual(value['buildGames'], ['rift'])
-        self.assertEqual(value['testGames'], ['dino', 'rift', 'starfield'])
+        self.assertEqual(value['testGames'], ['beasts', 'dino', 'rift', 'starfield'])
         self.assertTrue(value['buildWeb'])
         before={'dependencies':{'vue':'3.5.40'},'scripts':{'build:dino':'old'}}
         after={'dependencies':{'vue':'3.5.40'},'scripts':{'build:dino':'old','build:rift':'new','test:rift':'test'}}

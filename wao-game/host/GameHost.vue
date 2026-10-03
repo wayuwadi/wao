@@ -24,7 +24,7 @@ const props = withDefaults(
   { theme: "light", gameId: "dino" },
 );
 const emit = defineEmits<{ leave: []; immersion: [active: boolean]; memoryPanel: [active: boolean] }>();
-const memories = { dino: useGameMemory("dino"), rift: useGameMemory("rift"), starfield: useGameMemory("starfield") };
+const memories = { dino: useGameMemory("dino"), rift: useGameMemory("rift"), starfield: useGameMemory("starfield"), beasts: useGameMemory("beasts") };
 const memory = memories[props.gameId], game = games[props.gameId];
 const frame = ref<HTMLIFrameElement>(),
   source = ref(""),
@@ -47,6 +47,12 @@ const fileInput = ref<HTMLInputElement>(),
   }>();
 const backups = ref<Backup[]>([]),
   busy = ref(false);
+const exportUrl = ref(""), exportName = ref("");
+function clearExport() {
+  if (exportUrl.value) URL.revokeObjectURL(exportUrl.value);
+  exportUrl.value = "";
+  exportName.value = "";
+}
 let seq = 0,
   received = 0,
   timer: ReturnType<typeof setTimeout> | undefined,
@@ -153,6 +159,7 @@ function receive(e: MessageEvent) {
   } else if (event.type === "checkpoint") memory.update(event.payload);
 }
 async function openMemory() {
+  clearExport();
   pause("正在管理游戏记忆。");
   panel.value = true;
   emit("memoryPanel", true);
@@ -184,12 +191,17 @@ async function download(all = false) {
       href = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = href;
-    a.download = `wao-${all ? "all-games" : props.gameId}-memory-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `wao-${all ? "all-games" : props.gameId}-memory-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    clearExport();
+    exportUrl.value = href;
+    exportName.value = a.download;
+    a.hidden = true;
+    document.body.append(a);
     a.click();
-    setTimeout(() => URL.revokeObjectURL(href), 1000);
+    a.remove();
     feedback.value = all
-      ? `已导出全部已开放游戏：${Object.values(games).map(g => g.name).join("、")}。`
-      : `已导出${game.name}记忆。${game.restore}。`;
+      ? `已生成全部已开放游戏的记忆：${Object.values(games).map(g => g.name).join("、")}。若下载未开始，请点击下方下载文件。`
+      : `已生成${game.name}记忆。${game.restore}。若下载未开始，请点击下方下载文件。`;
   } catch (e) {
     feedback.value = e instanceof Error ? e.message : "导出失败，请重试。";
   }
@@ -255,6 +267,7 @@ async function confirmImport() {
         entries.map(e => memories[e.record.gameId].current())) : records;
       for (const record of saved) memories[record.gameId].acceptImported(record, item.toLocal);
     }
+    clearExport();
     resetFrame();
     pending.value = undefined;
     backups.value = await memory.backups();
@@ -372,6 +385,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   disposed = true;
+  if (exportUrl.value) URL.revokeObjectURL(exportUrl.value);
   send({ type: "dispose", payload: null });
   observer?.disconnect();
   clearTimeout(timer);
@@ -476,8 +490,9 @@ onBeforeUnmount(() => {
         />
       </div>
       <p class="note">
-        导出的是可恢复的游戏存档。恐龙保留纪录，裂隙保留房间检查点，星野保留已确认行动；全部导出包含三款游戏。
+        导出的是可恢复的游戏存档。本款：{{ game.restore }}。全部导出包含 {{ Object.keys(games).length }} 款已开放游戏。
       </p>
+      <p v-if="exportUrl"><a :href="exportUrl" :download="exportName">下载记忆文件（{{ exportName }}）</a></p>
       <div
         v-if="
           memory.status.value === 'conflict' || memory.status.value === 'error'
@@ -538,6 +553,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.game-host, .game-host * { box-sizing: border-box; }
+.memory-panel a { display: inline-block; overflow-wrap: anywhere; max-width: 100%; min-height: 44px; padding: 10px 0; }
 .game-host {
   position: relative;
   width: 100%;

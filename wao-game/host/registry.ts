@@ -1,3 +1,4 @@
+import {freshBeastMemory,isBeastMemory,type BeastMemory} from "../games/beasts/save";
 import { freshMemory, isDinoMemory, type DinoMemory } from "../games/dino/save";
 import { freshStarfieldMemory, isStarfieldMemory, type StarfieldMemory } from "../games/starfield/save";
 import {
@@ -10,9 +11,11 @@ export interface GameMemories {
   dino: DinoMemory;
   rift: RiftMemory;
   starfield: StarfieldMemory;
+  beasts: BeastMemory;
 }
 export type GameId = keyof GameMemories;
 export const games = {
+  beasts: { name: "幻兽领地", letter: "绿色领地", tagline: "把心事，养成小兽。", restore: "保存收集与成长 · 遭遇从本节点开战前恢复", fresh: freshBeastMemory, validate:isBeastMemory },
   dino: {
     name: "恐龙荒野",
     letter: "荒野来信",
@@ -39,7 +42,7 @@ export const games = {
   },
 } as const;
 export function isGameId(id: unknown): id is GameId {
-  return id === "dino" || id === "rift" || id === "starfield";
+  return id === "dino" || id === "rift" || id === "starfield" || id === "beasts";
 }
 export function clonePayload<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;

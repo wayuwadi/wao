@@ -14,7 +14,11 @@
     "dev:starfield": "vite --config games/starfield/vite.config.ts",
     "build:starfield": "vue-tsc --noEmit -p games/starfield/tsconfig.json && vite build --config games/starfield/vite.config.ts",
     "test:starfield": "vitest run --config games/starfield/vite.config.ts",
-    "lint:starfield": "oxlint games/starfield --deny-warnings"
+    "lint:starfield": "oxlint games/starfield --deny-warnings",
+    "dev:beasts": "vite --config games/beasts/vite.config.ts",
+    "build:beasts": "vue-tsc --noEmit -p games/beasts/tsconfig.json && vite build --config games/beasts/vite.config.ts",
+    "test:beasts": "vitest run --config games/beasts/vite.config.ts",
+    "lint:beasts": "oxlint games/beasts --deny-warnings"
   },
   "dependencies": {
     "vue": "3.5.40"

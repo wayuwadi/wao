@@ -14,7 +14,7 @@ export function gameAssetsDevPlugin() {
         res.setHeader('Cache-Control', 'no-store')
         res.end(await readFile(new URL('../../wao-game/games/dino/narrow.html', import.meta.url)))
       })
-      for (const gameId of ['dino', 'rift', 'starfield']) server.middlewares.use(`/play-assets/dev/${gameId}`, async (req, res) => {
+      for (const gameId of ['dino', 'rift', 'starfield', 'beasts']) server.middlewares.use(`/play-assets/dev/${gameId}`, async (req, res) => {
         const root = resolve(gamesRoot, gameId)
         try {
           const requestPath = decodeURIComponent((req.url ?? '/').split('?')[0])
