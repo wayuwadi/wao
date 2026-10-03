@@ -56,6 +56,22 @@ afterEach(() => {
 })
 
 describe('顶栏更新入口', () => {
+  it('已在历史锚点时，重复点击仍定位时间线且关闭浮层', async () => {
+    const router = await render()
+    await router.push('/features#recent-updates')
+    const section = document.createElement('section')
+    section.id = 'recent-updates'
+    section.scrollIntoView = vi.fn()
+    document.body.append(section)
+    for (let index = 0; index < 2; index++) {
+      await click('.update-entry')
+      await click('a[href="/features#recent-updates"]')
+      await flushPromises()
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+    }
+    expect(section.scrollIntoView).toHaveBeenCalledTimes(2)
+    expect(router.currentRoute.value.hash).toBe('#recent-updates')
+  })
   it('新版本不抢焦点、不自动展开；展开才读取目标说明，稍后可重开', async () => {
     await render()
     const input = document.createElement('textarea')

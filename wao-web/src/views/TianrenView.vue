@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
   createTodayTianrenReading,
   createTianrenShareLink,
   fetchTianrenHistory,
   fetchTodayTianrenReading,
+  fetchTianrenAiStatus,
   streamTianrenInterpretation,
   type TianrenReading,
 } from '@/api/tianren'
-import { fetchAssistantConversation, fetchAssistantStatus } from '@/api/assistant'
+import { fetchAssistantConversation } from '@/api/assistant'
 import { copyToClipboard } from '@/utils/clipboard'
 import { renderMarkdown } from '@/utils/markdown'
 import TianrenNotificationStatus from '@/components/workday/TianrenNotificationStatus.vue'
@@ -39,6 +40,10 @@ const interpretationError = ref('')
 const conversationError = ref('')
 const conversationLoading = ref(false)
 let assistantStatusRequest: Promise<boolean> | null = null
+const backgroundRunning = ref(false)
+let statusTimer: ReturnType<typeof setTimeout> | undefined
+let disposed = false
+onBeforeUnmount(() => { disposed = true; if (statusTimer) clearTimeout(statusTimer) })
 
 const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date())
 const draftKey = `wao-tianren-focus-v1:${localDate}`
@@ -65,7 +70,7 @@ const displayLines = computed(() => (reading.value?.lines ?? [])
 
 const interpretationHtml = computed(() => renderMarkdown(interpretation.value))
 const isViewingToday = computed(() => reading.value?.date === localDate)
-const canInterpret = computed(() => isViewingToday.value && assistantConfigured.value && !interpreting.value)
+const canInterpret = computed(() => isViewingToday.value && assistantConfigured.value && !interpreting.value && !backgroundRunning.value)
 const season = computed(() => {
   const month = Number((reading.value?.date ?? localDate).slice(5, 7))
   if (month >= 3 && month <= 5) return { name: '春 · 生', icon: 'ri-seedling-line', note: '留意舒展与循序，给今天保留一点向外生长的空间。' }
@@ -95,12 +100,18 @@ function loadDraft() {
 
 function loadAssistant(): Promise<boolean> {
   if (assistantStatusRequest) return assistantStatusRequest
+  if (statusTimer) clearTimeout(statusTimer)
   assistantLoading.value = true
   assistantStatusRequest = (async () => {
     try {
-      const status = await fetchAssistantStatus()
+      const status = await fetchTianrenAiStatus()
+      if (disposed) return false
+      const wasRunning = backgroundRunning.value
+      backgroundRunning.value = ['secure_queued', 'secure_running', 'queued', 'running', 'provider_queued', 'provider_running'].includes(status.runStatus || '')
       assistantConfigured.value = status.configured
       assistantMessage.value = status.message
+      if (backgroundRunning.value) statusTimer = setTimeout(() => void loadAssistant(), 5000)
+      else if (wasRunning && !interpreting.value && isViewingToday.value) await loadPage(false)
       return status.configured
     } catch (cause) {
       assistantConfigured.value = false
@@ -254,6 +265,7 @@ async function interpretToday() {
     interpretationError.value = cause instanceof Error ? cause.message : 'AI 解读失败，请保留关注点后重试'
   } finally {
     interpreting.value = false
+    void loadAssistant()
   }
 }
 
@@ -339,7 +351,7 @@ onMounted(() => {
                   <small>卦象是服务端事实；经典观点与当日建议由 AI 分层标注</small>
                 </div>
               </div>
-              <div v-if="(interpreting || conversationLoading) && !interpretation" class="answer-loading">
+              <div v-if="(interpreting || backgroundRunning || conversationLoading) && !interpretation" class="answer-loading">
                 <span class="typing"><i></i><i></i><i></i></span>
                 <span>{{ conversationLoading ? '正在取回这一天保存的联合解读……' : '正在梳理卦意、生活观察与今天的调养提示……' }}</span>
               </div>
@@ -354,7 +366,7 @@ onMounted(() => {
                 <strong>这一天没有保存 AI 解读</strong>
                 <span>完整卦象仍可回看；历史结果不会用今天的接口补做或伪造。</span>
               </div>
-<p v-if="isViewingToday && !interpretation && !interpreting && !conversationLoading && !conversationError" class="empty-answer">今日还没有保存 AI 解读。可以填写关注点，再发起解读。</p>
+<p v-if="isViewingToday && !interpretation && !interpreting && !backgroundRunning && !conversationLoading && !conversationError" class="empty-answer">今日还没有保存 AI 解读。可以填写关注点，再发起解读。</p>
               <div v-if="interpretationError || conversationError" class="answer-error" role="alert">
                 <i class="ri-error-warning-line"></i>
                 <span>{{ interpretationError || conversationError }}</span>
@@ -496,8 +508,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.tianren-page { min-height: 100%; padding: 24px 28px 40px; color: var(--wao-text); background: var(--wao-bg-page); container-type: inline-size; }
-.hero, .page-content { max-width: 1180px; margin: 0 auto; }
+.tianren-page { width: 100%; box-sizing: border-box; min-height: 100%; padding: 24px 28px 40px; color: var(--wao-text); background: var(--wao-bg-page); container-type: inline-size; }
+.hero, .page-content { max-width: var(--wao-content-max); margin: 0 auto; }
 .hero { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
 .page-title { display: flex; align-items: center; gap: 12px; }.page-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: var(--wao-primary-soft); color: var(--wao-primary); font-size: 22px; }
 h1 { margin: 0; font-size: 23px; font-weight: 650; }h2 { font-size: 22px; margin: 8px 0; }h3 { font-size: 15px; margin: 0 0 12px; }.hero p, .muted { margin: 4px 0 0; color: var(--wao-text-3); font-size: 12px; }

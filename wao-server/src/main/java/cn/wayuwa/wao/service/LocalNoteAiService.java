@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.env.Environment;
@@ -44,6 +45,9 @@ public class LocalNoteAiService {
     private String capability;
     private FileChannel lockChannel;
     private FileLock lock;
+
+    @Autowired
+    private LocalCodexConversationCompletion conversationCompletion;
 
     public LocalNoteAiService(AiAssistantRunMapper runs, ImageService images, NoteAiWorkflowMapper workflows,
             ObjectProvider<NoteAiWorkflowService> workflowService, Environment environment) {
@@ -91,17 +95,22 @@ public class LocalNoteAiService {
 
     /** 使用已有持久队列保存小记输入，模型调用由本机 worker 完成。 */
     public String enqueue(String memberId, String prompt, String purpose, String model) {
-        requireAvailable();
-        if (runs.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
-                .eq(AiAssistantRunEntity::getAiCapabilityId, capability)
-                .in(AiAssistantRunEntity::getStatus, "secure_queued", "provider_running")) >= 100)
-            throw new BadRequestException("本机 AI 队列已满；原文已保留，请稍后重试");
+        requireCapacity();
         AiAssistantRunEntity run = new AiAssistantRunEntity();
         run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
         run.setMemberId(memberId); run.setAiCapabilityId(capability); run.setUsagePurpose(purpose);
         run.setRequestedModel(model); run.setPromptText(prompt); run.setWebSearchEnabled(false); run.setStatus("secure_queued");
         runs.insertReadOnlyQueued(run);
         return run.getId();
+    }
+
+    /** 本机业务共用有界队列；会话型业务自行在事务中保存成员消息。 */
+    public void requireCapacity() {
+        requireAvailable();
+        if (runs.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
+                .eq(AiAssistantRunEntity::getAiCapabilityId, capability)
+                .in(AiAssistantRunEntity::getStatus, "secure_queued", "provider_running")) >= 100)
+            throw new BadRequestException("本机 AI 队列已满；原文已保留，请稍后重试");
     }
 
     private void tick() {
@@ -149,7 +158,10 @@ public class LocalNoteAiService {
                 storedImageId = stored.id(); response = stored.url();
             }
             // 只有明确返回 CAS 失败才清理孤儿；数据库提交结果未知时不能删除可能已被引用的图片。
-            if (runs.completeProviderSucceeded(run.getId(), claim, response) == 0) orphanImageId = storedImageId;
+            int completed = run.getConversationId() == null
+                    ? runs.completeProviderSucceeded(run.getId(), claim, response)
+                    : conversationCompletion.complete(run, claim, response);
+            if (completed == 0) orphanImageId = storedImageId;
         } catch (Exception exception) {
             log.warn("本机小记 AI 执行失败：{}", exception.getClass().getSimpleName());
             String error = exception instanceof IllegalStateException ? exception.getMessage()

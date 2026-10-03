@@ -1,5 +1,6 @@
 import type { FeatureCatalogEntry, ReleaseEdition } from '@/types/featureExplorer'
 import currentRelease from './currentRelease.json'
+import releaseHistory from './releaseHistory.json'
 
 /**
  * 功能名称、图标和路由仍以 MODULES 为权威；这里只补充面向成员的介绍文案与展示分组。
@@ -90,3 +91,6 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
 
 /** 当前前端制品携带的精选说明；只有 id 变化时才会成为新的自动介绍批次。 */
 export const CURRENT_RELEASE = currentRelease as ReleaseEdition
+
+/** 经确认的更新档案；相同日期保持清单中的发布顺序，不覆盖历史记录。 */
+export const RELEASE_HISTORY = (releaseHistory as ReleaseEdition[]).slice().sort((a, b) => b.publishedOn.localeCompare(a.publishedOn))

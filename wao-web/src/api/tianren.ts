@@ -51,6 +51,9 @@ async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
 export const fetchTodayTianrenReading = () =>
   data<TianrenReading | null>(http.get('/api/tianren/readings/today'))
 
+export interface TianrenAiStatus { configured: boolean; message: string; runStatus?: string | null; runId?: string | null }
+export const fetchTianrenAiStatus = () => data<TianrenAiStatus>(http.get('/api/tianren/readings/ai-status'))
+
 export const createTodayTianrenReading = () =>
   data<TianrenReading>(http.post('/api/tianren/readings/today'))
 

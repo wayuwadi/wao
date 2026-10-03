@@ -18,9 +18,9 @@ function render() {
 describe('功能探索', () => {
   it('展示当前版本精选与真实功能目录，不再出现示例预览', () => {
     const { wrapper } = render()
-    expect(wrapper.findAll('.latest-card')).toHaveLength(2)
+    expect(wrapper.findAll('.release-edition').length).toBeGreaterThan(1)
     expect(wrapper.findAll('.catalog-card')).toHaveLength(Math.min(12, FEATURE_CATALOG.length))
-    expect(wrapper.text()).toContain('最新功能')
+    expect(wrapper.text()).toContain('最近更新')
     expect(wrapper.text()).toContain('全部功能')
     expect(wrapper.text()).not.toContain('示例预览')
     wrapper.unmount()
