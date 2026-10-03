@@ -2,7 +2,7 @@
 import type { Priority, TaskStatus, ProjectStatus } from '@/types'
 
 /** ISO(YYYY-MM-DD) → “M月D日”（无前导零）。 */
-export function fmtDate(iso: string): string {
+export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   return `${+iso.slice(5, 7)}月${+iso.slice(8, 10)}日`
 }
@@ -13,7 +13,7 @@ export interface DueInfo {
 }
 
 /** 截止信息：逾期红 / 今天·明天橙 / 其余弱灰。 */
-export function dueInfo(iso: string, today: string): DueInfo {
+export function dueInfo(iso: string | null | undefined, today: string): DueInfo {
   if (!iso) return { label: '—', color: '#9A9DA9' }
   const d = Math.round((+new Date(iso) - +new Date(today)) / 86400000)
   if (d < 0) return { label: `逾期 ${-d} 天`, color: '#BC4141' }

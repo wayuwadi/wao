@@ -1683,7 +1683,7 @@ export const useDataStore = defineStore('data', () => {
       created = {
         id: 'p' + Date.now(), name: payload.name, icon: 'ri-stack-line', area: payload.area, status: '规划中', health: '良好',
         progress: 0, owner: 'wg', members: payload.visAll ? ['wg', 'wd'] : ['wg'],
-        start: today, due: '2026-09-30',
+        start: today, due: '',
         visibility: payload.visAll ? '组织内 2 人 · 可查看' : '仅自己可见',
         updated: '刚刚', goal: payload.goal || '尚未填写目标——打开项目后可补充。',
         milestones: [], msDates: [], trend: [0, 0], blockers: [], docs: [], files: [],
@@ -1698,17 +1698,17 @@ export const useDataStore = defineStore('data', () => {
   /** 更新项目字段（名称 / 领域 / 状态 / 目标 / 图标 / 通知开关）；apiLive 时写透后端。 */
   async function updateProject(
     id: string,
-    patch: { name?: string; area?: string; status?: Project['status']; goal?: string; icon?: string; notifyEnabled?: boolean },
+    patch: { name?: string; area?: string; status?: Project['status']; goal?: string; icon?: string; notifyEnabled?: boolean; due?: string },
   ): Promise<boolean> {
     const p = projectById(id)
     if (!p) return false
-    Object.assign(p, patch)
-    if (!apiLive.value) return true
+    if (!apiLive.value) { Object.assign(p, patch); return true }
     try {
-      await apiPatchProject(id, patch)
+      const saved = await apiPatchProject(id, patch)
+      Object.assign(p, patch, saved)
       return true
     } catch {
-      /* 保留本地乐观更新，但要让调用方知道没落库，好提示重试 */
+      /* 表单保留输入，列表继续展示已持久化结果；调用方提示重试。 */
       return false
     }
   }

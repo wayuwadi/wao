@@ -31,7 +31,7 @@ CLI 支持通过独立授权的现有托管页 API 发布一个公开 HTML 页�
 | 领域 | MCP 工具 | CLI 子命令 |
 | --- | --- | --- |
 | 项目读取 | `list_projects`、`get_project` | `projects list`、`projects get ID` |
-| 项目写入 | `create_project`、`update_project` | `projects create`、`projects update ID` |
+| 项目写入 | `create_project`、`update_project` | `projects create`、`projects update ID`；可选 `--due yyyy-MM-dd`，清空使用 `--input '{"due":""}'`，省略不改已有日期 |
 | 任务读取 | `list_open_tasks`、`get_task` | `tasks open`、`tasks get ID` |
 | 子任务状态 | `update_subtask_status` | `subtasks status ID` |
 | 任务写入 | `create_task`、`update_task` | `tasks create`、`tasks update ID` |

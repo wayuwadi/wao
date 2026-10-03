@@ -39,6 +39,40 @@ vi.mock('@/api/ai', () => ({
 }))
 
 describe('项目设置', () => {
+  it('截止日期失败保留输入，重试可保存并再次清空', async () => {
+    const data = useDataStore(), project = data.projects[0]!
+    project.due = '2026-12-03'
+    const save = vi.spyOn(data, 'updateProject').mockResolvedValueOnce(false).mockResolvedValue(true)
+    const wrapper = mount(ProjectSettingsModal, { props: { project } })
+    await wrapper.get('[aria-label="项目截止日期"]').setValue('2027-01-15')
+    await wrapper.get('.btn-primary').trigger('click'); await flushPromises()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(wrapper.get('[role="alert"]').text()).toContain('保存失败')
+    expect(wrapper.get('[aria-label="项目截止日期"]').element).toHaveProperty('value', '2027-01-15')
+    expect(project.due).toBe('2026-12-03')
+    await wrapper.get('.btn-primary').trigger('click'); await flushPromises()
+    expect(save).toHaveBeenLastCalledWith(project.id, expect.objectContaining({ due: '2027-01-15' }))
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+    const reopened = mount(ProjectSettingsModal, { props: { project: { ...project, due: '2027-01-15' } } })
+    await reopened.findAll('button').find(button => button.text() === '清空日期')!.trigger('click')
+    expect(reopened.text()).toContain('未排期')
+    await reopened.get('.btn-primary').trigger('click'); await flushPromises()
+    expect(save).toHaveBeenLastCalledWith(project.id, expect.objectContaining({ due: '' }))
+    reopened.unmount(); save.mockRestore()
+  })
+
+  it('没有编辑日期时不覆盖后台刷新带来的新日期', async () => {
+    const data = useDataStore(), project = data.projects[0]!
+    project.due = '2026-12-03'
+    const save = vi.spyOn(data, 'updateProject').mockResolvedValue(true)
+    const wrapper = mount(ProjectSettingsModal, { props: { project } })
+    project.due = '2027-01-15'
+    await wrapper.get('.title-input').setValue('只改项目名称')
+    await wrapper.get('.btn-primary').trigger('click'); await flushPromises()
+    expect(save.mock.calls[0]![1]).not.toHaveProperty('due')
+    wrapper.unmount(); save.mockRestore()
+  })
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())

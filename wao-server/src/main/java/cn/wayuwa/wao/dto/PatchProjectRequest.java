@@ -12,7 +12,15 @@ public record PatchProjectRequest(
         /** 这个项目的动静要不要发飞书群；null 表示不改。 */
         Boolean notifyEnabled,
         /** 自定义任务分组的完整列表（整表替换）；null 表示不改，空数组表示清空。 */
-        List<TaskGroupDto> taskGroups) {
+        List<TaskGroupDto> taskGroups,
+        /** yyyy-MM-dd；省略或 null 表示不改，空串表示清空。 */
+        String due) {
+
+    /** 兼容既有调用，不改变历史截止日期。 */
+    public PatchProjectRequest(String name, String area, String status, String goal, String icon,
+                               Boolean notifyEnabled, List<TaskGroupDto> taskGroups) {
+        this(name, area, status, goal, icon, notifyEnabled, taskGroups, null);
+    }
 
     /** 兼容尚未引入任务分组的既有调用。 */
     public PatchProjectRequest(String name, String area, String goal, String icon, Boolean notifyEnabled) {
