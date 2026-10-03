@@ -14,13 +14,19 @@ import {
 } from '@/utils/versionUpdate'
 
 const props = defineProps<{ row?: boolean; anchor?: HTMLElement }>()
-const emit = defineEmits<{ 'available-change': [value: boolean]; opened: [] }>()
+const emit = defineEmits<{ 'available-change': [value: boolean]; 'arrival-change': [value: boolean]; opened: [] }>()
 const router = useRouter()
 const route = useRoute()
 const trigger = ref<HTMLButtonElement>()
 const panel = ref<HTMLElement>()
 const closeButton = ref<HTMLButtonElement>()
 const open = ref(false)
+const arriving = ref(false)
+watch(arriving, value => emit('arrival-change', value))
+const ANNOUNCED_KEY = 'wao-update-arrival-version'
+let arrivalTimer: ReturnType<typeof setTimeout> | undefined
+let pendingArrival = false
+let motionPreference: MediaQueryList | undefined
 const availableVersion = ref('')
 watch(availableVersion, value => emit('available-change', !!value), { immediate: true })
 const upcoming = ref<ReleaseEdition | null>(null)
@@ -38,16 +44,42 @@ let observer: ResizeObserver | undefined
 
 function positionPanel() {
   const rect = (props.anchor ?? trigger.value)?.getBoundingClientRect()
-  if (!rect) return
   const width = Math.min(380, window.innerWidth - 24)
-  const top = Math.max(12, Math.min(rect.bottom + 10, window.innerHeight - 160))
+  // 窄屏完整菜单可能尚未打开；隐藏入口不能成为浮层的定位锚点。
+  const visibleAnchor = rect && rect.width > 0 && rect.height > 0
+  const top = visibleAnchor ? Math.max(12, Math.min(rect.bottom + 10, window.innerHeight - 260)) : 12
   position.value = {
-    left: `${Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12))}px`,
+    left: `${Math.max(12, Math.min((visibleAnchor ? rect.right : window.innerWidth - 12) - width, window.innerWidth - width - 12))}px`,
     top: `${top}px`,
     width: `${width}px`,
     maxHeight: `${Math.max(120, window.innerHeight - top - 12)}px`,
   }
 }
+function stopArrival() {
+  clearTimeout(arrivalTimer)
+  arriving.value = false
+}
+function announce() {
+  if (!pendingArrival || document.hidden || busy.value) return
+  pendingArrival = false
+  try { sessionStorage.setItem(ANNOUNCED_KEY, availableVersion.value) } catch { /* 本标签页内仍由版本去重。 */ }
+  positionPanel()
+  open.value = true
+  emit('opened')
+  void load()
+  stopArrival()
+  if (!motionPreference?.matches) {
+    arriving.value = true
+    arrivalTimer = setTimeout(stopArrival, 10_000)
+  }
+  // 自动提醒不移动焦点，用户可以继续输入。
+}
+function visibilityChanged() {
+  if (document.hidden) stopArrival()
+  else announce()
+}
+function motionChanged() { if (motionPreference?.matches) stopArrival() }
+function viewportChanged() { void nextTick(positionPanel) }
 async function load() {
   const target = availableVersion.value
   if (!target || loading.value) return
@@ -80,6 +112,8 @@ async function show() {
   closeButton.value?.focus()
 }
 function close(restoreFocus = true) {
+  if (busy.value) return
+  stopArrival()
   open.value = false
   if (restoreFocus) (props.anchor ?? trigger.value)?.focus()
 }
@@ -106,17 +140,25 @@ function handleUpdate(rawEvent: Event) {
   loaded.value = false
   loading.value = false
   loadError.value = ''
-  if (open.value) void load()
+  saveError.value = ''
+  let announced = ''
+  try { announced = sessionStorage.getItem(ANNOUNCED_KEY) || '' } catch { /* 存储不可用时不阻断提醒。 */ }
+  pendingArrival = announced !== version
+  if (pendingArrival) announce()
+  else if (open.value) void load()
 }
 function handleReload(rawEvent: Event) {
   const state = (rawEvent as CustomEvent<WorkspaceReloadState>).detail
+  stopArrival()
   busy.value = state.state !== 'failed'
   busyLabel.value = state.state === 'reloading' ? '正在更新…' : '正在保存…'
   saveError.value = state.state === 'failed' ? state.message || '保存失败，草稿已保留，请重试' : ''
+  if (state.state === 'failed' && pendingArrival) announce()
 }
 function update() {
   if (busy.value || !availableVersion.value) return
   saveError.value = ''
+  stopArrival()
   reloadToLatestVersion(availableVersion.value)
 }
 function feature(item: ReleaseHighlight) {
@@ -134,7 +176,8 @@ function outside(event: PointerEvent) {
   if (
     event.target instanceof Node &&
     !panel.value?.contains(event.target) &&
-    !trigger.value?.contains(event.target)
+    !trigger.value?.contains(event.target) &&
+    !props.anchor?.contains(event.target)
   )
     close(false)
 }
@@ -150,26 +193,32 @@ watch(
   () => close(false),
 )
 onMounted(() => {
+  motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+  motionPreference?.addEventListener('change', motionChanged)
+  document.addEventListener('visibilitychange', visibilityChanged)
   document.body.addEventListener(WEB_UPDATE_EVENT, handleUpdate)
   window.addEventListener(WORKSPACE_RELOAD_STATE_EVENT, handleReload)
   document.addEventListener('pointerdown', outside)
   document.addEventListener('keydown', keydown, true)
-  window.addEventListener('resize', positionPanel)
+  window.addEventListener('resize', viewportChanged)
   window.addEventListener('scroll', positionPanel, true)
-  const header = trigger.value?.closest('header')
+  const header = (props.anchor ?? trigger.value)?.closest('header')
   if (header && typeof ResizeObserver !== 'undefined') {
     observer = new ResizeObserver(positionPanel)
     observer.observe(header)
   }
 })
 onBeforeUnmount(() => {
+  stopArrival()
+  motionPreference?.removeEventListener('change', motionChanged)
+  document.removeEventListener('visibilitychange', visibilityChanged)
   request++
   observer?.disconnect()
   document.body.removeEventListener(WEB_UPDATE_EVENT, handleUpdate)
   window.removeEventListener(WORKSPACE_RELOAD_STATE_EVENT, handleReload)
   document.removeEventListener('pointerdown', outside)
   document.removeEventListener('keydown', keydown, true)
-  window.removeEventListener('resize', positionPanel)
+  window.removeEventListener('resize', viewportChanged)
   window.removeEventListener('scroll', positionPanel, true)
 })
 </script>
@@ -203,13 +252,20 @@ onBeforeUnmount(() => {
         id="version-update-panel"
         ref="panel"
         class="update-panel"
+        :class="{ 'has-new-version': availableVersion, arriving }"
         :style="position"
         role="dialog"
         aria-labelledby="version-update-title"
       >
+        <div v-if="availableVersion" class="arrival-callout" aria-hidden="true"><span>✦</span> 叮！新功能来敲门了 <span>✦</span></div>
+        <div v-if="arriving" class="arrival-orbit" aria-hidden="true"><span v-for="n in 6" :key="n"></span></div>
         <header class="panel-heading">
-          <div>
-            <span class="eyebrow">{{ availableVersion ? '新版本已准备好' : '本次更新' }}</span>
+          <div v-if="availableVersion" class="arrival-hero">
+            <span class="messenger" aria-hidden="true"><span class="messenger-eyes"></span><span class="messenger-smile"></span><span class="messenger-spark">✦</span></span>
+            <div><span class="eyebrow">新版本已就绪</span><h2 id="version-update-title">嘿，我又长本领了。</h2><p>新功能已经送到，刷新就能拆开。</p></div>
+          </div>
+          <div v-else>
+            <span class="eyebrow">本次更新</span>
             <h2 id="version-update-title">{{ edition?.title || '看看这次的新变化' }}</h2>
           </div>
           <button
@@ -217,6 +273,7 @@ onBeforeUnmount(() => {
             class="icon-button"
             type="button"
             aria-label="关闭更新内容"
+            :disabled="busy"
             @click="close()"
           >
             <i class="ri-close-line" aria-hidden="true"></i>
@@ -229,6 +286,7 @@ onBeforeUnmount(() => {
             <button type="button" class="text-button" @click="load">重试读取</button>
           </div>
           <template v-else-if="edition">
+            <h3 v-if="availableVersion" class="release-title">{{ edition.title }}</h3>
             <p class="intro">{{ edition.intro }}</p>
             <p class="edition-date">{{ edition.publishedOn }}</p>
             <ul v-if="edition.highlights.length" class="highlights">
@@ -259,7 +317,7 @@ onBeforeUnmount(() => {
           </template>
           <p v-else-if="loaded">本次版本暂未附带更新说明，仍可安全保存并更新。</p>
         </div>
-        <footer>
+        <footer class="update-footer">
           <p v-if="saveError" class="error" role="alert">{{ saveError }}</p>
           <p v-else class="save-hint">
             {{
@@ -270,8 +328,8 @@ onBeforeUnmount(() => {
           </p>
           <div class="panel-actions">
             <RouterLink class="text-button" :to="{ path: '/features', hash: '#recent-updates' }" @click="browseHistory">最近更新</RouterLink>
-            <button type="button" class="later" @click="close()">
-              {{ availableVersion ? '稍后' : '收起' }}
+            <button type="button" class="later" :disabled="busy" @click="close()">
+              {{ availableVersion ? '稍后再说' : '收起' }}
             </button>
             <button
               v-if="availableVersion"
@@ -280,7 +338,7 @@ onBeforeUnmount(() => {
               :disabled="busy"
               @click="update"
             >
-              {{ busy ? busyLabel : saveError ? '重试保存并更新' : '保存并更新' }}
+              <i class="ri-refresh-line" aria-hidden="true"></i>{{ busy ? busyLabel : saveError ? '重试保存并刷新' : '保存并刷新' }}
             </button>
             <RouterLink v-else class="explore-link" to="/features" @click="close(false)"
               >探索全部功能<i class="ri-arrow-right-up-line" aria-hidden="true"></i
@@ -434,7 +492,7 @@ h3 {
   font-size: 12px;
   cursor: pointer;
 }
-footer {
+.update-footer {
   padding: 12px 20px 16px;
   border-top: 1px solid var(--wao-line);
   flex: none;
@@ -523,13 +581,71 @@ a:focus-visible {
     font-size: 14px;
     margin-top: 0;
   }
-  footer {
+  .update-footer {
     padding: 8px 16px;
   }
   .save-hint {
     display: none;
   }
 }
+</style>
+
+<style scoped>
+.update-panel.has-new-version {
+  border-color:color-mix(in srgb,var(--wao-primary) 32%,var(--wao-line));
+  transform-origin:90% 0;
+  box-shadow:var(--wao-shadow-pop-2),0 0 0 3px color-mix(in srgb,var(--wao-primary) 6%,transparent);
+}
+.arrival-callout {
+  display:flex; justify-content:center; align-items:center; gap:12px; flex:none;
+  padding:8px 16px; color:#fff; background:linear-gradient(110deg,var(--wao-primary),#8570d9,var(--wao-primary));
+  background-size:200% 100%; font-size:12px; font-weight:600;
+}
+.arrival-hero { display:flex; align-items:center; gap:14px; min-width:0; }
+.has-new-version .panel-heading { padding:22px 18px 18px; background:linear-gradient(125deg,var(--wao-primary-soft),var(--wao-bg-card) 85%); }
+.arrival-hero h2 { font-size:20px; margin:4px 0 6px; letter-spacing:-.6px; }
+.arrival-hero .eyebrow { color:var(--wao-primary-text); }
+.arrival-hero p { color:var(--wao-text-weak); font-size:12px; margin:0; }
+.messenger {
+  position:relative; flex:none; width:48px; height:52px; display:block; border-radius:18px 18px 16px 8px;
+  transform:rotate(-8deg); background:linear-gradient(145deg,#8995ff,var(--wao-primary) 68%);
+  box-shadow:0 8px 16px color-mix(in srgb,var(--wao-primary) 25%,transparent);
+}
+.messenger-eyes { position:absolute; top:19px; left:13px; width:5px; height:7px; border-radius:5px; background:#fff; box-shadow:17px 0 0 #fff; }
+.messenger-smile { position:absolute; top:30px; left:20px; width:10px; height:6px; border-bottom:2px solid #fff; border-radius:0 0 9px 9px; }
+.messenger-spark { position:absolute; top:-16px; right:-11px; color:#efb64e; font-size:25px; }
+.release-title { margin:16px 0 8px; }
+.has-new-version .update-button { box-shadow:0 4px 12px color-mix(in srgb,var(--wao-primary) 20%,transparent); }
+.icon-button:disabled,.later:disabled { opacity:.5; cursor:wait; }
+.arrival-orbit { position:absolute; top:50px; right:0; width:100%; height:240px; overflow:hidden; pointer-events:none; z-index:1; }
+.arrival-orbit > span { position:absolute; top:35px; right:35px; width:7px; height:7px; border-radius:2px; background:var(--wao-primary); opacity:0; --dx:-150px; --dy:50px; --delay:0s; }
+.arrival-orbit > span:nth-child(2) { --dx:-270px; --dy:100px; --delay:.15s; background:#edaf44; border-radius:50%; }
+.arrival-orbit > span:nth-child(3) { --dx:-85px; --dy:145px; --delay:.3s; background:#62c9b9; }
+.arrival-orbit > span:nth-child(4) { --dx:20px; --dy:180px; --delay:.25s; background:#a68beb; border-radius:50%; }
+.arrival-orbit > span:nth-child(5) { --dx:-220px; --dy:145px; --delay:.4s; background:#a68beb; }
+.arrival-orbit > span:nth-child(6) { --dx:-40px; --dy:60px; --delay:.1s; background:#edaf44; border-radius:50%; }
+.update-panel.arriving { animation:update-card-arrival 10s cubic-bezier(.2,.7,.25,1) both; }
+.arriving .arrival-callout { animation:update-callout-shimmer 3.33s ease-in-out 3; }
+.arriving .messenger { animation:update-messenger-wave 2.5s ease-in-out 4; }
+.arriving .messenger-eyes { animation:update-messenger-blink 3.33s ease-in-out 3; }
+.arriving .messenger-spark { animation:update-star-twinkle 2.5s ease-in-out 4; }
+.arriving .arrival-orbit > span { animation:update-confetti 5s var(--delay) ease-out 2; }
+@keyframes update-card-arrival {
+  0% { opacity:0; transform:translate(25px,-35px) scale(.62) rotate(6deg); }
+  8% { opacity:1; transform:translate(-2px,6px) scale(1.018) rotate(-1deg); }
+  14%,32%,55%,78%,100% { transform:translate(0,0) scale(1) rotate(0); }
+  23%,45% { transform:translateY(-10px) rotate(-.4deg); }
+  67% { transform:translateY(-6px) rotate(.3deg); }
+}
+@keyframes update-messenger-wave { 0%,100% { transform:rotate(-8deg); } 25% { transform:translateY(-8px) rotate(12deg) scale(1.07); } 50% { transform:rotate(-12deg); } 75% { transform:rotate(5deg); } }
+@keyframes update-messenger-blink { 0%,40%,48%,100% { transform:scaleY(1); } 44% { transform:scaleY(.15); } }
+@keyframes update-star-twinkle { 0%,100% { transform:scale(.8) rotate(0); } 50% { transform:scale(1.25) rotate(45deg); } }
+@keyframes update-callout-shimmer { to { background-position:200% 0; } }
+@keyframes update-confetti { 0%,10% { opacity:0; transform:translate(0,0) rotate(0) scale(.5); } 14% { opacity:.95; } 48% { opacity:.8; } 70%,100% { opacity:0; transform:translate(var(--dx),var(--dy)) rotate(230deg) scale(.5); } }
+@media(max-width:380px) { .arrival-hero { gap:10px; } .arrival-hero h2 { font-size:17px; } .has-new-version .panel-heading { padding:16px 12px; gap:4px; } .messenger { width:42px; height:48px; } .messenger-eyes { left:10px; } .messenger-smile { left:17px; } }
+@media(max-height:480px) { .arrival-callout { padding:4px 12px; } .has-new-version .panel-heading { padding:8px 12px; } .messenger { display:none; } .arrival-hero h2 { font-size:16px; margin:0; } .arrival-hero p { display:none; } }
+@media(pointer:coarse) { .icon-button { min-width:44px; min-height:44px; } .panel-actions button,.panel-actions a { min-height:44px; } }
+@media(prefers-reduced-motion:reduce) { .update-panel.arriving,.arriving .arrival-callout,.arriving .messenger,.arriving .messenger-eyes,.arriving .messenger-spark,.arriving .arrival-orbit > span { animation:none; } .arrival-orbit { display:none; } }
 </style>
 
 <style scoped>

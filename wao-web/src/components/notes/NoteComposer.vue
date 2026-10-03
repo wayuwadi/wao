@@ -10,6 +10,7 @@ import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteCon
 import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
+import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
 const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: 'floating'; compact?: boolean; active?: boolean }>(), { active: true })
@@ -381,6 +382,12 @@ async function save() {
 }
 
 defineExpose({ save, dirty })
+useSaveBeforeRefresh(async () => {
+  if (saving.value) throw new Error('小记正在保存，请完成后再刷新')
+  if (!dirty.value) return
+  await save()
+  if (dirty.value || error.value) throw new Error(error.value || '小记尚未保存，输入已保留，请先完成保存')
+})
 
 async function uploadImage(file: File, done: (url: string | null, name: string) => void) {
   try {
