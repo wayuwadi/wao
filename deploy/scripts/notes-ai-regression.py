@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SUITES = (
     'cn.wayuwa.wao.service.NoteAiWorkflowServiceTest',
     'cn.wayuwa.wao.service.NoteAiWorkflowTransactionTest',
+    'cn.wayuwa.wao.service.NoteAiWorkflowQueueTest',
     'cn.wayuwa.wao.service.TextPolishJobServiceTest',
     'cn.wayuwa.wao.service.AiAssistantServiceTest',
     'cn.wayuwa.wao.mapper.AiAssistantRunMapperIntegrationTest',
