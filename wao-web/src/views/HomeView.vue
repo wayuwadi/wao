@@ -26,9 +26,14 @@ function actions(event: MouseEvent | KeyboardEvent, index?: number) {
   void menu.value?.openAt(event, index === undefined ? '此刻，想做点什么？' : ['小画家的画外音', '小书虫的旧纸条', '小开心的即兴舞', '小青蛙的慢时光'][index]!, [
     { id: 'inspire', label: index === 1 ? '翻翻自己的旧小记' : '给我一个新灵感', run: () => paper.value?.show(index === 1 ? 'memory' : 'question') },
     { id: 'write', label: '记下一个念头', run: () => paper.value?.show('write') },
+    { id: 'receive', label: '递一段文字给小画家', run: () => { void paper.value?.showCapture() } },
+    { id: 'ball', label: '抛个小球', run: () => companions.value?.play() },
     { id: 'dance', label: index === undefined ? '大家，跳支舞吧！' : '跳支舞给我看', run: () => companions.value?.dance(index) },
     { id: 'quiet', label: companionQuiet.value ? '唤醒伙伴' : '安静陪伴一会儿', run: () => companions.value?.toggleQuiet() },
   ])
+}
+async function receive(text: string) {
+  if (!await paper.value?.showCapture(text)) companions.value?.say('纸条里还有文字，先收好，再递给我。')
 }
 function blankMenu(event: MouseEvent) {
   if (!(event.target instanceof Element) || event.target.closest('a,button,input,textarea,[contenteditable],select,[role="dialog"]') || window.getSelection()?.toString()) return
@@ -55,7 +60,7 @@ function blankMenu(event: MouseEvent) {
         </div>
         <small class="play-hint">也可以在空白处或伙伴身上右键，发现一点小惊喜。</small>
       </div>
-      <div class="home-companion-space"><HomeCompanions ref="companions" @menu="actions" /></div>
+      <div class="home-companion-space"><HomeCompanions ref="companions" @menu="actions" @receive="receive" /></div>
     </section>
     <ContextActionMenu ref="menu" />
     <HomeInspirationPaper ref="paper" />

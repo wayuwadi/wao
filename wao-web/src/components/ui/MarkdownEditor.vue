@@ -792,6 +792,14 @@ function insertTextAtSelection(value: string, deleteBefore = 0) {
   const from = Math.max(1, cursor - Math.max(0, deleteBefore))
   return instance.chain().focus().insertContentAt({ from, to: cursor }, value).run()
 }
+function appendPlainText(value: string) {
+  const instance = editor.value
+  if (!instance || instance.isDestroyed || props.readonly || !value.trim()) return false
+  const paragraphs = value.replace(/\r\n?/g, '\n').split('\n').map(text => ({
+    type: 'paragraph', ...(text ? { content: [{ type: 'text', text }] } : {}),
+  }))
+  return instance.chain().focus().insertContentAt(instance.state.doc.content.size, paragraphs).run()
+}
 let preparingTask = false
 async function addSelectionTask() {
   const e = editor.value
@@ -1898,7 +1906,7 @@ async function focusSearch(term: string) {
 }
 watch(findOpen, open => { if (!open && editor.value) editor.value.view.dispatch(editor.value.state.tr.setMeta(searchHighlightKey, null)) })
 watch([() => props.searchTerm, editor, () => props.searchRequest], ([term], previous) => { if (term) void focusSearch(term); else if (previous?.[0]) findOpen.value = false }, { immediate: true })
-defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, focusSearch })
+defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, focusSearch })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(

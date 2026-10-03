@@ -75,6 +75,8 @@ python3 deploy/scripts/compare-performance.py /实际路径/before.json /实际�
 
 ## 后续待处理
 
+- [首页轻互动回归](home-companion-play-regression.md)：留白抛球、资源暂停、文字接物与草稿追加，附真实链路和未覆盖设备边界。
+
 - 四组历史 ADR 重号的仓库内引用已做[精确归属审计与链接澄清](adr-duplicate-references.md)；历史编号仍保留，后续重编号需要核对正文和外部引用，不能只改文件名。
 - 一次较早的新建请求未取得文档 ID，测试知识库中的一篇未命名文档归属尚待核对，未擅自删除。
 - 性能工具现有样本可用来建立后续可比较基线，但尚未提供线上容量或端到端延迟结论。

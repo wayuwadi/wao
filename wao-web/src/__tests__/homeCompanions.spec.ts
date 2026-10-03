@@ -44,6 +44,22 @@ describe('首页伙伴的边界和归位', () => {
 })
 
 describe('首页伙伴的组件生命周期', () => {
+  it('拖入文字只交给预览，不保存；文件、空白与超长内容不接收', async () => {
+    const w = mount(HomeCompanions)
+    await flushPromises()
+    const target = w.find('.companion-0')
+    const transfer = (text: string, files: unknown[] = []) => ({ types: ['text/plain'], files, getData: () => text, dropEffect: '' })
+    await target.trigger('dragover', { dataTransfer: transfer('原文') })
+    expect(target.classes()).toContain('receiving')
+    await target.trigger('drop', { dataTransfer: transfer(' 原文\n第二行 ') })
+    expect(w.emitted('receive')).toEqual([['原文\n第二行']])
+    expect(target.classes()).not.toContain('receiving')
+    for (const dataTransfer of [transfer('字'.repeat(10001)), transfer(' '), transfer('文', [{}])]) {
+      await target.trigger('drop', { dataTransfer })
+    }
+    expect(w.emitted('receive')).toHaveLength(1)
+    w.unmount()
+  })
   it('安静开关交给场景处理，卸载释放资源', async () => {
     const w = mount(HomeCompanions)
     await flushPromises()
