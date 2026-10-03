@@ -341,7 +341,7 @@ onMounted(() => {
         <button v-for="tab in ([{ id: 'reading', label: '今日解读' }, { id: 'structure', label: '卦象结构' }, { id: 'history', label: '往日记录' }] as const)" :key="tab.id" type="button" :aria-pressed="activeTab === tab.id" :aria-controls="`tianren-${tab.id}`" @click="activeTab = tab.id">{{ tab.id === 'reading' && reading && !isViewingToday ? '当日解读' : tab.label }}</button>
       </nav>
       <section v-show="activeTab === 'reading'" id="tianren-reading" aria-label="当日解读">
-        <div v-if="reading" class="reading-layout">
+        <div v-if="reading" class="reading-layout" :class="{ 'reading-layout-empty': !interpretation, 'reading-layout-history': !isViewingToday }">
           <div class="reading-main">
             <section class="answer-card card">
               <div class="answer-head">
@@ -508,6 +508,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.reading-layout.reading-layout-empty, .reading-layout.reading-layout-history { grid-template-columns: minmax(0, 1fr); }
+.reading-layout-empty .reflection-card { width: 100%; max-width: 700px; box-sizing: border-box; }
 .tianren-page { width: 100%; box-sizing: border-box; min-height: 100%; padding: 24px 28px 40px; color: var(--wao-text); background: var(--wao-bg-page); container-type: inline-size; }
 .hero, .page-content { max-width: var(--wao-content-max); margin: 0 auto; }
 .hero { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
