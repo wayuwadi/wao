@@ -171,13 +171,17 @@ function onDropStatus(status: TaskStatus) {
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" title="完成 / 重新打开" @click.stop="toggleTask(t.id)">
               <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
             </button>
-            <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
-            <span v-if="t.unfinishedSubCount" class="wait-badge">仍有 {{ t.unfinishedSubCount }} 项子项未收尾</span>
-            <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span>
+            <div class="trow-main">
+              <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
+              <div v-if="t.unfinishedSubCount || t.waitBadge || t.executionLabel" class="trow-context">
+                <span v-if="t.unfinishedSubCount" class="wait-badge">仍有 {{ t.unfinishedSubCount }} 项子项未收尾</span>
+                <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span>
+                <span v-if="t.executionLabel" class="execution-label">{{ t.executionLabel }}</span>
+              </div>
+            </div>
             <span class="trow-proj"><span class="proj-dot" :style="{ background: t.projColor }"></span><span class="ellip">{{ t.projName }}</span></span>
             <span class="pr" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
             <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
-            <span v-if="t.executionLabel" class="execution-label">{{ t.executionLabel }}</span>
             <span class="trow-due" :style="{ color: t.dueColor }">{{ t.due ? (t.due < data.today ? t.dueStr : `${t.dueStr}截止`) : '无截止日期' }}</span>
             <button type="button" class="task-more" :aria-label="`更多任务操作：${t.title}`" aria-haspopup="menu" @click.stop="openTaskMenu($event, t.id)"><i class="ri-more-line"></i></button>
           </div>
@@ -683,5 +687,18 @@ function onDropStatus(status: TaskStatus) {
   .trow-title { flex-basis: calc(100% - 30px); white-space: normal; }
   .trow-proj { max-width: calc(100% - 80px); margin-left: 27px; }
   .trow-due { margin-left: auto; }
+}
+
+.trow-main { flex: 1; min-width: 0; }
+.trow-main .trow-title { display: block; white-space: normal; overflow-wrap: anywhere; line-height: 1.55; }
+.trow-context { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; margin-top: 4px; }
+.trow-context .wait-badge { max-width: 100%; overflow-wrap: anywhere; }
+.trow-context .execution-label { padding: 1px 6px; border-radius: 5px; background: var(--wao-bg-hover); }
+.task-more { min-width: 32px; min-height: 32px; }
+.trow:focus-visible, .task-more:focus-visible, .check:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .trow-main { flex-basis: calc(100% - 40px); }
+  .task-more { min-width: 40px; min-height: 40px; }
+  .trow .check { margin-top: 4px; }
 }
 </style>
