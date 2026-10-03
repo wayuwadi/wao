@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { useTheme } from '@/composables/theme'
@@ -16,6 +16,19 @@ import { worlds, type WorldId } from '@/components/relax/worlds'
 import { useRelaxProgress } from '@/components/relax/useRelaxProgress'
 import RelaxGames from '@/components/relax/RelaxGames.vue'
 import '@/components/relax/relax.css'
+const GameHost = defineAsyncComponent(() => import('../../../wao-game/host/GameHost.vue'))
+const gameImmersive = ref(false), gameMemoryOpen = ref(false)
+const selectedPage = ref('home'),
+  pageStyle = ref<WorldId>('theater')
+const pages = [
+  { id: 'dino', name: '恐龙荒野', color: '#ec6660' },
+  { id: 'arcade', name: '五人摸鱼冒险', color: '#eb973e' },
+  { id: 'orbit', name: '把伙伴送回家', color: '#c8a126' },
+  { id: 'club', name: '今天怎么躺', color: '#62a873' },
+  { id: 'gallery', name: '影子有点不对劲', color: '#41a9b3' },
+  { id: 'journal', name: '今天贴点什么', color: '#627be0' },
+]
+const gameSource = import.meta.env.DEV ? '/play-assets/dev/dino/index.html' : undefined
 const session = useSessionStore(),
   route = useRoute(),
   router = useRouter()
@@ -31,17 +44,49 @@ const {
 const gameAuthOpen = ref(false)
 const visible = ref(!document.hidden)
 const gamesActive = computed(
-  () => progress.value.place === 'play' && !gameAuthOpen.value && visible.value,
+  () => selectedPage.value !== 'home' && !gameAuthOpen.value && visible.value,
 )
 function visibility() {
   visible.value = !document.hidden
 }
 function chooseWorld(id: WorldId) {
-  progress.value.world = id
+  pageStyle.value = id
 }
-function choosePlace(place: 'rest' | 'play') {
-  if (place === 'play') stage.value?.pauseForPlay()
-  progress.value.place = place
+function choosePage(id: string) {
+  if (id !== 'home' && !pages.some((p) => p.id === id)) return
+  if (id !== 'home') stage.value?.pauseForPlay()
+  selectedPage.value = id
+  if (id !== 'home' && id !== 'dino') progress.value.world = id as WorldId
+}
+function meditate() {
+  choosePage('home')
+  void stage.value?.chooseMode('sitting')
+}
+function breatheHome() {
+  choosePage('home')
+  void stage.value?.chooseMode('breathing')
+}
+function exportLegacy() {
+  const blob = new Blob(
+    [
+      JSON.stringify(
+        {
+          format: 'wao-legacy-relax-backup',
+          exportedAt: new Date().toISOString(),
+          progress: progress.value,
+        },
+        null,
+        2,
+      ),
+    ],
+    { type: 'application/json' },
+  )
+  const url = URL.createObjectURL(blob),
+    a = document.createElement('a')
+  a.href = url
+  a.download = 'wao-legacy-relax-backup.json'
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 function openedAuth() {
   gameAuthOpen.value = true
@@ -90,74 +135,100 @@ onMounted(async () => {
 </script>
 <template>
   <main
-    class="login-stage relax-root"
-    :class="[`world-${progress.world}`, { 'relax-light': theme.mode.value === 'light' }]"
-    :data-entry-theme="theme.mode.value === 'light' ? 'light' : 'dark'"
+    class="login-stage relax-root rainbow-pages"
+    :class="[
+      `world-${pageStyle}`,
+      {
+        'relax-light': theme.effective.value === 'light',
+        'breathing-home': selectedPage === 'home',
+        'dino-page': selectedPage === 'dino',
+      },
+    ]"
+    :data-entry-theme="theme.effective.value"
   >
-    <nav class="world-switcher" aria-label="六种休息风格">
-      <span>换个心情 ↘</span>
-      <div>
+    <header class="rainbow-header" :inert="gameImmersive || gameMemoryOpen">
+      <button class="home-link" :aria-pressed="selectedPage === 'home'" @click="breatheHome">
+        WAO <small>呼吸</small>
+      </button>
+      <nav class="rainbow-tabs" aria-label="游戏页面">
         <button
-          v-for="w in worlds"
-          :key="w.id"
-          :aria-pressed="progress.world === w.id"
-          @click="chooseWorld(w.id)"
+          v-for="page in pages"
+          :key="page.id"
+          :aria-pressed="selectedPage === page.id"
+          @click="choosePage(page.id)"
         >
-          <i :style="{ background: w.color }"></i>{{ w.name }}
+          <i :style="{ background: page.color }"></i>{{ page.name }}
         </button>
-      </div>
-    </nav>
-    <div class="place-switcher" role="group" aria-label="休息或游戏">
-      <button :aria-pressed="progress.place === 'rest'" @click="choosePlace('rest')">
-        歇一会儿</button
-      ><button :aria-pressed="progress.place === 'play'" @click="choosePlace('play')">
-        玩一小会儿 ↗</button
-      ><span>六个世界，同一支小队</span>
-    </div>
-    <HomeBreathingStage
-      v-show="progress.place === 'rest'"
-      ref="stage"
-      :world="progress.world"
-      :story="progress.anecdote"
-      @workspace="enterWorkspace"
-    >
-      <template #account
-        ><button class="header-login" @click="session.authed ? enterWorkspace() : openAuth()">
-          {{ session.authed ? '进入工作空间' : '登录 WAO' }} <span aria-hidden="true">↗</span>
-        </button></template
+      </nav>
+      <select
+        class="rainbow-select"
+        aria-label="选择呼吸或游戏页面"
+        :value="selectedPage"
+        @change="choosePage(($event.target as HTMLSelectElement).value)"
       >
-      <template #footer><SiteFooter class="entry-footer" /></template>
-    </HomeBreathingStage>
-    <section v-if="progress.place === 'play'" class="play-world">
-      <header class="play-header">
-        <strong>wao <small>· 玩一小会儿</small></strong>
+        <option value="home">纯呼吸</option>
+        <option v-for="page in pages" :key="page.id" :value="page.id">{{ page.name }}</option>
+      </select>
+      <details class="page-more">
+        <summary>更多</summary>
         <div>
-          <button @click="theme.toggleTheme">切换明暗</button
+          <button @click="meditate">静坐</button><button @click="theme.toggleTheme">切换明暗</button
           ><button class="header-login" @click="session.authed ? enterWorkspace() : openAuth()">
-            {{ session.authed ? '进入工作空间' : '登录 WAO' }} ↗
+            {{ session.authed ? '进入工作空间' : '登录 WAO' }}</button
+          ><button @click="exportLegacy">导出旧游戏历史档</button
+          ><small>旧档保留在原账号空间，备份供历史恢复；不是新游戏记忆。</small>
+        </div>
+      </details>
+    </header>
+    <HomeBreathingStage
+      v-show="selectedPage === 'home'"
+      ref="stage"
+      minimal
+      @workspace="enterWorkspace"
+    />
+    <section v-if="selectedPage !== 'home'" class="rainbow-play">
+      <details class="style-picker" :inert="gameImmersive || gameMemoryOpen">
+        <summary>页面风格 · {{ worlds.find((w) => w.id === pageStyle)?.name }}</summary>
+        <div>
+          <button
+            v-for="w in worlds"
+            :key="w.id"
+            :aria-pressed="pageStyle === w.id"
+            @click="chooseWorld(w.id)"
+          >
+            {{ w.name }}
           </button>
         </div>
-      </header>
+      </details>
+      <GameHost
+        v-if="selectedPage === 'dino'"
+        @immersion="gameImmersive = $event"
+        @memory-panel="gameMemoryOpen = $event"
+        :active="gamesActive"
+        :theme="theme.effective.value"
+        :source="gameSource"
+        @leave="breatheHome"
+      />
       <RelaxGames
-        :key="`${session.userId}:${revision}:${progress.world}`"
+        v-else
+        :key="`${session.userId}:${revision}:${selectedPage}`"
         :progress="progress"
         :active="gamesActive"
         @story="progress.anecdote = $event"
-      /><SiteFooter class="entry-footer" />
+      />
+      <div v-if="selectedPage !== 'dino'" class="legacy-status" role="status">
+        <span v-if="saveStatus === 'loading'">读取旧游戏进度…</span
+        ><span v-else-if="saveStatus === 'saving'">保存中…</span
+        ><span v-else-if="saveStatus === 'saved'"
+          >旧游戏进度保存在本机 · {{ session.authed ? '当前账号' : '访客' }}</span
+        ><template v-else
+          ><span>{{ saveMessage }}</span
+          ><button @click="save">保存本页进度</button
+          ><button @click="reload">重试读取</button></template
+        >
+      </div>
+      <SiteFooter :inert="gameMemoryOpen" v-show="!gameImmersive" class="entry-footer" />
     </section>
-    <div class="relax-save-status" role="status">
-      <span v-if="saveStatus === 'loading'">读取本机进度…</span
-      ><span v-else-if="saveStatus === 'saving'">保存中…</span
-      ><span v-else-if="saveStatus === 'saved'"
-        >进度已保存在本机 · {{ session.authed ? '当前账号' : '访客' }}</span
-      ><template v-else
-        ><span>{{ saveMessage }}</span
-        ><button @click="save">保存本页进度</button
-        ><button @click="reload">
-          {{ saveStatus === 'conflict' ? '读取另一个页面的进度' : '重试读取' }}
-        </button></template
-      >
-    </div>
     <AuthDialog
       ref="auth"
       :target="target"
@@ -199,6 +270,221 @@ onMounted(async () => {
   }
   .entry-footer {
     font-size: 9px;
+  }
+}
+</style>
+
+<style scoped>
+.rainbow-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 28px;
+  border-bottom: 1px solid #8882;
+  z-index: 12;
+  color: var(--world-fg);
+}
+.rainbow-header button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  min-height: 42px;
+}
+.home-link {
+  font-size: 18px !important;
+  letter-spacing: 2px;
+  white-space: nowrap;
+  font-weight: 750 !important;
+}
+.home-link small {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.rainbow-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  justify-content: center;
+}
+.rainbow-tabs button {
+  font-size: 11px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.rainbow-tabs [aria-pressed='true'] {
+  background: #8882;
+}
+.rainbow-tabs i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 7px;
+}
+.rainbow-select {
+  display: none;
+  flex: 1;
+  max-width: 240px;
+  background: transparent;
+  border: 1px solid #8885;
+  color: inherit;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 12px;
+  min-height: 44px;
+}
+.rainbow-select option {
+  color: #563b42;
+  background: #fff5ea;
+}
+.page-more {
+  font-size: 12px;
+}
+.page-more summary {
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+.page-more > div {
+  position: absolute;
+  right: 24px;
+  top: 65px;
+  width: 225px;
+  display: grid;
+  padding: 15px;
+  background: var(--world-panel);
+  border: 1px solid var(--world-line);
+  border-radius: 15px;
+  box-shadow: 0 15px 40px #0002;
+}
+.page-more small {
+  font-size: 10px;
+  line-height: 1.7;
+  opacity: 0.65;
+  padding: 6px;
+}
+.rainbow-play {
+  max-width: 1450px;
+  margin: auto;
+  padding: 18px 28px 25px;
+}
+.style-picker {
+  margin-bottom: 14px;
+  font-size: 11px;
+}
+.style-picker summary {
+  cursor: pointer;
+  text-align: right;
+  min-height: 32px;
+}
+.style-picker > div {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 7px 0;
+}
+.style-picker button {
+  font: inherit;
+  border: 1px solid #a0786a55;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  padding: 9px 12px;
+  min-height: 44px;
+}
+.style-picker [aria-pressed='true'] {
+  background: #b5745820;
+}
+.legacy-status {
+  font-size: 11px;
+  text-align: center;
+  margin: 14px;
+}
+.breathing-home {
+  --world-bg: #faf9f5;
+  --world-fg: #393d3a;
+  --world-panel: #fff;
+  --world-line: #dedfd8;
+  background: var(--world-bg);
+}
+.breathing-home[data-entry-theme='dark'] {
+  --world-bg: #191b1d;
+  --world-fg: #e8e8df;
+  --world-panel: #242629;
+  --world-line: #3a3d3f;
+}
+.dino-page {
+  --world-bg: #fff0e5;
+  --world-fg: #633d44;
+  --world-panel: #fff8ee;
+  --world-line: #e5bdb0;
+  --world-accent: #ed625b;
+  background: var(--world-bg);
+}
+.dino-page[data-entry-theme='dark'] {
+  --world-bg: #30232d;
+  --world-fg: #f3d7c4;
+  --world-panel: #44303b;
+  --world-line: #79535b;
+}
+.dino-page.world-arcade :deep(.game-host) {
+  border-radius: 4px;
+  box-shadow: 6px 6px 0 #a6515422;
+}
+.dino-page.world-journal :deep(.game-host) {
+  border: 2px dashed #d39a88;
+  border-radius: 12px;
+}
+.dino-page.world-gallery .rainbow-play {
+  max-width: 1160px;
+}
+.dino-page.world-club :deep(.game-host) {
+  border-radius: 36px;
+}
+.dino-page.world-orbit :deep(.game-host) {
+  box-shadow: 0 0 0 8px #e9928117;
+}
+.rainbow-header button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid #c65056;
+  outline-offset: 3px;
+}
+@media (max-width: 1100px) {
+  .rainbow-tabs {
+    display: none;
+  }
+  .rainbow-select {
+    display: block;
+  }
+  .rainbow-header {
+    justify-content: space-between;
+  }
+}
+@media (max-width: 600px) {
+  .rainbow-header {
+    padding: 10px 14px;
+    gap: 12px;
+  }
+  .rainbow-play {
+    padding: 10px 8px;
+  }
+  .home-link {
+    font-size: 15px !important;
+  }
+  .page-more > div {
+    right: 12px;
+  }
+  .rainbow-select {
+    max-width: 200px;
   }
 }
 </style>

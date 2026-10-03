@@ -10,16 +10,20 @@ import { edgeBuildPlugin } from './scripts/edge-build.mjs'
 import { releaseHighlightsPlugin } from './scripts/release-highlights.mjs'
 import currentRelease from './src/data/currentRelease.json'
 import releaseHistory from './src/data/releaseHistory.json'
+// @ts-expect-error Development-only JavaScript helper; serves an independently built game.
+import { gameAssetsDevPlugin } from './scripts/game-dev-assets.mjs'
 
 const buildCommitSha = process.env.WAO_GIT_SHA?.trim()
 const buildVersion = buildCommitSha ? buildCommitSha.slice(0, 7) : undefined
-if (buildCommitSha && !/^[0-9a-f]{40}$/.test(buildCommitSha)) throw new Error('WAO_GIT_SHA must be a full Git SHA')
+if (buildCommitSha && !/^[0-9a-f]{40}$/.test(buildCommitSha))
+  throw new Error('WAO_GIT_SHA must be a full Git SHA')
 
 // https://vite.dev/config/
 export default defineConfig({
   base: buildCommitSha ? `/releases/${buildCommitSha}/` : '/',
   plugins: [
     vue(),
+    gameAssetsDevPlugin(),
     // 调试插件按需开启，避免真实数据页面的调试采集拖慢浏览器验收。
     process.env.WAO_VUE_DEVTOOLS === 'true' ? vueDevTools() : undefined,
     webUpdateNotice({
@@ -40,6 +44,7 @@ export default defineConfig({
     'process.env.IS_PREACT': false,
   },
   resolve: {
+    dedupe: ['vue'],
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },

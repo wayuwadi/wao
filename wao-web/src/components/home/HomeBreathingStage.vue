@@ -14,7 +14,7 @@ import {
   type PracticeSnapshot,
 } from '@/composables/breathingSession'
 
-const props = defineProps<{ world?: WorldId; story?: string }>()
+const props = defineProps<{ world?: WorldId; story?: string; minimal?: boolean }>()
 const emit = defineEmits<{ workspace: [] }>()
 const mode = ref<PracticeMode>('breathing')
 const pendingMode = ref<PracticeMode | null>(null)
@@ -500,7 +500,15 @@ function pauseForPlay() {
   pauseForAuth()
   cancelAuthRetention()
 }
-defineExpose({ pauseForAuth, pauseForPlay, cancelAuthRetention, snapshot, restore, tell })
+defineExpose({
+  pauseForAuth,
+  pauseForPlay,
+  cancelAuthRetention,
+  snapshot,
+  restore,
+  tell,
+  chooseMode,
+})
 onMounted(() => {
   media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
   updateMotion()
@@ -542,9 +550,10 @@ onBeforeUnmount(() => {
       timer.state,
       props.world ? 'world-stage' : '',
       {
-        day: theme.mode.value === 'light',
+        day: theme.effective.value === 'light',
         sitting: mode === 'sitting',
         'no-guide': !prefs.guide,
+        minimal: props.minimal,
       },
     ]"
     :style="{ '--accent': colors[prefs.color], '--strength': prefs.glow / 100 }"
@@ -627,7 +636,11 @@ onBeforeUnmount(() => {
             </p>
           </div>
         </div>
-        <WorldScene v-if="idle && props.world" :world="props.world" :story="props.story" />
+        <WorldScene
+          v-if="idle && props.world && !props.minimal"
+          :world="props.world"
+          :story="props.story"
+        />
         <p v-if="idle && prefs.words" class="entry-copy">
           {{
             props.world ? worldById(props.world).subtitle : '跟随一呼一吸，或者只是安静待一会儿。'
@@ -2085,6 +2098,91 @@ input[type='range'] {
   }
   .entry-bottom {
     min-height: 24px;
+  }
+}
+</style>
+
+<style scoped>
+.breathing-stage.minimal {
+  background: transparent;
+  min-height: calc(100dvh - 82px);
+  --text: #424740;
+  --muted: #898d85;
+  --line: #dcded6;
+  --selected: #e8e9df;
+}
+.minimal:not(.day) {
+  --text: #e8e8df;
+  --muted: #979b95;
+  --line: #454942;
+  --selected: #34382f;
+}
+.minimal .stage-content {
+  min-height: calc(100dvh - 82px);
+  padding: 10px 24px 16px;
+}
+.minimal .scene,
+.minimal .entry-header,
+.minimal .mode-picker,
+.minimal .entry-copy,
+.minimal .eyebrow,
+.minimal .phase-sub,
+.minimal .companions {
+  display: none;
+}
+.minimal .orb {
+  width: 240px;
+  height: 240px;
+  opacity: 0.8;
+}
+.minimal .orb-light {
+  display: none;
+}
+.minimal .orb-ring {
+  border: 1px solid #abb59b77;
+  box-shadow: none;
+}
+.minimal .orb-ring:after {
+  display: none;
+}
+.minimal .phase {
+  font-size: 24px;
+  letter-spacing: 2px;
+}
+.minimal .entry-bottom {
+  min-height: 42px;
+  justify-content: center;
+}
+.minimal .scene-actions {
+  align-self: center;
+}
+.minimal .dock {
+  gap: 18px;
+}
+.minimal .focus-scene {
+  height: 320px;
+}
+.minimal .practice-main {
+  padding: 10px 0;
+}
+.minimal .primary {
+  border-radius: 24px;
+  min-width: 170px;
+}
+@media (max-width: 600px) {
+  .minimal .stage-content {
+    min-height: calc(100dvh - 66px);
+    padding: 8px 14px;
+  }
+  .minimal .focus-scene {
+    height: 300px;
+  }
+  .minimal .phase {
+    font-size: 21px;
+  }
+  .minimal .orb {
+    width: 220px;
+    height: 220px;
   }
 }
 </style>

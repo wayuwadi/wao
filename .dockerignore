@@ -11,3 +11,5 @@ deploy/certs
 deploy/backups
 *.log
 *.p12
+
+wao-game

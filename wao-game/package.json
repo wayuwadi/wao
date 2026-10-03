@@ -1,0 +1,29 @@
+{
+  "name": "wao-game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:dino": "vite --config games/dino/vite.config.ts",
+    "build:dino": "vue-tsc --noEmit -p games/dino/tsconfig.json && vite build --config games/dino/vite.config.ts",
+    "test:dino": "vitest run --config games/dino/vite.config.ts",
+    "lint:dino": "oxlint games/dino host protocol --deny-warnings"
+  },
+  "dependencies": {
+    "vue": "3.5.40"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@vitejs/plugin-vue": "6.0.8",
+    "@vue/test-utils": "2.4.11",
+    "fake-indexeddb": "6.2.5",
+    "jsdom": "29.1.1",
+    "oxlint": "1.73.0",
+    "typescript": "6.0.3",
+    "vite": "8.1.5",
+    "vitest": "4.1.10",
+    "vue-tsc": "3.3.7"
+  },
+  "engines": {
+    "node": "^22.18.0 || >=24.12.0"
+  }
+}
