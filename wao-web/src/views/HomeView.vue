@@ -17,7 +17,10 @@ const data = useDataStore()
         <p>WAO · 一呼一吸</p>
         <h1>留一点空白，再开始。</h1>
         <p>随时暂停手边的事，回到呼吸与静坐的空间。</p>
-        <RouterLink class="rest-entrance" to="/breathe">休息一下 <span aria-hidden="true">↗</span></RouterLink>
+        <div class="home-actions">
+          <RouterLink class="rest-entrance" to="/breathe">休息一下 <span aria-hidden="true">↗</span></RouterLink>
+          <RouterLink class="rest-entrance" to="/features">功能探索 <span aria-hidden="true">↗</span></RouterLink>
+        </div>
       </div>
     </section>
   </main>
@@ -29,7 +32,8 @@ const data = useDataStore()
 .home-rest-welcome { min-height: 300px; padding: 32px; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); display: flex; flex-direction: column; gap: 30px; }
 .home-rest-copy p { color: var(--wao-text-weak); font-size: 13px; line-height: 1.8; }
 .home-rest-copy h1 { font-size: clamp(20px,3vw,30px); font-weight: 500; }
-.rest-entrance { display: inline-block; margin-top: 12px; padding: 10px 16px; border: 1px solid var(--wao-line); border-radius: 24px; color: var(--wao-text); text-decoration: none; }
+.home-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.rest-entrance { display: inline-block; flex: none; white-space: nowrap; padding: 10px 16px; border: 1px solid var(--wao-line); border-radius: 24px; color: var(--wao-text); text-decoration: none; }
 .rest-entrance:focus-visible { outline: 2px solid var(--wao-primary-text); outline-offset: 4px; }
 @media (max-width: 600px) { .home-rest-welcome { padding: 20px; } }
 </style>
