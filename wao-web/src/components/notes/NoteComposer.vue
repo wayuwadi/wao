@@ -475,8 +475,8 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .composer-editor-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .composer-editor-main :deep(img.md-img) { max-height: min(38vh, 320px); object-fit: contain; }
 .composer-footer > span { color: var(--wao-text-faint); font-size: 12px; }
-.composer-footer { flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
-.composer-footer > span { flex: 1; min-width: 140px; }
+.composer-footer { border-top: 1px solid var(--wao-line); padding-top: 12px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.composer-footer > span { flex: 1; min-width: 140px; line-height: 1.6; overflow-wrap: anywhere; }
 button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 8px; padding: 8px 13px; cursor: pointer; }
 .save-note { background: var(--wao-primary); border-color: var(--wao-primary); color: white; font-weight: 600; }
 button:disabled { opacity: .5; cursor: default; }
@@ -484,6 +484,13 @@ button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 600px) { .note-composer { padding: 12px; } .composer-heading { flex-wrap: wrap; } .composer-heading span { width: 100%; } .fullscreen-reminder { top:49px; right:8px; width:calc(100% - 16px); gap:7px 8px; padding:10px 11px; } .fullscreen-reminder::before { right:15px; } .fullscreen-reminder-copy strong { font-size:12px; } .fullscreen-reminder-copy span { font-size:11px; } .fullscreen-reminder-actions { gap:4px; } .fullscreen-reminder-actions button { padding:5px 6px; font-size:11px; } }
 @media (prefers-reduced-motion: reduce) { .auto-switch,.auto-switch::after { transition:none; } }
 .composer-footer > button { min-height: 36px; padding: 7px 14px; font-size: 13px; border-radius: 7px; }
+
+button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .composer-footer > span { flex-basis: 100%; }
+  .composer-footer > button { min-height: 44px; }
+  .composer-footer .save-note { margin-left: auto; }
+}
 </style>
 
 <style scoped>
