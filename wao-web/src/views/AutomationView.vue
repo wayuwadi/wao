@@ -263,7 +263,7 @@ onMounted(() => {
       <div class="atop">
         <div class="atitle">自动化 / 定时任务</div>
         <span class="atip">让记录自己发生</span>
-        <button class="op" @click="chatConfigOpen = true">飞书任务收集配置</button>
+        <button class="btn-ghost" @click="chatConfigOpen = true">飞书任务收集配置</button>
         <div class="spacer"></div>
       </div>
       <div class="tabs">
@@ -650,6 +650,8 @@ button:disabled {
   color: var(--wao-text-weak);
 }
 .btn-primary {
+  flex-shrink: 0;
+  white-space: nowrap;
   height: 32px;
   padding: 0 13px;
   background: var(--wao-primary);
@@ -676,6 +678,8 @@ button:disabled {
   font-size: 13px;
 }
 .btn-ghost {
+  flex-shrink: 0;
+  white-space: nowrap;
   height: 31px;
   padding: 0 13px;
   border: 1px solid var(--wao-line-strong);
@@ -695,6 +699,8 @@ button:disabled {
   font-size: 13px;
 }
 .btn-danger {
+  flex-shrink: 0;
+  white-space: nowrap;
   height: 31px;
   padding: 0 13px;
   background: #bc4141;
@@ -846,6 +852,7 @@ button:disabled {
   gap: 6px;
 }
 .op {
+  flex-shrink: 0;
   width: 26px;
   height: 26px;
   border: 1px solid var(--wao-line-strong);
@@ -949,7 +956,7 @@ button:disabled {
 .job-cols {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: 1.7fr 1fr;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }

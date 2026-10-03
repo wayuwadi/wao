@@ -810,14 +810,14 @@ onMounted(() => void loadPins())
 
 <style scoped>
 .notes-page { width: 100%; max-width: none; margin: 0 auto; padding: 12px 28px 24px; box-sizing: border-box; color: var(--wao-text-2); }
-.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.heading-title { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.page-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.heading-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
 .daily-note-count { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--wao-line); border-radius: 8px; color: var(--wao-text-2); background: var(--wao-bg-card); font-size: 12px; white-space: nowrap; }
 .daily-note-count i { color: var(--wao-primary-text); }
 .daily-note-count.error { color: var(--wao-danger-text, #b42318); }
 .daily-note-count.error i { color: inherit; }
 .daily-note-count button { border: 0; padding: 0; background: transparent; color: var(--wao-primary-text); font: inherit; text-decoration: underline; }
-h1 { display: flex; gap: 10px; align-items: center; font-size: 18px; margin: 0; color: var(--wao-text); }
+h1 { display: flex; flex: none; white-space: nowrap; gap: 10px; align-items: center; font-size: 18px; margin: 0; color: var(--wao-text); }
 h1 i { color: #7a5cc6; }
 .page-heading p { margin: 0; color: var(--wao-text-faint); font-size: 13px; }
 .page-heading > span { color: var(--wao-text-faint); white-space: nowrap; font-size: 12px; }
@@ -826,7 +826,7 @@ h1 i { color: #7a5cc6; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
 .notes-list { min-width: 0; padding: 24px 20px 40px; border: 1px solid var(--wao-line); border-right: 0; border-bottom: 0; background: var(--wao-bg-sub); scroll-padding-block: 24px; }
 .list-toolbar, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
-.list-toolbar { margin-bottom: 8px; gap: 8px; }
+.list-toolbar { margin-bottom: 8px; gap: 8px; flex-wrap: wrap; position: relative; }
 button, a, select { color: var(--wao-text-3); font-size: 12px; }
 button { cursor: pointer; border: 0; border-radius: 7px; background: transparent; padding: 7px 9px; }
 button:hover, button[aria-pressed="true"] { background: var(--wao-bg-hover); color: var(--wao-primary-text); }
@@ -986,5 +986,10 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 14px 12px 16px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .mining-modal-mask { align-items: end; padding: 10px; } .mining-modal { width: 100%; max-height: calc(100dvh - 20px); padding: 24px 6px 10px; border-radius: 18px; } .mining-modal-close { margin-right: 4px; } .list-summary { flex-wrap: wrap; } .notes-reader { grid-template-rows: 48px minmax(0,1fr) 54px; padding: 0 10px; } .reader-page { border-radius: 13px; padding: 20px 15px; } .reader-page h2 { margin-top: 14px; } .reader-nav { top: auto; bottom: 62px; width: 34px; height: 40px; transform: none; } .reader-prev { left: 13px; } .reader-next { right: 13px; } .reader-controls { gap: 8px; } .reader-controls > span { display: none; } }
 @media (max-width: 600px) { .note-content.has-images { grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; } .note-images { max-height: 150px; padding-left: 7px; } }
 @media (hover: none) { .stage-list-complete, .card-quick-actions, .note-read-action, .mining-toggle { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
+@media (max-width: 600px) {
+  .search { flex: 1 1 100%; }
+  .filter-control { position: static; }
+  .filter-panel { width: 100%; max-width: 340px; }
+}
 @media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top, .mining-modal { transition: none; animation: none; } .reader-page { animation: none; } .reader-progress i { transition: none; } }
 </style>
