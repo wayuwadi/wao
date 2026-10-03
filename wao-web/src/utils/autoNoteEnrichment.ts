@@ -73,15 +73,17 @@ function progress(job: AutoJob, stage?: 'title' | 'image' | 'polish' | 'tags', s
   noteEnrichmentProgress[job.docId] = { ...snapshot }
 }
 function finish(job: AutoJob) {
-  try { localStorage.removeItem(keyOf(job.memberId, job.docId)) } catch { /* 已完成，无需重试。 */ }
-  try { localStorage.setItem(`${COMPLETE_PREFIX}${job.memberId}:${job.docId}`, JSON.stringify({ title: job.titleEnabled === false ? 'skipped' : 'done', image: job.imageEnabled === false ? 'skipped' : 'done', polish: job.polishEnabled === false ? 'skipped' : 'done', tags: job.tagsEnabled === true ? 'done' : 'skipped' })) } catch { /* 页面内状态仍可见。 */ }
   if (!activeJob(job)) return
+  progress(job)
+  const completedStages = Object.fromEntries((['title', 'image', 'polish', 'tags'] as const)
+    .map(stage => [stage, noteEnrichmentProgress[job.docId]?.[stage] === 'done' ? 'done' : 'skipped']))
+  try { localStorage.removeItem(keyOf(job.memberId, job.docId)) } catch { /* 已完成，无需重试。 */ }
+  try { localStorage.setItem(`${COMPLETE_PREFIX}${job.memberId}:${job.docId}`, JSON.stringify(completedStages)) } catch { /* 页面内状态仍可见。 */ }
   const completed = [job.titleEnabled !== false && '标题', job.imageEnabled !== false && '配图', job.polishEnabled !== false && '润色', job.tagsEnabled === true && '标签'].filter(Boolean)
   const completedLabel = completed.length > 1 ? `${completed.slice(0, -1).join('、')}和${completed[completed.length - 1]}` : completed[0] || ''
   noteEnrichmentStatus[job.docId] = job.polishEnabled === false
     ? `${completedLabel}已生成，已按选择保留原文`
     : `${completedLabel}已完成`
-  progress(job, 'polish', job.polishEnabled === false ? 'skipped' : 'done')
 }
 
 /** 总览图单独展示，不把图片 Markdown 交给文字润色改写。 */
