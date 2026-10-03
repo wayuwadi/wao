@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NoteOriginalReader from '@/components/notes/NoteOriginalReader.vue'
 import NoteAiSettingsDialog from '@/components/notes/NoteAiSettingsDialog.vue'
 import { startSavedNoteStage } from '@/api/noteAiWorkflows'
 import { newPolishRequestId } from '@/api/polishJobs'
@@ -401,6 +402,12 @@ const readerDialog = ref<HTMLElement | null>(null)
 const readerPage = ref<HTMLElement | null>(null)
 const readerClose = ref<HTMLButtonElement | null>(null)
 const readerPositions = new Map<string, number>()
+const originalsOpen = ref(false)
+let originalPositionKey = 'loading'
+const readerPositionKey = () => `${readingId.value}:${originalsOpen.value ? originalPositionKey : 'current'}`
+function changeOriginalSource(key: string) { rememberReaderPosition(); originalPositionKey = key; readerRestorePending = true; void nextTick(restoreReaderPosition) }
+async function toggleOriginals() { rememberReaderPosition(); originalsOpen.value = !originalsOpen.value; readerRestorePending = true; await nextTick(); restoreReaderPosition() }
+async function readOriginals(id: string, event: Event) { await startReading(id, event); originalsOpen.value = true }
 let readerTrigger: HTMLElement | null = null
 let readerApp: HTMLElement | null = null
 let readerAppWasInert = false
@@ -416,6 +423,7 @@ async function startReading(id?: string, event?: Event, mode?: 'side' | 'full') 
   const ids = matching.value.map(note => note.id)
   if (id && !ids.includes(id) && notes.value.some(note => note.id === id)) ids.unshift(id)
   if (!ids.length) return
+  originalsOpen.value = false
   readerIds.value = ids
   readingId.value = id && ids.includes(id) ? id : ids.includes(readingId.value) ? readingId.value : ids[0]!
   readerTrigger = event?.currentTarget instanceof HTMLElement ? event.currentTarget : document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -441,11 +449,11 @@ function openPreviewChoices(id: string, event: MouseEvent) {
   ], trigger)
 }
 function rememberReaderPosition() {
-  if (readingId.value && readerPage.value) readerPositions.set(readingId.value, readerPage.value.scrollTop)
+  if (readingId.value && readerPage.value) readerPositions.set(readerPositionKey(), readerPage.value.scrollTop)
 }
 function restoreReaderPosition() {
   if (!readerRestorePending || !readerPage.value) return
-  const top = readerPositions.get(readingId.value) ?? 0
+  const top = readerPositions.get(readerPositionKey()) ?? 0
   readerPage.value.scrollTop = top
   if (top === 0 || readerPage.value.scrollHeight > readerPage.value.clientHeight) readerRestorePending = false
 }
@@ -464,6 +472,7 @@ async function selectReadingNote(id: string) {
   if (!readerNotes.value.some(note => note.id === id)) return
   rememberReaderPosition()
   readingId.value = id
+  originalsOpen.value = false
   readerDirectoryOpen.value = false
   readerRestorePending = true
   await nextTick()
@@ -952,7 +961,7 @@ onMounted(() => void loadPins())
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出与按需操作">
               <button v-for="stage in (['title', 'image', 'polish', 'tags'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
             </div>
-            <span class="note-meta-trailing"><span v-if="!editingIds.includes(note.id)" class="note-preview-actions"><button class="note-preview-action" type="button" :aria-label="`预览小记：${note.title}`" @click.stop="startReading(note.id, $event)"><i class="ri-eye-line" aria-hidden="true"></i>预览</button><button class="note-preview-choice" type="button" :aria-label="`选择预览方式：${note.title}`" aria-haspopup="menu" @click.stop="openPreviewChoices(note.id, $event)"><i class="ri-arrow-down-s-line" aria-hidden="true"></i></button></span><button v-if="!editingIds.includes(note.id)" class="note-edit-action" type="button" :aria-label="`继续编辑小记：${note.title}`" @click.stop="editNote(note.id)"><i class="ri-edit-line" aria-hidden="true"></i>继续编辑</button><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-controls="confirmingDeleteId === note.id ? `note-delete-confirm-${note.id}` : undefined" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
+            <span class="note-meta-trailing"><span v-if="!editingIds.includes(note.id)" class="note-preview-actions"><button class="note-preview-action" type="button" :aria-label="`预览小记：${note.title}`" @click.stop="startReading(note.id, $event)"><i class="ri-eye-line" aria-hidden="true"></i>预览</button><button class="note-preview-choice" type="button" :aria-label="`选择预览方式：${note.title}`" aria-haspopup="menu" @click.stop="openPreviewChoices(note.id, $event)"><i class="ri-arrow-down-s-line" aria-hidden="true"></i></button></span><button v-if="!editingIds.includes(note.id)" class="note-edit-action" type="button" :aria-label="`继续编辑小记：${note.title}`" @click.stop="editNote(note.id)"><i class="ri-edit-line" aria-hidden="true"></i>继续编辑</button><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" aria-label="查看原文" title="查看原文" @click.stop="readOriginals(note.id, $event)"><i class="ri-history-line" aria-hidden="true"></i></button><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-controls="confirmingDeleteId === note.id ? `note-delete-confirm-${note.id}` : undefined" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
             <p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id) && workflowMessage(note.id))" class="workflow-status" role="status">{{ noteDrafts[note.id] ? '草稿已保护 · 有修改待保存' : workflowMessage(note.id) }} <button v-if="!noteDrafts[note.id] && (serverFailed(note.id) || canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成'))" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '重试中…' : '重试' }}</button></p>
           <button v-if="query && noteSearchHit(note)" class="note-search-hit" type="button" @click.stop="locateSearchNote(note.id, query, noteSearchHit(note)?.field === '正文')">
             {{ noteSearchHit(note)!.field }}命中 · {{ noteSearchHit(note)!.before }}<mark>{{ noteSearchHit(note)!.match }}</mark>{{ noteSearchHit(note)!.after }} <span>定位</span>
@@ -990,15 +999,15 @@ onMounted(() => void loadPins())
     <NoteAiSettingsDialog v-model:open="noteSettingsOpen" />
     <Teleport to="body">
       <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :class="{ 'reader-full': readerMode === 'full', 'directory-open': readerDirectoryOpen }" :inert="previewImage ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
-        <header class="reader-topbar"><strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>只读</small></strong><div class="reader-layout-actions"><div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div><button ref="readerClose" type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line" aria-hidden="true"></i><span>关闭</span></button></div></header>
+        <header class="reader-topbar"><strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>只读</small></strong><div class="reader-layout-actions"><button type="button" :aria-pressed="originalsOpen" @click="toggleOriginals">{{ originalsOpen ? '返回当前内容' : '查看原文' }}</button><div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div><button ref="readerClose" type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line" aria-hidden="true"></i><span>关闭</span></button></div></header>
         <div class="reader-layout">
           <aside class="reader-directory" aria-label="当前列表的小记目录"><div class="reader-directory-heading"><strong>小记目录</strong><span>{{ readerNotes.length }} 篇</span><button type="button" class="reader-directory-close" aria-label="收起小记目录" @click="closeReaderLayer"><i class="ri-close-line" aria-hidden="true"></i></button></div><nav aria-label="选择小记"><button v-for="note in readerNotes" :key="note.id" type="button" :aria-current="note.id === readingId ? 'true' : undefined" @click="selectReadingNote(note.id)"><strong>{{ displayedTitle(note) }}</strong><small>{{ authorName(note.author) }} · {{ timeLabel(note.updated || note.created) }}</small></button></nav></aside>
           <div class="reader-main" :inert="readerDirectoryOpen ? true : undefined"><button v-if="readerMode === 'side'" type="button" class="reader-directory-toggle" @click="openReaderDirectory"><i class="ri-list-check" aria-hidden="true"></i>小记目录 <span>{{ readingIndex + 1 }} / {{ readerNotes.length }}</span></button>
             <article :key="readingNote.id" ref="readerPage" class="reader-page" @scroll="readerRestorePending = false">
-              <div class="reader-article"><div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
+              <div class="reader-article"><NoteOriginalReader v-if="originalsOpen" :doc-id="readingNote.id" :member-id="session.currentUser.id" :current-rev="readingNote.rev" @source-change="changeOriginalSource" @ready="restoreReaderPosition" /><template v-else><div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
               <h2>{{ displayedTitle(readingNote) }}</h2>
               <div v-if="displayedTags(readingNote).length" class="reader-tags"><span v-for="tag in displayedTags(readingNote)" :key="tag"># {{ tag }}</span></div>
-              <div class="reader-content" @click="openInlineImage"><div class="reader-body"><MarkdownEditor :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="restoreReaderPosition" /></div></div></div>
+              <div class="reader-content" @click="openInlineImage"><div class="reader-body"><MarkdownEditor :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="restoreReaderPosition" /></div></div></template></div>
             </article>
             <footer class="reader-controls"><button type="button" aria-label="上一篇小记（←）" :disabled="readingIndex <= 0" @click="moveReader(-1)"><i class="ri-arrow-left-line" aria-hidden="true"></i>上一篇</button><span>{{ readingIndex + 1 }} / {{ readerNotes.length }}<small> · ← → 翻篇 · Esc 退出</small></span><button type="button" aria-label="下一篇小记（→）" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇<i class="ri-arrow-right-line" aria-hidden="true"></i></button></footer>
           </div>

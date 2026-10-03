@@ -86,6 +86,9 @@ public class KnowledgeService {
     @org.springframework.context.annotation.Lazy
     private NoteAiManagedService noteAiManaged;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
+    @org.springframework.context.annotation.Lazy
+    private NoteOriginalService noteOriginal;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
     private cn.wayuwa.wao.auth.CurrentMember noteMember;
     private String noteActor() {
         if(NoteAiManagedService.actor()!=null)return NoteAiManagedService.actor();
@@ -93,6 +96,10 @@ public class KnowledgeService {
         return noteMember != null && attrs instanceof org.springframework.web.context.request.ServletRequestAttributes request ? noteMember.id(request.getRequest()) : null;
     }
     private DocDto noteSaved(DocDto doc,String actor,String title,CreateNoteRequest selection) {
+        return noteSaved(doc,actor,title,selection,false);
+    }
+    private DocDto noteSaved(DocDto doc,String actor,String title,CreateNoteRequest selection,boolean firstSave) {
+        if(noteOriginal!=null&&!NoteAiManagedService.derived()){noteOriginal.saved(doc,actor,firstSave,title);if(selection!=null)noteOriginal.appliedInputs(actor,doc,selection.sourceInputIds());}
         if(noteAiManaged!=null)noteAiManaged.saved(doc,actor,title,selection);
         return doc;
     }
@@ -524,7 +531,7 @@ public class KnowledgeService {
             blocks = templateBlocks(template);
             content = richContentOf(template);
         }
-        return noteSaved(insertDoc(req.kbId(), folder.getId(), req.title(), author, blocks, content, links),author,req.title(),null);
+        return noteSaved(insertDoc(req.kbId(), folder.getId(), req.title(), author, blocks, content, links),author,req.title(),null,true);
     }
 
     /**
@@ -849,7 +856,7 @@ public class KnowledgeService {
         DocDto doc = insertDoc(id, kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(content, blocks)),
                 author, blocks, content, List.of(), tags);
         announceNote(kb.getId(), doc, author);
-        return noteSaved(doc,author,req.title(),req);
+        return noteSaved(doc,author,req.title(),req,true);
     }
 
     /** 新建小记后同步到飞书群；通知失败只记日志，不影响创建结果。 */
@@ -1371,7 +1378,10 @@ public class KnowledgeService {
             docMapper.updateContentSnapshot(e);
         }
         discoverySaved(e, origin);
-        return noteSaved(toDto(e),noteActor(),req.title(),null);
+        DocDto saved=toDto(e);
+        if(noteOriginal!=null&&!NoteAiManagedService.derived())noteOriginal.appliedInputs(noteActor(),saved,req.sourceInputIds());
+        saved=noteSaved(saved,noteActor(),req.title(),null);
+        return saved;
     }
 
     private DocDto updateVersionedArchive(DocEntity e, PatchDocRequest req) {
@@ -1996,6 +2006,11 @@ public class KnowledgeService {
         }
         return new RichDocContentDto(RICH_CONTENT_VERSION,
                 document == null || document.isNull() ? null : document, markdown);
+    }
+
+    /** 校验私人原稿的富文本安全与大小，不改变原始字符串或结构。 */
+    public void validateNoteSource(RichDocContentDto content) {
+        checkedRichContent(content);
     }
 
     private void validateRichNode(JsonNode node, int[] count) {

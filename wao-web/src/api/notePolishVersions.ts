@@ -2,13 +2,14 @@ import { http, type ApiResponse } from './http'
 
 export interface NotePolishVersion {
   docId: string
-  sourceMarkdown: string
+  sourceMarkdown?: string
+  sourceRev?: number
   polishedMarkdown: string
 }
 
 /** 只读取当前成员的小记润色对照；正文更新后由列表按快照判定是否仍有效。 */
 export async function fetchNotePolishVersions(): Promise<NotePolishVersion[]> {
-  const response = await http.get<ApiResponse<NotePolishVersion[]>>('/api/docs/notes/polish-versions')
+  const response = await http.get<ApiResponse<NotePolishVersion[]>>('/api/docs/notes/polish-versions/reading')
   return response.data.data
 }
 

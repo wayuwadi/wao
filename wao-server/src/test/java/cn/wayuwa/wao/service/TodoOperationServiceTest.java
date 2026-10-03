@@ -65,7 +65,7 @@ class TodoOperationServiceTest {
         var request = new TodoOperationService.NoteRequest("d-stable", null, null,
                 LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).minusDays(1), null,
                 "进展", null, new RichDocContentDto(1, null, "今天推进了步骤"), List.of(),
-                false, false, false);
+                false, false, false, List.of("e".repeat(32)));
         TransactionTemplate tx = new TransactionTemplate(new DataSourceTransactionManager(ds));
 
         var saved = tx.execute(status -> service.note(operation, request, "a1", "wg"));
@@ -76,7 +76,21 @@ class TodoOperationServiceTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM wao_todo_day_note_context", Integer.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM wao_todo_operation_receipt", Integer.class)).isEqualTo(1);
         verify(knowledge, times(1)).createNote(eq("d-stable"), any(), eq("wg"));
+        var sourceRequest=org.mockito.ArgumentCaptor.forClass(cn.wayuwa.wao.dto.CreateNoteRequest.class);
+        verify(knowledge).createNote(eq("d-stable"),sourceRequest.capture(),eq("wg"));
+        assertThat(sourceRequest.getValue().sourceInputIds()).containsExactly("e".repeat(32));
         verify(noteAi, times(1)).beginIfRequested(eq("wg"), eq(canonical), any());
+    }
+
+    @Test
+    void optionalSourceDoesNotInvalidateHistoricalReceiptHash() throws Exception {
+        ObjectMapper json=new ObjectMapper().registerModule(new JavaTimeModule());
+        var request=new TodoOperationService.NoteRequest("stable",null,null,LocalDate.of(2026,10,3),null,"原始标题",null,new RichDocContentDto(1,null,"原文"),List.of(),false,false,false);
+        var old=json.valueToTree(request);((com.fasterxml.jackson.databind.node.ObjectNode)old).remove("sourceInputIds");
+        byte[] encoded=json.writeValueAsBytes(List.of("NOTE","",old));
+        String expected=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(encoded));
+        var service=new TodoOperationService(mock(JdbcTemplate.class),json,mock(TaskMapper.class),mock(DocMapper.class),mock(TaskService.class),mock(KnowledgeService.class),mock(TodoHistoryService.class),mock(NoteAiWorkflowService.class));
+        assertThat(org.springframework.test.util.ReflectionTestUtils.<String>invokeMethod(service,"hash","NOTE",null,request)).isEqualTo(expected);
     }
 
     @Test

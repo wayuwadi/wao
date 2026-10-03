@@ -4,7 +4,8 @@ import NoteAiSettingsForm from '@/components/notes/NoteAiSettingsForm.vue'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { fetchArticleImage, startArticleImage, type ArticleImageJob } from '@/api/articleImages'
 import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
-import { waitForPolish } from '@/api/polishJobs'
+import { freezeNoteAiInput, retainNoteAiResult, type NoteAiOrigin, type NoteSourceContent } from '@/api/noteOriginals'
+import { newPolishRequestId, waitForPolish } from '@/api/polishJobs'
 import { fetchTextPolishWorkspace } from '@/api/textPolish'
 import { DEFAULT_NOTE_MODEL, resolveNoteModel } from '@/utils/noteAiModel'
 
@@ -18,8 +19,12 @@ const props = defineProps<{
   insertImage: (url: string) => boolean
   getCurrentImage?: () => string | null
   generateTitle?: boolean
+  noteAiOrigin?: NoteAiOrigin
+  getSourceContent?: () => NoteSourceContent
+  getImageResult?: (url: string) => NoteSourceContent
+  confirmCover?: (url: string | null) => void
 }>()
-const emit = defineEmits<{ 'generated-title': [title: string] }>()
+const emit = defineEmits<{ 'generated-title': [title: string]; 'ai-applied': [request: string] }>()
 
 const PREFERENCE_KEY = ARTICLE_IMAGE_PREFERENCE_KEY
 
@@ -36,6 +41,16 @@ const busy = ref(false)
 const job = ref<ArticleImageJob | null>(null)
 const error = ref('')
 const replacement = ref<string | null>(null)
+let imageSource: NoteSourceContent | undefined
+let imageRequest: string | undefined
+async function retainImage(url: string, task: string) {
+  if (!props.noteAiOrigin) return
+  if (!imageSource || !imageRequest) throw new Error('旧配图缺少可靠原稿关联，请重新生成；当前内容保留')
+  const source = imageSource, request = imageRequest, ticket = generation
+  if(props.getSourceContent?.().markdown !== imageSource.markdown) throw new Error('正文已更新，旧配图未应用，请重新生成')
+  await retainNoteAiResult(imageRequest, task, props.getImageResult?.(url) ?? { ...imageSource, markdown: `![文章总览图](${url})\n\n${imageSource.markdown}`, document: null })
+  if(ticket !== generation || request !== imageRequest || props.getSourceContent?.().markdown !== source.markdown) throw new Error('内容或账号已更新，旧配图未应用')
+}
 const titleStatus = ref('')
 let generation = 0
 
@@ -102,7 +117,10 @@ async function waitForImage(id: string, current: number) {
         replacement.value = result.imageUrl
         return
       }
+      await retainImage(result.imageUrl, id)
+      if(current !== generation) return
       if (!props.insertImage(result.imageUrl)) throw new Error('图片已生成，但编辑器暂不可用；点击继续插入')
+      if(props.noteAiOrigin && imageRequest) emit('ai-applied', imageRequest)
       rememberJob(null)
       job.value = null
       return
@@ -111,13 +129,17 @@ async function waitForImage(id: string, current: number) {
   }
   if (current === generation) throw new Error('仍在生成中，点击按钮可继续查询原任务')
 }
-function decideReplacement(accept: boolean) {
+async function decideReplacement(accept: boolean) {
   const url = replacement.value
+  const current = generation
   if (!url) return
+  if(accept) { try { await retainImage(url, job.value?.id ?? '') } catch(cause) { error.value = cause instanceof Error ? cause.message : '原稿保存失败'; return } }
+  if(current !== generation) return
   if (accept && !props.insertImage(url)) {
     error.value = '图片已生成，但编辑器暂不可用；点击继续插入'
     return
   }
+  if(accept && props.noteAiOrigin && imageRequest) emit('ai-applied', imageRequest)
   replacement.value = null
   job.value = null
   rememberJob(null)
@@ -131,20 +153,42 @@ async function generate() {
   const current = ++generation
   busy.value = true
   error.value = ''
-  if (!oldId && props.generateTitle) {
-    titleStatus.value = '正在生成标题…'
-    void waitForPolish(text.slice(0, 12_000), 'NOTE_TITLE', {
-      model: noteModel.value, titlePrompt: titlePrompt.value,
-    }).then(result => {
-      const title = result.polished?.trim().slice(0, 30)
-      if (current !== generation) return
-      if (props.getText().trim() !== text) { titleStatus.value = '正文已更新，保留当前标题'; return }
-      if (title) { emit('generated-title', title); titleStatus.value = `标题已生成：${title}` }
-      else titleStatus.value = '标题生成失败，可稍后重试'
-    }).catch(() => { if (current === generation) titleStatus.value = '标题生成失败，可稍后重试' })
+  // 同一组件内可继续查询；刷新后的旧任务没有完整本地应用上下文，不能重新指定来源。
+  if(oldId && props.noteAiOrigin && imageRequest !== oldId) {
+    rememberJob(null)
+    busy.value = false
+    error.value = '旧配图缺少可靠应用上下文，未插入正文；点击总览配图重新生成'
+    return
   }
+  if(!oldId) { imageRequest = newPolishRequestId(); imageSource = props.getSourceContent?.() }
   try {
-      const id = oldId || (await startArticleImage(text, prompt.value, noteModel.value)).id
+    if(props.noteAiOrigin && !oldId) {
+      if(!imageSource) throw new Error('完整原稿暂不可读取，请重试')
+      if(!imageRequest) throw new Error('来源请求尚未建立，请重试')
+      const frozen = await freezeNoteAiInput({ requestId: imageRequest, stableId: props.noteAiOrigin.stableId, docId: props.noteAiOrigin.docId ?? null, sourceRev: props.noteAiOrigin.sourceRev ?? null, stage: 'image', content: imageSource, inputText: text })
+      if(current !== generation) return
+      props.confirmCover?.(frozen.overviewImageUrl)
+    }
+    if(current !== generation) return
+    if (!oldId && props.generateTitle) {
+      const titleRequest = newPolishRequestId(), source = imageSource
+      titleStatus.value = '正在生成标题…'
+      void (async () => {
+        if(props.noteAiOrigin) {
+          if(!source) throw new Error('完整原稿暂不可读取')
+          await freezeNoteAiInput({ requestId: titleRequest, stableId: props.noteAiOrigin.stableId, docId: props.noteAiOrigin.docId ?? null, sourceRev: props.noteAiOrigin.sourceRev ?? null, stage: 'title', content: source, inputText: text.slice(0, 12_000) })
+        }
+        if(current !== generation) return
+        const result = await waitForPolish(text.slice(0, 12_000), 'NOTE_TITLE', { model: noteModel.value, titlePrompt: titlePrompt.value, requestId: titleRequest })
+        const title = result.polished?.trim()
+        if(current !== generation || !title) return
+        if(props.getText().trim() !== text || props.noteAiOrigin && props.noteAiOrigin.title !== source?.title) { titleStatus.value = '内容或手动标题已更新，旧标题未应用'; return }
+        if(props.noteAiOrigin && source) await retainNoteAiResult(titleRequest,result.id,{ ...source,title })
+        if(current !== generation || props.getText().trim() !== text || props.noteAiOrigin && props.noteAiOrigin.title !== source?.title) return
+        emit('generated-title',title); if(props.noteAiOrigin) emit('ai-applied', titleRequest); titleStatus.value = '标题已生成'
+      })().catch(cause => { if(current === generation) titleStatus.value = cause instanceof Error ? cause.message : '标题生成失败，请重试' })
+    }
+      const id = oldId || (await startArticleImage(text, prompt.value, noteModel.value, imageRequest)).id
     if (current !== generation) return
     rememberJob(id)
     await waitForImage(id, current)
@@ -157,6 +201,8 @@ watch(() => props.scopeKey, () => {
   busy.value = false
   job.value = null
   replacement.value = null
+  imageSource = undefined
+  imageRequest = undefined
   error.value = ''
   if (persistedJob()) void generate()
 })

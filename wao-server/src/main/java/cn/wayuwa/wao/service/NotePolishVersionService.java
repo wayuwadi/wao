@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 /** 保存小记的原文和润色版；AI 结果不会直接覆盖用户可编辑的正文。 */
 @Service
 public class NotePolishVersionService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private NoteOriginalService originals;
     private final KnowledgeService knowledge;
     private final NotePolishVersionMapper versions;
     @org.springframework.beans.factory.annotation.Autowired
@@ -28,14 +30,23 @@ public class NotePolishVersionService {
 
     /** 只列出当前成员的润色对照，不返回其他人的 AI 结果。 */
     public List<NotePolishVersionDto> list(String memberId) {
+        if(memberId==null)throw new cn.wayuwa.wao.common.UnauthorizedException("请先登录");
         return versions.listOwned(memberId).stream()
                 .map(version -> new NotePolishVersionDto(version.docId(), version.sourceMarkdown(),
                         version.polishedMarkdown())).toList();
     }
 
+    public record ReadingVersion(String docId,Integer sourceRev,String polishedMarkdown){}
+    /** 只返回仍有效的阅读结果与当前版本，不全量传输私人来源正文。 */
+    public List<ReadingVersion> reading(String member){
+        if(member==null)throw new cn.wayuwa.wao.common.UnauthorizedException("请先登录");
+        return versions.listOwned(member).stream().map(v->{DocDto doc=knowledge.getDoc(v.docId());return doc.content()!=null&&Objects.equals(v.sourceMarkdown(),doc.content().markdown())?new ReadingVersion(v.docId(),doc.rev(),v.polishedMarkdown()):null;}).filter(Objects::nonNull).toList();
+    }
     /** 只有源正文仍与已保存文档一致时才接受 AI 结果，重复提交相同结果可安全覆盖。 */
     @Transactional
     public NotePolishVersionDto save(String memberId, String docId, SaveNotePolishVersionRequest request) {
+        if(memberId==null)throw new cn.wayuwa.wao.common.UnauthorizedException("请先登录");
+        if(originals!=null)originals.archiveLegacy(memberId,docId);
         versions.lockDoc(docId);
         DocDto doc = knowledge.getDoc(docId);
         if(!Objects.equals(doc.author(),memberId))throw new cn.wayuwa.wao.common.NotFoundException("小记不存在");

@@ -41,6 +41,9 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @Service
 public class ImageService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    @org.springframework.context.annotation.Lazy
+    private NoteOriginalService noteOriginals;
 
     /** 单张图片基础设施硬上限 10MB；用户主动上传可在设置中进一步调低。 */
     public static final long MAX_BYTES = 10L * 1024 * 1024;
@@ -358,7 +361,9 @@ public class ImageService {
      *
      * @param id 图片 id
      */
+    @org.springframework.transaction.annotation.Transactional
     public void delete(String id) {
+        if(noteOriginals!=null)noteOriginals.requireAssetUnused("images",id);
         mapper.deleteById(id);
     }
 

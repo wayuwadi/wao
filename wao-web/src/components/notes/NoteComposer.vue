@@ -29,7 +29,7 @@ const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}${props.draftScope ? ':' + props.draftScope : ''}`
 type DraftBase = { title: string; tags: string[]; content: RichDocContent }
-type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string }
+type Draft = { sourceInputIds?: string[]; id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string }
 let restored = false
 function readDraft(): Draft {
   try {
@@ -188,6 +188,7 @@ function insertSuggestedTag(tag: string) {
   toggleTag(tag)
   tagSuggestionsOpen.value = false
 }
+const appliedAiInputs = ref<string[]>(initial.sourceInputIds ?? [])
 const id = ref(initial.id)
 const fullscreenReminderId = computed(() => `note-fullscreen-guide-${id.value}`)
 const taskSource = computed(() => ({
@@ -235,7 +236,7 @@ watch(
   },
   { flush: 'post' },
 )
-watch([text, content, tags, generatedTitle], () => {
+watch([text, content, tags, generatedTitle, appliedAiInputs], () => {
   if (resetting) return
   error.value = ''
   if (props.note && !dirty.value) {
@@ -248,7 +249,7 @@ watch([text, content, tags, generatedTitle], () => {
   try {
     writeNoteDraft(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev,
       baseNote: baseNote ? { title: baseNote.title, tags: baseNote.tags, content: baseNote.content } : undefined,
-      tags: tags.value, generatedTitle: generatedTitle.value } satisfies Draft))
+      tags: tags.value, generatedTitle: generatedTitle.value, sourceInputIds: appliedAiInputs.value } satisfies Draft))
     draftError.value = false
     status.value = '草稿已保存在此浏览器'
   } catch {
@@ -286,11 +287,12 @@ async function save(explicit = false) {
     // 模型文字已变化而结构化回调尚未到达时，以当前可见输入为准。
     const rich = content.value?.markdown === text.value
       ? content.value : { version: 1 as const, document: null, markdown: text.value }
-    const submitted = { text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value }
+    const submitted = { text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value, sourceInputIds: [...appliedAiInputs.value] }
     let savedId: string | null
     if (props.submitNote) {
       const aiDefaults = preferences.noteAiDefaults
       const saved = await props.submitNote({ docId: id.value, title: submitted.title, content: rich, tags: submitted.tags,
+        ...(submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : {}),
         autoTitle: aiDefaults.title && !submitted.title.trim(), autoImage: aiDefaults.image, autoPolish: aiDefaults.polish })
       data.applyRemoteDoc(saved)
       savedId = saved.id
@@ -305,7 +307,7 @@ async function save(explicit = false) {
         try {
           saved = await apiPatchDoc(props.note.id, {
             title: (merged.title || latest.title || firstMarkdownTextLine(submitted.text) || '未命名小记').slice(0, 80),
-            content: merged.content, blocks: legacyProjection(merged.content), expectedRev: latestRev, tags: merged.tags,
+            sourceInputIds: submitted.sourceInputIds, content: merged.content, blocks: legacyProjection(merged.content), expectedRev: latestRev, tags: merged.tags,
           })
           break
         } catch (cause) {
@@ -319,10 +321,11 @@ async function save(explicit = false) {
       baseNote = { title: saved.title, tags: [...(saved.tags ?? [])], blocks: saved.blocks, content: resolvedRichContent(saved) }
       savedId = saved.id
     } else {
-      savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags)
+      savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags, submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : undefined)
 
     }
     if (!savedId) throw new Error('正文为空，请先写点内容')
+    appliedAiInputs.value = appliedAiInputs.value.filter(request => !submitted.sourceInputIds.includes(request))
     try {
       const raw = readNoteDraft(draftKey)
       const latest = JSON.parse(raw || 'null') as Draft | null
@@ -353,6 +356,7 @@ async function save(explicit = false) {
       text.value = ''
       content.value = undefined
       tags.value = []
+      appliedAiInputs.value = []
       generatedTitle.value = ''
       id.value = crypto.randomUUID().replace(/-/g, '')
       resetting = false
@@ -441,7 +445,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <div class="composer-editor-layout"><div class="composer-editor-main">
       <MarkdownEditor :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls selection-image preview-images
         :article-image-key="`note:${session.currentUser.id}:${id}`"
-        note-title-on-image @generated-title="generatedTitle = $event"
+        :note-ai-origin="{ stableId: id, docId: note?.id, sourceRev: baseRev, title: generatedTitle, blocks: note?.blocks ?? [], links: note?.links ?? [] }" note-title-on-image @ai-applied="appliedAiInputs = [...new Set([...appliedAiInputs, $event])]" @generated-title="generatedTitle = $event"
         hide-toolbar :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : compact ? 1200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="compact ? 200 : note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"

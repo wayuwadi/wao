@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
+import { apiCreateNote } from '@/api/board'
+vi.mock('@/api/board', async original => ({ ...await original<typeof import('@/api/board')>(), apiCreateNote: vi.fn() }))
 
 /**
  * 知识库模块：小记、文档创建署名与回收站式删除。
@@ -71,6 +73,14 @@ describe('data store · 知识库', () => {
 
   it('小记正文为空时不创建', async () => {
     expect(await data.addNote('   ')).toBeNull()
+  })
+
+  it('真实保存请求保留原始标题和正文空白，供服务端冻结首份记录', async () => {
+    data.apiLive = true
+    const markdown = '  原始句子\n\n', title = '  原始标题  '
+    vi.mocked(apiCreateNote).mockResolvedValue({ id: 'raw-note', title: '原始标题', author: 'wg', kbId: 'kb-notes', folderId: 'kb-notes-f', blocks: [], links: [], backlinks: [], content: { version: 1, document: null, markdown }, rev: 1 } as never)
+    await data.addNote(markdown, title, 'raw-note')
+    expect(apiCreateNote).toHaveBeenCalledWith('raw-note', expect.objectContaining({ title, content: expect.objectContaining({ markdown }) }))
   })
 
   it('小记和文档保留高级 JSON，同时继续提供 Markdown 与旧块投影', async () => {

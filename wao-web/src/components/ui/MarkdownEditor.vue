@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { freezeNoteAiInput, retainNoteAiResult, type NoteAiOrigin, type NoteSourceContent } from '@/api/noteOriginals'
 import { editorSearchRanges } from '@/utils/contentSearch'
 /**
  * 所见即所得的描述编辑器 —— 全项目文字描述输入的统一控件。
@@ -160,6 +161,7 @@ const props = withDefaults(
     /** 小记选中文字可生成图片，图片作为正文附件节点保存。 */
     selectionImage?: boolean
     noteTitleOnImage?: boolean
+    noteAiOrigin?: NoteAiOrigin
     /** 知识库文档的完整工具栏、斜杠菜单和高级内容块。 */
     advanced?: boolean
     /** 小记使用紧凑工具栏，并隐藏需要进入完整文档继续编辑的重型内容块。 */
@@ -210,8 +212,10 @@ const emit = defineEmits<{
   'add-task': [text: string]
   'task-opened': []
   'generated-title': [title: string]
+  'ai-applied': [request: string]
 }>()
 
+function noteSourceContent(): NoteSourceContent { return { title: props.noteAiOrigin?.title ?? '', markdown: props.modelValue, document: editor.value?.getJSON() as RichDocNode ?? null, blocks: props.noteAiOrigin?.blocks ?? [], links: props.noteAiOrigin?.links ?? [] } }
 const previewImage = ref<{ src: string; alt: string } | null>(null)
 const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
 function fullImageSource(image: HTMLImageElement): string {
@@ -426,6 +430,8 @@ const TabIndent = Extension.create({
 interface PolishDialog {
   startedAt?: number
   requestId?: string
+  taskId?: string
+  sourceContent?: NoteSourceContent
   progress?: string
   failed?: boolean
   from: number
@@ -878,6 +884,11 @@ async function requestPolish(dialog: PolishDialog) {
   dialog.progress = '正在提交润色任务…'
   persistPolish(dialog)
   try {
+    if (props.noteAiOrigin) {
+      dialog.sourceContent ??= { title: props.noteAiOrigin.title, markdown: props.modelValue, document: editor.value?.getJSON() as RichDocNode, blocks: props.noteAiOrigin.blocks, links: props.noteAiOrigin.links }
+      await freezeNoteAiInput({ requestId: dialog.requestId!, stableId: props.noteAiOrigin.stableId, docId: props.noteAiOrigin.docId ?? null, sourceRev: props.noteAiOrigin.sourceRev ?? null, stage: 'polish', content: dialog.sourceContent, inputText: dialog.original, selection: { from: dialog.from, to: dialog.to, original: dialog.original } })
+    }
+    if(!polishMounted || polishDialog.value !== dialog || polishSession?.userId !== owner) return
     const result = await polishDocumentText(dialog.original, {
       requestId: dialog.requestId,
       isActive: () => polishMounted && polishDialog.value === dialog && polishSession?.userId === owner,
@@ -889,6 +900,7 @@ async function requestPolish(dialog: PolishDialog) {
       },
     })
     if (polishDialog.value !== dialog) return
+    dialog.taskId = result.taskId
     dialog.polished = result.polished.trim()
     if (!dialog.polished) dialog.error = 'AI 没有返回可用内容，请重试'
   } catch (cause) {
@@ -918,7 +930,7 @@ function keepOriginal() {
 }
 
 /** 用户明确选择“替换选区”后才修改正文；修改会走既有 update:modelValue 与自动保存链路。 */
-function applyPolish() {
+async function applyPolish() {
   const e = editor.value
   const dialog = polishDialog.value
   if (!e || !dialog || !dialog.polished) return
@@ -936,10 +948,22 @@ function applyPolish() {
   const options = dialog.inline
     ? undefined
     : { contentType: 'markdown' as const, updateSelection: true }
+  if (props.noteAiOrigin) {
+    if(!dialog.sourceContent || !dialog.requestId || !dialog.taskId) { dialog.error = '来源或任务关联缺失，请重新润色；原稿保留'; return }
+    // 在真正修改编辑器前确认结果留存；数据库失败不能应用并丢掉来源。
+    const proposed = e.state.tr
+    const fragment = dialog.inline ? e.schema.text((replacement as { text: string }).text, dialog.marks.map(mark => e.schema.markFromJSON(mark))) : e.schema.nodeFromJSON(e.markdown!.parse(dialog.polished)).content
+    proposed.replaceWith(dialog.from, dialog.to, fragment)
+    const candidate = e.markdown?.serialize(proposed.doc.toJSON()) ?? dialog.sourceContent.markdown
+    try { await retainNoteAiResult(dialog.requestId, dialog.taskId, { ...dialog.sourceContent, markdown: candidate, document: proposed.doc.toJSON() as RichDocNode }) }
+    catch(cause) { dialog.error = cause instanceof Error ? cause.message : '原稿保存失败，请重试'; return }
+    if (e.getMarkdown() !== dialog.sourceDocument || polishDialog.value !== dialog) { dialog.error = '内容已更新，旧结果未应用'; return }
+  }
   e.chain()
     .focus()
     .insertContentAt({ from: dialog.from, to: dialog.to }, replacement, options)
     .run()
+  if(props.noteAiOrigin && dialog.requestId) emit('ai-applied', dialog.requestId)
   persistPolish(null)
   polishDialog.value = null
 }
@@ -1817,18 +1841,30 @@ function onImagePicked(event: Event) {
 }
 
 /** 将总览图放在当前正文最前面；重复生成时替换上一张总览图。 */
+const generatedCoverUrls = new Set<string>()
+watch([() => props.articleImageKey, () => props.noteAiOrigin?.stableId, () => polishSession?.userId], () => generatedCoverUrls.clear())
+function confirmGeneratedCover(url: string | null) { if(url) generatedCoverUrls.add(url) }
+function articleImageResult(url: string): NoteSourceContent {
+  const e = editor.value, source = noteSourceContent()
+  if(!e) throw new Error('编辑器暂不可用，当前内容保留')
+  const first = e.state.doc.firstChild, tr = e.state.tr
+  const to = first?.type.name === 'image' && generatedCoverUrls.has(String(first.attrs.src)) ? first.nodeSize : 0
+  tr.replaceWith(0,to,e.schema.nodes.image!.create({ src:url,alt:'文章总览图',width:'50%',height:null,align:'center' }))
+  return { ...source, markdown:e.markdown?.serialize(tr.doc.toJSON()) ?? source.markdown,document:tr.doc.toJSON() as RichDocNode }
+}
 function insertArticleImageAtStart(url: string): boolean {
   const e = editor.value
   if (!e || props.readonly || !/^\/api\/images\/[A-Za-z0-9_-]+\/raw$/.test(url)) return false
   const first = e.state.doc.firstChild
-  const range = first?.type.name === 'image' && first.attrs.alt === '文章总览图'
+  const range = first?.type.name === 'image' && generatedCoverUrls.has(String(first.attrs.src))
     ? { from: 0, to: first.nodeSize } : 0
+  generatedCoverUrls.add(url)
   return e.commands.insertContentAt(range, { type: 'image', attrs: { src: url, alt: '文章总览图', width: '50%', height: null, align: 'center' } }, { updateSelection: false })
 }
 
 function currentArticleImage(): string | null {
   const first = editor.value?.state.doc.firstChild
-  return first?.type.name === 'image' && first.attrs.alt === '文章总览图' ? String(first.attrs.src) : null
+  return first?.type.name === 'image' && generatedCoverUrls.has(String(first.attrs.src)) ? String(first.attrs.src) : null
 }
 
 function articleText(): string { return editor.value?.state.doc.textContent ?? '' }
@@ -2145,7 +2181,7 @@ onBeforeUnmount(() => {
         <div v-if="!readonly" class="article-image-actions">
           <ArticleImageAction :scope-key="articleImageKey"
             :get-text="articleText" :insert-image="insertArticleImageAtStart" :get-current-image="currentArticleImage"
-            :generate-title="noteTitleOnImage" @generated-title="emit('generated-title', $event)" />
+            :note-ai-origin="noteAiOrigin" :get-source-content="noteSourceContent" :confirm-cover="confirmGeneratedCover" :get-image-result="articleImageResult" :generate-title="noteTitleOnImage" @ai-applied="emit('ai-applied', $event)" @generated-title="emit('generated-title', $event)" />
           <button type="button" class="image-upload" title="从图册选择图片"
             aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
             <i class="ri-image-add-line"></i><span>图片</span>

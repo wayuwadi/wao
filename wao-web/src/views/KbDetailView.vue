@@ -1263,7 +1263,9 @@ async function saveKbSettings() {
               image-controls
               :article-image-key="`document:${session.currentUser.id}:${docId}`"
               :note-title-on-image="!!kb?.notes"
+              :note-ai-origin="kb?.notes && doc && base ? { stableId: base.id, docId: base.id, sourceRev: base.rev, title: doc.title, blocks: base.blocks, links: base.links } : undefined"
               @generated-title="docId && data.setDocEdit(docId, { title: $event })"
+              @ai-applied="docId && data.setDocEdit(docId, { sourceInputIds: [...new Set([...(data.docEdits[docId]?.sourceInputIds ?? []), $event])] })"
               placeholder="开始写作…输入 / 插入内容块，支持 Markdown 和粘贴截图"
               :min-height="360"
               :peers="peers"

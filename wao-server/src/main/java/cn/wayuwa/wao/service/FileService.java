@@ -27,6 +27,9 @@ import org.springframework.web.multipart.MultipartFile;
 /** 通用文件的上传、元数据列表、下载和删除服务。 */
 @Service
 public class FileService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    @org.springframework.context.annotation.Lazy
+    private NoteOriginalService noteOriginals;
     public static final long MAX_BYTES = 200L * 1024 * 1024;
     public static final long MAX_PREVIEW_BYTES = 2L * 1024 * 1024;
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("M月d日 HH:mm");
@@ -235,7 +238,11 @@ public class FileService {
     }
 
     /** 删除一个文件。 */
-    public void delete(String id) { if (mapper.deleteById(id) == 0) throw new NotFoundException("文件不存在：" + id); }
+    @org.springframework.transaction.annotation.Transactional
+    public void delete(String id) {
+        if(noteOriginals!=null)noteOriginals.requireAssetUnused("files",id);
+        if (mapper.deleteById(id) == 0) throw new NotFoundException("文件不存在：" + id);
+    }
 
     private FileItemDto toDto(FileBlobEntity entity) {
         return new FileItemDto(entity.getId(), entity.getName(), entity.getDisplayName(), entity.getContentType(),

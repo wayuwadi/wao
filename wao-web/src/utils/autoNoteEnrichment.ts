@@ -263,7 +263,13 @@ export async function initializeNoteWorkflow(memberId: string) {
   try {
     const versions = await fetchNotePolishVersions()
     if (activeMember === memberId && generation === loadGeneration) {
-      for (const version of versions) notePolishVersions[version.docId] = version
+      for (const version of versions) {
+        if (version.sourceMarkdown != null) notePolishVersions[version.docId] = version
+        else {
+          const doc = useDataStore().docById(version.docId)
+          if (doc && doc.rev === version.sourceRev) notePolishVersions[version.docId] = { ...version, sourceMarkdown: resolvedRichContent(doc).markdown }
+        }
+      }
     }
   } catch { /* 自动任务仍可继续；卡片展示原文，后续刷新重试读取。 */ }
   if (activeMember === memberId && generation === loadGeneration) resumeAutoNoteEnrichment(memberId)

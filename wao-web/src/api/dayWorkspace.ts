@@ -16,7 +16,7 @@ export interface DayWorkspace {
   summary: { plannedCount: number; finishedCount: number; stepDoneCount: number; noteCount: number }
 }
 export interface ScheduleWrite { operationId: string; task: Task; previousSchedule: DailySchedule; appliedAt: string }
-export interface NoteSubmission { docId: string; title: string; content: RichDocContent; tags: string[]; autoTitle: boolean; autoImage: boolean; autoPolish: boolean }
+export interface NoteSubmission { docId: string; title: string; content: RichDocContent; tags: string[]; sourceInputIds?: string[]; autoTitle: boolean; autoImage: boolean; autoPolish: boolean }
 export interface DayNoteWrite { operationId: string; doc: Doc; task: Task | null; businessDate: string; late: boolean }
 export interface TodoReceipt<T> { status: 'COMMITTED' | 'UNCONFIRMED'; operationId: string; type?: string; result?: T }
 const unwrap = async <T>(request: Promise<{ data: ApiResponse<T> }>) => (await request).data.data
