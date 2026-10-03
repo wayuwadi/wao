@@ -18,7 +18,7 @@ export interface AiCapability {
   label: string
   provider: 'codex' | 'deepseek' | 'model_gateway'
   model?: string | null
-  executionMode: 'RUNNER' | 'SERVER_API'
+  executionMode: 'LOCAL_CODEX' | 'RUNNER' | 'SERVER_API'
   available: boolean
   message: string
 }

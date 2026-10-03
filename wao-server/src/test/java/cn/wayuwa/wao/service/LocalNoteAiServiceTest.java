@@ -37,6 +37,20 @@ class LocalNoteAiServiceTest {
 
     void claim() { when(runs.claimQueued(eq("ac-test"), isNull(), anyString(), eq("secure_queued"), eq("provider_running"))).thenReturn(1); }
 
+    @Test void checksImageOwnershipAgainBeforeReadingBytesOrStartingCli() throws Exception {
+        var references = mock(ReferenceImageService.class);
+        ReflectionTestUtils.setField(service, "referenceImages", references);
+        var run = run(); run.setMemberId("member"); run.setReferenceImageIds("foreign-image");
+        doThrow(new cn.wayuwa.wao.common.BadRequestException("图片不属于当前成员"))
+                .when(references).requireOwned(eq("member"), any());
+        assertThatThrownBy(() -> service.execute(run, "gpt-6-astra", Duration.ofSeconds(300)))
+                .hasMessageContaining("不属于当前成员");
+        verify(references, never()).raw(anyString(), anyString());
+        run.setReferenceImageIds("duplicate,duplicate");
+        assertThatThrownBy(() -> service.execute(run, "gpt-6-astra", Duration.ofSeconds(300)))
+                .hasMessageContaining("数量无效");
+    }
+
     @Test void defaultDisabledAndNeverFallsBackToPaidApi() {
         assertThat(service.enabled()).isFalse();
         assertThatThrownBy(() -> service.enqueue("member", "正文", "POLISH", "gpt-6-astra"))

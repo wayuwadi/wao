@@ -69,7 +69,7 @@ class AiAssistantServiceTest {
         verify(mapper).insertReadOnlyQueued(captured.capture());
         assertThat(captured.getValue().getAiCapabilityId()).isEqualTo("local-notes-test");
         assertThat(captured.getValue().getRequestedModel()).isEqualTo("gpt-6-astra");
-        assertThat(service.status("local-codex").configured()).isFalse();
+        assertThat(service.status("local-codex").configured()).isTrue();
         org.mockito.Mockito.verifyNoInteractions(runnerMapper, accountService);
         org.mockito.Mockito.doThrow(new cn.wayuwa.wao.common.BadRequestException("本机不可用"))
                 .when(local).enqueue(anyString(), anyString(), anyString(), anyString());
@@ -93,7 +93,7 @@ class AiAssistantServiceTest {
     }
 
     @Test
-    void localCodexRunnerClaimsAssistantWithCentralAccount() {
+    void historicalRunnerClaimNoLongerSuppliesCentralCredentialsForLocalCapability() {
         AiRunnerNodeEntity local = runner("Windows Server 2025", "codex,claude");
         AiAssistantRunEntity run = assistantRun("queued");
         AiRunAccountDto account = new AiRunAccountDto(
@@ -116,7 +116,8 @@ class AiAssistantServiceTest {
         assertThat(claim.claimToken()).hasSize(32).isEqualTo(run.getClaimToken());
         assertThat(claim.prompt()).isEqualTo("请总结");
         assertThat(claim.maxRuntimeSeconds()).isEqualTo(270);
-        assertThat(claim.account()).isSameAs(account);
+        assertThat(claim.account()).isNull();
+        verify(accountService, never()).defaultCodexRunAccount();
         assertThat(claim.mode()).isEqualTo("ASSISTANT");
         assertThat(run.getStatus()).isEqualTo("running");
         assertThat(run.getRunnerId()).isEqualTo("rn1");
@@ -291,14 +292,14 @@ class AiAssistantServiceTest {
         when(mapper.selectById("ac1")).thenReturn(active, failed);
         when(mapper.findExpiredReadOnlyQueuedIds(3600L)).thenReturn(List.of("ac1"));
         when(mapper.expireReadOnlyQueuedById("ac1", 3600L,
-                "只读 AI 任务排队超时，请检查本地 Runner 后重试")).thenReturn(1);
+                "只读 AI 任务排队超时，请检查本机 Codex 后重试")).thenReturn(1);
 
         var result = service.readOnlyJobResult("chat-review-cr1", "ac1");
 
         assertThat(result.status()).isEqualTo("failed");
         assertThat(result.error()).contains("排队超过 1 小时");
         verify(mapper).expireReadOnlyQueuedById("ac1", 3600L,
-                "只读 AI 任务排队超时，请检查本地 Runner 后重试");
+                "只读 AI 任务排队超时，请检查本机 Codex 后重试");
     }
 
     @Test
@@ -311,14 +312,14 @@ class AiAssistantServiceTest {
         when(mapper.selectById("ac1")).thenReturn(active, failed);
         when(mapper.findExpiredReadOnlyRunningIds(1800L)).thenReturn(List.of("ac1"));
         when(mapper.expireReadOnlyRunningById("ac1", 1800L,
-                "只读 AI 任务执行超时，请检查本地 Runner 后重试")).thenReturn(1);
+                "只读 AI 任务执行超时，请检查本机 Codex 后重试")).thenReturn(1);
 
         var result = service.readOnlyJobResult("chat-review-cr1", "ac1");
 
         assertThat(result.status()).isEqualTo("failed");
         assertThat(result.error()).contains("执行超过 30 分钟");
         verify(mapper).expireReadOnlyRunningById("ac1", 1800L,
-                "只读 AI 任务执行超时，请检查本地 Runner 后重试");
+                "只读 AI 任务执行超时，请检查本机 Codex 后重试");
     }
 
     @Test
@@ -344,11 +345,11 @@ class AiAssistantServiceTest {
         assertThat(service.expireReadOnlyJobs()).isEqualTo(3);
 
         verify(mapper).expireReadOnlyQueuedById(
-                "ac-q1", 3600L, "只读 AI 任务排队超时，请检查本地 Runner 后重试");
+                "ac-q1", 3600L, "只读 AI 任务排队超时，请检查本机 Codex 后重试");
         verify(mapper).expireReadOnlyQueuedById(
-                "ac-q2", 3600L, "只读 AI 任务排队超时，请检查本地 Runner 后重试");
+                "ac-q2", 3600L, "只读 AI 任务排队超时，请检查本机 Codex 后重试");
         verify(mapper).expireReadOnlyRunningById(
-                "ac-r1", 1800L, "只读 AI 任务执行超时，请检查本地 Runner 后重试");
+                "ac-r1", 1800L, "只读 AI 任务执行超时，请检查本机 Codex 后重试");
     }
 
     @Test
@@ -605,9 +606,9 @@ class AiAssistantServiceTest {
     @Test
     void retiredRunnerCannotBecomeAvailableOrReceiveNewJobs() {
         assertThat(service.status("local-codex").configured()).isFalse();
-        assertThat(service.status("local-codex").message()).contains("已下线");
+        assertThat(service.status("local-codex").message()).contains("本机 Codex 尚未启用");
         assertThatThrownBy(() -> service.enqueueReadOnlyJob("old-config", "分析"))
-                .hasMessageContaining("Runner 已下线");
+                .hasMessageContaining("本机 Codex 尚未启用");
         verify(mapper, never()).insertReadOnlyQueued(any());
         org.mockito.Mockito.verifyNoInteractions(runnerMapper);
     }
@@ -639,6 +640,112 @@ class AiAssistantServiceTest {
         when(accountService.assistantCapabilities()).thenReturn(List.of(
             new cn.wayuwa.wao.dto.AiCapabilityDto("old", "历史节点", "codex", null, "RUNNER", true, ""),
             new cn.wayuwa.wao.dto.AiCapabilityDto("api", "模型 API", "deepseek", "model", "SERVER_API", true, "")));
-        assertThat(service.capabilities()).extracting(cn.wayuwa.wao.dto.AiCapabilityDto::id).containsExactly("api");
+        assertThat(service.capabilities()).extracting(cn.wayuwa.wao.dto.AiCapabilityDto::id).containsExactly("local-codex", "api");
+        assertThat(service.capabilities().get(0).executionMode()).isEqualTo("LOCAL_CODEX");
+        assertThat(service.capabilities().get(0).available()).isFalse();
+    }
+
+    private LocalNoteAiService enableLocalBusinessAi() {
+        var local = mock(LocalNoteAiService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "localNotes", local);
+        when(local.enabled()).thenReturn(true);
+        when(local.capabilityId()).thenReturn("local-notes-test");
+        return local;
+    }
+
+    @Test
+    void savedCentralCodexReviewChoiceResolvesThroughMetadataWithoutLoadingCredentials() {
+        enableLocalBusinessAi();
+        when(accountService.assistantCapabilities()).thenReturn(List.of(
+                new cn.wayuwa.wao.dto.AiCapabilityDto("old-account", "旧集中账号", "codex", null, "RUNNER", true, "")));
+        assertThat(service.validateCapability("old-account")).isEqualTo("local-codex");
+        assertThat(service.status("old-account").configured()).isTrue();
+        service.enqueueReadOnlyJob("review", "合成复盘", "old-account");
+        var queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(queued.capture());
+        assertThat(queued.getValue().getAiCapabilityId()).isEqualTo("local-notes-test");
+        assertThat(queued.getValue().getStatus()).isEqualTo("secure_queued");
+        verify(accountService, never()).assistantAccount(anyString());
+        verify(accountService, never()).defaultCodexRunAccount();
+        org.mockito.Mockito.verifyNoInteractions(runnerMapper, aiRunService, deepSeekApi);
+    }
+
+    @Test
+    void durablePolishAndAllDefaultBackgroundAnalysesShareLocalQueue() {
+        enableLocalBusinessAi();
+        service.enqueueTextPolishJob("document", "合成润色正文", "保持原意");
+        service.enqueueReadOnlyJob("note-mining", "合成小记挖掘");
+        service.enqueueReadOnlyJob("chat-review", "合成聊天复盘", "local-codex");
+        var queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper, org.mockito.Mockito.times(3)).insertReadOnlyQueued(queued.capture());
+        assertThat(queued.getAllValues()).allSatisfy(run -> {
+            assertThat(run.getAiCapabilityId()).isEqualTo("local-notes-test");
+            assertThat(run.getStatus()).isEqualTo("secure_queued");
+            assertThat(run.getRequestedModel()).isEqualTo("gpt-6-astra");
+            assertThat(run.getWebSearchEnabled()).isFalse();
+        });
+        assertThat(queued.getAllValues().get(0).getUsagePurpose()).isEqualTo("POLISH");
+        assertThat(queued.getAllValues().get(1).getUsagePurpose()).isEqualTo("BACKGROUND");
+        org.mockito.Mockito.verifyNoInteractions(runnerMapper, aiRunService, accountService, deepSeekApi);
+    }
+
+    @Test
+    void synchronousSelectedTextPolishUsesLocalAndKeepsPolishPurpose() {
+        enableLocalBusinessAi();
+        var done = assistantRun("succeeded");
+        done.setMemberId("member"); done.setResponseText("保留事实的润色结果");
+        when(mapper.selectById(anyString())).thenReturn(done);
+        assertThat(service.polishText("合成原文", "member")).isEqualTo("保留事实的润色结果");
+        var queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(queued.capture());
+        assertThat(queued.getValue().getUsagePurpose()).isEqualTo("POLISH");
+        assertThat(queued.getValue().getPromptText()).contains("Markdown 块结构", "<selected_text>", "合成原文");
+        org.mockito.Mockito.verifyNoInteractions(runnerMapper, aiRunService, accountService, deepSeekApi);
+    }
+
+    @Test
+    void localChatRetainsPrivateConversationAssetsAndOwnedImages() {
+        enableLocalBusinessAi();
+        var done = assistantRun("succeeded");
+        done.setMemberId("member"); done.setResponseText("合成问答结果");
+        when(mapper.selectById(anyString())).thenReturn(done);
+        when(conversationService.recentHistory("cv-test", "member")).thenReturn(List.of());
+        when(assetService.relevantAssets("合成问答", null, "member")).thenReturn("仅本人成员资料");
+        String image = "11111111111111111111111111111111";
+        var request = new AssistantChatRequest("合成问答", List.of(), "当前页面", "cv-test", null, "local-codex", List.of(image));
+        assertThat(service.chatOnce(request, "member")).isEqualTo("合成问答结果");
+        var queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(conversationService).enqueue(queued.capture(), eq("cv-test"), eq("member"), contains("合成问答"));
+        verify(referenceImages).requireOwned("member", List.of(image));
+        assertThat(queued.getValue().getAiCapabilityId()).isEqualTo("local-notes-test");
+        assertThat(queued.getValue().getStatus()).isEqualTo("secure_queued");
+        assertThat(queued.getValue().getReferenceImageIds()).isEqualTo(image);
+        assertThat(queued.getValue().getPromptText()).contains("仅本人成员资料", "当前页面", "不使用工具或联网").doesNotContain("AI run");
+        org.mockito.Mockito.verifyNoInteractions(runnerMapper, aiRunService, accountService, deepSeekApi);
+    }
+
+    @Test
+    void unavailableLocalExecutionNeverFallsBackToPaidApi() {
+        var local = enableLocalBusinessAi();
+        org.mockito.Mockito.doThrow(new cn.wayuwa.wao.common.BadRequestException("本机未就绪"))
+                .when(local).requireAvailable();
+        assertThatThrownBy(() -> service.enqueueTextPolishJob("polish", "原文", "方法")).hasMessageContaining("本机未就绪");
+        assertThatThrownBy(() -> service.enqueueReadOnlyJob("mining", "分析")).hasMessageContaining("本机未就绪");
+        verify(mapper, never()).insertReadOnlyQueued(any());
+        org.mockito.Mockito.verifyNoInteractions(accountService, deepSeekApi, runnerMapper, aiRunService);
+    }
+
+    @Test
+    void explicitApprovedApiStillWorksWithLocalEnabledAndConcurrentMemberWorkIsRejected() {
+        var local = enableLocalBusinessAi();
+        var api = new AiRunAccountDto("api", "deepseek", "获准 API", "api_key", null, "synthetic", "https://api.deepseek.com", "deepseek-v4-flash", "chat_completions");
+        when(accountService.assistantAccount("api")).thenReturn(api);
+        service.enqueueReadOnlyJob("explicit-api", "分析", "api");
+        var queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(queued.capture());
+        assertThat(queued.getValue().getStatus()).isEqualTo("provider_queued");
+        verify(local, never()).requireCapacity();
+        when(mapper.selectCount(any())).thenReturn(1L);
+        assertThatThrownBy(() -> service.enqueueReadOnlyJob("busy", "分析")).hasMessageContaining("正在执行");
     }
 }

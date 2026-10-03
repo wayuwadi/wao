@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-/** 小记专用本机 CLI：沿用 ChatGPT 登录，禁用脚本、外部 MCP 和额外付费 API。 */
+/** 浏览器业务共用本机 CLI：沿用 ChatGPT 登录，禁用脚本、外部 MCP 和额外付费 API。 */
 final class LocalNoteCodexProcess {
     private static final Set<String> ENVIRONMENT = Set.of("SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "COMSPEC",
             "USERPROFILE", "HOME", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATH", "PATHEXT",
@@ -33,11 +33,19 @@ final class LocalNoteCodexProcess {
 
     static Result execute(String executable, String model, String prompt, Path root, Duration timeout,
             boolean image) throws Exception {
+        return execute(executable, model, prompt, root, timeout, image, List.of());
+    }
+
+    static Result execute(String executable, String model, String prompt, Path root, Duration timeout,
+            boolean image, List<ReferenceImageService.Content> references) throws Exception {
+        if (references.size() > 4 || image && !references.isEmpty())
+            throw new IllegalStateException("当前任务参考图片数量或用途无效");
         Path directory = Files.createTempDirectory(root, "job-");
         Path events = directory.resolve("events.jsonl");
         Process process = null;
         try {
-            var builder = new ProcessBuilder(command(LocalCodexExecutable.resolve(executable), model, directory, image));
+            var args = commandWithReferences(LocalCodexExecutable.resolve(executable), model, directory, image, references);
+            var builder = new ProcessBuilder(args);
             builder.environment().keySet().removeIf(key -> !ENVIRONMENT.contains(key.toUpperCase(java.util.Locale.ROOT)));
             builder.redirectErrorStream(true).redirectOutput(events.toFile());
             process = builder.start();
@@ -67,6 +75,31 @@ final class LocalNoteCodexProcess {
                 for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
             } catch (java.io.IOException ignored) { /* 留在本机专用目录，按登记归属处理。 */ }
         }
+    }
+
+    static List<String> commandWithReferences(String executable, String model, Path directory, boolean image,
+            List<ReferenceImageService.Content> references) throws Exception {
+        if (references.size() > 4 || image && !references.isEmpty())
+            throw new IllegalStateException("当前任务参考图片数量或用途无效");
+        var args = new ArrayList<>(command(executable, model, directory, image));
+        args.remove(args.size() - 1); // stdin 提示词标识最后添加，参考图片只来自已鉴权的数据库字节。
+        for (int i = 0; i < references.size(); i++) {
+            var reference = references.get(i);
+            String extension = switch (reference.contentType()) {
+                case "image/png" -> ".png";
+                case "image/jpeg" -> ".jpg";
+                case "image/webp" -> ".webp";
+                case "image/gif" -> ".gif";
+                default -> throw new IllegalStateException("参考图片类型无效");
+            };
+            if (reference.bytes() == null || reference.bytes().length == 0 || reference.bytes().length > ImageService.MAX_BYTES)
+                throw new IllegalStateException("参考图片为空或超过 10MB");
+            Path input = directory.resolve("reference-" + i + extension);
+            Files.write(input, reference.bytes());
+            args.addAll(List.of("--image", input.toString()));
+        }
+        args.add("-");
+        return args;
     }
 
     private static byte[] generatedPng(Path events) throws Exception {

@@ -94,7 +94,7 @@ const sourceFilter = reactive<{
   dateTo: string
   projectIds: string[]
 }>({ assetTypes: ['chat', 'knowledge', 'project', 'task'], chatIds: [], senders: [], dateFrom: '', dateTo: '', projectIds: [] })
-const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查 AI API…' })
+const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查 AI 能力…' })
 const capabilities = ref<AiCapability[]>([])
 function initialCapability() {
   try { return localStorage.getItem('wao-assistant-capability-v1') || '' } catch { return '' }
@@ -190,7 +190,7 @@ async function loadStatus() {
 
 async function loadCapabilities() {
   try {
-    capabilities.value = (await fetchAiCapabilities()).filter(item => item.executionMode === 'SERVER_API')
+    capabilities.value = (await fetchAiCapabilities()).filter(item => item.executionMode === 'LOCAL_CODEX' || item.executionMode === 'SERVER_API')
     if (capabilityId.value && !capabilities.value.some((item) => item.id === capabilityId.value)) {
       capabilityId.value = ''
     }
@@ -697,7 +697,7 @@ onBeforeUnmount(stopStatusRefresh)
                   @keydown.enter="handleEnter"
                 ></textarea>
                 <div class="composer-foot">
-                  <span><i class="ri-global-line"></i>只读对话 · 按需联网 · Enter 发送，Shift+Enter 换行</span>
+                  <span><i class="ri-chat-3-line"></i>只读对话 · 根据所选资料回答 · Enter 发送，Shift+Enter 换行</span>
                   <button class="send-btn" :disabled="!input.trim() || sending || historyLoading || !!historyError || !assistantStatus.configured" @click="send()">
                     <i :class="sending ? 'ri-loader-4-line spin' : 'ri-arrow-up-line'"></i>
                   </button>

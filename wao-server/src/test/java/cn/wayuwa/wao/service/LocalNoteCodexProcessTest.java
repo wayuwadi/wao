@@ -9,6 +9,27 @@ import org.junit.jupiter.api.io.TempDir;
 class LocalNoteCodexProcessTest {
     @TempDir Path directory;
 
+    @Test void stagesOnlyBoundedOwnedImageBytesInsideJobAndRetainsStdinPrompt() throws Exception {
+        byte[] bytes = {1, 2, 3};
+        var reference = new ReferenceImageService.Content("image/png", bytes);
+        var command = LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,
+                false, java.util.List.of(reference));
+        Path staged = directory.resolve("reference-0.png");
+        assertThat(Files.readAllBytes(staged)).isEqualTo(bytes);
+        assertThat(command).containsSubsequence("--image", staged.toString()).endsWith("-");
+        assertThatThrownBy(() -> LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,
+                true, java.util.List.of(reference))).hasMessageContaining("用途无效");
+        assertThatThrownBy(() -> LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,
+                false, java.util.Collections.nCopies(5, reference))).hasMessageContaining("数量");
+        assertThatThrownBy(() -> LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,
+                false, java.util.List.of(new ReferenceImageService.Content("text/html", bytes)))).hasMessageContaining("类型无效");
+        assertThatThrownBy(() -> LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,
+                false, java.util.List.of(new ReferenceImageService.Content("image/png", new byte[0])))).hasMessageContaining("为空");
+        assertThatThrownBy(() -> LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,
+                false, java.util.List.of(new ReferenceImageService.Content("image/png", new byte[(int) ImageService.MAX_BYTES + 1]))))
+                .hasMessageContaining("10MB");
+    }
+
     @Test void isolatesCliFromWorkspaceRulesToolsAndPaidApi() {
         var command = LocalNoteCodexProcess.command("codex", "gpt-6-astra", directory, false);
         assertThat(command).containsSubsequence("--sandbox", "read-only")

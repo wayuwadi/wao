@@ -1,5 +1,7 @@
 # Phase 1：独立润色工作台
 
+2026-10-03 执行路由变更：按 ADR-313，服务主机已启用本机时默认沿用 Codex ChatGPT 登录，失败不自动回退 API。原有原文、方法、历史与账号隔离保持有效；见 [公共业务 AI 本机执行](business-ai-local-codex.md)。
+
 对应任务：`t1787916105896`（新增机器人自带润色功能）。本规格复用
 `phase-1-document-selection-polish.md` 与 ADR-086 已定义的真实 AI 账号和只读 Runner 边界，不改变知识库选区润色交互。
 
