@@ -5,7 +5,7 @@ import { useTaskOrderStore } from '@/stores/taskOrder'
 import { taskDropAfter } from '@/utils/taskDrop'
 import { taskTreeRows } from '@/utils/taskHierarchy'
 import { isTaskFinished as isFinished, projectCompletion, projectCompletionLabel } from '@/utils/projectCompletion'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -87,6 +87,20 @@ watch(
   },
   { immediate: true },
 )
+
+const displaySettings = ref<HTMLDetailsElement>()
+const displaySettingsTrigger = ref<HTMLElement>()
+function closeDisplaySettings(restoreFocus = false) {
+  if (!displaySettings.value?.open) return
+  displaySettings.value.open = false
+  if (restoreFocus) displaySettingsTrigger.value?.focus()
+}
+function dismissDisplaySettings(event: PointerEvent) {
+  if (event.target instanceof Node && !displaySettings.value?.contains(event.target)) closeDisplaySettings()
+}
+onMounted(() => document.addEventListener('pointerdown', dismissDisplaySettings))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', dismissDisplaySettings))
+watch([pid, projTab, pdTaskView, searchQuery], () => closeDisplaySettings())
 
 const settingsOpen = ref(false)
 const projectInfoOpen = ref(false)
@@ -640,79 +654,84 @@ watch(visibleTaskIds, (ids) => {
       <button v-for="tb in pdTabs" :key="tb.label" class="ptab" :class="{ on: tb.on }" :title="tb.title" @click="setTab(tb.label)">
         {{ tb.label }}<span v-if="tb.showCount" class="ptab-count wao-tabular">{{ tb.count }}</span>
       </button>
-      <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar">
-        <div v-show="!searchQuery" class="seg">
-          <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
-            <i :class="v[1]"></i>{{ v[0] }}
-          </button>
-        </div>
-        <div class="creator-filter">
-          <button
-            class="creator-filter-btn"
-            :class="{ on: effectiveOwner }"
-            title="按负责人筛选；主任务或其中子任务派给了此人都算"
-            @click="ownerFilterOpen = !ownerFilterOpen; creatorFilterOpen = false"
-          >
-            <i class="ri-user-follow-line"></i>{{ activeOwnerName }}<i class="ri-arrow-down-s-line"></i>
-          </button>
-          <div v-if="ownerFilterOpen" class="creator-filter-menu">
-            <button :class="{ on: !effectiveOwner }" @click="ownerFilter = null; ownerFilterOpen = false">全部负责人</button>
-            <button
-              v-for="owner in ownerOptions"
-              :key="owner.id"
-              :class="{ on: effectiveOwner === owner.id }"
-              @click="ownerFilter = owner.id; ownerFilterOpen = false"
-            >{{ owner.name }}</button>
-          </div>
-        </div>
-        <div class="creator-filter">
-          <button
-            class="creator-filter-btn"
-            :class="{ on: creatorFilter }"
-            :disabled="!creatorOptions.length"
-            :title="creatorOptions.length ? '按创建人筛选任务' : '历史任务没有可靠的创建人记录'"
-            @click="creatorFilterOpen = !creatorFilterOpen; ownerFilterOpen = false"
-          >
-            <i class="ri-user-search-line"></i>{{ activeCreatorName }}<i class="ri-arrow-down-s-line"></i>
-          </button>
-          <div v-if="creatorFilterOpen" class="creator-filter-menu">
-            <button :class="{ on: !creatorFilter }" @click="creatorFilter = null; creatorFilterOpen = false">全部创建人</button>
-            <button
-              v-for="creator in creatorOptions"
-              :key="creator.id"
-              :class="{ on: creatorFilter === creator.id }"
-              @click="creatorFilter = creator.id; creatorFilterOpen = false"
-            >{{ creator.name }}</button>
-          </div>
-        </div>
-        <button v-if="!searchQuery && pdTaskView !== 'list' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
-        <!-- 表格的分组方式与已完成开关放在原「批量选择」的位置，和筛选同一行 -->
-        <template v-if="pdTaskView === 'list' && !searchQuery">
-          <div class="table-seg" role="group" aria-label="表格分组方式">
-            <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
-            <button :class="{ on: tableGrouped }" :aria-pressed="tableGrouped" @click="tableGrouped = true">按分组</button>
-          </div>
-          <button v-if="tableGrouped" class="table-toolbar-btn" :disabled="groupsSaving" @click="addGroup">
-            <i class="ri-add-line"></i>{{ groupsSaving ? '保存中…' : '新建分组' }}
-          </button>
-          <button
-            class="done-switch"
-            role="switch"
-            :aria-checked="showFinished"
-            title="是否显示已完成的任务与子任务；主任务完成但子任务未做完的始终显示"
-            @click="showDone = !showDone"
-          ><span class="track"><span class="thumb"></span></span>显示已完成<em v-if="doneTasks.length" class="done-switch-count wao-tabular">{{ doneTasks.length }}</em></button>
-        </template>
-      </div>
     </div>
-
-    <!-- 任务 -->
-    <div v-if="projTab === '任务'" class="project-task-content">
+    <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar" aria-label="任务工具栏">
+      <div v-show="!searchQuery" class="seg">
+        <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
+          <i :class="v[1]"></i>{{ v[0] }}
+        </button>
+      </div>
       <div class="project-search-bar">
         <i class="ri-search-line" aria-hidden="true"></i>
         <input v-model="searchText" type="search" aria-label="项目内查找" placeholder="查找编号、标题、正文或子任务" autocomplete="off">
         <button v-if="searchText" @click="searchText = ''">清除查找</button>
       </div>
+      <div class="creator-filter">
+        <button
+          class="creator-filter-btn"
+          :class="{ on: effectiveOwner }"
+          title="按负责人筛选；主任务或其中子任务派给了此人都算"
+          @click="ownerFilterOpen = !ownerFilterOpen; creatorFilterOpen = false"
+        >
+          <i class="ri-user-follow-line"></i>{{ activeOwnerName }}<i class="ri-arrow-down-s-line"></i>
+        </button>
+        <div v-if="ownerFilterOpen" class="creator-filter-menu">
+          <button :class="{ on: !effectiveOwner }" @click="ownerFilter = null; ownerFilterOpen = false">全部负责人</button>
+          <button
+            v-for="owner in ownerOptions"
+            :key="owner.id"
+            :class="{ on: effectiveOwner === owner.id }"
+            @click="ownerFilter = owner.id; ownerFilterOpen = false"
+          >{{ owner.name }}</button>
+        </div>
+      </div>
+      <div class="creator-filter">
+        <button
+          class="creator-filter-btn"
+          :class="{ on: creatorFilter }"
+          :disabled="!creatorOptions.length"
+          :title="creatorOptions.length ? '按创建人筛选任务' : '历史任务没有可靠的创建人记录'"
+          @click="creatorFilterOpen = !creatorFilterOpen; ownerFilterOpen = false"
+        >
+          <i class="ri-user-search-line"></i>{{ activeCreatorName }}<i class="ri-arrow-down-s-line"></i>
+        </button>
+        <div v-if="creatorFilterOpen" class="creator-filter-menu">
+          <button :class="{ on: !creatorFilter }" @click="creatorFilter = null; creatorFilterOpen = false">全部创建人</button>
+          <button
+            v-for="creator in creatorOptions"
+            :key="creator.id"
+            :class="{ on: creatorFilter === creator.id }"
+            @click="creatorFilter = creator.id; creatorFilterOpen = false"
+          >{{ creator.name }}</button>
+        </div>
+      </div>
+      <button v-if="!searchQuery && pdTaskView !== 'list' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
+      <template v-if="pdTaskView === 'list' && !searchQuery">
+        <button v-if="tableGrouped" class="table-toolbar-btn" :disabled="groupsSaving" @click="addGroup">
+          <i class="ri-add-line"></i>{{ groupsSaving ? '保存中…' : '新建分组' }}
+        </button>
+        <details ref="displaySettings" class="project-display-settings" @keydown.esc.stop.prevent="closeDisplaySettings(true)">
+          <summary ref="displaySettingsTrigger"><i class="ri-equalizer-line" aria-hidden="true"></i>显示设置<i class="ri-arrow-down-s-line" aria-hidden="true"></i></summary>
+          <div class="display-settings-panel">
+            <span class="display-settings-label">表格分组方式</span>
+            <div class="table-seg" role="group" aria-label="表格分组方式">
+              <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
+              <button :class="{ on: tableGrouped }" :aria-pressed="tableGrouped" @click="tableGrouped = true">按分组</button>
+            </div>
+            <button
+              class="done-switch"
+              role="switch"
+              :aria-checked="showFinished"
+              title="是否显示已完成的任务与子任务；主任务完成但子任务未做完的始终显示"
+              @click="showDone = !showDone"
+            ><span class="track"><span class="thumb"></span></span>显示已完成<em v-if="doneTasks.length && !tasksUnavailable" class="done-switch-count wao-tabular">{{ doneTasks.length }}</em></button>
+          </div>
+        </details>
+      </template>
+    </div>
+
+    <!-- 任务 -->
+    <div v-if="projTab === '任务'" class="project-task-content">
       <div v-if="data.taskLoadState === 'error'" class="task-scope" role="alert">
         {{ ptasks.length ? '任务刷新失败，当前保留已读取的任务及未保存输入；以下数量和结果可能不是最新。' : '任务加载失败，暂时无法确认任务数量；输入仍保留。' }}{{ data.taskLoadError }}
         <button @click="data.hydrate()">重新加载任务</button>
@@ -2214,13 +2233,13 @@ watch(visibleTaskIds, (ids) => {
   .doc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc-time { flex-shrink: 0; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
-/* 任务优先：项目标题、页签与视图、交付筛选合为三条紧凑工具栏。 */
+/* 任务优先：项目标题、内容页签与任务工具栏分层，保持紧凑全宽。 */
 .detail { padding-top: 12px; }
-/* 头部压紧：项目名一行 + 页签/工具一行，把高度让给任务表格 */
+/* 项目标题只承载项目身份和主要操作。 */
 .phead { margin-top: 0; gap: 8px; }
 .phead .back { padding: 2px 4px; }
 .phead-icon { width: 24px; height: 24px; font-size: 13px; border-radius: 6px; }
-.phead-name { font-size: 15px; overflow-wrap: anywhere; }
+.phead-name { font-size: 17px; overflow-wrap: anywhere; }
 .phead-name-wrap { flex: 0 1 auto; }
 .phead-name-row { gap: 7px; }
 .phead-av { width: 22px; height: 22px; font-size: 10px; }
@@ -2228,7 +2247,7 @@ watch(visibleTaskIds, (ids) => {
 .phead .btn-primary.sm { height: 28px; padding: 0 11px; }
 .ptabs { margin-top: 4px; align-items: center; gap: 6px; flex-wrap: wrap; overflow: visible; padding-bottom: 4px; }
 .ptab { height: 30px; padding: 4px 8px; }
-.task-view-toolbar { margin: 0 0 0 auto; flex-wrap: wrap; gap: 6px; }
+.task-view-toolbar { margin: 10px 0; flex-wrap: wrap; gap: 8px; }
 .task-view-toolbar .creator-filter { margin-left: 0; }
 .task-view-toolbar .seg { padding: 2px; border-radius: 7px; }
 .task-view-toolbar .seg-btn { height: 24px; padding: 0 9px; font-size: 12px; }
@@ -2258,7 +2277,7 @@ watch(visibleTaskIds, (ids) => {
   .ptabs { margin: 9px 0 0; padding: 0 0 6px; }
   .task-view-toolbar { margin-left: 0; flex-basis: 100%; }
   .task-view-toolbar .seg-btn { padding: 0 9px; }
-  .task-view-toolbar .creator-filter { margin-left: auto; }
+  .task-view-toolbar .creator-filter { margin-left: 0; }
   .board-col.is-collapsed { min-width: 0; }
   .project-more-menu { right: 0; }
 }
@@ -2285,11 +2304,12 @@ watch(visibleTaskIds, (ids) => {
   text-align: left;
   height: 34px;
   font-weight: 500;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
+  font-size: 13px;
 }
 .project-task-table .table-sort { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 2px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
 .project-task-table .table-sort:hover, .project-task-table .table-sort:focus-visible { color: var(--wao-primary-text); background: var(--wao-bg-hover); }
-.project-task-table .table-sort i { font-size: 12px; opacity: .55; }
+.project-task-table .table-sort i { font-size: 12px; opacity: .75; }
 .project-task-table th[aria-sort="ascending"] .table-sort i, .project-task-table th[aria-sort="descending"] .table-sort i { opacity: 1; }
 .project-task-table :is(th, td) {
   padding: 5px 9px;
@@ -2332,7 +2352,8 @@ watch(visibleTaskIds, (ids) => {
 .table-group-head .group-op {
   opacity: 0;
 }
-.table-group-row:hover .group-op {
+.table-group-row:hover .group-op,
+.table-group-row:focus-within .group-op {
   opacity: 1;
 }
 .project-task-table .table-quick-add td {
@@ -2434,4 +2455,37 @@ watch(visibleTaskIds, (ids) => {
   clip-path: inset(50%);
 }
 .table-title-heading { display: flex; align-items: center; justify-content: space-between; }
+
+/* B：常用操作直接可见，低频显示偏好在原位展开。 */
+.ptabs { margin-bottom: 0; }
+.ptab:not(.on), .task-view-toolbar .seg-btn:not(.on) { color: var(--wao-text-3); }
+.task-view-toolbar .seg { flex-shrink: 0; }
+.task-view-toolbar .seg-btn { height: 28px; font-size: 12.5px; }
+.task-view-toolbar .creator-filter-btn, .task-view-toolbar .table-toolbar-btn { height: 32px; white-space: nowrap; }
+.task-view-toolbar .project-search-bar { flex: 1 1 240px; max-width: 360px; min-width: 0; padding: 0; position: relative; }
+.task-view-toolbar .project-search-bar > i { position: absolute; left: 9px; color: var(--wao-text-3); pointer-events: none; }
+.task-view-toolbar .project-search-bar input { width: 100%; min-width: 0; height: 32px; padding-left: 29px; font-size: 12.5px; }
+.task-view-toolbar .project-search-bar button { flex-shrink: 0; white-space: nowrap; }
+.project-display-settings { position: relative; margin-left: auto; flex-shrink: 0; }
+.project-display-settings summary { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 9px; border: 1px solid var(--wao-line); border-radius: 7px; color: var(--wao-text-3); background: var(--wao-bg-card); font-size: 12.5px; cursor: pointer; list-style: none; white-space: nowrap; }
+.project-display-settings summary::-webkit-details-marker { display: none; }
+.project-display-settings[open] summary { color: var(--wao-primary-text); border-color: var(--wao-primary); }
+.display-settings-panel { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: 236px; max-width: calc(100vw - 32px); padding: 14px; display: flex; flex-direction: column; align-items: stretch; gap: 10px; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 8px; box-shadow: var(--wao-shadow-modal); }
+.display-settings-label { color: var(--wao-text-3); font-size: 12px; }
+.display-settings-panel .table-seg button { flex: 1; height: 30px; color: var(--wao-text-3); }
+.display-settings-panel .table-seg button.on { color: var(--wao-primary-text); }
+.display-settings-panel .done-switch { min-height: 32px; margin: 0; color: var(--wao-text-3); }
+:is(.phead, .ptabs, .task-view-toolbar, .project-task-table) :is(button, summary, input):focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.task-scope { color: var(--wao-text-3); }
+.task-scope[role="alert"] { border-left: 3px solid var(--wao-warning); }
+.project-task-table :deep(.table-number), .project-task-table :deep(.created-date) { color: var(--wao-text-3) !important; }
+@media (max-width: 760px) {
+  .task-view-toolbar { gap: 8px; }
+  .task-view-toolbar .project-search-bar { order: 2; flex-basis: 100%; max-width: none; }
+  .task-view-toolbar .creator-filter, .task-view-toolbar > .table-toolbar-btn, .task-view-toolbar > .batch-selection-toggle { order: 3; }
+  .task-view-toolbar .project-display-settings { order: 4; }
+  .task-view-toolbar .seg-btn { flex: 1; height: 32px; padding: 0 5px; gap: 4px; white-space: nowrap; }
+  .task-view-toolbar .creator-filter-btn, .task-view-toolbar .table-toolbar-btn, .project-display-settings summary { height: 36px; }
+  .task-view-toolbar .creator-filter-menu { max-width: calc(100vw - 32px); }
+}
 </style>
