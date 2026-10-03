@@ -85,7 +85,7 @@ export interface GitReleaseHistory {
 
 /** 从当前不可变制品读取所有可达提交，不将新部署的记录混入旧页面。 */
 export async function fetchGitReleaseHistory(expectedSha: string): Promise<GitReleaseHistory> {
-  const { data } = await axios.get(`${import.meta.env.BASE_URL}git-history.json`, { timeout: 10000 })
+  const { data } = await axios.get(`${import.meta.env.BASE_URL}assets/git-history.json`, { timeout: 10000 })
   if (data?.buildSha !== expectedSha || !Array.isArray(data.commits) || !data.commits.length)
     throw new Error('提交记录与当前页面版本不一致，请刷新后重试')
   const seen = new Set<string>()

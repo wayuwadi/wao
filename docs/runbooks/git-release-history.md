@@ -12,6 +12,6 @@ npm --prefix wao-web run build
 
 本地正常登录后打开 `/features#recent-updates`，核对当前 SHA/最新标题、查看更多提交、保留旧精选、顶栏打开和体验入口；窄屏文字换行无横向溢出。刷新后记录不丢失。真实 UI 不能以组件测试替代。
 
-发布验收读取目标制品的 `git-history.json` 和既有 `pluginWebUpdateNotice/web_version_by_plugin.json`：首条提交=部署 SHA、说明 id=`git-release-<SHA>`，标题来自该批次，静态摘要一致。保留后端实际版本与健康状态，不根据前端 Git 记录声称后端已升级。
+发布验收读取目标制品的 `assets/git-history.json` 和既有 `pluginWebUpdateNotice/web_version_by_plugin.json`：首条提交=部署 SHA、说明 id=`git-release-<SHA>`，标题来自该批次，静态摘要一致。保留后端实际版本与健康状态，不根据前端 Git 记录声称后端已升级。
 
 每次 main 批次（包括纯文档与测试）均刷新静态记录；未发布提交在旧制品不可见，不能伪称已上线。Jenkins 尚未恢复时沿用既有 Windows 发布协调者；此工具不创建新后台发布任务。

@@ -41,12 +41,12 @@ export function gitReleasePlugin(data) {
     name: 'wao-git-release',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (req.url?.split('?')[0] !== '/git-history.json') return next()
+        if (req.url?.split('?')[0] !== '/assets/git-history.json') return next()
         res.setHeader('Content-Type', 'application/json; charset=utf-8')
         res.setHeader('Cache-Control', 'no-store')
         res.end(source)
       })
     },
-    generateBundle() { this.emitFile({ type: 'asset', fileName: 'git-history.json', source }) },
+    generateBundle() { this.emitFile({ type: 'asset', fileName: 'assets/git-history.json', source }) },
   }
 }
