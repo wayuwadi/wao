@@ -2,6 +2,7 @@
 import { RouterLink } from 'vue-router'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
+import HomeCompanions from '@/components/home/HomeCompanions.vue'
 import { useDataStore } from '@/stores/data'
 const data = useDataStore()
 </script>
@@ -22,6 +23,7 @@ const data = useDataStore()
           <RouterLink class="rest-entrance" to="/features">功能探索 <span aria-hidden="true">↗</span></RouterLink>
         </div>
       </div>
+      <div class="home-companion-space"><HomeCompanions /></div>
     </section>
   </main>
 </template>
@@ -29,11 +31,12 @@ const data = useDataStore()
 <style scoped>
 .home { min-height: 100%; }
 .home-day { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.home-rest-welcome { min-height: 300px; padding: 32px; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); display: flex; flex-direction: column; gap: 30px; }
+.home-rest-welcome { min-height: max(650px, calc(100dvh - 145px)); padding: 32px 32px 0; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); display: flex; flex-direction: column; gap: 30px; overflow: hidden; }
+.home-companion-space { position: relative; flex: 1; min-height: 250px; margin-inline: -32px; }
 .home-rest-copy p { color: var(--wao-text-weak); font-size: 13px; line-height: 1.8; }
 .home-rest-copy h1 { font-size: clamp(20px,3vw,30px); font-weight: 500; }
 .home-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .rest-entrance { display: inline-block; flex: none; white-space: nowrap; padding: 10px 16px; border: 1px solid var(--wao-line); border-radius: 24px; color: var(--wao-text); text-decoration: none; }
 .rest-entrance:focus-visible { outline: 2px solid var(--wao-primary-text); outline-offset: 4px; }
-@media (max-width: 600px) { .home-rest-welcome { padding: 20px; } }
+@media (max-width: 600px) { .home-rest-welcome { padding: 20px 20px 0; } .home-companion-space { margin-inline: -20px; } }
 </style>
