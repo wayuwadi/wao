@@ -27,9 +27,15 @@ class CodexQuotaServiceTest {
     private final AiRunnerNodeMapper runnerMapper = mock(AiRunnerNodeMapper.class);
     private final QuotaRefreshNotificationService quotaNotifications = mock(QuotaRefreshNotificationService.class);
     private final AiQuotaSnapshotService quotaSnapshots = mock(AiQuotaSnapshotService.class);
+    private final LocalCodexQuotaService local = mock(LocalCodexQuotaService.class);
     private final ObjectMapper json = new ObjectMapper();
     private final CodexQuotaService service = new CodexQuotaService(
-            quotaMapper, runnerMapper, json, quotaNotifications, quotaSnapshots);
+            quotaMapper, runnerMapper, json, quotaNotifications, quotaSnapshots, local);
+
+    @org.junit.jupiter.api.BeforeEach
+    void passthroughLocalSnapshots() {
+        when(local.merge(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    }
 
     @Test
     void heartbeatStoresOnlySanitizedQuotaInsteadOfCredentials() {

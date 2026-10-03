@@ -2,7 +2,7 @@ package cn.wayuwa.wao.dto;
 
 import java.util.List;
 
-/** 首页展示的一个本地 Codex 账号额度；同账号的多台 Runner 已合并。 */
+/** 首页展示的一个 Codex 账号额度；同账号多来源已合并，runnerNames 沿用旧字段名表达采集来源。 */
 public record CodexQuotaAccountDto(
         String key,
         String accountEmail,

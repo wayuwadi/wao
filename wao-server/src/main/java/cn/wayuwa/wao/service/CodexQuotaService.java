@@ -36,15 +36,17 @@ public class CodexQuotaService {
     private final ObjectMapper json;
     private final QuotaRefreshNotificationService quotaNotifications;
     private final AiQuotaSnapshotService quotaSnapshots;
+    private final LocalCodexQuotaService local;
 
     public CodexQuotaService(CodexRunnerQuotaMapper quotaMapper, AiRunnerNodeMapper runnerMapper,
             ObjectMapper json, QuotaRefreshNotificationService quotaNotifications,
-            AiQuotaSnapshotService quotaSnapshots) {
+            AiQuotaSnapshotService quotaSnapshots, LocalCodexQuotaService local) {
         this.quotaMapper = quotaMapper;
         this.runnerMapper = runnerMapper;
         this.json = json;
         this.quotaNotifications = quotaNotifications;
         this.quotaSnapshots = quotaSnapshots;
+        this.local = local;
     }
 
     /**
@@ -88,7 +90,7 @@ public class CodexQuotaService {
         List<CodexRunnerQuotaEntity> snapshots = quotaMapper.selectList(null).stream()
                 .filter(item -> StringUtils.hasText(item.getSnapshotJson()) && item.getLastSuccessAt() != null)
                 .toList();
-        if (snapshots.isEmpty()) return List.of();
+        if (snapshots.isEmpty()) return local.merge(List.of());
         Map<String, AiRunnerNodeEntity> runners = new LinkedHashMap<>();
         for (AiRunnerNodeEntity runner : runnerMapper.selectList(null)) runners.put(runner.getId(), runner);
 
@@ -122,7 +124,7 @@ public class CodexQuotaService {
                     report.credits(), report.limits(), names, latest.getLastSuccessAt().toString(), fresh,
                     report.resetCredits()));
         }
-        return result;
+        return local.merge(result);
     }
 
     private RunnerCodexQuotaReport sanitize(RunnerCodexQuotaReport report) {

@@ -64,6 +64,10 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  codex-quota:
+    enabled: ${WAO_CODEX_QUOTA_ENABLED:false}
+    executable: ${WAO_CODEX_QUOTA_EXECUTABLE:codex}
+    source: ${WAO_CODEX_QUOTA_SOURCE:local}
   storage:
     mode: ${WAO_STORAGE_MODE:mysql}
     retain-mysql: ${WAO_STORAGE_RETAIN_MYSQL:true}
