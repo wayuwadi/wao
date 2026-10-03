@@ -70,8 +70,10 @@ function blankMenu(event: MouseEvent) {
 <style scoped>
 .home { min-height: 100%; }
 .home-day { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.home-rest-welcome { min-height: max(650px, calc(100dvh - 145px)); padding: 32px 32px 0; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); display: flex; flex-direction: column; gap: 30px; overflow: hidden; }
-.home-companion-space { position: relative; flex: 1; min-height: 250px; margin-inline: -32px; }
+.home-rest-welcome { padding: 24px 28px 0; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; overflow: hidden; }
+.home-day { grid-column: 1 / -1; }
+.home-rest-copy { align-self: center; min-width: 0; padding-bottom: 28px; }
+.home-companion-space { position: relative; min-width: 0; min-height: 350px; margin-right: -28px; }
 .home-rest-copy p { color: var(--wao-text-weak); font-size: 13px; line-height: 1.8; }
 .home-rest-copy h1 { font-size: clamp(20px,3vw,30px); font-weight: 500; }
 .home-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
@@ -79,5 +81,6 @@ function blankMenu(event: MouseEvent) {
 .play-entrance { background:var(--wao-primary-soft) !important; color:var(--wao-primary-text) !important; }
 .rest-entrance { background:var(--wao-bg-card); cursor:pointer; font:inherit; display: inline-block; flex: none; white-space: nowrap; padding: 10px 16px; border: 1px solid var(--wao-line); border-radius: 24px; color: var(--wao-text); text-decoration: none; }
 .rest-entrance:focus-visible { outline: 2px solid var(--wao-primary-text); outline-offset: 4px; }
+@media (max-width: 1100px) { .home-rest-welcome { grid-template-columns: minmax(0, 1fr); } .home-rest-copy { padding-bottom: 0; } .home-companion-space { min-height: 280px; margin-inline: -28px; } }
 @media (max-width: 600px) { .home-rest-welcome { padding: 20px 20px 0; } .home-companion-space { margin-inline: -20px; } }
 </style>
