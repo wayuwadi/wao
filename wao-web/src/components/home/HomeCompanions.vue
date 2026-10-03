@@ -67,6 +67,10 @@ async function perform(kind: CompanionActivity) {
   if (quiet.value) { toggleQuiet(); await nextTick() }
   if (!controller?.activity(kind)) say('今天安静陪着你，休息就好。')
 }
+function interact(event: MouseEvent, index: number) {
+  if (event.defaultPrevented) return
+  if (!controller?.pop(index)) say('我在这里，安静陪着你。')
+}
 defineExpose({ perform, toggleQuiet, quiet })
 onMounted(load)
 onActivated(() => {
@@ -98,12 +102,12 @@ onBeforeUnmount(() => {
       class="companion-target"
       :class="`companion-${index}`"
       :aria-label="`和${name}互动`"
-      :title="`${name}：点击或按 Enter 选择活动，拖动后归位；右键或 Shift+F10 也可打开菜单`"
+      :title="`${name}：点击或按 Enter 升空变泡泡；右键或 Shift+F10 选择活动，拖动后归位`"
       :style="{ '--index': index }"
       @contextmenu.stop.prevent="emit('menu', $event, index)"
       @keydown.shift.f10.prevent.stop="emit('menu', $event, index)"
       @keydown.contextmenu.prevent.stop="emit('menu', $event, index)"
-      @click="!$event.defaultPrevented && emit('menu', $event, index)"
+      @click="interact($event, index)"
     >
       <span class="companion-fallback" aria-hidden="true"
         ><span class="fallback-eyes">● ●</span></span

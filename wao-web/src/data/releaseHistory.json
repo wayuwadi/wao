@@ -1,5 +1,23 @@
 [
   {
+    "id": "release-home-bubbles-2026-10-03",
+    "publishedOn": "2026-10-03",
+    "title": "点一下，变成泡泡",
+    "intro": "伙伴回到底边，把中间留给轻松的小互动。",
+    "highlights": [
+      {
+        "featureId": "home",
+        "eyebrow": "休息空间",
+        "title": "点谁，谁轻轻升空",
+        "summary": "左键点击伙伴升空变泡泡，右键再选集体活动。",
+        "points": [
+          "到顶部散开，随后在底部恢复；其他伙伴继续陪伴",
+          "首页撑满可用高度，留出完整活动空间"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-home-rest-2026-10-03",
     "publishedOn": "2026-10-03",
     "title": "一起放松十五秒",

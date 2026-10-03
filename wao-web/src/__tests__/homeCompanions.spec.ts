@@ -9,6 +9,7 @@ const fake = vi.hoisted(() => ({
   dispose: vi.fn(),
   setQuiet: vi.fn(),
   setActive: vi.fn(),
+  pop: vi.fn(() => true),
 }))
 vi.mock('@/components/home/companionScene', () => ({ createCompanionScene: fake.create }))
 beforeEach(() => {
@@ -17,6 +18,7 @@ beforeEach(() => {
     dispose: fake.dispose,
     setQuiet: fake.setQuiet,
     setActive: fake.setActive,
+    pop: fake.pop,
   }))
 })
 
@@ -44,6 +46,16 @@ describe('首页伙伴的边界和归位', () => {
 })
 
 describe('首页伙伴的组件生命周期', () => {
+  it('左键只与被点的伙伴互动，右键才打开菜单', async () => {
+    const w = mount(HomeCompanions)
+    await flushPromises()
+    await w.findAll('.companion-target')[2]!.trigger('click')
+    expect(fake.pop).toHaveBeenCalledWith(2)
+    expect(w.emitted('menu')).toBeUndefined()
+    await w.findAll('.companion-target')[2]!.trigger('contextmenu')
+    expect(w.emitted('menu')).toHaveLength(1)
+    w.unmount()
+  })
   it('安静开关交给场景处理，卸载释放资源', async () => {
     const w = mount(HomeCompanions)
     await flushPromises()
@@ -69,7 +81,8 @@ describe('首页伙伴的组件生命周期', () => {
     expect(w.text()).toContain('静态陪伴')
     const oldCanvas = w.find('canvas').element
     await w.find('.companion-target').trigger('click')
-    expect(w.emitted('menu')).toHaveLength(1)
+    expect(w.emitted('menu')).toBeUndefined()
+    expect(w.text()).toContain('安静陪着你')
     await w.find('.companion-actions button').trigger('click')
     await flushPromises()
     expect(w.classes()).toContain('ready')

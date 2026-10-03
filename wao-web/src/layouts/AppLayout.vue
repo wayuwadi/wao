@@ -720,6 +720,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   width: auto;
   flex: 1 1 0;
 }
+.page-stage:has(.home) { align-items: stretch; }
 @media (min-width: 821px) {
   .content:has(.notes-page) {
     overflow: hidden;
