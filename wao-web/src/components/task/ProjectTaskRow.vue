@@ -265,6 +265,8 @@ function commitRename() {
   font-size: 12px;
 }
 .title-cell {
+  flex-wrap: wrap;
+  row-gap: 3px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -289,7 +291,7 @@ function commitRename() {
   flex-shrink: 0;
 }
 .trow-title {
-  flex: 0 1 auto;
+  flex: 1 1 100px;
   min-width: 0;
   border: none;
   background: none;
@@ -300,8 +302,12 @@ function commitRename() {
   text-align: left;
   cursor: pointer;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 .trow-title:hover {
   color: var(--wao-primary-text);
@@ -481,4 +487,7 @@ function commitRename() {
 }
 .task-row.order-before td { box-shadow: inset 0 2px var(--wao-primary); }
 .task-row.order-after td { box-shadow: inset 0 -2px var(--wao-primary); }
+
+.tree-toggle:focus-visible, .trow-title:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+@media (max-width: 760px) { .tree-toggle { width: 28px; height: 32px; } .tree-spacer { width: 28px; } }
 </style>

@@ -2517,4 +2517,10 @@ watch(visibleTaskIds, (ids) => {
   .task-view-toolbar .creator-filter-btn, .task-view-toolbar .table-toolbar-btn, .project-display-settings summary { height: 36px; }
   .task-view-toolbar .creator-filter-menu { max-width: calc(100vw - 32px); }
 }
+
+.project-action-filters button { min-height: 30px; }
+@media (max-width: 760px) {
+  .project-action-filters { gap: 6px; }
+  .project-action-filters button { min-height: 40px; padding: 6px 10px; }
+}
 </style>
