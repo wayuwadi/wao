@@ -1,6 +1,19 @@
-import {freshBeastMemory,isBeastMemory,type BeastMemory} from "../games/beasts/save";
+import {
+  freshBeastMemory,
+  isBeastMemory,
+  type BeastMemory,
+} from "../games/beasts/save";
+import {
+  freshCampMemory,
+  isCampMemory,
+  type CampMemory,
+} from "../games/camp/save";
 import { freshMemory, isDinoMemory, type DinoMemory } from "../games/dino/save";
-import { freshStarfieldMemory, isStarfieldMemory, type StarfieldMemory } from "../games/starfield/save";
+import {
+  freshStarfieldMemory,
+  isStarfieldMemory,
+  type StarfieldMemory,
+} from "../games/starfield/save";
 import {
   freshRiftMemory,
   isRiftMemory,
@@ -12,10 +25,26 @@ export interface GameMemories {
   rift: RiftMemory;
   starfield: StarfieldMemory;
   beasts: BeastMemory;
+  camp: CampMemory;
 }
 export type GameId = keyof GameMemories;
 export const games = {
-  beasts: { name: "幻兽领地", letter: "绿色领地", tagline: "把心事，养成小兽。", restore: "保存收集与成长 · 遭遇从本节点开战前恢复", fresh: freshBeastMemory, validate:isBeastMemory },
+  camp: {
+    name: "最后一座营地",
+    letter: "青色营地",
+    tagline: "为彼此，留一盏灯。",
+    restore: "保存波间布局与纪录 · 波内离开恢复本波开始前",
+    fresh: freshCampMemory,
+    validate: isCampMemory,
+  },
+  beasts: {
+    name: "幻兽领地",
+    letter: "绿色领地",
+    tagline: "把心事，养成小兽。",
+    restore: "保存收集与成长 · 遭遇从本节点开战前恢复",
+    fresh: freshBeastMemory,
+    validate: isBeastMemory,
+  },
   dino: {
     name: "恐龙荒野",
     letter: "荒野来信",
@@ -42,7 +71,13 @@ export const games = {
   },
 } as const;
 export function isGameId(id: unknown): id is GameId {
-  return id === "dino" || id === "rift" || id === "starfield" || id === "beasts";
+  return (
+    id === "dino" ||
+    id === "rift" ||
+    id === "starfield" ||
+    id === "beasts" ||
+    id === "camp"
+  );
 }
 export function clonePayload<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;

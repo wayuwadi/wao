@@ -53,7 +53,7 @@ def main():
     p.add_argument('action',choices=['stage','activate'])
     p.add_argument('--runtime',type=Path,required=True)
     p.add_argument('--version',type=checked_sha,required=True)
-    p.add_argument('--game',choices=['dino','rift','starfield','beasts'],default='dino')
+    p.add_argument('--game',choices=['dino','rift','starfield','beasts','camp'],default='dino')
     p.add_argument('--archive',type=Path,required=True)
     p.add_argument('--expected-catalog',type=int,required=True)
     args=p.parse_args(); runtime=args.runtime.resolve(); state=coordinator(runtime,args.version)

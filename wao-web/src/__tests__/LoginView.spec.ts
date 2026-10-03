@@ -86,7 +86,11 @@ describe('舞台登录与认证生命周期', () => {
     expect(wrapper.find('.world-crew').exists()).toBe(false)
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.get('.breathing-stage').classes()).toContain('minimal')
-    expect(wrapper.findAll('.rainbow-tabs button')).toHaveLength(6)
+    expect(wrapper.findAll('.rainbow-tabs button').map(b=>b.text())).toEqual(['恐龙荒野','裂隙远征','星野奇旅','幻兽领地','最后一座营地'])
+    expect(wrapper.text()).not.toContain('遗迹旅人')
+    expect(wrapper.text()).not.toContain('疾风赛道')
+    expect(wrapper.text()).not.toContain('影子有点不对劲')
+    expect(wrapper.text()).not.toContain('今天贴点什么')
     await wrapper
       .findAll('.page-more button')
       .find((button) => button.text() === '静坐')!

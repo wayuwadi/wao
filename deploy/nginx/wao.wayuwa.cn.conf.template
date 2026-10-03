@@ -46,7 +46,7 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
         add_header X-Content-Type-Options nosniff always;
     }
-    location ~ "^/play-assets/(dino|rift|starfield|beasts)/([0-9a-f]{40})/(index\.html|game-manifest\.json|assets/[A-Za-z0-9_.-]+\.(?:js|css|png|jpg|webp|svg|woff2|ogg|mp3))$" {
+    location ~ "^/play-assets/(dino|rift|starfield|beasts|camp)/([0-9a-f]{40})/(index\.html|game-manifest\.json|assets/[A-Za-z0-9_.-]+\.(?:js|css|png|jpg|webp|svg|woff2|ogg|mp3))$" {
         alias /var/www/wao/play-assets/$1/$2/$3;
         add_header Cache-Control "public, max-age=31536000, immutable";
         add_header X-Content-Type-Options nosniff always;
