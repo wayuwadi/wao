@@ -28,7 +28,7 @@ import org.springframework.util.StringUtils;
 public class AiAssistantConversationService {
 
     private static final List<String> ACTIVE_RUNS = List.of(
-            "queued", "running", "provider_queued", "provider_running");
+            "queued", "running", "secure_queued", "secure_running", "provider_queued", "provider_running");
     private static final String NEW_CHAT_TITLE = "新对话";
 
     private final AiAssistantConversationMapper conversationMapper;

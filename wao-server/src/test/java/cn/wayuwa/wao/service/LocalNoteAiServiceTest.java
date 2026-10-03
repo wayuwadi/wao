@@ -70,6 +70,16 @@ class LocalNoteAiServiceTest {
         verify(runs, never()).completeProviderSucceeded(anyString(), anyString(), anyString());
     }
 
+    @Test void conversationJobsUseAtomicCompletion() throws Exception {
+        var run = run(); run.setConversationId("cv-test"); run.setUsagePurpose("TIANREN"); claim();
+        var completion = mock(LocalCodexConversationCompletion.class);
+        ReflectionTestUtils.setField(service, "conversationCompletion", completion);
+        doReturn(new LocalNoteCodexProcess.Result("合成卦象解读", null)).when(service).execute(any(), anyString(), any());
+        service.process(run);
+        verify(completion).complete(eq(run), anyString(), eq("合成卦象解读"));
+        verify(runs, never()).completeProviderSucceeded(anyString(), anyString(), anyString());
+    }
+
     @Test void cancelledImageClaimDeletesOnlyNewOrphan() throws Exception {
         var run = run(); claim();
         doReturn(new LocalNoteCodexProcess.Result(null, new byte[]{1})).when(service).execute(any(), anyString(), any());
