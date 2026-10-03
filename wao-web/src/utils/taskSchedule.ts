@@ -38,3 +38,13 @@ export function taskCalendarEntries(task: TaskSchedule & Pick<Task, 'due'>, from
   }
   return result
 }
+
+/** 执行提示与截止日期独立；包含今天的跨日时段显示续段，不补任意时刻。 */
+export function taskExecutionLabel(task: TaskSchedule, today: string): string {
+  const start = task.startAt?.slice(0, 10) || task.start
+  if (!start) return ''
+  const current = taskCalendarEntries({ ...task, due: '' }, today, today)[0]
+  if (current) return `今天执行${current.time ? ` ${current.time}–${current.endTime}` : '（未指定时间）'}`
+  const date = start.slice(0, 4) === today.slice(0, 4) ? start.slice(5) : start
+  return `${date}执行${task.startAt ? ` ${task.startAt.slice(11, 16)}` : '（未指定时间）'}`
+}

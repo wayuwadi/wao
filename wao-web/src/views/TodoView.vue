@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { TODO_DUE_GROUPS, todoDueGroup } from '@/utils/todoDueGroups'
 import { isTaskFinished } from '@/utils/projectCompletion'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -43,14 +44,6 @@ const myList = computed(() => {
 const showDone = ref(false)
 const { toggle: toggleTask, isSettling } = useCompletionSettle()
 
-/** 本周日（含）为界：今天之后、本周日之前算「本周」，再往后是「稍后」。 */
-const weekEnd = computed(() => {
-  const d = new Date(`${data.today}T00:00:00`)
-  d.setDate(d.getDate() + (7 - (d.getDay() || 7)))
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-})
-
 /** 已完成任务倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
 const doneDesc = (a: Task, b: Task) =>
   (b.completedAt ?? '').localeCompare(a.completedAt ?? '') || b.id.localeCompare(a.id)
@@ -59,13 +52,8 @@ const taskGroups = computed(() => {
   const list = myList.value
   const open = list.filter((t) => !isTaskFinished(t) || isSettling(t.id))
   const done = list.filter((t) => isTaskFinished(t) && !isSettling(t.id)).sort(doneDesc)
-  const buckets: [string, (due: string) => boolean][] = [
-    ['今天', (due) => !!due && due <= data.today],
-    ['本周', (due) => !!due && due > data.today && due <= weekEnd.value],
-    ['稍后', (due) => !due || due > weekEnd.value],
-  ]
-  const groups: { label: string; items: ReturnType<typeof decoTask>[]; collapsible?: boolean }[] = buckets
-    .map(([label, fn]) => ({ label, items: open.filter((t) => fn(t.due)).map(decoTask) }))
+  const groups: { label: string; items: ReturnType<typeof decoTask>[]; collapsible?: boolean }[] = TODO_DUE_GROUPS
+    .map(label => ({ label, items: open.filter(t => todoDueGroup(t.due, data.today) === label).map(decoTask) }))
     .filter((g) => g.items.length)
   if (done.length) groups.push({ label: '已完成', items: done.map(decoTask), collapsible: true })
   return groups
@@ -189,7 +177,8 @@ function onDropStatus(status: TaskStatus) {
             <span class="trow-proj"><span class="proj-dot" :style="{ background: t.projColor }"></span><span class="ellip">{{ t.projName }}</span></span>
             <span class="pr" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
             <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
-            <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
+            <span v-if="t.executionLabel" class="execution-label">{{ t.executionLabel }}</span>
+            <span class="trow-due" :style="{ color: t.dueColor }">{{ t.due ? (t.due < data.today ? t.dueStr : `${t.dueStr}截止`) : '无截止日期' }}</span>
             <button type="button" class="task-more" :aria-label="`更多任务操作：${t.title}`" aria-haspopup="menu" @click.stop="openTaskMenu($event, t.id)"><i class="ri-more-line"></i></button>
           </div>
         </div>
@@ -233,9 +222,10 @@ function onDropStatus(status: TaskStatus) {
             <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
             <span v-if="t.unfinishedSubCount" class="wait-badge">仍有 {{ t.unfinishedSubCount }} 项子项未收尾</span>
             <div class="bc-proj"><span class="proj-dot" :style="{ background: t.projColor }"></span><span class="ellip">{{ t.projName }}</span></div>
+            <span v-if="t.executionLabel" class="execution-label">{{ t.executionLabel }}</span>
             <div class="bc-foot">
               <span class="pr" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
-              <span class="bc-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
+              <span class="bc-due" :style="{ color: t.dueColor }">{{ t.due ? (t.due < data.today ? t.dueStr : `${t.dueStr}截止`) : '无截止日期' }}</span>
               <span class="spacer"></span>
               <span class="owner-av small" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
               <button type="button" class="task-more" :aria-label="`更多任务操作：${t.title}`" aria-haspopup="menu" @click.stop="openTaskMenu($event, t.id)"><i class="ri-more-line"></i></button>
@@ -250,6 +240,7 @@ function onDropStatus(status: TaskStatus) {
 </template>
 
 <style scoped>
+.execution-label { color: var(--wao-primary-text); font-size: 11px; overflow-wrap: anywhere; }
 .task-more { flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); cursor: pointer; }
 .task-more:hover, .task-more:focus-visible { background: var(--wao-bg-hover); }
 .todo {
@@ -562,7 +553,7 @@ function onDropStatus(status: TaskStatus) {
 }
 .trow-due {
   font-size: 12px;
-  width: 62px;
+  min-width: 72px;
   text-align: right;
   flex-shrink: 0;
 }
