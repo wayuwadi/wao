@@ -1,17 +1,27 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import HomeInspirationPaper from '@/components/home/HomeInspirationPaper.vue'
 import { companionQuiet } from '@/composables/quietCompanions'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
 import HomeCompanions from '@/components/home/HomeCompanions.vue'
 import { useDataStore } from '@/stores/data'
 const data = useDataStore()
+const route = useRoute()
+const router = useRouter()
 const companions = ref<InstanceType<typeof HomeCompanions>>()
 const menu = ref<InstanceType<typeof ContextActionMenu>>()
 const paper = ref<InstanceType<typeof HomeInspirationPaper>>()
+watch(() => route?.fullPath, async () => {
+  if (route?.path !== '/' || route.query.try !== 'inspiration') return
+  await nextTick()
+  if (route.path !== '/' || route.query.try !== 'inspiration') return
+  await paper.value?.show('question')
+  const query = { ...route.query }; delete query.try
+  await router.replace({ path: '/', query, hash: route.hash })
+}, { immediate: true })
 function actions(event: MouseEvent | KeyboardEvent, index?: number) {
   void menu.value?.openAt(event, index === undefined ? '此刻，想做点什么？' : ['小画家的画外音', '小书虫的旧纸条', '小开心的即兴舞', '小青蛙的慢时光'][index]!, [
     { id: 'inspire', label: index === 1 ? '翻翻自己的旧小记' : '给我一个新灵感', run: () => paper.value?.show(index === 1 ? 'memory' : 'question') },

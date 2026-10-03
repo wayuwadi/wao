@@ -1,16 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { watch } from 'vue'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
-import { useTheme } from '@/composables/theme'
-import { useUiStore } from '@/stores/ui'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
-import { blockCompanions, companionQuiet, setCompanionQuiet } from '@/composables/quietCompanions'
+import { blockCompanions } from '@/composables/quietCompanions'
 
-const theme = useTheme()
-const ui = useUiStore()
+const router = useRouter()
 const route = useRoute()
 const open = ref(false)
 watch(open, value => blockCompanions('tools', value), { flush: 'sync' })
@@ -21,7 +18,6 @@ const updateArriving = ref(false)
 const trigger = ref<HTMLButtonElement>()
 const panel = ref<HTMLElement>()
 const position = ref({ right: '12px', top: '60px' })
-const themeLabel = computed(() => ({ light: '浅色', dark: '深色', system: '跟随系统' })[theme.mode.value])
 function place() {
   const rect = trigger.value?.getBoundingClientRect()
   if (!rect) return
@@ -36,7 +32,7 @@ function close() { open.value = false; trigger.value?.focus() }
 function outside(event: PointerEvent) {
   if (event.target instanceof Node && !panel.value?.contains(event.target) && !trigger.value?.contains(event.target)) open.value = false
 }
-function shortcuts() { open.value = false; ui.toggleHelp() }
+function preferences() { open.value = false; void router.push('/settings?tab=prefs') }
 useOverlayDismiss(() => open.value, close, outside)
 watch(() => route.fullPath, () => { open.value = false })
 onMounted(() => { window.addEventListener('resize', place); window.addEventListener('scroll', place, true) })
@@ -45,18 +41,17 @@ onBeforeUnmount(() => { window.removeEventListener('resize', place); window.remo
 
 <template>
   <div class="global-tools">
-    <button ref="trigger" class="tools-trigger" :class="{ 'has-update': updateAvailable, 'update-arriving': updateArriving }" type="button" :aria-label="updateAvailable ? '工具，有新版本可更新' : '工具'" aria-haspopup="dialog" :aria-expanded="open" aria-controls="global-tools-panel" @click="toggle">
-      <i class="ri-equalizer-line" aria-hidden="true"></i><span>工具</span><span v-if="unread || updateAvailable" class="tools-dot" :aria-label="[unread && '有未读通知', updateAvailable && '有新版本'].filter(Boolean).join('，')"></span><span v-if="updateAvailable" class="tools-update-label">可更新</span>
+    <button ref="trigger" class="tools-trigger" :class="{ 'has-update': updateAvailable, 'update-arriving': updateArriving }" type="button" :aria-label="updateAvailable ? '动态，有新版本可更新' : '动态'" aria-haspopup="dialog" :aria-expanded="open" aria-controls="global-tools-panel" @click="toggle">
+      <i class="ri-notification-3-line" aria-hidden="true"></i><span>动态</span><span v-if="unread || updateAvailable" class="tools-dot" :aria-label="[unread && '有未读通知', updateAvailable && '有新版本'].filter(Boolean).join('，')"></span><span v-if="updateAvailable" class="tools-update-label">可更新</span>
     </button>
     <Teleport to="body">
-      <section v-show="open" id="global-tools-panel" ref="panel" class="tools-panel" :style="position" role="dialog" aria-label="工具">
-        <header><strong>工具</strong><button type="button" aria-label="收起工具" @click="close"><i class="ri-close-line" aria-hidden="true"></i></button></header>
+      <section v-show="open" id="global-tools-panel" ref="panel" class="tools-panel" :style="position" role="dialog" aria-label="动态">
+        <header><strong>动态</strong><button type="button" aria-label="收起动态" @click="close"><i class="ri-close-line" aria-hidden="true"></i></button></header>
         <NotificationCenter row :return-focus="trigger" @unread-change="unread = $event" @opened="open = false" />
         <VersionUpdateNotice row :anchor="trigger" @available-change="updateAvailable = $event" @arrival-change="updateArriving = $event" @opened="open = false" />
+        <p class="activity-hint">消息有回应，更新有来处。</p>
         <hr>
-        <button class="tools-row" type="button" :aria-pressed="companionQuiet" @click="setCompanionQuiet(!companionQuiet)"><i class="ri-leaf-line" aria-hidden="true"></i><span>安静陪伴</span><small>{{ companionQuiet ? '已开启' : '偶尔回应' }}</small></button>
-        <button class="tools-row" type="button" :aria-label="`外观：${themeLabel}，点击切换`" @click="theme.toggleTheme()"><i :class="theme.effective.value === 'dark' ? 'ri-moon-line' : 'ri-sun-line'" aria-hidden="true"></i><span>外观</span><small>{{ themeLabel }}</small><i class="ri-arrow-right-s-line" aria-hidden="true"></i></button>
-        <button class="tools-row" type="button" @click="shortcuts"><i class="ri-keyboard-line" aria-hidden="true"></i><span>快捷键</span><i class="ri-arrow-right-s-line" aria-hidden="true"></i></button>
+        <button class="tools-row" type="button" @click="preferences"><i class="ri-settings-3-line" aria-hidden="true"></i><span>外观与偏好</span><small>快捷键 · 陪伴</small><i class="ri-arrow-right-s-line" aria-hidden="true"></i></button>
       </section>
     </Teleport>
   </div>
@@ -79,6 +74,7 @@ onBeforeUnmount(() => { window.removeEventListener('resize', place); window.remo
 .tools-row { display:flex; align-items:center; gap:10px; width:100%; min-height:42px; padding:8px 10px; background:transparent; color:var(--wao-text-2); border:0; border-radius:8px; font-size:13px; text-align:left; cursor:pointer; }
 .tools-row span { flex:1; } .tools-row small { color:var(--wao-text-faint); font-size:11px; }
 .tools-row:hover, .tools-panel > header button:hover { background:var(--wao-bg-hover); }
+.activity-hint { padding:0 10px; color:var(--wao-text-weak); font-size:11px; }
 hr { border:0; border-top:1px solid var(--wao-line); margin:8px 4px; }
 @media(pointer:coarse) { .tools-trigger, .tools-row, .tools-panel > header button { min-height:44px; } .tools-panel > header button { min-width:44px; } }
 </style>
