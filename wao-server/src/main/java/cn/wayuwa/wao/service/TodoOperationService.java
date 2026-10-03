@@ -45,9 +45,17 @@ public class TodoOperationService {
     private final KnowledgeService knowledge;
     private final TodoHistoryService history;
     private final NoteAiWorkflowService noteAi;
+    private final DailyRoutineService routines;
 
     public TodoOperationService(JdbcTemplate jdbc, ObjectMapper json, TaskMapper taskMapper, DocMapper docMapper,
             TaskService tasks, KnowledgeService knowledge, TodoHistoryService history, NoteAiWorkflowService noteAi) {
+        this(jdbc, json, taskMapper, docMapper, tasks, knowledge, history, noteAi, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TodoOperationService(JdbcTemplate jdbc, ObjectMapper json, TaskMapper taskMapper, DocMapper docMapper,
+            TaskService tasks, KnowledgeService knowledge, TodoHistoryService history,
+            NoteAiWorkflowService noteAi, DailyRoutineService routines) {
         this.jdbc = jdbc;
         this.json = json;
         this.taskMapper = taskMapper;
@@ -56,6 +64,7 @@ public class TodoOperationService {
         this.knowledge = knowledge;
         this.history = history;
         this.noteAi = noteAi;
+        this.routines = routines;
     }
 
     public record ScheduleRequest(String expectedEditVersion, String start, String startAt,
@@ -207,13 +216,20 @@ public class TodoOperationService {
         requireUuid(operationId);
         StoredReceipt stored = stored(accountId, operationId);
         if (stored == null) return new Receipt("UNCONFIRMED", operationId, null, null);
+        if ("ROUTINE_RULE".equals(stored.type()) || "ROUTINE_OCCURRENCE".equals(stored.type())) {
+            if (routines == null) throw new IllegalStateException("日常规则回执服务未配置");
+            DailyRoutineService.Receipt routine = routines.receipt(operationId, accountId, memberId);
+            return new Receipt(routine.status(), routine.operationId(), routine.type(), routine.result());
+        }
         try {
             if ("SCHEDULE".equals(stored.type())) {
                 return new Receipt("COMMITTED", operationId, stored.type(),
                         scheduleResult(operationId, read(stored.resultJson(), ScheduleReceiptRef.class), memberId));
             }
-            return new Receipt("COMMITTED", operationId, stored.type(),
-                    noteResult(operationId, read(stored.resultJson(), NoteReceiptRef.class), memberId));
+            if ("NOTE".equals(stored.type()))
+                return new Receipt("COMMITTED", operationId, stored.type(),
+                        noteResult(operationId, read(stored.resultJson(), NoteReceiptRef.class), memberId));
+            return new Receipt("UNCONFIRMED", operationId, null, null);
         } catch (NotFoundException ex) {
             return new Receipt("UNCONFIRMED", operationId, null, null);
         }
