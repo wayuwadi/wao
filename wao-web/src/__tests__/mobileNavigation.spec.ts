@@ -29,7 +29,7 @@ vi.mock('@/api/system', () => ({
     .mockRejectedValue(new Error('测试中保持默认菜单')),
 }))
 
-describe('手机高密度左侧导航', () => {
+describe('手机按需完整导航', () => {
   const originalMatchMedia = window.matchMedia
   const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
   const scrollIntoView = vi.fn<() => void>()
@@ -118,6 +118,18 @@ describe('手机高密度左侧导航', () => {
     wrapper.unmount()
   })
 
+  it('手机完整菜单不受桌面侧栏折叠影响，打开当前菜单也发出导航事件', async () => {
+    const nav = useNavStore()
+    nav.collapsed = true
+    const { wrapper } = await mountNavigation('/projects')
+    expect(wrapper.classes()).not.toContain('collapsed')
+    expect(wrapper.get('.search').isVisible()).toBe(true)
+    await wrapper.get('[title="项目"]').trigger('click')
+    expect(wrapper.emitted('navigate')).toHaveLength(1)
+    expect(nav.collapsed).toBe(true)
+    wrapper.unmount()
+  })
+
   it('桌面继续应用保存的分组折叠偏好和菜单拖拽能力', async () => {
     window.matchMedia = ((query: string) => ({
       matches: false,
@@ -141,19 +153,7 @@ describe('手机高密度左侧导航', () => {
   })
 })
 
-describe('手机高密度壳与安全区', () => {
-  it('左栏、紧凑顶栏和页签共同保留，正文不再为底栏留白', () => {
-    const sideNav = readFileSync(join(process.cwd(), 'src/components/nav/SideNav.vue'), 'utf8')
-    const layout = readFileSync(join(process.cwd(), 'src/layouts/AppLayout.vue'), 'utf8')
-    const tabs = readFileSync(join(process.cwd(), 'src/components/tabs/TabBar.vue'), 'utf8')
-
-    expect(sideNav).toContain('width: clamp(88px, 24vw, 104px)')
-    expect(sideNav).toContain('height: 100dvh')
-    expect(layout).not.toContain('padding-bottom: calc(64px + env(safe-area-inset-bottom))')
-    expect(layout).toContain('bottom: calc(12px + env(safe-area-inset-bottom))')
-    expect(tabs).not.toMatch(/@media \(max-width: 760px\)[\s\S]*?\.tabbar-shell \{\s*display: none/)
-  })
-
+describe('手机内容优先与安全区', () => {
   it('主站继续可安装并声明完整安全区', () => {
     const index = readFileSync(join(process.cwd(), 'index.html'), 'utf8')
     const manifest = JSON.parse(

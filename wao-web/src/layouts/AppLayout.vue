@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { useIsMobile } from '@/composables/viewport'
 const isMobile = useIsMobile()
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import TabWorkspace from '@/components/tabs/TabWorkspace.vue'
 import NavigationContext from '@/components/nav/NavigationContext.vue'
 import TopMenuBar from '@/components/nav/TopMenuBar.vue'
 import SideNav from '@/components/nav/SideNav.vue'
+import MobileShellMenu from '@/components/nav/MobileShellMenu.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
@@ -50,10 +51,22 @@ onMounted(() => {
 onBeforeUnmount(() => stopDesktopToolbar?.())
 const route = useRoute()
 const router = useRouter()
+const mobileMenuOpen = ref(false)
+const mobileMenuButton = ref<HTMLButtonElement>()
+async function closeMobileMenu() {
+  mobileMenuOpen.value = false
+  await nextTick()
+  if (isMobile.value) mobileMenuButton.value?.focus()
+}
+watch(isMobile, () => { mobileMenuOpen.value = false })
+watch(() => route.fullPath, () => { mobileMenuOpen.value = false })
 const nav = useNavStore()
 const tabs = useTabsStore()
 const floatingTabs = useFloatingTabsStore()
 const ui = useUiStore()
+watch(() => [ui.modal, ui.searchOpen, ui.helpOpen, ui.openTaskId, ui.assistantOpen], () => {
+  if (ui.modal || ui.searchOpen || ui.helpOpen || ui.openTaskId || ui.assistantOpen) mobileMenuOpen.value = false
+})
 const data = useDataStore()
 const preferences = usePreferenceStore()
 const session = useSessionStore()
@@ -323,12 +336,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     :class="{ 'desktop-shell': desktopToolbar, 'legacy-desktop-shell': legacyDesktopToolbar }"
     :data-control-style="preferences.effectiveControlStyle"
   >
-    <SideNav @open-search="openSearch" />
+    <MobileShellMenu :open="isMobile && mobileMenuOpen" @close="closeMobileMenu" />
+    <Teleport defer to="#mobile-navigation-slot" :disabled="!isMobile">
+      <SideNav @open-search="openSearch" @navigate="mobileMenuOpen = false" />
+    </Teleport>
 
-    <main class="main">
+    <main class="main" :inert="isMobile && mobileMenuOpen">
+      <Teleport defer to="#mobile-tools-slot" :disabled="!isMobile">
       <header ref="toolbarRef" class="header">
         <button
-          v-if="isMobile || desktopToolbar"
+          v-if="desktopToolbar"
           class="fold"
           data-desktop-action="fold"
           :title="nav.collapsed ? '展开导航' : '折叠导航'"
@@ -387,6 +404,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <VersionUpdateNotice />
         </div>
       </header>
+      </Teleport>
 
       <div ref="contentRef" class="content">
         <div v-if="loadErrorMessages.length" class="data-status error" role="alert">
@@ -415,17 +433,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       </div>
     </main>
 
-    <!-- 手机保留拇指区新建入口；左栏恢复后不再为底部模块导航让位。 -->
-    <button class="fab" aria-label="新建任务" title="新建任务" @click="newTask">
+    <!-- 窄屏正文占满宽度，导航与全局工具按需打开。 -->
+    <button :inert="isMobile && mobileMenuOpen" class="fab" aria-label="新建任务" title="新建任务" @click="newTask">
       <i class="ri-add-line"></i>
     </button>
 
-    <nav class="mobile-main-nav" aria-label="手机主入口">
+    <nav class="mobile-main-nav" aria-label="手机主入口" :inert="isMobile && mobileMenuOpen">
       <RouterLink to="/" :class="{ active: route.path === '/' }"
         ><i class="ri-home-4-line"></i>首页</RouterLink
       >
       <RouterLink to="/todo"><i class="ri-checkbox-multiple-line"></i>待办</RouterLink>
       <RouterLink to="/notes"><i class="ri-sticky-note-line"></i>小记</RouterLink>
+      <button ref="mobileMenuButton" aria-label="打开完整菜单" aria-haspopup="dialog" :aria-expanded="mobileMenuOpen" @click="mobileMenuOpen = true"><i class="ri-menu-line" aria-hidden="true"></i>更多</button>
     </nav>
     <TaskDrawer />
     <NewTaskModal v-if="ui.modal === 'task'" />
@@ -511,10 +530,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     color: white;
     padding: 1px 4px;
     font-size: 9px;
-  }
-  .shell :deep(.side) {
-    padding-bottom: calc(54px + env(safe-area-inset-bottom));
-    box-sizing: border-box;
   }
   .shell .main {
     padding-bottom: calc(54px + env(safe-area-inset-bottom));
@@ -886,5 +901,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   .plus i, .fold i, .bell i { font-size: 16px; }
   .header :deep(.top-menu-bar.empty-target) { flex-basis: 26px; min-width: 26px; }
   .header :deep(.top-menu-bar.has-items) { flex-basis: 100px; }
+}
+
+@media (max-width: 760px) {
+  .header { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 8px; background: var(--wao-bg-card); }
+  .header :deep(.top-menu-bar.empty-target) { display: none; }
+  .header :deep(.tabbar-shell) { order: 10; flex: 0 0 100%; min-width: 0; height: 36px; }
+  .header .quick-actions { flex-wrap: wrap; gap: 8px; }
+  .header .bell, .header .plus, .header .plus.ghost { width: 36px; min-width: 36px; height: 36px; }
+  .header .rest-link { padding: 8px 0; }
+  .mobile-main-nav > button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -3px; }
 }
 </style>
