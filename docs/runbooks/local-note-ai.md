@@ -73,3 +73,5 @@ npm run test:unit -- --run src/__tests__/MarkdownEditor.spec.ts src/__tests__/No
 MySQL 临时表只在当前连接可见，同名临时表遮蔽持久表，连接关闭后自动消失（[官方说明](https://dev.mysql.com/doc/refman/9.7/en/create-temporary-table.html)）。因此不能用此模式证明工作流的重启持久化；已有重启测试继续用登记 ID 的普通专用实例。验收中登记每条合成文档 ID，结束时通过回收站清理这些文档、恢复偏好，再停止自己的实例；不能清理整个共享库。
 
 串行与并行成员上限的步骤及已知标签状态缺项见 [串行上限验证](../validation/notes-serial-member-limit-2026-10-03.md)。
+
+删除与旧结果保护按 [迟到结果验证](../validation/notes-deleted-late-results-2026-10-03.md) 重跑：在专用实例中登记合成小记 ID，模型执行期间移入回收站，待调用结束后确认删除标记和内容哈希未变、刷新不存在。报告应分别记录模型调用终态与工作流结果是否采用，不把删除等同于取消调用。
