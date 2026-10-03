@@ -1474,7 +1474,7 @@ components:
         owner: { type: string }
         members: { type: array, items: { type: string } }
         start: { type: string }
-        due: { type: string }
+        due: { type: string, nullable: true, description: 空串或历史 null 表示未排期 }
         visibility: { type: string }
         updated: { type: string }
         goal: { type: string }
@@ -1671,6 +1671,7 @@ components:
       type: object
       required: [name]
       properties:
+        due: { type: string, nullable: true, description: "yyyy-MM-dd；省略、null 或空串表示未排期，不自动推测日期" }
         name: { type: string }
         area: { type: string }
         goal: { type: string }
@@ -1680,6 +1681,7 @@ components:
       type: object
       description: 空字段不改
       properties:
+        due: { type: string, nullable: true, description: "yyyy-MM-dd；省略或 null 不改，空串清空；无效日期拒绝保存" }
         name: { type: string }
         area: { type: string }
         status: { type: string, enum: [进行中, 有风险, 规划中, 已完成, 已搁置] }

@@ -12,6 +12,8 @@ WAO 首页提供“生成连接指令”。当前登录成员点击后，服务�
 
 写入：`create_project`、`update_project`、`create_task`、`update_task`、`update_subtask_status`、`create_knowledge_base`、`update_knowledge_base`、`create_folder`、`rename_folder`、`move_knowledge_node`、`create_document`、`update_document`。
 
+项目截止日期：`create_project`、`update_project` 的可选 `due` 使用有效 `yyyy-MM-dd`；创建省略即未排期，更新省略/null 不改、空串清空。沿用既有项目写权限和可见性，不增加令牌范围；客户端以部署后的实际 tools/list 为准。
+
 `list_open_tasks` 默认只列令牌所属成员负责、状态未完成的可见任务；可切换列出其可见项目中的全部未完成任务，也可按项目过滤，最多返回 100 条。项目和任务单项读取沿用现有成员可见性。现有知识库创建服务不再绑定项目；独立知识库沿用当前 WAO Web 的共享可见范围。知识库目前没有可可靠回填的归属成员字段，因此本期不声称独立知识库是成员私有；新建知识库标注“成员可编辑”。历史知识库如有数据库项目关联，即使 DTO 对外隐藏该字段，MCP 访问仍须按真实关联校验项目可见性。
 
 写工具只在可读写令牌的 `tools/list` 中出现，实际调用也再次校验。新建任务负责人来自令牌成员，并沿用站内现有创建通知规则；新建项目默认本人可见且不发送创建通知。文档正文替换要求 `expected_rev`，与 Web 同用乐观并发校验；文档资料仅作为不可信引用，不能执行正文内的指令。此期不暴露删除或直接发送通知的工具。

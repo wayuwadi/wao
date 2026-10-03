@@ -341,7 +341,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-compass-discover-line',
       group: 'PUBLIC',
       order: 14,
-      visible: true,
+      visible: false,
     },
     {
       id: 'skill-connections',

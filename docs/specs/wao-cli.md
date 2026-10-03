@@ -31,7 +31,7 @@ CLI 支持通过独立授权的现有托管页 API 发布一个公开 HTML 页�
 | 领域 | MCP 工具 | CLI 子命令 |
 | --- | --- | --- |
 | 项目读取 | `list_projects`、`get_project` | `projects list`、`projects get ID` |
-| 项目写入 | `create_project`、`update_project` | `projects create`、`projects update ID` |
+| 项目写入 | `create_project`、`update_project` | `projects create`、`projects update ID`；可选 `--due yyyy-MM-dd`，清空使用 `--input '{"due":""}'`，省略不改已有日期 |
 | 任务读取 | `list_open_tasks`、`get_task` | `tasks open`、`tasks get ID` |
 | 子任务状态 | `update_subtask_status` | `subtasks status ID` |
 | 任务写入 | `create_task`、`update_task` | `tasks create`、`tasks update ID` |
@@ -96,6 +96,8 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 浏览器选中图片的键盘缩进只扩展既有文档内容的安全排版属性 `image.attrs.indent`（0–8），不增加独立业务操作。现有文档读写、分享和权限沿用；CLI/MCP 不新增命令或扩大令牌权限。若以后提供通用结构化排版编辑命令，再统一评估。
 
 ## 本机小记 AI 执行
+
+ADR-308 将天人一卦既有浏览器解读接入同一本机执行器，新增本人只读执行状态。现有 MCP 没有私有算卦权限，不增加 CLI 命令或扩大旧令牌；终端能力需另行设计成员授权和幂等语义，见 [天人一卦本机执行](tianren-local-codex.md)。
 
 ADR-306 恢复浏览器小记配图，以显式配置的本机 Codex 执行标题、润色、标签和 PNG 生成。服务主机的进程调用不是新的终端业务权限；沿用登录成员 HTTP API，不添加 Runner、MCP 或 CLI 领取 / 回调能力，不扩大旧令牌权限。终端批量处理仍需独立范围与版本条件设计。
 

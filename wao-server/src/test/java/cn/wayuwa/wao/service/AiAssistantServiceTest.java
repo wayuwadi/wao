@@ -612,6 +612,29 @@ class AiAssistantServiceTest {
         org.mockito.Mockito.verifyNoInteractions(runnerMapper);
     }
     @Test
+    void tianrenUsesLocalCodexAndPrivateHistoryWithoutRunnerAccounts() {
+        var local = mock(LocalNoteAiService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "localNotes", local);
+        when(local.enabled()).thenReturn(true);
+        when(local.capabilityId()).thenReturn("local-notes-test");
+        when(conversationService.recentHistory("cv-test", "member")).thenReturn(List.of());
+        String id = service.enqueueTianren(new AssistantChatRequest("合成关注点", List.of(), null, "cv-test", null, "old-api"),
+                "member", "<authoritative_tianren_cast>合成卦象</authoritative_tianren_cast>");
+        var run = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(conversationService).enqueue(run.capture(), eq("cv-test"), eq("member"), eq("合成关注点"));
+        assertThat(run.getValue().getId()).isEqualTo(id);
+        assertThat(run.getValue().getStatus()).isEqualTo("secure_queued");
+        assertThat(run.getValue().getAiCapabilityId()).isEqualTo("local-notes-test");
+        assertThat(run.getValue().getRequestedModel()).isEqualTo("gpt-6-astra");
+        assertThat(run.getValue().getPromptText()).contains("authoritative_tianren_cast", "卦象事实", "不使用外部工具或联网").doesNotContain("AI run");
+        org.mockito.Mockito.verifyNoInteractions(runnerMapper, accountService, assetService, deepSeekApi);
+        when(local.enabled()).thenReturn(false);
+        assertThat(service.tianrenStatus().configured()).isFalse();
+        assertThatThrownBy(() -> service.enqueueTianren(new AssistantChatRequest("合成关注点", List.of(), null, "cv-test"), "member", "卦象"))
+                .hasMessageContaining("本机 Codex 尚未启用");
+        org.mockito.Mockito.verifyNoInteractions(accountService);
+    }
+    @Test
     void capabilitiesExcludeRetiredRunnerAccounts() {
         when(accountService.assistantCapabilities()).thenReturn(List.of(
             new cn.wayuwa.wao.dto.AiCapabilityDto("old", "历史节点", "codex", null, "RUNNER", true, ""),

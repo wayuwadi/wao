@@ -29,6 +29,7 @@ vi.mock('@/api/textPolish', () => ({ fetchTextPolishWorkspace: vi.fn().mockResol
 async function mountEditor(props: {
   modelValue: string
   readonly?: boolean
+  autofocus?: boolean
   previewImages?: boolean
   placeholder?: string
   allowH1?: boolean
@@ -71,6 +72,41 @@ async function mountEditor(props: {
   await new Promise((r) => setTimeout(r, 0))
   return w
 }
+
+describe('异步挂载焦点保护', () => {
+  it('标题已获得焦点时，正文就绪不能抢走焦点或选区', async () => {
+    const title = document.createElement('input')
+    title.value = '继续修改标题'
+    document.body.appendChild(title)
+    title.focus()
+    title.setSelectionRange(2, 4)
+    const w = await mountEditor({ modelValue: '原正文', autofocus: true })
+    await new Promise(resolve => setTimeout(resolve, 40))
+    expect(document.activeElement).toBe(title)
+    expect([title.selectionStart, title.selectionEnd]).toEqual([2, 4])
+    w.unmount()
+    title.remove()
+  })
+
+  it('没有其他输入焦点时仍默认进入正文', async () => {
+    const w = await mountEditor({ modelValue: '原正文', autofocus: true })
+    await new Promise(resolve => setTimeout(resolve, 40))
+    expect(document.activeElement).toBe(w.get('.tiptap').element)
+    w.unmount()
+  })
+
+  it('挂载等待期间转到其他控件后，不再自动聚焦正文', async () => {
+    const button = document.createElement('button')
+    document.body.appendChild(button)
+    const pending = mountEditor({ modelValue: '原正文', autofocus: true })
+    button.focus()
+    const w = await pending
+    await new Promise(resolve => setTimeout(resolve, 40))
+    expect(document.activeElement).toBe(button)
+    w.unmount()
+    button.remove()
+  })
+})
 
 describe('图片 Tab 缩进', () => {
   it('点击正文后的图片不误选相邻空段落，连续缩进有界且不丢图', async () => {

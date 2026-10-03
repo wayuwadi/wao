@@ -129,6 +129,7 @@ onMounted(() => {
         </p>
       </div>
       <div class="header-actions">
+        <button v-if="!governance" @click="router.push('/features')"><i class="ri-compass-discover-line" aria-hidden="true"></i>功能探索</button>
         <button v-if="!governance" class="customize-toggle" :aria-pressed="customizing" :disabled="nav.menuMutationState === 'saving'" @click="customizing = !customizing">
           <i class="ri-layout-line" aria-hidden="true"></i>{{ customizing ? '完成整理' : '自定义导航' }}
         </button>

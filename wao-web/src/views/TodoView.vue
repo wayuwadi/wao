@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { isTaskFinished } from '@/utils/projectCompletion'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -56,8 +57,8 @@ const doneDesc = (a: Task, b: Task) =>
 
 const taskGroups = computed(() => {
   const list = myList.value
-  const open = list.filter((t) => t.status !== '已完成' || isSettling(t.id))
-  const done = list.filter((t) => t.status === '已完成' && !isSettling(t.id)).sort(doneDesc)
+  const open = list.filter((t) => !isTaskFinished(t) || isSettling(t.id))
+  const done = list.filter((t) => isTaskFinished(t) && !isSettling(t.id)).sort(doneDesc)
   const buckets: [string, (due: string) => boolean][] = [
     ['今天', (due) => !!due && due <= data.today],
     ['本周', (due) => !!due && due > data.today && due <= weekEnd.value],
@@ -183,6 +184,7 @@ function onDropStatus(status: TaskStatus) {
               <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
             </button>
             <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
+            <span v-if="t.unfinishedSubCount" class="wait-badge">仍有 {{ t.unfinishedSubCount }} 项子项未收尾</span>
             <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span>
             <span class="trow-proj"><span class="proj-dot" :style="{ background: t.projColor }"></span><span class="ellip">{{ t.projName }}</span></span>
             <span class="pr" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
@@ -212,10 +214,10 @@ function onDropStatus(status: TaskStatus) {
           <span class="board-col-count wao-tabular">{{ col.items.length }}</span>
           <i v-if="col.collapsible" class="board-col-chev" :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
         </div>
-        <div v-if="col.collapsible && !showDone" class="board-collapsed">已收起 {{ col.items.length }} 项 · 点标题展开</div>
-        <div v-else class="board-cards">
+        <div v-if="col.collapsible && !showDone" class="board-collapsed">已收起 {{ col.items.filter(isTaskFinished).length }} 项已收尾任务 · 点标题展开</div>
+        <div v-if="!col.collapsible || showDone || col.items.some(t => !isTaskFinished(t) || isSettling(t.id))" class="board-cards">
           <div
-            v-for="t in col.items"
+            v-for="t in col.items.filter(t => !col.collapsible || showDone || !isTaskFinished(t) || isSettling(t.id))"
             :key="t.id"
             class="board-card"
             :aria-label="`任务：${t.title}`"
@@ -229,6 +231,7 @@ function onDropStatus(status: TaskStatus) {
             tabindex="0"
           >
             <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
+            <span v-if="t.unfinishedSubCount" class="wait-badge">仍有 {{ t.unfinishedSubCount }} 项子项未收尾</span>
             <div class="bc-proj"><span class="proj-dot" :style="{ background: t.projColor }"></span><span class="ellip">{{ t.projName }}</span></div>
             <div class="bc-foot">
               <span class="pr" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>

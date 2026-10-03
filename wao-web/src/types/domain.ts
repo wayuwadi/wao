@@ -88,7 +88,8 @@ export interface Project {
   owner: string
   members: string[]
   start: string
-  due: string
+  /** 空串或历史 null 表示未排期。 */
+  due: string | null
   visibility: string
   updated: string
   goal: string

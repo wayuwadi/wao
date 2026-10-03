@@ -49,6 +49,14 @@ public class TianrenController {
         return ApiResponse.ok(readings.today(member(http)));
     }
 
+    /** 本机 Codex 与本人今日解读状态，不使用旧 Runner 在线状态。 */
+    @GetMapping("/ai-status")
+    public ApiResponse<TianrenDailyAutomationService.AiStatus> aiStatus(HttpServletRequest http) {
+        String id = currentMember.id(http);
+        if (id == null) throw new cn.wayuwa.wao.common.UnauthorizedException("请先登录");
+        return ApiResponse.ok(automation.status(id));
+    }
+
     /** 主动起出今天唯一的一卦；重复调用仍返回同一卦。 */
     @PostMapping("/today")
     public ApiResponse<TianrenReadingDto> createToday(HttpServletRequest http) {

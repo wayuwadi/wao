@@ -6,6 +6,15 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { localOrigin, matchesFault, writeFault, readFault, clearFault, faultMiddleware, SAVE_FAILURE } from './faults.mjs'
 
+test('项目保存故障严格限于指定 ID 的 PATCH，不影响任务或其他项目', () => {
+  const fault = { projectId: 'p_acceptance' }
+  assert.equal(matchesFault({ method: 'PATCH', url: '/api/projects/p_acceptance' }, fault), true)
+  for (const url of ['/api/projects/p_acceptance_other', '/api/projects', '/api/docs/p_acceptance', '/api/tasks/p_acceptance']) {
+    assert.equal(matchesFault({ method: 'PATCH', url }, fault), false)
+  }
+  assert.equal(matchesFault({ method: 'GET', url: '/api/projects/p_acceptance' }, fault), false)
+})
+
 test('只接受本地无凭据源地址，拒绝生产、用户信息及路径', () => {
   assert.equal(localOrigin('http://127.0.0.1:18080', 'API'), 'http://127.0.0.1:18080')
   assert.equal(localOrigin('http://[::1]:8080', 'API'), 'http://[::1]:8080')

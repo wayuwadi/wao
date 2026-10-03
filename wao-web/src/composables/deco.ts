@@ -57,7 +57,7 @@ export function useDeco() {
       stColor: st.color,
       completion,
       completionLabel: projectCompletionLabel(projectTasks),
-      dueStr: due.label,
+      dueStr: p.due ? due.label : '未排期',
       dueColor: due.color,
       ownerName: owner.name,
       ownerColor: owner.color,

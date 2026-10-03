@@ -79,6 +79,12 @@ function close(restoreFocus = true) {
   open.value = false
   if (restoreFocus) trigger.value?.focus()
 }
+function browseHistory() {
+  close(false)
+  // 同一路由和锚点不会再次触发路由监听，也要让重复点击回到时间线开头。
+  if (route.path === '/features')
+    document.getElementById('recent-updates')?.scrollIntoView({ block: 'start' })
+}
 function handleUpdate(rawEvent: Event) {
   const value = (rawEvent as CustomEvent<WebUpdateEventDetail>).detail?.version
   if (typeof value !== 'string') return
@@ -254,6 +260,7 @@ onBeforeUnmount(() => {
             }}
           </p>
           <div class="panel-actions">
+            <RouterLink class="text-button" :to="{ path: '/features', hash: '#recent-updates' }" @click="browseHistory">最近更新</RouterLink>
             <button type="button" class="later" @click="close()">
               {{ availableVersion ? '稍后' : '收起' }}
             </button>
@@ -435,6 +442,7 @@ footer {
   flex-wrap: wrap;
 }
 .panel-actions button,
+.panel-actions a,
 .explore-link {
   display: inline-flex;
   align-items: center;

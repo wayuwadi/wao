@@ -131,7 +131,7 @@ public class ProjectService {
         e.setOwnerId(owner);
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
         e.setStartDate(today.toString());
-        e.setDueDate(today.plusMonths(2).toString());
+        e.setDueDate(normalizeDue(req.due()));
         e.setVisibility(req.visAll() ? "组织内 2 人 · 可查看" : "仅自己可见");
         e.setUpdatedLabel("刚刚");
         e.setGoal(req.goal() == null || req.goal().isBlank()
@@ -203,7 +203,7 @@ public class ProjectService {
     }
 
     /**
-     * 局部更新项目（名称 / 领域 / 状态 / 目标 / 图标 / 通知开关）。空字段不改。
+     * 局部更新项目（含截止日期）。null 字段不改；截止日期空串表示清空。
      *
      * @param id       项目 id
      * @param req      局部更新请求
@@ -213,6 +213,7 @@ public class ProjectService {
      */
     public ProjectDto update(String id, PatchProjectRequest req, String memberId) {
         ProjectEntity e = requireVisible(id, memberId);
+        if (req.due() != null) e.setDueDate(normalizeDue(req.due()));
         if (req.name() != null && !req.name().isBlank()) {
             e.setName(req.name().trim());
         }
@@ -242,6 +243,16 @@ public class ProjectService {
         e.setUpdatedLabel("刚刚");
         projectMapper.updateById(e);
         return toDto(e);
+    }
+
+    private String normalizeDue(String due) {
+        if (due == null || due.isBlank()) return "";
+        try {
+            if (!due.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) throw new IllegalArgumentException();
+            return LocalDate.parse(due).toString();
+        } catch (RuntimeException ex) {
+            throw new BadRequestException("截止日期须为有效的 yyyy-MM-dd 日期，清空请传空串");
+        }
     }
 
     /**

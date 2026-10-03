@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isTaskFinished } from '@/utils/projectCompletion'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -362,12 +363,12 @@ const events = computed<CalEvt[]>(() => {
   })
   data.tasks
     .filter((t) => t.owner === calendarMemberId.value && (t.due || t.startAt)
-      && (showCompletedTasks.value || t.status !== '已完成'))
+      && (showCompletedTasks.value || !isTaskFinished(t)))
     .forEach((t) => evs.push({
       date: t.startAt?.slice(0, 10) || t.due,
-      title: t.title,
+      title: t.title + (t.status === '已完成' && !isTaskFinished(t) ? ' · 仍有 ' + t.subs.filter(sub => !sub.done).length + ' 项子项未收尾' : ''),
       color: '#4358D6',
-      completed: t.status === '已完成',
+      completed: isTaskFinished(t),
       time: t.startAt?.slice(11, 16),
       endTime: t.endAt?.slice(11, 16),
       taskId: t.id,

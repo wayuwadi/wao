@@ -23,7 +23,7 @@ describe('TODO 四象限', () => {
     const source = data.tasks[0]!
     data.tasks = TASK_QUADRANTS.map((quadrant, index) => ({
       ...source, id: `q${index}`, title: `任务${index}`, pr: quadrant.priority,
-      owner: useSessionStore().currentUser.id, parts: [], status: '待办',
+      owner: useSessionStore().currentUser.id, parts: [], status: '待办', subs: [],
     }))
   })
 

@@ -145,7 +145,7 @@ describe('全量导航页', () => {
   it('完整目录覆盖所有非兼容模块，且不受侧栏显隐影响', async () => {
     const catalogIds = NAVIGATION_CATALOG.flatMap((section) => section.items.map((item) => item.id))
     const expected = Object.keys(MODULES).filter(
-      (id) => !['navigation', 'chat', 'chat-reviews', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions', 'updates', 'action-plans', 'workspaces'].includes(id),
+      (id) => !['navigation', 'chat', 'chat-reviews', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions', 'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world'].includes(id),
     )
     expect(new Set(catalogIds)).toEqual(new Set(expected))
 

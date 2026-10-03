@@ -202,6 +202,31 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.get('.search-toggle').attributes('aria-expanded')).toBe('true')
   })
 
+  it('关闭已完成后月、周、日仍保留未收尾子项，独立下级任务不级联改写父状态', async () => {
+    const data = useDataStore(pinia), session = useSessionStore(pinia)
+    const me = { id: 'wg', name: '验收', initial: '验', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' }); session.members = [me]
+    const source = { ...data.tasks[0]!, owner: me.id, due: data.today, parts: [], steps: [], subs: [], files: [], docs: [], linkTasks: [], comments: [], custom: [], activity: [], images: [] }
+    data.tasks = [
+      { ...source, id: 'pending-sub', title: '父完成子待验', status: '已完成', startAt: `${data.today}T09:00`, endAt: `${data.today}T10:00`, subs: [{ text: '待验证', done: false }] },
+      { ...source, id: 'closed', title: '全部收尾', status: '已完成' },
+      { ...source, id: 'child', parentTaskId: 'closed', title: '独立下级待验证', status: '待验证' },
+    ]
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } }); await flushPromises()
+    await wrapper.get('.completed-toggle').trigger('click')
+    for (const index of [1, 2, 3]) {
+      await wrapper.findAll('.view-switch button')[index]!.trigger('click')
+      expect(wrapper.text()).toContain('父完成子待验 · 仍有 1 项子项未收尾')
+      expect(wrapper.text()).toContain('独立下级待验证')
+      expect(wrapper.text()).not.toContain('全部收尾')
+    }
+    expect(data.tasks[0]!.status).toBe('已完成')
+    data.tasks[0]!.subs[0]!.done = true; await flushPromises()
+    expect(wrapper.text()).not.toContain('父完成子待验')
+    data.tasks[0]!.status = '待办'; await flushPromises()
+    expect(wrapper.text()).toContain('父完成子待验')
+  })
+
   it('已完成任务保留在原日期，月视图和时间轴均以删除线显示', async () => {
     const data = useDataStore(pinia)
     const session = useSessionStore(pinia)

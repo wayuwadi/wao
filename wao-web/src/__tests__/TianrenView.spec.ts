@@ -7,12 +7,14 @@ import {
   createTianrenShareLink,
   fetchTianrenHistory,
   fetchTodayTianrenReading,
+  fetchTianrenAiStatus,
   streamTianrenInterpretation,
   type TianrenReading,
 } from '@/api/tianren'
-import { fetchAssistantConversation, fetchAssistantStatus } from '@/api/assistant'
+import { fetchAssistantConversation } from '@/api/assistant'
 
 vi.mock('@/api/tianren', () => ({
+  fetchTianrenAiStatus: vi.fn(),
   createTodayTianrenReading: vi.fn<(typeof import('@/api/tianren'))['createTodayTianrenReading']>(),
   createTianrenShareLink: vi.fn<(typeof import('@/api/tianren'))['createTianrenShareLink']>(),
   fetchTianrenHistory: vi.fn<(typeof import('@/api/tianren'))['fetchTianrenHistory']>(),
@@ -25,7 +27,6 @@ vi.mock('@/utils/clipboard', () => ({
 }))
 
 vi.mock('@/api/assistant', () => ({
-  fetchAssistantStatus: vi.fn<(typeof import('@/api/assistant'))['fetchAssistantStatus']>(),
   fetchAssistantConversation: vi.fn<(typeof import('@/api/assistant'))['fetchAssistantConversation']>(),
 }))
 
@@ -49,6 +50,26 @@ const reading: TianrenReading = {
 }
 
 describe('TianrenView', () => {
+  it('刷新后显示本机排队，完成后恢复私有解读且不重复调用 AI', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue({ ...reading, conversationId: 'cv-local' })
+    vi.mocked(fetchTianrenAiStatus).mockResolvedValueOnce({ configured: true, message: '本机 Codex 排队中，关闭页面后继续处理', runStatus: 'secure_queued', runId: 'ac-local' })
+      .mockResolvedValue({ configured: true, message: '本机 Codex 已就绪', runStatus: 'succeeded', runId: 'ac-local' })
+    vi.mocked(fetchAssistantConversation).mockResolvedValueOnce({ conversation: { id: 'cv-local', title: '合成', updatedAt: '' }, messages: [] })
+      .mockResolvedValue({ conversation: { id: 'cv-local', title: '合成', updatedAt: '' }, messages: [{ id: 'm-local', role: 'assistant', content: '已保存的本机 Codex 解读', createdAt: '' }] })
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
+    try {
+      await flushPromises()
+      expect(wrapper.text()).toContain('本机 Codex 排队中')
+      expect(wrapper.get<HTMLButtonElement>('.interpret-button').element.disabled).toBe(true)
+      await wrapper.get('textarea').setValue('后台等待期间的新关注点')
+      await vi.advanceTimersByTimeAsync(5000); await flushPromises()
+      expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('后台等待期间的新关注点')
+      expect(wrapper.get('.markdown').text()).toContain('已保存的本机 Codex 解读')
+      expect(streamTianrenInterpretation).not.toHaveBeenCalled()
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
+
   it('页签切换保留关注点，重新解读失败恢复上份内容且不允许生成时切换日期', async () => {
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue({ ...reading, conversationId: 'cv1' })
     vi.mocked(fetchTianrenHistory).mockResolvedValue([reading, { ...reading, id: 'past', date: '2026-08-09' }])
@@ -78,7 +99,7 @@ describe('TianrenView', () => {
   })
   beforeEach(() => {
     localStorage.clear()
-    vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })
+    vi.mocked(fetchTianrenAiStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })
     vi.mocked(fetchTianrenHistory).mockResolvedValue([])
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue(null)
     vi.mocked(streamTianrenInterpretation).mockImplementation(async function* () {})
@@ -130,7 +151,7 @@ describe('TianrenView', () => {
 
   it('起卦早于 Codex 状态返回时等待同一次检查并自动解读', async () => {
     let finishStatus!: (value: { configured: boolean, message: string }) => void
-    vi.mocked(fetchAssistantStatus).mockReturnValue(new Promise((resolve) => {
+    vi.mocked(fetchTianrenAiStatus).mockReturnValue(new Promise((resolve) => {
       finishStatus = resolve
     }))
     vi.mocked(createTodayTianrenReading).mockResolvedValue(reading)
@@ -141,17 +162,18 @@ describe('TianrenView', () => {
     await wrapper.get('.cast-button').trigger('click')
     expect(streamTianrenInterpretation).not.toHaveBeenCalled()
 
+    expect(fetchTianrenAiStatus).toHaveBeenCalledTimes(1)
     finishStatus({ configured: true, message: '已连接本地 Codex' })
     await flushPromises()
 
-    expect(fetchAssistantStatus).toHaveBeenCalledTimes(1)
+    expect(fetchTianrenAiStatus).toHaveBeenCalledTimes(2)
     expect(streamTianrenInterpretation).toHaveBeenCalledWith('')
   })
 
   it('本地 Codex 离线时仍展示卦象但禁用 AI 解读', async () => {
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
     vi.mocked(fetchTianrenHistory).mockResolvedValue([reading])
-    vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: false, message: '未检测到在线 Codex' })
+    vi.mocked(fetchTianrenAiStatus).mockResolvedValue({ configured: false, message: '未检测到在线 Codex' })
     const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 

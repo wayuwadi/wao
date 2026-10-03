@@ -72,7 +72,7 @@ describe('个人导航快照', () => {
     expect(saved.items.find((item) => item.id === 'external:getnote')).not.toHaveProperty('appUrl')
   })
 
-  it('旧服务端与自定义分组也能显示功能探索，个人隐藏设置仍生效', async () => {
+  it('功能探索默认收进全部功能，个人仍可主动固定入口', async () => {
     const oldMenus = clone(customMenus).filter((item) => item.id !== 'changelog')
     vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({ version: 1, menus: oldMenus })
     const layout = snapshotNavigation(oldMenus, [])
@@ -86,8 +86,10 @@ describe('个人导航快照', () => {
     vi.mocked(fetchNavigationLayout).mockResolvedValue({ revision: 'old', layout })
     const nav = useNavStore()
     await nav.loadMenus()
-    expect(nav.groups.find((group) => group.id === 'ROOT')?.items).toContain('changelog')
+    expect(nav.groups.find((group) => group.id === 'ROOT')?.items).not.toContain('changelog')
     expect(saveNavigationLayout).not.toHaveBeenCalled()
+    await nav.setMenuVisibility('changelog', true)
+    expect(nav.menuConfig('changelog')?.visible).toBe(true)
     await nav.setMenuVisibility('changelog', false)
     expect(nav.menuConfig('changelog')?.visible).toBe(false)
   })

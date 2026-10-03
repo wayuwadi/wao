@@ -40,6 +40,7 @@ class TianrenDailyAutomationServiceTest {
     @Autowired MemberPreferenceMapper preferences;
     @Autowired AiAssistantRunMapper runs;
     @Autowired AiAssistantConversationService conversations;
+    @Autowired LocalCodexConversationCompletion localCompletion;
     @Autowired PlatformTransactionManager manager;
     @Autowired ObjectMapper json;
     @Autowired JdbcTemplate db;
@@ -52,6 +53,7 @@ class TianrenDailyAutomationServiceTest {
         config("wg", true, true, true, "oc-own");
         config("other", false, true, true, "oc-other");
         queueNormally();
+        when(assistant.tianrenStatus()).thenReturn(new cn.wayuwa.wao.dto.AssistantStatusDto(true, "本机 Codex 已就绪", "local-notes-test", "本机 Codex"));
     }
 
     private TianrenDailyAutomationService at(LocalTime time) {
@@ -88,6 +90,34 @@ class TianrenDailyAutomationServiceTest {
         assertThat(readings.today("wg")).isNotNull();
         assertThat(readings.today("other")).isNull();
         verify(assistant).enqueueTianren(any(), eq("wg"), contains("authoritative_tianren_cast"));
+    }
+
+    @Test void localQueuedRunsBlockDuplicatesAndStatusIsMemberScoped() {
+        service.runDue();
+        db.update("UPDATE ai_assistant_run SET status='secure_queued'");
+        service.runDue();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.enqueue("wg", "再次点击", false)).hasMessageContaining("正在解读");
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM ai_assistant_run", Integer.class)).isEqualTo(1);
+        assertThat(service.status("wg").message()).contains("排队中");
+        assertThat(service.status("other").runId()).isNull();
+    }
+
+    @Test void localCompletionCommitsPrivateReplyOnceAndRollsBackTogether() {
+        service.runDue();
+        String id = db.queryForObject("SELECT id FROM ai_assistant_run", String.class);
+        db.update("UPDATE ai_assistant_run SET status='provider_running',claim_token='claim'");
+        var run = runs.selectById(id);
+        var tx = new org.springframework.transaction.support.TransactionTemplate(manager);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            assertThat(localCompletion.complete(run, "claim", "合成测试解读")).isEqualTo(1);
+            throw new IllegalStateException("隔离事务故障");
+        })).hasMessageContaining("隔离事务故障");
+        assertThat(runs.selectById(id).getStatus()).isEqualTo("provider_running");
+        assertThat(conversations.latestAssistantReply(run.getConversationId(), "wg")).isNull();
+        assertThat(localCompletion.complete(run, "claim", "合成测试解读")).isEqualTo(1);
+        assertThat(localCompletion.complete(run, "claim", "迟到重复结果")).isZero();
+        assertThat(conversations.latestAssistantReply(run.getConversationId(), "wg")).isEqualTo("合成测试解读");
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM ai_assistant_message WHERE role='assistant'", Integer.class)).isEqualTo(1);
     }
 
     @Test void respectsMasterSwitchNotificationSwitchAndExplicitEmptyTarget() {

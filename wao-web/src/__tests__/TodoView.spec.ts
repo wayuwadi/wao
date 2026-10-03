@@ -24,6 +24,32 @@ describe('TodoView', () => {
     })
   })
 
+  it('三种视图保留主完成但子项未收尾的任务，全部收尾才隐藏且可重新打开', async () => {
+    const source = data.tasks[0]!
+    data.tasks = [
+      { ...source, id: 'unfinished', title: '仍待下级验收', owner: 'wg', pr: 'P2', status: '已完成', subs: [{ id: 'p', text: '父', done: true }, { parentId: 'p', text: '子', done: false, status: '待验证' }] },
+      { ...source, id: 'closed', title: '已经全部收尾', owner: 'wg', status: '已完成', subs: [] },
+      { ...source, id: 'verify', title: '主任务待验证', owner: 'wg', status: '待验证', subs: [] },
+      { ...source, id: 'outside', title: '他人的未收尾', owner: 'wd', parts: [], status: '待验证', subs: [] },
+    ]
+    const wrapper = mount(TodoView)
+    for (const index of [0, 1, 2]) {
+      await wrapper.findAll('.seg-btn')[index]!.trigger('click'); await flushPromises()
+      const rows = wrapper.findAll('.trow, .board-card, .quadrant-task')
+      expect(rows.some(row => row.text().includes('仍待下级验收'))).toBe(true)
+      expect(wrapper.text()).toContain('仍有 1 项子项未收尾')
+      expect(rows.some(row => row.text().includes('已经全部收尾'))).toBe(false)
+      expect(rows.some(row => row.text().includes('主任务待验证'))).toBe(true)
+      expect(rows.some(row => row.text().includes('他人的未收尾'))).toBe(false)
+    }
+    expect(data.taskById('unfinished')!.status).toBe('已完成')
+    await wrapper.findAll('.seg-btn')[0]!.trigger('click')
+    await wrapper.findAll('.trow').find(row => row.text().includes('仍待下级验收'))!.get('.check').trigger('click')
+    expect(data.taskById('unfinished')!.status).not.toBe('已完成')
+    expect(data.taskById('unfinished')!.subs[1]!.done).toBe(false)
+    wrapper.unmount()
+  })
+
   it('真实任务未返回时只显示加载状态，不展示启动 fixtures', () => {
     data.taskLoadState = 'loading'
     const fixtureTitle = data.tasks[0]!.title

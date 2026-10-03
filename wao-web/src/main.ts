@@ -10,6 +10,7 @@ import './assets/base.css'
 import { useTheme } from './composables/theme'
 import { installPreloadErrorRecovery } from './utils/preloadErrorRecovery'
 import { retireUnusedStorage } from './utils/retireUnusedStorage'
+import { prepareNoteDraftStorage } from './utils/noteDraftStorage'
 
 // 分包失败只提示手动恢复，避免节点切换导致页面刷新并丢失未保存输入。
 installPreloadErrorRecovery()
@@ -23,4 +24,4 @@ app.use(router)
 // 在挂载前初始化主题，避免首屏闪烁
 useTheme()
 
-app.mount('#app')
+void prepareNoteDraftStorage().then(() => app.mount('#app'))

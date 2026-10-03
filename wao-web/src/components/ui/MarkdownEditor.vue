@@ -477,6 +477,7 @@ function updateCharacterCount(e: Editor) {
 }
 const toolbarOpen = ref(false)
 
+const autofocusOrigin = typeof document === 'undefined' ? null : document.activeElement
 const editor = useEditor({
   content: props.document ?? props.modelValue,
   contentType: props.document ? 'json' : 'markdown',
@@ -575,7 +576,14 @@ const editor = useEditor({
     imageMenuRequested.value = false
     updateCharacterCount(e)
     editorReady.value = true
-    if (props.autofocus && !props.readonly && !e.isDestroyed) e.commands.focus('start', { scrollIntoView: false })
+    if (props.autofocus && !props.readonly && !e.isDestroyed) {
+      const active = document.activeElement
+      const editingElsewhere = active instanceof HTMLElement
+        && (active.matches('input, textarea, select') || active.isContentEditable || active.getAttribute('contenteditable') === 'true')
+      // 异步组件可能迟于标题输入挂载；只有原触发控件仍聚焦或没有焦点时才进入正文。
+      // view.focus 同步完成，避免 commands.focus 内的下一帧再次抢走用户刚切换的焦点。
+      if (!editingElsewhere && (active === document.body || active === autofocusOrigin) && !e.view.hasFocus()) e.view.focus()
+    }
   }),
   onTransaction: ({ editor: e, transaction }) => {
     if (transaction.docChanged) updateCharacterCount(e)

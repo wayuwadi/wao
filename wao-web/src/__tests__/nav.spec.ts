@@ -119,7 +119,6 @@ describe('侧边栏导航配置', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
     expect(publicGroup?.items).toEqual([
       'projects',
-      'changelog',
     ])
     expect(router.resolve('/media-agent').meta.module).toBeUndefined()
     const route = router.getRoutes().find((item) => item.name === 'external-app')
