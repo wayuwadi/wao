@@ -240,6 +240,9 @@ onBeforeUnmount(() => {
                   <span class="eyebrow">{{ item.eyebrow }}</span>
                   <h3>{{ item.title }}</h3>
                   <p>{{ item.summary }}</p>
+                  <div v-if="edition.id.startsWith('git-release-')" class="commit-points">
+                    <p v-for="point in item.points" :key="point">{{ point }}</p>
+                  </div>
                   <button
                     v-if="!availableVersion && feature(item)"
                     type="button"
@@ -381,6 +384,7 @@ h2 {
   font-size: 11px;
   color: var(--wao-text-weak);
 }
+.commit-points p { overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; margin: 8px 0; }
 .highlights {
   list-style: none;
   padding: 0;

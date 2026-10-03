@@ -8,8 +8,10 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 import { edgeBuildPlugin } from './scripts/edge-build.mjs'
 // @ts-expect-error Build-only JavaScript helper, exercised through node:test.
 import { releaseHighlightsPlugin } from './scripts/release-highlights.mjs'
-import currentRelease from './src/data/currentRelease.json'
+// @ts-expect-error Build-only helper, covered by real Git fixture tests.
+import { readGitRelease, gitReleasePlugin } from './scripts/git-release.mjs'
 import releaseHistory from './src/data/releaseHistory.json'
+import curatedRelease from './src/data/currentRelease.json'
 // @ts-expect-error Development-only JavaScript helper; serves an independently built game.
 import { gameAssetsDevPlugin } from './scripts/game-dev-assets.mjs'
 
@@ -17,6 +19,9 @@ const buildCommitSha = process.env.WAO_GIT_SHA?.trim()
 const buildVersion = buildCommitSha ? buildCommitSha.slice(0, 7) : undefined
 if (buildCommitSha && !/^[0-9a-f]{40}$/.test(buildCommitSha))
   throw new Error('WAO_GIT_SHA must be a full Git SHA')
+
+releaseHighlightsPlugin(curatedRelease, releaseHistory)
+const gitRelease = readGitRelease(fileURLToPath(new URL('..', import.meta.url)), buildCommitSha, process.env.WAO_GIT_HISTORY)
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -37,11 +42,13 @@ export default defineConfig({
       logVersion: false,
     }),
     edgeBuildPlugin(buildCommitSha),
-    releaseHighlightsPlugin(currentRelease, releaseHistory),
+    gitReleasePlugin(gitRelease),
+    releaseHighlightsPlugin(gitRelease.edition, [gitRelease.edition, ...releaseHistory]),
   ],
   // Excalidraw 用该常量在 React / Preact 运行时间选择；WAO 使用 React 岛。
   define: {
     'process.env.IS_PREACT': false,
+    __WAO_BUILD_RELEASE__: JSON.stringify(gitRelease.edition),
   },
   resolve: {
     dedupe: ['vue'],

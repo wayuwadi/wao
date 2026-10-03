@@ -30,7 +30,7 @@ async function render() {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
-      { path: '/features', component: { template: '<div />' } },
+      ...Object.values(MODULES).map(item => ({ path: item.path, component: { template: '<div />' } })),
     ],
   })
   await router.push('/')
@@ -102,14 +102,17 @@ describe('顶栏更新入口', () => {
   })
   it('当前制品说明提供真实功能入口', async () => {
     const router = await render()
-    const target = MODULES[CURRENT_RELEASE.highlights[0]!.featureId as keyof typeof MODULES].path
-    if (target !== '/' && target !== '/features') router.addRoute({ path: target, component: { template: '<div />' } })
-    await click('.update-entry')
-    expect(document.body.textContent).toContain(CURRENT_RELEASE.title)
-    await click('[aria-label^="去体验"]')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe(target)
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    for (const [index, highlight] of CURRENT_RELEASE.highlights.entries()) {
+      await click('.update-entry')
+      expect(document.body.textContent).toContain(CURRENT_RELEASE.title)
+      for (const point of highlight.points) expect(document.body.textContent).toContain(point)
+      const links = document.querySelectorAll<HTMLAnchorElement>('[aria-label^="去体验"]')
+      expect(links).toHaveLength(CURRENT_RELEASE.highlights.length)
+      links[index]!.click()
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe(MODULES[highlight.featureId].path)
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+    }
   })
   it('缺少说明时显示空状态，保存屏障失败可重试且不丢失目标版本', async () => {
     vi.mocked(fetchWebRelease).mockResolvedValue({ version: 'new1234', release: null })

@@ -1,5 +1,4 @@
 import type { FeatureCatalogEntry, ReleaseEdition } from '@/types/featureExplorer'
-import currentRelease from './currentRelease.json'
 import releaseHistory from './releaseHistory.json'
 
 /**
@@ -89,8 +88,8 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
   },
 ]
 
-/** 当前前端制品携带的精选说明；只有 id 变化时才会成为新的自动介绍批次。 */
-export const CURRENT_RELEASE = currentRelease as ReleaseEdition
+/** 构建 HEAD 自动生成的说明；随版本变化，不依赖人工精选。 */
+export const CURRENT_RELEASE = __WAO_BUILD_RELEASE__
 
 /** 经确认的更新档案；相同日期保持清单中的发布顺序，不覆盖历史记录。 */
-export const RELEASE_HISTORY = (releaseHistory as ReleaseEdition[]).slice().sort((a, b) => b.publishedOn.localeCompare(a.publishedOn))
+export const RELEASE_HISTORY = [CURRENT_RELEASE, ...(releaseHistory as ReleaseEdition[]).filter(item => item.id !== CURRENT_RELEASE.id)]

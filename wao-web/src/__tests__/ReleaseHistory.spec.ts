@@ -23,7 +23,7 @@ describe('最近更新档案', () => {
       ...Object.values(MODULES).map(item => ({ path: item.path, component: { template: '<div />' } })),
     ] })
     await router.push('/features')
-    const wrapper = mount(ReleaseHistory, { global: { plugins: [router] } })
+    const wrapper = mount(ReleaseHistory, { global: { plugins: [router], stubs: { GitCommitHistory: true } } })
     expect(wrapper.findAll('.release-edition')).toHaveLength(Math.min(5, RELEASE_HISTORY.length))
     while (wrapper.find('.older-updates').exists()) await wrapper.get('.older-updates').trigger('click')
     expect(wrapper.findAll('.release-edition')).toHaveLength(RELEASE_HISTORY.length)
