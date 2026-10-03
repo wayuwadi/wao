@@ -22,6 +22,7 @@ vi.mock('@/api/assistant', () => ({
 }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
 vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
+vi.mock('@/api/codexModels', () => ({ fetchCodexModels: vi.fn().mockResolvedValue({ models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra' }, { id: 'gpt-6-luna', label: 'GPT-6 Luna' }], stale: false, message: '自动刷新', updatedAt: '2026-10-03' }) }))
 vi.mock('@/api/textPolish', () => ({ fetchTextPolishWorkspace: vi.fn().mockResolvedValue({ prompt: '默认正文润色方法', records: [] }), saveTextPolishPrompt: vi.fn().mockResolvedValue('默认正文润色方法') }))
 
 /** Tiptap 需要真实 DOM 与一帧时间来完成挂载。 */

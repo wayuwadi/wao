@@ -48,6 +48,10 @@ class AiAssistantServiceTest {
                 mapper, runnerMapper, aiRunService, accountService, deepSeekApi,
                 conversationService, assetService, runnerScripts, ideaResearchService, referenceImages,
                 Duration.ofMinutes(60), Duration.ofMinutes(30));
+        var models = mock(LocalCodexModelService.class);
+        when(models.validate(org.mockito.ArgumentMatchers.nullable(String.class)))
+                .thenAnswer(call -> call.getArgument(0) == null ? "gpt-6-astra" : call.getArgument(0));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "localModels", models);
     }
 
     @Test
