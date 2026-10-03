@@ -5,14 +5,14 @@
 ## 可重复运行
 
 ```powershell
-npm --prefix wao-web run test:unit -- --run src/__tests__/NotesView.spec.ts src/__tests__/ContextActionMenu.spec.ts --maxWorkers=2
+npm --prefix wao-web run test:unit -- --run src/__tests__/NotesView.spec.ts src/__tests__/ContextActionMenu.spec.ts src/__tests__/VersionUpdateNotice.spec.ts --maxWorkers=2
 npm --prefix wao-web run build
 python deploy/scripts/check-engineering-consistency.py --base origin/main
 ```
 
 自动回归覆盖：三个入口共用阅读器、模式记忆、只读与草稿保留、重复打开后恢复背景、返回焦点、筛选目录 ID 固定、后台重排不跳篇、文章移除、逐篇滚动恢复、手机目录分层退出、窗口放大恢复正文、按钮菜单定位及滚动保持。
 
-本轮结果：2 个测试文件、60 项通过；前端类型检查及构建通过，保留既有大分块提示。一致性检查无错误，既有 ADR 重号警告单独保留。
+小记与菜单回归：2 个测试文件、60 项通过；前端类型检查及构建通过，保留既有大分块提示。一致性检查无错误，5 个既有 ADR 重号警告单独保留。同步最新 main 后，更新说明测试中的 `Object.hasOwn` 超出当前 TypeScript lib 配置；附带改为等价的 `Object.prototype.hasOwnProperty.call` 并补跑该文件，合计 3 文件、73 项通过，未改变更新说明行为。
 
 ## 真实浏览器步骤
 
