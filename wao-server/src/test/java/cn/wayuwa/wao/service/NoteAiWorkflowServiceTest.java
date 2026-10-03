@@ -32,6 +32,31 @@ class NoteAiWorkflowServiceTest {
     private final NoteAiWorkflowService service = new NoteAiWorkflowService(
             workflows, docs, knowledge, textJobs, images, polish, preferences, new ObjectMapper());
 
+    @Test void localWorkerRecordsStageSubmissionFailureInsteadOfLeavingItPending() {
+        String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2);
+        when(workflows.lock("d1")).thenReturn(pendingAll("d1", "m1"));
+        DocEntity entity = new DocEntity();
+        entity.setId("d1"); entity.setAuthorId("m1"); entity.setKbId(KnowledgeService.NOTES_KB_ID);
+        when(docs.selectById("d1")).thenReturn(entity);
+        when(knowledge.getDoc("d1")).thenReturn(note("m1", 1, body));
+        when(textJobs.submit(any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new cn.wayuwa.wao.common.BadRequestException("所选模型已不可用，请重新选择"));
+        @SuppressWarnings("unchecked")
+        var provider = (org.springframework.beans.factory.ObjectProvider<NoteAiWorkflowService>) mock(org.springframework.beans.factory.ObjectProvider.class);
+        when(provider.getObject()).thenReturn(service);
+        var env = new org.springframework.mock.env.MockEnvironment().withProperty("wao.ai.local-notes.document-ids", "d1");
+        var worker = new LocalNoteAiService(mock(cn.wayuwa.wao.mapper.AiAssistantRunMapper.class), mock(ImageService.class), workflows, provider, env);
+
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(worker, "advanceWorkflows");
+
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().titleStatus()).isEqualTo("FAILED");
+        assertThat(saved.getValue().imageStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().polishStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().lastError()).contains("标题", "重新选择");
+    }
+
     @Test void noExplicitAiChoiceDoesNotCreateWorkOrSpendQuota() {
         service.beginIfRequested("m1", note("m1", 1, "正文"),
                 new CreateNoteRequest(null, List.of(), null, null, false, false, false));
@@ -175,19 +200,70 @@ class NoteAiWorkflowServiceTest {
         } catch (java.security.NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
     }
 
-    @Test void failedStageDoesNotSilentlyCancelLaterSelectedStages() {
-        Workflow workflow = new Workflow("d1", "m1", 1, "原题", "oldhash", "RUNNING", "job1",
-                "PENDING", null, "PENDING", null, null, null, null);
+    @Test void polishSubmissionFailureDoesNotCancelRunningTitleOrCompletedImage() {
+        Workflow pending = pendingAll("d1", "m1");
+        Workflow workflow = new Workflow("d1", "m1", 1, "原题", pending.sourceMarkdownHash(), "RUNNING", "title1",
+                "DONE", "image1", "PENDING", null, null, null, null);
         when(workflows.lock("d1")).thenReturn(workflow);
-
-        service.failCurrent("d1", "当前账号不可用");
-
+        owned(note("m1", 1, failureBody()));
+        when(textJobs.get("m1", "title1")).thenReturn(new TextPolishJobService.Result("title1", "RUNNING", null, null, null, null));
+        when(textJobs.submit(any(), any(), any(), any(), any(), any(), any())).thenThrow(new IllegalStateException("不应保存的内部详情"));
+        RuntimeException failure = captureAdvanceFailure();
+        // 前一阶段的写入在实际事务中已回滚；这里只观察独立失败事务。
+        org.mockito.Mockito.clearInvocations(workflows);
+        service.failAdvance("d1", failure);
         ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
         verify(workflows).update(saved.capture());
-        assertThat(saved.getValue().titleStatus()).isEqualTo("FAILED");
-        assertThat(saved.getValue().imageStatus()).isEqualTo("PENDING");
-        assertThat(saved.getValue().polishStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().titleStatus()).isEqualTo("RUNNING");
+        assertThat(saved.getValue().imageStatus()).isEqualTo("DONE");
+        assertThat(saved.getValue().polishStatus()).isEqualTo("FAILED");
+        assertThat(saved.getValue().lastError()).contains("润色", "重试").doesNotContain("内部详情");
     }
+
+    @Test void failedImageStageRollsBackBeforeRecordingOnlyImageFailure() {
+        Workflow w = pendingAll("d1", "m1").withTitle("DONE", "title1", 1, "原题", null);
+        when(workflows.lock("d1")).thenReturn(w);
+        owned(note("m1", 1, failureBody()));
+        when(images.startNoteWorkflow(any(), any())).thenThrow(new cn.wayuwa.wao.common.BadRequestException("模型暂不可用"));
+        RuntimeException failure = captureAdvanceFailure();
+        verify(workflows, never()).update(any());
+        service.failAdvance("d1", failure);
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().imageStatus()).isEqualTo("FAILED");
+        assertThat(saved.getValue().polishStatus()).isEqualTo("PENDING");
+        assertThat(saved.getValue().lastError()).contains("配图");
+    }
+
+    @Test void lateFailureDoesNotOverwriteAWorkflowAlreadyChangedByAnotherRequest() {
+        Workflow w = pendingAll("d1", "m1");
+        when(workflows.lock("d1")).thenReturn(w);
+        owned(note("m1", 1, failureBody()));
+        when(textJobs.submit(any(), any(), any(), any(), any(), any(), any())).thenThrow(new IllegalStateException("失败"));
+        RuntimeException failure = captureAdvanceFailure();
+        when(workflows.lock("d1")).thenReturn(w.withRev(2));
+        service.failAdvance("d1", failure);
+        verify(workflows, never()).update(any());
+    }
+
+    @Test void databaseAndVersionConflictsRemainRecoverableWithoutFalseModelFailure() {
+        when(workflows.lock("d1")).thenReturn(pendingAll("d1", "m1"));
+        owned(note("m1", 1, failureBody()));
+        for (RuntimeException cause : List.of(new org.springframework.dao.DataAccessResourceFailureException("离线"),
+                new cn.wayuwa.wao.common.ConflictException("版本变化"))) {
+            org.mockito.Mockito.doThrow(cause).when(textJobs).submit(any(), any(), any(), any(), any(), any(), any());
+            service.failAdvance("d1", captureAdvanceFailure());
+        }
+        verify(workflows, never()).update(any());
+    }
+
+    private RuntimeException captureAdvanceFailure() {
+        Throwable failure = org.assertj.core.api.Assertions.catchThrowable(() -> service.advance("d1"));
+        assertThat(failure).isInstanceOf(RuntimeException.class);
+        return (RuntimeException) failure;
+    }
+
+    private static String failureBody() { return "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2); }
 
     private static DocDto note(String author, int rev, String markdown) {
         return new DocDto("d1", "原题", author, null, null, false, List.of(), List.of(),

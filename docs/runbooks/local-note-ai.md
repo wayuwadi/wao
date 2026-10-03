@@ -53,3 +53,5 @@ npm run test:unit -- --run src/__tests__/MarkdownEditor.spec.ts src/__tests__/No
 - CLI 失败：由服务运行账号检查 Codex 登录、网络、额度，然后点原小记失败阶段重试；不自动改用 API。
 - 服务中断：本实例运行中任务变成可重试失败，保留正文；队列仍在数据库，超龄队列失败收口。崩溃时可能留下本机 job 临时文件或生成目录，按登记的任务归属人工检查，不能清理整个 Codex 目录。
 - 公网是否更新由正常部署证据判断；本地通过与 PR 合并不能写成已上线。
+
+阶段提交或回写异常的收口规则见 [阶段异常恢复](../specs/notes-workflow-stage-failure.md)。`python deploy/scripts/notes-ai-regression.py` 已包括 `NoteAiWorkflowTransactionTest`：只使用进程内 H2 验证先回滚再记录失败，以及重试不受旧错误覆盖。真实页面另按上面的步骤验收，不用隔离测试代替。

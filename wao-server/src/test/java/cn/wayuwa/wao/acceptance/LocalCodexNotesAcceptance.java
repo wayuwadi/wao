@@ -83,7 +83,7 @@ public final class LocalCodexNotesAcceptance {
                 var workflows = context.getBean(NoteAiWorkflowService.class);
                 IN_SCOPE.set(true);
                 try { workflows.advance(id); }
-                catch (RuntimeException e) { workflows.failCurrent(id, e.getMessage()); }
+                catch (RuntimeException e) { workflows.failAdvance(id, e); }
                 finally { IN_SCOPE.remove(); }
                 flow = flowMapper.listOwned(config.memberId()).stream().filter(w -> id.equals(w.docId())).findFirst().orElseThrow();
                 if (flow.polishJobId() == null) continue;
