@@ -13,6 +13,8 @@ import {
   type WorkspaceReloadState,
 } from '@/utils/versionUpdate'
 
+const props = defineProps<{ row?: boolean; anchor?: HTMLElement }>()
+const emit = defineEmits<{ 'available-change': [value: boolean]; opened: [] }>()
 const router = useRouter()
 const route = useRoute()
 const trigger = ref<HTMLButtonElement>()
@@ -20,6 +22,7 @@ const panel = ref<HTMLElement>()
 const closeButton = ref<HTMLButtonElement>()
 const open = ref(false)
 const availableVersion = ref('')
+watch(availableVersion, value => emit('available-change', !!value), { immediate: true })
 const upcoming = ref<ReleaseEdition | null>(null)
 const loading = ref(false)
 const loaded = ref(false)
@@ -34,7 +37,7 @@ let request = 0
 let observer: ResizeObserver | undefined
 
 function positionPanel() {
-  const rect = trigger.value?.getBoundingClientRect()
+  const rect = (props.anchor ?? trigger.value)?.getBoundingClientRect()
   if (!rect) return
   const width = Math.min(380, window.innerWidth - 24)
   const top = Math.max(12, Math.min(rect.bottom + 10, window.innerHeight - 160))
@@ -71,13 +74,14 @@ async function show() {
   }
   positionPanel()
   open.value = true
+  emit('opened')
   if (availableVersion.value && !loaded.value) void load()
   await nextTick()
   closeButton.value?.focus()
 }
 function close(restoreFocus = true) {
   open.value = false
-  if (restoreFocus) trigger.value?.focus()
+  if (restoreFocus) (props.anchor ?? trigger.value)?.focus()
 }
 function browseHistory() {
   close(false)
@@ -176,7 +180,7 @@ onBeforeUnmount(() => {
       ref="trigger"
       class="update-entry"
       type="button"
-      :class="{ available: availableVersion }"
+      :class="{ available: availableVersion, 'tool-menu-row': row }"
       :aria-label="availableVersion ? '有新版本，查看本次更新' : '查看本次更新'"
       :title="availableVersion ? '有新版本，查看本次更新' : '查看本次更新'"
       :aria-expanded="open"
@@ -185,7 +189,9 @@ onBeforeUnmount(() => {
       @click="show"
     >
       <i :class="availableVersion ? 'ri-refresh-line' : 'ri-sparkling-line'" aria-hidden="true"></i>
-      <span class="trigger-label">{{ availableVersion ? '有更新' : '本次更新' }}</span>
+      <span class="trigger-label">{{ row ? '更新记录' : availableVersion ? '有更新' : '本次更新' }}</span>
+      <small v-if="row">{{ availableVersion ? '有新版本' : '本次与历史' }}</small>
+      <i v-if="row" class="ri-arrow-right-s-line" aria-hidden="true"></i>
       <span v-if="availableVersion" class="update-dot" aria-hidden="true"></span>
     </button>
     <span class="sr-only" role="status" aria-live="polite">{{
@@ -520,4 +526,12 @@ a:focus-visible {
     display: none;
   }
 }
+</style>
+
+<style scoped>
+.tool-menu-row { display:flex; align-items:center; gap:10px; width:100%; min-height:42px; height:auto; padding:8px 10px; border:0; border-radius:8px; background:transparent; color:var(--wao-text-2); font-size:13px; text-align:left; cursor:pointer; }
+.tool-menu-row:hover { background:var(--wao-bg-hover); }
+.tool-menu-row .trigger-label { display:inline; flex:1; }
+.tool-menu-row small { color:var(--wao-text-faint); font-size:11px; }
+@media(pointer:coarse) { .tool-menu-row { min-height:44px; } }
 </style>
