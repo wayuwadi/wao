@@ -2,6 +2,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { dueInfo, priorityMeta, statusMeta } from '@/utils/domain'
 import type { Project, Task } from '@/types'
+import { projectCompletion, projectCompletionLabel } from '@/utils/projectCompletion'
 
 /** 任务 / 项目的展示装饰 —— 对齐原型 decoTask / decoProj，供列表、看板、总览、抽屉复用。 */
 export function useDeco() {
@@ -18,6 +19,7 @@ export function useDeco() {
     return {
       ...t,
       done,
+      unfinishedSubCount: done ? t.subs.filter(sub => !sub.done).length : 0,
       deco: done ? 'line-through' : 'none',
       // 标题同时用于项目列表、看板和「我的任务」；必须交给主题 token 决定颜色，
       // 否则内联的浅色主题黑字会覆盖深色模式样式，导致卡片标题不可见。
@@ -46,14 +48,15 @@ export function useDeco() {
     const due = dueInfo(p.due, data.today)
     const owner = session.memberById(p.owner)
     const projectTasks = data.tasksByProject(p.id)
+    const completion = projectCompletion(projectTasks)
     return {
       ...p,
       areaName: a?.name ?? '未分类',
       areaColor: a?.color ?? '#9A9DA9',
       stBg: st.bg,
       stColor: st.color,
-      pct: p.progress,
-      progColor: p.status === '有风险' ? '#D9A13B' : p.status === '已完成' ? '#5CB88A' : '#4358D6',
+      completion,
+      completionLabel: projectCompletionLabel(projectTasks),
       dueStr: due.label,
       dueColor: due.color,
       ownerName: owner.name,
@@ -64,8 +67,8 @@ export function useDeco() {
         return { initial: mm.initial, color: mm.color }
       }),
       initialChar: (p.name || '·').slice(0, 1),
-      taskOpen: projectTasks.filter((t) => t.status !== '已完成').length,
-      taskTotal: projectTasks.length,
+      taskOpen: completion.open,
+      taskTotal: completion.total,
       goalShort: p.goal,
     }
   }
