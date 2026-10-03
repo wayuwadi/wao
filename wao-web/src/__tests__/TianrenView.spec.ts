@@ -61,11 +61,13 @@ describe('TianrenView', () => {
     try {
       await flushPromises()
       expect(wrapper.text()).toContain('本机 Codex 排队中')
+      expect(wrapper.get('.reading-layout').classes()).toContain('reading-layout-empty')
       expect(wrapper.get<HTMLButtonElement>('.interpret-button').element.disabled).toBe(true)
       await wrapper.get('textarea').setValue('后台等待期间的新关注点')
       await vi.advanceTimersByTimeAsync(5000); await flushPromises()
       expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('后台等待期间的新关注点')
       expect(wrapper.get('.markdown').text()).toContain('已保存的本机 Codex 解读')
+      expect(wrapper.get('.reading-layout').classes()).not.toContain('reading-layout-empty')
       expect(streamTianrenInterpretation).not.toHaveBeenCalled()
     } finally { wrapper.unmount(); vi.useRealTimers() }
   })
