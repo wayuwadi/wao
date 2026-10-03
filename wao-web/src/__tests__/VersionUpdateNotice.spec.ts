@@ -1,3 +1,5 @@
+import { createPinia } from 'pinia'
+import { useUiStore } from '@/stores/ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -34,7 +36,7 @@ async function render() {
     ],
   })
   await router.push('/')
-  wrapper = mount(VersionUpdateNotice, { attachTo: document.body, global: { plugins: [router] } })
+  wrapper = mount(VersionUpdateNotice, { attachTo: document.body, global: { plugins: [createPinia(), router] } })
   return router
 }
 beforeEach(() => {
@@ -195,7 +197,8 @@ describe('顶栏更新入口', () => {
       const links = document.querySelectorAll<HTMLButtonElement>('[aria-label^="去体验"]')
       links[index]!.click()
       await flushPromises()
-      expect(router.currentRoute.value.path).toBe(MODULES[highlight.featureId].path)
+      if (highlight.featureId === 'notes') { expect(useUiStore().modal).toBe('note'); useUiStore().closeModal() }
+      else expect(router.currentRoute.value.path).toBe(MODULES[highlight.featureId].path)
       expect(document.querySelector('[role="dialog"]')).toBeNull()
     }
   })

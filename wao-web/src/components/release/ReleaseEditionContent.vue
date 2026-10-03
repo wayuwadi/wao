@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useFeatureExperience } from '@/composables/featureExperience'
 import { MODULES } from '@/config/nav'
 import type { ReleaseEdition } from '@/types/featureExplorer'
 import ExplorerPagination from './ExplorerPagination.vue'
 const props = defineProps<{ edition: ReleaseEdition }>()
 const emit = defineEmits<{ navigate: [] }>()
 const page = ref(1)
+const tryFeature = useFeatureExperience()
+async function experience(id: string) { if (await tryFeature(id)) emit('navigate') }
 watch(
   () => props.edition.id,
   () => {
@@ -23,13 +26,13 @@ const visible = computed(() => props.edition.highlights.slice((page.value - 1) *
       <ul v-if="item.points.length">
         <li v-for="point in item.points" :key="point">{{ point }}</li>
       </ul>
-      <RouterLink
+      <button type="button"
         v-if="MODULES[item.featureId] && item.featureId !== 'changelog'"
-        :to="MODULES[item.featureId].path"
-        @click="emit('navigate')"
+
+        @click="experience(item.featureId)"
         >去体验 {{ MODULES[item.featureId].label }}
         <i class="ri-arrow-right-up-line" aria-hidden="true"></i
-      ></RouterLink>
+      ></button>
     </article>
     <p v-if="!edition.highlights.length">本次版本暂未附带详细说明。</p>
     <ExplorerPagination
@@ -66,7 +69,8 @@ ul {
 li {
   margin-bottom: 5px;
 }
-a {
+button {
+  border:0; background:transparent; padding:0; cursor:pointer;
   display: inline-flex;
   gap: 5px;
   color: var(--wao-primary-text);

@@ -2,6 +2,7 @@
 import { computed, onUnmounted, reactive, ref, watch, watchEffect } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
+import { companionQuiet, setCompanionQuiet } from '@/composables/quietCompanions'
 import { toast } from '@/composables/toast'
 import { apiCreateAccount, updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
@@ -690,6 +691,14 @@ async function bindFeishu() {
             </template>
           </div>
           <div class="card thin personal-preferences">
+            <div class="pref-row">
+              <div class="pref-main"><div class="pref-name">快捷键</div><div class="pref-desc">查看记录、搜索和页面操作的快捷方式。</div></div>
+              <button class="value-btn" type="button" @click="ui.toggleHelp()">查看快捷键</button>
+            </div>
+            <div class="pref-row">
+              <div class="pref-main"><div class="pref-name">安静陪伴</div><div class="pref-desc">暂停伙伴动作和主动回应，保留操作结果提示。本次浏览器会话生效。</div></div>
+              <button class="value-btn" type="button" :aria-pressed="companionQuiet" @click="setCompanionQuiet(!companionQuiet)">{{ companionQuiet ? '已开启' : '偶尔回应' }}</button>
+            </div>
             <div class="pref-row">
               <div class="pref-main">
                 <div class="pref-name">主题</div>

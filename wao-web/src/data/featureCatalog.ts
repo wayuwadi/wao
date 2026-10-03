@@ -17,7 +17,7 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
     id: 'home',
     category: 'life',
     summary: '卦象与 Codex 信息集中查看，留一点空白再开始。',
-    description: '查看今日卦象、Codex 周剩余额度、周重置时间与重置卡；从首页进入呼吸休息空间。',
+    description: '查看今日卦象与 Codex 统计，右键邀请伙伴跳舞，从自己的旧小记获得灵感，原地写下新想法。',
     tone: 'blue',
   },
   {

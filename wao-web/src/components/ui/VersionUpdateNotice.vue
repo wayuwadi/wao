@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
+import { useFeatureExperience } from '@/composables/featureExperience'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { blockCompanions, companionEditing, companionQuiet } from '@/composables/quietCompanions'
 import { fetchWebRelease } from '@/api/version'
@@ -17,7 +18,7 @@ import {
 
 const props = defineProps<{ row?: boolean; anchor?: HTMLElement }>()
 const emit = defineEmits<{ 'available-change': [value: boolean]; 'arrival-change': [value: boolean]; opened: [] }>()
-const router = useRouter()
+const tryFeature = useFeatureExperience()
 const route = useRoute()
 const trigger = ref<HTMLButtonElement>()
 const panel = ref<HTMLElement>()
@@ -181,8 +182,7 @@ function feature(item: ReleaseHighlight) {
 async function experience(item: ReleaseHighlight) {
   const module = feature(item)
   if (!module || availableVersion.value) return
-  await router.push(module.path)
-  close(false)
+  if (await tryFeature(item.featureId)) close(false)
 }
 function outside(event: PointerEvent) {
   if (
