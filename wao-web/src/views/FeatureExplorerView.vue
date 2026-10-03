@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRefs, watch } from 'vue'
+import { useBrowsingState, validPage, oneOf } from '@/composables/browsingState'
 import { Modal } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MODULES } from '@/config/nav'
@@ -21,8 +22,13 @@ const tabs = [
 ] as const
 type Tab = (typeof tabs)[number]['id']
 const active = ref<Tab>('all-features')
-const category = ref<FeatureCategory | 'all'>('all')
-const page = ref(1)
+const browse = useBrowsingState('features', { category: 'all' as FeatureCategory | 'all', page: 1, size: window.innerWidth <= 600 ? 3 : 6, tab: 'all-features' as Tab }, {
+  category: oneOf('all', ...FEATURE_CATEGORIES.map(item => item.id)), page: validPage, size: oneOf(3, 6), tab: oneOf(...tabs.map(item => item.id)),
+})
+const { category, page } = toRefs(browse)
+const restoredFirst = (page.value - 1) * browse.size
+browse.size = window.innerWidth <= 600 ? 3 : 6
+page.value = Math.floor(restoredFirst / browse.size) + 1
 const narrow = ref(window.innerWidth <= 600)
 const size = computed(() => (narrow.value ? 3 : 6))
 const selected = ref<FeatureCatalogEntry | null>(null)
@@ -53,13 +59,15 @@ const filtered = computed(() =>
 const visible = computed(() =>
   filtered.value.slice((page.value - 1) * size.value, page.value * size.value),
 )
+watch([() => filtered.value.length, size, page], ([total, count]) => { page.value = Math.min(page.value, Math.max(1, Math.ceil(total / count))) }, { immediate: true })
 const categoryLabel = (id: FeatureCategory) =>
   FEATURE_CATEGORIES.find((item) => item.id === id)?.label ?? '功能'
 watch(
   () => route.hash,
   (hash) => {
     const match = tabs.find((tab) => '#' + tab.id === hash)
-    active.value = match?.id ?? 'all-features'
+    active.value = match?.id ?? browse.tab
+    browse.tab = active.value
     if (active.value === 'recent-updates') historyLoaded.value = true
     selected.value = null
   },
@@ -91,6 +99,7 @@ function resize() {
   if (next !== narrow.value) {
     const first = (page.value - 1) * size.value
     narrow.value = next
+    browse.size = next ? 3 : 6
     page.value = Math.floor(first / size.value) + 1
   }
 }
