@@ -109,7 +109,6 @@ function onDropStatus(status: TaskStatus) {
     <div class="ptop">
       <div class="ptitle">TODO</div>
       <span class="ptip">跨项目任务汇总 · 任务归属于各自项目</span>
-      <div class="spacer"></div>
       <button class="btn-primary" @click="ui.openNewTask()">
         <i class="ri-add-line"></i>新建任务
       </button>
@@ -130,7 +129,6 @@ function onDropStatus(status: TaskStatus) {
         <option v-for="project in data.projects" :key="project.id" :value="project.id">{{ project.name }}</option>
         <option value="unassigned">未关联项目</option>
       </select>
-      <div class="spacer"></div>
       <div class="seg">
         <button
           v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)"
