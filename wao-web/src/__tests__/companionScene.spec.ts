@@ -97,6 +97,7 @@ function mountScene() {
   })
   return {
     canvas,
+    targets,
     controller: createCompanionScene({ host, canvas, targets, say: vi.fn(), failed: vi.fn() }),
   }
 }
@@ -106,6 +107,41 @@ function paint(time = 100) {
   work.forEach((fn) => fn(time))
 }
 describe('三维场景资源与省电', () => {
+  it('静止和活动时点击区域都留在可见画布内，聚焦不撑出隐藏滚动区', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0)
+    const { controller, targets } = mountScene()
+    for (const time of [100, 4000, 16000]) {
+      if (time === 4000) controller.activity('ball')
+      paint(time)
+      targets.forEach((target) => {
+        const [x, y] = target.style.transform.match(/-?[\d.]+/g)!.map(Number)
+        expect(x).toBeGreaterThanOrEqual(0)
+        expect(y).toBeGreaterThanOrEqual(0)
+        expect(x! + parseFloat(target.style.width)).toBeLessThanOrEqual(900.001)
+        expect(y! + parseFloat(target.style.height)).toBeLessThanOrEqual(300.001)
+        expect(parseFloat(target.style.height)).toBeGreaterThan(0)
+      })
+    }
+    controller.dispose()
+  })
+  it('抛球带动四人，活动互斥，十五秒截止后不续播', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0)
+    const { controller } = mountScene()
+    paint(100)
+    const scene = spies.render.mock.lastCall![0]
+    const groups = scene.children.filter((child: { type: string }) => child.type === 'Group')
+    const original = groups.map((g: { position: { y: number } }) => g.position.y)
+    controller.activity('ball')
+    paint(4000)
+    groups.forEach((g: { position: { y: number } }, i: number) => expect(g.position.y).toBeGreaterThan(original[i] + 15))
+    controller.activity('hiphop')
+    expect(scene.getObjectByName('companion-play-ball').visible).toBe(false)
+    paint(16000)
+    groups.forEach((g: { position: { y: number } }, i: number) => expect(Math.abs(g.position.y - original[i])).toBeLessThan(4))
+    paint(30000)
+    groups.forEach((g: { position: { y: number } }, i: number) => expect(Math.abs(g.position.y - original[i])).toBeLessThan(4))
+    controller.dispose()
+  })
   it('小球只有主动触发才出现，安静或停用立即收起且不能后台重启', () => {
     const { controller } = mountScene()
     paint()
@@ -117,7 +153,7 @@ describe('三维场景资源与省电', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(toy.visible).toBe(false)
     controller.play()
-    paint(performance.now() + 9000)
+    paint(performance.now() + 16000)
     expect(toy.visible).toBe(false)
     controller.play()
     controller.setQuiet(true)
@@ -133,19 +169,19 @@ describe('三维场景资源与省电', () => {
   })
   it('主动舞蹈尊重安静、减少动态效果和后台暂停', () => {
     const { controller } = mountScene()
-    expect(controller.dance()).toBe(true)
+    expect(controller.activity('ballet')).toBe(true)
     controller.setQuiet(true)
-    expect(controller.dance(1)).toBe(false)
+    expect(controller.activity('hiphop')).toBe(false)
     controller.setQuiet(false)
     media.matches = true
     media.dispatchEvent(new Event('change'))
-    expect(controller.dance()).toBe(false)
+    expect(controller.activity('ballet')).toBe(false)
     media.matches = false
     media.dispatchEvent(new Event('change'))
     controller.setActive(false)
-    expect(controller.dance()).toBe(false)
+    expect(controller.activity('ballet')).toBe(false)
     controller.dispose()
-    expect(controller.dance()).toBe(false)
+    expect(controller.activity('ballet')).toBe(false)
   })
   it('安静模式只画一帧，唤醒后重新排帧', () => {
     const { controller } = mountScene()

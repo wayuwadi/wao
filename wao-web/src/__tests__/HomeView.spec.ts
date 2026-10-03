@@ -14,6 +14,8 @@ describe('首页 AI Run 下线', () => {
     const wrapper = mount(HomeView, { global: { plugins: [createPinia()], stubs: { RouterLink: RouterLinkStub } } })
     expect(wrapper.text()).toContain('今日一卦')
     expect(wrapper.text()).toContain('天气')
+    expect(wrapper.text()).not.toMatch(/和伙伴玩|记个念头|新灵感|递一段文字/)
+    expect(wrapper.text()).toContain('一起放松十五秒')
     expect(wrapper.findComponent(RouterLinkStub).props('to')).toBe('/breathe')
     expect(wrapper.find('[aria-label="呼吸练习"]').exists()).toBe(false)
     expect(wrapper.text()).not.toMatch(/AI Run|Runner|执行电脑|AI 工作流/)

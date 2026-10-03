@@ -17,7 +17,7 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
     id: 'home',
     category: 'life',
     summary: '卦象与 Codex 信息集中查看，留一点空白再开始。',
-    description: '查看今日卦象与 Codex 统计，右键邀请伙伴跳舞，从自己的旧小记获得灵感，原地写下新想法。',
+    description: '查看今日卦象与 Codex 统计，和四个伙伴一起抛球、跳舞或伸展，十五秒后安静下来。',
     tone: 'blue',
   },
   {

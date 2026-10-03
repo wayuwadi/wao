@@ -7,7 +7,7 @@ import { useUiStore } from '@/stores/ui'
 import { useFeatureExperience } from '@/composables/featureExperience'
 
 describe('新功能原地体验', () => {
-  it('小记留在当前页，当前任务不被替换，首页有明确引导', async () => {
+  it('小记留在当前页，当前任务不被替换，首页直接进入休息空间', async () => {
     const router = createRouter({ history:createMemoryHistory(), routes:[{path:'/',component:{template:'<div />'}},{path:'/projects',component:{template:'<div />'}}] })
     await router.push('/projects')
     const w = mount(defineComponent({setup() { return { experience: useFeatureExperience() } }, template:'<div />'}), {global:{plugins:[createPinia(),router]}})
@@ -21,7 +21,7 @@ describe('新功能原地体验', () => {
     ui.closeModal()
     expect(await w.vm.experience('home')).toBe(true)
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/?try=inspiration')
+    expect(router.currentRoute.value.fullPath).toBe('/')
     expect(await w.vm.experience('unknown-feature')).toBe(false)
     w.unmount()
   })

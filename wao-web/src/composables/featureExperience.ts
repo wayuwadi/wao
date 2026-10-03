@@ -15,7 +15,7 @@ export function useFeatureExperience() {
       return false
     }
     if (id === 'notes') ui.openModal('note')
-    else await router.push(id === 'home' ? { path: module.path, query: { try: 'inspiration' } } : module.path)
+    else await router.push(module.path)
     return true
   }
 }
