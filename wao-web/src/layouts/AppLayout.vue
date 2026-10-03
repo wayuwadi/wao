@@ -336,7 +336,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           </template>
         </template>
         <TopMenuBar />
-        <RouterLink class="rest-link" to="/breathe" aria-label="休息一下，打开一呼一吸">休息一下</RouterLink>
         <TabBar />
 
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
@@ -835,8 +834,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </style>
 
 <style scoped>
-.rest-link { flex:none; padding:8px; color:var(--wao-text-weak); font-size:12px; white-space:nowrap; }
-
 /* 侧栏也占据空间：依据正文区宽度换行，而非仅看浏览器视口。 */
 @container app-main (max-width: 900px) {
   .header { height: auto; min-height: var(--wao-header-h); flex-wrap: wrap; gap: 6px; padding: 6px 12px 0; }
@@ -859,7 +856,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   .header :deep(.tabbar-shell) { order: 10; flex: 0 0 100%; min-width: 0; height: 36px; }
   .header .quick-actions { flex-wrap: wrap; gap: 8px; }
   .header .bell, .header .plus, .header .plus.ghost { width: 36px; min-width: 36px; height: 36px; }
-  .header .rest-link { padding: 8px 0; }
   .mobile-main-nav > button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -3px; }
 }
 </style>
