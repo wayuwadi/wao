@@ -18,7 +18,9 @@ final class LocalNoteCodexProcess {
             "USERPROFILE", "HOME", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATH", "PATHEXT",
             "CODEX_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY");
 
-    record Result(String text, byte[] png) { }
+    record Result(String text, byte[] png, Long inputTokens, Long cachedInputTokens, Long outputTokens, String cliVersion) {
+        Result(String text, byte[] png) { this(text, png, null, null, null,null); }
+    }
 
     static List<String> command(String executable, String model, Path directory, boolean image) {
         var args = new ArrayList<>(List.of(executable, "exec", "--ignore-user-config", "--ignore-rules",
@@ -44,7 +46,9 @@ final class LocalNoteCodexProcess {
         Path events = directory.resolve("events.jsonl");
         Process process = null;
         try {
-            var args = commandWithReferences(LocalCodexExecutable.resolve(executable), model, directory, image, references);
+            String resolved=LocalCodexExecutable.resolve(executable);
+            String version=version(resolved);
+            var args = commandWithReferences(resolved, model, directory, image, references);
             var builder = new ProcessBuilder(args);
             builder.environment().keySet().removeIf(key -> !ENVIRONMENT.contains(key.toUpperCase(java.util.Locale.ROOT)));
             builder.redirectErrorStream(true).redirectOutput(events.toFile());
@@ -61,7 +65,8 @@ final class LocalNoteCodexProcess {
             String text = Files.readString(output).trim();
             if (text.isEmpty() || text.length() > 30_000)
                 throw new IllegalStateException("本机 AI 返回正文为空或过长；原文已保留，请重试");
-            return new Result(text, null);
+            Long[] usage = usage(events);
+            return new Result(text, null, usage[0], usage[1], usage[2],version);
         } finally {
             if (process != null && process.isAlive()) {
                 process.descendants().forEach(ProcessHandle::destroyForcibly);
@@ -116,6 +121,35 @@ final class LocalNoteCodexProcess {
         Files.delete(png);
         try { Files.delete(directory); } catch (java.nio.file.DirectoryNotEmptyException ignored) { }
         return bytes;
+    }
+
+    static Long[] usage(Path events) throws Exception {
+        Long[] usage = {null, null, null};
+        ObjectMapper json = new ObjectMapper();
+        try (var lines = Files.lines(events)) {
+            for (String line : (Iterable<String>) lines::iterator) {
+                if (!line.startsWith("{")) continue;
+                var event = json.readTree(line);
+                if (!"turn.completed".equals(event.path("type").asText())) continue;
+                String[] keys = {"input_tokens", "cached_input_tokens", "output_tokens"};
+                for (int i = 0; i < keys.length; i++) {
+                    var value = event.path("usage").path(keys[i]);
+                    if (value.isIntegralNumber() && value.asLong() >= 0) usage[i] = value.asLong();
+                }
+            }
+        }
+        return usage;
+    }
+
+    static String version(String executable) {
+        Process process=null;
+        try {
+            process=new ProcessBuilder(executable,"--version").redirectErrorStream(true).start();
+            if(!process.waitFor(5,TimeUnit.SECONDS)||process.exitValue()!=0)return null;
+            String value=new String(process.getInputStream().readNBytes(256),StandardCharsets.UTF_8).strip();
+            return value.matches("[A-Za-z0-9 ._-]{1,64}")?value:null;
+        } catch(Exception ignored) { return null; }
+        finally { if(process!=null&&process.isAlive())process.destroyForcibly(); }
     }
 
     static String threadId(Path events) throws Exception {

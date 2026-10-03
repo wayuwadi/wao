@@ -6,6 +6,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import NotesView from '@/views/NotesView.vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
+import NoteDiscoveryInline from '@/components/notes/NoteDiscoveryInline.vue'
+import { fetchDiscoveryCurrent, fetchDiscoverySource, type Discovery } from '@/api/noteDiscoveries'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { polishDocumentText } from '@/api/assistant'
 import type { Editor as TiptapEditor } from '@tiptap/core'
@@ -20,6 +22,7 @@ import { copyText } from '@/utils/clipboard'
 import { fetchNotePolishVersions } from '@/api/notePolishVersions'
 import { notePolishVersions, noteEnrichmentStatus, activateNoteWorkflowMember } from '@/utils/autoNoteEnrichment'
 import { fetchNoteAiWorkflows } from '@/api/noteAiWorkflows'
+vi.mock('@/api/noteDiscoveries', () => ({ fetchDiscoveryCurrent: vi.fn().mockResolvedValue({ discovery: null, automationState: 'OFF', revision: '' }), fetchDiscoverySource: vi.fn(), feedbackDiscovery: vi.fn(), clearDiscoveryLegacyCache: vi.fn() }))
 vi.mock('@/api/noteAiWorkflows', () => ({ fetchNoteAiWorkflows: vi.fn().mockResolvedValue([]), retryNoteAiWorkflow: vi.fn() }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined) }))
@@ -49,7 +52,7 @@ async function requestDelete(wrapper: Awaited<ReturnType<typeof view>>, id: stri
 async function view(attachTo?: HTMLElement) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }, { path: '/kb/:id', component: { template: '<div />' } }] })
   await router.push('/notes')
-  return mount(NotesView, { attachTo, global: { plugins: [router], stubs: { MarkdownEditor: Editor, NoteMiningPanel: true } } })
+  return mount(NotesView, { attachTo, global: { plugins: [router], stubs: { MarkdownEditor: Editor } } })
 }
 async function setNoteBodyHeight(wrapper: Awaited<ReturnType<typeof view>>, id: string, height: number) {
   const body = wrapper.get(`[data-note-id="${id}"] .note-body`).element
@@ -171,22 +174,26 @@ describe('小记集中记录空间', () => {
     expect(scroll).toHaveBeenLastCalledWith({ top: 550 })
     w.unmount()
   })
-  it('默认收起 AI 挖掘，并从阅读模式旁的按钮打开弹层', async () => {
-    useDataStore().docs.one = doc('one', '给工具栏留出空间')
+  it('成员切换后丢弃迟到的发现来源，不写入新成员文档状态', async () => {
+    const finding: Discovery = { id: 'synthetic-discovery', origin: 'AUTO', headline: '合成联系', observation: '合成判断', valueReason: '合成价值', restricted: false, evidence: [], feedback: { saved: false, dismissed: false, correction: null, version: 0 } }
+    vi.mocked(fetchDiscoveryCurrent).mockResolvedValueOnce({ discovery: finding, automationState: 'READY', lastOutcome: 'PUBLISHED', revision: '1' })
+    let finish!: (value: Doc) => void
+    vi.mocked(fetchDiscoverySource).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const data = useDataStore(), apply = vi.spyOn(data, 'applyRemoteDoc')
+    const wrapper = await view(); await flushPromises()
+    wrapper.getComponent(NoteDiscoveryInline).vm.$emit('source', finding.id, 'old-source', new Event('click'))
+    await flushPromises()
+    useSessionStore().accept({ member: { id: 'other-member', name: '另一合成成员', initial: '测', color: '#4358d6', role: '成员' } } as never)
+    await flushPromises(); finish(doc('old-source', '不能落入新成员状态')); await flushPromises()
+    expect(apply).not.toHaveBeenCalled(); expect(data.docs['old-source']).toBeUndefined(); wrapper.unmount()
+  })
+
+  it('旧挖掘按钮和弹窗消失，无发现不放占位卡', async () => {
+    useDataStore().docs.one = doc('one', '保持小记紧凑')
     const wrapper = await view()
-    document.body.appendChild(wrapper.element)
-    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).toBeNull()
-    const readerButton = wrapper.get('.reader-toggle:not(.mining-toggle)')
-    const miningButton = wrapper.get('.mining-toggle')
-    expect(readerButton.element.nextElementSibling).toBe(miningButton.element)
-    await miningButton.trigger('click')
-    await flushPromises()
-    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).not.toBeNull()
-    expect(document.activeElement).toBe(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]'))
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    await flushPromises()
-    expect(document.body.querySelector('[role="dialog"][aria-label="AI 挖掘小记"]')).toBeNull()
-    expect(document.activeElement).toBe(miningButton.element)
+    expect(wrapper.find('.mining-toggle').exists()).toBe(false)
+    expect(wrapper.find('.note-discovery').exists()).toBe(false)
+    expect(document.body.querySelector('[aria-label="AI 挖掘小记"]')).toBeNull()
     wrapper.unmount()
   })
 
@@ -503,7 +510,7 @@ describe('小记集中记录空间', () => {
     useDataStore().docs.images = note
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }] })
     await router.push('/notes')
-    const wrapper = mount(NotesView, { global: { plugins: [router], stubs: { NoteMiningPanel: true } } })
+    const wrapper = mount(NotesView, { global: { plugins: [router], stubs: {  } } })
     await vi.dynamicImportSettled()
     await flushPromises()
     const card = wrapper.get('[data-note-id="images"]')

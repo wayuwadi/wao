@@ -6,6 +6,9 @@
     [ValidateRange(1,900)][int]$TimeoutSeconds = 300,
     # 仅验收：连接内临时工作流表隔离日常调度器；文档、任务、登录仍使用既有真实数据库。
     [switch]$IsolateWorkflowState,
+    [switch]$EnableDiscoveries,
+    [string]$DiscoveryMemberIds = '',
+    [string]$DiscoveryDocumentIds = '',
     [switch]$SkipBuild
 )
 $ErrorActionPreference = 'Stop'
@@ -40,10 +43,17 @@ try {
             '--spring.datasource.hikari.connection-init-sql=CREATE TEMPORARY TABLE wao_acceptance_workflow_init LIKE note_ai_workflow; ALTER TABLE wao_acceptance_workflow_init RENAME TO note_ai_workflow')
         Write-Output '隔离工作流验收：仅本连接保存阶段状态；停止后阶段状态消失，文档与模型任务仍须按精确 ID 清理。'
     }
+    $discoveryArgs = @('--wao.ai.discoveries.cleanup-enabled=false')
+    if ($EnableDiscoveries) {
+        if ($Port -in @(18080, 19090) -or -not $DiscoveryMemberIds -or -not $DiscoveryDocumentIds -or -not $PSBoundParameters.ContainsKey('StateDirectory')) {
+            throw '发现验收须使用专用端口、目录、明确成员和文档白名单'
+        }
+        $discoveryArgs += @('--wao.ai.discoveries.enabled=true', "--wao.ai.discoveries.member-ids=$DiscoveryMemberIds", "--wao.ai.discoveries.document-ids=$DiscoveryDocumentIds")
+    }
     & java '-Dfile.encoding=UTF-8' -cp $classPath cn.wayuwa.wao.WaoServerApplication `
         '--spring.profiles.active=local-cloud' "--server.port=$Port" `
         '--wao.ai.local-notes.enabled=true' "--wao.ai.local-notes.executable=$codexExecutable" `
         "--wao.ai.local-notes.directory=$StateDirectory" "--wao.ai.local-notes.document-ids=$DocumentIds" `
-        "--wao.ai.local-notes.timeout-seconds=$TimeoutSeconds" @isolationArgs
+        "--wao.ai.local-notes.timeout-seconds=$TimeoutSeconds" @isolationArgs @discoveryArgs
     if ($LASTEXITCODE -ne 0) { throw "本机服务退出：$LASTEXITCODE" }
 } finally { Pop-Location }

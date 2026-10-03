@@ -75,7 +75,7 @@ describe('小记保存后自动生成', () => {
       ]) }) }),
     }))
     expect(waitForPolish).toHaveBeenCalledWith('今天复盘打印流程', 'NOTE_BODY', expect.objectContaining({ model: 'gpt-6-sol', notePolishPrompt: '正文润色偏好' }))
-    expect(saveNotePolishVersion).toHaveBeenCalledWith('n1', content.markdown, '打印流程复盘')
+    expect(saveNotePolishVersion).toHaveBeenCalledWith('n1', content.markdown, '打印流程复盘', 'pj1')
     expect(noteEnrichmentStatus.n1).toBe('标题、配图和润色已完成')
     expect(localStorage.getItem('wao-note-auto-enrichment-v1:me:n1')).toBeNull()
   })

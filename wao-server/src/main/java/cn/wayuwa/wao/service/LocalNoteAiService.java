@@ -52,6 +52,9 @@ public class LocalNoteAiService {
     @Autowired
     private ReferenceImageService referenceImages;
 
+    @Autowired
+    private ObjectProvider<NoteDiscoveryService> discoveries;
+
     public LocalNoteAiService(AiAssistantRunMapper runs, ImageService images, NoteAiWorkflowMapper workflows,
             ObjectProvider<NoteAiWorkflowService> workflowService, Environment environment) {
         this.runs = runs; this.images = images; this.workflows = workflows;
@@ -60,6 +63,9 @@ public class LocalNoteAiService {
 
     /** 只在管理员显式配置本机执行时替代小记的 API 路径。 */
     public boolean enabled() { return environment.getProperty("wao.ai.local-notes.enabled", Boolean.class, false); }
+
+    /** 真实进程目录锁已建立后才报告可用，不以配置布尔值冒充启动成功。 */
+    public boolean ready() { return ready; }
 
     /** 启动后抢占本机目录锁，回收本机中断任务；不碰其他主机、API 或旧 Runner 队列。 */
     @EventListener(ApplicationReadyEvent.class)
@@ -120,6 +126,7 @@ public class LocalNoteAiService {
         if (!ready) return;
         try {
             advanceWorkflows();
+            if (discoveries != null) discoveries.getObject().tick();
             runs.expireLocalNoteQueue(capability);
             for (var run : runs.selectLocalNoteQueued(capability)) {
                 if (Thread.currentThread().isInterrupted()) return;
@@ -153,11 +160,18 @@ public class LocalNoteAiService {
         if (!capability.equals(run.getAiCapabilityId())
                 || runs.claimQueued(run.getId(), null, claim, "secure_queued", "provider_running") != 1) return false;
         String orphanImageId = null;
+        long started = System.nanoTime();
+        LocalNoteCodexProcess.Result result = null;
+        String discoveryError = null;
         try {
+            if (discoveries != null && !discoveries.getObject().beforeExecution(run)) {
+                runs.completeProviderFailed(run.getId(), claim, "发现已暂停、材料更新或预算延后");
+                return true;
+            }
             String model = run.getRequestedModel() == null ? "gpt-6-astra" : run.getRequestedModel();
             long seconds = environment.getProperty("wao.ai.local-notes.timeout-seconds", Long.class, 300L);
             if (seconds < 1 || seconds > 900) throw new IllegalStateException("本机 AI 超时配置必须为 1–900 秒");
-            var result = execute(run, model, Duration.ofSeconds(seconds));
+            result = execute(run, model, Duration.ofSeconds(seconds));
             String response = result.text();
             String storedImageId = null;
             if (result.png() != null) {
@@ -170,12 +184,18 @@ public class LocalNoteAiService {
                     : conversationCompletion.complete(run, claim, response);
             if (completed == 0) orphanImageId = storedImageId;
         } catch (Exception exception) {
+            discoveryError = "CALL_FAILED";
             log.warn("本机小记 AI 执行失败：{}", exception.getClass().getSimpleName());
             String error = exception instanceof IllegalStateException ? exception.getMessage()
                     : "本机 AI 执行中断或结果无效；原文已保留，请检查本机 Codex 后点击重试";
             runs.completeProviderFailed(run.getId(), claim, error);
             if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
         } finally {
+            if (discoveries != null) {
+                try { discoveries.getObject().executionFinished(run, result,
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), discoveryError); }
+                catch (RuntimeException error) { log.warn("发现调用状态保存失败：{}", error.getClass().getSimpleName()); }
+            }
             if (orphanImageId != null) images.delete(orphanImageId);
         }
         return true;

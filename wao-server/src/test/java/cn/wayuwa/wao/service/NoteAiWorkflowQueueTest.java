@@ -67,7 +67,7 @@ class NoteAiWorkflowQueueTest {
         });
         var knowledge = mock(KnowledgeService.class);
         when(knowledge.getDoc(any())).thenAnswer(call -> note(call.getArgument(0), "合成标题", body, 1));
-        when(knowledge.updateDoc(any(), any())).thenAnswer(call -> note(call.getArgument(0), "合成已完成", body, 2));
+        when(knowledge.updateDerivedNote(any(), any())).thenAnswer(call -> note(call.getArgument(0), "合成已完成", body, 2));
         var text = mock(TextPolishJobService.class);
         when(text.get(eq("member"), any())).thenAnswer(call -> new TextPolishJobService.Result(
                 call.getArgument(1), "SUCCEEDED", null, "合成已完成", null, null));
