@@ -20,6 +20,7 @@ export interface ReleaseHighlight {
 }
 
 export interface ReleaseEdition {
+  attention?: 'feature' | 'maintenance'
   id: string
   publishedOn: string
   title: string

@@ -23,15 +23,42 @@ export function readGitRelease(cwd, expectedSha, inputFile) {
   if (commits[0]?.sha !== sha) throw new Error('更新记录缺少构建 HEAD')
   const latest = commits[0]
   const publishedOn = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(latest.committedAt))
-  const edition = {
-    id: `git-release-${sha}`, publishedOn,
-    title: `版本更新 · ${sha.slice(0, 8)}`,
-    intro: `最新提交：${latest.subject.slice(0, 450)}。全部提交可在最近更新中查看；精选介绍保留在下方。`,
-    highlights: [{ featureId: 'changelog', eyebrow: '自动更新记录', title: '当前版本的最近提交',
-      summary: '以下记录随当前页面版本自动生成，包含功能、修复、文档与测试提交。提交时间不等于上线时间。',
-      points: commits.slice(0, 5).map(item => `${item.sha.slice(0, 8)} · ${item.subject}`.slice(0, 300)) }],
-  }
+  const edition = productEdition(sha, publishedOn, latest.subject)
   return { edition, history: { buildSha: sha, commits } }
+}
+
+// 只映射有真实入口的功能；未知 scope 不猜测功能归属。
+const destinations = {
+  notes: ['notes', '小记'], projects: ['projects', '项目'], todo: ['todo', '待办'],
+  calendar: ['calendar', '日历'], knowledge: ['knowledge', '知识库'],
+  home: ['home', '首页'], tianren: ['tianren', '天人一卦'], breathe: ['breathe', '休息一下'],
+  changelog: ['changelog', '功能探索'],
+  automation: ['automation', '自动化'], 'text-polish': ['text-polish', '润色'],
+  'reference-images': ['reference-images', '参考图库'],
+}
+
+/** 本次只介绍构建 HEAD，不把过去的提交重新宣称为本次新增。完整历史另行保留。 */
+export function productEdition(sha, publishedOn, subject) {
+  const match = /^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/.exec(subject)
+  const title = (match?.[3] || subject).replace(/\s*\(#\d+\)$/, '').slice(0, 160)
+  const userFacing = !!match && ['feat', 'fix', 'perf'].includes(match[1])
+  const destination = userFacing ? destinations[match[2]] : undefined
+  const maintenance = !userFacing
+  return {
+    id: `git-release-${sha}`, publishedOn,
+    title: maintenance ? '日常维护更新' : title,
+    attention: maintenance ? 'maintenance' : 'feature',
+    intro: maintenance
+      ? '本次为维护更新。你可以按自己的节奏保存并刷新，完整记录保留在「最近更新」。'
+      : '这里介绍当前版本的最新变化；更早的改动可在「最近更新」回顾。',
+    highlights: [{
+      featureId: destination?.[0] || 'changelog',
+      eyebrow: maintenance ? '日常维护' : match?.[1] === 'fix' ? '体验修复' : match?.[1] === 'perf' ? '性能优化' : '功能改进',
+      title,
+      summary: destination ? `打开「${destination[1]}」即可查看这项变化。` : '可在「最近更新 → 全部记录」查看完整提交记录。',
+      points: [],
+    }],
+  }
 }
 
 /** 同一份数据供页面、版本检测清单和提交档案使用，发布不可拆开替换。 */

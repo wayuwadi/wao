@@ -38,6 +38,7 @@ const busy = ref(false)
 const busyLabel = ref('正在保存…')
 const position = ref({ left: '12px', top: '60px', width: '360px', maxHeight: '500px' })
 const edition = computed(() => (availableVersion.value ? upcoming.value : CURRENT_RELEASE))
+const featureArrival = computed(() => !!availableVersion.value && !!upcoming.value && upcoming.value.attention !== 'maintenance')
 const currentVersion = document.querySelector('script[data-v]')?.getAttribute('data-v')
 let request = 0
 let observer: ResizeObserver | undefined
@@ -61,12 +62,13 @@ function stopArrival() {
 }
 function announce() {
   if (!pendingArrival || document.hidden || busy.value) return
+  if (!loaded.value) { void load(); return }
   pendingArrival = false
+  if (!upcoming.value || upcoming.value.attention === 'maintenance') return
   try { sessionStorage.setItem(ANNOUNCED_KEY, availableVersion.value) } catch { /* 本标签页内仍由版本去重。 */ }
   positionPanel()
   open.value = true
   emit('opened')
-  void load()
   stopArrival()
   if (!motionPreference?.matches) {
     arriving.value = true
@@ -92,6 +94,7 @@ async function load() {
     if (result.version !== target) throw new Error('版本正在切换，请稍后重试读取更新内容')
     upcoming.value = result.release
     loaded.value = true
+    announce()
   } catch (cause) {
     if (id === request)
       loadError.value = cause instanceof Error ? cause.message : '更新内容读取失败，请重试'
@@ -257,10 +260,10 @@ onBeforeUnmount(() => {
         role="dialog"
         aria-labelledby="version-update-title"
       >
-        <div v-if="availableVersion" class="arrival-callout" aria-hidden="true"><span>✦</span> 叮！新功能来敲门了 <span>✦</span></div>
+        <div v-if="featureArrival" class="arrival-callout" aria-hidden="true"><span>✦</span> 叮！新功能来敲门了 <span>✦</span></div>
         <div v-if="arriving" class="arrival-orbit" aria-hidden="true"><span v-for="n in 6" :key="n"></span></div>
         <header class="panel-heading">
-          <div v-if="availableVersion" class="arrival-hero">
+          <div v-if="featureArrival" class="arrival-hero">
             <span class="messenger" aria-hidden="true"><span class="messenger-eyes"></span><span class="messenger-smile"></span><span class="messenger-spark">✦</span></span>
             <div><span class="eyebrow">新版本已就绪</span><h2 id="version-update-title">嘿，我又长本领了。</h2><p>新功能已经送到，刷新就能拆开。</p></div>
           </div>
