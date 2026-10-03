@@ -77,16 +77,32 @@ public interface NoteAiWorkflowMapper {
         }
         public Workflow withTitle(String status, String jobId, int rev, String title, String error) {
             return new Workflow(docId, memberId, rev, title, sourceMarkdownHash, status, jobId,
-                    imageStatus, imageRunId, polishStatus, polishJobId, error, createdAt, updatedAt);
+                    imageStatus, imageRunId, polishStatus, polishJobId,
+                    errorAfter(status, imageStatus, polishStatus, error), createdAt, updatedAt);
         }
         public Workflow withImage(String status, String runId, int rev, String hash, String error) {
             return new Workflow(docId, memberId, rev, originalTitle, hash, titleStatus, titleJobId,
-                    status, runId, polishStatus, polishJobId, error, createdAt, updatedAt);
+                    status, runId, polishStatus, polishJobId,
+                    errorAfter(titleStatus, status, polishStatus, error), createdAt, updatedAt);
         }
         public Workflow withPolish(String status, String jobId, String error) {
             return new Workflow(docId, memberId, baseRev, originalTitle, sourceMarkdownHash,
-                    titleStatus, titleJobId, imageStatus, imageRunId, status, jobId, error,
+                    titleStatus, titleJobId, imageStatus, imageRunId, status, jobId,
+                    errorAfter(titleStatus, imageStatus, status, error),
                     createdAt, updatedAt);
+        }
+
+        /** 保留尚未解决的失败；部分失败被解除后不再沿用无法归属的旧原因。 */
+        public String errorAfter(String title, String image, String polish, String newError) {
+            if (!"FAILED".equals(title) && !"FAILED".equals(image) && !"FAILED".equals(polish)) return null;
+            if (newError != null && !newError.isBlank()) return newError;
+            if ("FAILED".equals(titleStatus) && !"FAILED".equals(title)
+                    || "FAILED".equals(imageStatus) && !"FAILED".equals(image)
+                    || "FAILED".equals(polishStatus) && !"FAILED".equals(polish)) {
+                // 现有结构只保存最近一次失败原因，无法确认它是否属于刚解除的阶段。
+                return "仍有自动整理步骤失败，请点击失败阶段重试；原文已保留";
+            }
+            return lastError;
         }
     }
 }

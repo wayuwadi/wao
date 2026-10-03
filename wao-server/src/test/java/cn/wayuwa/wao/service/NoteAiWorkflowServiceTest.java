@@ -257,6 +257,64 @@ class NoteAiWorkflowServiceTest {
         verify(workflows, never()).update(any());
     }
 
+    @Test void startingPolishPreservesAnUnresolvedTitleFailureReason() {
+        Workflow w = pendingAll("d1", "m1").withTitle("FAILED", "title1", 1, "原题", "标题模型暂不可用")
+                .withImage("DONE", "image1", 1, digestForTest(failureBody()), "标题模型暂不可用");
+        when(workflows.lock("d1")).thenReturn(w);
+        owned(note("m1", 1, failureBody()));
+        when(textJobs.submit(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TextPolishJobService.Result("polish1", "PENDING", null, null, null, null));
+        service.advance("d1");
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().polishStatus()).isEqualTo("RUNNING");
+        assertThat(saved.getValue().titleStatus()).isEqualTo("FAILED");
+        assertThat(saved.getValue().lastError()).isEqualTo("标题模型暂不可用");
+    }
+
+    @Test void editingOnlyTheTitlePreservesUnresolvedImageFailureReason() {
+        Workflow w = pendingAll("d1", "m1").withImage("FAILED", "image1", 1,
+                digestForTest(failureBody()), "配图模型暂不可用");
+        when(workflows.lock("d1")).thenReturn(w);
+        DocDto doc = note("m1", 2, failureBody());
+        owned(new DocDto(doc.id(), "手写标题", doc.author(), null, null, false, List.of(), List.of(),
+                doc.content(), List.of(), KnowledgeService.NOTES_KB_ID, null, 2));
+        service.refreshAfterSave("m1", "d1");
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().titleStatus()).isEqualTo("SKIPPED");
+        assertThat(saved.getValue().imageStatus()).isEqualTo("FAILED");
+        assertThat(saved.getValue().lastError()).isEqualTo("配图模型暂不可用");
+    }
+
+    @Test void retryClearsFailureReasonWithoutRestartingCompletedStages() {
+        Workflow w = pendingAll("d1", "m1").withImage("DONE", "image1", 1,
+                digestForTest(failureBody()), null).withPolish("DONE", "polish1", null)
+                .withTitle("FAILED", "title1", 1, "原题", "标题模型暂不可用");
+        when(workflows.lock("d1")).thenReturn(w);
+        owned(note("m1", 1, failureBody()));
+        var result = service.retry("m1", "d1");
+        assertThat(result.title()).isEqualTo("PENDING");
+        assertThat(result.image()).isEqualTo("DONE");
+        assertThat(result.polish()).isEqualTo("DONE");
+        assertThat(result.message()).isNull();
+    }
+
+    @Test void clearingOneOfSeveralFailuresDoesNotMisattributeItsOldReason() {
+        Workflow w = pendingAll("d1", "m1").withImage("FAILED", "image1", 1,
+                digestForTest(failureBody()), "配图失败").withTitle("FAILED", "title1", 1, "原题", "标题失败");
+        when(workflows.lock("d1")).thenReturn(w);
+        DocDto doc = note("m1", 2, failureBody());
+        owned(new DocDto(doc.id(), "手写标题", doc.author(), null, null, false, List.of(), List.of(),
+                doc.content(), List.of(), KnowledgeService.NOTES_KB_ID, null, 2));
+        service.refreshAfterSave("m1", "d1");
+        ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);
+        verify(workflows).update(saved.capture());
+        assertThat(saved.getValue().titleStatus()).isEqualTo("SKIPPED");
+        assertThat(saved.getValue().imageStatus()).isEqualTo("FAILED");
+        assertThat(saved.getValue().lastError()).contains("失败阶段重试").doesNotContain("标题失败");
+    }
+
     private RuntimeException captureAdvanceFailure() {
         Throwable failure = org.assertj.core.api.Assertions.catchThrowable(() -> service.advance("d1"));
         assertThat(failure).isInstanceOf(RuntimeException.class);
