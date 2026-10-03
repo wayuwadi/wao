@@ -1152,6 +1152,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
         <div class="date-navigation" aria-label="日期导航">
           <button class="nav-btn" aria-label="上一时间段" @click="shift(-1)"><i class="ri-arrow-left-s-line"></i></button>
           <input v-model="selectedDate" class="date-picker" type="date" aria-label="选择日历日期" />
+          <button v-if="calendarMemberId === session.userId" type="button" @click="router.push({ path: '/todo', query: { date: selectedDate } })">查看当天记录</button>
           <button class="today-btn" @click="goToday">今天</button>
           <button class="nav-btn" aria-label="下一时间段" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
         </div>

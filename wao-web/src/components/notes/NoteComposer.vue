@@ -13,8 +13,9 @@ import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 import type { Doc, FileItem, RichDocContent } from '@/types'
+import type { NoteSubmission } from '@/api/dayWorkspace'
 
-const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: 'floating' | 'home'; compact?: boolean; active?: boolean }>(), { active: true })
+const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: string; submitNote?: (request: NoteSubmission) => Promise<Doc>; compact?: boolean; active?: boolean }>(), { active: true })
 const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string]; 'draft-change': [draft: NoteDraftSnapshot | null]; 'saving-change': [saving: boolean]; 'fullscreen-change': [fullscreen: boolean] }>()
 const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
@@ -287,7 +288,13 @@ async function save(explicit = false) {
       ? content.value : { version: 1 as const, document: null, markdown: text.value }
     const submitted = { text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value }
     let savedId: string | null
-    if (props.note) {
+    if (props.submitNote) {
+      const aiDefaults = preferences.noteAiDefaults
+      const saved = await props.submitNote({ docId: id.value, title: submitted.title, content: rich, tags: submitted.tags,
+        autoTitle: aiDefaults.title && !submitted.title.trim(), autoImage: aiDefaults.image, autoPolish: aiDefaults.polish })
+      data.applyRemoteDoc(saved)
+      savedId = saved.id
+    } else if (props.note) {
       if (data.docPending(props.note.id)) throw new Error('这篇小记在文档页还有未保存编辑，请先完成保存')
       let saved: Doc | undefined
       for (let attempt = 0; attempt < 3; attempt++) {

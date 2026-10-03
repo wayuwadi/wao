@@ -1,7 +1,8 @@
 import type { Task } from '@/types'
 
-export type TaskSchedule = Pick<Task, 'start' | 'startAt' | 'endAt'>
-export const scheduleSnapshot = (task: TaskSchedule): TaskSchedule => ({ start: task.start || '', startAt: task.startAt || null, endAt: task.endAt || null })
+export type TaskSchedule = Pick<Task, 'start' | 'startAt' | 'endAt' | 'schedulePeriod'>
+export const PERIOD_LABELS = { MORNING: '早晨', AFTERNOON: '下午', EVENING: '晚上' } as const
+export const scheduleSnapshot = (task: TaskSchedule): TaskSchedule => ({ start: task.start || '', startAt: task.startAt || null, endAt: task.endAt || null, schedulePeriod: task.schedulePeriod || null })
 export const sameSchedule = (a: TaskSchedule, b: TaskSchedule) => JSON.stringify(scheduleSnapshot(a)) === JSON.stringify(scheduleSnapshot(b))
 
 // The contract stores local wall-clock ISO values, without a timezone. UTC arithmetic
@@ -11,7 +12,7 @@ export function moveTaskSchedule(task: TaskSchedule, day: string, grabbedDay?: s
   if (grabbedDay && original) {
     day = new Date(Date.parse(`${original}T00:00:00Z`) + Date.parse(`${day}T00:00:00Z`) - Date.parse(`${grabbedDay}T00:00:00Z`)).toISOString().slice(0, 10)
   }
-  if (!task.startAt) return { start: day, startAt: null, endAt: null }
+  if (!task.startAt) return { start: day, startAt: null, endAt: null, ...(task.schedulePeriod ? { schedulePeriod: task.schedulePeriod } : {}) }
   const startAt = `${day}T${task.startAt.slice(11)}`
   const shift = Date.parse(`${startAt}Z`) - Date.parse(`${task.startAt}Z`)
   return { start: day, startAt, endAt: task.endAt ? new Date(Date.parse(`${task.endAt}Z`) + shift).toISOString().slice(0, 19) : null }
@@ -31,7 +32,8 @@ export function taskCalendarEntries(task: TaskSchedule & Pick<Task, 'due'>, from
         label: day === task.due ? '执行 · 当天截止' : day === start ? '执行' : '执行续段', deadline: false })
     }
   } else if (start && start >= from && start <= to) {
-    result.push({ date: start, label: start === task.due ? '执行 · 当天截止' : '执行（未指定时间）', deadline: false })
+    const period = task.schedulePeriod ? PERIOD_LABELS[task.schedulePeriod] : '未指定时间'
+    result.push({ date: start, label: start === task.due ? `${task.schedulePeriod ? period + '执行' : '执行'} · 当天截止` : `执行（${period}）`, deadline: false })
   }
   if (task.due && task.due >= from && task.due <= to && !result.some(item => item.date === task.due)) {
     result.push({ date: task.due, label: '截止', deadline: true })
@@ -44,7 +46,7 @@ export function taskExecutionLabel(task: TaskSchedule, today: string): string {
   const start = task.startAt?.slice(0, 10) || task.start
   if (!start) return ''
   const current = taskCalendarEntries({ ...task, due: '' }, today, today)[0]
-  if (current) return `今天执行${current.time ? ` ${current.time}–${current.endTime}` : '（未指定时间）'}`
+  if (current) return `今天执行${current.time ? ` ${current.time}–${current.endTime}` : `（${task.schedulePeriod ? PERIOD_LABELS[task.schedulePeriod] : '未指定时间'}）`}`
   const date = start.slice(0, 4) === today.slice(0, 4) ? start.slice(5) : start
-  return `${date}执行${task.startAt ? ` ${task.startAt.slice(11, 16)}` : '（未指定时间）'}`
+  return `${date}执行${task.startAt ? ` ${task.startAt.slice(11, 16)}` : `（${task.schedulePeriod ? PERIOD_LABELS[task.schedulePeriod] : '未指定时间'}）`}`
 }

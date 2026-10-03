@@ -13,6 +13,9 @@ process.env.WAO_VUE_DEVTOOLS = 'false'
 const loaded = await loadConfigFromFile({ command: 'serve', mode: 'development' }, resolve(root, 'vite.config.ts'))
 const server = await createServer({
   ...loaded.config, configFile: false, root,
+  // Isolated worktrees may share node_modules through a junction. Never reuse a
+  // different checkout's optimized Vue runtime during real browser acceptance.
+  cacheDir: resolve(tmpdir(), `wao-draft-acceptance-${port}/vite`),
   plugins: [...loaded.config.plugins, {
     name: 'wao-local-draft-acceptance',
     transformIndexHtml(html, context) {

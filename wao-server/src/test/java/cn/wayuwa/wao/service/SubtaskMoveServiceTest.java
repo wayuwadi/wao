@@ -21,6 +21,7 @@ class SubtaskMoveServiceTest {
     TaskEntity task(String id, List<Step> subs) throws Exception {
         var task = new TaskEntity(); task.setId(id);
         var detail = json.createObjectNode(); detail.set("subs", json.valueToTree(subs)); detail.put("unknownField", "保留");
+        detail.put("schedulePeriod", "EVENING");
         task.setDetailJson(json.writeValueAsString(detail));
         when(mapper.lockById(id)).thenReturn(task);
         when(tasks.get(eq(id), anyString())).thenReturn(mock(TaskDto.class));
@@ -34,6 +35,7 @@ class SubtaskMoveServiceTest {
         verify(mapper).updateDetail(eq("t"), captured.capture());
         var saved = json.readTree(captured.getValue());
         assertThat(saved.path("unknownField").asText()).isEqualTo("保留");
+        assertThat(saved.path("schedulePeriod").asText()).isEqualTo("EVENING");
         assertThat(saved.path("subs").size()).isEqualTo(4);
         assertThat(saved.path("subs").get(1).path("parentId").asText()).isEqualTo("z");
         assertThat(saved.path("subs").get(2).path("owner").asText()).isEqualTo("m1");

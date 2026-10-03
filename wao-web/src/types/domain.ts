@@ -321,6 +321,8 @@ export interface Task {
   startAt?: string | null
   /** 日历时间段结束（本地 ISO 日期时间）；仅在 startAt 有值时使用。 */
   endAt?: string | null
+  /** 有执行日期、无精确时段时的粗粒度安排；不换算为任意时刻。 */
+  schedulePeriod?: 'MORNING' | 'AFTERNOON' | 'EVENING' | null
   waiting?: string
   desc: string
   steps: TaskStep[]

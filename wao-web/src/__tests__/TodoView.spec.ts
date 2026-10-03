@@ -13,6 +13,8 @@ describe('TodoView', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
+    // These regressions exercise the preserved all-tasks views; daily-default coverage lives separately.
+    sessionStorage.setItem('wao-browse-v1:a1:wg:todo-workspace', JSON.stringify({ workspace: 'all' }))
     setActivePinia(createPinia())
     data = useDataStore()
     seedDataStore(data)

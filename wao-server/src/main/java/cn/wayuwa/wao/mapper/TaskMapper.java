@@ -31,6 +31,10 @@ public interface TaskMapper extends BaseMapper<TaskEntity> {
     @Update("UPDATE task SET detail_json = #{detail} WHERE id = #{id}")
     int updateDetail(@Param("id") String id, @Param("detail") String detail);
 
+    /** 排期字段显式写 NULL；截止日期和其余任务字段保持原样。 */
+    @Update("UPDATE task SET start_date = #{start}, detail_json = #{detail} WHERE id = #{id}")
+    int updateSchedule(@Param("id") String id, @Param("start") String start, @Param("detail") String detail);
+
     /** 有未结束 AI 执行时禁止迁移归属，避免正在运行的提示与回写指向错误任务。 */
     @Select("SELECT COUNT(*) FROM ai_task_run WHERE task_id IN (#{source}, #{target}) AND finished_at IS NULL")
     int countUnfinishedRuns(@Param("source") String source, @Param("target") String target);
