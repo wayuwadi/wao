@@ -1,5 +1,7 @@
 # 本机小记 AI 启用与回归
 
+CLI 后续稳定版升级、指针配置、每日检查及回退见 [本机 Codex 自动更新](local-codex-updates.md)。原始可执行文件路径配置保持兼容。
+
 依据 ADR-306。小记单份最新正文继续有效；本机调用沿用已登录 Codex 的 ChatGPT 额度，不需要新增 API Key。旧 Runner 保持下线。
 
 ## 运行产品服务

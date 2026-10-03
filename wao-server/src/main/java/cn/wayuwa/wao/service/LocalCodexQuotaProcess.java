@@ -23,7 +23,7 @@ final class LocalCodexQuotaProcess {
     interface Exchange<T> { T read(Process process) throws Exception; }
 
     static <T> T run(String executable, Duration timeout, Exchange<T> exchange) throws Exception {
-        var builder = new ProcessBuilder(executable, "app-server");
+        var builder = new ProcessBuilder(LocalCodexExecutable.resolve(executable), "app-server");
         builder.environment().keySet().removeIf(key -> !ENV.contains(key.toUpperCase(Locale.ROOT)));
         builder.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process process = builder.start();

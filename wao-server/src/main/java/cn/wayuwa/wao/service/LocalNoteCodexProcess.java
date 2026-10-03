@@ -37,7 +37,7 @@ final class LocalNoteCodexProcess {
         Path events = directory.resolve("events.jsonl");
         Process process = null;
         try {
-            var builder = new ProcessBuilder(command(executable, model, directory, image));
+            var builder = new ProcessBuilder(command(LocalCodexExecutable.resolve(executable), model, directory, image));
             builder.environment().keySet().removeIf(key -> !ENVIRONMENT.contains(key.toUpperCase(java.util.Locale.ROOT)));
             builder.redirectErrorStream(true).redirectOutput(events.toFile());
             process = builder.start();
