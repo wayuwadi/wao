@@ -22,7 +22,6 @@ add_backend_project() {
 }
 
 force_full_validation() {
-  web_only=false
   force_full=true
   deploy_required=true
   test_wao_web=true
@@ -31,17 +30,19 @@ force_full_validation() {
 
 if ! git rev-parse --verify "${base}^{commit}" >/dev/null 2>&1 \
     || ! git rev-parse --verify "${head}^{commit}" >/dev/null 2>&1; then
+  web_only=false
   force_full_validation
 else
   changed_files="$(git diff --name-only "$base" "$head")"
   if [ -z "$changed_files" ]; then
+    web_only=false
     force_full_validation
   else
     while IFS= read -r path; do
       [ -n "$path" ] || continue
       changed_count=$((changed_count + 1))
       case "$path" in
-        wao-web/*|agent-web/*|docs/*|*.md|.github/*) ;;
+        wao-web/*|wao-game/*|agent-web/*|docs/*|*.md|.github/*|.dockerignore|Jenkinsfile|deploy/jenkins/ci-*.sh|deploy/nginx/*) ;;
         *) web_only=false ;;
       esac
       case "$path" in
@@ -52,7 +53,7 @@ else
           # 桌面外壳由 wao-client-release 独立构建发布；不重启 Web/后端。
           ;;
         pom.xml|deploy/Dockerfile|deploy/maven-settings.xml|Jenkinsfile|deploy/jenkins/ci-*.sh)
-          # Reactor、镜像或流水线自身变化必须用全量验证证明新门禁可用。
+          # 流水线仍扩大验证范围；仅脚本变化不等于后端运行制品变化。
           force_full_validation
           ;;
         wao-server/*)
@@ -75,6 +76,18 @@ else
             agent-server/src/test/*) ;;
             *) deploy_required=true ;;
           esac
+          ;;
+        wao-game/demos/*|wao-game/.gitignore)
+          ;;
+        wao-game/games/*/*.test.ts|wao-game/tools/test_*.py)
+          # 游戏的本地验证由独立包负责，测试文件自身不改变运行制品。
+          ;;
+        wao-game/host/*|wao-game/protocol/*|wao-game/games/*/save.ts|wao-game/package*.json)
+          test_wao_web=true
+          deploy_required=true
+          ;;
+        wao-game/*)
+          deploy_required=true
           ;;
         wao-web/src/__tests__/*)
           test_wao_web=true

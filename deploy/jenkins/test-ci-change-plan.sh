@@ -120,7 +120,7 @@ git -C "$fixture" commit -qm pipeline
 plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
 assert_plan 'WAO_DEPLOY_REQUIRED=true' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=all' "$plan"
-assert_plan 'WAO_WEB_ONLY=false' "$plan"
+assert_plan 'WAO_WEB_ONLY=true' "$plan"
 assert_plan 'WAO_TEST_WAO_WEB=true' "$plan"
 assert_plan 'WAO_TEST_AGENT_WEB=true' "$plan"
 
@@ -129,4 +129,14 @@ assert_plan 'WAO_DEPLOY_REQUIRED=true' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=all' "$plan"
 assert_plan 'WAO_WEB_ONLY=false' "$plan"
 
+base="$(git -C "$fixture" rev-parse HEAD)"
+mkdir -p "$fixture/wao-game/games/dino"
+printf 'engine\n' >"$fixture/wao-game/games/dino/engine.ts"
+git -C "$fixture" add wao-game
+git -C "$fixture" commit -qm game-only
+plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
+assert_plan 'WAO_WEB_ONLY=true' "$plan"
+assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
+assert_plan 'WAO_DEPLOY_REQUIRED=true' "$plan"
+assert_plan 'WAO_TEST_WAO_WEB=false' "$plan"
 echo 'Jenkins change plan tests passed.'

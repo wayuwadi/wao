@@ -114,6 +114,8 @@ verify_frontend_version() {
     && printf '%s' "$index_html" | grep -q "data-v=\"${short_sha}\""
 }
 
+build_web="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["buildWeb"]).lower())' "$WAO_RUN_TEMP/game-plan.json")"
+if [ "$build_web" = true ]; then
 frontend_attempt=1
 while ! verify_frontend_version; do
   if [ "$frontend_attempt" -ge 12 ]; then
@@ -124,6 +126,8 @@ while ! verify_frontend_version; do
   frontend_attempt=$((frontend_attempt + 1))
   sleep 5
 done
+
+fi
 
 probe=1
 while [ "$probe" -le 8 ]; do

@@ -9,6 +9,7 @@ set -eu
 source "$FIXTURE/function.sh"
 WAO_CHANGE_BASE=base
 WAO_GIT_SHA=target
+build_web="${BUILD_WEB:-true}"
 availability_failures="$FIXTURE/failures"
 : >"$availability_failures"
 sh() { printf 'WAO_WEB_ONLY=%s\n' "${PLAN:-true}"; }
@@ -38,6 +39,10 @@ grep -qx gateway_probe "$fixture/good.log"
 grep -qx stage "$fixture/good.log"
 grep -qx publish "$fixture/good.log"
 grep -qx 'linux2_status:success' "$fixture/good.log"
+run_case game_only success BUILD_WEB=false
+! grep -q routing "$fixture/game_only.log"
+grep -qx stage "$fixture/game_only.log"
+grep -qx publish "$fixture/game_only.log"
 run_case mixed failure PLAN=false
 ! grep -q publish "$fixture/mixed.log"
 run_case routing_failure failure ROUTING_FAIL=true

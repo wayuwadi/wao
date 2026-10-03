@@ -163,6 +163,34 @@ prepare_cloud_routing() {
   '
 }
 
+# Read the exact plan produced by this batch; absent/stale plans fail closed.
+game_plan="$WAO_RUN_TEMP/game-plan.json"
+test -f "$game_plan" || exit 1
+build_web="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["buildWeb"]).lower())' "$game_plan")"
+build_games="$(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))["buildGames"]))' "$game_plan")"
+case "$build_games" in ''|dino) ;; *) echo 'Unregistered game deploy target' >&2; exit 1 ;; esac
+game_remote="/tmp/wao-games-$WAO_GIT_SHA"
+
+stage_games() {
+  [ -n "$build_games" ] || return 0
+  retry_remote '游戏制品目录' ssh -o ConnectTimeout=15 wao-cloud "install -d -m 0755 '$game_remote' /var/www/wao/play-assets" || return
+  retry_remote '游戏安装器' scp -o ConnectTimeout=15 wao-game/tools/game-release.py deploy/scripts/static-release.py "wao-cloud:$game_remote/" || return
+  for game in $build_games; do
+    retry_remote '游戏制品传输' scp -o ConnectTimeout=15 "$WAO_RUN_TEMP/game-$game.tgz" "wao-cloud:$game_remote/" || return
+    retry_remote '游戏制品校验' ssh -o ConnectTimeout=15 wao-cloud \
+      "python3 '$game_remote/game-release.py' install '$game_remote/game-$game.tgz' /var/www/wao/play-assets '$game' '$WAO_GIT_SHA'" || return
+  done
+  ssh -o ConnectTimeout=15 wao-cloud "python3 -c \"import json,pathlib; p=pathlib.Path('/var/www/wao/play-assets/catalog.json'); print(json.loads(p.read_text())['revision'] if p.exists() else 0)\" >'$game_remote/expected-revision'"
+}
+
+activate_games() {
+  [ -n "$build_games" ] || return 0
+  for game in $build_games; do
+    retry_remote '游戏清单激活' ssh -o ConnectTimeout=15 wao-cloud \
+      "python3 '$game_remote/game-release.py' activate /var/www/wao/play-assets '$game' '$WAO_GIT_SHA' --expected-revision \$(cat '$game_remote/expected-revision')" || return
+  done
+}
+
 stage_cloud_static() {
   retry_remote '云端静态制品' scp -o ConnectTimeout=15 \
     "$WAO_RUN_TEMP/wao-static.tgz" deploy/scripts/static-release.py \
@@ -177,6 +205,8 @@ stage_cloud_static() {
 }
 
 stage_cloud() {
+  stage_games || return
+  [ "$build_web" = true ] || return 0
   python3 deploy/scripts/static-release.py pack wao-web/dist "$WAO_RUN_TEMP/wao-static.tgz" "$WAO_GIT_SHA" || return
   python3 deploy/scripts/static-release.py install "$WAO_RUN_TEMP/wao-static.tgz" \
     "${JENKINS_HOME:-/var/lib/jenkins}/wao-static/releases" "$WAO_GIT_SHA" || return
@@ -184,6 +214,8 @@ stage_cloud() {
 }
 
 activate_cloud() {
+  activate_games || return
+  [ "$build_web" = true ] || return 0
   retry_remote '静态路由清单' ssh -o ConnectTimeout=15 wao-cloud \
     "python3 /tmp/publish-static-routing.py /etc/wao-public-edge/routing.json '$WAO_GIT_SHA'" || return
   retry_remote '云端 Gateway 配置' ssh -o ConnectTimeout=15 wao-cloud \
@@ -330,6 +362,11 @@ publish_release() {
     cat cloud.log
     return 1
   fi
+  if [ -n "$build_games" ]; then
+    python3 wao-game/tools/verify-public.py --games $build_games --version "$WAO_GIT_SHA" || return 1
+  else
+    python3 wao-game/tools/verify-public.py || return 1
+  fi
   set_status cloud_status success
   set_status cloud_detail "$WAO_GIT_SHA"
   cat cloud.log
@@ -354,7 +391,8 @@ deploy_browser_only() {
   local plan
   plan="$(sh deploy/jenkins/ci-change-plan.sh "$WAO_CHANGE_BASE" "$WAO_GIT_SHA")" || return 1
   printf '%s\n' "$plan" | grep -qx 'WAO_WEB_ONLY=true' || return 1
-  prepare_cloud_routing || return 1
+  # A game-only catalog switch does not rewrite gateway/Nginx configuration.
+  if [ "$build_web" = true ]; then prepare_cloud_routing || return 1; fi
   wait_until_ready gateway_ready_from_cloud || return 1
   start_availability_monitor
   stage_cloud || { set_status cloud_status failed; set_status cloud_detail '云端静态制品预传失败'; return 1; }
