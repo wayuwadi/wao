@@ -620,7 +620,12 @@ onBeforeUnmount(() => {
                       : '一 呼 · 一 吸'
               }}
             </p>
-            <h1 class="phase">{{ label }}</h1>
+            <h1 class="phase">
+              <template v-if="idle && !world"
+                ><span class="phase-phrase">留一点空白，</span
+                ><span class="phase-phrase">再开始。</span></template
+              ><template v-else>{{ label }}</template>
+            </h1>
             <p class="phase-sub">
               {{
                 idle
@@ -1290,7 +1295,13 @@ button:disabled {
   font-size: 23px;
   color: var(--muted);
   background: none;
-  line-height: 1;
+  line-height: 1.4;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  flex: none;
+  display: grid;
+  place-items: center;
 }
 .section-title {
   font-size: 10px;
@@ -1721,8 +1732,8 @@ input[type='range'] {
   .breathing-stage:fullscreen .orb {
     min-width: 150px;
     min-height: 150px;
-    width: 170px;
-    height: 170px;
+    width: var(--orb-size);
+    height: var(--orb-size);
   }
 }
 @container (max-width: 340px) {
@@ -1802,6 +1813,7 @@ input[type='range'] {
   padding: 20px 0 22px;
 }
 .focus-scene {
+  --orb-size: 260px;
   position: relative;
   width: 100%;
   height: clamp(220px, 35dvh, 360px);
@@ -1810,8 +1822,8 @@ input[type='range'] {
 }
 .orb {
   top: 50%;
-  width: 260px;
-  height: 260px;
+  width: var(--orb-size);
+  height: var(--orb-size);
   min-width: 0;
   min-height: 0;
   opacity: 0.55;
@@ -1843,7 +1855,12 @@ input[type='range'] {
 .center-copy {
   top: 50%;
   white-space: normal;
-  width: 100%;
+  width: min(100%, calc(var(--orb-size) * 0.72));
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.phase-phrase {
+  display: inline-block;
 }
 .phase,
 .idle .phase {
@@ -1969,11 +1986,12 @@ input[type='range'] {
     height: 32px;
   }
   .focus-scene {
+    --orb-size: 210px;
     height: 240px;
   }
   .orb {
-    width: 210px;
-    height: 210px;
+    width: var(--orb-size);
+    height: var(--orb-size);
     top: 50%;
   }
   .center-copy {
@@ -2026,11 +2044,12 @@ input[type='range'] {
 }
 @media (max-height: 600px) {
   .focus-scene {
+    --orb-size: 170px;
     height: 180px;
   }
   .orb {
-    width: 170px;
-    height: 170px;
+    width: var(--orb-size);
+    height: var(--orb-size);
   }
   .entry-copy {
     margin: 0 0 16px;
@@ -2131,8 +2150,8 @@ input[type='range'] {
   display: none;
 }
 .minimal .orb {
-  width: 240px;
-  height: 240px;
+  width: var(--orb-size);
+  height: var(--orb-size);
   opacity: 0.8;
 }
 .minimal .orb-light {
@@ -2160,6 +2179,7 @@ input[type='range'] {
   gap: 18px;
 }
 .minimal .focus-scene {
+  --orb-size: 240px;
   height: 320px;
 }
 .minimal .practice-main {
@@ -2175,14 +2195,15 @@ input[type='range'] {
     padding: 8px 14px;
   }
   .minimal .focus-scene {
+    --orb-size: 220px;
     height: 300px;
   }
   .minimal .phase {
     font-size: 21px;
   }
   .minimal .orb {
-    width: 220px;
-    height: 220px;
+    width: var(--orb-size);
+    height: var(--orb-size);
   }
 }
 </style>
