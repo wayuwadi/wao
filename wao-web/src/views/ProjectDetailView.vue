@@ -3,6 +3,7 @@ import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { taskDropAfter } from '@/utils/taskDrop'
 import { taskTreeRows } from '@/utils/taskHierarchy'
+import { isTaskFinished as isFinished, projectCompletion, projectCompletionLabel } from '@/utils/projectCompletion'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
@@ -15,7 +16,7 @@ import { useNow } from '@/composables/now'
 import { useClientPagination } from '@/composables/clientPagination'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 import { absoluteTime, relativeTime } from '@/utils/time'
-import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
+import { fmtDate, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import { readSubtaskDrag } from '@/utils/subtaskTree'
 import { toast } from '@/composables/toast'
 import { createAiRuns } from '@/api/ai'
@@ -259,7 +260,7 @@ const allTasks = computed(() => creatorTasks.value
  * 真正收尾的任务：主任务已完成且子任务全部完成。主任务点了完成、子任务还有没做完的，
  * 仍算进行中的事，留在列表里展示，不跟着收进「已完成」。
  */
-const isFinished = (t: { status: string; subs: { done: boolean }[] }) => t.status === '已完成' && t.subs.every((sub) => sub.done)
+const filteredCompletion = computed(() => projectCompletion(allTasks.value))
 const openTasks = computed(() => allTasks.value.filter((t) => !isFinished(t) || isSettling(t.id)))
 /** 已完成倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
 const doneDesc = (a: { completedAt?: string | null; id: string }, b: { completedAt?: string | null; id: string }) =>
@@ -287,11 +288,11 @@ const emptyBoardColumns = computed(() => board.value.filter((col) => !col.items.
 const visibleBoard = computed(() => board.value.filter((col) => showEmptyColumns.value || col.items.length || col.collapsible || col.addable))
 const pdTabs = computed(() => {
   // 任务角标只数未完成的：一个跑了半年的项目里「25」几乎全是已完成，看不出还剩多少事。
-  const openCount = ptasks.value.filter((t) => isOpenStatus(t.status)).length
+  const openCount = projectCompletion(ptasks.value).open
   const counts: Record<string, number> = { 任务: openCount, 文档: linkedDocs.value.length }
   return (['任务', '文档', '文件', '记忆', '动态'] as const).map((t) => ({
-    label: t, count: counts[t], showCount: ['任务', '文档'].includes(t), on: projTab.value === t,
-    title: t === '任务' ? `${openCount} 个未完成 / 共 ${ptasks.value.length} 个` : '',
+    label: t, count: counts[t], showCount: ['任务', '文档'].includes(t) && (t !== '任务' || data.taskLoadState === 'loaded'), on: projTab.value === t,
+    title: t === '任务' ? `整个项目：${projectCompletionLabel(ptasks.value)}；不随负责人或创建人筛选变化` : '',
   }))
 })
 
@@ -305,7 +306,7 @@ function toggleSelection(id: string) {
 }
 const visibleTaskIds = computed(() => {
   if (pdTaskView.value === 'quadrant') return allTasks.value
-    .filter((task) => showDone.value || task.status !== '已完成' || data.taskSaveState(task.id) === 'saving' || data.taskSaveState(task.id) === 'error')
+    .filter((task) => showDone.value || !isFinished(task) || data.taskSaveState(task.id) === 'saving' || data.taskSaveState(task.id) === 'error')
     .map((task) => task.id)
   if (pdTaskView.value === 'list') return tableSections.value.flatMap((section) => section.collapsed ? [] : [
     ...section.open, ...(section.doneOpen ? section.done : []),
@@ -695,7 +696,7 @@ watch(visibleTaskIds, (ids) => {
       </div>
       <div v-else-if="data.taskLoadState === 'loading'" class="task-scope" role="status">正在加载任务，已显示的任务和本机草稿会继续保留。</div>
       <div v-if="effectiveCreator || effectiveOwner" class="task-scope" role="status">
-        当前仅显示{{ effectiveOwner ? ` ${activeOwnerName} 负责的` : '' }}{{ effectiveCreator ? ` ${activeCreatorName} 创建的` : '' }}任务 · {{ allTasks.length }} / {{ ptasks.length }} 项
+        当前仅显示{{ effectiveOwner ? ` ${activeOwnerName} 负责的` : '' }}{{ effectiveCreator ? ` ${activeCreatorName} 创建的` : '' }}任务 · 筛选内未收尾 {{ filteredCompletion.open }}／共 {{ allTasks.length }} 项任务（项目共 {{ ptasks.length }} 项；任务按全部子项判定收尾）
         <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
         <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
@@ -955,6 +956,7 @@ watch(visibleTaskIds, (ids) => {
               <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
             </button>
             <span class="grow-title">{{ t.title }}</span>
+            <span v-if="t.unfinishedSubCount" class="wait-badge">仍有 {{ t.unfinishedSubCount }} 项子项未收尾</span>
             <i class="ri-arrow-right-s-line grow-chev"></i>
           </div>
 
@@ -991,7 +993,7 @@ watch(visibleTaskIds, (ids) => {
           v-for="col in visibleBoard"
           :key="col.label"
           class="board-col"
-          :class="{ 'drop-hint': dragId, 'is-collapsed': col.collapsible && !showDone }"
+          :class="{ 'drop-hint': dragId, 'is-collapsed': col.collapsible && !showDone && col.items.every(isFinished) }"
           @dragover.prevent
           @drop="onDropStatus(col.label)"
         >
@@ -1010,10 +1012,10 @@ watch(visibleTaskIds, (ids) => {
             </button>
             <i v-if="col.collapsible" class="board-col-chev" :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
           </div>
-          <div v-if="col.collapsible && !showDone" class="board-collapsed">已收起 {{ col.items.length }} 项 · 点标题展开</div>
-          <div v-else class="board-cards">
+          <div v-if="col.collapsible && !showDone" class="board-collapsed">已收起 {{ col.items.filter(isFinished).length }} 项已收尾任务 · 点标题展开</div>
+          <div v-if="!col.collapsible || showDone || col.items.some(t => !isFinished(t))" class="board-cards">
             <div
-              v-for="t in col.items"
+              v-for="t in col.items.filter(t => !col.collapsible || showDone || !isFinished(t))"
               :key="t.id"
               class="board-card" @dragover.prevent @drop.stop="onDropReorder(t.id, $event)"
               :class="{ dragging: dragId === t.id }"
@@ -1033,6 +1035,7 @@ watch(visibleTaskIds, (ids) => {
                 <i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i>
               </button>
               <div class="bc-title" :title="t.title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
+              <span v-if="t.unfinishedSubCount" class="wait-badge">仍有 {{ t.unfinishedSubCount }} 项子项未收尾</span>
               <div class="bc-foot">
                 <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
                 <span class="bc-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>

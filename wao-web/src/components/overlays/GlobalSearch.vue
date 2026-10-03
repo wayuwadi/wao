@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { projectCompletionLabel } from '@/utils/projectCompletion'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
@@ -88,7 +89,7 @@ const groups = computed(() => {
       icon: 'ri-stack-line',
       iconColor: data.areaColor(p.area),
       title: p.name,
-      sub: `${p.status} · 进度 ${p.progress}%`,
+      sub: data.taskLoadState === 'loaded' ? projectCompletionLabel(data.tasksByProject(p.id)) : '任务计数尚未读取',
       go: () => {
         close()
         router.push(`/projects/${p.id}`)

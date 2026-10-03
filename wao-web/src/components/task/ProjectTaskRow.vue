@@ -145,10 +145,11 @@ function commitRename() {
         <template v-else>
           <button class="trow-title" :class="{ done: task.status === '已完成' }" :title="task.title" @click.stop="emit('open')">{{ task.title }}</button>
           <span v-if="task.waitBadge" class="wait-badge">{{ task.waitBadge }}</span>
+          <span v-if="task.unfinishedSubCount" class="wait-badge" title="主任务状态保持已完成，所有层级子项完成后才算收尾。">仍有 {{ task.unfinishedSubCount }} 项子项未收尾</span>
           <span v-if="task.subs.length" class="sub-count wao-tabular" :title="`子任务 已完成 ${doneSubs} / 共 ${task.subs.length}`"
             ><i class="ri-node-tree"></i>{{ doneSubs }}/{{ task.subs.length }}</span
           >
-          <span v-if="childTaskCount" class="sub-count">{{ childTaskCount }} 个子任务</span>
+          <span v-if="childTaskCount" class="sub-count" title="独立任务实体，计入项目任务总数">{{ childTaskCount }} 个下级任务</span>
 
           <span class="row-tools">
             <button v-if="task.parentTaskId" class="row-tool" title="移回顶层" aria-label="移回顶层" @click.stop="emit('detach')"><i class="ri-indent-decrease"></i></button>
