@@ -46,10 +46,10 @@ async function requestDelete(wrapper: Awaited<ReturnType<typeof view>>, id: stri
   action?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   await flushPromises()
 }
-async function view() {
+async function view(attachTo?: HTMLElement) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }, { path: '/kb/:id', component: { template: '<div />' } }] })
   await router.push('/notes')
-  return mount(NotesView, { global: { plugins: [router], stubs: { MarkdownEditor: Editor, NoteMiningPanel: true } } })
+  return mount(NotesView, { attachTo, global: { plugins: [router], stubs: { MarkdownEditor: Editor, NoteMiningPanel: true } } })
 }
 async function setNoteBodyHeight(wrapper: Awaited<ReturnType<typeof view>>, id: string, height: number) {
   const body = wrapper.get(`[data-note-id="${id}"] .note-body`).element
@@ -1084,6 +1084,94 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.classes()).not.toContain('fullscreen')
     expect(apiPatchDoc).toHaveBeenCalledWith('inline-fullscreen', expect.objectContaining({ expectedRev: 3 }))
+    wrapper.unmount()
+  })
+
+  it('卡片预览与阅读模式共用只读阅读器，记住布局且保留草稿和返回焦点', async () => {
+    useDataStore().docs.one = doc('one', '合成预览正文')
+    const host = document.createElement('div')
+    host.id = 'app'
+    document.body.append(host)
+    const wrapper = await view(host)
+    await wrapper.get('.writing-pane textarea').setValue('验收草稿保持不变')
+    const preview = wrapper.get('.note-preview-action')
+    await preview.trigger('click')
+    await preview.trigger('click') // 快速重复触发不能覆盖背景恢复状态。
+    await flushPromises()
+    const reader = () => new DOMWrapper(document.body).get('.notes-reader')
+    expect(host.inert).toBe(true)
+    expect(reader().get('textarea').attributes('readonly')).toBeDefined()
+    expect(wrapper.find('.note-card.editing').exists()).toBe(false)
+    await reader().get('.reader-mode-switch button:last-child').trigger('click')
+    expect(reader().classes()).toContain('reader-full')
+    await reader().get('[aria-label="退出阅读模式"]').trigger('click')
+    await flushPromises()
+    expect(host.inert).toBe(false)
+    expect(document.body.style.overflow).not.toBe('hidden')
+    expect(document.activeElement).toBe(preview.element)
+    expect(wrapper.get<HTMLTextAreaElement>('.writing-pane textarea').element.value).toBe('验收草稿保持不变')
+    await wrapper.get('.reader-toggle').trigger('click')
+    await flushPromises()
+    expect(reader().classes()).toContain('reader-full')
+    await reader().get('[aria-label="退出阅读模式"]').trigger('click')
+    await wrapper.get('.note-preview-choice').trigger('click')
+    await flushPromises()
+    await new DOMWrapper(document.body).get('[role="menu"] button:first-of-type').trigger('click')
+    await flushPromises()
+    expect(reader().classes()).not.toContain('reader-full')
+    wrapper.unmount()
+    host.remove()
+    expect(document.body.style.overflow).not.toBe('hidden')
+  })
+
+  it('阅读按 ID 固定本次目录，后台新增或重排不跳篇，逐篇恢复滚动位置', async () => {
+    const data = useDataStore()
+    data.docs.a = doc('a', '合成旧篇')
+    data.docs.b = doc('b', '合成新篇', '2026-09-08T08:00:00')
+    const wrapper = await view()
+    await wrapper.get('[data-note-id="b"] .note-preview-action').trigger('click')
+    await flushPromises()
+    const reader = () => new DOMWrapper(document.body).get('.notes-reader')
+    const page = reader().get('.reader-page').element as HTMLElement
+    page.scrollTop = 245
+    data.docs.c = doc('c', '后台新增', '2026-09-09T08:00:00')
+    data.docs.a = { ...data.docs.a!, updated: '2026-09-10T08:00:00' }
+    await flushPromises()
+    expect(reader().get('h2').text()).toBe('合成新篇')
+    expect(reader().findAll('.reader-directory nav button')).toHaveLength(2)
+    await reader().get('[aria-label="下一篇小记（→）"]').trigger('click')
+    await flushPromises()
+    expect(reader().get('h2').text()).toBe('合成旧篇')
+    await reader().get('[aria-label="上一篇小记（←）"]').trigger('click')
+    await flushPromises()
+    expect((reader().get('.reader-page').element as HTMLElement).scrollTop).toBe(245)
+    delete data.docs.b
+    await flushPromises()
+    expect(reader().get('h2').text()).toBe('合成旧篇')
+    delete data.docs.a
+    await flushPromises()
+    expect(document.querySelector('.notes-reader')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('窄屏目录先收起再退出，放大窗口后正文恢复操作', async () => {
+    useDataStore().docs.one = doc('one', '合成目录验收')
+    const wrapper = await view()
+    await wrapper.get('.note-preview-action').trigger('click')
+    const reader = new DOMWrapper(document.body).get('.notes-reader')
+    await reader.get('.reader-directory-toggle').trigger('click')
+    expect(reader.classes()).toContain('directory-open')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(reader.classes()).not.toContain('directory-open')
+    expect(document.querySelector('.notes-reader')).not.toBeNull()
+    await reader.get('.reader-directory-toggle').trigger('click')
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    expect(reader.get('.reader-main').attributes('inert')).toBeUndefined()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('.notes-reader')).toBeNull()
     wrapper.unmount()
   })
 

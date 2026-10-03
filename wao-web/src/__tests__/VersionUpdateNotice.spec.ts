@@ -188,7 +188,7 @@ describe('顶栏更新入口', () => {
       for (const point of highlight.points) expect(document.body.textContent).toContain(point)
     }
     // 当前制品可能包含没有功能地图入口的提交，不给它制造失效的体验按钮。
-    const navigable = CURRENT_RELEASE.highlights.filter(item => Object.hasOwn(MODULES, item.featureId))
+    const navigable = CURRENT_RELEASE.highlights.filter(item => Object.prototype.hasOwnProperty.call(MODULES, item.featureId))
     expect(document.querySelectorAll('[aria-label^="去体验"]')).toHaveLength(navigable.length)
     for (const [index, highlight] of navigable.entries()) {
       if (index) await click('.update-entry')

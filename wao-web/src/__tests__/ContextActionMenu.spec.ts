@@ -18,6 +18,23 @@ async function setup() {
 afterEach(() => { document.body.replaceChildren() })
 
 describe('对象右键菜单', () => {
+  it('按钮触发的菜单以按钮下沿定位，操作后恢复按钮焦点', async () => {
+    const { wrapper, trigger } = await setup()
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ left: 120, bottom: 90 } as DOMRect)
+    const run = vi.fn()
+    await wrapper.vm.openAt(new MouseEvent('click', { clientX: 1, clientY: 1 }), '预览方式', [{ id: 'read', label: '全屏预览', run }], trigger)
+    const menu = document.querySelector<HTMLElement>('[role="menu"]')!
+    expect(menu.style.left).toBe('120px')
+    expect(menu.style.top).toBe('90px')
+    window.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    expect(document.querySelector('[role="menu"]')).not.toBeNull()
+    menu.querySelector('button')!.click()
+    await nextTick()
+    expect(run).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(trigger)
+    wrapper.unmount()
+  })
   it('只接管有业务菜单的对象，并在窗口边缘显示可执行操作', async () => {
     const { wrapper, trigger } = await setup()
     const run = vi.fn()
