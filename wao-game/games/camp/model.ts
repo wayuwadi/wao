@@ -1,0 +1,82 @@
+import type { Point, TowerKind, EnemyKind, BossKind } from "./catalog";
+export type Priority = "first" | "strong" | "support";
+export type Tower = {
+  pad: number;
+  kind: TowerKind;
+  level: 1 | 2 | 3;
+  branch: 0 | 1 | null;
+  priority: Priority;
+};
+export type CampRun = {
+  map: number;
+  mode: "campaign" | "endless";
+  wave: number;
+  gold: number;
+  lives: number;
+  towers: Tower[];
+  spent: number;
+};
+export type CampMemory = {
+  muted: boolean;
+  speed: 1 | 2;
+  wins: [number, number, number];
+  bestLives: [number, number, number];
+  bestEndless: [number, number, number];
+  run: CampRun | null;
+};
+export type Foe = {
+  id: number;
+  kind: EnemyKind | BossKind;
+  boss: boolean;
+  path: number;
+  distance: number;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  shield: number;
+  armor: number;
+  speed: number;
+  flying: boolean;
+  slow: number;
+  slowTime: number;
+  freeze: number;
+  weak: number;
+  shred: number;
+  skill: number;
+  charge: number;
+  haste: number;
+  dead: boolean;
+};
+export type TowerRuntime = {
+  cooldown: number;
+  shots: number;
+  disabled: number;
+  repair: number;
+};
+export type Effect = {
+  kind: "shot" | "beam" | "blast" | "frost" | "heal" | "leak" | "disable";
+  from: Point;
+  to: Point;
+  life: number;
+  radius: number;
+};
+export type Battle = {
+  run: CampRun;
+  phase: "running" | "won" | "lost";
+  time: number;
+  queue: (EnemyKind | BossKind)[];
+  nextSpawn: number;
+  spawned: number;
+  nextId: number;
+  foes: Foe[];
+  turrets: Record<number, TowerRuntime>;
+  effects: Effect[];
+  blizzard: boolean;
+  rally: boolean;
+  boost: number;
+  messages: string[];
+  kills: number;
+  leaked: number;
+  settled: boolean;
+};

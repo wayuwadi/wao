@@ -1,14 +1,22 @@
-import { games, isGameId, clonePayload, type GameId, type GameMemories } from "./registry";
+import {
+  games,
+  isGameId,
+  clonePayload,
+  type GameId,
+  type GameMemories,
+} from "./registry";
 import { chapters, heroNames } from "../games/rift/catalog";
 import { level } from "../games/rift/save";
 export type { GameId } from "./registry";
-export type MemoryRecord<G extends GameId = GameId> = { [K in G]: {
-  gameId: K;
-  rulesVersion: 1;
-  savedAt: string;
-  revision: number;
-  payload: GameMemories[K];
-} }[G];
+export type MemoryRecord<G extends GameId = GameId> = {
+  [K in G]: {
+    gameId: K;
+    rulesVersion: 1;
+    savedAt: string;
+    revision: number;
+    payload: GameMemories[K];
+  };
+}[G];
 export type MemoryFile = {
   format: "wao-game-memory";
   formatVersion: 1;
@@ -137,15 +145,24 @@ export function exportMemory(games: MemoryRecord[]): string {
   return text;
 }
 export function summary(record: MemoryRecord) {
-  if (record.gameId === "beasts") { const p=record.payload; return `已收集 ${p.roster.length}/12种 · ${p.guardians.filter(Boolean).length}/4守卫 · 捕获${p.captures}次 · ${p.expedition ? `区域${p.expedition.region+1} / 节点${p.expedition.step+1}${p.expedition.pending?" 开战前":""}` : "营地"}`; }
+  if (record.gameId === "camp") {
+    const p = record.payload;
+    return `已守住 ${p.wins.filter((n) => n > 0).length}/3图 · 无尽最高${Math.max(...p.bestEndless)}波${p.run ? ` · 地图${p.run.map + 1} / 第${p.run.wave}波开始前 · ${p.run.lives}生命 · ${p.run.gold}补给` : " · 营地"}`;
+  }
+  if (record.gameId === "beasts") {
+    const p = record.payload;
+    return `已收集 ${p.roster.length}/12种 · ${p.guardians.filter(Boolean).length}/4守卫 · 捕获${p.captures}次 · ${p.expedition ? `区域${p.expedition.region + 1} / 节点${p.expedition.step + 1}${p.expedition.pending ? " 开战前" : ""}` : "营地"}`;
+  }
   if (record.gameId === "starfield") {
     const p = record.payload;
     return `已完成 ${p.completed.filter(Boolean).length}/9任务 · ${p.owned.length}件装备 · ${p.sand}星砂${p.battle ? ` · 第${p.battle.round}轮 / ${p.battle.actions}次已确认行动` : " · 浮岛营地"}`;
   }
   if (record.gameId === "rift") {
     const p = record.payload;
-    const checkpoint = p.checkpoint ? chapters[p.checkpoint.chapter]!.rooms[p.checkpoint.room] : "营地";
-    return `${heroNames[p.selected]} Lv.${level(p.heroes[p.selected].xp)} · 已通关 ${p.chapterWins.filter(n => n > 0).length}/3章 · ${checkpoint} · ${p.owned.length}件装备`;
+    const checkpoint = p.checkpoint
+      ? chapters[p.checkpoint.chapter]!.rooms[p.checkpoint.room]
+      : "营地";
+    return `${heroNames[p.selected]} Lv.${level(p.heroes[p.selected].xp)} · 已通关 ${p.chapterWins.filter((n) => n > 0).length}/3章 · ${checkpoint} · ${p.owned.length}件装备`;
   }
   const p = record.payload;
   return `最远 ${p.best} 米 · ${p.runs} 局 · 千米通关 ${p.sprintWins} 次${p.practiceComplete ? " · 已完成练习" : ""}`;
@@ -251,7 +268,11 @@ export class MemoryStore {
       throw storageError(e);
     }
   }
-  async save<G extends GameId = "dino">(payload: GameMemories[G], expectedRevision: number, gameId: G = "dino" as G) {
+  async save<G extends GameId = "dino">(
+    payload: GameMemories[G],
+    expectedRevision: number,
+    gameId: G = "dino" as G,
+  ) {
     const input = validateRecord({
       gameId,
       rulesVersion: 1,
@@ -259,7 +280,9 @@ export class MemoryStore {
       savedAt: new Date().toISOString(),
       payload,
     });
-    return (await this.replace([input], { [gameId]: expectedRevision }, false))[0]! as MemoryRecord<G>;
+    return (
+      await this.replace([input], { [gameId]: expectedRevision }, false)
+    )[0]! as MemoryRecord<G>;
   }
   /** 读取另一页前先持久化本页草稿；备份失败时不丢弃草稿。 */
   async readWithBackup(
@@ -327,9 +350,12 @@ export class MemoryStore {
         request.onsuccess = () => {
           try {
             const existing: MemoryRecord[] = request.result.map(validateRecord);
-            for (const original of drafts) tx.objectStore("backups").add({
-              id: crypto.randomUUID(), original, backedUpAt: new Date().toISOString(),
-            } satisfies Backup);
+            for (const original of drafts)
+              tx.objectStore("backups").add({
+                id: crypto.randomUUID(),
+                original,
+                backedUpAt: new Date().toISOString(),
+              } satisfies Backup);
             result = checked.map((record) => {
               const previous = existing.find((r) => r.gameId === record.gameId);
               if ((previous?.revision ?? 0) !== expected[record.gameId])

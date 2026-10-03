@@ -4,7 +4,7 @@ import argparse
 import json
 import subprocess
 
-GAMES = ('dino', 'rift', 'starfield', 'beasts')
+GAMES = ('dino', 'rift', 'starfield', 'beasts', 'camp')
 
 
 def plan(paths, full=False, package_before=None, package_after=None):
@@ -28,7 +28,7 @@ def plan(paths, full=False, package_before=None, package_after=None):
             if not path.endswith('.test.ts'):
                 build.add(game)
             # The host validates this schema; importing it does not load rendering/runtime.
-            if path.endswith('/save.ts') or path in ('wao-game/games/rift/catalog.ts', 'wao-game/games/starfield/catalog.ts', 'wao-game/games/starfield/model.ts', 'wao-game/games/beasts/catalog.ts', 'wao-game/games/beasts/model.ts'):
+            if path.endswith('/save.ts') or path in ('wao-game/games/rift/catalog.ts', 'wao-game/games/starfield/catalog.ts', 'wao-game/games/starfield/model.ts', 'wao-game/games/beasts/catalog.ts', 'wao-game/games/beasts/model.ts', 'wao-game/games/camp/catalog.ts', 'wao-game/games/camp/model.ts'):
                 web = True
         elif path.startswith('wao-game/protocol/'):
             web = True

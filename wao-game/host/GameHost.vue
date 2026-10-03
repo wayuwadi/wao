@@ -20,12 +20,28 @@ import { useGameMemory } from "./useGameMemory";
 import { games, clonePayload, type GameId } from "./registry";
 
 const props = withDefaults(
-  defineProps<{ active: boolean; gameId?: GameId; theme?: "light" | "dark"; source?: string }>(),
+  defineProps<{
+    active: boolean;
+    gameId?: GameId;
+    theme?: "light" | "dark";
+    source?: string;
+  }>(),
   { theme: "light", gameId: "dino" },
 );
-const emit = defineEmits<{ leave: []; immersion: [active: boolean]; memoryPanel: [active: boolean] }>();
-const memories = { dino: useGameMemory("dino"), rift: useGameMemory("rift"), starfield: useGameMemory("starfield"), beasts: useGameMemory("beasts") };
-const memory = memories[props.gameId], game = games[props.gameId];
+const emit = defineEmits<{
+  leave: [];
+  immersion: [active: boolean];
+  memoryPanel: [active: boolean];
+}>();
+const memories = {
+  dino: useGameMemory("dino"),
+  rift: useGameMemory("rift"),
+  starfield: useGameMemory("starfield"),
+  beasts: useGameMemory("beasts"),
+  camp: useGameMemory("camp"),
+};
+const memory = memories[props.gameId],
+  game = games[props.gameId];
 const frame = ref<HTMLIFrameElement>(),
   source = ref(""),
   instance = ref(crypto.randomUUID());
@@ -38,7 +54,11 @@ const fileInput = ref<HTMLInputElement>(),
   feedback = ref(""),
   pending = ref<{
     record: MemoryRecord;
-    additional?: { record: MemoryRecord; original?: MemoryRecord; expected: number }[];
+    additional?: {
+      record: MemoryRecord;
+      original?: MemoryRecord;
+      expected: number;
+    }[];
     original?: MemoryRecord;
     expected: number;
     toLocal: boolean;
@@ -47,7 +67,8 @@ const fileInput = ref<HTMLInputElement>(),
   }>();
 const backups = ref<Backup[]>([]),
   busy = ref(false);
-const exportUrl = ref(""), exportName = ref("");
+const exportUrl = ref(""),
+  exportName = ref("");
 function clearExport() {
   if (exportUrl.value) URL.revokeObjectURL(exportUrl.value);
   exportUrl.value = "";
@@ -184,7 +205,14 @@ function closeMemory() {
 }
 async function download(all = false) {
   try {
-    const records = all ? await Promise.all(Object.values(memories).map(async m => { await m.initialize(); return m.current(); })) : [memory.current()];
+    const records = all
+      ? await Promise.all(
+          Object.values(memories).map(async (m) => {
+            await m.initialize();
+            return m.current();
+          }),
+        )
+      : [memory.current()];
     const blob = new Blob([exportMemory(records)], {
         type: "application/json",
       }),
@@ -200,7 +228,9 @@ async function download(all = false) {
     a.click();
     a.remove();
     feedback.value = all
-      ? `已生成全部已开放游戏的记忆：${Object.values(games).map(g => g.name).join("、")}。若下载未开始，请点击下方下载文件。`
+      ? `已生成全部已开放游戏的记忆：${Object.values(games)
+          .map((g) => g.name)
+          .join("、")}。若下载未开始，请点击下方下载文件。`
       : `已生成${game.name}记忆。${game.restore}。若下载未开始，请点击下方下载文件。`;
   } catch (e) {
     feedback.value = e instanceof Error ? e.message : "导出失败，请重试。";
@@ -240,17 +270,29 @@ async function selectFile(e: Event) {
     const toLocal = memory.mode.value === "local";
     const entries = [];
     for (const record of records) {
-      const target = memories[record.gameId]; await target.initialize();
-      const original = toLocal ? await target.previewCurrentDisk() : target.current();
+      const target = memories[record.gameId];
+      await target.initialize();
+      const original = toLocal
+        ? await target.previewCurrentDisk()
+        : target.current();
       entries.push({ record, original, expected: original?.revision ?? 0 });
     }
-    pending.value = { ...entries[0]!, additional: entries.slice(1), toLocal,
-      title: records.length > 1 ? "导入全部游戏记忆" : `导入${games[records[0]!.gameId].name}记忆` };
+    pending.value = {
+      ...entries[0]!,
+      additional: entries.slice(1),
+      toLocal,
+      title:
+        records.length > 1
+          ? "导入全部游戏记忆"
+          : `导入${games[records[0]!.gameId].name}记忆`,
+    };
   } catch (e) {
     pending.value = undefined;
     feedback.value =
       e instanceof Error ? e.message : "导入失败，原进度未修改。";
-  } finally { busy.value = false; }
+  } finally {
+    busy.value = false;
+  }
 }
 async function confirmImport() {
   const item = pending.value;
@@ -261,11 +303,18 @@ async function confirmImport() {
     else {
       const entries = [item, ...(item.additional ?? [])];
       for (const entry of entries) await memories[entry.record.gameId].flush();
-      const records = entries.map(e => e.record);
-      const saved = item.toLocal ? await memory.commitBatch(records,
-        Object.fromEntries(entries.map(e => [e.record.gameId, e.expected])),
-        entries.map(e => memories[e.record.gameId].current())) : records;
-      for (const record of saved) memories[record.gameId].acceptImported(record, item.toLocal);
+      const records = entries.map((e) => e.record);
+      const saved = item.toLocal
+        ? await memory.commitBatch(
+            records,
+            Object.fromEntries(
+              entries.map((e) => [e.record.gameId, e.expected]),
+            ),
+            entries.map((e) => memories[e.record.gameId].current()),
+          )
+        : records;
+      for (const record of saved)
+        memories[record.gameId].acceptImported(record, item.toLocal);
     }
     clearExport();
     resetFrame();
@@ -407,7 +456,9 @@ onBeforeUnmount(() => {
     @keydown="key"
   >
     <header class="host-bar" :inert="panel">
-      <span>{{ game.letter }} <small>{{ game.tagline }}</small></span>
+      <span
+        >{{ game.letter }} <small>{{ game.tagline }}</small></span
+      >
       <div>
         <button class="memory-open" @click="openMemory">游戏记忆</button
         ><button @click="immerse">
@@ -490,9 +541,14 @@ onBeforeUnmount(() => {
         />
       </div>
       <p class="note">
-        导出的是可恢复的游戏存档。本款：{{ game.restore }}。全部导出包含 {{ Object.keys(games).length }} 款已开放游戏。
+        导出的是可恢复的游戏存档。本款：{{ game.restore }}。全部导出包含
+        {{ Object.keys(games).length }} 款已开放游戏。
       </p>
-      <p v-if="exportUrl"><a :href="exportUrl" :download="exportName">下载记忆文件（{{ exportName }}）</a></p>
+      <p v-if="exportUrl">
+        <a :href="exportUrl" :download="exportName"
+          >下载记忆文件（{{ exportName }}）</a
+        >
+      </p>
       <div
         v-if="
           memory.status.value === 'conflict' || memory.status.value === 'error'
@@ -506,17 +562,25 @@ onBeforeUnmount(() => {
       <div v-if="pending" class="import-preview">
         <h3>{{ pending.title }}</h3>
         <p>
-          {{ games[pending.record.gameId].name }} · {{ new Date(pending.record.savedAt).toLocaleString() }}
+          {{ games[pending.record.gameId].name }} ·
+          {{ new Date(pending.record.savedAt).toLocaleString() }}
         </p>
         <strong>{{ summary(pending.record) }}</strong>
         <p v-if="pending.original">
-          将替换：{{ summary(pending.original) }}。原档先备份，可在对应游戏的记忆面板恢复。
+          将替换：{{
+            summary(pending.original)
+          }}。原档先备份，可在对应游戏的记忆面板恢复。
         </p>
         <p v-else>本机尚无{{ games[pending.record.gameId].name }}记忆。</p>
         <div v-for="entry in pending.additional" :key="entry.record.gameId">
-          <p>{{ games[entry.record.gameId].name }} · {{ new Date(entry.record.savedAt).toLocaleString() }}</p>
+          <p>
+            {{ games[entry.record.gameId].name }} ·
+            {{ new Date(entry.record.savedAt).toLocaleString() }}
+          </p>
           <strong>{{ summary(entry.record) }}</strong>
-          <p v-if="entry.original">将替换：{{ summary(entry.original) }}。原档先备份。</p>
+          <p v-if="entry.original">
+            将替换：{{ summary(entry.original) }}。原档先备份。
+          </p>
         </div>
         <p>
           {{
@@ -553,8 +617,17 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.game-host, .game-host * { box-sizing: border-box; }
-.memory-panel a { display: inline-block; overflow-wrap: anywhere; max-width: 100%; min-height: 44px; padding: 10px 0; }
+.game-host,
+.game-host * {
+  box-sizing: border-box;
+}
+.memory-panel a {
+  display: inline-block;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 10px 0;
+}
 .game-host {
   position: relative;
   width: 100%;

@@ -14,7 +14,6 @@ import {
 } from '@/composables/breathingAuth'
 import { worlds, type WorldId } from '@/components/relax/worlds'
 import { useRelaxProgress } from '@/components/relax/useRelaxProgress'
-import RelaxGames from '@/components/relax/RelaxGames.vue'
 import '@/components/relax/relax.css'
 const GameHost = defineAsyncComponent(() => import('../../../wao-game/host/GameHost.vue'))
 const gameImmersive = ref(false), gameMemoryOpen = ref(false)
@@ -30,10 +29,9 @@ const pages = [
   { id: 'rift', name: '裂隙远征', color: '#eb973e' },
   { id: 'starfield', name: '星野奇旅', color: '#c8a126' },
   { id: 'beasts', name: '幻兽领地', color: '#62a873' },
-  { id: 'gallery', name: '影子有点不对劲', color: '#41a9b3' },
-  { id: 'journal', name: '今天贴点什么', color: '#627be0' },
+  { id: 'camp', name: '最后一座营地', color: '#41a9b3' },
 ]
-const isolatedGame = computed(() => selectedPage.value === 'dino' || selectedPage.value === 'rift' || selectedPage.value === 'starfield' || selectedPage.value === 'beasts' ? selectedPage.value : undefined)
+const isolatedGame = computed(() => selectedPage.value === 'dino' || selectedPage.value === 'rift' || selectedPage.value === 'starfield' || selectedPage.value === 'beasts' || selectedPage.value === 'camp' ? selectedPage.value : undefined)
 const gameSource = computed(() => import.meta.env.DEV && isolatedGame.value ? `/play-assets/dev/${isolatedGame.value}/index.html` : undefined)
 const session = useSessionStore(),
   route = useRoute(),
@@ -43,8 +41,6 @@ const {
   progress,
   status: saveStatus,
   message: saveMessage,
-  revision,
-  save,
   reload,
 } = useRelaxProgress(computed(() => session.userId))
 const gameAuthOpen = ref(false)
@@ -64,7 +60,6 @@ function choosePage(id: string) {
   closeMenus()
   if (id !== 'home') stage.value?.pauseForPlay()
   selectedPage.value = id
-  if (id !== 'home' && id !== 'dino' && id !== 'rift' && id !== 'starfield' && id !== 'beasts') progress.value.world = id as WorldId
 }
 function meditate() {
   choosePage('home')
@@ -153,6 +148,7 @@ onMounted(async () => {
         'rift-page': selectedPage === 'rift',
         'starfield-page': selectedPage === 'starfield',
         'beasts-page': selectedPage === 'beasts',
+        'camp-page': selectedPage === 'camp',
       },
     ]"
     :data-entry-theme="theme.effective.value"
@@ -188,8 +184,9 @@ onMounted(async () => {
         <summary>更多</summary>
         <div @click="closeMenus">
           <button @click="meditate">静坐</button><button @click="theme.toggleTheme">切换明暗</button
-          ><button @click="exportLegacy">导出旧游戏历史档</button
+          ><button :disabled="saveStatus === 'loading' || saveStatus === 'error'" @click="exportLegacy">导出旧游戏历史档</button
           ><small>旧档保留在原账号空间，备份供历史恢复；不是新游戏记忆。</small>
+          <template v-if="saveStatus === 'error' || saveStatus === 'conflict'"><small>{{saveMessage}}</small><button @click="reload">重试读取旧档</button></template>
         </div>
       </details>
       </div>
@@ -225,24 +222,6 @@ onMounted(async () => {
         :source="gameSource"
         @leave="breatheHome"
       />
-      <RelaxGames
-        v-else
-        :key="`${session.userId}:${revision}:${selectedPage}`"
-        :progress="progress"
-        :active="gamesActive"
-        @story="progress.anecdote = $event"
-      />
-      <div v-if="!isolatedGame" class="legacy-status" role="status">
-        <span v-if="saveStatus === 'loading'">读取旧游戏进度…</span
-        ><span v-else-if="saveStatus === 'saving'">保存中…</span
-        ><span v-else-if="saveStatus === 'saved'"
-          >旧游戏进度保存在本机 · {{ session.authed ? '当前账号' : '访客' }}</span
-        ><template v-else
-          ><span>{{ saveMessage }}</span
-          ><button @click="save">保存本页进度</button
-          ><button @click="reload">重试读取</button></template
-        >
-      </div>
       <SiteFooter :inert="gameMemoryOpen" v-show="!gameImmersive" class="entry-footer" />
     </section>
     <AuthDialog
@@ -526,4 +505,7 @@ summary:focus-visible {
 .beasts-page { --game-accent: #659655; background: #f2f5e9; }
 .beasts-page[data-entry-theme=dark] { background: #293729; }
 .beasts-page :deep(.game-host) { border-color: #c6d5b3; background: #f2f5e9; color: #45613e; }
+.camp-page { --game-accent: #4c929a; background: #eef5ef; }
+.camp-page[data-entry-theme=dark] { background: #293e43; }
+.camp-page :deep(.game-host) { border-color: #bdd3ca; background: #eef5ef; color: #315b63; }
 </style>

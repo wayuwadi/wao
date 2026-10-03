@@ -124,6 +124,23 @@ class GameArtifactsTest(unittest.TestCase):
         for game,entry in snapshots.items(): self.assertEqual(catalog['games'][game],entry)
         self.assertTrue((self.target/'beasts'/self.b/'index.html').exists())
 
+    def test_fifth_game_activation_and_rollback_preserves_four(self):
+        snapshots={}
+        for revision,game in enumerate(['dino','rift','starfield','beasts']):
+            archive=self.root/f'{game}.tgz'
+            release.pack(self.source,archive,game,self.a)
+            release.install(archive,self.target,game,self.a)
+            snapshots[game]=release.activate(self.target,game,self.a,revision)['games'][game]
+        for revision,version in enumerate([self.a,self.b],4):
+            archive=self.root/f'camp-{version}.tgz'
+            release.pack(self.source,archive,'camp',version)
+            release.install(archive,self.target,'camp',version)
+            release.activate(self.target,'camp',version,revision)
+        catalog=release.activate(self.target,'camp',self.a,6)
+        self.assertEqual(catalog['revision'],7)
+        for game,entry in snapshots.items(): self.assertEqual(catalog['games'][game],entry)
+        self.assertTrue((self.target/'camp'/self.b/'index.html').exists())
+
     def test_invalid_game_manifest_does_not_poison_immutable_path(self):
         archive = self.root / 'bad.tgz'
         release.pack(self.source, archive, 'dino', self.a)
