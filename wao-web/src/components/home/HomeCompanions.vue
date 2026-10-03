@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { companionEditing, companionQuiet as quiet, setCompanionQuiet } from '@/composables/quietCompanions'
 import type { createCompanionScene } from './companionScene'
 
 const host = ref<HTMLElement>()
@@ -7,7 +8,6 @@ const canvas = ref<HTMLCanvasElement>()
 const canvasKey = ref(0)
 const ready = ref(false)
 const failed = ref(false)
-const quiet = ref(false)
 const message = ref('')
 const messagePosition = ref({ left: '12px', top: '12px' })
 const names = ['小画家', '小书虫', '小开心', '小青蛙']
@@ -49,7 +49,7 @@ async function load() {
       say,
       failed: fallback,
     })
-    controller.setQuiet(quiet.value)
+    controller.setQuiet(quiet.value || companionEditing.value)
     controller.setActive(active)
     ready.value = true
   } catch {
@@ -57,10 +57,10 @@ async function load() {
   }
 }
 function toggleQuiet() {
-  quiet.value = !quiet.value
-  controller?.setQuiet(quiet.value)
+  setCompanionQuiet(!quiet.value)
   message.value = ''
 }
+watch([quiet, companionEditing], ([silent, editing]) => { controller?.setQuiet(silent || editing); message.value = '' })
 onMounted(load)
 onActivated(() => {
   active = true

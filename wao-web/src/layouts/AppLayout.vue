@@ -13,6 +13,7 @@ import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
 import QuickNotePopover from '@/components/overlays/QuickNotePopover.vue'
 import GlobalToolsMenu from '@/components/nav/GlobalToolsMenu.vue'
+import QuietCompanionHost from '@/components/companions/QuietCompanionHost.vue'
 import NewProjectModal from '@/components/overlays/NewProjectModal.vue'
 import GlobalSearch from '@/components/overlays/GlobalSearch.vue'
 import Celebration from '@/components/overlays/CelebrationOverlay.vue'
@@ -402,6 +403,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <ShortcutsHelp v-if="ui.helpOpen" />
     <Celebration v-if="ui.celebrating" />
     <ReleaseHighlightsHost />
+    <QuietCompanionHost />
   </div>
 </template>
 

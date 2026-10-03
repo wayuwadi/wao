@@ -1,4 +1,6 @@
 import { reactive, ref, watch } from 'vue'
+import { cancelCompanionResponse, captureCompanionTicket, respondWithCompanion, type CompanionTicket } from '@/composables/quietCompanions'
+import { isTaskFinished } from '@/utils/projectCompletion'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { taskDraftWindowId, readTaskDrafts, writeTaskDraft, removeTaskDraft, isTaskDraftDeleted, markTaskDraftDeleted } from '@/utils/taskDraftStorage'
 import { defineStore } from 'pinia'
@@ -1422,12 +1424,16 @@ export const useDataStore = defineStore('data', () => {
         clearTaskDraft(id)
         taskSaveStates[id] = 'saved'
         taskSavedAts[id] = nowIso()
+        const responseTicket = completionResponses.get(id)
+        completionResponses.delete(id)
+        if (responseTicket && isTaskFinished(saved) && isTaskFinished(task)) respondWithCompanion('task', responseTicket)
       } else if (taskDrafts.value[id]) {
         // 请求期间又有新改动：草稿要记住刚确认的版本，否则刷新回放草稿后会带着旧版本必然冲突。
         storeTaskDraft(task)
       }
     } catch (error) {
       if (requestMember !== useSessionStore().userId || taskDeletionBlocked(id) || taskById(id) !== task) return
+      completionResponses.delete(id)
       const conflict = (error as { status?: number })?.status === 409
       let rebased = false
       if (conflict && snapshot.editVersion) taskConflicts[id] = true
@@ -1603,10 +1609,17 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
+  const completionResponses = new Map<string, CompanionTicket>()
   /** 合并字段到任务，可选写入一条活动时间线（对齐原型 patchTask）。 */
   function patchTask(id: string, fields: Partial<Task>, activityText?: string) {
     const t = taskById(id)
     if (!t) return
+    if (fields.status !== undefined && fields.status !== t.status) {
+      completionResponses.delete(id)
+      if (fields.status !== '已完成') cancelCompanionResponse('task')
+      const ticket = fields.status === '已完成' ? captureCompanionTicket() : undefined
+      if (ticket) completionResponses.set(id, ticket)
+    }
     taskTouchedAt[id] = Date.now()
     // 完成时间跟着状态走：进入「已完成」记当下，离开则清空（服务端会重新校准）
     if (fields.status !== undefined && fields.status !== t.status && fields.completedAt === undefined) {

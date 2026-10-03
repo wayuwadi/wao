@@ -700,14 +700,8 @@ function commentKey(e: KeyboardEvent) {
 function setStatus(s: TaskStatus) {
   const t = task.value
   if (!t) return
-  const justFinished = s === '已完成' && t.status !== '已完成'
   data.patchTask(t.id, { status: s }, `将状态改为「${s}」`)
   menu.value = null
-  if (justFinished) {
-    toast(`已完成「${t.title}」`, 'ri-checkbox-circle-fill')
-    // 完成和创建一样值得庆祝一下
-    ui.celebrate()
-  }
 }
 function setPriority(p: Priority) {
   const t = task.value
@@ -1327,9 +1321,9 @@ async function uploadAttachment(event: Event) {
             </button>
           </div>
 
-          <div class="prop-row">
+          <div class="prop-row" data-companion-action>
             <span class="prop-key">状态</span>
-            <button class="pill" :style="{ background: tv.stBg, color: tv.stColor }" @click="menu = menu === 'status' ? null : 'status'">{{ tv.status }}<i class="ri-arrow-down-s-line"></i></button>
+            <button class="pill" data-companion-anchor :style="{ background: tv.stBg, color: tv.stColor }" @click="menu = menu === 'status' ? null : 'status'">{{ tv.status }}<i class="ri-arrow-down-s-line"></i></button>
             <div v-if="menu === 'status'" class="pmenu w150">
               <button v-for="o in statusOptions" :key="o" class="pmenu-item" @click="setStatus(o)">
                 <span class="mini pill-mini" :style="{ background: statusMeta(o).bg, color: statusMeta(o).color }">{{ o }}</span>

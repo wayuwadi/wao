@@ -12,6 +12,7 @@ import { useProjectListLayoutStore } from '@/stores/projectListLayout'
 import { useDeco } from '@/composables/deco'
 import type { Project } from '@/types'
 import { projectCompletion } from '@/utils/projectCompletion'
+import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 
 const data = useDataStore()
 const ui = useUiStore()
@@ -27,6 +28,11 @@ if (route.query.view === 'mytasks') router.replace('/todo')
 
 // ---------- 项目视图 ----------
 const { q, projectPage } = toRefs(useBrowsingState('projects', { q: '', projectPage: 1 }, { q: validSearch, projectPage: validPage }))
+const emptySpace = ref<HTMLElement>()
+const trulyEmpty = computed(() => data.loadStates.projects === 'loaded' && data.projects.length === 0 && !q.value.trim())
+watch([trulyEmpty, emptySpace], ([empty, el]) => {
+  if (empty && el) respondWithCompanion('empty', captureCompanionTicket(el))
+}, { flush: 'post' })
 // 项目状态已下线：项目只看任务推进，不再手工标「进行中 / 有风险」。
 const groupBy = computed(() => layout.state.grouping)
 const sortBy = computed(() => layout.state.sort)
@@ -395,7 +401,7 @@ onBeforeUnmount(() => {
         </section>
       <div v-if="filteredProjects.length === 0" class="empty">
           <i class="ri-filter-3-line"></i>
-          <div>没有符合条件的项目——试试清除搜索</div>
+          <div><span ref="emptySpace">{{ trulyEmpty ? '还没有项目，可以从右上角新建第一个' : '没有符合条件的项目——试试清除搜索' }}</span></div>
         </div>
       </div>
       </div>

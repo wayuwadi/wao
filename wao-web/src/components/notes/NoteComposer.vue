@@ -11,6 +11,7 @@ import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraf
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
+import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
 const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: 'floating'; compact?: boolean; active?: boolean }>(), { active: true })
@@ -273,8 +274,9 @@ watch(() => props.note ? { note: props.note, rich: latestNoteContent(props.note)
   resetting = false
 }, { flush: 'sync' })
 
-async function save() {
+async function save(explicit = false) {
   if (!canSave.value) return
+  const responseTicket = explicit ? captureCompanionTicket(composerElement.value?.querySelector('.save-note')) : undefined
   saving.value = true
   error.value = ''
   try {
@@ -373,6 +375,7 @@ async function save() {
     fullscreenReminderVisible.value = false
     clearFullscreenReminderTimer()
     fullscreen.value = false
+    respondWithCompanion('note', responseTicket)
     emit('saved', savedId)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '保存失败，请重试'
@@ -427,7 +430,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     <div v-if="!note && generatedTitle" class="new-generated-title"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="生成的小记标题"></div>
     <div v-if="fullscreen" class="fullscreen-quick-tags" aria-label="快捷标签"><span>常用标签</span><button v-for="tag in quickChoices" :key="tag" type="button" :class="{ selected: tags.includes(tag) }" :aria-pressed="tags.includes(tag)" :disabled="saving" @click="toggleTag(tag)"># {{ tag }}</button><span class="tag-hint">输入 # 可快速选择</span></div>
     <div v-if="inline && note" class="inline-heading"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="小记标题" :disabled="saving"><button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button><button class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
-    <div class="editor-space" @keydown.capture.exact="onComposerEditorKeydown" @keydown.capture.shift.exact="onComposerEditorKeydown" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
+    <div class="editor-space" @keydown.capture.exact="onComposerEditorKeydown" @keydown.capture.shift.exact="onComposerEditorKeydown" @keydown.ctrl.enter.prevent="save(true)" @keydown.meta.enter.prevent="save(true)">
       <div class="composer-editor-layout"><div class="composer-editor-main">
       <MarkdownEditor :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls selection-image preview-images
         :article-image-key="`note:${session.currentUser.id}:${id}`"
@@ -449,7 +452,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     <div class="composer-footer">
       <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : 'Ctrl / ⌘ + Enter 保存') }}</span>
       <button v-if="note" type="button" :disabled="saving" @click="emit('close')">收起编辑</button>
-      <button class="save-note" type="button" :disabled="!canSave" @click="save()">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
+      <button class="save-note" type="button" :disabled="!canSave" @click="save(true)">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
     </div>
     <Teleport to="body"><div v-if="tagSuggestionsOpen" class="tag-suggestion-menu" role="listbox" aria-label="最近常用标签" :style="tagSuggestionStyle"><div>最近常用</div><button v-for="tag in choices.slice(0, 8)" :key="tag" type="button" role="option" :aria-selected="tags.includes(tag)" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" @mousedown.prevent @click="insertSuggestedTag(tag)"># {{ tag }}<span>{{ tags.includes(tag) ? '已选' : '' }}</span></button><small>按使用频次排序 · Esc 收起</small></div></Teleport>
   </section>
