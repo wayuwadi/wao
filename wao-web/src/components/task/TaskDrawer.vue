@@ -59,7 +59,7 @@ async function viewServerTask() {
   if (!task.value) return
   try {
     const remote = await apiGetTask(task.value.id)
-    serverTaskText.value = `${remote.title}\n状态：${remote.status} · 优先级：${remote.pr}\n\n${remote.desc ?? ''}`
+    serverTaskText.value = `${remote.title}\n状态：${remote.status} · 优先级：${remote.pr}\n执行：${remote.startAt ? `${remote.startAt} — ${remote.endAt}` : remote.start || '未安排'}\n截止：${remote.due || '无截止日期'}\n\n${remote.desc ?? ''}`
     viewingServerTask.value = true
   } catch { toast('服务器版本读取失败，请重试', 'ri-error-warning-line') }
 }
@@ -766,7 +766,7 @@ function setDate(field: 'start' | 'due', event: Event) {
   const label = field === 'start' ? '开始日期' : '截止日期'
   if ((t[field] ?? '') === value) return
   const activity = value ? `将${label}改为 ${fmtDate(value)}` : `清空了${label}`
-  data.patchTask(t.id, field === 'start' ? { start: value } : { due: value }, activity)
+  data.patchTask(t.id, field === 'start' ? { start: value, startAt: null, endAt: null } : { due: value }, activity)
 }
 function setDateTime(field: 'startAt' | 'endAt', event: Event) {
   const t = task.value
@@ -792,7 +792,7 @@ function setDateTime(field: 'startAt' | 'endAt', event: Event) {
   data.patchTask(t.id, {
     [field]: value || null,
     ...(field === 'startAt' ? { endAt: automaticEnd } : {}),
-    ...(field === 'startAt' && value ? { due: value.slice(0, 10) } : {}),
+    ...(field === 'startAt' && value ? { start: value.slice(0, 10) } : {}),
   }, value ? `将${label}改为 ${value.replace('T', ' ')}` : `清空了${label}`)
 }
 function addHour(value: string) {
@@ -1371,9 +1371,8 @@ async function uploadAttachment(event: Event) {
               class="date-input due"
               type="date"
               :value="task.due || ''"
-              :min="task.start || undefined"
               :style="{ color: tv.dueColor }"
-              title="截止日期，留空表示未排期"
+              title="截止日期，留空表示无截止日期"
               @change="setDate('due', $event)"
             />
             <span v-if="dueHint" class="due-hint" :style="{ color: tv.dueColor }">{{ dueHint }}</span>
@@ -1489,24 +1488,25 @@ async function uploadAttachment(event: Event) {
           </div>
 
           <div class="prop-row">
-            <span class="prop-key">开始</span>
+            <span class="prop-key">执行日期</span>
             <input
               class="date-input"
               type="date"
               :value="task.start || ''"
-              :max="task.due || undefined"
-              title="开始日期，留空表示未排期"
+              aria-label="执行日期（不指定时间）"
+              title="开始日期，修改后按无具体时间安排，截止日期不变"
               @change="setDate('start', $event)"
             />
           </div>
           <div class="prop-row">
             <span class="prop-key">时段开始</span>
-            <input class="datetime-input" type="datetime-local" :value="task.startAt || ''" @change="setDateTime('startAt', $event)" />
+            <input class="datetime-input" aria-label="执行时段开始" type="datetime-local" :value="task.startAt || ''" @change="setDateTime('startAt', $event)" />
           </div>
           <div class="prop-row">
             <span class="prop-key">时段结束</span>
-            <input class="datetime-input" type="datetime-local" :value="task.endAt || ''" :min="task.startAt || undefined" @change="setDateTime('endAt', $event)" />
+            <input class="datetime-input" aria-label="执行时段结束" type="datetime-local" :value="task.endAt || ''" :min="task.startAt || undefined" @change="setDateTime('endAt', $event)" />
           </div>
+          <button type="button" class="text-btn small" @click="data.patchTask(task.id, { start: '', startAt: null, endAt: null }, '清空了执行安排（截止日期不变）')">清除执行安排</button>
           <div class="prop-row">
             <span class="prop-key">可见范围</span>
             <span class="prop-val"><i class="ri-eye-line"></i>项目成员可见</span>

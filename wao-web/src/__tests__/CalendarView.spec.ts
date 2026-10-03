@@ -31,11 +31,12 @@ import {
 } from '@/api/importantDates'
 import { fetchFeishuChats } from '@/api/system'
 import { fetchAttendance, syncAttendance } from '@/api/attendance'
-import { fetchVault } from '@/api/board'
+import { fetchVault, apiPutTask } from '@/api/board'
 
 vi.mock('@/api/board', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/api/board')>(),
   fetchVault: vi.fn(),
+  apiPutTask: vi.fn(),
 }))
 
 vi.mock('@/api/caldav', () => ({
@@ -190,6 +191,41 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(ui.modal).toBe('task')
     expect(ui.modalStartAt).toBe(`${data.today}T09:00`)
     expect(ui.modalEndAt).toBe(`${data.today}T11:00`)
+  })
+
+  it('移动跨日执行安排保留截止，失败保留并重试，撤销不覆盖后续修改', async () => {
+    const data = useDataStore(pinia), session = useSessionStore(pinia)
+    const me = { id: 'wg', name: '验收', initial: '验', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' }); session.members = [me]
+    data.tasks = [{ ...data.tasks[0]!, id: 'schedule', title: '周三执行周五截止', owner: me.id, status: '待办',
+      start: '2026-10-07', due: '2026-10-09', startAt: '2026-10-07T23:00', endAt: '2026-10-08T02:00', editVersion: 'v0', subs: [], activity: [] }]
+    let version = 0
+    vi.mocked(apiPutTask).mockImplementation(async (_id, task) => ({ ...task, editVersion: `v${++version}` }))
+    const w = mount(CalendarView, { global: { plugins: [pinia, router] } })
+    await w.get('[aria-label="选择日历日期"]').setValue('2026-10-07')
+    await flushPromises()
+    async function drag(from: string, to: string) {
+      await w.get(`[data-date="${from}"] .event`).trigger('dragstart')
+      await w.get(`[data-date="${to}"]`).trigger('drop')
+      await flushPromises()
+    }
+    await drag('2026-10-07', '2026-10-08')
+    expect(data.tasks[0]).toMatchObject({ due: '2026-10-09', startAt: '2026-10-08T23:00', endAt: '2026-10-09T02:00:00' })
+    expect(w.get('.schedule-feedback').text()).toContain('已保存')
+    await w.findAll('.schedule-feedback button').find(b => b.text() === '撤销本次安排')!.trigger('click')
+    await flushPromises()
+    expect(data.tasks[0]!.startAt).toBe('2026-10-07T23:00')
+    vi.mocked(apiPutTask).mockRejectedValueOnce(new Error('专用故障'))
+    await drag('2026-10-07', '2026-10-08')
+    expect(w.get('.schedule-feedback').text()).toContain('保存失败')
+    expect(data.tasks[0]!.due).toBe('2026-10-09')
+    await w.findAll('.schedule-feedback button').find(b => b.text() === '重试保存安排')!.trigger('click')
+    await flushPromises()
+    expect(w.get('.schedule-feedback').text()).toContain('撤销本次安排')
+    data.tasks[0]!.editVersion = 'remote-newer'
+    await flushPromises()
+    expect(w.get('.schedule-feedback').text()).not.toContain('撤销本次安排')
+    expect(apiPutTask).toHaveBeenCalledTimes(4)
   })
 
   it('合并日期选择后跨月自动收敛到有效日期，搜索可点击展开', async () => {

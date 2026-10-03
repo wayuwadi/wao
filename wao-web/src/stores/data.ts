@@ -1620,7 +1620,7 @@ export const useDataStore = defineStore('data', () => {
   /** 新建任务负载：核心字段 + 可选描述 / 内嵌图片 / 落点分组。 */
   type NewTaskPayload = Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'> &
     Pick<Task, 'desc' | 'images' | 'groupId' | 'startAt' | 'endAt'> &
-    Partial<Pick<Task, 'pdcaCycles' | 'docs' | 'workItemType'>>
+    Partial<Pick<Task, 'start' | 'pdcaCycles' | 'docs' | 'workItemType'>>
 
   /** 新建任务的即时本地记录与最终落库结果。 */
   interface NewTaskResult {
