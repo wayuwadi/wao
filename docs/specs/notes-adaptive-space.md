@@ -8,3 +8,5 @@
 - 不改变保存、AI、权限或服务端接口；不增加 CLI / MCP 能力。
 
 验收见 `docs/validation/notes-adaptive-space-2026-10-03.md`。
+
+后续补充：`notes-writing-pane-resize.md` 取代上述桌面记录区固定宽度，默认三分之一并支持拖拽记忆；收起按钮合入标题统计同排。

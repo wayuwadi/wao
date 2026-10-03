@@ -24,9 +24,13 @@ import { noteCharactersCreatedOn, shanghaiDateKey } from '@/utils/noteDailyChara
 import { readNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 import { fetchNoteAiWorkflows, retryNoteAiWorkflow, type NoteAiWorkflowStatus } from '@/api/noteAiWorkflows'
 import { noteAiRecoveryMessage } from '@/utils/noteAiRecoveryMessage'
+import { useNotesPaneWidth } from '@/composables/notesPaneWidth'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const writingOpen = ref(true)
+const workspace = ref<HTMLElement | null>(null)
+const { percentage: writingPercentage, style: writingStyle, resizing, start: startWritingResize, stop: stopWritingResize, reset: resetWritingWidth, keydown: resizeWritingByKey } = useNotesPaneWidth(workspace)
+watch(writingOpen, () => stopWritingResize())
 
 const pinnedIds = ref<string[]>([])
 const pinsReady = ref(false)
@@ -865,12 +869,12 @@ onMounted(() => void loadPins())
 <template>
   <main class="notes-page" @contextmenu="openImageMenu">
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
-    <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i>今日写字 {{ todayCharacters.toLocaleString('zh-CN') }} 字</span></div><span>{{ notes.length }} 条记录</span></header>
-    <button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button>
-    <div class="notes-workspace" :class="{ 'writing-collapsed': !writingOpen }">
+    <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i>今日写字 {{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button></div><span>{{ notes.length }} 条记录</span></header>
+    <div ref="workspace" class="notes-workspace" :style="writingStyle" :class="{ 'writing-collapsed': !writingOpen, resizing }">
       <aside v-show="writingOpen" id="notes-writing-pane" class="writing-pane" aria-label="新建小记区">
         <NoteComposer :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
       </aside>
+      <div v-show="writingOpen" class="writing-resizer" role="separator" tabindex="0" aria-label="调整记录区宽度" aria-orientation="vertical" aria-controls="notes-writing-pane" :aria-valuenow="writingPercentage" aria-valuemin="25" aria-valuemax="60" :aria-valuetext="`记录区宽度 ${writingPercentage}%`" title="拖拽调整宽度，双击恢复三分之一；方向键微调" @pointerdown="startWritingResize" @keydown="resizeWritingByKey" @dblclick="resetWritingWidth"><span aria-hidden="true"></span></div>
       <section ref="notesList" class="notes-list" aria-label="小记清单" @scroll.passive="onNotesScroll">
         <div class="list-toolbar">
           <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"><button v-if="query" type="button" aria-label="清除小记查找" @click="query = ''">清除</button></label>
@@ -993,9 +997,15 @@ h1 { display: flex; flex: none; white-space: nowrap; gap: 10px; align-items: cen
 h1 i { color: #7a5cc6; }
 .page-heading p { margin: 0; color: var(--wao-text-faint); font-size: 13px; }
 .page-heading > span { color: var(--wao-text-faint); white-space: nowrap; font-size: 12px; }
-.writing-toggle { align-self: flex-start; margin: 0 0 10px; border: 1px solid var(--wao-line-control); }
+.writing-toggle { margin: 0; white-space: nowrap; border: 1px solid var(--wao-line-control); }
 .writing-toggle i { margin-right: 6px; }
-.notes-workspace { display: grid; grid-template-columns: clamp(240px, 30%, 360px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.notes-workspace { display: grid; grid-template-columns: clamp(240px, var(--notes-writing-width, 33.333333%), calc(100% - 340px)) 20px minmax(0, 1fr); gap: 0; align-items: stretch; }
+.writing-resizer { display: flex; align-items: center; justify-content: center; min-height: 80px; cursor: col-resize; touch-action: none; outline: none; }
+.writing-resizer span { width: 3px; height: 48px; border-radius: 3px; background: var(--wao-line-control); transition: background .15s, height .15s; }
+.writing-resizer:hover span, .writing-resizer:focus-visible span, .resizing .writing-resizer span { height: 80px; background: var(--wao-primary); }
+.writing-resizer:focus-visible { box-shadow: inset 0 0 0 2px var(--wao-primary); border-radius: 6px; }
+.notes-workspace.resizing { cursor: col-resize; user-select: none; }
+.resizing .writing-pane, .resizing .notes-list { pointer-events: none; }
 .notes-workspace.writing-collapsed { grid-template-columns: minmax(0, 1fr); }
 .writing-collapsed .notes-list { border-left: 0; }
 .writing-pane { min-width: 0; position: sticky; top: 20px; }
@@ -1188,7 +1198,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .writing-pane :deep(.note-composer:not(.fullscreen)) { flex: 1; min-height: 0; max-height: none; }
   .notes-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 }
-@media (max-width: 1100px) { .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } .search { flex: 1 1 50%; } }
+@media (max-width: 1100px) { .writing-resizer { display: none; } .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } .search { flex: 1 1 50%; } }
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 14px 12px 16px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .mining-modal-mask { align-items: end; padding: 10px; } .mining-modal { width: 100%; max-height: calc(100dvh - 20px); padding: 24px 6px 10px; border-radius: 18px; } .mining-modal-close { margin-right: 4px; } .list-summary { flex-wrap: wrap; } }
 @media (max-width: 600px) { .note-content.has-images { grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; } .note-images { max-height: 150px; padding-left: 7px; } }
