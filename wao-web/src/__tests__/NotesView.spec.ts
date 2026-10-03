@@ -18,7 +18,7 @@ import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { copyText } from '@/utils/clipboard'
 import { fetchNotePolishVersions } from '@/api/notePolishVersions'
-import { notePolishVersions, activateNoteWorkflowMember } from '@/utils/autoNoteEnrichment'
+import { notePolishVersions, noteEnrichmentStatus, activateNoteWorkflowMember } from '@/utils/autoNoteEnrichment'
 import { fetchNoteAiWorkflows } from '@/api/noteAiWorkflows'
 vi.mock('@/api/noteAiWorkflows', () => ({ fetchNoteAiWorkflows: vi.fn().mockResolvedValue([]), retryNoteAiWorkflow: vi.fn() }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
@@ -61,6 +61,22 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it.each(['server', 'browser'] as const)('%s 历史失败保留超时原因并指向本机 Codex', async source => {
+    useDataStore().docs.one = doc('one', '合成历史错误验收')
+    const message = '只读 AI 任务排队超时，请检查本地 Runner 后重试'
+    if (source === 'server') vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([
+      { docId: 'one', title: 'FAILED', image: 'SKIPPED', polish: 'SKIPPED', message },
+    ])
+    const wrapper = await view()
+    await flushPromises()
+    if (source === 'browser') { noteEnrichmentStatus.one = message; await flushPromises() }
+    const status = wrapper.get('[data-note-id="one"] .workflow-status').text()
+    expect(status).toContain('排队超时')
+    expect(status).toContain('本机 Codex')
+    expect(status).not.toContain('Runner')
+    delete noteEnrichmentStatus.one
+    wrapper.unmount()
+  })
   it('手动完成状态刷新恢复后不会被服务端跳过覆盖为未生成', async () => {
     useDataStore().docs.one = doc('one', '合成手动生成验收')
     localStorage.setItem('wao-note-enrichment-complete-v1:wg:one', JSON.stringify({ title: 'done', image: 'done', polish: 'done', tags: 'skipped' }))
