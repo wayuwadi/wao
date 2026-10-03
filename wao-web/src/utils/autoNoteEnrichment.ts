@@ -234,14 +234,22 @@ async function run(job: AutoJob) {
           if (conflicted || !activeJob(job)) return
           const latest = await fetchDoc(job.docId)
           if (!activeJob(job)) return
-          if (latest.rev !== job.rev || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
+          // 标签仅依赖正文与既有标签；独立标题回写不应使推荐失效。
+          const inputsChanged = latest.rev !== job.rev && (
+            JSON.stringify(resolvedRichContent(latest)) !== JSON.stringify(resolvedRichContent(source))
+            || JSON.stringify(latest.tags ?? []) !== JSON.stringify(source.tags ?? []))
+          if (latest.rev == null || inputsChanged || data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
             throw new Error('小记已被修改，标签推荐未写入；请保存后重试')
           }
           const existingTags = await fetchNoteTags()
+          if (!activeJob(job)) return
+          if (data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
+            throw new Error('小记有未保存编辑，标签推荐未写入；请保存后重试')
+          }
           const stillExisting = suggested.filter(tag => existingTags.includes(tag))
           if (!stillExisting.length) return
           const nextTags = [...new Set([...(latest.tags ?? []), ...stillExisting])].slice(0, 20)
-          const saved = await apiPatchDoc(job.docId, { tags: nextTags, expectedRev: job.rev })
+          const saved = await apiPatchDoc(job.docId, { tags: nextTags, expectedRev: latest.rev })
           if (!activeJob(job)) return
           data.applyRemoteDoc(saved)
           job.rev = saved.rev ?? job.rev + 1
