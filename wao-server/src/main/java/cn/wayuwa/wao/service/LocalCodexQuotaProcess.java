@@ -17,13 +17,19 @@ final class LocalCodexQuotaProcess {
             "CODEX_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY");
 
     static RunnerCodexQuotaReport read(String executable, Duration timeout) throws Exception {
-        var builder = new ProcessBuilder(executable, "app-server", "--stdio");
+        return run(executable, timeout, LocalCodexQuotaProcess::exchange);
+    }
+
+    interface Exchange<T> { T read(Process process) throws Exception; }
+
+    static <T> T run(String executable, Duration timeout, Exchange<T> exchange) throws Exception {
+        var builder = new ProcessBuilder(executable, "app-server");
         builder.environment().keySet().removeIf(key -> !ENV.contains(key.toUpperCase(Locale.ROOT)));
         builder.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process process = builder.start();
         var executor = Executors.newSingleThreadExecutor(r -> { var t = new Thread(r, "codex-quota-reader"); t.setDaemon(true); return t; });
         try {
-            return executor.submit(() -> exchange(process)).get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            return executor.submit(() -> exchange.read(process)).get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } finally {
             process.descendants().forEach(ProcessHandle::destroyForcibly);
             process.destroyForcibly();
@@ -45,11 +51,11 @@ final class LocalCodexQuotaProcess {
         }
     }
 
-    private static void send(BufferedWriter output, String value) throws IOException {
+    static void send(BufferedWriter output, String value) throws IOException {
         output.write(value); output.newLine(); output.flush();
     }
 
-    private static JsonNode response(BufferedReader input, int id) throws IOException {
+    static JsonNode response(BufferedReader input, int id) throws IOException {
         for (int count = 0; count < 200; count++) {
             // 有界读取，异常原文可能含供应商信息，不进入日志或异常消息。
             var line = new StringBuilder();
