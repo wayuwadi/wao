@@ -42,7 +42,7 @@ else
       [ -n "$path" ] || continue
       changed_count=$((changed_count + 1))
       case "$path" in
-        wao-web/*|wao-game/*|agent-web/*|docs/*|*.md|.github/*|.dockerignore|Jenkinsfile|deploy/jenkins/ci-*.sh|deploy/nginx/*) ;;
+        wao-web/*|wao-game/*|agent-web/*|docs/*|*.md|.github/*|.dockerignore|Jenkinsfile|deploy/jenkins/ci-*.sh|deploy/jenkins/test-*.sh|deploy/nginx/*) ;;
         *) web_only=false ;;
       esac
       case "$path" in
@@ -76,6 +76,9 @@ else
             agent-server/src/test/*) ;;
             *) deploy_required=true ;;
           esac
+          ;;
+        deploy/jenkins/test-*.sh)
+          # 发布脚本的测试不改变后端运行制品。
           ;;
         wao-game/demos/*|wao-game/.gitignore)
           ;;

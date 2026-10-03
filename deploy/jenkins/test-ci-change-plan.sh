@@ -139,4 +139,11 @@ assert_plan 'WAO_WEB_ONLY=true' "$plan"
 assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
 assert_plan 'WAO_DEPLOY_REQUIRED=true' "$plan"
 assert_plan 'WAO_TEST_WAO_WEB=false' "$plan"
+mkdir -p "$fixture/deploy/jenkins"
+printf 'test script\n' >"$fixture/deploy/jenkins/test-browser-release.sh"
+git -C "$fixture" add deploy/jenkins
+git -C "$fixture" commit -qm game-and-release-test
+plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
+assert_plan 'WAO_WEB_ONLY=true' "$plan"
+assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
 echo 'Jenkins change plan tests passed.'
