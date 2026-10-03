@@ -179,16 +179,19 @@ onMounted(async () => {
         <option value="home">纯呼吸</option>
         <option v-for="page in pages" :key="page.id" :value="page.id">{{ page.name }}</option>
       </select>
+      <div class="header-actions">
+        <button class="header-login" type="button" @click="session.authed ? enterWorkspace() : openAuth()">
+          {{ session.authed ? '进入工作空间' : '登录 WAO' }} <span aria-hidden="true">↗</span>
+        </button>
       <details ref="moreMenu" class="page-more">
         <summary>更多</summary>
         <div @click="closeMenus">
           <button @click="meditate">静坐</button><button @click="theme.toggleTheme">切换明暗</button
-          ><button class="header-login" @click="session.authed ? enterWorkspace() : openAuth()">
-            {{ session.authed ? '进入工作空间' : '登录 WAO' }}</button
           ><button @click="exportLegacy">导出旧游戏历史档</button
           ><small>旧档保留在原账号空间，备份供历史恢复；不是新游戏记忆。</small>
         </div>
       </details>
+      </div>
     </header>
     <HomeBreathingStage
       v-show="selectedPage === 'home'"
@@ -311,6 +314,9 @@ onMounted(async () => {
   cursor: pointer;
   min-height: 42px;
 }
+.header-actions { display:flex; align-items:center; gap:18px; flex:none; }
+.rainbow-header .header-login { border:1px solid var(--world-line); background:var(--world-panel); font-size:12px; min-height:44px; padding:9px 16px; }
+.rainbow-header .header-login:hover { background:color-mix(in srgb,var(--world-fg) 8%,var(--world-panel)); }
 .home-link {
   font-size: 18px !important;
   letter-spacing: 2px;
@@ -490,7 +496,9 @@ summary:focus-visible {
 @media (max-width: 600px) {
   .rainbow-header {
     padding: 10px 14px;
-    gap: 12px;
+    gap: 10px 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
   .rainbow-play {
     padding: 10px 8px;
@@ -501,9 +509,9 @@ summary:focus-visible {
   .page-more > div {
     right: 12px;
   }
-  .rainbow-select {
-    max-width: 200px;
-  }
+  .header-actions { grid-column:2; grid-row:1; gap:12px; }
+  .rainbow-header .header-login { padding:9px 12px; }
+  .rainbow-select { grid-column:1 / -1; grid-row:2; width:100%; max-width:none; min-width:0; }
 }
 .rift-page { --game-accent: #d97a35; background: #fff4df; }
 .rift-page[data-entry-theme='dark'] { background: #382d34; }
