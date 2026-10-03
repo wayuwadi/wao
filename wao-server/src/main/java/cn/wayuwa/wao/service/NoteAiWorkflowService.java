@@ -1,6 +1,8 @@
 package cn.wayuwa.wao.service;
 
 import cn.wayuwa.wao.common.NotFoundException;
+import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.dto.ArticleImageRequest;
 import cn.wayuwa.wao.dto.CreateNoteRequest;
@@ -124,6 +126,7 @@ public class NoteAiWorkflowService {
     public void advance(String docId) {
         Workflow workflow = workflows.lock(docId);
         if (workflow == null) return;
+        Workflow original = workflow;
         DocDto doc = ownedNote(workflow);
         if (doc == null || doc.content() == null || doc.rev() == null) {
             workflows.update(failRemaining(workflow, "小记已删除或不属于原作者"));
@@ -139,9 +142,9 @@ public class NoteAiWorkflowService {
         if (doc.rev() != workflow.baseRev()) workflow = workflow.withRev(doc.rev());
         int capacity = executionCapacity(workflow.memberId());
         if (capacity == 1) {
-            if (active(workflow.titleStatus())) { advanceStage(workflow, "title"); return; }
-            if (active(workflow.imageStatus())) { advanceStage(workflow, "image"); return; }
-            if (active(workflow.polishStatus())) advanceStage(workflow, "polish");
+            if (active(workflow.titleStatus())) { advanceStage(workflow, "title", original); return; }
+            if (active(workflow.imageStatus())) { advanceStage(workflow, "image", original); return; }
+            if (active(workflow.polishStatus())) advanceStage(workflow, "polish", original);
             return;
         }
 
@@ -152,11 +155,20 @@ public class NoteAiWorkflowService {
             if (!active(status)) continue;
             boolean alreadyQueued = RUNNING.equals(status) && stageJobId(workflow, stage) != null;
             if (!alreadyQueued && workflows.countRunningStages(workflow.memberId()) >= capacity) continue;
-            workflow = advanceStage(workflow, stage);
+            workflow = advanceStage(workflow, stage, original);
         }
     }
 
-    private Workflow advanceStage(Workflow workflow, String stage) {
+    private Workflow advanceStage(Workflow workflow, String stage, Workflow original) {
+        try {
+            return performStage(workflow, stage);
+        } catch (RuntimeException error) {
+            // 阶段异常必须越过事务代理，入队/正文写回全部回滚后才记录失败。
+            throw new StageFailure(original, stage, error);
+        }
+    }
+
+    private Workflow performStage(Workflow workflow, String stage) {
         DocDto current = ownedNote(workflow);
         if (current == null || current.content() == null) {
             Workflow failed = failRemaining(workflow, "小记已删除或不属于原作者");
@@ -204,17 +216,35 @@ public class NoteAiWorkflowService {
         };
     }
 
-    /** 阶段调用回滚后单独保存失败状态，下一阶段仍可继续。 */
+    /** 阶段事务回滚后只标记实际失败阶段；并发重试、版本冲突及数据库恢复不被迟到错误覆盖。 */
     @Transactional
-    public void failCurrent(String docId, String message) {
+    public void failAdvance(String docId, RuntimeException error) {
+        if (!(error instanceof StageFailure failure) || !docId.equals(failure.original.docId())) return;
+        for (Throwable cause = failure.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof org.springframework.dao.DataAccessException || cause instanceof ConflictException) return;
+        }
         Workflow w = workflows.lock(docId);
-        if (w == null) return;
-        String error = limit(message == null ? "自动整理失败" : message, 500);
-        if (active(w.titleStatus())) workflows.update(w.withTitle(FAILED, w.titleJobId(), w.baseRev(), w.originalTitle(), error));
-        else if (active(w.polishStatus()) && w.polishJobId() == null)
-            workflows.update(w.withPolish(FAILED, null, error));
-        else if (active(w.imageStatus())) workflows.update(w.withImage(FAILED, w.imageRunId(), w.baseRev(), w.sourceMarkdownHash(), error));
-        else if (active(w.polishStatus())) workflows.update(w.withPolish(FAILED, w.polishJobId(), error));
+        if (!failure.original.equals(w)) return;
+        String label = switch (failure.stage) { case "title" -> "标题"; case "image" -> "配图"; default -> "润色"; };
+        String reason = failure.getCause() instanceof BadRequestException || failure.getCause() instanceof NotFoundException
+                ? failure.getCause().getMessage() : "请重试；若仍失败请检查本机 Codex 与服务日志";
+        String message = limit(label + "整理失败；原文已保留。" + (reason == null ? "请重试" : reason), 500);
+        Workflow failed = switch (failure.stage) {
+            case "title" -> w.withTitle(FAILED, w.titleJobId(), w.baseRev(), w.originalTitle(), message);
+            case "image" -> w.withImage(FAILED, w.imageRunId(), w.baseRev(), w.sourceMarkdownHash(), message);
+            default -> w.withPolish(FAILED, w.polishJobId(), message);
+        };
+        workflows.update(failed);
+    }
+
+    private static final class StageFailure extends RuntimeException {
+        private final Workflow original;
+        private final String stage;
+        StageFailure(Workflow original, String stage, RuntimeException cause) {
+            super("小记阶段推进失败：" + stage, cause);
+            this.original = original;
+            this.stage = stage;
+        }
     }
 
     private Workflow advanceTitle(Workflow workflow, DocDto doc) {
@@ -261,7 +291,7 @@ public class NoteAiWorkflowService {
             return workflow.withImage(DONE, runId, saved.rev(), digest(content.markdown()), null);
         } catch (RuntimeException ex) {
             if (ex.getMessage() != null && ex.getMessage().contains("已有一张总览图正在生成")) return workflow;
-            return workflow.withImage(FAILED, workflow.imageRunId(), workflow.baseRev(), workflow.sourceMarkdownHash(), shortError(ex));
+            throw ex;
         }
     }
 
@@ -326,7 +356,6 @@ public class NoteAiWorkflowService {
     }
     private static boolean active(String status) { return PENDING.equals(status) || RUNNING.equals(status); }
     private static String limit(String value, int max) { return value.length() <= max ? value : value.substring(0, max); }
-    private static String shortError(RuntimeException ex) { return limit(ex.getMessage() == null ? "自动整理失败" : ex.getMessage(), 500); }
     private static String requestId() { return UUID.randomUUID().toString().replace("-", ""); }
     private static String digest(String value) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }

@@ -314,9 +314,10 @@ export interface Task {
   /** 所属任务分组 id（项目分组视图）；未归组时为空，视为落在第一个分组。 */
   groupId?: string | null
   parts: string[]
+  /** 执行开始日期；没有具体时段时按此日期安排，空表示未安排。 */
   start?: string
   due: string
-  /** 日历时间段开始（本地 ISO 日期时间，yyyy-MM-ddTHH:mm）；为空表示仅按截止日展示。 */
+  /** 执行时段开始（本地 ISO 日期时间，yyyy-MM-ddTHH:mm）；优先于 start，不改变 due。 */
   startAt?: string | null
   /** 日历时间段结束（本地 ISO 日期时间）；仅在 startAt 有值时使用。 */
   endAt?: string | null

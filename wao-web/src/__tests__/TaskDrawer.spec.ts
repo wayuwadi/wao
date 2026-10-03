@@ -701,6 +701,19 @@ describe('TaskDrawer', () => {
     expect(data.taskById(taskId)!.activity[0]!.text).toContain('清空了开始日期')
   })
 
+  it('编辑时段和清空安排保持独立截止日期', async () => {
+    const t = data.taskById(taskId)!
+    t.due = '2026-10-09'; t.startAt = null; t.endAt = null
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.get('[aria-label="执行时段开始"]').setValue('2026-10-07T23:00')
+    await w.get('[aria-label="执行时段结束"]').setValue('2026-10-08T02:00')
+    expect(t.due).toBe('2026-10-09')
+    expect(t.start).toBe('2026-10-07')
+    await w.findAll('button').find(b => b.text() === '清除执行安排')!.trigger('click')
+    expect([t.start, t.startAt, t.endAt, t.due]).toEqual(['', null, null, '2026-10-09'])
+  })
+
   it('没有已完成子任务时不显示隐藏开关', async () => {
     data.addSub(taskId, '只有这一条')
     ui.openTask(taskId)

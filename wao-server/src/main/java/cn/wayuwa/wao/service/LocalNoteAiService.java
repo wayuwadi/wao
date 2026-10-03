@@ -137,6 +137,10 @@ public class LocalNoteAiService {
             try { workflowService.getObject().advance(id); }
             catch (RuntimeException exception) {
                 log.warn("本机小记工作流推进失败：{}", exception.getClass().getSimpleName());
+                try { workflowService.getObject().failAdvance(id, exception); }
+                catch (RuntimeException saveError) {
+                    log.warn("本机小记失败状态保存暂不可用：{}", saveError.getClass().getSimpleName());
+                }
             }
         }
     }

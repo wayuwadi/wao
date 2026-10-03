@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { isTaskFinished } from '@/utils/projectCompletion'
+import { moveTaskSchedule, sameSchedule, scheduleSnapshot, taskCalendarEntries, type TaskSchedule } from '@/utils/taskSchedule'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -52,6 +53,7 @@ interface CalEvt {
   time?: string
   endTime?: string
   taskId?: string
+  deadline?: boolean
   holidayDayType?: HolidayDayType
   holiday?: HolidayEvent
   importantDate?: FamilyImportantDateEvent
@@ -331,7 +333,8 @@ watch([calY, calM, calD, viewMode, () => preferences.weekStart], loadCalendarSou
 // ---------- 图例：固定来源 ----------
 const legend = computed(() => {
   const items = [
-    { label: '任务截止', color: '#4358D6' },
+    { label: '执行安排', color: '#4358D6' },
+    { label: '任务截止', color: '#B9821F' },
     { label: '里程碑', color: '#B9821F' },
     { label: '中国节假日', color: '#D9634C' },
   ]
@@ -362,20 +365,18 @@ const events = computed<CalEvt[]>(() => {
     event.go = () => { searchPreview.value = event }; evs.push(event)
   })
   data.tasks
-    .filter((t) => t.owner === calendarMemberId.value && (t.due || t.startAt)
+    .filter((t) => t.owner === calendarMemberId.value && (t.due || t.start || t.startAt)
       && (showCompletedTasks.value || !isTaskFinished(t)))
-    .forEach((t) => evs.push({
-      date: t.startAt?.slice(0, 10) || t.due,
-      title: t.title + (t.status === '已完成' && !isTaskFinished(t) ? ' · 仍有 ' + t.subs.filter(sub => !sub.done).length + ' 项子项未收尾' : ''),
-      color: '#4358D6',
+    .forEach((t) => taskCalendarEntries(t, `${calY.value - 1}-12-01`, `${calY.value + 1}-01-31`).forEach(entry => evs.push({
+      ...entry,
+      title: `${entry.label} · ${t.title}` + (t.status === '已完成' && !isTaskFinished(t) ? ' · 仍有 ' + t.subs.filter(sub => !sub.done).length + ' 项子项未收尾' : ''),
+      color: entry.deadline ? '#B9821F' : '#4358D6',
       completed: isTaskFinished(t),
-      time: t.startAt?.slice(11, 16),
-      endTime: t.endAt?.slice(11, 16),
       taskId: t.id,
       kind: '任务',
       sourceLabel: data.projectById(t.project)?.name ?? '个人事项',
       go: () => ui.openTask(t.id),
-    }))
+    })))
   data.projects.forEach((p) => {
     p.msDates.forEach((d, i) => {
       const name = p.milestones[i]?.name
@@ -1028,7 +1029,8 @@ function quickCreate(dayIso: string) {
 
 function continueCreateTask() {
   showCreateChoice.value = false
-  ui.openModal('task', '', createPreset.day, createPreset.startAt, createPreset.endAt)
+  ui.openModal('task', '', '', createPreset.startAt, createPreset.endAt)
+  ui.modalScheduleDate = createPreset.day
 }
 
 function continueCreateReminder() {
@@ -1064,10 +1066,41 @@ const selectedDate = computed({
 })
 
 const dragTaskId = ref<string | null>(null)
+const dragScheduleDay = ref<string | undefined>()
 const dragOverDay = ref<string | null>(null)
+const scheduleChange = ref<{ id: string; before: TaskSchedule; after: TaskSchedule; version?: string; undone?: boolean } | null>(null)
+const scheduleState = computed(() => scheduleChange.value ? data.taskSaveState(scheduleChange.value.id) : 'idle')
+const scheduleChanged = computed(() => {
+  const change = scheduleChange.value, task = change && data.taskById(change.id)
+  return !!(change && (!task || (change.version && task.editVersion !== change.version)
+    || !sameSchedule(task, change.undone ? change.before : change.after)))
+})
+const canUndoSchedule = computed(() => {
+  const change = scheduleChange.value, task = change && data.taskById(change.id)
+  return !!(change && task && !change.undone && change.version && scheduleState.value === 'saved'
+    && task.editVersion === change.version && sameSchedule(task, change.after))
+})
 
-function onDragStart(taskId: string, ev: DragEvent) {
+async function saveSchedule() {
+  const change = scheduleChange.value
+  if (!change) return
+  await data.flushTask(change.id)
+  if (scheduleChange.value === change && data.taskSaveState(change.id) === 'saved') {
+    change.version = data.taskById(change.id)?.editVersion
+  }
+}
+async function undoSchedule() {
+  if (!canUndoSchedule.value) return
+  const change = scheduleChange.value!
+  change.undone = true
+  data.patchTask(change.id, change.before, '撤销了日历执行安排调整（截止日期不变）')
+  await saveSchedule()
+}
+
+function onDragStart(taskId: string, ev: DragEvent, scheduleDay?: string) {
+  if (scheduleState.value === 'saving' || scheduleState.value === 'error' || data.taskSaveState(taskId) === 'saving' || data.taskSaveState(taskId) === 'error') { ev.preventDefault(); return }
   dragTaskId.value = taskId
+  dragScheduleDay.value = scheduleDay
   ev.dataTransfer?.setData('text/plain', taskId)
   if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'
 }
@@ -1075,24 +1108,18 @@ function onDragEnd() {
   dragTaskId.value = null
   dragOverDay.value = null
 }
-function onDropDay(dayIso: string) {
+async function onDropDay(dayIso: string) {
   const id = dragTaskId.value
   dragTaskId.value = null
   dragOverDay.value = null
   if (!id) return
   const t = data.taskById(id)
-  if (!t || t.due === dayIso) return
-  const hadDue = !!t.due
-  const timed = t.startAt ? {
-    startAt: `${dayIso}T${t.startAt.slice(11)}`,
-    endAt: t.endAt ? `${dayIso}T${t.endAt.slice(11)}` : null,
-  } : {}
-  data.patchTask(
-    id,
-    { due: dayIso, ...timed },
-    `通过日历${hadDue ? '拖拽调整' : '拖拽排期'}，日期设为 ${dayIso}`,
-  )
-  toast(`「${t.title}」已排到 ${dayIso}`, 'ri-calendar-check-line')
+  if (!t || data.taskSaveState(id) === 'saving' || data.taskSaveState(id) === 'error') return
+  const after = moveTaskSchedule(t, dayIso, dragScheduleDay.value)
+  if (sameSchedule(t, after)) return
+  scheduleChange.value = { id, before: scheduleSnapshot(t), after }
+  data.patchTask(id, after, `通过日历将执行安排移到 ${dayIso}（截止日期不变）`)
+  await saveSchedule()
 }
 useOverlayDismiss(() => showWorkScheduleConfig.value, closeWorkScheduleConfig)
 useOverlayDismiss(() => showHolidaySettings.value, closeHolidaySettings)
@@ -1104,6 +1131,15 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
 
 <template>
   <div class="cal" :class="`cal-${viewMode}`">
+    <div v-if="scheduleChange" class="schedule-feedback" role="status">
+      <span v-if="scheduleState === 'saving'">正在保存执行安排…</span>
+      <span v-else-if="scheduleState === 'error'">保存失败，执行安排已保留在本机。{{ data.taskSaveError(scheduleChange.id) }}</span>
+      <span v-else-if="scheduleChanged">任务已有后续更新，本次安排不能再撤销。</span>
+      <span v-else>{{ scheduleChange.undone ? '已撤销执行安排调整' : '执行安排已保存' }} · 截止日期不变</span>
+      <button v-if="scheduleState === 'error' && !data.taskConflicts[scheduleChange.id]" @click="saveSchedule">重试保存安排</button>
+      <button v-if="canUndoSchedule" @click="undoSchedule">撤销本次安排</button>
+      <button @click="ui.openTask(scheduleChange.id)">打开任务</button>
+    </div>
     <div class="cal-top">
       <div class="cal-heading-row">
         <div class="calendar-visibility" role="group" aria-label="日历显示内容">
@@ -1161,6 +1197,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
           <div
             v-for="dy in wk"
             :key="dy.iso"
+            :data-date="dy.iso"
             class="day"
             :class="{ 'drop-target': dragTaskId, 'drop-over': dragOverDay === dy.iso }"
             :style="{ background: dy.bg }"
@@ -1183,10 +1220,10 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
                 :key="ei"
                 class="event"
                 :class="{ completed: ev.completed }"
-                :title="ev.time ? `${ev.time} ${ev.title}` : ev.title"
+                :title="(ev.time ? `${ev.time} ${ev.title}` : ev.title) + (ev.taskId ? '（拖动只调整执行安排）' : '')"
                 :draggable="!!ev.taskId"
                 @click="ev.go?.()"
-                @dragstart="ev.taskId && onDragStart(ev.taskId, $event)"
+                @dragstart="ev.taskId && onDragStart(ev.taskId, $event, ev.deadline ? undefined : ev.date)"
                 @dragend="onDragEnd"
               >
                 <span class="ev-dot" :style="{ background: ev.color }"></span>
@@ -2356,4 +2393,6 @@ button.holiday-status { cursor: pointer; }
   .date-navigation .nav-btn:last-child { grid-row: 1; grid-column: 3; }
   .member-calendar { max-width: 100%; }
 }
+.schedule-feedback { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--wao-bg-soft); font-size: 12px; }
+.schedule-feedback button { border: 1px solid var(--wao-border); border-radius: 6px; background: var(--wao-bg); padding: 5px 8px; cursor: pointer; }
 </style>

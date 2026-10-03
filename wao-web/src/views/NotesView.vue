@@ -489,7 +489,7 @@ function workflowProgress(id: string) {
   const combined = { title: state(server.title), image: state(server.image), polish: state(server.polish), tags: local?.tags ?? 'pending' }
   for (const stage of ['title', 'image', 'polish'] as const) {
     if ((combined[stage] === 'done' || combined[stage] === 'skipped')
-        && (local?.[stage] === 'running' || local?.[stage] === 'failed')) combined[stage] = local[stage]
+        && (local?.[stage] === 'running' || local?.[stage] === 'failed' || local?.[stage] === 'done')) combined[stage] = local[stage]
   }
   return combined
 }

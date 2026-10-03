@@ -22,9 +22,9 @@ public class NoteAiWorkflowScheduler {
         for (String docId : mapper.pendingDocIds(30)) {
             try { workflows.advance(docId); }
             catch (RuntimeException ex) {
-                log.warn("小记自动整理推进失败：{}", docId, ex);
-                try { workflows.failCurrent(docId, ex.getMessage()); }
-                catch (RuntimeException saveError) { log.warn("小记自动整理失败状态保存失败：{}", docId, saveError); }
+                log.warn("小记自动整理推进失败：{}", ex.getClass().getSimpleName());
+                try { workflows.failAdvance(docId, ex); }
+                catch (RuntimeException saveError) { log.warn("小记自动整理失败状态保存暂不可用：{}", saveError.getClass().getSimpleName()); }
             }
         }
     }
