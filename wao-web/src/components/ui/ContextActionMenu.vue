@@ -9,6 +9,7 @@ const label = ref('')
 const actions = ref<ContextAction[]>([])
 const position = ref({ left: 0, top: 0 })
 let trigger: HTMLElement | null = null
+let anchored = false
 
 function close(restoreFocus = false) {
   if (!open.value) return
@@ -27,17 +28,27 @@ function outside(event: PointerEvent) {
 }
 function onScroll(event: Event) {
   if (event.target instanceof Node && menu.value?.contains(event.target)) return
+  if (anchored && trigger && menu.value) {
+    const rect = trigger.getBoundingClientRect()
+    const bounds = menu.value.getBoundingClientRect()
+    position.value = {
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - bounds.width - 8)),
+      top: Math.max(8, Math.min(rect.bottom, window.innerHeight - bounds.height - 8)),
+    }
+    return
+  }
   close()
 }
 function onResize() { close() }
 
-async function openAt(event: MouseEvent | KeyboardEvent, targetLabel: string, items: ContextAction[]) {
+async function openAt(event: MouseEvent | KeyboardEvent, targetLabel: string, items: ContextAction[], anchor?: HTMLElement) {
   if (!items.length) return
   if (event instanceof MouseEvent) event.preventDefault()
   close()
-  trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  anchored = !!anchor
+  trigger = anchor ?? (event.currentTarget instanceof HTMLElement ? event.currentTarget : null)
   const rect = trigger?.getBoundingClientRect()
-  const keyboard = event instanceof KeyboardEvent
+  const keyboard = !!anchor || event instanceof KeyboardEvent
   position.value = {
     left: keyboard ? (rect?.left ?? 8) : event.clientX,
     top: keyboard ? (rect?.bottom ?? 8) : event.clientY,
