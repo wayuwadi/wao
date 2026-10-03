@@ -24,9 +24,11 @@ const favoriteKbs = computed(() => data.kbs.filter((kb) => knowledgeFavorites.id
 import QuickLinks from '@/components/nav/QuickLinks.vue'
 import MenuGroupPicker from '@/components/nav/MenuGroupPicker.vue'
 
-const emit = defineEmits<{ (e: 'open-search'): void }>()
+const emit = defineEmits<{ (e: 'open-search'): void; (e: 'navigate'): void }>()
 
 const nav = useNavStore()
+// 手机完整菜单不继承桌面侧栏的窄条偏好，也不改写该偏好。
+const isCollapsed = computed(() => !isMobile.value && nav.collapsed)
 const session = useSessionStore()
 const favorites = useFavoritesStore()
 const favoriteProjects = computed(() => favorites.items.filter((item) => item.type === 'project'))
@@ -72,6 +74,7 @@ onMounted(() => {
 function go(id: NavItemId) {
   const meta = nav.itemMeta(id)
   if (!meta) return
+  emit('navigate')
   if (meta.openMode === 'NEW_PAGE') {
     const target = meta.newPagePath ?? meta.path
     const href = /^https:\/\//i.test(target) ? target : router.resolve(target).href
@@ -81,6 +84,7 @@ function go(id: NavItemId) {
   router.push(meta.path)
 }
 function goSettings() {
+  emit('navigate')
   router.push('/settings')
 }
 
@@ -123,7 +127,7 @@ function openRename(event: MouseEvent, id: NavItemId) {
 }
 
 function openContextMenu(event: MouseEvent, id: NavItemId) {
-  if (nav.collapsed || isMobile.value) return
+  if (isCollapsed.value || isMobile.value) return
   contextMenu.value = {
     id,
     groupId: null,
@@ -135,7 +139,7 @@ function openContextMenu(event: MouseEvent, id: NavItemId) {
 }
 
 function openGroupContextMenu(event: MouseEvent, groupId: string) {
-  if (nav.collapsed || isMobile.value || groupId === 'ROOT') return
+  if (isCollapsed.value || isMobile.value || groupId === 'ROOT') return
   contextMenu.value = {
     id: null,
     groupId,
@@ -274,22 +278,22 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 </script>
 
 <template>
-  <aside class="side" :class="{ collapsed: nav.collapsed }">
+  <aside class="side" :class="{ collapsed: isCollapsed }">
     <div class="side-heading">
-      <WaoLogo v-if="!desktopToolbar && !nav.collapsed" wordmark />
+      <WaoLogo v-if="!desktopToolbar && !isCollapsed" wordmark />
       <button
         class="side-collapse"
-        :aria-label="nav.collapsed ? '展开侧栏' : '折叠侧栏'"
-        :title="nav.collapsed ? '展开侧栏' : '折叠侧栏'"
-        :aria-expanded="!nav.collapsed"
+        :aria-label="isCollapsed ? '展开侧栏' : '折叠侧栏'"
+        :title="isCollapsed ? '展开侧栏' : '折叠侧栏'"
+        :aria-expanded="!isCollapsed"
         @click="nav.toggleCollapse()"
       >
-        <i :class="nav.collapsed ? 'ri-side-bar-line' : 'ri-sidebar-fold-line'"></i
-        ><span v-if="!nav.collapsed && desktopToolbar">折叠侧栏</span>
+        <i :class="isCollapsed ? 'ri-side-bar-line' : 'ri-sidebar-fold-line'"></i
+        ><span v-if="!isCollapsed && desktopToolbar">折叠侧栏</span>
       </button>
     </div>
 
-    <div v-if="!nav.collapsed" class="search-row">
+    <div v-if="!isCollapsed" class="search-row">
       <button class="search" aria-label="搜索功能与内容" aria-keyshortcuts="Meta+K Control+K" @click="emit('open-search')">
         <i class="ri-search-line"></i>
         <span class="search-text">搜索功能与内容</span>
@@ -300,19 +304,19 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     <button
       v-if="!nav.menuConfig('navigation')?.visible"
       class="all-functions"
-      :title="nav.collapsed ? '全部功能' : undefined"
+      :title="isCollapsed ? '全部功能' : undefined"
       @click="router.push('/navigation')"
     >
-      <i class="ri-apps-2-line"></i><span v-if="!nav.collapsed">全部功能</span>
+      <i class="ri-apps-2-line"></i><span v-if="!isCollapsed">全部功能</span>
     </button>
-    <div v-if="nav.menuMutationError && !nav.collapsed" class="nav-save-error" role="alert">
+    <div v-if="nav.menuMutationError && !isCollapsed" class="nav-save-error" role="alert">
       {{ nav.menuMutationError
       }}<button @click="router.push('/settings?tab=navigation')">处理未保存的布局</button>
     </div>
     <nav ref="menuRef" class="menu" aria-label="模块导航">
       <template v-for="g in groups" :key="g.id">
         <button
-          v-if="g.label && !nav.collapsed && (g.items.length || !g.configuredMenuCount)"
+          v-if="g.label && !isCollapsed && (g.items.length || !g.configuredMenuCount)"
           class="group-label"
           :data-group-id="g.id"
           :title="isMobile ? g.label : '点击折叠 / 展开，右键管理分组'"
@@ -324,11 +328,11 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           {{ desktopToolbar && g.id === 'PUBLIC' && g.label === '公共' ? '协作' : g.label }}
           <i :class="nav.isFolded(g.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>
         </button>
-        <div v-else-if="g.label && nav.collapsed && (g.items.length || !g.configuredMenuCount)" class="group-gap"></div>
+        <div v-else-if="g.label && isCollapsed && (g.items.length || !g.configuredMenuCount)" class="group-gap"></div>
 
         <!-- 手机没有分组展开按钮，必须始终展示全部可见模块，不能复用桌面的折叠状态。 -->
         <div
-          v-if="(g.items.length || !g.configuredMenuCount) && (isMobile || !nav.isFolded(g.id) || nav.collapsed)"
+          v-if="(g.items.length || !g.configuredMenuCount) && (isMobile || !nav.isFolded(g.id) || isCollapsed)"
           class="items"
           @dragover.prevent
           @drop.prevent="onDrop('MENU', g.id)"
@@ -337,14 +341,14 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           <button
             class="item"
             :class="{
-              active: activeItem === id && !(id === 'knowledge' && !nav.collapsed && route.name === 'kb' && favoriteKbs.some((kb) => kb.id === route.params.id)) && !(id === 'home' && route.query.console) && !(id === 'projects' && !nav.collapsed && favoriteProjects.some((project) => route.path === `/projects/${project.targetId}`)),
-              center: nav.collapsed,
+              active: activeItem === id && !(id === 'knowledge' && !isCollapsed && route.name === 'kb' && favoriteKbs.some((kb) => kb.id === route.params.id)) && !(id === 'home' && route.query.console) && !(id === 'projects' && !isCollapsed && favoriteProjects.some((project) => route.path === `/projects/${project.targetId}`)),
+              center: isCollapsed,
               dragging: dragId === id,
               'drag-over': !!dragId && dragOverId === id,
             }"
             :title="nav.itemMeta(id)?.label"
             :aria-label="nav.itemMeta(id)?.label"
-            :draggable="!isMobile && !nav.collapsed && nav.canMoveMenus"
+            :draggable="!isMobile && !isCollapsed && nav.canMoveMenus"
             @click="go(id)"
             @contextmenu.prevent="openContextMenu($event, id)"
             @dragstart="onDragStart(id, $event)"
@@ -353,9 +357,9 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             @dragend="onDragEnd"
           >
             <i :class="nav.itemMeta(id)?.icon"></i>
-            <span class="item-label" :class="{ 'compact-label': nav.collapsed }">{{ nav.itemMeta(id)?.label }}</span>
+            <span class="item-label" :class="{ 'compact-label': isCollapsed }">{{ nav.itemMeta(id)?.label }}</span>
           </button>
-          <div v-if="id === 'knowledge' && favoriteKbs.length && !nav.collapsed" class="favorite-children knowledge-children">
+          <div v-if="id === 'knowledge' && favoriteKbs.length && !isCollapsed" class="favorite-children knowledge-children">
             <div v-for="kb in favoriteKbs" :key="kb.id" class="favorite-child knowledge-child">
             <button class="item" :class="{ active: route.params.id === kb.id && route.name === 'kb' }" :title="kb.name" @click="router.push(tabs.tabs.find((tab) => tab.key === `kb:${kb.id}`)?.path || `/kb/${kb.id}`)">
               <span class="item-label">{{ kb.name }}</span>
@@ -363,7 +367,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             <button class="favorite-unfavorite knowledge-unfavorite" title="取消收藏" :aria-label="`取消收藏：${kb.name}`" :disabled="knowledgeFavorites.saving" @click="knowledgeFavorites.toggle(kb.id)"><i class="ri-star-fill" aria-hidden="true"></i></button>
             </div>
           </div>
-          <div v-if="id === 'projects' && favoriteProjects.length && !nav.collapsed" class="favorite-children project-children">
+          <div v-if="id === 'projects' && favoriteProjects.length && !isCollapsed" class="favorite-children project-children">
             <div v-for="project in favoriteProjects" :key="project.targetId" class="favorite-child">
               <button class="item" :class="{ active: route.path === `/projects/${project.targetId}` }" :title="project.label"
                 :draggable="!isMobile && !!favoriteShortcut(project)"
@@ -378,7 +382,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
         </div>
 
         <!-- 收藏分组紧跟首页之后；手机与桌面复用同一份真实收藏。 -->
-        <template v-if="!g.label && otherFavorites.length && !nav.collapsed">
+        <template v-if="!g.label && otherFavorites.length && !isCollapsed">
           <button
             class="group-label fav-group"
             :title="isMobile ? '收藏' : '折叠 / 展开分组'"
@@ -412,7 +416,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 
     <!-- 停靠菜单仍由菜单注册表驱动；快捷链接继续使用独立的成员级真实配置。 -->
     <div
-      v-if="!nav.collapsed"
+      v-if="!isCollapsed"
       class="quick-row"
       :class="{ 'drag-over': !!dragId && dragOverId === 'dock' }"
       aria-label="底部图标区"
@@ -454,14 +458,14 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     <div class="user-row">
       <button
         class="user"
-        :class="{ center: nav.collapsed }"
+        :class="{ center: isCollapsed }"
         title="成员、权限与系统设置"
         @click="goSettings"
       >
         <span class="avatar" :style="{ background: session.currentUser.color }">{{
           session.currentUser.initial
         }}</span>
-        <template v-if="!nav.collapsed">
+        <template v-if="!isCollapsed">
           <span class="user-meta">
             <span class="user-name">{{ session.currentUser.name }}</span>
             <span class="user-role">{{ session.currentUser.role }}</span>
@@ -1069,144 +1073,15 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 }
 
 @media (max-width: 760px) {
-  .side-heading :deep(.wao-logo-name) { display: none; }
-  .side-heading :deep(.wao-logo-symbol) { width: 30px; height: 22px; }
-  .side,
-  .side.collapsed {
-    position: relative;
-    z-index: 70;
-    width: clamp(88px, 24vw, 104px);
-    height: 100dvh;
-    padding-bottom: env(safe-area-inset-bottom);
-    border-top: 0;
-    border-right: 1px solid var(--wao-line);
-    background: var(--wao-bg-side);
-    box-shadow: 4px 0 14px rgba(16, 18, 28, 0.05);
-    overflow: hidden;
-  }
-  .side.collapsed {
-    width: 48px;
-  }
-  .brand-row {
-    gap: 5px;
-    padding: 8px 6px 5px;
-  }
-  .brand-mark {
-    width: 22px;
-    height: 22px;
-    border-radius: 6px;
-    font-size: 8px;
-  }
-  .org {
-    gap: 1px;
-    padding: 1px;
-  }
-  .org-name {
-    overflow: hidden;
-    font-size: 9.5px;
-    line-height: 1.2;
-    text-overflow: ellipsis;
-  }
-  .org i {
-    display: none;
-  }
-  .search-row {
-    padding: 1px 5px 4px;
-  }
-  .search {
-    height: 27px;
-    gap: 4px;
-    padding: 0 6px;
-    border-radius: 6px;
-    font-size: 9px;
-  }
-  .search-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .kbd,
-  .quick-row {
-    display: none;
-  }
-  .menu {
-    display: block;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding: 1px 0 4px;
-    overscroll-behavior: contain;
-  }
-  .group-label {
-    gap: 2px;
-    padding: 7px 7px 2px;
-    font-size: 8px;
-    letter-spacing: 0.08em;
-  }
-  .group-label i {
-    display: none;
-  }
-  .group-gap {
-    height: 7px;
-    margin: 0 6px 5px;
-  }
-  .items {
-    gap: 0;
-    padding: 0 4px;
-  }
-  .item,
-  .item.center {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    height: 27px;
-    padding: 0 5px;
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 4px;
-    border-radius: 6px;
-    font-size: 10px;
-  }
-  .item-label {
-    display: block;
-    min-width: 0;
-    max-width: none;
-    flex: 1;
-    text-align: left;
-    font-size: 10px;
-    line-height: 1.2;
-  }
-  .item i {
-    font-size: 12px;
-  }
-  .side.collapsed .item.center {
-    justify-content: center;
-    padding: 0;
-  }
-  .fav-remove {
-    display: none;
-  }
-  .user-row {
-    padding: 4px;
-  }
-  .user {
-    min-height: 28px;
-    gap: 4px;
-    padding: 3px;
-  }
-  .avatar {
-    width: 21px;
-    height: 21px;
-    font-size: 9px;
-  }
-  .user-name {
-    overflow: hidden;
-    font-size: 9px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .user-role,
-  .user-row .user > i {
-    display: none;
-  }
+  .side { width: 100%; height: 100%; min-height: 0; border: 0; background: var(--wao-bg-card); box-shadow: none; }
+  .side-heading { display: none; }
+  .search { height: 40px; font-size: 13px; }
+  .search-row { padding: 8px 12px; }
+  .kbd { display: none; }
+  .menu { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .item { min-height: 40px; }
+  .item-label { font-size: 13px; }
+  .group-label { font-size: 12px; }
+  .user { min-height: 44px; }
 }
 </style>
