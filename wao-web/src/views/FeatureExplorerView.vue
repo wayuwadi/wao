@@ -1,685 +1,527 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Modal } from 'ant-design-vue'
+import { useRoute, useRouter } from 'vue-router'
 import { MODULES } from '@/config/nav'
-import { FEATURE_CATALOG } from '@/data/featureCatalog'
+import { CURRENT_RELEASE, FEATURE_CATALOG } from '@/data/featureCatalog'
 import {
   FEATURE_CATEGORIES,
   type FeatureCatalogEntry,
   type FeatureCategory,
 } from '@/types/featureExplorer'
 import ReleaseHistory from '@/components/release/ReleaseHistory.vue'
-import { openReleaseHighlights } from '@/utils/versionUpdate'
-
+import ReleaseEditionContent from '@/components/release/ReleaseEditionContent.vue'
+import ExplorerPagination from '@/components/release/ExplorerPagination.vue'
+const route = useRoute()
 const router = useRouter()
+const tabs = [
+  { id: 'all-features', label: '全部功能', icon: 'ri-layout-grid-line' },
+  { id: 'recent-updates', label: '最近更新', icon: 'ri-history-line' },
+  { id: 'current-update', label: '本次更新', icon: 'ri-sparkling-line' },
+] as const
+type Tab = (typeof tabs)[number]['id']
+const active = ref<Tab>('all-features')
 const category = ref<FeatureCategory | 'all'>('all')
-const expanded = ref(false)
+const page = ref(1)
+const narrow = ref(window.innerWidth <= 600)
+const size = computed(() => (narrow.value ? 3 : 6))
 const selected = ref<FeatureCatalogEntry | null>(null)
-
+const historyLoaded = ref(false)
+const featureOrder = [
+  'notes',
+  'projects',
+  'tianren',
+  'todo',
+  'knowledge',
+  'home',
+  'reference-images',
+  'calendar',
+  'automation',
+  'text-polish',
+  'changelog',
+]
+const catalog = [...FEATURE_CATALOG].sort((a, b) => {
+  const rank = (id: string) => {
+    const index = featureOrder.indexOf(id)
+    return index < 0 ? featureOrder.length : index
+  }
+  return rank(a.id) - rank(b.id)
+})
 const filtered = computed(() =>
-  FEATURE_CATALOG.filter((item) => category.value === 'all' || item.category === category.value),
+  catalog.filter((item) => category.value === 'all' || item.category === category.value),
 )
 const visible = computed(() =>
-  category.value === 'all' && !expanded.value ? filtered.value.slice(0, 12) : filtered.value,
+  filtered.value.slice((page.value - 1) * size.value, page.value * size.value),
 )
-const recommended = FEATURE_CATALOG.filter((item) => item.recommended).slice(0, 3)
 const categoryLabel = (id: FeatureCategory) =>
   FEATURE_CATEGORIES.find((item) => item.id === id)?.label ?? '功能'
-
-function selectCategory(next: FeatureCategory | 'all') {
-  category.value = next
-  expanded.value = next !== 'all'
+watch(
+  () => route.hash,
+  (hash) => {
+    const match = tabs.find((tab) => '#' + tab.id === hash)
+    active.value = match?.id ?? 'all-features'
+    if (active.value === 'recent-updates') historyLoaded.value = true
+    selected.value = null
+  },
+  { immediate: true },
+)
+function switchTab(id: Tab) {
+  void router.replace({ path: route.path, query: route.query, hash: '#' + id })
 }
-
-function openDetail(item: FeatureCatalogEntry) {
-  selected.value = item
+async function tabKey(event: KeyboardEvent, index: number) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? tabs.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length
+  const id = tabs[next]!.id
+  await router.replace({ path: route.path, query: route.query, hash: '#' + id })
+  await nextTick()
+  document.getElementById(`explorer-tab-${id}`)?.focus()
 }
-
+function selectCategory(value: FeatureCategory | 'all') {
+  category.value = value
+  page.value = 1
+}
+function resize() {
+  const next = window.innerWidth <= 600
+  if (next !== narrow.value) {
+    const first = (page.value - 1) * size.value
+    narrow.value = next
+    page.value = Math.floor(first / size.value) + 1
+  }
+}
+onMounted(() => window.addEventListener('resize', resize))
+onBeforeUnmount(() => window.removeEventListener('resize', resize))
 async function openFeature(item: FeatureCatalogEntry) {
   selected.value = null
   if (item.id === 'changelog') return
   await router.push(MODULES[item.id].path)
 }
 </script>
-
 <template>
   <main class="features-page">
-    <header class="feature-hero">
-      <span class="hero-eyebrow"
-        ><i class="ri-compass-discover-line"></i> WAO FEATURE EXPLORER</span
-      >
-      <h1>认识 WAO 的全部能力</h1>
-      <p>
-        先看看最近的新变化，也可以按你的目标探索已经存在的功能。这里讲清楚每项能力能帮你做什么，而不是只列一个菜单名称。
-      </p>
-      <div class="hero-actions">
-        <a class="primary" href="#all-features">浏览全部功能</a>
-        <a href="#recent-updates">回顾最近更新</a>
-        <button type="button" @click="openReleaseHighlights">本次更新</button>
-      </div>
-    </header>
-
-    <ReleaseHistory />
-
-    <div id="all-features" class="catalog-wrap">
-      <section class="feature-section" aria-labelledby="catalog-title">
-        <div class="section-heading">
-          <div>
-            <small>EXPLORE BY GOAL</small>
-            <h2 id="catalog-title">全部功能</h2>
-          </div>
-          <p aria-live="polite">
-            {{ filtered.length }} 项能力 ·
-            {{ category === 'all' ? '全部分类' : categoryLabel(category) }}
-          </p>
-        </div>
-        <div class="filter-bar" role="group" aria-label="功能分类">
-          <button
-            type="button"
-            :class="{ active: category === 'all' }"
-            :aria-pressed="category === 'all'"
-            @click="selectCategory('all')"
-          >
-            所有功能
-          </button>
-          <button
-            v-for="item in FEATURE_CATEGORIES"
-            :key="item.id"
-            type="button"
-            :class="{ active: category === item.id }"
-            :aria-pressed="category === item.id"
-            @click="selectCategory(item.id)"
-          >
-            {{ item.label }}
-          </button>
-        </div>
-        <div class="catalog-grid">
-          <article
-            v-for="item in visible"
-            :key="item.id"
-            class="catalog-card"
-            tabindex="0"
-            role="button"
-            :aria-label="`了解${MODULES[item.id].label}`"
-            @click="openDetail(item)"
-            @keydown.enter="openDetail(item)"
-            @keydown.space.prevent="openDetail(item)"
-          >
-            <div class="catalog-art" :data-tone="item.tone">
-              <i :class="MODULES[item.id].icon"></i>
-            </div>
-            <div class="catalog-copy">
-              <span class="feature-tag">{{ categoryLabel(item.category) }}</span>
-              <h3>{{ MODULES[item.id].label }}</h3>
-              <p>{{ item.summary }}</p>
-            </div>
-            <i class="ri-arrow-right-up-line catalog-arrow" aria-hidden="true"></i>
-          </article>
-        </div>
-        <div v-if="category === 'all' && visible.length < filtered.length" class="more-wrap">
-          <button type="button" @click="expanded = true">查看更多功能</button>
-        </div>
-      </section>
-    </div>
-
-    <section class="feature-section" aria-labelledby="recommended-title">
-      <div class="section-heading">
-        <div>
-          <small>START HERE</small>
-          <h2 id="recommended-title">推荐从这里开始</h2>
-        </div>
-        <p>不是虚构的全局热门排行，而是适合快速理解 WAO 工作方式的几个入口。</p>
-      </div>
-      <div class="recommended-grid">
-        <article
-          v-for="item in recommended"
-          :key="item.id"
-          tabindex="0"
-          role="button"
-          :aria-label="`了解${MODULES[item.id].label}`"
-          @click="openDetail(item)"
-          @keydown.enter="openDetail(item)"
-          @keydown.space.prevent="openDetail(item)"
+    <header class="feature-heading">
+      <div>
+        <span class="hero-eyebrow"
+          ><i class="ri-compass-discover-line" aria-hidden="true"></i> WAO / 探索</span
         >
-          <span>{{ categoryLabel(item.category) }}</span
-          ><i :class="MODULES[item.id].icon"></i>
+        <h1>发现下一件好用的事 <span aria-hidden="true">✦</span></h1>
+        <p>找功能、看变化，按你的节奏来。</p>
+      </div>
+      <div class="heading-art" aria-hidden="true">✧</div>
+    </header>
+    <div class="explorer-tabs" role="tablist" aria-label="探索内容">
+      <button
+        v-for="(tab, index) in tabs"
+        :id="`explorer-tab-${tab.id}`"
+        :key="tab.id"
+        type="button"
+        role="tab"
+        :aria-selected="active === tab.id"
+        :aria-controls="tab.id"
+        :tabindex="active === tab.id ? 0 : -1"
+        @click="switchTab(tab.id)"
+        @keydown="tabKey($event, index)"
+      >
+        <i :class="tab.icon" aria-hidden="true"></i>{{ tab.label }}
+      </button>
+    </div>
+    <section
+      id="all-features"
+      v-show="active === 'all-features'"
+      role="tabpanel"
+      aria-labelledby="explorer-tab-all-features"
+    >
+      <div class="filter-bar" role="group" aria-label="功能分类">
+        <button type="button" :aria-pressed="category === 'all'" @click="selectCategory('all')">
+          全部</button
+        ><button
+          v-for="item in FEATURE_CATEGORIES"
+          :key="item.id"
+          type="button"
+          :aria-pressed="category === item.id"
+          @click="selectCategory(item.id)"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+      <div class="catalog-grid">
+        <button
+          v-for="item in visible"
+          :key="item.id"
+          type="button"
+          class="catalog-card"
+          :aria-label="`了解${MODULES[item.id].label}`"
+          @click="selected = item"
+        >
+          <span class="catalog-icon"><i :class="MODULES[item.id].icon" aria-hidden="true"></i></span
+          ><span class="feature-tag">{{ categoryLabel(item.category) }}</span>
           <h3>{{ MODULES[item.id].label }}</h3>
           <p>{{ item.summary }}</p>
-        </article>
+        </button>
+      </div>
+      <ExplorerPagination v-model:page="page" :total="filtered.length" :size="size" />
+      <p class="browse-hint">先点卡片了解详情，再决定是否进入。</p>
+    </section>
+    <section
+      id="recent-updates"
+      v-show="active === 'recent-updates'"
+      role="tabpanel"
+      aria-labelledby="explorer-tab-recent-updates"
+    >
+      <ReleaseHistory v-if="historyLoaded" />
+    </section>
+    <section
+      id="current-update"
+      v-show="active === 'current-update'"
+      role="tabpanel"
+      aria-labelledby="explorer-tab-current-update"
+    >
+      <header class="current-banner">
+        <div class="release-spark" aria-hidden="true"><i class="ri-sparkling-2-line"></i></div>
+        <div>
+          <small>当前页面版本 · {{ CURRENT_RELEASE.publishedOn }}</small>
+          <h2>{{ CURRENT_RELEASE.title }}</h2>
+          <p>{{ CURRENT_RELEASE.intro }}</p>
+        </div>
+      </header>
+      <ReleaseEditionContent :edition="CURRENT_RELEASE" />
+      <div class="current-footer">
+        <span>内容随当前页面版本更新</span
+        ><button type="button" @click="switchTab('recent-updates')">
+          查看更早更新 <i class="ri-arrow-right-line" aria-hidden="true"></i>
+        </button>
       </div>
     </section>
-
-    <Teleport to="body">
-      <div v-if="selected" class="detail-mask" @click.self="selected = null">
-        <section
-          class="detail-dialog"
-          role="dialog"
-          aria-modal="true"
-          :aria-labelledby="`feature-${selected.id}`"
-        >
+    <Modal
+      :open="!!selected"
+      :title="selected ? MODULES[selected.id].label : ''"
+      :footer="null"
+      :width="480"
+      :body-style="{ maxHeight: '65dvh', overflowY: 'auto' }"
+      @cancel="selected = null"
+      ><template v-if="selected"
+        ><span class="detail-tag">{{ categoryLabel(selected.category) }}</span>
+        <p class="detail-description">{{ selected.description }}</p>
+        <div class="detail-actions">
           <button
+            v-if="selected.id !== 'changelog'"
             type="button"
-            class="detail-close"
-            aria-label="关闭功能详情"
-            @click="selected = null"
+            class="primary"
+            @click="openFeature(selected)"
           >
-            <i class="ri-close-line"></i>
-          </button>
-          <div class="detail-visual" :data-tone="selected.tone">
-            <i :class="MODULES[selected.id].icon"></i>
-          </div>
-          <div class="detail-copy">
-            <span class="feature-tag">{{ categoryLabel(selected.category) }}</span>
-            <h2 :id="`feature-${selected.id}`">{{ MODULES[selected.id].label }}</h2>
-            <p>{{ selected.description }}</p>
-            <div class="detail-actions">
-              <button
-                v-if="selected.id !== 'changelog'"
-                type="button"
-                class="primary"
-                @click="openFeature(selected)"
-              >
-                打开功能
-              </button>
-              <button type="button" @click="selected = null">继续浏览</button>
-            </div>
-          </div>
-        </section>
-      </div>
-    </Teleport>
+            打开功能 <i class="ri-arrow-right-up-line" aria-hidden="true"></i></button
+          ><button type="button" @click="selected = null">继续浏览</button>
+        </div></template
+      ></Modal
+    >
   </main>
 </template>
-
 <style scoped>
 .features-page {
-  min-height: 100%;
-  background: var(--wao-bg-page);
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 32px 36px 28px;
   color: var(--wao-text);
 }
-.feature-hero {
-  position: relative;
-  overflow: hidden;
-  padding: 82px 24px 66px;
-  text-align: center;
-  background:
-    radial-gradient(
-      circle at 50% 8%,
-      color-mix(in srgb, var(--wao-primary) 18%, transparent),
-      transparent 35%
-    ),
-    linear-gradient(
-      var(--wao-bg-page),
-      color-mix(in srgb, var(--wao-primary-soft) 32%, var(--wao-bg-page))
-    );
-}
-.feature-hero::before,
-.feature-hero::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-}
-.feature-hero::before {
-  width: 340px;
-  height: 340px;
-  left: -190px;
-  bottom: -230px;
-  background: color-mix(in srgb, var(--wao-primary) 8%, transparent);
-}
-.feature-hero::after {
-  width: 300px;
-  height: 300px;
-  right: -170px;
-  top: 40px;
-  background: rgb(80 199 139 / 9%);
+.feature-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 26px;
 }
 .hero-eyebrow {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  color: var(--wao-primary-text);
+  gap: 8px;
   font-size: 11px;
-  font-weight: 850;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
+  color: var(--wao-primary-text);
 }
-.feature-hero h1 {
-  max-width: 850px;
-  margin: 17px auto 14px;
-  font-size: clamp(42px, 6vw, 72px);
-  line-height: 1.06;
-  letter-spacing: -0.06em;
-}
-.feature-hero p {
-  max-width: 700px;
-  margin: 0 auto;
-  color: var(--wao-text-3);
-  font-size: 15px;
-  line-height: 1.8;
-}
-.hero-actions {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 25px;
-}
-.hero-actions a,
-.hero-actions button {
-  padding: 11px 16px;
-  border: 1px solid var(--wao-line);
-  border-radius: 12px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-  font-weight: 800;
-  text-decoration: none;
-  cursor: pointer;
-}
-.hero-actions .primary {
-  border-color: var(--wao-text);
-  background: var(--wao-text);
-  color: var(--wao-bg-card);
-}
-.feature-section {
-  width: min(1180px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 66px 0;
-}
-.section-heading {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 25px;
-}
-.section-heading small {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--wao-text-weak);
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.14em;
-}
-.section-heading h2 {
-  margin: 0;
+h1 {
   font-size: 30px;
   letter-spacing: -0.04em;
+  margin: 12px 0 9px;
+  line-height: 1.3;
 }
-.section-heading p {
-  max-width: 420px;
-  margin: 0;
+h1 span {
+  color: var(--wao-primary-text);
+  font-size: 20px;
+}
+.feature-heading p {
   color: var(--wao-text-weak);
-  font-size: 12px;
-  line-height: 1.65;
-  text-align: right;
+  font-size: 13px;
+  margin: 0;
 }
-.feature-tag {
-  display: inline-flex;
-  padding: 5px 8px;
-  border-radius: 999px;
-  background: var(--wao-bg-hover-2);
-  color: var(--wao-text-3);
-  font-size: 9px;
-  font-weight: 850;
+.heading-art {
+  width: 75px;
+  height: 75px;
+  border-radius: 25px;
+  transform: rotate(9deg);
+  display: grid;
+  place-items: center;
+  color: var(--wao-primary-text);
+  background: var(--wao-primary-soft);
+  font-size: 46px;
+  margin-right: 10px;
 }
-[data-tone='violet'] {
-  --tone: linear-gradient(145deg, #dedcff, #f4f2ff);
-  --tone-ink: #5952dd;
-}
-[data-tone='mint'] {
-  --tone: linear-gradient(145deg, #dff4e8, #f4fbf6);
-  --tone-ink: #27805a;
-}
-[data-tone='amber'] {
-  --tone: linear-gradient(145deg, #f7e5cb, #fff7e8);
-  --tone-ink: #a86d18;
-}
-[data-tone='blue'] {
-  --tone: linear-gradient(145deg, #dcecf9, #f2f8fd);
-  --tone-ink: #2972a7;
-}
-[data-tone='rose'] {
-  --tone: linear-gradient(145deg, #f4dfe9, #fcf3f7);
-  --tone-ink: #a04f75;
-}
-[data-tone='slate'] {
-  --tone: linear-gradient(145deg, #e1e6e3, #f5f7f5);
-  --tone-ink: #53615a;
-}
-.catalog-wrap {
-  background: color-mix(in srgb, var(--wao-bg-side) 82%, var(--wao-bg-page));
-}
-.filter-bar {
-  position: sticky;
-  top: 12px;
-  z-index: 8;
+.explorer-tabs {
   display: flex;
-  gap: 5px;
-  width: fit-content;
-  max-width: 100%;
-  margin: 0 auto 32px;
-  padding: 7px;
-  overflow-x: auto;
-  border: 1px solid var(--wao-line);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--wao-bg-card) 92%, transparent);
-  box-shadow: 0 13px 32px rgb(33 43 38 / 10%);
-  backdrop-filter: blur(16px);
-  scrollbar-width: none;
+  gap: 28px;
+  border-bottom: 1px solid var(--wao-line);
 }
-.filter-bar::-webkit-scrollbar {
-  display: none;
-}
-.filter-bar button {
-  flex: none;
-  padding: 9px 13px;
+.explorer-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 2px;
+  margin-bottom: -1px;
   border: 0;
-  border-radius: 11px;
+  border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--wao-text-3);
-  font-size: 11px;
-  font-weight: 760;
+  white-space: nowrap;
   cursor: pointer;
 }
-.filter-bar button.active {
-  background: var(--wao-text);
-  color: var(--wao-bg-card);
-  box-shadow: 0 6px 14px rgb(30 40 35 / 16%);
+.explorer-tabs button[aria-selected='true'] {
+  color: var(--wao-primary-text);
+  border-color: var(--wao-primary);
+  font-weight: 600;
+}
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 20px 0;
+}
+.filter-bar button {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 11px;
+  background: transparent;
+  color: var(--wao-text-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.filter-bar button[aria-pressed='true'] {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
 }
 .catalog-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 .catalog-card {
   position: relative;
-  min-width: 0;
-  min-height: 292px;
-  overflow: hidden;
-  padding: 18px;
-  border: 1px solid var(--wao-line);
-  border-radius: 21px;
-  background: var(--wao-bg-card);
-  cursor: pointer;
-  transition:
-    transform 0.25s ease,
-    box-shadow 0.25s ease;
-}
-.catalog-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 18px 36px rgb(41 51 46 / 10%);
-}
-.catalog-art {
-  position: relative;
-  display: grid;
-  place-items: center;
-  height: 150px;
-  overflow: hidden;
-  border-radius: 15px;
-  background: var(--tone);
-}
-.catalog-art::before {
-  content: '';
-  position: absolute;
-  width: 105px;
-  height: 105px;
-  border: 1px solid rgb(39 48 43 / 10%);
-  border-radius: 36% 64% 55% 45%;
-  transform: rotate(-20deg);
-}
-.catalog-art i {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 20px;
-  background: rgb(255 255 255 / 78%);
-  box-shadow: 0 14px 30px rgb(39 48 43 / 12%);
-  color: var(--tone-ink);
-  font-size: 27px;
-  transition: transform 0.3s ease;
-}
-.catalog-card:hover .catalog-art i {
-  transform: scale(1.08) rotate(4deg);
-}
-.catalog-copy {
-  padding: 16px 3px 0;
-}
-.catalog-copy h3 {
-  margin: 11px 0 7px;
-  font-size: 17px;
-}
-.catalog-copy p {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: var(--wao-text-3);
-  font-size: 10px;
-  line-height: 1.62;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.catalog-arrow {
-  position: absolute;
-  right: 16px;
-  bottom: 14px;
-  color: var(--wao-text-3);
-  font-size: 16px;
-}
-.more-wrap {
   display: flex;
-  justify-content: center;
-  padding-top: 28px;
-}
-.more-wrap button {
-  padding: 11px 18px;
+  flex-direction: column;
+  align-items: start;
+  text-align: left;
+  min-height: 184px;
+  padding: 20px;
   border: 1px solid var(--wao-line);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--wao-bg-card);
   color: var(--wao-text);
-  font-weight: 800;
   cursor: pointer;
+  transition:
+    transform 0.18s,
+    box-shadow 0.18s;
 }
-.recommended-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+.catalog-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--wao-primary) 8%, transparent);
+  border-color: var(--wao-primary);
 }
-.recommended-grid article {
-  position: relative;
-  min-height: 220px;
-  padding: 25px;
-  border-radius: 22px;
-  background: #202925;
-  color: #fff;
-  cursor: pointer;
-  transition: transform 0.25s ease;
-}
-.recommended-grid article:nth-child(2) {
-  background: #504bd0;
-}
-.recommended-grid article:nth-child(3) {
-  background: #dfeee5;
-  color: #213029;
-}
-.recommended-grid article:hover {
-  transform: translateY(-5px) rotate(-0.5deg);
-}
-.recommended-grid span {
-  color: #9fe0bd;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.1em;
-}
-.recommended-grid article:nth-child(2) span {
-  color: #d7d5ff;
-}
-.recommended-grid article:nth-child(3) span {
-  color: #3a795a;
-}
-.recommended-grid i {
-  position: absolute;
-  right: 23px;
-  top: 22px;
-  font-size: 28px;
-  opacity: 0.65;
-}
-.recommended-grid h3 {
-  margin: 48px 0 10px;
-  font-size: 23px;
-}
-.recommended-grid p {
-  margin: 0;
-  color: #bdc7c1;
-  font-size: 11px;
-  line-height: 1.65;
-}
-.recommended-grid article:nth-child(3) p {
-  color: #65716a;
-}
-.detail-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 1250;
+.catalog-icon {
   display: grid;
   place-items: center;
-  padding: 22px;
-  background: rgb(15 20 17 / 58%);
-  backdrop-filter: blur(12px);
-}
-.detail-dialog {
-  position: relative;
-  width: min(680px, 100%);
-  overflow: hidden;
-  border-radius: 27px;
-  background: var(--wao-bg-card);
-  box-shadow: 0 35px 90px rgb(0 0 0 / 32%);
-}
-.detail-close {
-  position: absolute;
-  right: 15px;
-  top: 15px;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 0;
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
-  background: rgb(255 255 255 / 82%);
-  color: #1d2622;
-  font-size: 20px;
-  cursor: pointer;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+  font-size: 21px;
+  margin-bottom: 15px;
 }
-.detail-visual {
+.feature-tag {
+  position: absolute;
+  top: 26px;
+  right: 17px;
+  color: var(--wao-text-weak);
+  font-size: 10px;
+}
+h3 {
+  margin: 0 0 7px;
+  font-size: 16px;
+}
+.catalog-card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--wao-text-3);
+  line-height: 1.7;
+}
+.browse-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--wao-text-weak);
+  margin-top: 16px;
+}
+.current-banner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px;
+  margin: 22px 0 0;
+  background: var(--wao-primary-soft);
+  border-radius: 15px;
+}
+.release-spark {
   display: grid;
   place-items: center;
-  height: 230px;
-  background: var(--tone);
+  flex: none;
+  width: 56px;
+  height: 60px;
+  border-radius: 20px 20px 20px 7px;
+  transform: rotate(-8deg);
+  color: #fff;
+  background: var(--wao-primary);
+  font-size: 28px;
 }
-.detail-visual i {
-  color: var(--tone-ink);
-  font-size: 64px;
+.current-banner small {
+  color: var(--wao-primary-text);
+  font-size: 11px;
 }
-.detail-copy {
-  padding: 28px 30px 31px;
+.current-banner h2 {
+  font-size: 22px;
+  margin: 7px 0;
+  overflow-wrap: anywhere;
 }
-.detail-copy h2 {
-  margin: 12px 0 10px;
-  font-size: 29px;
-}
-.detail-copy p {
-  margin: 0;
-  color: var(--wao-text-3);
+.current-banner p {
   font-size: 13px;
+  color: var(--wao-text-3);
+  line-height: 1.7;
+  margin: 0;
+}
+.current-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--wao-text-weak);
+}
+.current-footer button,
+.detail-actions .primary {
+  background: var(--wao-primary);
+  color: #fff;
+  border-color: var(--wao-primary);
+}
+.current-footer button,
+.detail-actions button {
+  padding: 9px 14px;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.detail-tag {
+  color: var(--wao-primary-text);
+  font-size: 12px;
+}
+.detail-description {
+  font-size: 14px;
   line-height: 1.8;
+  margin: 18px 0 24px;
 }
 .detail-actions {
   display: flex;
-  gap: 9px;
-  margin-top: 24px;
+  gap: 10px;
 }
 .detail-actions button {
-  padding: 11px 15px;
-  border: 1px solid var(--wao-line);
-  border-radius: 11px;
   background: var(--wao-bg-card);
   color: var(--wao-text);
-  font-weight: 800;
-  cursor: pointer;
 }
 .detail-actions .primary {
-  border-color: var(--wao-text);
-  background: var(--wao-text);
-  color: var(--wao-bg-card);
+  background: var(--wao-primary);
+  color: #fff;
 }
-[role='button']:focus-visible,
-button:focus-visible,
-a:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--wao-primary) 45%, transparent);
+button:focus-visible {
+  outline: 2px solid var(--wao-primary);
   outline-offset: 3px;
 }
-@media (max-width: 900px) {
-  .recommended-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 1000px) {
+  .features-page {
+    padding: 28px 24px;
   }
   .catalog-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .feature-section {
-    width: min(100% - 28px, 680px);
-    padding: 48px 0;
-  }
-  .section-heading {
-    align-items: start;
-    flex-direction: column;
-  }
-  .section-heading p {
-    text-align: left;
-  }
-  .feature-hero {
-    padding-top: 62px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (max-width: 520px) {
-  .feature-hero h1 {
-    font-size: 42px;
+@media (max-width: 600px) {
+  .features-page {
+    padding: 24px 16px;
   }
-  .feature-hero p {
-    font-size: 13px;
+  .heading-art {
+    display: none;
   }
-  .hero-actions {
-    flex-direction: column;
-    align-items: center;
+  h1 {
+    font-size: 25px;
+  }
+  .explorer-tabs {
+    gap: 0;
+    justify-content: space-between;
+  }
+  .explorer-tabs button {
+    gap: 5px;
+    font-size: 12px;
   }
   .catalog-grid {
     grid-template-columns: 1fr;
   }
   .catalog-card {
-    min-height: 274px;
+    padding: 18px 16px 18px 74px;
+    min-height: 114px;
+    justify-content: center;
   }
-  .filter-bar {
-    top: 8px;
-    width: 100%;
-    justify-content: flex-start;
+  .catalog-icon {
+    position: absolute;
+    left: 17px;
+    top: 20px;
   }
-  .section-heading h2 {
-    font-size: 26px;
+  .feature-tag {
+    display: none;
   }
-  .detail-copy {
-    padding: 23px 21px 25px;
+  .current-banner {
+    padding: 18px;
+    gap: 12px;
   }
-  .detail-visual {
-    height: 190px;
+  .current-banner h2 {
+    font-size: 18px;
+  }
+  .release-spark {
+    width: 42px;
+    height: 48px;
+  }
+}
+@media (pointer: coarse) {
+  .explorer-tabs button,
+  .filter-bar button,
+  .detail-actions button {
+    min-height: 44px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation: none !important;
-    transition-duration: 0.01ms !important;
+  .catalog-card {
+    transition: none;
   }
 }
 </style>

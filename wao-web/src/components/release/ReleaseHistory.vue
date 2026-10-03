@@ -1,78 +1,181 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
-import { MODULES } from '@/config/nav'
+import { computed, ref, watch } from 'vue'
+import { Modal } from 'ant-design-vue'
+import { useRoute } from 'vue-router'
 import GitCommitHistory from './GitCommitHistory.vue'
+import ExplorerPagination from './ExplorerPagination.vue'
+import ReleaseEditionContent from './ReleaseEditionContent.vue'
 import { CURRENT_RELEASE, RELEASE_HISTORY } from '@/data/featureCatalog'
-
-const limit = ref(5)
-const visible = computed(() => RELEASE_HISTORY.slice(0, limit.value))
-const route = useRoute()
-const section = ref<HTMLElement>()
-async function revealHistory() {
-  if (route.hash !== '#recent-updates') return
-  await nextTick()
-  section.value?.scrollIntoView?.({ block: 'start' })
+import type { ReleaseEdition } from '@/types/featureExplorer'
+const mode = ref<'curated' | 'commits'>('curated')
+const page = ref(1)
+const loadedCommits = ref(false)
+const selected = ref<ReleaseEdition | null>(null)
+const editions = RELEASE_HISTORY.filter((item) => item.id !== CURRENT_RELEASE.id)
+const visible = computed(() => editions.slice((page.value - 1) * 3, page.value * 3))
+function selectMode(value: 'curated' | 'commits') {
+  mode.value = value
+  if (value === 'commits') loadedCommits.value = true
 }
-onMounted(revealHistory)
-watch(() => route.hash, revealHistory)
+const route = useRoute()
+watch(
+  () => route.fullPath,
+  () => {
+    selected.value = null
+  },
+)
 </script>
-
 <template>
-  <section id="recent-updates" ref="section" class="release-history" aria-labelledby="history-title">
-    <header class="history-heading">
-      <div><small>RECENT UPDATES</small><h2 id="history-title">最近更新</h2></div>
-      <p>当前版本自动更新 · 下方保留 {{ RELEASE_HISTORY.length - 1 }} 批精选说明</p>
-    </header>
-    <GitCommitHistory />
-    <ol class="release-list">
-      <li v-for="edition in visible" :key="edition.id">
-        <details class="release-edition" :open="edition.id === CURRENT_RELEASE.id">
-          <summary>
-            <span class="release-meta"><time :datetime="edition.publishedOn">{{ edition.publishedOn }}</time><span v-if="edition.id === CURRENT_RELEASE.id" class="current-badge">本次更新</span></span>
-            <span class="release-title">{{ edition.title }}</span>
-            <span class="release-intro">{{ edition.intro }}</span>
-            <i class="ri-arrow-down-s-line expand-icon" aria-hidden="true"></i>
-          </summary>
-          <div class="edition-content">
-            <article v-for="(item, index) in edition.highlights" :key="`${item.featureId}-${index}`">
-              <h3>{{ item.title }}</h3>
-              <p>{{ item.summary }}</p>
-              <ul><li v-for="point in item.points" :key="point">{{ point }}</li></ul>
-              <RouterLink v-if="MODULES[item.featureId]" :to="MODULES[item.featureId].path" :aria-label="`去体验：${item.title}`">去体验 {{ MODULES[item.featureId].label }} <i class="ri-arrow-right-up-line" aria-hidden="true"></i></RouterLink>
-            </article>
-          </div>
-        </details>
-      </li>
-    </ol>
-    <button v-if="limit < RELEASE_HISTORY.length" class="older-updates" type="button" @click="limit += 5">查看更多更新（还有 {{ RELEASE_HISTORY.length - limit }} 次）</button>
-    <p v-else class="history-end">已展示全部已收录更新</p>
+  <section class="release-history" aria-label="最近更新">
+    <div class="history-toolbar">
+      <div class="history-switch" role="group" aria-label="更新类型">
+        <button type="button" :aria-pressed="mode === 'curated'" @click="selectMode('curated')">
+          精选介绍</button
+        ><button type="button" :aria-pressed="mode === 'commits'" @click="selectMode('commits')">
+          全部记录
+        </button>
+      </div>
+      <span v-if="mode === 'curated'">按发布批次回顾 · 共 {{ editions.length }} 批</span>
+    </div>
+    <div v-show="mode === 'curated'">
+      <ol class="release-list">
+        <li v-for="edition in visible" :key="edition.id">
+          <button class="release-edition" type="button" @click="selected = edition">
+            <time :datetime="edition.publishedOn"
+              ><b>{{ edition.publishedOn.slice(5).replace('-', '/') }}</b
+              >{{ edition.publishedOn.slice(0, 4) }}</time
+            ><span class="release-copy"
+              ><strong>{{ edition.title }}</strong
+              ><span>{{ edition.intro }}</span></span
+            ><span class="release-count"
+              >{{ edition.highlights.length }} 项变化
+              <i class="ri-arrow-right-up-line" aria-hidden="true"></i
+            ></span>
+          </button>
+        </li>
+      </ol>
+      <p v-if="!editions.length">尚无已收录的精选更新，可查看全部记录。</p>
+      <ExplorerPagination v-model:page="page" :total="editions.length" :size="3" />
+    </div>
+    <GitCommitHistory v-if="loadedCommits" v-show="mode === 'commits'" />
+    <Modal
+      :open="!!selected"
+      :title="selected?.title"
+      :footer="null"
+      :width="560"
+      :body-style="{ maxHeight: 'min(65dvh, 640px)', overflowY: 'auto' }"
+      @cancel="selected = null"
+    >
+      <template v-if="selected"
+        ><p class="detail-date">{{ selected.publishedOn }}</p>
+        <p>{{ selected.intro }}</p>
+        <ReleaseEditionContent :edition="selected" @navigate="selected = null"
+      /></template>
+    </Modal>
   </section>
 </template>
-
 <style scoped>
-.release-history { width: min(1180px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0; scroll-margin-top: 16px; }
-.history-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 24px; }
-.history-heading small { color: var(--wao-text-weak); font-size: 10px; letter-spacing: .12em; }
-.history-heading h2 { margin: 8px 0 0; font-size: 28px; }
-.history-heading p, .history-end { color: var(--wao-text-weak); font-size: 12px; line-height: 1.7; }
-.release-list { margin-top: 24px; list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.release-edition { border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); overflow-wrap: anywhere; }
-summary { display: grid; position: relative; gap: 9px; padding: 20px 48px 20px 22px; list-style: none; cursor: pointer; }
-summary::-webkit-details-marker { display: none; }
-.release-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--wao-text-weak); font-size: 12px; }
-.current-badge { color: var(--wao-primary-text); background: var(--wao-primary-soft); border-radius: 6px; padding: 3px 7px; font-size: 11px; }
-.release-title { font-size: 18px; font-weight: 750; }
-.release-intro { color: var(--wao-text-3); font-size: 13px; line-height: 1.7; }
-.expand-icon { position: absolute; right: 20px; top: 25px; color: var(--wao-text-weak); }
-details[open] .expand-icon { transform: rotate(180deg); }
-.edition-content { margin: 0 22px; border-top: 1px solid var(--wao-line); padding: 4px 0 20px; display: grid; gap: 12px; }
-.edition-content h3 { font-size: 15px; margin: 16px 0 8px; }
-.edition-content p, .edition-content ul { color: var(--wao-text-3); font-size: 13px; line-height: 1.8; }
-.edition-content ul { padding-left: 20px; }
-.edition-content a { display: inline-flex; gap: 5px; color: var(--wao-primary-text); text-decoration: none; font-size: 12px; }
-.older-updates { display: block; margin: 24px auto 0; padding: 10px 16px; border: 1px solid var(--wao-line); border-radius: 10px; color: var(--wao-text); background: var(--wao-bg-card); cursor: pointer; }
-.history-end { text-align: center; margin-top: 24px; }
-summary:focus-visible, a:focus-visible, button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
-@media (max-width: 600px) { .release-history { width: calc(100% - 28px); padding: 32px 0; } summary { padding: 18px 36px 18px 16px; } .edition-content { margin: 0 16px; } .expand-icon { right: 14px; } }
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 20px 0 6px;
+}
+.history-toolbar > span,
+.detail-date {
+  color: var(--wao-text-weak);
+  font-size: 12px;
+}
+.history-switch {
+  display: flex;
+  padding: 3px;
+  gap: 3px;
+  background: var(--wao-bg-hover-2);
+  border-radius: 9px;
+}
+.history-switch button {
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wao-text-3);
+  cursor: pointer;
+}
+.history-switch button[aria-pressed='true'] {
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 6%);
+}
+.release-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.release-edition {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  text-align: left;
+  gap: 20px;
+  padding: 24px 0;
+  border: 0;
+  border-bottom: 1px solid var(--wao-line);
+  background: transparent;
+  color: var(--wao-text);
+  cursor: pointer;
+}
+.release-edition:hover strong {
+  color: var(--wao-primary-text);
+}
+time {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 54px;
+  font-size: 11px;
+  color: var(--wao-text-weak);
+}
+time b {
+  font-size: 19px;
+  color: var(--wao-text);
+  font-weight: 500;
+}
+.release-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+.release-copy strong {
+  font-size: 15px;
+}
+.release-copy > span {
+  font-size: 13px;
+  color: var(--wao-text-3);
+  line-height: 1.7;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.release-count {
+  color: var(--wao-primary-text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+button:focus-visible {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .release-edition {
+    gap: 12px;
+    padding: 20px 0;
+  }
+  .release-count {
+    display: none;
+  }
+}
 </style>
