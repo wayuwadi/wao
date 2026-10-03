@@ -137,6 +137,7 @@ export function exportMemory(games: MemoryRecord[]): string {
   return text;
 }
 export function summary(record: MemoryRecord) {
+  if (record.gameId === "beasts") { const p=record.payload; return `已收集 ${p.roster.length}/12种 · ${p.guardians.filter(Boolean).length}/4守卫 · 捕获${p.captures}次 · ${p.expedition ? `区域${p.expedition.region+1} / 节点${p.expedition.step+1}${p.expedition.pending?" 开战前":""}` : "营地"}`; }
   if (record.gameId === "starfield") {
     const p = record.payload;
     return `已完成 ${p.completed.filter(Boolean).length}/9任务 · ${p.owned.length}件装备 · ${p.sand}星砂${p.battle ? ` · 第${p.battle.round}轮 / ${p.battle.actions}次已确认行动` : " · 浮岛营地"}`;

@@ -29,11 +29,11 @@ const pages = [
   { id: 'dino', name: '恐龙荒野', color: '#ec6660' },
   { id: 'rift', name: '裂隙远征', color: '#eb973e' },
   { id: 'starfield', name: '星野奇旅', color: '#c8a126' },
-  { id: 'club', name: '今天怎么躺', color: '#62a873' },
+  { id: 'beasts', name: '幻兽领地', color: '#62a873' },
   { id: 'gallery', name: '影子有点不对劲', color: '#41a9b3' },
   { id: 'journal', name: '今天贴点什么', color: '#627be0' },
 ]
-const isolatedGame = computed(() => selectedPage.value === 'dino' || selectedPage.value === 'rift' || selectedPage.value === 'starfield' ? selectedPage.value : undefined)
+const isolatedGame = computed(() => selectedPage.value === 'dino' || selectedPage.value === 'rift' || selectedPage.value === 'starfield' || selectedPage.value === 'beasts' ? selectedPage.value : undefined)
 const gameSource = computed(() => import.meta.env.DEV && isolatedGame.value ? `/play-assets/dev/${isolatedGame.value}/index.html` : undefined)
 const session = useSessionStore(),
   route = useRoute(),
@@ -64,7 +64,7 @@ function choosePage(id: string) {
   closeMenus()
   if (id !== 'home') stage.value?.pauseForPlay()
   selectedPage.value = id
-  if (id !== 'home' && id !== 'dino' && id !== 'rift' && id !== 'starfield') progress.value.world = id as WorldId
+  if (id !== 'home' && id !== 'dino' && id !== 'rift' && id !== 'starfield' && id !== 'beasts') progress.value.world = id as WorldId
 }
 function meditate() {
   choosePage('home')
@@ -152,6 +152,7 @@ onMounted(async () => {
         'dino-page': !!isolatedGame,
         'rift-page': selectedPage === 'rift',
         'starfield-page': selectedPage === 'starfield',
+        'beasts-page': selectedPage === 'beasts',
       },
     ]"
     :data-entry-theme="theme.effective.value"
@@ -519,4 +520,10 @@ summary:focus-visible {
 .starfield-page { --game-accent: #bc982c; background: #fff9e9; }
 .starfield-page[data-entry-theme='dark'] { background: #343122; }
 .starfield-page :deep(.game-host) { border-color: #e1d4a1; background: #fff9e9; color: #625735; }
+</style>
+
+<style scoped>
+.beasts-page { --game-accent: #659655; background: #f2f5e9; }
+.beasts-page[data-entry-theme=dark] { background: #293729; }
+.beasts-page :deep(.game-host) { border-color: #c6d5b3; background: #f2f5e9; color: #45613e; }
 </style>

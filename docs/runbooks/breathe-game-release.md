@@ -32,7 +32,7 @@
 
 ## 第二款与后续独立更新
 
-当前注册 `dino`、`rift`、`starfield`。上述pack/install/activate命令的游戏参数可用rift或starfield；`cloud-game-stage.py --game starfield`使用独立包名与报告名。发布单款不重建、不替换其他游戏版本目录或指针。未传`verify-public.py --games`时核验清单所有已注册游戏；不同版本分别传各自预期SHA，不能把主站SHA强套旧游戏。
+当前注册 `dino`、`rift`、`starfield`、`beasts`。上述pack/install/activate命令的游戏参数可用rift、starfield或beasts；`cloud-game-stage.py --game starfield`使用独立包名与报告名。发布单款不重建、不替换其他游戏版本目录或指针。未传`verify-public.py --games`时核验清单所有已注册游戏；不同版本分别传各自预期SHA，不能把主站SHA强套旧游戏。
 
 rift新增开发/构建脚本不视为依赖变化；包依赖或lock变化则扩大全部游戏验证和构建。共享host只构建主站并测试已注册游戏，游戏逻辑仅构建本款；host引用的catalog/save元数据变更同时构建主站。主站单独发布复用现有游戏制品。测试文件不引起游戏重新打包。
 
@@ -45,3 +45,5 @@ rift新增开发/构建脚本不视为依赖变化；包依赖或lock变化则�
 ADR-312补充主站Git记录边界：纯游戏制品更新保留原主站SHA与其档案，不为记录更新重建主站；游戏版本由各自manifest/catalog追溯。其他主站/文档/纯测试批次仍按ADR-311刷新主站记录；下一次主站发布收录此前所有游戏提交。`--release-batch`落实此区分，显式`--full-web`仍供确需全主站构建使用。
 
 本地生产静态预览已在40个f与40个e的明确fixture版本之间切换；旧页面保持旧URL，新页面读新版本，真实跑局后回滚仍保留3局纪录与2份备份。见首款验收文档。最终公网版本与实际耗时须在上线后补记。
+
+幻兽仍以同源独立制品交付：model/save/catalog为主站存档校验依赖；仅引擎/角色绘制变化不构建主站。新增入口本批次只构建beasts和主站，回归四款，保留前三款全部指针与资源。四款CAS/回滚和真实构建编排测试覆盖此边界。指标与公网证据见幻兽验收记录。
