@@ -162,8 +162,8 @@ public class WorkspaceMcpTools {
         String text = optional(args, "text", 20000);
         List<DocBlockDto> blocks = text == null || text.isBlank() ? List.of()
                 : List.of(new DocBlockDto(null, null, text, null, null));
-        return knowledge.createDoc(new CreateDocRequest(kbId, required(args, "folder_id", 64),
-                required(args, "title", 200), null, blocks, null), member);
+        return NoteAiManagedService.withoutAuto(member, () -> knowledge.createDoc(new CreateDocRequest(kbId, required(args, "folder_id", 64),
+                required(args, "title", 200), null, blocks, null), member));
     }
 
     private Object updateDoc(JsonNode args, String member) {
@@ -178,7 +178,8 @@ public class WorkspaceMcpTools {
         }
         if (title == null && blocks == null) throw new BadRequestException("至少提供 title 或 blocks");
         Integer expected = args.path("expected_rev").canConvertToInt() ? args.path("expected_rev").intValue() : doc.rev();
-        return knowledge.updateDoc(doc.id(), new PatchDocRequest(title, blocks, null, null, null, expected));
+        final var selectedBlocks = blocks;
+        return NoteAiManagedService.withoutAuto(member, () -> knowledge.updateDoc(doc.id(), new PatchDocRequest(title, selectedBlocks, null, null, null, expected)));
     }
 
     private DocDto accessibleDoc(String id, String member) {

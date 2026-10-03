@@ -134,14 +134,14 @@ describe('小记集中记录空间', () => {
     delete noteEnrichmentStatus.one
     wrapper.unmount()
   })
-  it('手动完成状态刷新恢复后不会被服务端跳过覆盖为未生成', async () => {
+  it('旧浏览器完成记录不能覆盖服务端的真实跳过状态', async () => {
     useDataStore().docs.one = doc('one', '合成手动生成验收')
     localStorage.setItem('wao-note-enrichment-complete-v1:wg:one', JSON.stringify({ title: 'done', image: 'done', polish: 'done', tags: 'skipped' }))
     vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([{ docId: 'one', title: 'SKIPPED', image: 'SKIPPED', polish: 'SKIPPED', message: null }])
     const wrapper = await view()
     await flushPromises()
     for (const label of ['标题', '配图', '润色']) {
-      expect(wrapper.find(`[data-note-id="one"] button[aria-label="${label}已完成，点击重新生成"]`).exists()).toBe(true)
+      expect(wrapper.find(`[data-note-id="one"] button[aria-label="${label}未生成，点击开始"]`).exists()).toBe(true)
     }
     wrapper.unmount()
   })
@@ -249,7 +249,7 @@ describe('小记集中记录空间', () => {
     await first.get('.save-note').trigger('click')
     await flushPromises()
     expect(add).toHaveBeenCalledOnce()
-    expect(add.mock.calls[0]![5]).toEqual({ autoTitle: true, autoImage: true, autoPolish: true })
+    expect(add.mock.calls[0]![5]).toBeUndefined() // 保存策略由服务端读取已保存偏好
     expect(localStorage.getItem(`wao-note-auto-enrichment-v1:wg:${add.mock.calls[0]![2]}`)).toBeNull()
     expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
     await first.find('textarea').setValue('下一篇沿用默认 AI 能力')

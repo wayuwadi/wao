@@ -13,6 +13,7 @@ import { useUiStore } from '@/stores/ui'
 import { loadRotationImage } from '@/api/imageRotation'
 import { rotateImage } from '@/utils/rotateImage'
 import { fetchPreference, savePreference } from '@/api/favorites'
+import { fetchNoteAiSettings, saveNoteAiSettings } from '@/api/noteAiSettings'
 import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
 vi.mock('@/api/imageRotation', () => ({ loadRotationImage: vi.fn() }))
 vi.mock('@/utils/rotateImage', () => ({ rotateImage: vi.fn() }))
@@ -21,6 +22,7 @@ vi.mock('@/api/assistant', () => ({
   polishDocumentText: vi.fn<(text: string) => Promise<{ polished: string }>>(),
 }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
+vi.mock('@/api/noteAiSettings', () => ({ fetchNoteAiSettings: vi.fn(), saveNoteAiSettings: vi.fn() }))
 vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
 vi.mock('@/api/codexModels', () => ({ fetchCodexModels: vi.fn().mockResolvedValue({ models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra' }, { id: 'gpt-6-luna', label: 'GPT-6 Luna' }], stale: false, message: '自动刷新', updatedAt: '2026-10-03' }) }))
 vi.mock('@/api/textPolish', () => ({ fetchTextPolishWorkspace: vi.fn().mockResolvedValue({ prompt: '默认正文润色方法', records: [] }), saveTextPolishPrompt: vi.fn().mockResolvedValue('默认正文润色方法') }))
@@ -257,25 +259,27 @@ describe('文章总览配图', () => {
   })
 
   it('小记设置集中配置 GPT 模型及三类提示词并按成员偏好保存', async () => {
-    const { saveTextPolishPrompt } = await import('@/api/textPolish')
+    setActivePinia(createPinia())
+    const settings = { title: true, polish: true, image: true, executionMode: 'parallel' as const, maxConcurrent: 3 as const, model: '', titlePrompt: '', imagePrompt: '', polishPrompt: '默认正文润色方法', titleEpoch: 0, imageEpoch: 0, polishEpoch: 0 }
+    vi.mocked(fetchNoteAiSettings).mockResolvedValue({ settings, version: 'v1', configured: true, availability: '' })
+    vi.mocked(saveNoteAiSettings).mockResolvedValue({ settings, version: 'v2', configured: true, availability: '' })
     vi.mocked(fetchPreference).mockResolvedValue('')
     vi.mocked(savePreference).mockResolvedValue()
     const w = await mountEditor({ modelValue: '小记正文', articleImageKey: 'note:me:n1', noteTitleOnImage: true, allowH1: true })
     await flushPromises()
-    await w.get('.prompt-settings').trigger('click')
+    await w.get('.prompt-settings').trigger('click'); await flushPromises()
     const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="image-prompt-title"]')!
-    expect(modal.querySelector<HTMLSelectElement>('.model-choice select')?.value).toBe('gpt-6-astra')
-    expect(modal.textContent).toContain('标题文案提示词')
+    expect(modal.querySelector<HTMLSelectElement>('[aria-label="小记处理模型"]')?.value).toBe('')
+    expect(modal.textContent).toContain('标题提示词')
     expect(modal.textContent).toContain('正文润色提示词')
-    expect(modal.textContent).toContain('图片生成提示词')
-    const select = modal.querySelector<HTMLSelectElement>('.model-choice select')!
+    expect(modal.textContent).toContain('自动配图提示词')
+    const select = modal.querySelector<HTMLSelectElement>('[aria-label="小记处理模型"]')!
     select.value = 'gpt-6-luna'
     select.dispatchEvent(new Event('change', { bubbles: true }))
     const save = [...modal.querySelectorAll('button')].find(button => button.textContent?.includes('保存设置'))!
     save.click()
     await flushPromises()
-    expect(savePreference).toHaveBeenCalledWith('note-ai-model-v1', 'gpt-6-luna')
-    expect(saveTextPolishPrompt).toHaveBeenCalledWith('默认正文润色方法')
+    expect(saveNoteAiSettings).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-6-luna', polishPrompt: '默认正文润色方法' }), 'v1')
     w.unmount()
   })
 

@@ -120,10 +120,10 @@ export const usePreferenceStore = defineStore('preferences', () => {
     } catch (error) {
       if (requestVersion !== loadVersion) return
       loadError.value = error instanceof Error ? error.message : '个人偏好读取失败'
-      // 离线或会话尚未就绪时继续使用默认值，不让应用启动失败。
+      // 读取失败保留错误，不把默认值冒充已保存偏好。
     } finally {
       if (requestVersion === loadVersion) {
-        loaded.value = true
+        loaded.value = !loadError.value
         loading.value = false
       }
     }

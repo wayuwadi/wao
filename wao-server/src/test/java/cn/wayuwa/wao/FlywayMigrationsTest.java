@@ -36,6 +36,18 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void applicationYamlRetainsFlywayValidationAndSupportsParallelAdditions() throws Exception {
+        var options = new org.yaml.snakeyaml.LoaderOptions(); options.setAllowDuplicateKeys(false);
+        var yaml = new org.yaml.snakeyaml.Yaml(new org.yaml.snakeyaml.constructor.SafeConstructor(options));
+        Map<?, ?> root = yaml.load(Files.readString(Path.of("src/main/resources/application.yml")));
+        Map<?, ?> spring = (Map<?, ?>) root.get("spring");
+        Map<?, ?> flyway = (Map<?, ?>) spring.get("flyway");
+        assertThat(flyway.get("out-of-order")).isEqualTo(true);
+        assertThat(flyway.get("locations")).isEqualTo("classpath:db/migration");
+        assertThat(flyway.containsKey("validate-on-migrate")).isFalse();
+    }
+
+    @Test
     void everyMigrationHasItsOwnVersionNumber() throws Exception {
         Map<String, List<String>> byVersion = migrations().stream()
                 .map(path -> path.getFileName().toString())
