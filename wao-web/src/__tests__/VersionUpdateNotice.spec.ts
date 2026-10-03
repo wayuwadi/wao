@@ -102,6 +102,18 @@ describe('顶栏更新入口', () => {
     expect(fetchWebRelease).toHaveBeenCalledOnce()
     expect(input.value).toBe('草稿')
   })
+  it('说明慢加载期间手动打开并收起，响应到达不重新弹出', async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof fetchWebRelease>>) => void
+    vi.mocked(fetchWebRelease).mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    await render(); notify('new1234'); await nextTick()
+    await click('.update-entry'); await click('.later')
+    resolve({ version: 'new1234', release: upcoming }); await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(sessionStorage.getItem('wao-update-arrival-version')).toBe('new1234')
+    await click('.update-entry')
+    expect(document.body.textContent).toContain(upcoming.title)
+    expect(document.querySelector('.arriving')).toBeNull()
+  })
   it('维护更新只保留入口，手动可读，无新功能动效', async () => {
     vi.mocked(fetchWebRelease).mockResolvedValue({ version: 'new1234', release: { ...upcoming, attention: 'maintenance' } })
     await render()
