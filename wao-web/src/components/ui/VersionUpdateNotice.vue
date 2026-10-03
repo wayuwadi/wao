@@ -108,6 +108,11 @@ async function show() {
     close()
     return
   }
+  // 手动查看接管待提醒状态，慢响应不能在用户收起后重新弹出。
+  pendingArrival = false
+  if (availableVersion.value) {
+    try { sessionStorage.setItem(ANNOUNCED_KEY, availableVersion.value) } catch { /* 当前页面仍可去重。 */ }
+  }
   positionPanel()
   open.value = true
   emit('opened')
