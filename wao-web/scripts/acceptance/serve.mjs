@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { realpathSync } from 'node:fs'
+import { realpathSync, readFileSync } from 'node:fs'
 import { createServer, loadConfigFromFile } from 'vite'
 import { faultMiddleware, localOrigin } from './faults.mjs'
 
@@ -16,6 +16,11 @@ const server = await createServer({
   plugins: [...loaded.config.plugins, {
     name: 'wao-local-draft-acceptance',
     configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        if (request.method !== 'GET' || request.url !== '/_acceptance/clone-notes') return next()
+        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+        response.end(readFileSync(resolve(import.meta.dirname, 'clone-notes.html')))
+      })
       server.middlewares.use(faultMiddleware(faultFile))
     },
   }],
