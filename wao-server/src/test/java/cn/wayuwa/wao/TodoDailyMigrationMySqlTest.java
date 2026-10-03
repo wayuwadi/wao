@@ -10,7 +10,7 @@ import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/** Runs the unchanged V175 SQL against real MySQL JSON semantics when Docker is available. */
+/** Runs the unchanged V178 SQL against real MySQL JSON semantics when Docker is available. */
 @Testcontainers(disabledWithoutDocker = true)
 class TodoDailyMigrationMySqlTest {
     @Container static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:9.7.0")
@@ -38,7 +38,7 @@ class TodoDailyMigrationMySqlTest {
                       ('t-parts', '协作任务', 'p1', '待办', 'wg', NULL,
                        '{"parts":["wg","wd"],"steps":[],"subs":[]}', NULL)
                     """);
-            String migration = Files.readString(Path.of("src/main/resources/db/migration/V175__todo_daily_fusion.sql"));
+            String migration = Files.readString(Path.of("src/main/resources/db/migration/V178__todo_daily_fusion.sql"));
             for (String command : migration.split(";")) if (!command.isBlank()) statement.execute(command);
             try (var rs = statement.executeQuery("""
                     SELECT JSON_TYPE(JSON_EXTRACT(after_snapshot, '$.startAt')) AS start_type,
