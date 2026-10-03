@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { captureText, stepPlayBall } from '@/components/home/companionPlay'
 
 describe('留白游乐场', () => {
-  it('窄屏与高速投掷都留在底部区域，八秒内自动收好', () => {
+  it('窄屏与高速投掷都留在底部区域，十五秒内自动收好', () => {
     for (const width of [280, 900]) {
       const ball = { x: 0, y: 100, vx: 900, vy: 1000, age: 0 }
       let visible = true
-      for (let i = 0; i < 250; i++) {
+      for (let i = 0; i < 460; i++) {
         visible = stepPlayBall(ball, 1 / 30, width, 250)
         expect(Math.abs(ball.x)).toBeLessThanOrEqual(width / 2 - 11)
         expect(ball.y).toBeGreaterThanOrEqual(-114)

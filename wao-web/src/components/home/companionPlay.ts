@@ -10,7 +10,7 @@ export function stepPlayBall(ball: PlayBall, dt: number, width: number, height: 
   if (Math.abs(ball.x) > side) { ball.x = Math.sign(ball.x) * side; ball.vx *= -0.72 }
   if (ball.y < floor) { ball.y = floor; ball.vy = Math.abs(ball.vy) * 0.68; ball.vx *= 0.86 }
   if (ball.y > ceiling) { ball.y = ceiling; ball.vy = -Math.abs(ball.vy) }
-  return ball.age < 8
+  return ball.age < 15
 }
 
 export const CAPTURE_LIMIT = 10000

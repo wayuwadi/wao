@@ -50,7 +50,7 @@ describe('最近更新档案', () => {
     await wrapper.get('[aria-label="上一页"]').trigger('click')
     await wrapper.get('.release-edition').trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain(RELEASE_HISTORY[1]!.intro)
-    await wrapper.get('.edition-content a').trigger('click')
+    await wrapper.get('.edition-content article button').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe(
       MODULES[RELEASE_HISTORY[1]!.highlights[0]!.featureId].path,

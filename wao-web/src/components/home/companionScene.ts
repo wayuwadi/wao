@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { createCompanionModels } from './companionModels'
 import { boundCompanion, companionLayout, stepCompanion } from './companionMotion'
 import { stepPlayBall, type PlayBall } from './companionPlay'
+import { ACTIVITY_SECONDS, activityPose, companionActivities, type CompanionActivity } from './companionActivities'
 
 interface Options {
   host: HTMLElement
@@ -42,10 +43,11 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   scene.add(toy)
   let ball: PlayBall | null = null
   let ballStartedAt = 0
-  let bumpUntil = 0
+  let currentActivity: { kind: CompanionActivity; start: number } | null = null
+  let suppressClickUntil = 0
   const softness = pets.map(() => ({ value: 1, velocity: 0 }))
   const strokes = pets.map(() => ({ x: 0, y: 0, seen: false }))
-  function clearPlay() { ball = null; toy.visible = false }
+  function clearPlay() { ball = null; toy.visible = false; currentActivity = null }
   function resetBlinks() {
     pets.forEach((p, i) => {
       p.blink = 0
@@ -65,8 +67,6 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     last = 0,
     paintedAt = 0,
     reduced = media.matches
-  let danceUntil = 0
-  let dancer: number | undefined
   let pointer = { x: 0, active: false }
   let drag: {
     index: number
@@ -88,9 +88,13 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   function syncTarget(index: number) {
     const p = pets[index]!,
       el = targets[index]!
-    el.style.width = `${p.size * 2.18}px`
-    el.style.height = `${p.size * 2.55}px`
-    el.style.transform = `translate(${p.x + width / 2 - p.size * 1.09}px,${height / 2 - p.y - p.size * 1.3}px)`
+    const left = p.group.position.x + width / 2 - p.size * 1.09
+    const top = height / 2 - p.group.position.y - p.size * 1.3
+    // 底边露出的伙伴只保留可见热区，避免 focus/scrollIntoView 滚动隐藏容器。
+    const x = Math.max(0, left), y = Math.max(0, top)
+    el.style.width = `${Math.max(0, Math.min(width, left + p.size * 2.18) - x)}px`
+    el.style.height = `${Math.max(0, Math.min(height, top + p.size * 2.55) - y)}px`
+    el.style.transform = `translate(${x}px,${y}px)`
     el.style.zIndex = p.drag ? '3' : '1'
   }
   function layout() {
@@ -114,6 +118,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
         p.vx = p.vy = 0
       }
       p.group.scale.setScalar(p.size)
+      p.group.position.set(p.x, p.y, 0)
       syncTarget(i)
     })
     wake()
@@ -126,31 +131,18 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       Math.max(8, height / 2 - p.y - p.size * 1.55),
     )
   }
-  function react(index: number) {
-    const p = pets[index]!
-    if (!resting()) {
-      p.action = 1.2
-      p.vy = 170
-      p.vx = (index % 2 ? 1 : -1) * 45
-    }
-    announce(
-      index,
-      ['今天也留一点空白。', '慢慢来，我在呢。', '接住一点好心情！', '呱，休息一下？'][index]!,
-    )
-    wake()
-  }
   function point(e: MouseEvent) {
     const r = host.getBoundingClientRect()
     return { x: e.clientX - r.left - width / 2, y: height / 2 - (e.clientY - r.top) }
   }
   function play(x = 0, y = height / 2 - 24) {
     if (resting() || !runnable() || !width || !height) return false
-    danceUntil = 0
+    currentActivity = { kind: 'ball', start: performance.now() }
     ball = { x: Math.max(-width / 2 + 11, Math.min(width / 2 - 11, x)), y: Math.max(-height / 2 + 11, Math.min(height / 2 - 11, y)), vx: x > 0 ? -150 : 150, vy: 110, age: 0 }
     ballStartedAt = performance.now()
     toy.visible = true
     toy.material.opacity = 1
-    announce(2, '小球接住啦。按 Esc 收好。')
+    announce(2, '大家一起接！十五秒后歇一歇。')
     wake()
     return true
   }
@@ -160,7 +152,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     play(v.x, v.y)
   }) as EventListener)
   listen(document, 'keydown', ((e: KeyboardEvent) => {
-    if (e.key === 'Escape' && ball) { clearPlay(); wake() }
+    if (e.key === 'Escape' && currentActivity) { clearPlay(); wake() }
   }) as EventListener)
   function release(cancelled = false) {
     if (!drag) return
@@ -181,8 +173,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       p.action = 0.65
     }
     if (!cancelled) {
-      if (d.distance < 8) react(d.index)
-      else announce(d.index, '接住啦。')
+      if (d.distance >= 8) { suppressClickUntil = performance.now() + 500; announce(d.index, '接住啦。') }
     }
     wake()
   }
@@ -191,6 +182,11 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       if (drag || e.button !== 0) return
       const p = pets[index]!,
         v = point(e)
+      if (currentActivity) {
+        p.x = p.group.position.x
+        p.y = p.group.position.y
+        clearPlay()
+      }
       el.setPointerCapture(e.pointerId)
       el.focus({ preventScroll: true })
       el.classList.add('dragging')
@@ -241,9 +237,10 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     }) as EventListener)
     listen(el, 'pointercancel', (() => release(true)) as EventListener)
     listen(el, 'lostpointercapture', (() => release(true)) as EventListener)
-    listen(el, 'click', ((e: MouseEvent) => {
-      if (e.detail === 0) react(index)
-    }) as EventListener)
+    // 捕获阶段阻止拖动结束后的合成点击；普通轻点由 Vue 打开活动菜单。
+    const blockDragClick = (e: MouseEvent) => { if (e.detail > 0 && performance.now() < suppressClickUntil) { e.preventDefault(); e.stopImmediatePropagation() } }
+    el.addEventListener('click', blockDragClick, true)
+    cleanup.push(() => el.removeEventListener('click', blockDragClick, true))
     listen(el, 'keydown', ((e: KeyboardEvent) => {
       if (e.key === 'Escape' && drag) {
         e.preventDefault()
@@ -268,7 +265,6 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   }) as EventListener)
   function stop() {
     clearPlay()
-    danceUntil = 0
     cancelAnimationFrame(raf)
     raf = 0
     last = 0
@@ -287,40 +283,42 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     const dt = Math.min(0.034, (time - last) / 1000 || 0.016),
       t = time / 1000
     last = paintedAt = time
+    const elapsed = currentActivity ? (time - currentActivity.start) / 1000 : 0
+    if (elapsed >= ACTIVITY_SECONDS || resting()) clearPlay()
+    const poses = pets.map((_, i) => currentActivity ? activityPose(currentActivity.kind, elapsed, i) : null)
     if (ball) {
       ball.age = Math.max(ball.age, (time - ballStartedAt) / 1000)
       if (!stepPlayBall(ball, dt, width, height)) clearPlay()
       else {
-        for (const p of pets) {
-          const dx = ball.x - p.x, dy = ball.y - p.y, distance = Math.hypot(dx, dy), radius = p.size * 0.72 + 10
-          if (!p.drag && time > bumpUntil && distance < radius) {
-            const nx = distance ? dx / distance : 0, ny = Math.max(0.35, distance ? dy / distance : 1)
-            ball.x = p.x + nx * radius
-            ball.y = p.y + ny * radius
-            ball.vx = nx * 200
-            ball.vy = Math.max(130, ny * 230)
-            p.action = 0.55
-            bumpUntil = time + 180
-            break
-          }
+        if (elapsed > 0.9) {
+          // 先接住用户抛出的球，再按站位接力，四个伙伴都参与。
+          const passes = [0, 1, 2, 3, 2, 1, 0], leg = (elapsed - 0.9) / 1.4
+          const segment = Math.floor(leg) % 6, u = leg % 1
+          const a = pets[passes[segment]!]!, b = pets[passes[segment + 1]!]!
+          const pa = poses[passes[segment]!]!, pb = poses[passes[segment + 1]!]!
+          const blend = Math.min(1, (elapsed - 0.9) / 0.35)
+          const x = (a.x + pa.x * a.size) * (1 - u) + (b.x + pb.x * b.size) * u
+          const y = (a.y + (pa.y + 0.8) * a.size) * (1 - u) + (b.y + (pb.y + 0.8) * b.size) * u + Math.sin(u * Math.PI) * a.size
+          ball.x += (x - ball.x) * blend
+          ball.y += (y - ball.y) * blend
         }
-        toy.position.set(ball.x, ball.y, 150)
-        toy.material.opacity = Math.min(1, 8 - ball.age)
+        toy.position.set(Math.max(-width / 2 + 11, Math.min(width / 2 - 11, ball.x)), Math.min(height / 2 - 11, ball.y), 150)
+        toy.material.opacity = Math.min(1, ACTIVITY_SECONDS - ball.age)
       }
     }
     pets.forEach((p, i) => {
       if (!p.drag && !resting()) stepCompanion(p, dt)
       p.action = Math.max(0, p.action - dt)
-      const dancing = !resting() && time < danceUntil && (dancer === undefined || dancer === i) && !p.drag
-      const beat = dancing ? Math.sin(t * 9 + i * 0.9) : 0
-      const hop = dancing ? Math.abs(beat) * p.size * 0.65 : 0
+      const pose = poses[i]
       const wave = resting() ? 0 : Math.sin(t * 1.65 + p.phase) * 1.5
       const action = resting() ? 0 : Math.sin(p.action * 13) * p.action
-      p.group.position.set(p.x, p.y + wave + hop, p.drag ? 180 : 0)
+      p.group.position.set(
+        Math.max(-width / 2 + p.size * 1.1, Math.min(width / 2 - p.size * 1.1, p.x + (pose?.x ?? 0) * p.size)),
+        Math.min(height / 2 - p.size * 1.4, p.y + wave + (pose?.y ?? 0) * p.size), p.drag ? 180 : 0)
       const gaze = resting()
         ? 0
         : Math.max(-0.23, Math.min(0.23, (ball ? ball.x - p.x : pointer.active ? pointer.x - p.x : 0) / 950))
-      p.body.rotation.y += (gaze - p.body.rotation.y) * dt * 5
+      p.body.rotation.y = gaze + (pose?.turn ?? 0)
       let tilt = resting()
         ? 0
         : p.drag
@@ -329,9 +327,9 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
             ? 0.055
             : Math.sin(t * 0.7 + p.phase) * 0.015
       if (drag && !p.drag && !resting()) tilt += Math.sign(pets[drag.index]!.x - p.x) * 0.055
-      p.body.rotation.z += (tilt + action * 0.06 + beat * 0.24 - p.body.rotation.z) * dt * 10
+      p.body.rotation.z = tilt + action * 0.06 + (pose?.tilt ?? 0)
       const pressed = drag?.index === i && !p.drag
-      const targetStretch = resting() ? 1 : pressed ? 0.85 : p.drag ? 1.085 : 1 + action * 0.025
+      const targetStretch = resting() ? 1 : pressed ? 0.85 : p.drag ? 1.085 : (pose?.stretch ?? 1) + action * 0.025
       const soft = softness[i]!
       if (resting()) { soft.value = 1; soft.velocity = 0 }
       else {
@@ -412,17 +410,17 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   layout()
   return {
     play,
-    dance(index?: number) {
+    activity(kind: CompanionActivity) {
+      if (kind === 'ball') return play()
       if (resting() || !runnable()) return false
-      dancer = index
-      danceUntil = performance.now() + 8000
-      announce(index ?? 2, index === undefined ? '这一小段，跳给你看。' : '轮到我啦！')
+      clearPlay()
+      currentActivity = { kind, start: performance.now() }
+      announce(2, companionActivities.find(a => a.id === kind)!.greeting)
       wake()
       return true
     },
     setQuiet(value: boolean) {
       quiet = value
-      danceUntil = 0
       reset()
       wake()
     },
