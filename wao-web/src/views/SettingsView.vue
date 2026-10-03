@@ -453,7 +453,7 @@ async function bindFeishu() {
 
     <!-- 右侧内容 -->
     <div class="spane">
-      <div class="scontent" :class="{ 'navigation-wide': tab === 'navigation' }">
+      <div class="scontent" :class="{ 'navigation-wide': tab === 'navigation', 'content-wide': ['members', 'navigation', 'ai-accounts', 'wao-ai-capabilities', 'version'].includes(tab) }">
         <VersionSettingsPanel v-if="tab === 'version'" />
         <!-- 组织与成员 -->
         <template v-if="tab === 'members'">
@@ -884,7 +884,7 @@ async function bindFeishu() {
   flex: 1;
 }
 .snav {
-  width: 224px;
+  width: 184px;
   flex-shrink: 0;
   border-right: 1px solid var(--wao-line);
   background: var(--wao-bg-sub);
@@ -967,10 +967,10 @@ async function bindFeishu() {
   overflow-y: auto;
 }
 .scontent {
-  padding: 22px 32px 48px;
+  padding: 22px 24px 48px;
   max-width: 860px;
 }
-.scontent.navigation-wide { max-width: 1420px; }
+.scontent.content-wide { max-width: 1420px; }
 .notification-settings-stack { display: grid; gap: 14px; }
 .s-h1 {
   font-size: 18px;
