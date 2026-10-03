@@ -1503,7 +1503,20 @@ export const useDataStore = defineStore('data', () => {
         let result: T
         try { result = await mutate(base) }
         catch (cause) {
-          if (!(cause instanceof PreviousTodoWriteRecovered)) throw cause
+          if (!(cause instanceof PreviousTodoWriteRecovered)) {
+            const status = (cause as { status?: number; response?: { status?: number } })?.status ?? (cause as { response?: { status?: number } })?.response?.status
+            // A rejected dedicated operation wrote nothing. Refresh only a clean
+            // task, leaving any input made during the request for the usual CAS flow.
+            if (status === 409 && (taskPersistVersions[id] ?? 0) === version && !taskDrafts.value[id]) {
+              const remote = await apiGetTask(id).catch(() => null)
+              if (remote && member === useSessionStore().userId && taskById(id) === task
+                && (taskPersistVersions[id] ?? 0) === version && !taskDrafts.value[id]) {
+                Object.assign(task, remote)
+                taskSubBases[id] = clone(remote.subs ?? [])
+              }
+            }
+            throw cause
+          }
           recovered = cause as PreviousTodoWriteRecovered<T>
           result = recovered.result
         }
