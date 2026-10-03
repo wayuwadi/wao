@@ -40,7 +40,7 @@ describe('AiAssistantPanel', () => {
     localStorage.clear()
     vi.mocked(fetchAiCapabilities).mockResolvedValue([{
       id: 'local-codex', label: '本地 Codex', provider: 'codex', model: null,
-      executionMode: 'RUNNER', available: true, message: '安全只读 Runner 在线',
+      executionMode: 'LOCAL_CODEX', available: true, message: '本机 Codex 已就绪',
     }])
     vi.mocked(fetchAssistantSourceOptions).mockResolvedValue({
       chats: [{ id: 'oc_chat', name: 'WAO 项目群' }],
@@ -124,7 +124,8 @@ describe('AiAssistantPanel', () => {
     await flushPromises()
 
     expect(document.body.textContent).toContain('我的问答知识库')
-    expect(document.body.textContent).toContain('按需联网')
+    expect(document.body.textContent).toContain('根据所选资料回答')
+    expect(document.querySelector('option[value="local-codex"]')?.textContent).toContain('Codex')
     expect(document.body.textContent).toContain('项目复盘')
     expect(document.body.textContent).toContain('帮我复盘项目')
     expect(document.body.textContent).toContain('这是复盘建议')

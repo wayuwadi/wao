@@ -94,7 +94,8 @@ async function load(preferredId?: string) {
       autoRangeKind.value = automation.rangeKind
       autoRangeValue.value = automation.rangeValue
       autoFocus.value = automation.focus || ''
-      autoCapabilityId.value = automation.aiCapabilityId
+      autoCapabilityId.value = capabilities.value.some(item => item.id === automation.aiCapabilityId)
+        ? automation.aiCapabilityId : capabilities.value[0]?.id || 'local-codex'
       autoNextFireAt.value = automation.nextFireAt
       if (automation.intervalSeconds % 86400 === 0) { autoUnit.value = 'DAYS'; autoEvery.value = automation.intervalSeconds / 86400 }
       else if (automation.intervalSeconds % 3600 === 0) { autoUnit.value = 'HOURS'; autoEvery.value = automation.intervalSeconds / 3600 }

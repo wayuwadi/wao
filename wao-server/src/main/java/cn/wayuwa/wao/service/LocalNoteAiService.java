@@ -27,7 +27,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
-/** 小记专用本机执行出口，不依赖 Runner 节点、凭据分发或网络回调。默认关闭，按主机显式启用。 */
+/** 小记、算卦和业务助手共用的本机执行出口，不依赖 Runner。默认关闭，按主机显式启用。 */
 @Service
 public class LocalNoteAiService {
     private static final Logger log = LoggerFactory.getLogger(LocalNoteAiService.class);
@@ -48,6 +48,9 @@ public class LocalNoteAiService {
 
     @Autowired
     private LocalCodexConversationCompletion conversationCompletion;
+
+    @Autowired
+    private ReferenceImageService referenceImages;
 
     public LocalNoteAiService(AiAssistantRunMapper runs, ImageService images, NoteAiWorkflowMapper workflows,
             ObjectProvider<NoteAiWorkflowService> workflowService, Environment environment) {
@@ -179,9 +182,17 @@ public class LocalNoteAiService {
     }
 
     LocalNoteCodexProcess.Result execute(AiAssistantRunEntity run, String model, Duration timeout) throws Exception {
+        List<ReferenceImageService.Content> references = List.of();
+        if (run.getReferenceImageIds() != null && !run.getReferenceImageIds().isBlank()) {
+            var ids = List.of(run.getReferenceImageIds().split(","));
+            if (ids.size() > 4 || ids.size() != ids.stream().distinct().count())
+                throw new IllegalStateException("参考图片数量无效；请重新选择后重试");
+            referenceImages.requireOwned(run.getMemberId(), ids);
+            references = ids.stream().map(id -> referenceImages.raw(run.getMemberId(), id)).toList();
+        }
         return LocalNoteCodexProcess.execute(environment.getProperty("wao.ai.local-notes.executable", "codex"),
                 model, run.getPromptText(), directory, timeout,
-                AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose()));
+                AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose()), references);
     }
 
     /** 仅停止本实例创建的进程和 worker，保留未领取的持久队列。 */

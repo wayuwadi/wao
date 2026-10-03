@@ -52,3 +52,5 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 2026-10-02：项目 AI Run 退役（ADR-303）；现有工作区工具没有派工或 Runner 协议能力，不新增工具或扩大令牌权限。
 
 2026-10-02：WeKnora 同步退役（ADR-305），不改变原生知识库读取和编辑工具；无新的同步权限。
+
+2026-10-03：ADR-313 将既有浏览器润色、问答与后台只读分析迁至本机 Codex；服务主机队列不是工作区执行授权，不新增 MCP 工具或旧令牌权限，私有图片仍按浏览器成员鉴权。详见 [业务 AI 本机执行](business-ai-local-codex.md)。
