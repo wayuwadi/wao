@@ -84,6 +84,8 @@ export const useUiStore = defineStore('ui', () => {
 
   const modal = ref<'task' | 'project' | 'note' | null>(null)
   const modalOpenTaskAfterCreate = ref(false)
+  /** 非模态任务编辑中，提交或草稿存储失败时防止其他入口卸载表单。 */
+  const taskComposerLocked = ref(false)
   const modalProject = ref<string>('') // 新建任务时预选的项目
   const modalPriority = ref<Priority | null>(null) // 四象限入口的默认优先级
   const modalTaskSeed = ref<DocumentTaskSeed | null>(null)
@@ -130,6 +132,7 @@ export const useUiStore = defineStore('ui', () => {
     presetStartAt = '',
     presetEndAt = '',
   ) {
+    if (modal.value === 'task' && (taskComposerLocked.value || kind === 'task')) return
     modalOpenTaskAfterCreate.value = false
     modalTaskSeed.value = null
     modalPriority.value = null
@@ -142,10 +145,12 @@ export const useUiStore = defineStore('ui', () => {
   }
   /** 仅页面右上角完整新建入口在保存成功后打开详情。 */
   function openNewTask(project = '') {
+    if (modal.value === 'task') return
     openModal('task', project)
     modalOpenTaskAfterCreate.value = true
   }
   function closeModal() {
+    if (modal.value === 'task' && taskComposerLocked.value) return
     modal.value = null
   }
 
@@ -261,7 +266,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    openTaskId, openTaskSubId, modalOpenTaskAfterCreate, modal, modalProject, modalPriority, modalTaskSeed, modalDue, modalScheduleDate, modalStartAt, modalEndAt,
+    openTaskId, openTaskSubId, modalOpenTaskAfterCreate, taskComposerLocked, modal, modalProject, modalPriority, modalTaskSeed, modalDue, modalScheduleDate, modalStartAt, modalEndAt,
     searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft,
     chatOpen, chatDraft, chatDraftRequestVersion, chatUnreadCount, chatLatestUnread, chatRefreshVersion, shareToChat, consumeChatDraft, chatReviewId, chatReviewRequestVersion, taskViews,
     openTask, closeTask, openNewTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,

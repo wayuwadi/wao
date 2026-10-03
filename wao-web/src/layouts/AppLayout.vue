@@ -268,7 +268,7 @@ function onKeydown(e: KeyboardEvent) {
   } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
     e.preventDefault()
     ui.toggleAssistant()
-  } else if (e.key === 'Escape' && ui.modal !== 'note') {
+  } else if (e.key === 'Escape' && ui.modal !== 'note' && ui.modal !== 'task') {
     // 逐层关闭：聊天 → 助手 → 庆祝 → 帮助 → 搜索 → 弹窗
     if (ui.chatOpen) {
       e.preventDefault()
@@ -342,10 +342,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
         <div class="quick-actions" :class="{ relocated: desktopToolbar }">
           <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
-          <button class="plus" data-desktop-action="new-task" aria-label="新建任务" title="新建任务" @click="ui.openNewTask()">
+          <button class="plus" data-desktop-action="new-task" :disabled="ui.taskComposerLocked" aria-label="新建任务" title="新建任务" @click="ui.openNewTask()">
             <i class="ri-play-list-add-line" aria-hidden="true"></i><span class="action-label">任务</span>
           </button>
-          <button class="plus ghost" data-desktop-action="new-note" aria-label="新建小记" title="新建小记" @click="newNote">
+          <button class="plus ghost" data-desktop-action="new-note" :disabled="ui.taskComposerLocked" aria-label="新建小记" title="新建小记" @click="newNote">
             <i class="ri-file-add-line" aria-hidden="true"></i><span class="action-label">小记</span>
           </button>
 
