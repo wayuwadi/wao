@@ -28,7 +28,7 @@ const { page, pageCount, visible } = useClientPagination(results, [() => props.q
       <span>{{ includeFinished ? '查找全部任务（含已完成）' : '仅查找未收尾任务（含待验证）' }}</span>
       <span v-if="ready" role="status">命中 {{ results.length }} 项任务</span>
       <span v-else role="status">{{ loadState === 'error' ? '加载失败，以下仅为已加载内容，请在上方重试' : '正在加载，以下结果尚不完整' }}</span>
-      <button v-if="excluded" @click="emit('clearFilters')">{{ excluded }} 项被负责人或创建人筛选排除 · 清除筛选</button>
+      <button v-if="excluded" @click="emit('clearFilters')">{{ excluded }} 项被快捷条件或人员筛选排除 · 清除筛选</button>
       <button v-if="hiddenFinished" @click="includeFinished = true">另有 {{ hiddenFinished }} 项已收尾 · 包含历史</button>
     </div>
     <p v-if="ready && !matches.length" class="search-empty">当前项目没有匹配内容，试试其他关键词。</p>
