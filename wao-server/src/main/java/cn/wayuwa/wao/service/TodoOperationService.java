@@ -75,7 +75,9 @@ public class TodoOperationService {
     public record NoteRequest(String docId, Integer expectedDocRev, String expectedTaskEditVersion,
             LocalDate businessDate, String taskId, String title, List<DocBlockDto> blocks,
             RichDocContentDto content, List<String> tags, Boolean autoTitle, Boolean autoImage,
-            Boolean autoPolish) {}
+            Boolean autoPolish, List<String> sourceInputIds) {
+        public NoteRequest(String docId,Integer expectedDocRev,String expectedTaskEditVersion,LocalDate businessDate,String taskId,String title,List<DocBlockDto> blocks,RichDocContentDto content,List<String> tags,Boolean autoTitle,Boolean autoImage,Boolean autoPolish){this(docId,expectedDocRev,expectedTaskEditVersion,businessDate,taskId,title,blocks,content,tags,autoTitle,autoImage,autoPolish,null);}
+    }
     public record NoteResult(String operationId, DocDto doc, TaskDto task, LocalDate businessDate,
             boolean late) {}
     public record Receipt(String status, String operationId, String type, Object result) {}
@@ -163,10 +165,10 @@ public class TodoOperationService {
         if (!contexts.isEmpty() && !contexts.get(0).equals(request.businessDate()))
             throw new ConflictException("小记已归属另一日期，请刷新后重试");
         CreateNoteRequest noteRequest = new CreateNoteRequest(request.title(), request.blocks(), request.content(),
-                request.tags(), request.autoTitle(), request.autoImage(), request.autoPolish());
+                request.tags(), request.autoTitle(), request.autoImage(), request.autoPolish(), request.sourceInputIds());
         DocDto doc = existing == null ? knowledge.createNote(request.docId(), noteRequest, memberId)
                 : knowledge.updateDoc(request.docId(), new PatchDocRequest(request.title(), request.blocks(),
-                        request.content(), null, null, request.expectedDocRev(), request.tags()));
+                        request.content(), null, null, request.expectedDocRev(), request.tags(), request.sourceInputIds()));
         TaskDto task = null;
         if (linkedTask != null) {
             ObjectNode detail = detail(linkedTask);
@@ -321,6 +323,12 @@ public class TodoOperationService {
 
     private String hash(String type, String target, Object request) {
         try {
+            // 新增可选来源字段不得改变旧客户端已经持久化的保存回执摘要。
+            if(request instanceof NoteRequest note && (note.sourceInputIds()==null || note.sourceInputIds().isEmpty())) {
+                ObjectNode compatible=json.valueToTree(request);
+                compatible.remove("sourceInputIds");
+                request=compatible;
+            }
             byte[] bytes = json.writeValueAsBytes(List.of(type, target == null ? "" : target, request));
             return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (Exception ex) {

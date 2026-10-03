@@ -100,6 +100,7 @@ export const DEFAULT_TASK_GROUP = 'tg-default'
 
 /** 文档编辑覆盖（标题 / 正文 Markdown）。 */
 interface DocEdit {
+  sourceInputIds?: string[]
   title?: string
   text?: string
   content?: RichDocContent
@@ -568,6 +569,7 @@ export const useDataStore = defineStore('data', () => {
       await writeDocumentDraft({
         id,
         memberId,
+        sourceInputIds: next.sourceInputIds,
         title: next.title ?? base.title,
         content: next.content,
         baseRev: next.baseRev ?? 1,
@@ -628,6 +630,7 @@ export const useDataStore = defineStore('data', () => {
     const requestGeneration = docMemberGeneration
     const requestMember = useSessionStore().userId || 'anonymous'
     const request = apiPatchDoc(id, {
+      sourceInputIds: captured.sourceInputIds,
       title: resolved.title,
       blocks: legacyProjection(captured.content),
       content: captured.content,
@@ -645,6 +648,7 @@ export const useDataStore = defineStore('data', () => {
         try { localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value)) } catch { /* IndexedDB remains */ }
         await removeDocumentDraft(requestMember, id).catch(() => undefined)
       } else if (latest) {
+        latest.sourceInputIds = latest.sourceInputIds?.filter(request => !captured.sourceInputIds?.includes(request))
         latest.baseRev = saved.rev ?? (captured.baseRev ?? 1) + 1
         // 第一版已落库，后续输入的草稿必须记住新基线；否则补交失败后刷新会误判为协同冲突。
         await persistLocalDocDraft(id, latest, saved)
@@ -714,7 +718,7 @@ export const useDataStore = defineStore('data', () => {
     }
     docEdits.value = {
       ...docEdits.value,
-      [id]: { title: draft.title, text: draft.content.markdown, content: draft.content, baseRev: draft.baseRev },
+      [id]: { sourceInputIds: draft.sourceInputIds, title: draft.title, text: draft.content.markdown, content: draft.content, baseRev: draft.baseRev },
     }
     docDirty[id] = true
     try { localStorage.setItem(docDraftStorageKey(), JSON.stringify(docEdits.value)) } catch { docDraftErrors[id] = true }
@@ -945,12 +949,12 @@ export const useDataStore = defineStore('data', () => {
    * @return 新建的文档 id；正文与标题都为空时返回 null
    */
   async function addNote(text: string, title = '', noteId?: string, rich?: RichDocContent, tags?: string[],
-    ai?: { autoTitle: boolean; autoImage: boolean; autoPolish: boolean }): Promise<string | null> {
+    ai?: { autoTitle?: boolean; autoImage?: boolean; autoPolish?: boolean; sourceInputIds?: string[] }): Promise<string | null> {
     const content = rich ?? { version: 1 as const, document: null, markdown: text }
     const blocks = legacyProjection(content)
     if (!blocks.length && !content.document?.content?.length && !title.trim()) return null
     if (apiLive.value) {
-      const d = await apiCreateNote(noteId ?? uid('d'), { title: title.trim(), blocks, content, ...(tags ? { tags } : {}), ...(ai ?? {}) })
+      const d = await apiCreateNote(noteId ?? uid('d'), { title, blocks, content, ...(tags ? { tags } : {}), ...(ai ?? {}) })
       docs[d.id] = d
       const kb = kbs.value.find((k) => k.id === d.kbId) ?? notesKb()
       const folder = noteFolderOf(kb, d.folderId)

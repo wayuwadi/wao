@@ -9,6 +9,7 @@ import NoteComposer from '@/components/notes/NoteComposer.vue'
 import NoteDiscoveryInline from '@/components/notes/NoteDiscoveryInline.vue'
 import { fetchDiscoveryCurrent, fetchDiscoverySource, type Discovery } from '@/api/noteDiscoveries'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import { freezeNoteAiInput, retainNoteAiResult, fetchNoteOriginals } from '@/api/noteOriginals'
 import { polishDocumentText } from '@/api/assistant'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { useDataStore } from '@/stores/data'
@@ -28,6 +29,7 @@ vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
 
+vi.mock('@/api/noteOriginals', () => ({ freezeNoteAiInput: vi.fn().mockResolvedValue({ snapshotId: 'snapshot', overviewImageUrl: null }), retainNoteAiResult: vi.fn().mockResolvedValue(undefined), fetchNoteOriginals: vi.fn().mockResolvedValue({ before: null, initial: null, explanation: '', appliedRev: null }) }))
 vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
 vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn(), fetchKbs: vi.fn() }))
 const Editor = defineComponent({
@@ -339,6 +341,8 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
   beforeEach(() => {
+    if(!Range.prototype.getClientRects) Object.defineProperty(Range.prototype,'getClientRects',{configurable:true,value:()=>[]});
+    if(!Range.prototype.getBoundingClientRect) Object.defineProperty(Range.prototype,'getBoundingClientRect',{configurable:true,value:()=>new DOMRect()});
     vi.restoreAllMocks()
     vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([])
     activateNoteWorkflowMember('reset')
@@ -858,7 +862,7 @@ describe('小记集中记录空间', () => {
   it('小记润色确认后进入富文本草稿，保存并重新编辑仍保留结果', async () => {
     const source = '这句话写得不是特别顺。'
     localStorage.setItem('wao-quick-note-draft-v1:wg', JSON.stringify({ id: 'polish-note', text: source }))
-    vi.mocked(polishDocumentText).mockResolvedValue({ polished: '这句话表达得更加自然。' })
+    vi.mocked(polishDocumentText).mockResolvedValue({ polished: '这句话表达得更加自然。', taskId: 'a'.repeat(32) })
     const add = vi.spyOn(useDataStore(), 'addNote').mockResolvedValue('polish-note')
     const wrapper = mount(NoteComposer, { attachTo: document.body })
     await vi.dynamicImportSettled()
@@ -877,6 +881,7 @@ describe('小记集中记录空间', () => {
     }))
     expect(wrapper.find('.tiptap').text()).toBe(source)
     await wrapper.find('.polish-apply').trigger('click')
+    await flushPromises()
     expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).text).toContain('更加自然')
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()

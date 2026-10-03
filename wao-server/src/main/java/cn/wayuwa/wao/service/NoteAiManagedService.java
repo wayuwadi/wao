@@ -18,6 +18,8 @@ public class NoteAiManagedService {
     private final JdbcTemplate db; private final ObjectMapper json; private final NoteAiSettingsService settings;
     private final ObjectProvider<KnowledgeService> knowledge; private final TextPolishJobService text; private final ArticleImageService image;
     private final NotePolishVersionService versions;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private NoteOriginalService originals;
     private static final ThreadLocal<Boolean> DERIVED=ThreadLocal.withInitial(()->false);
     private static final ThreadLocal<String> ACTOR=new ThreadLocal<>();
     /** 返回明确的内部调用身份；不回落到默认成员。 */
@@ -61,6 +63,11 @@ public class NoteAiManagedService {
         settings.lockMember(actor);
         Map<String,Object> previous=one("SELECT * FROM note_ai_save_signal WHERE doc_id=? FOR UPDATE",doc.id());
         String cover=previous==null?"":str(previous,"cover_url");
+        var adopted=originals==null?null:originals.adopted(actor,doc);
+        if(adopted!=null){
+            if(adopted.cover()!=null)cover=adopted.cover();
+            if(adopted.title())suppliedTitle=null;
+        }
         String hash=fingerprint(userBody(doc,cover));
         if(previous!=null&&hash.equals(str(previous,"body_hash"))){
             if(suppliedTitle!=null){
@@ -72,6 +79,9 @@ public class NoteAiManagedService {
         String policy;
         try{policy=settings.write(settings.get(actor).settings());}catch(RuntimeException e){policy="{}";}
         if(NO_AUTO.get())policy="{}";
+        if(adopted!=null&&adopted.polish()&&!policy.equals("{}")){
+            ObjectNode node=(ObjectNode)decode(policy,JsonNode.class);node.put("polish",false);policy=settings.write(node);
+        }
         if(selection!=null&&!policy.equals("{}")){
             ObjectNode node=(ObjectNode)decode(policy,JsonNode.class);
             if(Boolean.FALSE.equals(selection.autoTitle()))node.put("title",false);
@@ -83,13 +93,14 @@ public class NoteAiManagedService {
         db.update("""
             INSERT INTO note_ai_save_signal(doc_id,member_id,user_generation,cycle_id,source_rev,title_origin,last_title,body_hash,policy_json,source_json,cover_url)
             VALUES(?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE user_generation=VALUES(user_generation),cycle_id=VALUES(cycle_id),
-            source_rev=VALUES(source_rev),title_origin=VALUES(title_origin),last_title=VALUES(last_title),body_hash=VALUES(body_hash),policy_json=VALUES(policy_json),source_json=VALUES(source_json),updated_at=CURRENT_TIMESTAMP(6)
+            source_rev=VALUES(source_rev),title_origin=VALUES(title_origin),last_title=VALUES(last_title),body_hash=VALUES(body_hash),policy_json=VALUES(policy_json),source_json=VALUES(source_json),cover_url=VALUES(cover_url),updated_at=CURRENT_TIMESTAMP(6)
             """,doc.id(),actor,generation,cycle,doc.rev(),origin,doc.title(),hash,policy,settings.write(doc),cover.isEmpty()?null:cover);
         if(policy.equals("{}")){
             project(doc,"SKIPPED","SKIPPED","SKIPPED",NO_AUTO.get()?"来源未授权自动 AI；原内容已保存":"正文已保存，自动整理设置暂不可确认；请读取设置后重试");return;
         }
         NoteAiSettingsService.Settings s=decode(policy,NoteAiSettingsService.Settings.class);
         for(String stage:List.of("title","image","polish"))create(doc,cycle,stage,s,false,1,origin,cover);
+        if(adopted!=null&&adopted.polish())db.update("UPDATE note_ai_stage_attempt SET reason_code='MANUAL_APPLIED',message='本次已采用手动润色，不重复自动润色' WHERE doc_id=? AND cycle_id=? AND stage='polish'",doc.id(),cycle);
         projectCurrent(doc);
     }
     private void create(DocDto doc,String cycle,String stage,NoteAiSettingsService.Settings s,boolean manual,int attempt,String origin,String cover){create(doc,doc.author(),cycle,stage,s,manual,attempt,origin,cover);}
@@ -163,7 +174,9 @@ public class NoteAiManagedService {
     }
     private boolean terminal(Map<String,Object> a){if(str(a,"job_id").isEmpty())return true;
         try{return "image".equals(str(a,"stage"))?!List.of("PENDING","QUEUED","RUNNING").contains(image.get(str(a,"member_id"),str(a,"job_id")).status()):!List.of("QUEUED","RUNNING").contains(text.get(str(a,"member_id"),str(a,"job_id")).status());}catch(NotFoundException e){return true;}}
-    private void submit(Map<String,Object> a){String stage=str(a,"stage"),job;
+    private void submit(Map<String,Object> a){
+        if(originals!=null)originals.freezeAttempt(str(a,"id"));
+        String stage=str(a,"stage"),job;
         NoteAiSettingsService.Settings s=decode(str(a,"policy_json"),NoteAiSettingsService.Settings.class);
         if(stage.equals("image"))job=image.startNoteWorkflow(str(a,"member_id"),new ArticleImageRequest(str(a,"input_text"),s.imagePrompt().isBlank()?"为这篇小记生成简洁的 16:9 总览图；只表达已有主题，不编造事实。":s.imagePrompt(),s.model().isBlank()?null:s.model(),str(a,"id"))).id();
             else job=text.submit(str(a,"member_id"),str(a,"id"),stage.equals("title")?"NOTE_TITLE":"NOTE_BODY",str(a,"input_text"),s.model().isBlank()?null:s.model(),s.titlePrompt(),s.polishPrompt()).id();
@@ -200,6 +213,7 @@ public class NoteAiManagedService {
         boolean old=DERIVED.get();DERIVED.set(true);
         DocDto saved;
         try{saved=knowledge.getObject().updateDerivedNote(doc.id(),patch);}finally{DERIVED.set(old);}
+        if(originals!=null)originals.result(str(a,"member_id"),str(a,"id"),str(a,"job_id"),originals.content(saved),saved.rev(),"APPLIED");
         if(stage.equals("title"))db.update("UPDATE note_ai_save_signal SET last_title=? WHERE doc_id=?",output,doc.id());
         if(stage.equals("image"))db.update("UPDATE note_ai_save_signal SET cover_url=? WHERE doc_id=?",output,doc.id());
         if(stage.equals("polish"))db.update("UPDATE note_ai_save_signal SET body_hash=? WHERE doc_id=?",fingerprint(output),doc.id());

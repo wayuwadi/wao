@@ -32,6 +32,9 @@ public class NotePolishVersionController {
         return ApiResponse.ok(versions.list(member.id(http)));
     }
 
+    @GetMapping("/reading")
+    public ApiResponse<List<NotePolishVersionService.ReadingVersion>> reading(HttpServletRequest http){return ApiResponse.ok(versions.reading(member.id(http)));}
+
     @PutMapping("/{docId}")
     public ApiResponse<NotePolishVersionDto> save(@PathVariable String docId,
             @Valid @RequestBody SaveNotePolishVersionRequest request, HttpServletRequest http) {

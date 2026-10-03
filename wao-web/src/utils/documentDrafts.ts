@@ -1,6 +1,7 @@
 import type { RichDocContent } from '@/types'
 
 export interface DocumentDraft {
+  sourceInputIds?: string[]
   id: string
   memberId: string
   title: string

@@ -24,6 +24,7 @@ export interface AiCapability {
 }
 
 export interface PolishTextResult {
+  taskId?: string
   polished: string
 }
 
@@ -89,7 +90,7 @@ export const fetchAiCapabilities = () =>
 /** 润色文档中明确选中的文字；结果不会写进 AI 助手聊天历史。 */
 export const polishDocumentText = async (text: string, options?: PolishJobOptions): Promise<PolishTextResult> => {
   const job = await waitForPolish(text, 'DOCUMENT', options)
-  return { polished: job.polished ?? '' }
+  return { polished: job.polished ?? '', taskId: job.id }
 }
 
 export const fetchAssistantSourceOptions = () =>

@@ -9,7 +9,8 @@ import java.util.List;
  * @param blocks 正文块
  */
 public record CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content,
-        List<String> tags, Boolean autoTitle, Boolean autoImage, Boolean autoPolish) {
+        List<String> tags, Boolean autoTitle, Boolean autoImage, Boolean autoPolish, List<String> sourceInputIds) {
+    public CreateNoteRequest(String title,List<DocBlockDto> blocks,RichDocContentDto content,List<String> tags,Boolean autoTitle,Boolean autoImage,Boolean autoPolish){this(title,blocks,content,tags,autoTitle,autoImage,autoPolish,null);}
     public CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content, List<String> tags) {
         this(title, blocks, content, tags, null, null, null);
     }

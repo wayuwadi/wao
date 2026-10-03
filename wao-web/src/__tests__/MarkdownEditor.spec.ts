@@ -191,6 +191,18 @@ describe('编辑区空白处', () => {
 })
 
 describe('文章总览配图', () => {
+  it('切换小记后不把上一篇生成图认成这一篇可替换的总览图', async () => {
+    const w = await mountEditor({ modelValue: '原正文', articleImageKey: 'note:me:first' })
+    const vm = w.vm as unknown as { editor: Editor; insertArticleImageAtStart: (url: string) => boolean }
+    vm.insertArticleImageAtStart('/api/images/previous/raw')
+    await w.setProps({ articleImageKey: 'note:me:second' })
+    vm.insertArticleImageAtStart('/api/images/current/raw')
+    const markdown = vm.editor.getMarkdown()
+    expect(markdown).toContain('/api/images/current/raw')
+    expect(markdown).toContain('/api/images/previous/raw')
+    expect(markdown).toContain('原正文')
+    w.unmount()
+  })
   it('迟到总览图插入和替换映射原光标，不跳到图片或覆盖新输入', async () => {
     const w = await mountEditor({ modelValue: '正在输入的新内容。' })
     const vm = w.vm as unknown as { editor: Editor; insertArticleImageAtStart: (url: string) => boolean }
@@ -227,7 +239,7 @@ describe('文章总览配图', () => {
     await w.get('.generate-image').trigger('click')
     await flushPromises()
 
-    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'), 'gpt-6-astra')
+    expect(startArticleImage).toHaveBeenCalledWith('第一段。第二段。', expect.stringContaining('总览图'), 'gpt-6-astra', expect.stringMatching(/^[a-f0-9]{32}$/))
     const updates = w.emitted('update:modelValue') as [string][]
     const latest = updates[updates.length - 1]?.[0]
     expect(latest).toMatch(/^!\[文章总览图\]\(\/api\/images\/img1\/raw "wao-image-size:50%xauto"\)/)
