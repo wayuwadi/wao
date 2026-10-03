@@ -2,7 +2,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchCodexMemberships } from '@/api/codexMemberships'
 import type { CodexQuotaAccount } from '@/api/ai'
-import { emptyCodexBenefits, type CodexBenefitsSnapshot } from '@/api/codexBenefits'
 import CodexBenefitsPanel from '@/components/ai/CodexBenefitsPanel.vue'
 import HomeTianrenGlance from './HomeTianrenGlance.vue'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
@@ -17,7 +16,6 @@ const accounts = ref<CodexQuotaAccount[]>([])
 const loading = ref(false)
 const error = ref('')
 const attention = ref('')
-const benefits = ref<CodexBenefitsSnapshot>({ saved: emptyCodexBenefits(), loading: true, loaded: false, error: '', daysLeft: null, expiryLabel: '' })
 const now = ref(Date.now())
 let version = 0
 let opener: HTMLElement | null = null
@@ -38,17 +36,23 @@ const quotaValue = computed(() => weekly.value.length > 1 ? `${weekly.value.leng
   : weekly.value[0] ? `${weekly.value[0].remaining}%` : loading.value ? '读取中…' : error.value ? '读取失败' : '暂无快照')
 const quotaHint = computed(() => weekly.value.some(item => !item.current) ? '历史快照'
   : weekly.value.length > 1 ? '分别查看' : weekly.value.length ? '最近同步' : '点击查看')
-const expiryValue = computed(() => benefits.value.loaded
-  ? benefits.value.saved.proExpiresOn?.replace(/-/g, '/') ?? '未设置'
-  : benefits.value.loading ? '读取中…' : benefits.value.error ? '读取失败' : '未读取')
+const resetValue = computed(() => weekly.value.length > 1 ? '分别查看'
+  : weekly.value[0]?.window.resetsAt ? new Date(weekly.value[0].window.resetsAt * 1000).toLocaleString('zh-CN',
+    { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+    : loading.value ? '读取中…' : error.value ? '读取失败' : '未同步')
 const cardsValue = computed(() => resetAccounts.value.length > 1 ? `${resetAccounts.value.length} 个账号`
   : resetAccounts.value[0] ? `${resetAccounts.value[0].resetCredits!.availableCount} 张`
-    : benefits.value.loaded && benefits.value.saved.resetCards !== null ? `${benefits.value.saved.resetCards} 张`
-      : loading.value || benefits.value.loading ? '读取中…' : error.value || benefits.value.error ? '读取失败' : '未设置')
+    : loading.value ? '读取中…' : error.value ? '读取失败' : '未同步')
 const cardsHint = computed(() => resetAccounts.value.length
   ? resetAccounts.value.some(account => !fresh(account)) ? '历史快照' : '官方同步'
-  : benefits.value.loaded && benefits.value.saved.resetCards !== null ? '手工记录' : '点击查看')
-const displayAccounts = computed(() => accounts.value.map(account => ({ ...account, fresh: fresh(account) })))
+  : '等待官方数据')
+const quotaDetails = computed(() => accounts.value.map(account => ({ account, current: fresh(account),
+  windows: account.limits.flatMap(limit => limit.windows.map(window => ({ ...window,
+    label: `${limit.id === 'codex' ? 'Codex' : limit.label} · ${window.windowDurationMinutes === 10080 ? '周额度' : window.windowDurationMinutes === 300 ? '5 小时' : window.windowDurationMinutes ? `${window.windowDurationMinutes} 分钟` : '额度'}`,
+    remaining: Math.max(0, Math.min(100, Math.round(100 - window.usedPercent))),
+    current: fresh(account) && (window.resetsAt === null || window.resetsAt * 1000 > now.value),
+  }))),
+})))
 
 async function load() {
   if (!session.userId || loading.value) return
@@ -120,9 +124,9 @@ onBeforeUnmount(() => {
         <small>{{ quotaHint }}</small>
       </button>
       <button class="overview-metric" type="button" :aria-expanded="open" aria-controls="home-codex-details" @click="showDetails">
-        <span class="metric-label"><i class="ri-calendar-line" aria-hidden="true"></i>Pro 到期</span>
-        <span class="metric-value expiry" :class="{ attention: benefits.daysLeft !== null && benefits.daysLeft <= 7 }">{{ expiryValue }}</span>
-        <small>{{ benefits.loaded ? `${benefits.expiryLabel} · 手工` : '点击查看' }}</small>
+        <span class="metric-label"><i class="ri-time-line" aria-hidden="true"></i>周重置</span>
+        <span class="metric-value expiry">{{ resetValue }}</span>
+        <small>{{ weekly.some(item => !item.current) ? '历史快照' : weekly.length ? '当地时间 · 官方同步' : '等待官方数据' }}</small>
       </button>
       <button class="overview-metric" type="button" :aria-expanded="open" aria-controls="home-codex-details" @click="showDetails">
         <span class="metric-label"><i class="ri-ticket-2-line" aria-hidden="true"></i>重置卡</span>
@@ -135,14 +139,20 @@ onBeforeUnmount(() => {
       <header><strong>Codex 额度与权益</strong><button ref="closeButton" type="button" aria-label="关闭额度详情" @click="close()"><i class="ri-close-line" aria-hidden="true"></i></button></header>
       <p v-if="error" class="attention" role="alert">{{ error }}；已有快照仅供参考。</p>
       <button type="button" :disabled="loading" @click="load">{{ loading ? '读取中…' : error ? '重试读取额度' : '刷新额度快照' }}</button>
-      <p v-if="!weekly.length && !loading">暂无可用的 Codex 周额度快照。</p>
-      <article v-for="item in weekly" :key="item.account.key" class="quota-account">
-        <strong>{{ item.account.accountEmail || item.account.key }} · 周剩余 {{ item.remaining }}%</strong>
+      <p v-if="!accounts.length && !loading">暂无可用的 Codex 额度快照。</p>
+      <article v-for="item in quotaDetails" :key="item.account.key" class="quota-account">
+        <strong>{{ item.account.accountEmail || item.account.key }} · {{ item.account.plan }}</strong>
         <p>{{ item.current ? '最近同步' : '历史快照' }} · {{ item.account.lastSyncedAt }}</p>
-        <p>{{ resetTime(item.window.resetsAt) }}</p>
-        <p v-if="item.remaining < 20" class="attention">周额度偏低，长任务可能受限。</p>
+        <p v-if="item.account.runnerNames.length">采集来源：{{ item.account.runnerNames.join('、') }} · 同账号取最新</p>
+        <div v-for="(window, index) in item.windows" :key="index" class="quota-window">
+          <span>{{ window.label }} · 剩余 {{ window.remaining }}% <small v-if="!window.current">（历史快照）</small></span>
+          <p>{{ resetTime(window.resetsAt) }}</p>
+        </div>
+        <p>重置卡：{{ item.account.resetCredits ? `${item.account.resetCredits.availableCount} 张` : '官方尚未返回' }}{{ item.current ? '' : '（历史快照）' }}</p>
       </article>
-      <CodexBenefitsPanel neutral :accounts="displayAccounts" @snapshot="benefits = $event" @attention="attention = $event" />
+      <details class="manual-benefits"><summary>手工补充记录（不参与上方统计）</summary>
+        <CodexBenefitsPanel neutral @attention="attention = $event" />
+      </details>
     </section>
   </div>
 </template>
@@ -167,6 +177,9 @@ small { font-size: 11px; color: var(--wao-text-3); overflow-wrap: anywhere; }
 .overview-details p { font-size: 12px; line-height: 1.6; }
 .quota-account { border-top: 1px solid var(--wao-line); margin-top: 12px; padding-top: 12px; font-size: 13px; }
 .quota-account p { color: var(--wao-text-3); margin: 5px 0; }
+.quota-window { padding-top: 8px; }
+.manual-benefits { margin-top: 12px; font-size: 12px; }
+.manual-benefits summary { cursor: pointer; color: var(--wao-text-3); }
 @media (max-width: 600px) {
   .overview-card { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0; }
   .overview-card > :nth-child(3) { border-left: 0; }

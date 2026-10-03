@@ -98,3 +98,7 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 ## 本机小记 AI 执行
 
 ADR-306 恢复浏览器小记配图，以显式配置的本机 Codex 执行标题、润色、标签和 PNG 生成。服务主机的进程调用不是新的终端业务权限；沿用登录成员 HTTP API，不添加 Runner、MCP 或 CLI 领取 / 回调能力，不扩大旧令牌权限。终端批量处理仍需独立范围与版本条件设计。
+
+## 本机 Codex 额度采集
+
+ADR-307 通过服务主机已有 ChatGPT 登录只读采样，沿用 `/api/codex-memberships` 展示，不新增对外操作。采集开关与 CLI 路径是主机配置，不向旧 MCP 令牌开放读取主机账号或执行进程的权限，因此不新增 `wao` 命令；跨机器复用数据库中的脱敏快照。
