@@ -15,6 +15,8 @@ import org.springframework.util.StringUtils;
 /** 管理成员级润色提示词，并记录每次真实 AI 润色的前后内容。 */
 @Service
 public class TextPolishService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private NoteAiSettingsService noteSettings;
 
     static final String PROMPT_PREFERENCE_KEY = "text-polish.prompt.v1";
     static final String DEFAULT_PROMPT = """
@@ -48,7 +50,8 @@ public class TextPolishService {
     /** 保存当前成员的润色方法；空白和超长内容不会覆盖原配置。 */
     public String savePrompt(String memberId, String value) {
         String normalized = normalizePrompt(value);
-        preferences.upsert(memberId, PROMPT_PREFERENCE_KEY, normalized);
+        if(noteSettings!=null)noteSettings.saveLegacy(memberId,PROMPT_PREFERENCE_KEY,normalized);
+        else preferences.upsert(memberId, PROMPT_PREFERENCE_KEY, normalized);
         return normalized;
     }
 

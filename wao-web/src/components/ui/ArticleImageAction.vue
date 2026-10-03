@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import NoteAiSettingsForm from '@/components/notes/NoteAiSettingsForm.vue'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { fetchArticleImage, startArticleImage, type ArticleImageJob } from '@/api/articleImages'
 import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
 import { waitForPolish } from '@/api/polishJobs'
-import { fetchTextPolishWorkspace, saveTextPolishPrompt } from '@/api/textPolish'
+import { fetchTextPolishWorkspace } from '@/api/textPolish'
 import { DEFAULT_NOTE_MODEL, resolveNoteModel } from '@/utils/noteAiModel'
-import { fetchCodexModels, type CodexModelCatalog } from '@/api/codexModels'
 
 const NOTE_MODEL_KEY = 'note-ai-model-v1'
 const NOTE_TITLE_PROMPT_KEY = 'note-title-prompt-v1'
@@ -26,35 +26,12 @@ const PREFERENCE_KEY = ARTICLE_IMAGE_PREFERENCE_KEY
 const prompt = ref(DEFAULT_ARTICLE_IMAGE_PROMPT)
 const draftPrompt = ref(DEFAULT_ARTICLE_IMAGE_PROMPT)
 const noteModel = ref(DEFAULT_NOTE_MODEL)
-const draftModel = ref(DEFAULT_NOTE_MODEL)
-const modelCatalog = ref<CodexModelCatalog | null>(null)
-const modelsLoading = ref(false)
-const modelError = ref('')
-let modelTimer: ReturnType<typeof setInterval> | undefined
-async function refreshModels() {
-  if (modelsLoading.value) return
-  modelsLoading.value = true
-  modelError.value = ''
-  try { modelCatalog.value = await fetchCodexModels() }
-  catch { modelError.value = '无法更新模型目录；已有选择保留，请稍后重试' }
-  finally { modelsLoading.value = false }
-}
 const titlePrompt = ref(DEFAULT_NOTE_TITLE_PROMPT)
-const draftTitlePrompt = ref(DEFAULT_NOTE_TITLE_PROMPT)
 const polishPrompt = ref('')
-const draftPolishPrompt = ref('')
 const loadingPrompt = ref(true)
 const savingPrompt = ref(false)
 const promptError = ref('')
 const settingsOpen = ref(false)
-watch(settingsOpen, open => {
-  if (modelTimer) clearInterval(modelTimer)
-  if (open && props.generateTitle) {
-    void refreshModels()
-    modelTimer = setInterval(() => void refreshModels(), 60_000)
-  }
-})
-onBeforeUnmount(() => { if (modelTimer) clearInterval(modelTimer) })
 const busy = ref(false)
 const job = ref<ArticleImageJob | null>(null)
 const error = ref('')
@@ -84,11 +61,8 @@ async function loadPrompt() {
     prompt.value = imageValue.trim() || DEFAULT_ARTICLE_IMAGE_PROMPT
     draftPrompt.value = prompt.value
     noteModel.value = resolveNoteModel(modelValue)
-    draftModel.value = noteModel.value
     titlePrompt.value = titleValue.trim() || DEFAULT_NOTE_TITLE_PROMPT
-    draftTitlePrompt.value = titlePrompt.value
     polishPrompt.value = workspace?.prompt || ''
-    draftPolishPrompt.value = polishPrompt.value
   } catch {
     promptError.value = '暂时无法读取个人配图提示词，请重试'
   } finally { loadingPrompt.value = false }
@@ -106,40 +80,11 @@ async function savePrompt() {
   } catch { promptError.value = '保存个人提示词失败，请重试' }
   finally { savingPrompt.value = false }
 }
-async function saveSettings() {
-  const image = draftPrompt.value.trim()
-  const title = draftTitlePrompt.value.trim()
-  const polish = draftPolishPrompt.value.trim()
-  if (!image || image.length > 4000 || (props.generateTitle && (!title || title.length > 4000 || !polish || polish.length > 4000))) {
-    promptError.value = '提示词不能为空，且每项最多 4000 字'; return
-  }
-  if (draftModel.value !== noteModel.value && !modelCatalog.value?.models.some(m => m.id === draftModel.value)) {
-    promptError.value = '请选择本机 Codex 目录中的模型'; return
-  }
-  savingPrompt.value = true
-  promptError.value = ''
-  try {
-    await savePromptValue(image)
-    if (props.generateTitle) {
-      await Promise.all([savePreference(NOTE_MODEL_KEY, draftModel.value),
-        savePreference(NOTE_TITLE_PROMPT_KEY, title === DEFAULT_NOTE_TITLE_PROMPT ? '' : title),
-        saveTextPolishPrompt(polish)])
-    }
-    prompt.value = image; draftPrompt.value = image
-    noteModel.value = draftModel.value
-    titlePrompt.value = title; polishPrompt.value = polish
-    settingsOpen.value = false
-  } catch (cause) { promptError.value = cause instanceof Error ? cause.message : '设置保存失败，请重试' }
-  finally { savingPrompt.value = false }
-}
 async function savePromptValue(value: string) {
   await savePreference(PREFERENCE_KEY, value === DEFAULT_ARTICLE_IMAGE_PROMPT ? '' : value)
 }
 function openSettings() {
   draftPrompt.value = prompt.value
-  draftModel.value = noteModel.value
-  draftTitlePrompt.value = titlePrompt.value
-  draftPolishPrompt.value = polishPrompt.value
   promptError.value = ''
   settingsOpen.value = true
 }
@@ -248,23 +193,12 @@ onBeforeUnmount(() => { generation++ })
       <div v-if="settingsOpen" class="image-prompt-mask" @click.self="settingsOpen = false">
         <section class="image-prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="image-prompt-title">
           <header><h2 id="image-prompt-title">{{ generateTitle ? '小记 AI 设置' : '个人配图提示词' }}</h2><button type="button" aria-label="关闭" @click="settingsOpen = false"><i class="ri-close-line"></i></button></header>
-          <p>{{ generateTitle ? '这些设置只影响当前账号的小记标题、配图与润色。本机 AI 使用已有 Codex 登录；失败可重试，保留当前内容。' : '用于文章总览图；只影响你的账号。正文会在点击生成时单独提供给模型。' }}</p>
-          <label v-if="generateTitle" class="model-choice"><span>标题、配图与润色模型</span><select v-model="draftModel">
-            <option v-if="!modelCatalog?.models.some(m => m.id === draftModel)" :value="draftModel" disabled>{{ draftModel }} · 已保留，待确认可用</option>
-            <option v-for="model in modelCatalog?.models || []" :key="model.id" :value="model.id">{{ model.label }}{{ model.id === DEFAULT_NOTE_MODEL ? ' · 默认' : '' }}</option>
-          </select></label>
-          <div v-if="generateTitle" class="model-status" role="status">
-            <span>{{ modelsLoading ? '正在更新模型目录…' : modelError || modelCatalog?.message }}</span>
-            <button type="button" :disabled="modelsLoading" @click="refreshModels">刷新模型</button>
-          </div>
-          <label v-if="generateTitle" class="prompt-field"><span>标题文案提示词</span><textarea v-model="draftTitlePrompt" maxlength="4000" rows="3" /></label>
-          <label v-if="generateTitle" class="prompt-field"><span>正文润色提示词</span><textarea v-model="draftPolishPrompt" maxlength="4000" rows="5" /></label>
-          <label class="prompt-field"><span>图片生成提示词</span><textarea v-model="draftPrompt" maxlength="4000" rows="6" /></label>
-          <span v-if="promptError" class="dialog-error" role="alert">{{ promptError }}</span>
-          <footer><button type="button" @click="draftPrompt = DEFAULT_ARTICLE_IMAGE_PROMPT">恢复图片默认</button>
-            <button v-if="generateTitle" type="button" @click="draftTitlePrompt = DEFAULT_NOTE_TITLE_PROMPT">恢复标题默认</button>
-            <button type="button" @click="settingsOpen = false">取消</button>
-            <button class="primary" type="button" :disabled="savingPrompt || !draftPrompt.trim()" @click="generateTitle ? saveSettings() : savePrompt()">{{ savingPrompt ? '保存中…' : '保存设置' }}</button></footer>
+          <NoteAiSettingsForm v-if="generateTitle" @saved="loadPrompt" />
+          <template v-else>
+            <label class="prompt-field">图片生成提示词<textarea v-model="draftPrompt" maxlength="4000" rows="6" /></label>
+            <span v-if="promptError" role="alert">{{ promptError }}</span>
+            <footer><button class="primary" type="button" :disabled="savingPrompt" @click="savePrompt">{{ savingPrompt ? '保存中…' : '保存设置' }}</button></footer>
+          </template>
         </section>
       </div>
     </Teleport>

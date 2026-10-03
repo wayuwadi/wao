@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import NoteAiSettingsDialog from '@/components/notes/NoteAiSettingsDialog.vue'
+import { startSavedNoteStage } from '@/api/noteAiWorkflows'
+import { newPolishRequestId } from '@/api/polishJobs'
 import { useRoute } from 'vue-router'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { contentHit, documentSearchText } from '@/utils/contentSearch'
@@ -388,6 +391,7 @@ const PAGE_SIZE = 10
 const limit = ref(PAGE_SIZE)
 const notesList = ref<HTMLElement>()
 const highlighted = ref('')
+const noteSettingsOpen = ref(false)
 const reading = ref(false)
 const readingId = ref('')
 const readerIds = ref<string[]>([])
@@ -606,10 +610,6 @@ function workflowProgress(id: string) {
   const state = (value: NoteAiWorkflowStatus['title']) => value.toLowerCase() as 'pending' | 'running' | 'done' | 'failed' | 'skipped'
   const local = noteEnrichmentProgress[id]
   const combined = { title: state(server.title), image: state(server.image), polish: state(server.polish), tags: local?.tags ?? 'pending' }
-  for (const stage of ['title', 'image', 'polish'] as const) {
-    if ((combined[stage] === 'done' || combined[stage] === 'skipped')
-        && (local?.[stage] === 'running' || local?.[stage] === 'failed' || local?.[stage] === 'done')) combined[stage] = local[stage]
-  }
   return combined
 }
 function progressVisible(id: string) {
@@ -622,6 +622,8 @@ function stageDisabled(id: string, stage: 'title' | 'image' | 'polish' | 'tags')
     || !!serverWorkflows.value[id] && ['PENDING', 'RUNNING'].includes(serverWorkflows.value[id]![stage])
 }
 function stageActionText(id: string, stage: 'title' | 'image' | 'polish' | 'tags') {
+  const detail = stage === 'tags' ? undefined : serverWorkflows.value[id]?.stages?.[stage]
+  if (detail?.message) return detail.message + (stageDisabled(id, stage) ? '' : '；点击手动执行一次')
   const value = workflowProgress(id)?.[stage]
   if (value === 'done') return '已完成，点击重新生成'
   if (value === 'running') return '正在处理'
@@ -636,7 +638,7 @@ function serverFailed(id: string) {
 function workflowMessage(id: string) {
   const server = serverWorkflows.value[id]
   if (!server) return noteAiRecoveryMessage(noteEnrichmentStatus[id])
-  if (serverFailed(id)) return noteAiRecoveryMessage(server.message || '自动整理有步骤失败，请重试')
+  if (server.message) return noteAiRecoveryMessage(server.message)
   if (['PENDING', 'RUNNING'].some(status => Object.values(server).includes(status))) return '后台自动整理中，关闭页面后仍会继续'
   return noteAiRecoveryMessage(noteEnrichmentStatus[id])
 }
@@ -680,23 +682,18 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
       noteEnrichmentStatus[note.id] = '自动整理未完成：本地草稿尚未保存，请先在编辑卡片中保存后重试'
       return
     }
-    if (stage && stage !== 'tags' && serverWorkflows.value[note.id]?.[stage] === 'FAILED') {
-      serverWorkflows.value[note.id] = await retryNoteAiWorkflow(note.id)
-      noteEnrichmentStatus[note.id] = '后台已接续失败步骤，关闭页面后仍会继续'
-      return
-    }
-    if (stage && workflowProgress(note.id)?.[stage] !== 'failed') {
+    if (stage && stage !== 'tags') {
       const latest = data.docById(note.id) ?? note
-      if (latest.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, latest.rev, stage, availableTags.value)
+      serverWorkflows.value[note.id] = await startSavedNoteStage(note.id, stage, latest.rev ?? 1, newPolishRequestId())
       return
     }
     noteEnrichmentStatus[note.id] = '正在重试未完成的自动整理…'
-    if (!stage && serverFailed(note.id)) {
+    if (!stage) {
       serverWorkflows.value[note.id] = await retryNoteAiWorkflow(note.id)
       noteEnrichmentStatus[note.id] = '后台已接续失败步骤，关闭页面后仍会继续'
     } else if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) await retryAutoNoteEnrichment(session.currentUser.id, note.id)
     else if (stage && note.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, note.rev, stage, availableTags.value)
-    else if (note.rev) startAutoNoteEnrichment(session.currentUser.id, note.id, note.rev, { title: true, image: true })
+
   } finally {
     retryingEnrichment.value = retryingEnrichment.value.filter(id => id !== note.id)
   }
@@ -922,6 +919,7 @@ onMounted(() => void loadPins())
             </div>
           </div>
           <button class="reader-toggle" type="button" aria-label="阅读模式" :disabled="!matching.length" @click="startReading(undefined, $event)"><i class="ri-book-open-line" aria-hidden="true"></i><span>阅读模式</span></button>
+          <button class="reader-toggle" type="button" aria-label="小记 AI 设置" @click="noteSettingsOpen = true"><i class="ri-settings-3-line" aria-hidden="true"></i><span>AI 设置</span></button>
           <button class="refresh" :disabled="loading || refreshing" :aria-busy="refreshing" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i :class="refreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i></button>
         </div>
         <NoteDiscoverySavedList v-if="discoveryMode !== 'notes'" :mode="discoveryMode" :member-id="session.currentUser.id" @source="openDiscoverySource" />
@@ -989,6 +987,7 @@ onMounted(() => void loadPins())
       </section>
     </div>
     <button v-if="showBackToTop" class="notes-back-top" type="button" aria-label="回到顶部" title="回到顶部" @click="backToTop"><i class="ri-rocket-2-line" aria-hidden="true"></i></button>
+    <NoteAiSettingsDialog v-model:open="noteSettingsOpen" />
     <Teleport to="body">
       <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :class="{ 'reader-full': readerMode === 'full', 'directory-open': readerDirectoryOpen }" :inert="previewImage ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
         <header class="reader-topbar"><strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>只读</small></strong><div class="reader-layout-actions"><div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div><button ref="readerClose" type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line" aria-hidden="true"></i><span>关闭</span></button></div></header>
