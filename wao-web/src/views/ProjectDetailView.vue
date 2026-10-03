@@ -617,7 +617,7 @@ watch(visibleTaskIds, (ids) => {
       <button class="btn-primary sm" @click="ui.openNewTask(pid)"><i class="ri-add-line"></i>新建任务</button>
     </div>
 
-    <div v-if="projectInfoOpen" class="project-info">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ fmtDate(pd.due) }}</div>
+    <div v-if="projectInfoOpen" class="project-info">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ pd.due ? fmtDate(pd.due) : '未排期' }}</div>
     <div class="ptabs">
       <button v-for="tb in pdTabs" :key="tb.label" class="ptab" :class="{ on: tb.on }" :title="tb.title" @click="setTab(tb.label)">
         {{ tb.label }}<span v-if="tb.showCount" class="ptab-count wao-tabular">{{ tb.count }}</span>

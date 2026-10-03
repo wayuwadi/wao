@@ -269,6 +269,8 @@ export const apiShareDoc = (id: string) =>
   get<SharedDoc>(`/api/share/docs/${encodeURIComponent(id)}`)
 
 export interface CreateProjectPayload {
+  /** yyyy-MM-dd；不传表示未排期。 */
+  due?: string
   name: string
   area: string
   goal: string
@@ -288,6 +290,8 @@ export async function apiCreateProject(payload: CreateProjectPayload): Promise<P
 }
 
 export interface PatchProjectPayload {
+  /** 不传表示不改；空串清空截止日期。 */
+  due?: string
   name?: string
   area?: string
   status?: Project['status']

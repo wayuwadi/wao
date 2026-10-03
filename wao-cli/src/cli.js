@@ -51,6 +51,9 @@ const HELP = `WAO 工作区 CLI
   wao tools call NAME --input-file payload.json
 
 例子：
+  wao projects create --name "新项目"           不指定截止日期即未排期
+  wao projects update PROJECT_ID --due 2026-12-31
+  wao projects update PROJECT_ID --input '{"due":""}'  清空截止日期
   wao tasks open --limit 10
   wao tasks open --mine-only false --project-id PROJECT_ID
   wao tasks create --project-id PROJECT_ID --title "修复问题"

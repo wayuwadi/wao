@@ -27,6 +27,35 @@ import org.mockito.ArgumentCaptor;
 
 class ProjectServiceTest {
 
+    @Test
+    void deadlinesAreExplicitAndOldPatchesPreserveHistory() {
+        assertThat(service.create(new CreateProjectRequest("未排期", "career", "", false, false), "wg").due()).isEmpty();
+        assertThat(service.create(new CreateProjectRequest("排期", "career", "", false, false, "2028-02-29"), "wg").due()).isEqualTo("2028-02-29");
+        ProjectEntity entity = project("due-project", "wg", "[\"wg\"]");
+        entity.setDueDate("2026-12-03");
+        when(mapper.selectById("due-project")).thenReturn(entity);
+        service.update("due-project", new PatchProjectRequest("改名", null, null, null, null), "wg");
+        assertThat(entity.getDueDate()).isEqualTo("2026-12-03");
+        service.update("due-project", new PatchProjectRequest(null, null, null, null, null, null, null, "2027-01-15"), "wg");
+        assertThat(entity.getDueDate()).isEqualTo("2027-01-15");
+        service.update("due-project", new PatchProjectRequest(null, null, null, null, null, null, null, ""), "wg");
+        assertThat(entity.getDueDate()).isEmpty();
+    }
+
+    @Test
+    void invalidDeadlinesAreRejectedBeforeWriting() {
+        for (String due : List.of("2026-02-29", "2026-13-01", "2026-1-1", "tomorrow")) {
+            assertThatThrownBy(() -> service.create(new CreateProjectRequest("非法排期", "career", "", false, false, due), "wg"))
+                    .isInstanceOf(BadRequestException.class).hasMessageContaining("截止日期");
+        }
+        verify(mapper, never()).insert(any(ProjectEntity.class));
+        ProjectEntity entity = project("due-project", "wg", "[\"wg\"]");
+        when(mapper.selectById("due-project")).thenReturn(entity);
+        assertThatThrownBy(() -> service.update("due-project", new PatchProjectRequest(null, null, null, null, null, null, null, "2026-02-30"), "wg"))
+                .isInstanceOf(BadRequestException.class);
+        verify(mapper, never()).updateById(any(ProjectEntity.class));
+    }
+
     private final ProjectMapper mapper = mock(ProjectMapper.class);
     private final ProjectActivityService activities = mock(ProjectActivityService.class);
     private final FeishuTaskNotifier notifier = mock(FeishuTaskNotifier.class);

@@ -26,6 +26,8 @@ const name = ref(props.project.name)
 const area = ref(props.project.area)
 const goal = ref(props.project.goal === '尚未填写目标——打开项目后可补充。' ? '' : props.project.goal)
 const icon = ref(props.project.icon || 'ri-stack-line')
+const originalDue = props.project.due || ''
+const due = ref(originalDue)
 const confirming = ref(false)
 const aiLoading = ref(true)
 const aiEnabled = ref(false)
@@ -63,7 +65,7 @@ const ICONS = [
 ]
 
 const saving = ref(false), saveError = ref('')
-const basicSnapshot = () => JSON.stringify([name.value, area.value, goal.value, icon.value])
+const basicSnapshot = () => JSON.stringify([name.value, area.value, goal.value, icon.value, due.value])
 const basicOriginal = basicSnapshot()
 const aiSnapshot = () => JSON.stringify([aiEnabled.value, repoUrl.value, defaultBranch.value, workspaceDir.value, defaultEngine.value, preferredRunnerId.value, maxParallelRuns.value, failureRetryCount.value, executionPrompt.value, selectedSkillVersions.value])
 const aiOriginal = ref(''), aiLoaded = ref(!AI_RUN_ENABLED)
@@ -85,6 +87,7 @@ async function save() {
       area: area.value,
       goal: goal.value.trim(),
       icon: icon.value,
+      ...(due.value !== originalDue ? { due: due.value } : {}),
     })
     if (!projectSaved) throw new Error('项目设置保存失败，请重试')
     // AI Run 下线期间不展示、也不读取执行配置，保存时绝不能用空白默认值覆盖服务端已有配置。
@@ -179,6 +182,13 @@ onMounted(() => {
 
     <div class="label">项目名称</div>
     <input v-model="name" class="title-input" placeholder="项目名称" @keydown.enter="save" />
+
+    <label class="label" for="project-due">截止日期 · 可选</label>
+    <div class="due-editor">
+      <input id="project-due" v-model="due" type="date" aria-label="项目截止日期" />
+      <button type="button" class="btn-ghost" :disabled="!due" @click="due = ''">清空日期</button>
+      <span v-if="!due">未排期</span>
+    </div>
 
     <details class="optional-project"><summary>更多项目属性 · 图标、领域与目标</summary>
     <div class="label">项目图标</div>
@@ -324,6 +334,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.due-editor { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; color: var(--wao-text-weak); }
+.due-editor input { padding: 7px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); }
 summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-size: 13px; }
 .mask {
   position: fixed;

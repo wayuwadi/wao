@@ -23,3 +23,11 @@ npm.cmd run build-only
 6. 整页刷新确认真实保存结果；窄屏下读取卡片、状态和筛选提示。加载失败不等于零任务。
 
 先以隔离单测覆盖异常和边界，再记录真实页面实际通过/未验证项。构建、接口成功或模拟页面不能替代上述链路。
+
+## 截止日期
+
+新项目默认未排期。进入项目右上角「更多操作 → 项目设置」，在名称下填写截止日期，或点击「清空日期」恢复未排期；保存后重新打开设置和刷新页面核对。历史项目日期保持不变。
+
+前端：`npm.cmd run test:unit -- --run src/__tests__/ProjectSettingsModal.spec.ts src/__tests__/projectNotify.spec.ts src/__tests__/projectListLayout.spec.ts`；CLI：`npm.cmd --prefix wao-cli test`；后端：`mvn -pl wao-server -am test -Dtest=ProjectServiceTest,WorkspaceMcpToolsTest,WorkspaceMcpControllerTest,FlywayMigrationsTest -Dsurefire.failIfNoSpecifiedTests=false`。
+
+真实验收需启动本轮后端、关闭迁移及共享后台任务，复用既有数据库；验证新建无日期、历史日期不变、填写/修改/清空后刷新。使用 `wao-web/scripts/acceptance/serve.mjs` 时，可在它输出的本地故障文件写入 `{ "projectId": "本轮专用项目ID", "mode": "fail", "expiresAt": 未来五分钟内毫秒时间戳 }`，仅拒绝该项目的 PATCH，不影响其他页面或服务器。验证失败保留日期输入后清除文件并重试；禁止对业务项目注入故障。`node --test scripts/acceptance/faults.node.mjs` 验证隔离边界。

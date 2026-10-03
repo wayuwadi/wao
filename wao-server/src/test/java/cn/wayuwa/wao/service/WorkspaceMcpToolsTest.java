@@ -22,6 +22,23 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class WorkspaceMcpToolsTest {
+
+    @Test
+    void projectDeadlineUsesExistingWritePermissionAndPreservesClear() throws Exception {
+        assertThat(tools.list(true).toString()).contains("due");
+        var reader = new WorkspaceMcpTokenService.AuthenticatedToken("token", "wd", false);
+        var args = json.readTree("{\"project_id\":\"p1\",\"due\":\"\"}");
+        assertThatThrownBy(() -> tools.call("update_project", args, reader)).hasMessageContaining("没有写权限");
+        verify(projects, never()).update(any(), any(), any());
+        tools.call("update_project", args, writer);
+        var patch = ArgumentCaptor.forClass(cn.wayuwa.wao.dto.PatchProjectRequest.class);
+        verify(projects).update(eq("p1"), patch.capture(), eq("wd"));
+        assertThat(patch.getValue().due()).isEmpty();
+        tools.call("create_project", json.readTree("{\"name\":\"项目\",\"due\":\"2026-12-31\"}"), writer);
+        var create = ArgumentCaptor.forClass(cn.wayuwa.wao.dto.CreateProjectRequest.class);
+        verify(projects).create(create.capture(), eq("wd"));
+        assertThat(create.getValue().due()).isEqualTo("2026-12-31");
+    }
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
     private final ProjectService projects = mock(ProjectService.class);
     private final TaskService tasks = mock(TaskService.class);

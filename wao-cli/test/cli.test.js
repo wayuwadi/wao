@@ -13,6 +13,7 @@ import { getToken, normalizeWorkspaceToken, readToken, removeToken, storeToken }
 let server, url, lastCall, hostedCalls, uploadedMultipart
 const WORKSPACE_TOKEN = `wao_workspace_${'A'.repeat(43)}`
 const ALL_TOOLS = [
+  { name: 'update_project', inputSchema: { properties: { project_id: { type: 'string' }, due: { type: 'string' } }, required: ['project_id'] }, annotations: { readOnlyHint: false } },
   { name: 'update_subtask_status', inputSchema: { properties: { task_id: { type: 'string' }, subtask_id: { type: 'string' }, status: { type: 'string' }, expected_subtask_version: { type: 'string' } }, required: ['task_id', 'subtask_id', 'status', 'expected_subtask_version'] }, annotations: { readOnlyHint: false } },
   { name: 'list_projects', inputSchema: { properties: {}, required: [] }, annotations: { readOnlyHint: true } },
   { name: 'list_open_tasks', inputSchema: { properties: { mine_only: { type: 'boolean' }, limit: { type: 'integer' }, project_id: { type: 'string' } }, required: [] }, annotations: { readOnlyHint: true } },
@@ -20,6 +21,17 @@ const ALL_TOOLS = [
   { name: 'update_document', inputSchema: { properties: { document_id: { type: 'string' }, blocks: { type: 'array' }, expected_rev: { type: 'integer' } }, required: ['document_id'] }, annotations: { readOnlyHint: false } },
   { name: 'future_tool', inputSchema: { properties: { value: { type: 'string' } }, required: ['value'] }, annotations: { readOnlyHint: true } },
 ]
+
+test('项目截止日期通过已发现工具发送，省略与空串保持不同语义', async () => {
+  for (const [flags, expected] of [
+    [['--due', '2027-01-15'], { project_id: 'p1', due: '2027-01-15' }],
+    [['--input', '{"due":""}'], { project_id: 'p1', due: '' }],
+    [[], { project_id: 'p1' }],
+  ]) {
+    await run(['projects', 'update', 'p1', ...flags, '--url', url], { tokenProvider: async () => 'good-token', stdout: output().stream })
+    assert.deepEqual(lastCall, { name: 'update_project', arguments: expected })
+  }
+})
 
 before(async () => {
   hostedCalls = []
