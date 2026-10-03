@@ -1,5 +1,6 @@
 import * as dino from "./dino";
 import * as rift from "./rift";
+import * as starfield from "./starfield";
 import type { GameId, GameMemories } from "../host/registry";
 export type ParentCommand =
   | Exclude<dino.ParentCommand, { type: "init" }>
@@ -15,10 +16,10 @@ export function childEvent(
   value: unknown,
   instance: string,
   gameId: GameId,
-): value is dino.Envelope<dino.ChildEvent> | rift.Envelope<rift.ChildEvent> {
+): value is dino.Envelope<dino.ChildEvent> | rift.Envelope<rift.ChildEvent> | starfield.Envelope<starfield.ChildEvent> {
   return gameId === "dino"
     ? dino.childEvent(value, instance)
-    : rift.childEvent(value, instance);
+    : gameId === "rift" ? rift.childEvent(value, instance) : starfield.childEvent(value, instance);
 }
 export function envelope(
   event: ParentCommand,

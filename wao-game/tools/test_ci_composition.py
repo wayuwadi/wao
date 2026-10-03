@@ -21,14 +21,15 @@ class CompositionTest(unittest.TestCase):
         for changed, expected in [
             ('wao-game/games/dino/engine.ts',['game:install','game:test:dino','game:dino']),
             ('wao-game/games/rift/engine.ts',['game:install','game:test:rift','game:rift']),
+            ('wao-game/games/starfield/engine.ts',['game:install','game:test:starfield','game:starfield']),
             ('wao-web/src/view.vue',['game:install','web']),
-            ('wao-game/host/GameHost.vue',['game:install','game:test:dino','game:test:rift','web']),
+            ('wao-game/host/GameHost.vue',['game:install','game:test:dino','game:test:rift','game:test:starfield','web']),
             ('docs/release.md',['game:install','web']),
             ('wao-game/games/rift/engine.test.ts',['game:install','game:test:rift','web']),
         ]:
             with self.subTest(changed=changed),tempfile.TemporaryDirectory() as folder:
                 root=Path(folder)
-                for directory in ['deploy/jenkins','wao-game/tools','wao-game/dist/dino/assets','wao-game/dist/rift/assets','bin','run']:
+                for directory in ['deploy/jenkins','wao-game/tools','wao-game/dist/dino/assets','wao-game/dist/rift/assets','wao-game/dist/starfield/assets','bin','run']:
                     (root/directory).mkdir(parents=True,exist_ok=True)
                 for file in ['ci-build-frontends.sh']:
                     shutil.copy(ROOT/'deploy/jenkins'/file,root/'deploy/jenkins'/file)
@@ -42,6 +43,8 @@ class CompositionTest(unittest.TestCase):
                 (root/'wao-game/dist/dino/index.html').write_text('<!doctype html><p>fixture</p>')
                 (root/'wao-game/dist/rift/assets/fixture.js').write_text('/* rift fixture */')
                 (root/'wao-game/dist/rift/index.html').write_text('<!doctype html><p>rift fixture</p>')
+                (root/'wao-game/dist/starfield/assets/fixture.js').write_text('/* starfield fixture */')
+                (root/'wao-game/dist/starfield/index.html').write_text('<!doctype html><p>starfield fixture</p>')
                 (root/'bin/python3').write_text('#!/bin/sh\nexec "'+Path(sys.executable).as_posix()+'" -X utf8 "$@"\n')
                 self.run_shell(root,'git init -q; git config user.email qa@example.invalid; git config user.name QA; git add .; git commit -qm base')
                 base=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
@@ -51,14 +54,14 @@ class CompositionTest(unittest.TestCase):
                 self.run_shell(root,'export PATH="$PWD/bin:$PATH"; export WAO_RUN_TEMP="$PWD/run"; sh deploy/jenkins/ci-build-frontends.sh',{'WAO_CHANGE_BASE':base,'WAO_GIT_SHA':head,'WAO_WEB_ONLY':'true'})
                 self.assertEqual((root/'calls').read_text().splitlines(),expected)
                 plan=json.loads((root/'run/game-plan.json').read_text())
-                for game in ['dino','rift']:
+                for game in ['dino','rift','starfield']:
                     self.assertEqual((root/f'run/game-{game}.tgz').exists(),game in plan['buildGames'])
 
     def test_game_only_deploy_never_activates_main(self):
         source=(ROOT/'deploy/jenkins/ci-deploy.sh').read_text(encoding='utf-8')
         functions=source.split('stage_games() {',1)[1].split('gateway_ready_from_cloud() {',1)[0]
         functions='stage_games() {'+functions
-        for web,games in [('false','dino'),('false','rift'),('true','')]:
+        for web,games in [('false','dino'),('false','rift'),('false','starfield'),('true','')]:
             with self.subTest(web=web),tempfile.TemporaryDirectory() as folder:
                 root=Path(folder)
                 preamble='''set -eu
