@@ -182,12 +182,17 @@ describe('顶栏更新入口', () => {
   })
   it('当前制品说明提供真实功能入口', async () => {
     const router = await render()
-    for (const [index, highlight] of CURRENT_RELEASE.highlights.entries()) {
-      await click('.update-entry')
-      expect(document.body.textContent).toContain(CURRENT_RELEASE.title)
+    await click('.update-entry')
+    expect(document.body.textContent).toContain(CURRENT_RELEASE.title)
+    for (const highlight of CURRENT_RELEASE.highlights) {
       for (const point of highlight.points) expect(document.body.textContent).toContain(point)
-      const links = document.querySelectorAll<HTMLAnchorElement>('[aria-label^="去体验"]')
-      expect(links).toHaveLength(CURRENT_RELEASE.highlights.length)
+    }
+    // 当前制品可能包含没有功能地图入口的提交，不给它制造失效的体验按钮。
+    const navigable = CURRENT_RELEASE.highlights.filter(item => Object.hasOwn(MODULES, item.featureId))
+    expect(document.querySelectorAll('[aria-label^="去体验"]')).toHaveLength(navigable.length)
+    for (const [index, highlight] of navigable.entries()) {
+      if (index) await click('.update-entry')
+      const links = document.querySelectorAll<HTMLButtonElement>('[aria-label^="去体验"]')
       links[index]!.click()
       await flushPromises()
       expect(router.currentRoute.value.path).toBe(MODULES[highlight.featureId].path)

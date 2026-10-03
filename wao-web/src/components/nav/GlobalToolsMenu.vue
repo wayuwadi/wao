@@ -7,11 +7,14 @@ import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
 import { useTheme } from '@/composables/theme'
 import { useUiStore } from '@/stores/ui'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
+import { blockCompanions, companionQuiet, setCompanionQuiet } from '@/composables/quietCompanions'
 
 const theme = useTheme()
 const ui = useUiStore()
 const route = useRoute()
 const open = ref(false)
+watch(open, value => blockCompanions('tools', value), { flush: 'sync' })
+onBeforeUnmount(() => blockCompanions('tools', false))
 const unread = ref(false)
 const updateAvailable = ref(false)
 const updateArriving = ref(false)
@@ -51,6 +54,7 @@ onBeforeUnmount(() => { window.removeEventListener('resize', place); window.remo
         <NotificationCenter row :return-focus="trigger" @unread-change="unread = $event" @opened="open = false" />
         <VersionUpdateNotice row :anchor="trigger" @available-change="updateAvailable = $event" @arrival-change="updateArriving = $event" @opened="open = false" />
         <hr>
+        <button class="tools-row" type="button" :aria-pressed="companionQuiet" @click="setCompanionQuiet(!companionQuiet)"><i class="ri-leaf-line" aria-hidden="true"></i><span>安静陪伴</span><small>{{ companionQuiet ? '已开启' : '偶尔回应' }}</small></button>
         <button class="tools-row" type="button" :aria-label="`外观：${themeLabel}，点击切换`" @click="theme.toggleTheme()"><i :class="theme.effective.value === 'dark' ? 'ri-moon-line' : 'ri-sun-line'" aria-hidden="true"></i><span>外观</span><small>{{ themeLabel }}</small><i class="ri-arrow-right-s-line" aria-hidden="true"></i></button>
         <button class="tools-row" type="button" @click="shortcuts"><i class="ri-keyboard-line" aria-hidden="true"></i><span>快捷键</span><i class="ri-arrow-right-s-line" aria-hidden="true"></i></button>
       </section>

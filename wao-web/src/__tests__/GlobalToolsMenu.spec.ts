@@ -29,7 +29,7 @@ it('收纳低频入口，通知和更新状态传到入口，打开子面板后�
   expect(wrapper.get('.tools-trigger').classes()).not.toContain('update-arriving')
   expect(wrapper.find('.tools-dot').exists()).toBe(true)
   await wrapper.get('.tools-trigger').trigger('click')
-  await wrapper.findAll('.tools-row')[1]!.trigger('click')
+  await wrapper.findAll('.tools-row').find(row => row.text().includes('快捷键'))!.trigger('click')
   expect(useUiStore().helpOpen).toBe(true)
   expect(wrapper.get('.tools-panel').isVisible()).toBe(false)
   wrapper.unmount()

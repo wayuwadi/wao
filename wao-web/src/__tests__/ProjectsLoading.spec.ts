@@ -5,6 +5,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectsView from '@/views/ProjectsView.vue'
 import { useDataStore } from '@/stores/data'
 import type { Project } from '@/types'
+import { respondWithCompanion } from '@/composables/quietCompanions'
+vi.mock('@/composables/quietCompanions', () => ({ captureCompanionTicket: vi.fn(() => ({})), respondWithCompanion: vi.fn() }))
 
 const fetchProjects = vi.fn<() => Promise<Project[]>>()
 
@@ -43,6 +45,7 @@ describe('项目真实数据加载', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     fetchProjects.mockReset()
+    vi.mocked(respondWithCompanion).mockClear()
   })
 
   it('接口未返回时只展示加载提示，不渲染原型项目', () => {
@@ -52,6 +55,7 @@ describe('项目真实数据加载', () => {
     expect(wrapper.text()).toContain('正在加载项目')
     expect(wrapper.text()).not.toContain('WAO 1.0 原型')
     expect(wrapper.findAll('.proj-card')).toHaveLength(0)
+    expect(respondWithCompanion).not.toHaveBeenCalled()
   })
 
   it('接口失败时保持空列表并提供重试入口', async () => {
@@ -66,5 +70,19 @@ describe('项目真实数据加载', () => {
     expect(wrapper.text()).toContain('项目加载失败')
     expect(wrapper.text()).toContain('项目接口超时')
     expect(wrapper.get('.load-state button').text()).toContain('重新加载')
+    expect(respondWithCompanion).not.toHaveBeenCalled()
+  })
+
+  it('真实空项目才出现书虫，搜索无结果不会触发', async () => {
+    fetchProjects.mockResolvedValue([])
+    const data = useDataStore(), wrapper = mountView()
+    await data.hydrate(); await flushPromises()
+    expect(wrapper.text()).toContain('还没有项目')
+    expect(respondWithCompanion).toHaveBeenCalledWith('empty', {})
+    vi.mocked(respondWithCompanion).mockClear()
+    await wrapper.get('.search input').setValue('不存在')
+    expect(wrapper.text()).toContain('没有符合条件的项目')
+    expect(respondWithCompanion).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 })

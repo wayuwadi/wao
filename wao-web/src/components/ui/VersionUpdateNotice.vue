@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
+import { blockCompanions, companionEditing, companionQuiet } from '@/composables/quietCompanions'
 import { fetchWebRelease } from '@/api/version'
 import { MODULES } from '@/config/nav'
 import { CURRENT_RELEASE } from '@/data/featureCatalog'
@@ -22,6 +23,8 @@ const trigger = ref<HTMLButtonElement>()
 const panel = ref<HTMLElement>()
 const closeButton = ref<HTMLButtonElement>()
 const open = ref(false)
+watch(open, value => blockCompanions('version', value), { flush: 'sync' })
+watch([companionQuiet, companionEditing], ([quiet, editing]) => { if (quiet || editing) stopArrival() })
 const arriving = ref(false)
 watch(arriving, value => emit('arrival-change', value))
 const ANNOUNCED_KEY = 'wao-update-arrival-version'
@@ -71,7 +74,7 @@ function announce() {
   open.value = true
   emit('opened')
   stopArrival()
-  if (!motionPreference?.matches) {
+  if (!motionPreference?.matches && !companionQuiet.value && !companionEditing.value) {
     arriving.value = true
     arrivalTimer = setTimeout(stopArrival, 10_000)
   }
@@ -210,6 +213,7 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
+  blockCompanions('version', false)
   stopArrival()
   motionPreference?.removeEventListener('change', motionChanged)
   document.removeEventListener('visibilitychange', visibilityChanged)

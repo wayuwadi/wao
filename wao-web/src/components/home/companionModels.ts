@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 /** 独立程序化角色与毛绒材质，不加载外站模型。每次创建拥有自己的资源。 */
-export function createCompanionModels() {
+export function createCompanionModels(only?: number) {
   const black = new THREE.MeshStandardMaterial({ color: 0x15191a, roughness: 0.8 }),
     glass = new THREE.MeshStandardMaterial({ color: 0x11161a, roughness: 0.33 }),
     white = new THREE.MeshStandardMaterial({ color: 0xf5ffe3, roughness: 0.8 })
@@ -143,7 +143,8 @@ export function createCompanionModels() {
   }
   const colors = [0x00b5f7, 0xffca0d, 0xf42cdb, 0xb3ec22],
     kinds = ['blue', 'yellow', 'heart', 'frog']
-  const pets = kinds.map((kind, i) => {
+  const pets = kinds.flatMap((kind, i) => {
+    if (only !== undefined && i !== only) return []
     const group = new THREE.Group(),
       body = new THREE.Group()
     group.add(body)

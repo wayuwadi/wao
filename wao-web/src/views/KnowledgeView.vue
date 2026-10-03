@@ -3,7 +3,8 @@ import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
 import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
 import { useTopShortcutsStore, resourceShortcut } from '@/stores/topShortcuts'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 import { useRouter } from 'vue-router'
 import { useTabsStore } from '@/stores/tabs'
 import { useDataStore } from '@/stores/data'
@@ -46,6 +47,11 @@ const newKbError = ref('')
 const query = ref('')
 type KnowledgeScope = 'all' | 'shared' | 'personal'
 const scope = ref<KnowledgeScope>('all')
+const emptySpace = ref<HTMLElement>()
+const trulyEmpty = computed(() => data.loadStates.knowledge === 'loaded' && data.kbs.length === 0 && !query.value.trim() && scope.value === 'all')
+watch([trulyEmpty, emptySpace], ([empty, el]) => {
+  if (empty && el) respondWithCompanion('empty', captureCompanionTicket(el))
+}, { flush: 'post' })
 
 const scopeOptions: { value: KnowledgeScope; label: string }[] = [
   { value: 'all', label: '全部资料' },
@@ -323,6 +329,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
     </div>
     <WaoPagination v-if="knowledgePageCount > 1" v-model:page="knowledgePage" :page-count="knowledgePageCount" :total="visibleCount" aria-label="知识库查询结果分页" />
     <ContextActionMenu ref="contextMenu" />
+    <div v-if="trulyEmpty" class="kb-filter-empty"><span ref="emptySpace">还没有知识库，可以从新建知识库开始。</span></div>
     <div v-if="filtering && visibleCount === 0" class="kb-filter-empty">
       <i class="ri-search-eye-line"></i>
       <b>没有匹配的真实资料</b>
