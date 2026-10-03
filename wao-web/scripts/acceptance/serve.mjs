@@ -15,6 +15,11 @@ const server = await createServer({
   ...loaded.config, configFile: false, root,
   plugins: [...loaded.config.plugins, {
     name: 'wao-local-draft-acceptance',
+    transformIndexHtml(html, context) {
+      const url = new URL(context.originalUrl ?? context.path, 'http://127.0.0.1')
+      if (url.pathname !== '/notes' || url.searchParams.get('waoAcceptanceDraftFailure') !== '1') return html
+      return [{ tag: 'script', injectTo: 'head-prepend', children: readFileSync(resolve(import.meta.dirname, 'storage-failure.js'), 'utf8') }]
+    },
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
         if (request.method !== 'GET' || request.url !== '/_acceptance/clone-notes') return next()
