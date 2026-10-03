@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   fetchNotificationCenter,
   markNotificationCenterRead,
@@ -8,11 +8,15 @@ import {
   type NotificationEvent,
 } from '@/api/notificationCenter'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { hasDesktopToolbar } from '@/utils/desktopToolbar'
 
 const props = defineProps<{ row?: boolean; returnFocus?: HTMLElement }>()
 const emit = defineEmits<{ 'unread-change': [value: boolean]; opened: [] }>()
 const router = useRouter()
+const route = useRoute()
+const trigger = ref<HTMLButtonElement>()
+const closeButton = ref<HTMLButtonElement>()
 const open = ref(false)
 const activeSection = ref<'events' | 'usage'>('events')
 const snapshot = ref<NotificationCenterSnapshot | null>(null)
@@ -75,13 +79,15 @@ async function toggle() {
   open.value = !open.value
   if (!open.value) return
   emit('opened')
+  await nextTick()
+  if (open.value) closeButton.value?.focus()
   const loaded = await load(Boolean(snapshot.value))
-  if (loaded) await markRead()
+  if (loaded && open.value) await markRead()
 }
 
-function close() {
+function close(restoreFocus = true) {
   open.value = false
-  props.returnFocus?.focus()
+  if (restoreFocus) (props.returnFocus ?? trigger.value)?.focus()
 }
 
 async function refresh() {
@@ -93,7 +99,7 @@ const notificationPolling = createVisibilityPoller(refresh, () => 60_000, docume
 
 async function navigate(path: string | null) {
   if (!path) return
-  close()
+  close(false)
   await router.push(path)
 }
 
@@ -110,24 +116,22 @@ function timeText(value: string | null): string {
   }).format(time)
 }
 
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && open.value) close()
-}
+useOverlayDismiss(() => open.value, () => close())
+watch(() => route.fullPath, () => close(false))
 
 onMounted(() => {
   void load()
-  window.addEventListener('keydown', onKeydown)
   notificationPolling.start(false)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
   notificationPolling.stop()
 })
 </script>
 
 <template>
   <button
+    ref="trigger"
     class="notification-trigger"
     :class="{ 'tool-menu-row': row }"
     data-desktop-action="notifications"
@@ -149,7 +153,7 @@ onBeforeUnmount(() => {
         class="notification-mask"
         type="button"
         aria-label="关闭通知中心"
-        @click="close"
+        @click="close()"
       ></button>
       <aside
         class="notification-panel"
@@ -165,7 +169,7 @@ onBeforeUnmount(() => {
           <button type="button" aria-label="打开通知设置" title="通知设置" @click="navigate('/settings?tab=notifications')">
             <i class="ri-settings-3-line"></i>
           </button>
-          <button type="button" aria-label="关闭通知中心" @click="close">
+          <button ref="closeButton" type="button" aria-label="关闭通知中心" @click="close()">
             <i class="ri-close-line"></i>
           </button>
         </header>

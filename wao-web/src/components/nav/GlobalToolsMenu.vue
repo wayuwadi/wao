@@ -34,10 +34,10 @@ function outside(event: PointerEvent) {
   if (event.target instanceof Node && !panel.value?.contains(event.target) && !trigger.value?.contains(event.target)) open.value = false
 }
 function shortcuts() { open.value = false; ui.toggleHelp() }
-useOverlayDismiss(() => open.value, close)
+useOverlayDismiss(() => open.value, close, outside)
 watch(() => route.fullPath, () => { open.value = false })
-onMounted(() => { document.addEventListener('pointerdown', outside); window.addEventListener('resize', place); window.addEventListener('scroll', place, true) })
-onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true) })
+onMounted(() => { window.addEventListener('resize', place); window.addEventListener('scroll', place, true) })
+onBeforeUnmount(() => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true) })
 </script>
 
 <template>
