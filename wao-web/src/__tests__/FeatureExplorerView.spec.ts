@@ -12,7 +12,7 @@ function render() {
       { path: '/notes', component: { template: '<div>notes</div>' } },
     ],
   })
-  return { router, wrapper: mount(FeatureExplorerView, { global: { plugins: [router] } }) }
+  return { router, wrapper: mount(FeatureExplorerView, { global: { plugins: [router], stubs: { GitCommitHistory: true } } }) }
 }
 
 describe('功能探索', () => {

@@ -3,8 +3,8 @@
 set -eu
 : "${WAO_RUN_TEMP:?}"
 mkdir -p "$WAO_RUN_TEMP"
-full_web=''
-[ "${WAO_WEB_ONLY:-false}" = true ] || full_web=--full-web
+# 每个批次刷新网页的 Git 提交档案；游戏仍按实际输入单独构建。
+full_web=--full-web
 python3 wao-game/tools/change-plan.py "${WAO_CHANGE_BASE:-HEAD^}" "${WAO_GIT_SHA:-HEAD}" $full_web >"$WAO_RUN_TEMP/game-plan.json"
 # Host imports save/protocol types from wao-game; dependency installation does not build games.
 sh deploy/jenkins/ci-game-build.sh install

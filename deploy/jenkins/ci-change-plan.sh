@@ -131,7 +131,11 @@ elif [ -z "$backend_projects" ]; then
   backend_projects=none
 fi
 
-if [ "$deploy_required" != true ]; then web_only=false; fi
+# 每次 main 批次都更新自动提交档案。纯文档/测试只发布网页，不重启后端。
+if [ "$deploy_required" != true ]; then
+  deploy_required=true
+  web_only=true
+fi
 
 printf '%s\n' \
   "WAO_DEPLOY_REQUIRED=$deploy_required" \

@@ -19,22 +19,34 @@ case " $* " in
     [ "${MOCK_FAIL_CI:-false}" != true ] || exit 7
     mkdir -p "$MOCK_ROOT/wao-web/node_modules/.bin"
     : >"$MOCK_ROOT/wao-web/node_modules/.package-lock.json"
-    : >"$MOCK_ROOT/wao-web/node_modules/.bin/vite"
+    printf '#!/bin/sh\nexit 0\n' >"$MOCK_ROOT/wao-web/node_modules/.bin/vite"
     chmod +x "$MOCK_ROOT/wao-web/node_modules/.bin/vite"
     ;;
 esac
 EOF
 chmod +x "$fixture/bin/docker" "$fixture/deploy/jenkins/"*.sh
 
+git -C "$fixture" init -q
+git -C "$fixture" config user.name 'WAO fixture'
+git -C "$fixture" config user.email 'fixture@invalid.example'
+git -C "$fixture" add wao-web/package.json wao-web/package-lock.json
+git -C "$fixture" commit -qm 'docs: 初始记录'
+
 run_build() {
   (cd "$fixture" && PATH="$fixture/bin:$PATH" MOCK_ROOT="$fixture" \
     MOCK_DOCKER_LOG="$fixture/docker.log" JENKINS_HOME="$fixture/jenkins" \
-    MOCK_FAIL_CI="${1:-false}" deploy/jenkins/ci-frontend-build.sh wao-web false true)
+    WAO_GIT_SHA="$(git rev-parse HEAD)" MOCK_FAIL_CI="${1:-false}" deploy/jenkins/ci-frontend-build.sh wao-web false true)
+}
+# 每次构建从宿主 Git 导出，容器不需要 Git。
+assert_history() {
+  [ "$(cut -f1 "$fixture/wao-web/node_modules/.cache/wao-git-history.tsv" | head -1)" = "$(git -C "$fixture" rev-parse HEAD)" ]
+  grep -q 'WAO_GIT_HISTORY=/workspace/wao-web/node_modules/.cache/wao-git-history.tsv' "$fixture/docker.log"
 }
 ci_count() { grep -c ' npm ci$' "$fixture/docker.log" || true; }
 
 run_build >"$fixture/output"
 [ "$(ci_count)" -eq 1 ]
+assert_history
 run_build >"$fixture/output"
 [ "$(ci_count)" -eq 1 ]
 grep -q 'dependencies unchanged' "$fixture/output"

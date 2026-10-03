@@ -77,3 +77,24 @@ export async function fetchWebVersion(): Promise<string> {
     throw new Error('版本信息无效，请稍后重试')
   return data.version.trim()
 }
+
+export interface GitReleaseHistory {
+  buildSha: string
+  commits: { sha: string; committedAt: string; subject: string }[]
+}
+
+/** 从当前不可变制品读取所有可达提交，不将新部署的记录混入旧页面。 */
+export async function fetchGitReleaseHistory(expectedSha: string): Promise<GitReleaseHistory> {
+  const { data } = await axios.get(`${import.meta.env.BASE_URL}git-history.json`, { timeout: 10000 })
+  if (data?.buildSha !== expectedSha || !Array.isArray(data.commits) || !data.commits.length)
+    throw new Error('提交记录与当前页面版本不一致，请刷新后重试')
+  const seen = new Set<string>()
+  for (const item of data.commits) {
+    if (!item || !/^[0-9a-f]{40}$/.test(item.sha) || seen.has(item.sha) ||
+        !text(item.subject, 10000) || !text(item.committedAt, 50) || !Number.isFinite(Date.parse(item.committedAt)))
+      throw new Error('提交记录格式无效，请重试')
+    seen.add(item.sha)
+  }
+  if (data.commits[0].sha !== expectedSha) throw new Error('提交记录缺少当前版本，请重试')
+  return data as GitReleaseHistory
+}

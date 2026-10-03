@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { MODULES } from '@/config/nav'
+import GitCommitHistory from './GitCommitHistory.vue'
 import { CURRENT_RELEASE, RELEASE_HISTORY } from '@/data/featureCatalog'
 
 const limit = ref(5)
@@ -21,8 +22,9 @@ watch(() => route.hash, revealHistory)
   <section id="recent-updates" ref="section" class="release-history" aria-labelledby="history-title">
     <header class="history-heading">
       <div><small>RECENT UPDATES</small><h2 id="history-title">最近更新</h2></div>
-      <p>已收录 {{ RELEASE_HISTORY.length }} 次更新 · 按时间倒序，随时回顾</p>
+      <p>当前版本自动更新 · 下方保留 {{ RELEASE_HISTORY.length - 1 }} 批精选说明</p>
     </header>
+    <GitCommitHistory />
     <ol class="release-list">
       <li v-for="edition in visible" :key="edition.id">
         <details class="release-edition" :open="edition.id === CURRENT_RELEASE.id">
@@ -54,7 +56,7 @@ watch(() => route.hash, revealHistory)
 .history-heading small { color: var(--wao-text-weak); font-size: 10px; letter-spacing: .12em; }
 .history-heading h2 { margin: 8px 0 0; font-size: 28px; }
 .history-heading p, .history-end { color: var(--wao-text-weak); font-size: 12px; line-height: 1.7; }
-.release-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.release-list { margin-top: 24px; list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .release-edition { border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); overflow-wrap: anywhere; }
 summary { display: grid; position: relative; gap: 9px; padding: 20px 48px 20px 22px; list-style: none; cursor: pointer; }
 summary::-webkit-details-marker { display: none; }

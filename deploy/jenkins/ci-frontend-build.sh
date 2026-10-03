@@ -20,12 +20,20 @@ fi
 run_npm() {
   project="$1"
   shift
+  # slim Node 容器没有 Git；在宿主可信 checkout 导出完整记录给构建读取。
+  if [ "$project" = wao-web ] && [ "${1:-}" = run ]; then
+    [ "$(git rev-parse --is-shallow-repository)" = false ] || { echo 'Git history is shallow' >&2; exit 1; }
+    [ "$(git rev-parse HEAD)" = "$WAO_GIT_SHA" ] || { echo 'Build SHA mismatch' >&2; exit 1; }
+    mkdir -p wao-web/node_modules/.cache
+    git log --topo-order --format='%H%x09%cI%x09%s' "$WAO_GIT_SHA" >wao-web/node_modules/.cache/wao-git-history.tsv
+  fi
   docker run --rm \
     --cpus=2 --memory=4g --memory-swap=4g --pids-limit=512 \
     --user "$(id -u):$(id -g)" \
     -e HOME=/tmp/home \
     -e npm_config_cache=/tmp/npm-cache \
     -e WAO_GIT_SHA="${WAO_GIT_SHA:-}" \
+    -e WAO_GIT_HISTORY=/workspace/wao-web/node_modules/.cache/wao-git-history.tsv \
     -v "$PWD:/workspace" \
     -v "$cache:/tmp/npm-cache" \
     -w "/workspace/$project" \
