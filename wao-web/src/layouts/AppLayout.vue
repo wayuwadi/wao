@@ -2,7 +2,7 @@
 import { useIsMobile } from '@/composables/viewport'
 const isMobile = useIsMobile()
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import TabWorkspace from '@/components/tabs/TabWorkspace.vue'
 import NavigationContext from '@/components/nav/NavigationContext.vue'
 import TopMenuBar from '@/components/nav/TopMenuBar.vue'
@@ -11,17 +11,17 @@ import MobileShellMenu from '@/components/nav/MobileShellMenu.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
+import QuickNotePopover from '@/components/overlays/QuickNotePopover.vue'
+import GlobalToolsMenu from '@/components/nav/GlobalToolsMenu.vue'
 import NewProjectModal from '@/components/overlays/NewProjectModal.vue'
 import GlobalSearch from '@/components/overlays/GlobalSearch.vue'
 import Celebration from '@/components/overlays/CelebrationOverlay.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
 import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
-import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import FloatingChat from '@/components/chat/FloatingChat.vue'
 import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
 import ReleaseHighlightsHost from '@/components/release/ReleaseHighlightsHost.vue'
-import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
 import { externalAppItemId, RETIRED_MODULE_IDS, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -30,7 +30,6 @@ import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
-import { useTheme } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useShortcuts } from '@/composables/shortcuts'
 import { useFunctionHealth } from '@/composables/functionHealth'
@@ -50,7 +49,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => stopDesktopToolbar?.())
 const route = useRoute()
-const router = useRouter()
 const mobileMenuOpen = ref(false)
 const mobileMenuButton = ref<HTMLButtonElement>()
 async function closeMobileMenu() {
@@ -70,7 +68,6 @@ watch(() => [ui.modal, ui.searchOpen, ui.helpOpen, ui.openTaskId, ui.assistantOp
 const data = useDataStore()
 const preferences = usePreferenceStore()
 const session = useSessionStore()
-const theme = useTheme()
 const quickLinks = useQuickLinks()
 const functionHealth = useFunctionHealth()
 const TRACKED_FEATURES = new Set([
@@ -126,17 +123,6 @@ const loadErrorMessages = computed(() => [
 preferences.prepareForMember(session.currentUser.id)
 
 useShortcuts()
-
-// 兼容旧动作调用，所有小记入口都回到同一个记录空间。
-watch(
-  () => ui.modal,
-  (modal) => {
-    if (modal === 'note') {
-      ui.closeModal()
-      newNote()
-    }
-  },
-)
 
 const crumbA = computed(() => {
   if (route.meta.tabKind === 'external') {
@@ -266,25 +252,9 @@ watch(
 function newTask() {
   ui.openModal('task')
 }
-/** 小记：不用先选知识库，打开就是一个空白输入框，存进小记知识库。 */
+/** 快速小记原地打开，保留当前页签、滚动和任务上下文。 */
 function newNote() {
-  if (ui.openTaskId) void data.flushTask(ui.openTaskId)
-  ui.closeTask()
-  void router.push('/notes')
-}
-const themeIcon = computed(() => {
-  return theme.effective.value === 'dark' ? 'ri-moon-line' : 'ri-sun-line'
-})
-const themeTitle = computed(() => {
-  const labels = {
-    light: '当前：明亮，点击切换深色',
-    dark: '当前：深色，点击切换跟随系统',
-    system: '当前：跟随系统，点击切换明亮',
-  }
-  return labels[theme.mode.value]
-})
-function toggleTheme() {
-  theme.toggleTheme()
+  ui.openModal('note')
 }
 function openSearch() {
   ui.openSearch()
@@ -298,7 +268,7 @@ function onKeydown(e: KeyboardEvent) {
   } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
     e.preventDefault()
     ui.toggleAssistant()
-  } else if (e.key === 'Escape') {
+  } else if (e.key === 'Escape' && ui.modal !== 'note') {
     // 逐层关闭：聊天 → 助手 → 庆祝 → 帮助 → 搜索 → 弹窗
     if (ui.chatOpen) {
       e.preventDefault()
@@ -373,35 +343,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <div class="quick-actions" :class="{ relocated: desktopToolbar }">
           <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
           <button class="plus" data-desktop-action="new-task" aria-label="新建任务" title="新建任务" @click="ui.openNewTask()">
-            <i class="ri-checkbox-circle-line" aria-hidden="true"></i><span class="action-label">新建任务</span>
+            <i class="ri-play-list-add-line" aria-hidden="true"></i><span class="action-label">任务</span>
           </button>
           <button class="plus ghost" data-desktop-action="new-note" aria-label="新建小记" title="新建小记" @click="newNote">
-            <i class="ri-sticky-note-line" aria-hidden="true"></i><span class="action-label">新建小记</span>
+            <i class="ri-file-add-line" aria-hidden="true"></i><span class="action-label">小记</span>
           </button>
 
-          <button
-            class="bell"
-            data-desktop-action="theme"
-            :data-theme="theme.effective.value"
-            :title="themeTitle"
-            :aria-label="themeTitle"
-            @click="toggleTheme"
-          >
-            <i :class="themeIcon" aria-hidden="true"></i>
-          </button>
-          <button
-            class="bell"
-            data-desktop-action="shortcuts"
-            title="查看快捷键"
-            aria-label="查看快捷键"
-            :aria-expanded="ui.helpOpen"
-            @click="ui.toggleHelp()"
-          >
-            <i class="ri-keyboard-line" aria-hidden="true"></i>
-          </button>
+          <GlobalToolsMenu />
           <FloatingChat :show-trigger="false" />
-          <NotificationCenter />
-          <VersionUpdateNotice />
         </div>
       </header>
       </Teleport>
@@ -448,6 +397,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     </nav>
     <TaskDrawer />
     <NewTaskModal v-if="ui.modal === 'task'" />
+    <QuickNotePopover :key="session.currentUser.id" :open="ui.modal === 'note'" @close="ui.closeModal()" />
     <NewProjectModal v-if="ui.modal === 'project'" />
     <GlobalSearch v-if="ui.searchOpen" />
     <ShortcutsHelp v-if="ui.helpOpen" />
@@ -897,7 +847,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   .header { gap: 4px; padding: 4px 6px 0; }
   .quick-actions { gap: 4px; }
   .plus, .plus.ghost, .fold, .bell { width: 32px; min-width: 32px; height: 32px; padding: 0; flex: 0 0 32px; justify-content: center; }
-  .plus .action-label { display: none; }
+  .plus .action-label { display: inline; }
   .plus i, .fold i, .bell i { font-size: 16px; }
   .header :deep(.top-menu-bar.empty-target) { flex-basis: 26px; min-width: 26px; }
   .header :deep(.top-menu-bar.has-items) { flex-basis: 100px; }
@@ -912,4 +862,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   .header .rest-link { padding: 8px 0; }
   .mobile-main-nav > button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -3px; }
 }
+</style>
+
+<style scoped>
+.header .quick-actions .plus, .header .quick-actions .plus.ghost { width:auto; min-width:0; flex:none; height:30px; padding:0 8px; gap:5px; border:0; border-radius:7px; background:transparent; color:var(--wao-text-2); font-size:12px; }
+.quick-actions .plus .action-label { display:inline; }
+.quick-actions .plus i, .quick-actions .plus.ghost i { font-size:16px; color:var(--wao-primary-text); }
+.quick-actions .plus:hover, .quick-actions .plus.ghost:hover { background:var(--wao-primary-soft); color:var(--wao-primary-text); }
+@media(pointer:coarse) { .header .quick-actions .plus, .header .quick-actions .plus.ghost { min-height:44px; min-width:44px; } }
 </style>

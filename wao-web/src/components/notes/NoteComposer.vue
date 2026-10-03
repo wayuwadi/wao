@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
@@ -12,16 +12,19 @@ import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 
-const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string; searchTerm?: string; searchRequest?: string }>()
-const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string]; 'draft-change': [draft: NoteDraftSnapshot | null] }>()
-const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
+const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: 'floating'; compact?: boolean; active?: boolean }>(), { active: true })
+const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string]; 'draft-change': [draft: NoteDraftSnapshot | null]; 'saving-change': [saving: boolean]; 'fullscreen-change': [fullscreen: boolean] }>()
+const MarkdownEditor = defineAsyncComponent({
+  loader: () => import('@/components/ui/MarkdownEditor.vue'),
+  loadingComponent: defineComponent({ setup: () => () => h('p', { role: 'status' }, '正在加载编辑器…') }),
+})
 const noteEditor = ref<{ removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean } | null>(null)
 const data = useDataStore()
 const session = useSessionStore()
 const preferences = usePreferenceStore()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
-  : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}`
+  : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}${props.draftScope === 'floating' ? ':floating' : ''}`
 type DraftBase = { title: string; tags: string[]; content: RichDocContent }
 type Draft = { id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string }
 let restored = false
@@ -81,6 +84,7 @@ async function toggleTagCreate() {
   if (tagCreateOpen.value) { await nextTick(); composerElement.value?.querySelector<HTMLInputElement>('.inline-tag-create input')?.focus() }
 }
 const fullscreen = ref(false)
+watch(fullscreen, value => emit('fullscreen-change', value), { flush: 'sync' })
 const fullscreenReminderVisible = ref(false)
 const composerElement = ref<HTMLElement>()
 let fullscreenReminderTimer: ReturnType<typeof setTimeout> | undefined
@@ -94,7 +98,7 @@ function clearFullscreenReminderTimer() {
 function scheduleFullscreenReminder() {
   clearFullscreenReminderTimer()
   const setting = preferences.noteFullscreenReminder
-  if (props.inline || !preferences.loaded || preferences.loadError || !setting.enabled
+  if (props.active === false || props.inline || !preferences.loaded || preferences.loadError || !setting.enabled
       || !text.value.trim() || !dirty.value || fullscreen.value || fullscreenReminderDismissed) return
   fullscreenReminderTimer = setTimeout(() => {
     fullscreenReminderTimer = undefined
@@ -141,6 +145,13 @@ function editorKeys(event: KeyboardEvent) {
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
 }
+watch(() => props.active, active => {
+  if (active !== false) return
+  fullscreen.value = false
+  tagSuggestionsOpen.value = false
+  fullscreenReminderVisible.value = false
+  clearFullscreenReminderTimer()
+})
 function toggleTag(tag: string) {
   if (saving.value || creatingTag.value) return
   if (tags.value.includes(tag)) tags.value = tags.value.filter(item => item !== tag)
@@ -200,6 +211,7 @@ let baseNote = props.note && (!restored || initial.baseRev != null && initial.ba
   ...restoredBase, blocks: legacyProjection(restoredBase.content),
 } : null
 const saving = ref(false)
+watch(saving, value => emit('saving-change', value), { flush: 'sync' })
 const error = ref('')
 const draftError = ref(false)
 const status = ref(restored ? '已恢复草稿，可继续记录' : '')
@@ -413,9 +425,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <MarkdownEditor :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls selection-image preview-images
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         note-title-on-image @generated-title="generatedTitle = $event"
-        hide-toolbar :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : 1000"
+        hide-toolbar :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : compact ? 1200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
-        :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
+        :readonly="saving" :min-height="compact ? 200 : note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">
         <template v-if="!inline" #footer-tags>
           <div class="composer-tags">

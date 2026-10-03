@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   fetchNotificationCenter,
@@ -10,6 +10,8 @@ import {
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { hasDesktopToolbar } from '@/utils/desktopToolbar'
 
+const props = defineProps<{ row?: boolean; returnFocus?: HTMLElement }>()
+const emit = defineEmits<{ 'unread-change': [value: boolean]; opened: [] }>()
 const router = useRouter()
 const open = ref(false)
 const activeSection = ref<'events' | 'usage'>('events')
@@ -25,6 +27,7 @@ const unreadLabel = computed(() => {
   return count > 99 ? '99+' : String(count)
 })
 const hasUnread = computed(() => (snapshot.value?.unreadCount ?? 0) > 0)
+watch(hasUnread, value => emit('unread-change', value), { immediate: true })
 
 const eventMeta: Record<NotificationEvent['type'], { icon: string; label: string }> = {
   INTERNAL: { icon: 'ri-notification-3-line', label: 'WAO 通知' },
@@ -71,12 +74,14 @@ async function markRead() {
 async function toggle() {
   open.value = !open.value
   if (!open.value) return
+  emit('opened')
   const loaded = await load(Boolean(snapshot.value))
   if (loaded) await markRead()
 }
 
 function close() {
   open.value = false
+  props.returnFocus?.focus()
 }
 
 async function refresh() {
@@ -124,6 +129,7 @@ onBeforeUnmount(() => {
 <template>
   <button
     class="notification-trigger"
+    :class="{ 'tool-menu-row': row }"
     data-desktop-action="notifications"
     type="button"
     :title="hasUnread ? `通知中心，${snapshot?.unreadCount} 条未读` : '通知中心'"
@@ -133,7 +139,8 @@ onBeforeUnmount(() => {
     @click="toggle"
   >
     <i class="ri-notification-3-line" aria-hidden="true"></i>
-    <span v-if="hasUnread" class="notification-badge" aria-live="polite">{{ unreadLabel }}</span>
+    <template v-if="row"><span class="row-name">通知</span><small>{{ hasUnread ? `${unreadLabel} 条未读` : '暂无未读' }}</small><i class="ri-arrow-right-s-line" aria-hidden="true"></i></template>
+    <span v-if="hasUnread && !row" class="notification-badge" aria-live="polite">{{ unreadLabel }}</span>
   </button>
 
   <Teleport to="body">
@@ -655,4 +662,12 @@ onBeforeUnmount(() => {
     flex: 1;
   }
 }
+</style>
+
+<style scoped>
+.tool-menu-row { display:flex; align-items:center; gap:10px; width:100%; min-height:42px; height:auto; padding:8px 10px; border:0; border-radius:8px; background:transparent; color:var(--wao-text-2); font-size:13px; text-align:left; cursor:pointer; }
+.tool-menu-row:hover { background:var(--wao-bg-hover); }
+.tool-menu-row .row-name, .tool-menu-row .trigger-label { display:inline; flex:1; }
+.tool-menu-row small { color:var(--wao-text-faint); font-size:11px; }
+@media(pointer:coarse) { .tool-menu-row { min-height:44px; } }
 </style>
