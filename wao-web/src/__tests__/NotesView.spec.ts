@@ -83,6 +83,24 @@ describe('小记集中记录空间', () => {
     expect(wrapper.find('[data-note-id="one"] button[aria-label="润色失败，点击重试"]').exists()).toBe(true)
     wrapper.unmount()
   })
+  it('正文片段定位保留新建草稿，清除查找恢复分页和列表位置', async () => {
+    const data = useDataStore()
+    for (let i = 0; i < 16; i++) data.docs[`search-${i}`] = { ...doc(`search-${i}`, `独特正文桂花${i}`), title: `独立标题${i}` }
+    const w = await view()
+    await w.find('textarea').setValue('正在写的草稿')
+    await w.get('.load-more').trigger('click')
+    const list = w.get('.notes-list').element as HTMLElement
+    Object.defineProperty(list, 'scrollTop', { value: 550, writable: true })
+    const scroll = vi.fn(); list.scrollTo = scroll
+    await w.get('[aria-label="搜索小记内容"]').setValue('独特正文桂花7')
+    expect(w.get('.note-search-hit').text()).toContain('正文命中')
+    await w.get('.note-search-hit').trigger('click')
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('正在写的草稿')
+    await w.get('[aria-label="清除小记查找"]').trigger('click'); await flushPromises()
+    expect(w.findAll('.note-card')).toHaveLength(16)
+    expect(scroll).toHaveBeenLastCalledWith({ top: 550 })
+    w.unmount()
+  })
   it('默认收起 AI 挖掘，并从阅读模式旁的按钮打开弹层', async () => {
     useDataStore().docs.one = doc('one', '给工具栏留出空间')
     const wrapper = await view()

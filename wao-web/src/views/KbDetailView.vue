@@ -66,6 +66,17 @@ function closeOutline() {
   outlineTrigger.value?.focus()
 }
 const titleEl = ref<HTMLInputElement | null>(null)
+watch([titleEl, () => route.query.findRequest, () => route.query.find, () => route.query.match, () => route.query.doc], async () => {
+  if (route.query.match !== 'title' || typeof route.query.find !== 'string') return
+  await nextTick()
+  const input = titleEl.value, term = route.query.find
+  if (!input || !term) return
+  const start = input.value.toLowerCase().indexOf(term.toLowerCase())
+  input.scrollIntoView?.({ block: 'center' })
+  input.focus()
+  if (start >= 0) input.setSelectionRange(start, start + term.length)
+})
+
 /** 正在重命名的文件夹 id。 */
 const renamingFolder = ref<string | null>(null)
 const folderNameDraft = ref('')
@@ -1238,6 +1249,8 @@ async function saveKbSettings() {
 
             <MarkdownEditor
               :key="docId ?? 'empty-doc'"
+              :search-request="String(route.query.findRequest ?? '')"
+              :search-term="route.query.match === 'title' ? '' : typeof route.query.find === 'string' ? route.query.find : ''"
               :model-value="body"
               :document="bodyContent?.document"
               :toolbar-target="toolbarHost"
