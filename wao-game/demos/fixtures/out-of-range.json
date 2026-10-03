@@ -1,0 +1,37 @@
+{
+  "format": "wao-design-preview",
+  "formatVersion": 1,
+  "rulesVersion": 1,
+  "savedAt": "2026-10-03T01:06:34.434Z",
+  "revision": 1,
+  "games": [
+    {
+      "gameId": "dino",
+      "choice": 900
+    },
+    {
+      "gameId": "rift",
+      "choice": 0
+    },
+    {
+      "gameId": "starfield",
+      "choice": 0
+    },
+    {
+      "gameId": "beasts",
+      "choice": 0
+    },
+    {
+      "gameId": "camp",
+      "choice": 0
+    },
+    {
+      "gameId": "ruins",
+      "choice": 0
+    },
+    {
+      "gameId": "racing",
+      "choice": 0
+    }
+  ]
+}
