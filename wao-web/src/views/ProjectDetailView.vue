@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
+import ProjectTaskSearch from '@/components/task/ProjectTaskSearch.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
 import { taskDropAfter } from '@/utils/taskDrop'
 import { taskTreeRows } from '@/utils/taskHierarchy'
@@ -53,6 +54,9 @@ function toggleSubtasks(id: string) {
     : [...collapsedSubTasks.value, id]
 }
 const pid = computed(() => String(route.params.id))
+const searchText = ref('')
+const searchQuery = computed(() => searchText.value.trim())
+watch(pid, () => { searchText.value = '' })
 const orderScope = computed(() => `project:${pid.value}`)
 const project = computed(() => data.projectById(pid.value))
 // 「总览」标签页已下线：老链接归到任务。文件页签已经接入真实资产 id 后重新开放。
@@ -623,7 +627,7 @@ watch(visibleTaskIds, (ids) => {
         {{ tb.label }}<span v-if="tb.showCount" class="ptab-count wao-tabular">{{ tb.count }}</span>
       </button>
       <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar">
-        <div class="seg">
+        <div v-show="!searchQuery" class="seg">
           <button v-for="v in ([['表格', 'ri-table-line', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
             <i :class="v[1]"></i>{{ v[0] }}
           </button>
@@ -667,9 +671,9 @@ watch(visibleTaskIds, (ids) => {
             >{{ creator.name }}</button>
           </div>
         </div>
-        <button v-if="pdTaskView !== 'list' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
+        <button v-if="!searchQuery && pdTaskView !== 'list' && !batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
         <!-- 表格的分组方式与已完成开关放在原「批量选择」的位置，和筛选同一行 -->
-        <template v-if="pdTaskView === 'list'">
+        <template v-if="pdTaskView === 'list' && !searchQuery">
           <div class="table-seg" role="group" aria-label="表格分组方式">
             <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
             <button :class="{ on: tableGrouped }" :aria-pressed="tableGrouped" @click="tableGrouped = true">按分组</button>
@@ -690,6 +694,11 @@ watch(visibleTaskIds, (ids) => {
 
     <!-- 任务 -->
     <div v-if="projTab === '任务'" class="project-task-content">
+      <div class="project-search-bar">
+        <i class="ri-search-line" aria-hidden="true"></i>
+        <input v-model="searchText" type="search" aria-label="项目内查找" placeholder="查找编号、标题、正文或子任务" autocomplete="off">
+        <button v-if="searchText" @click="searchText = ''">清除查找</button>
+      </div>
       <div v-if="data.taskLoadState === 'error'" class="task-scope" role="alert">
         任务加载失败，当前列表可能不完整，本机草稿已保留。{{ data.taskLoadError }}
         <button @click="data.hydrate()">重新加载任务</button>
@@ -700,6 +709,9 @@ watch(visibleTaskIds, (ids) => {
         <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
         <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
+      <ProjectTaskSearch v-if="searchQuery" :query="searchQuery" :tasks="ptasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="ownerFilter = null; creatorFilter = null" />
+      <!-- 保持普通视图挂载，清除查找后恢复原有行内输入、展开和排序。 -->
+      <div v-show="!searchQuery" class="project-normal-tasks">
       <!-- 表格视图不再提供批量选择；看板、分组和四象限视图仍可多选后复制 -->
       <div v-if="pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length)" class="copy-selection-actions">
         <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
@@ -1054,6 +1066,7 @@ watch(visibleTaskIds, (ids) => {
           :title="`拖到此处标记为「${col.label}」`">{{ col.label }} 0</button>
         <button :aria-expanded="showEmptyColumns" @click="showEmptyColumns = !showEmptyColumns">{{ showEmptyColumns ? '折叠空列' : '显示空列' }}</button>
       </div>
+      </div>
     </div>
 
     <!-- 文档 -->
@@ -1106,6 +1119,12 @@ watch(visibleTaskIds, (ids) => {
 </template>
 
 <style scoped>
+.project-search-bar { display:flex; align-items:center; gap:8px; min-width:0; padding:6px 0; }
+.project-search-bar input { width:320px; max-width:100%; min-width:0; padding:6px 10px; border:1px solid var(--wao-line); border-radius:8px; color:var(--wao-text); background:var(--wao-bg-card); font:inherit; font-size:12px; }
+.project-search-bar button { flex-shrink:0; border:0; background:none; color:var(--wao-primary-text); cursor:pointer; }
+.detail-quadrant .project-normal-tasks { display:flex; flex-direction:column; flex:1; min-height:0; }
+@media (max-width:600px) { .project-search-bar input { flex:1; width:0; } }
+
 .task-scope { padding:8px 16px; color:var(--wao-text-weak); background:var(--wao-bg-sub); font-size:12px; }.task-scope button { margin-left:12px; border:0; background:none; color:var(--wao-primary-text); cursor:pointer; }
 
 .copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 6px; }
@@ -1123,7 +1142,7 @@ watch(visibleTaskIds, (ids) => {
 .detail.detail-quadrant { display: flex; flex-direction: column; flex: 1; width: 100%; min-width: 0; min-height: 0; box-sizing: border-box; margin: 0; }
 .detail-quadrant > :not(.project-task-content) { flex-shrink: 0; }
 .detail-quadrant .project-task-content { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
-.detail-quadrant .project-task-content > :not(.quadrant-view) { flex-shrink: 0; }
+.detail-quadrant .project-normal-tasks > :not(.quadrant-view) { flex-shrink: 0; }
 .detail-quadrant :deep(.copy-preview) { max-height: 25vh; overflow: auto; }
 .spacer {
   flex: 1;
