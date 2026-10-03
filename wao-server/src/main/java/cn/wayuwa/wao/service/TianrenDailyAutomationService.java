@@ -30,7 +30,7 @@ public class TianrenDailyAutomationService {
     private static final Logger log = LoggerFactory.getLogger(TianrenDailyAutomationService.class);
     static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final Set<String> ACTIVE = Set.of("queued", "running", "provider_queued", "provider_running",
-            "web_search_queued", "web_search_running");
+            "secure_queued", "secure_running", "web_search_queued", "web_search_running");
     private final TianrenReadingService readings;
     private final TianrenDailyReadingMapper readingMapper;
     private final MemberPreferenceMapper preferences;
@@ -41,6 +41,28 @@ public class TianrenDailyAutomationService {
     private final ObjectMapper json;
     private final TransactionTemplate transaction;
     private final Clock clock;
+
+    public record AiStatus(boolean configured, String message, String runStatus, String runId) { }
+
+    /** 只读取当前成员今日解读状态，刷新页面不会重复发起模型调用。 */
+    public AiStatus status(String memberId) {
+        var executor = assistant.tianrenStatus();
+        var reading = readings.today(memberId);
+        AiAssistantRunEntity latest = null;
+        if (reading != null && StringUtils.hasText(reading.conversationId())) {
+            latest = runs.selectOne(new LambdaQueryWrapper<AiAssistantRunEntity>()
+                    .eq(AiAssistantRunEntity::getMemberId, memberId)
+                    .eq(AiAssistantRunEntity::getConversationId, reading.conversationId())
+                    .eq(AiAssistantRunEntity::getUsagePurpose, "TIANREN")
+                    .orderByDesc(AiAssistantRunEntity::getCreatedAt).last("LIMIT 1"));
+        }
+        String message = executor.message();
+        if (latest != null && ACTIVE.contains(latest.getStatus())) message = "secure_queued".equals(latest.getStatus())
+                ? "本机 Codex 排队中，关闭页面后继续处理" : "本机 Codex 正在解读，关闭页面后继续处理";
+        else if (latest != null && "failed".equals(latest.getStatus()))
+            message = executor.configured() ? "上次解读失败；本机 Codex 已就绪，可保留关注点重试" : executor.message();
+        return new AiStatus(executor.configured(), message, latest == null ? null : latest.getStatus(), latest == null ? null : latest.getId());
+    }
 
     @Autowired
     public TianrenDailyAutomationService(TianrenReadingService readings, TianrenDailyReadingMapper readingMapper,
