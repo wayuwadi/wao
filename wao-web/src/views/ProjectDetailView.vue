@@ -213,6 +213,9 @@ const pd = computed(() => (project.value ? decoProj(project.value) : null))
 const activity = computed(() => pd.value?.activity ?? [])
 const { page: activityPage, pageCount: activityPageCount, visible: visibleActivity } = useClientPagination(activity, [pid])
 const ptasks = computed(() => taskOrder.sort(orderScope.value, project.value ? data.tasksByProject(project.value.id) : [], t => t.id))
+// 未读到任务时不渲染各视图的空数量；刷新已有内容时保持视图挂载和输入上下文。
+const tasksUnavailable = computed(() => data.taskLoadState !== 'loaded')
+const hideTaskViews = computed(() => tasksUnavailable.value && !ptasks.value.length)
 const linkedDocs = computed(() => {
   const ids = new Set(ptasks.value.flatMap(task => [
     ...(task.docs ?? []), ...task.subs.flatMap(sub => sub.docs ?? []),
@@ -296,7 +299,7 @@ const pdTabs = computed(() => {
   const counts: Record<string, number> = { 任务: openCount, 文档: linkedDocs.value.length }
   return (['任务', '文档', '文件', '记忆', '动态'] as const).map((t) => ({
     label: t, count: counts[t], showCount: ['任务', '文档'].includes(t) && (t !== '任务' || data.taskLoadState === 'loaded'), on: projTab.value === t,
-    title: t === '任务' ? `整个项目：${projectCompletionLabel(ptasks.value)}；不随负责人或创建人筛选变化` : '',
+    title: t === '任务' ? (tasksUnavailable.value ? '任务尚未读取成功，暂时无法确认数量' : `整个项目：${projectCompletionLabel(ptasks.value)}；不随负责人或创建人筛选变化`) : '',
   }))
 })
 
@@ -593,8 +596,19 @@ watch(visibleTaskIds, (ids) => {
 </script>
 
 <template>
-  <div v-if="!pd" class="missing">项目不存在或已被移除。</div>
+  <div v-if="!pd" class="missing" :role="data.loadStates.projects === 'error' ? 'alert' : 'status'">
+    <template v-if="data.loadStates.projects === 'error'">
+      项目信息加载失败，暂时无法确认项目是否可访问。{{ data.loadErrors.projects }}
+      <button class="btn-ghost" @click="data.hydrate()">重新加载项目</button>
+    </template>
+    <template v-else-if="data.loadStates.projects !== 'loaded'">正在加载项目信息…</template>
+    <template v-else>项目不存在或当前账号无权访问。<button class="btn-ghost" @click="router.push('/projects')">返回全部项目</button></template>
+  </div>
   <div v-else class="detail" :class="{ 'detail-quadrant': projTab === '任务' && pdTaskView === 'quadrant', 'selecting-tasks': pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length) }">
+    <div v-if="data.loadStates.projects === 'error'" class="task-scope" role="alert">
+      项目信息刷新失败，当前显示上次读取的项目信息。{{ data.loadErrors.projects }}
+      <button @click="data.hydrate()">重新加载项目</button>
+    </div>
 
     <div class="phead">
       <button class="back" aria-label="全部项目" title="全部项目" @click="router.push('/projects')"><i class="ri-arrow-left-line"></i></button>
@@ -700,18 +714,19 @@ watch(visibleTaskIds, (ids) => {
         <button v-if="searchText" @click="searchText = ''">清除查找</button>
       </div>
       <div v-if="data.taskLoadState === 'error'" class="task-scope" role="alert">
-        任务加载失败，当前列表可能不完整，本机草稿已保留。{{ data.taskLoadError }}
+        {{ ptasks.length ? '任务刷新失败，当前保留已读取的任务及未保存输入；以下数量和结果可能不是最新。' : '任务加载失败，暂时无法确认任务数量；输入仍保留。' }}{{ data.taskLoadError }}
         <button @click="data.hydrate()">重新加载任务</button>
       </div>
       <div v-else-if="data.taskLoadState === 'loading'" class="task-scope" role="status">正在加载任务，已显示的任务和本机草稿会继续保留。</div>
       <div v-if="effectiveCreator || effectiveOwner" class="task-scope" role="status">
-        当前仅显示{{ effectiveOwner ? ` ${activeOwnerName} 负责的` : '' }}{{ effectiveCreator ? ` ${activeCreatorName} 创建的` : '' }}任务 · 筛选内未收尾 {{ filteredCompletion.open }}／共 {{ allTasks.length }} 项任务（项目共 {{ ptasks.length }} 项；任务按全部子项判定收尾）
+        当前仅显示{{ effectiveOwner ? ` ${activeOwnerName} 负责的` : '' }}{{ effectiveCreator ? ` ${activeCreatorName} 创建的` : '' }}任务
+        <template v-if="!tasksUnavailable"> · 筛选内未收尾 {{ filteredCompletion.open }}／共 {{ allTasks.length }} 项任务（项目共 {{ ptasks.length }} 项；任务按全部子项判定收尾）</template>
         <button v-if="effectiveOwner" @click="ownerFilter = null">查看全部负责人</button>
         <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
       <ProjectTaskSearch v-if="searchQuery" :query="searchQuery" :tasks="ptasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="ownerFilter = null; creatorFilter = null" />
       <!-- 保持普通视图挂载，清除查找后恢复原有行内输入、展开和排序。 -->
-      <div v-show="!searchQuery" class="project-normal-tasks">
+      <div v-show="!searchQuery && !hideTaskViews" class="project-normal-tasks">
       <!-- 表格视图不再提供批量选择；看板、分组和四象限视图仍可多选后复制 -->
       <div v-if="pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length)" class="copy-selection-actions">
         <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
@@ -987,7 +1002,7 @@ watch(visibleTaskIds, (ids) => {
             </div>
           </template>
 
-          <div v-if="!g.total" class="group-empty">点右上角的「+」往这里加第一条任务</div>
+          <div v-if="!g.total" class="group-empty">{{ tasksUnavailable ? '暂时无法确认这个分组是否为空' : effectiveOwner || effectiveCreator ? '当前筛选下这个分组没有任务，可在上方清除人员筛选' : '点右上角的「+」往这里加第一条任务' }}</div>
           </div>
         </div>
 
