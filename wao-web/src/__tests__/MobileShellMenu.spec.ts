@@ -36,4 +36,3 @@ it('窄屏入口能挂载原导航与工具，关闭后保持原组件及输入'
   await wrapper.get('[aria-label="关闭完整菜单"]').trigger('click')
   expect(wrapper.get('.mobile-menu-backdrop').isVisible()).toBe(false)
 })
-
