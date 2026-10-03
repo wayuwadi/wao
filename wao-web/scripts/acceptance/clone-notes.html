@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>本地小记复制页签验收</title>
+<h1>本地小记复制页签验收</h1>
+<p>仅本地验收服务器提供。用专用合成草稿操作；新窗口由浏览器复制本页会话存储，不修改业务接口。</p>
+<p role="status">正在准备原页签身份…</p>
+<button id="clone" disabled>打开复制页签</button>
+<a href="/notes">返回原页签小记</a>
+<script type="module">
+  import { prepareNoteDraftStorage } from '/src/utils/noteDraftStorage.ts'
+  const ready = await prepareNoteDraftStorage()
+  document.querySelector('[role=status]').textContent = ready
+    ? '原页签身份已准备；复制后分别输入、刷新并检查草稿。'
+    : '草稿身份准备失败，请保留输入并检查浏览器存储或更新浏览器。'
+  const button = document.querySelector('#clone')
+  button.disabled = !ready
+  button.onclick = () => window.open('/notes', '_blank')
+</script>
+</html>
