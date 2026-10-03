@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { fetchWebRelease } from '@/api/version'
 import { MODULES } from '@/config/nav'
 import { CURRENT_RELEASE } from '@/data/featureCatalog'
@@ -184,13 +185,7 @@ function outside(event: PointerEvent) {
   )
     close(false)
 }
-function keydown(event: KeyboardEvent) {
-  if (open.value && event.key === 'Escape') {
-    event.preventDefault()
-    event.stopPropagation()
-    close()
-  }
-}
+useOverlayDismiss(() => open.value, () => close(), outside)
 watch(
   () => route.path,
   () => close(false),
@@ -201,8 +196,6 @@ onMounted(() => {
   document.addEventListener('visibilitychange', visibilityChanged)
   document.body.addEventListener(WEB_UPDATE_EVENT, handleUpdate)
   window.addEventListener(WORKSPACE_RELOAD_STATE_EVENT, handleReload)
-  document.addEventListener('pointerdown', outside)
-  document.addEventListener('keydown', keydown, true)
   window.addEventListener('resize', viewportChanged)
   window.addEventListener('scroll', positionPanel, true)
   const header = (props.anchor ?? trigger.value)?.closest('header')
@@ -219,8 +212,6 @@ onBeforeUnmount(() => {
   observer?.disconnect()
   document.body.removeEventListener(WEB_UPDATE_EVENT, handleUpdate)
   window.removeEventListener(WORKSPACE_RELOAD_STATE_EVENT, handleReload)
-  document.removeEventListener('pointerdown', outside)
-  document.removeEventListener('keydown', keydown, true)
   window.removeEventListener('resize', viewportChanged)
   window.removeEventListener('scroll', positionPanel, true)
 })

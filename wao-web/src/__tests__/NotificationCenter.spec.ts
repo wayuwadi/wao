@@ -186,9 +186,10 @@ describe('右上角通知中心', () => {
     await flushPromises()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await flushPromises()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })
+

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { Popover } from 'ant-design-vue'
 import { fetchTodayTianrenReading, type TianrenReading } from '@/api/tianren'
 import { fetchAssistantConversation } from '@/api/assistant'
@@ -31,6 +32,7 @@ async function loadSummary() {
   }
 }
 async function onOpen(value: boolean) {
+  if (!value && !isTopmost()) return
   open.value = value
   if (!value) return
   emit('preview')
@@ -42,9 +44,7 @@ function close(restoreFocus = false) {
   open.value = false
   if (restoreFocus) trigger.value?.focus()
 }
-function onKey(event: KeyboardEvent) {
-  if (open.value && event.key === 'Escape') { event.preventDefault(); close(true) }
-}
+const { isTopmost } = useOverlayDismiss(() => open.value, () => close(true))
 defineExpose({ close })
 
 const reading = ref<TianrenReading | null>(null)
@@ -64,8 +64,8 @@ async function load() {
   }
 }
 
-onMounted(() => { void load(); document.addEventListener('keydown', onKey) })
-onBeforeUnmount(() => { disposed = true; document.removeEventListener('keydown', onKey) })
+onMounted(() => { void load() })
+onBeforeUnmount(() => { disposed = true })
 </script>
 
 <template>
