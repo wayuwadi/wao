@@ -60,7 +60,7 @@ class NoteAiWorkflowServiceTest {
         assertThat(saved.getValue().imageStatus()).isEqualTo("FAILED");
         assertThat(saved.getValue().polishStatus()).isEqualTo("FAILED");
         org.mockito.Mockito.verifyNoInteractions(textJobs, images, polish);
-        verify(knowledge, never()).updateDoc(any(), any());
+        verify(knowledge, never()).updateDerivedNote(any(), any());
     }
 
     @Test void changedBodyInvalidatesEveryOldRunningResultBeforePolling() {
@@ -79,7 +79,7 @@ class NoteAiWorkflowServiceTest {
         assertThat(saved.getValue().imageStatus()).isEqualTo("PENDING");
         assertThat(saved.getValue().polishStatus()).isEqualTo("PENDING");
         org.mockito.Mockito.verifyNoInteractions(textJobs, images, polish);
-        verify(knowledge, never()).updateDoc(any(), any());
+        verify(knowledge, never()).updateDerivedNote(any(), any());
     }
 
     @Test void localWorkerRecordsStageSubmissionFailureInsteadOfLeavingItPending() {
@@ -144,7 +144,7 @@ class NoteAiWorkflowServiceTest {
         assertThat(saved.getValue().polishStatus()).isEqualTo("PENDING");
         assertThat(saved.getValue().titleJobId()).isNull();
         assertThat(saved.getValue().baseRev()).isEqualTo(2);
-        verify(knowledge, never()).updateDoc(any(), any());
+        verify(knowledge, never()).updateDerivedNote(any(), any());
         verify(textJobs, never()).get(any(), any());
         verify(textJobs, never()).submit(any(), any(), any(), any(), any(), any(), any());
         verify(images, never()).start(any(), any());
@@ -438,10 +438,10 @@ class NoteAiWorkflowServiceTest {
         when(textJobs.get("m1", "polish1")).thenReturn(new TextPolishJobService.Result("polish1", "SUCCEEDED",
                 null, "今天明确了项目目标，并列出行动计划，接下来持续观察执行结果。", null, null));
         String finalBody = cover + "今天明确了项目目标，并列出行动计划，接下来持续观察执行结果。";
-        when(knowledge.updateDoc(any(), any())).thenReturn(note("m1", 5, finalBody));
+        when(knowledge.updateDerivedNote(any(), any())).thenReturn(note("m1", 5, finalBody));
         service.advance("d1");
         ArgumentCaptor<cn.wayuwa.wao.dto.PatchDocRequest> patch = ArgumentCaptor.forClass(cn.wayuwa.wao.dto.PatchDocRequest.class);
-        verify(knowledge).updateDoc(org.mockito.ArgumentMatchers.eq("d1"), patch.capture());
+        verify(knowledge).updateDerivedNote(org.mockito.ArgumentMatchers.eq("d1"), patch.capture());
         assertThat(patch.getValue().expectedRev()).isEqualTo(4);
         assertThat(patch.getValue().content().markdown()).isEqualTo(finalBody);
         ArgumentCaptor<Workflow> saved = ArgumentCaptor.forClass(Workflow.class);

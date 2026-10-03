@@ -27,37 +27,41 @@ public class NoteMiningController {
         this.member = member;
     }
 
+    private String owner(HttpServletRequest request) {
+        String id=member.id(request); if(id==null)throw new cn.wayuwa.wao.common.UnauthorizedException("请先登录"); return id;
+    }
+
     @GetMapping
     public ApiResponse<NoteMiningDto> latest(HttpServletRequest request) {
-        return ApiResponse.ok(service.latest(member.idOr(request, "unknown")));
+        return ApiResponse.ok(service.latest(owner(request)));
     }
 
     @PostMapping("/runs")
     public ApiResponse<NoteMiningDto> start(@Valid @RequestBody StartRequest body, HttpServletRequest request) {
-        return ApiResponse.ok(service.start(member.idOr(request, "unknown"), body.requestId()));
+        return ApiResponse.ok(service.start(owner(request), body.requestId()));
     }
 
     @GetMapping("/runs/{id}")
     public ApiResponse<NoteMiningDto> get(@PathVariable String id, HttpServletRequest request) {
-        return ApiResponse.ok(service.get(member.idOr(request, "unknown"), id));
+        return ApiResponse.ok(service.get(owner(request), id));
     }
 
     @PostMapping("/artifacts/{id}/feedback")
     public ApiResponse<NoteMiningDto.Artifact> feedback(@PathVariable String id,
             @Valid @RequestBody FeedbackRequest body, HttpServletRequest request) {
-        return ApiResponse.ok(service.feedback(member.idOr(request, "unknown"), id, body.status()));
+        return ApiResponse.ok(service.feedback(owner(request), id, body.status()));
     }
 
     @PostMapping("/runs/{id}/visuals/{lens}/retry")
     public ApiResponse<NoteMiningDto.Visual> retryVisual(@PathVariable String id, @PathVariable String lens,
             HttpServletRequest request) {
-        return ApiResponse.ok(service.retryVisual(member.idOr(request, "unknown"), id, lens));
+        return ApiResponse.ok(service.retryVisual(owner(request), id, lens));
     }
 
     @PostMapping("/runs/{id}/visuals/{lens}/feedback")
     public ApiResponse<NoteMiningDto.Visual> feedbackVisual(@PathVariable String id, @PathVariable String lens,
             @Valid @RequestBody VisualFeedbackRequest body, HttpServletRequest request) {
-        return ApiResponse.ok(service.feedbackVisual(member.idOr(request, "unknown"), id, lens, body.status()));
+        return ApiResponse.ok(service.feedbackVisual(owner(request), id, lens, body.status()));
     }
 
     public record StartRequest(@NotBlank @Pattern(regexp = "[a-f0-9]{32}") String requestId) { }

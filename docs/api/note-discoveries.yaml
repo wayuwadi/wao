@@ -1,0 +1,215 @@
+openapi: 3.0.3
+info:
+  title: 小记顺手发现（成员私有浏览器能力）
+  version: 1.0.0
+  description: 无令牌扩权。读取不启动分析。旧 POST /api/note-mining/runs 与图片 retry 为 410，旧 GET/反馈保持历史兼容。
+security:
+  - memberSession: []
+paths:
+  /api/note-discoveries/current:
+    get:
+      summary: 读取最多一条有效推荐；合法无结果为 discovery null
+      responses:
+        '200':
+          description: ApiResponse data 为 Current；读取故障不能伪装空结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/note-discoveries/preference:
+    get:
+      summary: 无记录为 enabled false/version 0；全局可用性不代表成员已开启
+      responses:
+        '200':
+          description: ApiResponse data 为 Preference
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Envelope' }
+                  - properties:
+                      data: { $ref: '#/components/schemas/Preference' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      summary: 保存明确同意或暂停，更新开启代次，禁止通用偏好写入该键
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, expectedVersion]
+              properties:
+                enabled: { type: boolean }
+                expectedVersion: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '200': { description: ApiResponse data 为落库后完整 Preference }
+        '400': { $ref: '#/components/responses/Invalid' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/note-discoveries/saved:
+    get:
+      summary: 游标分页新旧收藏与旧图片；权限失效返回 restricted 占位且不泄露内容
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Page' }
+        '400': { $ref: '#/components/responses/Invalid' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/note-discoveries/legacy:
+    get:
+      summary: 本人旧版产物和图片；不当作新流程已经核验的发现
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { $ref: '#/components/responses/Page' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/note-discoveries/items/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/ItemId' }
+    get:
+      summary: 读取当前独立反馈及权限保护的产物
+      responses:
+        '200': { description: ApiResponse data 为 Discovery }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/note-discoveries/items/{id}/feedback:
+    parameters:
+      - { $ref: '#/components/parameters/ItemId' }
+    patch:
+      summary: 幂等目标状态赋值，省略字段不改；收藏不是确认正确
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion]
+              properties:
+                expectedVersion: { type: integer, format: int64, minimum: 0 }
+                saved: { type: boolean }
+                dismissed: { type: boolean }
+                correction: { type: string, maxLength: 500, nullable: true, description: null 明确清除 }
+      responses:
+        '200': { description: ApiResponse data 为更新后的 Discovery }
+        '400': { $ref: '#/components/responses/Invalid' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/note-discoveries/items/{id}/sources/{docId}:
+    parameters:
+      - { $ref: '#/components/parameters/ItemId' }
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, maxLength: 32 }
+    get:
+      summary: 双重校验本人产物来源及实时权限，复用现有 Doc 阅读 DTO，不暴露任意历史版本
+      responses:
+        '200': { description: ApiResponse data 为现有 DocDto }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    memberSession: { type: apiKey, in: cookie, name: SESSION }
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+      description: 服务端生成的不透明时间/条目游标，始终限定当前成员
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
+    ItemId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, maxLength: 96 }
+  responses:
+    Unauthorized: { description: '401 未登录，不回退默认成员' }
+    NotFound: { description: '404 不存在、其他成员、来源不可访问均不可区分' }
+    Invalid: { description: '400 参数、游标、长度或字段无效' }
+    Conflict: { description: '409 并发版本冲突；重新读取并保留本地未保存输入' }
+    Page:
+      description: ApiResponse data 包含 items 与 nextCursor
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/Envelope' }
+              - properties:
+                  data:
+                    type: object
+                    required: [items, nextCursor]
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Discovery' }
+                      nextCursor: { type: string, nullable: true }
+  schemas:
+    Envelope:
+      type: object
+      required: [code, message, data]
+      properties:
+        code: { type: integer, description: 0 表示成功 }
+        message: { type: string }
+        data: { type: object, nullable: true }
+    Preference:
+      type: object
+      required: [enabled, version, available, message]
+      properties:
+        enabled: { type: boolean }
+        version: { type: integer, format: int64 }
+        available: { type: boolean }
+        message: { type: string }
+    CurrentResponse:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+        - properties:
+            data:
+              type: object
+              required: [discovery, automationState, lastOutcome, revision]
+              properties:
+                discovery:
+                  allOf: [{ $ref: '#/components/schemas/Discovery' }]
+                  nullable: true
+                automationState: { type: string, enum: [OFF, PAUSED, READY, PROCESSING, DEFERRED, UNAVAILABLE, FAILED] }
+                lastOutcome: { type: string, nullable: true, description: 业务成功无结果与 BUDGET_DEFERRED/CONFIG_UNAVAILABLE/PROTOCOL_ERROR/CALL_FAILED/SOURCE_UNAVAILABLE 等故障分别保存 }
+                revision: { type: string }
+    Discovery:
+      type: object
+      required: [id, origin, headline, observation, valueReason, restricted, evidence, feedback]
+      properties:
+        id: { type: string }
+        origin: { type: string, enum: [AUTO, LEGACY] }
+        kind: { type: string, nullable: true, enum: [REPEATED_FRICTION, REUSE_EXPERIENCE, PROGRESS_CHANGE] }
+        headline: { type: string }
+        observation: { type: string }
+        valueReason: { type: string }
+        optionalNextStep: { type: string, nullable: true }
+        imageUrl: { type: string, nullable: true, description: 仅旧版图片 }
+        restricted: { type: boolean }
+        validity: { type: string, nullable: true }
+        publishedAt: { type: string, nullable: true }
+        evidence:
+          type: array
+          items:
+            type: object
+            properties:
+              docId: { type: string }
+              docRev: { type: integer }
+              title: { type: string }
+              quote: { type: string }
+        feedback:
+          type: object
+          required: [saved, dismissed, correction, version]
+          properties:
+            saved: { type: boolean }
+            dismissed: { type: boolean }
+            correction: { type: string, nullable: true }
+            version: { type: integer, format: int64 }

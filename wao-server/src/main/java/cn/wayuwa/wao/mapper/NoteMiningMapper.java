@@ -26,25 +26,25 @@ public interface NoteMiningMapper {
 
     @Select("""
             SELECT id,member_id,source_snapshot_json,source_count,ai_run_id,materialized_at,error_message,created_at
-              FROM note_mining_job WHERE id=#{id} AND member_id=#{memberId}
+              FROM note_mining_job WHERE origin='LEGACY' AND id=#{id} AND member_id=#{memberId}
             """)
     Job findOwnedJob(@Param("id") String id, @Param("memberId") String memberId);
 
     @Select("""
             SELECT id,member_id,source_snapshot_json,source_count,ai_run_id,materialized_at,error_message,created_at
-              FROM note_mining_job WHERE id=#{id} AND member_id=#{memberId} FOR UPDATE
+              FROM note_mining_job WHERE origin='LEGACY' AND id=#{id} AND member_id=#{memberId} FOR UPDATE
             """)
     Job lockOwnedJob(@Param("id") String id, @Param("memberId") String memberId);
 
     @Select("""
             SELECT id,member_id,source_snapshot_json,source_count,ai_run_id,materialized_at,error_message,created_at
-              FROM note_mining_job WHERE member_id=#{memberId} ORDER BY created_at DESC LIMIT 1
+              FROM note_mining_job WHERE origin='LEGACY' AND member_id=#{memberId} ORDER BY created_at DESC LIMIT 1
             """)
     Job latestJob(@Param("memberId") String memberId);
 
     @Select("""
             SELECT id,member_id,source_snapshot_json,source_count,ai_run_id,materialized_at,error_message,created_at
-              FROM note_mining_job WHERE materialized_at IS NULL AND error_message IS NULL
+              FROM note_mining_job WHERE origin='LEGACY' AND materialized_at IS NULL AND error_message IS NULL
              ORDER BY created_at LIMIT #{limit}
             """)
     List<Job> pendingJobs(@Param("limit") int limit);

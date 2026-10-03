@@ -13,10 +13,10 @@ export async function fetchNotePolishVersions(): Promise<NotePolishVersion[]> {
 }
 
 /** 幂等保存一次成功润色；源正文改变时服务端拒绝旧结果。 */
-export async function saveNotePolishVersion(docId: string, sourceMarkdown: string, polishedMarkdown: string): Promise<NotePolishVersion> {
+export async function saveNotePolishVersion(docId: string, sourceMarkdown: string, polishedMarkdown: string, aiJobId?: string): Promise<NotePolishVersion> {
   const response = await http.put<ApiResponse<NotePolishVersion>>(
     `/api/docs/notes/polish-versions/${encodeURIComponent(docId)}`,
-    { sourceMarkdown, polishedMarkdown },
+    { sourceMarkdown, polishedMarkdown, ...(aiJobId ? { aiJobId } : {}) },
   )
   return response.data.data
 }

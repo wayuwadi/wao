@@ -8,7 +8,10 @@ import { toast } from '@/composables/toast'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
-import NoteMiningPanel from '@/components/notes/NoteMiningPanel.vue'
+import NoteDiscoveryInline from '@/components/notes/NoteDiscoveryInline.vue'
+import NoteDiscoverySavedList from '@/components/notes/NoteDiscoverySavedList.vue'
+import { useNoteDiscoveries } from '@/composables/useNoteDiscoveries'
+import { fetchDiscoverySource, feedbackDiscovery, clearDiscoveryLegacyCache, type Discovery } from '@/api/noteDiscoveries'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
@@ -399,9 +402,6 @@ let readerApp: HTMLElement | null = null
 let readerAppWasInert = false
 let readerBodyOverflow = ''
 let readerRestorePending = false
-const miningOpen = ref(false)
-const miningDialog = ref<HTMLElement | null>(null)
-let miningTrigger: HTMLElement | null = null
 // 固定本次阅读的筛选顺序；正文仍取当前单份内容，后台更新不让索引漂移。
 const readerNotes = computed(() => readerIds.value.map(id => notes.value.find(note => note.id === id)).filter((note): note is Doc => !!note))
 const readingIndex = computed(() => readerNotes.value.findIndex(note => note.id === readingId.value))
@@ -510,26 +510,18 @@ watch(() => readerNotes.value.map(note => note.id), ids => {
   if (ids.length) void selectReadingNote(ids[0]!)
   else void stopReading()
 })
-watch(() => session.currentUser.id, () => { void stopReading(); readerPositions.clear(); readingId.value = ''; readerMode.value = 'side' })
-async function openMiningSource(id: string) {
-  await closeMining()
-  query.value = ''
-  resetFilters()
-  limit.value = Math.max(limit.value, notes.value.length)
-  await nextTick()
-  startReading(id)
-}
-async function openMining(event: MouseEvent) {
-  miningTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
-  miningOpen.value = true
-  await nextTick()
-  miningDialog.value?.focus()
-}
-async function closeMining() {
-  miningOpen.value = false
-  await nextTick()
-  miningTrigger?.focus()
-  miningTrigger = null
+let discoverySourceRequest = 0
+watch(() => session.currentUser.id, () => { discoverySourceRequest++; clearDiscoveryLegacyCache(); void stopReading(); readerPositions.clear(); readingId.value = ''; readerMode.value = 'side' })
+async function openDiscoverySource(itemId: string, docId: string, event: Event) {
+  const trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  const member = session.currentUser.id, request = ++discoverySourceRequest
+  try {
+    const doc = await fetchDiscoverySource(itemId, docId)
+    if (member !== session.currentUser.id || request !== discoverySourceRequest) return
+    data.applyRemoteDoc(doc)
+    await startReading(docId)
+    if (member === session.currentUser.id && request === discoverySourceRequest) readerTrigger = trigger
+  } catch { if (member === session.currentUser.id && request === discoverySourceRequest) toast('来源暂时无法打开，请重试', 'error') }
 }
 function moveReader(delta: number) {
   if (!readerNotes.value.length) return
@@ -538,7 +530,6 @@ function moveReader(delta: number) {
 }
 function onReaderKeydown(event: KeyboardEvent) {
   if (event.defaultPrevented || event.isComposing) return
-  if (miningOpen.value && event.key === 'Escape') { event.preventDefault(); void closeMining(); return }
   if (!reading.value || previewImage.value || !readerDismiss.isTopmost()) return
   trapReaderFocus(event, readerDialog.value)
   const target = event.target
@@ -561,7 +552,7 @@ function onReaderKeydown(event: KeyboardEvent) {
   if (event.key === 'End') { event.preventDefault(); void selectReadingNote(readerNotes.value[readerNotes.value.length - 1]!.id) }
 }
 const showBackToTop = ref(false)
-function onNotesScroll() { showBackToTop.value = window.scrollY > 480 || (notesList.value?.scrollTop ?? 0) > 480 }
+function onNotesScroll() { discoveries.applyPending(); showBackToTop.value = window.scrollY > 480 || (notesList.value?.scrollTop ?? 0) > 480 }
 function backToTop() {
   const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
   if ((notesList.value?.scrollHeight ?? 0) > (notesList.value?.clientHeight ?? 0) + 1) notesList.value?.scrollTo({ top: 0, behavior })
@@ -766,6 +757,7 @@ watch([() => route.query.findRequest, () => route.query.note, () => route.query.
 }, { immediate: true })
 
 function onCreated(id: string) {
+  void discoveries.refresh()
   query.value = ''
   selectedTag.value = ''
   limit.value = PAGE_SIZE
@@ -774,6 +766,7 @@ function onCreated(id: string) {
   void loadServerWorkflows()
 }
 function onEdited(sourceId: string, savedId: string) {
+  void discoveries.refresh()
   delete noteDrafts.value[sourceId]
   closeEditing(sourceId)
   highlighted.value = savedId
@@ -863,6 +856,44 @@ watch([() => session.currentUser.id, notes], ([memberId, values], previous) => {
     } catch { /* 无有效草稿时使用服务器正文。 */ }
   }
 }, { immediate: true })
+const discoveryMode = ref<'notes' | 'saved' | 'legacy'>('notes')
+const discoveryExpanded = ref(false)
+const discoveryUndo = ref<Discovery | null>(null)
+let undoTimer: ReturnType<typeof setTimeout> | undefined
+function discoverySafe() {
+  return !reading.value && !editingIds.value.length && !discoveryExpanded.value
+    && (notesList.value?.scrollTop ?? 0) < 20 && window.scrollY < 100
+    && !document.activeElement?.closest('input, textarea, [contenteditable="true"]')
+}
+function preserveDiscoveryPosition() {
+  const list = notesList.value
+  if (!list) return
+  const anchor = Array.from(list.querySelectorAll<HTMLElement>('.note-card')).find(card => card.getBoundingClientRect().bottom > list.getBoundingClientRect().top)
+  if (!anchor) return
+  const top = anchor.getBoundingClientRect().top
+  const ownScroll = getComputedStyle(list).overflowY === 'auto'
+  void nextTick(() => { if (!anchor.isConnected) return; const delta = anchor.getBoundingClientRect().top - top; if (ownScroll) list.scrollTop += delta; else window.scrollBy(0, delta) })
+}
+const discoveries = useNoteDiscoveries(() => session.currentUser.id, () => data.apiLive, discoverySafe, preserveDiscoveryPosition)
+function discoveryChanged(item: Discovery) {
+  if (item.feedback.dismissed) {
+    discoveries.current.value = null
+    discoveryExpanded.value = false
+    discoveryUndo.value = item
+    if (undoTimer) clearTimeout(undoTimer)
+    undoTimer = setTimeout(() => { discoveryUndo.value = null }, 20_000)
+  } else discoveries.current.value = item
+}
+async function undoDiscovery() {
+  const item = discoveryUndo.value
+  if (!item) return
+  const memberId = session.currentUser.id
+  try { const updated = await feedbackDiscovery(item, { dismissed: false }); if (memberId !== session.currentUser.id) return; discoveryUndo.value = null; discoveries.current.value = updated }
+  catch { toast('撤销没有保存成功，请重试', 'error') }
+}
+function selectDiscoveryMode(mode: 'notes' | 'saved' | 'legacy') { discoveryMode.value = mode; filterOpen.value = false }
+watch(() => session.currentUser.id, () => { discoveryUndo.value = null; discoveryMode.value = 'notes'; if (undoTimer) clearTimeout(undoTimer) })
+onBeforeUnmount(() => { if (undoTimer) clearTimeout(undoTimer) })
 onMounted(() => void loadPins())
 </script>
 
@@ -886,13 +917,17 @@ onMounted(() => void loadPins())
               <div class="filter-group"><strong>图片</strong><div class="filter-options"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'yes', label: '有图' }, { value: 'no', label: '无图' }]" :key="option.value" type="button" :aria-pressed="imageFilter === option.value" @click="imageFilter = option.value as typeof imageFilter">{{ option.label }}</button></div></div>
               <div class="filter-group"><strong>更新时间</strong><div class="filter-options"><button v-for="option in [{ value: 'all', label: '不限' }, { value: 'today', label: '今天' }, { value: 'yesterday', label: '昨天' }, { value: 'earlier', label: '以前' }]" :key="option.value" type="button" :aria-pressed="timeFilter === option.value" @click="timeFilter = option.value as typeof timeFilter">{{ option.label }}</button></div></div>
               <div class="filter-group"><strong>排序</strong><select v-model="sort" aria-label="小记排序"><option value="updatedDesc">最近更新</option><option value="createdDesc">最近创建</option><option value="updatedAsc">最早更新</option></select></div>
+              <div class="filter-group"><strong>查看</strong><div class="filter-options"><button type="button" :aria-pressed="discoveryMode === 'notes'" @click="selectDiscoveryMode('notes')">小记</button><button type="button" :aria-pressed="discoveryMode === 'saved'" @click="selectDiscoveryMode('saved')">已收藏的发现</button><button type="button" :aria-pressed="discoveryMode === 'legacy'" @click="selectDiscoveryMode('legacy')">旧版生成内容</button></div></div>
               <div class="filter-footer"><button type="button" @click="addingTag = !addingTag; filterOpen = false">新增标签</button><button type="button" @click="managingTags = !managingTags; filterOpen = false">管理标签</button><button type="button" @click="resetFilters">清除筛选</button></div>
             </div>
           </div>
           <button class="reader-toggle" type="button" aria-label="阅读模式" :disabled="!matching.length" @click="startReading(undefined, $event)"><i class="ri-book-open-line" aria-hidden="true"></i><span>阅读模式</span></button>
-          <button class="reader-toggle mining-toggle" type="button" aria-haspopup="dialog" :aria-expanded="miningOpen" @click="openMining"><i class="ri-sparkling-2-line"></i><span>AI 挖掘</span></button>
           <button class="refresh" :disabled="loading || refreshing" :aria-busy="refreshing" title="刷新清单" aria-label="刷新小记清单" @click="reload"><i :class="refreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i></button>
         </div>
+        <NoteDiscoverySavedList v-if="discoveryMode !== 'notes'" :mode="discoveryMode" :member-id="session.currentUser.id" @source="openDiscoverySource" />
+        <template v-else>
+        <NoteDiscoveryInline v-if="discoveries.current.value" :item="discoveries.current.value" @changed="discoveryChanged" @expanded="discoveryExpanded = $event" @source="openDiscoverySource" />
+        <p v-if="discoveryUndo" class="discovery-undo" role="status">已收起这条发现 <button type="button" @click="undoDiscovery">撤销</button></p>
         <div v-if="managingTags" class="new-tag-form" aria-label="标签管理">
           <select v-model="sourceTag" aria-label="待处理标签" :disabled="tagSaving"><option value="">选择标签</option><option v-for="tag in availableTags" :key="tag" :value="tag">{{ tag }}</option></select>
           <button :disabled="tagSaving || !sourceTag" @click="manageTag(false)">删除标签（保留文章）</button>
@@ -949,17 +984,12 @@ onMounted(() => void loadPins())
           </div></Teleport>
         </article>
         <button v-if="matching.length > limit" class="load-more" @click="limit += PAGE_SIZE">加载更多（还有 {{ matching.length - limit }} 条）</button>
+        </template>
         <ContextActionMenu ref="contextMenu" />
       </section>
     </div>
     <button v-if="showBackToTop" class="notes-back-top" type="button" aria-label="回到顶部" title="回到顶部" @click="backToTop"><i class="ri-rocket-2-line" aria-hidden="true"></i></button>
     <Teleport to="body">
-      <div v-if="miningOpen" class="mining-modal-mask" @click.self="closeMining">
-        <section ref="miningDialog" class="mining-modal" role="dialog" aria-modal="true" aria-label="AI 挖掘小记" tabindex="-1">
-          <button class="mining-modal-close" type="button" aria-label="关闭 AI 挖掘" title="关闭（Esc）" @click="closeMining"><i class="ri-close-line"></i></button>
-          <NoteMiningPanel compact @open-note="openMiningSource" />
-        </section>
-      </div>
       <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :class="{ 'reader-full': readerMode === 'full', 'directory-open': readerDirectoryOpen }" :inert="previewImage ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
         <header class="reader-topbar"><strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>只读</small></strong><div class="reader-layout-actions"><div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div><button ref="readerClose" type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line" aria-hidden="true"></i><span>关闭</span></button></div></header>
         <div class="reader-layout">
@@ -1118,18 +1148,10 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .load-more { display: block; margin: 20px auto; }
 .reader-toggle { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); white-space: nowrap; }
 .reader-toggle i { margin-right: 5px; }
-.mining-toggle { color: var(--wao-primary-text); }
-.mining-modal-mask { position: fixed; inset: 0; z-index: 1160; display: grid; place-items: center; padding: 24px; background: rgba(24, 20, 38, .42); backdrop-filter: blur(5px); }
-.mining-modal { position: relative; width: min(980px, calc(100vw - 48px)); max-height: min(84dvh, 760px); overflow: auto; box-sizing: border-box; padding: 28px 20px 20px; border: 1px solid var(--wao-line); border-radius: 22px; background: var(--wao-bg-card); box-shadow: 0 28px 90px rgba(30, 24, 55, .24); outline: none; animation: mining-modal-in .18s ease-out; }
-.mining-modal:focus-visible { outline: 3px solid var(--wao-primary); outline-offset: 3px; }
-.mining-modal-close { position: sticky; z-index: 2; top: -18px; float: right; display: grid; place-items: center; width: 34px; height: 34px; margin: -10px -10px 0 0; padding: 0; border: 1px solid var(--wao-line-control); border-radius: 50%; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 19px; box-shadow: 0 3px 12px rgba(30, 24, 55, .1); }
-@keyframes mining-modal-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
 .note-read-action { position: absolute; right: 13px; bottom: 8px; z-index: 1; display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; background: var(--wao-bg-card); color: var(--wao-primary-text); border: 1px solid var(--wao-line-control); box-shadow: 0 2px 8px rgba(30,24,55,.08); }
 .note-read-action:hover { border-color: var(--wao-primary); }
 .note-read-action { transition: border-color .16s, background-color .16s; }
 .note-card.expanded .note-read-action { position: static; display: inline-flex; width: fit-content; margin: 12px 0 0 auto; }
-.mining-toggle { opacity: 0; visibility: hidden; transition: opacity .16s, visibility .16s; }
-.notes-list:hover .mining-toggle, .notes-list:focus-within .mining-toggle { opacity: 1; visibility: visible; }
 .notes-reader { position: fixed; inset: 0; z-index: 1150; display: flex; flex-direction: column; background: var(--wao-bg-card); color: var(--wao-text-2); }
 .reader-topbar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid var(--wao-line); }
 .reader-topbar strong { display: flex; align-items: center; gap: 7px; color: var(--wao-text-1); font-size: 15px; }
@@ -1200,15 +1222,15 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 }
 @media (max-width: 1100px) { .writing-resizer { display: none; } .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } .search { flex: 1 1 50%; } }
 @media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
-@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 14px 12px 16px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .mining-modal-mask { align-items: end; padding: 10px; } .mining-modal { width: 100%; max-height: calc(100dvh - 20px); padding: 24px 6px 10px; border-radius: 18px; } .mining-modal-close { margin-right: 4px; } .list-summary { flex-wrap: wrap; } }
+@media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 14px 12px 16px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .list-summary { flex-wrap: wrap; } }
 @media (max-width: 600px) { .note-content.has-images { grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; } .note-images { max-height: 150px; padding-left: 7px; } }
-@media (hover: none) { .stage-list-complete, .card-quick-actions, .note-read-action, .mining-toggle { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
+@media (hover: none) { .stage-list-complete, .card-quick-actions, .note-read-action { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }
 @media (max-width: 600px) {
   .search { flex: 1 1 100%; }
   .filter-control { position: static; }
   .filter-panel { width: 100%; max-width: 340px; }
 }
-@media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top, .mining-modal { transition: none; animation: none; } }
+@media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top { transition: none; animation: none; } }
 .search button { flex: none; white-space: nowrap; border: 0; background: transparent; color: var(--wao-primary-text); cursor: pointer; padding: 4px; }
 .note-search-hit { width: 100%; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; border: 0; border-radius: 6px; background: var(--wao-bg-sub); color: var(--wao-text-weak); padding: 8px; margin: 6px 0; cursor: pointer; }
 .note-search-hit mark { background: #fff0ae; color: #604a08; }

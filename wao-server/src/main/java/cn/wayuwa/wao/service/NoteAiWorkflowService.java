@@ -259,7 +259,7 @@ public class NoteAiWorkflowService {
         if (!"SUCCEEDED".equals(result.status())) return workflow;
         String title = result.polished();
         if (!StringUtils.hasText(title)) return workflow.withTitle(FAILED, jobId, workflow.baseRev(), doc.title(), "AI 未返回可用标题");
-        DocDto saved = knowledge.updateDoc(doc.id(), new PatchDocRequest(title, null, null, null, null, workflow.baseRev()));
+        DocDto saved = knowledge.updateDerivedNote(doc.id(), new PatchDocRequest(title, null, null, null, null, workflow.baseRev()));
         return workflow.withTitle(DONE, jobId, saved.rev(), title, null);
     }
 
@@ -281,7 +281,7 @@ public class NoteAiWorkflowService {
             if (!"SUCCEEDED".equals(result.status())) return workflow;
             if (!StringUtils.hasText(result.imageUrl())) return workflow.withImage(FAILED, runId, workflow.baseRev(), workflow.sourceMarkdownHash(), "配图任务未返回图片");
             RichDocContentDto content = withCover(doc.content(), result.imageUrl());
-            DocDto saved = knowledge.updateDoc(doc.id(), new PatchDocRequest(null, null, content, null, null, workflow.baseRev()));
+            DocDto saved = knowledge.updateDerivedNote(doc.id(), new PatchDocRequest(null, null, content, null, null, workflow.baseRev()));
             return workflow.withImage(DONE, runId, saved.rev(), digest(content.markdown()), null);
         } catch (RuntimeException ex) {
             if (ex.getMessage() != null && ex.getMessage().contains("已有一张总览图正在生成")) return workflow;
@@ -308,8 +308,8 @@ public class NoteAiWorkflowService {
                 ? markdown.substring(0, markdown.indexOf('\n') + 1) + "\n" : "";
         String polished = cover + result.polished().replaceFirst("^!\\[文章总览图]\\([^\\n]+\\)\\s*", "").strip();
         polishVersions.save(workflow.memberId(), workflow.docId(),
-                new SaveNotePolishVersionRequest(markdown, polished));
-        DocDto saved = knowledge.updateDoc(doc.id(), new PatchDocRequest(null, null,
+                new SaveNotePolishVersionRequest(markdown, polished,jobId));
+        DocDto saved = knowledge.updateDerivedNote(doc.id(), new PatchDocRequest(null, null,
                 new RichDocContentDto(1, null, polished), null, null, workflow.baseRev()));
         return workflow.withPolish(DONE, jobId, null).withContent(saved.rev(), digest(polished));
     }

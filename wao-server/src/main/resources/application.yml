@@ -86,6 +86,14 @@ wao:
     # 回退时可设 WAO_CHAT_REVIEW_PROCESSING_ENABLED=false 停止新的后台推进，已归档和报告不删除。
     processing-enabled: ${WAO_CHAT_REVIEW_PROCESSING_ENABLED:true}
   ai:
+    discoveries:
+      # 只在经过本机验收的执行主机显式开启；成员仍须在个人设置另行同意。
+      enabled: ${WAO_NOTE_DISCOVERIES_ENABLED:false}
+      member-ids: ${WAO_NOTE_DISCOVERIES_MEMBER_IDS:}
+      document-ids: ${WAO_NOTE_DISCOVERIES_DOCUMENT_IDS:}
+      stable-seconds: ${WAO_NOTE_DISCOVERIES_STABLE_SECONDS:120}
+      member-daily-calls: ${WAO_NOTE_DISCOVERIES_MEMBER_DAILY_CALLS:8}
+      global-daily-calls: ${WAO_NOTE_DISCOVERIES_GLOBAL_DAILY_CALLS:60}
     read-only:
       # 非阻塞内部任务允许等待 Runner 上线；领取后改按实际执行时间独立计时。
       queued-timeout: ${WAO_AI_READ_ONLY_QUEUED_TIMEOUT:60m}

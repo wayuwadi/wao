@@ -15,6 +15,10 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface DocMapper extends BaseMapper<DocEntity> {
 
+    /** 保存前固定文档锁顺序；成员发现信号随后在同一事务更新。 */
+    @Select("SELECT * FROM doc WHERE id=#{id} FOR UPDATE")
+    DocEntity selectByIdForUpdate(@Param("id") String id);
+
     /** 按主键只读有效文档的版本；不存在或已删除时返回 null，历史空版本视为 1。 */
     @Select("SELECT COALESCE(rev, 1) FROM doc WHERE id = #{id} AND deleted_at IS NULL")
     Integer selectAliveRevision(@Param("id") String id);

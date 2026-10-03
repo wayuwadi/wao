@@ -153,6 +153,7 @@ async function run(job: AutoJob) {
   let stage: 'title' | 'image' | 'polish' | 'tags' = 'title'
   const stageErrors: string[] = []
   let polishOutput: string | undefined
+  let verifiedPolishJobId: string | undefined
   try {
     job.error = undefined
     progress(job)
@@ -362,6 +363,7 @@ async function run(job: AutoJob) {
         if (!result.polished?.trim()) throw new Error('AI 未返回可用润色正文')
         if (!activeJob(job)) return
         polishOutput = result.polished
+        verifiedPolishJobId = result.id
         job.polishTerminalFailed = false
       } catch (cause) {
         if (!activeJob(job)) return
@@ -394,7 +396,7 @@ async function run(job: AutoJob) {
         }
         const sourceMarkdown = resolvedRichContent(latest).markdown
         if (noteTextForPolish(sourceMarkdown) !== articleText) throw new Error('小记正文已变化，旧润色任务不会覆盖新内容；请重试')
-        return saveNotePolishVersion(job.docId, sourceMarkdown, polishOutput!)
+        return verifiedPolishJobId ? saveNotePolishVersion(job.docId, sourceMarkdown, polishOutput!, verifiedPolishJobId) : saveNotePolishVersion(job.docId, sourceMarkdown, polishOutput!)
       })
       if (!activeJob(job)) return
       if (!version) return

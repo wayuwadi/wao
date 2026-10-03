@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NoteDiscoveryPreference from '@/components/notes/NoteDiscoveryPreference.vue'
 import { computed, onUnmounted, reactive, ref, watch, watchEffect } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
@@ -796,6 +797,7 @@ async function bindFeishu() {
               </div>
             </template>
           </div>
+          <NoteDiscoveryPreference />
           <div class="card thin note-ai-defaults-preferences">
             <div class="card-row wrap">
               <div>

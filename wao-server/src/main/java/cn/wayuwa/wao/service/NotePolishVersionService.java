@@ -16,6 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class NotePolishVersionService {
     private final KnowledgeService knowledge;
     private final NotePolishVersionMapper versions;
+    @org.springframework.beans.factory.annotation.Autowired
+    private TextPolishJobService jobs;
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.wayuwa.wao.mapper.TextPolishJobMapper jobMapper;
 
     public NotePolishVersionService(KnowledgeService knowledge, NotePolishVersionMapper versions) {
         this.knowledge = knowledge;
@@ -34,14 +38,27 @@ public class NotePolishVersionService {
     public NotePolishVersionDto save(String memberId, String docId, SaveNotePolishVersionRequest request) {
         versions.lockDoc(docId);
         DocDto doc = knowledge.getDoc(docId);
+        if(!Objects.equals(doc.author(),memberId))throw new cn.wayuwa.wao.common.NotFoundException("小记不存在");
         if (!KnowledgeService.NOTES_KB_ID.equals(doc.kbId())) throw new BadRequestException("只有小记支持自动润色对照");
         if (doc.content() == null || !Objects.equals(request.sourceMarkdown(), doc.content().markdown())) {
             throw new ConflictException("小记正文已更新，旧润色结果未覆盖新内容；请重新润色");
         }
         String polished = request.polishedMarkdown().trim();
         if (polished.isBlank()) throw new BadRequestException("润色结果为空，请重试");
+        String jobId=request.aiJobId();
+        if(jobId!=null) {
+            var job=jobMapper.findOwned(jobId,memberId);
+            if(job==null||!"NOTE_BODY".equals(job.kind())||!body(job.originalText()).equals(body(request.sourceMarkdown())))
+                throw new BadRequestException("润色来源任务与本小记不一致");
+            var result=jobs.get(memberId,jobId);
+            if(!"SUCCEEDED".equals(result.status())||!body(polished).equals(body(result.polished())))
+                throw new BadRequestException("润色结果与已完成任务不一致");
+        }
         versions.upsert(new NotePolishVersionMapper.Version(docId, memberId,
                 request.sourceMarkdown(), polished));
+        versions.markVerified(docId,memberId,jobId,jobId==null?null:NoteDiscoveryIndexService.hash(body(request.sourceMarkdown())),
+                jobId==null?null:NoteDiscoveryIndexService.hash(body(polished)),jobId==null?null:doc.rev());
         return new NotePolishVersionDto(docId, request.sourceMarkdown(), polished);
     }
+    private String body(String text) { return NoteDiscoveryIndexService.normalize(text==null?"":text.replaceFirst("^!\\[文章总览图]\\([^\\n]+\\)\\s*","")); }
 }

@@ -76,6 +76,12 @@ import org.springframework.util.StringUtils;
  */
 @Service
 public class KnowledgeService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private NoteDiscoveryChangeService discoveryChanges;
+
+    private void discoverySaved(DocEntity doc, String origin) {
+        if (discoveryChanges != null) discoveryChanges.saved(doc, origin);
+    }
 
     /** 回收站保留天数：删除后 7 天内可恢复，之后自动彻底删除。 */
     public static final int TRASH_DAYS = 7;
@@ -816,6 +822,7 @@ public class KnowledgeService {
                 existing.setUpdatedAt(LocalDateTime.now());
                 docMapper.updateContentSnapshot(existing);
             }
+            discoverySaved(existing, "USER");
             return toDto(existing);
         }
         KbEntity kb = notesKb();
@@ -1178,6 +1185,7 @@ public class KnowledgeService {
         e.setTagsJson(tags == null ? null : write(tags));
         e.setOrd(nextOrd(count));
         docMapper.insert(e);
+        discoverySaved(e, "USER");
         return toDto(e);
     }
 
@@ -1276,7 +1284,20 @@ public class KnowledgeService {
     }
 
     /** 局部更新文档：标题 / 正文块 / 出链 / 所在文件夹。正文或标题变化时版本号 +1。 */
+    @Transactional
     public DocDto updateDoc(String id, PatchDocRequest req) {
+        return updateDocWithOrigin(id, req, "USER");
+    }
+
+    /** 后台已验证 AI 成果的内部写入；不制造新的用户事实或独立证据。 */
+    @Transactional
+    public DocDto updateDerivedNote(String id, PatchDocRequest req) {
+        return updateDocWithOrigin(id, req, "AI_DERIVED");
+    }
+
+    private DocDto updateDocWithOrigin(String id, PatchDocRequest req, String origin) {
+        if("USER".equals(origin)&&req.content()==null&&req.blocks()==null)origin="METADATA";
+        docMapper.selectByIdForUpdate(id);
         DocEntity e = requireDoc(id);
         if (e.getAutoSyncScope() != null && !e.getAutoSyncScope().isBlank() && e.getAutoSyncDate() != null
                 && e.getAutoSyncVersion() != null) {
@@ -1329,6 +1350,7 @@ public class KnowledgeService {
         } else {
             docMapper.updateContentSnapshot(e);
         }
+        discoverySaved(e, origin);
         return toDto(e);
     }
 
@@ -1423,6 +1445,7 @@ public class KnowledgeService {
             e.setArchivedAt(now);
             e.setArchivedBy(memberId);
         }
+        discoverySaved(e, "REMOVED");
         return toDto(e);
     }
 
@@ -1432,6 +1455,7 @@ public class KnowledgeService {
      * @param id 文档 id
      * @return 已恢复到日常文档树的文档
      */
+    @Transactional
     public DocDto unarchiveDoc(String id) {
         DocEntity e = requireDoc(id);
         requireKb(e.getKbId());
@@ -1443,6 +1467,7 @@ public class KnowledgeService {
             e.setArchivedAt(null);
             e.setArchivedBy(null);
         }
+        discoverySaved(e, "RESTORED");
         return toDto(e);
     }
 
@@ -1459,6 +1484,7 @@ public class KnowledgeService {
         d.setDeletedBy(memberId);
         d.setCascadeDel(cascade);
         docMapper.markDeleted(d.getId(), now, memberId, cascade);
+        discoverySaved(d, "REMOVED");
     }
 
     // ---------------- 回收站 ----------------
@@ -1582,6 +1608,7 @@ public class KnowledgeService {
         d.setDeletedBy(null);
         d.setCascadeDel(false);
         docMapper.clearDeleted(d.getId());
+        discoverySaved(d, "RESTORED");
     }
 
     /**
