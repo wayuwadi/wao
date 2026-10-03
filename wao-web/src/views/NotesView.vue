@@ -1045,7 +1045,9 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-search-hit { width: 100%; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; border: 0; border-radius: 6px; background: var(--wao-bg-sub); color: var(--wao-text-weak); padding: 8px; margin: 6px 0; cursor: pointer; }
 .note-search-hit mark { background: #fff0ae; color: #604a08; }
 
-.note-edit-action { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; color: var(--wao-primary-text); background: var(--wao-bg-hover); font-size: 11px; white-space: nowrap; }
+.note-edit-action { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; color: var(--wao-primary-text); background: var(--wao-bg-hover); font-size: 11px; white-space: nowrap; opacity: 0; visibility: hidden; }
+.note-card:hover .note-edit-action, .note-card:focus-within .note-edit-action { opacity: 1; visibility: visible; }
+@media (hover: none) { .note-edit-action { opacity: 1; visibility: visible; } }
 .notes-page button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 @media (max-width: 600px) {
   .note-meta-trailing { flex-wrap: wrap; gap: 6px; max-width: 100%; }
