@@ -28,6 +28,8 @@ vi.mock('@/api/textPolish', () => ({ fetchTextPolishWorkspace: vi.fn().mockResol
 /** Tiptap 需要真实 DOM 与一帧时间来完成挂载。 */
 async function mountEditor(props: {
   modelValue: string
+  searchTerm?: string
+  searchRequest?: string
   readonly?: boolean
   autofocus?: boolean
   previewImages?: boolean
@@ -74,6 +76,17 @@ async function mountEditor(props: {
 }
 
 describe('异步挂载焦点保护', () => {
+  it('正文命中只定位选区，不改内容或触发保存，只读模式不提供替换', async () => {
+    const w = await mountEditor({ modelValue: '前文 桂**花**路线 后文', readonly: true, advanced: true, searchTerm: '桂花' })
+    await flushPromises()
+    const editor = (w.vm as unknown as { editor: Editor }).editor
+    expect(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to)).toBe('桂花')
+    expect(w.findAll('.content-search-hit').map(node => node.text()).join('')).toBe('桂花')
+    expect(w.emitted('content-change')).toBeUndefined()
+    expect(w.find('[aria-label="替换内容"]').exists()).toBe(false)
+    expect(w.text()).toContain('1 / 1')
+    w.unmount()
+  })
   it('标题已获得焦点时，正文就绪不能抢走焦点或选区', async () => {
     const title = document.createElement('input')
     title.value = '继续修改标题'
@@ -1381,4 +1394,15 @@ describe('跨应用复制选区', () => {
     expect(event.defaultPrevented).toBe(true)
     w.unmount()
   })
+})
+
+it('同一关键词再次定位时重新检查最新草稿，不把旧命中当作当前结果', async () => {
+  const w = await mountEditor({ modelValue: '桂花原文', searchTerm: '桂花', searchRequest: '1', advanced: true })
+  const e = (w.vm as unknown as { editor: Editor }).editor
+  e.commands.setContent('<p>尚未保存的松鼠草稿</p>')
+  await w.setProps({ searchRequest: '2' }); await flushPromises()
+  expect(w.text()).toContain('当前内容未找到')
+  expect(w.find('.content-search-hit').exists()).toBe(false)
+  expect(e.getText()).toBe('尚未保存的松鼠草稿')
+  w.unmount()
 })

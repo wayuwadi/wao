@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { editorSearchRanges } from '@/utils/contentSearch'
 /**
  * 所见即所得的描述编辑器 —— 全项目文字描述输入的统一控件。
  *
@@ -26,7 +27,8 @@ import { Markdown } from '@tiptap/markdown'
 import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
 import { TableKit } from '@tiptap/extension-table'
 import { CellSelection } from '@tiptap/pm/tables'
-import { NodeSelection, Plugin } from '@tiptap/pm/state'
+import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { closeHistory } from '@tiptap/pm/history'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { Mathematics } from '@tiptap/extension-mathematics'
@@ -125,6 +127,9 @@ export interface EditorPeer {
 const props = withDefaults(
   defineProps<{
     modelValue: string
+    /** Read-only search selection; never inserts or replaces content. */
+    searchTerm?: string
+    searchRequest?: string
     placeholder?: string
     /** 编辑区最小高度（px）。 */
     minHeight?: number
@@ -478,11 +483,31 @@ function updateCharacterCount(e: Editor) {
 const toolbarOpen = ref(false)
 
 const autofocusOrigin = typeof document === 'undefined' ? null : document.activeElement
+const searchHighlightKey = new PluginKey<DecorationSet>('contentSearchHighlight')
+const SearchHighlight = Extension.create({
+  name: 'contentSearchHighlight',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: searchHighlightKey,
+      state: {
+        init: () => DecorationSet.empty,
+        apply(tr, previous) {
+          const hit = tr.getMeta(searchHighlightKey) as { from: number; to: number } | null | undefined
+          if (hit !== undefined) return hit ? DecorationSet.create(tr.doc, [Decoration.inline(hit.from, hit.to, { class: 'content-search-hit' })]) : DecorationSet.empty
+          return tr.docChanged ? (tr.before.textContent === tr.doc.textContent ? previous.map(tr.mapping, tr.doc) : DecorationSet.empty) : previous
+        },
+      },
+      props: { decorations: state => searchHighlightKey.getState(state) },
+    })]
+  },
+})
+
 const editor = useEditor({
   content: props.document ?? props.modelValue,
   contentType: props.document ? 'json' : 'markdown',
   editable: !props.readonly,
   extensions: [
+    SearchHighlight,
     OrderedListContinuation,
     StarterKit.configure({
       // 只有知识库文档开放 h1；描述场景仍限制成 h2–h4，避免压过页面标题。
@@ -1408,24 +1433,18 @@ function runFind(next = true) {
     findStatus.value = ''
     return
   }
-  const matches: number[] = []
-  e.state.doc.descendants((node, pos) => {
-    if (!node.isText || !node.text) return
-    let offset = node.text.indexOf(needle)
-    while (offset >= 0) {
-      matches.push(pos + offset)
-      offset = node.text.indexOf(needle, offset + Math.max(1, needle.length))
-    }
-  })
+  const matches = editorSearchRanges(e.state.doc, needle)
   const start = next ? e.state.selection.to : 0
-  const from = matches.find((position) => position >= start) ?? matches[0]
-  if (from == null) {
-    findStatus.value = '未找到'
+  const match = matches.find(item => item.from >= start) ?? matches[0]
+  if (!match) {
+    e.view.dispatch(e.state.tr.setMeta(searchHighlightKey, null))
+    findStatus.value = '当前内容未找到，可能已有未保存修改'
     return
   }
-  const to = Math.min(e.state.doc.content.size, from + needle.length)
-  e.chain().focus().setTextSelection({ from, to }).scrollIntoView().run()
-  findStatus.value = `${matches.indexOf(from) + 1} / ${matches.length}`
+  e.chain().focus().setTextSelection(match).scrollIntoView().run()
+  e.view.dispatch(e.state.tr.setMeta(searchHighlightKey, match))
+  e.view.dom.querySelector('.content-search-hit')?.scrollIntoView?.({ block: 'nearest' })
+  findStatus.value = `${matches.indexOf(match) + 1} / ${matches.length}`
 }
 
 function replaceCurrent() {
@@ -1871,7 +1890,15 @@ async function copyFormatted() {
   const ok = await copyRichContent(e.getHTML(), e.getMarkdown())
   toast(ok ? '已复制，支持富文本与 Markdown 粘贴' : '复制失败，请手动选择复制', ok ? 'ri-file-copy-line' : 'ri-error-warning-line')
 }
-defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection })
+async function focusSearch(term: string) {
+  findText.value = term
+  findOpen.value = !!term
+  await nextTick()
+  if (term) runFind(false)
+}
+watch(findOpen, open => { if (!open && editor.value) editor.value.view.dispatch(editor.value.state.tr.setMeta(searchHighlightKey, null)) })
+watch([() => props.searchTerm, editor, () => props.searchRequest], ([term], previous) => { if (term) void focusSearch(term); else if (previous?.[0]) findOpen.value = false }, { immediate: true })
+defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, focusSearch })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
@@ -1956,8 +1983,8 @@ onBeforeUnmount(() => {
     </Teleport>
     <form v-if="advanced && findOpen" class="find-panel" @submit.prevent="runFind()">
       <input v-model="findText" placeholder="查找" aria-label="查找内容" />
-      <input v-model="replaceText" placeholder="替换为" aria-label="替换内容" />
-      <button type="submit">下一个</button><button type="button" @click="replaceCurrent">替换</button>
+      <input v-if="!readonly" v-model="replaceText" placeholder="替换为" aria-label="替换内容" />
+      <button type="submit">下一个</button><button v-if="!readonly" type="button" @click="replaceCurrent">替换</button>
       <span>{{ findStatus }}</span><button type="button" aria-label="关闭查找替换" @click="findOpen = false"><i class="ri-close-line"></i></button>
     </form>
     <div v-if="peerMarks.length" class="peer-track" aria-hidden="true">
@@ -2374,6 +2401,7 @@ onBeforeUnmount(() => {
   box-shadow: var(--wao-shadow-modal);
 }
 .tool-palette > div button { width: 28px; min-width: 28px; height: 28px; border: 2px solid var(--wao-bg-card); box-shadow: 0 0 0 1px var(--wao-line-control); }
+:deep(.content-search-hit) { background: #ffec99; color: #604a08; border-radius: 2px; }
 .find-panel {
   position: sticky;
   top: 43px;
@@ -3173,7 +3201,7 @@ onBeforeUnmount(() => {
 @media (max-width: 680px) {
   .advanced-toolbar { top: 0; border-radius: 8px; }
   .find-panel { flex-wrap: wrap; top: 43px; }
-  .find-panel span { display:none; }
+  .find-panel span { white-space: normal; overflow-wrap: anywhere; }
   .md-body :deep(div[data-columns]) { grid-template-columns:1fr !important; }
   .shortcut-grid { grid-template-columns:1fr; }
 }

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router'
+import { contentHit, documentSearchText } from '@/utils/contentSearch'
 import { docShareUrl } from '@/utils/share'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
@@ -146,7 +148,10 @@ function setNoteComposer(id: string, value: unknown) {
   if (composer?.save) noteComposers.set(id, composer)
   else noteComposers.delete(id)
 }
+const route = useRoute()
 const query = ref('')
+const searchFocus = ref({ id: '', term: '' })
+const searchRequest = ref(0)
 const sort = ref<'updatedDesc' | 'createdDesc' | 'updatedAsc'>('updatedDesc')
 const imageFilter = ref<'all' | 'yes' | 'no'>('all')
 const timeFilter = ref<'all' | 'today' | 'yesterday' | 'earlier'>('all')
@@ -465,7 +470,7 @@ const matching = computed(() => {
     && (!selectedAuthor.value || doc.author === selectedAuthor.value)
     && (imageFilter.value === 'all' || (notePreviewImages(displayedContent(doc)).length > 0) === (imageFilter.value === 'yes'))
     && inTimeRange(doc.updated, timeFilter.value)
-    && (!needle || `${displayedTitle(doc)}\n${displayedMarkdown(doc)}\n${displayedTags(doc).join(' ')}`.toLocaleLowerCase().includes(needle)))
+    && (!needle || `${displayedTitle(doc)}\n${documentSearchText({ blocks: doc.blocks, content: displayedContent(doc) })}\n${displayedTags(doc).join(' ')}`.toLocaleLowerCase().includes(needle)))
 })
 function inTimeRange(value: string, range: typeof timeFilter.value) {
   if (range === 'all') return true
@@ -587,17 +592,56 @@ function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish' | 'tags') {
   void retryOrStart(note, stage)
 }
 // 筛选、分页或远端刷新不能卸载正在输入的卡片，尤其是浏览器草稿写入失败时。
-const retainedEdits = computed(() => notes.value.filter(note => editingIds.value.includes(note.id)
+const retainedEdits = computed(() => notes.value.filter(note => (editingIds.value.includes(note.id) || searchFocus.value.id === note.id)
   && !matching.value.slice(0, limit.value).some(item => item.id === note.id)))
 const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
 const notePreviews = computed(() => new Map(visible.value.map(note => [note.id, cardImages(note)])))
 const loading = computed(() => !refreshing.value && (['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge)))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
-watch([query, selectedTag, sort, imageFilter, timeFilter], () => {
-  limit.value = PAGE_SIZE
+let searchReturn: { top: number; windowTop: number; limit: number; expanded: string[] } | null = null
+watch(query, async (value, previous) => {
+  if (value && !previous) searchReturn = { top: notesList.value?.scrollTop ?? 0, windowTop: window.scrollY, limit: limit.value, expanded: [...expandedIds.value] }
   confirmingDeleteId.value = ''
+  if (!value && searchReturn) {
+    limit.value = searchReturn.limit; expandedIds.value = searchReturn.expanded
+    searchFocus.value = { id: '', term: '' }
+    const restore = searchReturn; searchReturn = null
+    await nextTick()
+    notesList.value?.scrollTo?.({ top: restore.top })
+    if (window.scrollY !== restore.windowTop) window.scrollTo({ top: restore.windowTop })
+  } else { limit.value = PAGE_SIZE; notesList.value?.scrollTo?.({ top: 0 }) }
+})
+watch([selectedTag, sort, imageFilter, timeFilter], () => {
+  limit.value = PAGE_SIZE; confirmingDeleteId.value = ''
   notesList.value?.scrollTo?.({ top: 0 })
 })
+function noteSearchHit(note: Doc) {
+  const term = query.value
+  const title = contentHit(displayedTitle(note), term)
+  const body = contentHit(documentSearchText({ blocks: note.blocks, content: displayedContent(note) }), term)
+  const tags = contentHit(displayedTags(note).join(' '), term)
+  return title ? { ...title, field: '标题' } : body ? { ...body, field: '正文' } : tags ? { ...tags, field: '标签' } : null
+}
+async function locateSearchNote(id: string, term: string, body = true) {
+  if (!notes.value.some(note => note.id === id)) return
+  searchFocus.value = { id, term: body ? term : '' }; searchRequest.value++
+  if (!expandedIds.value.includes(id)) expandedIds.value.push(id)
+  await nextTick()
+  const card = Array.from(notesList.value?.querySelectorAll<HTMLElement>('[data-note-id]') ?? []).find(el => el.dataset.noteId === id)
+  card?.scrollIntoView?.({ block: 'center' })
+  if (!body) card?.focus({ preventScroll: true })
+}
+let lastSearchRoute = ''
+watch([() => route.query.findRequest, () => route.query.note, () => route.query.find, () => data.loadStates.docs, () => data.loadStates.knowledge], () => {
+  const id = typeof route.query.note === 'string' ? route.query.note : ''
+  const term = typeof route.query.find === 'string' ? route.query.find : ''
+  const key = `${id}:${term}:${route.query.findRequest ?? ''}`
+  if (id && term && data.loadStates.docs === 'loaded' && data.loadStates.knowledge === 'loaded' && key !== lastSearchRoute) {
+    lastSearchRoute = key
+    void locateSearchNote(id, term, route.query.match !== 'title')
+  }
+}, { immediate: true })
+
 function onCreated(id: string) {
   query.value = ''
   selectedTag.value = ''
@@ -708,7 +752,7 @@ onMounted(() => void loadPins())
       </aside>
       <section ref="notesList" class="notes-list" aria-label="小记清单" @scroll.passive="onNotesScroll">
         <div class="list-toolbar">
-          <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"></label>
+          <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"><button v-if="query" type="button" aria-label="清除小记查找" @click="query = ''">清除</button></label>
           <div ref="filterControl" class="filter-control">
             <button class="filter-toggle" type="button" :aria-expanded="filterOpen" aria-controls="note-filter-panel" @click="filterOpen = !filterOpen"><i class="ri-equalizer-line"></i>筛选与排序<span v-if="activeFilterCount" class="filter-count">{{ activeFilterCount }}</span><i class="ri-arrow-down-s-line"></i></button>
             <div v-if="filterOpen" id="note-filter-panel" class="filter-panel" role="group" aria-label="小记筛选与排序">
@@ -752,12 +796,16 @@ onMounted(() => void loadPins())
             </div>
             <span class="note-meta-trailing"><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-controls="confirmingDeleteId === note.id ? `note-delete-confirm-${note.id}` : undefined" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
             <p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id) && workflowMessage(note.id))" class="workflow-status" role="status">{{ noteDrafts[note.id] ? '草稿已保护 · 有修改待保存' : workflowMessage(note.id) }} <button v-if="!noteDrafts[note.id] && (serverFailed(note.id) || canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成'))" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '重试中…' : '重试' }}</button></p>
-          <NoteComposer v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags" :workflow-message="workflowMessage(note.id)"
+          <button v-if="query && noteSearchHit(note)" class="note-search-hit" type="button" @click.stop="locateSearchNote(note.id, query, noteSearchHit(note)?.field === '正文')">
+            {{ noteSearchHit(note)!.field }}命中 · {{ noteSearchHit(note)!.before }}<mark>{{ noteSearchHit(note)!.match }}</mark>{{ noteSearchHit(note)!.after }} <span>定位</span>
+          </button>
+          <p v-if="searchFocus.id === note.id && !matching.some(item => item.id === note.id)" class="workflow-status">搜索定位 · 原有筛选已保留，额外显示此条</p>
+          <NoteComposer :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags" :workflow-message="workflowMessage(note.id)"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @draft-change="onDraftChange(note.id, $event)" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
           <div class="note-heading"><h2>{{ displayedTitle(note) }}</h2><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
           <div class="note-content" :class="{ 'has-images': notePreviews.get(note.id)?.length }" @click="openInlineImage">
-            <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
+            <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
             <aside v-if="notePreviews.get(note.id)?.length" class="note-images" :class="{ expanded: isNotePreviewExpanded(note.id) }" aria-label="小记图片总览">
               <span>图片总览 <b>{{ notePreviews.get(note.id)?.length }} 张</b></span>
               <button v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image" type="button" :title="image.alt || `全屏阅读图片 ${index + 1}`" @click.stop="startReading(note.id)">
@@ -992,4 +1040,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .filter-panel { width: 100%; max-width: 340px; }
 }
 @media (prefers-reduced-motion: reduce) { .note-card, .stage-icon, .notes-back-top, .mining-modal { transition: none; animation: none; } .reader-page { animation: none; } .reader-progress i { transition: none; } }
+.search button { flex: none; white-space: nowrap; border: 0; background: transparent; color: var(--wao-primary-text); cursor: pointer; padding: 4px; }
+.note-search-hit { width: 100%; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; border: 0; border-radius: 6px; background: var(--wao-bg-sub); color: var(--wao-text-weak); padding: 8px; margin: 6px 0; cursor: pointer; }
+.note-search-hit mark { background: #fff0ae; color: #604a08; }
 </style>

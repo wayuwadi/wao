@@ -85,6 +85,8 @@ export async function fetchDocs(): Promise<Doc[]> {
   const res = await http.get<ApiResponse<Doc[]>>('/api/docs/catalog')
   return res.data.data.map(doc => ({ ...doc, detailLoaded: false }))
 }
+/** Explicit global search snapshot: all active documents including bodies, never merged into edit drafts. */
+export const fetchSearchDocuments = () => get<Doc[]>('/api/docs')
 export const fetchArchivedDocs = (kbId: string) =>
   get<Doc[]>(`/api/docs/archived?kbId=${encodeURIComponent(kbId)}`)
 export const fetchDoc = (id: string) => get<Doc>(`/api/docs/${id}`)
