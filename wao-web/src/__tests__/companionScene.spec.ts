@@ -106,6 +106,22 @@ function paint(time = 100) {
   work.forEach((fn) => fn(time))
 }
 describe('三维场景资源与省电', () => {
+  it('主动舞蹈尊重安静、减少动态效果和后台暂停', () => {
+    const { controller } = mountScene()
+    expect(controller.dance()).toBe(true)
+    controller.setQuiet(true)
+    expect(controller.dance(1)).toBe(false)
+    controller.setQuiet(false)
+    media.matches = true
+    media.dispatchEvent(new Event('change'))
+    expect(controller.dance()).toBe(false)
+    media.matches = false
+    media.dispatchEvent(new Event('change'))
+    controller.setActive(false)
+    expect(controller.dance()).toBe(false)
+    controller.dispose()
+    expect(controller.dance()).toBe(false)
+  })
   it('安静模式只画一帧，唤醒后重新排帧', () => {
     const { controller } = mountScene()
     controller.setQuiet(true)

@@ -54,6 +54,8 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     last = 0,
     paintedAt = 0,
     reduced = media.matches
+  let danceUntil = 0
+  let dancer: number | undefined
   let pointer = { x: 0, active: false }
   let drag: {
     index: number
@@ -223,6 +225,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     pointer.active = false
   }) as EventListener)
   function stop() {
+    danceUntil = 0
     cancelAnimationFrame(raf)
     raf = 0
     last = 0
@@ -244,9 +247,12 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     pets.forEach((p, i) => {
       if (!p.drag && !resting()) stepCompanion(p, dt)
       p.action = Math.max(0, p.action - dt)
+      const dancing = !resting() && time < danceUntil && (dancer === undefined || dancer === i) && !p.drag
+      const beat = dancing ? Math.sin(t * 9 + i * 0.9) : 0
+      const hop = dancing ? Math.abs(beat) * p.size * 0.65 : 0
       const wave = resting() ? 0 : Math.sin(t * 1.65 + p.phase) * 1.5
       const action = resting() ? 0 : Math.sin(p.action * 13) * p.action
-      p.group.position.set(p.x, p.y + wave, p.drag ? 180 : 0)
+      p.group.position.set(p.x, p.y + wave + hop, p.drag ? 180 : 0)
       const gaze = resting()
         ? 0
         : Math.max(-0.23, Math.min(0.23, (pointer.active ? pointer.x - p.x : 0) / 950))
@@ -259,7 +265,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
             ? 0.055
             : Math.sin(t * 0.7 + p.phase) * 0.015
       if (drag && !p.drag && !resting()) tilt += Math.sign(pets[drag.index]!.x - p.x) * 0.055
-      p.body.rotation.z += (tilt + action * 0.06 - p.body.rotation.z) * dt * 10
+      p.body.rotation.z += (tilt + action * 0.06 + beat * 0.24 - p.body.rotation.z) * dt * 10
       const stretch = p.drag ? 1.075 : 1 + action * 0.025
       p.body.scale.set(1 / Math.sqrt(stretch), stretch, 1)
       p.shadow.visible = false
@@ -332,8 +338,17 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   }
   layout()
   return {
+    dance(index?: number) {
+      if (resting() || !runnable()) return false
+      dancer = index
+      danceUntil = performance.now() + 8000
+      announce(index ?? 2, index === undefined ? '这一小段，跳给你看。' : '轮到我啦！')
+      wake()
+      return true
+    },
     setQuiet(value: boolean) {
       quiet = value
+      danceUntil = 0
       reset()
       wake()
     },
