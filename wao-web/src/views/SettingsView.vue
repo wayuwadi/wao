@@ -142,6 +142,10 @@ const noteReminderForm = reactive<NoteFullscreenReminderSettings>({ enabled: tru
 const noteReminderSaving = ref(false)
 const noteReminderError = ref('')
 const noteAiDefaultsForm = reactive<NoteAiDefaults>({ ...preferences.noteAiDefaults })
+const noteAiConcurrentDisplay = computed({
+  get: () => noteAiDefaultsForm.executionMode === 'serial' ? 1 : noteAiDefaultsForm.maxConcurrent,
+  set: (value: NoteAiDefaults['maxConcurrent']) => { noteAiDefaultsForm.maxConcurrent = value },
+})
 const noteAiDefaultsSaving = ref(false)
 const noteAiDefaultsError = ref('')
 const noteAiDefaultsDirty = computed(() => noteAiDefaultsForm.title !== preferences.noteAiDefaults.title
@@ -838,15 +842,15 @@ async function bindFeishu() {
               </div>
               <div class="pref-row" :class="{ muted: noteAiDefaultsForm.executionMode === 'serial' }">
                 <div class="pref-main">
-                  <div class="pref-name">同时生成数量</div>
-                  <div class="pref-desc">同一成员的多个小记共享并发上限；串行模式下固定为 1。</div>
+                  <div class="pref-name">同时整理上限</div>
+                  <div class="pref-desc">统计已排队和处理中的步骤；本机 Codex 逐项执行，串行模式固定为 1。</div>
                 </div>
-                <select v-model.number="noteAiDefaultsForm.maxConcurrent" class="pref-select" aria-label="小记 AI 同时生成数量" :disabled="noteAiDefaultsSaving || noteAiDefaultsForm.executionMode === 'serial'">
+                <select v-model.number="noteAiConcurrentDisplay" class="pref-select" aria-label="小记 AI 同时整理上限" :disabled="noteAiDefaultsSaving || noteAiDefaultsForm.executionMode === 'serial'">
                   <option v-for="count in [1, 2, 3, 4, 5]" :key="count" :value="count">{{ count }} 项</option>
                 </select>
               </div>
               <div class="preference-actions">
-                <span>设置按当前成员跨设备保存；同一成员的小记共用并发上限。</span>
+                <span>多个小记共享此上限；切换设置不会中断已经提交的任务。</span>
                 <button type="button" class="btn-primary" :disabled="noteAiDefaultsSaving || !noteAiDefaultsDirty" @click="saveNoteAiDefaults">
                   {{ noteAiDefaultsSaving ? '保存中…' : '保存小记 AI 设置' }}
                 </button>

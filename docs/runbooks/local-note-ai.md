@@ -59,3 +59,17 @@ npm run test:unit -- --run src/__tests__/MarkdownEditor.spec.ts src/__tests__/No
 失败后其他阶段继续处理、或只编辑标题时，未解决的失败原因应保持可见；重试后才清除。检查与边界见 [失败原因保留验收](../validation/notes-workflow-error-retention-2026-10-03.md)。聚合命令同时验证保留、重试清除及部分失败解除后的提示，不需单独调用模型。
 
 多篇等待而已有模型调用完成时，检查工作流是否正常释放入队名额。`notes-ai-regression.py` 的 `NoteAiWorkflowQueueTest` 覆盖 30 篇旧等待者不能挡住较新已入队阶段的完成回写，见 [队列推进验证](../validation/notes-workflow-queue-progress-2026-10-03.md)。工作流 RUNNING 包含模型排队与结果待回写，不代表 CLI 当前正在执行。
+
+## 与日常执行器隔离的真实工作流验收
+
+既有环境变量已加载后，可在专用本地实例运行：
+
+```powershell
+./deploy/scripts/start-local-note-ai.ps1 -CodexPath '<既有 Codex 或托管指针路径>' -Port 18084 -StateDirectory '<专用验收状态目录>' -IsolateWorkflowState
+```
+
+该可选参数将服务绑定到 127.0.0.1，要求专用端口和显式状态目录。单连接 Hikari 在每次建立连接时先创建临时表再改名为 `note_ai_workflow`，使日常实例无法领取验收工作流；初始化失败则连接失败，不回退到共享表。文档、登录、模型任务仍使用原数据库，页面和 Codex 均为真实产品链路。普通启动不启用这些参数。
+
+MySQL 临时表只在当前连接可见，同名临时表遮蔽持久表，连接关闭后自动消失（[官方说明](https://dev.mysql.com/doc/refman/9.7/en/create-temporary-table.html)）。因此不能用此模式证明工作流的重启持久化；已有重启测试继续用登记 ID 的普通专用实例。验收中登记每条合成文档 ID，结束时通过回收站清理这些文档、恢复偏好，再停止自己的实例；不能清理整个共享库。
+
+串行与并行成员上限的步骤及已知标签状态缺项见 [串行上限验证](../validation/notes-serial-member-limit-2026-10-03.md)。
