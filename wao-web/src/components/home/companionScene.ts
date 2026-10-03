@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { createCompanionModels } from './companionModels'
 import { boundCompanion, companionLayout, stepCompanion } from './companionMotion'
+import { stepPlayBall, type PlayBall } from './companionPlay'
 
 interface Options {
   host: HTMLElement
@@ -35,6 +36,16 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   scene.add(rim)
   const pets = createCompanionModels()
   pets.forEach((p) => scene.add(p.group))
+  const toy = new THREE.Mesh(new THREE.SphereGeometry(10, 20, 16), new THREE.MeshStandardMaterial({ color: 0xffbb43, roughness: 0.55, transparent: true }))
+  toy.name = 'companion-play-ball'
+  toy.visible = false
+  scene.add(toy)
+  let ball: PlayBall | null = null
+  let ballStartedAt = 0
+  let bumpUntil = 0
+  const softness = pets.map(() => ({ value: 1, velocity: 0 }))
+  const strokes = pets.map(() => ({ x: 0, y: 0, seen: false }))
+  function clearPlay() { ball = null; toy.visible = false }
   function resetBlinks() {
     pets.forEach((p, i) => {
       p.blink = 0
@@ -83,6 +94,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     el.style.zIndex = p.drag ? '3' : '1'
   }
   function layout() {
+    clearPlay()
     const initial = !width
     width = host.clientWidth
     height = host.clientHeight
@@ -127,10 +139,29 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     )
     wake()
   }
-  function point(e: PointerEvent) {
+  function point(e: MouseEvent) {
     const r = host.getBoundingClientRect()
     return { x: e.clientX - r.left - width / 2, y: height / 2 - (e.clientY - r.top) }
   }
+  function play(x = 0, y = height / 2 - 24) {
+    if (resting() || !runnable() || !width || !height) return false
+    danceUntil = 0
+    ball = { x: Math.max(-width / 2 + 11, Math.min(width / 2 - 11, x)), y: Math.max(-height / 2 + 11, Math.min(height / 2 - 11, y)), vx: x > 0 ? -150 : 150, vy: 110, age: 0 }
+    ballStartedAt = performance.now()
+    toy.visible = true
+    toy.material.opacity = 1
+    announce(2, '小球接住啦。按 Esc 收好。')
+    wake()
+    return true
+  }
+  listen(host, 'click', ((e: MouseEvent) => {
+    if (e.target !== host || e.button !== 0 || window.getSelection()?.toString()) return
+    const v = point(e)
+    play(v.x, v.y)
+  }) as EventListener)
+  listen(document, 'keydown', ((e: KeyboardEvent) => {
+    if (e.key === 'Escape' && ball) { clearPlay(); wake() }
+  }) as EventListener)
   function release(cancelled = false) {
     if (!drag) return
     const d = drag,
@@ -163,7 +194,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       el.setPointerCapture(e.pointerId)
       el.focus({ preventScroll: true })
       el.classList.add('dragging')
-      p.drag = true
+      // 先轻轻压下，超过移动阈值后才进入拖动。
       drag = {
         index,
         id: e.pointerId,
@@ -178,18 +209,28 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       wake()
     }) as EventListener)
     listen(el, 'pointermove', ((e: PointerEvent) => {
+      const pet = pets[index]!, stroke = strokes[index]!, cursor = point(e)
+      if (!resting() && !drag && stroke.seen && pet.brush) {
+        pet.brush.point.value.set((cursor.x - pet.x) / pet.size, (cursor.y - pet.y) / pet.size)
+        pet.brush.direction.value.set(cursor.x - stroke.x, cursor.y - stroke.y).normalize()
+        pet.brush.strength.value = Math.min(1, Math.hypot(cursor.x - stroke.x, cursor.y - stroke.y) / 12)
+      }
+      Object.assign(stroke, { x: cursor.x, y: cursor.y, seen: true })
       if (!drag || drag.id !== e.pointerId) return
       const v = point(e),
         p = pets[drag.index]!,
         now = performance.now(),
         dt = Math.max(0.016, (now - drag.time) / 1000)
+      const moved = Math.hypot(v.x - drag.x, v.y - drag.y)
+      if (!p.drag && moved < 8) return
+      drag.distance += moved
+      p.drag = true
       p.vx = (v.x - drag.x) / dt
       p.vy = (v.y - drag.y) / dt
       Object.assign(
         p,
         boundCompanion(v.x - drag.offsetX, v.y - drag.offsetY, width, height, p.size),
       )
-      drag.distance += Math.hypot(v.x - drag.x, v.y - drag.y)
       drag.x = v.x
       drag.y = v.y
       drag.time = now
@@ -215,6 +256,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     }) as EventListener)
     listen(el, 'pointerleave', (() => {
       pets[index]!.hover = false
+      strokes[index]!.seen = false
       wake()
     }) as EventListener)
   })
@@ -225,6 +267,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     pointer.active = false
   }) as EventListener)
   function stop() {
+    clearPlay()
     danceUntil = 0
     cancelAnimationFrame(raf)
     raf = 0
@@ -244,6 +287,27 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     const dt = Math.min(0.034, (time - last) / 1000 || 0.016),
       t = time / 1000
     last = paintedAt = time
+    if (ball) {
+      ball.age = Math.max(ball.age, (time - ballStartedAt) / 1000)
+      if (!stepPlayBall(ball, dt, width, height)) clearPlay()
+      else {
+        for (const p of pets) {
+          const dx = ball.x - p.x, dy = ball.y - p.y, distance = Math.hypot(dx, dy), radius = p.size * 0.72 + 10
+          if (!p.drag && time > bumpUntil && distance < radius) {
+            const nx = distance ? dx / distance : 0, ny = Math.max(0.35, distance ? dy / distance : 1)
+            ball.x = p.x + nx * radius
+            ball.y = p.y + ny * radius
+            ball.vx = nx * 200
+            ball.vy = Math.max(130, ny * 230)
+            p.action = 0.55
+            bumpUntil = time + 180
+            break
+          }
+        }
+        toy.position.set(ball.x, ball.y, 150)
+        toy.material.opacity = Math.min(1, 8 - ball.age)
+      }
+    }
     pets.forEach((p, i) => {
       if (!p.drag && !resting()) stepCompanion(p, dt)
       p.action = Math.max(0, p.action - dt)
@@ -255,7 +319,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       p.group.position.set(p.x, p.y + wave + hop, p.drag ? 180 : 0)
       const gaze = resting()
         ? 0
-        : Math.max(-0.23, Math.min(0.23, (pointer.active ? pointer.x - p.x : 0) / 950))
+        : Math.max(-0.23, Math.min(0.23, (ball ? ball.x - p.x : pointer.active ? pointer.x - p.x : 0) / 950))
       p.body.rotation.y += (gaze - p.body.rotation.y) * dt * 5
       let tilt = resting()
         ? 0
@@ -266,8 +330,16 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
             : Math.sin(t * 0.7 + p.phase) * 0.015
       if (drag && !p.drag && !resting()) tilt += Math.sign(pets[drag.index]!.x - p.x) * 0.055
       p.body.rotation.z += (tilt + action * 0.06 + beat * 0.24 - p.body.rotation.z) * dt * 10
-      const stretch = p.drag ? 1.075 : 1 + action * 0.025
-      p.body.scale.set(1 / Math.sqrt(stretch), stretch, 1)
+      const pressed = drag?.index === i && !p.drag
+      const targetStretch = resting() ? 1 : pressed ? 0.85 : p.drag ? 1.085 : 1 + action * 0.025
+      const soft = softness[i]!
+      if (resting()) { soft.value = 1; soft.velocity = 0 }
+      else {
+        soft.velocity += ((targetStretch - soft.value) * 180 - soft.velocity * 15) * dt
+        soft.value += soft.velocity * dt
+      }
+      p.body.scale.set(1 / Math.sqrt(soft.value), soft.value, 1)
+      if (p.brush) p.brush.strength.value = resting() ? 0 : Math.max(0, p.brush.strength.value - dt * 1.8)
       p.shadow.visible = false
       if (t > p.blinkAt && !p.drag) {
         p.blink = 0.2
@@ -328,6 +400,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     failed()
   }) as EventListener)
   function reset() {
+    clearPlay()
     release(true)
     pets.forEach((p) => {
       p.x = p.homeX
@@ -338,6 +411,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   }
   layout()
   return {
+    play,
     dance(index?: number) {
       if (resting() || !runnable()) return false
       dancer = index

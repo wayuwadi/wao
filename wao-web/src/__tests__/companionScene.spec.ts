@@ -106,6 +106,31 @@ function paint(time = 100) {
   work.forEach((fn) => fn(time))
 }
 describe('三维场景资源与省电', () => {
+  it('小球只有主动触发才出现，安静或停用立即收起且不能后台重启', () => {
+    const { controller } = mountScene()
+    paint()
+    const scene = spies.render.mock.lastCall![0]
+    const toy = scene.getObjectByName('companion-play-ball')
+    expect(toy.visible).toBe(false)
+    expect(controller.play()).toBe(true)
+    expect(toy.visible).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(toy.visible).toBe(false)
+    controller.play()
+    paint(performance.now() + 9000)
+    expect(toy.visible).toBe(false)
+    controller.play()
+    controller.setQuiet(true)
+    expect(toy.visible).toBe(false)
+    expect(controller.play()).toBe(false)
+    controller.setQuiet(false)
+    controller.play()
+    controller.setActive(false)
+    expect(toy.visible).toBe(false)
+    expect(controller.play()).toBe(false)
+    controller.dispose()
+    expect(controller.play()).toBe(false)
+  })
   it('主动舞蹈尊重安静、减少动态效果和后台暂停', () => {
     const { controller } = mountScene()
     expect(controller.dance()).toBe(true)

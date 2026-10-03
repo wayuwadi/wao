@@ -76,6 +76,17 @@ async function mountEditor(props: {
 }
 
 describe('异步挂载焦点保护', () => {
+  it('接物追加保留已有富文本，外部 HTML 和 Markdown 按原文保存，只读时拒绝追加', async () => {
+    const w = await mountEditor({ modelValue: '**已有草稿**' })
+    expect(w.vm.appendPlainText('<img src=x onerror=alert(1)>\n# 原样保留')).toBe(true)
+    const editor = (w.vm as unknown as { editor: Editor }).editor
+    expect(editor.state.doc.textContent).toBe('已有草稿<img src=x onerror=alert(1)># 原样保留')
+    expect(editor.getJSON().content![0]!.content![0]!.marks).toEqual([{ type: 'bold' }])
+    expect(w.find('img').exists()).toBe(false)
+    await w.setProps({ readonly: true })
+    expect(w.vm.appendPlainText('不可追加')).toBe(false)
+    w.unmount()
+  })
   it('正文命中只定位选区，不改内容或触发保存，只读模式不提供替换', async () => {
     const w = await mountEditor({ modelValue: '前文 桂**花**路线 后文', readonly: true, advanced: true, searchTerm: '桂花' })
     await flushPromises()

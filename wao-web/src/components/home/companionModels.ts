@@ -1,4 +1,9 @@
 import * as THREE from 'three'
+interface FurBrush {
+  point: { value: THREE.Vector2 }
+  direction: { value: THREE.Vector2 }
+  strength: { value: number }
+}
 
 /** 独立程序化角色与毛绒材质，不加载外站模型。每次创建拥有自己的资源。 */
 export function createCompanionModels(only?: number) {
@@ -34,7 +39,7 @@ export function createCompanionModels(only?: number) {
       s = Math.sin(t)
     return new THREE.Vector3(p.x * s, p.y * s, Math.cos(t) * 0.66)
   }
-  function furBody(kind: string, color: number) {
+  function furBody(kind: string, color: number, brush?: FurBrush) {
     const root = new THREE.Group(),
       geo = new THREE.BufferGeometry(),
       pos = [],
@@ -99,10 +104,23 @@ export function createCompanionModels(only?: number) {
     const f = new THREE.BufferGeometry()
     f.setAttribute('position', new THREE.Float32BufferAttribute(strandPositions, 3))
     f.setAttribute('color', new THREE.Float32BufferAttribute(strandColors, 3))
+    const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.72 })
+    if (brush) {
+      f.setAttribute('furWeight', new THREE.Float32BufferAttribute(Array.from({ length: strandPositions.length / 3 }, (_, i) => [0, 0.55, 0.55, 1][i % 4]!), 1))
+      // 只在 GPU 改变附近毛尖；不逐帧遍历或重建十多万根纤维。
+      material.onBeforeCompile = shader => {
+        shader.uniforms.brushPoint = brush.point
+        shader.uniforms.brushDirection = brush.direction
+        shader.uniforms.brushStrength = brush.strength
+        shader.vertexShader = `attribute float furWeight; uniform vec2 brushPoint; uniform vec2 brushDirection; uniform float brushStrength;\n${shader.vertexShader}`
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nfloat nearBrush = 1.0 - smoothstep(0.05, 0.5, distance(position.xy, brushPoint));\ntransformed.xy += brushDirection * brushStrength * nearBrush * furWeight * 0.09;')
+      }
+      material.customProgramCacheKey = () => 'wao-fur-brush-v1'
+    }
     root.add(
       new THREE.LineSegments(
         f,
-        new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.72 }),
+        material,
       ),
     )
     return root
@@ -148,7 +166,8 @@ export function createCompanionModels(only?: number) {
     const group = new THREE.Group(),
       body = new THREE.Group()
     group.add(body)
-    const shape = furBody(kind, colors[i]!)
+    const brush: FurBrush = { point: { value: new THREE.Vector2() }, direction: { value: new THREE.Vector2() }, strength: { value: 0 } }
+    const shape = furBody(kind, colors[i]!, brush)
     body.add(shape)
     const eyes: THREE.Object3D[] = [],
       pupils: THREE.Mesh[] = []
@@ -264,6 +283,7 @@ export function createCompanionModels(only?: number) {
     return {
       group,
       body,
+      brush,
       eyes,
       pupils,
       shadow,

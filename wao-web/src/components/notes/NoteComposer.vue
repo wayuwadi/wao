@@ -20,7 +20,7 @@ const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
   loadingComponent: defineComponent({ setup: () => () => h('p', { role: 'status' }, '正在加载编辑器…') }),
 })
-const noteEditor = ref<{ removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean } | null>(null)
+const noteEditor = ref<{ removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean } | null>(null)
 const data = useDataStore()
 const session = useSessionStore()
 const preferences = usePreferenceStore()
@@ -384,7 +384,11 @@ async function save(explicit = false) {
   }
 }
 
-defineExpose({ save, dirty })
+function appendPlainText(value: string) {
+  if (saving.value || props.loading) return false
+  return noteEditor.value?.appendPlainText(value) ?? false
+}
+defineExpose({ save, dirty, appendPlainText })
 useSaveBeforeRefresh(async () => {
   if (saving.value) throw new Error('小记正在保存，请完成后再刷新')
   if (!dirty.value) return

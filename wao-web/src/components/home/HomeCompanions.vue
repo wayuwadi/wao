@@ -2,8 +2,24 @@
 import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { companionEditing, companionQuiet as quiet, setCompanionQuiet } from '@/composables/quietCompanions'
 import type { createCompanionScene } from './companionScene'
+import { captureText } from './companionPlay'
 
-const emit = defineEmits<{ menu: [event: MouseEvent | KeyboardEvent, index: number] }>()
+const emit = defineEmits<{ menu: [event: MouseEvent | KeyboardEvent, index: number]; receive: [text: string] }>()
+const receiving = ref(false)
+function dragOver(event: DragEvent) {
+  if (!event.dataTransfer?.types.includes('text/plain') || event.dataTransfer.types.includes('Files')) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+  receiving.value = true
+}
+function receive(event: DragEvent) {
+  receiving.value = false
+  event.preventDefault()
+  if (event.dataTransfer?.files.length) { say('目前只接文字，把一段文字递给我吧。'); return }
+  const text = captureText(event.dataTransfer?.getData('text/plain') || '')
+  if (!text) { say('接一段 1–10000 字的文字吧。'); return }
+  emit('receive', text)
+}
 const host = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
 const canvasKey = ref(0)
@@ -66,7 +82,11 @@ async function dance(index?: number) {
   if (quiet.value) { toggleQuiet(); await nextTick() }
   if (!controller?.dance(index)) say('收到邀请啦，今天轻轻摇摆就好。', 12, 12)
 }
-defineExpose({ dance, toggleQuiet, quiet })
+async function play() {
+  if (quiet.value) { toggleQuiet(); await nextTick() }
+  if (!controller?.play()) say('今天让小球歇一歇，仍然可以把文字递给我。')
+}
+defineExpose({ dance, play, toggleQuiet, quiet, say })
 onMounted(load)
 onActivated(() => {
   active = true
@@ -76,6 +96,7 @@ onDeactivated(() => {
   active = false
   controller?.setActive(false)
   message.value = ''
+  receiving.value = false
   if (timer) clearTimeout(timer)
 })
 onBeforeUnmount(() => {
@@ -94,14 +115,17 @@ onBeforeUnmount(() => {
       :key="name"
       type="button"
       class="companion-target"
-      :class="`companion-${index}`"
+      :class="[`companion-${index}`, { receiving: index === 0 && receiving }]"
       :aria-label="`和${name}互动`"
-      :title="`${name}：轻点回应，拖动后归位；右键或 Shift+F10 打开互动菜单`"
+      :title="`${name}：轻按揉一揉，移动鼠标抚摸，拖动后归位；${index === 0 ? '可接收拖来的文字；' : ''}右键或 Shift+F10 打开互动菜单`"
       :style="{ '--index': index }"
       @contextmenu.stop.prevent="emit('menu', $event, index)"
       @keydown.shift.f10.prevent.stop="emit('menu', $event, index)"
       @keydown.contextmenu.prevent.stop="emit('menu', $event, index)"
       @click="!ready && say('慢慢来，我在呢。')"
+      @dragover="index === 0 && dragOver($event)"
+      @dragleave="receiving = false"
+      @drop.stop="index === 0 && receive($event)"
     >
       <span class="companion-fallback" aria-hidden="true"
         ><span class="fallback-eyes">● ●</span></span
@@ -164,6 +188,7 @@ canvas {
   outline: 2px dashed var(--wao-primary);
   outline-offset: -5px;
 }
+.companion-target.receiving { outline:2px dashed var(--wao-primary); outline-offset:4px; background:color-mix(in srgb, var(--wao-primary) 8%, transparent); }
 .companion-target.dragging {
   cursor: grabbing;
 }
