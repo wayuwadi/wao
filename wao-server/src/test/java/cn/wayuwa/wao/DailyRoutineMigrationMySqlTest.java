@@ -12,7 +12,7 @@ import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/** Validates the unchanged V176 SQL against MySQL's JSON, FK and uniqueness semantics. */
+/** Validates the unchanged V179 SQL against MySQL's JSON, FK and uniqueness semantics. */
 @Testcontainers(disabledWithoutDocker = true)
 class DailyRoutineMigrationMySqlTest {
     @Container static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:9.7.0")
@@ -22,7 +22,7 @@ class DailyRoutineMigrationMySqlTest {
     void migrationCreatesVersionedRulesWithoutOrdinaryTaskTables() throws Exception {
         try (var connection = DriverManager.getConnection(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
              var statement = connection.createStatement()) {
-            String migration = Files.readString(Path.of("src/main/resources/db/migration/V176__todo_daily_routines.sql"));
+            String migration = Files.readString(Path.of("src/main/resources/db/migration/V179__todo_daily_routines.sql"));
             for (String command : migration.split(";")) if (!command.isBlank()) statement.execute(command);
             statement.execute("""
                     INSERT INTO wao_todo_routine_template VALUES

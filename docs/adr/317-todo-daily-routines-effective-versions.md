@@ -14,4 +14,4 @@
 
 ## 影响
 
-V176 新增 `wao_todo_routine_template`、`wao_todo_routine_revision`、`wao_todo_routine_occurrence`，复用 V175 的账号范围回执表。新 `DailyRoutineController` 与 `DailyRoutineService` 保持独立，统一回执查询需要在第一阶段提交后接线。无定时批量建任务、无逾期实例清扫，也不改现有任务、小记和日历数据。迁移仅新增表，不修改既有已执行迁移。
+V179 新增 `wao_todo_routine_template`、`wao_todo_routine_revision`、`wao_todo_routine_occurrence`，复用 V178 的账号范围回执表。新 `DailyRoutineController` 与 `DailyRoutineService` 保持独立，统一回执查询需要在第一阶段提交后接线。无定时批量建任务、无逾期实例清扫，也不改现有任务、小记和日历数据。迁移仅新增表，不修改既有已执行迁移。

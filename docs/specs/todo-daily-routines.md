@@ -22,6 +22,6 @@
 
 ## 事务、权限与数据
 
-V176 新增 `wao_todo_routine_template`、`wao_todo_routine_revision`、`wao_todo_routine_occurrence`，复用 V175 的 `wao_todo_operation_receipt`。账号行锁、规则版本和实例版本共同约束并发；规则/状态与回执同事务提交。读取和重放均按会话成员过滤，不能凭猜测 ID 跨成员读取。日期范围查询批量读取规则、版本和实例，最多返回 500 个规则、5000 个版本及 5000 个实例，超出明确报错。
+V179 新增 `wao_todo_routine_template`、`wao_todo_routine_revision`、`wao_todo_routine_occurrence`，复用 V178 的 `wao_todo_operation_receipt`。账号行锁、规则版本和实例版本共同约束并发；规则/状态与回执同事务提交。读取和重放均按会话成员过滤，不能凭猜测 ID 跨成员读取。日期范围查询批量读取规则、版本和实例，最多返回 500 个规则、5000 个版本及 5000 个实例，超出明确报错。
 
 日常规则只开放新 Web API，不自动扩展旧 MCP 令牌。CLI 与 MCP 的适配需单独确认权限和用户价值，本阶段没有承诺新增命令。
