@@ -137,6 +137,10 @@ export function exportMemory(games: MemoryRecord[]): string {
   return text;
 }
 export function summary(record: MemoryRecord) {
+  if (record.gameId === "starfield") {
+    const p = record.payload;
+    return `已完成 ${p.completed.filter(Boolean).length}/9任务 · ${p.owned.length}件装备 · ${p.sand}星砂${p.battle ? ` · 第${p.battle.round}轮 / ${p.battle.actions}次已确认行动` : " · 浮岛营地"}`;
+  }
   if (record.gameId === "rift") {
     const p = record.payload;
     const checkpoint = p.checkpoint ? chapters[p.checkpoint.chapter]!.rooms[p.checkpoint.room] : "营地";

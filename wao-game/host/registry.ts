@@ -1,4 +1,5 @@
 import { freshMemory, isDinoMemory, type DinoMemory } from "../games/dino/save";
+import { freshStarfieldMemory, isStarfieldMemory, type StarfieldMemory } from "../games/starfield/save";
 import {
   freshRiftMemory,
   isRiftMemory,
@@ -8,6 +9,7 @@ import {
 export interface GameMemories {
   dino: DinoMemory;
   rift: RiftMemory;
+  starfield: StarfieldMemory;
 }
 export type GameId = keyof GameMemories;
 export const games = {
@@ -27,9 +29,17 @@ export const games = {
     fresh: freshRiftMemory,
     validate: isRiftMemory,
   },
+  starfield: {
+    name: "星野奇旅",
+    letter: "金色星野",
+    tagline: "把星光，带在身边。",
+    restore: "保存队伍与成长 · 恢复上一条已确认行动",
+    fresh: freshStarfieldMemory,
+    validate: isStarfieldMemory,
+  },
 } as const;
 export function isGameId(id: unknown): id is GameId {
-  return id === "dino" || id === "rift";
+  return id === "dino" || id === "rift" || id === "starfield";
 }
 export function clonePayload<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;

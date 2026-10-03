@@ -121,7 +121,7 @@ describe('舞台登录与认证生命周期', () => {
     await wrapper.findAll('.page-more button').find(b => b.text() === '静坐')!.trigger('click')
     expect(menu.element.open).toBe(false)
     menu.element.open = true
-    await wrapper.findAll('.rainbow-tabs button').find(b => b.text() === '把伙伴送回家')!.trigger('click')
+    await wrapper.findAll('.rainbow-tabs button').find(b => b.text() === '今天怎么躺')!.trigger('click')
     expect(menu.element.open).toBe(false)
     const styles = wrapper.get<HTMLDetailsElement>('.style-picker')
     styles.element.open = true

@@ -23,7 +23,7 @@ class PlanTest(unittest.TestCase):
     def test_second_game_reuses_first_artifact(self):
         value = module.plan(['wao-game/games/rift/engine.ts','wao-game/protocol/rift.ts','wao-game/host/registry.ts'])
         self.assertEqual(value['buildGames'], ['rift'])
-        self.assertEqual(value['testGames'], ['dino', 'rift'])
+        self.assertEqual(value['testGames'], ['dino', 'rift', 'starfield'])
         self.assertTrue(value['buildWeb'])
         before={'dependencies':{'vue':'3.5.40'},'scripts':{'build:dino':'old'}}
         after={'dependencies':{'vue':'3.5.40'},'scripts':{'build:dino':'old','build:rift':'new','test:rift':'test'}}

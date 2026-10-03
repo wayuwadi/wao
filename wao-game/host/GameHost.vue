@@ -24,7 +24,7 @@ const props = withDefaults(
   { theme: "light", gameId: "dino" },
 );
 const emit = defineEmits<{ leave: []; immersion: [active: boolean]; memoryPanel: [active: boolean] }>();
-const memories = { dino: useGameMemory("dino"), rift: useGameMemory("rift") };
+const memories = { dino: useGameMemory("dino"), rift: useGameMemory("rift"), starfield: useGameMemory("starfield") };
 const memory = memories[props.gameId], game = games[props.gameId];
 const frame = ref<HTMLIFrameElement>(),
   source = ref(""),
@@ -188,7 +188,7 @@ async function download(all = false) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(href), 1000);
     feedback.value = all
-      ? "已导出全部已开放游戏：恐龙荒野、裂隙远征。"
+      ? `已导出全部已开放游戏：${Object.values(games).map(g => g.name).join("、")}。`
       : `已导出${game.name}记忆。${game.restore}。`;
   } catch (e) {
     feedback.value = e instanceof Error ? e.message : "导出失败，请重试。";
@@ -476,7 +476,7 @@ onBeforeUnmount(() => {
         />
       </div>
       <p class="note">
-        导出的是可恢复的游戏存档。恐龙保留纪录，裂隙保留成长和房间检查点；全部导出包含两款游戏。
+        导出的是可恢复的游戏存档。恐龙保留纪录，裂隙保留房间检查点，星野保留已确认行动；全部导出包含三款游戏。
       </p>
       <div
         v-if="
