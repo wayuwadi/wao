@@ -94,3 +94,22 @@ npm.cmd run build
 真实回归使用项目 `p1791000623315` 的 #23—27：项目计数待验证1、等待反馈1、逾期1；切待验证后搜索#23标题显示被快捷条件排除，清条件恢复1条命中。负责人切到无命中成员显示筛选内0但项目计数仍为1；切回并组合创建人恢复真实结果。项目 `p1790990344904` 的#17主已完成、#19子项待验证仍能命中；任务状态未改变。对子项折叠并按标题排序，切快捷条件后清除，两者仍保留。390像素可点击切换，不溢出工具栏。
 
 2026-10-03：21项定向回归、类型和构建通过；加载/失败禁用伪计数与重试、任务不被改写、个人顺序/排序/折叠保留已自动化验证，真实浏览器完成以上链路。
+
+
+## 四页视觉回归（2026-10-03）
+
+在 `wao-web` 执行：
+
+```powershell
+npm.cmd run test:unit -- --run src/__tests__/NotesView.spec.ts src/__tests__/TodoView.spec.ts src/__tests__/todoDueGroups.spec.ts src/__tests__/projectActionFilters.spec.ts src/__tests__/ProjectDisplaySettings.spec.ts src/__tests__/projectCompletion.spec.ts src/__tests__/CalendarView.spec.ts src/__tests__/CalendarDayPlan.spec.ts src/__tests__/taskSchedule.spec.ts --maxWorkers=2
+npm.cmd run build
+```
+
+真实链路只使用登记的专用内容：
+
+1. 小记：搜索专用关键词，点击常显「继续编辑」。同时保留左侧新草稿与右侧编辑；仅对专用记录注入保存失败，确认两份输入保留，解除故障后重试并刷新。390像素保存按钮44像素。
+2. 待办：专用项目 #23—27 保留五种截止分组，标题与执行/等待提示分层。切等待筛选再恢复，手机「更多」和Esc可用。
+3. 项目：专用项目 #17父已完成、#19子待验证继续显示未收尾提示；先折叠，再切待验证并清除，折叠不丢。#20保留专用长标题测试两行截断；手机父标题不被辅助标记挤掉，快捷条件40像素。
+4. 日历：月/日视图区分紫色执行实线与浅橙截止虚线；点击专用任务打开详情。辅助区展开/收起不改偏好；收起时天气设置弹窗可打开。手机 Enter 展开/收起，横滚到周末；已完成开关和日期导航仍可用。
+
+本轮各页分别通过52、19、9、20项定向回归，项目与新窄屏导航合验16项。真实浏览器截图、故障注入日志及精确标识在忽略目录 `.local/core-acceptance/visual-*`；不提交凭据。线上只核对版本、资源与健康，业务体验由用户验证。阶段状态见 `docs/validation/core-visual-progress-2026-10-03.md`。

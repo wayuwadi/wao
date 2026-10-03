@@ -177,7 +177,10 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.text()).not.toContain('他人的任务')
     expect(wrapper.find('.attendance-sidebar').isVisible()).toBe(false)
     expect(wrapper.find('.calendar-display-menu').exists()).toBe(false)
-    expect(wrapper.findAll('.calendar-visibility [role="switch"]')).toHaveLength(5)
+    expect(wrapper.findAll('.calendar-visibility [role="switch"]')).toHaveLength(4)
+    const auxiliary = wrapper.get('.calendar-auxiliary')
+    expect(auxiliary.attributes('open')).toBeUndefined()
+    expect(wrapper.get('.completed-toggle').element.closest('details')).toBeNull()
 
     await wrapper.find('.view-switch button:last-child').trigger('click')
     const slots = wrapper.findAll('.time-day .time-slot')
