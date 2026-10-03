@@ -32,7 +32,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /** 页面 AI 助手队列：由在线的本地 Codex Runner 以只读权限完成问答。 */
 @Service
 public class AiAssistantService {
-    public static final Set<String> NOTE_CODEX_MODELS = Set.of("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-sol", "gpt-6-luna");
     private static final String DEFAULT_NOTE_MODEL = "gpt-6-astra";
 
     private static final String QUEUED = "queued";
@@ -86,6 +85,9 @@ public class AiAssistantService {
 
     @Autowired(required = false)
     private LocalNoteAiService localNotes;
+
+    @Autowired
+    private LocalCodexModelService localModels;
 
     private final AiAssistantRunMapper mapper;
     private final AiRunnerNodeMapper runnerMapper;
@@ -493,11 +495,8 @@ public class AiAssistantService {
                 defaultCapabilityId(DeepSeekPurpose.BACKGROUND), DeepSeekPurpose.BACKGROUND, null).getId();
     }
 
-    public String validateNoteModel(String model) {
-        String value = StringUtils.hasText(model) ? model.trim() : DEFAULT_NOTE_MODEL;
-        if (!NOTE_CODEX_MODELS.contains(value)) throw new BadRequestException("小记模型不在允许列表中");
-        return value;
-    }
+    /** 校验实际本机模型目录，未知模型不静默切换。 */
+    public String validateNoteModel(String model) { return localModels.validate(model); }
 
     private static String textPolishSystemPrompt() {
         return """

@@ -1,9 +1,7 @@
 export const DEFAULT_NOTE_MODEL = 'gpt-6-astra'
 
-export const NOTE_MODELS = ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-luna', 'gpt-5.6-terra'] as const
-
-/** 保留已选择模型；空白和未知旧值使用已验证的 GPT-6 Astra。 */
+/** 精确保留已选择模型；可用性由真实目录校验，不因前端版本落后静默换模型。 */
 export function resolveNoteModel(value: string | null | undefined): string {
   const model = value?.trim() || ''
-  return NOTE_MODELS.some(option => option === model) ? model : DEFAULT_NOTE_MODEL
+  return model || DEFAULT_NOTE_MODEL
 }

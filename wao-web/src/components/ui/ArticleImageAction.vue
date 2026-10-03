@@ -6,6 +6,7 @@ import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/ut
 import { waitForPolish } from '@/api/polishJobs'
 import { fetchTextPolishWorkspace, saveTextPolishPrompt } from '@/api/textPolish'
 import { DEFAULT_NOTE_MODEL, resolveNoteModel } from '@/utils/noteAiModel'
+import { fetchCodexModels, type CodexModelCatalog } from '@/api/codexModels'
 
 const NOTE_MODEL_KEY = 'note-ai-model-v1'
 const NOTE_TITLE_PROMPT_KEY = 'note-title-prompt-v1'
@@ -26,6 +27,18 @@ const prompt = ref(DEFAULT_ARTICLE_IMAGE_PROMPT)
 const draftPrompt = ref(DEFAULT_ARTICLE_IMAGE_PROMPT)
 const noteModel = ref(DEFAULT_NOTE_MODEL)
 const draftModel = ref(DEFAULT_NOTE_MODEL)
+const modelCatalog = ref<CodexModelCatalog | null>(null)
+const modelsLoading = ref(false)
+const modelError = ref('')
+let modelTimer: ReturnType<typeof setInterval> | undefined
+async function refreshModels() {
+  if (modelsLoading.value) return
+  modelsLoading.value = true
+  modelError.value = ''
+  try { modelCatalog.value = await fetchCodexModels() }
+  catch { modelError.value = '无法更新模型目录；已有选择保留，请稍后重试' }
+  finally { modelsLoading.value = false }
+}
 const titlePrompt = ref(DEFAULT_NOTE_TITLE_PROMPT)
 const draftTitlePrompt = ref(DEFAULT_NOTE_TITLE_PROMPT)
 const polishPrompt = ref('')
@@ -34,6 +47,14 @@ const loadingPrompt = ref(true)
 const savingPrompt = ref(false)
 const promptError = ref('')
 const settingsOpen = ref(false)
+watch(settingsOpen, open => {
+  if (modelTimer) clearInterval(modelTimer)
+  if (open && props.generateTitle) {
+    void refreshModels()
+    modelTimer = setInterval(() => void refreshModels(), 60_000)
+  }
+})
+onBeforeUnmount(() => { if (modelTimer) clearInterval(modelTimer) })
 const busy = ref(false)
 const job = ref<ArticleImageJob | null>(null)
 const error = ref('')
@@ -92,8 +113,8 @@ async function saveSettings() {
   if (!image || image.length > 4000 || (props.generateTitle && (!title || title.length > 4000 || !polish || polish.length > 4000))) {
     promptError.value = '提示词不能为空，且每项最多 4000 字'; return
   }
-  if (resolveNoteModel(draftModel.value) !== draftModel.value) {
-    promptError.value = '请选择支持的 GPT 模型'; return
+  if (draftModel.value !== noteModel.value && !modelCatalog.value?.models.some(m => m.id === draftModel.value)) {
+    promptError.value = '请选择本机 Codex 目录中的模型'; return
   }
   savingPrompt.value = true
   promptError.value = ''
@@ -228,7 +249,14 @@ onBeforeUnmount(() => { generation++ })
         <section class="image-prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="image-prompt-title">
           <header><h2 id="image-prompt-title">{{ generateTitle ? '小记 AI 设置' : '个人配图提示词' }}</h2><button type="button" aria-label="关闭" @click="settingsOpen = false"><i class="ri-close-line"></i></button></header>
           <p>{{ generateTitle ? '这些设置只影响当前账号的小记标题、配图与润色。本机 AI 使用已有 Codex 登录；失败可重试，保留当前内容。' : '用于文章总览图；只影响你的账号。正文会在点击生成时单独提供给模型。' }}</p>
-          <label v-if="generateTitle" class="model-choice"><span>标题、配图与润色模型</span><select v-model="draftModel"><option value="gpt-6-astra">GPT-6 Astra · 默认</option><option value="gpt-5.6-sol">GPT-5.6 Sol</option><option value="gpt-6-sol">GPT-6 Sol</option><option value="gpt-6-luna">GPT-6 Luna</option><option value="gpt-5.6-luna">GPT-5.6 Luna · 高频低成本</option><option value="gpt-5.6-terra">GPT-5.6 Terra</option></select></label>
+          <label v-if="generateTitle" class="model-choice"><span>标题、配图与润色模型</span><select v-model="draftModel">
+            <option v-if="!modelCatalog?.models.some(m => m.id === draftModel)" :value="draftModel" disabled>{{ draftModel }} · 已保留，待确认可用</option>
+            <option v-for="model in modelCatalog?.models || []" :key="model.id" :value="model.id">{{ model.label }}{{ model.id === DEFAULT_NOTE_MODEL ? ' · 默认' : '' }}</option>
+          </select></label>
+          <div v-if="generateTitle" class="model-status" role="status">
+            <span>{{ modelsLoading ? '正在更新模型目录…' : modelError || modelCatalog?.message }}</span>
+            <button type="button" :disabled="modelsLoading" @click="refreshModels">刷新模型</button>
+          </div>
           <label v-if="generateTitle" class="prompt-field"><span>标题文案提示词</span><textarea v-model="draftTitlePrompt" maxlength="4000" rows="3" /></label>
           <label v-if="generateTitle" class="prompt-field"><span>正文润色提示词</span><textarea v-model="draftPolishPrompt" maxlength="4000" rows="5" /></label>
           <label class="prompt-field"><span>图片生成提示词</span><textarea v-model="draftPrompt" maxlength="4000" rows="6" /></label>
@@ -245,6 +273,7 @@ onBeforeUnmount(() => { generation++ })
 
 <style scoped>
 .article-image-action { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.model-status { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--wao-text-3); }
 .generate-image, .prompt-settings { height: 26px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 7px; border: 1px solid var(--wao-divider); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text-weak); font-size: 11px; cursor: pointer; }
 .generate-image:hover, .prompt-settings:hover { border-color: var(--wao-primary); color: var(--wao-primary-text); }
 .generate-image:disabled { opacity: .6; cursor: default; }
