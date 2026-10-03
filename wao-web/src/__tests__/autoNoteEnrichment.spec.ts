@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { startAutoNoteEnrichment, noteEnrichmentStatus, noteEnrichmentProgress, discardAutoNoteEnrichment, retryAutoNoteEnrichment, resumeAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
+import { startAutoNoteEnrichment, startNoteEnrichmentStage, activateNoteWorkflowMember, noteEnrichmentStatus, noteEnrichmentProgress, discardAutoNoteEnrichment, retryAutoNoteEnrichment, resumeAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import { fetchDoc, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
 import { waitForPolish } from '@/api/polishJobs'
@@ -19,6 +19,20 @@ const content = { version: 1 as const, document: { type: 'doc', content: [{ type
 const doc = (rev: number, title = '今天复盘打印流程') => ({ id: 'n1', rev, title, blocks: [], content })
 
 describe('小记保存后自动生成', () => {
+  it('单独重做标题不会清除先前配图和润色的完成记录', async () => {
+    activateNoteWorkflowMember('me')
+    noteEnrichmentProgress.n1 = { title: 'done', image: 'done', polish: 'done', tags: 'done' }
+    vi.mocked(fetchDoc).mockResolvedValue(doc(1) as never)
+    vi.mocked(apiPatchDoc).mockResolvedValue(doc(2, '打印计划') as never)
+    vi.mocked(waitForPolish).mockResolvedValue({ id: 'pj1', status: 'SUCCEEDED', message: '', polished: '打印计划' })
+    startNoteEnrichmentStage('me', 'n1', 1, 'title')
+    await flushPromises()
+    expect(noteEnrichmentProgress.n1).toMatchObject({ title: 'done', image: 'done', polish: 'done', tags: 'done' })
+    activateNoteWorkflowMember('reset')
+    activateNoteWorkflowMember('me')
+    resumeAutoNoteEnrichment('me')
+    expect(noteEnrichmentProgress.n1).toMatchObject({ title: 'done', image: 'done', polish: 'done', tags: 'done' })
+  })
   beforeEach(() => {
     vi.useRealTimers()
     localStorage.clear()

@@ -84,3 +84,7 @@ npm run test:unit -- --run src/__tests__/noteDraftStorage.spec.ts src/__tests__/
 5. 保存截图与精确标识，按上文软删除合成小记并刷新确认。不要删除其他页签或账号草稿。
 
 辅助页面只由本地验收服务器提供；普通 Vite 构建不包含该页面。该路径验证浏览器 opener 的会话复制行为，不能宣称已操作所有浏览器的原生复制菜单。刷新恢复沿用已有身份，不创建迁移副本；混用未刷新的旧代码页签不在新锁保证内。
+
+## 手动 AI 阶段状态
+
+短正文自动跳过后按需生成、继续重做另一阶段及刷新恢复，按 [手动状态验收](../validation/notes-manual-ai-progress-2026-10-03.md) 执行。自动规则与手动成功的合并边界见 [规格](../specs/notes-manual-ai-progress.md)。

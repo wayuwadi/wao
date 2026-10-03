@@ -18,7 +18,9 @@ import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { copyText } from '@/utils/clipboard'
 import { fetchNotePolishVersions } from '@/api/notePolishVersions'
-import { notePolishVersions } from '@/utils/autoNoteEnrichment'
+import { notePolishVersions, activateNoteWorkflowMember } from '@/utils/autoNoteEnrichment'
+import { fetchNoteAiWorkflows } from '@/api/noteAiWorkflows'
+vi.mock('@/api/noteAiWorkflows', () => ({ fetchNoteAiWorkflows: vi.fn().mockResolvedValue([]), retryNoteAiWorkflow: vi.fn() }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
@@ -59,6 +61,28 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('手动完成状态刷新恢复后不会被服务端跳过覆盖为未生成', async () => {
+    useDataStore().docs.one = doc('one', '合成手动生成验收')
+    localStorage.setItem('wao-note-enrichment-complete-v1:wg:one', JSON.stringify({ title: 'done', image: 'done', polish: 'done', tags: 'skipped' }))
+    vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([{ docId: 'one', title: 'SKIPPED', image: 'SKIPPED', polish: 'SKIPPED', message: null }])
+    const wrapper = await view()
+    await flushPromises()
+    for (const label of ['标题', '配图', '润色']) {
+      expect(wrapper.find(`[data-note-id="one"] button[aria-label="${label}已完成，点击重新生成"]`).exists()).toBe(true)
+    }
+    wrapper.unmount()
+  })
+  it('旧完成标记不能掩盖服务端新一轮等待、执行或失败', async () => {
+    useDataStore().docs.one = doc('one', '合成新一轮验收')
+    localStorage.setItem('wao-note-enrichment-complete-v1:wg:one', JSON.stringify({ title: 'done', image: 'done', polish: 'done', tags: 'skipped' }))
+    vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([{ docId: 'one', title: 'PENDING', image: 'RUNNING', polish: 'FAILED', message: '润色失败，请重试' }])
+    const wrapper = await view()
+    await flushPromises()
+    expect(wrapper.find('[data-note-id="one"] button[aria-label="标题等待后台处理"]').exists()).toBe(true)
+    expect(wrapper.find('[data-note-id="one"] button[aria-label="配图正在处理"]').exists()).toBe(true)
+    expect(wrapper.find('[data-note-id="one"] button[aria-label="润色失败，点击重试"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
   it('默认收起 AI 挖掘，并从阅读模式旁的按钮打开弹层', async () => {
     useDataStore().docs.one = doc('one', '给工具栏留出空间')
     const wrapper = await view()
@@ -221,6 +245,9 @@ describe('小记集中记录空间', () => {
   })
   beforeEach(() => {
     vi.restoreAllMocks()
+    vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([])
+    activateNoteWorkflowMember('reset')
+    activateNoteWorkflowMember('wg')
     vi.mocked(copyText).mockClear()
     vi.mocked(apiPatchDoc).mockReset()
     vi.mocked(fetchDoc).mockImplementation(async id => useDataStore().docById(id)!)
