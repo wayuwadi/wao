@@ -895,6 +895,31 @@ describe('小记集中记录空间', () => {
     reopened.unmount()
   })
 
+  it('全屏正文已处理的 Tab 不被父层焦点循环接管，草稿缩进和选区保持', async () => {
+    const wrapper = mount(NoteComposer, { attachTo: document.body })
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    await wrapper.find('.fullscreen-toggle').trigger('click')
+    const instance = wrapper.findComponent(MarkdownEditor).vm as unknown as { editor: TiptapEditor }
+    instance.editor.commands.insertContent('第一段\n第二段')
+    const editable = wrapper.get('.tiptap').element as HTMLElement
+    const save = wrapper.get('.save-note').element as HTMLElement
+    // 把编辑器置于可见控件首位，专门覆盖 Shift-Tab 会进入父层循环的边界。
+    vi.spyOn(editable, 'getClientRects').mockReturnValue([new DOMRect()] as unknown as DOMRectList)
+    vi.spyOn(save, 'getClientRects').mockReturnValue([new DOMRect()] as unknown as DOMRectList)
+    editable.focus()
+    instance.editor.commands.selectAll()
+    const selected = instance.editor.state.doc.textContent
+    await wrapper.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(document.activeElement).toBe(editable)
+    expect(instance.editor.state.doc.textContent.replace(/\u00a0/g, '')).toBe(selected)
+    await wrapper.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(editable)
+    expect(instance.editor.state.doc.textContent).toBe(selected)
+    expect(JSON.parse(readNoteDraft('wao-quick-note-draft-v1:wg')!).content.document).toEqual(instance.editor.getJSON())
+    wrapper.unmount()
+  })
+
   it('全屏表格右键菜单位于全屏容器之上，可插入行并保留草稿', async () => {
     const wrapper = mount(NoteComposer, { attachTo: document.body })
     await vi.dynamicImportSettled()
