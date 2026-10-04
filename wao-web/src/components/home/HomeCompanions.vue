@@ -3,8 +3,9 @@ import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import { companionEditing, companionQuiet as quiet, setCompanionQuiet } from '@/composables/quietCompanions'
 import type { createCompanionScene } from './companionScene'
 import type { CompanionActivity } from './companionActivities'
+import type { SurpriseStyle } from './companionSurprises'
 
-const emit = defineEmits<{ menu: [event: MouseEvent | KeyboardEvent, index: number] }>()
+const emit = defineEmits<{ menu: [event: MouseEvent | KeyboardEvent, index: number]; surprise: [style: SurpriseStyle]; cancelSurprises: [] }>()
 const host = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
 const canvasKey = ref(0)
@@ -50,6 +51,8 @@ async function load() {
       targets: [...host.value.querySelectorAll<HTMLButtonElement>('.companion-target')],
       say,
       failed: fallback,
+      surprise: style => emit('surprise', style),
+      cancelSurprises: () => emit('cancelSurprises'),
     })
     controller.setQuiet(quiet.value || companionEditing.value)
     controller.setActive(active)
@@ -70,6 +73,12 @@ async function perform(kind: CompanionActivity) {
 function interact(event: MouseEvent, index: number) {
   if (event.defaultPrevented) return
   if (!controller?.pop(index)) say('我在这里，安静陪着你。')
+}
+function onMenuKey(event: KeyboardEvent, index: number) {
+  if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return
+  event.preventDefault()
+  event.stopPropagation()
+  emit('menu', event, index)
 }
 defineExpose({ perform, toggleQuiet, quiet })
 onMounted(load)
@@ -105,8 +114,7 @@ onBeforeUnmount(() => {
       :title="`${name}：点击或按 Enter 升空变泡泡；右键或 Shift+F10 选择活动，拖动后归位`"
       :style="{ '--index': index }"
       @contextmenu.stop.prevent="emit('menu', $event, index)"
-      @keydown.shift.f10.prevent.stop="emit('menu', $event, index)"
-      @keydown.contextmenu.prevent.stop="emit('menu', $event, index)"
+      @keydown="onMenuKey($event, index)"
       @click="interact($event, index)"
     >
       <span class="companion-fallback" aria-hidden="true"

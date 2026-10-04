@@ -4,6 +4,7 @@ import { boundCompanion, companionLayout, stepCompanion } from './companionMotio
 import { stepPlayBall, type PlayBall } from './companionPlay'
 import { ACTIVITY_SECONDS, activityPose, companionActivities, type CompanionActivity } from './companionActivities'
 import { bubblePose } from './companionBubble'
+import { createBubbleCollection, randomSurprise, surpriseResponse, type SurpriseStyle } from './companionSurprises'
 
 interface Options {
   host: HTMLElement
@@ -11,10 +12,12 @@ interface Options {
   targets: HTMLButtonElement[]
   say: (text: string, x: number, y: number) => void
   failed: () => void
+  surprise?: (style: SurpriseStyle) => void
+  cancelSurprises?: () => void
 }
 
 /** 一个首页实例拥有一个场景，隐藏、静止和卸载均停止绘制。 */
-export function createCompanionScene({ host, canvas, targets, say, failed }: Options) {
+export function createCompanionScene({ host, canvas, targets, say, failed, surprise, cancelSurprises }: Options) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
@@ -66,8 +69,15 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     scene.add(group)
     return { group, material, rimMaterial }
   })
-  const flights: ({ start: number; x: number; y: number } | null)[] = pets.map(() => null)
+  const collection = createBubbleCollection()
+  let lastSurprise: SurpriseStyle | undefined
+  let lastResponse: SurpriseStyle | undefined
+  let response: { style: SurpriseStyle; start: number; source: number } | null = null
+  const flights: ({ start: number; x: number; y: number; token: number; counted: boolean } | null)[] = pets.map(() => null)
   function clearFlights() {
+    collection.reset()
+    response = null
+    cancelSurprises?.()
     pets.forEach((p, i) => {
       if (flights[i]) { p.x = p.homeX; p.y = p.homeY; p.vx = p.vy = 0 }
       flights[i] = null
@@ -183,7 +193,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     play(v.x, v.y)
   }) as EventListener)
   listen(document, 'keydown', ((e: KeyboardEvent) => {
-    if (e.key === 'Escape' && (currentActivity || flights.some(Boolean))) { clearPlay(); clearFlights(); wake() }
+    if (e.key === 'Escape') { clearPlay(); clearFlights(); wake() }
   }) as EventListener)
   function release(cancelled = false) {
     if (!drag) return
@@ -204,7 +214,11 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       p.action = 0.65
     }
     if (!cancelled) {
-      if (d.distance >= 8) { suppressClickUntil = performance.now() + 500; announce(d.index, '接住啦。') }
+      if (d.distance >= 8) {
+        suppressClickUntil = performance.now() + 500
+        announce(d.index, '接住啦。')
+        if (!resting()) respond(d.index)
+      }
     }
     wake()
   }
@@ -250,6 +264,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
         dt = Math.max(0.016, (now - drag.time) / 1000)
       const moved = Math.hypot(v.x - drag.x, v.y - drag.y)
       if (!p.drag && moved < 8) return
+      if (!p.drag) { collection.reset(); cancelSurprises?.() }
       drag.distance += moved
       p.drag = true
       p.vx = (v.x - drag.x) / dt
@@ -287,6 +302,8 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       strokes[index]!.seen = false
       wake()
     }) as EventListener)
+    listen(el, 'focus', (() => { pets[index]!.hover = true; wake() }) as EventListener)
+    listen(el, 'blur', (() => { pets[index]!.hover = false; wake() }) as EventListener)
   })
   listen(host.parentElement!, 'pointermove', ((e: PointerEvent) => {
     pointer = { x: point(e).x, active: true }
@@ -304,6 +321,10 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
   function wake() {
     if (runnable() && !raf) raf = requestAnimationFrame(frame)
   }
+  function respond(source: number) {
+    lastResponse = randomSurprise(lastResponse)
+    response = { style: lastResponse, start: performance.now(), source }
+  }
   function frame(time: number) {
     raf = 0
     if (!runnable()) return
@@ -317,6 +338,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
     last = paintedAt = time
     const elapsed = currentActivity ? (time - currentActivity.start) / 1000 : 0
     if (elapsed >= ACTIVITY_SECONDS || resting()) clearPlay()
+    if (response && time - response.start > 1250) response = null
     const poses = pets.map((_, i) => currentActivity ? activityPose(currentActivity.kind, elapsed, i) : null)
     if (ball) {
       ball.age = Math.max(ball.age, (time - ballStartedAt) / 1000)
@@ -342,11 +364,13 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       if (!p.drag && !resting()) stepCompanion(p, dt)
       p.action = Math.max(0, p.action - dt)
       const pose = poses[i]
+      const reply = response && !resting() && !p.drag && !flights[i]
+        ? surpriseResponse(response.style, (time - response.start) / 1000, i, response.source) : null
       const wave = resting() ? 0 : Math.sin(t * 1.65 + p.phase) * 1.5
       const action = resting() ? 0 : Math.sin(p.action * 13) * p.action
       p.group.position.set(
         Math.max(-width / 2 + p.size * 1.1, Math.min(width / 2 - p.size * 1.1, p.x + (pose?.x ?? 0) * p.size)),
-        Math.min(height / 2 - p.size * 1.4, p.y + wave + (pose?.y ?? 0) * p.size), p.drag ? 180 : 0)
+        Math.min(height / 2 - p.size * 1.4, p.y + wave + (pose?.y ?? 0) * p.size + (reply?.y ?? 0) + (!resting() && p.hover && !p.drag ? 4 : 0)), p.drag ? 180 : 0)
       const gaze = resting()
         ? 0
         : Math.max(-0.23, Math.min(0.23, (ball ? ball.x - p.x : pointer.active ? pointer.x - p.x : 0) / 950))
@@ -359,9 +383,9 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
             ? 0.055
             : Math.sin(t * 0.7 + p.phase) * 0.015
       if (drag && !p.drag && !resting()) tilt += Math.sign(pets[drag.index]!.x - p.x) * 0.055
-      p.body.rotation.z = tilt + action * 0.06 + (pose?.tilt ?? 0)
+      p.body.rotation.z = tilt + action * 0.06 + (pose?.tilt ?? 0) + (reply?.tilt ?? 0)
       const pressed = drag?.index === i && !p.drag
-      const targetStretch = resting() ? 1 : pressed ? 0.85 : p.drag ? 1.085 : (pose?.stretch ?? 1) + action * 0.025
+      const targetStretch = resting() ? 1 : pressed ? 0.85 : p.drag ? 1.085 : (pose?.stretch ?? 1) + action * 0.025 + (reply?.stretch ?? 1) - 1
       const soft = softness[i]!
       if (resting()) { soft.value = 1; soft.velocity = 0 }
       else {
@@ -394,6 +418,14 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       const flight = flights[i]
       if (flight) {
         const motion = bubblePose((time - flight.start) / 1000)
+        if (motion.returning && !flight.counted) {
+          flight.counted = true
+          const collected = collection.complete(i, flight.token, time)
+          if (collected) {
+            lastSurprise = randomSurprise(lastSurprise)
+            surprise?.(lastSurprise)
+          }
+        }
         const top = height / 2 - p.size * 1.65
         if (motion.done) {
           flights[i] = null
@@ -476,7 +508,9 @@ export function createCompanionScene({ host, canvas, targets, say, failed }: Opt
       if (flights[index]) return true
       clearPlay()
       const p = pets[index]!
-      flights[index] = { start: performance.now(), x: p.group.position.x, y: p.group.position.y }
+      const start = performance.now()
+      flights[index] = { start, x: p.group.position.x, y: p.group.position.y, token: collection.start(index, start), counted: false }
+      respond(index)
       p.action = 0
       p.vx = p.vy = 0
       wake()

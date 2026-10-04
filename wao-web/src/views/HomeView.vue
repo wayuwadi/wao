@@ -7,11 +7,13 @@ import { RouterLink } from 'vue-router'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
 import HomeCompanions from '@/components/home/HomeCompanions.vue'
+import HomeSurprises from '@/components/home/HomeSurprises.vue'
 import { useDataStore } from '@/stores/data'
 const data = useDataStore()
 const companions = ref<InstanceType<typeof HomeCompanions>>()
+const surprises = ref<InstanceType<typeof HomeSurprises>>()
 const menu = ref<InstanceType<typeof ContextActionMenu>>()
-function actions(event: MouseEvent | KeyboardEvent, _index?: number) {
+function actions(event: MouseEvent | KeyboardEvent) {
   void menu.value?.openAt(event, '一起放松十五秒', [
     ...companionActivities.map(activity => ({ id: activity.id, label: activity.label, run: () => companions.value?.perform(activity.id) })),
     { id: 'quiet', label: companionQuiet.value ? '唤醒伙伴' : '现在安静下来', run: () => companions.value?.toggleQuiet() },
@@ -24,7 +26,7 @@ function blankMenu(event: MouseEvent) {
 </script>
 
 <template>
-  <main class="home" @contextmenu="blankMenu">
+  <main class="home" @contextmenu="blankMenu" @click="surprises?.tap($event)" @pointermove="surprises?.sweep($event)">
     <section class="home-rest-welcome">
       <header class="home-day">
         <HomeOverviewCard />
@@ -40,9 +42,10 @@ function blankMenu(event: MouseEvent) {
         </div>
         <small class="play-hint">点一下伙伴，让它变成泡泡。右键，一起放松十五秒。</small>
       </div>
-      <div class="home-companion-space"><HomeCompanions ref="companions" @menu="actions" /></div>
+      <div class="home-companion-space"><HomeCompanions ref="companions" @menu="actions" @surprise="surprises?.celebrate($event)" @cancel-surprises="surprises?.clear()" /></div>
     </section>
     <ContextActionMenu ref="menu" />
+    <HomeSurprises ref="surprises" />
 
   </main>
 </template>
@@ -58,8 +61,12 @@ function blankMenu(event: MouseEvent) {
 .home-rest-copy h1 { font-size: clamp(20px,3vw,30px); font-weight: 500; }
 .home-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .play-hint { display:block; margin-top:12px; color:var(--wao-text-weak); font-size:12px; }
-.rest-entrance { background:var(--wao-bg-card); cursor:pointer; font:inherit; display: inline-block; flex: none; white-space: nowrap; padding: 10px 16px; border: 1px solid var(--wao-line); border-radius: 24px; color: var(--wao-text); text-decoration: none; }
+.rest-entrance { background:var(--wao-bg-card); cursor:pointer; font:inherit; display: inline-block; flex: none; white-space: nowrap; padding: 10px 16px; border: 1px solid var(--wao-line); border-radius: 24px; color: var(--wao-text); text-decoration: none; transition: transform .2s, background .2s; }
+.rest-entrance span { display: inline-block; transition: transform .2s; }
+.rest-entrance:hover { transform: translateY(-2px); background: var(--wao-primary-soft); }
+.rest-entrance:hover span { transform: translate(2px,-2px); }
 .rest-entrance:focus-visible { outline: 2px solid var(--wao-primary-text); outline-offset: 4px; }
 @media (max-width: 1100px) { .home-rest-welcome { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(280px, 1fr); } .home-rest-copy { padding-bottom: 0; } .home-companion-space { min-height: 280px; margin-inline: -28px; } }
 @media (max-width: 600px) { .home-rest-welcome { padding: 20px 20px 0; } .home-companion-space { margin-inline: -20px; } }
+@media (prefers-reduced-motion: reduce) { .rest-entrance, .rest-entrance span { transition: none; transform: none !important; } }
 </style>
