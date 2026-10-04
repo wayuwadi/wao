@@ -30,6 +30,8 @@ import org.springframework.stereotype.Service;
 /** 小记、算卦和业务助手共用的本机执行出口，不依赖 Runner。默认关闭，按主机显式启用。 */
 @Service
 public class LocalNoteAiService {
+    @Autowired(required = false)
+    private ObjectProvider<TianrenVisualService> tianrenVisuals;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     private org.springframework.beans.factory.ObjectProvider<NoteAiManagedService> managedNotes;
     private static final Logger log = LoggerFactory.getLogger(LocalNoteAiService.class);
@@ -144,6 +146,7 @@ public class LocalNoteAiService {
             advanceWorkflows();
             if (discoveries != null) discoveries.getObject().tick();
             runs.expireLocalNoteQueue(capability);
+            if (tianrenVisuals != null) tianrenVisuals.getObject().tick(capability);
             for (var run : runs.selectLocalNoteQueued(capability)) {
                 if (Thread.currentThread().isInterrupted()) return;
                 if (process(run)) break;
@@ -192,6 +195,11 @@ public class LocalNoteAiService {
             long seconds = environment.getProperty("wao.ai.local-notes.timeout-seconds", Long.class, 300L);
             if (seconds < 1 || seconds > 900) throw new IllegalStateException("本机 AI 超时配置必须为 1–900 秒");
             result = execute(run, model, Duration.ofSeconds(seconds));
+            if (TianrenVisualService.IMAGE_PURPOSE.equals(run.getUsagePurpose())) {
+                if (tianrenVisuals == null || result.png() == null) throw new IllegalStateException("本机未返回真实卦象配图");
+                tianrenVisuals.getObject().completeImage(run, claim, result.png());
+                return true;
+            }
             String response = result.text();
             String storedImageId = null;
             if (result.png() != null) {
@@ -239,7 +247,8 @@ public class LocalNoteAiService {
         return LocalNoteCodexProcess.execute(environment.getProperty("wao.ai.local-notes.executable", "codex"),
                 model, effort,
                 run.getPromptText(), directory, timeout,
-                AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose()), references);
+                AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose())
+                        || TianrenVisualService.IMAGE_PURPOSE.equals(run.getUsagePurpose()), references);
     }
 
     /** 仅停止本实例创建的进程和 worker，保留未领取的持久队列。 */

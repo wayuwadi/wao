@@ -26,6 +26,41 @@ export interface TianrenReading {
   createdAt: string
 }
 
+export interface TianrenAiSettings {
+  version: number
+  autoImage: boolean
+  interpretationPrompt: string
+  imagePrompt: string
+  defaultInterpretationPrompt: string
+  defaultImagePrompt: string
+}
+
+export interface TianrenVisual {
+  interpretationRunId: string | null
+  state: 'NOT_GENERATED' | 'DISABLED' | 'BRIEF_FAILED' | 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  title: string | null
+  change: string | null
+  keep: string | null
+  imageAttemptId: string | null
+  message: string
+  retryable: boolean
+}
+
+export const fetchTianrenAiSettings = () => data<TianrenAiSettings>(http.get('/api/tianren/settings'))
+export const saveTianrenAiSettings = (settings: Pick<TianrenAiSettings, 'version' | 'autoImage' | 'interpretationPrompt' | 'imagePrompt'>) =>
+  data<TianrenAiSettings>(http.put('/api/tianren/settings', settings))
+export const fetchTianrenVisual = (readingId: string) =>
+  data<TianrenVisual>(http.get(`/api/tianren/readings/${encodeURIComponent(readingId)}/visual`))
+export const generateTianrenImage = (readingId: string, interpretationRunId: string, requestId: string) =>
+  data<TianrenVisual>(http.post(`/api/tianren/readings/${encodeURIComponent(readingId)}/visual/image`, { interpretationRunId, requestId }))
+/** 私有图片通过统一鉴权客户端读取，不使用公开图床地址。 */
+export async function fetchTianrenImage(readingId: string, attemptId: string): Promise<Blob> {
+  const response = await http.get<Blob>(`/api/tianren/readings/${encodeURIComponent(readingId)}/visual/images/${encodeURIComponent(attemptId)}/raw`, {
+    responseType: 'blob', headers: { Accept: 'image/png' },
+  })
+  return response.data
+}
+
 export interface TianrenNotification {
   state: 'DISABLED' | 'CONFIGURATION_REQUIRED' | 'INTERPRETING' | 'INTERPRETATION_FAILED' | 'WAITING' | 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'UNKNOWN'
   targetName: string
