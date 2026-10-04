@@ -17,6 +17,15 @@ export interface ReleaseHighlight {
   title: string
   summary: string
   points: string[]
+  steps?: string[]
+  demo?: ReleaseDemo
+}
+
+export interface ReleaseDemo {
+  presentation: 'inline' | 'window'
+  kind?: 'update-card' | 'workspace-mcp' | 'notes-layout'
+  image?: string
+  alt: string
 }
 
 export interface ReleaseEdition {

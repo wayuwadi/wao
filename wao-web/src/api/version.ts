@@ -1,16 +1,43 @@
 import axios from 'axios'
-import type { ReleaseEdition, ReleaseHighlight } from '@/types/featureExplorer'
+import type { ReleaseDemo, ReleaseEdition, ReleaseHighlight } from '@/types/featureExplorer'
 
 function text(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max
 }
 
-/** 清单只能提供纯文本说明和功能 id；路由仍由当前制品的功能地图决定。 */
+/** 演示只使用登记的专用场景或制品内截图，不接受外部地址和任意标记。 */
+export function parseReleaseDemo(value: unknown): ReleaseDemo | null {
+  if (!value || typeof value !== 'object') return null
+  const demo = value as Record<string, unknown>
+  if (!['inline', 'window'].includes(String(demo.presentation)) || !text(demo.alt, 300)) return null
+  if (
+    demo.kind !== undefined &&
+    !['update-card', 'workspace-mcp', 'notes-layout'].includes(String(demo.kind))
+  )
+    return null
+  if (
+    demo.image !== undefined &&
+    (typeof demo.image !== 'string' ||
+      !/^assets\/release-guides\/[a-z0-9-]+\.(png|jpg|webp)$/.test(demo.image))
+  )
+    return null
+  if (!!demo.kind === !!demo.image) return null
+  return {
+    presentation: demo.presentation as ReleaseDemo['presentation'],
+    alt: demo.alt,
+    ...(demo.kind ? { kind: demo.kind as ReleaseDemo['kind'] } : {}),
+    ...(demo.image ? { image: demo.image as string } : {}),
+  }
+}
+
+/** 清单只提供纯文本、演示元数据和功能 id；路由由当前制品的功能地图决定。 */
 export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
   if (!value || typeof value !== 'object') return null
   const edition = value as Record<string, unknown>
   if (
-    (edition.attention !== undefined && edition.attention !== 'feature' && edition.attention !== 'maintenance') ||
+    (edition.attention !== undefined &&
+      edition.attention !== 'feature' &&
+      edition.attention !== 'maintenance') ||
     !text(edition.id, 160) ||
     !text(edition.publishedOn, 30) ||
     !text(edition.title, 160) ||
@@ -31,7 +58,12 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
       !text(item.summary, 1000) ||
       !Array.isArray(item.points) ||
       item.points.length > 10 ||
-      !item.points.every((point) => text(point, 300))
+      !item.points.every((point) => text(point, 300)) ||
+      (item.steps !== undefined &&
+        (!Array.isArray(item.steps) ||
+          item.steps.length > 10 ||
+          !item.steps.every((point) => text(point, 300)))) ||
+      (item.demo !== undefined && !parseReleaseDemo(item.demo))
     )
       return null
     highlights.push({
@@ -40,6 +72,8 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
       title: item.title,
       summary: item.summary,
       points: item.points as string[],
+      ...(item.steps !== undefined ? { steps: item.steps as string[] } : {}),
+      ...(item.demo !== undefined ? { demo: parseReleaseDemo(item.demo)! } : {}),
     })
   }
   return {
@@ -87,13 +121,21 @@ export interface GitReleaseHistory {
 
 /** 从当前不可变制品读取所有可达提交，不将新部署的记录混入旧页面。 */
 export async function fetchGitReleaseHistory(expectedSha: string): Promise<GitReleaseHistory> {
-  const { data } = await axios.get(`${import.meta.env.BASE_URL}assets/git-history.json`, { timeout: 10000 })
+  const { data } = await axios.get(`${import.meta.env.BASE_URL}assets/git-history.json`, {
+    timeout: 10000,
+  })
   if (data?.buildSha !== expectedSha || !Array.isArray(data.commits) || !data.commits.length)
     throw new Error('提交记录与当前页面版本不一致，请刷新后重试')
   const seen = new Set<string>()
   for (const item of data.commits) {
-    if (!item || !/^[0-9a-f]{40}$/.test(item.sha) || seen.has(item.sha) ||
-        !text(item.subject, 10000) || !text(item.committedAt, 50) || !Number.isFinite(Date.parse(item.committedAt)))
+    if (
+      !item ||
+      !/^[0-9a-f]{40}$/.test(item.sha) ||
+      seen.has(item.sha) ||
+      !text(item.subject, 10000) ||
+      !text(item.committedAt, 50) ||
+      !Number.isFinite(Date.parse(item.committedAt))
+    )
       throw new Error('提交记录格式无效，请重试')
     seen.add(item.sha)
   }

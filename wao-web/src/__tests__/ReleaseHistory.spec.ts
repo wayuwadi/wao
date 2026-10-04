@@ -50,10 +50,13 @@ describe('最近更新档案', () => {
     await wrapper.get('[aria-label="上一页"]').trigger('click')
     await wrapper.get('.release-edition').trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain(RELEASE_HISTORY[1]!.intro)
+    // 新批次可能只有说明和演示；导航验证选择确实具有站内入口的历史批次。
+    const navigableIndex = RELEASE_HISTORY.slice(1, 4).findIndex(edition => edition.highlights.some(item => item.featureId !== 'changelog'))
+    await wrapper.findAll('.release-edition')[navigableIndex]!.trigger('click')
     await wrapper.get('.edition-content article button').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe(
-      MODULES[RELEASE_HISTORY[1]!.highlights[0]!.featureId].path,
+      MODULES[RELEASE_HISTORY[navigableIndex + 1]!.highlights[0]!.featureId].path,
     )
     wrapper.unmount()
   })

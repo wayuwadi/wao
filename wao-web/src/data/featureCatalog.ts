@@ -88,8 +88,9 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
   },
 ]
 
-/** 构建 HEAD 自动生成的说明；随版本变化，不依赖人工精选。 */
+/** 构建 HEAD 绑定的说明；匹配评审文案时带用途与步骤，否则明确说明缺项。 */
 export const CURRENT_RELEASE = __WAO_BUILD_RELEASE__
 
 /** 经确认的更新档案；相同日期保持清单中的发布顺序，不覆盖历史记录。 */
-export const RELEASE_HISTORY = [CURRENT_RELEASE, ...(releaseHistory as ReleaseEdition[]).filter(item => item.id !== CURRENT_RELEASE.id)]
+export const RELEASE_HISTORY = [CURRENT_RELEASE, ...(releaseHistory as ReleaseEdition[]).filter(item =>
+  item.id !== CURRENT_RELEASE.id && !(item.title === CURRENT_RELEASE.title && item.publishedOn === CURRENT_RELEASE.publishedOn && JSON.stringify(item.highlights) === JSON.stringify(CURRENT_RELEASE.highlights)))]
