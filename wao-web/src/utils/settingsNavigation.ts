@@ -22,6 +22,7 @@ export const SETTINGS_ENTRIES = {
   management: [
     ['members', '组织与成员', '组织资料与真实成员', 'ri-community-line'],
     ['ai-accounts', 'AI 账号', '已连接的 AI 服务', 'ri-robot-2-line'],
+    ['workspace-mcp', 'WAO CLI 与 MCP', '设备授权、连接指令与令牌管理', 'ri-plug-line'],
     ['webhook', 'Webhook 配置', '外部通知与连接', 'ri-links-line'],
     ['site', '网站信息 · 备案', '网站公开展示信息', 'ri-global-line'],
   ],

@@ -22,6 +22,7 @@ import {
 } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
+import WorkspaceMcpConnectCard from '@/components/home/WorkspaceMcpConnectCard.vue'
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
@@ -461,6 +462,12 @@ async function bindFeishu() {
         <!-- 系统 · 通用 Webhook 配置 -->
         <template v-else-if="tab === 'webhook'">
           <WebhookConfigPanel ref="webhookPanel" />
+        </template>
+
+        <template v-else-if="tab === 'workspace-mcp'">
+          <h1 class="s-h1">WAO CLI 与 MCP</h1>
+          <p class="s-intro">为本机 CLI 或 AI 客户端建立独立连接，在这里查看和吊销设备授权。</p>
+          <WorkspaceMcpConnectCard />
         </template>
 
         <!-- 系统 · AI 账号 -->
