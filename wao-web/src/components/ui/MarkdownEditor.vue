@@ -1817,6 +1817,14 @@ function onEditorKeydown(event: KeyboardEvent) {
   }
 }
 
+function dismissTransientUi() {
+  const selectedText = !!editor.value && !editor.value.state.selection.empty && !editor.value.isActive('image') && !selectionDismissed.value
+  if (!tableMenu.value && !selectedText && !slashOpen.value && !findOpen.value && !helpOpen.value && !imageMenu.value) return false
+  closeTableMenu(); hideSelectionMenu()
+  slashOpen.value = false; findOpen.value = false; helpOpen.value = false; imageMenu.value = null
+  return true
+}
+
 function setBlockType(value: string) {
   const chain = editor.value?.chain().focus()
   if (!chain) return
@@ -2155,7 +2163,7 @@ function positionAtPoint(left: number, top: number) {
     return found ? { position: found.pos, viewportTop: e.view.coordsAtPos(found.pos).top } : null
   } catch { return null /* 布局尚未就绪时仍允许进入编辑，不阻塞用户。 */ }
 }
-defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, focusSearch, positionAtPoint, focusImageReference })
+defineExpose({ dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, focusSearch, positionAtPoint, focusImageReference })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(

@@ -25,7 +25,7 @@ const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
   loadingComponent: defineComponent({ setup: () => () => h('p', { role: 'status' }, '正在加载编辑器…') }),
 })
-const noteEditor = ref<{ removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean } | null>(null)
+const noteEditor = ref<{ dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean } | null>(null)
 const data = useDataStore()
 const session = useSessionStore()
 const writingWidth = useNoteWritingWidth()
@@ -147,9 +147,16 @@ onBeforeUnmount(() => {
   if (previousOverflow !== undefined) document.body.style.overflow = previousOverflow
 })
 function editorKeys(event: KeyboardEvent) {
+  if (event.defaultPrevented) return
   if (event.key === 'Escape' && tagSuggestionsOpen.value) { event.preventDefault(); tagSuggestionsOpen.value = false; return }
+  if (event.key === 'Escape' && tagCreateOpen.value) { event.preventDefault(); event.stopPropagation(); tagCreateOpen.value = false; return }
+  if (event.key === 'Escape' && noteEditor.value?.dismissTransientUi?.()) { event.preventDefault(); event.stopPropagation(); return }
+  if (event.key === 'Escape' && (props.note || fullscreen.value)) {
+    event.preventDefault(); event.stopPropagation()
+    if (!saving.value && !creatingTag.value && !tagManaging.value && !aiSettingsOpen.value) void requestExit()
+    return
+  }
   if (!fullscreen.value) return
-  if (event.key === 'Escape') { event.preventDefault(); fullscreen.value = false }
   if (event.key !== 'Tab' || event.defaultPrevented) return
   const controls = Array.from(composerElement.value?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [contenteditable="true"], textarea, summary, [tabindex="0"]') ?? []).filter(el => el.getClientRects().length)
   const first = controls[0], last = controls[controls.length - 1]
@@ -249,6 +256,63 @@ useNoteTagChanges(change => {
   }
 })
 const canSave = computed(() => !!text.value.trim() && !saving.value && !creatingTag.value && !tagManaging.value && !props.loading)
+const exitOpen = ref(false)
+const exitSaveButton = ref<HTMLButtonElement>()
+const exitDiscardButton = ref<HTMLButtonElement>()
+let exitReturnFocus: HTMLElement | null = null
+async function requestExit() {
+  if (exitOpen.value) return
+  exitReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  exitOpen.value = true
+  await nextTick()
+  exitSaveButton.value?.focus()
+}
+function cancelExit() {
+  if (saving.value) return
+  exitOpen.value = false
+  void nextTick(() => exitReturnFocus?.focus())
+}
+function exitKeys(event: KeyboardEvent) {
+  event.stopPropagation()
+  if (event.key === 'Escape') { event.preventDefault(); cancelExit() }
+  if (event.key === 'Tab') {
+    event.preventDefault()
+    const next = document.activeElement === exitSaveButton.value ? exitDiscardButton.value : exitSaveButton.value
+    next?.focus()
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    if (document.activeElement === exitDiscardButton.value) void discardAndExit()
+    else void saveAndExit()
+  }
+}
+async function saveAndExit() {
+  if (saving.value) return
+  if (!canSave.value) { error.value = '正文为空或尚在加载，请完成内容后再保存'; return }
+  await save(true)
+  if (!error.value && !dirty.value) exitOpen.value = false
+}
+async function discardAndExit() {
+  if (saving.value) return
+  try { removeNoteDraft(draftKey) }
+  catch { error.value = '清除未保存草稿失败，请重试'; return }
+  resetting = true
+  const persisted = props.note ? data.docById(props.note.id) ?? props.note : undefined
+  const rich = persisted ? latestNoteContent(persisted) : undefined
+  text.value = rich?.markdown ?? ''
+  content.value = rich
+  tags.value = [...(persisted?.tags ?? [])]
+  generatedTitle.value = persisted?.title ?? ''
+  appliedAiInputs.value = []
+  if (!persisted) id.value = crypto.randomUUID().replace(/-/g, '')
+  savedSnapshot.value = { text: text.value, document: rich?.document ?? null, tags: [...tags.value], title: generatedTitle.value }
+  resetting = false
+  error.value = ''
+  emit('draft-change', null)
+  exitOpen.value = false
+  fullscreen.value = false
+  if (props.note) emit('close')
+}
 watch(
   [dirty, text, content, tags, generatedTitle, fullscreen, () => preferences.loaded,
     () => preferences.loadError, () => preferences.noteFullscreenReminder.enabled,
@@ -444,7 +508,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </script>
 
 <template>
-  <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline, expanded, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
+  <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline, expanded, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen }" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
     <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" :aria-describedby="fullscreenReminderVisible && !fullscreen ? fullscreenReminderId : undefined" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div v-if="fullscreenReminderVisible && !fullscreen" :id="fullscreenReminderId" class="fullscreen-reminder" role="status" aria-live="polite">
       <i class="ri-focus-3-line" aria-hidden="true"></i>
@@ -479,6 +543,16 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
     <NoteAiSettingsDialog v-model:open="aiSettingsOpen" />
+    <Teleport to="body">
+      <div v-if="exitOpen" class="note-exit-mask" @keydown="exitKeys">
+        <section class="note-exit-dialog" role="dialog" aria-modal="true" aria-label="保存修改并退出？">
+          <i class="ri-save-3-line" aria-hidden="true"></i><h3>保存修改并退出？</h3>
+          <p>保存后返回刚才的预览状态。</p>
+          <p v-if="error" class="error" role="alert">{{ error }}。输入已保留，请重试。</p>
+          <div><button ref="exitDiscardButton" type="button" :disabled="saving" @click="discardAndExit">不保存，退出</button><button ref="exitSaveButton" type="button" class="exit-save" :disabled="saving" @click="saveAndExit">{{ saving ? '正在保存…' : '保存并退出 ↵' }}</button></div>
+        </section>
+      </div>
+    </Teleport>
     <div class="composer-footer">
       <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : 'Ctrl / ⌘ + Enter 保存') }}</span>
       <button v-if="note" type="button" :disabled="saving" @click="emit('close')">收起编辑</button>
@@ -489,6 +563,16 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </template>
 
 <style scoped>
+.note-exit-mask { position:fixed; inset:0; z-index:2500; display:grid; place-items:center; background:rgb(24 28 46 / .28); padding:20px; }
+.note-exit-dialog { width:min(380px,100%); box-sizing:border-box; padding:26px; border-radius:16px; background:var(--wao-bg-card); box-shadow:0 20px 70px rgb(20 24 45 / .18); }
+.note-exit-dialog > i { color:var(--wao-primary); font-size:22px; }
+.note-exit-dialog h3 { margin:14px 0 8px; color:var(--wao-text-1); font-size:18px; }
+.note-exit-dialog p { color:var(--wao-text-2); font-size:13px; line-height:1.7; }
+.note-exit-dialog > div { display:flex; justify-content:flex-end; gap:10px; margin-top:24px; }
+.note-exit-dialog button { padding:9px 14px; border:1px solid var(--wao-line-control); border-radius:8px; background:var(--wao-bg-card); color:var(--wao-text-1); cursor:pointer; }
+.note-exit-dialog .exit-save { background:var(--wao-primary); border-color:var(--wao-primary); color:white; }
+.note-exit-dialog button:focus-visible { outline:2px solid var(--wao-primary); outline-offset:3px; }
+.note-exit-dialog button:disabled { opacity:.55; cursor:wait; }
 .note-composer { position: relative; display: flex; flex-direction: column; min-width: 0; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 14px; padding: 18px; background: var(--wao-bg-card); }
 .note-composer.inline:not(.fullscreen) { padding: 0; border: 0; border-radius: 0; }
 .inline:not(.fullscreen) .editor-space { min-height: 160px; max-height: 460px; }
