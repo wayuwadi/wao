@@ -180,6 +180,8 @@ const props = withDefaults(
     imageControls?: boolean
     /** 小记或知识库文档的文章总览图入口；key 用于跨页面恢复生成任务。 */
     articleImageKey?: string
+    /** 小记保存后自动配图，隐藏整篇手动生成入口。 */
+    articleImageGeneration?: boolean
     /** 小记选中文字可生成图片，图片作为正文附件节点保存。 */
     selectionImage?: boolean
     noteTitleOnImage?: boolean
@@ -211,6 +213,7 @@ const props = withDefaults(
     linkControls: false,
     imageControls: false,
     articleImageKey: '',
+    articleImageGeneration: true,
     selectionImage: false,
     noteTitleOnImage: false,
     advanced: false,
@@ -2191,7 +2194,7 @@ onBeforeUnmount(() => {
     <div v-if="articleImageKey" class="article-footer" aria-label="文章编辑操作">
       <div class="article-footer-left">
         <div v-if="!readonly" class="article-image-actions">
-          <ArticleImageAction :scope-key="articleImageKey"
+          <ArticleImageAction v-if="articleImageGeneration" :scope-key="articleImageKey"
             :get-text="articleText" :insert-image="insertArticleImageAtStart" :get-current-image="currentArticleImage"
             :note-ai-origin="noteAiOrigin" :get-source-content="noteSourceContent" :confirm-cover="confirmGeneratedCover" :get-image-result="articleImageResult" :generate-title="noteTitleOnImage" @ai-applied="emit('ai-applied', $event)" @generated-title="emit('generated-title', $event)" />
           <button type="button" class="image-upload" title="从图册选择图片"
