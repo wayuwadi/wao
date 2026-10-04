@@ -136,6 +136,13 @@ http.interceptors.response.use(
   (error: unknown) => {
     if (axios.isAxiosError<ApiResponse<unknown>>(error)) {
       report(error.config as RetriableRequestConfig | undefined, error.response?.status ?? null)
+      // WAO 已返回明确业务结论时不按网关断连重试（例如飞书未配置也使用 HTTP 502）。
+      const envelope = error.response?.data
+      if (RETRIABLE_GATEWAY_STATUSES.has(error.response?.status ?? 0)
+        && typeof envelope?.code === 'number' && envelope.code !== 0
+        && typeof envelope.message === 'string' && envelope.message) {
+        return Promise.reject(Object.assign(new Error(envelope.message), { status: error.response?.status }))
+      }
       const config = error.config as RetriableRequestConfig | undefined
       if (config?.waoEdgeOrigin) {
         // Cancellation and authorization failures are never transport failover.

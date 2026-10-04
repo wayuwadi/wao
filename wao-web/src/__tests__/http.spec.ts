@@ -22,6 +22,33 @@ function gatewayError(config: InternalAxiosRequestConfig, status: number) {
 }
 
 describe('HTTP 网关短暂故障自愈', () => {
+  it('飞书未配置的业务 502 立即返回原因，不反复请求或切换节点', async () => {
+    const failed = vi.spyOn(edgeApiRouting, 'failed')
+    let attempts = 0
+    await expect(http.get('/api/auth/feishu/authorize', { adapter: async config => {
+      attempts++
+      const error = gatewayError(config, 502)
+      error.response!.data = { code: 50201, message: '飞书登录尚未配置，请联系管理员', data: null, timestamp: 1 }
+      throw error
+    } })).rejects.toThrow('飞书登录尚未配置，请联系管理员')
+    expect(attempts).toBe(1)
+    expect(failed).not.toHaveBeenCalled()
+  })
+
+  it('节点返回明确业务 503 时不回云端重放，也不使节点会话失效', async () => {
+    vi.spyOn(edgeApiRouting, 'route').mockReturnValue({ origin: 'https://linux2.wayuwa.cn:9443', csrf: 'test-csrf', validUntil: Infinity })
+    const failed = vi.spyOn(edgeApiRouting, 'failed').mockImplementation(() => {})
+    let attempts = 0
+    await expect(http.get('/api/projects', { adapter: async config => {
+      attempts++
+      const error = gatewayError(config, 503)
+      error.response!.data = { code: 50301, message: '业务暂不可用', data: null, timestamp: 1 }
+      throw error
+    } })).rejects.toThrow('业务暂不可用')
+    expect(attempts).toBe(1)
+    expect(failed).not.toHaveBeenCalled()
+  })
+
   it('文件上传先建立节点会话，携带CSRF且响应丢失不重发正文', async () => {
     const prepared = vi.spyOn(edgeApiRouting, 'prepareUpload').mockResolvedValue({
       origin: 'https://linux2.wayuwa.cn:9443', csrf: 'upload-csrf', validUntil: Infinity,
