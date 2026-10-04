@@ -10,6 +10,7 @@ import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteCon
 import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
+import NoteAiSettingsDialog from './NoteAiSettingsDialog.vue'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 import type { Doc, FileItem, RichDocContent } from '@/types'
@@ -87,6 +88,7 @@ async function toggleTagCreate() {
   if (tagCreateOpen.value) { await nextTick(); composerElement.value?.querySelector<HTMLInputElement>('.inline-tag-create input')?.focus() }
 }
 const fullscreen = ref(false)
+const aiSettingsOpen = ref(false)
 watch(fullscreen, value => emit('fullscreen-change', value), { flush: 'sync' })
 const fullscreenReminderVisible = ref(false)
 const composerElement = ref<HTMLElement>()
@@ -445,21 +447,26 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <div class="composer-editor-layout"><div class="composer-editor-main">
       <MarkdownEditor :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls selection-image preview-images
         :article-image-key="`note:${session.currentUser.id}:${id}`"
+        :article-image-generation="false"
         :note-ai-origin="{ stableId: id, docId: note?.id, sourceRev: baseRev, title: generatedTitle, blocks: note?.blocks ?? [], links: note?.links ?? [] }" note-title-on-image @ai-applied="appliedAiInputs = [...new Set([...appliedAiInputs, $event])]" @generated-title="generatedTitle = $event"
         hide-toolbar :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : compact ? 1200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="compact ? 200 : note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">
-        <template v-if="!inline" #footer-tags>
+        <template #footer-tags>
           <div class="composer-tags">
+            <button class="note-ai-settings" type="button" aria-label="小记 AI 设置" title="小记 AI 设置" @click="aiSettingsOpen = true"><i class="ri-settings-3-line"></i><span>设置</span></button>
+            <template v-if="!inline">
             <button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button>
             <button class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span>
+            </template>
           </div>
         </template>
       </MarkdownEditor>
       </div></div>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
+    <NoteAiSettingsDialog v-model:open="aiSettingsOpen" />
     <div class="composer-footer">
       <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : 'Ctrl / ⌘ + Enter 保存') }}</span>
       <button v-if="note" type="button" :disabled="saving" @click="emit('close')">收起编辑</button>
