@@ -95,7 +95,7 @@ class FeishuLinkPreviewServiceTest {
         assertThat(elements.get(0).path("tag").asText()).isEqualTo("img");
         assertThat(elements.get(0).path("img_key").asText()).isEqualTo("img_note_cover");
         assertThat(elements.get(1).path("text").path("content").asText())
-                .startsWith("小记正文").endsWith("…").hasSize(80);
+                .isEqualTo("小记正文".repeat(40));
         assertThat(result.toString()).doesNotContain("文章总览图", "更新于", "2026-09-24T22:32:41");
         assertThat(elements.get(2).path("actions").get(0).path("url").asText())
                 .isEqualTo(BASE + "/s/d/note1");
@@ -197,7 +197,102 @@ class FeishuLinkPreviewServiceTest {
         blob.setContentType("image/png");
         when(images.raw(id)).thenReturn(blob);
         when(feishu.tenantAccessToken("app1", "secret1")).thenReturn("token1");
-        when(feishu.uploadMessageImage("token1", blob.getContent(), "image/png", "note-preview.png"))
+        when(feishu.uploadMessageImage("token1", blob.getContent(), "image/png", "share-preview.png"))
                 .thenReturn(key);
+    }
+
+    @Test
+    void tianrenCardUsesSavedImageAndSummarySectionWithoutLeakingImageSyntax() {
+        image("reading_cover", "img_reading");
+        var qian = new TianrenHexagramDto(1, "乾为天", "䷀",
+                new TianrenTrigramDto("乾", "天", "☰"), new TianrenTrigramDto("乾", "天", "☰"));
+        String token = "0123456789abcdef0123456789abcdef";
+        when(tianren.shared(token)).thenReturn(new SharedTianrenReadingDto(
+                LocalDate.of(2026, 10, 4), List.of(7, 7, 7, 7, 7, 7), List.of(), qian, null,
+                "![润色图](/api/images/reading_cover/raw)\n## 卦象事实\n很长的事实。\n"
+                        + "## 卦象快速总结\n**保持专注**，先完成一件小事。\n## 边界提醒\n其他正文。",
+                LocalDateTime.of(2026, 10, 4, 8, 0)));
+
+        JsonNode result = json.valueToTree(service.preview(event(BASE + "/s/tianren/" + token), BASE));
+        assertThat(result.path("card").path("data").path("header").path("template").asText())
+                .isEqualTo("purple");
+        assertThat(result.path("card").path("data").path("elements").get(0).path("img_key").asText())
+                .isEqualTo("img_reading");
+        assertThat(result.toString()).contains("保持专注，先完成一件小事。", "查看详情", BASE + "/s/tianren/" + token)
+                .doesNotContain("很长的事实", "其他正文", "润色图", "/api/images/", "![");
+    }
+
+    @Test
+    void summaryHandlesMissingEmptyAndLongSavedInterpretations() {
+        assertThat(FeishuLinkPreviewService.quickSummary(null)).isEmpty();
+        assertThat(FeishuLinkPreviewService.quickSummary("![配图](https://external.example/img.png)\n旧解读"))
+                .isEqualTo("旧解读");
+        assertThat(FeishuLinkPreviewService.quickSummary("## 快速总结\n\n## 卦象事实\n真实事实"))
+                .contains("真实事实");
+        assertThat(FeishuLinkPreviewService.quickSummary("## 快速总结\n" + "长".repeat(500)))
+                .hasSize(240).endsWith("…");
+    }
+
+    @Test
+    void repeatedLinksReuseImageUploadedForTheSameApp() {
+        image("one", "img_one");
+        when(share.shareDoc("d")).thenReturn(new SharedDocDto("d", "标题", true, "notes", "",
+                "![图](/api/images/one/raw)\n内容"));
+        service.preview(event(BASE + "/s/d/d"), BASE);
+        service.preview(event(BASE + "/api/share/docs/d.md"), BASE);
+        verify(feishu, org.mockito.Mockito.times(1)).uploadMessageImage(
+                org.mockito.ArgumentMatchers.eq("token1"), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("image/png"), org.mockito.ArgumentMatchers.eq("share-preview.png"));
+    }
+
+    @Test
+    void privateVisualProviderIsVersionCheckedAndFailureKeepsPublicCard() {
+        image("unused", "img_private");
+        var provider = mock(TianrenShareVisualProvider.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "tianrenVisuals", provider);
+        String token = "0123456789abcdef0123456789abcdef";
+        var qian = new TianrenHexagramDto(1, "乾为天", "䷀",
+                new TianrenTrigramDto("乾", "天", "☰"), new TianrenTrigramDto("乾", "天", "☰"));
+        when(tianren.shared(token)).thenReturn(new SharedTianrenReadingDto(
+                LocalDate.of(2026, 10, 4), List.of(7, 7, 7, 7, 7, 7), List.of(), qian, null,
+                "当前解读", LocalDateTime.of(2026, 10, 4, 8, 0)));
+        byte[] png = new byte[] {1, 2, 3};
+        when(feishu.uploadMessageImage("token1", png, "image/png", "share-preview.png"))
+                .thenReturn("img_private");
+        when(provider.findSharedVisual(token)).thenReturn(new TianrenShareVisualProvider.Visual(
+                "旧解读", "过时摘要", "attempt-old", png, "image/png"));
+        assertThat(service.preview(event(BASE + "/s/tianren/" + token), BASE).toString())
+                .contains("当前解读").doesNotContain("过时摘要", "img_private");
+
+        when(provider.findSharedVisual(token)).thenReturn(new TianrenShareVisualProvider.Visual(
+                "当前解读", "变：及时行动；不变：保持诚意", "attempt-current", png, "image/png"));
+        assertThat(service.preview(event(BASE + "/s/tianren/" + token), BASE).toString())
+                .contains("img_private", "变：及时行动；不变：保持诚意")
+                .doesNotContain("attempt-current", "image/png");
+        when(provider.findSharedVisual(token)).thenThrow(new IllegalStateException("私有存储故障"));
+        assertThat(service.preview(event(BASE + "/s/tianren/" + token), BASE).toString())
+                .contains("当前解读", "查看详情").doesNotContain("私有存储故障", "img_private");
+    }
+
+    @Test
+    void slowUploadDegradesWithinBudgetAndLaterPreviewReusesFinishedImage() throws Exception {
+        image("slow", "img_slow");
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(feishu.uploadMessageImage(org.mockito.ArgumentMatchers.eq("token1"),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("image/png"),
+                org.mockito.ArgumentMatchers.eq("share-preview.png"))).thenAnswer(call -> {
+                    release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                    return "img_slow";
+                });
+        when(share.shareDoc("slow-note")).thenReturn(new SharedDocDto("slow-note", "标题", true,
+                "notes", "", "![封面](/api/images/slow/raw)\n正文"));
+        long start = System.nanoTime();
+        try {
+            assertThat(service.preview(event(BASE + "/s/d/slow-note"), BASE).toString())
+                    .contains("正文", "打开原文").doesNotContain("img_slow", "/api/images/");
+            assertThat(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
+                    .isLessThan(2_800);
+        } finally { release.countDown(); }
+        assertThat(service.preview(event(BASE + "/s/d/slow-note"), BASE).toString()).contains("img_slow");
     }
 }

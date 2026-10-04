@@ -1,6 +1,7 @@
 package cn.wayuwa.wao.service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -12,7 +13,10 @@ import cn.wayuwa.wao.dto.SharedDocDto;
 import cn.wayuwa.wao.dto.SharedTaskDto;
 import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TaskDto;
+import cn.wayuwa.wao.mapper.NotePolishVersionMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
  * 任务 / 文档分享服务：把任务、子任务、文档、小记转成可公开访问的只读视图与 Markdown 文本。
@@ -28,13 +32,21 @@ public class ShareService {
     private final ProjectService projects;
     private final AiRunService aiRuns;
     private final KnowledgeService knowledge;
+    private final NotePolishVersionMapper noteVersions;
 
     public ShareService(TaskService tasks, ProjectService projects, AiRunService aiRuns,
             KnowledgeService knowledge) {
+        this(tasks, projects, aiRuns, knowledge, null);
+    }
+
+    @Autowired
+    public ShareService(TaskService tasks, ProjectService projects, AiRunService aiRuns,
+            KnowledgeService knowledge, NotePolishVersionMapper noteVersions) {
         this.tasks = tasks;
         this.projects = projects;
         this.aiRuns = aiRuns;
         this.knowledge = knowledge;
+        this.noteVersions = noteVersions;
     }
 
     /**
@@ -100,6 +112,16 @@ public class ShareService {
         String markdown = d.content() != null && d.content().markdown() != null
                 ? d.content().markdown()
                 : docMarkdown(nn(d.blocks()));
+        if (note && noteVersions != null) {
+            var version = noteVersions.findShareVersion(docId);
+            if (version != null && Objects.equals(d.author(), version.memberId())
+                    && Objects.equals(markdown, version.sourceMarkdown())
+                    && StringUtils.hasText(version.polishedMarkdown())) {
+                // 卡片与点击后的公开页面使用同一阅读版本，不公开润色对照中的私人来源字段。
+                return new SharedDocDto(d.id(), nz(d.title()), true, d.kbId(), d.updated(),
+                        version.polishedMarkdown(), null);
+            }
+        }
         return new SharedDocDto(d.id(), nz(d.title()), note, d.kbId(), d.updated(), markdown, d.content());
     }
 

@@ -11,6 +11,8 @@
 
 ## 规则
 
+小记润色阅读版本和卦象私有配图的补充规则见 [飞书图文卡片](feishu-share-visual-cards.md)；其 240 字正文限长及版本校验规则取代下面的小记 80 字旧规则。
+
 - `url.preview.get` 复用 `/api/feishu/events`；先完成已有 Verification Token / Encrypt Key 校验，再处理链接。
 - 只接受与当前 WAO 公网根地址同源的 HTTP(S) URL，不跟随重定向，不请求回调里的任意地址。
 - 任务卡片展示状态、优先级/截止/项目中存在的字段、未完成子任务数量和描述摘要；`openOnly=true` 继续使用现有过滤结果。

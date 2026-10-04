@@ -30,6 +30,27 @@ class ShareServiceTest {
 
     private final ShareService service = new ShareService(tasks, projects, aiRuns, knowledge);
 
+    @Test
+    void noteSharingUsesCurrentAuthorsPolishedVersionAndRejectsStaleOrForeignResults() {
+        var versions = mock(cn.wayuwa.wao.mapper.NotePolishVersionMapper.class);
+        var sharing = new ShareService(tasks, projects, aiRuns, knowledge, versions);
+        when(knowledge.getDoc("d1")).thenReturn(doc(KnowledgeService.NOTES_KB_ID));
+        String source = service.shareDoc("d1").md();
+        String polished = "![润色图](/api/images/polished/raw)\n润色正文";
+        when(versions.findShareVersion("d1")).thenReturn(
+                new cn.wayuwa.wao.mapper.NotePolishVersionMapper.Version("d1", "wg", source, polished));
+        assertThat(sharing.shareDoc("d1").md()).isEqualTo(polished);
+        assertThat(sharing.shareDoc("d1").content()).isNull();
+        assertThat(sharing.toMarkdown(sharing.shareDoc("d1"), BASE)).contains("润色正文", "/api/images/polished/raw");
+
+        when(versions.findShareVersion("d1")).thenReturn(
+                new cn.wayuwa.wao.mapper.NotePolishVersionMapper.Version("d1", "wg", "过期原文", polished));
+        assertThat(sharing.shareDoc("d1").md()).isEqualTo(source);
+        when(versions.findShareVersion("d1")).thenReturn(
+                new cn.wayuwa.wao.mapper.NotePolishVersionMapper.Version("d1", "other", source, polished));
+        assertThat(sharing.shareDoc("d1").md()).isEqualTo(source);
+    }
+
     private TaskDto task() {
         return new TaskDto("t1", "整理证件盒", "p1", "进行中", "P1", "wg",
                 List.of("wd"), "2026-07-20", "2026-07-30", null, "先按人分堆，再按年份排。",
