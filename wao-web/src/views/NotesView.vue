@@ -1083,7 +1083,7 @@ onMounted(() => void loadPins())
               </figure>
             </aside>
           </div>
-          <button v-if="isNotePreviewExpandable(note.id)" class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button>
+          <div v-if="isNotePreviewExpandable(note.id)" class="note-read-guide"><span v-if="!isNotePreviewExpanded(note.id)" aria-hidden="true">继续阅读这篇小记</span><button class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button></div>
           </template>
           <Teleport to="body"><div v-if="confirmingDeleteId === note.id" :ref="setDeleteConfirmation" :id="`note-delete-confirm-${note.id}`" class="card-delete-confirm" :data-delete-note-id="note.id" :style="deleteConfirmationStyle" role="dialog" :aria-label="`确认删除小记：${note.title}`">
             <span>将此小记移入回收站？7 天内可恢复。{{ editingIds.includes(note.id) ? '当前未保存的编辑会丢失。' : '' }}</span>
@@ -1282,6 +1282,14 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-read-action:hover { border-color: var(--wao-primary); }
 .note-read-action { transition: border-color .16s, background-color .16s; }
 .note-card.expanded .note-read-action { position: static; display: inline-flex; width: fit-content; margin: 12px 0 0 auto; }
+.note-read-guide { position: absolute; right: 0; bottom: 0; left: 0; z-index: 1; display: flex; align-items: flex-end; justify-content: flex-end; gap: 12px; min-height: 64px; box-sizing: border-box; padding: 16px 13px 8px; background: linear-gradient(transparent, color-mix(in srgb, var(--wao-bg-card) 90%, transparent)); opacity: 0; pointer-events: none; transition: opacity .16s; }
+.note-read-guide > span { padding-bottom: 5px; font-size: 12px; color: var(--wao-text-weak); }
+.note-read-guide .note-read-action { position: static; }
+.note-card:hover .note-read-guide, .note-card:focus-within .note-read-guide { opacity: 1; pointer-events: auto; }
+.note-card.expanded .note-read-guide { position: static; min-height: 0; padding: 0; background: none; opacity: 1; pointer-events: auto; }
+@media (hover: none), (pointer: coarse) { .note-read-guide { opacity: 1; pointer-events: auto; } .note-read-action { min-height: 44px; } }
+@media (max-width: 400px) { .note-read-guide > span { display: none; } }
+@media (prefers-reduced-motion: reduce) { .note-read-guide { transition: none; } }
 .notes-reader { position: fixed; inset: 0; z-index: 1150; display: flex; flex-direction: column; background: var(--wao-bg-card); color: var(--wao-text-2); }
 .reader-topbar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid var(--wao-line); }
 .reader-topbar strong { display: flex; align-items: center; gap: 7px; color: var(--wao-text-1); font-size: 15px; }

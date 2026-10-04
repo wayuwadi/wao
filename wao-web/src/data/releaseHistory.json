@@ -1,5 +1,25 @@
 [
   {
+    "title": "需要时，再展开全文",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "小记阅读",
+        "title": "悬停时出现轻量阅读引导",
+        "summary": "折叠卡片的展开按钮平时隐藏，悬停或键盘聚焦时出现；触屏保留入口。",
+        "points": [],
+        "steps": [
+          "将鼠标移到长文卡片，点击底部的展开全文。",
+          "键盘聚焦卡片同样显示入口；全文展开后可点击收起。"
+        ]
+      }
+    ],
+    "publishedOn": "2026-10-04",
+    "sourceSubject": "feat(notes): 悬停卡片显示全文阅读引导",
+    "intro": "让全文入口在需要的时候出现，卡片平时保持安静。",
+    "id": "release-notes-hover-guide-2026-10-04"
+  },
+  {
     "title": "修改之后，全文还在",
     "highlights": [
       {
