@@ -122,7 +122,10 @@ const loadErrorMessages = computed(() => [
 ])
 
 // 登录成员切换时先清掉上一名成员的内存偏好，再按当前会话重新读取。
-preferences.prepareForMember(session.currentUser.id)
+watch(() => session.currentUser.id, (memberId) => {
+  preferences.prepareForMember(memberId)
+  if (memberId) void preferences.load()
+}, { immediate: true })
 
 useShortcuts()
 
@@ -307,6 +310,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     class="shell"
     :class="{ 'desktop-shell': desktopToolbar, 'legacy-desktop-shell': legacyDesktopToolbar }"
     :data-control-style="preferences.effectiveControlStyle"
+    :data-page-layout="preferences.pageLayoutStyle"
   >
     <MobileShellMenu :open="isMobile && mobileMenuOpen" @close="closeMobileMenu" />
     <Teleport defer to="#mobile-navigation-slot" :disabled="!isMobile">

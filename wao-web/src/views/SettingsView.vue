@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import NoteDiscoveryPreference from '@/components/notes/NoteDiscoveryPreference.vue'
+import PageLayoutPreference from '@/components/settings/PageLayoutPreference.vue'
 import NoteAiSettingsForm from '@/components/notes/NoteAiSettingsForm.vue'
 import { computed, onUnmounted, reactive, ref, watch, watchEffect } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -356,7 +357,7 @@ async function bindFeishu() {
 </script>
 
 <template>
-  <div class="settings">
+  <div class="settings wao-page-frame">
     <!-- 左侧分类 -->
     <nav class="snav" aria-label="设置分类">
       <div class="snav-title">设置<span>让 WAO 更顺手</span></div>
@@ -536,6 +537,7 @@ async function bindFeishu() {
           <h1 class="s-h1">{{ tab === 'common' ? '把 WAO 调成你的习惯' : '外观与陪伴' }}</h1>
           <p class="s-intro">{{ categoryInfo.description }}</p>
           <h2 class="section-label">随手调整</h2>
+          <PageLayoutPreference :key="session.userId" />
           <div class="card thin personal-preferences">
             <div class="pref-row">
               <div class="pref-main">

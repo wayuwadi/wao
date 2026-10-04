@@ -237,7 +237,7 @@ useOverlayDismiss(() => newKbOpen.value, closeNewKb)
 </script>
 
 <template>
-  <div class="know">
+  <div class="know wao-page-frame">
     <div class="ktop">
       <div class="ktitle">知识库</div>
       <span class="ktip">按知识库组织文档；任务可关联具体文档</span>

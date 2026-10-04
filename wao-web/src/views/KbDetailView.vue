@@ -1035,7 +1035,7 @@ async function saveKbSettings() {
 
 <template>
   <div v-if="!kb" class="missing">知识库不存在。</div>
-  <div v-else class="kb-detail">
+  <div v-else class="kb-detail wao-page-frame">
     <!-- 左栏 -->
     <div class="side">
       <div class="side-top">

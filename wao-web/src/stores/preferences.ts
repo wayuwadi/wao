@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { fetchPreference, savePreference } from '@/api/favorites'
+import { isPageLayoutStyle, normalizePageLayoutStyle, type PageLayoutStyle } from '@/utils/pageLayout'
 
 export type WeekStart = '周一' | '周日'
 export type Celebration = '细腻纸屑' | '关闭'
@@ -10,6 +11,7 @@ const DEFAULT_PROJECT_KEY = 'default-project'
 const NOTE_FULLSCREEN_REMINDER_KEY = 'note-fullscreen-reminder-v1'
 const NOTE_AI_DEFAULTS_KEY = 'note-ai-defaults-v1'
 const CONTROL_STYLE_KEY = 'control-style-v1'
+const PAGE_LAYOUT_KEY = 'page-layout-style-v1'
 
 export interface NoteFullscreenReminderSettings {
   enabled: boolean
@@ -72,6 +74,7 @@ export const usePreferenceStore = defineStore('preferences', () => {
   const celebration = ref<Celebration>('细腻纸屑')
   const defaultProject = ref('')
   const controlStyle = ref<ControlStyle>('system')
+  const pageLayoutStyle = ref<PageLayoutStyle>('unified')
   const effectiveControlStyle = computed(() => controlStyle.value === 'detailed' ? 'detailed' : 'minimal')
   const compactControls = computed(() => effectiveControlStyle.value === 'minimal')
   const noteFullscreenReminder = ref<NoteFullscreenReminderSettings>({ ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS })
@@ -81,15 +84,18 @@ export const usePreferenceStore = defineStore('preferences', () => {
   const loading = ref(false)
   const loadError = ref('')
   let loadVersion = 0
+  let pageLayoutEditVersion = 0
   const valid = <T extends string>(value: string, choices: readonly T[], fallback: T): T => choices.includes(value as T) ? value as T : fallback
   function prepareForMember(nextMemberId: string) {
     if (memberId.value === nextMemberId) return
     loadVersion++
+    pageLayoutEditVersion++
     memberId.value = nextMemberId
     weekStart.value = '周一'
     celebration.value = '细腻纸屑'
     defaultProject.value = ''
     controlStyle.value = 'system'
+    pageLayoutStyle.value = 'unified'
     noteFullscreenReminder.value = { ...DEFAULT_NOTE_FULLSCREEN_REMINDER_SETTINGS }
     noteAiDefaults.value = { ...DEFAULT_NOTE_AI_DEFAULTS }
     loaded.value = false
@@ -99,22 +105,25 @@ export const usePreferenceStore = defineStore('preferences', () => {
   async function load(force = false) {
     if ((loaded.value && !force) || loading.value) return
     const requestVersion = ++loadVersion
+    const pageLayoutVersion = pageLayoutEditVersion
     loading.value = true
     loadError.value = ''
     try {
-      const [savedWeekStart, savedCelebration, savedDefaultProject, savedControlStyle, savedNoteFullscreenReminder, savedNoteAiDefaults] = await Promise.all([
+      const [savedWeekStart, savedCelebration, savedDefaultProject, savedControlStyle, savedNoteFullscreenReminder, savedNoteAiDefaults, savedPageLayout] = await Promise.all([
         fetchPreference(KEYS.weekStart),
         fetchPreference(KEYS.celebration),
         fetchPreference(DEFAULT_PROJECT_KEY),
         fetchPreference(CONTROL_STYLE_KEY),
         fetchPreference(NOTE_FULLSCREEN_REMINDER_KEY),
         fetchPreference(NOTE_AI_DEFAULTS_KEY),
+        fetchPreference(PAGE_LAYOUT_KEY),
       ])
       if (requestVersion !== loadVersion) return
       weekStart.value = valid(savedWeekStart, ['周一', '周日'], '周一')
       celebration.value = valid(savedCelebration, ['细腻纸屑', '关闭'], '细腻纸屑')
       defaultProject.value = savedDefaultProject
       controlStyle.value = valid(savedControlStyle, ['system', 'minimal', 'detailed'], 'system')
+      if (pageLayoutVersion === pageLayoutEditVersion) pageLayoutStyle.value = normalizePageLayoutStyle(savedPageLayout)
       noteFullscreenReminder.value = parseNoteFullscreenReminderSettings(savedNoteFullscreenReminder)
       noteAiDefaults.value = parseNoteAiDefaults(savedNoteAiDefaults)
     } catch (error) {
@@ -144,6 +153,14 @@ export const usePreferenceStore = defineStore('preferences', () => {
     controlStyle.value = value
     loadError.value = ''
   }
+  async function setPageLayoutStyle(value: PageLayoutStyle) {
+    if (!isPageLayoutStyle(value)) throw new Error('未知页面布局')
+    const owner = memberId.value
+    const editVersion = ++pageLayoutEditVersion
+    await savePreference(PAGE_LAYOUT_KEY, value)
+    if (owner !== memberId.value || editVersion !== pageLayoutEditVersion) return
+    pageLayoutStyle.value = value
+  }
   async function setNoteFullscreenReminder(settings: NoteFullscreenReminderSettings) {
     const normalized: NoteFullscreenReminderSettings = {
       enabled: settings.enabled,
@@ -166,9 +183,9 @@ export const usePreferenceStore = defineStore('preferences', () => {
     loadError.value = ''
   }
   return {
-    weekStart, celebration, defaultProject, controlStyle, effectiveControlStyle, compactControls,
+    weekStart, celebration, defaultProject, controlStyle, effectiveControlStyle, compactControls, pageLayoutStyle,
     noteFullscreenReminder, noteAiDefaults,
     loaded, loading, loadError,
-    prepareForMember, load, setWeekStart, setCelebration, setDefaultProject, setControlStyle, setNoteFullscreenReminder, setNoteAiDefaults,
+    prepareForMember, load, setWeekStart, setCelebration, setDefaultProject, setControlStyle, setPageLayoutStyle, setNoteFullscreenReminder, setNoteAiDefaults,
   }
 })

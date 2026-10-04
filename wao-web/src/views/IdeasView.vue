@@ -50,7 +50,7 @@ onMounted(load)
 </script>
 
 <template>
-  <main class="idea-inbox">
+  <main class="idea-inbox wao-page-frame">
     <header>
       <div><h1>历史点子归并</h1><p>新想法已融合进任务与项目，这里只处理旧版点子档案。</p></div>
       <button class="all-projects" @click="router.push('/projects')"><i class="ri-stack-line"></i>全部项目</button>

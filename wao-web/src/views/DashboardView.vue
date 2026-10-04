@@ -554,7 +554,7 @@ function goHome() { router.push('/') }
 </script>
 
 <template>
-  <div class="dashboard">
+  <div class="dashboard wao-page-frame">
     <header class="dash-head">
       <div>
         <div class="eyebrow">DATA INSIGHTS</div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePreferenceStore } from '@/stores/preferences'
 import { computed, provide, watch } from 'vue'
 import { pageVisibleKey } from '@/composables/pageVisibility'
 import { useFloatingDrag } from '@/composables/floatingDrag'
@@ -8,6 +9,7 @@ const props = defineProps<{ pageKey: string; label: string; floating: boolean; v
 provide(pageVisibleKey, computed(() => props.visible))
 defineEmits<{ dock: [] }>()
 const windows = useFloatingTabsStore()
+const preferences = usePreferenceStore()
 const { elementRef, style, dragging, onPointerDown } = useFloatingDrag(
   `wao-tab-window-${props.pageKey}`,
 )
@@ -45,6 +47,7 @@ function startDrag(event: PointerEvent) {
       ref="elementRef"
       v-show="visible"
       class="tab-page-window"
+      :data-page-layout="preferences.pageLayoutStyle"
       :class="{ floating, dragging }"
       :style="windowStyle"
       :aria-label="floating ? `${label}悬浮窗口` : undefined"

@@ -629,7 +629,7 @@ watch(visibleTaskIds, (ids) => {
     <template v-else-if="data.loadStates.projects !== 'loaded'">正在加载项目信息…</template>
     <template v-else>项目不存在或当前账号无权访问。<button class="btn-ghost" @click="router.push('/projects')">返回全部项目</button></template>
   </div>
-  <div v-else class="detail" :class="{ 'detail-quadrant': projTab === '任务' && pdTaskView === 'quadrant', 'selecting-tasks': pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length) }">
+  <div v-else class="detail wao-page-frame" :class="{ 'detail-quadrant': projTab === '任务' && pdTaskView === 'quadrant', 'selecting-tasks': pdTaskView !== 'list' && (batchSelectionOpen || selectedTaskIds.length) }">
     <div v-if="data.loadStates.projects === 'error'" class="task-scope" role="alert">
       项目信息刷新失败，当前显示上次读取的项目信息。{{ data.loadErrors.projects }}
       <button @click="data.hydrate()">重新加载项目</button>

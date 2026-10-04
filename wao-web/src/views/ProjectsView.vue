@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="projects">
+  <div class="projects wao-page-frame">
     <!-- header -->
     <div class="ptop">
       <div class="ptitle">项目</div>

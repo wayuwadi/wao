@@ -264,7 +264,7 @@ onBeforeUnmount(() => { generation++ })
 </script>
 
 <template>
-  <main class="polish-page">
+  <main class="polish-page wao-page-frame">
     <header class="page-header">
       <div>
         <span class="eyebrow">WRITING TOOL</span>

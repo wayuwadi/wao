@@ -252,7 +252,7 @@ useOverlayDismiss(() => newGroupOpen.value, closeNewGroup)
 </script>
 
 <template>
-  <div class="vault">
+  <div class="vault wao-page-frame">
     <div class="vtop">
       <div class="vtitle">密码库</div>
       <button class="group-manage" :class="{ on: managingGroups }" @click="managingGroups = !managingGroups">

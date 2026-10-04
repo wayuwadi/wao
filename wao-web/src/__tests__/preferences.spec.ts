@@ -17,6 +17,69 @@ describe('成员级界面偏好', () => {
     preferenceApi.savePreference.mockResolvedValue(undefined)
   })
 
+  it('页面布局默认统一外框，未知旧值安全回退，三种布局可持久化读取', async () => {
+    const preferences = usePreferenceStore()
+    expect(preferences.pageLayoutStyle).toBe('unified')
+    for (const style of ['unified', 'fluid', 'centered', 'unknown']) {
+      preferenceApi.fetchPreference.mockImplementation(key => Promise.resolve(key === 'page-layout-style-v1' ? style : ''))
+      await preferences.load(true)
+      expect(preferences.pageLayoutStyle).toBe(style === 'unknown' ? 'unified' : style)
+    }
+    await preferences.setPageLayoutStyle('fluid')
+    expect(preferenceApi.savePreference).toHaveBeenLastCalledWith('page-layout-style-v1', 'fluid')
+    expect(preferences.pageLayoutStyle).toBe('fluid')
+  })
+
+  it('页面布局保存失败保持已保存值，重试成功后才应用', async () => {
+    const preferences = usePreferenceStore()
+    preferenceApi.savePreference.mockRejectedValueOnce(new Error('网络不可用'))
+    await expect(preferences.setPageLayoutStyle('centered')).rejects.toThrow('网络不可用')
+    expect(preferences.pageLayoutStyle).toBe('unified')
+    await preferences.setPageLayoutStyle('centered')
+    expect(preferences.pageLayoutStyle).toBe('centered')
+  })
+
+  it('上一名成员的迟到布局保存不能覆盖新成员', async () => {
+    const preferences = usePreferenceStore()
+    preferences.prepareForMember('a')
+    let finish!: () => void
+    preferenceApi.savePreference.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+    const firstSave = preferences.setPageLayoutStyle('centered')
+    preferences.prepareForMember('b')
+    await preferences.setPageLayoutStyle('fluid')
+    finish()
+    await firstSave
+    expect(preferences.pageLayoutStyle).toBe('fluid')
+  })
+
+  it('读取中的旧布局不能回退刚保存的选择', async () => {
+    const preferences = usePreferenceStore()
+    let finish!: (value: string) => void
+    preferenceApi.fetchPreference.mockImplementation(key => key === 'page-layout-style-v1'
+      ? new Promise<string>(resolve => { finish = resolve }) : Promise.resolve(''))
+    const read = preferences.load()
+    await preferences.setPageLayoutStyle('fluid')
+    finish('centered')
+    await read
+    expect(preferences.pageLayoutStyle).toBe('fluid')
+  })
+
+  it('切换成员先恢复统一外框，上一人的迟到读取不能覆盖新成员', async () => {
+    const preferences = usePreferenceStore()
+    let finish!: (value: string) => void
+    preferenceApi.fetchPreference.mockImplementation(key => key === 'page-layout-style-v1'
+      ? new Promise<string>(resolve => { finish = resolve }) : Promise.resolve(''))
+    preferences.prepareForMember('a')
+    const read = preferences.load()
+    preferences.prepareForMember('b')
+    expect(preferences.pageLayoutStyle).toBe('unified')
+    preferenceApi.fetchPreference.mockResolvedValue('fluid')
+    await preferences.load()
+    finish('centered')
+    await read
+    expect(preferences.pageLayoutStyle).toBe('fluid')
+  })
+
   it('未配置时使用默认控件风格且不再读取已下线的音乐偏好', async () => {
     const preferences = usePreferenceStore()
     await preferences.load()

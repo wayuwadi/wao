@@ -224,7 +224,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="auto">
+  <div class="auto wao-page-frame">
     <DemoBanner
       icon="ri-flashlight-line"
       title="自动化"

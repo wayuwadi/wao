@@ -128,7 +128,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="reference-page" @paste="paste">
+  <main class="reference-page wao-page-frame" @paste="paste">
     <header class="page-head">
       <div><div class="eyebrow">看见就收，想用就发</div><h1>参考图库</h1><p>把好图留给下一次灵感。选几张图，附一句需求，交给 AI 参考。</p></div>
       <button class="primary-button" type="button" :disabled="uploading" @click="input?.click()">{{ uploading ? '正在收图…' : '收进截图' }}</button>

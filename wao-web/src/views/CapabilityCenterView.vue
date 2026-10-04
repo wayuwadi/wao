@@ -449,7 +449,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="cap-center">
+  <main class="cap-center wao-page-frame">
     <header class="cap-center-header">
       <div>
         <span class="cap-eyebrow">WAO · 开放与扩展</span>

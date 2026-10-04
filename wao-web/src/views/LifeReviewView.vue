@@ -144,7 +144,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="review-page">
+  <main class="review-page wao-page-frame">
     <header class="hero">
       <div>
         <span class="eyebrow"><i class="ri-time-line"></i> PERSONAL REVIEW</span>
