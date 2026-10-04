@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import { fetchDiscoveryPreference, saveDiscoveryPreference, fetchDiscoveryCurrent, discoveryHttpStatus, type DiscoveryPreference } from '@/api/noteDiscoveries'
 const session = useSessionStore()
 const preference = ref<DiscoveryPreference>(), draft = ref(false), loading = ref(false), saving = ref(false), error = ref(''), saved = ref(false), state = ref('')
 let generation = 0
+const dirty = computed(() => !!preference.value && draft.value !== preference.value.enabled)
+function confirmLeave() { return (!dirty.value && !saving.value) || window.confirm('小记顺手发现设置尚未保存，确认离开吗？') }
+defineExpose({ confirmLeave })
 async function load(preserve = false) {
   const mine = generation; loading.value = true; error.value = ''
   try {

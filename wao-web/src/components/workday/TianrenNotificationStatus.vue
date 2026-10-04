@@ -114,7 +114,7 @@ onBeforeUnmount(() => { disposed = true; generation++; clearTimer(); document.re
       <span aria-live="polite">飞书 · {{ statusLabel }}</span>
       <i :class="expanded ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>
     </button>
-    <RouterLink class="notice-settings" to="/settings?tab=notifications#tianren-notifications"><i class="ri-settings-3-line" aria-hidden="true"></i>配置通知群</RouterLink>
+    <RouterLink class="notice-settings" to="/settings?tab=tianren-notifications"><i class="ri-settings-3-line" aria-hidden="true"></i>配置通知群</RouterLink>
     <section v-if="expanded" :id="panelId" class="notice-details" aria-label="飞书通知详情">
       <div class="notice-heading">
         <strong>飞书群卡片 · {{ statusLabel }}</strong>

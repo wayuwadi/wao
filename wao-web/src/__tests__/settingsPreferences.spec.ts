@@ -21,7 +21,7 @@ describe('设置页成员偏好', () => {
     preferenceApi.savePreference.mockResolvedValue(undefined)
   })
 
-  it('个人偏好页不再提供音乐入口，并保留小记提醒与 AI 设置', async () => {
+  it('旧偏好链接进入外观分类，小记提醒与 AI 设置移到独立分类', async () => {
     const preferences = usePreferenceStore()
     await preferences.load()
     const router = createRouter({
@@ -34,6 +34,10 @@ describe('设置页成员偏好', () => {
     const wrapper = mount(SettingsView, { global: { plugins: [router] } })
     expect(wrapper.text()).not.toContain('音乐播放器')
     expect(wrapper.text()).not.toContain('显示播放器入口')
+    expect(wrapper.find('.note-reminder-preferences').exists()).toBe(false)
+    expect(wrapper.get('.snav-item[aria-current="page"]').text()).toBe('外观与陪伴')
+    await wrapper.findAll('.snav-item').find(button => button.text() === '小记与 AI')!.trigger('click')
+    await flushPromises()
     expect(wrapper.find('.note-reminder-preferences').exists()).toBe(true)
     expect(wrapper.find('.note-ai-defaults-preferences').exists()).toBe(true)
     expect(preferenceApi.fetchPreference).not.toHaveBeenCalledWith('music-player-settings-v1')

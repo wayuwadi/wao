@@ -93,7 +93,9 @@ describe('设置页 Webhook 草稿路由保护', () => {
   })
 
   it('路由离开时拒绝丢弃尚未保存的 Webhook 草稿', async () => {
-    const entry = wrapper.findAll('.snav-item').find((button) => button.text() === 'Webhook配置')
+    await wrapper.findAll('.snav-item').find(button => button.text() === '管理与连接')!.trigger('click')
+    await flushPromises()
+    const entry = wrapper.findAll('.settings-entry').find(button => button.text().includes('Webhook 配置'))
     await entry!.trigger('click')
     await flushPromises()
     await wrapper.get('button.primary.small').trigger('click')
@@ -109,12 +111,13 @@ describe('设置页 Webhook 草稿路由保护', () => {
     ).toBe('未保存机器人')
   })
 
-  it('下线设置不显示入口，旧链接和页内跳转回退到组织与成员', async () => {
+  it('下线设置不显示入口，旧链接和页内跳转继续回退到组织与成员', async () => {
     const labels = wrapper.findAll('.snav-item').map(button => button.text())
     for (const label of ['断网时段', '版本与更新', 'WAO AI 能力']) expect(labels).not.toContain(label)
     for (const tab of ['network-outage', 'version', 'wao-ai-capabilities']) {
       await router.replace('/settings?tab=' + tab)
       await flushPromises()
+      expect(wrapper.get('.snav-item[aria-current="page"]').text()).toBe('管理与连接')
       expect(wrapper.text()).toContain('组织与成员')
       expect(wrapper.find('.version-settings').exists()).toBe(false)
       expect(wrapper.find('.wao-ai-capabilities').exists()).toBe(false)
@@ -126,25 +129,27 @@ describe('设置页 Webhook 草稿路由保护', () => {
   it('通知设置保留设置侧栏，并在切换菜单配置时保护未保存草稿', async () => {
     const notificationEntry = wrapper
       .findAll('.snav-item')
-      .find((button) => button.text() === '通知设置')
+      .find((button) => button.text() === '通知与提醒')
     await notificationEntry!.trigger('click')
     await flushPromises()
+    await wrapper.findAll('.settings-entry').find(button => button.text().includes('站内与共享通知'))!.trigger('click')
+    await flushPromises()
 
-    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notifications')
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notification-policy')
     expect(wrapper.get('.notification-settings').text()).toContain('系统 · 共享通知策略')
-    expect(wrapper.get('.project-policy').text()).toContain('按项目通知')
+    expect(wrapper.find('.project-policy').exists()).toBe(false)
     expect(notificationEntry!.classes()).toContain('on')
 
     await wrapper.get('.quiet-row > label input').setValue(true)
     window.confirm = vi.fn<(message?: string) => boolean>(() => false)
     const navigationEntry = wrapper
       .findAll('.snav-item')
-      .find((button) => button.text() === '我的导航')
+      .find((button) => button.text() === '个人与账号')
     await navigationEntry!.trigger('click')
     await flushPromises()
 
     expect(window.confirm).toHaveBeenCalledOnce()
-    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notifications')
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notification-policy')
     expect((wrapper.get('.quiet-row > label input').element as HTMLInputElement).checked).toBe(true)
   })
   it('进入恢复草稿的宠物设置不误触发离开确认', async () => {
@@ -158,16 +163,16 @@ describe('设置页 Webhook 草稿路由保护', () => {
     expect(router.currentRoute.value.fullPath).toBe('/settings?tab=pet')
     expect(window.confirm).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('已恢复未保存的宠物设置')
-    await wrapper.findAll('.snav-item').find(button => button.text() === '偏好')!.trigger('click')
+    await wrapper.findAll('.snav-item').find(button => button.text() === '外观与陪伴')!.trigger('click')
     await flushPromises()
     expect(window.confirm).toHaveBeenCalledOnce()
     expect(router.currentRoute.value.fullPath).toBe('/settings?tab=pet')
     window.confirm = vi.fn(() => true)
-    await wrapper.findAll('.snav-item').find(button => button.text() === '组织与成员')!.trigger('click')
+    await wrapper.findAll('.snav-item').find(button => button.text() === '管理与连接')!.trigger('click')
     await flushPromises()
     expect(window.confirm).toHaveBeenCalledOnce()
-    expect(router.currentRoute.value.fullPath).toBe('/settings')
-    expect(wrapper.findAll('.snav-item').find(button => button.text() === '组织与成员')!.classes()).toContain('on')
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=management')
+    expect(wrapper.findAll('.snav-item').find(button => button.text() === '管理与连接')!.classes()).toContain('on')
     localStorage.removeItem('wao-web-pet-settings-draft-v1:pet-guard')
   })
 
