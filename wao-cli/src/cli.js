@@ -61,7 +61,7 @@ const HELP = `WAO 工作区 CLI
   wao pages publish --file dist/index.html --title "分享稿" --slug share-draft
 
 托管页发布：只接受 UTF-8 单文件 HTML，最大 10 MB；会公开生成公网链接。
-每次交互发布前均需确认；自动化须显式添加 --yes。请在 WAO 首页“连接 AI 客户端”中单独开启发布权限。
+每次交互发布前均需确认；自动化须显式添加 --yes。请在 WAO 设置“WAO CLI 与 MCP”中单独开启发布权限。
 
 配置：WAO_TOKEN（优先于本机安全凭据）；WAO_URL（默认 https://wao.wayuwa.cn/api/mcp/workspace）。
       --url 可指定本次地址，仅 HTTPS 和本机 HTTP；--output json 提供脚本可读结果。

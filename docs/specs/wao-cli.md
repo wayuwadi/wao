@@ -29,7 +29,7 @@ CLI 支持通过独立授权的现有托管页 API 发布一个公开 HTML 页�
 ## 命令与契约
 
 - Node.js 22+；仓库内 `wao-cli` 包通过 `npm link` 提供 `wao` 命令。默认远程地址为 `https://wao.wayuwa.cn/api/mcp/workspace`。
-- 首页连接弹窗提供单独的“复制令牌（用于 CLI）”；交互登录接受 `wao_workspace_` 令牌或包含唯一该令牌的连接说明，验证后在 Windows 使用当前用户 DPAPI、在 macOS 使用系统钥匙串保存。记忆 MCP 令牌及没有工作区令牌的文本在发出网络请求前拒绝。`WAO_TOKEN` 供自动化或其他系统使用并覆盖本机安全凭据。CLI 不将令牌写入本地明文配置或日志。
+- 设置 → 管理与连接 → WAO CLI 与 MCP 的连接弹窗提供单独的“复制令牌（用于 CLI）”；交互登录接受 `wao_workspace_` 令牌或包含唯一该令牌的连接说明，验证后在 Windows 使用当前用户 DPAPI、在 macOS 使用系统钥匙串保存。记忆 MCP 令牌及没有工作区令牌的文本在发出网络请求前拒绝。`WAO_TOKEN` 供自动化或其他系统使用并覆盖本机安全凭据。CLI 不将令牌写入本地明文配置或日志。
 - `wao tools list` 使用实时 `tools/list`。`wao tools call NAME --input-file FILE` 提供未封装工具的通用入口；调用前按令牌可见工具校验。常用子命令使用同一 schema，字段以 `--kebab-case` 输入。
 - `--output json` 输出 `structuredContent.data`，默认数组用表格、对象用 JSON；所有错误进入 stderr 且退出非零。CLI 不自动重试写入。远程 HTTP 被拒绝，本机 HTTP 仅供测试。
 - CLI 不提供删除、直接通知、浏览器会话管理或令牌签发命令。令牌签发和吊销仍在 WAO 页面进行。

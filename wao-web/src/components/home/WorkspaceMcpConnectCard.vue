@@ -68,7 +68,7 @@ async function generate() {
   secret.value = ''
   tokenCopied.value = false
   try {
-    const name = `首页快捷连接 · ${new Date().toLocaleString('zh-CN', { hour12: false })}`
+    const name = `工作区连接 · ${new Date().toLocaleString('zh-CN', { hour12: false })}`
     const created = await createWorkspaceMcpToken(name, canWrite.value, canPublishHostedPage.value)
     tokens.value.unshift(created.token)
     secret.value = created.secret
