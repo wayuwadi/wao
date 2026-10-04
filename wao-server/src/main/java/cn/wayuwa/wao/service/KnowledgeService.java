@@ -2061,6 +2061,15 @@ public class KnowledgeService {
                 }
                 return;
             }
+            if (Set.of("bulletList", "orderedList", "taskList").contains(nodeType == null ? "" : nodeType)
+                    && "indent".equals(entry.getKey())) {
+                JsonNode indent = entry.getValue();
+                if (!indent.isIntegralNumber() || !indent.canConvertToInt()
+                        || indent.intValue() < 0 || indent.intValue() > 8) {
+                    throw new BadRequestException("列表缩进必须为 0–8 级整数");
+                }
+                return;
+            }
             if (!RICH_ATTRS.contains(entry.getKey())) {
                 throw new BadRequestException("文档包含不支持的节点属性：" + entry.getKey());
             }
@@ -2145,6 +2154,7 @@ public class KnowledgeService {
     private static String markdownPlainText(String markdown) {
         return markdown
                 .replaceAll("(?s)```.*?```", " ")
+                .replaceAll("(?m)^[ \\t]*\\[wao-list-indent\\]: # \\\"[0-8]\\\"[ \\t]*(?:\\r?\\n|$)", "")
                 .replaceAll("!\\[[^]]*]\\([^)]*\\)", " ")
                 .replaceAll("!\\[[^]]*]|[>#*_`~|]", " ")
                 .replaceAll("\\[([^]]+)]\\([^)]*\\)", "$1")

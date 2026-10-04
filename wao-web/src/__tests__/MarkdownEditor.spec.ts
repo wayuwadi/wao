@@ -9,6 +9,7 @@ import type { Editor } from '@tiptap/core'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { CellSelection } from '@tiptap/pm/tables'
 import { AllSelection } from '@tiptap/pm/state'
+import { listIndentStyle } from '@/utils/listIndent'
 import { createPinia, setActivePinia } from 'pinia'
 import { useUiStore } from '@/stores/ui'
 import { loadRotationImage } from '@/api/imageRotation'
@@ -391,13 +392,16 @@ describe('正文选区安全缩进', () => {
     list.unmount()
   })
 
-  it('单一列表沿用层级操作，首项不能下沉也不删选区；待办仍可下沉和提升', async () => {
+  it('单一列表沿用层级操作，首项整体缩进不删选区；待办仍可下沉和提升', async () => {
     for (const source of ['- 第一项\n- 第二项', '- [ ] 第一项\n- [x] 第二项']) {
       const w = await mountEditor({ modelValue: source })
       const e = (w.vm as unknown as { editor: Editor }).editor
       const original = e.getJSON()
       e.commands.setTextSelection({ from: positionOf(e, '第一项'), to: positionOf(e, '第一项') + 3 })
       await tab(w)
+      expect(e.state.doc.firstChild?.attrs.indent).toBe(1)
+      expect(e.state.doc.textContent).toBe('第一项第二项')
+      await tab(w, true)
       expect(e.getJSON()).toEqual(original)
       e.commands.setTextSelection({ from: positionOf(e, '第二项'), to: positionOf(e, '第二项') + 3 })
       await tab(w)
@@ -450,6 +454,202 @@ describe('正文选区安全缩进', () => {
     await tab(w)
     expect(e.getJSON()).toEqual(original)
     expect(w.emitted('content-change')?.length ?? 0).toBe(changes)
+    w.unmount()
+  })
+})
+
+describe('列表标记与真实层级缩进', () => {
+  function positionOf(e: Editor, text: string) {
+    let position = -1
+    e.state.doc.descendants((node, pos) => { if (node.isText && node.text?.includes(text)) position = pos + node.text.indexOf(text) })
+    if (position < 0) throw new Error(`未找到 ${text}`)
+    return position
+  }
+  const sources = [
+    '- 第一项\n- 第二项\n- 第三项\n- 第四项',
+    '1. 第一项\n2. 第二项\n3. 第三项\n4. 第四项',
+    '- [ ] 第一项\n- [x] 第二项\n- [ ] 第三项\n- [x] 第四项',
+  ]
+
+  it.each(sources)('选中多个兄弟项真正挂到前项，反向选区及一次撤销/重做保留：%s', async source => {
+    const w = await mountEditor({ modelValue: source })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.commands.setTextSelection({ from: positionOf(e, '第三项') + 3, to: positionOf(e, '第二项') })
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    const list = e.state.doc.firstChild!
+    expect(list.childCount).toBe(2)
+    expect(list.firstChild!.lastChild!.type).toBe(list.type)
+    expect(list.firstChild!.lastChild!.childCount).toBe(2)
+    expect(e.state.doc.firstChild?.textContent).toBe('第一项第二项第三项第四项')
+    expect(e.state.selection.anchor).toBeGreaterThan(e.state.selection.head)
+    expect(e.state.doc.textBetween(e.state.selection.from, e.state.selection.to)).toBe('第二项第三项')
+    const nested = e.getJSON()
+    e.commands.undo()
+    expect(e.getJSON()).toEqual(original)
+    e.commands.redo()
+    expect(e.getJSON()).toEqual(nested)
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+
+  it.each(sources)('首项或整组选区连标记整体移动，Markdown/JSON回读一致且不造空父项：%s', async source => {
+    const w = await mountEditor({ modelValue: source })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.commands.selectAll()
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.doc.firstChild?.attrs.indent).toBe(1)
+    expect(e.state.doc.firstChild?.childCount).toBe(4)
+    const list = w.find('.md-body > .tiptap > ul, .md-body > .tiptap > ol')
+    // jsdom 不解析 margin-left:min()；真实样式由有界属性生成，浏览器验证标记实际位移。
+    expect(list.attributes('data-list-indent')).toBe('1')
+    expect(listIndentStyle(list.attributes('data-list-indent'))).toBe('margin-left:min(24px,50%)')
+    expect(e.state.doc.firstChild?.textContent).toBe('第一项第二项第三项第四项')
+    const snapshot = e.getJSON(), markdown = e.getMarkdown()
+    expect(markdown).toContain('[wao-list-indent]: # "1"')
+    const restored = await mountEditor({ modelValue: markdown })
+    expect((restored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(snapshot)
+    expect(restored.text()).not.toContain('wao-list-indent')
+    restored.unmount()
+    const richRestored = await mountEditor({ modelValue: markdown, document: snapshot as RichDocNode })
+    expect((richRestored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(snapshot)
+    richRestored.unmount()
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+
+  it('首项部分选区只移动所选项，编号连续；反缩进后合回原列表', async () => {
+    const w = await mountEditor({ modelValue: sources[1]! })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.commands.setTextSelection({ from: positionOf(e, '第一项'), to: positionOf(e, '第二项') })
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.doc.childCount).toBe(original.content!.length + 1)
+    expect(e.state.doc.child(0).attrs).toMatchObject({ start: 1, indent: 1 })
+    expect(e.state.doc.child(1).attrs).toMatchObject({ start: 2, indent: 0 })
+    expect(e.state.doc.child(1).childCount).toBe(3)
+    expect(e.state.doc.textBetween(e.state.selection.from, e.state.selection.to)).toBe('第一项')
+    const restored = await mountEditor({ modelValue: e.getMarkdown() })
+    expect((restored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(e.getJSON())
+    restored.unmount()
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+
+  it('跨正文、带子列表的父项及图片只移动一次，旧空白和格式保持', async () => {
+    const w = await mountEditor({ modelValue: '前文\n\n- **父项**\n  - 子项\n- \u00a0\u00a0旧空白\n\n![图](/api/images/hierarchy/raw)\n\n后文' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.commands.selectAll()
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    const list = e.state.doc.child(1)
+    expect(list.attrs.indent).toBe(1)
+    expect(list.firstChild?.lastChild?.attrs.indent).toBe(0)
+    expect(list.textContent).toBe('父项子项\u00a0\u00a0旧空白')
+    expect(w.get('strong').text()).toBe('父项')
+    expect(e.state.doc.child(2).attrs.indent).toBe(1)
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+
+  it('嵌套列表里选中兄弟项继续下沉/提升，已有不同整体偏移的子列表不合并', async () => {
+    const w = await mountEditor({ modelValue: '- 父项\n  - 子甲\n  - 子乙\n  - 子丙\n- 后项' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.commands.setTextSelection({ from: positionOf(e, '子乙'), to: positionOf(e, '子丙') + 2 })
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.doc.firstChild?.firstChild?.lastChild?.childCount).toBe(1)
+    expect(e.state.doc.firstChild?.firstChild?.lastChild?.firstChild?.lastChild?.childCount).toBe(2)
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+
+  it('部分反缩进只改变选中项，独立列表属性有界且不同偏移不合并', async () => {
+    const w = await mountEditor({ modelValue: sources[1]! })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.selectAll()
+    for (let n = 0; n < 10; n++) await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.doc.firstChild?.attrs.indent).toBe(8)
+    e.commands.setTextSelection({ from: positionOf(e, '第二项'), to: positionOf(e, '第二项') + 3 })
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.state.doc.childCount).toBe(4)
+    expect([0, 1, 2].map(n => e.state.doc.child(n).attrs.indent)).toEqual([8, 7, 8])
+    expect([0, 1, 2].map(n => e.state.doc.child(n).attrs.start)).toEqual([1, 2, 3])
+    expect(e.state.doc.textContent.trimEnd()).toBe('第一项第二项第三项第四项')
+    const restored = await mountEditor({ modelValue: e.getMarkdown() })
+    expect((restored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(e.getJSON())
+    restored.unmount()
+    w.unmount()
+  })
+
+  it('已有整体缩进的罗马数字列表仍可下沉/提升，编号与反向选区原样恢复', async () => {
+    const w = await mountEditor({ modelValue: '', document: { type: 'doc', content: [
+      { type: 'orderedList', attrs: { start: 4, type: 'i', indent: 2 }, content: ['第一项', '第二项'].map(text =>
+        ({ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })) },
+    ] } })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.commands.setTextSelection({ from: positionOf(e, '第二项') + 3, to: positionOf(e, '第二项') })
+    const { anchor, head } = e.state.selection
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.doc.firstChild?.attrs).toMatchObject({ start: 4, type: 'i', indent: 2 })
+    expect(e.state.doc.firstChild?.firstChild?.lastChild?.attrs.indent).toBe(0)
+    expect(e.state.doc.textBetween(e.state.selection.from, e.state.selection.to)).toBe('第二项')
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON()).toEqual(original)
+    expect(e.state.selection.anchor).toBe(anchor)
+    expect(e.state.selection.head).toBe(head)
+    const restored = await mountEditor({ modelValue: e.getMarkdown() })
+    expect((restored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(original)
+    restored.unmount()
+    w.unmount()
+  })
+
+  it('嵌套列表首项独立移动可Markdown往返，节点选中整组只移动该子列表', async () => {
+    const w = await mountEditor({ modelValue: '- 父项\n  - 子甲\n  - 子乙\n- 后项' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.commands.setTextSelection({ from: positionOf(e, '子甲'), to: positionOf(e, '子甲') + 2 })
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.doc.firstChild?.attrs.indent).toBe(0)
+    expect(e.state.doc.firstChild?.firstChild?.child(1).attrs.indent).toBe(1)
+    const restored = await mountEditor({ modelValue: e.getMarkdown() })
+    expect((restored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(e.getJSON())
+    restored.unmount()
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON()).toEqual(original)
+    let nested = -1
+    e.state.doc.descendants((node, position) => { if (node.type.name === 'bulletList' && node.textContent === '子甲子乙') nested = position })
+    e.commands.setNodeSelection(nested)
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.doc.firstChild?.attrs.indent).toBe(0)
+    expect(e.state.doc.firstChild?.firstChild?.lastChild?.attrs.indent).toBe(1)
+    expect(e.state.selection.from).toBe(nested)
+    w.unmount()
+  })
+
+  it('仅选中列表内代码块仍逐行缩进代码，不操作外层列表', async () => {
+    const w = await mountEditor({ modelValue: '', document: { type: 'doc', content: [
+      { type: 'bulletList', content: [{ type: 'listItem', content: [
+        { type: 'paragraph', content: [{ type: 'text', text: '前文不移动' }] },
+        { type: 'codeBlock', attrs: { language: 'js' }, content: [{ type: 'text', text: 'alpha()\nbeta()' }] },
+      ] }] },
+    ] } })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.commands.setTextSelection({ from: positionOf(e, 'alpha') + 1, to: positionOf(e, 'beta') + 4 })
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.doc.firstChild?.attrs.indent).toBe(0)
+    expect(e.state.doc.firstChild?.firstChild?.lastChild?.textContent).toBe('  alpha()\n  beta()')
+    expect(e.state.doc.firstChild?.firstChild?.firstChild?.textContent).toBe('前文不移动')
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.getJSON()).toEqual(original)
     w.unmount()
   })
 })
