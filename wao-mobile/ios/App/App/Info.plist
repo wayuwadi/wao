@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>WAOSharedKeychainGroup</key>
+    <string>$(AppIdentifierPrefix)cn.wayuwa.wao.notes</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>录制你的想法，结束后转成小记文字。录音失败或转写失败时保留音频供重试。</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>将你主动录制的想法转成文字。设备支持时在本机识别，否则使用 Apple 语音识别服务。</string>
   <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>

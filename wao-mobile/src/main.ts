@@ -6,7 +6,7 @@ import "./style.css";
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: "/", redirect: "/today" },
+    { path: "/", redirect: "/notes" },
     ...["today", "tasks", "calendar", "notes", "chat", "me"].map((tab) => ({
       path: `/${tab}`,
       component: WorkspaceView,

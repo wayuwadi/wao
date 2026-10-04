@@ -1,10 +1,9 @@
-name: WAO Mobile Release
+name: WAO iOS Notes Build
 
 on:
   push:
     branches: [main]
     paths: ['wao-mobile/**', '.github/workflows/mobile-release.yml']
-    tags: ['mobile-v*']
   workflow_dispatch:
     inputs:
       version:
@@ -71,9 +70,12 @@ jobs:
         run: npm run version:native
         working-directory: wao-mobile
         env:
+          IOS_ONLY: 'true'
           MOBILE_VERSION: ${{ steps.version.outputs.version }}
 
   android:
+    # ADR-323 仅恢复 iOS 小记；保留历史配置但禁止 Android 构建和发布。
+    if: false
     needs: check
     runs-on: ubuntu-latest
     steps:
@@ -161,7 +163,8 @@ jobs:
 
   publish:
     needs: [check, android, ios]
-    if: needs.check.outputs.publish == 'true'
+    # 未确定 Apple 签名与安装路径，不恢复公开双平台下载发布。
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: write

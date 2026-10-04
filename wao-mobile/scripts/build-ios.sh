@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${MOBILE_VERSION:=$(node -p 'require("./package.json").version')}"
 export MOBILE_VERSION
+export IOS_ONLY=true
 npm run version:native
 mkdir -p artifacts
 xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath artifacts/simulator CODE_SIGNING_ALLOWED=NO build

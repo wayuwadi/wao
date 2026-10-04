@@ -807,6 +807,7 @@ public class KnowledgeService {
      *
      * <p>第一次请求已落库但响应丢失时，重试会命中同一篇文档。若用户在重试前继续修改了草稿，
      * 这里把同一作者的同一篇小记更新到最新正文；不会再次插入，也不会再次发送飞书创建通知。
+     * createOnly 为 true 时，同作者重试只返回现有正文，不修改版本、通知或重新调度 AI。
      * 其他作者或其他知识库已经占用该 id 时拒绝写入，避免把碰撞伪装成成功。
      *
      * @param id     客户端草稿持有的文档 id
@@ -828,6 +829,7 @@ public class KnowledgeService {
                     || !Objects.equals(resolvedAuthor, existing.getAuthorId())) {
                 throw new BadRequestException("小记文档 id 已被占用");
             }
+            if (Boolean.TRUE.equals(req.createOnly())) return toDto(existing);
             List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
             RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
             String title = blankOr(req.title(), titleFrom(content, blocks));
@@ -1326,6 +1328,10 @@ public class KnowledgeService {
         if(noteAiManaged!=null&&actor!=null&&!NoteAiManagedService.derived())noteAiManaged.lockActor(actor);
         docMapper.selectByIdForUpdate(id);
         DocEntity e = requireDoc(id);
+        if ("AI_DERIVED".equals(origin)) {
+            if (req.content() != null) BookExcerptProtection.assertPreserved(e.getContentMarkdown(), req.content().markdown());
+            else if (req.blocks() != null) BookExcerptProtection.assertPreserved(e.getContentMarkdown(), null);
+        }
         if (e.getAutoSyncScope() != null && !e.getAutoSyncScope().isBlank() && e.getAutoSyncDate() != null
                 && e.getAutoSyncVersion() != null) {
             return updateVersionedArchive(e, req);

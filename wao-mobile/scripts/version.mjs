@@ -17,7 +17,7 @@ if (code < 1 || code > 2_100_000_000)
   throw Error("Android versionCode 超出范围");
 const edit = (file, fn) =>
   writeFileSync(root + file, fn(readFileSync(root + file, "utf8")));
-edit("android/app/build.gradle", (s) =>
+if (process.env.IOS_ONLY !== 'true') edit("android/app/build.gradle", (s) =>
   s
     .replace(/versionCode \d+/, `versionCode ${code}`)
     .replace(/versionName "[^"]+"/, `versionName "${version}"`),

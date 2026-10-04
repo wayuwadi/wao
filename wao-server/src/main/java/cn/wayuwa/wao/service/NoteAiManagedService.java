@@ -108,6 +108,7 @@ public class NoteAiManagedService {
     private void create(DocDto doc,String cycle,String stage,NoteAiSettingsService.Settings s,boolean manual,int attempt,String origin,String cover){create(doc,doc.author(),cycle,stage,s,manual,attempt,origin,cover);}
     private void create(DocDto doc,String member,String cycle,String stage,NoteAiSettingsService.Settings s,boolean manual,int attempt,String origin,String cover){
         String body=userBody(doc,cover),code=null,message=null;
+        if ("polish".equals(stage)) body=BookExcerptProtection.thoughts(body);
         String effective=body.strip();
         String letters=effective.replaceAll("!\\[[^]]*]\\([^)]*\\)","").replaceAll("\\[[^]]*]\\([^)]*\\)"," ").strip();
         if(!manual&&!s.enabled(stage)){code="DISABLED";message="已关闭保存后"+label(stage);}
@@ -221,6 +222,7 @@ public class NoteAiManagedService {
                 // 原图片、链接与附件引用必须仍存在，不接受丢失资源的结果。
                 java.util.regex.Matcher links=java.util.regex.Pattern.compile("!?\\[[^]]*]\\(([^)]+)\\)").matcher(source);
                 while(links.find())if(!output.contains(links.group(1))){fail(a,"润色结果未完整保留图片、链接或附件；当前正文未改变");return;}
+                output=BookExcerptProtection.reassemble(userBody(doc,str(signal,"cover_url")),output);
                 String cover=str(signal,"cover_url");String body=cover.isBlank()?output:"![文章总览图]("+cover+" \"wao-image-size:50%xauto\")\n\n"+output;
                 if(doc.author().equals(str(a,"member_id")))versions.save(str(a,"member_id"),doc.id(),new SaveNotePolishVersionRequest(raw(doc),body,str(a,"job_id")));
                 content=new RichDocContentDto(1,null,body);

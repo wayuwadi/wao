@@ -1,6 +1,6 @@
 {
   "name": "wao-mobile",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -14,7 +14,8 @@
     "check": "npm run test && npm run build",
     "sync": "npm run build && cap sync",
     "android": "npm run sync && cap run android",
-    "ios": "npm run sync && cap run ios",
+    "ios": "npm run sync:ios && cap run ios",
+    "sync:ios": "npm run build && cap sync ios",
     "open:android": "cap open android",
     "open:ios": "cap open ios",
     "doctor": "node scripts/doctor.mjs",

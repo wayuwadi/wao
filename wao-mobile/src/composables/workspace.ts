@@ -3,6 +3,7 @@ import { api, ApiError } from "../api/client";
 import type { Session, Project, Task, Note, Draft } from "../domain/models";
 import { notePayload, noteText } from "../domain/models";
 import { removeDraft } from "./drafts";
+import { iosCapture, isIosCapture } from '../native/noteCapture';
 const session = ref<Session | null>(null),
   tasks = ref<Task[]>([]),
   projects = ref<Project[]>([]),
@@ -41,6 +42,7 @@ export function useWorkspace() {
     loading.value = false;
   }
   function clear() {
+    if (isIosCapture()) void iosCapture.clearSession().catch(() => { error.value = '共享登录清理失败，请保持主应用打开后重试退出'; });
     generation++;
     session.value = null;
     tasks.value = [];
@@ -58,6 +60,7 @@ export function useWorkspace() {
     if (session.value) await refresh();
   }
   async function logout() {
+    if (isIosCapture()) await iosCapture.clearSession();
     await api.logout();
     clear();
   }

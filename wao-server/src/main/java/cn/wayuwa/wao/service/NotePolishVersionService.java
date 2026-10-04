@@ -55,14 +55,15 @@ public class NotePolishVersionService {
             throw new ConflictException("小记正文已更新，旧润色结果未覆盖新内容；请重新润色");
         }
         String polished = request.polishedMarkdown().trim();
+        BookExcerptProtection.assertPreserved(request.sourceMarkdown(), polished);
         if (polished.isBlank()) throw new BadRequestException("润色结果为空，请重试");
         String jobId=request.aiJobId();
         if(jobId!=null) {
             var job=jobMapper.findOwned(jobId,memberId);
-            if(job==null||!"NOTE_BODY".equals(job.kind())||!body(job.originalText()).equals(body(request.sourceMarkdown())))
+            if(job==null||!"NOTE_BODY".equals(job.kind())||!modelBody(job.originalText()).equals(modelBody(request.sourceMarkdown())))
                 throw new BadRequestException("润色来源任务与本小记不一致");
             var result=jobs.get(memberId,jobId);
-            if(!"SUCCEEDED".equals(result.status())||!body(polished).equals(body(result.polished())))
+            if(!"SUCCEEDED".equals(result.status())||!modelBody(polished).equals(modelBody(result.polished())))
                 throw new BadRequestException("润色结果与已完成任务不一致");
         }
         versions.upsert(new NotePolishVersionMapper.Version(docId, memberId,
@@ -72,4 +73,7 @@ public class NotePolishVersionService {
         return new NotePolishVersionDto(docId, request.sourceMarkdown(), polished);
     }
     private String body(String text) { return NoteDiscoveryIndexService.normalize(text==null?"":text.replaceFirst("^!\\[文章总览图]\\([^\\n]+\\)\\s*","")); }
+    private String modelBody(String text) {
+        return body(BookExcerptProtection.thoughts(text == null ? "" : text.replaceFirst("^!\\[文章总览图]\\([^\\n]+\\)\\s*", "")));
+    }
 }
