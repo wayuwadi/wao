@@ -8,6 +8,7 @@ const WORKSPACE_TOKEN = /(?<![A-Za-z0-9_-])wao_workspace_[A-Za-z0-9_-]{43}(?![A-
 
 const WINDOWS_READ_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
+  'Add-Type -AssemblyName System.Security',
   "$path = Join-Path $env:APPDATA 'WAO\\workspace-token.dpapi'",
   "if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { [Console]::Out.Write('__WAO_TOKEN_MISSING__'); exit 0 }",
   "$cipher = [System.IO.File]::ReadAllBytes($path)",
@@ -16,6 +17,7 @@ const WINDOWS_READ_SCRIPT = [
 ].join('\n')
 const WINDOWS_STORE_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
+  'Add-Type -AssemblyName System.Security',
   "$path = Join-Path $env:APPDATA 'WAO\\workspace-token.dpapi'",
   "$folder = Split-Path -Parent $path",
   "[System.IO.Directory]::CreateDirectory($folder) | Out-Null",

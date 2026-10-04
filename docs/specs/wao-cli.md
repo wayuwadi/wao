@@ -12,6 +12,8 @@
 
 ## 目标
 
+2026-10-04：Windows 凭据读写显式加载 `System.Security`，保证独立 Windows PowerShell 进程能找到 DPAPI 类型。使用隔离临时 `APPDATA` 的真实加密、解密、删除测试验证，不触碰用户凭据目录。
+
 在终端和脚本中使用 `wao` 操作已获授权的 WAO 业务能力，并让 Codex 等 AI 可通过标准命令调用。首版直接使用工作区 MCP；认证与权限由服务端设备令牌决定，CLI 不绕过业务服务，也不因为新增 HTTP API 就自动开放新能力。
 
 CLI 支持通过独立授权的现有托管页 API 发布一个公开 HTML 页面；命令、确认交互、文件校验与匿名内容核验见 [托管页发布规格](phase-1-cli-hosted-page-publish.md)。此能力不映射为 MCP 工具，也不授予列表、修改或删除页面的权限。
