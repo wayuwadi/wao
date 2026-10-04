@@ -736,6 +736,8 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
     padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   }
   .note-composer .editor-space :deep(.md-body .tiptap) { font-size: 16px; line-height: 1.7; }
+  /* 正文由 flex 填满输入区，不继承包含边框的最小高度产生空白滚动。 */
+  .note-composer .editor-space :deep(.md-body .tiptap) { min-height: 0; }
   .fullscreen-toggle { min-width: 44px; min-height: 44px; }
   .composer-footer { gap: 8px; padding-top: 8px; margin-top: 8px; }
   .composer-footer > span { flex-basis: 100%; min-width: 0; }
