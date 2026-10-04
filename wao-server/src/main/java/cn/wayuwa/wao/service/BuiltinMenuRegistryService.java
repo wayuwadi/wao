@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 45;
+    private static final int VERSION = 46;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -28,7 +28,7 @@ public class BuiltinMenuRegistryService {
             "dashboard", "automation", "files", "request-monitoring");
     /** 已融合进其它模块的旧入口；读取旧注册表时忽略，不能因此丢掉用户的其它菜单定制。 */
     private static final Set<String> RETIRED_IDS = Set.of(
-            "ideas", "chat", "chat-reviews", "system-reports",
+            "ideas", "chat", "chat-reviews", "system-reports", "life-review",
             "personal-principles", "crawler-capabilities", "account-resources", "infrastructure",
             "ledger", "english-learning", "vocabulary", "food", "weekly-report", "devices",
             "games", "data-center", "chatgpt", "appearance", "memory", "ai-sessions",
@@ -42,7 +42,6 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("skill-connections", "Skill 接入", "ri-apps-2-line", "PUBLIC", 13, false, "TAB"),
             new BuiltinMenuConfigDto("todo", "待办", "ri-checkbox-multiple-line", "PERSONAL", 10, true, "TAB"),
             new BuiltinMenuConfigDto("calendar", "日历", "ri-calendar-2-line", "PERSONAL", 20, true, "TAB"),
-            new BuiltinMenuConfigDto("life-review", "人生回顾", "ri-route-line", "PERSONAL", 27, false, "TAB"),
             new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true, "TAB"),
             new BuiltinMenuConfigDto("drawings", "草图", "ri-draft-line", "PERSONAL", 50, false, "TAB"),
             new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 60, false, "TAB"),

@@ -20,7 +20,6 @@ import cn.wayuwa.wao.mapper.IdeaMapper;
 import cn.wayuwa.wao.mapper.IdeaResearchRunMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -72,7 +71,6 @@ public class IdeaResearchService {
     }
 
     /** Runner 异常消失或报告写入持续失败时，也会清空敏感提示并允许成员重新调研。 */
-    @Scheduled(initialDelay = 60_000, fixedDelay = 60_000)
     @Transactional
     public void expireStale(){runs.expireStale();}
 

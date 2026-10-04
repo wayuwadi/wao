@@ -57,14 +57,14 @@ describe('通知设置', () => {
 
     const systemRows = wrapper.findAll('.policy-card')[0]!.findAll('.policy-row')
     expect((systemRows[2]!.get('input').element as HTMLInputElement).checked).toBe(false)
-    expect((systemRows[3]!.get('input').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.text()).not.toContain('AI Run')
     expect((systemRows[4]!.get('input').element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.text()).toContain('Jenkins 失败通知')
     expect(wrapper.text()).toContain('每日沉默时段')
     await wrapper.get('.quiet-row > label input').setValue(true)
     await wrapper.get('input[aria-label="沉默开始时间"]').setValue('21:30')
     expect(wrapper.text()).toContain('有未保存修改')
-    await systemRows[3]!.get('input').setValue(true)
+    await wrapper.get('#notification-system-taskSuccess input').setValue(true)
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     expect((wrapper.vm as unknown as { confirmLeave: () => boolean }).confirmLeave()).toBe(false)
     confirm.mockRestore()
@@ -73,7 +73,8 @@ describe('通知设置', () => {
     await flushPromises()
 
     expect(api.save).toHaveBeenCalledWith(expect.objectContaining({
-      system: expect.objectContaining({ aiRunSuccess: true, aiRunFailure: true }),
+      system: expect.objectContaining({ taskSuccess: true, aiRunSuccess: false, aiRunFailure: false }),
+      personal: expect.objectContaining({ aiRunSuccess: false, aiRunFailure: false }),
     }))
     expect(wrapper.text()).toContain('已保存')
   })
@@ -81,7 +82,7 @@ describe('通知设置', () => {
   it('普通成员只能改自己的站内偏好，保存失败后保留草稿并可重试', async () => {
     api.fetch.mockResolvedValueOnce({ ...structuredClone(settings), canManageSystem: false })
     api.save.mockRejectedValueOnce(new Error('网络不可用')).mockResolvedValueOnce({
-      ...structuredClone(settings), canManageSystem: false, personal: { ...settings.personal, loginActivity: false },
+      ...structuredClone(settings), canManageSystem: false, personal: { ...settings.personal, enabled: false },
     })
     const wrapper = mount(NotificationSettingsPanel, {
       global: { stubs: { DailyReminderSettingsPanel: true } },
@@ -90,7 +91,7 @@ describe('通知设置', () => {
 
     expect(wrapper.findAll('.policy-card')[0]!.findAll('input').every((input) => input.attributes('disabled') !== undefined)).toBe(true)
     const personalRows = wrapper.findAll('.policy-card')[1]!.findAll('.policy-row')
-    await personalRows[2]!.get('input').setValue(false)
+    await personalRows[0]!.get('input').setValue(false)
     await wrapper.get('footer button').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('网络不可用')

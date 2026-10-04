@@ -46,7 +46,7 @@ describe('侧边栏导航配置', () => {
     const retired = ['personal-principles', 'crawler-capabilities', 'account-resources',
       'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report',
       'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
-      'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm']
+      'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'life-review', 'system-reports', 'ideas']
     const menus = DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)
     const groups = NAV_GROUPS.flatMap((group) => group.items)
     for (const id of retired) {
@@ -151,11 +151,11 @@ describe('侧边栏导航配置', () => {
     ).toEqual({ path: '/', query: { chat: '1' }, replace: true })
   })
 
-  it('历史点子归并页保留兼容路由但不进入默认菜单', () => {
+  it('历史点子归并旧地址不再打开功能页', () => {
     expect(MODULES.ideas.path).toBe('/ideas')
     expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).not.toContain('ideas')
     expect(DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)).not.toContain('ideas')
-    expect(router.resolve('/ideas').meta.module).toBe('ideas')
+    expect(router.resolve('/ideas').name).toBe('not-found')
     expect(router.getRoutes().some((route) => route.path.startsWith('/s/i'))).toBe(false)
   })
 
@@ -170,12 +170,8 @@ describe('侧边栏导航配置', () => {
     ).toEqual({ path: '/', query: { chat: '1', review: '1' }, replace: true })
   })
 
-  it('系统报告从首页进入但保留兼容路由', () => {
-    expect(DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)).not.toContain('system-reports')
-    expect(NAV_GROUPS.flatMap((group) => group.items)).not.toContain('system-reports')
-    const route = router.getRoutes().find((item) => item.name === 'system-reports')
-    expect(route?.path).toBe('/system-reports')
-    expect(route?.meta.module).toBe('system-reports')
+  it('系统报告旧地址不再打开功能页', () => {
+    expect(router.resolve('/system-reports').name).toBe('not-found')
   })
 
   it('多个外部应用可分组排序和隐藏，且不破坏个人拖拽顺序', () => {
@@ -293,11 +289,8 @@ describe('侧边栏导航配置', () => {
 
 
 
-  it('人生回顾默认位于个人组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('life-review')
-    const route = router.getRoutes().find((item) => item.name === 'life-review')
-    expect(route?.path).toBe('/life-review')
-    expect(route?.meta.module).toBe('life-review')
+  it('人生回顾旧地址不再打开功能页', () => {
+    expect(router.resolve('/life-review').name).toBe('not-found')
   })
 
   it('内置菜单注册表可改名、换组、调序和隐藏', () => {

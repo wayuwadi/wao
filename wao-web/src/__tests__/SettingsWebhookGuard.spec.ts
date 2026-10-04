@@ -109,28 +109,18 @@ describe('设置页 Webhook 草稿路由保护', () => {
     ).toBe('未保存机器人')
   })
 
-  it('断网时段覆盖加载、草稿防丢和保存成功状态', async () => {
-    const entry = wrapper.findAll('.snav-item').find((button) => button.text() === '断网时段')
-    await entry!.trigger('click')
-    await flushPromises()
-
-    expect(fetchNetworkOutageWindow).toHaveBeenCalledOnce()
-    const times = wrapper.findAll('input[type="time"]')
-    await times[1]!.setValue('06:30')
-    expect(wrapper.text()).toContain('有未保存修改')
-
-    window.confirm = vi.fn<(message?: string) => boolean>(() => false)
-    await router.push('/other')
-    expect(router.currentRoute.value.path).toBe('/settings')
-
-    await wrapper.get('form.site-form').trigger('submit')
-    await flushPromises()
-    expect(saveNetworkOutageWindow).toHaveBeenCalledWith({
-      enabled: true,
-      startTime: '00:00',
-      endTime: '06:30',
-    })
-    expect(wrapper.text()).toContain('已保存')
+  it('下线设置不显示入口，旧链接和页内跳转回退到组织与成员', async () => {
+    const labels = wrapper.findAll('.snav-item').map(button => button.text())
+    for (const label of ['断网时段', '版本与更新', 'WAO AI 能力']) expect(labels).not.toContain(label)
+    for (const tab of ['network-outage', 'version', 'wao-ai-capabilities']) {
+      await router.replace('/settings?tab=' + tab)
+      await flushPromises()
+      expect(wrapper.text()).toContain('组织与成员')
+      expect(wrapper.find('.version-settings').exists()).toBe(false)
+      expect(wrapper.find('.wao-ai-capabilities').exists()).toBe(false)
+    }
+    expect(fetchNetworkOutageWindow).not.toHaveBeenCalled()
+    expect(saveNetworkOutageWindow).not.toHaveBeenCalled()
   })
 
   it('通知设置保留设置侧栏，并在切换菜单配置时保护未保存草稿', async () => {

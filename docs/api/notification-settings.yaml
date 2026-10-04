@@ -2,6 +2,7 @@ openapi: 3.0.3
 info:
   title: WAO 通知设置 API
   version: 0.1.0
+  description: AI Run 通知于 2026-10-04 下线，system/personal 的 aiRunSuccess 与 aiRunFailure 仅作兼容字段，读取及保存均固定 false，见 ADR-319。
 paths:
   /api/public/notification-settings/jenkins-success:
     get:
@@ -96,8 +97,8 @@ components:
         quietEnd: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', example: '08:00' }
         taskActivity: { type: boolean }
         taskSuccess: { type: boolean }
-        aiRunSuccess: { type: boolean }
-        aiRunFailure: { type: boolean }
+        aiRunSuccess: { type: boolean, enum: [false], deprecated: true }
+        aiRunFailure: { type: boolean, enum: [false], deprecated: true }
         manualTask: { type: boolean }
         reminders: { type: boolean }
         deliveryFailure: { type: boolean }
@@ -109,8 +110,8 @@ components:
         enabled: { type: boolean }
         taskCreated: { type: boolean }
         taskCompleted: { type: boolean }
-        aiRunSuccess: { type: boolean }
-        aiRunFailure: { type: boolean }
+        aiRunSuccess: { type: boolean, enum: [false], deprecated: true }
+        aiRunFailure: { type: boolean, enum: [false], deprecated: true }
         loginActivity: { type: boolean }
     NotificationReminder:
       type: object

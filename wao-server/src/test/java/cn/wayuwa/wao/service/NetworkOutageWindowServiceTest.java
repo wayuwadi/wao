@@ -32,23 +32,23 @@ class NetworkOutageWindowServiceTest {
     }
 
     @Test
-    void defaultsToMidnightUntilSixAndKeepsEndExclusive() {
+    void retiredWindowNeverBlocksAutomaticTasksIncludingOldDefaultHours() {
         when(settings.getAll(Set.of(NetworkOutageWindowService.ENABLED_KEY,
                 NetworkOutageWindowService.START_KEY, NetworkOutageWindowService.END_KEY)))
                 .thenReturn(new java.util.HashMap<>());
         assertThat(service.get().enabled()).isTrue();
-        assertThat(service.isUnavailable(LocalTime.MIDNIGHT)).isTrue();
-        assertThat(service.isUnavailable(LocalTime.of(5, 59))).isTrue();
+        assertThat(service.isUnavailable(LocalTime.MIDNIGHT)).isFalse();
+        assertThat(service.isUnavailable(LocalTime.of(5, 59))).isFalse();
         assertThat(service.isUnavailable(LocalTime.of(6, 0))).isFalse();
-        assertThat(service.isUnavailable()).isTrue();
+        assertThat(service.isUnavailable()).isFalse();
     }
 
     @Test
-    void supportsCrossMidnightWindow() {
+    void ignoresHistoricalEnabledCrossMidnightWindow() {
         configured("true", "23:30", "06:15");
 
-        assertThat(service.isUnavailable(LocalTime.of(23, 30))).isTrue();
-        assertThat(service.isUnavailable(LocalTime.of(1, 0))).isTrue();
+        assertThat(service.isUnavailable(LocalTime.of(23, 30))).isFalse();
+        assertThat(service.isUnavailable(LocalTime.of(1, 0))).isFalse();
         assertThat(service.isUnavailable(LocalTime.of(6, 15))).isFalse();
         assertThat(service.isUnavailable(LocalTime.NOON)).isFalse();
     }

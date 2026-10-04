@@ -35,6 +35,16 @@ describe('tabs store', () => {
     expect(tabs.activeKey).toBe('home')
   })
 
+  it('恢复历史页签时移除本次下线功能并保留项目', () => {
+    localStorage.setItem('wao-tabs-v1', JSON.stringify({ tabs: [
+      ...['life-review', 'system-reports', 'ideas'].map(key => ({ key, path: '/' + key, label: '旧页签' })),
+      proj('p1'),
+    ], activeKey: 'life-review' }))
+    const tabs = useTabsStore()
+    expect(tabs.tabs.map(tab => tab.key)).toEqual(['home', 'proj:p1'])
+    expect(tabs.activeKey).toBe('home')
+  })
+
   it('opens, dedupes and activates tabs', () => {
     const tabs = useTabsStore()
     tabs.open(proj('p1'))

@@ -178,12 +178,6 @@ const router = createRouter({
           meta: { module: 'projects', tabKind: 'module' },
         },
         {
-          path: 'ideas',
-          name: 'ideas',
-          component: () => import('@/views/IdeasView.vue'),
-          meta: { module: 'ideas', tabKind: 'module' },
-        },
-        {
           path: 'projects/:id',
           name: 'project',
           component: () => import('@/views/ProjectDetailView.vue'),
@@ -249,12 +243,6 @@ const router = createRouter({
           meta: { module: 'todo', tabKind: 'module' },
         },
         {
-          path: 'life-review',
-          name: 'life-review',
-          component: () => import('@/views/LifeReviewView.vue'),
-          meta: { module: 'life-review', tabKind: 'module' },
-        },
-        {
           path: 'chat',
           name: 'chat',
           redirect: (to) => ({ path: '/', query: { ...to.query, chat: '1' }, replace: true }),
@@ -267,12 +255,6 @@ const router = createRouter({
             query: { ...to.query, chat: '1', review: to.query.review ?? '1' },
             replace: true,
           }),
-        },
-        {
-          path: 'system-reports',
-          name: 'system-reports',
-          component: () => import('@/views/SystemReportsView.vue'),
-          meta: { module: 'system-reports', tabKind: 'module' },
         },
         {
           path: 'notes',

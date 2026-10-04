@@ -4,14 +4,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
 
-/** 周期性补齐最近一个已结束的周、月、年回顾。 */
-@Component
-@ConditionalOnProperty(name = "wao.ai.life-review-scheduler-enabled", havingValue = "true")
+/** 已退役的历史回顾调度实现，不再注册到应用上下文。 */
 public class LifeReviewScheduler {
     private static final Logger log = LoggerFactory.getLogger(LifeReviewScheduler.class);
     private final LifeReviewService reviews;

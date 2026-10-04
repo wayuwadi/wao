@@ -171,7 +171,7 @@ onMounted(() => {
       <span v-else>仅管理员可编辑</span>
     </div>
 
-    <p class="visibility-notice" role="note">每日提醒目前不会出现在通知中心：现有展示规则只保留 AI 结果与提及。执行成功仅表示记录已保存。</p>
+    <p class="visibility-notice" role="note">每日提醒目前不会出现在通知中心；执行成功仅表示记录已保存。</p>
     <div v-if="loading && !drafts.length" class="reminder-state">
       <i class="ri-loader-4-line spin"></i>正在读取真实提醒…
     </div>

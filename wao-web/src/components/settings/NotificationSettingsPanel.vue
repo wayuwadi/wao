@@ -30,8 +30,6 @@ const dirty = computed(() => Boolean(snapshot.value && system.value && personal.
 const systemRows: Array<{ key: BooleanSystemPolicyKey; title: string; detail: string }> = [
   { key: 'taskActivity', title: '任务普通动态', detail: '新建、状态变化、子任务与普通评论；默认关闭以减少噪音' },
   { key: 'taskSuccess', title: '任务成功通知', detail: '任务进入已完成时推送；默认关闭' },
-  { key: 'aiRunSuccess', title: 'AI Run 成功通知', detail: '成功后生成待验收通知；默认关闭' },
-  { key: 'aiRunFailure', title: 'AI Run 失败通知', detail: '失败或未报告终态时推送真实原因与处理入口' },
   { key: 'manualTask', title: '人工通知任务', detail: '允许成员在任务详情明确点击后发送一张任务卡片' },
   { key: 'reminders', title: '站内提醒', detail: '日历和自动化定时提醒' },
   { key: 'deliveryFailure', title: 'Jenkins 失败通知', detail: '构建或部署失败时发送真实失败阶段；成功通知遵守群通知总开关与沉默时段' },
@@ -49,8 +47,6 @@ const quietNow = computed(() => {
 
 const personalRows: Array<{ key: keyof PersonalNotificationPolicy; title: string; detail: string }> = [
   { key: 'enabled', title: '我的站内通知', detail: '只影响当前账号的通知中心动态与未读数' },
-  { key: 'aiRunSuccess', title: 'AI Run 成功', detail: '在通知中心保留成功运行，不产生群消息' },
-  { key: 'aiRunFailure', title: 'AI Run 失败', detail: '在通知中心保留失败运行与处理入口' },
 ]
 
 async function load() {
@@ -74,8 +70,8 @@ async function save() {
   error.value = ''
   try {
     const value = await saveNotificationSettings({
-      ...(snapshot.value?.canManageSystem ? { system: { ...system.value } } : {}),
-      personal: { ...personal.value },
+      ...(snapshot.value?.canManageSystem ? { system: { ...system.value, aiRunSuccess: false, aiRunFailure: false } } : {}),
+      personal: { ...personal.value, aiRunSuccess: false, aiRunFailure: false },
     })
     snapshot.value = structuredClone(value)
     system.value = structuredClone(value.system)

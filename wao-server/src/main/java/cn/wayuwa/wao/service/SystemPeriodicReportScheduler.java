@@ -3,15 +3,11 @@ package cn.wayuwa.wao.service;
 import java.time.LocalDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
 
-/** 只在指定节点按团队共享设置刷新系统日报、周报和月报。 */
-@Component
-@ConditionalOnProperty(name = "wao.system-report.scheduler-enabled", havingValue = "true")
+/** 已退役的历史报告调度实现，不再注册到应用上下文。 */
 public class SystemPeriodicReportScheduler {
     private static final Logger log = LoggerFactory.getLogger(SystemPeriodicReportScheduler.class);
     private final SystemPeriodicReportService reports;
