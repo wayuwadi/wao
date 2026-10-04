@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount, RouterLinkStub } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import HomeView from '@/views/HomeView.vue'
 
@@ -23,6 +23,18 @@ describe('首页 AI Run 下线', () => {
     expect(api.fetchAiRuns).not.toHaveBeenCalled()
     expect(api.fetchAiRunners).not.toHaveBeenCalled()
     expect(api.fetchAiWorkflows).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('旧执行队列返回数据也不会恢复目标、策略或运行详情入口', async () => {
+    const api = await import('@/api/ai')
+    vi.mocked(api.fetchAiRuns).mockResolvedValue([{ id: 'retired-run', status: 'running', goalTitle: '旧目标' }] as never)
+    const wrapper = mount(HomeView, { global: { plugins: [createPinia()], stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(wrapper.find('.goal-launcher, .auto-run-policy, .run-detail-meta, .run-activity-detail').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('旧目标')
+    expect(api.fetchAiRuns).not.toHaveBeenCalled()
+    expect(wrapper.findAllComponents(RouterLinkStub).some(link => link.props('to') === '/breathe')).toBe(true)
     wrapper.unmount()
   })
 })

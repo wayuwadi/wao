@@ -76,13 +76,15 @@ describe('右上角新建入口', () => {
     const wrapper = await mountLayout()
 
     const labels = wrapper.findAll('.header .plus').map((b) => b.text())
-    expect(labels).toEqual(['新建任务', '新建小记'])
+    expect(labels).toEqual(['任务', '小记'])
+    expect(wrapper.findAll('.header .plus').map((button) => button.attributes('aria-label')))
+      .toEqual(['新建任务', '新建小记'])
     // 二级菜单整体下线
     expect(wrapper.find('.plus-menu').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('新建任务打开弹窗，小记一步进入固定记录页面', async () => {
+  it('新建任务打开弹窗，小记原地记录并保留当前任务和页面', async () => {
     const ui = useUiStore()
     const wrapper = await mountLayout()
 
@@ -93,9 +95,12 @@ describe('右上角新建入口', () => {
     ui.openTask('existing-task')
     await wrapper.findAll('.header .plus')[1]!.trigger('click')
     await flushPromises()
+    expect(ui.modal).toBe('note')
+    expect(ui.openTaskId).toBe('existing-task')
+    expect(wrapper.vm.$router.currentRoute.value.path).toBe('/')
+    ui.closeModal()
     expect(ui.modal).toBeNull()
-    expect(ui.openTaskId).toBeNull()
-    expect(wrapper.vm.$router.currentRoute.value.path).toBe('/notes')
+    expect(ui.openTaskId).toBe('existing-task')
     wrapper.unmount()
   })
 

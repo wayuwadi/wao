@@ -23,6 +23,9 @@ import { useSessionStore } from '@/stores/session'
 import type { AuthSession } from '@/api/auth'
 import { snapshotNavigation } from '@/config/navigationLayout'
 
+const testReader: ExternalAppConfig = { id: 'test-reader', label: '测试资料库', icon: 'ri-apps-2-line',
+  group: 'PERSONAL', order: 10, visible: true, appUrl: '/test-reader/', healthUrl: '', openMode: 'TAB' }
+
 vi.mock('@/api/navigationLayout', () => ({
   fetchNavigationLayout: vi.fn(),
   saveNavigationLayout: vi.fn(),
@@ -97,7 +100,8 @@ describe('菜单与快捷链接统一设置', () => {
     })
     vi.mocked(fetchExternalAppRegistry).mockResolvedValue({
       version: 1,
-      apps: DEFAULT_EXTERNAL_APPS,
+      apps: [...DEFAULT_EXTERNAL_APPS, testReader,
+        ...['media-agent', 'jumpserver', 'weknora'].map(id => ({ ...testReader, id, label: `退役应用-${id}` }))],
     })
     vi.mocked(saveBuiltinMenuRegistry).mockImplementation(async (menus) => ({ version: 1, menus }))
     vi.mocked(saveExternalAppRegistry).mockImplementation(async (apps) => ({ version: 1, apps }))
@@ -149,15 +153,16 @@ describe('菜单与快捷链接统一设置', () => {
     useSessionStore().account = { member: { id: 'link-owner' } } as AuthSession
     const wrapper = await mountSettings()
     await wrapper.get('.quick-link-row input').setValue('尚未保存的快捷入口')
-    const profile = wrapper.findAll('.snav button').find(button => button.text() === '个人资料')
-    expect(profile).toBeTruthy()
-    await profile!.trigger('click')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await wrapper.vm.$router.push('/settings?tab=profile')
     await flushPromises()
-    await wrapper.findAll('.snav button').find(button => button.text() === '我的导航')!.trigger('click')
+    expect(wrapper.vm.$router.currentRoute.value.query.tab).toBe('profile')
+    await wrapper.vm.$router.push('/settings?tab=navigation')
     await flushPromises()
     expect((wrapper.get('.quick-link-row input').element as HTMLInputElement).value).toBe('尚未保存的快捷入口')
     expect(savePreference).not.toHaveBeenCalled()
     wrapper.unmount()
+    confirm.mockRestore()
   })
 
   it('本机存储不可用时刷新仍有未保存保护', async () => {
@@ -180,10 +185,14 @@ describe('菜单与快捷链接统一设置', () => {
     expect(fetchExternalAppRegistry).toHaveBeenCalledOnce()
     expect(
       wrapper.findAll('.menu-row input').map((input) => (input.element as HTMLInputElement).value),
-    ).toEqual(expect.arrayContaining(['自媒体 Agent', '得到大脑', '资源管理']))
+    ).toEqual(expect.arrayContaining(['测试资料库', '得到大脑']))
+    for (const id of ['media-agent', 'jumpserver', 'weknora']) {
+      expect(menuRow(wrapper, `退役应用-${id}`)).toBeUndefined()
+    }
     expect(wrapper.get('.menu-card').text()).toContain('已注册应用')
     expect(wrapper.text()).not.toContain('注册新应用')
     expect(wrapper.find('.registry-editor').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('分组下拉始终展示完整选项，隐藏后置底并由界面重建排序值', async () => {
@@ -225,7 +234,7 @@ describe('菜单与快捷链接统一设置', () => {
 
   it('外部应用可拖进其他分组，快捷链接可配置 WAO 页签并保存 v2 偏好', async () => {
     const wrapper = await mountSettings()
-    const external = menuRow(wrapper, '自媒体 Agent')
+    const external = menuRow(wrapper, '测试资料库')
     const transfer = { setData: vi.fn<(format: string, data: string) => void>(), effectAllowed: '' }
     await external.get('.drag-handle').trigger('dragstart', { dataTransfer: transfer })
     await menuGroup(wrapper, '工具').trigger('drop')
@@ -236,12 +245,15 @@ describe('菜单与快捷链接统一设置', () => {
       expect.any(String),
       expect.objectContaining({
         items: expect.arrayContaining([
-          expect.objectContaining({ id: 'external:media-agent', group: 'TOOLS' }),
+          expect.objectContaining({ id: 'external:test-reader', group: 'TOOLS' }),
           expect.objectContaining({ id: 'external:getnote', openMode: 'NEW_PAGE' }),
-          expect.objectContaining({ id: 'external:jumpserver', openMode: 'NEW_PAGE' }),
         ]),
       }),
     )
+    const savedIds = vi.mocked(saveNavigationLayout).mock.calls[0]![1].items.map(item => item.id)
+    expect(savedIds).not.toContain('external:media-agent')
+    expect(savedIds).not.toContain('external:jumpserver')
+    expect(savedIds).not.toContain('external:weknora')
 
     const firstLink = wrapper.get('.quick-link-row')
     await firstLink.get('select').setValue('TAB')

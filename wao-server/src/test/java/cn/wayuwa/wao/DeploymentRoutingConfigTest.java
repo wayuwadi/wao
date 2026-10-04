@@ -55,7 +55,8 @@ class DeploymentRoutingConfigTest {
         String status = readFromRepository("deploy/jenkins/github-status.sh");
         String resolver = readFromRepository("deploy/jenkins/resolve-batch-base.sh");
 
-        assertThat(casc).contains("quietPeriod(300)");
+        String mainJob = section(casc, "pipelineJob('wao-main-cd') {", "pipelineJob('wao-client-release') {");
+        assertThat(mainJob).contains("quietPeriod(60)").doesNotContain("quietPeriod(300)");
         assertThat(pipeline)
                 .contains("resolve-batch-base.sh \"$WAO_GIT_SHA\"")
                 .contains("git rev-list --reverse --first-parent \"$WAO_CHANGE_BASE..$WAO_GIT_SHA\"")
@@ -132,28 +133,27 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void agentUsesBundledStaticDirectoryServiceAndDedicatedGatewayRoute() throws IOException {
+    void retiredAgentHasGoneResponsesAndNoRuntimeServiceOrGatewayRoute() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String gateway = readFromRepository("wao-gateway/src/main/resources/application.yml");
         String localGateway = readFromRepository("wao-gateway/src/main/resources/application-local.yml");
         String masterCompose = readFromRepository("deploy/docker-compose-master.yml");
 
         assertThat(nginx)
-                .contains("location /agent/")
-                .contains("alias /var/www/wao-agent/dist/")
-                .contains("location /api/");
-        assertThat(gateway.indexOf("id: wao-agent-api")).isLessThan(gateway.indexOf("id: wao-server-api"));
-        assertThat(gateway)
-                .contains("Path=/api/agent/**")
-                .contains("WAO_AGENT_SERVER_URI:http://wao-agent-server:8081");
-        assertThat(localGateway).contains("WAO_AGENT_SERVER_URI:http://127.0.0.1:8081");
+                .contains("location /api/")
+                .doesNotContain("alias /var/www/wao-agent/dist/");
+        for (String location : java.util.List.of("location = /agent {", "location ^~ /agent/ {",
+                "location = /api/agent {", "location ^~ /api/agent/ {")) {
+            assertThat(nginx).contains(location + " return 410; }");
+        }
+        for (String config : java.util.List.of(gateway, localGateway)) {
+            assertThat(config).contains("id: wao-server-api", "Path=/api/**")
+                    .doesNotContain("wao-agent-api", "WAO_AGENT_SERVER_URI");
+        }
         assertThat(masterCompose)
-                .contains("wao-agent-server:")
-                .contains("target: agent-runtime")
-                .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081")
+                .doesNotContain("wao-agent-server:", "target: agent-runtime", "WAO_AGENT_SERVER_URI")
                 .contains("WAO_AI_EVOLUTION_SCHEDULER_ENABLED: \"false\"")
                 .contains("WAO_DAILY_GUIDANCE_WARMUP_ENABLED: \"true\"");
-        assertThat(masterCompose).contains("WAO_LIFE_REVIEW_SCHEDULER_ENABLED: \"true\"");
     }
 
     @Test
@@ -169,9 +169,9 @@ class DeploymentRoutingConfigTest {
                 .doesNotContain("${SLAVE_GATEWAY_IPV4}", "backup");
         Pattern route = Pattern.compile(aiRoutePattern);
         assertThat(route.matcher("/api/settings/ai-accounts/login/start").find()).isTrue();
-        assertThat(route.matcher("/api/ai/runner/accounts").find()).isTrue();
-        assertThat(route.matcher("/api/ai/runner/claim").find()).isTrue();
-        assertThat(route.matcher("/api/ai/runner/assistant-v2/claim").find()).isTrue();
+        assertThat(route.matcher("/api/ai/runner/accounts").find()).isFalse();
+        assertThat(route.matcher("/api/ai/runner/claim").find()).isFalse();
+        assertThat(route.matcher("/api/ai/runner/assistant-v2/claim").find()).isFalse();
         assertThat(route.matcher("/api/ai/runner/assistant-v2/ac1/complete").find()).isFalse();
         assertThat(route.matcher("/api/ai/runner/assistant/claim").find()).isFalse();
         assertThat(route.matcher("/api/tianren/readings/today/interpret/stream").find()).isTrue();
@@ -265,8 +265,10 @@ class DeploymentRoutingConfigTest {
                 .contains("/api/tianren/readings/today/interpret/stream")
                 .contains("probe-codex-egress.sh")
                 .contains("dual-gateway-ai")
-                .contains("/api/ai/runner/accounts")
-                .contains("linux-vpn-master");
+                .contains("/api/settings/ai-accounts")
+                .contains("https://wao.wayuwa.cn/api/ai/runner/heartbeat")
+                .contains("linux-vpn-master")
+                .doesNotContain("/api/ai/runner/accounts");
         assertThat(probe)
                 .contains("elif sudo -n docker info")
                 .contains("sudo -n docker \"$@\"")
@@ -503,7 +505,8 @@ class DeploymentRoutingConfigTest {
                 .contains("WAO_IMAGE_TAG=\"${requested_image_tag}\"")
                 .contains("requested_skip_image_build=\"${SKIP_IMAGE_BUILD:-}\"")
                 .contains("SKIP_IMAGE_BUILD=\"${requested_skip_image_build}\"")
-                .contains("compose build codex-egress-proxy wao-server wao-agent-server wao-gateway")
+                .contains("compose build codex-egress-proxy wao-server wao-gateway")
+                .doesNotContain("compose build codex-egress-proxy wao-server wao-agent-server")
                 .contains("compose up -d --no-deps codex-vpn codex-egress-proxy")
                 .contains("diagnostic_services=\"codex-vpn codex-egress-proxy ${diagnostic_services}\"")
                 .contains("ensure-codex-egress.sh")
