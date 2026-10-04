@@ -779,6 +779,31 @@ const retainedEdits = computed(() => notes.value.filter(note => (editingIds.valu
   && !matching.value.slice(0, limit.value).some(item => item.id === note.id)))
 const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
 const notePreviews = computed(() => new Map(visible.value.map(note => [note.id, cardImages(note)])))
+const cardActiveImages = ref<Record<string, number | undefined>>({})
+watch(() => session.currentUser.id, () => { cardActiveImages.value = {} })
+watch(() => new Map([...notePreviews.value].map(([id, images]) => [id, JSON.stringify(images)])), (current, previous) => {
+  for (const id of Object.keys(cardActiveImages.value)) {
+    if (current.get(id) !== previous?.get(id)) delete cardActiveImages.value[id]
+  }
+})
+async function locateCardImage(id: string, index: number) {
+  if (!notePreviews.value.get(id)?.[index - 1]) return
+  clearCardClickTimer()
+  cardActiveImages.value[id] = index
+  await nextTick()
+  const card = [...(notesList.value?.querySelectorAll<HTMLElement>('[data-note-id]') ?? [])].find(el => el.dataset.noteId === id)
+  const button = card?.querySelector<HTMLButtonElement>(`[data-card-image="${index}"] .note-image`)
+  button?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  button?.focus({ preventScroll: true })
+}
+async function returnToCardImageReference(id: string, index: number) {
+  clearCardClickTimer()
+  cardActiveImages.value[id] = index
+  // 固定高度卡片先展开，以免原位置被预览高度遮住。
+  if (isNotePreviewExpandable(id) && !expandedIds.value.includes(id)) expandedIds.value.push(id)
+  await nextTick()
+  noteEditors.get(id)?.focusImageReference(index)
+}
 const loading = computed(() => !refreshing.value && (['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge)))
 const loadError = computed(() => refreshError.value || data.loadErrors.docs || data.loadErrors.knowledge)
 let searchReturn: { top: number; windowTop: number; limit: number; expanded: string[] } | null = null
@@ -1035,12 +1060,15 @@ onMounted(() => void loadPins())
           <template v-else>
           <div class="note-heading"><h2>{{ displayedTitle(note) }}</h2><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
           <div class="note-content" :class="{ 'has-images': notePreviews.get(note.id)?.length }" @click="openInlineImage">
-            <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
+            <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images image-references :active-image-reference="cardActiveImages[note.id] ?? null" bare advanced allow-h1 :min-height="0" @image-reference="locateCardImage(note.id, $event)" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
             <aside v-if="notePreviews.get(note.id)?.length" class="note-images" :class="{ expanded: isNotePreviewExpanded(note.id) }" aria-label="小记图片总览">
               <span>图片总览 <b>{{ notePreviews.get(note.id)?.length }} 张</b></span>
-              <button v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image" type="button" :title="image.alt || `全屏阅读图片 ${index + 1}`" @click.stop="startReading(note.id)">
+              <figure v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image-item" :class="{ active: cardActiveImages[note.id] === index + 1 }" :data-card-image="index + 1" :aria-label="`图 ${index + 1} ${image.alt}`">
+              <button class="note-image" type="button" :title="image.alt || `全屏阅读图片 ${index + 1}`" @click.stop="startReading(note.id)">
                 <img :src="notePreviewSource(image.src)" :alt="image.alt || `小记图片 ${index + 1}`" loading="lazy">
               </button>
+              <figcaption><span>图 {{ index + 1 }}</span><button class="note-image-return" type="button" :aria-label="`返回正文图 ${index + 1}的位置`" @click.stop="returnToCardImageReference(note.id, index + 1)">返回正文</button></figcaption>
+              </figure>
             </aside>
           </div>
           <button v-if="isNotePreviewExpandable(note.id)" class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button>
@@ -1207,6 +1235,13 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-images b { font-weight: 400; white-space: nowrap; }
 .note-image { overflow: hidden; padding: 0; border: 1px solid var(--wao-line-control); background: var(--wao-bg-sub); }
 .note-image img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.note-image-item { margin: 0; min-width: 0; padding: 3px; border: 1px solid transparent; border-radius: 8px; }
+.note-image-item.active { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
+.note-image-item .note-image { display: block; width: 100%; }
+.note-image-item figcaption { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 3px; padding-top: 3px; font-size: 11px; color: var(--wao-text-3); }
+.note-image-return { padding: 2px 4px; font-size: 11px; color: var(--wao-primary-text); }
+.note-image-return:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 1px; }
+@media (pointer: coarse) { .note-image-return { min-height: 44px; } }
 .note-body :deep(p:first-child) { margin-top: 0; }
 .note-body :deep(img.md-img) { max-height: min(32vh, 220px); object-fit: contain; cursor: zoom-in; }
 .note-body :deep(.character-count) { display: none !important; }
