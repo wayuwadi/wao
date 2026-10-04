@@ -206,7 +206,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed, surpr
   }
   listen(host, 'click', ((e: MouseEvent) => {
     if (e.target !== host || e.button !== 0 || window.getSelection()?.toString()) return
-    // 留白点击交由隐藏世界；原抛球活动仍从右键菜单进入。
+    // 留白点击交由隐藏世界；集体活动从随机事件入口触发。
     pointer = { x: point(e).x, active: true }
   }) as EventListener)
   listen(document, 'keydown', ((e: KeyboardEvent) => {
@@ -596,6 +596,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed, surpr
   layout()
   return {
     play,
+    settle() { reset(); wake() },
     story: beginStory,
     anchors() {
       const bounds = host.getBoundingClientRect()

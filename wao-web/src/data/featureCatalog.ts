@@ -17,7 +17,7 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
     id: 'home',
     category: 'life',
     summary: '卦象与 Codex 信息集中查看，留一点空白再开始。',
-    description: '查看今日卦象与 Codex 统计，和四个伙伴放松；留白里藏着接泡泡、划风、画星系与节拍，伙伴会串门、模仿和隔空击掌，集齐后还有谢幕与接力。',
+    description: '查看今日卦象与 Codex 统计，和四个伙伴放松；按住留白或右键直接随机触发小气候、伙伴回应、小魔法与六种集体动作，原有接泡泡、节拍和集齐彩蛋继续保留。',
     tone: 'blue',
   },
   {

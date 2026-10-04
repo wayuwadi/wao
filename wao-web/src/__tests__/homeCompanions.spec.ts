@@ -46,14 +46,14 @@ describe('首页伙伴的边界和归位', () => {
 })
 
 describe('首页伙伴的组件生命周期', () => {
-  it('左键只与被点的伙伴互动，右键才打开菜单', async () => {
+  it('左键只与被点的伙伴互动，右键直接发出随机事件', async () => {
     const w = mount(HomeCompanions)
     await flushPromises()
     await w.findAll('.companion-target')[2]!.trigger('click')
     expect(fake.pop).toHaveBeenCalledWith(2)
-    expect(w.emitted('menu')).toBeUndefined()
+    expect(w.emitted('random')).toBeUndefined()
     await w.findAll('.companion-target')[2]!.trigger('contextmenu')
-    expect(w.emitted('menu')).toHaveLength(1)
+    expect(w.emitted('random')).toHaveLength(1)
     w.unmount()
   })
   it('安静开关交给场景处理，卸载释放资源', async () => {
@@ -81,7 +81,7 @@ describe('首页伙伴的组件生命周期', () => {
     expect(w.text()).toContain('静态陪伴')
     const oldCanvas = w.find('canvas').element
     await w.find('.companion-target').trigger('click')
-    expect(w.emitted('menu')).toBeUndefined()
+    expect(w.emitted('random')).toBeUndefined()
     expect(w.text()).toContain('安静陪着你')
     await w.find('.companion-actions button').trigger('click')
     await flushPromises()

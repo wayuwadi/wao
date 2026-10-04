@@ -7,7 +7,7 @@ import type { SurpriseStyle } from './companionSurprises'
 import type { WorldStory, WorldChoices } from './companionWorld'
 
 const props = defineProps<{ choices?: WorldChoices }>()
-const emit = defineEmits<{ menu: [event: MouseEvent | KeyboardEvent, index: number]; surprise: [style: SurpriseStyle]; cancelSurprises: []; world: [story: WorldStory] }>()
+const emit = defineEmits<{ random: [event: MouseEvent | KeyboardEvent, index: number]; surprise: [style: SurpriseStyle]; cancelSurprises: []; world: [story: WorldStory] }>()
 const host = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
 const canvasKey = ref(0)
@@ -78,13 +78,13 @@ function interact(event: MouseEvent, index: number) {
   if (event.defaultPrevented) return
   if (!controller?.pop(index)) say('我在这里，安静陪着你。')
 }
-function onMenuKey(event: KeyboardEvent, index: number) {
+function onRandomKey(event: KeyboardEvent, index: number) {
   if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return
   event.preventDefault()
   event.stopPropagation()
-  emit('menu', event, index)
+  emit('random', event, index)
 }
-defineExpose({ perform, toggleQuiet, quiet, story: (event: WorldStory) => controller?.story(event), anchors: () => controller?.anchors() ?? [] })
+defineExpose({ perform, toggleQuiet, quiet, ready, settle: () => controller?.settle(), story: (event: WorldStory) => controller?.story(event), anchors: () => controller?.anchors() ?? [] })
 onMounted(load)
 onActivated(() => {
   active = true
@@ -115,10 +115,10 @@ onBeforeUnmount(() => {
       class="companion-target"
       :class="`companion-${index}`"
       :aria-label="`和${name}互动`"
-      :title="`${name}：点击或按 Enter 升空变泡泡；右键或 Shift+F10 选择活动，拖动后归位`"
+      :title="`${name}：点击或按 Enter 升空变泡泡；右键或 Shift+F10 随机互动，拖动后归位`"
       :style="{ '--index': index }"
-      @contextmenu.stop.prevent="emit('menu', $event, index)"
-      @keydown="onMenuKey($event, index)"
+      @contextmenu.stop.prevent="emit('random', $event, index)"
+      @keydown="onRandomKey($event, index)"
       @click="interact($event, index)"
     >
       <span class="companion-fallback" aria-hidden="true"

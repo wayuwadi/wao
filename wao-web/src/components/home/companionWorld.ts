@@ -1,4 +1,4 @@
-export type WorldKind = 'watch' | 'catch' | 'miss' | 'wind' | 'orbit' | 'visit' | 'tickle' | 'imitate' | 'wave' | 'reverse' | 'yawn' | 'peek' | 'pass'
+export type WorldKind = 'watch' | 'catch' | 'miss' | 'wind' | 'orbit' | 'visit' | 'tickle' | 'imitate' | 'wave' | 'reverse' | 'yawn' | 'peek' | 'pass' | 'attention'
 export type WorldTier = 'common' | 'variation' | 'rare'
 export interface WorldStory { kind: WorldKind; source: number; target?: number; direction?: number; tier: WorldTier }
 export interface WorldPoint { x: number; y: number }
@@ -75,6 +75,7 @@ export function worldPose(story: WorldStory, seconds: number, index: number) {
   const t = Math.max(0, seconds - delay), involved = index === story.source || index === story.target
   const pose = { x: 0, y: 0, tilt: 0, stretch: 1, turn: 0, lid: 1, hat: 0 }
   switch (story.kind) {
+    case 'attention': if (story.source < 0 || index === story.source) { pose.turn = (story.direction ?? 1) * .16 * fade; pose.x = (story.direction ?? 1) * 8 * fade; pose.y = 7 * fade; pose.tilt = -(story.direction ?? 1) * .08 * fade }; break
     case 'watch': case 'orbit': pose.turn = (index % 2 ? -0.12 : 0.12) * fade; pose.y = 3 * fade; break
     case 'catch': pose.y = Math.max(0, Math.sin(t * 5)) * (involved ? (index === 3 ? 29 : 22) : 5) * fade; pose.tilt = Math.sin(t * 3) * 0.08 * fade; break
     case 'miss': if (involved || story.tier === 'rare') { pose.turn = Math.sin(t * 4 + index) * 0.25 * fade; pose.y = Math.max(0, Math.sin(t * 6)) * 7 * fade }; break
