@@ -79,6 +79,43 @@ async function mountEditor(props: {
 }
 
 describe('异步挂载焦点保护', () => {
+  it('历史段落内的块图片加载后保留前后文字、格式与图片属性，不在只读时写回', async () => {
+    const legacy: RichDocNode = { type: 'doc', content: [{ type: 'paragraph', content: [
+      { type: 'text', text: '图片前', marks: [{ type: 'bold' }] },
+      { type: 'image', attrs: { src: 'https://example.com/a.png', alt: '历史图片', width: '50%', indent: 2 } },
+      { type: 'text', text: '图片后' },
+    ] }] }
+    const w = await mountEditor({ modelValue: '', document: legacy, advanced: true, readonly: true })
+    await new Promise(resolve => setTimeout(resolve, 40))
+    const editor = (w.vm as unknown as { editor: Editor }).editor
+    expect(() => editor.state.doc.check()).not.toThrow()
+    expect(w.get('strong').text()).toBe('图片前')
+    expect(w.get('img').attributes('alt')).toBe('历史图片')
+    expect(editor.getJSON().content!.map(node => node.type)).toEqual(['paragraph', 'image', 'paragraph'])
+    expect(editor.getJSON().content![1]!.attrs).toMatchObject({ width: '50%', indent: 2 })
+    expect(w.emitted('content-change')).toBeUndefined()
+    expect(legacy.content![0]!.content).toHaveLength(3)
+    w.unmount()
+  })
+  it('同行 Markdown 图片与前后文字加载为合法结构', async () => {
+    const w = await mountEditor({ modelValue: '前文 ![图片](https://example.com/a.png) 后文', advanced: true })
+    await new Promise(resolve => setTimeout(resolve, 40))
+    const editor = (w.vm as unknown as { editor: Editor }).editor
+    expect(() => editor.state.doc.check()).not.toThrow()
+    expect(editor.state.doc.textContent).toContain('前文')
+    expect(editor.state.doc.textContent).toContain('后文')
+    expect(w.get('img').attributes('alt')).toBe('图片')
+    await w.setProps({ modelValue: '更新前 ![新图](https://example.com/b.png) 更新后' })
+    expect(() => editor.state.doc.check()).not.toThrow()
+    expect(w.get('img').attributes('alt')).toBe('新图')
+    await w.setProps({ document: { type: 'doc', content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [
+      { type: 'paragraph', content: [{ type: 'image', attrs: { src: 'https://example.com/c.png', alt: '列表图片' } }, { type: 'text', text: '图后条目' }] },
+    ] }] }] } })
+    expect(() => editor.state.doc.check()).not.toThrow()
+    expect(w.get('li img').attributes('alt')).toBe('列表图片')
+    expect(w.get('li').text()).toBe('图后条目')
+    w.unmount()
+  })
   it('接物追加保留已有富文本，外部 HTML 和 Markdown 按原文保存，只读时拒绝追加', async () => {
     const w = await mountEditor({ modelValue: '**已有草稿**' })
     expect(w.vm.appendPlainText('<img src=x onerror=alert(1)>\n# 原样保留')).toBe(true)
