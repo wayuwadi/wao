@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import WaoLogo from '@/components/WaoLogo.vue'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
 import HomeCompanions from '@/components/home/HomeCompanions.vue'
@@ -40,7 +41,7 @@ function actions(event: MouseEvent | KeyboardEvent, index?: number) {
         <WeatherPanel surface="calendar" :date="data.today" toolbar glance />
       </header>
       <div class="home-rest-copy">
-        <p>WAO · 一呼一吸</p>
+        <p class="home-brand-signature"><WaoLogo wordmark /><span>· 一呼一吸</span></p>
         <h1>留一点空白，再开始。</h1>
         <p>随时暂停手边的事，回到呼吸与静坐的空间。</p>
         <div class="home-actions">
@@ -66,6 +67,10 @@ function actions(event: MouseEvent | KeyboardEvent, index?: number) {
 .home-rest-copy { align-self: center; min-width: 0; padding-bottom: 28px; }
 .home-companion-space { position: relative; min-width: 0; min-height: 350px; margin-right: -28px; }
 .home-rest-copy p { color: var(--wao-text-weak); font-size: 13px; line-height: 1.8; }
+.home-rest-copy .home-brand-signature { display: flex; align-items: center; gap: 9px; }
+.home-brand-signature :deep(.wao-logo) { gap: 7px; color: var(--wao-primary-text); }
+.home-brand-signature :deep(.wao-logo-symbol) { width: 26px; height: 26px; }
+.home-brand-signature :deep(.wao-logo-name) { font-size: 18px; font-weight: 600; letter-spacing: .08em; }
 .home-rest-copy h1 { font-size: clamp(20px,3vw,30px); font-weight: 500; }
 .home-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .play-hint { display:block; margin-top:12px; color:var(--wao-text-weak); font-size:12px; }
