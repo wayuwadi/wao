@@ -18,7 +18,10 @@ const emit = defineEmits<{ 'update:active': [value: string] }>()
             <i v-if="item.icon" :class="item.icon" aria-hidden="true"></i>{{ item.label }}
           </button>
         </nav>
-        <p class="sidebar-foot">仅用于当前功能<br />切换设置项会保留草稿</p>
+        <div class="sidebar-foot">
+          <i class="ri-shield-check-line" aria-hidden="true"></i
+          ><span>仅用于当前功能<br />不会修改另一处设置</span>
+        </div>
       </aside>
       <div class="settings-main">
         <div class="settings-engine"><slot name="engine" /></div>
@@ -38,6 +41,7 @@ const emit = defineEmits<{ 'update:active': [value: string] }>()
   min-height: 0;
   height: 100%;
   color: var(--wao-text);
+  font: 14px/1.6 var(--wao-font, 'Segoe UI', 'Microsoft YaHei', sans-serif);
 }
 .settings-body {
   min-width: 0;
@@ -48,7 +52,7 @@ const emit = defineEmits<{ 'update:active': [value: string] }>()
 }
 aside {
   min-width: 0;
-  padding: 23px 13px;
+  padding: 24px 13px;
   background: var(--wao-bg-sub);
   border-right: 1px solid var(--wao-divider);
   display: flex;
@@ -56,9 +60,9 @@ aside {
   gap: 13px;
 }
 .nav-label {
-  padding-left: 12px;
+  padding-left: 13px;
   font-size: 12px;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
 }
 nav {
   display: grid;
@@ -67,7 +71,7 @@ nav {
 nav button {
   border: 0;
   background: transparent;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
   border-radius: 8px;
   padding: 11px 12px;
   font: inherit;
@@ -76,7 +80,11 @@ nav button {
   text-align: left;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
+  white-space: nowrap;
+}
+nav button i {
+  font-size: 16px;
 }
 nav button[aria-pressed='true'] {
   background: var(--wao-primary-soft);
@@ -85,10 +93,17 @@ nav button[aria-pressed='true'] {
 }
 .sidebar-foot {
   margin-top: auto;
-  padding: 20px 10px 0;
-  color: var(--wao-text-weak);
+  padding: 22px 10px 0;
+  color: var(--wao-text-3);
   font-size: 11px;
   line-height: 1.8;
+  display: flex;
+  gap: 7px;
+}
+.sidebar-foot i {
+  font-size: 16px;
+  margin-top: 4px;
+  flex-shrink: 0;
 }
 .settings-main {
   min-width: 0;
@@ -98,7 +113,15 @@ nav button[aria-pressed='true'] {
 }
 .settings-engine {
   flex-shrink: 0;
-  padding: 23px 27px 18px;
+  padding: 23px 27px 20px;
+  position: relative;
+}
+.settings-engine::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 27px;
+  right: 27px;
   border-bottom: 1px solid var(--wao-divider);
 }
 .settings-scroll {
@@ -113,20 +136,51 @@ nav button[aria-pressed='true'] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 16px;
   padding: 15px 26px;
   border-top: 1px solid var(--wao-divider);
   background: var(--wao-bg-card);
 }
 .settings-scroll :deep(h3) {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 16px;
+  font-weight: 600;
 }
 .settings-scroll :deep(p) {
-  color: var(--wao-text-weak);
+  margin: 4px 0 0;
+  color: var(--wao-text-3);
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.6;
+}
+.settings-scroll :deep(.section-heading) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.settings-scroll :deep(.default-tag) {
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-3);
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+.settings-scroll :deep(.behavior-note) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-top: 15px;
+  background: var(--wao-bg-sub);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--wao-text-3);
+}
+.settings-scroll :deep(.behavior-note i) {
+  flex-shrink: 0;
+  font-size: 16px;
 }
 .settings-scroll :deep(fieldset) {
   margin: 0;
@@ -141,7 +195,8 @@ nav button[aria-pressed='true'] {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  min-height: 250px;
+  height: 250px;
+  min-height: 180px;
   padding: 15px 16px;
   resize: vertical;
   border: 1px solid var(--wao-line-control);
@@ -165,8 +220,8 @@ nav button[aria-pressed='true'] {
 .settings-footer :deep(button),
 .settings-scroll :deep(button) {
   font: inherit;
-  font-size: 12px;
-  padding: 7px 12px;
+  font-size: 13px;
+  padding: 8px 17px;
   border: 1px solid var(--wao-divider);
   border-radius: 8px;
   background: var(--wao-bg-card);
@@ -178,17 +233,29 @@ nav button[aria-pressed='true'] {
   color: white;
   border-color: var(--wao-primary);
 }
-.settings-footer :deep(.save-status) {
-  margin: 0;
-  max-width: 100%;
-  font-size: 12px;
-  color: var(--wao-text-weak);
-}
 .settings-footer :deep(.footer-actions) {
   display: flex;
-  gap: 8px;
+  gap: 9px;
   flex-wrap: wrap;
   margin-left: auto;
+}
+.settings-footer :deep(.footer-actions > button:not(.light-action)) {
+  min-height: 40px;
+}
+.settings-footer :deep(.light-action),
+.settings-scroll :deep(.prompt-toolbar button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--wao-primary-text);
+  font-size: 12px;
+}
+.settings-footer :deep(.light-action) {
+  margin-right: 6px;
 }
 .settings-scroll :deep(.error),
 .settings-footer :deep(.error) {
@@ -200,13 +267,14 @@ nav button[aria-pressed='true'] {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 12px 0;
+  margin: 0 0 9px;
   font-size: 12px;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
 }
 .settings-scroll :deep(.prompt-meta) {
   font-size: 11px;
   flex-wrap: wrap;
+  margin: 8px 0 0;
 }
 .settings-scroll :deep(.settings-conflict) {
   padding: 12px;
@@ -232,7 +300,7 @@ nav button[aria-pressed='true'] {
   }
   aside {
     min-width: 0;
-    padding: 10px 12px;
+    padding: 12px 14px;
     border-right: 0;
     border-bottom: 1px solid var(--wao-divider);
     gap: 0;
@@ -240,15 +308,15 @@ nav button[aria-pressed='true'] {
   }
   nav {
     display: flex;
-    flex-wrap: nowrap;
-    gap: 4px;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    gap: 5px;
   }
   nav button {
     flex-shrink: 0;
     white-space: nowrap;
-    padding: 7px 9px;
+    padding: 9px 10px;
     font-size: 12px;
+    gap: 6px;
   }
   .nav-label,
   .sidebar-foot {
@@ -258,18 +326,29 @@ nav button[aria-pressed='true'] {
     flex: 1;
   }
   .settings-engine {
-    padding: 14px 15px;
+    padding: 20px 16px;
+  }
+  .settings-engine::after {
+    left: 16px;
+    right: 16px;
   }
   .settings-scroll {
-    padding: 17px 15px;
+    padding: 21px 16px 20px;
   }
   .settings-footer {
-    padding: 12px 15px;
-    gap: 8px;
+    padding: 14px 16px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .settings-footer :deep(.footer-status) {
+    flex-basis: 100%;
+  }
+  .settings-footer :deep(.footer-actions) {
+    justify-content: flex-end;
   }
   .settings-scroll :deep(textarea) {
     font-size: 16px;
-    min-height: 220px;
+    min-height: 180px;
   }
 }
 </style>

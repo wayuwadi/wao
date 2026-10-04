@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AIModelFields from '@/components/ui/AIModelFields.vue'
+import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
+import AiSettingsSaveStatus from '@/components/ui/AiSettingsSaveStatus.vue'
 import { useAiModelCatalog } from '@/composables/aiModelCatalog'
 import {
   fetchTianrenAiSettings,
@@ -15,9 +17,9 @@ const emit = defineEmits<{ close: []; saved: [] }>()
 const session = useSessionStore(),
   tab = ref<'capabilities' | 'interpretationPrompt' | 'imagePrompt'>('capabilities')
 const items = [
-  { id: 'capabilities', label: 'AI 能力', icon: 'ri-sparkling-line' },
-  { id: 'interpretationPrompt', label: '卦象解读', icon: 'ri-compass-3-line' },
-  { id: 'imagePrompt', label: '图片生成', icon: 'ri-image-line' },
+  { id: 'capabilities', label: 'AI 能力', icon: 'ri-cpu-line' },
+  { id: 'interpretationPrompt', label: '解读提示词', icon: 'ri-book-open-line' },
+  { id: 'imagePrompt', label: '配图提示词', icon: 'ri-image-line' },
 ]
 type Draft = Pick<
   TianrenAiSettings,
@@ -243,8 +245,8 @@ onBeforeUnmount(() => {
 
 <template>
   <SettingsDialogShell
-    title="解读与配图设置"
-    description="保存后用于下一次生成；已有解读与配图保留。"
+    title="卦象 AI 设置"
+    description="把今天的卦意，讲清楚、画出来。"
     @close="close"
   >
     <AiSettingsLayout :items="items" :active="tab" @update:active="tab = $event as typeof tab">
@@ -259,7 +261,7 @@ onBeforeUnmount(() => {
           :disabled="loading || saving"
           :error="catalogError || validationError"
           scope="天人"
-          description="用于卦象解读与图片生成，独立保存此处设置。"
+          description="用于卦象解读与配图。"
           @refresh="loadModels"
         />
         <p v-else role="status">
@@ -269,24 +271,44 @@ onBeforeUnmount(() => {
       <p v-if="loading && draft" role="status">正在读取账号设置…</p>
       <fieldset v-if="draft" :disabled="saving || loading">
         <template v-if="tab === 'capabilities'"
-          ><h3>生成安排</h3>
-          <p>解读完成后，按你的选择生成一张卦象图片。</p>
-          <label class="auto-image"
-            ><span
-              ><strong>解读时一起生成图片</strong
-              ><small>解读与图片共用上方处理模型和思考深度。</small></span
-            ><input v-model="draft.autoImage" type="checkbox" aria-label="解读时一起生成图片"
-          /></label>
-          <p class="behavior-note">
-            保存后用于下一次生成；已有解读与配图保留。恢复默认也需要保存才会生效。
-          </p></template
+          ><div class="section-heading">
+            <div>
+              <h3>解读与配图</h3>
+              <p>文字保存后，图片继续在后台生成。</p>
+            </div>
+          </div>
+          <AiSettingsToggleRow
+            v-model="draft.autoImage"
+            title="解读时一起配图"
+            description="配图与本次解读对应，展示变与不变。"
+            icon="ri-image-line"
+            control-label="解读时一起生成图片"
+          />
+          <div class="behavior-note">
+            <i class="ri-information-line" aria-hidden="true"></i
+            ><span> 只影响之后的新解读，已有解读与配图保留。配图失败可单独重试。 </span>
+          </div></template
         >
         <template v-else
-          ><h3>{{ tab === 'interpretationPrompt' ? '卦象解读提示词' : '图片生成提示词' }}</h3>
-          <p>用于下一次生成；切换设置项会保留你的草稿。</p>
+          ><div class="section-heading">
+            <div>
+              <h3>{{ tab === 'interpretationPrompt' ? '解读提示词' : '配图提示词' }}</h3>
+              <p>完整编辑这一步的表达方式。</p>
+            </div>
+            <span class="default-tag">{{
+              draft[tab] ===
+              (tab === 'interpretationPrompt'
+                ? remote?.defaultInterpretationPrompt
+                : remote?.defaultImagePrompt)
+                ? '默认提示词'
+                : '自定义提示词'
+            }}</span>
+          </div>
           <div class="prompt-toolbar">
             <label for="tianren-prompt">提示词</label
-            ><button type="button" :disabled="!remote" @click="restoreDefault">恢复当前默认</button>
+            ><button type="button" :disabled="!remote" @click="restoreDefault">
+              <i class="ri-history-line" aria-hidden="true"></i>恢复当前默认
+            </button>
           </div>
           <textarea
             id="tianren-prompt"
@@ -322,11 +344,16 @@ onBeforeUnmount(() => {
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <p v-if="storageError" class="error" role="alert">{{ storageError }}</p>
       <template #footer
-        ><p class="save-status" role="status">
-          {{ saving ? '正在保存设置…' : storageError || error || status }}
-        </p>
+        ><AiSettingsSaveStatus
+          :text="saving ? '正在保存设置…' : storageError || error || status"
+          :dirty="dirty"
+          :loading="loading"
+          :saving="saving"
+          :error="!!(storageError || error || conflict)"
+        />
         <div class="footer-actions">
-          <button type="button" :disabled="loading || saving" @click="load">重新读取设置</button
+          <button class="light-action" type="button" :disabled="loading || saving" @click="load">
+            <i class="ri-refresh-line" aria-hidden="true"></i>重新读取设置</button
           ><button type="button" @click="close">关闭</button
           ><button
             class="primary"
@@ -341,32 +368,3 @@ onBeforeUnmount(() => {
     </AiSettingsLayout>
   </SettingsDialogShell>
 </template>
-<style scoped>
-.auto-image {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  justify-content: space-between;
-  padding: 18px 0;
-  border-bottom: 1px solid var(--wao-divider);
-}
-.auto-image span {
-  display: grid;
-  gap: 5px;
-}
-.auto-image small {
-  font-size: 12px;
-  color: var(--wao-text-weak);
-}
-input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--wao-primary);
-  flex-shrink: 0;
-}
-.behavior-note {
-  padding: 12px 14px;
-  background: var(--wao-bg-sub);
-  border-radius: 8px;
-}
-</style>
