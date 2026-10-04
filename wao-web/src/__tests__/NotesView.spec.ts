@@ -19,14 +19,14 @@ import { useUiStore } from '@/stores/ui'
 import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc, fetchDoc, fetchKbs } from '@/api/board'
 import type { Doc } from '@/types'
 import { fetchPreference, savePreference } from '@/api/favorites'
-import { copyText } from '@/utils/clipboard'
+import { copyText, copyToClipboard } from '@/utils/clipboard'
 import { fetchNotePolishVersions } from '@/api/notePolishVersions'
 import { notePolishVersions, noteEnrichmentStatus, activateNoteWorkflowMember } from '@/utils/autoNoteEnrichment'
 import { fetchNoteAiWorkflows } from '@/api/noteAiWorkflows'
 vi.mock('@/api/noteDiscoveries', () => ({ fetchDiscoveryCurrent: vi.fn().mockResolvedValue({ discovery: null, automationState: 'OFF', revision: '' }), fetchDiscoverySource: vi.fn(), feedbackDiscovery: vi.fn(), clearDiscoveryLegacyCache: vi.fn() }))
 vi.mock('@/api/noteAiWorkflows', () => ({ fetchNoteAiWorkflows: vi.fn().mockResolvedValue([]), retryNoteAiWorkflow: vi.fn() }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
-vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined), copyToClipboard: vi.fn().mockResolvedValue(true) }))
 vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
 
 vi.mock('@/api/noteOriginals', () => ({ freezeNoteAiInput: vi.fn().mockResolvedValue({ snapshotId: 'snapshot', overviewImageUrl: null }), retainNoteAiResult: vi.fn().mockResolvedValue(undefined), fetchNoteOriginals: vi.fn().mockResolvedValue({ before: null, initial: null, explanation: '', appliedRev: null }) }))
@@ -348,6 +348,7 @@ describe('小记集中记录空间', () => {
     activateNoteWorkflowMember('reset')
     activateNoteWorkflowMember('wg')
     vi.mocked(copyText).mockClear()
+    vi.mocked(copyToClipboard).mockReset().mockResolvedValue(true)
     vi.mocked(apiPatchDoc).mockReset()
     vi.mocked(fetchDoc).mockImplementation(async id => useDataStore().docById(id)!)
     vi.mocked(fetchNoteTags).mockResolvedValue([])
@@ -1175,6 +1176,78 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.classes()).not.toContain('fullscreen')
     expect(apiPatchDoc).toHaveBeenCalledWith('inline-fullscreen', expect.objectContaining({ expectedRev: 3 }))
+    wrapper.unmount()
+  })
+
+  it('阅读器分享与复制正文随翻篇更新，保留草稿、阅读布局与滚动位置', async () => {
+    useDataStore().docs.one = doc('one', '第一篇已保存正文', '2026-10-04T10:00:00')
+    useDataStore().docs.two = doc('two', '第二篇已保存正文', '2026-10-04T09:00:00')
+    const wrapper = await view(document.body)
+    await wrapper.get('.writing-pane textarea').setValue('不能复制出去的未保存草稿')
+    await wrapper.get('[data-note-id="one"] .note-preview-action').trigger('click')
+    const reader = () => new DOMWrapper(document.body).get('.notes-reader')
+    const page = reader().get('.reader-page').element as HTMLElement
+    page.scrollTop = 120
+    await reader().get('[aria-label="复制小记分享链接"]').trigger('click')
+    await flushPromises()
+    expect(copyToClipboard).toHaveBeenLastCalledWith(`${window.location.origin}/s/d/one`)
+    expect(reader().get('[role="status"]').text()).toBe('公开分享链接已复制')
+    expect(page.scrollTop).toBe(120)
+    await reader().get('[aria-label="复制小记正文"]').trigger('click')
+    await flushPromises()
+    expect(copyToClipboard).toHaveBeenLastCalledWith('第一篇已保存正文')
+    await reader().findAll('button').find(button => button.text() === '全屏阅读')!.trigger('click')
+    await reader().get('[aria-label="下一篇小记（→）"]').trigger('click')
+    expect(reader().get('[role="status"]').text()).toBe('')
+    await reader().get('[aria-label="复制小记分享链接"]').trigger('click')
+    await flushPromises()
+    expect(copyToClipboard).toHaveBeenLastCalledWith(`${window.location.origin}/s/d/two`)
+    useDataStore().docs.two!.blocks = [{ p: '第二篇最新正文 [链接](https://example.com)' }]
+    await flushPromises()
+    await reader().get('[aria-label="复制小记正文"]').trigger('click')
+    await flushPromises()
+    expect(copyToClipboard).toHaveBeenLastCalledWith('第二篇最新正文 [链接](https://example.com)')
+    expect(reader().classes()).toContain('reader-full')
+    expect((wrapper.get('.writing-pane textarea').element as HTMLTextAreaElement).value).toBe('不能复制出去的未保存草稿')
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('阅读器复制失败可重试，历史原文不能误复制为当前正文', async () => {
+    useDataStore().docs.one = doc('one', '当前正文')
+    vi.mocked(copyToClipboard).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const wrapper = await view(document.body)
+    await wrapper.get('.note-preview-action').trigger('click')
+    const reader = () => new DOMWrapper(document.body).get('.notes-reader')
+    await reader().get('[aria-label="复制小记分享链接"]').trigger('click')
+    await flushPromises()
+    expect(reader().get('[role="status"]').text()).toContain('复制失败，请重试')
+    await reader().get('[aria-label="复制小记分享链接"]').trigger('click')
+    await flushPromises()
+    expect(reader().get('[role="status"]').text()).toBe('公开分享链接已复制')
+    await reader().findAll('button').find(button => button.text() === '查看原文')!.trigger('click')
+    expect(reader().get('[aria-label="复制小记正文"]').attributes('disabled')).toBeDefined()
+    expect(reader().get('[aria-label="复制小记正文"]').attributes('title')).toBe('返回当前内容后复制正文')
+    expect(reader().get('[aria-label="复制小记分享链接"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('复制进行中禁止重复操作，迟到结果不进入另一篇阅读器', async () => {
+    useDataStore().docs.one = doc('one', '第一篇', '2026-10-04T10:00:00')
+    useDataStore().docs.two = doc('two', '第二篇', '2026-10-04T09:00:00')
+    let finish!: (copied: boolean) => void
+    vi.mocked(copyToClipboard).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = await view(document.body)
+    await wrapper.get('[data-note-id="one"] .note-preview-action').trigger('click')
+    const reader = () => new DOMWrapper(document.body).get('.notes-reader')
+    await reader().get('[aria-label="复制小记分享链接"]').trigger('click')
+    expect(reader().get('[aria-label="复制小记分享链接"]').attributes('disabled')).toBeDefined()
+    expect(reader().get('[aria-label="复制小记正文"]').attributes('disabled')).toBeDefined()
+    await reader().get('[aria-label="下一篇小记（→）"]').trigger('click')
+    finish(true)
+    await flushPromises()
+    expect(reader().get('[role="status"]').text()).toBe('')
+    expect(reader().get('[aria-label="复制小记分享链接"]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 
