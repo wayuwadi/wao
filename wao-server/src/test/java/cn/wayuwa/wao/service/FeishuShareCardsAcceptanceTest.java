@@ -31,6 +31,7 @@ class FeishuShareCardsAcceptanceTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired ShareService share;
     @Autowired SettingService settings;
+    @Autowired TianrenVisualService visuals;
 
     @Test
     void savedNotePublicProjectionAndCallbackKeepTitleTextAndDetailsLink() throws Exception {
@@ -83,7 +84,30 @@ class FeishuShareCardsAcceptanceTest {
         JsonNode card = preview("http://localhost/s/tianren/" + tokens.get(0));
         assertThat(card.path("inline").path("i18n_title").path("zh_cn").asText()).startsWith("WAO 天人一卦 · ");
         assertThat(card.toString()).contains("本卦：", "查看详情").doesNotContain("memberId", "conversationId");
-        System.out.println("卦象验收通过：既有公开凭据、真实卦象、详情跳转；私有配图分享适配未接通");
+        System.out.println("卦象验收通过：既有公开凭据、真实卦象、详情跳转");
+    }
+
+    @Test
+    void existingSharedVisualUsesSavedSummaryAndRealFeishuImage() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                org.springframework.util.StringUtils.hasText(settings.get(SettingService.CHAT_SYNC_APP_ID, ""))
+                && org.springframework.util.StringUtils.hasText(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")),
+                "既有数据库未配置飞书应用凭据，真实卦象图片上传未验证");
+        var tokens = jdbc.queryForList("SELECT share_token FROM tianren_daily_reading "
+                + "WHERE share_token IS NOT NULL ORDER BY reading_date DESC", String.class);
+        String token = tokens.stream().filter(candidate -> {
+            var visual = visuals.findSharedVisual(candidate);
+            return visual != null && visual.content() != null;
+        }).findFirst().orElseThrow(() -> new IllegalStateException("没有与当前解读对应的已分享成功配图"));
+        var visual = visuals.findSharedVisual(token);
+        preview("http://localhost/s/tianren/" + token);
+        JsonNode card = preview("http://localhost/s/tianren/" + token);
+        assertThat(card.path("card").path("data").path("elements").get(0).path("img_key").asText())
+                .startsWith("img_");
+        assertThat(card.toString()).contains("变：", "不变：", "查看详情")
+                .doesNotContain("memberId", "conversationId", "imagePrompt", "scenePrompt");
+        assertThat(visual.summary()).isNotBlank();
+        System.out.println("卦象图文验收通过：既有生成结果、当前正文版本、保存摘要、真实飞书图片上传和详情链接；未发送会话消息");
     }
 
     private JsonNode preview(String url) throws Exception {
