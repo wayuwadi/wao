@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type { NoteWritingWidth } from '@/composables/noteWritingWidth'
-defineProps<{ modelValue: NoteWritingWidth }>()
+withDefaults(defineProps<{ modelValue: NoteWritingWidth; label?: string }>(), { label: '书写宽度' })
 const emit = defineEmits<{ 'update:modelValue': [value: NoteWritingWidth] }>()
 </script>
 
 <template>
-  <div class="note-width-switch" role="group" aria-label="书写宽度">
+  <div class="note-width-switch" role="group" :aria-label="label">
     <button type="button" :aria-pressed="modelValue === 'wide'" @mousedown.prevent @click="emit('update:modelValue', 'wide')">宽屏</button>
     <button type="button" :aria-pressed="modelValue === 'narrow'" @mousedown.prevent @click="emit('update:modelValue', 'narrow')">窄屏</button>
   </div>

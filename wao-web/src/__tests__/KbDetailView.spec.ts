@@ -82,6 +82,26 @@ describe('知识库详情目录体验', () => {
     return wrapper
   }
 
+  it('文档宽度切换保留未保存正文和同一个编辑器，重开恢复成员偏好', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7', false, true)
+    const data = useDataStore(pinia)
+    await wrapper.get('.markdown-editor-stub').setValue('这份未保存输入需要保留')
+    const editor = wrapper.get('.markdown-editor-stub').element
+    const before = JSON.stringify(data.docOf('d7'))
+    const edit = vi.spyOn(data, 'setDocEdit')
+    await wrapper.get('[aria-label="文档宽度"] button:last-child').trigger('click')
+    expect(wrapper.get('.document-pane').classes()).toContain('content-narrow')
+    expect(wrapper.get('.markdown-editor-stub').element).toBe(editor)
+    expect(JSON.stringify(data.docOf('d7'))).toBe(before)
+    expect((wrapper.get('.markdown-editor-stub').element as HTMLTextAreaElement).value).toBe('这份未保存输入需要保留')
+    expect(edit).not.toHaveBeenCalled()
+    wrapper.unmount()
+    const reopened = await mountView('/kb/k3?doc=d7', false, true)
+    expect(reopened.get('.document-pane').classes()).toContain('content-narrow')
+    await reopened.get('[aria-label="文档宽度"] button:first-child').trigger('click')
+    expect(reopened.get('.document-pane').classes()).not.toContain('content-narrow')
+  })
+
   it('重命名期间后台刷新不覆盖输入，失败保留草稿并可重试', async () => {
     const wrapper = await mountView('/kb/k3')
     const data = useDataStore(pinia)

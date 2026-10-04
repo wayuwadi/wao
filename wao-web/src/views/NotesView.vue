@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import NoteOriginalReader from '@/components/notes/NoteOriginalReader.vue'
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
+import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
+import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import NoteAiSettingsDialog from '@/components/notes/NoteAiSettingsDialog.vue'
 import { startSavedNoteStage } from '@/api/noteAiWorkflows'
 import { newPolishRequestId } from '@/api/polishJobs'
@@ -36,6 +38,7 @@ import { useNotesPaneWidth } from '@/composables/notesPaneWidth'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const writingOpen = ref(true)
+const contentWidth = useNoteWritingWidth()
 const workspace = ref<HTMLElement | null>(null)
 const { percentage: writingPercentage, style: writingStyle, resizing, start: startWritingResize, stop: stopWritingResize, reset: resetWritingWidth, keydown: resizeWritingByKey } = useNotesPaneWidth(workspace)
 watch(writingOpen, () => stopWritingResize())
@@ -1058,7 +1061,7 @@ onMounted(() => void loadPins())
     <button v-if="showBackToTop" class="notes-back-top" type="button" aria-label="回到顶部" title="回到顶部" @click="backToTop"><i class="ri-rocket-2-line" aria-hidden="true"></i></button>
     <NoteAiSettingsDialog v-model:open="noteSettingsOpen" />
     <Teleport to="body">
-      <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :class="{ 'reader-full': readerMode === 'full', 'directory-open': readerDirectoryOpen }" :inert="previewImage ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
+      <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :class="{ 'reader-full': readerMode === 'full', 'reader-narrow': contentWidth === 'narrow', 'directory-open': readerDirectoryOpen }" :inert="previewImage ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
         <header class="reader-topbar">
           <strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>只读</small></strong>
           <span class="reader-copy-status" role="status" aria-live="polite">{{ readerCopyStatus }}</span>
@@ -1067,6 +1070,7 @@ onMounted(() => void loadPins())
             <button type="button" aria-label="复制小记正文" :title="originalsOpen ? '返回当前内容后复制正文' : '复制当前正文（Markdown）'" :disabled="readerCopyBusy || originalsOpen" @click="copyReadingNote('body')"><i class="ri-file-copy-line" aria-hidden="true"></i><span>复制正文</span></button>
             <button type="button" :aria-pressed="originalsOpen" @click="toggleOriginals">{{ originalsOpen ? '返回当前内容' : '查看原文' }}</button>
             <div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div>
+            <NoteWidthSwitch v-if="readerMode === 'full'" v-model="contentWidth" label="阅读宽度" />
             <button ref="readerClose" type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line" aria-hidden="true"></i><span>关闭</span></button>
           </div>
         </header>
@@ -1256,7 +1260,8 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-columns { display: grid; grid-template-columns: minmax(0, 1fr) 238px; min-height: 100%; align-items: start; }
 .reader-columns > .reader-images { position: sticky; top: 0; max-height: calc(100dvh - 150px); overflow: auto; overscroll-behavior: contain; }
 .reader-article { min-width: 0; width: min(100%, 820px); box-sizing: border-box; margin: 0 auto; padding: 28px clamp(24px, 2vw, 32px); }
-.reader-full .reader-article { max-width: 760px; }
+.reader-full .reader-article { width: min(100%, 1100px); }
+.reader-full.reader-narrow .reader-article { width: min(100%, 650px); }
 .reader-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--wao-text-faint); font-size: 12px; }
 .reader-meta span:first-child { color: var(--wao-text-2); font-weight: 650; }
 .reader-page h2 { margin: 16px 0 8px; color: var(--wao-text-1); font-size: 25px; line-height: 1.55; overflow-wrap: anywhere; text-wrap: balance; }
