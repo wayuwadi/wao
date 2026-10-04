@@ -28,6 +28,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 @Sql(scripts = {"/tianren-share-schema.sql", "/db/migration/V54__tianren_daily_reading.sql", "/db/migration/V62__tianren_reading_share.sql"})
 @Sql(statements = {
     "CREATE TABLE IF NOT EXISTS member(id VARCHAR(32) PRIMARY KEY)",
+    "CREATE TABLE IF NOT EXISTS tianren_visual(interpretation_run_id VARCHAR(48) PRIMARY KEY)",
     "MERGE INTO member KEY(id) VALUES ('wg'),('other')",
     "DROP TABLE IF EXISTS member_preference",
     "CREATE TABLE member_preference(member_id VARCHAR(32),pref_key VARCHAR(128),pref_value CLOB,updated_at TIMESTAMP, PRIMARY KEY(member_id,pref_key))",

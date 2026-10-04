@@ -8,12 +8,14 @@ import {
   fetchTianrenHistory,
   fetchTodayTianrenReading,
   fetchTianrenAiStatus,
+  fetchTianrenVisual,
   streamTianrenInterpretation,
   type TianrenReading,
 } from '@/api/tianren'
 import { fetchAssistantConversation } from '@/api/assistant'
 
 vi.mock('@/api/tianren', () => ({
+  fetchTianrenVisual: vi.fn(), fetchTianrenImage: vi.fn(), generateTianrenImage: vi.fn(),
   fetchTianrenAiStatus: vi.fn(),
   createTodayTianrenReading: vi.fn<(typeof import('@/api/tianren'))['createTodayTianrenReading']>(),
   createTianrenShareLink: vi.fn<(typeof import('@/api/tianren'))['createTianrenShareLink']>(),
@@ -102,6 +104,7 @@ describe('TianrenView', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.mocked(fetchTianrenAiStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })
+    vi.mocked(fetchTianrenVisual).mockResolvedValue({ interpretationRunId: null, state: 'NOT_GENERATED', title: null, change: null, keep: null, imageAttemptId: null, message: '尚未生成配图', retryable: false })
     vi.mocked(fetchTianrenHistory).mockResolvedValue([])
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue(null)
     vi.mocked(streamTianrenInterpretation).mockImplementation(async function* () {})

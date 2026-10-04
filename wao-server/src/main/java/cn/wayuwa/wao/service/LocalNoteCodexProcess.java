@@ -131,7 +131,7 @@ final class LocalNoteCodexProcess {
         String thread = threadId(events);
         if (thread == null) throw new IllegalStateException("本机 AI 未生成可确认归属的图片，请检查图片工具后重试");
         Path directory = generated.resolve(thread);
-        Path png = uniquePng(generated, directory);
+        Path png = latestPng(generated, directory);
         byte[] bytes = Files.readAllBytes(png);
         ArticleImageService.validatePng(bytes);
         // 文件由 CLI 本次 thread.started 对应的工具生成，绝不采用模型最终回答中的路径。
@@ -183,7 +183,8 @@ final class LocalNoteCodexProcess {
         return null;
     }
 
-    static Path uniquePng(Path generated, Path directory) throws Exception {
+    /** 工具可能在同一线程重绘；只接受本次线程中最后落盘的唯一结果，拒绝时间相同的歧义。 */
+    static Path latestPng(Path generated, Path directory) throws Exception {
         if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)
                 || Files.isSymbolicLink(generated) || Files.isSymbolicLink(directory)
                 || !directory.toRealPath().getParent().equals(generated.toRealPath()))
@@ -192,10 +193,20 @@ final class LocalNoteCodexProcess {
         try (var files = Files.list(directory)) {
             candidates = files.filter(path -> path.getFileName().toString().endsWith(".png")).toList();
         }
-        if (candidates.size() != 1) throw new IllegalStateException("本次配图结果为空或多于一张，请重试");
-        Path png = candidates.get(0);
-        if (!Files.isRegularFile(png, LinkOption.NOFOLLOW_LINKS) || Files.size(png) > ImageService.MAX_BYTES)
+        Path newest = null;
+        java.nio.file.attribute.FileTime latest = null;
+        boolean tied = false;
+        for (Path candidate : candidates) {
+            if (!Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(candidate))
+                throw new IllegalStateException("本次生成图片无效，请重试");
+            var modified = Files.getLastModifiedTime(candidate, LinkOption.NOFOLLOW_LINKS);
+            if (latest == null || modified.compareTo(latest) > 0) {
+                newest = candidate; latest = modified; tied = false;
+            } else if (modified.equals(latest)) tied = true;
+        }
+        if (newest == null || tied) throw new IllegalStateException("本次配图结果为空或无法确认最后一张，请重试");
+        if (Files.size(newest) > ImageService.MAX_BYTES)
             throw new IllegalStateException("本次生成图片无效或超过 10MB，请重试");
-        return png;
+        return newest;
     }
 }

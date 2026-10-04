@@ -14,8 +14,13 @@ import { fetchAssistantConversation } from '@/api/assistant'
 import { copyToClipboard } from '@/utils/clipboard'
 import { renderMarkdown } from '@/utils/markdown'
 import TianrenNotificationStatus from '@/components/workday/TianrenNotificationStatus.vue'
+import TianrenVisualCard from '@/components/tianren/TianrenVisualCard.vue'
+import TianrenAiSettingsDialog from '@/components/tianren/TianrenAiSettingsDialog.vue'
+import { tianrenReadingBody } from '@/components/tianren/tianrenReadingBody'
 
 const activeTab = ref<'reading' | 'structure' | 'history'>('reading')
+const settingsOpen = ref(false)
+const visualRefreshKey = ref(0)
 
 type SyncState = 'loading' | 'casting' | 'saved' | 'error'
 
@@ -68,7 +73,7 @@ const displayLines = computed(() => (reading.value?.lines ?? [])
   }))
   .reverse())
 
-const interpretationHtml = computed(() => renderMarkdown(interpretation.value))
+const interpretationHtml = computed(() => renderMarkdown(tianrenReadingBody(interpretation.value)))
 const isViewingToday = computed(() => reading.value?.date === localDate)
 const canInterpret = computed(() => isViewingToday.value && assistantConfigured.value && !interpreting.value && !backgroundRunning.value)
 const season = computed(() => {
@@ -137,6 +142,7 @@ async function loadConversation(current: TianrenReading | null) {
     if (reading.value?.id !== requestedId) return
     interpretation.value = [...detail.messages].reverse()
       .find((message) => message.role === 'assistant')?.content ?? ''
+    visualRefreshKey.value++
   } catch (cause) {
     if (reading.value?.id !== requestedId) return
     conversationError.value = cause instanceof Error ? cause.message : '历史解读读取失败'
@@ -259,6 +265,7 @@ async function interpretToday() {
       reading.value = latest
     }
     history.value = await fetchTianrenHistory(14)
+    visualRefreshKey.value++
     focus.value = ''
   } catch (cause) {
     interpretation.value = previous
@@ -285,6 +292,7 @@ onMounted(() => {
     <header class="hero">
       <div class="page-title"><span class="page-icon"><i class="ri-windy-line" aria-hidden="true"></i></span><div><h1>天人一卦</h1><p>观照当下，留下一点行动。</p></div></div>
       <div class="hero-actions">
+        <button class="ai-settings-button" type="button" @click="settingsOpen = true"><i class="ri-settings-3-line"></i> 解读与配图设置</button>
         <span class="sync-pill" :class="syncState" role="status">{{ syncText }}</span>
         <TianrenNotificationStatus v-if="reading" :reading-id="reading.id" :interpreting="interpreting" />
         <RouterLink v-else class="notification-settings" to="/settings?tab=tianren-notifications"><i class="ri-settings-3-line"></i>配置通知群</RouterLink>
@@ -359,6 +367,19 @@ onMounted(() => {
                 <span><i class="ri-lock-line"></i> 卦象事实</span>
                 <span><i class="ri-book-open-line"></i> 传统观点 · AI 概括</span>
                 <span><i class="ri-sparkling-line"></i> 当日建议 · AI 延伸</span>
+              </div>
+              <div class="facts-visual">
+                <section class="reading-facts" aria-label="卦象事实">
+                  <h3>卦象事实</h3>
+                  <dl>
+                    <div><dt>本卦</dt><dd>第 {{ reading.primary.number }} 卦 · {{ reading.primary.name }}</dd></div>
+                    <div><dt>卦象</dt><dd>上{{ reading.primary.upper.name }}（{{ reading.primary.upper.nature }}）下{{ reading.primary.lower.name }}（{{ reading.primary.lower.nature }}）</dd></div>
+                    <div><dt>六爻</dt><dd>{{ reading.lines.join('、') }}<small>初爻 → 上爻</small></dd></div>
+                    <div><dt>变爻</dt><dd>{{ reading.changingLines.length ? reading.changingLines.map(position => ['初爻', '二爻', '三爻', '四爻', '五爻', '上爻'][position - 1]).join('、') : '无变爻' }}</dd></div>
+                    <div><dt>之卦</dt><dd>{{ reading.relating ? `第 ${reading.relating.number} 卦 · ${reading.relating.name}` : '无变爻，守持与深化本卦' }}</dd></div>
+                  </dl>
+                </section>
+                <TianrenVisualCard :reading-id="reading.id" :today="isViewingToday" :visible="activeTab === 'reading'" :refresh-key="visualRefreshKey" :interpreting="interpreting" />
               </div>
               <div v-if="interpretation" class="markdown" v-html="interpretationHtml"></div>
               <div v-else-if="!isViewingToday && !conversationLoading && !conversationError" class="history-answer-empty">
@@ -504,12 +525,16 @@ onMounted(() => {
       </section>
       <footer class="boundary-note">文化反思，不是医疗建议。用作文化阅读与自我观照，不作为医疗或决策依据。</footer>
     </main>
+    <TianrenAiSettingsDialog v-if="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>
 
 <style scoped>
 .reading-layout.reading-layout-empty, .reading-layout.reading-layout-history { grid-template-columns: minmax(0, 1fr); }
 .reading-layout-empty .reflection-card { width: 100%; max-width: 700px; box-sizing: border-box; }
+.facts-visual { display: grid; grid-template-columns: minmax(165px, .85fr) minmax(0, 1.65fr); gap: 18px; align-items: start; margin: 18px 0 24px; }
+.reading-facts { min-width: 0; font-size: 12px; } .reading-facts h3 { font-size: 15px; margin-bottom: 12px; } .reading-facts dl { margin: 0; display: grid; gap: 9px; } .reading-facts dl > div { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 8px; line-height: 1.7; } .reading-facts dt { color: var(--wao-text-3); } .reading-facts dd { margin: 0; overflow-wrap: anywhere; } .reading-facts small { display: block; font-size: 11px; color: var(--wao-text-3); }
+@container (max-width: 560px) { .facts-visual { grid-template-columns: 1fr; } }
 .tianren-page { width: 100%; box-sizing: border-box; min-height: 100%; padding: 24px 28px 40px; color: var(--wao-text); background: var(--wao-bg-page); container-type: inline-size; }
 .hero, .page-content { max-width: var(--wao-content-max); margin: 0 auto; }
 .hero { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }

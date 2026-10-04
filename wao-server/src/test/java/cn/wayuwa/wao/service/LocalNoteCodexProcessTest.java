@@ -54,15 +54,26 @@ class LocalNoteCodexProcessTest {
         assertThat(LocalNoteCodexProcess.threadId(events)).isEqualTo("11111111-1111-1111-1111-111111111111");
     }
 
-    @Test void rejectsForeignDirectoryAndAmbiguousImages() throws Exception {
+    @Test void rejectsForeignDirectoryAndEmptyImageResults() throws Exception {
         Path generated = Files.createDirectory(directory.resolve("generated"));
         Path thread = Files.createDirectory(generated.resolve("thread"));
-        assertThatThrownBy(() -> LocalNoteCodexProcess.uniquePng(generated, directory)).hasMessageContaining("本次生成");
-        assertThatThrownBy(() -> LocalNoteCodexProcess.uniquePng(generated, thread)).hasMessageContaining("为空或多于");
+        assertThatThrownBy(() -> LocalNoteCodexProcess.latestPng(generated, directory)).hasMessageContaining("本次生成");
+        assertThatThrownBy(() -> LocalNoteCodexProcess.latestPng(generated, thread)).hasMessageContaining("结果为空");
         Path first = Files.write(thread.resolve("first.png"), new byte[]{1});
-        assertThat(LocalNoteCodexProcess.uniquePng(generated, thread)).isEqualTo(first);
-        Files.write(thread.resolve("second.png"), new byte[]{2});
-        assertThatThrownBy(() -> LocalNoteCodexProcess.uniquePng(generated, thread)).hasMessageContaining("为空或多于");
+        assertThat(LocalNoteCodexProcess.latestPng(generated, thread)).isEqualTo(first);
         assertThatThrownBy(() -> ArticleImageService.validatePng(new byte[24])).hasMessageContaining("PNG");
+    }
+
+    @Test void acceptsLastOwnedToolImageAndRejectsTiedOrForeignResults() throws Exception {
+        Path generated = Files.createDirectory(directory.resolve("generated"));
+        Path thread = Files.createDirectory(generated.resolve("thread"));
+        Path first = Files.write(thread.resolve("first.png"), new byte[]{1});
+        Path last = Files.write(thread.resolve("last.png"), new byte[]{2});
+        Files.setLastModifiedTime(first, java.nio.file.attribute.FileTime.fromMillis(1000));
+        Files.setLastModifiedTime(last, java.nio.file.attribute.FileTime.fromMillis(2000));
+        assertThat(LocalNoteCodexProcess.latestPng(generated, thread)).isEqualTo(last);
+        assertThatThrownBy(() -> LocalNoteCodexProcess.latestPng(generated, directory)).hasMessageContaining("本次生成");
+        Files.setLastModifiedTime(first, java.nio.file.attribute.FileTime.fromMillis(2000));
+        assertThatThrownBy(() -> LocalNoteCodexProcess.latestPng(generated, thread)).hasMessageContaining("无法确认");
     }
 }

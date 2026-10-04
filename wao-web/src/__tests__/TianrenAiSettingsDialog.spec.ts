@@ -1,0 +1,93 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import TianrenAiSettingsDialog from '@/components/tianren/TianrenAiSettingsDialog.vue'
+import { fetchTianrenAiSettings, saveTianrenAiSettings, type TianrenAiSettings } from '@/api/tianren'
+import { useSessionStore } from '@/stores/session'
+vi.mock('@/api/tianren', () => ({ fetchTianrenAiSettings: vi.fn(), saveTianrenAiSettings: vi.fn() }))
+const settings: TianrenAiSettings = { version: 2, autoImage: true, interpretationPrompt: '已保存解读提示', imagePrompt: '已保存图片提示', defaultInterpretationPrompt: '默认解读提示', defaultImagePrompt: '默认图片提示' }
+const storageKey = 'wao-tianren-ai-settings-draft-v1:member1'
+function accept(id: string) { useSessionStore().accept({ accountId: id, member: { id, name: id, initial: 'M', color: '', role: '' }, identities: [], createdAt: '' }) }
+function mountDialog() { return mount(TianrenAiSettingsDialog, { attachTo: document.body, global: { stubs: { Teleport: true } } }) }
+function button(wrapper: ReturnType<typeof mountDialog>, label: string) { return wrapper.findAll('button').find(item => item.text() === label)! }
+describe('TianrenAiSettingsDialog', () => {
+  beforeEach(() => { setActivePinia(createPinia()); accept('member1'); localStorage.clear(); vi.mocked(fetchTianrenAiSettings).mockResolvedValue(settings); vi.mocked(saveTianrenAiSettings).mockResolvedValue({ ...settings, version: 3 }) })
+  afterEach(() => { vi.clearAllMocks(); document.body.innerHTML = '' })
+  it('切换页签和关闭后保留两段草稿与开关，恢复默认只改草稿', async () => {
+    const wrapper = mountDialog(); await flushPromises()
+    await wrapper.get('textarea').setValue('未保存的解读')
+    await button(wrapper, '图片生成').trigger('click')
+    await wrapper.get('textarea').setValue('未保存的图片')
+    await wrapper.get('input').setValue(false)
+    await button(wrapper, '恢复当前默认').trigger('click')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('默认图片提示')
+    expect(saveTianrenAiSettings).not.toHaveBeenCalled()
+    wrapper.unmount()
+    const reopened = mountDialog(); await flushPromises()
+    expect(reopened.get<HTMLTextAreaElement>('textarea').element.value).toBe('未保存的解读')
+    await button(reopened, '图片生成').trigger('click')
+    expect(reopened.get<HTMLTextAreaElement>('textarea').element.value).toBe('默认图片提示')
+    expect(reopened.get<HTMLInputElement>('input').element.checked).toBe(false)
+    reopened.unmount()
+  })
+  it('加载失败保留本机草稿并禁止以默认设置覆盖账号', async () => {
+    localStorage.setItem(storageKey, JSON.stringify({ version: 2, autoImage: false, interpretationPrompt: '本机解读', imagePrompt: '本机图片' }))
+    vi.mocked(fetchTianrenAiSettings).mockRejectedValue(new Error('读取中断'))
+    const wrapper = mountDialog(); await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('本机解读')
+    expect(button(wrapper, '重试保存').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('读取中断')
+    expect(localStorage.getItem(storageKey)).toContain('本机图片')
+    wrapper.unmount()
+  })
+  it('409 冲突保留基准版本与草稿，明确读取对比后才允许重新保存', async () => {
+    vi.mocked(saveTianrenAiSettings).mockRejectedValueOnce(Object.assign(new Error('版本冲突'), { status: 409 })).mockResolvedValue({ ...settings, version: 5, interpretationPrompt: '我的改动' })
+    const wrapper = mountDialog(); await flushPromises()
+    await wrapper.get('textarea').setValue('我的改动')
+    await button(wrapper, '保存设置').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('其他页面或设备已修改设置')
+    expect(JSON.parse(localStorage.getItem(storageKey)!).version).toBe(2)
+    expect(button(wrapper, '保存设置').attributes('disabled')).toBeDefined()
+    vi.mocked(fetchTianrenAiSettings).mockResolvedValue({ ...settings, version: 4, interpretationPrompt: '其他设备改动' })
+    await button(wrapper, '重新读取设置').trigger('click'); await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('我的改动')
+    expect(wrapper.text()).toContain('其他设备改动')
+    expect(button(wrapper, '保存设置').attributes('disabled')).toBeDefined()
+    await button(wrapper, '保留草稿，基于最新版本').trigger('click')
+    await button(wrapper, '保存设置').trigger('click'); await flushPromises()
+    expect(saveTianrenAiSettings).toHaveBeenLastCalledWith({ version: 4, autoImage: true, interpretationPrompt: '我的改动', imagePrompt: '已保存图片提示' })
+    expect(localStorage.getItem(storageKey)).toBeNull()
+    expect(wrapper.text()).toContain('设置已保存')
+    wrapper.unmount()
+  })
+  it('加载中的账号设置不能覆盖等待期间已有草稿，跨成员草稿隔离', async () => {
+    const wrapper = mountDialog(); await flushPromises()
+    await wrapper.get('textarea').setValue('第一位成员草稿')
+    accept('member2'); await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe(settings.interpretationPrompt)
+    await wrapper.get('textarea').setValue('第二位成员草稿')
+    expect(localStorage.getItem(storageKey)).toContain('第一位成员草稿')
+    expect(localStorage.getItem('wao-tianren-ai-settings-draft-v1:member2')).toContain('第二位成员草稿')
+    accept('member1'); await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('第一位成员草稿')
+    wrapper.unmount()
+  })
+  it('验证空提示词和 4000 字边界，失败保存仍可重试且保留草稿', async () => {
+    const wrapper = mountDialog(); await flushPromises()
+    await wrapper.get('textarea').setValue('   ')
+    await button(wrapper, '保存设置').trigger('click')
+    expect(wrapper.text()).toContain('1–4000 字')
+    expect(saveTianrenAiSettings).not.toHaveBeenCalled()
+    await wrapper.get('textarea').setValue('字'.repeat(4001))
+    await button(wrapper, '重试保存').trigger('click')
+    expect(saveTianrenAiSettings).not.toHaveBeenCalled()
+    await wrapper.get('textarea').setValue('字'.repeat(4000))
+    vi.mocked(saveTianrenAiSettings).mockRejectedValueOnce(new Error('保存连接中断'))
+    await button(wrapper, '重试保存').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('保存连接中断')
+    expect(JSON.parse(localStorage.getItem(storageKey)!).interpretationPrompt).toHaveLength(4000)
+    await button(wrapper, '重试保存').trigger('click'); await flushPromises()
+    expect(saveTianrenAiSettings).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+})

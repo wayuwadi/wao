@@ -42,6 +42,9 @@ public class MemberPreferenceController {
     public ApiResponse<Void> put(@PathVariable String key, @RequestBody Map<String, String> body,
             HttpServletRequest http) {
         String value = body.get("value");
+        if (cn.wayuwa.wao.service.TianrenSettingsService.KEY.equals(key)) {
+            throw new BadRequestException("请使用天人一卦设置接口保存，以保护跨设备修改");
+        }
         if (cn.wayuwa.wao.service.NoteDiscoveryService.PREFERENCE_KEY.equals(key)) {
             throw new BadRequestException("请使用自动发现设置接口保存，以保护暂停及跨设备修改");
         }
