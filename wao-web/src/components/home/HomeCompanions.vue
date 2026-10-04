@@ -4,8 +4,10 @@ import { companionEditing, companionQuiet as quiet, setCompanionQuiet } from '@/
 import type { createCompanionScene } from './companionScene'
 import type { CompanionActivity } from './companionActivities'
 import type { SurpriseStyle } from './companionSurprises'
+import type { WorldStory, WorldChoices } from './companionWorld'
 
-const emit = defineEmits<{ menu: [event: MouseEvent | KeyboardEvent, index: number]; surprise: [style: SurpriseStyle]; cancelSurprises: [] }>()
+const props = defineProps<{ choices?: WorldChoices }>()
+const emit = defineEmits<{ menu: [event: MouseEvent | KeyboardEvent, index: number]; surprise: [style: SurpriseStyle]; cancelSurprises: []; world: [story: WorldStory] }>()
 const host = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
 const canvasKey = ref(0)
@@ -53,6 +55,8 @@ async function load() {
       failed: fallback,
       surprise: style => emit('surprise', style),
       cancelSurprises: () => emit('cancelSurprises'),
+      world: story => emit('world', story),
+      choices: props.choices,
     })
     controller.setQuiet(quiet.value || companionEditing.value)
     controller.setActive(active)
@@ -80,7 +84,7 @@ function onMenuKey(event: KeyboardEvent, index: number) {
   event.stopPropagation()
   emit('menu', event, index)
 }
-defineExpose({ perform, toggleQuiet, quiet })
+defineExpose({ perform, toggleQuiet, quiet, story: (event: WorldStory) => controller?.story(event), anchors: () => controller?.anchors() ?? [] })
 onMounted(load)
 onActivated(() => {
   active = true

@@ -8,10 +8,19 @@ import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
 import HomeCompanions from '@/components/home/HomeCompanions.vue'
 import HomeSurprises from '@/components/home/HomeSurprises.vue'
+import HomeHiddenWorld from '@/components/home/HomeHiddenWorld.vue'
+import { createWorldChoices } from '@/components/home/companionWorld'
+import type { SurpriseStyle } from '@/components/home/companionSurprises'
 import { useDataStore } from '@/stores/data'
 const data = useDataStore()
 const companions = ref<InstanceType<typeof HomeCompanions>>()
 const surprises = ref<InstanceType<typeof HomeSurprises>>()
+const world = ref<InstanceType<typeof HomeHiddenWorld>>()
+const choices = createWorldChoices()
+const anchors = () => companions.value?.anchors() ?? []
+function surprise(style: SurpriseStyle) { surprises.value?.celebrate(style); world.value?.celebrated() }
+function clearSurprises() { surprises.value?.clear(); world.value?.clear() }
+function tap(event: MouseEvent) { surprises.value?.tap(event); world.value?.tap(event) }
 const menu = ref<InstanceType<typeof ContextActionMenu>>()
 function actions(event: MouseEvent | KeyboardEvent) {
   void menu.value?.openAt(event, '一起放松十五秒', [
@@ -26,7 +35,7 @@ function blankMenu(event: MouseEvent) {
 </script>
 
 <template>
-  <main class="home" @contextmenu="blankMenu" @click="surprises?.tap($event)" @pointermove="surprises?.sweep($event)">
+  <main class="home" @contextmenu="blankMenu" @click="tap" @pointerdown="world?.down($event)" @pointermove="surprises?.sweep($event); world?.move($event)" @pointerup="world?.up($event)" @pointercancel="world?.clear()">
     <section class="home-rest-welcome">
       <header class="home-day">
         <HomeOverviewCard />
@@ -42,10 +51,11 @@ function blankMenu(event: MouseEvent) {
         </div>
         <small class="play-hint">点一下伙伴，让它变成泡泡。右键，一起放松十五秒。</small>
       </div>
-      <div class="home-companion-space"><HomeCompanions ref="companions" @menu="actions" @surprise="surprises?.celebrate($event)" @cancel-surprises="surprises?.clear()" /></div>
+      <div class="home-companion-space"><HomeCompanions ref="companions" :choices="choices" @menu="actions" @surprise="surprise" @cancel-surprises="clearSurprises" @world="world?.story($event)" /></div>
     </section>
     <ContextActionMenu ref="menu" />
     <HomeSurprises ref="surprises" />
+    <HomeHiddenWorld ref="world" :anchors="anchors" :choices="choices" @story="companions?.story($event)" />
 
   </main>
 </template>

@@ -17,7 +17,7 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
     id: 'home',
     category: 'life',
     summary: '卦象与 Codex 信息集中查看，留一点空白再开始。',
-    description: '查看今日卦象与 Codex 统计，和四个伙伴一起抛球、跳舞或伸展；点击留白发现随机回应，十五秒内让四位升空破碎，遇见全屏彩蛋。',
+    description: '查看今日卦象与 Codex 统计，和四个伙伴放松；留白里藏着接泡泡、划风、画星系与节拍，伙伴会串门、模仿和隔空击掌，集齐后还有谢幕与接力。',
     tone: 'blue',
   },
   {

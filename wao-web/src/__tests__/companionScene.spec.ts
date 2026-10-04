@@ -95,12 +95,12 @@ function mountScene() {
     host.append(b)
     return b
   })
-  const surprise = vi.fn(), cancelSurprises = vi.fn()
+  const surprise = vi.fn(), cancelSurprises = vi.fn(), world = vi.fn(), say = vi.fn()
   return {
     canvas,
     targets,
-    surprise, cancelSurprises,
-    controller: createCompanionScene({ host, canvas, targets, say: vi.fn(), failed: vi.fn(), surprise, cancelSurprises }),
+    surprise, cancelSurprises, world, say,
+    controller: createCompanionScene({ host, canvas, targets, say, failed: vi.fn(), surprise, cancelSurprises, world }),
   }
 }
 function paint(time = 100) {
@@ -109,6 +109,72 @@ function paint(time = 100) {
   work.forEach((fn) => fn(time))
 }
 describe('三维场景资源与省电', () => {
+  it('快速点击两位会在原飞行途中靠近，仍各自归位并保留原集齐条件', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0)
+    const { controller, surprise } = mountScene()
+    paint(100)
+    const groups = spies.render.mock.lastCall![0].children.filter((child: { type: string }) => child.type === 'Group')
+    const gap = Math.abs(groups[0].position.x - groups[1].position.x)
+    controller.pop(0); vi.mocked(performance.now).mockReturnValue(400); controller.pop(1)
+    paint(1600)
+    expect(Math.abs(groups[0].position.x - groups[1].position.x)).toBeLessThan(gap * 0.5)
+    paint(5100)
+    expect(groups[0].visible && groups[1].visible).toBe(true)
+    expect(surprise).not.toHaveBeenCalled()
+    controller.dispose()
+  })
+  it('倒序谢幕等原彩蛋结束，安静会丢弃待播剧情；重复逗伙伴会唤起模仿', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0)
+    const { controller, surprise, world } = mountScene()
+    for (let i = 3; i >= 0; i--) { vi.mocked(performance.now).mockReturnValue((3 - i) * 300); controller.pop(i) }
+    paint(4800)
+    expect(surprise).toHaveBeenCalledOnce()
+    expect(world.mock.calls.some(([s]) => s.kind === 'reverse')).toBe(false)
+    vi.mocked(performance.now).mockReturnValue(8200); paint(8200)
+    expect(world.mock.calls.some(([s]) => s.kind === 'reverse')).toBe(true)
+    controller.setQuiet(true); controller.setQuiet(false)
+    for (let i = 0; i < 3; i++) { vi.mocked(performance.now).mockReturnValue(10000 + i * 1000); controller.pop(1) }
+    expect(world.mock.calls.some(([s]) => s.kind === 'imitate' && s.source === 1)).toBe(true)
+    controller.dispose()
+  })
+  it('按住后小幅反复移动是挠痒，大幅移动仍可串门，松手不合成升空', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0)
+    const { controller, targets, world } = mountScene()
+    paint(100)
+    const button = targets[0]!
+    button.setPointerCapture = vi.fn(); button.hasPointerCapture = () => false
+    const send = (name: string, x: number, y = 100) => {
+      const e = new MouseEvent(name, { clientX: x, clientY: y, cancelable: true })
+      Object.defineProperty(e, 'pointerId', { value: 1 }); button.dispatchEvent(e)
+    }
+    send('pointerdown', 100)
+    for (const [time, x] of [[600, 108], [650, 92], [700, 108]]) { vi.mocked(performance.now).mockReturnValue(time!); send('pointermove', x!) }
+    expect(world.mock.calls.some(([s]) => s.kind === 'tickle')).toBe(true)
+    send('pointerup', 108)
+    const click = new MouseEvent('click', { detail: 1, cancelable: true }); button.dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(true)
+    vi.mocked(performance.now).mockReturnValue(2000)
+    const anchors = controller.anchors()
+    send('pointerdown', anchors[0]!.x, anchors[0]!.y + 55)
+    vi.mocked(performance.now).mockReturnValue(2200)
+    send('pointermove', anchors[1]!.x, anchors[1]!.y + 55)
+    send('pointerup', anchors[1]!.x, anchors[1]!.y + 55)
+    expect(world.mock.calls.some(([s]) => s.kind === 'visit')).toBe(true)
+    controller.dispose()
+  })
+  it('静置只触发小剧场，后台回来重新计时，减少动态时拒绝剧情', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0)
+    const { controller, world } = mountScene()
+    vi.mocked(performance.now).mockReturnValue(61000); paint(61000)
+    expect(world.mock.calls.some(([s]) => s.kind === 'yawn' || s.kind === 'peek')).toBe(true)
+    controller.setActive(false)
+    world.mockClear()
+    vi.mocked(performance.now).mockReturnValue(200000); controller.setActive(true); paint(200100)
+    expect(world).not.toHaveBeenCalled()
+    media.matches = true; media.dispatchEvent(new Event('change'))
+    expect(controller.story({ kind: 'wind', source: 0, tier: 'common' })).toBe(false)
+    controller.dispose()
+  })
   it('四位泡沫消散才发出一次彩蛋，单次升空及重复点击不能凑数', () => {
     vi.spyOn(performance, 'now').mockReturnValue(0)
     const { controller, surprise } = mountScene()

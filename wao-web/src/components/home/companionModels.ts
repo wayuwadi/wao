@@ -174,6 +174,7 @@ export function createCompanionModels(only?: number) {
     if (i === 0) {
       for (const x of [-0.27, 0.27]) eyes.push(ball(body, glass, x, 0.18, 0.82, 0.078, 0.12, 0.055))
       const hat = new THREE.Group()
+      hat.name = 'companion-hat'
       hat.position.set(-0.2, 0.87, 0.06)
       hat.rotation.z = 0.22
       ball(hat, black, 0, 0, 0, 0.87, 0.23, 0.62)
