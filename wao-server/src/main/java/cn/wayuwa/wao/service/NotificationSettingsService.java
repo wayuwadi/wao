@@ -33,9 +33,9 @@ public class NotificationSettingsService {
 
     private static final SystemPolicy DEFAULT_SYSTEM = new SystemPolicy(
             true, false, "22:00", "08:00",
-            false, false, false, true, true, true, true, true);
+            false, false, false, false, true, true, true, true);
     private static final PersonalPolicy DEFAULT_PERSONAL = new PersonalPolicy(
-            true, true, true, true, true, true);
+            true, true, true, false, false, true);
 
     private final SettingService settings;
     private final MemberPreferenceMapper preferences;
@@ -71,7 +71,10 @@ public class NotificationSettingsService {
         }
         if (request.personal() != null) {
             requireMember(memberId);
-            preferences.upsert(memberId, PERSONAL_POLICY_KEY, write(request.personal()));
+            PersonalPolicy personal = request.personal();
+            preferences.upsert(memberId, PERSONAL_POLICY_KEY, write(new PersonalPolicy(
+                    personal.enabled(), personal.taskCreated(), personal.taskCompleted(),
+                    false, false, personal.loginActivity())));
         }
         return get(memberId);
     }
@@ -88,8 +91,7 @@ public class NotificationSettingsService {
                     time(node, "quietEnd", DEFAULT_SYSTEM.quietEnd()),
                     bool(node, "taskActivity", DEFAULT_SYSTEM.taskActivity()),
                     bool(node, "taskSuccess", DEFAULT_SYSTEM.taskSuccess()),
-                    bool(node, "aiRunSuccess", DEFAULT_SYSTEM.aiRunSuccess()),
-                    bool(node, "aiRunFailure", DEFAULT_SYSTEM.aiRunFailure()),
+                    false, false,
                     bool(node, "manualTask", DEFAULT_SYSTEM.manualTask()),
                     bool(node, "reminders", DEFAULT_SYSTEM.reminders()),
                     bool(node, "deliveryFailure", DEFAULT_SYSTEM.deliveryFailure()),
@@ -108,8 +110,7 @@ public class NotificationSettingsService {
             return new PersonalPolicy(bool(node, "enabled", DEFAULT_PERSONAL.enabled()),
                     bool(node, "taskCreated", DEFAULT_PERSONAL.taskCreated()),
                     bool(node, "taskCompleted", DEFAULT_PERSONAL.taskCompleted()),
-                    bool(node, "aiRunSuccess", DEFAULT_PERSONAL.aiRunSuccess()),
-                    bool(node, "aiRunFailure", DEFAULT_PERSONAL.aiRunFailure()),
+                    false, false,
                     bool(node, "loginActivity", DEFAULT_PERSONAL.loginActivity()));
         } catch (Exception ignored) {
             return DEFAULT_PERSONAL;
@@ -196,7 +197,7 @@ public class NotificationSettingsService {
             throw new BadRequestException("沉默开始时间和结束时间不能相同");
         }
         return new SystemPolicy(policy.enabled(), policy.quietHoursEnabled(), start, end,
-                policy.taskActivity(), policy.taskSuccess(), policy.aiRunSuccess(), policy.aiRunFailure(),
+                policy.taskActivity(), policy.taskSuccess(), false, false,
                 policy.manualTask(), policy.reminders(), policy.deliveryFailure(), policy.automation());
     }
 

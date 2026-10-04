@@ -179,10 +179,6 @@ onBeforeUnmount(() => {
             <i class="ri-bar-chart-box-line"></i
             ><span><b>AI 使用统计</b><small>Token 与次数</small></span>
           </button>
-          <button type="button" @click="navigate('/system-reports')">
-            <i class="ri-file-chart-line"></i
-            ><span><b>系统报告</b><small>日周月归档</small></span>
-          </button>
           <button type="button" @click="navigate('/request-monitoring')">
             <i class="ri-pulse-line"></i
             ><span><b>请求监控</b><small>慢请求与失败</small></span>

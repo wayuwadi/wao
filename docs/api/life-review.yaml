@@ -2,6 +2,7 @@ openapi: 3.0.3
 info:
   title: WAO 周期人生回顾 API
   version: 0.1.0
+  description: 已于 2026-10-04 下线，全部根路径及子路径返回 HTTP 410（code 41000）。以下定义仅保留历史契约，现行行为见 ADR-319。
 paths:
   /api/life-reviews:
     get:

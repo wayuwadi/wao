@@ -28,6 +28,19 @@ class NotificationSettingsServiceTest {
             settings, preferences, members, new ObjectMapper());
 
     @Test
+    void legacyAiRunSwitchesCannotReactivateSystemOrPersonalNotifications() {
+        when(settings.get(SettingService.NOTIFICATION_POLICY, "")).thenReturn(
+                "{\"enabled\":true,\"aiRunSuccess\":true,\"aiRunFailure\":true}");
+        when(preferences.find("wd", NotificationSettingsService.PERSONAL_POLICY_KEY)).thenReturn(
+                "{\"enabled\":true,\"aiRunSuccess\":true,\"aiRunFailure\":true}");
+        assertThat(service.allows(SystemPolicy::aiRunSuccess)).isFalse();
+        assertThat(service.allows(SystemPolicy::aiRunFailure)).isFalse();
+        assertThat(service.personalPolicy("wd").aiRunSuccess()).isFalse();
+        assertThat(service.personalPolicy("wd").aiRunFailure()).isFalse();
+        assertThat(service.allows(SystemPolicy::manualTask)).isTrue();
+    }
+
+    @Test
     void jenkinsSuccessRespectsGlobalPolicyButNotFailureToggle() {
         when(settings.get(SettingService.NOTIFICATION_POLICY, "")).thenReturn(
                 "{\"enabled\":true,\"deliveryFailure\":false,\"quietHoursEnabled\":false}");
@@ -51,7 +64,9 @@ class NotificationSettingsServiceTest {
         assertThat(result.system().taskActivity()).isFalse();
         assertThat(result.system().taskSuccess()).isFalse();
         assertThat(result.system().aiRunSuccess()).isFalse();
-        assertThat(result.system().aiRunFailure()).isTrue();
+        assertThat(result.system().aiRunFailure()).isFalse();
+        assertThat(result.personal().aiRunSuccess()).isFalse();
+        assertThat(result.personal().aiRunFailure()).isFalse();
         assertThat(result.system().manualTask()).isTrue();
         assertThat(result.system().reminders()).isTrue();
         assertThat(result.system().deliveryFailure()).isTrue();
@@ -68,7 +83,7 @@ class NotificationSettingsServiceTest {
 
         verify(preferences).upsert(eq("wd"), eq(NotificationSettingsService.PERSONAL_POLICY_KEY),
                 eq("{\"enabled\":true,\"taskCreated\":true,\"taskCompleted\":false,"
-                        + "\"aiRunSuccess\":false,\"aiRunFailure\":true,\"loginActivity\":false}"));
+                        + "\"aiRunSuccess\":false,\"aiRunFailure\":false,\"loginActivity\":false}"));
         verify(settings, never()).put(eq(SettingService.NOTIFICATION_POLICY), org.mockito.ArgumentMatchers.any());
     }
 

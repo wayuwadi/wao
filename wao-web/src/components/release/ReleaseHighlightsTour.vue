@@ -159,8 +159,7 @@ function openCurrentFeature() {
               <span class="kicker">已经看完</span>
               <h2 tabindex="-1">继续你的 WAO</h2>
               <p>
-                这份介绍不会挡住工作。以后可以从“设置 →
-                版本与更新”再次查看；更新日记一直保留真实交付记录。
+                这份介绍不会挡住工作。以后可以从“全部功能 → 功能探索”查看功能介绍。
               </p>
               <div class="finish-grid">
                 <div v-for="item in edition.highlights" :key="item.featureId">

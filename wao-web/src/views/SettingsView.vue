@@ -9,9 +9,9 @@ import { toast } from '@/composables/toast'
 import { apiCreateAccount, updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
 import {
-  fetchNetworkOutageWindow, fetchSiteInfo,
-  saveNetworkOutageWindow, saveSiteInfo,
-  type NetworkOutageWindow, type SiteInfo,
+  fetchSiteInfo,
+  saveSiteInfo,
+  type SiteInfo,
 } from '@/api/system'
 import {
   usePreferenceStore,
@@ -22,9 +22,7 @@ import {
   type WeekStart,
 } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
-import VersionSettingsPanel from '@/components/settings/VersionSettingsPanel.vue'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
-import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel.vue'
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
@@ -40,7 +38,6 @@ const ui = useUiStore()
 const router = useRouter()
 const route = useRoute()
 const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
-const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const tianrenNotificationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
@@ -48,7 +45,7 @@ const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(nu
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['版本与更新', 'version'], ['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['通知设置', 'notifications'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['我的导航', 'navigation'], ['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs']] },
 ] as const
 
@@ -70,7 +67,7 @@ watch(
   () => route.query.tab,
   (value) => {
     const requested = value === 'quick-links' ? 'navigation' : (value ?? 'members')
-    if (typeof requested === 'string' && availableTabs.has(requested)) tab.value = requested
+    tab.value = typeof requested === 'string' && availableTabs.has(requested) ? requested : 'members'
   },
 )
 
@@ -80,15 +77,13 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
     return true
   }
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return false
-  if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return false
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
   if (tab.value === 'notifications' && tianrenNotificationPanel.value && !tianrenNotificationPanel.value.confirmLeave()) return false
   if (tab.value === 'notifications' && notificationSettingsPanel.value
       && !notificationSettingsPanel.value.confirmLeave()) return false
   if (tab.value === 'pet' && webPetPanel.value && !webPetPanel.value.confirmLeave()) return false
-  return tab.value !== 'wao-ai-capabilities' || !waoAiCapabilitiesPanel.value
-    || waoAiCapabilitiesPanel.value.confirmLeave()
+  return true
 })
 onUnmounted(removeWebhookRouteGuard)
 const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
@@ -329,13 +324,6 @@ function cycleTheme() {
 const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
 const siteLoaded = ref(false)
 const siteBusy = ref(false)
-const networkOutage = reactive<NetworkOutageWindow>({ enabled: true, startTime: '00:00', endTime: '06:00' })
-const networkOutageSaved = ref<NetworkOutageWindow | null>(null)
-const networkOutageLoading = ref(false)
-const networkOutageSaving = ref(false)
-const networkOutageError = ref('')
-const networkOutageDirty = computed(() => !!networkOutageSaved.value
-  && JSON.stringify(networkOutage) !== JSON.stringify(networkOutageSaved.value))
 
 async function loadSiteInfo() {
   try {
@@ -354,50 +342,13 @@ async function saveSiteInformation() {
   finally { siteBusy.value = false }
 }
 
-async function loadNetworkOutageWindow() {
-  networkOutageLoading.value = true
-  networkOutageError.value = ''
-  try {
-    const value = await fetchNetworkOutageWindow()
-    Object.assign(networkOutage, value)
-    networkOutageSaved.value = { ...value }
-  } catch (error) {
-    networkOutageError.value = error instanceof Error ? error.message : '读取断网时段失败'
-  } finally {
-    networkOutageLoading.value = false
-  }
-}
-
-async function persistNetworkOutageWindow() {
-  networkOutageSaving.value = true
-  networkOutageError.value = ''
-  try {
-    const value = await saveNetworkOutageWindow({ ...networkOutage })
-    Object.assign(networkOutage, value)
-    networkOutageSaved.value = { ...value }
-    toast('断网时段已保存，自动任务已按新时间生效', 'ri-check-line')
-  } catch (error) {
-    networkOutageError.value = error instanceof Error ? error.message : '断网时段保存失败，请重试'
-  } finally {
-    networkOutageSaving.value = false
-  }
-}
-
-function confirmNetworkOutageDraft() {
-  return !networkOutageDirty.value || window.confirm('断网时段还有未保存的修改，确认离开吗？')
-}
-
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
-  if (t === 'network-outage' && !networkOutageSaved.value && !networkOutageLoading.value) {
-    void loadNetworkOutageWindow()
-  }
 }, { immediate: true })
 async function logout() {
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
-  if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return
   if (tab.value === 'notifications' && notificationSettingsPanel.value
       && !notificationSettingsPanel.value.confirmLeave()) return
   await session.logout()
@@ -455,8 +406,7 @@ async function bindFeishu() {
 
     <!-- 右侧内容 -->
     <div class="spane">
-      <div class="scontent" :class="{ 'navigation-wide': tab === 'navigation', 'content-wide': ['members', 'navigation', 'ai-accounts', 'wao-ai-capabilities', 'version'].includes(tab) }">
-        <VersionSettingsPanel v-if="tab === 'version'" />
+      <div class="scontent" :class="{ 'navigation-wide': tab === 'navigation', 'content-wide': ['members', 'navigation', 'ai-accounts'].includes(tab) }">
         <!-- 组织与成员 -->
         <template v-if="tab === 'members'">
           <div class="s-h1">组织与成员</div>
@@ -523,39 +473,6 @@ async function bindFeishu() {
           </div>
         </template>
 
-        <!-- 系统 · 断网时段 -->
-        <template v-else-if="tab === 'network-outage'">
-          <div class="s-h1">断网时段</div>
-          <div class="card">
-            <div class="card-row wrap">
-              <div class="card-title">自动任务停机窗口</div>
-              <span v-if="networkOutageLoading" class="connected">正在读取…</span>
-              <span v-else-if="networkOutageDirty" class="connected err"><span class="c-dot"></span>有未保存修改</span>
-              <span v-else-if="networkOutageSaved" class="connected"><span class="c-dot"></span>已保存</span>
-            </div>
-            <div v-if="networkOutageLoading && !networkOutageSaved" class="menu-loading">正在读取断网时段…</div>
-            <div v-else-if="networkOutageError && !networkOutageSaved" class="registry-load-error">
-              <span>{{ networkOutageError }}</span>
-              <button type="button" class="btn-ghost" @click="loadNetworkOutageWindow">重新读取</button>
-            </div>
-            <form v-else class="site-form" @submit.prevent="persistNetworkOutageWindow">
-              <label class="outage-switch">
-                <span>启用断网时段</span>
-                <input v-model="networkOutage.enabled" type="checkbox" aria-label="启用断网时段" />
-              </label>
-              <label><span>每天开始时间</span><input v-model="networkOutage.startTime" type="time" required /></label>
-              <label><span>每天结束时间</span><input v-model="networkOutage.endTime" type="time" required /></label>
-              <p v-if="networkOutageError" class="form-error">{{ networkOutageError }}</p>
-              <div class="hint">按上海时间生效，开始时间包含、结束时间不包含，支持跨午夜。窗口内不会自动派发待办或执行自动化 Cron；手动运行不受影响。HTTP 性能巡检固定在每天 06:30。</div>
-              <div class="site-actions">
-                <button class="btn-primary" :disabled="networkOutageSaving || !networkOutageDirty">
-                  {{ networkOutageSaving ? '保存中…' : '保存断网时段' }}
-                </button>
-              </div>
-            </form>
-          </div>
-        </template>
-
         <!-- 系统 · 通知设置 -->
         <template v-else-if="tab === 'notifications'">
           <div class="notification-settings-stack">
@@ -578,11 +495,6 @@ async function bindFeishu() {
         <!-- 系统 · AI 账号 -->
         <template v-else-if="tab === 'ai-accounts'">
           <AiAccountPanel />
-        </template>
-
-        <!-- 系统 · WAO AI 能力 -->
-        <template v-else-if="tab === 'wao-ai-capabilities'">
-          <WaoAiCapabilitiesPanel ref="waoAiCapabilitiesPanel" />
         </template>
 
         <!-- 个人资料 -->

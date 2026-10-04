@@ -22,6 +22,7 @@ export const RETIRED_MODULE_IDS = new Set<ModuleId>([
   'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
   'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices',
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
+  'life-review', 'system-reports', 'ideas',
   'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world',
 ])
 export const RETIRED_EXTERNAL_APP_IDS = new Set(['media-agent', 'jumpserver', 'weknora'])
@@ -552,6 +553,7 @@ export function resolveNavGroups(
           .filter(
             (menu) =>
               menu.id !== 'chat' &&
+              !RETIRED_MODULE_IDS.has(menu.id) &&
               menu.visible &&
               normalizeMenuPlacement(menu.placement) === 'MENU' &&
               { ROOT: '', PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[menu.group] === label,
@@ -597,7 +599,7 @@ export function resolveDockItems(
 ): NavItemId[] {
   return [
     ...builtinMenus
-      .filter((menu) => menu.visible && normalizeMenuPlacement(menu.placement) === placement)
+      .filter((menu) => !RETIRED_MODULE_IDS.has(menu.id) && menu.visible && normalizeMenuPlacement(menu.placement) === placement)
       .map((menu) => ({ id: menu.id as NavItemId, order: menu.order, sourceOrder: 0 })),
     ...externalApps
       .filter((app) => app.visible && normalizeMenuPlacement(app.placement) === placement)

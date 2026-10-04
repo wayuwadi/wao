@@ -1,13 +1,9 @@
 package cn.wayuwa.wao.config;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
-/** 为周期回顾的长耗时补齐任务提供独立单线程。 */
-@Configuration
-@ConditionalOnProperty(name = "wao.ai.life-review-scheduler-enabled", havingValue = "true")
+/** 已退役的历史执行器实现，不再注册到应用上下文。 */
 public class LifeReviewSchedulerConfiguration {
     /** 串行生成成员回顾，防止周期边界瞬间占满本地 Codex Runner。 */
     @Bean(name = "lifeReviewExecutor")

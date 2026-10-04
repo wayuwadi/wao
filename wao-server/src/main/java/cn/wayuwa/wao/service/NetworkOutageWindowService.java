@@ -70,24 +70,20 @@ public class NetworkOutageWindowService {
         return get();
     }
 
-    /** 当前上海时间是否处于已启用的断网窗口。 */
+    /** 断网时段已下线，自动任务不再受历史窗口限制。 */
     public boolean isUnavailable() {
-        return isUnavailable(LocalTime.now(clock));
+        return false;
     }
 
     /**
-     * 指定时间是否处于断网窗口，供调度器和边界测试复用。
+     * 兼容既有调用方；断网时段下线后指定时间也不限制自动任务。
      *
      * @param time 上海本地时间
-     * @return 处于窗口时为 true
+     * @return 始终为 false
      */
     public boolean isUnavailable(LocalTime time) {
-        NetworkOutageWindowDto window = get();
-        if (!window.enabled()) return false;
-        LocalTime start = parse(window.startTime(), "断网开始时间格式不正确");
-        LocalTime end = parse(window.endTime(), "断网结束时间格式不正确");
-        if (start.isBefore(end)) return !time.isBefore(start) && time.isBefore(end);
-        return !time.isBefore(start) || time.isBefore(end);
+        // 功能已下线，历史配置不再阻塞自动任务；不删除持久化设置。
+        return false;
     }
 
     private static String validOrDefault(String value, String fallback) {

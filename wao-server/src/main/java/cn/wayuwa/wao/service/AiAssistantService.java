@@ -692,7 +692,8 @@ public class AiAssistantService {
                             : assistantMaxRuntimeSeconds(SECURE_QUEUED.equals(expected)),
                     account, mode, referenceIds(claimed.getReferenceImageIds()), claimed.getRequestedModel());
         }
-        return ideaResearch.claim(runner.getId(), accountService.defaultCodexRunAccount());
+        // 历史点子归并已下线，不再领取旧点子的研究队列。
+        return null;
     }
 
     /**

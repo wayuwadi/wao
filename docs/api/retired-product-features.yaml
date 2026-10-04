@@ -1,0 +1,16 @@
+openapi: 3.0.3
+info:
+  title: WAO 本批次功能退役契约
+  version: 1.0.0
+  description: 2026-10-04 起按 ADR-319 停用。以下所有根路径及其子路径在路由匹配前拒绝全部 HTTP 方法，统一返回 HTTP 410；历史数据保留。
+paths: {}
+x-retired-path-prefixes:
+  - /api/life-reviews
+  - /api/system-reports
+  - /api/ideas
+  - /api/settings/network-outage-window
+  - /api/ai/application-skills
+x-retired-response:
+  status: 410
+  content-type: application/json
+  body: { code: 41000, message: 该功能已下线, data: null }
