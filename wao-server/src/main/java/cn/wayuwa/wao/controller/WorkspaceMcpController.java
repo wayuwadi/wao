@@ -60,7 +60,7 @@ public class WorkspaceMcpController {
             JsonNode result = switch (method) {
                 case "initialize" -> initialize(request.path("params"));
                 case "ping" -> json.createObjectNode();
-                case "tools/list" -> tools.list(token.canWrite());
+                case "tools/list" -> tools.list(token);
                 case "tools/call" -> call(request.path("params"), token);
                 default -> null;
             };

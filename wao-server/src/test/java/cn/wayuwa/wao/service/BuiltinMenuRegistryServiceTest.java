@@ -17,6 +17,19 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 class BuiltinMenuRegistryServiceTest {
+    @Test
+    void oldHubAndAppMenusAreRetiredAndOldClientSaveKeepsCapabilityCenter() throws Exception {
+        var oldMenus = new ArrayList<>(service.getRegistry().menus());
+        oldMenus.removeIf(menu -> "capabilities".equals(menu.id()));
+        oldMenus.add(new BuiltinMenuConfigDto("skills", "我的仓库", "ri-box-3-line", "PUBLIC", 9, true, "TAB"));
+        oldMenus.add(new BuiltinMenuConfigDto("skill-connections", "应用接入", "ri-plug-line", "PUBLIC", 10, true, "TAB"));
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(new ObjectMapper().writeValueAsString(
+                new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(46, oldMenus)));
+        assertThat(service.getRegistry().menus()).noneMatch(menu -> java.util.Set.of("skills", "skill-connections").contains(menu.id()));
+        assertThat(service.saveRegistry(new SaveBuiltinMenuRegistryRequest(oldMenus)).menus())
+                .filteredOn(menu -> "capabilities".equals(menu.id())).singleElement()
+                .satisfies(menu -> assertThat(menu.label()).isEqualTo("能力中心"));
+    }
 
     @Test
     void oldRegistryAddsNotesBelowHomeWithoutOverwritingCustomMenus() throws Exception {

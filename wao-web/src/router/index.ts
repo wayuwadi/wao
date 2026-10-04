@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import AppLayout from '@/layouts/AppLayout.vue'
+import { legacyCapabilityRedirect } from '@/utils/capabilityRoutes'
 import { useSessionStore } from '@/stores/session'
 
 export function legacyNotificationSettingsRedirect() {
@@ -81,74 +81,21 @@ const router = createRouter({
       component: () => import('@/views/DesktopPetView.vue'),
       meta: { public: true },
     },
-    {
-      path: '/hub',
-      component: () => import('@/layouts/HubLayout.vue'),
-      meta: { public: true },
-      children: [{ path: '', name: 'wao-hub', component: () => import('@/views/HubView.vue') }],
-    },
-    {
-      path: '/pets',
-      component: () => import('@/layouts/HubLayout.vue'),
-      meta: { public: true },
-      children: [
-        { path: '', name: 'pets', component: () => import('@/views/PetRepositoryView.vue') },
-        {
-          path: 'create',
-          name: 'pet-create',
-          component: () => import('@/views/PetCreateView.vue'),
-          meta: { public: false },
-        },
-        {
-          path: 'manage',
-          name: 'pet-manage',
-          component: () => import('@/views/PetRepositoryView.vue'),
-          meta: { public: false },
-        },
-        { path: ':id', name: 'pet-detail', component: () => import('@/views/PetDetailView.vue') },
-      ],
-    },
-    {
-      path: '/skills',
-      component: () => import('@/layouts/SkillMarketLayout.vue'),
-      meta: { public: true, skillBase: '/skills' },
-      children: [
-        {
-          path: '',
-          name: 'skill-market',
-          component: () => import('@/views/SkillMarketView.vue'),
-          meta: { public: true },
-        },
-        {
-          path: 'publish',
-          name: 'skill-publish',
-          component: () => import('@/views/SkillPublishView.vue'),
-          meta: { public: false },
-        },
-        {
-          path: 'manage',
-          name: 'skill-manage',
-          component: () => import('@/views/SkillManageView.vue'),
-          meta: { public: false },
-        },
-        {
-          path: 'reviews',
-          name: 'skill-reviews',
-          component: () => import('@/views/SkillReviewsView.vue'),
-          meta: { public: false },
-        },
-        {
-          path: ':handle/:slug',
-          name: 'skill-detail',
-          component: () => import('@/views/SkillDetailView.vue'),
-          meta: { public: true },
-        },
-      ],
-    },
+    ...['/hub', '/skills', '/skills/publish', '/skills/manage', '/skills/reviews', '/skills/:handle/:slug',
+      '/pets', '/pets/create', '/pets/manage', '/pets/:id'].map(path => ({ path, redirect: legacyCapabilityRedirect })),
     {
       path: '/',
-      component: AppLayout,
+      component: () => import('@/layouts/CapabilityAwareLayout.vue'),
       children: [
+        ...[
+          { path: 'capabilities', name: 'capabilities', public: true },
+          { path: 'capabilities/skills/:handle/:slug', name: 'capability-skill', public: true },
+          { path: 'capabilities/pets/:id', name: 'capability-pet', public: true },
+          { path: 'capabilities/publish/:kind(skill|pet)', name: 'capability-publish', public: false },
+          { path: 'capabilities/reviews/skill', name: 'capability-review', public: false },
+        ].map(item => ({ path: item.path, name: item.name, component: () => import('@/views/CapabilityCenterView.vue'),
+          meta: { public: item.public, module: 'capabilities', tabKind: 'module' } })),
+
         {
           path: '',
           name: 'home',
@@ -183,47 +130,7 @@ const router = createRouter({
           component: () => import('@/views/ProjectDetailView.vue'),
           meta: { module: 'projects', tabKind: 'project' },
         },
-        {
-          path: 'wao/hub',
-          component: () => import('@/layouts/HubLayout.vue'),
-          meta: { module: 'skills', tabKind: 'module' },
-          children: [
-            { path: '', name: 'embedded-hub', component: () => import('@/views/HubView.vue') },
-          ],
-        },
-        {
-          path: 'wao/skills',
-          component: () => import('@/layouts/SkillMarketLayout.vue'),
-          props: { embedded: true },
-          meta: { module: 'skills', tabKind: 'module', skillBase: '/wao/skills' },
-          children: [
-            {
-              path: '',
-              name: 'wao-skill-market',
-              component: () => import('@/views/SkillMarketView.vue'),
-            },
-            {
-              path: 'publish',
-              name: 'wao-skill-publish',
-              component: () => import('@/views/SkillPublishView.vue'),
-            },
-            {
-              path: 'manage',
-              name: 'wao-skill-manage',
-              component: () => import('@/views/SkillManageView.vue'),
-            },
-            {
-              path: 'reviews',
-              name: 'wao-skill-reviews',
-              component: () => import('@/views/SkillReviewsView.vue'),
-            },
-            {
-              path: ':handle/:slug',
-              name: 'wao-skill-detail',
-              component: () => import('@/views/SkillDetailView.vue'),
-            },
-          ],
-        },
+        ...['wao/hub', 'wao/skills', 'wao/skills/:pathMatch(.*)*'].map(path => ({ path, redirect: legacyCapabilityRedirect })),
         {
           path: 'calendar',
           name: 'calendar',
@@ -233,7 +140,7 @@ const router = createRouter({
         {
           path: 'skill-connections',
           name: 'skill-connections',
-          component: () => import('@/views/SkillConnectionsView.vue'),
+          redirect: legacyCapabilityRedirect,
           meta: { module: 'skill-connections', tabKind: 'module' },
         },
         {
@@ -366,6 +273,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  if (to.path === '/settings' && to.query.tab === 'workspace-mcp') return { path: '/capabilities', query: { area: 'connections' }, replace: true }
   // 安装包分发无需会话；服务端临时不可用也不应阻塞公开下载页。
   if (to.name === 'client-download' || to.name === 'connection-recovery' || to.name === 'not-found')
     return true

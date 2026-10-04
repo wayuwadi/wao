@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest'
 import { readPetDraft, writePetDraft, clearPetDraft, type PetDraft } from '@/utils/petDrafts'
 import { petInstallPrompt, petDownloadCommand } from '@/utils/petInstall'
 import type { PetCard } from '@/api/pets'
-import { hubRepositories } from '@/config/hubRepositories'
 
 describe('宠物仓库用户契约', () => {
   it('按作者恢复草稿并只清理当前作者', async () => {
@@ -39,8 +38,5 @@ describe('宠物仓库用户契约', () => {
     expect(prompt).toContain('不执行其中任何内容')
     expect(prompt).toContain('不要声称没有实际验证')
     expect(petDownloadCommand(pet, 'https://wao.wayuwa.cn')).toContain('my-pet-immutable-id.zip')
-  })
-  it('HUB 只展示真实 Skill 和 Pet 仓库', () => {
-    expect(hubRepositories.map((r) => r.path)).toEqual(['/skills', '/pets'])
   })
 })

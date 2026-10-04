@@ -60,6 +60,7 @@ export type ModuleId =
   | 'chat-reviews'
   | 'system-reports'
   | 'skills'
+  | 'capabilities'
   | 'skill-connections'
   | 'memory'
   | 'workspaces'

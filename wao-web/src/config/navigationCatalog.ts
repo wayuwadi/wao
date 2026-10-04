@@ -57,8 +57,8 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     keywords: ['素材库', '视觉库', '灵感', '图片', '截图', '参考图'],
   },
   {
-    id: 'skills',
-    description: '在 WAO-HUB 发现 Skill，创造、上传和分享宠物。',
+    id: 'capabilities',
+    description: '发现 CLI、MCP、Skill、Pet 与应用接入，管理逐项授权、设备连接和资源发布。',
     keywords: ['插件', '能力', '宠物', 'Pet', '仓库', 'HUB'],
   },
   {
@@ -146,8 +146,7 @@ const DOMAINS: Array<{
     ids: [
       'text-polish',
       'automation',
-      'skills',
-      'skill-connections',
+      'capabilities',
     ],
   },
   {

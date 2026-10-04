@@ -175,7 +175,7 @@ async function submit() {
     }
     dirty.value = false
     draftStatus.value = '宠物已保存'
-    await router.push('/pets/manage')
+    await router.push('/capabilities?area=published&type=Pet')
   } catch (e) {
     error.value = e instanceof Error ? e.message : '保存失败，草稿仍在，请重试'
   } finally {
@@ -217,7 +217,7 @@ onUnmounted(() => {
       已有宠物包可以直接导入；已有完整动作图集可以制作可安装宠物。先私人保存，再决定是否公开分享。
     </p>
     <p class="hub-note">
-      只想使用宠物？<RouterLink to="/pets">去宠物仓库挑选</RouterLink>，无需准备素材或填写创建表单。
+      只想使用宠物？<RouterLink to="/capabilities?type=Pet">去宠物仓库挑选</RouterLink>，无需准备素材或填写创建表单。
     </p>
     <div v-if="loading" role="status">正在加载作者身份与草稿…</div>
     <div v-if="error" class="hub-error" role="alert">
@@ -348,7 +348,7 @@ onUnmounted(() => {
             :disabled="saving || !file || (form.mode === 'create' && !imageValid)"
           >
             {{ saving ? '正在校验并保存…' : '保存私人宠物' }}</button
-          ><RouterLink class="hub-button" to="/pets/manage">我的宠物</RouterLink>
+          ><RouterLink class="hub-button" to="/capabilities?area=published&type=Pet">我的宠物</RouterLink>
         </div>
       </fieldset>
     </form>

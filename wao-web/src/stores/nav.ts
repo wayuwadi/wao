@@ -151,10 +151,21 @@ export const useNavStore = defineStore('nav', () => {
             group: layoutGroups.value.some((group) => group.id === 'PUBLIC') ? 'PUBLIC' : 'ROOT',
           }
         : {}
+      const legacyCapability = overrides.get('skills') ?? overrides.get('skill-connections')
+      const capabilityDefault = item.id === 'capabilities' && !own
+        ? {
+            visible: true,
+            group: layoutGroups.value.some(group => group.id === legacyCapability?.group)
+              ? legacyCapability!.group : layoutGroups.value.some(group => group.id === 'TOOLS') ? 'TOOLS' : 'ROOT',
+            order: legacyCapability?.order ?? item.order,
+            placement: legacyCapability?.placement ?? 'MENU',
+          }
+        : {}
       return normalizeBuiltinMenu({
         ...item,
         ...(personalLayout.value ? { visible: false } : {}),
         ...changelogDefault,
+        ...capabilityDefault,
         ...own,
       } as BuiltinMenuConfig)
     })

@@ -96,6 +96,14 @@ public class TaskService {
         return toDto(requireVisible(id, memberId));
     }
 
+    /** 在工作区工具的事务内锁住任务归属，避免限定授权检查后被并发移到另一项目。 */
+    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public TaskDto lockWorkspaceTask(String id, String memberId) {
+        TaskEntity entity = taskMapper.lockById(id);
+        if (entity == null || !visibleTo(entity, memberId)) throw new NotFoundException("任务不存在：" + id);
+        return toDto(entity);
+    }
+
     /**
      * 新建任务（默认状态待办）。
      *

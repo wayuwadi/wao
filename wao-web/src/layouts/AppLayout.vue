@@ -96,6 +96,7 @@ const TRACKED_FEATURES = new Set([
   'vocabulary',
   'skills',
   'skill-connections',
+  'capabilities',
   'drawings',
   'files',
   'automation',

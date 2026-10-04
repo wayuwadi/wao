@@ -1,0 +1,218 @@
+
+.hub-shell {
+  min-height: 100%;
+  background: var(--wao-bg-page, #f7f8fc);
+  color: var(--wao-text, #182035);
+}
+.hub-header {
+  padding: 20px max(20px, calc((100% - 1120px) / 2));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--wao-line, #e5e7eb);
+  background: var(--wao-bg-card, #fff);
+}
+.hub-brand {
+  font-size: 21px;
+  font-weight: 850;
+  letter-spacing: -0.6px;
+  white-space: nowrap;
+}
+.hub-header a {
+  color: inherit;
+  text-decoration: none;
+}
+.hub-header nav {
+  display: flex;
+  gap: 18px;
+  overflow: auto;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.hub-header nav a.router-link-active {
+  color: var(--wao-primary, #4358d6);
+}
+.hub-main {
+  max-width: 1120px;
+  margin: auto;
+  padding: 36px 20px 70px;
+}
+.hub-main h1 {
+  font-size: 32px;
+  margin: 0 0 14px;
+}
+.hub-lead {
+  color: var(--wao-text-3, #687087);
+  line-height: 1.8;
+  max-width: 750px;
+}
+.hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+}
+.hub-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--wao-line, #ddd);
+  border-radius: 10px;
+  padding: 10px 16px;
+  background: var(--wao-bg-card, #fff);
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  font: inherit;
+}
+.hub-button.primary {
+  background: var(--wao-primary, #4358d6);
+  color: white;
+  border-color: transparent;
+}
+.hub-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.hub-card {
+  border: 1px solid var(--wao-line, #e3e6ef);
+  border-radius: 18px;
+  background: var(--wao-bg-card, #fff);
+  padding: 24px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+  gap: 20px;
+}
+.hub-field {
+  display: grid;
+  gap: 7px;
+  margin: 16px 0;
+  font-size: 14px;
+}
+.hub-input {
+  padding: 11px;
+  border: 1px solid var(--wao-line, #d9dce6);
+  border-radius: 9px;
+  background: var(--wao-bg-card, #fff);
+  color: inherit;
+  font: inherit;
+  width: 100%;
+  min-width: 0;
+}
+.hub-error {
+  background: var(--wao-danger-bg, #fff1f0);
+  color: var(--wao-danger-strong, #a52a2a);
+  padding: 14px;
+  border-radius: 10px;
+  margin: 16px 0;
+}
+.hub-note {
+  color: var(--wao-text-3, #687087);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.hub-empty {
+  padding: 64px 20px;
+  text-align: center;
+}
+.hub-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--wao-bg-page, #f4f5f9);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.hub-status {
+  font-size: 13px;
+  color: var(--wao-text-3, #687087);
+}
+@media (max-width: 700px) {
+  .hub-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+  }
+  .hub-header nav {
+    max-width: 100%;
+    padding-bottom: 4px;
+  }
+  .hub-main {
+    padding: 24px 14px;
+  }
+  .hub-main h1 {
+    font-size: 26px;
+  }
+}
+
+
+:root { --market-ink:#182035; --market-sub:#687087; --market-line:#e6e9f2; --market-blue:#4358d6; --market-soft:#f4f6ff; --market-page:#f6f7fc; --market-card:#fff; --market-header:rgba(255,255,255,.88); --market-danger:#fff1f2; }
+:root[data-theme='dark'] { --market-ink:var(--wao-text); --market-sub:var(--wao-text-3); --market-line:var(--wao-line); --market-blue:var(--wao-primary); --market-soft:var(--wao-primary-soft); --market-page:var(--wao-bg-page); --market-card:var(--wao-bg-card); --market-header:color-mix(in srgb,var(--wao-bg-card) 88%,transparent); --market-danger:var(--wao-danger-bg); }
+.cap-center * { box-sizing:border-box; }
+.market-shell { min-height:100vh;background:linear-gradient(180deg,var(--market-page) 0,var(--market-card) 340px);color:var(--market-ink);font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif; }
+.market-header { height:68px;padding:0 max(24px,calc((100vw - 1180px)/2));display:flex;align-items:center;justify-content:space-between;gap:24px;background:var(--market-header);border-bottom:1px solid var(--market-line);backdrop-filter:blur(18px);position:sticky;top:0;z-index:20; }
+.market-brand { display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none;white-space:nowrap; }.market-brand b{font-size:17px}
+.market-section-title{font-size:14px;white-space:nowrap}.market-shell.embedded{min-height:100%;background:linear-gradient(180deg,var(--market-page) 0,var(--market-card) 340px)}.market-shell.embedded .market-header{height:48px;top:0;padding:0 20px}.market-shell.embedded .market-main{padding-top:28px;min-height:0}
+.market-header nav{display:flex;align-items:center;gap:6px;overflow:auto}.market-header nav a,.login-button{border:0;background:transparent;color:var(--market-sub);text-decoration:none;padding:9px 12px;border-radius:9px;font-size:13px;white-space:nowrap;cursor:pointer}.market-header nav a.router-link-active{background:var(--market-soft);color:var(--market-blue);font-weight:700}.market-header nav .back-wao,.login-button{background:var(--market-blue);color:white}.market-main{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:42px 0 70px;min-height:calc(100vh - 120px)}
+.market-title{margin:0;font-size:34px;letter-spacing:-1px}.market-lead{color:var(--market-sub);line-height:1.8;margin:10px 0 0}.market-card{background:var(--market-card);border:1px solid var(--market-line);border-radius:18px;box-shadow:var(--wao-shadow-card-hover-2)}
+.market-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--market-line);background:var(--market-card);color:var(--market-ink);height:40px;padding:0 16px;border-radius:10px;text-decoration:none;cursor:pointer;font-weight:650}.market-button.primary{background:var(--market-blue);border-color:var(--market-blue);color:#fff}.market-button.danger{color:var(--wao-danger-strong);border-color:var(--wao-danger-line)}.market-button:disabled{opacity:.48;cursor:not-allowed}.market-input,.market-select,.market-textarea{width:100%;border:1px solid var(--market-line);background:var(--market-card);border-radius:10px;padding:10px 12px;color:var(--market-ink);font:inherit;outline:none}.market-input:focus,.market-select:focus,.market-textarea:focus{border-color:var(--market-blue);box-shadow:0 0 0 3px var(--market-soft)}.market-textarea{min-height:100px;resize:vertical}.market-label{display:grid;gap:7px;font-size:13px;font-weight:700}.market-muted{color:var(--market-sub)}.market-error{padding:12px 14px;border-radius:10px;background:var(--market-danger);color:var(--wao-danger-strong);font-size:13px}.market-empty{text-align:center;padding:60px 24px;color:var(--market-sub)}
+@media(max-width:720px){.market-header{height:auto;min-height:60px;padding:10px 14px;align-items:flex-start}.market-brand b{display:none}.market-header nav{width:100%;justify-content:flex-end}.market-header nav a,.login-button{padding:8px 9px;font-size:12px}.market-main{width:calc(100% - 20px);padding:26px 0 50px}.market-title{font-size:27px}}
+.market-header nav { min-width: 0; }
+.market-header nav > * { flex-shrink: 0; }
+@media (max-width: 720px) {
+  .market-header, .market-shell.embedded .market-header { height: auto; padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+  .market-header nav { flex: 1 1 100%; justify-content: flex-start; }
+}
+@container app-main (max-width: 640px) {
+  .market-shell.embedded .market-header { height: auto; padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+  .market-shell.embedded .market-header nav { flex: 1 1 100%; justify-content: flex-start; }
+}
+
+/* 能力中心共享控件；资源工作台沿用既有样式与业务生命周期。 */
+.cap-center .cap-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 13px;border:1px solid var(--wao-line-control);border-radius:9px;background:var(--wao-bg-card);color:var(--wao-text);font:inherit;font-size:12px;cursor:pointer;text-decoration:none}
+.cap-center .cap-button.primary{background:var(--wao-primary);border-color:var(--wao-primary);color:white}
+.cap-center .cap-button.danger{color:var(--wao-danger-strong);border-color:var(--wao-danger-line)}
+.cap-center .cap-button:disabled{opacity:.5;cursor:default}
+.cap-center .cap-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:17px}
+.cap-center .cap-icon{width:34px;height:34px;display:grid;place-items:center;flex-shrink:0;border-radius:10px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:18px}
+.cap-center .cap-badge{display:inline-flex;align-items:center;font-size:11px;border-radius:5px;padding:2px 6px;background:var(--wao-bg-sub);color:var(--wao-text-3)}
+.cap-center .cap-badge.warm{background:var(--wao-warning-bg);color:var(--wao-warning-strong)}
+.cap-center .cap-muted{font-size:12px;line-height:1.8;color:var(--wao-text-3);margin:10px 0}
+.cap-center .cap-info{font-size:12px;line-height:1.8;padding:12px 14px;background:var(--wao-primary-soft);color:var(--wao-primary-text);border-radius:9px;margin:16px 0}
+.cap-center .cap-error{padding:11px 12px;background:var(--wao-danger-bg);color:var(--wao-danger-strong);border-radius:9px;font-size:12px;line-height:1.8;margin:10px 0}
+.cap-center .cap-error button{border:0;background:transparent;color:inherit;text-decoration:underline;font:inherit;cursor:pointer}
+.cap-center .cap-detail-heading{display:flex;align-items:start;gap:11px;margin-bottom:14px}
+.cap-center .cap-detail-heading .cap-icon{width:42px;height:42px;border-radius:12px}
+.cap-center .cap-detail-heading h2{font-size:21px;margin:3px 0;overflow-wrap:anywhere}
+.cap-center .cap-detail-heading small{font-size:11px;color:var(--wao-text-3)}
+.cap-center .cap-section-heading{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:20px 0 12px}
+.cap-center .cap-section-heading h3,.cap-center .cap-resource-scope h3{font-size:14px;margin:0}
+.cap-center .cap-view-modes{display:flex;gap:3px;background:var(--wao-bg-sub);padding:3px;border-radius:8px}
+.cap-center .cap-view-modes button,.cap-center .cap-group-picker button,.cap-center .cap-subtabs button{font:inherit;font-size:12px;padding:6px 9px;border:0;background:transparent;color:var(--wao-text-3);border-radius:7px;cursor:pointer}
+.cap-center .cap-view-modes button.active,.cap-center .cap-subtabs button.active{background:var(--wao-bg-card);color:var(--wao-primary-text)}
+.cap-center .cap-group-picker,.cap-center .cap-subtabs{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}
+.cap-center .cap-group-picker button{border:1px solid var(--wao-line);background:var(--wao-bg-card)}
+.cap-center .cap-group-picker button.active{background:var(--wao-primary-soft);border-color:var(--wao-primary);color:var(--wao-primary-text)}
+.cap-center .cap-subtabs{padding-bottom:12px;border-bottom:1px solid var(--wao-line)}
+.cap-center .cap-subtabs button.active{background:var(--wao-primary-soft)}
+.cap-center .cap-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.cap-center .cap-field{display:grid;gap:7px;font-size:12px;margin:14px 0;min-width:0}
+.cap-center .cap-field input,.cap-center .cap-field select{width:100%;min-width:0;font:inherit;font-size:13px;padding:9px 10px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text)}
+.cap-center .cap-facts{display:grid;grid-template-columns:80px minmax(0,1fr);gap:9px;font-size:12px;margin:18px 0}
+.cap-center .cap-facts dt{color:var(--wao-text-3)}
+.cap-center .cap-facts dd{margin:0;overflow-wrap:anywhere}
+.cap-center code{display:block;background:var(--wao-bg-sub);color:var(--wao-text);border-radius:6px;padding:5px 7px;font:12px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;min-width:0}
+.cap-center .connections-page{width:100%;padding:0}
+.cap-center .market-title,.cap-center .hub-main h1{font-size:23px}
+.cap-center .market-hero{padding-top:0}
+.cap-center .market-card,.cap-center .hub-card{box-shadow:none;border-radius:12px}
+.cap-center .hub-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr))}
+@media(max-width:650px){.cap-center .cap-form-grid{grid-template-columns:1fr;gap:0}.cap-center .cap-field input,.cap-center .cap-field select{font-size:16px}.cap-center .cap-button,.cap-center .cap-group-picker button,.cap-center .cap-subtabs button,.cap-center .cap-view-modes button{min-height:40px}.cap-center .market-title{font-size:21px}.cap-center .hub-card{padding:16px}.cap-center .cap-facts{grid-template-columns:70px minmax(0,1fr)}}

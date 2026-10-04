@@ -29,6 +29,15 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class TaskServiceTest {
+    @Test
+    void workspaceScopeUsesLockedCurrentProjectAndStillChecksMemberVisibility() {
+        TaskEntity entity = todo(); entity.setProjectId("moved-project");
+        org.mockito.Mockito.doReturn(entity).when(mapper).lockById("t1");
+        assertThat(service.lockWorkspaceTask("t1", "wg").project()).isEqualTo("moved-project");
+        verify(mapper, never()).selectById("t1");
+        when(projects.get("moved-project", "wg")).thenThrow(new NotFoundException("不可见"));
+        assertThatThrownBy(() -> service.lockWorkspaceTask("t1", "wg")).isInstanceOf(NotFoundException.class);
+    }
 
     private final TaskMapper mapper = mock(TaskMapper.class);
     private final FeishuCommentNotifier notifier = mock(FeishuCommentNotifier.class);

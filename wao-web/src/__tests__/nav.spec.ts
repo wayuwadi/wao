@@ -79,41 +79,15 @@ describe('侧边栏导航配置', () => {
     expect(DEFAULT_EXTERNAL_APPS.find((app) => app.id === 'jumpserver')).toBeUndefined()
   })
 
-  it('Skill 市场同时保留公开路由和 WAO 页签路由', () => {
-    expect(MODULES.skills.path).toBe('/wao/hub')
-    expect(MODULES.skills.newPagePath).toBe('/hub')
-    expect(router.getRoutes().find((route) => route.name === 'skill-market')?.path).toBe('/skills')
-    const inApp = router.getRoutes().find((route) => route.name === 'wao-skill-market')
-    expect(inApp?.path).toBe('/wao/skills')
-    expect(router.resolve('/wao/hub').meta.module).toBe('skills')
-    expect(router.resolve('/pets').meta.public).toBe(true)
-    expect(router.resolve('/pets/create').meta.public).toBe(false)
-    expect(router.resolve('/wao/skills').meta.module).toBe('skills')
-    expect(router.resolve('/wao/skills').meta.tabKind).toBe('module')
-    expect(
-      tabFromRoute(router.resolve('/wao/skills/manage') as RouteLocationNormalized)?.path,
-    ).toBe('/wao/skills/manage')
+  it('能力中心替代 HUB 与 Skill 接入，并保留旧地址跳转', () => {
+    expect(MODULES.capabilities.path).toBe('/capabilities')
+    expect(DEFAULT_BUILTIN_MENUS.find(menu => menu.id === 'capabilities')).toMatchObject({ group: 'TOOLS', visible: true })
+    expect(DEFAULT_BUILTIN_MENUS.some(menu => ['skills', 'skill-connections'].includes(menu.id))).toBe(false)
+    expect(router.resolve('/capabilities').meta).toMatchObject({ module: 'capabilities', public: true })
+    expect(router.resolve('/capabilities/publish/skill').meta.public).toBe(false)
+    expect(router.resolve('/wao/hub').matched.slice(-1)[0]?.redirect).toBeTypeOf('function')
+    expect(tabFromRoute(router.resolve('/capabilities?area=connections') as RouteLocationNormalized)?.path).toBe('/capabilities?area=connections')
   })
-
-  it('Skill 接入作为独立公共菜单打开真实管理入口', () => {
-    expect(MODULES['skill-connections']).toMatchObject({
-      label: 'Skill 接入',
-      path: '/skill-connections',
-    })
-    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'skill-connections')).toMatchObject({
-      group: 'PUBLIC',
-      visible: false,
-      openMode: 'TAB',
-    })
-    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).not.toContain(
-      'skill-connections',
-    )
-    expect(router.resolve('/skill-connections').meta).toMatchObject({
-      module: 'skill-connections',
-      tabKind: 'module',
-    })
-  })
-
 
   it('公共组保留活跃应用且 Agent 旧地址不恢复功能', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
