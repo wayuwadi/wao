@@ -39,6 +39,7 @@ async function mountEditor(props: {
   initialPosition?: number
   previewImages?: boolean
   imageReferences?: boolean
+  noteMediaCopy?: boolean
   activeImageReference?: number | null
   placeholder?: string
   allowH1?: boolean
@@ -2009,6 +2010,25 @@ describe('MarkdownEditor（所见即所得）', () => {
 
 
 describe('跨应用复制选区', () => {
+  it('小记全选复制保留正文图号，打开逐张原图步骤；不更改原文', async () => {
+    const source = '## 正文\n\n![第一张](/api/images/one/raw)\n\n后文\n\n![第二张](/api/images/two/raw)'
+    const w = await mountEditor({ modelValue: source, noteMediaCopy: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.selectAll()
+    const before = e.getJSON()
+    const values: Record<string, string> = {}
+    const event = new Event('copy', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { setData: (type: string, value: string) => values[type] = value } })
+    w.get('.tiptap').element.dispatchEvent(event)
+    await nextTick()
+    expect(values['text/plain']).toContain('[图 1：第一张]')
+    expect(values['text/plain']).toContain('后文')
+    expect(values['text/plain']).toContain('[图 2：第二张]')
+    expect(document.body.querySelector('.note-media-copy-dialog')?.textContent).toContain('正文已复制')
+    expect(document.body.querySelector('.copy-primary')?.textContent).toBe('复制图 1 原图')
+    expect(e.getJSON()).toEqual(before)
+    w.unmount()
+  })
   it('只复制选中的正文，HTML 保持标题语义，纯文本保留 Markdown', async () => {
     const w = await mountEditor({ modelValue: '## 标题\n\n不要复制的后文' })
     const e = (w.vm as unknown as { editor: Editor }).editor

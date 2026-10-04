@@ -1,5 +1,29 @@
 [
   {
+    "id": "release-notes-copy-original-media-2026-10-04",
+    "publishedOn": "2026-10-04",
+    "sourceSubject": "feat(notes): 分步复制正文与原图到 ChatGPT",
+    "title": "让小记图文完整带到对话里",
+    "intro": "正文先粘贴，原图逐张复制，每张保持独立。",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "复制图文",
+        "title": "正文和原图分步复制",
+        "summary": "面板保留图号引用，逐张复制原始尺寸图片。",
+        "points": [
+          "卡片和阅读模式均可打开图文复制",
+          "编辑器全选含图片时自动打开原图步骤",
+          "复制失败可重试，不改动正文和草稿"
+        ],
+        "steps": [
+          "复制正文后，到 ChatGPT 粘贴",
+          "回到面板逐张复制原图，再分别粘贴"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-page-layout-styles-2026-10-04",
     "publishedOn": "2026-10-04",
     "sourceSubject": "feat(settings): 统一页面外框并提供三种布局偏好",
