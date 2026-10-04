@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
-import { companionActivities } from '@/components/home/companionActivities'
-import { companionQuiet } from '@/composables/quietCompanions'
 import { RouterLink } from 'vue-router'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
 import HomeCompanions from '@/components/home/HomeCompanions.vue'
 import HomeSurprises from '@/components/home/HomeSurprises.vue'
 import HomeHiddenWorld from '@/components/home/HomeHiddenWorld.vue'
+import HomePointerPlay from '@/components/home/HomePointerPlay.vue'
 import { createWorldChoices } from '@/components/home/companionWorld'
 import type { SurpriseStyle } from '@/components/home/companionSurprises'
 import { useDataStore } from '@/stores/data'
@@ -16,26 +14,26 @@ const data = useDataStore()
 const companions = ref<InstanceType<typeof HomeCompanions>>()
 const surprises = ref<InstanceType<typeof HomeSurprises>>()
 const world = ref<InstanceType<typeof HomeHiddenWorld>>()
+const pointerPlay = ref<InstanceType<typeof HomePointerPlay>>()
 const choices = createWorldChoices()
 const anchors = () => companions.value?.anchors() ?? []
 function surprise(style: SurpriseStyle) { surprises.value?.celebrate(style); world.value?.celebrated() }
-function clearSurprises() { surprises.value?.clear(); world.value?.clear() }
-function tap(event: MouseEvent) { surprises.value?.tap(event); world.value?.tap(event) }
-const menu = ref<InstanceType<typeof ContextActionMenu>>()
-function actions(event: MouseEvent | KeyboardEvent) {
-  void menu.value?.openAt(event, '一起放松十五秒', [
-    ...companionActivities.map(activity => ({ id: activity.id, label: activity.label, run: () => companions.value?.perform(activity.id) })),
-    { id: 'quiet', label: companionQuiet.value ? '唤醒伙伴' : '现在安静下来', run: () => companions.value?.toggleQuiet() },
-  ])
+function clearSurprises() { surprises.value?.clear(); world.value?.clear(); pointerPlay.value?.clear() }
+function tap(event: MouseEvent) {
+  if (pointerPlay.value?.consumeTap(event)) return
+  surprises.value?.tap(event); world.value?.tap(event)
 }
-function blankMenu(event: MouseEvent) {
-  if (!(event.target instanceof Element) || event.target.closest('a,button,input,textarea,[contenteditable],select,[role="dialog"]') || window.getSelection()?.toString()) return
-  actions(event)
+function beginRandom() { companions.value?.settle(); surprises.value?.clear(); world.value?.clear() }
+function down(event: PointerEvent) { pointerPlay.value?.down(event); world.value?.down(event) }
+function move(event: PointerEvent) { pointerPlay.value?.move(event); surprises.value?.sweep(event); world.value?.move(event) }
+function up(event: PointerEvent) { pointerPlay.value?.up(event); world.value?.up(event) }
+function actions(event: MouseEvent | KeyboardEvent, index?: number) {
+  pointerPlay.value?.trigger(event, index)
 }
 </script>
 
 <template>
-  <main class="home" @contextmenu="blankMenu" @click="tap" @pointerdown="world?.down($event)" @pointermove="surprises?.sweep($event); world?.move($event)" @pointerup="world?.up($event)" @pointercancel="world?.clear()">
+  <main class="home" @contextmenu="actions" @click="tap" @pointerdown="down" @pointermove="move" @pointerup="up" @pointerleave="pointerPlay?.release()" @pointercancel="clearSurprises">
     <section class="home-rest-welcome">
       <header class="home-day">
         <HomeOverviewCard />
@@ -49,13 +47,13 @@ function blankMenu(event: MouseEvent) {
           <RouterLink class="rest-entrance" to="/breathe">休息一下 <span aria-hidden="true">↗</span></RouterLink>
           <RouterLink class="rest-entrance" to="/features">功能探索 <span aria-hidden="true">↗</span></RouterLink>
         </div>
-        <small class="play-hint">点一下伙伴，让它变成泡泡。右键，一起放松十五秒。</small>
+        <small class="play-hint">点一下伙伴，让它变成泡泡。按住留白或右键，随机遇见一点惊喜。</small>
       </div>
-      <div class="home-companion-space"><HomeCompanions ref="companions" :choices="choices" @menu="actions" @surprise="surprise" @cancel-surprises="clearSurprises" @world="world?.story($event)" /></div>
+      <div class="home-companion-space"><HomeCompanions ref="companions" :choices="choices" @random="actions" @surprise="surprise" @cancel-surprises="clearSurprises" @world="world?.story($event)" /></div>
     </section>
-    <ContextActionMenu ref="menu" />
     <HomeSurprises ref="surprises" />
     <HomeHiddenWorld ref="world" :anchors="anchors" :choices="choices" @story="companions?.story($event)" />
+    <HomePointerPlay ref="pointerPlay" :anchors="anchors" :available="() => !!companions?.ready" @begin="beginRandom" @activity="companions?.perform($event)" @story="companions?.story($event)" />
 
   </main>
 </template>

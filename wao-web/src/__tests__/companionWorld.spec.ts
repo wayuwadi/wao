@@ -37,7 +37,7 @@ describe('隐藏世界的可重复发现', () => {
     expect(recognizeWorldGesture([{ x: 0, y: 0 }, { x: 90, y: 90 }, { x: 45, y: 45 }, { x: 0, y: 0 }])).toBeNull()
   })
   it('所有剧情姿态数值有界并回到原位，书虫与青蛙保留不同节奏', () => {
-    const kinds: WorldKind[] = ['watch', 'catch', 'miss', 'wind', 'orbit', 'visit', 'tickle', 'imitate', 'wave', 'reverse', 'yawn', 'peek', 'pass']
+    const kinds: WorldKind[] = ['watch', 'catch', 'miss', 'wind', 'orbit', 'visit', 'tickle', 'imitate', 'wave', 'reverse', 'yawn', 'peek', 'pass', 'attention']
     for (const kind of kinds) for (let index = 0; index < 4; index++) {
       const event = { kind, source: 0, target: 1, tier: 'rare' as const }
       for (const t of [0, 0.6, 1.2, 2.8, 7]) {
