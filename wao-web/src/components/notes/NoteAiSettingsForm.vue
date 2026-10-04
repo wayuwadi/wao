@@ -6,6 +6,7 @@ import { fetchCodexModels, type CodexModelCatalog } from '@/api/codexModels'
 import { useSessionStore } from '@/stores/session'
 import { usePreferenceStore } from '@/stores/preferences'
 const emit = defineEmits<{ saved: [] }>()
+const props = withDefaults(defineProps<{ progressive?: boolean }>(), { progressive: false })
 const session = useSessionStore(), preferences = usePreferenceStore()
 const draft = ref<NoteAiSettings | null>(null), loading = ref(false), saving = ref(false), dirty = ref(false)
 const error = ref(''), status = ref(''), version = ref(''), catalog = ref<CodexModelCatalog | null>(null)
@@ -67,6 +68,8 @@ onBeforeUnmount(() => { generation++; remember() })
         <label><input v-model="draft.polish" type="checkbox">保存后润色正文</label>
         <label><input v-model="draft.image" type="checkbox">保存后自动配图</label>
         <p>新建和修改正文按已保存的设置整理；手动标题保留，已有自动配图不重复生成。开启不重跑历史小记，关闭阻止旧自动结果写回；手动单项执行仍可用。</p>
+        <details class="ai-advanced" :open="!props.progressive"><summary>模型、提示词与执行方式</summary>
+        <div class="ai-advanced-fields">
         <label>执行方式<select v-model="draft.executionMode"><option value="parallel">并行</option><option value="serial">串行</option></select></label>
         <label v-if="draft.executionMode === 'parallel'">成员入队上限<select v-model.number="draft.maxConcurrent"><option v-for="n in 5" :key="n" :value="n">{{ n }}</option></select></label>
         <label>标题、正文和配图模型<select aria-label="小记处理模型" v-model="draft.model"><option value="">沿用已配置的默认模型</option><option v-if="draft.model && !catalog?.models.some(m => m.id === draft?.model)" :value="draft.model">{{ draft.model }} · 已保留，待确认可用</option><option v-for="model in catalog?.models || []" :key="model.id" :value="model.id">{{ model.label }}</option></select></label>
@@ -76,6 +79,7 @@ onBeforeUnmount(() => { generation++; remember() })
         <label>标题提示词<textarea v-model="draft.titlePrompt" maxlength="4000" rows="2" placeholder="留空沿用默认" /></label>
         <label>正文润色提示词<textarea v-model="draft.polishPrompt" maxlength="4000" rows="3" placeholder="留空沿用默认" /></label>
         <label>自动配图提示词<textarea v-model="draft.imagePrompt" maxlength="4000" rows="3" placeholder="留空沿用默认" /></label>
+        </div></details>
       </fieldset>
       <p>整篇润色最多 12000 个实现字符；超长内容可选段润色，每次最多 4000。自动配图暂需至少 80 个实现字符，短文可手动配图。</p>
     </template>
@@ -86,6 +90,9 @@ onBeforeUnmount(() => { generation++; remember() })
 </template>
 <style scoped>
 fieldset { border: 0; padding: 0; display: grid; gap: 10px; }
+.ai-advanced { border-top: 1px solid var(--wao-divider); padding-top: 10px; }
+summary { cursor: pointer; color: var(--wao-text); font-size: 13px; padding: 6px 0; }
+.ai-advanced-fields { display: grid; gap: 10px; margin-top: 12px; }
 label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 textarea { width: 100%; box-sizing: border-box; padding: 8px; resize: vertical; }
 select, textarea { color: var(--wao-text-1); background: var(--wao-bg-card); border: 1px solid var(--wao-divider); border-radius: 6px; }

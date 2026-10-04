@@ -17,7 +17,6 @@ import {
   usePreferenceStore,
   type Celebration,
   type ControlStyle,
-  type NoteAiDefaults,
   type NoteFullscreenReminderSettings,
   type WeekStart,
 } from '@/stores/preferences'
@@ -30,6 +29,8 @@ import NotificationSettingsPanel from '@/components/settings/NotificationSetting
 import TianrenNotificationSettingsPanel from '@/components/settings/TianrenNotificationSettingsPanel.vue'
 import ProjectNotificationSettingsPanel from '@/components/settings/ProjectNotificationSettingsPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
+import { SETTINGS_CATEGORIES, SETTINGS_ENTRIES, normalizeSettingsTab, settingsCategory } from '@/utils/settingsNavigation'
+import { readReminderDraft, rememberReminderDraft } from '@/utils/settingsReminderDraft'
 
 const session = useSessionStore()
 const theme = useTheme()
@@ -42,32 +43,25 @@ const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const tianrenNotificationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
+const discoveryPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
-const NAV = [
-  { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['通知设置', 'notifications'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['我的导航', 'navigation'], ['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs']] },
-] as const
-
-const requestedTab = (route.query.tab as string) || 'members'
-const availableTabs = new Set<string>([...NAV.flatMap((group) => group.items.map((item) => item[1])), 'pet'])
-const normalizedTab = requestedTab === 'quick-links'
-    ? 'navigation'
-    : requestedTab
-const tab = ref<string>(availableTabs.has(normalizedTab) ? normalizedTab : 'members')
+const tab = ref(normalizeSettingsTab(route.query.tab, route.hash))
+const category = computed(() => settingsCategory(tab.value))
+const categoryInfo = computed(() => SETTINGS_CATEGORIES.find(item => item.id === category.value)!)
+const categoryEntries = computed(() => SETTINGS_ENTRIES[tab.value as keyof typeof SETTINGS_ENTRIES] ?? [])
+const isDetail = computed(() => tab.value !== category.value)
 let skipWebhookRouteGuardOnce = false
 
 function selectTab(next: string) {
   if (next === tab.value) return
   // 路由守卫只检查当前面板；导航成功后由 query watcher 切换内容。
-  void router.replace({ query: { ...route.query, tab: next === 'members' ? undefined : next } })
+  void router.replace({ query: { ...route.query, tab: next === 'common' ? undefined : next }, hash: '' })
 }
 
 watch(
-  () => route.query.tab,
-  (value) => {
-    const requested = value === 'quick-links' ? 'navigation' : (value ?? 'members')
-    tab.value = typeof requested === 'string' && availableTabs.has(requested) ? requested : 'members'
+  () => [route.query.tab, route.hash] as const,
+  ([value, hash]) => {
+    tab.value = normalizeSettingsTab(value, hash)
   },
 )
 
@@ -76,15 +70,24 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
     skipWebhookRouteGuardOnce = false
     return true
   }
+  return confirmCurrentSettings()
+})
+function confirmCurrentSettings(): boolean {
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return false
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
-  if (tab.value === 'notifications' && tianrenNotificationPanel.value && !tianrenNotificationPanel.value.confirmLeave()) return false
-  if (tab.value === 'notifications' && notificationSettingsPanel.value
+  if (tab.value === 'tianren-notifications' && tianrenNotificationPanel.value && !tianrenNotificationPanel.value.confirmLeave()) return false
+  if (tab.value === 'notification-policy' && notificationSettingsPanel.value
       && !notificationSettingsPanel.value.confirmLeave()) return false
   if (tab.value === 'pet' && webPetPanel.value && !webPetPanel.value.confirmLeave()) return false
+  if (tab.value === 'notes' && discoveryPanel.value && !discoveryPanel.value.confirmLeave()) return false
+  if (tab.value === 'notes' && noteReminderSaving.value) {
+    toast('小记提醒正在保存，请稍后再离开')
+    return false
+  }
+  if (tab.value === 'notes' && noteReminderDirty.value && !window.confirm('小记提醒还有未保存的修改，确认离开吗？')) return false
   return true
-})
+}
 onUnmounted(removeWebhookRouteGuard)
 const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
 const profileForm = reactive({ name: '', initial: '' })
@@ -136,22 +139,14 @@ const personalPreferenceSaving = ref<'weekStart' | 'celebration' | ''>('')
 const personalPreferenceError = ref('')
 const lastPersonalPreferenceAttempt = ref<{ key: 'weekStart' | 'celebration'; value: WeekStart | Celebration } | null>(null)
 
-const noteReminderForm = reactive<NoteFullscreenReminderSettings>({ enabled: true, delayMinutes: 1 })
+const reminderDraft = readReminderDraft(session.currentUser.id)
+const noteReminderForm = reactive<NoteFullscreenReminderSettings>(reminderDraft ?? { ...preferences.noteFullscreenReminder })
+const noteReminderBaseline = ref({ ...preferences.noteFullscreenReminder })
+const noteReminderDirty = computed(() => noteReminderForm.enabled !== noteReminderBaseline.value.enabled
+  || noteReminderForm.delayMinutes !== noteReminderBaseline.value.delayMinutes)
+const noteReminderStorageError = ref('')
 const noteReminderSaving = ref(false)
 const noteReminderError = ref('')
-const noteAiDefaultsForm = reactive<NoteAiDefaults>({ ...preferences.noteAiDefaults })
-const noteAiConcurrentDisplay = computed({
-  get: () => noteAiDefaultsForm.executionMode === 'serial' ? 1 : noteAiDefaultsForm.maxConcurrent,
-  set: (value: NoteAiDefaults['maxConcurrent']) => { noteAiDefaultsForm.maxConcurrent = value },
-})
-const noteAiDefaultsSaving = ref(false)
-const noteAiDefaultsError = ref('')
-const noteAiDefaultsDirty = computed(() => noteAiDefaultsForm.title !== preferences.noteAiDefaults.title
-  || noteAiDefaultsForm.polish !== preferences.noteAiDefaults.polish
-  || noteAiDefaultsForm.image !== preferences.noteAiDefaults.image
-  || noteAiDefaultsForm.executionMode !== preferences.noteAiDefaults.executionMode
-  || noteAiDefaultsForm.maxConcurrent !== preferences.noteAiDefaults.maxConcurrent)
-
 watch(
   [() => preferences.loaded, () => preferences.controlStyle],
   ([loaded, style]) => {
@@ -174,32 +169,30 @@ watch(
 watch(
   [() => preferences.loaded, () => preferences.noteFullscreenReminder.enabled, () => preferences.noteFullscreenReminder.delayMinutes],
   ([loaded, enabled, delayMinutes]) => {
-    if (!loaded || noteReminderSaving.value) return
-    noteReminderForm.enabled = enabled
-    noteReminderForm.delayMinutes = delayMinutes
+    if (!loaded) return
+    const keepDraft = noteReminderDirty.value
+    noteReminderBaseline.value = { enabled, delayMinutes }
+    if (noteReminderSaving.value || keepDraft) return
+    Object.assign(noteReminderForm, { enabled, delayMinutes })
   },
   { immediate: true },
 )
 
-watch(
-  [() => preferences.loaded, () => preferences.noteAiDefaults.title, () => preferences.noteAiDefaults.polish,
-    () => preferences.noteAiDefaults.image, () => preferences.noteAiDefaults.executionMode,
-    () => preferences.noteAiDefaults.maxConcurrent],
-  ([loaded, title, polish, image, executionMode, maxConcurrent]) => {
-    if (!loaded || noteAiDefaultsSaving.value) return
-    noteAiDefaultsForm.title = title
-    noteAiDefaultsForm.polish = polish
-    noteAiDefaultsForm.image = image
-    noteAiDefaultsForm.executionMode = executionMode
-    noteAiDefaultsForm.maxConcurrent = maxConcurrent
-  },
-  { immediate: true },
-)
+watch([() => noteReminderForm.enabled, () => noteReminderForm.delayMinutes, noteReminderDirty], () => {
+  noteReminderStorageError.value = rememberReminderDraft(session.currentUser.id, noteReminderDirty.value ? { ...noteReminderForm } : null)
+    ? '' : '浏览器暂不能保留提醒草稿，刷新前请先保存。'
+})
+function protectReminderUnload(event: BeforeUnloadEvent) {
+  if (!noteReminderDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+window.addEventListener('beforeunload', protectReminderUnload)
+onUnmounted(() => window.removeEventListener('beforeunload', protectReminderUnload))
 
 async function reloadPreferences() {
   controlStyleError.value = ''
   noteReminderError.value = ''
-  noteAiDefaultsError.value = ''
   personalPreferenceError.value = ''
   await preferences.load(true)
 }
@@ -268,20 +261,6 @@ async function saveNoteReminderPreferences() {
   }
 }
 
-async function saveNoteAiDefaults() {
-  if (noteAiDefaultsSaving.value) return
-  noteAiDefaultsSaving.value = true
-  noteAiDefaultsError.value = ''
-  try {
-    await preferences.setNoteAiDefaults({ ...noteAiDefaultsForm })
-    toast('小记 AI 默认能力已保存', 'ri-checkbox-circle-line')
-  } catch (error) {
-    noteAiDefaultsError.value = error instanceof Error ? error.message : '小记 AI 默认能力保存失败'
-  } finally {
-    noteAiDefaultsSaving.value = false
-  }
-}
-
 const canManageMembers = computed(() => ['管理员', '超级管理员'].includes(session.currentUser.role))
 const accountCreateOpen = ref(false)
 const accountCreateForm = reactive({ name: '', email: '', password: '' })
@@ -314,13 +293,6 @@ async function createMemberAccount() {
   }
 }
 
-function cycleTheme() {
-  const order: ThemeMode[] = ['light', 'dark', 'system']
-  const idx = order.indexOf(theme.mode.value)
-  const next = order[(idx + 1) % order.length]
-  theme.setTheme(next ?? 'system')
-}
-
 const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
 const siteLoaded = ref(false)
 const siteBusy = ref(false)
@@ -344,13 +316,10 @@ async function saveSiteInformation() {
 
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
+
 }, { immediate: true })
 async function logout() {
-  if (tab.value === 'navigation' && navigationPanel.value
-      && !navigationPanel.value.confirmLeave()) return
-  if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
-  if (tab.value === 'notifications' && notificationSettingsPanel.value
-      && !notificationSettingsPanel.value.confirmLeave()) return
+  if (!confirmCurrentSettings()) return
   await session.logout()
   skipWebhookRouteGuardOnce = true
   await router.push('/login')
@@ -389,24 +358,30 @@ async function bindFeishu() {
 <template>
   <div class="settings">
     <!-- 左侧分类 -->
-    <div class="snav">
-      <div class="snav-title">设置</div>
-      <div v-for="g in NAV" :key="g.label">
-        <div class="snav-group"><i :class="g.icon"></i>{{ g.label }}</div>
-        <div class="snav-items">
-          <button v-for="it in g.items" :key="it[1]" class="snav-item" :class="{ on: tab === it[1] }" @click="selectTab(it[1])">
-            {{ it[0] }}
-          </button>
-        </div>
+    <nav class="snav" aria-label="设置分类">
+      <div class="snav-title">设置<span>让 WAO 更顺手</span></div>
+      <div class="snav-items">
+        <template v-for="(item, index) in SETTINGS_CATEGORIES" :key="item.id">
+          <div v-if="index === 5" class="snav-divider">更多</div>
+          <button type="button" class="snav-item" :class="{ on: category === item.id }" :aria-current="category === item.id ? 'page' : undefined" @click="selectTab(item.id)"><i :class="item.icon"></i>{{ item.label }}</button>
+        </template>
       </div>
       <div class="snav-foot">
         <button class="logout" @click="logout"><i class="ri-logout-box-r-line"></i>退出登录</button>
       </div>
-    </div>
+    </nav>
 
     <!-- 右侧内容 -->
     <div class="spane">
       <div class="scontent" :class="{ 'navigation-wide': tab === 'navigation', 'content-wide': ['members', 'navigation', 'ai-accounts'].includes(tab) }">
+        <button v-if="isDetail" class="settings-back" @click="selectTab(category)"><i class="ri-arrow-left-line"></i>返回{{ categoryInfo.label }}</button>
+        <template v-if="categoryEntries.length && tab !== 'appearance'">
+          <h1 class="s-h1">{{ categoryInfo.label }}</h1><p class="s-intro">{{ categoryInfo.description }}</p>
+          <p v-if="tab === 'management'" class="settings-scope">编辑权限与影响范围在各项设置中展示。</p>
+          <div class="card settings-entry-list">
+            <button v-for="entry in categoryEntries" :key="entry[0]" class="settings-entry" @click="selectTab(entry[0])"><i class="entry-icon" :class="entry[3]"></i><span><strong>{{ entry[1] }}</strong><small>{{ entry[2] }}</small></span><i class="ri-arrow-right-s-line"></i></button>
+          </div>
+        </template>
         <!-- 组织与成员 -->
         <template v-if="tab === 'members'">
           <div class="s-h1">组织与成员</div>
@@ -473,14 +448,10 @@ async function bindFeishu() {
           </div>
         </template>
 
-        <!-- 系统 · 通知设置 -->
-        <template v-else-if="tab === 'notifications'">
-          <div class="notification-settings-stack">
-            <NotificationSettingsPanel ref="notificationSettingsPanel" />
-            <ProjectNotificationSettingsPanel />
-            <TianrenNotificationSettingsPanel ref="tianrenNotificationPanel" />
-          </div>
-        </template>
+        <!-- 通知按来源分开，继续复用原面板与保存边界。 -->
+        <NotificationSettingsPanel v-else-if="tab === 'notification-policy'" ref="notificationSettingsPanel" />
+        <ProjectNotificationSettingsPanel v-else-if="tab === 'project-notifications'" />
+        <TianrenNotificationSettingsPanel v-else-if="tab === 'tianren-notifications'" ref="tianrenNotificationPanel" />
 
         <!-- 系统 · 菜单配置 -->
         <template v-else-if="tab === 'navigation'">
@@ -560,9 +531,55 @@ async function bindFeishu() {
           <WebPetSettingsPanel :key="session.userId" ref="webPetPanel" />
         </template>
 
-        <!-- 偏好 -->
-        <template v-else-if="tab === 'prefs'">
-          <div class="s-h1">偏好</div>
+        <template v-else-if="['common', 'appearance'].includes(tab)">
+          <h1 class="s-h1">{{ tab === 'common' ? '把 WAO 调成你的习惯' : '外观与陪伴' }}</h1>
+          <p class="s-intro">{{ categoryInfo.description }}</p>
+          <h2 class="section-label">随手调整</h2>
+          <div class="card thin personal-preferences">
+            <div class="pref-row">
+              <div class="pref-main">
+                <div class="pref-name">主题</div>
+                <div class="pref-desc">明亮 / 深色 / 跟随系统</div>
+              </div>
+              <select class="value-select" aria-label="主题" :value="theme.mode.value" @change="theme.setTheme(($event.target as HTMLSelectElement).value as ThemeMode)"><option v-for="(label, value) in THEME_LABELS" :key="value" :value="value">{{ label }}</option></select>
+            </div>
+            <div class="pref-row">
+              <div class="pref-main"><div class="pref-name">安静陪伴</div><div class="pref-desc">暂停伙伴动作和主动回应，保留操作结果提示。本次浏览器会话生效。</div></div>
+              <button class="value-btn" type="button" role="switch" aria-label="安静陪伴" :aria-checked="companionQuiet" @click="setCompanionQuiet(!companionQuiet)">{{ companionQuiet ? '已开启' : '偶尔回应' }}</button>
+            </div>
+            <div class="pref-row">
+              <div class="pref-main">
+                <div class="pref-name">庆祝动画</div>
+                <div class="pref-desc">创建任务 / 项目、完成任务时的全屏反馈；开启后保存时立即预览。</div>
+              </div>
+              <select
+                v-model="personalPreferenceForm.celebration"
+                class="value-select"
+                aria-label="庆祝动画"
+                :disabled="!!personalPreferenceSaving || preferences.loading || !preferences.loaded || !!preferences.loadError"
+                @change="savePersonalPreference('celebration', personalPreferenceForm.celebration)"
+              >
+                <option value="细腻纸屑">细腻纸屑</option>
+                <option value="关闭">关闭</option>
+              </select>
+              <span v-if="personalPreferenceSaving === 'celebration'" class="row-saving">保存中…</span>
+            </div>
+            <div v-if="personalPreferenceError" class="preference-error personal-preference-save-error" role="alert">
+              <span>{{ personalPreferenceError }}，已保留原有设置。</span>
+              <button type="button" class="btn-ghost sm" @click="retryPersonalPreference">重试保存</button>
+            </div>
+
+            <div v-if="preferences.loadError" class="preference-error" role="alert"><span>{{ preferences.loadError }}</span><button class="btn-ghost" :disabled="preferences.loading" @click="reloadPreferences">重新读取</button></div>
+            <p v-else-if="preferences.loading || !preferences.loaded" class="preference-loading" role="status">正在读取个人偏好…</p>
+            <p v-else class="hint">{{ personalPreferenceSaving ? '保存中…' : '主题和安静陪伴即时应用；庆祝动画跨设备保存。' }}</p>
+          </div>
+          <div v-if="tab === 'common'" class="settings-shortcuts">
+            <button class="settings-shortcut" @click="selectTab('notes')"><i class="ri-quill-pen-line"></i><span>小记怎么帮我？<small>提醒与 AI 整理 →</small></span></button>
+            <button class="settings-shortcut" @click="selectTab('reminders')"><i class="ri-notification-3-line"></i><span>调整通知<small>按提醒来源设置 →</small></span></button>
+          </div>
+          <template v-else>
+            <button class="settings-entry companion-entry" @click="selectTab('pet')"><i class="entry-icon ri-bear-smile-line"></i><span><strong>伙伴设置</strong><small>外观与互动</small></span><i class="ri-arrow-right-s-line"></i></button>
+            <details class="settings-disclosure"><summary>更多外观设置</summary>
           <div class="card thin control-style-preferences">
             <div class="card-row wrap">
               <div>
@@ -604,22 +621,8 @@ async function bindFeishu() {
               </div>
             </template>
           </div>
-          <div class="card thin personal-preferences">
-            <div class="pref-row">
-              <div class="pref-main"><div class="pref-name">快捷键</div><div class="pref-desc">查看记录、搜索和页面操作的快捷方式。</div></div>
-              <button class="value-btn" type="button" @click="ui.toggleHelp()">查看快捷键</button>
-            </div>
-            <div class="pref-row">
-              <div class="pref-main"><div class="pref-name">安静陪伴</div><div class="pref-desc">暂停伙伴动作和主动回应，保留操作结果提示。本次浏览器会话生效。</div></div>
-              <button class="value-btn" type="button" :aria-pressed="companionQuiet" @click="setCompanionQuiet(!companionQuiet)">{{ companionQuiet ? '已开启' : '偶尔回应' }}</button>
-            </div>
-            <div class="pref-row">
-              <div class="pref-main">
-                <div class="pref-name">主题</div>
-                <div class="pref-desc">明亮 / 深色 / 跟随系统</div>
-              </div>
-              <button class="value-btn" @click="cycleTheme">{{ THEME_LABELS[theme.mode.value] }}<i class="ri-arrow-down-s-line"></i></button>
-            </div>
+
+              <div class="card thin">
             <div class="pref-row">
               <div class="pref-main">
                 <div class="pref-name">每周起始日</div>
@@ -638,28 +641,18 @@ async function bindFeishu() {
               <span v-if="personalPreferenceSaving === 'weekStart'" class="row-saving">保存中…</span>
             </div>
             <div class="pref-row">
-              <div class="pref-main">
-                <div class="pref-name">庆祝动画</div>
-                <div class="pref-desc">创建任务 / 项目、完成任务时的全屏反馈；开启后保存时立即预览。</div>
+              <div class="pref-main"><div class="pref-name">快捷键</div><div class="pref-desc">查看记录、搜索和页面操作的快捷方式。</div></div>
+              <button class="value-btn" type="button" @click="ui.toggleHelp()">查看快捷键</button>
+            </div>
+                <div class="hint language-boundary">界面当前仅提供完整的简体中文版本。</div>
               </div>
-              <select
-                v-model="personalPreferenceForm.celebration"
-                class="value-select"
-                aria-label="庆祝动画"
-                :disabled="!!personalPreferenceSaving || preferences.loading || !preferences.loaded || !!preferences.loadError"
-                @change="savePersonalPreference('celebration', personalPreferenceForm.celebration)"
-              >
-                <option value="细腻纸屑">细腻纸屑</option>
-                <option value="关闭">关闭</option>
-              </select>
-              <span v-if="personalPreferenceSaving === 'celebration'" class="row-saving">保存中…</span>
-            </div>
-            <div v-if="personalPreferenceError" class="preference-error personal-preference-save-error" role="alert">
-              <span>{{ personalPreferenceError }}，已保留原有设置。</span>
-              <button type="button" class="btn-ghost sm" @click="retryPersonalPreference">重试保存</button>
-            </div>
-            <div class="hint language-boundary">界面当前仅提供完整的简体中文版本；没有可用的第二套翻译前不展示无效的语言切换。</div>
-          </div>
+            </details>
+          </template>
+        </template>
+        <template v-else-if="tab === 'notes'">
+          <h1 class="s-h1">小记与 AI</h1><p class="s-intro">{{ categoryInfo.description }}</p>
+          <div class="card note-ai-defaults-preferences"><h2 class="card-title">保存后的 AI 整理</h2><NoteAiSettingsForm progressive /></div>
+          <details class="settings-disclosure"><summary>编辑中的未保存提醒{{ noteReminderDirty ? ' · 待保存' : '' }}</summary>
           <div class="card thin note-reminder-preferences">
             <div class="card-row wrap">
               <div>
@@ -668,19 +661,19 @@ async function bindFeishu() {
               </div>
               <span v-if="noteReminderSaving" class="connected"><span class="c-dot"></span>保存中…</span>
               <span v-else-if="preferences.loading || !preferences.loaded" class="connected"><span class="c-dot"></span>读取中…</span>
-              <span v-else-if="!preferences.loadError && !noteReminderError" class="connected"><span class="c-dot"></span>个人设置</span>
+              <span v-else-if="!preferences.loadError && !noteReminderError" class="connected"><span class="c-dot"></span>{{ noteReminderDirty ? '有未保存修改' : '已保存' }}</span>
             </div>
             <div v-if="preferences.loadError || noteReminderError" class="preference-error" role="alert">
               <span>{{ noteReminderError || preferences.loadError }}</span>
-              <button type="button" class="btn-ghost sm" :disabled="preferences.loading" @click="reloadPreferences">
+              <button type="button" class="btn-ghost sm" :disabled="preferences.loading || noteReminderSaving" @click="reloadPreferences">
                 {{ preferences.loading ? '重新读取中…' : '重新读取' }}
               </button>
-              <button v-if="noteReminderError" type="button" class="btn-ghost sm" :disabled="noteReminderSaving" @click="saveNoteReminderPreferences">重试保存</button>
+              <button v-if="noteReminderError" type="button" class="btn-ghost sm" :disabled="noteReminderSaving || !noteReminderDirty" @click="saveNoteReminderPreferences">重试保存</button>
             </div>
-            <div v-else-if="preferences.loading || !preferences.loaded" class="preference-loading" aria-live="polite">
+            <div v-if="preferences.loading || !preferences.loaded" class="preference-loading" aria-live="polite">
               <i class="ri-loader-4-line"></i>正在读取小记提醒偏好…
             </div>
-            <template v-else>
+            <template v-else-if="!preferences.loadError">
               <div class="pref-row">
                 <div class="pref-main">
                   <div class="pref-name">启用未保存提醒</div>
@@ -703,16 +696,17 @@ async function bindFeishu() {
                 </select>
               </div>
               <div class="preference-actions">
-                <span>按当前成员跨设备保存；保存失败时当前设置草稿会保留。</span>
-                <button type="button" class="btn-primary" :disabled="noteReminderSaving" @click="saveNoteReminderPreferences">
+                <span>{{ noteReminderStorageError || '本组独立保存；未保存的草稿保留在此浏览器。' }}</span>
+                <button type="button" class="btn-primary" :disabled="noteReminderSaving || !noteReminderDirty" @click="saveNoteReminderPreferences">
                   {{ noteReminderSaving ? '保存中…' : '保存提醒设置' }}
                 </button>
               </div>
             </template>
           </div>
-          <NoteDiscoveryPreference />
-          <div class="card thin note-ai-defaults-preferences"><h3>小记 AI 设置</h3><NoteAiSettingsForm /></div>
+
+          </details>
         </template>
+        <KeepAlive><NoteDiscoveryPreference v-if="tab === 'notes'" :key="session.userId" ref="discoveryPanel" /></KeepAlive>
 
       </div>
     </div>
@@ -742,6 +736,8 @@ async function bindFeishu() {
   font-size: 16px;
   font-weight: 700;
 }
+.snav-title span { display: block; margin-top: 5px; font-size: 11px; font-weight: 400; color: var(--wao-text-weak); }
+.snav-divider { padding: 20px 10px 6px; color: var(--wao-text-faint); font-size: 11px; }
 .snav-group {
   display: flex;
   align-items: center;
@@ -762,8 +758,9 @@ async function bindFeishu() {
 .snav-item {
   display: flex;
   align-items: center;
-  height: 31px;
-  padding: 0 10px 0 28px;
+  min-height: 39px;
+  padding: 8px 10px;
+  gap: 9px;
   border: none;
   border-radius: 7px;
   background: transparent;
@@ -813,15 +810,35 @@ async function bindFeishu() {
   overflow-y: auto;
 }
 .scontent {
-  padding: 22px 24px 48px;
+  padding: 30px 32px 48px;
   max-width: 860px;
 }
 .scontent.content-wide { max-width: 1420px; }
 .notification-settings-stack { display: grid; gap: 14px; }
 .s-h1 {
-  font-size: 18px;
+  margin: 0;
+  font-size: 24px;
   font-weight: 700;
 }
+.s-intro { margin: 8px 0 24px; color: var(--wao-text-weak); font-size: 13px; line-height: 1.7; }
+.section-label { margin: 24px 0 8px; font-size: 13px; color: var(--wao-text-3); }
+.settings-shortcuts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 22px; }
+.settings-shortcut { display: flex; gap: 12px; align-items: center; padding: 18px; text-align: left; background: var(--wao-bg-card); color: var(--wao-text); border: 1px solid var(--wao-line); border-radius: 12px; cursor: pointer; }
+.settings-shortcut > i { font-size: 20px; color: var(--wao-primary-text); }
+.settings-shortcut small, .settings-entry small { display: block; margin-top: 5px; font-size: 12px; color: var(--wao-text-weak); line-height: 1.5; }
+.settings-shortcut:hover, .settings-entry:hover { background: var(--wao-primary-soft); }
+.settings-shortcut span { min-width: 0; font-size: 13px; }
+.settings-entry-list { padding: 0 18px; }
+.settings-entry { width: 100%; min-width: 0; display: flex; align-items: center; gap: 14px; border: 0; border-bottom: 1px solid var(--wao-line); padding: 18px 0; background: transparent; color: var(--wao-text); cursor: pointer; text-align: left; }
+.settings-entry:last-child { border-bottom: 0; }
+.settings-entry > span { flex: 1; min-width: 0; }
+.settings-entry strong { font-size: 14px; font-weight: 600; }
+.entry-icon { width: 36px; height: 36px; display: grid; place-items: center; flex: none; border-radius: 11px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: 18px; }
+.settings-back { display: flex; align-items: center; gap: 6px; margin: 0 0 20px; padding: 0; border: 0; background: transparent; color: var(--wao-text-weak); cursor: pointer; font-size: 12px; }
+.settings-disclosure { margin-top: 22px; }
+.settings-disclosure > summary { padding: 10px 0; font-size: 13px; color: var(--wao-text-3); cursor: pointer; }
+.settings-scope { margin: 0; color: var(--wao-text-faint); font-size: 12px; }
+.companion-entry { margin-top: 16px; }
 .card {
   margin-top: 14px;
   background: var(--wao-bg-card);
@@ -1459,15 +1476,21 @@ async function bindFeishu() {
 @media (max-width: 760px) {
   .settings { display: block; height: auto; min-height: 100%; }
   .snav { width: 100%; height: auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--wao-line); overflow-x: auto; overflow-y: hidden; }
-  .snav-title, .snav-group, .snav-foot { display: none; }
-  .snav-items { flex-direction: row; width: max-content; }
-  .snav-item { height: 34px; padding: 0 10px; white-space: nowrap; }
+  .snav-title, .snav-divider, .snav-group, .snav-foot { display: none; }
+  .snav-items { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .snav-item { min-height: 34px; padding: 6px 9px; white-space: nowrap; }
   .preference-actions { align-items: stretch; flex-direction: column; }
   .control-style-options { grid-template-columns: 1fr; }
   .preference-actions .btn-primary { justify-content: center; }
   .spane { overflow: visible; }
   .scontent { padding: 16px 12px 28px; }
   .card { padding: 14px; }
+  .s-h1 { font-size: 22px; }
+  .settings-shortcuts { gap: 8px; }
+  .settings-shortcut { padding: 13px 10px; gap: 7px; }
+  .pref-row { flex-wrap: wrap; }
+  .pref-main { flex-basis: 55%; }
+  .value-select { min-width: 94px; max-width: 100%; }
   .credential-form, .profile-form { grid-template-columns: 1fr; }
   .site-form { grid-template-columns: 1fr; }
   .builtin-menu-row { grid-template-columns: 64px minmax(0, 1fr); }

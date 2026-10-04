@@ -287,7 +287,7 @@ onMounted(() => {
       <div class="hero-actions">
         <span class="sync-pill" :class="syncState" role="status">{{ syncText }}</span>
         <TianrenNotificationStatus v-if="reading" :reading-id="reading.id" :interpreting="interpreting" />
-        <RouterLink v-else class="notification-settings" to="/settings?tab=notifications#tianren-notifications"><i class="ri-settings-3-line"></i>配置通知群</RouterLink>
+        <RouterLink v-else class="notification-settings" to="/settings?tab=tianren-notifications"><i class="ri-settings-3-line"></i>配置通知群</RouterLink>
       </div>
     </header>
     <div v-if="loading" class="state-card" role="status"><span class="spinner"></span><strong>正在取回你的每日记录</strong></div>
