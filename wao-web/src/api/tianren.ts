@@ -29,6 +29,8 @@ export interface TianrenReading {
 export interface TianrenAiSettings {
   version: number
   autoImage: boolean
+  model: string
+  reasoningEffort: string
   interpretationPrompt: string
   imagePrompt: string
   defaultInterpretationPrompt: string
@@ -47,7 +49,7 @@ export interface TianrenVisual {
 }
 
 export const fetchTianrenAiSettings = () => data<TianrenAiSettings>(http.get('/api/tianren/settings'))
-export const saveTianrenAiSettings = (settings: Pick<TianrenAiSettings, 'version' | 'autoImage' | 'interpretationPrompt' | 'imagePrompt'>) =>
+export const saveTianrenAiSettings = (settings: Pick<TianrenAiSettings, 'version' | 'autoImage' | 'model' | 'reasoningEffort' | 'interpretationPrompt' | 'imagePrompt'>) =>
   data<TianrenAiSettings>(http.put('/api/tianren/settings', settings))
 export const fetchTianrenVisual = (readingId: string) =>
   data<TianrenVisual>(http.get(`/api/tianren/readings/${encodeURIComponent(readingId)}/visual`))

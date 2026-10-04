@@ -46,7 +46,7 @@ describe('本机动态模型目录', () => {
     expect((wrapper.get('[aria-label="小记处理模型"]').element as HTMLSelectElement).value).toBe('gpt-future-model')
     expect(wrapper.text()).toContain('已有选择保留')
     vi.mocked(fetchCodexModels).mockResolvedValue({ models: [{ id: 'gpt-future-model', label: '未来模型', reasoningEfforts: ['medium'] }], stale: false, updatedAt: 'now', message: '自动刷新' })
-    await wrapper.get('.model-status button').trigger('click'); await flushPromises()
+    await wrapper.get('.model-meta button').trigger('click'); await flushPromises()
     expect(wrapper.get('select option').attributes('disabled')).toBeUndefined()
     expect(wrapper.text()).toContain('未来模型')
   })

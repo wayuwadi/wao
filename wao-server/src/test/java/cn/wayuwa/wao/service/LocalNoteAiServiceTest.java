@@ -60,6 +60,17 @@ class LocalNoteAiServiceTest {
         verifyNoInteractions(runs, images);
     }
 
+    @Test void explicitTianrenEffortNeverReadsNoteSettings() {
+        ReflectionTestUtils.setField(service, "ready", true);
+        ReflectionTestUtils.setField(service, "capability", "local-notes-test");
+        var notes=mock(NoteAiSettingsService.class);ReflectionTestUtils.setField(service,"noteSettings",notes);
+        var models=mock(LocalCodexModelService.class);ReflectionTestUtils.setField(service,"localModels",models);
+        when(models.validate("gpt-6.1-sol")).thenReturn("gpt-6.1-sol");
+        when(models.validateEffort("gpt-6.1-sol","high")).thenReturn("high");
+        service.enqueueWithEffort("member","合成卦象","TIANREN_IMAGE","gpt-6.1-sol","high");
+        var queued=org.mockito.ArgumentCaptor.forClass(AiAssistantRunEntity.class);verify(runs).insertReadOnlyQueued(queued.capture());
+        assertThat(queued.getValue().getReasoningEffort()).isEqualTo("high");assertThat(queued.getValue().getRequestedModel()).isEqualTo("gpt-6.1-sol");verifyNoInteractions(notes);
+    }
     @Test void snapshotsConfiguredEffortWhenQueuingNote() {
         ReflectionTestUtils.setField(service, "ready", true);
         ReflectionTestUtils.setField(service, "capability", "local-notes-test");

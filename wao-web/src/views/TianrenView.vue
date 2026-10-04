@@ -130,6 +130,12 @@ function loadAssistant(): Promise<boolean> {
   return assistantStatusRequest
 }
 
+async function refreshAssistantSettings() {
+  // 若保存时有旧状态请求在途，等它结束再重新读取，避免复用旧模型状态。
+  if (assistantStatusRequest) await assistantStatusRequest
+  if (!disposed) await loadAssistant()
+}
+
 async function loadConversation(current: TianrenReading | null) {
   const requestedId = current?.id
   interpretation.value = ''
@@ -525,7 +531,7 @@ onMounted(() => {
       </section>
       <footer class="boundary-note">文化反思，不是医疗建议。用作文化阅读与自我观照，不作为医疗或决策依据。</footer>
     </main>
-    <TianrenAiSettingsDialog v-if="settingsOpen" @close="settingsOpen = false" />
+    <TianrenAiSettingsDialog v-if="settingsOpen" @close="settingsOpen = false" @saved="refreshAssistantSettings" />
   </div>
 </template>
 

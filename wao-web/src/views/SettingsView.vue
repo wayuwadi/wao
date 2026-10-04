@@ -818,9 +818,11 @@ async function bindFeishu() {
 }
 .scontent {
   padding: 30px 32px 48px;
-  max-width: 860px;
+  max-width: 1000px;
 }
 .scontent.content-wide { max-width: 1420px; }
+.note-ai-defaults-preferences :deep(.note-ai-settings-form) { height: 640px; max-height: calc(100dvh - 120px); min-height: 440px; }
+@media(max-width:650px) { .note-ai-defaults-preferences :deep(.note-ai-settings-form) { min-height: 650px; max-height:none; } }
 .notification-settings-stack { display: grid; gap: 14px; }
 .s-h1 {
   margin: 0;

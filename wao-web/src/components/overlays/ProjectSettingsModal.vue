@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useOverlayDismiss } from '@/composables/overlayDismiss'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import { onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
@@ -24,7 +24,9 @@ const data = useDataStore()
 
 const name = ref(props.project.name)
 const area = ref(props.project.area)
-const goal = ref(props.project.goal === '尚未填写目标——打开项目后可补充。' ? '' : props.project.goal)
+const goal = ref(
+  props.project.goal === '尚未填写目标——打开项目后可补充。' ? '' : props.project.goal,
+)
 const icon = ref(props.project.icon || 'ri-stack-line')
 const originalDue = props.project.due || ''
 const due = ref(originalDue)
@@ -48,39 +50,88 @@ const selectedSkillVersions = ref<string[]>([])
 
 function toggleSkill(skill: AiSkillCapability, checked: boolean) {
   if (!checked) {
-    selectedSkillVersions.value = selectedSkillVersions.value.filter((versionId) => versionId !== skill.versionId)
+    selectedSkillVersions.value = selectedSkillVersions.value.filter(
+      (versionId) => versionId !== skill.versionId,
+    )
     return
   }
-  const sameSkillVersions = new Set(availableSkills.value.filter((item) => item.skillId === skill.skillId).map((item) => item.versionId))
-  selectedSkillVersions.value = selectedSkillVersions.value.filter((versionId) => !sameSkillVersions.has(versionId))
+  const sameSkillVersions = new Set(
+    availableSkills.value
+      .filter((item) => item.skillId === skill.skillId)
+      .map((item) => item.versionId),
+  )
+  selectedSkillVersions.value = selectedSkillVersions.value.filter(
+    (versionId) => !sameSkillVersions.has(versionId),
+  )
   selectedSkillVersions.value.push(skill.versionId)
 }
 
 /** 可选项目图标（remixicon）。 */
 const ICONS = [
-  'ri-stack-line', 'ri-rocket-line', 'ri-plant-line', 'ri-home-heart-line',
-  'ri-briefcase-line', 'ri-book-2-line', 'ri-heart-pulse-line', 'ri-palette-line',
-  'ri-code-box-line', 'ri-camera-line', 'ri-flight-takeoff-line', 'ri-cup-line',
-  'ri-money-cny-circle-line', 'ri-run-line', 'ri-music-2-line', 'ri-lightbulb-line',
+  'ri-stack-line',
+  'ri-rocket-line',
+  'ri-plant-line',
+  'ri-home-heart-line',
+  'ri-briefcase-line',
+  'ri-book-2-line',
+  'ri-heart-pulse-line',
+  'ri-palette-line',
+  'ri-code-box-line',
+  'ri-camera-line',
+  'ri-flight-takeoff-line',
+  'ri-cup-line',
+  'ri-money-cny-circle-line',
+  'ri-run-line',
+  'ri-music-2-line',
+  'ri-lightbulb-line',
 ]
 
-const saving = ref(false), saveError = ref('')
-const basicSnapshot = () => JSON.stringify([name.value, area.value, goal.value, icon.value, due.value])
+const saving = ref(false),
+  saveError = ref('')
+const basicSnapshot = () =>
+  JSON.stringify([name.value, area.value, goal.value, icon.value, due.value])
 const basicOriginal = basicSnapshot()
-const aiSnapshot = () => JSON.stringify([aiEnabled.value, repoUrl.value, defaultBranch.value, workspaceDir.value, defaultEngine.value, preferredRunnerId.value, maxParallelRuns.value, failureRetryCount.value, executionPrompt.value, selectedSkillVersions.value])
-const aiOriginal = ref(''), aiLoaded = ref(!AI_RUN_ENABLED)
+const aiSnapshot = () =>
+  JSON.stringify([
+    aiEnabled.value,
+    repoUrl.value,
+    defaultBranch.value,
+    workspaceDir.value,
+    defaultEngine.value,
+    preferredRunnerId.value,
+    maxParallelRuns.value,
+    failureRetryCount.value,
+    executionPrompt.value,
+    selectedSkillVersions.value,
+  ])
+const aiOriginal = ref(''),
+  aiLoaded = ref(!AI_RUN_ENABLED)
 async function requestClose() {
   if (saving.value) return
-  if (confirming.value) { confirming.value = false; return }
-  if (basicSnapshot() !== basicOriginal || (aiLoaded.value && AI_RUN_ENABLED && aiSnapshot() !== aiOriginal.value)) await save()
+  if (confirming.value) {
+    confirming.value = false
+    return
+  }
+  if (
+    basicSnapshot() !== basicOriginal ||
+    (aiLoaded.value && AI_RUN_ENABLED && aiSnapshot() !== aiOriginal.value)
+  )
+    await save()
   else emit('close')
 }
-useOverlayDismiss(() => true, requestClose)
+
 async function save() {
   if (saving.value) return
-  if (!name.value.trim()) { saveError.value = '请填写项目名称，输入已保留。'; return }
-  if (!aiLoaded.value) { saveError.value = '请先成功加载配置，避免覆盖已有设置。'; return }
-  saving.value = true; saveError.value = ''
+  if (!name.value.trim()) {
+    saveError.value = '请填写项目名称，输入已保留。'
+    return
+  }
+  if (!aiLoaded.value) {
+    saveError.value = '请先成功加载配置，避免覆盖已有设置。'
+    return
+  }
+  saving.value = true
+  saveError.value = ''
   try {
     const projectSaved = await data.updateProject(props.project.id, {
       name: name.value.trim(),
@@ -113,7 +164,9 @@ async function save() {
   } catch (error) {
     saveError.value = error instanceof Error ? error.message : '项目设置保存失败'
     toast(saveError.value, 'ri-error-warning-line')
-  } finally { saving.value = false }
+  } finally {
+    saving.value = false
+  }
 }
 
 async function remove() {
@@ -143,9 +196,13 @@ async function loadAiConfig() {
     runners.value = nodes
     waoApplicationSkills.value = applicationSkills
     const availableVersionIds = new Set(skills.map((item) => item.versionId))
-    availableSkills.value = [...skills, ...enabledSkills.filter((item) => !availableVersionIds.has(item.versionId))]
+    availableSkills.value = [
+      ...skills,
+      ...enabledSkills.filter((item) => !availableVersionIds.has(item.versionId)),
+    ]
     selectedSkillVersions.value = enabledSkills.map((item) => item.versionId)
-    aiOriginal.value = aiSnapshot(); aiLoaded.value = true
+    aiOriginal.value = aiSnapshot()
+    aiLoaded.value = true
   } catch (error) {
     toast(error instanceof Error ? error.message : 'AI Run 配置加载失败', 'ri-error-warning-line')
   } finally {
@@ -170,231 +227,301 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mask" @click="requestClose"></div>
-  <div class="modal" role="dialog" aria-modal="true" :inert="saving">
-    <p v-if="saveError" role="alert">{{ saveError }}</p>
-    <div class="head">
-      <div class="title">项目设置</div>
-      <span class="head-tip">自定义图标、名称、描述，或删除项目</span>
-      <div class="spacer"></div>
-      <button class="close" @click="requestClose"><i class="ri-close-line"></i></button>
-    </div>
-
-    <div class="label">项目名称</div>
-    <input v-model="name" class="title-input" placeholder="项目名称" @keydown.enter="save" />
-
-    <label class="label" for="project-due">截止日期 · 可选</label>
-    <div class="due-editor">
-      <input id="project-due" v-model="due" type="date" aria-label="项目截止日期" />
-      <button type="button" class="btn-ghost" :disabled="!due" @click="due = ''">清空日期</button>
-      <span v-if="!due">未排期</span>
-    </div>
-
-    <details class="optional-project"><summary>更多项目属性 · 图标、领域与目标</summary>
-    <div class="label">项目图标</div>
-    <div class="icon-grid">
-      <button
-        v-for="ic in ICONS"
-        :key="ic"
-        class="icon-cell"
-        :class="{ on: icon === ic }"
-        :style="icon === ic ? { background: data.areaColor(area) } : {}"
-        @click="icon = ic"
-      >
-        <i :class="ic"></i>
-      </button>
-    </div>
-
-    <div class="label">所属领域</div>
-    <div class="pills">
-      <button v-for="a in data.areas" :key="a.id" class="pill" :class="{ on: area === a.id }" @click="area = a.id">
-        <span class="dot" :style="{ background: a.color }"></span>{{ a.name }}
-      </button>
-    </div>
-
-    <div class="label">项目描述 / 目标</div>
-    <textarea v-model="goal" class="goal" rows="3" placeholder="这个项目做成了，会是什么样？"></textarea>
-
-    </details>
-    <details v-if="AI_RUN_ENABLED" class="ai-section"><summary>AI 执行配置与 Skill</summary>
-      <div class="ai-head">
+  <SettingsDialogShell
+    title="项目设置"
+    description="名称、日期与项目属性"
+    width="760px"
+    height="auto"
+    @close="requestClose"
+  >
+    <div class="project-settings-body" :inert="saving || undefined">
+      <p v-if="saveError" class="save-error" role="alert">{{ saveError }}</p>
+      <section class="basic-fields">
         <div>
-          <div class="ai-title"><i class="ri-robot-2-line"></i>AI Run</div>
-          <div class="ai-sub">把任务派给在线电脑上的 Codex 或 Claude Code，自动开发、测试、提交和部署。</div>
+          <div class="label">项目名称</div>
+          <input v-model="name" class="title-input" placeholder="项目名称" @keydown.enter="save" />
         </div>
-        <label class="switch">
-          <input v-model="aiEnabled" type="checkbox" :disabled="aiLoading" />
-          <span></span>
-        </label>
-      </div>
-
-      <div v-if="aiLoading" class="ai-loading"><i class="ri-loader-4-line spin"></i>正在读取执行配置…</div>
-      <div v-else class="ai-fields" :class="{ muted: !aiEnabled }">
-        <label class="form-field wide">
-          <span>GitHub 仓库</span>
-          <input v-model="repoUrl" placeholder="https://github.com/组织/仓库.git" />
-        </label>
-        <label class="form-field">
-          <span>默认分支</span>
-          <input v-model="defaultBranch" placeholder="main" />
-        </label>
-        <label class="form-field">
-          <span>本机工程文件夹</span>
-          <input v-model="workspaceDir" placeholder="wao" />
-        </label>
-        <label class="form-field">
-          <span>默认 AI 工具</span>
-          <select v-model="defaultEngine">
-            <option v-for="engine in AI_ENGINES" :key="engine.id" :value="engine.id">{{ engine.label }}</option>
-          </select>
-        </label>
-        <label class="form-field">
-          <span>同项目最大并发</span>
-          <input v-model.number="maxParallelRuns" type="number" min="1" max="10" />
-        </label>
-        <label class="form-field">
-          <span>失败自动重试次数</span>
-          <input v-model.number="failureRetryCount" type="number" min="0" max="5" />
-        </label>
-        <label class="form-field wide">
-          <span>AI 执行提示词 <small>{{ executionPrompt.length }}/4000</small></span>
-          <textarea
-            v-model="executionPrompt"
-            rows="7"
-            maxlength="4000"
-            aria-label="AI 执行提示词"
-            placeholder="先完整阅读任务原文，核验根因，再按可验证结果连续完成实现。"
-          ></textarea>
-          <em>每次 AI Run 领取任务时先读取这段方法；任务原文和系统交付约束仍会完整保留。</em>
-        </label>
-        <label class="form-field">
-          <span>优先执行电脑</span>
-          <select v-model="preferredRunnerId">
-            <option value="">自动分配在线电脑</option>
-            <option v-for="runner in runners" :key="runner.id" :value="runner.id">
-              {{ runner.name }} · {{ runner.engines.map(engineLabel).join(' / ') }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
-            </option>
-          </select>
-        </label>
-      </div>
-
-      <div v-if="!aiLoading" class="skill-config" :class="{ muted: !aiEnabled }">
-        <div class="skill-config-head">
-          <div><b>项目 Skill</b><span>固定审核版本，只在隔离的 Codex 运行中加载；升级不会改写历史运行。</span></div>
-          <RouterLink to="/wao/skills" target="_blank">打开 Skill 市场</RouterLink>
-        </div>
-        <div v-if="waoApplicationSkills.length" class="application-skill-note">
-          WAO 默认将加载：{{ waoApplicationSkills.map((item) => `${item.displayName} v${item.version}`).join('、') }}。项目选择同一 Skill 时以项目版本为准。
-        </div>
-        <div v-if="defaultEngine !== 'codex' && (selectedSkillVersions.length || waoApplicationSkills.length)" class="skill-engine-warning">WAO 默认或项目 Skill 当前只支持 Codex；其它工具的运行会在入队前明确拒绝。</div>
-        <div v-if="!availableSkills.length" class="skill-empty">市场暂无可启用的 Codex Skill，可先发布并通过审核。</div>
-        <label v-for="skill in availableSkills" v-else :key="skill.versionId" class="skill-option">
-          <input type="checkbox" :value="skill.versionId" :checked="selectedSkillVersions.includes(skill.versionId)" :disabled="defaultEngine !== 'codex' || (selectedSkillVersions.length >= 10 && !selectedSkillVersions.includes(skill.versionId) && !availableSkills.some((item) => item.skillId === skill.skillId && selectedSkillVersions.includes(item.versionId)))" @change="toggleSkill(skill, ($event.target as HTMLInputElement).checked)" />
-          <span><b>{{ skill.displayName }} <small>v{{ skill.version }}</small></b><em>{{ skill.summary }}</em></span>
-        </label>
-      </div>
-
-      <div class="runner-box">
         <div>
-          <b>接入一台新电脑</b>
-          <span>电脑只需配对一次；Codex / Claude Code 与 GitHub 凭据不会上传到 WAO。更完整的电脑与工作流管理在首页 AI 控制台。</span>
+          <label class="label" for="project-due">截止日期 · 可选</label>
+          <div class="due-editor">
+            <input id="project-due" v-model="due" type="date" aria-label="项目截止日期" />
+            <button type="button" class="btn-ghost" :disabled="!due" @click="due = ''">
+              清空日期
+            </button>
+            <span v-if="!due">未排期</span>
+          </div>
         </div>
-        <button class="pair-btn" @click="generatePairCode"><i class="ri-link"></i>生成电脑配对码</button>
-      </div>
-      <div v-if="pairCode" class="pair-code">
-        <span>{{ pairCode }}</span>
-        <small>十分钟内有效 · 到期时间 {{ pairExpiresAt.replace('T', ' ') }}</small>
-      </div>
-    </details>
+      </section>
+      <details class="optional-project">
+        <summary>更多项目属性 · 图标、领域与目标</summary>
+        <div class="label">项目图标</div>
+        <div class="icon-grid">
+          <button
+            v-for="ic in ICONS"
+            :key="ic"
+            class="icon-cell"
+            :class="{ on: icon === ic }"
+            :style="icon === ic ? { background: data.areaColor(area) } : {}"
+            @click="icon = ic"
+          >
+            <i :class="ic"></i>
+          </button>
+        </div>
 
-    <div class="danger-zone">
-      <template v-if="!confirming">
-        <div class="dz-text">
-          <div class="dz-title">删除项目</div>
-          <div class="dz-sub">将同时移除该项目下的任务与关联知识库，不可恢复。</div>
+        <div class="label">所属领域</div>
+        <div class="pills">
+          <button
+            v-for="a in data.areas"
+            :key="a.id"
+            class="pill"
+            :class="{ on: area === a.id }"
+            @click="area = a.id"
+          >
+            <span class="dot" :style="{ background: a.color }"></span>{{ a.name }}
+          </button>
         </div>
-        <button class="btn-danger" @click="confirming = true"><i class="ri-delete-bin-line"></i>删除</button>
-      </template>
-      <template v-else>
-        <div class="dz-text">
-          <div class="dz-title">确认删除「{{ project.name }}」？</div>
-          <div class="dz-sub">此操作不可撤销。</div>
-        </div>
-        <button class="btn-ghost sm" @click="confirming = false">完成并关闭</button>
-        <button class="btn-danger" @click="remove"><i class="ri-delete-bin-line"></i>确认删除</button>
-      </template>
-    </div>
 
-    <div class="foot">
-      <div class="spacer"></div>
-      <button class="btn-ghost" @click="requestClose">完成并关闭</button>
-      <button class="btn-primary" :disabled="!name.trim()" @click="save">保存</button>
+        <div class="label">项目描述 / 目标</div>
+        <textarea
+          v-model="goal"
+          class="goal"
+          rows="3"
+          placeholder="这个项目做成了，会是什么样？"
+        ></textarea>
+      </details>
+      <details v-if="AI_RUN_ENABLED" class="ai-section">
+        <summary>AI 执行配置与 Skill</summary>
+        <div class="ai-head">
+          <div>
+            <div class="ai-title"><i class="ri-robot-2-line"></i>AI Run</div>
+            <div class="ai-sub">
+              把任务派给在线电脑上的 Codex 或 Claude Code，自动开发、测试、提交和部署。
+            </div>
+          </div>
+          <label class="switch">
+            <input v-model="aiEnabled" type="checkbox" :disabled="aiLoading" />
+            <span></span>
+          </label>
+        </div>
+
+        <div v-if="aiLoading" class="ai-loading">
+          <i class="ri-loader-4-line spin"></i>正在读取执行配置…
+        </div>
+        <div v-else class="ai-fields" :class="{ muted: !aiEnabled }">
+          <label class="form-field wide">
+            <span>GitHub 仓库</span>
+            <input v-model="repoUrl" placeholder="https://github.com/组织/仓库.git" />
+          </label>
+          <label class="form-field">
+            <span>默认分支</span>
+            <input v-model="defaultBranch" placeholder="main" />
+          </label>
+          <label class="form-field">
+            <span>本机工程文件夹</span>
+            <input v-model="workspaceDir" placeholder="wao" />
+          </label>
+          <label class="form-field">
+            <span>默认 AI 工具</span>
+            <select v-model="defaultEngine">
+              <option v-for="engine in AI_ENGINES" :key="engine.id" :value="engine.id">
+                {{ engine.label }}
+              </option>
+            </select>
+          </label>
+          <label class="form-field">
+            <span>同项目最大并发</span>
+            <input v-model.number="maxParallelRuns" type="number" min="1" max="10" />
+          </label>
+          <label class="form-field">
+            <span>失败自动重试次数</span>
+            <input v-model.number="failureRetryCount" type="number" min="0" max="5" />
+          </label>
+          <label class="form-field wide">
+            <span
+              >AI 执行提示词 <small>{{ executionPrompt.length }}/4000</small></span
+            >
+            <textarea
+              v-model="executionPrompt"
+              rows="7"
+              maxlength="4000"
+              aria-label="AI 执行提示词"
+              placeholder="先完整阅读任务原文，核验根因，再按可验证结果连续完成实现。"
+            ></textarea>
+            <em>每次 AI Run 领取任务时先读取这段方法；任务原文和系统交付约束仍会完整保留。</em>
+          </label>
+          <label class="form-field">
+            <span>优先执行电脑</span>
+            <select v-model="preferredRunnerId">
+              <option value="">自动分配在线电脑</option>
+              <option v-for="runner in runners" :key="runner.id" :value="runner.id">
+                {{ runner.name }} · {{ runner.engines.map(engineLabel).join(' / ')
+                }}{{
+                  runner.online
+                    ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}`
+                    : ' · 离线'
+                }}
+              </option>
+            </select>
+          </label>
+        </div>
+
+        <div v-if="!aiLoading" class="skill-config" :class="{ muted: !aiEnabled }">
+          <div class="skill-config-head">
+            <div>
+              <b>项目 Skill</b
+              ><span>固定审核版本，只在隔离的 Codex 运行中加载；升级不会改写历史运行。</span>
+            </div>
+            <RouterLink to="/wao/skills" target="_blank">打开 Skill 市场</RouterLink>
+          </div>
+          <div v-if="waoApplicationSkills.length" class="application-skill-note">
+            WAO 默认将加载：{{
+              waoApplicationSkills.map((item) => `${item.displayName} v${item.version}`).join('、')
+            }}。项目选择同一 Skill 时以项目版本为准。
+          </div>
+          <div
+            v-if="
+              defaultEngine !== 'codex' &&
+              (selectedSkillVersions.length || waoApplicationSkills.length)
+            "
+            class="skill-engine-warning"
+          >
+            WAO 默认或项目 Skill 当前只支持 Codex；其它工具的运行会在入队前明确拒绝。
+          </div>
+          <div v-if="!availableSkills.length" class="skill-empty">
+            市场暂无可启用的 Codex Skill，可先发布并通过审核。
+          </div>
+          <label
+            v-for="skill in availableSkills"
+            v-else
+            :key="skill.versionId"
+            class="skill-option"
+          >
+            <input
+              type="checkbox"
+              :value="skill.versionId"
+              :checked="selectedSkillVersions.includes(skill.versionId)"
+              :disabled="
+                defaultEngine !== 'codex' ||
+                (selectedSkillVersions.length >= 10 &&
+                  !selectedSkillVersions.includes(skill.versionId) &&
+                  !availableSkills.some(
+                    (item) =>
+                      item.skillId === skill.skillId &&
+                      selectedSkillVersions.includes(item.versionId),
+                  ))
+              "
+              @change="toggleSkill(skill, ($event.target as HTMLInputElement).checked)"
+            />
+            <span
+              ><b
+                >{{ skill.displayName }} <small>v{{ skill.version }}</small></b
+              ><em>{{ skill.summary }}</em></span
+            >
+          </label>
+        </div>
+
+        <div class="runner-box">
+          <div>
+            <b>接入一台新电脑</b>
+            <span
+              >电脑只需配对一次；Codex / Claude Code 与 GitHub 凭据不会上传到
+              WAO。更完整的电脑与工作流管理在首页 AI 控制台。</span
+            >
+          </div>
+          <button class="pair-btn" @click="generatePairCode">
+            <i class="ri-link"></i>生成电脑配对码
+          </button>
+        </div>
+        <div v-if="pairCode" class="pair-code">
+          <span>{{ pairCode }}</span>
+          <small>十分钟内有效 · 到期时间 {{ pairExpiresAt.replace('T', ' ') }}</small>
+        </div>
+      </details>
+
+      <div class="danger-zone">
+        <template v-if="!confirming">
+          <div class="dz-text">
+            <div class="dz-title">删除项目</div>
+            <div class="dz-sub">将同时移除该项目下的任务与关联知识库，不可恢复。</div>
+          </div>
+          <button class="btn-danger" @click="confirming = true">
+            <i class="ri-delete-bin-line"></i>删除
+          </button>
+        </template>
+        <template v-else>
+          <div class="dz-text">
+            <div class="dz-title">确认删除「{{ project.name }}」？</div>
+            <div class="dz-sub">此操作不可撤销。</div>
+          </div>
+          <button class="btn-ghost sm" @click="confirming = false">完成并关闭</button>
+          <button class="btn-danger" @click="remove">
+            <i class="ri-delete-bin-line"></i>确认删除
+          </button>
+        </template>
+      </div>
     </div>
-  </div>
+    <template #footer>
+      <div class="foot">
+        <span class="save-status">{{ saving ? '正在保存…' : '关闭时保存本次修改' }}</span>
+        <button class="btn-ghost" :disabled="saving" @click="requestClose">完成并关闭</button>
+        <button class="btn-primary" :disabled="saving || !name.trim()" @click="save">
+          {{ saving ? '保存中…' : '保存设置' }}
+        </button>
+      </div>
+    </template>
+  </SettingsDialogShell>
 </template>
 
 <style scoped>
-.due-editor { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; color: var(--wao-text-weak); }
-.due-editor input { padding: 7px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); }
-summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-size: 13px; }
-.mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(23, 25, 35, 0.32);
-  z-index: 100;
-  animation: waoFade 0.15s ease;
-}
-.modal {
-  position: fixed;
-  top: 8vh;
-  /* 用 margin 居中而不是 transform：waoPop 动画也动 transform，
-     两者叠在一起时居中位移会被覆盖，卡片先偏右出现再跳回中间。 */
-  left: 0;
-  right: 0;
-  margin-inline: auto;
-  width: min(560px, calc(100vw - 40px));
-  max-height: 84vh;
-  overflow-y: auto;
-  background: var(--wao-bg-card);
-  border-radius: 14px;
-  z-index: 101;
-  box-shadow: var(--wao-shadow-modal);
-  animation: waoPop 0.16s ease;
-  padding: 20px 22px;
-}
-.spacer {
-  flex: 1;
-}
-.head {
+.due-editor {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-.title {
-  font-size: 16px;
-  font-weight: 700;
-}
-.head-tip {
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
   font-size: 12px;
   color: var(--wao-text-weak);
 }
-.close {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: none;
+.due-editor input {
+  padding: 7px;
+  border: 1px solid var(--wao-line-control);
   border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+}
+summary {
   cursor: pointer;
-  color: var(--wao-text-3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  padding: 10px 0;
+  color: var(--wao-text-weak);
+  font-size: 13px;
 }
-.close:hover {
-  background: var(--wao-bg-hover-2);
+.project-settings-body {
+  padding: 24px 26px;
 }
-.close i {
-  font-size: 16px;
+.basic-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 22px;
+}
+.basic-fields .label {
+  margin-top: 0;
+  display: block;
+}
+.save-status {
+  margin-right: auto;
+  color: var(--wao-text-weak);
+  font-size: 12px;
+}
+.save-error {
+  padding: 10px;
+  color: var(--wao-danger-strong);
+  background: var(--wao-danger-bg);
+  border-radius: 8px;
+}
+.optional-project {
+  margin-top: 22px;
+  border-top: 1px solid var(--wao-divider);
+  padding-top: 12px;
 }
 .label {
   margin-top: 14px;
@@ -503,21 +630,89 @@ summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-si
   align-items: center;
   gap: 14px;
 }
-.skill-config { margin-top: 14px; border-top: 1px solid var(--wao-line); padding-top: 13px; }
-.skill-config-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
-.skill-config-head > div { display: grid; gap: 3px; }
-.skill-config-head b { font-size: 12px; }
-.skill-config-head span,.skill-empty { font-size: 11px; color: var(--wao-text-weak); line-height: 1.5; }
-.skill-config-head a { flex: none; font-size: 11px; color: var(--wao-primary-text); text-decoration: none; }
-.skill-option { margin-top: 8px; display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--wao-line-control); border-radius: 9px; background: var(--wao-bg-card); cursor: pointer; }
-.skill-option input { margin-top: 3px; accent-color: var(--wao-primary); }
-.skill-option span { min-width: 0; display: grid; gap: 3px; }
-.skill-option b { font-size: 12px; color: var(--wao-text); }
-.skill-option small { color: var(--wao-text-weak); font-weight: 500; }
-.skill-option em { font-size: 11px; color: var(--wao-text-weak); font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.skill-empty { padding: 12px 0 2px; }
-.skill-engine-warning { margin-top: 8px; color: var(--wao-warning-strong); font-size: 11px; }
-.application-skill-note { margin-top: 8px; padding: 8px 9px; border-radius: 8px; background: var(--wao-success-bg); color: var(--wao-success-strong); font-size: 11px; line-height: 1.5; }
+.skill-config {
+  margin-top: 14px;
+  border-top: 1px solid var(--wao-line);
+  padding-top: 13px;
+}
+.skill-config-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.skill-config-head > div {
+  display: grid;
+  gap: 3px;
+}
+.skill-config-head b {
+  font-size: 12px;
+}
+.skill-config-head span,
+.skill-empty {
+  font-size: 11px;
+  color: var(--wao-text-weak);
+  line-height: 1.5;
+}
+.skill-config-head a {
+  flex: none;
+  font-size: 11px;
+  color: var(--wao-primary-text);
+  text-decoration: none;
+}
+.skill-option {
+  margin-top: 8px;
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 9px;
+  background: var(--wao-bg-card);
+  cursor: pointer;
+}
+.skill-option input {
+  margin-top: 3px;
+  accent-color: var(--wao-primary);
+}
+.skill-option span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.skill-option b {
+  font-size: 12px;
+  color: var(--wao-text);
+}
+.skill-option small {
+  color: var(--wao-text-weak);
+  font-weight: 500;
+}
+.skill-option em {
+  font-size: 11px;
+  color: var(--wao-text-weak);
+  font-style: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skill-empty {
+  padding: 12px 0 2px;
+}
+.skill-engine-warning {
+  margin-top: 8px;
+  color: var(--wao-warning-strong);
+  font-size: 11px;
+}
+.application-skill-note {
+  margin-top: 8px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
+  font-size: 11px;
+  line-height: 1.5;
+}
 .ai-head > div,
 .runner-box > div {
   flex: 1;
@@ -585,7 +780,9 @@ summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-si
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .ai-fields {
   margin-top: 14px;
@@ -619,9 +816,22 @@ summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-si
   font-size: 12px;
   outline: none;
 }
-.form-field textarea { resize: vertical; min-height: 132px; line-height: 1.6; }
-.form-field span small { float: right; color: var(--wao-text-muted); font-weight: 500; }
-.form-field em { color: var(--wao-text-muted); font-size: 11px; font-style: normal; line-height: 1.5; }
+.form-field textarea {
+  resize: vertical;
+  min-height: 132px;
+  line-height: 1.6;
+}
+.form-field span small {
+  float: right;
+  color: var(--wao-text-muted);
+  font-weight: 500;
+}
+.form-field em {
+  color: var(--wao-text-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.5;
+}
 .form-field input:focus,
 .form-field select:focus,
 .form-field textarea:focus {
@@ -655,7 +865,11 @@ summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-si
 .pair-code span {
   display: block;
   color: #273ba3;
-  font: 700 21px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font:
+    700 21px/1.2 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
   letter-spacing: 2px;
 }
 .pair-code small {
@@ -707,7 +921,6 @@ summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-si
   font-size: 14px;
 }
 .foot {
-  margin-top: 20px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -748,5 +961,27 @@ summary { cursor: pointer; padding: 10px 0; color: var(--wao-text-weak); font-si
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+@media (max-width: 650px) {
+  .project-settings-body {
+    padding: 20px 15px;
+  }
+  .basic-fields {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .icon-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .foot {
+    flex-wrap: wrap;
+  }
+  .save-status {
+    flex-basis: 100%;
+  }
+  .danger-zone {
+    flex-wrap: wrap;
+  }
 }
 </style>

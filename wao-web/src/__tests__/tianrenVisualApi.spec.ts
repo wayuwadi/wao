@@ -17,7 +17,7 @@ describe('天人私有配图 API', () => {
     expect(http.post).not.toHaveBeenCalled()
     await generateTianrenImage('day/a', 'run1', 'request1')
     expect(http.post).toHaveBeenCalledWith('/api/tianren/readings/day%2Fa/visual/image', { interpretationRunId: 'run1', requestId: 'request1' })
-    const settings = { version: 2, autoImage: true, interpretationPrompt: '解读', imagePrompt: '配图' }
+    const settings = { version: 2, autoImage: true, model: 'gpt-6-astra', reasoningEffort: 'medium', interpretationPrompt: '解读', imagePrompt: '配图' }
     expect(await saveTianrenAiSettings(settings)).toEqual({ version: 3 })
     expect(http.put).toHaveBeenCalledWith('/api/tianren/settings', settings)
   })

@@ -52,6 +52,18 @@ const reading: TianrenReading = {
 }
 
 describe('TianrenView', () => {
+  it('设置保存后重新读取当前模型状态，在途旧请求完成后仍会读取新配置', async () => {
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
+    let resolve!:(value:{configured:boolean;message:string})=>void
+    vi.mocked(fetchTianrenAiStatus).mockImplementationOnce(()=>new Promise(done=>{resolve=done}))
+      .mockResolvedValue({configured:true,message:'本机 Codex · GPT-6.1 Sol · 中'})
+    const wrapper=mount(TianrenView,{global:{stubs:{RouterLink:true,TianrenAiSettingsDialog:{template:'<button class="save-settings-stub" @click="$emit(\'saved\')">保存设置</button>'}}}})
+    await flushPromises();await wrapper.get('.ai-settings-button').trigger('click');await wrapper.get('.save-settings-stub').trigger('click')
+    expect(fetchTianrenAiStatus).toHaveBeenCalledTimes(1)
+    resolve({configured:true,message:'旧模型状态'});await flushPromises()
+    expect(fetchTianrenAiStatus).toHaveBeenCalledTimes(2);expect(wrapper.text()).toContain('GPT-6.1 Sol')
+    wrapper.unmount()
+  })
   it('刷新后显示本机排队，完成后恢复私有解读且不重复调用 AI', async () => {
     vi.useFakeTimers()
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue({ ...reading, conversationId: 'cv-local' })
