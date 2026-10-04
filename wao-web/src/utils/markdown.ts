@@ -6,12 +6,23 @@
  */
 import DOMPurify from 'dompurify'
 import { Marked } from 'marked'
+import { listIndent, listIndentStyle, readIndentedList } from './listIndent'
 
 const marked = new Marked({
   /** 单个换行即断行 —— 用户在描述框里敲回车就该换行，不需要敲两次。 */
   breaks: true,
   gfm: true,
 })
+
+marked.use({ extensions: [{
+  name: 'waoIndentedList', level: 'block',
+  start: source => source.indexOf('[wao-list-indent]: # "'),
+  tokenizer(source) { return readIndentedList(source, markdown => this.lexer.blockTokens(markdown)) },
+  renderer(token) {
+    const html = this.parser.parse(token.tokens ?? [])
+    return html.replace(/^<(ul|ol)(?=[\s>])/, `<$1 data-list-indent="${listIndent(token.indent)}"`)
+  },
+}] })
 
 /** 允许的标签白名单：描述场景够用，且排除 script / iframe / form 等。 */
 const ALLOWED_TAGS = [
@@ -77,6 +88,11 @@ function safeImageSize(title: string): { style: string; title: string | null } |
 
 /** 外链一律 target=_blank + noopener，避免反向控制打开者的标签页。 */
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (['UL', 'OL'].includes(node.tagName)) {
+    const style = listIndentStyle(node.getAttribute('data-list-indent'))
+    if (style) node.setAttribute('style', style)
+    else node.removeAttribute('data-list-indent')
+  }
   if (node.tagName === 'A' && node.getAttribute('href')) {
     node.setAttribute('target', '_blank')
     node.setAttribute('rel', 'noopener noreferrer')
@@ -103,7 +119,7 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 export function renderMarkdown(text: string): string {
   if (!text?.trim()) return ''
   const html = marked.parse(text, { async: false })
-  return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR })
+  return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR: [...ALLOWED_ATTR, 'data-list-indent'] })
 }
 
 /**

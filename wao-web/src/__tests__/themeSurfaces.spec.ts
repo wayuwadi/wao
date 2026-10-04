@@ -7,17 +7,14 @@ function source(relativePath: string) {
 }
 
 describe('夜间模式表面', () => {
-  it('首页首屏和自动推进策略不再固定为浅色背景', () => {
+  it('首页欢迎区与休息入口复用夜间主题表面', () => {
     const home = source('../views/HomeView.vue')
 
     expect(home).toMatch(
-      /\.goal-launcher[\s\S]*?background: linear-gradient\([^;]*var\(--wao-bg-card\)/,
+      /\.home-rest-welcome\s*\{[^}]*background: var\(--wao-bg-card\)/,
     )
     expect(home).toMatch(
-      /\.auto-run-policy[\s\S]*?background: linear-gradient\([^;]*var\(--wao-bg-card\)/,
-    )
-    expect(home).not.toContain(
-      "queued: { label: '等待电脑领取', icon: 'ri-time-line', color: '#8a5b0d'",
+      /\.rest-entrance\s*\{[^}]*background:\s*var\(--wao-bg-card\)/,
     )
   })
 

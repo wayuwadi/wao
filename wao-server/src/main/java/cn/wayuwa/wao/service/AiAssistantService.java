@@ -32,6 +32,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /** 页面 AI 助手队列：优先复用本机 Codex，显式选择的获准 API 保留独立执行出口。 */
 @Service
 public class AiAssistantService {
+    @Autowired(required = false)
+    private org.springframework.beans.factory.ObjectProvider<TianrenVisualService> tianrenVisuals;
     private static final String DEFAULT_NOTE_MODEL = "gpt-6-astra";
 
     private static final String QUEUED = "queued";
@@ -225,6 +227,8 @@ public class AiAssistantService {
         run.setRequestedModel(DEFAULT_NOTE_MODEL); run.setUsagePurpose(DeepSeekPurpose.TIANREN.name());
         run.setStatus(SECURE_QUEUED); run.setWebSearchEnabled(false);
         run.setPromptText(buildPrompt(request, history, null, trustedContext));
+        run.setConversationId(conversationId);
+        if (tianrenVisuals != null) run.setPromptText(tianrenVisuals.getObject().register(run, trustedContext));
         run.setCreatedAt(LocalDateTime.now()); run.setUpdatedAt(run.getCreatedAt());
         conversationService.enqueue(run, conversationId, memberId, request.message());
         return run;

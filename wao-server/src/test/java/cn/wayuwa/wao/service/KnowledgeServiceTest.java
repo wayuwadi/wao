@@ -388,6 +388,59 @@ class KnowledgeServiceTest {
                 """.formatted(type, indent)), "![验收图](/api/images/test/raw)");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "1", "8"})
+    void listIndentSavesAndReloadsWithoutChangingItemsOrMarkdown(String indent) throws Exception {
+        for (String type : List.of("bulletList", "orderedList", "taskList")) {
+            DocEntity existing = doc("d-list-" + type, "k1", "f1");
+            when(docMapper.selectById(existing.getId())).thenReturn(existing);
+            when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+            var content = listIndentContent(type, indent);
+            var saved = service.updateDoc(existing.getId(), new PatchDocRequest(null, List.of(), content, null, null, 1));
+            assertThat(saved.content()).isEqualTo(content);
+            assertThat(new ObjectMapper().readTree(existing.getContentJson())).isEqualTo(content.document());
+            assertThat(existing.getContentMarkdown()).isEqualTo(content.markdown());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-1", "9", "1.5", "null", "true", "{}", "[]", "2147483648", "\"1\""})
+    void listIndentRejectsInvalidValueForEveryListKind(String indent) throws Exception {
+        DocEntity existing = doc("d-list", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        for (String type : List.of("bulletList", "orderedList", "taskList")) {
+            assertThatThrownBy(() -> service.updateDoc(existing.getId(),
+                    new PatchDocRequest(null, null, listIndentContent(type, indent), null, null, 1)))
+                    .isInstanceOf(BadRequestException.class).hasMessageContaining("列表缩进");
+        }
+        verify(docMapper, never()).updateIfRevision(any(), anyInt());
+    }
+
+    @Test
+    void listIndentDoesNotAllowMarkAttributesOrArbitraryStyles() throws Exception {
+        DocEntity existing = doc("d-list", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        for (String node : List.of(
+                "{\"type\":\"text\",\"text\":\"正文\",\"marks\":[{\"type\":\"bold\",\"attrs\":{\"indent\":1}}]}",
+                "{\"type\":\"bulletList\",\"attrs\":{\"indent\":1,\"style\":\"position:fixed\"}}")) {
+            var content = new RichDocContentDto(1, new ObjectMapper().readTree(
+                    "{\"type\":\"doc\",\"content\":[" + node + "]}"), "正文");
+            assertThatThrownBy(() -> service.updateDoc(existing.getId(),
+                    new PatchDocRequest(null, null, content, null, null, 1)))
+                    .isInstanceOf(BadRequestException.class).hasMessageContaining("不支持的节点属性");
+        }
+        verify(docMapper, never()).updateIfRevision(any(), anyInt());
+    }
+
+    private RichDocContentDto listIndentContent(String type, String indent) throws Exception {
+        String itemType = "taskList".equals(type) ? "taskItem" : "listItem";
+        return new RichDocContentDto(1, new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"%s","attrs":{"indent":%s},"content":[
+                  {"type":"%s","content":[{"type":"paragraph","content":[{"type":"text","text":"保留正文"}]}]}
+                ]}]}
+                """.formatted(type, indent, itemType)), "[wao-list-indent]: # \"" + indent + "\"\n\n- 保留正文");
+    }
+
     @Test
     void listTypeAttributeDoesNotBroadenOtherNodesOrMarks() throws Exception {
         DocEntity existing = doc("d-list", "k1", "f1");
@@ -1220,6 +1273,30 @@ class KnowledgeServiceTest {
 
         assertThat(dto.title()).startsWith("早起与写作");
         assertThat(dto.title()).doesNotContain("/api/images");
+    }
+
+    @Test
+    void noteFallbackTitleAndBacklinkSnippetSkipListMetadataWithoutChangingSavedMarkdown() {
+        KbEntity notes = kb("kb-notes");
+        notes.setNotes(true);
+        when(kbMapper.selectList(any())).thenReturn(List.of(notes));
+        when(folderMapper.selectList(any())).thenReturn(List.of(folder("kb-notes-f", "kb-notes")));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+        String markdown = "真正正文\n\n[wao-list-indent]: # \"1\"\n\n- 子项\n\n[wao-list-indent]: # \"0\"\n\n后文";
+        DocDto note = service.createNote(new CreateNoteRequest(null, List.of(), new RichDocContentDto(1, null, markdown)), "m1");
+        assertThat(note.title()).contains("真正正文", "子项", "后文").doesNotContain("wao-list-indent");
+        assertThat(note.content().markdown()).isEqualTo(markdown);
+
+        DocEntity target = doc("target", "k1", "f1");
+        DocEntity source = doc("source", "k1", "f1");
+        source.setContentMarkdown(markdown);
+        source.setLinksJson("[{\"type\":\"doc\",\"id\":\"target\"}]");
+        when(docMapper.selectById("target")).thenReturn(target);
+        when(docMapper.selectBacklinkSources("target")).thenReturn(List.of(source));
+        assertThat(service.getDoc("target").backlinks().get(0).snippet())
+                .contains("真正正文", "子项", "后文").doesNotContain("wao-list-indent");
+        assertThat(source.getContentMarkdown()).isEqualTo(markdown);
     }
 
     @Test

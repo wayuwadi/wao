@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
 import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import TodoView from '@/views/TodoView.vue'
-import { TASK_QUADRANTS, readTodoTaskView } from '@/utils/taskQuadrants'
+import { TASK_QUADRANTS } from '@/utils/taskQuadrants'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -18,7 +18,9 @@ vi.mock('@/api/board', async (importOriginal) => ({
 describe('TODO 四象限', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     setActivePinia(createPinia())
+    useSessionStore().accept({ accountId: 'quadrant-test', member: { id: 'quadrant-member', name: '测试成员', initial: '测', role: '', color: '' }, identities: [], createdAt: '' })
     const data = seedDataStore()
     const source = data.tasks[0]!
     data.tasks = TASK_QUADRANTS.map((quadrant, index) => ({
@@ -127,8 +129,9 @@ describe('TODO 四象限', () => {
   it('完成默认收起，展开后可见；筛选后只保留匹配任务', async () => {
     const data = useDataStore()
     data.tasks[0]!.status = '已完成'
-    localStorage.setItem('wao-todo-view-v1', 'quadrant')
     const wrapper = mount(TodoView)
+    await wrapper.get('.workspace-switch button:last-child').trigger('click')
+    await wrapper.findAll('.seg-btn').find((button) => button.text().includes('四象限'))!.trigger('click')
     expect(wrapper.findAll('article')).toHaveLength(3)
     await wrapper.get('.quadrant-toolbar button').trigger('click')
     expect(wrapper.findAll('article')).toHaveLength(4)
@@ -140,17 +143,28 @@ describe('TODO 四象限', () => {
     wrapper.unmount()
   })
 
-  it('记住四象限偏好，损坏或不可用的存储安全回退', async () => {
-    expect(readTodoTaskView()).toBe('list')
+  it('会话内记住四象限偏好，损坏或不可用的存储安全回退', async () => {
     const wrapper = mount(TodoView)
+    expect(wrapper.get('.workspace-switch button:first-child').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('.workspace-switch button:last-child').trigger('click')
     await wrapper.findAll('.seg-btn').find((button) => button.text().includes('四象限'))!.trigger('click')
-    expect(localStorage.getItem('wao-todo-view-v1')).toBe('quadrant')
-    expect(readTodoTaskView()).toBe('quadrant')
+    const preferenceKey = 'wao-browse-v1:quadrant-test:quadrant-member:todo'
+    expect(JSON.parse(sessionStorage.getItem(preferenceKey)!).taskView).toBe('quadrant')
     wrapper.unmount()
-    localStorage.setItem('wao-todo-view-v1', 'invalid')
-    expect(readTodoTaskView()).toBe('list')
+    const restored = mount(TodoView)
+    expect(restored.find('.quadrants').exists()).toBe(true)
+    restored.unmount()
+    sessionStorage.setItem(preferenceKey, JSON.stringify({ taskView: 'invalid' }))
+    const corrupt = mount(TodoView)
+    expect(corrupt.find('.quadrants').exists()).toBe(false)
+    expect(corrupt.find('.trow').exists()).toBe(true)
+    corrupt.unmount()
     const broken = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('禁止存储') })
-    expect(readTodoTaskView()).toBe('list')
+    const blocked = mount(TodoView)
+    await blocked.get('.workspace-switch button:last-child').trigger('click')
+    expect(blocked.find('.quadrants').exists()).toBe(false)
+    expect(blocked.find('.trow').exists()).toBe(true)
+    blocked.unmount()
     broken.mockRestore()
   })
 
@@ -204,6 +218,9 @@ describe('TODO 四象限', () => {
       expect(useUiStore().modal).toBe('task')
       expect(useUiStore().modalPriority).toBe(quadrant.priority)
     }
+    useUiStore().openModal('task')
+    expect(useUiStore().modalPriority).toBe('P3')
+    useUiStore().closeModal()
     useUiStore().openModal('task')
     expect(useUiStore().modalPriority).toBeNull()
     expect(JSON.stringify(useDataStore().tasks)).toBe(before)
