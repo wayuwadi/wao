@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import PetCreateView from '@/views/PetCreateView.vue'
+import PetCreateView from '@/components/capabilities/resources/PetCreatePanel.vue'
 const api = vi.hoisted(() => ({
   createPet: vi.fn(),
   readPetDraft: vi.fn(),
@@ -24,7 +24,7 @@ async function render() {
     history: createMemoryHistory(),
     routes: [
       { path: '/pets/create', component: PetCreateView },
-      { path: '/pets/manage', component: { template: '<p>我的宠物</p>' } },
+      { path: '/capabilities', component: { template: '<p>我的宠物</p>' } },
     ],
   })
   await router.push('/pets/create')
@@ -56,7 +56,7 @@ describe('宠物创建保存与防丢', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(api.createPet).toHaveBeenCalledOnce()
-    expect(router.currentRoute.value.path).toBe('/pets/manage')
+    expect(router.currentRoute.value.path).toBe('/capabilities')
     expect(api.clearPetDraft).toHaveBeenCalledWith('author')
     wrapper.unmount()
   })
@@ -72,7 +72,7 @@ describe('宠物创建保存与防丢', () => {
     expect(api.clearPetDraft).not.toHaveBeenCalled()
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/pets/manage')
+    expect(router.currentRoute.value.path).toBe('/capabilities')
     wrapper.unmount()
   })
   it('草稿写入尚未完成时保护刷新，落地后允许刷新', async () => {
@@ -154,7 +154,7 @@ describe('宠物创建保存与防丢', () => {
       )
     await wrapper.get('input[maxlength="500"]').setValue('第一版来源')
     await flushPromises()
-    const navigation = router.push('/pets/manage')
+    const navigation = router.push('/capabilities?area=published&type=Pet')
     await flushPromises()
     await wrapper.get('input[maxlength="500"]').setValue('离开前继续修改的来源')
     firstDone()
@@ -168,7 +168,7 @@ describe('宠物创建保存与防丢', () => {
     wrapper.unmount()
     expect(routeWhilePending).toBe('/pets/create')
     expect(lastWritten.source).toBe('离开前继续修改的来源')
-    expect(finalRoute).toBe('/pets/manage')
+    expect(finalRoute).toBe('/capabilities')
   })
 
   afterEach(() => {

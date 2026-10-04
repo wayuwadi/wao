@@ -44,8 +44,7 @@ public class WorkspaceMcpTokenController {
     public ResponseEntity<ApiResponse<CreatedWorkspaceMcpTokenDto>> create(
             @Valid @RequestBody CreateWorkspaceMcpTokenRequest body, HttpServletRequest request) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(ApiResponse.ok(tokens.create(member(request), body.name(), body.canWrite(),
-                        Boolean.TRUE.equals(body.canPublishHostedPage()))));
+                .body(ApiResponse.ok(tokens.create(member(request), body)));
     }
 
     /** 吊销当前成员的一枚令牌。 */

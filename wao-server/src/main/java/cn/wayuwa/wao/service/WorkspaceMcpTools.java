@@ -73,20 +73,32 @@ public class WorkspaceMcpTools {
         return json.createObjectNode().set("tools", list);
     }
 
+    /** 按设备的显式操作快照返回工具；新能力不会自动出现在既有令牌中。 */
+    public ObjectNode list(AuthenticatedToken token) {
+        ArrayNode allowed = json.createArrayNode();
+        list(true).path("tools").forEach(tool -> {
+            if (token.permits(tool.path("name").asText())) allowed.add(tool);
+        });
+        return json.createObjectNode().set("tools", allowed);
+    }
+
     /** 调用经过显式列举的工具；每次都使用令牌成员重新应用业务可见性。 */
+    @org.springframework.transaction.annotation.Transactional
     public Object call(String name, JsonNode arguments, AuthenticatedToken token) {
         if (arguments == null || !arguments.isObject()) throw new BadRequestException("工具参数必须是对象");
         String member = token.memberId();
         if (!token.canWrite() && !isReadOnly(name)) throw new BadRequestException("令牌没有写权限");
+        if (!token.permits(name)) throw new BadRequestException("连接未授权此操作：" + name);
+        requireScope(name, arguments, token);
         return switch (name) {
-            case "list_projects" -> projects.list(member).stream().map(ProjectSummary::from).toList();
+            case "list_projects" -> projects.list(member).stream().filter(project -> token.permitsProject(project.id())).map(ProjectSummary::from).toList();
             case "get_project" -> projects.get(required(arguments, "project_id", 64), member);
-            case "list_open_tasks" -> openTasks(arguments, member);
-            case "get_task" -> tasks.get(required(arguments, "task_id", 64), member);
-            case "list_knowledge_bases" -> knowledge.listKbs().stream().filter(kb -> visible(kb, member)).toList();
+            case "list_open_tasks" -> openTasks(arguments, member, token);
+            case "get_task" -> scopedTask(required(arguments, "task_id", 64), token);
+            case "list_knowledge_bases" -> knowledge.listKbs().stream().filter(kb -> token.permitsKnowledgeBase(kb.id()) && visible(kb, member)).toList();
             case "get_knowledge_base" -> accessibleKb(required(arguments, "kb_id", 64), member);
             case "list_documents" -> documents(arguments, member);
-            case "get_document" -> accessibleDoc(required(arguments, "document_id", 64), member);
+            case "get_document" -> scopedDocument(required(arguments, "document_id", 64), token);
             case "create_project" -> projects.create(new CreateProjectRequest(required(arguments, "name", 120),
                     optional(arguments, "area", 40), optional(arguments, "goal", 2000),
                     optionalBoolean(arguments, "visible_to_all", false), false, optional(arguments, "due", 10)), member);
@@ -124,17 +136,52 @@ public class WorkspaceMcpTools {
         };
     }
 
-    private List<TaskSummary> openTasks(JsonNode args, String member) {
+    private List<TaskSummary> openTasks(JsonNode args, String member, AuthenticatedToken token) {
         String project = optional(args, "project_id", 64);
         if (project != null) projects.requireAccess(project, member);
         boolean mineOnly = optionalBoolean(args, "mine_only", true);
         int limit = limit(args);
         return tasks.list(member).stream().filter(task -> !TaskService.DONE.equals(task.status()))
+                .filter(task -> token.permitsProject(task.project()))
                 .filter(task -> project == null || project.equals(task.project()))
                 .filter(task -> !mineOnly || member.equals(task.owner()))
                 .sorted(Comparator.comparing((TaskDto task) -> task.due() == null || task.due().isBlank() ? "9999" : task.due())
                         .thenComparing(TaskDto::title))
                 .limit(limit).map(TaskSummary::from).toList();
+    }
+
+    private void requireScope(String operation, JsonNode args, AuthenticatedToken token) {
+        if (token.policy() == null) return;
+        if (Set.of("get_project", "update_project", "create_task", "list_open_tasks").contains(operation)) {
+            String id = optional(args, "project_id", 64);
+            if (id != null && !token.permitsProject(id)) throw new BadRequestException("目标项目不在连接授权范围内");
+        }
+        if (Set.of("update_task", "update_subtask_status").contains(operation)
+                && token.policy().projectIds() != null) {
+            TaskDto task = tasks.lockWorkspaceTask(required(args, "task_id", 64), token.memberId());
+            if (!token.permitsProject(task.project())) throw new BadRequestException("任务所属项目不在连接授权范围内");
+        }
+        if (Set.of("get_knowledge_base", "list_documents", "update_knowledge_base", "create_folder",
+                "rename_folder", "move_knowledge_node", "create_document").contains(operation)) {
+            String id = required(args, "kb_id", 64);
+            if (!token.permitsKnowledgeBase(id)) throw new BadRequestException("目标知识库不在连接授权范围内");
+        }
+        if ("update_document".equals(operation) && token.policy().knowledgeBaseIds() != null) {
+            DocDto doc = accessibleDoc(required(args, "document_id", 64), token.memberId());
+            if (!token.permitsKnowledgeBase(doc.kbId())) throw new BadRequestException("文档所属知识库不在连接授权范围内");
+        }
+    }
+
+    private TaskDto scopedTask(String id, AuthenticatedToken token) {
+        TaskDto task = tasks.get(id, token.memberId());
+        if (!token.permitsProject(task.project())) throw new BadRequestException("任务所属项目不在连接授权范围内");
+        return task;
+    }
+
+    private DocDto scopedDocument(String id, AuthenticatedToken token) {
+        DocDto doc = accessibleDoc(id, token.memberId());
+        if (!token.permitsKnowledgeBase(doc.kbId())) throw new BadRequestException("文档所属知识库不在连接授权范围内");
+        return doc;
     }
 
     private List<DocDto> documents(JsonNode args, String member) {

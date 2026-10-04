@@ -4,7 +4,9 @@ import { useRoute } from 'vue-router'
 import { fetchMyPets, fetchPets, petFileUrl, setPetVisibility, type PetCard } from '@/api/pets'
 import RepositoryPetPreview from '@/components/assistant/RepositoryPetPreview.vue'
 const route = useRoute(),
-  mine = computed(() => route.path.endsWith('/manage'))
+  props = defineProps<{ mine?: boolean; selectedId?: string }>(),
+  mine = computed(() => props.mine ?? route.path.endsWith('/manage'))
+const emit = defineEmits<{ changed: [] }>()
 const items = ref<PetCard[]>([]),
   keyword = ref(''),
   page = ref(1),
@@ -15,6 +17,7 @@ const items = ref<PetCard[]>([]),
   confirmId = ref(''),
   confirmed = ref(false)
 let generation = 0
+const displayItems = computed(() => props.selectedId ? items.value.filter(item => item.id === props.selectedId) : items.value)
 async function load(next = 1) {
   const ticket = ++generation
   loading.value = true
@@ -41,6 +44,7 @@ async function visibility(pet: PetCard) {
     items.value = items.value.map((p) => (p.id === pet.id ? updated : p))
     confirmId.value = ''
     confirmed.value = false
+    emit('changed')
   } catch (e) {
     error.value = e instanceof Error ? e.message : '操作失败，请重试'
   } finally {
@@ -68,8 +72,8 @@ watch(
       }}
     </p>
     <div class="hub-actions">
-      <RouterLink class="hub-button primary" to="/pets/create">创造 / 上传宠物</RouterLink
-      ><RouterLink class="hub-button" :to="mine ? '/pets' : '/pets/manage'">{{
+      <RouterLink class="hub-button primary" to="/capabilities/publish/pet">创造 / 上传宠物</RouterLink
+      ><RouterLink class="hub-button" :to="mine ? '/capabilities?type=Pet' : '/capabilities?area=published&type=Pet'">{{
         mine ? '浏览公开仓库' : '我的宠物'
       }}</RouterLink>
     </div>
@@ -95,7 +99,7 @@ watch(
       }}
     </div>
     <div class="hub-grid">
-      <article v-for="pet in items" :key="pet.id" class="hub-card">
+      <article v-for="pet in displayItems" :key="pet.id" class="hub-card">
         <RepositoryPetPreview
           :src="petFileUrl(pet.id, 'sprite', mine)"
           :version="pet.spriteVersion"
@@ -105,7 +109,7 @@ watch(
         <p>{{ pet.description }}</p>
         <p v-if="mine" class="hub-status">{{ pet.listed ? '已公开' : '私人 / 已下架' }}</p>
         <div class="hub-actions">
-          <RouterLink v-if="pet.listed" class="hub-button" :to="`/pets/${pet.id}`"
+          <RouterLink v-if="pet.listed" class="hub-button" :to="`/capabilities/pets/${pet.id}`"
             >详情与安装</RouterLink
           ><a v-if="mine" class="hub-button" :href="petFileUrl(pet.id, 'download', true)"
             >下载 ZIP</a

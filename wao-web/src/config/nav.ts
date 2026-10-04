@@ -22,7 +22,7 @@ export const RETIRED_MODULE_IDS = new Set<ModuleId>([
   'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure',
   'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices',
   'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions',
-  'life-review', 'system-reports', 'ideas',
+  'life-review', 'system-reports', 'ideas', 'skills', 'skill-connections',
   'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world',
 ])
 export const RETIRED_EXTERNAL_APP_IDS = new Set(['media-agent', 'jumpserver', 'weknora'])
@@ -131,6 +131,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
   ideas: { id: 'ideas', label: '点子库', icon: 'ri-lightbulb-flash-line', path: '/ideas' },
+  capabilities: { id: 'capabilities', label: '能力中心', icon: 'ri-box-3-line', path: '/capabilities' },
   skills: {
     id: 'skills',
     label: 'WAO-HUB',
@@ -441,6 +442,9 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
+      id: 'capabilities', label: '能力中心', icon: 'ri-box-3-line', group: 'TOOLS', order: 15, visible: true,
+    },
+    {
       id: 'dashboard',
       label: '使用统计',
       icon: 'ri-bar-chart-box-line',
@@ -518,6 +522,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   {
     label: '工具',
     items: [
+      'capabilities',
       'dashboard',
       'automation',
       'crawler-capabilities',
@@ -711,7 +716,7 @@ export function tabFromRoute(route: RouteLocationNormalized): Tab | null {
   if (mod) {
     const tab = moduleTab(mod)
     // Skill 市场有站内子路由；复用同一页签时保留详情、发布或管理页的位置。
-    if (mod === 'skills' && route.path.startsWith('/wao/skills')) tab.path = route.fullPath
+    if (mod === 'capabilities' || mod === 'skills' && route.path.startsWith('/wao/skills')) tab.path = route.fullPath
     return tab
   }
   return null

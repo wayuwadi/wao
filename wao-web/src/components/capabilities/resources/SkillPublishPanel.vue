@@ -3,7 +3,9 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createSkillDraft, fetchMySkills, fetchPublisher, fetchSkillCategories, inspectSkillPackage, savePublisher, submitSkill, type DraftMetadata, type MySkill, type SkillCategory, type SkillPackageInspection, type SkillPublisher } from '@/api/skills'
 import { useSkillMarketRoutes } from '@/composables/skillMarketRoutes'
+import { readSkillPackageDraft, writeSkillPackageDraft, clearSkillPackageDraft } from '@/utils/skillPackageDrafts'
 
+const props = defineProps<{ targetSkillId?: string }>()
 const route = useRoute(), router = useRouter()
 const marketRoutes = useSkillMarketRoutes()
 const categories = ref<SkillCategory[]>([]), publisher = ref<SkillPublisher | null>(null), result = ref<MySkill | null>(null)
@@ -14,7 +16,7 @@ const publisherForm = reactive({ handle: '', displayName: '' })
 const form = reactive<DraftMetadata>({ skillId: undefined, slug: '', displayName: '', summary: '', category: '', tags: [], version: '1.0.0', changelog: '', license: 'MIT', testedPlatforms: ['codex'], rightsConfirmed: false, scanOverrideConfirmed: false })
 const tagsText = ref(''), storageKey = ref(''), draftStorageError = ref('')
 const targetSkill = ref<MySkill | null>(null)
-const requestedSkillId = computed(() => typeof route.query.skillId === 'string' ? route.query.skillId : '')
+const requestedSkillId = computed(() => props.targetSkillId ?? (typeof route.query.skillId === 'string' ? route.query.skillId : ''))
 let contextSequence = 0
 const draftVersion = computed(() => result.value?.versions.find(v => v.state === 'DRAFT'))
 const selectedName = computed(() => archive.value?.name || (folderFiles.value.length ? `${folderFiles.value.length} 个文件` : '尚未选择'))
@@ -29,6 +31,11 @@ watch([() => ({ ...form, tags: tagsText.value }), tagsText], () => {
 }, { deep: true })
 
 function message(value: unknown) { return value instanceof Error ? value.message : '操作失败，请稍后重试' }
+async function savePackageDraft() {
+  if (!storageKey.value) return
+  try { await writeSkillPackageDraft(storageKey.value, archive.value, folderFiles.value) }
+  catch { draftStorageError.value = '文件草稿未能保存到本机，请保持页面打开并重试上传。' }
+}
 async function inspectSelectedPackage() {
   const sequence = ++inspectionSequence
   error.value = ''; inspection.value = null; inspecting.value = true
@@ -48,11 +55,13 @@ function passInspection() { form.scanOverrideConfirmed = true }
 async function chooseArchive(event: Event) {
   const input = event.target as HTMLInputElement
   archive.value = input.files?.[0] || null; folderFiles.value = []; input.value = ''
+  void savePackageDraft()
   if (archive.value) await inspectSelectedPackage()
 }
 async function chooseFolder(event: Event) {
   const input = event.target as HTMLInputElement
   folderFiles.value = [...(input.files || [])]; archive.value = null; input.value = ''
+  void savePackageDraft()
   if (folderFiles.value.length) await inspectSelectedPackage()
 }
 async function persistPublisher() {
@@ -73,6 +82,7 @@ async function upload() {
   uploading.value = true; progress.value = 0
   try {
     const created = await createSkillDraft({ ...form, skillId: requestedSkillId.value || undefined }, archive.value, folderFiles.value, value => { if (sequence === contextSequence) progress.value = value })
+    try { await clearSkillPackageDraft(savedKey) } catch { /* 服务端已经持久保存文件。 */ }
     try { localStorage.removeItem(savedKey) } catch { /* 服务端草稿已保存，不能误报上传失败。 */ }
     if (sequence === contextSequence) result.value = created
   }
@@ -119,6 +129,19 @@ watch(requestedSkillId, async (skillId) => {
       targetSkill.value = existing
       Object.assign(form, { skillId: existing.id, slug: existing.slug })
       if (!savedForm) Object.assign(form, { displayName: existing.displayName, summary: existing.summary, category: existing.category })
+    }
+    if (storageKey.value) {
+      try {
+        const savedPackage = await readSkillPackageDraft(storageKey.value)
+        if (sequence !== contextSequence) return
+        if (savedPackage) {
+          archive.value = savedPackage.archive; folderFiles.value = savedPackage.files
+          const editedForm = { ...form }
+          if (archive.value || folderFiles.value.length) await inspectSelectedPackage()
+          if (sequence !== contextSequence) return
+          Object.assign(form, editedForm, { scanOverrideConfirmed: false })
+        }
+      } catch { draftStorageError.value = '无法恢复本机文件草稿，原缓存未删除，请重新选择文件。' }
     }
   } catch (e) { if (sequence === contextSequence) error.value = message(e) }
   finally { if (sequence === contextSequence) loading.value = false }

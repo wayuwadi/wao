@@ -19,7 +19,7 @@ describe('夜间模式表面', () => {
   })
 
   it('独立视觉页面复用主题表面 token', () => {
-    const marketLayout = source('../layouts/SkillMarketLayout.vue')
+    const marketLayout = source('../styles/capabilityResources.css')
     const desktopDownload = source('../views/DesktopDownloadView.vue')
 
     expect(marketLayout).toContain(":root[data-theme='dark']")

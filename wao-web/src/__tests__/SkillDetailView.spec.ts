@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import SkillDetailView from '@/views/SkillDetailView.vue'
+import SkillDetailView from '@/components/capabilities/resources/SkillDetailPanel.vue'
 import { fetchSkill, fetchSkillFile, type SkillDetail } from '@/api/skills'
 import { copyText } from '@/utils/clipboard'
 

@@ -84,7 +84,7 @@ public class HostedPageController {
         }
         AuthenticatedToken token = workspaceTokens.authenticate(authorization.substring(7).trim());
         if (token == null) throw new UnauthorizedException("工作区令牌无效或已吊销");
-        if (!token.canPublishHostedPage()) {
+        if (!token.permits("publish_html")) {
             throw new ForbiddenException("此工作区令牌未获 HTML 页面发布权限，请重新生成并开启该权限");
         }
         return token;

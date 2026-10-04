@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import SkillPublishView from '@/views/SkillPublishView.vue'
+import SkillPublishView from '@/components/capabilities/resources/SkillPublishPanel.vue'
 
 const api = vi.hoisted(() => ({
   createSkillDraft: vi.fn<() => Promise<unknown>>(),

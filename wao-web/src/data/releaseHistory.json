@@ -1,5 +1,26 @@
 [
   {
+    "id": "release-capability-center-2026-10-04",
+    "publishedOn": "2026-10-04",
+    "sourceSubject": "feat(capabilities): 统一能力中心并提供逐项连接授权",
+    "title": "开放能力，有了统一入口",
+    "intro": "CLI、MCP、Skill、应用接入和 Pet 在能力中心集中浏览与管理。",
+    "highlights": [
+      {
+        "featureId": "capabilities",
+        "eyebrow": "能力中心",
+        "title": "发现、连接、发布在同一处",
+        "summary": "左侧选择能力与资源，右侧查看详情和管理；设备连接可以逐项授权，再限定项目或知识库范围。",
+        "points": [],
+        "steps": [
+          "从菜单打开「能力中心」，在「发现能力」按类型查看 CLI/MCP 清单与资源。",
+          "进入「我的连接」，逐项选择操作和数据范围，再生成连接指令；原有连接可复制为新授权草稿。",
+          "在「我的发布」管理 Skill 版本、审核与 Pet 可见性，上传未完成时可恢复本机草稿。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-home-hidden-world-2026-10-04",
     "publishedOn": "2026-10-04",
     "sourceSubject": "feat(home): 为首页加入十二种隐藏互动与随机小剧场",

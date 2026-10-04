@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
-import SkillConnectionsView from '@/views/SkillConnectionsView.vue'
+import SkillConnectionsView from '@/components/capabilities/ApplicationConnectionsPanel.vue'
 
 describe('应用 Skill 接入入口', () => {
   it('无真实提供方时展示诚实空状态，并区分 WAO Skill 市场', async () => {

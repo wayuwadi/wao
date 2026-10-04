@@ -38,7 +38,7 @@ async function copy(value: string) {
 watch(() => route.params.id, load, { immediate: true })
 </script>
 <template>
-  <RouterLink to="/pets">← Pet 仓库</RouterLink>
+  <RouterLink to="/capabilities?type=Pet">← Pet 仓库</RouterLink>
   <p v-if="loading" role="status">正在加载宠物…</p>
   <div v-if="error" class="hub-error" role="alert">
     {{ error }}<button class="hub-button" @click="load">重试</button>

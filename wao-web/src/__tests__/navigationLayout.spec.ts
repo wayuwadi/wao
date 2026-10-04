@@ -42,6 +42,18 @@ function login(id: string) {
   useSessionStore().account = { member: { id } } as AuthSession
 }
 describe('个人导航快照', () => {
+  it('旧个人布局获得能力中心入口，并尊重新版显隐选择', async () => {
+    const old = snapshotNavigation(clone(customMenus), clone(customApps))
+    old.items = old.items.filter(item => item.id !== 'capabilities')
+    vi.mocked(fetchNavigationLayout).mockResolvedValue({revision:'old',layout:old})
+    const nav = useNavStore(); await nav.loadMenus()
+    expect(nav.menuConfig('capabilities')?.visible).toBe(true)
+    expect(nav.builtinMenus.some(item => ['skills','skill-connections'].includes(item.id))).toBe(false)
+    old.items.push({id:'capabilities',label:'能力中心',icon:'ri-box-3-line',group:'TOOLS',order:15,visible:false,openMode:'TAB',placement:'MENU'})
+    vi.mocked(fetchNavigationLayout).mockResolvedValue({revision:'new',layout:old})
+    await nav.loadMenus(true)
+    expect(nav.menuConfig('capabilities')?.visible).toBe(false)
+  })
   beforeEach(() => {
     vi.resetAllMocks()
     localStorage.clear()

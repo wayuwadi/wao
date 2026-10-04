@@ -9,6 +9,15 @@ export function useSkillMarketRoutes() {
   const base = computed(() =>
     typeof route.meta.skillBase === 'string' ? route.meta.skillBase : '/skills',
   )
-  const path = (suffix = '') => `${base.value}${suffix}`
+  const path = (suffix = '') => {
+    if (route.path.startsWith('/capabilities')) {
+      if (!suffix) return '/capabilities?type=Skill'
+      if (suffix === '/manage') return '/capabilities?area=published&type=Skill'
+      if (suffix === '/publish') return '/capabilities/publish/skill'
+      if (suffix === '/reviews') return '/capabilities/reviews/skill'
+      return `/capabilities/skills${suffix}`
+    }
+    return `${base.value}${suffix}`
+  }
   return { base, path }
 }

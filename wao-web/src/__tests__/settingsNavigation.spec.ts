@@ -101,17 +101,11 @@ describe('常用优先的设置分类', () => {
     expect(fetchNoteAiSettings).not.toHaveBeenCalled()
   })
 
-  it('从管理分类进入工作区授权，查看连接不会自动签发令牌', async () => {
+  it('设置不再提供 CLI 和 MCP 弹层入口', async () => {
     await router.replace('/settings?tab=management')
     await flushPromises()
-    await wrapper.findAll('.settings-entry').find(button => button.text().includes('WAO CLI 与 MCP'))!.trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.query.tab).toBe('workspace-mcp')
-    expect(wrapper.get('.snav-item[aria-current="page"]').text()).toBe('管理与连接')
-    await wrapper.get('.mcp-card .manage').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[role="dialog"]').text()).toContain('暂无连接')
-    expect(mcp.fetchWorkspaceMcpTokens).toHaveBeenCalledOnce()
+    expect(wrapper.text()).not.toContain('WAO CLI 与 MCP')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(mcp.createWorkspaceMcpToken).not.toHaveBeenCalled()
   })
 
