@@ -95,10 +95,12 @@ function mountScene() {
     host.append(b)
     return b
   })
+  const surprise = vi.fn(), cancelSurprises = vi.fn()
   return {
     canvas,
     targets,
-    controller: createCompanionScene({ host, canvas, targets, say: vi.fn(), failed: vi.fn() }),
+    surprise, cancelSurprises,
+    controller: createCompanionScene({ host, canvas, targets, say: vi.fn(), failed: vi.fn(), surprise, cancelSurprises }),
   }
 }
 function paint(time = 100) {
@@ -107,6 +109,31 @@ function paint(time = 100) {
   work.forEach((fn) => fn(time))
 }
 describe('三维场景资源与省电', () => {
+  it('四位泡沫消散才发出一次彩蛋，单次升空及重复点击不能凑数', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0)
+    const { controller, surprise } = mountScene()
+    for (let i = 0; i < 4; i++) controller.pop(i)
+    controller.pop(0)
+    paint(3100)
+    expect(surprise).not.toHaveBeenCalled()
+    paint(3900)
+    expect(surprise).toHaveBeenCalledOnce()
+    paint(4800)
+    expect(surprise).toHaveBeenCalledOnce()
+    controller.dispose()
+  })
+  it('安静中止集齐，旧飞行不会在唤醒后补播', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0)
+    const { controller, surprise, cancelSurprises } = mountScene()
+    for (let i = 0; i < 4; i++) controller.pop(i)
+    paint(3000)
+    controller.setQuiet(true)
+    controller.setQuiet(false)
+    paint(4000)
+    expect(surprise).not.toHaveBeenCalled()
+    expect(cancelSurprises).toHaveBeenCalled()
+    controller.dispose()
+  })
   it('只让被点的伙伴升空、散成泡沫再归位，重复点击不重置计时', () => {
     vi.spyOn(performance, 'now').mockReturnValue(0)
     const { controller } = mountScene()
