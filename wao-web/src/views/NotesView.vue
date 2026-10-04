@@ -38,6 +38,7 @@ import { noteCharactersCreatedOn, shanghaiDateKey } from '@/utils/noteDailyChara
 import { readNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 import { fetchNoteAiWorkflows, retryNoteAiWorkflow, type NoteAiWorkflowStatus } from '@/api/noteAiWorkflows'
 import { noteAiRecoveryMessage } from '@/utils/noteAiRecoveryMessage'
+import { useNoteReaderWidths } from '@/composables/noteReaderWidths'
 import { useNotesPaneWidth } from '@/composables/notesPaneWidth'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
@@ -437,6 +438,8 @@ const readerMode = ref<'side' | 'full'>('side')
 const readerDirectoryOpen = ref(false)
 const readerDialog = ref<HTMLElement | null>(null)
 const readerPage = ref<HTMLElement | null>(null)
+const readerLayout = ref<HTMLElement | null>(null)
+const readerWidths = useNoteReaderWidths(readerLayout)
 const readerClose = ref<HTMLButtonElement | null>(null)
 const readerPositions = new Map<string, number>()
 const originalsOpen = ref(false)
@@ -572,6 +575,7 @@ function restoreReaderBackground() {
 async function stopReading() {
   if (!reading.value) return
   rememberReaderPosition()
+  readerWidths.stop()
   reading.value = false
   readerDirectoryOpen.value = false
   restoreReaderBackground()
@@ -1151,14 +1155,16 @@ onMounted(() => void loadPins())
             <button ref="readerClose" type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line" aria-hidden="true"></i><span>关闭</span></button>
           </div>
         </header>
-        <div class="reader-layout">
+        <div ref="readerLayout" class="reader-layout" :class="{ resizing: readerWidths.resizing.value }" :style="readerWidths.style.value">
           <aside class="reader-directory" aria-label="当前列表的小记目录"><div class="reader-directory-heading"><strong>小记目录</strong><span>{{ readerNotes.length }} 篇</span><button type="button" class="reader-directory-close" aria-label="收起小记目录" @click="closeReaderLayer"><i class="ri-close-line" aria-hidden="true"></i></button></div><nav aria-label="选择小记"><button v-for="note in readerNotes" :key="note.id" type="button" :aria-current="note.id === readingId ? 'true' : undefined" @click="selectReadingNote(note.id)"><strong>{{ displayedTitle(note) }}</strong><small>{{ authorName(note.author) }} · {{ timeLabel(note.updated || note.created) }}</small></button></nav></aside>
+          <div class="reader-resizer reader-directory-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="小记目录宽度" :aria-valuemin="readerWidths.minimum.directory" :aria-valuemax="readerWidths.limit('directory')" :aria-valuenow="readerWidths.widths.value.directory" title="拖拽调整宽度，双击恢复默认；方向键微调" @pointerdown="readerWidths.start('directory', $event)" @keydown="readerWidths.keydown('directory', $event)" @dblclick="readerWidths.reset('directory')"><span></span></div>
           <div class="reader-main" :inert="readerDirectoryOpen ? true : undefined"><button type="button" class="reader-directory-toggle" @click="openReaderDirectory"><i class="ri-list-check" aria-hidden="true"></i>小记目录 <span>{{ readingIndex + 1 }} / {{ readerNotes.length }}</span></button>
             <article :key="readingNote.id" ref="readerPage" class="reader-page" @scroll="readerRestorePending = false">
               <div class="reader-columns"><div class="reader-article"><NoteOriginalReader v-if="originalsOpen" ref="readerOriginal" :doc-id="readingNote.id" :member-id="session.currentUser.id" :current-rev="readingNote.rev" image-references :active-image-reference="readerActiveImage" @reading-content="readerOriginalContent = $event" @image-reference="locateReadingImage" @source-change="changeOriginalSource" @ready="restoreReaderPosition" /><template v-else><div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
               <h2>{{ displayedTitle(readingNote) }}</h2>
               <div v-if="displayedTags(readingNote).length" class="reader-tags"><span v-for="tag in displayedTags(readingNote)" :key="tag"># {{ tag }}</span></div>
               <div class="reader-content" @dblclick="editReadingNote"><div class="reader-body"><MarkdownEditor ref="readerEditor" :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="readerActiveImage" bare advanced allow-h1 :min-height="0" @image-reference="locateReadingImage" @character-count="restoreReaderPosition" /></div></div></template></div>
+              <div class="reader-resizer reader-images-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="图片清单宽度" :aria-valuemin="readerWidths.minimum.images" :aria-valuemax="readerWidths.limit('images')" :aria-valuenow="readerWidths.widths.value.images" title="拖拽调整宽度，双击恢复默认；方向键微调" @pointerdown="readerWidths.start('images', $event)" @keydown="readerWidths.keydown('images', $event)" @dblclick="readerWidths.reset('images')"><span></span></div>
               <NoteReadingImages :key="`${readingNote.id}:${originalsOpen ? originalPositionKey : 'current'}`" ref="readerImagesPanel" :images="readerImages" :active="readerActiveImage" :unavailable="originalsOpen && !readerOriginalContent" @return="returnToImageReference" @fullscreen="openImage" /></div>
             </article>
             <footer class="reader-controls"><button type="button" aria-label="上一篇小记（←）" :disabled="readingIndex <= 0" @click="moveReader(-1)"><i class="ri-arrow-left-line" aria-hidden="true"></i>上一篇</button><span>{{ readingIndex + 1 }} / {{ readerNotes.length }}<small> · ← → 翻篇 · Esc 退出</small></span><button type="button" aria-label="下一篇小记（→）" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇<i class="ri-arrow-right-line" aria-hidden="true"></i></button></footer>
@@ -1342,7 +1348,15 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-layout-actions button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); white-space: nowrap; }
 .reader-mode-switch button { border-color: transparent; background: transparent; font-size: 12px; }
 .reader-mode-switch button[aria-pressed='true'] { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
-.reader-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 180px minmax(0, 1fr); position: relative; }
+.reader-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(140px, var(--reader-directory-width, 180px), calc((100vw - 332px) / 2)) 6px minmax(0, 1fr); position: relative; }
+.reader-resizer { display: flex; align-items: center; justify-content: center; cursor: col-resize; touch-action: none; outline: none; z-index: 1; }
+.reader-resizer span { width: 3px; height: 48px; border-radius: 3px; background: var(--wao-line-control); }
+.reader-resizer:hover span, .reader-resizer:focus-visible span, .resizing .reader-resizer span { height: 80px; background: var(--wao-primary); }
+.reader-resizer:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
+.reader-images-resizer { position: sticky; top: 0; height: calc(100dvh - 150px); }
+.reader-layout.resizing { cursor: col-resize; user-select: none; }
+.resizing .reader-directory, .resizing .reader-article, .resizing .reader-images { pointer-events: none; }
+@media (max-width: 850px) { .reader-resizer { display: none; } }
 .reader-directory { min-width: 0; overflow: auto; background: var(--wao-bg-sub); border-right: 1px solid var(--wao-line); padding: 16px 12px; }
 .reader-directory-heading { display: flex; align-items: center; gap: 8px; padding: 0 8px 14px; font-size: 13px; }
 .reader-directory-heading > span { color: var(--wao-text-faint); font-size: 12px; }
@@ -1353,7 +1367,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-directory nav small { display: block; color: var(--wao-text-faint); font-size: 11px; margin-top: 8px; }
 .reader-main { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .reader-page { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.reader-columns { display: grid; grid-template-columns: minmax(0, 1fr) 238px; min-height: 100%; align-items: start; }
+.reader-columns { display: grid; grid-template-columns: minmax(0, 1fr) 6px clamp(180px, var(--reader-images-width, 238px), calc((100vw - 332px) / 2)); min-height: 100%; align-items: start; }
 .reader-columns > .reader-images { position: sticky; top: 0; max-height: calc(100dvh - 150px); overflow: auto; overscroll-behavior: contain; }
 .reader-article { min-width: 0; width: min(100%, 820px); box-sizing: border-box; margin: 0 auto; padding: 28px clamp(24px, 2vw, 32px); }
 .reader-full .reader-article { width: min(100%, 1100px); }
