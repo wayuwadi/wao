@@ -5,6 +5,7 @@ export interface NoteAiWorkflowStatus {
   title: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED'
   image: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED'
   polish: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED'
+  tags?: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED'
   message: string | null
   stages?: Record<string, { reasonCode: string; message: string; retryable: boolean; action: string; jobId: string; sourceVersion: number }>
 }

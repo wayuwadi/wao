@@ -9,7 +9,6 @@ import { rebaseNoteDraft } from '@/utils/rebaseNoteDraft'
 import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
 import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
-import { startAutoNoteEnrichment } from '@/utils/autoNoteEnrichment'
 import NoteAiSettingsDialog from './NoteAiSettingsDialog.vue'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
@@ -341,17 +340,6 @@ async function save(explicit = false) {
         || generatedTitle.value !== submitted.title) {
       status.value = '已保存提交内容 · 最新输入已保留，待保存'
       return
-    }
-    if (!props.note) {
-      const saved = data.docById(savedId)
-      const allowedTags = [...new Set([...(props.tagOptions ?? []), ...tags.value])]
-      if (saved?.rev && allowedTags.length > 0) startAutoNoteEnrichment(session.currentUser.id, savedId, saved.rev, {
-        titleEnabled: false,
-        imageEnabled: false,
-        polishEnabled: false,
-        tagsEnabled: true,
-        allowedTags,
-      })
     }
     if (!props.note) {
       resetting = true

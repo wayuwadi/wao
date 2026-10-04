@@ -22,7 +22,7 @@ import { resolvedRichContent } from '@/utils/richDoc'
 import { notePreviewImages, notePreviewSource, type NotePreviewImage } from '@/utils/notePreviewImages'
 import type { Doc } from '@/types'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
-import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus, retryAutoNoteEnrichment, startAutoNoteEnrichment, startNoteEnrichmentStage } from '@/utils/autoNoteEnrichment'
+import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus } from '@/utils/autoNoteEnrichment'
 import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
@@ -80,8 +80,8 @@ async function loadServerWorkflows() {
     if (memberId !== session.currentUser.id) return
     const previous = serverWorkflows.value
     serverWorkflows.value = Object.fromEntries(values.map(value => [value.docId, value]))
-    if (values.some(value => ['title', 'image', 'polish'].some(stage => {
-      const key = stage as 'title' | 'image' | 'polish'
+    if (values.some(value => ['title', 'image', 'polish', 'tags'].some(stage => {
+      const key = stage as 'title' | 'image' | 'polish' | 'tags'
       return value[key] === 'DONE' && previous[value.docId]?.[key] !== 'DONE'
     }))) {
       void data.refreshDocs()
@@ -642,7 +642,7 @@ function workflowProgress(id: string) {
   if (!server) return noteEnrichmentProgress[id]
   const state = (value: NoteAiWorkflowStatus['title']) => value.toLowerCase() as 'pending' | 'running' | 'done' | 'failed' | 'skipped'
   const local = noteEnrichmentProgress[id]
-  const combined = { title: state(server.title), image: state(server.image), polish: state(server.polish), tags: local?.tags ?? 'pending' }
+  const combined = { title: state(server.title), image: state(server.image), polish: state(server.polish), tags: server.tags ? state(server.tags) : local?.tags ?? 'skipped' }
   return combined
 }
 function progressVisible(id: string) {
@@ -650,23 +650,22 @@ function progressVisible(id: string) {
   return !steps || !((steps.title === 'done' || steps.title === 'skipped') && (steps.image === 'done' || steps.image === 'skipped') && (steps.polish === 'done' || steps.polish === 'skipped') && (steps.tags === 'done' || steps.tags === 'skipped'))
 }
 function stageDisabled(id: string, stage: 'title' | 'image' | 'polish' | 'tags') {
-  if (stage === 'tags') return retryingEnrichment.value.includes(id) || workflowProgress(id)?.tags === 'running'
   return retryingEnrichment.value.includes(id) || workflowProgress(id)?.[stage] === 'running'
-    || !!serverWorkflows.value[id] && ['PENDING', 'RUNNING'].includes(serverWorkflows.value[id]![stage])
+    || !!serverWorkflows.value[id] && ['PENDING', 'RUNNING'].includes(serverWorkflows.value[id]![stage] ?? '')
 }
 function stageActionText(id: string, stage: 'title' | 'image' | 'polish' | 'tags') {
-  const detail = stage === 'tags' ? undefined : serverWorkflows.value[id]?.stages?.[stage]
+  const detail = serverWorkflows.value[id]?.stages?.[stage]
   if (detail?.message) return detail.message + (stageDisabled(id, stage) ? '' : '；点击手动执行一次')
   const value = workflowProgress(id)?.[stage]
   if (value === 'done') return '已完成，点击重新生成'
   if (value === 'running') return '正在处理'
   if (value === 'failed') return '失败，点击重试'
-  if (stage !== 'tags' && serverWorkflows.value[id] && ['PENDING', 'RUNNING'].includes(serverWorkflows.value[id]![stage])) return '等待后台处理'
+  if (serverWorkflows.value[id] && ['PENDING', 'RUNNING'].includes(serverWorkflows.value[id]![stage] ?? '')) return '等待后台处理'
   return '未生成，点击开始'
 }
 function serverFailed(id: string) {
   const server = serverWorkflows.value[id]
-  return !!server && (server.title === 'FAILED' || server.image === 'FAILED' || server.polish === 'FAILED')
+  return !!server && (server.title === 'FAILED' || server.image === 'FAILED' || server.polish === 'FAILED' || server.tags === 'FAILED')
 }
 function workflowMessage(id: string) {
   const server = serverWorkflows.value[id]
@@ -715,17 +714,14 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
       noteEnrichmentStatus[note.id] = '自动整理未完成：本地草稿尚未保存，请先在编辑卡片中保存后重试'
       return
     }
-    if (stage && stage !== 'tags') {
+    if (stage) {
       const latest = data.docById(note.id) ?? note
       serverWorkflows.value[note.id] = await startSavedNoteStage(note.id, stage, latest.rev ?? 1, newPolishRequestId())
       return
     }
     noteEnrichmentStatus[note.id] = '正在重试未完成的自动整理…'
-    if (!stage) {
-      serverWorkflows.value[note.id] = await retryNoteAiWorkflow(note.id)
-      noteEnrichmentStatus[note.id] = '后台已接续失败步骤，关闭页面后仍会继续'
-    } else if (canRetryAutoNoteEnrichment(session.currentUser.id, note.id)) await retryAutoNoteEnrichment(session.currentUser.id, note.id)
-    else if (stage && note.rev) startNoteEnrichmentStage(session.currentUser.id, note.id, note.rev, stage, availableTags.value)
+    serverWorkflows.value[note.id] = await retryNoteAiWorkflow(note.id)
+    noteEnrichmentStatus[note.id] = '后台已接续失败步骤，关闭页面后仍会继续'
 
   } finally {
     retryingEnrichment.value = retryingEnrichment.value.filter(id => id !== note.id)

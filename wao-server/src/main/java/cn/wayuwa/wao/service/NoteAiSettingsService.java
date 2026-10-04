@@ -26,8 +26,8 @@ public class NoteAiSettingsService {
     public record Settings(boolean title, boolean polish, boolean image, String executionMode, int maxConcurrent,
             String model, String reasoningEffort, String titlePrompt, String imagePrompt, String polishPrompt,
             long titleEpoch, long imageEpoch, long polishEpoch) {
-        public boolean enabled(String stage) { return switch(stage) { case "title" -> title; case "image" -> image; default -> polish; }; }
-        public long epoch(String stage) { return switch(stage) { case "title" -> titleEpoch; case "image" -> imageEpoch; default -> polishEpoch; }; }
+        public boolean enabled(String stage) { return switch(stage) { case "title" -> title; case "image" -> image; case "tags" -> true; default -> polish; }; }
+        public long epoch(String stage) { return switch(stage) { case "title" -> titleEpoch; case "image" -> imageEpoch; case "tags" -> 0; default -> polishEpoch; }; }
         public int capacity() { return "serial".equals(executionMode) ? 1 : maxConcurrent; }
     }
     public record View(Settings settings, String version, boolean configured, String availability) { }

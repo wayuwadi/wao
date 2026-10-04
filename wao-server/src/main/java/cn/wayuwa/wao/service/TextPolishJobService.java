@@ -80,7 +80,7 @@ public class TextPolishJobService {
                     + "保留事实、数字、原意和 Markdown 链接与图片；不要添加原文没有的信息，只返回润色后的正文。";
             case "NOTE_TITLE" -> titlePrompt == null || titlePrompt.isBlank()
                     ? "从小记正文提炼一个准确、简短的中文标题" : titlePrompt.trim();
-            case "NOTE_TAGS" -> "小记标签推荐。严格只从下列已有标签中选择 1 至 3 个，每行只输出一个标签名称；不可创建或修改标签。\n"
+            case "NOTE_TAGS" -> "小记标签推荐。严格只从下列已有标签中选择最多 3 个；没有合适标签时只返回“无”。每行只输出一个标签名称；不可创建或修改标签。\n"
                     + TAGS_START + tagsJson + TAGS_END;
             default -> prepared.promptSnapshot();
         };

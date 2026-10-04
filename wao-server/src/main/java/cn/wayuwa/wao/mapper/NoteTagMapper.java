@@ -19,6 +19,8 @@ public interface NoteTagMapper {
     int deleteName(@Param("name") String name);
     @Select("SELECT name FROM note_tag ORDER BY name")
     List<String> listNames();
+    @Select("SELECT name FROM note_tag ORDER BY name FOR UPDATE")
+    List<String> lockNames();
 
     @Insert("INSERT INTO note_tag (name) VALUES (#{name}) ON DUPLICATE KEY UPDATE name = name")
     int ensureName(@Param("name") String name);

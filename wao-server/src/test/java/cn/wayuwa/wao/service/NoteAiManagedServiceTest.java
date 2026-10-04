@@ -19,6 +19,7 @@ import org.springframework.jdbc.datasource.init.ScriptUtils;
 class NoteAiManagedServiceTest {
  JdbcTemplate db; TransactionTemplate tx; NoteAiSettingsService settings; NoteAiManagedService managed;
  Map<String,String> values; KnowledgeService knowledge; TextPolishJobService text; ArticleImageService image;
+ NoteTagService noteTags;
  @BeforeEach void setup() throws Exception {
   var ds=new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa","");
   db=new JdbcTemplate(ds);tx=new TransactionTemplate(new DataSourceTransactionManager(ds));
@@ -33,8 +34,43 @@ class NoteAiManagedServiceTest {
   ObjectProvider<KnowledgeService> provider=mock(ObjectProvider.class);when(provider.getObject()).thenReturn(knowledge);
   when(text.submit(any(),any(),any(),any(),any(),any(),any())).thenReturn(new TextPolishJobService.Result("job", "QUEUED", "等待", null, null, null));
   managed=new NoteAiManagedService(db,new ObjectMapper(),settings,provider,text,image,mock(NotePolishVersionService.class));
+  noteTags=mock(NoteTagService.class);
+  when(noteTags.list()).thenReturn(List.of());
+  org.springframework.test.util.ReflectionTestUtils.setField(managed,"noteTags",noteTags);
  }
  DocDto doc(String body,String title,int rev){return new DocDto("n",title,"m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,body),List.of(),"kb-notes",null,rev);}
+ @Test void tagsContinueOnServerMergeManualChoicesAndRejectUnknownAndDeletedNames(){
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false}");
+  when(noteTags.list()).thenReturn(List.of("提示词","已删除"));
+  when(noteTags.lockExisting()).thenReturn(List.of("提示词","手选"));
+  var initial=doc("常用提示词整理与复用","首行",1);
+  var current=new DocDto("n","新标题","m",null,null,false,List.of(),List.of(),initial.content(),List.of(),"kb-notes",null,2,List.of("手选"));
+  when(knowledge.getDoc("n")).thenReturn(current);
+  when(text.submit(eq("m"),any(),eq("NOTE_TAGS"),eq(initial.content().markdown()),any(),isNull(),isNull(),eq(List.of("提示词","已删除")))).thenReturn(new TextPolishJobService.Result("tag-job","QUEUED","等待",null,null,null));
+  tx.executeWithoutResult(t->managed.saved(initial,"m","",null));
+  assertThat(managed.status("n","m").tags()).isEqualTo("PENDING");
+  tx.executeWithoutResult(t->managed.advance("n"));
+  when(text.get("m","tag-job")).thenReturn(new TextPolishJobService.Result("tag-job","SUCCEEDED","完成","提示词\n新标签\n已删除\n提示词",null,null));
+  when(knowledge.updateDerivedNote(eq("n"),any())).thenAnswer(c->{PatchDocRequest patch=c.getArgument(1);assertThat(patch.expectedRev()).isEqualTo(2);assertThat(patch.title()).isNull();assertThat(patch.content()).isNull();assertThat(patch.tags()).containsExactly("手选","提示词");return current;});
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(managed.status("n","m").tags()).isEqualTo("DONE");
+  verify(noteTags,never()).create(any());
+ }
+ @Test void noTagsOrNoMatchingTagSkipsWithoutCreatingOrChangingContent(){
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false}");
+  var initial=doc("常用提示词","标题",1);when(knowledge.getDoc("n")).thenReturn(initial);
+  tx.executeWithoutResult(t->managed.saved(initial,"m","",null));
+  assertThat(managed.status("n","m").tags()).isEqualTo("SKIPPED");
+  when(noteTags.list()).thenReturn(List.of("工作"));
+  when(noteTags.lockExisting()).thenReturn(List.of("工作"));
+  when(text.submit(any(),any(),eq("NOTE_TAGS"),any(),any(),any(),any(),anyList())).thenReturn(new TextPolishJobService.Result("tag-job","QUEUED","等待",null,null,null));
+  tx.executeWithoutResult(t->managed.manual("m","n","tags",1,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  when(text.get("m","tag-job")).thenReturn(new TextPolishJobService.Result("tag-job","SUCCEEDED","完成","",null,null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(managed.status("n","m").stages().get("tags").reasonCode()).isEqualTo("NO_MATCHING_TAGS");
+  verify(knowledge,never()).updateDerivedNote(any(),any());
+ }
  @Test void missingPreferenceDefaultsAndExplicitFalseStayDifferentFromCorruptPreference(){
   assertThat(settings.get("m").settings().title()).isTrue();assertThat(settings.get("m").configured()).isFalse();
   values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false}");assertThat(settings.get("m").settings().title()).isFalse();assertThat(settings.get("m").settings().polish()).isTrue();
