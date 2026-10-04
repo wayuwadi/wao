@@ -2,9 +2,9 @@
   "id": "/",
   "name": "WAO Life OS",
   "short_name": "WAO",
-  "description": "在手机上管理项目、记录小记并使用 WAO 全部真实功能。",
+  "description": "打开就能记录小记，也能管理项目并使用 WAO 全部功能。",
   "lang": "zh-CN",
-  "start_url": "/projects",
+  "start_url": "/notes",
   "scope": "/",
   "display": "standalone",
   "display_override": [
@@ -39,6 +39,12 @@
     }
   ],
   "shortcuts": [
+    {
+      "name": "随手记小记",
+      "short_name": "小记",
+      "description": "记录想法、书摘和感想",
+      "url": "/notes"
+    },
     {
       "name": "项目管理",
       "short_name": "项目",
