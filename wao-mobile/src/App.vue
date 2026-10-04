@@ -7,6 +7,7 @@ import { chat } from "./composables/chat";
 import { App as NativeApp } from "@capacitor/app";
 import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import AppIcon from "./components/AppIcon.vue";
+import NoteCaptureInbox from "./components/NoteCaptureInbox.vue";
 const demo = import.meta.env.DEV && import.meta.env.MODE === "demo";
 const w = useWorkspace(),
   booting = ref(true),
@@ -158,5 +159,9 @@ onUnmounted(() => {
     <p class="login-footer">使用已有 WAO 账号登录 · 与 Web 数据同步</p>
   </div>
   <RouterView v-else />
+  <NoteCaptureInbox
+    v-if="w.session.value"
+    :key="`${w.session.value.accountId}:${w.session.value.member.id}`"
+  />
   <UpdateDialog />
 </template>

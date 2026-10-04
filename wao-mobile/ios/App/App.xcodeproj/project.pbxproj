@@ -17,6 +17,13 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		5C7AB8E5B4744CB7AA35EBFB /* WAOShare.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = DB0574FC190341679702A870 /* WAOShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A11FE98625774B419EA76ED4 /* NoteCapturePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D900F86D14B49F5A1C3D848 /* NoteCapturePlugin.swift */; };
+		08323E73053141BA9DCA56DC /* CaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C283C2A4A84C04980DCF86 /* CaptureStore.swift */; };
+		4E367581619A41FDBD1E8C7E /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0120BC245C43C388AF11B5 /* ShareViewController.swift */; };
+		A3B0A42FE5144F8BAC61423E /* CaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C283C2A4A84C04980DCF86 /* CaptureStore.swift */; };
+		354078E331364C4EB42DD96C /* CaptureFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = F907CCF2954143ACACEE4C78 /* CaptureFormat.swift */; };
+		D070346EBD84451189DE9E15 /* CaptureFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = F907CCF2954143ACACEE4C78 /* CaptureFormat.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +39,11 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		DB0574FC190341679702A870 /* WAOShare.appex */ = {isa = PBXFileReference; name = "WAOShare.appex"; path = "WAOShare.appex"; sourceTree = BUILT_PRODUCTS_DIR; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; };
+		2D900F86D14B49F5A1C3D848 /* NoteCapturePlugin.swift */ = {isa = PBXFileReference; name = "NoteCapturePlugin.swift"; path = "App/NoteCapturePlugin.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		02C283C2A4A84C04980DCF86 /* CaptureStore.swift */ = {isa = PBXFileReference; name = "CaptureStore.swift"; path = "Shared/CaptureStore.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		5C0120BC245C43C388AF11B5 /* ShareViewController.swift */ = {isa = PBXFileReference; name = "ShareViewController.swift"; path = "WAOShare/ShareViewController.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		F907CCF2954143ACACEE4C78 /* CaptureFormat.swift */ = {isa = PBXFileReference; name = "CaptureFormat.swift"; path = "Shared/CaptureFormat.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -40,6 +52,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		55F424E9B2164E28ACB227DD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -52,6 +71,10 @@
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
+				2D900F86D14B49F5A1C3D848 /* NoteCapturePlugin.swift */,
+				02C283C2A4A84C04980DCF86 /* CaptureStore.swift */,
+				5C0120BC245C43C388AF11B5 /* ShareViewController.swift */,
+				F907CCF2954143ACACEE4C78 /* CaptureFormat.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -59,6 +82,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				DB0574FC190341679702A870 /* WAOShare.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -90,10 +114,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				5497515A8E32440C8E447FA2 /* Copy Files */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				4165A05FC01441258E82AC3F /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -103,19 +129,55 @@
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		66DA02D7F69A4433A4E615AA /* "WAOShare" */ = {
+			isa = PBXNativeTarget;
+			name = "WAOShare";
+			productName = "WAOShare";
+			productReference = DB0574FC190341679702A870;
+			productType = "com.apple.product-type.app-extension";
+			buildConfigurationList = 34A26F3D2FF744C0857507CF;
+			buildPhases = (
+				A726FF6C2F6545C2B24705BB /* Sources */,
+				55F424E9B2164E28ACB227DD /* Frameworks */,
+				C84C9685774A4C92A18DC1B2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
 		504EC2FC1FED79650016851F /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastSwiftUpdateCheck = 0920;
-				LastUpgradeCheck = 0920;
+				LastSwiftUpdateCheck = 920;
+				LastUpgradeCheck = 920;
 				TargetAttributes = {
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
 						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = {
+								enabled = 1;
+							};
+							com.apple.Keychain = {
+								enabled = 1;
+							};
+						};
+					};
+					66DA02D7F69A4433A4E615AA = {
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = {
+								enabled = 1;
+							};
+							com.apple.Keychain = {
+								enabled = 1;
+							};
+						};
 					};
 				};
 			};
@@ -136,6 +198,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				66DA02D7F69A4433A4E615AA /* "WAOShare" */,
 			);
 		};
 /* End PBXProject section */
@@ -155,6 +218,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C84C9685774A4C92A18DC1B2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -164,6 +234,19 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				A11FE98625774B419EA76ED4 /* NoteCapturePlugin.swift in Sources */,
+				08323E73053141BA9DCA56DC /* CaptureStore.swift in Sources */,
+				354078E331364C4EB42DD96C /* CaptureFormat.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A726FF6C2F6545C2B24705BB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4E367581619A41FDBD1E8C7E /* ShareViewController.swift in Sources */,
+				A3B0A42FE5144F8BAC61423E /* CaptureStore.swift in Sources */,
+				D070346EBD84451189DE9E15 /* CaptureFormat.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -304,20 +387,21 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1001001;
+				CURRENT_PROJECT_VERSION = 1002000;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = cn.wayuwa.wao;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				CODE_SIGN_ENTITLEMENTS = Shared/NoteCapture.entitlements;
 			};
 			name = Debug;
 		};
@@ -326,21 +410,64 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1001001;
+				CURRENT_PROJECT_VERSION = 1002000;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = cn.wayuwa.wao;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				CODE_SIGN_ENTITLEMENTS = Shared/NoteCapture.entitlements;
 			};
 			name = Release;
+		};
+		2F022ED04D984A44AA3B8AB8 /* Debug */ = {
+			name = Debug;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				INFOPLIST_FILE = WAOShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "cn.wayuwa.wao.share";
+				CODE_SIGN_ENTITLEMENTS = Shared/NoteCapture.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1002000;
+				MARKETING_VERSION = 1.2.0;
+				SWIFT_VERSION = 5.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				APPLICATION_EXTENSION_API_ONLY = YES;
+			};
+		};
+		E04844273F3D4D179618A3FF /* Release */ = {
+			name = Release;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = WAOShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "cn.wayuwa.wao.share";
+				CODE_SIGN_ENTITLEMENTS = Shared/NoteCapture.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1002000;
+				MARKETING_VERSION = 1.2.0;
+				SWIFT_VERSION = 5.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				APPLICATION_EXTENSION_API_ONLY = YES;
+			};
 		};
 /* End XCBuildConfiguration section */
 
@@ -363,6 +490,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		34A26F3D2FF744C0857507CF /* Build configuration list for PBXNativeTarget "WAOShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2F022ED04D984A44AA3B8AB8 /* Debug */,
+				E04844273F3D4D179618A3FF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -379,6 +515,38 @@
 			productName = "CapApp-SPM";
 		};
 /* End XCSwiftPackageProductDependency section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		5497515A8E32440C8E447FA2 /* Copy Files */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5C7AB8E5B4744CB7AA35EBFB /* WAOShare.appex in Copy Files */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			name = "Copy Files";
+			dstPath = "";
+			dstSubfolderSpec = 13;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		F644E634061445B087ECAEB4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 66DA02D7F69A4433A4E615AA;
+			remoteInfo = "WAOShare";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		4165A05FC01441258E82AC3F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 66DA02D7F69A4433A4E615AA /* "WAOShare" */;
+			targetProxy = F644E634061445B087ECAEB4 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 	};
 	rootObject = 504EC2FC1FED79650016851F /* Project object */;
 }

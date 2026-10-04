@@ -300,6 +300,7 @@ public class NoteAiWorkflowService {
     private Workflow advancePolish(Workflow workflow, DocDto doc) {
         String markdown = doc.content().markdown();
         String text = markdown.replaceFirst("^!\\[文章总览图]\\([^\\n]+\\)\\s*", "").strip();
+        text = BookExcerptProtection.thoughts(text);
         if (text.length() < 40 || text.length() > 12_000) return workflow.withPolish(SKIPPED, workflow.polishJobId(), null);
         String jobId = workflow.polishJobId();
         if (jobId == null) {
@@ -314,7 +315,9 @@ public class NoteAiWorkflowService {
         if (!StringUtils.hasText(result.polished())) return workflow.withPolish(FAILED, jobId, "AI 未返回可用润色版本");
         String cover = markdown.startsWith("![文章总览图](")
                 ? markdown.substring(0, markdown.indexOf('\n') + 1) + "\n" : "";
-        String polished = cover + result.polished().replaceFirst("^!\\[文章总览图]\\([^\\n]+\\)\\s*", "").strip();
+        String sourceBody = markdown.replaceFirst("^!\\[文章总览图]\\([^\\n]+\\)\\s*", "");
+        String polished = cover + BookExcerptProtection.reassemble(sourceBody,
+                result.polished().replaceFirst("^!\\[文章总览图]\\([^\\n]+\\)\\s*", "").strip());
         polishVersions.save(workflow.memberId(), workflow.docId(),
                 new SaveNotePolishVersionRequest(markdown, polished,jobId));
         DocDto saved = knowledge.updateDerivedNote(doc.id(), new PatchDocRequest(null, null,

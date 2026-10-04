@@ -1409,6 +1409,24 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void createOnlyRetryKeepsLaterCloudContentRevisionAndDoesNotNotify() {
+        String id = "m-mobile-create-only";
+        DocEntity existing = doc(id, KnowledgeService.NOTES_KB_ID, "kb-notes-wg");
+        existing.setAuthorId("wg"); existing.setTitle("电脑整理后的标题");
+        existing.setContentVersion(1); existing.setContentMarkdown("电脑上继续写的正文"); existing.setRev(9);
+        when(docMapper.selectById(id)).thenReturn(existing);
+        when(docMapper.selectList(any())).thenReturn(List.of(existing));
+        DocDto dto = service.createNote(id, new CreateNoteRequest("原始标题", List.of(),
+                new RichDocContentDto(1, null, "手机重试的旧正文"), null, null, null, null, null, true), "wg");
+        assertThat(dto.title()).isEqualTo("电脑整理后的标题");
+        assertThat(dto.content().markdown()).isEqualTo("电脑上继续写的正文");
+        assertThat(dto.rev()).isEqualTo(9);
+        verify(docMapper, never()).updateContentSnapshot(any());
+        verify(docMapper, never()).insert(any(DocEntity.class));
+        verify(taskNotifier, never()).notifyNoteCreated(any(), any(), any(), any());
+    }
+
+    @Test
     void createNoteWithStableIdRejectsCollisionsAndInvalidIds() {
         String occupiedId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         DocEntity occupied = doc(occupiedId, "another-kb", "another-folder");

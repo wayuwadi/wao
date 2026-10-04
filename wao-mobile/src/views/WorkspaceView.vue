@@ -24,6 +24,9 @@ import AppIcon from "../components/AppIcon.vue";
 import TaskRow from "../components/TaskRow.vue";
 import GameEntry from "../components/GameEntry.vue";
 import DraftEditor from "../components/DraftEditor.vue";
+import BookNoteReader from "../components/BookNoteReader.vue";
+import { capturePreview, newCapture, quoteParts } from "../domain/noteCapture";
+const readingBook = ref<Note | null>(null);
 const version = import.meta.env.VITE_MOBILE_VERSION || pkg.version;
 const props = defineProps<{ tab: string }>(),
   w = useWorkspace(),
@@ -133,6 +136,24 @@ function taskEditor(task: Task) {
   };
 }
 function noteEditor(note: Note) {
+  if (quoteParts(note)) {
+    readingBook.value = note;
+    return;
+  }
+  if (note.content && !note.content.document && note.rev !== undefined) {
+    window.dispatchEvent(
+      new CustomEvent("wao:capture-open", {
+        detail: {
+          ...newCapture(),
+          id: note.id,
+          title: note.title,
+          thoughts: note.content.markdown,
+          rev: note.rev,
+        },
+      }),
+    );
+    return;
+  }
   editor.value = drafts.value.find((d) => d.id === note.id) ?? {
     kind: "note",
     id: note.id,
@@ -146,6 +167,10 @@ function noteEditor(note: Note) {
 function create(
   kind: "task" | "note" = props.tab === "notes" ? "note" : "task",
 ) {
+  if (kind === "note") {
+    window.dispatchEvent(new CustomEvent("wao:capture-create"));
+    return;
+  }
   editor.value =
     kind === "task"
       ? {
@@ -441,7 +466,7 @@ onUnmounted(() => {
                 }}</span
               >
               <h3>{{ note.title }}</h3>
-              <p>{{ noteText(note) }}</p>
+              <p>{{ capturePreview(note) ?? noteText(note) }}</p>
               <AppIcon class="note-arrow" name="arrow" :size="18" /></button
             ><button
               v-if="!w.myNotes.value.length"
@@ -629,7 +654,7 @@ onUnmounted(() => {
                   }}</span
                 >
                 <h3>{{ note.title }}</h3>
-                <p>{{ noteText(note) }}</p>
+                <p>{{ capturePreview(note) ?? noteText(note) }}</p>
                 <span v-if="note.tags?.length" class="note-tags">{{
                   note.tags.map((t) => "#" + t).join(" ")
                 }}</span
@@ -680,6 +705,12 @@ onUnmounted(() => {
         /></RouterLink>
       </nav>
     </div>
+    <BookNoteReader
+      v-if="readingBook"
+      :key="readingBook.id"
+      :note="readingBook"
+      @close="readingBook = null"
+    />
     <DraftEditor
       v-if="editor"
       :key="editor.id"
