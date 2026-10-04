@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -13,6 +13,46 @@ function testRouter() {
 }
 
 describe('TabBar', () => {
+  it('尺寸变化后下一帧更新左右浏览状态，并在卸载时取消观察与待执行帧', async () => {
+    let onResize!: () => void
+    let onFrame!: FrameRequestCallback
+    const disconnect = vi.fn()
+    const cancelFrame = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { onResize = callback }
+      observe() {}
+      disconnect = disconnect
+    })
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+      onFrame = callback
+      return 7
+    }))
+    vi.stubGlobal('cancelAnimationFrame', cancelFrame)
+    const wrapper = mount(TabBar, { global: { plugins: [createPinia(), testRouter()] } })
+    try {
+      await flushPromises()
+      const scroller = wrapper.get('.tabbar').element
+      Object.defineProperties(scroller, {
+        clientWidth: { configurable: true, value: 100 },
+        scrollWidth: { configurable: true, value: 500 },
+        scrollLeft: { configurable: true, value: 100 },
+      })
+      onResize()
+      expect(wrapper.get('[aria-label="查看右侧页签"]').attributes('disabled')).toBeDefined()
+      onFrame(0)
+      await flushPromises()
+      expect(wrapper.get('[aria-label="查看左侧页签"]').attributes('disabled')).toBeUndefined()
+      expect(wrapper.get('[aria-label="查看右侧页签"]').attributes('disabled')).toBeUndefined()
+      onResize()
+      wrapper.unmount()
+      expect(disconnect).toHaveBeenCalledOnce()
+      expect(cancelFrame).toHaveBeenLastCalledWith(7)
+    } finally {
+      if (wrapper.exists()) wrapper.unmount()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('页签使用独立切换与关闭按钮，键盘关闭后焦点回到剩余页签', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
