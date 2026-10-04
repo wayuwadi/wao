@@ -8,6 +8,24 @@ const data = (): NoteOriginals => ({ before: snapshot('round', '本次输入'), 
 const create = () => mount(NoteOriginalReader, { props: { docId: 'note', memberId: 'member', currentRev: 3 }, global: { stubs: { MarkdownEditor: { props: {modelValue:String,readonly:Boolean}, template: '<pre :data-readonly="readonly">{{ modelValue }}</pre>' } } } })
 describe('按篇只读原文', () => {
  beforeEach(() => { vi.clearAllMocks(); vi.mocked(fetchNoteOriginals).mockResolvedValue(data()) })
+ it('图片清单内容跟随实际原文来源，换篇加载及失败时清空旧图片', async () => {
+  const originals = data()
+  originals.before!.markdown = '![本次图](/api/images/round/raw)'
+  originals.initial!.markdown = '![最初图](/api/images/first/raw)'
+  vi.mocked(fetchNoteOriginals).mockResolvedValueOnce(originals)
+  const w = create(); await flushPromises()
+  expect(w.emitted('reading-content')?.slice(-1)[0]?.[0]).toMatchObject({ markdown: originals.before!.markdown })
+  await w.get('button[aria-pressed="false"]').trigger('click'); await flushPromises()
+  expect(w.emitted('reading-content')?.slice(-1)[0]?.[0]).toMatchObject({ markdown: originals.initial!.markdown })
+  let reject!: (error: Error) => void
+  vi.mocked(fetchNoteOriginals).mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+  await w.setProps({ docId: 'other' }); await flushPromises()
+  expect(w.emitted('reading-content')?.slice(-1)[0]?.[0]).toBeNull()
+  reject(new Error('离线')); await flushPromises()
+  expect(w.get('[role=alert]').text()).toContain('离线')
+  expect(w.emitted('reading-content')?.slice(-1)[0]?.[0]).toBeNull()
+  w.unmount()
+ })
  it('默认本次来源，切换最初记录只改变阅读状态', async () => {
   const w=create();await flushPromises();expect(fetchNoteOriginals).toHaveBeenCalledExactlyOnceWith('note');expect(w.text()).toContain('本次输入');expect(w.text()).toContain('该次润色之后有更新');
   await w.get('button[aria-pressed="false"]').trigger('click');expect(w.get('pre').attributes('data-readonly')).toBe('true');expect(w.get('pre').text()).toBe('最初记录');expect(fetchNoteOriginals).toHaveBeenCalledTimes(1);w.unmount()

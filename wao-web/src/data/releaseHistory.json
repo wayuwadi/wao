@@ -1,5 +1,27 @@
 [
   {
+    "id": "release-notes-reading-columns-2026-10-04",
+    "publishedOn": "2026-10-04",
+    "sourceSubject": "feat(notes): 阅读模式采用三栏布局并保留正文图号引用",
+    "title": "文字与图片，各有位置",
+    "intro": "阅读小记时，目录、正文和配图分别呈现，图片在原位置留下可点击的图号。",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "小记阅读",
+        "title": "三栏阅读与图片引用",
+        "summary": "左侧选小记，中间读文字，右侧看图片；图号与配图支持双向定位。手机上正文与图片上下分区。",
+        "points": [],
+        "steps": [
+          "打开小记「预览」或「阅读模式」，按目录选择文章。",
+          "点击正文图号，右侧对应图片会突出显示；点击「返回正文」回到图片原位置。",
+          "点击图片或「全屏」查看原图，Esc 或关闭后返回。",
+          "「查看原文」仍只读，图片清单会跟随实际原文来源。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-capability-center-2026-10-04",
     "publishedOn": "2026-10-04",
     "sourceSubject": "feat(capabilities): 统一能力中心并提供逐项连接授权",

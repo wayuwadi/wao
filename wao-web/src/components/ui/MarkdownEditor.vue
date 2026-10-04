@@ -160,6 +160,9 @@ const props = withDefaults(
     readonly?: boolean
     /** 小记清单隐藏正文图片时，仍只请求轻量预览。 */
     previewImages?: boolean
+    /** 阅读模式以图号引用展示原图片节点，保留文档位置。 */
+    imageReferences?: boolean
+    activeImageReference?: number | null
     /** 原地编辑首次挂载后将焦点交给正文。 */
     autofocus?: boolean
     initialPosition?: number
@@ -207,6 +210,8 @@ const props = withDefaults(
     minHeight: 84,
     readonly: false,
     previewImages: false,
+    imageReferences: false,
+    activeImageReference: null,
     autofocus: false,
     bare: false,
     allowH1: false,
@@ -237,6 +242,7 @@ const emit = defineEmits<{
   'update:document': [value: RichDocNode]
   'content-change': [value: RichDocContent]
   'character-count': [value: number]
+  'image-reference': [index: number]
   'upload-file': [file: File, done: (item: FileItem | null) => void]
   'add-task': [text: string]
   'task-opened': []
@@ -402,6 +408,40 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
     ]
   },
   addNodeView() {
+    if (props.readonly && props.imageReferences) return ({ node }) => {
+      let current = node
+      const dom = document.createElement('span')
+      dom.className = 'reading-image-node'
+      dom.contentEditable = 'false'
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'reading-image-reference'
+      button.dataset.imageReference = '0'
+      const icon = document.createElement('i')
+      icon.className = 'ri-image-line'
+      icon.setAttribute('aria-hidden', 'true')
+      const number = document.createElement('span')
+      number.className = 'reading-image-number'
+      const caption = document.createElement('span')
+      caption.className = 'reading-image-caption'
+      const arrow = document.createElement('i')
+      arrow.className = 'ri-arrow-right-up-line'
+      arrow.setAttribute('aria-hidden', 'true')
+      button.append(icon, number, caption, arrow)
+      button.addEventListener('click', event => {
+        event.stopPropagation()
+        emit('image-reference', Number(button.dataset.imageReference))
+      })
+      dom.append(button)
+      const update = () => {
+        button.hidden = typeof current.attrs.src !== 'string' || !/^(https?:\/\/|\/(?!\/))/i.test(current.attrs.src)
+        caption.textContent = current.attrs.alt ? ` · ${current.attrs.alt}` : ''
+        button.title = current.attrs.alt || '查看右侧图片'
+      }
+      update()
+      return { dom, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
+        stopEvent: () => true, ignoreMutation: () => true }
+    }
     if (!this.options.contextControls) return null
     const usePreview = this.options.previewImages
     return ({ node }) => {
@@ -681,6 +721,7 @@ const editor = useEditor({
     },
   },
   onCreate: ({ editor: e }) => nextTick(() => {
+    refreshImageReferences(e)
     imageMenuRequested.value = false
     updateCharacterCount(e)
     editorReady.value = true
@@ -707,12 +748,12 @@ const editor = useEditor({
     }
   }),
   onTransaction: ({ editor: e, transaction }) => {
-    if (transaction.docChanged) updateCharacterCount(e)
+    if (transaction.docChanged) { refreshImageReferences(e); updateCharacterCount(e) }
   },
   onUpdate: ({ editor: e }) => {
     tableMenu.value = null
     selectionDismissed.value = false
-    if (!editorReady.value) return
+    if (!editorReady.value || props.readonly) return
     const markdown = e.getMarkdown()
     const document = e.getJSON() as RichDocNode
     emit('update:modelValue', markdown)
@@ -730,6 +771,24 @@ const editor = useEditor({
   },
   onBlur: () => flushExternal(),
 })
+
+function refreshImageReferences(e: Editor) {
+  if (!props.readonly || !props.imageReferences || e.isDestroyed) return
+  ;[...e.view.dom.querySelectorAll<HTMLButtonElement>('[data-image-reference]')].filter(button => !button.hidden).forEach((button, offset) => {
+    const index = offset + 1
+    button.dataset.imageReference = String(index)
+    button.querySelector('.reading-image-number')!.textContent = `图 ${index}`
+    button.setAttribute('aria-label', `查看图 ${index}${button.title ? `：${button.title}` : ''}`)
+    button.setAttribute('aria-current', String(props.activeImageReference === index))
+  })
+}
+watch(() => props.activeImageReference, () => { if (editor.value) refreshImageReferences(editor.value) })
+function focusImageReference(index: number) {
+  const button = editor.value?.view.dom.querySelector<HTMLButtonElement>(`[data-image-reference="${index}"]`)
+  button?.scrollIntoView?.({ block: 'center', inline: 'nearest' })
+  button?.focus({ preventScroll: true })
+  return !!button
+}
 
 const selectionMenuEl = ref<HTMLElement | null>(null)
 const selectionImageAction = ref<InstanceType<typeof SelectionImageAction> | null>(null)
@@ -2095,7 +2154,7 @@ function positionAtPoint(left: number, top: number) {
     return found ? { position: found.pos, viewportTop: e.view.coordsAtPos(found.pos).top } : null
   } catch { return null /* 布局尚未就绪时仍允许进入编辑，不阻塞用户。 */ }
 }
-defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, focusSearch, positionAtPoint })
+defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, focusSearch, positionAtPoint, focusImageReference })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
@@ -2504,6 +2563,13 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.md-body :deep(.reading-image-node) { display: inline-block; max-width: 100%; margin: 6px 8px 6px 0; vertical-align: middle; }
+.md-body :deep(.reading-image-reference) { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 9px; border: 1px solid var(--wao-line-control); border-radius: 8px; color: var(--wao-primary-text); background: var(--wao-primary-soft); font: inherit; font-size: 12px; line-height: 1.6; cursor: pointer; }
+.md-body :deep(.reading-image-reference[hidden]) { display: none; }
+.md-body :deep(.reading-image-reference:hover), .md-body :deep(.reading-image-reference[aria-current='true']) { border-color: var(--wao-primary); }
+.md-body :deep(.reading-image-number), .md-body :deep(.reading-image-reference i) { flex: none; }
+.md-body :deep(.reading-image-caption) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-body :deep(.reading-image-reference:focus-visible) { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .md-body :deep(.note-image-node) { display: inline-block; position: relative; vertical-align: top; margin: 8px 8px 8px 0; border-radius: 9px; line-height: 0; }
 .md-body :deep(.note-image-node.image-aligned) { display: block; }
 .md-body :deep(.note-image-node img) { border-radius: 9px; cursor: default; }
