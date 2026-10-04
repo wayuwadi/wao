@@ -292,7 +292,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="tianren-page">
+  <div class="tianren-page wao-page-frame">
     <header class="hero">
       <div class="page-title"><span class="page-icon"><i class="ri-windy-line" aria-hidden="true"></i></span><div><h1>天人一卦</h1><p>观照当下，留下一点行动。</p></div></div>
       <div class="hero-actions">

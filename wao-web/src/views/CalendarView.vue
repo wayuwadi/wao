@@ -1130,7 +1130,7 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
 </script>
 
 <template>
-  <div class="cal" :class="`cal-${viewMode}`">
+  <div class="cal wao-page-frame" :class="`cal-${viewMode}`">
     <div v-if="scheduleChange" class="schedule-feedback" role="status">
       <span v-if="scheduleState === 'saving'">正在保存执行安排…</span>
       <span v-else-if="scheduleState === 'error'">保存失败，执行安排已保留在本机。{{ data.taskSaveError(scheduleChange.id) }}</span>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePreferenceStore } from '@/stores/preferences'
 import NoteOriginalReader from '@/components/notes/NoteOriginalReader.vue'
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
@@ -70,6 +71,7 @@ async function togglePin(id: string) {
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const data = useDataStore()
+const pagePreferences = usePreferenceStore()
 const session = useSessionStore()
 const now = useNow()
 type NoteEditorHandle = { copyFormatted: () => Promise<void>; positionAtPoint: (left: number, top: number) => { position: number; viewportTop: number } | null; focusImageReference: (index: number) => boolean }
@@ -1033,7 +1035,7 @@ onMounted(() => void loadPins())
 </script>
 
 <template>
-  <main class="notes-page" @contextmenu="openImageMenu">
+  <main class="notes-page wao-page-frame" @contextmenu="openImageMenu">
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
     <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i>今日写字 {{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button></div><span>{{ notes.length }} 条记录</span></header>
     <div ref="workspace" class="notes-workspace" :style="writingStyle" :class="{ 'writing-collapsed': !writingOpen, resizing }">
@@ -1131,7 +1133,7 @@ onMounted(() => void loadPins())
     <button v-if="showBackToTop" class="notes-back-top" type="button" aria-label="回到顶部" title="回到顶部" @click="backToTop"><i class="ri-rocket-2-line" aria-hidden="true"></i></button>
     <NoteAiSettingsDialog v-model:open="noteSettingsOpen" />
     <Teleport to="body">
-      <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :class="{ 'reader-full': readerMode === 'full', 'reader-narrow': contentWidth === 'narrow', 'directory-open': readerDirectoryOpen }" :inert="previewImage ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
+      <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :data-page-layout="pagePreferences.pageLayoutStyle" :class="{ 'reader-full': readerMode === 'full', 'reader-narrow': contentWidth === 'narrow', 'directory-open': readerDirectoryOpen }" :inert="previewImage ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
         <header class="reader-topbar">
           <strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>只读</small></strong>
           <span class="reader-copy-status" role="status" aria-live="polite">{{ readerCopyStatus }}</span>

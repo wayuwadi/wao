@@ -447,7 +447,7 @@ function onFileSettingsSaved(settings: FileSettings) {
 </script>
 
 <template>
-  <div class="files">
+  <div class="files wao-page-frame">
     <DemoBanner
       icon="ri-hard-drive-2-line"
       title="文件与图床"

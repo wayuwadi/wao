@@ -33,7 +33,7 @@ function actions(event: MouseEvent | KeyboardEvent, index?: number) {
 </script>
 
 <template>
-  <main class="home" @contextmenu="actions" @click="tap" @pointerdown="down" @pointermove="move" @pointerup="up" @pointerleave="pointerPlay?.release()" @pointercancel="clearSurprises">
+  <main class="home wao-page-frame" @contextmenu="actions" @click="tap" @pointerdown="down" @pointermove="move" @pointerup="up" @pointerleave="pointerPlay?.release()" @pointercancel="clearSurprises">
     <section class="home-rest-welcome">
       <header class="home-day">
         <HomeOverviewCard />

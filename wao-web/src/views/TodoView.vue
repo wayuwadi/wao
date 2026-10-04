@@ -114,7 +114,7 @@ function onDropStatus(status: TaskStatus) {
 </script>
 
 <template>
-  <div class="todo" :class="{ 'todo-quadrant': taskView === 'quadrant' }">
+  <div class="todo wao-page-frame" :class="{ 'todo-quadrant': taskView === 'quadrant' }">
     <div class="ptop">
       <div class="ptitle">待办</div>
       <span class="ptip">按天安排与回看 · 任务归属于各自项目</span>

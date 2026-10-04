@@ -117,7 +117,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="navigation-center" :class="{ customizing }">
+  <main class="navigation-center wao-page-frame" :class="{ customizing }">
     <header class="hero">
       <div>
         <span class="eyebrow">WAO / 导航</span>

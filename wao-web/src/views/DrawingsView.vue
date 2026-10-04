@@ -416,7 +416,7 @@ useSaveBeforeRefresh(async () => { if (dirty.value) await saveNow() })
 </script>
 
 <template>
-  <section ref="page" class="drawings-page" :class="{ 'sidebar-open': sidebarOpen }">
+  <section ref="page" class="drawings-page wao-page-frame" :class="{ 'sidebar-open': sidebarOpen }">
     <aside class="file-sidebar">
       <div class="sidebar-head">
         <div>

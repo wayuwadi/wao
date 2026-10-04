@@ -1,0 +1,62 @@
+/* One member-controlled outer frame. Inner workspaces retain their own height and scrolling. */
+:is(.shell, .tab-page-window.floating, .notes-reader)[data-page-layout] {
+  --wao-page-frame-max: none;
+  --wao-page-gutter: clamp(16px, 3vw, 44px);
+  --wao-reading-max: 840px;
+  --wao-form-max: 760px;
+  --wao-complex-form-max: 1000px;
+}
+:is(.shell, .tab-page-window.floating, .notes-reader)[data-page-layout='fluid'] {
+  --wao-reading-max: none;
+  --wao-form-max: none;
+  --wao-complex-form-max: none;
+}
+:is(.shell, .tab-page-window.floating, .notes-reader)[data-page-layout='centered'] {
+  --wao-page-frame-max: 1600px;
+}
+
+/* Specificity is intentional: page-local scoped padding and view modes cannot narrow the outer frame. */
+.shell[data-page-layout] .page-body .wao-page-frame,
+.tab-page-window.floating[data-page-layout] .window-content .wao-page-frame {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: var(--wao-page-frame-max);
+  margin-inline: auto;
+  padding-inline: var(--wao-page-gutter);
+}
+
+.shell[data-page-layout] .content,
+.shell[data-page-layout] .spane,
+:is(.shell, .tab-page-window.floating)[data-page-layout] .doc-scroll {
+  scrollbar-gutter: stable;
+}
+:is(.shell, .tab-page-window.floating)[data-page-layout] .day-workspace { max-width: none; margin-inline: 0; }
+:is(.shell, .tab-page-window.floating)[data-page-layout] .day-task-main :is(.task-trace, .historical-subs, .past-schedule),
+:is(.shell, .tab-page-window.floating)[data-page-layout] .cap-detail > p { max-width: var(--wao-reading-max); }
+:is(.shell, .tab-page-window.floating)[data-page-layout] .reader-article { width: 100%; max-width: var(--wao-reading-max); }
+.notes-reader[data-page-layout].notes-reader .reader-article { width: 100%; max-width: var(--wao-reading-max); }
+.notes-reader[data-page-layout].reader-narrow .reader-article { max-width: 650px; }
+:is(.shell, .tab-page-window.floating)[data-page-layout] .doc-scroll:not(.library-home-scroll) .doc-col { max-width: var(--wao-reading-max); }
+/* This deliberate writing-mode choice remains narrower than the general reading style. */
+:is(.shell, .tab-page-window.floating)[data-page-layout] .document-pane.content-narrow .doc-scroll:not(.library-home-scroll) .doc-col { max-width: 650px; }
+:is(.shell, .tab-page-window.floating)[data-page-layout] .scontent { width: 100%; max-width: var(--wao-form-max); padding-inline: 24px; }
+:is(.shell, .tab-page-window.floating)[data-page-layout] .scontent.content-wide,
+:is(.shell, .tab-page-window.floating)[data-page-layout] .scontent:has(.note-ai-settings-form) { max-width: var(--wao-complex-form-max); }
+
+/* Mobile layout is determined by available workspace width, including a narrowed or floating tab. */
+@container app-main (max-width: 760px) {
+  .shell[data-page-layout] .wao-page-frame { --wao-page-gutter: 16px; }
+}
+@container app-main (max-width: 360px) {
+  .shell[data-page-layout] .wao-page-frame { --wao-page-gutter: 12px; }
+}
+.tab-page-window.floating[data-page-layout] { --wao-page-gutter: 12px; }
+.tab-page-window.floating[data-page-layout] .window-content { scrollbar-gutter: stable; }
+@media (max-width: 760px) {
+  :is(.shell, .tab-page-window.floating)[data-page-layout] { --wao-page-gutter: 16px; }
+  :is(.shell, .tab-page-window.floating)[data-page-layout] .scontent { padding-inline: 12px; }
+}
+@media (max-width: 360px) {
+  :is(.shell, .tab-page-window.floating)[data-page-layout] { --wao-page-gutter: 12px; }
+}

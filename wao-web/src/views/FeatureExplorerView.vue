@@ -112,7 +112,7 @@ async function openFeature(item: FeatureCatalogEntry) {
 }
 </script>
 <template>
-  <main class="features-page">
+  <main class="features-page wao-page-frame">
     <header class="feature-heading">
       <div>
         <span class="hero-eyebrow"

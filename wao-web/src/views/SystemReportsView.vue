@@ -223,7 +223,7 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 </script>
 
 <template>
-  <main class="reports-page">
+  <main class="reports-page wao-page-frame">
     <header class="hero">
       <div>
         <span><i class="ri-bar-chart-box-line"></i> SYSTEM DELIVERY</span>

@@ -168,7 +168,7 @@ onMounted(load)
 </script>
 
 <template>
-  <main class="monitor-page">
+  <main class="monitor-page wao-page-frame">
     <header class="hero">
       <div>
         <span>NETWORK EXPERIENCE</span>
