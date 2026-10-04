@@ -66,7 +66,10 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 const data = useDataStore()
 const session = useSessionStore()
 const now = useNow()
-const noteEditors = new Map<string, { copyFormatted: () => Promise<void> }>()
+type NoteEditorHandle = { copyFormatted: () => Promise<void>; positionAtPoint: (left: number, top: number) => { position: number; viewportTop: number } | null }
+const noteEditors = new Map<string, NoteEditorHandle>()
+const readerEditor = ref<NoteEditorHandle | null>(null)
+const editAnchors = ref<Record<string, { position: number; viewportTop: number; fullscreen?: boolean } | undefined>>({})
 type NoteComposerHandle = { dirty: boolean; save: () => Promise<void> }
 const noteComposers = new Map<string, NoteComposerHandle>()
 const retryingEnrichment = ref<string[]>([])
@@ -157,7 +160,7 @@ async function closeImage() {
   if (reading.value && document.activeElement !== imageTrigger) readerClose.value?.focus({ preventScroll: true })
   imageTrigger = null
 }
-function setNoteEditor(id: string, value: unknown) { if (value) noteEditors.set(id, value as { copyFormatted: () => Promise<void> }); else noteEditors.delete(id) }
+function setNoteEditor(id: string, value: unknown) { if (value) noteEditors.set(id, value as NoteEditorHandle); else noteEditors.delete(id) }
 function setNoteComposer(id: string, value: unknown) {
   const composer = value as NoteComposerHandle | null
   if (composer?.save) noteComposers.set(id, composer)
@@ -380,13 +383,25 @@ async function deleteNote(id: string) {
   } finally { deletingId.value = '' }
 }
 async function editNote(id: string, event?: MouseEvent) {
-  if (event?.target instanceof Element && event.target.closest('a, button, input, select, textarea, summary, [contenteditable="true"]')) return
+  if (event?.target instanceof Element && event.target.closest('a, button, input, select, textarea, summary, img, [contenteditable="true"]')) return
+  editAnchors.value[id] = event ? noteEditors.get(id)?.positionAtPoint?.(event.clientX, event.clientY) ?? undefined : undefined
   if (pendingCardClickId === id) clearCardClickTimer()
   confirmingDeleteId.value = ''
   if (!editingIds.value.includes(id)) editingIds.value = [...editingIds.value, id]
   await nextTick()
   const card = Array.from(notesList.value?.querySelectorAll<HTMLElement>('[data-note-id]') ?? []).find(el => el.dataset.noteId === id)
   card?.querySelector<HTMLElement>('[contenteditable="true"], textarea')?.focus({ preventScroll: true })
+}
+async function editReadingNote(event: MouseEvent) {
+  if (originalsOpen.value || !readingNote.value || event.target instanceof Element && event.target.closest('a, button, img')) return
+  const id = readingNote.value.id
+  const anchor = readerEditor.value?.positionAtPoint?.(event.clientX, event.clientY)
+  const fullscreen = readerMode.value === 'full'
+  await stopReading()
+  limit.value = Math.max(limit.value, matching.value.findIndex(note => note.id === id) + 1)
+  editAnchors.value[id] = { position: anchor?.position ?? 1, viewportTop: anchor?.viewportTop ?? 100, fullscreen }
+  if (!expandedIds.value.includes(id)) expandedIds.value.push(id)
+  if (!editingIds.value.includes(id)) editingIds.value.push(id)
 }
 const PAGE_SIZE = 10
 const limit = ref(PAGE_SIZE)
@@ -987,7 +1002,7 @@ onMounted(() => void loadPins())
             {{ noteSearchHit(note)!.field }}命中 · {{ noteSearchHit(note)!.before }}<mark>{{ noteSearchHit(note)!.match }}</mark>{{ noteSearchHit(note)!.after }} <span>定位</span>
           </button>
           <p v-if="searchFocus.id === note.id && !matching.some(item => item.id === note.id)" class="workflow-status">搜索定位 · 原有筛选已保留，额外显示此条</p>
-          <NoteComposer :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :tag-options="availableTags" :workflow-message="workflowMessage(note.id)"
+          <NoteComposer :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :expanded="expandedIds.includes(note.id)" :initial-fullscreen="editAnchors[note.id]?.fullscreen" :initial-position="editAnchors[note.id]?.position" :initial-viewport-top="editAnchors[note.id]?.viewportTop" :tag-options="availableTags" :workflow-message="workflowMessage(note.id)"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @draft-change="onDraftChange(note.id, $event)" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
           <div class="note-heading"><h2>{{ displayedTitle(note) }}</h2><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
@@ -1037,7 +1052,7 @@ onMounted(() => void loadPins())
               <div class="reader-article"><NoteOriginalReader v-if="originalsOpen" :doc-id="readingNote.id" :member-id="session.currentUser.id" :current-rev="readingNote.rev" @source-change="changeOriginalSource" @ready="restoreReaderPosition" /><template v-else><div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
               <h2>{{ displayedTitle(readingNote) }}</h2>
               <div v-if="displayedTags(readingNote).length" class="reader-tags"><span v-for="tag in displayedTags(readingNote)" :key="tag"># {{ tag }}</span></div>
-              <div class="reader-content" @click="openInlineImage"><div class="reader-body"><MarkdownEditor :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="restoreReaderPosition" /></div></div></template></div>
+              <div class="reader-content" @click="openInlineImage" @dblclick="editReadingNote"><div class="reader-body"><MarkdownEditor ref="readerEditor" :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="restoreReaderPosition" /></div></div></template></div>
             </article>
             <footer class="reader-controls"><button type="button" aria-label="上一篇小记（←）" :disabled="readingIndex <= 0" @click="moveReader(-1)"><i class="ri-arrow-left-line" aria-hidden="true"></i>上一篇</button><span>{{ readingIndex + 1 }} / {{ readerNotes.length }}<small> · ← → 翻篇 · Esc 退出</small></span><button type="button" aria-label="下一篇小记（→）" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇<i class="ri-arrow-right-line" aria-hidden="true"></i></button></footer>
           </div>

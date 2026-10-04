@@ -36,6 +36,7 @@ async function mountEditor(props: {
   searchRequest?: string
   readonly?: boolean
   autofocus?: boolean
+  initialPosition?: number
   previewImages?: boolean
   placeholder?: string
   allowH1?: boolean
@@ -81,6 +82,14 @@ async function mountEditor(props: {
 }
 
 describe('异步挂载焦点保护', () => {
+  it('异步编辑器创建后恢复富文本光标位置，插入发生在原来的文字中', async () => {
+    const w = await mountEditor({ modelValue: '甲乙丙丁', initialPosition: 3 })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    expect(e.state.selection.from).toBe(3)
+    e.commands.insertContent('定位')
+    expect(e.getText()).toBe('甲乙定位丙丁')
+    w.unmount()
+  })
   it('历史段落内的块图片加载后保留前后文字、格式与图片属性，不在只读时写回', async () => {
     const legacy: RichDocNode = { type: 'doc', content: [{ type: 'paragraph', content: [
       { type: 'text', text: '图片前', marks: [{ type: 'bold' }] },
