@@ -30,8 +30,8 @@ class TianrenVisualServiceTest {
         var ds=new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa","");
         db=new JdbcTemplate(ds);
         db.execute("CREATE TABLE member(id VARCHAR(32) PRIMARY KEY)");db.update("INSERT INTO member VALUES ('m')");
-        db.execute("CREATE TABLE tianren_daily_reading(id VARCHAR(48) PRIMARY KEY,member_id VARCHAR(32),conversation_id VARCHAR(48),reading_date DATE)");
-        db.update("INSERT INTO tianren_daily_reading VALUES('reading','m','conversation',?)",Date.valueOf(LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"))));
+        db.execute("CREATE TABLE tianren_daily_reading(id VARCHAR(48) PRIMARY KEY,member_id VARCHAR(32),conversation_id VARCHAR(48),reading_date DATE,share_token VARCHAR(32))");
+        db.update("INSERT INTO tianren_daily_reading VALUES('reading','m','conversation',?,NULL)",Date.valueOf(LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"))));
         db.execute("CREATE TABLE ai_assistant_run(id VARCHAR(48) PRIMARY KEY,status VARCHAR(32),claim_token VARCHAR(64),response_text TEXT,error_text TEXT,ai_capability_id VARCHAR(48))");
         db.execute("CREATE TABLE replies(content TEXT)");
         String migration=Files.readString(Path.of("src/main/resources/db/migration/V181__tianren_private_visuals.sql"));
@@ -132,5 +132,30 @@ class TianrenVisualServiceTest {
         service.completeText(textRun("text"),"claim",output());db.update("INSERT INTO replies VALUES('合成通用聊天续写')");
         assertThat(service.get("m","reading").interpretationRunId()).isNull();
         assertThatThrownBy(()->service.start("m","reading",new TianrenVisualService.ImageRequest("text","retry"))).isInstanceOf(ConflictException.class);
+    }
+
+    @Test void sharedVisualRequiresTokenCurrentBodyAndOwnedSuccessfulImage() throws Exception {
+        String token="0123456789abcdef0123456789abcdef";
+        db.update("UPDATE tianren_daily_reading SET share_token=?",token);
+        service.completeText(textRun("text"),"claim",output());
+        var brief=service.findSharedVisual(token);
+        assertThat(brief.summary()).contains("合成图意","变：留出准备","不变：保持诚意");
+        assertThat(brief.content()).isNull();
+        assertThat(service.findSharedVisual("invalid")).isNull();
+        assertThat(service.findSharedVisual("11111111111111111111111111111111")).isNull();
+        service.tick("local");
+        var image=new AiAssistantRunEntity();image.setId("image1");image.setMemberId("m");
+        db.update("UPDATE ai_assistant_run SET status='provider_running',claim_token='image-claim' WHERE id='image1'");
+        var out=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(3,2,BufferedImage.TYPE_INT_RGB),"png",out);
+        service.completeImage(image,"image-claim",out.toByteArray());
+        var shared=service.findSharedVisual(token);
+        assertThat(shared.content()).isEqualTo(out.toByteArray());
+        assertThat(shared.imageVersion()).isEqualTo(service.get("m","reading").imageAttemptId());
+        db.update("UPDATE tianren_visual_attempt SET member_id='other'");
+        assertThat(service.findSharedVisual(token).content()).isNull();
+        db.update("INSERT INTO replies VALUES('新的通用会话回复')");
+        assertThat(service.findSharedVisual(token)).isNull();
+        db.update("UPDATE tianren_daily_reading SET share_token=NULL");
+        assertThat(service.findSharedVisual(token)).isNull();
     }
 }

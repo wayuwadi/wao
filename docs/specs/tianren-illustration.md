@@ -22,6 +22,6 @@
 
 成员设置存在 `member_preference:tianren-ai-settings-v1`，每项提示词 1–4000 字。整个 JSON 可超过通用偏好 4000 字上限，只能经专用设置入口保存；通用 PUT 拒绝该 key。
 
-新增 migration `V181__tianren_private_visuals.sql` 创建两张表，已执行版本不可修改。公开分享仅保留现有纯文字投影，群通知不等待图片、不自动启用。历史仅看已有图；今日有效摘要可主动重画，包括自动配图关闭时。
+新增 migration `V181__tianren_private_visuals.sql` 创建两张表，已执行版本不可修改。公开分享页面保留现有文字投影；有效分享链接在飞书预览时，可按 `feishu-share-visual-cards.md` 读取与当前正文一致的已保存摘要和成功图片，并上传给飞书应用，不新增匿名图片接口。群通知不等待图片、不自动启用。历史仅看已有图；今日有效摘要可主动重画，包括自动配图关闭时。
 
 接口契约见 `../api/tianren-visuals.md`，数据结构见 `../database/tianren-visuals.md`。现有 MCP/CLI 没有私有起卦授权，本次不扩权，台账记录于 `wao-cli.md`。

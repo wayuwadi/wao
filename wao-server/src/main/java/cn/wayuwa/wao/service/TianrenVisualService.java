@@ -18,7 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /** 每次解读的私有图意和真实图片；与本机共用执行器，状态读取不入队。 */
 @Service
-public class TianrenVisualService {
+public class TianrenVisualService implements TianrenShareVisualProvider {
     public static final String IMAGE_PURPOSE = "TIANREN_IMAGE";
     static final List<String> HEADINGS = List.of("卦象事实", "《易经》卦意（AI 概括）", "变与不变（AI 概括）",
             "当日状态观察（AI 延伸）", "《黄帝内经》生活观（AI 概括）", "今日调养提示（AI 延伸）",
@@ -113,6 +113,35 @@ public class TianrenVisualService {
         var bytes=db.query("SELECT a.content FROM tianren_visual_attempt a JOIN tianren_visual v ON v.interpretation_run_id=a.interpretation_run_id WHERE a.id=? AND a.member_id=? AND v.reading_id=? AND a.state='SUCCEEDED'",
                 (rs,i)->rs.getBytes(1),attempt,member,reading);
         if(bytes.isEmpty()||bytes.get(0)==null)throw new NotFoundException("配图不存在");return bytes.get(0);
+    }
+
+    /**
+     * 按既有公开分享凭据提供当前解读的摘要与配图；不公开私有图片 URL，也不入队。
+     *
+     * @param shareToken 有效的卦象分享凭据
+     * @return 与当前公开解读完全对应的图文投影，无有效图意时返回 null
+     */
+    @Override
+    public Visual findSharedVisual(String shareToken) {
+        if (shareToken == null || !shareToken.matches("[0-9a-f]{32}")) return null;
+        return transaction.execute(status -> {
+            var readings = db.queryForList("SELECT id,member_id,conversation_id FROM tianren_daily_reading WHERE share_token=?", shareToken);
+            if (readings.size() != 1) return null;
+            var reading = readings.get(0);
+            String member = (String) reading.get("member_id");
+            Row row = latest(member, (String) reading.get("id"));
+            if (row == null || !validBrief(row)) return null;
+            var parent = runs.selectById(row.run());
+            if (parent == null || !java.util.Objects.equals(member, parent.getMemberId())
+                    || !java.util.Objects.equals(reading.get("conversation_id"), parent.getConversationId())
+                    || parent.getResponseText() == null || !matchesBody(row)) return null;
+            String summary = row.title() + "\n变：" + row.change() + "\n不变：" + row.keep();
+            var images = row.display() == null ? List.<byte[]>of() : db.query(
+                    "SELECT content FROM tianren_visual_attempt WHERE id=? AND interpretation_run_id=? AND member_id=? AND state='SUCCEEDED'",
+                    (rs, i) -> rs.getBytes(1), row.display(), row.run(), member);
+            byte[] content = images.size() == 1 ? images.get(0) : null;
+            return new Visual(parent.getResponseText(), summary, content == null ? null : row.display(), content, "image/png");
+        });
     }
     /** 既有 worker 推进当前实例的持久配图待办，关闭浏览器不影响执行。 */
     public void tick(String capability) {
