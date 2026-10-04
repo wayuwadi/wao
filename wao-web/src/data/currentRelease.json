@@ -1,21 +1,24 @@
 {
-  "title": "图片尺寸，点选就生效",
+  "id": "release-notes-escape-save-exit-2026-10-04",
+  "publishedOn": "2026-10-04",
+  "sourceSubject": "feat(notes): Esc 确认保存并退出编辑",
+  "title": "按 Esc，保存后回到阅读",
+  "intro": "退出编辑时，保存与不保存都有明确选择。",
   "highlights": [
     {
       "featureId": "notes",
-      "eyebrow": "小记图片",
-      "title": "百分比直接应用，调整范围更清楚",
-      "summary": "图片右键菜单先选当前图片或本篇全部；比例立即生效，固定像素和统一高度保留。",
-      "points": [],
+      "eyebrow": "小记编辑",
+      "title": "Esc 确认保存并退出",
+      "summary": "默认选中保存，回车即可返回原来的预览状态。",
+      "points": [
+        "不保存退出会清除本次草稿",
+        "保存失败保留输入并支持重试",
+        "局部菜单优先响应 Esc"
+      ],
       "steps": [
-        "右键图片，先选择当前图片或本篇全部。",
-        "点击百分比直接调整；输入固定像素后按回车。",
-        "统一高度可直接应用到本篇图片，保存小记后保留。"
+        "编辑已有小记时按 Esc",
+        "按 Enter 保存，或选择不保存退出"
       ]
     }
-  ],
-  "publishedOn": "2026-10-04",
-  "sourceSubject": "fix(notes): 图片右键尺寸点选立即生效",
-  "intro": "图片比例文字清楚可见，调整不用重复确认。",
-  "id": "release-notes-image-immediate-2026-10-04"
+  ]
 }
