@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import NoteOriginalReader from '@/components/notes/NoteOriginalReader.vue'
+import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import NoteAiSettingsDialog from '@/components/notes/NoteAiSettingsDialog.vue'
 import { startSavedNoteStage } from '@/api/noteAiWorkflows'
 import { newPolishRequestId } from '@/api/polishJobs'
@@ -20,7 +21,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
 import { notePreviewImages, notePreviewSource, type NotePreviewImage } from '@/utils/notePreviewImages'
-import type { Doc } from '@/types'
+import type { Doc, RichDocContent } from '@/types'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
 import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus } from '@/utils/autoNoteEnrichment'
 import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
@@ -66,7 +67,7 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 const data = useDataStore()
 const session = useSessionStore()
 const now = useNow()
-type NoteEditorHandle = { copyFormatted: () => Promise<void>; positionAtPoint: (left: number, top: number) => { position: number; viewportTop: number } | null }
+type NoteEditorHandle = { copyFormatted: () => Promise<void>; positionAtPoint: (left: number, top: number) => { position: number; viewportTop: number } | null; focusImageReference: (index: number) => boolean }
 const noteEditors = new Map<string, NoteEditorHandle>()
 const readerEditor = ref<NoteEditorHandle | null>(null)
 const editAnchors = ref<Record<string, { position: number; viewportTop: number; fullscreen?: boolean } | undefined>>({})
@@ -143,7 +144,7 @@ function openImageMenu(event: MouseEvent) {
 const lightbox = ref<HTMLElement | null>(null)
 let imageTrigger: HTMLElement | null = null
 async function openImage(image: NotePreviewImage, event: MouseEvent) {
-  imageTrigger = event.target instanceof HTMLImageElement ? event.target : event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  imageTrigger = event.currentTarget instanceof HTMLButtonElement ? event.currentTarget : event.target instanceof HTMLImageElement ? event.target : event.currentTarget instanceof HTMLElement ? event.currentTarget : null
   previewImage.value = image
   await nextTick()
   lightbox.value?.focus()
@@ -420,7 +421,7 @@ const readerPositions = new Map<string, number>()
 const originalsOpen = ref(false)
 let originalPositionKey = 'loading'
 const readerPositionKey = () => `${readingId.value}:${originalsOpen.value ? originalPositionKey : 'current'}`
-function changeOriginalSource(key: string) { rememberReaderPosition(); originalPositionKey = key; readerRestorePending = true; void nextTick(restoreReaderPosition) }
+function changeOriginalSource(key: string) { rememberReaderPosition(); originalPositionKey = key; readerActiveImage.value = null; readerRestorePending = true; void nextTick(restoreReaderPosition) }
 async function toggleOriginals() { rememberReaderPosition(); originalsOpen.value = !originalsOpen.value; readerRestorePending = true; await nextTick(); restoreReaderPosition() }
 async function readOriginals(id: string, event: Event) { await startReading(id, event); originalsOpen.value = true }
 let readerTrigger: HTMLElement | null = null
@@ -432,6 +433,30 @@ let readerRestorePending = false
 const readerNotes = computed(() => readerIds.value.map(id => notes.value.find(note => note.id === id)).filter((note): note is Doc => !!note))
 const readingIndex = computed(() => readerNotes.value.findIndex(note => note.id === readingId.value))
 const readingNote = computed(() => readerNotes.value.find(note => note.id === readingId.value) ?? null)
+const readerOriginalContent = ref<RichDocContent | null>(null)
+const readerOriginal = ref<{ focusImageReference: (index: number) => boolean } | null>(null)
+const readerImagesPanel = ref<{ locate: (index: number) => void } | null>(null)
+const readerActiveImage = ref<number | null>(null)
+const readerImages = computed(() => {
+  const content = originalsOpen.value ? readerOriginalContent.value : readingNote.value ? displayedContent(readingNote.value) : null
+  return content ? notePreviewImages(content) : []
+})
+watch([readingId, originalsOpen, () => JSON.stringify(readerImages.value)], () => { readerActiveImage.value = null })
+watch([readingId, originalsOpen], () => { readerOriginalContent.value = null })
+async function locateReadingImage(index: number) {
+  if (!readerImages.value[index - 1]) return
+  readerRestorePending = false
+  readerActiveImage.value = index
+  await nextTick()
+  readerImagesPanel.value?.locate(index)
+}
+async function returnToImageReference(index: number) {
+  readerRestorePending = false
+  readerActiveImage.value = index
+  await nextTick()
+  if (originalsOpen.value) readerOriginal.value?.focusImageReference(index)
+  else readerEditor.value?.focusImageReference(index)
+}
 const readerCopyBusy = ref(false)
 const readerCopyStatus = ref('')
 let readerCopyRequest = 0
@@ -499,7 +524,7 @@ function restoreReaderPosition() {
 async function changeReaderMode(mode: 'side' | 'full') {
   const page = readerPage.value
   const top = page?.getBoundingClientRect().top ?? 0
-  const anchor = [...(page?.querySelectorAll<HTMLElement>('.reader-body p, .reader-body h1, .reader-body h2, .reader-body h3, .reader-body li, .reader-body img') ?? [])].find(el => el.getBoundingClientRect().bottom > top + 10)
+  const anchor = [...(page?.querySelectorAll<HTMLElement>('.reader-body p, .reader-body h1, .reader-body h2, .reader-body h3, .reader-body li, .reading-image-reference') ?? [])].find(el => el.getBoundingClientRect().bottom > top + 10)
   const offset = anchor ? anchor.getBoundingClientRect().top - top : 0
   readerMode.value = mode
   readerDirectoryOpen.value = false
@@ -546,7 +571,7 @@ async function openReaderDirectory() {
   readerDialog.value?.querySelector<HTMLElement>('.reader-directory [aria-current="true"]')?.focus({ preventScroll: true })
 }
 function onReaderResize() {
-  if (window.innerWidth > 760) readerDirectoryOpen.value = false
+  if (window.innerWidth > 650) readerDirectoryOpen.value = false
 }
 const readerDismiss = useOverlayDismiss(() => reading.value, closeReaderLayer)
 useOverlayDismiss(() => !!previewImage.value, closeImage)
@@ -1047,12 +1072,13 @@ onMounted(() => void loadPins())
         </header>
         <div class="reader-layout">
           <aside class="reader-directory" aria-label="当前列表的小记目录"><div class="reader-directory-heading"><strong>小记目录</strong><span>{{ readerNotes.length }} 篇</span><button type="button" class="reader-directory-close" aria-label="收起小记目录" @click="closeReaderLayer"><i class="ri-close-line" aria-hidden="true"></i></button></div><nav aria-label="选择小记"><button v-for="note in readerNotes" :key="note.id" type="button" :aria-current="note.id === readingId ? 'true' : undefined" @click="selectReadingNote(note.id)"><strong>{{ displayedTitle(note) }}</strong><small>{{ authorName(note.author) }} · {{ timeLabel(note.updated || note.created) }}</small></button></nav></aside>
-          <div class="reader-main" :inert="readerDirectoryOpen ? true : undefined"><button v-if="readerMode === 'side'" type="button" class="reader-directory-toggle" @click="openReaderDirectory"><i class="ri-list-check" aria-hidden="true"></i>小记目录 <span>{{ readingIndex + 1 }} / {{ readerNotes.length }}</span></button>
+          <div class="reader-main" :inert="readerDirectoryOpen ? true : undefined"><button type="button" class="reader-directory-toggle" @click="openReaderDirectory"><i class="ri-list-check" aria-hidden="true"></i>小记目录 <span>{{ readingIndex + 1 }} / {{ readerNotes.length }}</span></button>
             <article :key="readingNote.id" ref="readerPage" class="reader-page" @scroll="readerRestorePending = false">
-              <div class="reader-article"><NoteOriginalReader v-if="originalsOpen" :doc-id="readingNote.id" :member-id="session.currentUser.id" :current-rev="readingNote.rev" @source-change="changeOriginalSource" @ready="restoreReaderPosition" /><template v-else><div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
+              <div class="reader-columns"><div class="reader-article"><NoteOriginalReader v-if="originalsOpen" ref="readerOriginal" :doc-id="readingNote.id" :member-id="session.currentUser.id" :current-rev="readingNote.rev" image-references :active-image-reference="readerActiveImage" @reading-content="readerOriginalContent = $event" @image-reference="locateReadingImage" @source-change="changeOriginalSource" @ready="restoreReaderPosition" /><template v-else><div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
               <h2>{{ displayedTitle(readingNote) }}</h2>
               <div v-if="displayedTags(readingNote).length" class="reader-tags"><span v-for="tag in displayedTags(readingNote)" :key="tag"># {{ tag }}</span></div>
-              <div class="reader-content" @click="openInlineImage" @dblclick="editReadingNote"><div class="reader-body"><MarkdownEditor ref="readerEditor" :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images bare advanced allow-h1 :min-height="0" @character-count="restoreReaderPosition" /></div></div></template></div>
+              <div class="reader-content" @dblclick="editReadingNote"><div class="reader-body"><MarkdownEditor ref="readerEditor" :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images image-references :active-image-reference="readerActiveImage" bare advanced allow-h1 :min-height="0" @image-reference="locateReadingImage" @character-count="restoreReaderPosition" /></div></div></template></div>
+              <NoteReadingImages :key="`${readingNote.id}:${originalsOpen ? originalPositionKey : 'current'}`" ref="readerImagesPanel" :images="readerImages" :active="readerActiveImage" :unavailable="originalsOpen && !readerOriginalContent" @return="returnToImageReference" @fullscreen="openImage" /></div>
             </article>
             <footer class="reader-controls"><button type="button" aria-label="上一篇小记（←）" :disabled="readingIndex <= 0" @click="moveReader(-1)"><i class="ri-arrow-left-line" aria-hidden="true"></i>上一篇</button><span>{{ readingIndex + 1 }} / {{ readerNotes.length }}<small> · ← → 翻篇 · Esc 退出</small></span><button type="button" aria-label="下一篇小记（→）" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇<i class="ri-arrow-right-line" aria-hidden="true"></i></button></footer>
           </div>
@@ -1216,9 +1242,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-layout-actions button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); white-space: nowrap; }
 .reader-mode-switch button { border-color: transparent; background: transparent; font-size: 12px; }
 .reader-mode-switch button[aria-pressed='true'] { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
-.reader-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 204px minmax(0, 1fr); position: relative; }
-.reader-full .reader-layout { grid-template-columns: minmax(0, 1fr); }
-.reader-full .reader-directory { display: none; }
+.reader-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 180px minmax(0, 1fr); position: relative; }
 .reader-directory { min-width: 0; overflow: auto; background: var(--wao-bg-sub); border-right: 1px solid var(--wao-line); padding: 16px 12px; }
 .reader-directory-heading { display: flex; align-items: center; gap: 8px; padding: 0 8px 14px; font-size: 13px; }
 .reader-directory-heading > span { color: var(--wao-text-faint); font-size: 12px; }
@@ -1229,22 +1253,25 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-directory nav small { display: block; color: var(--wao-text-faint); font-size: 11px; margin-top: 8px; }
 .reader-main { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .reader-page { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.reader-article { width: min(100%, 1360px); box-sizing: border-box; margin: 0; padding: 28px clamp(24px, 2vw, 32px); }
+.reader-columns { display: grid; grid-template-columns: minmax(0, 1fr) 238px; min-height: 100%; align-items: start; }
+.reader-columns > .reader-images { position: sticky; top: 0; max-height: calc(100dvh - 150px); overflow: auto; overscroll-behavior: contain; }
+.reader-article { min-width: 0; width: min(100%, 820px); box-sizing: border-box; margin: 0 auto; padding: 28px clamp(24px, 2vw, 32px); }
+.reader-full .reader-article { max-width: 760px; }
 .reader-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--wao-text-faint); font-size: 12px; }
 .reader-meta span:first-child { color: var(--wao-text-2); font-weight: 650; }
-.reader-page h2 { margin: 20px 0 10px; color: var(--wao-text-1); font-size: clamp(24px, 3vw, 34px); line-height: 1.4; overflow-wrap: anywhere; }
+.reader-page h2 { margin: 16px 0 8px; color: var(--wao-text-1); font-size: 25px; line-height: 1.55; overflow-wrap: anywhere; text-wrap: balance; }
 .reader-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 22px; }
 .reader-tags span { padding: 4px 9px; border-radius: 999px; background: var(--wao-bg-hover); color: var(--wao-primary-text); font-size: 11px; }
-.reader-body { min-width: 0; overflow-wrap: anywhere; font-size: 16px; line-height: 1.95; }
+.reader-body { min-width: 0; overflow-wrap: anywhere; font-size: 15px; line-height: 1.95; }
+.reader-article :deep(.md-body .tiptap) { font-size: 15px; line-height: 1.95; }
 .reader-body :deep(.character-count) { display: none; }
 .notes-reader button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
-.reader-body :deep(img.md-img) { max-height: min(62vh, 560px); object-fit: contain; cursor: zoom-in; }
 .reader-body :deep(pre), .reader-body :deep(table) { max-width: 100%; overflow: auto; }
 .reader-controls { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--wao-line); }
 .reader-controls button { min-height: 36px; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); white-space: nowrap; }
 .reader-controls > span { color: var(--wao-text-faint); font-size: 12px; }
 .reader-directory-toggle, .reader-directory-close { display: none; }
-@media (max-width: 760px) {
+@media (max-width: 650px) {
   .reader-topbar { position: relative; padding: 10px 12px; gap: 8px; }
   .reader-topbar strong { min-height: 36px; font-size: 13px; }
   .reader-copy-status { flex: 1; min-width: 0; padding-right: 64px; overflow-wrap: anywhere; }
@@ -1263,6 +1290,18 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .reader-article { padding: 22px 18px; }
   .reader-controls { padding: 10px 12px; }
   .reader-controls small { display: none; }
+}
+@media (min-width: 651px) and (max-width: 850px) {
+  .reader-layout { grid-template-columns: 140px minmax(0, 1fr); }
+  .reader-columns { grid-template-columns: minmax(0, 1fr) 190px; }
+  .reader-directory { padding: 12px 6px; }
+  .reader-directory nav button { padding: 10px 8px; }
+  .reader-article { padding: 22px 18px; }
+}
+@media (max-width: 650px) {
+  .reader-layout { grid-template-columns: minmax(0, 1fr); }
+  .reader-columns { grid-template-columns: minmax(0, 1fr); }
+  .reader-columns > .reader-images { position: static; max-height: none; overflow: visible; }
 }
 
 .notes-back-top { position: fixed; right: 28px; bottom: 28px; z-index: 30; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid color-mix(in srgb, var(--wao-primary) 24%, transparent); border-radius: 50%; background: color-mix(in srgb, var(--wao-bg-card) 88%, transparent); color: var(--wao-primary-text); box-shadow: 0 8px 24px rgba(40, 48, 90, .16); backdrop-filter: blur(10px); font-size: 20px; animation: notes-rocket-in .2s ease-out; }

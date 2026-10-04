@@ -2,9 +2,12 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { fetchNoteOriginals, type NoteOriginals } from '@/api/noteOriginals'
 import { resolvedRichContent } from '@/utils/richDoc'
+import type { RichDocContent } from '@/types'
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-const props = defineProps<{ docId: string; memberId: string; currentRev?: number }>()
-const emit = defineEmits<{ 'source-change': [key: string]; ready: [] }>()
+const props = defineProps<{ docId: string; memberId: string; currentRev?: number; imageReferences?: boolean; activeImageReference?: number | null }>()
+const emit = defineEmits<{ 'source-change': [key: string]; ready: []; 'reading-content': [content: RichDocContent | null]; 'image-reference': [index: number] }>()
+const editor = ref<{ focusImageReference: (index: number) => boolean } | null>(null)
+defineExpose({ focusImageReference: (index: number) => editor.value?.focusImageReference(index) ?? false })
 const content = ref<NoteOriginals | null>(null), error = ref(''), loading = ref(false), selected = ref<'before' | 'initial'>('before')
 let generation = 0
 const source = computed(() => selected.value === 'initial' ? content.value?.initial : content.value?.before ?? content.value?.initial)
@@ -20,6 +23,7 @@ async function load() {
 }
 watch(() => [props.memberId, props.docId, props.currentRev], () => { generation++; content.value = null; selected.value = 'before'; void load() }, { immediate: true })
 watch(source, async value => { emit('source-change', value ? `${selected.value}:${value.id}` : 'loading'); await nextTick(); emit('ready') })
+watch([rich, loading, error], () => emit('reading-content', loading.value || error.value ? null : rich.value), { immediate: true })
 onBeforeUnmount(() => { generation++ })
 </script>
 <template>
@@ -32,7 +36,7 @@ onBeforeUnmount(() => { generation++ })
    </div>
    <p>{{ content?.explanation }}</p><p v-if="content?.appliedRev && currentRev && content.appliedRev !== currentRev">当前内容在该次润色之后有更新；此原文对应最近一次润色。</p>
    <h1>{{ source.title === null ? '标题未留存' : source.title || '未填写标题' }}</h1>
-   <MarkdownEditor :model-value="rich.markdown" :document="rich.document" readonly preview-images bare advanced allow-h1 :min-height="0" @character-count="emit('ready')" />
+   <MarkdownEditor ref="editor" :model-value="rich.markdown" :document="rich.document" readonly preview-images bare advanced allow-h1 :min-height="0" :image-references="imageReferences" :active-image-reference="activeImageReference" @image-reference="emit('image-reference', $event)" @character-count="emit('ready')" />
   </template>
   <p v-else>没有可用原文。更早的内容没有留存，无法恢复；当前内容仍保留。</p>
  </section>

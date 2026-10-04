@@ -38,6 +38,8 @@ async function mountEditor(props: {
   autofocus?: boolean
   initialPosition?: number
   previewImages?: boolean
+  imageReferences?: boolean
+  activeImageReference?: number | null
   placeholder?: string
   allowH1?: boolean
   peers?: {
@@ -82,6 +84,43 @@ async function mountEditor(props: {
 }
 
 describe('异步挂载焦点保护', () => {
+  it('阅读图号只改变图片视图，重复图片与嵌套图片保留原文位置和复制内容', async () => {
+    const document: RichDocNode = { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: '之前' }] },
+      { type: 'image', attrs: { src: '/api/images/same/raw', alt: '第一次', width: '50%', height: null } },
+      { type: 'blockquote', content: [{ type: 'image', attrs: { src: '/api/images/same/raw', alt: '第二次', height: 200 } }, { type: 'paragraph', content: [{ type: 'text', text: '之后' }] }] },
+    ] }
+    const ordinary = await mountEditor({ modelValue: '', document, readonly: true })
+    const references = await mountEditor({ modelValue: '', document, readonly: true, imageReferences: true })
+    const originalEditor = (ordinary.vm as unknown as { editor: Editor }).editor
+    const e = (references.vm as unknown as { editor: Editor }).editor
+    expect(e.getJSON()).toEqual(originalEditor.getJSON())
+    expect(e.getMarkdown()).toBe(originalEditor.getMarkdown())
+    expect(references.findAll('img.md-img')).toHaveLength(0)
+    const buttons = references.findAll('[data-image-reference]')
+    expect(buttons.map(button => button.text())).toEqual(['图 1 · 第一次', '图 2 · 第二次'])
+    await buttons[1]!.trigger('click')
+    expect(references.emitted('image-reference')).toEqual([[2]])
+    await references.setProps({ activeImageReference: 2 })
+    expect(buttons[1]!.attributes('aria-current')).toBe('true')
+    ;(references.vm as unknown as { focusImageReference: (index: number) => boolean }).focusImageReference(1)
+    expect(window.document.activeElement).toBe(buttons[0]!.element)
+    expect(references.emitted('content-change')).toBeUndefined()
+    expect(references.emitted('upload-image')).toBeUndefined()
+    ordinary.unmount(); references.unmount()
+  })
+
+  it('阅读内容替换后按新的出现顺序重新编号，历史段落内图片的前后文字不丢失', async () => {
+    const w = await mountEditor({ modelValue: '![原图](/api/images/old/raw)', readonly: true, imageReferences: true })
+    await w.setProps({ document: { type: 'doc', content: [{ type: 'paragraph', content: [
+      { type: 'text', text: '图片前' }, { type: 'image', attrs: { src: '/api/images/one/raw', alt: '一' } },
+      { type: 'text', text: '图片后' },
+    ] }, { type: 'image', attrs: { src: '/api/images/two/raw', alt: '二' } }] } })
+    expect(w.findAll('[data-image-reference]').map(button => button.attributes('data-image-reference'))).toEqual(['1', '2'])
+    expect(w.find('.tiptap').text()).toContain('图片前图 1 · 一图片后图 2 · 二')
+    expect(w.emitted('content-change')).toBeUndefined()
+    w.unmount()
+  })
   it('异步编辑器创建后恢复富文本光标位置，插入发生在原来的文字中', async () => {
     const w = await mountEditor({ modelValue: '甲乙丙丁', initialPosition: 3 })
     const e = (w.vm as unknown as { editor: Editor }).editor
