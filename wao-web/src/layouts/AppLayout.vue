@@ -7,6 +7,7 @@ import TabWorkspace from '@/components/tabs/TabWorkspace.vue'
 import NavigationContext from '@/components/nav/NavigationContext.vue'
 import TopMenuBar from '@/components/nav/TopMenuBar.vue'
 import SideNav from '@/components/nav/SideNav.vue'
+import WaoLogo from '@/components/WaoLogo.vue'
 import MobileShellMenu from '@/components/nav/MobileShellMenu.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
@@ -341,13 +342,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <div class="crumb-b">{{ crumbB }}</div>
           </template>
         </template>
+        <RouterLink v-if="nav.collapsed && !isMobile && !desktopToolbar" class="header-brand" to="/" aria-label="WAO 首页">
+          <WaoLogo wordmark />
+        </RouterLink>
         <TopMenuBar />
         <TabBar />
 
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
         <div class="quick-actions" :class="{ relocated: desktopToolbar }" role="group" aria-label="全局快捷操作">
           <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
-          <button class="plus" data-desktop-action="new-task" :disabled="ui.taskComposerLocked" aria-label="新建任务" title="新建任务" @click="ui.openNewTask()">
+          <button class="plus ghost" data-desktop-action="new-task" :disabled="ui.taskComposerLocked" aria-label="新建任务" title="新建任务" @click="ui.openNewTask()">
             <i class="ri-play-list-add-line" aria-hidden="true"></i><span class="action-label">任务</span>
           </button>
           <button class="plus ghost" data-desktop-action="new-note" :disabled="ui.taskComposerLocked" aria-label="新建小记" title="新建小记" @click="newNote">
@@ -383,7 +387,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <AiAssistantPanel v-model="ui.assistantOpen" />
           </div>
         </div>
-        <SiteFooter reserve-mobile-actions />
+        <SiteFooter reserve-mobile-actions show-brand />
       </div>
     </main>
 
@@ -620,6 +624,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .header > :not(.top-menu-bar):not(.tabbar-shell) {
   flex-shrink: 0;
 }
+.header-brand {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 6px;
+  color: var(--wao-primary-text);
+  text-decoration: none;
+  border-radius: 6px;
+}
+.header-brand:hover { background: var(--wao-primary-soft); }
+.header-brand :deep(.wao-logo) { gap: 6px; }
+.header-brand :deep(.wao-logo-symbol) { width: 28px; height: 28px; }
+.header-brand :deep(.wao-logo-name) { font-size: 15px; font-weight: 600; }
 .crumb-b {
   max-width: 180px;
 }

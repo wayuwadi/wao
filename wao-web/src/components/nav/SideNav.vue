@@ -280,7 +280,9 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 <template>
   <aside class="side" :class="{ collapsed: isCollapsed }">
     <div class="side-heading">
-      <WaoLogo v-if="!desktopToolbar && !isCollapsed" wordmark />
+      <RouterLink v-if="!desktopToolbar && !isCollapsed" class="side-brand" to="/" aria-label="WAO 首页" @click="emit('navigate')">
+        <WaoLogo wordmark />
+      </RouterLink>
       <button
         class="side-collapse"
         :aria-label="isCollapsed ? '展开侧栏' : '折叠侧栏'"
@@ -599,6 +601,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   cursor: pointer;
   font-size: 12px;
 }
+.side-brand { display: inline-flex; color: var(--wao-primary-text); text-decoration: none; border-radius: 6px; }
+.side-brand :deep(.wao-logo-name) { font-weight: 600; }
 .side-collapse:hover {
   background: var(--wao-bg-hover);
   color: var(--wao-text);
@@ -1074,7 +1078,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 
 @media (max-width: 760px) {
   .side { width: 100%; height: 100%; min-height: 0; border: 0; background: var(--wao-bg-card); box-shadow: none; }
-  .side-heading { display: none; }
+  .side-heading { display: flex; padding: 8px 12px 0; }
+  .side-collapse { display: none; }
   .search { height: 40px; font-size: 13px; }
   .search-row { padding: 8px 12px; }
   .kbd { display: none; }
