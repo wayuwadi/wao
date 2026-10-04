@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { freezeNoteAiInput, retainNoteAiResult, type NoteAiOrigin, type NoteSourceContent } from '@/api/noteOriginals'
 import { editorSearchRanges } from '@/utils/contentSearch'
+import { indentEditorSelection } from '@/utils/editorIndent'
 /**
  * 所见即所得的描述编辑器 —— 全项目文字描述输入的统一控件。
  *
@@ -21,6 +22,7 @@ import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { DragHandle } from '@tiptap/extension-drag-handle-vue-3'
 import StarterKit from '@tiptap/starter-kit'
+import Heading from '@tiptap/extension-heading'
 import Image, { type ImageOptions } from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
@@ -63,6 +65,19 @@ import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, M
 
 const lowlight = createLowlight(common)
 const PASTE_COLORS = new Set(['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0', '#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe'])
+
+/** Markdown 标题会裁掉开头空白；用安全实体保留行首缩进，节点结构不变。 */
+const IndentableHeading = Heading.extend({
+  parseMarkdown: (token, helpers) => helpers.createNode('heading', { level: token.depth || 1 },
+    helpers.parseInline((token.tokens ?? []).map(part => part.type === 'text'
+      ? { ...part, text: (part.text ?? '').replace(/^(?:&nbsp;)+/, spaces => '\u00a0'.repeat(spaces.length / 6)) }
+      : part))),
+  renderMarkdown: (node, helpers) => {
+    if (!node.content) return ''
+    const text = helpers.renderChildren(node.content).replace(/^\u00a0+/, spaces => '&nbsp;'.repeat(spaces.length))
+    return `${'#'.repeat(Number(node.attrs?.level) || 1)} ${text}`
+  },
+})
 
 /** 合并相邻的默认有序列表，确保在列表前插入新条目后原条目自动顺延。 */
 const OrderedListContinuation = Extension.create({
@@ -368,10 +383,6 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean }>({
   },
 })
 
-/**
- * Tab 留在编辑器内：列表项缩进 / 反缩进，普通段落插入一个真实制表符。
- * 返回 true 会阻止浏览器把焦点跳到编辑器后的“图片”按钮。
- */
 /** 整表选中时删除表格本身；局部选区仍沿用清空单元格的行为。 */
 const WholeTableDeletion = Extension.create({
   name: 'wholeTableDeletion',
@@ -390,39 +401,14 @@ const WholeTableDeletion = Extension.create({
   },
 })
 
-function indentImage(editor: Editor, direction: number): boolean {
-  const selection = editor.state.selection
-  if (!(selection instanceof NodeSelection)) return false
-  // 原子节点绝不能落入 insertContent，否则选中内容会被制表符替换。
-  if (selection.node.type.name !== 'image' || !editor.isEditable) return true
-  const indent = Math.max(0, Math.min(8, imageIndent(selection.node.attrs.indent) + direction))
-  if (indent === imageIndent(selection.node.attrs.indent)) return true
-  const tr = closeHistory(editor.state.tr).setNodeMarkup(selection.from, undefined, { ...selection.node.attrs, indent })
-  tr.setSelection(NodeSelection.create(tr.doc, selection.from))
-  editor.view.dispatch(tr)
-  editor.view.dispatch(closeHistory(editor.state.tr))
-  return true
-}
-
+/** Tab 留在编辑区，选中文字、混合块或图片时均不能替换已有内容。 */
 const TabIndent = Extension.create({
   name: 'tabIndent',
   priority: 1100,
   addKeyboardShortcuts() {
     return {
-      Tab: () => {
-        if (indentImage(this.editor, 1)) return true
-        if (this.editor.isActive('table') || this.editor.isActive('codeBlock')) return false
-        if (this.editor.isActive('taskItem')) return this.editor.commands.sinkListItem('taskItem') || true
-        if (this.editor.isActive('listItem')) return this.editor.commands.sinkListItem('listItem') || true
-        return this.editor.commands.insertContent('\t') || true
-      },
-      'Shift-Tab': () => {
-        if (indentImage(this.editor, -1)) return true
-        if (this.editor.isActive('table') || this.editor.isActive('codeBlock')) return false
-        if (this.editor.isActive('taskItem')) return this.editor.commands.liftListItem('taskItem') || true
-        if (this.editor.isActive('listItem')) return this.editor.commands.liftListItem('listItem') || true
-        return true
-      },
+      Tab: () => indentEditorSelection(this.editor, 1),
+      'Shift-Tab': () => indentEditorSelection(this.editor, -1),
     }
   },
 })
@@ -517,7 +503,7 @@ const editor = useEditor({
     OrderedListContinuation,
     StarterKit.configure({
       // 只有知识库文档开放 h1；描述场景仍限制成 h2–h4，避免压过页面标题。
-      heading: { levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] },
+      heading: false,
       codeBlock: false,
       underline: false,
       link: {
@@ -527,6 +513,7 @@ const editor = useEditor({
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
       },
     }),
+    IndentableHeading.configure({ levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] }),
     DocumentImage.configure({ inline: false, previewImages: props.previewImages, HTMLAttributes: { class: 'md-img' } }),
     TaskList,
     TaskItem.configure({ nested: true }),
@@ -2216,7 +2203,7 @@ onBeforeUnmount(() => {
           <span><b>Ctrl/⌘ + U</b><small>下划线</small></span><span><b>Ctrl/⌘ + K</b><small>添加或编辑链接</small></span>
           <span><b>Ctrl/⌘ + Z</b><small>撤销</small></span><span><b>Ctrl/⌘ + Shift + Z</b><small>重做</small></span>
           <span><b>Ctrl/⌘ + F</b><small>查找与替换</small></span><span><b>/</b><small>插入内容块</small></span>
-          <span><b>Tab / Shift + Tab</b><small>列表或选中图片缩进 / 减少缩进</small></span><span><b>Ctrl/⌘ + /</b><small>打开本帮助</small></span>
+          <span><b>Tab / Shift + Tab</b><small>当前行或所选行缩进 / 减少缩进；列表调整层级，图片调整位置</small></span><span><b>Ctrl/⌘ + /</b><small>打开本帮助</small></span>
         </div>
       </section>
     </div>

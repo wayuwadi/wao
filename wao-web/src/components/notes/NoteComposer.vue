@@ -142,7 +142,7 @@ function editorKeys(event: KeyboardEvent) {
   if (event.key === 'Escape' && tagSuggestionsOpen.value) { event.preventDefault(); tagSuggestionsOpen.value = false; return }
   if (!fullscreen.value) return
   if (event.key === 'Escape') { event.preventDefault(); fullscreen.value = false }
-  if (event.key !== 'Tab') return
+  if (event.key !== 'Tab' || event.defaultPrevented) return
   const controls = Array.from(composerElement.value?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [contenteditable="true"], textarea, summary, [tabindex="0"]') ?? []).filter(el => el.getClientRects().length)
   const first = controls[0], last = controls[controls.length - 1]
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
