@@ -341,7 +341,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <TabBar />
 
         <!-- 「问问 AI」入口按用户要求从顶栏移除；Ctrl/⌘ + J 快捷键仍可打开助手 -->
-        <div class="quick-actions" :class="{ relocated: desktopToolbar }">
+        <div class="quick-actions" :class="{ relocated: desktopToolbar }" role="group" aria-label="全局快捷操作">
           <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
           <button class="plus" data-desktop-action="new-task" :disabled="ui.taskComposerLocked" aria-label="新建任务" title="新建任务" @click="ui.openNewTask()">
             <i class="ri-play-list-add-line" aria-hidden="true"></i><span class="action-label">任务</span>
@@ -838,14 +838,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </style>
 
 <style scoped>
-/* 侧栏也占据空间：依据正文区宽度换行，而非仅看浏览器视口。 */
-@container app-main (max-width: 900px) {
-  .header { height: auto; min-height: var(--wao-header-h); flex-wrap: wrap; gap: 6px; padding: 6px 12px 0; }
-  .header :deep(.tabbar-shell) { order: 10; flex: 0 0 100%; width: 100%; min-width: 0; height: 38px; margin: 0; border-top: 1px solid var(--wao-line); border-radius: 0; }
-  .header :deep(.top-menu-bar.has-items) { flex: 1 1 120px; min-width: 0; }
-}
 @container app-main (max-width: 560px) {
-  .header { gap: 4px; padding: 4px 6px 0; }
+  .header { gap: 4px; padding-inline: 8px; }
   .quick-actions { gap: 4px; }
   .plus, .plus.ghost, .fold, .bell { width: 32px; min-width: 32px; height: 32px; padding: 0; flex: 0 0 32px; justify-content: center; }
   .plus .action-label { display: inline; }
@@ -870,4 +864,41 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .quick-actions .plus i, .quick-actions .plus.ghost i { font-size:16px; color:var(--wao-primary-text); }
 .quick-actions .plus:hover, .quick-actions .plus.ghost:hover { background:var(--wao-primary-soft); color:var(--wao-primary-text); }
 @media(pointer:coarse) { .header .quick-actions .plus, .header .quick-actions .plus.ghost { min-height:44px; min-width:44px; } }
+
+/* 页签与操作分区，保持桌面原有的单行高度。 */
+@media (min-width: 761px) {
+  .header { gap: 12px; padding: 0 16px; }
+  .header :deep(.top-menu-bar.has-items) { flex: 0 1 28%; min-width: 100px; max-width: 320px; }
+  .header :deep(.tabbar-shell) {
+    min-width: 0;
+    height: 38px;
+    padding: 4px;
+    gap: 2px;
+    background: var(--wao-bg-tab);
+    border-radius: 12px;
+  }
+  .header :deep(.tabbar) { padding: 0 2px; gap: 5px; }
+  .header :deep(.tab) {
+    margin: 0;
+    padding: 0 8px 0 10px;
+    gap: 6px;
+    border: 0;
+    border-radius: 8px;
+  }
+  .header :deep(.home-tab) { margin-left: 0; }
+  .header :deep(.tab.active) { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+  .header :deep(.scroll-btn) { width: 22px; flex-basis: 22px; border-radius: 7px; padding: 0; }
+  .header :deep(.scroll-btn:disabled) { opacity: .28; }
+  .header .quick-actions {
+    margin-left: 0;
+    padding-left: 12px;
+    border-left: 1px solid var(--wao-line-control);
+    gap: 6px;
+  }
+  .header .quick-actions .plus { background: var(--wao-primary-soft); color: var(--wao-primary-text); border-radius: 8px; padding: 0 10px; }
+  .header .quick-actions .plus.ghost { background: transparent; color: var(--wao-text-2); }
+  .header .quick-actions .plus:hover { background: var(--wao-primary-soft-2); }
+  .header .quick-actions :deep(.tools-trigger) { border-radius: 8px; }
+  .header .quick-actions :deep(.tools-trigger:not(.has-update)) { border-color: transparent; }
+}
 </style>

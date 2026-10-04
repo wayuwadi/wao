@@ -16,6 +16,7 @@ const scroller = ref<HTMLElement | null>(null)
 const shell = ref<HTMLElement | null>(null)
 const canLeft = ref(false)
 const canRight = ref(false)
+let resizeObserver: ResizeObserver | undefined
 const homeTab = computed(() => tabs.tabs.find((tab) => tab.key === 'home'))
 const scrollableTabs = computed(() => tabs.tabs.filter((tab) => tab.key !== 'home'))
 
@@ -48,7 +49,14 @@ function revealActive() {
   })
 }
 watch(() => [tabs.activeKey, tabs.tabs.map((tab) => tab.key).join('|')], revealActive)
-onMounted(revealActive)
+onMounted(() => {
+  revealActive()
+  if (typeof ResizeObserver !== 'undefined' && shell.value) {
+    resizeObserver = new ResizeObserver(measureScroll)
+    resizeObserver.observe(shell.value)
+  }
+})
+onBeforeUnmount(() => resizeObserver?.disconnect())
 
 const menuTargetClosable = computed(() => {
   const t = tabs.tabs.find((t) => t.key === menu.key)
@@ -211,7 +219,7 @@ function mCloseUnpinned() {
         @drop.prevent="onDrop(tab)"
         @dragend="onDragEnd"
       >
-        <button type="button" class="tab-open" :aria-label="'切换到' + tab.label" :aria-current="tab.key === tabs.activeKey ? 'page' : undefined" @click.stop="selectTab(tab)">
+        <button type="button" class="tab-open" :title="tab.label" :aria-label="'切换到' + tab.label" :aria-current="tab.key === tabs.activeKey ? 'page' : undefined" @click.stop="selectTab(tab)">
           <i :class="tab.icon" aria-hidden="true"></i>
           <span class="tab-label">{{ tab.label }}</span>
           <i v-if="windows.keys.includes(tab.key)" class="ri-picture-in-picture-line" title="已悬浮，点击置前" aria-hidden="true"></i>
@@ -290,6 +298,7 @@ function mCloseUnpinned() {
   overflow-x: auto;
 }
 .tab-open { display: flex; align-items: center; gap: 7px; min-width: 0; height: 100%; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.tab-open i { flex: none; }
 .home-tab { border: 0; border-bottom: 2px solid transparent; }
 .tab-open:focus-visible, .home-tab:focus-visible, .close:focus-visible, .scroll-btn:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .home-tab {
@@ -316,6 +325,8 @@ function mCloseUnpinned() {
 }
 .tab {
   display: flex;
+  flex: none;
+  max-width: clamp(128px, 18vw, 220px);
   align-items: center;
   gap: 7px;
   padding: 0 9px 0 13px;
@@ -358,9 +369,13 @@ function mCloseUnpinned() {
   color: var(--wao-primary-text);
 }
 .tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .close {
+  flex: none;
   width: 18px;
   height: 18px;
   border: none;
