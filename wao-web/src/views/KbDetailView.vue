@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import KnowledgeIconPicker from '@/components/knowledge/KnowledgeIconPicker.vue'
+import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
+import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { apiMoveKnowledgeNode, fetchDoc as fetchMovedDoc } from '@/api/board'
 import { directoryParents, directoryRows } from '@/utils/knowledgeDirectory'
 import { isColoredKnowledgeIcon } from '@/utils/knowledgeIcons'
@@ -43,6 +45,7 @@ const route = useRoute()
 const router = useRouter()
 const data = useDataStore()
 const session = useSessionStore()
+const contentWidth = useNoteWritingWidth()
 const ui = useUiStore()
 const tabs = useTabsStore()
 const favorites = useFavoritesStore()
@@ -1111,7 +1114,7 @@ async function saveKbSettings() {
     </div>
 
     <!-- 文档区 -->
-    <div class="document-pane">
+    <div class="document-pane" :class="{ 'content-narrow': contentWidth === 'narrow' }">
           <div v-if="doc" class="doc-bar">
             <div class="doc-location" :title="`${kb.name} / ${doc.title || '未命名文档'}`">
               <span class="ellip library-name">{{ kb.name }}</span>
@@ -1121,6 +1124,7 @@ async function saveKbSettings() {
               <span v-if="currentArchived" class="tag-archived">已归档</span>
             </div>
             <span v-if="saving || saveFailed || docSavedAt" class="document-save-status"><SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" /></span>
+            <NoteWidthSwitch v-model="contentWidth" label="文档宽度" />
 
             <!-- 协同：只有此刻真的打开着这篇文档的人才会出现 -->
             <span class="collab">
@@ -1821,6 +1825,7 @@ async function saveKbSettings() {
   min-width: min(420px, 100%);
   max-width: none;
 }
+.document-pane.content-narrow .doc-scroll:not(.library-home-scroll) .doc-col { max-width: 650px; }
 .doc-bar {
   display: flex;
   align-items: center;
