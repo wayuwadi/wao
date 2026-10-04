@@ -18,6 +18,13 @@ public interface NotePolishVersionMapper {
             + "WHERE v.member_id = #{memberId} AND d.kb_id = 'kb-notes' AND d.deleted_at IS NULL")
     List<Version> listOwned(@Param("memberId") String memberId);
 
+    /** 公开分享只读取仍属于文档作者的阅读结果；来源有效性由分享服务再次核对。 */
+    @Select("SELECT v.doc_id, v.member_id, v.source_markdown, v.polished_markdown "
+            + "FROM note_polish_version v JOIN doc d ON d.id = v.doc_id "
+            + "WHERE v.doc_id = #{docId} AND v.member_id = d.author_id "
+            + "AND d.kb_id = 'kb-notes' AND d.deleted_at IS NULL")
+    Version findShareVersion(@Param("docId") String docId);
+
     @Insert("INSERT INTO note_polish_version (doc_id, member_id, source_markdown, polished_markdown) "
             + "VALUES (#{docId}, #{memberId}, #{sourceMarkdown}, #{polishedMarkdown}) "
             + "ON DUPLICATE KEY UPDATE source_markdown = VALUES(source_markdown), "

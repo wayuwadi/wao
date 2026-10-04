@@ -49,6 +49,9 @@ public class FeishuLinkPreviewService {
     private static final Pattern HTML_TAG = Pattern.compile("<[^>]{0,500}>");
     private static final Pattern MARKDOWN_DECORATION = Pattern.compile("[`*_~#>|]+");
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    private static final Pattern SUMMARY_SECTION = Pattern.compile(
+            "(?im)^#{1,6}\\s+[^\\r\\n]*(?:快速总结|卦象总结|一句话总结|今日指引|今日建议|简要总结)[^\\r\\n]*\\r?$\\n?");
+    private static final Pattern HEADING = Pattern.compile("(?m)^#{1,6}\\s+");
     private static final int MAX_SOURCE_CHARS = 4_000;
     private static final long IMAGE_UPLOAD_WAIT_MILLIS = 1_800;
 
@@ -57,6 +60,8 @@ public class FeishuLinkPreviewService {
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final ImageService images;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private TianrenShareVisualProvider tianrenVisuals;
     private final Map<String, CompletableFuture<String>> imageKeys = new ConcurrentHashMap<>();
 
     public FeishuLinkPreviewService(ShareService share, TianrenReadingService tianren,
@@ -128,8 +133,9 @@ public class FeishuLinkPreviewService {
         String title = StringUtils.hasText(doc.title()) ? doc.title() : (doc.note() ? "未命名小记" : "未命名文档");
         if (doc.note()) {
             String image = firstNoteImage(doc);
-            String summary = plainText(MARKDOWN_IMAGE.matcher(doc.md()).replaceAll(""), 80);
-            return noteResponse(kind, title, summary, image == null ? null : noteImageKey(image), url);
+            String summary = contentSummary(doc.md(), 240);
+            return visualResponse(kind, title, List.of(), summary,
+                    image == null ? null : previewImageKey(image), url, "打开原文", "turquoise");
         }
         List<String> facts = new ArrayList<>();
         addFact(facts, "更新于", doc.updated());
@@ -157,62 +163,69 @@ public class FeishuLinkPreviewService {
         return null;
     }
 
-    private String noteImageKey(String path) {
+    private String previewImageKey(String path) {
+        String imageId = path.substring("/api/images/".length(), path.length() - "/raw".length());
+        return uploadImageKey("public:" + imageId, () -> images.raw(imageId));
+    }
+
+    private String uploadImageKey(String imageVersion, java.util.function.Supplier<ImageBlobEntity> source) {
         String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
         String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
         if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) return null;
-        String imageId = path.substring("/api/images/".length(), path.length() - "/raw".length());
-        String cacheKey = appId + ":" + imageId;
+        String cacheKey = appId + ":" + imageVersion;
         if (!imageKeys.containsKey(cacheKey) && imageKeys.size() >= 256) {
             imageKeys.entrySet().removeIf(entry -> entry.getValue().isDone());
             if (imageKeys.size() >= 256) return null;
         }
         CompletableFuture<String> upload = imageKeys.computeIfAbsent(cacheKey, ignored ->
                 CompletableFuture.supplyAsync(() -> {
-                    ImageBlobEntity image = images.raw(imageId);
+                    ImageBlobEntity image = source.get();
                     if (image.getContent() == null || image.getContent().length == 0
                             || image.getContent().length > ImageService.MAX_BYTES
                             || image.getContentType() == null
                             || !image.getContentType().startsWith("image/")) {
-                        throw new IllegalArgumentException("小记配图格式无效");
+                        throw new IllegalArgumentException("分享配图格式无效");
                     }
                     String token = feishu.tenantAccessToken(appId, appSecret);
-                    return feishu.uploadMessageImage(token, image.getContent(), image.getContentType(),
-                            "note-preview.png");
+                    String key = feishu.uploadMessageImage(token, image.getContent(), image.getContentType(),
+                            "share-preview.png");
+                    if (!StringUtils.hasText(key)) throw new IllegalStateException("飞书未返回图片凭据");
+                    return key;
                 }));
         try {
             return upload.get(IMAGE_UPLOAD_WAIT_MILLIS, TimeUnit.MILLISECONDS);
         } catch (java.util.concurrent.TimeoutException exception) {
             // 回调要求三秒内响应；上传继续完成并缓存，下一次分享可直接复用。
-            log.warn("飞书小记配图上传未在预览预算内完成");
+            log.warn("飞书分享配图上传未在预览预算内完成");
             return null;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return null;
         } catch (Exception exception) {
             imageKeys.remove(cacheKey, upload);
-            log.warn("飞书小记配图上传失败：{}", exception.getClass().getSimpleName());
+            log.warn("飞书分享配图上传失败：{}", exception.getClass().getSimpleName());
             return null;
         }
     }
 
-    private static Map<String, Object> noteResponse(String kind, String title, String summary, String imageKey,
-            String url) {
+    private static Map<String, Object> visualResponse(String kind, String title, List<String> facts,
+            String summary, String imageKey, String url, String button, String theme) {
         String safeTitle = plainText(title, 100);
         List<Map<String, Object>> elements = new ArrayList<>();
         if (imageKey != null) {
             elements.add(Map.of("tag", "img", "img_key", imageKey,
-                    "alt", Map.of("tag", "plain_text", "content", "小记配图")));
+                    "alt", Map.of("tag", "plain_text", "content", "分享配图")));
         }
+        for (String fact : facts) elements.add(textElement(plainText(fact, 160)));
         if (StringUtils.hasText(summary)) elements.add(textElement(summary));
         elements.add(Map.of("tag", "action", "actions", List.of(Map.of(
-                "tag", "button", "text", Map.of("tag", "plain_text", "content", "打开原文"),
+                "tag", "button", "text", Map.of("tag", "plain_text", "content", button),
                 "type", "primary", "url", url))));
-        String heading = kind + " · " + (StringUtils.hasText(safeTitle) ? safeTitle : "未命名小记");
+        String heading = kind + " · " + (StringUtils.hasText(safeTitle) ? safeTitle : "未命名内容");
         return Map.of("inline", Map.of("i18n_title", Map.of("zh_cn", heading)),
                 "card", Map.of("type", "raw", "data", Map.of(
                         "config", Map.of("wide_screen_mode", true),
-                        "header", Map.of("template", "turquoise",
+                        "header", Map.of("template", theme,
                                 "title", Map.of("tag", "plain_text", "content", heading)),
                         "elements", elements)));
     }
@@ -229,8 +242,51 @@ public class FeishuLinkPreviewService {
             facts.add("变化：" + reading.changingLines().size() + " 个变爻 · 之卦 "
                     + reading.relating().symbol() + " " + reading.relating().name());
         }
-        return response("WAO 天人一卦", reading.primary().name(), facts,
-                plainText(reading.interpretation(), 240), url, "打开卦象", "purple");
+        String interpretation = reading.interpretation() == null ? "" : reading.interpretation();
+        String summary = quickSummary(interpretation);
+        Matcher image = NOTE_IMAGE.matcher(interpretation);
+        String imageKey = null;
+        if (tianrenVisuals != null) {
+            try {
+                var visual = tianrenVisuals.findSharedVisual(token);
+                if (visual != null && StringUtils.hasText(interpretation)
+                        && interpretation.equals(visual.interpretation())) {
+                    if (StringUtils.hasText(visual.summary())) summary = contentSummary(visual.summary(), 240);
+                    if (StringUtils.hasText(visual.imageVersion()) && visual.content() != null) {
+                        imageKey = uploadImageKey("tianren:" + token + ":" + visual.imageVersion(), () -> {
+                            var blob = new ImageBlobEntity();
+                            blob.setContent(visual.content());
+                            blob.setContentType(visual.contentType());
+                            return blob;
+                        });
+                    }
+                }
+            } catch (RuntimeException exception) {
+                log.warn("卦象分享配图暂不可用：{}", exception.getClass().getSimpleName());
+            }
+        }
+        // 无领域配图模块的旧存档仍可使用解读中已经公开的站内图片。
+        if (tianrenVisuals == null && image.find()) imageKey = previewImageKey(image.group(1));
+        return visualResponse("WAO 天人一卦", reading.primary().name(), facts,
+                summary, imageKey, url, "查看详情", "purple");
+    }
+
+    /** 从已经公开的解读中优先取快速总结小节；旧存档使用正文开头，不再调用模型。 */
+    static String quickSummary(String interpretation) {
+        if (!StringUtils.hasText(interpretation)) return "";
+        Matcher summary = SUMMARY_SECTION.matcher(interpretation);
+        if (summary.find()) {
+            String body = interpretation.substring(summary.end());
+            Matcher next = HEADING.matcher(body);
+            String section = next.find() ? body.substring(0, next.start()) : body;
+            String text = contentSummary(section, 240);
+            if (StringUtils.hasText(text)) return text;
+        }
+        return contentSummary(interpretation, 240);
+    }
+
+    private static String contentSummary(String markdown, int limit) {
+        return plainText(MARKDOWN_IMAGE.matcher(markdown == null ? "" : markdown).replaceAll(""), limit);
     }
 
     private static Map<String, Object> response(String kind, String title, List<String> facts, String summary,
