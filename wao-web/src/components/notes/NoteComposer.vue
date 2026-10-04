@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
@@ -11,6 +11,11 @@ import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraf
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import NoteAiSettingsDialog from './NoteAiSettingsDialog.vue'
 import NoteWidthSwitch from './NoteWidthSwitch.vue'
+import NoteImageModeSwitch from './NoteImageModeSwitch.vue'
+import NoteReadingImages from './NoteReadingImages.vue'
+import { useNoteImageMode } from '@/composables/noteImageMode'
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
+import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import NoteTagContextMenu from './NoteTagContextMenu.vue'
 import { replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
@@ -26,7 +31,7 @@ const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
   loadingComponent: defineComponent({ setup: () => () => h('p', { role: 'status' }, '正在加载编辑器…') }),
 })
-const noteEditor = ref<{ dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean } | null>(null)
+const noteEditor = ref<{ focusImageReference?: (index: number) => boolean; dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean } | null>(null)
 const data = useDataStore()
 const session = useSessionStore()
 const writingWidth = useNoteWritingWidth()
@@ -95,6 +100,45 @@ async function toggleTagCreate() {
   tagCreateOpen.value = !tagCreateOpen.value
   if (tagCreateOpen.value) { await nextTick(); composerElement.value?.querySelector<HTMLInputElement>('.inline-tag-create input')?.focus() }
 }
+const imageRailStacked = ref(window.innerWidth <= 650 || !!props.compact)
+let imageLayoutObserver: ResizeObserver | undefined
+onMounted(() => {
+  const root = composerElement.value
+  if (!root || typeof ResizeObserver === 'undefined') return
+  imageLayoutObserver = new ResizeObserver(entries => {
+    const width = entries[0]?.contentRect.width
+    if (width != null) imageRailStacked.value = width <= 600
+  })
+  imageLayoutObserver.observe(root)
+})
+onBeforeUnmount(() => imageLayoutObserver?.disconnect())
+const imageMode = useNoteImageMode()
+const draftImages = computed(() => notePreviewImages(content.value ?? { version: 1, markdown: text.value }))
+const activeImage = ref<number | null>(null)
+const imagesPanel = ref<{ locate: (index: number) => void } | null>(null)
+const imagePreview = ref<NotePreviewImage | null>(null)
+const imageClose = ref<HTMLButtonElement | null>(null)
+let imageTrigger: HTMLElement | null = null
+watch(imageMode, () => { activeImage.value = null })
+function locateDraftImage(index: number) { activeImage.value = index; imagesPanel.value?.locate(index) }
+function returnToDraftImage(index: number) { activeImage.value = index; noteEditor.value?.focusImageReference?.(index) }
+async function openDraftImage(image: NotePreviewImage, event: MouseEvent) {
+  imageTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  imagePreview.value = image
+  await nextTick()
+  imageClose.value?.focus({ preventScroll: true })
+}
+async function closeDraftImage() {
+  imagePreview.value = null
+  await nextTick()
+  if (imageTrigger?.isConnected) imageTrigger.focus({ preventScroll: true })
+  imageTrigger = null
+}
+useOverlayDismiss(() => !!imagePreview.value, closeDraftImage)
+function imagePreviewKeys(event: KeyboardEvent) {
+  if (event.key === 'Tab') { event.preventDefault(); imageClose.value?.focus() }
+}
+
 const fullscreen = ref(!!props.initialFullscreen)
 const aiSettingsOpen = ref(false)
 watch(fullscreen, value => emit('fullscreen-change', value), { flush: 'sync' })
@@ -216,6 +260,7 @@ const taskSource = computed(() => ({
 }))
 const text = ref(initial.text)
 const content = ref<RichDocContent | undefined>(initial.content)
+watch(() => JSON.stringify(draftImages.value), () => { activeImage.value = null })
 const generatedTitle = ref(initial.generatedTitle || props.note?.title || '')
 // 保留开始编辑时的快照，后台元信息可合并，本次输入优先。
 let baseRev = initial.baseRev ?? props.note?.rev ?? 1
@@ -510,20 +555,21 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </script>
 
 <template>
-  <section ref="composerElement" class="note-composer" :style="fullscreen ? fullscreenStyle : undefined" :class="{ fullscreen, inline, expanded, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen }" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
-    <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" :aria-describedby="fullscreenReminderVisible && !fullscreen ? fullscreenReminderId : undefined" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
+  <section ref="composerElement" class="note-composer" :style="fullscreen ? fullscreenStyle : undefined" :class="{ fullscreen, inline, expanded, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen, 'has-image-rail': imageMode === 'references' && !!draftImages.length, 'images-stacked': imageRailStacked }" :inert="imagePreview ? true : undefined" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
+    <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><NoteImageModeSwitch v-model="imageMode" /><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" :aria-describedby="fullscreenReminderVisible && !fullscreen ? fullscreenReminderId : undefined" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div v-if="fullscreenReminderVisible && !fullscreen" :id="fullscreenReminderId" class="fullscreen-reminder" role="status" aria-live="polite">
       <i class="ri-focus-3-line" aria-hidden="true"></i>
       <div class="fullscreen-reminder-copy"><strong>已经写了一会儿，来全屏专心创作？</strong><span>全屏后正文和图片更舒展，当前内容与草稿会保留。</span></div>
       <div class="fullscreen-reminder-actions"><button type="button" class="reminder-enter" @click="enterFullscreen">进入全屏</button><button type="button" @click="remindLater">稍后提醒</button><button type="button" aria-label="关闭全屏提醒" title="关闭提醒" @click="dismissFullscreenReminder"><i class="ri-close-line" aria-hidden="true"></i></button></div>
     </div>
     <div v-if="!note && generatedTitle" class="new-generated-title"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="生成的小记标题"></div>
-    <div v-if="inline && note" class="inline-heading"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="小记标题" :disabled="saving"><button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @contextmenu="tagMenu?.open($event, tag)" @keydown="tagMenu?.open($event, tag)" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button><button class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
+    <div v-if="inline && note" class="inline-heading"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="小记标题" :disabled="saving"><button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @contextmenu="tagMenu?.open($event, tag)" @keydown="tagMenu?.open($event, tag)" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button><button class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span><NoteImageModeSwitch v-model="imageMode" /><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div class="editor-space" @keydown.capture.exact="onComposerEditorKeydown" @keydown.capture.shift.exact="onComposerEditorKeydown" @keydown.ctrl.enter.prevent="save(true)" @keydown.meta.enter.prevent="save(true)">
       <div v-if="quickChoices.length" class="fullscreen-quick-tags" role="group" aria-label="快捷标签"><i class="ri-price-tag-3-line" aria-hidden="true"></i><button v-for="tag in quickChoices" :key="tag" type="button" :class="{ selected: tags.includes(tag) }" :aria-pressed="tags.includes(tag)" :aria-label="`${tags.includes(tag) ? '移除' : '添加'}标签 ${tag}`" :disabled="saving || creatingTag || (!tags.includes(tag) && tags.length >= 20)" @contextmenu="tagMenu?.open($event, tag)" @keydown="tagMenu?.open($event, tag)" @mousedown.prevent @click="toggleTag(tag)"><span class="quick-tag-hash" aria-hidden="true">#</span>{{ tag }}<i v-if="tags.includes(tag)" class="ri-check-line" aria-hidden="true"></i></button></div>
       <NoteTagContextMenu ref="tagMenu" :choices="choices" :disabled="saving || creatingTag" @saving-change="tagManaging = $event" />
       <div class="composer-editor-layout"><div class="composer-editor-main">
       <MarkdownEditor :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls image-context-controls selection-image preview-images note-media-copy
+        :image-references="imageMode === 'references'" :active-image-reference="activeImage" @image-reference="locateDraftImage"
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         :article-image-generation="false"
         :note-ai-origin="{ stableId: id, docId: note?.id, sourceRev: baseRev, title: generatedTitle, blocks: note?.blocks ?? [], links: note?.links ?? [] }" note-title-on-image @ai-applied="appliedAiInputs = [...new Set([...appliedAiInputs, $event])]" @generated-title="generatedTitle = $event"
@@ -541,8 +587,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
           </div>
         </template>
       </MarkdownEditor>
-      </div></div>
+      </div><NoteReadingImages v-if="imageMode === 'references' && draftImages.length" ref="imagesPanel" class="composer-images" :images="draftImages" :active="activeImage" @return="returnToDraftImage" @fullscreen="openDraftImage" /></div>
     </div>
+    <Teleport to="body"><div v-if="imagePreview" class="composer-image-lightbox" role="dialog" aria-modal="true" :aria-label="imagePreview.alt || '小记图片预览'" @click.self="closeDraftImage" @keydown="imagePreviewKeys"><button ref="imageClose" type="button" aria-label="关闭图片预览" @click="closeDraftImage"><i class="ri-close-line" aria-hidden="true"></i></button><img :src="imagePreview.src" :alt="imagePreview.alt" /></div></Teleport>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
     <NoteAiSettingsDialog v-model:open="aiSettingsOpen" />
     <Teleport to="body">
@@ -612,6 +659,15 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .new-generated-title input { width: 100%; margin-bottom: 8px; border: 0; border-bottom: 1px solid var(--wao-line-control); padding: 5px 0; background: transparent; color: var(--wao-text-1); font-size: 16px; font-weight: 600; }
 .inline-heading .tag-chip, .inline-heading .add-tag { padding: 3px 7px; font-size: 11px; }
 .composer-editor-layout { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.composer-images { flex: 0 0 clamp(180px, 28%, 300px); align-self: stretch; min-height: 0; overflow: auto; margin-left: 16px; padding: 12px; border: 1px solid var(--wao-line); border-radius: 10px; }
+.images-stacked.has-image-rail .composer-editor-layout { flex-direction: column; }
+.images-stacked .composer-images { flex: 0 1 auto; width: 100%; max-height: 220px; margin: 14px 0 0; }
+.images-stacked.has-image-rail .composer-editor-main { min-height: 160px; }
+.fullscreen.images-stacked.has-image-rail .composer-editor-main { min-height: 80px; }
+.fullscreen.images-stacked .composer-images { max-height: min(220px, calc(var(--note-visible-height, 100dvh) * .28)); }
+.composer-image-lightbox { position: fixed; inset: 0; z-index: 2400; display: grid; place-items: center; padding: 32px; background: rgba(15, 18, 28, .82); }
+.composer-image-lightbox > img { max-width: 100%; max-height: calc(100dvh - 64px); object-fit: contain; }
+.composer-image-lightbox > button { position: absolute; top: 16px; right: 20px; border: 0; padding: 10px; color: white; background: rgba(255,255,255,.16); font-size: 22px; }
 .composer-editor-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .composer-editor-main :deep(img.md-img) { max-height: min(38vh, 320px); object-fit: contain; }
 .composer-editor-main :deep(.note-image-node img.md-img) { max-height: none; }
@@ -663,11 +719,17 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
 .tag-picker span { color: var(--wao-text-faint); font-size: 12px; }
 .note-composer.fullscreen { position: fixed; inset: 0; z-index: 2100; border-radius: 0; padding: 24px max(24px, calc((100vw - 1100px) / 2)); height: 100dvh; }
 .note-composer.fullscreen.writing-narrow { padding-inline: max(24px, calc((100vw - 650px) / 2)); }
-.composer-heading .note-width-switch, .inline-heading .note-width-switch { margin-left: auto; }
+.note-composer.fullscreen.has-image-rail { padding-inline: max(24px, calc((100vw - 1440px) / 2)); }
+.note-composer.fullscreen.has-image-rail .composer-editor-main { max-width: 1100px; }
+.note-composer.fullscreen.has-image-rail.writing-narrow .composer-editor-main { max-width: 650px; }
+.note-composer.fullscreen.has-image-rail.writing-narrow { padding-inline: max(24px, calc((100vw - 970px) / 2)); }
+.composer-heading .note-width-switch, .inline-heading .note-width-switch { margin-left: 0; }
+.composer-heading, .inline-heading { flex-wrap: wrap; }
+@media (max-width: 600px) { .note-composer.fullscreen.has-image-rail { padding: 12px; } }
 .composer-heading .fullscreen-toggle, .inline-heading .fullscreen-toggle { margin-left: 0; }
 
 @media (max-width: 760px) {
-  .note-composer.fullscreen, .note-composer.fullscreen.writing-narrow {
+  .note-composer.fullscreen, .note-composer.fullscreen.writing-narrow, .note-composer.fullscreen.has-image-rail, .note-composer.fullscreen.has-image-rail.writing-narrow {
     top: var(--note-visible-top, 0px);
     bottom: auto;
     height: var(--note-visible-height, 100dvh);

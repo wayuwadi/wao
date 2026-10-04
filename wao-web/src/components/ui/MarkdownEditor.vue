@@ -366,6 +366,8 @@ function imageStyle(attributes: Record<string, unknown>): string {
   return styles.join(';')
 }
 
+const imageNodeViews = new Set<() => void>()
+
 /** Tiptap 自带 Image 已有 width/height 属性；这里只补 Markdown 往返和百分比渲染。 */
 const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; contextControls: boolean }>({
   addOptions() {
@@ -413,7 +415,7 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
     ]
   },
   addNodeView() {
-    if (props.readonly && props.imageReferences) return ({ node }) => {
+    if (props.readonly && props.imageReferences && !this.options.contextControls) return ({ node }) => {
       let current = node
       const dom = document.createElement('span')
       dom.className = 'reading-image-node'
@@ -449,7 +451,7 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
     }
     if (!this.options.contextControls) return null
     const usePreview = this.options.previewImages
-    return ({ node }) => {
+    return ({ node, getPos }) => {
       let current = node
       const dom = document.createElement('span')
       dom.className = 'note-image-node'
@@ -468,9 +470,37 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
         event.stopPropagation()
         previewImage.value = { src: current.attrs.src, alt: current.attrs.alt || '' }
       })
-      dom.append(image, button)
+      const reference = document.createElement('button')
+      reference.type = 'button'
+      reference.className = 'reading-image-reference'
+      reference.dataset.imageReference = '0'
+      reference.innerHTML = '<i class="ri-image-line" aria-hidden="true"></i><span class="reading-image-number"></span><span class="reading-image-caption"></span><i class="ri-arrow-right-up-line" aria-hidden="true"></i>'
+      reference.addEventListener('mousedown', event => event.preventDefault())
+      reference.addEventListener('click', event => { event.stopPropagation(); emit('image-reference', Number(reference.dataset.imageReference)) })
+      dom.addEventListener('contextmenu', event => {
+        if (!props.imageReferences || props.readonly || !editor.value) return
+        const pos = getPos()
+        if (pos == null) return
+        event.preventDefault(); event.stopPropagation()
+        editor.value.commands.setNodeSelection(pos)
+        syncSelectionControls(editor.value)
+        imageApplyAll.value = false
+        imageMenu.value = { src: current.attrs.src, x: event.clientX, y: event.clientY }
+      })
       const update = () => {
         const attrs = current.attrs
+        dom.classList.toggle('reading-image-node', props.imageReferences)
+        dom.classList.toggle('note-image-node', !props.imageReferences)
+        dom.draggable = !props.readonly
+        if (props.imageReferences) {
+          dom.style.cssText = ''
+          reference.hidden = typeof attrs.src !== 'string' || !/^(https?:\/\/|\/(?!\/))/i.test(attrs.src)
+          reference.querySelector('.reading-image-caption')!.textContent = attrs.alt ? ` · ${attrs.alt}` : ''
+          reference.title = attrs.alt || '查看右侧图片'
+          if (dom.firstChild !== reference) { image.removeAttribute('src'); dom.replaceChildren(reference) }
+          return
+        }
+        if (dom.firstChild !== image) dom.replaceChildren(image, button)
         image.src = usePreview ? notePreviewSource(attrs.src) : attrs.src
         image.dataset.fullSrc = attrs.src
         image.alt = attrs.alt || ''
@@ -491,7 +521,8 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
         else image.style.height = 'auto'
       }
       update()
-      return { dom, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
+      imageNodeViews.add(update)
+      return { dom, destroy() { imageNodeViews.delete(update) }, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
         selectNode() { dom.classList.add('ProseMirror-selectednode') }, deselectNode() { dom.classList.remove('ProseMirror-selectednode') },
         stopEvent(event) { return event.target instanceof Element && !!event.target.closest('button') }, ignoreMutation: () => true }
     }
@@ -788,7 +819,7 @@ const editor = useEditor({
 })
 
 function refreshImageReferences(e: Editor) {
-  if (!props.readonly || !props.imageReferences || e.isDestroyed) return
+  if (!props.imageReferences || e.isDestroyed) return
   ;[...e.view.dom.querySelectorAll<HTMLButtonElement>('[data-image-reference]')].filter(button => !button.hidden).forEach((button, offset) => {
     const index = offset + 1
     button.dataset.imageReference = String(index)
@@ -797,6 +828,12 @@ function refreshImageReferences(e: Editor) {
     button.setAttribute('aria-current', String(props.activeImageReference === index))
   })
 }
+watch(() => props.imageReferences, () => {
+  imageMenu.value = null
+  for (const update of imageNodeViews) update()
+  if (editor.value) refreshImageReferences(editor.value)
+  scheduleMeasure()
+})
 watch(() => props.activeImageReference, () => { if (editor.value) refreshImageReferences(editor.value) })
 function focusImageReference(index: number) {
   const button = editor.value?.view.dom.querySelector<HTMLButtonElement>(`[data-image-reference="${index}"]`)

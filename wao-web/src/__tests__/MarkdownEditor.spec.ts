@@ -85,6 +85,42 @@ async function mountEditor(props: {
 }
 
 describe('异步挂载焦点保护', () => {
+  it('编辑图片引用动态切换不重建编辑器，光标、属性、修改及撤销保留', async () => {
+    setActivePinia(createPinia())
+    const document: RichDocNode = { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: '之前' }] },
+      { type: 'image', attrs: { src: '/api/images/same/raw', alt: '第一张', width: '50%', height: null } },
+      { type: 'blockquote', content: [{ type: 'image', attrs: { src: '/api/images/same/raw', alt: '第二张', height: 200 } }] },
+    ] }
+    const w = await mountEditor({ modelValue: '', document, advanced: true, imageReferences: true, imageContextControls: true, previewImages: true, imageControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    expect(w.findAll('img.md-img')).toHaveLength(0)
+    expect(w.findAll('[data-image-reference]').map(x => x.text())).toEqual(['图 1 · 第一张', '图 2 · 第二张'])
+    e.commands.setTextSelection(2)
+    e.commands.insertContent('新增')
+    const before = e.getJSON(), markdown = e.getMarkdown(), selection = e.state.selection.toJSON()
+    const emissions = w.emitted('content-change')?.length
+    await w.setProps({ imageReferences: false })
+    expect(w.findAll('img.md-img')).toHaveLength(2)
+    await w.setProps({ imageReferences: true })
+    expect((w.vm as unknown as { editor: Editor }).editor).toBe(e)
+    expect(e.getJSON()).toEqual(before)
+    expect(e.getMarkdown()).toBe(markdown)
+    expect(e.state.selection.toJSON()).toEqual(selection)
+    expect(w.emitted('content-change')?.length).toBe(emissions)
+    expect(e.commands.undo()).toBe(true)
+    expect(e.state.doc.textContent).toBe('之前')
+    const images: number[] = []; e.state.doc.descendants((node, pos) => { if (node.type.name === 'image') images.push(pos) })
+    e.commands.setNodeSelection(images[0]!); e.commands.deleteSelection()
+    await nextTick()
+    expect(w.findAll('[data-image-reference]').map(x => x.text())).toEqual(['图 1 · 第二张'])
+    e.commands.undo(); await nextTick()
+    expect(w.findAll('[data-image-reference]')).toHaveLength(2)
+    await w.get('[data-image-reference="1"]').trigger('contextmenu', { clientX: 50, clientY: 60 })
+    expect(e.isActive('image')).toBe(true)
+    expect(window.document.body.querySelector('.note-image-menu')).not.toBeNull()
+    w.unmount()
+  })
   it('阅读图号只改变图片视图，重复图片与嵌套图片保留原文位置和复制内容', async () => {
     const document: RichDocNode = { type: 'doc', content: [
       { type: 'paragraph', content: [{ type: 'text', text: '之前' }] },
