@@ -763,6 +763,31 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
+  it('全文预览编辑保存后，异步正文的短暂零高度不清除展开选择', async () => {
+    const note = doc('keep-preview', '全文预览保存前的正文')
+    useDataStore().docs[note.id] = note
+    const wrapper = await view()
+    const card = wrapper.get(`[data-note-id="${note.id}"]`)
+    await setNoteBodyHeight(wrapper, note.id, 230)
+    await card.get('.note-read-action').trigger('click')
+    await card.get('.note-edit-action').trigger('click')
+    expect(card.get('.note-composer').classes()).toContain('expanded')
+    await card.get('textarea').setValue('全文预览保存后的正文')
+    vi.mocked(apiPatchDoc).mockResolvedValueOnce({ ...note, rev: 4, blocks: [{ p: '全文预览保存后的正文' }] })
+    await card.get('.save-note').trigger('click')
+    await flushPromises()
+    expect(card.find('.note-composer').exists()).toBe(false)
+    await setNoteBodyHeight(wrapper, note.id, 0)
+    await setNoteBodyHeight(wrapper, note.id, 240)
+    expect(card.classes()).toContain('expanded')
+    expect(card.classes()).not.toContain('fixed-height')
+    await card.get('.note-edit-action').trigger('click')
+    await card.get('.composer-footer button').trigger('click')
+    await setNoteBodyHeight(wrapper, note.id, 230)
+    expect(card.classes()).toContain('expanded')
+    wrapper.unmount()
+  })
+
   it('短小记自然收高且不显示展开入口，正文超出后才启用折叠', async () => {
     const note = doc('short-preview', '先写小记再复制到飞书聊天')
     note.content = { version: 1, markdown: '你现在写东西时，会先把想说的话记在小记上，再发到飞书吗？\n\n我想试试每天先把要聊的内容写在小记上，再复制到飞书上。', document: {

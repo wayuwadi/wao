@@ -8,6 +8,7 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 import ReleaseHistory from '@/components/release/ReleaseHistory.vue'
 import { CURRENT_RELEASE, RELEASE_HISTORY } from '@/data/featureCatalog'
 import { MODULES } from '@/config/nav'
+import { useUiStore } from '@/stores/ui'
 
 describe('最近更新档案', () => {
   it('当前说明归档，历史批次唯一且按日期倒序，入口来自真实目录', () => {
@@ -53,11 +54,13 @@ describe('最近更新档案', () => {
     // 新批次可能只有说明和演示；导航验证选择确实具有站内入口的历史批次。
     const navigableIndex = RELEASE_HISTORY.slice(1, 4).findIndex(edition => edition.highlights.some(item => item.featureId !== 'changelog'))
     await wrapper.findAll('.release-edition')[navigableIndex]!.trigger('click')
-    await wrapper.get('.edition-content article button').trigger('click')
+    await wrapper.findAll('.edition-content article button').find(button => button.text().startsWith('去体验'))!.trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe(
-      MODULES[RELEASE_HISTORY[navigableIndex + 1]!.highlights[0]!.featureId].path,
-    )
+    const featureId = RELEASE_HISTORY[navigableIndex + 1]!.highlights.find(item => item.featureId !== 'changelog')!.featureId
+    if (featureId === 'notes') {
+      expect(useUiStore().modal).toBe('note')
+      expect(router.currentRoute.value.path).toBe('/features')
+    } else expect(router.currentRoute.value.path).toBe(MODULES[featureId].path)
     wrapper.unmount()
   })
 })
