@@ -28,6 +28,7 @@ class AiAssistantRunMapperIntegrationTest {
                     member_id VARCHAR(64) NULL,
                     ai_capability_id VARCHAR(32) NULL,
                     requested_model VARCHAR(64) NULL,
+                    reasoning_effort VARCHAR(16) NULL,
                     usage_purpose VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
                     web_search_enabled BOOLEAN NOT NULL DEFAULT FALSE,
                     runner_id VARCHAR(32) NULL,
@@ -87,9 +88,12 @@ class AiAssistantRunMapperIntegrationTest {
         AiAssistantRunEntity durable = readOnlyRun("durable", "secure_queued");
         ordinary.setUsagePurpose("BACKGROUND");
         durable.setUsagePurpose("POLISH");
+        durable.setReasoningEffort("high");
 
         assertThat(mapper.insertReadOnlyQueued(ordinary)).isEqualTo(1);
         assertThat(mapper.insertReadOnlyQueued(durable)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT reasoning_effort FROM ai_assistant_run WHERE id='durable'", String.class))
+                .isEqualTo("high");
 
         assertThat(rowWithCreatedAt("ordinary"))
                 .containsEntry("STATUS", "queued")
