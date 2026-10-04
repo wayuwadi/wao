@@ -1193,11 +1193,11 @@ describe('小记集中记录空间', () => {
     const editorElement = wrapper.find('textarea').element
     expect(wrapper.find('.inline-heading .fullscreen-toggle').attributes('aria-label')).toBe('全屏编辑')
     expect(wrapper.find('.tag-chip').text()).toContain('工作')
-    expect(wrapper.find('.fullscreen-quick-tags').exists()).toBe(false)
+    expect(wrapper.find('.fullscreen-quick-tags').text()).toContain('工作')
 
     await wrapper.find('.inline-heading .fullscreen-toggle').trigger('click')
     expect(wrapper.classes()).toContain('fullscreen')
-    expect(wrapper.find('.fullscreen-quick-tags').text()).toContain('常用标签')
+    expect(wrapper.find('.fullscreen-quick-tags').text()).toContain('工作')
     expect(wrapper.find('textarea').element).toBe(editorElement)
     await wrapper.find('.save-note').trigger('click')
     await flushPromises()

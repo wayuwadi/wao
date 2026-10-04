@@ -1,5 +1,26 @@
 [
   {
+    "id": "release-notes-quick-tags-2026-10-04",
+    "publishedOn": "2026-10-04",
+    "sourceSubject": "style(notes): 以轻量胶囊呈现常用标签快选",
+    "title": "常用标签，轻一点",
+    "intro": "快捷标签融入书写区，一点就选，不打断正文输入。",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "小记标签",
+        "title": "更安静的标签快选",
+        "summary": "正文上方显示常用标签胶囊，已选标签有勾号，普通编辑和全屏编辑都能快速选择。",
+        "points": [],
+        "steps": [
+          "点击正文上方的标签胶囊添加已有标签。",
+          "再次点击已选胶囊即可移除，正文输入和光标继续保留。",
+          "没有标签时不显示空行，新增标签入口和井号选择继续可用。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-notes-edit-position-2026-10-04",
     "publishedOn": "2026-10-04",
     "sourceSubject": "fix(notes): 进入编辑时保留全文状态和光标位置",
