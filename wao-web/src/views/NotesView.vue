@@ -1433,7 +1433,16 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .notes-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 }
 @media (max-width: 1100px) { .writing-resizer { display: none; } .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } .search { flex: 1 1 50%; } }
-@media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
+@media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
+@media (max-width: 760px) {
+  .page-heading { gap: 8px; }
+  .heading-title { gap: 8px; flex-wrap: wrap; }
+  .writing-toggle, .toolbar button, .reader-toggle { min-height: 44px; }
+  .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 320px; }
+  .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height: 170px !important; }
+  .notes-list { padding: 18px 0 30px; }
+  .notes-page .note-body :deep(.md-body .tiptap), .notes-page .reader-article :deep(.md-body .tiptap) { font-size: 16px; line-height: 1.7; }
+}
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 14px 12px 16px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .list-summary { flex-wrap: wrap; } }
 @media (max-width: 600px) { .note-content.has-images { grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; } .note-images { max-height: 150px; padding-left: 7px; } }
 @media (hover: none) { .stage-list-complete, .card-quick-actions, .note-read-action { opacity: 1; visibility: visible; } .note-card:hover { transform: none; } }

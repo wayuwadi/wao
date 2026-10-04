@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useIsMobile } from '@/composables/viewport'
+import { useMobileVisualViewport } from '@/composables/mobileVisualViewport'
 const isMobile = useIsMobile()
+const { keyboardOpen } = useMobileVisualViewport()
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import TabWorkspace from '@/components/tabs/TabWorkspace.vue'
@@ -309,7 +311,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 <template>
   <div
     class="shell"
-    :class="{ 'desktop-shell': desktopToolbar, 'legacy-desktop-shell': legacyDesktopToolbar }"
+    :class="{ 'desktop-shell': desktopToolbar, 'legacy-desktop-shell': legacyDesktopToolbar, 'mobile-keyboard-open': keyboardOpen }"
     :data-control-style="preferences.effectiveControlStyle"
     :data-page-layout="preferences.pageLayoutStyle"
   >
@@ -392,8 +394,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     </main>
 
     <!-- 窄屏正文占满宽度，导航与全局工具按需打开。 -->
-    <button :inert="isMobile && mobileMenuOpen" class="fab" aria-label="新建任务" title="新建任务" @click="newTask">
-      <i class="ri-add-line"></i>
+    <button :inert="isMobile && mobileMenuOpen" class="fab" :aria-label="route.meta.module === 'notes' ? '新建小记' : '新建任务'" :title="route.meta.module === 'notes' ? '新建小记' : '新建任务'" @click="route.meta.module === 'notes' ? newNote() : newTask()">
+      <i :class="route.meta.module === 'notes' ? 'ri-quill-pen-line' : 'ri-add-line'" aria-hidden="true"></i>
     </button>
 
     <nav class="mobile-main-nav" aria-label="手机主入口" :inert="isMobile && mobileMenuOpen">
@@ -460,6 +462,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     background: var(--wao-bg-card);
     border-top: 1px solid var(--wao-line);
   }
+  .mobile-keyboard-open .mobile-main-nav, .mobile-keyboard-open .fab { display: none; }
+  .shell.mobile-keyboard-open .main { padding-bottom: 0; }
   .mobile-main-nav > * {
     position: relative;
     flex: 1;

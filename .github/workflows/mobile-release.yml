@@ -1,9 +1,7 @@
 name: WAO iOS Notes Build
 
 on:
-  push:
-    branches: [main]
-    paths: ['wao-mobile/**', '.github/workflows/mobile-release.yml']
+  # ADR-324：手机维护浏览器版，历史原生构建仅在明确恢复时人工执行。
   workflow_dispatch:
     inputs:
       version:

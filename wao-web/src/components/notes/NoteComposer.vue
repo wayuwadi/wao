@@ -15,6 +15,7 @@ import NoteTagContextMenu from './NoteTagContextMenu.vue'
 import { replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
+import { useMobileVisualViewport } from '@/composables/mobileVisualViewport'
 import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 import type { Doc, FileItem, RichDocContent } from '@/types'
 import type { NoteSubmission } from '@/api/dayWorkspace'
@@ -30,6 +31,7 @@ const data = useDataStore()
 const session = useSessionStore()
 const writingWidth = useNoteWritingWidth()
 const preferences = usePreferenceStore()
+const { fullscreenStyle, isMobile } = useMobileVisualViewport()
 const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}${props.draftScope ? ':' + props.draftScope : ''}`
@@ -508,7 +510,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </script>
 
 <template>
-  <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline, expanded, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen }" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
+  <section ref="composerElement" class="note-composer" :style="fullscreen ? fullscreenStyle : undefined" :class="{ fullscreen, inline, expanded, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen }" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
     <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" :aria-describedby="fullscreenReminderVisible && !fullscreen ? fullscreenReminderId : undefined" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div v-if="fullscreenReminderVisible && !fullscreen" :id="fullscreenReminderId" class="fullscreen-reminder" role="status" aria-live="polite">
       <i class="ri-focus-3-line" aria-hidden="true"></i>
@@ -554,7 +556,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       </div>
     </Teleport>
     <div class="composer-footer">
-      <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : 'Ctrl / ⌘ + Enter 保存') }}</span>
+      <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : isMobile ? '随手写，点“记下来了”保存' : 'Ctrl / ⌘ + Enter 保存') }}</span>
       <button v-if="note" type="button" :disabled="saving" @click="emit('close')">收起编辑</button>
       <button class="save-note" type="button" :disabled="!canSave" @click="save(true)">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
     </div>
@@ -664,5 +666,21 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
 .composer-heading .note-width-switch, .inline-heading .note-width-switch { margin-left: auto; }
 .composer-heading .fullscreen-toggle, .inline-heading .fullscreen-toggle { margin-left: 0; }
 
-@media (max-width: 600px) { .note-composer.fullscreen { padding: 12px; } }
+@media (max-width: 760px) {
+  .note-composer.fullscreen, .note-composer.fullscreen.writing-narrow {
+    top: var(--note-visible-top, 0px);
+    bottom: auto;
+    height: var(--note-visible-height, 100dvh);
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  .note-composer .editor-space :deep(.md-body .tiptap) { font-size: 16px; line-height: 1.7; }
+  .fullscreen-toggle { min-width: 44px; min-height: 44px; }
+  .composer-footer { gap: 8px; padding-top: 8px; margin-top: 8px; }
+  .composer-footer > span { flex-basis: 100%; min-width: 0; }
+  .composer-footer > button { min-height: 44px; }
+  .fullscreen .composer-footer > span { flex: 1 1 120px; }
+  .fullscreen-quick-tags { gap: 6px; margin-bottom: 8px; }
+  .fullscreen-quick-tags { flex-wrap: nowrap; overflow-x: auto; flex-shrink: 0; }
+  .fullscreen-quick-tags button { min-height: 44px; flex-shrink: 0; }
+}
 </style>
