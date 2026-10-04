@@ -89,7 +89,7 @@ export function createClient({ url = endpoint(), token, fetchImpl = fetch } = {}
         throw new Error('无法检查 WAO 页面发布权限：' + error.message)
       }
       if (response.status === 401) throw new Error('工作区令牌无效或已吊销；请重新登录')
-      if (response.status === 403) throw new Error('当前工作区令牌没有发布 HTML 页面权限；请在 WAO 首页“连接 AI 客户端”中单独开启后重新生成')
+      if (response.status === 403) throw new Error('当前工作区令牌没有发布 HTML 页面权限；请在能力中心“我的连接”的 CLI/MCP 新授权中选择发布 HTML 页面')
       if (!response.ok) throw new Error('WAO 权限检查返回 HTTP ' + response.status)
       let body
       try { body = await response.json() } catch { throw new Error('WAO 权限检查返回的不是 JSON') }
@@ -118,7 +118,7 @@ export function createClient({ url = endpoint(), token, fetchImpl = fetch } = {}
         throw new Error('无法连接 WAO 托管页服务：' + error.message)
       }
       if (response.status === 401) throw new Error('工作区令牌无效或已吊销；请重新登录')
-      if (response.status === 403) throw new Error('当前工作区令牌没有发布 HTML 页面权限；请在 WAO 首页“连接 AI 客户端”中单独开启后重新生成')
+      if (response.status === 403) throw new Error('当前工作区令牌没有发布 HTML 页面权限；请在能力中心“我的连接”的 CLI/MCP 新授权中选择发布 HTML 页面')
       if (!response.ok) throw new Error('WAO 托管页服务返回 HTTP ' + response.status)
       let body
       try { body = await response.json() } catch { throw new Error('WAO 托管页服务返回的不是 JSON') }

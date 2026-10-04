@@ -49,14 +49,27 @@ public class TodoDayService {
 
     /** Reads one Shanghai business day, with current project permission applied to every task. */
     public Day day(LocalDate date, String memberId) {
-        return day(date, memberId, visibleTasks(memberId), recordingStart());
+        return day(date, memberId, visibleTasks(memberId), recordingStart(), true);
+    }
+
+    /** 工作区日读取叠加连接项目范围及小记知识库范围，事件和统计使用相同过滤。 */
+    public Day day(LocalDate date, String memberId, java.util.function.Predicate<TaskDto> allowed, boolean includeNotes) {
+        Map<String, TaskDto> visible = visibleTasks(memberId);
+        visible.values().removeIf(t -> !allowed.test(t));
+        return day(date, memberId, visible, recordingStart(), includeNotes);
     }
 
     /** Reads at most 31 days without expanding an unbounded historical range. */
     public Month month(LocalDate from, LocalDate to, String memberId) {
+        return month(from, to, memberId, t -> true, true);
+    }
+
+    /** 工作区月摘要使用连接范围计算，不泄漏未授权项目的数量或小记。 */
+    public Month month(LocalDate from, LocalDate to, String memberId, java.util.function.Predicate<TaskDto> allowed, boolean includeNotes) {
         if (from == null || to == null || to.isBefore(from) || to.toEpochDay() - from.toEpochDay() >= 31)
             throw new BadRequestException("日期范围最多 31 天");
         Map<String, TaskDto> visible = visibleTasks(memberId);
+        visible.values().removeIf(t -> !allowed.test(t));
         LocalDateTime started = recordingStart();
         Map<LocalDate, Map<String, JsonNode>> dailySnapshots = new LinkedHashMap<>();
         Map<LocalDate, Set<String>> stepDone = new HashMap<>();
@@ -113,12 +126,12 @@ public class TodoDayService {
                 stepDone.computeIfAbsent(event.date(), ignored -> new HashSet<>())
                         .addAll(newlyDoneIds(event.taskId(), event.before(), event.after()));
         }
-        List<LocalDate> explicitNotes = jdbc.query("""
+        List<LocalDate> explicitNotes = includeNotes ? jdbc.query("""
                 SELECT c.business_date FROM wao_todo_day_note_context c JOIN doc d ON d.id = c.doc_id
                  WHERE c.member_id = ? AND c.business_date BETWEEN ? AND ? AND d.author_id = ?
                    AND d.kb_id = 'kb-notes' AND d.deleted_at IS NULL AND d.archived_at IS NULL LIMIT 6201
-                """, (rs, row) -> rs.getDate(1).toLocalDate(), memberId, from, to, memberId);
-        List<LocalDate> ordinaryNotes = jdbc.query("""
+                """, (rs, row) -> rs.getDate(1).toLocalDate(), memberId, from, to, memberId) : List.of();
+        List<LocalDate> ordinaryNotes = includeNotes ? jdbc.query("""
                 SELECT DATE(d.created_at) FROM doc d
                  WHERE d.author_id = ? AND d.kb_id = 'kb-notes'
                    AND d.created_at >= ? AND d.created_at < ?
@@ -126,7 +139,7 @@ public class TodoDayService {
                    AND NOT EXISTS (SELECT 1 FROM wao_todo_day_note_context c WHERE c.doc_id = d.id)
                  LIMIT 6201
                 """, (rs, row) -> rs.getDate(1).toLocalDate(), memberId,
-                from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+                from.atStartOfDay(), to.plusDays(1).atStartOfDay()) : List.of();
         if (explicitNotes.size() + ordinaryNotes.size() > 6200)
             throw new BadRequestException("月度小记超过安全读取上限");
         for (LocalDate date : explicitNotes) noteCount.merge(date, 1, Integer::sum);
@@ -149,7 +162,7 @@ public class TodoDayService {
     private record VersionRow(LocalDate date, String taskId, JsonNode snapshot) {}
     private record MonthEventRow(LocalDate date, String taskId, String type, JsonNode before, JsonNode after) {}
 
-    private Day day(LocalDate date, String memberId, Map<String, TaskDto> visible, LocalDateTime started) {
+    private Day day(LocalDate date, String memberId, Map<String, TaskDto> visible, LocalDateTime started, boolean includeNotes) {
         if (date == null) throw new BadRequestException("日期无效");
         boolean beforeBaseline = date.isBefore(started.toLocalDate());
         Map<String, JsonNode> snapshots = new LinkedHashMap<>();
@@ -210,7 +223,7 @@ public class TodoDayService {
             taskList.add(new DayTask(task, snapshot, date.isBefore(LocalDate.now(SHANGHAI)) ? "RECORDED" : "CURRENT",
                     byTask.getOrDefault(entry.getKey(), List.of()), isPlanned, finished));
         }
-        List<DayNote> notes = notes(date, memberId, visible);
+        List<DayNote> notes = includeNotes ? notes(date, memberId, visible) : List.of();
         return new Day(date, timestamp(started), beforeBaseline ? "BEFORE_BASELINE" : "RECORDED",
                 taskList, notes, new Summary(plannedCount,
                         date.isAfter(LocalDate.now(SHANGHAI)) ? 0 : finishedFacts.size(),

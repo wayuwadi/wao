@@ -501,6 +501,13 @@ onBeforeUnmount(() => {
         @click="draft.permissions = capabilities.filter((c) => c.readOnly).map((c) => c.name)"
       >
         只选读取</button
+      ><button
+        type="button"
+        class="cap-button"
+        :disabled="busy || !capabilities.length"
+        @click="draft.permissions = capabilities.filter((c) => c.name !== 'publish_html').map((c) => c.name)"
+      >
+        日常完整</button
       ><span class="cap-muted">{{ storageError ? '草稿未保存' : '草稿已保存在本机' }}</span>
     </div>
     <p v-if="notice" role="status" class="cap-notice">{{ notice }}</p>

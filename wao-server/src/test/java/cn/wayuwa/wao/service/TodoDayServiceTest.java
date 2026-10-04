@@ -74,5 +74,18 @@ class TodoDayServiceTest {
         assertThat(service.day(third, "wg").summary().finishedCount()).isZero();
         var month = service.month(first, third, "wg");
         assertThat(month.days()).extracting(TodoDayService.DaySummary::finishedCount).containsExactly(0, 1, 0);
+
+        jdbc.update("INSERT INTO doc VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)",
+                "scope-note", "可见的小记", second.atTime(12, 0), second.atTime(12, 0), "wg", "kb-notes");
+        assertThat(service.day(second, "wg").notes()).hasSize(1);
+        var restricted = service.day(second, "wg", t -> false, false);
+        assertThat(restricted.tasks()).isEmpty();
+        assertThat(restricted.notes()).isEmpty();
+        assertThat(restricted.summary()).isEqualTo(new TodoDayService.Summary(0, 0, 0, 0));
+        var restrictedMonth = service.month(first, third, "wg", t -> false, false);
+        assertThat(restrictedMonth.days()).allSatisfy(day -> {
+            assertThat(day.plannedCount()).isZero(); assertThat(day.finishedCount()).isZero();
+            assertThat(day.stepDoneCount()).isZero(); assertThat(day.noteCount()).isZero();
+        });
     }
 }

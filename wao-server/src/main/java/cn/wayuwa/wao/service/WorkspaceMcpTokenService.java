@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -140,14 +141,19 @@ public class WorkspaceMcpTokenService {
         /** 操作白名单与旧版兼容标记统一判断，未知能力不自动扩权。 */
         public boolean permits(String operation) {
             if (policy != null) return policy.permits(operation);
-            return WorkspaceCapabilityPolicy.READ.contains(operation)
-                    || (canWrite && WorkspaceCapabilityPolicy.WRITE.contains(operation))
+            return WorkspaceCapabilityPolicy.LEGACY_READ.contains(operation)
+                    || (canWrite && WorkspaceCapabilityPolicy.LEGACY_WRITE.contains(operation))
                     || (canPublishHostedPage && "publish_html".equals(operation));
         }
         /** 检查项目范围；null policy 的旧令牌沿用账号可见性。 */
         public boolean permitsProject(String id) { return policy == null || policy.permitsProject(id); }
         /** 检查知识库范围；null policy 的旧令牌沿用账号可见性。 */
         public boolean permitsKnowledgeBase(String id) { return policy == null || policy.permitsKnowledgeBase(id); }
+        /** 每日范围只能来自显式工具授权快照，旧令牌保持关闭。 */
+        public boolean canUseDaily() {
+            return policy != null && policy.permissions().stream().anyMatch(Set.of("get_todo_day", "list_todo_days",
+                    "get_daily_operation", "schedule_task", "record_daily_note")::contains);
+        }
     }
 
     private WorkspaceMcpTokenDto toDto(WorkspaceMcpTokenEntity row) {

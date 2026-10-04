@@ -98,6 +98,21 @@ describe('页内逐项连接授权', () => {
     expect(localStorage.getItem('wao:capability-connection-draft:v1:wd')).toContain('本机测试')
     restored.unmount()
   })
+  it('日常完整只填授权草稿，保留数据范围并由用户签发，不含公开发布', async () => {
+    const wrapper = await render()
+    await wrapper.setProps({ capabilities: [...capabilities, {
+      name: 'publish_html', title: '发布页面', description: '', group: 'pages', readOnly: false,
+      cli: 'wao pages publish', mcp: null,
+    }] })
+    await wrapper.get('.cap-resource-scope select').setValue('specific')
+    await wrapper.get('.cap-scope-list input').setValue(true)
+    await wrapper.findAll('button').find((b) => b.text() === '日常完整')!.trigger('click')
+    const saved = JSON.parse(localStorage.getItem('wao:capability-connection-draft:v1:wd')!)
+    expect(saved.permissions).toEqual(['get_task', 'update_task', 'get_document'])
+    expect(saved.projectIds).toEqual(['p1'])
+    expect(api.createGranularWorkspaceToken).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('失败保留草稿，成功明文只留当前页面，不写本机草稿', async () => {
     api.createGranularWorkspaceToken.mockRejectedValueOnce(new Error('服务器暂不可用'))
     const wrapper = await render()

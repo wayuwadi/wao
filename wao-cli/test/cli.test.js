@@ -261,10 +261,25 @@ test('文档替换可从标准输入读取复杂 JSON 参数', async () => {
 
 test('命令表覆盖服务端工作区 MCP 工具目录', async () => {
   const names = [...COMMANDS.values()].map(([name]) => name)
-  const source = await readFile(new URL('../../wao-server/src/main/java/cn/wayuwa/wao/service/WorkspaceMcpTools.java', import.meta.url), 'utf8')
-  const serverTools = [...source.matchAll(/add\(list, "([a-z_]+)"/g)].map(match => match[1])
-  assert.equal(new Set(names).size, names.length)
-  assert.deepEqual(names.sort(), serverTools.sort())
+  const sources = await Promise.all(['WorkspaceMcpTools.java', 'WorkspaceMcpOperations.java'].map(file =>
+    readFile(new URL('../../wao-server/src/main/java/cn/wayuwa/wao/service/' + file, import.meta.url), 'utf8')))
+  const serverTools = sources.flatMap(source => [...source.matchAll(/(?:add\(list|tool\(tools), "([a-z_]+)"/g)].map(match => match[1]))
+  const available = new Set(names)
+  assert.ok(serverTools.length > 0)
+  assert.deepEqual(serverTools.filter(name => !available.has(name)), [], '每个工作区工具都应有友好命令')
+})
+
+test('能力中心公开目录的 CLI 命令与唯一命令表保持一致，包含每日工具', async () => {
+  const source = await readFile(new URL('../../wao-server/src/main/java/cn/wayuwa/wao/controller/CapabilityCenterController.java', import.meta.url), 'utf8')
+  const mappings = [...source.matchAll(/Map\.entry\("([a-z_]+)", "(wao [^"]+)"\)/g)].map(match => [match[1], match[2]])
+  const names = new Set([...COMMANDS.values()].map(([name]) => name))
+  assert.equal(new Map(mappings).size, mappings.length, 'Java Map 不能有重复工具键')
+  assert.deepEqual(mappings.map(([name]) => name).sort(), [...names].sort(), '公开能力 CLI 映射不能遗漏或虚构工具')
+  for (const [name, cli] of mappings) {
+    const aliases = [...COMMANDS.entries()].filter(([, [tool]]) => tool === name).map(([path, [, positional]]) => 'wao ' + path + (positional ? ' ' : ''))
+    assert.ok(aliases.some(alias => cli === alias || (alias.endsWith(' ') && cli.startsWith(alias))), `${name} 的 CLI 映射必须指向实际别名`)
+  }
+  assert.match(source, /tools\.list\(true, true\)/, '公开目录须含全部日操作，仅元数据不会授予任何令牌')
 })
 
 test('URL 和输出不会泄露令牌或接受远程明文 HTTP', async () => {

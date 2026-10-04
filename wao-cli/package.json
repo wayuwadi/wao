@@ -1,6 +1,6 @@
 {
   "name": "@wayuwa/wao-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "WAO 工作区命令行工具",
   "type": "module",
   "bin": { "wao": "bin/wao.js" },

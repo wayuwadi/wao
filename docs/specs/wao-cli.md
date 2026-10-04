@@ -1,6 +1,9 @@
 # WAO CLI 规格与能力台账
 
-2026-10-04：授权入口统一迁至独立「能力中心」→「我的连接」（`/capabilities?area=connections`），旧设置地址重定向。逐项授权固定操作快照和项目／知识库范围，CLI 与 MCP 共用服务端检查；旧整体令牌不原地扩权。公开能力目录包含 20 项 MCP 业务操作和 CLI 单独的 HTML 发布。Skill/Pet 与应用接入由中心管理，暂不新增终端上传、令牌签发或应用授权工具，避免设备自行扩权。当前契约见 [能力中心](capability-center.md) 和 ADR-322；下文旧设置入口说明为迁移前历史。
+2026-10-04：授权入口统一迁至独立「能力中心」→「我的连接」（`/capabilities?area=connections`），旧设置地址重定向。逐项授权固定操作快照和项目／知识库范围，CLI 与 MCP 共用服务端检查；旧整体令牌固定原有工具授权，不原地扩权。公开能力目录由实际服务端工具 schema 构建，包含日常 MCP 操作及 CLI 单独的 HTML 发布。Skill/Pet 与应用接入由中心管理，暂不新增终端上传、令牌签发或应用授权工具，避免设备自行扩权。当前契约见 [能力中心](capability-center.md) 和 ADR-322；下文历史规格中的旧设置入口为迁移前记录。
+
+2026-10-04：CLI 0.2.0 按 [日常工作区能力](workspace-mcp-daily-capabilities.md) 扩展小记、标签、文档模板、归档、任务编辑、子任务、检索及日安排。此前“未开放 CLI”描述保留历史决策；本节新增的明确能力取代其中对应日安排、日小记及标签人工编辑限制。AI 设置、个人规则、私有原稿和模型执行依然不开放。`get_workspace_info` 返回成员身份、写 / 日操作 / 托管页权限、服务版本与可用能力；`list_members` 提供可选负责人。这两个元数据工具也必须经逐项授权，不能借诊断扩大旧令牌读取范围。所有新增能力需要在能力中心创建 CLI/MCP 新授权时选入操作快照，已有令牌仍只保留原有工具。`permissions.daily` 是从逐项 policy 快照推导的指标，不是新增数据库开关。常用别名和通用调用均先取实时 `tools/list`，旧服务端不被假定已有新工具。
+
 2026-10-03：[每日固定事项](todo-daily-routines.md) 首版用本人登录会话维护个人规则与当日实例，规则修改次日生效、历史只读。现有工作区令牌没有个人生活规则与回执的独立权限，暂不新增 CLI 命令或 MCP 工具。明确出现脚本化维护需求时，应同步定义规则版本、有效日、成员隔离、状态 CAS 与操作回执，重新评估终端开放。
 
 2026-10-03：[待办日视图融合](todo-daily-fusion.md) 增加成员私有日聚合、粗粒度排时和日小记原子操作。既有任务/文档 MCP 写入口通过公共服务记录真实日事实；不新增工作区工具或扩展旧令牌。日聚合含私人回顾，首版只供本人浏览器；未来需要脚本读日记录或改排时，须设计独立授权、日期边界、版本条件与回执后同步 CLI 命令及测试。
@@ -32,9 +35,14 @@ CLI 支持通过独立授权的现有托管页 API 发布一个公开 HTML 页�
 ## 命令与契约
 
 - Node.js 22+；仓库内 `wao-cli` 包通过 `npm link` 提供 `wao` 命令。默认远程地址为 `https://wao.wayuwa.cn/api/mcp/workspace`。
-- 设置 → 管理与连接 → WAO CLI 与 MCP 的连接弹窗提供单独的“复制令牌（用于 CLI）”；交互登录接受 `wao_workspace_` 令牌或包含唯一该令牌的连接说明，验证后在 Windows 使用当前用户 DPAPI、在 macOS 使用系统钥匙串保存。记忆 MCP 令牌及没有工作区令牌的文本在发出网络请求前拒绝。`WAO_TOKEN` 供自动化或其他系统使用并覆盖本机安全凭据。CLI 不将令牌写入本地明文配置或日志。
+- 能力中心 → 我的连接 → CLI/MCP 新授权，选择需要的具体操作及项目 / 知识库范围后复制工作区令牌；交互登录接受 `wao_workspace_` 令牌或包含唯一该令牌的连接说明，验证后在 Windows 使用当前用户 DPAPI、在 macOS 使用系统钥匙串保存。记忆 MCP 令牌及没有工作区令牌的文本在发出网络请求前拒绝。`WAO_TOKEN` 供自动化或其他系统使用并覆盖本机安全凭据。CLI 不将令牌写入本地明文配置或日志，不能通过登录或升级 CLI 给已有令牌增加工具授权。
 - `wao tools list` 使用实时 `tools/list`。`wao tools call NAME --input-file FILE` 提供未封装工具的通用入口；调用前按令牌可见工具校验。常用子命令使用同一 schema，字段以 `--kebab-case` 输入。
-- `--output json` 输出 `structuredContent.data`，默认数组用表格、对象用 JSON；所有错误进入 stderr 且退出非零。CLI 不自动重试写入。远程 HTTP 被拒绝，本机 HTTP 仅供测试。
+- `wao tools describe NAME` 和业务命令 `--help` 返回当前工具 schema；字段类型、枚举和必填条件来自服务端。`wao --version` 无需连接，`wao doctor` / `auth status` 检查连接并在可用时读取身份、权限及版本；身份工具未授权或旧服务器未提供时说明连接成功但身份不可查询，给出当前可用工具和能力中心授权入口，不假设当前成员或写权限，也不绕过快照探测未授权工具。
+- `--output json` 输出 `structuredContent.data`，默认数组用表格、普通对象用 JSON、分页对象渲染 `items` 与总数量 / 偏移 / 下一页提示；所有错误进入 stderr 且退出非零。CLI 不自动重试写入。远程 HTTP 被拒绝，本机 HTTP 仅供测试。
+- 正文写命令的 `--file FILE|-` 严格读 UTF-8，将 Markdown / 纯文本作为 `content={version:1,markdown,document:null}`，保留原分段、标题、列表等。与 JSON / 参数中的 `content`、`blocks`、`text` 互斥；两个输入源同时占 stdin 也明确拒绝。`--input-file` 专门读 JSON 参数，不能将文章正文误作为 JSON。
+- `notes export` / `documents export` 支持 `--format md|json --file FILE|-`；Markdown 优先用高级正文，历史 blocks 转换相应 Markdown，JSON 保留完整文档版本。文件默认独占创建，不覆盖已有文件；只有导出接受无值布尔开关 `--force`。
+- 小记创建和日小记默认生成 schema 已声明的稳定 `document_id`（无横线 UUID），日安排与日小记默认生成 `operation_id` UUID；允许显式传入标识，业务日期仍显式必填。写之前在独立本机目录 `WAO/cli/data/operations`（Windows LOCALAPPDATA，缺少则 APPDATA）或 `~/.local/share/wao-cli/operations` 落盘回执，同时保留操作号与文档号，stderr 展示标识与路径，`--receipt-file NEW_FILE` 可覆盖路径。已有回执拒绝再次提交；成功记录结果，错误保留 `unknown`。标识可通过 `daily operation` / `notes get` 查状态。CLI 不自动重试写入，不自动获取新 CAS 版本覆盖请求；回执没有凭据，但可能包含成员业务数据。
+- `documents list` 发现实时 schema 支持 `offset` 后默认发送 `offset=0,limit=50`，避免目录超过默认页时不知被截断；显式 flags / JSON 可覆盖分页值。旧服务器没有 offset 则不注入，保持原数组契约。`tasks list --status open` 包括主任务已完成但子任务未收尾；跨任务移动快照使用双方 `subtaskVersion`，集合编辑使用任务 `editVersion`。
 - CLI 不提供删除、直接通知、浏览器会话管理或令牌签发命令。令牌签发和吊销仍在 WAO 页面进行。
 
 ## 当前覆盖
@@ -44,14 +52,26 @@ CLI 支持通过独立授权的现有托管页 API 发布一个公开 HTML 页�
 | 领域 | MCP 工具 | CLI 子命令 |
 | --- | --- | --- |
 | 项目读取 | `list_projects`、`get_project` | `projects list`、`projects get ID` |
+| 工作区诊断与成员 | `get_workspace_info`、`list_members` | `workspace info`、`members list`；`auth status` / `doctor` 自动使用身份工具（旧服务端兼容） |
 | 项目写入 | `create_project`、`update_project` | `projects create`、`projects update ID`；可选 `--due yyyy-MM-dd`，清空使用 `--input '{"due":""}'`，省略不改已有日期 |
-| 任务读取 | `list_open_tasks`、`get_task` | `tasks open`、`tasks get ID` |
+| 任务读取 | `list_open_tasks`、`list_tasks`、`get_task` | `tasks open`、`tasks list`、`tasks get ID`；list 支持实时 schema 的条件与分页 |
 | 子任务状态 | `update_subtask_status` | `subtasks status ID` |
 | 任务写入 | `create_task`、`update_task` | `tasks create`、`tasks update ID` |
+| 子任务编辑 | `create_subtask`、`update_subtask`、`reorder_subtasks`、`move_subtask` | `subtasks create TASK_ID`、`subtasks update SUB_ID`、`subtasks reorder TASK_ID`、`subtasks move SUB_ID`；版本条件不自动替换 |
+| 任务关系 | `move_task`、`link_task_document` | `tasks move ID`、`tasks document ID --mode add/remove` |
+| 任务评论 | `add_task_comment`、`update_task_comment` | `tasks comment TASK_ID` / `comments add TASK_ID`、`comments update COMMENT_ID --task-id TASK_ID` |
 | 知识库读取 | `list_knowledge_bases`、`get_knowledge_base` | `knowledge list`、`knowledge get ID` |
 | 知识库写入 | `create_knowledge_base`、`update_knowledge_base`、`move_knowledge_node` | `knowledge create`、`knowledge update ID`、`knowledge move` |
 | 文档读取 | `list_documents`、`get_document` | `documents list KB_ID`、`documents get ID` |
 | 文档写入 | `create_document`、`update_document` | `documents create`、`documents update ID` |
+| 文档归档 | `list_archived_documents`、`archive_document`、`unarchive_document` | `documents archived KB_ID`、`documents archive ID`、`documents restore ID`；写带 `expected_rev` |
+| 文档导出 | `get_document` | `documents export ID`、`notes export ID`；md / json，仅本机文件写入 |
+| 小记读取与创建 | `list_notes`、`create_note`、`get_document` / `update_document` | `notes list`、`notes create`、`notes get ID` / `notes update ID`；支持 UTF-8 正文文件 |
+| 小记人工标签 | `list_note_tags`、`create_note_tag`、`update_note_tags` | `tags list/create` / `notes tags list/create`、`notes tags add/remove/set/clear ID`；mode 为 add / remove / replace / clear，版本必填 |
+| 文档模板 | `list_doc_templates`、`create_doc_template`、`update_doc_template` | `templates list/create`、`templates update ID`；更新带 `expected_updated_at` |
+| 工作区检索 | `search_workspace` | `search --keyword TEXT`；kinds 为 task / note / document，支持分页 |
+| 日读取与排程 | `get_todo_day`、`list_todo_days`、`schedule_task` | `todo day DATE`、`todo days --from DATE --to DATE`、`tasks schedule ID`；需对应操作快照授权，due 与执行安排保持分离 |
+| 原子日小记与回执 | `record_daily_note`、`get_daily_operation` | `daily record`、`daily operation OPERATION_ID`；操作标识在调用前保存 |
 | 文件夹写入 | `create_folder`、`rename_folder` | `folders create`、`folders rename` |
 | 托管页公开发布 | 独立托管页 API（非 MCP 工具） | `pages publish`（仅新建，不提供列表、修改、删除） |
 
