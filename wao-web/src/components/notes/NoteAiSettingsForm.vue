@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AIModelFields from '@/components/ui/AIModelFields.vue'
+import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
+import AiSettingsSaveStatus from '@/components/ui/AiSettingsSaveStatus.vue'
 import { useAiModelCatalog } from '@/composables/aiModelCatalog'
 import { noteSettingsDraft, rememberNoteSettingsDraft } from '@/utils/noteAiSettingsDraft'
 import {
@@ -23,10 +25,10 @@ const session = useSessionStore(),
 type Section = 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
 const active = ref<Section>('capabilities')
 const items = [
-  { id: 'capabilities', label: 'AI 能力', icon: 'ri-sparkling-line' },
-  { id: 'titlePrompt', label: '标题提示词', icon: 'ri-text' },
-  { id: 'polishPrompt', label: '正文润色', icon: 'ri-file-text-line' },
-  { id: 'imagePrompt', label: '自动配图', icon: 'ri-image-line' },
+  { id: 'capabilities', label: 'AI 能力', icon: 'ri-cpu-line' },
+  { id: 'titlePrompt', label: '标题提示词', icon: 'ri-heading' },
+  { id: 'polishPrompt', label: '正文提示词', icon: 'ri-text' },
+  { id: 'imagePrompt', label: '配图提示词', icon: 'ri-image-line' },
   { id: 'execution', label: '执行安排', icon: 'ri-list-check-2' },
 ]
 const promptLabels = {
@@ -229,7 +231,7 @@ onBeforeUnmount(() => {
           :error="catalogError || validationError"
           scope="小记"
           allow-default
-          description="用于标题、正文与配图；新任务使用保存时所选深度。"
+          description="用于标题、正文与配图。"
           @refresh="loadModels"
         />
         <p v-else role="status">
@@ -239,35 +241,63 @@ onBeforeUnmount(() => {
       <p v-if="loading && draft" role="status">正在读取小记 AI 设置…</p>
       <fieldset v-if="draft" :disabled="loading || saving">
         <template v-if="active === 'capabilities'"
-          ><h3>自动整理</h3>
-          <p>保存小记后，按你的选择继续处理。</p>
-          <div class="auto-list">
-            <label
-              ><span><strong>润色标题</strong><small>保存后润色标题，手动标题保留。</small></span
-              ><input v-model="draft.title" type="checkbox" aria-label="保存后润色标题" /></label
-            ><label
-              ><span><strong>润色正文</strong><small>保存后润色正文，保留原稿与结果。</small></span
-              ><input v-model="draft.polish" type="checkbox" aria-label="保存后润色正文" /></label
-            ><label
-              ><span
-                ><strong>自动配图</strong><small>保存后自动配图，已有配图不重复生成。</small></span
-              ><input v-model="draft.image" type="checkbox" aria-label="保存后自动配图"
-            /></label>
+          ><div class="section-heading">
+            <div>
+              <h3>自动整理</h3>
+              <p>保存小记后，按你的选择继续处理。</p>
+            </div>
           </div>
-          <p class="behavior-note">
-            开启不重跑历史小记，关闭阻止旧自动结果写回；手动单项执行仍可用。
-          </p>
-          <p>
-            整篇润色最多 12000 个实现字符；超长内容可选段润色，每次最多 4000。自动配图暂需至少 80
-            个实现字符，短文可手动配图。
-          </p></template
+          <div class="auto-list">
+            <AiSettingsToggleRow
+              v-model="draft.title"
+              title="润色标题"
+              description="保留手动标题，只整理自动生成的标题。"
+              icon="ri-heading"
+              control-label="保存后润色标题"
+            />
+            <AiSettingsToggleRow
+              v-model="draft.polish"
+              title="润色正文"
+              description="整理表达，原稿继续保留。"
+              icon="ri-text"
+              control-label="保存后润色正文"
+            />
+            <AiSettingsToggleRow
+              v-model="draft.image"
+              title="自动配图"
+              description="已有自动配图保留，避免重复生成。"
+              icon="ri-image-line"
+              control-label="保存后自动配图"
+            />
+          </div>
+          <div class="behavior-note">
+            <i class="ri-information-line" aria-hidden="true"></i
+            ><span> 开启后用于新建和修改的小记，不重新处理历史内容。 </span>
+          </div>
+          <details class="usage-details">
+            <summary>处理范围与字数限制</summary>
+            <p>关闭阻止旧自动结果写回；手动单项执行仍可用。</p>
+            <p>
+              整篇润色最多 12000 个实现字符；超长内容可选段润色，每次最多 4000。自动配图暂需至少 80
+              个实现字符，短文可手动配图。
+            </p>
+          </details></template
         >
         <template v-else-if="promptField"
-          ><h3>{{ promptLabels[promptField] }}</h3>
-          <p>用于下一次生成；留空沿用默认提示词。</p>
+          ><div class="section-heading">
+            <div>
+              <h3>{{ items.find((item) => item.id === promptField)?.label }}</h3>
+              <p>用于下一次生成；留空沿用默认提示词。</p>
+            </div>
+            <span class="default-tag">{{
+              draft[promptField] ? '自定义提示词' : '默认提示词'
+            }}</span>
+          </div>
           <div class="prompt-toolbar">
             <label :for="`note-${promptField}`">提示词</label
-            ><button type="button" @click="draft[promptField] = ''">恢复默认</button>
+            ><button type="button" @click="draft[promptField] = ''">
+              <i class="ri-history-line" aria-hidden="true"></i>恢复默认
+            </button>
           </div>
           <textarea
             :id="`note-${promptField}`"
@@ -282,19 +312,27 @@ onBeforeUnmount(() => {
           </div></template
         >
         <template v-else
-          ><h3>执行安排</h3>
-          <p>设置用于之后的新任务，已入队任务继续原安排。</p>
+          ><div class="section-heading">
+            <div>
+              <h3>执行安排</h3>
+              <p>把处理顺序和入队数量单独安排。</p>
+            </div>
+          </div>
           <div class="execution-fields">
             <label
               >执行方式<select v-model="draft.executionMode">
-                <option value="parallel">并行</option>
-                <option value="serial">串行</option>
-              </select></label
+                <option value="parallel">并行处理</option>
+                <option value="serial">依次处理</option></select
+              ><small>选择标题、正文和配图的处理顺序。</small></label
             ><label v-if="draft.executionMode === 'parallel'"
               >成员入队上限<select v-model.number="draft.maxConcurrent">
-                <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
-              </select></label
+                <option v-for="n in 5" :key="n" :value="n">{{ n }}</option></select
+              ><small>限制同时提交的自动处理阶段。</small></label
             >
+          </div>
+          <div class="behavior-note">
+            <i class="ri-information-line" aria-hidden="true"></i
+            ><span>修改安排用于之后的新任务，已入队任务继续原安排。</span>
           </div></template
         >
       </fieldset>
@@ -332,11 +370,16 @@ onBeforeUnmount(() => {
       <p v-if="error" class="error" role="alert">{{ error }} · 未保存设置仍保留</p>
       <p v-if="storageError" class="error" role="alert">{{ storageError }}</p>
       <template #footer
-        ><p class="save-status" role="status">
-          {{ saving ? '设置保存中…' : storageError || error || status }}
-        </p>
+        ><AiSettingsSaveStatus
+          :text="saving ? '设置保存中…' : storageError || error || status"
+          :dirty="dirty"
+          :loading="loading"
+          :saving="saving"
+          :error="!!(storageError || error || conflict)"
+        />
         <div class="footer-actions">
-          <button type="button" :disabled="loading || saving" @click="load">
+          <button class="light-action" type="button" :disabled="loading || saving" @click="load">
+            <i class="ri-refresh-line" aria-hidden="true"></i>
             {{ error ? '重新读取 / 重试' : '刷新设置' }}</button
           ><button v-if="closable" type="button" @click="close">关闭</button
           ><button
@@ -363,36 +406,15 @@ onBeforeUnmount(() => {
 }
 .auto-list {
   display: grid;
+  gap: 0;
 }
-.auto-list label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--wao-divider);
+.usage-details {
+  margin-top: 10px;
+  color: var(--wao-text-3);
+  font-size: 11px;
 }
-.auto-list label:last-child {
-  border: 0;
-}
-.auto-list span {
-  display: grid;
-  gap: 4px;
-}
-.auto-list small {
-  color: var(--wao-text-weak);
-  font-size: 12px;
-}
-input {
-  accent-color: var(--wao-primary);
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-.behavior-note {
-  background: var(--wao-bg-sub);
-  border-radius: 8px;
-  padding: 12px 14px;
+.usage-details summary {
+  cursor: pointer;
 }
 .execution-fields {
   display: grid;
@@ -403,10 +425,17 @@ input {
 .execution-fields label {
   display: grid;
   gap: 8px;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
+  font-size: 12px;
+}
+.execution-fields small {
+  font-size: 12px;
+  line-height: 1.6;
 }
 select {
-  padding: 10px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  height: 40px;
   width: 100%;
   min-width: 0;
   border: 1px solid var(--wao-line-control);
@@ -414,10 +443,14 @@ select {
   color: var(--wao-text);
   border-radius: 8px;
   font: inherit;
+  font-size: 14px;
 }
 @media (max-width: 650px) {
   .execution-fields {
     grid-template-columns: 1fr;
+  }
+  select {
+    font-size: 16px;
   }
 }
 </style>

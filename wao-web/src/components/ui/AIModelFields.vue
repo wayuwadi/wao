@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { CodexModelCatalog } from '@/api/codexModels'
 const props = withDefaults(
   defineProps<{
@@ -20,6 +21,11 @@ const emit = defineEmits<{
   'update:reasoningEffort': [value: string]
   refresh: []
 }>()
+const showCatalogStatus = ref(false)
+function refresh() {
+  showCatalogStatus.value = true
+  emit('refresh')
+}
 const labels: Record<string, string> = {
   none: '无',
   minimal: '极低',
@@ -72,12 +78,19 @@ const labels: Record<string, string> = {
     </div>
     <div class="model-meta">
       <span>{{ description }}</span
-      ><button type="button" :disabled="props.loading" @click="emit('refresh')">
+      ><button type="button" :disabled="props.loading" @click="refresh">
+        <i class="ri-refresh-line" aria-hidden="true"></i>
         {{ loading ? '读取模型目录中…' : '刷新模型目录' }}
       </button>
     </div>
     <p v-if="error" class="model-error" role="alert">{{ error }}</p>
-    <p v-else-if="catalog?.message" class="model-status" role="status">{{ catalog.message }}</p>
+    <p
+      v-else-if="catalog?.message && (catalog.stale || showCatalogStatus)"
+      class="model-status"
+      role="status"
+    >
+      {{ catalog.message }}
+    </p>
   </section>
 </template>
 <style scoped>
@@ -87,14 +100,23 @@ const labels: Record<string, string> = {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 14px;
-  font-size: 13px;
+  font-size: 14px;
+}
+.model-heading strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+.model-heading strong i {
+  font-size: 16px;
 }
 .model-heading > span {
   font-size: 11px;
   padding: 3px 10px;
   border-radius: 20px;
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary-text);
+  background: var(--wao-success-bg);
+  color: var(--wao-success-strong);
 }
 .model-inputs {
   display: grid;
@@ -105,13 +127,13 @@ label {
   display: grid;
   gap: 8px;
   font-size: 12px;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
 }
 select {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  height: 42px;
+  height: 40px;
   padding: 0 10px;
   font: inherit;
   font-size: 14px;
@@ -128,9 +150,12 @@ select {
   gap: 8px;
   margin-top: 11px;
   font-size: 12px;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
 }
 button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 0;
   background: transparent;
   color: var(--wao-primary-text);
@@ -143,7 +168,7 @@ p {
   margin: 8px 0 0;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
 }
 .model-error {
   color: var(--wao-danger-strong);
@@ -151,6 +176,7 @@ p {
 @media (max-width: 650px) {
   .model-inputs {
     gap: 10px;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
   }
   select {
     font-size: 16px;

@@ -86,6 +86,7 @@ onBeforeUnmount(() => {
   background: var(--wao-mask-bg, #12223c70);
 }
 .settings-dialog-shell {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   width: min(var(--settings-dialog-width), 100%);
@@ -99,24 +100,26 @@ onBeforeUnmount(() => {
   color: var(--wao-text);
   box-shadow: var(--wao-shadow-dialog);
   outline: none;
+  font: 14px/1.6 var(--wao-font, 'Segoe UI', 'Microsoft YaHei', sans-serif);
 }
 .dialog-heading {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 13px;
-  padding: 20px 26px;
+  padding: 22px 26px;
   border-bottom: 1px solid var(--wao-divider);
 }
 h2 {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+  letter-spacing: 0.3px;
 }
 p {
-  margin: 4px 0 0;
-  color: var(--wao-text-weak);
-  font-size: 12px;
+  margin: 3px 0 0;
+  color: var(--wao-text-3);
+  font-size: 13px;
   line-height: 1.6;
 }
 .title-icon {
@@ -172,15 +175,14 @@ button:focus-visible {
     border: 0;
   }
   .dialog-heading {
-    padding: 15px;
-    gap: 10px;
+    padding: 18px 16px;
   }
   h2 {
-    font-size: 18px;
+    font-size: 20px;
   }
   .title-icon {
-    width: 36px;
-    height: 36px;
+    width: 42px;
+    height: 42px;
   }
   .dialog-footer {
     padding: 12px 15px;
