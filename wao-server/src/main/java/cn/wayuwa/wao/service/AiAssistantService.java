@@ -346,6 +346,7 @@ public class AiAssistantService {
         run.setMemberId(memberId);
         run.setAiCapabilityId(localNotes.capabilityId());
         run.setRequestedModel(requestedModel);
+        run.setReasoningEffort(localNotes.reasoningEffort(memberId, requestedModel));
         run.setUsagePurpose(ARTICLE_IMAGE_PURPOSE);
         run.setWebSearchEnabled(false);
         run.setStatus(SECURE_QUEUED);

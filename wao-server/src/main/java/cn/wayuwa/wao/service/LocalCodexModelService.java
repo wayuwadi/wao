@@ -14,7 +14,11 @@ import org.springframework.stereotype.Service;
 /** 从实际执行器发现可见模型；保留最后成功目录，绝不替换用户选择。 */
 @Service
 public class LocalCodexModelService {
-    public record Model(String id, String label) { }
+    public record Model(String id, String label, List<String> reasoningEfforts) {
+        public Model { reasoningEfforts = reasoningEfforts == null || reasoningEfforts.isEmpty()
+                ? List.of("medium") : List.copyOf(reasoningEfforts); }
+        public Model(String id, String label) { this(id, label, List.of("medium")); }
+    }
     public record Catalog(List<Model> models, String updatedAt, boolean stale, String message) { }
     private final Environment environment;
     private final ObjectMapper json;
@@ -67,6 +71,16 @@ public class LocalCodexModelService {
         return value;
     }
 
+    /** 思考深度必须来自所选模型当前可见的支持列表。 */
+    public String validateEffort(String model, String effort) {
+        String selected = validate(model);
+        String value = effort == null || effort.isBlank() ? "medium" : effort.strip();
+        Model available = catalog().models().stream().filter(item -> item.id().equals(selected)).findFirst().orElseThrow();
+        if (available.reasoningEfforts() == null || !available.reasoningEfforts().contains(value))
+            throw new BadRequestException("所选模型不支持该思考深度；请刷新小记 AI 设置后重新选择");
+        return value;
+    }
+
     private Path cachePath() {
         return Path.of(environment.getProperty("wao.ai.local-notes.directory",
                 Path.of(System.getProperty("user.home"), ".wao", "local-notes").toString())).resolve("model-catalog.json");
@@ -108,7 +122,14 @@ public class LocalCodexModelService {
             String id = node.path("model").asText("");
             if (node.path("hidden").asBoolean(false) || !validId(id)) continue;
             String label = node.path("displayName").asText(id);
-            models.add(new Model(id, label.substring(0, Math.min(label.length(), 160))));
+            List<String> efforts = new ArrayList<>();
+            for (JsonNode option : node.path("supportedReasoningEfforts")) {
+                String effort = option.path("reasoningEffort").asText("");
+                if (List.of("none", "minimal", "low", "medium", "high", "xhigh", "max").contains(effort)
+                        && !efforts.contains(effort)) efforts.add(effort);
+            }
+            models.add(new Model(id, label.substring(0, Math.min(label.length(), 160)),
+                    efforts.isEmpty() ? List.of("medium") : List.copyOf(efforts)));
         }
         return models;
     }

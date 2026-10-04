@@ -41,6 +41,10 @@ class NoteAiWorkflowQueueTest {
                   last_error VARCHAR(500), created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
                   updated_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6))
                 """);
+        jdbc.execute("""
+                CREATE TABLE note_ai_stage_attempt (
+                  doc_id VARCHAR(64), state VARCHAR(16))
+                """);
         var configuration = new org.apache.ibatis.session.Configuration();
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.addMapper(NoteAiWorkflowMapper.class);

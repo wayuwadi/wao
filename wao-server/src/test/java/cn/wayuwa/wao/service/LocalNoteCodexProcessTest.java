@@ -32,6 +32,11 @@ class LocalNoteCodexProcessTest {
 
     @Test void isolatesCliFromWorkspaceRulesToolsAndPaidApi() {
         var command = LocalNoteCodexProcess.command("codex", "gpt-6-astra", directory, false);
+        assertThat(command).doesNotContain("model_reasoning_effort=\"medium\"");
+        assertThat(LocalNoteCodexProcess.command("codex", "gpt-6-astra", "medium", directory, false))
+                .contains("model_reasoning_effort=\"medium\"");
+        assertThat(LocalNoteCodexProcess.command("codex", "gpt-6-astra", "high", directory, false))
+                .contains("model_reasoning_effort=\"high\"");
         assertThat(command).containsSubsequence("--sandbox", "read-only")
                 .containsSubsequence("--disable", "shell_tool").containsSubsequence("--disable", "multi_agent")
                 .containsSubsequence("--disable", "image_generation").contains("--ignore-user-config", "--ignore-rules", "--ephemeral", "forced_login_method=\"chatgpt\"");

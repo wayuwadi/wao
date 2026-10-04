@@ -54,6 +54,12 @@ public class LocalNoteAiService {
     @Autowired
     private ReferenceImageService referenceImages;
 
+    @Autowired(required = false)
+    private NoteAiSettingsService noteSettings;
+
+    @Autowired(required = false)
+    private LocalCodexModelService localModels;
+
     @Autowired
     private ObjectProvider<NoteDiscoveryService> discoveries;
 
@@ -110,9 +116,17 @@ public class LocalNoteAiService {
         AiAssistantRunEntity run = new AiAssistantRunEntity();
         run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
         run.setMemberId(memberId); run.setAiCapabilityId(capability); run.setUsagePurpose(purpose);
-        run.setRequestedModel(model); run.setPromptText(prompt); run.setWebSearchEnabled(false); run.setStatus("secure_queued");
+        run.setRequestedModel(model); run.setReasoningEffort(reasoningEffort(memberId, model));
+        run.setPromptText(prompt); run.setWebSearchEnabled(false); run.setStatus("secure_queued");
         runs.insertReadOnlyQueued(run);
         return run.getId();
+    }
+
+    /** 入队时读取成员设置并校验模型支持的档位，固定到本次任务。 */
+    public String reasoningEffort(String memberId, String model) {
+        String effort = noteSettings == null ? "medium" : noteSettings.get(memberId).settings().reasoningEffort();
+        if (effort == null || effort.isBlank()) effort = "medium";
+        return localModels == null ? effort : localModels.validateEffort(model, effort);
     }
 
     /** 本机业务共用有界队列；会话型业务自行在事务中保存成员消息。 */
@@ -216,8 +230,15 @@ public class LocalNoteAiService {
             referenceImages.requireOwned(run.getMemberId(), ids);
             references = ids.stream().map(id -> referenceImages.raw(run.getMemberId(), id)).toList();
         }
+        String effort = run.getReasoningEffort();
+        String purpose = run.getUsagePurpose();
+        if (effort == null && ("POLISH".equals(purpose) || "BACKGROUND".equals(purpose)
+                || "ARTICLE_IMAGE".equals(purpose) || NoteDiscoveryService.GENERATE.equals(purpose)
+                || NoteDiscoveryService.REVIEW.equals(purpose)))
+            effort = "medium";
         return LocalNoteCodexProcess.execute(environment.getProperty("wao.ai.local-notes.executable", "codex"),
-                model, run.getPromptText(), directory, timeout,
+                model, effort,
+                run.getPromptText(), directory, timeout,
                 AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose()), references);
     }
 

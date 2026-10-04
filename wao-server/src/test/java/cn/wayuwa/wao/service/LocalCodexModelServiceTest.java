@@ -25,11 +25,13 @@ class LocalCodexModelServiceTest {
     }
     @Test void discoversNewModelsAndRejectsHiddenOrMalformedRows() throws Exception {
         var result = LocalCodexModelService.normalize(json.readTree("""
-            {"data":[{"model":"gpt-6.1-sol","displayName":"GPT-6.1 Sol"},
+            {"data":[{"model":"gpt-6.1-sol","displayName":"GPT-6.1 Sol","supportedReasoningEfforts":[{"reasoningEffort":"low"},{"reasoningEffort":"medium"},{"reasoningEffort":"high"}]},
             {"model":"gpt-future-model","displayName":"未来模型"},
             {"model":"hidden","hidden":true},{"model":"--unsafe flag"},{}]}
             """));
         assertThat(result).extracting(LocalCodexModelService.Model::id).containsExactly("gpt-6.1-sol", "gpt-future-model");
+        assertThat(result.get(0).reasoningEfforts()).containsExactly("low", "medium", "high");
+        assertThat(result.get(1).reasoningEfforts()).containsExactly("medium");
     }
     @Test void preservesExactSelectionAndDoesNotSilentlyFallback() throws Exception {
         var service = service(); doReturn(models).when(service).readModels();
@@ -37,6 +39,14 @@ class LocalCodexModelServiceTest {
         assertThat(service.validate(null)).isEqualTo("gpt-6-astra");
         assertThatThrownBy(() -> service.validate("gpt-no-longer-available")).hasMessageContaining("重新选择");
         verify(service, times(1)).readModels();
+    }
+    @Test void rejectsUnsupportedEffortForSelectedModel() throws Exception {
+        var service = service();
+        doReturn(List.of(new LocalCodexModelService.Model("gpt-6.1-sol", "GPT-6.1 Sol", List.of("low", "medium", "high"))))
+                .when(service).readModels();
+        assertThat(service.validateEffort("gpt-6.1-sol", null)).isEqualTo("medium");
+        assertThat(service.validateEffort("gpt-6.1-sol", "high")).isEqualTo("high");
+        assertThatThrownBy(() -> service.validateEffort("gpt-6.1-sol", "max")).hasMessageContaining("不支持");
     }
     @Test void failureRetainsLastSuccessIncludingAcrossRestartAndRecovers() throws Exception {
         var first = service(); doReturn(models).when(first).readModels();
@@ -69,6 +79,8 @@ class LocalCodexModelServiceTest {
         var catalog = service.catalog();
         assertThat(catalog.stale()).as(catalog.message()).isFalse();
         assertThat(catalog.models()).extracting(LocalCodexModelService.Model::id).contains("gpt-6.1-sol", "gpt-6-astra");
+        assertThat(catalog.models().stream().filter(model -> model.id().equals("gpt-6.1-sol")).findFirst().orElseThrow()
+                .reasoningEfforts()).contains("medium");
         System.out.println("CODEX_MODEL_IDS=" + catalog.models().stream().map(LocalCodexModelService.Model::id).toList());
     }
 }
