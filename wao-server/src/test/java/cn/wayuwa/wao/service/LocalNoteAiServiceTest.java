@@ -8,6 +8,8 @@ import cn.wayuwa.wao.domain.AiAssistantRunEntity;
 import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.mapper.AiAssistantRunMapper;
 import cn.wayuwa.wao.mapper.NoteAiWorkflowMapper;
+import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -56,6 +58,23 @@ class LocalNoteAiServiceTest {
         assertThatThrownBy(() -> service.enqueue("member", "正文", "POLISH", "gpt-6-astra"))
                 .hasMessageContaining("尚未启用");
         verifyNoInteractions(runs, images);
+    }
+
+    @Test void snapshotsConfiguredEffortWhenQueuingNote() {
+        ReflectionTestUtils.setField(service, "ready", true);
+        ReflectionTestUtils.setField(service, "capability", "local-notes-test");
+        var preferences = mock(MemberPreferenceMapper.class);
+        when(preferences.find("member", NoteAiSettingsService.DEFAULTS)).thenReturn("{\"reasoningEffort\":\"high\"}");
+        ReflectionTestUtils.setField(service, "noteSettings", new NoteAiSettingsService(
+                mock(org.springframework.jdbc.core.JdbcTemplate.class), preferences, new ObjectMapper()));
+        var models = mock(LocalCodexModelService.class);
+        when(models.validateEffort("gpt-6-astra", "high")).thenReturn("high");
+        ReflectionTestUtils.setField(service, "localModels", models);
+        service.enqueue("member", "合成正文", "POLISH", "gpt-6-astra");
+        var queued = org.mockito.ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(runs).insertReadOnlyQueued(queued.capture());
+        assertThat(queued.getValue().getReasoningEffort()).isEqualTo("high");
+        verify(models).validateEffort("gpt-6-astra", "high");
     }
 
     @Test void failingWorkflowAndFailureRecordingDoNotPreventAnotherDocumentFromAdvancing() {

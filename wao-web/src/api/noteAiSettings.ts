@@ -1,7 +1,7 @@
 import { http, type ApiResponse } from './http'
 import type { NoteAiDefaults } from '@/stores/preferences'
 export interface NoteAiSettings extends NoteAiDefaults {
-  model: string; titlePrompt: string; imagePrompt: string; polishPrompt: string
+  model: string; reasoningEffort: string; titlePrompt: string; imagePrompt: string; polishPrompt: string
   titleEpoch: number; imageEpoch: number; polishEpoch: number
 }
 export interface NoteAiSettingsView { settings: NoteAiSettings; version: string; configured: boolean; availability: string }

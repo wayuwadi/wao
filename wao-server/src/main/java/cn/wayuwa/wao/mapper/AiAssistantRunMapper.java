@@ -16,10 +16,10 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** 内部只读任务的起始时间由数据库统一签发，不信任节点本地时钟。 */
     @Insert("""
             INSERT INTO ai_assistant_run
-                (id, member_id, ai_capability_id, requested_model, usage_purpose, web_search_enabled, status, prompt_text,
+                (id, member_id, ai_capability_id, requested_model, reasoning_effort, usage_purpose, web_search_enabled, status, prompt_text,
                  created_at, updated_at)
             VALUES
-                (#{id}, #{memberId}, #{aiCapabilityId}, #{requestedModel}, #{usagePurpose}, #{webSearchEnabled}, #{status}, #{promptText},
+                (#{id}, #{memberId}, #{aiCapabilityId}, #{requestedModel}, #{reasoningEffort}, #{usagePurpose}, #{webSearchEnabled}, #{status}, #{promptText},
                  CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
             """)
     int insertReadOnlyQueued(AiAssistantRunEntity run);

@@ -23,12 +23,19 @@ final class LocalNoteCodexProcess {
     }
 
     static List<String> command(String executable, String model, Path directory, boolean image) {
+        return command(executable, model, null, directory, image);
+    }
+
+    static List<String> command(String executable, String model, String effort, Path directory, boolean image) {
+        if (effort != null && !Set.of("none", "minimal", "low", "medium", "high", "xhigh", "max").contains(effort))
+            throw new IllegalArgumentException("思考深度无效");
         var args = new ArrayList<>(List.of(executable, "exec", "--ignore-user-config", "--ignore-rules",
                 "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--model", model,
                 "--disable", "shell_tool", "--disable", "multi_agent", "--disable", "view_image",
                 "-c", "forced_login_method=\"chatgpt\"", "-c", "web_search=\"disabled\"",
                 "--cd", directory.toString(), "--json", "--color", "never",
                 "--output-last-message", directory.resolve("result.txt").toString()));
+        if (effort != null) args.addAll(List.of("-c", "model_reasoning_effort=\"" + effort + "\""));
         args.addAll(List.of(image ? "--enable" : "--disable", "image_generation", "-"));
         return args;
     }
@@ -40,6 +47,11 @@ final class LocalNoteCodexProcess {
 
     static Result execute(String executable, String model, String prompt, Path root, Duration timeout,
             boolean image, List<ReferenceImageService.Content> references) throws Exception {
+        return execute(executable, model, null, prompt, root, timeout, image, references);
+    }
+
+    static Result execute(String executable, String model, String effort, String prompt, Path root, Duration timeout,
+            boolean image, List<ReferenceImageService.Content> references) throws Exception {
         if (references.size() > 4 || image && !references.isEmpty())
             throw new IllegalStateException("当前任务参考图片数量或用途无效");
         Path directory = Files.createTempDirectory(root, "job-");
@@ -48,7 +60,7 @@ final class LocalNoteCodexProcess {
         try {
             String resolved=LocalCodexExecutable.resolve(executable);
             String version=version(resolved);
-            var args = commandWithReferences(resolved, model, directory, image, references);
+            var args = commandWithReferences(resolved, model, effort, directory, image, references);
             var builder = new ProcessBuilder(args);
             builder.environment().keySet().removeIf(key -> !ENVIRONMENT.contains(key.toUpperCase(java.util.Locale.ROOT)));
             builder.redirectErrorStream(true).redirectOutput(events.toFile());
@@ -84,9 +96,14 @@ final class LocalNoteCodexProcess {
 
     static List<String> commandWithReferences(String executable, String model, Path directory, boolean image,
             List<ReferenceImageService.Content> references) throws Exception {
+        return commandWithReferences(executable, model, null, directory, image, references);
+    }
+
+    static List<String> commandWithReferences(String executable, String model, String effort, Path directory, boolean image,
+            List<ReferenceImageService.Content> references) throws Exception {
         if (references.size() > 4 || image && !references.isEmpty())
             throw new IllegalStateException("当前任务参考图片数量或用途无效");
-        var args = new ArrayList<>(command(executable, model, directory, image));
+        var args = new ArrayList<>(command(executable, model, effort, directory, image));
         args.remove(args.size() - 1); // stdin 提示词标识最后添加，参考图片只来自已鉴权的数据库字节。
         for (int i = 0; i < references.size(); i++) {
             var reference = references.get(i);

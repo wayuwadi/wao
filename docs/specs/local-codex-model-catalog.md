@@ -2,7 +2,7 @@
 
 2026-10-03，补充 ADR-306。用户已要求新模型能自动出现在小记选择器，已保存的选择不得随默认模型变动。
 
-- `GET /api/assistant/codex-models` 仅登录成员可读，返回 `models[{id,label}]`、`updatedAt`、`stale`、`message`。未登录不启动 CLI；不返回邮箱、凭据、路径或隐藏模型。
+- `GET /api/assistant/codex-models` 仅登录成员可读，返回 `models[{id,label,reasoningEfforts}]`、`updatedAt`、`stale`、`message`。思考深度来自实际模型目录的 `supportedReasoningEfforts`，缺失时兼容显示 `medium`。未登录不启动 CLI；不返回邮箱、凭据、路径或隐藏模型。
 - 通过实际配置的 Codex `app-server` 读取 `account/read` 与分页 `model/list`，只接受现有 ChatGPT 登录及非隐藏模型。不是从网页、静态名单或模型名称推测账号权限。
 - 打开设置时自动读取；设置保持打开时每分钟读取。服务端成功目录缓存五分钟，失败退避一分钟，并保存最后成功目录到本机状态目录。过期失败明确展示，刷新成功后自动恢复。
 - 新模型不需要再次修改前端或服务端枚举。现有默认仍为 GPT-6 Astra，用户选择精确保留；目录缺少所选模型时显示保留状态，不静默换模型。提交执行时按本机目录校验，无法确认模型给出可操作错误。

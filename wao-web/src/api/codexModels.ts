@@ -1,7 +1,7 @@
 import { http, type ApiResponse } from './http'
 
 export interface CodexModelCatalog {
-  models: { id: string; label: string }[]
+  models: { id: string; label: string; reasoningEfforts: string[] }[]
   updatedAt: string | null
   stale: boolean
   message: string

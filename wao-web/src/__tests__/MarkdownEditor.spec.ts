@@ -272,7 +272,7 @@ describe('文章总览配图', () => {
 
   it('小记设置集中配置 GPT 模型及三类提示词并按成员偏好保存', async () => {
     setActivePinia(createPinia())
-    const settings = { title: true, polish: true, image: true, executionMode: 'parallel' as const, maxConcurrent: 3 as const, model: '', titlePrompt: '', imagePrompt: '', polishPrompt: '默认正文润色方法', titleEpoch: 0, imageEpoch: 0, polishEpoch: 0 }
+    const settings = { title: true, polish: true, image: true, executionMode: 'parallel' as const, maxConcurrent: 3 as const, model: '', reasoningEffort: 'medium', titlePrompt: '', imagePrompt: '', polishPrompt: '默认正文润色方法', titleEpoch: 0, imageEpoch: 0, polishEpoch: 0 }
     vi.mocked(fetchNoteAiSettings).mockResolvedValue({ settings, version: 'v1', configured: true, availability: '' })
     vi.mocked(saveNoteAiSettings).mockResolvedValue({ settings, version: 'v2', configured: true, availability: '' })
     vi.mocked(fetchPreference).mockResolvedValue('')

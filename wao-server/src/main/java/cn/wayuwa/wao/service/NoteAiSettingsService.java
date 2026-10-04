@@ -24,7 +24,7 @@ public class NoteAiSettingsService {
         this.db = db; this.preferences = preferences; this.json = json;
     }
     public record Settings(boolean title, boolean polish, boolean image, String executionMode, int maxConcurrent,
-            String model, String titlePrompt, String imagePrompt, String polishPrompt,
+            String model, String reasoningEffort, String titlePrompt, String imagePrompt, String polishPrompt,
             long titleEpoch, long imageEpoch, long polishEpoch) {
         public boolean enabled(String stage) { return switch(stage) { case "title" -> title; case "image" -> image; default -> polish; }; }
         public long epoch(String stage) { return switch(stage) { case "title" -> titleEpoch; case "image" -> imageEpoch; default -> polishEpoch; }; }
@@ -53,6 +53,7 @@ public class NoteAiSettingsService {
         Settings s = new Settings(node.path("title").asBoolean(true),node.path("polish").asBoolean(true),node.path("image").asBoolean(true),
             "serial".equals(node.path("executionMode").asText()) ? "serial" : "parallel",
             Math.max(1,Math.min(5,node.path("maxConcurrent").asInt(3))), text(values.get("note-ai-model-v1")),
+            reasoningEffort(node.path("reasoningEffort").asText("medium")),
             text(values.get("note-title-prompt-v1")),text(values.get("article-overview-image-prompt-v1")),
             text(canonical == null || canonical.isBlank() ? values.get("note-polish-prompt-v1") : canonical),
             node.path("titleEpoch").asLong(),node.path("imageEpoch").asLong(),node.path("polishEpoch").asLong());
@@ -73,13 +74,15 @@ public class NoteAiSettingsService {
         Settings next = request.settings();
         if (next.maxConcurrent()<1 || next.maxConcurrent()>5 || !List.of("serial","parallel").contains(next.executionMode()))
             throw new BadRequestException("执行方式或并发上限无效");
+        String effort = reasoningEffort(next.reasoningEffort());
         for (String value : List.of(text(next.model()),text(next.titlePrompt()),text(next.imagePrompt()),text(next.polishPrompt())))
             if (value.length()>4000) throw new BadRequestException("设置内容最多 4000 字符");
         ObjectNode defaults;
         try { String raw=preferences.find(member,DEFAULTS); defaults=raw==null||raw.isBlank()?json.createObjectNode():(ObjectNode)json.readTree(raw); }
         catch (Exception e) { throw new BadRequestException("已有设置格式异常"); }
         defaults.put("title",next.title()).put("polish",next.polish()).put("image",next.image())
-            .put("executionMode",next.executionMode()).put("maxConcurrent",next.maxConcurrent());
+            .put("executionMode",next.executionMode()).put("maxConcurrent",next.maxConcurrent())
+            .put("reasoningEffort",effort);
         for(String stage:List.of("title","image","polish")) defaults.put(stage+"Epoch",old.settings().epoch(stage)+(old.settings().enabled(stage)&&!next.enabled(stage)?1:0));
         preferences.upsert(member,DEFAULTS,write(defaults));
         preferences.upsert(member,"note-ai-model-v1",text(next.model()));
@@ -111,5 +114,11 @@ public class NoteAiSettingsService {
     /** 比较策略版本或内容副本的稳定摘要。 */
     public static String hash(String value) { try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));}catch(Exception e){throw new IllegalStateException(e);} }
     private static String text(String value){return value==null?"":value;}
+    private static String reasoningEffort(String value){
+        if(value==null||value.isBlank())return "medium";
+        if(!List.of("none","minimal","low","medium","high","xhigh","max").contains(value))
+            throw new BadRequestException("思考深度无效，请重新选择");
+        return value;
+    }
     private static void requireMember(String member){if(member==null||member.isBlank())throw new UnauthorizedException("请先登录");}
 }

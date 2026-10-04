@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { noteSettingsDraft, rememberNoteSettingsDraft } from '@/utils/noteAiSettingsDraft'
 import { fetchNoteAiSettings, saveNoteAiSettings, type NoteAiSettings } from '@/api/noteAiSettings'
 import { fetchCodexModels, type CodexModelCatalog } from '@/api/codexModels'
@@ -10,6 +10,8 @@ const session = useSessionStore(), preferences = usePreferenceStore()
 const draft = ref<NoteAiSettings | null>(null), loading = ref(false), saving = ref(false), dirty = ref(false)
 const error = ref(''), status = ref(''), version = ref(''), catalog = ref<CodexModelCatalog | null>(null)
 const modelError = ref('')
+const selectedEfforts = computed(() => catalog.value?.models.find(model => model.id === (draft.value?.model || 'gpt-6-astra'))?.reasoningEfforts || ['medium'])
+const effortLabels: Record<string, string> = { none: '无', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' }
 async function loadModels() {
   const ticket = generation; modelError.value = ''
   try { const value = await fetchCodexModels(); if(ticket === generation) catalog.value = value }
@@ -35,6 +37,10 @@ async function load() {
 }
 async function save() {
   if (!draft.value || saving.value || loading.value) return
+  if (catalog.value?.models.some(model => model.id === (draft.value?.model || 'gpt-6-astra'))
+    && !selectedEfforts.value.includes(draft.value.reasoningEffort)) {
+    error.value = '当前模型不支持所选思考深度，请重新选择'; return
+  }
   const ticket = generation, submitted = JSON.parse(JSON.stringify(draft.value)) as NoteAiSettings
   saving.value = true; error.value = ''
   try {
@@ -64,6 +70,8 @@ onBeforeUnmount(() => { generation++; remember() })
         <label>执行方式<select v-model="draft.executionMode"><option value="parallel">并行</option><option value="serial">串行</option></select></label>
         <label v-if="draft.executionMode === 'parallel'">成员入队上限<select v-model.number="draft.maxConcurrent"><option v-for="n in 5" :key="n" :value="n">{{ n }}</option></select></label>
         <label>标题、正文和配图模型<select aria-label="小记处理模型" v-model="draft.model"><option value="">沿用已配置的默认模型</option><option v-if="draft.model && !catalog?.models.some(m => m.id === draft?.model)" :value="draft.model">{{ draft.model }} · 已保留，待确认可用</option><option v-for="model in catalog?.models || []" :key="model.id" :value="model.id">{{ model.label }}</option></select></label>
+        <label>思考深度<select aria-label="小记思考深度" v-model="draft.reasoningEffort"><option v-if="!selectedEfforts.includes(draft.reasoningEffort)" :value="draft.reasoningEffort" disabled>{{ effortLabels[draft.reasoningEffort] || draft.reasoningEffort }} · 当前模型不支持</option><option v-for="effort in selectedEfforts" :key="effort" :value="effort">{{ effortLabels[effort] || effort }}{{ effort === 'medium' ? ' · 默认' : '' }}</option></select></label>
+        <p>默认“中”；新提交的标题、正文和配图任务会使用保存时所选深度。</p>
         <p class="model-status">{{ modelError || catalog?.message }} <button type="button" @click="loadModels">刷新模型目录</button></p>
         <label>标题提示词<textarea v-model="draft.titlePrompt" maxlength="4000" rows="2" placeholder="留空沿用默认" /></label>
         <label>正文润色提示词<textarea v-model="draft.polishPrompt" maxlength="4000" rows="3" placeholder="留空沿用默认" /></label>
