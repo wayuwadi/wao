@@ -145,7 +145,7 @@ describe('全量导航页', () => {
   it('完整目录覆盖所有非兼容模块，且不受侧栏显隐影响', async () => {
     const catalogIds = NAVIGATION_CATALOG.flatMap((section) => section.items.map((item) => item.id))
     const expected = Object.keys(MODULES).filter(
-      (id) => !['navigation', 'chat', 'chat-reviews', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions', 'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world'].includes(id),
+      (id) => !['navigation', 'chat', 'chat-reviews', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions', 'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world', 'life-review', 'system-reports', 'ideas'].includes(id),
     )
     expect(new Set(catalogIds)).toEqual(new Set(expected))
 
@@ -160,8 +160,12 @@ describe('全量导航页', () => {
     expect(seen.join(' ')).not.toContain('记忆中心')
     expect(seen.join(' ')).toContain('隐藏应用')
     expect(seen.join(' ')).toContain('我的资料')
+    while (wrapper.get('button[aria-label="上一页"]').attributes('disabled') === undefined) {
+      await wrapper.get('button[aria-label="上一页"]').trigger('click')
+    }
     await wrapper.get('.customize-toggle').trigger('click')
-    expect(wrapper.text()).toContain('未固定')
+    expect(wrapper.findAll('.position select option').map(option => option.text()))
+      .toEqual(expect.arrayContaining(['不固定', '左侧菜单', '顶部菜单', '底部停靠']))
     wrapper.unmount()
   })
 
@@ -206,13 +210,12 @@ describe('全量导航页', () => {
     wrapper.unmount()
   })
 
-  it('点子库入口明确只处理旧档案，新想法回到项目任务', async () => {
+  it('历史点子归并已下线，搜索不会恢复其入口', async () => {
     const { wrapper } = await mountNavigation()
     await wrapper.get('.search input').setValue('历史点子')
 
-    expect(wrapper.findAll('.function-row')).toHaveLength(1)
-    expect(wrapper.get('.function-row').text()).toContain('归并旧版点子档案')
-    expect(wrapper.get('.function-row').text()).toContain('新想法直接进入项目任务')
+    expect(wrapper.findAll('.function-row')).toHaveLength(0)
+    expect(NAVIGATION_CATALOG.flatMap(section => section.items.map(item => item.id))).not.toContain('ideas')
     wrapper.unmount()
   })
 

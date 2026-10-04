@@ -120,6 +120,7 @@ describe('批量复制任务全文', () => {
     const me = useSessionStore().currentUser.id
     data.tasks = data.tasks.slice(0, 2).map((task, index) => ({ ...task, owner: me, parts: [], project: `p${index + 1}`, status: '待办' }))
     const wrapper = mount(TodoView)
+    await wrapper.get('.workspace-switch button:last-child').trigger('click')
     await wrapper.get('[aria-label="按项目筛选任务"]').setValue('p2')
     expect(wrapper.findAll('.trow')).toHaveLength(1)
     expect(wrapper.text()).not.toContain('批量选择')

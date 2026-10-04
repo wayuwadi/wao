@@ -3,22 +3,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import { apiExternalAppHealth } from '@/api/agent'
-import { DEFAULT_EXTERNAL_APPS, type ExternalAppRegistry } from '@/config/nav'
+import { DEFAULT_BUILTIN_MENUS, type ExternalAppRegistry } from '@/config/nav'
+import { fetchExternalAppRegistry } from '@/api/system'
 import ExternalAppView from '@/views/ExternalAppView.vue'
 
 vi.mock('@/api/agent', () => ({
   apiExternalAppHealth: vi.fn<(url: string) => Promise<void>>(),
 }))
+vi.mock('@/api/navigationLayout', () => ({
+  fetchNavigationLayout: vi.fn().mockResolvedValue({ revision: 'none', layout: null }),
+}))
 vi.mock('@/api/system', () => ({
+  fetchBuiltinMenuRegistry: vi.fn().mockResolvedValue({ version: 1, menus: DEFAULT_BUILTIN_MENUS }),
   fetchExternalAppRegistry: vi.fn<() => Promise<ExternalAppRegistry>>().mockResolvedValue({
     version: 1,
-    apps: DEFAULT_EXTERNAL_APPS,
+    apps: [{ id: 'test-reader', label: '测试资料库', icon: 'ri-apps-2-line', group: 'TOOLS', order: 1,
+      visible: true, appUrl: '/test-reader/', healthUrl: '/api/test-reader/health', openMode: 'TAB' }],
   }),
 }))
 
 const health = vi.mocked(apiExternalAppHealth)
 
-async function mountApp(id = 'media-agent') {
+async function mountApp(id = 'test-reader') {
   const pinia = createPinia()
   setActivePinia(pinia)
   const router = createRouter({
@@ -39,13 +45,13 @@ describe('ExternalAppView', () => {
     health.mockResolvedValue()
     const wrapper = await mountApp()
 
-    expect(health).toHaveBeenCalledWith('/api/agent/health')
+    expect(health).toHaveBeenCalledWith('/api/test-reader/health')
     const frame = wrapper.get('iframe')
-    expect(frame.attributes('src')).toBe('/agent/')
-    expect(frame.attributes('title')).toBe('自媒体 Agent')
+    expect(frame.attributes('src')).toBe('/test-reader/')
+    expect(frame.attributes('title')).toBe('测试资料库')
 
     await frame.trigger('load')
-    expect(wrapper.text()).toContain('「自媒体 Agent」页面已载入')
+    expect(wrapper.text()).toContain('「测试资料库」页面已载入')
     expect(wrapper.text()).not.toContain('已连接')
     wrapper.unmount()
   })
@@ -56,8 +62,21 @@ describe('ExternalAppView', () => {
 
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.text()).toContain('连接超时')
-    expect(wrapper.get('a').attributes('href')).toBe('/agent/')
+    expect(wrapper.get('a').attributes('href')).toBe('/test-reader/')
     expect(wrapper.get('.state-card button').text()).toBe('重试')
+    wrapper.unmount()
+  })
+
+  it('旧注册表中的自媒体 Agent 不会恢复健康探测或嵌入入口', async () => {
+    vi.mocked(fetchExternalAppRegistry).mockResolvedValueOnce({ version: 1, apps: [{
+      id: 'media-agent', label: '自媒体 Agent', icon: 'ri-apps-2-line', group: 'TOOLS', order: 1,
+      visible: true, appUrl: '/agent/', healthUrl: '/api/agent/health', openMode: 'TAB',
+    }] })
+    const wrapper = await mountApp('media-agent')
+    expect(wrapper.text()).toContain('这个外部应用尚未注册')
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    expect(health).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 })
 

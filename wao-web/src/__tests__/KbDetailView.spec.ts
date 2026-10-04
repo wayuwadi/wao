@@ -231,7 +231,11 @@ describe('知识库详情目录体验', () => {
     await vm.addSelectionToTask(text)
     expect(ui.modalTaskSeed?.draftKey).toBe(key)
     ui.openModal('task')
+    expect(ui.modalTaskSeed?.draftKey).toBe(key)
+    ui.closeModal()
+    ui.openModal('task')
     expect(ui.modalTaskSeed).toBeNull()
+    wrapper.unmount()
   })
 
   it('从链接直达另一篇文档时展开它所在的文件夹', async () => {
