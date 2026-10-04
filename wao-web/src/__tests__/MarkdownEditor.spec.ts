@@ -8,6 +8,7 @@ import type { RichDocNode } from '@/types'
 import type { Editor } from '@tiptap/core'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { CellSelection } from '@tiptap/pm/tables'
+import { AllSelection } from '@tiptap/pm/state'
 import { createPinia, setActivePinia } from 'pinia'
 import { useUiStore } from '@/stores/ui'
 import { loadRotationImage } from '@/api/imageRotation'
@@ -212,6 +213,244 @@ describe('图片 Tab 缩进', () => {
     expect(restored.get('.md-body img').attributes('data-image-indent')).toBe('1')
     expect(restored.get('.md-body img').attributes('src')).toBe('/api/images/tab-test/raw')
     restored.unmount()
+  })
+})
+
+describe('正文选区安全缩进', () => {
+  const indent = '\u00a0\u00a0'
+  function positionOf(e: Editor, text: string) {
+    let result = -1
+    e.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text?.includes(text)) result = pos + node.text.indexOf(text)
+    })
+    if (result < 0) throw new Error(`未找到正文：${text}`)
+    return result
+  }
+  const tab = (w: Awaited<ReturnType<typeof mountEditor>>, backwards = false) =>
+    w.get('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: backwards })
+
+  it('选中一段中的文字缩进整行，保留粗体、链接及反向选区，单次撤销和重做', async () => {
+    const w = await mountEditor({ modelValue: '前文 **加粗文字** [链接](https://example.com) 后文' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    const from = positionOf(e, '加粗文字'), to = from + 4
+    e.commands.setTextSelection({ from: to, to: from })
+    await tab(w)
+    expect(e.state.doc.textContent).toBe(indent + '前文 加粗文字 链接 后文')
+    expect(e.state.doc.textBetween(e.state.selection.from, e.state.selection.to)).toBe('加粗文字')
+    expect(e.state.selection.anchor).toBe(to + 2)
+    expect(e.state.selection.head).toBe(from + 2)
+    expect(e.getJSON().content![0]!.content!.filter(node => node.marks)).toEqual(original.content![0]!.content!.filter(node => node.marks))
+    const indented = e.getJSON()
+    e.commands.undo()
+    expect(e.getJSON()).toEqual(original)
+    e.commands.redo()
+    expect(e.getJSON()).toEqual(indented)
+    await tab(w, true)
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+
+  it('跨段选区逐行缩进，末端下一段开头不受影响，可连续反缩进且不会删正文', async () => {
+    const w = await mountEditor({ modelValue: '第一段\n\n第二段\n\n第三段' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setTextSelection({ from: positionOf(e, '第一段') + 1, to: positionOf(e, '第三段') })
+    await tab(w)
+    expect(e.getJSON().content?.map(node => node.content?.map(child => 'text' in child ? child.text : '').join(''))).toEqual([indent + '第一段', indent + '第二段', '第三段'])
+    await tab(w, true)
+    await tab(w, true)
+    expect(e.state.doc.textContent).toBe('第一段第二段第三段')
+    expect(e.state.doc.childCount).toBe(3)
+    w.unmount()
+  })
+
+  it('硬换行按实际选中行缩进，光标和末端边界保持', async () => {
+    const w = await mountEditor({ modelValue: '第一行  \n第二行  \n第三行' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setTextSelection({ from: positionOf(e, '第二行') + 1, to: positionOf(e, '第三行') })
+    await tab(w)
+    expect(e.state.doc.textContent).toBe('第一行' + indent + '第二行第三行')
+    expect(w.findAll('.md-body br')).toHaveLength(2)
+    await tab(w, true)
+    expect(e.state.doc.textContent).toBe('第一行第二行第三行')
+    e.commands.setTextSelection(positionOf(e, '第二行') + 2)
+    await tab(w)
+    expect(e.state.selection.$from.parentOffset).toBe(8)
+    expect(e.state.doc.textContent).toBe('第一行' + indent + '第二行第三行')
+    w.unmount()
+  })
+
+  it('跨正文、列表、图片和代码的全选保留所有节点与属性，一次撤销还原', async () => {
+    const w = await mountEditor({ modelValue: '前文 **粗体**\n\n- 列表甲\n- 列表乙\n\n![图](/api/images/mixed/raw "wao-image-size:50%xauto;title=%E5%9B%BE")\n\n```js\nconst x = 1\nconsole.log(x)\n```\n\n后文', imageControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.view.dispatch(e.state.tr.setSelection(new AllSelection(e.state.doc)))
+    await tab(w)
+    const changed = e.getJSON()
+    expect(changed.content?.map(node => node.type)).toEqual(original.content?.map(node => node.type))
+    expect(changed.content?.find(node => node.type === 'image')?.attrs).toMatchObject({ indent: 1, width: '50%', title: '图', src: '/api/images/mixed/raw' })
+    expect(e.state.doc.textContent.replace(/[\u00a0 ]/g, '')).toBe('前文粗体列表甲列表乙constx=1\nconsole.log(x)后文')
+    expect(w.findAll('.md-body li')).toHaveLength(2)
+    expect(w.findAll('.md-body img')).toHaveLength(1)
+    const codeText = changed.content?.find(node => node.type === 'codeBlock')?.content?.[0]
+    expect(codeText && 'text' in codeText ? codeText.text : '').toBe('  const x = 1\n  console.log(x)')
+    e.commands.undo()
+    expect(e.getJSON()).toEqual(original)
+    e.commands.redo()
+    expect(e.getJSON()).toEqual(changed)
+    await tab(w, true)
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+  })
+
+  it('Markdown 与富文本回读都保留普通行缩进、格式和混合图片，不把正文变成代码', async () => {
+    const w = await mountEditor({ modelValue: '## 标题\n\n**正文**\n\n- 项目\n\n![图片](/api/images/roundtrip/raw)' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.view.dispatch(e.state.tr.setSelection(new AllSelection(e.state.doc)))
+    await tab(w)
+    const changes = w.emitted('content-change')!
+    const rich = (changes[changes.length - 1] as [{ document: RichDocNode; markdown: string }])[0]
+    expect(rich.markdown).toContain(indent)
+    const json = e.getJSON()
+    w.unmount()
+    const markdownRestored = await mountEditor({ modelValue: rich.markdown })
+    const restored = (markdownRestored.vm as unknown as { editor: Editor }).editor
+    expect(restored.getJSON()).toEqual(json)
+    expect(restored.isActive('codeBlock')).toBe(false)
+    markdownRestored.unmount()
+    const jsonRestored = await mountEditor({ modelValue: rich.markdown, document: rich.document })
+    expect((jsonRestored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(json)
+    jsonRestored.unmount()
+  })
+
+  it('代码内部分选区只缩进所选逻辑行，跨出代码块仍保留后文节点', async () => {
+    const w = await mountEditor({ modelValue: '```js\nalpha()\nbeta()\ngamma()\n```\n\n后文' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    e.commands.setTextSelection({ from: positionOf(e, 'alpha') + 2, to: positionOf(e, 'gamma') })
+    await tab(w)
+    expect(e.state.doc.firstChild?.textContent).toBe('  alpha()\n  beta()\ngamma()')
+    await tab(w, true)
+    expect(e.getJSON()).toEqual(original)
+    e.commands.setTextSelection({ from: positionOf(e, 'beta') + 2, to: positionOf(e, '后文') + 2 })
+    await tab(w)
+    expect(e.state.doc.firstChild?.textContent).toBe('alpha()\n  beta()\n  gamma()')
+    expect(e.state.doc.lastChild?.textContent).toBe(indent + '后文')
+    expect(e.state.doc.lastChild?.type.name).toBe('paragraph')
+    w.unmount()
+  })
+
+  it('代码光标 Tab 在原处输入，单次撤销保留前一次输入，Shift-Tab 删除所在行前缀', async () => {
+    const w = await mountEditor({ modelValue: '```js\nalpha()\n  beta()\n```' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setTextSelection(positionOf(e, 'alpha') + 2)
+    e.commands.insertContent('x')
+    const typed = e.getJSON()
+    const caret = e.state.selection.from
+    await tab(w)
+    expect(e.state.doc.textContent).toBe('alx  pha()\n  beta()')
+    expect(e.state.selection.from).toBe(caret + 2)
+    e.commands.undo()
+    expect(e.getJSON()).toEqual(typed)
+    e.commands.setTextSelection(positionOf(e, 'beta') + 2)
+    await tab(w, true)
+    expect(e.state.doc.textContent).toBe('alxpha()\nbeta()')
+    expect(e.state.selection.$from.parentOffset).toBe(11)
+    w.unmount()
+  })
+
+  it('跨表格混合选区保持单元格、行列和格式，图片单独选中不触发列表层级操作', async () => {
+    const w = await mountEditor({ modelValue: '前文\n\n| 甲 | 乙 |\n| --- | --- |\n| **一** | 二 |\n\n后文' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setTextSelection({ from: positionOf(e, '前文'), to: positionOf(e, '后文') + 2 })
+    const original = e.getJSON()
+    await tab(w)
+    expect(w.findAll('tr')).toHaveLength(2)
+    expect(w.findAll('th, td')).toHaveLength(4)
+    expect(w.get('strong').text()).toBe('一')
+    expect(e.state.doc.textContent).toContain('甲')
+    expect(e.state.doc.textContent).toContain('后文')
+    await tab(w, true)
+    expect(e.getJSON()).toEqual(original)
+    w.unmount()
+
+    const list = await mountEditor({ modelValue: '', document: { type: 'doc', content: [{ type: 'bulletList', content: [
+      { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: '列表正文' }] }, { type: 'image', attrs: { src: '/api/images/list/raw' } }] },
+    ] }] } })
+    const listEditor = (list.vm as unknown as { editor: Editor }).editor
+    let image = -1
+    listEditor.state.doc.descendants((node, position) => { if (node.type.name === 'image') image = position })
+    listEditor.commands.setNodeSelection(image)
+    await tab(list)
+    expect(listEditor.state.selection.from).toBe(image)
+    expect(listEditor.state.selection.$from.node(1).type.name).toBe('bulletList')
+    expect(listEditor.state.doc.firstChild?.firstChild?.child(1).attrs.indent).toBe(1)
+    expect(listEditor.state.doc.textContent).toBe('列表正文')
+    await tab(list, true)
+    expect(listEditor.state.doc.firstChild?.firstChild?.child(1).attrs.indent).toBe(0)
+    list.unmount()
+  })
+
+  it('单一列表沿用层级操作，首项不能下沉也不删选区；待办仍可下沉和提升', async () => {
+    for (const source of ['- 第一项\n- 第二项', '- [ ] 第一项\n- [x] 第二项']) {
+      const w = await mountEditor({ modelValue: source })
+      const e = (w.vm as unknown as { editor: Editor }).editor
+      const original = e.getJSON()
+      e.commands.setTextSelection({ from: positionOf(e, '第一项'), to: positionOf(e, '第一项') + 3 })
+      await tab(w)
+      expect(e.getJSON()).toEqual(original)
+      e.commands.setTextSelection({ from: positionOf(e, '第二项'), to: positionOf(e, '第二项') + 3 })
+      await tab(w)
+      expect(e.state.doc.firstChild?.childCount).toBe(1)
+      expect(e.state.doc.textContent).toBe('第一项第二项')
+      await tab(w, true)
+      expect(e.getJSON()).toEqual(original)
+      w.unmount()
+    }
+  })
+
+  it('当前行缩进有界，Shift-Tab 可移除历史 Tab 和空格；后续输入撤销不合并缩进', async () => {
+    const w = await mountEditor({ modelValue: '正文' })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setTextSelection(2)
+    for (let count = 0; count < 10; count++) await tab(w)
+    expect(e.state.doc.textContent).toBe(indent.repeat(8) + '正文')
+    for (let count = 0; count < 10; count++) await tab(w, true)
+    expect(e.state.doc.textContent).toBe('正文')
+    e.commands.insertContent('\t')
+    e.commands.setTextSelection(1)
+    e.commands.insertContent('\t ')
+    await tab(w, true)
+    expect(e.state.doc.textContent.startsWith('\t')).toBe(false)
+    await tab(w)
+    const previous = e.getJSON()
+    e.commands.insertContent('继续写')
+    e.commands.undo()
+    expect(e.getJSON()).toEqual(previous)
+    w.unmount()
+  })
+
+  it('只读正文、代码、列表、表格和图片的 Tab 与 Shift-Tab 不改文档', async () => {
+    const w = await mountEditor({ modelValue: '正文\n\n- 列表\n\n![图](/api/images/readonly/raw)\n\n```js\ncode()\n```\n\n| 甲 | 乙 |\n| --- | --- |\n| 一 | 二 |', readonly: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const original = e.getJSON()
+    for (const text of ['正文', '列表', 'code()', '甲']) {
+      const from = positionOf(e, text)
+      e.commands.setTextSelection({ from, to: from + text.length })
+      const changes = w.emitted('content-change')?.length ?? 0
+      await tab(w)
+      await tab(w, true)
+      expect(e.getJSON()).toEqual(original)
+      expect(w.emitted('content-change')?.length ?? 0).toBe(changes)
+    }
+    let image = -1
+    e.state.doc.descendants((node, pos) => { if (node.type.name === 'image') image = pos })
+    e.commands.setNodeSelection(image)
+    const changes = w.emitted('content-change')?.length ?? 0
+    await tab(w)
+    expect(e.getJSON()).toEqual(original)
+    expect(w.emitted('content-change')?.length ?? 0).toBe(changes)
+    w.unmount()
   })
 })
 
@@ -746,7 +985,7 @@ describe('MarkdownEditor（所见即所得）', () => {
 
     expect(event.defaultPrevented).toBe(true)
     expect(document.activeElement).toBe(editable)
-    expect(w.emitted('update:modelValue')?.flat().some((value) => String(value).includes('\t'))).toBe(true)
+    expect(w.emitted('update:modelValue')?.flat().some((value) => String(value).includes('\u00a0\u00a0'))).toBe(true)
     w.unmount()
   })
 
