@@ -162,6 +162,8 @@ const props = withDefaults(
     previewImages?: boolean
     /** 原地编辑首次挂载后将焦点交给正文。 */
     autofocus?: boolean
+    initialPosition?: number
+    initialViewportTop?: number
     /** 文档正文等沉浸场景不显示输入框边框与底色。 */
     bare?: boolean
     /** 文档正文允许一级标题；任务描述等场景仍从二级标题开始。 */
@@ -682,6 +684,19 @@ const editor = useEditor({
     imageMenuRequested.value = false
     updateCharacterCount(e)
     editorReady.value = true
+    if (props.initialPosition != null && !props.readonly && !e.isDestroyed) {
+      const position = Math.max(0, Math.min(props.initialPosition, e.state.doc.content.size))
+      e.commands.setTextSelection(position)
+      e.view.focus()
+      if (props.initialViewportTop != null) {
+        const delta = e.view.coordsAtPos(position).top - props.initialViewportTop
+        let scrollParent = e.view.dom.parentElement
+        while (scrollParent && !(scrollParent.scrollHeight > scrollParent.clientHeight && /auto|scroll/.test(getComputedStyle(scrollParent).overflowY))) scrollParent = scrollParent.parentElement
+        if (scrollParent) scrollParent.scrollTop += delta
+        else window.scrollBy(0, delta)
+      }
+      return
+    }
     if (props.autofocus && !props.readonly && !e.isDestroyed) {
       const active = document.activeElement
       const editingElsewhere = active instanceof HTMLElement
@@ -2072,7 +2087,15 @@ async function focusSearch(term: string) {
 }
 watch(findOpen, open => { if (!open && editor.value) editor.value.view.dispatch(editor.value.state.tr.setMeta(searchHighlightKey, null)) })
 watch([() => props.searchTerm, editor, () => props.searchRequest], ([term], previous) => { if (term) void focusSearch(term); else if (previous?.[0]) findOpen.value = false }, { immediate: true })
-defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, focusSearch })
+function positionAtPoint(left: number, top: number) {
+  const e = editor.value
+  if (!e || e.isDestroyed) return null
+  try {
+    const found = e.view.posAtCoords({ left, top })
+    return found ? { position: found.pos, viewportTop: e.view.coordsAtPos(found.pos).top } : null
+  } catch { return null /* 布局尚未就绪时仍允许进入编辑，不阻塞用户。 */ }
+}
+defineExpose({ clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, focusSearch, positionAtPoint })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(

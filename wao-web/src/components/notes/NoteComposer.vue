@@ -15,7 +15,7 @@ import { captureCompanionTicket, respondWithCompanion } from '@/composables/quie
 import type { Doc, FileItem, RichDocContent } from '@/types'
 import type { NoteSubmission } from '@/api/dayWorkspace'
 
-const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: string; submitNote?: (request: NoteSubmission) => Promise<Doc>; compact?: boolean; active?: boolean }>(), { active: true })
+const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; expanded?: boolean; initialFullscreen?: boolean; initialPosition?: number; initialViewportTop?: number; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: string; submitNote?: (request: NoteSubmission) => Promise<Doc>; compact?: boolean; active?: boolean }>(), { active: true })
 const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string]; 'draft-change': [draft: NoteDraftSnapshot | null]; 'saving-change': [saving: boolean]; 'fullscreen-change': [fullscreen: boolean] }>()
 const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
@@ -86,7 +86,7 @@ async function toggleTagCreate() {
   tagCreateOpen.value = !tagCreateOpen.value
   if (tagCreateOpen.value) { await nextTick(); composerElement.value?.querySelector<HTMLInputElement>('.inline-tag-create input')?.focus() }
 }
-const fullscreen = ref(false)
+const fullscreen = ref(!!props.initialFullscreen)
 const aiSettingsOpen = ref(false)
 watch(fullscreen, value => emit('fullscreen-change', value), { flush: 'sync' })
 const fullscreenReminderVisible = ref(false)
@@ -134,7 +134,7 @@ let previousOverflow: string | undefined
 watch(fullscreen, value => {
   if (value) { previousOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden' }
   else if (previousOverflow !== undefined) { document.body.style.overflow = previousOverflow; previousOverflow = undefined }
-})
+}, { immediate: true })
 onBeforeUnmount(() => {
   clearFullscreenReminderTimer()
   if (previousOverflow !== undefined) document.body.style.overflow = previousOverflow
@@ -421,7 +421,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </script>
 
 <template>
-  <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline, 'reminder-active': fullscreenReminderVisible && !fullscreen }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
+  <section ref="composerElement" class="note-composer" :class="{ fullscreen, inline, expanded, 'reminder-active': fullscreenReminderVisible && !fullscreen }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
     <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? (inline ? '编辑这条小记' : '继续编辑') : '此刻，想记点什么？' }}</b><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" :aria-describedby="fullscreenReminderVisible && !fullscreen ? fullscreenReminderId : undefined" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div v-if="fullscreenReminderVisible && !fullscreen" :id="fullscreenReminderId" class="fullscreen-reminder" role="status" aria-live="polite">
       <i class="ri-focus-3-line" aria-hidden="true"></i>
@@ -437,7 +437,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         :article-image-generation="false"
         :note-ai-origin="{ stableId: id, docId: note?.id, sourceRev: baseRev, title: generatedTitle, blocks: note?.blocks ?? [], links: note?.links ?? [] }" note-title-on-image @ai-applied="appliedAiInputs = [...new Set([...appliedAiInputs, $event])]" @generated-title="generatedTitle = $event"
-        hide-toolbar :autofocus="autofocus" :menu-z-index="fullscreen ? 2200 : compact ? 1200 : 1000"
+        hide-toolbar :autofocus="autofocus" :initial-position="initialPosition" :initial-viewport-top="initialViewportTop" :menu-z-index="fullscreen ? 2200 : compact ? 1200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="compact ? 200 : note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">
@@ -468,6 +468,8 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .note-composer { position: relative; display: flex; flex-direction: column; min-width: 0; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 14px; padding: 18px; background: var(--wao-bg-card); }
 .note-composer.inline:not(.fullscreen) { padding: 0; border: 0; border-radius: 0; }
 .inline:not(.fullscreen) .editor-space { min-height: 160px; max-height: 460px; }
+.inline.expanded:not(.fullscreen) .editor-space { max-height: none; }
+.inline.expanded:not(.fullscreen) .editor-space :deep(.md-body) { overflow: visible; flex-basis: auto; }
 .inline .composer-heading { flex-wrap: wrap; }
 .note-composer:focus-within { border-color: var(--wao-primary); }
 .note-composer:not(:focus-within) :deep(.article-footer) { max-height: 0; padding-top: 0; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; }
