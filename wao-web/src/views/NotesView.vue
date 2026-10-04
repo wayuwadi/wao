@@ -3,6 +3,7 @@ import NoteOriginalReader from '@/components/notes/NoteOriginalReader.vue'
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
+import { publishNoteTagChange, replaceCachedNoteTags, replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
 import NoteAiSettingsDialog from '@/components/notes/NoteAiSettingsDialog.vue'
 import { startSavedNoteStage } from '@/api/noteAiWorkflows'
 import { newPolishRequestId } from '@/api/polishJobs'
@@ -216,6 +217,15 @@ const managingTags = ref(false)
 const sourceTag = ref('')
 const targetTag = ref('')
 const tagSaving = ref(false)
+useNoteTagChanges(change => {
+  tagNames.value = replaceTagNames(tagNames.value, change)
+  if (selectedTag.value === change.source) selectedTag.value = change.target ?? ''
+  if (sourceTag.value === change.source) sourceTag.value = change.target ?? ''
+  if (targetTag.value === change.source) targetTag.value = change.target ?? ''
+  void Promise.all([loadTags(), data.refreshDocs()]).catch(() => {
+    tagsError.value = '标签已修改，清单刷新失败；请重试，正文与草稿仍保留。'
+  })
+})
 async function manageTag(merge: boolean) {
   if (tagSaving.value || !sourceTag.value || (merge && (!targetTag.value || targetTag.value === sourceTag.value))) return
   const source = sourceTag.value, target = targetTag.value
@@ -225,10 +235,12 @@ async function manageTag(merge: boolean) {
   try {
     if (merge) await apiMergeNoteTag(source, target)
     else await apiDeleteNoteTag(source)
+    const change = { source, target: merge ? target : null }
+    if (!replaceCachedNoteTags(session.currentUser.id, change)) toast('标签已修改，部分浏览器草稿标签未同步；请保留输入并检查浏览器存储。', 'ri-error-warning-line')
+    publishNoteTagChange(change)
     if (selectedTag.value === source) selectedTag.value = merge ? target : ''
     sourceTag.value = ''
     targetTag.value = ''
-    await Promise.all([loadTags(), data.refreshDocs()])
   } catch (cause) { tagsError.value = cause instanceof Error ? cause.message : '标签修改失败，请重试' }
   finally { tagSaving.value = false }
 }
