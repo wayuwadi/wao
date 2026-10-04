@@ -11,6 +11,8 @@ import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraf
 import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import NoteAiSettingsDialog from './NoteAiSettingsDialog.vue'
 import NoteWidthSwitch from './NoteWidthSwitch.vue'
+import NoteTagContextMenu from './NoteTagContextMenu.vue'
+import { replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
@@ -59,6 +61,8 @@ const newTag = ref('')
 const creatingTag = ref(false)
 const tagError = ref('')
 const tagUsageKey = `wao-note-tag-usage-v1:${session.currentUser.id}`
+const tagMenu = ref<InstanceType<typeof NoteTagContextMenu>>()
+const tagManaging = ref(false)
 type TagUsage = Record<string, { count: number; lastUsed: number }>
 function readTagUsage(): TagUsage {
   try { return JSON.parse(localStorage.getItem(tagUsageKey) || '{}') as TagUsage } catch { return {} }
@@ -160,7 +164,7 @@ watch(() => props.active, active => {
   clearFullscreenReminderTimer()
 })
 function toggleTag(tag: string) {
-  if (saving.value || creatingTag.value) return
+  if (saving.value || creatingTag.value || tagManaging.value) return
   if (tags.value.includes(tag)) tags.value = tags.value.filter(item => item !== tag)
   else if (tags.value.length < 20) { tags.value = [...tags.value, tag]; recordTagUse(tag) }
 }
@@ -228,7 +232,23 @@ const dirty = computed(() => text.value !== savedSnapshot.value.text
   || JSON.stringify(content.value?.document ?? null) !== JSON.stringify(savedSnapshot.value.document ?? null)
   || JSON.stringify(tags.value) !== JSON.stringify(savedSnapshot.value.tags)
   || generatedTitle.value !== savedSnapshot.value.title)
-const canSave = computed(() => !!text.value.trim() && !saving.value && !creatingTag.value && !props.loading)
+useNoteTagChanges(change => {
+  // 标签管理只改元信息，不能重置用户尚未保存的正文或标题。
+  savedSnapshot.value.tags = replaceTagNames(savedSnapshot.value.tags, change)
+  if (baseNote) baseNote.tags = replaceTagNames(baseNote.tags ?? [], change)
+  tags.value = replaceTagNames(tags.value, change)
+  const usage = readTagUsage()
+  if (usage[change.source]) {
+    if (change.target) {
+      const previous = usage[change.target]
+      usage[change.target] = { count: (previous?.count ?? 0) + usage[change.source]!.count,
+        lastUsed: Math.max(previous?.lastUsed ?? 0, usage[change.source]!.lastUsed) }
+    }
+    delete usage[change.source]
+    try { localStorage.setItem(tagUsageKey, JSON.stringify(usage)) } catch { /* 不阻断输入。 */ }
+  }
+})
+const canSave = computed(() => !!text.value.trim() && !saving.value && !creatingTag.value && !tagManaging.value && !props.loading)
 watch(
   [dirty, text, content, tags, generatedTitle, fullscreen, () => preferences.loaded,
     () => preferences.loadError, () => preferences.noteFullscreenReminder.enabled,
@@ -432,9 +452,10 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <div class="fullscreen-reminder-actions"><button type="button" class="reminder-enter" @click="enterFullscreen">进入全屏</button><button type="button" @click="remindLater">稍后提醒</button><button type="button" aria-label="关闭全屏提醒" title="关闭提醒" @click="dismissFullscreenReminder"><i class="ri-close-line" aria-hidden="true"></i></button></div>
     </div>
     <div v-if="!note && generatedTitle" class="new-generated-title"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="生成的小记标题"></div>
-    <div v-if="inline && note" class="inline-heading"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="小记标题" :disabled="saving"><button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button><button class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
+    <div v-if="inline && note" class="inline-heading"><input v-model="generatedTitle" type="text" maxlength="80" aria-label="小记标题" :disabled="saving"><button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @contextmenu="tagMenu?.open($event, tag)" @keydown="tagMenu?.open($event, tag)" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button><button class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div class="editor-space" @keydown.capture.exact="onComposerEditorKeydown" @keydown.capture.shift.exact="onComposerEditorKeydown" @keydown.ctrl.enter.prevent="save(true)" @keydown.meta.enter.prevent="save(true)">
-      <div v-if="quickChoices.length" class="fullscreen-quick-tags" role="group" aria-label="快捷标签"><i class="ri-price-tag-3-line" aria-hidden="true"></i><button v-for="tag in quickChoices" :key="tag" type="button" :class="{ selected: tags.includes(tag) }" :aria-pressed="tags.includes(tag)" :aria-label="`${tags.includes(tag) ? '移除' : '添加'}标签 ${tag}`" :disabled="saving || creatingTag || (!tags.includes(tag) && tags.length >= 20)" @mousedown.prevent @click="toggleTag(tag)"><span class="quick-tag-hash" aria-hidden="true">#</span>{{ tag }}<i v-if="tags.includes(tag)" class="ri-check-line" aria-hidden="true"></i></button></div>
+      <div v-if="quickChoices.length" class="fullscreen-quick-tags" role="group" aria-label="快捷标签"><i class="ri-price-tag-3-line" aria-hidden="true"></i><button v-for="tag in quickChoices" :key="tag" type="button" :class="{ selected: tags.includes(tag) }" :aria-pressed="tags.includes(tag)" :aria-label="`${tags.includes(tag) ? '移除' : '添加'}标签 ${tag}`" :disabled="saving || creatingTag || (!tags.includes(tag) && tags.length >= 20)" @contextmenu="tagMenu?.open($event, tag)" @keydown="tagMenu?.open($event, tag)" @mousedown.prevent @click="toggleTag(tag)"><span class="quick-tag-hash" aria-hidden="true">#</span>{{ tag }}<i v-if="tags.includes(tag)" class="ri-check-line" aria-hidden="true"></i></button></div>
+      <NoteTagContextMenu ref="tagMenu" :choices="choices" :disabled="saving || creatingTag" @saving-change="tagManaging = $event" />
       <div class="composer-editor-layout"><div class="composer-editor-main">
       <MarkdownEditor :search-term="searchTerm" :search-request="searchRequest" :key="id" ref="noteEditor" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls image-context-controls selection-image preview-images
         :article-image-key="`note:${session.currentUser.id}:${id}`"
@@ -448,7 +469,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
           <div class="composer-tags">
             <button class="note-ai-settings" type="button" aria-label="小记 AI 设置" title="小记 AI 设置" @click="aiSettingsOpen = true"><i class="ri-settings-3-line"></i><span>设置</span></button>
             <template v-if="!inline">
-            <button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button>
+            <button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @contextmenu="tagMenu?.open($event, tag)" @keydown="tagMenu?.open($event, tag)" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button>
             <button class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span>
             </template>
           </div>

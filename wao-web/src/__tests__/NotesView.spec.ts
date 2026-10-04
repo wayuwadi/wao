@@ -1,4 +1,5 @@
 import { readNoteDraft } from '@/utils/noteDraftStorage'
+import { publishNoteTagChange } from '@/utils/noteTagChanges'
 import { defineComponent } from 'vue'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -66,6 +67,27 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('标签改名及删除同步活动草稿及基线，保留正文和编辑器；右键不切换标签', async () => {
+    const note = { ...doc('rename-draft', '已保存的正文'), tags: ['旧分类'] }
+    const wrapper = mount(NoteComposer, { props: { note, tagOptions: ['旧分类', '保留'] }, global: { stubs: { MarkdownEditor: Editor } }, attachTo: document.body })
+    await flushPromises()
+    const editor = wrapper.get('textarea')
+    await editor.setValue('继续输入的正文不能丢失')
+    await wrapper.get('.fullscreen-quick-tags button').trigger('contextmenu', { clientX: 100, clientY: 100 })
+    await flushPromises()
+    expect(wrapper.find('.tag-chip').text()).toContain('旧分类')
+    expect(document.body.querySelector('[role="menu"]')?.textContent).toContain('修改标签')
+    publishNoteTagChange({ source: '旧分类', target: '新分类' })
+    await flushPromises()
+    expect(wrapper.find('.tag-chip').text()).toContain('新分类')
+    const draft = JSON.parse(readNoteDraft('wao-note-edit-v1:wg:rename-draft')!)
+    expect(draft).toMatchObject({ text: '继续输入的正文不能丢失', tags: ['新分类'], baseNote: { tags: ['新分类'] } })
+    publishNoteTagChange({ source: '新分类', target: null }); await flushPromises()
+    expect(wrapper.find('.tag-chip').exists()).toBe(false)
+    expect(wrapper.get('textarea').element).toBe(editor.element)
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('继续输入的正文不能丢失')
+    expect(apiPatchDoc).not.toHaveBeenCalled(); wrapper.unmount()
+  })
   it('切换宽窄布局保留同一个编辑器及草稿，同成员同步并在重开后恢复', async () => {
     const first = composer()
     const second = composer(doc('second-width', '另一篇'))
