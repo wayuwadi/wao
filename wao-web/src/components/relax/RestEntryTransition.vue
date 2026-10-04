@@ -1,18 +1,33 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { isNavigationFailure, NavigationFailureType, useRouter } from 'vue-router'
 import { completeRestJourney } from '@/composables/restJourney'
 import RestCompanions from './RestCompanions.vue'
 
 const router = useRouter()
-const phase = ref<'collect' | 'invite' | 'flip' | 'error'>('collect')
+const phase = ref<'collect' | 'invite' | 'depart' | 'flip' | 'arrive' | 'error'>('collect')
 const snapshot = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
 const skipButton = ref<HTMLButtonElement>()
 const error = ref('')
 const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 const paused = ref(document.hidden)
-let frame = 0, elapsed = 0, stamp = 0, disposed = false
+let frame = 0, stamp = 0, disposed = false
+const elapsed = ref(0)
+const reacting = ref(-1)
+let reactionUntil = 0
+const passageDuration = 7500
+const arrivalDuration = reduced ? 4500 : passageDuration
+const progress = computed(() => Math.min(1, elapsed.value / (phase.value === 'arrive' ? arrivalDuration : passageDuration)))
+const speaker = computed(() => Math.min(2, Math.floor(progress.value * 3)))
+const departures = ['我先去探探路，你慢慢来。', '把待办留在这里，带上轻松的自己。', '跟上啦，我们去有风的地方。']
+const arrivals = ['哇，休息一下好舒服。看看这片暖暖的阳光。', '这里的空气好清新。松松肩膀，慢慢感受一下。', '风轻轻吹过来啦。不用赶路，我们一起歇一会儿。']
+const replies = ['收到你的招呼啦，我在前面等你。', '好呀，今天也给自己一点空白。', '嘿嘿，走吧，舒服的风在等我们。']
+const arrivalReplies = ['你也来啦，一起晒晒太阳吧。', '不着急，慢慢呼吸就好。', '这阵风也在和你打招呼呢。']
+const speech = computed(() => reacting.value >= 0 ? (phase.value === 'arrive' ? arrivalReplies : replies)[reacting.value] : phase.value === 'depart' ? departures[speaker.value] : phase.value === 'arrive' ? arrivals[speaker.value] : '工作收好啦，一起去休息吧。')
+const turn = computed(() => reduced || phase.value === 'arrive' ? undefined : `rotateY(${-180 * (phase.value === 'flip' ? Math.min(1, elapsed.value / 1200) : 0)}deg)`)
+function greet(index: number) { if (paused.value) return; reacting.value = index; reactionUntil = elapsed.value + 850 }
+function changePhase(next: typeof phase.value) { phase.value = next; elapsed.value = 0; reacting.value = -1 }
 const navigating = ref(false)
 const animations: Animation[] = []
 const app = document.getElementById('app')
@@ -42,7 +57,7 @@ function capture() {
   Object.assign(clone.style, { width: `${window.innerWidth}px`, height: `${window.innerHeight}px`, margin: '0', pointerEvents: 'none' })
   snapshot.value.append(clone)
   const bounds = clone.getBoundingClientRect(), cx = innerWidth * .52, cy = innerHeight * .42
-  const pieces = clone.querySelectorAll<HTMLElement>('.side, .header, .tab-bar, .home-day, .home-rest-copy > *, .home-companion-space, .site-footer')
+  const pieces = clone.querySelectorAll<HTMLElement>('.side, .header, .tab-bar, .home-day, .home-rest-copy > *, .home-companion-space, .site-footer, .mobile-main-nav, .fab')
   if (!reduced) pieces.forEach((el, i) => {
     const b = el.getBoundingClientRect(), dx = cx - (b.left - bounds.left + b.width / 2), dy = cy - (b.top - bounds.top + b.height / 2)
     if (!el.animate) return
@@ -73,20 +88,27 @@ async function enter(guided=true) {
     const failure = await router.push('/breathe')
     if ((isNavigationFailure(failure) && !isNavigationFailure(failure, NavigationFailureType.duplicated)) || router.currentRoute.value.path !== '/breathe') throw new Error('休息页面暂时未能打开。')
     if (disposed) return
-    if (!guided || reduced) { completeRestJourney(guided, true); return }
-    phase.value='flip';elapsed=0;stamp=performance.now();frame=requestAnimationFrame(tick)
+    if (!guided) { completeRestJourney(false, true); return }
+    changePhase(reduced ? 'arrive' : 'flip');stamp=performance.now();frame=requestAnimationFrame(tick)
   } catch {
     if (!disposed) { phase.value='error';error.value='休息页面暂时未能打开，请重试。';await nextTick();skipButton.value?.focus() }
-  } finally { navigating.value=false }
+  } finally { navigating.value=false;await nextTick();if(!disposed)skipButton.value?.focus() }
 }
 function tick(now: number) {
   if (disposed || paused.value) return
-  elapsed+=Math.min(100, Math.max(0,now-stamp));stamp=now
+  elapsed.value+=Math.min(100, Math.max(0,now-stamp));stamp=now
+  if (reacting.value >= 0 && elapsed.value >= reactionUntil) reacting.value = -1
   if (phase.value==='collect') {
-    draw(elapsed/4000)
-    if(elapsed>=(reduced?300:4000)){phase.value='invite';elapsed=0}
-  } else if(phase.value==='invite' && elapsed>=(reduced?300:1800)){void enter();return}
-  else if(phase.value==='flip' && elapsed>=1200){completeRestJourney(true);return}
+    draw(elapsed.value/4000)
+    if(elapsed.value>=(reduced?300:4000)) changePhase('invite')
+  } else if(phase.value==='invite' && elapsed.value>=(reduced?300:1800)) {
+    if(reduced){void enter();return}
+    changePhase('depart')
+  } else if(phase.value==='depart') {
+    draw(1 + progress.value*.5)
+    if(elapsed.value>=passageDuration){void enter();return}
+  } else if(phase.value==='flip' && elapsed.value>=1200) changePhase('arrive')
+  else if(phase.value==='arrive' && elapsed.value>=arrivalDuration){completeRestJourney(true);return}
   frame=requestAnimationFrame(tick)
 }
 function pause() {
@@ -117,11 +139,16 @@ onBeforeUnmount(()=>{
 <template>
   <Teleport to="body">
     <section class="rest-entry-transition" :class="[phase, { reduced }]" role="dialog" aria-modal="true" aria-label="和伙伴一起进入休息空间">
-      <div class="entry-turn" :class="{ flipped: phase==='flip' }" aria-hidden="true">
+      <div class="entry-turn" :style="{ transform:turn }" aria-hidden="true">
         <div class="entry-front"><div ref="snapshot" class="entry-snapshot"></div><canvas ref="canvas"></canvas></div>
-        <div class="entry-back"><div class="entry-sun"></div><div class="entry-hill"></div></div>
+        <div class="entry-back"><div class="entry-sun"></div><div class="entry-hill"></div><div class="entry-water"></div><div class="entry-breeze"><span></span><span></span><span></span></div></div>
       </div>
-      <div v-if="phase!=='collect'" class="entry-crew"><p v-if="phase==='invite'" class="crew-speech">工作收好啦，一起去休息吧。</p><RestCompanions :welcoming="phase==='invite'" :reduced="reduced" /></div>
+      <div v-if="phase==='invite' || phase==='depart' || phase==='arrive'" class="entry-crew">
+        <div v-if="phase==='arrive'" class="arrival-door" aria-hidden="true"></div>
+        <p class="crew-speech" role="status"><small v-if="phase!=='invite'">{{ ['小画家','小书虫','小青蛙'][reacting>=0 ? reacting : speaker] }}</small>{{ speech }}</p>
+        <RestCompanions :welcoming="phase==='invite'" :reduced="reduced" :journey="phase==='depart' || phase==='arrive' ? phase : undefined" :progress="progress" :paused="paused" :reacting="reacting" @greet="greet" />
+      </div>
+      <p v-if="phase==='depart' || phase==='arrive'" class="entry-interaction">{{ phase==='depart' ? '轻轻点一下伙伴，和它打个招呼' : '先感受阳光、空气和风，再一起呼吸' }}</p>
       <p v-if="phase==='collect'" class="entry-message" role="status">把忙碌，暂时交给宇宙。</p>
       <div v-if="phase==='error'" class="entry-error" role="alert"><p>{{ error }}</p><button @click="cancel">返回首页</button></div>
       <div v-if="paused" class="entry-paused"><p>已暂停，准备好后继续。</p><button @click="resume">继续旅程</button></div>
@@ -133,9 +160,14 @@ onBeforeUnmount(()=>{
 <style scoped>
 .rest-entry-transition { position:fixed;inset:0;z-index:25000;isolation:isolate;overflow:hidden;background:#0d0e1c;perspective:1500px;font-family:Inter,'Microsoft YaHei',sans-serif; }
 .entry-turn,.entry-front,.entry-back,.entry-snapshot,canvas { position:absolute;inset:0;width:100%;height:100%; }
-.entry-turn { transform-style:preserve-3d;transition:transform 1.2s cubic-bezier(.4,0,.2,1); }.entry-turn.flipped { transform:rotateY(-180deg); }
+.entry-turn { transform-style:preserve-3d; }
 .entry-front,.entry-back { backface-visibility:hidden; }.entry-back { transform:rotateY(180deg);background:#f6f6ed; }.entry-sun { position:absolute;right:13%;top:20%;width:115px;height:115px;border-radius:50%;background:#f7e6b6;opacity:.6; }.entry-hill { position:absolute;bottom:-15%;left:-10%;width:120%;height:40%;border-radius:50%;background:#e1e9d9; }
-.entry-crew { position:absolute;left:50%;top:48%;transform:translateX(-50%);z-index:2;transition:top 1.2s ease; }.flip .entry-crew { top:38%; }
+.entry-crew { position:absolute;left:50%;top:48%;transform:translateX(-50%);z-index:2; }.arrive .entry-crew { top:43%; }
+.entry-water { position:absolute;left:12%;right:12%;top:57%;height:22%;border-radius:50%;background:#e3eee6; }
+.entry-breeze { position:absolute;inset:0; }.entry-breeze span { position:absolute;left:14%;top:30%;width:100px;height:20px;border-top:1px solid #8fab9d;border-radius:50%;opacity:.25; }.entry-breeze span:nth-child(2) { left:72%;top:47%;width:75px; }.entry-breeze span:nth-child(3) { left:23%;top:69%;width:60px; }
+.arrival-door { position:absolute;left:50%;top:-120px;width:94px;height:128px;border:1px solid #acb9d055;border-radius:50%;transform:translateX(-50%);background:radial-gradient(ellipse,#d8e2d9,#e8efe9 60%,transparent 70%);box-shadow:0 0 30px #cddfd366; }
+.entry-interaction { position:absolute;top:76%;left:18px;right:18px;text-align:center;font-size:13px;color:#c5c1d7; }.arrive .entry-interaction { color:#526960; }
+.crew-speech small { display:block;margin-bottom:7px;font-size:11px;color:#74867c; }.depart .crew-speech,.arrive .crew-speech { bottom:205px;min-height:82px;line-height:1.6; }
 .crew-speech { position:absolute;bottom:165px;left:50%;transform:translateX(-50%);width:min(370px,calc(100vw - 36px));padding:17px;border-radius:24px;text-align:center;background:#fff;color:#273c3b;font-size:16px; }.crew-speech:after { content:'';position:absolute;left:50%;bottom:-8px;width:16px;height:16px;transform:rotate(45deg);background:#fff; }
 .entry-message { position:absolute;bottom:16%;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 36px);padding:12px 20px;border-radius:26px;background:#0d0e1ccc;text-align:center;color:#efedf9;font-size:21px;letter-spacing:2px; }
 button { font:inherit;cursor:pointer;border:1px solid #dce3dc;border-radius:24px;background:#fff;color:#273c3b;padding:12px 19px;min-height:44px; }.entry-skip { position:absolute;right:26px;bottom:25px;font-size:12px;z-index:4; }
@@ -143,5 +175,8 @@ button { font:inherit;cursor:pointer;border:1px solid #dce3dc;border-radius:24px
 button:focus-visible { outline:2px solid #8b87d8;outline-offset:4px; }
 .reduced .entry-turn,.reduced .entry-crew { transition:none; }.reduced .entry-snapshot { opacity:0; }
 :global([data-theme='dark']) .entry-back { background:#202b2a; }:global([data-theme='dark']) .entry-hill { background:#334b42; }
+:global([data-theme='dark']) .entry-water { background:#293e36; }:global([data-theme='dark']) .arrive .entry-interaction { color:#b9cbbf; }
+.reduced .entry-back { transform:none; }.reduced.arrive .entry-front { visibility:hidden; }.reduced .arrival-door { display:none; }
+.arrive .entry-back { transform:none; }.arrive .entry-front { visibility:hidden; }
 @media(max-width:600px) { .entry-message { font-size:16px;bottom:17%; }.entry-crew { top:48%; }.crew-speech { font-size:14px; }.entry-skip { right:16px;bottom:20px; } }
 </style>
