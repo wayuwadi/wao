@@ -23,9 +23,9 @@ import { fetchPreference, savePreference } from '@/api/favorites'
 import { copyText, copyToClipboard } from '@/utils/clipboard'
 import { fetchNotePolishVersions } from '@/api/notePolishVersions'
 import { notePolishVersions, noteEnrichmentStatus, activateNoteWorkflowMember } from '@/utils/autoNoteEnrichment'
-import { fetchNoteAiWorkflows } from '@/api/noteAiWorkflows'
+import { fetchNoteAiWorkflows, startSavedNoteStage } from '@/api/noteAiWorkflows'
 vi.mock('@/api/noteDiscoveries', () => ({ fetchDiscoveryCurrent: vi.fn().mockResolvedValue({ discovery: null, automationState: 'OFF', revision: '' }), fetchDiscoverySource: vi.fn(), feedbackDiscovery: vi.fn(), clearDiscoveryLegacyCache: vi.fn() }))
-vi.mock('@/api/noteAiWorkflows', () => ({ fetchNoteAiWorkflows: vi.fn().mockResolvedValue([]), retryNoteAiWorkflow: vi.fn() }))
+vi.mock('@/api/noteAiWorkflows', () => ({ fetchNoteAiWorkflows: vi.fn().mockResolvedValue([]), retryNoteAiWorkflow: vi.fn(), startSavedNoteStage: vi.fn() }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined), copyToClipboard: vi.fn().mockResolvedValue(true) }))
 vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
@@ -67,6 +67,53 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('一键四连只补未完成阶段，跳过完成和运行，逐次读取最新修订号', async () => {
+    const note = doc('four-note', '测试正文')
+    useDataStore().docs[note.id] = note
+    const status = { docId: note.id, title: 'DONE', image: 'SKIPPED', polish: 'RUNNING', tags: 'FAILED', message: null } as const
+    vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([status])
+    vi.mocked(fetchDoc).mockResolvedValueOnce(note).mockResolvedValueOnce({ ...note, rev: 7 })
+    vi.mocked(startSavedNoteStage).mockResolvedValue({ ...status, image: 'PENDING', tags: 'PENDING' })
+    const wrapper = await view()
+    await flushPromises()
+    await wrapper.get('.note-four-action').trigger('click'); await flushPromises()
+    expect(vi.mocked(startSavedNoteStage).mock.calls.map(call => [call[1], call[2]])).toEqual([['image', 3], ['tags', 7]])
+    wrapper.unmount()
+  })
+  it('四项全完成时四连不再请求；保存失败的草稿不触发任何 AI', async () => {
+    const note = doc('four-draft', '旧正文')
+    useDataStore().docs[note.id] = note
+    vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([{ docId: note.id, title: 'DONE', image: 'DONE', polish: 'DONE', tags: 'DONE', message: null }])
+    const wrapper = await view()
+    await flushPromises()
+    expect(wrapper.get<HTMLButtonElement>('.note-four-action').element.disabled).toBe(true)
+    await wrapper.get('.note-four-action').trigger('click'); await flushPromises()
+    expect(startSavedNoteStage).not.toHaveBeenCalled()
+    vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([{ docId: note.id, title: 'FAILED', image: 'DONE', polish: 'DONE', tags: 'DONE', message: null }])
+    wrapper.unmount()
+    const edited = await view()
+    await flushPromises()
+    await edited.get('.note-edit-action').trigger('click')
+    await edited.get('.note-card textarea').setValue('尚未保存')
+    vi.mocked(fetchDoc).mockResolvedValue(note)
+    vi.mocked(apiPatchDoc).mockRejectedValue(new Error('保存失败'))
+    await edited.get('.note-four-action').trigger('click'); await flushPromises()
+    expect(startSavedNoteStage).not.toHaveBeenCalled()
+    expect(edited.get<HTMLTextAreaElement>('.note-card textarea').element.value).toBe('尚未保存')
+    edited.unmount()
+  })
+  it('保留手动标题、已有配图及无匹配标签也算已处理，四连不会重做', async () => {
+    const note = doc('four-existing', '已有内容')
+    useDataStore().docs[note.id] = note
+    const detail = (reasonCode: string) => ({ reasonCode, message: '', retryable: false, action: '', jobId: '', sourceVersion: 3 })
+    vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([{ docId: note.id, title: 'SKIPPED', image: 'SKIPPED', polish: 'DONE', tags: 'SKIPPED', message: null,
+      stages: { title: detail('MANUAL_TITLE'), image: detail('EXISTING_IMAGE'), tags: detail('NO_MATCHING_TAGS') } }])
+    const wrapper = await view(); await flushPromises()
+    expect(wrapper.get('.note-four-action').text()).toBe('四项已齐备')
+    await wrapper.get('.note-four-action').trigger('click'); await flushPromises()
+    expect(startSavedNoteStage).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('真实富文本编辑器 Esc 先关闭查找，再打开退出确认', async () => {
     const wrapper = mount(NoteComposer, { props: { note: doc('escape-editor', '正文') }, attachTo: document.body })
     await vi.dynamicImportSettled()
@@ -307,7 +354,7 @@ describe('小记集中记录空间', () => {
     const wrapper = await view()
     await flushPromises()
     for (const label of ['标题', '配图', '润色']) {
-      expect(wrapper.find(`[data-note-id="one"] button[aria-label="${label}未生成，点击开始"]`).exists()).toBe(true)
+      expect(wrapper.find(`[data-note-id="one"] button[aria-label^="${label}未生成，点击开始"]`).exists()).toBe(true)
     }
     wrapper.unmount()
   })
@@ -317,7 +364,7 @@ describe('小记集中记录空间', () => {
     vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([{ docId: 'one', title: 'PENDING', image: 'RUNNING', polish: 'FAILED', message: '润色失败，请重试' }])
     const wrapper = await view()
     await flushPromises()
-    expect(wrapper.find('[data-note-id="one"] button[aria-label="标题等待后台处理"]').exists()).toBe(true)
+    expect(wrapper.find('[data-note-id="one"] button[aria-label^="标题等待后台处理"]').exists()).toBe(true)
     expect(wrapper.find('[data-note-id="one"] button[aria-label="配图正在处理"]').exists()).toBe(true)
     expect(wrapper.find('[data-note-id="one"] button[aria-label="润色失败，点击重试"]').exists()).toBe(true)
     wrapper.unmount()
@@ -516,6 +563,7 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
   beforeEach(() => {
+    vi.mocked(startSavedNoteStage).mockReset()
     if(!Range.prototype.getClientRects) Object.defineProperty(Range.prototype,'getClientRects',{configurable:true,value:()=>[]});
     if(!Range.prototype.getBoundingClientRect) Object.defineProperty(Range.prototype,'getBoundingClientRect',{configurable:true,value:()=>new DOMRect()});
     vi.restoreAllMocks()

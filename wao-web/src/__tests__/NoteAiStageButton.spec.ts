@@ -1,0 +1,38 @@
+import { mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import NoteAiStageButton from '@/components/notes/NoteAiStageButton.vue'
+afterEach(() => vi.useRealTimers())
+describe('一键四连蓄力', () => {
+  it('短点击仍单项；不足三秒松开取消；满三秒仅触发四连', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(NoteAiStageButton, { props: { holdEnabled: true } })
+    await wrapper.trigger('pointerdown'); vi.advanceTimersByTime(100)
+    await wrapper.trigger('pointerup'); await wrapper.trigger('click')
+    expect(wrapper.emitted('activate')).toHaveLength(1)
+    await wrapper.trigger('pointerdown'); vi.advanceTimersByTime(1500)
+    await wrapper.trigger('pointerup'); await wrapper.trigger('click'); vi.advanceTimersByTime(2000)
+    expect(wrapper.emitted('four')).toBeUndefined()
+    expect(wrapper.emitted('activate')).toHaveLength(1)
+    await wrapper.trigger('pointerdown'); vi.advanceTimersByTime(3000)
+    expect(wrapper.emitted('four')).toHaveLength(1)
+    vi.advanceTimersByTime(4000); await wrapper.trigger('pointerup'); await wrapper.trigger('click')
+    expect(wrapper.emitted('four')).toHaveLength(1)
+    expect(wrapper.emitted('activate')).toHaveLength(1)
+    wrapper.unmount()
+  })
+  it('离开按钮、窗口失焦及卸载取消蓄力；空格支持三秒触发', async () => {
+    vi.useFakeTimers()
+    const four = vi.fn()
+    const wrapper = mount(NoteAiStageButton, { props: { holdEnabled: true, onFour: four } })
+    await wrapper.trigger('pointerdown'); vi.advanceTimersByTime(500)
+    await wrapper.trigger('pointerleave'); vi.advanceTimersByTime(3000)
+    expect(wrapper.emitted('four')).toBeUndefined()
+    await wrapper.trigger('pointerdown'); window.dispatchEvent(new Event('blur')); vi.advanceTimersByTime(3000)
+    expect(wrapper.emitted('four')).toBeUndefined()
+    await wrapper.trigger('keydown', { key: ' ' }); vi.advanceTimersByTime(3000)
+    expect(four).toHaveBeenCalledTimes(1)
+    await wrapper.trigger('keyup', { key: ' ' }); expect(wrapper.emitted('activate')).toBeUndefined()
+    await wrapper.trigger('pointerdown'); wrapper.unmount(); vi.advanceTimersByTime(3000)
+    expect(four).toHaveBeenCalledTimes(1)
+  })
+})
