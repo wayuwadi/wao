@@ -7,7 +7,7 @@ import { useRoute } from 'vue-router'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { contentHit, documentSearchText } from '@/utils/contentSearch'
 import { docShareUrl } from '@/utils/share'
-import { copyText } from '@/utils/clipboard'
+import { copyText, copyToClipboard } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -417,6 +417,30 @@ let readerRestorePending = false
 const readerNotes = computed(() => readerIds.value.map(id => notes.value.find(note => note.id === id)).filter((note): note is Doc => !!note))
 const readingIndex = computed(() => readerNotes.value.findIndex(note => note.id === readingId.value))
 const readingNote = computed(() => readerNotes.value.find(note => note.id === readingId.value) ?? null)
+const readerCopyBusy = ref(false)
+const readerCopyStatus = ref('')
+let readerCopyRequest = 0
+watch([reading, readingId, () => session.userId], () => {
+  readerCopyRequest++
+  readerCopyBusy.value = false
+  readerCopyStatus.value = ''
+}, { flush: 'sync' })
+async function copyReadingNote(kind: 'share' | 'body') {
+  const note = readingNote.value
+  if (!note || readerCopyBusy.value || (kind === 'body' && originalsOpen.value)) return
+  const request = ++readerCopyRequest
+  const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  readerCopyBusy.value = true
+  readerCopyStatus.value = '正在复制…'
+  const text = kind === 'share' ? docShareUrl(note.id) : displayedMarkdown(note)
+  const copied = await copyToClipboard(text)
+  if (request !== readerCopyRequest) return
+  readerCopyBusy.value = false
+  readerCopyStatus.value = copied ? kind === 'share' ? '公开分享链接已复制' : '正文已复制' : '复制失败，请重试或手动选中复制'
+  await nextTick()
+  if (request !== readerCopyRequest) return
+  if (trigger?.isConnected && readerDialog.value?.contains(trigger)) trigger.focus({ preventScroll: true })
+}
 async function startReading(id?: string, event?: Event, mode?: 'side' | 'full') {
   clearCardClickTimer()
   if (reading.value) return
@@ -999,7 +1023,17 @@ onMounted(() => void loadPins())
     <NoteAiSettingsDialog v-model:open="noteSettingsOpen" />
     <Teleport to="body">
       <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :class="{ 'reader-full': readerMode === 'full', 'directory-open': readerDirectoryOpen }" :inert="previewImage ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
-        <header class="reader-topbar"><strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>只读</small></strong><div class="reader-layout-actions"><button type="button" :aria-pressed="originalsOpen" @click="toggleOriginals">{{ originalsOpen ? '返回当前内容' : '查看原文' }}</button><div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div><button ref="readerClose" type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line" aria-hidden="true"></i><span>关闭</span></button></div></header>
+        <header class="reader-topbar">
+          <strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>只读</small></strong>
+          <span class="reader-copy-status" role="status" aria-live="polite">{{ readerCopyStatus }}</span>
+          <div class="reader-layout-actions">
+            <button type="button" aria-label="复制小记分享链接" title="复制当前小记的公开只读分享链接" :disabled="readerCopyBusy" @click="copyReadingNote('share')"><i class="ri-share-forward-line" aria-hidden="true"></i><span>分享</span></button>
+            <button type="button" aria-label="复制小记正文" :title="originalsOpen ? '返回当前内容后复制正文' : '复制当前正文（Markdown）'" :disabled="readerCopyBusy || originalsOpen" @click="copyReadingNote('body')"><i class="ri-file-copy-line" aria-hidden="true"></i><span>复制正文</span></button>
+            <button type="button" :aria-pressed="originalsOpen" @click="toggleOriginals">{{ originalsOpen ? '返回当前内容' : '查看原文' }}</button>
+            <div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div>
+            <button ref="readerClose" type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line" aria-hidden="true"></i><span>关闭</span></button>
+          </div>
+        </header>
         <div class="reader-layout">
           <aside class="reader-directory" aria-label="当前列表的小记目录"><div class="reader-directory-heading"><strong>小记目录</strong><span>{{ readerNotes.length }} 篇</span><button type="button" class="reader-directory-close" aria-label="收起小记目录" @click="closeReaderLayer"><i class="ri-close-line" aria-hidden="true"></i></button></div><nav aria-label="选择小记"><button v-for="note in readerNotes" :key="note.id" type="button" :aria-current="note.id === readingId ? 'true' : undefined" @click="selectReadingNote(note.id)"><strong>{{ displayedTitle(note) }}</strong><small>{{ authorName(note.author) }} · {{ timeLabel(note.updated || note.created) }}</small></button></nav></aside>
           <div class="reader-main" :inert="readerDirectoryOpen ? true : undefined"><button v-if="readerMode === 'side'" type="button" class="reader-directory-toggle" @click="openReaderDirectory"><i class="ri-list-check" aria-hidden="true"></i>小记目录 <span>{{ readingIndex + 1 }} / {{ readerNotes.length }}</span></button>
@@ -1165,6 +1199,8 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-topbar strong { display: flex; align-items: center; gap: 7px; color: var(--wao-text-1); font-size: 15px; }
 .reader-topbar small { font-size: 11px; font-weight: 400; color: var(--wao-text-faint); }
 .reader-layout-actions, .reader-mode-switch { display: flex; align-items: center; gap: 6px; }
+.reader-layout-actions { flex-wrap: wrap; min-width: 0; }
+.reader-copy-status { font-size: 12px; color: var(--wao-text-weak); }
 .reader-mode-switch { padding: 3px; border-radius: 9px; background: var(--wao-bg-sub); }
 .reader-layout-actions button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); white-space: nowrap; }
 .reader-mode-switch button { border-color: transparent; background: transparent; font-size: 12px; }
@@ -1198,9 +1234,12 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .reader-controls > span { color: var(--wao-text-faint); font-size: 12px; }
 .reader-directory-toggle, .reader-directory-close { display: none; }
 @media (max-width: 760px) {
-  .reader-topbar { padding: 10px 12px; gap: 8px; }
-  .reader-topbar strong { font-size: 13px; }
-  .reader-topbar small, .reader-layout-actions > button span { display: none; }
+  .reader-topbar { position: relative; padding: 10px 12px; gap: 8px; }
+  .reader-topbar strong { min-height: 36px; font-size: 13px; }
+  .reader-copy-status { flex: 1; min-width: 0; padding-right: 64px; overflow-wrap: anywhere; }
+  .reader-layout-actions { width: 100%; }
+  .reader-layout-actions > button[aria-label="退出阅读模式"] { position: absolute; top: 10px; right: 12px; }
+  .reader-topbar small { display: none; }
   .reader-layout-actions, .reader-mode-switch { gap: 3px; }
   .reader-layout-actions button { padding: 6px; min-height: 40px; }
   .reader-mode-switch button { font-size: 11px; }
