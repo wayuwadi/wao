@@ -1,0 +1,189 @@
+<script setup lang="ts">
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useOverlayDismiss } from '@/composables/overlayDismiss'
+withDefaults(
+  defineProps<{ title: string; description?: string; width?: string; height?: string }>(),
+  { description: '', width: '1000px', height: 'min(760px, calc(100dvh - 48px))' },
+)
+const emit = defineEmits<{ close: [] }>()
+const dialog = ref<HTMLElement>()
+const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+const dismiss = useOverlayDismiss(
+  () => true,
+  () => emit('close'),
+)
+function outside() {
+  if (dismiss.isTopmost()) emit('close')
+}
+function trap(event: KeyboardEvent) {
+  if (event.key !== 'Tab') return
+  const items = [
+    ...(dialog.value?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+    ) ?? []),
+  ].filter((item) => !item.closest('[hidden]'))
+  const first = items[0],
+    last = items[items.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+onMounted(async () => {
+  await nextTick()
+  dialog.value?.focus({ preventScroll: true })
+})
+onBeforeUnmount(() => {
+  if (trigger?.isConnected) trigger.focus({ preventScroll: true })
+})
+</script>
+<template>
+  <Teleport to="body"
+    ><div class="settings-dialog-mask" @click.self="outside">
+      <section
+        ref="dialog"
+        class="settings-dialog-shell"
+        :style="{ '--settings-dialog-width': width, '--settings-dialog-height': height }"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="title"
+        tabindex="-1"
+        @keydown="trap"
+      >
+        <header class="dialog-heading">
+          <div class="title-icon"><i class="ri-sparkling-2-line" aria-hidden="true"></i></div>
+          <div>
+            <h2>{{ title }}</h2>
+            <p v-if="description">{{ description }}</p>
+          </div>
+          <button
+            class="dialog-close"
+            type="button"
+            :aria-label="`关闭${title}`"
+            @click="emit('close')"
+          >
+            <i class="ri-close-line" aria-hidden="true"></i>
+          </button>
+        </header>
+        <div class="dialog-content"><slot /></div>
+        <footer v-if="$slots.footer" class="dialog-footer"><slot name="footer" /></footer>
+      </section></div
+  ></Teleport>
+</template>
+<style scoped>
+.settings-dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  box-sizing: border-box;
+  background: var(--wao-mask-bg, #12223c70);
+}
+.settings-dialog-shell {
+  display: flex;
+  flex-direction: column;
+  width: min(var(--settings-dialog-width), 100%);
+  height: var(--settings-dialog-height);
+  max-height: calc(100dvh - 48px);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--wao-divider);
+  border-radius: 16px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  box-shadow: var(--wao-shadow-dialog);
+  outline: none;
+}
+.dialog-heading {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 20px 26px;
+  border-bottom: 1px solid var(--wao-divider);
+}
+h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+p {
+  margin: 4px 0 0;
+  color: var(--wao-text-weak);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.title-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+  border-radius: 12px;
+  font-size: 22px;
+}
+.dialog-close {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  font-size: 20px;
+}
+.dialog-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.dialog-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--wao-divider);
+  padding: 15px 26px;
+}
+button:focus-visible {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: 2px;
+}
+@media (max-width: 650px) {
+  .settings-dialog-mask {
+    padding: 0;
+  }
+  .settings-dialog-shell {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: 0;
+  }
+  .dialog-heading {
+    padding: 15px;
+    gap: 10px;
+  }
+  h2 {
+    font-size: 18px;
+  }
+  .title-icon {
+    width: 36px;
+    height: 36px;
+  }
+  .dialog-footer {
+    padding: 12px 15px;
+  }
+}
+</style>

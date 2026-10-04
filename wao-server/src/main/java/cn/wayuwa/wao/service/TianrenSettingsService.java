@@ -12,6 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TianrenSettingsService {
     public static final String KEY = "tianren-ai-settings-v1";
+    public static final String DEFAULT_MODEL = "gpt-6-astra";
+    public static final String DEFAULT_EFFORT = "medium";
     public static final String DEFAULT_INTERPRETATION = """
             请把今天的卦象解释成容易理解、能够联系日常生活的反思。
             用通俗、温和、具体的中文，结合这次提供的关注点，说明本卦的主要主题、变爻提示以及之卦提供的观察方向。
@@ -33,13 +35,33 @@ public class TianrenSettingsService {
             不出现文字、字母、卦名、数字、卦符、爻线、水印和界面控件；标题与“变 / 不变”由页面单独排版。
             忠于本次解读，不新增吉凶承诺、财富或健康保证，不画确定的未来事件，不复现姓名、联系方式等可识别私人信息。
             """;
-    public record Save(long version, Boolean autoImage, String interpretationPrompt, String imagePrompt) { }
+    public record Save(long version, Boolean autoImage, String interpretationPrompt, String imagePrompt,
+                       String model, String reasoningEffort) {
+        public Save(long version, Boolean autoImage, String interpretationPrompt, String imagePrompt) {
+            this(version, autoImage, interpretationPrompt, imagePrompt, null, null);
+        }
+    }
     public record View(long version, boolean autoImage, String interpretationPrompt, String imagePrompt,
-                       String defaultInterpretationPrompt, String defaultImagePrompt) { }
+                       String defaultInterpretationPrompt, String defaultImagePrompt, String model, String reasoningEffort) {
+        public View {
+            model = checkedModel(model == null ? DEFAULT_MODEL : model);
+            reasoningEffort = checkedEffort(reasoningEffort == null ? DEFAULT_EFFORT : reasoningEffort);
+        }
+        public View(long version, boolean autoImage, String interpretationPrompt, String imagePrompt,
+                    String defaultInterpretationPrompt, String defaultImagePrompt) {
+            this(version, autoImage, interpretationPrompt, imagePrompt, defaultInterpretationPrompt, defaultImagePrompt,
+                    DEFAULT_MODEL, DEFAULT_EFFORT);
+        }
+    }
     private final MemberPreferenceMapper preferences;
     private final ObjectMapper json;
+    private final LocalCodexModelService models;
     public TianrenSettingsService(MemberPreferenceMapper preferences, ObjectMapper json) {
-        this.preferences = preferences; this.json = json;
+        this(preferences, json, null);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public TianrenSettingsService(MemberPreferenceMapper preferences, ObjectMapper json, LocalCodexModelService models) {
+        this.preferences = preferences; this.json = json; this.models = models;
     }
     /** 无保存值才使用默认；加载或格式错误不能默默覆盖设置。 */
     public View get(String member) { requireMember(member); return parse(preferences.find(member, KEY)); }
@@ -50,9 +72,13 @@ public class TianrenSettingsService {
         if (input == null || input.autoImage() == null) throw new BadRequestException("请填写完整设置");
         String interpretation = checked(input.interpretationPrompt()), image = checked(input.imagePrompt());
         String old = preferences.find(member, KEY);
-        if (parse(old).version() != input.version()) throw new ConflictException("设置已在其他设备更新，请重新读取；草稿仍保留");
+        View current = parse(old);
+        if (current.version() != input.version()) throw new ConflictException("设置已在其他设备更新，请重新读取；草稿仍保留");
+        String model = checkedModel(input.model() == null ? current.model() : input.model());
+        String effort = checkedEffort(input.reasoningEffort() == null ? current.reasoningEffort() : input.reasoningEffort());
+        if (models != null) { model = models.validate(model); effort = models.validateEffort(model, effort); }
         String next;
-        try { next = json.writeValueAsString(new Save(input.version() + 1, input.autoImage(), interpretation, image)); }
+        try { next = json.writeValueAsString(new Save(input.version() + 1, input.autoImage(), interpretation, image, model, effort)); }
         catch (Exception e) { throw new IllegalStateException("设置保存失败"); }
         int changed = old == null ? preferences.insertIfAbsent(member, KEY, next) : preferences.compareAndSet(member, KEY, old, next);
         if (changed != 1) throw new ConflictException("设置已在其他设备更新，请重新读取；草稿仍保留");
@@ -66,12 +92,28 @@ public class TianrenSettingsService {
                     || !node.path("autoImage").isBoolean() || !node.path("interpretationPrompt").isTextual()
                     || !node.path("imagePrompt").isTextual()) throw new IllegalArgumentException();
             return new View(node.get("version").asLong(), node.get("autoImage").asBoolean(),
-                    checked(node.get("interpretationPrompt").asText()), checked(node.get("imagePrompt").asText()), DEFAULT_INTERPRETATION, DEFAULT_IMAGE);
+                    checked(node.get("interpretationPrompt").asText()), checked(node.get("imagePrompt").asText()), DEFAULT_INTERPRETATION, DEFAULT_IMAGE,
+                    optional(node,"model",DEFAULT_MODEL), optional(node,"reasoningEffort",DEFAULT_EFFORT));
         } catch (Exception e) { throw new BadRequestException("天人一卦设置格式异常，请检查已有配置"); }
     }
     private static String checked(String value) {
         if (value == null || value.trim().isEmpty() || value.length() > 4000) throw new BadRequestException("每项提示词须为 1–4000 字");
         return value.trim();
+    }
+    private static String optional(com.fasterxml.jackson.databind.JsonNode node, String key, String fallback) {
+        if (!node.has(key)) return fallback;
+        if (!node.get(key).isTextual()) throw new IllegalArgumentException();
+        return node.get(key).asText();
+    }
+    private static String checkedModel(String value) {
+        if (value == null || !value.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,95}"))
+            throw new BadRequestException("请选择有效的卦象模型");
+        return value;
+    }
+    private static String checkedEffort(String value) {
+        if (!java.util.Set.of("none","minimal","low","medium","high","xhigh","max").contains(value))
+            throw new BadRequestException("请选择有效的思考深度");
+        return value;
     }
     static void requireMember(String member) { if (member == null || member.isBlank()) throw new UnauthorizedException("请先登录"); }
 }

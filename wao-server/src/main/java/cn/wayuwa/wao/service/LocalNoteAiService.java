@@ -115,10 +115,23 @@ public class LocalNoteAiService {
     /** 使用已有持久队列保存小记输入，模型调用由本机 worker 完成。 */
     public String enqueue(String memberId, String prompt, String purpose, String model) {
         requireCapacity();
+        return enqueueRun(memberId, prompt, purpose, model, reasoningEffort(memberId, model));
+    }
+
+    /** 其他私有功能使用自己的模型与深度快照，不继承小记偏好。 */
+    public String enqueueWithEffort(String memberId, String prompt, String purpose, String model, String effort) {
+        requireCapacity();
+        String selected = localModels == null ? model : localModels.validate(model);
+        String depth = effort == null ? "medium" : effort;
+        if (localModels != null) depth = localModels.validateEffort(selected, depth);
+        return enqueueRun(memberId, prompt, purpose, selected, depth);
+    }
+
+    private String enqueueRun(String memberId, String prompt, String purpose, String model, String effort) {
         AiAssistantRunEntity run = new AiAssistantRunEntity();
         run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
         run.setMemberId(memberId); run.setAiCapabilityId(capability); run.setUsagePurpose(purpose);
-        run.setRequestedModel(model); run.setReasoningEffort(reasoningEffort(memberId, model));
+        run.setRequestedModel(model); run.setReasoningEffort(effort);
         run.setPromptText(prompt); run.setWebSearchEnabled(false); run.setStatus("secure_queued");
         runs.insertReadOnlyQueued(run);
         return run.getId();

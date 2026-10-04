@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useOverlayDismiss } from '@/composables/overlayDismiss'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { fetchFileSettings, saveFileSettings, type FileSettings } from '@/api/system'
 import { toast } from '@/composables/toast'
@@ -36,7 +36,14 @@ async function load() {
 
 async function save() {
   if (saving.value || !loaded.value) return
-  if (!Number.isInteger(form.fileMaxMb) || form.fileMaxMb < 1 || form.fileMaxMb > 200 || !Number.isInteger(form.imageMaxMb) || form.imageMaxMb < 1 || form.imageMaxMb > 10) {
+  if (
+    !Number.isInteger(form.fileMaxMb) ||
+    form.fileMaxMb < 1 ||
+    form.fileMaxMb > 200 ||
+    !Number.isInteger(form.imageMaxMb) ||
+    form.imageMaxMb < 1 ||
+    form.imageMaxMb > 10
+  ) {
     error.value = '请输入有效上传上限：普通文件 1–200MB，图片 1–10MB'
     return
   }
@@ -61,22 +68,17 @@ async function close() {
   else emit('close')
 }
 onMounted(load)
-useOverlayDismiss(() => true, close)
 </script>
 
 <template>
-  <div class="mask" @click.self="close">
-    <form class="dialog" @submit.prevent="save">
-      <header>
-        <div>
-          <span>FILES & IMAGE STORE</span>
-          <h2>文件与图床设置</h2>
-        </div>
-        <button type="button" aria-label="关闭" @click="close">
-          <i class="ri-close-line"></i>
-        </button>
-      </header>
-
+  <SettingsDialogShell
+    title="文件与图床设置"
+    description="管理上传上限与公开下载验证"
+    width="760px"
+    height="auto"
+    @close="close"
+  >
+    <form id="file-settings-form" class="file-settings-body" @submit.prevent="save">
       <div v-if="loading" class="state"><i class="ri-loader-4-line spin"></i>正在读取真实设置…</div>
       <div v-else-if="!loaded" class="load-error" role="alert">
         <i class="ri-error-warning-line"></i><span>{{ error }}</span
@@ -114,65 +116,34 @@ useOverlayDismiss(() => true, close)
         </div>
         <div v-if="error" class="error" role="alert">{{ error }}</div>
       </template>
-
-      <footer>
-        <button type="button" class="ghost" @click="close">完成并关闭</button>
-        <button class="primary" :disabled="loading || !loaded || saving">
+    </form>
+    <template #footer>
+      <div class="settings-footer">
+        <span class="save-status">{{
+          saving ? '正在保存…' : loaded ? '关闭时保存本次修改' : '读取后即可修改设置'
+        }}</span>
+        <button type="button" class="ghost" :disabled="saving" @click="close">完成并关闭</button>
+        <button class="primary" form="file-settings-form" :disabled="loading || !loaded || saving">
           {{ saving ? '保存中…' : '保存设置' }}
         </button>
-      </footer>
-    </form>
-  </div>
+      </div>
+    </template>
+  </SettingsDialogShell>
 </template>
 
 <style scoped>
-.mask {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(18, 20, 30, 0.38);
-  display: grid;
-  place-items: center;
-  padding: 18px;
+.file-settings-body {
+  padding: 26px;
 }
-.dialog {
-  width: min(520px, 100%);
-  max-height: calc(100vh - 36px);
-  overflow: auto;
-  border: 1px solid var(--wao-line);
-  border-radius: 14px;
-  background: var(--wao-bg-card);
-  box-shadow: var(--wao-shadow-modal);
-  padding: 20px;
-}
-.dialog header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-.dialog header span {
-  font-size: 9px;
-  letter-spacing: 1.3px;
-  color: var(--wao-primary-text);
-  font-weight: 800;
-}
-.dialog h2 {
-  margin: 4px 0 0;
-  font-size: 19px;
-}
-.dialog header button {
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--wao-text-3);
-  cursor: pointer;
+.save-status {
+  margin-right: auto;
+  color: var(--wao-text-weak);
+  font-size: 12px;
 }
 .fields {
   display: grid;
-  gap: 17px;
-  margin-top: 22px;
+  gap: 22px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 .fields label > span {
   display: block;
@@ -205,6 +176,7 @@ useOverlayDismiss(() => true, close)
   line-height: 1.55;
 }
 .switch-row {
+  grid-column: 1 / -1;
   display: flex;
   align-items: flex-start;
   gap: 9px;
@@ -252,11 +224,10 @@ useOverlayDismiss(() => true, close)
   color: var(--wao-danger-strong);
   font-size: 11px;
 }
-.dialog footer {
+.settings-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 22px;
 }
 .ghost,
 .primary {
@@ -285,6 +256,20 @@ useOverlayDismiss(() => true, close)
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+@media (max-width: 650px) {
+  .file-settings-body {
+    padding: 20px 15px;
+  }
+  .fields {
+    grid-template-columns: 1fr;
+  }
+  .settings-footer {
+    flex-wrap: wrap;
+  }
+  .save-status {
+    flex-basis: 100%;
   }
 }
 </style>

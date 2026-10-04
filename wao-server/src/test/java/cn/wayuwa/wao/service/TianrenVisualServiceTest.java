@@ -44,7 +44,7 @@ class TianrenVisualServiceTest {
         when(runs.completeProviderSucceeded(anyString(),anyString(),anyString())).thenAnswer(a->db.update("UPDATE ai_assistant_run SET status='succeeded',response_text=? WHERE id=? AND claim_token=? AND status='provider_running'",a.getArgument(2),a.getArgument(0),a.getArgument(1)));
         doAnswer(a->{db.update("INSERT INTO replies VALUES(?)",a.getArgument(1,String.class));return null;}).when(conversations).appendAssistantReply(any(),anyString());
         when(conversations.latestAssistantReply(any(),eq("m"))).thenAnswer(a->{var replies=db.queryForList("SELECT content FROM replies",String.class);return replies.isEmpty()?null:replies.get(replies.size()-1);});
-        when(executor.enqueue(eq("m"),anyString(),eq(TianrenVisualService.IMAGE_PURPOSE),eq("gpt-6-astra"))).thenAnswer(a->{String id="image"+(++serial);db.update("INSERT INTO ai_assistant_run VALUES(?,'secure_queued',NULL,NULL,NULL,'local')",id);return id;});
+        when(executor.enqueueWithEffort(eq("m"),anyString(),eq(TianrenVisualService.IMAGE_PURPOSE),anyString(),anyString())).thenAnswer(a->{String id="image"+(++serial);db.update("INSERT INTO ai_assistant_run VALUES(?,'secure_queued',NULL,NULL,NULL,'local')",id);return id;});
     }
     AiAssistantRunEntity textRun(String id) {
         var run=new AiAssistantRunEntity();run.setId(id);run.setMemberId("m");run.setConversationId("conversation");run.setRequestedModel("gpt-6-astra");run.setUsagePurpose("TIANREN");run.setPromptText("固定事实和九章节");
@@ -54,6 +54,17 @@ class TianrenVisualServiceTest {
     }
     String output() throws Exception {
         return json.writeValueAsString(Map.of("readingMarkdown",TianrenVisualService.HEADINGS.stream().map(h->"## "+h+"\n合成文化反思。\n").reduce("",String::concat),"visual",Map.of("title","合成图意","change","留出准备","keep","保持诚意","scene","同一人物先停下观察，再有节制地前行")));
+    }
+    @Test void automaticImageKeepsInterpretationSnapshotAndManualRetryUsesCurrentSettings() throws Exception {
+        var run=textRun("text");assertThat(run.getReasoningEffort()).isEqualTo("medium");
+        service.completeText(run,"claim",output());
+        when(settings.get("m")).thenReturn(new TianrenSettingsService.View(4,true,"新解读","新配图","默认解读","默认配图","gpt-6.1-sol","high"));
+        service.tick("local");
+        verify(executor).enqueueWithEffort(eq("m"),contains("画面偏好"),eq("TIANREN_IMAGE"),eq("gpt-6-astra"),eq("medium"));
+        db.update("UPDATE ai_assistant_run SET status='failed' WHERE id='image1'");
+        service.start("m","reading",new TianrenVisualService.ImageRequest("text","current-settings"));
+        verify(executor).enqueueWithEffort(eq("m"),contains("新配图"),eq("TIANREN_IMAGE"),eq("gpt-6.1-sol"),eq("high"));
+        assertThat(db.queryForObject("SELECT model FROM tianren_visual_attempt WHERE image_run_id='image2'",String.class)).isEqualTo("gpt-6.1-sol");
     }
     @Test void malformedTextFailsWhileInvalidBriefKeepsValidMarkdown() throws Exception {
         assertThatThrownBy(()->service.parse("这不是 JSON")).isInstanceOf(IllegalStateException.class);
@@ -81,7 +92,7 @@ class TianrenVisualServiceTest {
         service.completeText(textRun("text"),"claim",output());service.tick("local");service.tick("local");
         service.start("m","reading",new TianrenVisualService.ImageRequest("text","network-retry"));
         assertThat(db.queryForObject("SELECT COUNT(*) FROM tianren_visual_attempt",Integer.class)).isOne();
-        verify(executor,times(1)).enqueue(eq("m"),contains("画面偏好"),eq("TIANREN_IMAGE"),eq("gpt-6-astra"));
+        verify(executor,times(1)).enqueueWithEffort(eq("m"),contains("画面偏好"),eq("TIANREN_IMAGE"),eq("gpt-6-astra"),eq("medium"));
     }
     @Test void imageIsPrivateAndOldClaimCannotReplaceIt() throws Exception {
         service.completeText(textRun("text"),"claim",output());service.tick("local");
@@ -117,7 +128,7 @@ class TianrenVisualServiceTest {
     }
     @Test void automaticEnqueueFailureEndsWaitingAndAllowsExplicitRetry() throws Exception {
         service.completeText(textRun("text"),"claim",output());
-        when(executor.enqueue(anyString(),anyString(),anyString(),anyString())).thenThrow(new BadRequestException("合成容量不足"));
+        when(executor.enqueueWithEffort(anyString(),anyString(),anyString(),anyString(),anyString())).thenThrow(new BadRequestException("合成容量不足"));
         service.tick("local");
         assertThat(service.get("m","reading").state()).isEqualTo("FAILED");
         assertThat(service.get("m","reading").retryable()).isTrue();

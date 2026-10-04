@@ -9,6 +9,27 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 class TianrenSettingsServiceTest {
+    @Test void historicalSettingsAndSnapshotsUseIndependentDefaults() throws Exception {
+        var preferences=mock(MemberPreferenceMapper.class);var models=mock(LocalCodexModelService.class);var json=new ObjectMapper();
+        when(preferences.find("m",TianrenSettingsService.KEY)).thenReturn("{\"version\":2,\"autoImage\":true,\"interpretationPrompt\":\"旧解读\",\"imagePrompt\":\"旧配图\"}");
+        var view=new TianrenSettingsService(preferences,json,models).get("m");
+        assertThat(view.model()).isEqualTo("gpt-6-astra");assertThat(view.reasoningEffort()).isEqualTo("medium");
+        var snapshot=json.readValue("{\"version\":2,\"autoImage\":true,\"interpretationPrompt\":\"旧解读\",\"imagePrompt\":\"旧配图\"}",TianrenSettingsService.View.class);
+        assertThat(snapshot.reasoningEffort()).isEqualTo("medium");verifyNoInteractions(models);
+    }
+    @Test void invalidSelectionCannotWriteAndLegacyPutPreservesCurrentSelection() {
+        var preferences=mock(MemberPreferenceMapper.class);var models=mock(LocalCodexModelService.class);
+        when(preferences.find("m",TianrenSettingsService.KEY)).thenReturn("{\"version\":1,\"autoImage\":true,\"interpretationPrompt\":\"解读\",\"imagePrompt\":\"配图\",\"model\":\"gpt-6.1-sol\",\"reasoningEffort\":\"high\"}");
+        when(models.validate("gpt-6.1-sol")).thenReturn("gpt-6.1-sol");
+        when(models.validateEffort("gpt-6.1-sol","max")).thenThrow(new BadRequestException("不支持此深度"));
+        when(models.validateEffort("gpt-6.1-sol","high")).thenReturn("high");
+        var service=new TianrenSettingsService(preferences,new ObjectMapper(),models);
+        assertThatThrownBy(()->service.save("m",new TianrenSettingsService.Save(1,true,"解读","配图","gpt-6.1-sol","max"))).isInstanceOf(BadRequestException.class);
+        verify(preferences,never()).compareAndSet(any(),any(),any(),any());
+        when(preferences.compareAndSet(any(),any(),any(),any())).thenReturn(1);
+        var view=service.save("m",new TianrenSettingsService.Save(1,true,"新解读","新配图"));
+        assertThat(view.model()).isEqualTo("gpt-6.1-sol");assertThat(view.reasoningEffort()).isEqualTo("high");
+    }
     @Test void defaultsAreEditableAndEmptyInputsDoNotOverwrite() {
         var preferences=mock(MemberPreferenceMapper.class);var service=new TianrenSettingsService(preferences,new ObjectMapper());
         var view=service.get("member");assertThat(view.version()).isZero();assertThat(view.autoImage()).isTrue();

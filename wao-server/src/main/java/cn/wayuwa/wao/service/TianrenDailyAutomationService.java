@@ -46,7 +46,7 @@ public class TianrenDailyAutomationService {
 
     /** 只读取当前成员今日解读状态，刷新页面不会重复发起模型调用。 */
     public AiStatus status(String memberId) {
-        var executor = assistant.tianrenStatus();
+        var executor = assistant.tianrenStatus(memberId);
         var reading = readings.today(memberId);
         AiAssistantRunEntity latest = null;
         if (reading != null && StringUtils.hasText(reading.conversationId())) {

@@ -10,15 +10,24 @@ import { seedDataStore } from './helpers/seedDataStore'
 const flags = vi.hoisted(() => ({ ai: false }))
 vi.mock('@/config/features', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/config/features')>()),
-  get AI_RUN_ENABLED() { return flags.ai },
+  get AI_RUN_ENABLED() {
+    return flags.ai
+  },
 }))
 
 vi.mock('@/api/ai', () => ({
   createAiPairCode: vi.fn(),
-  fetchAvailableAiSkills: vi.fn(async () => [{
-    skillId: 'skill-1', versionId: 'sv-1', displayName: '代码审查', summary: '检查改动风险',
-    version: '1.0.0', sha256: 'abc', compatiblePlatforms: ['codex'],
-  }]),
+  fetchAvailableAiSkills: vi.fn(async () => [
+    {
+      skillId: 'skill-1',
+      versionId: 'sv-1',
+      displayName: '代码审查',
+      summary: '检查改动风险',
+      version: '1.0.0',
+      sha256: 'abc',
+      compatiblePlatforms: ['codex'],
+    },
+  ]),
   fetchWaoApplicationSkills: vi.fn(async () => []),
   fetchAiProjectSkills: vi.fn(async () => []),
   fetchAiRunners: vi.fn(async () => []),
@@ -40,38 +49,64 @@ vi.mock('@/api/ai', () => ({
 
 describe('项目设置', () => {
   it('截止日期失败保留输入，重试可保存并再次清空', async () => {
-    const data = useDataStore(), project = data.projects[0]!
+    const data = useDataStore(),
+      project = data.projects[0]!
     project.due = '2026-12-03'
-    const save = vi.spyOn(data, 'updateProject').mockResolvedValueOnce(false).mockResolvedValue(true)
-    const wrapper = mount(ProjectSettingsModal, { props: { project } })
+    const save = vi
+      .spyOn(data, 'updateProject')
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true)
+    const wrapper = mount(ProjectSettingsModal, {
+      global: { stubs: { Teleport: true } },
+      props: { project },
+    })
     await wrapper.get('[aria-label="项目截止日期"]').setValue('2027-01-15')
-    await wrapper.get('.btn-primary').trigger('click'); await flushPromises()
+    await wrapper.get('.btn-primary').trigger('click')
+    await flushPromises()
     expect(wrapper.emitted('close')).toBeUndefined()
     expect(wrapper.get('[role="alert"]').text()).toContain('保存失败')
     expect(wrapper.get('[aria-label="项目截止日期"]').element).toHaveProperty('value', '2027-01-15')
     expect(project.due).toBe('2026-12-03')
-    await wrapper.get('.btn-primary').trigger('click'); await flushPromises()
-    expect(save).toHaveBeenLastCalledWith(project.id, expect.objectContaining({ due: '2027-01-15' }))
+    await wrapper.get('.btn-primary').trigger('click')
+    await flushPromises()
+    expect(save).toHaveBeenLastCalledWith(
+      project.id,
+      expect.objectContaining({ due: '2027-01-15' }),
+    )
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
-    const reopened = mount(ProjectSettingsModal, { props: { project: { ...project, due: '2027-01-15' } } })
-    await reopened.findAll('button').find(button => button.text() === '清空日期')!.trigger('click')
+    const reopened = mount(ProjectSettingsModal, {
+      global: { stubs: { Teleport: true } },
+      props: { project: { ...project, due: '2027-01-15' } },
+    })
+    await reopened
+      .findAll('button')
+      .find((button) => button.text() === '清空日期')!
+      .trigger('click')
     expect(reopened.text()).toContain('未排期')
-    await reopened.get('.btn-primary').trigger('click'); await flushPromises()
+    await reopened.get('.btn-primary').trigger('click')
+    await flushPromises()
     expect(save).toHaveBeenLastCalledWith(project.id, expect.objectContaining({ due: '' }))
-    reopened.unmount(); save.mockRestore()
+    reopened.unmount()
+    save.mockRestore()
   })
 
   it('没有编辑日期时不覆盖后台刷新带来的新日期', async () => {
-    const data = useDataStore(), project = data.projects[0]!
+    const data = useDataStore(),
+      project = data.projects[0]!
     project.due = '2026-12-03'
     const save = vi.spyOn(data, 'updateProject').mockResolvedValue(true)
-    const wrapper = mount(ProjectSettingsModal, { props: { project } })
+    const wrapper = mount(ProjectSettingsModal, {
+      global: { stubs: { Teleport: true } },
+      props: { project },
+    })
     project.due = '2027-01-15'
     await wrapper.get('.title-input').setValue('只改项目名称')
-    await wrapper.get('.btn-primary').trigger('click'); await flushPromises()
+    await wrapper.get('.btn-primary').trigger('click')
+    await flushPromises()
     expect(save.mock.calls[0]![1]).not.toHaveProperty('due')
-    wrapper.unmount(); save.mockRestore()
+    wrapper.unmount()
+    save.mockRestore()
   })
   beforeEach(() => {
     localStorage.clear()
@@ -84,7 +119,10 @@ describe('项目设置', () => {
   it('项目状态与 AI 配置都不再出现，保存不会覆盖已有 AI 配置', async () => {
     const data = useDataStore()
     const project = data.projects.find((item) => item.status === '规划中')!
-    const wrapper = mount(ProjectSettingsModal, { props: { project } })
+    const wrapper = mount(ProjectSettingsModal, {
+      global: { stubs: { Teleport: true } },
+      props: { project },
+    })
     await flushPromises()
 
     expect(wrapper.find('select[aria-label="项目状态"]').exists()).toBe(false)
@@ -103,13 +141,17 @@ describe('项目设置', () => {
   it('AI Run 开关打开时仍展示审核 Skill 并允许固定版本到项目', async () => {
     flags.ai = true
     const project = useDataStore().projects[0]!
-    const wrapper = mount(ProjectSettingsModal, { props: { project } })
+    const wrapper = mount(ProjectSettingsModal, {
+      global: { stubs: { Teleport: true } },
+      props: { project },
+    })
     await flushPromises()
 
     expect(wrapper.text()).toContain('代码审查')
     expect(wrapper.text()).toContain('失败自动重试次数')
     expect(wrapper.get('[aria-label="AI 执行提示词"]').element).toHaveProperty(
-      'value', '先完整阅读任务原文，再按可验证结果实现。',
+      'value',
+      '先完整阅读任务原文，再按可验证结果实现。',
     )
     await wrapper.get('.skill-option input').setValue(true)
     expect((wrapper.get('.skill-option input').element as HTMLInputElement).checked).toBe(true)

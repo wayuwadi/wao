@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TianrenAiSettingsDialog from '@/components/tianren/TianrenAiSettingsDialog.vue'
 import { fetchTianrenAiSettings, saveTianrenAiSettings, type TianrenAiSettings } from '@/api/tianren'
 import { useSessionStore } from '@/stores/session'
+import { fetchCodexModels } from '@/api/codexModels'
+vi.mock('@/api/codexModels', () => ({ fetchCodexModels: vi.fn().mockResolvedValue({ models: [{id: 'gpt-6-astra', label: 'GPT-6 Astra', reasoningEfforts: ['medium', 'high']}, {id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', reasoningEfforts: ['medium']}], stale: false, updatedAt: null, message: '' }) }))
 vi.mock('@/api/tianren', () => ({ fetchTianrenAiSettings: vi.fn(), saveTianrenAiSettings: vi.fn() }))
-const settings: TianrenAiSettings = { version: 2, autoImage: true, interpretationPrompt: '已保存解读提示', imagePrompt: '已保存图片提示', defaultInterpretationPrompt: '默认解读提示', defaultImagePrompt: '默认图片提示' }
+const settings: TianrenAiSettings = { version: 2, autoImage: true, model: 'gpt-6-astra', reasoningEffort: 'medium', interpretationPrompt: '已保存解读提示', imagePrompt: '已保存图片提示', defaultInterpretationPrompt: '默认解读提示', defaultImagePrompt: '默认图片提示' }
 const storageKey = 'wao-tianren-ai-settings-draft-v1:member1'
 function accept(id: string) { useSessionStore().accept({ accountId: id, member: { id, name: id, initial: 'M', color: '', role: '' }, identities: [], createdAt: '' }) }
 function mountDialog() { return mount(TianrenAiSettingsDialog, { attachTo: document.body, global: { stubs: { Teleport: true } } }) }
@@ -14,26 +16,26 @@ describe('TianrenAiSettingsDialog', () => {
   beforeEach(() => { setActivePinia(createPinia()); accept('member1'); localStorage.clear(); vi.mocked(fetchTianrenAiSettings).mockResolvedValue(settings); vi.mocked(saveTianrenAiSettings).mockResolvedValue({ ...settings, version: 3 }) })
   afterEach(() => { vi.clearAllMocks(); document.body.innerHTML = '' })
   it('切换页签和关闭后保留两段草稿与开关，恢复默认只改草稿', async () => {
-    const wrapper = mountDialog(); await flushPromises()
+    const wrapper = mountDialog(); await flushPromises(); await button(wrapper, '卦象解读').trigger('click')
     await wrapper.get('textarea').setValue('未保存的解读')
     await button(wrapper, '图片生成').trigger('click')
     await wrapper.get('textarea').setValue('未保存的图片')
-    await wrapper.get('input').setValue(false)
+    await button(wrapper, 'AI 能力').trigger('click'); await wrapper.get('input').setValue(false); await button(wrapper, '图片生成').trigger('click')
     await button(wrapper, '恢复当前默认').trigger('click')
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('默认图片提示')
     expect(saveTianrenAiSettings).not.toHaveBeenCalled()
     wrapper.unmount()
-    const reopened = mountDialog(); await flushPromises()
+    const reopened = mountDialog(); await flushPromises(); await button(reopened, '卦象解读').trigger('click')
     expect(reopened.get<HTMLTextAreaElement>('textarea').element.value).toBe('未保存的解读')
     await button(reopened, '图片生成').trigger('click')
     expect(reopened.get<HTMLTextAreaElement>('textarea').element.value).toBe('默认图片提示')
-    expect(reopened.get<HTMLInputElement>('input').element.checked).toBe(false)
+    await button(reopened, 'AI 能力').trigger('click'); expect(reopened.get<HTMLInputElement>('input').element.checked).toBe(false)
     reopened.unmount()
   })
   it('加载失败保留本机草稿并禁止以默认设置覆盖账号', async () => {
     localStorage.setItem(storageKey, JSON.stringify({ version: 2, autoImage: false, interpretationPrompt: '本机解读', imagePrompt: '本机图片' }))
     vi.mocked(fetchTianrenAiSettings).mockRejectedValue(new Error('读取中断'))
-    const wrapper = mountDialog(); await flushPromises()
+    const wrapper = mountDialog(); await flushPromises(); await button(wrapper, '卦象解读').trigger('click')
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('本机解读')
     expect(button(wrapper, '重试保存').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('读取中断')
@@ -42,7 +44,7 @@ describe('TianrenAiSettingsDialog', () => {
   })
   it('409 冲突保留基准版本与草稿，明确读取对比后才允许重新保存', async () => {
     vi.mocked(saveTianrenAiSettings).mockRejectedValueOnce(Object.assign(new Error('版本冲突'), { status: 409 })).mockResolvedValue({ ...settings, version: 5, interpretationPrompt: '我的改动' })
-    const wrapper = mountDialog(); await flushPromises()
+    const wrapper = mountDialog(); await flushPromises(); await button(wrapper, '卦象解读').trigger('click')
     await wrapper.get('textarea').setValue('我的改动')
     await button(wrapper, '保存设置').trigger('click'); await flushPromises()
     expect(wrapper.text()).toContain('其他页面或设备已修改设置')
@@ -55,13 +57,13 @@ describe('TianrenAiSettingsDialog', () => {
     expect(button(wrapper, '保存设置').attributes('disabled')).toBeDefined()
     await button(wrapper, '保留草稿，基于最新版本').trigger('click')
     await button(wrapper, '保存设置').trigger('click'); await flushPromises()
-    expect(saveTianrenAiSettings).toHaveBeenLastCalledWith({ version: 4, autoImage: true, interpretationPrompt: '我的改动', imagePrompt: '已保存图片提示' })
+    expect(saveTianrenAiSettings).toHaveBeenLastCalledWith({ version: 4, autoImage: true, model: 'gpt-6-astra', reasoningEffort: 'medium', interpretationPrompt: '我的改动', imagePrompt: '已保存图片提示' })
     expect(localStorage.getItem(storageKey)).toBeNull()
     expect(wrapper.text()).toContain('设置已保存')
     wrapper.unmount()
   })
   it('加载中的账号设置不能覆盖等待期间已有草稿，跨成员草稿隔离', async () => {
-    const wrapper = mountDialog(); await flushPromises()
+    const wrapper = mountDialog(); await flushPromises(); await button(wrapper, '卦象解读').trigger('click')
     await wrapper.get('textarea').setValue('第一位成员草稿')
     accept('member2'); await flushPromises()
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe(settings.interpretationPrompt)
@@ -73,7 +75,7 @@ describe('TianrenAiSettingsDialog', () => {
     wrapper.unmount()
   })
   it('验证空提示词和 4000 字边界，失败保存仍可重试且保留草稿', async () => {
-    const wrapper = mountDialog(); await flushPromises()
+    const wrapper = mountDialog(); await flushPromises(); await button(wrapper, '卦象解读').trigger('click')
     await wrapper.get('textarea').setValue('   ')
     await button(wrapper, '保存设置').trigger('click')
     expect(wrapper.text()).toContain('1–4000 字')
@@ -89,5 +91,36 @@ describe('TianrenAiSettingsDialog', () => {
     await button(wrapper, '重试保存').trigger('click'); await flushPromises()
     expect(saveTianrenAiSettings).toHaveBeenCalledTimes(2)
     wrapper.unmount()
+  })
+  it('天人独立模型和深度原子保存，切到提示词仍显示能力选择', async () => {
+    const wrapper = mountDialog(); await flushPromises()
+    await wrapper.get('[aria-label="天人思考深度"]').setValue('high')
+    await button(wrapper, '图片生成').trigger('click')
+    expect(wrapper.find('[aria-label="天人处理模型"]').exists()).toBe(true)
+    await button(wrapper, '保存设置').trigger('click'); await flushPromises()
+    expect(saveTianrenAiSettings).toHaveBeenLastCalledWith(expect.objectContaining({model:'gpt-6-astra',reasoningEffort:'high',version:2}))
+    expect(wrapper.emitted('saved')).toHaveLength(1)
+    wrapper.unmount()
+  })
+  it('未知模型和模型切换后不支持的深度精确保留，必须明确修正再保存', async () => {
+    const wrapper=mountDialog();await flushPromises()
+    await wrapper.get('[aria-label="天人思考深度"]').setValue('high');await wrapper.get('[aria-label="天人处理模型"]').setValue('gpt-6.1-sol')
+    await button(wrapper,'保存设置').trigger('click');await flushPromises()
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="天人思考深度"]').element.value).toBe('high')
+    expect(wrapper.text()).toContain('当前模型不支持');expect(saveTianrenAiSettings).not.toHaveBeenCalled()
+    vi.mocked(fetchCodexModels).mockResolvedValueOnce({models:[],stale:false,updatedAt:null,message:''})
+    await button(wrapper,'刷新模型目录').trigger('click');await flushPromises()
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="天人处理模型"]').element.value).toBe('gpt-6.1-sol')
+    expect(wrapper.text()).toContain('找不到已选模型');wrapper.unmount()
+  })
+  it('保存期间改动不被响应覆盖，关闭仍保留最新草稿和新基准版本', async () => {
+    const wrapper=mountDialog();await flushPromises();await button(wrapper,'卦象解读').trigger('click');await wrapper.get('textarea').setValue('提交内容')
+    let resolve!:(value:TianrenAiSettings)=>void
+    vi.mocked(saveTianrenAiSettings).mockImplementationOnce(()=>new Promise(done=>{resolve=done}))
+    await button(wrapper,'保存设置').trigger('click');await wrapper.get('textarea').setValue('保存期间的新输入')
+    resolve({...settings,version:3,interpretationPrompt:'提交内容'});await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('保存期间的新输入')
+    expect(JSON.parse(localStorage.getItem(storageKey)!).version).toBe(3)
+    expect(wrapper.text()).toContain('最新修改仍待保存');wrapper.unmount()
   })
 })

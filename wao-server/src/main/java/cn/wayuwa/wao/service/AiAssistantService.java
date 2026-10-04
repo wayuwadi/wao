@@ -34,6 +34,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class AiAssistantService {
     @Autowired(required = false)
     private org.springframework.beans.factory.ObjectProvider<TianrenVisualService> tianrenVisuals;
+    @Autowired(required = false)
+    private TianrenSettingsService tianrenSettings;
     private static final String DEFAULT_NOTE_MODEL = "gpt-6-astra";
 
     private static final String QUEUED = "queued";
@@ -202,19 +204,35 @@ public class AiAssistantService {
 
     /** 卦象只使用本机现有 Codex 登录，失败不回退旧 Runner 或付费 API。 */
     public AssistantStatusDto tianrenStatus() {
+        return tianrenStatus(DEFAULT_NOTE_MODEL, TianrenSettingsService.DEFAULT_EFFORT);
+    }
+
+    /** 按本人卦象配置检查可用性，状态展示与实际任务模型保持一致。 */
+    public AssistantStatusDto tianrenStatus(String memberId) {
+        var config = tianrenConfig(memberId);
+        return tianrenStatus(config.model(), config.reasoningEffort());
+    }
+
+    private AssistantStatusDto tianrenStatus(String model, String effort) {
         try {
             if (localNotes == null || !localNotes.enabled())
                 throw new BadRequestException("本机 Codex 尚未启用，请在服务主机启用已有登录");
             localNotes.requireAvailable();
-            localModels.validate(DEFAULT_NOTE_MODEL);
-            return new AssistantStatusDto(true, "本机 Codex · GPT-6 Astra 已就绪", localNotes.capabilityId(), "本机 Codex");
+            localModels.validate(model);
+            localModels.validateEffort(model, effort);
+            var catalog = localModels.catalog();
+            String label = catalog == null ? model : catalog.models().stream().filter(item -> item.id().equals(model))
+                    .map(LocalCodexModelService.Model::label).findFirst().orElse(model);
+            String depth = java.util.Map.of("none","无","minimal","极低","low","低","medium","中","high","高","xhigh","极高","max","最高").getOrDefault(effort,effort);
+            return new AssistantStatusDto(true, "本机 Codex · " + label + " · 思考深度 " + depth + " 已就绪", localNotes.capabilityId(), "本机 Codex");
         } catch (BadRequestException error) {
             return new AssistantStatusDto(false, error.getMessage(), null, "本机 Codex");
         }
     }
 
     private AiAssistantRunEntity enqueueLocalTianren(AssistantChatRequest request, String memberId, String trustedContext) {
-        AssistantStatusDto available = tianrenStatus();
+        var config = tianrenConfig(memberId);
+        AssistantStatusDto available = tianrenStatus(config.model(), config.reasoningEffort());
         if (!available.configured()) throw new BadRequestException(available.message());
         if (!StringUtils.hasText(trustedContext)) throw new BadRequestException("缺少服务端卦象，请刷新后重试");
         localNotes.requireCapacity();
@@ -224,14 +242,22 @@ public class AiAssistantService {
         var run = new AiAssistantRunEntity();
         run.setId("ac" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
         run.setMemberId(memberId); run.setAiCapabilityId(localNotes.capabilityId());
-        run.setRequestedModel(DEFAULT_NOTE_MODEL); run.setUsagePurpose(DeepSeekPurpose.TIANREN.name());
+        run.setRequestedModel(config.model()); run.setReasoningEffort(config.reasoningEffort());
+        run.setUsagePurpose(DeepSeekPurpose.TIANREN.name());
         run.setStatus(SECURE_QUEUED); run.setWebSearchEnabled(false);
         run.setPromptText(buildPrompt(request, history, null, trustedContext));
         run.setConversationId(conversationId);
-        if (tianrenVisuals != null) run.setPromptText(tianrenVisuals.getObject().register(run, trustedContext));
+        if (tianrenVisuals != null) run.setPromptText(tianrenVisuals.getObject().register(run, trustedContext, config));
         run.setCreatedAt(LocalDateTime.now()); run.setUpdatedAt(run.getCreatedAt());
         conversationService.enqueue(run, conversationId, memberId, request.message());
         return run;
+    }
+
+    private TianrenSettingsService.View tianrenConfig(String memberId) {
+        return tianrenSettings == null ? new TianrenSettingsService.View(0, true,
+                TianrenSettingsService.DEFAULT_INTERPRETATION, TianrenSettingsService.DEFAULT_IMAGE,
+                TianrenSettingsService.DEFAULT_INTERPRETATION, TianrenSettingsService.DEFAULT_IMAGE)
+                : tianrenSettings.get(memberId);
     }
 
     private void chatStream(AssistantChatRequest request, String memberId,

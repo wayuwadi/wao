@@ -67,7 +67,7 @@ public class LocalCodexModelService {
     public String validate(String model) {
         String value = model == null || model.isBlank() ? "gpt-6-astra" : model.strip();
         if (!validId(value) || catalog().models().stream().noneMatch(m -> m.id().equals(value)))
-            throw new BadRequestException("所选模型不在本机 Codex 可用目录中；请刷新小记 AI 设置后重新选择");
+            throw new BadRequestException("所选模型不在本机 Codex 可用目录中；请刷新 AI 设置的模型目录后重新选择");
         return value;
     }
 
@@ -77,7 +77,7 @@ public class LocalCodexModelService {
         String value = effort == null || effort.isBlank() ? "medium" : effort.strip();
         Model available = catalog().models().stream().filter(item -> item.id().equals(selected)).findFirst().orElseThrow();
         if (available.reasoningEfforts() == null || !available.reasoningEfforts().contains(value))
-            throw new BadRequestException("所选模型不支持该思考深度；请刷新小记 AI 设置后重新选择");
+            throw new BadRequestException("所选模型不支持该思考深度；请刷新 AI 设置的模型目录后重新选择");
         return value;
     }
 

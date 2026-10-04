@@ -54,7 +54,7 @@ class TianrenDailyAutomationServiceTest {
         config("wg", true, true, true, "oc-own");
         config("other", false, true, true, "oc-other");
         queueNormally();
-        when(assistant.tianrenStatus()).thenReturn(new cn.wayuwa.wao.dto.AssistantStatusDto(true, "本机 Codex 已就绪", "local-notes-test", "本机 Codex"));
+        when(assistant.tianrenStatus(anyString())).thenReturn(new cn.wayuwa.wao.dto.AssistantStatusDto(true, "本机 Codex 已就绪", "local-notes-test", "本机 Codex"));
     }
 
     private TianrenDailyAutomationService at(LocalTime time) {

@@ -645,6 +645,20 @@ class AiAssistantServiceTest {
         assertThat(service.capabilities().get(0).available()).isFalse();
     }
 
+    @Test
+    void tianrenSnapshotsItsOwnModelAndEffortAndReportsThem() {
+        var local=enableLocalBusinessAi();var settings=mock(TianrenSettingsService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service,"tianrenSettings",settings);
+        when(settings.get("member")).thenReturn(new TianrenSettingsService.View(4,true,"解读","配图","默认解读","默认配图","gpt-6.1-sol","high"));
+        when(conversationService.recentHistory("cv-test","member")).thenReturn(List.of());
+        assertThat(service.tianrenStatus("member").message()).contains("gpt-6.1-sol","高");
+        service.enqueueTianren(new AssistantChatRequest("合成关注点",List.of(),null,"cv-test"),"member","权威卦象");
+        var queued=ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(conversationService).enqueue(queued.capture(),eq("cv-test"),eq("member"),eq("合成关注点"));
+        assertThat(queued.getValue().getRequestedModel()).isEqualTo("gpt-6.1-sol");
+        assertThat(queued.getValue().getReasoningEffort()).isEqualTo("high");
+        verify(local,never()).reasoningEffort(anyString(),anyString());
+    }
     private LocalNoteAiService enableLocalBusinessAi() {
         var local = mock(LocalNoteAiService.class);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "localNotes", local);

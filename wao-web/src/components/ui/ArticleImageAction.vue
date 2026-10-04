@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import NoteAiSettingsForm from '@/components/notes/NoteAiSettingsForm.vue'
+import NoteAiSettingsDialog from '@/components/notes/NoteAiSettingsDialog.vue'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { fetchArticleImage, startArticleImage, type ArticleImageJob } from '@/api/articleImages'
 import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
@@ -236,11 +236,10 @@ onBeforeUnmount(() => { generation++ })
             <button class="primary" type="button" @click="decideReplacement(true)">替换为新图</button></footer>
         </section>
       </div>
-      <div v-if="settingsOpen" class="image-prompt-mask" @click.self="settingsOpen = false">
+      <div v-if="settingsOpen && !generateTitle" class="image-prompt-mask" @click.self="settingsOpen = false">
         <section class="image-prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="image-prompt-title">
           <header><h2 id="image-prompt-title">{{ generateTitle ? '小记 AI 设置' : '个人配图提示词' }}</h2><button type="button" aria-label="关闭" @click="settingsOpen = false"><i class="ri-close-line"></i></button></header>
-          <NoteAiSettingsForm v-if="generateTitle" @saved="loadPrompt" />
-          <template v-else>
+          <template>
             <label class="prompt-field">图片生成提示词<textarea v-model="draftPrompt" maxlength="4000" rows="6" /></label>
             <span v-if="promptError" role="alert">{{ promptError }}</span>
             <footer><button class="primary" type="button" :disabled="savingPrompt" @click="savePrompt">{{ savingPrompt ? '保存中…' : '保存设置' }}</button></footer>
@@ -248,6 +247,7 @@ onBeforeUnmount(() => { generation++ })
         </section>
       </div>
     </Teleport>
+    <NoteAiSettingsDialog v-if="generateTitle" v-model:open="settingsOpen" @saved="loadPrompt" />
   </div>
 </template>
 
