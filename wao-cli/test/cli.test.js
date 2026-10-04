@@ -5,13 +5,43 @@ import { Readable } from 'node:stream'
 import { after, before, test } from 'node:test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import { spawn } from 'node:child_process'
 import { COMMANDS, argumentsForTool, formatOutput, run } from '../src/cli.js'
 import { createClient, endpoint, hostedPageUrl } from '../src/client.js'
 import { getToken, normalizeWorkspaceToken, readToken, removeToken, storeToken } from '../src/auth.js'
 
 let server, url, lastCall, hostedCalls, uploadedMultipart
 const WORKSPACE_TOKEN = `wao_workspace_${'A'.repeat(43)}`
+
+test('Windows 真正使用 DPAPI 加密存取及删除，隔离于用户凭据目录', { skip: process.platform !== 'win32' }, async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'wao-dpapi-'))
+  const windowsRunner = (script, input = '') => new Promise((resolve, reject) => {
+    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+      windowsHide: true, env: { ...process.env, APPDATA: folder }, stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    child.stdout.on('data', chunk => { stdout += chunk.toString() })
+    child.stderr.resume()
+    child.once('error', reject)
+    child.once('close', code => code === 0 ? resolve(stdout) : reject(new Error('真实 DPAPI 操作失败')))
+    child.stdin.end(input)
+  })
+  const options = { platform: 'win32', env: {}, windowsRunner }
+  try {
+    assert.equal(await getToken(options), null)
+    await storeToken(WORKSPACE_TOKEN, options)
+    const cipher = await readFile(join(folder, 'WAO', 'workspace-token.dpapi'))
+    assert.ok(!cipher.includes(Buffer.from(WORKSPACE_TOKEN)), '落盘仅包含密文')
+    assert.equal(await getToken(options), WORKSPACE_TOKEN)
+    await removeToken(options)
+    assert.equal(await getToken(options), null)
+  } finally {
+    assert.equal(dirname(resolve(folder)), resolve(tmpdir()))
+    assert.ok(basename(folder).startsWith('wao-dpapi-'))
+    await rm(folder, { recursive: true, force: true })
+  }
+})
 const ALL_TOOLS = [
   { name: 'update_project', inputSchema: { properties: { project_id: { type: 'string' }, due: { type: 'string' } }, required: ['project_id'] }, annotations: { readOnlyHint: false } },
   { name: 'update_subtask_status', inputSchema: { properties: { task_id: { type: 'string' }, subtask_id: { type: 'string' }, status: { type: 'string' }, expected_subtask_version: { type: 'string' } }, required: ['task_id', 'subtask_id', 'status', 'expected_subtask_version'] }, annotations: { readOnlyHint: false } },
