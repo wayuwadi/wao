@@ -22,6 +22,8 @@
 		08323E73053141BA9DCA56DC /* CaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C283C2A4A84C04980DCF86 /* CaptureStore.swift */; };
 		4E367581619A41FDBD1E8C7E /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0120BC245C43C388AF11B5 /* ShareViewController.swift */; };
 		A3B0A42FE5144F8BAC61423E /* CaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C283C2A4A84C04980DCF86 /* CaptureStore.swift */; };
+		354078E331364C4EB42DD96C /* CaptureFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = F907CCF2954143ACACEE4C78 /* CaptureFormat.swift */; };
+		D070346EBD84451189DE9E15 /* CaptureFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = F907CCF2954143ACACEE4C78 /* CaptureFormat.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +43,7 @@
 		2D900F86D14B49F5A1C3D848 /* NoteCapturePlugin.swift */ = {isa = PBXFileReference; name = "NoteCapturePlugin.swift"; path = "App/NoteCapturePlugin.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
 		02C283C2A4A84C04980DCF86 /* CaptureStore.swift */ = {isa = PBXFileReference; name = "CaptureStore.swift"; path = "Shared/CaptureStore.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
 		5C0120BC245C43C388AF11B5 /* ShareViewController.swift */ = {isa = PBXFileReference; name = "ShareViewController.swift"; path = "WAOShare/ShareViewController.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
+		F907CCF2954143ACACEE4C78 /* CaptureFormat.swift */ = {isa = PBXFileReference; name = "CaptureFormat.swift"; path = "Shared/CaptureFormat.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +74,7 @@
 				2D900F86D14B49F5A1C3D848 /* NoteCapturePlugin.swift */,
 				02C283C2A4A84C04980DCF86 /* CaptureStore.swift */,
 				5C0120BC245C43C388AF11B5 /* ShareViewController.swift */,
+				F907CCF2954143ACACEE4C78 /* CaptureFormat.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -232,6 +236,7 @@
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				A11FE98625774B419EA76ED4 /* NoteCapturePlugin.swift in Sources */,
 				08323E73053141BA9DCA56DC /* CaptureStore.swift in Sources */,
+				354078E331364C4EB42DD96C /* CaptureFormat.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -241,6 +246,7 @@
 			files = (
 				4E367581619A41FDBD1E8C7E /* ShareViewController.swift in Sources */,
 				A3B0A42FE5144F8BAC61423E /* CaptureStore.swift in Sources */,
+				D070346EBD84451189DE9E15 /* CaptureFormat.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

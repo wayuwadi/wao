@@ -18,6 +18,8 @@ class BookExcerptProtectionTest {
                 .doesNotThrowAnyException();
     }
     @Test void ordinaryNotesAndQuotedHeadingsAreNotMisparsed() {
+        assertThatCode(() -> BookExcerptProtection.assertPreserved(null, "普通内容")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> BookExcerptProtection.assertPreserved(prefix, null)).hasMessageContaining("改变了书摘");
         String normal="普通引用\n\n> 书摘\n\n感想";
         assertThat(BookExcerptProtection.thoughts(normal)).isEqualTo(normal);
         assertThat(BookExcerptProtection.thoughts(prefix.replace("第二段", "## 我的感想")+"真实感想")).isEqualTo("真实感想");

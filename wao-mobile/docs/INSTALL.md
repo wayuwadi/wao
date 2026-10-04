@@ -1,5 +1,15 @@
 # WAO 移动端内测安装
 
+## 1.2.0：仅恢复 iOS 小记采集
+
+此轮按 ADR-323 只构建 iOS 主应用和 WAO 分享扩展。Android 与旧双平台公开下载发布保持禁用，下面旧版本下载说明不代表 1.2.0 已发布。Actions「WAO iOS Notes Build」的制品是**未签名 IPA**，不能直接安装，也不是 TestFlight 包。
+
+Windows 可完成代码与未签名构建下载；安装前仍需确定你实际使用的 Apple 签名路径。若使用 Mac/Xcode：`npm ci && npm run sync:ios && npm run open:ios`，App 和 WAOShare 两个 target 必须使用同一 Team。为该 Team 配置 App Group `group.cn.wayuwa.wao.notes`，以及共享 Keychain `$(AppIdentifierPrefix)cn.wayuwa.wao.notes`；两者必须同时出现在主应用和扩展的正确签名中。若标识被占用，应同时修改两个 target、共享 entitlements 和 CaptureStore 的 App Group 常量，之后保持稳定。个人签名工具若移除扩展或 App Group / Keychain 权限，不能据此宣称分享功能可用。
+
+首次打开使用已有 WAO 邮箱密码登录。之后在微信读书复制原文，再打开 WAO 点击「导入」并允许系统粘贴；或在「分享到其他」中选择 WAO（必要时在「更多 / 编辑」启用），核对实际收到的文字、链接或图片。录音会影响正在播放的听书；结束、来电、切到后台或满 60 秒会停止并保留音频，自动转写结果接在感想下方。拒绝识别权限或离线失败可重试，未保存文字前不删除录音。
+
+当前不预设你拥有付费账号、Mac 或签名工具；签名安装、微信读书实际载荷、iPhone 12 上的键盘/安全区与听书恢复仍需真机验收。
+
 ## Android
 下载 `WAO-X.Y.Z-android.apk`，在手机按系统提示允许当前来源安装。后续下载新版覆盖安装，不要先卸载。
 固定应用 ID 为 `cn.wayuwa.wao`。签名不变，云端数据及应用本机草稿可随正常覆盖更新保留。卸载会删除本机草稿。

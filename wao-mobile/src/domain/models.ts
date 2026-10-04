@@ -106,7 +106,7 @@ export function editableNote(note: Note): boolean {
   );
 }
 export function newId(): string {
-  return `m-${crypto.randomUUID()}`;
+  return crypto.randomUUID().replaceAll("-", "");
 }
 export function notePayload(draft: NoteDraft) {
   return {

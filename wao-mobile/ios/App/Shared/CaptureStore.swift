@@ -1,19 +1,6 @@
 import Foundation
 import Security
 
-struct CaptureItem: Codable {
-    var id: String
-    var title = ""
-    var excerpt = ""
-    var thoughts = ""
-    var sourceUrl = ""
-    var sourceTitle = ""
-    var accountId: String?
-    var memberId: String?
-    var imagePath: String?
-    var imageUrl: String?
-}
-
 struct CaptureSession: Codable {
     var accountId: String
     var memberId: String
@@ -133,17 +120,7 @@ enum CaptureStore {
             throw CaptureFailure.message("登录已退出或成员已变化，导入仍保留在本机")
         }
     }
-    static func escape(_ text: String) -> String {
-        text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "([\\\\`*_{}\\[\\]()#+.!|~-])", with: "\\\\$1", options: .regularExpression)
-    }
-    static func markdown(_ item: CaptureItem) -> String {
-        let source = [item.sourceTitle, item.sourceUrl].filter { !$0.isEmpty }.joined(separator: " · ")
-        let quote = item.excerpt.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-            .components(separatedBy: "\n").map { "> " + escape($0) }.joined(separator: "\n")
-        let image = item.imageUrl.map { "![书摘原图](\($0))\n\n" } ?? ""
-        return image + "## 书摘\n\n" + quote + "\n\n" + (source.isEmpty ? "" : "来源：" + escape(source) + "\n\n") + "## 我的感想\n\n" + item.thoughts
-    }
+    static func markdown(_ item: CaptureItem) -> String { CaptureFormat.markdown(item) }
     static func submit(_ original: CaptureItem) async throws -> [String: Any] {
         guard let session = try session(), original.accountId == session.accountId, original.memberId == session.memberId else {
             throw CaptureFailure.message("请打开 WAO 登录并确认导入，内容仅存本机")

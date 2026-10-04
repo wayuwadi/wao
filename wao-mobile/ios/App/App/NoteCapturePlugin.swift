@@ -25,6 +25,8 @@ public final class NoteCapturePlugin: CAPPlugin, CAPBridgedPlugin {
     private var speechTimeout: DispatchWorkItem?
     private var observers: [NSObjectProtocol] = []
     private var sessionGeneration = 0
+    private var syncGeneration = 0
+    private var activeOwner: String?
     private var recordingStarting = false
     private var recordingLimit: Timer?
 
@@ -58,8 +60,10 @@ public final class NoteCapturePlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async { self.syncSessionOnMain(call) }
     }
     private func syncSessionOnMain(_ call: CAPPluginCall) {
-        sessionGeneration += 1; let ticket = sessionGeneration
+        syncGeneration += 1; let ticket = syncGeneration
         guard let account = call.getString("accountId"), let member = call.getString("memberId") else { call.reject("缺少登录成员"); return }
+        let owner = account + ":" + member
+        if activeOwner != owner { sessionGeneration += 1; activeOwner = owner; interrupt(); speechTask?.cancel(); finishSpeech(error: "成员已变化，录音保留在本机") }
         let cookies = HTTPCookieStorage.shared.cookies(for: URL(string: CaptureStore.origin)!) ?? []
         guard let cookie = cookies.first(where: { $0.name == "WAO_SESSION" && $0.isSecure }) else {
             try? CaptureStore.clearSession(); call.reject("主应用登录会话尚不可供分享使用"); return
@@ -71,7 +75,7 @@ public final class NoteCapturePlugin: CAPPlugin, CAPBridgedPlugin {
         Task { @MainActor in
             do {
                 try await CaptureStore.validate(session)
-                guard ticket == sessionGeneration else { throw CaptureFailure.message("登录成员已变化，请重新打开导入") }
+                guard ticket == syncGeneration && activeOwner == owner else { throw CaptureFailure.message("登录成员已变化，请重新打开导入") }
                 try CaptureStore.setSession(session); call.resolve()
             }
             catch { call.reject(error.localizedDescription) }
@@ -80,6 +84,7 @@ public final class NoteCapturePlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func clearSession(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.sessionGeneration += 1
+            self.syncGeneration += 1; self.activeOwner = nil
             do { try CaptureStore.clearSession(); self.interrupt(); self.speechTask?.cancel(); self.finishSpeech(error: "登录已退出，录音保留在本机"); call.resolve() }
             catch { call.reject(error.localizedDescription) }
         }

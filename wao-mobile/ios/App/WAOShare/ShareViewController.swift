@@ -4,7 +4,7 @@ import Vision
 
 /// 分享扩展只处理系统实际交付的内容；不强制启动主应用。
 final class ShareViewController: UIViewController {
-    private var item = CaptureItem(id: "m-" + UUID().uuidString.lowercased())
+    private var item = CaptureItem(id: CaptureFormat.newID())
     private let excerpt = UITextView(), thoughts = UITextView(), status = UILabel(), saveButton = UIButton(type: .system)
     private let imageView = UIImageView()
     private let cancel = UIButton(type: .system)
@@ -50,7 +50,10 @@ final class ShareViewController: UIViewController {
             let inputs = extensionContext?.inputItems as? [NSExtensionItem] ?? []
             let providers = inputs.flatMap { $0.attachments ?? [] }
             var texts: [String] = []
-            for input in inputs { if let content = input.attributedContentText?.string, !content.isEmpty { texts.append(content) } }
+            for input in inputs {
+                if let content = input.attributedContentText?.string, !content.isEmpty { texts.append(content) }
+                if item.sourceTitle.isEmpty, let title = input.attributedTitle?.string, !title.isEmpty { item.sourceTitle = title }
+            }
             for provider in providers.prefix(8) {
                 if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
                     let value = try await load(provider, UTType.plainText.identifier)

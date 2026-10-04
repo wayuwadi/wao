@@ -39,6 +39,30 @@ class NoteAiManagedServiceTest {
   org.springframework.test.util.ReflectionTestUtils.setField(managed,"noteTags",noteTags);
  }
  DocDto doc(String body,String title,int rev){return new DocDto("n",title,"m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,body),List.of(),"kb-notes",null,rev);}
+ @Test void importedBookSendsOnlyThoughtsToPolishAndReassemblesExactSource(){
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  String prefix="![书摘原图](/api/images/original/raw)\n\n## 书摘\n\n> 这是\\*书里原文\\*\n> \n> 第二段\n\n来源：微信读书实际给出的来源\n\n## 我的感想\n\n";
+  String thoughts="这是我读完之后的感想与生活经历。";
+  var current=new java.util.concurrent.atomic.AtomicReference<>(doc(prefix+thoughts,"手选标题",1));
+  when(knowledge.getDoc("n")).thenAnswer(c->current.get());
+  when(knowledge.updateDerivedNote(eq("n"),any())).thenAnswer(c->{PatchDocRequest patch=c.getArgument(1);assertThat(patch.expectedRev()).isEqualTo(1);current.set(doc(patch.content().markdown(),current.get().title(),2));return current.get();});
+  tx.executeWithoutResult(t->managed.saved(current.get(),"m","手选标题",null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  verify(text).submit(eq("m"),any(),eq("NOTE_BODY"),eq(thoughts),any(),any(),any());
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成","整理后的个人感想",null,null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(current.get().content().markdown()).isEqualTo(prefix+"整理后的个人感想");
+  assertThat(managed.status("n","m").polish()).isEqualTo("DONE");
+ }
+ @Test void quoteWithoutPersonalThoughtsDoesNotRequestPolish(){
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  var book=doc("## 书摘\n\n> 很长的书摘也不属于个人感想。\n\n## 我的感想\n\n","手选标题",1);
+  when(knowledge.getDoc("n")).thenReturn(book);
+  tx.executeWithoutResult(t->managed.saved(book,"m","手选标题",null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(managed.status("n","m").polish()).isEqualTo("SKIPPED");
+  verify(text,never()).submit(any(),any(),eq("NOTE_BODY"),any(),any(),any(),any());
+ }
  @Test void tagsContinueOnServerMergeManualChoicesAndRejectUnknownAndDeletedNames(){
   values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false}");
   when(noteTags.list()).thenReturn(List.of("提示词","已删除"));
