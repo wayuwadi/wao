@@ -83,7 +83,7 @@ class FeishuShareCardsAcceptanceTest {
         JsonNode card = preview("http://localhost/s/tianren/" + tokens.get(0));
         assertThat(card.path("inline").path("i18n_title").path("zh_cn").asText()).startsWith("WAO 天人一卦 · ");
         assertThat(card.toString()).contains("本卦：", "查看详情").doesNotContain("memberId", "conversationId");
-        System.out.println("卦象验收通过：既有公开凭据、真实卦象、详情跳转；私有配图生产者尚未交付");
+        System.out.println("卦象验收通过：既有公开凭据、真实卦象、详情跳转；私有配图分享适配未接通");
     }
 
     private JsonNode preview(String url) throws Exception {
