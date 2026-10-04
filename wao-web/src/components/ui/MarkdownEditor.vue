@@ -53,6 +53,7 @@ import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/ed
 import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
 import { toast } from '@/composables/toast'
 import { countCharacters } from '@/utils/characterCount'
+import { editorBlockImages } from '@/utils/richDoc'
 import { notePreviewSource } from '@/utils/notePreviewImages'
 import ArticleImageAction from './ArticleImageAction.vue'
 import SelectionImageAction from './SelectionImageAction.vue'
@@ -508,8 +509,21 @@ const SearchHighlight = Extension.create({
   },
 })
 
+/** 统一修正初次解析和后续 Markdown 插入，避免段落内块图片使 UniqueID 初始化失败。 */
+const DocumentMarkdown = Markdown.extend({
+  onBeforeCreate(event) {
+    this.parent?.(event)
+    const manager = this.editor.markdown
+    if (!manager) return
+    const parse = manager.parse.bind(manager)
+    manager.parse = source => editorBlockImages(parse(source) as RichDocNode)
+    const content = this.editor.options.content
+    if (content && typeof content === 'object' && !Array.isArray(content)) this.editor.options.content = editorBlockImages(content as RichDocNode)
+  },
+})
+
 const editor = useEditor({
-  content: props.document ?? props.modelValue,
+  content: props.document ? editorBlockImages(props.document) : props.modelValue,
   contentType: props.document ? 'json' : 'markdown',
   editable: !props.readonly,
   extensions: [
@@ -531,7 +545,7 @@ const editor = useEditor({
     TaskList,
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: () => props.placeholder }),
-    Markdown,
+    DocumentMarkdown,
     TabIndent,
     WholeTableDeletion,
     Underline,
@@ -1896,14 +1910,14 @@ function applyExternalDocument(next: RichDocNode | null) {
     return
   }
   pendingExternalDocument = null
-  e.commands.setContent(next, { emitUpdate: false })
+  e.commands.setContent(editorBlockImages(next), { emitUpdate: false })
 }
 /** 失焦时把输入期间错过的外部更新补灌回来。 */
 function flushExternal() {
   const nextDocument = pendingExternalDocument
   pendingExternalDocument = null
   if (nextDocument && editor.value && JSON.stringify(nextDocument) !== JSON.stringify(editor.value.getJSON())) {
-    editor.value.commands.setContent(nextDocument, { emitUpdate: false })
+    editor.value.commands.setContent(editorBlockImages(nextDocument), { emitUpdate: false })
     pendingExternal = null
     return
   }
