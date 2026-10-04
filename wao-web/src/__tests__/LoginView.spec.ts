@@ -258,6 +258,7 @@ describe('舞台登录与认证生命周期', () => {
   })
   it('公共空间中真实状态接收流程保持练习暂停，不导航且不持久化密码', async () => {
     const { session, router } = await setup()
+    await wrapper.get('.rest-choice').trigger('click')
     await wrapper.get('.duration button').trigger('click')
     await wrapper.get('.actions .primary').trigger('click')
     await open()
@@ -279,7 +280,7 @@ describe('舞台登录与认证生命周期', () => {
     expect(router.currentRoute.value.path).toBe('/login')
     expect(wrapper.get('.breathing-stage').classes()).toContain('paused')
     expect(wrapper.get('.timer').text()).toBe(remaining)
-    expect(wrapper.get('.header-login').text()).toContain('进入工作空间')
+    expect(wrapper.get('.header-login').text()).toContain('返回首页')
     expect(JSON.stringify(localStorage)).not.toContain('private-password')
     expect(JSON.stringify(sessionStorage)).not.toContain('private-password')
   })

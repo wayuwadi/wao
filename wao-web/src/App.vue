@@ -8,6 +8,8 @@ import { useUiStore } from '@/stores/ui'
 import { toast, clearToasts } from '@/composables/toast'
 import { RouterView } from 'vue-router'
 import ToastHost from '@/components/ui/ToastHost.vue'
+import { restJourneyRequested } from '@/composables/restJourney'
+import RestEntryTransition from '@/components/relax/RestEntryTransition.vue'
 import {
   rememberPendingReleaseVersion,
   reportWorkspaceReloadState,
@@ -97,5 +99,6 @@ onBeforeUnmount(() => {
   <ConfigProvider :theme="componentTheme">
     <RouterView />
     <ToastHost />
+    <RestEntryTransition v-if="restJourneyRequested" />
   </ConfigProvider>
 </template>

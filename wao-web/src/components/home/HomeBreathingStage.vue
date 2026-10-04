@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useSessionStore } from '@/stores/session'
 import { useTheme } from '@/composables/theme'
 import WorldScene from '@/components/relax/WorldScene.vue'
+import RestCompanions from '@/components/relax/RestCompanions.vue'
 import { worldById, type WorldId } from '@/components/relax/worlds'
 import {
   BreathingSession,
@@ -14,7 +15,7 @@ import {
   type PracticeSnapshot,
 } from '@/composables/breathingSession'
 
-const props = defineProps<{ world?: WorldId; story?: string; minimal?: boolean }>()
+const props = defineProps<{ world?: WorldId; story?: string; minimal?: boolean; restful?: boolean; arrival?: number; selection?: number }>()
 const emit = defineEmits<{ workspace: [] }>()
 const mode = ref<PracticeMode>('breathing')
 const pendingMode = ref<PracticeMode | null>(null)
@@ -95,6 +96,33 @@ const expansion = computed(() => {
     : 1 - (phase.value - breath.inhale) / breath.exhale
   return (1 - Math.cos(Math.PI * p)) / 2
 })
+const restStep = ref<'choose' | 'guide' | 'practice' | 'walk'>('choose')
+const guideElapsed = ref(0), guidePaused = ref(false), returnedFromWalk = ref(false)
+const restChoice = ref<HTMLButtonElement>()
+let guideLast = 0
+const guideInhaling = computed(() => guideElapsed.value < 3600)
+const restExpansion = computed(() => {
+  if (restStep.value !== 'guide') return !idle.value && mode.value === 'breathing' ? expansion.value : 0
+  const p = guideInhaling.value ? guideElapsed.value / 3600 : 1 - (guideElapsed.value - 3600) / 4400
+  return (1 - Math.cos(Math.PI * Math.max(0, Math.min(1, p)))) / 2
+})
+const restTitle = computed(() => restStep.value === 'guide' ? '先和我们，一起呼吸。' : restStep.value === 'walk' ? '去吧，世界比屏幕大一点。' : restStep.value === 'practice' ? mode.value === 'sitting' ? '只是安静坐着，也很好。' : '只管呼吸，其他的晚一点。' : returnedFromWalk.value ? '欢迎回来，感觉怎么样？' : '这一刻，你想怎么休息？')
+const restSubtitle = computed(() => restStep.value === 'guide' ? '放松肩膀，不用着急，按自己舒服的节奏。' : restStep.value === 'walk' ? '起身伸个懒腰，喝口水，去窗边或外面走走。' : restStep.value === 'practice' ? '伙伴陪着你。随时可以停下来。' : '可以留下来安静一会儿，也可以去看看外面的世界。')
+async function restChoices() {
+  restStep.value = 'choose'; guidePaused.value = false; panel.value = false
+  await nextTick(); restChoice.value?.focus()
+}
+function beginGuide() {
+  if (!props.restful || !idle.value) return
+  restStep.value = 'guide'; guideElapsed.value = 0; guidePaused.value = document.hidden; guideLast = Date.now()
+  void nextTick(() => root.value?.querySelector<HTMLButtonElement>('.rest-skip')?.focus())
+}
+function resumeGuide() { guidePaused.value = false; guideLast = Date.now() }
+async function stay() { restStep.value = 'practice'; await nextTick(); startButton.value?.focus() }
+async function takeWalk() { restStep.value = 'walk'; await nextTick(); root.value?.querySelector<HTMLButtonElement>('.walk-return')?.focus() }
+function returnWalk() { returnedFromWalk.value = true; void restChoices() }
+watch(() => props.arrival, (serial, previous) => { if (serial && serial !== previous) beginGuide() })
+watch(() => props.selection, (serial, previous) => { if (props.restful && serial && serial !== previous) void restChoices() })
 const label = computed(() =>
   idle.value
     ? props.world
@@ -135,6 +163,7 @@ function tell(text: string) {
   }, 4500)
 }
 async function setPanel(value: boolean) {
+  if (value && restStep.value === 'guide') guidePaused.value = true
   panel.value = value
   wake()
   await nextTick()
@@ -231,6 +260,7 @@ async function start(isDemo = false) {
   Object.assign(breath, { inhale: prefs.inhale, exhale: prefs.exhale })
   now.value = Date.now()
   timer.start(isDemo ? 10000 : prefs.minutes * 60000, now.value)
+  if (props.restful) restStep.value = 'practice'
   panel.value = custom.value = false
   wake()
   syncAnimation()
@@ -274,12 +304,18 @@ async function finish(natural = true) {
 }
 async function closeComplete() {
   complete.value = false
+  if (props.restful) { await restChoices(); return }
   await nextTick()
   startButton.value?.focus()
   wake()
 }
 function tick() {
   now.value = Date.now()
+  if (restStep.value === 'guide' && !guidePaused.value) {
+    guideElapsed.value += Math.max(0, now.value - guideLast)
+    guideLast = now.value
+    if (guideElapsed.value >= 8000) void restChoices()
+  }
   if (timer.state === 'running' && timer.left(now.value) <= 0) void finish()
 }
 function animate(stamp: number) {
@@ -294,6 +330,10 @@ function syncAnimation() {
   if (timer.state === 'running' && !document.hidden) frame = requestAnimationFrame(animate)
 }
 function visibility() {
+  if (props.restful && document.hidden) {
+    if (restStep.value === 'guide') guidePaused.value = true
+    if (timer.state === 'running') { now.value = Date.now(); timer.pause(now.value) }
+  }
   tick()
   syncAnimation()
 }
@@ -363,6 +403,7 @@ function keydown(event: KeyboardEvent) {
     return
   }
   if (event.key === 'Escape') {
+    if (props.restful && restStep.value === 'guide') { void restChoices(); return }
     if (panel.value) void setPanel(false)
   }
   if ((event.target as HTMLElement)?.closest('input,button,textarea,[contenteditable=true]')) return
@@ -380,6 +421,7 @@ watch(
     if (!(retainForAuth && !previous && member)) {
       timer.stop()
       pendingMode.value = null
+      if (props.restful) { restStep.value = 'choose'; guidePaused.value = false; returnedFromWalk.value = false }
     }
     retainForAuth = false
     complete.value = false
@@ -444,6 +486,7 @@ function snapshot(): PracticeSnapshot | null {
   }
 }
 function pauseForAuth() {
+  if (restStep.value === 'guide') guidePaused.value = true
   retainForAuth = true
   audioAttempt++
   starting.value = false
@@ -467,9 +510,11 @@ function restore(value: PracticeSnapshot) {
   Object.assign(breath, { inhale: saved.inhale, exhale: saved.exhale })
   timer.restore(saved.total, saved.remaining)
   now.value = Date.now()
+  if (props.restful) restStep.value = 'practice'
   tell('已保留本次练习，请准备好后主动继续')
 }
 async function chooseMode(next: PracticeMode) {
+  if (props.restful && idle.value) restStep.value = 'practice'
   if (next === mode.value) return
   if (idle.value) {
     mode.value = next
@@ -508,6 +553,7 @@ defineExpose({
   restore,
   tell,
   chooseMode,
+  restChoices,
 })
 onMounted(() => {
   media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
@@ -520,8 +566,8 @@ onMounted(() => {
   document.addEventListener('visibilitychange', visibility)
   document.addEventListener('fullscreenchange', updateFullscreen)
   interval = setInterval(() => {
-    if (timer.state === 'running') tick()
-  }, 250)
+    if (timer.state === 'running' || restStep.value === 'guide') tick()
+  }, 50)
   drawGalaxy()
   wake()
 })
@@ -554,6 +600,8 @@ onBeforeUnmount(() => {
         sitting: mode === 'sitting',
         'no-guide': !prefs.guide,
         minimal: props.minimal,
+        'restful-space': props.restful,
+        'rest-intro': props.restful && restStep === 'guide',
       },
     ]"
     :style="{ '--accent': colors[prefs.color], '--strength': prefs.glow / 100 }"
@@ -566,7 +614,7 @@ onBeforeUnmount(() => {
       <canvas ref="canvas" id="galaxy" v-show="prefs.galaxy"></canvas>
     </div>
     <div ref="content" class="stage-content" :inert="complete || !!pendingMode">
-      <header class="entry-header">
+      <header v-if="!props.restful" class="entry-header">
         <a class="entry-brand" href="/breathe" aria-label="WAO 一呼一吸首页"
           >WAO <span>· 一呼一吸</span></a
         >
@@ -596,7 +644,27 @@ onBeforeUnmount(() => {
         </div>
       </header>
       <div class="practice-main">
-        <div class="focus-scene">
+        <div v-if="props.restful" class="rest-space" :class="[prefs.scene, restStep]">
+          <div class="rest-landscape" aria-hidden="true"><div class="rest-sun"></div><div class="rest-hill back"></div><div class="rest-hill front"></div><div class="rest-pool"></div></div>
+          <div class="rest-heading"><p class="rest-eyebrow">和伙伴一起，把节奏慢下来</p><h1>{{ restTitle }}</h1><p>{{ restSubtitle }}</p></div>
+          <div class="rest-crew-scene">
+            <div class="rest-halo" :style="{ opacity: restStep==='guide' || (!idle && mode==='breathing') ? 1 : 0, transform: `scale(${reduced || mode==='sitting' ? 1 : .86 + restExpansion*.55})` }" aria-hidden="true"></div>
+            <div class="rest-ripple" aria-hidden="true"></div>
+            <RestCompanions :expansion="restExpansion" :breathing="restStep==='guide' || (!idle && mode==='breathing')" :reduced="reduced" :welcoming="restStep==='walk'" />
+          </div>
+          <div v-if="restStep==='guide'" class="rest-guidance" role="status">
+            <strong>{{ guidePaused ? '安心停一会儿' : guideInhaling ? '慢慢吸气' : '缓缓呼气' }}</strong><p>按自己舒服的节奏</p>
+            <button v-if="guidePaused" @click="resumeGuide">继续引导</button><button class="rest-skip" @click="restChoices">跳过引导 ↗</button>
+          </div>
+          <div v-if="restStep==='choose'" class="rest-choices">
+            <button ref="restChoice" class="rest-choice" @click="stay"><i class="ri-windy-line" aria-hidden="true"></i><span><b>留下来，呼吸一会儿</b><small>让伙伴陪着你，慢慢安静下来</small></span><span aria-hidden="true">↗</span></button>
+            <button class="rest-choice" @click="takeWalk"><i class="ri-walk-line" aria-hidden="true"></i><span><b>站起来，出去走走</b><small>把目光移远，看看窗外和天空</small></span><span aria-hidden="true">↗</span></button>
+          </div>
+          <div v-if="restStep==='walk'" class="rest-walk"><p>不用盯着屏幕，走多久都可以。</p><button class="walk-return" @click="returnWalk">我回来啦</button></div>
+          <p v-if="restStep==='practice' && !idle && (prefs.guide || mode==='sitting' || timer.state==='paused')" class="rest-practice-label" role="status">{{ label }}</p>
+          <button v-if="restStep==='practice' && idle" class="text-button rest-back" @click="restChoices">重新选择休息方式</button>
+        </div>
+        <div v-else class="focus-scene">
           <div
             class="orb"
             :style="{
@@ -646,12 +714,12 @@ onBeforeUnmount(() => {
           :world="props.world"
           :story="props.story"
         />
-        <p v-if="idle && prefs.words" class="entry-copy">
+        <p v-if="idle && prefs.words && !props.restful" class="entry-copy">
           {{
             props.world ? worldById(props.world).subtitle : '跟随一呼一吸，或者只是安静待一会儿。'
           }}
         </p>
-        <section class="dock" aria-label="练习计时">
+        <section v-if="!props.restful || restStep==='practice'" class="dock" aria-label="练习计时">
           <div class="mode-picker" role="group" aria-label="练习模式">
             <button :aria-pressed="mode === 'breathing'" @click="chooseMode('breathing')">
               呼吸</button
@@ -720,6 +788,7 @@ onBeforeUnmount(() => {
       <div class="entry-bottom">
         <div class="companions"><slot v-if="idle" name="companions" /></div>
         <div class="scene-actions">
+          <button v-if="props.restful" class="text-button sound-toggle" :aria-pressed="prefs.sound" :aria-label="prefs.sound ? '关闭结束提示音' : '开启结束提示音'" @click="prefs.sound=!prefs.sound">{{ prefs.sound ? '结束提示音已开启' : '结束提示音已关闭' }}</button>
           <button class="text-button" @click="toggleFullscreen">
             {{ fullscreen ? '退出全屏' : '全屏停留' }}</button
           ><button
@@ -1762,6 +1831,8 @@ input[type='range'] {
   }
 }
 </style>
+
+<style scoped src="./restfulBreathing.css"></style>
 
 <style scoped>
 .breathing-stage {

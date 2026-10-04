@@ -15,6 +15,7 @@ import {
 import { worlds, type WorldId } from '@/components/relax/worlds'
 import { useRelaxProgress } from '@/components/relax/useRelaxProgress'
 import '@/components/relax/relax.css'
+import { restArrivalSerial, restSelectionSerial } from '@/composables/restJourney'
 const GameHost = defineAsyncComponent(() => import('../../../wao-game/host/GameHost.vue'))
 const gameImmersive = ref(false), gameMemoryOpen = ref(false)
 const moreMenu = ref<HTMLDetailsElement>(), styleMenu = ref<HTMLDetailsElement>()
@@ -155,9 +156,9 @@ onMounted(async () => {
   >
     <header class="rainbow-header" :inert="gameImmersive || gameMemoryOpen">
       <button class="home-link" :aria-pressed="selectedPage === 'home'" @click="breatheHome">
-        WAO <small>呼吸</small>
+        WAO <small>{{ selectedPage === 'home' ? '／ 片刻留白' : '呼吸' }}</small>
       </button>
-      <nav class="rainbow-tabs" aria-label="游戏页面">
+      <nav v-show="selectedPage !== 'home'" class="rainbow-tabs" aria-label="游戏页面">
         <button
           v-for="page in pages"
           :key="page.id"
@@ -168,6 +169,7 @@ onMounted(async () => {
         </button>
       </nav>
       <select
+        v-show="selectedPage !== 'home'"
         class="rainbow-select"
         aria-label="选择呼吸或游戏页面"
         :value="selectedPage"
@@ -178,15 +180,16 @@ onMounted(async () => {
       </select>
       <div class="header-actions">
         <button class="header-login" type="button" @click="session.authed ? enterWorkspace() : openAuth()">
-          {{ session.authed ? '进入工作空间' : '登录 WAO' }} <span aria-hidden="true">↗</span>
+          {{ session.authed ? selectedPage === 'home' ? '返回首页' : '进入工作空间' : '登录 WAO' }} <span aria-hidden="true">↗</span>
         </button>
       <details ref="moreMenu" class="page-more">
         <summary>更多</summary>
         <div @click="closeMenus">
-          <button @click="meditate">静坐</button><button @click="theme.toggleTheme">切换明暗</button
+          <button @click="meditate">静坐</button><button :aria-label="`切换明暗，当前${theme.mode.value === 'system' ? '跟随系统' : theme.mode.value === 'dark' ? '夜间' : '日间'}`" @click="theme.toggleTheme">切换明暗</button
           ><button :disabled="saveStatus === 'loading' || saveStatus === 'error'" @click="exportLegacy">导出旧游戏历史档</button
           ><small>旧档保留在原账号空间，备份供历史恢复；不是新游戏记忆。</small>
           <template v-if="saveStatus === 'error' || saveStatus === 'conflict'"><small>{{saveMessage}}</small><button @click="reload">重试读取旧档</button></template>
+          <template v-if="selectedPage === 'home'"><small>玩一小会儿</small><button v-for="page in pages" :key="page.id" @click="choosePage(page.id)">{{ page.name }}</button></template>
         </div>
       </details>
       </div>
@@ -195,8 +198,11 @@ onMounted(async () => {
       v-show="selectedPage === 'home'"
       ref="stage"
       minimal
+      restful
+      :arrival="restArrivalSerial"
+      :selection="restSelectionSerial"
       @workspace="enterWorkspace"
-    />
+    ><template #footer><SiteFooter class="entry-footer" /></template></HomeBreathingStage>
     <section v-if="selectedPage !== 'home'" class="rainbow-play">
       <details ref="styleMenu" class="style-picker" :inert="gameImmersive || gameMemoryOpen">
         <summary>页面风格 · {{ worlds.find((w) => w.id === pageStyle)?.name }}</summary>
@@ -414,18 +420,21 @@ onMounted(async () => {
   margin: 14px;
 }
 .breathing-home {
-  --world-bg: #faf9f5;
-  --world-fg: #393d3a;
+  --world-bg: #f6f6ed;
+  --world-fg: #273c3b;
   --world-panel: #fff;
   --world-line: #dedfd8;
   background: var(--world-bg);
 }
 .breathing-home[data-entry-theme='dark'] {
-  --world-bg: #191b1d;
-  --world-fg: #e8e8df;
-  --world-panel: #242629;
-  --world-line: #3a3d3f;
+  --world-bg: #202b2a;
+  --world-fg: #e6efea;
+  --world-panel: #293934;
+  --world-line: #52675a;
 }
+.breathing-home .rainbow-header { justify-content:space-between;border-bottom:0; }
+.breathing-home .home-link { font-weight:500 !important; }
+.breathing-home .header-login { border:0;background:transparent; }
 .dino-page {
   --world-bg: #fff0e5;
   --world-fg: #633d44;
