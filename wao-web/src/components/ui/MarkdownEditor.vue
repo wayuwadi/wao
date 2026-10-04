@@ -53,6 +53,9 @@ import { loadRotationImage } from '@/api/imageRotation'
 import { rotateImage } from '@/utils/rotateImage'
 import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/editorSelectionTask'
 import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
+import NoteMediaCopyDialog from '@/components/notes/NoteMediaCopyDialog.vue'
+import { noteMediaCopyText } from '@/utils/noteMediaClipboard'
+import { notePreviewImages } from '@/utils/notePreviewImages'
 import { toast } from '@/composables/toast'
 import { countCharacters } from '@/utils/characterCount'
 import { editorBlockImages } from '@/utils/richDoc'
@@ -162,6 +165,8 @@ const props = withDefaults(
     previewImages?: boolean
     /** 阅读模式以图号引用展示原图片节点，保留文档位置。 */
     imageReferences?: boolean
+    /** 小记图文按正文、原图分步复制，以兼容 ChatGPT 图片附件。 */
+    noteMediaCopy?: boolean
     activeImageReference?: number | null
     /** 原地编辑首次挂载后将焦点交给正文。 */
     autofocus?: boolean
@@ -583,6 +588,8 @@ function updateCharacterCount(e: Editor) {
   emit('character-count', characterCount.value)
 }
 const toolbarOpen = ref(false)
+const mediaCopyContent = ref<RichDocContent | null>(null)
+const mediaTextCopied = ref(false)
 
 const autofocusOrigin = typeof document === 'undefined' ? null : document.activeElement
 const searchHighlightKey = new PluginKey<DecorationSet>('contentSearchHighlight')
@@ -684,6 +691,14 @@ const editor = useEditor({
         const { dom } = view.serializeForClipboard(slice)
         const markdown = editor.value?.markdown?.serialize({ type: 'doc', content: slice.content.toJSON() })
           || view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '\n')
+        const selectedContent: RichDocContent = { version: 1, document: { type: 'doc', content: slice.content.toJSON() }, markdown }
+        if (props.noteMediaCopy && notePreviewImages(selectedContent).length) {
+          event.clipboardData.setData('text/plain', noteMediaCopyText(selectedContent))
+          event.preventDefault()
+          mediaTextCopied.value = true
+          mediaCopyContent.value = selectedContent
+          return true
+        }
         event.clipboardData.setData('text/html', portableClipboardHtml(dom.innerHTML))
         event.clipboardData.setData('text/plain', markdown)
         event.preventDefault()
@@ -2144,6 +2159,10 @@ function appendMarkdown(text: string): boolean {
 async function copyFormatted() {
   const e = editor.value
   if (!e) return
+  const content: RichDocContent = { version: 1, document: e.getJSON(), markdown: e.getMarkdown() }
+  if (props.noteMediaCopy && notePreviewImages(content).length) {
+    mediaTextCopied.value = false; mediaCopyContent.value = content; return
+  }
   const ok = await copyRichContent(e.getHTML(), e.getMarkdown())
   toast(ok ? '已复制，支持富文本与 Markdown 粘贴' : '复制失败，请手动选择复制', ok ? 'ri-file-copy-line' : 'ri-error-warning-line')
 }
@@ -2432,6 +2451,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <SelectionImageAction v-if="selectionImage && articleImageKey && !readonly" ref="selectionImageAction" :scope-key="articleImageKey" :insert-image="insertSelectionImage" />
+    <NoteMediaCopyDialog v-if="mediaCopyContent" :content="mediaCopyContent" :initial-text-copied="mediaTextCopied" @close="mediaCopyContent = null" />
     <Teleport v-else :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
       <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
         <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
