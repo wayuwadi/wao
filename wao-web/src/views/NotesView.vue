@@ -114,7 +114,7 @@ function measureNotePreview(id: string) {
   notePreviewOverflowIds.value = shouldCollapse
     ? [...notePreviewOverflowIds.value, id]
     : notePreviewOverflowIds.value.filter(item => item !== id)
-  if (!shouldCollapse) expandedIds.value = expandedIds.value.filter(item => item !== id)
+  // 编辑器重挂载时正文会短暂为空；保留用户选择，实际短文仍由 overflow 判断自然收高。
 }
 function scheduleNotePreviewMeasure(id: string) { void nextTick(() => measureNotePreview(id)) }
 function setNotePreviewBody(id: string, value: unknown) {

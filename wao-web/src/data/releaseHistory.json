@@ -1,5 +1,25 @@
 [
   {
+    "title": "修改之后，全文还在",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "小记阅读",
+        "title": "全文预览编辑保存后保持展开",
+        "summary": "异步编辑器加载不再清掉展开选择，原本折叠的卡片继续折叠。",
+        "points": [],
+        "steps": [
+          "展开一篇长小记，点击继续编辑。",
+          "修改并保存，回到同一张卡片的全文预览。"
+        ]
+      }
+    ],
+    "publishedOn": "2026-10-04",
+    "sourceSubject": "fix(notes): 编辑保存后保留全文预览",
+    "intro": "从全文预览进入编辑，保存后继续阅读全文。",
+    "id": "release-notes-preview-retention-2026-10-04"
+  },
+  {
     "title": "标签管理，就在右键里",
     "highlights": [
       {
