@@ -178,6 +178,7 @@ const props = withDefaults(
     linkControls?: boolean
     /** 文档正文允许按比例或像素长宽调整图片。 */
     imageControls?: boolean
+    imageContextControls?: boolean
     /** 小记或知识库文档的文章总览图入口；key 用于跨页面恢复生成任务。 */
     articleImageKey?: string
     /** 小记保存后自动配图，隐藏整篇手动生成入口。 */
@@ -212,6 +213,7 @@ const props = withDefaults(
     taskable: false,
     linkControls: false,
     imageControls: false,
+    imageContextControls: false,
     articleImageKey: '',
     articleImageGeneration: true,
     selectionImage: false,
@@ -250,6 +252,12 @@ function openImageMenu(event: MouseEvent) {
   const target = event.target
   if (!(target instanceof HTMLImageElement)) return
   event.preventDefault()
+  event.stopPropagation()
+  if (props.imageContextControls && !props.readonly && editor.value) {
+    editor.value.commands.setNodeSelection(editor.value.view.posAtDOM(target, 0))
+    syncSelectionControls(editor.value)
+    imageApplyAll.value = false
+  }
   imageMenu.value = { src: fullImageSource(target), x: event.clientX, y: event.clientY }
 }
 
@@ -346,9 +354,9 @@ function imageStyle(attributes: Record<string, unknown>): string {
 }
 
 /** Tiptap 自带 Image 已有 width/height 属性；这里只补 Markdown 往返和百分比渲染。 */
-const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean }>({
+const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; contextControls: boolean }>({
   addOptions() {
-    return { ...this.parent!(), previewImages: false }
+    return { ...this.parent!(), previewImages: false, contextControls: false }
   },
   addAttributes() {
     return { ...this.parent?.(), align: { default: null }, indent: { default: 0,
@@ -390,6 +398,56 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean }>({
       'img',
       mergeAttributes(this.options.HTMLAttributes, attributes, style ? { style } : {}),
     ]
+  },
+  addNodeView() {
+    if (!this.options.contextControls) return null
+    const usePreview = this.options.previewImages
+    return ({ node }) => {
+      let current = node
+      const dom = document.createElement('span')
+      dom.className = 'note-image-node'
+      dom.contentEditable = 'false'
+      dom.draggable = true
+      const image = document.createElement('img')
+      image.className = 'md-img'
+      image.draggable = false
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'note-image-fullscreen'
+      button.setAttribute('aria-label', '全屏查看图片')
+      button.innerHTML = '<i class="ri-fullscreen-line" aria-hidden="true"></i><span>全屏</span>'
+      button.addEventListener('mousedown', event => event.preventDefault())
+      button.addEventListener('click', event => {
+        event.stopPropagation()
+        previewImage.value = { src: current.attrs.src, alt: current.attrs.alt || '' }
+      })
+      dom.append(image, button)
+      const update = () => {
+        const attrs = current.attrs
+        image.src = usePreview ? notePreviewSource(attrs.src) : attrs.src
+        image.dataset.fullSrc = attrs.src
+        image.alt = attrs.alt || ''
+        image.title = attrs.title || ''
+        image.setAttribute('data-image-indent', String(imageIndent(attrs.indent)))
+        const width = parseImageDimension(attrs.width), height = parseImageDimension(attrs.height)
+        dom.style.cssText = 'max-width:100%;'
+        const indent = imageIndent(attrs.indent) * 24
+        if (indent) { dom.style.marginLeft = `min(${indent}px,50%)`; dom.style.maxWidth = `calc(100% - min(${indent}px,50%))` }
+        dom.classList.toggle('image-aligned', !!indent || width === null && !!attrs.align)
+        if (attrs.align === 'center') { dom.style.marginLeft = 'auto'; dom.style.marginRight = 'auto' }
+        if (attrs.align === 'right') { dom.style.marginLeft = 'auto'; dom.style.marginRight = '0' }
+        if (typeof width === 'string') dom.style.width = `calc(${width} - 8px)`
+        else if (typeof width === 'number') dom.style.width = `${width}px`
+        image.style.cssText = 'display:block;margin:0;max-width:100%;object-fit:contain;'
+        if (width !== null) image.style.width = '100%'
+        if (typeof height === 'number') image.style.height = `${height}px`
+        else image.style.height = 'auto'
+      }
+      update()
+      return { dom, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
+        selectNode() { dom.classList.add('ProseMirror-selectednode') }, deselectNode() { dom.classList.remove('ProseMirror-selectednode') },
+        stopEvent(event) { return event.target instanceof Element && !!event.target.closest('button') }, ignoreMutation: () => true }
+    }
   },
 })
 
@@ -542,7 +600,7 @@ const editor = useEditor({
     IndentableBulletList,
     IndentableOrderedList,
     ListIndentAttributes,
-    DocumentImage.configure({ inline: false, previewImages: props.previewImages, HTMLAttributes: { class: 'md-img' } }),
+    DocumentImage.configure({ inline: false, previewImages: props.previewImages, contextControls: props.imageContextControls, HTMLAttributes: { class: 'md-img' } }),
     IndentableTaskList,
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: () => props.placeholder }),
@@ -592,10 +650,10 @@ const editor = useEditor({
     },
     transformPastedHTML: sanitizePastedHtml,
     handlePaste: (_view, event) => consumeImages(event.clipboardData),
-    handleDrop: (_view, event) => consumeImages((event as DragEvent).dataTransfer),
+    handleDrop: (view, event, _slice, moved) => moved || view.dragging ? false : consumeImages((event as DragEvent).dataTransfer),
     handleClick: (_view, pos, event) => {
       const target = event.target
-      imageMenuRequested.value = target instanceof HTMLImageElement && props.imageControls && !props.readonly
+      imageMenuRequested.value = target instanceof HTMLImageElement && props.imageControls && !props.imageContextControls && !props.readonly
       if (target instanceof HTMLImageElement) {
         if (props.imageControls && !props.readonly) {
           // 用户在尺寸输入框或“应用”上操作后，ProseMirror 仍保留原来的
@@ -606,6 +664,7 @@ const editor = useEditor({
           editor.value?.chain().focus().setNodeSelection(imagePos).run()
           return true
         }
+        if (props.imageContextControls) return true
         previewImage.value = { src: fullImageSource(target), alt: target.alt }
         return true
       }
@@ -614,6 +673,7 @@ const editor = useEditor({
     handleDoubleClick: (_view, _pos, event) => {
       const target = event.target
       if (!(target instanceof HTMLImageElement)) return false
+      if (props.imageContextControls) return true
       previewImage.value = { src: fullImageSource(target), alt: target.alt }
       return true
     },
@@ -1017,6 +1077,44 @@ const imageTitleInput = ref('')
 const selectedImageScale = ref<number | null>(null)
 const imageSizeError = ref('')
 const imageMenuRequested = ref(false)
+const imageApplyAll = ref(false)
+
+function updateImageSizes(width: ImageDimension, height: ImageDimension) {
+  const e = editor.value
+  if (!e?.isActive('image') || props.readonly) return
+  if (props.imageContextControls && imageApplyAll.value) {
+    const tr = e.state.tr
+    tr.doc.descendants((node, position) => {
+      if (node.type.name === 'image') tr.setNodeMarkup(position, undefined, { ...node.attrs, width, height })
+    })
+    e.view.dispatch(tr)
+  } else e.commands.updateAttributes('image', { width, height })
+  if (props.imageContextControls) imageMenu.value = null
+}
+
+function chooseUniformHeight() {
+  imageWidthInput.value = ''
+  imageHeightInput.value ||= '240'
+  selectedImageScale.value = null
+  imageApplyAll.value = true
+}
+
+function changeImageRow(join: boolean) {
+  const e = editor.value
+  if (!e || props.readonly || !(e.state.selection instanceof NodeSelection) || !e.isActive('image')) return
+  const { from, to, $from, $to } = e.state.selection
+  const tr = e.state.tr
+  if (join) {
+    const previous = $from.nodeBefore
+    if (previous?.type.name === 'paragraph' && previous.content.size === 0 && $from.index() > 1
+      && $from.parent.child($from.index() - 2).type.name === 'image') tr.delete(from - previous.nodeSize, from)
+  } else {
+    if ($to.nodeAfter?.type.name === 'image') tr.insert(to, e.schema.nodes.paragraph!.create())
+    if ($from.nodeBefore?.type.name === 'image') tr.insert(from, e.schema.nodes.paragraph!.create())
+  }
+  if (tr.docChanged) e.view.dispatch(tr)
+  imageMenu.value = null
+}
 
 function syncSelectionControls(e: Editor) {
   const { from, to } = e.state.selection
@@ -1177,7 +1275,7 @@ function onEditorContentClick(event: MouseEvent) {
 function setImageScale(percent: 25 | 50 | 75 | 100) {
   const e = editor.value
   if (!e?.isActive('image')) return
-  e.chain().updateAttributes('image', { width: `${percent}%`, height: null }).run()
+  if (!props.imageContextControls) e.chain().updateAttributes('image', { width: `${percent}%`, height: null }).run()
   selectedImageScale.value = percent
   imageWidthInput.value = ''
   imageHeightInput.value = ''
@@ -1219,15 +1317,15 @@ async function rotateSelectedImage(clockwise: boolean) {
 function applyImageDimensions() {
   const e = editor.value
   if (!e?.isActive('image')) return
-  const width = imageWidthInput.value.trim()
-  const height = imageHeightInput.value.trim()
-  const parsedWidth = width ? parseImageDimension(width) : null
+  const width = String(imageWidthInput.value).trim()
+  const height = String(imageHeightInput.value).trim()
+  const parsedWidth = width ? parseImageDimension(width) : props.imageContextControls && selectedImageScale.value ? `${selectedImageScale.value}%` as ImageDimension : null
   const parsedHeight = height ? parseImageDimension(height) : null
-  if ((!width && !height) || (width && typeof parsedWidth !== 'number') || (height && typeof parsedHeight !== 'number')) {
+  if ((!parsedWidth && !parsedHeight) || (width && typeof parsedWidth !== 'number') || (height && typeof parsedHeight !== 'number')) {
     imageSizeError.value = '长宽至少填写一项，范围为 1–4000 像素'
     return
   }
-  e.chain().updateAttributes('image', { width: parsedWidth, height: parsedHeight }).run()
+  updateImageSizes(parsedWidth, typeof parsedWidth === 'string' ? null : parsedHeight)
   selectedImageScale.value = null
   imageSizeError.value = ''
 }
@@ -1235,7 +1333,7 @@ function applyImageDimensions() {
 function clearImageSize() {
   const e = editor.value
   if (!e?.isActive('image')) return
-  e.chain().updateAttributes('image', { width: null, height: null }).run()
+  updateImageSizes(null, null)
   selectedImageScale.value = null
   imageWidthInput.value = ''
   imageHeightInput.value = ''
@@ -1575,6 +1673,23 @@ function toggleInsertMenu(event?: MouseEvent) {
 
 function onEditorKeydown(event: KeyboardEvent) {
   if (event.isComposing || composing.value) return
+  const imageEditor = editor.value
+  if (props.imageContextControls && !props.readonly && imageEditor?.state.selection instanceof NodeSelection && imageEditor.isActive('image')) {
+    if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      event.preventDefault()
+      event.stopPropagation()
+      const pos = imageEditor.state.selection.to
+      imageEditor.chain().insertContentAt(pos, { type: 'paragraph' }).setTextSelection(pos + 1).focus().run()
+      return
+    }
+    if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') {
+      event.preventDefault()
+      const element = imageEditor.view.nodeDOM(imageEditor.state.selection.from) as HTMLElement | null
+      const image = element?.querySelector('img')
+      if (image) { const rect = image.getBoundingClientRect(); image.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.top })) }
+      return
+    }
+  }
   if (props.imageControls && !props.readonly && ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp'].includes(event.key)) {
     imageMenuRequested.value = true
   }
@@ -1980,7 +2095,21 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0, bare }" @contextmenu="openImageMenu">
-    <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
+    <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null">
+      <form v-if="imageContextControls && imageControls && !readonly && editor?.isActive('image')" class="note-image-menu" @submit.prevent="applyImageDimensions">
+        <header><b>图片操作</b><button type="button" aria-label="关闭图片操作" @click="imageMenu = null"><i class="ri-close-line"></i></button></header>
+        <button type="button" class="image-menu-row" @click="openSelectedImage(); imageMenu = null"><i class="ri-fullscreen-line"></i>全屏查看</button>
+        <div class="image-menu-section"><span>图片尺寸 · 完整显示原图</span>
+          <div class="image-scale-options"><button v-for="percent in IMAGE_SCALES" :key="percent" type="button" :aria-pressed="selectedImageScale === percent" :class="{ active: selectedImageScale === percent }" @click="setImageScale(percent)">{{ percent }}%</button></div>
+          <div class="note-image-pixels"><label>宽度 · px<input v-model="imageWidthInput" type="number" min="1" max="4000" placeholder="自动" aria-label="图片宽度（像素）" @input="selectedImageScale = null" /></label><label>高度 · px<input v-model="imageHeightInput" type="number" min="1" max="4000" placeholder="自动" aria-label="图片高度（像素）" @input="selectedImageScale = null" /></label></div>
+          <button type="button" class="image-menu-row" @click="chooseUniformHeight"><i class="ri-align-top"></i>统一本篇图片高度</button>
+          <label class="image-all-scope"><input v-model="imageApplyAll" type="checkbox">同时调整本篇全部图片</label>
+          <button type="submit" class="image-menu-apply">{{ imageApplyAll ? '应用到本篇全部图片' : '应用到这张图片' }}</button>
+          <div v-if="imageSizeError" class="image-size-error" role="alert">{{ imageSizeError }}</div>
+        </div>
+        <div class="image-menu-section"><button type="button" class="image-menu-row" @click="changeImageRow(false)"><i class="ri-corner-down-left-line"></i>独占一行</button><button type="button" class="image-menu-row" @click="changeImageRow(true)"><i class="ri-layout-column-line"></i>与上一张接在同一行</button><button type="button" class="image-menu-row" @click="clearImageSize">原始大小</button></div>
+      </form>
+    </ImageCopyMenu>
     <input
       ref="imagePicker"
       class="image-picker"
@@ -2100,7 +2229,7 @@ onBeforeUnmount(() => {
           </div>
         </BubbleMenu>
       </div>
-      <div v-if="editor && imageControls" class="bubble-menu-anchor">
+      <div v-if="editor && imageControls && !imageContextControls" class="bubble-menu-anchor">
         <BubbleMenu
           :editor="editor"
           plugin-key="documentImageMenu"
@@ -2352,6 +2481,28 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.md-body :deep(.note-image-node) { display: inline-block; position: relative; vertical-align: top; margin: 8px 8px 8px 0; border-radius: 9px; line-height: 0; }
+.md-body :deep(.note-image-node.image-aligned) { display: block; }
+.md-body :deep(.note-image-node img) { border-radius: 9px; cursor: default; }
+.md-body :deep(.note-image-node.ProseMirror-selectednode) { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.md-body :deep(.note-image-fullscreen) { position: absolute; right: 7px; top: 7px; opacity: 0; display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-1); font: 12px/1.4 inherit; cursor: pointer; }
+.md-body :deep(.note-image-node:hover .note-image-fullscreen), .md-body :deep(.note-image-node:focus-within .note-image-fullscreen) { opacity: 1; }
+.note-image-menu { width: 256px; color: var(--wao-text-1); font-size: 12px; }
+.note-image-menu header { display: flex; justify-content: space-between; align-items: center; font-size: 14px; margin: 3px 3px 6px; }
+.note-image-menu button { border: 0; border-radius: 8px; background: transparent; color: inherit; padding: 6px 5px; cursor: pointer; }
+.note-image-menu button:hover { background: var(--wao-bg-sub); }
+.note-image-menu .image-menu-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; }
+.image-menu-section { border-top: 1px solid var(--wao-line-control); padding-top: 10px; margin-top: 8px; }
+.image-menu-section > span { color: var(--wao-text-weak); }
+.note-image-menu .image-scale-options { margin-top: 8px; }
+.note-image-menu .image-scale-options button { flex: 1; border: 1px solid var(--wao-line-control); }
+.note-image-menu .image-scale-options button.active { background: var(--wao-primary-soft); color: var(--wao-primary); border-color: var(--wao-primary); }
+.note-image-pixels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.note-image-pixels label { min-width: 0; color: var(--wao-text-weak); }
+.note-image-pixels input { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--wao-line-control); border-radius: 7px; padding: 5px 7px; margin-top: 4px; background: var(--wao-bg-card); color: var(--wao-text-1); }
+.image-all-scope { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+.note-image-menu .image-menu-apply { width: 100%; background: var(--wao-primary); color: white; }
+@media (pointer: coarse) { .md-body :deep(.note-image-fullscreen) { opacity: 1; min-height: 40px; } .note-image-menu button { min-height: 40px; } }
 .character-count { position:sticky; bottom:0; z-index:1; flex-shrink:0; width:fit-content; max-width:100%; margin-left:auto; padding:4px 8px; border-radius:4px; background:var(--wao-bg-card,#fff); color:var(--wao-text-weak,#646a73); font-size:12px; line-height:20px; font-variant-numeric:tabular-nums; }
 .character-count.docked { position:static; padding:3px 16px; }
 .polish-resume {

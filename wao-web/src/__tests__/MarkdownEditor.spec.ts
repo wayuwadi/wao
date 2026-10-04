@@ -26,7 +26,7 @@ vi.mock('@/api/assistant', () => ({
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
 vi.mock('@/api/noteAiSettings', () => ({ fetchNoteAiSettings: vi.fn(), saveNoteAiSettings: vi.fn() }))
 vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
-vi.mock('@/api/codexModels', () => ({ fetchCodexModels: vi.fn().mockResolvedValue({ models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra' }, { id: 'gpt-6-luna', label: 'GPT-6 Luna' }], stale: false, message: '自动刷新', updatedAt: '2026-10-03' }) }))
+vi.mock('@/api/codexModels', () => ({ fetchCodexModels: vi.fn().mockResolvedValue({ models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', reasoningEfforts: ['medium', 'high'] }, { id: 'gpt-6-luna', label: 'GPT-6 Luna', reasoningEfforts: ['medium', 'high'] }], stale: false, message: '自动刷新', updatedAt: '2026-10-03' }) }))
 vi.mock('@/api/textPolish', () => ({ fetchTextPolishWorkspace: vi.fn().mockResolvedValue({ prompt: '默认正文润色方法', records: [] }), saveTextPolishPrompt: vi.fn().mockResolvedValue('默认正文润色方法') }))
 
 /** Tiptap 需要真实 DOM 与一帧时间来完成挂载。 */
@@ -51,6 +51,7 @@ async function mountEditor(props: {
   taskable?: boolean
   linkControls?: boolean
   imageControls?: boolean
+  imageContextControls?: boolean
   selectionImage?: boolean
   menuZIndex?: number
   advanced?: boolean
@@ -756,14 +757,15 @@ describe('文章总览配图', () => {
     const w = await mountEditor({ modelValue: '小记正文', articleImageKey: 'note:me:n1', noteTitleOnImage: true, allowH1: true })
     await flushPromises()
     await w.get('.prompt-settings').trigger('click'); await flushPromises()
-    const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="image-prompt-title"]')!
+    const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-label="小记 AI 设置"]')!
     expect(modal.querySelector<HTMLSelectElement>('[aria-label="小记处理模型"]')?.value).toBe('')
     expect(modal.textContent).toContain('标题提示词')
-    expect(modal.textContent).toContain('正文润色提示词')
-    expect(modal.textContent).toContain('自动配图提示词')
+    expect(modal.textContent).toContain('正文提示词')
+    expect(modal.textContent).toContain('配图提示词')
     const select = modal.querySelector<HTMLSelectElement>('[aria-label="小记处理模型"]')!
     select.value = 'gpt-6-luna'
     select.dispatchEvent(new Event('change', { bubbles: true }))
+    await nextTick()
     const save = [...modal.querySelectorAll('button')].find(button => button.textContent?.includes('保存设置'))!
     save.click()
     await flushPromises()
@@ -840,6 +842,57 @@ function pasteHtmlInto(el: Element, html: string) {
 }
 
 describe('MarkdownEditor（所见即所得）', () => {
+  it('小记左键不打开设置，右键统一高度可一次撤销且不上传', async () => {
+    const w = await mountEditor({ modelValue: '![一](/api/images/one/raw "wao-image-size:50%xauto")\n\n![二](/api/images/two/raw "wao-image-size:50%xauto")', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    await w.get('.md-body img').trigger('click')
+    expect(w.findComponent(ImageCopyMenu).exists()).toBe(false)
+    await w.get('.md-body img').trigger('contextmenu', { clientX: 20, clientY: 30 })
+    await flushPromises()
+    expect(w.findComponent(ImageCopyMenu).exists()).toBe(true)
+    expect(document.body.textContent).not.toContain('向右旋转')
+    const uniform = [...document.body.querySelectorAll<HTMLButtonElement>('.note-image-menu button')].find(x => x.textContent?.includes('统一本篇'))!
+    uniform.click()
+    await nextTick()
+    const height = document.body.querySelector<HTMLInputElement>('[aria-label="图片高度（像素）"]')!
+    height.value = '180'
+    height.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    document.body.querySelector<HTMLFormElement>('.note-image-menu')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await nextTick()
+    const images = () => e.getJSON().content!.filter(n => n.type === 'image')
+    expect(images().map(n => n.attrs?.height)).toEqual([180, 180])
+    expect(images().map(n => n.attrs?.src)).toEqual(['/api/images/one/raw', '/api/images/two/raw'])
+    expect(e.getMarkdown()).toContain('wao-image-size:autox180')
+    expect(w.emitted('upload-image')).toBeUndefined()
+    e.commands.undo()
+    expect(images().map(n => n.attrs?.width)).toEqual(['50%', '50%'])
+    expect(images().map(n => n.attrs?.height)).toEqual([null, null])
+    w.unmount()
+  })
+
+  it('小记固定宽高与回车分行保存到正文结构，全屏按钮读取原图', async () => {
+    const w = await mountEditor({ modelValue: '![一](/api/images/one/raw)\n\n![二](/api/images/two/raw)', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    e.commands.setNodeSelection(0)
+    await w.get('.md-body').trigger('keydown', { key: 'Enter' })
+    expect(e.getJSON().content!.slice(0, 3).map(n => n.type)).toEqual(['image', 'paragraph', 'image'])
+    await w.get('.md-body img').trigger('contextmenu', { clientX: 20, clientY: 30 })
+    await flushPromises()
+    for (const [label, value] of [['图片宽度（像素）', '320'], ['图片高度（像素）', '160']]) {
+      const input = document.body.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!
+      input.value = value!; input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    await nextTick()
+    document.body.querySelector<HTMLFormElement>('.note-image-menu')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 320, height: 160 })
+    const restored = await mountEditor({ modelValue: e.getMarkdown(), document: e.getJSON() as RichDocNode, imageContextControls: true })
+    expect((restored.vm as unknown as { editor: Editor }).editor.getJSON().content!.slice(0, 3).map(n => n.type)).toEqual(['image', 'paragraph', 'image'])
+    await w.get('.note-image-fullscreen').trigger('click')
+    expect(document.body.querySelector('.image-lightbox img')).toBeTruthy()
+    restored.unmount(); w.unmount()
+  })
   it('按正文统计字形并在静默载入、编辑与撤销时更新', async () => {
     setActivePinia(createPinia())
     const w = await mountEditor({ modelValue: '**你好** [AB](https://example.com) 👨‍👩‍👧‍👦\n\n![图片](https://example.com/a.png)' })
