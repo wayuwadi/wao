@@ -15,13 +15,14 @@
 - 通过键盘 Enter 关闭日历页签，关闭后焦点回到知识库切换按钮。
 - 深色主题下底槽与激活项背景可区分；验收后恢复原来的跟随系统主题及展开侧栏。
 - 1920px、1280px、1024px、820px 下桌面顶栏实测均为 52px，无整页横向溢出。390px、320px 下无整页横向溢出，320px 完整菜单可打开，并包含页签与任务/小记/动态入口。
-- 本轮浏览器控制台未记录错误。
+- 浏览器控制台检查未记录错误；收尾读取 Vite 日志发现一次 `ResizeObserver loop completed with undelivered notifications` 提示。尺寸观察器回调的滚动测量改为下一帧执行，避免在布局通知周期中同步更新按钮状态；卸载时取消待执行帧。
 
 ## 自动检查
 
 - `TabBar.spec.ts`、`GlobalToolsMenu.spec.ts`、`themeSurfaces.spec.ts`：3 个文件、9 条通过。
 - `navigationLayout.spec.ts`、`mobileNavigation.spec.ts`：2 个文件、14 条通过。
 - `tabs.spec.ts`：20 条通过，含顺序调整、首页固定和置顶/批量关闭逻辑。
+- 尺寸通知修复追加下一帧测量和卸载清理回归测试，`TabBar.spec.ts` 6 条通过；复验连续 8 次视口切换及侧栏收放，无横向溢出，浏览器与 Vite 日志未再出现尺寸观察器提示。累计相关用例为 44 条。
 - 修改文件 ESLint、`git diff --check` 通过。
 - `npm run build` 通过，包含类型检查与生产构建；存在既有大于 500kB 的打包体积警告。初次独立工作区类型检查因游戏模块依赖缺失失败，复用既有依赖后重新构建通过。
 - 工程一致性检查无错误；保留仓库历史 ADR 的 5 条重复编号警告。本次无新增 ADR 或 migration。

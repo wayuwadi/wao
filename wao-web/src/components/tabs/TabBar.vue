@@ -17,6 +17,7 @@ const shell = ref<HTMLElement | null>(null)
 const canLeft = ref(false)
 const canRight = ref(false)
 let resizeObserver: ResizeObserver | undefined
+let resizeFrame = 0
 const homeTab = computed(() => tabs.tabs.find((tab) => tab.key === 'home'))
 const scrollableTabs = computed(() => tabs.tabs.filter((tab) => tab.key !== 'home'))
 
@@ -52,11 +53,17 @@ watch(() => [tabs.activeKey, tabs.tabs.map((tab) => tab.key).join('|')], revealA
 onMounted(() => {
   revealActive()
   if (typeof ResizeObserver !== 'undefined' && shell.value) {
-    resizeObserver = new ResizeObserver(measureScroll)
+    resizeObserver = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeFrame)
+      resizeFrame = requestAnimationFrame(measureScroll)
+    })
     resizeObserver.observe(shell.value)
   }
 })
-onBeforeUnmount(() => resizeObserver?.disconnect())
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  cancelAnimationFrame(resizeFrame)
+})
 
 const menuTargetClosable = computed(() => {
   const t = tabs.tabs.find((t) => t.key === menu.key)
