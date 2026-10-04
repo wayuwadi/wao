@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 import {
   createTodayTianrenReading,
   createTianrenShareLink,
@@ -13,7 +12,6 @@ import {
 import { fetchAssistantConversation } from '@/api/assistant'
 import { copyToClipboard } from '@/utils/clipboard'
 import { renderMarkdown } from '@/utils/markdown'
-import TianrenNotificationStatus from '@/components/workday/TianrenNotificationStatus.vue'
 import TianrenVisualCard from '@/components/tianren/TianrenVisualCard.vue'
 import TianrenAiSettingsDialog from '@/components/tianren/TianrenAiSettingsDialog.vue'
 import { tianrenReadingBody } from '@/components/tianren/tianrenReadingBody'
@@ -298,10 +296,8 @@ onMounted(() => {
     <header class="hero">
       <div class="page-title"><span class="page-icon"><i class="ri-windy-line" aria-hidden="true"></i></span><div><h1>天人一卦</h1><p>观照当下，留下一点行动。</p></div></div>
       <div class="hero-actions">
-        <button class="ai-settings-button" type="button" @click="settingsOpen = true"><i class="ri-settings-3-line"></i> 解读与配图设置</button>
+        <button class="ai-settings-button" type="button" @click="settingsOpen = true"><i class="ri-settings-3-line" aria-hidden="true"></i> 设置</button>
         <span class="sync-pill" :class="syncState" role="status">{{ syncText }}</span>
-        <TianrenNotificationStatus v-if="reading" :reading-id="reading.id" :interpreting="interpreting" />
-        <RouterLink v-else class="notification-settings" to="/settings?tab=tianren-notifications"><i class="ri-settings-3-line"></i>配置通知群</RouterLink>
       </div>
     </header>
     <div v-if="loading" class="state-card" role="status"><span class="spinner"></span><strong>正在取回你的每日记录</strong></div>
@@ -356,8 +352,8 @@ onMounted(() => {
       </nav>
       <section v-show="activeTab === 'reading'" id="tianren-reading" aria-label="当日解读">
         <div v-if="reading" class="reading-layout" :class="{ 'reading-layout-empty': !interpretation, 'reading-layout-history': !isViewingToday }">
-          <div class="reading-main">
-            <section class="answer-card card">
+          <div class="reading-summary" :class="{ 'reading-summary-history': !isViewingToday }" aria-label="卦象概览、配图与关注点">
+            <section class="overview-card card" aria-label="卦象概览">
               <div class="answer-head">
                 <span class="answer-avatar"><i class="ri-sparkling-2-fill"></i></span>
                 <div>
@@ -365,52 +361,22 @@ onMounted(() => {
                   <small>卦象是服务端事实；经典观点与当日建议由 AI 分层标注</small>
                 </div>
               </div>
-              <div v-if="(interpreting || backgroundRunning || conversationLoading) && !interpretation" class="answer-loading">
-                <span class="typing"><i></i><i></i><i></i></span>
-                <span>{{ conversationLoading ? '正在取回这一天保存的联合解读……' : '正在梳理卦意、生活观察与今天的调养提示……' }}</span>
-              </div>
-              <div v-if="interpretation" class="interpretation-legend" aria-label="解读内容标注说明">
-                <span><i class="ri-lock-line"></i> 卦象事实</span>
-                <span><i class="ri-book-open-line"></i> 传统观点 · AI 概括</span>
-                <span><i class="ri-sparkling-line"></i> 当日建议 · AI 延伸</span>
-              </div>
-              <div class="facts-visual">
-                <section class="reading-facts" aria-label="卦象事实">
-                  <h3>卦象事实</h3>
-                  <dl>
-                    <div><dt>本卦</dt><dd>第 {{ reading.primary.number }} 卦 · {{ reading.primary.name }}</dd></div>
-                    <div><dt>卦象</dt><dd>上{{ reading.primary.upper.name }}（{{ reading.primary.upper.nature }}）下{{ reading.primary.lower.name }}（{{ reading.primary.lower.nature }}）</dd></div>
-                    <div><dt>六爻</dt><dd>{{ reading.lines.join('、') }}<small>初爻 → 上爻</small></dd></div>
-                    <div><dt>变爻</dt><dd>{{ reading.changingLines.length ? reading.changingLines.map(position => ['初爻', '二爻', '三爻', '四爻', '五爻', '上爻'][position - 1]).join('、') : '无变爻' }}</dd></div>
-                    <div><dt>之卦</dt><dd>{{ reading.relating ? `第 ${reading.relating.number} 卦 · ${reading.relating.name}` : '无变爻，守持与深化本卦' }}</dd></div>
-                  </dl>
-                </section>
-                <TianrenVisualCard :reading-id="reading.id" :today="isViewingToday" :visible="activeTab === 'reading'" :refresh-key="visualRefreshKey" :interpreting="interpreting" />
-              </div>
-              <div v-if="interpretation" class="markdown" v-html="interpretationHtml"></div>
-              <div v-else-if="!isViewingToday && !conversationLoading && !conversationError" class="history-answer-empty">
-                <i class="ri-chat-history-line"></i>
-                <strong>这一天没有保存 AI 解读</strong>
-                <span>完整卦象仍可回看；历史结果不会用今天的接口补做或伪造。</span>
-              </div>
-<p v-if="isViewingToday && !interpretation && !interpreting && !backgroundRunning && !conversationLoading && !conversationError" class="empty-answer">今日还没有保存 AI 解读。可以填写关注点，再发起解读。</p>
-              <div v-if="interpretationError || conversationError" class="answer-error" role="alert">
-                <i class="ri-error-warning-line"></i>
-                <span>{{ interpretationError || conversationError }}</span>
-                <button v-if="interpretationError" type="button" :disabled="!canInterpret" @click="interpretToday">保留关注点并重试</button>
-                <button v-else type="button" @click="loadConversation(reading)">重新读取历史解读</button>
-              </div>
+              <section class="reading-facts" aria-label="卦象事实">
+                <h3>卦象事实</h3>
+                <dl>
+                  <div><dt>本卦</dt><dd>第 {{ reading.primary.number }} 卦 · {{ reading.primary.name }}</dd></div>
+                  <div><dt>卦象</dt><dd>上{{ reading.primary.upper.name }}（{{ reading.primary.upper.nature }}）下{{ reading.primary.lower.name }}（{{ reading.primary.lower.nature }}）</dd></div>
+                  <div><dt>六爻</dt><dd>{{ reading.lines.join('、') }}<small>初爻 → 上爻</small></dd></div>
+                  <div><dt>变爻</dt><dd>{{ reading.changingLines.length ? reading.changingLines.map(position => ['初爻', '二爻', '三爻', '四爻', '五爻', '上爻'][position - 1]).join('、') : '无变爻' }}</dd></div>
+                  <div><dt>之卦</dt><dd>{{ reading.relating ? `第 ${reading.relating.number} 卦 · ${reading.relating.name}` : '无变爻，守持与深化本卦' }}</dd></div>
+                </dl>
+              </section>
             </section>
-              <div class="reflection-head">
-                <div class="season-icon"><i :class="season.icon"></i></div>
-                <div><span>四时自照</span><strong>{{ season.name }}</strong></div>
-                <p>{{ season.note }}</p>
-              </div>
-
-
-          </div>
+            <TianrenVisualCard class="summary-visual" :reading-id="reading.id" :today="isViewingToday" :visible="activeTab === 'reading'" :refresh-key="visualRefreshKey" :interpreting="interpreting" />
             <section v-if="isViewingToday" class="reflection-card card">
-<h3>留给今天的关注点</h3><p class="muted">写下一句话，结合今天的卦象继续解读。</p>              <div class="ai-status" :class="{ offline: !assistantConfigured && !assistantLoading }">
+              <h3>留给今天的关注点</h3>
+              <p class="muted">写下一句话，结合今天的卦象继续解读。</p>
+              <div class="ai-status" :class="{ offline: !assistantConfigured && !assistantLoading }">
                 <span class="status-dot" :class="{ online: assistantConfigured }"></span>
                 <span>{{ assistantLoading ? '正在连接本地 Codex' : assistantMessage }}</span>
                 <button v-if="!assistantConfigured && !assistantLoading" type="button" @click="loadAssistant">重新连接</button>
@@ -442,8 +408,37 @@ onMounted(() => {
               </button>
               <small class="privacy-note"><i class="ri-shield-user-line"></i> 起卦后会自动生成首次解读；之后可填写关注点重新解读。内容保存在你的成员私有 AI 会话，主动分享后公开链接会展示当前最新一条 AI 自照。</small>
             </section>
-
-
+          </div>
+          <section class="answer-card card" aria-label="详细解读">
+            <h3 class="detail-title">详细解读</h3>
+            <div v-if="(interpreting || backgroundRunning || conversationLoading) && !interpretation" class="answer-loading">
+              <span class="typing"><i></i><i></i><i></i></span>
+              <span>{{ conversationLoading ? '正在取回这一天保存的联合解读……' : '正在梳理卦意、生活观察与今天的调养提示……' }}</span>
+            </div>
+            <div v-if="interpretation" class="interpretation-legend" aria-label="解读内容标注说明">
+              <span><i class="ri-lock-line"></i> 卦象事实</span>
+              <span><i class="ri-book-open-line"></i> 传统观点 · AI 概括</span>
+              <span><i class="ri-sparkling-line"></i> 当日建议 · AI 延伸</span>
+            </div>
+            <div v-if="interpretation" class="markdown" v-html="interpretationHtml"></div>
+            <div v-else-if="!isViewingToday && !conversationLoading && !conversationError" class="history-answer-empty">
+              <i class="ri-chat-history-line"></i>
+              <strong>这一天没有保存 AI 解读</strong>
+              <span>完整卦象仍可回看；历史结果不会用今天的接口补做或伪造。</span>
+            </div>
+            <p v-if="isViewingToday && !interpretation && !interpreting && !backgroundRunning && !conversationLoading && !conversationError" class="empty-answer">今日还没有保存 AI 解读。可以填写关注点，再发起解读。</p>
+            <div v-if="interpretationError || conversationError" class="answer-error" role="alert">
+              <i class="ri-error-warning-line"></i>
+              <span>{{ interpretationError || conversationError }}</span>
+              <button v-if="interpretationError" type="button" :disabled="!canInterpret" @click="interpretToday">保留关注点并重试</button>
+              <button v-else type="button" @click="loadConversation(reading)">重新读取历史解读</button>
+            </div>
+          </section>
+          <div class="reflection-head">
+            <div class="season-icon"><i :class="season.icon"></i></div>
+            <div><span>四时自照</span><strong>{{ season.name }}</strong></div>
+            <p>{{ season.note }}</p>
+          </div>
         </div>
         <p v-else class="empty-answer">起卦后，可以在这里查看今日解读。</p>
       </section>
@@ -531,26 +526,30 @@ onMounted(() => {
       </section>
       <footer class="boundary-note">文化反思，不是医疗建议。用作文化阅读与自我观照，不作为医疗或决策依据。</footer>
     </main>
-    <TianrenAiSettingsDialog v-if="settingsOpen" @close="settingsOpen = false" @saved="refreshAssistantSettings" />
+    <TianrenAiSettingsDialog v-if="settingsOpen" :reading-id="todayReading?.id" :interpreting="interpreting || backgroundRunning" @close="settingsOpen = false" @saved="refreshAssistantSettings" />
   </div>
 </template>
 
 <style scoped>
-.reading-layout.reading-layout-empty, .reading-layout.reading-layout-history { grid-template-columns: minmax(0, 1fr); }
-.reading-layout-empty .reflection-card { width: 100%; max-width: 700px; box-sizing: border-box; }
-.facts-visual { display: grid; grid-template-columns: minmax(165px, .85fr) minmax(0, 1.65fr); gap: 18px; align-items: start; margin: 18px 0 24px; }
+.reading-summary { display: grid; grid-template-columns: minmax(220px, .6fr) minmax(0, 1.6fr) 280px; gap: 20px; align-items: start; }
+.reading-summary-history { grid-template-columns: minmax(220px, .75fr) minmax(0, 1.5fr); }
+.overview-card { padding: 18px; box-sizing: border-box; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); }
+.overview-card .reading-facts { margin-top: 20px; }
+.summary-visual :deep(.image-button img), .summary-visual :deep(.image-placeholder) { aspect-ratio: 16 / 9; }
+.summary-visual :deep(.image-button img) { object-fit: contain; }
+.answer-card { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--wao-line); }
+.detail-title { font-size: 15px; margin: 0; }
 .reading-facts { min-width: 0; font-size: 12px; } .reading-facts h3 { font-size: 15px; margin-bottom: 12px; } .reading-facts dl { margin: 0; display: grid; gap: 9px; } .reading-facts dl > div { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 8px; line-height: 1.7; } .reading-facts dt { color: var(--wao-text-3); } .reading-facts dd { margin: 0; overflow-wrap: anywhere; } .reading-facts small { display: block; font-size: 11px; color: var(--wao-text-3); }
-@container (max-width: 560px) { .facts-visual { grid-template-columns: 1fr; } }
 .tianren-page { width: 100%; box-sizing: border-box; min-height: 100%; padding: 24px 28px 40px; color: var(--wao-text); background: var(--wao-bg-page); container-type: inline-size; }
 .hero, .page-content { max-width: var(--wao-content-max); margin: 0 auto; }
 .hero { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
 .page-title { display: flex; align-items: center; gap: 12px; }.page-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: var(--wao-primary-soft); color: var(--wao-primary); font-size: 22px; }
 h1 { margin: 0; font-size: 23px; font-weight: 650; }h2 { font-size: 22px; margin: 8px 0; }h3 { font-size: 15px; margin: 0 0 12px; }.hero p, .muted { margin: 4px 0 0; color: var(--wao-text-3); font-size: 12px; }
-.hero-actions, .card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }.sync-pill, .once-pill { padding: 5px 9px; border-radius: 20px; background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: 11px; }.sync-pill.error { color: var(--wao-danger-strong); }.notification-settings { color: var(--wao-text-3); font-size: 12px; }
+.hero-actions, .card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }.sync-pill, .once-pill { padding: 5px 9px; border-radius: 20px; background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: 11px; }.sync-pill.error { color: var(--wao-danger-strong); }
 button { cursor: pointer; font: inherit; font-size: 12px; border: 1px solid var(--wao-line); border-radius: 7px; padding: 7px 10px; background: var(--wao-bg-card); color: var(--wao-text); }button:disabled { opacity: .5; cursor: default; }button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
 .card { min-width: 0; }.cast-card { padding: 20px 24px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); }.card-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }.section-kicker { color: var(--wao-text-3); font-size: 12px; }.card-head p { font-size: 12px; margin: 0; color: var(--wao-text-3); }.card-head h2 { color: var(--wao-primary-text); }.share-feedback { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; font-size: 12px; color: var(--wao-text-3); }.share-feedback input { width: 100%; padding: 8px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-sub); color: var(--wao-text); }
 .content-tabs { display: flex; gap: 22px; margin: 20px 0 24px; border-bottom: 1px solid var(--wao-line); }.content-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 12px 0; background: transparent; color: var(--wao-text-3); }.content-tabs button[aria-pressed="true"] { color: var(--wao-primary-text); border-bottom-color: var(--wao-primary); }
-.reading-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 28px; align-items: start; }.reading-main { min-width: 0; }.answer-head { display: flex; align-items: center; gap: 8px; color: var(--wao-primary-text); font-size: 13px; }.answer-head small { display: block; color: var(--wao-text-3); margin-top: 4px; font-size: 11px; }.answer-avatar { font-size: 20px; }
+.reading-layout { min-width: 0; }.answer-head { display: flex; align-items: flex-start; gap: 8px; color: var(--wao-primary-text); font-size: 13px; }.answer-head small { display: block; color: var(--wao-text-3); margin-top: 4px; font-size: 11px; line-height: 1.7; }.answer-avatar { font-size: 20px; flex: none; }
 .reflection-card { padding: 18px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-sub); }.reflection-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--wao-line); margin-top: 24px; padding-top: 18px; font-size: 12px; }.reflection-head span { display: block; color: var(--wao-text-3); font-size: 11px; }.reflection-head p { color: var(--wao-text-3); margin: 0; }.season-icon { font-size: 22px; color: var(--wao-primary-text); }
 .ai-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0; font-size: 12px; color: var(--wao-text-3); overflow-wrap: anywhere; }.ai-status.offline { color: var(--wao-warning-strong); }.ai-status button { font-size: 11px; padding: 4px 6px; }.status-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
 .focus-field { display: grid; gap: 8px; font-size: 12px; }.focus-field > span > small { margin-left: 8px; color: var(--wao-text-3); }.focus-field textarea { resize: vertical; width: 100%; box-sizing: border-box; min-height: 130px; padding: 12px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text); font: inherit; line-height: 1.6; }.focus-field textarea:focus { outline-color: var(--wao-primary); }.focus-foot { display: flex; justify-content: space-between; gap: 8px; color: var(--wao-text-3); font-size: 11px; }.focus-foot em { font-style: normal; }.focus-foot .error { color: var(--wao-danger-strong); }.interpret-button, .cast-button { background: var(--wao-primary); color: white; border-color: transparent; margin-top: 14px; line-height: 1.6; }.interpret-button { width: 100%; }.privacy-note { display: block; margin-top: 12px; color: var(--wao-text-3); line-height: 1.7; font-size: 11px; }
@@ -560,7 +559,8 @@ button { cursor: pointer; font: inherit; font-size: 12px; border: 1px solid var(
 .history-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 16px; }.history-head span { display: none; }.history-head strong { font-size: 14px; }.history-list { display: grid; gap: 8px; }.history-row { width: 100%; display: flex; text-align: left; align-items: center; gap: 12px; padding: 12px; }.history-row.selected { border-color: var(--wao-primary); background: var(--wao-primary-soft); }.history-symbol { font-size: 30px; color: var(--wao-primary); }.history-main { flex: 1; min-width: 0; }.history-main strong, .history-main span { display: block; }.history-main span { font-size: 12px; color: var(--wao-text-3); margin-top: 4px; }.ai-mark { color: var(--wao-primary-text); }.history-empty { display: grid; justify-items: center; gap: 10px; padding: 32px; font-size: 13px; color: var(--wao-text-3); }
 .boundary-note { margin-top: 28px; color: var(--wao-text-3); font-size: 11px; line-height: 1.7; }.state-card, .empty-cast { display: grid; justify-items: center; align-content: center; gap: 12px; padding: 36px 20px; text-align: center; }.empty-cast { border: 1px solid var(--wao-line); border-radius: 12px; }.empty-cast p { max-width: 540px; color: var(--wao-text-3); font-size: 13px; line-height: 1.8; }.empty-cast small { color: var(--wao-text-3); font-size: 11px; }.empty-orbit { font-size: 30px; color: var(--wao-primary); }.empty-orbit i { display: none; }.today-label { color: var(--wao-text-3); font-size: 12px; }
 .spin, .spinner { animation: spin .9s linear infinite; }.spinner { width: 20px; height: 20px; border: 2px solid var(--wao-line); border-top-color: var(--wao-primary); border-radius: 50%; }@keyframes spin { to { transform: rotate(360deg); } }
-@container (max-width: 780px) { .reading-layout, .cast-layout { grid-template-columns: 1fr; }.hero-actions { width: 100%; justify-content: flex-start; }.reflection-card { margin-top: 6px; } }
+@container (max-width: 1040px) { .reading-summary { grid-template-columns: minmax(220px, .75fr) minmax(0, 1.5fr); }.reflection-card { grid-column: 1 / -1; } }
+@container (max-width: 780px) { .reading-summary, .cast-layout { grid-template-columns: 1fr; }.reflection-card { grid-column: auto; }.hero-actions { width: 100%; justify-content: flex-start; } }
 @media (max-width: 650px) { .tianren-page { padding: 18px 14px 32px; }.cast-card { padding: 16px; }.card-actions { gap: 6px; }.focus-field textarea { font-size: 16px; }.line-stack { padding: 18px 12px; }.yao-row { gap: 6px; grid-template-columns: 18px minmax(50px, 1fr) 62px 18px; }.hexagram-flow { gap: 8px; } }
 @media (prefers-reduced-motion: reduce) { .spin, .spinner { animation: none; } }
 </style>

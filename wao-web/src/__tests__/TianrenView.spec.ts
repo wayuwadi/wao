@@ -1,7 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TianrenView from '@/views/TianrenView.vue'
-vi.mock('@/components/workday/TianrenNotificationStatus.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/components/tianren/TianrenAiSettingsDialog.vue', () => ({ default: {
+  props: ['readingId', 'interpreting'], emits: ['close', 'saved'],
+  template: '<section class="settings-dialog-stub" role="dialog" :data-reading-id="readingId" :data-interpreting="interpreting"><button @click="$emit(\'close\')">关闭设置</button></section>',
+} }))
 import {
   createTodayTianrenReading,
   createTianrenShareLink,
@@ -52,6 +55,51 @@ const reading: TianrenReading = {
 }
 
 describe('TianrenView', () => {
+  it('今日概览、配图、关注点同级排列，完整正文独立在下方', async () => {
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue({ ...reading, conversationId: 'cv-summary' })
+    vi.mocked(fetchAssistantConversation).mockResolvedValue({ conversation: { id: 'cv-summary', title: '天人一卦', updatedAt: '' }, messages: [{ id: 'm-summary', role: 'assistant', content: '## 今日卦意\n完整解读正文。\n\n## 今日一件小事\n留出十分钟整理。', createdAt: '' }] })
+    const wrapper = mount(TianrenView)
+    await flushPromises()
+    const summary = wrapper.get('.reading-summary')
+    expect(summary.element.children).toHaveLength(3)
+    expect(summary.get(':scope > .overview-card').text()).toContain('天人一卦 · 联合解读')
+    expect(summary.get(':scope > .summary-visual').attributes('aria-label')).toBe('当日卦意配图')
+    expect(summary.get(':scope > .reflection-card').text()).toContain('留给今天的关注点')
+    expect(summary.find('.markdown').exists()).toBe(false)
+    const detail = wrapper.get('.answer-card')
+    expect(detail.attributes('aria-label')).toBe('详细解读')
+    expect(detail.element.previousElementSibling).toBe(summary.element)
+    expect(detail.text()).toContain('完整解读正文')
+    expect(detail.text()).toContain('留出十分钟整理')
+    expect(detail.find('textarea').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('右上角只保留设置及同步状态，开关弹窗保留关注点且通知状态绑定今日记录', async () => {
+    const past = { ...reading, id: 'history-settings', date: '2026-08-09' }
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
+    vi.mocked(fetchTianrenHistory).mockResolvedValue([reading, past])
+    const wrapper = mount(TianrenView)
+    await flushPromises()
+    expect(wrapper.get('.hero-actions').findAll('button').map(button => button.text())).toEqual(['设置'])
+    expect(wrapper.get('.sync-pill').text()).toBe('已保存到账号')
+    expect(wrapper.find('.notification-settings').exists()).toBe(false)
+    const textarea = wrapper.get('textarea').element
+    await wrapper.get('textarea').setValue('仍在编辑的关注点')
+    await wrapper.get('.ai-settings-button').trigger('click')
+    expect(wrapper.get('.settings-dialog-stub').attributes('data-reading-id')).toBe(reading.id)
+    await wrapper.get('.settings-dialog-stub button').trigger('click')
+    expect(wrapper.get('textarea').element).toBe(textarea)
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('仍在编辑的关注点')
+    await wrapper.findAll('.history-row')[1]!.trigger('click'); await flushPromises()
+    expect(wrapper.get('.reading-summary').element.children).toHaveLength(2)
+    expect(wrapper.get('.reading-summary').classes()).toContain('reading-summary-history')
+    expect(wrapper.find('.reflection-card').exists()).toBe(false)
+    await wrapper.get('.ai-settings-button').trigger('click')
+    expect(wrapper.get('.settings-dialog-stub').attributes('data-reading-id')).toBe(reading.id)
+    wrapper.unmount()
+  })
+
   it('设置保存后重新读取当前模型状态，在途旧请求完成后仍会读取新配置', async () => {
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
     let resolve!:(value:{configured:boolean;message:string})=>void
@@ -77,6 +125,10 @@ describe('TianrenView', () => {
       expect(wrapper.text()).toContain('本机 Codex 排队中')
       expect(wrapper.get('.reading-layout').classes()).toContain('reading-layout-empty')
       expect(wrapper.get<HTMLButtonElement>('.interpret-button').element.disabled).toBe(true)
+      await wrapper.get('.ai-settings-button').trigger('click')
+      expect(wrapper.get('.settings-dialog-stub').attributes('data-interpreting')).toBe('true')
+      expect(wrapper.get('.settings-dialog-stub').attributes('data-reading-id')).toBe(reading.id)
+      await wrapper.get('.settings-dialog-stub button').trigger('click')
       await wrapper.get('textarea').setValue('后台等待期间的新关注点')
       await vi.advanceTimersByTimeAsync(5000); await flushPromises()
       expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('后台等待期间的新关注点')

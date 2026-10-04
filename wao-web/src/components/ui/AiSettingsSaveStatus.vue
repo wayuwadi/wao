@@ -1,5 +1,15 @@
 <script setup lang="ts">
-defineProps<{ text: string; dirty: boolean; loading: boolean; saving: boolean; error: boolean }>()
+withDefaults(
+  defineProps<{
+    text: string
+    dirty: boolean
+    loading: boolean
+    saving: boolean
+    error: boolean
+    hint?: string
+  }>(),
+  { hint: '保存后用于下一次生成' },
+)
 </script>
 <template>
   <div class="footer-status">
@@ -23,7 +33,7 @@ defineProps<{ text: string; dirty: boolean; loading: boolean; saving: boolean; e
       ></i
       ><span>{{ text }}</span>
     </div>
-    <span class="save-hint">保存后用于下一次生成</span>
+    <span class="save-hint">{{ hint }}</span>
   </div>
 </template>
 <style scoped>

@@ -5,15 +5,38 @@ import TianrenAiSettingsDialog from '@/components/tianren/TianrenAiSettingsDialo
 import { fetchTianrenAiSettings, saveTianrenAiSettings, type TianrenAiSettings } from '@/api/tianren'
 import { useSessionStore } from '@/stores/session'
 import { fetchCodexModels } from '@/api/codexModels'
+import { fetchTianrenPreference, saveTianrenPreference } from '@/api/tianren'
+import { DEFAULT_WORKDAY_RHYTHM } from '@/utils/workdayRhythm'
 vi.mock('@/api/codexModels', () => ({ fetchCodexModels: vi.fn().mockResolvedValue({ models: [{id: 'gpt-6-astra', label: 'GPT-6 Astra', reasoningEfforts: ['medium', 'high']}, {id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', reasoningEfforts: ['medium']}], stale: false, updatedAt: null, message: '' }) }))
-vi.mock('@/api/tianren', () => ({ fetchTianrenAiSettings: vi.fn(), saveTianrenAiSettings: vi.fn() }))
+vi.mock('@/api/tianren', () => ({ fetchTianrenAiSettings: vi.fn(), saveTianrenAiSettings: vi.fn(), fetchTianrenPreference: vi.fn(), saveTianrenPreference: vi.fn() }))
+vi.mock('@/api/system', () => ({ fetchWebhookEndpoints: vi.fn().mockResolvedValue([]), fetchFeishuChats: vi.fn().mockResolvedValue([]) }))
 const settings: TianrenAiSettings = { version: 2, autoImage: true, model: 'gpt-6-astra', reasoningEffort: 'medium', interpretationPrompt: '已保存解读提示', imagePrompt: '已保存图片提示', defaultInterpretationPrompt: '默认解读提示', defaultImagePrompt: '默认图片提示' }
 const storageKey = 'wao-tianren-ai-settings-draft-v1:member1'
 function accept(id: string) { useSessionStore().accept({ accountId: id, member: { id, name: id, initial: 'M', color: '', role: '' }, identities: [], createdAt: '' }) }
 function mountDialog() { return mount(TianrenAiSettingsDialog, { attachTo: document.body, global: { stubs: { Teleport: true } } }) }
 function button(wrapper: ReturnType<typeof mountDialog>, label: string) { return wrapper.findAll('button').find(item => item.text() === label)! }
 describe('TianrenAiSettingsDialog', () => {
-  beforeEach(() => { setActivePinia(createPinia()); accept('member1'); localStorage.clear(); vi.mocked(fetchTianrenAiSettings).mockResolvedValue(settings); vi.mocked(saveTianrenAiSettings).mockResolvedValue({ ...settings, version: 3 }) })
+  beforeEach(() => { setActivePinia(createPinia()); accept('member1'); localStorage.clear(); vi.mocked(fetchTianrenAiSettings).mockResolvedValue(settings); vi.mocked(saveTianrenAiSettings).mockResolvedValue({ ...settings, version: 3 }); vi.mocked(fetchTianrenPreference).mockResolvedValue(JSON.stringify(DEFAULT_WORKDAY_RHYTHM)); vi.mocked(saveTianrenPreference).mockResolvedValue(undefined) })
+  it('统一通知入口隐藏模型区，切项保留两类草稿，保存通知不会覆盖 AI 设置', async () => {
+    const wrapper = mountDialog(); await flushPromises(); await button(wrapper, '解读提示词').trigger('click')
+    await wrapper.get('textarea').setValue('独立的解读草稿')
+    await button(wrapper, '飞书通知').trigger('click'); await flushPromises()
+    expect(wrapper.find('.settings-engine').exists()).toBe(false)
+    await wrapper.get('input[aria-label="卦象解读发送通知"]').setValue(true)
+    expect(localStorage.getItem('wao-tianren-notification-draft:member1')).toContain('"notifyTianren":true')
+    await button(wrapper, '解读提示词').trigger('click')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('独立的解读草稿')
+    await button(wrapper, '飞书通知').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('input[aria-label="卦象解读发送通知"]').element.checked).toBe(true)
+    await button(wrapper, '保存通知设置').trigger('click'); await flushPromises()
+    expect(saveTianrenAiSettings).not.toHaveBeenCalled()
+    const saved = JSON.parse(vi.mocked(saveTianrenPreference).mock.calls[0]![1])
+    expect(saved.energyNotification.notifyTianren).toBe(true)
+    expect(saved.blocks).toEqual(DEFAULT_WORKDAY_RHYTHM.blocks)
+    expect(localStorage.getItem(storageKey)).toContain('独立的解读草稿')
+    expect(localStorage.getItem('wao-tianren-notification-draft:member1')).toBeNull()
+    expect(wrapper.text()).toContain('卦象通知已保存'); wrapper.unmount()
+  })
   afterEach(() => { vi.clearAllMocks(); document.body.innerHTML = '' })
   it('切换页签和关闭后保留两段草稿与开关，恢复默认只改草稿', async () => {
     const wrapper = mountDialog(); await flushPromises(); await button(wrapper, '解读提示词').trigger('click')

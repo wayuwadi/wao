@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { fetchTianrenNotification, retryTianrenNotification, type TianrenNotification } from '@/api/tianren'
+import {
+  fetchTianrenNotification,
+  retryTianrenNotification,
+  type TianrenNotification,
+} from '@/api/tianren'
 
-const props = defineProps<{ readingId: string; interpreting: boolean }>()
+const props = withDefaults(
+  defineProps<{ readingId: string; interpreting: boolean; embedded?: boolean }>(),
+  { embedded: false },
+)
 const notification = ref<TianrenNotification | null>(null)
 const loading = ref(false)
 const retrying = ref(false)
@@ -13,12 +20,26 @@ const expanded = ref(false)
 const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
 const panelId = useId()
-const statusLabel = computed(() => error.value ? '读取失败' : notification.value ? labels[notification.value.state] : '读取中')
-const needsAttention = computed(() => !!error.value || ['FAILED', 'UNKNOWN', 'CONFIGURATION_REQUIRED', 'INTERPRETATION_FAILED'].includes(notification.value?.state ?? ''))
+const statusLabel = computed(() =>
+  error.value ? '读取失败' : notification.value ? labels[notification.value.state] : '读取中',
+)
+const needsAttention = computed(
+  () =>
+    !!error.value ||
+    ['FAILED', 'UNKNOWN', 'CONFIGURATION_REQUIRED', 'INTERPRETATION_FAILED'].includes(
+      notification.value?.state ?? '',
+    ),
+)
 
 function closeDetails() {
   expanded.value = false
   trigger.value?.focus()
+}
+function handleEscape(event: KeyboardEvent) {
+  if (props.embedded) return
+  event.stopPropagation()
+  event.preventDefault()
+  closeDetails()
 }
 
 function dismissOutside(event: PointerEvent) {
@@ -31,9 +52,17 @@ let attempts = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 const labels: Record<TianrenNotification['state'], string> = {
-  INTERPRETING: '解读中', INTERPRETATION_FAILED: '解读失败',
-  DISABLED: '未启用', CONFIGURATION_REQUIRED: '待配置', WAITING: '等待解读与投递',
-  PENDING: '待发送', SENDING: '发送中', SENT: '已发送', FAILED: '发送失败', SKIPPED: '已跳过', UNKNOWN: '接收结果待确认',
+  INTERPRETING: '解读中',
+  INTERPRETATION_FAILED: '解读失败',
+  DISABLED: '未启用',
+  CONFIGURATION_REQUIRED: '待配置',
+  WAITING: '等待解读与投递',
+  PENDING: '待发送',
+  SENDING: '发送中',
+  SENT: '已发送',
+  FAILED: '发送失败',
+  SKIPPED: '已跳过',
+  UNKNOWN: '接收结果待确认',
 }
 
 function clearTimer() {
@@ -53,11 +82,19 @@ async function refresh(reset = false) {
     const result = await fetchTianrenNotification(id)
     if (disposed || current !== generation) return
     notification.value = result
-    if (['WAITING', 'INTERPRETING', 'INTERPRETATION_FAILED', 'PENDING', 'SENDING'].includes(result.state) && attempts++ < 24) {
-      timer = setTimeout(() => { void refresh() }, 5000)
+    if (
+      ['WAITING', 'INTERPRETING', 'INTERPRETATION_FAILED', 'PENDING', 'SENDING'].includes(
+        result.state,
+      ) &&
+      attempts++ < 24
+    ) {
+      timer = setTimeout(() => {
+        void refresh()
+      }, 5000)
     }
   } catch (cause) {
-    if (current === generation && !disposed) error.value = cause instanceof Error ? cause.message : '通知状态读取失败'
+    if (current === generation && !disposed)
+      error.value = cause instanceof Error ? cause.message : '通知状态读取失败'
   } finally {
     if (current === generation) loading.value = false
   }
@@ -76,33 +113,57 @@ async function retry() {
     notification.value = result
     confirmed.value = false
     attempts = 0
-    timer = setTimeout(() => { void refresh() }, 3000)
+    timer = setTimeout(() => {
+      void refresh()
+    }, 3000)
   } catch (cause) {
-    if (current === generation && !disposed) error.value = cause instanceof Error ? cause.message : '重试失败'
+    if (current === generation && !disposed)
+      error.value = cause instanceof Error ? cause.message : '重试失败'
   } finally {
     if (current === generation) retrying.value = false
   }
 }
 
-watch(() => props.readingId, () => {
+watch(
+  () => props.readingId,
+  () => {
+    generation++
+    expanded.value = false
+    clearTimer()
+    attempts = 0
+    loading.value = false
+    retrying.value = false
+    notification.value = null
+    confirmed.value = false
+    void refresh(true)
+  },
+  { immediate: true },
+)
+watch(
+  () => props.interpreting,
+  (active) => {
+    if (!active) void refresh(true)
+  },
+)
+onBeforeUnmount(() => {
+  disposed = true
   generation++
-  expanded.value = false
   clearTimer()
-  attempts = 0
-  loading.value = false
-  retrying.value = false
-  notification.value = null
-  confirmed.value = false
-  void refresh(true)
-}, { immediate: true })
-watch(() => props.interpreting, (active) => { if (!active) void refresh(true) })
-onBeforeUnmount(() => { disposed = true; generation++; clearTimer(); document.removeEventListener('pointerdown', dismissOutside) })
+  document.removeEventListener('pointerdown', dismissOutside)
+})
 </script>
 
 <template>
-  <div ref="root" class="tianren-notification" aria-label="卦象飞书群通知" @keydown.esc.stop.prevent="closeDetails">
+  <div
+    ref="root"
+    class="tianren-notification"
+    :class="{ embedded }"
+    aria-label="卦象飞书群通知"
+    @keydown.esc="handleEscape"
+  >
     <button
       ref="trigger"
+      v-if="!embedded"
       class="notice-trigger"
       :class="{ attention: needsAttention }"
       type="button"
@@ -110,47 +171,174 @@ onBeforeUnmount(() => { disposed = true; generation++; clearTimer(); document.re
       :aria-controls="panelId"
       @click="expanded = !expanded"
     >
-      <i :class="needsAttention ? 'ri-error-warning-line' : 'ri-notification-3-line'" aria-hidden="true"></i>
+      <i
+        :class="needsAttention ? 'ri-error-warning-line' : 'ri-notification-3-line'"
+        aria-hidden="true"
+      ></i>
       <span aria-live="polite">飞书 · {{ statusLabel }}</span>
       <i :class="expanded ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>
     </button>
-    <RouterLink class="notice-settings" to="/settings?tab=tianren-notifications"><i class="ri-settings-3-line" aria-hidden="true"></i>配置通知群</RouterLink>
-    <section v-if="expanded" :id="panelId" class="notice-details" aria-label="飞书通知详情">
+    <RouterLink v-if="!embedded" class="notice-settings" to="/settings?tab=tianren-notifications"
+      ><i class="ri-settings-3-line" aria-hidden="true"></i>配置通知群</RouterLink
+    >
+    <section
+      v-if="embedded || expanded"
+      :id="panelId"
+      class="notice-details"
+      aria-label="飞书通知详情"
+    >
       <div class="notice-heading">
         <strong>飞书群卡片 · {{ statusLabel }}</strong>
-        <button class="notice-close" type="button" aria-label="关闭通知详情" @click="closeDetails"><i class="ri-close-line" aria-hidden="true"></i></button>
+        <button
+          v-if="!embedded"
+          class="notice-close"
+          type="button"
+          aria-label="关闭通知详情"
+          @click="closeDetails"
+        >
+          <i class="ri-close-line" aria-hidden="true"></i>
+        </button>
       </div>
-      <p v-if="notification">{{ notification.targetName ? `${notification.targetName} · ` : '' }}{{ notification.message }}</p>
+      <p v-if="notification">
+        {{ notification.targetName ? `${notification.targetName} · ` : ''
+        }}{{ notification.message }}
+      </p>
       <p v-if="error" class="notice-error" role="alert">{{ error }}</p>
       <label v-if="notification?.state === 'UNKNOWN'">
         <input v-model="confirmed" type="checkbox" :disabled="retrying" />
         已确认群里没有收到（重试可能产生重复卡片）
       </label>
       <div class="notice-actions">
-        <button v-if="notification?.retryable" type="button" :disabled="retrying || loading || (notification.state === 'UNKNOWN' && !confirmed)" @click="retry">
+        <button
+          v-if="notification?.retryable"
+          type="button"
+          :disabled="retrying || loading || (notification.state === 'UNKNOWN' && !confirmed)"
+          @click="retry"
+        >
           {{ retrying ? '正在安排重试…' : '重试发送原群' }}
         </button>
-        <button type="button" :disabled="loading || retrying" @click="refresh(true)">{{ loading ? '读取中…' : '刷新状态' }}</button>
+        <button type="button" :disabled="loading || retrying" @click="refresh(true)">
+          {{ loading ? '读取中…' : '刷新状态' }}
+        </button>
       </div>
-      <small v-if="notification?.state === 'DISABLED' || notification?.state === 'CONFIGURATION_REQUIRED'">在设置 → 通知中配置卦象通知。</small>
+      <small
+        v-if="
+          notification?.state === 'DISABLED' || notification?.state === 'CONFIGURATION_REQUIRED'
+        "
+        >{{
+          embedded
+            ? '在上方选择通知群并保存；保存配置不会立即发送消息。'
+            : '在设置 → 通知中配置卦象通知。'
+        }}</small
+      >
     </section>
   </div>
 </template>
 
 <style scoped>
-.tianren-notification { position: relative; margin-left: auto; display: inline-flex; align-items: center; gap: 8px; max-width: 100%; font-size: 12px; }
-.notice-trigger { min-height: 30px; display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; font-size: 11px; white-space: nowrap; color: var(--wao-text-3); }
-.notice-trigger.attention { border-color: var(--wao-warning-line); background: var(--wao-warning-bg); color: var(--wao-warning-strong); }
-.notice-settings { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; color: var(--wao-text-3); font-size: 11px; white-space: nowrap; }
-.notice-settings:hover { color: var(--wao-primary-text); }
-.notice-details { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: min(340px, calc(100vw - 24px)); box-sizing: border-box; padding: 14px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-card-hover); overflow-wrap: anywhere; }
-.notice-heading, .notice-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.notice-heading { flex-wrap: nowrap; }
-.notice-close { flex-shrink: 0; padding: 3px 5px; border: 0; }
-.notice-actions { justify-content: flex-start; margin-top: 8px; }
-button { padding: 5px 10px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text); cursor: pointer; }
-button:disabled { opacity: .5; cursor: default; }
-button:focus-visible, a:focus-visible { outline: 2px solid var(--wao-primary-text); outline-offset: 2px; }
-.notice-error { color: var(--wao-danger-strong); }
-small { display: block; margin-top: 8px; color: var(--wao-text-weak); }
+.tianren-notification {
+  position: relative;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  font-size: 12px;
+}
+.tianren-notification.embedded {
+  display: block;
+  margin: 22px 0 0;
+}
+.embedded .notice-details {
+  position: static;
+  width: 100%;
+  box-shadow: none;
+  background: var(--wao-bg-sub);
+}
+.notice-trigger {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--wao-text-3);
+}
+.notice-trigger.attention {
+  border-color: var(--wao-warning-line);
+  background: var(--wao-warning-bg);
+  color: var(--wao-warning-strong);
+}
+.notice-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  color: var(--wao-text-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.notice-settings:hover {
+  color: var(--wao-primary-text);
+}
+.notice-details {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(340px, calc(100vw - 24px));
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+  box-shadow: var(--wao-shadow-card-hover);
+  overflow-wrap: anywhere;
+}
+.notice-heading,
+.notice-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.notice-heading {
+  flex-wrap: nowrap;
+}
+.notice-close {
+  flex-shrink: 0;
+  padding: 3px 5px;
+  border: 0;
+}
+.notice-actions {
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+button {
+  padding: 5px 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 6px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--wao-primary-text);
+  outline-offset: 2px;
+}
+.notice-error {
+  color: var(--wao-danger-strong);
+}
+small {
+  display: block;
+  margin-top: 8px;
+  color: var(--wao-text-weak);
+}
 </style>
