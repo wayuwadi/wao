@@ -1163,7 +1163,6 @@ function updateImageSizes(width: ImageDimension, height: ImageDimension) {
     })
     e.view.dispatch(tr)
   } else e.commands.updateAttributes('image', { width, height })
-  if (props.imageContextControls) imageMenu.value = null
 }
 
 function chooseUniformHeight() {
@@ -1171,6 +1170,7 @@ function chooseUniformHeight() {
   imageHeightInput.value ||= '240'
   selectedImageScale.value = null
   imageApplyAll.value = true
+  applyImageDimensions()
 }
 
 function changeImageRow(join: boolean) {
@@ -1349,7 +1349,8 @@ function onEditorContentClick(event: MouseEvent) {
 function setImageScale(percent: 25 | 50 | 75 | 100) {
   const e = editor.value
   if (!e?.isActive('image')) return
-  if (!props.imageContextControls) e.chain().updateAttributes('image', { width: `${percent}%`, height: null }).run()
+  if (props.imageContextControls) updateImageSizes(`${percent}%`, null)
+  else e.chain().updateAttributes('image', { width: `${percent}%`, height: null }).run()
   selectedImageScale.value = percent
   imageWidthInput.value = ''
   imageHeightInput.value = ''
@@ -2181,15 +2182,18 @@ onBeforeUnmount(() => {
       <form v-if="imageContextControls && imageControls && !readonly && editor?.isActive('image')" class="note-image-menu" @submit.prevent="applyImageDimensions">
         <header><b>图片操作</b><button type="button" aria-label="关闭图片操作" @click="imageMenu = null"><i class="ri-close-line"></i></button></header>
         <button type="button" class="image-menu-row" @click="openSelectedImage(); imageMenu = null"><i class="ri-fullscreen-line"></i>全屏查看</button>
-        <div class="image-menu-section"><span>图片尺寸 · 完整显示原图</span>
+        <div class="image-menu-section"><span>调整范围</span>
+          <div class="image-size-scope" role="group" aria-label="图片尺寸调整范围"><button type="button" :aria-pressed="!imageApplyAll" @click="imageApplyAll = false">当前图片</button><button type="button" :aria-pressed="imageApplyAll" @click="imageApplyAll = true">本篇全部</button></div>
+          <div class="image-menu-caption"><span>宽度比例</span><span>点击即生效</span></div>
           <div class="image-scale-options"><button v-for="percent in IMAGE_SCALES" :key="percent" type="button" :aria-pressed="selectedImageScale === percent" :class="{ active: selectedImageScale === percent }" @click="setImageScale(percent)">{{ percent }}%</button></div>
+          <div class="image-menu-caption"><span>固定尺寸</span></div>
           <div class="note-image-pixels"><label>宽度 · px<input v-model="imageWidthInput" type="number" min="1" max="4000" placeholder="自动" aria-label="图片宽度（像素）" @input="selectedImageScale = null" /></label><label>高度 · px<input v-model="imageHeightInput" type="number" min="1" max="4000" placeholder="自动" aria-label="图片高度（像素）" @input="selectedImageScale = null" /></label></div>
-          <button type="button" class="image-menu-row" @click="chooseUniformHeight"><i class="ri-align-top"></i>统一本篇图片高度</button>
-          <label class="image-all-scope"><input v-model="imageApplyAll" type="checkbox">同时调整本篇全部图片</label>
-          <button type="submit" class="image-menu-apply">{{ imageApplyAll ? '应用到本篇全部图片' : '应用到这张图片' }}</button>
+          <button type="submit" class="image-menu-apply">应用固定尺寸 <span aria-hidden="true">↵</span></button>
+          <button type="button" class="image-menu-row" @click="chooseUniformHeight"><i class="ri-align-top"></i>统一本篇图片高度<span class="image-uniform-value">{{ imageHeightInput || '240' }} px</span></button>
           <div v-if="imageSizeError" class="image-size-error" role="alert">{{ imageSizeError }}</div>
         </div>
-        <div class="image-menu-section"><button type="button" class="image-menu-row" @click="changeImageRow(false)"><i class="ri-corner-down-left-line"></i>独占一行</button><button type="button" class="image-menu-row" @click="changeImageRow(true)"><i class="ri-layout-column-line"></i>与上一张接在同一行</button><button type="button" class="image-menu-row" @click="clearImageSize">原始大小</button></div>
+        <div class="image-menu-section"><button type="button" class="image-menu-row" @click="changeImageRow(false)"><i class="ri-corner-down-left-line"></i>独占一行</button><button type="button" class="image-menu-row" @click="changeImageRow(true)"><i class="ri-layout-column-line"></i>与上一张并排</button><button type="button" class="image-menu-row" @click="clearImageSize">恢复原始尺寸</button></div>
+        <p class="image-menu-footnote">图片完整显示，保持原始比例</p>
       </form>
     </ImageCopyMenu>
     <input
@@ -2584,13 +2588,20 @@ onBeforeUnmount(() => {
 .image-menu-section { border-top: 1px solid var(--wao-line-control); padding-top: 10px; margin-top: 8px; }
 .image-menu-section > span { color: var(--wao-text-weak); }
 .note-image-menu .image-scale-options { margin-top: 8px; }
-.note-image-menu .image-scale-options button { flex: 1; border: 1px solid var(--wao-line-control); }
+.note-image-menu .image-scale-options button { flex: 1; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-1); font-size: 12px; padding: 6px 4px; }
 .note-image-menu .image-scale-options button.active { background: var(--wao-primary-soft); color: var(--wao-primary); border-color: var(--wao-primary); }
 .note-image-pixels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
 .note-image-pixels label { min-width: 0; color: var(--wao-text-weak); }
 .note-image-pixels input { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--wao-line-control); border-radius: 7px; padding: 5px 7px; margin-top: 4px; background: var(--wao-bg-card); color: var(--wao-text-1); }
 .image-all-scope { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
-.note-image-menu .image-menu-apply { width: 100%; background: var(--wao-primary); color: white; }
+.note-image-menu .image-menu-apply { display: flex; justify-content: space-between; width: 100%; margin: 8px 0 4px; padding: 7px 9px; background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.image-size-scope { display: flex; gap: 3px; padding: 3px; margin-top: 6px; border-radius: 8px; background: var(--wao-bg-sub); }
+.note-image-menu .image-size-scope button { flex: 1; font-size: 12px; }
+.note-image-menu .image-size-scope button[aria-pressed="true"] { color: var(--wao-primary-text); background: var(--wao-bg-card); box-shadow: 0 1px 4px color-mix(in srgb, var(--wao-text-1) 10%, transparent); }
+.image-menu-caption { display: flex; justify-content: space-between; margin-top: 11px; color: var(--wao-text-weak); }
+.image-menu-caption > span + span { color: var(--wao-primary-text); }
+.image-uniform-value { margin-left: auto; color: var(--wao-text-weak); }
+.image-menu-footnote { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--wao-line-control); color: var(--wao-text-weak); font-size: 12px; }
 @media (pointer: coarse) { .md-body :deep(.note-image-fullscreen) { opacity: 1; min-height: 40px; } .note-image-menu button { min-height: 40px; } }
 .character-count { position:sticky; bottom:0; z-index:1; flex-shrink:0; width:fit-content; max-width:100%; margin-left:auto; padding:4px 8px; border-radius:4px; background:var(--wao-bg-card,#fff); color:var(--wao-text-weak,#646a73); font-size:12px; line-height:20px; font-variant-numeric:tabular-nums; }
 .character-count.docked { position:static; padding:3px 16px; }
