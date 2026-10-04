@@ -25,7 +25,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Heading from '@tiptap/extension-heading'
 import Image, { type ImageOptions } from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
-import { TaskItem, TaskList } from '@tiptap/extension-list'
+import { TaskItem } from '@tiptap/extension-list'
 import { Markdown } from '@tiptap/markdown'
 import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
 import { TableKit } from '@tiptap/extension-table'
@@ -63,6 +63,8 @@ import ImageCopyMenu from './ImageCopyMenu.vue'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
 import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
+import { IndentableBulletList, IndentableOrderedList, IndentableTaskList, ListIndentAttributes } from './listIndentExtensions'
+import { LIST_TYPES, listIndent } from '@/utils/listIndent'
 
 const lowlight = createLowlight(common)
 const PASTE_COLORS = new Set(['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0', '#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe'])
@@ -89,9 +91,13 @@ const OrderedListContinuation = Extension.create({
         if (!transactions.some(transaction => transaction.docChanged)) return null
         let joinPosition: number | null = null
         newState.doc.descendants((node, position, parent, index) => {
-          if (joinPosition !== null || node.type.name !== 'orderedList' || !parent || index >= parent.childCount - 1) return
+          if (joinPosition !== null || !LIST_TYPES.includes(node.type.name) || !parent || index >= parent.childCount - 1) return
           const next = parent.child(index + 1)
-          if (next.type === node.type && node.attrs.start === 1 && next.attrs.start === 1 && node.attrs.type === next.attrs.type) {
+          const numberingContinues = node.type.name !== 'orderedList'
+            || (node.attrs.start === 1 && next.attrs.start === 1)
+            || next.attrs.start === node.attrs.start + node.childCount
+          if (next.type === node.type && numberingContinues && node.attrs.type === next.attrs.type
+            && listIndent(node.attrs.indent) === listIndent(next.attrs.indent)) {
             joinPosition = position + node.nodeSize
           }
         })
@@ -518,6 +524,8 @@ const editor = useEditor({
     StarterKit.configure({
       // 只有知识库文档开放 h1；描述场景仍限制成 h2–h4，避免压过页面标题。
       heading: false,
+      bulletList: false,
+      orderedList: false,
       codeBlock: false,
       underline: false,
       link: {
@@ -528,8 +536,11 @@ const editor = useEditor({
       },
     }),
     IndentableHeading.configure({ levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] }),
+    IndentableBulletList,
+    IndentableOrderedList,
+    ListIndentAttributes,
     DocumentImage.configure({ inline: false, previewImages: props.previewImages, HTMLAttributes: { class: 'md-img' } }),
-    TaskList,
+    IndentableTaskList,
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: () => props.placeholder }),
     DocumentMarkdown,

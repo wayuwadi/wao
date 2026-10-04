@@ -1,7 +1,32 @@
 import { describe, expect, it } from 'vitest'
 import { renderChatReviewMarkdown, renderMarkdown } from '@/utils/markdown'
+import { noteCharactersCreatedOn } from '@/utils/noteDailyCharacters'
+import type { Doc } from '@/types'
 
 describe('renderMarkdown', () => {
+  it('列表缩进元数据只作用于紧随的列表，编号与圆点整体位移，正文不显示元数据', () => {
+    const html = renderMarkdown('[wao-list-indent]: # "1"\n\n- 第一组\n\n[wao-list-indent]: # "3"\n\n1. 第二组\n\n正文')
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    expect(doc.querySelector('ul')?.getAttribute('style')).toBe('margin-left:min(24px,50%)')
+    expect(doc.querySelector('ol')?.getAttribute('style')).toBe('margin-left:min(72px,50%)')
+    expect(doc.body.textContent).not.toContain('wao-list-indent')
+    expect(doc.body.textContent).toContain('第一组')
+    expect(doc.body.textContent).toContain('正文')
+    expect(noteCharactersCreatedOn([{ id: 'metadata', author: 'me', created: '2026-10-04T08:00:00+08:00',
+      content: { version: 1, document: null, markdown: '[wao-list-indent]: # "1"\n\n- 第一组\n\n[wao-list-indent]: # "3"\n\n1. 第二组\n\n正文' },
+    } as Doc], 'me', '2026-10-04')).toBe(8)
+    for (const invalid of ['9', '-1', '1.5', '1;position=fixed']) {
+      expect(renderMarkdown(`[wao-list-indent]: # "${invalid}"\n\n- 内容`)).not.toContain('style=')
+    }
+    expect(renderMarkdown('[wao-list-indent]: # "1"\n\n普通正文')).not.toContain('style=')
+  })
+  it('多组独立列表元数据逐组消费，解析不重复递归整份剩余正文', () => {
+    const source = Array.from({ length: 30 }, (_, index) => `[wao-list-indent]: # "1"\n\n- 正文${index}\n\n`).join('')
+    const html = renderMarkdown(source)
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    expect(doc.querySelectorAll('ul')).toHaveLength(30)
+    expect(doc.body.textContent).not.toContain('wao-list-indent')
+  })
   it('渲染标题、列表与行内样式', () => {
     const html = renderMarkdown('## 目标\n\n- 第一项\n- 第二项\n\n**重点**与 `代码`')
     expect(html).toContain('<h2>目标</h2>')

@@ -1,6 +1,9 @@
+import { LIST_INDENT_METADATA } from './listIndent'
+
 /** 从正文中寻找第一行可读文字，跳过放在文章开头的 Markdown 图片。 */
 export function firstMarkdownTextLine(markdown: string): string {
   for (const source of markdown.split('\n')) {
+    if (LIST_INDENT_METADATA.test(source + '\n')) continue
     const line = source
       .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
       .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
