@@ -21,7 +21,7 @@ if (buildCommitSha && !/^[0-9a-f]{40}$/.test(buildCommitSha))
   throw new Error('WAO_GIT_SHA must be a full Git SHA')
 
 releaseHighlightsPlugin(curatedRelease, releaseHistory)
-const gitRelease = readGitRelease(fileURLToPath(new URL('..', import.meta.url)), buildCommitSha, process.env.WAO_GIT_HISTORY)
+const gitRelease = readGitRelease(fileURLToPath(new URL('..', import.meta.url)), buildCommitSha, process.env.WAO_GIT_HISTORY, curatedRelease)
 
 // https://vite.dev/config/
 export default defineConfig({

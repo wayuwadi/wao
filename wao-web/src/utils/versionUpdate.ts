@@ -35,11 +35,13 @@ export function rememberPendingReleaseVersion(version: string) {
   sessionStorage.setItem(PENDING_RELEASE_VERSION_KEY, version.trim())
 }
 
-/** 更新介绍只消费一次本次刷新标记，普通首次登录或手动刷新不会自动弹出。 */
+/** 只消费一次安全刷新标记，用于匹配当前制品的轻提示，不自动弹出介绍。 */
 export function consumePendingReleaseVersion() {
-  const version = sessionStorage.getItem(PENDING_RELEASE_VERSION_KEY) || ''
-  sessionStorage.removeItem(PENDING_RELEASE_VERSION_KEY)
-  return version
+  try {
+    const version = sessionStorage.getItem(PENDING_RELEASE_VERSION_KEY) || ''
+    sessionStorage.removeItem(PENDING_RELEASE_VERSION_KEY)
+    return version
+  } catch { return '' }
 }
 
 export function openReleaseHighlights() {

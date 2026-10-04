@@ -14,6 +14,7 @@ watch(open, value => blockCompanions('tools', value), { flush: 'sync' })
 onBeforeUnmount(() => blockCompanions('tools', false))
 const unread = ref(false)
 const updateAvailable = ref(false)
+const justUpdated = ref(false)
 const updateArriving = ref(false)
 const trigger = ref<HTMLButtonElement>()
 const panel = ref<HTMLElement>()
@@ -42,13 +43,13 @@ onBeforeUnmount(() => { window.removeEventListener('resize', place); window.remo
 <template>
   <div class="global-tools">
     <button ref="trigger" class="tools-trigger" :class="{ 'has-update': updateAvailable, 'update-arriving': updateArriving }" type="button" :aria-label="updateAvailable ? '动态，有新版本可更新' : '动态'" aria-haspopup="dialog" :aria-expanded="open" aria-controls="global-tools-panel" @click="toggle">
-      <i class="ri-notification-3-line" aria-hidden="true"></i><span>动态</span><span v-if="unread || updateAvailable" class="tools-dot" :aria-label="[unread && '有未读通知', updateAvailable && '有新版本'].filter(Boolean).join('，')"></span><span v-if="updateAvailable" class="tools-update-label">可更新</span>
+      <i class="ri-notification-3-line" aria-hidden="true"></i><span>动态</span><span v-if="unread || updateAvailable" class="tools-dot" :aria-label="[unread && '有未读通知', updateAvailable && '有新版本'].filter(Boolean).join('，')"></span><span v-if="updateAvailable || justUpdated" class="tools-update-label">{{ updateAvailable ? '可更新' : '已更新' }}</span>
     </button>
     <Teleport to="body">
       <section v-show="open" id="global-tools-panel" ref="panel" class="tools-panel" :style="position" role="dialog" aria-label="动态">
         <header><strong>动态</strong><button type="button" aria-label="收起动态" @click="close"><i class="ri-close-line" aria-hidden="true"></i></button></header>
         <NotificationCenter row :return-focus="trigger" @unread-change="unread = $event" @opened="open = false" />
-        <VersionUpdateNotice row :anchor="trigger" @available-change="updateAvailable = $event" @arrival-change="updateArriving = $event" @opened="open = false" />
+        <VersionUpdateNotice row :anchor="trigger" @available-change="updateAvailable = $event" @updated-change="justUpdated = $event" @arrival-change="updateArriving = $event" @opened="open = false" />
         <p class="activity-hint">消息有回应，更新有来处。</p>
         <hr>
         <button class="tools-row" type="button" @click="preferences"><i class="ri-settings-3-line" aria-hidden="true"></i><span>外观与偏好</span><small>快捷键 · 陪伴</small><i class="ri-arrow-right-s-line" aria-hidden="true"></i></button>

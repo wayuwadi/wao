@@ -12,6 +12,7 @@ import {
   reloadToLatestVersion,
   WEB_UPDATE_EVENT,
   reportWorkspaceReloadState,
+  openReleaseHighlights,
 } from '@/utils/versionUpdate'
 
 vi.mock('@/api/version', () => ({ fetchWebRelease: vi.fn() }))
@@ -20,7 +21,7 @@ vi.mock('@/utils/versionUpdate', async (original) => ({
   reloadToLatestVersion: vi.fn(),
 }))
 let wrapper: VueWrapper
-const upcoming = { ...CURRENT_RELEASE, attention: 'feature' as const, title: '目标版本的更新内容' }
+const upcoming = { ...CURRENT_RELEASE, attention: 'feature' as const, title: '目标版本的更新内容', highlights: [{ ...CURRENT_RELEASE.highlights[0]!, title: '目标版本的更新内容', steps: ['打开对应功能', '按指引开始使用'] }] }
 const notify = (version: unknown) =>
   document.body.dispatchEvent(new CustomEvent(WEB_UPDATE_EVENT, { detail: { version } }))
 const click = async (selector: string) => {
@@ -61,6 +62,14 @@ afterEach(() => {
 })
 
 describe('顶栏更新入口', () => {
+  it('设置页手动查看复用卡片，不重复开关，不再打开三页介绍',async()=>{
+    await render()
+    openReleaseHighlights();await nextTick()
+    expect(document.querySelector('.update-panel')).not.toBeNull()
+    openReleaseHighlights();await nextTick()
+    expect(document.querySelectorAll('.update-panel')).toHaveLength(1)
+    expect(document.querySelector('.release-tour')).toBeNull()
+  })
   it('已在历史锚点时，重复点击仍定位时间线且关闭浮层', async () => {
     const router = await render()
     await router.push('/features#recent-updates')
@@ -185,12 +194,12 @@ describe('顶栏更新入口', () => {
   it('当前制品说明提供真实功能入口', async () => {
     const router = await render()
     await click('.update-entry')
-    expect(document.body.textContent).toContain(CURRENT_RELEASE.title)
+    expect(document.body.textContent).toContain(CURRENT_RELEASE.highlights[0]!.title)
     for (const highlight of CURRENT_RELEASE.highlights) {
       for (const point of highlight.points) expect(document.body.textContent).toContain(point)
     }
     // 当前制品可能包含没有功能地图入口的提交，不给它制造失效的体验按钮。
-    const navigable = CURRENT_RELEASE.highlights.filter(item => Object.prototype.hasOwnProperty.call(MODULES, item.featureId))
+    const navigable = CURRENT_RELEASE.highlights.filter(item => item.featureId !== 'changelog' && CURRENT_RELEASE.attention !== 'maintenance' && Object.prototype.hasOwnProperty.call(MODULES, item.featureId))
     expect(document.querySelectorAll('[aria-label^="去体验"]')).toHaveLength(navigable.length)
     for (const [index, highlight] of navigable.entries()) {
       if (index) await click('.update-entry')

@@ -1,73 +1,44 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMemoryHistory, createRouter } from 'vue-router'
-import { createPinia, setActivePinia } from 'pinia'
 import ReleaseHighlightsHost from '@/components/release/ReleaseHighlightsHost.vue'
-import { CURRENT_RELEASE } from '@/data/featureCatalog'
-import { fetchPreference, savePreference } from '@/api/favorites'
-import { openReleaseHighlights, rememberPendingReleaseVersion } from '@/utils/versionUpdate'
-
-vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
-vi.mock('@/composables/toast', () => ({ toast: vi.fn() }))
-
-function render() {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      { path: '/', component: { template: '<div />' } },
-      { path: '/features', component: { template: '<div />' } },
-    ],
-  })
-  return mount(ReleaseHighlightsHost, { global: { plugins: [router, createPinia()] } })
-}
-
+import { releaseJustUpdated } from '@/composables/releaseUpdateState'
+import { consumePendingReleaseVersion, rememberPendingReleaseVersion } from '@/utils/versionUpdate'
+let wrapper: ReturnType<typeof mount>
 beforeEach(() => {
-  setActivePinia(createPinia())
-  localStorage.clear()
   sessionStorage.clear()
-  vi.mocked(fetchPreference).mockReset().mockResolvedValue('')
-  vi.mocked(savePreference).mockReset().mockResolvedValue()
+  releaseJustUpdated.value = false
 })
 afterEach(() => {
+  vi.restoreAllMocks()
+  wrapper?.unmount()
   document.body.innerHTML = ''
-  vi.clearAllMocks()
 })
-
-describe('更新介绍触发与已读状态', () => {
-  it('普通首次打开不弹，完成安全更新后才自动展示', async () => {
-    const ordinary = render()
-    await flushPromises()
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-    ordinary.unmount()
-
-    rememberPendingReleaseVersion('abcdef0')
-    const updated = render()
-    await flushPromises()
-    expect(document.body.textContent).toContain(CURRENT_RELEASE.title)
-    updated.unmount()
+describe('更新后的轻提示', () => {
+  it('会话存储被禁用时仍保持页面可用，不伪造已更新',()=>{
+    vi.spyOn(Storage.prototype,'getItem').mockImplementation(()=>{throw new Error('blocked')})
+    wrapper=mount(ReleaseHighlightsHost)
+    expect(releaseJustUpdated.value).toBe(false)
   })
-
-  it('跨设备偏好已读时不重复自动展示', async () => {
+  it('安全刷新且匹配当前制品只显示已更新状态，不自动弹窗', () => {
+    const script = document.createElement('script')
+    script.setAttribute('data-v', 'abcdef0')
+    document.body.append(script)
     rememberPendingReleaseVersion('abcdef0')
-    vi.mocked(fetchPreference).mockResolvedValue(
-      JSON.stringify({ lastSeenReleaseId: CURRENT_RELEASE.id }),
-    )
-    const wrapper = render()
-    await flushPromises()
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-    wrapper.unmount()
+    wrapper = mount(ReleaseHighlightsHost)
+    expect(releaseJustUpdated.value).toBe(true)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(consumePendingReleaseVersion()).toBe('')
   })
-
-  it('可从设置手动重开，并在关闭时保存成员级已读状态', async () => {
-    const wrapper = render()
-    openReleaseHighlights()
-    await flushPromises()
-    document.body.querySelector<HTMLButtonElement>('.close')!.click()
-    await flushPromises()
-    expect(savePreference).toHaveBeenCalledWith(
-      'release-highlights-state-v1',
-      expect.stringContaining(CURRENT_RELEASE.id),
-    )
+  it('普通刷新或尚未加载目标制品不能冒充已更新', () => {
+    const script = document.createElement('script')
+    script.setAttribute('data-v', 'old')
+    document.body.append(script)
+    rememberPendingReleaseVersion('new')
+    wrapper = mount(ReleaseHighlightsHost)
+    expect(releaseJustUpdated.value).toBe(false)
     wrapper.unmount()
+    wrapper = mount(ReleaseHighlightsHost)
+    expect(releaseJustUpdated.value).toBe(false)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 })

@@ -5,6 +5,32 @@ import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { readGitRelease, gitReleasePlugin, productEdition } from './git-release.mjs'
+import currentGuide from '../src/data/currentRelease.json' with { type: 'json' }
+
+test('评审用途和演示只绑定本次提交，保留自动 SHA 身份，旧精选不串版',()=>{
+  const sha='b'.repeat(40)
+  const edition=productEdition(sha,'2026-10-04',`${currentGuide.sourceSubject} (#9999)`,currentGuide)
+  assert.equal(edition.id,`git-release-${sha}`)
+  assert.deepEqual(edition.highlights,currentGuide.highlights)
+  assert.equal('sourceSubject' in edition,false)
+  const other=productEdition(sha,'2026-10-04','feat(changelog): 另外一次变化',currentGuide)
+  assert.equal(other.highlights[0].title,'另外一次变化')
+  assert.match(other.highlights[0].summary,/尚未附带/)
+  assert.equal(other.highlights[0].demo,undefined)
+})
+
+test('随制品发布的演示截图缺失时阻止构建，不产生失效引导图',()=>{
+  const cwd=mkdtempSync(join(tmpdir(),'wao-release-image-'))
+  try {
+    const sha='c'.repeat(40), input=join(cwd,'history.tsv')
+    writeFileSync(input,`${sha}\t2026-10-04T08:00:00+08:00\t${currentGuide.sourceSubject}`)
+    const guide={...currentGuide,highlights:[{...currentGuide.highlights[0],demo:{presentation:'window',image:'assets/release-guides/missing.png',alt:'截图'}}]}
+    assert.throws(()=>readGitRelease(cwd,sha,input,guide),/截图缺失/)
+  } finally {
+    assert.equal(resolve(dirname(cwd)),resolve(tmpdir()))
+    rmSync(cwd,{recursive:true,force:true})
+  }
+})
 
 test('真实 Git：无精选改动的文档提交也更新版本，未合并分支不混入，所有祖先保留', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'wao-git-release-'))

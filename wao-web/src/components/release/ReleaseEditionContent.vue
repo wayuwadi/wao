@@ -4,11 +4,18 @@ import { useFeatureExperience } from '@/composables/featureExperience'
 import { MODULES } from '@/config/nav'
 import type { ReleaseEdition } from '@/types/featureExplorer'
 import ExplorerPagination from './ExplorerPagination.vue'
+import ReleaseFeatureDemo from './ReleaseFeatureDemo.vue'
+import ReleaseGuideDialog from './ReleaseGuideDialog.vue'
+import type { ReleaseHighlight } from '@/types/featureExplorer'
+const expanded = ref<string[]>([])
+const guide = ref<ReleaseHighlight | null>(null)
 const props = defineProps<{ edition: ReleaseEdition }>()
 const emit = defineEmits<{ navigate: [] }>()
 const page = ref(1)
 const tryFeature = useFeatureExperience()
-async function experience(id: string) { if (await tryFeature(id)) emit('navigate') }
+async function experience(id: string) {
+  if (await tryFeature(id)) emit('navigate')
+}
 watch(
   () => props.edition.id,
   () => {
@@ -26,13 +33,48 @@ const visible = computed(() => props.edition.highlights.slice((page.value - 1) *
       <ul v-if="item.points.length">
         <li v-for="point in item.points" :key="point">{{ point }}</li>
       </ul>
-      <button type="button"
+      <div v-if="item.steps?.length" class="usage">
+        <b>怎么用</b>
+        <ol>
+          <li v-for="step in item.steps" :key="step">{{ step }}</li>
+        </ol>
+      </div>
+      <button
+        v-if="item.demo"
+        type="button"
+        class="demo-link"
+        :aria-expanded="
+          item.demo.presentation === 'inline' ? expanded.includes(item.title) : undefined
+        "
+        @click="
+          item.demo.presentation === 'window'
+            ? (guide = item)
+            : (expanded = expanded.includes(item.title)
+                ? expanded.filter((title) => title !== item.title)
+                : [...expanded, item.title])
+        "
+      >
+        {{
+          item.demo.presentation === 'window'
+            ? '打开大图演示'
+            : expanded.includes(item.title)
+              ? '收起功能演示'
+              : '看看功能演示'
+        }}
+      </button>
+      <ReleaseFeatureDemo
+        v-if="item.demo?.presentation === 'inline' && expanded.includes(item.title)"
+        :demo="item.demo"
+        :edition-id="edition.id"
+      />
+      <button
+        type="button"
         v-if="MODULES[item.featureId] && item.featureId !== 'changelog'"
-
         @click="experience(item.featureId)"
-        >去体验 {{ MODULES[item.featureId].label }}
-        <i class="ri-arrow-right-up-line" aria-hidden="true"></i
-      ></button>
+      >
+        去体验 {{ MODULES[item.featureId].label }}
+        <i class="ri-arrow-right-up-line" aria-hidden="true"></i>
+      </button>
     </article>
     <p v-if="!edition.highlights.length">本次版本暂未附带详细说明。</p>
     <ExplorerPagination
@@ -42,6 +84,7 @@ const visible = computed(() => props.edition.highlights.slice((page.value - 1) *
       :size="3"
     />
   </div>
+  <ReleaseGuideDialog v-if="guide" :item="guide" :edition-id="edition.id" @close="guide = null" />
 </template>
 <style scoped>
 article {
@@ -69,8 +112,31 @@ ul {
 li {
   margin-bottom: 5px;
 }
+.usage {
+  margin-top: 16px;
+  background: var(--wao-primary-soft);
+  padding: 12px 16px;
+  border-radius: 12px;
+}
+.usage b {
+  color: var(--wao-primary-text);
+  font-size: 12px;
+}
+.usage ol {
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--wao-text-2);
+}
+.demo-link {
+  display: flex;
+  margin: 14px 0;
+}
 button {
-  border:0; background:transparent; padding:0; cursor:pointer;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
   display: inline-flex;
   gap: 5px;
   color: var(--wao-primary-text);
