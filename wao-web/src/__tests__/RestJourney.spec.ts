@@ -12,9 +12,45 @@ function stage(arrival=0) {
   mounted.push(wrapper);return wrapper
 }
 beforeEach(()=>{ vi.useFakeTimers();localStorage.clear();restJourneyRequested.value=false;restArrivalSerial.value=0;restSelectionSerial.value=0;Object.defineProperty(document,'hidden',{configurable:true,value:false}) })
-afterEach(()=>{mounted.forEach(w=>w.unmount());mounted.length=0;vi.useRealTimers();vi.restoreAllMocks();document.body.innerHTML='';Object.defineProperty(document,'hidden',{configurable:true,value:false})})
+afterEach(()=>{mounted.forEach(w=>w.unmount());mounted.length=0;vi.useRealTimers();vi.restoreAllMocks();vi.unstubAllGlobals();document.body.innerHTML='';Object.defineProperty(document,'hidden',{configurable:true,value:false})})
+
+async function transition(reduced=false) {
+  vi.stubGlobal('matchMedia',()=>({matches:reduced}))
+  vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(null)
+  const router=createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{template:'<div />'}},{path:'/breathe',component:{template:'<div />'}}]})
+  await router.push('/')
+  const w=mount(RestEntryTransition,{attachTo:document.body,global:{plugins:[router],stubs:{Teleport:true}}})
+  mounted.push(w);await flushPromises();return {w,router}
+}
 
 describe('伙伴休息旅程',()=>{
+ it('伙伴逐个出发与到达，点按可回应，完整对白结束前不开始呼吸引导',async()=>{
+   const {w,router}=await transition()
+   await vi.advanceTimersByTimeAsync(6200);expect(w.get('.rest-entry-transition').classes()).toContain('depart')
+   expect(w.text()).toContain('我先去探探路');await w.get('.entry-crew .green').trigger('click');expect(w.text()).toContain('舒服的风在等我们')
+   await vi.advanceTimersByTimeAsync(2500);expect(w.get('.entry-crew .blue').attributes('disabled')).toBeDefined();expect(w.get('.crew-speech').text()).toContain('带上轻松的自己')
+   await vi.advanceTimersByTimeAsync(5000);expect(router.currentRoute.value.path).toBe('/breathe');expect(restArrivalSerial.value).toBe(0)
+   await vi.advanceTimersByTimeAsync(1300);expect(w.get('.rest-entry-transition').classes()).toContain('arrive');expect(w.text()).toContain('暖暖的阳光')
+   await vi.advanceTimersByTimeAsync(2500);expect(w.text()).toContain('空气好清新')
+   await vi.advanceTimersByTimeAsync(2500);expect(w.text()).toContain('风轻轻吹过来');expect(restArrivalSerial.value).toBe(0)
+   await vi.advanceTimersByTimeAsync(2600);expect(restArrivalSerial.value).toBe(1)
+ })
+ it('后台同时冻结位移与对白，主动继续后可在到达阶段跳过',async()=>{
+   const {w}=await transition();await vi.advanceTimersByTimeAsync(6800)
+   Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));await flushPromises()
+   const pose=w.get('.entry-crew .blue').attributes('style'),speech=w.get('.crew-speech').text()
+   await vi.advanceTimersByTimeAsync(20000);expect(w.get('.entry-crew .blue').attributes('style')).toBe(pose);expect(w.get('.crew-speech').text()).toBe(speech)
+   Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));await flushPromises();expect(w.text()).toContain('继续旅程')
+   await w.get('.entry-paused button').trigger('click');await vi.advanceTimersByTimeAsync(8200);expect(w.get('.rest-entry-transition').classes()).toContain('arrive')
+   await w.get('.entry-skip').trigger('click');await flushPromises();expect(restArrivalSerial.value).toBe(0);expect(restSelectionSerial.value).toBe(1)
+ })
+ it('减少动态效果仍按顺序保留三句感受，省略迈步与翻转',async()=>{
+   const {w}=await transition(true);await vi.advanceTimersByTimeAsync(800)
+   expect(w.get('.rest-entry-transition').classes()).toContain('arrive');expect(w.find('.walking').exists()).toBe(false);expect(w.text()).toContain('阳光')
+   await vi.advanceTimersByTimeAsync(1500);expect(w.text()).toContain('空气')
+   await vi.advanceTimersByTimeAsync(1500);expect(w.text()).toContain('风轻轻');expect(restArrivalSerial.value).toBe(0)
+   await vi.advanceTimersByTimeAsync(1600);expect(restArrivalSerial.value).toBe(1)
+ })
  it('直接访问先选择，不自动计时；走走与返回不创建练习',async()=>{
    const w=stage();expect(w.find('.rest-guidance').exists()).toBe(false);expect(w.classes()).toContain('idle')
    expect(w.findAll('.rest-choice')).toHaveLength(2)
