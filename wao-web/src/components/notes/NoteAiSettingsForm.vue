@@ -231,7 +231,7 @@ onBeforeUnmount(() => {
           :error="catalogError || validationError"
           scope="小记"
           allow-default
-          description="用于标题、正文与配图。"
+          description="仅用于小记标题、正文与配图，不影响卦象。"
           @refresh="loadModels"
         />
         <p v-else role="status">

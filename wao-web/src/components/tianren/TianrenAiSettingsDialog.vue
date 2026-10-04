@@ -5,6 +5,8 @@ import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AIModelFields from '@/components/ui/AIModelFields.vue'
 import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
 import AiSettingsSaveStatus from '@/components/ui/AiSettingsSaveStatus.vue'
+import TianrenNotificationSettingsPanel from '@/components/settings/TianrenNotificationSettingsPanel.vue'
+import TianrenNotificationStatus from '@/components/workday/TianrenNotificationStatus.vue'
 import { useAiModelCatalog } from '@/composables/aiModelCatalog'
 import {
   fetchTianrenAiSettings,
@@ -14,13 +16,27 @@ import {
 import { useSessionStore } from '@/stores/session'
 
 const emit = defineEmits<{ close: []; saved: [] }>()
+const props = withDefaults(defineProps<{ readingId?: string; interpreting?: boolean }>(), {
+  readingId: '',
+  interpreting: false,
+})
 const session = useSessionStore(),
-  tab = ref<'capabilities' | 'interpretationPrompt' | 'imagePrompt'>('capabilities')
+  tab = ref<'capabilities' | 'interpretationPrompt' | 'imagePrompt' | 'notifications'>(
+    'capabilities',
+  )
 const items = [
   { id: 'capabilities', label: 'AI 能力', icon: 'ri-cpu-line' },
   { id: 'interpretationPrompt', label: '解读提示词', icon: 'ri-book-open-line' },
   { id: 'imagePrompt', label: '配图提示词', icon: 'ri-image-line' },
+  { id: 'notifications', label: '飞书通知', icon: 'ri-notification-3-line' },
 ]
+const notificationPanel = ref<InstanceType<typeof TianrenNotificationSettingsPanel> | null>(null)
+const notificationsVisited = ref(false)
+const isNotification = computed(() => tab.value === 'notifications')
+function selectSection(value: string) {
+  if (value === 'notifications') notificationsVisited.value = true
+  tab.value = value as typeof tab.value
+}
 type Draft = Pick<
   TianrenAiSettings,
   'version' | 'autoImage' | 'model' | 'reasoningEffort' | 'interpretationPrompt' | 'imagePrompt'
@@ -155,7 +171,13 @@ function keepDraft() {
   remember()
 }
 function restoreDefault() {
-  if (!draft.value || !remote.value || tab.value === 'capabilities') return
+  if (
+    !draft.value ||
+    !remote.value ||
+    tab.value === 'capabilities' ||
+    tab.value === 'notifications'
+  )
+    return
   draft.value[tab.value] =
     tab.value === 'interpretationPrompt'
       ? remote.value.defaultInterpretationPrompt
@@ -210,6 +232,7 @@ async function save() {
   }
 }
 function close() {
+  if (notificationPanel.value?.saving) return
   remember()
   emit('close')
 }
@@ -245,12 +268,19 @@ onBeforeUnmount(() => {
 
 <template>
   <SettingsDialogShell
-    title="卦象 AI 设置"
-    description="把今天的卦意，讲清楚、画出来。"
+    title="天人一卦设置"
+    description="把解读、配图和飞书通知，在这里一起安排。"
     @close="close"
   >
-    <AiSettingsLayout :items="items" :active="tab" @update:active="tab = $event as typeof tab">
-      <template #engine
+    <AiSettingsLayout
+      :items="items"
+      :active="tab"
+      :scope-note="
+        isNotification ? '行动通知总开关\n也影响精力补给和重点' : '仅用于天人一卦\n不会修改小记设置'
+      "
+      @update:active="selectSection"
+    >
+      <template v-if="!isNotification" #engine
         ><AIModelFields
           v-if="draft"
           v-model:model="draft.model"
@@ -261,15 +291,31 @@ onBeforeUnmount(() => {
           :disabled="loading || saving"
           :error="catalogError || validationError"
           scope="天人"
-          description="用于卦象解读与配图。"
+          description="仅用于卦象解读与配图，不影响小记。"
           @refresh="loadModels"
         />
         <p v-else role="status">
           {{ loading ? '正在读取账号设置…' : '账号设置尚未读取' }}
         </p></template
       >
-      <p v-if="loading && draft" role="status">正在读取账号设置…</p>
-      <fieldset v-if="draft" :disabled="saving || loading">
+      <p v-if="loading && draft && !isNotification" role="status">正在读取账号设置…</p>
+      <TianrenNotificationSettingsPanel
+        v-if="notificationsVisited"
+        v-show="isNotification"
+        ref="notificationPanel"
+        embedded
+      />
+      <TianrenNotificationStatus
+        v-if="isNotification && props.readingId"
+        :reading-id="props.readingId"
+        :interpreting="props.interpreting"
+        embedded
+      />
+      <div v-else-if="isNotification" class="behavior-note">
+        <i class="ri-information-line" aria-hidden="true"></i
+        ><span>今天尚未起卦，起卦后可在这里查看飞书投递状态。保存设置不会立即发送通知。</span>
+      </div>
+      <fieldset v-if="draft && !isNotification" :disabled="saving || loading">
         <template v-if="tab === 'capabilities'"
           ><div class="section-heading">
             <div>
@@ -289,7 +335,7 @@ onBeforeUnmount(() => {
             ><span> 只影响之后的新解读，已有解读与配图保留。配图失败可单独重试。 </span>
           </div></template
         >
-        <template v-else
+        <template v-else-if="tab === 'interpretationPrompt' || tab === 'imagePrompt'"
           ><div class="section-heading">
             <div>
               <h3>{{ tab === 'interpretationPrompt' ? '解读提示词' : '配图提示词' }}</h3>
@@ -321,7 +367,7 @@ onBeforeUnmount(() => {
           </div></template
         >
       </fieldset>
-      <div v-if="conflict && remote" class="settings-conflict" role="alert">
+      <div v-if="conflict && remote && !isNotification" class="settings-conflict" role="alert">
         <strong>保留了你的未保存草稿</strong>
         <p>草稿基于版本 {{ draft?.version }}，账号当前为版本 {{ remote.version }}。</p>
         <details>
@@ -341,29 +387,70 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
-      <p v-if="storageError" class="error" role="alert">{{ storageError }}</p>
+      <p v-if="error && !isNotification" class="error" role="alert">{{ error }}</p>
+      <p v-if="storageError && !isNotification" class="error" role="alert">{{ storageError }}</p>
       <template #footer
-        ><AiSettingsSaveStatus
-          :text="saving ? '正在保存设置…' : storageError || error || status"
-          :dirty="dirty"
-          :loading="loading"
-          :saving="saving"
-          :error="!!(storageError || error || conflict)"
-        />
-        <div class="footer-actions">
-          <button class="light-action" type="button" :disabled="loading || saving" @click="load">
-            <i class="ri-refresh-line" aria-hidden="true"></i>重新读取设置</button
-          ><button type="button" @click="close">关闭</button
-          ><button
-            class="primary"
-            type="button"
-            :disabled="!draft || !remote || loading || saving || conflict"
-            @click="save"
-          >
-            {{ saving ? '保存中…' : error && !conflict ? '重试保存' : '保存设置' }}
-          </button>
-        </div></template
+        ><template v-if="isNotification">
+          <AiSettingsSaveStatus
+            :text="notificationPanel?.error || notificationPanel?.status || '正在读取通知设置…'"
+            :dirty="!!notificationPanel?.dirty"
+            :loading="!!notificationPanel?.loading"
+            :saving="!!notificationPanel?.saving"
+            :error="!!notificationPanel?.error"
+            hint="保存后跨设备生效，不会立即发送通知"
+          />
+          <div class="footer-actions">
+            <button
+              class="light-action"
+              type="button"
+              :disabled="notificationPanel?.loading || notificationPanel?.saving"
+              @click="notificationPanel?.load()"
+            >
+              <i class="ri-refresh-line" aria-hidden="true"></i>重新读取设置
+            </button>
+            <button type="button" :disabled="notificationPanel?.saving" @click="close">关闭</button>
+            <button
+              class="primary"
+              type="button"
+              :disabled="
+                !notificationPanel?.loaded ||
+                !notificationPanel?.dirty ||
+                notificationPanel?.loading ||
+                notificationPanel?.saving
+              "
+              @click="notificationPanel?.save()"
+            >
+              {{
+                notificationPanel?.saving
+                  ? '保存中…'
+                  : notificationPanel?.error
+                    ? '重试保存'
+                    : '保存通知设置'
+              }}
+            </button>
+          </div> </template
+        ><template v-else
+          ><AiSettingsSaveStatus
+            :text="saving ? '正在保存设置…' : storageError || error || status"
+            :dirty="dirty"
+            :loading="loading"
+            :saving="saving"
+            :error="!!(storageError || error || conflict)"
+          />
+          <div class="footer-actions">
+            <button class="light-action" type="button" :disabled="loading || saving" @click="load">
+              <i class="ri-refresh-line" aria-hidden="true"></i>重新读取设置</button
+            ><button type="button" @click="close">关闭</button
+            ><button
+              class="primary"
+              type="button"
+              :disabled="!draft || !remote || loading || saving || conflict"
+              @click="save"
+            >
+              {{ saving ? '保存中…' : error && !conflict ? '重试保存' : '保存设置' }}
+            </button>
+          </div></template
+        ></template
       >
     </AiSettingsLayout>
   </SettingsDialogShell>

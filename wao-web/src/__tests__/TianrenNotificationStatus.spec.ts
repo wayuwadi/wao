@@ -10,6 +10,15 @@ const mountStatus = () => mount(TianrenNotificationStatus, { props: { readingId:
 describe('卦象通知状态', () => {
   beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks() })
   afterEach(() => { vi.useRealTimers() })
+  it('聚合设置中直接显示投递详情，不再提供独立配置或折叠按钮', async () => {
+    vi.mocked(fetchTianrenNotification).mockResolvedValue(state('SENT'))
+    const wrapper = mount(TianrenNotificationStatus, { props: { readingId: 'reading-1', interpreting: false, embedded: true }, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    expect(wrapper.find('.notice-trigger').exists()).toBe(false)
+    expect(wrapper.find('.notice-settings').exists()).toBe(false)
+    expect(wrapper.find('.notice-details').exists()).toBe(true)
+    expect(wrapper.text()).toContain('已发送'); wrapper.unmount()
+  })
 
   it('未知接收结果确认后才能重试并保留群名', async () => {
     vi.mocked(fetchTianrenNotification).mockResolvedValue(state('UNKNOWN'))

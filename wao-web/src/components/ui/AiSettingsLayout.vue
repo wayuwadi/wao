@@ -1,5 +1,12 @@
 <script setup lang="ts">
-defineProps<{ items: { id: string; label: string; icon?: string }[]; active: string }>()
+withDefaults(
+  defineProps<{
+    items: { id: string; label: string; icon?: string }[]
+    active: string
+    scopeNote?: string
+  }>(),
+  { scopeNote: '仅用于当前功能\n不会修改另一处设置' },
+)
 const emit = defineEmits<{ 'update:active': [value: string] }>()
 </script>
 <template>
@@ -19,12 +26,11 @@ const emit = defineEmits<{ 'update:active': [value: string] }>()
           </button>
         </nav>
         <div class="sidebar-foot">
-          <i class="ri-shield-check-line" aria-hidden="true"></i
-          ><span>仅用于当前功能<br />不会修改另一处设置</span>
+          <i class="ri-shield-check-line" aria-hidden="true"></i><span>{{ scopeNote }}</span>
         </div>
       </aside>
       <div class="settings-main">
-        <div class="settings-engine"><slot name="engine" /></div>
+        <div v-if="$slots.engine" class="settings-engine"><slot name="engine" /></div>
         <div class="settings-scroll"><slot /></div>
       </div>
     </div>
@@ -104,6 +110,9 @@ nav button[aria-pressed='true'] {
   font-size: 16px;
   margin-top: 4px;
   flex-shrink: 0;
+}
+.sidebar-foot span {
+  white-space: pre-line;
 }
 .settings-main {
   min-width: 0;

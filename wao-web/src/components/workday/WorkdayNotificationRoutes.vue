@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
 import {
   fetchFeishuChats,
   fetchWebhookEndpoints,
@@ -13,7 +14,11 @@ import {
   type WorkdayRhythmEnergyNotification,
 } from '@/utils/workdayRhythm'
 
-const props = defineProps<{ modelValue: WorkdayRhythmEnergyNotification; disabled?: boolean; onlyTianren?: boolean }>()
+const props = defineProps<{
+  modelValue: WorkdayRhythmEnergyNotification
+  disabled?: boolean
+  onlyTianren?: boolean
+}>()
 const emit = defineEmits<{ 'update:modelValue': [value: WorkdayRhythmEnergyNotification] }>()
 const chats = ref<FeishuChat[]>([])
 const webhooks = ref<FeishuWebhookEndpoint[]>([])
@@ -77,9 +82,12 @@ function copyConfig() {
 }
 function updateFlag(
   flag: 'enabled' | 'notifyEnergy' | 'notifyFocus' | 'notifyTianren' | 'autoTianrenAtNine',
-  event: Event,
+  event: Event | boolean,
 ) {
-  emit('update:modelValue', { ...copyConfig(), [flag]: (event.target as HTMLInputElement).checked })
+  emit('update:modelValue', {
+    ...copyConfig(),
+    [flag]: typeof event === 'boolean' ? event : (event.target as HTMLInputElement).checked,
+  })
 }
 function selectTarget(kind: WorkdayNotificationKind, event: Event) {
   const selected = options.value.find(
@@ -110,70 +118,82 @@ async function refresh() {
   if (loading.value) return
   loading.value = true
   errors.value = []
-  const results = await Promise.allSettled([fetchWebhookEndpoints(), fetchFeishuChats()])
-  const [hooksResult, chatsResult] = results
-  if (hooksResult.status === 'fulfilled') webhooks.value = hooksResult.value
-  else errors.value.push('已配置通知群读取失败，请刷新重试。')
-  if (chatsResult.status === 'fulfilled') chats.value = chatsResult.value
-  else errors.value.push('飞书机器人所在群读取失败，请刷新重试。')
+  await Promise.allSettled([
+    fetchWebhookEndpoints()
+      .then((value) => {
+        webhooks.value = value
+      })
+      .catch(() => {
+        errors.value.push('已配置通知群读取失败，请刷新重试。')
+      }),
+    fetchFeishuChats()
+      .then((value) => {
+        chats.value = value
+      })
+      .catch(() => {
+        errors.value.push('飞书机器人所在群读取失败，请刷新重试。')
+      }),
+  ])
   loading.value = false
 }
 onMounted(refresh)
 </script>
 
 <template>
-  <section class="notification-routes" aria-label="分类通知设置">
-    <header>
-      <div>
-        <h3>通知群设置</h3>
-        <p>{{ onlyTianren ? '卦象通知保存后跨设备生效。' : '三类通知分别选群，互不影响；保存后跨设备生效。' }}</p>
+  <section
+    class="notification-routes"
+    :class="{ 'tianren-only': onlyTianren }"
+    aria-label="分类通知设置"
+  >
+    <template v-if="onlyTianren">
+      <div class="section-heading">
+        <div>
+          <h3>飞书通知</h3>
+          <p>选择通知群，安排每天的卦象解读。</p>
+        </div>
       </div>
-      <label class="toggle-field"
-        ><input
-          type="checkbox"
-          :checked="modelValue.enabled"
-          :disabled="disabled"
-          @change="updateFlag('enabled', $event)"
-        /><span>启用行动通知</span></label
-      >
-    </header>
-    <p v-if="!modelValue.enabled" class="muted">当前暂停全部行动通知，已选的群会保留。</p>
-    <article v-for="route in routes.filter((item) => !onlyTianren || item.kind === 'tianren')" :key="route.kind" :data-notification-kind="route.kind">
-      <div class="route-heading">
-        <h4>{{ route.title }}</h4>
-        <label
-          ><input
-            type="checkbox"
-            :aria-label="`${route.title}发送通知`"
-            :disabled="disabled"
-            :checked="
-              route.kind === 'energy' ? modelValue.notifyEnergy !== false : !!modelValue[route.flag]
-            "
-            @change="updateFlag(route.flag, $event)"
-          />发送通知</label
-        >
+      <fieldset :disabled="disabled">
+        <AiSettingsToggleRow
+          :model-value="modelValue.enabled"
+          title="行动通知总开关"
+          description="同时控制卦象、精力补给和今日重点通知；关闭后已选群保留。"
+          icon="ri-notification-3-line"
+          control-label="启用行动通知"
+          @update:model-value="updateFlag('enabled', $event)"
+        />
+        <AiSettingsToggleRow
+          :model-value="!!modelValue.notifyTianren"
+          title="发送卦象解读"
+          description="每天发送一张已保存解读的卡片，重新解读不会重复发送。"
+          icon="ri-send-plane-line"
+          control-label="卦象解读发送通知"
+          @update:model-value="updateFlag('notifyTianren', $event)"
+        />
+        <AiSettingsToggleRow
+          :model-value="!!modelValue.autoTianrenAtNine"
+          title="每天 9:00 自动起卦并解读"
+          description="北京时间，周末照常；需启用通知并选择目标群。"
+          icon="ri-time-line"
+          control-label="每天 9:00 自动起卦并解读"
+          @update:model-value="updateFlag('autoTianrenAtNine', $event)"
+        />
+      </fieldset>
+      <p v-if="!modelValue.enabled" class="muted">当前暂停全部行动通知，已选的群会保留。</p>
+      <div v-if="modelValue.autoTianrenAtNine" class="behavior-note">
+        <i class="ri-information-line" aria-hidden="true"></i
+        ><span>无需打开页面；当天已起卦会沿用。AI 暂不可用时稍后继续，失败最多自动尝试三次。</span>
       </div>
-      <p>{{ route.description }}</p>
-      <label v-if="route.kind === 'tianren'" class="daily-cast-setting">
-        <input type="checkbox" aria-label="每天 9:00 自动起卦并解读" :checked="!!modelValue.autoTianrenAtNine"
-          :disabled="disabled" @change="updateFlag('autoTianrenAtNine', $event)" />
-        每天 9:00 自动起卦并解读（北京时间）
-      </label>
-      <p v-if="route.kind === 'tianren' && modelValue.autoTianrenAtNine" class="muted">
-        每天执行，周末照常；无需打开页面。需同时启用行动通知和卦象通知并选群，解读完成后发群。
-        当天已起卦会沿用；AI 暂不可用时稍后继续，失败最多自动尝试三次。
-      </p>
       <label class="target-field"
         ><span>目标群</span>
         <select
-          :aria-label="`${route.title}目标群`"
-          :value="targetValue(route.kind)"
-          :disabled="loading || disabled"
-          @change="selectTarget(route.kind, $event)"
+          aria-label="卦象解读目标群"
+          :value="targetValue('tianren')"
+          :disabled="disabled || (loading && !options.length)"
+          @change="selectTarget('tianren', $event)"
         >
           <option value="">请选择通知群</option>
-          <option v-if="missing(route.kind)" :value="targetValue(route.kind)" disabled>
-            已保存 · {{ targetName(route.kind) || '原目标' }}（{{
+          <option v-if="missing('tianren')" :value="targetValue('tianren')" disabled>
+            已保存 · {{ targetName('tianren') || '原目标' }}（{{
               loading ? '读取中' : '暂不可用'
             }}）
           </option>
@@ -197,7 +217,101 @@ onMounted(refresh)
           </optgroup>
         </select>
       </label>
-    </article>
+    </template>
+    <template v-else
+      ><header>
+        <div>
+          <h3>通知群设置</h3>
+          <p>
+            {{
+              onlyTianren
+                ? '卦象通知保存后跨设备生效。'
+                : '三类通知分别选群，互不影响；保存后跨设备生效。'
+            }}
+          </p>
+        </div>
+        <label class="toggle-field"
+          ><input
+            type="checkbox"
+            :checked="modelValue.enabled"
+            :disabled="disabled"
+            @change="updateFlag('enabled', $event)"
+          /><span>启用行动通知</span></label
+        >
+      </header>
+      <p v-if="!modelValue.enabled" class="muted">当前暂停全部行动通知，已选的群会保留。</p>
+      <article
+        v-for="route in routes.filter((item) => !onlyTianren || item.kind === 'tianren')"
+        :key="route.kind"
+        :data-notification-kind="route.kind"
+      >
+        <div class="route-heading">
+          <h4>{{ route.title }}</h4>
+          <label
+            ><input
+              type="checkbox"
+              :aria-label="`${route.title}发送通知`"
+              :disabled="disabled"
+              :checked="
+                route.kind === 'energy'
+                  ? modelValue.notifyEnergy !== false
+                  : !!modelValue[route.flag]
+              "
+              @change="updateFlag(route.flag, $event)"
+            />发送通知</label
+          >
+        </div>
+        <p>{{ route.description }}</p>
+        <label v-if="route.kind === 'tianren'" class="daily-cast-setting">
+          <input
+            type="checkbox"
+            aria-label="每天 9:00 自动起卦并解读"
+            :checked="!!modelValue.autoTianrenAtNine"
+            :disabled="disabled"
+            @change="updateFlag('autoTianrenAtNine', $event)"
+          />
+          每天 9:00 自动起卦并解读（北京时间）
+        </label>
+        <p v-if="route.kind === 'tianren' && modelValue.autoTianrenAtNine" class="muted">
+          每天执行，周末照常；无需打开页面。需同时启用行动通知和卦象通知并选群，解读完成后发群。
+          当天已起卦会沿用；AI 暂不可用时稍后继续，失败最多自动尝试三次。
+        </p>
+        <label class="target-field"
+          ><span>目标群</span>
+          <select
+            :aria-label="`${route.title}目标群`"
+            :value="targetValue(route.kind)"
+            :disabled="disabled || (loading && !options.length)"
+            @change="selectTarget(route.kind, $event)"
+          >
+            <option value="">请选择通知群</option>
+            <option v-if="missing(route.kind)" :value="targetValue(route.kind)" disabled>
+              已保存 · {{ targetName(route.kind) || '原目标' }}（{{
+                loading ? '读取中' : '暂不可用'
+              }}）
+            </option>
+            <optgroup label="已配置通知群（Webhook）">
+              <option
+                v-for="option in options.filter((item) => item.channel === 'WEBHOOK')"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.name }}
+              </option>
+            </optgroup>
+            <optgroup label="飞书机器人所在群">
+              <option
+                v-for="option in options.filter((item) => item.channel === 'CHAT')"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.name }}
+              </option>
+            </optgroup>
+          </select>
+        </label>
+      </article>
+    </template>
     <div class="route-options-status" aria-live="polite">
       <span v-if="loading">正在读取可用通知群…</span>
       <span v-else-if="!options.length && !errors.length"
@@ -212,7 +326,33 @@ onMounted(refresh)
 </template>
 
 <style scoped>
-.daily-cast-setting { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; }
+.tianren-only {
+  gap: 16px;
+}
+.tianren-only h3 {
+  font-size: 16px;
+}
+.tianren-only fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.tianren-only .target-field {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 8px;
+}
+.tianren-only .target-field select {
+  height: 40px;
+  font-size: 14px;
+}
+.daily-cast-setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+}
 .notification-routes {
   display: grid;
   gap: 12px;
