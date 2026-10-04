@@ -15,6 +15,8 @@ public class NoteTagService {
 
     /** 列出已持久化标签，未关联文档的标签也保留。 */
     public List<String> list() { return mapper.listNames(); }
+    /** 自动标注写回时锁住现有字典，防止结果重新关联并发删除的标签。 */
+    public List<String> lockExisting() { return mapper.lockNames(); }
 
     /** 幂等新增一个标签；重试和同时创建同名标签不产生重复项。 */
     public String create(String name) {

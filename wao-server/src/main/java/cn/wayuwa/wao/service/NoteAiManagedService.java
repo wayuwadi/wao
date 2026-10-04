@@ -20,6 +20,8 @@ public class NoteAiManagedService {
     private final NotePolishVersionService versions;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     private NoteOriginalService originals;
+    @org.springframework.beans.factory.annotation.Autowired
+    private NoteTagService noteTags;
     private static final ThreadLocal<Boolean> DERIVED=ThreadLocal.withInitial(()->false);
     private static final ThreadLocal<String> ACTOR=new ThreadLocal<>();
     /** 返回明确的内部调用身份；不回落到默认成员。 */
@@ -99,7 +101,7 @@ public class NoteAiManagedService {
             project(doc,"SKIPPED","SKIPPED","SKIPPED",NO_AUTO.get()?"来源未授权自动 AI；原内容已保存":"正文已保存，自动整理设置暂不可确认；请读取设置后重试");return;
         }
         NoteAiSettingsService.Settings s=decode(policy,NoteAiSettingsService.Settings.class);
-        for(String stage:List.of("title","image","polish"))create(doc,cycle,stage,s,false,1,origin,cover);
+        for(String stage:List.of("title","image","polish","tags"))create(doc,cycle,stage,s,false,1,origin,cover);
         if(adopted!=null&&adopted.polish())db.update("UPDATE note_ai_stage_attempt SET reason_code='MANUAL_APPLIED',message='本次已采用手动润色，不重复自动润色' WHERE doc_id=? AND cycle_id=? AND stage='polish'",doc.id(),cycle);
         projectCurrent(doc);
     }
@@ -112,6 +114,8 @@ public class NoteAiManagedService {
         else if("title".equals(stage)&&!manual&&"MANUAL".equals(origin)){code="MANUAL_TITLE";message="保留手动标题";}
         else if("image".equals(stage)&&!manual&&!cover.isBlank()){code="EXISTING_IMAGE";message="已有自动配图，本次不重复生成";}
         else if(letters.isBlank()){code="NOT_APPLICABLE";message="暂无可整理文字";}
+        else if("tags".equals(stage)&&noteTags.list().isEmpty()){code="NO_EXISTING_TAGS";message="暂无已有标签，不创建新标签";}
+        else if("tags".equals(stage)&&effective.length()>12000){code="TAGS_TOO_LONG";message="标签推荐最多 12000 个实现字符，本次未标注";}
         else if("image".equals(stage)&&!manual&&effective.length()<80){code="SHORT_IMAGE_INPUT";message="自动配图暂需至少 80 个实现字符，可手动配图";}
         else if("polish".equals(stage)&&effective.length()>12000){code="BODY_TOO_LONG";message="整篇润色最多 12000 个实现字符；请编辑并选择不超过 4000 字符的片段润色";}
         else if("image".equals(stage)&&effective.length()>60000){code="IMAGE_TOO_LONG";message="配图最多 60000 个实现字符，请明确选择较短材料";}
@@ -120,7 +124,7 @@ public class NoteAiManagedService {
         db.update("INSERT INTO note_ai_stage_attempt(id,doc_id,member_id,cycle_id,stage,attempt_no,manual_stage,cancel_epoch,state,reason_code,message,source_json,input_text,policy_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             id(),doc.id(),member,cycle,stage,attempt,manual,s.epoch(stage),code==null?"PENDING":"SKIPPED",code,message,settings.write(doc),input,settings.write(s));
     }
-    private String label(String stage){return switch(stage){case "title"->"润色标题";case "image"->"自动配图";default->"润色正文";};}
+    private String label(String stage){return switch(stage){case "title"->"润色标题";case "image"->"自动配图";case "tags"->"自动标签";default->"润色正文";};}
     private List<Map<String,Object>> attempts(String doc,String cycle){return db.queryForList("SELECT a.* FROM note_ai_stage_attempt a WHERE doc_id=? AND cycle_id=? AND attempt_no=(SELECT MAX(b.attempt_no) FROM note_ai_stage_attempt b WHERE b.cycle_id=a.cycle_id AND b.stage=a.stage) ORDER BY CASE stage WHEN 'title' THEN 0 WHEN 'image' THEN 1 ELSE 2 END",doc,cycle);}
     private void project(DocDto doc,String title,String image,String polish,String message){db.update("""
         INSERT INTO note_ai_workflow(doc_id,member_id,base_rev,original_title,source_markdown_hash,title_status,image_status,polish_status,last_error)
@@ -175,11 +179,16 @@ public class NoteAiManagedService {
     private boolean terminal(Map<String,Object> a){if(str(a,"job_id").isEmpty())return true;
         try{return "image".equals(str(a,"stage"))?!List.of("PENDING","QUEUED","RUNNING").contains(image.get(str(a,"member_id"),str(a,"job_id")).status()):!List.of("QUEUED","RUNNING").contains(text.get(str(a,"member_id"),str(a,"job_id")).status());}catch(NotFoundException e){return true;}}
     private void submit(Map<String,Object> a){
-        if(originals!=null)originals.freezeAttempt(str(a,"id"));
+        if(originals!=null&&!"tags".equals(str(a,"stage")))originals.freezeAttempt(str(a,"id"));
         String stage=str(a,"stage"),job;
         NoteAiSettingsService.Settings s=decode(str(a,"policy_json"),NoteAiSettingsService.Settings.class);
         if(stage.equals("image"))job=image.startNoteWorkflow(str(a,"member_id"),new ArticleImageRequest(str(a,"input_text"),s.imagePrompt().isBlank()?"为这篇小记生成简洁的 16:9 总览图；只表达已有主题，不编造事实。":s.imagePrompt(),s.model().isBlank()?null:s.model(),str(a,"id"))).id();
-            else job=text.submit(str(a,"member_id"),str(a,"id"),stage.equals("title")?"NOTE_TITLE":"NOTE_BODY",str(a,"input_text"),s.model().isBlank()?null:s.model(),s.titlePrompt(),s.polishPrompt()).id();
+        else if(stage.equals("tags")){
+            List<String> allowed=noteTags.list();
+            if(allowed.isEmpty()){db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='NO_EXISTING_TAGS',message='暂无已有标签，不创建新标签' WHERE id=?",str(a,"id"));return;}
+            job=text.submit(str(a,"member_id"),str(a,"id"),"NOTE_TAGS",str(a,"input_text"),s.model().isBlank()?null:s.model(),null,null,allowed).id();
+        }
+        else job=text.submit(str(a,"member_id"),str(a,"id"),stage.equals("title")?"NOTE_TITLE":"NOTE_BODY",str(a,"input_text"),s.model().isBlank()?null:s.model(),s.titlePrompt(),s.polishPrompt()).id();
             db.update("UPDATE note_ai_stage_attempt SET state='RUNNING',job_id=?,reason_code='QUEUED',message='已入队，关闭页面后仍会继续' WHERE id=?",job,str(a,"id"));
     }
     private void fail(Map<String,Object> a,String message){db.update("UPDATE note_ai_stage_attempt SET state='FAILED',reason_code='EXECUTION_FAILED',message=? WHERE id=?",message==null?"执行失败，请重试":message.substring(0,Math.min(500,message.length())),str(a,"id"));}
@@ -189,13 +198,21 @@ public class NoteAiManagedService {
         else{var result=text.get(str(a,"member_id"),str(a,"job_id"));status=result.status();output=result.polished();message=result.message();}
         if(status.equals("FAILED")){fail(a,message);return;}
         if(!status.equals("SUCCEEDED")){db.update("UPDATE note_ai_stage_attempt SET reason_code=?,message=? WHERE id=?",status,status.equals("RUNNING")?"正在执行":"正在模型队列等待",str(a,"id"));return;}
-        if(output==null||output.isBlank()){fail(a,"AI 未返回可用结果");return;}
+        if((output==null||output.isBlank())&&!stage.equals("tags")){fail(a,"AI 未返回可用结果");return;}
         if(stage.equals("title")&&!Objects.equals(doc.title(),decode(str(a,"source_json"),DocDto.class).title())){
             db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='MANUAL_TITLE',message='标题在等待期间已更新，旧结果未采用' WHERE id=?",str(a,"id"));return;
         }
         if(!fingerprint(userBody(doc,str(signal,"cover_url"))).equals(str(signal,"body_hash"))){fail(a,"来源已更新，旧结果未采用");return;}
         PatchDocRequest patch;
-        if(stage.equals("title"))patch=new PatchDocRequest(output,null,null,null,null,doc.rev());
+        if(stage.equals("tags")){
+            var allowed=noteTags.lockExisting();
+            var selected=Objects.toString(output,"").lines().map(String::strip).filter(allowed::contains).distinct().limit(3).toList();
+            if(selected.isEmpty()){db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='NO_MATCHING_TAGS',message='没有合适的已有标签，本次未标注' WHERE id=?",str(a,"id"));return;}
+            var merged=new LinkedHashSet<>(doc.tags()==null?List.<String>of():doc.tags());
+            for(String tag:selected)if(merged.size()<20)merged.add(tag);
+            patch=new PatchDocRequest(null,null,null,null,null,doc.rev(),List.copyOf(merged));
+        }
+        else if(stage.equals("title"))patch=new PatchDocRequest(output,null,null,null,null,doc.rev());
         else{
             RichDocContentDto content;
             if(stage.equals("image"))content=withCover(doc.content(),output,str(signal,"cover_url"));
@@ -213,7 +230,7 @@ public class NoteAiManagedService {
         boolean old=DERIVED.get();DERIVED.set(true);
         DocDto saved;
         try{saved=knowledge.getObject().updateDerivedNote(doc.id(),patch);}finally{DERIVED.set(old);}
-        if(originals!=null)originals.result(str(a,"member_id"),str(a,"id"),str(a,"job_id"),originals.content(saved),saved.rev(),"APPLIED");
+        if(originals!=null&&!stage.equals("tags"))originals.result(str(a,"member_id"),str(a,"id"),str(a,"job_id"),originals.content(saved),saved.rev(),"APPLIED");
         if(stage.equals("title"))db.update("UPDATE note_ai_save_signal SET last_title=? WHERE doc_id=?",output,doc.id());
         if(stage.equals("image"))db.update("UPDATE note_ai_save_signal SET cover_url=? WHERE doc_id=?",output,doc.id());
         if(stage.equals("polish"))db.update("UPDATE note_ai_save_signal SET body_hash=? WHERE doc_id=?",fingerprint(output),doc.id());
@@ -233,7 +250,7 @@ public class NoteAiManagedService {
     /** 单项手动重做独立于自动开关，失败重试只处理指定阶段。 */
     @Transactional
     public NoteAiWorkflowService.Status manual(String member,String docId,String stage,Integer expectedRev,String requestId){
-        if(!List.of("title","image","polish").contains(stage)||requestId==null||!requestId.matches("[a-f0-9]{32}"))throw new BadRequestException("阶段或请求标识无效");
+        if(!List.of("title","image","polish","tags").contains(stage)||requestId==null||!requestId.matches("[a-f0-9]{32}"))throw new BadRequestException("阶段或请求标识无效");
         settings.lockMember(member);DocDto doc=knowledge.getObject().getDoc(docId);
         if(!"kb-notes".equals(doc.kbId()))throw new NotFoundException("小记不存在");
         var existing=one("SELECT * FROM note_ai_stage_attempt WHERE id=?",requestId);
@@ -265,7 +282,7 @@ public class NoteAiManagedService {
         for(var a:attempts(docId,str(signal,"cycle_id"))){String stage=str(a,"stage"),message=str(a,"message"),code=str(a,"reason_code"),state=str(a,"state");
             states.put(stage,state);details.put(stage,new NoteAiWorkflowService.StageDetail(code,message,state.equals("FAILED"),code.equals("BODY_TOO_LONG")?"SELECT_TEXT":"RETRY",str(a,"job_id"),(int)num(signal,"source_rev")));if(!message.isBlank())messages.add(label(stage)+"："+message);}
         if(details.isEmpty())messages.add("正文已保存，自动整理设置暂不可确认；请读取设置后重试");
-        return new NoteAiWorkflowService.Status(docId,states.getOrDefault("title","SKIPPED"),states.getOrDefault("image","SKIPPED"),states.getOrDefault("polish","SKIPPED"),String.join("；",messages),details);
+        return new NoteAiWorkflowService.Status(docId,states.getOrDefault("title","SKIPPED"),states.getOrDefault("image","SKIPPED"),states.getOrDefault("polish","SKIPPED"),String.join("；",messages),details,states.getOrDefault("tags","SKIPPED"));
     }
     /** 返回成员自己发起的协作小记阶段；不包含其他人的私人输入。 */
     public List<NoteAiWorkflowService.Status> sharedStatuses(String member){

@@ -158,6 +158,17 @@ describe('小记集中记录空间', () => {
     expect(wrapper.find('[data-note-id="one"] button[aria-label="润色失败，点击重试"]').exists()).toBe(true)
     wrapper.unmount()
   })
+  it('后台标签状态覆盖旧浏览器记录，执行中不能重复启动', async () => {
+    useDataStore().docs.one = doc('one', '合成提示词标签验收')
+    localStorage.setItem('wao-note-enrichment-complete-v1:wg:one', JSON.stringify({ tags: 'done' }))
+    vi.mocked(fetchNoteAiWorkflows).mockResolvedValue([{ docId: 'one', title: 'SKIPPED', image: 'SKIPPED', polish: 'SKIPPED', tags: 'RUNNING', message: '后台标签推荐中' }])
+    const wrapper = await view()
+    await flushPromises()
+    const tag = wrapper.get('[data-note-id="one"] button[aria-label="标签正在处理"]')
+    expect(tag.classes()).toContain('stage-running')
+    expect(tag.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
   it('正文片段定位保留新建草稿，清除查找恢复分页和列表位置', async () => {
     const data = useDataStore()
     for (let i = 0; i < 16; i++) data.docs[`search-${i}`] = { ...doc(`search-${i}`, `独特正文桂花${i}`), title: `独立标题${i}` }
