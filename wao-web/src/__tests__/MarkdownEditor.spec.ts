@@ -900,13 +900,11 @@ describe('MarkdownEditor（所见即所得）', () => {
     expect(w.findComponent(ImageCopyMenu).exists()).toBe(true)
     expect(document.body.textContent).not.toContain('向右旋转')
     const uniform = [...document.body.querySelectorAll<HTMLButtonElement>('.note-image-menu button')].find(x => x.textContent?.includes('统一本篇'))!
-    uniform.click()
-    await nextTick()
     const height = document.body.querySelector<HTMLInputElement>('[aria-label="图片高度（像素）"]')!
     height.value = '180'
     height.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick()
-    document.body.querySelector<HTMLFormElement>('.note-image-menu')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    uniform.click()
     await nextTick()
     const images = () => e.getJSON().content!.filter(n => n.type === 'image')
     expect(images().map(n => n.attrs?.height)).toEqual([180, 180])
@@ -916,6 +914,33 @@ describe('MarkdownEditor（所见即所得）', () => {
     e.commands.undo()
     expect(images().map(n => n.attrs?.width)).toEqual(['50%', '50%'])
     expect(images().map(n => n.attrs?.height)).toEqual([null, null])
+    w.unmount()
+  })
+
+  it('小记百分比立即生效，单张与全篇范围独立且菜单保持打开', async () => {
+    const w = await mountEditor({ modelValue: '![一](/api/images/one/raw)\n\n![二](/api/images/two/raw)', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    await w.get('.md-body img').trigger('contextmenu', { clientX: 20, clientY: 30 })
+    await flushPromises()
+    const preset = (text: string) => [...document.body.querySelectorAll<HTMLButtonElement>('.note-image-menu .image-scale-options button')].find(b => b.textContent === text)!
+    preset('25%').click()
+    await nextTick()
+    const images = () => e.getJSON().content!.filter(n => n.type === 'image')
+    expect(images().map(n => n.attrs?.width)).toEqual(['25%', null])
+    expect(document.body.querySelector('.note-image-menu')).not.toBeNull()
+    expect(preset('25%').getAttribute('aria-pressed')).toBe('true')
+    e.commands.undo()
+    await nextTick()
+    const all = [...document.body.querySelectorAll<HTMLButtonElement>('.image-size-scope button')].find(b => b.textContent === '本篇全部')!
+    all.click()
+    await nextTick()
+    preset('75%').click()
+    await nextTick()
+    expect(images().map(n => n.attrs?.width)).toEqual(['75%', '75%'])
+    expect(images().map(n => n.attrs?.height)).toEqual([null, null])
+    expect(w.emitted('upload-image')).toBeUndefined()
+    e.commands.undo()
+    expect(images().map(n => n.attrs?.width)).toEqual([null, null])
     w.unmount()
   })
 
