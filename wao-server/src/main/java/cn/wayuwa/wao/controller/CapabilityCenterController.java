@@ -20,17 +20,32 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class CapabilityCenterController {
     private static final Map<String, String> CLI = Map.ofEntries(
+            Map.entry("get_workspace_info", "wao workspace info"), Map.entry("list_members", "wao members list"),
             Map.entry("list_projects", "wao projects list"), Map.entry("get_project", "wao projects get ID"),
             Map.entry("create_project", "wao projects create"), Map.entry("update_project", "wao projects update ID"),
             Map.entry("list_open_tasks", "wao tasks open"), Map.entry("get_task", "wao tasks get ID"),
+            Map.entry("list_tasks", "wao tasks list"), Map.entry("move_task", "wao tasks move ID"),
+            Map.entry("schedule_task", "wao tasks schedule ID"), Map.entry("add_task_comment", "wao tasks comment ID"),
+            Map.entry("update_task_comment", "wao comments update ID"), Map.entry("link_task_document", "wao tasks document ID"),
             Map.entry("create_task", "wao tasks create"), Map.entry("update_task", "wao tasks update ID"),
             Map.entry("update_subtask_status", "wao subtasks status ID"),
+            Map.entry("create_subtask", "wao subtasks create ID"), Map.entry("update_subtask", "wao subtasks update ID"),
+            Map.entry("reorder_subtasks", "wao subtasks reorder ID"), Map.entry("move_subtask", "wao subtasks move ID"),
             Map.entry("list_knowledge_bases", "wao knowledge list"), Map.entry("get_knowledge_base", "wao knowledge get ID"),
             Map.entry("create_knowledge_base", "wao knowledge create"), Map.entry("update_knowledge_base", "wao knowledge update ID"),
             Map.entry("create_folder", "wao folders create"), Map.entry("rename_folder", "wao folders rename"),
             Map.entry("move_knowledge_node", "wao knowledge move"), Map.entry("list_documents", "wao documents list KB_ID"),
             Map.entry("get_document", "wao documents get ID"), Map.entry("create_document", "wao documents create"),
-            Map.entry("update_document", "wao documents update ID"));
+            Map.entry("update_document", "wao documents update ID"),
+            Map.entry("list_archived_documents", "wao documents archived KB_ID"),
+            Map.entry("archive_document", "wao documents archive ID"), Map.entry("unarchive_document", "wao documents restore ID"),
+            Map.entry("list_notes", "wao notes list"), Map.entry("create_note", "wao notes create"),
+            Map.entry("update_note_tags", "wao notes tags add ID"),
+            Map.entry("list_note_tags", "wao notes tags list"), Map.entry("create_note_tag", "wao notes tags create"),
+            Map.entry("list_doc_templates", "wao templates list"), Map.entry("create_doc_template", "wao templates create"),
+            Map.entry("update_doc_template", "wao templates update ID"), Map.entry("search_workspace", "wao search"),
+            Map.entry("get_todo_day", "wao todo day DATE"), Map.entry("list_todo_days", "wao todo days"),
+            Map.entry("record_daily_note", "wao daily record"), Map.entry("get_daily_operation", "wao daily operation ID"));
     private final WorkspaceMcpTools tools;
     private final CurrentMember members;
     private final ObjectMapper json;
@@ -43,7 +58,7 @@ public class CapabilityCenterController {
     @GetMapping("/api/public/capabilities")
     public ApiResponse<ObjectNode> catalog() {
         ArrayNode capabilities = json.createArrayNode();
-        tools.list(true).path("tools").forEach(tool -> {
+        tools.list(true, true).path("tools").forEach(tool -> {
             String name = tool.path("name").asText();
             ObjectNode item = ((ObjectNode) tool).deepCopy();
             item.put("group", group(name)); item.put("cli", CLI.get(name));
@@ -70,8 +85,8 @@ public class CapabilityCenterController {
 
     private static String group(String name) {
         if (name.contains("project")) return "projects";
-        if (name.contains("task")) return "tasks";
-        if (name.contains("document")) return "documents";
+        if (name.contains("task") || name.contains("todo") || name.contains("daily")) return "tasks";
+        if (name.contains("document") || name.contains("note") || name.contains("template")) return "documents";
         return "knowledge";
     }
 }

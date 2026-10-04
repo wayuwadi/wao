@@ -12,6 +12,8 @@ CREATE TABLE workspace_mcp_token (
     name VARCHAR(80) NOT NULL, token_prefix VARCHAR(20) NOT NULL,
     token_hash CHAR(64) NOT NULL UNIQUE, can_write BOOLEAN NOT NULL,
     can_publish_hosted_page BOOLEAN NOT NULL DEFAULT FALSE,
+    permission_policy CLOB NULL,
+    client_type VARCHAR(8) NULL,
     created_at TIMESTAMP NOT NULL, last_used_at TIMESTAMP NULL, revoked_at TIMESTAMP NULL
 );
 CREATE TABLE kb (

@@ -8,11 +8,19 @@ import java.util.Set;
 /** 设备签发时固定的操作白名单和可选资源范围；null 范围表示沿用成员可见性。 */
 public record WorkspaceCapabilityPolicy(List<String> permissions, List<String> projectIds,
         List<String> knowledgeBaseIds) {
-    public static final List<String> READ = List.of("list_projects", "get_project", "list_open_tasks", "get_task",
+    public static final List<String> LEGACY_READ = List.of("list_projects", "get_project", "list_open_tasks", "get_task",
             "list_knowledge_bases", "get_knowledge_base", "list_documents", "get_document");
-    public static final List<String> WRITE = List.of("create_project", "update_project", "create_task", "update_task",
+    public static final List<String> LEGACY_WRITE = List.of("create_project", "update_project", "create_task", "update_task",
             "update_subtask_status", "create_knowledge_base", "update_knowledge_base", "create_folder",
             "rename_folder", "move_knowledge_node", "create_document", "update_document");
+    public static final List<String> READ = java.util.stream.Stream.concat(LEGACY_READ.stream(), java.util.stream.Stream.of(
+            "get_workspace_info", "list_members", "list_tasks", "list_notes", "list_note_tags", "list_doc_templates",
+            "list_archived_documents", "search_workspace", "get_todo_day", "list_todo_days", "get_daily_operation")).toList();
+    public static final List<String> WRITE = java.util.stream.Stream.concat(LEGACY_WRITE.stream(), java.util.stream.Stream.of(
+            "create_note_tag", "create_note", "update_note_tags", "create_doc_template", "update_doc_template",
+            "archive_document", "unarchive_document", "create_subtask", "update_subtask", "reorder_subtasks",
+            "move_subtask", "move_task", "add_task_comment", "update_task_comment", "link_task_document",
+            "schedule_task", "record_daily_note")).toList();
     public static final List<String> ALL = java.util.stream.Stream.concat(
             java.util.stream.Stream.concat(READ.stream(), WRITE.stream()), java.util.stream.Stream.of("publish_html")).toList();
 

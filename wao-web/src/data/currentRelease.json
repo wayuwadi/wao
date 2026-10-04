@@ -1,21 +1,20 @@
 {
-  "id": "release-notes-card-image-references-2026-10-04",
+  "id": "release-workspace-daily-complete-2026-10-04",
   "publishedOn": "2026-10-04",
-  "sourceSubject": "feat(notes): 半屏卡片预览补上正文图号与图片联动",
-  "title": "半屏阅读，也能找到配图原位置",
-  "intro": "卡片正文保留轻量图号，点击即可在右侧找到对应图片。",
+  "sourceSubject": "feat(capabilities): 补全小记标签与日常工作区命令",
+  "title": "日常操作，CLI 与 MCP 一次补齐",
+  "intro": "小记带标签直接保存，任务、安排、文档与检索也可通过同一连接完成。",
   "highlights": [
     {
-      "featureId": "notes",
-      "eyebrow": "小记半屏预览",
-      "title": "图号与右侧图片互相定位",
-      "summary": "在普通卡片和展开全文中，图片原位置显示图号；点击后定位右侧对应缩略图，也能返回正文。",
+      "featureId": "capabilities",
+      "eyebrow": "CLI · MCP",
+      "title": "写小记时，就把标签一起带上",
+      "summary": "支持标签增删、任务与子任务编辑、每日安排和进展、文档模板归档、全文搜索，以及 Markdown 文件导入导出。",
       "points": [],
       "steps": [
-        "小记卡片正文中的图片位置会显示「图 1」「图 2」和图片说明。",
-        "点击正文图号，右侧对应图片突出显示。",
-        "点击缩略图下的「返回正文」，展开全文并回到原图号。",
-        "点击缩略图，仍可进入完整阅读模式查看图片。"
+        "打开「能力中心 → 我的连接」，选择「日常完整」，确认项目和知识库范围后生成新连接；旧连接保留原权限。",
+        "用 wao notes create --file article.md --tags '[\"WAO功能建设\"]' 保存带标签的小记；参数以命令 --help 和实际授权工具为准。",
+        "运行 wao doctor 检查连接，使用 wao tasks、wao todo、wao daily、wao documents 和 wao search 完成日常操作；编辑时带读取到的版本，冲突后保留输入重新确认。"
       ]
     }
   ]

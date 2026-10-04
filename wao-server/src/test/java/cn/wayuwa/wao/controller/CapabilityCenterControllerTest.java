@@ -15,12 +15,16 @@ class CapabilityCenterControllerTest {
         var tools = new WorkspaceMcpTools(projects, tasks, knowledge, json);
         var members = mock(CurrentMember.class);
         var catalog = new CapabilityCenterController(tools, members, json).catalog().data().path("capabilities");
-        assertThat(catalog).hasSize(21);
+        assertThat(catalog).hasSize(tools.list(true, true).path("tools").size() + 1);
+        java.util.List<String> names = new java.util.ArrayList<>();
+        catalog.forEach(item -> names.add(item.path("name").asText()));
+        assertThat(names).doesNotHaveDuplicates().containsExactlyInAnyOrderElementsOf(WorkspaceCapabilityPolicy.ALL);
         catalog.forEach(item -> {
             assertThat(item.path("cli").asText()).startsWith("wao ");
             assertThat(WorkspaceCapabilityPolicy.ALL).contains(item.path("name").asText());
         });
-        assertThat(catalog.get(20).path("mcp").isNull()).isTrue();
+        assertThat(catalog.get(catalog.size() - 1).path("mcp").isNull()).isTrue();
+        assertThat(catalog.toString()).contains("update_note_tags", "record_daily_note", "schedule_task");
         verifyNoInteractions(projects, tasks, knowledge, members);
     }
     @Test void browserResourceChoicesRejectAnonymousRequests() {

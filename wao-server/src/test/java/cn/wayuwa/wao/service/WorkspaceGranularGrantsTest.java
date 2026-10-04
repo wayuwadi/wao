@@ -45,6 +45,20 @@ class WorkspaceGranularGrantsTest {
         assertThat(tools.list(grant(List.of("publish_html"), null, null)).path("tools")).isEmpty();
     }
 
+    @Test void existingConnectionsNeverAcquireNewToolsAndNewDailyGrantIsExplicit() {
+        var old = new WorkspaceMcpTokenService.AuthenticatedToken("old", "wd", true);
+        assertThat(tools.list(old).path("tools")).hasSize(20);
+        for (String operation : List.of("create_note", "update_note_tags", "schedule_task", "record_daily_note", "search_workspace"))
+            assertThat(old.permits(operation)).isFalse();
+        var existing = grant(List.of("get_task", "update_document"), null, null);
+        assertThat(existing.permits("update_note_tags")).isFalse();
+        assertThat(existing.canUseDaily()).isFalse();
+        var daily = grant(List.of("get_todo_day"), List.of("allowed"), List.of("kb-notes"));
+        assertThat(daily.canUseDaily()).isTrue();
+        assertThat(tools.list(daily).path("tools")).hasSize(1);
+        assertThat(daily.permits("record_daily_note")).isFalse();
+    }
+
     @Test void scopeFiltersBeforeLimitAndBlocksTaskWrites() throws Exception {
         TaskDto outside = mock(TaskDto.class), inside = mock(TaskDto.class);
         when(outside.project()).thenReturn("outside"); when(outside.status()).thenReturn("待办");

@@ -128,6 +128,16 @@ public class TodoOperationService {
     /** Saves one canonical note, its day context and an optional task.docs link in one transaction. */
     @Transactional
     public NoteResult note(String operationId, NoteRequest request, String accountId, String memberId) {
+        return note(operationId, request, accountId, memberId, true);
+    }
+
+    /** 工作区普通写入不触发浏览器的自动 AI 续跑，仍保存来源和每日回执。 */
+    @Transactional
+    public NoteResult noteWithoutAi(String operationId, NoteRequest request, String accountId, String memberId) {
+        return note(operationId, request, accountId, memberId, false);
+    }
+
+    private NoteResult note(String operationId, NoteRequest request, String accountId, String memberId, boolean allowAi) {
         requireIdentity(accountId, memberId);
         requireUuid(operationId);
         if (request == null || request.businessDate() == null || !StringUtils.hasText(request.docId()))
@@ -201,7 +211,7 @@ public class TodoOperationService {
         save(accountId, operationId, "NOTE", hash,
                 new NoteReceiptRef(doc.id(), doc.rev(), task == null ? null : task.id(), request.businessDate(), late));
         boolean created = existing == null;
-        afterCommit(() -> {
+        if (allowAi) afterCommit(() -> {
             try {
                 if (created) noteAi.beginIfRequested(memberId, doc, noteRequest);
                 else noteAi.refreshAfterSave(memberId, doc.id());
