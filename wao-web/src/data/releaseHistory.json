@@ -1,5 +1,29 @@
 [
   {
+    "id": "release-notes-four-ai-actions-2026-10-04",
+    "publishedOn": "2026-10-04",
+    "sourceSubject": "feat(notes): 一键四连补齐未完成 AI 能力",
+    "title": "小记支持一键四连",
+    "intro": "按住标题按钮三秒，或从卡片右侧直接接续。",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "AI 四连",
+        "title": "把缺少的产出补齐",
+        "summary": "已完成与处理中项目会跳过，保留已有配图和手动标题。",
+        "points": [
+          "T 短点仍是单项，长按三秒触发四连",
+          "松开或离开按钮可以取消蓄力",
+          "未保存修改先保存，失败时保护草稿"
+        ],
+        "steps": [
+          "按住卡片第一个 T 按钮三秒",
+          "也可以点击右侧一键四连"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-notes-escape-save-exit-2026-10-04",
     "publishedOn": "2026-10-04",
     "sourceSubject": "feat(notes): Esc 确认保存并退出编辑",

@@ -2,6 +2,7 @@
 import NoteOriginalReader from '@/components/notes/NoteOriginalReader.vue'
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
+import NoteAiStageButton from '@/components/notes/NoteAiStageButton.vue'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { publishNoteTagChange, replaceCachedNoteTags, replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
 import NoteAiSettingsDialog from '@/components/notes/NoteAiSettingsDialog.vue'
@@ -28,7 +29,7 @@ import type { Doc, RichDocContent } from '@/types'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
 import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus } from '@/utils/autoNoteEnrichment'
 import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
-import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs } from '@/api/board'
+import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs, fetchDoc } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { useNow } from '@/composables/now'
 import { noteCharactersCreatedOn, shanghaiDateKey } from '@/utils/noteDailyCharacters'
@@ -747,8 +748,17 @@ function hasPendingNoteDraft(note: Doc) {
     return true
   } catch { return true /* 无法确认内容相同时保留草稿。 */ }
 }
-async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 'tags') {
+const chargingNote = ref('')
+const aiStages = ['title', 'image', 'polish', 'tags'] as const
+function fourStageComplete(id: string, stage: typeof aiStages[number]) {
+  if (workflowProgress(id)?.[stage] === 'done') return true
+  const server = serverWorkflows.value[id]
+  return server?.[stage] === 'SKIPPED' && ['EXISTING_IMAGE', 'MANUAL_TITLE', 'NO_MATCHING_TAGS'].includes(server.stages?.[stage]?.reasonCode ?? '')
+}
+function fourComplete(id: string) { return aiStages.every(stage => fourStageComplete(id, stage)) }
+async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 'tags' | 'four') {
   if (retryingEnrichment.value.includes(note.id)) return
+  if (stage === 'four' && fourComplete(note.id)) { toast('四项已完成，无需重复执行'); return }
   retryingEnrichment.value = [...retryingEnrichment.value, note.id]
   try {
     const composer = noteComposers.get(note.id)
@@ -769,6 +779,21 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
       noteEnrichmentStatus[note.id] = '自动整理未完成：本地草稿尚未保存，请先在编辑卡片中保存后重试'
       return
     }
+    if (stage === 'four') {
+      let queued = 0
+      for (const next of aiStages) {
+        const fresh = (await fetchNoteAiWorkflows()).find(status => status.docId === note.id)
+        if (fresh) serverWorkflows.value[note.id] = fresh
+        const state = workflowProgress(note.id)?.[next]
+        if (fourStageComplete(note.id, next) || state === 'running' || fresh?.[next] === 'PENDING') continue
+        const latest = await fetchDoc(note.id)
+        data.applyRemoteDoc(latest)
+        serverWorkflows.value[note.id] = await startSavedNoteStage(note.id, next, latest.rev ?? 1, newPolishRequestId())
+        queued++
+      }
+      toast(queued ? `已接续 ${queued} 项未完成能力` : '已完成或正在处理中，无需重复执行')
+      return
+    }
     if (stage) {
       const latest = data.docById(note.id) ?? note
       serverWorkflows.value[note.id] = await startSavedNoteStage(note.id, stage, latest.rev ?? 1, newPolishRequestId())
@@ -778,6 +803,10 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
     serverWorkflows.value[note.id] = await retryNoteAiWorkflow(note.id)
     noteEnrichmentStatus[note.id] = '后台已接续失败步骤，关闭页面后仍会继续'
 
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : 'AI 操作未完成，请重试'
+    noteEnrichmentStatus[note.id] = message
+    toast(message, 'ri-error-warning-line', { duration: 6000 })
   } finally {
     retryingEnrichment.value = retryingEnrichment.value.filter(id => id !== note.id)
   }
@@ -1059,9 +1088,10 @@ onMounted(() => void loadPins())
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id, $event)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出与按需操作">
-              <button v-for="stage in (['title', 'image', 'polish', 'tags'] as const)" :key="stage" type="button" class="stage-icon" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}`" @click="onStageClick(note, stage)">{{ stageIcon(stage) }}</button>
+              <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :hold-enabled="stage === 'title'" :disabled="stage === 'title' ? retryingEnrichment.includes(note.id) : stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}${stage === 'title' ? '；长按 3 秒一键四连' : ''}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}${stage === 'title' ? '，长按 3 秒一键四连' : ''}`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
             </div>
-            <span class="note-meta-trailing"><span v-if="!editingIds.includes(note.id)" class="note-preview-actions"><button class="note-preview-action" type="button" :aria-label="`预览小记：${note.title}`" @click.stop="startReading(note.id, $event)"><i class="ri-eye-line" aria-hidden="true"></i>预览</button><button class="note-preview-choice" type="button" :aria-label="`选择预览方式：${note.title}`" aria-haspopup="menu" @click.stop="openPreviewChoices(note.id, $event)"><i class="ri-arrow-down-s-line" aria-hidden="true"></i></button></span><button v-if="!editingIds.includes(note.id)" class="note-edit-action" type="button" :aria-label="`继续编辑小记：${note.title}`" @click.stop="editNote(note.id)"><i class="ri-edit-line" aria-hidden="true"></i>继续编辑</button><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" aria-label="查看原文" title="查看原文" @click.stop="readOriginals(note.id, $event)"><i class="ri-history-line" aria-hidden="true"></i></button><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-controls="confirmingDeleteId === note.id ? `note-delete-confirm-${note.id}` : undefined" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
+            <span v-if="chargingNote === note.id" class="four-charge-hint" role="status">按住 3 秒 · 松开取消</span>
+            <span class="note-meta-trailing"><button class="note-four-action" type="button" :disabled="retryingEnrichment.includes(note.id) || fourComplete(note.id)" :aria-label="`一键四连：${note.title}`" title="只补齐未完成的标题、配图、润色、标签" @click.stop="retryOrStart(note, 'four')"><i class="ri-sparkling-line" aria-hidden="true"></i>{{ retryingEnrichment.includes(note.id) ? '接续中…' : fourComplete(note.id) ? '四项已齐备' : '一键四连' }}</button><span v-if="!editingIds.includes(note.id)" class="note-preview-actions"><button class="note-preview-action" type="button" :aria-label="`预览小记：${note.title}`" @click.stop="startReading(note.id, $event)"><i class="ri-eye-line" aria-hidden="true"></i>预览</button><button class="note-preview-choice" type="button" :aria-label="`选择预览方式：${note.title}`" aria-haspopup="menu" @click.stop="openPreviewChoices(note.id, $event)"><i class="ri-arrow-down-s-line" aria-hidden="true"></i></button></span><button v-if="!editingIds.includes(note.id)" class="note-edit-action" type="button" :aria-label="`继续编辑小记：${note.title}`" @click.stop="editNote(note.id)"><i class="ri-edit-line" aria-hidden="true"></i>继续编辑</button><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button type="button" aria-label="查看原文" title="查看原文" @click.stop="readOriginals(note.id, $event)"><i class="ri-history-line" aria-hidden="true"></i></button><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-controls="confirmingDeleteId === note.id ? `note-delete-confirm-${note.id}` : undefined" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
             <p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id) && workflowMessage(note.id))" class="workflow-status" role="status">{{ noteDrafts[note.id] ? '草稿已保护 · 有修改待保存' : workflowMessage(note.id) }} <button v-if="!noteDrafts[note.id] && (serverFailed(note.id) || canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成'))" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '重试中…' : '重试' }}</button></p>
           <button v-if="query && noteSearchHit(note)" class="note-search-hit" type="button" @click.stop="locateSearchNote(note.id, query, noteSearchHit(note)?.field === '正文')">
             {{ noteSearchHit(note)!.field }}命中 · {{ noteSearchHit(note)!.before }}<mark>{{ noteSearchHit(note)!.match }}</mark>{{ noteSearchHit(note)!.after }} <span>定位</span>
@@ -1207,6 +1237,10 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-card:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
 .note-meta { font-size: 11px; color: var(--wao-text-faint); margin-bottom: 16px; flex-wrap: wrap; gap: 5px 9px; }
 .stage-list { display: inline-flex; align-items: center; gap: 4px; }
+.four-charge-hint { color:var(--wao-primary-text); font-size:11px; }
+.note-four-action { display:inline-flex; align-items:center; gap:4px; padding:5px 8px; border:0; border-radius:7px; background:var(--wao-bg-hover); color:var(--wao-primary-text); font-size:11px; cursor:pointer; }
+.note-four-action:disabled { cursor:default; color:var(--wao-text-faint); background:var(--wao-bg-sub); }
+.note-four-action:focus-visible { outline:2px solid var(--wao-primary); outline-offset:2px; }
 .stage-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--wao-line-control); border-radius: 50%; font-size: 12px; font-weight: 700; }
 .stage-icon:not(:disabled) { cursor: pointer; }
 .stage-icon:not(:disabled):hover, .stage-icon:not(:disabled):focus-visible { border-color: var(--wao-primary); color: var(--wao-primary-text); outline: none; box-shadow: 0 0 0 2px var(--wao-bg-hover); }
