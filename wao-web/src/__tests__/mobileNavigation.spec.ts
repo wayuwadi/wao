@@ -164,8 +164,8 @@ describe('手机内容优先与安全区', () => {
     expect(index).toContain('rel="manifest"')
     expect(index).toContain('apple-mobile-web-app-capable')
     expect(manifest.display).toBe('standalone')
-    expect(manifest.start_url).toBe('/projects')
-    expect(manifest.shortcuts.map((item) => item.url)).toEqual(['/projects', '/navigation'])
+    expect(manifest.start_url).toBe('/notes')
+    expect(manifest.shortcuts.map((item) => item.url)).toEqual(['/notes', '/projects', '/navigation'])
   })
 
   it('持久会话 Cookie 与服务端会话统一为三十天', () => {

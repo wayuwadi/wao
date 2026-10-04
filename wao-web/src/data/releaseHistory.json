@@ -1,5 +1,30 @@
 [
   {
+    "id": "release-mobile-web-notes-2026-10-04",
+    "publishedOn": "2026-10-04",
+    "sourceSubject": "feat(notes): 优化手机小记入口与键盘下的编辑",
+    "title": "手机点开就能随手记",
+    "intro": "同一份浏览器 WAO，放到主屏幕即可快速打开小记。",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "手机小记",
+        "title": "主屏幕打开小记，输入更顺手",
+        "summary": "手机单列、正文更清晰，全屏保存区跟随可见屏幕。",
+        "points": [
+          "主屏幕启动小记，更多中查看安装方法",
+          "触控按钮更好点，键盘弹出时收起底部导航",
+          "沿用草稿恢复与刷新前保存保护"
+        ],
+        "steps": [
+          "在 Safari 登录后打开小记页",
+          "点分享，选择添加到主屏幕；保持作为 Web App 打开",
+          "点主屏幕 WAO 图标，写下内容后点记下来了"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-notes-copy-original-media-2026-10-04",
     "publishedOn": "2026-10-04",
     "sourceSubject": "feat(notes): 分步复制正文与原图到 ChatGPT",
