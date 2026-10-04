@@ -58,8 +58,12 @@ async function loadQr() {
     })
     if (active()) unmountQr = cleanup
     else cleanup()
-  } catch {
-    if (active()) qrError.value = '飞书二维码暂时加载失败，请重试或使用下方授权登录。'
+  } catch (reason) {
+    if (active()) {
+      qrError.value = reason instanceof Error && reason.message
+        ? reason.message
+        : '飞书二维码暂时加载失败，请重试或使用下方授权登录。'
+    }
   }
 }
 async function openAuth() {
@@ -105,7 +109,9 @@ async function authorizeFeishu() {
     })
   } catch (reason) {
     inAppError.value =
-      `暂时无法连接飞书，请重试或使用邮箱登录。${reason instanceof Error ? reason.message : ''}`
+      reason instanceof Error && 'status' in reason
+        ? reason.message
+        : `暂时无法连接飞书，请重试或使用邮箱登录。${reason instanceof Error ? reason.message : ''}`
   } finally {
     authorizationBusy.value = false
   }
@@ -359,6 +365,10 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.7;
   margin-top: 12px;
+}
+.qr-error .switch {
+  display: block;
+  margin-top: 6px;
 }
 .authorization-cta {
   display: flex;
