@@ -66,6 +66,29 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('切换宽窄布局保留同一个编辑器及草稿，同成员同步并在重开后恢复', async () => {
+    const first = composer()
+    const second = composer(doc('second-width', '另一篇'))
+    await flushPromises()
+    const editor = first.get('textarea')
+    await editor.setValue('切换宽窄时保护这份草稿')
+    const editingElement = first.get('textarea').element
+    await first.get('[aria-label="书写宽度"] button:last-child').trigger('click')
+    expect(first.classes()).toContain('writing-narrow')
+    expect(second.classes()).toContain('writing-narrow')
+    expect(first.get('textarea').element).toBe(editingElement)
+    expect(localStorage.getItem('wao-note-writing-width-v1:wg')).toBe('narrow')
+    await first.get('.fullscreen-toggle').trigger('click')
+    expect(first.classes()).toContain('fullscreen')
+    expect(first.classes()).toContain('writing-narrow')
+    first.unmount(); second.unmount()
+    const reopened = composer()
+    expect(reopened.classes()).toContain('writing-narrow')
+    expect((reopened.get('textarea').element as HTMLTextAreaElement).value).toBe('切换宽窄时保护这份草稿')
+    await reopened.get('[aria-label="书写宽度"] button:first-child').trigger('click')
+    expect(reopened.classes()).not.toContain('writing-narrow')
+    reopened.unmount()
+  })
   it('展开全文双击进入编辑时保留展开状态，全屏阅读双击进入全屏编辑', async () => {
     useDataStore().docs.one = doc('one', '状态保留验收正文')
     const wrapper = await view(document.body)
