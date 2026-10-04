@@ -1,20 +1,22 @@
 {
-  "id": "release-workspace-daily-complete-2026-10-04",
+  "id": "release-ios-note-capture-2026-10-04",
   "publishedOn": "2026-10-04",
-  "sourceSubject": "feat(capabilities): 补全小记标签与日常工作区命令",
-  "title": "日常操作，CLI 与 MCP 一次补齐",
-  "intro": "小记带标签直接保存，任务、安排、文档与检索也可通过同一连接完成。",
+  "sourceSubject": "feat(notes): 接入苹果手机书摘分享和录音转写",
+  "title": "读书时，顺手留下原文和感想",
+  "intro": "iOS 1.2.0 内测采集支持书摘分享、剪贴板导入与录音转写；安装仍需完成 Apple 签名。",
   "highlights": [
     {
-      "featureId": "capabilities",
-      "eyebrow": "CLI · MCP",
-      "title": "写小记时，就把标签一起带上",
-      "summary": "支持标签增删、任务与子任务编辑、每日安排和进展、文档模板归档、全文搜索，以及 Markdown 文件导入导出。",
+      "featureId": "notes",
+      "eyebrow": "iOS 小记采集",
+      "title": "原文保留，感想接在下方",
+      "summary": "引用与个人感想分别保存，失败时保留本机草稿和录音，AI 正文整理只处理感想。",
       "points": [],
       "steps": [
-        "打开「能力中心 → 我的连接」，选择「日常完整」，确认项目和知识库范围后生成新连接；旧连接保留原权限。",
-        "用 wao notes create --file article.md --tags '[\"WAO功能建设\"]' 保存带标签的小记；参数以命令 --help 和实际授权工具为准。",
-        "运行 wao doctor 检查连接，使用 wao tasks、wao todo、wao daily、wao documents 和 wao search 完成日常操作；编辑时带读取到的版本，冲突后保留输入重新确认。"
+        "完成主应用和分享扩展的同一 Team 签名安装后，登录 WAO。",
+        "在微信读书复制文字，打开 WAO 点「导入」并允许系统粘贴。",
+        "也可从「分享到其他」选择 WAO，核对原文、来源或识别结果后保存。",
+        "在小记中点录音，结束后自动转文字；失败可重试，也可保留录音继续写。",
+        "回看时书摘与感想分开；感想编辑遇到其他设备更新时先比较再保存。"
       ]
     }
   ]

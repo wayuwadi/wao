@@ -1,5 +1,28 @@
 [
   {
+    "id": "release-ios-note-capture-2026-10-04",
+    "publishedOn": "2026-10-04",
+    "sourceSubject": "feat(notes): 接入苹果手机书摘分享和录音转写",
+    "title": "读书时，顺手留下原文和感想",
+    "intro": "iOS 1.2.0 内测采集支持书摘分享、剪贴板导入与录音转写；安装仍需完成 Apple 签名。",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "iOS 小记采集",
+        "title": "原文保留，感想接在下方",
+        "summary": "引用与个人感想分别保存，失败时保留本机草稿和录音，AI 正文整理只处理感想。",
+        "points": [],
+        "steps": [
+          "完成主应用和分享扩展的同一 Team 签名安装后，登录 WAO。",
+          "在微信读书复制文字，打开 WAO 点「导入」并允许系统粘贴。",
+          "也可从「分享到其他」选择 WAO，核对原文、来源或识别结果后保存。",
+          "在小记中点录音，结束后自动转文字；失败可重试，也可保留录音继续写。",
+          "回看时书摘与感想分开；感想编辑遇到其他设备更新时先比较再保存。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-workspace-daily-complete-2026-10-04",
     "publishedOn": "2026-10-04",
     "sourceSubject": "feat(capabilities): 补全小记标签与日常工作区命令",

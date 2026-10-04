@@ -7,9 +7,18 @@ import {
 } from "../src/domain/noteCapture";
 import NoteCaptureEditor from "../src/components/NoteCaptureEditor.vue";
 import { useWorkspace } from "../src/composables/workspace";
-import { saveCapture } from "../src/api/noteCapture";
+import { saveCapture, saveCaptureThoughts } from "../src/api/noteCapture";
+import BookNoteReader from "../src/components/BookNoteReader.vue";
+import { ApiError, api } from "../src/api/client";
 import { iosCapture } from "../src/native/noteCapture";
-vi.mock("../src/api/noteCapture", () => ({ saveCapture: vi.fn() }));
+vi.mock("../src/api/noteCapture", () => ({
+  saveCapture: vi.fn(),
+  saveCaptureThoughts: vi.fn(),
+}));
+vi.mock("../src/api/client", async (original) => {
+  const mod = await original<typeof import("../src/api/client")>();
+  return { ...mod, api: { ...mod.api, note: vi.fn() } };
+});
 vi.mock("../src/native/noteCapture", () => ({
   isIosCapture: () => true,
   iosCapture: {
@@ -32,6 +41,83 @@ beforeEach(() => {
   };
 });
 describe("采集书摘与录音草稿", () => {
+  it("明确暂不转写后可先保存文字，未转写录音不会删除", async () => {
+    const draft = {
+      ...newCapture(),
+      thoughts: "先记下文字",
+      audioId: "pending-audio",
+      audioIds: ["pending-audio"],
+    };
+    const wrapper = mount(NoteCaptureEditor, { props: { initial: draft } });
+    await flushPromises();
+    const button = wrapper
+      .findAll("button")
+      .find((b) => b.text().includes("暂不转写"))!;
+    await button.trigger("click");
+    vi.mocked(saveCapture).mockResolvedValueOnce({
+      id: draft.id,
+      title: "",
+      author: "member",
+      created: "",
+      updated: "",
+      blocks: [],
+      content: { version: 1, markdown: draft.thoughts },
+      rev: 1,
+    });
+    await wrapper.get("footer button").trigger("click");
+    await flushPromises();
+    expect(wrapper.emitted("saved")).toHaveLength(1);
+    expect(iosCapture.removeRecording).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+  it("感想冲突先比较云端，明确保留草稿后才携带新版本保存", async () => {
+    const prefix = "## 书摘\n\n> 合成书摘\n\n## 我的感想\n\n";
+    const note = {
+      id: "book-note",
+      title: "合成书摘",
+      author: "member",
+      created: "",
+      updated: "",
+      blocks: [],
+      content: { version: 1, markdown: prefix + "原感想" },
+      rev: 1,
+    };
+    const wrapper = mount(BookNoteReader, { props: { note } });
+    await wrapper.get("footer button").trigger("click");
+    await wrapper.get("textarea").setValue("我的新输入");
+    vi.mocked(saveCaptureThoughts).mockRejectedValueOnce(
+      new ApiError("已在其他设备更新", 409),
+    );
+    vi.mocked(api.note).mockResolvedValueOnce({
+      ...note,
+      rev: 2,
+      content: { version: 1, markdown: prefix + "另一设备的感想" },
+    });
+    await wrapper.get("footer button").trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("另一设备的感想");
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe(
+      "我的新输入",
+    );
+    await wrapper.get("details button").trigger("click");
+    vi.mocked(saveCaptureThoughts).mockResolvedValueOnce({
+      ...note,
+      rev: 3,
+      content: { version: 1, markdown: prefix + "我的新输入" },
+    });
+    await wrapper.get("footer button").trigger("click");
+    await flushPromises();
+    expect(saveCaptureThoughts).toHaveBeenLastCalledWith(
+      "book-note",
+      2,
+      prefix,
+      "我的新输入",
+    );
+    expect(
+      localStorage.getItem("wao-book-thoughts:v1:account:member:book-note"),
+    ).toBeNull();
+    wrapper.unmount();
+  });
   it("保留空行、转义危险语法；链接和空感想可单独保存", () => {
     expect(newCapture().id).toMatch(/^[a-f0-9]{32}$/);
     const draft = {

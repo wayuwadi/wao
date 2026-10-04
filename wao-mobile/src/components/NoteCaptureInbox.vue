@@ -19,6 +19,8 @@ const pending = ref<SharedCapture[]>([]),
   error = ref(""),
   busy = ref(false);
 const recordings = ref<string[]>([]);
+const toast = ref("");
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let active: PluginListenerHandle | undefined,
   disposed = false,
   generation = 0;
@@ -164,6 +166,11 @@ function close() {
 }
 function saved() {
   editor.value = null;
+  toast.value = "已保存到服务器，其他设备刷新后可见";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.value = "";
+  }, 4000);
   void w.refresh();
   void refresh();
 }
@@ -197,6 +204,7 @@ onMounted(async () => {
   }
 });
 onUnmounted(() => {
+  clearTimeout(toastTimer);
   disposed = true;
   generation++;
   void active?.remove();
@@ -205,6 +213,7 @@ onUnmounted(() => {
 });
 </script>
 <template>
+  <p v-if="toast" role="status" class="capture-toast">{{ toast }}</p>
   <aside
     v-if="
       clipboard !== null ||
@@ -311,5 +320,19 @@ details[open] {
 .capture-inbox {
   top: auto;
   bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+}
+.capture-toast {
+  position: fixed;
+  top: calc(64px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  background: #f3f2ff;
+  border: 1px solid #c9c9ef;
+  border-radius: 12px;
+  padding: 12px;
+  max-width: calc(100% - 24px);
+  font-size: 13px;
+  box-shadow: 0 4px 18px #32365e16;
 }
 </style>

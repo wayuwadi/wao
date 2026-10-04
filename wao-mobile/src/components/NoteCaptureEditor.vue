@@ -7,6 +7,7 @@ import {
   type CaptureDraft,
 } from "../domain/noteCapture";
 import { saveCapture } from "../api/noteCapture";
+import { ApiError } from "../api/client";
 import { iosCapture, isIosCapture } from "../native/noteCapture";
 import type { PluginListenerHandle } from "@capacitor/core";
 
@@ -39,6 +40,13 @@ const pendingAudio = computed(
   () =>
     draft.value.audioId &&
     !draft.value.transcribedAudioIds?.includes(draft.value.audioId),
+);
+const retainedAudio = computed(() =>
+  (draft.value.audioIds ?? []).filter(
+    (id) =>
+      id !== draft.value.audioId &&
+      !draft.value.transcribedAudioIds?.includes(id),
+  ),
 );
 function persist() {
   if (restoreFailed) return;
@@ -159,6 +167,7 @@ async function save() {
     localStorage.removeItem(key);
     saved.value = true;
     for (const audioId of draft.value.audioIds ?? []) {
+      if (!draft.value.transcribedAudioIds?.includes(audioId)) continue;
       try {
         await iosCapture.removeRecording({ owner, audioId });
       } catch {
@@ -168,7 +177,11 @@ async function save() {
     emit("saved");
   } catch (e) {
     error.value = e instanceof Error ? e.message : "保存失败，输入已保留。";
-    if (error.value.includes("云端已有") || error.value.includes("id 不合法"))
+    if (
+      (e instanceof ApiError && e.status === 409) ||
+      error.value.includes("云端已有") ||
+      error.value.includes("id 不合法")
+    )
       conflicted.value = true;
     persist();
   } finally {
@@ -185,6 +198,11 @@ function close() {
     persist();
     emit("close");
   }
+}
+function deferAudio() {
+  draft.value.audioId = undefined;
+  error.value =
+    "录音仍保留在本机。可先保存文字，之后到本机收件箱恢复录音转写。";
 }
 function copy() {
   const next: CaptureDraft = {
@@ -312,9 +330,12 @@ onUnmounted(() => {
             :disabled="saving"
             maxlength="200"
         /></label>
-        <template v-if="draft.excerpt"
+        <template v-if="draft.excerpt || draft.sourceUrl || draft.importedId"
           ><p class="capture-label">书摘 · 保留原文</p>
-          <blockquote>{{ draft.excerpt }}</blockquote>
+          <blockquote v-if="draft.excerpt">{{ draft.excerpt }}</blockquote>
+          <p v-else class="muted">
+            未收到书摘文字，可以先保存实际来源链接或原图。
+          </p>
           <p v-if="draft.sourceTitle || draft.sourceUrl" class="muted">
             {{ draft.sourceTitle }} {{ draft.sourceUrl }}
           </p></template
@@ -355,10 +376,29 @@ onUnmounted(() => {
             秒，切走或来电会停止并保留录音。</small
           >
         </div>
-        <p v-else class="muted">录音入口在 iOS 应用中可用。</p>
+        <button
+          v-if="pendingAudio && !transcribing && !recording"
+          type="button"
+          @click="deferAudio"
+        >
+          暂不转写，保留录音并继续写
+        </button>
+        <button
+          v-for="audioId in retainedAudio"
+          :key="audioId"
+          type="button"
+          :disabled="recording || transcribing || starting || saving"
+          @click="
+            draft.audioId = audioId;
+            transcribe(audioId);
+          "
+        >
+          继续转写保留的录音 · {{ audioId.slice(0, 8) }}
+        </button>
+        <p v-if="!isIosCapture()" class="muted">录音入口在 iOS 应用中可用。</p>
         <p v-if="error" role="alert" class="error">{{ error }}</p>
         <p v-if="storageError" role="alert" class="error">{{ storageError }}</p>
-        <button v-if="conflicted" type="button" @click="copy">
+        <button v-if="conflicted || restoreFailed" type="button" @click="copy">
           将当前输入另存一篇
         </button>
       </div>

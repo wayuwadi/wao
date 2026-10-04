@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import Vision
 
 /// 分享扩展只处理系统实际交付的内容；不强制启动主应用。
-final class ShareViewController: UIViewController {
+final class ShareViewController: UIViewController, UITextViewDelegate {
     private var item = CaptureItem(id: CaptureFormat.newID())
     private let excerpt = UITextView(), thoughts = UITextView(), status = UILabel(), saveButton = UIButton(type: .system)
     private let imageView = UIImageView()
@@ -15,6 +15,7 @@ final class ShareViewController: UIViewController {
         let quoteLabel = UILabel(); quoteLabel.text = "书摘 · 请核对原文"; quoteLabel.font = .preferredFont(forTextStyle: .headline)
         let thoughtsLabel = UILabel(); thoughtsLabel.text = "我的感想（可留空）"
         excerpt.font = .preferredFont(forTextStyle: .body); thoughts.font = .preferredFont(forTextStyle: .body)
+        excerpt.delegate = self; thoughts.delegate = self
         excerpt.backgroundColor = .secondarySystemBackground; thoughts.backgroundColor = .secondarySystemBackground
         excerpt.layer.cornerRadius = 10; thoughts.layer.cornerRadius = 10
         imageView.contentMode = .scaleAspectFit; imageView.isHidden = true
@@ -22,7 +23,7 @@ final class ShareViewController: UIViewController {
         status.text = "正在读取分享内容…"
         saveButton.setTitle("保存小记", for: .normal); saveButton.isEnabled = false
         saveButton.addTarget(self, action: #selector(saveNote), for: .touchUpInside)
-        cancel.setTitle("取消", for: .normal)
+        cancel.setTitle("收起并保留草稿", for: .normal)
         cancel.addTarget(self, action: #selector(cancelShare), for: .touchUpInside)
         let buttons = UIStackView(arrangedSubviews: [cancel, saveButton]); buttons.distribution = .fillEqually
         let stack = UIStackView(arrangedSubviews: [heading, imageView, quoteLabel, excerpt, thoughtsLabel, thoughts, status, buttons])
@@ -81,6 +82,7 @@ final class ShareViewController: UIViewController {
             }
             item.excerpt = texts.joined(separator: "\n\n"); excerpt.text = item.excerpt
             guard !item.excerpt.isEmpty || !item.sourceUrl.isEmpty || item.imagePath != nil else { throw CaptureFailure.message("没有收到可保存的文字、链接或图片") }
+            try CaptureStore.save(item)
             if item.excerpt.isEmpty && !item.sourceUrl.isEmpty { status.text = "只收到链接，未取得所选书摘。可以保存链接，或取消后复制原文。" }
             else if item.imagePath != nil { status.text = "图片文字是识别结果，请核对；原图会随小记保存。" }
             else { status.text = item.accountId == nil ? "尚未登录 WAO，保存后暂存本机，打开 WAO 再确认归属。" : "书摘保留原文，AI 只整理我的感想。" }
@@ -104,12 +106,18 @@ final class ShareViewController: UIViewController {
             return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
         }.value
     }
+    func textViewDidChange(_ textView: UITextView) {
+        guard !busy else { return }
+        item.excerpt = excerpt.text; item.thoughts = thoughts.text
+        do { try CaptureStore.save(item) }
+        catch { status.text = "本机草稿保存失败，请保持面板并重试：" + error.localizedDescription }
+    }
     @objc private func saveNote() {
         if busy { return }; busy = true; saveButton.isEnabled = false; excerpt.isEditable = false; thoughts.isEditable = false
         item.excerpt = excerpt.text; item.thoughts = thoughts.text
-        guard !item.excerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !item.sourceUrl.isEmpty || item.imagePath != nil else { status.text = "请保留书摘或来源内容"; busy = false; saveButton.isEnabled = true; return }
+        guard !item.excerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !item.sourceUrl.isEmpty || item.imagePath != nil else { status.text = "请保留书摘或来源内容"; busy = false; saveButton.isEnabled = true; excerpt.isEditable = true; thoughts.isEditable = true; return }
         do { try CaptureStore.save(item) }
-        catch { status.text = "本机暂存失败，请保持面板并重试：" + error.localizedDescription; busy = false; saveButton.isEnabled = true; return }
+        catch { status.text = "本机暂存失败，请保持面板并重试：" + error.localizedDescription; busy = false; saveButton.isEnabled = true; excerpt.isEditable = true; thoughts.isEditable = true; return }
         status.text = "正在保存…"
         Task { @MainActor in
             do {

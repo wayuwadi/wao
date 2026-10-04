@@ -4,7 +4,7 @@ import type { Note } from "../domain/models";
 import { quoteParts } from "../domain/noteCapture";
 import { saveCaptureThoughts } from "../api/noteCapture";
 import { useWorkspace } from "../composables/workspace";
-import { API_ORIGIN } from "../api/client";
+import { API_ORIGIN, ApiError, api } from "../api/client";
 import { Capacitor } from "@capacitor/core";
 
 const props = defineProps<{ note: Note }>(),
@@ -20,6 +20,12 @@ const thoughts = ref(parts.value.thoughts),
   editing = ref(false),
   saving = ref(false),
   error = ref("");
+const latest = ref<Note | null>(null);
+const saved = ref(false);
+const sameMember = () =>
+  !disposed &&
+  w.session.value?.accountId === account &&
+  w.session.value?.member.id === member;
 let disposed = false,
   corrupt = false;
 const unescape = (s: string) =>
@@ -68,6 +74,7 @@ function persist() {
 }
 watch(thoughts, persist);
 function edit() {
+  saved.value = false;
   try {
     const raw = localStorage.getItem(key);
     if (raw) {
@@ -109,11 +116,37 @@ async function save() {
     w.notes.value = w.notes.value.map((n) => (n.id === note.id ? note : n));
     localStorage.removeItem(key);
     editing.value = false;
+    saved.value = true;
   } catch (e) {
+    if (!sameMember()) return;
     error.value = e instanceof Error ? e.message : "保存失败，输入保留在本机。";
+    if (e instanceof ApiError && e.status === 409) await loadLatest();
   } finally {
     saving.value = false;
   }
+}
+async function loadLatest() {
+  try {
+    const note = await api.note(current.value.id);
+    if (!sameMember()) return;
+    if (!quoteParts(note)) {
+      error.value = "云端已改变正文结构，本机感想仍保留，请回列表核对。";
+      return;
+    }
+    latest.value = note;
+  } catch (e) {
+    if (sameMember())
+      error.value =
+        e instanceof Error ? e.message : "重新读取失败，输入仍保留。";
+  }
+}
+function useLatest() {
+  if (!latest.value) return;
+  current.value = latest.value;
+  baseline.value = latest.value.rev;
+  latest.value = null;
+  error.value = "";
+  persist();
 }
 onUnmounted(() => {
   disposed = true;
@@ -154,8 +187,25 @@ onUnmounted(() => {
           {{ parts.thoughts || "暂时没有感想，也可以先把原文留住。" }}
         </p>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
+        <details v-if="latest">
+          <summary>对比云端最新感想</summary>
+          <p class="thoughts">
+            {{ quoteParts(latest)?.thoughts || "云端目前没有感想" }}
+          </p>
+          <button :disabled="saving" @click="useLatest">
+            保留我的感想，以最新版本继续
+          </button>
+        </details>
+        <button
+          v-else-if="error && editing && !corrupt"
+          :disabled="saving"
+          @click="loadLatest"
+        >
+          重新读取云端并对比
+        </button>
       </main>
-      <footer>
+      <footer aria-live="polite">
+        <span v-if="saved && !editing">感想已保存</span>
         <button
           v-if="!editing"
           :disabled="current.rev === undefined"
@@ -244,5 +294,8 @@ button {
 footer {
   border-top: 1px solid var(--line);
   font-size: 12px;
+}
+.book-reader .muted {
+  overflow-wrap: anywhere;
 }
 </style>
