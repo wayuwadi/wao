@@ -29,7 +29,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
   },
   {
     id: 'changelog',
-    description: '查看当前版本亮点，并按目标探索 WAO 的新旧全部功能。',
+    description: '查看本次版本变化与历次更新记录。',
     keywords: ['功能探索', '新功能', '版本', '更新介绍'],
   },
   {

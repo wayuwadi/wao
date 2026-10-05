@@ -87,6 +87,7 @@ export function normalizeExternalApp(app: ExternalAppConfig): ExternalAppConfig 
 export function normalizeBuiltinMenu(menu: BuiltinMenuConfig): BuiltinMenuConfig {
   return {
     ...menu,
+    label: menu.id === 'changelog' && menu.label === '功能探索' ? '版本更新' : menu.label,
     openMode: normalizeMenuOpenMode(menu.openMode),
     placement: normalizeMenuPlacement(menu.placement),
   }
@@ -125,7 +126,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   updates: { id: 'updates', label: '更新日记', icon: 'ri-history-line', path: '/updates' },
   changelog: {
     id: 'changelog',
-    label: '功能探索',
+    label: '版本更新',
     icon: 'ri-compass-discover-line',
     path: '/features',
   },
@@ -339,7 +340,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     },
     {
       id: 'changelog',
-      label: '功能探索',
+      label: '版本更新',
       icon: 'ri-compass-discover-line',
       group: 'PUBLIC',
       order: 14,

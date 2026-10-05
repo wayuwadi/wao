@@ -102,7 +102,7 @@ describe('侧边栏导航配置', () => {
 
 
   it('功能探索使用独立入口，旧更新日志地址重定向且保留真实更新日记', () => {
-    expect(MODULES.changelog).toMatchObject({ label: '功能探索', path: '/features' })
+    expect(MODULES.changelog).toMatchObject({ label: '版本更新', path: '/features' })
     expect(router.resolve('/features').meta).toMatchObject({
       module: 'changelog',
       tabKind: 'module',
