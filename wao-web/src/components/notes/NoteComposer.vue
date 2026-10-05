@@ -26,7 +26,7 @@ import { captureCompanionTicket, respondWithCompanion } from '@/composables/quie
 import type { Doc, FileItem, RichDocContent } from '@/types'
 import type { NoteSubmission } from '@/api/dayWorkspace'
 
-const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; expanded?: boolean; initialFullscreen?: boolean; initialPosition?: number; initialViewportTop?: number; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: string; submitNote?: (request: NoteSubmission) => Promise<Doc>; compact?: boolean; active?: boolean }>(), { active: true })
+const props = withDefaults(defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[]; inline?: boolean; autofocus?: boolean; focusRequest?: number; expanded?: boolean; initialFullscreen?: boolean; initialPosition?: number; initialViewportTop?: number; workflowMessage?: string; searchTerm?: string; searchRequest?: string; draftScope?: string; submitNote?: (request: NoteSubmission) => Promise<Doc>; compact?: boolean; active?: boolean }>(), { active: true })
 const emit = defineEmits<{ saved: [id: string]; close: []; 'tag-created': [name: string]; 'draft-change': [draft: NoteDraftSnapshot | null]; 'saving-change': [saving: boolean]; 'fullscreen-change': [fullscreen: boolean] }>()
 const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
@@ -581,9 +581,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         :article-image-generation="false"
         :note-ai-origin="{ stableId: id, docId: note?.id, sourceRev: baseRev, title: generatedTitle, blocks: note?.blocks ?? [], links: note?.links ?? [] }" note-title-on-image @ai-applied="appliedAiInputs = [...new Set([...appliedAiInputs, $event])]" @generated-title="generatedTitle = $event"
-        hide-toolbar :autofocus="autofocus" :initial-position="initialPosition" :initial-viewport-top="initialViewportTop" :menu-z-index="fullscreen ? 2200 : compact ? 1200 : 1000"
+        hide-toolbar :autofocus="autofocus" :focus-request="loading ? 0 : focusRequest" :initial-position="initialPosition" :initial-viewport-top="initialViewportTop" :menu-z-index="fullscreen ? 2200 : compact ? 1200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
-        :readonly="saving" :min-height="compact ? 200 : note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
+        :readonly="saving" :min-height="compact ? 200 : note ? 320 : 360" :placeholder="focusRequest ? '先写一句，就很好。想法、点子、提示词、想建设的功能……' : '想法、灵感、工作备忘…随手记在这里，也可以粘贴图片'"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">
         <template #footer-tags>
           <div class="composer-tags">

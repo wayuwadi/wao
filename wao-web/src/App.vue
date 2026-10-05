@@ -10,6 +10,8 @@ import { RouterView } from 'vue-router'
 import ToastHost from '@/components/ui/ToastHost.vue'
 import { restJourneyRequested } from '@/composables/restJourney'
 import RestEntryTransition from '@/components/relax/RestEntryTransition.vue'
+import { writingJourneyRequested } from '@/composables/writingJourney'
+import WritingEntryTransition from '@/components/home/WritingEntryTransition.vue'
 import {
   rememberPendingReleaseVersion,
   reportWorkspaceReloadState,
@@ -100,5 +102,6 @@ onBeforeUnmount(() => {
     <RouterView />
     <ToastHost />
     <RestEntryTransition v-if="restJourneyRequested" />
+    <WritingEntryTransition v-if="writingJourneyRequested" :journey="writingJourneyRequested" />
   </ConfigProvider>
 </template>
