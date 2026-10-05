@@ -76,9 +76,9 @@ function rest() { clearSurprises(); companions.value?.settle(); requestRestJourn
 .home-rest-copy h1 { font-size: clamp(20px,3vw,30px); font-weight: 500; }
 .home-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .play-hint { display:block; margin-top:12px; color:var(--wao-text-3); font-size:12px; line-height:1.65; }
-.rest-entrance { background:var(--wao-bg-card); cursor:pointer; font:inherit; display: inline-block; flex: none; white-space: nowrap; padding: 10px 16px; border: 1px solid var(--wao-line); border-radius: 24px; color: var(--wao-text); text-decoration: none; transition: transform .2s, background .2s; }
-.rest-entrance span { display: inline-block; transition: transform .2s; }
-.rest-entrance:hover { transform: translateY(-2px); background: var(--wao-primary-soft); }
+.rest-entrance { background:linear-gradient(135deg,var(--wao-primary-soft),var(--wao-bg-card));cursor:pointer;font:inherit;font-weight:550;display:inline-flex;align-items:center;gap:9px;flex:none;white-space:nowrap;padding:10px 16px;border:1px solid color-mix(in srgb,var(--wao-primary-text) 25%,var(--wao-line));border-radius:24px;color:var(--wao-primary-text);text-decoration:none;box-shadow:0 5px 18px color-mix(in srgb,var(--wao-primary-text) 9%,transparent);transition:transform .2s,background .2s,box-shadow .2s; }
+.rest-entrance span { display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:color-mix(in srgb,var(--wao-primary-soft) 68%,transparent);transition:transform .2s; }
+.rest-entrance:hover { transform:translateY(-2px);background:var(--wao-primary-soft);box-shadow:0 8px 22px color-mix(in srgb,var(--wao-primary-text) 14%,transparent); }
 .rest-entrance:hover span { transform: translate(2px,-2px); }
 .rest-entrance:focus-visible { outline: 2px solid var(--wao-primary-text); outline-offset: 4px; }
 @media (max-width: 1100px) { .home-rest-welcome { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(280px, 1fr); } .home-rest-copy { padding-bottom: 0; } .home-companion-space { height: auto; min-height: 280px; margin: 0 -28px; transform: none; } }

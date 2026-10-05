@@ -107,7 +107,7 @@ const restExpansion = computed(() => {
   return (1 - Math.cos(Math.PI * Math.max(0, Math.min(1, p)))) / 2
 })
 const restTitle = computed(() => restStep.value === 'guide' ? '先和我们，一起呼吸。' : restStep.value === 'walk' ? '去吧，世界比屏幕大一点。' : restStep.value === 'practice' ? mode.value === 'sitting' ? '只是安静坐着，也很好。' : '只管呼吸，其他的晚一点。' : returnedFromWalk.value ? '欢迎回来，感觉怎么样？' : '这一刻，你想怎么休息？')
-const restSubtitle = computed(() => restStep.value === 'guide' ? '放松肩膀，不用着急，按自己舒服的节奏。' : restStep.value === 'walk' ? '起身伸个懒腰，喝口水，去窗边或外面走走。' : restStep.value === 'practice' ? '伙伴陪着你。随时可以停下来。' : '可以留下来安静一会儿，也可以去看看外面的世界。')
+const restSubtitle = computed(() => restStep.value === 'guide' ? '放松肩膀，不用着急，按自己舒服的节奏。' : restStep.value === 'walk' ? '起身伸个懒腰，喝口水，去窗边或外面走走。' : restStep.value === 'practice' ? '伙伴陪着你。随时可以停下来。' : '先安静下来，或到外面透透气。')
 async function restChoices() {
   restStep.value = 'choose'; guidePaused.value = false; panel.value = false
   await nextTick(); restChoice.value?.focus()
@@ -645,7 +645,7 @@ onBeforeUnmount(() => {
       </header>
       <div class="practice-main">
         <div v-if="props.restful" class="rest-space" :class="[prefs.scene, restStep]">
-          <div class="rest-landscape" aria-hidden="true"><div class="rest-sun"></div><div class="rest-hill back"></div><div class="rest-hill front"></div><div class="rest-pool"></div></div>
+          <div class="rest-landscape" aria-hidden="true"><div class="rest-sun"></div><div class="rest-hill back"></div><div class="rest-hill front"></div><div class="rest-pool"></div><div class="rest-breeze"><i></i><i></i><i></i></div></div>
           <div class="rest-heading"><p class="rest-eyebrow">和伙伴一起，把节奏慢下来</p><h1>{{ restTitle }}</h1><p>{{ restSubtitle }}</p></div>
           <div class="rest-crew-scene">
             <div class="rest-halo" :style="{ opacity: restStep==='guide' || (!idle && mode==='breathing') ? 1 : 0, transform: `scale(${reduced || mode==='sitting' ? 1 : .86 + restExpansion*.55})` }" aria-hidden="true"></div>
