@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import type { Doc } from '@/types'
 import { useSessionStore } from '@/stores/session'
@@ -31,6 +31,8 @@ const props = defineProps<{
   explicitlySelected?: boolean
   overlayOpen?: boolean
   collapsed?: boolean
+  focused?: boolean
+  initialTab?: 'results' | 'chat' | 'runs' | 'discovery'
 }>()
 const emit = defineEmits<{
   select: [id: string]
@@ -48,6 +50,14 @@ const emit = defineEmits<{
 }>()
 const session = useSessionStore()
 const panel = ref<HTMLElement>()
+onMounted(() => { if (props.overlayOpen) panel.value?.querySelector<HTMLButtonElement>('button')?.focus() })
+function trapPanel(event: KeyboardEvent) {
+  if (!props.overlayOpen || event.key !== 'Tab') return
+  const controls = [...(panel.value?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea, select, input:not(:disabled), summary, a[href]') ?? [])].filter(el => el.getClientRects().length)
+  const first = controls[0], last = controls[controls.length - 1]
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+}
 watch(
   () => props.overlayOpen,
   async (open) => {
@@ -64,7 +74,7 @@ const tabs = [
   { id: 'chat', text: '继续聊' },
   { id: 'runs', text: '执行记录' },
 ] as const
-const tab = ref<(typeof tabs)[number]['id']>('results')
+const tab = ref<(typeof tabs)[number]['id']>(props.initialTab ?? 'results')
 const stage = ref<CompanionStage>('polish')
 const labels: Record<CompanionStage, string> = {
   polish: '正文',
@@ -248,6 +258,7 @@ async function refresh(append = false) {
     error.value = ''
     if (id) {
       const data = await fetchAiResults(id, append ? results.value?.nextCursor : undefined)
+      if (props.focused && !results.value && !append) { const preferred = data.items.find(a => a.application === 'PENDING' && a.validity === 'CURRENT') ?? data.items.find(a => a.stage === 'polish') ?? data.items[0]; if (preferred) stage.value = preferred.stage }
       if (mine !== generation || sequence !== request) return
       results.value =
         append && results.value ? { ...data, items: [...results.value.items, ...data.items] } : data
@@ -525,7 +536,7 @@ function confirmTransfer() {
   closePanel()
 }
 const timer = setInterval(() => {
-  if (!document.hidden && !busy.value) void refresh()
+  if (!document.hidden && !busy.value && (!props.focused || results.value?.attempts.some(a => ['PENDING', 'QUEUED', 'RUNNING', 'WAITING'].includes(a.state)) || chatRunning.value)) void refresh()
 }, 10_000)
 onBeforeUnmount(() => {
   generation++
@@ -540,21 +551,22 @@ defineExpose({ refresh })
     <section
       ref="panel"
       class="ai-companion"
-      :class="{
+      @keydown="trapPanel"
+      :class="{ focused,
         'reader-overlay': overlayOpen,
         'mobile-open': mobile && mobileOpen,
         'mobile-closed': mobile && !mobileOpen && !overlayOpen,
         'desktop-collapsed': desktopCollapsed,
       }"
-      aria-label="AI 伴读"
+       :role="overlayOpen ? 'dialog' : undefined" :aria-modal="overlayOpen ? true : undefined" :aria-label="focused ? tab === 'chat' ? '聊聊这篇' : 'AI 改了什么' : 'AI 伴读'"
     >
       <button v-if="desktopCollapsed" class="companion-dock" type="button" aria-label="展开 AI 伴读" :aria-expanded="false" @click="emit('collapse', false)">
         <i class="ri-sparkling-2-line" aria-hidden="true" /><strong>AI 伴读</strong><span class="dock-status" :class="{ unread: overview?.unread }">{{ dockStatus }}</span><span class="dock-expand">展开 <i class="ri-arrow-up-s-line" aria-hidden="true" /></span>
       </button>
       <header v-show="!desktopCollapsed" class="companion-heading">
         <div>
-          <i class="ri-sparkling-2-line" aria-hidden="true"></i><strong>AI 伴读</strong
-          ><span>{{
+          <i class="ri-sparkling-2-line" aria-hidden="true"></i><strong>{{ focused ? tab === 'chat' ? '聊聊这篇' : 'AI 改了什么' : 'AI 伴读' }}</strong
+          ><span v-if="!focused">{{
             mobile && !mobileOpen && overview?.unread
               ? `${overview.unread} 项新成果`
               : '让整理看得见'
@@ -564,10 +576,10 @@ defineExpose({ refresh })
           v-if="mobile || overlayOpen"
           type="button"
           :aria-expanded="mobileOpen"
-          :aria-label="overlayOpen ? '返回阅读' : mobileOpen ? '返回小记空间' : '打开 AI 伴读'"
+          :aria-label="focused ? '关闭小记 AI 操作' : overlayOpen ? '返回阅读' : mobileOpen ? '返回小记空间' : '打开 AI 伴读'"
           @click="overlayOpen || mobileOpen ? closePanel() : (mobileOpen = true)"
         >
-          {{ overlayOpen ? '返回阅读' : mobileOpen ? '返回小记' : '打开伴读' }}</button
+          {{ focused ? '返回小记' : overlayOpen ? '返回阅读' : mobileOpen ? '返回小记' : '打开伴读' }}</button
         ><button
           v-if="!mobile || mobileOpen || overlayOpen"
           type="button"
@@ -602,7 +614,7 @@ defineExpose({ refresh })
             模型、提示词与自动开关 <i class="ri-arrow-right-up-line" /></button
           ><NoteDiscoveryPreference />
         </div>
-        <div class="companion-health" role="status">
+        <details v-if="focused" class="focused-details"><summary>执行状态与历史</summary><nav aria-label="详细记录"><button type="button" @click="tab = 'runs'">执行记录</button><button type="button" @click="tab = 'discovery'">已有发现</button></nav><p>{{ overview?.message }}</p></details><div v-else class="companion-health" role="status">
           <span class="health-dot" :class="{ ready: overview?.available }" />{{
             loading ? '正在读取执行状态…' : overview?.message || '等待服务状态'
           }}<small v-if="overview && (overview.queued || overview.running)"
@@ -611,7 +623,7 @@ defineExpose({ refresh })
         </div>
         <nav aria-label="伴读栏目">
           <button
-            v-for="item in tabs"
+            v-for="item in focused ? tabs.filter(t => t.id === 'results' || t.id === 'chat') : tabs"
             :key="item.id"
             :aria-pressed="tab === item.id"
             @click="tab = item.id"
@@ -619,7 +631,7 @@ defineExpose({ refresh })
             {{ item.text }}
           </button>
         </nav>
-        <label v-if="tab !== 'discovery'" class="note-picker"
+        <p v-if="focused && note" class="focused-note-title">{{ note.title }}</p><label v-if="!focused && tab !== 'discovery'" class="note-picker"
           >围绕这篇<select
             :value="activeId"
             aria-label="选择伴读小记"
@@ -1437,4 +1449,12 @@ pre,
     display: none;
   }
 }
+</style>
+
+<style scoped>
+.focused.reader-overlay { left:auto; right:16px; top:16px; bottom:16px; width:min(760px,calc(100vw - 32px)); z-index:2250; box-shadow:0 12px 48px color-mix(in srgb,var(--wao-text) 18%,transparent); }
+.focused-note-title { margin:8px 0; color:var(--wao-text); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.focused-details { color:var(--wao-text-3); font-size:12px; padding:4px 0; }
+.focused-details summary { cursor:pointer; }
+@media(max-width:760px){.focused.reader-overlay{inset:0;width:100%;height:100dvh;max-height:100dvh;border-radius:0;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));box-sizing:border-box}}
 </style>

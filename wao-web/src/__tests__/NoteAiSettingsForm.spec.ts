@@ -15,6 +15,20 @@ describe('小记 AI 设置原子保存与草稿', () => {
   function button(wrapper: ReturnType<typeof mount>, label: string) { return wrapper.findAll('button').find(item => item.text() === label)! }
   beforeEach(() => { setActivePinia(createPinia()); localStorage.clear(); rememberNoteSettingsDraft(useSessionStore().currentUser.id,null); vi.clearAllMocks(); vi.mocked(fetchCodexModels).mockResolvedValue({ models: [{ id:'gpt-6-astra', label:'GPT-6 Astra', reasoningEfforts:['medium','high'] }], stale:false, updatedAt:null, message:'' }); vi.mocked(fetchNoteAiSettings).mockResolvedValue(view()); vi.mocked(saveNoteAiSettings).mockResolvedValue(view()) })
   afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks() })
+  it('图片显示在设置内立即生效，不提交或改动 AI 设置', async () => {
+    const wrapper = form(); await flushPromises()
+    await button(wrapper, '编辑与图片').trigger('click')
+    expect(button(wrapper, '预览引入').attributes('aria-pressed')).toBe('true')
+    await button(wrapper, '图片嵌入').trigger('click')
+    expect(button(wrapper, '图片嵌入').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('footer').text()).toContain('立即生效')
+    expect(wrapper.find('footer button.primary').exists()).toBe(false)
+    expect(saveNoteAiSettings).not.toHaveBeenCalled()
+    wrapper.unmount()
+    const reopened = form(); await flushPromises()
+    await button(reopened, '编辑与图片').trigger('click')
+    expect(button(reopened, '图片嵌入').attributes('aria-pressed')).toBe('true')
+  })
   it('失败保留开关，读取刷新不覆盖设置草稿', async () => {
     const wrapper = form(); await flushPromises()
     await wrapper.findAll('input')[0]!.setValue(true)

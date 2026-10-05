@@ -14,6 +14,8 @@ import {
 } from '@/api/noteAiSettings'
 import { useSessionStore } from '@/stores/session'
 import { usePreferenceStore } from '@/stores/preferences'
+import NoteImageModeSwitch from './NoteImageModeSwitch.vue'
+import { useNoteImageMode } from '@/composables/noteImageMode'
 const emit = defineEmits<{ saved: []; close: [] }>()
 // progressive 保留既有调用接口；所有入口统一展示分项布局。
 withDefaults(defineProps<{ progressive?: boolean; closable?: boolean }>(), {
@@ -22,9 +24,11 @@ withDefaults(defineProps<{ progressive?: boolean; closable?: boolean }>(), {
 })
 const session = useSessionStore(),
   preferences = usePreferenceStore()
-type Section = 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
+const imageMode = useNoteImageMode()
+type Section = 'display' | 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
 const active = ref<Section>('capabilities')
 const items = [
+  { id: 'display', label: '编辑与图片', icon: 'ri-layout-line' },
   { id: 'capabilities', label: 'AI 能力', icon: 'ri-cpu-line' },
   { id: 'titlePrompt', label: '标题提示词', icon: 'ri-heading' },
   { id: 'polishPrompt', label: '正文提示词', icon: 'ri-text' },
@@ -221,7 +225,7 @@ onBeforeUnmount(() => {
     <AiSettingsLayout :items="items" :active="active" @update:active="active = $event as Section">
       <template #engine
         ><AIModelFields
-          v-if="draft"
+          v-if="draft && active !== 'display'"
           v-model:model="draft.model"
           v-model:reasoning-effort="draft.reasoningEffort"
           :catalog="catalog"
@@ -234,12 +238,17 @@ onBeforeUnmount(() => {
           description="仅用于小记标题、正文与配图，不影响卦象。"
           @refresh="loadModels"
         />
-        <p v-else role="status">
+        <p v-else-if="active !== 'display'" role="status">
           {{ loading ? '正在读取小记 AI 设置…' : '小记 AI 设置尚未读取' }}
         </p></template
       >
       <p v-if="loading && draft" role="status">正在读取小记 AI 设置…</p>
-      <fieldset v-if="draft" :disabled="loading || saving">
+      <section v-if="active === 'display'" class="display-settings">
+        <div class="section-heading"><div><h3>编辑时的图片显示</h3><p>默认在正文保留图号引用，图片展示在右侧清单。</p></div></div>
+        <NoteImageModeSwitch v-model="imageMode" />
+        <p class="behavior-note">当前浏览器立即生效，按账号记住；只改变显示，不重新上传图片或修改正文。</p>
+      </section>
+      <fieldset v-if="draft && active !== 'display'" :disabled="loading || saving">
         <template v-if="active === 'capabilities'"
           ><div class="section-heading">
             <div>
@@ -371,18 +380,21 @@ onBeforeUnmount(() => {
       <p v-if="storageError" class="error" role="alert">{{ storageError }}</p>
       <template #footer
         ><AiSettingsSaveStatus
+          v-if="active !== 'display'"
           :text="saving ? '设置保存中…' : storageError || error || status"
           :dirty="dirty"
           :loading="loading"
           :saving="saving"
           :error="!!(storageError || error || conflict)"
         />
+        <p v-else class="muted">图片展示偏好在当前浏览器立即生效</p>
         <div class="footer-actions">
-          <button class="light-action" type="button" :disabled="loading || saving" @click="load">
+          <button v-if="active !== 'display'" class="light-action" type="button" :disabled="loading || saving" @click="load">
             <i class="ri-refresh-line" aria-hidden="true"></i>
             {{ error ? '重新读取 / 重试' : '刷新设置' }}</button
           ><button v-if="closable" type="button" @click="close">关闭</button
           ><button
+            v-if="active !== 'display'"
             class="primary"
             type="button"
             :disabled="!draft || !remote || loading || saving || conflict"

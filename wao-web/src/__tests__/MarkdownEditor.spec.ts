@@ -842,7 +842,7 @@ describe('文章总览配图', () => {
     const w = await mountEditor({ modelValue: '小记正文', articleImageKey: 'note:me:n1', noteTitleOnImage: true, allowH1: true })
     await flushPromises()
     await w.get('.prompt-settings').trigger('click'); await flushPromises()
-    const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-label="小记 AI 设置"]')!
+    const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-label="小记设置"]')!
     expect(modal.querySelector<HTMLSelectElement>('[aria-label="小记处理模型"]')?.value).toBe('')
     expect(modal.textContent).toContain('标题提示词')
     expect(modal.textContent).toContain('正文提示词')

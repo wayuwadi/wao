@@ -195,6 +195,8 @@ const props = withDefaults(
     articleImageKey?: string
     /** 小记保存后自动配图，隐藏整篇手动生成入口。 */
     articleImageGeneration?: boolean
+    /** 小记收口底部操作，图片仍可粘贴、拖拽或通过斜线插入。 */
+    articleImageUpload?: boolean
     /** 小记选中文字可生成图片，图片作为正文附件节点保存。 */
     selectionImage?: boolean
     noteTitleOnImage?: boolean
@@ -230,6 +232,7 @@ const props = withDefaults(
     imageContextControls: false,
     articleImageKey: '',
     articleImageGeneration: true,
+    articleImageUpload: true,
     selectionImage: false,
     noteTitleOnImage: false,
     advanced: false,
@@ -2489,7 +2492,7 @@ onBeforeUnmount(() => {
           <ArticleImageAction v-if="articleImageGeneration" :scope-key="articleImageKey"
             :get-text="articleText" :insert-image="insertArticleImageAtStart" :get-current-image="currentArticleImage"
             :note-ai-origin="noteAiOrigin" :get-source-content="noteSourceContent" :confirm-cover="confirmGeneratedCover" :get-image-result="articleImageResult" :generate-title="noteTitleOnImage" @ai-applied="emit('ai-applied', $event)" @generated-title="emit('generated-title', $event)" />
-          <button type="button" class="image-upload" title="从图册选择图片"
+          <button v-if="articleImageUpload" type="button" class="image-upload" title="从图册选择图片"
             aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
             <i class="ri-image-add-line"></i><span>图片</span>
           </button>
@@ -2502,7 +2505,7 @@ onBeforeUnmount(() => {
     </div>
     <SelectionImageAction v-if="selectionImage && articleImageKey && !readonly" ref="selectionImageAction" :scope-key="articleImageKey" :insert-image="insertSelectionImage" />
     <NoteMediaCopyDialog v-if="mediaCopyContent" :content="mediaCopyContent" :initial-text-copied="mediaTextCopied" @close="mediaCopyContent = null" />
-    <Teleport v-else :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
+    <Teleport v-if="!articleImageKey" :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
       <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
         <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
       </div>

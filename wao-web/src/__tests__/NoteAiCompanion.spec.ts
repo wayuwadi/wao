@@ -109,6 +109,27 @@ afterEach(() => {
   wrappers.length = 0
 })
 
+it('按需打开绑定本篇，不展示选篇框；关闭重开保留问题且没有后台闲置轮询', async () => {
+  vi.useFakeTimers()
+  try {
+    const props = { notes: [doc], activeId: 'n', blocked: false, focused: true, initialTab: 'chat' as const, overlayOpen: true }
+    const w = mount(NoteAiCompanion, { props, global: { stubs: { Teleport: true, NoteDiscoveryInline: true, NoteDiscoveryPreference: true } } }); wrappers.push(w)
+    await flushPromises()
+    expect(w.get('[role="dialog"]').attributes('aria-label')).toBe('聊聊这篇')
+    expect(w.find('.note-picker').exists()).toBe(false)
+    await w.get('textarea').setValue('围绕这篇继续思考的草稿')
+    const reads = vi.mocked(fetchAiResults).mock.calls.length
+    await vi.advanceTimersByTimeAsync(30_000); await flushPromises()
+    expect(fetchAiResults).toHaveBeenCalledTimes(reads)
+    w.unmount()
+    const reopened = mount(NoteAiCompanion, { props, global: { stubs: { Teleport: true, NoteDiscoveryInline: true, NoteDiscoveryPreference: true } } }); wrappers.push(reopened)
+    await flushPromises()
+    expect(reopened.get<HTMLTextAreaElement>('textarea').element.value).toBe('围绕这篇继续思考的草稿')
+    expect(askNoteChat).not.toHaveBeenCalled()
+    expect(reopened.find('details').text()).toContain('执行状态与历史')
+  } finally { vi.useRealTimers() }
+})
+
 it('折叠不消费未读，展开保留原问题和栏目，后台新成果不自动展开', async () => {
   const w = mount(NoteAiCompanion, { props: { notes: [doc], activeId: 'n', blocked: false, explicitlySelected: true, collapsed: true } })
   wrappers.push(w)
