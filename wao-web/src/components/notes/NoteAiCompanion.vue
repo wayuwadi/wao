@@ -30,6 +30,7 @@ const props = defineProps<{
   blocked: boolean
   explicitlySelected?: boolean
   overlayOpen?: boolean
+  collapsed?: boolean
 }>()
 const emit = defineEmits<{
   select: [id: string]
@@ -43,6 +44,7 @@ const emit = defineEmits<{
   appendExisting: [id: string, text: string, messageId: string]
   settings: []
   closeOverlay: []
+  collapse: [value: boolean]
 }>()
 const session = useSessionStore()
 const panel = ref<HTMLElement>()
@@ -90,6 +92,22 @@ const mobile = ref(
     typeof window.matchMedia === 'function' && window.matchMedia('(max-width:760px)').matches,
   ),
   mobileOpen = ref(false)
+const desktopCollapsed = computed(() => !!props.collapsed && !mobile.value && !props.overlayOpen)
+const dockStatus = computed(() => {
+  if (overview.value?.running) return `${overview.value.running} 项执行中`
+  if (overview.value?.queued) return `${overview.value.queued} 项等待中`
+  if (overview.value?.unread) return `${overview.value.unread} 项新成果`
+  return '随时继续'
+})
+let contentScroll = 0
+watch(desktopCollapsed, async (closed) => {
+  const content = panel.value?.querySelector<HTMLElement>('.companion-content')
+  if (closed) contentScroll = content?.scrollTop || 0
+  await nextTick()
+  if (!closed && content) content.scrollTop = contentScroll
+  panel.value?.querySelector<HTMLButtonElement>(closed ? '.companion-dock' : '.companion-collapse')?.focus()
+  if (!closed) void seen(artifact.value)
+})
 function resizePanel() {
   mobile.value =
     typeof window.matchMedia === 'function' && window.matchMedia('(max-width:760px)').matches
@@ -280,6 +298,7 @@ async function loadChat() {
 async function seen(value?: AiArtifact) {
   if (
     !explicitlyViewed.value ||
+    desktopCollapsed.value ||
     (mobile.value && !mobileOpen.value && !props.overlayOpen) ||
     !value ||
     value.seen ||
@@ -525,10 +544,14 @@ defineExpose({ refresh })
         'reader-overlay': overlayOpen,
         'mobile-open': mobile && mobileOpen,
         'mobile-closed': mobile && !mobileOpen && !overlayOpen,
+        'desktop-collapsed': desktopCollapsed,
       }"
       aria-label="AI 伴读"
     >
-      <header class="companion-heading">
+      <button v-if="desktopCollapsed" class="companion-dock" type="button" aria-label="展开 AI 伴读" :aria-expanded="false" @click="emit('collapse', false)">
+        <i class="ri-sparkling-2-line" aria-hidden="true" /><strong>AI 伴读</strong><span class="dock-status" :class="{ unread: overview?.unread }">{{ dockStatus }}</span><span class="dock-expand">展开 <i class="ri-arrow-up-s-line" aria-hidden="true" /></span>
+      </button>
+      <header v-show="!desktopCollapsed" class="companion-heading">
         <div>
           <i class="ri-sparkling-2-line" aria-hidden="true"></i><strong>AI 伴读</strong
           ><span>{{
@@ -554,8 +577,9 @@ defineExpose({ refresh })
         >
           <i class="ri-settings-3-line" />
         </button>
+        <button v-if="!mobile && !overlayOpen" class="companion-collapse" type="button" aria-label="收起 AI 伴读" :aria-expanded="true" title="收进底部，为记录腾出空间" @click="emit('collapse', true)"><i class="ri-arrow-down-s-line" aria-hidden="true" /></button>
       </header>
-      <div v-show="!mobile || mobileOpen || overlayOpen" class="companion-body">
+      <div v-show="!desktopCollapsed && (!mobile || mobileOpen || overlayOpen)" class="companion-body">
         <div v-if="settingsOpen" class="companion-settings">
           <strong>成果采用方式</strong>
           <div class="mode-choice">
@@ -924,6 +948,17 @@ defineExpose({ refresh })
 </template>
 
 <style scoped>
+.ai-companion.desktop-collapsed { min-height:44px; height:44px; box-sizing:border-box; }
+.companion-dock { display:flex; align-items:center; gap:8px; flex:1; width:100%; min-width:0; border:0; padding:0 14px; background:var(--wao-bg-card); color:var(--wao-text-2); text-align:left; cursor:pointer; }
+.companion-dock:hover { background:var(--wao-bg-hover); }
+.companion-dock > i, .companion-collapse { color:var(--wao-primary-text); }
+.companion-dock strong { color:var(--wao-text); font-size:13px; white-space:nowrap; }
+.dock-status { font-size:11px; color:var(--wao-text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dock-status.unread { color:var(--wao-primary-text); }
+.dock-expand { margin-left:auto; white-space:nowrap; font-size:11px; color:var(--wao-text-3); }
+.companion-collapse { margin-left:6px; }
+.companion-heading > div { margin-right:auto; min-width:0; }
+.companion-dock:focus-visible, .companion-collapse:focus-visible { outline:2px solid var(--wao-primary); outline-offset:-3px; }
 .ai-companion {
   display: flex;
   flex-direction: column;

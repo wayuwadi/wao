@@ -42,6 +42,7 @@ import { fetchNoteAiWorkflows, retryNoteAiWorkflow, type NoteAiWorkflowStatus } 
 import { noteAiRecoveryMessage } from '@/utils/noteAiRecoveryMessage'
 import { useNoteReaderWidths } from '@/composables/noteReaderWidths'
 import { useNotesPaneWidth } from '@/composables/notesPaneWidth'
+import { useNotesCompanionLayout } from '@/composables/notesCompanionLayout'
 import { writingFocusPending } from '@/composables/writingJourney'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
@@ -61,13 +62,13 @@ const companionNoteId = ref('')
 const companionExplicitId = ref('')
 const readerCompanionOpen = ref(false)
 async function closeReaderCompanion() { readerCompanionOpen.value = false; await nextTick(); readerDialog.value?.querySelector<HTMLButtonElement>('.reader-companion-toggle')?.focus({ preventScroll: true }) }
-function openReaderCompanion() { if (!readingNote.value) return; selectCompanion(readingNote.value.id); readerCompanionOpen.value = true }
+function openReaderCompanion() { if (!readingNote.value) return; selectCompanion(readingNote.value.id, false); readerCompanionOpen.value = true }
 const aiReceipts = ref<Record<string, number>>({})
 async function loadAiReceipts() { const member = session.currentUser.id; try { const values = await fetchAiReceipts(); if (session.currentUser.id === member) aiReceipts.value = Object.fromEntries(values.map(v => [v.docId, v.unread])) } catch { /* 旧服务不可用时不显示虚构回执。 */ } }
 function companionUpdated(doc: Doc) { delete notePolishVersions[doc.id]; data.applyRemoteDoc(doc); void loadServerWorkflows(); void loadAiReceipts() }
 function companionRun(stage: CompanionStage | 'four') { const note = notes.value.find(n => n.id === companionNoteId.value); if (note) void retryOrStart(note, stage) }
 async function appendCompanion(text: string, messageId: string) { await stopReading(); writingOpen.value = true; await nextTick(); if (!newComposer.value?.appendPlainText(text, messageId)) toast('未能带入草稿，请从伴读复制回答；已有输入仍保留') }
-function selectCompanion(id: string) { companionExplicitId.value = id; companionNoteId.value = id; writingOpen.value = true }
+function selectCompanion(id: string, expand = true) { companionExplicitId.value = id; companionNoteId.value = id; writingOpen.value = true; if (expand) companionLayout.setCollapsed(false) }
 async function editCompanionNote(id: string) { await stopReading(); await editNote(id) }
 async function appendExistingCompanion(id: string, text: string, messageId: string) {
   await stopReading()
@@ -112,6 +113,10 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 const data = useDataStore()
 const pagePreferences = usePreferenceStore()
 const session = useSessionStore()
+const writingPane = ref<HTMLElement | null>(null)
+const companionLayout = useNotesCompanionLayout(writingPane, computed(() => session.currentUser.id))
+const { collapsed: companionCollapsed, percentage: editorPercentage, style: companionLayoutStyle, resizing: resizingCompanion, bounds: companionBounds } = companionLayout
+watch([writingOpen, readerCompanionOpen], () => companionLayout.stop())
 const now = useNow()
 type NoteEditorHandle = { focusSearch?: (text: string) => Promise<void>; copyFormatted: () => Promise<void>; positionAtPoint: (left: number, top: number) => { position: number; viewportTop: number } | null; focusImageReference: (index: number) => boolean }
 const noteEditors = new Map<string, NoteEditorHandle>()
@@ -1099,9 +1104,10 @@ onMounted(() => void loadPins())
     <NoteMediaCopyDialog v-if="mediaCopyContent" :content="mediaCopyContent" @close="mediaCopyContent = null" />
     <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i>今日写字 {{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button></div><span>{{ notes.length }} 条记录</span></header>
     <div ref="workspace" class="notes-workspace" :style="writingStyle" :class="{ 'writing-collapsed': !writingOpen, resizing }">
-      <aside v-show="writingOpen" id="notes-writing-pane" class="writing-pane" aria-label="新建小记区">
+      <aside v-show="writingOpen" ref="writingPane" id="notes-writing-pane" class="writing-pane" :style="companionLayoutStyle" :class="{ 'companion-collapsed': companionCollapsed, 'companion-resizing': resizingCompanion }" aria-label="新建小记区">
         <NoteComposer ref="newComposer" :key="`${session.currentUser.id}:new`" :focus-request="writingFocusRequest" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
-        <NoteAiCompanion :overlay-open="readerCompanionOpen" @close-overlay="closeReaderCompanion" ref="companion" :notes="notes" :active-id="companionNoteId" :explicitly-selected="companionExplicitId === companionNoteId && !!companionNoteId" @seen="loadAiReceipts" :blocked="!!companionNoteId && !!notes.find(n => n.id === companionNoteId && hasPendingNoteDraft(n))" @select="selectCompanion" @updated="companionUpdated" @run="companionRun" @source="openDiscoverySource" @open-note="openCompanionSource" @edit-note="editCompanionNote" @append="appendCompanion" @append-existing="appendExistingCompanion" @settings="noteSettingsOpen = true" />
+        <div class="companion-resizer" :class="{ inactive: companionCollapsed }" role="separator" :tabindex="companionCollapsed ? -1 : 0" :aria-disabled="companionCollapsed" aria-label="调整记录区与伴读高度" aria-orientation="horizontal" :aria-valuenow="editorPercentage" :aria-valuemin="Math.round(companionBounds.min * 100)" :aria-valuemax="Math.round(companionBounds.max * 100)" :aria-valuetext="`记录区高度 ${editorPercentage}%`" title="上下拖拽调整空间；方向键微调，双击恢复" @pointerdown="companionLayout.start" @keydown="companionLayout.keydown" @dblclick="companionLayout.reset"><span aria-hidden="true"></span></div>
+        <NoteAiCompanion :collapsed="companionCollapsed" @collapse="companionLayout.setCollapsed" :overlay-open="readerCompanionOpen" @close-overlay="closeReaderCompanion" ref="companion" :notes="notes" :active-id="companionNoteId" :explicitly-selected="companionExplicitId === companionNoteId && !!companionNoteId" @seen="loadAiReceipts" :blocked="!!companionNoteId && !!notes.find(n => n.id === companionNoteId && hasPendingNoteDraft(n))" @select="selectCompanion" @updated="companionUpdated" @run="companionRun" @source="openDiscoverySource" @open-note="openCompanionSource" @edit-note="editCompanionNote" @append="appendCompanion" @append-existing="appendExistingCompanion" @settings="noteSettingsOpen = true" />
       </aside>
       <div v-show="writingOpen" class="writing-resizer" role="separator" tabindex="0" aria-label="调整记录区宽度" aria-orientation="vertical" aria-controls="notes-writing-pane" :aria-valuenow="writingPercentage" aria-valuemin="25" aria-valuemax="60" :aria-valuetext="`记录区宽度 ${writingPercentage}%`" title="拖拽调整宽度，双击恢复三分之一；方向键微调" @pointerdown="startWritingResize" @keydown="resizeWritingByKey" @dblclick="resetWritingWidth"><span aria-hidden="true"></span></div>
       <section ref="notesList" class="notes-list" aria-label="小记清单" @scroll.passive="onNotesScroll">
@@ -1530,13 +1536,24 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 </style>
 
 <style scoped>
-.writing-pane{gap:14px}
-.writing-pane :deep(.note-composer:not(.fullscreen)){min-height:300px;max-height:410px;flex:0 0 auto}
-.writing-pane :deep(.note-composer:not(.fullscreen) .md-body){min-height:110px!important;max-height:220px}
-.writing-pane :deep(.ai-companion){flex:1 0 350px;min-height:300px;max-height:600px}
-@media(min-width:1101px){.writing-pane{overflow:hidden}.writing-pane :deep(.note-composer:not(.fullscreen)){height:42%;min-height:230px;max-height:370px;display:flex;flex-direction:column}.writing-pane :deep(.ai-companion){flex:1 1 0;min-height:230px;max-height:none}.writing-pane :deep(.note-composer:not(.fullscreen) .composer-content){min-height:0}}
+.companion-resizer { display:none; }
+@media(min-width:1101px){
+  .writing-pane { display:grid; grid-template-rows:minmax(0,var(--notes-editor-share)) 16px minmax(0,var(--notes-companion-share)); gap:0; overflow:hidden; }
+  .writing-pane.companion-collapsed { grid-template-rows:minmax(0,1fr) 10px 44px; }
+  .writing-pane :deep(.note-composer:not(.fullscreen)) { height:100%; min-height:0; max-height:none; box-sizing:border-box; }
+  .writing-pane :deep(.note-composer:not(.fullscreen) .editor-space), .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height:0!important; max-height:none; }
+  .writing-pane :deep(.ai-companion:not(.reader-overlay)) { min-height:0; max-height:none; }
+  .companion-resizer { display:flex; align-items:center; justify-content:center; cursor:row-resize; touch-action:none; outline:none; }
+  .companion-resizer span { width:42px; height:3px; border-radius:8px; background:var(--wao-line-control); transition:background .15s,width .15s; }
+  .companion-resizer:hover span, .companion-resizer:focus-visible span, .companion-resizing .companion-resizer span { width:64px; background:var(--wao-primary); }
+  .companion-resizer:focus-visible { border-radius:6px; outline:2px solid var(--wao-primary); outline-offset:-2px; }
+  .companion-resizer.inactive { pointer-events:none; }
+  .companion-resizer.inactive span { display:none; }
+  .companion-resizing { user-select:none; cursor:row-resize; }
+  .companion-resizing :deep(.note-composer), .companion-resizing :deep(.ai-companion) { pointer-events:none; }
+}
 @media(max-width:760px){.writing-pane :deep(.ai-companion.mobile-open){max-height:none;min-height:0}}
-@media(max-width:1100px){.writing-pane{display:flex;flex-direction:column}.writing-pane :deep(.ai-companion){flex:none;max-height:660px}.writing-pane :deep(.note-composer:not(.fullscreen)){max-height:none}}
+@media(max-width:1100px){.writing-pane{display:flex;flex-direction:column;gap:14px}.writing-pane :deep(.ai-companion){flex:none;max-height:660px}.writing-pane :deep(.note-composer:not(.fullscreen)){max-height:none}}
 @media(hover:none),(pointer:coarse){.companion-receipt{opacity:1;visibility:visible;min-height:44px}}
 </style>
 
