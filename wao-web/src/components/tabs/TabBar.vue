@@ -394,7 +394,12 @@ function mCloseUnpinned() {
   align-items: center;
   justify-content: center;
   padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
 }
+.tab:hover .close,
+.tab:focus-within .close { opacity: 1; pointer-events: auto; }
 .close:hover {
   background: var(--wao-bg-hover-2);
   color: var(--wao-text-2);
@@ -403,6 +408,8 @@ function mCloseUnpinned() {
   font-size: 13px;
   color: inherit;
 }
+@media (hover: none) { .close { opacity: 1; pointer-events: auto; } }
+@media (prefers-reduced-motion: reduce) { .close { transition: none; } }
 
 .menu-mask {
   position: fixed;

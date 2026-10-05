@@ -61,7 +61,7 @@ onMounted(async () => {
   text-decoration: none;
 }
 .footer-info { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
-.site-footer.has-brand { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+.site-footer.has-brand { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; color: var(--wao-text-3, #5a5e6b); }
 .footer-brand { display: inline-flex; align-items: center; gap: 5px; justify-self: end; white-space: nowrap; }
 .footer-brand :deep(.wao-logo) { gap: 5px; }
 .footer-brand :deep(.wao-logo-symbol) { width: 21px; height: 21px; }

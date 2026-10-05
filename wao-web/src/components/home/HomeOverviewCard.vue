@@ -164,10 +164,10 @@ onBeforeUnmount(() => {
 .overview-card > * + * { border-left: 1px solid var(--wao-line); }
 .overview-metric:hover, .overview-metric[aria-expanded="true"] { background: var(--wao-primary-soft); }
 .overview-metric:focus-visible, .overview-details button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
-.metric-label { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; color: var(--wao-text-3); font-size: 11px; }
-.metric-value { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.metric-label { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; color: var(--wao-text-3); font-size: 11px; letter-spacing: .01em; }
+.metric-value { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .metric-value.expiry { font-size: 14px; }
-small { font-size: 11px; color: var(--wao-text-3); overflow-wrap: anywhere; }
+small { font-size: 10px; line-height: 1.4; color: var(--wao-text-3); overflow-wrap: anywhere; }
 .attention, .overview-attention { color: var(--wao-warning-text, var(--wao-primary-text)); }
 .overview-attention { font-size: 11px; margin: 5px 0 0; }
 .overview-details { position: absolute; top: calc(100% + 8px); left: 0; width: 100%; box-sizing: border-box; max-height: min(60dvh, 520px); overflow: auto; z-index: 80; border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 16px; background: var(--wao-bg-card); color: var(--wao-text); box-shadow: 0 8px 30px #0002; overflow-wrap: anywhere; }
@@ -185,5 +185,6 @@ small { font-size: 11px; color: var(--wao-text-3); overflow-wrap: anywhere; }
   .overview-card > :nth-child(3) { border-left: 0; }
   .overview-card > :nth-child(n+3) { border-top: 1px solid var(--wao-line); }
   .overview-metric { padding: 12px 14px; }
+  .overview-metric small { font-size: 11px; }
 }
 </style>
