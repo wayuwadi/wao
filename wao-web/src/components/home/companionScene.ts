@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { createCompanionModels } from './companionModels'
+import { createCompanionWardrobe, disposeWardrobe, wardrobeNecklines } from './companionWardrobe'
+import { plainWeather, type LivingWeather } from './livingWeather'
 import { boundCompanion, companionLayout, stepCompanion } from './companionMotion'
 import { stepPlayBall, type PlayBall } from './companionPlay'
 import { ACTIVITY_SECONDS, activityPose, companionActivities, type CompanionActivity } from './companionActivities'
@@ -43,6 +45,8 @@ export function createCompanionScene({ host, canvas, targets, say, failed, surpr
   rim.position.set(4, 2, -2)
   scene.add(rim)
   const pets = createCompanionModels()
+  let weather = plainWeather
+  let wardrobes: THREE.Group[] = []
   pets.forEach((p) => scene.add(p.group))
   const toy = new THREE.Mesh(new THREE.SphereGeometry(10, 20, 16), new THREE.MeshStandardMaterial({ color: 0xffbb43, roughness: 0.55, transparent: true }))
   toy.name = 'companion-play-ball'
@@ -167,6 +171,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed, surpr
     camera.updateProjectionMatrix()
     pets.forEach((p, i) => {
       Object.assign(p, companionLayout(width, height, i))
+      if (weather.clothes !== 'plain') p.homeY += p.size * 0.17
       // Resize also returns an in-flight character to its visible home.
       if (initial || !p.drag) {
         p.x = p.homeX
@@ -183,7 +188,7 @@ export function createCompanionScene({ host, canvas, targets, say, failed, surpr
     const p = pets[index]!
     say(
       text,
-      Math.max(12, Math.min(width - 190, p.x + width / 2 - 70)),
+      Math.max(12, Math.min(width - Math.min(220, width - 24) - 12, p.x + width / 2 - 70)),
       Math.max(8, height / 2 - p.y - p.size * 1.55),
     )
   }
@@ -465,7 +470,9 @@ export function createCompanionScene({ host, canvas, targets, say, failed, surpr
       if (drag && !p.drag && !resting()) tilt += Math.sign(pets[drag.index]!.x - p.x) * 0.055
       p.body.rotation.z = tilt + action * 0.06 + (pose?.tilt ?? 0) + (reply?.tilt ?? 0) + (acting?.tilt ?? 0)
       const hat = p.body.getObjectByName('companion-hat')
-      if (hat) hat.rotation.z = acting?.hat ?? 0
+      if (hat) hat.rotation.z = acting?.hat ?? (!resting() && weather.windy ? Math.sin(t * 2.3) * 0.045 : 0)
+      const scarf = p.body.getObjectByName('companion-scarf-tail')
+      if (scarf) scarf.rotation.z = !resting() && weather.windy ? Math.sin(t * 3 + i) * 0.16 : 0
       const pressed = drag?.index === i && !p.drag && !drag.tickling
       const targetStretch = resting() ? 1 : pressed ? 0.85 : p.drag ? 1.085 : (pose?.stretch ?? 1) + action * 0.025 + (reply?.stretch ?? 1) - 1 + (acting?.stretch ?? 1) - 1
       const soft = softness[i]!
@@ -596,6 +603,22 @@ export function createCompanionScene({ host, canvas, targets, say, failed, surpr
   layout()
   return {
     play,
+    idle: () => runnable() && !resting() && !drag && !currentActivity && !story && !response && !flights.some(Boolean) && !pendingReverse,
+    setWeather(value: LivingWeather) {
+      const changed = weather.clothes !== value.clothes || weather.scarf !== value.scarf
+      weather = value
+      if (changed) {
+        wardrobes.forEach(disposeWardrobe)
+        wardrobes = pets.map(p => createCompanionWardrobe(p.body, p.i, value))
+        pets.forEach((p, i) => {
+          if (p.brush?.clothingCut) p.brush.clothingCut.value = weather.clothes === 'plain' ? -10 : wardrobeNecklines[i]!
+          const homeY = companionLayout(width, height, i).homeY + (weather.clothes !== 'plain' ? p.size * 0.17 : 0)
+          p.y += homeY - p.homeY
+          p.homeY = homeY
+        })
+      }
+      wake()
+    },
     settle() { reset(); wake() },
     story: beginStory,
     anchors() {
@@ -617,6 +640,10 @@ export function createCompanionScene({ host, canvas, targets, say, failed, surpr
       flights[index] = { start, x: p.group.position.x, y: p.group.position.y, token: collection.start(index, start), counted: false }
       if (combo.pair !== undefined && flights[combo.pair]) highFive = { a: combo.pair, b: index, start }
       respond(index)
+      if (weather.clothes !== 'plain') {
+        const clothes = { light: '轻薄上衣', jacket: '薄外套', winter: '厚外套', raincoat: '雨衣' }[weather.clothes]
+        announce(index, `今天穿${clothes}${weather.scarf ? '，围巾也系好了' : '，舒服一点'}。`)
+      }
       p.action = 0
       p.vx = p.vy = 0
       wake()
