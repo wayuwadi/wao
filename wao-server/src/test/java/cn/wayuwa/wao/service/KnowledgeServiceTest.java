@@ -60,6 +60,49 @@ import org.mockito.ArgumentCaptor;
 
 class KnowledgeServiceTest {
     @Test
+    void systemNoteKeepsRealOwnerAndAuthorFolder() {
+        KbEntity notes = kb("kb-notes"); notes.setNotes(true);
+        member("wg", "娃哥");
+        when(kbMapper.selectList(any())).thenReturn(List.of(notes));
+        when(folderMapper.selectList(any())).thenReturn(List.of());
+        when(folderMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+        DocDto saved = service.createNote("system-story", new CreateNoteRequest("系统功能介绍", List.of(), null,
+                List.of("新功能介绍"), false, false, false, null, true, true), "wg");
+        assertThat(saved.author()).isEqualTo("wg");
+        assertThat(saved.folderId()).isEqualTo("kb-notes-wg");
+        assertThat(saved.systemGenerated()).isTrue();
+        var inserted = ArgumentCaptor.forClass(DocEntity.class);
+        verify(docMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getSystemGenerated()).isTrue();
+        verify(taskNotifier).notifyNoteCreated("kb-notes", "system-story", "系统功能介绍", "系统");
+    }
+
+    @Test
+    void systemSourceMetadataUsesRevisionPreservesBodyAndRejectsOtherOwner() {
+        DocEntity note = doc("story", "kb-notes", "f");
+        note.setAuthorId("wg"); note.setRev(3); note.setTagsJson("[\"工作\"]");
+        when(docMapper.selectById("story")).thenReturn(note);
+        when(docMapper.updateIfRevision(any(), eq(3))).thenReturn(1);
+        String originalBody = note.getBlocksJson();
+        var patch = new PatchDocRequest(null, null, null, null, null, 3, null, null, true);
+        assertThatThrownBy(() -> NoteAiManagedService.withoutAuto("other", () -> service.updateDoc("story", patch)))
+                .hasMessageContaining("本人");
+        assertThatThrownBy(() -> service.updateDoc("story", new PatchDocRequest(null, null, null, null, null, null, null, null, true)))
+                .hasMessageContaining("expectedRev");
+        DocDto saved = NoteAiManagedService.withoutAuto("wg", () -> service.updateDoc("story", patch));
+        assertThat(saved.systemGenerated()).isTrue(); assertThat(saved.rev()).isEqualTo(4);
+        assertThat(saved.author()).isEqualTo("wg"); assertThat(saved.tags()).containsExactly("工作");
+        assertThat(note.getBlocksJson()).isEqualTo(originalBody);
+        assertThatThrownBy(() -> service.updateDoc("story", patch)).isInstanceOf(ConflictException.class);
+        service.updateDoc("story", new PatchDocRequest("之后人工修改", null, null, null));
+        assertThat(note.getSystemGenerated()).isTrue();
+        note.setKbId("normal-kb");
+        assertThatThrownBy(() -> service.updateDoc("story", patch)).hasMessageContaining("只有小记");
+    }
+
+    @Test
     void catalogOmitsOrdinaryBodiesButKeepsCompleteNotesWithoutPerDocumentQueries() {
         KbEntity notesKb = kb("notes");
         notesKb.setNotes(true);

@@ -23,7 +23,14 @@ public record DocDto(
         String folderId,
         Integer rev,
         List<String> tags,
-        boolean bodyLoaded) {
+        boolean bodyLoaded,
+        boolean systemGenerated) {
+    /** 历史调用默认是个人记录，不能按作者、标签或 auto 推断系统来源。 */
+    public DocDto(String id, String title, String author, String created, String updated, Boolean auto,
+            List<DocLinkDto> links, List<DocBlockDto> blocks, RichDocContentDto content,
+            List<BacklinkDto> backlinks, String kbId, String folderId, Integer rev, List<String> tags, boolean bodyLoaded) {
+        this(id, title, author, created, updated, auto, links, blocks, content, backlinks, kbId, folderId, rev, tags, bodyLoaded, false);
+    }
     public DocDto(String id, String title, String author, String created, String updated, Boolean auto,
             List<DocLinkDto> links, List<DocBlockDto> blocks, RichDocContentDto content,
             List<BacklinkDto> backlinks, String kbId, String folderId, Integer rev, List<String> tags) {

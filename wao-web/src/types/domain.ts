@@ -397,6 +397,8 @@ export interface Backlink {
 }
 
 export interface Doc {
+  /** 系统生成展示来源；author 仍是拥有和编辑本文的真实成员。 */
+  systemGenerated?: boolean
   /** false 表示目录条目；详情加载成功前不得作为空正文编辑或保存。 */
   bodyLoaded?: boolean
   /** 客户端目录标记；小记虽含正文，打开详情仍需补齐反向链接。 */

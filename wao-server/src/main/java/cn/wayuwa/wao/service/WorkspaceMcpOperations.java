@@ -53,7 +53,7 @@ public class WorkspaceMcpOperations {
         tool(tools, "list_tasks", "分页查找任务及已完成历史；from/to 按截止日期", true,
                 "keyword:s project_id:s mine_only:b status:s owner:s from:s to:s offset:i limit:i");
         tool(tools, "list_notes", "分页查找小记，默认本人；tags 为全部匹配；from/to 按创建日期", true,
-                "keyword:s tags:a mine_only:b from:s to:s offset:i limit:i");
+                "keyword:s tags:a mine_only:b include_system:b from:s to:s offset:i limit:i");
         tool(tools, "list_note_tags", "读取共享小记标签字典", true, "");
         tool(tools, "list_doc_templates", "读取本人的文档模板", true, "");
         tool(tools, "list_archived_documents", "分页读取指定知识库的归档文档", true, "kb_id:s! offset:i limit:i");
@@ -62,7 +62,7 @@ public class WorkspaceMcpOperations {
         if (write) {
             tool(tools, "create_note_tag", "幂等创建小记标签", false, "name:s!");
             tool(tools, "create_note", "创建到本人小记文件夹；稳定 UUID 文档 id 可安全重试；不自动调用 AI", false,
-                    "document_id:s title:s text:s blocks:a content:o tags:a");
+                    "document_id:s title:s text:s blocks:a content:o tags:a system_generated:b");
             tool(tools, "update_note_tags", "仅修改小记标签，不替换正文；需当前修订号", false,
                     "document_id:s! mode:s! tags:a expected_rev:i!");
             tool(tools, "create_doc_template", "从可见来源文档创建本人模板", false,
@@ -259,7 +259,7 @@ public class WorkspaceMcpOperations {
         }
         if (docs.selectById(id) != null) throw new ConflictException("小记 id 已存在，请先读取，不能覆盖");
         CreateNoteRequest requestDto = new CreateNoteRequest(text(a, "title", false, 200), body(a), content(a),
-                tags(a), false, false, false, null);
+                tags(a), false, false, false, null, true, bool(a, "system_generated", false));
         ensureTags(requestDto.tags());
         String selectedId = id;
         DocDto result = NoteAiManagedService.withoutAuto(member, () -> knowledge.createNote(selectedId, requestDto, member));
@@ -411,6 +411,7 @@ public class WorkspaceMcpOperations {
         List<DocDto> selected = knowledge.listDocCatalog().stream()
                 .filter(d -> KnowledgeService.NOTES_KB_ID.equals(d.kbId()))
                 .filter(d -> !bool(a, "mine_only", true) || member.equals(d.author()))
+                .filter(d -> bool(a, "include_system", true) || !d.systemGenerated())
                 .filter(d -> dates.test(d.created()))
                 .filter(d -> selectedTags == null || nn(d.tags()).containsAll(selectedTags))
                 .filter(d -> keyword == null || match(docText(d.bodyLoaded() ? d : doc(d.id(), member)), keyword))
@@ -458,7 +459,7 @@ public class WorkspaceMcpOperations {
     private static Map<String, Object> summary(DocDto d) {
         return Map.of("id", d.id(), "title", nz(d.title()), "author", nz(d.author()), "created", nz(d.created()),
                 "updated", nz(d.updated()), "rev", d.rev() == null ? 0 : d.rev(), "kbId", d.kbId(),
-                "folderId", nz(d.folderId()), "tags", nn(d.tags()));
+                "folderId", nz(d.folderId()), "tags", nn(d.tags()), "systemGenerated", d.systemGenerated());
     }
     private DocDto doc(String id, String member) { DocDto d = knowledge.getDoc(id); kb(d.kbId(), member); return d; }
     private void kb(String id, String member) { knowledge.getKb(id); if (!visible(id, member)) throw new NotFoundException("知识库不存在"); }

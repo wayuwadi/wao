@@ -80,7 +80,7 @@ public class WorkspaceMcpTools {
             add(list, "rename_folder", "重命名文件夹", "重命名已有文件夹。", schema(req("kb_id", 1, 64), req("folder_id", 1, 64), req("name", 1, 120)), false);
             add(list, "move_knowledge_node", "移动知识库节点", "移动文档或文件夹；expected_parent 用于防止并发覆盖。", schema(req("kb_id", 1, 64), req("node", 1, 70), req("parent", 0, 70), req("expected_parent", 0, 70)), false);
             add(list, "create_document", "创建文档", "在文件夹中创建文档；支持正文或本人模板，两者互斥。", schema(req("kb_id", 1, 64), req("folder_id", 1, 64), req("title", 1, 200), opt("text", 0, 1000000), opt("blocks", "array"), opt("content", "object"), opt("template_id", 1, 64)), false);
-            add(list, "update_document", "更新文档", "支持标题、正文、标签、出链与文件夹；正文和元数据集合修改必须携带 expected_rev。标签仅小记支持。", schema(req("document_id", 1, 64), opt("title", 1, 200), opt("blocks", "array"), opt("content", "object"), opt("tags", "array"), opt("links", "array"), opt("folder_id", 1, 64), opt("expected_rev", "integer")), false);
+            add(list, "update_document", "更新文档", "支持标题、正文、标签、出链、文件夹与本人小记的 system_generated 来源；正文和元数据修改必须携带 expected_rev。", schema(req("document_id", 1, 64), opt("title", 1, 200), opt("blocks", "array"), opt("content", "object"), opt("tags", "array"), opt("links", "array"), opt("folder_id", 1, 64), opt("system_generated", "boolean"), opt("expected_rev", "integer")), false);
         }
         WorkspaceMcpOperations.catalog(list, canWrite, canUseDaily);
         return json.createObjectNode().set("tools", list);
@@ -252,7 +252,7 @@ public class WorkspaceMcpTools {
         if (raw != null && !raw.isNull()) {
             blocks = checkedBlocks(raw);
         }
-        boolean extra = args.hasNonNull("content") || args.hasNonNull("tags") || args.hasNonNull("links") || args.hasNonNull("folder_id");
+        boolean extra = args.hasNonNull("content") || args.hasNonNull("tags") || args.hasNonNull("links") || args.hasNonNull("folder_id") || args.hasNonNull("system_generated");
         if (title == null && blocks == null && !extra) throw new BadRequestException("至少提供一个可修改字段");
         if ((blocks != null || extra) && (!args.path("expected_rev").isIntegralNumber() || !args.path("expected_rev").canConvertToInt()))
             throw new BadRequestException("修改正文或元数据需要 expected_rev");
@@ -268,7 +268,8 @@ public class WorkspaceMcpTools {
         return NoteAiManagedService.withoutAuto(member, () -> knowledge.updateDoc(doc.id(), new PatchDocRequest(title, selectedBlocks,
                 args.hasNonNull("content") ? json.convertValue(args.get("content"), cn.wayuwa.wao.dto.RichDocContentDto.class) : null,
                 args.hasNonNull("links") ? json.convertValue(args.get("links"), new TypeReference<List<cn.wayuwa.wao.dto.DocLinkDto>>() {}) : null,
-                optional(args, "folder_id", 64), expected, selectedTags, null)));
+                optional(args, "folder_id", 64), expected, selectedTags, null,
+                args.hasNonNull("system_generated") ? optionalBoolean(args, "system_generated", false) : null)));
     }
 
     private List<DocBlockDto> checkedBlocks(JsonNode raw) {

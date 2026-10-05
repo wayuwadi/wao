@@ -248,6 +248,7 @@ const sort = ref<'updatedDesc' | 'createdDesc' | 'updatedAsc'>('updatedDesc')
 const imageFilter = ref<'all' | 'yes' | 'no'>('all')
 const timeFilter = ref<'all' | 'today' | 'yesterday' | 'earlier'>('all')
 const selectedAuthor = ref('')
+const showSystemArticles = ref(true)
 const filterOpen = ref(false)
 const filterControl = ref<HTMLElement>()
 const selectedTag = ref<string | null>('')
@@ -255,29 +256,31 @@ const noteListPreferenceKey = `wao-note-list-preferences-v1:${session.currentUse
 const noteListPreferenceLoaded = ref(false)
 function restoreNoteListPreferences() {
   try {
-    const saved = JSON.parse(localStorage.getItem(noteListPreferenceKey) || 'null') as Partial<{ sort: string; imageFilter: string; timeFilter: string; selectedAuthor: string; selectedTag: string | null }> | null
+    const saved = JSON.parse(localStorage.getItem(noteListPreferenceKey) || 'null') as Partial<{ sort: string; imageFilter: string; timeFilter: string; selectedAuthor: string; selectedTag: string | null; showSystemArticles: boolean }> | null
     if (saved?.sort && ['updatedDesc', 'createdDesc', 'updatedAsc'].includes(saved.sort)) sort.value = saved.sort as typeof sort.value
     if (saved?.imageFilter && ['all', 'yes', 'no'].includes(saved.imageFilter)) imageFilter.value = saved.imageFilter as typeof imageFilter.value
     if (saved?.timeFilter && ['all', 'today', 'yesterday', 'earlier'].includes(saved.timeFilter)) timeFilter.value = saved.timeFilter as typeof timeFilter.value
     if (typeof saved?.selectedAuthor === 'string') selectedAuthor.value = saved.selectedAuthor
     if (saved?.selectedTag === null || typeof saved?.selectedTag === 'string') selectedTag.value = saved.selectedTag
+    if (typeof saved?.showSystemArticles === 'boolean') showSystemArticles.value = saved.showSystemArticles
   } catch { /* 忽略损坏的列表偏好，使用默认筛选。 */ }
   noteListPreferenceLoaded.value = true
 }
 restoreNoteListPreferences()
-watch([sort, imageFilter, timeFilter, selectedAuthor, selectedTag], () => {
+watch([sort, imageFilter, timeFilter, selectedAuthor, selectedTag, showSystemArticles], () => {
   if (!noteListPreferenceLoaded.value) return
-  try { localStorage.setItem(noteListPreferenceKey, JSON.stringify({ sort: sort.value, imageFilter: imageFilter.value, timeFilter: timeFilter.value, selectedAuthor: selectedAuthor.value, selectedTag: selectedTag.value })) }
+  try { localStorage.setItem(noteListPreferenceKey, JSON.stringify({ sort: sort.value, imageFilter: imageFilter.value, timeFilter: timeFilter.value, selectedAuthor: selectedAuthor.value, selectedTag: selectedTag.value, showSystemArticles: showSystemArticles.value })) }
   catch { /* 偏好无法持久化时仍可在当前页面使用筛选。 */ }
 }, { flush: 'sync' })
 const activeFilterCount = computed(() => Number(!!selectedTag.value || selectedTag.value === null)
-  + Number(!!selectedAuthor.value) + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc'))
+  + Number(!!selectedAuthor.value) + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc') + Number(!showSystemArticles.value))
 const filterSummary = computed(() => [selectedTag.value === null ? '无标签' : selectedTag.value ? `# ${selectedTag.value}` : '',
   selectedAuthor.value ? `作者：${authorName(selectedAuthor.value)}` : '',
+  showSystemArticles.value ? '' : '已隐藏系统文章',
   imageFilter.value === 'yes' ? '有图' : imageFilter.value === 'no' ? '无图' : '',
   { today: '今天', yesterday: '昨天', earlier: '以前', all: '' }[timeFilter.value],
   { updatedDesc: '最近更新', createdDesc: '最近创建', updatedAsc: '最早更新' }[sort.value]].filter(Boolean).join(' · '))
-function resetFilters() { selectedTag.value = ''; selectedAuthor.value = ''; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc' }
+function resetFilters() { selectedTag.value = ''; selectedAuthor.value = ''; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc'; showSystemArticles.value = true }
 function onOutsideFilter(event: PointerEvent) { if (!filterControl.value?.contains(event.target as Node)) filterOpen.value = false }
 const tagNames = ref<string[]>([])
 const tagsLoading = ref(false)
@@ -774,13 +777,14 @@ const todayCountError = computed(() => data.loadErrors.docs || data.loadErrors.k
 const todayCountLoading = computed(() => !todayCountError.value
   && (['idle', 'loading'].includes(data.loadStates.docs) || ['idle', 'loading'].includes(data.loadStates.knowledge)))
 const availableTags = computed(() => [...new Set([...tagNames.value, ...notes.value.flatMap(note => note.tags ?? [])])].sort((a, b) => a.localeCompare(b, 'zh-CN')))
-const availableAuthors = computed(() => [...new Set(notes.value.map(note => note.author).filter(Boolean))]
+const availableAuthors = computed(() => [...new Set(notes.value.map(note => note.systemGenerated ? '__system__' : note.author).filter(Boolean))]
   .map(id => ({ id, name: authorName(id) }))
   .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN') || a.id.localeCompare(b.id)))
 const matching = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
   return notes.value.filter(doc => (selectedTag.value === null ? !doc.tags?.length : !selectedTag.value || doc.tags?.includes(selectedTag.value))
-    && (!selectedAuthor.value || doc.author === selectedAuthor.value)
+    && (showSystemArticles.value || !doc.systemGenerated)
+    && (!selectedAuthor.value || (doc.systemGenerated ? '__system__' : doc.author) === selectedAuthor.value)
     && (imageFilter.value === 'all' || (notePreviewImages(displayedContent(doc)).length > 0) === (imageFilter.value === 'yes'))
     && inTimeRange(doc.updated, timeFilter.value)
     && (!needle || `${displayedTitle(doc)}\n${documentSearchText({ blocks: doc.blocks, content: displayedContent(doc) })}\n${displayedTags(doc).join(' ')}`.toLocaleLowerCase().includes(needle)))
@@ -1018,7 +1022,8 @@ function onEdited(sourceId: string, savedId: string) {
   highlighted.value = savedId
   void loadServerWorkflows()
 }
-function authorName(id: string) { return session.members.find(member => member.id === id)?.name || '成员' }
+function authorName(id: string) { return id === '__system__' ? '系统' : session.members.find(member => member.id === id)?.name || '成员' }
+function noteAuthorName(note: Doc) { return note.systemGenerated ? '系统' : authorName(note.author) }
 function timeLabel(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
@@ -1159,6 +1164,7 @@ onMounted(() => void loadPins())
           <div ref="filterControl" class="filter-control">
             <button class="filter-toggle" type="button" :aria-expanded="filterOpen" aria-controls="note-filter-panel" @click="filterOpen = !filterOpen"><i class="ri-equalizer-line"></i>筛选与排序<span v-if="activeFilterCount" class="filter-count">{{ activeFilterCount }}</span><i class="ri-arrow-down-s-line"></i></button>
             <div v-if="filterOpen" id="note-filter-panel" class="filter-panel" role="group" aria-label="小记筛选与排序">
+              <div class="filter-group system-filter"><strong>系统文章</strong><button type="button" class="system-visibility" role="switch" aria-label="显示系统文章" :aria-checked="showSystemArticles" @click="showSystemArticles = !showSystemArticles"><span>显示系统文章</span><span class="system-switch-track" aria-hidden="true"></span></button></div>
               <div class="filter-group"><strong>标签</strong><div class="filter-options"><button type="button" :aria-pressed="selectedTag === ''" @click="selectedTag = ''">全部</button><button type="button" :aria-pressed="selectedTag === null" @click="selectedTag = null">无标签</button><button v-for="tag in availableTags" :key="tag" type="button" :aria-pressed="selectedTag === tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
               <div class="filter-group"><strong>作者</strong><select v-model="selectedAuthor" aria-label="按作者筛选"><option value="">全部作者</option><option v-for="author in availableAuthors" :key="author.id" :value="author.id">{{ author.name }}</option></select></div>
               <div class="filter-group"><strong>图片</strong><div class="filter-options"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'yes', label: '有图' }, { value: 'no', label: '无图' }]" :key="option.value" type="button" :aria-pressed="imageFilter === option.value" @click="imageFilter = option.value as typeof imageFilter">{{ option.label }}</button></div></div>
@@ -1194,11 +1200,11 @@ onMounted(() => void loadPins())
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
-        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id }" :data-note-id="note.id"
+        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id, 'system-generated': note.systemGenerated }" :data-note-id="note.id"
           tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id, $event)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta">
-            <span class="author">{{ authorName(note.author) }}</span><time>{{ timeLabel(note.updated || note.created) }}</time>
+            <span class="author" :class="{ 'system-author': note.systemGenerated }" :title="note.systemGenerated ? 'Skill 生成的系统文章' : undefined"><i v-if="note.systemGenerated" class="ri-sparkling-line" aria-hidden="true"></i>{{ noteAuthorName(note) }}</span><time>{{ timeLabel(note.updated || note.created) }}</time>
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id), 'stage-list-open': mobileActionsId === note.id }" role="group" aria-label="AI 产出与按需操作">
               <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" hold-enabled :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}；长按 3 秒一键四连`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}，长按 3 秒一键四连`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
             </div>
@@ -1271,11 +1277,11 @@ onMounted(() => void loadPins())
           </div>
         </header>
         <div ref="readerLayout" class="reader-layout" :class="{ resizing: readerWidths.resizing.value }" :style="readerWidths.style.value">
-          <aside class="reader-directory" aria-label="当前列表的小记目录"><div class="reader-directory-heading"><strong>小记目录</strong><span>{{ readerNotes.length }} 篇</span><button type="button" class="reader-directory-close" aria-label="收起小记目录" @click="closeReaderLayer"><i class="ri-close-line" aria-hidden="true"></i></button></div><nav aria-label="选择小记"><button v-for="note in readerNotes" :key="note.id" type="button" :aria-current="note.id === readingId ? 'true' : undefined" @click="selectReadingNote(note.id)"><strong>{{ displayedTitle(note) }}</strong><small>{{ authorName(note.author) }} · {{ timeLabel(note.updated || note.created) }}</small></button></nav></aside>
+          <aside class="reader-directory" aria-label="当前列表的小记目录"><div class="reader-directory-heading"><strong>小记目录</strong><span>{{ readerNotes.length }} 篇</span><button type="button" class="reader-directory-close" aria-label="收起小记目录" @click="closeReaderLayer"><i class="ri-close-line" aria-hidden="true"></i></button></div><nav aria-label="选择小记"><button v-for="note in readerNotes" :key="note.id" type="button" :aria-current="note.id === readingId ? 'true' : undefined" @click="selectReadingNote(note.id)"><strong>{{ displayedTitle(note) }}</strong><small>{{ noteAuthorName(note) }} · {{ timeLabel(note.updated || note.created) }}</small></button></nav></aside>
           <div class="reader-resizer reader-directory-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="小记目录宽度" :aria-valuemin="readerWidths.minimum.directory" :aria-valuemax="readerWidths.limit('directory')" :aria-valuenow="readerWidths.widths.value.directory" title="拖拽调整宽度，双击恢复默认；方向键微调" @pointerdown="readerWidths.start('directory', $event)" @keydown="readerWidths.keydown('directory', $event)" @dblclick="readerWidths.reset('directory')"><span></span></div>
           <div class="reader-main" :inert="readerDirectoryOpen ? true : undefined"><button type="button" class="reader-directory-toggle" @click="openReaderDirectory"><i class="ri-list-check" aria-hidden="true"></i>小记目录 <span>{{ readingIndex + 1 }} / {{ readerNotes.length }}</span></button>
             <article :key="readingNote.id" ref="readerPage" class="reader-page" @scroll="readerRestorePending = false">
-              <div class="reader-columns"><div class="reader-article"><NoteComposer v-if="readerEditing" ref="readingComposer" :key="`${session.currentUser.id}:${readingNote.id}:reading`" :note="readingNote" inline contained expanded autofocus :initial-position="readingEditAnchor?.position" :initial-viewport-top="readingEditAnchor?.viewportTop" :tag-options="availableTags" @draft-change="onDraftChange(readingNote.id, $event)" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="finishReadingEdit($event)" @image-reference="locateReadingImage" @close="finishReadingEdit()" @exit-cancelled="afterReadingEdit = undefined" /><NoteOriginalReader v-else-if="originalsOpen" ref="readerOriginal" :doc-id="readingNote.id" :member-id="session.currentUser.id" :current-rev="readingNote.rev" image-references :active-image-reference="readerActiveImage" @reading-content="readerOriginalContent = $event" @image-reference="locateReadingImage" @source-change="changeOriginalSource" @ready="restoreReaderPosition" /><template v-else><div class="reader-meta"><span>{{ authorName(readingNote.author) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
+              <div class="reader-columns"><div class="reader-article"><NoteComposer v-if="readerEditing" ref="readingComposer" :key="`${session.currentUser.id}:${readingNote.id}:reading`" :note="readingNote" inline contained expanded autofocus :initial-position="readingEditAnchor?.position" :initial-viewport-top="readingEditAnchor?.viewportTop" :tag-options="availableTags" @draft-change="onDraftChange(readingNote.id, $event)" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="finishReadingEdit($event)" @image-reference="locateReadingImage" @close="finishReadingEdit()" @exit-cancelled="afterReadingEdit = undefined" /><NoteOriginalReader v-else-if="originalsOpen" ref="readerOriginal" :doc-id="readingNote.id" :member-id="session.currentUser.id" :current-rev="readingNote.rev" image-references :active-image-reference="readerActiveImage" @reading-content="readerOriginalContent = $event" @image-reference="locateReadingImage" @source-change="changeOriginalSource" @ready="restoreReaderPosition" /><template v-else><div class="reader-meta"><span>{{ noteAuthorName(readingNote) }}</span><time>{{ timeLabel(readingNote.updated || readingNote.created) }}</time><span>{{ noteCounts[readingNote.id]?.toLocaleString('zh-CN') ?? '' }} 字</span></div>
               <h2>{{ displayedTitle(readingNote) }}</h2>
               <div v-if="displayedTags(readingNote).length" class="reader-tags"><span v-for="tag in displayedTags(readingNote)" :key="tag"># {{ tag }}</span></div>
               <div class="reader-content" @dblclick="editReadingNote"><div class="reader-body"><MarkdownEditor ref="readerEditor" :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="readerActiveImage" bare advanced allow-h1 :min-height="0" @image-reference="locateReadingImage" @character-count="restoreReaderPosition" /></div></div></template></div>
@@ -1358,6 +1364,14 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .tag-status { font-size: 12px; color: var(--wao-text-faint); }
 .list-summary { display: flex; justify-content: space-between; gap: 10px; margin: 9px 0 12px; font-size: 11px; color: var(--wao-text-faint); }
 .note-card { position: relative; box-sizing: border-box; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 17px 19px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
+.note-card.system-generated { background: color-mix(in srgb, var(--wao-primary) 9%, var(--wao-bg-card)); border-color: color-mix(in srgb, var(--wao-primary) 45%, var(--wao-line-control)); }
+.author.system-author { display: inline-flex; align-items: center; gap: 4px; color: var(--wao-primary-text); background: color-mix(in srgb, var(--wao-primary) 13%, var(--wao-bg-card)); padding: 3px 7px; border-radius: 6px; }
+.system-visibility { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; color: var(--wao-text-1); border: 0; background: transparent; padding: 4px 0; cursor: pointer; text-align: left; }
+.system-switch-track { flex: none; width: 36px; height: 21px; border-radius: 11px; background: var(--wao-line-control); position: relative; }
+.system-switch-track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: var(--wao-bg-card); }
+.system-visibility[aria-checked="true"] .system-switch-track { background: var(--wao-primary); }
+.system-visibility[aria-checked="true"] .system-switch-track::after { left: 18px; }
+.system-visibility:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; border-radius: 4px; }
 .note-card.fixed-height { min-height: 300px; height: 300px; max-height: 300px; overflow: hidden; padding-bottom: 36px; }
 .note-card.expanded, .note-card.editing { height: auto; max-height: none; overflow: visible; }
 .note-card:hover, .note-card:focus-within { border-color: var(--wao-primary); box-shadow: 0 4px 16px rgba(59, 47, 91, .07); }

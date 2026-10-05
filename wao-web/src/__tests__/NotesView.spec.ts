@@ -72,6 +72,36 @@ function composer(note?: Doc) {
 }
 async function triggerFour(wrapper: ReturnType<typeof mount>) { wrapper.getComponent(NoteAiStageButton).vm.$emit('four'); await flushPromises() }
 describe('小记集中记录空间', () => {
+  it('系统来源独立于所有者，卡片与阅读显示系统，开关持久化且保留输入草稿', async () => {
+    useDataStore().docs = { personal: doc('personal', '我的记录'), system: { ...doc('system', '功能介绍'), systemGenerated: true } }
+    let wrapper = await view(document.body); await flushPromises()
+    const system = wrapper.get('[data-note-id="system"]')
+    expect(system.classes()).toContain('system-generated')
+    expect(system.get('.author').text()).toBe('系统')
+    expect(wrapper.get('[data-note-id="personal"] .author').text()).toBe('娃哥')
+    await system.trigger('keydown', { key: 'Enter' }); await flushPromises()
+    const reader = new DOMWrapper(document.body).get('.notes-reader')
+    expect(reader.get('.reader-meta').text()).toContain('系统')
+    await reader.get('[aria-label="退出阅读模式"]').trigger('click'); await flushPromises()
+    await wrapper.get('.writing-pane textarea').setValue('筛选前未保存的记录')
+    await openFilters(wrapper)
+    expect(wrapper.get('[aria-label="按作者筛选"]').text()).toContain('系统')
+    await wrapper.get('[role="switch"][aria-label="显示系统文章"]').trigger('click'); await flushPromises()
+    expect(wrapper.find('[data-note-id="system"]').exists()).toBe(false)
+    expect(wrapper.get<HTMLTextAreaElement>('.writing-pane textarea').element.value).toBe('筛选前未保存的记录')
+    expect(wrapper.get('.list-summary').text()).toContain('已隐藏系统文章')
+    wrapper.unmount()
+    wrapper = await view(document.body); await flushPromises()
+    expect(wrapper.find('[data-note-id="system"]').exists()).toBe(false)
+    await openFilters(wrapper)
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('false')
+    await wrapper.get('[role="switch"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('[data-note-id="system"] .author').text()).toBe('系统')
+    await wrapper.get('[aria-label="按作者筛选"]').setValue('__system__')
+    expect(wrapper.findAll('.note-card')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('已读但尚待采用的建议仍提示，已自动采用的未读成果不显示待确认', async () => {
     useDataStore().docs = { pending: doc('pending', '等待采用'), adopted: doc('adopted', '已经自动采用') }
     vi.mocked(fetchAiReceipts).mockResolvedValue([{ docId: 'adopted', unread: 4 }])
@@ -2042,8 +2072,8 @@ describe('小记集中记录空间', () => {
     expect(wrapper.get<HTMLTextAreaElement>('[data-note-id="a"] .note-composer textarea').element.value).toContain('会议决定明天发布。')
     await wrapper.get('[data-note-id="a"] .note-composer').findAll('button').find(button => button.text() === '收起编辑')!.trigger('click')
     await openFilters(wrapper)
-    await wrapper.findAll('.filter-group')[2]!.findAll('button')[1]!.trigger('click')
-    await wrapper.findAll('.filter-group')[3]!.findAll('button')[1]!.trigger('click')
+    await wrapper.findAll('.filter-group').find(group => group.find('strong').text() === '图片')!.findAll('button')[1]!.trigger('click')
+    await wrapper.findAll('.filter-group').find(group => group.find('strong').text() === '更新时间')!.findAll('button')[1]!.trigger('click')
     expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['a'])
     wrapper.unmount()
   })

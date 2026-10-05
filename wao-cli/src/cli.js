@@ -59,6 +59,8 @@ const HELP = `WAO 工作区 CLI
   wao tasks create --project-id PROJECT_ID --title "修复问题"
   wao documents update DOC_ID --input-file update.json
   wao notes create --title "今日小记" --file article.md --tags '["工作"]'
+  wao notes create --title "系统功能介绍" --file article.md --system-generated true --tags '["新功能介绍"]'
+  wao notes list --include-system false
   wao pages publish --file dist/index.html --title "分享稿" --slug share-draft
 
 托管页发布：只接受 UTF-8 单文件 HTML，最大 10 MB；会公开生成公网链接。

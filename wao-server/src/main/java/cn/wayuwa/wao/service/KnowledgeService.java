@@ -441,7 +441,7 @@ public class KnowledgeService {
     public List<DocDto> listDocCatalog() {
         List<DocEntity> entries = docMapper.selectList(activeDocs().select(
                 DocEntity::getId, DocEntity::getKbId, DocEntity::getFolderId, DocEntity::getTitle,
-                DocEntity::getAuthorId, DocEntity::getAuto, DocEntity::getCreatedLabel,
+                DocEntity::getAuthorId, DocEntity::getAuto, DocEntity::getSystemGenerated, DocEntity::getCreatedLabel,
                 DocEntity::getUpdatedLabel, DocEntity::getCreatedAt, DocEntity::getUpdatedAt,
                 DocEntity::getRev, DocEntity::getTagsJson, DocEntity::getLinksJson));
         List<String> noteKbIds = kbMapper.selectList(aliveKbs()).stream()
@@ -455,7 +455,7 @@ public class KnowledgeService {
             DocDto metadata = toDtoWithBacklinks(entry, List.of());
             return new DocDto(metadata.id(), metadata.title(), metadata.author(), metadata.created(),
                     metadata.updated(), metadata.auto(), metadata.links(), List.of(), null, List.of(),
-                    metadata.kbId(), metadata.folderId(), metadata.rev(), metadata.tags(), false);
+                    metadata.kbId(), metadata.folderId(), metadata.rev(), metadata.tags(), false, metadata.systemGenerated());
         }).toList();
     }
 
@@ -835,11 +835,15 @@ public class KnowledgeService {
             String title = blankOr(req.title(), titleFrom(content, blocks));
             String blocksJson = write(blocks);
             String tagsJson = tags == null ? existing.getTagsJson() : write(tags);
+            boolean systemGenerated = req.systemGenerated() == null
+                    ? Boolean.TRUE.equals(existing.getSystemGenerated()) : req.systemGenerated();
             boolean changed = !Objects.equals(tagsJson, existing.getTagsJson())
+                    || systemGenerated != Boolean.TRUE.equals(existing.getSystemGenerated())
                     || !Objects.equals(title, existing.getTitle())
                     || !Objects.equals(blocksJson, existing.getBlocksJson())
                     || !sameRichContent(existing, content);
             if (changed) {
+                existing.setSystemGenerated(systemGenerated);
                 existing.setTagsJson(tagsJson);
                 existing.setTitle(title);
                 existing.setBlocksJson(blocksJson);
@@ -856,7 +860,7 @@ public class KnowledgeService {
         List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
         RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
         DocDto doc = insertDoc(id, kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(content, blocks)),
-                author, blocks, content, List.of(), tags);
+                author, blocks, content, List.of(), tags, Boolean.TRUE.equals(req.systemGenerated()));
         announceNote(kb.getId(), doc, author);
         return noteSaved(doc,author,req.title(),req,true);
     }
@@ -867,7 +871,7 @@ public class KnowledgeService {
         try {
             MemberEntity member = author == null || author.isBlank() ? null : memberMapper.selectById(author);
             taskNotifier.notifyNoteCreated(kbId, doc.id(), doc.title(),
-                    member == null ? author : member.getName());
+                    doc.systemGenerated() ? "系统" : member == null ? author : member.getName());
         } catch (RuntimeException ex) {
             LOG.warn("新建小记的飞书通知发送失败：{}", ex.getMessage());
         }
@@ -1191,6 +1195,12 @@ public class KnowledgeService {
 
     private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
             List<DocBlockDto> blocks, RichDocContentDto content, List<DocLinkDto> links, List<String> tags) {
+        return insertDoc(id, kbId, folderId, title, author, blocks, content, links, tags, false);
+    }
+
+    private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
+            List<DocBlockDto> blocks, RichDocContentDto content, List<DocLinkDto> links, List<String> tags,
+            boolean systemGenerated) {
         Long count = docMapper.selectCount(aliveDocs().eq(DocEntity::getFolderId, folderId));
         LocalDateTime now = LocalDateTime.now();
 
@@ -1201,6 +1211,7 @@ public class KnowledgeService {
         e.setTitle(blankOr(title, ""));
         e.setAuthorId(blankOr(author, "wg"));
         e.setAuto(false);
+        e.setSystemGenerated(systemGenerated);
         e.setCreatedAt(now);
         e.setUpdatedAt(now);
         e.setRev(1);
@@ -1328,6 +1339,12 @@ public class KnowledgeService {
         if(noteAiManaged!=null&&actor!=null&&!NoteAiManagedService.derived())noteAiManaged.lockActor(actor);
         docMapper.selectByIdForUpdate(id);
         DocEntity e = requireDoc(id);
+        if (req.systemGenerated() != null) {
+            if (!NOTES_KB_ID.equals(e.getKbId())) throw new BadRequestException("只有小记支持系统来源");
+            if (req.expectedRev() == null) throw new BadRequestException("修改系统来源需要 expectedRev");
+            if (actor != null && !Objects.equals(actor, e.getAuthorId()))
+                throw new BadRequestException("只能修改本人小记的系统来源");
+        }
         if ("AI_DERIVED".equals(origin)) {
             if (req.content() != null) BookExcerptProtection.assertPreserved(e.getContentMarkdown(), req.content().markdown());
             else if (req.blocks() != null) BookExcerptProtection.assertPreserved(e.getContentMarkdown(), null);
@@ -1341,10 +1358,14 @@ public class KnowledgeService {
             throw new ConflictException("文档已在其他窗口更新，请刷新后处理本机草稿");
         }
         boolean contentChanged = false;
+        if (req.systemGenerated() != null) {
+            contentChanged = req.systemGenerated() != Boolean.TRUE.equals(e.getSystemGenerated());
+            e.setSystemGenerated(req.systemGenerated());
+        }
         if (req.tags() != null) {
             if (!NOTES_KB_ID.equals(e.getKbId())) throw new BadRequestException("只有小记支持标签");
             String nextTags = write(NoteTagService.normalize(req.tags()));
-            contentChanged = !Objects.equals(nextTags, e.getTagsJson());
+            contentChanged |= !Objects.equals(nextTags, e.getTagsJson());
             e.setTagsJson(nextTags);
         }
         if (req.title() != null && !req.title().equals(e.getTitle())) {
@@ -1884,7 +1905,7 @@ public class KnowledgeService {
         return new DocDto(e.getId(), e.getTitle(), e.getAuthorId(),
                 stamp(e.getCreatedAt(), e.getCreatedLabel()), stamp(e.getUpdatedAt(), e.getUpdatedLabel()),
                 e.getAuto(), withoutProjectLinks(links), blocks, richContentOf(e), backlinks, e.getKbId(), e.getFolderId(), rev(e),
-                readList(e.getTagsJson(), new TypeReference<List<String>>() {}));
+                readList(e.getTagsJson(), new TypeReference<List<String>>() {}), true, Boolean.TRUE.equals(e.getSystemGenerated()));
     }
 
     private static List<DocLinkDto> withoutProjectLinks(List<DocLinkDto> links) {
