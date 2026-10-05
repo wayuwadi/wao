@@ -86,7 +86,7 @@ async function download() {
 <template>
   <div class="page">
     <div class="card" :class="{ expanded: previewContent !== null }">
-      <div class="brand"><WaoLogo />WAO 文件下载</div>
+      <div class="brand"><WaoLogo wordmark /> · 文件下载</div>
 
       <div v-if="loadError" class="missing">
         <i class="ri-error-warning-line"></i>{{ loadError }}

@@ -8,6 +8,8 @@
 .rest-heading h1 { font-size:clamp(25px,3vw,34px);font-weight:400;letter-spacing:2px;line-height:1.4;margin:0 0 8px;text-wrap:balance; }
 .rest-heading p { font-size:13px;line-height:1.75;color:var(--muted);margin:0; }
 .rest-landscape { position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:-1; }
+.rest-landscape:after { content:'';position:absolute;right:7%;bottom:7%;width:180px;aspect-ratio:1;background:var(--text);opacity:.035;mask:url('/brand/wao-soft-loop-mono-v4.svg') center / contain no-repeat; }
+@media(max-width:380px) { .rest-landscape:after { width:130px;opacity:.025; } }
 .rest-sun { position:absolute;right:15%;top:11%;width:clamp(82px,10vw,124px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 42% 40%,#fff9dd 0,var(--rest-sun) 54%,transparent 74%);opacity:.78;filter:blur(1px);box-shadow:0 0 56px color-mix(in srgb,var(--rest-sun) 48%,transparent); }
 .rest-hill { position:absolute;width:116%;height:260px;border-radius:50% 50% 0 0;bottom:-116px;background:linear-gradient(165deg,color-mix(in srgb,var(--rest-sage) 86%,#fff 14%),var(--rest-sage));transform:rotate(-9deg);left:-31%; }
 .rest-hill.back { bottom:-104px;left:-24%;height:225px;opacity:.82; }
