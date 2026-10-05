@@ -7,6 +7,8 @@ import NoteAiStageButton from '@/components/notes/NoteAiStageButton.vue'
 import NoteAiCompanion from '@/components/notes/NoteAiCompanion.vue'
 import { fetchAiReceipts, fetchAiResults, type CompanionStage } from '@/api/noteAiCompanion'
 import NoteMediaCopyDialog from '@/components/notes/NoteMediaCopyDialog.vue'
+import NoteTrashDialog from '@/components/notes/NoteTrashDialog.vue'
+import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { publishNoteTagChange, replaceCachedNoteTags, replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
 import NoteAiSettingsDialog from '@/components/notes/NoteAiSettingsDialog.vue'
@@ -46,7 +48,12 @@ import { writingFocusPending } from '@/composables/writingJourney'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const mediaCopyContent = ref<RichDocContent | null>(null)
-function openMediaCopy(note: Doc) { mediaCopyContent.value = JSON.parse(JSON.stringify(displayedContent(note))) as RichDocContent }
+const mediaCopyNote = ref({ id: '', title: '' })
+const trashOpen = ref(false)
+function openMediaCopy(note: Doc) {
+  mediaCopyNote.value = { id: note.id, title: displayedTitle(note) }
+  mediaCopyContent.value = JSON.parse(JSON.stringify(displayedContent(note))) as RichDocContent
+}
 const writingOpen = ref(true)
 const companion = ref<InstanceType<typeof NoteAiCompanion> | null>(null)
 const newComposer = ref<InstanceType<typeof NoteComposer> | null>(null)
@@ -207,6 +214,13 @@ function measureAllNotePreviews() {
   for (const id of notePreviewBodies.keys()) measureNotePreview(id)
 }
 const previewImage = ref<NotePreviewImage | null>(null)
+const previewImages = ref<NotePreviewImage[]>([])
+const previewImageIndex = ref(0)
+function changePreviewImage(index: number) {
+  previewImageIndex.value = index
+  previewImage.value = previewImages.value[index] ?? null
+  imageMenu.value = null
+}
 const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
 function openImageMenu(event: MouseEvent) {
   const target = event.target
@@ -216,8 +230,10 @@ function openImageMenu(event: MouseEvent) {
 }
 const lightbox = ref<HTMLElement | null>(null)
 let imageTrigger: HTMLElement | null = null
-async function openImage(image: NotePreviewImage, event: MouseEvent) {
+async function openImage(image: NotePreviewImage, event: MouseEvent, images: NotePreviewImage[] = readerImages.value, index?: number) {
   imageTrigger = event.currentTarget instanceof HTMLButtonElement ? event.currentTarget : event.target instanceof HTMLImageElement ? event.target : event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  previewImages.value = images.length ? images.map(item => ({ ...item })) : [{ ...image }]
+  previewImageIndex.value = index ?? Math.max(0, previewImages.value.findIndex(item => item.src === image.src))
   previewImage.value = image
   await nextTick()
   lightbox.value?.focus()
@@ -457,7 +473,7 @@ function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
       { id: 'ai-chat', label: '聊聊这篇', run: () => selectCompanion(id, 'chat') },
     ] : []),
     { id: 'edit', label: '编辑小记', run: () => editNote(id) },
-    { id: 'copy', label: '复制内容', run: () => { const note = data.docById(id); if (note && cardImages(note).length) openMediaCopy(note); else void noteEditors.get(id)?.copyFormatted() } },
+    { id: 'copy', label: '复制内容', run: () => { const note = data.docById(id); if (note) openMediaCopy(note) } },
     { id: 'link', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
     { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
     { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => toggleDeleteConfirmation(id) },
@@ -704,7 +720,7 @@ watch(() => readerNotes.value.map(note => note.id), ids => {
   else void stopReading()
 })
 let discoverySourceRequest = 0
-watch(() => session.currentUser.id, () => { readerEditing.value = false; afterReadingEdit = undefined; readerCompanionOpen.value = false; receiptVersions.clear(); reviewSuggestions.value = {}; discoverySourceRequest++; clearDiscoveryLegacyCache(); void stopReading(); readerPositions.clear(); readingId.value = ''; readerMode.value = 'side' })
+watch(() => session.currentUser.id, () => { trashOpen.value = false; mediaCopyContent.value = null; previewImage.value = null; readerEditing.value = false; afterReadingEdit = undefined; readerCompanionOpen.value = false; receiptVersions.clear(); reviewSuggestions.value = {}; discoverySourceRequest++; clearDiscoveryLegacyCache(); void stopReading(); readerPositions.clear(); readingId.value = ''; readerMode.value = 'side' })
 async function openDiscoverySource(itemId: string, docId: string, event: Event) {
   const trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
   const member = session.currentUser.id, request = ++discoverySourceRequest
@@ -1151,8 +1167,9 @@ onMounted(() => void loadPins())
 <template>
   <main class="notes-page wao-page-frame" @contextmenu="openImageMenu">
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
-    <NoteMediaCopyDialog v-if="mediaCopyContent" :content="mediaCopyContent" @close="mediaCopyContent = null" />
-    <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i>今日写字 {{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button><button class="writing-toggle notes-settings-toggle" type="button" aria-label="小记设置" @click="noteSettingsOpen = true"><i class="ri-settings-3-line" aria-hidden="true"></i><span>小记设置</span></button></div><span>{{ notes.length }} 条记录</span></header>
+    <NoteMediaCopyDialog v-if="mediaCopyContent" :content="mediaCopyContent" :note-id="mediaCopyNote.id" :title="mediaCopyNote.title" @close="mediaCopyContent = null" />
+    <NoteTrashDialog v-if="trashOpen" :key="session.currentUser.id" :kb-name="data.kbs.find(kb => kb.id === 'kb-notes')?.name || '小记'" @close="trashOpen = false" @restored="reload" />
+    <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i><span class="daily-count-label">今日写字 </span>{{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button><button class="writing-toggle notes-settings-toggle" type="button" aria-label="小记设置" @click="noteSettingsOpen = true"><i class="ri-settings-3-line" aria-hidden="true"></i><span>小记设置</span></button><button class="writing-toggle notes-trash-toggle" type="button" aria-label="小记回收站" @click="trashOpen = true"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>回收站</span></button></div><span>{{ notes.length }} 条记录</span></header>
     <div ref="workspace" class="notes-workspace" :inert="readerCompanionOpen ? true : undefined" :style="writingStyle" :class="{ 'writing-collapsed': !writingOpen, resizing }">
       <aside v-show="writingOpen" id="notes-writing-pane" class="writing-pane" aria-label="新建小记区">
         <NoteComposer ref="newComposer" :key="`${session.currentUser.id}:new`" :focus-request="writingFocusRequest" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
@@ -1204,13 +1221,14 @@ onMounted(() => void loadPins())
           tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id, $event)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta">
-            <span class="author" :class="{ 'system-author': note.systemGenerated }" :title="note.systemGenerated ? 'Skill 生成的系统文章' : undefined"><i v-if="note.systemGenerated" class="ri-sparkling-line" aria-hidden="true"></i>{{ noteAuthorName(note) }}</span><time>{{ timeLabel(note.updated || note.created) }}</time>
+            <div class="note-heading"><h2 :title="displayedTitle(note)">{{ displayedTitle(note) }}</h2></div>
+            <span class="card-identity"><span class="author" :class="{ 'system-author': note.systemGenerated }" :title="note.systemGenerated ? 'Skill 生成的系统文章' : undefined"><i v-if="note.systemGenerated" class="ri-sparkling-line" aria-hidden="true"></i>{{ noteAuthorName(note) }}</span><time :title="timeLabel(note.updated || note.created)">{{ new Date(note.updated || note.created).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</time></span>
+
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id), 'stage-list-open': mobileActionsId === note.id }" role="group" aria-label="AI 产出与按需操作">
               <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" hold-enabled :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}；长按 3 秒一键四连`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}，长按 3 秒一键四连`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
             </div>
             <span v-if="chargingNote === note.id" class="four-charge-hint" role="status">按住 3 秒 · 松开取消</span>
-          <p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id) || reviewSuggestions[note.id])" :title="workflowMessage(note.id)" class="workflow-status compact-workflow" role="status"><template v-if="noteDrafts[note.id]">草稿已保护 · 有修改待保存</template><button v-else type="button" @click.stop="selectCompanion(note.id)">{{ reviewSuggestions[note.id] ? `待确认 ${reviewSuggestions[note.id]} 项建议` : workflowMessage(note.id) || (serverFailed(note.id) ? '整理未完成 · 查看并重试' : '整理中 · 查看进度') }}</button></p>
-            <span class="note-meta-trailing"><span class="card-quick-actions"><button v-if="cardImages(note).length" type="button" aria-label="复制小记图文" title="复制图文到 ChatGPT" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" @click.stop="togglePin(note.id)"><i class="ri-pushpin-line" aria-hidden="true"></i></button><button type="button" aria-label="复制分享链接" @click.stop="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
+            <span class="note-meta-trailing"><span class="card-quick-actions"><button type="button" aria-label="复制小记图文" title="复制正文、原图或交给 Codex" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" @click.stop="togglePin(note.id)"><i class="ri-pushpin-line" aria-hidden="true"></i></button><button type="button" aria-label="复制分享链接" @click.stop="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
               <button class="note-more-actions" type="button" :aria-label="`小记操作：${note.title}`" aria-haspopup="menu" @click.stop="openNoteMenu($event, note.id)"><i class="ri-more-line" aria-hidden="true"></i></button>
               <button class="note-touch-ai" type="button" aria-label="显示 AI 操作" :aria-expanded="mobileActionsId === note.id" @click.stop="mobileActionsId = mobileActionsId === note.id ? '' : note.id"><i class="ri-sparkling-line" aria-hidden="true"></i></button>
             </span>
@@ -1223,20 +1241,19 @@ onMounted(() => void loadPins())
           <NoteComposer :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :expanded="expandedIds.includes(note.id)" :initial-fullscreen="editAnchors[note.id]?.fullscreen" :initial-position="editAnchors[note.id]?.position" :initial-viewport-top="editAnchors[note.id]?.viewportTop" :tag-options="availableTags" :workflow-message="workflowMessage(note.id)"
             @tag-created="tagNames = [...new Set([...tagNames, $event])]" @draft-change="onDraftChange(note.id, $event)" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
           <template v-else>
-          <div class="note-heading"><h2>{{ displayedTitle(note) }}</h2><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
           <div class="note-content" :class="{ 'has-images': notePreviews.get(note.id)?.length }" @click="openInlineImage">
             <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="cardActiveImages[note.id] ?? null" bare advanced allow-h1 :min-height="0" @image-reference="locateCardImage(note.id, $event)" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
             <aside v-if="notePreviews.get(note.id)?.length" class="note-images" :class="{ expanded: isNotePreviewExpanded(note.id) }" aria-label="小记图片总览">
               <span>图片总览 <b>{{ notePreviews.get(note.id)?.length }} 张</b></span>
               <figure v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image-item" :class="{ active: cardActiveImages[note.id] === index + 1 }" :data-card-image="index + 1" :aria-label="`图 ${index + 1} ${image.alt}`">
-              <button class="note-image" type="button" :title="image.alt || `全屏阅读图片 ${index + 1}`" @click.stop="startReading(note.id)">
+              <button class="note-image" type="button" :aria-label="`放大图 ${index + 1}：${image.alt || '正文配图'}`" :title="image.alt || `放大图片 ${index + 1}`" @click.stop="openImage(image, $event, cardImages(note), index)">
                 <img :src="notePreviewSource(image.src)" :alt="image.alt || `小记图片 ${index + 1}`" loading="lazy">
               </button>
               <figcaption><span>图 {{ index + 1 }}</span><button class="note-image-return" type="button" :aria-label="`返回正文图 ${index + 1}的位置`" @click.stop="returnToCardImageReference(note.id, index + 1)">返回正文</button></figcaption>
               </figure>
             </aside>
           </div>
-          <div v-if="isNotePreviewExpandable(note.id)" class="note-read-guide"><span v-if="!isNotePreviewExpanded(note.id)" aria-hidden="true">继续阅读这篇小记</span><button class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button></div>
+          <div class="note-card-footer"><p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id) || reviewSuggestions[note.id])" :title="workflowMessage(note.id)" class="workflow-status compact-workflow" role="status"><template v-if="noteDrafts[note.id]">草稿已保护 · 有修改待保存</template><button v-else type="button" @click.stop="selectCompanion(note.id)">{{ reviewSuggestions[note.id] ? `待确认 ${reviewSuggestions[note.id]} 项建议` : workflowMessage(note.id) || (serverFailed(note.id) ? '整理未完成 · 查看并重试' : '整理中 · 查看进度') }}</button></p><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click.stop="selectedTag = tag"># {{ tag }}</button></div><div v-if="isNotePreviewExpandable(note.id)" class="note-read-guide"><button class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button></div></div>
           </template>
           <Teleport to="body"><div v-if="confirmingDeleteId === note.id && !reading" :ref="setDeleteConfirmation" :id="`note-delete-confirm-${note.id}`" class="card-delete-confirm" :data-delete-note-id="note.id" :style="deleteConfirmationStyle" role="dialog" :aria-label="`确认删除小记：${note.title}`">
             <span>将此小记移入回收站？7 天内可恢复。{{ editingIds.includes(note.id) ? '当前未保存的编辑会丢失。' : '' }}</span>
@@ -1267,7 +1284,7 @@ onMounted(() => void loadPins())
             <button v-if="readingNote.author === session.currentUser.id" class="reader-companion-toggle" type="button" @click="openReaderCompanion"><i class="ri-sparkling-2-line" aria-hidden="true"></i><span>AI 改了什么</span></button>
             <button type="button" aria-label="复制小记分享链接" title="复制当前小记的公开只读分享链接" :disabled="readerCopyBusy" @click="copyReadingNote('share')"><i class="ri-share-forward-line" aria-hidden="true"></i><span>分享</span></button>
             <button type="button" aria-label="复制小记正文" :title="originalsOpen ? '返回当前内容后复制正文' : '复制当前正文（Markdown）'" :disabled="readerCopyBusy || originalsOpen" @click="copyReadingNote('body')"><i class="ri-file-copy-line" aria-hidden="true"></i><span>复制正文</span></button>
-            <button v-if="cardImages(readingNote).length" type="button" aria-label="复制当前小记图文" :disabled="originalsOpen" @click="openMediaCopy(readingNote)"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span>复制图文</span></button>
+            <button type="button" aria-label="复制当前小记图文" :disabled="originalsOpen" @click="openMediaCopy(readingNote)"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span>复制图文</span></button>
             <button v-if="readingNote.author === session.currentUser.id" type="button" :disabled="readerEditing" @click="selectCompanion(readingNote.id, 'chat')"><i class="ri-chat-3-line" aria-hidden="true"></i><span>聊聊这篇</span></button>
             <button type="button" :ref="setReaderDeleteButton" :aria-label="`删除小记：${readingNote.title}`" :disabled="!!deletingId" @click="guardReadingEdit(() => void toggleDeleteConfirmation(readingId)) || toggleDeleteConfirmation(readingId)"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>删除</span></button>
             <button v-if="!readerEditing" type="button" :aria-pressed="originalsOpen" @click="toggleOriginals">{{ originalsOpen ? '返回当前内容' : '查看原文' }}</button>
@@ -1286,7 +1303,7 @@ onMounted(() => void loadPins())
               <div v-if="displayedTags(readingNote).length" class="reader-tags"><span v-for="tag in displayedTags(readingNote)" :key="tag"># {{ tag }}</span></div>
               <div class="reader-content" @dblclick="editReadingNote"><div class="reader-body"><MarkdownEditor ref="readerEditor" :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="readerActiveImage" bare advanced allow-h1 :min-height="0" @image-reference="locateReadingImage" @character-count="restoreReaderPosition" /></div></div></template></div>
               <div class="reader-resizer reader-images-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="图片清单宽度" :aria-valuemin="readerWidths.minimum.images" :aria-valuemax="readerWidths.limit('images')" :aria-valuenow="readerWidths.widths.value.images" title="拖拽调整宽度，双击恢复默认；方向键微调" @pointerdown="readerWidths.start('images', $event)" @keydown="readerWidths.keydown('images', $event)" @dblclick="readerWidths.reset('images')"><span></span></div>
-              <NoteReadingImages :key="`${readingNote.id}:${originalsOpen ? originalPositionKey : 'current'}`" ref="readerImagesPanel" :images="readerImages" :active="readerActiveImage" :unavailable="originalsOpen && !readerOriginalContent" @return="returnToImageReference" @fullscreen="openImage" /></div>
+              <NoteReadingImages :key="`${readingNote.id}:${originalsOpen ? originalPositionKey : 'current'}`" ref="readerImagesPanel" :images="readerImages" :active="readerActiveImage" :unavailable="originalsOpen && !readerOriginalContent" @return="returnToImageReference" @fullscreen="(image, event, index) => openImage(image, event, readerImages, index)" /></div>
             </article>
             <footer class="reader-controls"><button type="button" aria-label="上一篇小记（←）" :disabled="readingIndex <= 0" @click="moveReader(-1)"><i class="ri-arrow-left-line" aria-hidden="true"></i>上一篇</button><span>{{ readingIndex + 1 }} / {{ readerNotes.length }}<small> · ← → 翻篇 · Esc 退出</small></span><button type="button" aria-label="下一篇小记（→）" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇<i class="ri-arrow-right-line" aria-hidden="true"></i></button></footer>
           </div>
@@ -1296,6 +1313,7 @@ onMounted(() => void loadPins())
         :aria-label="previewImage.alt || '小记图片预览'" tabindex="-1" @click.self="closeImage" @keydown.esc.stop.prevent="closeImage" @keydown="trapReaderFocus($event, lightbox)" @contextmenu="openImageMenu">
         <button type="button" class="note-image-close" aria-label="关闭图片预览" @click="closeImage"><i class="ri-close-line"></i></button>
         <img :src="previewImage.src" :alt="previewImage.alt">
+        <NoteImageNavigator :images="previewImages" :index="previewImageIndex" @change="changePreviewImage" />
       </div>
     </Teleport>
   </main>
@@ -1652,7 +1670,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 <style scoped>
 .writing-pane { display:flex; flex-direction:column; gap:0; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { flex:1; }
-.list-toolbar { position:sticky; top:0; z-index:20; margin-top:-24px; padding:16px 0 12px; background:var(--wao-bg-sub); }
+.list-toolbar { position:sticky; top:0; z-index:20; margin-top:0; padding:16px 0 12px; background:var(--wao-bg-sub); }
 .note-meta { position:relative; flex-wrap:nowrap; min-width:0; height:28px; margin-bottom:8px; gap:6px; }
 .note-meta > time { min-width:0; flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .note-meta > .author { flex:none; }
@@ -1686,3 +1704,29 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 @media(max-width:760px){.note-meta .compact-workflow{max-width:100px}}
 @media(max-width:600px){.notes-settings-toggle{padding:8px;min-width:40px}.notes-settings-toggle span{display:none}}
 </style>
+
+<style scoped>
+/* 标题与动作共享一行；悬浮仅切换同一区域，不改变标题可用宽度。 */
+.note-meta{display:grid;grid-template-columns:minmax(0,1fr) min(310px,44%);align-items:center;gap:12px;height:32px;margin-bottom:12px;position:relative;min-width:0}
+.note-meta .note-heading{display:block;min-width:0;margin:0;width:100%;overflow:hidden}
+.note-meta .note-heading h2{display:block;margin:0;width:100%;font-size:16px;line-height:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:unset}
+.card-identity{position:absolute;right:86px;max-width:calc(44% - 86px);display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap;font-size:10px;color:var(--wao-text-faint)}.card-identity time{overflow:hidden;text-overflow:ellipsis}.card-identity .author{flex:none}
+.note-meta-trailing{display:flex;min-width:0;width:100%;margin:0;gap:5px;justify-content:flex-end;flex-wrap:nowrap}
+.note-meta .stage-list{position:absolute;right:178px;top:5px;visibility:hidden;opacity:0;gap:4px;margin:0}
+.note-meta-trailing .card-quick-actions{opacity:0;visibility:hidden;pointer-events:none}
+.note-card:hover .card-identity,.note-card:focus-within .card-identity{visibility:hidden;opacity:0}
+.note-card:hover .stage-list,.note-card:focus-within .stage-list,.note-card:hover .card-quick-actions,.note-card:focus-within .card-quick-actions{visibility:visible;opacity:1;pointer-events:auto}
+.four-charge-hint{position:absolute;right:0;top:33px;z-index:2;background:var(--wao-bg-card);border-radius:6px;padding:3px 7px}
+.note-card-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;min-height:28px;opacity:0;pointer-events:none;transition:opacity .16s}
+.note-card:hover .note-card-footer,.note-card:focus-within .note-card-footer{opacity:1;pointer-events:auto}
+.note-card.fixed-height .note-card-footer{position:absolute;inset:auto 0 0;padding:22px 16px 9px;margin:0;background:linear-gradient(transparent,var(--wao-bg-card) 42%);z-index:1}
+.note-card-footer .card-tags{display:flex;flex:1;min-width:0;max-width:none;gap:5px;flex-wrap:nowrap;overflow:auto;white-space:nowrap;scrollbar-width:thin}.note-card-footer .card-tags button{flex:none;overflow:hidden;text-overflow:ellipsis;max-width:180px;font-size:11px}
+.note-card-footer .note-read-guide,.note-card.expanded .note-card-footer .note-read-guide{position:static;inset:auto;min-height:0;margin:0;padding:0;background:none;opacity:1;pointer-events:inherit;flex:none}
+.note-card-footer .compact-workflow{min-width:0;max-width:160px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}.compact-workflow button{color:var(--wao-primary-text);font:inherit;border:0;padding:0;background:transparent;cursor:pointer}
+.notes-toolbar{margin-top:0}.note-image-lightbox img{max-height:calc(100dvh - 150px)}
+@container(max-width:560px){.note-meta{grid-template-columns:minmax(0,1fr) 180px}.card-identity{right:64px;max-width:116px}.card-identity time{display:block}.note-meta .stage-list{right:70px}.note-meta-trailing .card-quick-actions{display:none}.note-meta .note-heading h2{font-size:15px}}
+@media(max-width:760px){.note-meta{grid-template-columns:minmax(0,1fr) 82px;height:40px}.note-meta .note-heading h2{font-size:15px}.card-identity{display:none}.note-meta .stage-list{display:none}.note-meta .stage-list-open{display:flex;top:42px;right:0;opacity:1;visibility:visible}.note-meta-trailing{display:flex;width:100%;gap:2px}.note-card-footer .compact-workflow{max-width:90px}.notes-trash-toggle{min-width:40px;padding:8px}.notes-trash-toggle span{display:none}}
+@media(hover:none),(pointer:coarse){.note-card-footer{opacity:1;pointer-events:auto}.note-card-footer .card-tags button{min-height:36px}.note-card:hover .card-identity{opacity:1;visibility:visible}}
+</style>
+
+<style scoped>@media(max-width:600px){.heading-title{gap:6px}.daily-count-label{display:none}.daily-note-count{padding:5px 7px}.heading-title h1{font-size:18px}.heading-title .writing-toggle{font-size:11px;padding:8px 7px}.notes-trash-toggle{width:36px;min-width:36px}.notes-settings-toggle{min-width:36px}}</style>

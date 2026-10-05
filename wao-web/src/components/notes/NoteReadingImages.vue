@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { notePreviewSource, type NotePreviewImage } from '@/utils/notePreviewImages'
 defineProps<{ images: NotePreviewImage[]; active: number | null; unavailable?: boolean }>()
-const emit = defineEmits<{ return: [index: number]; fullscreen: [image: NotePreviewImage, event: MouseEvent] }>()
+const emit = defineEmits<{ return: [index: number]; fullscreen: [image: NotePreviewImage, event: MouseEvent, index: number] }>()
 const root = ref<HTMLElement | null>(null)
 const failed = ref<Record<string, boolean>>({})
 function locate(index: number) {
@@ -18,11 +18,11 @@ defineExpose({ locate })
     <p v-if="!images.length" class="reading-images-empty">{{ unavailable ? '原文图片暂不可用' : '本篇没有图片' }}</p>
     <figure v-for="(image, offset) in images" :key="`${offset}:${image.src}`" :data-reading-image="offset + 1" :class="{ active: active === offset + 1 }">
       <figcaption><span>图 {{ offset + 1 }}</span><strong>{{ image.alt || '正文配图' }}</strong></figcaption>
-      <button class="reading-image-open" type="button" :aria-label="`全屏查看图 ${offset + 1}：${image.alt || '正文配图'}`" @click="emit('fullscreen', image, $event)">
+      <button class="reading-image-open" type="button" :aria-label="`全屏查看图 ${offset + 1}：${image.alt || '正文配图'}`" @click="emit('fullscreen', image, $event, offset)">
         <span v-if="failed[image.src]" class="reading-image-error">图片加载失败，点击查看原图</span>
         <img v-else :src="notePreviewSource(image.src)" :alt="image.alt || `图 ${offset + 1}`" loading="lazy" @error="failed[image.src] = true" />
       </button>
-      <div class="reading-image-actions"><button type="button" :aria-label="`返回正文图 ${offset + 1}的位置`" @click="emit('return', offset + 1)"><i class="ri-arrow-left-up-line" aria-hidden="true"></i>返回正文</button><button type="button" :aria-label="`全屏查看图 ${offset + 1}`" @click="emit('fullscreen', image, $event)"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏</button></div>
+      <div class="reading-image-actions"><button type="button" :aria-label="`返回正文图 ${offset + 1}的位置`" @click="emit('return', offset + 1)"><i class="ri-arrow-left-up-line" aria-hidden="true"></i>返回正文</button><button type="button" :aria-label="`全屏查看图 ${offset + 1}`" @click="emit('fullscreen', image, $event, offset)"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏</button></div>
     </figure>
   </aside>
 </template>
