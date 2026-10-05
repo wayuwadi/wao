@@ -124,19 +124,27 @@ const groups = computed(() => {
       },
     }))
   const ts = data.tasks
-    .filter((t) => !kw || [t.title, t.desc, ...t.subs.map((sub) => `${sub.text} ${sub.desc ?? ''}`)].join(' ').toLowerCase().includes(kw))
-    .slice(0, kw ? 50 : 4)
-    .map<Item>((t) => ({
+    .flatMap<Item>((t) => {
+      const titleHit = contentHit(t.title, q.value), bodyHit = contentHit(t.desc, q.value)
+      const subHit = t.subs.flatMap(sub => {
+        const title = contentHit(sub.text, q.value), body = contentHit(sub.desc ?? '', q.value)
+        return title || body ? [{ sub, hit: title || body, field: title ? '子任务标题' : '子任务正文' }] : []
+      })[0]
+      const hit = titleHit || bodyHit || subHit?.hit
+      if (kw && !hit) return []
+      const field = titleHit ? '任务标题' : bodyHit ? '任务正文' : subHit?.field
+      return [{
       icon: 'ri-checkbox-circle-line',
       iconColor: '#5A5E6B',
       title: t.title,
-      sub: `${data.projectById(t.project)?.name ?? ''} · ${t.status}${kw && !t.title.toLowerCase().includes(kw) ? ' · 正文或子任务匹配' : ''}`,
+      sub: `${data.projectById(t.project)?.name ?? ''} · ${t.status}${kw ? ` · ${field}命中` : ''}`,
+      snippet: hit,
       go: () => {
         close()
-        const matchedSub = kw ? t.subs.find(sub => `${sub.text} ${sub.desc ?? ''}`.toLowerCase().includes(kw)) : undefined
+        const matchedSub = !titleHit && !bodyHit ? subHit?.sub : undefined
         ui.openTask(t.id, matchedSub?.id)
       },
-    }))
+    }] }).slice(0, kw ? 50 : 4)
   const ds = documentMatches.value.slice(0, kw ? documentLimit.value : 4).map<Item>(({ doc, kb, hit, field }) => ({
     icon: kb.notes ? 'ri-sticky-note-line' : 'ri-file-text-line', iconColor: '#7A5CC6', title: doc.title,
     sub: `${kb.notes ? '小记' : '文档'} · ${kb.name} · ${kw ? `${field}命中` : '最近更新'}`, snippet: hit,
