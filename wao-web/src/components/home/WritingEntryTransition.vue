@@ -61,7 +61,7 @@ async function enter() {
     )
       throw new Error('小记页面暂时未能打开')
     if (disposed) return
-    completeWritingJourney()
+    completeWritingJourney(true)
     await nextTick() // 浮层卸载、恢复 app 可交互后再交出一次焦点请求。
     requestWritingFocus()
   } catch {
