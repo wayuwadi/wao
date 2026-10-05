@@ -482,6 +482,7 @@ onBeforeUnmount(() => {
     </nav>
     <div class="cap-toolbar">
       <div class="cap-type-filters" aria-label="按类型筛选">
+        <span class="cap-filter-label">资源类型</span>
         <button
           v-for="item in types"
           :key="item"
@@ -825,22 +826,34 @@ onBeforeUnmount(() => {
 }
 .cap-type-filters {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  background: var(--wao-bg-sub);
+}
+.cap-filter-label {
+  padding: 0 8px;
+  color: var(--wao-text-2);
+  font-size: 12px;
+  font-weight: 600;
 }
 .cap-type-filters button {
   border: 0;
   background: transparent;
   color: var(--wao-text-3);
-  border-radius: 8px;
-  padding: 7px 10px;
+  border-radius: 7px;
+  padding: 7px 9px;
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 .cap-type-filters button.active {
-  background: var(--wao-primary-soft);
+  background: var(--wao-bg-card);
   color: var(--wao-primary-text);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--wao-text) 10%, transparent);
 }
 .cap-search {
   display: flex;
