@@ -22,6 +22,36 @@ async function open(view = 'list') {
 describe('项目详情读取状态', () => {
   beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()) })
 
+  it('表格仅有收尾任务时解释隐藏原因，查看入口复用完成显示偏好', async () => {
+    const data = seedDataStore()
+    const task = data.tasksByProject('p1')[0]!
+    task.status = '已完成'
+    task.subs = []
+    data.tasks = [task]
+    const wrapper = await open()
+    await flushPromises()
+    expect(wrapper.text()).toContain('1 项任务已收尾并收起')
+    await wrapper.findAll('button').find(button => button.text() === '查看已完成')!.trigger('click')
+    expect(wrapper.text()).not.toContain('任务已收尾并收起')
+    expect(wrapper.text()).toContain(task.title)
+  })
+
+  it('父任务已完成但还有未收尾子项不显示隐藏提示，读取失败也不声称已收尾', async () => {
+    const data = seedDataStore()
+    const task = data.tasksByProject('p1')[0]!
+    task.status = '已完成'
+    task.subs = [{ id: 'unfinished', text: '还有一步', done: false }]
+    data.tasks = [task]
+    const wrapper = await open()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('任务已收尾并收起')
+    expect(wrapper.text()).toContain(task.title)
+    task.subs = []
+    data.taskLoadState = 'error'
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('任务已收尾并收起')
+  })
+
   it('初次加载、读取失败与确实不可访问分开，失败可重试', async () => {
     const data = useDataStore()
     const retry = vi.spyOn(data, 'hydrate').mockResolvedValue()
