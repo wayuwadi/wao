@@ -121,6 +121,12 @@ class TextPolishJobServiceTest {
                 .hasMessageContaining("已有标签");
         verify(assistant, never()).enqueueNoteTagsJob(any(), any(), any(), any());
     }
+    @Test void structuredTagReasonsCannotCreateUnknownTags() {
+        when(jobs.lockMember("m1")).thenReturn("m1");when(noteTags.list()).thenReturn(List.of("创作"));
+        when(assistant.enqueueNoteTagsJob(eq(id),eq("一段正文"),anyString(),eq("gpt-6-luna"))).thenReturn("ac1");
+        when(assistant.readOnlyJobResult(id,"ac1")).thenReturn(new AiAssistantService.ReadOnlyJobResult("ac1","succeeded","{\"tags\":[{\"name\":\"创作\",\"reason\":\"记录写作\"},{\"name\":\"伪造新标签\",\"reason\":\"不要创建\"}]}",null));
+        assertThat(service.submit("m1",request,"NOTE_TAGS","一段正文","gpt-6-luna",null,null,List.of("创作")).polished()).isEqualTo("创作");
+    }
 
     @Test void noteTagsIgnoreClientValuesThatAreNotPersistedTags() {
         when(jobs.lockMember("m1")).thenReturn("m1");

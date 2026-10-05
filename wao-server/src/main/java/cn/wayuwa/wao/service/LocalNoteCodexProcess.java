@@ -52,6 +52,10 @@ final class LocalNoteCodexProcess {
 
     static Result execute(String executable, String model, String effort, String prompt, Path root, Duration timeout,
             boolean image, List<ReferenceImageService.Content> references) throws Exception {
+        return execute(executable,model,effort,prompt,root,timeout,image,references,()->false);
+    }
+    static Result execute(String executable,String model,String effort,String prompt,Path root,Duration timeout,
+            boolean image,List<ReferenceImageService.Content> references,java.util.function.BooleanSupplier cancelled) throws Exception {
         if (references.size() > 4 || image && !references.isEmpty())
             throw new IllegalStateException("当前任务参考图片数量或用途无效");
         Path directory = Files.createTempDirectory(root, "job-");
@@ -66,7 +70,9 @@ final class LocalNoteCodexProcess {
             builder.redirectErrorStream(true).redirectOutput(events.toFile());
             process = builder.start();
             try (var input = process.getOutputStream()) { input.write(prompt.getBytes(StandardCharsets.UTF_8)); }
-            if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS))
+            long deadline=System.nanoTime()+timeout.toNanos();
+            while(!process.waitFor(500,TimeUnit.MILLISECONDS)&&System.nanoTime()<deadline){if(cancelled.getAsBoolean())throw new IllegalStateException("已取消本次任务，结果未采用");}
+            if (process.isAlive())
                 throw new IllegalStateException("本机 AI 执行超时；原文已保留，请稍后重试");
             if (process.exitValue() != 0)
                 throw new IllegalStateException("本机 Codex 执行失败，请检查 ChatGPT 登录、网络和额度后重试；原文已保留");

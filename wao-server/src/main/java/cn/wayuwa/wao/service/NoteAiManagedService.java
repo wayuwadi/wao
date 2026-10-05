@@ -22,6 +22,8 @@ public class NoteAiManagedService {
     private NoteOriginalService originals;
     @org.springframework.beans.factory.annotation.Autowired
     private NoteTagService noteTags;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private ObjectProvider<NoteAiCompanionService> companion;
     private static final ThreadLocal<Boolean> DERIVED=ThreadLocal.withInitial(()->false);
     private static final ThreadLocal<String> ACTOR=new ThreadLocal<>();
     /** 返回明确的内部调用身份；不回落到默认成员。 */
@@ -124,6 +126,7 @@ public class NoteAiManagedService {
         if(code==null&&"title".equals(stage)&&body.length()>12000)message="标题将仅依据前 12000 个实现字符生成";
         db.update("INSERT INTO note_ai_stage_attempt(id,doc_id,member_id,cycle_id,stage,attempt_no,manual_stage,cancel_epoch,state,reason_code,message,source_json,input_text,policy_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             id(),doc.id(),member,cycle,stage,attempt,manual,s.epoch(stage),code==null?"PENDING":"SKIPPED",code,message,settings.write(doc),input,settings.write(s));
+        if(companion!=null)db.update("UPDATE note_ai_stage_attempt SET result_mode=? WHERE doc_id=? AND cycle_id=? AND stage=? AND attempt_no=?",companion.getObject().preference(member).get("mode"),doc.id(),cycle,stage,attempt);
     }
     private String label(String stage){return switch(stage){case "title"->"润色标题";case "image"->"自动配图";case "tags"->"自动标签";default->"润色正文";};}
     private List<Map<String,Object>> attempts(String doc,String cycle){return db.queryForList("SELECT a.* FROM note_ai_stage_attempt a WHERE doc_id=? AND cycle_id=? AND attempt_no=(SELECT MAX(b.attempt_no) FROM note_ai_stage_attempt b WHERE b.cycle_id=a.cycle_id AND b.stage=a.stage) ORDER BY CASE stage WHEN 'title' THEN 0 WHEN 'image' THEN 1 ELSE 2 END",doc,cycle);}
@@ -154,12 +157,16 @@ public class NoteAiManagedService {
         try{current=settings.get(member).settings();}catch(RuntimeException e){return true;}
         // 旧轮运行占用仍查询终态；取消写回不假装已停止进程。
         for(var old:db.queryForList("SELECT * FROM note_ai_stage_attempt WHERE member_id=? AND doc_id=? AND state='RUNNING' AND (cycle_id<>? OR attempt_no<(SELECT MAX(b.attempt_no) FROM note_ai_stage_attempt b WHERE b.cycle_id=note_ai_stage_attempt.cycle_id AND b.stage=note_ai_stage_attempt.stage))",member,docId,str(signal,"cycle_id"))){
-            if(terminal(old))db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='SOURCE_CHANGED',message='来源已更新，旧结果未采用' WHERE id=?",str(old,"id"));}
+            if(terminal(old)){retain(old);if(companion!=null)companion.getObject().invalidate(str(old,"id"),"STALE");db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='SOURCE_CHANGED',message='来源已更新，旧结果未采用' WHERE id=?",str(old,"id"));}}
         for(var a:attempts(docId,str(signal,"cycle_id"))){
             String stage=str(a,"stage"),state=str(a,"state");if(!List.of("PENDING","RUNNING").contains(state))continue;
+            if(cancelled(a)){
+                if(state.equals("PENDING")||terminal(a)){retain(a);if(companion!=null)companion.getObject().invalidate(str(a,"id"),"CANCELLED");db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='CANCELLED',message='已停止，结果未采用' WHERE id=?",str(a,"id"));}
+                continue;
+            }
             boolean manual=Boolean.TRUE.equals(a.get("manual_stage"))||"1".equals(str(a,"manual_stage"));
             if(!manual&&(!current.enabled(stage)||current.epoch(stage)!=num(a,"cancel_epoch"))){
-                if(state.equals("PENDING")||terminal(a))db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='DISABLED',message='设置已关闭，结果不会采用' WHERE id=?",str(a,"id"));
+                if(state.equals("PENDING")||terminal(a)){retain(a);if(companion!=null)companion.getObject().invalidate(str(a,"id"),"CANCELLED");db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='DISABLED',message='设置已关闭，结果不会采用' WHERE id=?",str(a,"id"));}
                 else db.update("UPDATE note_ai_stage_attempt SET reason_code='CANCEL_PENDING',message='设置已关闭，等待调用收尾；结果不会采用' WHERE id=?",str(a,"id"));
                 continue;
             }
@@ -193,17 +200,25 @@ public class NoteAiManagedService {
             db.update("UPDATE note_ai_stage_attempt SET state='RUNNING',job_id=?,reason_code='QUEUED',message='已入队，关闭页面后仍会继续' WHERE id=?",job,str(a,"id"));
     }
     private void fail(Map<String,Object> a,String message){db.update("UPDATE note_ai_stage_attempt SET state='FAILED',reason_code='EXECUTION_FAILED',message=? WHERE id=?",message==null?"执行失败，请重试":message.substring(0,Math.min(500,message.length())),str(a,"id"));}
+    private boolean cancelled(Map<String,Object> a){return Boolean.TRUE.equals(a.get("cancel_requested"))||"1".equals(str(a,"cancel_requested"));}
+    private void retain(Map<String,Object> a){if(companion==null||str(a,"job_id").isBlank())return;try{
+        if("image".equals(str(a,"stage"))){var r=image.get(str(a,"member_id"),str(a,"job_id"));if("SUCCEEDED".equals(r.status()))companion.getObject().capture(a,r.imageUrl());}
+        else{var r=text.get(str(a,"member_id"),str(a,"job_id"));if("SUCCEEDED".equals(r.status()))companion.getObject().capture(a,Objects.toString(r.polished(),""));}
+    }catch(NotFoundException ignored){}}
     private void complete(Map<String,Object> a,DocDto doc,Map<String,Object> signal){
         String stage=str(a,"stage"),status,output,message;
         if(stage.equals("image")){var result=image.get(str(a,"member_id"),str(a,"job_id"));status=result.status();output=result.imageUrl();message=result.message();}
         else{var result=text.get(str(a,"member_id"),str(a,"job_id"));status=result.status();output=result.polished();message=result.message();}
         if(status.equals("FAILED")){fail(a,message);return;}
         if(!status.equals("SUCCEEDED")){db.update("UPDATE note_ai_stage_attempt SET reason_code=?,message=? WHERE id=?",status,status.equals("RUNNING")?"正在执行":"正在模型队列等待",str(a,"id"));return;}
-        if((output==null||output.isBlank())&&!stage.equals("tags")){fail(a,"AI 未返回可用结果");return;}
+        if(output==null||output.isBlank()&&!stage.equals("tags")){fail(a,"AI 未返回可用结果");return;}
+        if(companion!=null)companion.getObject().capture(a,Objects.toString(output,""));
+        if(companion!=null&&companion.getObject().notNeeded(str(a,"id"))){db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='NOT_NEEDED',message='已分析，本次无需修改' WHERE id=?",str(a,"id"));return;}
         if(stage.equals("title")&&!Objects.equals(doc.title(),decode(str(a,"source_json"),DocDto.class).title())){
             db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='MANUAL_TITLE',message='标题在等待期间已更新，旧结果未采用' WHERE id=?",str(a,"id"));return;
         }
         if(!fingerprint(userBody(doc,str(signal,"cover_url"))).equals(str(signal,"body_hash"))){fail(a,"来源已更新，旧结果未采用");return;}
+        if(companion!=null&&"REVIEW".equals(str(a,"result_mode"))){db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='READY',message='建议已准备，等待你采用' WHERE id=?",str(a,"id"));return;}
         PatchDocRequest patch;
         if(stage.equals("tags")){
             var allowed=noteTags.lockExisting();
@@ -224,14 +239,16 @@ public class NoteAiManagedService {
                 while(links.find())if(!output.contains(links.group(1))){fail(a,"润色结果未完整保留图片、链接或附件；当前正文未改变");return;}
                 output=BookExcerptProtection.reassemble(userBody(doc,str(signal,"cover_url")),output);
                 String cover=str(signal,"cover_url");String body=cover.isBlank()?output:"![文章总览图]("+cover+" \"wao-image-size:50%xauto\")\n\n"+output;
+                if(companion!=null){try{content=companion.getObject().polishedContent(doc,body);}catch(ConflictException unsafe){db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='REVIEW_REQUIRED',message=? WHERE id=?",unsafe.getMessage(),str(a,"id"));return;}}
+                else content=new RichDocContentDto(1,null,body);
                 if(doc.author().equals(str(a,"member_id")))versions.save(str(a,"member_id"),doc.id(),new SaveNotePolishVersionRequest(raw(doc),body,str(a,"job_id")));
-                content=new RichDocContentDto(1,null,body);
             }
             patch=new PatchDocRequest(null,null,content,null,null,doc.rev());
         }
         boolean old=DERIVED.get();DERIVED.set(true);
         DocDto saved;
         try{saved=knowledge.getObject().updateDerivedNote(doc.id(),patch);}finally{DERIVED.set(old);}
+        if(companion!=null)companion.getObject().applied(str(a,"id"),saved);
         if(originals!=null&&!stage.equals("tags"))originals.result(str(a,"member_id"),str(a,"id"),str(a,"job_id"),originals.content(saved),saved.rev(),"APPLIED");
         if(stage.equals("title"))db.update("UPDATE note_ai_save_signal SET last_title=? WHERE doc_id=?",output,doc.id());
         if(stage.equals("image"))db.update("UPDATE note_ai_save_signal SET cover_url=? WHERE doc_id=?",output,doc.id());
@@ -304,8 +321,10 @@ public class NoteAiManagedService {
         if(latest==null||latest!=num(a,"attempt_no"))return false;
         boolean manual=Boolean.TRUE.equals(a.get("manual_stage"))||"1".equals(str(a,"manual_stage"));
         var s=settings.get(member).settings();
-        return signal!=null&&(manual||!"title".equals(str(a,"stage"))||!"MANUAL".equals(str(signal,"title_origin")))&&str(signal,"cycle_id").equals(str(a,"cycle_id"))&&(manual||s.enabled(str(a,"stage"))&&s.epoch(str(a,"stage"))==num(a,"cancel_epoch"));
+        return !cancelled(a)&&signal!=null&&(manual||!"title".equals(str(a,"stage"))||!"MANUAL".equals(str(signal,"title_origin")))&&str(signal,"cycle_id").equals(str(a,"cycle_id"))&&(manual||s.enabled(str(a,"stage"))&&s.epoch(str(a,"stage"))==num(a,"cancel_epoch"));
     }
+    /** 仅查询当前运行归属的持久取消信号，不涉及共用 worker 或其他任务。 */
+    public boolean cancellationRequested(String runId){var a=one("SELECT a.* FROM note_ai_stage_attempt a LEFT JOIN text_polish_job t ON t.id=a.job_id WHERE a.job_id=? OR t.ai_run_id=?",runId,runId);return a!=null&&cancelled(a);}
     /** 推进事务回滚后独立保存真实错误；不提交半个入队事务。 */
     @Transactional
     public void failed(String docId,RuntimeException error){

@@ -19,7 +19,7 @@ export interface Discovery {
   feedback: { saved: boolean; dismissed: boolean; correction: string | null; version: number }
 }
 export interface DiscoveryPreference { enabled: boolean; version: number; available: boolean; message: string }
-export interface DiscoveryCurrent { discovery: Discovery | null; automationState: string; lastOutcome: string | null; revision: string }
+export interface DiscoveryCurrent { discovery: Discovery | null; automationState: string; lastOutcome: string | null; revision: string; coverage?: { days: number; eligible: number; indexed: number; analyzed: number } }
 export interface DiscoveryPage { items: Discovery[]; nextCursor: string | null }
 const unwrap = async <T>(request: Promise<{ data: ApiResponse<T> }>) => (await request).data.data
 export const fetchDiscoveryCurrent = () => unwrap<DiscoveryCurrent>(http.get('/api/note-discoveries/current'))

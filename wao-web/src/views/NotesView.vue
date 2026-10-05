@@ -4,6 +4,8 @@ import NoteOriginalReader from '@/components/notes/NoteOriginalReader.vue'
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
 import NoteAiStageButton from '@/components/notes/NoteAiStageButton.vue'
+import NoteAiCompanion from '@/components/notes/NoteAiCompanion.vue'
+import { fetchAiReceipts, type CompanionStage } from '@/api/noteAiCompanion'
 import NoteMediaCopyDialog from '@/components/notes/NoteMediaCopyDialog.vue'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { publishNoteTagChange, replaceCachedNoteTags, replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
@@ -29,7 +31,7 @@ import { resolvedRichContent } from '@/utils/richDoc'
 import { notePreviewImages, notePreviewSource, type NotePreviewImage } from '@/utils/notePreviewImages'
 import type { Doc, RichDocContent } from '@/types'
 import ImageCopyMenu from '@/components/ui/ImageCopyMenu.vue'
-import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus } from '@/utils/autoNoteEnrichment'
+import { canRetryAutoNoteEnrichment, discardAutoNoteEnrichment, initializeNoteWorkflow, noteEnrichmentProgress, noteEnrichmentStatus, notePolishVersions } from '@/utils/autoNoteEnrichment'
 import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
 import { apiCreateNoteTag, apiDeleteNoteTag, apiMergeNoteTag, fetchNoteTags, fetchKbs, fetchDoc } from '@/api/board'
 import { fetchPreference, savePreference } from '@/api/favorites'
@@ -45,6 +47,31 @@ const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const mediaCopyContent = ref<RichDocContent | null>(null)
 function openMediaCopy(note: Doc) { mediaCopyContent.value = JSON.parse(JSON.stringify(displayedContent(note))) as RichDocContent }
 const writingOpen = ref(true)
+const companion = ref<InstanceType<typeof NoteAiCompanion> | null>(null)
+const newComposer = ref<InstanceType<typeof NoteComposer> | null>(null)
+const companionNoteId = ref('')
+const companionExplicitId = ref('')
+const readerCompanionOpen = ref(false)
+async function closeReaderCompanion() { readerCompanionOpen.value = false; await nextTick(); readerDialog.value?.querySelector<HTMLButtonElement>('.reader-companion-toggle')?.focus({ preventScroll: true }) }
+function openReaderCompanion() { if (!readingNote.value) return; selectCompanion(readingNote.value.id); readerCompanionOpen.value = true }
+const aiReceipts = ref<Record<string, number>>({})
+async function loadAiReceipts() { const member = session.currentUser.id; try { const values = await fetchAiReceipts(); if (session.currentUser.id === member) aiReceipts.value = Object.fromEntries(values.map(v => [v.docId, v.unread])) } catch { /* 旧服务不可用时不显示虚构回执。 */ } }
+function companionUpdated(doc: Doc) { delete notePolishVersions[doc.id]; data.applyRemoteDoc(doc); void loadServerWorkflows(); void loadAiReceipts() }
+function companionRun(stage: CompanionStage | 'four') { const note = notes.value.find(n => n.id === companionNoteId.value); if (note) void retryOrStart(note, stage) }
+async function appendCompanion(text: string, messageId: string) { await stopReading(); writingOpen.value = true; await nextTick(); if (!newComposer.value?.appendPlainText(text, messageId)) toast('未能带入草稿，请从伴读复制回答；已有输入仍保留') }
+function selectCompanion(id: string) { companionExplicitId.value = id; companionNoteId.value = id; writingOpen.value = true }
+async function editCompanionNote(id: string) { await stopReading(); await editNote(id) }
+async function appendExistingCompanion(id: string, text: string, messageId: string) {
+  await stopReading()
+  const member = session.currentUser.id
+  if (!(await data.ensureDocLoaded(id)) || member !== session.currentUser.id) { toast('原小记暂时无法读取，回答仍在伴读中保留'); return }
+  const index = matching.value.findIndex(n => n.id === id)
+  if (index < 0) { toast('原小记被当前筛选隐藏，请清除筛选后再附加；回答仍保留'); return }
+  limit.value = Math.max(limit.value, index + 1)
+  if (!expandedIds.value.includes(id)) expandedIds.value.push(id)
+  await editNote(id)
+  if (!noteComposers.get(id)?.appendPlainText?.(text, messageId)) toast('未能带入草稿，请从伴读复制回答；原文未改变')
+}
 const contentWidth = useNoteWritingWidth()
 const workspace = ref<HTMLElement | null>(null)
 const { percentage: writingPercentage, style: writingStyle, resizing, start: startWritingResize, stop: stopWritingResize, reset: resetWritingWidth, keydown: resizeWritingByKey } = useNotesPaneWidth(workspace)
@@ -78,16 +105,17 @@ const data = useDataStore()
 const pagePreferences = usePreferenceStore()
 const session = useSessionStore()
 const now = useNow()
-type NoteEditorHandle = { copyFormatted: () => Promise<void>; positionAtPoint: (left: number, top: number) => { position: number; viewportTop: number } | null; focusImageReference: (index: number) => boolean }
+type NoteEditorHandle = { focusSearch?: (text: string) => Promise<void>; copyFormatted: () => Promise<void>; positionAtPoint: (left: number, top: number) => { position: number; viewportTop: number } | null; focusImageReference: (index: number) => boolean }
 const noteEditors = new Map<string, NoteEditorHandle>()
 const readerEditor = ref<NoteEditorHandle | null>(null)
 const editAnchors = ref<Record<string, { position: number; viewportTop: number; fullscreen?: boolean } | undefined>>({})
-type NoteComposerHandle = { dirty: boolean; save: () => Promise<void> }
+type NoteComposerHandle = { dirty: boolean; save: () => Promise<void>; appendPlainText?: (text: string, messageId?: string) => boolean }
 const noteComposers = new Map<string, NoteComposerHandle>()
 const retryingEnrichment = ref<string[]>([])
 const serverWorkflows = ref<Record<string, NoteAiWorkflowStatus>>({})
 let workflowTimer: ReturnType<typeof setInterval> | undefined
 async function loadServerWorkflows() {
+  void loadAiReceipts()
   if (!session.currentUser.id) { serverWorkflows.value = {}; return }
   const memberId = session.currentUser.id
   try {
@@ -578,6 +606,7 @@ async function stopReading() {
   rememberReaderPosition()
   readerWidths.stop()
   reading.value = false
+  readerCompanionOpen.value = false
   readerDirectoryOpen.value = false
   restoreReaderBackground()
   await nextTick()
@@ -586,6 +615,7 @@ async function stopReading() {
   readerTrigger = null
 }
 function closeReaderLayer() {
+  if (readerCompanionOpen.value) { void closeReaderCompanion(); return }
   if (readerDirectoryOpen.value) {
     readerDirectoryOpen.value = false
     void nextTick(() => readerDialog.value?.querySelector<HTMLButtonElement>('.reader-directory-toggle')?.focus())
@@ -625,6 +655,15 @@ async function openDiscoverySource(itemId: string, docId: string, event: Event) 
     await startReading(docId)
     if (member === session.currentUser.id && request === discoverySourceRequest) readerTrigger = trigger
   } catch { if (member === session.currentUser.id && request === discoverySourceRequest) toast('来源暂时无法打开，请重试', 'error') }
+}
+async function openCompanionSource(id: string, quote?: string, rev?: number) {
+  const member = session.currentUser.id
+  if (!(await data.ensureDocLoaded(id)) || member !== session.currentUser.id) return
+  if (reading.value) await selectReadingNote(id)
+  else await startReading(id)
+  await nextTick()
+  if (quote) await readerEditor.value?.focusSearch?.(quote)
+  if (rev !== undefined && data.docById(id)?.rev !== rev) toast(`原文现已更新；这条回答引用的是 v${rev}，请对照查看`)
 }
 function moveReader(delta: number) {
   if (!readerNotes.value.length) return
@@ -902,6 +941,10 @@ watch([() => route.query.findRequest, () => route.query.note, () => route.query.
 }, { immediate: true })
 
 function onCreated(id: string) {
+  companionNoteId.value = id
+  companionExplicitId.value = ''
+  void companion.value?.refresh()
+  void loadAiReceipts()
   void discoveries.refresh()
   query.value = ''
   selectedTag.value = ''
@@ -1049,7 +1092,8 @@ onMounted(() => void loadPins())
     <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i>今日写字 {{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button></div><span>{{ notes.length }} 条记录</span></header>
     <div ref="workspace" class="notes-workspace" :style="writingStyle" :class="{ 'writing-collapsed': !writingOpen, resizing }">
       <aside v-show="writingOpen" id="notes-writing-pane" class="writing-pane" aria-label="新建小记区">
-        <NoteComposer :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
+        <NoteComposer ref="newComposer" :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
+        <NoteAiCompanion :overlay-open="readerCompanionOpen" @close-overlay="closeReaderCompanion" ref="companion" :notes="notes" :active-id="companionNoteId" :explicitly-selected="companionExplicitId === companionNoteId && !!companionNoteId" @seen="loadAiReceipts" :blocked="!!companionNoteId && !!notes.find(n => n.id === companionNoteId && hasPendingNoteDraft(n))" @select="selectCompanion" @updated="companionUpdated" @run="companionRun" @source="openDiscoverySource" @open-note="openCompanionSource" @edit-note="editCompanionNote" @append="appendCompanion" @append-existing="appendExistingCompanion" @settings="noteSettingsOpen = true" />
       </aside>
       <div v-show="writingOpen" class="writing-resizer" role="separator" tabindex="0" aria-label="调整记录区宽度" aria-orientation="vertical" aria-controls="notes-writing-pane" :aria-valuenow="writingPercentage" aria-valuemin="25" aria-valuemax="60" :aria-valuetext="`记录区宽度 ${writingPercentage}%`" title="拖拽调整宽度，双击恢复三分之一；方向键微调" @pointerdown="startWritingResize" @keydown="resizeWritingByKey" @dblclick="resetWritingWidth"><span aria-hidden="true"></span></div>
       <section ref="notesList" class="notes-list" aria-label="小记清单" @scroll.passive="onNotesScroll">
@@ -1097,7 +1141,7 @@ onMounted(() => void loadPins())
         <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id }" :data-note-id="note.id"
           tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id, $event)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
-          <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
+          <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time><button v-if="note.author === session.currentUser.id" class="companion-receipt" :class="{ unread: aiReceipts[note.id] }" type="button" @click.stop="selectCompanion(note.id)"><i class="ri-sparkling-2-line" />{{ aiReceipts[note.id] ? `${aiReceipts[note.id]} 项新成果` : '伴读' }}</button>
             <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id) }" role="group" aria-label="AI 产出与按需操作">
               <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :hold-enabled="stage === 'title'" :disabled="stage === 'title' ? retryingEnrichment.includes(note.id) : stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}${stage === 'title' ? '；长按 3 秒一键四连' : ''}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}${stage === 'title' ? '，长按 3 秒一键四连' : ''}`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
             </div>
@@ -1143,11 +1187,12 @@ onMounted(() => void loadPins())
     <button v-if="showBackToTop" class="notes-back-top" type="button" aria-label="回到顶部" title="回到顶部" @click="backToTop"><i class="ri-rocket-2-line" aria-hidden="true"></i></button>
     <NoteAiSettingsDialog v-model:open="noteSettingsOpen" />
     <Teleport to="body">
-      <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :data-page-layout="pagePreferences.pageLayoutStyle" :class="{ 'reader-full': readerMode === 'full', 'reader-narrow': contentWidth === 'narrow', 'directory-open': readerDirectoryOpen }" :inert="previewImage ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
+      <div v-if="reading && readingNote" ref="readerDialog" class="notes-reader" :data-page-layout="pagePreferences.pageLayoutStyle" :class="{ 'reader-full': readerMode === 'full', 'reader-narrow': contentWidth === 'narrow', 'directory-open': readerDirectoryOpen }" :inert="previewImage || readerCompanionOpen ? true : undefined" role="dialog" aria-modal="true" aria-label="小记阅读模式">
         <header class="reader-topbar">
           <strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>只读</small></strong>
           <span class="reader-copy-status" role="status" aria-live="polite">{{ readerCopyStatus }}</span>
           <div class="reader-layout-actions">
+            <button v-if="readingNote.author === session.currentUser.id" class="reader-companion-toggle" type="button" @click="openReaderCompanion"><i class="ri-sparkling-2-line" aria-hidden="true"></i><span>AI 伴读</span></button>
             <button type="button" aria-label="复制小记分享链接" title="复制当前小记的公开只读分享链接" :disabled="readerCopyBusy" @click="copyReadingNote('share')"><i class="ri-share-forward-line" aria-hidden="true"></i><span>分享</span></button>
             <button type="button" aria-label="复制小记正文" :title="originalsOpen ? '返回当前内容后复制正文' : '复制当前正文（Markdown）'" :disabled="readerCopyBusy || originalsOpen" @click="copyReadingNote('body')"><i class="ri-file-copy-line" aria-hidden="true"></i><span>复制正文</span></button>
             <button v-if="cardImages(readingNote).length" type="button" aria-label="复制当前小记图文" :disabled="originalsOpen" @click="openMediaCopy(readingNote)"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span>复制图文</span></button>
@@ -1207,6 +1252,8 @@ h1 i { color: #7a5cc6; }
 .notes-workspace.writing-collapsed { grid-template-columns: minmax(0, 1fr); }
 .writing-collapsed .notes-list { border-left: 0; }
 .writing-pane { min-width: 0; position: sticky; top: 20px; }
+.companion-receipt { color:var(--wao-primary-text); opacity:0; visibility:hidden; }
+.companion-receipt.unread, .note-card:hover .companion-receipt, .note-card:focus-within .companion-receipt { opacity:1; visibility:visible; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
 .notes-list { min-width: 0; padding: 24px 20px 40px; border: 1px solid var(--wao-line); border-right: 0; border-bottom: 0; background: var(--wao-bg-sub); scroll-padding-block: 24px; }
 .list-toolbar, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
@@ -1472,6 +1519,17 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .card-quick-actions button, .card-quick-actions .full-doc-icon { width: 36px; height: 36px; }
   .note-count { margin-left: auto; }
 }
+</style>
+
+<style scoped>
+.writing-pane{gap:14px}
+.writing-pane :deep(.note-composer:not(.fullscreen)){min-height:300px;max-height:410px;flex:0 0 auto}
+.writing-pane :deep(.note-composer:not(.fullscreen) .md-body){min-height:110px!important;max-height:220px}
+.writing-pane :deep(.ai-companion){flex:1 0 350px;min-height:300px;max-height:600px}
+@media(min-width:1101px){.writing-pane{overflow:hidden}.writing-pane :deep(.note-composer:not(.fullscreen)){height:42%;min-height:230px;max-height:370px;display:flex;flex-direction:column}.writing-pane :deep(.ai-companion){flex:1 1 0;min-height:230px;max-height:none}.writing-pane :deep(.note-composer:not(.fullscreen) .composer-content){min-height:0}}
+@media(max-width:760px){.writing-pane :deep(.ai-companion.mobile-open){max-height:none;min-height:0}}
+@media(max-width:1100px){.writing-pane{display:flex;flex-direction:column}.writing-pane :deep(.ai-companion){flex:none;max-height:660px}.writing-pane :deep(.note-composer:not(.fullscreen)){max-height:none}}
+@media(hover:none),(pointer:coarse){.companion-receipt{opacity:1;visibility:visible;min-height:44px}}
 </style>
 
 <style scoped>

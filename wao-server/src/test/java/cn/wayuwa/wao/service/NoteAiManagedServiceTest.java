@@ -39,6 +39,41 @@ class NoteAiManagedServiceTest {
   org.springframework.test.util.ReflectionTestUtils.setField(managed,"noteTags",noteTags);
  }
  DocDto doc(String body,String title,int rev){return new DocDto("n",title,"m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,body),List.of(),"kb-notes",null,rev);}
+ NoteAiCompanionService companion(String mode){
+  db.execute("ALTER TABLE note_ai_stage_attempt ADD COLUMN result_mode VARCHAR(16) DEFAULT 'AUTO'");
+  db.execute("ALTER TABLE note_ai_stage_attempt ADD COLUMN cancel_requested BOOLEAN DEFAULT FALSE");
+  var companion=mock(NoteAiCompanionService.class);
+  ObjectProvider<NoteAiCompanionService> provider=mock(ObjectProvider.class);
+  when(provider.getObject()).thenReturn(companion);
+  when(companion.preference("m")).thenReturn(Map.of("mode",mode));
+  org.springframework.test.util.ReflectionTestUtils.setField(managed,"companion",provider);
+  return companion;
+ }
+ @Test void reviewModeRetainsCompletedOutputWithoutChangingTheNote(){
+  var companion=companion("REVIEW");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
+  tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成","整理后事实",null,null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  verify(companion).capture(anyMap(),eq("整理后事实"));
+  assertThat(managed.status("n","m").stages().get("polish").reasonCode()).isEqualTo("READY");
+  verify(knowledge,never()).updateDerivedNote(any(),any());
+ }
+ @Test void unsafeAutoPolishRetainsSuggestionAndRequiresExplicitReview(){
+  var companion=companion("AUTO");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
+  when(companion.polishedContent(eq(original),anyString())).thenThrow(new ConflictException("保留复杂格式，请在编辑器确认"));
+  tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成","整理后事实",null,null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  verify(companion).capture(anyMap(),eq("整理后事实"));
+  assertThat(managed.status("n","m").stages().get("polish").reasonCode()).isEqualTo("REVIEW_REQUIRED");
+  verify(knowledge,never()).updateDerivedNote(any(),any());
+ }
  @Test void importedBookSendsOnlyThoughtsToPolishAndReassemblesExactSource(){
   values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
   String prefix="![书摘原图](/api/images/original/raw)\n\n## 书摘\n\n> 这是\\*书里原文\\*\n> \n> 第二段\n\n来源：微信读书实际给出的来源\n\n## 我的感想\n\n";

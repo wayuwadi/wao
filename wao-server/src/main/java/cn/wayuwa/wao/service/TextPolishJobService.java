@@ -145,6 +145,8 @@ public class TextPolishJobService {
         try {
             List<String> allowed = JSON.readValue(prompt.substring(start + TAGS_START.length(), end), new TypeReference<>() { });
             List<String> selected = new ArrayList<>();
+            String raw=output.strip().replaceFirst("^```(?:json)?\\s*","").replaceFirst("\\s*```$","");
+            if(raw.startsWith("{")){var root=JSON.readTree(raw);if(!root.path("tags").isArray()||root.path("tags").size()>3)return null;for(var tag:root.path("tags")){String candidate=tag.path("name").asText();if(allowed.contains(candidate)&&!selected.contains(candidate))selected.add(candidate);}return String.join("\n",selected);}
             for (String line : output.replace("\r", "\n").lines().toList()) {
                 String candidate = line.trim().replaceFirst("^(?:[-*•]+\\s*|\\d+[.)、]\\s*|#+\\s*)", "");
                 candidate = candidate.replaceAll("^[\\[\\\"']+|[\\]\\\"',]+$", "").trim();

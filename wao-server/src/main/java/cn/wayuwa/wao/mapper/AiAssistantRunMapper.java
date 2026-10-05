@@ -254,7 +254,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
             @Param("timeoutSeconds") long timeoutSeconds,
             @Param("reason") String reason);
     /** 只消费当前本机小记执行实例的队列，不领取旧 Runner 或服务端 API 任务。 */
-    @Select("SELECT * FROM ai_assistant_run WHERE ai_capability_id=#{capability} AND status='secure_queued' ORDER BY CASE WHEN usage_purpose IN ('NOTE_DISCOVERY_GENERATE','NOTE_DISCOVERY_REVIEW') THEN 1 ELSE 0 END,created_at LIMIT 8")
+    @Select("SELECT * FROM ai_assistant_run WHERE ai_capability_id=#{capability} AND status='secure_queued' ORDER BY CASE WHEN usage_purpose IN ('NOTE_DISCOVERY_GENERATE','NOTE_DISCOVERY_REVIEW') AND created_at>DATE_SUB(CURRENT_TIMESTAMP(6),INTERVAL 10 MINUTE) THEN 1 ELSE 0 END,created_at LIMIT 8")
     List<AiAssistantRunEntity> selectLocalNoteQueued(@Param("capability") String capability);
 
     /** 同一执行目录持有独占锁后回收中断任务；不自动重做已经调用过的模型。 */

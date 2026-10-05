@@ -7,6 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import NotesView from '@/views/NotesView.vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
+import { saveCompanionDraft } from '@/api/noteAiCompanion'
 import NoteDiscoveryInline from '@/components/notes/NoteDiscoveryInline.vue'
 import { fetchDiscoveryCurrent, fetchDiscoverySource, type Discovery } from '@/api/noteDiscoveries'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
@@ -26,6 +27,7 @@ import { notePolishVersions, noteEnrichmentStatus, activateNoteWorkflowMember } 
 import { fetchNoteAiWorkflows, startSavedNoteStage } from '@/api/noteAiWorkflows'
 vi.mock('@/api/noteDiscoveries', () => ({ fetchDiscoveryCurrent: vi.fn().mockResolvedValue({ discovery: null, automationState: 'OFF', revision: '' }), fetchDiscoverySource: vi.fn(), feedbackDiscovery: vi.fn(), clearDiscoveryLegacyCache: vi.fn() }))
 vi.mock('@/api/noteAiWorkflows', () => ({ fetchNoteAiWorkflows: vi.fn().mockResolvedValue([]), retryNoteAiWorkflow: vi.fn(), startSavedNoteStage: vi.fn() }))
+vi.mock('@/api/noteAiCompanion', async importOriginal => ({ ...await importOriginal<object>(), saveCompanionDraft: vi.fn() }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(undefined), copyToClipboard: vi.fn().mockResolvedValue(true) }))
 vi.mock('@/api/notePolishVersions', () => ({ fetchNotePolishVersions: vi.fn().mockResolvedValue([]), saveNotePolishVersion: vi.fn() }))
@@ -67,6 +69,42 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('阅读里的伴读独立浮层返回同篇，不改变阅读布局或新建草稿', async () => {
+    useDataStore().docs.one = doc('one', '阅读中的正文')
+    const wrapper = await view(document.body)
+    await flushPromises()
+    await wrapper.get('.writing-pane textarea').setValue('仍未保存的新想法')
+    await wrapper.get('[aria-label="预览小记：阅读中的正文"]').trigger('click')
+    await flushPromises()
+    const reader = document.body.querySelector<HTMLElement>('.notes-reader')!
+    reader.querySelector<HTMLElement>('.reader-companion-toggle')!.click()
+    await flushPromises()
+    expect(reader.hasAttribute('inert')).toBe(true)
+    const overlay = document.body.querySelector<HTMLElement>('.reader-overlay')!
+    expect(overlay.textContent).toContain('AI 伴读')
+    overlay.querySelector<HTMLElement>('[aria-label="返回阅读"]')!.click()
+    await flushPromises()
+    expect(document.body.querySelector('.notes-reader')).toBe(reader)
+    expect(reader.hasAttribute('inert')).toBe(false)
+    expect(wrapper.get<HTMLTextAreaElement>('.writing-pane textarea').element.value).toBe('仍未保存的新想法')
+    document.body.querySelector<HTMLElement>('[aria-label="退出阅读模式"]')!.click()
+    await flushPromises()
+    wrapper.unmount()
+  })
+  it('刷新保留伴读草稿来源，保存通过派生接口且失败时不丢草稿', async () => {
+    const key = 'wao-quick-note-draft-v1:wg'
+    localStorage.setItem(key, JSON.stringify({ id: 'derived-draft', text: '尚未证实的回答', tags: [], generatedTitle: '', companionMessageId: 'owned-reply' }))
+    vi.mocked(saveCompanionDraft).mockRejectedValueOnce(new Error('来源已更新，草稿仍保留'))
+    const add = vi.spyOn(useDataStore(), 'addNote')
+    const wrapper = composer()
+    await wrapper.get('.save-note').trigger('click')
+    await flushPromises()
+    expect(saveCompanionDraft).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'owned-reply', docId: 'derived-draft', existing: false }))
+    expect(add).not.toHaveBeenCalled()
+    expect(JSON.parse(readNoteDraft(key)!).companionMessageId).toBe('owned-reply')
+    expect(wrapper.text()).toContain('来源已更新，草稿仍保留')
+    wrapper.unmount()
+  })
   it('手机操作入口独立展开，只保留当前卡片展开且不会触发 AI 或编辑', async () => {
     useDataStore().docs = { one: doc('one', '第一篇'), two: doc('two', '第二篇') }
     const wrapper = await view()

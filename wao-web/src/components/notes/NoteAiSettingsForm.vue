@@ -321,9 +321,9 @@ onBeforeUnmount(() => {
           <div class="execution-fields">
             <label
               >执行方式<select v-model="draft.executionMode">
-                <option value="parallel">并行处理</option>
-                <option value="serial">依次处理</option></select
-              ><small>选择标题、正文和配图的处理顺序。</small></label
+                <option value="parallel">一起排队</option>
+                <option value="serial">按顺序入队</option></select
+              ><small>安排各阶段入队顺序；本机执行器一次执行一个模型任务。</small></label
             ><label v-if="draft.executionMode === 'parallel'"
               >成员入队上限<select v-model.number="draft.maxConcurrent">
                 <option v-for="n in 5" :key="n" :value="n">{{ n }}</option></select
