@@ -4,7 +4,10 @@ import type { RichDocContent } from '@/types'
 import { notePreviewImages, notePreviewSource } from '@/utils/notePreviewImages'
 import { copyOriginalImage, noteMediaCopyText } from '@/utils/noteMediaClipboard'
 import { copyToClipboard } from '@/utils/clipboard'
-const props = defineProps<{ content: RichDocContent; initialTextCopied?: boolean }>()
+import { noteCodexPrompt } from '@/utils/noteCodexPrompt'
+const props = defineProps<{ content: RichDocContent; initialTextCopied?: boolean; noteId?: string; title?: string }>()
+const mode = ref<'chatgpt' | 'codex'>('chatgpt')
+const prompt = computed(() => noteCodexPrompt(props.content, { id: props.noteId, title: props.title }, window.location.origin))
 const emit = defineEmits<{ close: [] }>()
 const images = computed(() => notePreviewImages(props.content))
 const step = ref(props.initialTextCopied && images.value.length ? 1 : 0)
@@ -31,6 +34,11 @@ async function copyStep() {
   const current = step.value
   busy.value = true; error.value = ''; status.value = '正在复制…'
   try {
+    if (mode.value === 'codex') {
+      if (!await copyToClipboard(prompt.value)) throw new Error('提示词复制失败，请重试')
+      status.value = '已复制完整内容与执行提示词，切到 Codex 粘贴后按回车。'
+      return
+    }
     if (!current) {
       if (!await copyToClipboard(noteMediaCopyText(props.content))) throw new Error('正文复制失败，请重试')
     } else await copyOriginalImage(images.value[current - 1]!.src)
@@ -46,11 +54,12 @@ function next() { if (!busy.value && step.value < images.value.length) { step.va
   <Teleport to="body"><div class="note-media-copy-mask" @keydown="keys">
     <section ref="dialog" class="note-media-copy-dialog" role="dialog" aria-modal="true" aria-label="复制图文到 ChatGPT">
       <header><div><i class="ri-file-copy-line" aria-hidden="true"></i><h3>复制图文</h3></div><button type="button" aria-label="关闭图文复制" :disabled="busy" @click="close"><i class="ri-close-line"></i></button></header>
-      <p class="copy-intro">先粘贴正文，再逐张粘贴原图。每次复制后，切到 ChatGPT 按 Ctrl / ⌘ + V。</p>
-      <nav aria-label="图文复制步骤"><button type="button" :aria-current="step === 0 ? 'step' : undefined" :disabled="busy" @click="step = 0; error = ''; status = ''">正文<i v-if="copied.includes(0)" class="ri-check-line" aria-hidden="true"></i></button><button v-for="(image, index) in images" :key="index" type="button" :aria-label="`选择图 ${index + 1}`" :aria-current="step === index + 1 ? 'step' : undefined" :disabled="busy" @click="step = index + 1; error = ''; status = ''">图 {{ index + 1 }}<i v-if="copied.includes(index + 1)" class="ri-check-line" aria-hidden="true"></i></button></nav>
-      <div class="copy-content"><template v-if="step"><img :src="notePreviewSource(images[step - 1]!.src)" :alt="images[step - 1]!.alt || `图 ${step}`"><small>按原始尺寸复制为 PNG · 保留透明背景</small></template><pre v-else>{{ noteMediaCopyText(content) }}</pre></div>
+      <nav class="copy-target" aria-label="复制用途"><button type="button" :aria-current="mode === 'chatgpt' ? 'true' : undefined" :disabled="busy" @click="mode = 'chatgpt'; error = ''; status = ''">到 ChatGPT</button><button type="button" :aria-current="mode === 'codex' ? 'true' : undefined" :disabled="busy" @click="mode = 'codex'; error = ''; status = ''">交给 Codex</button></nav>
+      <p class="copy-intro">{{ mode === 'codex' ? '一次复制完整正文、原图链接与执行提示词。到 Codex 粘贴后按回车，按正文中的要求执行。' : '先粘贴正文，再逐张粘贴原图。每次复制后，切到 ChatGPT 按 Ctrl / ⌘ + V。' }}</p>
+      <nav v-if="mode === 'chatgpt'" aria-label="图文复制步骤"><button type="button" :aria-current="step === 0 ? 'step' : undefined" :disabled="busy" @click="step = 0; error = ''; status = ''">正文<i v-if="copied.includes(0)" class="ri-check-line" aria-hidden="true"></i></button><button v-for="(image, index) in images" :key="index" type="button" :aria-label="`选择图 ${index + 1}`" :aria-current="step === index + 1 ? 'step' : undefined" :disabled="busy" @click="step = index + 1; error = ''; status = ''">图 {{ index + 1 }}<i v-if="copied.includes(index + 1)" class="ri-check-line" aria-hidden="true"></i></button></nav>
+      <div class="copy-content"><pre v-if="mode === 'codex'">{{ prompt }}</pre><template v-else-if="step"><img :src="notePreviewSource(images[step - 1]!.src)" :alt="images[step - 1]!.alt || `图 ${step}`"><small>按原始尺寸复制为 PNG · 保留透明背景</small></template><pre v-else>{{ noteMediaCopyText(content) }}</pre></div>
       <p v-if="error" class="copy-error" role="alert">{{ error }}</p><p v-else class="copy-status" role="status" aria-live="polite">{{ status || `第 ${step + 1} / ${images.length + 1} 步` }}</p>
-      <footer><button ref="copyButton" type="button" class="copy-primary" :disabled="busy" @click="copyStep">{{ busy ? '正在复制…' : step ? `复制图 ${step} 原图` : '复制正文' }}</button><button v-if="step < images.length" type="button" :disabled="busy || !copied.includes(step)" @click="next">已粘贴，下一步 <i class="ri-arrow-right-line"></i></button><button v-else type="button" :disabled="busy" @click="close">完成</button></footer>
+      <footer><button ref="copyButton" type="button" class="copy-primary" :disabled="busy" @click="copyStep">{{ busy ? '正在复制…' : mode === 'codex' ? '复制执行提示词' : step ? `复制图 ${step} 原图` : '复制正文' }}</button><button v-if="mode === 'chatgpt' && step < images.length" type="button" :disabled="busy || !copied.includes(step)" @click="next">已粘贴，下一步 <i class="ri-arrow-right-line"></i></button><button v-else type="button" :disabled="busy" @click="close">完成</button></footer>
     </section>
   </div></Teleport>
 </template>
@@ -66,6 +75,7 @@ button:disabled { opacity:.5; cursor:default; } button:focus-visible { outline:2
 nav { display:flex; gap:7px; flex-wrap:wrap; max-height:110px; overflow:auto; padding:3px; }
 nav button { display:inline-flex; align-items:center; gap:5px; } nav button[aria-current] { background:var(--wao-bg-hover); border-color:var(--wao-primary); color:var(--wao-primary-text); }
 nav i { color:#248455; }
+.copy-target { margin-top:16px; }
 .copy-content { height:210px; margin:16px 0 12px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--wao-bg-sub); border-radius:10px; overflow:hidden; }
 .copy-content img { max-width:100%; max-height:180px; object-fit:contain; } .copy-content small { margin:8px; font-size:11px; color:var(--wao-text-faint); }
 .copy-content pre { white-space:pre-wrap; overflow:auto; width:100%; height:100%; box-sizing:border-box; padding:14px; margin:0; font-family:inherit; font-size:12px; line-height:1.8; }

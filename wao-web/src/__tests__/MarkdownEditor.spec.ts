@@ -85,6 +85,49 @@ async function mountEditor(props: {
 }
 
 describe('异步挂载焦点保护', () => {
+  it('编辑器看图方向键切换，Esc 先关闭图片且不改正文，焦点返回入口', async () => {
+    const w = await mountEditor({ modelValue: '', advanced: true, imageContextControls: true, document: { type: 'doc', content: [
+      { type: 'image', attrs: { src: '/api/images/one/raw', alt: '第一张' } },
+      { type: 'image', attrs: { src: '/api/images/two/raw', alt: '第二张' } },
+    ] } })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const before = e.getJSON()
+    const trigger = w.findAll('.note-image-fullscreen')[0]!
+    ;(trigger.element as HTMLButtonElement).focus()
+    await trigger.trigger('click'); await flushPromises()
+    expect(window.document.activeElement).toBe(w.get('.image-lightbox-close').element)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    await flushPromises()
+    expect(w.get('.image-lightbox img').attributes('src')).toBe('/api/images/two/raw')
+    expect((w.vm as unknown as { dismissTransientUi: () => boolean }).dismissTransientUi()).toBe(true)
+    await flushPromises()
+    expect(w.find('.image-lightbox').exists()).toBe(false)
+    expect(window.document.activeElement).toBe(trigger.element)
+    expect(e.getJSON()).toEqual(before)
+    w.unmount()
+  })
+  it('图片引用选中后可 Tab 缩进，前后输入文字保留图片并可撤销', async () => {
+    const w = await mountEditor({ modelValue: '', advanced: true, imageReferences: true, imageContextControls: true, imageControls: true,
+      document: { type: 'doc', content: [{ type: 'image', attrs: { src: '/api/images/one/raw', alt: '示例' } }] } })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    await w.get('[data-image-reference="1"]').trigger('click')
+    expect(e.isActive('image')).toBe(true)
+    await w.get('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.selection.$from.nodeAfter?.attrs.indent).toBe(1)
+    await w.get('[aria-label="在图片引用前输入文字"]').trigger('click')
+    e.commands.insertContent('前面的文字')
+    await w.get('[aria-label="在图片引用后输入文字"]').trigger('click')
+    e.commands.insertContent('后面的文字')
+    const nodes = e.getJSON().content!
+    expect(nodes[0]?.content?.[0]).toMatchObject({ type: 'text', text: '前面的文字' })
+    expect(nodes[1]?.type).toBe('image')
+    expect(nodes[1]?.attrs?.src).toBe('/api/images/one/raw')
+    expect(nodes[2]?.content?.[0]).toMatchObject({ type: 'text', text: '后面的文字' })
+    expect(e.getMarkdown()).toContain('前面的文字')
+    expect(e.getMarkdown()).toContain('后面的文字')
+    expect(e.commands.undo()).toBe(true)
+    w.unmount()
+  })
   it('编辑图片引用动态切换不重建编辑器，光标、属性、修改及撤销保留', async () => {
     setActivePinia(createPinia())
     const document: RichDocNode = { type: 'doc', content: [

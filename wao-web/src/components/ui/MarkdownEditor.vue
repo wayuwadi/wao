@@ -30,7 +30,9 @@ import { Markdown } from '@tiptap/markdown'
 import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
 import { TableKit } from '@tiptap/extension-table'
 import { CellSelection } from '@tiptap/pm/tables'
-import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection, Plugin, PluginKey } from '@tiptap/pm/state'
+import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
+import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { closeHistory } from '@tiptap/pm/history'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
@@ -55,7 +57,6 @@ import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/ed
 import { copyRichContent, portableClipboardHtml } from '@/utils/richClipboard'
 import NoteMediaCopyDialog from '@/components/notes/NoteMediaCopyDialog.vue'
 import { noteMediaCopyText } from '@/utils/noteMediaClipboard'
-import { notePreviewImages } from '@/utils/notePreviewImages'
 import { toast } from '@/composables/toast'
 import { countCharacters } from '@/utils/characterCount'
 import { editorBlockImages } from '@/utils/richDoc'
@@ -262,6 +263,53 @@ const emit = defineEmits<{
 
 function noteSourceContent(): NoteSourceContent { return { title: props.noteAiOrigin?.title ?? '', markdown: props.modelValue, document: editor.value?.getJSON() as RichDocNode ?? null, blocks: props.noteAiOrigin?.blocks ?? [], links: props.noteAiOrigin?.links ?? [] } }
 const previewImage = ref<{ src: string; alt: string } | null>(null)
+const galleryImages = ref<NotePreviewImage[]>([])
+const galleryIndex = ref(0)
+let navigatingGallery = false
+let galleryTrigger: HTMLElement | null = null
+watch(previewImage, async image => {
+  if (!image) { await nextTick(); if (galleryTrigger?.isConnected) galleryTrigger.focus({ preventScroll: true }); galleryTrigger = null; return }
+  if (navigatingGallery) return
+  galleryTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  galleryImages.value = notePreviewImages({ version: 1, markdown: props.modelValue, document: editor.value?.getJSON() as RichDocNode })
+  if (!galleryImages.value.length) galleryImages.value = [{ ...image }]
+  galleryIndex.value = Math.max(0, galleryImages.value.findIndex(item => item.src === image.src && item.alt === image.alt))
+  await nextTick()
+  if (previewImage.value === image) shell.value?.querySelector<HTMLButtonElement>('.image-lightbox-close')?.focus()
+})
+function galleryKeys(event: KeyboardEvent) {
+  if (event.key !== 'Tab' || !(event.currentTarget instanceof HTMLElement)) return
+  const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+  if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons[buttons.length - 1]?.focus() }
+  else if (!event.shiftKey && document.activeElement === buttons[buttons.length - 1]) { event.preventDefault(); buttons[0]?.focus() }
+}
+function changeGallery(index: number) {
+  navigatingGallery = true
+  galleryIndex.value = index
+  previewImage.value = galleryImages.value[index] ?? null
+  void nextTick(() => { navigatingGallery = false })
+}
+/** 在相邻文字块放置真实光标；没有文字块时创建普通段落，保持既有图片事实结构。 */
+function focusImageBoundary(position: number, after: boolean) {
+  const e = editor.value
+  if (!e || props.readonly) return
+  const node = e.state.doc.nodeAt(position)
+  if (node?.type.name !== 'image') return
+  const boundary = after ? position + node.nodeSize : position
+  const resolved = e.state.doc.resolve(boundary)
+  const adjacent = after ? resolved.nodeAfter : resolved.nodeBefore
+  const tr = e.state.tr
+  let cursor: number
+  if (adjacent?.isTextblock) cursor = after ? boundary + 1 : boundary - 1
+  else {
+    const paragraph = e.schema.nodes.paragraph?.create()
+    if (!paragraph) return
+    tr.insert(boundary, paragraph)
+    cursor = boundary + 1
+  }
+  tr.setSelection(TextSelection.create(tr.doc, cursor))
+  e.view.dispatch(tr.scrollIntoView()); e.view.focus()
+}
 const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
 function fullImageSource(image: HTMLImageElement): string {
   return image.dataset.fullSrc || image.currentSrc || image.src
@@ -481,7 +529,23 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
       reference.dataset.imageReference = '0'
       reference.innerHTML = '<i class="ri-image-line" aria-hidden="true"></i><span class="reading-image-number"></span><span class="reading-image-caption"></span><i class="ri-arrow-right-up-line" aria-hidden="true"></i>'
       reference.addEventListener('mousedown', event => event.preventDefault())
-      reference.addEventListener('click', event => { event.stopPropagation(); emit('image-reference', Number(reference.dataset.imageReference)) })
+      reference.addEventListener('click', event => {
+        event.stopPropagation()
+        const pos = getPos()
+        emit('image-reference', Number(reference.dataset.imageReference))
+        if (!props.readonly && pos != null) editor.value?.chain().focus().setNodeSelection(pos).run()
+      })
+      const boundaryButton = (after: boolean) => {
+        const control = document.createElement('button')
+        control.type = 'button'; control.className = 'image-reference-caret'
+        control.setAttribute('aria-label', after ? '在图片引用后输入文字' : '在图片引用前输入文字')
+        control.title = after ? '在后面写字' : '在前面写字'
+        control.textContent = '|'
+        control.addEventListener('mousedown', event => event.preventDefault())
+        control.addEventListener('click', event => { event.stopPropagation(); const pos = getPos(); if (pos != null) focusImageBoundary(pos, after) })
+        return control
+      }
+      const before = boundaryButton(false), after = boundaryButton(true)
       dom.addEventListener('contextmenu', event => {
         if (!props.imageReferences || props.readonly || !editor.value) return
         const pos = getPos()
@@ -499,10 +563,13 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
         dom.draggable = !props.readonly
         if (props.imageReferences) {
           dom.style.cssText = ''
+          const indent = imageIndent(attrs.indent) * 24
+          if (indent) dom.style.marginLeft = `min(${indent}px,50%)`
           reference.hidden = typeof attrs.src !== 'string' || !/^(https?:\/\/|\/(?!\/))/i.test(attrs.src)
           reference.querySelector('.reading-image-caption')!.textContent = attrs.alt ? ` · ${attrs.alt}` : ''
           reference.title = attrs.alt || '查看右侧图片'
-          if (dom.firstChild !== reference) { image.removeAttribute('src'); dom.replaceChildren(reference) }
+          before.hidden = after.hidden = props.readonly
+          if (!dom.contains(reference)) { image.removeAttribute('src'); dom.replaceChildren(before, reference, after) }
           return
         }
         if (dom.firstChild !== image) dom.replaceChildren(image, button)
@@ -1624,7 +1691,7 @@ async function createDrawingSnapshot(item: DrawingFileSummary): Promise<string> 
     const { exportToBlob } = await import('@excalidraw/excalidraw')
     const blob = await exportToBlob({
       elements: scene.elements as never,
-      appState: { ...(scene.appState ?? {}), viewBackgroundColor: scene.viewBackgroundColor ?? scene.appState?.viewBackgroundColor ?? '#ffffff', exportBackground: true } as never,
+      appState: { ...scene.appState, viewBackgroundColor: scene.viewBackgroundColor ?? scene.appState?.viewBackgroundColor ?? '#ffffff', exportBackground: true } as never,
       files: (scene.files ?? {}) as never,
       mimeType: 'image/png',
     })
@@ -1807,6 +1874,11 @@ function onEditorKeydown(event: KeyboardEvent) {
   if (event.isComposing || composing.value) return
   const imageEditor = editor.value
   if (props.imageContextControls && !props.readonly && imageEditor?.state.selection instanceof NodeSelection && imageEditor.isActive('image')) {
+    if (props.imageReferences && ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault(); event.stopPropagation()
+      focusImageBoundary(imageEditor.state.selection.from, event.key === 'ArrowRight' || event.key === 'ArrowDown')
+      return
+    }
     if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
       event.preventDefault()
       event.stopPropagation()
@@ -1817,7 +1889,7 @@ function onEditorKeydown(event: KeyboardEvent) {
     if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') {
       event.preventDefault()
       const element = imageEditor.view.nodeDOM(imageEditor.state.selection.from) as HTMLElement | null
-      const image = element?.querySelector('img')
+      const image = element?.querySelector('img, .reading-image-reference')
       if (image) { const rect = image.getBoundingClientRect(); image.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.top })) }
       return
     }
@@ -1875,6 +1947,7 @@ function onEditorKeydown(event: KeyboardEvent) {
 }
 
 function dismissTransientUi() {
+  if (previewImage.value) { previewImage.value = null; return true }
   const selectedText = !!editor.value && !editor.value.state.selection.empty && !editor.value.isActive('image') && !selectionDismissed.value
   if (!tableMenu.value && !selectedText && !slashOpen.value && !findOpen.value && !helpOpen.value && !imageMenu.value) return false
   closeTableMenu(); hideSelectionMenu()
@@ -2538,6 +2611,8 @@ onBeforeUnmount(() => {
       aria-modal="true"
       :aria-label="previewImage.alt || '图片预览'"
       @click.self="previewImage = null"
+      @keydown.esc.stop.prevent="previewImage = null"
+      @keydown="galleryKeys"
     >
       <button
         type="button"
@@ -2548,6 +2623,7 @@ onBeforeUnmount(() => {
         <i class="ri-close-line"></i>
       </button>
       <img :src="previewImage.src" :alt="previewImage.alt" />
+      <NoteImageNavigator :images="galleryImages" :index="galleryIndex" @change="changeGallery" />
     </div>
     <div v-if="linkDialog" class="link-dialog-mask" @click.self="linkDialog = null">
       <form class="link-dialog" role="dialog" aria-modal="true" aria-labelledby="link-dialog-title" @submit.prevent="saveLink">
@@ -3596,4 +3672,8 @@ onBeforeUnmount(() => {
   .md-body :deep(div[data-columns]) { grid-template-columns:1fr !important; }
   .shortcut-grid { grid-template-columns:1fr; }
 }
+</style>
+
+<style scoped>
+.md-body :deep(.image-reference-caret){display:inline-grid;place-items:center;width:20px;min-height:30px;padding:0;border:0;background:transparent;color:var(--wao-text-faint);opacity:.35;cursor:text;vertical-align:middle}.md-body :deep(.reading-image-node:hover .image-reference-caret),.md-body :deep(.image-reference-caret:focus-visible){opacity:1;color:var(--wao-primary-text)}.md-body :deep(.reading-image-node.ProseMirror-selectednode){outline:2px solid var(--wao-primary);outline-offset:2px;border-radius:7px}.image-lightbox img{max-height:calc(100dvh - 150px)}
 </style>
