@@ -42,6 +42,12 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: '/download/archive',
+      name: 'historical-client-download',
+      component: () => import('@/views/HistoricalClientDownloadView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/desktop',
       name: 'desktop-download',
       component: () => import('@/views/DesktopDownloadView.vue'),

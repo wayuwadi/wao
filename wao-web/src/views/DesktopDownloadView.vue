@@ -19,7 +19,7 @@ const loading = ref(true)
 const available = ref<Record<'windows' | 'macos', boolean>>({ windows: false, macos: false })
 
 const downloads = computed(() => orderedDesktopDownloads(platform.value))
-const versionText = computed(() => latest.value?.version ? `最新版本 v${latest.value.version}` : '版本信息暂不可用')
+const versionText = computed(() => latest.value?.version ? `历史版本 v${latest.value.version}` : '版本信息暂不可用')
 
 async function exists(url: string) {
   try {
@@ -52,15 +52,15 @@ onMounted(async () => {
 <template>
   <main class="desktop-page">
     <header class="desktop-header">
-      <a class="brand" href="/" aria-label="返回 WAO"><WaoLogo wordmark /><b>桌面宠物</b></a>
+      <a class="brand" href="/" aria-label="返回 WAO"><WaoLogo wordmark /><b>历史桌面宠物</b></a>
       <a class="back" href="/"><i class="ri-arrow-left-line"></i>返回网页版</a>
     </header>
 
     <section class="hero">
       <div class="hero-copy">
-        <span class="eyebrow">WAO DESKTOP COMPANION</span>
-        <h1>把 WAO 留在桌面，<br>安静陪你做重要的事。</h1>
-        <p>Windows 与 macOS 使用同一个轻量桌面宠物。第一次从这里安装，以后直接在宠物上检查、下载并应用更新。</p>
+        <span class="eyebrow">WAO · 历史安装包</span>
+        <h1>历史桌面宠物安装包</h1>
+        <p>当前仅维护浏览器版本。此处保留旧桌面宠物安装包与说明，不再发布客户端新版。</p>
         <div class="status"><i :class="loading ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ loading ? '正在读取发布状态…' : versionText }}</div>
       </div>
       <div class="pet-preview" aria-label="WAO 桌面宠物预览">
@@ -78,17 +78,17 @@ onMounted(async () => {
           <h3>{{ item.label }}</h3>
           <p>{{ item.detail }}</p>
           <a v-if="available[item.id]" :href="item.href" download><i class="ri-download-cloud-2-line"></i>下载安装包</a>
-          <button v-else disabled><i class="ri-time-line"></i>{{ loading ? '正在检查…' : '首次安装包正在准备' }}</button>
+          <button v-else disabled><i class="ri-time-line"></i>{{ loading ? '正在检查…' : '未找到历史安装包' }}</button>
           <small>{{ item.fileName }}</small>
         </article>
       </div>
     </section>
 
     <section class="steps">
-      <div class="section-heading"><span>02</span><div><h2>第一次安装之后</h2><p>不再反复卸载，也不用每次回来找安装包。</p></div></div>
+      <div class="section-heading"><span>02</span><div><h2>第一次安装之后</h2><p>以下说明适用于已发布的历史版本。</p></div></div>
       <div class="step-grid">
         <article><b>1</b><i class="ri-drag-move-2-line"></i><h3>放在顺手的位置</h3><p>拖动宠物到桌面任意位置；隐藏后可从系统托盘或菜单栏重新唤回。</p></article>
-        <article><b>2</b><i class="ri-refresh-line"></i><h3>宠物自己检查更新</h3><p>启动后安静检查，也能随时点击宠物上的更新按钮。</p></article>
+        <article><b>2</b><i class="ri-refresh-line"></i><h3>原版本的更新入口</h3><p>旧版本保留更新入口，当前已停止客户端发布。</p></article>
         <article><b>3</b><i class="ri-shield-check-line"></i><h3>确认后快速更新</h3><p>更新包通过专用签名校验，下载完成后自动安装并重启。</p></article>
       </div>
     </section>

@@ -28,7 +28,7 @@ onMounted(async () => {
     aria-label="网站备案信息"
   >
     <div class="footer-info">
-      <a href="/download">下载 WAO</a>
+      <a href="/download">浏览器使用</a>
       <span class="separator">·</span>
       <span>© {{ new Date().getFullYear() }} {{ site?.siteName ?? 'WAO' }}</span>
       <span v-if="site?.description" class="separator">·</span>
