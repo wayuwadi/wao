@@ -25,6 +25,29 @@
     ]
   },
   {
+    "id": "release-replay-icon-2026-10-06",
+    "publishedOn": "2026-10-06",
+    "sourceSubject": "fix(home): 修复伙伴旅程重播图标缺失",
+    "title": "修复伙伴旅程重播图标缺失",
+    "intro": "修复重播按钮空白的图标显示，休息和写作旅程可以从主入口旁清楚找到。",
+    "highlights": [
+      {
+        "featureId": "home",
+        "eyebrow": "体验精简",
+        "title": "修复伙伴旅程重播图标缺失",
+        "summary": "修复重播按钮空白的图标显示，休息和写作旅程可以从主入口旁清楚找到。",
+        "points": [
+          "使用当前图标库已有的回转箭头。",
+          "保留可访问名称、提示与完整旅程行为。"
+        ],
+        "steps": [
+          "体验一次休息或写作后，主按钮旁出现回转箭头。",
+          "点击回转箭头重播伙伴旅程。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-home-living-corner-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "feat(home): 让四个伙伴随天气换装并闲聊捎来系统动态",

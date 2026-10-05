@@ -82,11 +82,11 @@ function write(replay = false) { begin('writing', replay) }
         <div class="home-actions">
           <div class="entry-action">
             <button class="rest-entrance" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="rest()">休息一下 <span aria-hidden="true">↗</span></button>
-            <button v-if="homeJourneyExperience.rest" class="journey-replay" aria-label="重看休息旅程" title="重看休息旅程" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="rest(true)"><i class="ri-replay-line" aria-hidden="true"></i></button>
+            <button v-if="homeJourneyExperience.rest" class="journey-replay" aria-label="重看休息旅程" title="重看休息旅程" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="rest(true)"><i class="ri-refresh-line" aria-hidden="true"></i></button>
           </div>
           <div class="entry-action">
             <button class="rest-entrance writing-entrance" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="write()">写点东西 <i class="ri-quill-pen-line" aria-hidden="true"></i></button>
-            <button v-if="homeJourneyExperience.writing" class="journey-replay" aria-label="重看写作旅程" title="重看写作旅程" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="write(true)"><i class="ri-replay-line" aria-hidden="true"></i></button>
+            <button v-if="homeJourneyExperience.writing" class="journey-replay" aria-label="重看写作旅程" title="重看写作旅程" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="write(true)"><i class="ri-refresh-line" aria-hidden="true"></i></button>
           </div>
         </div>
         <p v-if="entryError" class="entry-error" role="alert">{{ entryError }}</p>
