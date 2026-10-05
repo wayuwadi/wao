@@ -320,3 +320,36 @@ describe('私人小记伴读', () => {
     })
   })
 })
+
+
+describe('本篇 AI 结果概况', () => {
+  it('待采用与已采用未读独立计数，排除历史旧来源并按成果去重', async () => {
+    vi.mocked(fetchAiResults).mockResolvedValue({ items: [
+      { ...candidate, seen: true }, { ...candidate, seen: true },
+      { ...candidate, id: 'applied', stage: 'title', application: 'APPLIED' },
+      { ...candidate, id: 'read', application: 'APPLIED', seen: true },
+      { ...candidate, id: 'old', application: 'HISTORICAL_APPLIED' },
+      { ...candidate, id: 'stale', validity: 'STALE' },
+      { ...candidate, id: 'ignored', application: 'DECLINED' },
+    ] as never, nextCursor: '', attempts: [] })
+    const w = mount(NoteAiCompanion, { props: { notes: [doc], activeId: 'n', blocked: false, explicitlySelected: false } }); wrappers.push(w)
+    await flushPromises()
+    const summary = w.get('.result-summary').text()
+    expect(summary).toContain('这篇小记')
+    expect(summary).toContain('1 项待你采用')
+    expect(summary).toContain('1 项已采用但未读')
+    expect(actOnArtifact).not.toHaveBeenCalled()
+  })
+  it('分页只说明已加载结果，不冒充全篇总数', async () => {
+    vi.mocked(fetchAiResults).mockResolvedValue({ items: [], nextCursor: 'older', attempts: [] })
+    const w = render(); await flushPromises()
+    expect(w.get('.result-summary').text()).toContain('已加载结果')
+    expect(w.get('.result-summary').text()).toContain('0 项待你采用')
+  })
+  it('读取失败不展示虚假的零结果', async () => {
+    vi.mocked(fetchAiResults).mockRejectedValue(new Error('offline'))
+    const w = render(); await flushPromises()
+    expect(w.find('.result-summary').exists()).toBe(false)
+    expect(w.get('[role="alert"]').text()).toContain('请求失败')
+  })
+})

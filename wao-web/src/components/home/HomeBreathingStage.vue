@@ -5,6 +5,7 @@ import { useTheme } from '@/composables/theme'
 import WorldScene from '@/components/relax/WorldScene.vue'
 import RestCompanions from '@/components/relax/RestCompanions.vue'
 import WaoLogo from '@/components/WaoLogo.vue'
+import { brandMonoMask } from '@/config/brand'
 import { worldById, type WorldId } from '@/components/relax/worlds'
 import {
   BreathingSession,
@@ -646,7 +647,7 @@ onBeforeUnmount(() => {
       </header>
       <div class="practice-main">
         <div v-if="props.restful" class="rest-space" :class="[prefs.scene, restStep]">
-          <div class="rest-landscape" aria-hidden="true"><div class="rest-sun"></div><div class="rest-hill back"></div><div class="rest-hill front"></div><div class="rest-pool"></div><div class="rest-breeze"><i></i><i></i><i></i></div></div>
+          <div class="rest-landscape" :style="{ '--wao-brand-mask': brandMonoMask }" aria-hidden="true"><div class="rest-sun"></div><div class="rest-hill back"></div><div class="rest-hill front"></div><div class="rest-pool"></div><div class="rest-breeze"><i></i><i></i><i></i></div></div>
           <div class="rest-heading"><p class="rest-eyebrow">和伙伴一起，把节奏慢下来</p><h1>{{ restTitle }}</h1><p>{{ restSubtitle }}</p></div>
           <div class="rest-crew-scene">
             <div class="rest-halo" :style="{ opacity: restStep==='guide' || (!idle && mode==='breathing') ? 1 : 0, transform: `scale(${reduced || mode==='sitting' ? 1 : .86 + restExpansion*.55})` }" aria-hidden="true"></div>
