@@ -1,5 +1,29 @@
 [
   {
+    "id": "release-brand-refinement-2026-10-06",
+    "publishedOn": "2026-10-06",
+    "sourceSubject": "feat(navigation): 精修柔环标识并统一呼吸与伙伴品牌",
+    "title": "让 WAO 的品牌更清楚、更统一",
+    "intro": "从浏览器小图标到呼吸空间，使用同一套柔环图形、圆角字标和伙伴形象。",
+    "highlights": [
+      {
+        "featureId": "navigation",
+        "eyebrow": "品牌精修",
+        "title": "让 WAO 的品牌更清楚、更统一",
+        "summary": "柔环中央更通透，小尺寸更清楚；呼吸页和工作区使用统一品牌。",
+        "points": [
+          "单次穿插的柔环 W 与固定圆角 WAO 字标",
+          "小尺寸专用图标与深浅场景单色版本",
+          "休息伙伴与首页共享角色颜色和特征"
+        ],
+        "steps": [
+          "查看浏览器标签图标，以及展开或折叠菜单后的 WAO 标识。",
+          "从首页进入“休息一下”，查看统一品牌和三个休息伙伴。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-capability-planning-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "feat(capabilities): 将未开放的应用接入收进规划说明",

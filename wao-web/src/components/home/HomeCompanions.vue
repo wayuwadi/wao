@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { companionBrand } from '@/config/companionBrand'
 import { companionEditing, companionQuiet as quiet, setCompanionQuiet } from '@/composables/quietCompanions'
 import type { createCompanionScene } from './companionScene'
 import type { CompanionActivity } from './companionActivities'
@@ -15,7 +16,7 @@ const ready = ref(false)
 const failed = ref(false)
 const message = ref('')
 const messagePosition = ref({ left: '12px', top: '12px' })
-const names = ['小画家', '小书虫', '小开心', '小青蛙']
+const names = companionBrand.map(pal => pal.name)
 let controller: ReturnType<typeof createCompanionScene> | undefined
 let disposed = false
 let active = true

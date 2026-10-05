@@ -6,6 +6,7 @@ import { useTheme } from '@/composables/theme'
 import HomeBreathingStage from '@/components/home/HomeBreathingStage.vue'
 import AuthDialog from '@/components/login/AuthDialog.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
+import WaoLogo from '@/components/WaoLogo.vue'
 import {
   consumeAuthPractice,
   safeAuthTarget,
@@ -156,7 +157,7 @@ onMounted(async () => {
   >
     <header class="rainbow-header" :inert="gameImmersive || gameMemoryOpen">
       <button class="home-link" :aria-pressed="selectedPage === 'home'" @click="breatheHome">
-        WAO <small>{{ selectedPage === 'home' ? '／ 片刻留白' : '呼吸' }}</small>
+        <WaoLogo wordmark tone="current" /><small class="rest-brand-title">· 一呼一吸</small>
       </button>
       <nav v-show="selectedPage !== 'home'" class="rainbow-tabs" aria-label="游戏页面">
         <button
@@ -279,6 +280,14 @@ onMounted(async () => {
 .starfield-page { --game-accent: #bc982c; background: #fff9e9; }
 .starfield-page[data-entry-theme='dark'] { background: #343122; }
 .starfield-page :deep(.game-host) { border-color: #e1d4a1; background: #fff9e9; color: #625735; }
+</style>
+
+<style scoped>
+.home-link { display:inline-flex;align-items:center;gap:10px;white-space:nowrap; }
+.home-link :deep(.wao-logo-symbol) { width:28px;height:28px; }
+.home-link :deep(.wao-logo-name) { font-size:17px; }
+.home-link .rest-brand-title { font-family:inherit;font-size:11px;font-weight:400;letter-spacing:.08em; }
+@media(max-width:380px) { .home-link { gap:5px; }.home-link :deep(.wao-logo-symbol) { width:24px;height:24px; }.home-link :deep(.wao-logo-name) { font-size:15px; }.home-link .rest-brand-title { font-size:10px;letter-spacing:0; } }
 </style>
 
 <style scoped>

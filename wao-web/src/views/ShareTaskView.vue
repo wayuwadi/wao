@@ -89,7 +89,7 @@ async function copyMd() {
 
       <template v-else-if="shared">
         <div class="brand">
-          <WaoLogo />WAO · {{ shared.kind === 'sub' ? '子任务分享' : '任务分享' }}
+          <WaoLogo wordmark /> · {{ shared.kind === 'sub' ? '子任务分享' : '任务分享' }}
         </div>
         <a class="locate" :href="originalUrl"><i class="ri-corner-up-left-line"></i>回到 WAO 中的原任务</a>
         <h1 class="title">{{ shared.title }}</h1>

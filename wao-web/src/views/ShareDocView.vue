@@ -58,7 +58,7 @@ async function copyMd() {
 
       <template v-else-if="shared">
         <div class="brand">
-          <WaoLogo />WAO · {{ shared.note ? '小记分享' : '文档分享' }}
+          <WaoLogo wordmark /> · {{ shared.note ? '小记分享' : '文档分享' }}
         </div>
         <a class="locate" :href="originalUrl"><i class="ri-corner-up-left-line"></i>回到 WAO 中的原文档</a>
         <h1 class="title">{{ shared.title || (shared.note ? '未命名小记' : '未命名文档') }}</h1>
