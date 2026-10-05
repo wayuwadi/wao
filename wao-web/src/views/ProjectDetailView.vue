@@ -301,6 +301,9 @@ const doneTasks = computed(() =>
   taskOrder.sort(orderScope.value, allTasks.value.filter((t) => isFinished(t) && !isSettling(t.id)).sort(doneDesc), t => t.id))
 /** 「显示已完成的任务」开关。 */
 const showFinished = computed(() => showDone.value)
+const hiddenFinishedOnly = computed(() => !tasksUnavailable.value && !searchQuery.value
+  && pdTaskView.value === 'list' && !showFinished.value
+  && !openTasks.value.length && doneTasks.value.length > 0)
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
 const boardStatuses = computed(() => TASK_STATUSES.filter((status) => AI_RUN_ENABLED || status !== 'AI 进行中'
   || allTasks.value.some((task) => task.status === status)))
@@ -766,6 +769,10 @@ watch(visibleTaskIds, (ids) => {
         <button v-if="effectiveCreator" @click="creatorFilter = null">查看全部创建人</button>
       </div>
       <ProjectTaskSearch v-if="searchQuery" :query="searchQuery" :tasks="ptasks" :filtered-tasks="allTasks" :load-state="data.taskLoadState" @clear-filters="clearTaskFilters" />
+      <div v-if="hiddenFinishedOnly" class="task-scope" role="status">
+        当前范围内 {{ doneTasks.length }} 项任务已收尾并收起；项目共 {{ ptasks.length }} 项任务。
+        <button @click="showDone = true">查看已完成</button>
+      </div>
       <!-- 保持普通视图挂载，清除查找后恢复原有行内输入、展开和排序。 -->
       <div v-show="!searchQuery && !hideTaskViews" class="project-normal-tasks">
       <!-- 表格视图不再提供批量选择；看板、分组和四象限视图仍可多选后复制 -->
