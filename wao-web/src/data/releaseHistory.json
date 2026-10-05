@@ -1,5 +1,29 @@
 [
   {
+    "id": "release-retired-function-archive-2026-10-06",
+    "publishedOn": "2026-10-06",
+    "sourceSubject": "feat(navigation): 将已退场功能收进历史记录",
+    "title": "将已退场功能收进历史记录",
+    "intro": "功能治理默认只看在用模块，历史访问记录仍可展开回看。",
+    "highlights": [
+      {
+        "featureId": "navigation",
+        "eyebrow": "体验精简",
+        "title": "将已退场功能收进历史记录",
+        "summary": "功能治理默认只看在用模块，历史访问记录仍可展开回看。",
+        "points": [
+          "在用与已退场模块分开展示和汇总",
+          "历史模块不再显示继续观察或重新启用",
+          "失败和真实空数据状态清楚可见"
+        ],
+        "steps": [
+          "进入功能治理查看在用功能。",
+          "点击查看历史模块回看旧记录，再返回在用功能。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-project-create-draft-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "fix(projects): 新建项目关闭保留草稿并改为显式创建",
