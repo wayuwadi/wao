@@ -133,6 +133,16 @@ let generation = 0,
 let pendingChat: { id: string; message: string; rev: number; sources: string[] } | undefined
 const note = computed(() => props.notes.find((n) => n.id === props.activeId))
 const ownNotes = computed(() => props.notes.filter((n) => n.author === session.currentUser.id))
+const resultSummary = computed(() => {
+  if (!results.value || error.value) return undefined
+  const current = [...new Map(results.value.items.map(item => [item.id, item])).values()]
+    .filter(item => item.validity === 'CURRENT')
+  return {
+    pending: current.filter(item => item.application === 'PENDING').length,
+    appliedUnread: current.filter(item => item.application === 'APPLIED' && !item.seen).length,
+    partial: !!results.value.nextCursor,
+  }
+})
 const visibleArtifacts = computed(
   () => results.value?.items.filter((a) => a.stage === stage.value) ?? [],
 )
@@ -649,6 +659,11 @@ defineExpose({ refresh })
         </p>
         <div class="companion-content">
           <template v-if="tab === 'results'">
+            <div v-if="resultSummary" class="result-summary" role="status" aria-label="本篇 AI 结果概况">
+              <small>{{ resultSummary.partial ? '已加载结果' : '这篇小记' }}</small>
+              <span><b>{{ resultSummary.pending }}</b> 项待你采用</span>
+              <span><b>{{ resultSummary.appliedUnread }}</b> 项已采用但未读</span>
+            </div>
             <div v-if="note" class="stage-tabs">
               <button
                 v-for="(text, id) in labels"
@@ -1087,6 +1102,9 @@ select {
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
+.result-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; margin-bottom: 12px; background: var(--wao-bg-subtle, #f7f8fc); border-radius: 8px; font-size: 12px; }
+.result-summary small { color: var(--wao-text-secondary); }
+.result-summary b { color: var(--wao-primary); }
 .stage-tabs {
   display: flex;
   gap: 5px;
