@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { rememberHomeJourney } from './homeJourneyExperience'
 import { restJourneyRequested } from './restJourney'
 
 export const writingJourneys = [
@@ -37,7 +38,8 @@ export function requestWritingJourney() {
   writingJourneyRequested.value = chosen
 }
 
-export function completeWritingJourney() {
+export function completeWritingJourney(arrived = false) {
+  if (arrived) rememberHomeJourney('writing')
   writingJourneyRequested.value = null
 }
 export function requestWritingFocus() {
