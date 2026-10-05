@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import WaoLogo from '@/components/WaoLogo.vue'
 import { requestRestJourney, restJourneyRequested } from '@/composables/restJourney'
+import { requestWritingJourney, writingJourneyRequested } from '@/composables/writingJourney'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
 import HomeCompanions from '@/components/home/HomeCompanions.vue'
@@ -31,7 +32,8 @@ function up(event: PointerEvent) { pointerPlay.value?.up(event); world.value?.up
 function actions(event: MouseEvent | KeyboardEvent, index?: number) {
   pointerPlay.value?.trigger(event, index)
 }
-function rest() { clearSurprises(); companions.value?.settle(); requestRestJourney() }
+function rest() { if (writingJourneyRequested.value) return; clearSurprises(); companions.value?.settle(); requestRestJourney() }
+function write() { clearSurprises(); companions.value?.settle(); requestWritingJourney() }
 </script>
 
 <template>
@@ -46,7 +48,8 @@ function rest() { clearSurprises(); companions.value?.settle(); requestRestJourn
         <h1>留一点空白，再开始。</h1>
         <p>随时暂停手边的事，回到呼吸与静坐的空间。</p>
         <div class="home-actions">
-          <button class="rest-entrance" :disabled="restJourneyRequested" @click.stop="rest">休息一下 <span aria-hidden="true">↗</span></button>
+          <button class="rest-entrance" :disabled="restJourneyRequested || !!writingJourneyRequested" @click.stop="rest">休息一下 <span aria-hidden="true">↗</span></button>
+          <button class="rest-entrance writing-entrance" :disabled="restJourneyRequested || !!writingJourneyRequested" @click.stop="write">写点东西 <i class="ri-quill-pen-line" aria-hidden="true"></i></button>
         </div>
         <small class="play-hint">点一下伙伴，让它变成泡泡。按住留白或右键，随机遇见一点惊喜。</small>
       </div>

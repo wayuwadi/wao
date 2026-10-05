@@ -170,6 +170,8 @@ const props = withDefaults(
     activeImageReference?: number | null
     /** 原地编辑首次挂载后将焦点交给正文。 */
     autofocus?: boolean
+    /** 首页写作入场的一次性请求，编辑器和草稿就绪后聚焦末尾。 */
+    focusRequest?: number
     initialPosition?: number
     initialViewportTop?: number
     /** 文档正文等沉浸场景不显示输入框边框与底色。 */
@@ -2211,6 +2213,17 @@ async function focusSearch(term: string) {
 }
 watch(findOpen, open => { if (!open && editor.value) editor.value.view.dispatch(editor.value.state.tr.setMeta(searchHighlightKey, null)) })
 watch([() => props.searchTerm, editor, () => props.searchRequest], ([term], previous) => { if (term) void focusSearch(term); else if (previous?.[0]) findOpen.value = false }, { immediate: true })
+let handledFocusRequest = 0
+watch([() => props.focusRequest, editor, () => props.readonly], async ([request, current, readonly]) => {
+  if (!request || request === handledFocusRequest || !current || readonly || current.isDestroyed) return
+  await nextTick()
+  if (current.isDestroyed || !current.view.dom.isConnected) return
+  handledFocusRequest = request
+  const active = document.activeElement
+  if (active instanceof HTMLElement && active !== document.body && !current.view.dom.contains(active) && active.closest('input,textarea,[contenteditable="true"],[role="dialog"]')) return
+  current.commands.focus('end', { scrollIntoView: false })
+  current.view.dom.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+}, { immediate: true, flush: 'post' })
 function positionAtPoint(left: number, top: number) {
   const e = editor.value
   if (!e || e.isDestroyed) return null

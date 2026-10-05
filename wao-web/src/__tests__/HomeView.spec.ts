@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import HomeView from '@/views/HomeView.vue'
 import { restJourneyRequested } from '@/composables/restJourney'
+import { writingJourneyRequested, completeWritingJourney } from '@/composables/writingJourney'
 
 vi.mock('@/components/home/HomeBreathingStage.vue', () => ({ default: { template: '<section aria-label="呼吸练习"><slot name="information" /></section>' } }))
 vi.mock('@/components/home/HomeTianrenGlance.vue', () => ({ default: { template: '<span>今日一卦</span>' } }))
@@ -21,6 +22,11 @@ describe('首页 AI Run 下线', () => {
     expect(wrapper.get('.rest-entrance').text()).toContain('休息一下')
     expect(wrapper.text()).not.toContain('功能探索')
     restJourneyRequested.value = false
+    await wrapper.get('.writing-entrance').trigger('click')
+    expect(writingJourneyRequested.value).not.toBeNull()
+    expect(wrapper.get('.writing-entrance').attributes('disabled')).toBeDefined()
+    completeWritingJourney()
+    await flushPromises()
     await wrapper.get('.rest-entrance').trigger('click')
     expect(restJourneyRequested.value).toBe(true)
     expect(wrapper.get('.rest-entrance').attributes('disabled')).toBeDefined()

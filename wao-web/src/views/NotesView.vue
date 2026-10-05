@@ -42,6 +42,7 @@ import { fetchNoteAiWorkflows, retryNoteAiWorkflow, type NoteAiWorkflowStatus } 
 import { noteAiRecoveryMessage } from '@/utils/noteAiRecoveryMessage'
 import { useNoteReaderWidths } from '@/composables/noteReaderWidths'
 import { useNotesPaneWidth } from '@/composables/notesPaneWidth'
+import { writingFocusPending } from '@/composables/writingJourney'
 
 const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const mediaCopyContent = ref<RichDocContent | null>(null)
@@ -49,6 +50,13 @@ function openMediaCopy(note: Doc) { mediaCopyContent.value = JSON.parse(JSON.str
 const writingOpen = ref(true)
 const companion = ref<InstanceType<typeof NoteAiCompanion> | null>(null)
 const newComposer = ref<InstanceType<typeof NoteComposer> | null>(null)
+const writingFocusRequest = ref(0)
+watch(writingFocusPending, request => {
+  if (!request) return
+  writingOpen.value = true
+  writingFocusRequest.value = request
+  writingFocusPending.value = 0
+}, { immediate: true })
 const companionNoteId = ref('')
 const companionExplicitId = ref('')
 const readerCompanionOpen = ref(false)
@@ -1092,7 +1100,7 @@ onMounted(() => void loadPins())
     <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i>今日写字 {{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button></div><span>{{ notes.length }} 条记录</span></header>
     <div ref="workspace" class="notes-workspace" :style="writingStyle" :class="{ 'writing-collapsed': !writingOpen, resizing }">
       <aside v-show="writingOpen" id="notes-writing-pane" class="writing-pane" aria-label="新建小记区">
-        <NoteComposer ref="newComposer" :key="`${session.currentUser.id}:new`" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
+        <NoteComposer ref="newComposer" :key="`${session.currentUser.id}:new`" :focus-request="writingFocusRequest" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
         <NoteAiCompanion :overlay-open="readerCompanionOpen" @close-overlay="closeReaderCompanion" ref="companion" :notes="notes" :active-id="companionNoteId" :explicitly-selected="companionExplicitId === companionNoteId && !!companionNoteId" @seen="loadAiReceipts" :blocked="!!companionNoteId && !!notes.find(n => n.id === companionNoteId && hasPendingNoteDraft(n))" @select="selectCompanion" @updated="companionUpdated" @run="companionRun" @source="openDiscoverySource" @open-note="openCompanionSource" @edit-note="editCompanionNote" @append="appendCompanion" @append-existing="appendExistingCompanion" @settings="noteSettingsOpen = true" />
       </aside>
       <div v-show="writingOpen" class="writing-resizer" role="separator" tabindex="0" aria-label="调整记录区宽度" aria-orientation="vertical" aria-controls="notes-writing-pane" :aria-valuenow="writingPercentage" aria-valuemin="25" aria-valuemax="60" :aria-valuetext="`记录区宽度 ${writingPercentage}%`" title="拖拽调整宽度，双击恢复三分之一；方向键微调" @pointerdown="startWritingResize" @keydown="resizeWritingByKey" @dblclick="resetWritingWidth"><span aria-hidden="true"></span></div>
