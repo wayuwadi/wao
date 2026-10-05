@@ -23,6 +23,7 @@ import type { Priority, SubtaskState, TaskStep } from '@/types'
  * 有下级的子任务可以单独收起；`ownerFilter` 只保留该负责人的子任务及其上级。
  */
 const props = defineProps<{
+  columns?: readonly string[]
   taskId: string
   table?: boolean
   taskDepth?: number
@@ -32,6 +33,7 @@ const props = defineProps<{
   addParentId?: string | null
   ownerFilter?: string | null
 }>()
+const hasColumn = (key: string) => props.columns?.includes(key) ?? true
 const emit = defineEmits<{ 'add-sub': [parentId: string | null]; 'close-add': [] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
@@ -236,12 +238,12 @@ function add() {
 </script>
 <template>
   <tbody v-if="task && table" class="table-subs" @click.stop @dragstart.stop @dragover.prevent @drop.prevent.stop :inert="data.movingSubtasks">
-    <tr v-if="rows.length > 1 && orderNotice"><td colspan="10"><TaskOrderStatus :scope="orderScope" /></td></tr>
-    <tr v-if="localError"><td colspan="10"><small class="error" role="alert">{{ localError }}</small></td></tr>
+    <tr v-if="rows.length > 1 && orderNotice"><td :colspan="columns?.length ?? 10"><TaskOrderStatus :scope="orderScope" /></td></tr>
+    <tr v-if="localError"><td :colspan="columns?.length ?? 10"><small class="error" role="alert">{{ localError }}</small></td></tr>
     <template v-for="item in tableItems" :key="item.kind === 'row' ? data.subKey(taskId, item.row.sub, item.row.idx) : '__add'">
       <tr v-if="item.kind === 'add'" class="sub-add-row">
-        <td></td>
-        <td colspan="9">
+        <td v-if="hasColumn('number')"></td>
+        <td :colspan="(columns?.length ?? 10) - Number(hasColumn('number'))">
           <form :style="{ paddingLeft: `${44 + (item.depth + (taskDepth ?? 0)) * 20}px` }" @submit.prevent="add">
             <input
               ref="addInput"
@@ -260,8 +262,8 @@ function add() {
         class="inline-sub-row" :class="{ 'is-done': item.row.sub.done, 'order-before': orderingOver?.id === item.row.key && !orderingOver.after, 'order-after': orderingOver?.id === item.row.key && orderingOver.after }" draggable="true" @dragstart.stop="drag($event, item.row.key)" @dragover.prevent.stop="dragOver($event, item.row.key)" @dragleave="orderingOver = null" @dragend="draggingSub = null; orderingOver = null" @drop.prevent.stop="drop($event, item.row.key)"
         @click="ui.openTask(taskId, item.row.key)"
       >
-        <td class="sub-number wao-tabular">{{ item.row.sub.number ?? '…' }}</td>
-        <td>
+        <td v-if="hasColumn('number')" class="sub-number wao-tabular">{{ item.row.sub.number ?? '…' }}</td>
+        <td v-if="hasColumn('title')">
           <div class="sub-title" :style="{ paddingLeft: `${22 + (item.row.depth + (taskDepth ?? 0)) * 20}px` }">
             <button
               v-if="parentIds.has(item.row.key)"
@@ -294,11 +296,11 @@ function add() {
             </span></template>
           </div>
         </td>
-        <td></td>
-        <td class="cell-pop" title="点击修改优先级" @click.stop="openMenu('priority', item.row.key, $event)">
+        <td v-if="hasColumn('group')"></td>
+        <td v-if="hasColumn('priority')" class="cell-pop" title="点击修改优先级" @click.stop="openMenu('priority', item.row.key, $event)">
           <button class="sub-priority" :style="item.row.sub.pr ? { background: priorityMeta(item.row.sub.pr).bg, color: priorityMeta(item.row.sub.pr).color } : {}" :aria-label="`修改子任务 ${item.row.sub.text} 的优先级`" aria-haspopup="menu" :aria-expanded="menu?.kind === 'priority' && menu.subId === item.row.key">{{ item.row.sub.pr || '—' }}</button>
         </td>
-        <td class="cell-pop" title="点击修改状态" @click.stop="openMenu('state', item.row.key, $event)">
+        <td v-if="hasColumn('status')" class="cell-pop" title="点击修改状态" @click.stop="openMenu('state', item.row.key, $event)">
           <button
             class="sub-state"
             :style="stateStyle(item.row.sub)"
@@ -307,7 +309,7 @@ function add() {
             :aria-expanded="menu?.kind === 'state' && menu.subId === item.row.key"
           >{{ subtaskState(item.row.sub) }}</button>
         </td>
-        <td class="cell-pop" :title="member(item.row.sub.owner) ? `负责人：${member(item.row.sub.owner)!.name}，点击修改` : '点击设置负责人'" @click.stop="openMenu('owner', item.row.key, $event)">
+        <td v-if="hasColumn('owner')" class="cell-pop" :title="member(item.row.sub.owner) ? `负责人：${member(item.row.sub.owner)!.name}，点击修改` : '点击设置负责人'" @click.stop="openMenu('owner', item.row.key, $event)">
           <button class="member-trigger" :aria-label="`修改子任务 ${item.row.sub.text} 的负责人`" aria-haspopup="menu">
             <template v-if="member(item.row.sub.owner)">
               <span class="sub-av" :style="{ background: member(item.row.sub.owner)!.color }">{{ member(item.row.sub.owner)!.initial }}</span><span class="member-name">{{ member(item.row.sub.owner)!.name }}</span>
@@ -315,24 +317,24 @@ function add() {
             <span v-else class="faint">—</span>
           </button>
         </td>
-        <td :title="member(item.row.sub.createdBy) ? `创建者：${member(item.row.sub.createdBy)!.name}` : '历史子任务没有创建者记录'">
+        <td v-if="hasColumn('creator')" :title="member(item.row.sub.createdBy) ? `创建者：${member(item.row.sub.createdBy)!.name}` : '历史子任务没有创建者记录'">
           <span v-if="member(item.row.sub.createdBy)" class="member-trigger">
             <span class="sub-av" :style="{ background: member(item.row.sub.createdBy)!.color }">{{ member(item.row.sub.createdBy)!.initial }}</span><span class="member-name">{{ member(item.row.sub.createdBy)!.name }}</span>
           </span>
           <span v-else class="faint">—</span>
         </td>
-        <td class="wao-tabular created-date">
+        <td v-if="hasColumn('created')" class="wao-tabular created-date">
           <span v-if="createdDate(item.row.sub)">{{ createdDate(item.row.sub) }}</span><span v-else class="faint">—</span>
         </td>
-        <td><span class="faint">—</span></td>
-        <td @click.stop>
+        <td v-if="hasColumn('start')"><span class="faint">—</span></td>
+        <td v-if="hasColumn('due')" @click.stop>
           <input class="cell-input date wao-tabular" :class="{ empty: !item.row.sub.due }" type="date" :value="item.row.sub.due || ''" :aria-label="`子任务 ${item.row.sub.text} 的截止日期`" @change="setDue(item.row.key, $event)" />
         </td>
       </tr>
     </template>
     <tr v-if="data.taskSaveState(taskId) === 'error'" class="sub-add-row">
-      <td></td>
-      <td colspan="9">
+      <td v-if="hasColumn('number')"></td>
+      <td :colspan="(columns?.length ?? 10) - Number(hasColumn('number'))">
         <small class="error" role="alert"
           >保存失败{{ data.taskSaveError(taskId) ? `：${data.taskSaveError(taskId)}` : '' }}，草稿已保留<button v-if="data.taskConflicts[taskId]" type="button" @click="ui.openTask(taskId)">查看并处理冲突</button><button v-else type="button" @click="data.flushTask(taskId)">重试保存</button></small
         >

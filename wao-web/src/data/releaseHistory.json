@@ -1,5 +1,30 @@
 [
   {
+    "id": "release-project-table-columns-2026-10-06",
+    "publishedOn": "2026-10-06",
+    "sourceSubject": "feat(projects): 项目表格精简默认字段并记住成员选择",
+    "title": "项目表格精简默认字段并记住成员选择",
+    "intro": "项目表格默认聚焦六个常用字段，按本浏览器成员记住额外字段。",
+    "highlights": [
+      {
+        "featureId": "projects",
+        "eyebrow": "体验细化",
+        "title": "项目表格精简默认字段并记住成员选择",
+        "summary": "项目表格默认聚焦六个常用字段，按本浏览器成员记住额外字段。",
+        "points": [
+          "打开项目表格查看常用字段",
+          "在显示设置勾选更多字段或切换全部字段",
+          "刷新后保留选择，窄屏横向浏览"
+        ],
+        "steps": [
+          "打开项目表格查看常用字段",
+          "在显示设置勾选更多字段或切换全部字段",
+          "刷新后保留选择，窄屏横向浏览"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-brand-refinement-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "feat(navigation): 精修柔环标识并统一呼吸与伙伴品牌",
