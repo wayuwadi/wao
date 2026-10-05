@@ -145,7 +145,7 @@ describe('全量导航页', () => {
   it('完整目录覆盖所有非兼容模块，且不受侧栏显隐影响', async () => {
     const catalogIds = NAVIGATION_CATALOG.flatMap((section) => section.items.map((item) => item.id))
     const expected = Object.keys(MODULES).filter(
-      (id) => !['navigation', 'chat', 'chat-reviews', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions', 'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world', 'life-review', 'system-reports', 'ideas'].includes(id),
+      (id) => !['navigation', 'chat', 'chat-reviews', 'personal-principles', 'crawler-capabilities', 'account-resources', 'infrastructure', 'ledger', 'english-learning', 'vocabulary', 'food', 'weekly-report', 'devices', 'games', 'data-center', 'chatgpt', 'appearance', 'memory', 'ai-sessions', 'updates', 'action-plans', 'workspaces', 'decisions', 'workday-rhythm', 'pet-world', 'life-review', 'system-reports', 'ideas', 'skills', 'skill-connections'].includes(id),
     )
     expect(new Set(catalogIds)).toEqual(new Set(expected))
 
@@ -169,7 +169,7 @@ describe('全量导航页', () => {
     wrapper.unmount()
   })
 
-  it('把明确规划放到同分类末尾，功能探索可搜索打开且不保存个人布局', async () => {
+  it('能力入口统一到能力中心，功能探索可搜索打开且不保存个人布局', async () => {
     const before = NAVIGATION_CATALOG.map((section) => section.items.map((item) => item.id))
     const { wrapper, router } = await mountNavigation()
     await wrapper.get('.domains button').trigger('click')
@@ -181,9 +181,9 @@ describe('全量导航页', () => {
       .findAll('.catalog-section')
       .find((section) => section.find('h2').text() === 'AI 与自动化')!
     const rows = ai.findAll('.function-row')
-    expect(rows[rows.length - 1]!.text()).toContain('外部应用授权尚未开放')
-    expect(rows[rows.length - 1]!.get('.maturity-label').text()).toBe('规划中')
-    expect(rows[rows.length - 2]!.text()).toContain('WAO-HUB')
+    expect(rows.map(row => row.text()).join(' ')).toContain('能力中心')
+    expect(rows.map(row => row.text()).join(' ')).not.toContain('外部应用授权尚未开放')
+    expect(rows.filter(row => row.find('.maturity-label').exists())).toHaveLength(0)
     expect(NAVIGATION_CATALOG.map((section) => section.items.map((item) => item.id))).toEqual(
       before,
     )

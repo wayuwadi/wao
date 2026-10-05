@@ -258,7 +258,7 @@ function onDropStatus(status: TaskStatus) {
 .task-more { flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); cursor: pointer; }
 .task-more:hover, .task-more:focus-visible { background: var(--wao-bg-hover); }
 .todo {
-  padding: 16px 24px 40px;
+  padding: 28px 24px 40px;
   max-width: var(--wao-content-max);
   margin: 0 auto;
   animation: waoFadeUp 0.25s ease;
@@ -280,14 +280,15 @@ function onDropStatus(status: TaskStatus) {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  margin-bottom: 8px;
 }
 .ptitle {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
 }
 .ptip {
   font-size: 12px;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-2);
 }
 .seg {
   display: flex;

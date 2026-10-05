@@ -45,7 +45,7 @@ async function save(style: PageLayoutStyle) {
       :aria-checked="preferences.pageLayoutStyle === option.value" :disabled="saving"
       :class="['layout-choice', option.value, { selected: preferences.pageLayoutStyle === option.value }]"
       @click="save(option.value)">
-      <span class="layout-thumbnail" aria-hidden="true"><span class="thumbnail-side"></span><span class="thumbnail-frame"><span class="thumbnail-title"></span><span class="thumbnail-content"></span></span></span>
+      <span class="layout-thumbnail" aria-hidden="true"><span class="thumbnail-side"></span><span class="thumbnail-frame"><span class="thumbnail-title"></span><span class="thumbnail-content"><i></i><i></i><i></i></span></span></span>
       <span class="choice-title"><i :class="preferences.pageLayoutStyle === option.value ? 'ri-radio-button-line' : 'ri-checkbox-blank-circle-line'" aria-hidden="true"></i>{{ option.name }}</span>
       <small>{{ option.description }}</small>
     </button>
@@ -68,13 +68,18 @@ header p { color: var(--wao-text-3); font-size: 12px; margin: 7px 0 0; }
 .choice-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
 .choice-title i { color: var(--wao-primary); }
 .layout-choice small { font-size: 12px; line-height: 1.6; color: var(--wao-text-3); }
-.layout-thumbnail { width: 100%; height: 58px; display: flex; gap: 6px; padding: 6px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-sub); }
+.layout-thumbnail { width: 100%; height: 66px; display: flex; gap: 6px; padding: 6px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-sub); }
 .thumbnail-side { width: 15%; flex: none; border-radius: 3px; background: var(--wao-line-control); }
 .thumbnail-frame { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.thumbnail-title { height: 8px; background: var(--wao-primary-soft); border-radius: 2px; }
-.thumbnail-content { height: 26px; width: 68%; background: var(--wao-primary-soft); border-radius: 3px; }
-.fluid .thumbnail-content { width: 100%; }
-.centered .thumbnail-frame { flex: 0 0 62%; margin-inline: auto; }
+.thumbnail-title { width: 78%; height: 7px; background: var(--wao-primary-soft); border-radius: 2px; }
+.thumbnail-content { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; height: 34px; width: 76%; padding: 4px; background: color-mix(in srgb, var(--wao-primary-soft) 65%, var(--wao-bg-card)); border: 1px solid var(--wao-line); border-radius: 4px; }
+.thumbnail-content i { display: block; min-width: 0; border-radius: 2px; background: var(--wao-primary-soft); }
+.thumbnail-content i:first-child { grid-column: 1 / -1; }
+.fluid .thumbnail-title,.fluid .thumbnail-content { width: 100%; }
+.fluid .thumbnail-content { grid-template-columns: 1fr 1fr 1fr; }
+.fluid .thumbnail-content i:first-child { grid-column: auto; }
+.centered .thumbnail-frame { flex: 0 0 54%; margin-inline: auto; }
+.centered .thumbnail-title { width: 88%; }
 .layout-message { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; color: var(--wao-danger-strong); font-size: 12px; }
 .layout-message button { border: 1px solid var(--wao-line-control); border-radius: 6px; padding: 6px 9px; background: var(--wao-bg-card); color: var(--wao-text); font: inherit; cursor: pointer; }
 .layout-loading { margin: 14px 0 0; color: var(--wao-text-3); font-size: 12px; }

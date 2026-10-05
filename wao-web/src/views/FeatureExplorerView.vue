@@ -264,8 +264,8 @@ h1 span {
   font-size: 20px;
 }
 .feature-heading p {
-  color: var(--wao-text-weak);
-  font-size: 13px;
+  color: var(--wao-text-2);
+  font-size: 14px;
   margin: 0;
 }
 .heading-art {
@@ -307,7 +307,7 @@ h1 span {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 20px 0;
+  margin: 16px 0;
 }
 .filter-bar button {
   border: 0;
@@ -324,8 +324,8 @@ h1 span {
 }
 .catalog-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 12px;
 }
 .catalog-card {
   position: relative;
@@ -333,8 +333,8 @@ h1 span {
   flex-direction: column;
   align-items: start;
   text-align: left;
-  min-height: 184px;
-  padding: 20px;
+  min-height: 156px;
+  padding: 17px;
   border: 1px solid var(--wao-line);
   border-radius: 14px;
   background: var(--wao-bg-card);
@@ -358,7 +358,7 @@ h1 span {
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
   font-size: 21px;
-  margin-bottom: 15px;
+  margin-bottom: 11px;
 }
 .feature-tag {
   position: absolute;
@@ -374,7 +374,7 @@ h3 {
 .catalog-card p {
   margin: 0;
   font-size: 13px;
-  color: var(--wao-text-3);
+  color: var(--wao-text-2);
   line-height: 1.7;
 }
 .browse-hint {

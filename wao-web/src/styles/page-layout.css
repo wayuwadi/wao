@@ -26,6 +26,12 @@
   padding-inline: var(--wao-page-gutter);
 }
 
+/* Keep page introductions aligned while inner reading areas retain their own width. */
+.shell[data-page-layout] .page-body .wao-page-frame:not(.todo-quadrant),
+.tab-page-window.floating[data-page-layout] .window-content .wao-page-frame:not(.todo-quadrant) {
+  padding-block-start: clamp(22px, 2vw, 30px);
+}
+
 .shell[data-page-layout] .content,
 .shell[data-page-layout] .spane,
 :is(.shell, .tab-page-window.floating)[data-page-layout] .doc-scroll {

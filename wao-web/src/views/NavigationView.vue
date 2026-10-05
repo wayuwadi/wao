@@ -431,7 +431,7 @@ button:disabled {
 .search span,
 .search kbd {
   font-size: 11px;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-3);
 }
 .domains {
   display: flex;
@@ -466,8 +466,8 @@ button:disabled {
   margin-bottom: 11px;
 }
 .catalog-section header > span {
-  color: var(--wao-text-faint);
-  font-size: 11px;
+  color: var(--wao-text-3);
+  font-size: 12px;
 }
 .function-list {
   border: 1px solid var(--wao-line);
@@ -481,6 +481,27 @@ button:disabled {
   gap: 4px;
   padding: 10px 14px 10px 5px;
   border-bottom: 1px solid var(--wao-divider);
+}
+@media (min-width: 1080px) {
+  .function-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    gap: 10px;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    background: transparent;
+  }
+  .function-row,
+  .function-row:last-child {
+    min-width: 0;
+    border: 1px solid var(--wao-line);
+    border-radius: 12px;
+    background: var(--wao-bg-card);
+  }
+  .function-row:hover {
+    border-color: var(--wao-line-control);
+  }
 }
 .navigation-center:not(.customizing) .function-row {
   padding-left: 14px;
