@@ -1,22 +1,55 @@
 <script setup lang="ts">
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { useProjectListLayoutStore } from '@/stores/projectListLayout'
 import { toast } from '@/composables/toast'
 import { onBeforeUnmount } from 'vue'
+import { useSessionStore } from '@/stores/session'
 
 const data = useDataStore()
 const ui = useUiStore()
 const projectLayout = useProjectListLayoutStore()
 const router = useRouter()
+const session = useSessionStore()
 
 const name = ref('')
 const area = ref('career')
 const goal = ref('')
 const vis = ref('仅自己可见')
+const draftError = ref('')
+const restored = ref(false)
+let restoring = false
+const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
+const draftKey = () => `wao-new-project-draft-v1:${identity()}`
+const hasInput = () => !!(name.value.trim() || goal.value.trim() || area.value !== 'career' || vis.value !== '仅自己可见')
+function rememberDraft() {
+  try {
+    if (hasInput()) sessionStorage.setItem(draftKey(), JSON.stringify({ name: name.value, area: area.value, goal: goal.value, vis: vis.value }))
+    else sessionStorage.removeItem(draftKey())
+    draftError.value = ''
+    return true
+  } catch { draftError.value = '浏览器未能保存草稿，请保持窗口打开，或点击创建项目保存到服务器。'; return false }
+}
+watch(identity, () => {
+  restoring = true
+  name.value = ''; area.value = 'career'; goal.value = ''; vis.value = '仅自己可见'
+  restored.value = false; draftError.value = ''
+  try {
+    const raw = sessionStorage.getItem(draftKey())
+    if (raw) {
+      const draft = JSON.parse(raw) as Record<string, unknown>
+      if (typeof draft.name !== 'string' || typeof draft.goal !== 'string' || typeof draft.area !== 'string'
+        || !['仅自己可见', '全部成员可见'].includes(String(draft.vis))) throw new Error('invalid draft')
+      name.value = draft.name; goal.value = draft.goal; area.value = draft.area; vis.value = String(draft.vis)
+      restored.value = true
+    }
+  } catch { draftError.value = '草稿暂时无法恢复，原副本仍保留；重新输入后可保存新草稿。' }
+  finally { restoring = false }
+}, { immediate: true, flush: 'sync' })
+watch([name, area, goal, vis], () => { if (!restoring) rememberDraft() }, { flush: 'sync' })
 
 const VIS_OPTS = [
   { label: '仅自己可见', desc: '创建后再邀请成员', icon: 'ri-lock-line' },
@@ -27,10 +60,13 @@ const saving = ref(false), error = ref('')
 async function create() {
   if (!name.value.trim() || saving.value) return
   saving.value = true; error.value = ''
+  const owner = identity(), key = draftKey()
   try {
   const p = await data.addProject({
     name: name.value.trim(), area: area.value, goal: goal.value.trim(), visAll: vis.value === '全部成员可见',
   })
+  try { sessionStorage.removeItem(key) } catch { /* 项目已创建，不能因本机清理失败重复提交。 */ }
+  if (identity() !== owner) return
   await projectLayout.consumeCreateGroupTarget(p.id)
   ui.closeModal()
   toast(`项目「${p.name}」已创建`, 'ri-checkbox-circle-fill')
@@ -41,9 +77,8 @@ async function create() {
 }
 async function requestClose() {
   if (saving.value) return
-  if (name.value.trim()) await create()
-  else if (goal.value.trim() || area.value !== 'career' || vis.value !== '仅自己可见') error.value = '请填写项目名称后保存，输入已保留。'
-  else ui.closeModal()
+  if (hasInput() && !rememberDraft()) return
+  ui.closeModal()
 }
 useOverlayDismiss(() => true, requestClose)
 onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
@@ -51,14 +86,15 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
 
 <template>
   <div class="mask" @click="requestClose"></div>
-  <div class="modal" :inert="saving"><p v-if="error" role="alert">{{ error }}</p>
+  <div class="modal" :inert="saving"><p v-if="error || draftError" role="alert">{{ error || draftError }}</p>
     <div class="head">
       <div class="title">新建项目</div>
       <span class="head-tip">软件项目或人生大事，都值得立项</span>
       <div class="spacer"></div>
-      <button class="close" @click="requestClose"><i class="ri-close-line"></i></button>
+      <button class="close" aria-label="保留草稿并关闭" @click="requestClose"><i class="ri-close-line"></i></button>
     </div>
     <input v-model="name" class="title-input" placeholder="项目名称，例如「阳台花园改造」" @keydown.enter="create" />
+    <p v-if="restored" class="foot-tip" role="status">已恢复当前页签草稿，点击创建项目后才会保存到服务器。</p>
 
     <div class="label">所属领域</div>
     <div class="pills">
@@ -81,8 +117,8 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
     <div class="foot">
       <span class="foot-tip">创建后可随时邀请成员并设置查看 / 编辑权限</span>
       <div class="spacer"></div>
-      <button class="btn-ghost" @click="requestClose">完成并关闭</button>
-      <button class="btn-primary" :disabled="!name.trim()" @click="create">创建项目</button>
+      <button class="btn-ghost" @click="requestClose">保留草稿并关闭</button>
+      <button class="btn-primary" :disabled="!name.trim() || saving" @click="create">{{ saving ? '创建中…' : '创建项目' }}</button>
     </div>
   </div>
 </template>
@@ -254,6 +290,7 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .foot-tip {
   font-size: 11.5px;

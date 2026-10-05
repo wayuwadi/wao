@@ -26,7 +26,6 @@ import {
 } from '@/api/skills'
 import { fetchPets, fetchMyPets, type PetCard } from '@/api/pets'
 import WorkspaceConnectionPanel from '@/components/capabilities/WorkspaceConnectionPanel.vue'
-import ApplicationConnectionsPanel from '@/components/capabilities/ApplicationConnectionsPanel.vue'
 import '@/styles/capabilityResources.css'
 
 function resourcePanel(loader: AsyncComponentLoader) {
@@ -71,7 +70,7 @@ const route = useRoute(),
   router = useRouter(),
   session = useSessionStore()
 const endpoint = `${location.origin}/api/mcp/workspace`
-type CapabilityType = '全部' | 'CLI' | 'MCP' | 'Skill' | '应用接入' | 'Pet'
+type CapabilityType = '全部' | 'CLI' | 'MCP' | 'Skill' | 'Pet'
 interface Entry {
   id: string
   type: CapabilityType | 'CLI / MCP'
@@ -119,7 +118,7 @@ const type = computed<CapabilityType>(() => {
   )
     return 'Skill'
   if (route.path.includes('/pets/') || route.path.includes('/publish/pet')) return 'Pet'
-  return ['CLI', 'MCP', 'Skill', '应用接入', 'Pet'].includes(String(route.query.type))
+  return ['CLI', 'MCP', 'Skill', 'Pet'].includes(String(route.query.type))
     ? (String(route.query.type) as CapabilityType)
     : '全部'
 })
@@ -135,8 +134,8 @@ const types = computed<CapabilityType[]>(() =>
   area.value === 'published'
     ? ['全部', 'Skill', 'Pet']
     : area.value === 'connections'
-      ? ['全部', 'CLI', 'MCP', '应用接入']
-      : ['全部', 'CLI', 'MCP', 'Skill', '应用接入', 'Pet'],
+      ? ['全部', 'CLI', 'MCP']
+      : ['全部', 'CLI', 'MCP', 'Skill', 'Pet'],
 )
 const builtin: Entry[] = [
   {
@@ -155,14 +154,7 @@ const builtin: Entry[] = [
     status: '现有能力',
     icon: 'ri-plug-line',
   },
-  {
-    id: 'app',
-    type: '应用接入',
-    name: '外部应用 Skill',
-    description: '外部账号与能力接入',
-    status: '规划中',
-    icon: 'ri-apps-2-line',
-  },
+
 ]
 const entries = computed<Entry[]>(() => {
   let items: Entry[]
@@ -185,7 +177,6 @@ const entries = computed<Entry[]>(() => {
         icon: 'ri-key-2-line',
         token,
       })),
-      ...builtin.filter((e) => e.id === 'app'),
     ]
   else if (area.value === 'published')
     items = [
@@ -363,7 +354,7 @@ function selectArea(value: string) {
 function selectType(value: CapabilityType) {
   keyword.value = ''
   selected.value =
-    value === 'CLI' ? 'cli' : value === 'MCP' ? 'mcp' : value === '应用接入' ? 'app' : ''
+    value === 'CLI' ? 'cli' : value === 'MCP' ? 'mcp' : ''
   catalogPane.value = 'overview'
   void router.push(rootRoute(area.value, value))
 }
@@ -631,10 +622,9 @@ onBeforeUnmount(() => {
             :key="`${route.params.handle}/${route.params.slug}`"
           />
           <PetDetailPanel v-else-if="detailKind === 'pet'" :key="String(route.params.id)" />
-          <ApplicationConnectionsPanel v-else-if="entry?.id === 'app'" />
           <WorkspaceConnectionPanel
             v-else-if="
-              (area === 'connections' && entry?.id !== 'app') ||
+              area === 'connections' ||
               (catalogPane === 'permissions' && ['cli', 'mcp'].includes(selected))
             "
             :capabilities="capabilities"
@@ -766,10 +756,19 @@ onBeforeUnmount(() => {
         </template>
       </section>
     </div>
+    <details v-if="area !== 'published' && !detailKind" class="cap-planning" :open="route.query.type === '应用接入'">
+      <summary>后续规划 · 外部应用接入</summary>
+      <p>外部应用账号接入仍在规划中，目前没有可用的授权或连接入口。</p>
+      <p>已开放的工作流包可在 <RouterLink :to="rootRoute('discover', 'Skill')">Skill 资源</RouterLink> 中浏览；安装资源不会获得账号授权。</p>
+    </details>
   </main>
 </template>
 
 <style scoped>
+.cap-planning { margin-top:20px; padding:14px 18px; border-top:1px solid var(--wao-line); color:var(--wao-text-2); font-size:13px; line-height:1.8; }
+.cap-planning summary { cursor:pointer; color:var(--wao-text-3); }
+.cap-planning p { margin:10px 0 0; }
+.cap-planning a { color:var(--wao-primary-text); }
 .cap-center {
   max-width: 1420px;
   margin: 0 auto;

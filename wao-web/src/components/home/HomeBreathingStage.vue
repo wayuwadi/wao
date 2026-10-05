@@ -4,6 +4,7 @@ import { useSessionStore } from '@/stores/session'
 import { useTheme } from '@/composables/theme'
 import WorldScene from '@/components/relax/WorldScene.vue'
 import RestCompanions from '@/components/relax/RestCompanions.vue'
+import WaoLogo from '@/components/WaoLogo.vue'
 import { worldById, type WorldId } from '@/components/relax/worlds'
 import {
   BreathingSession,
@@ -616,7 +617,7 @@ onBeforeUnmount(() => {
     <div ref="content" class="stage-content" :inert="complete || !!pendingMode">
       <header v-if="!props.restful" class="entry-header">
         <a class="entry-brand" href="/breathe" aria-label="WAO 一呼一吸首页"
-          >WAO <span>· 一呼一吸</span></a
+          ><WaoLogo wordmark tone="current" /><span>· 一呼一吸</span></a
         >
         <div class="entry-tools">
           <button
@@ -1860,6 +1861,9 @@ input[type='range'] {
   z-index: 2;
 }
 .entry-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   color: var(--text);
   text-decoration: none;
   font-size: 18px;

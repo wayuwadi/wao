@@ -20,6 +20,7 @@ type TaskRowView = ReturnType<ReturnType<typeof useDeco>['decoTask']>
  * 下拉菜单悬浮在表格之上（CellMenu），点整个单元格任意处都能打开。
  */
 const props = defineProps<{
+  columns?: readonly string[]
   task: TaskRowView
   groups: TaskGroup[]
   groupId: string
@@ -29,6 +30,7 @@ const props = defineProps<{
   orderSide?: 'before' | 'after'
   dragging: boolean
 }>()
+const hasColumn = (key: string) => props.columns?.includes(key) ?? true
 const emit = defineEmits<{ 'toggle-subs': []; open: []; completed: []; 'add-sub': []; detach: [] }>()
 const data = useDataStore()
 const session = useSessionStore()
@@ -117,8 +119,8 @@ function commitRename() {
 
 <template>
   <tr class="task-row" :class="{ done: task.status === '已完成', dragging, 'order-before': orderSide === 'before', 'order-after': orderSide === 'after' }" draggable="true" @click="emit('open')">
-    <td class="table-number wao-tabular">{{ task.number ?? '…' }}</td>
-    <td>
+    <td v-if="hasColumn('number')" class="table-number wao-tabular">{{ task.number ?? '…' }}</td>
+    <td v-if="hasColumn('title')">
       <div class="title-cell" :style="{ paddingLeft: `${(depth ?? 0) * 20}px` }">
         <button
           v-if="task.subs.length || childTaskCount"
@@ -159,12 +161,12 @@ function commitRename() {
         </template>
       </div>
     </td>
-    <td @click.stop>
+    <td v-if="hasColumn('group')" @click.stop>
       <select class="cell-input" :disabled="!!task.parentTaskId" :value="groupId" :aria-label="`${task.title} 所在分组`" title="修改分组" @change="changeGroup">
         <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
       </select>
     </td>
-    <td ref="prCell" class="cell-pop" @click.stop="toggle('pr')">
+    <td v-if="hasColumn('priority')" ref="prCell" class="cell-pop" @click.stop="toggle('pr')">
       <button class="priority" :style="{ background: PRIORITY_COLOR[task.pr] ?? '#9aa0ab' }" :aria-label="`修改 ${task.title} 的优先级`" aria-haspopup="menu" :aria-expanded="menu === 'pr'">{{ task.pr }}</button>
       <CellMenu v-if="menu === 'pr'" :anchor="prCell" @close="menu = null">
         <button v-for="pr in PRIORITIES" :key="pr" role="menuitemradio" :aria-checked="task.pr === pr" :class="{ on: task.pr === pr }" @click="changePriority(pr)">
@@ -173,7 +175,7 @@ function commitRename() {
         </button>
       </CellMenu>
     </td>
-    <td
+    <td v-if="hasColumn('status')"
       ref="statusCell"
       class="cell-pop"
       :title="failed ? '状态保存失败，点击重试' : '点击修改状态'"
@@ -204,7 +206,7 @@ function commitRename() {
         </button>
       </CellMenu>
     </td>
-    <td ref="ownerCell" class="cell-pop" :title="`负责人：${task.ownerName}，点击修改`" @click.stop="toggle('owner')">
+    <td v-if="hasColumn('owner')" ref="ownerCell" class="cell-pop" :title="`负责人：${task.ownerName}，点击修改`" @click.stop="toggle('owner')">
       <button class="table-member member-trigger" :aria-label="`修改 ${task.title} 的负责人`" aria-haspopup="menu" :aria-expanded="menu === 'owner'">
         <span class="member-av" :style="{ background: task.ownerColor }">{{ task.ownerInitial }}</span><span class="member-name">{{ task.ownerName }}</span>
       </button>
@@ -215,17 +217,17 @@ function commitRename() {
         </button>
       </CellMenu>
     </td>
-    <td :title="creator ? `创建者：${creator.name}（系统记录）` : '历史任务没有创建者记录'">
+    <td v-if="hasColumn('creator')" :title="creator ? `创建者：${creator.name}（系统记录）` : '历史任务没有创建者记录'">
       <span v-if="creator" class="table-member"><span class="member-av" :style="{ background: creator.color }">{{ creator.initial }}</span><span class="member-name">{{ creator.name }}</span></span>
       <span v-else class="faint">—</span>
     </td>
-    <td class="wao-tabular created-date" :title="task.createdAt ? `创建于 ${task.createdAt.replace('T', ' ').slice(0, 16)}` : '历史任务没有创建时间'">
+    <td v-if="hasColumn('created')" class="wao-tabular created-date" :title="task.createdAt ? `创建于 ${task.createdAt.replace('T', ' ').slice(0, 16)}` : '历史任务没有创建时间'">
       <span v-if="createdDate">{{ createdDate }}</span><span v-else class="faint">—</span>
     </td>
-    <td @click.stop>
+    <td v-if="hasColumn('start')" @click.stop>
       <input class="cell-input date" :class="{ empty: !task.start }" type="date" :value="task.start || ''" :max="task.due || undefined" :aria-label="`${task.title} 计划开始`" @change="changeDate('start', $event)" />
     </td>
-    <td @click.stop>
+    <td v-if="hasColumn('due')" @click.stop>
       <input class="cell-input date" :class="{ empty: !task.due }" type="date" :value="task.due || ''" :min="task.start || undefined" :style="{ color: task.dueColor }" :aria-label="`${task.title} 截止日期`" @change="changeDate('due', $event)" />
     </td>
   </tr>

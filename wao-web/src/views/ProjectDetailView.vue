@@ -34,6 +34,7 @@ import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import ProjectTaskRow from '@/components/task/ProjectTaskRow.vue'
 import { AI_RUN_ENABLED } from '@/config/features'
+import { PROJECT_TABLE_COLUMNS, DEFAULT_PROJECT_TABLE_COLUMNS, readProjectTableColumns, type ProjectTableColumn } from '@/utils/projectTableColumns'
 
 const route = useRoute()
 const router = useRouter()
@@ -131,7 +132,26 @@ function columnPreference(kind: string) {
 const showEmptyColumns = columnPreference('empty-columns-v1')
 /** 表格视图是否按任务分组分段展示（与「分组」视图共用同一份分组数据，可在表格里直接改）。 */
 const tableGrouped = columnPreference('table-grouped-v1')
-type TableSortColumn = 'number' | 'title' | 'group' | 'priority' | 'status' | 'owner' | 'creator' | 'created' | 'start' | 'due'
+type TableSortColumn = ProjectTableColumn
+const visibleColumnKeys = ref<ProjectTableColumn[]>([...DEFAULT_PROJECT_TABLE_COLUMNS])
+const columnSaveError = ref('')
+const columnKey = () => `wao-project-table-columns-v1:${session.account?.accountId ?? ''}:${session.userId}`
+watch(columnKey, () => {
+  columnSaveError.value = ''
+  try { visibleColumnKeys.value = readProjectTableColumns(localStorage.getItem(columnKey())) }
+  catch { visibleColumnKeys.value = [...DEFAULT_PROJECT_TABLE_COLUMNS]; columnSaveError.value = '浏览器暂时无法读取字段偏好，当前使用常用字段。' }
+}, { immediate: true })
+const visibleColumns = computed(() => PROJECT_TABLE_COLUMNS.filter(column => visibleColumnKeys.value.includes(column.key)))
+const tableMinWidth = computed(() => 280 + visibleColumns.value.reduce((total, column) => total + column.width, 0))
+function saveColumns(keys: ProjectTableColumn[]) {
+  visibleColumnKeys.value = PROJECT_TABLE_COLUMNS.filter(column => column.key === 'title' || keys.includes(column.key)).map(column => column.key)
+  try { localStorage.setItem(columnKey(), JSON.stringify(visibleColumnKeys.value)); columnSaveError.value = '' }
+  catch { columnSaveError.value = '字段已临时调整，但浏览器未能保存偏好。请重试。' }
+}
+function toggleColumn(key: ProjectTableColumn) {
+  if (key === 'title') return
+  saveColumns(visibleColumnKeys.value.includes(key) ? visibleColumnKeys.value.filter(item => item !== key) : [...visibleColumnKeys.value, key])
+}
 const tableSort = ref<{ column: TableSortColumn; direction: 'asc' | 'desc' } | null>(null)
 function toggleTableSort(column: TableSortColumn) {
   tableSort.value = { column, direction: tableSort.value?.column === column && tableSort.value.direction === 'asc' ? 'desc' : 'asc' }
@@ -727,6 +747,10 @@ watch(visibleTaskIds, (ids) => {
         <details ref="displaySettings" class="project-display-settings" @keydown.esc.stop.prevent="closeDisplaySettings(true)">
           <summary ref="displaySettingsTrigger"><i class="ri-equalizer-line" aria-hidden="true"></i>显示设置<i class="ri-arrow-down-s-line" aria-hidden="true"></i></summary>
           <div class="display-settings-panel">
+            <span class="display-settings-label">表格字段 · 本浏览器成员偏好</span>
+            <div class="table-seg" role="group" aria-label="字段快捷配置"><button type="button" @click="saveColumns([...DEFAULT_PROJECT_TABLE_COLUMNS])">常用字段</button><button type="button" @click="saveColumns(PROJECT_TABLE_COLUMNS.map(column => column.key))">全部字段</button></div>
+            <div class="column-choices" role="group" aria-label="表格可见字段"><label v-for="column in PROJECT_TABLE_COLUMNS" :key="column.key"><input type="checkbox" :checked="visibleColumnKeys.includes(column.key)" :disabled="column.key === 'title'" @change="toggleColumn(column.key)" />{{ column.label }}</label></div>
+            <p v-if="columnSaveError" role="alert">{{ columnSaveError }}<button type="button" @click="saveColumns(visibleColumnKeys)">重试保存字段</button></p>
             <span class="display-settings-label">表格分组方式</span>
             <div class="table-seg" role="group" aria-label="表格分组方式">
               <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
@@ -813,28 +837,11 @@ watch(visibleTaskIds, (ids) => {
       <template v-if="pdTaskView === 'list'">
       <div class="task-list-card task-table-scroll">
         <TaskOrderStatus :scope="orderScope" />
-        <table class="project-task-table" aria-label="项目任务表格">
-          <colgroup>
-            <col style="width: 64px" />
-            <col style="width: auto" />
-            <col style="width: 112px" />
-            <col style="width: 64px" />
-            <col style="width: 92px" />
-            <col style="width: 88px" />
-            <col style="width: 88px" />
-            <col style="width: 96px" />
-            <col style="width: 124px" />
-            <col style="width: 124px" />
-          </colgroup>
+        <table :style="{ minWidth: `${tableMinWidth}px` }" class="project-task-table" aria-label="项目任务表格">
+          <colgroup><col v-for="column in visibleColumns" :key="column.key" :style="{ width: column.width ? `${column.width}px` : 'auto' }" /></colgroup>
           <thead>
             <tr>
-              <th v-for="column in ([
-                { key: 'number', label: 'ID' }, { key: 'title', label: '标题' },
-                { key: 'group', label: '分组' }, { key: 'priority', label: '优先级' },
-                { key: 'status', label: '状态' }, { key: 'owner', label: '负责人' },
-                { key: 'creator', label: '创建者' }, { key: 'created', label: '创建日期' },
-                { key: 'start', label: '计划开始' }, { key: 'due', label: '截止日期' },
-              ] as { key: TableSortColumn; label: string }[])" :key="column.key" scope="col" :aria-sort="sortDirection(column.key)">
+              <th v-for="column in visibleColumns" :key="column.key" scope="col" :aria-sort="sortDirection(column.key)">
                 <div class="table-title-heading">
                   <button class="table-sort" type="button" :aria-label="`按${column.label}${sortDirection(column.key) === 'ascending' ? '降序' : '升序'}排序`" @click="toggleTableSort(column.key)">
                     {{ column.label }}<i :class="sortDirection(column.key) === 'ascending' ? 'ri-arrow-up-line' : sortDirection(column.key) === 'descending' ? 'ri-arrow-down-line' : 'ri-expand-up-down-line'" aria-hidden="true"></i>
@@ -847,7 +854,7 @@ watch(visibleTaskIds, (ids) => {
           <template v-for="section in tableSections" :key="section.id">
             <tbody v-if="section.header" class="table-group">
               <tr class="table-group-row" :class="{ 'drop-hint': dragId }" @dragover.prevent @drop="onDropGroup(section.id)">
-                <td colspan="10">
+                <td :colspan="visibleColumns.length">
                   <div class="table-group-head">
                     <button class="group-collapse" :aria-label="`${section.collapsed ? '展开' : '折叠'}分组 ${section.name}`" :aria-expanded="!section.collapsed" @click="toggleGroup(section.id)"><i :class="section.collapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
                     <input
@@ -873,7 +880,7 @@ watch(visibleTaskIds, (ids) => {
             </tbody>
             <tbody v-if="quickAddGroup === section.id && !section.collapsed">
               <tr class="table-quick-add">
-                <td colspan="10">
+                <td :colspan="visibleColumns.length">
                   <div class="group-add-row" :class="{ error: quickAddState === 'error' }">
                     <i :class="quickAddState === 'submitting' ? 'ri-loader-4-line spinning' : 'ri-add-line'"></i>
                     <input
@@ -896,6 +903,7 @@ watch(visibleTaskIds, (ids) => {
                 <tbody>
                   <ProjectTaskRow
                     :task="t"
+                    :columns="visibleColumnKeys"
                     :depth="depth"
                     :child-task-count="childTaskCount(t.id)"
                     :order-side="orderingOver?.id === t.id ? (orderingOver.after ? 'after' : 'before') : undefined"
@@ -924,18 +932,19 @@ watch(visibleTaskIds, (ids) => {
                   :add-parent-id="addingSub?.taskId === t.id ? addingSub.parentId : null"
                   :owner-filter="effectiveOwner && t.owner !== effectiveOwner ? effectiveOwner : null"
                   table
+                  :columns="visibleColumnKeys"
                   @add-sub="(parentId) => startAddSub(t.id, parentId)"
                   @close-add="addingSub = null"
                 />
               </template>
               <tbody v-if="section.header && !section.total && quickAddGroup !== section.id">
-                <tr><td colspan="10" class="empty-inline">{{ data.taskLoadState === 'error' ? '任务加载失败，请重新加载' : data.taskLoadState === 'loading' ? '正在加载任务…' : '这个分组还没有任务，点分组名旁的「+」添加' }}</td></tr>
+                <tr><td :colspan="visibleColumns.length" class="empty-inline">{{ data.taskLoadState === 'error' ? '任务加载失败，请重新加载' : data.taskLoadState === 'loading' ? '正在加载任务…' : '这个分组还没有任务，点分组名旁的「+」添加' }}</td></tr>
               </tbody>
             </template>
           </template>
           <tbody v-if="!allTasks.length && !tableGrouped">
             <tr>
-              <td colspan="10" class="empty-inline">
+              <td :colspan="visibleColumns.length" class="empty-inline">
                 {{
                   data.taskLoadState === 'error'
                     ? '任务加载失败，暂时无法确认任务数量，请重新加载'
@@ -1182,6 +1191,9 @@ watch(visibleTaskIds, (ids) => {
 </template>
 
 <style scoped>
+.column-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.column-choices label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+.column-choices input { accent-color: var(--wao-primary); }
 .project-action-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 12px; }
 .action-count-scope { color: var(--wao-text-2); margin-right: 3px; }
 .project-action-filters button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); border-radius: 6px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }

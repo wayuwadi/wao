@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { companionBrand } from '@/config/companionBrand'
 interface FurBrush {
   point: { value: THREE.Vector2 }
   direction: { value: THREE.Vector2 }
@@ -162,7 +163,7 @@ export function createCompanionModels(only?: number) {
     parent.add(m)
     return m
   }
-  const colors = [0x00b5f7, 0xffca0d, 0xf42cdb, 0xb3ec22],
+  const colors = companionBrand.map(pal => Number.parseInt(pal.color.slice(1), 16)),
     kinds = ['blue', 'yellow', 'heart', 'frog']
   const pets = kinds.flatMap((kind, i) => {
     if (only !== undefined && i !== only) return []

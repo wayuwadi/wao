@@ -10,6 +10,7 @@ import {
   watch,
 } from 'vue'
 import { useRouter } from 'vue-router'
+import { companionBrand } from '@/config/companionBrand'
 import { notificationSnapshot } from '@/composables/notificationSnapshot'
 import { livingNotification, livingNotificationText, safeLivingPath } from './livingNotifications'
 import { livingConversation, type LivingLine, type LivingWeather } from './livingWeather'
@@ -37,7 +38,7 @@ const position = ref({ left: '12px', top: '12px' })
 const navigationError = ref(''),
   navigating = ref(false)
 const placed = ref(false)
-const names = ['小画家', '小书虫', '小开心', '小青蛙']
+const names = companionBrand.map((item) => item.name)
 const paused = computed(
   () =>
     props.quiet ||

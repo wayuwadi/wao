@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { seedDataStore } from './helpers/seedDataStore'
+import { useSessionStore } from '@/stores/session'
 
 enableAutoUnmount(afterEach)
 vi.mock('@/api/favorites', async (original) => ({
@@ -23,12 +24,39 @@ async function open() {
 describe('项目显示设置与任务上下文', () => {
   beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); seedDataStore() })
 
+  it('默认常用字段，主任务与子项保持同列，完整字段和成员切换不影响标题输入', async () => {
+    const { wrapper } = await open()
+    expect(wrapper.findAll('.project-task-table th')).toHaveLength(6)
+    expect(wrapper.findAll('.task-row')[0]!.findAll('td')).toHaveLength(6)
+    for (const row of wrapper.findAll('.inline-sub-row')) expect(row.findAll('td')).toHaveLength(6)
+    await wrapper.get('.column-choices input').setValue(true)
+    expect(wrapper.findAll('.project-task-table th')).toHaveLength(7)
+    await wrapper.findAll('button').find(button => button.text() === '全部字段')!.trigger('click')
+    expect(wrapper.findAll('.project-task-table th')).toHaveLength(10)
+    expect(wrapper.findAll('.task-row')[0]!.findAll('td')).toHaveLength(10)
+    useSessionStore().accept({ accountId: 'other', member: { id: 'other', name: '乙', initial: '乙', color: '', role: '' }, identities: [], createdAt: '' })
+    await flushPromises()
+    expect(wrapper.findAll('.project-task-table th')).toHaveLength(6)
+  })
+
+  it('存储失败保持临时选择并可重试，标题字段不可隐藏', async () => {
+    const { wrapper } = await open()
+    expect(wrapper.findAll('.column-choices input')[1]!.attributes('disabled')).toBeDefined()
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('full') })
+    await wrapper.findAll('button').find(button => button.text() === '全部字段')!.trigger('click')
+    expect(wrapper.findAll('.project-task-table th')).toHaveLength(10)
+    expect(wrapper.text()).toContain('字段已临时调整')
+    storage.mockRestore()
+    await wrapper.findAll('button').find(button => button.text() === '重试保存字段')!.trigger('click')
+    expect(wrapper.text()).not.toContain('字段已临时调整')
+  })
+
   it('显示偏好仍影响原表格并按项目持久化；Esc 返回入口，外部点击不抢焦点', async () => {
     const { wrapper } = await open()
     const details = wrapper.get<HTMLDetailsElement>('.project-display-settings')
     const trigger = wrapper.get<HTMLElement>('.project-display-settings summary')
     details.element.open = true
-    await wrapper.get('.table-seg button:last-child').trigger('click')
+    await wrapper.get('[aria-label="表格分组方式"] button:last-child').trigger('click')
     expect(wrapper.find('.table-group').exists()).toBe(true)
     expect(JSON.parse(localStorage.getItem('wao-board-table-grouped-v1')!)).toMatchObject({ p1: true })
     await wrapper.get('.done-switch').trigger('click')

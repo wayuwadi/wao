@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { isNavigationFailure, NavigationFailureType, useRouter } from 'vue-router'
+import { homeJourneyExperience } from '@/composables/homeJourneyExperience'
 import WaoLogo from '@/components/WaoLogo.vue'
-import { requestRestJourney, restJourneyRequested } from '@/composables/restJourney'
-import { requestWritingJourney, writingJourneyRequested } from '@/composables/writingJourney'
+import { completeRestJourney, requestRestJourney, restJourneyRequested } from '@/composables/restJourney'
+import { requestWritingFocus, requestWritingJourney, writingJourneyRequested } from '@/composables/writingJourney'
 import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import HomeOverviewCard from '@/components/home/HomeOverviewCard.vue'
 import HomeCompanions from '@/components/home/HomeCompanions.vue'
@@ -38,8 +40,32 @@ function up(event: PointerEvent) { pointerPlay.value?.up(event); world.value?.up
 function actions(event: MouseEvent | KeyboardEvent, index?: number) {
   pointerPlay.value?.trigger(event, index)
 }
-function rest() { if (writingJourneyRequested.value) return; clearSurprises(); companions.value?.settle(); requestRestJourney() }
-function write() { clearSurprises(); companions.value?.settle(); requestWritingJourney() }
+const router = useRouter()
+const entering = ref(false)
+const entryError = ref('')
+async function enterRoutine(kind: 'rest' | 'writing') {
+  entering.value = true
+  try {
+    const path = kind === 'rest' ? '/breathe' : '/notes'
+    const failure = await router.push(path)
+    // 工作区页签注入的 currentRoute 是首页快照，成功导航以 push 的结果为准。
+    if (isNavigationFailure(failure) && !isNavigationFailure(failure, NavigationFailureType.duplicated)) throw new Error('navigation')
+    await nextTick()
+    if (kind === 'rest') completeRestJourney(false, true)
+    else requestWritingFocus()
+  } catch { entryError.value = kind === 'rest' ? '休息页面暂时未能打开，请再试一次。' : '小记暂时未能打开，请再试一次。已有草稿仍保留。' }
+  finally { entering.value = false }
+}
+function begin(kind: 'rest' | 'writing', replay = false) {
+  if (entering.value || restJourneyRequested.value || writingJourneyRequested.value) return
+  entryError.value = ''
+  clearSurprises(); companions.value?.settle()
+  if (homeJourneyExperience.value[kind] && !replay) { void enterRoutine(kind); return }
+  if (kind === 'rest') requestRestJourney()
+  else requestWritingJourney()
+}
+function rest(replay = false) { begin('rest', replay) }
+function write(replay = false) { begin('writing', replay) }
 </script>
 
 <template>
@@ -54,9 +80,16 @@ function write() { clearSurprises(); companions.value?.settle(); requestWritingJ
         <h1>留一点空白，再开始。</h1>
         <p>随时暂停手边的事，回到呼吸与静坐的空间。</p>
         <div class="home-actions">
-          <button class="rest-entrance" :disabled="restJourneyRequested || !!writingJourneyRequested" @click.stop="rest">休息一下 <span aria-hidden="true">↗</span></button>
-          <button class="rest-entrance writing-entrance" :disabled="restJourneyRequested || !!writingJourneyRequested" @click.stop="write">写点东西 <i class="ri-quill-pen-line" aria-hidden="true"></i></button>
+          <div class="entry-action">
+            <button class="rest-entrance" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="rest()">休息一下 <span aria-hidden="true">↗</span></button>
+            <button v-if="homeJourneyExperience.rest" class="journey-replay" aria-label="重看休息旅程" title="重看休息旅程" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="rest(true)"><i class="ri-replay-line" aria-hidden="true"></i></button>
+          </div>
+          <div class="entry-action">
+            <button class="rest-entrance writing-entrance" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="write()">写点东西 <i class="ri-quill-pen-line" aria-hidden="true"></i></button>
+            <button v-if="homeJourneyExperience.writing" class="journey-replay" aria-label="重看写作旅程" title="重看写作旅程" :disabled="entering || restJourneyRequested || !!writingJourneyRequested" @click.stop="write(true)"><i class="ri-replay-line" aria-hidden="true"></i></button>
+          </div>
         </div>
+        <p v-if="entryError" class="entry-error" role="alert">{{ entryError }}</p>
         <small class="play-hint">点一下伙伴，让它变成泡泡。按住留白或右键，随机遇见一点惊喜。</small>
       </div>
       <div class="home-companion-space"><HomeCompanions ref="companions" :choices="choices" :weather="living" :member="session.currentUser.id" :date="data.today" :blocked="restJourneyRequested || !!writingJourneyRequested" @random="actions" @surprise="surprise" @cancel-surprises="clearSurprises" @world="world?.story($event)" /></div>
@@ -69,6 +102,13 @@ function write() { clearSurprises(); companions.value?.settle(); requestWritingJ
 </template>
 
 <style scoped>
+.entry-action { display:flex; align-items:center; gap:2px; }
+.journey-replay { width:32px; height:36px; display:grid; place-items:center; border:0; border-radius:50%; background:transparent; color:var(--wao-text-3); cursor:pointer; font-size:16px; }
+.journey-replay:hover { color:var(--wao-primary-text); background:var(--wao-primary-soft); }
+.journey-replay:focus-visible { outline:2px solid var(--wao-primary-text); outline-offset:2px; }
+.journey-replay:disabled { opacity:.5; cursor:default; }
+.home-rest-copy .entry-error { color:var(--wao-danger); }
+
 .home { height: 100%; min-width: 0; display: flex; }
 .home-day { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .home-rest-welcome { flex: 1; min-width: 0; padding: 24px 28px 0; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); display: grid; grid-template-columns: minmax(300px, 320px) minmax(0, 1fr); grid-template-rows: auto minmax(350px, 1fr); gap: 24px; overflow: hidden; }

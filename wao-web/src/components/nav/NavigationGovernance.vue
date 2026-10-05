@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import type { NavItemId } from '@/config/nav'
+import { RETIRED_MODULE_IDS, type NavItemId } from '@/config/nav'
+import type { ModuleId } from '@/types'
 import { computed, onMounted, ref } from 'vue'
 import { useFunctionHealth } from '@/composables/functionHealth'
 import { useNavStore } from '@/stores/nav'
 const health = useFunctionHealth()
 const nav = useNavStore()
 const sortDirection = ref<'asc' | 'desc'>('desc')
-const sortedFunctions = computed(() => [...(health.overview.value?.functions ?? [])].sort((a, b) =>
+const showRetired = ref(false)
+const archivedFunctions = computed(() => (health.overview.value?.functions ?? []).filter(item => RETIRED_MODULE_IDS.has(item.featureId as ModuleId)))
+const activeFunctions = computed(() => (health.overview.value?.functions ?? []).filter(item => !RETIRED_MODULE_IDS.has(item.featureId as ModuleId)))
+const recentOpens = computed(() => (showRetired.value ? archivedFunctions.value : activeFunctions.value).reduce((sum, item) => sum + item.recentOpens, 0))
+const sortedFunctions = computed(() => [...(showRetired.value ? archivedFunctions.value : activeFunctions.value)].sort((a, b) =>
   sortDirection.value === 'desc' ? b.recentOpens - a.recentOpens : a.recentOpens - b.recentOpens,
 ))
 function toggleOpenSort() {
@@ -17,9 +22,7 @@ onMounted(() => void health.load(true))
 <template>
   <section class="governance">
     <p>
-      当前账号近 30 天真实打开：{{
-        health.overview.value?.recentOpens ?? '—'
-      }}。统计用于整理功能；未读取的数据不计为零。
+      当前账号近 30 天{{ showRetired ? '历史模块' : '在用功能' }}打开：{{ health.overview.value && !health.error.value ? recentOpens : '—' }}。统计用于整理功能；未读取的数据不计为零。
     </p>
     <p class="governance-guidance">
       打开次数只代表当前账号的访问记录，可能包含开发验收；不能直接代表功能质量或其他成员的需求。
@@ -28,7 +31,12 @@ onMounted(() => void health.load(true))
       {{ health.error.value }} <button @click="health.load(true)">重试</button>
     </div>
     <p v-if="health.loading.value" role="status">正在读取统计…</p>
-    <table v-else-if="health.overview.value">
+    <div v-if="health.overview.value && !health.error.value && archivedFunctions.length" class="archive-switch">
+      <button type="button" :aria-pressed="showRetired" @click="showRetired = !showRetired">{{ showRetired ? '返回在用功能' : `查看历史模块（${archivedFunctions.length}）` }}</button>
+      <span v-if="showRetired">已退场模块，仅保留访问记录，不提供重新启用入口。</span>
+    </div>
+    <p v-if="health.overview.value && !health.loading.value && !health.error.value && !sortedFunctions.length" role="status">{{ showRetired ? '没有历史模块记录。' : '暂无在用功能的访问记录。' }}</p>
+    <table v-if="health.overview.value && !health.loading.value && !health.error.value && sortedFunctions.length">
       <thead>
         <tr>
           <th>功能</th>
@@ -50,6 +58,9 @@ onMounted(() => void health.load(true))
   </section>
 </template>
 <style scoped>
+.archive-switch { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin:16px 0; }
+.archive-switch button { border:1px solid var(--wao-line); border-radius:8px; padding:8px 12px; color:var(--wao-text-2); background:var(--wao-bg-card); cursor:pointer; }
+.archive-switch span { color:var(--wao-text-3); font-size:12px; }
 .governance {
   overflow: auto;
   font-size: 13px;
