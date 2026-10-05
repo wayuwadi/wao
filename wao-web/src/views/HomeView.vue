@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import WaoLogo from '@/components/WaoLogo.vue'
 import { requestRestJourney, restJourneyRequested } from '@/composables/restJourney'
 import { requestWritingJourney, writingJourneyRequested } from '@/composables/writingJourney'
@@ -12,7 +12,13 @@ import HomePointerPlay from '@/components/home/HomePointerPlay.vue'
 import { createWorldChoices } from '@/components/home/companionWorld'
 import type { SurpriseStyle } from '@/components/home/companionSurprises'
 import { useDataStore } from '@/stores/data'
+import { useWeatherStore } from '@/stores/weather'
+import { useSessionStore } from '@/stores/session'
+import { livingWeather } from '@/components/home/livingWeather'
 const data = useDataStore()
+const weather = useWeatherStore()
+const session = useSessionStore()
+const living = computed(() => livingWeather(weather.days.find(day => day.date === data.today), weather.loaded && !!weather.prefs.location && !weather.forecasting && !weather.forecastError && !weather.stale))
 const companions = ref<InstanceType<typeof HomeCompanions>>()
 const surprises = ref<InstanceType<typeof HomeSurprises>>()
 const world = ref<InstanceType<typeof HomeHiddenWorld>>()
@@ -41,7 +47,7 @@ function write() { clearSurprises(); companions.value?.settle(); requestWritingJ
     <section class="home-rest-welcome">
       <header class="home-day">
         <HomeOverviewCard />
-        <WeatherPanel surface="calendar" :date="data.today" toolbar glance />
+        <div class="home-weather-glance" title="今日天气预报，非实时天气"><WeatherPanel surface="calendar" :date="data.today" toolbar glance /></div>
       </header>
       <div class="home-rest-copy">
         <p class="home-brand-signature"><WaoLogo wordmark /><span>· 一呼一吸</span></p>
@@ -53,7 +59,7 @@ function write() { clearSurprises(); companions.value?.settle(); requestWritingJ
         </div>
         <small class="play-hint">点一下伙伴，让它变成泡泡。按住留白或右键，随机遇见一点惊喜。</small>
       </div>
-      <div class="home-companion-space"><HomeCompanions ref="companions" :choices="choices" @random="actions" @surprise="surprise" @cancel-surprises="clearSurprises" @world="world?.story($event)" /></div>
+      <div class="home-companion-space"><HomeCompanions ref="companions" :choices="choices" :weather="living" :member="session.currentUser.id" :date="data.today" :blocked="restJourneyRequested || !!writingJourneyRequested" @random="actions" @surprise="surprise" @cancel-surprises="clearSurprises" @world="world?.story($event)" /></div>
     </section>
     <HomeSurprises ref="surprises" />
     <HomeHiddenWorld ref="world" :anchors="anchors" :choices="choices" @story="companions?.story($event)" />

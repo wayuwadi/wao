@@ -3,6 +3,7 @@ interface FurBrush {
   point: { value: THREE.Vector2 }
   direction: { value: THREE.Vector2 }
   strength: { value: number }
+  clothingCut: { value: number }
 }
 
 /** 独立程序化角色与毛绒材质，不加载外站模型。每次创建拥有自己的资源。 */
@@ -112,10 +113,12 @@ export function createCompanionModels(only?: number) {
         shader.uniforms.brushPoint = brush.point
         shader.uniforms.brushDirection = brush.direction
         shader.uniforms.brushStrength = brush.strength
-        shader.vertexShader = `attribute float furWeight; uniform vec2 brushPoint; uniform vec2 brushDirection; uniform float brushStrength;\n${shader.vertexShader}`
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nfloat nearBrush = 1.0 - smoothstep(0.05, 0.5, distance(position.xy, brushPoint));\ntransformed.xy += brushDirection * brushStrength * nearBrush * furWeight * 0.09;')
+        shader.uniforms.clothingCut = brush.clothingCut
+        shader.vertexShader = `attribute float furWeight; uniform vec2 brushPoint; uniform vec2 brushDirection; uniform float brushStrength; varying float furHeight;\n${shader.vertexShader}`
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nfurHeight = position.y;\nfloat nearBrush = 1.0 - smoothstep(0.05, 0.5, distance(position.xy, brushPoint));\ntransformed.xy += brushDirection * brushStrength * nearBrush * furWeight * 0.09;')
+        shader.fragmentShader = `varying float furHeight; uniform float clothingCut;\n${shader.fragmentShader}`.replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (furHeight < clothingCut) discard;')
       }
-      material.customProgramCacheKey = () => 'wao-fur-brush-v1'
+      material.customProgramCacheKey = () => 'wao-fur-brush-wardrobe-v2'
     }
     root.add(
       new THREE.LineSegments(
@@ -166,8 +169,9 @@ export function createCompanionModels(only?: number) {
     const group = new THREE.Group(),
       body = new THREE.Group()
     group.add(body)
-    const brush: FurBrush = { point: { value: new THREE.Vector2() }, direction: { value: new THREE.Vector2() }, strength: { value: 0 } }
+    const brush: FurBrush = { point: { value: new THREE.Vector2() }, direction: { value: new THREE.Vector2() }, strength: { value: 0 }, clothingCut: { value: -10 } }
     const shape = furBody(kind, colors[i]!, brush)
+    shape.name = 'companion-fur-body'
     body.add(shape)
     const eyes: THREE.Object3D[] = [],
       pupils: THREE.Mesh[] = []

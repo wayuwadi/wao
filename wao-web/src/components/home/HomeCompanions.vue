@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { companionEditing, companionQuiet as quiet, setCompanionQuiet } from '@/composables/quietCompanions'
 import type { createCompanionScene } from './companionScene'
 import type { CompanionActivity } from './companionActivities'
 import type { SurpriseStyle } from './companionSurprises'
 import type { WorldStory, WorldChoices } from './companionWorld'
+import HomeLivingCorner from './HomeLivingCorner.vue'
+import { plainWeather, type LivingWeather } from './livingWeather'
 
-const props = defineProps<{ choices?: WorldChoices }>()
+const props = defineProps<{ choices?: WorldChoices; weather?: LivingWeather; member?: string; date?: string; blocked?: boolean }>()
+const living = computed(() => props.weather ?? plainWeather)
 const emit = defineEmits<{ random: [event: MouseEvent | KeyboardEvent, index: number]; surprise: [style: SurpriseStyle]; cancelSurprises: []; world: [story: WorldStory] }>()
 const host = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
@@ -60,6 +63,7 @@ async function load() {
     })
     controller.setQuiet(quiet.value || companionEditing.value)
     controller.setActive(active)
+    controller.setWeather?.(living.value)
     ready.value = true
   } catch {
     if (!disposed && token === generation) fallback()
@@ -70,6 +74,9 @@ function toggleQuiet() {
   message.value = ''
 }
 watch([quiet, companionEditing], ([silent, editing]) => { controller?.setQuiet(silent || editing); message.value = '' })
+watch(living, value => controller?.setWeather?.(value))
+const livingIdle = () => controller?.idle?.() ?? true
+const livingAnchors = () => controller?.anchors?.() ?? []
 async function perform(kind: CompanionActivity) {
   if (quiet.value) { toggleQuiet(); await nextTick() }
   if (!controller?.activity(kind)) say('今天安静陪着你，休息就好。')
@@ -108,6 +115,7 @@ onBeforeUnmount(() => {
 <template>
   <section ref="host" class="home-companions" :class="{ ready, quiet }" aria-label="首页四个伙伴">
     <canvas :key="canvasKey" ref="canvas" aria-hidden="true" />
+    <HomeLivingCorner :weather="living" :member="member ?? ''" :date="date ?? ''" :quiet="quiet || companionEditing" :blocked="!!blocked || !!message" :idle="livingIdle" :anchors="livingAnchors" />
     <button
       v-for="(name, index) in names"
       :key="name"
@@ -122,7 +130,7 @@ onBeforeUnmount(() => {
       @click="interact($event, index)"
     >
       <span class="companion-fallback" aria-hidden="true"
-        ><span class="fallback-eyes">● ●</span></span
+        ><span class="fallback-eyes">● ●</span><span v-if="living.clothes !== 'plain'" class="fallback-clothes" :data-clothes="living.clothes"></span><span v-if="living.scarf" class="fallback-scarf"></span></span
       >
     </button>
     <div class="companion-actions">
@@ -156,6 +164,7 @@ canvas {
   width: 100%;
   height: 100%;
   pointer-events: none;
+  z-index: 1;
   opacity: 0;
   transition: opacity 0.25s;
 }
@@ -186,6 +195,8 @@ canvas {
   cursor: grabbing;
 }
 .companion-fallback {
+  position: relative;
+  overflow: hidden;
   display: block;
   width: 100%;
   height: 100%;
@@ -210,6 +221,10 @@ canvas {
   color: #24272b;
   letter-spacing: 5px;
 }
+.fallback-clothes { position:absolute; inset:62% 2% 0; border-radius:6px 6px 25% 25%; background:#8299bc; }
+.companion-1 .fallback-clothes { background:#ad875d; }.companion-2 .fallback-clothes { background:#d6a7bd; }.companion-3 .fallback-clothes { background:#85996b; }
+.fallback-clothes[data-clothes="light"] { background:#ece6d5; }.fallback-clothes[data-clothes="raincoat"] { background:#dec16a; }.fallback-clothes[data-clothes="winter"] { filter:brightness(.85); }
+.fallback-scarf { position:absolute; top:59%; left:0; right:0; height:7px; background:#d29958; }
 .ready .companion-fallback {
   visibility: hidden;
 }
@@ -258,7 +273,7 @@ canvas {
   position: absolute;
   z-index: 5;
   pointer-events: none;
-  max-width: calc(100% - 24px);
+  max-width: min(220px, calc(100% - 24px));
   background: var(--wao-bg-card);
   color: var(--wao-text);
   border: 1px solid var(--wao-line);

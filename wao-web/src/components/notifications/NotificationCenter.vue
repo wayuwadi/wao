@@ -10,10 +10,13 @@ import {
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { hasDesktopToolbar } from '@/utils/desktopToolbar'
+import { useSessionStore } from '@/stores/session'
+import { publishNotificationSnapshot, notificationSnapshot } from '@/composables/notificationSnapshot'
 
 const props = defineProps<{ row?: boolean; returnFocus?: HTMLElement }>()
 const emit = defineEmits<{ 'unread-change': [value: boolean]; opened: [] }>()
 const router = useRouter()
+const session = useSessionStore()
 const route = useRoute()
 const trigger = ref<HTMLButtonElement>()
 const closeButton = ref<HTMLButtonElement>()
@@ -46,9 +49,12 @@ async function load(silent = false): Promise<boolean> {
   if (silent && snapshot.value) refreshing.value = true
   else loading.value = !snapshot.value
   loadError.value = ''
+  const member = session.currentUser.id
   loadPromise = fetchNotificationCenter()
     .then((value) => {
+      if (session.currentUser.id !== member) return false
       snapshot.value = value
+      publishNotificationSnapshot(member, value)
       return true
     })
     .catch((cause: unknown) => {
@@ -65,10 +71,13 @@ async function load(silent = false): Promise<boolean> {
 
 async function markRead() {
   if (!hasUnread.value) return
+  const member = session.currentUser.id
   readError.value = ''
   try {
     const readAt = await markNotificationCenterRead()
+    if (member !== session.currentUser.id) return
     if (snapshot.value) snapshot.value = { ...snapshot.value, unreadCount: 0, readAt }
+    if (snapshot.value) publishNotificationSnapshot(member, snapshot.value)
   } catch (cause) {
     readError.value =
       cause instanceof Error ? cause.message : '已读状态同步失败，下次打开会继续保留提醒'
@@ -118,6 +127,11 @@ function timeText(value: string | null): string {
 
 useOverlayDismiss(() => open.value, () => close())
 watch(() => route.fullPath, () => close(false))
+watch(() => session.currentUser.id, () => {
+  snapshot.value = null
+  notificationSnapshot.value = null
+  close(false)
+})
 
 onMounted(() => {
   void load()

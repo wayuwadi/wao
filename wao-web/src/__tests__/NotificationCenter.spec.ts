@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { createPinia } from 'pinia'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import type { NotificationCenterSnapshot } from '@/api/notificationCenter'
 
@@ -80,7 +81,7 @@ async function mounted() {
   return {
     router,
     wrapper: mount(NotificationCenter, {
-      global: { plugins: [router], stubs: { Teleport: true } },
+      global: { plugins: [router, createPinia()], stubs: { Teleport: true } },
     }),
   }
 }
@@ -192,4 +193,3 @@ describe('右上角通知中心', () => {
     wrapper.unmount()
   })
 })
-
