@@ -1,5 +1,29 @@
 [
   {
+    "id": "release-capability-planning-2026-10-06",
+    "publishedOn": "2026-10-06",
+    "sourceSubject": "feat(capabilities): 将未开放的应用接入收进规划说明",
+    "title": "将未开放的应用接入收进规划说明",
+    "intro": "能力中心优先展示实际可用的能力与资源，未开放的应用接入保留在折叠说明中。",
+    "highlights": [
+      {
+        "featureId": "capabilities",
+        "eyebrow": "体验精简",
+        "title": "将未开放的应用接入收进规划说明",
+        "summary": "能力中心优先展示实际可用的能力与资源，未开放的应用接入保留在折叠说明中。",
+        "points": [
+          "筛选与列表只展示可用类型。",
+          "旧应用接入深链仍可查看规划。",
+          "CLI/MCP 权限与资源发布不变。"
+        ],
+        "steps": [
+          "打开能力中心，浏览真实资源。",
+          "需要了解后续接入时展开页面底部规划说明。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-search-task-snippets-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "feat(navigation): 搜索任务时展示命中原文并定位子任务",

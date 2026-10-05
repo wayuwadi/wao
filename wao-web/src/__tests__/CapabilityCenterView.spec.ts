@@ -93,14 +93,19 @@ describe('能力中心真实目录与区域', () => {
     expect(group.attributes('style') ?? '').not.toContain('display: none')
     expect(group.text()).toContain('读取任务')
     expect(wrapper.text()).toContain('1 项业务操作')
-    await wrapper
-      .get('.cap-type-filters')
-      .findAll('button')
-      .find((b) => b.text() === '应用接入')!
-      .trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('规划中')
-    expect(wrapper.text()).not.toContain('已连接 2')
+    expect(wrapper.get('.cap-type-filters').text()).not.toContain('应用接入')
+    expect(wrapper.get('.cap-entry-grid').text()).not.toContain('外部应用')
+    expect(wrapper.get('.cap-planning').attributes('open')).toBeUndefined()
+    wrapper.unmount()
+  })
+  it('旧应用接入深链展开规划说明，同时保留真实能力列表', async () => {
+    const { wrapper, router } = await render('/capabilities?type=应用接入')
+    expect(wrapper.get('.cap-planning').attributes('open')).toBeDefined()
+    expect(wrapper.get('.cap-planning').text()).toContain('目前没有可用的授权')
+    expect(wrapper.get('.cap-entry-grid').text()).toContain('WAO CLI')
+    expect(wrapper.get('.cap-entry-grid').text()).not.toContain('外部应用')
+    await wrapper.get('.cap-planning a').trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.query.type).toBe('Skill')
     wrapper.unmount()
   })
   it('游客不能签发，目录失败可重试且不会显示虚假能力', async () => {
