@@ -75,7 +75,10 @@ public class NoteDiscoveryService {
         String state=!flag(s,"enabled")?(number(s,"enable_generation")==0?"OFF":"PAUSED"):!availableFor(member)?"UNAVAILABLE":
                 job!=null&&"FAILED".equals(string(job,"status"))?"FAILED":job!=null&&"DEFERRED".equals(string(job,"status"))?"DEFERRED":string(s,"active_job_id")!=null?"PROCESSING":"READY";
         result.put("discovery",item);result.put("automationState",state);result.put("lastOutcome",string(job,"result_type"));
-        result.put("revision",number(s,"change_seq")+":"+Objects.toString(id,""));return result;
+        result.put("revision",number(s,"change_seq")+":"+Objects.toString(id,""));
+        var coverage=db.one("SELECT COUNT(*) AS eligible,SUM(CASE WHEN n.indexed_rev IS NOT NULL AND n.indexed_rev=d.rev THEN 1 ELSE 0 END) AS indexed FROM doc d JOIN kb k ON k.id=d.kb_id LEFT JOIN note_discovery_note_state n ON n.doc_id=d.id AND n.member_id=? WHERE d.author_id=? AND k.notes=1 AND k.deleted_at IS NULL AND d.deleted_at IS NULL AND d.archived_at IS NULL AND COALESCE(d.auto,0)=0 AND d.updated_at>=TIMESTAMPADD(DAY,-90,CURRENT_TIMESTAMP(6))",member,member);
+        var latest=db.one("SELECT source_count FROM note_mining_job WHERE member_id=? AND origin='AUTO' ORDER BY created_at DESC,id DESC LIMIT 1",member);
+        result.put("coverage",Map.of("days",90,"eligible",number(coverage,"eligible"),"indexed",number(coverage,"indexed"),"analyzed",number(latest,"source_count")));return result;
     }
     private boolean flagFeedback(String member,String id,String field) {
         var f=db.one("SELECT * FROM note_discovery_feedback WHERE member_id=? AND item_id=?",member,id);return f!=null&&f.get(field)!=null;

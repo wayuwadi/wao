@@ -848,7 +848,7 @@ public class KnowledgeService {
                 existing.setUpdatedAt(LocalDateTime.now());
                 docMapper.updateContentSnapshot(existing);
             }
-            discoverySaved(existing, "USER");
+            discoverySaved(existing, NoteAiManagedService.derived()?"AI_DERIVED":"USER");
             return noteSaved(toDto(existing),author,req.title(),req);
         }
         KbEntity kb = notesKb();
@@ -1211,7 +1211,7 @@ public class KnowledgeService {
         e.setTagsJson(tags == null ? null : write(tags));
         e.setOrd(nextOrd(count));
         docMapper.insert(e);
-        discoverySaved(e, "USER");
+        discoverySaved(e, NoteAiManagedService.derived()?"AI_DERIVED":"USER");
         return toDto(e);
     }
 

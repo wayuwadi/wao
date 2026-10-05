@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class LocalCodexConversationCompletion {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.beans.factory.ObjectProvider<NoteAiCompanionService> noteCompanion;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     private org.springframework.beans.factory.ObjectProvider<TianrenVisualService> tianrenVisuals;
     private final AiAssistantRunMapper runs;
     private final AiAssistantConversationService conversations;
@@ -18,6 +20,8 @@ public class LocalCodexConversationCompletion {
     /** 成功终态和成员私有回复同时提交；失败回滚后仍走既有可重试失败收口。 */
     @Transactional
     public int complete(AiAssistantRunEntity run, String claim, String response) {
+        if ("NOTE_CONVERSATION".equals(run.getUsagePurpose()) && noteCompanion != null)
+            noteCompanion.getObject().validateChatRun(run, null);
         if ("TIANREN".equals(run.getUsagePurpose()) && tianrenVisuals != null
                 && tianrenVisuals.getObject().supports(run.getId()))
             return tianrenVisuals.getObject().completeText(run, claim, response);

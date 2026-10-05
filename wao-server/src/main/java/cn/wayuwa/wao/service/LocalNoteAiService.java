@@ -34,6 +34,8 @@ public class LocalNoteAiService {
     private ObjectProvider<TianrenVisualService> tianrenVisuals;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     private org.springframework.beans.factory.ObjectProvider<NoteAiManagedService> managedNotes;
+    @Autowired(required=false)
+    private ObjectProvider<NoteAiCompanionService> companion;
     private static final Logger log = LoggerFactory.getLogger(LocalNoteAiService.class);
     private final AiAssistantRunMapper runs;
     private final ImageService images;
@@ -207,13 +209,14 @@ public class LocalNoteAiService {
             String model = run.getRequestedModel() == null ? "gpt-6-astra" : run.getRequestedModel();
             long seconds = environment.getProperty("wao.ai.local-notes.timeout-seconds", Long.class, 300L);
             if (seconds < 1 || seconds > 900) throw new IllegalStateException("本机 AI 超时配置必须为 1–900 秒");
+            if(companion!=null)companion.getObject().validateChatRun(run,null);
             result = execute(run, model, Duration.ofSeconds(seconds));
             if (TianrenVisualService.IMAGE_PURPOSE.equals(run.getUsagePurpose())) {
                 if (tianrenVisuals == null || result.png() == null) throw new IllegalStateException("本机未返回真实卦象配图");
                 tianrenVisuals.getObject().completeImage(run, claim, result.png());
                 return true;
             }
-            String response = result.text();
+            String response = companion==null?result.text():companion.getObject().validateChatRun(run,result.text());
             String storedImageId = null;
             if (result.png() != null) {
                 var stored = images.store(result.png(), "image/png", "文章总览图.png", "文章总览图 · " + run.getId());
@@ -223,11 +226,12 @@ public class LocalNoteAiService {
             int completed = run.getConversationId() == null
                     ? runs.completeProviderSucceeded(run.getId(), claim, response)
                     : conversationCompletion.complete(run, claim, response);
+            if (completed == 1 && companion != null) companion.getObject().captureRun(run, response);
             if (completed == 0) orphanImageId = storedImageId;
         } catch (Exception exception) {
             discoveryError = "CALL_FAILED";
             log.warn("本机小记 AI 执行失败：{}", exception.getClass().getSimpleName());
-            String error = exception instanceof IllegalStateException ? exception.getMessage()
+            String error = exception instanceof IllegalStateException || exception instanceof BadRequestException || exception instanceof cn.wayuwa.wao.common.ConflictException || exception instanceof cn.wayuwa.wao.common.NotFoundException ? exception.getMessage()
                     : "本机 AI 执行中断或结果无效；原文已保留，请检查本机 Codex 后点击重试";
             runs.completeProviderFailed(run.getId(), claim, error);
             if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -261,7 +265,8 @@ public class LocalNoteAiService {
                 model, effort,
                 run.getPromptText(), directory, timeout,
                 AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose())
-                        || TianrenVisualService.IMAGE_PURPOSE.equals(run.getUsagePurpose()), references);
+                        || TianrenVisualService.IMAGE_PURPOSE.equals(run.getUsagePurpose()), references,
+                () -> managedNotes!=null&&managedNotes.getObject().cancellationRequested(run.getId()));
     }
 
     /** 仅停止本实例创建的进程和 worker，保留未领取的持久队列。 */

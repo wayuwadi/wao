@@ -4,6 +4,7 @@ import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
 import { apiCreateNoteTag, apiPatchDoc, fetchDoc } from '@/api/board'
+import { saveCompanionDraft } from '@/api/noteAiCompanion'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { rebaseNoteDraft } from '@/utils/rebaseNoteDraft'
 import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
@@ -41,7 +42,7 @@ const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}${props.draftScope ? ':' + props.draftScope : ''}`
 type DraftBase = { title: string; tags: string[]; content: RichDocContent }
-type Draft = { sourceInputIds?: string[]; id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string }
+type Draft = { companionMessageId?: string; sourceInputIds?: string[]; id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string }
 let restored = false
 function readDraft(): Draft {
   try {
@@ -55,6 +56,7 @@ function readDraft(): Draft {
   return { id: props.note?.id ?? crypto.randomUUID().replace(/-/g, ''), text: content?.markdown ?? '', content, baseRev: props.note?.rev, tags: props.note?.tags ?? [] }
 }
 const initial = readDraft()
+const companionMessageId = ref(initial.companionMessageId || '')
 const savedContent = props.note ? latestNoteContent(props.note) : { version: 1 as const, document: null, markdown: '' }
 const savedSnapshot = ref({
   text: props.note ? savedContent.markdown : '',
@@ -351,6 +353,7 @@ async function discardAndExit() {
   tags.value = [...(persisted?.tags ?? [])]
   generatedTitle.value = persisted?.title ?? ''
   appliedAiInputs.value = []
+  companionMessageId.value = ''
   if (!persisted) id.value = crypto.randomUUID().replace(/-/g, '')
   savedSnapshot.value = { text: text.value, document: rich?.document ?? null, tags: [...tags.value], title: generatedTitle.value }
   resetting = false
@@ -371,7 +374,7 @@ watch(
   },
   { flush: 'post' },
 )
-watch([text, content, tags, generatedTitle, appliedAiInputs], () => {
+watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId], () => {
   if (resetting) return
   error.value = ''
   if (props.note && !dirty.value) {
@@ -384,7 +387,7 @@ watch([text, content, tags, generatedTitle, appliedAiInputs], () => {
   try {
     writeNoteDraft(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev,
       baseNote: baseNote ? { title: baseNote.title, tags: baseNote.tags, content: baseNote.content } : undefined,
-      tags: tags.value, generatedTitle: generatedTitle.value, sourceInputIds: appliedAiInputs.value } satisfies Draft))
+      tags: tags.value, generatedTitle: generatedTitle.value, sourceInputIds: appliedAiInputs.value, companionMessageId: companionMessageId.value } satisfies Draft))
     draftError.value = false
     status.value = '草稿已保存在此浏览器'
   } catch {
@@ -422,7 +425,7 @@ async function save(explicit = false) {
     // 模型文字已变化而结构化回调尚未到达时，以当前可见输入为准。
     const rich = content.value?.markdown === text.value
       ? content.value : { version: 1 as const, document: null, markdown: text.value }
-    const submitted = { text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value, sourceInputIds: [...appliedAiInputs.value] }
+    const submitted = { text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value, sourceInputIds: [...appliedAiInputs.value], companionMessageId: companionMessageId.value }
     let savedId: string | null
     if (props.submitNote) {
       const aiDefaults = preferences.noteAiDefaults
@@ -440,7 +443,7 @@ async function save(explicit = false) {
         const merged = rebaseNoteDraft(baseNote, { ...latest, content: latestNoteContent(latest) },
           { title: submitted.title, tags: submitted.tags, content: rich })
         try {
-          saved = await apiPatchDoc(props.note.id, {
+          saved = submitted.companionMessageId ? await saveCompanionDraft({ messageId: submitted.companionMessageId, docId: props.note.id, existing: true, expectedRev: latestRev, title: (merged.title || latest.title || '未命名小记').slice(0,80), content: merged.content, blocks: legacyProjection(merged.content), tags: merged.tags }) : await apiPatchDoc(props.note.id, {
             title: (merged.title || latest.title || firstMarkdownTextLine(submitted.text) || '未命名小记').slice(0, 80),
             sourceInputIds: submitted.sourceInputIds, content: merged.content, blocks: legacyProjection(merged.content), expectedRev: latestRev, tags: merged.tags,
           })
@@ -456,7 +459,8 @@ async function save(explicit = false) {
       baseNote = { title: saved.title, tags: [...(saved.tags ?? [])], blocks: saved.blocks, content: resolvedRichContent(saved) }
       savedId = saved.id
     } else {
-      savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags, submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : undefined)
+      if(submitted.companionMessageId){const saved=await saveCompanionDraft({ messageId: submitted.companionMessageId, docId:id.value, existing:false, expectedRev:1, title:submitted.title, content:rich, blocks:legacyProjection(rich), tags:submitted.tags });data.applyRemoteDoc(saved);savedId=saved.id}
+      else savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags, submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : undefined)
 
     }
     if (!savedId) throw new Error('正文为空，请先写点内容')
@@ -477,6 +481,7 @@ async function save(explicit = false) {
     }
     if (!props.note) {
       resetting = true
+      companionMessageId.value = ''
       text.value = ''
       content.value = undefined
       tags.value = []
@@ -489,6 +494,7 @@ async function save(explicit = false) {
       const saved = data.docById(savedId) ?? props.note
       const savedRich = resolvedRichContent(saved)
       resetting = true
+      companionMessageId.value = ''
       text.value = savedRich.markdown
       content.value = savedRich
       tags.value = [...(saved.tags ?? [])]
@@ -515,9 +521,11 @@ async function save(explicit = false) {
   }
 }
 
-function appendPlainText(value: string) {
+function appendPlainText(value: string, messageId?: string) {
   if (saving.value || props.loading) return false
-  return noteEditor.value?.appendPlainText(value) ?? false
+  const inserted=noteEditor.value?.appendPlainText(value) ?? false
+  if(inserted && messageId)companionMessageId.value = messageId
+  return inserted
 }
 defineExpose({ save, dirty, appendPlainText })
 useSaveBeforeRefresh(async () => {
