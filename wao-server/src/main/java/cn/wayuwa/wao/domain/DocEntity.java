@@ -27,6 +27,8 @@ public class DocEntity {
     private String title;
     private String authorId;
     private Boolean auto;
+    /** 展示来源，不能替代 authorId 或赋予系统权限。 */
+    private Boolean systemGenerated = false;
     private String createdLabel;
     private String updatedLabel;
     private String blocksJson;
@@ -64,6 +66,8 @@ public class DocEntity {
     public void setAuthorId(String authorId) { this.authorId = authorId; }
     public Boolean getAuto() { return auto; }
     public void setAuto(Boolean auto) { this.auto = auto; }
+    public Boolean getSystemGenerated() { return systemGenerated; }
+    public void setSystemGenerated(Boolean systemGenerated) { this.systemGenerated = systemGenerated; }
     public String getCreatedLabel() { return createdLabel; }
     public void setCreatedLabel(String createdLabel) { this.createdLabel = createdLabel; }
     public String getUpdatedLabel() { return updatedLabel; }

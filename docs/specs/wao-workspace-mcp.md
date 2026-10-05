@@ -1,5 +1,7 @@
 # WAO 工作区 MCP
 
+2026-10-06：[系统文章来源](notes-system-generated-source.md) 在既有 `create_note` / `update_document` 中增加布尔字段 `system_generated`，`list_notes.include_system` 可在分页前隐藏系统文章。来源不改变真实 author 或操作权限，更新本人小记需当前 `expected_rev`；旧授权不增加工具，旧文档创建可用受版本保护的更新补标。
+
 2026-10-04：[iOS 小记系统采集](ios-notes-system-capture.md) 不增加 tools/list 或设备权限。剪贴板/麦克风/系统分享属于人工设备入口；既有文档写入口沿用权限和版本契约，引用保护服务不会启动 MCP 自动 AI 消耗。
 
 2026-10-04 日常能力补全：新授权目录包含小记及标签、历史任务、子任务编辑与移动、评论、文档关联、模板及归档、执行安排、每日进展和全文检索。能力中心提供「日常完整」选项，先填入授权草稿，再由用户确认范围并签发；已有连接不自动扩大权限。新增工具、并发条件和验收契约见 [日常能力首批补全](workspace-mcp-daily-capabilities.md)，CLI 同步升级至 0.2.0。下方「首批工具」为原 20 项兼容基线。

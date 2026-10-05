@@ -33,7 +33,7 @@ function plainNoteText(note: Doc): string {
 export function noteCharactersCreatedOn(notes: Doc[], memberId: string, dayKey: string): number {
   if (!memberId) return 0
   return notes.reduce((sum, note) => {
-    if (note.author !== memberId || note.auto || storedDateKey(note.created) !== dayKey) return sum
+    if (note.author !== memberId || note.auto || note.systemGenerated || storedDateKey(note.created) !== dayKey) return sum
     return sum + countCharacters(plainNoteText(note))
   }, 0)
 }

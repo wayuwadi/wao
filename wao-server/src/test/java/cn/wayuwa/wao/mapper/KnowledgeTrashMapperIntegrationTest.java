@@ -42,7 +42,7 @@ class KnowledgeTrashMapperIntegrationTest {
                     folder_id VARCHAR(32) NOT NULL,
                     title VARCHAR(256) NOT NULL,
                     blocks_json VARCHAR(10000), content_json VARCHAR(10000), content_markdown VARCHAR(10000),
-                    content_version INT, links_json VARCHAR(10000), tags_json VARCHAR(10000), updated_at TIMESTAMP,
+                    content_version INT, links_json VARCHAR(10000), tags_json VARCHAR(10000), system_generated BOOLEAN DEFAULT FALSE, updated_at TIMESTAMP,
                     deleted_by VARCHAR(32), cascade_del TINYINT DEFAULT 0,
                     deleted_at TIMESTAMP NULL,
                     archived_at TIMESTAMP NULL,

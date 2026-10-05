@@ -44,6 +44,8 @@ wao tools call list_open_tasks --input '{"limit":5}'
 ```bash
 wao notes list --keyword 工作 --tags '["项目"]' --offset 0 --limit 20
 wao notes create --title "发布回顾" --file article.md --tags '["工作"]'
+wao notes create --title "系统功能介绍" --file article.md --tags '["新功能介绍"]' --system-generated true
+wao notes list --include-system false
 wao notes update DOCUMENT_ID --file article.md --expected-rev 7
 wao notes tags add DOCUMENT_ID --tags '["工作"]' --expected-rev 7
 wao notes tags remove DOCUMENT_ID --tags '["临时"]' --expected-rev 8

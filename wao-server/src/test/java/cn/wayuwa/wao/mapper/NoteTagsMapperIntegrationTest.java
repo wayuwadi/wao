@@ -23,14 +23,16 @@ class NoteTagsMapperIntegrationTest {
         jdbc.execute("""
                 CREATE TABLE doc (id VARCHAR(32) PRIMARY KEY, folder_id VARCHAR(32), title VARCHAR(256),
                 blocks_json CLOB, content_json CLOB, content_markdown CLOB, content_version INT,
-                links_json CLOB, tags_json CLOB, rev INT, updated_at TIMESTAMP, deleted_at TIMESTAMP)
+                links_json CLOB, tags_json CLOB, system_generated BOOLEAN DEFAULT FALSE, rev INT, updated_at TIMESTAMP, deleted_at TIMESTAMP)
                 """);
         jdbc.update("INSERT INTO doc (id, title, tags_json, rev) VALUES ('n1', '原文', '[]', 1)");
         DocEntity doc = new DocEntity();
         doc.setId("n1"); doc.setTitle("正文和标签一起保存"); doc.setTagsJson("[\"灵感\"]");
         doc.setRev(2); doc.setUpdatedAt(LocalDateTime.now());
+        doc.setSystemGenerated(true);
         assertThat(docs.updateIfRevision(doc, 1)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT tags_json FROM doc WHERE id='n1'", String.class)).isEqualTo("[\"灵感\"]");
+        assertThat(jdbc.queryForObject("SELECT system_generated FROM doc WHERE id='n1'", Boolean.class)).isTrue();
         doc.setTagsJson("[]");
         assertThat(docs.updateIfRevision(doc, 1)).isZero();
         assertThat(jdbc.queryForObject("SELECT tags_json FROM doc WHERE id='n1'", String.class)).isEqualTo("[\"灵感\"]");
