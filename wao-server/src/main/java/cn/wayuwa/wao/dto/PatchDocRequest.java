@@ -11,7 +11,9 @@ public record PatchDocRequest(
         String folderId,
         Integer expectedRev,
         List<String> tags,
-        List<String> sourceInputIds) {
+        List<String> sourceInputIds,
+        Boolean systemGenerated) {
+    public PatchDocRequest(String title,List<DocBlockDto> blocks,RichDocContentDto content,List<DocLinkDto> links,String folderId,Integer expectedRev,List<String> tags,List<String> sourceInputIds){this(title,blocks,content,links,folderId,expectedRev,tags,sourceInputIds,null);}
     public PatchDocRequest(String title,List<DocBlockDto> blocks,RichDocContentDto content,List<DocLinkDto> links,String folderId,Integer expectedRev,List<String> tags){this(title,blocks,content,links,folderId,expectedRev,tags,null);}
     public PatchDocRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content,
             List<DocLinkDto> links, String folderId, Integer expectedRev) {

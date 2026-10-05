@@ -135,6 +135,7 @@ watch([() => data.apiLive, kbId], ([live]) => {
   if (live) void loadArchivedDocs()
 }, { immediate: true })
 const author = computed(() => {
+  if (base.value?.systemGenerated) return { name: '系统', initial: '系', color: '#7A5CC6' }
   const a = base.value?.author ?? ''
   if (a === 'auto') return { name: '自动化', initial: '自', color: '#B9821F' }
   return session.memberById(a)

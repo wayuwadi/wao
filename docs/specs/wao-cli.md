@@ -1,5 +1,7 @@
 # WAO CLI 规格与能力台账
 
+2026-10-06：[系统文章来源](notes-system-generated-source.md) 沿用实时参数帮助：`wao notes create --system-generated true`，`wao notes update ID --system-generated true --expected-rev REV`，`wao notes list --include-system false`。默认普通记录，所有者仍为令牌成员；旧服务未声明参数时拒绝，不能扩大令牌范围。
+
 2026-10-04：[iOS 小记系统采集](ios-notes-system-capture.md) 的剪贴板、分享扩展和麦克风由设备用户主动操作，不新增 CLI/MCP 工具或旧令牌权限。既有 HTTP 小记 PUT 增加可选 `createOnly`，终端仍走原有文档创建/版本更新契约；引用 Markdown 的书摘保护在公共服务生效。后续需要批量导入时再设计固定 ID、范围和版本回执。
 
 2026-10-04：授权入口统一迁至独立「能力中心」→「我的连接」（`/capabilities?area=connections`），旧设置地址重定向。逐项授权固定操作快照和项目／知识库范围，CLI 与 MCP 共用服务端检查；旧整体令牌固定原有工具授权，不原地扩权。公开能力目录由实际服务端工具 schema 构建，包含日常 MCP 操作及 CLI 单独的 HTML 发布。Skill/Pet 与应用接入由中心管理，暂不新增终端上传、令牌签发或应用授权工具，避免设备自行扩权。当前契约见 [能力中心](capability-center.md) 和 ADR-322；下文历史规格中的旧设置入口为迁移前记录。

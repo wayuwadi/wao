@@ -14,6 +14,32 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 class WorkspaceMcpOperationsTest {
+    @Test void systemSourceCompatibilityPatchRequiresRevisionAndReadOnlyCannotMark() throws Exception {
+        docVisible(note("source", "m1", "保留正文", List.of("已有")));
+        var patch = json.readTree("{\"document_id\":\"source\",\"system_generated\":true,\"expected_rev\":4}");
+        tools.call("update_document", patch, writer);
+        var captured = ArgumentCaptor.forClass(PatchDocRequest.class);
+        verify(knowledge).updateDoc(eq("source"), captured.capture());
+        assertThat(captured.getValue().systemGenerated()).isTrue();
+        assertThat(captured.getValue().blocks()).isNull(); assertThat(captured.getValue().tags()).isNull();
+        assertThatThrownBy(() -> tools.call("update_document", json.readTree("{\"document_id\":\"source\",\"system_generated\":true}"), writer))
+                .hasMessageContaining("expected_rev");
+        assertThatThrownBy(() -> tools.call("update_document", patch, token(false, false))).hasMessageContaining("没有写权限");
+        assertThatThrownBy(() -> tools.call("create_note", json.readTree("{\"system_generated\":\"true\"}"), writer)).hasMessageContaining("类型");
+    }
+
+    @Test void noteListExcludesSystemBeforePaginationButKeepsOwnerInSummary() throws Exception {
+        DocDto personal = note("personal", "m1", "个人", List.of());
+        DocDto generated = new DocDto("system", "系统介绍", "m1", personal.created(), personal.updated(), false,
+                List.of(), personal.blocks(), null, List.of(), "kb-notes", "f", 4, List.of(), true, true);
+        when(knowledge.listDocCatalog()).thenReturn(List.of(generated, personal));
+        var all = json.valueToTree(tools.call("list_notes", json.readTree("{}"), writer));
+        assertThat(all.path("total").asInt()).isEqualTo(2);
+        var filtered = json.valueToTree(tools.call("list_notes", json.readTree("{\"include_system\":false,\"limit\":1}"), writer));
+        assertThat(filtered.path("total").asInt()).isEqualTo(1);
+        assertThat(filtered.path("items").get(0).path("id").asText()).isEqualTo("personal");
+        assertThat(filtered.path("items").get(0).path("author").asText()).isEqualTo("m1");
+    }
     final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
     final ProjectService projects = mock(ProjectService.class);
     final TaskService tasks = mock(TaskService.class);
@@ -160,7 +186,7 @@ class WorkspaceMcpOperationsTest {
         when(accounts.findByMemberId("m1")).thenReturn(identity);
         when(jdbc.query(anyString(), org.mockito.ArgumentMatchers.<org.springframework.jdbc.core.RowMapper<String>>any(), eq("m1"), eq(id)))
                 .thenReturn(List.of());
-        var a = json.readTree("{\"document_id\":\"" + id + "\",\"text\":\"  保留原样\\n\\n第二段  \"}");
+        var a = json.readTree("{\"document_id\":\"" + id + "\",\"system_generated\":true,\"text\":\"  保留原样\\n\\n第二段  \"}");
         DocDto created = note(id, "m1", "  保留原样\n\n第二段  ", List.of());
         when(knowledge.createNote(eq(id), any(), eq("m1"))).thenReturn(created);
         assertThat(tools.call("create_note", a, writer)).isEqualTo(created);
@@ -168,6 +194,7 @@ class WorkspaceMcpOperationsTest {
         verify(knowledge).createNote(eq(id), request.capture(), eq("m1"));
         assertThat(request.getValue().blocks().get(0).p()).isEqualTo("  保留原样\n\n第二段  ");
         assertThat(request.getValue().autoPolish()).isFalse();
+        assertThat(request.getValue().systemGenerated()).isTrue();
         var hash = ArgumentCaptor.forClass(String.class);
         verify(jdbc).update(startsWith("INSERT INTO workspace_mcp_note_receipt"), eq("m1"), eq(id), hash.capture());
         when(jdbc.query(anyString(), org.mockito.ArgumentMatchers.<org.springframework.jdbc.core.RowMapper<String>>any(), eq("m1"), eq(id)))

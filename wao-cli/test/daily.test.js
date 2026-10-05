@@ -16,9 +16,9 @@ const integer = { type: 'integer' }
 const nullable = { type: ['string', 'null'] }
 const tools = [
   { name: 'get_workspace_info', inputSchema: { properties: {} }, annotations: { readOnlyHint: true } },
-  { name: 'list_notes', inputSchema: { properties: { keyword: string, tags: { type: 'array', items: string }, offset: integer, limit: integer } }, annotations: { readOnlyHint: true } },
+  { name: 'list_notes', inputSchema: { properties: { keyword: string, tags: { type: 'array', items: string }, include_system: { type: 'boolean' }, offset: integer, limit: integer } }, annotations: { readOnlyHint: true } },
   { name: 'get_document', inputSchema: { properties: { document_id: string }, required: ['document_id'] }, annotations: { readOnlyHint: true } },
-  { name: 'create_note', inputSchema: { properties: { document_id: string, title: string, text: string, content: { type: 'object' }, blocks: { type: 'array' }, tags: { type: 'array', items: string } } } },
+  { name: 'create_note', inputSchema: { properties: { document_id: string, title: string, text: string, content: { type: 'object' }, blocks: { type: 'array' }, tags: { type: 'array', items: string }, system_generated: { type: 'boolean' } } } },
   { name: 'update_note_tags', inputSchema: { properties: { document_id: string, mode: { type: 'string', enum: ['add', 'remove', 'replace', 'clear'] }, tags: { type: 'array', items: string }, expected_rev: integer }, required: ['document_id', 'mode', 'expected_rev'] } },
   { name: 'schedule_task', inputSchema: { properties: { task_id: string, operation_id: string, expected_edit_version: string, start: nullable, start_at: nullable, end_at: nullable, schedule_period: nullable }, required: ['task_id', 'operation_id', 'expected_edit_version', 'start', 'start_at', 'end_at', 'schedule_period'] } },
   { name: 'record_daily_note', inputSchema: { properties: { operation_id: string, document_id: string, business_date: string, content: { type: 'object' } }, required: ['operation_id', 'document_id', 'business_date'] } },
@@ -37,6 +37,21 @@ function fixture({ visible = tools, data = args => args, fail = null } = {}) {
   } }
   return { calls, stdout, stderr, options: { clientFactory: () => client, tokenProvider: async () => 'test-token', stdout: stdout.stream, stderr: stderr.stream } }
 }
+
+test('系统小记沿用实时授权工具的显式来源，列表可隐藏且旧服务不猜测支持', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'wao-system-notes-'))
+  try {
+    const f = fixture()
+    await run(['notes', 'create', '--title', '系统介绍', '--text', '正文', '--system-generated', 'true'], { ...f.options, receiptDirectory: folder })
+    assert.equal(f.calls[0].name, 'create_note')
+    assert.equal(f.calls[0].args.system_generated, true)
+    await run(['notes', 'list', '--include-system', 'false'], f.options)
+    assert.equal(f.calls[1].args.include_system, false)
+    const old = fixture({ visible: [{ name: 'create_note', inputSchema: { properties: { title: string } } }] })
+    await assert.rejects(() => run(['notes', 'create', '--system-generated', 'true'], old.options), /参数|字段|支持/)
+    assert.equal(old.calls.length, 0)
+  } finally { await rm(folder, { recursive: true, force: true }) }
+})
 
 test('文件与多块文档的 Markdown 导出保留标题、段落、列表与引用', () => {
   assert.equal(documentMarkdown({ title: '文章', content: { markdown: '## 章节\n\n第一段\n\n第二段\n\n- 项目' }, blocks: [{ p: '旧正文' }] }), '# 文章\n\n## 章节\n\n第一段\n\n第二段\n\n- 项目\n')
