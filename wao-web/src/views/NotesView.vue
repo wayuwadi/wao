@@ -256,6 +256,7 @@ const newTag = ref('')
 const creatingTag = ref(false)
 const tagError = ref('')
 const editingIds = ref<string[]>([])
+const mobileActionsId = ref('')
 const noteDrafts = ref<Record<string, NoteDraftSnapshot>>({})
 function displayedContent(note: Doc) { return noteDrafts.value[note.id]?.content ?? latestNoteContent(note) }
 function displayedTitle(note: Doc) { return noteDrafts.value[note.id]?.title ?? note.title }
@@ -1093,7 +1094,7 @@ onMounted(() => void loadPins())
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
-        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id }" :data-note-id="note.id"
+        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id }" :data-note-id="note.id"
           tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id, $event)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta"><span class="author">{{ authorName(note.author) }}</span><time>更新于 {{ timeLabel(note.updated || note.created) }}</time>
@@ -1101,6 +1102,7 @@ onMounted(() => void loadPins())
               <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" :hold-enabled="stage === 'title'" :disabled="stage === 'title' ? retryingEnrichment.includes(note.id) : stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}${stage === 'title' ? '；长按 3 秒一键四连' : ''}`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}${stage === 'title' ? '，长按 3 秒一键四连' : ''}`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
             </div>
             <span v-if="chargingNote === note.id" class="four-charge-hint" role="status">按住 3 秒 · 松开取消</span>
+            <button class="note-mobile-actions" type="button" :aria-label="`小记操作：${note.title}`" :aria-expanded="mobileActionsId === note.id" @click.stop="mobileActionsId = mobileActionsId === note.id ? '' : note.id"><i class="ri-more-line" aria-hidden="true"></i></button>
             <span class="note-meta-trailing"><button class="note-four-action" :class="{ 'is-running': retryingEnrichment.includes(note.id) }" type="button" :disabled="retryingEnrichment.includes(note.id) || fourComplete(note.id)" :aria-label="`一键四连：${note.title}`" title="只补齐未完成的标题、配图、润色、标签" @click.stop="retryOrStart(note, 'four')"><i class="ri-sparkling-line" aria-hidden="true"></i>{{ retryingEnrichment.includes(note.id) ? '接续中…' : fourComplete(note.id) ? '四项已齐备' : '一键四连' }}</button><span v-if="!editingIds.includes(note.id)" class="note-preview-actions"><button class="note-preview-action" type="button" :aria-label="`预览小记：${note.title}`" @click.stop="startReading(note.id, $event)"><i class="ri-eye-line" aria-hidden="true"></i>预览</button><button class="note-preview-choice" type="button" :aria-label="`选择预览方式：${note.title}`" aria-haspopup="menu" @click.stop="openPreviewChoices(note.id, $event)"><i class="ri-arrow-down-s-line" aria-hidden="true"></i></button></span><button v-if="!editingIds.includes(note.id)" class="note-edit-action" type="button" :aria-label="`继续编辑小记：${note.title}`" @click.stop="editNote(note.id)"><i class="ri-edit-line" aria-hidden="true"></i>继续编辑</button><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved">已保存</span><span class="card-quick-actions"><button v-if="cardImages(note).length" type="button" aria-label="复制小记图文" title="复制图文到 ChatGPT" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" aria-label="查看原文" title="查看原文" @click.stop="readOriginals(note.id, $event)"><i class="ri-history-line" aria-hidden="true"></i></button><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" :title="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" @click="togglePin(note.id)"><i class="ri-pushpin-line"></i></button><button type="button" aria-label="复制分享链接" title="复制分享链接" @click="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-controls="confirmingDeleteId === note.id ? `note-delete-confirm-${note.id}` : undefined" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button><RouterLink class="full-doc-icon" :to="{ path: `/kb/${note.kbId}`, query: { doc: note.id } }" aria-label="完整文档" title="完整文档"><i class="ri-file-text-line" aria-hidden="true"></i></RouterLink></span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count" :aria-label="`正文 ${noteCounts[note.id]?.toLocaleString('zh-CN')} 字`">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span></span></div>
             <p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id) && workflowMessage(note.id))" class="workflow-status" role="status">{{ noteDrafts[note.id] ? '草稿已保护 · 有修改待保存' : workflowMessage(note.id) }} <button v-if="!noteDrafts[note.id] && (serverFailed(note.id) || canRetryAutoNoteEnrichment(session.currentUser.id, note.id) && noteEnrichmentStatus[note.id]?.includes('未完成'))" type="button" :disabled="retryingEnrichment.includes(note.id)" @click="retryOrStart(note)">{{ retryingEnrichment.includes(note.id) ? '重试中…' : '重试' }}</button></p>
           <button v-if="query && noteSearchHit(note)" class="note-search-hit" type="button" @click.stop="locateSearchNote(note.id, query, noteSearchHit(note)?.field === '正文')">
@@ -1248,6 +1250,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-card.delete-confirming { transform: none; transition: border-color .18s, box-shadow .18s; }
 .note-card.highlighted, .note-card.editing { border-color: var(--wao-primary); }
 .note-card:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
+.note-mobile-actions { display: none; }
 .note-meta { font-size: 11px; color: var(--wao-text-faint); margin-bottom: 16px; flex-wrap: wrap; gap: 5px 9px; }
 .stage-list { display: inline-flex; align-items: center; gap: 4px; }
 .four-charge-hint { color:var(--wao-primary-text); font-size:11px; }
@@ -1440,8 +1443,8 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .page-heading { gap: 8px; }
   .heading-title { gap: 8px; flex-wrap: wrap; }
   .writing-toggle, .toolbar button, .reader-toggle { min-height: 44px; }
-  .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 320px; }
-  .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height: 170px !important; }
+  .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 300px; }
+  .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height: 120px !important; }
   .notes-list { padding: 18px 0 30px; }
   .notes-page .note-body :deep(.md-body .tiptap), .notes-page .reader-article :deep(.md-body .tiptap) { font-size: 16px; line-height: 1.7; }
 }
@@ -1478,4 +1481,31 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-preview-action { border-radius: 7px 0 0 7px; }
 .note-preview-choice { border-radius: 0 7px 7px 0; border-left: 1px solid var(--wao-line); }
 @media (hover: none), (pointer: coarse) { .note-preview-actions { opacity: 1; pointer-events: auto; } .note-preview-actions button { min-height: 40px; } }
+/* 手机先读内容；次要操作按需展开，保留原有按钮与状态。 */
+@media (max-width: 760px) {
+  .note-meta { gap: 4px 8px; margin-bottom: 8px; }
+  .note-meta > time { flex: 1; min-width: 0; }
+  .note-mobile-actions { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; width: 44px; height: 44px; padding: 0; font-size: 20px; flex: none; }
+  .note-meta .stage-list, .note-meta-trailing { display: none; }
+  .mobile-actions-open .stage-list { display: flex; order: 2; width: 100%; opacity: 1; visibility: visible; }
+  .mobile-actions-open .stage-list :deep(.stage-icon) { width: 44px; height: 44px; }
+  .mobile-actions-open .note-meta-trailing { display: flex; order: 3; flex-wrap: wrap; width: 100%; gap: 6px; margin: 0; }
+  .mobile-actions-open .note-meta-trailing button, .mobile-actions-open .full-doc-icon { min-width: 44px; min-height: 44px; }
+  .mobile-actions-open .note-four-action, .mobile-actions-open .note-edit-action, .mobile-actions-open .card-quick-actions { opacity: 1; visibility: visible; }
+  .mobile-actions-open .note-preview-actions { opacity: 1; pointer-events: auto; }
+  .mobile-actions-open .card-quick-actions { flex-wrap: wrap; max-width: 100%; }
+  .note-card.fixed-height { height: auto; min-height: 0; max-height: none; }
+  .note-content.has-images { display: flex; flex-direction: column; gap: 12px; }
+  .note-content.has-images > .note-body { width: 100%; }
+  .note-images, .note-images.expanded { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 8px; width: 100%; max-height: none; overflow-x: auto; padding: 8px 0 0; border-left: 0; border-top: 1px solid var(--wao-line); }
+  .note-images > span { flex: 0 0 44px; flex-direction: column; padding-top: 5px; }
+  .note-image-item { flex: 0 0 96px; }
+  .note-image-return { min-width: 44px; min-height: 44px; }
+  .note-read-guide { position: static; margin-top: 8px; }
+  .note-read-guide > span { display: none; }
+  .note-read-action { min-height: 44px; opacity: 1; visibility: visible; }
+  .note-read-guide { opacity: 1; visibility: visible; pointer-events: auto; }
+  .list-toolbar .search { min-height: 44px; }
+  .list-toolbar > button { min-width: 44px; min-height: 44px; }
+}
 </style>

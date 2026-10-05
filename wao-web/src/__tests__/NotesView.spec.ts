@@ -67,6 +67,24 @@ function composer(note?: Doc) {
   return mount(NoteComposer, { props: { note }, global: { stubs: { MarkdownEditor: Editor } } })
 }
 describe('小记集中记录空间', () => {
+  it('手机操作入口独立展开，只保留当前卡片展开且不会触发 AI 或编辑', async () => {
+    useDataStore().docs = { one: doc('one', '第一篇'), two: doc('two', '第二篇') }
+    const wrapper = await view()
+    await flushPromises()
+    const one = wrapper.get('[data-note-id="one"]')
+    const two = wrapper.get('[data-note-id="two"]')
+    expect(one.get('.note-mobile-actions').attributes('aria-expanded')).toBe('false')
+    await one.get('.note-mobile-actions').trigger('click')
+    expect(one.classes()).toContain('mobile-actions-open')
+    expect(one.classes()).not.toContain('editing')
+    expect(startSavedNoteStage).not.toHaveBeenCalled()
+    await two.get('.note-mobile-actions').trigger('click')
+    expect(one.classes()).not.toContain('mobile-actions-open')
+    expect(two.get('.note-mobile-actions').attributes('aria-expanded')).toBe('true')
+    await two.get('.note-mobile-actions').trigger('click')
+    expect(two.classes()).not.toContain('mobile-actions-open')
+    wrapper.unmount()
+  })
   it('一键四连只补未完成阶段，跳过完成和运行，逐次读取最新修订号', async () => {
     const note = doc('four-note', '测试正文')
     useDataStore().docs[note.id] = note

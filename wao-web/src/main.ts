@@ -12,6 +12,10 @@ import { useTheme } from './composables/theme'
 import { installPreloadErrorRecovery } from './utils/preloadErrorRecovery'
 import { retireUnusedStorage } from './utils/retireUnusedStorage'
 import { prepareNoteDraftStorage } from './utils/noteDraftStorage'
+import { installStandalonePhoneViewport } from './utils/standalonePhoneViewport'
+
+const disposePhoneViewport = installStandalonePhoneViewport()
+if (import.meta.hot) import.meta.hot.dispose(disposePhoneViewport)
 
 // 分包失败只提示手动恢复，避免节点切换导致页面刷新并丢失未保存输入。
 installPreloadErrorRecovery()
