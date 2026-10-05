@@ -7,8 +7,8 @@ const emit = defineEmits<{ 'update:open': [value: boolean]; saved: [] }>()
 <template>
   <SettingsDialogShell
     v-if="open"
-    title="小记 AI 设置"
-    description="让整理方式，更贴近你的表达。"
+    title="小记设置"
+    description="编辑、图片与自动整理，都在这里调整。"
     @close="emit('update:open', false)"
     ><NoteAiSettingsForm closable @close="emit('update:open', false)" @saved="emit('saved')"
   /></SettingsDialogShell>
