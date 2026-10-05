@@ -1,5 +1,29 @@
 [
   {
+    "id": "release-browser-entry-2026-10-06",
+    "publishedOn": "2026-10-06",
+    "sourceSubject": "feat(navigation): 让浏览器成为默认使用入口",
+    "title": "让浏览器成为默认使用入口",
+    "intro": "直接打开网页开始使用，历史客户端安装包仍可按需查找。",
+    "highlights": [
+      {
+        "featureId": "navigation",
+        "eyebrow": "体验精简",
+        "title": "让浏览器成为默认使用入口",
+        "summary": "直接打开网页开始使用，历史客户端安装包仍可按需查找。",
+        "points": [
+          "页脚统一为浏览器使用",
+          "历史包与旧平台书签继续保留",
+          "默认页面不再加载或推广客户端安装包"
+        ],
+        "steps": [
+          "点击页脚的浏览器使用，直接打开 WAO。",
+          "确需旧安装包时，进入历史客户端下载页面。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-todo-recent-project-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "feat(todo): 快速添加默认带入上次成功使用的项目",
