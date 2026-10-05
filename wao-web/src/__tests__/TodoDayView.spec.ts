@@ -21,6 +21,39 @@ describe('待办日工作区', () => {
     const task = useDataStore().tasks[0]!
     return { date, recordingStartedAt: '2026-10-01T00:00:00+08:00', historyCoverage: 'RECORDED', tasks: [{ task: { ...task, title: '后来改名', status: '待办' }, snapshot: { ...task, title: '当天原名称', status: '已完成', start: date, subs: [{ id: 'one', text: '当天步骤', done: true }] }, source: 'RECORDED', planned: true, finished: true, events: [] }], notes: [], summary: { plannedCount: 1, finishedCount: 1, stepDoneCount: 1, noteCount: 0 } }
   }
+  it('有效默认项目跨日期带入，现有日期草稿优先；失效选择清空但标题保留', async () => {
+    const data = useDataStore(), first = data.projects[0]!.id, second = data.projects[1]!.id
+    localStorage.setItem('wao-day-task-recent-project-v1:a:wg', first)
+    localStorage.setItem('wao-day-task-draft-v1:a:wg:2026-10-04', JSON.stringify({ id: 'draft', title: '继续填写', project: second }))
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [] })
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' } })
+    await flushPromises()
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe(first)
+    await wrapper.setProps({ date: '2026-10-04' })
+    await flushPromises()
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe(second)
+    data.projects = data.projects.filter(project => project.id !== second)
+    await flushPromises()
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe('')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="当天要做的事"]').element.value).toBe('继续填写')
+    wrapper.unmount()
+  })
+
+  it('首次读取项目后恢复有效默认，成员切换不沿用其他人的选择', async () => {
+    const data = useDataStore(), projects = [...data.projects]
+    localStorage.setItem('wao-day-task-recent-project-v1:a:wg', projects[0]!.id)
+    data.projects = []; data.loadStates.projects = 'loading'
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [] })
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' } })
+    await flushPromises()
+    data.projects = projects; data.loadStates.projects = 'loaded'
+    await flushPromises()
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe(projects[0]!.id)
+    useSessionStore().accept({ accountId: 'other', member: { id: 'other', name: '其他', initial: '?', color: '', role: '' }, identities: [], createdAt: '' })
+    await flushPromises()
+    expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe('')
+    wrapper.unmount()
+  })
   it('首次默认按天，同一入口可返回全部待办', async () => {
     fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [] })
     const wrapper = mount(TodoView, { global: { stubs: { TaskSchedulePopover: true } } })
