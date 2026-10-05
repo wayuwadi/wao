@@ -337,8 +337,8 @@ onBeforeUnmount(() => {
             >
               <i class="ri-refresh-line" aria-hidden="true"></i>{{ busy ? busyLabel : saveError ? '重试保存并刷新' : '保存并刷新' }}
             </button>
-            <RouterLink v-else class="explore-link" to="/features" @click="close(false)"
-              >探索全部功能<i class="ri-arrow-right-up-line" aria-hidden="true"></i
+            <RouterLink v-else class="explore-link" to="/navigation" @click="close(false)"
+              >查看全部功能<i class="ri-arrow-right-up-line" aria-hidden="true"></i
             ></RouterLink>
           </div>
         </footer>
