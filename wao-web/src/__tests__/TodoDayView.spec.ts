@@ -7,6 +7,7 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }), useRoute: (
 import TodoView from '@/views/TodoView.vue'
 import TodoDayView from '@/components/todo/TodoDayView.vue'
 import { useDataStore } from '@/stores/data'
+import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
 import { useDayWorkspaceStore } from '@/stores/dayWorkspace'
 import { seedDataStore } from './helpers/seedDataStore'
@@ -54,6 +55,24 @@ describe('待办日工作区', () => {
     expect(wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]').element.value).toBe('')
     wrapper.unmount()
   })
+  it('指定默认优先于最近项目，迟到默认不能覆盖手选和输入中的归属', async () => {
+    const data = useDataStore(), prefs = usePreferenceStore()
+    const first = data.projects[0]!.id, second = data.projects[1]!.id
+    localStorage.setItem('wao-day-task-recent-project-v1:a:wg', first)
+    prefs.defaultProject = second
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [] })
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' } }); await flushPromises()
+    const select = wrapper.get<HTMLSelectElement>('[aria-label="任务所属项目"]')
+    expect(select.element.value).toBe(second)
+    await select.setValue(first); prefs.defaultProject = first; await flushPromises()
+    prefs.defaultProject = second; await flushPromises()
+    expect(select.element.value).toBe(first)
+    await wrapper.get('[aria-label="当天要做的事"]').setValue('正在写的标题')
+    prefs.defaultProject = first; await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('[aria-label="当天要做的事"]').element.value).toBe('正在写的标题')
+    expect(select.element.value).toBe(first); wrapper.unmount()
+  })
+
   it('首次默认按天，同一入口可返回全部待办', async () => {
     fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [] })
     const wrapper = mount(TodoView, { global: { stubs: { TaskSchedulePopover: true } } })

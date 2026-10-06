@@ -7,6 +7,7 @@ import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
+import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
 import { seedDataStore } from './helpers/seedDataStore'
 
@@ -132,6 +133,7 @@ describe('新建任务的所属项目', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     seedDataStore()
+    usePreferenceStore().defaultProject = useDataStore().projects[0]!.id
   })
 
   it('项目页入口不被旧全局草稿覆盖，重开恢复该项目草稿', async () => {
@@ -148,7 +150,7 @@ describe('新建任务的所属项目', () => {
     expect(JSON.parse(localStorage.getItem('wao-new-task-draft-v1')!).title).toBe('全局草稿'); second.unmount()
   })
 
-  it('真实项目列表替换启动 fixtures 后，首页入口会改选真实项目', async () => {
+  it('真实项目列表替换后，失效默认留空要求确认，不自动改归属', async () => {
     const data = useDataStore()
     const fixtureProject = data.projects[0]!
     const realProject = { ...fixtureProject, id: 'real-project', name: '真实项目' }
@@ -165,7 +167,7 @@ describe('新建任务的所属项目', () => {
     data.projects = [realProject]
     await flushPromises()
 
-    expect(wrapper.get('[aria-label="所属项目"]').element).toHaveProperty('value', 'real-project')
+    expect(wrapper.get('[aria-label="所属项目"]').element).toHaveProperty('value', '')
     expect(wrapper.findAll('[aria-label="所属项目"] option').map((pill) => pill.text())).not.toContain(fixtureProject.name)
     wrapper.unmount()
   })

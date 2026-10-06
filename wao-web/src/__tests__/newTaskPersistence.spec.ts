@@ -10,6 +10,7 @@ import { useToastHost } from '@/composables/toast'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import type { Task } from '@/types'
+import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
 
 vi.mock('@/api/board', async (importOriginal) => ({
@@ -42,6 +43,7 @@ describe('新建任务的落库反馈', () => {
     setActivePinia(createPinia())
     data = useDataStore()
     seedDataStore(data)
+    usePreferenceStore().defaultProject = data.projects[0]!.id
     data.apiLive = true
     putTask.mockReset()
   })

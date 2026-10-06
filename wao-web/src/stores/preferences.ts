@@ -85,11 +85,13 @@ export const usePreferenceStore = defineStore('preferences', () => {
   const loadError = ref('')
   let loadVersion = 0
   let pageLayoutEditVersion = 0
+  let defaultProjectEditVersion = 0
   const valid = <T extends string>(value: string, choices: readonly T[], fallback: T): T => choices.includes(value as T) ? value as T : fallback
   function prepareForMember(nextMemberId: string) {
     if (memberId.value === nextMemberId) return
     loadVersion++
     pageLayoutEditVersion++
+    defaultProjectEditVersion++
     memberId.value = nextMemberId
     weekStart.value = '周一'
     celebration.value = '细腻纸屑'
@@ -106,6 +108,7 @@ export const usePreferenceStore = defineStore('preferences', () => {
     if ((loaded.value && !force) || loading.value) return
     const requestVersion = ++loadVersion
     const pageLayoutVersion = pageLayoutEditVersion
+    const defaultProjectVersion = defaultProjectEditVersion
     loading.value = true
     loadError.value = ''
     try {
@@ -121,7 +124,7 @@ export const usePreferenceStore = defineStore('preferences', () => {
       if (requestVersion !== loadVersion) return
       weekStart.value = valid(savedWeekStart, ['周一', '周日'], '周一')
       celebration.value = valid(savedCelebration, ['细腻纸屑', '关闭'], '细腻纸屑')
-      defaultProject.value = savedDefaultProject
+      if (defaultProjectVersion === defaultProjectEditVersion) defaultProject.value = savedDefaultProject
       controlStyle.value = valid(savedControlStyle, ['system', 'minimal', 'detailed'], 'system')
       if (pageLayoutVersion === pageLayoutEditVersion) pageLayoutStyle.value = normalizePageLayoutStyle(savedPageLayout)
       noteFullscreenReminder.value = parseNoteFullscreenReminderSettings(savedNoteFullscreenReminder)
@@ -147,7 +150,11 @@ export const usePreferenceStore = defineStore('preferences', () => {
     celebration.value = value
     loadError.value = ''
   }
-  async function setDefaultProject(value: string) { defaultProject.value = value; await savePreference(DEFAULT_PROJECT_KEY, value) }
+  async function setDefaultProject(value: string) {
+    const owner = memberId.value, version = ++defaultProjectEditVersion
+    await savePreference(DEFAULT_PROJECT_KEY, value)
+    if (owner === memberId.value && version === defaultProjectEditVersion) defaultProject.value = value
+  }
   async function setControlStyle(value: ControlStyle) {
     await savePreference(CONTROL_STYLE_KEY, value)
     controlStyle.value = value

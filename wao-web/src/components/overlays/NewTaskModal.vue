@@ -9,6 +9,7 @@ import { usePreferenceStore } from '@/stores/preferences'
 import { toast } from '@/composables/toast'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
+import { readRecentTaskProject, rememberTaskProject, selectTaskProject } from '@/utils/taskProjectSelection'
 import type { Priority, WorkItemType } from '@/types'
 
 const data = useDataStore()
@@ -59,38 +60,23 @@ const draft = loadDraft()
  */
 const openProjects = computed(() => data.projects.filter((p) => p.status !== '已完成'))
 const title = ref(draft.title ?? source?.title ?? '')
-// modalProject 未预选时是空串（不是 null），必须用 || 兜底到第一个进行中的项目，
-// 否则从顶栏全局入口建出的任务 project 为空，在所有项目列表里都看不见。
-const project = ref(
-  draft.project || contextProject || (source ? '' : preferences.defaultProject || openProjects.value[0]?.id || ''),
-)
-
-/**
- * 真实项目列表到达后，只有当前预选项目不在列表中时才回退到首个可用项目。
- * 这样既能清理 fixtures / 过期草稿留下的伪 id，也不会覆盖用户已经选中的真实项目。
- */
+const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
+const composerIdentity = identity()
+const hasDraftProject = typeof draft.project === 'string'
+function automaticProject() {
+  return selectTaskProject(openProjects.value.map(project => project.id), {
+    draft: hasDraftProject ? draft.project : undefined, context: contextProject,
+    preferred: preferences.defaultProject, recent: readRecentTaskProject(identity()), requireConfirmation: !!source,
+  })
+}
+const project = ref(data.loadStates.projects === 'loaded' ? automaticProject() : draft.project || '')
 const projectChosenByUser = ref(false)
-watch(openProjects, (projects) => {
-  if (!projectChosenByUser.value && !draft.project && contextProject && projects.some(item => item.id === contextProject)) {
-    project.value = contextProject
-    return
-  }
-  if (!projects.some((item) => item.id === project.value)) {
-    if (source) {
-      project.value = projects.some((item) => item.id === ui.modalProject) ? ui.modalProject : ''
-      return
-    }
-    project.value = projects.some((item) => item.id === contextProject) ? contextProject
-      : projects.some((item) => item.id === preferences.defaultProject)
-      ? preferences.defaultProject
-      : projects[0]?.id || ''
-  }
+watch(() => [data.loadStates.projects, openProjects.value.map(project => project.id), preferences.defaultProject] as const, () => {
+  if (data.loadStates.projects !== 'loaded') return
+  if (projectChosenByUser.value || hasDraftProject || title.value.trim()) {
+    if (project.value && !openProjects.value.some(item => item.id === project.value)) project.value = ''
+  } else project.value = automaticProject()
 }, { immediate: true })
-watch(() => preferences.defaultProject, (value) => {
-  if (!source && !draft.project && !contextProject && value && openProjects.value.some((item) => item.id === value)) {
-    project.value = value
-  }
-})
 const owner = ref(draft.pendingTaskId ? draft.owner || session.currentUser.id : session.currentUser.id)
 const workItemType = ref<WorkItemType>(draft.workItemType ?? 'task')
 const pr = ref<Priority>(draft.pendingTaskId ? draft.pr || ui.modalPriority || 'P2' : ui.modalPriority || 'P2')
@@ -176,13 +162,13 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 
 async function create() {
   if (createState.value === 'submitting') return
-  if ((session.account?.accountId ?? session.userId) !== draftAccount) {
+  if ((session.account?.accountId ?? session.userId) !== draftAccount || identity() !== composerIdentity) {
     toast('登录账号已变化，请切回原账号继续处理草稿', 'ri-error-warning-line')
     return
   }
   const name = title.value.trim()
   if (!name) return
-  if (!project.value) {
+  if (!project.value || !openProjects.value.some(item => item.id === project.value)) {
     toast('请先选择所属项目', 'ri-error-warning-line')
     return
   }
@@ -230,6 +216,8 @@ async function create() {
     toast(data.taskSaveError(pendingTaskId.value ?? '') || '保存尚未确认，输入已保留，请检查网络后重试', 'ri-error-warning-line')
     return
   }
+  if (identity() !== composerIdentity) return
+  try { rememberTaskProject(composerIdentity, payload.project) } catch { toast('任务已保存，但浏览器暂时无法记住最近项目', 'ri-error-warning-line') }
   try { localStorage.removeItem(DRAFT_KEY) } catch { /* 服务器已确认保存，不阻止关闭表单。 */ }
   ui.taskComposerLocked = false
   ui.closeModal()
@@ -238,14 +226,16 @@ async function create() {
   ui.celebrate()
 }
 
+const defaultProjectSaving = ref(false)
 async function makeDefaultProject() {
-  if (!project.value || project.value === preferences.defaultProject) return
+  if (defaultProjectSaving.value || !project.value || project.value === preferences.defaultProject) return
+  defaultProjectSaving.value = true
   try {
     await preferences.setDefaultProject(project.value)
     toast('以后新建任务会默认选择这个项目', 'ri-pushpin-line')
   } catch {
     toast('默认项目保存失败，请重试', 'ri-error-warning-line')
-  }
+  } finally { defaultProjectSaving.value = false }
 }
 
 /** 收起只保存草稿；只有明确提交才创建任务，存储失败时保留当前表单。 */
@@ -293,7 +283,7 @@ useOverlayDismiss(() => true, requestClose)
         type="button"
         :aria-label="preferences.defaultProject === project ? '当前默认项目' : '设为默认项目'"
         :title="preferences.defaultProject === project ? '当前默认项目' : '设为默认项目'"
-        :disabled="preferences.defaultProject === project"
+        :disabled="defaultProjectSaving || preferences.defaultProject === project"
         @click="makeDefaultProject"
       >
         <i class="ri-pushpin-line"></i>
