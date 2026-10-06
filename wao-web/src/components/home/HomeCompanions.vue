@@ -7,6 +7,7 @@ import type { CompanionActivity } from './companionActivities'
 import type { SurpriseStyle } from './companionSurprises'
 import type { WorldStory, WorldChoices } from './companionWorld'
 import HomeLivingCorner from './HomeLivingCorner.vue'
+import HomeDateReminders from './HomeDateReminders.vue'
 import { plainWeather, type LivingWeather } from './livingWeather'
 
 const props = defineProps<{ choices?: WorldChoices; weather?: LivingWeather; member?: string; date?: string; blocked?: boolean }>()
@@ -18,6 +19,7 @@ const canvasKey = ref(0)
 const ready = ref(false)
 const failed = ref(false)
 const message = ref('')
+const dateReminderBusy = ref(false)
 const messagePosition = ref({ left: '12px', top: '12px' })
 const names = companionBrand.map(pal => pal.name)
 let controller: ReturnType<typeof createCompanionScene> | undefined
@@ -116,7 +118,8 @@ onBeforeUnmount(() => {
 <template>
   <section ref="host" class="home-companions" :class="{ ready, quiet }" aria-label="首页四个伙伴">
     <canvas :key="canvasKey" ref="canvas" aria-hidden="true" />
-    <HomeLivingCorner :weather="living" :member="member ?? ''" :date="date ?? ''" :quiet="quiet || companionEditing" :blocked="!!blocked || !!message" :idle="livingIdle" :anchors="livingAnchors" />
+    <HomeDateReminders :member="member ?? ''" :date="date ?? ''" :quiet="quiet" :blocked="!!blocked || !!message || companionEditing" :idle="livingIdle" :anchors="livingAnchors" @busy="dateReminderBusy=$event" />
+    <HomeLivingCorner :weather="living" :member="member ?? ''" :date="date ?? ''" :quiet="quiet || companionEditing" :blocked="!!blocked || !!message || dateReminderBusy" :idle="livingIdle" :anchors="livingAnchors" />
     <button
       v-for="(name, index) in names"
       :key="name"

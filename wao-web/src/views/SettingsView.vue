@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import NoteDiscoveryPreference from '@/components/notes/NoteDiscoveryPreference.vue'
 import PageLayoutPreference from '@/components/settings/PageLayoutPreference.vue'
+import HomeDateReminderSettings from '@/components/settings/HomeDateReminderSettings.vue'
 import NoteAiSettingsForm from '@/components/notes/NoteAiSettingsForm.vue'
 import { computed, onUnmounted, reactive, ref, watch, watchEffect } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -45,6 +46,7 @@ const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const tianrenNotificationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const discoveryPanel = ref<{ confirmLeave: () => boolean } | null>(null)
+const homeDateSettings = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const tab = ref(normalizeSettingsTab(route.query.tab, route.hash))
 const category = computed(() => settingsCategory(tab.value))
@@ -74,6 +76,7 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
   return confirmCurrentSettings()
 })
 function confirmCurrentSettings(): boolean {
+  if (['common','appearance'].includes(tab.value) && homeDateSettings.value && !homeDateSettings.value.confirmLeave()) return false
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return false
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
@@ -576,6 +579,7 @@ async function bindFeishu() {
             <p v-else-if="preferences.loading || !preferences.loaded" class="preference-loading" role="status">正在读取个人偏好…</p>
             <p v-else class="hint">{{ personalPreferenceSaving ? '保存中…' : '主题和安静陪伴即时应用；庆祝动画跨设备保存。' }}</p>
           </div>
+          <HomeDateReminderSettings :key="session.userId" ref="homeDateSettings" />
           <div v-if="tab === 'common'" class="settings-shortcuts">
             <button class="settings-shortcut" @click="selectTab('notes')"><i class="ri-quill-pen-line"></i><span>小记怎么帮我？<small>提醒与 AI 整理 →</small></span></button>
             <button class="settings-shortcut" @click="selectTab('reminders')"><i class="ri-notification-3-line"></i><span>调整通知<small>按提醒来源设置 →</small></span></button>

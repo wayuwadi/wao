@@ -18,6 +18,9 @@ public class FamilyImportantDateEntity {
     private Integer lunarDay;
     private Boolean lunarLeapMonth;
     private String note;
+    private String eventKind;
+    private String birthdaySubject;
+    private Boolean homeReminderEnabled;
     private Boolean reminderEnabled;
     private Integer reminderDaysBefore;
     private LocalTime reminderTime;
@@ -44,6 +47,12 @@ public class FamilyImportantDateEntity {
     public Boolean getLunarLeapMonth() { return lunarLeapMonth; }
     public void setLunarLeapMonth(Boolean value) { lunarLeapMonth = value; }
     public String getNote() { return note; }
+    public String getEventKind() { return eventKind; }
+    public void setEventKind(String value) { eventKind = value; }
+    public String getBirthdaySubject() { return birthdaySubject; }
+    public void setBirthdaySubject(String value) { birthdaySubject = value; }
+    public Boolean getHomeReminderEnabled() { return homeReminderEnabled; }
+    public void setHomeReminderEnabled(Boolean value) { homeReminderEnabled = value; }
     public void setNote(String value) { note = value; }
     public Boolean getReminderEnabled() { return reminderEnabled; }
     public void setReminderEnabled(Boolean value) { reminderEnabled = value; }
