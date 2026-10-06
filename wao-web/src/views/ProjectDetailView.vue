@@ -2536,5 +2536,16 @@ watch(visibleTaskIds, (ids) => {
 @media (max-width: 760px) {
   .project-action-filters { gap: 6px; }
   .project-action-filters button { min-height: 40px; padding: 6px 10px; }
+  .display-settings-panel {
+    position: fixed; z-index: 1200; left: 12px; right: 12px; top: auto;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    width: auto; max-width: none; box-sizing: border-box;
+    max-height: calc(100dvh - 96px - env(safe-area-inset-bottom, 0px) - env(safe-area-inset-top, 0px));
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  .display-settings-panel .column-choices { gap: 0 8px; }
+  .display-settings-panel .column-choices label,
+  .display-settings-panel .table-seg button,
+  .display-settings-panel .done-switch { min-height: 44px; }
 }
 </style>
