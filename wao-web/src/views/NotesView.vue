@@ -465,7 +465,16 @@ function cancelDeleteOnEscape(id: string, event: KeyboardEvent) {
 }
 function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
   const note = data.docById(id)
-  if (!note || editingIds.value.includes(id)) return
+  if (!note) return
+  const moreButton = event.currentTarget instanceof HTMLElement && event.currentTarget.matches('.note-more-actions') ? event.currentTarget : undefined
+  if (editingIds.value.includes(id)) {
+    if (!moreButton) return
+    contextMenu.value?.openAt(event, `小记：${note.title}`, [
+      { id: 'link', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
+      { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
+    ], moreButton)
+    return
+  }
   if (event instanceof KeyboardEvent) {
     if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
     event.preventDefault()
@@ -486,7 +495,7 @@ function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
     { id: 'link', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
     { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
     { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => toggleDeleteConfirmation(id) },
-  ])
+  ], moreButton)
 }
 function openReaderNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
   if (event instanceof KeyboardEvent && !(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
@@ -1265,7 +1274,7 @@ onMounted(() => void loadPins())
         <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id, 'system-generated': note.systemGenerated && noteDisplay.settings.value.distinguishSystem }" :style="{ '--note-system-color': noteDisplay.settings.value.systemColor }" :data-note-id="note.id"
           tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id, $event)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
-          <div class="note-meta">
+          <div v-if="!editingIds.includes(note.id)" class="note-meta">
             <div class="note-heading"><h2 :title="displayedTitle(note)">{{ displayedTitle(note) }}</h2></div>
 
 
@@ -1273,7 +1282,7 @@ onMounted(() => void loadPins())
             <span v-if="chargingNote === note.id" class="four-charge-hint" role="status">按住 3 秒 · 松开取消</span>
             <span class="note-meta-trailing"><span class="card-action-slot"><span class="card-identity"><span class="author" :class="{ 'system-author': note.systemGenerated }" :title="note.systemGenerated ? 'Skill 生成的系统文章' : undefined"><i v-if="note.systemGenerated" class="ri-sparkling-line" aria-hidden="true"></i>{{ noteAuthorName(note) }}</span><time :title="timeLabel(note.updated || note.created)">{{ new Date(note.updated || note.created).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</time></span><span class="card-hover-actions"><div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id), 'stage-list-open': mobileActionsId === note.id }" role="group" aria-label="AI 产出与按需操作">
               <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" hold-enabled :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}；长按 3 秒一键四连`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}，长按 3 秒一键四连`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
-            </div><span class="card-quick-actions"><button type="button" aria-label="复制小记图文" title="复制正文、原图或交给 Codex" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" @click.stop="togglePin(note.id)"><i class="ri-pushpin-line" aria-hidden="true"></i></button><button type="button" aria-label="复制分享链接" @click.stop="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span></span></span><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
+            </div><span class="card-quick-actions"><button type="button" aria-label="复制小记图文" title="复制正文、原图或交给 Codex" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span></span></span><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
               <button class="note-more-actions" type="button" :aria-label="`小记操作：${note.title}`" aria-haspopup="menu" @click.stop="openNoteMenu($event, note.id)"><i class="ri-more-line" aria-hidden="true"></i></button>
               <button class="note-touch-ai" type="button" aria-label="显示 AI 操作" :aria-expanded="mobileActionsId === note.id" @click.stop="mobileActionsId = mobileActionsId === note.id ? '' : note.id"><i class="ri-sparkling-line" aria-hidden="true"></i></button>
             </span>
@@ -1284,7 +1293,9 @@ onMounted(() => void loadPins())
           </button>
           <p v-if="searchFocus.id === note.id && !matching.some(item => item.id === note.id)" class="workflow-status">搜索定位 · 原有筛选已保留，额外显示此条</p>
           <NoteComposer :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" v-if="editingIds.includes(note.id)" :ref="value => setNoteComposer(note.id, value)" :key="`${session.currentUser.id}:${note.id}`" :note="note" inline autofocus :expanded="expandedIds.includes(note.id)" :initial-fullscreen="editAnchors[note.id]?.fullscreen" :initial-position="editAnchors[note.id]?.position" :initial-viewport-top="editAnchors[note.id]?.viewportTop" :tag-options="availableTags" :workflow-message="workflowMessage(note.id)"
-            @tag-created="tagNames = [...new Set([...tagNames, $event])]" @draft-change="onDraftChange(note.id, $event)" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)" />
+            @tag-created="tagNames = [...new Set([...tagNames, $event])]" @draft-change="onDraftChange(note.id, $event)" @saved="onEdited(note.id, $event)" @close="closeEditing(note.id)">
+            <template #heading-actions><button class="note-more-actions" type="button" :aria-label="`小记操作：${note.title}`" aria-haspopup="menu" @click.stop="openNoteMenu($event, note.id)"><i class="ri-more-line" aria-hidden="true"></i></button></template>
+          </NoteComposer>
           <template v-else>
           <div class="note-content" :class="{ 'has-images': notePreviews.get(note.id)?.length }" @click="openInlineImage">
             <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="cardActiveImages[note.id] ?? null" bare advanced allow-h1 :min-height="0" @image-reference="locateCardImage(note.id, $event)" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
