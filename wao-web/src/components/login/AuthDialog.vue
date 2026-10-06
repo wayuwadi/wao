@@ -12,6 +12,8 @@ import {
   prefersFeishuAuthorization,
 } from '@/utils/loginPreference'
 import { reauthenticateWithFeishu } from '@/utils/reauthPopup'
+import CompanionAvatar from '@/components/companions/CompanionAvatar.vue'
+import { COMPANION_IDS, selectCompanion } from '@/utils/companionIdentity'
 
 const props = defineProps<{
   target: string
@@ -36,6 +38,9 @@ const working = computed(() => busy.value || authorizationBusy.value || inAppTry
 let returnFocus: HTMLElement | null = null
 const dialog = ref<HTMLDialogElement | null>(null)
 const opened = ref(false)
+const welcome = ref(false)
+let welcomed = false
+const recoveryCompanion = computed(() => selectCompanion('reauth', session.userId))
 const viewportHeight = ref(0),
   viewportTop = ref(0)
 function measureViewport() {
@@ -103,6 +108,16 @@ async function openAuth() {
   error.value = ''
   qrError.value = ''
   inAppError.value = ''
+  welcome.value = false
+  if (!props.recovery && !welcomed) {
+    try {
+      welcome.value = !sessionStorage.getItem('wao-companion-welcome:v1')
+      sessionStorage.setItem('wao-companion-welcome:v1', 'seen')
+    } catch {
+      welcome.value = true
+    }
+    welcomed = true
+  }
   opened.value = true
   await nextTick()
   if (disposed || !opened.value) return
@@ -152,9 +167,10 @@ async function authorizeFeishu() {
     })
   } catch (reason) {
     if (disposed) return
-    inAppError.value = reason instanceof Error && (props.recovery || 'status' in reason)
-      ? reason.message
-      : `暂时无法连接飞书，请重试或使用邮箱登录。${reason instanceof Error ? reason.message : ''}`
+    inAppError.value =
+      reason instanceof Error && (props.recovery || 'status' in reason)
+        ? reason.message
+        : `暂时无法连接飞书，请重试或使用邮箱登录。${reason instanceof Error ? reason.message : ''}`
   } finally {
     authorizationBusy.value = false
   }
@@ -264,15 +280,28 @@ onBeforeUnmount(() => {
       >
         ×
       </button>
-      <span class="tiny">WAO · 准备好，再出发</span>
-      <h2 id="auth-title">{{ recovery ? '重新登录，继续刚才的内容' : '欢迎回到 WAO' }}</h2>
-      <p class="product-summary">
-        {{
-          recovery
-            ? `登录已过期，请使用 ${session.currentUser.name} 的原账号登录。当前页面和草稿已保留。`
-            : '安排待办、整理资料，与 AI 一起完成任务。'
-        }}
-      </p>
+      <header class="auth-welcome" :class="{ recovery }">
+        <CompanionAvatar v-if="recovery" :identity="recoveryCompanion" :size="44" />
+        <div>
+          <span class="tiny">WAO · 准备好，再出发</span>
+          <h2 id="auth-title"><template v-if="recovery">重新登录，<span class="recovery-tail">继续刚才的内容</span></template><template v-else>欢迎回到 WAO</template></h2>
+          <p class="product-summary">
+            {{
+              recovery
+                ? `登录已过期，请使用 ${session.currentUser.name} 的原账号登录。当前页面和草稿已保留。`
+                : '安排待办、整理资料，与 AI 一起完成任务。'
+            }}
+          </p>
+        </div>
+      </header>
+      <div v-if="welcome && !recovery" class="welcome-companions" aria-hidden="true">
+        <CompanionAvatar
+          v-for="identity in COMPANION_IDS"
+          :key="identity"
+          :identity="identity"
+          :size="36"
+        />
+      </div>
       <template v-if="method === 'feishu'">
         <template v-if="inAppTrying">
           <p class="subtitle">检测到飞书环境，正在免登…</p>
@@ -398,6 +427,20 @@ onBeforeUnmount(() => {
   </dialog>
 </template>
 <style scoped>
+.auth-welcome.recovery {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.auth-welcome.recovery > div {
+  min-width: 0;
+}
+.recovery-tail { display:inline-block; }
+.welcome-companions {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 0;
+}
 .primary {
   border: 1px solid var(--wao-primary-text);
   border-radius: 30px;

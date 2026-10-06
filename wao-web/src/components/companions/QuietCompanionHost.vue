@@ -49,10 +49,9 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <Teleport to="body"><div v-if="companionResponse && position" class="quiet-companion" :style="position" aria-hidden="true" :data-kind="companionResponse.kind">
-    <Portrait :kind="companionResponse.kind" @ready="ready" @failed="dismiss" />
+    <Portrait :kind="companionResponse.kind" :identity="companionResponse.identity" @ready="ready" @failed="dismiss" />
   </div></Teleport>
 </template>
 <style scoped>
 .quiet-companion { position:fixed; width:56px; height:56px; pointer-events:none; z-index:90; }
-.quiet-companion :deep(canvas) { width:56px; height:56px; display:block; }
 </style>

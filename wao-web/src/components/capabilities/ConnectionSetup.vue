@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fetchWorkspaceMcpTokens, type WorkspaceMcpToken } from '@/api/workspaceMcp'
 import { connectionState } from '@/utils/capabilityCenter'
+import { captureCompanionTicket, respondWithCompanion } from '@/composables/quietCompanions'
 
 const props = defineProps<{ token: WorkspaceMcpToken; clientType?: 'CLI' | 'MCP' }>()
 const emit = defineEmits<{ refreshed: [token: WorkspaceMcpToken] }>()
@@ -32,6 +33,8 @@ watch(
 )
 async function refresh() {
   if (busy.value) return
+  const companionTicket = captureCompanionTicket()
+  const wasVerified = state.value === '已验证'
   const ticket = ++generation
   busy.value = true
   error.value = ''
@@ -45,6 +48,8 @@ async function refresh() {
       return
     }
     latest.value = token
+    if (connectionState(token) === '已验证' && !wasVerified)
+      respondWithCompanion('note', companionTicket)
     emit('refreshed', token)
     notice.value =
       connectionState(token) === '已验证'

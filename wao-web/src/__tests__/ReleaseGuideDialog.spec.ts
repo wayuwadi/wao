@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import ReleaseGuideDialog from '@/components/release/ReleaseGuideDialog.vue'
 import ReleaseFeatureDemo from '@/components/release/ReleaseFeatureDemo.vue'
 import type { ReleaseHighlight } from '@/types/featureExplorer'
+import { selectCompanion } from '@/utils/companionIdentity'
+import { companionMember } from '@/composables/quietCompanions'
 const item: ReleaseHighlight = {
   featureId: 'notes',
   eyebrow: '小记',
@@ -17,6 +19,14 @@ afterEach(() => {
   document.body.style.overflow = ''
 })
 describe('具体功能演示', () => {
+  it('大图和更新卡片复用同一成员版本的伙伴', () => {
+    companionMember.value = 'guide-member'
+    const identity = selectCompanion('release:same-edition', companionMember.value)
+    const wrapper = mount(ReleaseGuideDialog, { props: { item, editionId: 'same-edition' }, attachTo: document.body })
+    expect(document.querySelector('header img')?.getAttribute('data-companion')).toBe(identity)
+    wrapper.unmount()
+    companionMember.value = ''
+  })
   it('一屏展示专用演示，支持操作、Esc与焦点恢复，不再包含欢迎和完成页', async () => {
     const trigger = document.createElement('button')
     document.body.append(trigger)

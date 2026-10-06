@@ -1,8 +1,8 @@
 import { readNoteDraft } from '@/utils/noteDraftStorage'
 import { publishNoteTagChange } from '@/utils/noteTagChanges'
 import { defineComponent } from 'vue'
-import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import NotesView from '@/views/NotesView.vue'
@@ -27,6 +27,8 @@ import { copyText, copyToClipboard } from '@/utils/clipboard'
 import { fetchNotePolishVersions } from '@/api/notePolishVersions'
 import { notePolishVersions, noteEnrichmentStatus, activateNoteWorkflowMember } from '@/utils/autoNoteEnrichment'
 import { fetchNoteAiWorkflows, startSavedNoteStage } from '@/api/noteAiWorkflows'
+// 阅读器有全局键盘与焦点监听；每条测试释放组件，避免跨案例响应。
+enableAutoUnmount(afterEach)
 vi.mock('@/api/noteDiscoveries', () => ({ fetchDiscoveryCurrent: vi.fn().mockResolvedValue({ discovery: null, automationState: 'OFF', revision: '' }), fetchDiscoverySource: vi.fn(), feedbackDiscovery: vi.fn(), clearDiscoveryLegacyCache: vi.fn() }))
 vi.mock('@/api/noteAiWorkflows', () => ({ fetchNoteAiWorkflows: vi.fn().mockResolvedValue([]), retryNoteAiWorkflow: vi.fn(), startSavedNoteStage: vi.fn() }))
 vi.mock('@/api/noteAiCompanion', async importOriginal => ({ ...await importOriginal<object>(), saveCompanionDraft: vi.fn(), fetchAiReceipts: vi.fn().mockResolvedValue([]), fetchAiResults: vi.fn().mockResolvedValue({ items: [], attempts: [] }) }))

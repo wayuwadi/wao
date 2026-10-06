@@ -3,7 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useFeatureExperience } from '@/composables/featureExperience'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
-import { blockCompanions, companionEditing, companionQuiet } from '@/composables/quietCompanions'
+import { blockCompanions, companionEditing, companionQuiet, companionMember } from '@/composables/quietCompanions'
+import CompanionAvatar from '@/components/companions/CompanionAvatar.vue'
+import { selectCompanion } from '@/utils/companionIdentity'
 import { fetchWebRelease } from '@/api/version'
 import { MODULES } from '@/config/nav'
 import { CURRENT_RELEASE } from '@/data/featureCatalog'
@@ -61,6 +63,7 @@ const busy = ref(false)
 const busyLabel = ref('正在保存…')
 const position = ref({ left: '12px', top: '60px', width: '360px', maxHeight: '500px' })
 const edition = computed(() => (availableVersion.value ? upcoming.value : CURRENT_RELEASE))
+const companionIdentity = computed(() => selectCompanion(`release:${edition.value?.id ?? availableVersion.value}`, companionMember.value))
 const featureArrival = computed(() => !!edition.value && edition.value.attention !== 'maintenance')
 const currentVersion = document.querySelector('script[data-v]')?.getAttribute('data-v')
 let request = 0
@@ -288,7 +291,7 @@ onBeforeUnmount(() => {
         <div v-if="arriving" class="arrival-orbit" aria-hidden="true"><span v-for="n in 6" :key="n"></span></div>
         <header class="panel-heading">
           <div v-if="featureArrival" class="arrival-hero">
-            <span class="messenger" aria-hidden="true"><span class="messenger-eyes"></span><span class="messenger-smile"></span><span class="messenger-spark">✦</span></span>
+            <CompanionAvatar class="update-companion" :identity="companionIdentity" :size="60" :animate="arriving" />
             <div><span class="eyebrow">{{ availableVersion ? '新版本已就绪' : releaseJustUpdated ? '已更新 · 可以体验了' : '本次更新' }}</span><h2 id="version-update-title">{{ availableVersion ? '嘿，我又长本领了。' : '新本领，慢慢拆开看。' }}</h2><p>这次的小变化，给你说清楚。</p></div>
           </div>
           <div v-else>
@@ -557,14 +560,7 @@ a:focus-visible {
 .arrival-hero h2 { font-size:20px; margin:4px 0 6px; letter-spacing:-.6px; }
 .arrival-hero .eyebrow { color:var(--wao-primary-text); }
 .arrival-hero p { color:var(--wao-text-weak); font-size:12px; margin:0; }
-.messenger {
-  position:relative; flex:none; width:48px; height:52px; display:block; border-radius:18px 18px 16px 8px;
-  transform:rotate(-8deg); background:linear-gradient(145deg,#8995ff,var(--wao-primary) 68%);
-  box-shadow:0 8px 16px color-mix(in srgb,var(--wao-primary) 25%,transparent);
-}
-.messenger-eyes { position:absolute; top:19px; left:13px; width:5px; height:7px; border-radius:5px; background:#fff; box-shadow:17px 0 0 #fff; }
-.messenger-smile { position:absolute; top:30px; left:20px; width:10px; height:6px; border-bottom:2px solid #fff; border-radius:0 0 9px 9px; }
-.messenger-spark { position:absolute; top:-16px; right:-11px; color:#efb64e; font-size:25px; }
+.update-companion { filter:drop-shadow(0 4px 6px #5362d51a); }
 .release-title { margin:16px 0 8px; }
 .has-new-version .update-button { box-shadow:0 4px 12px color-mix(in srgb,var(--wao-primary) 20%,transparent); }
 .icon-button:disabled,.later:disabled { opacity:.5; cursor:wait; }
@@ -577,9 +573,6 @@ a:focus-visible {
 .arrival-orbit > span:nth-child(6) { --dx:-40px; --dy:60px; --delay:.1s; background:#edaf44; border-radius:50%; }
 .update-panel.arriving { animation:update-card-arrival 10s cubic-bezier(.2,.7,.25,1) both; }
 .arriving .arrival-callout { animation:update-callout-shimmer 3.33s ease-in-out 3; }
-.arriving .messenger { animation:update-messenger-wave 2.5s ease-in-out 4; }
-.arriving .messenger-eyes { animation:update-messenger-blink 3.33s ease-in-out 3; }
-.arriving .messenger-spark { animation:update-star-twinkle 2.5s ease-in-out 4; }
 .arriving .arrival-orbit > span { animation:update-confetti 5s var(--delay) ease-out 2; }
 @keyframes update-card-arrival {
   0% { opacity:0; transform:translate(25px,-35px) scale(.62) rotate(6deg); }
@@ -588,15 +581,12 @@ a:focus-visible {
   23%,45% { transform:translateY(-10px) rotate(-.4deg); }
   67% { transform:translateY(-6px) rotate(.3deg); }
 }
-@keyframes update-messenger-wave { 0%,100% { transform:rotate(-8deg); } 25% { transform:translateY(-8px) rotate(12deg) scale(1.07); } 50% { transform:rotate(-12deg); } 75% { transform:rotate(5deg); } }
-@keyframes update-messenger-blink { 0%,40%,48%,100% { transform:scaleY(1); } 44% { transform:scaleY(.15); } }
-@keyframes update-star-twinkle { 0%,100% { transform:scale(.8) rotate(0); } 50% { transform:scale(1.25) rotate(45deg); } }
 @keyframes update-callout-shimmer { to { background-position:200% 0; } }
 @keyframes update-confetti { 0%,10% { opacity:0; transform:translate(0,0) rotate(0) scale(.5); } 14% { opacity:.95; } 48% { opacity:.8; } 70%,100% { opacity:0; transform:translate(var(--dx),var(--dy)) rotate(230deg) scale(.5); } }
-@media(max-width:380px) { .arrival-hero { gap:10px; } .arrival-hero h2 { font-size:17px; } .has-feature .panel-heading { padding:16px 12px; gap:4px; } .messenger { width:42px; height:48px; } .messenger-eyes { left:10px; } .messenger-smile { left:17px; } }
-@media(max-height:480px) { .arrival-callout { padding:4px 12px; } .has-feature .panel-heading { padding:8px 12px; } .messenger { display:none; } .arrival-hero h2 { font-size:16px; margin:0; } .arrival-hero p { display:none; } }
+@media(max-width:380px) { .arrival-hero { gap:10px; } .arrival-hero h2 { font-size:17px; } .has-feature .panel-heading { padding:16px 12px; gap:4px; } .update-companion { max-width:48px; max-height:48px; } }
+@media(max-height:480px) { .arrival-callout { padding:4px 12px; } .has-feature .panel-heading { padding:8px 12px; } .update-companion { display:none; } .arrival-hero h2 { font-size:16px; margin:0; } .arrival-hero p { display:none; } }
 @media(pointer:coarse) { .icon-button { min-width:44px; min-height:44px; } .panel-actions button,.panel-actions a { min-height:44px; } }
-@media(prefers-reduced-motion:reduce) { .update-panel.arriving,.arriving .arrival-callout,.arriving .messenger,.arriving .messenger-eyes,.arriving .messenger-spark,.arriving .arrival-orbit > span { animation:none; } .arrival-orbit { display:none; } }
+@media(prefers-reduced-motion:reduce) { .update-panel.arriving,.arriving .arrival-callout,.arriving .arrival-orbit > span { animation:none; } .arrival-orbit { display:none; } }
 </style>
 
 <style scoped>

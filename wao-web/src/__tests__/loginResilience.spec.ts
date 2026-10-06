@@ -29,6 +29,7 @@ let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => {
   setActivePinia(createPinia())
   localStorage.clear()
+  sessionStorage.clear()
   resumeSessionRequests()
   vi.clearAllMocks()
   HTMLDialogElement.prototype.showModal = function () {
@@ -60,6 +61,18 @@ async function setup(recovery = false) {
   await (wrapper.vm as unknown as { open: () => Promise<void> }).open()
   return router
 }
+it('首次登录欢迎四位既有伙伴，同一会话重开不重复；恢复登录只用一位', async () => {
+  await setup()
+  expect(wrapper!.findAll('.welcome-companions img')).toHaveLength(4)
+  wrapper!.get('dialog').element.close()
+  await (wrapper!.vm as unknown as { open: () => Promise<void> }).open()
+  expect(wrapper!.find('.welcome-companions').exists()).toBe(false)
+  wrapper!.unmount()
+  await setup(true)
+  expect(wrapper!.find('.welcome-companions').exists()).toBe(false)
+  expect(wrapper!.findAll('.auth-welcome img')).toHaveLength(1)
+  expect(wrapper!.text()).toContain('当前页面和草稿已保留')
+})
 it('移动浏览器先提供授权，扫码入口可切换', async () => {
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('iPhone Safari')
   await setup()
