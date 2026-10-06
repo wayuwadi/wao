@@ -6,10 +6,3 @@ export function selectTaskProject(ids: readonly string[], options: { draft?: str
   if (options.requireConfirmation) return ''
   return [options.preferred, options.recent].find(valid) ?? ''
 }
-export const recentTaskProjectKey = (identity: string) => `wao-day-task-recent-project-v1:${identity}`
-export function readRecentTaskProject(identity: string): string {
-  try { return localStorage.getItem(recentTaskProjectKey(identity)) || '' } catch { return '' }
-}
-export function rememberTaskProject(identity: string, project: string): void {
-  localStorage.setItem(recentTaskProjectKey(identity), project)
-}

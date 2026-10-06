@@ -5,7 +5,8 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { usePreferenceStore } from '@/stores/preferences'
-import { readRecentTaskProject, rememberTaskProject, selectTaskProject } from '@/utils/taskProjectSelection'
+import { useTaskPreferencesStore } from '@/stores/taskPreferences'
+import { selectTaskProject } from '@/utils/taskProjectSelection'
 import { useDayWorkspaceStore } from '@/stores/dayWorkspace'
 import { isTaskFinished } from '@/utils/projectCompletion'
 import { legacyProjection } from '@/utils/richDoc'
@@ -19,6 +20,7 @@ const props = defineProps<{ date: string }>()
 const emit = defineEmits<{ 'update:date': [date: string]; all: [] }>()
 const data = useDataStore(), session = useSessionStore(), ui = useUiStore(), days = useDayWorkspaceStore(), router = useRouter()
 const preferences = usePreferenceStore()
+const taskPreferences = useTaskPreferencesStore()
 const availableProjects = computed(() => data.projects.filter(project => project.status !== '已完成'))
 const day = computed(() => days.days[props.date])
 const past = computed(() => props.date < data.today), future = computed(() => props.date > data.today)
@@ -27,19 +29,18 @@ const noteFor = ref<string | null>(null), expanded = ref<Record<string, boolean>
 const createProject = ref('')
 const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
 const newKey = () => `wao-day-task-draft-v1:${identity()}:${props.date}`
-const projectMemoryError = ref('')
 const selectionProtected = ref(false)
 function automaticProject() {
-  return selectTaskProject(availableProjects.value.map(project => project.id), { preferred: preferences.defaultProject, recent: readRecentTaskProject(identity()) })
+  return selectTaskProject(availableProjects.value.map(project => project.id), { preferred: preferences.defaultProject, recent: taskPreferences.recentProject })
 }
 let createId = ''
 watch(() => [props.date, identity()], () => {
   selectionProtected.value = false
-  noteFor.value = null; title.value = ''; createError.value = ''; projectMemoryError.value = ''; createId = ''; createProject.value = data.loadStates.projects === 'loaded' ? automaticProject() : ''
+  noteFor.value = null; title.value = ''; createError.value = ''; createId = ''; createProject.value = data.loadStates.projects === 'loaded' ? automaticProject() : ''
   try { const draft = JSON.parse(localStorage.getItem(newKey()) || 'null') as { id: string; title: string; project?: string } | null; if (draft) { selectionProtected.value = true; title.value = draft.title; createId = draft.id; createProject.value = draft.project || '' } } catch { selectionProtected.value = true /* Preserve corrupted draft without overwriting it. */ }
   void days.load(props.date)
 }, { immediate: true })
-watch(() => [data.loadStates.projects, availableProjects.value.map(project => project.id), preferences.defaultProject] as const, () => {
+watch(() => [data.loadStates.projects, availableProjects.value.map(project => project.id), preferences.defaultProject, taskPreferences.recentProject] as const, () => {
   if (data.loadStates.projects !== 'loaded') return
   if (selectionProtected.value || title.value.trim()) {
     if (createProject.value && !availableProjects.value.some(project => project.id === createProject.value)) createProject.value = ''
@@ -79,8 +80,7 @@ async function createTask() {
       if (!result.persisted) throw new Error(data.taskSaveError(createId) || '任务尚未保存，原地重试不会重复创建')
     }
     if (identity() === account && props.date === date && title.value.trim() === submitted) {
-      try { rememberTaskProject(account, project) }
-      catch { projectMemoryError.value = '任务已保存，但浏览器暂时无法记住所属项目。' }
+      void taskPreferences.rememberProject(project)
       localStorage.removeItem(key); title.value = ''; createId = ''; selectionProtected.value = false; createProject.value = automaticProject()
     }
     await refresh(date)
@@ -152,7 +152,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
         </div>
       </article>
       <form v-if="!past" class="day-create" @submit.prevent="createTask"><input v-model="title" aria-label="当天要做的事" placeholder="＋ 写下当天要做的一件事" :disabled="creating" maxlength="500" /><select v-model="createProject" @change="selectionProtected = true" aria-label="任务所属项目" :disabled="creating"><option value="">选择项目</option><option v-for="project in availableProjects" :key="project.id" :value="project.id">{{ project.name }}</option></select><button type="submit" :disabled="creating || !title.trim()">{{ creating ? '保存中…' : '添加' }}</button></form><p v-if="createError" class="task-error" role="alert">{{ createError }}</p>
-      <p v-if="projectMemoryError" class="task-error" role="status">{{ projectMemoryError }}</p>
+      <p v-if="taskPreferences.recentError" class="task-error" role="status">最近使用项目：{{ taskPreferences.recentError }} <button type="button" @click="taskPreferences.retryRecent()">重试同步最近项目</button></p>
       <section class="day-notes"><header><h3>{{ past ? '当天记录与补记' : '随手记' }}</h3><button v-if="!future" type="button" @click="noteFor = noteFor === '' ? null : ''">{{ noteFor === '' ? '收起输入' : past ? '补记这一天' : '写一条' }}</button></header><NoteComposer v-if="noteFor === '' && !future" :key="`${identity()}:${date}:free`" compact :draft-scope="`day:${identity()}:${date}:free`" :submit-note="request => submitNote(request)" />
         <button v-for="note in day.notes" :key="note.docId" class="day-note-link" type="button" @click="router.push({ path: '/notes', query: { note: note.docId } })"><i class="ri-sticky-note-line"></i><span>{{ data.docById(note.docId)?.title || note.title }}</span><small>{{ note.late ? '补记 · ' : '' }}{{ note.updatedAt !== note.createdAt ? '后来有修改' : '已保存' }}</small></button><p v-if="!day.notes.length" class="day-empty">{{ future ? '实际记录留给当天' : '还没有记录，想到什么就记下来' }}</p>
       </section>
