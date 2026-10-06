@@ -241,4 +241,55 @@ describe('页内逐项连接授权', () => {
     expect(api.revokeWorkspaceMcpToken).toHaveBeenCalledWith('old')
     wrapper.unmount()
   })
+  it('旧整体授权不展示或迁移新增能力，汇总与原服务端兼容白名单一致', async () => {
+    const token = {
+      id: 'old',
+      name: '旧连接',
+      tokenPrefix: 'prefix',
+      canWrite: true,
+      canPublishHostedPage: false,
+      createdAt: '',
+      permissionMode: 'legacy',
+    } as WorkspaceMcpToken
+    const wrapper = await render(token)
+    await wrapper.setProps({
+      capabilities: [
+        ...capabilities,
+        {
+          name: 'get_todo_day',
+          title: '读取每日安排',
+          description: '',
+          group: 'tasks',
+          readOnly: true,
+          cli: 'wao day get',
+          mcp: 'get_todo_day',
+        },
+        {
+          name: 'record_daily_note',
+          title: '记录进展',
+          description: '',
+          group: 'tasks',
+          readOnly: false,
+          cli: 'wao day record',
+          mcp: 'record_daily_note',
+        },
+      ],
+    })
+    expect(
+      (wrapper.get('input[aria-label="允许读取每日安排"]').element as HTMLInputElement).checked,
+    ).toBe(false)
+    expect(
+      (wrapper.get('input[aria-label="允许记录进展"]').element as HTMLInputElement).checked,
+    ).toBe(false)
+    expect(wrapper.get('[aria-label="授权汇总"]').text()).toContain('读取 2')
+    expect(wrapper.get('[aria-label="授权汇总"]').text()).toContain('写入 1')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '复制为新授权草稿')!
+      .trigger('click')
+    expect(
+      JSON.parse(localStorage.getItem('wao:capability-connection-draft:v1:wd')!).permissions,
+    ).toEqual(['get_task', 'update_task', 'get_document'])
+    wrapper.unmount()
+  })
 })

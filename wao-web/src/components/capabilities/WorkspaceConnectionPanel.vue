@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import ConnectionSetup from './ConnectionSetup.vue'
-import { grantPresets, presetPermissions } from '@/utils/capabilityCenter'
+import { grantPresets, presetPermissions, grantedPermissions } from '@/utils/capabilityCenter'
 import {
   createGranularWorkspaceToken,
   fetchWorkspaceResources,
@@ -114,13 +114,7 @@ const instruction = computed(() =>
 )
 let generation = 0
 function tokenPermissions(token: WorkspaceMcpToken) {
-  return token.permissionMode === 'granular'
-    ? (token.permissions ?? [])
-    : props.capabilities
-        .filter((c) =>
-          c.name === 'publish_html' ? token.canPublishHostedPage : c.readOnly || token.canWrite,
-        )
-        .map((c) => c.name)
+  return grantedPermissions(token, props.capabilities)
 }
 function restoreDraft() {
   issued.value = null
