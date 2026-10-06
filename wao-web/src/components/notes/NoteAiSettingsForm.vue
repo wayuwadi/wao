@@ -16,6 +16,7 @@ import { useSessionStore } from '@/stores/session'
 import { usePreferenceStore } from '@/stores/preferences'
 import NoteImageModeSwitch from './NoteImageModeSwitch.vue'
 import { useNoteImageMode } from '@/composables/noteImageMode'
+import { useNoteDisplayPreferences } from '@/composables/noteDisplayPreferences'
 const emit = defineEmits<{ saved: []; close: [] }>()
 // progressive 保留既有调用接口；所有入口统一展示分项布局。
 withDefaults(defineProps<{ progressive?: boolean; closable?: boolean }>(), {
@@ -25,10 +26,11 @@ withDefaults(defineProps<{ progressive?: boolean; closable?: boolean }>(), {
 const session = useSessionStore(),
   preferences = usePreferenceStore()
 const imageMode = useNoteImageMode()
+const noteDisplay = useNoteDisplayPreferences()
 type Section = 'display' | 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
 const active = ref<Section>('capabilities')
 const items = [
-  { id: 'display', label: '编辑与图片', icon: 'ri-layout-line' },
+  { id: 'display', label: '显示与图片', icon: 'ri-layout-line' },
   { id: 'capabilities', label: 'AI 能力', icon: 'ri-cpu-line' },
   { id: 'titlePrompt', label: '标题提示词', icon: 'ri-heading' },
   { id: 'polishPrompt', label: '正文提示词', icon: 'ri-text' },
@@ -247,6 +249,10 @@ onBeforeUnmount(() => {
         <div class="section-heading"><div><h3>编辑时的图片显示</h3><p>默认在正文保留图号引用，图片展示在右侧清单。</p></div></div>
         <NoteImageModeSwitch v-model="imageMode" />
         <p class="behavior-note">当前浏览器立即生效，按账号记住；只改变显示，不重新上传图片或修改正文。</p>
+        <div class="section-heading"><div><h3>系统文章的表达</h3><p>轻淡的底色用于区分系统交付文章，个人记录保持原样。</p></div></div>
+        <AiSettingsToggleRow :model-value="noteDisplay.settings.value.distinguishSystem" @update:model-value="noteDisplay.update({ distinguishSystem: $event })" title="区分系统文章" description="关闭后使用普通卡片底色，系统来源和筛选继续保留。" icon="ri-palette-line" control-label="区分系统文章" />
+        <label class="system-color-field">系统文章颜色<input type="color" aria-label="系统文章颜色" :value="noteDisplay.settings.value.systemColor" :disabled="!noteDisplay.settings.value.distinguishSystem" @input="noteDisplay.update({ systemColor: ($event.target as HTMLInputElement).value })"><span>{{ noteDisplay.settings.value.systemColor }}</span><button type="button" @click="noteDisplay.update({ systemColor: '#7c83b8' })">恢复默认颜色</button></label>
+        <div class="system-color-preview" :style="{ background: noteDisplay.settings.value.distinguishSystem ? `color-mix(in srgb, ${noteDisplay.settings.value.systemColor} 3%, var(--wao-bg-card))` : 'var(--wao-bg-card)' }">系统 · 文章标题<span>轻描淡写地表达来源</span></div>
       </section>
       <fieldset v-if="draft && active !== 'display'" :disabled="loading || saving">
         <template v-if="active === 'capabilities'"
@@ -387,7 +393,7 @@ onBeforeUnmount(() => {
           :saving="saving"
           :error="!!(storageError || error || conflict)"
         />
-        <p v-else class="muted">图片展示偏好在当前浏览器立即生效</p>
+        <p v-else class="muted">显示偏好在当前浏览器立即生效，按账号记住</p>
         <div class="footer-actions">
           <button v-if="active !== 'display'" class="light-action" type="button" :disabled="loading || saving" @click="load">
             <i class="ri-refresh-line" aria-hidden="true"></i>
@@ -465,4 +471,8 @@ select {
     font-size: 16px;
   }
 }
+</style>
+
+<style scoped>
+.system-color-field{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:18px 0;color:var(--wao-text-2);font-size:13px}.system-color-field input{width:44px;height:36px;cursor:pointer;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);padding:4px}.system-color-field span{font-size:12px;color:var(--wao-text-faint)}.system-color-preview{border:1px solid var(--wao-line);border-radius:12px;padding:20px;font-weight:600}.system-color-preview span{display:block;margin-top:10px;font-size:12px;font-weight:400;color:var(--wao-text-faint)}
 </style>
