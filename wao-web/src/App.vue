@@ -8,6 +8,8 @@ import { useUiStore } from '@/stores/ui'
 import { toast, clearToasts } from '@/composables/toast'
 import { RouterView } from 'vue-router'
 import ToastHost from '@/components/ui/ToastHost.vue'
+import SessionRecovery from '@/components/login/SessionRecovery.vue'
+import { SESSION_EXPIRED_EVENT } from '@/utils/sessionRecovery'
 import { restJourneyRequested } from '@/composables/restJourney'
 import RestEntryTransition from '@/components/relax/RestEntryTransition.vue'
 import { writingJourneyRequested } from '@/composables/writingJourney'
@@ -83,13 +85,18 @@ function legacyPetOpen(event: StorageEvent) {
 function openChat() {
   useUiStore().openChat()
 }
+function recoverSession() {
+  useSessionStore().requireRecovery()
+}
 onMounted(() => {
+  window.addEventListener(SESSION_EXPIRED_EVENT, recoverSession)
   window.addEventListener('wao-workspace-reload', reloadWorkspace)
   window.addEventListener('wao-open-chat', openChat)
   window.addEventListener('wao-open-task', openTask)
   window.addEventListener('storage', legacyPetOpen)
 })
 onBeforeUnmount(() => {
+  window.removeEventListener(SESSION_EXPIRED_EVENT, recoverSession)
   window.removeEventListener('wao-workspace-reload', reloadWorkspace)
   window.removeEventListener('wao-open-chat', openChat)
   window.removeEventListener('wao-open-task', openTask)
@@ -100,6 +107,7 @@ onBeforeUnmount(() => {
 <template>
   <ConfigProvider :theme="componentTheme">
     <RouterView />
+    <SessionRecovery v-if="useSessionStore().recoveryRequired" />
     <ToastHost />
     <RestEntryTransition v-if="restJourneyRequested" />
     <WritingEntryTransition v-if="writingJourneyRequested" :journey="writingJourneyRequested" />

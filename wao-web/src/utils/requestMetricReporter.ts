@@ -1,3 +1,5 @@
+import { isSessionPaused } from './sessionRecovery'
+
 export interface BrowserRequestMetric {
   method: string
   path: string
@@ -52,7 +54,7 @@ function bindPagehide() {
   if (pagehideBound || typeof window === 'undefined') return
   pagehideBound = true
   window.addEventListener('pagehide', () => {
-    if (paused || !queue.length || typeof navigator.sendBeacon !== 'function') return
+    if (paused || isSessionPaused() || !queue.length || typeof navigator.sendBeacon !== 'function') return
     const batch = queue.splice(0, BATCH_SIZE)
     const accepted = navigator.sendBeacon(
       ENDPOINT,
@@ -90,6 +92,7 @@ export function reportBrowserRequest(
 
 /** 使用原生 fetch 上报，绕开 Axios 拦截器，防止监控请求递归采集。 */
 export function flushRequestMetrics(): Promise<void> {
+  if (isSessionPaused()) { queue = []; return Promise.resolve() }
   if (activeFlush) return activeFlush
   if (!queue.length || typeof fetch === 'undefined') return Promise.resolve()
   activeFlush = performFlush()
