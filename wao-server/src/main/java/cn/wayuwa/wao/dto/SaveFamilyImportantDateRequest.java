@@ -22,7 +22,19 @@ public record SaveFamilyImportantDateRequest(
         boolean lunarLeapMonth,
         String notificationType,
         @Size(max = 128, message = "飞书群标识最多 128 个字") String chatId,
-        @Size(max = 128, message = "飞书群名称最多 128 个字") String chatName) {
+        @Size(max = 128, message = "飞书群名称最多 128 个字") String chatName,
+        @Size(max = 16) String eventKind,
+        @Size(max = 16) String birthdaySubject,
+        Boolean homeReminderEnabled) {
+
+    /** 兼容旧客户端；缺省首页字段在修改时保留已有配置。 */
+    public SaveFamilyImportantDateRequest(String name, LocalDate eventDate, String note,
+            boolean reminderEnabled, int reminderDaysBefore, LocalTime reminderTime,
+            String calendarType, Integer lunarMonth, Integer lunarDay, boolean lunarLeapMonth,
+            String notificationType, String chatId, String chatName) {
+        this(name, eventDate, note, reminderEnabled, reminderDaysBefore, reminderTime, calendarType,
+                lunarMonth, lunarDay, lunarLeapMonth, notificationType, chatId, chatName, null, null, null);
+    }
 
     /** 兼容既有只含公历和私聊字段的服务调用。 */
     public SaveFamilyImportantDateRequest(String name, LocalDate eventDate, String note,

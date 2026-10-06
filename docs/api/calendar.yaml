@@ -121,6 +121,9 @@ components:
       required: [name, eventDate, reminderEnabled, reminderDaysBefore, calendarType, notificationType]
       properties:
         name: { type: string, maxLength: 64, example: 妈妈生日 }
+        eventKind: { type: string, enum: [IMPORTANT, BIRTHDAY, ANNIVERSARY], description: 创建缺省 IMPORTANT，旧客户端修改省略保留已存值 }
+        birthdaySubject: { type: string, enum: [SELF, FAMILY, OTHER], description: 明确生日对象；非生日统一 OTHER }
+        homeReminderEnabled: { type: boolean, description: 独立于飞书，新建缺省开启，旧客户端修改省略保留已存值 }
         eventDate: { type: string, format: date, example: '1990-05-10' }
         note: { type: string, nullable: true, maxLength: 200, example: 记得提前订花 }
         reminderEnabled: { type: boolean }

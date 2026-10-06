@@ -3,7 +3,7 @@ import { isTaskFinished } from '@/utils/projectCompletion'
 import { moveTaskSchedule, sameSchedule, scheduleSnapshot, taskCalendarEntries, type TaskSchedule } from '@/utils/taskSchedule'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -68,6 +68,7 @@ const session = useSessionStore()
 const ui = useUiStore()
 const preferences = usePreferenceStore()
 const router = useRouter()
+const route = useRoute()
 const weather = useWeatherStore()
 const weatherPanel = ref<InstanceType<typeof WeatherPanel> | null>(null)
 const attendancePanel = ref<InstanceType<typeof AttendancePanel> | null>(null)
@@ -771,6 +772,7 @@ const importantDateSaving = ref(false)
 const importantDateSaveError = ref('')
 const importantDateDeletingId = ref<string | null>(null)
 const importantDateDraft = reactive<SaveFamilyImportantDate>({
+  eventKind: 'IMPORTANT', birthdaySubject: 'OTHER', homeReminderEnabled: true,
   name: '',
   eventDate: data.today,
   note: null,
@@ -794,6 +796,9 @@ const importantDateDraftKey = computed(() =>
   `wao-family-important-date-draft:${session.currentUser.id || 'anonymous'}:${editingImportantDateId.value || 'new'}`)
 
 function copyImportantDateDraft(value?: FamilyImportantDate) {
+  importantDateDraft.eventKind = value?.eventKind ?? 'IMPORTANT'
+  importantDateDraft.birthdaySubject = value?.birthdaySubject ?? 'OTHER'
+  importantDateDraft.homeReminderEnabled = value?.homeReminderEnabled ?? true
   importantDateDraft.name = value?.name ?? ''
   importantDateDraft.eventDate = value?.eventDate ?? data.today
   importantDateDraft.note = value?.note ?? null
@@ -815,6 +820,9 @@ function restoreImportantDateDraft(value?: FamilyImportantDate) {
   try {
     const parsed = JSON.parse(localStorage.getItem(importantDateDraftKey.value) || 'null') as (Partial<SaveFamilyImportantDate> & { lunarYear?: number }) | null
     if (!parsed) return
+    if (['IMPORTANT','BIRTHDAY','ANNIVERSARY'].includes(parsed.eventKind ?? '')) importantDateDraft.eventKind = parsed.eventKind
+    if (['SELF','FAMILY','OTHER'].includes(parsed.birthdaySubject ?? '')) importantDateDraft.birthdaySubject = parsed.birthdaySubject
+    if (typeof parsed.homeReminderEnabled === 'boolean') importantDateDraft.homeReminderEnabled = parsed.homeReminderEnabled
     if (typeof parsed.name === 'string') importantDateDraft.name = parsed.name
     if (typeof parsed.eventDate === 'string') importantDateDraft.eventDate = parsed.eventDate
     if (typeof parsed.note === 'string' || parsed.note === null) importantDateDraft.note = parsed.note
@@ -923,8 +931,7 @@ function backToImportantDateList() {
 }
 
 watch(importantDateDraft, (value) => {
-  if (showImportantDates.value && importantDateEditorOpen.value
-      && (editingImportantDateId.value || value.name || value.note)) {
+  if (showImportantDates.value && importantDateEditorOpen.value) {
     localStorage.setItem(importantDateDraftKey.value, JSON.stringify({ ...value, lunarYear: lunarYear.value }))
   }
 }, { deep: true })
@@ -973,6 +980,7 @@ async function submitImportantDate() {
     importantDateEditorOpen.value = false
     await loadImportantDates()
     toast(`${name}已保存，并会每年显示在日历中`, 'ri-heart-3-line')
+    window.dispatchEvent(new Event('wao-home-date-changed'))
   } catch (error) {
     importantDateSaveError.value = error instanceof Error ? error.message : '保存家庭重要日失败'
   } finally {
@@ -993,6 +1001,7 @@ async function removeImportantDate(value: FamilyImportantDate) {
     }
     await loadImportantDates()
     toast(`${value.name}已删除`, 'ri-delete-bin-line')
+    window.dispatchEvent(new Event('wao-home-date-changed'))
   } catch (error) {
     importantDateSaveError.value = error instanceof Error ? error.message : '删除家庭重要日失败'
   } finally {
@@ -1006,11 +1015,42 @@ function importantDateMonthDay(value: string) {
 }
 
 function importantDateReminderLabel(value: FamilyImportantDate) {
-  if (!value.reminderEnabled) return '仅在日历显示'
+  const home = value.homeReminderEnabled !== false ? '首页轻提醒' : ''
+  if (!value.reminderEnabled) return home || '仅在日历显示'
   const before = value.reminderDaysBefore ? `提前 ${value.reminderDaysBefore} 天` : '当天'
   const target = value.notificationType === 'GROUP' ? 'WAO 通知中心' : '飞书私聊'
-  return `${before} ${value.reminderTime} ${target}提醒`
+  return `${home ? home + ' · ' : ''}${before} ${value.reminderTime} ${target}提醒`
 }
+
+// 首页来源深链接只定位真实事项；已有编辑草稿不被自动替换。
+let openedHomeSource = ''
+function openHomeSource() {
+  const date = typeof route.query.date === 'string' ? route.query.date : ''
+  const id = typeof route.query.importantDateId === 'string' ? route.query.importantDateId : ''
+  const code = typeof route.query.holidayCode === 'string' ? route.query.holidayCode : ''
+  const key = `${date}:${id}:${code}`
+  if (!date || (!id && !code) || key === openedHomeSource || showImportantDates.value || activeHoliday.value) return
+  if (id && importantDateState.value === 'ready') {
+    const item = importantDateItems.value.find(item => item.id === id)
+    openedHomeSource = key
+    if (item) { showImportantDates.value = true; editImportantDate(item) }
+    else toast('这个提醒事项已修改或删除，仍可浏览对应日期', 'ri-calendar-line')
+  } else if (code && holidayState.value === 'ready') {
+    const event = holidayEvents.value.find(event => event.code === code && event.date === date)
+    openedHomeSource = key
+    if (event) openHolidayDetail(event)
+  }
+}
+watch(() => [route.query.date, route.query.importantDateId, route.query.holidayCode], () => {
+  const value = typeof route.query.date === 'string' ? route.query.date : ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return
+  const date = new Date(`${value}T00:00:00`)
+  if (!Number.isFinite(date.getTime()) || iso(date) !== value) return
+  if (importantDateEditorOpen.value || activeHoliday.value) return
+  calY.value = date.getFullYear(); calM.value = date.getMonth(); calD.value = date.getDate(); viewMode.value = 'day'
+  void nextTick(openHomeSource)
+}, { immediate: true })
+watch([importantDateState, holidayState], () => { void nextTick(openHomeSource) })
 
 const showCreateChoice = ref(false)
 const createPreset = reactive({ day: data.today, startAt: '', endAt: '' })
@@ -1399,6 +1439,10 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
               <span>名称</span>
               <input v-model="importantDateDraft.name" type="text" maxlength="64" required placeholder="例如：妈妈生日、合同续费日" :disabled="importantDateSaving" />
             </label>
+            <div class="important-date-reminder-fields">
+              <label class="important-date-field"><span>事项类型</span><select v-model="importantDateDraft.eventKind"><option value="IMPORTANT">重要事项</option><option value="BIRTHDAY">生日</option><option value="ANNIVERSARY">纪念日</option></select></label>
+              <label v-if="importantDateDraft.eventKind === 'BIRTHDAY'" class="important-date-field"><span>谁的生日</span><select v-model="importantDateDraft.birthdaySubject"><option value="SELF">我的生日</option><option value="FAMILY">家人的生日</option><option value="OTHER">其他人的生日</option></select></label>
+            </div>
             <div class="calendar-type-switch" role="group" aria-label="录入历法">
               <button type="button" :class="{ on: importantDateDraft.calendarType === 'SOLAR' }" @click="switchCalendarType('SOLAR')">公历录入</button>
               <button type="button" :class="{ on: importantDateDraft.calendarType === 'LUNAR' }" @click="switchCalendarType('LUNAR')">农历录入</button>
@@ -1423,8 +1467,12 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
               <textarea v-model="importantDateDraft.note" maxlength="200" rows="3" placeholder="例如：喜欢百合花，记得提前订餐" :disabled="importantDateSaving"></textarea>
             </label>
             <label class="important-date-reminder-toggle">
+              <span><b>首页轻提醒</b><small>进入首页时由伙伴捎话，生日和纪念日有小仪式；不需要绑定飞书。</small></span>
+              <input v-model="importantDateDraft.homeReminderEnabled" type="checkbox" aria-label="首页轻提醒" :disabled="importantDateSaving" />
+            </label>
+            <label class="important-date-reminder-toggle">
               <span><b>提醒通知</b><small>{{ importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelHint : importantDateChannelHint }}</small></span>
-              <input v-model="importantDateDraft.reminderEnabled" type="checkbox" :disabled="importantDateSaving || (!(importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelAvailable : importantDateChannelAvailable) && !importantDateDraft.reminderEnabled)" />
+              <input v-model="importantDateDraft.reminderEnabled" type="checkbox" aria-label="提醒通知" :disabled="importantDateSaving || (!(importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelAvailable : importantDateChannelAvailable) && !importantDateDraft.reminderEnabled)" />
             </label>
             <div class="calendar-type-switch notification-type" role="group" aria-label="通知方式">
               <button type="button" :class="{ on: importantDateDraft.notificationType === 'DIRECT' }" @click="importantDateDraft.notificationType = 'DIRECT'">私聊我</button>
@@ -1433,8 +1481,8 @@ useOverlayDismiss(() => showCreateChoice.value, () => { showCreateChoice.value =
             <div class="important-date-reminder-fields">
               <label class="important-date-field">
                 <span>提前天数</span>
-                <input v-model.number="importantDateDraft.reminderDaysBefore" type="number" min="0" max="30" required :disabled="importantDateSaving || !importantDateDraft.reminderEnabled" />
-                <small>0 表示当天提醒，最多提前 30 天。</small>
+                <input v-model.number="importantDateDraft.reminderDaysBefore" type="number" min="0" max="30" required :disabled="importantDateSaving || (!importantDateDraft.reminderEnabled && !importantDateDraft.homeReminderEnabled)" />
+                <small>首页可在提前日和当天各提醒一次，最多提前 30 天。</small>
               </label>
               <label class="important-date-field">
                 <span>提醒时间</span>

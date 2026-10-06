@@ -152,6 +152,10 @@ public class FamilyImportantDateService {
     }
 
     private void validate(String memberId, SaveFamilyImportantDateRequest request) {
+        if (request.eventKind() != null && !List.of("IMPORTANT", "BIRTHDAY", "ANNIVERSARY").contains(request.eventKind()))
+            throw new BadRequestException("请选择有效的事项类型");
+        if (request.birthdaySubject() != null && !List.of("SELF", "FAMILY", "OTHER").contains(request.birthdaySubject()))
+            throw new BadRequestException("请选择有效的生日对象");
         String calendarType = calendarType(request.calendarType());
         if ("LUNAR".equals(calendarType)) {
             if (request.lunarMonth() == null || request.lunarDay() == null) {
@@ -285,6 +289,14 @@ public class FamilyImportantDateService {
         entity.setLunarDay("LUNAR".equals(entity.getCalendarType()) ? request.lunarDay() : null);
         entity.setLunarLeapMonth("LUNAR".equals(entity.getCalendarType()) && request.lunarLeapMonth());
         entity.setNote(StringUtils.hasText(request.note()) ? request.note().trim() : null);
+        entity.setEventKind(request.eventKind() != null ? request.eventKind()
+                : entity.getEventKind() != null ? entity.getEventKind() : "IMPORTANT");
+        entity.setBirthdaySubject("BIRTHDAY".equals(entity.getEventKind())
+                ? request.birthdaySubject() != null ? request.birthdaySubject()
+                    : entity.getBirthdaySubject() != null ? entity.getBirthdaySubject() : "OTHER"
+                : "OTHER");
+        entity.setHomeReminderEnabled(request.homeReminderEnabled() != null ? request.homeReminderEnabled()
+                : entity.getHomeReminderEnabled() == null || entity.getHomeReminderEnabled());
         entity.setReminderEnabled(request.reminderEnabled());
         entity.setReminderDaysBefore(request.reminderDaysBefore());
         entity.setReminderTime(request.reminderEnabled() ? request.reminderTime() : null);
@@ -293,7 +305,7 @@ public class FamilyImportantDateService {
         entity.setChatName("GROUP".equals(entity.getNotificationType()) ? "WAO 通知中心" : null);
     }
 
-    private static boolean matchesOccurrence(FamilyImportantDateEntity entity, LocalDate day) {
+    static boolean matchesOccurrence(FamilyImportantDateEntity entity, LocalDate day) {
         if (day.isBefore(entity.getEventDate())) return false;
         if (!"LUNAR".equals(calendarType(entity.getCalendarType()))) {
             return day.getMonthValue() == entity.getEventDate().getMonthValue()
@@ -312,7 +324,10 @@ public class FamilyImportantDateService {
                 minute(entity.getReminderTime()), calendarType(entity.getCalendarType()), entity.getLunarMonth(),
                 entity.getLunarDay(), Boolean.TRUE.equals(entity.getLunarLeapMonth()),
                 entity.getEventDate().toString(), lunarLabel(entity.getEventDate()),
-                notificationType(entity.getNotificationType()), entity.getChatId(), entity.getChatName());
+                notificationType(entity.getNotificationType()), entity.getChatId(), entity.getChatName(),
+                entity.getEventKind() == null ? "IMPORTANT" : entity.getEventKind(),
+                entity.getBirthdaySubject() == null ? "OTHER" : entity.getBirthdaySubject(),
+                !Boolean.FALSE.equals(entity.getHomeReminderEnabled()));
     }
 
     private static FamilyImportantDateEventDto eventDto(FamilyImportantDateEntity entity, LocalDate occurrence) {

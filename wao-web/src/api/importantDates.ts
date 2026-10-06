@@ -1,6 +1,9 @@
 import { http, type ApiResponse } from './http'
 
 export interface FamilyImportantDate {
+  eventKind?: 'IMPORTANT' | 'BIRTHDAY' | 'ANNIVERSARY'
+  birthdaySubject?: 'SELF' | 'FAMILY' | 'OTHER'
+  homeReminderEnabled?: boolean
   id: string
   name: string
   eventDate: string
@@ -45,6 +48,9 @@ export interface FamilyImportantDateCalendar {
 }
 
 export interface SaveFamilyImportantDate {
+  eventKind?: 'IMPORTANT' | 'BIRTHDAY' | 'ANNIVERSARY'
+  birthdaySubject?: 'SELF' | 'FAMILY' | 'OTHER'
+  homeReminderEnabled?: boolean
   name: string
   eventDate: string
   note: string | null

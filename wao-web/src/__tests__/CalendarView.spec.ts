@@ -146,6 +146,28 @@ describe('日历成员隔离、清单与时间轴', () => {
     vi.mocked(fetchVault).mockReset().mockResolvedValue([])
   })
 
+  it('首页来源定位真实生日编辑器，保留明确分类和首页渠道', async () => {
+    const session = useSessionStore(pinia)
+    const me = { id: 'wg', name: '验收', initial: '验', color: '#4358D6', role: '成员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    const item: FamilyImportantDate = { id: 'birthday1', name: '生日测试', eventDate: '2026-10-06', note: null,
+      reminderEnabled: false, reminderDaysBefore: 0, reminderTime: null, calendarType: 'SOLAR',
+      lunarMonth: null, lunarDay: null, lunarLeapMonth: false, solarDateLabel: '2026-10-06',
+      lunarDateLabel: '', notificationType: 'DIRECT', chatId: null, chatName: null,
+      eventKind: 'BIRTHDAY', birthdaySubject: 'SELF', homeReminderEnabled: true }
+    vi.mocked(fetchFamilyImportantDates).mockResolvedValue({ ...emptyImportantDates, items: [item] })
+    await router.push('/calendar?date=2026-10-06&importantDateId=birthday1')
+    await router.isReady()
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(wrapper.get('.important-date-modal').text()).toContain('编辑提醒事项')
+    const selections = wrapper.findAll('.important-date-field select')
+    expect(selections.map(select => (select.element as HTMLSelectElement).value)).toEqual(['BIRTHDAY', 'SELF'])
+    expect(wrapper.get('input[aria-label="首页轻提醒"]').element).toHaveProperty('checked', true)
+    expect(wrapper.get('.date-picker').element).toHaveProperty('value', '2026-10-06')
+  })
+
   it('默认只看当前人，移除待安排清单并保留时间段创建', async () => {
     const data = useDataStore(pinia)
     const session = useSessionStore(pinia)
@@ -531,7 +553,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     await wrapper.find('.important-date-field input[type="text"]').setValue('妈妈生日')
     await wrapper.find('.important-date-field input[type="date"]').setValue(data.today)
     await wrapper.find('.important-date-field textarea').setValue('记得提前订花')
-    await wrapper.find('.important-date-reminder-toggle input').setValue(true)
+    await wrapper.find('input[aria-label="提醒通知"]').setValue(true)
     await wrapper.find('.important-date-field input[type="number"]').setValue(3)
     await wrapper.find('.important-date-field input[type="time"]').setValue('08:30')
     await wrapper.find('.important-date-form').trigger('submit')
@@ -542,6 +564,7 @@ describe('日历成员隔离、清单与时间轴', () => {
       reminderDaysBefore: 3, reminderTime: '08:30',
       calendarType: 'SOLAR', lunarMonth: 1, lunarDay: 1, lunarLeapMonth: false,
       notificationType: 'GROUP', chatId: null, chatName: null,
+      eventKind: 'IMPORTANT', birthdaySubject: 'OTHER', homeReminderEnabled: true,
     })
     expect(wrapper.find('.important-date-item').text()).toContain('提前 3 天 08:30 WAO 通知中心提醒')
     expect(wrapper.findAll('.event').some((event) => event.text().includes('妈妈生日'))).toBe(true)
