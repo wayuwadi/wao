@@ -20,6 +20,8 @@
 
 GET /api/docs/notes/ai-settings 返回 settings、version、configured、availability。settings 包含 title/polish/image、executionMode、maxConcurrent、model 和三提示词；关闭 epoch 是服务端字段，客户端不能自选。PUT 携带 settings 和 expectedVersion；409 时保留本地草稿，重新读取后明确保存。会话缺失返回 401，无默认成员回落。
 
+2026-10-06 响应增补只读 `defaultPrompts`（`titlePrompt`、`polishPrompt`、`imagePrompt`），与实际执行默认内容同源，不参与 CAS 指纹或 PUT 写入；完整契约及交互见 [保存范围与默认提示词](settings-save-scope-and-default-prompts-2026-10-06.md)。
+
 思考深度作为同一成员设置的 `reasoningEffort` 字段保存，历史配置缺少该字段时明确按 `medium` 执行。表单在模型旁展示可配置档位，选项来自本机 Codex `model/list.supportedReasoningEfforts`；不支持的组合在入队前报错。新任务入队时将档位写入 `ai_assistant_run.reasoning_effort`，本机执行显式传 `model_reasoning_effort`；已入队任务保持原值，历史小记任务空值按 `medium` 执行。模型目录缓存升级前缺少档位数据时仅展示 `medium`，刷新成功后展示真实列表。该设置适用于小记本机标题、正文、配图、标签和自动发现；不改变天人一卦、Runner 或付费 API 的参数。
 
 POST /api/docs/notes/{id}/ai-stages/{title|image|polish} 携带 expectedRev 和 32 位请求号；相同身份/文档/阶段请求重试返回原阶段，不重新消费模型。手动操作单独使用发起成员设置与并发名额，允许自动开关关闭时执行一次，不取消其他阶段。旧自动失败重试仍遵守当前开关。

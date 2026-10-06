@@ -15,6 +15,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /** 业务保存信号、阶段幂等与来源保护；模型执行复用已有队列。 */
 @Service
 public class NoteAiManagedService {
+    static final String DEFAULT_IMAGE_PROMPT = "为这篇小记生成简洁的 16:9 总览图；只表达已有主题，不编造事实。";
     private final JdbcTemplate db; private final ObjectMapper json; private final NoteAiSettingsService settings;
     private final ObjectProvider<KnowledgeService> knowledge; private final TextPolishJobService text; private final ArticleImageService image;
     private final NotePolishVersionService versions;
@@ -190,7 +191,7 @@ public class NoteAiManagedService {
         if(originals!=null&&!"tags".equals(str(a,"stage")))originals.freezeAttempt(str(a,"id"));
         String stage=str(a,"stage"),job;
         NoteAiSettingsService.Settings s=decode(str(a,"policy_json"),NoteAiSettingsService.Settings.class);
-        if(stage.equals("image"))job=image.startNoteWorkflow(str(a,"member_id"),new ArticleImageRequest(str(a,"input_text"),s.imagePrompt().isBlank()?"为这篇小记生成简洁的 16:9 总览图；只表达已有主题，不编造事实。":s.imagePrompt(),s.model().isBlank()?null:s.model(),str(a,"id"))).id();
+        if(stage.equals("image"))job=image.startNoteWorkflow(str(a,"member_id"),new ArticleImageRequest(str(a,"input_text"),s.imagePrompt().isBlank()?DEFAULT_IMAGE_PROMPT:s.imagePrompt(),s.model().isBlank()?null:s.model(),str(a,"id"))).id();
         else if(stage.equals("tags")){
             List<String> allowed=noteTags.list();
             if(allowed.isEmpty()){db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='NO_EXISTING_TAGS',message='暂无已有标签，不创建新标签' WHERE id=?",str(a,"id"));return;}

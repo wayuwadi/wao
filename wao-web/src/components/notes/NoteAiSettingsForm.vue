@@ -4,6 +4,7 @@ import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AIModelFields from '@/components/ui/AIModelFields.vue'
 import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
 import AiSettingsSaveStatus from '@/components/ui/AiSettingsSaveStatus.vue'
+import AiPromptEditor from '@/components/ui/AiPromptEditor.vue'
 import { useAiModelCatalog } from '@/composables/aiModelCatalog'
 import { noteSettingsDraft, rememberNoteSettingsDraft } from '@/utils/noteAiSettingsDraft'
 import {
@@ -27,7 +28,8 @@ const session = useSessionStore(),
   preferences = usePreferenceStore()
 const imageMode = useNoteImageMode()
 const noteDisplay = useNoteDisplayPreferences()
-type Section = 'display' | 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
+type Section =
+  'display' | 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
 const active = ref<Section>('capabilities')
 const items = [
   { id: 'display', label: '显示与图片', icon: 'ri-layout-line' },
@@ -55,6 +57,27 @@ const error = ref(''),
   status = ref(''),
   version = ref(''),
   storageError = ref('')
+const navigationItems = computed(() =>
+  items.map((item) => ({
+    ...item,
+    pending:
+      !!draft.value &&
+      !!remote.value &&
+      (item.id === 'capabilities'
+        ? ['model', 'reasoningEffort', 'title', 'polish', 'image'].some(
+            (key) =>
+              draft.value![key as keyof NoteAiSettings] !==
+              remote.value!.settings[key as keyof NoteAiSettings],
+          )
+        : item.id === 'execution'
+          ? draft.value.executionMode !== remote.value.settings.executionMode ||
+            draft.value.maxConcurrent !== remote.value.settings.maxConcurrent
+          : item.id in promptLabels
+            ? draft.value[item.id as keyof typeof promptLabels] !==
+              remote.value.settings[item.id as keyof typeof promptLabels]
+            : false),
+  })),
+)
 const {
   catalog,
   catalogError,
@@ -224,7 +247,11 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <section class="note-ai-settings-form">
-    <AiSettingsLayout :items="items" :active="active" @update:active="active = $event as Section">
+    <AiSettingsLayout
+      :items="navigationItems"
+      :active="active"
+      @update:active="active = $event as Section"
+    >
       <template #engine
         ><AIModelFields
           v-if="draft && active !== 'display'"
@@ -246,13 +273,52 @@ onBeforeUnmount(() => {
       >
       <p v-if="loading && draft" role="status">正在读取小记 AI 设置…</p>
       <section v-if="active === 'display'" class="display-settings">
-        <div class="section-heading"><div><h3>编辑时的图片显示</h3><p>默认在正文保留图号引用，图片展示在右侧清单。</p></div></div>
+        <div class="section-heading">
+          <div>
+            <h3>编辑时的图片显示</h3>
+            <p>默认在正文保留图号引用，图片展示在右侧清单。</p>
+          </div>
+        </div>
         <NoteImageModeSwitch v-model="imageMode" />
-        <p class="behavior-note">当前浏览器立即生效，按账号记住；只改变显示，不重新上传图片或修改正文。</p>
-        <div class="section-heading"><div><h3>系统文章的表达</h3><p>轻淡的底色用于区分系统交付文章，个人记录保持原样。</p></div></div>
-        <AiSettingsToggleRow :model-value="noteDisplay.settings.value.distinguishSystem" @update:model-value="noteDisplay.update({ distinguishSystem: $event })" title="区分系统文章" description="关闭后使用普通卡片底色，系统来源和筛选继续保留。" icon="ri-palette-line" control-label="区分系统文章" />
-        <label class="system-color-field">系统文章颜色<input type="color" aria-label="系统文章颜色" :value="noteDisplay.settings.value.systemColor" :disabled="!noteDisplay.settings.value.distinguishSystem" @input="noteDisplay.update({ systemColor: ($event.target as HTMLInputElement).value })"><span>{{ noteDisplay.settings.value.systemColor }}</span><button type="button" @click="noteDisplay.update({ systemColor: '#7c83b8' })">恢复默认颜色</button></label>
-        <div class="system-color-preview" :style="{ background: noteDisplay.settings.value.distinguishSystem ? `color-mix(in srgb, ${noteDisplay.settings.value.systemColor} 3%, var(--wao-bg-card))` : 'var(--wao-bg-card)' }">系统 · 文章标题<span>轻描淡写地表达来源</span></div>
+        <p class="behavior-note">
+          当前浏览器立即生效，按账号记住；只改变显示，不重新上传图片或修改正文。
+        </p>
+        <div class="section-heading">
+          <div>
+            <h3>系统文章的表达</h3>
+            <p>轻淡的底色用于区分系统交付文章，个人记录保持原样。</p>
+          </div>
+        </div>
+        <AiSettingsToggleRow
+          :model-value="noteDisplay.settings.value.distinguishSystem"
+          @update:model-value="noteDisplay.update({ distinguishSystem: $event })"
+          title="区分系统文章"
+          description="关闭后使用普通卡片底色，系统来源和筛选继续保留。"
+          icon="ri-palette-line"
+          control-label="区分系统文章"
+        />
+        <label class="system-color-field"
+          >系统文章颜色<input
+            type="color"
+            aria-label="系统文章颜色"
+            :value="noteDisplay.settings.value.systemColor"
+            :disabled="!noteDisplay.settings.value.distinguishSystem"
+            @input="noteDisplay.update({ systemColor: ($event.target as HTMLInputElement).value })"
+          /><span>{{ noteDisplay.settings.value.systemColor }}</span
+          ><button type="button" @click="noteDisplay.update({ systemColor: '#7c83b8' })">
+            恢复默认颜色
+          </button></label
+        >
+        <div
+          class="system-color-preview"
+          :style="{
+            background: noteDisplay.settings.value.distinguishSystem
+              ? `color-mix(in srgb, ${noteDisplay.settings.value.systemColor} 3%, var(--wao-bg-card))`
+              : 'var(--wao-bg-card)',
+          }"
+        >
+          系统 · 文章标题<span>轻描淡写地表达来源</span>
+        </div>
       </section>
       <fieldset v-if="draft && active !== 'display'" :disabled="loading || saving">
         <template v-if="active === 'capabilities'"
@@ -308,24 +374,13 @@ onBeforeUnmount(() => {
               draft[promptField] ? '自定义提示词' : '默认提示词'
             }}</span>
           </div>
-          <div class="prompt-toolbar">
-            <label :for="`note-${promptField}`">提示词</label
-            ><button type="button" @click="draft[promptField] = ''">
-              <i class="ri-history-line" aria-hidden="true"></i>恢复默认
-            </button>
-          </div>
-          <textarea
-            :id="`note-${promptField}`"
+          <AiPromptEditor
             v-model="draft[promptField]"
-            :aria-label="promptLabels[promptField]"
-            maxlength="4000"
-            rows="11"
-            placeholder="留空沿用默认"
-          />
-          <div class="prompt-meta">
-            <span>切换设置项会保留草稿</span><span>{{ draft[promptField].length }} / 4000 字</span>
-          </div></template
-        >
+            :editor-id="`note-${promptField}`"
+            :label="promptLabels[promptField]"
+            :default-value="remote?.defaultPrompts?.[promptField]"
+            empty-uses-default
+        /></template>
         <template v-else
           ><div class="section-heading">
             <div>
@@ -392,10 +447,17 @@ onBeforeUnmount(() => {
           :loading="loading"
           :saving="saving"
           :error="!!(storageError || error || conflict)"
+          hint="本次保存所有小记 AI 分项，下一次生成生效；显示偏好单独即时生效"
         />
         <p v-else class="muted">显示偏好在当前浏览器立即生效，按账号记住</p>
         <div class="footer-actions">
-          <button v-if="active !== 'display'" class="light-action" type="button" :disabled="loading || saving" @click="load">
+          <button
+            v-if="active !== 'display'"
+            class="light-action"
+            type="button"
+            :disabled="loading || saving"
+            @click="load"
+          >
             <i class="ri-refresh-line" aria-hidden="true"></i>
             {{ error ? '重新读取 / 重试' : '刷新设置' }}</button
           ><button v-if="closable" type="button" @click="close">关闭</button
@@ -406,7 +468,7 @@ onBeforeUnmount(() => {
             :disabled="!draft || !remote || loading || saving || conflict"
             @click="save"
           >
-            {{ saving ? '保存中…' : error && !conflict ? '重试保存' : '保存设置' }}
+            {{ saving ? '保存中…' : error && !conflict ? '重试保存' : '保存小记 AI 设置' }}
           </button>
         </div></template
       >
@@ -474,5 +536,39 @@ select {
 </style>
 
 <style scoped>
-.system-color-field{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:18px 0;color:var(--wao-text-2);font-size:13px}.system-color-field input{width:44px;height:36px;cursor:pointer;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);padding:4px}.system-color-field span{font-size:12px;color:var(--wao-text-faint)}.system-color-preview{border:1px solid var(--wao-line);border-radius:12px;padding:20px;font-weight:600}.system-color-preview span{display:block;margin-top:10px;font-size:12px;font-weight:400;color:var(--wao-text-faint)}
+.system-color-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0;
+  color: var(--wao-text-2);
+  font-size: 13px;
+}
+.system-color-field input {
+  width: 44px;
+  height: 36px;
+  cursor: pointer;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  padding: 4px;
+}
+.system-color-field span {
+  font-size: 12px;
+  color: var(--wao-text-faint);
+}
+.system-color-preview {
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  padding: 20px;
+  font-weight: 600;
+}
+.system-color-preview span {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--wao-text-faint);
+}
 </style>

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    items: { id: string; label: string; icon?: string }[]
+    items: { id: string; label: string; icon?: string; pending?: boolean }[]
     active: string
     scopeNote?: string
+    engineVisible?: boolean
   }>(),
-  { scopeNote: '仅用于当前功能\n不会修改另一处设置' },
+  { scopeNote: '仅用于当前功能\n不会修改另一处设置', engineVisible: true },
 )
 const emit = defineEmits<{ 'update:active': [value: string] }>()
 </script>
@@ -20,9 +21,12 @@ const emit = defineEmits<{ 'update:active': [value: string] }>()
             :key="item.id"
             type="button"
             :aria-pressed="active === item.id"
+            :aria-label="item.pending ? `${item.label}，待保存` : item.label"
             @click="emit('update:active', item.id)"
           >
-            <i v-if="item.icon" :class="item.icon" aria-hidden="true"></i>{{ item.label }}
+            <i v-if="item.icon" :class="item.icon" aria-hidden="true"></i
+            ><span>{{ item.label }}</span
+            ><small v-if="item.pending" class="pending-badge" aria-hidden="true">待保存</small>
           </button>
         </nav>
         <div class="sidebar-foot">
@@ -30,7 +34,9 @@ const emit = defineEmits<{ 'update:active': [value: string] }>()
         </div>
       </aside>
       <div class="settings-main">
-        <div v-if="$slots.engine" class="settings-engine"><slot name="engine" /></div>
+        <div v-if="$slots.engine && engineVisible" class="settings-engine">
+          <slot name="engine" />
+        </div>
         <div class="settings-scroll"><slot /></div>
       </div>
     </div>
@@ -91,6 +97,12 @@ nav button {
 }
 nav button i {
   font-size: 16px;
+}
+.pending-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--wao-text-3);
 }
 nav button[aria-pressed='true'] {
   background: var(--wao-primary-soft);

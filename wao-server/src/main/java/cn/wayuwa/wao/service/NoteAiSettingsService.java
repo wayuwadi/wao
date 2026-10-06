@@ -30,7 +30,15 @@ public class NoteAiSettingsService {
         public long epoch(String stage) { return switch(stage) { case "title" -> titleEpoch; case "image" -> imageEpoch; case "tags" -> 0; default -> polishEpoch; }; }
         public int capacity() { return "serial".equals(executionMode) ? 1 : maxConcurrent; }
     }
-    public record View(Settings settings, String version, boolean configured, String availability) { }
+    public record PromptDefaults(String titlePrompt, String polishPrompt, String imagePrompt) { }
+    public record View(Settings settings, String version, boolean configured, String availability,
+            PromptDefaults defaultPrompts) {
+        public View(Settings settings, String version, boolean configured, String availability) {
+            this(settings, version, configured, availability, new PromptDefaults(
+                    TextPolishJobService.DEFAULT_NOTE_TITLE_PROMPT, TextPolishService.DEFAULT_PROMPT,
+                    NoteAiManagedService.DEFAULT_IMAGE_PROMPT));
+        }
+    }
     public record Save(Settings settings, String expectedVersion) { }
     /** 读取成功且无配置时才应用默认；坏配置作为真实错误报告。 */
     @Transactional(readOnly=true,noRollbackFor=RuntimeException.class)
