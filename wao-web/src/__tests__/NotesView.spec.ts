@@ -72,6 +72,23 @@ function composer(note?: Doc) {
 }
 async function triggerFour(wrapper: ReturnType<typeof mount>) { wrapper.getComponent(NoteAiStageButton).vm.$emit('four'); await flushPromises() }
 describe('小记集中记录空间', () => {
+  it('发现条可直接关闭，刷新同一条不再弹出，新发现仍可显示且不改变反馈', async () => {
+    const finding: Discovery = { id: 'close-one', origin: 'AUTO', headline: '可关闭的发现', observation: '依据', valueReason: '价值', restricted: false, evidence: [], feedback: { saved: true, dismissed: false, correction: null, version: 0 } }
+    vi.mocked(fetchDiscoveryCurrent).mockResolvedValue({ discovery: finding, automationState: 'ON', lastOutcome: null, revision: '1' })
+    useDataStore().apiLive = true
+    let wrapper = await view(); await flushPromises()
+    await wrapper.get('[aria-label="关闭这条发现"]').trigger('click'); await flushPromises()
+    expect(wrapper.findComponent(NoteDiscoveryInline).exists()).toBe(false)
+    expect(finding.feedback).toEqual({ saved: true, dismissed: false, correction: null, version: 0 })
+    wrapper.unmount(); wrapper = await view(); await flushPromises()
+    expect(wrapper.findComponent(NoteDiscoveryInline).exists()).toBe(false)
+    wrapper.unmount()
+    vi.mocked(fetchDiscoveryCurrent).mockResolvedValue({ discovery: { ...finding, id: 'close-two' }, automationState: 'ON', lastOutcome: null, revision: '2' })
+    wrapper = await view(); await flushPromises()
+    expect(wrapper.findComponent(NoteDiscoveryInline).exists()).toBe(true)
+    wrapper.unmount()
+    vi.mocked(fetchDiscoveryCurrent).mockResolvedValue({ discovery: null, automationState: 'OFF', lastOutcome: null, revision: '' })
+  })
   it('输入区可复制未保存的标题和完整草稿给 Codex，复制不触发保存', async () => {
     const wrapper = composer(); await flushPromises()
     await wrapper.get('[aria-label="小记标题（可选）"]').setValue('尚未保存的标题')

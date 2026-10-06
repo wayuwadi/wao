@@ -1198,7 +1198,7 @@ onMounted(() => void loadPins())
         </div>
         <NoteDiscoverySavedList v-if="discoveryMode !== 'notes'" :mode="discoveryMode" :member-id="session.currentUser.id" @source="openDiscoverySource" />
         <template v-else>
-        <NoteDiscoveryInline v-if="discoveries.current.value" :item="discoveries.current.value" @changed="discoveryChanged" @expanded="discoveryExpanded = $event" @source="openDiscoverySource" />
+        <NoteDiscoveryInline v-if="discoveries.current.value && !discoveries.hidden.value" :item="discoveries.current.value" @close="discoveries.hide()" @changed="discoveryChanged" @expanded="discoveryExpanded = $event" @source="openDiscoverySource" />
         <p v-if="discoveryUndo" class="discovery-undo" role="status">已收起这条发现 <button type="button" @click="undoDiscovery">撤销</button></p>
         <div v-if="managingTags" class="new-tag-form" aria-label="标签管理">
           <select v-model="sourceTag" aria-label="待处理标签" :disabled="tagSaving"><option value="">选择标签</option><option v-for="tag in availableTags" :key="tag" :value="tag">{{ tag }}</option></select>

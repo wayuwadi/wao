@@ -6,6 +6,7 @@ const emit = defineEmits<{
   changed: [item: Discovery]
   source: [itemId: string, docId: string, event: Event]
   expanded: [value: boolean]
+  close: []
 }>()
 const expanded = ref(false), busy = ref(false), error = ref(''), correcting = ref(false), correction = ref('')
 watch(() => props.item.id, () => { expanded.value = false; error.value = ''; correcting.value = false; correction.value = '' })
@@ -31,6 +32,7 @@ async function save(patch: Parameters<typeof feedbackDiscovery>[1]) {
 
 <template>
   <article class="note-discovery" :class="{ expanded }" aria-label="顺手发现">
+    <button type="button" class="discovery-close" aria-label="关闭这条发现" title="收起这条发现，不改变收藏或反馈" :disabled="busy" @click.stop="emit('expanded', false); emit('close')"><i class="ri-close-line" aria-hidden="true"></i></button>
     <button class="discovery-heading" type="button" :aria-expanded="expanded" :aria-controls="`discovery-${item.id}`" @click="toggle">
       <i class="ri-sparkling-line" aria-hidden="true"></i><span>{{ item.headline }}</span><i :class="expanded ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>
     </button>
@@ -71,4 +73,8 @@ async function save(patch: Parameters<typeof feedbackDiscovery>[1]) {
 button { cursor: pointer; }button:focus-visible, textarea:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }.discovery-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .discovery-actions button, .discovery-evidence button, .correction button { border: 1px solid var(--wao-line-control); padding: 6px 9px; min-height: 36px; border-radius: 7px; color: var(--wao-primary-text); background: var(--wao-bg-card); }
 .next-step { color: var(--wao-text-2); }.legacy-image { max-width: 100%; max-height: 300px; object-fit: contain; }.correction { margin-top: 10px; }.correction label { display: grid; gap: 5px; }.correction textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 7px; padding: 8px; background: var(--wao-bg-card); color: var(--wao-text-1); }.discovery-error { color: var(--wao-danger); }
+</style>
+
+<style scoped>
+.note-discovery{position:relative}.discovery-heading{padding-right:50px}.discovery-close{position:absolute;right:7px;top:7px;display:grid;place-items:center;width:34px;height:34px;border:0;border-radius:7px;background:transparent;color:var(--wao-text-faint)}.discovery-close:hover{background:var(--wao-bg-hover);color:var(--wao-text-2)}
 </style>
