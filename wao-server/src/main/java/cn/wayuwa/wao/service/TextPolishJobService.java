@@ -20,6 +20,7 @@ import java.util.HexFormat;
 /** 文档和工作台共用的持久润色编排，不持有 HTTP 请求等待模型。 */
 @Service
 public class TextPolishJobService {
+    static final String DEFAULT_NOTE_TITLE_PROMPT = "从小记正文提炼一个准确、简短的中文标题";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String TAGS_START = "<allowed_tags_json>";
     private static final String TAGS_END = "</allowed_tags_json>";
@@ -79,7 +80,7 @@ public class TextPolishJobService {
                     ? prepared.promptSnapshot() : notePolishPrompt.trim()) + "\n小记额外要求：删除口语化赘词和重复内容，"
                     + "保留事实、数字、原意和 Markdown 链接与图片；不要添加原文没有的信息，只返回润色后的正文。";
             case "NOTE_TITLE" -> titlePrompt == null || titlePrompt.isBlank()
-                    ? "从小记正文提炼一个准确、简短的中文标题" : titlePrompt.trim();
+                    ? DEFAULT_NOTE_TITLE_PROMPT : titlePrompt.trim();
             case "NOTE_TAGS" -> "小记标签推荐。严格只从下列已有标签中选择最多 3 个；没有合适标签时只返回“无”。每行只输出一个标签名称；不可创建或修改标签。\n"
                     + TAGS_START + tagsJson + TAGS_END;
             default -> prepared.promptSnapshot();

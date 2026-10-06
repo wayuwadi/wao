@@ -9,6 +9,7 @@ import {
 } from '@/utils/workdayRhythm'
 import WorkdayNotificationRoutes from '@/components/workday/WorkdayNotificationRoutes.vue'
 const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+const emit = defineEmits<{ 'dirty-change': [dirty: boolean] }>()
 
 const session = useSessionStore()
 const preferenceKey = 'workday-rhythm-config-v1'
@@ -24,6 +25,7 @@ const saving = ref(false)
 const saved = ref(false)
 const error = ref('')
 const dirty = computed(() => loaded.value && JSON.stringify(draft.value) !== baseline.value)
+watch(dirty, (value) => emit('dirty-change', value), { immediate: true })
 const status = computed(() =>
   saved.value
     ? '卦象通知已保存'
