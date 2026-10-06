@@ -72,6 +72,22 @@ function composer(note?: Doc) {
 }
 async function triggerFour(wrapper: ReturnType<typeof mount>) { wrapper.getComponent(NoteAiStageButton).vm.$emit('four'); await flushPromises() }
 describe('小记集中记录空间', () => {
+  it('输入区可复制未保存的标题和完整草稿给 Codex，复制不触发保存', async () => {
+    const wrapper = composer(); await flushPromises()
+    await wrapper.get('[aria-label="小记标题（可选）"]').setValue('尚未保存的标题')
+    await wrapper.get('textarea').setValue('未保存的完整正文\n\n![原图](/api/images/draft/raw)')
+    await wrapper.get('.copy-draft').trigger('click'); await flushPromises()
+    const dialog = new DOMWrapper(document.body).get('.note-media-copy-dialog')
+    expect(dialog.get('.copy-target button:first-child').attributes('aria-current')).toBe('true')
+    await dialog.get('.copy-primary').trigger('click'); await flushPromises()
+    expect(copyToClipboard).toHaveBeenCalledWith(expect.stringContaining('尚未保存的标题'))
+    expect(copyToClipboard).toHaveBeenCalledWith(expect.stringContaining('未保存的完整正文'))
+    expect(copyToClipboard).toHaveBeenCalledWith(expect.stringContaining('/api/images/draft/raw'))
+    expect(wrapper.emitted('saved')).toBeUndefined()
+    await dialog.get('[aria-label="关闭图文复制"]').trigger('click')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('未保存的完整正文')
+    wrapper.unmount()
+  })
   it('系统来源独立于所有者，卡片与阅读显示系统，开关持久化且保留输入草稿', async () => {
     useDataStore().docs = { personal: doc('personal', '我的记录'), system: { ...doc('system', '功能介绍'), systemGenerated: true } }
     let wrapper = await view(document.body); await flushPromises()
