@@ -1,5 +1,7 @@
 # WAO 工作区 MCP
 
+2026-10-06：[能力中心](capability-center.md) 增加实际接入验证元数据。鉴权后的 `tools/list` 成功记录时间与实际可见工具数，目录运行失败记录失败时间；签发、initialize、管理列表和最近访问不算成功。浏览器 `/api/workspace-mcp/tokens` DTO 新增可空 `lastVerifiedAt`、`verifiedToolCount`、`lastVerificationFailedAt`；原令牌权限、tools/list/schema 与调用响应保持。元数据记录失败不改变工具目录结果，不新增验证或令牌管理工具。
+
 2026-10-06：[系统文章来源](notes-system-generated-source.md) 在既有 `create_note` / `update_document` 中增加布尔字段 `system_generated`，`list_notes.include_system` 可在分页前隐藏系统文章。来源不改变真实 author 或操作权限，更新本人小记需当前 `expected_rev`；旧授权不增加工具，旧文档创建可用受版本保护的更新补标。
 
 2026-10-04：[iOS 小记系统采集](ios-notes-system-capture.md) 不增加 tools/list 或设备权限。剪贴板/麦克风/系统分享属于人工设备入口；既有文档写入口沿用权限和版本契约，引用保护服务不会启动 MCP 自动 AI 消耗。

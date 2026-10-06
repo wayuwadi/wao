@@ -28,6 +28,7 @@ class WorkspaceMcpNetworkIntegrationTest {
     void connectsWithDedicatedBearerAndRevocationImmediatelyStopsAccess() throws Exception {
         var readOnly = tokens.create("wd", "网络验收只读设备", false);
         var writable = tokens.create("wd", "网络验收读写设备", true);
+        assertThat(tokens.list("wd").stream().filter(t -> t.id().equals(readOnly.token().id())).findFirst().orElseThrow().lastVerifiedAt()).isNull();
         JsonNode initialized = body(post(readOnly.secret(), """
                 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}
                 """));
@@ -39,6 +40,10 @@ class WorkspaceMcpNetworkIntegrationTest {
         assertThat(readTools.path("result").path("tools").findValuesAsText("name"))
                 .contains("list_open_tasks", "get_document")
                 .doesNotContain("create_task", "update_document", "update_subtask_status");
+        var verified = tokens.list("wd").stream().filter(t -> t.id().equals(readOnly.token().id())).findFirst().orElseThrow();
+        assertThat(verified.lastVerifiedAt()).isNotNull();
+        assertThat(verified.verifiedToolCount()).isEqualTo(readTools.path("result").path("tools").size());
+        assertThat(tokens.list("other")).isEmpty();
         JsonNode writeTools = body(post(writable.secret(), discover));
         assertThat(writeTools.path("result").path("tools").findValuesAsText("name"))
                 .contains("create_task", "update_document", "create_project", "update_subtask_status");

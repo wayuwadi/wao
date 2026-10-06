@@ -3,6 +3,7 @@ import {
   computed,
   defineAsyncComponent,
   h,
+  nextTick,
   onBeforeUnmount,
   ref,
   watch,
@@ -27,6 +28,7 @@ import {
 import { fetchPets, fetchMyPets, type PetCard } from '@/api/pets'
 import WorkspaceConnectionPanel from '@/components/capabilities/WorkspaceConnectionPanel.vue'
 import '@/styles/capabilityResources.css'
+import { matchesCapability, connectionState } from '@/utils/capabilityCenter'
 
 function resourcePanel(loader: AsyncComponentLoader) {
   return defineAsyncComponent({
@@ -82,6 +84,7 @@ interface Entry {
   pet?: PetCard
   token?: WorkspaceMcpToken
   mine?: boolean
+  matches?: WorkspaceCapability[]
 }
 const capabilities = ref<WorkspaceCapability[]>([]),
   catalogError = ref(''),
@@ -154,7 +157,6 @@ const builtin: Entry[] = [
     status: '现有能力',
     icon: 'ri-plug-line',
   },
-
 ]
 const entries = computed<Entry[]>(() => {
   let items: Entry[]
@@ -173,7 +175,7 @@ const entries = computed<Entry[]>(() => {
         type: token.clientType ?? ('CLI / MCP' as const),
         name: token.name,
         description: `${token.permissionMode === 'granular' ? (token.permissions?.length ?? 0) + ' 项操作' : token.canWrite ? '整体读写' : '只读'} · ${token.tokenPrefix}••••`,
-        status: token.permissionMode === 'granular' ? '逐项授权' : '旧版授权',
+        status: connectionState(token),
         icon: 'ri-key-2-line',
         token,
       })),
@@ -202,7 +204,16 @@ const entries = computed<Entry[]>(() => {
     ]
   else
     items = [
-      ...builtin,
+      ...builtin.map((item) => ({
+        ...item,
+        matches: keyword.value.trim()
+          ? capabilities.value.filter(
+              (capability) =>
+                (item.id === 'cli' || !!capability.mcp) &&
+                matchesCapability(capability, keyword.value),
+            )
+          : [],
+      })),
       ...skills.value.map((skill) => ({
         id: skill.id,
         type: 'Skill' as const,
@@ -227,7 +238,8 @@ const entries = computed<Entry[]>(() => {
       (type.value === '全部' ||
         e.type === type.value ||
         (e.type === 'CLI / MCP' && ['CLI', 'MCP'].includes(type.value))) &&
-      `${e.name} ${e.description}`.toLowerCase().includes(keyword.value.toLowerCase()),
+      (`${e.name} ${e.description}`.toLowerCase().includes(keyword.value.trim().toLowerCase()) ||
+        !!e.matches?.length),
   )
 })
 const entry = computed(() => entries.value.find((e) => e.id === selected.value))
@@ -244,12 +256,20 @@ const groupNames: Record<string, string> = {
 const selectedCapabilities = computed(() =>
   capabilities.value.filter((c) => selected.value !== 'mcp' || !!c.mcp),
 )
+const matchingCapabilities = computed(() =>
+  selectedCapabilities.value.filter((capability) => matchesCapability(capability, keyword.value)),
+)
+const displayedCapabilities = computed(() =>
+  keyword.value.trim() && matchingCapabilities.value.length
+    ? matchingCapabilities.value
+    : selectedCapabilities.value,
+)
 const catalogGroups = computed(() =>
   Object.entries(groupNames)
     .map(([id, name]) => ({
       id,
       name,
-      items: selectedCapabilities.value.filter((c) => c.group === id),
+      items: displayedCapabilities.value.filter((c) => c.group === id),
     }))
     .filter((group) => group.items.length),
 )
@@ -353,8 +373,7 @@ function selectArea(value: string) {
 }
 function selectType(value: CapabilityType) {
   keyword.value = ''
-  selected.value =
-    value === 'CLI' ? 'cli' : value === 'MCP' ? 'mcp' : ''
+  selected.value = value === 'CLI' ? 'cli' : value === 'MCP' ? 'mcp' : ''
   catalogPane.value = 'overview'
   void router.push(rootRoute(area.value, value))
 }
@@ -370,6 +389,11 @@ function selectEntry(item: Entry) {
     void router.push({ path: `/capabilities/pets/${item.pet.id}`, query: { type: 'Pet' } })
   else if (detailKind.value || publishKind.value || route.path.includes('/reviews/'))
     void router.push(rootRoute())
+}
+async function locateCapability(item: Entry, operation: string) {
+  selectEntry(item)
+  await nextTick()
+  document.getElementById(`cap-operation-${operation}`)?.focus()
 }
 function newConnection() {
   selected.value = 'new'
@@ -490,7 +514,7 @@ onBeforeUnmount(() => {
           v-model="keyword"
           type="search"
           aria-label="搜索名称或能力"
-          placeholder="搜索名称或能力"
+          placeholder="例如：发小记、查任务"
           maxlength="100"
       /></label>
     </div>
@@ -528,14 +552,6 @@ onBeforeUnmount(() => {
           }}</span
           ><span>{{ entries.length }} 项</span>
         </div>
-        <button
-          v-if="area === 'connections'"
-          type="button"
-          class="cap-button primary"
-          @click="newConnection"
-        >
-          新建连接
-        </button>
         <div v-if="loading" role="status" class="cap-muted">正在读取…</div>
         <div v-if="error" class="cap-error" role="alert">
           {{ error }} <button type="button" @click="load(page)">重试</button>
@@ -557,10 +573,31 @@ onBeforeUnmount(() => {
               ><span class="cap-badge">{{ item.type }}</span>
               <span
                 class="cap-badge"
-                :class="{ warm: item.status === '规划中' || item.status === '旧版授权' }"
+                :class="{ warm: item.status === '尚未验证' || item.status === '验证失败' }"
                 >{{ item.status }}</span
+              ><small v-if="item.token">最近使用：{{ item.token.lastUsedAt ?? '尚未使用' }}</small>
+              <small v-if="item.token?.permissionMode === 'legacy'">旧版整体授权</small>
+              <small v-if="item.matches?.length"
+                >匹配 {{ item.matches.length }} 项操作 ·
+                {{
+                  item.matches
+                    .slice(0, 3)
+                    .map((c) => c.title)
+                    .join('、')
+                }}</small
               ></span
             >
+          </button>
+        </div>
+        <div v-if="entry?.matches?.length" class="cap-match-shortcuts" aria-label="定位匹配能力">
+          <button
+            v-for="match in entry.matches"
+            :key="match.name"
+            type="button"
+            class="cap-button"
+            @click="locateCapability(entry!, match.name)"
+          >
+            {{ match.title }}
           </button>
         </div>
         <p v-if="!loading && !error && !entries.length" class="cap-muted">
@@ -716,12 +753,30 @@ onBeforeUnmount(() => {
                 <h3>目前具备哪些能力</h3>
                 <span class="cap-badge">{{ selectedCapabilities.length }} 项业务操作</span>
               </div>
-              <details v-for="group in catalogGroups" :key="group.id" class="cap-capability-group">
+              <p
+                v-if="keyword.trim() && matchingCapabilities.length"
+                role="status"
+                class="cap-muted"
+              >
+                找到 {{ matchingCapabilities.length }} 项匹配操作
+              </p>
+              <details
+                v-for="group in catalogGroups"
+                :key="group.id"
+                class="cap-capability-group"
+                :open="!!keyword.trim()"
+              >
                 <summary>
                   <strong>{{ group.name }}</strong
                   ><span class="cap-muted">{{ group.items.length }} 项 · 查看命令与工具</span>
                 </summary>
-                <div v-for="item in group.items" :key="item.name" class="cap-operation-description">
+                <div
+                  v-for="item in group.items"
+                  :id="`cap-operation-${item.name}`"
+                  :key="item.name"
+                  class="cap-operation-description"
+                  tabindex="-1"
+                >
                   <h3>{{ item.title }}</h3>
                   <p class="cap-muted">{{ item.description }}</p>
                   <code>{{ item.cli }}</code
@@ -756,19 +811,51 @@ onBeforeUnmount(() => {
         </template>
       </section>
     </div>
-    <details v-if="area !== 'published' && !detailKind" class="cap-planning" :open="route.query.type === '应用接入'">
+    <details
+      v-if="area !== 'published' && !detailKind"
+      class="cap-planning"
+      :open="route.query.type === '应用接入'"
+    >
       <summary>后续规划 · 外部应用接入</summary>
       <p>外部应用账号接入仍在规划中，目前没有可用的授权或连接入口。</p>
-      <p>已开放的工作流包可在 <RouterLink :to="rootRoute('discover', 'Skill')">Skill 资源</RouterLink> 中浏览；安装资源不会获得账号授权。</p>
+      <p>
+        已开放的工作流包可在
+        <RouterLink :to="rootRoute('discover', 'Skill')">Skill 资源</RouterLink>
+        中浏览；安装资源不会获得账号授权。
+      </p>
     </details>
   </main>
 </template>
 
 <style scoped>
-.cap-planning { margin-top:20px; padding:14px 18px; border-top:1px solid var(--wao-line); color:var(--wao-text-2); font-size:13px; line-height:1.8; }
-.cap-planning summary { cursor:pointer; color:var(--wao-text-3); }
-.cap-planning p { margin:10px 0 0; }
-.cap-planning a { color:var(--wao-primary-text); }
+.cap-match-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.cap-operation-description:focus {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: 4px;
+}
+.cap-planning {
+  margin-top: 20px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--wao-line);
+  color: var(--wao-text-2);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.cap-planning summary {
+  cursor: pointer;
+  color: var(--wao-text-3);
+}
+.cap-planning p {
+  margin: 10px 0 0;
+}
+.cap-planning a {
+  color: var(--wao-primary-text);
+}
 .cap-center {
   max-width: 1420px;
   margin: 0 auto;

@@ -8,6 +8,9 @@ export interface WorkspaceMcpToken {
   canPublishHostedPage: boolean
   createdAt: string
   lastUsedAt?: string | null
+  lastVerifiedAt?: string | null
+  lastVerificationFailedAt?: string | null
+  verifiedToolCount?: number | null
   permissionMode?: 'legacy' | 'granular'
   permissions?: string[] | null
   projectIds?: string[] | null

@@ -562,7 +562,7 @@ V121 会把集中账号已有的最新真实额度补成首条基线，未知额
 | token_hash | CHAR(64) UNIQUE | `wao_mcp_...` 高熵令牌的 SHA-256 摘要；数据库不保存明文 |
 | created_at / last_used_at / revoked_at | DATETIME | 创建、最近成功认证和吊销时间 |
 
-### workspace_mcp_token（V161、V171）
+### workspace_mcp_token（V161、V171、V182、V186）
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -571,6 +571,10 @@ V121 会把集中账号已有的最新真实额度补成首条基线，未知额
 | token_hash | CHAR(64) UNIQUE | 工作区令牌 SHA-256 摘要 |
 | can_write | BOOLEAN | MCP 工具写入权限 |
 | can_publish_hosted_page | BOOLEAN NOT NULL DEFAULT FALSE | 独立的 CLI 托管 HTML 发布权限；旧令牌默认关闭 |
+| permission_policy / client_type | JSON / VARCHAR(8) NULL | V182 操作与资源范围快照、CLI/MCP 类型；NULL policy 沿用旧整体授权 |
+| last_verified_at | DATETIME(6) NULL | V186 实际客户端 tools/list 最近成功时间；原有访问不回填 |
+| verified_tool_count | INT NULL | V186 最近成功返回的工具数量 |
+| last_verification_failed_at | DATETIME(6) NULL | V186 最近工具目录运行失败时间，不保存异常内容或令牌 |
 | created_at / last_used_at / revoked_at | DATETIME | 创建、最近成功认证和吊销时间 |
 
 V70 同时种下固定 `kb-memory / kb-memory-f` 的“共享记忆”知识库与文件夹。它保留为历史协作资料；从 V73
