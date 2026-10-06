@@ -273,6 +273,18 @@ const selectedAuthor = ref('')
 const showSystemArticles = ref(true)
 const filterOpen = ref(false)
 const filterControl = ref<HTMLElement>()
+const pageActionsOpen = ref(false)
+const pageActionsControl = ref<HTMLElement>()
+const pageActionsButton = ref<HTMLButtonElement>()
+function closePageActions() { pageActionsOpen.value = false; pageActionsButton.value?.focus() }
+function choosePageAction(action: 'settings' | 'trash') {
+  closePageActions()
+  if (action === 'settings') noteSettingsOpen.value = true
+  else trashOpen.value = true
+}
+useOverlayDismiss(() => pageActionsOpen.value, closePageActions, event => {
+  if (!pageActionsControl.value?.contains(event.target as Node)) pageActionsOpen.value = false
+})
 const selectedTag = ref<string | null>('')
 const noteListPreferenceKey = `wao-note-list-preferences-v1:${session.currentUser.id}`
 const noteListPreferenceLoaded = ref(false)
@@ -1223,7 +1235,7 @@ onMounted(() => void loadPins())
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
     <NoteMediaCopyDialog v-if="mediaCopyContent" :content="mediaCopyContent" :note-id="mediaCopyNote.id" :title="mediaCopyNote.title" @close="mediaCopyContent = null" />
     <NoteTrashDialog v-if="trashOpen" :key="session.currentUser.id" :kb-name="data.kbs.find(kb => kb.id === 'kb-notes')?.name || '小记'" @close="trashOpen = false" @restored="reload" />
-    <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i><span class="daily-count-label">今日写字 </span>{{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle" type="button" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</button><button class="writing-toggle notes-settings-toggle" type="button" aria-label="小记设置" @click="noteSettingsOpen = true"><i class="ri-settings-3-line" aria-hidden="true"></i><span>小记设置</span></button><button class="writing-toggle notes-trash-toggle" type="button" aria-label="小记回收站" @click="trashOpen = true"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>回收站</span></button></div><span>{{ notes.length }} 条记录</span></header>
+    <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i><span class="daily-count-label">今日写字 </span>{{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle writing-region-toggle" type="button" :aria-label="writingOpen ? '收起记录区' : '展开记录区 · 继续写'" :title="writingOpen ? '收起记录区' : '展开记录区 · 继续写'" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i><span>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</span></button><button class="writing-toggle notes-settings-toggle" type="button" aria-label="小记设置" @click="noteSettingsOpen = true"><i class="ri-settings-3-line" aria-hidden="true"></i><span>小记设置</span></button><button class="writing-toggle notes-trash-toggle" type="button" aria-label="小记回收站" @click="trashOpen = true"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>回收站</span></button><div ref="pageActionsControl" class="notes-page-actions"><button ref="pageActionsButton" type="button" aria-label="小记更多操作" aria-haspopup="true" :aria-expanded="pageActionsOpen" aria-controls="notes-page-actions" @click="pageActionsOpen = !pageActionsOpen"><i class="ri-more-line" aria-hidden="true"></i></button><div v-if="pageActionsOpen" id="notes-page-actions" class="notes-page-actions-panel" role="group" aria-label="小记更多操作"><button type="button" @click="choosePageAction('settings')"><i class="ri-settings-3-line" aria-hidden="true"></i>小记设置</button><button type="button" @click="choosePageAction('trash')"><i class="ri-delete-bin-line" aria-hidden="true"></i>回收站</button></div></div></div><span>{{ notes.length }} 条记录</span></header>
     <div ref="workspace" class="notes-workspace" :inert="readerCompanionOpen ? true : undefined" :style="writingStyle" :class="{ 'writing-collapsed': !writingOpen, resizing }">
       <aside v-show="writingOpen" id="notes-writing-pane" class="writing-pane" aria-label="新建小记区">
         <NoteComposer ref="newComposer" :key="`${session.currentUser.id}:new`" :focus-request="writingFocusRequest" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
@@ -1799,4 +1811,26 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 
 <style scoped>
 .reader-layout-actions{gap:10px;flex-wrap:nowrap}.reader-mode-switch{background:var(--wao-bg-sub);border:1px solid var(--wao-line);padding:3px;border-radius:9px;gap:2px}.reader-mode-switch button{border:0;background:transparent}.reader-mode-switch button[aria-pressed="true"]{background:var(--wao-bg-card);box-shadow:0 1px 4px rgb(20 24 45 / .06)}.reader-more{position:relative;flex:none}.reader-more summary{display:flex;align-items:center;gap:5px;min-height:36px;box-sizing:border-box;padding:6px 10px;border:1px solid var(--wao-line-control);border-radius:7px;cursor:pointer;font-size:12px;color:var(--wao-text-3);list-style:none}.reader-more summary::-webkit-details-marker{display:none}.reader-more summary:focus-visible{outline:2px solid var(--wao-primary);outline-offset:2px}.reader-more-panel{position:absolute;right:0;top:calc(100% + 8px);width:190px;padding:6px;display:grid;gap:2px;border:1px solid var(--wao-line-control);border-radius:10px;background:var(--wao-bg-card);box-shadow:var(--wao-shadow-pop);z-index:100}.reader-more-panel button{justify-content:flex-start;border:0;min-height:38px;background:transparent}.reader-more-panel button:hover{background:var(--wao-bg-hover)}.reader-more-panel button:has(.ri-delete-bin-line){color:var(--wao-danger-strong);border-top:1px solid var(--wao-line);border-radius:0;margin-top:4px}.reader-copy-status{max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@media(max-width:760px){.reader-layout-actions{gap:6px;flex-wrap:wrap;padding-right:44px}.reader-mode-switch button{padding:6px 8px}.reader-more-panel{right:0;max-height:55dvh;overflow:auto}.reader-copy-status{display:none}}
+</style>
+
+<style scoped>
+.notes-page-actions { display:none; position:relative; }
+.notes-page-actions-panel { position:absolute; top:calc(100% + 6px); right:0; z-index:20; display:grid; width:160px; padding:6px; border:1px solid var(--wao-line-control); border-radius:10px; background:var(--wao-bg-card); box-shadow:var(--wao-shadow-pop); }
+.notes-page-actions-panel button { display:flex; align-items:center; gap:8px; text-align:left; }
+@media(max-width:760px) {
+  .page-heading { margin-bottom:8px; gap:4px; }
+  .heading-title { flex:1 1 100%; flex-wrap:nowrap; gap:6px; }
+  .heading-title h1 { font-size:18px; gap:6px; }
+  .heading-title .daily-note-count { min-width:0; padding:5px 6px; font-size:11px; white-space:normal; }
+  .daily-count-label, .heading-title .notes-settings-toggle, .heading-title .notes-trash-toggle, .writing-region-toggle span { display:none; }
+  .heading-title .writing-region-toggle { flex:none; margin-left:auto; min-width:44px; min-height:44px; padding:8px; }
+  .writing-region-toggle i { margin:0; }
+  .notes-page-actions { display:block; flex:none; }
+  .notes-page-actions button { min-width:44px; min-height:44px; }
+  .filter-toggle, .filter-options button, .filter-group select, .system-visibility, .list-toolbar > button, .reader-layout-actions button, .reader-more summary, .workflow-status button { min-height:44px; }
+  .note-touch-ai, .note-more-actions { min-width:44px; min-height:44px; }
+  .search { min-height:44px; box-sizing:border-box; }
+  .search input { font-size:16px; }
+  .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height:270px; }
+}
 </style>
