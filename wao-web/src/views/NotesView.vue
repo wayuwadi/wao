@@ -51,6 +51,9 @@ const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const mediaCopyContent = ref<RichDocContent | null>(null)
 const mediaCopyNote = ref({ id: '', title: '' })
 const trashOpen = ref(false)
+const readerMore = ref<HTMLDetailsElement | null>(null)
+const readerMenuAnchor = ref<{ id: string; element: HTMLElement } | null>(null)
+function closeReaderMore() { if (readerMore.value) readerMore.value.open = false }
 const noteDisplay = useNoteDisplayPreferences()
 function openMediaCopy(note: Doc) {
   mediaCopyNote.value = { id: note.id, title: displayedTitle(note) }
@@ -299,7 +302,10 @@ const filterSummary = computed(() => [selectedTag.value === null ? '无标签' :
   { today: '今天', yesterday: '昨天', earlier: '以前', all: '' }[timeFilter.value],
   { updatedDesc: '最近更新', createdDesc: '最近创建', updatedAsc: '最早更新' }[sort.value]].filter(Boolean).join(' · '))
 function resetFilters() { selectedTag.value = ''; selectedAuthor.value = ''; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc'; showSystemArticles.value = true }
-function onOutsideFilter(event: PointerEvent) { if (!filterControl.value?.contains(event.target as Node)) filterOpen.value = false }
+function onOutsideFilter(event: PointerEvent) {
+  if (!filterControl.value?.contains(event.target as Node)) filterOpen.value = false
+  if (readerMore.value?.open && !readerMore.value.contains(event.target as Node)) closeReaderMore()
+}
 const tagNames = ref<string[]>([])
 const tagsLoading = ref(false)
 const tagsError = ref('')
@@ -356,7 +362,7 @@ const deleteConfirmation = ref<HTMLElement | null>(null)
 const deleteButtons = new Map<string, HTMLElement>()
 const readerDeleteButton = ref<HTMLElement | null>(null)
 function setReaderDeleteButton(value: unknown) { readerDeleteButton.value = value instanceof HTMLElement ? value : null }
-function deleteAnchor(id: string) { return reading.value && readingId.value === id ? readerDeleteButton.value : deleteButtons.get(id) }
+function deleteAnchor(id: string) { return reading.value ? readerMenuAnchor.value?.id === id ? readerMenuAnchor.value.element : readerMore.value?.querySelector<HTMLElement>('summary') ?? readerDeleteButton.value : deleteButtons.get(id) }
 const deleteConfirmationStyle = ref<Record<string, string>>({ visibility: 'hidden' })
 function setDeleteConfirmation(value: unknown) { deleteConfirmation.value = value instanceof HTMLElement ? value : null }
 function setDeleteButton(id: string, value: unknown) {
@@ -479,6 +485,22 @@ function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
     { id: 'link', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
     { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
     { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => toggleDeleteConfirmation(id) },
+  ])
+}
+function openReaderNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
+  if (event instanceof KeyboardEvent && !(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
+  event.preventDefault(); event.stopPropagation()
+  const note = data.docById(id)
+  if (!note || !reading.value) return
+  if (event.currentTarget instanceof HTMLElement) readerMenuAnchor.value = { id, element: event.currentTarget }
+  const inReader = (action: () => void) => { if (!guardReadingEdit(action)) action() }
+  contextMenu.value?.openAt(event, `小记：${displayedTitle(note)}`, [
+    { id: 'read', label: '在这里阅读', run: () => selectReadingNote(id) },
+    { id: 'edit', label: '就地编辑', run: () => inReader(() => { void selectReadingNote(id).then(() => { if (readingId.value === id) void beginReadingEdit() }) }) },
+    { id: 'copy', label: '复制给 Codex', run: () => openMediaCopy(note) },
+    { id: 'share', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
+    { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
+    { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => inReader(() => void toggleDeleteConfirmation(id)) },
   ])
 }
 async function deleteNote(id: string) {
@@ -665,6 +687,8 @@ async function selectReadingNote(id: string) {
   if (!readerNotes.value.some(note => note.id === id)) return
   rememberReaderPosition()
   readingId.value = id
+  closeReaderMore()
+  readerMenuAnchor.value = null
   originalsOpen.value = false
   readerDirectoryOpen.value = false
   readerRestorePending = true
@@ -693,6 +717,7 @@ async function stopReading() {
   readerTrigger = null
 }
 function closeReaderLayer() {
+  if (readerMore.value?.open) { closeReaderMore(); readerMore.value?.querySelector<HTMLElement>('summary')?.focus(); return }
   if (readerCompanionOpen.value) { void closeReaderCompanion(); return }
   if (readerDirectoryOpen.value) {
     readerDirectoryOpen.value = false
@@ -749,6 +774,7 @@ function moveReader(delta: number) {
   void selectReadingNote(readerNotes.value[index]!.id)
 }
 function onReaderKeydown(event: KeyboardEvent) {
+  if (event.target instanceof Element && event.target.closest('.wao-context-menu, .reader-more')) return
   if (event.defaultPrevented || event.isComposing || readerEditing.value || confirmingDeleteId.value) return
   if (!reading.value || previewImage.value || !readerDismiss.isTopmost()) return
   trapReaderFocus(event, readerDialog.value)
@@ -1275,6 +1301,7 @@ onMounted(() => void loadPins())
     <NoteAiSettingsDialog v-model:open="noteSettingsOpen" />
     <Teleport to="body">
       <div v-if="reading && confirmingDeleteId" :ref="setDeleteConfirmation" class="card-delete-confirm" :style="deleteConfirmationStyle" role="dialog" aria-label="确认删除当前小记">
+        <strong>{{ data.docById(confirmingDeleteId)?.title }}</strong>
         <span>将此小记移入回收站？7 天内可恢复。</span><p v-if="deleteError" role="alert">{{ deleteError.message }}</p>
         <div class="card-delete-actions"><button class="card-delete-cancel" type="button" :disabled="!!deletingId" @click="closeDeleteConfirmation(true)">取消</button><button class="card-delete-submit" type="button" :disabled="!!deletingId || !data.apiLive" @click="deleteNote(confirmingDeleteId)">{{ deletingId ? '删除中…' : '确认删除' }}</button></div>
       </div>
@@ -1283,20 +1310,22 @@ onMounted(() => void loadPins())
           <strong><i class="ri-book-open-line" aria-hidden="true"></i> 阅读模式 <small>{{ readerEditing ? '编辑中' : '只读' }}</small></strong>
           <span class="reader-copy-status" role="status" aria-live="polite">{{ readerCopyStatus }}</span>
           <div class="reader-layout-actions">
+            <div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div>
+            <NoteWidthSwitch v-if="readerMode === 'full'" v-model="contentWidth" label="阅读宽度" />
+            <button type="button" aria-label="复制当前小记图文" :disabled="originalsOpen" @click="openMediaCopy(readingNote)"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span>复制</span></button>
+            <details ref="readerMore" class="reader-more"><summary tabindex="0" aria-label="更多阅读操作"><i class="ri-more-line" aria-hidden="true"></i><span>更多</span></summary><div class="reader-more-panel" @click="closeReaderMore">
             <button v-if="readingNote.author === session.currentUser.id" class="reader-companion-toggle" type="button" @click="openReaderCompanion"><i class="ri-sparkling-2-line" aria-hidden="true"></i><span>AI 改了什么</span></button>
             <button type="button" aria-label="复制小记分享链接" title="复制当前小记的公开只读分享链接" :disabled="readerCopyBusy" @click="copyReadingNote('share')"><i class="ri-share-forward-line" aria-hidden="true"></i><span>分享</span></button>
             <button type="button" aria-label="复制小记正文" :title="originalsOpen ? '返回当前内容后复制正文' : '复制当前正文（Markdown）'" :disabled="readerCopyBusy || originalsOpen" @click="copyReadingNote('body')"><i class="ri-file-copy-line" aria-hidden="true"></i><span>复制正文</span></button>
-            <button type="button" aria-label="复制当前小记图文" :disabled="originalsOpen" @click="openMediaCopy(readingNote)"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span>复制图文</span></button>
             <button v-if="readingNote.author === session.currentUser.id" type="button" :disabled="readerEditing" @click="selectCompanion(readingNote.id, 'chat')"><i class="ri-chat-3-line" aria-hidden="true"></i><span>聊聊这篇</span></button>
             <button type="button" :ref="setReaderDeleteButton" :aria-label="`删除小记：${readingNote.title}`" :disabled="!!deletingId" @click="guardReadingEdit(() => void toggleDeleteConfirmation(readingId)) || toggleDeleteConfirmation(readingId)"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>删除</span></button>
             <button v-if="!readerEditing" type="button" :aria-pressed="originalsOpen" @click="toggleOriginals">{{ originalsOpen ? '返回当前内容' : '查看原文' }}</button>
-            <div class="reader-mode-switch" role="group" aria-label="阅读布局"><button type="button" :aria-pressed="readerMode === 'side'" @click="changeReaderMode('side')"><i class="ri-layout-left-line" aria-hidden="true"></i>侧栏速览</button><button type="button" :aria-pressed="readerMode === 'full'" @click="changeReaderMode('full')"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏阅读</button></div>
-            <NoteWidthSwitch v-if="readerMode === 'full'" v-model="contentWidth" label="阅读宽度" />
+            </div></details>
             <button ref="readerClose" type="button" aria-label="退出阅读模式" title="退出阅读模式（Esc）" @click="stopReading"><i class="ri-close-line" aria-hidden="true"></i><span>关闭</span></button>
           </div>
         </header>
         <div ref="readerLayout" class="reader-layout" :class="{ resizing: readerWidths.resizing.value }" :style="readerWidths.style.value">
-          <aside class="reader-directory" aria-label="当前列表的小记目录"><div class="reader-directory-heading"><strong>小记目录</strong><span>{{ readerNotes.length }} 篇</span><button type="button" class="reader-directory-close" aria-label="收起小记目录" @click="closeReaderLayer"><i class="ri-close-line" aria-hidden="true"></i></button></div><nav aria-label="选择小记"><button v-for="note in readerNotes" :key="note.id" type="button" :aria-current="note.id === readingId ? 'true' : undefined" @click="selectReadingNote(note.id)"><strong>{{ displayedTitle(note) }}</strong><small>{{ noteAuthorName(note) }} · {{ timeLabel(note.updated || note.created) }}</small></button></nav></aside>
+          <aside class="reader-directory" aria-label="当前列表的小记目录"><div class="reader-directory-heading"><strong>小记目录</strong><span>{{ readerNotes.length }} 篇</span><button type="button" class="reader-directory-close" aria-label="收起小记目录" @click="closeReaderLayer"><i class="ri-close-line" aria-hidden="true"></i></button></div><nav aria-label="选择小记"><button v-for="note in readerNotes" :key="note.id" type="button" :aria-current="note.id === readingId ? 'true' : undefined" @click="selectReadingNote(note.id)" @contextmenu.prevent.stop="openReaderNoteMenu($event, note.id)" @keydown="openReaderNoteMenu($event, note.id)"><strong>{{ displayedTitle(note) }}</strong><small>{{ noteAuthorName(note) }} · {{ timeLabel(note.updated || note.created) }}</small></button></nav></aside>
           <div class="reader-resizer reader-directory-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="小记目录宽度" :aria-valuemin="readerWidths.minimum.directory" :aria-valuemax="readerWidths.limit('directory')" :aria-valuenow="readerWidths.widths.value.directory" title="拖拽调整宽度，双击恢复默认；方向键微调" @pointerdown="readerWidths.start('directory', $event)" @keydown="readerWidths.keydown('directory', $event)" @dblclick="readerWidths.reset('directory')"><span></span></div>
           <div class="reader-main" :inert="readerDirectoryOpen ? true : undefined"><button type="button" class="reader-directory-toggle" @click="openReaderDirectory"><i class="ri-list-check" aria-hidden="true"></i>小记目录 <span>{{ readingIndex + 1 }} / {{ readerNotes.length }}</span></button>
             <article :key="readingNote.id" ref="readerPage" class="reader-page" @scroll="readerRestorePending = false">
@@ -1719,6 +1748,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .card-hover-actions{visibility:hidden;opacity:0;pointer-events:none;gap:8px}
 .note-meta-trailing{display:flex;min-width:0;width:100%;margin:0;gap:6px;justify-content:flex-end;flex-wrap:nowrap}
 .note-meta-trailing .saved,.note-meta-trailing .note-count{flex:none;margin:0;white-space:nowrap}
+.note-meta-trailing .saved{font-size:10px}
 .note-meta .stage-list{position:static;visibility:inherit;opacity:1;gap:4px;margin:0;flex:none}
 .note-meta-trailing .card-quick-actions{display:flex;opacity:1;visibility:inherit;pointer-events:inherit;flex:none}
 .note-card:hover .card-identity,.note-card:focus-within .card-identity{visibility:hidden;opacity:0}
@@ -1732,9 +1762,13 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .note-card-footer .note-read-guide,.note-card.expanded .note-card-footer .note-read-guide{position:static;inset:auto;min-height:0;margin:0;padding:0;background:none;opacity:1;pointer-events:inherit;flex:none}
 .note-card-footer .compact-workflow{min-width:0;max-width:160px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}.compact-workflow button{color:var(--wao-primary-text);font:inherit;border:0;padding:0;background:transparent;cursor:pointer}
 .notes-toolbar{margin-top:0}.note-image-lightbox img{max-height:calc(100dvh - 150px)}
-@container(max-width:560px){.note-meta{grid-template-columns:minmax(0,1fr) min(220px,48%)}.card-identity{max-width:100%}.card-identity time{display:block}.note-meta .stage-list{position:static}.note-meta-trailing .card-quick-actions{display:none}.note-meta .note-heading h2{font-size:15px}}
+@container(max-width:700px){.note-meta{grid-template-columns:minmax(0,1fr) min(220px,48%)}.card-identity{max-width:100%}.card-identity time{display:block}.note-meta .stage-list{position:static}.note-meta-trailing .card-quick-actions{display:none}.note-meta .note-heading h2{font-size:15px}}
 @media(max-width:760px){.note-meta{grid-template-columns:minmax(0,1fr) 82px;height:40px}.note-meta .note-heading h2{font-size:15px}.card-identity{display:none}.note-meta .stage-list{display:none}.note-meta .stage-list-open{position:absolute;display:flex;top:42px;right:0;opacity:1;visibility:visible}.note-meta-trailing{display:flex;width:100%;gap:2px}.card-action-slot{min-width:0;flex:0}.card-hover-actions{visibility:visible;opacity:1}.note-card-footer .compact-workflow{max-width:90px}.notes-trash-toggle{min-width:40px;padding:8px}.notes-trash-toggle span{display:none}}
 @media(hover:none),(pointer:coarse){.note-card-footer{opacity:1;pointer-events:auto}.note-card-footer .card-tags button{min-height:36px}.card-action-slot .card-identity{display:none}.card-hover-actions{opacity:1;visibility:visible;pointer-events:auto}.note-card:not(.fixed-height){padding-bottom:50px}}
 </style>
 
 <style scoped>@media(max-width:600px){.heading-title{gap:6px}.daily-count-label{display:none}.daily-note-count{padding:5px 7px}.heading-title h1{font-size:18px}.heading-title .writing-toggle{font-size:11px;padding:8px 7px}.notes-trash-toggle{width:36px;min-width:36px}.notes-settings-toggle{min-width:36px}}</style>
+
+<style scoped>
+.reader-layout-actions{gap:10px;flex-wrap:nowrap}.reader-mode-switch{background:var(--wao-bg-sub);border:1px solid var(--wao-line);padding:3px;border-radius:9px;gap:2px}.reader-mode-switch button{border:0;background:transparent}.reader-mode-switch button[aria-pressed="true"]{background:var(--wao-bg-card);box-shadow:0 1px 4px rgb(20 24 45 / .06)}.reader-more{position:relative;flex:none}.reader-more summary{display:flex;align-items:center;gap:5px;min-height:36px;box-sizing:border-box;padding:6px 10px;border:1px solid var(--wao-line-control);border-radius:7px;cursor:pointer;font-size:12px;color:var(--wao-text-3);list-style:none}.reader-more summary::-webkit-details-marker{display:none}.reader-more summary:focus-visible{outline:2px solid var(--wao-primary);outline-offset:2px}.reader-more-panel{position:absolute;right:0;top:calc(100% + 8px);width:190px;padding:6px;display:grid;gap:2px;border:1px solid var(--wao-line-control);border-radius:10px;background:var(--wao-bg-card);box-shadow:var(--wao-shadow-pop);z-index:100}.reader-more-panel button{justify-content:flex-start;border:0;min-height:38px;background:transparent}.reader-more-panel button:hover{background:var(--wao-bg-hover)}.reader-more-panel button:has(.ri-delete-bin-line){color:var(--wao-danger-strong);border-top:1px solid var(--wao-line);border-radius:0;margin-top:4px}.reader-copy-status{max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@media(max-width:760px){.reader-layout-actions{gap:6px;flex-wrap:wrap;padding-right:44px}.reader-mode-switch button{padding:6px 8px}.reader-more-panel{right:0;max-height:55dvh;overflow:auto}.reader-copy-status{display:none}}
+</style>
