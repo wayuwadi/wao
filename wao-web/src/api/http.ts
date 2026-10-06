@@ -2,6 +2,11 @@ import { invalidateDesktopCache } from './desktopCache'
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { reportBrowserRequest } from '@/utils/requestMetricReporter'
 import { edgeApiRouting, isSafeEdgeMethod } from './edgeRouting'
+import {
+  assertSessionRequest,
+  isProtectedRequest,
+  requireSessionRecovery,
+} from '@/utils/sessionRecovery'
 
 export interface ApiResponse<T> {
   code: number
@@ -47,6 +52,7 @@ function retryGatewayRequest(
 
 /** 解析 WAO 后端的 token/done/error SSE 事件，供长时 AI 接口复用。 */
 export async function* streamTextEvents(url: string, body: unknown): AsyncGenerator<string> {
+  assertSessionRequest(url)
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -54,6 +60,7 @@ export async function* streamTextEvents(url: string, body: unknown): AsyncGenera
     credentials: 'include',
   })
   if (!res.ok || !res.body) {
+    if (res.status === 401 && isProtectedRequest(url)) requireSessionRecovery()
     let message = `请求失败：${res.status}`
     try {
       const error = (await res.json()) as Partial<ApiResponse<unknown>>
@@ -93,17 +100,25 @@ export async function* streamTextEvents(url: string, body: unknown): AsyncGenera
 
 http.interceptors.request.use(async (config: RetriableRequestConfig) => {
   const url = config.url ?? ''
+  assertSessionRequest(url)
   if (/^\/api\/auth\//.test(url)) edgeApiRouting.reset()
-  if (!config.waoEdgeFallback && !config.waoEdgeOrigin && (!config.baseURL || config.baseURL === '/')) {
+  if (
+    !config.waoEdgeFallback &&
+    !config.waoEdgeOrigin &&
+    (!config.baseURL || config.baseURL === '/')
+  ) {
     const method = config.method?.toLowerCase() ?? 'get'
-    const route = method === 'post' && /^\/api\/(?:files|images)$/.test(url)
-      ? await edgeApiRouting.prepareUpload(url) : edgeApiRouting.route(url, method)
+    const route =
+      method === 'post' && /^\/api\/(?:files|images)$/.test(url)
+        ? await edgeApiRouting.prepareUpload(url)
+        : edgeApiRouting.route(url, method)
     if (route) {
       config.baseURL = route.origin
       config.waoEdgeOrigin = route.origin
       if (!isSafeEdgeMethod(config.method ?? 'get')) config.headers.set('X-WAO-CSRF', route.csrf)
     }
   }
+  assertSessionRequest(url)
   config.waoMetricStartedAt = performance.now()
   config.waoMetricStartedAtEpoch = Date.now()
   return config
@@ -129,8 +144,13 @@ http.interceptors.response.use(
     if (typeof envelope?.code === 'number' && envelope.code !== 0) {
       return Promise.reject(new Error(envelope.message || '请求失败'))
     }
-    if (!['get', 'head'].includes(response.config.method?.toLowerCase() ?? 'get')
-      && /^\/api\/(tasks|projects|areas|members|org|kbs|kb-groups)(?:\/|$)/.test(response.config.url ?? '')) invalidateDesktopCache()
+    if (
+      !['get', 'head'].includes(response.config.method?.toLowerCase() ?? 'get') &&
+      /^\/api\/(tasks|projects|areas|members|org|kbs|kb-groups)(?:\/|$)/.test(
+        response.config.url ?? '',
+      )
+    )
+      invalidateDesktopCache()
     return response
   },
   (error: unknown) => {
@@ -138,20 +158,33 @@ http.interceptors.response.use(
       report(error.config as RetriableRequestConfig | undefined, error.response?.status ?? null)
       // WAO 已返回明确业务结论时不按网关断连重试（例如飞书未配置也使用 HTTP 502）。
       const envelope = error.response?.data
-      if (RETRIABLE_GATEWAY_STATUSES.has(error.response?.status ?? 0)
-        && typeof envelope?.code === 'number' && envelope.code !== 0
-        && typeof envelope.message === 'string' && envelope.message) {
-        return Promise.reject(Object.assign(new Error(envelope.message), { status: error.response?.status }))
+      if (
+        RETRIABLE_GATEWAY_STATUSES.has(error.response?.status ?? 0) &&
+        typeof envelope?.code === 'number' &&
+        envelope.code !== 0 &&
+        typeof envelope.message === 'string' &&
+        envelope.message
+      ) {
+        return Promise.reject(
+          Object.assign(new Error(envelope.message), { status: error.response?.status }),
+        )
       }
       const config = error.config as RetriableRequestConfig | undefined
+      if (error.response?.status === 401 && isProtectedRequest(config?.url ?? ''))
+        requireSessionRecovery()
       if (config?.waoEdgeOrigin) {
         // Cancellation and authorization failures are never transport failover.
         if (axios.isCancel(error) || config.signal?.aborted) return Promise.reject(error)
-        const transportFailure = !error.response || RETRIABLE_GATEWAY_STATUSES.has(error.response.status)
+        const transportFailure =
+          !error.response || RETRIABLE_GATEWAY_STATUSES.has(error.response.status)
         if (transportFailure || error.response?.status === 401 || error.response?.status === 403) {
           edgeApiRouting.failed(config.waoEdgeOrigin)
         }
-        if (transportFailure && isSafeEdgeMethod(config.method ?? 'get') && !config.waoEdgeFallback) {
+        if (
+          transportFailure &&
+          isSafeEdgeMethod(config.method ?? 'get') &&
+          !config.waoEdgeFallback
+        ) {
           config.waoEdgeFallback = true
           config.waoEdgeOrigin = undefined
           config.baseURL = '/'
@@ -159,11 +192,18 @@ http.interceptors.response.use(
           return http.request(config)
         }
         if (transportFailure && !isSafeEdgeMethod(config.method ?? 'get')) {
-          return Promise.reject(Object.assign(new Error('连接中断，保存结果尚未确认。请先检查最新内容，再决定是否重试。'), { cause: error }))
+          return Promise.reject(
+            Object.assign(
+              new Error('连接中断，保存结果尚未确认。请先检查最新内容，再决定是否重试。'),
+              { cause: error },
+            ),
+          )
         }
         // Do not fall through to the legacy cloud retry loop for node requests.
         const message = error.response?.data?.message
-        return Promise.reject(message ? Object.assign(new Error(message), { status: error.response?.status }) : error)
+        return Promise.reject(
+          message ? Object.assign(new Error(message), { status: error.response?.status }) : error,
+        )
       }
       const retry = retryGatewayRequest(
         error.config as RetriableRequestConfig | undefined,
@@ -171,7 +211,8 @@ http.interceptors.response.use(
       )
       if (retry) return retry
       const message = error.response?.data?.message
-      if (message) return Promise.reject(Object.assign(new Error(message), { status: error.response?.status }))
+      if (message)
+        return Promise.reject(Object.assign(new Error(message), { status: error.response?.status }))
     }
     return Promise.reject(error)
   },

@@ -6,12 +6,24 @@ import { useSessionStore } from '@/stores/session'
 import { mountFeishuQr } from '@/utils/feishuQr'
 import { feishuInAppLogin, isInFeishu } from '@/utils/feishuInApp'
 import { safeAuthTarget } from '@/composables/breathingAuth'
+import {
+  preferredLoginMethod,
+  rememberLoginMethod,
+  prefersFeishuAuthorization,
+} from '@/utils/loginPreference'
+import { reauthenticateWithFeishu } from '@/utils/reauthPopup'
 
-const props = defineProps<{ target: string; beforeNavigate: (url: string) => void }>()
+const props = defineProps<{
+  target: string
+  beforeNavigate: (url: string) => void
+  recovery?: boolean
+}>()
 const emit = defineEmits<{ opened: []; authenticated: []; closed: []; claim: [] }>()
 const router = useRouter(),
   session = useSessionStore()
 const method = ref<'feishu' | 'email'>('feishu')
+const authorizationFirst = ref(false)
+const showPassword = ref(false)
 const email = ref(''),
   password = ref('')
 const busy = ref(false),
@@ -33,6 +45,7 @@ function measureViewport() {
 let unmountQr: (() => void) | undefined
 let qrGeneration = 0
 let disposed = false
+let recoveryAbort: AbortController | undefined
 function stopQr() {
   qrGeneration++
   unmountQr?.()
@@ -42,27 +55,41 @@ async function loadQr() {
   stopQr()
   const generation = qrGeneration
   const active = () =>
-    !disposed && opened.value && method.value === 'feishu' && generation === qrGeneration
+    !disposed &&
+    opened.value &&
+    method.value === 'feishu' &&
+    !authorizationFirst.value &&
+    generation === qrGeneration
   qrError.value = ''
   await nextTick()
   if (!active()) return
   try {
-    const cleanup = await mountFeishuQr('feishu-qr', active, (url) => {
-      try {
-        props.beforeNavigate(url)
-      } catch (reason) {
-        inAppError.value =
-          reason instanceof Error ? reason.message : '无法暂存练习，请使用邮箱登录。'
-        return false
-      }
-    })
+    const cleanup = await mountFeishuQr(
+      'feishu-qr',
+      active,
+      (url) => {
+        try {
+          props.beforeNavigate(url)
+        } catch (reason) {
+          inAppError.value =
+            reason instanceof Error ? reason.message : '无法暂存练习，请使用邮箱登录。'
+          return false
+        }
+      },
+      () => {
+        if (!active()) return
+        qrError.value = '二维码已过期，请刷新后重新扫码。'
+        stopQr()
+      },
+    )
     if (active()) unmountQr = cleanup
     else cleanup()
   } catch (reason) {
     if (active()) {
-      qrError.value = reason instanceof Error && reason.message
-        ? reason.message
-        : '飞书二维码暂时加载失败，请重试或使用下方授权登录。'
+      qrError.value =
+        reason instanceof Error && reason.message
+          ? reason.message
+          : '飞书二维码暂时加载失败，请重试或使用下方授权登录。'
     }
   }
 }
@@ -71,30 +98,36 @@ async function openAuth() {
   returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   emit('opened')
   measureViewport()
-  method.value = 'feishu'
+  method.value = isInFeishu() ? 'feishu' : preferredLoginMethod()
+  authorizationFirst.value = !!props.recovery || !!prefersFeishuAuthorization()
   error.value = ''
+  qrError.value = ''
+  inAppError.value = ''
   opened.value = true
   await nextTick()
   if (disposed || !opened.value) return
   dialog.value?.showModal()
   if (isInFeishu()) await tryInApp()
-  else await loadQr()
+  else if (method.value === 'feishu' && !authorizationFirst.value) await loadQr()
 }
 function onClose() {
   opened.value = false
+  showPassword.value = false
+  recoveryAbort?.abort()
   stopQr()
   emit('closed')
   if (returnFocus?.isConnected) returnFocus.focus()
 }
 function closeAuth() {
-  if (!working.value) dialog.value?.close()
+  if (!working.value && !props.recovery) dialog.value?.close()
 }
 async function switchMethod(next: 'feishu' | 'email') {
   if (working.value) return
   stopQr()
   method.value = next
+  showPassword.value = false
   error.value = ''
-  if (next === 'feishu') {
+  if (next === 'feishu' && !authorizationFirst.value) {
     await loadQr()
   }
 }
@@ -103,15 +136,25 @@ async function authorizeFeishu() {
   authorizationBusy.value = true
   inAppError.value = ''
   try {
+    if (props.recovery) {
+      recoveryAbort = new AbortController()
+      await reauthenticateWithFeishu(recoveryAbort.signal)
+      if (disposed) return
+      await session.recover()
+      rememberLoginMethod('feishu')
+      dialog.value?.close()
+      emit('authenticated')
+      return
+    }
     await startFeishuLogin('authorization', (url) => {
       if (disposed || !opened.value) return false
       props.beforeNavigate(url)
     })
   } catch (reason) {
-    inAppError.value =
-      reason instanceof Error && 'status' in reason
-        ? reason.message
-        : `暂时无法连接飞书，请重试或使用邮箱登录。${reason instanceof Error ? reason.message : ''}`
+    if (disposed) return
+    inAppError.value = reason instanceof Error && (props.recovery || 'status' in reason)
+      ? reason.message
+      : `暂时无法连接飞书，请重试或使用邮箱登录。${reason instanceof Error ? reason.message : ''}`
   } finally {
     authorizationBusy.value = false
   }
@@ -122,11 +165,13 @@ async function submitEmail() {
   busy.value = true
   try {
     await session.emailLogin(email.value, password.value)
+    rememberLoginMethod('email')
     password.value = ''
     if (disposed || !opened.value) return
     dialog.value?.close()
     emit('authenticated')
-    if (props.target !== '/breathe') await router.replace(safeAuthTarget(props.target))
+    if (!props.recovery && props.target !== '/breathe')
+      await router.replace(safeAuthTarget(props.target))
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '登录失败，请稍后重试。'
   } finally {
@@ -147,11 +192,15 @@ async function tryInApp() {
     if (resolution) {
       await session.acceptResolution(resolution)
       if (disposed || !opened.value) return
-      if (resolution.claimRequired) { emit('claim'); await router.replace('/auth/claim') }
-      else {
+      if (resolution.claimRequired) {
+        emit('claim')
+        await router.replace('/auth/claim')
+      } else {
+        rememberLoginMethod('feishu')
         dialog.value?.close()
         emit('authenticated')
-        if (props.target !== '/breathe') await router.replace(safeAuthTarget(props.target))
+        if (!props.recovery && props.target !== '/breathe')
+          await router.replace(safeAuthTarget(props.target))
       }
       return
     }
@@ -160,11 +209,33 @@ async function tryInApp() {
   } finally {
     inAppTrying.value = false
   }
-  if (!disposed && opened.value && method.value === 'feishu') await loadQr()
+  if (!disposed && opened.value && method.value === 'feishu' && !authorizationFirst.value)
+    await loadQr()
+}
+async function showQr() {
+  authorizationFirst.value = false
+  await loadQr()
+}
+async function checkRecovery() {
+  if (busy.value) return
+  busy.value = true
+  inAppError.value = ''
+  try {
+    await session.recover()
+    if (disposed) return
+    dialog.value?.close()
+    emit('authenticated')
+  } catch (reason) {
+    if (!disposed)
+      inAppError.value = reason instanceof Error ? reason.message : '尚未恢复登录，请重试。'
+  } finally {
+    busy.value = false
+  }
 }
 defineExpose({ open: openAuth })
 onBeforeUnmount(() => {
   disposed = true
+  recoveryAbort?.abort()
   window.visualViewport?.removeEventListener('resize', measureViewport)
   window.visualViewport?.removeEventListener('scroll', measureViewport)
   window.removeEventListener('resize', measureViewport)
@@ -181,26 +252,44 @@ onBeforeUnmount(() => {
     }"
     aria-labelledby="auth-title"
     @close="onClose"
-    @cancel="working && $event.preventDefault()"
+    @cancel="(working || recovery) && $event.preventDefault()"
   >
     <section class="card">
-      <button class="close" aria-label="关闭登录弹窗" :disabled="working" @click="closeAuth">
+      <button
+        v-if="!recovery"
+        class="close"
+        aria-label="关闭登录弹窗"
+        :disabled="working"
+        @click="closeAuth"
+      >
         ×
       </button>
       <span class="tiny">WAO · 准备好，再出发</span>
-      <h2 id="auth-title">欢迎回到 WAO</h2>
-      <p class="product-summary">安排待办、整理资料，与 AI 一起完成任务。</p>
+      <h2 id="auth-title">{{ recovery ? '重新登录，继续刚才的内容' : '欢迎回到 WAO' }}</h2>
+      <p class="product-summary">
+        {{
+          recovery
+            ? `登录已过期，请使用 ${session.currentUser.name} 的原账号登录。当前页面和草稿已保留。`
+            : '安排待办、整理资料，与 AI 一起完成任务。'
+        }}
+      </p>
       <template v-if="method === 'feishu'">
         <template v-if="inAppTrying">
           <p class="subtitle">检测到飞书环境，正在免登…</p>
           <div class="in-app-loading"><i class="ri-loader-4-line"></i>正在通过飞书身份自动登录</div>
         </template>
         <template v-else>
-          <p class="subtitle">使用飞书扫码，快速进入你的 WAO</p>
-          <div v-if="!qrError" id="feishu-qr" class="qr">
+          <p class="subtitle">
+            {{
+              authorizationFirst
+                ? '使用飞书授权，快速进入你的 WAO'
+                : '使用飞书扫码，快速进入你的 WAO'
+            }}
+          </p>
+          <div v-if="!authorizationFirst && !qrError" id="feishu-qr" class="qr">
             <div class="qr-loading"><i class="ri-loader-4-line"></i>正在加载飞书二维码…</div>
           </div>
-          <div v-else class="qr-fallback">
+          <div v-else-if="!authorizationFirst" class="qr-fallback">
             <i class="ri-qr-code-line"></i><span>二维码暂不可用</span>
           </div>
           <div v-if="qrError" class="qr-error" role="alert">
@@ -215,8 +304,33 @@ onBeforeUnmount(() => {
             :disabled="authorizationBusy"
           >
             <i class="ri-feishu-line"></i
-            ><span>{{ qrError ? '改用飞书授权登录' : '二维码不方便？使用飞书授权登录' }}</span
+            ><span>{{
+              authorizationBusy
+                ? '正在等待飞书登录…'
+                : authorizationFirst
+                  ? '使用飞书授权登录'
+                  : qrError
+                    ? '改用飞书授权登录'
+                    : '二维码不方便？使用飞书授权登录'
+            }}</span
             ><i class="ri-arrow-right-s-line"></i>
+          </button>
+          <button
+            v-if="authorizationFirst && !recovery"
+            type="button"
+            class="switch"
+            @click="showQr"
+          >
+            改用二维码扫码
+          </button>
+          <button
+            v-if="recovery"
+            type="button"
+            class="switch"
+            :disabled="busy"
+            @click="checkRecovery"
+          >
+            已在其他窗口登录？检查登录状态
           </button>
         </template>
       </template>
@@ -237,12 +351,21 @@ onBeforeUnmount(() => {
             >密码<input
               :disabled="working"
               v-model="password"
-              type="password"
+              :type="showPassword ? 'text' : 'password'"
               autocomplete="current-password"
               minlength="8"
               required
               placeholder="输入账号密码"
           /></label>
+          <button
+            class="switch"
+            type="button"
+            :disabled="working"
+            :aria-pressed="showPassword"
+            @click="showPassword = !showPassword"
+          >
+            {{ showPassword ? '隐藏密码' : '显示密码' }}
+          </button>
           <div v-if="error" class="error" role="alert">{{ error }}</div>
           <button class="primary" :disabled="working">{{ busy ? '正在登录…' : '登录' }}</button>
         </form>
@@ -405,7 +528,7 @@ onBeforeUnmount(() => {
   margin-top: 18px;
 }
 .switch {
-  color: #ff9fd7;
+  color: var(--wao-primary-text);
   background: none;
   border: 0;
   padding: 12px 0;
@@ -495,8 +618,32 @@ input:focus-visible {
 }
 </style>
 <style scoped>
-.auth-dialog { color-scheme: light; background: #f7f7f9; color: #34343b; border-color: #d1d1d8; --wao-text: #34343b; --wao-text-weak: #666670; --wao-bg-page: #ededf0; --wao-line: #d1d1d8; }
-:global(.login-stage[data-entry-theme='dark'] .auth-dialog) { color-scheme: dark; background: #17171b; color: #e5e5e8; border-color: #38383f; --wao-text: #e5e5e8; --wao-text-weak: #a1a1aa; --wao-bg-page: #090a0c; --wao-line: #38383f; }
-.other-methods button { background: var(--wao-bg-page); color: var(--wao-text); border-color: var(--wao-line); }
-.email-form input { border-color: var(--wao-line); }
+.auth-dialog {
+  color-scheme: light;
+  background: #f7f7f9;
+  color: #34343b;
+  border-color: #d1d1d8;
+  --wao-text: #34343b;
+  --wao-text-weak: #666670;
+  --wao-bg-page: #ededf0;
+  --wao-line: #d1d1d8;
+}
+:global(.login-stage[data-entry-theme='dark'] .auth-dialog) {
+  color-scheme: dark;
+  background: #17171b;
+  color: #e5e5e8;
+  border-color: #38383f;
+  --wao-text: #e5e5e8;
+  --wao-text-weak: #a1a1aa;
+  --wao-bg-page: #090a0c;
+  --wao-line: #38383f;
+}
+.other-methods button {
+  background: var(--wao-bg-page);
+  color: var(--wao-text);
+  border-color: var(--wao-line);
+}
+.email-form input {
+  border-color: var(--wao-line);
+}
 </style>

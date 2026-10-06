@@ -1,6 +1,11 @@
 import { setDesktopCacheMember } from '@/api/desktopCache'
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import {
+  isSessionPaused,
+  requireSessionRecovery,
+  resumeSessionRequests,
+} from '@/utils/sessionRecovery'
 import type { Member } from '@/types'
 import { fetchMembers, fetchOrg } from '@/api/board'
 import {
@@ -18,29 +23,55 @@ export const useSessionStore = defineStore('session', () => {
   const pendingClaim = ref<AuthResolution | null>(null)
   const initialized = ref(false)
   const connectionError = ref('')
+  const recoveryRequired = ref(false)
   let initializePromise: Promise<void> | null = null
 
   const members = ref<Member[]>([])
   const org = ref({ id: '', name: '', memberCount: 0 })
   const authed = computed(() => account.value !== null)
   const userId = computed(() => account.value?.member.id ?? '')
-  const currentUser = computed<Member>(() => account.value?.member ?? {
-    id: '', name: '未登录', initial: '?', color: '#9A9DA9', role: '',
-  })
+  const currentUser = computed<Member>(
+    () =>
+      account.value?.member ?? {
+        id: '',
+        name: '未登录',
+        initial: '?',
+        color: '#9A9DA9',
+        role: '',
+      },
+  )
 
   function memberById(id: string): Member {
     if (account.value?.member.id === id) return account.value.member
-    return members.value.find((member) => member.id === id)
-      ?? { id, name: id, initial: '?', color: '#9A9DA9', role: '' }
+    return (
+      members.value.find((member) => member.id === id) ?? {
+        id,
+        name: id,
+        initial: '?',
+        color: '#9A9DA9',
+        role: '',
+      }
+    )
   }
 
   function accept(session: AuthSession) {
+    if (
+      (recoveryRequired.value || isSessionPaused()) &&
+      account.value &&
+      (session.accountId !== account.value.accountId ||
+        session.member.id !== account.value.member.id)
+    ) {
+      throw new Error('请使用原账号重新登录，当前页面和草稿已保留。')
+    }
     setDesktopCacheMember(session.member.id)
     account.value = session
     connectionError.value = ''
     initialized.value = true
     pendingClaim.value = null
-    if (!members.value.some((member) => member.id === session.member.id)) members.value.push(session.member)
+    recoveryRequired.value = false
+    resumeSessionRequests()
+    if (!members.value.some((member) => member.id === session.member.id))
+      members.value.push(session.member)
   }
 
   async function refreshDirectory() {
@@ -53,8 +84,25 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function acceptResolution(resolution: AuthResolution) {
-    if (resolution.session) { accept(resolution.session) }
-    else if (resolution.claimRequired) pendingClaim.value = resolution
+    if (resolution.session) {
+      accept(resolution.session)
+    } else if (resolution.claimRequired) {
+      if (recoveryRequired.value) throw new Error('请使用已绑定的原账号重新登录。')
+      pendingClaim.value = resolution
+    }
+  }
+
+  function requireRecovery() {
+    if (!account.value) {
+      resumeSessionRequests()
+      return
+    }
+    recoveryRequired.value = true
+    requireSessionRecovery()
+  }
+
+  async function recover() {
+    accept(await getSession())
   }
 
   async function initialize() {
@@ -62,10 +110,13 @@ export const useSessionStore = defineStore('session', () => {
     if (!initializePromise) {
       connectionError.value = ''
       initializePromise = getSession()
-        .then((value) => { accept(value) })
+        .then((value) => {
+          accept(value)
+        })
         .catch((error: unknown) => {
-          const status = (error as { status?: number; response?: { status?: number } })?.status
-            ?? (error as { response?: { status?: number } })?.response?.status
+          const status =
+            (error as { status?: number; response?: { status?: number } })?.status ??
+            (error as { response?: { status?: number } })?.response?.status
           if (status === 401) {
             account.value = null
             initialized.value = true
@@ -73,7 +124,9 @@ export const useSessionStore = defineStore('session', () => {
             connectionError.value = error instanceof Error ? error.message : '暂时无法连接服务器'
           }
         })
-        .finally(() => { initializePromise = null })
+        .finally(() => {
+          initializePromise = null
+        })
     }
     return initializePromise
   }
@@ -91,16 +144,39 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function logout() {
-    try { await logoutSession() } finally {
+    try {
+      await logoutSession()
+    } finally {
       setDesktopCacheMember('')
       account.value = null
       pendingClaim.value = null
       initialized.value = true
+      recoveryRequired.value = false
+      resumeSessionRequests()
     }
   }
 
   return {
-    account, pendingClaim, initialized, connectionError, authed, userId, members, org, currentUser,
-    memberById, accept, acceptResolution, initialize, refreshDirectory, emailLogin, emailRegister, claim, logout,
+    account,
+    pendingClaim,
+    initialized,
+    connectionError,
+    recoveryRequired,
+    authed,
+    userId,
+    members,
+    org,
+    currentUser,
+    requireRecovery,
+    recover,
+    memberById,
+    accept,
+    acceptResolution,
+    initialize,
+    refreshDirectory,
+    emailLogin,
+    emailRegister,
+    claim,
+    logout,
   }
 })

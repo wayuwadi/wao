@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { requireSessionRecovery, resumeSessionRequests } from '@/utils/sessionRecovery'
 import {
   flushRequestMetrics,
   pauseRequestMetricReporter,
@@ -9,15 +10,28 @@ import {
 
 describe('浏览器请求指标上报', () => {
   beforeEach(() => {
+    resumeSessionRequests()
     vi.useFakeTimers()
     resetRequestMetricReporterForTest()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
   })
 
   afterEach(() => {
+    resumeSessionRequests()
     resetRequestMetricReporterForTest()
     vi.unstubAllGlobals()
     vi.useRealTimers()
+  })
+
+  it('会话恢复期间停止原生上报与离页Beacon，恢复后不补报旧批次', async () => {
+    const beacon = vi.fn(); vi.stubGlobal('navigator', { sendBeacon: beacon })
+    reportBrowserRequest('/api/projects', 'get', 401, 10, Date.now())
+    requireSessionRecovery()
+    window.dispatchEvent(new Event('pagehide'))
+    await flushRequestMetrics()
+    expect(fetch).not.toHaveBeenCalled(); expect(beacon).not.toHaveBeenCalled()
+    resumeSessionRequests(); await flushRequestMetrics()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('批量上报真实 API 耗时并去掉查询参数', async () => {
