@@ -1,5 +1,29 @@
 [
   {
+    "sourceSubject": "fix(deploy): 将本机公网服务交给系统独立守护",
+    "id": "release-public-runtime-supervision-2026-10-07",
+    "title": "公网服务增加独立恢复保障",
+    "publishedOn": "2026-10-07",
+    "intro": "守护程序退出后由系统自动恢复，既有数据与使用入口保持不变。",
+    "highlights": [
+      {
+        "featureId": "navigation",
+        "eyebrow": "运行保障",
+        "title": "服务退出后能够再次恢复",
+        "summary": "系统托管已有公网运行程序，减少临时工作进程停止造成的中断。",
+        "points": [
+          "服务仍在运行时直接接管，避免重复启动。",
+          "退出后自动恢复，并保留可核对的生命周期记录。",
+          "当前仍需本机保持登录、供电和网络连接。"
+        ],
+        "steps": [
+          "打开首页，照常使用小记、待办和休息入口。",
+          "短暂连接异常后可重试；内容保存仍以原有保存状态为准。"
+        ]
+      }
+    ]
+  },
+  {
     "sourceSubject": "feat(capabilities): 在能力中心统一管理系统 AI 功能与执行依赖",
     "id": "release-system-ai-center-2026-10-06",
     "title": "系统 AI 来到能力中心",
