@@ -17,6 +17,26 @@ describe('成员级界面偏好', () => {
     preferenceApi.savePreference.mockResolvedValue(undefined)
   })
 
+  it('默认项目保存失败不冒充成功，重试后生效', async () => {
+    const prefs = usePreferenceStore(); prefs.defaultProject = 'old'
+    preferenceApi.savePreference.mockRejectedValueOnce(new Error('offline'))
+    await expect(prefs.setDefaultProject('new')).rejects.toThrow('offline')
+    expect(prefs.defaultProject).toBe('old')
+    await prefs.setDefaultProject('new'); expect(prefs.defaultProject).toBe('new')
+  })
+  it('迟到默认项目读取与上一成员保存不能回退较新选择', async () => {
+    const prefs = usePreferenceStore(); prefs.prepareForMember('a')
+    let finish!: (v: string) => void
+    preferenceApi.fetchPreference.mockImplementation(key => key === 'default-project' ? new Promise<string>(r => { finish = r }) : Promise.resolve(''))
+    const read = prefs.load(); await prefs.setDefaultProject('new')
+    finish('old'); await read; expect(prefs.defaultProject).toBe('new')
+    let saved!: () => void
+    preferenceApi.savePreference.mockImplementationOnce(() => new Promise<void>(r => { saved = r }))
+    const write = prefs.setDefaultProject('a-project'); prefs.prepareForMember('b')
+    await prefs.setDefaultProject('b-project'); saved(); await write
+    expect(prefs.defaultProject).toBe('b-project')
+  })
+
   it('页面布局默认统一外框，未知旧值安全回退，三种布局可持久化读取', async () => {
     const preferences = usePreferenceStore()
     expect(preferences.pageLayoutStyle).toBe('unified')
