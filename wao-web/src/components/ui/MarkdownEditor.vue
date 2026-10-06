@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { freezeNoteAiInput, retainNoteAiResult, type NoteAiOrigin, type NoteSourceContent } from '@/api/noteOriginals'
 import { editorSearchRanges } from '@/utils/contentSearch'
+import { bookExcerptContent } from '@/utils/bookExcerpt'
 import { indentEditorSelection } from '@/utils/editorIndent'
 /**
  * 所见即所得的描述编辑器 —— 全项目文字描述输入的统一控件。
@@ -1082,6 +1083,11 @@ function appendPlainText(value: string) {
     type: 'paragraph', ...(text ? { content: [{ type: 'text', text }] } : {}),
   }))
   return instance.chain().focus().insertContentAt(instance.state.doc.content.size, paragraphs).run()
+}
+function appendBookExcerpt(text: string, source: string, reflection: string) {
+  const instance = editor.value
+  if (!instance || instance.isDestroyed || props.readonly || !text.trim()) return false
+  return instance.chain().focus().insertContentAt(instance.state.doc.content.size, bookExcerptContent(text, source, reflection)).run()
 }
 let preparingTask = false
 async function addSelectionTask() {
@@ -2312,7 +2318,7 @@ function positionAtPoint(left: number, top: number) {
     return found ? { position: found.pos, viewportTop: e.view.coordsAtPos(found.pos).top } : null
   } catch { return null /* 布局尚未就绪时仍允许进入编辑，不阻塞用户。 */ }
 }
-defineExpose({ dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, focusSearch, positionAtPoint, focusImageReference })
+defineExpose({ dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, appendBookExcerpt, focusSearch, positionAtPoint, focusImageReference })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(

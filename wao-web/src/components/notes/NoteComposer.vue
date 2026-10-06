@@ -19,6 +19,7 @@ import NoteMediaCopyDialog from './NoteMediaCopyDialog.vue'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import NoteTagContextMenu from './NoteTagContextMenu.vue'
 import NoteComposerTags from './NoteComposerTags.vue'
+import BookExcerptDialog from './BookExcerptDialog.vue'
 import { replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
@@ -33,7 +34,13 @@ const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
   loadingComponent: defineComponent({ setup: () => () => h('p', { role: 'status' }, '正在加载编辑器…') }),
 })
-const noteEditor = ref<{ focusImageReference?: (index: number) => boolean; dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean } | null>(null)
+const noteEditor = ref<{ focusImageReference?: (index: number) => boolean; dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean; appendBookExcerpt?: (text: string, source: string, reflection: string) => boolean } | null>(null)
+const excerptDialog = ref<InstanceType<typeof BookExcerptDialog>>()
+const excerptOpen = ref(false)
+function insertExcerpt(text: string, source: string, reflection: string) {
+  if (saving.value || props.loading) return false
+  return noteEditor.value?.appendBookExcerpt?.(text, source, reflection) ?? false
+}
 const data = useDataStore()
 const session = useSessionStore()
 const writingWidth = useNoteWritingWidth()
@@ -579,7 +586,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </script>
 
 <template>
-  <section ref="composerElement" class="note-composer" :style="fullscreen ? fullscreenStyle : undefined" :class="{ fullscreen, inline, expanded, contained, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen, 'has-image-rail': !contained && imageMode === 'references' && !!draftImages.length, 'images-stacked': imageRailStacked }" :inert="imagePreview || copyDraftContent ? true : undefined" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
+  <section ref="composerElement" class="note-composer" :style="fullscreen ? fullscreenStyle : undefined" :class="{ fullscreen, inline, expanded, contained, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen, 'has-image-rail': !contained && imageMode === 'references' && !!draftImages.length, 'images-stacked': imageRailStacked }" :inert="imagePreview || copyDraftContent || excerptOpen ? true : undefined" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
     <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><input v-model="generatedTitle" class="composer-title-input" aria-label="小记标题（可选）" :placeholder="note ? '小记标题' : '此刻，想记点什么？'" maxlength="80" :disabled="saving" /><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button v-if="!contained" class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" :aria-describedby="fullscreenReminderVisible && !fullscreen ? fullscreenReminderId : undefined" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div v-if="fullscreenReminderVisible && !fullscreen" :id="fullscreenReminderId" class="fullscreen-reminder" role="status" aria-live="polite">
       <i class="ri-focus-3-line" aria-hidden="true"></i>
@@ -628,14 +635,23 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : isMobile ? '随手写，点“记下来了”保存' : 'Ctrl / ⌘ + Enter 保存') }}</span>
       <span v-if="inline" class="composer-word-count" aria-label="当前正文字数" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）">{{ characterCount.toLocaleString('zh-CN') }} 字</span>
       <button v-if="note" type="button" :disabled="saving" @click="contained ? requestExit() : emit('close')">{{ contained ? '退出编辑' : '收起编辑' }}</button>
-      <button v-if="!note" type="button" class="copy-draft" :disabled="loading || saving || !text.trim()" @click="copyDraft"><i class="ri-file-copy-2-line" aria-hidden="true"></i> 复制给 Codex</button>
+      <button type="button" class="import-excerpt" aria-label="粘贴为书摘" title="粘贴为书摘" :disabled="loading || saving" @click="excerptDialog?.openDialog()"><i class="ri-double-quotes-l" aria-hidden="true"></i><span>书摘</span></button>
+      <button v-if="!note" type="button" class="copy-draft" aria-label="复制给 Codex" title="复制给 Codex" :disabled="loading || saving || !text.trim()" @click="copyDraft"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span> 复制给 Codex</span></button>
       <button class="save-note" type="button" :disabled="!canSave" @click="save(true)">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
     </div>
+    <BookExcerptDialog ref="excerptDialog" :draft-key="`${draftKey}:excerpt`" :insert-excerpt="insertExcerpt" @open-change="excerptOpen = $event" />
     <Teleport to="body"><div v-if="tagSuggestionsOpen" class="tag-suggestion-menu" role="listbox" aria-label="最近常用标签" :style="tagSuggestionStyle"><div>最近常用</div><button v-for="tag in choices.slice(0, 8)" :key="tag" type="button" role="option" :aria-selected="tags.includes(tag)" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" @mousedown.prevent @click="insertSuggestedTag(tag)"># {{ tag }}<span>{{ tags.includes(tag) ? '已选' : '' }}</span></button><small>按使用频次排序 · Esc 收起</small></div></Teleport>
   </section>
 </template>
 
 <style scoped>
+.import-excerpt { display:inline-flex; align-items:center; justify-content:center; gap:5px; }
+@media(max-width:760px) {
+  .composer-footer > .import-excerpt, .composer-footer > .copy-draft { min-width:44px; padding:8px; }
+  .composer-footer > .copy-draft span { display:none; }
+  .composer-footer > span[role="status"] { flex:1 1 100%; }
+  .composer-footer > .save-note { margin-left:auto; }
+}
 .note-exit-mask { position:fixed; inset:0; z-index:2500; display:grid; place-items:center; background:rgb(24 28 46 / .28); padding:20px; }
 .note-exit-dialog { width:min(380px,100%); box-sizing:border-box; padding:26px; border-radius:16px; background:var(--wao-bg-card); box-shadow:0 20px 70px rgb(20 24 45 / .18); }
 .note-exit-dialog > i { color:var(--wao-primary); font-size:22px; }
