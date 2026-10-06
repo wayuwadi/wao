@@ -14,8 +14,8 @@ description: WAO 本地开发与验收后提交、推送并合并 PR，默认继
 3. 连接真实数据不扩大操作范围；保护凭据和业务数据，不将清库或重置测试指向线上，不修改已执行 migration。破坏性生产操作仍需明确授权。
 4. 一个需求或 BUG 一个 PR。本地验证通过后创建详细中文提交、推送功能分支、建 PR 并 Squash Merge 到 main；保留现有自动执行授权。合并前检查普通冲突及 ADR / Flyway 编号冲突。PR 没有 Jenkins checks 是预期行为。
    - 刷新并同步 `origin/main` 后，可运行 `python3 deploy/scripts/check-engineering-consistency.py --base origin/main` 辅助核对编号、migration 不可变性和本次文档路径；退出码 1/2 需先解决，历史 ADR 警告如实保留，不自动改写历史。它不替代暂存区审阅或本地功能验收。
-   - 每个 main 发布批次自动生成 Git 提交档案和当前版本说明，核对制品 SHA、首条提交及线上清单；不依赖人工精选。文档/测试也进入提交记录，只有这些变更时只更新网页静态制品、不重启后端，不再笼统说“无需部署”。产品精选仍可在同一 PR 更新 `currentRelease.json` 和 `releaseHistory.json`，新批次置前、旧记录保留。已有更新检测与草稿保存屏障不绕过。
-   - 用户可感知变化在同一 PR 维护 `currentRelease.json` 的用途与 `steps`，并将完整对象放到 `releaseHistory.json` 最前；`sourceSubject` 精确对应将要 Squash Merge 的中文提交标题（可包含 Conventional Commit 前缀，不含 PR 编号）。简单修复不强制配图，复杂功能可附带专用 `demo` 或制品内截图。构建只在标题匹配时采用这些说明，不匹配时自动记录仍更新并如实提示说明缺项，禁止复用旧介绍。格式与图片路径见 `docs/specs/update-unboxing-2026-10-04.md`。
+   - 每个 main 发布批次自动生成 Git 提交档案和当前版本说明，核对制品 SHA、首条提交及线上清单；不依赖人工精选。文档/测试也进入提交记录，只有这些变更时只更新网页静态制品、不重启后端，不再笼统说“无需部署”。发布区间使用上次实际部署的完整 `WAO_CHANGE_BASE`，按首父链汇总并保留完整提交档案；无法确认区间时只说明 HEAD，不宣称完整批次。已有更新检测与草稿保存屏障不绕过。
+   - 用户可感知变化在同一 PR 新增 `wao-web/src/data/releaseChanges/` 独立 JSON，包含用途、变化点、具体 `steps` 和可选登记 `action`；旧双份 JSON 仅保留兼容，不重复手填；`sourceSubject` 精确对应将要 Squash Merge 的中文提交标题（可包含 Conventional Commit 前缀，不含 PR 编号）。简单修复不强制配图，复杂功能可附带专用 `demo` 或制品内截图。构建只在标题匹配时采用这些说明，不匹配时自动记录仍更新并如实提示说明缺项，禁止复用旧介绍。新能力明确标记 `prominence:major`，一般改进默认 minor。格式、发布区间与体验入口见 `docs/specs/update-guidance-batches-2026-10-06.md`。
 5. 合并后按 [release-coordination.md](references/release-coordination.md) 复用唯一发布协调者与已有批次，默认继续公网发布。只使用当前已有授权通道；通道受阻时报告缺项，不擅自扩大权限或另建基础设施。已有版本包含本次提交且验证通过时不重复发布。前端或文档/测试批次保持后端运行，后端改动按现有完整发布要求处理。
 6. 核对部署版本对合并 SHA 的覆盖、静态资源、服务就绪及受影响页面后，交付可达入口、实际前后端版本、本地验证、PR 和合并 SHA。发布失败或验证不足时保留未完成状态，不把合并说成上线。实体设备验收缺项如实保留。
 

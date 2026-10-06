@@ -56,9 +56,9 @@ async function requestDelete(wrapper: Awaited<ReturnType<typeof view>>, id: stri
   action?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   await flushPromises()
 }
-async function view(attachTo?: HTMLElement) {
+async function view(attachTo?: HTMLElement, query: Record<string, string> = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/notes', component: NotesView }, { path: '/kb/:id', component: { template: '<div />' } }] })
-  await router.push('/notes')
+  await router.push({path:'/notes',query})
   return mount(NotesView, { attachTo, global: { plugins: [router], stubs: { MarkdownEditor: Editor } } })
 }
 async function setNoteBodyHeight(wrapper: Awaited<ReturnType<typeof view>>, id: string, height: number) {
@@ -131,6 +131,21 @@ describe('小记集中记录空间', () => {
     await dialog.get('[aria-label="关闭图文复制"]').trigger('click')
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toContain('未保存的完整正文')
     wrapper.unmount()
+  })
+  it.each(['settings', 'reading', 'ai'])('更新 %s 入口进入具体功能且保留记录草稿，不自动保存或运行 AI', async action => {
+    useDataStore().docs = { one: doc('one', '真实加载的正文') }
+    const w = await view(document.body); await flushPromises()
+    await w.get('.writing-pane textarea').setValue('尚未保存的草稿')
+    const router = w.vm.$router
+    await router.push({path:'/notes',query:{search:'',releaseAction:action,releaseRequest:'next'}}); await flushPromises()
+    expect(router.currentRoute.value.query.releaseAction).toBeUndefined()
+    expect(w.get<HTMLTextAreaElement>('.writing-pane textarea').element.value).toBe('尚未保存的草稿')
+    if (action === 'settings') expect(document.querySelector('[role=dialog][aria-label="小记设置"]')).not.toBeNull()
+    else if (action === 'reading') expect(document.querySelector('.notes-reader')?.textContent).toContain('真实加载的正文')
+    else expect(document.querySelector('.reader-overlay')).not.toBeNull()
+    expect(apiPatchDoc).not.toHaveBeenCalled()
+    expect(startSavedNoteStage).not.toHaveBeenCalled()
+    w.unmount()
   })
   it('系统来源独立于所有者，卡片与阅读显示系统，开关持久化且保留输入草稿', async () => {
     useDataStore().docs = { personal: doc('personal', '我的记录'), system: { ...doc('system', '功能介绍'), systemGenerated: true } }

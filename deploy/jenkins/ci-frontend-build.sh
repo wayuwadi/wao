@@ -26,6 +26,17 @@ run_npm() {
     [ "$(git rev-parse HEAD)" = "$WAO_GIT_SHA" ] || { echo 'Build SHA mismatch' >&2; exit 1; }
     mkdir -p wao-web/node_modules/.cache
     git log --topo-order --format='%H%x09%cI%x09%s' "$WAO_GIT_SHA" >wao-web/node_modules/.cache/wao-git-history.tsv
+    # 使用发布协调者给出的实际上线边界，并导出可信首父链；容器不猜 HEAD^。
+    range_file=wao-web/node_modules/.cache/wao-git-release-range.tsv
+    rm -f "$range_file"
+    if [ -n "${WAO_CHANGE_BASE:-}" ] && git cat-file -e "${WAO_CHANGE_BASE}^{commit}" 2>/dev/null \
+        && git merge-base --is-ancestor "$WAO_CHANGE_BASE" "$WAO_GIT_SHA" \
+        && git rev-list --first-parent "$WAO_GIT_SHA" | grep -qx "$WAO_CHANGE_BASE"; then
+      git log --first-parent --format='%H%x09%P' "$WAO_CHANGE_BASE..$WAO_GIT_SHA" >"$range_file"
+      git show -s --format='%H%x09%P' "$WAO_CHANGE_BASE" >>"$range_file"
+    else
+      echo 'Release boundary is unverified; update guide will only describe HEAD.' >&2
+    fi
   fi
   docker run --rm \
     --cpus=2 --memory=4g --memory-swap=4g --pids-limit=512 \
@@ -34,6 +45,8 @@ run_npm() {
     -e npm_config_cache=/tmp/npm-cache \
     -e WAO_GIT_SHA="${WAO_GIT_SHA:-}" \
     -e WAO_GIT_HISTORY=/workspace/wao-web/node_modules/.cache/wao-git-history.tsv \
+    -e WAO_CHANGE_BASE="${WAO_CHANGE_BASE:-}" \
+    -e WAO_GIT_RELEASE_RANGE=/workspace/wao-web/node_modules/.cache/wao-git-release-range.tsv \
     -v "$PWD:/workspace" \
     -v "$cache:/tmp/npm-cache" \
     -w "/workspace/$project" \

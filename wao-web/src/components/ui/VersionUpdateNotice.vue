@@ -43,7 +43,7 @@ function closeDemo() {
 }
 function showManually() { if (!open.value) void show() }
 watch(open, value => blockCompanions('version', value), { flush: 'sync' })
-watch([companionQuiet, companionEditing], ([quiet, editing]) => { if (quiet || editing) stopArrival() })
+watch([companionQuiet, companionEditing], ([quiet, editing]) => { if (quiet || editing) stopArrival(); else announce() })
 const arriving = ref(false)
 watch(arriving, value => emit('arrival-change', value))
 const ANNOUNCED_KEY = 'wao-update-arrival-version'
@@ -84,11 +84,12 @@ function stopArrival() {
   arriving.value = false
 }
 function announce() {
-  if (!pendingArrival || document.hidden || busy.value) return
+  if (!pendingArrival || document.hidden || busy.value || companionEditing.value || companionQuiet.value) return
   if (!loaded.value) { void load(); return }
   pendingArrival = false
   if (!upcoming.value || upcoming.value.attention === 'maintenance') return
   try { sessionStorage.setItem(ANNOUNCED_KEY, availableVersion.value) } catch { /* 本标签页内仍由版本去重。 */ }
+  if (upcoming.value.prominence !== 'major') return
   positionPanel()
   open.value = true
   emit('opened')
@@ -201,7 +202,7 @@ function feature(item: ReleaseHighlight) {
 async function experience(item: ReleaseHighlight) {
   const module = feature(item)
   if (!module || availableVersion.value) return
-  if (await tryFeature(item.featureId)) close(false)
+  if (await tryFeature(item.featureId, item.action)) close(false)
 }
 function outside(event: PointerEvent) {
   if (guideItem.value) return

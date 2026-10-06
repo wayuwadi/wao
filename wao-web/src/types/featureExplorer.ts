@@ -12,6 +12,8 @@ export interface FeatureCatalogEntry {
 }
 
 export interface ReleaseHighlight {
+  id?: string
+  sourceSubject?: string
   featureId: ModuleId
   eyebrow: string
   title: string
@@ -19,16 +21,22 @@ export interface ReleaseHighlight {
   points: string[]
   steps?: string[]
   demo?: ReleaseDemo
+  action?: ReleaseAction
 }
+
+export interface ReleaseAction { target: string; label: string }
 
 export interface ReleaseDemo {
   presentation: 'inline' | 'window'
-  kind?: 'update-card' | 'workspace-mcp' | 'notes-layout'
+  kind?: 'update-card' | 'workspace-mcp' | 'notes-layout' | 'notes-reading'
   image?: string
   alt: string
 }
 
 export interface ReleaseEdition {
+  prominence?: 'major' | 'minor'
+  baseSha?: string
+  rangeVerified?: boolean
   attention?: 'feature' | 'maintenance'
   id: string
   publishedOn: string

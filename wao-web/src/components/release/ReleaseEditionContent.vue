@@ -7,14 +7,15 @@ import ExplorerPagination from './ExplorerPagination.vue'
 import ReleaseFeatureDemo from './ReleaseFeatureDemo.vue'
 import ReleaseGuideDialog from './ReleaseGuideDialog.vue'
 import type { ReleaseHighlight } from '@/types/featureExplorer'
+import { releaseActionLabel, resolveReleaseAction } from '@/utils/releaseActions'
 const expanded = ref<string[]>([])
 const guide = ref<ReleaseHighlight | null>(null)
 const props = defineProps<{ edition: ReleaseEdition }>()
 const emit = defineEmits<{ navigate: [] }>()
 const page = ref(1)
 const tryFeature = useFeatureExperience()
-async function experience(id: string) {
-  if (await tryFeature(id)) emit('navigate')
+async function experience(item: ReleaseHighlight) {
+  if (await tryFeature(item.featureId, item.action)) emit('navigate')
 }
 watch(
   () => props.edition.id,
@@ -69,10 +70,10 @@ const visible = computed(() => props.edition.highlights.slice((page.value - 1) *
       />
       <button
         type="button"
-        v-if="MODULES[item.featureId] && item.featureId !== 'changelog'"
-        @click="experience(item.featureId)"
+        v-if="MODULES[item.featureId] && (item.featureId !== 'changelog' || resolveReleaseAction(item.featureId, item.action))"
+        @click="experience(item)"
       >
-        去体验 {{ MODULES[item.featureId].label }}
+        {{ releaseActionLabel(item, `去体验 ${MODULES[item.featureId].label}`) }}
         <i class="ri-arrow-right-up-line" aria-hidden="true"></i>
       </button>
     </article>

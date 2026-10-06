@@ -16,6 +16,7 @@ import NoteAiSettingsDialog from '@/components/notes/NoteAiSettingsDialog.vue'
 import { startSavedNoteStage } from '@/api/noteAiWorkflows'
 import { newPolishRequestId } from '@/api/polishJobs'
 import { useRoute } from 'vue-router'
+import { useReleaseNoteExperience } from '@/composables/releaseNoteExperience'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { contentHit, documentSearchText } from '@/utils/contentSearch'
 import { docShareUrl } from '@/utils/share'
@@ -1036,6 +1037,22 @@ async function locateSearchNote(id: string, term: string, body = true) {
   if (!body) card?.focus({ preventScroll: true })
 }
 let lastSearchRoute = ''
+useReleaseNoteExperience({
+  loadState: () => data.loadStates.docs === 'loaded' && data.loadStates.knowledge === 'loaded' ? 'loaded' : 'loading',
+  openSettings: () => { noteSettingsOpen.value = true },
+  read: async () => {
+    const note = matching.value[0] ?? notes.value[0]
+    if (!note) return false
+    await startReading(note.id)
+    return true
+  },
+  ai: () => {
+    const note = notes.value.find(item => item.author === session.currentUser.id)
+    if (!note) return false
+    selectCompanion(note.id)
+    return true
+  },
+})
 watch([() => route.query.findRequest, () => route.query.note, () => route.query.find, () => data.loadStates.docs, () => data.loadStates.knowledge], () => {
   const id = typeof route.query.note === 'string' ? route.query.note : ''
   const term = typeof route.query.find === 'string' ? route.query.find : ''
