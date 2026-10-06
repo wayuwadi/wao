@@ -1,5 +1,26 @@
 [
   {
+    "id": "release-notes-refine-copy-2026-10-06",
+    "publishedOn": "2026-10-06",
+    "sourceSubject": "feat(notes): 默认复制给 Codex并扩大图文复制面板",
+    "title": "默认复制给 Codex并扩大图文复制面板",
+    "intro": "复制用途默认 Codex 在前、ChatGPT 在后；输入区可复制未保存草稿；采用 760px 弹窗与独立正文滚动，长链接换行，保留复制失败重试和焦点恢复。",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "小记体验",
+        "title": "默认复制给 Codex并扩大图文复制面板",
+        "summary": "复制用途默认 Codex 在前、ChatGPT 在后；输入区可复制未保存草稿；采用 760px 弹窗与独立正文滚动，长链接换行，保留复制失败重试和焦点恢复。",
+        "points": [
+          "复制用途默认 Codex 在前、ChatGPT 在后；输入区可复制未保存草稿；采用 760px 弹窗与独立正文滚动，长链接换行，保留复制失败重试和焦点恢复。"
+        ],
+        "steps": [
+          "打开小记页面，使用本次调整后的入口。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-notes-refine-display-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "feat(notes): 支持轻淡且可配置的系统小记配色",

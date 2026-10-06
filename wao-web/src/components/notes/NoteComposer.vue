@@ -15,6 +15,7 @@ import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
 import NoteReadingImages from './NoteReadingImages.vue'
 import { useNoteImageMode } from '@/composables/noteImageMode'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
+import NoteMediaCopyDialog from './NoteMediaCopyDialog.vue'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import NoteTagContextMenu from './NoteTagContextMenu.vue'
 import { replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
@@ -284,6 +285,11 @@ let baseNote = props.note && (!restored || initial.baseRev != null && initial.ba
 } : restored && initial.baseRev != null && validRestoredBase ? {
   ...restoredBase, blocks: legacyProjection(restoredBase.content),
 } : null
+const copyDraftContent = ref<RichDocContent | null>(null)
+function copyDraft() {
+  copyDraftContent.value = JSON.parse(JSON.stringify(content.value?.markdown === text.value
+    ? content.value : { version: 1, document: null, markdown: text.value })) as RichDocContent
+}
 const saving = ref(false)
 watch(saving, value => emit('saving-change', value), { flush: 'sync' })
 const error = ref('')
@@ -571,7 +577,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </script>
 
 <template>
-  <section ref="composerElement" class="note-composer" :style="fullscreen ? fullscreenStyle : undefined" :class="{ fullscreen, inline, expanded, contained, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen, 'has-image-rail': !contained && imageMode === 'references' && !!draftImages.length, 'images-stacked': imageRailStacked }" :inert="imagePreview ? true : undefined" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
+  <section ref="composerElement" class="note-composer" :style="fullscreen ? fullscreenStyle : undefined" :class="{ fullscreen, inline, expanded, contained, 'writing-narrow': fullscreen && writingWidth === 'narrow', 'reminder-active': fullscreenReminderVisible && !fullscreen, 'has-image-rail': !contained && imageMode === 'references' && !!draftImages.length, 'images-stacked': imageRailStacked }" :inert="imagePreview || copyDraftContent ? true : undefined" @keydown.capture="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
     <div v-if="!inline" class="composer-heading"><i class="ri-quill-pen-line"></i><input v-model="generatedTitle" class="composer-title-input" aria-label="小记标题（可选）" :placeholder="note ? '小记标题' : '此刻，想记点什么？'" maxlength="80" :disabled="saving" /><NoteWidthSwitch v-if="fullscreen" v-model="writingWidth" /><button v-if="!contained" class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" :aria-describedby="fullscreenReminderVisible && !fullscreen ? fullscreenReminderId : undefined" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div v-if="fullscreenReminderVisible && !fullscreen" :id="fullscreenReminderId" class="fullscreen-reminder" role="status" aria-live="polite">
       <i class="ri-focus-3-line" aria-hidden="true"></i>
@@ -608,9 +614,11 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         </section>
       </div>
     </Teleport>
+    <NoteMediaCopyDialog v-if="copyDraftContent" :content="copyDraftContent" :title="generatedTitle" @close="copyDraftContent = null" />
     <div class="composer-footer">
       <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : isMobile ? '随手写，点“记下来了”保存' : 'Ctrl / ⌘ + Enter 保存') }}</span>
       <button v-if="note" type="button" :disabled="saving" @click="contained ? requestExit() : emit('close')">{{ contained ? '退出编辑' : '收起编辑' }}</button>
+      <button v-if="!note" type="button" class="copy-draft" :disabled="loading || saving || !text.trim()" @click="copyDraft"><i class="ri-file-copy-2-line" aria-hidden="true"></i> 复制给 Codex</button>
       <button class="save-note" type="button" :disabled="!canSave" @click="save(true)">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
     </div>
     <Teleport to="body"><div v-if="tagSuggestionsOpen" class="tag-suggestion-menu" role="listbox" aria-label="最近常用标签" :style="tagSuggestionStyle"><div>最近常用</div><button v-for="tag in choices.slice(0, 8)" :key="tag" type="button" role="option" :aria-selected="tags.includes(tag)" :disabled="saving || (!tags.includes(tag) && tags.length >= 20)" @mousedown.prevent @click="insertSuggestedTag(tag)"># {{ tag }}<span>{{ tags.includes(tag) ? '已选' : '' }}</span></button><small>按使用频次排序 · Esc 收起</small></div></Teleport>

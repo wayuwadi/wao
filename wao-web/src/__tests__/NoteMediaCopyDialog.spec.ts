@@ -11,7 +11,7 @@ describe('分步复制图文', () => {
     const content = { version: 1 as const, markdown: '完整开始\n\n![甲](/api/images/one/raw)\n\n完整结束' }
     const wrapper = mount(NoteMediaCopyDialog, { props: { content, noteId: 'source-id', title: '手写标题' }, attachTo: document.body })
     const dialog = new DOMWrapper(document.body)
-    await dialog.get('.copy-target button:last-child').trigger('click')
+    expect(dialog.get('.copy-target button:first-child').attributes('aria-current')).toBe('true')
     await dialog.get('.copy-primary').trigger('click'); await flushPromises()
     const copied = vi.mocked(copyToClipboard).mock.calls[vi.mocked(copyToClipboard).mock.calls.length - 1]![0]
     expect(copied).toContain('/api/share/docs/source-id.md')
@@ -19,7 +19,7 @@ describe('分步复制图文', () => {
     expect(copied).toContain(`${window.location.origin}/api/images/one/raw`)
     expect(copied).toContain('手写标题')
     expect(dialog.text()).toContain('已复制完整内容')
-    await dialog.get('.copy-target button:first-child').trigger('click')
+    await dialog.get('.copy-target button:last-child').trigger('click')
     expect(dialog.get('.copy-primary').text()).toBe('复制正文')
     wrapper.unmount()
   })
@@ -27,7 +27,8 @@ describe('分步复制图文', () => {
     const wrapper = mount(NoteMediaCopyDialog, { props: { content: { version: 1, document: null, markdown: '正文\n\n![第一张](/api/images/one/raw)\n\n![第二张](/api/images/two/raw)' } } })
     await flushPromises()
     const dialog = new DOMWrapper(document.body).get('.note-media-copy-dialog')
-    expect(document.activeElement?.textContent).toBe('复制正文')
+    await dialog.get('.copy-target button:last-child').trigger('click')
+    expect(dialog.get('.copy-primary').text()).toBe('复制正文')
     expect(dialog.get('footer button:last-child').attributes('disabled')).toBeDefined()
     await dialog.get('.copy-primary').trigger('click'); await flushPromises()
     expect(copyToClipboard).toHaveBeenCalledWith(expect.stringContaining('[图 1：第一张]'))
