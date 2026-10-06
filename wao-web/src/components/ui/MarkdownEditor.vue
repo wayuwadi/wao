@@ -500,6 +500,7 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
       }
       update()
       return { dom, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
+        selectNode() {}, deselectNode() {},
         stopEvent: () => true, ignoreMutation: () => true }
     }
     if (!this.options.contextControls) return null
@@ -2730,7 +2731,7 @@ onBeforeUnmount(() => {
 .md-body :deep(.reading-image-reference:hover), .md-body :deep(.reading-image-reference[aria-current='true']) { border-color: var(--wao-primary); }
 .md-body :deep(.reading-image-number), .md-body :deep(.reading-image-reference i) { flex: none; }
 .md-body :deep(.reading-image-caption) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.md-body :deep(.reading-image-reference:focus-visible) { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.md-body :deep(.reading-image-reference:focus-visible) { outline: 2px solid var(--wao-primary); outline-offset: -2px; }
 .md-body :deep(.note-image-node) { display: inline-block; position: relative; vertical-align: top; margin: 8px 8px 8px 0; border-radius: 9px; line-height: 0; }
 .md-body :deep(.note-image-node.image-aligned) { display: block; }
 .md-body :deep(.note-image-node img) { border-radius: 9px; cursor: default; }
