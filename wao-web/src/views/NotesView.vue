@@ -1222,13 +1222,13 @@ onMounted(() => void loadPins())
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id, $event)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta">
             <div class="note-heading"><h2 :title="displayedTitle(note)">{{ displayedTitle(note) }}</h2></div>
-            <span class="card-identity"><span class="author" :class="{ 'system-author': note.systemGenerated }" :title="note.systemGenerated ? 'Skill 生成的系统文章' : undefined"><i v-if="note.systemGenerated" class="ri-sparkling-line" aria-hidden="true"></i>{{ noteAuthorName(note) }}</span><time :title="timeLabel(note.updated || note.created)">{{ new Date(note.updated || note.created).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</time></span>
 
-            <div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id), 'stage-list-open': mobileActionsId === note.id }" role="group" aria-label="AI 产出与按需操作">
-              <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" hold-enabled :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}；长按 3 秒一键四连`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}，长按 3 秒一键四连`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
-            </div>
+
+
             <span v-if="chargingNote === note.id" class="four-charge-hint" role="status">按住 3 秒 · 松开取消</span>
-            <span class="note-meta-trailing"><span class="card-quick-actions"><button type="button" aria-label="复制小记图文" title="复制正文、原图或交给 Codex" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" @click.stop="togglePin(note.id)"><i class="ri-pushpin-line" aria-hidden="true"></i></button><button type="button" aria-label="复制分享链接" @click.stop="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
+            <span class="note-meta-trailing"><span class="card-action-slot"><span class="card-identity"><span class="author" :class="{ 'system-author': note.systemGenerated }" :title="note.systemGenerated ? 'Skill 生成的系统文章' : undefined"><i v-if="note.systemGenerated" class="ri-sparkling-line" aria-hidden="true"></i>{{ noteAuthorName(note) }}</span><time :title="timeLabel(note.updated || note.created)">{{ new Date(note.updated || note.created).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</time></span><span class="card-hover-actions"><div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id), 'stage-list-open': mobileActionsId === note.id }" role="group" aria-label="AI 产出与按需操作">
+              <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" hold-enabled :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}；长按 3 秒一键四连`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}，长按 3 秒一键四连`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
+            </div><span class="card-quick-actions"><button type="button" aria-label="复制小记图文" title="复制正文、原图或交给 Codex" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" :disabled="!pinsReady || pinSaving" :aria-label="pinnedIds.includes(note.id) ? '取消置顶' : '置顶'" :aria-pressed="pinnedIds.includes(note.id)" @click.stop="togglePin(note.id)"><i class="ri-pushpin-line" aria-hidden="true"></i></button><button type="button" aria-label="复制分享链接" @click.stop="copyText(docShareUrl(note.id), '公开分享链接已复制')"><i class="ri-share-forward-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span></span></span><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
               <button class="note-more-actions" type="button" :aria-label="`小记操作：${note.title}`" aria-haspopup="menu" @click.stop="openNoteMenu($event, note.id)"><i class="ri-more-line" aria-hidden="true"></i></button>
               <button class="note-touch-ai" type="button" aria-label="显示 AI 操作" :aria-expanded="mobileActionsId === note.id" @click.stop="mobileActionsId = mobileActionsId === note.id ? '' : note.id"><i class="ri-sparkling-line" aria-hidden="true"></i></button>
             </span>
@@ -1347,7 +1347,7 @@ h1 i { color: #7a5cc6; }
 .companion-receipt { color:var(--wao-primary-text); opacity:0; visibility:hidden; }
 .companion-receipt.unread, .note-card:hover .companion-receipt, .note-card:focus-within .companion-receipt { opacity:1; visibility:visible; }
 .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: min(650px, calc(100dvh - 210px)); max-height: calc(100dvh - 155px); }
-.notes-list { min-width: 0; padding: 24px 20px 40px; border: 1px solid var(--wao-line); border-right: 0; border-bottom: 0; background: var(--wao-bg-sub); scroll-padding-block: 24px; }
+.notes-list { min-width: 0; padding: 0 20px 24px; border: 1px solid var(--wao-line); border-right: 0; border-bottom: 0; background: var(--wao-bg-sub); scroll-padding-block: 24px; }
 .list-toolbar, .search, .note-meta, .note-actions, .sort { display: flex; align-items: center; gap: 10px; }
 .list-toolbar { margin-bottom: 8px; gap: 8px; flex-wrap: wrap; position: relative; }
 button, a, select { color: var(--wao-text-3); font-size: 12px; }
@@ -1584,15 +1584,15 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
   .writing-pane :deep(.note-composer:not(.fullscreen)) { flex: 1; min-height: 0; max-height: none; }
   .notes-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 }
-@media (max-width: 1100px) { .writing-resizer { display: none; } .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } .search { flex: 1 1 50%; } }
-@media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 24px 10px 40px; } }
+@media (max-width: 1100px) { .writing-resizer { display: none; } .notes-page { height: auto; display: block; overflow: visible; padding: 20px; } .notes-workspace { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); overflow: visible; } .writing-pane { position: static; min-height: 0; overflow: visible; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 330px; max-height: none; } .notes-list { overflow: visible; border-left: 0; border-top: 1px solid var(--wao-line); padding: 0 10px 24px; } .search { flex: 1 1 50%; } }
+@media (max-width: 820px) { .notes-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; } .writing-pane { position: static; } .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 380px; max-height: none; } .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height: 230px !important; } .notes-list { border-left: 0; border-top: 1px solid var(--wao-line); padding: 0 10px 24px; } }
 @media (max-width: 760px) {
   .page-heading { gap: 8px; }
   .heading-title { gap: 8px; flex-wrap: wrap; }
   .writing-toggle, .toolbar button, .reader-toggle { min-height: 44px; }
   .writing-pane :deep(.note-composer:not(.fullscreen)) { min-height: 300px; }
   .writing-pane :deep(.note-composer:not(.fullscreen) .md-body) { min-height: 120px !important; }
-  .notes-list { padding: 18px 0 30px; }
+  .notes-list { padding: 0 0 24px; }
   .notes-page .note-body :deep(.md-body .tiptap), .notes-page .reader-article :deep(.md-body .tiptap) { font-size: 16px; line-height: 1.7; }
 }
 @media (max-width: 600px) { .notes-page { padding: 16px 12px 40px; } .note-card { padding: 14px 12px 16px; } .note-card.fixed-height { height: 286px; min-height: 286px; max-height: 286px; padding: 14px 12px 34px; } .note-card.expanded, .note-card.editing { padding: 14px 12px 34px; } .reader-toggle { padding: 7px; } .reader-toggle span { display: none; } .list-summary { flex-wrap: wrap; } }
@@ -1707,26 +1707,32 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 
 <style scoped>
 /* 标题与动作共享一行；悬浮仅切换同一区域，不改变标题可用宽度。 */
-.note-meta{display:grid;grid-template-columns:minmax(0,1fr) min(310px,44%);align-items:center;gap:12px;height:32px;margin-bottom:12px;position:relative;min-width:0}
+.note-meta{display:grid;grid-template-columns:minmax(0,1fr) min(340px,48%);align-items:center;gap:12px;height:32px;margin-bottom:12px;position:relative;min-width:0}
 .note-meta .note-heading{display:block;min-width:0;margin:0;width:100%;overflow:hidden}
 .note-meta .note-heading h2{display:block;margin:0;width:100%;font-size:16px;line-height:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:unset}
-.card-identity{position:absolute;right:86px;max-width:calc(44% - 86px);display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap;font-size:10px;color:var(--wao-text-faint)}.card-identity time{overflow:hidden;text-overflow:ellipsis}.card-identity .author{flex:none}
-.note-meta-trailing{display:flex;min-width:0;width:100%;margin:0;gap:5px;justify-content:flex-end;flex-wrap:nowrap}
-.note-meta .stage-list{position:absolute;right:178px;top:5px;visibility:hidden;opacity:0;gap:4px;margin:0}
-.note-meta-trailing .card-quick-actions{opacity:0;visibility:hidden;pointer-events:none}
+/* 身份和悬浮操作在同一个网格单元替换；保存状态、字数独立排列。 */
+.card-action-slot{display:grid;flex:1;min-width:0;align-items:center}
+.card-identity,.card-hover-actions{grid-area:1/1;min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:7px}
+.card-identity{overflow:hidden;white-space:nowrap;font-size:10px;color:var(--wao-text-faint)}.card-identity time{overflow:hidden;text-overflow:ellipsis}.card-identity .author{flex:none}
+.card-hover-actions{visibility:hidden;opacity:0;pointer-events:none;gap:8px}
+.note-meta-trailing{display:flex;min-width:0;width:100%;margin:0;gap:6px;justify-content:flex-end;flex-wrap:nowrap}
+.note-meta-trailing .saved,.note-meta-trailing .note-count{flex:none;margin:0;white-space:nowrap}
+.note-meta .stage-list{position:static;visibility:inherit;opacity:1;gap:4px;margin:0;flex:none}
+.note-meta-trailing .card-quick-actions{display:flex;opacity:1;visibility:inherit;pointer-events:inherit;flex:none}
 .note-card:hover .card-identity,.note-card:focus-within .card-identity{visibility:hidden;opacity:0}
-.note-card:hover .stage-list,.note-card:focus-within .stage-list,.note-card:hover .card-quick-actions,.note-card:focus-within .card-quick-actions{visibility:visible;opacity:1;pointer-events:auto}
+.note-card:hover .card-hover-actions,.note-card:focus-within .card-hover-actions{visibility:visible;opacity:1;pointer-events:auto}
+
 .four-charge-hint{position:absolute;right:0;top:33px;z-index:2;background:var(--wao-bg-card);border-radius:6px;padding:3px 7px}
-.note-card-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;min-height:28px;opacity:0;pointer-events:none;transition:opacity .16s}
+.note-card-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;position:absolute;inset:auto 0 0;min-height:28px;padding:8px 16px;margin:0;background:var(--wao-bg-card);opacity:0;pointer-events:none;transition:opacity .16s;z-index:1}
 .note-card:hover .note-card-footer,.note-card:focus-within .note-card-footer{opacity:1;pointer-events:auto}
 .note-card.fixed-height .note-card-footer{position:absolute;inset:auto 0 0;padding:22px 16px 9px;margin:0;background:linear-gradient(transparent,var(--wao-bg-card) 42%);z-index:1}
 .note-card-footer .card-tags{display:flex;flex:1;min-width:0;max-width:none;gap:5px;flex-wrap:nowrap;overflow:auto;white-space:nowrap;scrollbar-width:thin}.note-card-footer .card-tags button{flex:none;overflow:hidden;text-overflow:ellipsis;max-width:180px;font-size:11px}
 .note-card-footer .note-read-guide,.note-card.expanded .note-card-footer .note-read-guide{position:static;inset:auto;min-height:0;margin:0;padding:0;background:none;opacity:1;pointer-events:inherit;flex:none}
 .note-card-footer .compact-workflow{min-width:0;max-width:160px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}.compact-workflow button{color:var(--wao-primary-text);font:inherit;border:0;padding:0;background:transparent;cursor:pointer}
 .notes-toolbar{margin-top:0}.note-image-lightbox img{max-height:calc(100dvh - 150px)}
-@container(max-width:560px){.note-meta{grid-template-columns:minmax(0,1fr) 180px}.card-identity{right:64px;max-width:116px}.card-identity time{display:block}.note-meta .stage-list{right:70px}.note-meta-trailing .card-quick-actions{display:none}.note-meta .note-heading h2{font-size:15px}}
-@media(max-width:760px){.note-meta{grid-template-columns:minmax(0,1fr) 82px;height:40px}.note-meta .note-heading h2{font-size:15px}.card-identity{display:none}.note-meta .stage-list{display:none}.note-meta .stage-list-open{display:flex;top:42px;right:0;opacity:1;visibility:visible}.note-meta-trailing{display:flex;width:100%;gap:2px}.note-card-footer .compact-workflow{max-width:90px}.notes-trash-toggle{min-width:40px;padding:8px}.notes-trash-toggle span{display:none}}
-@media(hover:none),(pointer:coarse){.note-card-footer{opacity:1;pointer-events:auto}.note-card-footer .card-tags button{min-height:36px}.note-card:hover .card-identity{opacity:1;visibility:visible}}
+@container(max-width:560px){.note-meta{grid-template-columns:minmax(0,1fr) min(220px,48%)}.card-identity{max-width:100%}.card-identity time{display:block}.note-meta .stage-list{position:static}.note-meta-trailing .card-quick-actions{display:none}.note-meta .note-heading h2{font-size:15px}}
+@media(max-width:760px){.note-meta{grid-template-columns:minmax(0,1fr) 82px;height:40px}.note-meta .note-heading h2{font-size:15px}.card-identity{display:none}.note-meta .stage-list{display:none}.note-meta .stage-list-open{position:absolute;display:flex;top:42px;right:0;opacity:1;visibility:visible}.note-meta-trailing{display:flex;width:100%;gap:2px}.card-action-slot{min-width:0;flex:0}.card-hover-actions{visibility:visible;opacity:1}.note-card-footer .compact-workflow{max-width:90px}.notes-trash-toggle{min-width:40px;padding:8px}.notes-trash-toggle span{display:none}}
+@media(hover:none),(pointer:coarse){.note-card-footer{opacity:1;pointer-events:auto}.note-card-footer .card-tags button{min-height:36px}.card-action-slot .card-identity{display:none}.card-hover-actions{opacity:1;visibility:visible;pointer-events:auto}.note-card:not(.fixed-height){padding-bottom:50px}}
 </style>
 
 <style scoped>@media(max-width:600px){.heading-title{gap:6px}.daily-count-label{display:none}.daily-note-count{padding:5px 7px}.heading-title h1{font-size:18px}.heading-title .writing-toggle{font-size:11px;padding:8px 7px}.notes-trash-toggle{width:36px;min-width:36px}.notes-settings-toggle{min-width:36px}}</style>
