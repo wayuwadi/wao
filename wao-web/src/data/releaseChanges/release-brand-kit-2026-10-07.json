@@ -1,0 +1,15 @@
+{
+  "id": "release-brand-kit-2026-10-07",
+  "publishedOn": "2026-10-07",
+  "sourceSubject": "feat(navigation): 提供统一品牌规范与可下载标识资源包",
+  "title": "让 WAO 品牌有一套可复用的素材",
+  "intro": "正式图形、圆角字标、深浅组合与小尺寸图标集中交付，后续页面与材料使用同一套品牌。",
+  "highlights": [{
+    "featureId": "navigation",
+    "eyebrow": "品牌资源",
+    "title": "让 WAO 品牌有一套可复用的素材",
+    "summary": "在品牌参考页查看留白、最小尺寸和背景用法，下载 SVG、PNG 与完整资源包。",
+    "points": ["应用与导出共用字标几何，保持同一轮廓", "蓝紫、单色、反白组合及小尺寸图标可独立下载"],
+    "steps": ["打开 /brand/guide.html，查看不同背景和实际小图标尺寸。", "点击“下载完整资源包”，获取正式素材、使用规范和文件摘要。"]
+  }]
+}

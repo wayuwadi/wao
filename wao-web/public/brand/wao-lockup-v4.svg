@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 290 100">
+  <defs><mask id="cross"><rect width="100" height="100" fill="white"/><path d="M44 40.4 L56 62.5" fill="none" stroke="black" stroke-width="12.5"/></mask></defs>
+  <path d="M22 22 C13 22 11 32 16 45 L25 69 C29 80 36 79 41 68 L60 33 C65 24 71 22 78 22 C87 22 89 32 84 45 L75 69 C71 80 64 79 59 68 L40 33 C35 24 29 22 22 22 Z" fill="none" stroke="#5665e9" stroke-width="7.2" stroke-linejoin="round" stroke-linecap="round" mask="url(#cross)"/>
+  <path d="M44 40.4 L56 62.5" fill="none" stroke="#5665e9" stroke-width="7.2" stroke-linecap="butt"/>
+<g transform="translate(125 19.667) scale(2.1667)"><path d="M3 5 L8.5 22 Q9.3 24.5 10.5 21.5 L16 8 L21.5 21.5 Q22.7 24.5 23.5 22 L29 5 M35 23 L42 6 Q43 3.5 44 6 L51 23 M38 16.5 H48 M73 14 C73 7 70 4 64 4 C58 4 55 7 55 14 C55 21 58 24 64 24 C70 24 73 21 73 14 Z" fill="none" stroke="#5665e9" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
