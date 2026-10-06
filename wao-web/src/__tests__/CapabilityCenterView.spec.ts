@@ -98,13 +98,52 @@ describe('能力中心真实目录与区域', () => {
     expect(wrapper.get('.cap-planning').attributes('open')).toBeUndefined()
     wrapper.unmount()
   })
+  it('按业务动作找到 CLI/MCP，展开并定位实际匹配能力；仅 CLI 能力不进入 MCP', async () => {
+    api.fetchWorkspaceCapabilities.mockResolvedValue({
+      capabilities: [
+        {
+          name: 'create_note',
+          title: '创建小记',
+          description: '创建本人小记',
+          group: 'documents',
+          readOnly: false,
+          cli: 'wao notes create',
+          mcp: 'create_note',
+        },
+        {
+          name: 'publish_html',
+          title: '发布 HTML 页面',
+          description: '公开页面',
+          group: 'pages',
+          readOnly: false,
+          cli: 'wao pages publish',
+          mcp: null,
+        },
+      ],
+    })
+    const { wrapper } = await render()
+    await wrapper.get('input[type="search"]').setValue('发小记')
+    expect(wrapper.get('.cap-entry-grid').text()).toContain('WAO CLI')
+    expect(wrapper.get('.cap-entry-grid').text()).toContain('WAO MCP')
+    expect(wrapper.get('.cap-entry-grid').text()).toContain('匹配 1 项操作')
+    expect(wrapper.get('.cap-capability-group').attributes('open')).toBeDefined()
+    await wrapper.get('.cap-match-shortcuts button').trigger('click')
+    expect(wrapper.find('#cap-operation-create_note').exists()).toBe(true)
+    await wrapper.get('input[type="search"]').setValue('publish_html')
+    expect(wrapper.get('.cap-entry-grid').text()).toContain('WAO CLI')
+    expect(wrapper.get('.cap-entry-grid').text()).not.toContain('WAO MCP')
+    await wrapper.get('input[type="search"]').setValue('并不存在的能力')
+    expect(wrapper.text()).toContain('没有符合条件的条目')
+    wrapper.unmount()
+  })
   it('旧应用接入深链展开规划说明，同时保留真实能力列表', async () => {
     const { wrapper, router } = await render('/capabilities?type=应用接入')
     expect(wrapper.get('.cap-planning').attributes('open')).toBeDefined()
     expect(wrapper.get('.cap-planning').text()).toContain('目前没有可用的授权')
     expect(wrapper.get('.cap-entry-grid').text()).toContain('WAO CLI')
     expect(wrapper.get('.cap-entry-grid').text()).not.toContain('外部应用')
-    await wrapper.get('.cap-planning a').trigger('click'); await flushPromises()
+    await wrapper.get('.cap-planning a').trigger('click')
+    await flushPromises()
     expect(router.currentRoute.value.query.type).toBe('Skill')
     wrapper.unmount()
   })

@@ -1,14 +1,23 @@
 openapi: 3.0.3
 info:
   title: WAO 工作区 MCP 与设备令牌
-  version: 1.0.0
+  version: 1.1.0
 paths:
   /api/workspace-mcp/tokens:
     get:
       summary: 列出当前成员的工作区 MCP 设备令牌元数据
       security: [{ waoSession: [] }]
       responses:
-        '200': { description: 不包含明文或摘要的令牌列表 }
+        '200':
+          description: 本人成员的非敏感连接元数据，不包含完整令牌或哈希
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/WorkspaceConnection' }
     post:
       summary: 签发只读或可读写令牌，明文仅返回一次
       security: [{ waoSession: [] }]
@@ -39,7 +48,7 @@ paths:
   /api/mcp/workspace:
     post:
       summary: 无状态 Streamable HTTP JSON-RPC 端点
-      description: 支持 initialize、ping、tools/list、tools/call；每次请求重新验证专用 Bearer。
+      description: 支持 initialize、ping、tools/list、tools/call；每次请求重新验证专用 Bearer。实际 tools/list 成功记录验证时间与工具数量，目录运行失败记录失败时间；元数据写入失败不改变业务响应。
       security: [{ workspaceBearer: [] }]
       requestBody:
         required: true
@@ -51,6 +60,17 @@ paths:
         '202': { description: 已接受 notification }
         '401': { description: 令牌无效、已吊销或误用了记忆令牌 }
 components:
+  schemas:
+    WorkspaceConnection:
+      type: object
+      description: 原有连接元数据沿用；验证字段均可空，旧连接不回填成功。
+      properties:
+        id: { type: string }
+        name: { type: string }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        lastVerifiedAt: { type: string, format: date-time, nullable: true, description: 最近成功读取该连接工具目录的时间，不表示持续在线 }
+        verifiedToolCount: { type: integer, minimum: 0, nullable: true, description: 最近成功读取的实际 MCP 工具数量 }
+        lastVerificationFailedAt: { type: string, format: date-time, nullable: true, description: 最近一次实际工具目录运行失败时间，无法推断客户端网络故障 }
   securitySchemes:
     waoSession:
       type: apiKey

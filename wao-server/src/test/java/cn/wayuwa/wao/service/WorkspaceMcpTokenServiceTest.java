@@ -10,6 +10,10 @@ import static org.mockito.Mockito.when;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.WorkspaceMcpTokenEntity;
 import cn.wayuwa.wao.mapper.WorkspaceMcpTokenMapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -62,5 +66,18 @@ class WorkspaceMcpTokenServiceTest {
         when(mapper.selectById("t1")).thenReturn(row);
         assertThatThrownBy(() -> tokens.revoke("wd", "t1"))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void verificationUpdatesOnlyMetadataWithOwnerAndActiveConnectionGuards() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), WorkspaceMcpTokenEntity.class);
+        ArgumentCaptor<LambdaUpdateWrapper<WorkspaceMcpTokenEntity>> update = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        tokens.recordVerification(new WorkspaceMcpTokenService.AuthenticatedToken("t1", "wd", false), 8);
+        verify(mapper).update(org.mockito.ArgumentMatchers.isNull(), update.capture());
+        assertThat(update.getValue().getSqlSegment()).contains("id", "member_id", "revoked_at IS NULL");
+        assertThat(update.getValue().getParamNameValuePairs().values()).contains("t1", "wd", 8);
+        assertThat(update.getValue().getSqlSet()).contains("last_verified_at", "verified_tool_count")
+                .doesNotContain("permission_policy", "can_write", "revoked_at", "token_hash");
     }
 }

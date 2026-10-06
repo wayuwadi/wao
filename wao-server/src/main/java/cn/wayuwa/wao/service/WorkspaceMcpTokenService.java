@@ -8,6 +8,7 @@ import cn.wayuwa.wao.dto.CreateWorkspaceMcpTokenRequest;
 import cn.wayuwa.wao.dto.WorkspaceMcpTokenDto;
 import cn.wayuwa.wao.mapper.WorkspaceMcpTokenMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
@@ -124,10 +125,31 @@ public class WorkspaceMcpTokenService {
         catch (RuntimeException corruptPolicy) { return null; }
         LocalDateTime now = LocalDateTime.now();
         if (row.getLastUsedAt() == null || row.getLastUsedAt().isBefore(now.minusMinutes(1))) {
-            row.setLastUsedAt(now); mapper.updateById(row);
+            mapper.update(null, new LambdaUpdateWrapper<WorkspaceMcpTokenEntity>()
+                    .eq(WorkspaceMcpTokenEntity::getId, row.getId())
+                    .eq(WorkspaceMcpTokenEntity::getMemberId, row.getMemberId())
+                    .isNull(WorkspaceMcpTokenEntity::getRevokedAt)
+                    .set(WorkspaceMcpTokenEntity::getLastUsedAt, now));
         }
         return new AuthenticatedToken(row.getId(), row.getMemberId(), Boolean.TRUE.equals(row.getCanWrite()),
                 Boolean.TRUE.equals(row.getCanPublishHostedPage()), policy);
+    }
+
+    /** 记录实际客户端 tools/list 结果；只更新当前成员仍有效的连接，不改变授权或吊销状态。 */
+    public void recordVerification(AuthenticatedToken token, Integer toolCount) {
+        var update = new LambdaUpdateWrapper<WorkspaceMcpTokenEntity>()
+                .eq(WorkspaceMcpTokenEntity::getId, token.tokenId())
+                .eq(WorkspaceMcpTokenEntity::getMemberId, token.memberId())
+                .isNull(WorkspaceMcpTokenEntity::getRevokedAt);
+        LocalDateTime now = LocalDateTime.now();
+        if (toolCount == null) {
+            update.set(WorkspaceMcpTokenEntity::getLastVerificationFailedAt, now);
+        } else {
+            if (toolCount < 0) throw new IllegalArgumentException("工具数量不能为负数");
+            update.set(WorkspaceMcpTokenEntity::getLastVerifiedAt, now)
+                    .set(WorkspaceMcpTokenEntity::getVerifiedToolCount, toolCount);
+        }
+        mapper.update(null, update);
     }
 
     public record AuthenticatedToken(String tokenId, String memberId, boolean canWrite,
@@ -162,7 +184,8 @@ public class WorkspaceMcpTokenService {
                 Boolean.TRUE.equals(row.getCanWrite()), Boolean.TRUE.equals(row.getCanPublishHostedPage()),
                 row.getCreatedAt(), row.getLastUsedAt(), policy == null ? "legacy" : "granular",
                 policy == null ? null : policy.permissions(), policy == null ? null : policy.projectIds(),
-                policy == null ? null : policy.knowledgeBaseIds(), row.getClientType());
+                policy == null ? null : policy.knowledgeBaseIds(), row.getClientType(),
+                row.getLastVerifiedAt(), row.getVerifiedToolCount(), row.getLastVerificationFailedAt());
     }
 
     private static String writePolicy(WorkspaceCapabilityPolicy policy) {

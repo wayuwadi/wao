@@ -1,5 +1,7 @@
 # WAO CLI 规格与能力台账
 
+2026-10-06：能力中心接入验证复用现有 `wao auth status`、`wao tools list` 与 `wao doctor`。这些命令成功读取实时工具目录后，服务器记录本连接验证时间及工具数；浏览器刷新验证状态只读取记录。不存在额外验证命令或管理授权，网络失败遵循既有错误退出；不把安装成功或已有访问时间当作接入成功。详见 [能力中心](capability-center.md)。
+
 2026-10-06：[系统文章来源](notes-system-generated-source.md) 沿用实时参数帮助：`wao notes create --system-generated true`，`wao notes update ID --system-generated true --expected-rev REV`，`wao notes list --include-system false`。默认普通记录，所有者仍为令牌成员；旧服务未声明参数时拒绝，不能扩大令牌范围。
 
 2026-10-04：[iOS 小记系统采集](ios-notes-system-capture.md) 的剪贴板、分享扩展和麦克风由设备用户主动操作，不新增 CLI/MCP 工具或旧令牌权限。既有 HTTP 小记 PUT 增加可选 `createOnly`，终端仍走原有文档创建/版本更新契约；引用 Markdown 的书摘保护在公共服务生效。后续需要批量导入时再设计固定 ID、范围和版本回执。

@@ -7,10 +7,11 @@ import java.util.List;
 public record WorkspaceMcpTokenDto(String id, String name, String tokenPrefix, boolean canWrite,
         boolean canPublishHostedPage, LocalDateTime createdAt, LocalDateTime lastUsedAt,
         String permissionMode, List<String> permissions, List<String> projectIds,
-        List<String> knowledgeBaseIds, String clientType) {
+        List<String> knowledgeBaseIds, String clientType, LocalDateTime lastVerifiedAt,
+        Integer verifiedToolCount, LocalDateTime lastVerificationFailedAt) {
     public WorkspaceMcpTokenDto(String id, String name, String tokenPrefix, boolean canWrite,
             boolean canPublishHostedPage, LocalDateTime createdAt, LocalDateTime lastUsedAt) {
         this(id, name, tokenPrefix, canWrite, canPublishHostedPage, createdAt, lastUsedAt,
-                "legacy", null, null, null, null);
+                "legacy", null, null, null, null, null, null, null);
     }
 }

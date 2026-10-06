@@ -60,7 +60,7 @@ public class WorkspaceMcpController {
             JsonNode result = switch (method) {
                 case "initialize" -> initialize(request.path("params"));
                 case "ping" -> json.createObjectNode();
-                case "tools/list" -> tools.list(token);
+                case "tools/list" -> listAndVerify(token);
                 case "tools/call" -> call(request.path("params"), token);
                 default -> null;
             };
@@ -71,6 +71,27 @@ public class WorkspaceMcpController {
         } catch (RuntimeException ex) {
             log.error("WAO 工作区 MCP 失败：method={}", method, ex);
             return response(HttpStatus.OK, error(id, -32603, "工作区服务暂时不可用，请稍后重试"));
+        }
+    }
+
+    private JsonNode listAndVerify(WorkspaceMcpTokenService.AuthenticatedToken token) {
+        JsonNode result;
+        try {
+            result = tools.list(token);
+        } catch (RuntimeException ex) {
+            recordVerification(token, null);
+            throw ex;
+        }
+        recordVerification(token, result.path("tools").size());
+        return result;
+    }
+
+    private void recordVerification(WorkspaceMcpTokenService.AuthenticatedToken token, Integer count) {
+        try {
+            tokens.recordVerification(token, count);
+        } catch (RuntimeException ex) {
+            // 元数据失败不能让成功读取目录的客户端失去业务访问。
+            log.warn("工作区连接验证记录暂时无法保存");
         }
     }
 

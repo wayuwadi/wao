@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 import cn.wayuwa.wao.service.KnowledgeService;
 import cn.wayuwa.wao.service.ProjectService;
@@ -49,11 +50,37 @@ class WorkspaceMcpControllerTest {
         assertThat(listed.path("result").path("tools").findValuesAsText("name"))
                 .contains("list_open_tasks", "list_projects", "get_document")
                 .doesNotContain("create_task", "update_document", "create_project");
+        verify(tokens).recordVerification(new WorkspaceMcpTokenService.AuthenticatedToken("t1", "wd", false),
+                listed.path("result").path("tools").size());
         JsonNode denied = controller.handle("Bearer read-secret", json.readTree("""
                 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_task","arguments":{}}}
                 """)).getBody();
         assertThat(denied.path("result").path("isError").asBoolean()).isTrue();
         verify(tasks, never()).create(any(), any());
+    }
+
+    @Test
+    void initializationAndInvalidBearerDoNotMarkVerifiedAndMetadataFailureDoesNotBreakDiscovery() throws Exception {
+        var authenticated = new WorkspaceMcpTokenService.AuthenticatedToken("t", "wd", false);
+        when(tokens.authenticate("valid")).thenReturn(authenticated);
+        controller.handle("Bearer valid", json.readTree("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}"));
+        controller.handle("Bearer invalid", json.readTree("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+        verify(tokens, never()).recordVerification(any(), any());
+        doThrow(new IllegalStateException("元数据暂不可用")).when(tokens).recordVerification(eq(authenticated), any());
+        var response = controller.handle("Bearer valid", json.readTree("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}"));
+        assertThat(response.getBody().path("result").path("tools").isArray()).isTrue();
+    }
+
+    @Test
+    void directoryFailureRecordsFailureWithoutPretendingSuccessfulValidation() throws Exception {
+        var authenticated = new WorkspaceMcpTokenService.AuthenticatedToken("t", "wd", false);
+        when(tokens.authenticate("valid")).thenReturn(authenticated);
+        var failingTools = mock(WorkspaceMcpTools.class);
+        when(failingTools.list(authenticated)).thenThrow(new IllegalStateException("目录暂不可用"));
+        var failingController = new WorkspaceMcpController(tokens, failingTools, json);
+        var response = failingController.handle("Bearer valid", json.readTree("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"));
+        assertThat(response.getBody().path("error").path("code").asInt()).isEqualTo(-32603);
+        verify(tokens).recordVerification(authenticated, null);
     }
 
     @Test

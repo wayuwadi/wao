@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
+import ConnectionSetup from './ConnectionSetup.vue'
+import { grantPresets, presetPermissions } from '@/utils/capabilityCenter'
 import {
   createGranularWorkspaceToken,
   fetchWorkspaceResources,
@@ -68,6 +70,40 @@ const scopeIds = computed(() =>
   props.token ? (props.token[scopeKey.value] ?? null) : draft.value[scopeKey.value],
 )
 const viewName = computed(() => props.token?.name ?? '新建连接')
+const activeToken = computed(() => props.token ?? issued.value?.token)
+const selectedPreset = ref('')
+const scopeSection = ref<HTMLElement | null>(null)
+const summary = computed(() => {
+  const selected = props.capabilities.filter((c) => permissions.value.includes(c.name))
+  return {
+    read: selected.filter((c) => c.readOnly).length,
+    write: selected.filter((c) => !c.readOnly && c.name !== 'publish_html').length,
+    publish: selected.filter((c) => c.name === 'publish_html').length,
+  }
+})
+function scopeSummary(key: 'projectIds' | 'knowledgeBaseIds') {
+  const ids = activeToken.value ? activeToken.value[key] : draft.value[key]
+  if (ids == null) return '账号当前可访问范围'
+  if (!ids.length) return '尚未选择（不能签发）'
+  const options = key === 'projectIds' ? resources.value?.projects : resources.value?.knowledgeBases
+  return ids
+    .map((id) => options?.find((option) => option.id === id)?.name ?? '当前不可访问的资源')
+    .join('、')
+}
+function applyPreset(id: string) {
+  if (readonly.value || busy.value) return
+  draft.value.permissions = presetPermissions(id, props.capabilities)
+  selectedPreset.value = id
+  if (id === 'notes') group.value = 'documents'
+  if (id === 'projects') group.value = 'tasks'
+  notice.value = '方案已填入草稿，数据范围保留。请核对后签发。'
+}
+async function editScope(key: 'projectIds' | 'knowledgeBaseIds') {
+  group.value = key === 'projectIds' ? 'projects' : 'knowledge'
+  await nextTick()
+  scopeSection.value?.scrollIntoView({ block: 'center' })
+  scopeSection.value?.querySelector('select')?.focus({ preventScroll: true })
+}
 const endpoint = `${location.origin}/api/mcp/workspace`
 const instruction = computed(() =>
   !issued.value
@@ -134,6 +170,7 @@ function message(cause: unknown, fallback: string) {
 }
 function togglePermission(name: string, checked: boolean) {
   if (readonly.value) return
+  selectedPreset.value = ''
   draft.value.permissions = checked
     ? [...new Set([...draft.value.permissions, name])]
     : draft.value.permissions.filter((p) => p !== name)
@@ -314,6 +351,79 @@ onBeforeUnmount(() => {
         </select></label
       >
     </div>
+    <ConnectionSetup
+      v-if="activeToken"
+      :key="activeToken.id"
+      :token="activeToken"
+      :client-type="draft.clientType"
+      @refreshed="
+        (value) => {
+          if (issued) issued.token = value
+          emit('changed')
+        }
+      "
+    />
+    <div v-if="!readonly" class="cap-presets" aria-label="快捷授权方案">
+      <span class="cap-muted">快捷方案 · 可继续逐项调整</span>
+      <div class="cap-actions">
+        <button
+          v-for="preset in grantPresets"
+          :key="preset.id"
+          type="button"
+          class="cap-button"
+          :aria-pressed="selectedPreset === preset.id"
+          :title="preset.description"
+          :disabled="busy || !capabilities.length"
+          @click="applyPreset(preset.id)"
+        >
+          {{ preset.title }}
+        </button>
+      </div>
+      <p v-if="selectedPreset" class="cap-muted">
+        {{ grantPresets.find((p) => p.id === selectedPreset)?.description }} 数据范围保持原选择。
+      </p>
+    </div>
+    <section class="cap-grant-summary" aria-label="授权汇总">
+      <div class="cap-summary-counts">
+        <strong>读取 {{ summary.read }}</strong
+        ><strong>写入 {{ summary.write }}</strong
+        ><strong>公开发布 {{ summary.publish }}</strong>
+      </div>
+      <p :title="scopeSummary('projectIds')">
+        项目：{{ scopeSummary('projectIds') }}
+        <button
+          v-if="!readonly"
+          type="button"
+          class="cap-scope-shortcut"
+          @click="editScope('projectIds')"
+        >
+          调整项目范围
+        </button>
+      </p>
+      <p :title="scopeSummary('knowledgeBaseIds')">
+        知识库：{{ scopeSummary('knowledgeBaseIds') }}
+        <button
+          v-if="!readonly"
+          type="button"
+          class="cap-scope-shortcut"
+          @click="editScope('knowledgeBaseIds')"
+        >
+          调整知识库范围
+        </button>
+      </p>
+      <div v-if="!readonly" class="cap-actions">
+        <button
+          type="button"
+          class="cap-button primary"
+          :disabled="busy || !capabilities.length"
+          @click="create"
+        >
+          {{ busy ? '签发中…' : '生成连接指令' }}
+        </button>
+        <small class="cap-muted">{{ storageError ? '草稿未保存' : '草稿已保存在本机' }}</small>
+      </div>
+      <p v-if="error" role="alert" class="cap-error">{{ error }}</p>
+    </section>
     <div class="cap-section-heading">
       <h3>已选 {{ permissions.length }} / {{ capabilities.length }} 项操作</h3>
       <div class="cap-view-modes" aria-label="权限查看方式">
@@ -409,7 +519,7 @@ onBeforeUnmount(() => {
         </details>
       </article>
     </div>
-    <div v-if="group !== 'pages'" class="cap-resource-scope">
+    <div v-if="group !== 'pages'" ref="scopeSection" class="cap-resource-scope">
       <h3>数据范围 · {{ scopeLabel }}</h3>
       <p v-if="resourcesLoading" role="status">正在读取可选范围…</p>
       <div v-if="resourcesError" class="cap-error" role="alert">
@@ -452,7 +562,6 @@ onBeforeUnmount(() => {
       </p>
     </div>
     <p v-else class="cap-info">HTML 发布会生成公开页面，不获得已有页面的读取、修改或删除权限。</p>
-    <div v-if="error" class="cap-error" role="alert">{{ error }}</div>
     <p v-if="storageError" class="cap-error" role="alert">{{ storageError }}</p>
     <div v-if="issued" class="cap-issued">
       <h3>完整令牌仅本次显示</h3>
@@ -486,30 +595,6 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
-    <div v-else-if="!token && !issued" class="cap-actions">
-      <button
-        type="button"
-        class="cap-button primary"
-        :disabled="busy || !capabilities.length"
-        @click="create"
-      >
-        {{ busy ? '签发中…' : '生成连接指令' }}</button
-      ><button
-        type="button"
-        class="cap-button"
-        :disabled="busy"
-        @click="draft.permissions = capabilities.filter((c) => c.readOnly).map((c) => c.name)"
-      >
-        只选读取</button
-      ><button
-        type="button"
-        class="cap-button"
-        :disabled="busy || !capabilities.length"
-        @click="draft.permissions = capabilities.filter((c) => c.name !== 'publish_html').map((c) => c.name)"
-      >
-        日常完整</button
-      ><span class="cap-muted">{{ storageError ? '草稿未保存' : '草稿已保存在本机' }}</span>
-    </div>
     <p v-if="notice" role="status" class="cap-notice">{{ notice }}</p>
   </section>
 </template>
@@ -517,6 +602,46 @@ onBeforeUnmount(() => {
 <style scoped>
 .connection-panel {
   min-width: 0;
+}
+.cap-presets {
+  margin: 18px 0;
+}
+.cap-grant-summary {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 12px;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  box-shadow: 0 3px 14px #30266a0d;
+}
+.cap-summary-counts {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--wao-primary-text);
+}
+.cap-scope-shortcut {
+  border: 0;
+  background: none;
+  color: var(--wao-primary-text);
+  cursor: pointer;
+  font: inherit;
+  margin-left: 8px;
+  padding: 2px;
+  text-decoration: underline;
+}
+.cap-grant-summary p {
+  font-size: 12px;
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 650px) {
+  .cap-grant-summary {
+    position: static;
+  }
 }
 .cap-permission {
   padding: 12px;

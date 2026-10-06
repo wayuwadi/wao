@@ -18,6 +18,9 @@ public class WorkspaceMcpTokenEntity {
     private String clientType;
     private LocalDateTime createdAt;
     private LocalDateTime lastUsedAt;
+    private LocalDateTime lastVerifiedAt;
+    private Integer verifiedToolCount;
+    private LocalDateTime lastVerificationFailedAt;
     private LocalDateTime revokedAt;
 
     public String getId() { return id; }
@@ -42,6 +45,12 @@ public class WorkspaceMcpTokenEntity {
     public void setCreatedAt(LocalDateTime value) { createdAt = value; }
     public LocalDateTime getLastUsedAt() { return lastUsedAt; }
     public void setLastUsedAt(LocalDateTime value) { lastUsedAt = value; }
+    public LocalDateTime getLastVerifiedAt() { return lastVerifiedAt; }
+    public void setLastVerifiedAt(LocalDateTime value) { lastVerifiedAt = value; }
+    public Integer getVerifiedToolCount() { return verifiedToolCount; }
+    public void setVerifiedToolCount(Integer value) { verifiedToolCount = value; }
+    public LocalDateTime getLastVerificationFailedAt() { return lastVerificationFailedAt; }
+    public void setLastVerificationFailedAt(LocalDateTime value) { lastVerificationFailedAt = value; }
     public LocalDateTime getRevokedAt() { return revokedAt; }
     public void setRevokedAt(LocalDateTime value) { revokedAt = value; }
 }

@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   createGranularWorkspaceToken: vi.fn(),
   fetchWorkspaceResources: vi.fn(),
   revokeWorkspaceMcpToken: vi.fn(),
+  fetchWorkspaceMcpTokens: vi.fn(),
 }))
 vi.mock('@/api/workspaceMcp', () => api)
 const capabilities: WorkspaceCapability[] = [
@@ -100,16 +101,76 @@ describe('页内逐项连接授权', () => {
   })
   it('日常完整只填授权草稿，保留数据范围并由用户签发，不含公开发布', async () => {
     const wrapper = await render()
-    await wrapper.setProps({ capabilities: [...capabilities, {
-      name: 'publish_html', title: '发布页面', description: '', group: 'pages', readOnly: false,
-      cli: 'wao pages publish', mcp: null,
-    }] })
+    await wrapper.setProps({
+      capabilities: [
+        ...capabilities,
+        {
+          name: 'publish_html',
+          title: '发布页面',
+          description: '',
+          group: 'pages',
+          readOnly: false,
+          cli: 'wao pages publish',
+          mcp: null,
+        },
+      ],
+    })
     await wrapper.get('.cap-resource-scope select').setValue('specific')
     await wrapper.get('.cap-scope-list input').setValue(true)
-    await wrapper.findAll('button').find((b) => b.text() === '日常完整')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '日常完整')!
+      .trigger('click')
     const saved = JSON.parse(localStorage.getItem('wao:capability-connection-draft:v1:wd')!)
     expect(saved.permissions).toEqual(['get_task', 'update_task', 'get_document'])
     expect(saved.projectIds).toEqual(['p1'])
+    expect(api.createGranularWorkspaceToken).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('小记方案只包含相关权限，汇总范围保留；调整单项后取消方案选中状态', async () => {
+    const wrapper = await render()
+    await wrapper.setProps({
+      capabilities: [
+        ...capabilities,
+        {
+          name: 'create_note',
+          title: '创建小记',
+          description: '',
+          group: 'documents',
+          readOnly: false,
+          cli: 'wao notes create',
+          mcp: 'create_note',
+        },
+        {
+          name: 'publish_html',
+          title: '发布页面',
+          description: '',
+          group: 'pages',
+          readOnly: false,
+          cli: 'wao pages publish',
+          mcp: null,
+        },
+      ],
+    })
+    await wrapper.get('.cap-resource-scope select').setValue('specific')
+    await wrapper.get('.cap-scope-list input').setValue(true)
+    const preset = wrapper
+      .findAll('.cap-presets button')
+      .find((button) => button.text() === '记录小记')!
+    await preset.trigger('click')
+    expect(
+      JSON.parse(localStorage.getItem('wao:capability-connection-draft:v1:wd')!),
+    ).toMatchObject({
+      permissions: ['get_document', 'create_note'],
+      projectIds: ['p1'],
+    })
+    expect(wrapper.get('[aria-label="授权汇总"]').text()).toContain('读取 1')
+    expect(wrapper.get('[aria-label="授权汇总"]').text()).toContain('写入 1')
+    expect(wrapper.get('[aria-label="授权汇总"]').text()).toContain('公开发布 0')
+    expect(wrapper.get('[aria-label="授权汇总"]').text()).toContain('真实项目')
+    expect(preset.attributes('aria-pressed')).toBe('true')
+    await wrapper.get('input[aria-label="允许读取文档"]').setValue(false)
+    expect(preset.attributes('aria-pressed')).toBe('false')
     expect(api.createGranularWorkspaceToken).not.toHaveBeenCalled()
     wrapper.unmount()
   })
