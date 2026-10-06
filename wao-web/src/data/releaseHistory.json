@@ -1,5 +1,26 @@
 [
   {
+    "id": "release-notes-refine-discovery-2026-10-06",
+    "publishedOn": "2026-10-06",
+    "sourceSubject": "feat(notes): 支持关闭小记顺手发现提示条",
+    "title": "支持关闭小记顺手发现提示条",
+    "intro": "发现条新增关闭入口；按成员在当前浏览器收起这一条，新发现仍可出现，关闭不提交不贴切反馈、不影响收藏和历史内容。",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "小记体验",
+        "title": "支持关闭小记顺手发现提示条",
+        "summary": "发现条新增关闭入口；按成员在当前浏览器收起这一条，新发现仍可出现，关闭不提交不贴切反馈、不影响收藏和历史内容。",
+        "points": [
+          "发现条新增关闭入口；按成员在当前浏览器收起这一条，新发现仍可出现，关闭不提交不贴切反馈、不影响收藏和历史内容。"
+        ],
+        "steps": [
+          "打开小记页面，使用本次调整后的入口。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-notes-refine-copy-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "feat(notes): 默认复制给 Codex并扩大图文复制面板",

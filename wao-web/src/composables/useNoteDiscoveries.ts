@@ -1,9 +1,22 @@
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchDiscoveryCurrent, discoveryHttpStatus, type Discovery } from '@/api/noteDiscoveries'
 
 /** 发现刷新与编辑器、草稿完全分离，结果只在安全位置进入列表。 */
 export function useNoteDiscoveries(member: () => string, ready: () => boolean, safe: () => boolean, preservePosition: () => void = () => {}) {
   const current = ref<Discovery | null>(null)
+  const hiddenId = ref('')
+  const hidden = computed(() => !!current.value && current.value.id === hiddenId.value)
+  watch(member, id => {
+    try { hiddenId.value = localStorage.getItem(`wao-note-discovery-hidden-v1:${id}`) || '' }
+    catch { hiddenId.value = '' }
+  }, { immediate: true })
+  function hide() {
+    if (!current.value) return
+    preservePosition()
+    hiddenId.value = current.value.id
+    try { localStorage.setItem(`wao-note-discovery-hidden-v1:${member()}`, hiddenId.value) }
+    catch { /* 当前页面仍可隐藏；不改变发现反馈或收藏。 */ }
+  }
   const pendingCurrent = ref<Discovery | null | undefined>()
   const loadError = ref('')
   const supported = ref(true)
@@ -34,5 +47,5 @@ export function useNoteDiscoveries(member: () => string, ready: () => boolean, s
   watch(ready, value => { if (value) void refresh() })
   onMounted(() => { void refresh(); timer = setInterval(() => { applyPending(); void refresh() }, 60_000) })
   onBeforeUnmount(() => { generation++; if (timer) clearInterval(timer) })
-  return { current, pendingCurrent, loadError, supported, refresh, applyPending }
+  return { current, hidden, hide, pendingCurrent, loadError, supported, refresh, applyPending }
 }
