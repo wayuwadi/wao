@@ -1,5 +1,43 @@
 import type { WorkspaceCapability, WorkspaceMcpToken } from '@/api/workspaceMcp'
 
+// ADR-322 规定旧连接固定原 20 项能力，不随 READ/WRITE 目录增长。
+const legacyRead = [
+  'list_projects',
+  'get_project',
+  'list_open_tasks',
+  'get_task',
+  'list_knowledge_bases',
+  'get_knowledge_base',
+  'list_documents',
+  'get_document',
+]
+const legacyWrite = [
+  'create_project',
+  'update_project',
+  'create_task',
+  'update_task',
+  'update_subtask_status',
+  'create_knowledge_base',
+  'update_knowledge_base',
+  'create_folder',
+  'rename_folder',
+  'move_knowledge_node',
+  'create_document',
+  'update_document',
+]
+
+export function grantedPermissions(token: WorkspaceMcpToken, capabilities: WorkspaceCapability[]) {
+  if (token.permissionMode === 'granular') return token.permissions ?? []
+  return capabilities
+    .filter(
+      (capability) =>
+        legacyRead.includes(capability.name) ||
+        (token.canWrite && legacyWrite.includes(capability.name)) ||
+        (token.canPublishHostedPage && capability.name === 'publish_html'),
+    )
+    .map((capability) => capability.name)
+}
+
 const actionAliases: Record<string, string> = {
   create_note: '发小记 写小记 记录小记',
   list_notes: '查小记 找小记',

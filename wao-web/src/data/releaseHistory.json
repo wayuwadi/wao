@@ -1,5 +1,30 @@
 [
   {
+    "sourceSubject": "fix(capabilities): 修正旧版连接的权限展示与迁移草稿",
+    "id": "release-capability-legacy-2026-10-06",
+    "highlights": [
+      {
+        "steps": [
+          "打开能力中心的“我的连接”，选择旧版连接。",
+          "查看读取、写入和公开发布的汇总及操作清单。",
+          "如需细粒度授权，复制为新草稿后明确选择新能力再生成连接。"
+        ],
+        "points": [
+          "旧版读写连接按原有 8 项读取、12 项写入展示。",
+          "后来新增的小记与每日能力保持未授权。",
+          "复制为新授权草稿保留原权限，HTML 发布仍单独判断。"
+        ],
+        "summary": "授权汇总与服务端实际兼容规则一致。",
+        "featureId": "capabilities",
+        "title": "旧连接授权显示更准确",
+        "eyebrow": "能力中心"
+      }
+    ],
+    "title": "旧连接授权显示更准确",
+    "publishedOn": "2026-10-06",
+    "intro": "旧连接只显示实际拥有的原有权限，复制为新授权草稿时不会自动加入后来新增的能力。"
+  },
+{
     "id": "release-settings-save-defaults-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "feat(settings): 明确保存范围并展示真实默认提示词",
