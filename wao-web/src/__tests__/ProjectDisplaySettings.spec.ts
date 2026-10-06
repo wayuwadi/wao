@@ -5,11 +5,12 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
+import { savePreference } from '@/api/favorites'
 
 enableAutoUnmount(afterEach)
 vi.mock('@/api/favorites', async (original) => ({
   ...await original<typeof import('@/api/favorites')>(),
-  fetchPreference: vi.fn().mockResolvedValue('[]'),
+  fetchPreference: vi.fn().mockResolvedValue(''),
   savePreference: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -22,7 +23,7 @@ async function open() {
 }
 
 describe('项目显示设置与任务上下文', () => {
-  beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); seedDataStore() })
+  beforeEach(() => { localStorage.clear(); vi.mocked(savePreference).mockReset().mockResolvedValue(); setActivePinia(createPinia()); seedDataStore(); useSessionStore().accept({ accountId: 'a', member: { id: 'm', name: '验收', initial: '验', color: '', role: '' }, identities: [], createdAt: '' }) })
 
   it('默认常用字段，主任务与子项保持同列，完整字段和成员切换不影响标题输入', async () => {
     const { wrapper } = await open()
@@ -42,13 +43,12 @@ describe('项目显示设置与任务上下文', () => {
   it('存储失败保持临时选择并可重试，标题字段不可隐藏', async () => {
     const { wrapper } = await open()
     expect(wrapper.findAll('.column-choices input')[1]!.attributes('disabled')).toBeDefined()
-    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('full') })
+    vi.mocked(savePreference).mockRejectedValueOnce(new Error('offline'))
     await wrapper.findAll('button').find(button => button.text() === '全部字段')!.trigger('click')
     expect(wrapper.findAll('.project-task-table th')).toHaveLength(10)
-    expect(wrapper.text()).toContain('字段已临时调整')
-    storage.mockRestore()
-    await wrapper.findAll('button').find(button => button.text() === '重试保存字段')!.trigger('click')
-    expect(wrapper.text()).not.toContain('字段已临时调整')
+    await flushPromises(); expect(wrapper.text()).toContain('尚未同步到账号')
+    await wrapper.findAll('button').find(button => button.text() === '重试同步字段')!.trigger('click')
+    await flushPromises(); expect(wrapper.text()).not.toContain('尚未同步到账号'); expect(wrapper.text()).toContain('已同步到账号')
   })
 
   it('显示偏好仍影响原表格并按项目持久化；Esc 返回入口，外部点击不抢焦点', async () => {

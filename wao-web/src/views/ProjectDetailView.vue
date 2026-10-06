@@ -34,7 +34,8 @@ import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import ProjectTaskRow from '@/components/task/ProjectTaskRow.vue'
 import { AI_RUN_ENABLED } from '@/config/features'
-import { PROJECT_TABLE_COLUMNS, DEFAULT_PROJECT_TABLE_COLUMNS, readProjectTableColumns, type ProjectTableColumn } from '@/utils/projectTableColumns'
+import { useTaskPreferencesStore } from '@/stores/taskPreferences'
+import { PROJECT_TABLE_COLUMNS, DEFAULT_PROJECT_TABLE_COLUMNS, type ProjectTableColumn } from '@/utils/projectTableColumns'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,6 +45,7 @@ const session = useSessionStore()
 const ui = useUiStore()
 const tabs = useTabsStore()
 const favorites = useFavoritesStore()
+const taskPreferences = useTaskPreferencesStore()
 const { decoProj, decoTask } = useDeco()
 
 // 动态时间随时间推移自己变新
@@ -133,21 +135,10 @@ const showEmptyColumns = columnPreference('empty-columns-v1')
 /** 表格视图是否按任务分组分段展示（与「分组」视图共用同一份分组数据，可在表格里直接改）。 */
 const tableGrouped = columnPreference('table-grouped-v1')
 type TableSortColumn = ProjectTableColumn
-const visibleColumnKeys = ref<ProjectTableColumn[]>([...DEFAULT_PROJECT_TABLE_COLUMNS])
-const columnSaveError = ref('')
-const columnKey = () => `wao-project-table-columns-v1:${session.account?.accountId ?? ''}:${session.userId}`
-watch(columnKey, () => {
-  columnSaveError.value = ''
-  try { visibleColumnKeys.value = readProjectTableColumns(localStorage.getItem(columnKey())) }
-  catch { visibleColumnKeys.value = [...DEFAULT_PROJECT_TABLE_COLUMNS]; columnSaveError.value = '浏览器暂时无法读取字段偏好，当前使用常用字段。' }
-}, { immediate: true })
+const visibleColumnKeys = computed(() => taskPreferences.columns)
 const visibleColumns = computed(() => PROJECT_TABLE_COLUMNS.filter(column => visibleColumnKeys.value.includes(column.key)))
 const tableMinWidth = computed(() => 280 + visibleColumns.value.reduce((total, column) => total + column.width, 0))
-function saveColumns(keys: ProjectTableColumn[]) {
-  visibleColumnKeys.value = PROJECT_TABLE_COLUMNS.filter(column => column.key === 'title' || keys.includes(column.key)).map(column => column.key)
-  try { localStorage.setItem(columnKey(), JSON.stringify(visibleColumnKeys.value)); columnSaveError.value = '' }
-  catch { columnSaveError.value = '字段已临时调整，但浏览器未能保存偏好。请重试。' }
-}
+function saveColumns(keys: ProjectTableColumn[]) { void taskPreferences.setColumns(keys) }
 function toggleColumn(key: ProjectTableColumn) {
   if (key === 'title') return
   saveColumns(visibleColumnKeys.value.includes(key) ? visibleColumnKeys.value.filter(item => item !== key) : [...visibleColumnKeys.value, key])
@@ -747,10 +738,11 @@ watch(visibleTaskIds, (ids) => {
         <details ref="displaySettings" class="project-display-settings" @keydown.esc.stop.prevent="closeDisplaySettings(true)">
           <summary ref="displaySettingsTrigger"><i class="ri-equalizer-line" aria-hidden="true"></i>显示设置<i class="ri-arrow-down-s-line" aria-hidden="true"></i></summary>
           <div class="display-settings-panel">
-            <span class="display-settings-label">表格字段 · 本浏览器成员偏好</span>
+            <span class="display-settings-label">表格字段 · 成员偏好</span>
             <div class="table-seg" role="group" aria-label="字段快捷配置"><button type="button" @click="saveColumns([...DEFAULT_PROJECT_TABLE_COLUMNS])">常用字段</button><button type="button" @click="saveColumns(PROJECT_TABLE_COLUMNS.map(column => column.key))">全部字段</button></div>
             <div class="column-choices" role="group" aria-label="表格可见字段"><label v-for="column in PROJECT_TABLE_COLUMNS" :key="column.key"><input type="checkbox" :checked="visibleColumnKeys.includes(column.key)" :disabled="column.key === 'title'" @change="toggleColumn(column.key)" />{{ column.label }}</label></div>
-            <p v-if="columnSaveError" role="alert">{{ columnSaveError }}<button type="button" @click="saveColumns(visibleColumnKeys)">重试保存字段</button></p>
+            <p v-if="taskPreferences.columnsError" role="alert">{{ taskPreferences.columnsError }}<button type="button" @click="taskPreferences.retryColumns()">重试同步字段</button></p>
+            <small v-else role="status">{{ taskPreferences.columnsState === 'loading' ? '正在读取账号偏好…' : taskPreferences.columnsState === 'saving' ? '正在同步字段…' : taskPreferences.columnsState === 'saved' ? '已同步到账号，其他设备打开时恢复' : '登录后可同步到其他设备' }}</small>
             <span class="display-settings-label">表格分组方式</span>
             <div class="table-seg" role="group" aria-label="表格分组方式">
               <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
@@ -2519,6 +2511,9 @@ watch(visibleTaskIds, (ids) => {
 .project-display-settings summary::-webkit-details-marker { display: none; }
 .project-display-settings[open] summary { color: var(--wao-primary-text); border-color: var(--wao-primary); }
 .display-settings-panel { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: 236px; max-width: calc(100vw - 32px); padding: 14px; display: flex; flex-direction: column; align-items: stretch; gap: 10px; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 8px; box-shadow: var(--wao-shadow-modal); }
+.display-settings-panel p, .display-settings-panel small { margin: 0; font-size: 12px; line-height: 1.6; color: var(--wao-text-3); }
+.display-settings-panel p[role="alert"] { color: var(--wao-danger); }
+.display-settings-panel p button { padding: 0; margin-left: 6px; border: 0; background: none; color: var(--wao-primary-text); cursor: pointer; font: inherit; }
 .display-settings-label { color: var(--wao-text-3); font-size: 12px; }
 .display-settings-panel .table-seg button { flex: 1; height: 30px; color: var(--wao-text-3); }
 .display-settings-panel .table-seg button.on { color: var(--wao-primary-text); }

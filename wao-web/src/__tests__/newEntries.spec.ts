@@ -253,3 +253,5 @@ describe('项目任务视图', () => {
     wrapper.unmount()
   })
 })
+
+vi.mock('@/api/favorites', async original => ({ ...await original<typeof import('@/api/favorites')>(), fetchPreference: vi.fn().mockResolvedValue(''), savePreference: vi.fn().mockResolvedValue(undefined) }))

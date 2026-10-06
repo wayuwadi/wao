@@ -9,13 +9,15 @@ import { usePreferenceStore } from '@/stores/preferences'
 import { toast } from '@/composables/toast'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
-import { readRecentTaskProject, rememberTaskProject, selectTaskProject } from '@/utils/taskProjectSelection'
+import { useTaskPreferencesStore } from '@/stores/taskPreferences'
+import { selectTaskProject } from '@/utils/taskProjectSelection'
 import type { Priority, WorkItemType } from '@/types'
 
 const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
 const preferences = usePreferenceStore()
+const taskPreferences = useTaskPreferencesStore()
 const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
 
 /**
@@ -66,12 +68,12 @@ const hasDraftProject = typeof draft.project === 'string'
 function automaticProject() {
   return selectTaskProject(openProjects.value.map(project => project.id), {
     draft: hasDraftProject ? draft.project : undefined, context: contextProject,
-    preferred: preferences.defaultProject, recent: readRecentTaskProject(identity()), requireConfirmation: !!source,
+    preferred: preferences.defaultProject, recent: taskPreferences.recentProject, requireConfirmation: !!source,
   })
 }
 const project = ref(data.loadStates.projects === 'loaded' ? automaticProject() : draft.project || '')
 const projectChosenByUser = ref(false)
-watch(() => [data.loadStates.projects, openProjects.value.map(project => project.id), preferences.defaultProject] as const, () => {
+watch(() => [data.loadStates.projects, openProjects.value.map(project => project.id), preferences.defaultProject, taskPreferences.recentProject] as const, () => {
   if (data.loadStates.projects !== 'loaded') return
   if (projectChosenByUser.value || hasDraftProject || title.value.trim()) {
     if (project.value && !openProjects.value.some(item => item.id === project.value)) project.value = ''
@@ -217,7 +219,7 @@ async function create() {
     return
   }
   if (identity() !== composerIdentity) return
-  try { rememberTaskProject(composerIdentity, payload.project) } catch { toast('任务已保存，但浏览器暂时无法记住最近项目', 'ri-error-warning-line') }
+  void taskPreferences.rememberProject(payload.project)
   try { localStorage.removeItem(DRAFT_KEY) } catch { /* 服务器已确认保存，不阻止关闭表单。 */ }
   ui.taskComposerLocked = false
   ui.closeModal()
@@ -271,6 +273,7 @@ useOverlayDismiss(() => true, requestClose)
 
     <p v-if="source" class="source-note">来自：<a v-if="source.sourceUrl" :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a><span v-else>{{ source.sourceTitle }}</span>。原文保留不变。</p>
     <div class="meta-row">
+      <p v-if="taskPreferences.recentError" class="recent-sync-error" role="status">最近使用项目：{{ taskPreferences.recentError }} <button type="button" @click="taskPreferences.retryRecent()">重试同步</button></p>
       <label class="meta-field"><span>项目</span><select v-model="project" @change="projectChosenByUser = true" aria-label="所属项目" class="compact-select">
         <option value="" disabled>请选择项目</option>
         <option v-for="p in openProjects" :key="p.id" :value="p.id">{{ p.name }}</option>
@@ -336,6 +339,8 @@ useOverlayDismiss(() => true, requestClose)
 </template>
 
 <style scoped>
+.recent-sync-error { width: 100%; color: var(--wao-text-3); font-size: 12px; margin: 0; }
+.recent-sync-error button { color: var(--wao-primary-text); border: 0; background: none; cursor: pointer; font: inherit; }
 .meta-row { display: flex; gap: 8px; align-items: end; margin-top: 12px; }
 .meta-field { display: grid; gap: 5px; min-width: 0; flex: 1; color: var(--wao-text-weak); font-size: 11px; }
 .type-field { flex: 0 0 110px; }

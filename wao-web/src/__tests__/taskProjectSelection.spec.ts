@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { selectTaskProject } from '@/utils/taskProjectSelection'
@@ -44,3 +44,5 @@ describe('任务项目选择', () => {
     expect(w.get<HTMLSelectElement>('[aria-label="所属项目"]').element.value).toBe(''); w.unmount()
   })
 })
+
+vi.mock('@/api/favorites', async original => ({ ...await original<typeof import('@/api/favorites')>(), fetchPreference: vi.fn().mockResolvedValue(''), savePreference: vi.fn().mockResolvedValue(undefined) }))
