@@ -5,6 +5,7 @@ defineProps<{
   description: string
   icon: string
   controlLabel: string
+  disabled?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 </script>
@@ -19,6 +20,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
       ><input
         type="checkbox"
         :checked="modelValue"
+        :disabled="disabled"
         :aria-label="controlLabel"
         @change="emit('update:modelValue', ($event.target as HTMLInputElement).checked)" /><span
         class="switch-track"

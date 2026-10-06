@@ -20,10 +20,18 @@ import { useNoteImageMode } from '@/composables/noteImageMode'
 import { useNoteDisplayPreferences } from '@/composables/noteDisplayPreferences'
 const emit = defineEmits<{ saved: []; close: [] }>()
 // progressive 保留既有调用接口；所有入口统一展示分项布局。
-withDefaults(defineProps<{ progressive?: boolean; closable?: boolean }>(), {
-  progressive: false,
-  closable: false,
-})
+const props = withDefaults(
+  defineProps<{
+    progressive?: boolean
+    closable?: boolean
+    section?: 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
+  }>(),
+  {
+    progressive: false,
+    closable: false,
+    section: 'capabilities',
+  },
+)
 const session = useSessionStore(),
   preferences = usePreferenceStore()
 const imageMode = useNoteImageMode()
@@ -31,6 +39,13 @@ const noteDisplay = useNoteDisplayPreferences()
 type Section =
   'display' | 'capabilities' | 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'execution'
 const active = ref<Section>('capabilities')
+watch(
+  () => props.section,
+  (value) => {
+    active.value = value
+  },
+  { immediate: true },
+)
 const items = [
   { id: 'display', label: '显示与图片', icon: 'ri-layout-line' },
   { id: 'capabilities', label: 'AI 能力', icon: 'ri-cpu-line' },
@@ -250,6 +265,7 @@ onBeforeUnmount(() => {
     <AiSettingsLayout
       :items="navigationItems"
       :active="active"
+      :scope-note="'小记 AI 保存组\n配图提示词与文档共用'"
       @update:active="active = $event as Section"
     >
       <template #engine

@@ -54,6 +54,14 @@ async function render(path = '/capabilities', authed = true) {
   return { wrapper, router }
 }
 describe('能力中心真实目录与区域', () => {
+  it('游客打开系统 AI 时提示登录，不读取成员连接、发布或模型配置', async () => {
+    const { wrapper } = await render('/capabilities?area=system-ai', false)
+    expect(wrapper.text()).toContain('登录后管理系统 AI')
+    expect(wrapper.find('.system-ai').exists()).toBe(false)
+    expect(api.fetchWorkspaceMcpTokens).not.toHaveBeenCalled()
+    expect(api.fetchMySkills).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   beforeEach(async () => {
     vi.clearAllMocks()
     localStorage.clear()

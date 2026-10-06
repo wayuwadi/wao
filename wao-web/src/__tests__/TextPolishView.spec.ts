@@ -16,7 +16,7 @@ vi.mock('@/stores/session', async () => {
 })
 enableAutoUnmount(afterEach)
 function setMember(userId: string) {
-  (useSessionStore() as unknown as { userId: string }).userId = userId
+  ;(useSessionStore() as unknown as { userId: string }).userId = userId
 }
 
 vi.mock('@/api/textPolish', () => ({
@@ -36,6 +36,24 @@ const record: TextPolishRecord = {
 }
 
 describe('TextPolishView', () => {
+  it('能力中心仅设置模式保留原文和待执行草稿，只保存同一份润色方法', async () => {
+    localStorage.setItem('wao-text-polish-original-draft-v2:member-a', '原工作台未保存输入')
+    const pending = JSON.stringify({ requestId: 'a'.repeat(32), original: '已排队输入' })
+    localStorage.setItem('wao-text-polish-pending-v1:member-a', pending)
+    const wrapper = mount(TextPolishView, { props: { settingsOnly: true } })
+    await flushPromises()
+    expect(wrapper.find('[aria-label="待润色原文"]').exists()).toBe(false)
+    expect(wrapper.find('.run-button').exists()).toBe(false)
+    expect(runTextPolish).not.toHaveBeenCalled()
+    await wrapper.get('[aria-label="润色提示词"]').setValue('新的合成方法')
+    await wrapper.get('.secondary-button').trigger('click')
+    await flushPromises()
+    expect(saveTextPolishPrompt).toHaveBeenCalledWith('新的合成方法')
+    expect(localStorage.getItem('wao-text-polish-original-draft-v2:member-a')).toBe(
+      '原工作台未保存输入',
+    )
+    expect(localStorage.getItem('wao-text-polish-pending-v1:member-a')).toBe(pending)
+  })
   beforeEach(() => {
     setMember('member-a')
     localStorage.clear()
@@ -50,8 +68,15 @@ describe('TextPolishView', () => {
   it('生成期间展示增量且不能复制半篇，完成后才提供结果', async () => {
     let finish!: (value: TextPolishRecord) => void
     vi.mocked(runTextPolish).mockImplementationOnce(async (_text, options) => {
-      options?.onProgress?.({ id: 'pj1', status: 'RUNNING', message: '正在生成', preview: '第一句话' })
-      return new Promise(resolve => { finish = resolve })
+      options?.onProgress?.({
+        id: 'pj1',
+        status: 'RUNNING',
+        message: '正在生成',
+        preview: '第一句话',
+      })
+      return new Promise((resolve) => {
+        finish = resolve
+      })
     })
     const wrapper = mount(TextPolishView)
     await flushPromises()
@@ -79,8 +104,14 @@ describe('TextPolishView', () => {
     first.unmount()
     const restored = mount(TextPolishView)
     await flushPromises()
-    expect(runTextPolish).toHaveBeenLastCalledWith('提交时的原文', expect.objectContaining({ requestId }))
-    expect(restored.get('[aria-label="待润色原文"]').element).toHaveProperty('value', '后来继续编辑的草稿')
+    expect(runTextPolish).toHaveBeenLastCalledWith(
+      '提交时的原文',
+      expect.objectContaining({ requestId }),
+    )
+    expect(restored.get('[aria-label="待润色原文"]').element).toHaveProperty(
+      'value',
+      '后来继续编辑的草稿',
+    )
     expect(restored.findAll('.history-list details')).toHaveLength(1)
     expect(localStorage.getItem('wao-text-polish-pending-v1:member-a')).toBeNull()
   })
@@ -111,7 +142,9 @@ describe('TextPolishView', () => {
     expect(wrapper.text()).toContain('还没有润色记录')
     expect(wrapper.text()).toContain('不会填充演示内容')
     expect(wrapper.get('.method-settings').attributes('open')).toBeUndefined()
-    expect(wrapper.html().indexOf('workbench-grid')).toBeLessThan(wrapper.html().indexOf('method-settings'))
+    expect(wrapper.html().indexOf('workbench-grid')).toBeLessThan(
+      wrapper.html().indexOf('method-settings'),
+    )
   })
 
   it('无需展开方法即可用已保存方法润色，不重新保存配置', async () => {
@@ -121,7 +154,10 @@ describe('TextPolishView', () => {
     await wrapper.get('.run-button').trigger('click')
     await flushPromises()
     expect(saveTextPolishPrompt).not.toHaveBeenCalled()
-    expect(runTextPolish).toHaveBeenCalledWith('这件事需要梳理。', expect.objectContaining({ requestId: expect.any(String) }))
+    expect(runTextPolish).toHaveBeenCalledWith(
+      '这件事需要梳理。',
+      expect.objectContaining({ requestId: expect.any(String) }),
+    )
     expect(wrapper.get('.method-settings').attributes('open')).toBeUndefined()
   })
 
@@ -153,7 +189,10 @@ describe('TextPolishView', () => {
     await flushPromises()
 
     expect(saveTextPolishPrompt).toHaveBeenCalledWith('先写结论，再列步骤。')
-    expect(runTextPolish).toHaveBeenCalledWith('这个事情吧大概比较绕。', expect.objectContaining({ requestId: expect.any(String) }))
+    expect(runTextPolish).toHaveBeenCalledWith(
+      '这个事情吧大概比较绕。',
+      expect.objectContaining({ requestId: expect.any(String) }),
+    )
     expect(wrapper.get('.result-text').text()).toContain('需要先梳理背景')
     expect(wrapper.findAll('.history-list details')).toHaveLength(1)
     expect(localStorage.getItem('wao-text-polish-prompt-draft-v2:member-a')).toBeNull()
@@ -207,12 +246,18 @@ describe('TextPolishView', () => {
     expect(wrapper.find('.result-text').exists()).toBe(false)
     expect(wrapper.findAll('.history-list details')).toHaveLength(0)
     expect(wrapper.get('[aria-label="待润色原文"]').element).toHaveProperty('value', '')
-    expect(wrapper.get('[aria-label="润色提示词"]').element).toHaveProperty('value', '乙的云端提示词')
+    expect(wrapper.get('[aria-label="润色提示词"]').element).toHaveProperty(
+      'value',
+      '乙的云端提示词',
+    )
     await wrapper.get('[aria-label="待润色原文"]').setValue('乙的原文')
     setMember('member-a')
     await flushPromises()
     expect(wrapper.get('[aria-label="待润色原文"]').element).toHaveProperty('value', '甲的原文')
-    expect(wrapper.get('[aria-label="润色提示词"]').element).toHaveProperty('value', '甲的提示词草稿')
+    expect(wrapper.get('[aria-label="润色提示词"]').element).toHaveProperty(
+      'value',
+      '甲的提示词草稿',
+    )
     expect(localStorage.getItem('wao-text-polish-original-draft-v2:member-b')).toBe('乙的原文')
   })
   it('不认领也不删除无法确认归属的旧版草稿', async () => {
@@ -226,7 +271,12 @@ describe('TextPolishView', () => {
   })
   it('旧账号加载回包不覆盖新账号', async () => {
     let finish!: (value: { prompt: string; records: TextPolishRecord[] }) => void
-    vi.mocked(fetchTextPolishWorkspace).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(fetchTextPolishWorkspace).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
     const wrapper = mount(TextPolishView)
     setMember('member-b')
     await flushPromises()
@@ -237,7 +287,12 @@ describe('TextPolishView', () => {
   })
   it('旧账号润色回包不进入新账号结果或历史', async () => {
     let finish!: (value: TextPolishRecord) => void
-    vi.mocked(runTextPolish).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(runTextPolish).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
     const wrapper = mount(TextPolishView)
     await flushPromises()
     await wrapper.get('[aria-label="待润色原文"]').setValue('甲的原文')
@@ -251,7 +306,12 @@ describe('TextPolishView', () => {
   })
   it('旧账号保存返回不清除新账号草稿或继续润色', async () => {
     let finish!: (value: string) => void
-    vi.mocked(saveTextPolishPrompt).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(saveTextPolishPrompt).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
     const wrapper = mount(TextPolishView)
     await flushPromises()
     await wrapper.get('[aria-label="润色提示词"]').setValue('甲的新方法')
@@ -268,7 +328,12 @@ describe('TextPolishView', () => {
   })
   it('保存期间新输入保留且不重复启动', async () => {
     let finish!: (value: string) => void
-    vi.mocked(saveTextPolishPrompt).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    vi.mocked(saveTextPolishPrompt).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
     const wrapper = mount(TextPolishView)
     await flushPromises()
     await wrapper.get('[aria-label="润色提示词"]').setValue('第一版')
@@ -286,13 +351,17 @@ describe('TextPolishView', () => {
   it('本机存储失败提示备份和重试', async () => {
     const wrapper = mount(TextPolishView)
     await flushPromises()
-    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('存储已满') })
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('存储已满')
+    })
     await wrapper.get('[aria-label="待润色原文"]').setValue('不能丢失的输入')
     expect(wrapper.get('[role="alert"]').text()).toContain('复制原文备份')
     storage.mockRestore()
     await wrapper.get('[role="alert"] button').trigger('click')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(localStorage.getItem('wao-text-polish-original-draft-v2:member-a')).toBe('不能丢失的输入')
+    expect(localStorage.getItem('wao-text-polish-original-draft-v2:member-a')).toBe(
+      '不能丢失的输入',
+    )
   })
   it('退出登录清空可见内容，不写入无身份草稿', async () => {
     const wrapper = mount(TextPolishView)
@@ -316,5 +385,4 @@ describe('TextPolishView', () => {
     expect(restored.get('[aria-label="润色提示词"]').element).toHaveProperty('value', '')
     expect(restored.get('.run-button').attributes('disabled')).toBeDefined()
   })
-
 })

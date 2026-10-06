@@ -61,6 +61,26 @@ function button(wrapper: ReturnType<typeof mountDialog>, label: string) {
   return wrapper.findAll('button').find((item) => item.text().replace(/待保存$/, '') === label)!
 }
 describe('TianrenAiSettingsDialog', () => {
+  it('能力中心内嵌模式不创建遮罩与焦点陷阱，复用同一份卦象配置', async () => {
+    const wrapper = mount(TianrenAiSettingsDialog, {
+      props: { embedded: true, section: 'imagePrompt' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    expect(document.body.querySelector('[aria-modal=true]')).toBeNull()
+    expect(wrapper.get('[role=region]').attributes('aria-label')).toBe('天人一卦设置')
+    expect(wrapper.get('textarea').element).toHaveProperty('value', settings.imagePrompt)
+    await wrapper.get('textarea').setValue('中心配图方法')
+    await button(wrapper, '保存 AI 设置').trigger('click')
+    await flushPromises()
+    expect(saveTianrenAiSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: 2,
+        imagePrompt: '中心配图方法',
+        interpretationPrompt: settings.interpretationPrompt,
+      }),
+    )
+  })
   beforeEach(() => {
     setActivePinia(createPinia())
     accept('member1')

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+const props = withDefaults(defineProps<{ settingsOnly?: boolean }>(), { settingsOnly: false })
 import {
   fetchTextPolishWorkspace,
   runTextPolish,
@@ -24,13 +25,22 @@ const originalText = ref('')
 const running = ref(false)
 const runProgress = ref('')
 const preview = ref('')
-const pendingJob = ref<{ requestId: string; original: string; failed?: boolean; startedAt?: number } | null>(null)
-function pendingKey() { return `wao-text-polish-pending-v1:${owner.value}` }
+const pendingJob = ref<{
+  requestId: string
+  original: string
+  failed?: boolean
+  startedAt?: number
+} | null>(null)
+function pendingKey() {
+  return `wao-text-polish-pending-v1:${owner.value}`
+}
 function savePending() {
   try {
     if (pendingJob.value) localStorage.setItem(pendingKey(), JSON.stringify(pendingJob.value))
     else localStorage.removeItem(pendingKey())
-  } catch { draftErrors.value.original = true }
+  } catch {
+    draftErrors.value.original = true
+  }
 }
 const runError = ref('')
 const result = ref<TextPolishRecord | null>(null)
@@ -49,10 +59,26 @@ async function showMethod() {
 const draftErrors = ref({ prompt: false, original: false })
 const draftError = computed(() => draftErrors.value.prompt || draftErrors.value.original)
 const promptDirty = computed(() => prompt.value.trim() !== savedPrompt.value)
-const canRun = computed(() => initialized.value && originalText.value.trim().length > 0
-  && prompt.value.trim().length > 0 && !running.value && !promptSaving.value)
-const runLabel = computed(() => running.value ? '正在润色…' : pendingJob.value && !pendingJob.value.failed ? '继续查看结果' : promptDirty.value ? '保存方法并润色' : '开始润色')
-watch([promptDirty, promptError], ([dirty, error]) => { if (dirty || error) methodOpen.value = true })
+const canRun = computed(
+  () =>
+    initialized.value &&
+    originalText.value.trim().length > 0 &&
+    prompt.value.trim().length > 0 &&
+    !running.value &&
+    !promptSaving.value,
+)
+const runLabel = computed(() =>
+  running.value
+    ? '正在润色…'
+    : pendingJob.value && !pendingJob.value.failed
+      ? '继续查看结果'
+      : promptDirty.value
+        ? '保存方法并润色'
+        : '开始润色',
+)
+watch([promptDirty, promptError], ([dirty, error]) => {
+  if (dirty || error) methodOpen.value = true
+})
 
 type DraftKind = 'prompt' | 'original'
 function draftKey(kind: DraftKind) {
@@ -60,8 +86,12 @@ function draftKey(kind: DraftKind) {
 }
 function readDraft(kind: DraftKind): string | null {
   if (!owner.value) return null
-  try { return localStorage.getItem(draftKey(kind)) }
-  catch { draftErrors.value[kind] = true; return null }
+  try {
+    return localStorage.getItem(draftKey(kind))
+  } catch {
+    draftErrors.value[kind] = true
+    return null
+  }
 }
 function writeDraft(kind: DraftKind, value: string | null) {
   if (!owner.value || owner.value !== session.userId) return
@@ -69,12 +99,14 @@ function writeDraft(kind: DraftKind, value: string | null) {
     if (value === null) localStorage.removeItem(draftKey(kind))
     else localStorage.setItem(draftKey(kind), value)
     draftErrors.value[kind] = false
-  } catch { draftErrors.value[kind] = true }
+  } catch {
+    draftErrors.value[kind] = true
+  }
 }
 function persistDrafts() {
   if (!initialized.value) return
   writeDraft('prompt', promptDirty.value ? prompt.value : null)
-  writeDraft('original', originalText.value || null)
+  if (!props.settingsOnly) writeDraft('original', originalText.value || null)
 }
 function current(version: number) {
   return version === generation && Boolean(owner.value) && owner.value === session.userId
@@ -96,7 +128,7 @@ async function load() {
     const workspace = await fetchTextPolishWorkspace()
     if (!current(version)) return
     const localPrompt = readDraft('prompt')
-    const localOriginal = readDraft('original')
+    const localOriginal = props.settingsOnly ? null : readDraft('original')
     savedPrompt.value = workspace.prompt.trim()
     prompt.value = localPrompt ?? savedPrompt.value
     originalText.value = localOriginal ?? ''
@@ -105,11 +137,17 @@ async function load() {
     initialized.value = true
     try {
       const pending = JSON.parse(localStorage.getItem(pendingKey()) ?? 'null')
-      if (pending && /^[a-f0-9]{32}$/.test(pending.requestId) && typeof pending.original === 'string') {
+      if (
+        pending &&
+        /^[a-f0-9]{32}$/.test(pending.requestId) &&
+        typeof pending.original === 'string'
+      ) {
         pendingJob.value = pending
-        if (!pending.failed) void continueJob(version)
+        if (!pending.failed && !props.settingsOnly) void continueJob(version)
       }
-    } catch { /* 无效缓存不影响已保存的原文和方法。 */ }
+    } catch {
+      /* 无效缓存不影响已保存的原文和方法。 */
+    }
   } catch (error) {
     if (current(version)) loadError.value = errorMessage(error, '润色工作台加载失败')
   } finally {
@@ -158,7 +196,10 @@ async function run() {
   runError.value = ''
   copyState.value = 'idle'
   try {
-    if (pendingJob.value && !pendingJob.value.failed) { await continueJob(version); return }
+    if (pendingJob.value && !pendingJob.value.failed) {
+      await continueJob(version)
+      return
+    }
     if (promptDirty.value && !(await savePrompt())) return
     if (!current(version)) return
     if (promptDirty.value) {
@@ -186,7 +227,7 @@ async function continueJob(version: number) {
     const record = await runTextPolish(pending.original, {
       requestId: pending.requestId,
       isActive: () => current(version),
-      onProgress: job => {
+      onProgress: (job) => {
         if (!current(version)) return
         preview.value = job.preview ?? ''
         runProgress.value = job.message
@@ -196,7 +237,7 @@ async function continueJob(version: number) {
     })
     if (!current(version)) return
     result.value = record
-    records.value = [record, ...records.value.filter(item => item.id !== record.id)]
+    records.value = [record, ...records.value.filter((item) => item.id !== record.id)]
     pendingJob.value = null
     savePending()
   } catch (error) {
@@ -224,54 +265,77 @@ function reuse(record: TextPolishRecord) {
 }
 function formatTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(new Date(value))
 }
 
-watch(prompt, (value) => {
-  if (!initialized.value) return
-  if (!promptSaving.value) promptState.value = 'idle'
-  promptError.value = ''
-  writeDraft('prompt', value.trim() === savedPrompt.value ? null : value)
-}, { flush: 'sync' })
-watch(originalText, (value) => {
-  if (initialized.value) writeDraft('original', value || null)
-}, { flush: 'sync' })
-watch(() => session.userId, (member) => {
-  // 在读取新成员前清空可见数据；旧异步请求从此失效。
+watch(
+  prompt,
+  (value) => {
+    if (!initialized.value) return
+    if (!promptSaving.value) promptState.value = 'idle'
+    promptError.value = ''
+    writeDraft('prompt', value.trim() === savedPrompt.value ? null : value)
+  },
+  { flush: 'sync' },
+)
+watch(
+  originalText,
+  (value) => {
+    if (initialized.value && !props.settingsOnly) writeDraft('original', value || null)
+  },
+  { flush: 'sync' },
+)
+watch(
+  () => session.userId,
+  (member) => {
+    // 在读取新成员前清空可见数据；旧异步请求从此失效。
+    generation++
+    initialized.value = false
+    owner.value = member
+    prompt.value = ''
+    savedPrompt.value = ''
+    originalText.value = ''
+    result.value = null
+    records.value = []
+    promptSaving.value = false
+    promptState.value = 'idle'
+    promptError.value = ''
+    runError.value = ''
+    running.value = false
+    pendingJob.value = null
+    runProgress.value = ''
+    copyState.value = 'idle'
+    restoredDraft.value = false
+    methodOpen.value = false
+    draftErrors.value = { prompt: false, original: false }
+    void load()
+  },
+  { immediate: true, flush: 'sync' },
+)
+onBeforeUnmount(() => {
   generation++
-  initialized.value = false
-  owner.value = member
-  prompt.value = ''
-  savedPrompt.value = ''
-  originalText.value = ''
-  result.value = null
-  records.value = []
-  promptSaving.value = false
-  promptState.value = 'idle'
-  promptError.value = ''
-  runError.value = ''
-  running.value = false
-  pendingJob.value = null
-  runProgress.value = ''
-  copyState.value = 'idle'
-  restoredDraft.value = false
-  methodOpen.value = false
-  draftErrors.value = { prompt: false, original: false }
-  void load()
-}, { immediate: true, flush: 'sync' })
-onBeforeUnmount(() => { generation++ })
+})
 </script>
 
 <template>
-  <main class="polish-page wao-page-frame">
-    <header class="page-header">
+  <component
+    :is="settingsOnly ? 'section' : 'main'"
+    class="polish-page"
+    :class="settingsOnly ? 'embedded-settings' : 'wao-page-frame'"
+  >
+    <header v-if="!settingsOnly" class="page-header">
       <div>
         <span class="eyebrow">WRITING TOOL</span>
         <h1><i class="ri-magic-line"></i> 润色</h1>
         <p>把口语化长文整理成清晰、自然、可直接发送的表达，并保留每次前后对照。</p>
       </div>
-      <div class="privacy-note"><i class="ri-user-shared-line"></i> 提示词、历史与本机草稿按当前账号隔离</div>
+      <div class="privacy-note">
+        <i class="ri-user-shared-line"></i> 提示词、历史与本机草稿按当前账号隔离
+      </div>
     </header>
 
     <section v-if="loading" class="state-card">
@@ -290,9 +354,16 @@ onBeforeUnmount(() => { generation++ })
         <span>本机草稿保存不可用，请保持页面打开或复制原文备份。</span>
         <button @click="persistDrafts">重试保存草稿</button>
       </div>
-      <p v-else-if="restoredDraft" class="draft-notice" role="status">已恢复当前账号的本机草稿；原文不会跨设备同步。</p>
-      <p class="start-hint">粘贴原文后即可开始，将沿用你已保存的润色方法。需要调整表达风格时，可展开下方“润色方法”。</p>
-      <section class="workbench-grid">
+      <p v-else-if="restoredDraft" class="draft-notice" role="status">
+        已恢复当前账号的本机草稿；原文不会跨设备同步。
+      </p>
+      <p v-if="!settingsOnly" class="start-hint">
+        粘贴原文后即可开始，将沿用你已保存的润色方法。需要调整表达风格时，可展开下方“润色方法”。
+      </p>
+      <p v-else class="start-hint">
+        保存本人润色方法，下一次工作台润色生效。不会运行任务或修改原文草稿。
+      </p>
+      <section v-if="!settingsOnly" class="workbench-grid">
         <article class="editor-card">
           <div class="section-title compact">
             <div>
@@ -314,7 +385,14 @@ onBeforeUnmount(() => { generation++ })
           <button class="run-button" :disabled="!canRun" @click="run">
             <i :class="running ? 'ri-loader-4-line spin' : 'ri-sparkling-2-line'"></i>{{ runLabel }}
           </button>
-          <p v-if="promptDirty" class="method-notice">润色方法有未保存修改；开始时会先保存，并用于后续润色。<button type="button" @click="showMethod">查看修改</button></p>
+          <p v-if="promptDirty" class="method-notice">
+            润色方法有未保存修改；开始时会先保存，并用于后续润色。<button
+              type="button"
+              @click="showMethod"
+            >
+              查看修改
+            </button>
+          </p>
         </article>
 
         <article class="result-card">
@@ -328,7 +406,10 @@ onBeforeUnmount(() => { generation++ })
               {{ copyState === 'copied' ? '已复制' : copyState === 'error' ? '复制失败' : '复制' }}
             </button>
           </div>
-          <div v-if="running && preview"><small>正在生成，完成后可复制</small><pre class="result-text">{{ preview }} ▍</pre></div>
+          <div v-if="running && preview">
+            <small>正在生成，完成后可复制</small>
+            <pre class="result-text">{{ preview }} ▍</pre>
+          </div>
           <div v-else-if="running" class="result-empty active">
             <PolishProgress :message="runProgress" :started-at="pendingJob?.startedAt" />
             <span>可以切换页面，回来后继续查看结果。</span>
@@ -341,8 +422,15 @@ onBeforeUnmount(() => { generation++ })
         </article>
       </section>
 
-      <details ref="methodSettings" class="prompt-card method-settings" :open="methodOpen" @toggle="methodOpen = ($event.target as HTMLDetailsElement).open">
-        <summary>润色方法（可选调整）<span>{{ promptDirty ? '有未保存修改' : '沿用已保存的方法' }}</span></summary>
+      <details
+        ref="methodSettings"
+        class="prompt-card method-settings"
+        :open="settingsOnly || methodOpen"
+        @toggle="methodOpen = ($event.target as HTMLDetailsElement).open"
+      >
+        <summary>
+          润色方法（可选调整）<span>{{ promptDirty ? '有未保存修改' : '沿用已保存的方法' }}</span>
+        </summary>
         <div class="section-title">
           <div>
             <span>润色方法</span>
@@ -359,7 +447,9 @@ onBeforeUnmount(() => { generation++ })
             <template v-else><i class="ri-cloud-line"></i> 已同步</template>
           </div>
         </div>
-        <p class="method-help">可以说明用途和语气，例如“用于工作沟通，先给结论，表达简洁”或“保留我的口语风格”。这里的提示词会保存为你后续润色使用的方法，不必每次填写。</p>
+        <p class="method-help">
+          可以说明用途和语气，例如“用于工作沟通，先给结论，表达简洁”或“保留我的口语风格”。这里的提示词会保存为你后续润色使用的方法，不必每次填写。
+        </p>
         <textarea
           v-model="prompt"
           maxlength="4000"
@@ -382,7 +472,7 @@ onBeforeUnmount(() => { generation++ })
         </div>
       </details>
 
-      <section class="history-card">
+      <section v-if="!settingsOnly" class="history-card">
         <div class="section-title">
           <div>
             <span>历史记录</span>
@@ -423,12 +513,78 @@ onBeforeUnmount(() => { generation++ })
         </div>
       </section>
     </template>
-  </main>
+  </component>
 </template>
 
 <style scoped>
-.start-hint,.method-help,.method-notice{font-size:13px;color:var(--wao-text-3);line-height:1.7}.start-hint{margin:0 0 16px}.method-settings>summary{cursor:pointer;font-size:14px;font-weight:600;line-height:1.7}.method-settings>summary span{margin-left:12px;font-size:12px;font-weight:400;color:var(--wao-text-3)}.method-settings[open]>summary{margin-bottom:20px}.method-help{margin:0 0 14px}.method-notice button{border:0;background:transparent;color:var(--wao-primary-text);cursor:pointer;text-decoration:underline;font:inherit}.method-settings>summary:focus-visible,.method-notice button:focus-visible{outline:2px solid var(--wao-primary-text);outline-offset:3px}
-.draft-notice { color: var(--wao-text-3); font-size: 12px; margin: 0 0 14px; }
+.polish-page.embedded-settings {
+  max-width: none;
+  padding: 20px 24px;
+  margin: 0;
+}
+.embedded-settings .prompt-card {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.embedded-settings .method-settings > summary {
+  display: none;
+}
+@media (max-width: 650px) {
+  .polish-page.embedded-settings {
+    padding: 16px;
+  }
+}
+</style>
+
+<style scoped>
+.start-hint,
+.method-help,
+.method-notice {
+  font-size: 13px;
+  color: var(--wao-text-3);
+  line-height: 1.7;
+}
+.start-hint {
+  margin: 0 0 16px;
+}
+.method-settings > summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.7;
+}
+.method-settings > summary span {
+  margin-left: 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--wao-text-3);
+}
+.method-settings[open] > summary {
+  margin-bottom: 20px;
+}
+.method-help {
+  margin: 0 0 14px;
+}
+.method-notice button {
+  border: 0;
+  background: transparent;
+  color: var(--wao-primary-text);
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+}
+.method-settings > summary:focus-visible,
+.method-notice button:focus-visible {
+  outline: 2px solid var(--wao-primary-text);
+  outline-offset: 3px;
+}
+.draft-notice {
+  color: var(--wao-text-3);
+  font-size: 12px;
+  margin: 0 0 14px;
+}
 .polish-page {
   max-width: none;
   margin: 0 auto;
