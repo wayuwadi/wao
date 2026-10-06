@@ -1,0 +1,126 @@
+{
+  "version": "v4",
+  "primary": "#5665e9",
+  "files": [
+    {
+      "name": "guide.html",
+      "bytes": 10055,
+      "sha256": "8bcf0e8b2c4ccfcdb4ffe24439f306c90274f16c7b2d9f0c06e0369028ababce"
+    },
+    {
+      "name": "wao-lockup-ink-v4.png",
+      "bytes": 28050,
+      "sha256": "8027c2ee9f9deb8f0985396c62be400edfaa3dcfee975325dd431ae6dbc0406b"
+    },
+    {
+      "name": "wao-lockup-ink-v4.svg",
+      "bytes": 974,
+      "sha256": "df1c3b3d5e576ca2171bc7f608e3f4fc41d3d78711aa8407ac3711abb29d0bb7"
+    },
+    {
+      "name": "wao-lockup-v4.png",
+      "bytes": 28650,
+      "sha256": "f8bd17f81968bc0843324606c2ed937cca8550698066d2daf462766645be19b1"
+    },
+    {
+      "name": "wao-lockup-v4.svg",
+      "bytes": 974,
+      "sha256": "11e6794281425f1eb00bd1859310140f1a6a55be331012448198fab1f70dc7e3"
+    },
+    {
+      "name": "wao-lockup-white-v4.png",
+      "bytes": 22444,
+      "sha256": "b4f62f37ddd71ef4ad26f1ef0b98943ddd9d0753e33ec3c22c4864451f0d5245"
+    },
+    {
+      "name": "wao-lockup-white-v4.svg",
+      "bytes": 974,
+      "sha256": "3e1db0e88776bc0beedcda415dea26270daff6eb026f7e3376023da2bb959477"
+    },
+    {
+      "name": "wao-soft-loop-16-v4.png",
+      "bytes": 559,
+      "sha256": "24894846b0978e5085fde5fb6538717570c36eab26efe12a54c42f3a86ef8bef"
+    },
+    {
+      "name": "wao-soft-loop-180-v4.png",
+      "bytes": 4541,
+      "sha256": "df078d819c4cc6ec1ec1af513d696a1874b85ddd9b0380a0ed59984752cd7cfa"
+    },
+    {
+      "name": "wao-soft-loop-192-v4.png",
+      "bytes": 4759,
+      "sha256": "a27ecdea923f343c1dcc61fddb0707e02e93029d243f8083797ad18af6e706b0"
+    },
+    {
+      "name": "wao-soft-loop-24-v4.png",
+      "bytes": 797,
+      "sha256": "b1c0f2e8ee503d183169a629ae76e4bb5dd2f8acbdd89b0ccdef6c692fd5a339"
+    },
+    {
+      "name": "wao-soft-loop-32-v4.png",
+      "bytes": 885,
+      "sha256": "0db49955c2270829eac30c440fad6b35c6a173b3491e3531aa0c4aa11c80752f"
+    },
+    {
+      "name": "wao-soft-loop-512-v4.png",
+      "bytes": 15831,
+      "sha256": "104dc34b81aec95369076e7edb363ee698068022a7711d0ce93e17c0e94867cc"
+    },
+    {
+      "name": "wao-soft-loop-64-v4.png",
+      "bytes": 1923,
+      "sha256": "6b2b96493af47ac3dd439fec4f3310d681234f56e53bf43fe6d9d03e8bd45271"
+    },
+    {
+      "name": "wao-soft-loop-ink-v4.svg",
+      "bytes": 612,
+      "sha256": "d6110f20f97cedc5ff49cacdb74cc07ce4232e1e9983e9e92152bdb53c275bc9"
+    },
+    {
+      "name": "wao-soft-loop-maskable-512-v4.png",
+      "bytes": 12888,
+      "sha256": "654433ea79f9b5d3e3466141b1d7cc5c84137b62b0bcb0ec37cb1470f714922c"
+    },
+    {
+      "name": "wao-soft-loop-mono-v4.svg",
+      "bytes": 622,
+      "sha256": "6537fa00941e42a88bfc32ac10687bc8e765b147892a2cf15eb8364d9d0d2b16"
+    },
+    {
+      "name": "wao-soft-loop-small-v4.svg",
+      "bytes": 609,
+      "sha256": "0a02b29c9d40f15d45bfc6e882329fa037328bb0ab43db231e887f310c4b1212"
+    },
+    {
+      "name": "wao-soft-loop-v4.svg",
+      "bytes": 612,
+      "sha256": "8ec601d94609b2507d8f9e1d800ca58190ec38d13a861eb77907a8f918ed64df"
+    },
+    {
+      "name": "wao-soft-loop-white-v4.svg",
+      "bytes": 612,
+      "sha256": "375cbfe52edc0f17210ff63ddd33f8a5e9f32e22a8dd59f1447d5b60f5e24dd1"
+    },
+    {
+      "name": "wao-wordmark-v4.svg",
+      "bytes": 374,
+      "sha256": "570eaf0bbea41d7a4abfd1fd1324eb5ba3d504d33c9253443c4be09b3dc14bfc"
+    },
+    {
+      "name": "favicon.svg",
+      "bytes": 609,
+      "sha256": "0a02b29c9d40f15d45bfc6e882329fa037328bb0ab43db231e887f310c4b1212"
+    },
+    {
+      "name": "favicon.ico",
+      "bytes": 5087,
+      "sha256": "1792f3c077ffeafc58500393dee59f095d9827aaa706d6e7ede03eb4bcf0ddd5"
+    },
+    {
+      "name": "wao-brand-usage.md",
+      "bytes": 4409,
+      "sha256": "2be0ef09194b8cfe8181c0050aef0335a379995cc2700e5d9d18712cc21388b4"
+    }
+  ]
+}
