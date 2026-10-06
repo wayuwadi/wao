@@ -72,6 +72,33 @@ function composer(note?: Doc) {
 }
 async function triggerFour(wrapper: ReturnType<typeof mount>) { wrapper.getComponent(NoteAiStageButton).vm.$emit('four'); await flushPromises() }
 describe('小记集中记录空间', () => {
+  it('阅读目录右键针对目标复制和确认删除，就地编辑保持阅读布局', async () => {
+    const data = useDataStore(); data.docs.one = doc('one', '正在阅读'); data.docs.two = doc('two', '菜单目标'); data.apiLive = true
+    const remove = vi.spyOn(data, 'deleteDoc')
+    const wrapper = await view(document.body); await wrapper.get('[data-note-id="one"]').trigger('keydown', { key: 'Enter' }); await flushPromises()
+    const reader = () => new DOMWrapper(document.body).get('.notes-reader')
+    const target = () => reader().findAll('.reader-directory nav button').find(button => button.text().includes('菜单目标'))!
+    await target().trigger('contextmenu'); await flushPromises()
+    let menu = new DOMWrapper(document.body).get('[role="menu"]')
+    await menu.findAll('button').find(button => button.text() === '复制给 Codex')!.trigger('click'); await flushPromises()
+    const copy = new DOMWrapper(document.body).get('.note-media-copy-dialog')
+    await copy.get('.copy-primary').trigger('click'); await flushPromises()
+    expect(copyToClipboard).toHaveBeenCalledWith(expect.stringContaining('/s/d/two'))
+    expect(reader().get('.reader-article h2').text()).toBe('正在阅读')
+    await copy.get('[aria-label="关闭图文复制"]').trigger('click'); await flushPromises()
+    await target().trigger('keydown', { key: 'F10', shiftKey: true }); await flushPromises()
+    menu = new DOMWrapper(document.body).get('[role="menu"]')
+    await menu.findAll('button').find(button => button.text() === '移入回收站')!.trigger('click'); await flushPromises()
+    await new DOMWrapper(document.body).get('.card-delete-cancel').trigger('click'); await flushPromises()
+    expect(remove).not.toHaveBeenCalled()
+    await target().trigger('contextmenu'); await flushPromises()
+    menu = new DOMWrapper(document.body).get('[role="menu"]')
+    await menu.findAll('button').find(button => button.text() === '就地编辑')!.trigger('click'); await flushPromises()
+    expect(reader().find('.reader-article .note-composer.contained').exists()).toBe(true)
+    expect((reader().get('.inline-heading input').element as HTMLInputElement).value).toBe('菜单目标')
+    expect(wrapper.find('.note-card.editing').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('发现条可直接关闭，刷新同一条不再弹出，新发现仍可显示且不改变反馈', async () => {
     const finding: Discovery = { id: 'close-one', origin: 'AUTO', headline: '可关闭的发现', observation: '依据', valueReason: '价值', restricted: false, evidence: [], feedback: { saved: true, dismissed: false, correction: null, version: 0 } }
     vi.mocked(fetchDiscoveryCurrent).mockResolvedValue({ discovery: finding, automationState: 'ON', lastOutcome: null, revision: '1' })
@@ -1188,7 +1215,7 @@ describe('小记集中记录空间', () => {
     await wrapper.get('[data-note-id="sources"]').trigger('keydown', { key: 'Enter' }); await flushPromises()
     const reader = () => new DOMWrapper(document.body).get('.notes-reader')
     expect(reader().get('.reader-images img').attributes('src')).toBe('/api/images/current/preview')
-    await reader().findAll('.reader-layout-actions > button').find(button => button.text() === '查看原文')!.trigger('click'); await flushPromises()
+    await reader().findAll('.reader-layout-actions button').find(button => button.text() === '查看原文')!.trigger('click'); await flushPromises()
     expect(reader().get('.reader-images img').attributes('src')).toBe('/api/images/before/preview')
     await reader().get('[aria-label="原文来源"] [aria-pressed="false"]').trigger('click'); await flushPromises()
     expect(reader().findAll('.reader-images figure')).toHaveLength(2)
