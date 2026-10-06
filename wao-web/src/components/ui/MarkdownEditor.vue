@@ -208,6 +208,8 @@ const props = withDefaults(
     compact?: boolean
     /** 保留斜线与选区能力，但不显示顶部格式工具栏。 */
     hideToolbar?: boolean
+    /** 宿主在自己的操作栏显示字数时，避免编辑器重复占用一行。 */
+    hideCharacterCount?: boolean
     /** 挂到 body 的菜单层级；全屏容器需显式提升，避免菜单被遮挡。 */
     menuZIndex?: number
     /** 知识库页面的常驻顶部工具栏挂载点。 */
@@ -239,6 +241,7 @@ const props = withDefaults(
     advanced: false,
     compact: false,
     hideToolbar: false,
+    hideCharacterCount: false,
     menuZIndex: 1000,
     toolbarTarget: null,
     document: null,
@@ -2560,7 +2563,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
-    <div v-if="articleImageKey" class="article-footer" aria-label="文章编辑操作">
+    <div v-if="articleImageKey && (!hideCharacterCount || articleImageGeneration || articleImageUpload || $slots['footer-tags'])" class="article-footer" aria-label="文章编辑操作">
       <div class="article-footer-left">
         <div v-if="!readonly" class="article-image-actions">
           <ArticleImageAction v-if="articleImageGeneration" :scope-key="articleImageKey"
@@ -2573,13 +2576,13 @@ onBeforeUnmount(() => {
         </div>
         <slot name="footer-tags" />
       </div>
-      <div class="character-count article-count" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
+      <div v-if="!hideCharacterCount" class="character-count article-count" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
         <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
       </div>
     </div>
     <SelectionImageAction v-if="selectionImage && articleImageKey && !readonly" ref="selectionImageAction" :scope-key="articleImageKey" :insert-image="insertSelectionImage" />
     <NoteMediaCopyDialog v-if="mediaCopyContent" :content="mediaCopyContent" :initial-text-copied="mediaTextCopied" @close="mediaCopyContent = null" />
-    <Teleport v-if="!articleImageKey" :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
+    <Teleport v-if="!articleImageKey && !hideCharacterCount" :to="toolbarTarget || 'body'" :disabled="!toolbarTarget">
       <div class="character-count" :class="{ docked: toolbarTarget }" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）" aria-label="当前正文字数">
         <template v-if="selectedCharacterCount">已选中 {{ selectedCharacterCount.toLocaleString('zh-CN') }} 字 · 全文 </template>{{ characterCount.toLocaleString('zh-CN') }} 字
       </div>
