@@ -1,5 +1,26 @@
 [
   {
+    "id": "release-notes-refine-display-2026-10-06",
+    "publishedOn": "2026-10-06",
+    "sourceSubject": "feat(notes): 支持轻淡且可配置的系统小记配色",
+    "title": "支持轻淡且可配置的系统小记配色",
+    "intro": "系统文章默认仅使用轻淡底色；小记设置提供是否区分和自定义颜色，按账号在当前浏览器记住，与 AI 配置和正文相互独立。",
+    "highlights": [
+      {
+        "featureId": "notes",
+        "eyebrow": "小记体验",
+        "title": "支持轻淡且可配置的系统小记配色",
+        "summary": "系统文章默认仅使用轻淡底色；小记设置提供是否区分和自定义颜色，按账号在当前浏览器记住，与 AI 配置和正文相互独立。",
+        "points": [
+          "系统文章默认仅使用轻淡底色；小记设置提供是否区分和自定义颜色，按账号在当前浏览器记住，与 AI 配置和正文相互独立。"
+        ],
+        "steps": [
+          "打开小记页面，使用本次调整后的入口。"
+        ]
+      }
+    ]
+  },
+  {
     "id": "release-notes-refine-layout-2026-10-06",
     "publishedOn": "2026-10-06",
     "sourceSubject": "fix(notes): 修复小记引用边框与卡片动作重叠",

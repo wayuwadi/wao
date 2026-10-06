@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { usePreferenceStore } from '@/stores/preferences'
+import { useNoteDisplayPreferences } from '@/composables/noteDisplayPreferences'
 import NoteOriginalReader from '@/components/notes/NoteOriginalReader.vue'
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
@@ -50,6 +51,7 @@ const contextMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
 const mediaCopyContent = ref<RichDocContent | null>(null)
 const mediaCopyNote = ref({ id: '', title: '' })
 const trashOpen = ref(false)
+const noteDisplay = useNoteDisplayPreferences()
 function openMediaCopy(note: Doc) {
   mediaCopyNote.value = { id: note.id, title: displayedTitle(note) }
   mediaCopyContent.value = JSON.parse(JSON.stringify(displayedContent(note))) as RichDocContent
@@ -1217,7 +1219,7 @@ onMounted(() => void loadPins())
         <p v-if="loading" class="empty" role="status">正在读取小记…</p>
         <p v-else-if="!loadError && !matching.length" class="empty">{{ query || activeFilterCount ? '没有找到相关小记，调整筛选条件试试。' : '还没有小记，写下第一条想法吧。' }}</p>
         <p v-if="retainedEdits.length" class="tag-status" role="status">正在编辑的小记会保留在列表中，保存或收起后恢复筛选结果。</p>
-        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id, 'system-generated': note.systemGenerated }" :data-note-id="note.id"
+        <article v-for="note in visible" :key="note.id" class="note-card" :class="{ 'fixed-height': isNotePreviewExpandable(note.id) && !isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), expanded: isNotePreviewExpanded(note.id) && !editingIds.includes(note.id), highlighted: highlighted === note.id, editing: editingIds.includes(note.id), 'delete-confirming': confirmingDeleteId === note.id, 'mobile-actions-open': mobileActionsId === note.id, 'system-generated': note.systemGenerated && noteDisplay.settings.value.distinguishSystem }" :style="{ '--note-system-color': noteDisplay.settings.value.systemColor }" :data-note-id="note.id"
           tabindex="0" :aria-expanded="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) : undefined" :title="isNotePreviewExpandable(note.id) ? isNotePreviewExpanded(note.id) ? '单击收起全文，按 Enter 阅读，双击编辑' : '单击展开全文，按 Enter 阅读，双击编辑' : '双击编辑，按 Enter 阅读'" :aria-label="`小记：${note.title}，${isNotePreviewExpandable(note.id) ? `单击${isNotePreviewExpanded(note.id) ? '收起' : '展开'}全文，` : ''}按 Enter 开始阅读，双击编辑`"
           @click="scheduleCardPreview(note.id, $event)" @dblclick="editNote(note.id, $event)" @keydown.enter.self.prevent="startReading(note.id, $event)" @keydown.esc="cancelDeleteOnEscape(note.id, $event)" @keydown="openNoteMenu($event, note.id)" @contextmenu="openNoteMenu($event, note.id)">
           <div class="note-meta">
@@ -1382,7 +1384,7 @@ input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparen
 .tag-status { font-size: 12px; color: var(--wao-text-faint); }
 .list-summary { display: flex; justify-content: space-between; gap: 10px; margin: 9px 0 12px; font-size: 11px; color: var(--wao-text-faint); }
 .note-card { position: relative; box-sizing: border-box; background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: 12px; padding: 17px 19px; margin-bottom: 16px; transition: border-color .18s, box-shadow .18s, transform .18s; }
-.note-card.system-generated { background: color-mix(in srgb, var(--wao-primary) 9%, var(--wao-bg-card)); border-color: color-mix(in srgb, var(--wao-primary) 45%, var(--wao-line-control)); }
+.note-card.system-generated { background: color-mix(in srgb, var(--note-system-color) 3%, var(--wao-bg-card)); border-color: color-mix(in srgb, var(--note-system-color) 12%, var(--wao-line-control)); }
 .author.system-author { display: inline-flex; align-items: center; gap: 4px; color: var(--wao-primary-text); background: color-mix(in srgb, var(--wao-primary) 13%, var(--wao-bg-card)); padding: 3px 7px; border-radius: 6px; }
 .system-visibility { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; color: var(--wao-text-1); border: 0; background: transparent; padding: 4px 0; cursor: pointer; text-align: left; }
 .system-switch-track { flex: none; width: 36px; height: 21px; border-radius: 11px; background: var(--wao-line-control); position: relative; }
