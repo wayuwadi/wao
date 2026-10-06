@@ -18,6 +18,7 @@ import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import NoteMediaCopyDialog from './NoteMediaCopyDialog.vue'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import NoteTagContextMenu from './NoteTagContextMenu.vue'
+import NoteComposerTags from './NoteComposerTags.vue'
 import { replaceTagNames, useNoteTagChanges } from '@/utils/noteTagChanges'
 import { useNoteWritingWidth } from '@/composables/noteWritingWidth'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
@@ -268,6 +269,7 @@ const taskSource = computed(() => ({
   docId: props.note?.id,
 }))
 const text = ref(initial.text)
+const characterCount = ref(0)
 const content = ref<RichDocContent | undefined>(initial.content)
 watch(() => JSON.stringify(draftImages.value), () => { activeImage.value = null })
 const generatedTitle = ref(initial.generatedTitle || props.note?.title || '')
@@ -599,14 +601,14 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         :article-image-key="`note:${session.currentUser.id}:${id}`"
         :article-image-generation="false" :article-image-upload="false"
         :note-ai-origin="{ stableId: id, docId: note?.id, sourceRev: baseRev, title: generatedTitle, blocks: note?.blocks ?? [], links: note?.links ?? [] }" note-title-on-image @ai-applied="appliedAiInputs = [...new Set([...appliedAiInputs, $event])]" @generated-title="generatedTitle = $event"
-        hide-toolbar :autofocus="autofocus" :focus-request="loading ? 0 : focusRequest" :initial-position="initialPosition" :initial-viewport-top="initialViewportTop" :menu-z-index="fullscreen || contained ? 2200 : compact ? 1200 : 1000"
+        :hide-character-count="inline" @character-count="characterCount = $event" hide-toolbar :autofocus="autofocus" :focus-request="loading ? 0 : focusRequest" :initial-position="initialPosition" :initial-viewport-top="initialViewportTop" :menu-z-index="fullscreen || contained ? 2200 : compact ? 1200 : 1000"
         :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="compact ? 200 : note ? 320 : 360" :placeholder="focusRequest ? '先写一句，就很好。想法、点子、提示词、想建设的功能……' : '想法、灵感、工作备忘…随手记在这里，也可以粘贴图片'"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">
 
       </MarkdownEditor>
       </div><NoteReadingImages v-if="!contained && imageMode === 'references' && draftImages.length" ref="imagesPanel" class="composer-images" :images="draftImages" :active="activeImage" @return="returnToDraftImage" @fullscreen="openDraftImage" /></div>
-      <div class="fullscreen-quick-tags composer-tags" role="group" aria-label="快捷标签"><i class="ri-price-tag-3-line" aria-hidden="true"></i><button v-for="tag in quickChoices" :key="tag" type="button" :class="{ selected: tags.includes(tag), 'tag-chip': tags.includes(tag) }" :aria-pressed="tags.includes(tag)" :aria-label="`${tags.includes(tag) ? '移除' : '添加'}标签 ${tag}`" :disabled="saving || creatingTag || (!tags.includes(tag) && tags.length >= 20)" @contextmenu="tagMenu?.open($event, tag)" @keydown="tagMenu?.open($event, tag)" @mousedown.prevent @click="toggleTag(tag)"><span class="quick-tag-hash" aria-hidden="true">#</span>{{ tag }}<i v-if="tags.includes(tag)" class="ri-check-line" aria-hidden="true"></i></button><button v-if="!inline" class="add-tag" type="button" :disabled="saving || creatingTag" :aria-label="tagCreateOpen ? '收起新增标签' : '新增标签'" :title="tagCreateOpen ? '收起新增标签' : '新增标签'" @click="toggleTagCreate"><i :class="tagCreateOpen ? 'ri-close-line' : 'ri-add-line'"></i></button><span v-if="tagCreateOpen" class="inline-tag-create"><input v-model="newTag" aria-label="新标签名称" placeholder="新标签名称" maxlength="32" :disabled="saving || creatingTag" @keydown.enter.prevent="createTag" @keydown.esc="tagCreateOpen = false"><button type="button" :disabled="saving || creatingTag || !newTag.trim()" @click="createTag">{{ creatingTag ? '…' : '↵' }}</button><span v-if="tagError" class="error" role="alert">{{ tagError }}</span></span></div>
+      <NoteComposerTags v-if="!inline" add-button v-model="newTag" :choices="quickChoices" :selected="tags" :saving="saving" :creating="creatingTag" :create-open="tagCreateOpen" :error="tagError" @toggle="toggleTag" @create="createTag" @toggle-create="toggleTagCreate" @close-create="tagCreateOpen = false" @menu="(event, tag) => tagMenu?.open(event, tag)" />
     </div>
     <Teleport to="body"><div v-if="imagePreview" class="composer-image-lightbox" role="dialog" aria-modal="true" :aria-label="imagePreview.alt || '小记图片预览'" @click.self="closeDraftImage" @keydown="imagePreviewKeys"><button ref="imageClose" type="button" aria-label="关闭图片预览" @click="closeDraftImage"><i class="ri-close-line" aria-hidden="true"></i></button><img :src="imagePreview.src" :alt="imagePreview.alt" /><NoteImageNavigator :images="galleryImages" :index="galleryIndex" @change="changeGallery" /></div></Teleport>
     <p v-if="error" class="error" role="alert">{{ error }}。正文仍在，可原地重试。</p>
@@ -622,7 +624,9 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     </Teleport>
     <NoteMediaCopyDialog v-if="copyDraftContent" :content="copyDraftContent" :title="generatedTitle" @close="copyDraftContent = null" />
     <div class="composer-footer">
+      <NoteComposerTags v-if="inline" v-model="newTag" :choices="quickChoices" :selected="tags" :saving="saving" :creating="creatingTag" :create-open="tagCreateOpen" :error="tagError" @toggle="toggleTag" @create="createTag" @toggle-create="toggleTagCreate" @close-create="tagCreateOpen = false" @menu="(event, tag) => tagMenu?.open(event, tag)" />
       <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : isMobile ? '随手写，点“记下来了”保存' : 'Ctrl / ⌘ + Enter 保存') }}</span>
+      <span v-if="inline" class="composer-word-count" aria-label="当前正文字数" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）">{{ characterCount.toLocaleString('zh-CN') }} 字</span>
       <button v-if="note" type="button" :disabled="saving" @click="contained ? requestExit() : emit('close')">{{ contained ? '退出编辑' : '收起编辑' }}</button>
       <button v-if="!note" type="button" class="copy-draft" :disabled="loading || saving || !text.trim()" @click="copyDraft"><i class="ri-file-copy-2-line" aria-hidden="true"></i> 复制给 Codex</button>
       <button class="save-note" type="button" :disabled="!canSave" @click="save(true)">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
@@ -644,7 +648,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 .note-exit-dialog button:disabled { opacity:.55; cursor:wait; }
 .note-composer { position: relative; display: flex; flex-direction: column; min-width: 0; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 14px; padding: 18px; background: var(--wao-bg-card); }
 .note-composer.inline:not(.fullscreen) { padding: 0; border: 0; border-radius: 0; }
-.inline:not(.fullscreen) .editor-space { min-height: 160px; max-height: 460px; }
+.inline:not(.fullscreen) .editor-space { min-height: 200px; max-height: 460px; }
 .inline.expanded:not(.fullscreen) .editor-space { max-height: none; }
 .inline.expanded:not(.fullscreen) .editor-space :deep(.md-body) { overflow: visible; flex-basis: auto; }
 .inline .composer-heading { flex-wrap: wrap; }
@@ -777,7 +781,9 @@ button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2p
 
 <style scoped>
 .note-composer.contained { min-height: 60dvh; }
-.note-composer.inline .composer-tags { margin: 14px 0 0; flex-shrink: 0; }
+.note-composer.inline .composer-footer > .composer-tags { flex: 0 0 100%; margin: 0; padding-bottom: 2px; }
+.note-composer .composer-footer > .composer-word-count { flex: 0 0 auto; min-width: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.note-composer.inline .composer-footer { margin-top: 10px; gap: 8px 10px; }
 .note-composer:not(.inline) .composer-tags { order: -1; }
 .note-composer.inline .inline-heading .add-tag { flex: none; min-width: 30px; min-height: 30px; padding: 4px 7px; border: 0; color: var(--wao-text-3); }
 @media (max-width: 600px) { .inline-heading:has(.note-width-switch) { flex-wrap: wrap; } .inline-heading .note-width-switch { flex-basis: 100%; justify-content: flex-end; } }

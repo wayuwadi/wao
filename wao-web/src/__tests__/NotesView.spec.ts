@@ -84,6 +84,8 @@ describe('小记集中记录空间', () => {
     expect(card.get('.inline-heading').findAll('button').map(b => b.attributes('aria-label'))).toEqual(['新增标签', '全屏编辑', '小记操作：单行编辑标题'])
     expect(card.find('.inline-heading .tag-chip').exists()).toBe(false)
     expect(card.get('.composer-editor-layout').element.compareDocumentPosition(card.get('.composer-tags').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(card.find('.editor-space .composer-tags').exists()).toBe(false)
+    expect(card.find('.composer-footer [aria-label="快捷标签"]').exists()).toBe(true)
     await card.get('[aria-label="小记标题"]').setValue('保留手写标题')
     await card.get('textarea').setValue('保留编辑正文')
     await card.get('.note-more-actions').trigger('click')
@@ -1115,7 +1117,7 @@ describe('小记集中记录空间', () => {
     wrapper.unmount()
   })
 
-  it('阅读态把不含图片地址的字数放到卡片顶部，编辑态保留编辑器字数', async () => {
+  it('阅读态字数在顶部，编辑态将实时字数和标签归入底部并释放正文', async () => {
     const note = doc('count', '正文ABC!')
     note.content = { version: 1, markdown: '![图片](/api/images/one/raw)\n\n正文ABC!', document: {
       type: 'doc', content: [
@@ -1135,6 +1137,15 @@ describe('小记集中记录空间', () => {
     await flushPromises()
     expect(wrapper.find('.note-meta .note-count').exists()).toBe(false)
     expect(wrapper.find('[aria-label="当前正文字数"]').exists()).toBe(true)
+    const inline = wrapper.get('.note-composer.inline')
+    expect(inline.findAll('[aria-label="当前正文字数"]')).toHaveLength(1)
+    expect(inline.get('.composer-footer [aria-label="当前正文字数"]').text()).toBe('6 字')
+    expect(inline.find('.composer-editor-main .article-footer').exists()).toBe(false)
+    expect(inline.find('.editor-space [aria-label="快捷标签"]').exists()).toBe(false)
+    const editor = inline.getComponent(MarkdownEditor).vm as unknown as { editor: TiptapEditor }
+    editor.editor.commands.insertContentAt(editor.editor.state.doc.content.size, '追加文字')
+    await flushPromises()
+    expect(inline.get('.composer-footer [aria-label="当前正文字数"]').text()).toBe('10 字')
     expect(wrapper.find('.composer-editor-main img.md-img').exists()).toBe(false)
     expect(wrapper.findAll('.composer-images img')).toHaveLength(1)
     useNoteImageMode().value = 'embedded'; await flushPromises()
