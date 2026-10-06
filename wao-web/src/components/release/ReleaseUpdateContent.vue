@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { MODULES } from '@/config/nav'
 import type { ReleaseEdition, ReleaseHighlight } from '@/types/featureExplorer'
 import ReleaseFeatureDemo from './ReleaseFeatureDemo.vue'
+import { releaseActionLabel, resolveReleaseAction } from '@/utils/releaseActions'
 const props = defineProps<{ edition: ReleaseEdition; pending?: boolean; busy?: boolean }>()
 const emit = defineEmits<{ experience: [item: ReleaseHighlight]; demo: [item: ReleaseHighlight] }>()
 const expanded = ref<number[]>([])
+const details = ref<number[]>([])
+const showAll = ref(false)
+const visible = computed(() => showAll.value ? props.edition.highlights : props.edition.highlights.slice(0, 3))
+function moreCount(item: ReleaseHighlight) { return Math.max(0, item.points.length - 2) + Math.max(0, (item.steps?.length ?? 0) - 2) }
+function toggleDetails(index: number) { details.value = details.value.includes(index) ? details.value.filter(item => item !== index) : [...details.value, index] }
 function knownModule(id: string) {
   return Object.prototype.hasOwnProperty.call(MODULES, id)
 }
@@ -13,6 +19,8 @@ watch(
   () => props.edition.id,
   () => {
     expanded.value = []
+    details.value = []
+    showAll.value = false
   },
 )
 function toggle(index: number) {
@@ -32,19 +40,22 @@ function toggle(index: number) {
       ><time>{{ edition.publishedOn }}</time>
     </div>
     <p v-if="edition.highlights.length > 1" class="edition-intro">{{ edition.intro }}</p>
-    <article v-for="(item, index) in edition.highlights" :key="`${item.featureId}-${index}`">
+    <article v-for="(item, index) in visible" :key="item.id || `${item.featureId}-${index}`">
       <span v-if="edition.highlights.length > 1" class="item-eyebrow">{{ item.eyebrow }}</span>
       <h3>{{ item.title }}</h3>
       <p>{{ item.summary }}</p>
+      <ul v-if="item.points.length" class="points" aria-label="变化说明">
+        <li v-for="point in item.points.slice(0, details.includes(index) ? undefined : 2)" :key="point">{{ point }}</li>
+      </ul>
       <div v-if="item.steps?.length" class="usage">
         <span><i class="ri-signpost-line" aria-hidden="true"></i> 怎么用</span>
         <ol>
-          <li v-for="step in item.steps" :key="step">{{ step }}</li>
+          <li v-for="step in item.steps.slice(0, details.includes(index) ? undefined : 2)" :key="step">{{ step }}</li>
         </ol>
       </div>
-      <ul v-else-if="item.points.length" class="points">
-        <li v-for="point in item.points" :key="point">{{ point }}</li>
-      </ul>
+      <button v-if="moreCount(item)" type="button" class="details-toggle" :disabled="busy" :aria-expanded="details.includes(index)" @click="toggleDetails(index)">
+        {{ details.includes(index) ? '收起完整说明' : `展开完整说明 · 另有 ${moreCount(item)} 条` }}
+      </button>
       <button
         v-if="item.demo"
         type="button"
@@ -80,7 +91,7 @@ function toggle(index: number) {
         v-if="
           !pending &&
           knownModule(item.featureId) &&
-          item.featureId !== 'changelog' &&
+          (item.featureId !== 'changelog' || resolveReleaseAction(item.featureId, item.action)) &&
           edition.attention !== 'maintenance'
         "
         type="button"
@@ -89,10 +100,13 @@ function toggle(index: number) {
         :aria-label="`去体验：${item.title}`"
         @click="emit('experience', item)"
       >
-        去体验 {{ MODULES[item.featureId].label }}
+        {{ releaseActionLabel(item, `去体验 ${MODULES[item.featureId].label}`) }}
         <i class="ri-arrow-right-up-line" aria-hidden="true"></i>
       </button>
     </article>
+    <button v-if="edition.highlights.length > 3" class="more-changes" type="button" :disabled="busy" :aria-expanded="showAll" @click="showAll = !showAll">
+      {{ showAll ? '收起其他变化' : `查看其余 ${edition.highlights.length - 3} 项变化` }}
+    </button>
     <template v-if="!edition.highlights.length"
       ><h3>{{ edition.title }}</h3>
       <p>{{ edition.intro }}</p>

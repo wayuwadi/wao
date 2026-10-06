@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type { ReleaseDemo, ReleaseEdition, ReleaseHighlight } from '@/types/featureExplorer'
+import { resolveReleaseAction } from '@/utils/releaseActions'
 
 function text(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max
@@ -12,7 +13,7 @@ export function parseReleaseDemo(value: unknown): ReleaseDemo | null {
   if (!['inline', 'window'].includes(String(demo.presentation)) || !text(demo.alt, 300)) return null
   if (
     demo.kind !== undefined &&
-    !['update-card', 'workspace-mcp', 'notes-layout'].includes(String(demo.kind))
+    !['update-card', 'workspace-mcp', 'notes-layout', 'notes-reading'].includes(String(demo.kind))
   )
     return null
   if (
@@ -35,6 +36,9 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
   if (!value || typeof value !== 'object') return null
   const edition = value as Record<string, unknown>
   if (
+    (edition.prominence !== undefined && !['major', 'minor'].includes(String(edition.prominence))) ||
+    (edition.baseSha !== undefined && (typeof edition.baseSha !== 'string' || !/^[a-f0-9]{40}$/.test(edition.baseSha))) ||
+    (edition.rangeVerified !== undefined && typeof edition.rangeVerified !== 'boolean') ||
     (edition.attention !== undefined &&
       edition.attention !== 'feature' &&
       edition.attention !== 'maintenance') ||
@@ -43,7 +47,7 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
     !text(edition.title, 160) ||
     !text(edition.intro, 1000) ||
     !Array.isArray(edition.highlights) ||
-    edition.highlights.length > 20
+    edition.highlights.length > 2000
   )
     return null
   const highlights: ReleaseHighlight[] = []
@@ -51,6 +55,8 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
     if (!raw || typeof raw !== 'object') return null
     const item = raw as Record<string, unknown>
     if (
+      (item.id !== undefined && !text(item.id, 200)) ||
+      (item.sourceSubject !== undefined && !text(item.sourceSubject, 1000)) ||
       !text(item.featureId, 100) ||
       !/^[a-z0-9-]+$/.test(item.featureId) ||
       !text(item.eyebrow, 80) ||
@@ -66,7 +72,17 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
       (item.demo !== undefined && !parseReleaseDemo(item.demo))
     )
       return null
+    let action: ReleaseHighlight['action']
+    if (item.action !== undefined) {
+      if (!item.action || typeof item.action !== 'object') return null
+      const rawAction = item.action as Record<string, unknown>
+      if (!text(rawAction.target, 80) || !text(rawAction.label, 80)) return null
+      action = { target: rawAction.target, label: rawAction.label }
+      if (!resolveReleaseAction(item.featureId, action)) return null
+    }
     highlights.push({
+      ...(item.id !== undefined ? { id: item.id as string } : {}),
+      ...(item.sourceSubject !== undefined ? { sourceSubject: item.sourceSubject as string } : {}),
       featureId: item.featureId as ReleaseHighlight['featureId'],
       eyebrow: item.eyebrow,
       title: item.title,
@@ -74,9 +90,13 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
       points: item.points as string[],
       ...(item.steps !== undefined ? { steps: item.steps as string[] } : {}),
       ...(item.demo !== undefined ? { demo: parseReleaseDemo(item.demo)! } : {}),
+      ...(action ? { action } : {}),
     })
   }
   return {
+    ...(edition.prominence ? { prominence: edition.prominence as 'major' | 'minor' } : {}),
+    ...(edition.baseSha ? { baseSha: edition.baseSha as string } : {}),
+    ...(edition.rangeVerified !== undefined ? { rangeVerified: edition.rangeVerified as boolean } : {}),
     ...(edition.attention ? { attention: edition.attention as 'feature' | 'maintenance' } : {}),
     id: edition.id,
     publishedOn: edition.publishedOn,

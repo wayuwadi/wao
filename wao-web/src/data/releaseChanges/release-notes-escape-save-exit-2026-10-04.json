@@ -1,0 +1,24 @@
+{
+  "id": "release-notes-escape-save-exit-2026-10-04",
+  "publishedOn": "2026-10-04",
+  "sourceSubject": "feat(notes): Esc 确认保存并退出编辑",
+  "title": "按 Esc，保存后回到阅读",
+  "intro": "退出编辑时，保存与不保存都有明确选择。",
+  "highlights": [
+    {
+      "featureId": "notes",
+      "eyebrow": "小记编辑",
+      "title": "Esc 确认保存并退出",
+      "summary": "默认选中保存，回车即可返回原来的预览状态。",
+      "points": [
+        "不保存退出会清除本次草稿",
+        "保存失败保留输入并支持重试",
+        "局部菜单优先响应 Esc"
+      ],
+      "steps": [
+        "编辑已有小记时按 Esc",
+        "按 Enter 保存，或选择不保存退出"
+      ]
+    }
+  ]
+}

@@ -8,6 +8,8 @@ import VersionUpdateNotice from '@/components/ui/VersionUpdateNotice.vue'
 import { fetchWebRelease } from '@/api/version'
 import { CURRENT_RELEASE } from '@/data/featureCatalog'
 import { MODULES } from '@/config/nav'
+import { resolveReleaseAction } from '@/utils/releaseActions'
+import { companionEditing, companionQuiet } from '@/composables/quietCompanions'
 import {
   reloadToLatestVersion,
   WEB_UPDATE_EVENT,
@@ -21,7 +23,7 @@ vi.mock('@/utils/versionUpdate', async (original) => ({
   reloadToLatestVersion: vi.fn(),
 }))
 let wrapper: VueWrapper
-const upcoming = { ...CURRENT_RELEASE, attention: 'feature' as const, title: '目标版本的更新内容', highlights: [{ ...CURRENT_RELEASE.highlights[0]!, title: '目标版本的更新内容', steps: ['打开对应功能', '按指引开始使用'] }] }
+const upcoming = { ...CURRENT_RELEASE, attention: 'feature' as const, prominence: 'major' as const, title: '目标版本的更新内容', highlights: [{ ...CURRENT_RELEASE.highlights[0]!, title: '目标版本的更新内容', steps: ['打开对应功能', '按指引开始使用'] }] }
 const notify = (version: unknown) =>
   document.body.dispatchEvent(new CustomEvent(WEB_UPDATE_EVENT, { detail: { version } }))
 const click = async (selector: string) => {
@@ -42,6 +44,8 @@ async function render() {
 }
 beforeEach(() => {
   sessionStorage.clear()
+  companionEditing.value = false
+  companionQuiet.value = false
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -62,6 +66,21 @@ afterEach(() => {
 })
 
 describe('顶栏更新入口', () => {
+  it('小优化只显示更新入口，编辑期间重大更新延后提示', async () => {
+    vi.mocked(fetchWebRelease).mockResolvedValue({version:'minor-version',release:{...upcoming,prominence:'minor'}})
+    await render(); notify('minor-version'); await flushPromises()
+    expect(document.querySelector('[role=dialog]')).toBeNull()
+    expect(document.querySelector('.arriving')).toBeNull()
+    await click('.update-entry'); expect(document.body.textContent).toContain(upcoming.title)
+    await click('.later')
+    companionEditing.value = true
+    vi.mocked(fetchWebRelease).mockResolvedValue({version:'major-version',release:upcoming})
+    notify('major-version'); await flushPromises()
+    expect(document.querySelector('[role=dialog]')).toBeNull()
+    expect(sessionStorage.getItem('wao-update-arrival-version')).not.toBe('major-version')
+    companionEditing.value = false; await flushPromises()
+    expect(document.querySelector('[role=dialog]')).not.toBeNull()
+  })
   it('设置页手动查看复用卡片，不重复开关，不再打开三页介绍',async()=>{
     await render()
     openReleaseHighlights();await nextTick()
@@ -195,18 +214,20 @@ describe('顶栏更新入口', () => {
     const router = await render()
     await click('.update-entry')
     expect(document.body.textContent).toContain(CURRENT_RELEASE.highlights[0]!.title)
-    for (const highlight of CURRENT_RELEASE.highlights) {
-      for (const point of highlight.points) expect(document.body.textContent).toContain(point)
+    for (const highlight of CURRENT_RELEASE.highlights.slice(0, 3)) {
+      for (const point of highlight.points.slice(0, 2)) expect(document.body.textContent).toContain(point)
     }
     // 当前制品可能包含没有功能地图入口的提交，不给它制造失效的体验按钮。
-    const navigable = CURRENT_RELEASE.highlights.filter(item => item.featureId !== 'changelog' && CURRENT_RELEASE.attention !== 'maintenance' && Object.prototype.hasOwnProperty.call(MODULES, item.featureId))
+    const navigable = CURRENT_RELEASE.highlights.slice(0, 3).filter(item => (item.featureId !== 'changelog' || resolveReleaseAction(item.featureId, item.action)) && CURRENT_RELEASE.attention !== 'maintenance' && Object.prototype.hasOwnProperty.call(MODULES, item.featureId))
     expect(document.querySelectorAll('[aria-label^="去体验"]')).toHaveLength(navigable.length)
     for (const [index, highlight] of navigable.entries()) {
       if (index) await click('.update-entry')
       const links = document.querySelectorAll<HTMLButtonElement>('[aria-label^="去体验"]')
       links[index]!.click()
       await flushPromises()
-      if (highlight.featureId === 'notes') { expect(useUiStore().modal).toBe('note'); useUiStore().closeModal() }
+      const destination = resolveReleaseAction(highlight.featureId, highlight.action)
+      if (destination && destination.id !== 'notes-compose') expect(router.currentRoute.value.path).toBe(destination.path)
+      else if (highlight.featureId === 'notes') { expect(useUiStore().modal).toBe('note'); useUiStore().closeModal() }
       else expect(router.currentRoute.value.path).toBe(MODULES[highlight.featureId].path)
       expect(document.querySelector('[role="dialog"]')).toBeNull()
     }

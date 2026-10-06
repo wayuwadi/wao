@@ -5,6 +5,16 @@ import { CURRENT_RELEASE } from '@/data/featureCatalog'
 import { MODULES } from '@/config/nav'
 vi.mock('axios', () => ({ default: { get: vi.fn() } }))
 describe('公开版本清单', () => {
+  it('仅接受登记且属于该功能的体验入口，保留发布区间及阅读演示', () => {
+    const item={ ...CURRENT_RELEASE.highlights[0]!, featureId:'notes', action:{target:'notes-reading',label:'进入阅读'}, demo:{presentation:'inline',kind:'notes-reading',alt:'阅读编辑示意'} }
+    const data={ ...CURRENT_RELEASE, baseSha:'a'.repeat(40), rangeVerified:true, prominence:'minor', highlights:[item] }
+    expect(parseReleaseEdition(data)).toEqual(data)
+    expect(parseReleaseEdition({...data,highlights:[{...item,action:{target:'workspace-connections',label:'外部入口'}}]})).toBeNull()
+    expect(parseReleaseEdition({...data,highlights:[{...item,action:{target:'https://evil.test',label:'外部入口'}}]})).toBeNull()
+    expect(parseReleaseEdition({...data,baseSha:'unknown'})).toBeNull()
+    expect(parseReleaseEdition({...data,rangeVerified:'true'})).toBeNull()
+    expect(parseReleaseEdition({...data,highlights:[{...item,action:{...item.action,url:'https://evil.test'}}]})).toEqual(data)
+  })
   it('兼容旧清单并保留新步骤与专用演示，拒绝外部图和目录穿越',()=>{
     const base=CURRENT_RELEASE.highlights[0]!
     const demo={presentation:'window',kind:'notes-layout',alt:'记录区示意'}

@@ -1,0 +1,78 @@
+{
+  "id": "update-guidance-2026-10-06",
+  "publishedOn": "2026-10-06",
+  "sourceSubject": "feat(changelog): 完整汇总更新内容并直达具体用法",
+  "prominence": "major",
+  "title": "每次更新，都能看懂也能用上",
+  "intro": "卡片汇总本批次的变化，说明怎么用，并直接带你进入对应功能。",
+  "highlights": [
+    {
+      "featureId": "changelog",
+      "eyebrow": "完整更新",
+      "title": "一张卡片，看全本次变化",
+      "summary": "按上次已发布版本到当前制品汇总，多项变化可以逐步展开。",
+      "points": [
+        "变化说明与使用步骤同时保留",
+        "同一功能的不同改动各自呈现，不遗漏、不重复"
+      ],
+      "steps": [
+        "点击右上角更新入口，先看本次重点。",
+        "展开完整说明或其余变化；历史记录中可再次查看。"
+      ],
+      "action": {
+        "target": "release-updates",
+        "label": "查看完整更新"
+      },
+      "demo": {
+        "presentation": "inline",
+        "kind": "update-card",
+        "alt": "卡片内展开功能介绍与步骤"
+      }
+    },
+    {
+      "featureId": "notes",
+      "eyebrow": "具体入口",
+      "title": "从说明直接进入对应功能",
+      "summary": "设置、阅读和 AI 成果分别有自己的体验入口。",
+      "points": [
+        "体验按钮显示实际操作，不再统一跳到新建小记",
+        "有正在填写的弹层时先保留编辑，不替换表单"
+      ],
+      "steps": [
+        "在对应变化中点击打开设置、进入阅读或查看成果。",
+        "进入后使用真实小记；体验入口不会自动写入内容或运行 AI。"
+      ],
+      "action": {
+        "target": "notes-reading",
+        "label": "进入小记阅读"
+      },
+      "demo": {
+        "presentation": "inline",
+        "kind": "notes-reading",
+        "alt": "小记阅读和双击编辑引导"
+      }
+    },
+    {
+      "featureId": "capabilities",
+      "eyebrow": "连接引导",
+      "title": "连接演示跟随实际入口",
+      "summary": "CLI 与 MCP 引导直接对应能力中心的我的连接。",
+      "points": [
+        "新能力才自动开箱；小优化仅提示圆点，维护更新保持安静"
+      ],
+      "steps": [
+        "进入能力中心的我的连接，选择需要的操作范围。",
+        "按页面指引连接 CLI 或 MCP，验证可用工具。"
+      ],
+      "action": {
+        "target": "workspace-connections",
+        "label": "打开我的连接"
+      },
+      "demo": {
+        "presentation": "window",
+        "kind": "workspace-mcp",
+        "alt": "能力中心中连接 CLI 与 MCP 的步骤"
+      }
+    }
+  ]
+}

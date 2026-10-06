@@ -54,18 +54,27 @@ const imageUrl = computed(() => {
           </div>
         </template>
         <template v-else-if="demo.kind === 'workspace-mcp'">
-          <div class="mini-path">设置 → WAO CLI 与 MCP</div>
+          <div class="mini-path">能力中心 → 我的连接</div>
           <div class="mini-content">
             <b>连接你的工具</b>
-            <p>连接说明与设备授权集中在同一个入口。</p>
+            <p>按操作与数据范围授权，CLI 与 MCP 共用连接。</p>
             <button type="button" :aria-expanded="expanded" @click="expanded = !expanded">
               {{ expanded ? '收起连接步骤' : '展开连接步骤' }}
             </button>
             <ol v-if="expanded">
-              <li>打开连接说明</li>
-              <li>按指引连接本机工具</li>
-              <li>在授权设备列表管理已连接设备</li>
+              <li>新建连接，选择日常完整或所需能力</li>
+              <li>生成连接指令，在本机安全登录</li>
+              <li>运行连接检查，确认当前授权工具</li>
             </ol>
+          </div>
+        </template>
+        <template v-else-if="demo.kind === 'notes-reading'">
+          <div class="mini-path">小记 → 侧栏速览 / 全屏阅读</div>
+          <div class="mini-content">
+            <b>{{ expanded ? '编辑同一篇小记' : '读到想改的地方' }}</b>
+            <p>{{ expanded ? '保存后回到原来的阅读布局与位置。' : '双击正文可原地修改，保留正在阅读的位置。' }}</p>
+            <button type="button" :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? '返回阅读示意' : '演示双击编辑' }}</button>
+            <ol v-if="expanded"><li>双击正文进入编辑</li><li>修改后保存，继续阅读</li><li>按 Esc 可选择保存退出或不保存退出</li></ol>
           </div>
         </template>
         <template v-else-if="demo.kind === 'notes-layout'">
