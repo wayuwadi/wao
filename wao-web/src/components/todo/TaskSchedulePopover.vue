@@ -35,20 +35,41 @@ const canUndo = computed(() => receipt.value && props.task.editVersion === recei
 function close() { open.value = false; void nextTick(() => anchor.value?.focus()) }
 async function show() {
   if (open.value) { close(); return }
-  const box = anchor.value!.getBoundingClientRect()
-  const width = Math.min(340, window.innerWidth - 24)
-  const height = Math.min(370, window.innerHeight - 24)
-  const top = box.bottom + height + 8 <= window.innerHeight ? box.bottom + 6 : Math.max(12, box.top - height - 6)
-  style.value = { left: `${Math.max(12, Math.min(box.left, window.innerWidth - width - 12))}px`, top: `${top}px`, width: `${width}px`, maxHeight: `${Math.max(100, window.innerHeight - top - 12)}px` }
+  style.value = { visibility: 'hidden' }
   open.value = true
-  await nextTick(); panel.value?.querySelector<HTMLElement>('button')?.focus()
+  await nextTick()
+  positionPanel()
+  panel.value?.querySelector<HTMLElement>('button')?.focus()
+}
+function positionPanel() {
+  if (!open.value || !panel.value || !anchor.value) return
+  const viewport = window.visualViewport
+  const leftEdge = (viewport?.offsetLeft ?? 0) + 12
+  const topEdge = (viewport?.offsetTop ?? 0) + 12
+  const width = Math.max(1, Math.min(340, (viewport?.width ?? window.innerWidth) - 24))
+  const availableHeight = Math.max(1, (viewport?.height ?? window.innerHeight) - 24)
+  // Measure at the final width before revealing the first frame.
+  panel.value.style.width = `${width}px`
+  const height = Math.min(panel.value.scrollHeight, availableHeight)
+  const box = anchor.value.getBoundingClientRect()
+  const bottomEdge = topEdge + availableHeight
+  const preferredTop = box.bottom + height + 6 <= bottomEdge ? box.bottom + 6 : box.top - height - 6
+  style.value = { left: `${Math.max(leftEdge, Math.min(box.left, leftEdge + (viewport?.width ?? window.innerWidth) - 24 - width))}px`, top: `${Math.max(topEdge, Math.min(preferredTop, bottomEdge - height))}px`, width: `${width}px`, maxHeight: `${availableHeight}px` }
 }
 useOverlayDismiss(() => open.value, close, event => {
   if (!panel.value?.contains(event.target as Node) && !anchor.value?.contains(event.target as Node)) close()
 })
-const viewportChanged = () => { if (open.value) close() }
+const viewportChanged = () => { if (open.value) void nextTick(positionPanel) }
+watch(exact, viewportChanged)
 window.addEventListener('resize', viewportChanged)
-onBeforeUnmount(() => window.removeEventListener('resize', viewportChanged))
+const visualViewport = window.visualViewport
+visualViewport?.addEventListener('resize', viewportChanged)
+visualViewport?.addEventListener('scroll', viewportChanged)
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', viewportChanged)
+  visualViewport?.removeEventListener('resize', viewportChanged)
+  visualViewport?.removeEventListener('scroll', viewportChanged)
+})
 async function save(schedule: DailySchedule, undo = false) {
   if (saving.value) return
   saving.value = true; error.value = ''
@@ -93,4 +114,5 @@ function saveExact() {
 
 <style scoped>
 .schedule-control{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0}.time-chip{border:0;border-radius:7px;padding:5px 8px;background:var(--wao-bg-hover);color:var(--wao-primary);font-size:12px;white-space:normal;text-align:left;overflow-wrap:anywhere}.time-chip i{margin-right:5px}.schedule-feedback{font-size:11px;color:var(--wao-text-3)}.schedule-feedback button,.schedule-error button{color:var(--wao-primary);border:0;background:none}.schedule-error{font-size:12px;color:var(--wao-danger,#ce4c65)}.schedule-popover{position:fixed;z-index:1300;box-sizing:border-box;overflow:auto;border:1px solid var(--wao-line-control);border-radius:14px;background:var(--wao-bg-card);box-shadow:0 12px 40px #18234222;padding:14px;color:var(--wao-text-1)}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}button{cursor:pointer}header button{border:0;background:none;font-size:22px}.schedule-popover label{display:grid;gap:5px;font-size:12px;color:var(--wao-text-2);margin-bottom:10px}input{width:100%;min-width:0;box-sizing:border-box;border:1px solid var(--wao-line-control);border-radius:7px;padding:8px;background:var(--wao-bg-card);color:var(--wao-text-1)}.period-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-bottom:8px}.period-options button,.exact-fields button{min-height:38px;border:1px solid var(--wao-line-control);border-radius:7px;background:var(--wao-bg-hover);color:var(--wao-primary);padding:5px}.secondary{display:block;border:0;background:none;color:var(--wao-text-2);padding:10px 0}.schedule-popover small{font-size:11px;color:var(--wao-text-3)}.schedule-popover p{font-size:12px;color:var(--wao-danger,#ce4c65)}@media(max-width:600px){.time-chip,.period-options button,.secondary,header button{min-height:44px}}
+@media (max-width: 600px) { .schedule-popover input, .exact-fields button { min-height: 44px; font-size: 16px; } header button { min-width: 44px; } }
 </style>
