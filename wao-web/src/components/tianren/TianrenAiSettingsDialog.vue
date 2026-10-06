@@ -17,14 +17,31 @@ import {
 import { useSessionStore } from '@/stores/session'
 
 const emit = defineEmits<{ close: []; saved: [] }>()
-const props = withDefaults(defineProps<{ readingId?: string; interpreting?: boolean }>(), {
-  readingId: '',
-  interpreting: false,
-})
+const props = withDefaults(
+  defineProps<{
+    readingId?: string
+    interpreting?: boolean
+    embedded?: boolean
+    section?: 'capabilities' | 'interpretationPrompt' | 'imagePrompt'
+  }>(),
+  {
+    readingId: '',
+    interpreting: false,
+    embedded: false,
+    section: 'capabilities',
+  },
+)
 const session = useSessionStore(),
   tab = ref<'capabilities' | 'interpretationPrompt' | 'imagePrompt' | 'notifications'>(
     'capabilities',
   )
+watch(
+  () => props.section,
+  (value) => {
+    tab.value = value
+  },
+  { immediate: true },
+)
 const items = reactive<{ id: string; label: string; icon: string; pending?: boolean }[]>([
   { id: 'capabilities', label: 'AI 能力', icon: 'ri-cpu-line' },
   { id: 'interpretationPrompt', label: '解读提示词', icon: 'ri-book-open-line' },
@@ -278,6 +295,7 @@ onBeforeUnmount(() => {
 
 <template>
   <SettingsDialogShell
+    :embedded="embedded"
     title="天人一卦设置"
     description="把解读、配图和飞书通知，在这里一起安排。"
     @close="close"
@@ -421,7 +439,14 @@ onBeforeUnmount(() => {
             >
               <i class="ri-refresh-line" aria-hidden="true"></i>重新读取设置
             </button>
-            <button type="button" :disabled="notificationPanel?.saving" @click="close">关闭</button>
+            <button
+              v-if="!embedded"
+              type="button"
+              :disabled="notificationPanel?.saving"
+              @click="close"
+            >
+              关闭
+            </button>
             <button
               class="primary"
               type="button"
@@ -459,7 +484,7 @@ onBeforeUnmount(() => {
           <div class="footer-actions">
             <button class="light-action" type="button" :disabled="loading || saving" @click="load">
               <i class="ri-refresh-line" aria-hidden="true"></i>重新读取设置</button
-            ><button type="button" @click="close">关闭</button
+            ><button v-if="!embedded" type="button" @click="close">关闭</button
             ><button
               class="primary"
               type="button"

@@ -1,21 +1,28 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
-withDefaults(
-  defineProps<{ title: string; description?: string; width?: string; height?: string }>(),
-  { description: '', width: '1000px', height: 'min(760px, calc(100dvh - 48px))' },
+const props = withDefaults(
+  defineProps<{
+    title: string
+    description?: string
+    width?: string
+    height?: string
+    embedded?: boolean
+  }>(),
+  { description: '', width: '1000px', height: 'min(760px, calc(100dvh - 48px))', embedded: false },
 )
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLElement>()
 const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
 const dismiss = useOverlayDismiss(
-  () => true,
+  () => !props.embedded,
   () => emit('close'),
 )
 function outside() {
   if (dismiss.isTopmost()) emit('close')
 }
 function trap(event: KeyboardEvent) {
+  if (props.embedded) return
   if (event.key !== 'Tab') return
   const items = [
     ...(dialog.value?.querySelectorAll<HTMLElement>(
@@ -33,22 +40,23 @@ function trap(event: KeyboardEvent) {
   }
 }
 onMounted(async () => {
+  if (props.embedded) return
   await nextTick()
   dialog.value?.focus({ preventScroll: true })
 })
 onBeforeUnmount(() => {
-  if (trigger?.isConnected) trigger.focus({ preventScroll: true })
+  if (!props.embedded && trigger?.isConnected) trigger.focus({ preventScroll: true })
 })
 </script>
 <template>
-  <Teleport to="body"
-    ><div class="settings-dialog-mask" @click.self="outside">
+  <Teleport to="body" :disabled="embedded"
+    ><div class="settings-dialog-mask" :class="{ embedded }" @click.self="!embedded && outside()">
       <section
         ref="dialog"
         class="settings-dialog-shell"
         :style="{ '--settings-dialog-width': width, '--settings-dialog-height': height }"
-        role="dialog"
-        aria-modal="true"
+        :role="embedded ? 'region' : 'dialog'"
+        :aria-modal="embedded ? undefined : true"
         :aria-label="title"
         tabindex="-1"
         @keydown="trap"
@@ -60,6 +68,7 @@ onBeforeUnmount(() => {
             <p v-if="description">{{ description }}</p>
           </div>
           <button
+            v-if="!embedded"
             class="dialog-close"
             type="button"
             :aria-label="`关闭${title}`"
@@ -186,6 +195,36 @@ button:focus-visible {
   }
   .dialog-footer {
     padding: 12px 15px;
+  }
+}
+</style>
+
+<style scoped>
+.settings-dialog-mask.embedded {
+  position: static;
+  display: block;
+  padding: 0;
+  background: none;
+  z-index: auto;
+  width: 100%;
+  min-width: 0;
+}
+.embedded .settings-dialog-shell {
+  width: 100%;
+  height: 640px;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.embedded .dialog-heading {
+  display: none;
+}
+@media (max-width: 900px) {
+  .embedded .settings-dialog-shell {
+    height: auto;
+    min-height: 640px;
+    overflow: visible;
   }
 }
 </style>
