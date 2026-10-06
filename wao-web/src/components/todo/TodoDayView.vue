@@ -170,4 +170,5 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
 .day-overview span { padding: 6px 9px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-sub); }
 .day-task { padding-block: 18px; }
 @media (max-width: 600px) { .day-overview { gap: 7px; } .day-overview span { padding: 6px 8px; } }
+@media (max-width: 600px) { .day-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; } .day-create input { grid-column: 1 / -1; width: 100%; box-sizing: border-box; } .day-create select { width: 100%; max-width: none; min-width: 0; } .day-create input, .day-create select, .day-create button { min-height: 44px; font-size: 16px; } .task-check { min-width: 44px; } }
 </style>
