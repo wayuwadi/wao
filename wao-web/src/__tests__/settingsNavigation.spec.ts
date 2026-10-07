@@ -96,7 +96,7 @@ describe('常用优先的设置分类', () => {
       '安静陪伴',
       '庆祝动画',
     ])
-    expect(wrapper.findAll('.snav-item')).toHaveLength(6)
+    expect(wrapper.findAll('.snav-item')).toHaveLength(7)
     expect(wrapper.find('.note-ai-settings-form').exists()).toBe(false)
     expect(fetchNoteAiSettings).not.toHaveBeenCalled()
   })

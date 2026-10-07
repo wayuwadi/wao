@@ -5,6 +5,7 @@ export const SETTINGS_CATEGORIES = [
   { id: 'reminders', label: '通知与提醒', icon: 'ri-notification-3-line', description: '先选提醒来源，再调整具体内容。' },
   { id: 'personal', label: '个人与账号', icon: 'ri-user-smile-line', description: '资料、登录方式和我的导航。' },
   { id: 'management', label: '管理与连接', icon: 'ri-settings-4-line', description: '组织、AI 账号和外部连接。' },
+  { id: 'about', label: '关于 WAO', icon: 'ri-information-line', description: '品牌规范与正式素材。' },
 ] as const
 
 export const SETTINGS_ENTRIES = {

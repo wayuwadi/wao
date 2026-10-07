@@ -390,7 +390,18 @@ async function bindFeishu() {
           </div>
         </template>
         <!-- 组织与成员 -->
-        <template v-if="tab === 'members'">
+        <template v-if="tab === 'about'">
+          <h1 class="s-h1">关于 WAO</h1>
+          <p class="s-intro">{{ categoryInfo.description }}</p>
+          <div class="card settings-entry-list">
+            <a class="settings-entry brand-resource-link" href="/brand/guide.html" target="_blank" rel="noopener noreferrer">
+              <i class="entry-icon ri-palette-line" aria-hidden="true"></i>
+              <span><strong>品牌与素材</strong><small>查看标识、配色与使用规范，下载 SVG、PNG 和完整资源包。</small></span>
+              <i class="ri-external-link-line" aria-hidden="true"></i>
+            </a>
+          </div>
+        </template>
+        <template v-else-if="tab === 'members'">
           <div class="s-h1">组织与成员</div>
           <div class="card org">
             <div class="org-badge">W</div>
@@ -845,6 +856,8 @@ async function bindFeishu() {
 .settings-entry:last-child { border-bottom: 0; }
 .settings-entry > span { flex: 1; min-width: 0; }
 .settings-entry strong { font-size: 14px; font-weight: 600; }
+.brand-resource-link { box-sizing: border-box; text-decoration: none; }
+.brand-resource-link:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; border-radius: 8px; }
 .entry-icon { width: 36px; height: 36px; display: grid; place-items: center; flex: none; border-radius: 11px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: 18px; }
 .settings-back { display: flex; align-items: center; gap: 6px; margin: 0 0 20px; padding: 0; border: 0; background: transparent; color: var(--wao-text-weak); cursor: pointer; font-size: 12px; }
 .settings-disclosure { margin-top: 22px; }

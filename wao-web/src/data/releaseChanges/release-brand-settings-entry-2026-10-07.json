@@ -1,0 +1,15 @@
+{
+  "id": "release-brand-settings-entry-2026-10-07",
+  "publishedOn": "2026-10-07",
+  "sourceSubject": "feat(settings): 增加关于 WAO 的品牌与素材入口",
+  "title": "在设置里找到 WAO 品牌素材",
+  "intro": "设置新增关于 WAO 分类，正式标识和品牌规范有了可点击的站内入口。",
+  "highlights": [{
+    "featureId": "settings",
+    "eyebrow": "品牌入口",
+    "title": "品牌与素材有了站内入口",
+    "summary": "在关于 WAO 中打开品牌参考页，查看使用规范并下载正式素材。",
+    "points": ["位于设置的更多分类中，普通成员也可访问", "在新页打开，保留当前设置页面"],
+    "steps": ["打开设置，在更多下点击“关于 WAO”。", "点击“品牌与素材”，在新页查看参考并下载资源包。"]
+  }]
+}
