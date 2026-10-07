@@ -43,7 +43,7 @@ public class ArticleImageService {
         return get(memberId, id);
     }
 
-    /** 仅供服务端持久小记工作流入队；普通浏览器图片请求仍受单任务限制。 */
+    /** 仅供服务端持久小记工作流入队；普通浏览器图片请求同样允许独立并行。 */
     ArticleImageJobDto startNoteWorkflow(String memberId, ArticleImageRequest request) {
         String id = assistant.enqueueNoteWorkflowArticleImageJob(memberId, request.articleText(), request.visualPrompt(),
                 request.model(), request.requestId());

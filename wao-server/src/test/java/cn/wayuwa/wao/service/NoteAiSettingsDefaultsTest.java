@@ -9,6 +9,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 class NoteAiSettingsDefaultsTest {
+    @Test void legacySerialAndFiveSlotSettingsNormalizeToUnboundedParallelWithoutChangingStoredVersion() {
+        var service = new NoteAiSettingsService(mock(JdbcTemplate.class), mock(MemberPreferenceMapper.class), new ObjectMapper());
+        var values = Map.of(NoteAiSettingsService.DEFAULTS, "{\"executionMode\":\"serial\",\"maxConcurrent\":5,\"image\":false}");
+        var view = service.parse(values);
+        assertThat(view.settings().executionMode()).isEqualTo("parallel");
+        assertThat(view.settings().maxConcurrent()).isZero();
+        assertThat(view.settings().image()).isFalse();
+        assertThat(service.parse(values).version()).isEqualTo(view.version());
+        assertThat(service.parse(Map.of()).settings().maxConcurrent()).isZero();
+    }
+
     @Test void exposesExecutionDefaultsWithoutChangingOverridesOrConfigurationVersion() {
         var json = new ObjectMapper();
         var service = new NoteAiSettingsService(mock(JdbcTemplate.class), mock(MemberPreferenceMapper.class), json);

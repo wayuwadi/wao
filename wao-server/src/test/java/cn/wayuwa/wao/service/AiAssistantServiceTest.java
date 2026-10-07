@@ -77,6 +77,23 @@ class AiAssistantServiceTest {
         org.mockito.Mockito.verifyNoInteractions(accountService);
     }
 
+    @Test void twentyImageRequestsForSameMemberAreAcceptedAndRetryReusesItsOwnJob() {
+        var local = mock(LocalNoteAiService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "localNotes", local);
+        when(local.capabilityId()).thenReturn("local-notes-test");
+        when(mapper.selectCount(any())).thenReturn(20L);
+        for (int i = 0; i < 20; i++)
+            service.enqueueArticleImageJob("member", "合成正文", "合成配图", "gpt-6-astra", String.format("%032x", i));
+        verify(mapper, org.mockito.Mockito.times(20)).insertReadOnlyQueued(any());
+        verify(mapper, never()).selectCount(any());
+        var existing = new AiAssistantRunEntity(); existing.setId(String.format("%032x", 1));
+        existing.setMemberId("member"); existing.setUsagePurpose("ARTICLE_IMAGE"); existing.setStatus("provider_running");
+        when(mapper.selectById(existing.getId())).thenReturn(existing);
+        assertThat(service.enqueueArticleImageJob("member", "合成正文", "合成配图", "gpt-6-astra", existing.getId())).isEqualTo(existing.getId());
+        verify(mapper, org.mockito.Mockito.times(20)).insertReadOnlyQueued(any());
+        assertThatThrownBy(() -> service.enqueueArticleImageJob("another", "合成正文", "合成配图", "gpt-6-astra", existing.getId())).hasMessageContaining("已被使用");
+    }
+
     @Test
     void unifiedDefaultRoutesReadOnlyJobsToApiAndFallsBackAfterRemoval() {
         AiRunAccountDto api = new AiRunAccountDto("aa1", "deepseek", "默认模型", "api_key",

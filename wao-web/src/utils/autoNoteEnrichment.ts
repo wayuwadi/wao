@@ -5,7 +5,6 @@ import { fetchPreference } from '@/api/favorites'
 import { newPolishRequestId, waitForPolish } from '@/api/polishJobs'
 import { fetchNotePolishVersions, saveNotePolishVersion, type NotePolishVersion } from '@/api/notePolishVersions'
 import { useDataStore } from '@/stores/data'
-import type { NoteAiDefaults } from '@/stores/preferences'
 import { ARTICLE_IMAGE_PREFERENCE_KEY, DEFAULT_ARTICLE_IMAGE_PROMPT } from '@/utils/articleImagePrompt'
 import { cloneRichContent, legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { resolveNoteModel } from '@/utils/noteAiModel'
@@ -31,8 +30,6 @@ const TITLE_PROMPT_KEY = 'note-title-prompt-v1'
 const DEFAULT_TITLE_PROMPT = '标题准确概括这条小记的主题，简洁自然，方便以后搜索；只返回一个标题。'
 const running = new Set<string>()
 const documentWrites = new Map<string, Promise<void>>()
-type ScheduledTask = { run: () => Promise<unknown>; resolve: (value?: unknown) => void; reject: (error: unknown) => void }
-const stageQueues = new Map<string, { active: number; capacity: number; queue: ScheduledTask[] }>()
 const discarded = new Set<string>()
 let activeMember = ''
 let loadGeneration = 0
@@ -91,45 +88,6 @@ export function noteTextForPolish(markdown: string): string {
   return markdown.replace(/^!\[文章总览图\]\([^\n]+\)\s*/u, '').trim()
 }
 
-function readExecutionSettings(value: string): Pick<NoteAiDefaults, 'executionMode' | 'maxConcurrent'> {
-  try {
-    const parsed = JSON.parse(value) as Partial<NoteAiDefaults>
-    return {
-      executionMode: parsed.executionMode === 'serial' ? 'serial' : 'parallel',
-      maxConcurrent: [1, 2, 3, 4, 5].includes(parsed.maxConcurrent as number)
-        ? parsed.maxConcurrent as NoteAiDefaults['maxConcurrent'] : 3,
-    }
-  } catch { return { executionMode: 'parallel', maxConcurrent: 3 } }
-}
-
-function drainStageQueue(memberId: string) {
-  const scheduler = stageQueues.get(memberId)
-  if (!scheduler) return
-  while (scheduler.active < scheduler.capacity && scheduler.queue.length) {
-    const task = scheduler.queue.shift()!
-    scheduler.active++
-    void task.run().then(task.resolve, task.reject).finally(() => {
-      scheduler.active--
-      drainStageQueue(memberId)
-    })
-  }
-}
-
-function scheduleStage<T>(memberId: string, settings: Pick<NoteAiDefaults, 'executionMode' | 'maxConcurrent'>,
-    task: () => Promise<T>): Promise<T> {
-  let scheduler = stageQueues.get(memberId)
-  if (!scheduler) {
-    scheduler = { active: 0, capacity: 1, queue: [] }
-    stageQueues.set(memberId, scheduler)
-  }
-  scheduler.capacity = settings.executionMode === 'serial' ? 1 : settings.maxConcurrent
-  const result = new Promise<T>((resolve, reject) => {
-    scheduler!.queue.push({ run: task, resolve: value => resolve(value as T), reject })
-  })
-  drainStageQueue(memberId)
-  return result
-}
-
 async function serializeDocumentWrite<T>(job: AutoJob, task: () => Promise<T>): Promise<T> {
   const key = keyOf(job.memberId, job.docId)
   const previous = documentWrites.get(key) ?? Promise.resolve()
@@ -160,9 +118,8 @@ async function run(job: AutoJob) {
     const source = await fetchDoc(job.docId)
     if (!activeJob(job)) return
     const articleText = noteTextForPolish(resolvedRichContent(source).markdown)
-    const [modelValue, executionValue] = await Promise.all([fetchPreference(MODEL_PREFERENCE_KEY), fetchPreference('note-ai-defaults-v1')])
+    const modelValue = await fetchPreference(MODEL_PREFERENCE_KEY)
     const model = resolveNoteModel(modelValue)
-    const execution = readExecutionSettings(executionValue)
     if (!articleText) throw new Error('正文为空，无法自动整理')
     if (data.docPending(job.docId) || hasUnsavedEdit(job.memberId, job.docId)) {
       throw new Error('小记有未保存编辑，请保存后重试；自动结果不会覆盖草稿')
@@ -223,7 +180,7 @@ async function run(job: AutoJob) {
       }
     }
     const stages = [
-      job.tagsEnabled === true && !job.tagsDone ? scheduleStage(job.memberId, execution, runTags) : Promise.resolve(),
+      job.tagsEnabled === true && !job.tagsDone ? runTags() : Promise.resolve(),
     ]
     const stageResults = await Promise.allSettled(stages)
     const rejectedStage = stageResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')

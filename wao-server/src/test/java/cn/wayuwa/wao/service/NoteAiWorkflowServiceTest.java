@@ -196,7 +196,7 @@ class NoteAiWorkflowServiceTest {
         assertThat(finalState.polishStatus()).isEqualTo("RUNNING");
     }
 
-    @Test void parallelModeRespectsTheSavedPerMemberConcurrencyLimit() {
+    @Test void legacyParallelLimitDoesNotBlockAnySelectedStage() {
         String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2);
         Workflow workflow = pendingAll("d1", "m1");
         when(workflows.lock("d1")).thenReturn(workflow);
@@ -211,14 +211,15 @@ class NoteAiWorkflowServiceTest {
                 .thenReturn(new TextPolishJobService.Result("job1", "PENDING", null, null, null, null));
         when(images.startNoteWorkflow(any(), any())).thenReturn(new ArticleImageJobDto("image1", "QUEUED", "等待生成", null));
 
+        when(images.startNoteWorkflow(any(), any())).thenReturn(new ArticleImageJobDto("image1", "QUEUED", "等待生成", null));
         service.advance("d1");
 
         verify(textJobs).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_TITLE"), any(), any(), any(), any());
         verify(images).startNoteWorkflow(any(), any());
-        verify(textJobs, never()).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_BODY"), any(), any(), any(), any());
+        verify(textJobs).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_BODY"), any(), any(), any(), any());
     }
 
-    @Test void serialPreferenceStartsOnlyTheFirstSelectedStage() {
+    @Test void legacySerialPreferenceStartsAllIndependentStages() {
         String body = "今天记录了一个重要的想法，想留待以后对照继续观察它是否成立，也想记下当时的场景和我为什么改变了看法。".repeat(2);
         Workflow workflow = pendingAll("d1", "m1");
         when(workflows.lock("d1")).thenReturn(workflow);
@@ -232,14 +233,15 @@ class NoteAiWorkflowServiceTest {
         when(textJobs.submit(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new TextPolishJobService.Result("job1", "PENDING", null, null, null, null));
 
+        when(images.startNoteWorkflow(any(), any())).thenReturn(new ArticleImageJobDto("image1", "QUEUED", "等待生成", null));
         service.advance("d1");
 
         verify(textJobs).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_TITLE"), any(), any(), any(), any());
-        verify(images, never()).startNoteWorkflow(any(), any());
-        verify(textJobs, never()).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_BODY"), any(), any(), any(), any());
+        verify(images).startNoteWorkflow(any(), any());
+        verify(textJobs).submit(any(), any(), org.mockito.ArgumentMatchers.eq("NOTE_BODY"), any(), any(), any(), any());
     }
 
-    @Test void switchingToSerialStillReadsAlreadyQueuedStagesWhileOtherNotesHoldTheSlot() {
+    @Test void legacySerialPreferenceReadsRunningStageAndStartsOtherIndependentStages() {
         Workflow w = pendingAll("d1", "m1").withImage("RUNNING", "image1", 1,
                 digestForTest(failureBody()), null);
         when(workflows.lock("d1")).thenReturn(w);
@@ -248,9 +250,11 @@ class NoteAiWorkflowServiceTest {
                 .thenReturn("{\"executionMode\":\"serial\"}");
         owned(note("m1", 1, failureBody()));
         when(images.get("m1", "image1")).thenReturn(new ArticleImageJobDto("image1", "RUNNING", "处理中", null));
+        when(textJobs.submit(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TextPolishJobService.Result("job1", "QUEUED", null, null, null, null));
         service.advance("d1");
         verify(images).get("m1", "image1");
-        verify(textJobs, never()).submit(any(), any(), any(), any(), any(), any(), any());
+        verify(textJobs, org.mockito.Mockito.times(2)).submit(any(), any(), any(), any(), any(), any(), any());
         verify(images, never()).startNoteWorkflow(any(), any());
     }
 

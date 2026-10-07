@@ -127,7 +127,7 @@ public class NoteAiWorkflowService {
         return status(reset);
     }
 
-    /** 推进符合成员并发偏好的阶段；工作流行锁防止重复入队和条件写回冲突。 */
+    /** 推进独立并行阶段；工作流行锁防止重复入队和条件写回冲突。 */
     @Transactional
     public void advance(String docId) {
         if (managed != null) { managed.advance(docId); return; }
@@ -147,15 +147,10 @@ public class NoteAiWorkflowService {
         }
         // 标签等元信息可独立保存；正文与标题没有变化时沿用当前版本继续 CAS。
         if (doc.rev() != workflow.baseRev()) workflow = workflow.withRev(doc.rev());
-        int capacity = executionCapacity(workflow.memberId());
-        // 串行与并行均共享成员槽位；切换为串行后仍续查先前已入队的阶段。
-        // 按标题、配图、润色的顺序填充空闲槽位。
-        // 三个阶段可同时运行；润色版本会以图片写回后的最终 Markdown 保存。
+        // 所有独立阶段均可入队；正文写回仍通过文档版本与工作流行锁保护。
         for (String stage : List.of("title", "image", "polish")) {
             String status = stageStatus(workflow, stage);
             if (!active(status)) continue;
-            boolean alreadyQueued = RUNNING.equals(status) && stageJobId(workflow, stage) != null;
-            if (!alreadyQueued && workflows.countRunningStages(workflow.memberId()) >= capacity) continue;
             workflow = advanceStage(workflow, stage, original);
         }
     }
@@ -186,34 +181,12 @@ public class NoteAiWorkflowService {
         return advanced;
     }
 
-    private int executionCapacity(String memberId) {
-        String saved = preferences.find(memberId, "note-ai-defaults-v1");
-        if (!StringUtils.hasText(saved)) return 3;
-        try {
-            JsonNode settings = json.readTree(saved);
-            if ("serial".equals(settings.path("executionMode").asText())) return 1;
-            int configured = settings.path("maxConcurrent").asInt(3);
-            return configured >= 1 && configured <= 5 ? configured : 3;
-        } catch (Exception ignored) {
-            return 3;
-        }
-    }
-
     private static String stageStatus(Workflow workflow, String stage) {
         return switch (stage) {
             case "title" -> workflow.titleStatus();
             case "image" -> workflow.imageStatus();
             case "polish" -> workflow.polishStatus();
             default -> SKIPPED;
-        };
-    }
-
-    private static String stageJobId(Workflow workflow, String stage) {
-        return switch (stage) {
-            case "title" -> workflow.titleJobId();
-            case "image" -> workflow.imageRunId();
-            case "polish" -> workflow.polishJobId();
-            default -> null;
         };
     }
 
@@ -276,25 +249,20 @@ public class NoteAiWorkflowService {
         if (markdown.startsWith("![文章总览图](") || markdown.strip().length() < 80) {
             return workflow.withImage(SKIPPED, workflow.imageRunId(), workflow.baseRev(), workflow.sourceMarkdownHash(), null);
         }
-        try {
-            String runId = workflow.imageRunId();
-            if (runId == null) {
-                var started = imageJobs.startNoteWorkflow(workflow.memberId(), new ArticleImageRequest(
-                        limit(markdown, 60_000), imagePrompt(workflow.memberId()), model(workflow.memberId()),
-                        requestId()));
-                return workflow.withImage(RUNNING, started.id(), workflow.baseRev(), workflow.sourceMarkdownHash(), null);
-            }
-            var result = imageJobs.get(workflow.memberId(), runId);
-            if ("FAILED".equals(result.status())) return workflow.withImage(FAILED, runId, workflow.baseRev(), workflow.sourceMarkdownHash(), result.message());
-            if (!"SUCCEEDED".equals(result.status())) return workflow;
-            if (!StringUtils.hasText(result.imageUrl())) return workflow.withImage(FAILED, runId, workflow.baseRev(), workflow.sourceMarkdownHash(), "配图任务未返回图片");
-            RichDocContentDto content = withCover(doc.content(), result.imageUrl());
-            DocDto saved = knowledge.updateDerivedNote(doc.id(), new PatchDocRequest(null, null, content, null, null, workflow.baseRev()));
-            return workflow.withImage(DONE, runId, saved.rev(), digest(content.markdown()), null);
-        } catch (RuntimeException ex) {
-            if (ex.getMessage() != null && ex.getMessage().contains("已有一张总览图正在生成")) return workflow;
-            throw ex;
+        String runId = workflow.imageRunId();
+        if (runId == null) {
+            var started = imageJobs.startNoteWorkflow(workflow.memberId(), new ArticleImageRequest(
+                    limit(markdown, 60_000), imagePrompt(workflow.memberId()), model(workflow.memberId()),
+                    requestId()));
+            return workflow.withImage(RUNNING, started.id(), workflow.baseRev(), workflow.sourceMarkdownHash(), null);
         }
+        var result = imageJobs.get(workflow.memberId(), runId);
+        if ("FAILED".equals(result.status())) return workflow.withImage(FAILED, runId, workflow.baseRev(), workflow.sourceMarkdownHash(), result.message());
+        if (!"SUCCEEDED".equals(result.status())) return workflow;
+        if (!StringUtils.hasText(result.imageUrl())) return workflow.withImage(FAILED, runId, workflow.baseRev(), workflow.sourceMarkdownHash(), "配图任务未返回图片");
+        RichDocContentDto content = withCover(doc.content(), result.imageUrl());
+        DocDto saved = knowledge.updateDerivedNote(doc.id(), new PatchDocRequest(null, null, content, null, null, workflow.baseRev()));
+        return workflow.withImage(DONE, runId, saved.rev(), digest(content.markdown()), null);
     }
 
     private Workflow advancePolish(Workflow workflow, DocDto doc) {

@@ -601,6 +601,8 @@ describe('小记集中记录空间', () => {
     expect(w.get('.composer-images figure.active').attributes('data-reading-image')).toBe('1')
     await w.get('.composer-images [aria-label="返回正文图 1的位置"]').trigger('click')
     expect(document.activeElement).toBe(w.get('[data-image-reference="1"]').element)
+    // Tiptap 的正文定位有下一帧聚焦；先让该操作收口，再独立验收图片预览的返回焦点。
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     await w.get('.composer-images .reading-image-open').trigger('click'); await flushPromises()
     expect(document.body.querySelector('.composer-image-lightbox img')?.getAttribute('src')).toBe('/api/images/one/raw')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await flushPromises()
@@ -881,7 +883,7 @@ describe('小记集中记录空间', () => {
     })
     const first = composer()
     expect(first.find('.auto-enrichment-choices').exists()).toBe(false)
-    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 3 })
+    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 0 })
     await first.find('textarea').setValue('按默认 AI 能力整理')
     await first.get('.save-note').trigger('click')
     await flushPromises()
