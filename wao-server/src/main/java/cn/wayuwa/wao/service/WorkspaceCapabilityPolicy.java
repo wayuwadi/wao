@@ -22,7 +22,8 @@ public record WorkspaceCapabilityPolicy(List<String> permissions, List<String> p
             "move_subtask", "move_task", "add_task_comment", "update_task_comment", "link_task_document",
             "schedule_task", "record_daily_note")).toList();
     public static final List<String> ALL = java.util.stream.Stream.concat(
-            java.util.stream.Stream.concat(READ.stream(), WRITE.stream()), java.util.stream.Stream.of("publish_html")).toList();
+            java.util.stream.Stream.concat(READ.stream(), WRITE.stream()),
+            java.util.stream.Stream.of("publish_html", "list_my_pets", "upload_pet", "share_pet")).toList();
 
     public WorkspaceCapabilityPolicy {
         if (permissions == null || permissions.isEmpty() || permissions.size() > ALL.size()
@@ -52,5 +53,5 @@ public record WorkspaceCapabilityPolicy(List<String> permissions, List<String> p
     /** 是否在知识库范围内；业务成员可见性仍需额外检查。 */
     public boolean permitsKnowledgeBase(String id) { return knowledgeBaseIds == null || knowledgeBaseIds.contains(id); }
     /** 用于兼容非敏感元数据的写操作标记，不能代替逐项检查。 */
-    public boolean canWrite() { return permissions.stream().anyMatch(WRITE::contains); }
+    public boolean canWrite() { return permissions.stream().anyMatch(p -> WRITE.contains(p) || List.of("upload_pet", "share_pet").contains(p)); }
 }

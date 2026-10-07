@@ -3,6 +3,7 @@ package cn.wayuwa.wao.controller;
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.*;
 import cn.wayuwa.wao.service.PetRepositoryService;
+import cn.wayuwa.wao.service.WorkspaceMcpTokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -15,24 +16,37 @@ import java.util.List;
 public class PetRepositoryController {
     private final PetRepositoryService pets;
     private final CurrentMember current;
-    public PetRepositoryController(PetRepositoryService pets, CurrentMember current) { this.pets = pets; this.current = current; }
+    private final WorkspaceMcpTokenService workspaceTokens;
+    public PetRepositoryController(PetRepositoryService pets, CurrentMember current, WorkspaceMcpTokenService workspaceTokens) {
+        this.pets = pets; this.current = current; this.workspaceTokens = workspaceTokens;
+    }
+    /** 上传字节前检查一项明确的 Pet CLI 权限，不接受浏览器会话替代设备授权。 */
+    @GetMapping("/api/pets/cli-access")
+    public ResponseEntity<ApiResponse<Boolean>> cliAccess(@RequestParam String operation, HttpServletRequest request) {
+        if (!List.of("list_my_pets", "upload_pet", "share_pet").contains(operation)) {
+            throw new BadRequestException("未知宠物操作");
+        }
+        tokenMember(request.getHeader(HttpHeaders.AUTHORIZATION), operation);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(ApiResponse.ok(true));
+    }
     @GetMapping("/api/public/pets")
     public ApiResponse<PetRepositoryService.Page> browse(@RequestParam(defaultValue="") String keyword, @RequestParam(defaultValue="1") int page) { return ApiResponse.ok(pets.browse(keyword, page)); }
     @GetMapping("/api/public/pets/{id}")
     public ApiResponse<PetRepositoryService.Card> detail(@PathVariable String id) { return ApiResponse.ok(pets.detail(id)); }
     @GetMapping("/api/pets/mine")
-    public ApiResponse<List<PetRepositoryService.Card>> mine(HttpServletRequest request) { return ApiResponse.ok(pets.mine(member(request))); }
+    public ApiResponse<List<PetRepositoryService.Card>> mine(HttpServletRequest request) { return ApiResponse.ok(pets.mine(operationMember(request, "list_my_pets"))); }
     @PostMapping(value="/api/pets", consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<PetRepositoryService.Card> create(@RequestPart(required=false) MultipartFile archive,
             @RequestParam(required=false) String manifest, @RequestPart(required=false) MultipartFile sprite,
             @RequestParam String source, @RequestParam String license, HttpServletRequest request) throws IOException {
-        return ApiResponse.ok(pets.create(member(request), archive == null ? null : archive.getBytes(), manifest,
+        String member = operationMember(request, "upload_pet");
+        return ApiResponse.ok(pets.create(member, archive == null ? null : archive.getBytes(), manifest,
                 sprite == null ? null : sprite.getBytes(), source, license));
     }
     public record Visibility(boolean listed, boolean rightsConfirmed) {}
     @PutMapping("/api/pets/{id}/visibility")
     public ApiResponse<PetRepositoryService.Card> visibility(@PathVariable String id, @RequestBody Visibility body, HttpServletRequest request) {
-        return ApiResponse.ok(pets.visibility(member(request), id, body.listed(), body.rightsConfirmed()));
+        return ApiResponse.ok(pets.visibility(operationMember(request, "share_pet"), id, body.listed(), body.rightsConfirmed()));
     }
     @GetMapping({"/api/public/pets/{id}/sprite", "/api/public/pets/{id}/download"})
     public ResponseEntity<byte[]> publicFile(@PathVariable String id, HttpServletRequest request) { return file(id, null, request); }
@@ -50,5 +64,18 @@ public class PetRepositoryController {
         String member = current.id(request);
         if (member == null) throw new UnauthorizedException("请先登录");
         return member;
+    }
+    private String operationMember(HttpServletRequest request, String operation) {
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        return authorization == null ? member(request) : tokenMember(authorization, operation);
+    }
+    private String tokenMember(String authorization, String operation) {
+        if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            throw new UnauthorizedException("工作区令牌无效或已吊销");
+        }
+        var token = workspaceTokens.authenticate(authorization.substring(7).trim());
+        if (token == null) throw new UnauthorizedException("工作区令牌无效或已吊销");
+        if (!token.permits(operation)) throw new ForbiddenException("此工作区令牌未获宠物操作权限，请在能力中心新建授权并选择对应 Pet 操作");
+        return token.memberId();
     }
 }

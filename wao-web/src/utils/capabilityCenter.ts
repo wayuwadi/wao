@@ -83,7 +83,7 @@ export const grantPresets = [
 export function presetPermissions(id: string, capabilities: WorkspaceCapability[]) {
   return capabilities
     .filter((capability) => {
-      if (capability.name === 'publish_html') return false
+      if (capability.name === 'publish_html' || capability.group === 'pets') return false
       if (id === 'read') return capability.readOnly
       if (id === 'notes')
         return [

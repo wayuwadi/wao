@@ -15,9 +15,13 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeAll;
 import org.mockito.ArgumentCaptor;
 
 class WorkspaceMcpTokenServiceTest {
+    @BeforeAll static void initializeMapperMetadata() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), WorkspaceMcpTokenEntity.class);
+    }
     private final WorkspaceMcpTokenMapper mapper = mock(WorkspaceMcpTokenMapper.class);
     private final WorkspaceMcpTokenService tokens = new WorkspaceMcpTokenService(mapper);
 

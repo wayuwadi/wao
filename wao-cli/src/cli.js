@@ -7,10 +7,11 @@ import { createClient, endpoint, hostedPageUrl } from './client.js'
 import { getToken, normalizeWorkspaceToken, readToken, removeToken, storeToken } from './auth.js'
 import { COMMANDS } from './commands.js'
 import { readUtf8, exportDocument } from './content.js'
+import { runPets, confirmPetShare } from './pets.js'
 export { COMMANDS } from './commands.js'
 
 // 子命令是人类友好的别名；参数定义和权限始终来自服务端 tools/list。
-export const VERSION = '0.2.0'
+export const VERSION = '0.3.0'
 
 const HELP = `WAO 工作区 CLI
 
@@ -45,6 +46,9 @@ const HELP = `WAO 工作区 CLI
   wao daily operation OPERATION_ID
   wao folders create | rename
   wao pages publish --file index.html --title 标题 --slug public-name [--project-id ID] [--yes]
+  wao pets list
+  wao pets upload --file PET.zip --source 素材来源 [--license ALL-RIGHTS-RESERVED]
+  wao pets share ID [--yes] | unshare ID
   wao tools list                 查看当前令牌实际可用的工具
   wao tools describe NAME        查看动态输入字段和必填条件
   wao tools call NAME --input '{"field":"value"}'
@@ -62,6 +66,8 @@ const HELP = `WAO 工作区 CLI
   wao notes create --title "系统功能介绍" --file article.md --system-generated true --tags '["新功能介绍"]'
   wao notes list --include-system false
   wao pages publish --file dist/index.html --title "分享稿" --slug share-draft
+  wao pets upload --file curly-trio.zip --source "本人创作"
+  wao pets share PET_ID --yes
 
 托管页发布：只接受 UTF-8 单文件 HTML，最大 10 MB；会公开生成公网链接。
 每次交互发布前均需确认；自动化须显式添加 --yes。请在能力中心“我的连接”CLI/MCP 新授权中选择发布 HTML。
@@ -346,7 +352,7 @@ async function prepareReceipt(toolName, args, receiptFile, receiptDirectory, std
 
 export async function run(argv, { stdout = process.stdout, stderr = process.stderr, stdin = process.stdin,
   tokenProvider = getToken, clientFactory = createClient, tokenStore = storeToken,
-  confirmHostedPage = confirmHostedHtml, receiptDirectory = defaultReceiptDirectory() } = {}) {
+  confirmHostedPage = confirmHostedHtml, confirmShare = confirmPetShare, receiptDirectory = defaultReceiptDirectory() } = {}) {
   const { rest, globals } = removeGlobalOptions(argv)
   const path = rest.slice(0, 2).join(' ')
   if (rest.length === 1 && (rest[0] === '--version' || rest[0] === '-v')) { stdout.write(VERSION + '\n'); return }
@@ -355,6 +361,10 @@ export async function run(argv, { stdout = process.stdout, stderr = process.stde
   }
   if (path === 'auth logout') { await removeToken(); stdout.write('已移除本机安全凭据库中的 WAO 令牌。\n'); return }
   const url = endpoint(globals.url)
+  if (rest[0] === 'pets') {
+    await runPets(rest, { url, stdout, stderr, stdin, tokenProvider, clientFactory, receiptDirectory, confirmShare, formatOutput, output: globals.output })
+    return
+  }
   if (path === 'auth login') {
     if (rest.length > 3 || (rest[2] && rest[2] !== '--token-stdin')) throw new Error('用法：wao auth login [--token-stdin]')
     const token = normalizeWorkspaceToken(await readToken({ stdin, stdout, fromStdin: rest[2] === '--token-stdin' }))

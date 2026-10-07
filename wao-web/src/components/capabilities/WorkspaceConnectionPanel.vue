@@ -50,6 +50,7 @@ const groupNames: Record<string, string> = {
   knowledge: '知识库与目录',
   documents: '文档',
   pages: 'HTML 发布',
+  pets: 'Pet 仓库',
 }
 const key = computed(() => `wao:capability-connection-draft:v1:${session.userId}`)
 const groupCapabilities = computed(() => props.capabilities.filter((c) => c.group === group.value))
@@ -82,8 +83,8 @@ const summary = computed(() => {
   const selected = props.capabilities.filter((c) => permissions.value.includes(c.name))
   return {
     read: selected.filter((c) => c.readOnly).length,
-    write: selected.filter((c) => !c.readOnly && c.name !== 'publish_html').length,
-    publish: selected.filter((c) => c.name === 'publish_html').length,
+    write: selected.filter((c) => !c.readOnly && !['publish_html', 'share_pet'].includes(c.name)).length,
+    publish: selected.filter((c) => ['publish_html', 'share_pet'].includes(c.name)).length,
   }
 })
 function scopeSummary(key: 'projectIds' | 'knowledgeBaseIds') {
@@ -129,7 +130,7 @@ function restoreDraft() {
   draft.value = {
     name: '',
     clientType: props.clientType ?? 'MCP',
-    permissions: props.capabilities.filter((c) => c.readOnly).map((c) => c.name),
+    permissions: props.capabilities.filter((c) => c.readOnly && c.group !== 'pets').map((c) => c.name),
     projectIds: null,
     knowledgeBaseIds: null,
   }
@@ -262,7 +263,7 @@ watch(
   (caps) => {
     try {
       if (!draft.value.permissions.length && !localStorage.getItem(key.value))
-        draft.value.permissions = caps.filter((c) => c.readOnly).map((c) => c.name)
+        draft.value.permissions = caps.filter((c) => c.readOnly && c.group !== 'pets').map((c) => c.name)
     } catch {
       storageError.value = '本机草稿存储不可用，请保持页面打开。'
     }
@@ -499,7 +500,7 @@ onBeforeUnmount(() => {
             @change="togglePermission(item.name, ($event.target as HTMLInputElement).checked)"
           /><strong>{{ item.title }}</strong
           ><span class="cap-badge">{{
-            item.readOnly ? '读取' : item.name === 'publish_html' ? '公开发布' : '写入'
+            item.readOnly ? '读取' : ['publish_html', 'share_pet'].includes(item.name) ? '公开发布' : '写入'
           }}</span></label
         >
         <p>{{ item.description }}</p>
@@ -518,7 +519,7 @@ onBeforeUnmount(() => {
         </details>
       </article>
     </div>
-    <div v-if="group !== 'pages'" ref="scopeSection" class="cap-resource-scope">
+    <div v-if="!['pages', 'pets'].includes(group)" ref="scopeSection" class="cap-resource-scope">
       <h3>数据范围 · {{ scopeLabel }}</h3>
       <p v-if="resourcesLoading" role="status">正在读取可选范围…</p>
       <div v-if="resourcesError" class="cap-error" role="alert">
@@ -560,6 +561,7 @@ onBeforeUnmount(() => {
         范围只收窄账号权限。项目与知识库的新建操作沿用 WAO 规则，不自动扩大限定范围。
       </p>
     </div>
+    <p v-else-if="group === 'pets'" class="cap-info">仅管理自己的宠物。上传先私人保存，公开分享需单独授权并确认素材分享权；项目和知识库范围不适用于宠物。</p>
     <p v-else class="cap-info">HTML 发布会生成公开页面，不获得已有页面的读取、修改或删除权限。</p>
     <p v-if="storageError" class="cap-error" role="alert">{{ storageError }}</p>
     <div v-if="issued" class="cap-issued">
