@@ -20,51 +20,71 @@ const edition: ReleaseEdition = {
   ],
 }
 describe('更新卡片开箱内容', () => {
-  it('新版新登记入口更新前可传递选择，当前版未知或错误关联不制造无关跳转', async () => {
-    const item = {...edition.highlights[0]!,action:{target:'future-settings-entry',label:'新分类'}}
-    const wrapper = mount(ReleaseUpdateContent,{props:{edition:{...edition,highlights:[item]},pending:true}})
-    await wrapper.get('.experience').trigger('click')
-    expect(wrapper.emitted('experience')?.[0]).toEqual([item])
-    await wrapper.setProps({pending:false})
+  it('一次只展示当前变化，所有变化都可选择，不再提供重复体验按钮', async () => {
+    const item = edition.highlights[0]!
+    const wrapper = mount(ReleaseUpdateContent, {
+      props: {
+        edition: {
+          ...edition,
+          highlights: [
+            item,
+            { ...item, title: '第二项' },
+            { ...item, title: '第三项' },
+            { ...item, title: '第四项独立变化' },
+          ],
+        },
+      },
+    })
+    expect(wrapper.findAll('article')).toHaveLength(1)
     expect(wrapper.find('.experience').exists()).toBe(false)
-    await wrapper.setProps({pending:true,edition:{...edition,highlights:[{...item,action:{target:'notes-reading',label:'错误关联'}}]}})
-    expect(wrapper.find('.experience').exists()).toBe(false)
-    wrapper.unmount()
-  })
-  it('变化点与步骤同时出现，展开后保留全部说明和所有变化', async () => {
-    const item = { ...edition.highlights[0]!, points: ['重要变化一', '重要变化二', '重要变化三'], steps: ['操作一', '操作二', '操作三'] }
-    const wrapper = mount(ReleaseUpdateContent, { props: { edition: { ...edition, highlights: [item, item, item, { ...item, title: '第四项独立变化' }] } } })
-    expect(wrapper.text()).toContain('重要变化一')
-    expect(wrapper.text()).toContain('操作一')
-    expect(wrapper.text()).not.toContain('重要变化三')
-    await wrapper.get('.details-toggle').trigger('click')
-    expect(wrapper.text()).toContain('重要变化三')
-    expect(wrapper.text()).toContain('操作三')
-    expect(wrapper.text()).not.toContain('第四项独立变化')
-    await wrapper.get('.more-changes').trigger('click')
-    expect(wrapper.text()).toContain('第四项独立变化')
+    expect(wrapper.findAll('input')).toHaveLength(4)
+    await wrapper.get('[aria-label="查看变化：第四项独立变化"]').setValue()
+    expect(wrapper.emitted('select')?.[0]).toEqual([3])
+    await wrapper.setProps({ selectedIndex: 3 })
+    expect(wrapper.get('h3').text()).toBe('第四项独立变化')
     await wrapper.setProps({ busy: true })
-    expect(wrapper.get('.more-changes').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.details-toggle').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('fieldset').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
-  it('标题只出现一次，直接展示用途与步骤，演示按需展开', async () => {
-    const wrapper = mount(ReleaseUpdateContent, { props: { edition, pending: true } })
-    expect(wrapper.findAll('h3')).toHaveLength(1)
+  it('变化点与步骤同时出现，展开状态随具体变化保留，新版重置', async () => {
+    const item = {
+      ...edition.highlights[0]!,
+      points: ['变化一', '变化二', '变化三'],
+      steps: ['操作一', '操作二', '操作三'],
+    }
+    const wrapper = mount(ReleaseUpdateContent, {
+      props: { edition: { ...edition, highlights: [item, { ...item, title: '另一项' }] } },
+    })
+    expect(wrapper.text()).toContain('变化一')
+    expect(wrapper.text()).toContain('操作一')
+    expect(wrapper.text()).not.toContain('变化三')
+    await wrapper.get('.details-toggle').trigger('click')
+    expect(wrapper.text()).toContain('变化三')
+    expect(wrapper.text()).toContain('操作三')
+    await wrapper.setProps({ selectedIndex: 1 })
+    expect(wrapper.text()).not.toContain('变化三')
+    await wrapper.setProps({ selectedIndex: 0 })
+    expect(wrapper.text()).toContain('变化三')
+    await wrapper.setProps({ edition: { ...edition, id: 'next', highlights: [item] } })
+    expect(wrapper.text()).not.toContain('变化三')
+    wrapper.unmount()
+  })
+  it('标题只出现一次，展示用途与步骤，演示按需展开', async () => {
+    const wrapper = mount(ReleaseUpdateContent, { props: { edition } })
     expect(wrapper.text().split('恢复连接')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('旧通用说明')
     expect(wrapper.text()).toContain('选择 WAO CLI 与 MCP')
     expect(wrapper.find('.feature-demo').exists()).toBe(false)
-    expect(wrapper.get('.experience').text()).toContain('去看看')
     await wrapper.get('.demo-toggle').trigger('click')
     expect(wrapper.get('.feature-demo').text()).toContain('连接你的工具')
     await wrapper.setProps({ edition: { ...edition, id: 'next' } })
     expect(wrapper.find('.feature-demo').exists()).toBe(false)
     wrapper.unmount()
   })
-  it('复杂演示只在点击时请求大图窗，保存中禁用体验和演示', async () => {
+  it('复杂演示只在点击时请求大图窗，保存中禁用演示和说明展开', async () => {
     const item = {
       ...edition.highlights[0]!,
+      points: ['一', '二', '三'],
       demo: { ...edition.highlights[0]!.demo!, presentation: 'window' as const },
     }
     const wrapper = mount(ReleaseUpdateContent, {
@@ -73,8 +93,8 @@ describe('更新卡片开箱内容', () => {
     await wrapper.get('.demo-toggle').trigger('click')
     expect(wrapper.emitted('demo')?.[0]).toEqual([item])
     await wrapper.setProps({ busy: true })
-    expect(wrapper.get('button.demo-toggle').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('button.experience').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.demo-toggle').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.details-toggle').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 })

@@ -23,7 +23,19 @@ vi.mock('@/utils/versionUpdate', async (original) => ({
   reloadToLatestVersion: vi.fn(),
 }))
 let wrapper: VueWrapper
-const upcoming = { ...CURRENT_RELEASE, attention: 'feature' as const, prominence: 'major' as const, title: '目标版本的更新内容', highlights: [{ ...CURRENT_RELEASE.highlights[0]!, title: '目标版本的更新内容', steps: ['打开对应功能', '按指引开始使用'] }] }
+const upcoming = {
+  ...CURRENT_RELEASE,
+  attention: 'feature' as const,
+  prominence: 'major' as const,
+  title: '目标版本的更新内容',
+  highlights: [
+    {
+      ...CURRENT_RELEASE.highlights[0]!,
+      title: '目标版本的更新内容',
+      steps: ['打开对应功能', '按指引开始使用'],
+    },
+  ],
+}
 const notify = (version: unknown) =>
   document.body.dispatchEvent(new CustomEvent(WEB_UPDATE_EVENT, { detail: { version } }))
 const click = async (selector: string) => {
@@ -35,11 +47,17 @@ async function render() {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
-      ...Object.values(MODULES).map(item => ({ path: item.path, component: { template: '<div />' } })),
+      ...Object.values(MODULES).map((item) => ({
+        path: item.path,
+        component: { template: '<div />' },
+      })),
     ],
   })
   await router.push('/')
-  wrapper = mount(VersionUpdateNotice, { attachTo: document.body, global: { plugins: [createPinia(), router] } })
+  wrapper = mount(VersionUpdateNotice, {
+    attachTo: document.body,
+    global: { plugins: [createPinia(), router] },
+  })
   return router
 }
 beforeEach(() => {
@@ -66,41 +84,93 @@ afterEach(() => {
 })
 
 describe('顶栏更新入口', () => {
-  it('去看看请求保存刷新后打开具体入口，失败可重试且旧页面不提前跳转', async () => {
-    const item = {...upcoming.highlights[0]!,featureId:'settings' as const,action:{target:'settings-about',label:'关于 WAO'}}
-    vi.mocked(fetchWebRelease).mockResolvedValue({version:'new1234',release:{...upcoming,highlights:[item]}})
-    const router = await render(); notify('new1234'); await flushPromises()
+  it('待更新可传递新版安全入口，错误关联与未知功能不提供体验', async () => {
+    const first = {
+      ...upcoming.highlights[0]!,
+      featureId: 'settings' as const,
+      title: '新版入口',
+      action: { target: 'future-settings-entry', label: '新分类' },
+    }
+    const wrong = {
+      ...first,
+      title: '错误关联',
+      action: { target: 'notes-reading', label: '错误关联' },
+    }
+    vi.mocked(fetchWebRelease).mockResolvedValue({
+      version: 'new1234',
+      release: { ...upcoming, highlights: [first, wrong] },
+    })
+    await render()
+    notify('new1234')
+    await flushPromises()
     await click('.experience')
-    expect(reloadToLatestVersion).toHaveBeenCalledWith('new1234',{featureId:'settings',action:item.action})
+    expect(reloadToLatestVersion).toHaveBeenCalledWith('new1234', {
+      featureId: 'settings',
+      action: first.action,
+    })
+    await click('[aria-label="查看变化：错误关联"]')
+    expect(document.querySelector('.experience')).toBeNull()
+    expect(document.querySelector('.update-button')?.textContent).toContain('保存并刷新')
+  })
+  it('去看看请求保存刷新后打开具体入口，失败可重试且旧页面不提前跳转', async () => {
+    const item = {
+      ...upcoming.highlights[0]!,
+      featureId: 'settings' as const,
+      action: { target: 'settings-about', label: '关于 WAO' },
+    }
+    vi.mocked(fetchWebRelease).mockResolvedValue({
+      version: 'new1234',
+      release: { ...upcoming, highlights: [item] },
+    })
+    const router = await render()
+    notify('new1234')
+    await flushPromises()
+    await click('.experience')
+    expect(reloadToLatestVersion).toHaveBeenCalledWith('new1234', {
+      featureId: 'settings',
+      action: item.action,
+    })
     expect(router.currentRoute.value.path).toBe('/')
-    reportWorkspaceReloadState({state:'saving'}); await nextTick()
+    reportWorkspaceReloadState({ state: 'saving' })
+    await nextTick()
     expect(document.querySelector<HTMLButtonElement>('.experience')!.disabled).toBe(true)
-    reportWorkspaceReloadState({state:'failed',message:'草稿保存失败'}); await nextTick()
+    reportWorkspaceReloadState({ state: 'failed', message: '草稿保存失败' })
+    await nextTick()
     expect(document.body.textContent).toContain('草稿保存失败')
     await click('.experience')
     expect(reloadToLatestVersion).toHaveBeenCalledTimes(2)
     expect(router.currentRoute.value.path).toBe('/')
   })
   it('小优化只显示更新入口，编辑期间重大更新延后提示', async () => {
-    vi.mocked(fetchWebRelease).mockResolvedValue({version:'minor-version',release:{...upcoming,prominence:'minor'}})
-    await render(); notify('minor-version'); await flushPromises()
+    vi.mocked(fetchWebRelease).mockResolvedValue({
+      version: 'minor-version',
+      release: { ...upcoming, prominence: 'minor' },
+    })
+    await render()
+    notify('minor-version')
+    await flushPromises()
     expect(document.querySelector('[role=dialog]')).toBeNull()
     expect(document.querySelector('.arriving')).toBeNull()
-    await click('.update-entry'); expect(document.body.textContent).toContain(upcoming.title)
-    await click('.later')
+    await click('.update-entry')
+    expect(document.body.textContent).toContain(upcoming.title)
+    await click('[aria-label="关闭更新内容"]')
     companionEditing.value = true
-    vi.mocked(fetchWebRelease).mockResolvedValue({version:'major-version',release:upcoming})
-    notify('major-version'); await flushPromises()
+    vi.mocked(fetchWebRelease).mockResolvedValue({ version: 'major-version', release: upcoming })
+    notify('major-version')
+    await flushPromises()
     expect(document.querySelector('[role=dialog]')).toBeNull()
     expect(sessionStorage.getItem('wao-update-arrival-version')).not.toBe('major-version')
-    companionEditing.value = false; await flushPromises()
+    companionEditing.value = false
+    await flushPromises()
     expect(document.querySelector('[role=dialog]')).not.toBeNull()
   })
-  it('设置页手动查看复用卡片，不重复开关，不再打开三页介绍',async()=>{
+  it('设置页手动查看复用卡片，不重复开关，不再打开三页介绍', async () => {
     await render()
-    openReleaseHighlights();await nextTick()
+    openReleaseHighlights()
+    await nextTick()
     expect(document.querySelector('.update-panel')).not.toBeNull()
-    openReleaseHighlights();await nextTick()
+    openReleaseHighlights()
+    await nextTick()
     expect(document.querySelectorAll('.update-panel')).toHaveLength(1)
     expect(document.querySelector('.release-tour')).toBeNull()
   })
@@ -113,6 +183,7 @@ describe('顶栏更新入口', () => {
     document.body.append(section)
     for (let index = 0; index < 2; index++) {
       await click('.update-entry')
+      await click('.history-toggle')
       await click('a[href="/features#recent-updates"]')
       await flushPromises()
       expect(document.querySelector('[role="dialog"]')).toBeNull()
@@ -138,7 +209,7 @@ describe('顶栏更新入口', () => {
     await flushPromises()
     expect(document.body.textContent).toContain(upcoming.title)
     expect(document.querySelector('[aria-label^="去体验"]')).toBeNull()
-    await click('.later')
+    await click('[aria-label="关闭更新内容"]')
     notify('new1234')
     await nextTick()
     expect(document.querySelector('[role="dialog"]')).toBeNull()
@@ -149,10 +220,19 @@ describe('顶栏更新入口', () => {
   })
   it('说明慢加载期间手动打开并收起，响应到达不重新弹出', async () => {
     let resolve!: (value: Awaited<ReturnType<typeof fetchWebRelease>>) => void
-    vi.mocked(fetchWebRelease).mockImplementationOnce(() => new Promise(done => { resolve = done }))
-    await render(); notify('new1234'); await nextTick()
-    await click('.update-entry'); await click('.later')
-    resolve({ version: 'new1234', release: upcoming }); await flushPromises()
+    vi.mocked(fetchWebRelease).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    await render()
+    notify('new1234')
+    await nextTick()
+    await click('.update-entry')
+    await click('[aria-label="关闭更新内容"]')
+    resolve({ version: 'new1234', release: upcoming })
+    await flushPromises()
     expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(sessionStorage.getItem('wao-update-arrival-version')).toBe('new1234')
     await click('.update-entry')
@@ -160,7 +240,10 @@ describe('顶栏更新入口', () => {
     expect(document.querySelector('.arriving')).toBeNull()
   })
   it('维护更新只保留入口，手动可读，无新功能动效', async () => {
-    vi.mocked(fetchWebRelease).mockResolvedValue({ version: 'new1234', release: { ...upcoming, attention: 'maintenance' } })
+    vi.mocked(fetchWebRelease).mockResolvedValue({
+      version: 'new1234',
+      release: { ...upcoming, attention: 'maintenance' },
+    })
     await render()
     notify('new1234')
     await flushPromises()
@@ -180,7 +263,7 @@ describe('顶栏更新入口', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     expect(document.querySelector('.arriving')).toBeNull()
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
-    await click('.later')
+    await click('[aria-label="关闭更新内容"]')
     await click('.update-entry')
     expect(document.querySelector('.arriving')).toBeNull()
     vi.mocked(fetchWebRelease).mockResolvedValue({ version: 'next-version', release: upcoming })
@@ -192,7 +275,11 @@ describe('顶栏更新入口', () => {
   })
   it('后台收到更新只在返回前台时展示，减少动态效果不播放动画', async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
-    vi.stubGlobal('matchMedia', () => ({ matches:true, addEventListener:vi.fn(), removeEventListener:vi.fn() }))
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
     await render()
     notify('new1234')
     await nextTick()
@@ -206,7 +293,7 @@ describe('顶栏更新入口', () => {
     vi.restoreAllMocks()
   })
   it('同标签页重新挂载不重复自动弹出，手动打开仍能读取目标说明', async () => {
-    sessionStorage.setItem('wao-update-arrival-version','new1234')
+    sessionStorage.setItem('wao-update-arrival-version', 'new1234')
     await render()
     notify('new1234')
     await nextTick()
@@ -216,7 +303,9 @@ describe('顶栏更新入口', () => {
     expect(document.body.textContent).toContain(upcoming.title)
   })
   it('隐藏锚点使用视口内位置，会话存储失败仍能提醒', async () => {
-    vi.spyOn(Storage.prototype,'setItem').mockImplementation(() => { throw new Error('blocked') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
     await render()
     notify('new1234')
     await flushPromises()
@@ -229,23 +318,89 @@ describe('顶栏更新入口', () => {
     const router = await render()
     await click('.update-entry')
     expect(document.body.textContent).toContain(CURRENT_RELEASE.highlights[0]!.title)
-    for (const highlight of CURRENT_RELEASE.highlights.slice(0, 3)) {
-      for (const point of highlight.points.slice(0, 2)) expect(document.body.textContent).toContain(point)
-    }
-    // 当前制品可能包含没有功能地图入口的提交，不给它制造失效的体验按钮。
-    const navigable = CURRENT_RELEASE.highlights.slice(0, 3).filter(item => (item.featureId !== 'changelog' || resolveReleaseAction(item.featureId, item.action)) && CURRENT_RELEASE.attention !== 'maintenance' && Object.prototype.hasOwnProperty.call(MODULES, item.featureId))
-    expect(document.querySelectorAll('[aria-label^="去体验"]')).toHaveLength(navigable.length)
-    for (const [index, highlight] of navigable.entries()) {
-      if (index) await click('.update-entry')
-      const links = document.querySelectorAll<HTMLButtonElement>('[aria-label^="去体验"]')
-      links[index]!.click()
+    expect(document.querySelector('.panel-content .experience')).toBeNull()
+    expect(document.querySelector('.explore-link')).toBeNull()
+    for (const [index, highlight] of CURRENT_RELEASE.highlights.entries()) {
+      if (!document.querySelector('.update-panel')) await click('.update-entry')
+      const options = document.querySelectorAll<HTMLInputElement>('.change-picker input')
+      if (options.length) {
+        options[index]!.checked = true
+        options[index]!.dispatchEvent(new Event('change'))
+        await nextTick()
+      }
+      for (const point of highlight.points.slice(0, 2))
+        expect(document.body.textContent).toContain(point)
+      const navigable =
+        (highlight.featureId !== 'changelog' ||
+          resolveReleaseAction(highlight.featureId, highlight.action)) &&
+        CURRENT_RELEASE.attention !== 'maintenance' &&
+        Object.prototype.hasOwnProperty.call(MODULES, highlight.featureId)
+      expect(document.querySelectorAll('.panel-actions button')).toHaveLength(navigable ? 1 : 0)
+      if (!navigable) continue
+      await click('.experience')
       await flushPromises()
       const destination = resolveReleaseAction(highlight.featureId, highlight.action)
-      if (destination && destination.id !== 'notes-compose') expect(router.currentRoute.value.path).toBe(destination.path)
-      else if (highlight.featureId === 'notes') { expect(useUiStore().modal).toBe('note'); useUiStore().closeModal() }
-      else expect(router.currentRoute.value.path).toBe(MODULES[highlight.featureId].path)
+      if (destination && destination.id !== 'notes-compose')
+        expect(router.currentRoute.value.path).toBe(destination.path)
+      else if (highlight.featureId === 'notes') {
+        expect(useUiStore().modal).toBe('note')
+        useUiStore().closeModal()
+      } else expect(router.currentRoute.value.path).toBe(MODULES[highlight.featureId].path)
       expect(document.querySelector('[role="dialog"]')).toBeNull()
     }
+  })
+  it('多项更新主按钮跟随选择，只保留一个', async () => {
+    const first = {
+      ...upcoming.highlights[0]!,
+      featureId: 'notes' as const,
+      title: '小记更新',
+      action: undefined,
+    }
+    const second = {
+      ...first,
+      featureId: 'settings' as const,
+      title: '关于更新',
+      action: { target: 'settings-about', label: '看看关于 WAO' },
+    }
+    vi.mocked(fetchWebRelease).mockResolvedValue({
+      version: 'new1234',
+      release: { ...upcoming, highlights: [first, second] },
+    })
+    await render()
+    notify('new1234')
+    await flushPromises()
+    expect(document.querySelectorAll('.panel-actions button')).toHaveLength(1)
+    expect(document.querySelector('.update-button')?.textContent).toContain('更新并去看看 · 小记')
+    await click('[aria-label="查看变化：关于更新"]')
+    expect(document.querySelector('.update-button')?.textContent).toContain(
+      '更新并去看看 · 关于 WAO',
+    )
+    await click('.update-button')
+    expect(reloadToLatestVersion).toHaveBeenCalledWith('new1234', {
+      featureId: 'settings',
+      action: second.action,
+    })
+    expect(document.querySelector('.later')).toBeNull()
+    expect(document.querySelector('.panel-actions a')).toBeNull()
+  })
+  it('维护说明只有安全更新，历史菜单 Esc 优先收起并恢复焦点', async () => {
+    vi.mocked(fetchWebRelease).mockResolvedValue({
+      version: 'new1234',
+      release: { ...upcoming, attention: 'maintenance' },
+    })
+    await render()
+    notify('new1234')
+    await flushPromises()
+    await click('.update-entry')
+    expect(document.querySelector('.experience')).toBeNull()
+    expect(document.querySelector('.update-button')?.textContent).toContain('保存并刷新')
+    await click('.history-toggle')
+    expect(document.querySelector('[role="menu"]')).not.toBeNull()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(document.querySelector('.update-panel')).not.toBeNull()
+    expect(document.activeElement).toBe(document.querySelector('.history-toggle'))
   })
   it('缺少说明时显示空状态，保存屏障失败可重试且不丢失目标版本', async () => {
     vi.mocked(fetchWebRelease).mockResolvedValue({ version: 'new1234', release: null })
@@ -260,8 +415,10 @@ describe('顶栏更新入口', () => {
     reportWorkspaceReloadState({ state: 'saving' })
     await nextTick()
     expect(document.querySelector<HTMLButtonElement>('.update-button')!.disabled).toBe(true)
-    expect(document.querySelector<HTMLButtonElement>('.later')!.disabled).toBe(true)
-    document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape' }))
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="关闭更新内容"]')!.disabled).toBe(
+      true,
+    )
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await nextTick()
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     reportWorkspaceReloadState({ state: 'failed', message: '保存失败，草稿已保留' })
@@ -271,7 +428,9 @@ describe('顶栏更新入口', () => {
     expect(reloadToLatestVersion).toHaveBeenCalledTimes(2)
   })
   it('版本错配不展示说明，重试后恢复', async () => {
-    vi.mocked(fetchWebRelease).mockResolvedValueOnce({ version: 'old', release: upcoming }).mockResolvedValueOnce({ version: 'old', release: upcoming })
+    vi.mocked(fetchWebRelease)
+      .mockResolvedValueOnce({ version: 'old', release: upcoming })
+      .mockResolvedValueOnce({ version: 'old', release: upcoming })
     await render()
     notify('new1234')
     await flushPromises()
