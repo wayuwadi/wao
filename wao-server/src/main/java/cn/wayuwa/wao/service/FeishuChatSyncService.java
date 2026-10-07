@@ -34,7 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 飞书任务收集共用配置与历史归档兼容服务；聊天记录同步已退役。
+ * 飞书共用配置与每日知识库归档；旧批量归档及 WAO 聊天同步仍退役。
  *
  * <p>一天一篇，标题就是那一天（{@code 飞书群聊 · 2026-07-25}），同一天重复运行覆盖同一篇，
  * 不会在知识库里堆同名文档。发言人按配置里的 ID → 人名映射还原（娃哥 / 娃弟 / 机器人通知），
@@ -84,13 +84,13 @@ public class FeishuChatSyncService implements JobHandler {
         return HANDLER;
     }
 
-    /** 定时 / 手动触发都走这里：同步「今天」的群聊记录。 */
+    /** 兼容旧执行器注册；原手动及自动化入口仍拒绝执行。 */
     @Override
     public String execute() {
         return syncDay(null);
     }
 
-    /** 定时执行严格同步本次 Cron 的计划日期；手动执行仍同步上海时区的今天。 */
+    /** 兼容旧计划点接口，不恢复泛自动化同步。 */
     @Override
     public String execute(cn.wayuwa.wao.domain.AutomationJobEntity job, LocalDateTime scheduledFireAt) {
         return syncDay(scheduledFireAt == null ? null : scheduledFireAt.toLocalDate());
@@ -98,7 +98,7 @@ public class FeishuChatSyncService implements JobHandler {
 
     /** 已退役的归档与飞书复盘入口统一拒绝，保留历史数据。 */
     public void requireSyncAvailable() {
-        throw new BadRequestException("飞书聊天记录同步已停用；请使用 WAO 原生聊天复盘");
+        throw new BadRequestException("旧飞书聊天记录同步已停用；每日归档请通过能力中心管理");
     }
 
     /** 当前配置（App Secret 只回脱敏形态）。 */
@@ -196,6 +196,79 @@ public class FeishuChatSyncService implements JobHandler {
             Runnable heartbeat) {
         return syncDayResult(day, false, expectedChatId, expectedKbId,
                 heartbeat == null ? () -> { } : heartbeat);
+    }
+
+    /** 仅供每日调度领取后调用；上海午夜处理前一天，旧批量及聊天入口仍退役。 */
+    ChatSyncDayResult archivePreviousDay(LocalDate runDay, String expectedChatId, String expectedKbId,
+            Runnable stillEnabled) {
+        LocalDate target = runDay.minusDays(1);
+        SyncConfig snapshot = syncConfig();
+        String chatId = requiredValue(snapshot.chatId(), "请先选择归档群聊");
+        String kbId = requiredValue(snapshot.kbId(), "请先选择归档知识库");
+        if (!chatId.equals(expectedChatId) || !kbId.equals(expectedKbId))
+            throw new BadRequestException("归档目标配置已变更");
+        Runnable guard = () -> {
+            stillEnabled.run();
+            SyncConfig current = syncConfig();
+            if (!java.util.Objects.equals(snapshot.appId(), current.appId())
+                    || !java.util.Objects.equals(snapshot.appSecret(), current.appSecret())
+                    || !chatId.equals(current.chatId()) || !kbId.equals(current.kbId()))
+                throw new BadRequestException("归档目标配置已变更");
+        };
+        guard.run();
+        long version = archiveVersions.nextVersion();
+        String token = token(snapshot);
+        long start = target.atStartOfDay(ZONE).toEpochSecond();
+        long end = runDay.atStartOfDay(ZONE).toEpochSecond();
+        // 秒级查询稍放宽边界；以消息的毫秒时间决定归属，兼容上游含/不含边界。
+        List<FeishuMessage> messages = feishu.listMessages(token, chatId, start - 1, end).stream()
+                .filter(message -> message.createTime() >= start * 1000 && message.createTime() < end * 1000)
+                .toList();
+        guard.run();
+        String chatName = hasText(snapshot.chatName()) ? snapshot.chatName().trim() : "群聊";
+        List<DocBlockDto> blocks = render(token, target, messages, senderNames(snapshot.senders()), chatName, guard);
+        guard.run();
+        String folderId = knowledge.ensureAutoFolder(kbId, target.getYear() + " 年 " + target.getMonthValue() + " 月").getId();
+        guard.run();
+        DocDto document = knowledge.upsertAutoDoc(kbId, folderId, "飞书群聊 · " + target.format(DAY),
+                blocks, chatId, target, version);
+        return new ChatSyncDayResult(target, chatId, chatName, kbId, document, List.copyOf(messages));
+    }
+
+    /** 正文：一条消息一段，图片单独成段，按小时分节。 */
+    private List<DocBlockDto> render(String token, LocalDate day, List<FeishuMessage> messages,
+            Map<String, String> names, String chatName, Runnable heartbeat) {
+        List<DocBlockDto> blocks = new ArrayList<>();
+        blocks.add(block(day.format(DAY) + " 00:00–23:59 的群聊记录，于次日上海 00:00 每日归档，"
+                + "每一天只运行一次；历史内容不补扫。", null, null, null));
+        if (messages.isEmpty()) {
+            blocks.add(paragraph("这一天群里没有消息。"));
+            return blocks;
+        }
+        String currentHour = "";
+        int processed = 0;
+        for (FeishuMessage m : messages) {
+            if (processed++ % 25 == 0) heartbeat.run();
+            if (m.deleted()) {
+                continue;
+            }
+            String time = Instant.ofEpochMilli(m.createTime()).atZone(ZONE).format(CLOCK);
+            String hour = time.substring(0, 2) + ":00";
+            if (!hour.equals(currentHour)) {
+                currentHour = hour;
+                blocks.add(heading(hour));
+            }
+            String who = names.getOrDefault(m.senderId(), shortId(m.senderId()));
+            // 多媒体也保留「时间 + 发言人 + 占位」，依旧不声称完成 OCR 或转写。
+            String text = reviewTextOf(m);
+            if (!text.isBlank()) {
+                blocks.add(paragraph("**" + time + " " + who + "**：" + text));
+            }
+            for (String url : imageUrls(token, m, chatName, heartbeat)) {
+                blocks.add(paragraph("![群聊图片](" + url + ")"));
+            }
+        }
+        return blocks;
     }
 
     private ChatSyncDayResult syncDayResult(LocalDate day, boolean notify) {
@@ -344,6 +417,45 @@ public class FeishuChatSyncService implements JobHandler {
     /** 消息里的图片：下载后转存图床，返回本地地址；下载或转存失败就跳过这一张。 */
 
 
+    private List<String> imageUrls(String token, FeishuMessage m, String chatName, Runnable heartbeat) {
+        List<String> keys = new ArrayList<>();
+        JsonNode content = readContent(m);
+        if ("image".equals(m.msgType())) {
+            String key = content.path("image_key").asText("");
+            if (!key.isBlank()) {
+                keys.add(key);
+            }
+        } else if ("post".equals(m.msgType())) {
+            for (JsonNode line : content.path("content")) {
+                for (JsonNode span : line) {
+                    if ("img".equals(span.path("tag").asText(""))) {
+                        String key = span.path("image_key").asText("");
+                        if (!key.isBlank()) {
+                            keys.add(key);
+                        }
+                    }
+                }
+            }
+        }
+        List<String> urls = new ArrayList<>();
+        for (String key : keys) {
+            heartbeat.run();
+            byte[] bytes = feishu.downloadImage(token, m.messageId(), key);
+            if (bytes == null || bytes.length == 0) {
+                throw new IllegalStateException("ARCHIVE_IMAGE_DOWNLOAD_FAILED");
+            }
+            try {
+                // 复用按内容去重的既有图床，归档图片长期可访问。
+                ImageItemDto stored = images.store(bytes, "image/png", key + ".png",
+                        "飞书群聊 · " + chatName, true);
+                urls.add(stored.url());
+            } catch (RuntimeException ex) {
+                throw new IllegalStateException("ARCHIVE_IMAGE_STORE_FAILED", ex);
+            }
+        }
+        return urls;
+    }
+
     private JsonNode readContent(FeishuMessage m) {
         try {
             return json.readTree(m.content() == null || m.content().isBlank() ? "{}" : m.content());
@@ -422,6 +534,26 @@ public class FeishuChatSyncService implements JobHandler {
 
 
 
+
+    /** 没映射上的发言人：留一段可辨识的 ID，方便回配置页补上。 */
+    private static String shortId(String senderId) {
+        if (senderId == null || senderId.isBlank()) {
+            return "未知成员";
+        }
+        return senderId.length() <= 10 ? senderId : "成员 " + senderId.substring(senderId.length() - 6);
+    }
+
+    private static DocBlockDto paragraph(String text) {
+        return block(null, null, text, null);
+    }
+
+    private static DocBlockDto heading(String text) {
+        return block(null, text, null, null);
+    }
+
+    private static DocBlockDto block(String call, String h, String p, List<String> ul) {
+        return new DocBlockDto(call, h, p, ul, null);
+    }
 
     private static String trimmed(String value) {
         return value == null ? null : value.trim();

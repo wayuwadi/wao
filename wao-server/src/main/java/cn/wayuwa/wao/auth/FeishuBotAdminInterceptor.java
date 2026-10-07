@@ -21,7 +21,8 @@ public class FeishuBotAdminInterceptor implements HandlerInterceptor, WebMvcConf
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(this).addPathPatterns("/api/settings/webhooks", "/api/settings/webhooks/**",
                 "/api/settings/feishu-webhook", "/api/settings/feishu-webhook/**",
-                "/api/feishu/chat-sync/**", "/api/feishu/quick-collect/config");
+                "/api/feishu/chat-sync/**", "/api/feishu/quick-collect/config",
+                "/api/feishu/daily-archive", "/api/feishu/daily-archive/**");
     }
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {

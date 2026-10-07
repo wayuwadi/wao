@@ -59,6 +59,22 @@ class AutomationServiceTest {
     }
 
     @Test
+    void privateDailyArchiveCannotBeManipulatedByGenericAutomationApis() {
+        var reserved = job("正常"); reserved.setId(FeishuDailyArchiveService.JOB_ID);
+        reserved.setHandler(FeishuDailyArchiveService.JOB_ID);
+        when(jobMapper.selectById(FeishuDailyArchiveService.JOB_ID)).thenReturn(reserved);
+        assertThatThrownBy(() -> service.runJob(reserved.getId(), null)).hasMessageContaining("已下线");
+        assertThatThrownBy(() -> service.pauseJob(reserved.getId())).hasMessageContaining("飞书设置");
+        assertThatThrownBy(() -> service.resumeJob(reserved.getId())).hasMessageContaining("已下线");
+        assertThatThrownBy(() -> service.reauthJob(reserved.getId())).hasMessageContaining("已下线");
+        assertThatThrownBy(() -> service.updateJob(reserved.getId(), null)).hasMessageContaining("飞书设置");
+        assertThatThrownBy(() -> service.deleteJob(reserved.getId())).hasMessageContaining("不能删除");
+        service.executeScheduled(reserved);
+        org.mockito.Mockito.verifyNoInteractions(runMapper);
+        verify(jobMapper, org.mockito.Mockito.never()).updateById(any(AutomationJobEntity.class));
+    }
+
+    @Test
     void createJobDefaultsToNormalStatusAndNoCron() {
         when(jobMapper.selectCount(null)).thenReturn(0L);
 

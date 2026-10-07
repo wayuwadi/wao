@@ -9,6 +9,7 @@ import {
   saveChatSyncConfig,
   saveQuickCollectConfig,
   fetchFeishuChats,
+  fetchFeishuDailyArchive,
 } from '@/api/system'
 vi.mock('@/api/system', () => ({
   fetchChatSyncConfig: vi.fn(),
@@ -16,6 +17,8 @@ vi.mock('@/api/system', () => ({
   saveChatSyncConfig: vi.fn(),
   saveQuickCollectConfig: vi.fn(),
   fetchFeishuChats: vi.fn(),
+  fetchFeishuDailyArchive: vi.fn(),
+  saveFeishuDailyArchive: vi.fn(),
 }))
 const cfg = {
   appId: 'app',
@@ -50,6 +53,18 @@ beforeEach(() => {
     createdAt: '',
   })
   vi.mocked(fetchChatSyncConfig).mockResolvedValue(structuredClone(cfg))
+  vi.mocked(fetchFeishuDailyArchive).mockResolvedValue({
+    enabled: false,
+    configured: true,
+    timezone: 'Asia/Shanghai',
+    schedule: '0 0 0 * * *',
+    nextRunAt: null,
+    appId: cfg.appId,
+    chatId: cfg.chatId,
+    chatName: cfg.chatName,
+    kbId: cfg.kbId,
+    latestRun: null,
+  })
   vi.mocked(fetchQuickCollectConfig).mockResolvedValue(structuredClone(quick))
   vi.mocked(saveChatSyncConfig).mockResolvedValue(structuredClone(cfg))
   vi.mocked(saveQuickCollectConfig).mockResolvedValue(structuredClone(quick))

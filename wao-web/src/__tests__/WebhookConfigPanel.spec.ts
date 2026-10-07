@@ -101,7 +101,7 @@ describe('能力中心机器人真实引用与草稿', () => {
   it('展示真实引用和脱敏地址，发送测试不冒充群收集成功', async () => {
     await render()
     expect(wrapper!.text()).toContain('群消息创建个人待办')
-    expect(wrapper!.text()).toContain('群聊收集尚未验证')
+    expect(wrapper!.text()).toContain('@ 快捷记录尚未验证')
     expect(wrapper!.text()).toContain('••••1234')
     expect((wrapper!.get('input[type=password]').element as HTMLInputElement).value).toBe('')
     await button('运行记录').trigger('click')

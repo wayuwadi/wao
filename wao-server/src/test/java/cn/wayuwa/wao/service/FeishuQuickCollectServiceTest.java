@@ -210,54 +210,6 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
-    void authenticatedPollingReadsFlightAndReusesTheSameDispatchGate() {
-        var reaction = new FeishuMessageReaction(
-                "reaction-1", "on_sender", "user", "1787900000000", "StatusInFlight");
-        when(feishu.listMessageReactions("token", "om_source", "StatusInFlight"))
-                .thenReturn(List.of(reaction));
-
-        service.triggerPolledReaction("token", "om_source");
-
-        verify(reactionAiRuns).triggerPolled("om_source", reaction, "https://wao.wayuwa.cn");
-    }
-
-    @Test
-    void pollingChecksTheSameMessageReactionOnlyOnceWithinFiveMinutes() {
-        when(feishu.listMessageReactions("token", "om_source", "StatusInFlight"))
-                .thenReturn(List.of());
-
-        service.triggerPolledReaction("token", "om_source");
-        service.triggerPolledReaction("token", "om_source");
-
-        verify(feishu, org.mockito.Mockito.times(1))
-                .listMessageReactions("token", "om_source", "StatusInFlight");
-    }
-
-    @Test
-    void failedReactionReadCanRetryOnTheNextPoll() {
-        when(feishu.listMessageReactions("token", "om_source", "StatusInFlight"))
-                .thenThrow(new RuntimeException("unavailable"))
-                .thenReturn(List.of());
-
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-                () -> service.triggerPolledReaction("token", "om_source"))
-                .isInstanceOf(RuntimeException.class);
-        service.triggerPolledReaction("token", "om_source");
-
-        verify(feishu, org.mockito.Mockito.times(2))
-                .listMessageReactions("token", "om_source", "StatusInFlight");
-    }
-
-    @Test
-    void pollingSkipsExternalApiAfterMessageWasAlreadyDispatched() {
-        when(reactionAiRuns.hasTriggered("om_source")).thenReturn(true);
-
-        service.triggerPolledReaction("token", "om_source");
-
-        verify(feishu, never()).listMessageReactions(any(), any(), any());
-    }
-
-    @Test
     void mentioningTheBotCreatesATaggedTask() {
         enabled();
 
@@ -266,6 +218,7 @@ class FeishuQuickCollectServiceTest {
 
         verify(tasks).createFromChat(eq("p1"), eq("做一个群里 @ 机器人就能建任务的功能"),
                 eq("做一个群里 @ 机器人就能建任务的功能"), eq("wd"), eq(FeishuQuickCollectService.SOURCE_TAG));
+        verify(feishu, never()).listMessageReactions(any(), any(), any());
     }
 
     @Test

@@ -99,6 +99,7 @@ export interface FeishuWebhookActivity {
     chatName?: string
     eventUrl: string
     pollIntervalMinutes: number
+    receptionMode?: 'EVENT'
   }
   canDelete: boolean
   replacementName?: string
@@ -200,6 +201,30 @@ export const saveChatSyncConfig = (payload: {
 export const fetchFeishuChats = () => get<FeishuChat[]>('/api/feishu/chat-sync/chats')
 export const fetchFeishuChatMembers = (chatId: string) =>
   get<FeishuSender[]>('/api/feishu/chat-sync/members', { chatId })
+/** 每日午夜归档；旧批量同步接口仍停用。 */
+export interface FeishuDailyArchive {
+  enabled: boolean
+  timezone: string
+  schedule: string
+  nextRunAt: string | null
+  configured: boolean
+  appId: string
+  chatId: string
+  chatName: string
+  kbId: string
+  latestRun: {
+    archiveDate: string
+    status: 'RUNNING' | 'SUCCESS' | 'FAILED'
+    runAt: string
+    durationMs: number | null
+    errorCode: string | null
+    docId: string | null
+    messageCount: number | null
+  } | null
+}
+export const fetchFeishuDailyArchive = () => get<FeishuDailyArchive>('/api/feishu/daily-archive')
+export const saveFeishuDailyArchive = (payload: { enabled: boolean; expectedEnabled: boolean }) =>
+  put<FeishuDailyArchive>('/api/feishu/daily-archive', payload)
 /** 手动同步一天（默认今天）或一段连续日期，返回结果摘要。 */
 export const runChatSync = (range?: { day?: string; startDay?: string; endDay?: string }) =>
   post<string>('/api/feishu/chat-sync/run', range)

@@ -75,7 +75,13 @@ public class AutomationService {
     }
 
     private static boolean retiredHandler(AutomationJobEntity job) {
-        return "feishu-chat-sync".equals(job.getHandler()) || "shared-chat-nightly-sync".equals(job.getHandler()) || "http-performance-ai-run".equals(job.getHandler()) || "weknora-content-sync".equals(job.getHandler());
+        return FeishuDailyArchiveService.JOB_ID.equals(job.getId()) || FeishuDailyArchiveService.JOB_ID.equals(job.getHandler())
+                || "feishu-chat-sync".equals(job.getHandler()) || "shared-chat-nightly-sync".equals(job.getHandler()) || "http-performance-ai-run".equals(job.getHandler()) || "weknora-content-sync".equals(job.getHandler());
+    }
+
+    private static void requireOrdinaryJob(AutomationJobEntity job) {
+        if (FeishuDailyArchiveService.JOB_ID.equals(job.getId()))
+            throw new cn.wayuwa.wao.common.BadRequestException("每日群归档请通过飞书设置管理，运行凭证不能删除");
     }
 
     private static void requireActiveHandler(AutomationJobEntity job) {
@@ -92,6 +98,8 @@ public class AutomationService {
 
     /** 新建自动化任务。 */
     public AutomationJobDto createJob(CreateJobRequest req) {
+        if (FeishuDailyArchiveService.JOB_ID.equals(req.handler()))
+            throw new cn.wayuwa.wao.common.BadRequestException("每日群归档请通过飞书设置管理");
         validateCron(req.cronExpr());
         AutomationJobEntity e = new AutomationJobEntity();
         e.setId("j" + System.currentTimeMillis());
@@ -115,6 +123,9 @@ public class AutomationService {
     /** 局部更新自动化任务。 */
     public AutomationJobDto updateJob(String id, PatchJobRequest req) {
         AutomationJobEntity e = requireJob(id);
+        requireOrdinaryJob(e);
+        if (FeishuDailyArchiveService.JOB_ID.equals(req.handler()))
+            throw new cn.wayuwa.wao.common.BadRequestException("每日群归档请通过飞书设置管理");
         if (req.name() != null && !req.name().isBlank()) {
             e.setName(req.name().trim());
         }
@@ -149,7 +160,7 @@ public class AutomationService {
 
     /** 删除自动化任务，级联删除其运行记录。 */
     public void deleteJob(String id) {
-        requireJob(id);
+        requireOrdinaryJob(requireJob(id));
         runMapper.delete(new LambdaQueryWrapper<AutomationRunEntity>().eq(AutomationRunEntity::getJobId, id));
         jobMapper.deleteById(id);
     }
@@ -176,6 +187,7 @@ public class AutomationService {
     /** 暂停任务：停止按计划自动执行，可仍手动触发。 */
     public AutomationJobDto pauseJob(String id) {
         AutomationJobEntity e = requireJob(id);
+        requireOrdinaryJob(e);
         e.setStatus("已暂停");
         jobMapper.updateById(e);
         return getJob(id);
