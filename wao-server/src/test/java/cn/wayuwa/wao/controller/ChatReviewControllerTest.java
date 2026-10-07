@@ -37,7 +37,7 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(ChatReviewController.class)
+@WebMvcTest(controllers = ChatReviewController.class, excludeFilters = @org.springframework.context.annotation.ComponentScan.Filter(type = org.springframework.context.annotation.FilterType.ASSIGNABLE_TYPE, classes = cn.wayuwa.wao.auth.FeishuBotAdminInterceptor.class))
 @Import(GlobalExceptionHandler.class)
 class ChatReviewControllerTest {
 
