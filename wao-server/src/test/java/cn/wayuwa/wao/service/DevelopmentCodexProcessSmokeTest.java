@@ -25,9 +25,15 @@ class DevelopmentCodexProcessSmokeTest {
         assertThat(result.answer().path("validation").toString()).as("实际合约结果：%s",result.answer()).contains("fixture-verified-421");
         assertThat(result.successfulCommands()).isPositive();
         assertThat(Files.readString(work.resolve("probe.txt"))).isEqualTo("fixture-verified-421");
-        var written=DevelopmentCodexProcess.run(System.getProperty("wao.development.executable","codex"),work,directory.resolve("write-output"),schema,
-            "这是本机workspace-write合约验收。只把probe.txt内容改成fixture-written-422，读取确认后在validation中记录精确内容。不得联网、不读取其他目录、不commit。noChange=false；所有不适用字段为空字符串、空数组或false；recommendedIndex=0。",false,Duration.ofMinutes(4),id->{});
+        Path writeOutput=directory.resolve("write-output");
+        var written=DevelopmentCodexProcess.run(System.getProperty("wao.development.executable","codex"),work,writeOutput,schema,
+            "这是本机workspace-write合约验收。源码只把当前工作区probe.txt内容改成fixture-written-422。"
+            +"另已授权本次专用产物目录："+writeOutput.toAbsolutePath()+"，仅在其中创建probe-artifact.txt，内容fixture-artifact-423。"
+            +"读取两个文件确认后在validation中记录其精确内容。不得联网、不读取其他外部目录、不commit。noChange=false；所有不适用字段为空字符串、空数组或false；recommendedIndex=0。",false,Duration.ofMinutes(4),id->{});
         assertThat(written.answer().path("blockedReason").asText()).isBlank();
+        assertThat(written.successfulCommands()).isPositive();
         assertThat(Files.readString(work.resolve("probe.txt"))).isEqualTo("fixture-written-422");
+        assertThat(Files.readString(writeOutput.resolve("probe-artifact.txt"))).isEqualTo("fixture-artifact-423");
+        assertThat(written.answer().path("validation").toString()).contains("fixture-written-422","fixture-artifact-423");
     }
 }

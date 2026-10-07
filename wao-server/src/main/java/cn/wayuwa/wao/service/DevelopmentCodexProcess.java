@@ -27,6 +27,10 @@ final class DevelopmentCodexProcess {
                 "-c","windows.sandbox=\"elevated\"",
                 "--model","gpt-6.1-sol","--cd",worktree.toString(),"--json","--color","never",
                 "--output-schema",schema.toString(),"--output-last-message",output.toString(),"-"));
+        if(!analysis) {
+            args.add(args.size()-1,"--add-dir");
+            args.add(args.size()-1,output.toAbsolutePath().normalize().getParent().toString());
+        }
         return args;
     }
     static Result run(String executable, Path worktree, Path directory, Path schema, String prompt,
