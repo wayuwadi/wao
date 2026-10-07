@@ -11,6 +11,12 @@ const router = createRouter({
   history: createWebHistory('/'),
   routes: [
     {
+      path: '/design',
+      name: 'design-reference',
+      component: () => import('@/views/DesignReferenceView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/connection-recovery',
       name: 'connection-recovery',
       component: () => import('@/views/ConnectionRecoveryView.vue'),
