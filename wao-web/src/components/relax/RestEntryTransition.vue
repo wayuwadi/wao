@@ -3,6 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { isNavigationFailure, NavigationFailureType, useRouter } from 'vue-router'
 import { completeRestJourney } from '@/composables/restJourney'
 import RestCompanions from './RestCompanions.vue'
+import { COMPANIONS } from '@/utils/companionIdentity'
+
+const companionNames = [COMPANIONS.painter.name, COMPANIONS.bookworm.name, COMPANIONS.frog.name]
 
 const router = useRouter()
 const phase = ref<'collect' | 'invite' | 'depart' | 'flip' | 'arrive' | 'error'>('collect')
@@ -145,7 +148,7 @@ onBeforeUnmount(()=>{
       </div>
       <div v-if="phase==='invite' || phase==='depart' || phase==='arrive'" class="entry-crew">
         <div v-if="phase==='arrive'" class="arrival-door" aria-hidden="true"></div>
-        <p class="crew-speech" role="status"><small v-if="phase!=='invite'">{{ ['小画家','小书虫','小青蛙'][reacting>=0 ? reacting : speaker] }}</small>{{ speech }}</p>
+        <p class="crew-speech" role="status"><small v-if="phase!=='invite'">{{ companionNames[reacting>=0 ? reacting : speaker] }}</small>{{ speech }}</p>
         <RestCompanions :welcoming="phase==='invite'" :reduced="reduced" :journey="phase==='depart' || phase==='arrive' ? phase : undefined" :progress="progress" :paused="paused" :reacting="reacting" @greet="greet" />
       </div>
       <p v-if="phase==='depart' || phase==='arrive'" class="entry-interaction">{{ phase==='depart' ? '轻轻点一下伙伴，和它打个招呼' : '先感受阳光、空气和风，再一起呼吸' }}</p>

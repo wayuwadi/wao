@@ -8,6 +8,7 @@ import { inspirationNotes, inspirationExcerpt, inspirationQuestions } from './ho
 import type { Doc } from '@/types'
 import { CAPTURE_LIMIT, captureText } from './companionPlay'
 import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
+import { COMPANIONS } from '@/utils/companionIdentity'
 
 const session = useSessionStore()
 const open = ref(false)
@@ -122,7 +123,7 @@ defineExpose({ show, showCapture })
       <p v-if="receiveError" role="alert">{{ receiveError }}</p>
       <div v-if="!receiving && !capturing" class="paper-top"><span><i class="ri-sparkling-line" aria-hidden="true"></i> {{ mode === 'memory' ? '从自己的小记，遇见一个旧念头' : '一个小问题，换个角度想想' }}</span><button type="button" :disabled="loading" @click="changeMode">{{ mode === 'memory' ? '换个问题' : '翻翻旧小记' }}</button></div>
       <div v-if="!receiving && !capturing" class="paper-prompt" aria-live="polite">
-        <p v-if="mode === 'memory' && loading" role="status">小书虫正在翻找你的小记…</p>
+      <p v-if="mode === 'memory' && loading" role="status">{{ COMPANIONS.bookworm.name }}正在翻找你的小记…</p>
         <template v-else-if="mode === 'memory' && error"><p role="alert">{{ error }}</p><button type="button" @click="load">再试一次</button></template>
         <template v-else-if="mode === 'memory' && memory"><small>来自你的小记 · {{ memory.updated.slice(0, 10) }}</small><strong>{{ memory.title || '无标题小记' }}</strong><p>{{ inspirationExcerpt(memory) }}</p></template>
         <template v-else><small v-if="mode === 'memory'">还没有可回顾的小记，先从一个问题开始。</small><p class="question">{{ question }}</p></template>
