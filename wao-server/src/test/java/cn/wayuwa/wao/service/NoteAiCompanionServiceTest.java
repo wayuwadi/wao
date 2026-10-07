@@ -33,6 +33,15 @@ class NoteAiCompanionServiceTest {
     }
     DocDto doc(String text,String title,int rev){return new DocDto("n",title,"m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,text),List.of(),"kb-notes",null,rev,List.of("思考"));}
     String capture(String stage,String text){String id=UUID.randomUUID().toString().replace("-","");service.capture(Map.of("id",id,"member_id","m","source_json",settings.write(current),"stage",stage),text);return id;}
+    @Test void reviewingAnImageKeepsLegacyParagraphsAndRestoreOnlyRemovesCover(){
+        String body="飞书记录第一段。\n\n第二段及原图：![原图](/api/images/original/raw)";
+        current=new DocDto("n","临时标题","m",null,null,false,List.of(),List.of(new DocBlockDto(null,null,body,null,null)),null,List.of(),"kb-notes",null,1);
+        String image=capture("image","/api/images/new/raw");
+        service.action("m",image,"apply",1);
+        assertThat(current.content().markdown()).startsWith("![文章总览图](/api/images/new/raw").endsWith(body);
+        service.action("m",image,"restore",2);
+        assertThat(current.content().markdown()).isEqualTo(body);
+    }
     @Test void pendingOutcomeAndExplicitSeenAreIndependent(){String id=capture("polish","数字为 75%，不是 70%。");assertThat(db.queryForObject("SELECT application FROM note_ai_artifact WHERE id=?",String.class,id)).isEqualTo("PENDING");assertThat(service.receipts("m")).hasSize(1);service.action("m",id,"seen",null);assertThat(service.receipts("m")).isEmpty();assertThat(db.queryForObject("SELECT application FROM note_ai_artifact WHERE id=?",String.class,id)).isEqualTo("PENDING");}
     @Test void staleCandidateDoesNotOverwriteEditedBody(){String id=capture("polish","建议文字");current=doc("我已经改成另一篇内容","手动标题",2);assertThatThrownBy(()->service.action("m",id,"apply",2)).isInstanceOf(ConflictException.class);verify(knowledge,never()).updateDerivedNote(any(),any());}
     @Test void applyAndRestorePreserveLaterTitleEdit(){String id=capture("polish","数字为 75%，不是 70%。");service.action("m",id,"apply",1);current=doc(current.content().markdown(),"用户后来改的标题",3);service.action("m",id,"restore",3);assertThat(current.title()).isEqualTo("用户后来改的标题");assertThat(current.content().markdown()).contains("75%","不是 70%");assertThat(current.content().markdown()).startsWith("原稿");}

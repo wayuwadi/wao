@@ -42,7 +42,7 @@ public class NoteAiCompanionService {
         if(one("SELECT id FROM doc WHERE id=? AND author_id=? AND kb_id='kb-notes' AND deleted_at IS NULL AND archived_at IS NULL",id,member)==null)throw new NotFoundException("小记不存在或不可访问");
         return knowledge.getObject().getDoc(id);
     }
-    private static String body(DocDto doc){return doc.content()==null?"":Objects.toString(doc.content().markdown(),"");}
+    private static String body(DocDto doc){return NoteMarkdown.of(doc);}
     /** 文字依赖不受系统配图变化影响；原图引用仍单独保护。 */
     public static String textDependency(String body){return NoteAiSettingsService.hash(body.replaceAll("!\\[[^]]*]\\([^\\n]*?\\)","").replaceAll("\\s+"," ").strip());}
     private String dependency(DocDto doc,String stage){return "title".equals(stage)?NoteAiSettingsService.hash(doc.title()+textDependency(body(doc))):textDependency(body(doc));}
