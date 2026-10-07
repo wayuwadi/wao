@@ -8,6 +8,7 @@ const props = withDefaults(
     width?: string
     height?: string
     embedded?: boolean
+    theme?: 'light' | 'dark'
   }>(),
   { description: '', width: '1000px', height: 'min(760px, calc(100dvh - 48px))', embedded: false },
 )
@@ -50,7 +51,13 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <Teleport to="body" :disabled="embedded"
-    ><div class="settings-dialog-mask" :class="{ embedded }" @click.self="!embedded && outside()">
+    ><div
+      class="settings-dialog-mask"
+      :class="{ embedded }"
+      :data-wao-theme="theme"
+      :style="theme ? { colorScheme: theme } : undefined"
+      @click.self="!embedded && outside()"
+    >
       <section
         ref="dialog"
         class="settings-dialog-shell"
@@ -104,7 +111,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--wao-divider);
-  border-radius: 16px;
+  border-radius: var(--wao-radius-modal);
   background: var(--wao-bg-card);
   color: var(--wao-text);
   box-shadow: var(--wao-shadow-dialog);

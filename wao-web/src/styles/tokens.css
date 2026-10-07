@@ -2,7 +2,8 @@
  * WAO Life OS 设计 token —— 源自 init-design/README.md「Design Tokens」。
  * 界面文字、表面和状态颜色统一使用语义变量，保证明暗主题同步。
  */
-:root {
+:root,
+[data-wao-theme='light'] {
   /* 品牌主色 */
   --wao-primary: #4358d6;
   --wao-primary-hover: #3a4cc2;
@@ -11,6 +12,7 @@
   --wao-primary-soft-2: #e9edfb;
   --wao-primary-tint: #f7f9fe;
   --wao-primary-line: #d9dff6;
+  --wao-on-primary: #ffffff;
 
   /* 背景层级 */
   --wao-bg-page: #ffffff;
@@ -91,7 +93,19 @@
   --wao-radius-card: 12px;
   --wao-radius-control: 8px;
   --wao-radius-pill: 999px;
-  --wao-radius-modal: 14px;
+  --wao-radius-modal: 16px;
+
+  /* 公共组件与设计参考使用同一尺寸来源。 */
+  --wao-space-1: 8px;
+  --wao-space-2: 16px;
+  --wao-space-3: 24px;
+  --wao-space-4: 32px;
+  --wao-font-body: 14px;
+  --wao-font-caption: 12px;
+  --wao-font-title: 24px;
+  --wao-control-height: 40px;
+  --wao-mask-bg: #12223c70;
+  --wao-shadow-dialog: var(--wao-shadow-modal);
 
   /* 阴影 */
   --wao-shadow-card-hover: 0 2px 8px rgba(16, 18, 28, 0.06);
@@ -117,7 +131,8 @@
 }
 
 /* 深色模式 —— 与明亮模式保持相同的语义层级，仅反转亮度关系 */
-:root[data-theme='dark'] {
+:root[data-theme='dark'],
+[data-wao-theme='dark'] {
   /* 品牌主色：略微提亮，保证在深色背景上的可读性 */
   --wao-primary: #5365d8;
   --wao-primary-hover: #5869d5;
@@ -189,6 +204,7 @@
   --wao-shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.36);
   --wao-shadow-pop-2: 0 10px 30px rgba(0, 0, 0, 0.42);
   --wao-shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.52);
+  --wao-mask-bg: #00000099;
 }
 
 /* 全局动画 —— 与原型 keyframes 命名一致 */

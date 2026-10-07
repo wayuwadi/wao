@@ -52,6 +52,11 @@ const stories = [
     <section class="about-section" aria-labelledby="wao-more-title">
       <h2 id="wao-more-title">了解更多</h2>
       <div class="resource-links">
+        <a class="about-link" href="/design" target="_blank" rel="noopener noreferrer">
+          <i class="ri-layout-grid-line" aria-hidden="true"></i>
+          <span><strong>设计参考</strong><small>颜色、卡片、控件、弹窗与交互状态。</small></span>
+          <i class="ri-external-link-line" aria-hidden="true"></i>
+        </a>
         <a class="about-link brand-resource-link" href="/brand/guide.html" target="_blank" rel="noopener noreferrer">
           <i class="ri-palette-line" aria-hidden="true"></i>
           <span><strong>品牌与素材</strong><small>标识、配色、使用规范与完整资源包。</small></span>
