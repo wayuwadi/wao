@@ -223,7 +223,30 @@ public class DigitalMemberService {
     @Transactional
     public Subject confirm(String member,String version) {
         lock(member);String subject=versionSubject(member,version);active(member,subject);
+        if("deleted".equals(db.queryForObject("SELECT state FROM digital_appearance_version WHERE id=? AND member_id=?",String.class,version,member)))throw new ConflictException("形象版本已删除，请先恢复");
         db.update("UPDATE digital_appearance_version SET state='confirmed',confirmed_at=CURRENT_TIMESTAMP(6) WHERE id=? AND member_id=? AND state='candidate'",version,member);
+        return subject(member,subject);
+    }
+    /** 将版本移入已删除，保留照片、历史快照及排队任务；清除对应默认版本。 */
+    @Transactional
+    public Subject deleteVersion(String member,String version,VersionLifecycle input) {
+        return changeVersionLifecycle(member,version,input,true);
+    }
+    /** 恢复版本原有确认状态，不自动恢复默认形象；CAS 防止覆盖跨设备操作。 */
+    @Transactional
+    public Subject restoreVersion(String member,String version,VersionLifecycle input) {
+        return changeVersionLifecycle(member,version,input,false);
+    }
+    private Subject changeVersionLifecycle(String member,String version,VersionLifecycle input,boolean deleting) {
+        lock(member);String subject=versionSubject(member,version);active(member,subject);
+        var row=db.queryForMap("SELECT look_id,state FROM digital_appearance_version WHERE id=? AND member_id=?",version,member);
+        boolean deleted="deleted".equals(row.get("state"));
+        if(deleted==deleting)return subject(member,subject);
+        changed(db.update("UPDATE digital_look SET revision=revision+1 WHERE id=? AND member_id=? AND revision=?",row.get("look_id"),member,revision(input.expectedRevision())));
+        if(deleting) {
+            db.update("UPDATE digital_appearance_version SET state='deleted' WHERE id=? AND member_id=?",version,member);
+            db.update("UPDATE digital_member_binding SET version_id=NULL,revision=revision+1 WHERE member_id=? AND version_id=?",member,version);
+        } else db.update("UPDATE digital_appearance_version SET state=CASE WHEN confirmed_at IS NULL THEN 'candidate' ELSE 'confirmed' END WHERE id=? AND member_id=?",version,member);
         return subject(member,subject);
     }
     private String versionSubject(String member,String version) {

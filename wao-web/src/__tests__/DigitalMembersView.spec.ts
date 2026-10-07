@@ -14,6 +14,8 @@ const api = vi.hoisted(() => ({
   look: vi.fn(),
   version: vi.fn(),
   confirm: vi.fn(),
+  deleteVersion: vi.fn(),
+  restoreVersion: vi.fn(),
   bind: vi.fn(),
   generate: vi.fn(),
   poll: vi.fn(),
@@ -29,6 +31,8 @@ vi.mock('@/api/digitalMembers', () => ({
   createDigitalLook: api.look,
   createDigitalVersion: api.version,
   confirmDigitalVersion: api.confirm,
+  deleteDigitalVersion: api.deleteVersion,
+  restoreDigitalVersion: api.restoreVersion,
   saveDigitalBinding: api.bind,
   generateDigitalLook: api.generate,
   fetchDigitalGeneration: api.poll,
@@ -53,7 +57,7 @@ const library = (subjects = [subject()]): DigitalLibrary => ({
   profile: { gender: 'unknown', revision: 0 },
   capability: { referenceImage: false, message: '当前执行器未验证参考图能力' },
 })
-const options = { global: { stubs: { DigitalAssetImage: true } } }
+const options = { global: { stubs: { DigitalAssetImage: true, teleport: true } } }
 beforeEach(() => {
   session = reactive({ userId: 'member-one' })
   localStorage.clear()
@@ -66,6 +70,77 @@ beforeEach(() => {
   }))
 })
 describe('数字成员图库持久化与并发', () => {
+  it('删除默认版本需确认，隐藏后可恢复，并保留正在编辑的候选草稿', async () => {
+    const item = subject()
+    item.looks = [
+      {
+        id: 'look',
+        name: '本人形象',
+        style: '',
+        revision: 2,
+        versions: [
+          {
+            id: 'version',
+            number: 1,
+            state: 'confirmed',
+            assetIds: ['photo'],
+            portraitAssetId: null,
+            createdAt: '',
+          },
+        ],
+      },
+    ]
+    const lib = library([item])
+    lib.binding = { subjectId: item.id, versionId: 'version', revision: 1 }
+    api.list.mockResolvedValue(lib)
+    const wrapper = mount(DigitalMembersView, options)
+    await flushPromises()
+    await wrapper.get('.member').trigger('click')
+    await wrapper.findAll('.tabs button')[2]!.trigger('click')
+    await wrapper.get('.look-form input').setValue('尚未保存的新形象')
+    const deletion = () => wrapper.findAll('.version button').find((b) => b.text() === '删除版本')!
+    await deletion().trigger('click')
+    expect(api.deleteVersion).not.toHaveBeenCalled()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '取消')!
+      .trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    const removed = JSON.parse(JSON.stringify(item)) as DigitalSubject
+    removed.looks[0]!.revision = 3
+    removed.looks[0]!.versions[0]!.state = 'deleted'
+    api.deleteVersion.mockResolvedValue(removed)
+    api.list.mockResolvedValue({
+      ...library([removed]),
+      binding: { subjectId: item.id, versionId: null, revision: 2 },
+    })
+    await deletion().trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('会清除该默认设置')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '确认删除')!
+      .trigger('click')
+    await flushPromises()
+    expect(api.deleteVersion).toHaveBeenCalledWith('version', 2)
+    expect(wrapper.findAll('.version')).toHaveLength(0)
+    expect(wrapper.get('.look-form input').element).toHaveProperty('value', '尚未保存的新形象')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '已删除版本（1）')!
+      .trigger('click')
+    expect(wrapper.findAll('.version button').map((button) => button.text())).toEqual(['恢复版本'])
+    expect(wrapper.text()).toContain('已删除')
+    api.restoreVersion.mockResolvedValue({ ...item, looks: [{ ...item.looks[0]!, revision: 4 }] })
+    await wrapper
+      .findAll('.version button')
+      .find((b) => b.text() === '恢复版本')!
+      .trigger('click')
+    await flushPromises()
+    expect(api.restoreVersion).toHaveBeenCalledWith('version', 3)
+    expect(wrapper.text()).toContain('已确认')
+    expect(wrapper.text()).toContain('设为小记默认')
+    wrapper.unmount()
+  })
   it('拖入多张照片沿用上传用途，失败文件保留并可重试', async () => {
     const first = new File(['one'], '照片一.jpg', { type: 'image/jpeg' })
     const second = new File(['two'], '照片二.png', { type: 'image/png' })

@@ -2,6 +2,7 @@
 import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoField from '@/components/ui/WaoField.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
 import DigitalAssetImage from '@/components/ui/DigitalAssetImage.vue'
@@ -14,6 +15,8 @@ import {
   createDigitalLook,
   createDigitalVersion,
   confirmDigitalVersion,
+  deleteDigitalVersion,
+  restoreDigitalVersion,
   saveDigitalBinding,
   generateDigitalLook,
   fetchDigitalGeneration,
@@ -52,6 +55,21 @@ const draft = ref<DigitalMemberDraft | null>(null),
   draftStorageError = ref(false)
 const newVersionLook = ref<DigitalLook | null>(null),
   lookConflict = ref<DigitalLook | null>(null)
+const showDeletedVersions = ref(false)
+const pendingDeletion = ref<{ look: DigitalLook; version: DigitalVersion } | null>(null)
+const deletedVersionCount = computed(
+  () =>
+    subject.value?.looks
+      .flatMap((look) => look.versions)
+      .filter((version) => version.state === 'deleted').length ?? 0,
+)
+const visibleLooks = computed(
+  () =>
+    subject.value?.looks.filter(
+      (look) =>
+        showDeletedVersions.value || look.versions.some((version) => version.state !== 'deleted'),
+    ) ?? [],
+)
 let epoch = 0,
   loadTicket = 0,
   restoring = false,
@@ -128,6 +146,8 @@ function open(item?: DigitalSubject) {
   conflict.value = null
   failedFiles.value = []
   newVersionLook.value = null
+  pendingDeletion.value = null
+  showDeletedVersions.value = false
   draft.value =
     readDigitalDraft(session.userId, item?.id ?? 'new') ??
     (item ? { ...blank(), form: formOf(item), expectedRevision: item.revision } : blank())
@@ -352,14 +372,43 @@ async function createLook() {
 function prepareVersion(look: DigitalLook) {
   if (!draft.value) return
   newVersionLook.value = look
+  const previous = look.versions.find((version) => version.state !== 'deleted')
   draft.value.look = {
     name: look.name,
     style: look.style,
-    assetIds: [...(look.versions[look.versions.length - 1]?.assetIds ?? [])],
-    portraitAssetId: look.versions[look.versions.length - 1]?.portraitAssetId ?? null,
+    assetIds: [...(previous?.assetIds ?? [])],
+    portraitAssetId: previous?.portraitAssetId ?? null,
     lookId: look.id,
     expectedRevision: look.revision,
   }
+}
+async function changeVersionLifecycle(
+  look: DigitalLook,
+  version: DigitalVersion,
+  restoringVersion: boolean,
+) {
+  const current = epoch
+  await act(async () => {
+    const value = await (restoringVersion ? restoreDigitalVersion : deleteDigitalVersion)(
+      version.id,
+      look.revision,
+    )
+    if (current !== epoch) return
+    replace(value)
+    // 生命周期写入会更新默认绑定 CAS；保留其他尚未保存的表单与草稿。
+    const latest = await fetchDigitalLibrary()
+    if (current !== epoch) return
+    library.value!.binding = latest.binding
+    if (newVersionLook.value?.id === look.id) {
+      lookConflict.value = value.looks.find((item) => item.id === look.id) ?? null
+    }
+  })
+}
+async function confirmVersionDeletion() {
+  const pending = pendingDeletion.value
+  if (!pending || saving.value) return
+  pendingDeletion.value = null
+  await changeVersionLifecycle(pending.look, pending.version, false)
 }
 function resolveLookConflict() {
   newVersionLook.value = lookConflict.value
@@ -454,6 +503,8 @@ watch(
     library.value = null
     draft.value = null
     selectedId.value = ''
+    pendingDeletion.value = null
+    showDeletedVersions.value = false
     editingNew.value = false
     saving.value = false
     error.value = ''
@@ -818,18 +869,29 @@ onBeforeUnmount(() => {
                 </div>
                 <p class="muted">{{ library.capability.message }}</p>
               </div>
-              <div v-if="!subject.looks.length" class="empty">
-                还没有形象版本。已确认版本会保留，下次修改创建新版本。
+              <WaoButton
+                v-if="deletedVersionCount"
+                :aria-pressed="showDeletedVersions"
+                @click="showDeletedVersions = !showDeletedVersions"
+              >
+                {{
+                  showDeletedVersions ? '收起已删除版本' : `已删除版本（${deletedVersionCount}）`
+                }}
+              </WaoButton>
+              <div v-if="!visibleLooks.length" class="empty">
+                还没有可用的形象版本。删除的版本可恢复，下次修改创建新版本。
               </div>
               <div v-else class="looks">
-                <WaoCard v-for="look in subject.looks" :key="look.id" class="look" role="article">
+                <WaoCard v-for="look in visibleLooks" :key="look.id" class="look" role="article">
                   <header>
                     <h3>{{ look.name }}</h3>
                     <WaoButton @click="prepareVersion(look)">新版本</WaoButton>
                   </header>
                   <p class="muted">{{ look.style || '未指定画风' }}</p>
                   <div
-                    v-for="version in [...look.versions].reverse()"
+                    v-for="version in [...look.versions]
+                      .filter((item) => showDeletedVersions || item.state !== 'deleted')
+                      .reverse()"
                     :key="version.id"
                     class="version"
                   >
@@ -841,17 +903,35 @@ onBeforeUnmount(() => {
                     <p>
                       第 {{ version.number }} 版
                       <span class="badge">{{
-                        version.state === 'confirmed' ? '已确认' : '候选 · 待确认'
+                        version.state === 'deleted'
+                          ? '已删除'
+                          : version.state === 'confirmed'
+                            ? '已确认'
+                            : '候选 · 待确认'
                       }}</span>
                     </p>
                     <div class="actions">
                       <WaoButton v-if="version.state === 'candidate'" @click="confirm(version)">
                         确认此形象</WaoButton
-                      ><WaoButton v-else-if="canDefault" @click="bind(version.id)">
+                      ><WaoButton
+                        v-else-if="version.state === 'confirmed' && canDefault"
+                        @click="bind(version.id)"
+                      >
                         {{
                           library.binding.versionId === version.id ? '小记默认形象' : '设为小记默认'
                         }}
                       </WaoButton>
+                      <WaoButton
+                        v-if="version.state === 'deleted'"
+                        @click="changeVersionLifecycle(look, version, true)"
+                        >恢复版本</WaoButton
+                      >
+                      <WaoButton
+                        v-else
+                        variant="danger"
+                        @click="pendingDeletion = { look, version }"
+                        >删除版本</WaoButton
+                      >
                     </div>
                   </div>
                 </WaoCard>
@@ -914,9 +994,33 @@ onBeforeUnmount(() => {
       </template>
     </template>
   </main>
+  <SettingsDialogShell
+    v-if="pendingDeletion"
+    title="删除形象版本"
+    :description="`删除“${pendingDeletion.look.name}”第 ${pendingDeletion.version.number} 版？`"
+    width="520px"
+    height="auto"
+    @close="pendingDeletion = null"
+  >
+    <div class="deletion-explanation">
+      <p>如果是小记默认版本，会清除该默认设置。本人绑定、参考照片和已有小记会保留。</p>
+      <p>删除后可从「已删除版本」恢复，恢复后需重新设置默认形象。</p>
+    </div>
+    <template #footer>
+      <div class="actions">
+        <WaoButton @click="pendingDeletion = null">取消</WaoButton>
+        <WaoButton variant="danger" :disabled="saving" @click="confirmVersionDeletion"
+          >确认删除</WaoButton
+        >
+      </div>
+    </template>
+  </SettingsDialogShell>
 </template>
 
 <style scoped>
+.deletion-explanation {
+  padding: 16px 26px;
+}
 .digital-page {
   max-width: 1120px;
   padding: 28px 30px 90px;

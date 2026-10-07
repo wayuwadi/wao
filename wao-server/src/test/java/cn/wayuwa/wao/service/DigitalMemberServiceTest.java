@@ -38,6 +38,30 @@ class DigitalMemberServiceTest {
         service=new DigitalMemberService(db,new ObjectMapper(),provider,runMapper,new MockEnvironment().withProperty("wao.ai.local-notes.reference-images-enabled","true"));
     }
     private Subject person(String name) {return service.create("a",new Create(name,"human","家人","male","长发，圆框眼镜"));}
+    @Test void deletingDefaultVersionKeepsHistoryAndFrozenReferencesAndRestoreDoesNotRebind() throws Exception {
+        var s=person("本人");var p=photo(s.id());var look=service.createLook("a",s.id(),new CreateLook("本人形象","",List.of(p.id()),p.id()));
+        String version=look.versions().get(0).id();service.confirm("a",version);service.bind("a",new Bind(s.id(),version,0L));
+        var frozen=service.freeze("a",new IdentitySelection("explicit",s.id(),version));service.record("a","retained-run","ARTICLE_IMAGE","hash",frozen);
+        var removed=service.deleteVersion("a",version,new VersionLifecycle(look.revision()));
+        assertThat(removed.looks().get(0).versions().get(0).state()).isEqualTo("deleted");
+        assertThat(service.binding("a").subjectId()).isEqualTo(s.id());assertThat(service.binding("a").versionId()).isNull();
+        assertThat(service.references("a","retained-run")).hasSize(1);assertThat(removed.history()).hasSize(1);
+        assertThatThrownBy(()->service.freeze("a",new IdentitySelection("explicit",s.id(),version))).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(()->service.confirm("a",version)).isInstanceOf(ConflictException.class);
+        assertThatThrownBy(()->service.restoreVersion("a",version,new VersionLifecycle(look.revision()))).isInstanceOf(ConflictException.class);
+        var restored=service.restoreVersion("a",version,new VersionLifecycle(removed.looks().get(0).revision()));
+        assertThat(restored.looks().get(0).versions().get(0).state()).isEqualTo("confirmed");assertThat(service.binding("a").versionId()).isNull();
+        assertThatThrownBy(()->service.deleteVersion("b",version,new VersionLifecycle(0L))).isInstanceOf(NotFoundException.class);
+    }
+    @Test void candidateRestoresAsCandidateAndDeletedNumbersAreNeverReused() throws Exception {
+        var s=person("候选");var p=photo(s.id());var look=service.createLook("a",s.id(),new CreateLook("候选","",List.of(p.id()),null));
+        String version=look.versions().get(0).id();var deleted=service.deleteVersion("a",version,new VersionLifecycle(look.revision()));
+        assertThat(service.deleteVersion("a",version,new VersionLifecycle(look.revision())).looks().get(0).revision()).isEqualTo(deleted.looks().get(0).revision());
+        var next=service.createVersion("a",look.id(),new CreateVersion(List.of(p.id()),null,deleted.looks().get(0).revision()));
+        assertThat(next.versions().stream().map(Version::number)).containsExactly(2,1);
+        var restored=service.restoreVersion("a",version,new VersionLifecycle(next.revision()));
+        assertThat(restored.looks().get(0).versions().stream().filter(v->v.id().equals(version)).findFirst().orElseThrow().state()).isEqualTo("candidate");
+    }
     private Asset photo(String subject) throws Exception {
         var b=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(50,60,BufferedImage.TYPE_INT_RGB),"png",b);
         return service.upload("a",subject,new MockMultipartFile("file","real.png","text/html",b.toByteArray()),"reference");
