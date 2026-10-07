@@ -72,22 +72,22 @@ class FeishuQuickCollectPollingSchedulerTest {
         verify(quickCollect).collectPolled("oc_chat", eligible);
         verify(quickCollect).triggerPolledReaction("token", "om_yes");
         verify(quickCollect).recallPolled("oc_chat", "om_deleted");
-        verify(quickCollect, org.mockito.Mockito.times(1)).collectPolled(
+        verify(quickCollect, org.mockito.Mockito.times(2)).collectPolled(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
-    void eligibilityRequiresExactBotMention() {
+    void eligibilityPassesUserMentionsToTheRegistryForExactRouting() {
         assertThat(FeishuQuickCollectPollingScheduler.eligible(
                 message("om_1", "user", false, "ou_bot"), "ou_bot")).isTrue();
         assertThat(FeishuQuickCollectPollingScheduler.eligible(
-                message("om_2", "user", false, "ou_person"), "ou_bot")).isFalse();
+                message("om_2", "user", false, "ou_person"), "ou_bot")).isTrue();
         assertThat(FeishuQuickCollectPollingScheduler.eligible(
                 namedMessage("om_note", "小记创作"), "ou_bot")).isTrue();
         assertThat(FeishuQuickCollectPollingScheduler.eligible(
                 namedMessage("om_task", "任务待办"), "ou_bot")).isTrue();
         assertThat(FeishuQuickCollectPollingScheduler.eligible(
-                namedMessage("om_person", "普通成员"), "ou_bot")).isFalse();
+                namedMessage("om_person", "普通成员"), "ou_bot")).isTrue();
     }
 
     @Test

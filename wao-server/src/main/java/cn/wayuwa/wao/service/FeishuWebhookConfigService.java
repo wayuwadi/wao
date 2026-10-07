@@ -1,6 +1,7 @@
 package cn.wayuwa.wao.service;
 
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.domain.FeishuWebhookConfigEntity;
@@ -19,6 +20,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class FeishuWebhookConfigService {
 
     private static final String SYSTEM_DEFAULT = "SYSTEM";
+    private static final String LEGACY_TASK_RETIRED = "feishu.bot-center.legacy-task-retired";
+    private static final String LEGACY_NOTE_RETIRED = "feishu.bot-center.legacy-note-retired";
     private static final int MAX_CONFIGS = 30;
     private static final String HOOK_PATH = "/open-apis/bot/v2/hook/";
     private static final Set<String> FEISHU_HOSTS = Set.of("open.feishu.cn", "open.larksuite.com");
@@ -46,6 +51,11 @@ public class FeishuWebhookConfigService {
     private final VaultCryptoService crypto;
     private final SettingService settings;
     private final String legacyDeploymentUrl;
+    private FeishuBotActivityService activity;
+
+    /** 注入真实引用查询；旧单元调用保持可独立构造。 */
+    @Autowired
+    public void setActivityService(FeishuBotActivityService activity) { this.activity = activity; }
 
     public FeishuWebhookConfigService(FeishuWebhookConfigMapper mapper, VaultCryptoService crypto,
             SettingService settings, @Value("${feishu.comment-webhook-url:}") String legacyDeploymentUrl) {
@@ -73,6 +83,8 @@ public class FeishuWebhookConfigService {
         VaultCryptoService.Encrypted encrypted = crypto.encrypt(url);
         LocalDateTime now = LocalDateTime.now();
         boolean systemDefault = count == 0 || Boolean.TRUE.equals(request.systemDefault());
+        if (systemDefault && count > 0 && !Boolean.TRUE.equals(request.impactConfirmed()))
+            throw new ConflictException("切换系统默认会影响现有通知，请核对影响后确认");
         if (systemDefault) clearSystemDefault();
 
         FeishuWebhookConfigEntity entity = new FeishuWebhookConfigEntity();
@@ -85,6 +97,8 @@ public class FeishuWebhookConfigService {
         entity.setDefaultMarker(systemDefault ? SYSTEM_DEFAULT : null);
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
+        entity.setRevision(0L);
+        applyCapture(entity, request);
         mapper.insert(entity);
         markInitialized();
         if (systemDefault) syncLegacyDefault(entity);
@@ -97,6 +111,17 @@ public class FeishuWebhookConfigService {
     @Transactional
     public FeishuWebhookEndpointDto update(String id, SaveFeishuWebhookEndpointRequest request) {
         FeishuWebhookConfigEntity entity = required(id);
+        long previousRevision = revision(entity);
+        if (request.revision() != null && request.revision() != previousRevision)
+            throw new ConflictException("机器人配置已更新，请重新加载后保存");
+        boolean impact = Boolean.TRUE.equals(entity.getEnabled()) && !Boolean.TRUE.equals(request.enabled())
+                || request.captureKind() != null && !request.captureKind().equals(kind(entity))
+                || request.mentionId() != null && !trim(request.mentionId()).equals(trim(entity.getMentionId()))
+                || request.mentionName() != null && !trim(request.mentionName()).equals(trim(entity.getMentionName()))
+                || Boolean.TRUE.equals(request.systemDefault()) && !isDefault(entity);
+        if (impact && activity != null && (!activity.usages(entity).isEmpty()
+                || Boolean.TRUE.equals(request.systemDefault())) && !Boolean.TRUE.equals(request.impactConfirmed()))
+            throw new ConflictException("此变更会影响已引用的通知或收集，请核对影响后确认");
         Credential credential = credential(entity);
         String suppliedUrl = trim(request.url());
         if (!credential.usable() && suppliedUrl.isEmpty()) {
@@ -110,6 +135,7 @@ public class FeishuWebhookConfigService {
         entity.setName(name(request.name()));
         entity.setDescription(description(request.description()));
         entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
+        applyCapture(entity, request);
         if (!suppliedUrl.isEmpty()) {
             String url = validateUrl(suppliedUrl);
             VaultCryptoService.Encrypted encrypted = crypto.encrypt(url);
@@ -121,7 +147,10 @@ public class FeishuWebhookConfigService {
             entity.setDefaultMarker(SYSTEM_DEFAULT);
         }
         entity.setUpdatedAt(LocalDateTime.now());
-        mapper.updateById(entity);
+        entity.setRevision(previousRevision + 1);
+        if (mapper.update(entity, new UpdateWrapper<FeishuWebhookConfigEntity>()
+                .eq("id", id).eq("revision", previousRevision)) != 1)
+            throw new ConflictException("机器人配置已更新，请重新加载后保存");
         markInitialized();
         if (isDefault(entity)) syncLegacyDefault(entity);
         return toDto(entity);
@@ -130,8 +159,21 @@ public class FeishuWebhookConfigService {
     /** 删除一项配置；删除系统默认项时自动把最近修改的剩余项提升为默认。 */
     @Transactional
     public void delete(String id) {
+        delete(id, null, false);
+    }
+
+    /** 删除前核对版本及真实引用；有引用时必须提交影响确认。 */
+    @Transactional
+    public void delete(String id, Long expectedRevision, boolean impactConfirmed) {
         FeishuWebhookConfigEntity deleted = required(id);
-        mapper.deleteById(id);
+        if (expectedRevision != null && expectedRevision != revision(deleted))
+            throw new ConflictException("机器人配置已更新，请重新加载后删除");
+        if (activity != null && !activity.usages(deleted).isEmpty() && !impactConfirmed)
+            throw new ConflictException("机器人仍被引用，请核对影响后确认删除");
+        if (mapper.delete(new QueryWrapper<FeishuWebhookConfigEntity>().eq("id", id)
+                .eq("revision", revision(deleted))) != 1)
+            throw new ConflictException("机器人配置已更新，请重新加载后删除");
+        retireLegacyName(deleted);
         markInitialized();
         if (!isDefault(deleted)) return;
 
@@ -144,6 +186,7 @@ public class FeishuWebhookConfigService {
         FeishuWebhookConfigEntity promoted = remaining.get(0);
         promoted.setDefaultMarker(SYSTEM_DEFAULT);
         promoted.setUpdatedAt(LocalDateTime.now());
+        promoted.setRevision(revision(promoted) + 1);
         mapper.updateById(promoted);
         syncLegacyDefault(promoted);
     }
@@ -255,6 +298,7 @@ public class FeishuWebhookConfigService {
     private void clearSystemDefault() {
         mapper.update(null, new UpdateWrapper<FeishuWebhookConfigEntity>()
                 .eq("default_marker", SYSTEM_DEFAULT)
+                .setSql("revision = revision + 1")
                 .set("default_marker", null));
     }
 
@@ -323,7 +367,107 @@ public class FeishuWebhookConfigService {
         return new FeishuWebhookEndpointDto(
                 entity.getId(), entity.getName(), entity.getDescription(), credential.display(), credential.usable(),
                 credential.usable() && Boolean.TRUE.equals(entity.getEnabled()), isDefault(entity),
-                entity.getCreatedAt(), entity.getUpdatedAt());
+                entity.getCreatedAt(), entity.getUpdatedAt(), kind(entity), trim(entity.getMentionId()),
+                trim(entity.getMentionName()), trim(entity.getChatId()), trim(entity.getAppId()), revision(entity));
+    }
+
+    /** 根据精确 @ 元数据选择唯一启用路由；未知 @、冲突和已停用路由一律拒绝。 */
+    @Transactional(readOnly = true)
+    public CaptureRoute captureRoute(JsonNode mentions) {
+        List<FeishuWebhookConfigEntity> all = entities();
+        CaptureRoute matched = null;
+        for (JsonNode mention : mentions) {
+            String mentionId = mention.path("id").path("open_id").asText("");
+            String mentionName = mention.path("name").asText("");
+            boolean reserved = "任务待办".equals(mentionName) && settings.getBoolean(LEGACY_TASK_RETIRED)
+                    || "小记创作".equals(mentionName) && settings.getBoolean(LEGACY_NOTE_RETIRED);
+            for (FeishuWebhookConfigEntity bot : all) {
+                boolean explicit = !trim(bot.getMentionId()).isEmpty() || !trim(bot.getMentionName()).isEmpty();
+                boolean same = !trim(bot.getMentionId()).isEmpty()
+                        ? bot.getMentionId().equals(mentionId)
+                        : explicit && bot.getMentionName().equals(mentionName);
+                // 旧名称一旦明确绑定或停用，绝不能借名称兼容绕开。
+                if (mentionName.equals(bot.getName()) && (explicit || !Boolean.TRUE.equals(bot.getEnabled()))) reserved = true;
+                if (!same) continue;
+                reserved = true;
+                if (!Boolean.TRUE.equals(bot.getEnabled()) || "NONE".equals(kind(bot))) return null;
+                String currentApp = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+                String currentChat = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");
+                if (!trim(bot.getAppId()).equals(currentApp) || !trim(bot.getChatId()).equals(currentChat)) return null;
+                CaptureRoute route = new CaptureRoute(bot.getId(), kind(bot));
+                if (matched != null && !matched.equals(route)) return null;
+                matched = route;
+            }
+            if (!reserved && ("任务待办".equals(mentionName) || "小记创作".equals(mentionName))) {
+                CaptureRoute legacy = new CaptureRoute(null, "小记创作".equals(mentionName) ? "NOTE" : "TASK");
+                if (matched != null && !matched.equals(legacy)) return null;
+                matched = legacy;
+            }
+        }
+        return matched;
+    }
+
+    private void applyCapture(FeishuWebhookConfigEntity entity, SaveFeishuWebhookEndpointRequest request) {
+        if (request.captureKind() == null) {
+            if (entity.getCaptureKind() == null) entity.setCaptureKind("NONE");
+            return;
+        }
+        String kind = trim(request.captureKind());
+        if (!Set.of("NONE", "TASK", "NOTE").contains(kind)) throw new BadRequestException("请选择有效的收集角色");
+        String mentionId = request.mentionId() == null ? trim(entity.getMentionId()) : trim(request.mentionId());
+        String mentionName = request.mentionName() == null ? trim(entity.getMentionName()) : trim(request.mentionName());
+        if (!"NONE".equals(kind)) {
+            if (mentionName.isEmpty() && mentionId.isEmpty()) mentionName = "NOTE".equals(kind) ? "小记创作" : "任务待办";
+            String app = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+            String chat = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");
+            if (trim(app).isEmpty() || trim(chat).isEmpty() || trim(settings.get(SettingService.CHAT_SYNC_APP_SECRET)).isEmpty())
+                throw new BadRequestException("请先配置飞书应用和目标群，再关联收集机器人");
+            if (request.appId() != null && !request.appId().equals(app)
+                    || request.chatId() != null && !request.chatId().equals(chat))
+                throw new ConflictException("飞书应用或目标群已改变，请重新加载后关联");
+            entity.setAppId(app); entity.setChatId(chat);
+            for (FeishuWebhookConfigEntity other : entities()) {
+                if (entity.getId().equals(other.getId()) || "NONE".equals(kind(other))) continue;
+                if (!mentionId.isEmpty() && mentionId.equals(other.getMentionId())
+                        || !mentionName.isEmpty() && mentionName.equals(other.getMentionName()))
+                    throw new ConflictException("这个 @ 身份已被另一个收集机器人使用");
+            }
+        }
+        entity.setCaptureKind(kind); entity.setMentionId(mentionId); entity.setMentionName(mentionName);
+    }
+
+    private static String kind(FeishuWebhookConfigEntity entity) {
+        return trim(entity.getCaptureKind()).isEmpty() ? "NONE" : entity.getCaptureKind();
+    }
+    private static long revision(FeishuWebhookConfigEntity entity) {
+        return entity.getRevision() == null ? 0 : entity.getRevision();
+    }
+
+    /** 精确匹配的收集目标；旧名称兼容路由没有 Webhook id。 */
+    public record CaptureRoute(String webhookId, String kind) { }
+
+    private void retireLegacyName(FeishuWebhookConfigEntity entity) {
+        if ("任务待办".equals(entity.getName()) || "任务待办".equals(entity.getMentionName()))
+            settings.put(LEGACY_TASK_RETIRED, "true");
+        if ("小记创作".equals(entity.getName()) || "小记创作".equals(entity.getMentionName()))
+            settings.put(LEGACY_NOTE_RETIRED, "true");
+    }
+
+    /** 根据真正使用的地址记发送结果；地址明文只在本方法内比较，不保留。 */
+    public void recordSend(String url, String kind, boolean success) {
+        if (activity == null || trim(url).isEmpty()) return;
+        for (FeishuWebhookConfigEntity entity : entities()) {
+            Credential candidate = credential(entity);
+            if (candidate.usable() && candidate.url().equals(url)) {
+                activity.recordSend(entity.getId(), kind, success);
+                return;
+            }
+        }
+    }
+
+    /** 显式指定目标的发送按稳定 id 记录，即使两条注册记录使用同一个地址也不串记录。 */
+    public void recordSendForId(String id, String kind, boolean success) {
+        if (activity != null) activity.recordSend(id, kind, success);
     }
 
     private Credential credential(FeishuWebhookConfigEntity entity) {

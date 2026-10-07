@@ -14,5 +14,17 @@ public record FeishuWebhookEndpointDto(
         boolean enabled,
         boolean systemDefault,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt) {
+        LocalDateTime updatedAt,
+        String captureKind,
+        String mentionId,
+        String mentionName,
+        String chatId,
+        String appId,
+        long revision) {
+    /** 兼容未接入机器人收集的内部调用。 */
+    public FeishuWebhookEndpointDto(String id, String name, String description, String urlMask,
+            boolean urlSet, boolean enabled, boolean systemDefault, LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this(id, name, description, urlMask, urlSet, enabled, systemDefault, createdAt, updatedAt,
+                "NONE", "", "", "", "", 0);
+    }
 }

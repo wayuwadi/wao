@@ -18,5 +18,17 @@ public record SaveFeishuWebhookEndpointRequest(
         @NotNull(message = "请选择是否启用")
         Boolean enabled,
         @NotNull(message = "请选择是否作为系统默认通知")
-        Boolean systemDefault) {
+        Boolean systemDefault,
+        String captureKind,
+        @Size(max = 128) String mentionId,
+        @Size(max = 64) String mentionName,
+        @Size(max = 128) String chatId,
+        @Size(max = 128) String appId,
+        Long revision,
+        Boolean impactConfirmed) {
+    /** 兼容原有调用，未传收集字段时保留已保存的路由。 */
+    public SaveFeishuWebhookEndpointRequest(String name, String description, String url,
+            Boolean enabled, Boolean systemDefault) {
+        this(name, description, url, enabled, systemDefault, null, null, null, null, null, null, null);
+    }
 }

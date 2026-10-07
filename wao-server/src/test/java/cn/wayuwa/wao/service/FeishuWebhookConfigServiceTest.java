@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
 
 class FeishuWebhookConfigServiceTest {
@@ -32,6 +34,94 @@ class FeishuWebhookConfigServiceTest {
     private final SettingService settings = mock(SettingService.class);
     private final VaultCryptoService crypto = new VaultCryptoService(KEY);
     private final FeishuWebhookConfigService service = new FeishuWebhookConfigService(mapper, crypto, settings, "");
+
+    @BeforeEach
+    void mutationsSucceed() {
+        when(mapper.update(any(), any())).thenReturn(1);
+        when(mapper.delete(any())).thenReturn(1);
+    }
+
+    @Test
+    void staleRevisionAndConcurrentDatabaseChangeAreRejected() {
+        var bot = entity("fw1", true, false, URL); bot.setRevision(3L);
+        when(mapper.selectById("fw1")).thenReturn(bot);
+        assertThatThrownBy(() -> service.update("fw1", new SaveFeishuWebhookEndpointRequest(
+                "新名称", "", "", true, false, null, null, null, null, null, 2L, false)))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+        when(mapper.update(any(), any())).thenReturn(0);
+        assertThatThrownBy(() -> service.update("fw1", new SaveFeishuWebhookEndpointRequest(
+                "新名称", "", "", true, false, null, null, null, null, null, 3L, false)))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+    }
+
+    @Test
+    void referencedBotsRequireImpactConfirmationForDisableAndDelete() {
+        var bot = entity("fw1", true, true, URL);
+        when(mapper.selectById("fw1")).thenReturn(bot);
+        var activity = mock(FeishuBotActivityService.class);
+        service.setActivityService(activity);
+        when(activity.usages(bot)).thenReturn(List.of(new cn.wayuwa.wao.dto.FeishuBotActivityDto.Usage("SYSTEM_DEFAULT", "默认", 1)));
+        assertThatThrownBy(() -> service.update("fw1", request("机器人", "", false, true)))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+        assertThatThrownBy(() -> service.delete("fw1", 0L, false))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+        verify(mapper, never()).delete(any());
+    }
+
+    @Test
+    void stableMentionIdWinsOverNameAndDisabledRoutesCannotUseLegacyFallback() throws Exception {
+        var bot = entity("fw1", true, false, URL);
+        bot.setName("任务待办"); bot.setMentionName("任务待办"); bot.setMentionId("ou_custom");
+        bot.setCaptureKind("TASK"); bot.setAppId("cli_chat"); bot.setChatId("oc_1");
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_chat");
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_1");
+        when(mapper.selectList(any())).thenReturn(List.of(bot));
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertThat(service.captureRoute(json.readTree("[{\"name\":\"旧名称\",\"id\":{\"open_id\":\"ou_custom\"}}]")))
+                .isEqualTo(new FeishuWebhookConfigService.CaptureRoute("fw1", "TASK"));
+        assertThat(service.captureRoute(json.readTree("[{\"name\":\"任务待办\",\"id\":{\"open_id\":\"ou_wrong\"}}]"))).isNull();
+        bot.setEnabled(false);
+        assertThat(service.captureRoute(json.readTree("[{\"name\":\"任务待办\",\"id\":{\"open_id\":\"ou_custom\"}}]"))).isNull();
+    }
+
+    @Test
+    void legacyKnownNamesWorkUntilAttachedButUnknownOrAmbiguousMentionsNeverRoute() throws Exception {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertThat(service.captureRoute(json.readTree("[{\"name\":\"任务待办\"}]")))
+                .isEqualTo(new FeishuWebhookConfigService.CaptureRoute(null, "TASK"));
+        assertThat(service.captureRoute(json.readTree("[{\"name\":\"普通成员\"}]"))).isNull();
+        assertThat(service.captureRoute(json.readTree("[{\"name\":\"任务待办\"},{\"name\":\"小记创作\"}]"))).isNull();
+    }
+
+    @Test
+    void deletingConfiguredBotLeavesPersistentLegacySuppressionAndExplicitRecreationCanRoute() throws Exception {
+        var bot = entity("fw1", true, false, URL); bot.setName("任务待办"); bot.setCaptureKind("TASK");
+        bot.setMentionName("任务待办"); bot.setChatId("oc_1"); bot.setAppId("cli_chat");
+        when(mapper.selectById("fw1")).thenReturn(bot);
+        service.delete("fw1", 0L, true);
+        verify(settings).put("feishu.bot-center.legacy-task-retired", "true");
+        when(settings.getBoolean("feishu.bot-center.legacy-task-retired")).thenReturn(true);
+        var mentions = new com.fasterxml.jackson.databind.ObjectMapper().readTree("[{\"name\":\"任务待办\"}]");
+        assertThat(service.captureRoute(mentions)).isNull();
+        when(mapper.selectList(any())).thenReturn(List.of(bot));
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_chat");
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_1");
+        assertThat(service.captureRoute(mentions)).isEqualTo(new FeishuWebhookConfigService.CaptureRoute("fw1", "TASK"));
+    }
+
+    @Test
+    void captureBindingRequiresConfiguredApplicationAndRejectsDuplicateMentions() {
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_chat");
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_1");
+        var request = new SaveFeishuWebhookEndpointRequest("任务待办", "", URL, true, false,
+                "TASK", "", "任务待办", "oc_1", "cli_chat", null, false);
+        assertThatThrownBy(() -> service.create(request)).isInstanceOf(BadRequestException.class);
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET)).thenReturn("secret");
+        var other = entity("fw-other", true, false, URL);
+        other.setCaptureKind("TASK"); other.setMentionName("任务待办");
+        when(mapper.selectList(any())).thenReturn(List.of(other));
+        assertThatThrownBy(() -> service.create(request)).isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+    }
 
     @Test
     void firstConfigBecomesDefaultAndNeverReturnsOrStoresPlaintext() {
@@ -93,7 +183,7 @@ class FeishuWebhookConfigServiceTest {
         assertThat(existing.getWebhookNonce()).isSameAs(nonce);
         assertThat(existing.getName()).isEqualTo("新名称");
         assertThat(result.enabled()).isFalse();
-        verify(mapper).updateById(existing);
+        verify(mapper).update(eq(existing), any());
     }
 
     @Test
@@ -221,7 +311,7 @@ class FeishuWebhookConfigServiceTest {
         assertThat(repaired.urlSet()).isTrue();
         assertThat(repaired.enabled()).isTrue();
         assertThat(repaired.urlMask()).endsWith("••••1234");
-        verify(mapper).updateById(unsafe);
+        verify(mapper).update(eq(unsafe), any());
     }
 
     @Test
@@ -253,7 +343,7 @@ class FeishuWebhookConfigServiceTest {
 
         service.delete("fw-current");
 
-        verify(mapper).deleteById("fw-current");
+        verify(mapper).delete(any());
         assertThat(remaining.getDefaultMarker()).isEqualTo("SYSTEM");
         verify(mapper).updateById(remaining);
         verify(settings).put(SettingService.FEISHU_WEBHOOK_URL,

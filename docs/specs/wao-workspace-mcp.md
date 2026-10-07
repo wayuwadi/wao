@@ -67,3 +67,7 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 2026-10-03：ADR-313 将既有浏览器润色、问答与后台只读分析迁至本机 Codex；服务主机队列不是工作区执行授权，不新增 MCP 工具或旧令牌权限，私有图片仍按浏览器成员鉴权。详见 [业务 AI 本机执行](business-ai-local-codex.md)。
 
 私人小记原稿、保存前 AI 输入及结果关联不加入 workspace tools/list，旧文档 scope 不包含历史来源或个人 AI 设置。普通写入仍参与用户来源保护与旧任务失效，不新增自动 AI 权限。见 [不可变原稿](notes-immutable-originals.md)。
+
+## 2026-10-07 机器人管理边界
+
+能力中心机器人配置与诊断仅接受管理员浏览器会话；Webhook、共享应用密钥、接收路由和事件诊断不增加 Workspace MCP 工具，不扩大历史设备令牌授权。群消息创建待办／小记使用发送者飞书身份绑定，不接受 MCP 伪造平台消息。契约见 [飞书机器人规格](feishu-bot-center.md)。

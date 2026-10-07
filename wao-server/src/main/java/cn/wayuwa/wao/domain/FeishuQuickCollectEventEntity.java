@@ -20,6 +20,12 @@ public class FeishuQuickCollectEventEntity {
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String webhookId;
+    public String getWebhookId() { return webhookId; }
+    public void setWebhookId(String value) { webhookId = value; }
+    private String targetVersion;
+    public String getTargetVersion() { return targetVersion; }
+    public void setTargetVersion(String value) { targetVersion = value; }
 
     public String getEventKey() { return eventKey; }
     public void setEventKey(String eventKey) { this.eventKey = eventKey; }

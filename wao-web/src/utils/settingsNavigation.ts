@@ -22,7 +22,7 @@ export const SETTINGS_ENTRIES = {
   management: [
     ['members', '组织与成员', '组织资料与真实成员', 'ri-community-line'],
     ['ai-accounts', 'AI 账号', '已连接的 AI 服务', 'ri-robot-2-line'],
-    ['webhook', 'Webhook 配置', '外部通知与连接', 'ri-links-line'],
+    ['webhook', 'Webhook 配置', '前往能力中心统一管理机器人', 'ri-links-line'],
     ['site', '网站信息 · 备案', '网站公开展示信息', 'ri-global-line'],
   ],
 } as const

@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
@@ -46,6 +47,7 @@ public class SettingController {
     private final FeishuWebhookNotifier notifier;
     private final FeishuWebhookConfigService webhooks;
     private final NetworkOutageWindowService networkOutageWindow;
+    @Autowired private cn.wayuwa.wao.service.FeishuBotActivityService botActivity;
 
     @Autowired
     public SettingController(SettingService settings, ExternalAppRegistryService externalApps,
@@ -107,17 +109,25 @@ public class SettingController {
 
     /** 删除机器人配置；删除默认项时服务会自动提升一项剩余配置。 */
     @DeleteMapping("/webhooks/{id}")
-    public ApiResponse<Void> deleteWebhook(@PathVariable String id) {
-        webhooks.delete(id);
+    public ApiResponse<Void> deleteWebhook(@PathVariable String id,
+            @RequestParam(required = false) Long revision,
+            @RequestParam(defaultValue = "false") boolean impactConfirmed) {
+        webhooks.delete(id, revision, impactConfirmed);
         return ApiResponse.ok(null);
     }
 
     /** 用指定配置发送测试卡片，测试不受其启用开关影响。 */
     @PostMapping("/webhooks/{id}/test")
     public ApiResponse<Void> testWebhook(@PathVariable String id) {
-        notifier.send(webhooks.endpointUrl(id), FeishuWebhookNotifier.Card.simple(
+        notifier.sendTest(id, FeishuWebhookNotifier.Card.simple(
                 "WAO 测试通知", "green", "机器人配置可用，之后可在 WAO 的通知功能中复用。"));
         return ApiResponse.ok(null);
+    }
+
+    /** 查询真实引用和最近结果；发送测试成功不能冒充消息收集已验证。 */
+    @GetMapping("/webhooks/{id}/activity")
+    public ApiResponse<cn.wayuwa.wao.dto.FeishuBotActivityDto> webhookActivity(@PathVariable String id) {
+        return ApiResponse.ok(botActivity.activity(id));
     }
 
     @GetMapping("/site-info")

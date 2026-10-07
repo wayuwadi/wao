@@ -19,6 +19,25 @@ public class FeishuWebhookConfigEntity {
     private String defaultMarker;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String captureKind;
+    private String mentionId;
+    private String mentionName;
+    private String chatId;
+    private String appId;
+    private Long revision;
+
+    public String getCaptureKind() { return captureKind; }
+    public void setCaptureKind(String value) { captureKind = value; }
+    public String getMentionId() { return mentionId; }
+    public void setMentionId(String value) { mentionId = value; }
+    public String getMentionName() { return mentionName; }
+    public void setMentionName(String value) { mentionName = value; }
+    public String getChatId() { return chatId; }
+    public void setChatId(String value) { chatId = value; }
+    public String getAppId() { return appId; }
+    public void setAppId(String value) { appId = value; }
+    public Long getRevision() { return revision; }
+    public void setRevision(Long value) { revision = value; }
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
