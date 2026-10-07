@@ -4,8 +4,8 @@
   "files": [
     {
       "name": "guide.html",
-      "bytes": 10055,
-      "sha256": "8bcf0e8b2c4ccfcdb4ffe24439f306c90274f16c7b2d9f0c06e0369028ababce"
+      "bytes": 11100,
+      "sha256": "1aea14b58d5aa257290cc5ee4d7897702f72329e74a0b8c84d958f30e20844eb"
     },
     {
       "name": "wao-lockup-ink-v4.png",
@@ -119,8 +119,8 @@
     },
     {
       "name": "wao-brand-usage.md",
-      "bytes": 4409,
-      "sha256": "2be0ef09194b8cfe8181c0050aef0335a379995cc2700e5d9d18712cc21388b4"
+      "bytes": 5819,
+      "sha256": "0bc9e225c1ffca62dd1622b14cafb38a5aba7f8d25ebb0f6f67198888565dcda"
     }
   ]
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { COMPANIONS, COMPANION_IDS } from '@/utils/companionIdentity'
 import { createCompanionModels } from './companionModels'
 import { createCompanionWardrobe, disposeWardrobe, wardrobeNecklines } from './companionWardrobe'
 import { plainWeather, type LivingWeather } from './livingWeather'
@@ -386,9 +387,9 @@ export function createCompanionScene({ host, canvas, targets, say, failed, surpr
     if (resting() || !runnable() || currentActivity) return false
     story = { event, start: performance.now() }
     lastInteraction = performance.now()
-    const names = ['小画家', '小书虫', '小开心', '小青蛙']
+    const names = COMPANION_IDS.map(id => COMPANIONS[id].name)
     const text: Partial<Record<WorldStory['kind'], string>> = {
-      catch: [`${names[event.source]}把泡泡染成了颜色。`, '小书虫：瞄准，接住。', '小开心：这个归我啦。', '小青蛙抢先跳起来了。'][event.source],
+      catch: [`${names[event.source]}把泡泡染成了颜色。`, `${names[1]}：瞄准，接住。`, `${names[2]}：这个归我啦。`, `${names[3]}抢先跳起来了。`][event.source],
       miss: event.tier === 'rare' ? '大家都扑空啦。' : '咦，泡泡去哪了？',
       wind: event.tier === 'rare' ? '帽子歪了，帮你扶一下。' : '借你一阵轻轻的风。',
       orbit: '你画的小小星系。', wave: '收到你的节拍。',
