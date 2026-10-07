@@ -1,10 +1,12 @@
 import { ref, shallowRef } from 'vue'
+import { randomCompanion, type CompanionId } from '@/utils/companionIdentity'
 
 export type CompanionKind = 'note' | 'task' | 'empty'
 export type CompanionTicket = { epoch: number; at: number; anchor: DOMRect }
 export const companionQuiet = ref(false)
 export const companionEditing = ref(false)
-export const companionResponse = shallowRef<{ kind: CompanionKind; ticket: CompanionTicket } | null>(null)
+export const companionMember = ref('')
+export const companionResponse = shallowRef<{ kind: CompanionKind; ticket: CompanionTicket; identity?: CompanionId } | null>(null)
 const blockers = new Set<string>()
 const last = new Map<CompanionKind, number>()
 let epoch = 0
@@ -18,6 +20,7 @@ export function resetCompanionContext(user?: string) {
   companionResponse.value = null
   if (user !== undefined && user !== member) {
     member = user
+    companionMember.value = user
     last.clear()
     emptySeen = false
     try {
@@ -66,6 +69,6 @@ export function respondWithCompanion(kind: CompanionKind, ticket?: CompanionTick
     emptySeen = true
     try { sessionStorage.setItem(`wao-companion-empty:${member}`, 'true') } catch { /* 当前页面内仍去重。 */ }
   }
-  companionResponse.value = { kind, ticket }
+  companionResponse.value = { kind, ticket, identity: randomCompanion() }
   return true
 }

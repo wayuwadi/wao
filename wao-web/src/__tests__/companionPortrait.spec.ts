@@ -1,44 +1,47 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CompanionPortrait from '@/components/companions/CompanionPortrait.vue'
-const spies = vi.hoisted(() => ({ render: vi.fn(), dispose: vi.fn(), loss: vi.fn(), geometry: vi.fn(), material: vi.fn() }))
-vi.mock('three', async original => ({
-  ...await original<typeof import('three')>(),
-  WebGLRenderer: class { setPixelRatio() {} setSize() {} render = spies.render; dispose = spies.dispose; forceContextLoss = spies.loss },
-}))
-vi.mock('@/components/home/companionModels', async () => {
-  const { Group, Mesh, BoxGeometry, MeshBasicMaterial } = await import('three')
-  return { createCompanionModels: () => {
-    const group = new Group(), geometry = new BoxGeometry(), material = new MeshBasicMaterial()
-    geometry.dispose = spies.geometry; material.dispose = spies.material
-    group.add(new Mesh(geometry, material))
-    return [{ group, body: new Group(), shadow: new Group() }]
-  } }
-})
-let media: EventTarget & { matches: boolean }, frames: Map<number, FrameRequestCallback>, id: number
+import CompanionAvatar from '@/components/companions/CompanionAvatar.vue'
+import { companionEditing, companionQuiet } from '@/composables/quietCompanions'
 beforeEach(() => {
-  vi.clearAllMocks(); frames = new Map(); id = 0
-  media = Object.assign(new EventTarget(), { matches: false })
-  vi.stubGlobal('matchMedia', () => media)
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frames.set(++id, cb); return id })
-  vi.stubGlobal('cancelAnimationFrame', (i: number) => frames.delete(i))
+  companionEditing.value = false
+  companionQuiet.value = false
 })
-afterEach(() => vi.unstubAllGlobals())
-it('减少动态效果只绘制一帧，卸载释放图形资源', () => {
-  media.matches = true
-  const w = mount(CompanionPortrait, { props: { kind: 'note' } })
-  expect(w.emitted('ready')).toHaveLength(1)
-  expect(spies.render).toHaveBeenCalledOnce(); expect(frames.size).toBe(0)
-  w.unmount()
-  expect(spies.dispose).toHaveBeenCalledOnce(); expect(spies.loss).toHaveBeenCalledOnce()
-  expect(spies.geometry).toHaveBeenCalledOnce(); expect(spies.material).toHaveBeenCalledOnce()
+afterEach(() => {
+  companionEditing.value = false
+  companionQuiet.value = false
 })
-it('动画有终点，图形上下文丢失不继续运行', async () => {
-  const w = mount(CompanionPortrait, { props: { kind: 'task' } })
-  const work = [...frames.values()]; frames.clear()
-  work.forEach(cb => cb(performance.now() + 1700))
-  expect(frames.size).toBe(0)
-  await w.get('canvas').trigger('webglcontextlost')
-  expect(w.emitted('failed')).toHaveLength(1)
-  w.unmount()
+it('复用指定首页角色，图片加载后才通知展示计时，不启动工作区 WebGL', async () => {
+  const wrapper = mount(CompanionPortrait, { props: { kind: 'note', identity: 'frog' } })
+  expect(wrapper.find('canvas').exists()).toBe(false)
+  expect(wrapper.get('img').attributes('src')).toBe('/companions/frog.png')
+  expect(wrapper.emitted('ready')).toBeUndefined()
+  await wrapper.get('img').trigger('load')
+  expect(wrapper.emitted('ready')).toHaveLength(1)
+  expect(wrapper.get('img').attributes('aria-hidden')).toBe('true')
+  wrapper.unmount()
+})
+it('素材失败静默退出，切换角色后允许正常加载', async () => {
+  const wrapper = mount(CompanionAvatar, { props: { identity: 'painter' } })
+  await wrapper.get('img').trigger('error')
+  expect(wrapper.emitted('failed')).toHaveLength(1)
+  expect(wrapper.find('img').exists()).toBe(false)
+  await wrapper.setProps({ identity: 'happy' })
+  expect(wrapper.get('img').attributes('src')).toBe('/companions/happy.png')
+  wrapper.unmount()
+})
+it('输入或安静模式立即停止动作，静态引导从不启动动作', async () => {
+  const wrapper = mount(CompanionAvatar, { props: { identity: 'bookworm', animate: true } })
+  expect(wrapper.get('img').classes()).toContain('greeting')
+  companionEditing.value = true
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('img').classes()).not.toContain('greeting')
+  companionEditing.value = false
+  companionQuiet.value = true
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('img').classes()).not.toContain('greeting')
+  companionQuiet.value = false
+  await wrapper.setProps({ animate: false })
+  expect(wrapper.get('img').classes()).not.toContain('greeting')
+  wrapper.unmount()
 })

@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import CompanionAvatar from '@/components/companions/CompanionAvatar.vue'
+import { selectCompanion } from '@/utils/companionIdentity'
+import { companionMember } from '@/composables/quietCompanions'
 import type { ReleaseHighlight } from '@/types/featureExplorer'
 import ReleaseFeatureDemo from './ReleaseFeatureDemo.vue'
-defineProps<{ item: ReleaseHighlight; editionId: string }>()
+const props = defineProps<{ item: ReleaseHighlight; editionId: string }>()
+const identity = computed(() =>
+  selectCompanion(`release:${props.editionId}`, companionMember.value),
+)
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLElement>()
 const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -52,7 +58,7 @@ onBeforeUnmount(() => {
         aria-labelledby="release-guide-title"
       >
         <header>
-          <span class="guide-mark">W</span><span>看看怎么用</span
+          <CompanionAvatar :identity="identity" :size="40" /><span>看看怎么用</span
           ><button
             type="button"
             class="guide-close"
@@ -111,15 +117,6 @@ header {
   border-bottom: 1px solid #ffffff14;
   font-size: 13px;
   flex: none;
-}
-.guide-mark {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  background: #7c67f3;
-  border-radius: 9px;
-  font-weight: 700;
 }
 button {
   border: 1px solid #ffffff20;

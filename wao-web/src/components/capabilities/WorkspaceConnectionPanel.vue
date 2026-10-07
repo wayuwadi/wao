@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useSessionStore } from '@/stores/session'
+import CompanionAvatar from '@/components/companions/CompanionAvatar.vue'
+import { selectCompanion } from '@/utils/companionIdentity'
 import ConnectionSetup from './ConnectionSetup.vue'
 import { grantPresets, presetPermissions, grantedPermissions } from '@/utils/capabilityCenter'
 import {
@@ -20,6 +22,9 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ changed: []; newDraft: [] }>()
 const session = useSessionStore()
+const companionIdentity = computed(() =>
+  selectCompanion(`connection:${props.token?.id ?? 'new'}`, session.userId),
+)
 const draft = ref<WorkspaceGrantRequest>({
   name: '',
   clientType: 'MCP',
@@ -301,7 +306,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="connection-panel">
     <div class="cap-detail-heading">
-      <span class="cap-icon"><i class="ri-shield-keyhole-line" /></span>
+      <CompanionAvatar :identity="companionIdentity" :size="48" />
       <div>
         <small>{{
           token
