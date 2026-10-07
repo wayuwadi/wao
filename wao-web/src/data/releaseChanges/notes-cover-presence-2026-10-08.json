@@ -1,0 +1,1 @@
+{"id":"notes-cover-presence-2026-10-08","sourceSubject":"fix(notes): 按当前正文判断配图是否存在","title":"移除配图后可以重新生成","publishedOn":"2026-10-08","intro":"修复无图小记仍提示已有配图并跳过的问题。","highlights":[{"featureId":"notes","title":"配图状态跟随当前内容","summary":"旧配图已移除时显示可重新配图；润色也不会把旧图插回。","steps":["打开已移除总览图的小记，查看配图状态。","点击配图按钮或长按任一 AI 按钮三秒，补齐未完成项目。"]}]}
