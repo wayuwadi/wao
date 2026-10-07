@@ -24,6 +24,7 @@ public final class DigitalMemberDtos {
     public record Bind(String subjectId, String versionId, Long expectedRevision) { }
     public record CreateLook(String name, String style, List<String> assetIds, String portraitAssetId) { }
     public record CreateVersion(List<String> assetIds, String portraitAssetId, Long expectedRevision) { }
+    public record VersionLifecycle(Long expectedRevision) { }
     public record Generate(String name, String style, List<String> assetIds, String requestId) { }
     public record Generation(String runId, String status, String message, String lookId, String versionId) { }
     public record IdentitySelection(@Size(max=12) String mode, @Size(max=32) String subjectId, @Size(max=32) String versionId) { }

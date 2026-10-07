@@ -37,6 +37,10 @@ public class DigitalMemberController {
     public ApiResponse<Look> createVersion(@PathVariable String id,@RequestBody CreateVersion body,HttpServletRequest r){return ApiResponse.ok(service.createVersion(current.id(r),id,body));}
     @PostMapping("/api/digital-versions/{id}/confirm")
     public ApiResponse<Subject> confirm(@PathVariable String id,HttpServletRequest r){return ApiResponse.ok(service.confirm(current.id(r),id));}
+    @DeleteMapping("/api/digital-versions/{id}")
+    public ApiResponse<Subject> deleteVersion(@PathVariable String id,@RequestBody VersionLifecycle body,HttpServletRequest r){return ApiResponse.ok(service.deleteVersion(current.id(r),id,body));}
+    @PostMapping("/api/digital-versions/{id}/restore")
+    public ApiResponse<Subject> restoreVersion(@PathVariable String id,@RequestBody VersionLifecycle body,HttpServletRequest r){return ApiResponse.ok(service.restoreVersion(current.id(r),id,body));}
     @GetMapping("/api/me/profile")
     public ApiResponse<Profile> profile(HttpServletRequest r){return ApiResponse.ok(service.profile(current.id(r)));}
     @PutMapping("/api/me/profile")

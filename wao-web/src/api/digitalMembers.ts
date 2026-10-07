@@ -13,7 +13,7 @@ export interface DigitalAsset {
 export interface DigitalVersion {
   id: string
   number: number
-  state: 'candidate' | 'confirmed'
+  state: 'candidate' | 'confirmed' | 'deleted'
   assetIds: string[]
   portraitAssetId: string | null
   createdAt: string
@@ -119,6 +119,18 @@ export const createDigitalVersion = (
 ) => data(http.post<ApiResponse<DigitalLook>>(`/api/digital-looks/${key(id)}/versions`, input))
 export const confirmDigitalVersion = (id: string) =>
   data(http.post<ApiResponse<DigitalSubject>>(`/api/digital-versions/${key(id)}/confirm`))
+export const deleteDigitalVersion = (id: string, expectedRevision: number) =>
+  data(
+    http.delete<ApiResponse<DigitalSubject>>(`/api/digital-versions/${key(id)}`, {
+      data: { expectedRevision },
+    }),
+  )
+export const restoreDigitalVersion = (id: string, expectedRevision: number) =>
+  data(
+    http.post<ApiResponse<DigitalSubject>>(`/api/digital-versions/${key(id)}/restore`, {
+      expectedRevision,
+    }),
+  )
 export const saveDigitalBinding = (input: {
   subjectId: string | null
   versionId: string | null
