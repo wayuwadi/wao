@@ -4,7 +4,7 @@ import { automationResult } from '@/utils/automationResult'
 import { useDataStore } from '@/stores/data'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
-import ChatSyncConfigModal from '@/components/overlays/ChatSyncConfigModal.vue'
+import { useRouter } from 'vue-router'
 import HttpPerformanceConfigModal from '@/components/overlays/HttpPerformanceConfigModal.vue'
 import type { HttpPerformanceInspectionConfig } from '@/api/board'
 import type { AutomationJob } from '@/types'
@@ -26,7 +26,8 @@ const newNotification = ref(false)
 /** 有配置页的执行器：任务列表与详情上多一个「配置」入口。 */
 const CHAT_SYNC_HANDLER = 'feishu-chat-sync'
 const HTTP_PERFORMANCE_HANDLER = 'http-performance-ai-run'
-const chatConfigOpen = ref(false)
+const router = useRouter()
+function openChatConfig() { void router.push('/capabilities?area=bots&pane=receiver') }
 const httpConfigOpen = ref(false)
 const RUN_PAGE_SIZE = 10
 const runPage = ref(1)
@@ -205,7 +206,7 @@ function switchTab(next: 'jobs' | 'runs') {
 }
 
 function openConfig(job: AutomationJob) {
-  if (job.handler === CHAT_SYNC_HANDLER) chatConfigOpen.value = true
+  if (job.handler === CHAT_SYNC_HANDLER) openChatConfig()
   if (job.handler === HTTP_PERFORMANCE_HANDLER) httpConfigOpen.value = true
 }
 
@@ -263,7 +264,7 @@ onMounted(() => {
       <div class="atop">
         <div class="atitle">自动化 / 定时任务</div>
         <span class="atip">让记录自己发生</span>
-        <button class="btn-ghost" @click="chatConfigOpen = true">飞书任务收集配置</button>
+        <button class="btn-ghost" @click="openChatConfig">飞书任务收集配置</button>
         <div class="spacer"></div>
       </div>
       <div class="tabs">
@@ -500,7 +501,6 @@ onMounted(() => {
       </div>
     </template>
 
-    <ChatSyncConfigModal v-if="chatConfigOpen" @close="chatConfigOpen = false" />
     <HttpPerformanceConfigModal
       v-if="httpConfigOpen"
       @close="httpConfigOpen = false"

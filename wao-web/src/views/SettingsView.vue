@@ -24,7 +24,6 @@ import {
 } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
-import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
 import NotificationSettingsPanel from '@/components/settings/NotificationSettingsPanel.vue'
@@ -40,7 +39,6 @@ const preferences = usePreferenceStore()
 const ui = useUiStore()
 const router = useRouter()
 const route = useRoute()
-const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const tianrenNotificationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
@@ -56,6 +54,10 @@ const isDetail = computed(() => tab.value !== category.value)
 let skipWebhookRouteGuardOnce = false
 
 function selectTab(next: string) {
+  if (next === 'webhook') {
+    void router.push({ path: '/capabilities', query: { area: 'bots' } })
+    return
+  }
   if (next === tab.value) return
   // 路由守卫只检查当前面板；导航成功后由 query watcher 切换内容。
   void router.replace({ query: { ...route.query, tab: next === 'common' ? undefined : next }, hash: '' })
@@ -65,6 +67,7 @@ watch(
   () => [route.query.tab, route.hash] as const,
   ([value, hash]) => {
     tab.value = normalizeSettingsTab(value, hash)
+    if (tab.value === 'webhook') void router.replace({ path: '/capabilities', query: { area: 'bots' } })
   },
 )
 
@@ -77,7 +80,6 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
 })
 function confirmCurrentSettings(): boolean {
   if (['common','appearance'].includes(tab.value) && homeDateSettings.value && !homeDateSettings.value.confirmLeave()) return false
-  if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return false
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
   if (tab.value === 'tianren-notifications' && tianrenNotificationPanel.value && !tianrenNotificationPanel.value.confirmLeave()) return false
@@ -319,6 +321,7 @@ async function saveSiteInformation() {
 }
 
 watch(tab, (t) => {
+  if (t === 'webhook') void router.replace({ path: '/capabilities', query: { area: 'bots' } })
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
 
 }, { immediate: true })
@@ -464,7 +467,7 @@ async function bindFeishu() {
 
         <!-- 系统 · 通用 Webhook 配置 -->
         <template v-else-if="tab === 'webhook'">
-          <WebhookConfigPanel ref="webhookPanel" />
+          <p>正在前往能力中心的机器人管理…</p>
         </template>
 
 

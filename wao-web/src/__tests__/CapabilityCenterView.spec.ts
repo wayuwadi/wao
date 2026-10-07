@@ -54,6 +54,14 @@ async function render(path = '/capabilities', authed = true) {
   return { wrapper, router }
 }
 describe('能力中心真实目录与区域', () => {
+  it('游客打开机器人管理仅提示登录，不读取成员配置', async () => {
+    const { wrapper } = await render('/capabilities?area=bots', false)
+    expect(wrapper.text()).toContain('登录后管理机器人')
+    expect(wrapper.find('.webhook-panel').exists()).toBe(false)
+    expect(api.fetchWorkspaceMcpTokens).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('游客打开系统 AI 时提示登录，不读取成员连接、发布或模型配置', async () => {
     const { wrapper } = await render('/capabilities?area=system-ai', false)
     expect(wrapper.text()).toContain('登录后管理系统 AI')

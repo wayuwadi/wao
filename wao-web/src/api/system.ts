@@ -54,6 +54,12 @@ export interface FeishuWebhookEndpoint {
   systemDefault: boolean
   createdAt: string
   updatedAt: string
+  captureKind?: 'NONE' | 'TASK' | 'NOTE'
+  mentionId?: string
+  mentionName?: string
+  chatId?: string
+  appId?: string
+  revision?: number
 }
 
 export interface FeishuWebhookEndpointInput {
@@ -63,15 +69,53 @@ export interface FeishuWebhookEndpointInput {
   url?: string
   enabled: boolean
   systemDefault: boolean
+  captureKind?: 'NONE' | 'TASK' | 'NOTE'
+  mentionId?: string
+  mentionName?: string
+  chatId?: string
+  appId?: string
+  revision?: number
+  impactConfirmed?: boolean
 }
+
+export interface FeishuWebhookActivity {
+  usages: { kind: string; label: string; count: number }[]
+  recentSends: { kind: string; status: string; occurredAt: string; errorCode?: string }[]
+  recentCaptures: {
+    messageId: string
+    captureKind: string
+    status: string
+    targetId?: string
+    occurredAt: string
+    errorCode?: string
+  }[]
+  receiver: {
+    enabled: boolean
+    appConfigured: boolean
+    chatConfigured: boolean
+    callbackVerified: boolean
+    appId: string
+    chatId: string
+    chatName?: string
+    eventUrl: string
+    pollIntervalMinutes: number
+  }
+  canDelete: boolean
+  replacementName?: string
+}
+export const fetchWebhookActivity = (id: string) =>
+  get<FeishuWebhookActivity>(`/api/settings/webhooks/${id}/activity`)
 
 export const fetchWebhookEndpoints = () => get<FeishuWebhookEndpoint[]>('/api/settings/webhooks')
 export const createWebhookEndpoint = (payload: FeishuWebhookEndpointInput) =>
   postWithBody<FeishuWebhookEndpoint>('/api/settings/webhooks', payload)
 export const updateWebhookEndpoint = (id: string, payload: FeishuWebhookEndpointInput) =>
   put<FeishuWebhookEndpoint>(`/api/settings/webhooks/${id}`, payload)
-export async function deleteWebhookEndpoint(id: string): Promise<void> {
-  await http.delete<ApiResponse<void>>(`/api/settings/webhooks/${id}`)
+export async function deleteWebhookEndpoint(
+  id: string,
+  options?: { revision?: number; impactConfirmed?: boolean },
+): Promise<void> {
+  await http.delete<ApiResponse<void>>(`/api/settings/webhooks/${id}`, { params: options })
 }
 export const testWebhookEndpoint = (id: string) => post<void>(`/api/settings/webhooks/${id}/test`)
 

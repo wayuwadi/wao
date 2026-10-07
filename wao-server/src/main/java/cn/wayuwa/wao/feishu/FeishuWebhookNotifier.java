@@ -105,21 +105,25 @@ public class FeishuWebhookNotifier {
      */
     public boolean notifyResetCardIncrease(Card card) {
         if (!notificationSettings.allows(policy -> policy.automation())) return false;
+        String actualUrl = null;
+        boolean success = false;
         try {
             EffectiveTarget destination = target();
             if (!destination.enabled() || destination.url() == null || destination.url().isBlank()) return false;
+            actualUrl = destination.url();
             JsonNode response = rawCardClient.post().uri(destination.url()).contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of("msg_type", "interactive", "card", card.toPayload()))
                     .retrieve().body(JsonNode.class);
             boolean accepted = response != null && (response.has("code") || response.has("StatusCode"))
                     && response.path("code").asInt(response.path("StatusCode").asInt(-1)) == 0;
             if (!accepted) log.warn("重置卡增加通知未获飞书确认，保留基线等待重试");
+            success = accepted;
             return accepted;
         } catch (RuntimeException ex) {
             // 不记录异常正文，避免 HTTP 错误包含 Webhook 凭据。
             log.warn("重置卡增加通知投递失败，保留基线等待重试：{}", ex.getClass().getSimpleName());
             return false;
-        }
+        } finally { if (actualUrl != null) recordResult(actualUrl, "SEND", success); }
     }
 
     /** 原群目标已退休，所有系统通知进入 WAO 通知中心。 */
@@ -151,6 +155,8 @@ public class FeishuWebhookNotifier {
 
     /** 向业务已校验的指定 Webhook 发送 JSON 2.0 卡片；不回落默认群。 */
     public void sendRawCard(String url, JsonNode card) {
+        boolean success = false;
+        try {
         if (url == null || url.isBlank()) throw new FeishuApiException("未选择通知 Webhook");
         JsonNode response;
         try {
@@ -163,6 +169,8 @@ public class FeishuWebhookNotifier {
                 || response.path("code").asInt(response.path("StatusCode").asInt(-1)) != 0) {
             throw new FeishuApiException("飞书未确认接收卡片，请检查图片及机器人配置");
         }
+        success = true;
+        } finally { recordResult(url, "SEND", success); }
     }
 
     private record EffectiveTarget(String url, boolean enabled) {
@@ -176,6 +184,20 @@ public class FeishuWebhookNotifier {
      * @throws FeishuApiException 地址为空、网络不通或飞书返回错误码时
      */
     public void send(String url, Card card) {
+        sendCard(url, card, "SEND", null);
+    }
+
+    /** 指定机器人发送测试并独立记录 TEST 结果，不改变收集验证状态。 */
+    public void sendTest(String id, Card card) {
+        String url;
+        try { url = webhooks.endpointUrl(id); }
+        catch (RuntimeException ex) { webhooks.recordSendForId(id, "TEST", false); throw ex; }
+        sendCard(url, card, "TEST", id);
+    }
+
+    private void sendCard(String url, Card card, String kind, String id) {
+        boolean success = false;
+        try {
         if (url == null || url.isBlank()) {
             throw new FeishuApiException("请先填写飞书 webhook 地址");
         }
@@ -187,9 +209,14 @@ public class FeishuWebhookNotifier {
         } catch (RestClientException ex) {
             throw new FeishuApiException("无法连接飞书 webhook，请检查地址是否正确", ex);
         }
-        int code = res == null ? -1 : res.path("code").asInt(res.path("StatusCode").asInt(0));
+        int code = res == null ? -1 : res.path("code").asInt(res.path("StatusCode").asInt(-1));
         if (code != 0) {
-            throw new FeishuApiException("飞书 webhook 返回错误：" + (res == null ? "空响应" : res.path("msg").asText("")));
+            throw new FeishuApiException("飞书 Webhook 未确认接收，请检查配置后重试");
+        }
+        success = true;
+        } finally {
+            if (id == null) recordResult(url, kind, success);
+            else webhooks.recordSendForId(id, kind, success);
         }
     }
 
@@ -207,10 +234,12 @@ public class FeishuWebhookNotifier {
             throw new FeishuApiException("请选择飞书 webhook 配置");
         }
         FeishuWebhookConfigService.NotificationTarget target = webhooks.enabledTarget(webhookId.trim());
-        sendTextToUrl(target.url(), text);
+        sendTextToUrl(target.url(), text, target.id());
     }
 
-    private void sendTextToUrl(String url, String text) {
+    private void sendTextToUrl(String url, String text, String id) {
+        boolean success = false;
+        try {
         if (url == null || url.isBlank()) {
             throw new FeishuApiException("请先填写飞书 webhook 地址");
         }
@@ -225,11 +254,12 @@ public class FeishuWebhookNotifier {
         } catch (RestClientException ex) {
             throw new FeishuApiException("无法连接飞书 webhook，请检查地址是否正确", ex);
         }
-        int code = res == null ? -1 : res.path("code").asInt(res.path("StatusCode").asInt(0));
+        int code = res == null ? -1 : res.path("code").asInt(res.path("StatusCode").asInt(-1));
         if (code != 0) {
-            throw new FeishuApiException("飞书 webhook 返回错误："
-                    + (res == null ? "空响应" : res.path("msg").asText("")));
+            throw new FeishuApiException("飞书 Webhook 未确认接收，请检查配置后重试");
         }
+        success = true;
+        } finally { webhooks.recordSendForId(id, "SEND", success); }
     }
 
     /**
@@ -240,6 +270,8 @@ public class FeishuWebhookNotifier {
      * @throws FeishuApiException 地址为空、网络不通或飞书返回错误码时
      */
     public void sendComic(String url, ComicCard card) {
+        boolean success = false;
+        try {
         if (url == null || url.isBlank()) {
             throw new FeishuApiException("请先填写飞书 webhook 地址");
         }
@@ -251,10 +283,17 @@ public class FeishuWebhookNotifier {
         } catch (RestClientException ex) {
             throw new FeishuApiException("无法连接飞书 webhook，请检查地址是否正确", ex);
         }
-        int code = res == null ? -1 : res.path("code").asInt(res.path("StatusCode").asInt(0));
+        int code = res == null ? -1 : res.path("code").asInt(res.path("StatusCode").asInt(-1));
         if (code != 0) {
-            throw new FeishuApiException("飞书 webhook 返回错误：" + (res == null ? "空响应" : res.path("msg").asText("")));
+            throw new FeishuApiException("飞书 Webhook 未确认接收，请检查配置后重试");
         }
+        success = true;
+        } finally { recordResult(url, "SEND", success); }
+    }
+
+    private void recordResult(String url, String kind, boolean success) {
+        try { webhooks.recordSend(url, kind, success); }
+        catch (RuntimeException ex) { log.warn("飞书发送结果记录失败"); }
     }
 
     /**

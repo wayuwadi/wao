@@ -97,6 +97,16 @@ public class FeishuQuickCollectService {
     private final FeishuQuickCollectRecallService recalls;
     private final FeishuLinkPreviewService linkPreviews;
     private final Map<String, Long> recentReactionChecks = new ConcurrentHashMap<>();
+    private FeishuWebhookConfigService botRegistry;
+    private FeishuBotInboxService inbox;
+    private FeishuCaptureTargetGuard targetGuard;
+
+    /** 生产入口使用持久收件箱、显式机器人路由和来源版本保护。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setBotCenter(FeishuWebhookConfigService botRegistry, FeishuBotInboxService inbox,
+            FeishuCaptureTargetGuard targetGuard) {
+        this.botRegistry = botRegistry; this.inbox = inbox; this.targetGuard = targetGuard;
+    }
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             TaskService tasks, KnowledgeService knowledge, ProjectService projects, AccountMapper accounts,
             AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
@@ -178,10 +188,13 @@ public class FeishuQuickCollectService {
         boolean encryptedEnvelope = StringUtils.hasText(read(rawBody).path("encrypt").asText(""));
         JsonNode body = decrypt(rawBody);
         if ("url_verification".equals(body.path("type").asText(""))) {
-            requireToken(body.path("token").asText(""));
+            requireToken(body.path("token").asText(""), encryptedEnvelope);
             return Map.of("challenge", body.path("challenge").asText(""));
         }
-        requireToken(body.path("header").path("token").asText(body.path("token").asText("")));
+        requireToken(body.path("header").path("token").asText(body.path("token").asText("")), encryptedEnvelope);
+        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+        if (!StringUtils.hasText(appId) || !appId.equals(body.path("header").path("app_id").asText("")))
+            throw new BadRequestException("飞书事件应用与接收配置不一致");
         String eventType = body.path("header").path("event_type").asText("");
         if ("url.preview.get".equals(eventType)) {
             return linkPreviews.preview(body.path("event"), baseUrl);
@@ -204,7 +217,7 @@ public class FeishuQuickCollectService {
                 recall(body.path("event"), body.path("header").path("event_id").asText(""));
             } catch (RuntimeException ex) {
                 // 回调仍按既有协议返回 200；一分钟回看会用 deleted=true 的真实消息状态再次收敛。
-                log.warn("飞书原消息撤回同步失败：{}", ex.getMessage());
+                log.warn("飞书原消息撤回同步失败：{}", ex.getClass().getSimpleName());
             }
             return Map.of();
         }
@@ -219,7 +232,7 @@ public class FeishuQuickCollectService {
                 reactionTriggered = reactionAiRuns.trigger(body, baseUrl);
             } catch (RuntimeException ex) {
                 // 回调必须保持 200；事务会回滚，用户重新添加表情即可再派工，并已尽力在原消息加 ERROR。
-                log.warn("飞书触发表情启动 AI Run 失败：{}", ex.getMessage());
+                log.warn("飞书触发表情启动 AI Run 失败：{}", ex.getClass().getSimpleName());
                 reactionTriggered = true;
             }
         }
@@ -232,13 +245,35 @@ public class FeishuQuickCollectService {
         if (!"im.message.receive_v1".equals(eventType)) {
             return Map.of();
         }
-        try {
-            collect(body.path("event"), body.path("header").path("event_id").asText(""));
-        } catch (RuntimeException ex) {
-            // 事件已经收下了，重推同一条只会再失败一次；把原因留在日志里，别把 5xx 抛回飞书
-            log.warn("群聊快速收集处理失败：{}", ex.getMessage());
-        }
+        JsonNode event = body.path("event");
+        String eventId = body.path("header").path("event_id").asText("");
+        if (inbox != null) inbox.enqueue(event, eventId, appId);
+        else collect(event, eventId);
         return Map.of();
+    }
+
+    /** 已认证且加密持久化的事件异步处理；创建、幂等和完成标记在同一事务提交。 */
+    @Transactional
+    public void processInbox(cn.wayuwa.wao.domain.FeishuBotInboxEntity row) {
+        inbox.requireLease(row);
+        if (!settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED))
+            throw new BadRequestException("飞书收集已暂停");
+        if (!row.getAppId().equals(settings.get(SettingService.CHAT_SYNC_APP_ID, "")))
+            throw new BadRequestException("飞书接收应用已改变");
+        JsonNode event = inbox.event(row);
+        if (!event.path("message").path("chat_id").asText("").equals(settings.get(SettingService.CHAT_SYNC_CHAT_ID, ""))
+                || !StringUtils.hasText(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")))
+            throw new BadRequestException("飞书接收配置已改变");
+        var route = botRegistry.captureRoute(event.path("message").path("mentions"));
+        if (route == null || !java.util.Objects.equals(route.webhookId(), row.getWebhookId())
+                || !route.kind().equals(row.getCaptureKind())) throw new BadRequestException("飞书收集路由已改变");
+        if (event.path("_wao_polled_identity_check").asBoolean(false)) {
+            var senderId = (com.fasterxml.jackson.databind.node.ObjectNode) event.path("sender").path("sender_id");
+            senderId.put("union_id", polledSenderUnionId(event.path("message").path("chat_id").asText(""),
+                    senderId.path("open_id").asText("")));
+        }
+        collect(event, row.getEventId());
+        inbox.complete(row);
     }
 
     /**
@@ -248,14 +283,12 @@ public class FeishuQuickCollectService {
      * @param chatId 目标群 id
      * @param source 飞书消息
      */
+    @Transactional
     public void collectPolled(String chatId, FeishuMessage source) {
+        if (source == null || !"user".equals(source.senderType()) || source.deleted()) return;
         var event = json.createObjectNode();
-        var senderId = event.putObject("sender").putObject("sender_id");
+        var senderId = event.putObject("sender").put("sender_type", "user").putObject("sender_id");
         senderId.put("open_id", source.senderId());
-        String unionId = polledSenderUnionId(chatId, source.senderId());
-        if (StringUtils.hasText(unionId)) {
-            senderId.put("union_id", unionId);
-        }
         var message = event.putObject("message");
         message.put("message_id", source.messageId());
         message.put("chat_id", chatId);
@@ -265,7 +298,14 @@ public class FeishuQuickCollectService {
         source.mentions().forEach(mention -> mentions.addObject()
                 .put("key", mention.key()).put("name", mention.name())
                 .putObject("id").put("open_id", mention.openId()));
-        collect(event, "");
+        if (inbox != null) {
+            // 先持久保留已认证消息，群成员接口的瞬时失败由现有收件箱重试，不能随着水位推进丢失。
+            event.put("_wao_polled_identity_check", true);
+            inbox.enqueue(event, "", settings.get(SettingService.CHAT_SYNC_APP_ID, ""));
+        } else {
+            senderId.put("union_id", polledSenderUnionId(chatId, source.senderId()));
+            collect(event, "");
+        }
     }
 
     /**
@@ -325,21 +365,28 @@ public class FeishuQuickCollectService {
         JsonNode message = event.path("message");
         String chatId = message.path("chat_id").asText("");
         String configured = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");
-        if (StringUtils.hasText(configured) && !configured.equals(chatId)) {
+        if (!settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)
+                || !StringUtils.hasText(configured) || !configured.equals(chatId)
+                || !StringUtils.hasText(settings.get(SettingService.CHAT_SYNC_APP_ID, ""))
+                || !StringUtils.hasText(settings.get(SettingService.CHAT_SYNC_APP_SECRET, ""))
+                || !"user".equals(event.path("sender").path("sender_type").asText(""))) {
             return;
         }
         // 普通群聊必须保持零打扰；只有明确 @ 了机器人的消息才能进收集链路。
         if (!message.path("mentions").isArray() || message.path("mentions").isEmpty()) {
             return;
         }
-        String botKind = botKind(message.path("mentions"));
-        if ("AMBIGUOUS".equals(botKind)) return;
+        var route = botRegistry == null ? null : botRegistry.captureRoute(message.path("mentions"));
+        String botKind = botRegistry == null ? botKind(message.path("mentions")) : route == null ? "NONE" : route.kind();
+        if ("AMBIGUOUS".equals(botKind) || "NONE".equals(botKind)) return;
         String messageId = message.path("message_id").asText("");
+        if (!StringUtils.hasText(messageId)) return;
         String eventKey = eventKey(eventId, messageId, event);
         String type = message.path("message_type").asText("");
         String fingerprint = sourceFingerprint(type, message.path("content").asText(""));
         ClaimMode claim = claim(eventKey, eventId, messageId, chatId,
-                event.path("sender").path("sender_id").path("open_id").asText(""), fingerprint);
+                event.path("sender").path("sender_id").path("open_id").asText(""), fingerprint,
+                route == null ? null : route.webhookId());
         if (claim == ClaimMode.NONE) {
             return;
         }
@@ -354,7 +401,7 @@ public class FeishuQuickCollectService {
             capture = "NOTE".equals(botKind)
                     ? new CaptureText("NOTE", content, "") : captureText(content);
         } catch (RuntimeException ex) {
-            finish(eventKey, "FAILED", "TASK", null, null, abbreviated(ex.getMessage()));
+            finish(eventKey, "FAILED", botKind, null, null, "CAPTURE_FAILED");
             react(messageId, "ERROR");
             throw ex;
         }
@@ -363,15 +410,25 @@ public class FeishuQuickCollectService {
             finish(eventKey, "REJECTED", capture.kind(), null, fingerprint, "EMPTY_CONTENT");
             return;
         }
-        String memberId = senderMemberId(event.path("sender"));
+        SenderBinding binding = senderBinding(event.path("sender"));
+        String memberId = binding.memberId();
         if (!StringUtils.hasText(memberId)) {
             react(messageId, "ERROR");
-            finish(eventKey, "REJECTED", capture.kind(), null, fingerprint, "SENDER_NOT_BOUND");
+            finish(eventKey, "REJECTED", capture.kind(), null, fingerprint, binding.errorCode());
+            bindingGuide(chatId, messageId, binding.errorCode());
             return;
         }
         try {
             if (claim == ClaimMode.UPDATE) {
                 FeishuQuickCollectEventEntity stored = events.selectById(eventKey);
+                if (targetGuard != null && !targetGuard.mayUpdate(stored)) {
+                    finish(eventKey, "REJECTED", stored.getCaptureKind(), stored.getTargetId(), fingerprint, "TARGET_CHANGED");
+                    return;
+                }
+                if (!("NOTE".equals(stored.getCaptureKind()) == "NOTE".equals(capture.kind()))) {
+                    finish(eventKey, "REJECTED", stored.getCaptureKind(), stored.getTargetId(), fingerprint, "ROUTE_CHANGED");
+                    return;
+                }
                 if ("NOTE".equals(stored.getCaptureKind())) {
                     knowledge.createNote(stored.getTargetId(), noteRequest(capture.content()), memberId);
                     finish(eventKey, "UPDATED", "NOTE", stored.getTargetId(), fingerprint, null);
@@ -400,8 +457,9 @@ public class FeishuQuickCollectService {
                 log.info("群聊个人收集：已创建任务 {}（项目 {}）", task.id(), project.id());
             }
             react(messageId, reactionPolicy.receivedEmoji());
+            if (targetGuard != null) targetGuard.remember(events.selectById(eventKey));
         } catch (RuntimeException ex) {
-            finish(eventKey, "FAILED", capture.kind(), null, null, abbreviated(ex.getMessage()));
+            finish(eventKey, "FAILED", capture.kind(), null, null, "CAPTURE_FAILED");
             react(messageId, "ERROR");
             throw ex;
         }
@@ -415,7 +473,7 @@ public class FeishuQuickCollectService {
             if (TASK_BOT_NAME.equals(mention.path("name").asText())) task = true;
             if (NOTE_BOT_NAME.equals(mention.path("name").asText())) note = true;
         }
-        return task && note ? "AMBIGUOUS" : note ? "NOTE" : "TASK";
+        return task && note ? "AMBIGUOUS" : note ? "NOTE" : task ? "TASK" : "NONE";
     }
 
     private static CreateNoteRequest noteRequest(String content) {
@@ -457,13 +515,14 @@ public class FeishuQuickCollectService {
     }
 
     private ClaimMode claim(String key, String eventId, String messageId, String chatId, String senderOpenId,
-            String fingerprint) {
+            String fingerprint, String webhookId) {
         FeishuQuickCollectEventEntity event = new FeishuQuickCollectEventEntity();
         event.setEventKey(key);
         event.setEventId(emptyToNull(eventId));
         event.setMessageId(emptyToNull(messageId));
         event.setChatId(emptyToNull(chatId));
         event.setSenderOpenId(emptyToNull(senderOpenId));
+        event.setWebhookId(webhookId);
         event.setStatus("PROCESSING");
         event.setCreatedAt(LocalDateTime.now(SHANGHAI));
         event.setUpdatedAt(event.getCreatedAt());
@@ -540,20 +599,24 @@ public class FeishuQuickCollectService {
         JsonNode content = read(message.path("content").asText("{}"));
         String text = switch (type) {
             case "text" -> content.path("text").asText("");
-            case "post" -> postText(content, message.path("message_id").asText(""));
+            case "post" -> postText(content, message.path("message_id").asText(""), message.path("mentions"));
             default -> "";
         };
-        for (JsonNode mention : message.path("mentions")) {
+        List<JsonNode> mentions = new ArrayList<>();
+        message.path("mentions").forEach(mentions::add);
+        mentions.sort(java.util.Comparator.comparingInt((JsonNode mention) -> mention.path("key").asText("").length()).reversed());
+        for (JsonNode mention : mentions) {
             String key = mention.path("key").asText("");
             if (StringUtils.hasText(key)) {
-                text = text.replace(key, "");
+                String name = mention.path("name").asText("");
+                text = text.replace(key, entryMention(mention) ? "" : StringUtils.hasText(name) ? "@" + name : key);
             }
         }
         return text.trim();
     }
 
     /** 富文本消息：先保留全部文字段落，再把图片按原有顺序追加到正文末尾。 */
-    private String postText(JsonNode content, String messageId) {
+    private String postText(JsonNode content, String messageId, JsonNode mentions) {
         StringBuilder text = new StringBuilder();
         List<String> imageMarkdown = new ArrayList<>();
         String title = content.path("title").asText("");
@@ -567,6 +630,8 @@ public class FeishuQuickCollectService {
                 } else if ("a".equals(span.path("tag").asText(""))) {
                     text.append(span.path("text").asText("")).append(' ')
                             .append(span.path("href").asText(""));
+                } else if ("at".equals(span.path("tag").asText(""))) {
+                    text.append(postMentionText(span, mentions));
                 } else if ("img".equals(span.path("tag").asText(""))) {
                     String key = span.path("image_key").asText("");
                     if (StringUtils.hasText(key)) {
@@ -582,6 +647,26 @@ public class FeishuQuickCollectService {
         }
         String images = String.join("\n\n", imageMarkdown);
         return body.isEmpty() ? images : body + "\n\n" + images;
+    }
+
+    private boolean entryMention(JsonNode mention) {
+        var single = json.createArrayNode().add(mention);
+        return botRegistry == null ? !"NONE".equals(botKind(single)) : botRegistry.captureRoute(single) != null;
+    }
+
+    private String postMentionText(JsonNode span, JsonNode mentions) {
+        String id = span.path("user_id").asText("");
+        for (JsonNode mention : mentions) {
+            if (StringUtils.hasText(id) && (id.equals(mention.path("id").path("open_id").asText(""))
+                    || id.equals(mention.path("id").path("user_id").asText(""))
+                    || id.equals(mention.path("key").asText("")))) {
+                if (entryMention(mention)) return "";
+                String name = mention.path("name").asText("");
+                return "@" + (StringUtils.hasText(name) ? name : id);
+            }
+        }
+        String name = span.path("user_name").asText("");
+        return StringUtils.hasText(name) ? "@" + name : StringUtils.hasText(id) ? "@" + id : "";
     }
 
     /** 用当前应用的真实消息资源权限下载图片并转存 WAO 图床。 */
@@ -641,35 +726,48 @@ public class FeishuQuickCollectService {
     }
 
     /** 发言人对应的 WAO 成员；未绑定时必须拒绝，不能把私人待办记到别人名下。 */
-    private String senderMemberId(JsonNode sender) {
+    private SenderBinding senderBinding(JsonNode sender) {
         String openId = sender.path("sender_id").path("open_id").asText("");
-        if (StringUtils.hasText(openId)) {
-            AccountIdentityEntity identity = identities.findByProviderSubject("feishu", openId);
-            String memberId = memberId(identity);
-            if (StringUtils.hasText(memberId)) return memberId;
-        }
+        if (!StringUtils.hasText(openId)) return new SenderBinding(null, "SENDER_NOT_BOUND");
+        AccountIdentityEntity direct = identities.findByProviderSubject("feishu", openId);
         String unionId = sender.path("sender_id").path("union_id").asText("");
-        return StringUtils.hasText(unionId)
-                ? memberId(identities.findByProviderUnionSubject("feishu", unionId)) : null;
+        AccountIdentityEntity union = StringUtils.hasText(unionId)
+                ? identities.findByProviderUnionSubject("feishu", unionId) : null;
+        if (direct != null && union != null && !direct.getAccountId().equals(union.getAccountId()))
+            return new SenderBinding(null, "SENDER_IDENTITY_CONFLICT");
+        String member = memberId(direct != null ? direct : union);
+        return new SenderBinding(member, StringUtils.hasText(member) ? null : "SENDER_NOT_BOUND");
+    }
+
+    private void bindingGuide(String chatId, String messageId, String errorCode) {
+        String text = "SENDER_IDENTITY_CONFLICT".equals(errorCode)
+                ? "飞书身份归属冲突，未创建记录。请登录 WAO 核对账号绑定，或联系管理员。"
+                : "未创建记录：请先登录 WAO，在账号设置中绑定当前飞书身份，再发送一条新的 @ 消息。";
+        text += "\n" + PUBLIC_BASE_URL + "/settings?tab=account";
+        try {
+            String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+            String secret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
+            if (StringUtils.hasText(appId) && StringUtils.hasText(secret))
+                feishu.sendTextMessage(feishu.tenantAccessToken(appId, secret), chatId, text,
+                        "bind-" + sourceFingerprint("guide", messageId).substring(0, 40), messageId);
+        } catch (RuntimeException ex) { log.warn("飞书身份绑定指引未能投递，拒绝结果已保留"); }
     }
 
     /** 主动轮询只给出机器人应用 Open ID，通过群成员列表安全换成 Union ID。 */
     private String polledSenderUnionId(String chatId, String openId) {
-        // 同一应用下的旧绑定仍然直接命中，无需额外请求飞书。
-        if (identities.findByProviderSubject("feishu", openId) != null) {
-            return "";
-        }
         String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
         String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
         if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)
                 || !StringUtils.hasText(chatId) || !StringUtils.hasText(openId)) {
-            return "";
+            throw new BadRequestException("飞书群成员身份暂无法核实");
         }
         try {
-            return feishu.chatMemberUnionId(feishu.tenantAccessToken(appId, appSecret), chatId, openId);
+            String unionId = feishu.chatMemberUnionId(feishu.tenantAccessToken(appId, appSecret), chatId, openId);
+            if (!StringUtils.hasText(unionId)) throw new BadRequestException("飞书群成员身份暂无法唯一核实");
+            return unionId;
         } catch (RuntimeException ex) {
-            log.warn("飞书群成员跨应用身份换算失败：{}", ex.getMessage());
-            return "";
+            log.warn("飞书群成员跨应用身份换算失败：{}", ex.getClass().getSimpleName());
+            throw new BadRequestException("飞书群成员身份暂无法核实，请稍后重试");
         }
     }
 
@@ -691,13 +789,16 @@ public class FeishuQuickCollectService {
                 feishu.addMessageReaction(feishu.tenantAccessToken(appId, appSecret), messageId, emojiType);
             }
         } catch (RuntimeException ex) {
-            log.warn("群聊快速收集表情回执失败：{}", ex.getMessage());
+            log.warn("群聊快速收集表情回执失败：{}", ex.getClass().getSimpleName());
         }
     }
 
     /** 配置过 Verification Token 时才校验；没配就跳过（飞书那边也可以不开）。 */
-    private void requireToken(String presented) {
+    private void requireToken(String presented, boolean encryptedEnvelope) {
         String expected = settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN);
+        if (!StringUtils.hasText(expected) && !(encryptedEnvelope
+                && StringUtils.hasText(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY))))
+            throw new BadRequestException("飞书回调未配置身份校验，请配置 Verification Token 或加密事件");
         if (StringUtils.hasText(expected) && !expected.equals(presented)) {
             throw new BadRequestException("飞书事件校验失败");
         }
@@ -763,6 +864,7 @@ public class FeishuQuickCollectService {
     }
 
     record CaptureText(String kind, String content, String sourceTag) { }
+    private record SenderBinding(String memberId, String errorCode) { }
 
     private enum ClaimMode { CREATE, UPDATE, NONE }
 }

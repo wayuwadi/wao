@@ -42,6 +42,7 @@ import cn.wayuwa.wao.mapper.AccountMapper;
 import cn.wayuwa.wao.mapper.FeishuQuickCollectEventMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.dao.DuplicateKeyException;
 
 class FeishuQuickCollectServiceTest {
@@ -64,12 +65,20 @@ class FeishuQuickCollectServiceTest {
             settings, feishu, tasks, knowledge, projects, accounts, identities, events, images, new ObjectMapper(), feedback,
             reactionAiRuns, reactionPolicy, recalls, linkPreviews);
 
+    @BeforeEach
+    void authenticatedReceiver() {
+        when(settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN)).thenReturn("real-token");
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_chat");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_1");
+    }
+
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
-        when(settings.get(eq(SettingService.CHAT_SYNC_CHAT_ID), any())).thenReturn("");
+        when(settings.get(eq(SettingService.CHAT_SYNC_CHAT_ID), any())).thenReturn("oc_1");
         when(settings.get(eq(SettingService.QUICK_COLLECT_PROJECT_ID), any())).thenReturn("");
-        when(settings.get(eq(SettingService.CHAT_SYNC_APP_ID), any())).thenReturn("");
-        when(settings.get(eq(SettingService.CHAT_SYNC_APP_SECRET), any())).thenReturn("");
+        when(settings.get(eq(SettingService.CHAT_SYNC_APP_ID), any())).thenReturn("cli_chat");
+        when(settings.get(eq(SettingService.CHAT_SYNC_APP_SECRET), any())).thenReturn("secret");
         ProjectDto project = mock(ProjectDto.class);
         when(project.id()).thenReturn("p1");
         when(project.name()).thenReturn("Wa All in One");
@@ -80,6 +89,9 @@ class FeishuQuickCollectServiceTest {
         account.setId("a1");
         account.setMemberId("wd");
         when(identities.findByProviderSubject("feishu", "ou_sender")).thenReturn(identity);
+        when(identities.findByProviderUnionSubject("feishu", "on_sender")).thenReturn(identity);
+        when(feishu.tenantAccessToken("cli_chat", "secret")).thenReturn("token");
+        when(feishu.chatMemberUnionId("token", "oc_1", "ou_sender")).thenReturn("on_sender");
         when(accounts.selectById("a1")).thenReturn(account);
         when(events.insert(any(FeishuQuickCollectEventEntity.class))).thenReturn(1);
         when(tasks.createFromChat(any(), any(), any(), any(), any()))
@@ -90,7 +102,7 @@ class FeishuQuickCollectServiceTest {
 
     @Test
     void urlVerificationEchoesTheChallenge() {
-        var out = service.handleEvent("{\"type\":\"url_verification\",\"challenge\":\"abc123\"}");
+        var out = service.handleEvent("{\"type\":\"url_verification\",\"challenge\":\"abc123\",\"token\":\"real-token\"}");
 
         assertThat(out).containsEntry("challenge", "abc123");
     }
@@ -112,7 +124,7 @@ class FeishuQuickCollectServiceTest {
         var out = service.handleEvent("""
                 {
                   "schema":"2.0",
-                  "header":{"event_type":"url.preview.get","token":""},
+                  "header":{"app_id":"cli_chat","event_type":"url.preview.get","token":"real-token"},
                   "event":{"context":{"url":"https://wao.example/s/t/t1"}}
                 }
                 """, "https://wao.example");
@@ -126,7 +138,7 @@ class FeishuQuickCollectServiceTest {
     void cardActionShowsIdentityResultWithoutAddingBotReaction() {
         when(feedback.collect(any())).thenReturn(new NotificationFeedbackService.Result("做到了", true));
         var out = service.handleEvent("""
-                {"header":{"event_type":"card.action.trigger","token":""},"event":{}}
+                {"header":{"app_id":"cli_chat","event_type":"card.action.trigger","token":"real-token"},"event":{}}
                 """);
         verify(feedback).collect(any());
         verify(feishu, never()).addMessageReaction(any(), any(), any());
@@ -137,7 +149,7 @@ class FeishuQuickCollectServiceTest {
     void savedFeedbackReportsRetryWhenIdentityCardCannotBeDisplayed() {
         when(feedback.collect(any())).thenReturn(new NotificationFeedbackService.Result("没做到", false));
         var out = service.handleEvent("""
-                {"header":{"event_type":"card.action.trigger","token":""},"event":{}}
+                {"header":{"app_id":"cli_chat","event_type":"card.action.trigger","token":"real-token"},"event":{}}
                 """);
         verify(feishu, never()).addMessageReaction(any(), any(), any());
         assertThat(out).containsEntry("toast", Map.of("type", "warning", "content", "已记录：没做到；个人表情暂未显示，请重试或重新授权"));
@@ -146,7 +158,7 @@ class FeishuQuickCollectServiceTest {
     @Test
     void invalidFeedbackDoesNotClaimItWasRecorded() {
         var out = service.handleEvent("""
-                {"header":{"event_type":"card.action.trigger","token":""},"event":{}}
+                {"header":{"app_id":"cli_chat","event_type":"card.action.trigger","token":"real-token"},"event":{}}
                 """);
         verify(feishu, never()).addMessageReaction(any(), any(), any());
         assertThat(out).containsEntry("toast", Map.of("type", "warning", "content", "反馈未记录，请稍后重试"));
@@ -167,7 +179,8 @@ class FeishuQuickCollectServiceTest {
     void unverifiedReactionCannotDispatchAnAiRun() {
         enabled();
 
-        service.handleEvent(reaction(""), "https://wao.example");
+        assertThatThrownBy(() -> service.handleEvent(reaction(""), "https://wao.example"))
+                .isInstanceOf(BadRequestException.class);
 
         verify(reactionAiRuns, never()).trigger(any(), any());
     }
@@ -177,7 +190,8 @@ class FeishuQuickCollectServiceTest {
         enabled();
         when(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY)).thenReturn("my-encrypt-key");
 
-        service.handleEvent(reaction(""), "https://wao.example");
+        assertThatThrownBy(() -> service.handleEvent(reaction(""), "https://wao.example"))
+                .isInstanceOf(BadRequestException.class);
 
         verify(reactionAiRuns, never()).trigger(any(), any());
     }
@@ -187,6 +201,7 @@ class FeishuQuickCollectServiceTest {
         enabled();
         when(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY)).thenReturn("my-encrypt-key");
         when(reactionAiRuns.trigger(any(), eq("https://wao.example"))).thenReturn(true);
+        when(settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN)).thenReturn("");
         String encrypted = encrypt(reaction(""), "my-encrypt-key");
 
         service.handleEvent("{\"encrypt\":\"" + encrypted + "\"}", "https://wao.example");
@@ -305,7 +320,7 @@ class FeishuQuickCollectServiceTest {
         service.collectPolled("oc_1", new FeishuMessage(
                 "om_poll", "ou_sender", "user", "text",
                 "{\"text\":\"@_user_1 记录任务：整理周报\"}", 1L, false,
-                List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+                List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"))));
 
         verify(tasks).createFromChat("p1", "整理周报", "整理周报", "wd",
                 FeishuQuickCollectService.SOURCE_TAG);
@@ -326,7 +341,7 @@ class FeishuQuickCollectServiceTest {
         service.collectPolled("oc_1", new FeishuMessage(
                 "om_cross_app", "ou_sender", "user", "text",
                 "{\"text\":\"@_user_1 记录XXX测试\"}", 1L, false,
-                List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+                List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"))));
 
         verify(tasks).createFromChat("p1", "记录XXX测试", "记录XXX测试", "wd",
                 FeishuQuickCollectService.SOURCE_TAG);
@@ -354,6 +369,7 @@ class FeishuQuickCollectServiceTest {
     @Test
     void unboundSenderCannotCreateANoteUnderAnotherMembersName() {
         enabled();
+        when(identities.findByProviderUnionSubject("feishu", "on_sender")).thenReturn(null);
         when(identities.findByProviderSubject("feishu", "ou_sender")).thenReturn(null);
         service.collectPolled("oc_1", new FeishuMessage(
                 "om_unbound_note", "ou_sender", "user", "text",
@@ -459,6 +475,8 @@ class FeishuQuickCollectServiceTest {
                 "{\\\"text\\\":\\\"@_user_1 记录任务：整理方案\\\"}"));
         verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
         verify(feishu).addMessageReaction("token", "om_ev-unbound", "ERROR");
+        verify(feishu).sendTextMessage(eq("token"), eq("oc_1"),
+                org.mockito.ArgumentMatchers.contains("/settings?tab=account"), any(), eq("om_ev-unbound"));
     }
 
     @Test
@@ -501,7 +519,7 @@ class FeishuQuickCollectServiceTest {
         service.collectPolled("oc_1", new FeishuMessage(
                 "om_ev-both", "ou_sender", "user", "text",
                 "{\"text\":\"@_user_1 记录任务：同一条消息\"}", 1L, false,
-                List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+                List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"))));
 
         verify(tasks, org.mockito.Mockito.times(1))
                 .createFromChat(any(), any(), any(), any(), any());
@@ -576,7 +594,7 @@ class FeishuQuickCollectServiceTest {
                 "om_image", "ou_sender", "user", "post",
                 "{\"title\":\"\",\"content\":[[{\"tag\":\"text\",\"text\":\"@_user_1 记录任务：看设计图\"},"
                         + "{\"tag\":\"img\",\"image_key\":\"img_key\"}]]}",
-                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"))));
 
         verify(tasks).createFromChat("p1", "看设计图",
                 "看设计图\n\n![任务图片](/api/images/img1/raw)", "wd",
@@ -596,7 +614,7 @@ class FeishuQuickCollectServiceTest {
                 "om_image_first", "ou_sender", "user", "post",
                 "{\"title\":\"\",\"content\":[[{\"tag\":\"img\",\"image_key\":\"img_key\"}],"
                         + "[{\"tag\":\"text\",\"text\":\"@_user_1 记录任务：核对新版布局\"}]]}",
-                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"))));
 
         verify(tasks).createFromChat("p1", "核对新版布局",
                 "核对新版布局\n\n![任务图片](/api/images/img1/raw)", "wd",
@@ -620,7 +638,7 @@ class FeishuQuickCollectServiceTest {
                 "{\"title\":\"\",\"content\":[[{\"tag\":\"text\",\"text\":\"@_user_1\"},"
                         + "{\"tag\":\"img\",\"image_key\":\"img_a\"}],"
                         + "[{\"tag\":\"img\",\"image_key\":\"img_b\"}]]}",
-                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"))));
 
         verify(tasks).createFromChat("p1", "图片待办",
                 "![任务图片](/api/images/img1/raw)\n\n![任务图片](/api/images/img2/raw)", "wd",
@@ -640,6 +658,7 @@ class FeishuQuickCollectServiceTest {
 
     @Test
     void encryptedEventsAreDecryptedBeforeBeingRead() throws Exception {
+        when(settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN)).thenReturn("");
         when(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY)).thenReturn("my-encrypt-key");
 
         var out = service.handleEvent("{\"encrypt\":\""
@@ -677,7 +696,7 @@ class FeishuQuickCollectServiceTest {
                 "om_html", "ou_sender", "user", "post",
                 "{\"title\":\"\",\"content\":[[{\"tag\":\"text\",\"text\":\"@_user_1 "
                         + html.replace("\"", "\\\"") + "\"}]]}",
-                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"))));
 
         verify(tasks).createFromChat("p1", "测试修改问题，任务那边会不会同步更新", html, "wd",
                 FeishuQuickCollectService.SOURCE_TAG);
@@ -697,10 +716,165 @@ class FeishuQuickCollectServiceTest {
         when(feishu.tenantAccessToken("cli_chat", "secret")).thenReturn("token");
     }
 
+    @Test
+    void textKeepsOtherPeopleMentionsAndDoesNotConfuseOverlappingPlaceholderKeys() {
+        enabled();
+        service.collectPolled("oc_1", new FeishuMessage("om_people", "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 提醒 @_user_10：确认安排\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"),
+                        new FeishuMention("@_user_10", "ou_person", "小王"))));
+        verify(tasks).createFromChat("p1", "提醒 @小王：确认安排", "提醒 @小王：确认安排", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
+    void richTextAtSpansRemoveOnlyEntryBotAndPreserveActualHumanName() {
+        enabled();
+        service.collectPolled("oc_1", new FeishuMessage("om_post_people", "ou_sender", "user", "post",
+                """
+                {"title":"","content":[[{"tag":"at","user_id":"ou_bot"},
+                {"tag":"text","text":"和 "},{"tag":"at","user_id":"ou_person"},
+                {"tag":"text","text":"一起确认"}]]}
+                """, 1L, false,
+                List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"),
+                        new FeishuMention("@_user_2", "ou_person", "小王"))));
+        verify(tasks).createFromChat("p1", "和 @小王一起确认", "和 @小王一起确认", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
+    void configuredStableBotIdDoesNotRemoveSameNamedHumanMention() {
+        enabled();
+        var registry = mock(FeishuWebhookConfigService.class);
+        when(registry.captureRoute(any())).thenAnswer(invocation -> {
+            com.fasterxml.jackson.databind.JsonNode mentions = invocation.getArgument(0);
+            for (var mention : mentions)
+                if ("ou_bot".equals(mention.path("id").path("open_id").asText()))
+                    return new FeishuWebhookConfigService.CaptureRoute("fw1", "TASK");
+            return null;
+        });
+        service.setBotCenter(registry, null, null);
+        service.collectPolled("oc_1", new FeishuMessage("om_same_name", "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 提醒 @_user_2 确认\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办"),
+                        new FeishuMention("@_user_2", "ou_person", "任务待办"))));
+        verify(tasks).createFromChat("p1", "提醒 @任务待办 确认", "提醒 @任务待办 确认", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
+    void directPolledBindingStillChecksRealUnionIdAndRejectsAccountConflict() {
+        enabled();
+        var other = new AccountIdentityEntity(); other.setAccountId("a2");
+        when(feishu.chatMemberUnionId("token", "oc_1", "ou_sender")).thenReturn("on_other");
+        when(identities.findByProviderUnionSubject("feishu", "on_other")).thenReturn(other);
+        service.collectPolled("oc_1", polled("om_poll_conflict", "内容"));
+        verify(feishu).chatMemberUnionId("token", "oc_1", "ou_sender");
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+        verify(events).finishUnlessRecalled(eq("message:om_poll_conflict"), eq("REJECTED"), eq("TASK"),
+                eq(null), any(), eq("SENDER_IDENTITY_CONFLICT"), any());
+    }
+
+    @Test
+    void failedOrAmbiguousPolledUnionLookupCannotFallBackToDirectBinding() {
+        enabled();
+        when(feishu.chatMemberUnionId("token", "oc_1", "ou_sender"))
+                .thenThrow(new IllegalStateException("temporary")).thenReturn("");
+        assertThatThrownBy(() -> service.collectPolled("oc_1", polled("om_union_api", "内容")))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.collectPolled("oc_1", polled("om_union_missing", "内容")))
+                .isInstanceOf(BadRequestException.class);
+        verify(events, never()).insert(any(FeishuQuickCollectEventEntity.class));
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void productionPollingPersistsMessageBeforeUnionLookupSoFailuresCanRetry() {
+        enabled();
+        var registry = mock(FeishuWebhookConfigService.class);
+        var inbox = mock(FeishuBotInboxService.class);
+        service.setBotCenter(registry, inbox, null);
+        service.collectPolled("oc_1", polled("om_pending_identity", "内容"));
+        var event = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
+        verify(inbox).enqueue(event.capture(), eq(""), eq("cli_chat"));
+        assertThat(event.getValue().path("_wao_polled_identity_check").asBoolean()).isTrue();
+        verify(feishu, never()).chatMemberUnionId(any(), any(), any());
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void unknownMentionCannotFallBackToATask() {
+        enabled();
+        service.handleEvent(message("unknown", "text", "{\\\"text\\\":\\\"@_user_1 私聊内容\\\"}")
+                .replace("任务待办", "普通成员"));
+        verify(events, never()).insert(any(FeishuQuickCollectEventEntity.class));
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void emptyConfiguredChatAndBotSenderAreRejected() {
+        enabled();
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("");
+        service.handleEvent(message("empty-chat", "text", "{\\\"text\\\":\\\"@_user_1 内容\\\"}"));
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_1");
+        service.handleEvent(message("bot-sender", "text", "{\\\"text\\\":\\\"@_user_1 内容\\\"}")
+                .replace("\"sender_type\":\"user\"", "\"sender_type\":\"app\""));
+        verify(events, never()).insert(any(FeishuQuickCollectEventEntity.class));
+    }
+
+    @Test
+    void callbackMustHaveAuthenticationAndTheConfiguredApplication() {
+        enabled();
+        when(settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN)).thenReturn("");
+        assertThatThrownBy(() -> service.handleEvent(message("unsafe", "text", "{}")))
+                .isInstanceOf(BadRequestException.class);
+        when(settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN)).thenReturn("real-token");
+        assertThatThrownBy(() -> service.handleEvent(message("wrong-app", "text", "{}")
+                .replace("cli_chat", "cli_other"))).isInstanceOf(BadRequestException.class);
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void conflictingOpenAndUnionIdentitiesCannotAttributeAPersonalTask() {
+        enabled();
+        var other = new AccountIdentityEntity(); other.setAccountId("someone-else");
+        when(identities.findByProviderUnionSubject("feishu", "on_conflict")).thenReturn(other);
+        service.handleEvent(message("conflict", "text", "{\\\"text\\\":\\\"@_user_1 内容\\\"}")
+                .replace("\"open_id\":\"ou_sender\"", "\"open_id\":\"ou_sender\",\"union_id\":\"on_conflict\""));
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+        verify(events).finishUnlessRecalled(eq("message:om_conflict"), eq("REJECTED"), eq("TASK"),
+                eq(null), any(), eq("SENDER_IDENTITY_CONFLICT"), any());
+    }
+
+    @Test
+    void authenticatedCallbackAcknowledgesDurableDepositWithoutCreatingInline() {
+        enabled();
+        var registry = mock(FeishuWebhookConfigService.class);
+        var inbox = mock(FeishuBotInboxService.class);
+        service.setBotCenter(registry, inbox, mock(FeishuCaptureTargetGuard.class));
+        assertThat(service.handleEvent(message("queued", "text", "{}"))).isEmpty();
+        verify(inbox).enqueue(any(), eq("queued"), eq("cli_chat"));
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void disablingRouteAfterDepositCannotCreateOrCompleteQueuedCapture() throws Exception {
+        enabled();
+        var registry = mock(FeishuWebhookConfigService.class);
+        var inbox = mock(FeishuBotInboxService.class);
+        service.setBotCenter(registry, inbox, mock(FeishuCaptureTargetGuard.class));
+        var row = new cn.wayuwa.wao.domain.FeishuBotInboxEntity();
+        row.setAppId("cli_chat"); row.setId("queued"); row.setWebhookId("fw1"); row.setCaptureKind("TASK");
+        when(inbox.event(row)).thenReturn(new ObjectMapper().readTree(message("queued", "text", "{}")).path("event"));
+        assertThatThrownBy(() -> service.processInbox(row)).isInstanceOf(BadRequestException.class);
+        verify(inbox, never()).complete(any());
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
     private static FeishuMessage polled(String messageId, String text) {
         return new FeishuMessage(messageId, "ou_sender", "user", "text",
                 "{\"text\":\"@_user_1 " + text + "\"}", 1L, false,
-                List.of(new FeishuMention("@_user_1", "ou_bot", "WAO")));
+                List.of(new FeishuMention("@_user_1", "ou_bot", "任务待办")));
     }
 
     private static TaskDto task(String id, String title) {
@@ -715,16 +889,16 @@ class FeishuQuickCollectServiceTest {
     }
 
     private static String message(String eventId, String type, String content, boolean mentioned) {
-        return "{\"schema\":\"2.0\",\"header\":{\"event_id\":\"" + eventId
+        return "{\"schema\":\"2.0\",\"header\":{\"app_id\":\"cli_chat\",\"token\":\"real-token\",\"event_id\":\"" + eventId
                 + "\",\"event_type\":\"im.message.receive_v1\"},\"event\":{"
-                + "\"sender\":{\"sender_id\":{\"open_id\":\"ou_sender\"}},"
+                + "\"sender\":{\"sender_type\":\"user\",\"sender_id\":{\"open_id\":\"ou_sender\"}},"
                 + "\"message\":{\"message_id\":\"om_" + eventId + "\",\"chat_id\":\"oc_1\",\"message_type\":\"" + type + "\","
-                + "\"mentions\":" + (mentioned ? "[{\"key\":\"@_user_1\",\"name\":\"娃弟\"}]" : "[]") + ","
+                + "\"mentions\":" + (mentioned ? "[{\"key\":\"@_user_1\",\"name\":\"任务待办\"}]" : "[]") + ","
                 + "\"content\":\"" + content + "\"}}}";
     }
 
     private static String reaction(String token) {
-        return "{\"schema\":\"2.0\",\"header\":{\"event_id\":\"ev-flight\","
+        return "{\"schema\":\"2.0\",\"header\":{\"app_id\":\"cli_chat\",\"token\":\"real-token\",\"event_id\":\"ev-flight\","
                 + "\"event_type\":\"im.message.reaction.created_v1\",\"token\":\"" + token + "\"},"
                 + "\"event\":{\"message_id\":\"om_source\",\"operator_type\":\"user\","
                 + "\"user_id\":{\"open_id\":\"ou_sender\"},"
@@ -733,7 +907,7 @@ class FeishuQuickCollectServiceTest {
     }
 
     private static String recalled(String eventId, String messageId, String chatId) {
-        return "{\"schema\":\"2.0\",\"header\":{\"event_id\":\"" + eventId
+        return "{\"schema\":\"2.0\",\"header\":{\"app_id\":\"cli_chat\",\"token\":\"real-token\",\"event_id\":\"" + eventId
                 + "\",\"event_type\":\"im.message.recalled_v1\"},\"event\":{"
                 + "\"message_id\":\"" + messageId + "\",\"chat_id\":\"" + chatId
                 + "\",\"recall_type\":\"message_owner\"}}";

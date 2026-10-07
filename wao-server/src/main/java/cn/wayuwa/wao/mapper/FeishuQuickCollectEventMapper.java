@@ -12,6 +12,9 @@ import org.apache.ibatis.annotations.Update;
 /** 飞书群聊快速收集事件。 */
 @Mapper
 public interface FeishuQuickCollectEventMapper extends BaseMapper<FeishuQuickCollectEventEntity> {
+    /** 保存来源最后写入目标的真实版本，供后续来源编辑保护。 */
+    @Update("UPDATE feishu_quick_collect_event SET target_version=#{version} WHERE event_key=#{key}")
+    int saveTargetVersion(@Param("key") String key, @Param("version") String version);
 
     /** 按飞书原消息定位已经真实创建的任务，不从标题或正文猜测来源。 */
     @Select("SELECT * FROM feishu_quick_collect_event WHERE message_id = #{messageId} "

@@ -83,7 +83,7 @@ public class FeishuQuickCollectPollingScheduler {
                 } catch (RuntimeException ex) {
                     // 群自定义机器人有独立 @ 名称；旧应用的 Bot Info 失败不应阻断它们。
                     nextBotLookupAt = end + 3600;
-                    log.warn("飞书旧机器人身份暂不可读，本轮继续识别专用机器人：{}", ex.getMessage());
+                    log.warn("飞书旧机器人身份暂不可读，本轮继续识别专用机器人：{}", ex.getClass().getSimpleName());
                 }
             }
             List<FeishuMessage> messages = feishu.listMessages(token, chatId, start, end);
@@ -97,7 +97,7 @@ public class FeishuQuickCollectPollingScheduler {
                         quickCollect.recallPolled(chatId, message.messageId());
                     } catch (RuntimeException ex) {
                         log.warn("飞书轮询撤回同步失败：message={} reason={}",
-                                message.messageId(), ex.getMessage());
+                                message.messageId(), ex.getClass().getSimpleName());
                     }
                 } else if (eligible(message, currentBot)) {
                     try {
@@ -105,7 +105,7 @@ public class FeishuQuickCollectPollingScheduler {
                         quickCollect.triggerPolledReaction(token, message.messageId());
                     } catch (RuntimeException ex) {
                         log.warn("飞书轮询收集或表情派工失败：message={} reason={}",
-                                message.messageId(), ex.getMessage());
+                                message.messageId(), ex.getClass().getSimpleName());
                     }
                 }
             }
@@ -121,7 +121,7 @@ public class FeishuQuickCollectPollingScheduler {
                         .plusMonths(1).atStartOfDay(now.getZone())).getSeconds() + 60;
             }
             deferred = state.defer("quick-realtime", leaseOwner, cooldown) == 1;
-            log.warn("飞书个人收集轮询失败，冷却 {} 秒：{}", cooldown, ex.getMessage());
+            log.warn("飞书个人收集轮询失败，冷却 {} 秒：{}", cooldown, ex.getClass().getSimpleName());
         } finally {
             if (!deferred) state.release("quick-realtime", leaseOwner);
         }
@@ -130,8 +130,6 @@ public class FeishuQuickCollectPollingScheduler {
     static boolean eligible(FeishuMessage message, String botOpenId) {
         return message != null && "user".equals(message.senderType()) && !message.deleted()
                 && StringUtils.hasText(message.messageId())
-                && message.mentions().stream().anyMatch(mention ->
-                        (StringUtils.hasText(botOpenId) && botOpenId.equals(mention.openId()))
-                                || "任务待办".equals(mention.name()) || "小记创作".equals(mention.name()));
+                && !message.mentions().isEmpty();
     }
 }

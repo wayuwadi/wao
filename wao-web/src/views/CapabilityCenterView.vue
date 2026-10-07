@@ -27,6 +27,7 @@ import {
 } from '@/api/skills'
 import { fetchPets, fetchMyPets, type PetCard } from '@/api/pets'
 import WorkspaceConnectionPanel from '@/components/capabilities/WorkspaceConnectionPanel.vue'
+const BotCenter = resourcePanel(() => import('@/components/settings/WebhookConfigPanel.vue'))
 const SystemAiCenter = resourcePanel(() => import('@/components/capabilities/SystemAiCenter.vue'))
 import '@/styles/capabilityResources.css'
 import { matchesCapability, connectionState } from '@/utils/capabilityCenter'
@@ -110,7 +111,7 @@ const pendingType = ref<'Skill' | 'Pet'>('Skill')
 const area = computed(() =>
   route.path.includes('/publish/') || route.path.includes('/reviews/')
     ? 'published'
-    : ['connections', 'published', 'system-ai'].includes(String(route.query.area))
+    : ['connections', 'published', 'system-ai', 'bots'].includes(String(route.query.area))
       ? String(route.query.area)
       : 'discover',
 )
@@ -307,7 +308,7 @@ async function loadCatalog() {
   }
 }
 async function load(nextPage = 1) {
-  if (area.value === 'system-ai') {
+  if (['system-ai', 'bots'].includes(area.value)) {
     loadGeneration++
     loading.value = false
     return
@@ -478,6 +479,7 @@ onBeforeUnmount(() => {
         <p>发现、连接、分享与管理 WAO 的能力。</p>
       </div>
       <button
+        v-if="area !== 'bots'"
         type="button"
         class="cap-button primary"
         @click="session.authed ? publish() : login()"
@@ -492,6 +494,7 @@ onBeforeUnmount(() => {
           { id: 'connections', name: '我的连接' },
           { id: 'published', name: '我的发布' },
           { id: 'system-ai', name: '系统 AI' },
+          { id: 'bots', name: '机器人' },
         ]"
         :key="tab.id"
         type="button"
@@ -502,7 +505,7 @@ onBeforeUnmount(() => {
         {{ tab.name }}
       </button>
     </nav>
-    <div v-if="area !== 'system-ai'" class="cap-toolbar">
+    <div v-if="!['system-ai', 'bots'].includes(area)" class="cap-toolbar">
       <div class="cap-type-filters" aria-label="按类型筛选">
         <span class="cap-filter-label">资源类型</span>
         <button
@@ -543,10 +546,13 @@ onBeforeUnmount(() => {
       </select>
     </div>
     <div v-if="requiresLogin" class="cap-detail cap-login">
-      <h2>登录后管理{{ area === 'system-ai' ? '系统 AI' : '连接与发布' }}</h2>
+      <h2>
+        登录后管理{{ area === 'system-ai' ? '系统 AI' : area === 'bots' ? '机器人' : '连接与发布' }}
+      </h2>
       <p class="cap-muted">公开资源仍可在发现能力中浏览。</p>
       <button type="button" class="cap-button primary" @click="login">登录 WAO</button>
     </div>
+    <BotCenter v-else-if="area === 'bots'" :key="session.userId" />
     <SystemAiCenter v-else-if="area === 'system-ai'" :key="session.userId" />
     <div v-else class="cap-columns">
       <aside class="cap-catalog" aria-label="能力与资源清单">
@@ -820,7 +826,7 @@ onBeforeUnmount(() => {
       </section>
     </div>
     <details
-      v-if="!['published', 'system-ai'].includes(area) && !detailKind"
+      v-if="!['published', 'system-ai', 'bots'].includes(area) && !detailKind"
       class="cap-planning"
       :open="route.query.type === '应用接入'"
     >
