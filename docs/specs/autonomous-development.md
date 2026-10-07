@@ -49,6 +49,16 @@ Windows 仅当固定依赖源与目标工作区的 `wao-web/package.json`、`pac
 
 统一 verification 在汇聚提交之后检查工作区 clean 且没有未完成 rebase/merge/cherry-pick，再 `fetch origin main`、`rebase origin/main`，确认 clean、重新校验依赖后才冻结 `testedHead`。冲突不自动 abort/reset，未提交改动或未完成操作保留现场并阻塞；不发布未在新主干基线上验收的提交。验证与交付后仍核对 HEAD 和源码未改变。失败重试不删除工作区或产物。
 
+### 固定只读浏览器验收助手
+
+可选 `wao.development.browser-script` 是运维在 state **根目录**预先配置的普通 `.mjs` 文件，实际读取不超过 100,000 字节且为有效 UTF-8；父目录实际路径等于 state 根目录。脚本不得来自 worktree、output、子目录或链接，Code CLI 不获得 state 根目录写权限。`wao.development.browser-node` 默认 `node`，可显式指定已有 Node 可执行文件，不能包含 shell/脚本命令。无脚本配置时保留已有 `validation-context` 通道。
+
+仅统一 verification 用 Java 普通账号子进程启动 `[node, script, worktreeAbsolute, outputAbsolute]`，不经过 shell；剔除 DB/API/飞书等 secret ENV 和 Node 注入变量，保留既有系统/工具目录。Code CLI 继续使用原生沙箱。启动最多等待 60 秒，仅解析 stdout 的 `ACCEPTANCE_BRIDGE_PORT=<1–65535>`，其他 stdout/stderr 丢弃、不入日志或数据库。analysis、独立 Agent、delivery 不启动助手。verification 成功、失败、取消或启动失败均停止本次进程及其子进程，不按进程名/端口清理别的运行；专用产物目录保留。
+
+固定助手由运维维护，校验工作区 package/lock/config 与可信独立依赖 clone 一致，只从该可信 clone 加载 Vite 配置、把 `@` 指向当前工作区并使用本次独立缓存。Edge 使用独立 profile 和 Chromium sandbox，不在 Code CLI 原生沙箱内启动 Chromium。助手只暴露本机 `POST /check` 的有限 JSON：`{path,viewport:{width,height},theme:'light'|'dark',visibleTexts:string[],clickSelectors:string[]}`，不接受任意 JavaScript、shell 或外域。路由固定，浏览器网络及既有账号 API 桥接仅同 origin 回环 GET/HEAD；UI 点击不能授权业务写操作。写入业务数据的真实用户链路仍需独立授权/通道，不能凭该助手扩大权限。
+
+截图自动命名 `browser-proof-N.png` 并保存 proof JSON，仅写本次 output。`GET /summary` 返回助手**进程内存**的 `{testedHead,proofs:[{passed,testedHead,screenshot,screenshotSha256,checks:[{check,passed}],consoleErrorCount}]}`，不读取模型可写的 proof 文件。Java 在采纳 verification 结果前读取固定端口摘要，至少一条 proof 必须严格 `passed=true`、匹配冻结 HEAD、checks 非空且每项严格通过、consoleErrorCount 为数字 0；PNG 文件必须实际位于本次 output 且 SHA-256 一致。摘要读取有大小/超时限制，模型自报或修改输出 JSON 不替代此门禁。Java 采纳的证据进入 `browserVerification` 并保留到交付记录；原有 `blockedReason` 为空、实际成功命令与 validation 非空、被测提交未改变等门禁继续生效。
+
 恢复保存会话关联和 worktree，不使用 resume --last 或盲目重放。已有合并证据只核对 PR/公网版本；子工作区按 patch-id 查询未汇聚提交，避免重复 cherry-pick。退回或失效后的新审视保留旧工作区，子分支带决定版本，避免与旧 Agent 分支撞名。主干普通及 ADR/Flyway 编号冲突仍由交付检查，冲突后需修复并重新验收。PR 分支及 HEAD 必须匹配外层冻结的已测提交；公网版本须覆盖合并 SHA，静态资源按同版本制品清单校验 SHA-256，支持不可变 release 路径。
 
 ## 飞书决定

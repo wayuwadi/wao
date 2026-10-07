@@ -35,6 +35,8 @@ public class DevelopmentWorker {
     private final boolean auditOnly;
     private final DevelopmentEnvironment environment;
     private final String validationContext;
+    private final String browserScript;
+    private final String browserNode;
     private final String instance=UUID.randomUUID().toString();
     private final java.util.concurrent.ExecutorService pool=Executors.newFixedThreadPool(3);
     private final java.util.concurrent.ExecutorService agents=Executors.newFixedThreadPool(3);
@@ -49,7 +51,9 @@ public class DevelopmentWorker {
             @Value("${wao.development.delivery-directory:}") String deliveryDirectory,
             @Value("${wao.development.audit-only:false}") boolean auditOnly,
             @Value("${wao.development.validation-context:}") String validationContext,
-            @Value("${wao.development.dependencies-repository:}") String dependenciesRepository) {
+            @Value("${wao.development.dependencies-repository:}") String dependenciesRepository,
+            @Value("${wao.development.browser-script:}") String browserScript,
+            @Value("${wao.development.browser-node:node}") String browserNode) {
         if(member.isBlank()||repository.isBlank()||state.isBlank())throw new IllegalStateException("开发执行器必须显式指定成员、仓库和专用状态目录");
         this.runs=runs;this.json=json;this.member=member;this.executable=executable;
         this.repository=Path.of(repository).toAbsolutePath().normalize();this.state=Path.of(state).toAbsolutePath().normalize();
@@ -57,6 +61,7 @@ public class DevelopmentWorker {
         this.auditOnly=auditOnly;
         this.environment=new DevelopmentEnvironment(this.repository,this.state,dependenciesRepository.isBlank()?null:Path.of(dependenciesRepository));
         this.validationContext=validationContext;
+        this.browserScript=browserScript;this.browserNode=browserNode;
         if(!deliveryDirectory.isBlank()&&!Path.of(deliveryDirectory).toAbsolutePath().normalize().equals(this.repository.resolve("deploy/data/windows-local")))
             throw new IllegalStateException("交付目录只允许已有 WAO 本机发布运行目录");
         if(this.state.startsWith(this.repository))throw new IllegalStateException("开发状态目录必须位于仓库之外，避免日志和会话进入提交");
@@ -172,7 +177,7 @@ public class DevelopmentWorker {
                     +"\n本阶段仅完成相称本地验证、真实浏览器用户链路验收、普通与语义冲突检查，记录validation和可核对产物。不得commit/push/PR/merge/deploy或发消息。"
                     +"\n不能把mock、编译、接口200代替真实用户链路。无法获得真实浏览器、数据库或既有验收通道，写blockedReason并停止，不编造通过。"
                     +"\n审阅实际diff是否扩大权限、处理凭据、改变产品方向或造成数据风险；发现大事requiresDecision=true并写decisionReason，不用测试通过替代决定。"
-                    +"\n不修改源码、Git提交或方案；需修复时返回blockedReason。非适用字段用空字符串、空数组或false。",false);
+                    +"\n不修改源码、Git提交或方案；需修复时返回blockedReason。非适用字段用空字符串、空数组或false。",false,testedHead);
             evidence=checked.answer();
             runs.progress(lease,"VERIFYING","保存本地验证结果",null,parts,evidence,null,checked.sessionId());
             if(checked.successfulCommands()==0||!evidence.path("blockedReason").asText().isBlank()||evidence.path("validation").isEmpty())
@@ -183,6 +188,7 @@ public class DevelopmentWorker {
                 runs.progress(lease,"VERIFYING","实际改动需本人确认",plan,parts,evidence,null,null);
                 runs.requestDecision(lease,"实际改动审阅发现大事：是否继续交付？",evidence.path("decisionReason").asText());return;
             }
+            JsonNode browserVerification=evidence.path("browserVerification");
             var delivered=invoke(lease,worktree,directory.resolve("delivery"),schema,
                     instructions(lease)+"\n已冻结计划："+plan+"\n本地验证证据："+evidence+"\n已测提交："+testedHead
                     +"\n现在按AGENTS以及wao-dev-batch-delivery/detailed-commit-notification/wao-cli-sync技能完成详细PR、普通与语义冲突复核、一个需求一个PR、合并和唯一发布协调者跟进。"
@@ -193,6 +199,8 @@ public class DevelopmentWorker {
                     +"\n非适用字段用空字符串、空数组或false；validation必须是实际执行的检查与结果，artifacts只给真实可达入口。",false);
             evidence=delivered.answer();
             ((com.fasterxml.jackson.databind.node.ObjectNode)evidence).put("testedHead",testedHead);
+            if(!browserVerification.isMissingNode())
+                ((com.fasterxml.jackson.databind.node.ObjectNode)evidence).set("browserVerification",browserVerification);
             requireUnchanged(worktree,testedHead);
             runs.progress(lease,evidence.path("mergeSha").asText().isBlank()?"PR_READY":"MERGED","核对 PR 与真实发布证据",null,parts,evidence,null,delivered.sessionId());
             if(!evidence.path("blockedReason").asText().isBlank())throw new IllegalStateException("交付尚未完成："+safeMessage(evidence.path("blockedReason").asText()));
@@ -274,6 +282,9 @@ public class DevelopmentWorker {
         return false;
     }
     private DevelopmentCodexProcess.Result invoke(DevelopmentService.Lease lease,Path work,Path output,Path schema,String prompt,boolean analysis) throws Exception {
+        return invoke(lease,work,output,schema,prompt,analysis,null);
+    }
+    private DevelopmentCodexProcess.Result invoke(DevelopmentService.Lease lease,Path work,Path output,Path schema,String prompt,boolean analysis,String testedHead) throws Exception {
         var writable=new ArrayList<Path>();
         if(!analysis) {
             Path artifacts=environment.outputDirectory(output);
@@ -288,9 +299,17 @@ public class DevelopmentWorker {
             if(!deliveryDirectory.isBlank())writable.add(Path.of(deliveryDirectory));
             prompt+="\n已授权发布运行目录（只允许复用既有协调者和既有通道，不修改账号/凭据/其他任务）："+deliveryDirectory;
         }
-        return DevelopmentCodexProcess.run(executable,work,output,schema,prompt,analysis,Duration.ofMinutes(90),session-> {
-            try{var current=runs.get(member,lease.id());runs.progress(lease,current.status(),current.phase(),null,null,null,null,session);}catch(RuntimeException ignored){ }
-        },writable);
+        try(var browser=DevelopmentBrowserProcess.applies(analysis,browserScript,output)
+                ?DevelopmentBrowserProcess.start(state,browserNode,browserScript,work,output):null) {
+            if(browser!=null)prompt+=browser.instructions();
+            var result=DevelopmentCodexProcess.run(executable,work,output,schema,prompt,analysis,Duration.ofMinutes(90),session-> {
+                try{var current=runs.get(member,lease.id());runs.progress(lease,current.status(),current.phase(),null,null,null,null,session);}catch(RuntimeException ignored){ }
+            },writable);
+            if(browser!=null&&result.answer().path("blockedReason").asText().isBlank()) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode)result.answer()).set("browserVerification",browser.verificationEvidence(testedHead,output));
+            }
+            return result;
+        }
     }
     private void recoverRelease(DevelopmentService.Lease lease,Path work,JsonNode evidence) throws Exception {
         verifyPr(lease,work,evidence);verifyRelease(work,evidence);
