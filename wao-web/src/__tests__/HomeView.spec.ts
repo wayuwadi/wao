@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import HomeView from '@/views/HomeView.vue'
+import { developmentOverview } from './fixtures/development'
 import { restJourneyRequested } from '@/composables/restJourney'
 import { writingJourneyRequested, completeWritingJourney } from '@/composables/writingJourney'
 
@@ -10,6 +11,7 @@ vi.mock('@/components/home/HomeTianrenGlance.vue', () => ({ default: { template:
 vi.mock('@/api/codexMemberships', () => ({ fetchCodexMemberships: vi.fn().mockResolvedValue([]) }))
 vi.mock('@/components/calendar/WeatherPanel.vue', () => ({ default: { template: '<span>天气</span>' } }))
 vi.mock('@/api/ai', () => ({ fetchAiRuns: vi.fn(), fetchAiRunners: vi.fn(), fetchAiWorkflows: vi.fn() }))
+vi.mock('@/api/development', () => ({ fetchDevelopmentOverview: vi.fn().mockImplementation(() => Promise.resolve(developmentOverview())) }))
 
 describe('首页 AI Run 下线', () => {
   it('保留天气、卦象和呼吸入口，不加载执行队列', async () => {

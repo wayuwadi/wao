@@ -53,6 +53,8 @@ import org.springframework.web.util.HtmlUtils;
  */
 @Service
 public class FeishuQuickCollectService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private DevelopmentDecisionService developmentDecisions;
 
     /** 打在任务上的来源标签。 */
     public static final String SOURCE_TAG = "群聊快速收集";
@@ -190,6 +192,10 @@ public class FeishuQuickCollectService {
         if (!StringUtils.hasText(appId) || !appId.equals(body.path("header").path("app_id").asText("")))
             throw new BadRequestException("飞书事件应用与接收配置不一致");
         String eventType = body.path("header").path("event_type").asText("");
+        if (developmentDecisions != null) {
+            var decisionResponse=developmentDecisions.handle(eventType,body.path("event"),appId);
+            if(decisionResponse!=null) return decisionResponse;
+        }
         if ("url.preview.get".equals(eventType)) {
             return linkPreviews.preview(body.path("event"), baseUrl);
         }

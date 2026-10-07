@@ -12,6 +12,7 @@ const fake = vi.hoisted(() => ({
   pop: vi.fn(() => true),
 }))
 vi.mock('@/components/home/companionScene', () => ({ createCompanionScene: fake.create }))
+vi.mock('@/components/development/DevelopmentGlance.vue', () => ({ default: { template: '<span />' } }))
 beforeEach(() => {
   vi.clearAllMocks()
   fake.create.mockImplementation(() => ({
