@@ -8,7 +8,7 @@ import { useFeatureExperience } from '@/composables/featureExperience'
 
 describe('新功能原地体验', () => {
   it('设置、阅读、AI 和连接入口按登记定位，重复入口可再次消费且不替换草稿弹层', async () => {
-    const router = createRouter({ history: createMemoryHistory(), routes: ['/notes', '/capabilities', '/features'].map(path => ({path, component:{template:'<div />'}})) })
+    const router = createRouter({ history: createMemoryHistory(), routes: ['/notes', '/capabilities', '/features', '/settings'].map(path => ({path, component:{template:'<div />'}})) })
     await router.push('/notes?search=保留筛选')
     const w = mount(defineComponent({ setup() { return { experience: useFeatureExperience() } }, template:'<div />' }), { global:{plugins:[createPinia(),router]} })
     for (const [target, action] of [['notes-settings','settings'],['notes-reading','reading'],['notes-ai','ai']]) {
@@ -27,6 +27,8 @@ describe('新功能原地体验', () => {
     expect(router.currentRoute.value.fullPath).toBe('/capabilities?area=connections')
     await w.vm.experience('changelog',{target:'release-updates',label:'完整更新'})
     expect(router.currentRoute.value.fullPath).toBe('/features#recent-updates')
+    await w.vm.experience('settings', {target:'settings-about',label:'关于 WAO'})
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=about')
     w.unmount()
   })
   it('小记留在当前页，当前任务不被替换，首页直接进入休息空间', async () => {

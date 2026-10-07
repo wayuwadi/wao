@@ -1,0 +1,16 @@
+{
+  "id": "release-update-go-see-2026-10-07",
+  "publishedOn": "2026-10-07",
+  "sourceSubject": "feat(changelog): 更新卡片支持保存刷新后直达功能",
+  "title": "更新看完，直接去看看",
+  "intro": "从更新说明一键保存、刷新并打开对应功能，让验收与体验更顺手。",
+  "highlights": [{
+    "featureId": "changelog",
+    "eyebrow": "更新体验",
+    "title": "看完变化，直接去看看",
+    "summary": "每条有入口的更新都有「去看看」，先保护当前内容，再打开新版本的对应功能。",
+    "points": ["一次点击完成保存、刷新和功能定位", "保存失败留在原页，刷新后只打开你选中的功能"],
+    "steps": ["打开顶栏的更新卡片，找到想验收的变化。", "点击该条右下角「去看看」，保存并刷新后直接体验；失败时重试。"],
+    "action": {"target": "release-updates", "label": "查看更新入口"}
+  }]
+}

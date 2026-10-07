@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { MODULES } from '@/config/nav'
 import type { ReleaseEdition, ReleaseHighlight } from '@/types/featureExplorer'
 import ReleaseFeatureDemo from './ReleaseFeatureDemo.vue'
-import { releaseActionLabel, resolveReleaseAction } from '@/utils/releaseActions'
+import { releaseActionLabel, canExperienceRelease, canRequestReleaseExperience } from '@/utils/releaseActions'
 const props = defineProps<{ edition: ReleaseEdition; pending?: boolean; busy?: boolean }>()
 const emit = defineEmits<{ experience: [item: ReleaseHighlight]; demo: [item: ReleaseHighlight] }>()
 const expanded = ref<number[]>([])
@@ -12,9 +12,6 @@ const showAll = ref(false)
 const visible = computed(() => showAll.value ? props.edition.highlights : props.edition.highlights.slice(0, 3))
 function moreCount(item: ReleaseHighlight) { return Math.max(0, item.points.length - 2) + Math.max(0, (item.steps?.length ?? 0) - 2) }
 function toggleDetails(index: number) { details.value = details.value.includes(index) ? details.value.filter(item => item !== index) : [...details.value, index] }
-function knownModule(id: string) {
-  return Object.prototype.hasOwnProperty.call(MODULES, id)
-}
 watch(
   () => props.edition.id,
   () => {
@@ -89,18 +86,17 @@ function toggle(index: number) {
       />
       <button
         v-if="
-          !pending &&
-          knownModule(item.featureId) &&
-          (item.featureId !== 'changelog' || resolveReleaseAction(item.featureId, item.action)) &&
+          (pending ? canRequestReleaseExperience(item.featureId, item.action) : canExperienceRelease(item.featureId, item.action)) &&
           edition.attention !== 'maintenance'
         "
         type="button"
         class="experience"
         :disabled="busy"
-        :aria-label="`去体验：${item.title}`"
+        :aria-label="`${pending ? '更新并去看看' : '去体验'}：${item.title}`"
+        :title="pending ? '保存当前内容，刷新后直接打开此功能' : undefined"
         @click="emit('experience', item)"
       >
-        {{ releaseActionLabel(item, `去体验 ${MODULES[item.featureId].label}`) }}
+        {{ pending ? '去看看' : releaseActionLabel(item, `去体验 ${MODULES[item.featureId].label}`) }}
         <i class="ri-arrow-right-up-line" aria-hidden="true"></i>
       </button>
     </article>
@@ -204,8 +200,13 @@ button:disabled {
   margin-top: 6px;
 }
 .experience {
-  display: flex;
+  display: inline-flex;
+  float: right;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--wao-primary-soft);
 }
+article::after { content: ''; display: block; clear: both; }
 @media (pointer: coarse) {
   button {
     min-height: 44px;

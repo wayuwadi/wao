@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type { ReleaseDemo, ReleaseEdition, ReleaseHighlight } from '@/types/featureExplorer'
-import { resolveReleaseAction } from '@/utils/releaseActions'
+import { isKnownReleaseActionTarget, resolveReleaseAction } from '@/utils/releaseActions'
 
 function text(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max
@@ -76,9 +76,10 @@ export function parseReleaseEdition(value: unknown): ReleaseEdition | null {
     if (item.action !== undefined) {
       if (!item.action || typeof item.action !== 'object') return null
       const rawAction = item.action as Record<string, unknown>
-      if (!text(rawAction.target, 80) || !text(rawAction.label, 80)) return null
+      if (!text(rawAction.target, 80) || !/^[a-z0-9-]+$/.test(rawAction.target) || !text(rawAction.label, 80)) return null
       action = { target: rawAction.target, label: rawAction.label }
-      if (!resolveReleaseAction(item.featureId, action)) return null
+      // 待更新的旧制品可读取新登记标识，具体路由只在新版登记表中解析。
+      if (isKnownReleaseActionTarget(action.target) && !resolveReleaseAction(item.featureId, action)) return null
     }
     highlights.push({
       ...(item.id !== undefined ? { id: item.id as string } : {}),

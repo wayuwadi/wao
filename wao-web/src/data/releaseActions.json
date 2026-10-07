@@ -4,5 +4,6 @@
   { "id": "notes-reading", "featureId": "notes", "label": "体验阅读编辑", "path": "/notes", "query": { "releaseAction": "reading" } },
   { "id": "notes-ai", "featureId": "notes", "label": "查看这篇的 AI 成果", "path": "/notes", "query": { "releaseAction": "ai" } },
   { "id": "workspace-connections", "featureId": "capabilities", "label": "打开 CLI 与 MCP 连接", "path": "/capabilities", "query": { "area": "connections" } },
-  { "id": "release-updates", "featureId": "changelog", "label": "查看完整更新", "path": "/features", "query": {}, "hash": "#recent-updates" }
+  { "id": "release-updates", "featureId": "changelog", "label": "查看完整更新", "path": "/features", "query": {}, "hash": "#recent-updates" },
+  { "id": "settings-about", "featureId": "settings", "label": "看看关于 WAO", "path": "/settings", "query": { "tab": "about" } }
 ]
