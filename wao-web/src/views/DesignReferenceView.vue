@@ -4,6 +4,7 @@ import WaoLogo from '@/components/WaoLogo.vue'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
+import TodoDayLayout from '@/components/todo/TodoDayLayout.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
@@ -297,6 +298,14 @@ const repository = 'https://github.com/wayuwacn/wao/blob/main/'
                 <p>说明需要被看见，也可以轻一点。不叠加强阴影。</p></WaoCard
               >
             </div>
+          </section>
+          <section class="reference-section">
+            <h2>主清单与日常区</h2>
+            <p>主区先呈现要做的事，辅助区承载日常与记录；窄屏按阅读顺序排列，沿用页面滚动。以下为布局示例。</p>
+            <TodoDayLayout primary-label="主清单布局示例" secondary-label="日常区布局示例">
+              <WaoCard><h3>今日安排 · 示例</h3><p>一件要做的事，清楚放在前面。</p><WaoButton variant="ghost" @click="feedback = '布局示例，没有打开或修改真实任务。'">查看示例</WaoButton></WaoCard>
+              <template #secondary><WaoCard><h3>每日固定 · 示例</h3><p>早晨与晚上的日常事项。</p></WaoCard><WaoCard><h3>随手记 · 示例</h3><p>先看最近几条，需要时再展开。</p></WaoCard></template>
+            </TodoDayLayout>
           </section>
           <section class="reference-section">
             <h2>按钮层级</h2>

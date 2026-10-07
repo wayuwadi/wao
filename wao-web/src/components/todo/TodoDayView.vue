@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -15,6 +15,9 @@ import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import TaskSchedulePopover from './TaskSchedulePopover.vue'
 import DailyRoutineSection from './DailyRoutineSection.vue'
+import TodoDayLayout from './TodoDayLayout.vue'
+import WaoCard from '@/components/ui/WaoCard.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 
 const props = defineProps<{ date: string }>()
 const emit = defineEmits<{ 'update:date': [date: string]; all: [] }>()
@@ -72,6 +75,20 @@ watch([title, createProject], ([value], [previousTitle]) => {
 }, { flush: 'sync' })
 const current = (entry: DayTask) => data.taskById(entry.task.id) ?? entry.task
 const shown = (entry: DayTask) => past.value ? { ...entry.task, ...entry.snapshot } : current(entry)
+const recordsOpen = ref(false), allNotesOpen = ref(false)
+const recordsId = useId()
+watch(() => [props.date, identity()], () => { recordsOpen.value = past.value; allNotesOpen.value = false }, { immediate: true })
+const taskGroups = computed(() => {
+  const entries = day.value?.tasks ?? []
+  const planned = entries.filter(entry => entry.planned && !isTaskFinished(shown(entry)))
+  const records = entries.filter(entry => !entry.planned || isTaskFinished(shown(entry)))
+  return [
+    { id: 'planned', label: past.value ? '当日安排' : future.value ? '计划安排' : '今日安排', items: planned },
+    { id: 'records', label: '当天进展与已完成', items: records },
+  ]
+})
+const recordsVisible = computed(() => recordsOpen.value || taskGroups.value[1]!.items.some(entry =>
+  noteFor.value === entry.task.id || data.taskSaveState(entry.task.id) === 'saving' || data.taskSaveState(entry.task.id) === 'error'))
 function move(offset: number) { emit('update:date', new Date(Date.parse(`${props.date}T00:00:00Z`) + offset * 86400000).toISOString().slice(0, 10)) }
 async function refresh(date = props.date) { days.invalidate(); await days.load(date, true) }
 async function createTask() {
@@ -147,47 +164,166 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
 
 <template>
   <section class="day-workspace" aria-label="待办按天视图">
-    <header class="day-heading"><div><h2>{{ heading }}</h2><p>{{ past ? '回看这一天留下的真实记录' : future ? '先安排，实际进展留给当天' : '先安排要做的事，实际进展留给今天' }}</p></div><nav aria-label="切换日期"><button type="button" aria-label="前一天" @click="move(-1)">‹</button><button type="button" @click="emit('update:date', data.today)">今天</button><button type="button" aria-label="后一天" @click="move(1)">›</button><input :value="date" type="date" aria-label="选择待办日期" @change="emit('update:date', ($event.target as HTMLInputElement).value || date)" /></nav></header>
+    <header class="day-heading">
+      <div>
+        <h2>{{ heading }}</h2>
+        <div v-if="day" class="day-overview" aria-label="当天概况">
+          <span><b>{{ taskGroups[0]!.items.length }}</b> {{ past ? '件未收尾安排' : future ? '件计划' : '件待办' }}</span>
+          <span><b>{{ day.summary.finishedCount }}</b> 件完成记录</span>
+          <span><b>{{ day.summary.stepDoneCount }}</b> 项步骤完成</span>
+          <span><b>{{ day.summary.noteCount }}</b> 条记录</span>
+          <span v-if="days.states[date] === 'loading'" role="status">正在刷新…</span>
+        </div>
+      </div>
+      <nav aria-label="切换日期">
+        <WaoButton class="date-arrow" aria-label="前一天" @click="move(-1)"><i class="ri-arrow-left-s-line" aria-hidden="true"></i></WaoButton>
+        <WaoButton @click="emit('update:date', data.today)">今天</WaoButton>
+        <WaoButton class="date-arrow" aria-label="后一天" @click="move(1)"><i class="ri-arrow-right-s-line" aria-hidden="true"></i></WaoButton>
+        <input :value="date" type="date" aria-label="选择待办日期" @change="emit('update:date', ($event.target as HTMLInputElement).value || date)" />
+      </nav>
+    </header>
     <div v-if="days.states[date] === 'loading' && !day" class="day-state" role="status">正在读取当天记录…</div>
-    <div v-else-if="days.states[date] === 'error'" class="day-state" role="alert"><b>当天记录暂时没有加载出来</b><p>{{ days.errors[date] }}</p><button type="button" @click="days.load(date, true)">重新加载</button><button type="button" @click="emit('all')">查看全部待办</button></div>
+    <div v-else-if="days.states[date] === 'error'" class="day-state" role="alert">
+      <b>当天记录暂时没有加载出来</b><p>{{ days.errors[date] }}</p>
+      <WaoButton @click="days.load(date, true)">重新加载</WaoButton><WaoButton variant="ghost" @click="emit('all')">查看全部待办</WaoButton>
+    </div>
     <template v-else-if="day">
       <p v-if="day.historyCoverage === 'BEFORE_BASELINE'" class="coverage" role="status">这一天早于可靠记录起点。可查看有依据的小记，不根据当前状态补造任务历史。</p>
-      <div class="day-overview"><span>{{ day.summary.plannedCount }} 件安排</span><span>{{ day.summary.finishedCount }} 件完成记录</span><span>{{ day.summary.stepDoneCount }} 项步骤完成</span><span>{{ day.summary.noteCount }} 条记录</span><span v-if="days.states[date] === 'loading'" role="status">正在刷新…</span></div>
-      <DailyRoutineSection :date="date" />
-      <div v-if="!day.tasks.length" class="day-empty">{{ past ? '这一天还没有可靠的任务记录' : '这一天还没有安排，写下一件想做的事' }}</div>
-      <article v-for="(entry, index) in day.tasks" :key="entry.task.id" class="day-task">
-        <span class="task-index">{{ String(index + 1).padStart(2, '0') }}</span><div class="day-task-main">
-          <div class="task-heading"><button v-if="!past && !future" type="button" class="task-check" :aria-label="`完成或重新打开：${shown(entry).title}`" :aria-pressed="isTaskFinished(current(entry))" @click="toggle(entry)">{{ isTaskFinished(current(entry)) ? '✓' : '○' }}</button><button class="task-title" type="button" @click="ui.openTask(entry.task.id)">{{ shown(entry).title }}</button><span class="task-status">{{ shown(entry).status }}</span></div>
-          <p v-if="!entry.planned" class="task-trace">当天留下了进展，未安排在这一天</p>
-          <TaskSchedulePopover v-if="!past" :key="`${identity()}:${entry.task.id}`" :task="current(entry)" :day="date" @saved="refresh()" />
-          <p v-else class="past-schedule">当日安排：{{ entry.snapshot.startAt ? entry.snapshot.startAt.slice(11, 16) : entry.snapshot.schedulePeriod === 'MORNING' ? '早晨' : entry.snapshot.schedulePeriod === 'AFTERNOON' ? '下午' : entry.snapshot.schedulePeriod === 'EVENING' ? '晚上' : entry.snapshot.start ? '不定时' : '未排期' }}</p>
-          <div class="task-actions"><button v-if="shown(entry).subs?.length" type="button" :aria-expanded="!!expanded[entry.task.id]" @click="expanded[entry.task.id] = !expanded[entry.task.id]">{{ expanded[entry.task.id] ? '收起子事项' : `${shown(entry).subs.length} 项子事项` }}</button><button v-if="!future" type="button" @click="noteFor = noteFor === entry.task.id ? null : entry.task.id">{{ noteFor === entry.task.id ? '收起记录' : past ? '补记进展' : '记进展' }}</button><button v-if="!past" type="button" @click="ui.openTask(entry.task.id)">拆分与详情</button></div>
-          <InlineSubtasks v-if="expanded[entry.task.id] && !past && !future && data.taskById(entry.task.id)" :task-id="entry.task.id" />
-          <ul v-else-if="expanded[entry.task.id]" class="historical-subs"><li v-for="(sub, subIndex) in shown(entry).subs" :key="sub.id || subIndex">{{ sub.done ? '✓' : '○' }} {{ sub.text }}</li></ul>
-          <p v-if="data.taskSaveState(entry.task.id) === 'saving'" role="status">正在保存任务…</p><p v-if="data.taskSaveState(entry.task.id) === 'error'" class="task-error" role="alert">{{ data.taskSaveError(entry.task.id) }} <button type="button" @click="ui.openTask(entry.task.id)">处理保存</button></p>
-          <NoteComposer v-if="noteFor === entry.task.id" :key="`${identity()}:${date}:${entry.task.id}`" compact :draft-scope="`day:${identity()}:${date}:${entry.task.id}`" :submit-note="request => submitNote(request, entry.task.id)" />
-          <div v-if="entry.events.length" class="day-events"><span v-for="event in entry.events" :key="event.id">{{ event.summary }}<small>{{ new Date(event.occurredAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' }) }}{{ event.late ? ' · 后来补记' : '' }}</small></span></div>
-        </div>
-      </article>
-      <form v-if="!past" class="day-create" @submit.prevent="createTask"><input v-model="title" aria-label="当天要做的事" placeholder="＋ 写下当天要做的一件事" :disabled="creating" maxlength="500" /><select v-model="createProject" @change="selectionProtected = true" aria-label="任务所属项目" :disabled="creating"><option value="">选择项目</option><option v-for="project in availableProjects" :key="project.id" :value="project.id">{{ project.name }}</option></select><button type="submit" :disabled="creating || !title.trim()">{{ creating ? '保存中…' : '添加' }}</button></form><p v-if="createError" class="task-error" role="alert">{{ createError }}</p>
-      <p v-if="draftError" class="task-error" role="alert">{{ draftError }} <button type="button" @click="protectDraft">重试保护草稿</button></p>
-      <p v-if="taskPreferences.recentError" class="task-error" role="status">最近使用项目：{{ taskPreferences.recentError }} <button type="button" @click="taskPreferences.retryRecent()">重试同步最近项目</button></p>
-      <section class="day-notes"><header><h3>{{ past ? '当天记录与补记' : '随手记' }}</h3><button v-if="!future" type="button" @click="noteFor = noteFor === '' ? null : ''">{{ noteFor === '' ? '收起输入' : past ? '补记这一天' : '写一条' }}</button></header><NoteComposer v-if="noteFor === '' && !future" :key="`${identity()}:${date}:free`" compact :draft-scope="`day:${identity()}:${date}:free`" :submit-note="request => submitNote(request)" />
-        <button v-for="note in day.notes" :key="note.docId" class="day-note-link" type="button" @click="router.push({ path: '/notes', query: { note: note.docId } })"><i class="ri-sticky-note-line"></i><span>{{ data.docById(note.docId)?.title || note.title }}</span><small>{{ note.late ? '补记 · ' : '' }}{{ note.updatedAt !== note.createdAt ? '后来有修改' : '已保存' }}</small></button><p v-if="!day.notes.length" class="day-empty">{{ future ? '实际记录留给当天' : '还没有记录，想到什么就记下来' }}</p>
-      </section>
+      <p v-else-if="past || future" class="day-context">{{ past ? '回看这一天留下的真实记录，任务与固定事项只读，可以补记。' : '先安排，实际进展留给当天。' }}</p>
+      <TodoDayLayout>
+        <template #default>
+          <WaoCard v-for="group in taskGroups" :key="group.id" class="day-task-group" :class="{ 'day-records': group.id === 'records' }" :data-group="group.id">
+            <header v-if="group.id === 'planned'" class="section-heading">
+              <h3>{{ group.label }} <span>{{ group.items.length }} 件</span></h3>
+            </header>
+            <header v-else class="section-heading">
+              <button type="button" class="records-toggle" :aria-expanded="recordsVisible" :aria-controls="recordsId" @click="recordsOpen = !recordsVisible">
+                <i :class="recordsVisible ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'" aria-hidden="true"></i>{{ group.label }}<span>{{ group.items.length }} 件</span>
+              </button>
+            </header>
+            <div v-show="group.id === 'planned' || recordsVisible" :id="group.id === 'records' ? recordsId : undefined">
+              <p v-if="!group.items.length" class="day-empty">{{ group.id === 'records' ? '这一天还没有可靠的任务进展记录' : past ? '这一天还没有可靠的任务安排记录' : '这一天还没有安排，写下一件想做的事' }}</p>
+              <article v-for="entry in group.items" :key="entry.task.id" class="day-task" :class="{ 'task-finished': isTaskFinished(shown(entry)) }">
+                <div class="day-task-main">
+                  <div class="task-heading">
+                    <button v-if="!past && !future" type="button" class="task-check" :aria-label="`完成或重新打开：${shown(entry).title}`" :aria-pressed="isTaskFinished(current(entry))" @click="toggle(entry)">{{ isTaskFinished(current(entry)) ? '✓' : '○' }}</button>
+                    <button class="task-title" type="button" @click="ui.openTask(entry.task.id)">{{ shown(entry).title }}</button>
+                    <span class="task-status">{{ shown(entry).status }}</span>
+                  </div>
+                  <div class="task-meta">
+                    <TaskSchedulePopover v-if="!past" :key="`${identity()}:${entry.task.id}`" :task="current(entry)" :day="date" @saved="refresh()" />
+                    <span v-else class="past-schedule">当日安排：{{ entry.snapshot.startAt ? entry.snapshot.startAt.slice(11, 16) : entry.snapshot.schedulePeriod === 'MORNING' ? '早晨' : entry.snapshot.schedulePeriod === 'AFTERNOON' ? '下午' : entry.snapshot.schedulePeriod === 'EVENING' ? '晚上' : entry.snapshot.start ? '不定时' : '未排期' }}</span>
+                    <span v-if="!entry.planned" class="task-trace">当天留下了进展，未安排在这一天</span>
+                  </div>
+                  <div class="task-actions">
+                    <button v-if="shown(entry).subs?.length" type="button" :aria-expanded="!!expanded[entry.task.id]" @click="expanded[entry.task.id] = !expanded[entry.task.id]">{{ expanded[entry.task.id] ? '收起子事项' : `${shown(entry).subs.length} 项子事项` }}</button>
+                    <button v-if="!future" type="button" :aria-expanded="noteFor === entry.task.id" @click="noteFor = noteFor === entry.task.id ? null : entry.task.id">{{ noteFor === entry.task.id ? '收起记录' : past ? '补记进展' : '记进展' }}</button>
+                    <button v-if="!past" type="button" @click="ui.openTask(entry.task.id)">拆分与详情</button>
+                  </div>
+                  <InlineSubtasks v-if="expanded[entry.task.id] && !past && !future && data.taskById(entry.task.id)" :task-id="entry.task.id" />
+                  <ul v-else-if="expanded[entry.task.id]" class="historical-subs"><li v-for="(sub, subIndex) in shown(entry).subs" :key="sub.id || subIndex">{{ sub.done ? '✓' : '○' }} {{ sub.text }}</li></ul>
+                  <p v-if="data.taskSaveState(entry.task.id) === 'saving'" role="status">正在保存任务…</p>
+                  <p v-if="data.taskSaveState(entry.task.id) === 'error'" class="task-error" role="alert">{{ data.taskSaveError(entry.task.id) }} <button type="button" @click="ui.openTask(entry.task.id)">处理保存</button></p>
+                  <NoteComposer v-if="noteFor === entry.task.id" :key="`${identity()}:${date}:${entry.task.id}`" compact :draft-scope="`day:${identity()}:${date}:${entry.task.id}`" :submit-note="request => submitNote(request, entry.task.id)" />
+                  <details v-if="entry.events.length" class="day-events">
+                    <summary>查看当天进展 · {{ entry.events.length }} 条</summary>
+                    <div><span v-for="event in entry.events" :key="event.id">{{ event.summary }}<small>{{ new Date(event.occurredAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' }) }}{{ event.late ? ' · 后来补记' : '' }}</small></span></div>
+                  </details>
+                </div>
+              </article>
+              <template v-if="group.id === 'planned'">
+                <form v-if="!past" class="day-create" @submit.prevent="createTask">
+                  <input v-model="title" aria-label="当天要做的事" placeholder="＋ 写下当天要做的一件事" :disabled="creating" maxlength="500" />
+                  <select v-model="createProject" aria-label="任务所属项目" :disabled="creating" @change="selectionProtected = true"><option value="">选择项目</option><option v-for="project in availableProjects" :key="project.id" :value="project.id">{{ project.name }}</option></select>
+                  <WaoButton type="submit" variant="primary" :loading="creating" :disabled="!title.trim()">{{ creating ? '保存中…' : '添加' }}</WaoButton>
+                </form>
+                <p v-if="createError" class="task-error" role="alert">{{ createError }}</p>
+                <p v-if="draftError" class="task-error" role="alert">{{ draftError }} <button type="button" @click="protectDraft">重试保护草稿</button></p>
+                <p v-if="taskPreferences.recentError" class="task-error" role="status">最近使用项目：{{ taskPreferences.recentError }} <button type="button" @click="taskPreferences.retryRecent()">重试同步最近项目</button></p>
+              </template>
+            </div>
+          </WaoCard>
+        </template>
+        <template #secondary>
+          <DailyRoutineSection :date="date" />
+          <WaoCard class="day-notes">
+            <header class="section-heading"><h3>{{ past ? '当天记录与补记' : '随手记' }} <span>{{ day.notes.length }}</span></h3><WaoButton v-if="!future" class="section-action" variant="ghost" :aria-expanded="noteFor === ''" @click="noteFor = noteFor === '' ? null : ''">{{ noteFor === '' ? '收起输入' : past ? '补记这一天' : '写一条' }}</WaoButton></header>
+            <NoteComposer v-if="noteFor === '' && !future" :key="`${identity()}:${date}:free`" compact :draft-scope="`day:${identity()}:${date}:free`" :submit-note="request => submitNote(request)" />
+            <button v-for="(note, index) in day.notes" v-show="allNotesOpen || index < 3" :key="note.docId" class="day-note-link" type="button" @click="router.push({ path: '/notes', query: { note: note.docId } })"><span>{{ data.docById(note.docId)?.title || note.title }}</span><small>{{ note.late ? '补记 · ' : '' }}{{ note.updatedAt !== note.createdAt ? '后来有修改' : '已保存' }}</small></button>
+            <WaoButton v-if="day.notes.length > 3" class="section-action notes-more" variant="ghost" :aria-expanded="allNotesOpen" @click="allNotesOpen = !allNotesOpen">{{ allNotesOpen ? '收起记录' : `展开全部 ${day.notes.length} 条记录` }}</WaoButton>
+            <p v-if="!day.notes.length" class="day-empty">{{ future ? '实际记录留给当天' : '还没有记录，想到什么就记下来' }}</p>
+          </WaoCard>
+        </template>
+      </TodoDayLayout>
     </template>
   </section>
 </template>
 
 <style scoped>
-.day-workspace{max-width:1000px;margin:20px auto;min-width:0}.day-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-bottom:18px;border-bottom:1px solid var(--wao-line-control)}h2{margin:0;font-size:24px;font-weight:700}.day-heading p{margin:8px 0 0;color:var(--wao-text-3);font-size:12px}nav{display:flex;gap:5px;flex-wrap:wrap}button,input,select{font:inherit}.day-create select{max-width:180px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text-1);min-height:40px}nav button,nav input,.day-create button,.day-state button{border:1px solid var(--wao-line-control);border-radius:7px;padding:7px 10px;background:var(--wao-bg-card);color:var(--wao-primary)}nav input{width:140px;min-width:0}.day-overview{display:flex;gap:15px;flex-wrap:wrap;color:var(--wao-text-3);font-size:12px;padding:18px 0}.day-task{display:flex;gap:16px;padding:21px 0;border-bottom:1px solid var(--wao-line-control)}.task-index{font-size:12px;color:var(--wao-primary);font-weight:700;padding-top:6px}.day-task-main{min-width:0;flex:1}.task-heading{display:flex;align-items:flex-start;gap:8px;margin-bottom:8px}.task-title{border:0;background:none;font-weight:650;color:var(--wao-text-1);text-align:left;overflow-wrap:anywhere;padding:3px 0;flex:1;min-width:0}.task-check{border:0;background:none;color:var(--wao-primary);font-size:19px;padding:0;min-width:24px}.task-status{font-size:11px;color:var(--wao-text-3);white-space:nowrap;padding-top:5px}.task-actions{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}.task-actions button,.day-notes header button{border:0;background:none;padding:4px 0;font-size:12px;color:var(--wao-primary)}.task-trace,.past-schedule{font-size:12px;color:var(--wao-text-3)}.day-create{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}.day-create input{min-width:0;flex:1;padding:10px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text-1)}.day-events{display:flex;gap:8px 15px;flex-wrap:wrap;font-size:11px;color:var(--wao-text-3);margin-top:12px}.day-events small{margin-left:5px}.day-notes{margin-top:30px}.day-notes header{display:flex;justify-content:space-between;align-items:center}h3{font-size:14px}.day-note-link{display:flex;align-items:center;gap:8px;width:100%;border:0;border-bottom:1px solid var(--wao-line-control);background:none;text-align:left;padding:13px 0;color:var(--wao-text-1)}.day-note-link span{flex:1;min-width:0;overflow-wrap:anywhere}.day-note-link small{font-size:11px;color:var(--wao-text-3)}.coverage{font-size:12px;padding:12px;border-radius:8px;background:var(--wao-bg-hover);color:var(--wao-text-2)}.day-empty,.day-state{font-size:13px;color:var(--wao-text-3);padding:15px 0}.day-state button{margin-right:8px}.task-error{font-size:12px;color:var(--wao-danger,#ce4c65)}.historical-subs{padding-left:18px;line-height:1.8;overflow-wrap:anywhere}button{cursor:pointer}button:focus-visible,input:focus-visible{outline:2px solid var(--wao-primary);outline-offset:2px}button:disabled{opacity:.55;cursor:default}@media(max-width:600px){.day-heading h2{font-size:21px}.day-heading nav{width:100%}.day-heading nav button,.day-heading nav input{min-height:44px;box-sizing:border-box}.day-task{gap:9px}.task-actions button,.task-check,.day-notes header button,.day-create button{min-height:44px}.day-note-link{flex-wrap:wrap}.day-note-link small{padding-left:25px}.task-status{max-width:65px;white-space:normal}.day-overview{gap:8px 12px}}
-/* Keep the date, summary and task list visually connected without compressing task content. */
-.day-workspace { margin-top: 18px; margin-bottom: 24px; }
-.day-heading { padding-bottom: 16px; }
-.day-heading p { margin-top: 6px; color: var(--wao-text-2); font-size: 13px; }
-.day-overview { gap: 8px; padding: 13px 0 16px; color: var(--wao-text-2); }
-.day-overview span { padding: 6px 9px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-sub); }
-.day-task { padding-block: 18px; }
-@media (max-width: 600px) { .day-overview { gap: 7px; } .day-overview span { padding: 6px 8px; } }
-@media (max-width: 600px) { .day-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; } .day-create input { grid-column: 1 / -1; width: 100%; box-sizing: border-box; } .day-create select { width: 100%; max-width: none; min-width: 0; } .day-create input, .day-create select, .day-create button { min-height: 44px; font-size: 16px; } .task-check { min-width: 44px; } }
+.day-workspace { container: todo-day / inline-size; width: 100%; min-width: 0; margin: var(--wao-space-2) auto var(--wao-space-3); }
+.day-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--wao-space-2); flex-wrap: wrap; margin-bottom: var(--wao-space-3); }
+h2 { margin: 0; color: var(--wao-text); font-size: 22px; font-weight: 700; }
+.day-overview { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-top: var(--wao-space-1); color: var(--wao-text-3); font-size: 12px; }
+.day-overview b { color: var(--wao-text-2); font-weight: 600; }
+.day-heading nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.date-arrow { width: 40px; padding: 0; }
+button, input, select { font: inherit; }
+.day-heading input { width: 154px; min-width: 0; min-height: var(--wao-control-height); padding: 7px 10px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); }
+.day-task-group { padding: 0 var(--wao-space-2); }
+.section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wao-space-1); min-height: 52px; }
+h3 { margin: 0; font-size: 14px; font-weight: 650; color: var(--wao-text); }
+.section-heading span { margin-left: var(--wao-space-1); color: var(--wao-text-3); font-size: 12px; font-weight: 400; }
+.records-toggle { display: inline-flex; gap: 5px; align-items: center; min-height: 40px; padding: 4px 0; border: 0; background: transparent; color: var(--wao-text-2); font-size: 13px; text-align: left; }
+.day-records { border-color: transparent; background: transparent; }
+.day-task { padding: 14px 0; border-top: 1px solid var(--wao-line); }
+.day-task-main { min-width: 0; }
+.task-heading { display: flex; align-items: flex-start; gap: var(--wao-space-1); }
+.task-title { flex: 1; min-width: 0; padding: 2px 0; border: 0; background: transparent; color: var(--wao-text); font-size: 14px; font-weight: 650; text-align: left; overflow-wrap: anywhere; line-height: 1.65; }
+.task-title:hover { color: var(--wao-primary-text); }
+.task-check { flex: none; min-width: 24px; padding: 0; border: 0; background: transparent; color: var(--wao-primary-text); font-size: 20px; line-height: 1.4; }
+.task-check[aria-pressed='true'] { color: var(--wao-success-strong); }
+.task-finished .task-title { font-weight: 500; color: var(--wao-text-2); }
+.task-status { flex: none; padding-top: 4px; font-size: 12px; color: var(--wao-text-3); }
+.task-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 6px 0 0 32px; }
+.task-trace, .past-schedule { margin: 0; color: var(--wao-text-3); font-size: 12px; }
+.task-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 0 32px; }
+.task-actions button, .task-error button { min-height: 28px; padding: 3px 0; border: 0; background: transparent; color: var(--wao-primary-text); font-size: 12px; }
+.day-create { display: flex; flex-wrap: wrap; gap: var(--wao-space-1); margin: 0; padding: 12px 0 var(--wao-space-2); border-top: 1px solid var(--wao-line); }
+.day-create input { flex: 1; min-width: 130px; padding: 10px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); }
+.day-create select { min-width: 0; max-width: 180px; min-height: var(--wao-control-height); padding: 5px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); }
+.day-events { margin: var(--wao-space-1) 0 0 32px; color: var(--wao-text-3); font-size: 12px; }
+.day-events summary { width: fit-content; cursor: pointer; }
+.day-events > div { display: grid; gap: 6px; padding: var(--wao-space-1) 0 0; }
+.day-events small { margin-left: var(--wao-space-1); font-size: 12px; }
+.day-notes { padding-top: 0; }
+.section-action { min-height: 32px; padding: 4px 8px; font-size: 12px; }
+.day-note-link { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px 0; border: 0; border-top: 1px solid var(--wao-line); background: transparent; color: var(--wao-text); text-align: left; }
+.day-note-link span { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.day-note-link small { color: var(--wao-text-3); font-size: 12px; }
+.notes-more { margin-top: var(--wao-space-1); }
+.coverage, .day-context { margin: 0 0 var(--wao-space-2); color: var(--wao-text-2); font-size: 13px; }
+.coverage { padding: var(--wao-space-2); border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); }
+.day-empty, .day-state { margin: 0; padding: var(--wao-space-2) 0; color: var(--wao-text-3); font-size: 13px; }
+.day-state p { margin: var(--wao-space-1) 0; }
+.day-state button { margin-right: var(--wao-space-1); }
+.task-error { margin: var(--wao-space-1) 0; color: var(--wao-danger-strong); font-size: 12px; }
+.historical-subs { padding-left: var(--wao-space-3); line-height: 1.8; overflow-wrap: anywhere; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+button:disabled { opacity: .55; cursor: default; }
+@container todo-day (max-width: 600px) {
+  h2 { font-size: 21px; }
+  .day-heading nav { width: 100%; }
+  .day-heading input { flex: 1; }
+  .day-task-group { padding-inline: 12px; }
+  .day-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .day-create input { grid-column: 1 / -1; min-width: 0; width: 100%; }
+  .day-create select { width: 100%; max-width: none; }
+  .day-heading input, .day-create input, .day-create select, .day-create button { min-height: 44px; font-size: 16px; }
+  .task-check, .task-actions button, .section-action, .records-toggle { min-height: 44px; }
+  .task-check { min-width: 32px; }
+  .task-meta, .task-actions, .day-events { margin-left: 40px; }
+  .task-status { max-width: 65px; overflow-wrap: anywhere; }
+}
+@media (pointer: coarse) { .task-check, .task-actions button, .section-action, .records-toggle { min-height: 44px; } .task-check { min-width: 44px; } }
 </style>

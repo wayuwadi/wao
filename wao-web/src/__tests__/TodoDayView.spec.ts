@@ -168,6 +168,54 @@ describe('待办日工作区', () => {
     expect(wrapper.get('.historical-subs').text()).toContain('✓ 当天步骤')
     wrapper.unmount()
   })
+  it('今日安排与未排期进展、已收尾分开，未收尾子项不能被完成分组隐藏', async () => {
+    const data = useDataStore(), base = data.tasks[0]!
+    data.tasks = [
+      { ...base, id: 'planned', title: '今天要做', status: '进行中', subs: [] },
+      { ...base, id: 'trace', title: '当天进展未安排', status: '进行中', subs: [] },
+      { ...base, id: 'done', title: '真正收尾', status: '已完成', subs: [] },
+      { ...base, id: 'pending-sub', title: '仍需子项验收', status: '已完成', subs: [{ text: '仍待验证', done: false, status: '待验证' }] },
+    ] as typeof data.tasks
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: data.tasks.map(task => ({ task, snapshot: task, planned: task.id !== 'trace', finished: task.id === 'done', events: [] })) })
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' }, global: { stubs: { TaskSchedulePopover: true } } })
+    await flushPromises()
+    const planned = wrapper.get('[data-group="planned"]'), records = wrapper.get('[data-group="records"]')
+    expect(planned.findAll('.task-title').map(item => item.text())).toEqual(['今天要做', '仍需子项验收'])
+    expect(records.findAll('.task-title').map(item => item.text())).toEqual(['当天进展未安排', '真正收尾'])
+    const recordsContent = records.get('[id]')
+    expect((recordsContent.element as HTMLElement).style.display).toBe('none')
+    await records.get('.records-toggle').trigger('click')
+    expect(records.get('.records-toggle').attributes('aria-expanded')).toBe('true')
+    expect((recordsContent.element as HTMLElement).style.display).toBe('')
+    expect(wrapper.get('.day-secondary').find('[aria-label="每日固定事项"]').exists()).toBe(true)
+    expect(wrapper.get('.day-secondary').find('.day-notes').exists()).toBe(true)
+    wrapper.unmount()
+  })
+  it('收起进展分组时保留保存失败反馈，历史分组默认可读', async () => {
+    const data = useDataStore(), base = data.tasks[0]!
+    data.tasks = [{ ...base, status: '已完成', subs: [] }]
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [{ task: data.tasks[0], snapshot: data.tasks[0], planned: false, finished: true, events: [] }] })
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('error')
+    vi.spyOn(data, 'taskSaveError').mockReturnValue('保存尚未确认')
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' }, global: { stubs: { TaskSchedulePopover: true } } })
+    await flushPromises()
+    expect(wrapper.get('[data-group="records"] [role="alert"]').isVisible()).toBe(true)
+    await wrapper.get('.records-toggle').trigger('click')
+    expect(wrapper.get('[data-group="records"] [role="alert"]').isVisible()).toBe(true)
+    wrapper.unmount()
+  })
+  it('右侧小记先显示三条，用户能展开全部并收起', async () => {
+    const notes = Array.from({ length: 5 }, (_, index) => ({ docId: `note-${index}`, title: `记录${index}`, createdAt: '2026-10-03T09:00:00+08:00', updatedAt: '2026-10-03T09:00:00+08:00', late: false }))
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [], notes })
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' } }); await flushPromises()
+    const visibleNotes = () => wrapper.findAll('.day-note-link').filter(item => (item.element as HTMLElement).style.display !== 'none')
+    expect(visibleNotes()).toHaveLength(3)
+    await wrapper.get('.notes-more').trigger('click')
+    expect(visibleNotes()).toHaveLength(5)
+    await wrapper.get('.notes-more').trigger('click')
+    expect(visibleNotes()).toHaveLength(3)
+    wrapper.unmount()
+  })
   it('读取失败不冒充没有安排，可重试或回到全部待办', async () => {
     fetchDay.mockRejectedValueOnce(new Error('断网')).mockResolvedValueOnce({ ...fixture('2026-10-03'), tasks: [] })
     const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' } })
