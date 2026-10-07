@@ -205,6 +205,7 @@ const router = createRouter({
           component: () => import('@/views/ReferenceImagesView.vue'),
           meta: { module: 'reference-images', tabKind: 'module' },
         },
+        { path: 'digital-members', name: 'digital-members', component: () => import('@/views/DigitalMembersView.vue'), meta: { module: 'digital-members', tabKind: 'module' } },
         {
           path: 'automation',
           name: 'automation',

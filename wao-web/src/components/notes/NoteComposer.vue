@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DigitalIdentitySettings from '@/components/ui/DigitalIdentitySettings.vue'
+import type { IdentitySelection } from '@/api/digitalMembers'
 import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
@@ -50,7 +52,7 @@ const draftKey = props.note
   ? `wao-note-edit-v1:${session.currentUser.id}:${props.note.id}`
   : `wao-quick-note-draft-v1:${session.currentUser.id || 'anonymous'}${props.draftScope ? ':' + props.draftScope : ''}`
 type DraftBase = { title: string; tags: string[]; content: RichDocContent }
-type Draft = { companionMessageId?: string; sourceInputIds?: string[]; id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string }
+type Draft = { identitySelection?: IdentitySelection; companionMessageId?: string; sourceInputIds?: string[]; id: string; text: string; content?: RichDocContent; baseRev?: number; baseNote?: DraftBase; tags?: string[]; generatedTitle?: string }
 let restored = false
 function readDraft(): Draft {
   try {
@@ -64,6 +66,7 @@ function readDraft(): Draft {
   return { id: props.note?.id ?? crypto.randomUUID().replace(/-/g, ''), text: content?.markdown ?? '', content, baseRev: props.note?.rev, tags: props.note?.tags ?? [] }
 }
 const initial = readDraft()
+const identitySelection = ref<IdentitySelection>(initial.identitySelection && ['default','explicit','none'].includes(initial.identitySelection.mode) ? initial.identitySelection : { mode: 'default' })
 const companionMessageId = ref(initial.companionMessageId || '')
 const savedContent = props.note ? latestNoteContent(props.note) : { version: 1 as const, document: null, markdown: '' }
 const savedSnapshot = ref({
@@ -396,7 +399,7 @@ watch(
   },
   { flush: 'post' },
 )
-watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId], () => {
+watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId, identitySelection], () => {
   if (resetting) return
   error.value = ''
   if (props.note && !dirty.value) {
@@ -407,7 +410,7 @@ watch([text, content, tags, generatedTitle, appliedAiInputs, companionMessageId]
     return
   }
   try {
-    writeNoteDraft(draftKey, JSON.stringify({ id: id.value, text: text.value, content: content.value, baseRev,
+    writeNoteDraft(draftKey, JSON.stringify({ identitySelection: identitySelection.value, id: id.value, text: text.value, content: content.value, baseRev,
       baseNote: baseNote ? { title: baseNote.title, tags: baseNote.tags, content: baseNote.content } : undefined,
       tags: tags.value, generatedTitle: generatedTitle.value, sourceInputIds: appliedAiInputs.value, companionMessageId: companionMessageId.value } satisfies Draft))
     draftError.value = false
@@ -438,6 +441,7 @@ watch(() => props.note ? { note: props.note, rich: latestNoteContent(props.note)
 
 async function save(explicit = false) {
   if (!canSave.value) return
+  if (!props.note && !companionMessageId.value && identitySelection.value.mode === 'explicit' && (!identitySelection.value.subjectId || !identitySelection.value.versionId)) { error.value = '请选择成员与已确认的形象版本'; return }
   const responseTicket = explicit ? captureCompanionTicket(composerElement.value?.querySelector('.save-note')) : undefined
   saving.value = true
   error.value = ''
@@ -447,13 +451,13 @@ async function save(explicit = false) {
     // 模型文字已变化而结构化回调尚未到达时，以当前可见输入为准。
     const rich = content.value?.markdown === text.value
       ? content.value : { version: 1 as const, document: null, markdown: text.value }
-    const submitted = { text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value, sourceInputIds: [...appliedAiInputs.value], companionMessageId: companionMessageId.value }
+    const submitted = { identitySelection: { ...identitySelection.value }, text: text.value, content: content.value, tags: [...tags.value], title: generatedTitle.value, sourceInputIds: [...appliedAiInputs.value], companionMessageId: companionMessageId.value }
     let savedId: string | null
-    if (props.submitNote) {
+    if (props.submitNote && !submitted.companionMessageId) {
       const aiDefaults = preferences.noteAiDefaults
       const saved = await props.submitNote({ docId: id.value, title: submitted.title, content: rich, tags: submitted.tags,
         ...(submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : {}),
-        autoTitle: aiDefaults.title && !submitted.title.trim(), autoImage: aiDefaults.image, autoPolish: aiDefaults.polish })
+        autoTitle: aiDefaults.title && !submitted.title.trim(), autoImage: aiDefaults.image, autoPolish: aiDefaults.polish, ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) })
       data.applyRemoteDoc(saved)
       savedId = saved.id
     } else if (props.note) {
@@ -482,7 +486,7 @@ async function save(explicit = false) {
       savedId = saved.id
     } else {
       if(submitted.companionMessageId){const saved=await saveCompanionDraft({ messageId: submitted.companionMessageId, docId:id.value, existing:false, expectedRev:1, title:submitted.title, content:rich, blocks:legacyProjection(rich), tags:submitted.tags });data.applyRemoteDoc(saved);savedId=saved.id}
-      else savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags, submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : undefined)
+      else savedId = await data.addNote(submitted.text, submitted.title, id.value, rich, submitted.tags, submitted.sourceInputIds.length || submitted.identitySelection.mode !== 'default' ? { ...(submitted.sourceInputIds.length ? { sourceInputIds: submitted.sourceInputIds } : {}), ...(submitted.identitySelection.mode === 'default' ? {} : { identitySelection: submitted.identitySelection }) } : undefined)
 
     }
     if (!savedId) throw new Error('正文为空，请先写点内容')
@@ -494,16 +498,17 @@ async function save(explicit = false) {
       if (!latest || (latest.id === id.value && latest.text === submitted.text
         && JSON.stringify(latest.content) === JSON.stringify(submitted.content)
         && JSON.stringify(latest.tags ?? []) === JSON.stringify(submitted.tags)
-        && (latest.generatedTitle ?? '') === submitted.title)) removeNoteDraft(draftKey, raw)
+        && (latest.generatedTitle ?? '') === submitted.title && JSON.stringify(latest.identitySelection ?? { mode: 'default' }) === JSON.stringify(submitted.identitySelection))) removeNoteDraft(draftKey, raw)
     } catch { /* 服务端保存已成功。 */ }
     if (text.value !== submitted.text || JSON.stringify(tags.value) !== JSON.stringify(submitted.tags)
-        || generatedTitle.value !== submitted.title) {
+        || generatedTitle.value !== submitted.title || JSON.stringify(identitySelection.value) !== JSON.stringify(submitted.identitySelection)) {
       status.value = '已保存提交内容 · 最新输入已保留，待保存'
       return
     }
     if (!props.note) {
       resetting = true
       companionMessageId.value = ''
+      identitySelection.value = { mode: 'default' }
       text.value = ''
       content.value = undefined
       tags.value = []
@@ -635,6 +640,8 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
       <span role="status" aria-live="polite" :class="{ error: draftError }">{{ loading ? '正在加载小记…' : saving ? '正在保存到服务器…' : draftError ? status : dirty ? '草稿已保护 · 有修改待保存' : workflowMessage || status || (note ? '已保存，可继续编辑' : isMobile ? '随手写，点“记下来了”保存' : 'Ctrl / ⌘ + Enter 保存') }}</span>
       <span v-if="inline" class="composer-word-count" aria-label="当前正文字数" title="正文字符数（含标点，不含空白、格式标记及图片附件地址）">{{ characterCount.toLocaleString('zh-CN') }} 字</span>
       <button v-if="note" type="button" :disabled="saving" @click="contained ? requestExit() : emit('close')">{{ contained ? '退出编辑' : '收起编辑' }}</button>
+      <span v-if="!note && companionMessageId" class="derived-image-hint">对话草稿不自动配图，保存后可手动生成。</span>
+      <DigitalIdentitySettings v-if="!note && !companionMessageId" v-model="identitySelection" execution="save" :disabled="loading || saving" />
       <button type="button" class="import-excerpt" aria-label="粘贴为书摘" title="粘贴为书摘" :disabled="loading || saving" @click="excerptDialog?.openDialog()"><i class="ri-double-quotes-l" aria-hidden="true"></i><span>书摘</span></button>
       <button v-if="!note" type="button" class="copy-draft" aria-label="复制给 Codex" title="复制给 Codex" :disabled="loading || saving || !text.trim()" @click="copyDraft"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span> 复制给 Codex</span></button>
       <button class="save-note" type="button" :disabled="!canSave" @click="save(true)">{{ saving ? '正在保存…' : error ? '重试保存' : note ? '保存修改' : '记下来了' }}</button>
@@ -645,6 +652,8 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
 </template>
 
 <style scoped>
+.composer-footer :deep(.identity-trigger) { min-width:36px; height:36px; }
+@media(max-width:650px) { .composer-footer :deep(.identity-trigger) { min-width:44px; height:44px; } }
 .import-excerpt { display:inline-flex; align-items:center; justify-content:center; gap:5px; }
 @media(max-width:760px) {
   .composer-footer > .import-excerpt, .composer-footer > .copy-draft { min-width:44px; padding:8px; }

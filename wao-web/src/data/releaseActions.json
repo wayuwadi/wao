@@ -1,4 +1,5 @@
 [
+  { "id": "digital-member-library", "featureId": "digital-members", "label": "打开数字成员图库", "path": "/digital-members", "query": {} },
   { "id": "notes-compose", "featureId": "notes", "label": "写一条小记", "path": "/notes", "query": {} },
   { "id": "notes-settings", "featureId": "notes", "label": "打开小记设置", "path": "/notes", "query": { "releaseAction": "settings" } },
   { "id": "notes-reading", "featureId": "notes", "label": "体验阅读编辑", "path": "/notes", "query": { "releaseAction": "reading" } },

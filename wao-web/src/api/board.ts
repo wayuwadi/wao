@@ -1,3 +1,4 @@
+import type { IdentitySelection } from './digitalMembers'
 import { desktopCachedRead } from './desktopCache'
 import { http, type ApiResponse } from './http'
 import type {
@@ -368,7 +369,7 @@ export const apiCreateDoc = (payload: CreateDocPayload) => post<Doc>('/api/docs'
 
 /** 幂等新建小记：草稿重试沿用同一个 id，服务端不会插入重复小记。 */
 export const apiCreateNote = (id: string, payload: { title?: string; blocks: DocBlock[]; content?: RichDocContent; tags?: string[];
-  autoTitle?: boolean; autoImage?: boolean; autoPolish?: boolean; sourceInputIds?: string[] }) =>
+  autoTitle?: boolean; autoImage?: boolean; autoPolish?: boolean; sourceInputIds?: string[]; identitySelection?: IdentitySelection }) =>
   put<Doc>(`/api/docs/notes/${id}`, payload)
 
 export const fetchNoteTags = () => get<string[]>('/api/docs/note-tags')

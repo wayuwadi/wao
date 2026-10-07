@@ -156,6 +156,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-image-2-line',
     path: '/reference-images',
   },
+  'digital-members': { id: 'digital-members', label: '数字成员图库', icon: 'ri-user-smile-line', path: '/digital-members' },
   automation: {
     id: 'automation',
     label: '自动化',
@@ -411,6 +412,9 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
+      id: 'digital-members', label: '数字成员图库', icon: 'ri-user-smile-line', group: 'PERSONAL', order: 33, visible: true,
+    },
+    {
       id: 'drawings',
       label: '草图',
       icon: 'ri-draft-line',
@@ -505,6 +509,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
   'memory',
   'knowledge',
   'reference-images',
+  'digital-members',
   'english-learning',
   'vocabulary',
   'drawings',

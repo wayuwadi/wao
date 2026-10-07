@@ -685,6 +685,27 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void imageIdentityIsFrozenOnceAndStableRetryDoesNotReadNewDefault() {
+        enableLocalBusinessAi();
+        var identities=mock(DigitalMemberService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service,"digitalMembers",identities);
+        var selection=new cn.wayuwa.wao.dto.DigitalMemberDtos.IdentitySelection("explicit","subject","version");
+        var snapshot=new DigitalMemberService.Snapshot("explicit","subject","version","{\"gender\":\"male\"}","确认性别为男，保持长发");
+        when(identities.inputHash("正文","画面","gpt-6-astra",selection)).thenReturn("input-hash");
+        when(identities.freeze("member",selection)).thenReturn(snapshot);
+        String request="f".repeat(32);
+        assertThat(service.enqueueArticleImageJob("member","正文","画面","gpt-6-astra",request,selection)).isEqualTo(request);
+        var queued=ArgumentCaptor.forClass(AiAssistantRunEntity.class);verify(mapper).insertReadOnlyQueued(queued.capture());
+        assertThat(queued.getValue().getPromptText()).contains("确认性别为男，保持长发");
+        verify(identities).record("member",request,"ARTICLE_IMAGE","input-hash",snapshot);
+        when(mapper.selectById(request)).thenReturn(queued.getValue());
+        assertThat(service.enqueueArticleImageJob("member","正文","画面","gpt-6-astra",request,selection)).isEqualTo(request);
+        verify(identities).verifyRetry("member",request,"input-hash");
+        verify(identities,org.mockito.Mockito.times(1)).freeze(anyString(),any());
+        verify(mapper,org.mockito.Mockito.times(1)).insertReadOnlyQueued(any());
+    }
+
+    @Test
     void savedCentralCodexReviewChoiceResolvesThroughMetadataWithoutLoadingCredentials() {
         enableLocalBusinessAi();
         when(accountService.assistantCapabilities()).thenReturn(List.of(

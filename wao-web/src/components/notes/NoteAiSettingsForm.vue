@@ -337,6 +337,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <fieldset v-if="draft && active !== 'display'" :disabled="loading || saving">
+        <p v-if="active === 'imagePrompt'" class="identity-default-link">自动配图使用账号已确认的本人默认形象；没有具体人物时保留场景表达。<RouterLink to="/digital-members">管理默认形象</RouterLink></p>
         <template v-if="active === 'capabilities'"
           ><div class="section-heading">
             <div>

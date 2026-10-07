@@ -6,7 +6,11 @@ import QuickNotePopover from '@/components/overlays/QuickNotePopover.vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useSessionStore } from '@/stores/session'
 import { useDataStore } from '@/stores/data'
-import { readNoteDraft } from '@/utils/noteDraftStorage'
+import { readNoteDraft, writeNoteDraft } from '@/utils/noteDraftStorage'
+import DigitalIdentitySettings from '@/components/ui/DigitalIdentitySettings.vue'
+
+const companionSave = vi.hoisted(() => vi.fn())
+vi.mock('@/api/noteAiCompanion', () => ({ saveCompanionDraft: companionSave }))
 
 const Editor = defineComponent({ props: ['modelValue', 'readonly'], emits: ['update:modelValue'], template: '<textarea class="tiptap" :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" />' })
 const options = { attachTo: document.body, global: { stubs: { MarkdownEditor: Editor } } }
@@ -14,8 +18,55 @@ beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); setActivePinia(createPinia())
   useSessionStore().accept({ member: { id: 'wg', name: '测试成员', initial: '测', color: '#4358d6', role: '成员' } } as never)
   useDataStore().apiLive = true
+  companionSave.mockReset()
 })
 describe('原地快速小记', () => {
+  it('本次人物选择随草稿恢复，重试传递同一选择且成功后清理', async () => {
+    const add = vi.spyOn(useDataStore(), 'addNote').mockRejectedValueOnce(new Error('离线')).mockResolvedValueOnce('saved-note')
+    let wrapper = mount(NoteComposer, options)
+    await flushPromises()
+    await wrapper.get('textarea').setValue('保存本次人物选择')
+    wrapper.findComponent(DigitalIdentitySettings).vm.$emit('update:modelValue', { mode: 'none' })
+    await flushPromises()
+    wrapper.unmount()
+    wrapper = mount(NoteComposer, options)
+    await flushPromises()
+    expect(wrapper.findComponent(DigitalIdentitySettings).props('modelValue')).toEqual({ mode: 'none' })
+    await wrapper.get('.save-note').trigger('click'); await flushPromises()
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toContain('"mode":"none"')
+    await wrapper.get('.save-note').trigger('click'); await flushPromises()
+    expect(add.mock.calls[0]![5]).toEqual({ identitySelection: { mode: 'none' } })
+    expect(add.mock.calls[1]![5]).toEqual(add.mock.calls[0]![5])
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toBeNull()
+    wrapper.unmount()
+  })
+  it('本次指定缺少confirmed版本时保护正文并阻止请求', async () => {
+    const add = vi.spyOn(useDataStore(), 'addNote')
+    const wrapper = mount(NoteComposer, options)
+    await flushPromises()
+    await wrapper.get('textarea').setValue('指定人物的正文')
+    wrapper.findComponent(DigitalIdentitySettings).vm.$emit('update:modelValue', { mode: 'explicit', subjectId: 'one' })
+    await wrapper.get('.save-note').trigger('click'); await flushPromises()
+    expect(add).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请选择成员与已确认的形象版本')
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toContain('指定人物的正文')
+    wrapper.unmount()
+  })
+  it('对话来源隐藏形象入口且忽略保留的explicit选择，仍用无自动配图保存', async () => {
+    writeNoteDraft('wao-quick-note-draft-v1:wg', JSON.stringify({ id: 'draft-one', text: '对话正文', companionMessageId: 'message-one', identitySelection: { mode: 'explicit', subjectId: 'one' } }))
+    companionSave.mockRejectedValueOnce(new Error('对话保存可重试'))
+    const submitNote = vi.fn()
+    const wrapper = mount(NoteComposer, { ...options, props: { submitNote } })
+    await flushPromises()
+    expect(wrapper.findComponent(DigitalIdentitySettings).exists()).toBe(false)
+    expect(wrapper.text()).toContain('保存后可手动生成')
+    await wrapper.get('.save-note').trigger('click'); await flushPromises()
+    expect(submitNote).not.toHaveBeenCalled()
+    expect(companionSave).toHaveBeenCalledWith(expect.objectContaining({ messageId: 'message-one' }))
+    expect(wrapper.text()).toContain('对话保存可重试')
+    expect(readNoteDraft('wao-quick-note-draft-v1:wg')).toContain('"mode":"explicit"')
+    wrapper.unmount()
+  })
   it('刷新屏障保存已收起的浮层草稿，失败阻断且重试沿用同一条小记', async () => {
     const add = vi.spyOn(useDataStore(), 'addNote').mockRejectedValueOnce(new Error('离线，无法保存')).mockResolvedValueOnce('saved-note')
     const wrapper = mount(QuickNotePopover, { ...options, props: { open:true } })

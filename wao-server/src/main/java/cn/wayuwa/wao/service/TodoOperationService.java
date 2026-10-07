@@ -75,7 +75,8 @@ public class TodoOperationService {
     public record NoteRequest(String docId, Integer expectedDocRev, String expectedTaskEditVersion,
             LocalDate businessDate, String taskId, String title, List<DocBlockDto> blocks,
             RichDocContentDto content, List<String> tags, Boolean autoTitle, Boolean autoImage,
-            Boolean autoPolish, List<String> sourceInputIds) {
+            Boolean autoPolish, List<String> sourceInputIds, cn.wayuwa.wao.dto.DigitalMemberDtos.IdentitySelection identitySelection) {
+        public NoteRequest(String docId,Integer expectedDocRev,String expectedTaskEditVersion,LocalDate businessDate,String taskId,String title,List<DocBlockDto> blocks,RichDocContentDto content,List<String> tags,Boolean autoTitle,Boolean autoImage,Boolean autoPolish,List<String> sourceInputIds){this(docId,expectedDocRev,expectedTaskEditVersion,businessDate,taskId,title,blocks,content,tags,autoTitle,autoImage,autoPolish,sourceInputIds,null);}
         public NoteRequest(String docId,Integer expectedDocRev,String expectedTaskEditVersion,LocalDate businessDate,String taskId,String title,List<DocBlockDto> blocks,RichDocContentDto content,List<String> tags,Boolean autoTitle,Boolean autoImage,Boolean autoPolish){this(docId,expectedDocRev,expectedTaskEditVersion,businessDate,taskId,title,blocks,content,tags,autoTitle,autoImage,autoPolish,null);}
     }
     public record NoteResult(String operationId, DocDto doc, TaskDto task, LocalDate businessDate,
@@ -175,7 +176,7 @@ public class TodoOperationService {
         if (!contexts.isEmpty() && !contexts.get(0).equals(request.businessDate()))
             throw new ConflictException("小记已归属另一日期，请刷新后重试");
         CreateNoteRequest noteRequest = new CreateNoteRequest(request.title(), request.blocks(), request.content(),
-                request.tags(), request.autoTitle(), request.autoImage(), request.autoPolish(), request.sourceInputIds());
+                request.tags(), request.autoTitle(), request.autoImage(), request.autoPolish(), request.sourceInputIds(), null, null, request.identitySelection());
         DocDto doc = existing == null ? knowledge.createNote(request.docId(), noteRequest, memberId)
                 : knowledge.updateDoc(request.docId(), new PatchDocRequest(request.title(), request.blocks(),
                         request.content(), null, null, request.expectedDocRev(), request.tags(), request.sourceInputIds()));
