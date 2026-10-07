@@ -4,7 +4,6 @@ import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.AiAssistantRunEntity;
 import cn.wayuwa.wao.mapper.AiAssistantRunMapper;
 import cn.wayuwa.wao.mapper.NoteAiWorkflowMapper;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.PreDestroy;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
@@ -15,6 +14,11 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -45,6 +49,13 @@ public class LocalNoteAiService {
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "wao-local-note-ai"); t.setDaemon(true); return t;
     });
+    // 调度只负责短事务推进；每个独立任务拥有自己的 CLI 进程与工作目录。
+    private final AtomicInteger executionSequence = new AtomicInteger();
+    private final ExecutorService executions = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "wao-local-note-ai-job-" + executionSequence.incrementAndGet());
+        t.setDaemon(true); return t;
+    });
+    private final Set<String> dispatched = ConcurrentHashMap.newKeySet();
     private volatile boolean ready;
     private String unavailable = "本机小记 AI 尚未启用，请在服务主机启用已登录的 Codex";
     private Path directory;
@@ -146,14 +157,8 @@ public class LocalNoteAiService {
         return localModels == null ? effort : localModels.validateEffort(model, effort);
     }
 
-    /** 本机业务共用有界队列；会话型业务自行在事务中保存成员消息。 */
-    public void requireCapacity() {
-        requireAvailable();
-        if (runs.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
-                .eq(AiAssistantRunEntity::getAiCapabilityId, capability)
-                .in(AiAssistantRunEntity::getStatus, "secure_queued", "provider_running")) >= 100)
-            throw new BadRequestException("本机 AI 队列已满；原文已保留，请稍后重试");
-    }
+    /** 兼容既有调用入口，只检查执行器可用性，不人为限制排队数量。 */
+    public void requireCapacity() { requireAvailable(); }
 
     private void tick() {
         if (!ready) return;
@@ -164,11 +169,27 @@ public class LocalNoteAiService {
             if (tianrenVisuals != null) tianrenVisuals.getObject().tick(capability);
             for (var run : runs.selectLocalNoteQueued(capability)) {
                 if (Thread.currentThread().isInterrupted()) return;
-                if (process(run)) break;
+                dispatch(run);
             }
         } catch (Exception exception) {
             // 不输出原始 CLI 输出、提示词、私有正文或数据库连接信息。
             log.warn("本机小记 AI 推进暂时失败：{}", exception.getClass().getSimpleName());
+        }
+    }
+
+    void dispatch(AiAssistantRunEntity run) {
+        if (!ready || !dispatched.add(run.getId())) return;
+        try {
+            executions.execute(() -> {
+                try { process(run); }
+                catch (RuntimeException error) {
+                    log.warn("本机 AI 任务状态推进失败：{}", error.getClass().getSimpleName());
+                }
+                finally { dispatched.remove(run.getId()); }
+            });
+        } catch (RejectedExecutionException stopped) {
+            // 停机期间未领取的任务留在持久队列，下一实例接续。
+            dispatched.remove(run.getId());
         }
     }
 
@@ -272,8 +293,12 @@ public class LocalNoteAiService {
     /** 仅停止本实例创建的进程和 worker，保留未领取的持久队列。 */
     @PreDestroy
     public void stop() throws Exception {
-        ready = false; worker.shutdownNow();
-        worker.awaitTermination(10, TimeUnit.SECONDS);
+        ready = false; worker.shutdownNow(); executions.shutdownNow();
+        boolean dispatcherStopped = worker.awaitTermination(10, TimeUnit.SECONDS);
+        boolean executionsStopped = executions.awaitTermination(30, TimeUnit.SECONDS);
+        // 仍在收尾时保留目录锁，禁止另一个实例重领尚在运行的任务。
+        if (!dispatcherStopped || !executionsStopped)
+            throw new IllegalStateException("本机 AI 进程尚未停止，执行目录锁继续保留");
         if (lock != null && lock.isValid()) lock.release();
         if (lockChannel != null) lockChannel.close();
     }

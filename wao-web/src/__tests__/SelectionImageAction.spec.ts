@@ -19,7 +19,7 @@ describe('小记选段生图', () => {
     await wrapper.vm.$nextTick()
     document.body.querySelector<HTMLButtonElement>('.selection-image-dialog button.primary')?.click()
     await flushPromises()
-    expect(startArticleImage).toHaveBeenCalledWith('选中的三点收获', expect.stringContaining('选中的文字'))
+    expect(startArticleImage).toHaveBeenCalledWith('选中的三点收获', expect.stringContaining('选中的文字'), undefined, expect.stringMatching(/^[a-f0-9]{32}$/))
     expect(document.body.querySelector('.selection-image-dialog img')?.getAttribute('src')).toBe('/api/images/generated/raw')
     expect(insertImage).not.toHaveBeenCalled()
     document.body.querySelector<HTMLButtonElement>('.selection-image-dialog button.primary')?.click()
@@ -49,6 +49,27 @@ describe('小记选段生图', () => {
     expect(startArticleImage).toHaveBeenCalledTimes(2)
     expect(document.body.querySelector('.selection-image-dialog img')?.getAttribute('src')).toBe('/api/images/retry/raw')
     wrapper.unmount()
+  })
+
+  it('同一编辑器的二十个不同选段可同时提交，切换不丢原任务', async () => {
+    vi.useFakeTimers()
+    vi.mocked(startArticleImage).mockImplementation(async (_source, _prompt, _model, requestId) => ({ id: requestId!, status: 'QUEUED', message: '', imageUrl: null }))
+    vi.mocked(fetchArticleImage).mockImplementation(async id => ({ id, status: 'RUNNING', message: '', imageUrl: null }))
+    const wrapper = mount(SelectionImageAction, { props: { scopeKey: 'parallel', insertImage: () => true }, attachTo: document.body })
+    try {
+      for (let i = 0; i < 20; i++) {
+        ;(wrapper.vm as unknown as { open: (source: string) => void }).open(`独立选段 ${i}`)
+        await wrapper.vm.$nextTick()
+        document.body.querySelector<HTMLButtonElement>('.selection-image-dialog button.primary')?.click()
+        await flushPromises()
+      }
+      expect(startArticleImage).toHaveBeenCalledTimes(20)
+      expect(document.body.querySelectorAll('.image-jobs button')).toHaveLength(20)
+      expect(JSON.parse(localStorage.getItem('wao-note-selection-image-v1:parallel')!)).toHaveLength(20)
+      document.body.querySelector<HTMLButtonElement>('.image-jobs button')?.click()
+      await wrapper.vm.$nextTick()
+      expect(document.body.querySelector('blockquote')?.textContent).toBe('独立选段 0')
+    } finally { wrapper.unmount(); vi.clearAllTimers(); vi.useRealTimers() }
   })
 
   it('返回编辑器后用服务端任务 ID 恢复查询', async () => {

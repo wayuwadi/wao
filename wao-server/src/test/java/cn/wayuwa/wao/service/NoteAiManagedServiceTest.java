@@ -49,6 +49,22 @@ class NoteAiManagedServiceTest {
   org.springframework.test.util.ReflectionTestUtils.setField(managed,"companion",provider);
   return companion;
  }
+ @Test void twentyNotesSubmitImagesAndPolishWithoutMemberSlotsEvenWithLegacySerialPreference(){
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"executionMode\":\"serial\",\"maxConcurrent\":1}");
+  when(image.startNoteWorkflow(anyString(),any())).thenAnswer(c->new ArticleImageJobDto(java.util.UUID.randomUUID().toString(),"QUEUED",null,null));
+  var notes=new LinkedHashMap<String,DocDto>();
+  when(knowledge.getDoc(anyString())).thenAnswer(c->notes.get(c.getArgument(0)));
+  for(int i=0;i<20;i++){
+   String id="parallel-note-"+i;
+   db.update("INSERT INTO doc VALUES(?, 'm', 'kb-notes', NULL, NULL)",id);
+   var note=new DocDto(id,"合成标题","m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,"并行验收合成正文".repeat(20)),List.of(),"kb-notes",null,1);
+   notes.put(id,note);tx.executeWithoutResult(t->managed.saved(note,"m","",null));
+   tx.executeWithoutResult(t->managed.advance(id));
+  }
+  verify(image,times(20)).startNoteWorkflow(eq("m"),any());
+  verify(text,times(20)).submit(eq("m"),any(),eq("NOTE_BODY"),any(),any(),any(),any());
+  assertThat(db.queryForObject("SELECT COUNT(*) FROM note_ai_stage_attempt WHERE stage='image' AND state='RUNNING'",Integer.class)).isEqualTo(20);
+ }
  @Test void reviewModeRetainsCompletedOutputWithoutChangingTheNote(){
   var companion=companion("REVIEW");
   values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");

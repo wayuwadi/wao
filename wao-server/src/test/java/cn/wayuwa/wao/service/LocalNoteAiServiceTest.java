@@ -166,5 +166,60 @@ class LocalNoteAiServiceTest {
         assertThat(LocalNoteAiService.instanceCapability(Files.createDirectory(directory.resolve("another")))).isNotEqualTo(first);
     }
 
+    @Test void twentyIndependentJobsStartBeforeAnyJobFinishesAndDuplicateDispatchIsIgnored() throws Exception {
+        ReflectionTestUtils.setField(service, "ready", true);
+        var template = run();
+        var started = new java.util.concurrent.CountDownLatch(20);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var completed = new java.util.concurrent.CountDownLatch(20);
+        when(runs.claimQueued(anyString(), isNull(), anyString(), eq("secure_queued"), eq("provider_running"))).thenReturn(1);
+        doAnswer(call -> {
+            started.countDown();
+            if (!release.await(10, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("测试未释放任务");
+            return new LocalNoteCodexProcess.Result("独立结果", null);
+        }).when(service).execute(any(), anyString(), any());
+        when(runs.completeProviderSucceeded(anyString(), anyString(), anyString())).thenAnswer(call -> { completed.countDown(); return 1; });
+        try {
+            for (int i = 0; i < 20; i++) {
+                var job = new AiAssistantRunEntity();
+                job.setId("parallel-" + i); job.setAiCapabilityId(template.getAiCapabilityId());
+                job.setMemberId("same-member"); job.setUsagePurpose(i % 2 == 0 ? "ARTICLE_IMAGE" : "POLISH");
+                service.dispatch(job); service.dispatch(job);
+            }
+            assertThat(started.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            verify(runs, never()).completeProviderSucceeded(anyString(), anyString(), anyString());
+            release.countDown();
+            assertThat(completed.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            verify(service, times(20)).execute(any(), anyString(), any());
+            verify(runs, times(20)).claimQueued(anyString(), isNull(), anyString(), anyString(), anyString());
+        } finally { release.countDown(); service.stop(); }
+    }
+
+    @Test void shutdownInterruptsAllParallelJobsAndLeavesUnclaimedJobsPersistent() throws Exception {
+        ReflectionTestUtils.setField(service, "ready", true); run();
+        var started = new java.util.concurrent.CountDownLatch(20);
+        var blocked = new java.util.concurrent.CountDownLatch(1);
+        when(runs.claimQueued(anyString(), isNull(), anyString(), anyString(), anyString())).thenReturn(1);
+        doAnswer(call -> { started.countDown(); blocked.await(); return null; }).when(service).execute(any(), anyString(), any());
+        try {
+            for (int i = 0; i < 20; i++) {
+                var job = new AiAssistantRunEntity(); job.setId("stop-" + i); job.setAiCapabilityId("local-notes-test");
+                service.dispatch(job);
+            }
+            assertThat(started.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            service.stop();
+            verify(runs, times(20)).completeProviderFailed(anyString(), anyString(), contains("原文已保留"));
+            var pending = new AiAssistantRunEntity(); pending.setId("unclaimed"); service.dispatch(pending);
+            verify(runs, never()).claimQueued(eq("unclaimed"), any(), anyString(), anyString(), anyString());
+        } finally { blocked.countDown(); service.stop(); }
+    }
+
+    @Test void moreThanOneHundredExistingJobsDoNotPreventAnotherEnqueue() {
+        ReflectionTestUtils.setField(service, "ready", true); run();
+        when(runs.selectCount(any())).thenReturn(100L);
+        service.enqueue("member", "正文", "POLISH", "gpt-6-astra");
+        verify(runs).insertReadOnlyQueued(any()); verify(runs, never()).selectCount(any());
+    }
+
     ImageItemDto image() { return new ImageItemDto("new-image", "合成.png", "1 KB", "今天", "合成", "/api/images/new-image/raw", "#fff", "#eee"); }
 }

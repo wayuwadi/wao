@@ -116,7 +116,7 @@ describe('成员级界面偏好', () => {
     await preferences.load()
 
     expect(preferences.noteFullscreenReminder).toEqual({ enabled: true, delayMinutes: 1 })
-    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 3 })
+    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 0 })
     await preferences.setNoteFullscreenReminder({ enabled: false, delayMinutes: 5 })
     expect(preferenceApi.savePreference).toHaveBeenCalledWith(
       'note-fullscreen-reminder-v1', JSON.stringify({ enabled: false, delayMinutes: 5 }),
@@ -124,16 +124,16 @@ describe('成员级界面偏好', () => {
     expect(preferences.noteFullscreenReminder).toEqual({ enabled: false, delayMinutes: 5 })
     await preferences.setNoteAiDefaults({ title: false, polish: true, image: false, executionMode: 'serial', maxConcurrent: 4 })
     expect(preferenceApi.savePreference).toHaveBeenCalledWith(
-      'note-ai-defaults-v1', JSON.stringify({ title: false, polish: true, image: false, executionMode: 'serial', maxConcurrent: 4 }),
+      'note-ai-defaults-v1', JSON.stringify({ title: false, polish: true, image: false, executionMode: 'parallel', maxConcurrent: 0 }),
     )
-    expect(preferences.noteAiDefaults).toEqual({ title: false, polish: true, image: false, executionMode: 'serial', maxConcurrent: 4 })
+    expect(preferences.noteAiDefaults).toEqual({ title: false, polish: true, image: false, executionMode: 'parallel', maxConcurrent: 0 })
 
     preferences.prepareForMember('another-member')
     expect(preferences.noteFullscreenReminder).toEqual({ enabled: true, delayMinutes: 1 })
-    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 3 })
+    expect(preferences.noteAiDefaults).toEqual({ title: true, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 0 })
   })
 
-  it('读取旧小记偏好时补齐并行默认值，且保留有效并发设置', async () => {
+  it('读取旧小记偏好时补齐并行默认值，且不再继承历史并发限制', async () => {
     preferenceApi.fetchPreference.mockImplementation((key: string) => Promise.resolve(
       key === 'note-ai-defaults-v1'
         ? JSON.stringify({ title: true, polish: false, image: true, executionMode: 'serial', maxConcurrent: 5 })
@@ -142,7 +142,7 @@ describe('成员级界面偏好', () => {
     const preferences = usePreferenceStore()
     await preferences.load()
     expect(preferences.noteAiDefaults).toEqual({
-      title: true, polish: false, image: true, executionMode: 'serial', maxConcurrent: 5,
+      title: true, polish: false, image: true, executionMode: 'parallel', maxConcurrent: 0,
     })
 
     preferenceApi.fetchPreference.mockImplementation((key: string) => Promise.resolve(
@@ -151,7 +151,7 @@ describe('成员级界面偏好', () => {
     preferences.prepareForMember('member-with-legacy-settings')
     await preferences.load()
     expect(preferences.noteAiDefaults).toEqual({
-      title: false, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 3,
+      title: false, polish: true, image: true, executionMode: 'parallel', maxConcurrent: 0,
     })
   })
 

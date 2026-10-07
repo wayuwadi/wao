@@ -29,7 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** 真实状态表与调度批次验证队列继续推进，模型与文档出口隔离，不连接共享库。 */
 class NoteAiWorkflowQueueTest {
     @ParameterizedTest @ValueSource(ints = {1, 3})
-    void waitingNotesReleaseCompletedJobsAndRespectSharedMemberCapacity(int capacity) throws Exception {
+    void waitingNotesAllStartDespiteLegacyMemberCapacity(int capacity) throws Exception {
         var ds = new DriverManagerDataSource("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
         var jdbc = new JdbcTemplate(ds);
         jdbc.execute("""
@@ -90,10 +90,10 @@ class NoteAiWorkflowQueueTest {
                 String id = "note" + i;
                 assertThat(transaction.execute(status -> mapper.lock(id)).titleStatus()).as(id).isEqualTo("DONE");
             }
-            // 已完成项释放槽位，多个小记的等待者共用成员上限。
+            // 历史串行或三槽位偏好不再挡住其他小记的独立任务。
             verify(text, times(capacity)).get(eq("member"), any());
-            verify(text, times(capacity)).submit(any(), any(), any(), any(), any(), any(), any());
-            assertThat(mapper.countRunningStages("member")).isEqualTo(capacity);
+            verify(text, times(30 - capacity)).submit(any(), any(), any(), any(), any(), any(), any());
+            assertThat(mapper.countRunningStages("member")).isEqualTo(30 - capacity);
         } finally { jdbc.execute("SHUTDOWN"); }
     }
 

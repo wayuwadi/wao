@@ -176,9 +176,6 @@ public class NoteAiManagedService {
             if(state.equals("PENDING")){
                 String stageMember=str(a,"member_id");
                 settings.lockMember(stageMember);
-                var executingSettings=manual?settings.get(stageMember).settings():current;
-                Integer running=db.queryForObject("SELECT COUNT(*) FROM note_ai_stage_attempt WHERE member_id=? AND state='RUNNING'",Integer.class,stageMember);
-                if(running>=executingSettings.capacity()){db.update("UPDATE note_ai_stage_attempt SET reason_code='MEMBER_CAPACITY',message='等待成员执行名额' WHERE id=?",str(a,"id"));continue;}
                 submit(a);continue;
             }
             doc=knowledge.getObject().getDoc(docId);signal=one("SELECT * FROM note_ai_save_signal WHERE doc_id=?",docId);complete(a,doc,signal);

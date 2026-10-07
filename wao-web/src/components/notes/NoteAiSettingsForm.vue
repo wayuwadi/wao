@@ -401,24 +401,12 @@ onBeforeUnmount(() => {
           ><div class="section-heading">
             <div>
               <h3>执行安排</h3>
-              <p>把处理顺序和入队数量单独安排。</p>
+              <p>独立任务同时执行，不设置成员入队数量上限。</p>
             </div>
           </div>
-          <div class="execution-fields">
-            <label
-              >执行方式<select v-model="draft.executionMode">
-                <option value="parallel">一起排队</option>
-                <option value="serial">按顺序入队</option></select
-              ><small>安排各阶段入队顺序；本机执行器一次执行一个模型任务。</small></label
-            ><label v-if="draft.executionMode === 'parallel'"
-              >成员入队上限<select v-model.number="draft.maxConcurrent">
-                <option v-for="n in 5" :key="n" :value="n">{{ n }}</option></select
-              ><small>限制同时提交的自动处理阶段。</small></label
-            >
-          </div>
           <div class="behavior-note">
-            <i class="ri-information-line" aria-hidden="true"></i
-            ><span>修改安排用于之后的新任务，已入队任务继续原安排。</span>
+            <i class="ri-information-line" aria-hidden="true"></i>
+            <span>标题、正文、标签和配图可并行处理，包括多篇小记和多项选段生图。每项任务独立保存进度；实际调用仍以 Codex 的响应为准。</span>
           </div></template
         >
       </fieldset>
@@ -438,9 +426,7 @@ onBeforeUnmount(() => {
             }}；自动配图：{{ remote.settings.image ? '开启' : '关闭' }}
           </p>
           <p>
-            执行方式：{{ remote.settings.executionMode }}；成员入队上限：{{
-              remote.settings.maxConcurrent
-            }}
+            执行方式：独立任务并行，无成员入队数量上限
           </p>
           <template v-for="(label, field) in promptLabels" :key="field"
             ><h4>{{ label }}</h4>

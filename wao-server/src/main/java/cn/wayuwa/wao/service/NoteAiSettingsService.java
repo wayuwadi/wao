@@ -28,7 +28,6 @@ public class NoteAiSettingsService {
             long titleEpoch, long imageEpoch, long polishEpoch) {
         public boolean enabled(String stage) { return switch(stage) { case "title" -> title; case "image" -> image; case "tags" -> true; default -> polish; }; }
         public long epoch(String stage) { return switch(stage) { case "title" -> titleEpoch; case "image" -> imageEpoch; case "tags" -> 0; default -> polishEpoch; }; }
-        public int capacity() { return "serial".equals(executionMode) ? 1 : maxConcurrent; }
     }
     public record PromptDefaults(String titlePrompt, String polishPrompt, String imagePrompt) { }
     public record View(Settings settings, String version, boolean configured, String availability,
@@ -59,8 +58,7 @@ public class NoteAiSettingsService {
             if (node.has(key) && !node.get(key).isBoolean()) throw new BadRequestException("小记 AI 开关格式异常");
         String canonical = values.get("text-polish.prompt.v1");
         Settings s = new Settings(node.path("title").asBoolean(true),node.path("polish").asBoolean(true),node.path("image").asBoolean(true),
-            "serial".equals(node.path("executionMode").asText()) ? "serial" : "parallel",
-            Math.max(1,Math.min(5,node.path("maxConcurrent").asInt(3))), text(values.get("note-ai-model-v1")),
+            "parallel", 0, text(values.get("note-ai-model-v1")),
             reasoningEffort(node.path("reasoningEffort").asText("medium")),
             text(values.get("note-title-prompt-v1")),text(values.get("article-overview-image-prompt-v1")),
             text(canonical == null || canonical.isBlank() ? values.get("note-polish-prompt-v1") : canonical),
@@ -80,8 +78,6 @@ public class NoteAiSettingsService {
         if (request == null || request.settings() == null || !Objects.equals(old.version(),request.expectedVersion()))
             throw new ConflictException("小记 AI 设置已在其他设备更新，请重新读取；未保存设置仍保留");
         Settings next = request.settings();
-        if (next.maxConcurrent()<1 || next.maxConcurrent()>5 || !List.of("serial","parallel").contains(next.executionMode()))
-            throw new BadRequestException("执行方式或并发上限无效");
         String effort = reasoningEffort(next.reasoningEffort());
         for (String value : List.of(text(next.model()),text(next.titlePrompt()),text(next.imagePrompt()),text(next.polishPrompt())))
             if (value.length()>4000) throw new BadRequestException("设置内容最多 4000 字符");
@@ -89,7 +85,7 @@ public class NoteAiSettingsService {
         try { String raw=preferences.find(member,DEFAULTS); defaults=raw==null||raw.isBlank()?json.createObjectNode():(ObjectNode)json.readTree(raw); }
         catch (Exception e) { throw new BadRequestException("已有设置格式异常"); }
         defaults.put("title",next.title()).put("polish",next.polish()).put("image",next.image())
-            .put("executionMode",next.executionMode()).put("maxConcurrent",next.maxConcurrent())
+            .put("executionMode","parallel").put("maxConcurrent",0)
             .put("reasoningEffort",effort);
         for(String stage:List.of("title","image","polish")) defaults.put(stage+"Epoch",old.settings().epoch(stage)+(old.settings().enabled(stage)&&!next.enabled(stage)?1:0));
         preferences.upsert(member,DEFAULTS,write(defaults));
