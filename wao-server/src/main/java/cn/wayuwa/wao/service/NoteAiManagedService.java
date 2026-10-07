@@ -54,6 +54,17 @@ public class NoteAiManagedService {
     /** 只用比较副本判定触发，保存的原始内容不被格式化。 */
     public static String fingerprint(String markdown){return NoteAiSettingsService.hash(markdown.replaceAll("(?m)^#{1,6} +","").replaceAll("\\s+"," ").strip());}
     private String userBody(DocDto doc,String cover){String value=raw(doc);String prefix="![文章总览图]("+cover+" \"wao-image-size:50%xauto\")\n\n";return !cover.isBlank()&&value.startsWith(prefix)?value.substring(prefix.length()):value;}
+    private String presentCover(DocDto doc,String cover){
+        if(cover.isBlank())return "";
+        JsonNode tree=doc.content()==null?null:doc.content().document();
+        if(tree!=null&&"doc".equals(tree.path("type").asText()))return containsImage(tree,cover)?cover:"";
+        return java.util.regex.Pattern.compile("!\\[[^]\\r\\n]*]\\(\\s*<?"+java.util.regex.Pattern.quote(cover)+">?(?=[\\s)])").matcher(raw(doc)).find()?cover:"";
+    }
+    private boolean containsImage(JsonNode node,String cover){
+        if("image".equals(node.path("type").asText())&&cover.equals(node.path("attrs").path("src").asText()))return true;
+        for(JsonNode child:node.path("content"))if(containsImage(child,cover))return true;
+        return false;
+    }
     /** 正文与信号必须同事务；设置异常仅记录未确认策略，不能误报正文失败。 */
     public void saved(DocDto doc,String actor,String suppliedTitle,CreateNoteRequest selection){
         if(DERIVED.get()||!"kb-notes".equals(doc.kbId())||actor==null)return;
@@ -65,7 +76,11 @@ public class NoteAiManagedService {
         if(!TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("小记信号必须与正文同事务");
         settings.lockMember(actor);
         Map<String,Object> previous=one("SELECT * FROM note_ai_save_signal WHERE doc_id=? FOR UPDATE",doc.id());
-        String cover=previous==null?"":str(previous,"cover_url");
+        String cover=previous==null?"":presentCover(doc,str(previous,"cover_url"));
+        if(previous!=null&&!str(previous,"cover_url").isBlank()&&cover.isBlank()){
+            db.update("UPDATE note_ai_save_signal SET cover_url=NULL WHERE doc_id=?",doc.id());
+            db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='COVER_REMOVED',message='原自动配图已移除，可重新配图' WHERE doc_id=? AND cycle_id=? AND stage='image' AND reason_code IN ('EXISTING_IMAGE','APPLIED')",doc.id(),str(previous,"cycle_id"));
+        }
         var adopted=originals==null?null:originals.adopted(actor,doc);
         if(adopted!=null){
             if(adopted.cover()!=null)cover=adopted.cover();
@@ -110,6 +125,7 @@ public class NoteAiManagedService {
     }
     private void create(DocDto doc,String cycle,String stage,NoteAiSettingsService.Settings s,boolean manual,int attempt,String origin,String cover){create(doc,doc.author(),cycle,stage,s,manual,attempt,origin,cover);}
     private void create(DocDto doc,String member,String cycle,String stage,NoteAiSettingsService.Settings s,boolean manual,int attempt,String origin,String cover){
+        cover=presentCover(doc,cover);
         String body=userBody(doc,cover),code=null,message=null;
         if ("polish".equals(stage)) body=BookExcerptProtection.thoughts(body);
         String effective=body.strip();
@@ -236,7 +252,7 @@ public class NoteAiManagedService {
                 java.util.regex.Matcher links=java.util.regex.Pattern.compile("!?\\[[^]]*]\\(([^)]+)\\)").matcher(source);
                 while(links.find())if(!output.contains(links.group(1))){fail(a,"润色结果未完整保留图片、链接或附件；当前正文未改变");return;}
                 output=BookExcerptProtection.reassemble(userBody(doc,str(signal,"cover_url")),output);
-                String cover=str(signal,"cover_url");String body=cover.isBlank()?output:"![文章总览图]("+cover+" \"wao-image-size:50%xauto\")\n\n"+output;
+                String cover=presentCover(doc,str(signal,"cover_url"));String body=cover.isBlank()?output:"![文章总览图]("+cover+" \"wao-image-size:50%xauto\")\n\n"+output;
                 if(companion!=null){try{content=companion.getObject().polishedContent(doc,body);}catch(ConflictException unsafe){db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='REVIEW_REQUIRED',message=? WHERE id=?",unsafe.getMessage(),str(a,"id"));return;}}
                 else content=new RichDocContentDto(1,null,body);
                 if(doc.author().equals(str(a,"member_id")))versions.save(str(a,"member_id"),doc.id(),new SaveNotePolishVersionRequest(raw(doc),body,str(a,"job_id")));
@@ -298,7 +314,10 @@ public class NoteAiManagedService {
         if(!member.equals(str(signal,"member_id"))&&one("SELECT id FROM note_ai_stage_attempt WHERE doc_id=? AND member_id=? LIMIT 1",docId,member)==null)return null;
         Map<String,NoteAiWorkflowService.StageDetail> details=new LinkedHashMap<>();Map<String,String> states=new HashMap<>();List<String> messages=new ArrayList<>();
         for(var a:attempts(docId,str(signal,"cycle_id"))){String stage=str(a,"stage"),message=str(a,"message"),code=str(a,"reason_code"),state=str(a,"state");
-            states.put(stage,state);details.put(stage,new NoteAiWorkflowService.StageDetail(code,message,state.equals("FAILED"),code.equals("BODY_TOO_LONG")?"SELECT_TEXT":"RETRY",str(a,"job_id"),(int)num(signal,"source_rev")));if(!message.isBlank())messages.add(label(stage)+"："+message);}
+            if(stage.equals("image")&&List.of("EXISTING_IMAGE","APPLIED").contains(code)&&!str(signal,"cover_url").isBlank()&&presentCover(knowledge.getObject().getDoc(docId),str(signal,"cover_url")).isBlank()){
+                code="COVER_REMOVED";message="原自动配图已移除，可重新配图";state="SKIPPED";
+            }
+            states.put(stage,state);details.put(stage,new NoteAiWorkflowService.StageDetail(code,message,state.equals("FAILED")||code.equals("COVER_REMOVED"),code.equals("BODY_TOO_LONG")?"SELECT_TEXT":"RETRY",str(a,"job_id"),(int)num(signal,"source_rev")));if(!message.isBlank())messages.add(label(stage)+"："+message);}
         if(details.isEmpty())messages.add("正文已保存，自动整理设置暂不可确认；请读取设置后重试");
         return new NoteAiWorkflowService.Status(docId,states.getOrDefault("title","SKIPPED"),states.getOrDefault("image","SKIPPED"),states.getOrDefault("polish","SKIPPED"),String.join("；",messages),details,states.getOrDefault("tags","SKIPPED"));
     }

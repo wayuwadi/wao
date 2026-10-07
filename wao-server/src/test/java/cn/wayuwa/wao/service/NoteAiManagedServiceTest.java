@@ -69,6 +69,42 @@ class NoteAiManagedServiceTest {
   var intentionallyEmpty=new DocDto("n","标题","m",null,null,false,List.of(),blocks,new RichDocContentDto(1,null,""),List.of(),"kb-notes",null,2);
   assertThat(NoteMarkdown.of(intentionallyEmpty)).isEmpty();
  }
+ @Test void removedCoverIsRetryableAndIdenticalBodySaveDoesNotRegenerateIt(){
+  var current=doc("记录".repeat(60),"标题",2);when(knowledge.getDoc("n")).thenReturn(current);
+  tx.executeWithoutResult(t->managed.saved(current,"m","标题",null));
+  db.update("UPDATE note_ai_save_signal SET cover_url='/api/images/old/raw'");
+  db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='EXISTING_IMAGE' WHERE stage='image'");
+  assertThat(managed.status("n","m").stages().get("image").reasonCode()).isEqualTo("COVER_REMOVED");
+  assertThat(managed.status("n","m").stages().get("image").retryable()).isTrue();
+  verify(image,never()).startNoteWorkflow(any(),any());
+  tx.executeWithoutResult(t->managed.saved(current,"m","标题",null));
+  assertThat(db.queryForObject("SELECT cover_url FROM note_ai_save_signal",String.class)).isNull();
+  assertThat(managed.status("n","m").image()).isEqualTo("SKIPPED");
+  tx.executeWithoutResult(t->managed.saved(doc(current.content().markdown()+"新思考","标题",3),"m","标题",null));
+  assertThat(managed.status("n","m").image()).isEqualTo("PENDING");
+ }
+ @Test void richDocumentIsAuthoritativeForCoverPresence() throws Exception {
+  String cover="/api/images/old/raw",body="记录".repeat(60);
+  for(boolean present:List.of(false,true)){
+   db.update("DELETE FROM note_ai_stage_attempt");db.update("DELETE FROM note_ai_save_signal");
+   var tree=new ObjectMapper().readTree(present?"{\"type\":\"doc\",\"content\":[{\"type\":\"image\",\"attrs\":{\"src\":\"/api/images/old/raw\"}}]}":"{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\"}]}");
+   var current=new DocDto("n","标题","m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,tree,"![文章总览图]("+cover+")\n\n"+body),List.of(),"kb-notes",null,1);
+   when(knowledge.getDoc("n")).thenReturn(current);
+   tx.executeWithoutResult(t->managed.saved(current,"m","标题",null));db.update("UPDATE note_ai_save_signal SET cover_url=?",cover);
+   db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='APPLIED' WHERE stage='image'");
+   assertThat(managed.status("n","m").stages().get("image").reasonCode()).isEqualTo(present?"APPLIED":"COVER_REMOVED");
+  }
+ }
+ @Test void plainImageUrlIsNotACoverAndPolishDoesNotBringDeletedCoverBack(){
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  var current=doc("链接 /api/images/old/raw 是资料","标题",1);when(knowledge.getDoc("n")).thenReturn(current);
+  tx.executeWithoutResult(t->managed.saved(current,"m","标题",null));db.update("UPDATE note_ai_save_signal SET cover_url='/api/images/old/raw'");
+  tx.executeWithoutResult(t->managed.advance("n"));
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成","整理后的资料",null,null));
+  when(knowledge.updateDerivedNote(eq("n"),any())).thenAnswer(c->{PatchDocRequest patch=c.getArgument(1);assertThat(patch.content().markdown()).isEqualTo("整理后的资料");return doc(patch.content().markdown(),"标题",2);});
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(managed.status("n","m").polish()).isEqualTo("DONE");
+ }
  NoteAiCompanionService companion(String mode){
   db.execute("ALTER TABLE note_ai_stage_attempt ADD COLUMN result_mode VARCHAR(16) DEFAULT 'AUTO'");
   db.execute("ALTER TABLE note_ai_stage_attempt ADD COLUMN cancel_requested BOOLEAN DEFAULT FALSE");
