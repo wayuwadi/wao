@@ -2,6 +2,7 @@
 import { computed, ref, toRefs, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import TodoDayView from '@/components/todo/TodoDayView.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import { useBrowsingState, oneOf, validSearch } from '@/composables/browsingState'
 import { TODO_DUE_GROUPS, todoDueGroup } from '@/utils/todoDueGroups'
 import { isTaskFinished } from '@/utils/projectCompletion'
@@ -114,16 +115,16 @@ function onDropStatus(status: TaskStatus) {
 </script>
 
 <template>
-  <div class="todo wao-page-frame" :class="{ 'todo-quadrant': taskView === 'quadrant' }">
+  <div class="todo wao-page-frame" :class="{ 'todo-day': workspace === 'day', 'todo-quadrant': workspace === 'all' && taskView === 'quadrant' }">
     <div class="ptop">
       <div class="ptitle">待办</div>
-      <span class="ptip">按天安排与回看 · 任务归属于各自项目</span>
-      <button class="btn-primary" @click="ui.openNewTask()">
+      <nav class="workspace-switch" aria-label="待办视图"><button type="button" :aria-pressed="workspace === 'day'" @click="workspace = 'day'">按天</button><button type="button" :aria-pressed="workspace === 'all'" @click="workspace = 'all'">全部待办</button></nav>
+      <span v-if="workspace === 'all'" class="ptip">任务归属于各自项目</span>
+      <WaoButton class="todo-new-task" variant="ghost" @click="ui.openNewTask()">
         <i class="ri-add-line"></i>新建任务
-      </button>
+      </WaoButton>
     </div>
 
-    <nav class="workspace-switch" aria-label="待办视图"><button type="button" :aria-pressed="workspace === 'day'" @click="workspace = 'day'">按天</button><button type="button" :aria-pressed="workspace === 'all'" @click="workspace = 'all'">全部待办</button></nav>
     <TodoDayView v-if="workspace === 'day'" v-model:date="selectedDay" @all="workspace = 'all'" />
     <div v-if="workspace === 'all'" class="mt-toolbar">
       <button
@@ -253,7 +254,11 @@ function onDropStatus(status: TaskStatus) {
 </template>
 
 <style scoped>
-.workspace-switch{display:flex;gap:5px;margin:14px 0}.workspace-switch button{border:0;border-radius:8px;background:transparent;color:var(--wao-text-2);padding:8px 14px;cursor:pointer}.workspace-switch button[aria-pressed="true"]{background:var(--wao-bg-hover);color:var(--wao-primary);font-weight:600}@media(max-width:600px){.workspace-switch button{min-height:44px}}
+.todo .ptop { flex-wrap: wrap; gap: var(--wao-space-2); }
+.todo-new-task { margin-left: auto; }
+.workspace-switch button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+@media (max-width: 600px) { .todo .ptop { gap: var(--wao-space-1); } .todo-new-task { padding-inline: var(--wao-space-1); } }
+.workspace-switch{display:flex;gap:5px;margin:0}.workspace-switch button{border:0;border-radius:var(--wao-radius-control);background:transparent;color:var(--wao-text-2);padding:8px 14px;cursor:pointer}.workspace-switch button[aria-pressed="true"]{background:var(--wao-primary-soft);color:var(--wao-primary-text);font-weight:600}@media(max-width:600px){.workspace-switch button{min-height:44px}}
 .execution-label { color: var(--wao-primary-text); font-size: 11px; overflow-wrap: anywhere; }
 .task-more { flex: none; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); cursor: pointer; }
 .task-more:hover, .task-more:focus-visible { background: var(--wao-bg-hover); }
