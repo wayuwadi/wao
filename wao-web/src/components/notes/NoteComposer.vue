@@ -11,7 +11,6 @@ import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
 import { rebaseNoteDraft } from '@/utils/rebaseNoteDraft'
 import { latestNoteContent, type NoteDraftSnapshot } from '@/utils/latestNoteContent'
 import { readNoteDraft, writeNoteDraft, removeNoteDraft } from '@/utils/noteDraftStorage'
-import { firstMarkdownTextLine } from '@/utils/markdownTitle'
 import NoteWidthSwitch from './NoteWidthSwitch.vue'
 import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
 import NoteReadingImages from './NoteReadingImages.vue'
@@ -470,7 +469,7 @@ async function save(explicit = false) {
           { title: submitted.title, tags: submitted.tags, content: rich })
         try {
           saved = submitted.companionMessageId ? await saveCompanionDraft({ messageId: submitted.companionMessageId, docId: props.note.id, existing: true, expectedRev: latestRev, title: (merged.title || latest.title || '未命名小记').slice(0,80), content: merged.content, blocks: legacyProjection(merged.content), tags: merged.tags }) : await apiPatchDoc(props.note.id, {
-            title: (merged.title || latest.title || firstMarkdownTextLine(submitted.text) || '未命名小记').slice(0, 80),
+            title: merged.title.slice(0, 80),
             sourceInputIds: submitted.sourceInputIds, content: merged.content, blocks: legacyProjection(merged.content), expectedRev: latestRev, tags: merged.tags,
           })
           break

@@ -252,6 +252,28 @@ class NoteAiManagedServiceTest {
   tx.executeWithoutResult(s->managed.saved(doc("新的日常记录","手动标题",3),"m","手动标题",null));
   assertThat(db.queryForObject("SELECT cycle_id FROM note_ai_save_signal",String.class)).isNotEqualTo(cycle);
  }
+ @Test void clearingManualTitleWithNewBodyRestoresAutomaticTitle(){
+  tx.executeWithoutResult(t->managed.saved(doc("旧正文","手填标题",1),"m","手填标题",null));
+  tx.executeWithoutResult(t->managed.saved(doc("新的正文","新的正文",2),"m","",null));
+  assertThat(db.queryForObject("SELECT title_origin FROM note_ai_save_signal",String.class)).isEqualTo("AUTO");
+  assertThat(managed.status("n","m").title()).isEqualTo("PENDING");
+ }
+ @Test void clearingOnlyTitleIsNotManualAndDoesNotSilentlyStartAi(){
+  var current=doc("原正文","首行临时标题",2);when(knowledge.getDoc("n")).thenReturn(current);
+  tx.executeWithoutResult(t->managed.saved(doc("原正文","手填标题",1),"m","手填标题",null));
+  String cycle=db.queryForObject("SELECT cycle_id FROM note_ai_save_signal",String.class);
+  tx.executeWithoutResult(t->managed.saved(current,"m","",null));
+  assertThat(db.queryForObject("SELECT title_origin FROM note_ai_save_signal",String.class)).isEqualTo("AUTO");
+  assertThat(db.queryForObject("SELECT cycle_id FROM note_ai_save_signal",String.class)).isEqualTo(cycle);
+  assertThat(managed.status("n","m").stages().get("title").reasonCode()).isEqualTo("TITLE_CLEARED");
+  verify(text,never()).submit(any(),any(),any(),any(),any(),any(),any());
+ }
+ @Test void retryingAnUnauthorizedSaveKeepsItsKnownAutomaticTitleOrigin(){
+  var current=doc("机器带入的正文","系统截取标题",1);when(knowledge.getDoc("n")).thenReturn(current);
+  tx.executeWithoutResult(t->NoteAiManagedService.withoutAuto("m",()->{managed.saved(current,"m","",null);return null;}));
+  tx.executeWithoutResult(t->managed.retry("m","n"));
+  assertThat(managed.status("n","m").title()).isEqualTo("PENDING");
+ }
  @Test void preferenceFailureStillPersistsBodySignalAndNoDefaultTasks(){
   values.put(NoteAiSettingsService.DEFAULTS,"invalid");tx.executeWithoutResult(s->managed.saved(doc("内容已保存","标题",1),"m",null,null));
   assertThat(db.queryForObject("SELECT COUNT(*) FROM note_ai_save_signal",Integer.class)).isEqualTo(1);

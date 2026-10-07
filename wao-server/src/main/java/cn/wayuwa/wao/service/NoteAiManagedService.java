@@ -89,11 +89,15 @@ public class NoteAiManagedService {
         String hash=fingerprint(userBody(doc,cover));
         if(previous!=null&&hash.equals(str(previous,"body_hash"))){
             if(suppliedTitle!=null){
-                if(!Objects.equals(str(previous,"last_title"),doc.title()))db.update("UPDATE note_ai_save_signal SET title_origin='MANUAL',last_title=?,source_rev=? WHERE doc_id=?",doc.title(),doc.rev(),doc.id());}
+                if(suppliedTitle.isBlank()){
+                    db.update("UPDATE note_ai_save_signal SET title_origin='AUTO',last_title=?,source_rev=? WHERE doc_id=?",doc.title(),doc.rev(),doc.id());
+                    db.update("UPDATE note_ai_stage_attempt SET reason_code='TITLE_CLEARED',message='未填写手动标题，可润色标题' WHERE doc_id=? AND cycle_id=? AND stage='title' AND state='SKIPPED' AND reason_code='MANUAL_TITLE'",doc.id(),str(previous,"cycle_id"));
+                }else if(!Objects.equals(str(previous,"last_title"),doc.title()))db.update("UPDATE note_ai_save_signal SET title_origin='MANUAL',last_title=?,source_rev=? WHERE doc_id=?",doc.title(),doc.rev(),doc.id());}
             return;
         }
         String origin=previous==null?(suppliedTitle!=null&&!suppliedTitle.isBlank()?"MANUAL":"AUTO"):str(previous,"title_origin");
-        if(previous!=null&&suppliedTitle!=null&&!Objects.equals(str(previous,"last_title"),doc.title()))origin="MANUAL";
+        if(suppliedTitle!=null&&suppliedTitle.isBlank()||adopted!=null&&adopted.title())origin="AUTO";
+        else if(previous!=null&&suppliedTitle!=null&&!Objects.equals(str(previous,"last_title"),doc.title()))origin="MANUAL";
         String policy;
         try{policy=settings.write(settings.get(actor).settings());}catch(RuntimeException e){policy="{}";}
         if(NO_AUTO.get())policy="{}";
@@ -302,7 +306,7 @@ public class NoteAiManagedService {
     public NoteAiWorkflowService.Status retry(String member,String docId){
         settings.lockMember(member);DocDto doc=knowledge.getObject().getDoc(docId);if(!member.equals(doc.author()))throw new NotFoundException("小记不存在");
         var signal=one("SELECT * FROM note_ai_save_signal WHERE doc_id=?",docId);
-        if(signal==null||str(signal,"policy_json").equals("{}")){db.update("DELETE FROM note_ai_save_signal WHERE doc_id=?",docId);saved(doc,member,doc.title(),null);}
+        if(signal==null||str(signal,"policy_json").equals("{}")){String title=signal!=null&&"AUTO".equals(str(signal,"title_origin"))?null:doc.title();db.update("DELETE FROM note_ai_save_signal WHERE doc_id=?",docId);saved(doc,member,title,null);}
         else for(var a:attempts(docId,str(signal,"cycle_id")))if(str(a,"state").equals("FAILED"))create(doc,str(signal,"cycle_id"),str(a,"stage"),settings.get(member).settings(),false,(int)num(a,"attempt_no")+1,str(signal,"title_origin"),str(signal,"cover_url"));
         projectCurrent(doc);return status(docId,member);
     }

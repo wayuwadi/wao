@@ -1509,6 +1509,18 @@ describe('小记集中记录空间', () => {
     restored.unmount()
   })
 
+  it('清空旧标题保存时传递空标题意图，不把占位或旧标题当作手写输入', async () => {
+    const note = doc('clear-title', '正文')
+    note.title = '原来的标题'
+    const wrapper = composer(note)
+    vi.mocked(fetchDoc).mockResolvedValue(note)
+    vi.mocked(apiPatchDoc).mockImplementation(async (_id, payload) => ({ ...note, rev: 4, title: '正文', content: payload.content! }))
+    await wrapper.get('[aria-label="小记标题（可选）"]').setValue('')
+    await wrapper.get('.save-note').trigger('click'); await flushPromises()
+    expect(apiPatchDoc).toHaveBeenCalledWith(note.id, expect.objectContaining({ title: '', expectedRev: note.rev }))
+    expect(wrapper.get<HTMLInputElement>('[aria-label="小记标题（可选）"]').element.value).toBe('正文')
+  })
+
   it('续写期间 AI 到达保持唯一编辑正文，保存时合入标题和配图', async () => {
     const base = doc('ai-note', '原文')
     base.content = { version: 1, markdown: '原文', document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '原文' }] }] } }
