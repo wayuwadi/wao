@@ -28,7 +28,7 @@ public class DigitalMemberController {
     @PostMapping(value="/api/digital-members/{id}/assets",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<Asset> upload(@PathVariable String id,@RequestParam MultipartFile file,@RequestParam(defaultValue="reference") String role,HttpServletRequest r){return ApiResponse.ok(service.upload(current.id(r),id,file,role));}
     @GetMapping("/api/digital-assets/{id}/raw")
-    public ResponseEntity<byte[]> raw(@PathVariable String id,HttpServletRequest r){var content=service.raw(current.id(r),id);return ResponseEntity.ok().contentType(MediaType.parseMediaType(content.contentType())).cacheControl(CacheControl.noStore()).header("X-Content-Type-Options","nosniff").body(content.bytes());}
+    public ResponseEntity<byte[]> raw(@PathVariable String id,@RequestParam(defaultValue="false") boolean preview,HttpServletRequest r){var content=service.raw(current.id(r),id);if(preview)content=cn.wayuwa.wao.service.DigitalImagePreview.create(content);return ResponseEntity.ok().contentType(MediaType.parseMediaType(content.contentType())).cacheControl(CacheControl.noStore()).header("X-Content-Type-Options","nosniff").body(content.bytes());}
     @DeleteMapping("/api/digital-assets/{id}")
     public ApiResponse<Void> delete(@PathVariable String id,HttpServletRequest r){service.deleteAsset(current.id(r),id);return ApiResponse.ok(null);}
     @PostMapping("/api/digital-members/{id}/looks")

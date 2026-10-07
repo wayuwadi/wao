@@ -66,11 +66,73 @@ beforeEach(() => {
   }))
 })
 describe('数字成员图库持久化与并发', () => {
+  it('拖入多张照片沿用上传用途，失败文件保留并可重试', async () => {
+    const first = new File(['one'], '照片一.jpg', { type: 'image/jpeg' })
+    const second = new File(['two'], '照片二.png', { type: 'image/png' })
+    const uploaded = {
+      id: 'uploaded-one',
+      name: first.name,
+      role: 'portrait',
+      url: '',
+      width: 100,
+      height: 100,
+      createdAt: '',
+    }
+    api.upload
+      .mockResolvedValueOnce(uploaded)
+      .mockRejectedValueOnce(new Error('传输失败'))
+      .mockResolvedValueOnce({ ...uploaded, id: 'uploaded-two', name: second.name })
+    const wrapper = mount(DigitalMembersView, options)
+    await flushPromises()
+    await wrapper.get('.member').trigger('click')
+    await wrapper.findAll('.tabs button')[1]!.trigger('click')
+    await wrapper.get('select[aria-label="上传照片用途"]').setValue('portrait')
+    const transfer = { types: ['Files'], files: [first, second] }
+    await wrapper.get('.upload').trigger('dragenter', { dataTransfer: transfer })
+    expect(wrapper.get('.upload').classes()).toContain('upload-dragging')
+    await wrapper.get('.upload').trigger('drop', { dataTransfer: transfer })
+    await flushPromises()
+    expect(api.upload).toHaveBeenNthCalledWith(1, 'person-one', first, 'portrait')
+    expect(api.upload).toHaveBeenNthCalledWith(2, 'person-one', second, 'portrait')
+    expect(wrapper.text()).toContain('照片二.png：传输失败')
+    expect(wrapper.get('.upload').classes()).not.toContain('upload-dragging')
+    await wrapper.get('.error.state button').trigger('click')
+    await flushPromises()
+    expect(api.upload).toHaveBeenLastCalledWith('person-one', second, 'portrait')
+    expect(wrapper.findAll('.asset')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('传输失败')
+    wrapper.unmount()
+  })
   it('仅上传形象图片时可将其选为封面并作为来源保存候选', async () => {
     const item = subject()
-    item.assets = [{ id: 'portrait-one', name: '上传形象', role: 'portrait', url: '/api/digital-assets/portrait-one/raw', width: 100, height: 100, createdAt: '2026-10-07' }]
+    item.assets = [
+      {
+        id: 'portrait-one',
+        name: '上传形象',
+        role: 'portrait',
+        url: '/api/digital-assets/portrait-one/raw',
+        width: 100,
+        height: 100,
+        createdAt: '2026-10-07',
+      },
+    ]
     api.list.mockResolvedValue(library([item]))
-    api.look.mockResolvedValue({ id: 'portrait-look', name: '上传形象候选', style: '', revision: 1, versions: [{ id: 'portrait-version', number: 1, state: 'candidate', assetIds: ['portrait-one'], portraitAssetId: 'portrait-one', createdAt: '2026-10-07' }] })
+    api.look.mockResolvedValue({
+      id: 'portrait-look',
+      name: '上传形象候选',
+      style: '',
+      revision: 1,
+      versions: [
+        {
+          id: 'portrait-version',
+          number: 1,
+          state: 'candidate',
+          assetIds: ['portrait-one'],
+          portraitAssetId: 'portrait-one',
+          createdAt: '2026-10-07',
+        },
+      ],
+    })
     const wrapper = mount(DigitalMembersView, options)
     await flushPromises()
     await wrapper.get('.member').trigger('click')
@@ -79,7 +141,12 @@ describe('数字成员图库持久化与并发', () => {
     await wrapper.get('.look-form select').setValue('portrait-one')
     await wrapper.get('.look-form .actions button.primary').trigger('click')
     await flushPromises()
-    expect(api.look).toHaveBeenCalledWith('person-one', { name: '上传形象候选', style: '', assetIds: ['portrait-one'], portraitAssetId: 'portrait-one' })
+    expect(api.look).toHaveBeenCalledWith('person-one', {
+      name: '上传形象候选',
+      style: '',
+      assetIds: ['portrait-one'],
+      portraitAssetId: 'portrait-one',
+    })
     expect(wrapper.text()).toContain('候选 · 待确认')
     wrapper.unmount()
   })
@@ -94,7 +161,10 @@ describe('数字成员图库持久化与并发', () => {
     expect(wrapper.text()).not.toContain('这是本人')
     await wrapper.get('.savebar .actions button').trigger('click')
     await flushPromises()
-    expect(api.patch).toHaveBeenCalledWith('person-one', expect.objectContaining({ state: 'active', expectedRevision: 3 }))
+    expect(api.patch).toHaveBeenCalledWith(
+      'person-one',
+      expect.objectContaining({ state: 'active', expectedRevision: 3 }),
+    )
     wrapper.unmount()
   })
   it('恢复新版本草稿保留目标和旧CAS，显式rebase后仍添加到原形象', async () => {
@@ -102,8 +172,24 @@ describe('数字成员图库持久化与并发', () => {
     item.looks = [{ id: 'original-look', name: '原形象', style: '', revision: 4, versions: [] }]
     api.list.mockResolvedValue(library([item]))
     api.version.mockResolvedValue(item.looks[0])
-    rememberDigitalDraft('member-one', item.id, { form: { name: item.name, kind: item.kind, relation: item.relation, gender: item.gender, traits: item.traits }, expectedRevision: 3,
-      look: { name: '原形象', style: '', assetIds: ['photo-one'], portraitAssetId: null, lookId: 'original-look', expectedRevision: 2 } })
+    rememberDigitalDraft('member-one', item.id, {
+      form: {
+        name: item.name,
+        kind: item.kind,
+        relation: item.relation,
+        gender: item.gender,
+        traits: item.traits,
+      },
+      expectedRevision: 3,
+      look: {
+        name: '原形象',
+        style: '',
+        assetIds: ['photo-one'],
+        portraitAssetId: null,
+        lookId: 'original-look',
+        expectedRevision: 2,
+      },
+    })
     const wrapper = mount(DigitalMembersView, options)
     await flushPromises()
     await wrapper.get('.member').trigger('click')
@@ -114,7 +200,11 @@ describe('数字成员图库持久化与并发', () => {
     await wrapper.get('.conflict button').trigger('click')
     await wrapper.get('.look-form .actions button.primary').trigger('click')
     await flushPromises()
-    expect(api.version).toHaveBeenCalledWith('original-look', { assetIds: ['photo-one'], portraitAssetId: null, expectedRevision: 4 })
+    expect(api.version).toHaveBeenCalledWith('original-look', {
+      assetIds: ['photo-one'],
+      portraitAssetId: null,
+      expectedRevision: 4,
+    })
     expect(api.look).not.toHaveBeenCalled()
     wrapper.unmount()
   })

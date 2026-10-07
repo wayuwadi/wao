@@ -46,6 +46,8 @@ const tab = ref('basic'),
 const uploadInput = ref<HTMLInputElement>(),
   uploadRole = ref<DigitalAsset['role']>('reference')
 const failedFiles = ref<Array<{ file: File; role: DigitalAsset['role']; reason: string }>>([])
+const dragging = ref(false)
+let dragDepth = 0
 const draft = ref<DigitalMemberDraft | null>(null),
   draftStorageError = ref(false)
 const newVersionLook = ref<DigitalLook | null>(null),
@@ -276,6 +278,22 @@ function chooseFiles(event: Event) {
   void upload(Array.from(input.files ?? []))
   input.value = ''
 }
+function dragEnter(event: DragEvent) {
+  if (saving.value || !event.dataTransfer?.types.includes('Files')) return
+  dragDepth++
+  dragging.value = true
+}
+function dragLeave() {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (!dragDepth) dragging.value = false
+}
+function dropFiles(event: DragEvent) {
+  dragDepth = 0
+  dragging.value = false
+  if (saving.value) return
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (files.length) void upload(files)
+}
 async function removeAsset(asset: DigitalAsset) {
   if (!window.confirm(`移除“${asset.name}”？已被形象引用的照片需先解除引用。`)) return
   const current = epoch
@@ -299,7 +317,10 @@ async function createLook() {
     error.value = '原形象已不可用，候选草稿仍保留，请取消后重新创建'
     return
   }
-  if (!draft.value.look.name.trim() || (!draft.value.look.assetIds.length && !draft.value.look.portraitAssetId)) {
+  if (
+    !draft.value.look.name.trim() ||
+    (!draft.value.look.assetIds.length && !draft.value.look.portraitAssetId)
+  ) {
     error.value = '请填写形象名称，并选择参考照片或候选封面'
     return
   }
@@ -581,7 +602,9 @@ onBeforeUnmount(() => {
               {{ item.name }}
             </WaoButton>
           </nav>
-          <p v-if="subject?.state === 'archived'" class="muted">已归档，素材和形象可继续查看；恢复后可修改或使用。</p>
+          <p v-if="subject?.state === 'archived'" class="muted">
+            已归档，素材和形象可继续查看；恢复后可修改或使用。
+          </p>
           <div v-if="conflict" class="conflict" role="alert">
             <strong>账号资料已更新，草稿仍保留</strong>
             <p>
@@ -606,7 +629,13 @@ onBeforeUnmount(() => {
               基于最新形象版本重新保存</WaoButton
             ><WaoButton @click="cancelLookDraft"> 取消此候选草稿 </WaoButton>
           </div>
-          <fieldset :disabled="saving || !!draft.generation?.runId || (subject?.state === 'archived' && tab !== 'basic')">
+          <fieldset
+            :disabled="
+              saving ||
+              !!draft.generation?.runId ||
+              (subject?.state === 'archived' && tab !== 'basic')
+            "
+          >
             <form v-if="tab === 'basic'" class="form" @submit.prevent="saveBasic">
               <WaoField v-slot="field" label="成员名称" required
                 ><input :id="field.id" v-model="draft.form.name" maxlength="64" required
@@ -643,10 +672,25 @@ onBeforeUnmount(() => {
               <p class="muted full">此档案独立保存，不推测其他家人或宠物的性别。</p>
             </form>
             <section v-else-if="tab === 'photos' && subject">
-              <WaoCard class="upload" variant="soft">
+              <WaoCard
+                class="upload"
+                :class="{ 'upload-dragging': dragging }"
+                variant="soft"
+                :aria-busy="saving"
+                @dragenter.prevent="dragEnter"
+                @dragover.prevent
+                @dragleave.prevent="dragLeave"
+                @drop.prevent="dropFiles"
+              >
                 <i class="ri-image-add-line"></i>
                 <h3>留住真实的参考照片</h3>
-                <p>建议清晰、光线自然；形象图片可作为候选版本的封面。</p>
+                <p>
+                  {{
+                    dragging
+                      ? '松开即可上传照片'
+                      : '拖拽照片到这里，或点击上传；支持 JPEG、PNG，单张最多 10MB。'
+                  }}
+                </p>
                 <div class="actions">
                   <select v-model="uploadRole" aria-label="上传照片用途">
                     <option value="reference">参考照片</option>
@@ -658,7 +702,7 @@ onBeforeUnmount(() => {
                 <input
                   ref="uploadInput"
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept="image/png,image/jpeg"
                   multiple
                   hidden
                   @change="chooseFiles"
@@ -731,9 +775,18 @@ onBeforeUnmount(() => {
                   v-if="!subject.assets.some((asset) => asset.role === 'reference')"
                   class="empty"
                 >
-                  可选择已上传的形象图片作为候选封面，也可上传参考照片。<WaoButton @click="tab = 'photos'">去上传</WaoButton>
+                  可选择已上传的形象图片作为候选封面，也可上传参考照片。<WaoButton
+                    @click="tab = 'photos'"
+                    >去上传</WaoButton
+                  >
                 </div>
-                <div v-else class="references">
+                <p v-if="subject.assets.some((asset) => asset.role === 'reference')" class="muted">
+                  点击下方照片选择参考，再保存候选版本或生成形象。
+                </p>
+                <div
+                  v-if="subject.assets.some((asset) => asset.role === 'reference')"
+                  class="references"
+                >
                   <WaoButton
                     v-for="asset in subject.assets.filter((item) => item.role === 'reference')"
                     :key="asset.id"
@@ -746,7 +799,9 @@ onBeforeUnmount(() => {
                         :alt="asset.name"
                         :retryable="false" /></span
                     >{{ asset.name
-                    }}<i v-if="draft.look.assetIds.includes(asset.id)" class="ri-check-line"></i>
+                    }}<span v-if="draft.look.assetIds.includes(asset.id)"
+                      ><i class="ri-check-line"></i> 已选择</span
+                    >
                   </WaoButton>
                 </div>
                 <div class="actions">
@@ -1117,6 +1172,10 @@ textarea {
 }
 .upload select {
   width: auto;
+}
+.upload-dragging {
+  border-color: var(--wao-primary);
+  background: var(--wao-primary-soft);
 }
 .assets,
 .looks {

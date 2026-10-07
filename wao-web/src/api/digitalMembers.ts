@@ -89,13 +89,18 @@ export async function uploadDigitalAsset(
   const form = new FormData()
   form.append('file', file)
   form.append('role', role)
-  return data(http.post<ApiResponse<DigitalAsset>>(`/api/digital-members/${key(id)}/assets`, form))
+  return data(
+    http.post<ApiResponse<DigitalAsset>>(`/api/digital-members/${key(id)}/assets`, form, {
+      timeout: 60_000,
+    }),
+  )
 }
 export const deleteDigitalAsset = (id: string) =>
   data(http.delete<ApiResponse<unknown>>(`/api/digital-assets/${key(id)}`))
 export async function fetchDigitalAssetBlob(id: string): Promise<Blob> {
-  const response = await http.get<Blob>(`/api/digital-assets/${key(id)}/raw`, {
+  const response = await http.get<Blob>(`/api/digital-assets/${key(id)}/raw?preview=true`, {
     responseType: 'blob',
+    timeout: 60_000,
   })
   if (!response.data.type.startsWith('image/')) throw new Error('照片读取失败，请重试')
   return response.data
