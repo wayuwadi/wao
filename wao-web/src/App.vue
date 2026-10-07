@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { ConfigProvider, theme as antTheme } from 'ant-design-vue'
 import { useTheme } from '@/composables/theme'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
-import { toast, clearToasts } from '@/composables/toast'
+import { clearToasts } from '@/composables/toast'
 import { RouterView } from 'vue-router'
 import ToastHost from '@/components/ui/ToastHost.vue'
 import SessionRecovery from '@/components/login/SessionRecovery.vue'
@@ -14,57 +14,17 @@ import { restJourneyRequested } from '@/composables/restJourney'
 import RestEntryTransition from '@/components/relax/RestEntryTransition.vue'
 import { writingJourneyRequested } from '@/composables/writingJourney'
 import WritingEntryTransition from '@/components/home/WritingEntryTransition.vue'
-import {
-  rememberPendingReleaseVersion,
-  reportWorkspaceReloadState,
-  type WorkspaceReloadDetail,
-} from '@/utils/versionUpdate'
+import { createWorkspaceReloader } from '@/utils/workspaceReload'
 const { effective } = useTheme()
 const componentTheme = computed(() => ({
   algorithm: effective.value === 'dark' ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
   token: { colorPrimary: effective.value === 'dark' ? '#5365d8' : '#4358d6' },
 }))
 watch(() => useSessionStore().userId, clearToasts, { flush: 'sync' })
-let refreshing = false
-async function reloadWorkspace(rawEvent?: Event) {
-  if (refreshing) return
-  refreshing = true
-  reportWorkspaceReloadState({ state: 'saving' })
-  try {
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
-    await nextTick()
-    if (!(await useDataStore().flushWorkspace()))
-      throw new Error('保存失败，已保留当前页面和草稿，请重试')
-    const requests: Promise<unknown>[] = []
-    window.dispatchEvent(
-      new CustomEvent('wao-save-before-refresh', {
-        detail: { waitUntil: (request: Promise<unknown>) => requests.push(request) },
-      }),
-    )
-    await Promise.all(requests)
-    if (!(await useDataStore().flushWorkspace()))
-      throw new Error('保存失败，已保留当前页面和草稿，请重试')
-    const leave = new Event('beforeunload', { cancelable: true })
-    if (!window.dispatchEvent(leave))
-      throw new Error('当前编辑尚未保存，请处理页面中的保存提示后重试')
-    const targetVersion = (rawEvent as CustomEvent<WorkspaceReloadDetail> | undefined)?.detail
-      ?.targetVersion
-    if (targetVersion) rememberPendingReleaseVersion(targetVersion)
-    reportWorkspaceReloadState({ state: 'reloading' })
-    window.location.reload()
-  } catch (error) {
-    reportWorkspaceReloadState({
-      state: 'failed',
-      message: error instanceof Error ? error.message : '保存失败，当前内容已保留',
-    })
-    toast(
-      error instanceof Error ? error.message : '保存失败，当前内容已保留',
-      'ri-error-warning-line',
-    )
-  } finally {
-    refreshing = false
-  }
-}
+const reloadWorkspace = createWorkspaceReloader({
+  flush: () => useDataStore().flushWorkspace(),
+  member: () => useSessionStore().userId,
+})
 function openTask(event: Event) {
   const id = (event as CustomEvent<unknown>).detail
   if (typeof id === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(id)) useUiStore().openTask(id)

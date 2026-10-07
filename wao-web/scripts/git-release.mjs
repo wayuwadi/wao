@@ -67,16 +67,18 @@ export function loadReleaseChanges(cwd) {
     }) : []
 }
 
-const actionTargets = new Set(['notes-compose', 'notes-settings', 'notes-reading', 'notes-ai', 'workspace-connections', 'release-updates'])
+const actionTargets = new Set(['notes-compose', 'notes-settings', 'notes-reading', 'notes-ai', 'workspace-connections', 'release-updates', 'settings-about'])
 const actionDestinations = {
   'notes-compose': ['notes', '/notes'], 'notes-settings': ['notes', '/notes'],
   'notes-reading': ['notes', '/notes'], 'notes-ai': ['notes', '/notes'],
   'workspace-connections': ['capabilities', '/capabilities'], 'release-updates': ['changelog', '/features'],
+  'settings-about': ['settings', '/settings'],
 }
 const actionQueries = {
   'notes-compose': {}, 'notes-settings': { releaseAction: 'settings' },
   'notes-reading': { releaseAction: 'reading' }, 'notes-ai': { releaseAction: 'ai' },
   'workspace-connections': { area: 'connections' }, 'release-updates': {},
+  'settings-about': { tab: 'about' },
 }
 const demoKinds = new Set(['update-card', 'workspace-mcp', 'notes-layout', 'notes-reading'])
 const text = (value, limit = 2000) => typeof value === 'string' && !!value.trim() && value.length <= limit

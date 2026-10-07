@@ -204,7 +204,13 @@ function feature(item: ReleaseHighlight) {
 }
 async function experience(item: ReleaseHighlight) {
   const module = feature(item)
-  if (!module || availableVersion.value) return
+  if (!module || busy.value) return
+  if (availableVersion.value) {
+    saveError.value = ''
+    stopArrival()
+    reloadToLatestVersion(availableVersion.value, { featureId: item.featureId, action: item.action })
+    return
+  }
   if (await tryFeature(item.featureId, item.action)) close(false)
 }
 function outside(event: PointerEvent) {
@@ -323,7 +329,7 @@ onBeforeUnmount(() => {
           <p v-else class="save-hint">
             {{
               availableVersion
-                ? '保存成功后再刷新，失败时保留当前内容。'
+                ? '「去看看」会保存并刷新，再打开对应功能。失败时保留当前内容。'
                 : '随时从顶栏回看，选择感兴趣的功能体验。'
             }}
           </p>

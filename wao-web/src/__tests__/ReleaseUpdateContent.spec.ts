@@ -20,6 +20,17 @@ const edition: ReleaseEdition = {
   ],
 }
 describe('更新卡片开箱内容', () => {
+  it('新版新登记入口更新前可传递选择，当前版未知或错误关联不制造无关跳转', async () => {
+    const item = {...edition.highlights[0]!,action:{target:'future-settings-entry',label:'新分类'}}
+    const wrapper = mount(ReleaseUpdateContent,{props:{edition:{...edition,highlights:[item]},pending:true}})
+    await wrapper.get('.experience').trigger('click')
+    expect(wrapper.emitted('experience')?.[0]).toEqual([item])
+    await wrapper.setProps({pending:false})
+    expect(wrapper.find('.experience').exists()).toBe(false)
+    await wrapper.setProps({pending:true,edition:{...edition,highlights:[{...item,action:{target:'notes-reading',label:'错误关联'}}]}})
+    expect(wrapper.find('.experience').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('变化点与步骤同时出现，展开后保留全部说明和所有变化', async () => {
     const item = { ...edition.highlights[0]!, points: ['重要变化一', '重要变化二', '重要变化三'], steps: ['操作一', '操作二', '操作三'] }
     const wrapper = mount(ReleaseUpdateContent, { props: { edition: { ...edition, highlights: [item, item, item, { ...item, title: '第四项独立变化' }] } } })
@@ -44,7 +55,7 @@ describe('更新卡片开箱内容', () => {
     expect(wrapper.text()).not.toContain('旧通用说明')
     expect(wrapper.text()).toContain('选择 WAO CLI 与 MCP')
     expect(wrapper.find('.feature-demo').exists()).toBe(false)
-    expect(wrapper.find('.experience').exists()).toBe(false)
+    expect(wrapper.get('.experience').text()).toContain('去看看')
     await wrapper.get('.demo-toggle').trigger('click')
     expect(wrapper.get('.feature-demo').text()).toContain('连接你的工具')
     await wrapper.setProps({ edition: { ...edition, id: 'next' } })

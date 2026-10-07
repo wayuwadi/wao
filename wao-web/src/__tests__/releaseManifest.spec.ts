@@ -5,6 +5,10 @@ import { CURRENT_RELEASE } from '@/data/featureCatalog'
 import { MODULES } from '@/config/nav'
 vi.mock('axios', () => ({ default: { get: vi.fn() } }))
 describe('公开版本清单', () => {
+  it('新登记动作保留说明与安全标识，旧制品不执行未知路由', () => {
+    const data = {...CURRENT_RELEASE,highlights:[{...CURRENT_RELEASE.highlights[0]!,action:{target:'future-registered-entry',label:'查看新功能'}}]}
+    expect(parseReleaseEdition(data)).toEqual(data)
+  })
   it('仅接受登记且属于该功能的体验入口，保留发布区间及阅读演示', () => {
     const item={ ...CURRENT_RELEASE.highlights[0]!, featureId:'notes', action:{target:'notes-reading',label:'进入阅读'}, demo:{presentation:'inline',kind:'notes-reading',alt:'阅读编辑示意'} }
     const data={ ...CURRENT_RELEASE, baseSha:'a'.repeat(40), rangeVerified:true, prominence:'minor', highlights:[item] }

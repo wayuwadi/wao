@@ -6,6 +6,7 @@
   "intro": "设置新增关于 WAO 分类，正式标识和品牌规范有了可点击的站内入口。",
   "highlights": [{
     "featureId": "settings",
+    "action": {"target": "settings-about", "label": "看看关于 WAO"},
     "eyebrow": "品牌入口",
     "title": "品牌与素材有了站内入口",
     "summary": "在关于 WAO 中打开品牌参考页，查看使用规范并下载正式素材。",

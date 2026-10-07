@@ -66,6 +66,21 @@ afterEach(() => {
 })
 
 describe('顶栏更新入口', () => {
+  it('去看看请求保存刷新后打开具体入口，失败可重试且旧页面不提前跳转', async () => {
+    const item = {...upcoming.highlights[0]!,featureId:'settings' as const,action:{target:'settings-about',label:'关于 WAO'}}
+    vi.mocked(fetchWebRelease).mockResolvedValue({version:'new1234',release:{...upcoming,highlights:[item]}})
+    const router = await render(); notify('new1234'); await flushPromises()
+    await click('.experience')
+    expect(reloadToLatestVersion).toHaveBeenCalledWith('new1234',{featureId:'settings',action:item.action})
+    expect(router.currentRoute.value.path).toBe('/')
+    reportWorkspaceReloadState({state:'saving'}); await nextTick()
+    expect(document.querySelector<HTMLButtonElement>('.experience')!.disabled).toBe(true)
+    reportWorkspaceReloadState({state:'failed',message:'草稿保存失败'}); await nextTick()
+    expect(document.body.textContent).toContain('草稿保存失败')
+    await click('.experience')
+    expect(reloadToLatestVersion).toHaveBeenCalledTimes(2)
+    expect(router.currentRoute.value.path).toBe('/')
+  })
   it('小优化只显示更新入口，编辑期间重大更新延后提示', async () => {
     vi.mocked(fetchWebRelease).mockResolvedValue({version:'minor-version',release:{...upcoming,prominence:'minor'}})
     await render(); notify('minor-version'); await flushPromises()

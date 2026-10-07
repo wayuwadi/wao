@@ -6,6 +6,7 @@
   "intro": "关于 WAO 增加品牌理念、伙伴介绍和了解更多入口，让品牌的名字与性格更清楚。",
   "highlights": [{
     "featureId": "settings",
+    "action": {"target": "settings-about", "label": "看看关于 WAO"},
     "eyebrow": "关于 WAO",
     "title": "让事务有序，让生活留白",
     "summary": "在关于页认识 WAO 的理念，以及小绘、小知、小悦、小悠的含义。",
