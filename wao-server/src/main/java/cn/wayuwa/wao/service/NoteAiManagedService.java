@@ -49,11 +49,7 @@ public class NoteAiManagedService {
     private long num(Map<String,Object> row,String key){return ((Number)row.get(key)).longValue();}
     private String id(){return UUID.randomUUID().toString().replace("-","");}
     private String raw(DocDto doc){
-        if(doc.content()!=null)return Objects.toString(doc.content().markdown(),"");
-        if(doc.blocks()==null)return "";
-        List<String> parts=new ArrayList<>();
-        for(var b:doc.blocks()){if(b.h()!=null)parts.add("# "+b.h());if(b.p()!=null)parts.add(b.p());if(b.call()!=null)parts.add(b.call());if(b.ul()!=null)parts.addAll(b.ul());if(b.q()!=null)parts.addAll(b.q());}
-        return String.join("\n\n",parts);
+        return NoteMarkdown.of(doc);
     }
     /** 只用比较副本判定触发，保存的原始内容不被格式化。 */
     public static String fingerprint(String markdown){return NoteAiSettingsService.hash(markdown.replaceAll("(?m)^#{1,6} +","").replaceAll("\\s+"," ").strip());}
@@ -233,7 +229,7 @@ public class NoteAiManagedService {
         else if(stage.equals("title"))patch=new PatchDocRequest(output,null,null,null,null,doc.rev());
         else{
             RichDocContentDto content;
-            if(stage.equals("image"))content=withCover(doc.content(),output,str(signal,"cover_url"));
+            if(stage.equals("image"))content=withCover(doc,output,str(signal,"cover_url"));
             else{
                 String source=str(a,"input_text");
                 // 原图片、链接与附件引用必须仍存在，不接受丢失资源的结果。
@@ -257,8 +253,9 @@ public class NoteAiManagedService {
         if(stage.equals("polish"))db.update("UPDATE note_ai_save_signal SET body_hash=? WHERE doc_id=?",fingerprint(output),doc.id());
         db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='APPLIED',message='已完成' WHERE id=?",str(a,"id"));
     }
-    private RichDocContentDto withCover(RichDocContentDto original,String url,String previous){
-        String markdown=original==null?"":Objects.toString(original.markdown(),"");
+    private RichDocContentDto withCover(DocDto doc,String url,String previous){
+        RichDocContentDto original=doc.content();
+        String markdown=raw(doc);
         String prefix="![文章总览图]("+previous+" \"wao-image-size:50%xauto\")\n\n";
         if(!previous.isBlank()&&markdown.startsWith(prefix))markdown=markdown.substring(prefix.length());
         JsonNode document=original==null||original.document()==null?null:original.document().deepCopy();

@@ -1,0 +1,10 @@
+{
+  "id": "notes-legacy-cover-preservation-2026-10-08",
+  "sourceSubject": "fix(notes): 生成配图时完整保留旧格式小记正文",
+  "title": "配图完成，正文也完整保留",
+  "publishedOn": "2026-10-08",
+  "intro": "修复飞书及历史小记生成总览图后，只显示图片、正文被遮蔽的问题。",
+  "highlights": [{"featureId":"notes","title":"配图与正文一起保留",
+    "summary":"自动配图和对照采用均保留旧正文和排版。已有新格式内容仍为准，避免复活主动删除的文字。",
+    "steps":["打开从飞书收集或历史保存的小记。","生成或采用总览图，查看完整正文与原图。"]}]
+}

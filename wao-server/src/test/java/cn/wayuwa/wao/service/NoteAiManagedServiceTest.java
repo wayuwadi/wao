@@ -39,6 +39,36 @@ class NoteAiManagedServiceTest {
   org.springframework.test.util.ReflectionTestUtils.setField(managed,"noteTags",noteTags);
  }
  DocDto doc(String body,String title,int rev){return new DocDto("n",title,"m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,body),List.of(),"kb-notes",null,rev);}
+ @Test void automaticCoverKeepsLegacyBodyAndDoesNotInvalidateOtherStages(){
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":true,\"polish\":true}");
+  String body="早起下楼的真实记录。".repeat(12)+"\n\n第二段保留原样。";
+  var current=new java.util.concurrent.atomic.AtomicReference<>(new DocDto("n","首行","m",null,null,false,
+      List.of(),List.of(new DocBlockDto(null,null,body,null,null)),null,List.of(),"kb-notes",null,1));
+  when(knowledge.getDoc("n")).thenAnswer(c->current.get());
+  when(image.startNoteWorkflow(any(),any())).thenReturn(new ArticleImageJobDto("IMAGE","QUEUED","等待",null));
+  when(image.get("m","IMAGE")).thenReturn(new ArticleImageJobDto("IMAGE","SUCCEEDED","完成","/api/images/cover/raw"));
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","QUEUED","等待",null,null,null));
+  when(knowledge.updateDerivedNote(eq("n"),any())).thenAnswer(c->{
+   PatchDocRequest patch=c.getArgument(1);
+   assertThat(patch.expectedRev()).isEqualTo(current.get().rev());
+   assertThat(patch.content().markdown()).isEqualTo("![文章总览图](/api/images/cover/raw \"wao-image-size:50%xauto\")\n\n"+body);
+   current.set(doc(patch.content().markdown(),current.get().title(),2));return current.get();
+  });
+  tx.executeWithoutResult(t->managed.saved(current.get(),"m","",null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(managed.status("n","m").image()).isEqualTo("DONE");
+  assertThat(managed.status("n","m").polish()).isEqualTo("RUNNING");
+  assertThat(NoteAiManagedService.fingerprint(body)).isEqualTo(db.queryForObject("SELECT body_hash FROM note_ai_save_signal",String.class));
+ }
+ @Test void legacyConversionKeepsStructureButNeverResurrectsStaleBlocks(){
+  var blocks=List.of(new DocBlockDto(null,"三级标题",null,null,null,3),new DocBlockDto(null,null,"正文\n\n![原图](/api/images/original/raw)",null,null),
+      new DocBlockDto(null,null,null,List.of("甲","乙"),null),new DocBlockDto(null,null,null,null,List.of("引用","作者")),new DocBlockDto("提示",null,null,null,null));
+  var legacy=new DocDto("n","标题","m",null,null,false,List.of(),blocks,null,List.of(),"kb-notes",null,1);
+  assertThat(NoteMarkdown.of(legacy)).isEqualTo("### 三级标题\n\n正文\n\n![原图](/api/images/original/raw)\n\n- 甲\n- 乙\n\n> 引用 —— 作者\n\n!> 提示");
+  var intentionallyEmpty=new DocDto("n","标题","m",null,null,false,List.of(),blocks,new RichDocContentDto(1,null,""),List.of(),"kb-notes",null,2);
+  assertThat(NoteMarkdown.of(intentionallyEmpty)).isEmpty();
+ }
  NoteAiCompanionService companion(String mode){
   db.execute("ALTER TABLE note_ai_stage_attempt ADD COLUMN result_mode VARCHAR(16) DEFAULT 'AUTO'");
   db.execute("ALTER TABLE note_ai_stage_attempt ADD COLUMN cancel_requested BOOLEAN DEFAULT FALSE");
