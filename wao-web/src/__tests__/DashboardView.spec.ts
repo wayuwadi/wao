@@ -3,7 +3,6 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia } from 'pinia'
 import DashboardView from '@/views/DashboardView.vue'
-import { developmentOverview } from './fixtures/development'
 import { fetchCodexMemberships } from '@/api/codexMemberships'
 import {
   fetchAiRunTrend,
@@ -27,7 +26,6 @@ const chart = vi.hoisted(() => ({
   dispose: vi.fn<() => void>(),
 }))
 const initChart = vi.hoisted(() => vi.fn<() => typeof chart>(() => chart))
-vi.mock('@/api/development', () => ({ fetchDevelopmentOverview: vi.fn().mockImplementation(() => Promise.resolve(developmentOverview())) }))
 
 vi.mock('@/api/codexMemberships', () => ({
   fetchCodexMemberships: vi.fn().mockResolvedValue([]),
@@ -161,16 +159,6 @@ function mountDashboard() {
 }
 
 describe('DashboardView AI 用量面板', () => {
-  it('旧入口改为自主建设工作台，历史渠道节点不冒充新执行器状态', async () => {
-    const wrapper = mountDashboard()
-    await flushPromises()
-    expect(wrapper.text()).toContain('历史 AI 渠道在线记录')
-    expect(wrapper.text()).not.toContain('查看 AI 控制台')
-    await wrapper.findAll('button').find(button => button.text().includes('打开自主建设工作台'))!.trigger('click')
-    await flushPromises()
-    expect(wrapper.vm.$router.currentRoute.value.fullPath).toBe('/automation?tab=development')
-    wrapper.unmount()
-  })
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()

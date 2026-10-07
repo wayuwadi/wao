@@ -1,7 +1,5 @@
 # WAO 工作区 MCP
 
-2026-10-07：[自主建设](autonomous-development.md)的代码执行、策略和决定接口仅供本人已授权成员/管理员浏览器及显式配置的本机协调器，不进入 WorkspaceMcpTools；旧工作区 token 和实时 tools/list 不增加开发或部署权限。
-
 2026-10-06：[能力中心](capability-center.md) 增加实际接入验证元数据。鉴权后的 `tools/list` 成功记录时间与实际可见工具数，目录运行失败记录失败时间；签发、initialize、管理列表和最近访问不算成功。浏览器 `/api/workspace-mcp/tokens` DTO 新增可空 `lastVerifiedAt`、`verifiedToolCount`、`lastVerificationFailedAt`；原令牌权限、tools/list/schema 与调用响应保持。元数据记录失败不改变工具目录结果，不新增验证或令牌管理工具。
 
 2026-10-06：[系统文章来源](notes-system-generated-source.md) 在既有 `create_note` / `update_document` 中增加布尔字段 `system_generated`，`list_notes.include_system` 可在分页前隐藏系统文章。来源不改变真实 author 或操作权限，更新本人小记需当前 `expected_rev`；旧授权不增加工具，旧文档创建可用受版本保护的更新补标。
@@ -75,3 +73,5 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 能力中心机器人配置与诊断仅接受管理员浏览器会话；Webhook、共享应用密钥、接收路由和事件诊断不增加 Workspace MCP 工具，不扩大历史设备令牌授权。群消息创建待办／小记使用发送者飞书身份绑定，不接受 MCP 伪造平台消息。契约见 [飞书机器人规格](feishu-bot-center.md)。
 
 2026-10-07：新增数字成员图库仅供当前浏览器成员会话使用；没有新增工作区工具定义或分发，不将真实成员照片、性别、候选确认、头像生成消费隐含到旧 workspace Token。后续独立私有形象 scope 和重新授权之后再评估 MCP/CLI 覆盖，参见 [数字成员图库](digital-member-library.md)。
+
+2026-10-07：自主建设已按用户要求终止（ADR-332）。相关 Web API、代码执行协调器和飞书决定路由移除，该项目没有新增 MCP 工具，既有 tools/list 与令牌权限不变。

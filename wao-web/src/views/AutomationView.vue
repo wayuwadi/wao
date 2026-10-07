@@ -1,19 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { automationResult } from '@/utils/automationResult'
 import { useDataStore } from '@/stores/data'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
-import { useRoute, useRouter } from 'vue-router'
-import DevelopmentPanel from '@/components/development/DevelopmentPanel.vue'
+import { useRouter } from 'vue-router'
 import HttpPerformanceConfigModal from '@/components/overlays/HttpPerformanceConfigModal.vue'
 import type { HttpPerformanceInspectionConfig } from '@/api/board'
 import type { AutomationJob } from '@/types'
 
 const data = useDataStore()
-const route = useRoute()
-const tab = ref<'jobs' | 'runs' | 'development'>(route?.query.tab === 'development' ? 'development' : 'jobs')
-const developmentRunId = computed(() => typeof route?.query.run === 'string' ? route.query.run : undefined)
+const tab = ref<'jobs' | 'runs'>('jobs')
 const selId = ref<string | null>(null)
 // 保留既有弹层状态以兼容历史深链；界面不再暴露泛化“新建自动化”入口。
 const newOpen = ref(false)
@@ -203,14 +200,10 @@ async function createAuto() {
   selId.value = job.id
 }
 
-function switchTab(next: 'jobs' | 'runs' | 'development') {
+function switchTab(next: 'jobs' | 'runs') {
   tab.value = next
-  selId.value = null
   if (next === 'runs') runPage.value = 1
-  if (router && route) void router.replace({ query: { ...route.query, tab: next } })
-  if (next !== 'development') void data.ensureAutomationLoaded()
 }
-watch(() => route?.query.tab, next => { if (next === 'development' || next === 'jobs' || next === 'runs') { tab.value = next; selId.value = null } })
 
 function openConfig(job: AutomationJob) {
   if (job.handler === CHAT_SYNC_HANDLER) openChatConfig()
@@ -227,7 +220,7 @@ function onHttpConfigSaved(config: HttpPerformanceInspectionConfig) {
 }
 
 onMounted(() => {
-  if (tab.value !== 'development') void data.ensureAutomationLoaded()
+  void data.ensureAutomationLoaded()
 })
 </script>
 
@@ -239,14 +232,11 @@ onMounted(() => {
       text="查看定时任务是否启用，以及每次运行发生了什么。已启用只代表允许按计划运行；已入队或已提交执行不代表任务完成。不再需要的任务可以暂停。"
       storage-key="automation"
     />
-    <div class="tabs" role="group" aria-label="自动化内容">
-      <button v-for="t in [['任务列表', 'jobs'], ['运行记录', 'runs'], ['自主建设', 'development']] as const" :key="t[1]" type="button" class="tab" :class="{ on: tab === t[1] }" :aria-pressed="tab === t[1]" @click="switchTab(t[1])">{{ t[0] }}</button>
-    </div>
-    <div v-if="tab !== 'development' && data.loadStates.automation === 'loading'" class="automation-state" role="status">
+    <div v-if="data.loadStates.automation === 'loading'" class="automation-state" role="status">
       <i class="ri-loader-4-line spin"></i>正在读取自动化任务与真实运行记录…
     </div>
     <div
-      v-else-if="tab !== 'development' && data.loadStates.automation === 'error'"
+      v-else-if="data.loadStates.automation === 'error'"
       class="automation-state error"
       role="alert"
     >
@@ -270,13 +260,26 @@ onMounted(() => {
       <button v-if="!pending[job.id]" @click="inspectRecords(job.id)">刷新并查看记录</button>
     </div>
     <!-- 列表 -->
-    <DevelopmentPanel v-if="tab === 'development'" :run-id="developmentRunId" />
-    <template v-else-if="!sel">
+    <template v-if="!sel">
       <div class="atop">
         <div class="atitle">自动化 / 定时任务</div>
         <span class="atip">让记录自己发生</span>
         <button class="btn-ghost" @click="openChatConfig">飞书归档与 @ 记录</button>
         <div class="spacer"></div>
+      </div>
+      <div class="tabs">
+        <button
+          v-for="t in [
+            ['任务列表', 'jobs'],
+            ['运行记录', 'runs'],
+          ] as const"
+          :key="t[1]"
+          class="tab"
+          :class="{ on: tab === t[1] }"
+          @click="switchTab(t[1])"
+        >
+          {{ t[0] }}
+        </button>
       </div>
       <div v-if="tab === 'jobs'" class="table-card">
         <div class="grid-jobs th">

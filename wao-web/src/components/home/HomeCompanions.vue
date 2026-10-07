@@ -8,7 +8,6 @@ import type { SurpriseStyle } from './companionSurprises'
 import type { WorldStory, WorldChoices } from './companionWorld'
 import HomeLivingCorner from './HomeLivingCorner.vue'
 import HomeDateReminders from './HomeDateReminders.vue'
-import DevelopmentGlance from '@/components/development/DevelopmentGlance.vue'
 import { plainWeather, type LivingWeather } from './livingWeather'
 
 const props = defineProps<{ choices?: WorldChoices; weather?: LivingWeather; member?: string; date?: string; blocked?: boolean }>()
@@ -145,7 +144,6 @@ onBeforeUnmount(() => {
         {{ quiet ? '唤醒伙伴' : '安静陪伴' }}
       </button>
     </div>
-    <DevelopmentGlance variant="companion" :blocked="quiet || !!blocked || !!message || dateReminderBusy || companionEditing" />
     <div
       class="companion-speech"
       role="status"

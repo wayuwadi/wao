@@ -29,7 +29,6 @@ import { formatDuration } from '@/composables/aiRunDuration'
 import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { usePageVisibility } from '@/composables/pageVisibility'
 import CodexMembershipPanel from '@/components/dashboard/CodexMembershipPanel.vue'
-import DevelopmentGlance from '@/components/development/DevelopmentGlance.vue'
 
 echarts.use([
   CanvasRenderer,
@@ -552,7 +551,6 @@ onBeforeUnmount(() => {
 
 function goProjects() { router.push('/projects') }
 function goHome() { router.push('/') }
-function goDevelopment() { void router.push({ path: '/automation', query: { tab: 'development' } }) }
 </script>
 
 <template>
@@ -573,7 +571,6 @@ function goDevelopment() { void router.push({ path: '/automation', query: { tab:
       </div>
     </header>
 
-    <DevelopmentGlance />
     <section v-if="summary" class="usage-guidance" aria-label="统计解读与下一步">
       <h2>先查看运行，再判断消耗</h2>
       <p>本页读取时间：{{ formatTime(lastLoadedAt) }}。这是系统汇总，不是个人效率评分；各图表的时间范围不同。</p>
@@ -613,8 +610,8 @@ function goDevelopment() { void router.push({ path: '/automation', query: { tab:
         <div class="kpi">
           <i class="ri-computer-line"></i>
           <div class="kpi-num">{{ summary?.onlineRunners ?? 0 }}</div>
-          <div class="kpi-label">历史 AI 渠道在线记录</div>
-          <div class="kpi-sub">旧渠道已退役；自主建设执行电脑的状态在工作台查看</div>
+          <div class="kpi-label">在线执行电脑</div>
+          <div class="kpi-sub">仅表示近期在线，运行前仍需检查配置</div>
         </div>
         <div class="kpi">
           <i class="ri-checkbox-circle-line"></i>
@@ -802,8 +799,8 @@ function goDevelopment() { void router.push({ path: '/automation', query: { tab:
             <button class="link-btn" @click="goProjects">
               <i class="ri-stack-line"></i>打开项目列表
             </button>
-            <button class="link-btn" @click="goDevelopment">
-              <i class="ri-pulse-line"></i>打开自主建设工作台
+            <button class="link-btn" @click="goHome">
+              <i class="ri-pulse-line"></i>查看 AI 控制台
             </button>
             <p class="muted">数据每 30 秒自动刷新一次（手动点击「刷新」可立即获取最新数据）。</p>
           </div>
