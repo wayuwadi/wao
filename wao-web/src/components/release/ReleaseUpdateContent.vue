@@ -3,21 +3,29 @@ import { computed, ref, watch } from 'vue'
 import { MODULES } from '@/config/nav'
 import type { ReleaseEdition, ReleaseHighlight } from '@/types/featureExplorer'
 import ReleaseFeatureDemo from './ReleaseFeatureDemo.vue'
-import { releaseActionLabel, canExperienceRelease, canRequestReleaseExperience } from '@/utils/releaseActions'
-const props = defineProps<{ edition: ReleaseEdition; pending?: boolean; busy?: boolean }>()
-const emit = defineEmits<{ experience: [item: ReleaseHighlight]; demo: [item: ReleaseHighlight] }>()
+const props = defineProps<{ edition: ReleaseEdition; selectedIndex?: number; busy?: boolean }>()
+const emit = defineEmits<{ select: [index: number]; demo: [item: ReleaseHighlight] }>()
 const expanded = ref<number[]>([])
 const details = ref<number[]>([])
-const showAll = ref(false)
-const visible = computed(() => showAll.value ? props.edition.highlights : props.edition.highlights.slice(0, 3))
-function moreCount(item: ReleaseHighlight) { return Math.max(0, item.points.length - 2) + Math.max(0, (item.steps?.length ?? 0) - 2) }
-function toggleDetails(index: number) { details.value = details.value.includes(index) ? details.value.filter(item => item !== index) : [...details.value, index] }
+const currentIndex = computed(() =>
+  Math.max(0, Math.min(props.selectedIndex ?? 0, props.edition.highlights.length - 1)),
+)
+const visible = computed(() =>
+  props.edition.highlights.slice(currentIndex.value, currentIndex.value + 1),
+)
+function moreCount(item: ReleaseHighlight) {
+  return Math.max(0, item.points.length - 2) + Math.max(0, (item.steps?.length ?? 0) - 2)
+}
+function toggleDetails(index: number) {
+  details.value = details.value.includes(index)
+    ? details.value.filter((item) => item !== index)
+    : [...details.value, index]
+}
 watch(
   () => props.edition.id,
   () => {
     expanded.value = []
     details.value = []
-    showAll.value = false
   },
 )
 function toggle(index: number) {
@@ -28,6 +36,23 @@ function toggle(index: number) {
 </script>
 <template>
   <div class="release-update-content">
+    <fieldset v-if="edition.highlights.length > 1" class="change-picker" :disabled="busy">
+      <legend class="sr-only">选择本次变化</legend>
+      <label
+        v-for="(item, index) in edition.highlights"
+        :key="item.id || index"
+        :class="{ selected: index === currentIndex }"
+      >
+        <input
+          type="radio"
+          name="release-highlight"
+          :checked="index === currentIndex"
+          :aria-label="`查看变化：${item.title}`"
+          @change="emit('select', index)"
+        />
+        <span>{{ item.eyebrow || MODULES[item.featureId]?.label || '本次变化' }}</span>
+      </label>
+    </fieldset>
     <div class="release-meta">
       <span>{{
         edition.highlights.length > 1
@@ -36,35 +61,56 @@ function toggle(index: number) {
       }}</span
       ><time>{{ edition.publishedOn }}</time>
     </div>
-    <p v-if="edition.highlights.length > 1" class="edition-intro">{{ edition.intro }}</p>
-    <article v-for="(item, index) in visible" :key="item.id || `${item.featureId}-${index}`">
-      <span v-if="edition.highlights.length > 1" class="item-eyebrow">{{ item.eyebrow }}</span>
+    <article v-for="item in visible" :key="item.id || `${item.featureId}-${currentIndex}`">
       <h3>{{ item.title }}</h3>
       <p>{{ item.summary }}</p>
       <ul v-if="item.points.length" class="points" aria-label="变化说明">
-        <li v-for="point in item.points.slice(0, details.includes(index) ? undefined : 2)" :key="point">{{ point }}</li>
+        <li
+          v-for="point in item.points.slice(0, details.includes(currentIndex) ? undefined : 2)"
+          :key="point"
+        >
+          {{ point }}
+        </li>
       </ul>
       <div v-if="item.steps?.length" class="usage">
         <span><i class="ri-signpost-line" aria-hidden="true"></i> 怎么用</span>
         <ol>
-          <li v-for="step in item.steps.slice(0, details.includes(index) ? undefined : 2)" :key="step">{{ step }}</li>
+          <li
+            v-for="step in item.steps.slice(0, details.includes(currentIndex) ? undefined : 2)"
+            :key="step"
+          >
+            {{ step }}
+          </li>
         </ol>
       </div>
-      <button v-if="moreCount(item)" type="button" class="details-toggle" :disabled="busy" :aria-expanded="details.includes(index)" @click="toggleDetails(index)">
-        {{ details.includes(index) ? '收起完整说明' : `展开完整说明 · 另有 ${moreCount(item)} 条` }}
+      <button
+        v-if="moreCount(item)"
+        type="button"
+        class="details-toggle"
+        :disabled="busy"
+        :aria-expanded="details.includes(currentIndex)"
+        @click="toggleDetails(currentIndex)"
+      >
+        {{
+          details.includes(currentIndex)
+            ? '收起完整说明'
+            : `展开完整说明 · 另有 ${moreCount(item)} 条`
+        }}
       </button>
       <button
         v-if="item.demo"
         type="button"
         class="demo-toggle"
         :disabled="busy"
-        :aria-expanded="item.demo.presentation === 'inline' ? expanded.includes(index) : undefined"
-        @click="item.demo.presentation === 'window' ? emit('demo', item) : toggle(index)"
+        :aria-expanded="
+          item.demo.presentation === 'inline' ? expanded.includes(currentIndex) : undefined
+        "
+        @click="item.demo.presentation === 'window' ? emit('demo', item) : toggle(currentIndex)"
       >
         {{
           item.demo.presentation === 'window'
             ? '打开大图演示'
-            : expanded.includes(index)
+            : expanded.includes(currentIndex)
               ? '收起功能演示'
               : '看看功能演示'
         }}
@@ -72,7 +118,7 @@ function toggle(index: number) {
           :class="
             item.demo.presentation === 'window'
               ? 'ri-arrow-right-up-line'
-              : expanded.includes(index)
+              : expanded.includes(currentIndex)
                 ? 'ri-arrow-up-s-line'
                 : 'ri-arrow-down-s-line'
           "
@@ -80,29 +126,11 @@ function toggle(index: number) {
         ></i>
       </button>
       <ReleaseFeatureDemo
-        v-if="item.demo?.presentation === 'inline' && expanded.includes(index)"
+        v-if="item.demo?.presentation === 'inline' && expanded.includes(currentIndex)"
         :demo="item.demo"
         :edition-id="edition.id"
       />
-      <button
-        v-if="
-          (pending ? canRequestReleaseExperience(item.featureId, item.action) : canExperienceRelease(item.featureId, item.action)) &&
-          edition.attention !== 'maintenance'
-        "
-        type="button"
-        class="experience"
-        :disabled="busy"
-        :aria-label="`${pending ? '更新并去看看' : '去体验'}：${item.title}`"
-        :title="pending ? '保存当前内容，刷新后直接打开此功能' : undefined"
-        @click="emit('experience', item)"
-      >
-        {{ pending ? '去看看' : releaseActionLabel(item, `去体验 ${MODULES[item.featureId].label}`) }}
-        <i class="ri-arrow-right-up-line" aria-hidden="true"></i>
-      </button>
     </article>
-    <button v-if="edition.highlights.length > 3" class="more-changes" type="button" :disabled="busy" :aria-expanded="showAll" @click="showAll = !showAll">
-      {{ showAll ? '收起其他变化' : `查看其余 ${edition.highlights.length - 3} 项变化` }}
-    </button>
     <template v-if="!edition.highlights.length"
       ><h3>{{ edition.title }}</h3>
       <p>{{ edition.intro }}</p>
@@ -111,6 +139,50 @@ function toggle(index: number) {
   </div>
 </template>
 <style scoped>
+.change-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  margin: 16px 0 0;
+  min-width: 0;
+}
+.change-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--wao-radius-control);
+  padding: 6px 9px;
+  background: var(--wao-bg-soft);
+  color: var(--wao-text-2);
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.change-picker label.selected {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+}
+.change-picker input {
+  margin: 0;
+  accent-color: var(--wao-primary);
+  flex: none;
+}
+.change-picker:disabled label {
+  opacity: 0.6;
+  cursor: wait;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .release-meta {
   display: flex;
   justify-content: space-between;
@@ -199,14 +271,6 @@ button:disabled {
 .feature-demo {
   margin-top: 6px;
 }
-.experience {
-  display: inline-flex;
-  float: right;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: var(--wao-primary-soft);
-}
-article::after { content: ''; display: block; clear: both; }
 @media (pointer: coarse) {
   button {
     min-height: 44px;

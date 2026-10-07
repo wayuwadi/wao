@@ -3,11 +3,22 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useFeatureExperience } from '@/composables/featureExperience'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
-import { blockCompanions, companionEditing, companionQuiet, companionMember } from '@/composables/quietCompanions'
+import {
+  blockCompanions,
+  companionEditing,
+  companionQuiet,
+  companionMember,
+} from '@/composables/quietCompanions'
 import CompanionAvatar from '@/components/companions/CompanionAvatar.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import { selectCompanion } from '@/utils/companionIdentity'
 import { fetchWebRelease } from '@/api/version'
 import { MODULES } from '@/config/nav'
+import {
+  canExperienceRelease,
+  canRequestReleaseExperience,
+  resolveReleaseAction,
+} from '@/utils/releaseActions'
 import { CURRENT_RELEASE } from '@/data/featureCatalog'
 import { releaseJustUpdated } from '@/composables/releaseUpdateState'
 import ReleaseUpdateContent from '@/components/release/ReleaseUpdateContent.vue'
@@ -23,13 +34,22 @@ import {
 } from '@/utils/versionUpdate'
 
 const props = defineProps<{ row?: boolean; anchor?: HTMLElement }>()
-const emit = defineEmits<{ 'available-change': [value: boolean]; 'updated-change': [value: boolean]; 'arrival-change': [value: boolean]; opened: [] }>()
-watch(releaseJustUpdated, value => emit('updated-change', value), { immediate: true })
+const emit = defineEmits<{
+  'available-change': [value: boolean]
+  'updated-change': [value: boolean]
+  'arrival-change': [value: boolean]
+  opened: []
+}>()
+watch(releaseJustUpdated, (value) => emit('updated-change', value), { immediate: true })
 const tryFeature = useFeatureExperience()
 const route = useRoute()
 const trigger = ref<HTMLButtonElement>()
 const panel = ref<HTMLElement>()
 const closeButton = ref<HTMLButtonElement>()
+const historyButton = ref<HTMLButtonElement>()
+const historyLink = ref<{ $el: HTMLElement }>()
+const historyOpen = ref(false)
+const selectedIndex = ref(0)
 const open = ref(false)
 const guideItem = ref<ReleaseHighlight | null>(null)
 let guideTrigger: HTMLElement | null = null
@@ -43,17 +63,22 @@ function closeDemo() {
   guideItem.value = null
   void nextTick(() => guideTrigger?.focus())
 }
-function showManually() { if (!open.value) void show() }
-watch(open, value => blockCompanions('version', value), { flush: 'sync' })
-watch([companionQuiet, companionEditing], ([quiet, editing]) => { if (quiet || editing) stopArrival(); else announce() })
+function showManually() {
+  if (!open.value) void show()
+}
+watch(open, (value) => blockCompanions('version', value), { flush: 'sync' })
+watch([companionQuiet, companionEditing], ([quiet, editing]) => {
+  if (quiet || editing) stopArrival()
+  else announce()
+})
 const arriving = ref(false)
-watch(arriving, value => emit('arrival-change', value))
+watch(arriving, (value) => emit('arrival-change', value))
 const ANNOUNCED_KEY = 'wao-update-arrival-version'
 let arrivalTimer: ReturnType<typeof setTimeout> | undefined
 let pendingArrival = false
 let motionPreference: MediaQueryList | undefined
 const availableVersion = ref('')
-watch(availableVersion, value => emit('available-change', !!value), { immediate: true })
+watch(availableVersion, (value) => emit('available-change', !!value), { immediate: true })
 const upcoming = ref<ReleaseEdition | null>(null)
 const loading = ref(false)
 const loaded = ref(false)
@@ -63,7 +88,65 @@ const busy = ref(false)
 const busyLabel = ref('正在保存…')
 const position = ref({ left: '12px', top: '60px', width: '360px', maxHeight: '500px' })
 const edition = computed(() => (availableVersion.value ? upcoming.value : CURRENT_RELEASE))
-const companionIdentity = computed(() => selectCompanion(`release:${edition.value?.id ?? availableVersion.value}`, companionMember.value))
+watch(
+  () => edition.value?.id,
+  () => {
+    selectedIndex.value = 0
+    historyOpen.value = false
+  },
+)
+const selectedItem = computed(() => edition.value?.highlights[selectedIndex.value])
+const experienceItem = computed(() => {
+  const item = selectedItem.value
+  if (!item || edition.value?.attention === 'maintenance') return undefined
+  return (
+    availableVersion.value
+      ? canRequestReleaseExperience(item.featureId, item.action)
+      : canExperienceRelease(item.featureId, item.action)
+  )
+    ? item
+    : undefined
+})
+const destinationLabel = computed(() => {
+  const item = experienceItem.value
+  if (!item) return ''
+  const action = resolveReleaseAction(item.featureId, item.action)
+  return action
+    ? action.label.replace(/^(看看|打开|查看|去体验|体验|写一条)/, '')
+    : MODULES[item.featureId].label
+})
+const primaryLabel = computed(() => {
+  if (busy.value) return busyLabel.value
+  if (experienceItem.value)
+    return `${saveError.value ? '重试更新并去看看' : availableVersion.value ? '更新并去看看' : '去看看'} · ${destinationLabel.value}`
+  return saveError.value ? '重试保存并刷新' : '保存并刷新'
+})
+watch(busy, (value) => {
+  if (value) historyOpen.value = false
+})
+function selectHighlight(index: number) {
+  if (busy.value) return
+  selectedIndex.value = index
+  saveError.value = ''
+  void nextTick(positionPanel)
+}
+async function toggleHistory() {
+  if (busy.value) return
+  historyOpen.value = !historyOpen.value
+  if (historyOpen.value) {
+    await nextTick()
+    historyLink.value?.$el.focus()
+  }
+}
+function dismiss() {
+  if (historyOpen.value) {
+    historyOpen.value = false
+    historyButton.value?.focus()
+  } else close()
+}
+const companionIdentity = computed(() =>
+  selectCompanion(`release:${edition.value?.id ?? availableVersion.value}`, companionMember.value),
+)
 const featureArrival = computed(() => !!edition.value && edition.value.attention !== 'maintenance')
 const currentVersion = document.querySelector('script[data-v]')?.getAttribute('data-v')
 let request = 0
@@ -74,7 +157,9 @@ function positionPanel() {
   const width = Math.min(380, window.innerWidth - 24)
   // 窄屏完整菜单可能尚未打开；隐藏入口不能成为浮层的定位锚点。
   const visibleAnchor = rect && rect.width > 0 && rect.height > 0
-  const top = visibleAnchor ? Math.max(12, Math.min(rect.bottom + 10, window.innerHeight - 260)) : 12
+  const top = visibleAnchor
+    ? Math.max(12, Math.min(rect.bottom + 10, window.innerHeight - 260))
+    : 12
   position.value = {
     left: `${Math.max(12, Math.min((visibleAnchor ? rect.right : window.innerWidth - 12) - width, window.innerWidth - width - 12))}px`,
     top: `${top}px`,
@@ -87,11 +172,25 @@ function stopArrival() {
   arriving.value = false
 }
 function announce() {
-  if (!pendingArrival || document.hidden || busy.value || companionEditing.value || companionQuiet.value) return
-  if (!loaded.value) { void load(); return }
+  if (
+    !pendingArrival ||
+    document.hidden ||
+    busy.value ||
+    companionEditing.value ||
+    companionQuiet.value
+  )
+    return
+  if (!loaded.value) {
+    void load()
+    return
+  }
   pendingArrival = false
   if (!upcoming.value || upcoming.value.attention === 'maintenance') return
-  try { sessionStorage.setItem(ANNOUNCED_KEY, availableVersion.value) } catch { /* 本标签页内仍由版本去重。 */ }
+  try {
+    sessionStorage.setItem(ANNOUNCED_KEY, availableVersion.value)
+  } catch {
+    /* 本标签页内仍由版本去重。 */
+  }
   if (upcoming.value.prominence !== 'major') return
   positionPanel()
   open.value = true
@@ -107,8 +206,12 @@ function visibilityChanged() {
   if (document.hidden) stopArrival()
   else announce()
 }
-function motionChanged() { if (motionPreference?.matches) stopArrival() }
-function viewportChanged() { void nextTick(positionPanel) }
+function motionChanged() {
+  if (motionPreference?.matches) stopArrival()
+}
+function viewportChanged() {
+  void nextTick(positionPanel)
+}
 async function load() {
   const target = availableVersion.value
   if (!target || loading.value) return
@@ -137,7 +240,11 @@ async function show() {
   // 手动查看接管待提醒状态，慢响应不能在用户收起后重新弹出。
   pendingArrival = false
   if (availableVersion.value) {
-    try { sessionStorage.setItem(ANNOUNCED_KEY, availableVersion.value) } catch { /* 当前页面仍可去重。 */ }
+    try {
+      sessionStorage.setItem(ANNOUNCED_KEY, availableVersion.value)
+    } catch {
+      /* 当前页面仍可去重。 */
+    }
   }
   positionPanel()
   open.value = true
@@ -150,6 +257,7 @@ function close(restoreFocus = true) {
   if (busy.value || guideItem.value) return
   stopArrival()
   open.value = false
+  historyOpen.value = false
   if (restoreFocus) (props.anchor ?? trigger.value)?.focus()
 }
 function browseHistory() {
@@ -178,7 +286,11 @@ function handleUpdate(rawEvent: Event) {
   saveError.value = ''
   guideItem.value = null
   let announced = ''
-  try { announced = sessionStorage.getItem(ANNOUNCED_KEY) || '' } catch { /* 存储不可用时不阻断提醒。 */ }
+  try {
+    announced = sessionStorage.getItem(ANNOUNCED_KEY) || ''
+  } catch {
+    /* 存储不可用时不阻断提醒。 */
+  }
   pendingArrival = announced !== version
   if (pendingArrival) announce()
   else if (open.value) void load()
@@ -208,7 +320,10 @@ async function experience(item: ReleaseHighlight) {
   if (availableVersion.value) {
     saveError.value = ''
     stopArrival()
-    reloadToLatestVersion(availableVersion.value, { featureId: item.featureId, action: item.action })
+    reloadToLatestVersion(availableVersion.value, {
+      featureId: item.featureId,
+      action: item.action,
+    })
     return
   }
   if (await tryFeature(item.featureId, item.action)) close(false)
@@ -223,10 +338,13 @@ function outside(event: PointerEvent) {
   )
     close(false)
 }
-useOverlayDismiss(() => open.value, () => close(), outside)
+useOverlayDismiss(() => open.value, dismiss, outside)
 watch(
   () => route.path,
-  () => { guideItem.value = null; close(false) },
+  () => {
+    guideItem.value = null
+    close(false)
+  },
 )
 onMounted(() => {
   motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)')
@@ -273,13 +391,21 @@ onBeforeUnmount(() => {
       @click="show"
     >
       <i :class="availableVersion ? 'ri-refresh-line' : 'ri-sparkling-line'" aria-hidden="true"></i>
-      <span class="trigger-label">{{ row ? '更新记录' : availableVersion ? '有更新' : '本次更新' }}</span>
-      <small v-if="row">{{ availableVersion ? '有新版本' : releaseJustUpdated ? '已更新' : '本次与历史' }}</small>
+      <span class="trigger-label">{{
+        row ? '更新记录' : availableVersion ? '有更新' : '本次更新'
+      }}</span>
+      <small v-if="row">{{
+        availableVersion ? '有新版本' : releaseJustUpdated ? '已更新' : '本次与历史'
+      }}</small>
       <i v-if="row" class="ri-arrow-right-s-line" aria-hidden="true"></i>
       <span v-if="availableVersion" class="update-dot" aria-hidden="true"></span>
     </button>
     <span class="sr-only" role="status" aria-live="polite">{{
-      availableVersion ? '发现新版本，可在顶栏查看更新内容' : releaseJustUpdated ? '更新已完成，可从顶栏查看使用说明' : ''
+      availableVersion
+        ? '发现新版本，可在顶栏查看更新内容'
+        : releaseJustUpdated
+          ? '更新已完成，可从顶栏查看使用说明'
+          : ''
     }}</span>
     <Teleport to="body">
       <section
@@ -293,27 +419,82 @@ onBeforeUnmount(() => {
         role="dialog"
         aria-labelledby="version-update-title"
       >
-        <div v-if="featureArrival" class="arrival-callout" aria-hidden="true"><span>✦</span> {{ availableVersion ? '叮！新变化送到了' : releaseJustUpdated ? '更新完成，新本领就位' : '看看这次的新变化' }} <span>✦</span></div>
-        <div v-if="arriving" class="arrival-orbit" aria-hidden="true"><span v-for="n in 6" :key="n"></span></div>
+        <div v-if="featureArrival" class="arrival-callout" aria-hidden="true">
+          <span>✦</span>
+          {{
+            availableVersion
+              ? '叮！新变化送到了'
+              : releaseJustUpdated
+                ? '更新完成，新本领就位'
+                : '看看这次的新变化'
+          }}
+          <span>✦</span>
+        </div>
+        <div v-if="arriving" class="arrival-orbit" aria-hidden="true">
+          <span v-for="n in 6" :key="n"></span>
+        </div>
         <header class="panel-heading">
           <div v-if="featureArrival" class="arrival-hero">
-            <CompanionAvatar class="update-companion" :identity="companionIdentity" :size="60" :animate="arriving" />
-            <div><span class="eyebrow">{{ availableVersion ? '新版本已就绪' : releaseJustUpdated ? '已更新 · 可以体验了' : '本次更新' }}</span><h2 id="version-update-title">{{ availableVersion ? '嘿，我又长本领了。' : '新本领，慢慢拆开看。' }}</h2><p>这次的小变化，给你说清楚。</p></div>
+            <CompanionAvatar
+              class="update-companion"
+              :identity="companionIdentity"
+              :size="60"
+              :animate="arriving"
+            />
+            <div>
+              <span class="eyebrow">{{
+                availableVersion
+                  ? '新版本已就绪'
+                  : releaseJustUpdated
+                    ? '已更新 · 可以体验了'
+                    : '本次更新'
+              }}</span>
+              <h2 id="version-update-title">
+                {{ availableVersion ? '嘿，我又长本领了。' : '新本领，慢慢拆开看。' }}
+              </h2>
+              <p>这次的小变化，给你说清楚。</p>
+            </div>
           </div>
           <div v-else>
             <span class="eyebrow">本次更新</span>
-            <h2 id="version-update-title">{{ edition?.attention === 'maintenance' ? '日常维护更新' : '看看这次的新变化' }}</h2>
+            <h2 id="version-update-title">
+              {{ edition?.attention === 'maintenance' ? '日常维护更新' : '看看这次的新变化' }}
+            </h2>
           </div>
-          <button
-            ref="closeButton"
-            class="icon-button"
-            type="button"
-            aria-label="关闭更新内容"
-            :disabled="busy"
-            @click="close()"
-          >
-            <i class="ri-close-line" aria-hidden="true"></i>
-          </button>
+          <div class="heading-actions">
+            <button
+              ref="historyButton"
+              class="icon-button history-toggle"
+              type="button"
+              aria-label="更多更新选项"
+              aria-haspopup="menu"
+              :aria-expanded="historyOpen"
+              :disabled="busy"
+              @click="toggleHistory"
+              @keydown.down.prevent="!historyOpen && toggleHistory()"
+            >
+              <i class="ri-more-line" aria-hidden="true"></i>
+            </button>
+            <div v-if="historyOpen" class="history-menu" role="menu" aria-label="更多更新选项">
+              <RouterLink
+                ref="historyLink"
+                role="menuitem"
+                :to="{ path: '/features', hash: '#recent-updates' }"
+                @click="browseHistory"
+                >历史更新<i class="ri-arrow-right-up-line" aria-hidden="true"></i
+              ></RouterLink>
+            </div>
+            <button
+              ref="closeButton"
+              class="icon-button"
+              type="button"
+              aria-label="关闭更新内容"
+              :disabled="busy"
+              @click="close()"
+            >
+              <i class="ri-close-line" aria-hidden="true"></i>
+            </button>
+          </div>
         </header>
         <div class="panel-content" :aria-busy="loading">
           <p v-if="loading" role="status">正在读取本次更新内容…</p>
@@ -321,40 +502,51 @@ onBeforeUnmount(() => {
             <p>{{ loadError }}</p>
             <button type="button" class="text-button" @click="load">重试读取</button>
           </div>
-          <ReleaseUpdateContent v-else-if="edition" :edition="edition" :pending="!!availableVersion" :busy="busy" @experience="experience" @demo="showDemo" />
+          <ReleaseUpdateContent
+            v-else-if="edition"
+            :edition="edition"
+            :selected-index="selectedIndex"
+            :busy="busy"
+            @select="selectHighlight"
+            @demo="showDemo"
+          />
           <p v-else-if="loaded">本次版本暂未附带更新说明，仍可安全保存并更新。</p>
         </div>
-        <footer class="update-footer">
+        <footer v-if="availableVersion || experienceItem || saveError" class="update-footer">
           <p v-if="saveError" class="error" role="alert">{{ saveError }}</p>
-          <p v-else class="save-hint">
+          <p v-else-if="availableVersion" class="save-hint">
             {{
-              availableVersion
-                ? '「去看看」会保存并刷新，再打开对应功能。失败时保留当前内容。'
-                : '随时从顶栏回看，选择感兴趣的功能体验。'
+              experienceItem
+                ? '先保存并刷新，再打开对应功能。失败时保留当前内容。'
+                : '保存成功后刷新，失败时保留当前内容。'
             }}
           </p>
           <div class="panel-actions">
-            <RouterLink class="text-button" :to="{ path: '/features', hash: '#recent-updates' }" @click="browseHistory">最近更新</RouterLink>
-            <button type="button" class="later" :disabled="busy" @click="close()">
-              {{ availableVersion ? '稍后再说' : '收起' }}
-            </button>
-            <button
-              v-if="availableVersion"
+            <WaoButton
+              variant="primary"
               class="update-button"
+              :class="{ experience: experienceItem }"
               type="button"
               :disabled="busy"
-              @click="update"
+              :loading="busy"
+              @click="experienceItem ? experience(experienceItem) : update()"
             >
-              <i class="ri-refresh-line" aria-hidden="true"></i>{{ busy ? busyLabel : saveError ? '重试保存并刷新' : '保存并刷新' }}
-            </button>
-            <RouterLink v-else class="explore-link" to="/navigation" @click="close(false)"
-              >查看全部功能<i class="ri-arrow-right-up-line" aria-hidden="true"></i
-            ></RouterLink>
+              {{ primaryLabel
+              }}<i
+                :class="availableVersion ? 'ri-refresh-line' : 'ri-arrow-right-up-line'"
+                aria-hidden="true"
+              ></i>
+            </WaoButton>
           </div>
         </footer>
       </section>
     </Teleport>
-    <ReleaseGuideDialog v-if="guideItem && edition" :item="guideItem" :edition-id="edition.id" @close="closeDemo" />
+    <ReleaseGuideDialog
+      v-if="guideItem && edition"
+      :item="guideItem"
+      :edition-id="edition.id"
+      @close="closeDemo"
+    />
   </div>
 </template>
 
@@ -405,6 +597,7 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 .panel-heading {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -434,6 +627,10 @@ h2 {
   color: var(--wao-text-weak);
   cursor: pointer;
 }
+.heading-actions { display: flex; flex: none; gap: 2px; }
+.history-menu { position: absolute; top: 52px; right: 20px; z-index: 1; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-control); padding: 5px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); }
+.history-menu a { display: flex; align-items: center; gap: 16px; padding: 8px 10px; color: var(--wao-text-2); text-decoration: none; font-size: 12px; border-radius: var(--wao-radius-control); }
+.history-menu a:hover { background: var(--wao-primary-soft); }
 .panel-content {
   padding: 0 20px;
   overflow-y: auto;
@@ -469,31 +666,7 @@ h2 {
   gap: 8px;
   flex-wrap: wrap;
 }
-.panel-actions button,
-.panel-actions a,
-.explore-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font: inherit;
-  font-size: 12px;
-  text-decoration: none;
-  cursor: pointer;
-}
-.later {
-  border: 0;
-  background: transparent;
-  color: var(--wao-text-weak);
-}
-.update-button,
-.explore-link {
-  border: 0;
-  background: var(--wao-primary);
-  color: #fff;
-}
+.update-button { overflow-wrap: anywhere; max-width: 100%; text-align: left; }
 .update-button:disabled {
   opacity: 0.65;
   cursor: wait;
@@ -535,6 +708,7 @@ a:focus-visible {
 }
 @media (max-height: 420px) {
   .panel-heading {
+  position: relative;
     padding: 10px 16px 6px;
   }
   h2 {
@@ -569,7 +743,7 @@ a:focus-visible {
 .update-companion { filter:drop-shadow(0 4px 6px #5362d51a); }
 .release-title { margin:16px 0 8px; }
 .has-new-version .update-button { box-shadow:0 4px 12px color-mix(in srgb,var(--wao-primary) 20%,transparent); }
-.icon-button:disabled,.later:disabled { opacity:.5; cursor:wait; }
+.icon-button:disabled { opacity:.5; cursor:wait; }
 .arrival-orbit { position:absolute; top:50px; right:0; width:100%; height:240px; overflow:hidden; pointer-events:none; z-index:1; }
 .arrival-orbit > span { position:absolute; top:35px; right:35px; width:7px; height:7px; border-radius:2px; background:var(--wao-primary); opacity:0; --dx:-150px; --dy:50px; --delay:0s; }
 .arrival-orbit > span:nth-child(2) { --dx:-270px; --dy:100px; --delay:.15s; background:#edaf44; border-radius:50%; }
