@@ -34,4 +34,12 @@ class DevelopmentPlanTest {
         assertThat(cmd).contains("read-only","--ignore-user-config","--output-schema").doesNotContain("--dangerously-bypass-approvals-and-sandbox");
         assertThat(DevelopmentWorker.safeMessage("password=abc token=def ghp_abcdef")).doesNotContain("abc","def","ghp_");
     }
+    @Test void writableAgentAddsOnlyItsDedicatedOutputButReadOnlyAuditDoesNot() {
+        var work=java.nio.file.Path.of("work");
+        var output=java.nio.file.Path.of("state/run/output-agent/result.json").toAbsolutePath();
+        var write=DevelopmentCodexProcess.command("codex",work,java.nio.file.Path.of("schema"),output,false);
+        assertThat(java.util.Collections.frequency(write,"--add-dir")).isEqualTo(1);
+        assertThat(write.get(write.indexOf("--add-dir")+1)).isEqualTo(output.getParent().toString());
+        assertThat(DevelopmentCodexProcess.command("codex",work,java.nio.file.Path.of("schema"),output,true)).doesNotContain("--add-dir");
+    }
 }

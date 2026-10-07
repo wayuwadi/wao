@@ -35,6 +35,20 @@ Flyway V190 新增 development_policy/run/decision/worker，不修改历史迁�
 
 Windows 受监督进程须使用实际存在的 Git / GitHub CLI 安装目录，不依赖桌面应用虚拟化后的表面路径；用原生 Java 子进程验证工具可执行性。已有 GitHub 登录可通过 `GH_CONFIG_DIR` 指向同一成员的既有安全配置目录，此变量只保存目录，不包含或复制 Token；专用开发进程保留该目录指针。部署不得为解决路径差异创建新凭据。
 
+### 专用依赖与验收环境
+
+`DevelopmentEnvironment` 在父/子 worktree 创建或恢复后准备前端依赖。依赖源默认是固定 primary `repository`；可选 `wao.development.dependencies-repository` 只接受 `directory` / state 内真实普通 Git clone（实际路径无越界链接、`.git` 位于 clone 内、origin 为允许的 WAO HTTPS/SSH URL）。此属性不改变业务 `repository` 或交付目录。运维可在该固定独立 clone 同步 main 后按其现有锁文件 `npm ci`，避免改动用户正在使用的 dirty 主仓库；执行器本身不安装、升级依赖或复制凭据。
+
+Windows 仅当固定依赖源与目标工作区的 `wao-web/package.json`、`package-lock.json` **逐字节一致**，源 checkout 内部的现有 `node_modules` 可用且目标路径被 Git 忽略时，通过参数数组调用 `cmd /c mklink /J` 创建工作区内 junction。现有 `wao-game` 也按自身 manifest、源 checkout 内部依赖和 ignored 规则准备，避免前端类型检查缺少游戏源码依赖。源目录和目标目录校验实际路径；不安装或更新共享依赖，不覆盖已有错误目录。正确链接重试复用；缺失、不匹配、非 Windows 或越界均明确阻塞，目录与半成品保留。已有合并记录的恢复只核对 PR/公网，不要求无关依赖准备。
+
+可选 `wao.development.validation-context` 指向专用 `directory` 内已有 UTF-8 普通文件（相对路径以 `directory` 为基准），实际读取最多 20,000 字节；外部路径、穿越、目录、越界 junction、非法 UTF-8 或超限拒绝使用。内容作为部署已配置验收通道的运维资料追加到非只读调用，不是授权来源，不扩大成员、冻结源码 paths、凭据、用户数据或网络监听范围。已有账号的正常登录、只读回环助手和既有浏览器工具须由运维准备；上下文不得写入 Git，也不得借此创建账号、Token 或绕过认证。
+
+非只读 Codex 调用仅额外允许本次 `output-<agent>` / `verification` / `delivery` 产物目录写入（交付阶段原有受限 Git/发布目录规则不变）。独立 Agent 的冻结 paths 限制针对源码，允许读取外层准备的 ignored 依赖，并在自己的产物目录保存不入 Git 的检查脚本、截图与缓存；独立检查与汇聚后的统一真实浏览器验收分开。源码路径检查仍由外层执行。
+
+共享 `node_modules` 不能用来存放 Vite 写缓存。已有验收服务器须为每个工作区/端口配置独立 `cacheDir`；新临时检查可在自己的产物目录生成脚本，调用已有 Vite `createServer({ root, configFile, configLoader: 'runner', cacheDir })`：`root`/`configFile` 指向目标 `wao-web`/原配置，`cacheDir` 位于本次产物目录。`runner` 避免默认配置打包写入共享 `node_modules/.vite-temp`。不改仓库 Vite 源配置、不授予 primary repository 依赖目录写权限。
+
+统一 verification 在汇聚提交之后检查工作区 clean 且没有未完成 rebase/merge/cherry-pick，再 `fetch origin main`、`rebase origin/main`，确认 clean、重新校验依赖后才冻结 `testedHead`。冲突不自动 abort/reset，未提交改动或未完成操作保留现场并阻塞；不发布未在新主干基线上验收的提交。验证与交付后仍核对 HEAD 和源码未改变。失败重试不删除工作区或产物。
+
 恢复保存会话关联和 worktree，不使用 resume --last 或盲目重放。已有合并证据只核对 PR/公网版本；子工作区按 patch-id 查询未汇聚提交，避免重复 cherry-pick。退回或失效后的新审视保留旧工作区，子分支带决定版本，避免与旧 Agent 分支撞名。主干普通及 ADR/Flyway 编号冲突仍由交付检查，冲突后需修复并重新验收。PR 分支及 HEAD 必须匹配外层冻结的已测提交；公网版本须覆盖合并 SHA，静态资源按同版本制品清单校验 SHA-256，支持不可变 release 路径。
 
 ## 飞书决定
@@ -45,4 +59,4 @@ Windows 受监督进程须使用实际存在的 Git / GitHub CLI 安装目录，
 
 ## 验收
 
-核心测试覆盖成员隔离、关闭默认值、功能去重、策略 CAS、租约限制/失效回写、决定事务回滚/重复与消息身份、模糊回复、路径/依赖与沙箱参数。前端覆盖状态共享、草稿恢复、精准深链、失败重试、窄屏和真实 API 链路。发布核对实际 SHA 覆盖、资源和就绪；实体设备最终感受由用户验收。没完成真实执行/飞书回调/公网发布时必须分别报告缺项。
+核心测试覆盖成员隔离、关闭默认值、功能去重、策略 CAS、租约限制/失效回写、决定事务回滚/重复与消息身份、模糊回复、路径/依赖与沙箱参数；环境测试覆盖 manifest 不匹配、ignored/source 检查、正确 junction 幂等、错误目录保留、上下文实际字节限制/UTF-8/越界、单次产物写权限以及同步主干/dirty/rebase 冲突保留。前端覆盖状态共享、草稿恢复、精准深链、失败重试、窄屏和真实 API 链路。发布核对实际 SHA 覆盖、资源和就绪；实体设备最终感受由用户验收。没完成真实执行/飞书回调/公网发布时必须分别报告缺项。
