@@ -125,6 +125,14 @@ describe('能力中心机器人真实引用与草稿', () => {
     )
     expect(wrapper!.text()).toContain('已保存')
   })
+  it('将显示名称误填为稳定标识时保留输入并拒绝保存', async () => {
+    await render()
+    await wrapper!.get('input[placeholder="飞书 @ 元数据中的机器人标识"]').setValue('任务待办')
+    await wrapper!.get('form.editor').trigger('submit')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('稳定标识须填写飞书真实 ID')
+    expect(updateWebhookEndpoint).not.toHaveBeenCalled()
+  })
   it('停用前显示实际影响，取消不写服务端', async () => {
     await render()
     window.confirm = vi.fn(() => false)

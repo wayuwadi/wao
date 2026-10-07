@@ -55,6 +55,16 @@ class FeishuWebhookConfigServiceTest {
     }
 
     @Test
+    void displayNameCannotBeUsedAsStableMentionIdentity() {
+        var bot = entity("fw1", true, false, URL);
+        when(mapper.selectById("fw1")).thenReturn(bot);
+        assertThatThrownBy(() -> service.update("fw1", new SaveFeishuWebhookEndpointRequest(
+                "任务入口", "", "", true, false, "TASK", "任务待办", "任务待办", null, null, 0L, true)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("真实 ID");
+        verify(mapper, never()).update(any(), any());
+    }
+
+    @Test
     void referencedBotsRequireImpactConfirmationForDisableAndDelete() {
         var bot = entity("fw1", true, true, URL);
         when(mapper.selectById("fw1")).thenReturn(bot);

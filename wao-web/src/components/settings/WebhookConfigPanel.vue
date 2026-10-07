@@ -278,6 +278,13 @@ async function save() {
     saveError.value = '服务器配置已有更新，请先处理草稿冲突'
     return false
   }
+  if (
+    form.mentionId &&
+    (!/^[A-Za-z0-9_-]{1,128}$/.test(form.mentionId) || form.mentionId === form.mentionName)
+  ) {
+    saveError.value = '稳定标识须填写飞书真实 ID；不知道时请留空，按机器人 @ 名称匹配'
+    return false
+  }
   saving.value = true
   const id = selectedId.value,
     creating = mode.value === 'new'

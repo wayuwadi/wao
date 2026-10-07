@@ -416,6 +416,8 @@ public class FeishuWebhookConfigService {
         if (!Set.of("NONE", "TASK", "NOTE").contains(kind)) throw new BadRequestException("请选择有效的收集角色");
         String mentionId = request.mentionId() == null ? trim(entity.getMentionId()) : trim(request.mentionId());
         String mentionName = request.mentionName() == null ? trim(entity.getMentionName()) : trim(request.mentionName());
+        if (mentionName.length() > 64 || !mentionId.isEmpty() && (!mentionId.matches("[A-Za-z0-9_-]{1,128}") || mentionId.equals(mentionName)))
+            throw new BadRequestException("稳定标识须填写飞书真实 ID；不知道时请留空，按机器人 @ 名称匹配");
         if (!"NONE".equals(kind)) {
             if (mentionName.isEmpty() && mentionId.isEmpty()) mentionName = "NOTE".equals(kind) ? "小记创作" : "任务待办";
             String app = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
