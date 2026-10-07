@@ -33,6 +33,8 @@ Flyway V190 新增 development_policy/run/decision/worker，不修改历史迁�
 
 验收专用 `audit-only=true` 只审视未有方案的记录，保存后排队等待正式执行器；不得反复领取已有方案。`notifications-enabled=false` 可在本地验收期间关闭实际发信，正式执行默认开启。
 
+Windows 受监督进程须使用实际存在的 Git / GitHub CLI 安装目录，不依赖桌面应用虚拟化后的表面路径；用原生 Java 子进程验证工具可执行性。已有 GitHub 登录可通过 `GH_CONFIG_DIR` 指向同一成员的既有安全配置目录，此变量只保存目录，不包含或复制 Token；专用开发进程保留该目录指针。部署不得为解决路径差异创建新凭据。
+
 恢复保存会话关联和 worktree，不使用 resume --last 或盲目重放。已有合并证据只核对 PR/公网版本；子工作区按 patch-id 查询未汇聚提交，避免重复 cherry-pick。退回或失效后的新审视保留旧工作区，子分支带决定版本，避免与旧 Agent 分支撞名。主干普通及 ADR/Flyway 编号冲突仍由交付检查，冲突后需修复并重新验收。PR 分支及 HEAD 必须匹配外层冻结的已测提交；公网版本须覆盖合并 SHA，静态资源按同版本制品清单校验 SHA-256，支持不可变 release 路径。
 
 ## 飞书决定
