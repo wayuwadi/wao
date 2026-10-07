@@ -254,6 +254,7 @@ const groupNames: Record<string, string> = {
   knowledge: '知识库与目录',
   documents: '文档',
   pages: 'HTML 发布',
+  pets: 'Pet 仓库',
 }
 const selectedCapabilities = computed(() =>
   capabilities.value.filter((c) => selected.value !== 'mcp' || !!c.mcp),
@@ -719,7 +720,7 @@ onBeforeUnmount(() => {
             <p class="cap-muted">
               {{
                 selected === 'cli'
-                  ? '在终端查询、创建和更新内容，或发布单文件 HTML 页面。'
+                  ? '在终端查询、创建和更新内容，发布 HTML 页面，或上传与分享自己的 Pet。'
                   : '让 AI 客户端按授权使用你的项目、任务与知识库。'
               }}
             </p>
@@ -802,7 +803,7 @@ onBeforeUnmount(() => {
                 <code>wao auth login / status / logout<br />wao tools list / call</code></template
               >
               <p class="cap-info">
-                创建、更新、移动和发布分别授权。Skill/Pet 上传与管理目前不在 CLI/MCP 工具范围中。
+                创建、更新、移动和发布分别授权。Pet 的读取、私人上传和公开分享分别授权，仅支持 CLI；Skill 上传与管理尚未开放。
               </p>
               <div class="cap-actions">
                 <button

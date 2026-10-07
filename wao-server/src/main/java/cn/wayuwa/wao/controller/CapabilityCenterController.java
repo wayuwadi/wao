@@ -68,6 +68,16 @@ public class CapabilityCenterController {
         capabilities.add(json.createObjectNode().put("name", "publish_html").put("title", "发布 HTML 页面")
                 .put("description", "新建公开 UTF-8 单文件 HTML，最大 10 MB；不开放已有页面的列表、修改或删除。")
                 .put("group", "pages").put("cli", "wao pages publish").putNull("mcp").put("readOnly", false));
+        capabilities.add(json.createObjectNode().put("name", "list_my_pets").put("title", "读取我的宠物")
+                .put("description", "仅列出当前令牌成员的私人和公开宠物，不包含其他作者的私人素材。")
+                .put("group", "pets").put("cli", "wao pets list").putNull("mcp").put("readOnly", true));
+        capabilities.add(json.createObjectNode().put("name", "upload_pet").put("title", "上传私人宠物")
+                .put("description", "上传不超过 10 MiB 的宠物 ZIP，使用已建立的作者身份；校验后私人保存，不自动公开。")
+                .put("group", "pets").put("cli", "wao pets upload").putNull("mcp").put("readOnly", false));
+        capabilities.add(json.createObjectNode().put("name", "share_pet").put("title", "公开或下架我的宠物")
+                .put("description", "仅管理本人宠物的公开状态；公开前确认素材分享权，公开内容可由任何人下载。")
+                .put("group", "pets").put("cli", "wao pets share ID / wao pets unshare ID")
+                .putNull("mcp").put("readOnly", false));
         return ApiResponse.ok(json.createObjectNode().set("capabilities", capabilities));
     }
 

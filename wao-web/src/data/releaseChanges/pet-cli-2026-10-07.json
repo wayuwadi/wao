@@ -1,0 +1,17 @@
+{
+  "sourceSubject": "feat(capabilities): 支持 CLI 上传与分享 Pet 宠物",
+  "id": "pet-cli-2026-10-07",
+  "title": "把自己的宠物分享给朋友",
+  "publishedOn": "2026-10-07",
+  "prominence": "major",
+  "intro": "WAO CLI 可以上传自制宠物包，私人保存后再生成公开分享链接。",
+  "highlights": [{
+    "featureId": "capabilities",
+    "eyebrow": "Pet 仓库",
+    "title": "上传、分享各自授权",
+    "summary": "让朋友通过固定链接下载并安装你的自制宠物。",
+    "points": ["Pet 读取、上传、公开分享分开授权，原有连接不会增加权限。", "上传先私人保存，公开后检查下载包；失败保留回执方便核对。"],
+    "steps": ["更新 WAO CLI，在能力中心“我的连接”新建 CLI 授权并选择需要的 Pet 操作，运行 wao auth login 保存令牌。", "运行 wao pets upload --file pet.zip --source 素材来源，再运行 wao pets share ID --yes，复制返回的公开链接。"],
+    "action": {"target": "workspace-connections", "label": "配置 Pet 授权"}
+  }]
+}

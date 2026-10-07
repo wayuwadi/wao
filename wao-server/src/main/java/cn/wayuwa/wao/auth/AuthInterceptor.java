@@ -36,6 +36,11 @@ public class AuthInterceptor implements HandlerInterceptor {
         // CLI preflight validates the dedicated publishing scope and optional project visibility.
         if ("GET".equals(request.getMethod()) && path.equals("/api/hosted-pages/publish-access")
                 && request.getHeader("Authorization") != null) return true;
+        // Only Pet CLI operations may delegate authentication to the scoped bearer controller.
+        if (request.getHeader("Authorization") != null
+                && (("GET".equals(request.getMethod()) && (path.equals("/api/pets/cli-access") || path.equals("/api/pets/mine")))
+                    || ("POST".equals(request.getMethod()) && path.equals("/api/pets"))
+                    || ("PUT".equals(request.getMethod()) && path.matches("/api/pets/[^/]+/visibility")))) return true;
         if ("GET".equals(request.getMethod()) && path.equals("/api/edge/ready")) return true;
         // 飞书事件订阅与卡片交互回调没有 WAO 会话，真实性由 Verification Token / Encrypt Key 保证
         if (path.equals("/api/hello") || path.startsWith("/api/auth/") || path.startsWith("/api/share/")

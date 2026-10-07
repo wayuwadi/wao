@@ -68,6 +68,28 @@ describe('页内逐项连接授权', () => {
       token: { id: 'new' },
     })
   })
+  it.each([false, true])('新连接不自动选择 Pet 权限，延迟目录=%s', async (lateCatalog) => {
+    const pet: WorkspaceCapability = {
+      name: 'list_my_pets', title: '读取我的宠物', description: '',
+      group: 'pets', readOnly: true, cli: 'wao pets list', mcp: null,
+    }
+    const all = [...capabilities, pet]
+    const wrapper = mount(WorkspaceConnectionPanel, {
+      props: { capabilities: lateCatalog ? [] : all },
+    })
+    if (lateCatalog) await wrapper.setProps({ capabilities: all })
+    await flushPromises()
+    await wrapper.findAll('.cap-group-picker button')
+      .find((button) => button.text().startsWith('Pet 仓库'))!.trigger('click')
+    const checkbox = wrapper.get('input[aria-label="允许读取我的宠物"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.find('.cap-resource-scope').exists()).toBe(false)
+    await checkbox.setValue(true)
+    expect(JSON.parse(localStorage.getItem('wao:capability-connection-draft:v1:wd')!).permissions)
+      .toContain('list_my_pets')
+    expect(api.createGranularWorkspaceToken).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('没有弹层或自动签发，按项目和知识库分别保留选择', async () => {
     const wrapper = await render()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)

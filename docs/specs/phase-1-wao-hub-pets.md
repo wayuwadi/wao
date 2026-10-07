@@ -1,5 +1,7 @@
 # WAO-HUB 与宠物仓库
 
+2026-10-07：新增 [Pet CLI 上传与分享](pet-cli-upload-and-sharing.md)。CLI 通过单独的新逐项授权复用现有包服务；不自动扩展旧令牌权限。
+
 任务来源：https://wao.wayuwa.cn/api/share/tasks/t1788926199278.md?openOnly=true
 
 ## 用户结果

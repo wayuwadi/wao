@@ -1,6 +1,6 @@
 # WAO CLI
 
-`wao` 使用现有工作区 MCP，命令权限与当前令牌的 `tools/list` 完全一致。需要 Node.js 22+。
+`wao` 使用现有工作区 MCP；托管 HTML 与 Pet ZIP 使用同一工作区令牌的专用 HTTP 接口。MCP 命令权限取自当前令牌的 `tools/list`，Pet 每次先检查对应操作快照。需要 Node.js 22+。
 
 ## 安装与连接
 
@@ -15,6 +15,10 @@
 ```bash
 wao tools list
 wao pages publish --file dist/index.html --title "WAO 设计稿" --slug wao-design --project-id PROJECT_ID
+wao pets list
+wao pets upload --file curly-trio.zip --source "本人创作" --license ALL-RIGHTS-RESERVED
+wao pets share PET_ID --yes
+wao pets unshare PET_ID
 wao projects list
 wao projects get PROJECT_ID
 wao tasks open --limit 10
@@ -30,6 +34,16 @@ wao tools call list_open_tasks --input '{"limit":5}'
 列表默认以表格显示；分页对象显示 `items`、总数量、偏移及是否还有下一页，`--output json` 保留原始分页对象，适合管道和脚本。错误写入标准错误并返回非零退出码。CLI 不自动重试写入；如遇超时，应先查询 WAO 当前状态。`wao --version` 查看 CLI 版本，`wao doctor` 或 `wao auth status` 查询连接、当前可用工具与授权入口；只有快照授权了 `get_workspace_info` 才会读取成员身份、权限和服务版本。旧服未提供或当前令牌未授权身份工具时明确提示身份不可查询，连接检测仍可成功，不探测未授权工具。
 
 `wao pages publish` 会把单文件 HTML 公开发布到 WAO，并在完成后匿名访问公网链接，逐字节核对托管内容。能力中心 CLI/MCP 新授权必须选入“发布 HTML 页面”；项目归属还要在令牌授权范围内且对成员可见。命令会在发布前展示文件、标题、后缀、项目和公网地址并要求输入 `yes`；脚本可传 `--yes` 明确授权。CLI 不自动重试创建请求，遇到超时或核验失败时先检查已返回的链接，避免重复创建。
+
+## Pet 命令（0.3.0）
+
+`pets list` 查看本成员的 Pet。Pet 的工作区地址路径必须是 `/api/mcp/workspace`（末尾斜线兼容），不支持部署路径前缀；公开链接和匿名 API 位于同源根路径。`pets upload --file PET.zip --source 素材来源` 接受大于 0 且不超过 10 MiB 的 ZIP；服务端继续验证清单、精灵图和包结构。素材来源必填，去除首尾空格后为 1–500 字。授权默认 `ALL-RIGHTS-RESERVED`，也可选 `MIT`、`Apache-2.0`、`CC-BY-4.0`、`CC0-1.0`。上传创建私有 Pet，同一成员的相同规范化内容、来源和授权由服务端复用既有包；复用已经公开的包时保持其当前公开状态，上传命令不会改变可见性。
+
+`pets share ID` 是单独的公开操作，会展示 Pet ID、公网链接并要求确认拥有素材分享权利，输入 `yes` 后提交 `rightsConfirmed=true`。脚本须显式使用 `--yes`。`pets unshare ID` 取消公开，无需再次确认。浏览器中的发布者身份需已经设置；CLI 不代替用户创建发布者身份。三个授权操作分别为“查看我的 Pet”（`list_my_pets`）、“上传 Pet”（`upload_pet`）、“分享/取消分享 Pet”（`share_pet`），必须在能力中心 CLI/MCP 新授权中逐项选择；旧令牌不会自动扩权。CLI 在上传任何 ZIP 字节或修改可见性前检查授权，并拒绝跟随携带令牌的 HTTP 重定向。Pet 二进制上传不经 MCP tools/call。
+
+上传先在既有操作回执目录持久保存输入 ZIP 的 SHA-256、来源、授权及端点；默认回执名由这些字段稳定生成，相同输入再次执行时先要求用 `pets list` 核对旧结果，不会重新 POST。`--receipt-file NEW_FILE` 可指定一个尚未存在的持久回执文件。分享和取消分享也保存各自回执。请求结果不明时保留 `unknown` 状态，CLI 不自动重试。服务端可能重新打包 ZIP，回执中的 `archiveSha256` 是输入包摘要，返回卡片 `sha256` 是服务端规范化包摘要。
+
+分享保存后，CLI 无令牌请求公开元数据和下载包，按卡片校验元数据、包大小和 SHA-256，下载严格限制为 10 MiB。通过后返回 `/pets/ID` 公网链接和 `verification.ok=true`。匿名校验失败会非零退出，并在回执中分别保留 `persistedListing` 与 `verification`；公开状态可能已经保存，应先检查链接或执行 `pets unshare ID`，不要凭失败退出推断分享未生效。`--output json` 保留卡片、公开链接、校验结果与回执路径，便于脚本核对。回执没有令牌，但包含业务元数据，应按用户数据保护。
 
 `update_document` 替换正文时，先用 `wao documents get` 读取当前 `rev`，再在输入 JSON 中提供 `expected_rev` 和完整 `blocks`，以便服务端阻止覆盖他人的编辑。
 

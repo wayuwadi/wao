@@ -15,7 +15,7 @@ class CapabilityCenterControllerTest {
         var tools = new WorkspaceMcpTools(projects, tasks, knowledge, json);
         var members = mock(CurrentMember.class);
         var catalog = new CapabilityCenterController(tools, members, json).catalog().data().path("capabilities");
-        assertThat(catalog).hasSize(tools.list(true, true).path("tools").size() + 1);
+        assertThat(catalog).hasSize(tools.list(true, true).path("tools").size() + 4);
         java.util.List<String> names = new java.util.ArrayList<>();
         catalog.forEach(item -> names.add(item.path("name").asText()));
         assertThat(names).doesNotHaveDuplicates().containsExactlyInAnyOrderElementsOf(WorkspaceCapabilityPolicy.ALL);

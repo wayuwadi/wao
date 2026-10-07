@@ -1,3 +1,5 @@
+import { createPetClient } from './pets-client.js'
+
 const DEFAULT_URL = 'https://wao.wayuwa.cn/api/mcp/workspace'
 const MCP_PATH = '/api/mcp/workspace'
 const MAX_HTML_BYTES = 10 * 1024 * 1024
@@ -32,6 +34,7 @@ export function endpoint(value = process.env.WAO_URL || DEFAULT_URL) {
 
 export function createClient({ url = endpoint(), token, fetchImpl = fetch } = {}) {
   if (!token) throw new Error('未找到工作区令牌。运行 wao auth login，或设置 WAO_TOKEN')
+  url = endpoint(url)
   let nextId = 1
   async function request(method, params) {
     let response
@@ -44,6 +47,7 @@ export function createClient({ url = endpoint(), token, fetchImpl = fetch } = {}
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ jsonrpc: '2.0', id: nextId++, method, ...(params === undefined ? {} : { params }) }),
+        redirect: 'error',
         signal: AbortSignal.timeout(20_000),
       })
     } catch (error) {
@@ -58,6 +62,7 @@ export function createClient({ url = endpoint(), token, fetchImpl = fetch } = {}
     return body.result
   }
   return {
+    ...createPetClient({ url, token, fetchImpl }),
     async listTools() {
       const result = await request('tools/list')
       if (!Array.isArray(result.tools)) throw new Error('WAO 工具目录格式无效')
