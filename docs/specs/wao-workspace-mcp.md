@@ -71,3 +71,5 @@ CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expecte
 ## 2026-10-07 机器人管理边界
 
 能力中心机器人配置与诊断仅接受管理员浏览器会话；Webhook、共享应用密钥、接收路由和事件诊断不增加 Workspace MCP 工具，不扩大历史设备令牌授权。群消息创建待办／小记使用发送者飞书身份绑定，不接受 MCP 伪造平台消息。契约见 [飞书机器人规格](feishu-bot-center.md)。
+
+2026-10-07：新增数字成员图库仅供当前浏览器成员会话使用；没有新增工作区工具定义或分发，不将真实成员照片、性别、候选确认、头像生成消费隐含到旧 workspace Token。后续独立私有形象 scope 和重新授权之后再评估 MCP/CLI 覆盖，参见 [数字成员图库](digital-member-library.md)。

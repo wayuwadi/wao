@@ -90,6 +90,9 @@ public class AiAssistantService {
     @Autowired(required = false)
     private LocalNoteAiService localNotes;
 
+    @Autowired(required = false)
+    private DigitalMemberService digitalMembers;
+
     @Autowired
     private LocalCodexModelService localModels;
 
@@ -325,17 +328,24 @@ public class AiAssistantService {
     /** 使用浏览器生成的稳定请求标识，避免响应丢失后重试创建重复图片任务。 */
     public String enqueueArticleImageJob(String memberId, String articleText, String visualPrompt,
             String model, String requestId) {
-        return enqueueIndependentArticleImageJob(memberId, articleText, visualPrompt, model, requestId);
+        return enqueueArticleImageJob(memberId, articleText, visualPrompt, model, requestId, null);
+    }
+
+    /** 冻结本次所选形象；旧调用者继续使用本人默认，不扩展旧令牌权限。 */
+    @Transactional
+    public String enqueueArticleImageJob(String memberId, String articleText, String visualPrompt,
+            String model, String requestId, cn.wayuwa.wao.dto.DigitalMemberDtos.IdentitySelection identity) {
+        return enqueueIndependentArticleImageJob(memberId, articleText, visualPrompt, model, requestId, identity);
     }
 
     /** 服务端持久小记工作流沿用独立图片任务与稳定请求标识。 */
     String enqueueNoteWorkflowArticleImageJob(String memberId, String articleText, String visualPrompt,
             String model, String requestId) {
-        return enqueueIndependentArticleImageJob(memberId, articleText, visualPrompt, model, requestId);
+        return enqueueIndependentArticleImageJob(memberId, articleText, visualPrompt, model, requestId, null);
     }
 
     private String enqueueIndependentArticleImageJob(String memberId, String articleText, String visualPrompt,
-            String model, String requestId) {
+            String model, String requestId, cn.wayuwa.wao.dto.DigitalMemberDtos.IdentitySelection identity) {
         if (!StringUtils.hasText(articleText) || articleText.length() > 60_000) {
             throw new BadRequestException("请提供 1–60000 字的正文后再生成总览图");
         }
@@ -343,6 +353,7 @@ public class AiAssistantService {
             throw new BadRequestException("配图提示词不能为空且不超过 4000 字");
         }
         String requestedModel = validateNoteModel(model);
+        String inputHash = digitalMembers == null ? null : digitalMembers.inputHash(articleText, visualPrompt, requestedModel, identity);
         String runId = null;
         if (StringUtils.hasText(requestId)) {
             String stableRequestId = requestId.trim().toLowerCase();
@@ -357,11 +368,13 @@ public class AiAssistantService {
                         || !ARTICLE_IMAGE_PURPOSE.equals(existing.getUsagePurpose())) {
                     throw new BadRequestException("图片任务请求标识已被使用，请重新尝试");
                 }
+                if (digitalMembers != null) digitalMembers.verifyRetry(memberId, existing.getId(), inputHash);
                 return existing.getId();
             }
         }
         if (localNotes == null) throw new BadRequestException("本机小记 AI 尚未启用，请配置本机 Codex");
         localNotes.requireAvailable();
+        var snapshot = digitalMembers == null ? null : digitalMembers.freeze(memberId, identity);
         // 独立请求可同时生成；同一 requestId 仍复用上方已有任务。
         expireReadOnlyJobs();
         AiAssistantRunEntity run = new AiAssistantRunEntity();
@@ -387,7 +400,9 @@ public class AiAssistantService {
                 %s
                 </article_text>
                 """.formatted(visualPrompt, articleText));
+        if (snapshot != null) run.setPromptText(run.getPromptText() + "\n" + snapshot.prompt());
         mapper.insertReadOnlyQueued(run);
+        if (snapshot != null) digitalMembers.record(memberId, run.getId(), ARTICLE_IMAGE_PURPOSE, inputHash, snapshot);
         return run.getId();
     }
 

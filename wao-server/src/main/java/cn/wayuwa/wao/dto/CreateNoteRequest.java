@@ -10,7 +10,9 @@ import java.util.List;
  */
 public record CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content,
         List<String> tags, Boolean autoTitle, Boolean autoImage, Boolean autoPolish, List<String> sourceInputIds,
-        Boolean createOnly, Boolean systemGenerated) {
+        Boolean createOnly, Boolean systemGenerated, DigitalMemberDtos.IdentitySelection identitySelection) {
+    /** 旧客户端与服务调用继续使用默认本人。 */
+    public CreateNoteRequest(String title,List<DocBlockDto> blocks,RichDocContentDto content,List<String> tags,Boolean autoTitle,Boolean autoImage,Boolean autoPolish,List<String> sourceInputIds,Boolean createOnly,Boolean systemGenerated){this(title,blocks,content,tags,autoTitle,autoImage,autoPolish,sourceInputIds,createOnly,systemGenerated,null);}
     /** 兼容普通创建和幂等创建；省略来源时仍是个人记录。 */
     public CreateNoteRequest(String title,List<DocBlockDto> blocks,RichDocContentDto content,List<String> tags,Boolean autoTitle,Boolean autoImage,Boolean autoPolish,List<String> sourceInputIds,Boolean createOnly){this(title,blocks,content,tags,autoTitle,autoImage,autoPolish,sourceInputIds,createOnly,null);}
     /** 保留旧客户端与来源留存调用；createOnly 只在明确首次创建时启用。 */

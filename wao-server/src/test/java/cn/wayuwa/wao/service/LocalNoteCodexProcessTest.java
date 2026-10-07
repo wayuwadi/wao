@@ -17,8 +17,9 @@ class LocalNoteCodexProcessTest {
         Path staged = directory.resolve("reference-0.png");
         assertThat(Files.readAllBytes(staged)).isEqualTo(bytes);
         assertThat(command).containsSubsequence("--image", staged.toString()).endsWith("-");
-        assertThatThrownBy(() -> LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,
-                true, java.util.List.of(reference))).hasMessageContaining("用途无效");
+        assertThat(LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,
+                true, java.util.List.of(reference))).containsSubsequence("--image", staged.toString())
+                .containsSubsequence("--enable", "image_generation");
         assertThatThrownBy(() -> LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,
                 false, java.util.Collections.nCopies(5, reference))).hasMessageContaining("数量");
         assertThatThrownBy(() -> LocalNoteCodexProcess.commandWithReferences("codex", "gpt-6-astra", directory,

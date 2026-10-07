@@ -33,6 +33,7 @@ export type ModuleId =
   | 'knowledge'
   | 'files'
   | 'reference-images'
+  | 'digital-members'
   | 'automation'
   | 'crawler-capabilities'
   | 'account-resources'

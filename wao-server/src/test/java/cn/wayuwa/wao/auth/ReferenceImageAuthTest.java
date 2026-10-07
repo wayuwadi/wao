@@ -19,6 +19,9 @@ class ReferenceImageAuthTest {
         when(sessions.currentAccountId(privateRequest)).thenReturn(null);
         assertThatThrownBy(() -> interceptor.preHandle(privateRequest, new MockHttpServletResponse(), null))
                 .isInstanceOf(UnauthorizedException.class);
+        var digitalRequest = new MockHttpServletRequest("GET", "/api/digital-assets/abc/raw");
+        assertThatThrownBy(() -> interceptor.preHandle(digitalRequest, new MockHttpServletResponse(), null))
+                .isInstanceOf(UnauthorizedException.class);
 
         var publicRequest = new MockHttpServletRequest("GET", "/api/images/abc/raw");
         assertThat(interceptor.preHandle(publicRequest, new MockHttpServletResponse(), null)).isTrue();

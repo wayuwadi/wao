@@ -56,6 +56,7 @@ const CATALOG_DETAILS: NavigationCatalogSection['items'] = [
     description: '收集截图，选图并附一句需求交给 AI 参考。',
     keywords: ['素材库', '视觉库', '灵感', '图片', '截图', '参考图'],
   },
+  { id: 'digital-members', description: '管理本人、家人与宠物的私有参考照片、形象版本和小记默认。', keywords: ['人物', '数字形象', '照片', '家人', '宠物'] },
   {
     id: 'capabilities',
     description: '发现 CLI、MCP、Skill、Pet 与应用接入，管理逐项授权、设备连接和资源发布。',
@@ -133,6 +134,7 @@ const DOMAINS: Array<{
     ids: [
       'knowledge',
       'reference-images',
+      'digital-members',
       'files',
       'drawings',
       'decisions',

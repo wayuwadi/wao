@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DigitalProfileFacts from '@/components/settings/DigitalProfileFacts.vue'
 import NoteDiscoveryPreference from '@/components/notes/NoteDiscoveryPreference.vue'
 import PageLayoutPreference from '@/components/settings/PageLayoutPreference.vue'
 import HomeDateReminderSettings from '@/components/settings/HomeDateReminderSettings.vue'
@@ -496,6 +497,7 @@ async function bindFeishu() {
               <input v-model.trim="profileForm.initial" maxlength="4" required placeholder="头像文字" />
               <button class="btn-primary" :disabled="accountBusy">保存资料</button>
             </form>
+            <DigitalProfileFacts :key="session.userId" />
             <div class="kv-list bordered">
               <div class="kv"><span class="kv-k w76">飞书绑定</span><span class="kv-v" :class="{ ok: hasIdentity('feishu') }"><i :class="hasIdentity('feishu') ? 'ri-checkbox-circle-fill' : 'ri-close-circle-line'"></i>{{ hasIdentity('feishu') ? '已绑定 · 扫码登录可用' : '尚未绑定' }}</span></div>
               <div class="kv"><span class="kv-k w76">邮箱</span><span class="kv-v">{{ emailIdentity?.email || '尚未设置' }}</span></div>

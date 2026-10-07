@@ -56,7 +56,7 @@ final class LocalNoteCodexProcess {
     }
     static Result execute(String executable,String model,String effort,String prompt,Path root,Duration timeout,
             boolean image,List<ReferenceImageService.Content> references,java.util.function.BooleanSupplier cancelled) throws Exception {
-        if (references.size() > 4 || image && !references.isEmpty())
+        if (references.size() > 4)
             throw new IllegalStateException("当前任务参考图片数量或用途无效");
         Path directory = Files.createTempDirectory(root, "job-");
         Path events = directory.resolve("events.jsonl");
@@ -76,7 +76,10 @@ final class LocalNoteCodexProcess {
                 throw new IllegalStateException("本机 AI 执行超时；原文已保留，请稍后重试");
             if (process.exitValue() != 0)
                 throw new IllegalStateException("本机 Codex 执行失败，请检查 ChatGPT 登录、网络和额度后重试；原文已保留");
-            if (image) return new Result(null, generatedPng(events));
+            if (image) {
+                Long[] usage = usage(events);
+                return new Result(null, generatedPng(events), usage[0], usage[1], usage[2], version);
+            }
             Path output = directory.resolve("result.txt");
             if (!Files.isRegularFile(output) || Files.size(output) > 120_000)
                 throw new IllegalStateException("本机 AI 未返回有效正文；原文已保留，请重试");
@@ -107,7 +110,7 @@ final class LocalNoteCodexProcess {
 
     static List<String> commandWithReferences(String executable, String model, String effort, Path directory, boolean image,
             List<ReferenceImageService.Content> references) throws Exception {
-        if (references.size() > 4 || image && !references.isEmpty())
+        if (references.size() > 4)
             throw new IllegalStateException("当前任务参考图片数量或用途无效");
         var args = new ArrayList<>(command(executable, model, effort, directory, image));
         args.remove(args.size() - 1); // stdin 提示词标识最后添加，参考图片只来自已鉴权的数据库字节。

@@ -36,6 +36,8 @@ import org.springframework.stereotype.Service;
 public class LocalNoteAiService {
     @Autowired(required = false)
     private ObjectProvider<TianrenVisualService> tianrenVisuals;
+    @Autowired(required = false)
+    private ObjectProvider<DigitalMemberService> digitalMembers;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     private org.springframework.beans.factory.ObjectProvider<NoteAiManagedService> managedNotes;
     @Autowired(required=false)
@@ -232,6 +234,11 @@ public class LocalNoteAiService {
             if (seconds < 1 || seconds > 900) throw new IllegalStateException("本机 AI 超时配置必须为 1–900 秒");
             if(companion!=null)companion.getObject().validateChatRun(run,null);
             result = execute(run, model, Duration.ofSeconds(seconds));
+            if (DigitalMemberService.IMAGE_PURPOSE.equals(run.getUsagePurpose())) {
+                if (digitalMembers == null || result.png() == null) throw new IllegalStateException("本机未返回真实候选形象");
+                digitalMembers.getObject().completeImage(run, claim, result.png());
+                return true;
+            }
             if (TianrenVisualService.IMAGE_PURPOSE.equals(run.getUsagePurpose())) {
                 if (tianrenVisuals == null || result.png() == null) throw new IllegalStateException("本机未返回真实卦象配图");
                 tianrenVisuals.getObject().completeImage(run, claim, result.png());
@@ -269,6 +276,9 @@ public class LocalNoteAiService {
 
     LocalNoteCodexProcess.Result execute(AiAssistantRunEntity run, String model, Duration timeout) throws Exception {
         List<ReferenceImageService.Content> references = List.of();
+        if (digitalMembers != null && (AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose())
+                || DigitalMemberService.IMAGE_PURPOSE.equals(run.getUsagePurpose())))
+            references = digitalMembers.getObject().references(run.getMemberId(), run.getId());
         if (run.getReferenceImageIds() != null && !run.getReferenceImageIds().isBlank()) {
             var ids = List.of(run.getReferenceImageIds().split(","));
             if (ids.size() > 4 || ids.size() != ids.stream().distinct().count())
@@ -286,7 +296,8 @@ public class LocalNoteAiService {
                 model, effort,
                 run.getPromptText(), directory, timeout,
                 AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose())
-                        || TianrenVisualService.IMAGE_PURPOSE.equals(run.getUsagePurpose()), references,
+                        || TianrenVisualService.IMAGE_PURPOSE.equals(run.getUsagePurpose())
+                        || DigitalMemberService.IMAGE_PURPOSE.equals(run.getUsagePurpose()), references,
                 () -> managedNotes!=null&&managedNotes.getObject().cancellationRequested(run.getId()));
     }
 

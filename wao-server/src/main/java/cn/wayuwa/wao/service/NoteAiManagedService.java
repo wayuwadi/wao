@@ -25,6 +25,8 @@ public class NoteAiManagedService {
     private NoteTagService noteTags;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     private ObjectProvider<NoteAiCompanionService> companion;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private ObjectProvider<DigitalMemberService> digitalMembers;
     private static final ThreadLocal<Boolean> DERIVED=ThreadLocal.withInitial(()->false);
     private static final ThreadLocal<String> ACTOR=new ThreadLocal<>();
     /** 返回明确的内部调用身份；不回落到默认成员。 */
@@ -95,6 +97,8 @@ public class NoteAiManagedService {
             policy=settings.write(node);
         }
         String cycle=id();long generation=previous==null?1:num(previous,"user_generation")+1;
+        if(digitalMembers!=null&&selection!=null&&selection.identitySelection()!=null)
+            digitalMembers.getObject().rememberNoteSelection(actor,doc.id(),cycle,selection.identitySelection());
         db.update("""
             INSERT INTO note_ai_save_signal(doc_id,member_id,user_generation,cycle_id,source_rev,title_origin,last_title,body_hash,policy_json,source_json,cover_url)
             VALUES(?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE user_generation=VALUES(user_generation),cycle_id=VALUES(cycle_id),
@@ -188,7 +192,7 @@ public class NoteAiManagedService {
         if(originals!=null&&!"tags".equals(str(a,"stage")))originals.freezeAttempt(str(a,"id"));
         String stage=str(a,"stage"),job;
         NoteAiSettingsService.Settings s=decode(str(a,"policy_json"),NoteAiSettingsService.Settings.class);
-        if(stage.equals("image"))job=image.startNoteWorkflow(str(a,"member_id"),new ArticleImageRequest(str(a,"input_text"),s.imagePrompt().isBlank()?DEFAULT_IMAGE_PROMPT:s.imagePrompt(),s.model().isBlank()?null:s.model(),str(a,"id"))).id();
+        if(stage.equals("image"))job=image.startNoteWorkflow(str(a,"member_id"),new ArticleImageRequest(str(a,"input_text"),s.imagePrompt().isBlank()?DEFAULT_IMAGE_PROMPT:s.imagePrompt(),s.model().isBlank()?null:s.model(),str(a,"id"),digitalMembers==null?null:digitalMembers.getObject().noteSelection(str(a,"member_id"),str(a,"doc_id"),str(a,"cycle_id")))).id();
         else if(stage.equals("tags")){
             List<String> allowed=noteTags.list();
             if(allowed.isEmpty()){db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='NO_EXISTING_TAGS',message='暂无已有标签，不创建新标签' WHERE id=?",str(a,"id"));return;}

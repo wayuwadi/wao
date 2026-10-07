@@ -49,6 +49,25 @@ class NoteAiManagedServiceTest {
   org.springframework.test.util.ReflectionTestUtils.setField(managed,"companion",provider);
   return companion;
  }
+ @Test void savedIdentityChoiceFlowsToAutomaticImageAndRemainsCycleScoped(){
+  var identities=mock(DigitalMemberService.class);
+  ObjectProvider<DigitalMemberService> provider=mock(ObjectProvider.class);when(provider.getObject()).thenReturn(identities);
+  org.springframework.test.util.ReflectionTestUtils.setField(managed,"digitalMembers",provider);
+  var selection=new cn.wayuwa.wao.dto.DigitalMemberDtos.IdentitySelection("none",null,null);
+  when(identities.noteSelection(eq("m"),eq("n"),anyString())).thenReturn(selection);
+  when(image.startNoteWorkflow(anyString(),any())).thenReturn(new ArticleImageJobDto("image","QUEUED","等待",null));
+  var original=doc("这是测试小记正文，用于验证自动配图采用保存时指定的不出现人物设置。".repeat(5),"标题",1);
+  when(knowledge.getDoc("n")).thenReturn(original);
+  var request=new CreateNoteRequest("标题",List.of(),original.content(),List.of(),false,true,false,null,null,null,selection);
+  tx.executeWithoutResult(t->managed.saved(original,"m","标题",request));
+  var cycle=org.mockito.ArgumentCaptor.forClass(String.class);
+  verify(identities).rememberNoteSelection(eq("m"),eq("n"),cycle.capture(),eq(selection));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  var imageRequest=org.mockito.ArgumentCaptor.forClass(ArticleImageRequest.class);
+  verify(image).startNoteWorkflow(eq("m"),imageRequest.capture());
+  assertThat(imageRequest.getValue().identitySelection()).isEqualTo(selection);
+  verify(identities).noteSelection("m","n",cycle.getValue());
+ }
  @Test void twentyNotesSubmitImagesAndPolishWithoutMemberSlotsEvenWithLegacySerialPreference(){
   values.put(NoteAiSettingsService.DEFAULTS,"{\"executionMode\":\"serial\",\"maxConcurrent\":1}");
   when(image.startNoteWorkflow(anyString(),any())).thenAnswer(c->new ArticleImageJobDto(java.util.UUID.randomUUID().toString(),"QUEUED",null,null));

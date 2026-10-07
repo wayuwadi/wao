@@ -7,6 +7,8 @@
     # 仅验收：连接内临时工作流表隔离日常调度器；文档、任务、登录仍使用既有真实数据库。
     [switch]$IsolateWorkflowState,
     [switch]$EnableDiscoveries,
+    # 仅在已验证此主机真实图片参考输入后开启，不因CLI文字视觉能力推定图片能力。
+    [switch]$EnableDigitalReferences,
     [string]$DiscoveryMemberIds = '',
     [string]$DiscoveryDocumentIds = '',
     [switch]$SkipBuild
@@ -54,6 +56,6 @@ try {
         '--spring.profiles.active=local-cloud' "--server.port=$Port" `
         '--wao.ai.local-notes.enabled=true' "--wao.ai.local-notes.executable=$codexExecutable" `
         "--wao.ai.local-notes.directory=$StateDirectory" "--wao.ai.local-notes.document-ids=$DocumentIds" `
-        "--wao.ai.local-notes.timeout-seconds=$TimeoutSeconds" @isolationArgs @discoveryArgs
+        "--wao.ai.local-notes.timeout-seconds=$TimeoutSeconds" "--wao.ai.local-notes.reference-images-enabled=$($EnableDigitalReferences.IsPresent.ToString().ToLowerInvariant())" @isolationArgs @discoveryArgs
     if ($LASTEXITCODE -ne 0) { throw "本机服务退出：$LASTEXITCODE" }
 } finally { Pop-Location }

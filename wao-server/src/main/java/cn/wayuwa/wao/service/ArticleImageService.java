@@ -16,6 +16,7 @@ import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.mapper.AiAssistantRunMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 /** 把登录成员的文章交给本地 Codex ImageGen，并将生成的 PNG 收进既有图床。 */
@@ -37,16 +38,19 @@ public class ArticleImageService {
     }
 
     /** 提交生成任务，不覆盖正在编辑的正文。 */
+    @Transactional
     public ArticleImageJobDto start(String memberId, ArticleImageRequest request) {
-        String id = assistant.enqueueArticleImageJob(memberId, request.articleText(), request.visualPrompt(),
-                request.model(), request.requestId());
+        String id = request.identitySelection() == null
+                ? assistant.enqueueArticleImageJob(memberId, request.articleText(), request.visualPrompt(), request.model(), request.requestId())
+                : assistant.enqueueArticleImageJob(memberId, request.articleText(), request.visualPrompt(), request.model(), request.requestId(), request.identitySelection());
         return get(memberId, id);
     }
 
     /** 仅供服务端持久小记工作流入队；普通浏览器图片请求同样允许独立并行。 */
     ArticleImageJobDto startNoteWorkflow(String memberId, ArticleImageRequest request) {
-        String id = assistant.enqueueNoteWorkflowArticleImageJob(memberId, request.articleText(), request.visualPrompt(),
-                request.model(), request.requestId());
+        String id = request.identitySelection() == null
+                ? assistant.enqueueNoteWorkflowArticleImageJob(memberId, request.articleText(), request.visualPrompt(), request.model(), request.requestId())
+                : assistant.enqueueArticleImageJob(memberId, request.articleText(), request.visualPrompt(), request.model(), request.requestId(), request.identitySelection());
         return get(memberId, id);
     }
 
