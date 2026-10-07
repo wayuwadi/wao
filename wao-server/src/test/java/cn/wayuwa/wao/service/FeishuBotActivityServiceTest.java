@@ -35,6 +35,8 @@ class FeishuBotActivityServiceTest {
             assertThat(usage.kind()).isEqualTo("SAVED_PREFERENCE"); assertThat(usage.count()).isEqualTo(1);
         });
         assertThat(result.receiver().callbackVerified()).isTrue();
+        assertThat(result.receiver().receptionMode()).isEqualTo("EVENT");
+        assertThat(result.receiver().pollIntervalMinutes()).isZero();
         assertThat(result.recentCaptures()).isEmpty();
         assertThat(result.toString()).doesNotContain("private-token").doesNotContain("旧名称");
     }

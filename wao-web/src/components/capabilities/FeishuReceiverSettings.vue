@@ -5,6 +5,7 @@ import { useDataStore } from '@/stores/data'
 import { useSaveBeforeRefresh } from '@/composables/saveBeforeRefresh'
 import { copyToClipboard } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import FeishuDailyArchiveSettings from './FeishuDailyArchiveSettings.vue'
 import {
   fetchChatSyncConfig,
   fetchQuickCollectConfig,
@@ -29,7 +30,15 @@ const loading = ref(true),
   loaded = ref(false),
   storageError = ref(false),
   restored = ref(false)
-const form = reactive({ appId: '', chatId: '', chatName: '', enabled: false, projectId: '' })
+const form = reactive({
+  appId: '',
+  chatId: '',
+  chatName: '',
+  kbId: '',
+  enabled: false,
+  projectId: '',
+})
+const archiveSettings = ref<InstanceType<typeof FeishuDailyArchiveSettings> | null>(null)
 const appSecret = ref(''),
   verificationToken = ref(''),
   encryptKey = ref('')
@@ -42,7 +51,7 @@ const dirty = computed(
     !!verificationToken.value ||
     !!encryptKey.value,
 )
-const eventUrl = `${location.origin}/api/feishu/events`
+const eventUrl = `${['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) ? 'https://wao.wayuwa.cn' : location.origin}/api/feishu/events`
 let disposed = false
 function alive() {
   return !disposed && owner === session.userId
@@ -64,6 +73,7 @@ watch(
   { deep: true },
 )
 function confirmLeave() {
+  if (archiveSettings.value && !archiveSettings.value.confirmLeave()) return false
   if (busy.value) {
     toast('接收配置正在保存，请稍后再离开')
     return false
@@ -99,6 +109,7 @@ async function load() {
         appId: c.appId,
         chatId: c.chatId,
         chatName: c.chatName,
+        kbId: c.kbId,
         enabled: q.enabled,
         projectId: q.projectId,
       })
@@ -117,6 +128,7 @@ async function load() {
             appId: draft.appId,
             chatId: draft.chatId,
             chatName: draft.chatName,
+            kbId: typeof draft.kbId === 'string' ? draft.kbId : c.kbId,
             enabled: draft.enabled,
             projectId: draft.projectId,
           })
@@ -166,7 +178,7 @@ async function save() {
     form.enabled &&
     (!form.appId.trim() || (!cfg.value.appSecretSet && !appSecret.value) || !form.chatId)
   ) {
-    error.value = '启用收集前，请先配置真实飞书应用、密钥与目标群'
+    error.value = '启用 @ 快捷记录前，请先配置真实飞书应用、密钥与目标群'
     return false
   }
   busy.value = true
@@ -190,7 +202,7 @@ async function save() {
       appSecret: appSecret.value.trim() || undefined,
       chatId: form.chatId,
       chatName: form.chatName,
-      kbId: cfg.value.kbId,
+      kbId: form.kbId,
       senders: cfg.value.senders,
     })
     if (!alive()) return false
@@ -210,6 +222,7 @@ async function save() {
     initial.value = JSON.stringify(form)
     restored.value = false
     retainDraft()
+    void archiveSettings.value?.reload()
     emit('saved')
     toast('接收应用与群配置已保存', 'ri-check-line')
     return true
@@ -241,7 +254,7 @@ defineExpose({ confirmLeave })
 <template>
   <section class="receiver-settings" aria-label="接收应用与群配置">
     <h3>接收应用与群</h3>
-    <p class="muted">待办和小记机器人共用这套接收配置，修改会影响所有关联收集。</p>
+    <p class="muted">@ 快捷记录与每日归档共用这套应用和目标群，分别控制开关。</p>
     <p v-if="loading" role="status">正在读取接收配置…</p>
     <div v-else-if="!loaded" role="alert">
       <p class="error">{{ error }}</p>
@@ -287,7 +300,7 @@ defineExpose({ confirmLeave })
         >
         <label class="check-row"
           ><input v-model="form.enabled" type="checkbox" /><span
-            >启用群聊待办／小记收集</span
+            >启用 @ 快捷记录（待办／小记）</span
           ></label
         >
         <label
@@ -306,7 +319,7 @@ defineExpose({ confirmLeave })
             在飞书开放平台给该应用订阅目标群消息事件 im.message.receive_v1，并配置事件认证；仅订阅 @
             当前应用机器人不能覆盖两个群自定义机器人。
           </p>
-          <p>未配置事件时，轮询默认每十分钟兜底；有密钥配置不代表已经收到真实消息。</p>
+          <p>仅通过事件接收，不定时读取群消息或表情。有密钥配置不代表已经收到真实事件。</p>
         </div>
         <label
           ><span>事件 Verification Token</span
@@ -327,6 +340,16 @@ defineExpose({ confirmLeave })
         <p class="muted">
           仅保存认证过的真实群消息。作者依靠飞书账号绑定，不使用这里的群昵称映射。
         </p>
+        <label
+          ><span>每日归档知识库</span
+          ><select v-model="form.kbId">
+            <option value="">请选择真实知识库</option>
+            <option v-if="form.kbId && !data.kbById(form.kbId)" :value="form.kbId">
+              {{ form.kbId }}（当前配置）
+            </option>
+            <option v-for="kb in data.kbs" :key="kb.id" :value="kb.id">{{ kb.name }}</option>
+          </select></label
+        >
         <div v-if="error" class="error" role="alert">
           <p>{{ error }}</p>
           <button v-if="error.includes('已有更新')" type="button" class="ghost" @click="load">
@@ -342,6 +365,7 @@ defineExpose({ confirmLeave })
         </footer>
       </fieldset>
     </form>
+    <FeishuDailyArchiveSettings ref="archiveSettings" />
   </section>
 </template>
 

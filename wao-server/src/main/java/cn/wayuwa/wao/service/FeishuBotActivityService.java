@@ -69,7 +69,7 @@ public class FeishuBotActivityService {
                 has(settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN))
                         || has(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY)),
                 appId, chatId, settings.get(SettingService.CHAT_SYNC_CHAT_NAME, ""),
-                "https://wao.wayuwa.cn/api/feishu/events", 10);
+                "https://wao.wayuwa.cn/api/feishu/events", 0, "EVENT");
         FeishuWebhookConfigEntity replacement = "SYSTEM".equals(bot.getDefaultMarker())
                 ? bots.selectList(new QueryWrapper<FeishuWebhookConfigEntity>().ne("id", id)
                         .orderByDesc("updated_at").orderByAsc("id").last("LIMIT 1")).stream().findFirst().orElse(null)

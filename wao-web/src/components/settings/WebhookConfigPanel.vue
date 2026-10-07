@@ -382,7 +382,7 @@ async function sendTest(item: FeishuWebhookEndpoint) {
   itemErrors[item.id] = ''
   try {
     await testWebhookEndpoint(item.id)
-    if (alive()) toast('测试消息已发出；群聊收集需真实 @ 验证', 'ri-check-line')
+    if (alive()) toast('测试消息已发出；@ 快捷记录需真实事件验证', 'ri-check-line')
   } catch (error) {
     if (alive()) itemErrors[item.id] = error instanceof Error ? error.message : '测试消息发送失败'
   } finally {
@@ -568,7 +568,7 @@ defineExpose({ confirmLeave })
                       v-model="form.description"
                       maxlength="255"
                       rows="2"
-                      placeholder="例如 系统通知、群聊快速收集"
+                      placeholder="例如 系统通知、@ 快捷记录"
                     />
                   </label>
                   <label
@@ -588,7 +588,7 @@ defineExpose({ confirmLeave })
                     ></label
                   >
                   <label
-                    ><span>群聊收集用途</span
+                    ><span>@ 快捷记录用途</span
                     ><select v-model="form.captureKind">
                       <option value="NONE">仅发送通知</option>
                       <option value="TASK">@ 后创建待办</option>
@@ -688,7 +688,7 @@ defineExpose({ confirmLeave })
                     errors[row.errorCode] ?? '发送失败，请检查配置后重试'
                   }}</small>
                 </article>
-                <h3>群聊收集记录</h3>
+                <h3>@ 快捷记录</h3>
                 <p v-if="!activity?.recentCaptures.length" class="muted">
                   {{ activityError ? '记录读取失败' : '暂无真实 @ 收集记录' }}
                 </p>
@@ -734,7 +734,7 @@ defineExpose({ confirmLeave })
                     v-if="selected.captureKind && selected.captureKind !== 'NONE'"
                     class="receiver-status"
                   >
-                    <p>{{ activity.receiver.enabled ? '群聊收集已启用' : '群聊收集已暂停' }}</p>
+                    <p>{{ activity.receiver.enabled ? '@ 快捷记录已启用' : '@ 快捷记录已暂停' }}</p>
                     <p>
                       接收群：{{
                         activity.receiver.chatName || activity.receiver.chatId || '尚未配置'
@@ -744,12 +744,10 @@ defineExpose({ confirmLeave })
                       {{
                         activity.receiver.callbackVerified ? '事件认证已配置' : '事件认证尚未配置'
                       }}
-                      · {{ captureVerified ? '已有真实收集成功记录' : '群聊收集尚未验证' }}
+                      · {{ captureVerified ? '已有真实保存记录' : '@ 快捷记录尚未验证' }}
                     </p>
                     <small
-                      >轮询默认每
-                      {{ activity.receiver.pollIntervalMinutes }}
-                      分钟兜底；发送测试不代表收集已验证。</small
+                      >仅接收飞书事件，不定时读取群消息或表情；发送测试不代表事件接收已验证。</small
                     >
                   </div></template
                 >

@@ -69,4 +69,107 @@ class FeishuChatSyncServiceTest {
         assertThat(service.config().chatId()).isEqualTo("chat");
         verifyNoInteractions(feishu);
     }
+
+    @Test
+    void dailyArchiveFetchesExactlyPreviousShanghaiDayAndReusesStableDocumentFence() {
+        configuredArchive();
+        long noon = DAY.atTime(12, 0).atZone(ZONE).toInstant().toEpochMilli();
+        when(feishu.listMessages(eq("token"), eq("chat"), anyLong(), anyLong())).thenReturn(List.of(
+                new FeishuMessage("message", "sender", "text", "{\"text\":\"真实当日文字\"}", noon, false),
+                new FeishuMessage("gone", "sender", "text", "{\"text\":\"已撤回\"}", noon, true)));
+        var result = service.archivePreviousDay(DAY.plusDays(1), "chat", "kb", () -> {});
+        assertThat(result.day()).isEqualTo(DAY);
+        verify(feishu).listMessages("token", "chat", DAY.atStartOfDay(ZONE).toEpochSecond() - 1,
+                DAY.plusDays(1).atStartOfDay(ZONE).toEpochSecond());
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<DocBlockDto>> blocks = ArgumentCaptor.forClass(List.class);
+        verify(knowledge).upsertAutoDoc(eq("kb"), eq("folder"), eq("飞书群聊 · 2026-07-25"), blocks.capture(),
+                eq("chat"), eq(DAY), eq(91L));
+        assertThat(blocks.getValue().toString()).contains("12:00 映射发言人", "真实当日文字", "次日上海 00:00")
+                .doesNotContain("已撤回");
+        verify(feishu, org.mockito.Mockito.never()).listMessageReactions(anyString(), anyString(), anyString());
+        verifyNoInteractions(notifier);
+    }
+
+    @Test
+    void dailyArchiveIncludesFirstAndLastMillisecondsButExcludesAdjacentDays() {
+        configuredArchive();
+        long start = DAY.atStartOfDay(ZONE).toInstant().toEpochMilli();
+        long end = DAY.plusDays(1).atStartOfDay(ZONE).toInstant().toEpochMilli();
+        var beforeDay = new FeishuMessage("before-day", "sender", "text",
+                "{\"text\":\"前一天最后一毫秒\"}", start - 1, false);
+        var midnight = new FeishuMessage("midnight", "sender", "text",
+                "{\"text\":\"当日午夜\"}", start, false);
+        var lastMillisecond = new FeishuMessage("last-millisecond", "sender", "text",
+                "{\"text\":\"当日末秒999毫秒\"}", end - 1, false);
+        var nextDay = new FeishuMessage("next-day", "sender", "text",
+                "{\"text\":\"次日午夜\"}", end, false);
+        when(feishu.listMessages("token", "chat", start / 1000 - 1, end / 1000))
+                .thenReturn(List.of(beforeDay, midnight, lastMillisecond, nextDay));
+
+        var result = service.archivePreviousDay(DAY.plusDays(1), "chat", "kb", () -> {});
+
+        assertThat(result.messages()).containsExactly(midnight, lastMillisecond);
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<DocBlockDto>> blocks = ArgumentCaptor.forClass(List.class);
+        verify(knowledge).upsertAutoDoc(eq("kb"), eq("folder"), anyString(), blocks.capture(),
+                eq("chat"), eq(DAY), eq(91L));
+        assertThat(blocks.getValue().toString()).contains("00:00 映射发言人", "23:59 映射发言人", "当日午夜", "当日末秒999毫秒")
+                .doesNotContain("前一天最后一毫秒", "次日午夜");
+        verify(feishu).listMessages("token", "chat", start / 1000 - 1, end / 1000);
+        verify(feishu, org.mockito.Mockito.never()).listMessageReactions(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void emptyDayStillProducesOneTruthfulArchiveWithoutImageOrReactionReads() {
+        configuredArchive();
+        when(feishu.listMessages(eq("token"), eq("chat"), anyLong(), anyLong())).thenReturn(List.of());
+        service.archivePreviousDay(DAY.plusDays(1), "chat", "kb", () -> {});
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<DocBlockDto>> blocks = ArgumentCaptor.forClass(List.class);
+        verify(knowledge).upsertAutoDoc(anyString(), anyString(), anyString(), blocks.capture(), eq("chat"), eq(DAY), eq(91L));
+        assertThat(blocks.getValue().toString()).contains("这一天群里没有消息");
+        verifyNoInteractions(images, notifier);
+        verify(feishu, org.mockito.Mockito.never()).listMessageReactions(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void changedTargetBeforeFetchOrAfterFetchCannotWriteArchive() {
+        configuredArchive();
+        assertThatThrownBy(() -> service.archivePreviousDay(DAY.plusDays(1), "different", "kb", () -> {}))
+                .isInstanceOf(BadRequestException.class);
+        verifyNoInteractions(feishu, knowledge, archiveVersions);
+        when(feishu.listMessages(eq("token"), eq("chat"), anyLong(), anyLong())).thenAnswer(call -> {
+            when(settings.getAll(any())).thenReturn(Map.of(SettingService.CHAT_SYNC_CHAT_ID, "changed"));
+            return List.of();
+        });
+        assertThatThrownBy(() -> service.archivePreviousDay(DAY.plusDays(1), "chat", "kb", () -> {}))
+                .hasMessageContaining("已变更");
+        verifyNoInteractions(knowledge, images, notifier);
+    }
+
+    @Test
+    void imageArchiveReusesImageStorageWithoutReadingReactions() {
+        configuredArchive();
+        long noon = DAY.atTime(12, 0).atZone(ZONE).toInstant().toEpochMilli();
+        when(feishu.listMessages(eq("token"), eq("chat"), anyLong(), anyLong())).thenReturn(List.of(
+                new FeishuMessage("image-message", "sender", "image", "{\"image_key\":\"image-key\"}", noon, false)));
+        when(feishu.downloadImage("token", "image-message", "image-key")).thenReturn(new byte[] {1, 2});
+        var image = mock(ImageItemDto.class); when(image.url()).thenReturn("/api/images/stored-image");
+        when(images.store(any(), anyString(), anyString(), anyString(), anyBoolean())).thenReturn(image);
+        service.archivePreviousDay(DAY.plusDays(1), "chat", "kb", () -> {});
+        verify(images).store(any(), eq("image/png"), eq("image-key.png"), eq("飞书群聊 · 真实群名"), eq(true));
+        verify(feishu, org.mockito.Mockito.never()).listMessageReactions(anyString(), anyString(), anyString());
+    }
+
+    private void configuredArchive() {
+        when(settings.getAll(any())).thenReturn(Map.of(
+                SettingService.CHAT_SYNC_APP_ID, "app", SettingService.CHAT_SYNC_APP_SECRET, "secret-value",
+                SettingService.CHAT_SYNC_CHAT_ID, "chat", SettingService.CHAT_SYNC_KB_ID, "kb",
+                SettingService.CHAT_SYNC_CHAT_NAME, "真实群名", SettingService.CHAT_SYNC_SENDERS,
+                "[{\"id\":\"sender\",\"name\":\"映射发言人\"}]"));
+        when(feishu.tenantAccessToken("app", "secret-value")).thenReturn("token");
+        when(archiveVersions.nextVersion()).thenReturn(91L);
+        var folder = new KbFolderEntity(); folder.setId("folder");
+        when(knowledge.ensureAutoFolder("kb", "2026 年 7 月")).thenReturn(folder);
+        when(knowledge.upsertAutoDoc(anyString(), anyString(), anyString(), any(), anyString(), any(), anyLong()))
+                .thenReturn(mock(DocDto.class));
+    }
 }

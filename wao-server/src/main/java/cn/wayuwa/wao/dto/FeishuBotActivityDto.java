@@ -13,5 +13,5 @@ public record FeishuBotActivityDto(List<Usage> usages, List<Send> recentSends,
             LocalDateTime occurredAt, String errorCode) { }
     public record Receiver(boolean enabled, boolean appConfigured, boolean chatConfigured,
             boolean callbackVerified, String appId, String chatId, String chatName,
-            String eventUrl, int pollIntervalMinutes) { }
+            String eventUrl, int pollIntervalMinutes, String receptionMode) { }
 }

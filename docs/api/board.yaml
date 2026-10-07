@@ -1072,7 +1072,26 @@ paths:
       summary: 免登录读取网站公开信息，供登录页、分享页与页脚展示
       security: []
       responses: { '200': { description: OK } }
-  # 飞书群聊同步知识库
+  # 飞书共享接收配置；每日归档见 ADR-328，旧手动同步保持退役
+  /feishu/daily-archive:
+    get:
+      summary: 管理员浏览器读取每日午夜归档配置与最近结果
+      description: 仅管理员会话；响应字段与权限见 docs/api/feishu-daily-archive.md，不新增终端令牌权限。
+      responses: { '200': { description: OK }, '401': { description: 缺少管理员浏览器会话 } }
+    put:
+      summary: 独立保存每日归档开关，下次上海午夜归档前一天
+      description: 同日永久领取一次，失败不自动重拉，不提供补录和手动运行。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, expectedEnabled]
+              properties:
+                enabled: { type: boolean }
+                expectedEnabled: { type: boolean }
+      responses: { '200': { description: OK }, '400': { description: 配置不完整 }, '409': { description: 开关已有并发更新 } }
   /feishu/chat-sync/config:
     get:
       summary: 同步配置（appSecret 只回脱敏形态）
@@ -1097,8 +1116,9 @@ paths:
       responses: { '200': { description: OK }, '400': { description: 尚未选择群聊 } }
   /feishu/chat-sync/run:
     post:
-      summary: 手动同步某一天（默认今天）或一段连续日期，批量时逐日覆盖各自当天的归档
+      summary: 已退役的手动同步与历史补录入口，拒绝执行且不调用飞书
       description: >
+        ADR-266/ADR-328 已退役此接口，始终拒绝；下面是历史归档身份兼容规则，仅窄每日归档核心继续复用。
         每日消息查询前签发数据库单调版本；归档按知识库、chatId 和自然日唯一定位，只有同一身份的更新版本能 CAS 覆盖文档，旧快照失败。
         V77 migration 仅按执行时的当前群 / KB 回填旧日期标题：重复候选优先取未软删除文档中 id 最小的一篇，仅全部已删时回退至全体最小 id；运行时不认领无身份旧文档。软删除的同身份文档重同步时原地恢复，
         切换群后同日创建独立文档，不覆盖旧群来源链接。

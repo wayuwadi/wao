@@ -11,6 +11,17 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 class FeishuBotAdminInterceptorTest {
     @Test
+    void dailyArchiveReadAndWriteRoutesUseTheSameSessionAdministratorGuard() {
+        class Registry extends org.springframework.web.servlet.config.annotation.InterceptorRegistry {
+            java.util.List<Object> registered() { return getInterceptors(); }
+        }
+        var guard = new FeishuBotAdminInterceptor(mock(CurrentMember.class), mock(MemberMapper.class));
+        var registry = new Registry(); guard.addInterceptors(registry);
+        var mapped = (org.springframework.web.servlet.handler.MappedInterceptor) registry.registered().get(0);
+        assertThat(mapped.getPathPatterns()).contains("/api/feishu/daily-archive", "/api/feishu/daily-archive/**");
+    }
+
+    @Test
     void acceptsOnlyPersistedAdministratorSessionRole() {
         var current = mock(CurrentMember.class); var members = mock(MemberMapper.class);
         var guard = new FeishuBotAdminInterceptor(current, members);

@@ -46,7 +46,7 @@ function stMeta(a: AutomationJob) {
 }
 
 const jobs = computed(() =>
-  data.autos.filter(a => !['feishu-chat-sync', 'shared-chat-nightly-sync', 'http-performance-ai-run', 'weknora-content-sync'].includes(a.handler ?? '')).map((a) => {
+  data.autos.filter(a => !['feishu-chat-sync', 'feishu-daily-archive', 'shared-chat-nightly-sync', 'http-performance-ai-run', 'weknora-content-sync'].includes(a.handler ?? '')).map((a) => {
     const st = stMeta(a)
     const dots = a.runs
       .map((r) => ({
@@ -264,7 +264,7 @@ onMounted(() => {
       <div class="atop">
         <div class="atitle">自动化 / 定时任务</div>
         <span class="atip">让记录自己发生</span>
-        <button class="btn-ghost" @click="openChatConfig">飞书任务收集配置</button>
+        <button class="btn-ghost" @click="openChatConfig">飞书归档与 @ 记录</button>
         <div class="spacer"></div>
       </div>
       <div class="tabs">
@@ -398,7 +398,7 @@ onMounted(() => {
         />
       </div>
       <div class="foot-note">
-        飞书聊天记录同步已停用；群内 @机器人 保存任务可通过“飞书任务收集配置”管理。
+        每日午夜归档与 @ 快捷记录在能力中心管理；旧聊天同步和表情轮询已停用。
       </div>
     </template>
 

@@ -9,8 +9,6 @@ import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import javax.crypto.Cipher;
@@ -29,7 +27,6 @@ import cn.wayuwa.wao.dto.SaveQuickCollectConfigRequest;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
-import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessageReaction;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
 import cn.wayuwa.wao.mapper.FeishuQuickCollectEventMapper;
@@ -52,7 +49,7 @@ import org.springframework.web.util.HtmlUtils;
  * 收到语音条会回一句提示，而不是假装能转写。
  *
  * <p>安全上不额外造轮子：飞书事件订阅本身提供 Encrypt Key（AES-256-CBC）和 Verification Token，
- * 配了就校验、就解密；两者都没配时只接受来自已配置群的消息。凭据和其他飞书配置一样加密存库。
+ * 认证回调后持久入队；缺少事件认证配置时拒绝收集。凭据和其他飞书配置一样加密存库。
  */
 @Service
 public class FeishuQuickCollectService {
@@ -76,8 +73,6 @@ public class FeishuQuickCollectService {
     private static final String MESSAGE_RECALLED_EVENT = "im.message.recalled_v1";
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final String PUBLIC_BASE_URL = "https://wao.wayuwa.cn";
-    private static final long REACTION_CHECK_TTL_NANOS = TimeUnit.MINUTES.toNanos(5);
-    private static final int MAX_RECENT_REACTION_CHECKS = 10_000;
 
     private static final Logger log = LoggerFactory.getLogger(FeishuQuickCollectService.class);
 
@@ -96,7 +91,6 @@ public class FeishuQuickCollectService {
     private final FeishuQuickCollectReactionPolicy reactionPolicy;
     private final FeishuQuickCollectRecallService recalls;
     private final FeishuLinkPreviewService linkPreviews;
-    private final Map<String, Long> recentReactionChecks = new ConcurrentHashMap<>();
     private FeishuWebhookConfigService botRegistry;
     private FeishuBotInboxService inbox;
     private FeishuCaptureTargetGuard targetGuard;
@@ -316,48 +310,6 @@ public class FeishuQuickCollectService {
      */
     public void recallPolled(String chatId, String messageId) {
         recall(chatId, messageId, "");
-    }
-
-    /**
-     * 用已经认证的飞书应用令牌读取原消息上的人工派工表情。
-     *
-     * <p>事件订阅仍用于低延迟触发；此入口让没有配置 Verification Token / Encrypt Key 的部署也能
-     * 在现有消息轮询中可靠发现飞机表情。身份、原消息和幂等校验仍由派工服务统一执行。
-     *
-     * @param token tenant_access_token
-     * @param messageId 已进入快速收集链路的原消息 id
-     */
-    public void triggerPolledReaction(String token, String messageId) {
-        if (!StringUtils.hasText(messageId) || reactionAiRuns.hasTriggered(messageId)) return;
-        long now = System.nanoTime();
-        if (!claimReactionCheck(messageId, now)) return;
-        try {
-            List<FeishuMessageReaction> reactions = feishu.listMessageReactions(
-                    token, messageId, reactionPolicy.triggerEmoji());
-            for (FeishuMessageReaction reaction : reactions) {
-                reactionAiRuns.triggerPolled(messageId, reaction, PUBLIC_BASE_URL);
-                if (reactionAiRuns.hasTriggered(messageId)) return;
-            }
-        } catch (RuntimeException ex) {
-            recentReactionChecks.remove(messageId);
-            throw ex;
-        }
-    }
-
-    private boolean claimReactionCheck(String messageId, long now) {
-        long expiresAt = now + REACTION_CHECK_TTL_NANOS;
-        Long previous = recentReactionChecks.putIfAbsent(messageId, expiresAt);
-        if (previous != null && previous > now) return false;
-        if (previous != null && !recentReactionChecks.replace(messageId, previous, expiresAt)) return false;
-        if (recentReactionChecks.size() > MAX_RECENT_REACTION_CHECKS) {
-            recentReactionChecks.entrySet().removeIf(entry -> entry.getValue() <= now);
-            int excess = recentReactionChecks.size() - MAX_RECENT_REACTION_CHECKS;
-            if (excess > 0) {
-                recentReactionChecks.keySet().stream().limit(excess)
-                        .forEach(recentReactionChecks::remove);
-            }
-        }
-        return true;
     }
 
     /** 真正把一条群消息变成任务。 */
