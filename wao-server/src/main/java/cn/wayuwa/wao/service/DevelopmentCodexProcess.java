@@ -19,7 +19,7 @@ import java.util.function.Consumer;
 final class DevelopmentCodexProcess {
     record Result(JsonNode answer, String sessionId, int successfulCommands) {}
     private static final Set<String> ENV=Set.of("SYSTEMROOT","WINDIR","SYSTEMDRIVE","COMSPEC","USERPROFILE","HOME",
-            "APPDATA","LOCALAPPDATA","TEMP","TMP","PATH","PATHEXT","JAVA_HOME","PYTHONUTF8","PYTHONIOENCODING","CODEX_HOME","HTTP_PROXY","HTTPS_PROXY","NO_PROXY");
+            "APPDATA","LOCALAPPDATA","TEMP","TMP","PATH","PATHEXT","JAVA_HOME","PYTHONUTF8","PYTHONIOENCODING","CODEX_HOME","GH_CONFIG_DIR","HTTP_PROXY","HTTPS_PROXY","NO_PROXY");
     static List<String> command(String executable, Path worktree, Path schema, Path output, boolean analysis) {
         var args=new ArrayList<>(List.of(executable,"exec","--ignore-user-config","--sandbox",analysis?"read-only":"workspace-write",
                 "--disable","multi_agent","-c","approval_policy=\"never\"","-c","forced_login_method=\"chatgpt\"",
