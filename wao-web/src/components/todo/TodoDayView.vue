@@ -27,6 +27,7 @@ const past = computed(() => props.date < data.today), future = computed(() => pr
 const heading = computed(() => new Date(`${props.date}T12:00:00+08:00`).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }))
 const noteFor = ref<string | null>(null), expanded = ref<Record<string, boolean>>({}), title = ref(''), createError = ref(''), creating = ref(false)
 const createProject = ref('')
+const draftError = ref('')
 const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
 const newKey = () => `wao-day-task-draft-v1:${identity()}:${props.date}`
 const selectionProtected = ref(false)
@@ -34,24 +35,41 @@ function automaticProject() {
   return selectTaskProject(availableProjects.value.map(project => project.id), { preferred: preferences.defaultProject, recent: taskPreferences.recentProject })
 }
 let createId = ''
+let restoringDraft = false
 watch(() => [props.date, identity()], () => {
+  restoringDraft = true
   selectionProtected.value = false
-  noteFor.value = null; title.value = ''; createError.value = ''; createId = ''; createProject.value = data.loadStates.projects === 'loaded' ? automaticProject() : ''
+  noteFor.value = null; title.value = ''; createError.value = ''; draftError.value = ''; createId = ''; createProject.value = data.loadStates.projects === 'loaded' ? automaticProject() : ''
   try { const draft = JSON.parse(localStorage.getItem(newKey()) || 'null') as { id: string; title: string; project?: string } | null; if (draft) { selectionProtected.value = true; title.value = draft.title; createId = draft.id; createProject.value = draft.project || '' } } catch { selectionProtected.value = true /* Preserve corrupted draft without overwriting it. */ }
+  restoringDraft = false
   void days.load(props.date)
 }, { immediate: true })
-watch(() => [data.loadStates.projects, availableProjects.value.map(project => project.id), preferences.defaultProject, taskPreferences.recentProject] as const, () => {
+watch(() => [data.loadStates.projects, availableProjects.value.map(project => project.id), preferences.defaultProject, taskPreferences.recentProject, data.apiLive] as const, () => {
   if (data.loadStates.projects !== 'loaded') return
+  // Hydration marks the request loaded before publishing the aggregate snapshot.
+  if (!data.apiLive && !data.projects.length) return
   if (selectionProtected.value || title.value.trim()) {
     if (createProject.value && !availableProjects.value.some(project => project.id === createProject.value)) createProject.value = ''
   } else createProject.value = automaticProject()
 }, { immediate: true })
-watch([title, createProject], ([value]) => {
-  if (!value.trim()) return
-  createId ||= crypto.randomUUID().replace(/-/g, '')
-  try { localStorage.setItem(newKey(), JSON.stringify({ id: createId, title: value, project: createProject.value })) }
-  catch { createError.value = '无法保护本机标题草稿，请保持页面并保存' }
-})
+function protectDraft() {
+  if (restoringDraft) return
+  try {
+    if (title.value.trim()) {
+      createId ||= crypto.randomUUID().replace(/-/g, '')
+      localStorage.setItem(newKey(), JSON.stringify({ id: createId, title: title.value, project: createProject.value }))
+    } else {
+      localStorage.removeItem(newKey())
+      createId = ''
+    }
+    draftError.value = ''
+  } catch {
+    draftError.value = title.value.trim() ? '无法保护本机标题草稿，请保持页面并重试' : '标题已清空，但本机旧草稿尚未清除，请重试'
+  }
+}
+watch([title, createProject], ([value], [previousTitle]) => {
+  if (value.trim() || value !== previousTitle) protectDraft()
+}, { flush: 'sync' })
 const current = (entry: DayTask) => data.taskById(entry.task.id) ?? entry.task
 const shown = (entry: DayTask) => past.value ? { ...entry.task, ...entry.snapshot } : current(entry)
 function move(offset: number) { emit('update:date', new Date(Date.parse(`${props.date}T00:00:00Z`) + offset * 86400000).toISOString().slice(0, 10)) }
@@ -152,6 +170,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
         </div>
       </article>
       <form v-if="!past" class="day-create" @submit.prevent="createTask"><input v-model="title" aria-label="当天要做的事" placeholder="＋ 写下当天要做的一件事" :disabled="creating" maxlength="500" /><select v-model="createProject" @change="selectionProtected = true" aria-label="任务所属项目" :disabled="creating"><option value="">选择项目</option><option v-for="project in availableProjects" :key="project.id" :value="project.id">{{ project.name }}</option></select><button type="submit" :disabled="creating || !title.trim()">{{ creating ? '保存中…' : '添加' }}</button></form><p v-if="createError" class="task-error" role="alert">{{ createError }}</p>
+      <p v-if="draftError" class="task-error" role="alert">{{ draftError }} <button type="button" @click="protectDraft">重试保护草稿</button></p>
       <p v-if="taskPreferences.recentError" class="task-error" role="status">最近使用项目：{{ taskPreferences.recentError }} <button type="button" @click="taskPreferences.retryRecent()">重试同步最近项目</button></p>
       <section class="day-notes"><header><h3>{{ past ? '当天记录与补记' : '随手记' }}</h3><button v-if="!future" type="button" @click="noteFor = noteFor === '' ? null : ''">{{ noteFor === '' ? '收起输入' : past ? '补记这一天' : '写一条' }}</button></header><NoteComposer v-if="noteFor === '' && !future" :key="`${identity()}:${date}:free`" compact :draft-scope="`day:${identity()}:${date}:free`" :submit-note="request => submitNote(request)" />
         <button v-for="note in day.notes" :key="note.docId" class="day-note-link" type="button" @click="router.push({ path: '/notes', query: { note: note.docId } })"><i class="ri-sticky-note-line"></i><span>{{ data.docById(note.docId)?.title || note.title }}</span><small>{{ note.late ? '补记 · ' : '' }}{{ note.updatedAt !== note.createdAt ? '后来有修改' : '已保存' }}</small></button><p v-if="!day.notes.length" class="day-empty">{{ future ? '实际记录留给当天' : '还没有记录，想到什么就记下来' }}</p>
