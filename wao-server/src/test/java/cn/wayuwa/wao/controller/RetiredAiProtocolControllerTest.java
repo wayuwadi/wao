@@ -27,7 +27,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** AI Run 与 Runner 下线后，旧协议不能领取工作、提交结果或读取凭据。 */
-@WebMvcTest({AiRunController.class, RetiredRunnerController.class})
+@WebMvcTest(controllers = {AiRunController.class, RetiredRunnerController.class}, excludeFilters = @org.springframework.context.annotation.ComponentScan.Filter(type = org.springframework.context.annotation.FilterType.ASSIGNABLE_TYPE, classes = cn.wayuwa.wao.auth.FeishuBotAdminInterceptor.class))
 @Import(GlobalExceptionHandler.class)
 class RetiredAiProtocolControllerTest {
     @Autowired private MockMvc mockMvc;
