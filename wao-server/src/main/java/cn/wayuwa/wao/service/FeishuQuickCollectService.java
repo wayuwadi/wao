@@ -429,8 +429,8 @@ public class FeishuQuickCollectService {
     }
 
     private static CreateNoteRequest noteRequest(String content) {
-        String heading = title(content);
-        return new CreateNoteRequest(IMAGE_ONLY_TITLE.equals(heading) ? "图片小记" : heading,
+        // 群聊正文没有独立的手写标题；可读占位标题由小记服务推导，不能冒充人工输入。
+        return new CreateNoteRequest("",
                 List.of(new DocBlockDto(null, null, content, null, null)));
     }
 

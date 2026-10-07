@@ -311,7 +311,7 @@ class FeishuQuickCollectServiceTest {
         var request = org.mockito.ArgumentCaptor.forClass(CreateNoteRequest.class);
         verify(knowledge).createNote(org.mockito.ArgumentMatchers.matches("fn[a-f0-9]{30}"),
                 request.capture(), eq("wd"));
-        assertThat(request.getValue().title()).isEqualTo("今天想到一个新方向");
+        assertThat(request.getValue().title()).isEmpty();
         assertThat(request.getValue().blocks().get(0).p())
                 .isEqualTo("今天想到一个新方向\n先把灵感记下来");
         verify(events).finishUnlessRecalled(eq("message:om_note"), eq("CREATED"), eq("NOTE"),
@@ -363,9 +363,9 @@ class FeishuQuickCollectServiceTest {
 
         String id = stored.get().getTargetId();
         verify(knowledge, org.mockito.Mockito.times(1)).createNote(eq(id),
-                org.mockito.ArgumentMatchers.argThat(req -> "第一段".equals(req.title())), eq("wd"));
+                org.mockito.ArgumentMatchers.argThat(req -> req.title().isEmpty() && "第一段".equals(req.blocks().get(0).p())), eq("wd"));
         verify(knowledge, org.mockito.Mockito.times(1)).createNote(eq(id),
-                org.mockito.ArgumentMatchers.argThat(req -> "更新后的内容".equals(req.title())), eq("wd"));
+                org.mockito.ArgumentMatchers.argThat(req -> req.title().isEmpty() && "更新后的内容".equals(req.blocks().get(0).p())), eq("wd"));
         verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
     }
 

@@ -1368,9 +1368,15 @@ public class KnowledgeService {
             contentChanged |= !Objects.equals(nextTags, e.getTagsJson());
             e.setTagsJson(nextTags);
         }
-        if (req.title() != null && !req.title().equals(e.getTitle())) {
-            e.setTitle(req.title());
-            contentChanged = true;
+        if (req.title() != null) {
+            String nextTitle = NOTES_KB_ID.equals(e.getKbId()) && req.title().isBlank()
+                    ? titleFrom(req.content() == null ? richContentOf(e) : req.content(),
+                            req.blocks() == null ? readList(e.getBlocksJson(), new TypeReference<List<DocBlockDto>>() {}) : req.blocks())
+                    : req.title();
+            if (!nextTitle.equals(e.getTitle())) {
+                e.setTitle(nextTitle);
+                contentChanged = true;
+            }
         }
         if (req.blocks() != null) {
             String next = write(req.blocks());

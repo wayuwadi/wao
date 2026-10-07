@@ -1038,6 +1038,22 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void clearingNoteTitleDerivesPlaceholderButPassesEmptyUserIntentToAi() {
+        DocEntity note = doc("clear-title", "kb-notes", "f");
+        note.setAuthorId("wg");note.setTitle("旧手动标题");
+        when(docMapper.selectById("clear-title")).thenReturn(note);
+        when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+        var managed = mock(NoteAiManagedService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service,"noteAiManaged",managed);
+        var content = new RichDocContentDto(1,null,"新的正文首句，系统可以使用临时标题。");
+        DocDto saved = NoteAiManagedService.withoutAuto("wg", () -> service.updateDoc("clear-title",
+                new PatchDocRequest("",null,content,null,null,1)));
+        assertThat(saved.title()).isEqualTo(content.markdown());
+        assertThat(saved.content().markdown()).isEqualTo(content.markdown());
+        verify(managed).saved(eq(saved),eq("wg"),eq(""),eq(null));
+    }
+
+    @Test
     void createKbSeedsDefaultFolder() {
         when(kbMapper.selectCount(null)).thenReturn(0L);
 

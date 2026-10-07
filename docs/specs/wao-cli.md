@@ -1,5 +1,7 @@
 # WAO CLI 规格与能力台账
 
+2026-10-08：[小记标题输入意图](notes-automatic-title-intent-2026-10-08.md)区分飞书正文的临时标题、浏览器清空标题与真实手写标题。CLI/MCP 的 `update_document` 实时 schema 仍要求非空标题，省略标题表示不改；本次不开放终端清空标题或自动执行模型，不新增命令、工具或权限。
+
 2026-10-07：CLI 0.3.0 按 [Pet CLI 上传与分享](pet-cli-upload-and-sharing.md) 提供 `pets list/upload/share/unshare`。能力中心新授权分别选择 `list_my_pets`、`upload_pet`、`share_pet`；multipart 文件传输通过独立 Bearer HTTP 入口，MCP 不搬运 ZIP。旧连接与日常预设不扩权；上传私人保存，分享单独确认并匿名核验下载包。本节取代下方“Skill/Pet 暂不新增终端上传”中的 Pet 部分，Skill 和设备签发边界不变。
 
 2026-10-06：[系统 AI 能力](system-ai-center.md)聚合已有浏览器会话的个人设置、模型目录与运行状态，未新增服务操作。设备令牌不能管理成员 AI 设置或服务账号，本次不新增 CLI/MCP 命令、不扩大旧授权；后续开放脚本配置需独立设计设置版本与资源权限。
