@@ -17,7 +17,6 @@ function mountView(autos: AutomationJob[] = []) {
         DemoBanner: true,
         ChatSyncConfigModal: true,
         HttpPerformanceConfigModal: { template: '<div class="http-config"></div>' },
-        DevelopmentPanel: { template: '<section aria-label="自主建设工作台"></section>' },
       },
     },
   })
@@ -54,10 +53,10 @@ describe('AutomationView 导航', () => {
     wrapper.unmount()
   })
 
-  it('保留任务列表、运行记录和自主建设，不暴露旧反馈报表', async () => {
+  it('只保留任务列表和运行记录，不再暴露反馈报表', async () => {
     const wrapper = mountView()
     const tabs = wrapper.findAll('.tab')
-    expect(tabs).toHaveLength(3)
+    expect(tabs).toHaveLength(2)
     expect(tabs.some((item) => item.text() === '反馈报表')).toBe(false)
 
     await tabs.find((item) => item.text() === '任务列表')!.trigger('click')
@@ -65,9 +64,6 @@ describe('AutomationView 导航', () => {
 
     await tabs.find((item) => item.text() === '运行记录')!.trigger('click')
     expect(wrapper.find('.grid-runs').exists()).toBe(true)
-    await tabs.find((item) => item.text() === '自主建设')!.trigger('click')
-    expect(wrapper.find('[aria-label="自主建设工作台"]').exists()).toBe(true)
-    expect(wrapper.find('.grid-runs').exists()).toBe(false)
     wrapper.unmount()
   })
 

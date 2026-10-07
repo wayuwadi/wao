@@ -581,26 +581,6 @@ public class FeishuOpenApiClient {
                 Map.of("receive_id", openId, "msg_type", "interactive", "content", writeJson(card)), token);
     }
 
-    /** 发送绑定方案版本的开发决定卡；稳定 uuid 去重，返回消息身份供回复精确匹配。 */
-    public String sendDevelopmentDecision(String token, String openId, String decisionId, long revision,
-            String question, String reason) {
-        var buttons = List.of("approve", "reject").stream().map(action -> Map.of(
-                "tag", "button", "type", "approve".equals(action) ? "primary" : "default",
-                "text", Map.of("tag", "plain_text", "content", "approve".equals(action) ? "按此方案继续" : "退回方案"),
-                "value", Map.of("kind", "wao-development-decision", "decisionId", decisionId,
-                        "revision", revision, "action", action))).toList();
-        var card = Map.of("config", Map.of("wide_screen_mode", true),
-                "header", Map.of("template", "purple", "title", Map.of("tag", "plain_text", "content", "WAO 自主建设 · 待你决定")),
-                "elements", List.of(Map.of("tag", "div", "text", Map.of("tag", "plain_text", "content", question + "\n" + reason)),
-                        Map.of("tag", "note", "elements", List.of(Map.of("tag", "plain_text", "content", "可点击按钮，或回复这条消息：确认 / 确认继续 / 退回：理由。仅当前方案有效。"))),
-                        Map.of("tag", "action", "actions", buttons)));
-        JsonNode result = post("/open-apis/im/v1/messages?receive_id_type=open_id", Map.of("receive_id", openId,
-                "msg_type", "interactive", "content", writeJson(card), "uuid", decisionId), token);
-        String id = result.path("message_id").asText("");
-        if (id.isBlank()) throw new FeishuApiException("决定卡未返回消息身份");
-        return id;
-    }
-
     private String writeJson(Object value) {
         try {
             return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(value);

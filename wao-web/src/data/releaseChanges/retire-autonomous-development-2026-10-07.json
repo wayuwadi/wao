@@ -1,0 +1,18 @@
+{
+  "id": "retire-autonomous-development-2026-10-07",
+  "sourceSubject": "revert(automation): 终止并回滚自主建设功能",
+  "title": "终止自主建设",
+  "publishedOn": "2026-10-07",
+  "intro": "撤回独立自主建设工作台与执行器，恢复首页、看板和伙伴原有体验。",
+  "prominence": "minor",
+  "highlights": [
+    {
+      "featureId": "automation",
+      "eyebrow": "项目终止",
+      "title": "撤回自主建设入口",
+      "summary": "首页伙伴、看板及自动化页面不再展示自主建设，普通自动化继续保留。",
+      "points": ["关闭派工与确认续跑，保留已产生的工作和记录。", "自主建设队列不再执行，既有用户数据保留。"],
+      "steps": ["打开自动化页面查看既有任务列表与运行记录。"]
+    }
+  ]
+}

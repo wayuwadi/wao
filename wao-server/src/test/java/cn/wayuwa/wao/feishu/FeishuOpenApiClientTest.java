@@ -24,35 +24,6 @@ class FeishuOpenApiClientTest {
     private static final String BASE_URL = "https://open.feishu.test";
 
     @Test
-    void developmentDecisionUsesStableUuidBoundRevisionAndPlainText() throws Exception {
-        RestClient.Builder builder=RestClient.builder();
-        MockRestServiceServer server=MockRestServiceServer.bindTo(builder).build();
-        ObjectMapper json=new ObjectMapper();
-        server.expect(requestTo(BASE_URL+"/open-apis/im/v1/messages?receive_id_type=open_id"))
-            .andExpect(method(HttpMethod.POST)).andExpect(request->{
-                JsonNode body=json.readTree(((MockClientHttpRequest)request).getBodyAsString());
-                assertThat(body.path("uuid").asText()).isEqualTo("decision-fixture");
-                assertThat(body.path("receive_id").asText()).isEqualTo("ou_owner");
-                JsonNode card=json.readTree(body.path("content").asText());
-                assertThat(card.path("elements").get(0).path("text").path("tag").asText()).isEqualTo("plain_text");
-                var value=card.path("elements").get(2).path("actions").get(0).path("value");
-                assertThat(value.path("revision").asLong()).isEqualTo(7);
-                assertThat(value.path("decisionId").asText()).isEqualTo("decision-fixture");
-            }).andRespond(withSuccess("{\"code\":0,\"data\":{\"message_id\":\"om_bound\"}}",MediaType.APPLICATION_JSON));
-        assertThat(new FeishuOpenApiClient(builder,BASE_URL,null).sendDevelopmentDecision("test-token","ou_owner","decision-fixture",7,"采用？","理由"))
-            .isEqualTo("om_bound");server.verify();
-    }
-
-    @Test
-    void developmentDecisionCannotPretendSentWithoutMessageReceipt() {
-        RestClient.Builder builder=RestClient.builder();var server=MockRestServiceServer.bindTo(builder).build();
-        server.expect(requestTo(BASE_URL+"/open-apis/im/v1/messages?receive_id_type=open_id"))
-            .andRespond(withSuccess("{\"code\":0,\"data\":{}}",MediaType.APPLICATION_JSON));
-        assertThatThrownBy(()->new FeishuOpenApiClient(builder,BASE_URL,null).sendDevelopmentDecision("test-token","ou_owner","decision-fixture",7,"采用？","理由"))
-            .isInstanceOf(FeishuApiException.class);server.verify();
-    }
-
-    @Test
     void actualHttpAttemptsAreCountedButCacheHitsAreNotAndStatisticsFailureDoesNotBreakReads() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
