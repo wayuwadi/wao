@@ -6,6 +6,7 @@ import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
 import TodoDayLayout from '@/components/todo/TodoDayLayout.vue'
 import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
+import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
@@ -24,6 +25,7 @@ const sections = [
   { id: 'base', label: '基础样式', icon: 'ri-palette-line' },
   { id: 'components', label: '卡片与控件', icon: 'ri-layout-grid-line' },
   { id: 'dialogs', label: '弹窗与浮层', icon: 'ri-window-line' },
+  { id: 'task-detail', label: '任务详情', icon: 'ri-list-check-3' },
   { id: 'states', label: '状态与反馈', icon: 'ri-checkbox-circle-line' },
   { id: 'engineering', label: '开发参考', icon: 'ri-code-s-slash-line' },
 ] as const
@@ -175,6 +177,13 @@ onBeforeUnmount(() => {
   clearTimeout(saveTimer)
 })
 const repository = 'https://github.com/wayuwacn/wao/blob/main/'
+const detailDemoDescription = ref('先说明背景、目标与边界，再把具体执行拆成子任务。\n\n'+ '这里是长描述演示，切换分区不会清空正在输入的文字。\n'.repeat(16))
+const detailDemoSubtasks = ref([
+  { title: '确认目标与验收标准', done: true },
+  { title: '完成第一步并留下证据', done: false },
+  { title: '邀请伙伴验证结果', done: false },
+])
+const detailDemoComment = ref('')
 </script>
 
 <template>
@@ -394,6 +403,23 @@ const repository = 'https://github.com/wayuwacn/wao/blob/main/'
           </section>
         </template>
 
+        <template v-else-if="active === 'task-detail'">
+          <div class="section-heading">
+            <small>TASK DETAIL</small><h1>描述再长，也能找到下一步。</h1>
+            <p>概览展示原文预览与子任务，描述独立阅读和编辑，属性与评论按需展开。</p>
+          </div>
+          <p class="demonstration-note">演示数据 · 下方输入只保留在本页，不写入账号。</p>
+          <div class="task-detail-demo">
+            <TaskDetailLayout context-key="design-reference" :description="detailDemoDescription" :subtask-count="detailDemoSubtasks.length">
+              <template #heading><h2>把一个想法拆成可执行的行动</h2></template>
+              <template #summary><span>进行中 · P2 · 演示成员</span><span>演示草稿 · 不写入账号</span></template>
+              <template #description><WaoField v-slot="{ id }" label="描述草稿（演示）"><textarea :id="id" v-model="detailDemoDescription" class="detail-demo-input"></textarea></WaoField></template>
+              <template #subtasks><h3>子任务</h3><label v-for="item in detailDemoSubtasks" :key="item.title" class="detail-demo-row"><input v-model="item.done" type="checkbox" />{{ item.title }}</label></template>
+              <template #properties><p>编号 #演示 · 状态 进行中</p><p>负责人 演示成员</p><WaoField v-slot="{ id }" label="评论草稿（演示）"><textarea :id="id" v-model="detailDemoComment" class="detail-demo-input"></textarea></WaoField></template>
+            </TaskDetailLayout>
+          </div>
+        </template>
+
         <template v-else-if="active === 'states'">
           <div class="section-heading">
             <small>STATES</small>
@@ -596,6 +622,10 @@ const repository = 'https://github.com/wayuwacn/wao/blob/main/'
 </template>
 
 <style scoped>
+.task-detail-demo { height: 620px; display: flex; border: 1px solid var(--wao-line); border-radius: var(--wao-radius-modal); overflow: hidden; background: var(--wao-bg-card); }
+.detail-demo-input { width: 100%; min-height: 180px; padding: var(--wao-space-2); resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
+.detail-demo-row { display: flex; align-items: center; gap: var(--wao-space-1); padding: var(--wao-space-2) 0; border-bottom: 1px solid var(--wao-line); }
+.detail-demo-row input { accent-color: var(--wao-primary); }
 .design-reference {
   min-height: 100dvh;
   background: var(--wao-bg-page);

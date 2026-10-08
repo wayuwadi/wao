@@ -122,6 +122,44 @@ describe('TaskDrawer', () => {
     expect(mountDrawer().find('.drawer').exists()).toBe(false)
   })
 
+  it('长描述下概览直接显示子任务，切换描述不重建编辑器', async () => {
+    data.taskById(taskId)!.desc = '# 真实草稿\n\n长内容'.repeat(200)
+    data.addSub(taskId, '需要直接看到的下一步')
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await waitFor(w, '.md-body')
+    expect(w.get('.inline-subs').isVisible()).toBe(true)
+    expect(w.get('[data-section="subtasks"]').text()).toBe('子任务 1')
+    const editor = w.get('.md-body').element
+    const input = w.get('.inline-subs form input')
+    await input.setValue('没有回车的新增草稿')
+    await w.get('[data-section="description"]').trigger('click')
+    expect(w.get('.md-body').isVisible()).toBe(true)
+    await w.get('[data-section="subtasks"]').trigger('click')
+    expect(w.get('.md-body').element).toBe(editor)
+    expect((w.get('.inline-subs form input').element as HTMLInputElement).value).toBe('没有回车的新增草稿')
+    expect(data.taskById(taskId)!.desc).toContain('真实草稿')
+  })
+
+  it('从下级返回保留父列表新增输入与分区，数量只统计当前下级', async () => {
+    const subId = data.addSub(taskId, '父子任务')!
+    data.addSub(taskId, '孙子任务', subId)
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+    await w.get('[data-section="subtasks"]').trigger('click')
+    await w.get('.inline-subs form input').setValue('父列表未提交输入')
+    ui.openTask(taskId, subId)
+    await flushPromises()
+    expect(w.get('[data-section="subtasks"]').text()).toBe('子任务 1')
+    expect((w.get('.inline-subs form input').element as HTMLInputElement).value).toBe('')
+    await w.findAll('.crumb-item')[0]!.trigger('click')
+    await flushPromises()
+    expect(w.get('[data-section="subtasks"]').attributes('aria-selected')).toBe('true')
+    expect(w.get('[data-section="subtasks"]').text()).toBe('子任务 2')
+    expect((w.get('.inline-subs form input').element as HTMLInputElement).value).toBe('父列表未提交输入')
+  })
+
   it('打开任务后渲染标题与描述编辑器', async () => {
     ui.openTask(taskId)
     const w = mountDrawer()
@@ -534,12 +572,15 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
-  it('默认展示任务属性栏，点击子任务后在弹框主区切成子任务详情', async () => {
+  it('默认展示概览并收起属性，点击子任务后在弹框主区切成子任务详情', async () => {
     const subId = data.addSub(taskId, '扫描身份证')!
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
 
+    expect(w.get('.detail-properties').isVisible()).toBe(false)
+    await w.get('.properties-toggle').trigger('click')
+    expect(w.get('.detail-properties').isVisible()).toBe(true)
     // 只看右侧栏——「自定义属性」这几个字也出现在种子数据的评论里，全局断言会误判
     expect(w.find('.props').text()).toContain('自定义属性')
     expect(w.find('.type-line').text()).toContain('任务')
