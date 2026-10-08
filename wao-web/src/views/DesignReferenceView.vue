@@ -5,6 +5,7 @@ import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
 import WaoField from '@/components/ui/WaoField.vue'
 import TodoDayLayout from '@/components/todo/TodoDayLayout.vue'
+import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
@@ -27,6 +28,12 @@ const sections = [
   { id: 'engineering', label: '开发参考', icon: 'ri-code-s-slash-line' },
 ] as const
 const active = ref<string>('base')
+const todoExampleSubs = ref([{ id: 'read', text: '看清今天要做的事', done: false }, { id: 'align', text: '确认下一步安排', done: false }])
+function toggleTodoExample(id: string) {
+  const sub = todoExampleSubs.value.find(item => item.id === id)
+  if (sub) sub.done = !sub.done
+  feedback.value = '仅改变清单示例，没有保存到账号。'
+}
 const colors = [
   { name: '品牌识别', token: '', value: identity.primary, use: '标识与轻量签名' },
   { name: '主操作', token: '--wao-primary', use: '保存、选中与焦点' },
@@ -301,9 +308,9 @@ const repository = 'https://github.com/wayuwacn/wao/blob/main/'
           </section>
           <section class="reference-section">
             <h2>主清单与日常区</h2>
-            <p>主区先呈现要做的事，辅助区承载日常与记录；窄屏按阅读顺序排列，沿用页面滚动。以下为布局示例。</p>
+            <p>未完成子事项默认展开，仍在推进的任务直接可见，已完成内容按需回看。低频操作放进更多菜单；辅助区承载日常与记录，窄屏沿用页面滚动。以下为布局示例。</p>
             <TodoDayLayout primary-label="主清单布局示例" secondary-label="日常区布局示例">
-              <WaoCard><h3>今日安排 · 示例</h3><p>一件要做的事，清楚放在前面。</p><WaoButton variant="ghost" @click="feedback = '布局示例，没有打开或修改真实任务。'">查看示例</WaoButton></WaoCard>
+              <section aria-label="任务清单示例"><h3>今日安排 · 示例</h3><p>一件要做的事，清楚放在前面。</p><TodoTaskChecklist task-id="design-todo" :subs="todoExampleSubs" @toggle="toggleTodoExample" /><WaoButton variant="ghost" @click="feedback = '记进展与任务详情位于任务更多菜单；本示例没有修改真实任务。'">更多操作示例</WaoButton></section>
               <template #secondary><WaoCard><h3>每日固定 · 示例</h3><p>早晨与晚上的日常事项。</p></WaoCard><WaoCard><h3>随手记 · 示例</h3><p>先看最近几条，需要时再展开。</p></WaoCard></template>
             </TodoDayLayout>
           </section>

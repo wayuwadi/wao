@@ -164,8 +164,9 @@ describe('待办日工作区', () => {
     expect(wrapper.get('.task-title').text()).toBe('当天原名称')
     expect(wrapper.get('.task-status').text()).toBe('已完成')
     expect(wrapper.find('.task-check').exists()).toBe(false)
-    await wrapper.get('.task-actions button').trigger('click')
-    expect(wrapper.get('.historical-subs').text()).toContain('✓ 当天步骤')
+    await wrapper.get('.todo-checklist button').trigger('click')
+    expect(wrapper.get('.todo-checklist').text()).toContain('当天步骤')
+    expect(wrapper.get('.todo-checklist input').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
   it('今日安排与未排期进展、已收尾分开，未收尾子项不能被完成分组隐藏', async () => {
@@ -179,9 +180,14 @@ describe('待办日工作区', () => {
     fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: data.tasks.map(task => ({ task, snapshot: task, planned: task.id !== 'trace', finished: task.id === 'done', events: [] })) })
     const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' }, global: { stubs: { TaskSchedulePopover: true } } })
     await flushPromises()
-    const planned = wrapper.get('[data-group="planned"]'), records = wrapper.get('[data-group="records"]')
+    const planned = wrapper.get('[data-group="planned"]'), progress = wrapper.get('[data-group="progress"]'), records = wrapper.get('[data-group="records"]')
     expect(planned.findAll('.task-title').map(item => item.text())).toEqual(['今天要做', '仍需子项验收'])
-    expect(records.findAll('.task-title').map(item => item.text())).toEqual(['当天进展未安排', '真正收尾'])
+    expect(progress.findAll('.task-title').map(item => item.text())).toEqual(['当天进展未安排'])
+    expect(progress.get('.task-title').isVisible()).toBe(true)
+    expect(records.findAll('.task-title').map(item => item.text())).toEqual(['真正收尾'])
+    expect(planned.get('.todo-checklist').isVisible()).toBe(true)
+    expect(planned.get('.todo-checklist').text()).toContain('仍待验证')
+    expect(wrapper.get('.day-overview').text()).toContain('3 件待办')
     const recordsContent = records.get('[id]')
     expect((recordsContent.element as HTMLElement).style.display).toBe('none')
     await records.get('.records-toggle').trigger('click')
@@ -189,6 +195,49 @@ describe('待办日工作区', () => {
     expect((recordsContent.element as HTMLElement).style.display).toBe('')
     expect(wrapper.get('.day-secondary').find('[aria-label="每日固定事项"]').exists()).toBe(true)
     expect(wrapper.get('.day-secondary').find('.day-notes').exists()).toBe(true)
+    wrapper.unmount()
+  })
+  it('默认展开未完成子事项，更多菜单记进展沿用隔离草稿；日期切换恢复展开', async () => {
+    const data = useDataStore(), task = data.tasks[0]!
+    task.status = '进行中'; task.subs = [{ id: 'pending', text: '明确下一步', done: false }]
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [{ task, snapshot: task, planned: true, finished: false, events: [{ id: 1, summary: '改了安排', occurredAt: '2026-10-03T09:00:00+08:00' }] }] })
+    const wrapper = mount(TodoDayView, { attachTo: document.body, props: { date: '2026-10-03' }, global: { stubs: { TaskSchedulePopover: true, NoteComposer: true } } })
+    await flushPromises()
+    expect(wrapper.get('.todo-checklist').isVisible()).toBe(true)
+    expect(wrapper.find('.task-actions').exists()).toBe(false)
+    expect(wrapper.get('.latest-progress').text()).toContain('改了安排')
+    const menuAction = async (label: string) => {
+      await wrapper.get('.task-more').trigger('click'); await flushPromises()
+      const action = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === label)!
+      action.click(); await flushPromises()
+    }
+    await menuAction('记进展')
+    expect(wrapper.getComponent({ name: 'NoteComposer' }).props('draftScope')).toBe(`day:a:wg:2026-10-03:${task.id}`)
+    await wrapper.get('.task-note-composer button').trigger('click')
+    await menuAction('收起子事项')
+    expect(wrapper.get('.todo-checklist').isVisible()).toBe(false)
+    expect(wrapper.get('.checklist-reopen').text()).toContain('1 项子事项')
+    await wrapper.setProps({ date: '2026-10-04' }); await flushPromises()
+    expect(wrapper.get('.todo-checklist').isVisible()).toBe(true)
+    expect(wrapper.get('.todo-checklist input').attributes('disabled')).toBeDefined()
+    await wrapper.get('.task-more').trigger('click'); await flushPromises()
+    expect([...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent)).not.toContain('记进展')
+    wrapper.unmount(); document.body.innerHTML = ''
+  })
+  it('子事项勾选使用既有状态保存，不把待验证或主任务自动标成完成', async () => {
+    const data = useDataStore(), task = data.tasks[0]!
+    task.status = '进行中'; task.subs = [{ id: 'pending', text: '需要验收', done: false, status: '待验证' }]
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [{ task, snapshot: task, planned: true, finished: false, events: [] }] })
+    const setState = vi.spyOn(data, 'setSubState')
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' }, global: { stubs: { TaskSchedulePopover: true } } }); await flushPromises()
+    expect(wrapper.get('.todo-checklist .sub-state').text()).toBe('待验证')
+    expect(setState).not.toHaveBeenCalled()
+    await wrapper.get('.todo-checklist input').setValue(true); await flushPromises()
+    expect(setState).toHaveBeenCalledWith(task.id, 'pending', '已完成')
+    expect(flush).toHaveBeenCalledWith(task.id)
+    expect(task.status).toBe('进行中')
+    expect(wrapper.find('[data-group="progress"]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('收起进展分组时保留保存失败反馈，历史分组默认可读', async () => {
