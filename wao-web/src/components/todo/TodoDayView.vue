@@ -11,7 +11,10 @@ import { useDayWorkspaceStore } from '@/stores/dayWorkspace'
 import { isTaskFinished } from '@/utils/projectCompletion'
 import { legacyProjection } from '@/utils/richDoc'
 import { PreviousTodoWriteRecovered, saveTodoWithReceipt, writeDayNote, type DayNoteWrite, type DayTask, type NoteSubmission } from '@/api/dayWorkspace'
-import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
+import TodoTaskChecklist from './TodoTaskChecklist.vue'
+import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
+import { useTaskOrderStore } from '@/stores/taskOrder'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import TaskSchedulePopover from './TaskSchedulePopover.vue'
 import DailyRoutineSection from './DailyRoutineSection.vue'
@@ -24,11 +27,14 @@ const emit = defineEmits<{ 'update:date': [date: string]; all: [] }>()
 const data = useDataStore(), session = useSessionStore(), ui = useUiStore(), days = useDayWorkspaceStore(), router = useRouter()
 const preferences = usePreferenceStore()
 const taskPreferences = useTaskPreferencesStore()
+const taskOrder = useTaskOrderStore()
 const availableProjects = computed(() => data.projects.filter(project => project.status !== '已完成'))
 const day = computed(() => days.days[props.date])
 const past = computed(() => props.date < data.today), future = computed(() => props.date > data.today)
 const heading = computed(() => new Date(`${props.date}T12:00:00+08:00`).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }))
 const noteFor = ref<string | null>(null), expanded = ref<Record<string, boolean>>({}), title = ref(''), createError = ref(''), creating = ref(false)
+const taskMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
+const checklistOpen = (id: string) => expanded.value[id] !== false
 const createProject = ref('')
 const draftError = ref('')
 const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
@@ -42,7 +48,7 @@ let restoringDraft = false
 watch(() => [props.date, identity()], () => {
   restoringDraft = true
   selectionProtected.value = false
-  noteFor.value = null; title.value = ''; createError.value = ''; draftError.value = ''; createId = ''; createProject.value = data.loadStates.projects === 'loaded' ? automaticProject() : ''
+  taskMenu.value?.close(); expanded.value = {}; noteFor.value = null; title.value = ''; createError.value = ''; draftError.value = ''; createId = ''; createProject.value = data.loadStates.projects === 'loaded' ? automaticProject() : ''
   try { const draft = JSON.parse(localStorage.getItem(newKey()) || 'null') as { id: string; title: string; project?: string } | null; if (draft) { selectionProtected.value = true; title.value = draft.title; createId = draft.id; createProject.value = draft.project || '' } } catch { selectionProtected.value = true /* Preserve corrupted draft without overwriting it. */ }
   restoringDraft = false
   void days.load(props.date)
@@ -81,14 +87,32 @@ watch(() => [props.date, identity()], () => { recordsOpen.value = past.value; al
 const taskGroups = computed(() => {
   const entries = day.value?.tasks ?? []
   const planned = entries.filter(entry => entry.planned && !isTaskFinished(shown(entry)))
-  const records = entries.filter(entry => !entry.planned || isTaskFinished(shown(entry)))
+  const progress = entries.filter(entry => !entry.planned && !isTaskFinished(shown(entry)))
+  const records = entries.filter(entry => isTaskFinished(shown(entry)))
   return [
     { id: 'planned', label: past.value ? '当日安排' : future.value ? '计划安排' : '今日安排', items: planned },
-    { id: 'records', label: '当天进展与已完成', items: records },
+    { id: 'progress', label: past.value ? '当日推进过' : '今天推进过', items: progress },
+    { id: 'records', label: '已完成', items: records },
   ]
 })
-const recordsVisible = computed(() => recordsOpen.value || taskGroups.value[1]!.items.some(entry =>
+const recordsVisible = computed(() => recordsOpen.value || taskGroups.value[2]!.items.some(entry =>
   noteFor.value === entry.task.id || data.taskSaveState(entry.task.id) === 'saving' || data.taskSaveState(entry.task.id) === 'error'))
+function openTaskMenu(event: MouseEvent, entry: DayTask) {
+  taskMenu.value?.openAt(event, `任务：${shown(entry).title}`, [
+    { id: 'detail', label: '查看任务详情', run: () => ui.openTask(entry.task.id) },
+    ...(!future.value ? [{ id: 'note', label: past.value ? '补记进展' : '记进展', run: () => { noteFor.value = entry.task.id } }] : []),
+    ...(shown(entry).subs?.length ? [{ id: 'subs', label: checklistOpen(entry.task.id) ? '收起子事项' : '展开子事项', run: () => { expanded.value[entry.task.id] = !checklistOpen(entry.task.id) } }] : []),
+  ], event.currentTarget as HTMLElement)
+}
+async function toggleSubtask(entry: DayTask, subId: string) {
+  if (past.value || future.value || data.movingSubtasks || data.taskSaveState(entry.task.id) === 'saving') return
+  const sub = data.subById(entry.task.id, subId)
+  if (!sub) return
+  const date = props.date
+  data.setSubState(entry.task.id, subId, sub.done ? '未开始' : '已完成')
+  await data.flushTask(entry.task.id)
+  if (data.taskSaveState(entry.task.id) === 'saved') await refresh(date)
+}
 function move(offset: number) { emit('update:date', new Date(Date.parse(`${props.date}T00:00:00Z`) + offset * 86400000).toISOString().slice(0, 10)) }
 async function refresh(date = props.date) { days.invalidate(); await days.load(date, true) }
 async function createTask() {
@@ -168,7 +192,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
       <div>
         <h2>{{ heading }}</h2>
         <div v-if="day" class="day-overview" aria-label="当天概况">
-          <span><b>{{ taskGroups[0]!.items.length }}</b> {{ past ? '件未收尾安排' : future ? '件计划' : '件待办' }}</span>
+          <span><b>{{ taskGroups[0]!.items.length + taskGroups[1]!.items.length }}</b> {{ past ? '件未收尾任务' : future ? '件计划' : '件待办' }}</span>
           <span><b>{{ day.summary.finishedCount }}</b> 件完成记录</span>
           <span><b>{{ day.summary.stepDoneCount }}</b> 项步骤完成</span>
           <span><b>{{ day.summary.noteCount }}</b> 条记录</span>
@@ -192,8 +216,8 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
       <p v-else-if="past || future" class="day-context">{{ past ? '回看这一天留下的真实记录，任务与固定事项只读，可以补记。' : '先安排，实际进展留给当天。' }}</p>
       <TodoDayLayout>
         <template #default>
-          <WaoCard v-for="group in taskGroups" :key="group.id" class="day-task-group" :class="{ 'day-records': group.id === 'records' }" :data-group="group.id">
-            <header v-if="group.id === 'planned'" class="section-heading">
+          <WaoCard v-for="group in taskGroups.filter(item => item.id !== 'progress' || item.items.length)" :key="group.id" class="day-task-group" :class="{ 'day-records': group.id === 'records' }" :data-group="group.id">
+            <header v-if="group.id !== 'records'" class="section-heading">
               <h3>{{ group.label }} <span>{{ group.items.length }} 件</span></h3>
             </header>
             <header v-else class="section-heading">
@@ -201,30 +225,30 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
                 <i :class="recordsVisible ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'" aria-hidden="true"></i>{{ group.label }}<span>{{ group.items.length }} 件</span>
               </button>
             </header>
-            <div v-show="group.id === 'planned' || recordsVisible" :id="group.id === 'records' ? recordsId : undefined">
-              <p v-if="!group.items.length" class="day-empty">{{ group.id === 'records' ? '这一天还没有可靠的任务进展记录' : past ? '这一天还没有可靠的任务安排记录' : '这一天还没有安排，写下一件想做的事' }}</p>
+            <div v-show="group.id !== 'records' || recordsVisible" :id="group.id === 'records' ? recordsId : undefined">
+              <p v-if="!group.items.length" class="day-empty">{{ group.id === 'records' ? '这一天还没有已收尾的任务' : past ? '这一天还没有可靠的任务安排记录' : '这一天还没有安排，写下一件想做的事' }}</p>
               <article v-for="entry in group.items" :key="entry.task.id" class="day-task" :class="{ 'task-finished': isTaskFinished(shown(entry)) }">
                 <div class="day-task-main">
                   <div class="task-heading">
                     <button v-if="!past && !future" type="button" class="task-check" :aria-label="`完成或重新打开：${shown(entry).title}`" :aria-pressed="isTaskFinished(current(entry))" @click="toggle(entry)">{{ isTaskFinished(current(entry)) ? '✓' : '○' }}</button>
                     <button class="task-title" type="button" @click="ui.openTask(entry.task.id)">{{ shown(entry).title }}</button>
                     <span class="task-status">{{ shown(entry).status }}</span>
+                    <WaoButton class="task-more" variant="ghost" :aria-label="`更多操作：${shown(entry).title}`" aria-haspopup="menu" @click="openTaskMenu($event, entry)"><i class="ri-more-line" aria-hidden="true"></i></WaoButton>
                   </div>
                   <div class="task-meta">
+                    <span v-if="data.projectById(entry.task.project)" class="task-project">{{ data.projectById(entry.task.project)?.name }}</span>
+                    <span v-if="!past" class="task-priority">{{ entry.task.pr }}</span>
                     <TaskSchedulePopover v-if="!past" :key="`${identity()}:${entry.task.id}`" :task="current(entry)" :day="date" @saved="refresh()" />
                     <span v-else class="past-schedule">当日安排：{{ entry.snapshot.startAt ? entry.snapshot.startAt.slice(11, 16) : entry.snapshot.schedulePeriod === 'MORNING' ? '早晨' : entry.snapshot.schedulePeriod === 'AFTERNOON' ? '下午' : entry.snapshot.schedulePeriod === 'EVENING' ? '晚上' : entry.snapshot.start ? '不定时' : '未排期' }}</span>
                     <span v-if="!entry.planned" class="task-trace">当天留下了进展，未安排在这一天</span>
                   </div>
-                  <div class="task-actions">
-                    <button v-if="shown(entry).subs?.length" type="button" :aria-expanded="!!expanded[entry.task.id]" @click="expanded[entry.task.id] = !expanded[entry.task.id]">{{ expanded[entry.task.id] ? '收起子事项' : `${shown(entry).subs.length} 项子事项` }}</button>
-                    <button v-if="!future" type="button" :aria-expanded="noteFor === entry.task.id" @click="noteFor = noteFor === entry.task.id ? null : entry.task.id">{{ noteFor === entry.task.id ? '收起记录' : past ? '补记进展' : '记进展' }}</button>
-                    <button v-if="!past" type="button" @click="ui.openTask(entry.task.id)">拆分与详情</button>
-                  </div>
-                  <InlineSubtasks v-if="expanded[entry.task.id] && !past && !future && data.taskById(entry.task.id)" :task-id="entry.task.id" />
-                  <ul v-else-if="expanded[entry.task.id]" class="historical-subs"><li v-for="(sub, subIndex) in shown(entry).subs" :key="sub.id || subIndex">{{ sub.done ? '✓' : '○' }} {{ sub.text }}</li></ul>
+                  <TaskOrderStatus v-if="!past && !future && shown(entry).subs?.length > 1" :scope="`subs:${entry.task.id}`" />
+                  <TodoTaskChecklist v-if="shown(entry).subs?.length" v-show="checklistOpen(entry.task.id)" :task-id="entry.task.id" :subs="shown(entry).subs" :order="!past && !future ? taskOrder.state(`subs:${entry.task.id}`).ids : undefined" :read-only="past || future || !data.taskById(entry.task.id)" :saving="data.taskSaveState(entry.task.id) === 'saving' || data.movingSubtasks" @toggle="toggleSubtask(entry, $event)" />
+                  <button v-if="shown(entry).subs?.length && !checklistOpen(entry.task.id)" class="checklist-reopen" type="button" @click="expanded[entry.task.id] = true">展开 {{ shown(entry).subs.length }} 项子事项</button>
                   <p v-if="data.taskSaveState(entry.task.id) === 'saving'" role="status">正在保存任务…</p>
                   <p v-if="data.taskSaveState(entry.task.id) === 'error'" class="task-error" role="alert">{{ data.taskSaveError(entry.task.id) }} <button type="button" @click="ui.openTask(entry.task.id)">处理保存</button></p>
-                  <NoteComposer v-if="noteFor === entry.task.id" :key="`${identity()}:${date}:${entry.task.id}`" compact :draft-scope="`day:${identity()}:${date}:${entry.task.id}`" :submit-note="request => submitNote(request, entry.task.id)" />
+                  <div v-if="noteFor === entry.task.id" class="task-note-composer"><WaoButton variant="ghost" @click="noteFor = null">收起记录</WaoButton><NoteComposer :key="`${identity()}:${date}:${entry.task.id}`" compact autofocus :draft-scope="`day:${identity()}:${date}:${entry.task.id}`" :submit-note="request => submitNote(request, entry.task.id)" /></div>
+                  <p v-if="entry.events.length" class="latest-progress">最近进展：{{ entry.events[entry.events.length - 1]!.summary }}</p>
                   <details v-if="entry.events.length" class="day-events">
                     <summary>查看当天进展 · {{ entry.events.length }} 条</summary>
                     <div><span v-for="event in entry.events" :key="event.id">{{ event.summary }}<small>{{ new Date(event.occurredAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' }) }}{{ event.late ? ' · 后来补记' : '' }}</small></span></div>
@@ -255,6 +279,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
           </WaoCard>
         </template>
       </TodoDayLayout>
+      <ContextActionMenu ref="taskMenu" />
     </template>
   </section>
 </template>
@@ -269,7 +294,7 @@ h2 { margin: 0; color: var(--wao-text); font-size: 22px; font-weight: 700; }
 .date-arrow { width: 40px; padding: 0; }
 button, input, select { font: inherit; }
 .day-heading input { width: 154px; min-width: 0; min-height: var(--wao-control-height); padding: 7px 10px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); }
-.day-task-group { padding: 0 var(--wao-space-2); }
+.day-task-group { padding: 0; border: 0; border-radius: 0; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wao-space-1); min-height: 52px; }
 h3 { margin: 0; font-size: 14px; font-weight: 650; color: var(--wao-text); }
 .section-heading span { margin-left: var(--wao-space-1); color: var(--wao-text-3); font-size: 12px; font-weight: 400; }
@@ -284,10 +309,14 @@ h3 { margin: 0; font-size: 14px; font-weight: 650; color: var(--wao-text); }
 .task-check[aria-pressed='true'] { color: var(--wao-success-strong); }
 .task-finished .task-title { font-weight: 500; color: var(--wao-text-2); }
 .task-status { flex: none; padding-top: 4px; font-size: 12px; color: var(--wao-text-3); }
+.task-more { flex: none; min-width: 32px; min-height: 32px; padding: 4px; }
+.task-project, .task-priority { min-width: 0; overflow-wrap: anywhere; font-size: 12px; color: var(--wao-text-3); }
+.checklist-reopen, .latest-progress { margin: var(--wao-space-1) 0 0 32px; color: var(--wao-text-3); font-size: 12px; }
+.checklist-reopen { padding: 4px 0; min-height: 32px; border: 0; background: transparent; }
+.task-note-composer { margin: var(--wao-space-1) 0 0 32px; }
 .task-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 6px 0 0 32px; }
 .task-trace, .past-schedule { margin: 0; color: var(--wao-text-3); font-size: 12px; }
-.task-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 0 32px; }
-.task-actions button, .task-error button { min-height: 28px; padding: 3px 0; border: 0; background: transparent; color: var(--wao-primary-text); font-size: 12px; }
+.task-error button { min-height: 28px; padding: 3px 0; border: 0; background: transparent; color: var(--wao-primary-text); font-size: 12px; }
 .day-create { display: flex; flex-wrap: wrap; gap: var(--wao-space-1); margin: 0; padding: 12px 0 var(--wao-space-2); border-top: 1px solid var(--wao-line); }
 .day-create input { flex: 1; min-width: 130px; padding: 10px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); }
 .day-create select { min-width: 0; max-width: 180px; min-height: var(--wao-control-height); padding: 5px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); }
@@ -307,7 +336,6 @@ h3 { margin: 0; font-size: 14px; font-weight: 650; color: var(--wao-text); }
 .day-state p { margin: var(--wao-space-1) 0; }
 .day-state button { margin-right: var(--wao-space-1); }
 .task-error { margin: var(--wao-space-1) 0; color: var(--wao-danger-strong); font-size: 12px; }
-.historical-subs { padding-left: var(--wao-space-3); line-height: 1.8; overflow-wrap: anywhere; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 button:disabled { opacity: .55; cursor: default; }
@@ -315,15 +343,14 @@ button:disabled { opacity: .55; cursor: default; }
   h2 { font-size: 21px; }
   .day-heading nav { width: 100%; }
   .day-heading input { flex: 1; }
-  .day-task-group { padding-inline: 12px; }
   .day-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
   .day-create input { grid-column: 1 / -1; min-width: 0; width: 100%; }
   .day-create select { width: 100%; max-width: none; }
   .day-heading input, .day-create input, .day-create select, .day-create button { min-height: 44px; font-size: 16px; }
-  .task-check, .task-actions button, .section-action, .records-toggle { min-height: 44px; }
+  .task-check, .task-more, .checklist-reopen, .section-action, .records-toggle { min-height: 44px; }
   .task-check { min-width: 32px; }
-  .task-meta, .task-actions, .day-events { margin-left: 40px; }
+  .task-meta, .day-events, .checklist-reopen, .latest-progress, .task-note-composer { margin-left: 40px; }
   .task-status { max-width: 65px; overflow-wrap: anywhere; }
 }
-@media (pointer: coarse) { .task-check, .task-actions button, .section-action, .records-toggle { min-height: 44px; } .task-check { min-width: 44px; } }
+@media (pointer: coarse) { .task-check, .task-more, .checklist-reopen, .section-action, .records-toggle { min-height: 44px; } .task-check { min-width: 44px; } }
 </style>
