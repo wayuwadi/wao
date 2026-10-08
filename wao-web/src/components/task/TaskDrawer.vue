@@ -12,6 +12,7 @@ import { toast } from '@/composables/toast'
 // 不该压在首屏包里。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
+import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
 import SubtaskProperties from '@/components/task/SubtaskProperties.vue'
 import WorkItemIcon from '@/components/task/WorkItemIcon.vue'
 import { AI_RUN_ENABLED, selectableTaskStatuses } from '@/config/features'
@@ -31,7 +32,7 @@ import { useFavoritesStore } from '@/stores/favorites'
 import { nextTaskAiRunPollDelay, taskAiRunFingerprint } from '@/utils/taskAiRunPolling'
 import { apiGetTask, notifyTaskManually } from '@/api/board'
 import CellMenu from '@/components/task/CellMenu.vue'
-import { subtaskState, SUBTASK_STATE_COLOR, SUBTASK_STATES } from '@/utils/subtaskTree'
+import { subtaskRows, subtaskState, SUBTASK_STATE_COLOR, SUBTASK_STATES } from '@/utils/subtaskTree'
 import type { AiEngine, AiRun, Comment, Priority, SubtaskState, TaskStatus, TaskStep } from '@/types'
 
 const ui = useUiStore()
@@ -549,6 +550,23 @@ const subDesc = computed({
     if (t && openSubId.value) data.updateSub(t.id, openSubId.value, { desc: v })
   },
 })
+/** 分区布局仅保存浏览位置，业务输入继续走原有任务草稿。 */
+const detailLayout = ref<InstanceType<typeof TaskDetailLayout>>()
+const detailContextKey = computed(() => `${task.value?.id ?? ''}/${openSubId.value ?? ''}`)
+const detailDescription = computed(() => openSub.value ? subDesc.value : desc.value)
+const detailImages = computed(() => (openSub.value ? openSub.value.images : task.value?.images) ?? [])
+const detailSubtasks = computed(() => {
+  if (!task.value) return []
+  const rows = subtaskRows(task.value.id, task.value.subs)
+  if (!openSubId.value) return rows
+  const index = rows.findIndex(row => row.key === openSubId.value)
+  if (index < 0) return []
+  const parent = rows[index]!
+  const children = []
+  for (let i = index + 1; i < rows.length && rows[i]!.depth > parent.depth; i++) children.push(rows[i]!)
+  return children
+})
+const detailSubtaskCount = computed(() => detailSubtasks.value.length + (openSub.value ? 0 : fullChildren.value.length))
 const subStateOpen = ref(false)
 const subStateAnchor = ref<HTMLElement | null>(null)
 function setSubState(state: SubtaskState) {
@@ -1033,157 +1051,168 @@ async function uploadAttachment(event: Event) {
         <button type="button" @click="loadServerTask">放弃本机修改并载入服务器版</button>
         <pre v-if="viewingServerTask">{{ serverTaskText }}</pre>
       </div>
-      <div v-if="!openSub && (parentTask || fullChildren.length)" class="task-hierarchy-links">
+      <div v-if="!openSub && parentTask" class="task-hierarchy-links">
         <div v-if="parentTask">父任务：<button @click="ui.openTask(parentTask.id)">#{{ parentTask.number ?? '…' }} {{ parentTask.title }}</button></div>
-        <div v-if="fullChildren.length">子任务：<button v-for="child in fullChildren" :key="child.id" @click="ui.openTask(child.id)">#{{ child.number ?? '…' }} {{ child.title }}</button></div>
       </div>
-      <div class="dbody">
-        <!-- 主区 -->
-        <div v-if="openSub" class="main">
-          <div class="type-line">
-            <WorkItemIcon kind="subtask" :size="18" />子任务
-            <span class="type-parent">属于 <button @click="backToTask">#{{ task.number ?? '…' }} {{ task.title }}</button></span>
-          </div>
-          <textarea
-            ref="subTitleArea"
-            class="title-input"
-            :class="{ done: openSub.done }"
-            rows="1"
-            :value="openSub.text"
-            placeholder="子任务名称"
-            @input="editSubTitle"
-            @keydown.enter.prevent
-          ></textarea>
+      <TaskDetailLayout
+        ref="detailLayout"
+        :context-key="detailContextKey"
+        :description="detailDescription"
+        :image-count="detailImages.length"
+        :subtask-count="detailSubtaskCount"
+      >
+        <template #heading>
+          <div class="main detail-title">
+            <template v-if="openSub">
+              <div class="type-line">
+                <WorkItemIcon kind="subtask" :size="18" />子任务
+                <span class="type-parent">属于 <button @click="backToTask">#{{ task.number ?? '…' }} {{ task.title }}</button></span>
+              </div>
+              <textarea
+                ref="subTitleArea"
+                class="title-input"
+                :class="{ done: openSub.done }"
+                rows="1"
+                :value="openSub.text"
+                placeholder="子任务名称"
+                @input="editSubTitle"
+                @keydown.enter.prevent
+              ></textarea>
 
-          <div class="field">
-            <div class="field-headline">
-              <div class="field-label">描述</div>
-              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" :error-message="data.taskSaveError(task.id)" />
+            </template>
+            <template v-else>
+              <div class="type-line"><WorkItemIcon :kind="task.workItemType || 'task'" :size="18" /><select aria-label="工作项类型" :value="task.workItemType || 'task'" @change="data.patchTask(task.id, { workItemType: ($event.target as HTMLSelectElement).value as 'task' | 'requirement' | 'bug' }, '修改了工作项类型')"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select></div>
+              <textarea ref="taskTitleArea" class="title-input" rows="1" :value="task.title" @input="editTitle"></textarea>
+
+            </template>
+          </div>
+        </template>
+        <template #summary>
+          <button type="button" class="detail-meta" aria-label="编辑状态" @click="detailLayout?.openProperties()">{{ openSub ? subtaskState(openSub) : task.status }}</button>
+          <button type="button" class="detail-meta" aria-label="编辑优先级" @click="detailLayout?.openProperties()">{{ openSub ? openSub.pr || '未设置优先级' : task.pr }}</button>
+          <button type="button" class="detail-meta" aria-label="编辑负责人" @click="detailLayout?.openProperties()">负责人 {{ session.memberById(openSub ? openSub.owner || '' : task.owner).name || '未设置' }}</button>
+          <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" :error-message="data.taskSaveError(task.id)" />
+          <button v-if="saveState === 'error' && !data.taskConflicts[task.id]" type="button" class="text-btn small" @click="data.flushTask(task.id)">重试保存</button>
+        </template>
+        <template #description>
+          <template v-if="openSub">
+            <div class="field">
+              <div class="field-headline">
+                <div class="field-label">描述</div>
+              </div>
+              <MarkdownEditor
+                v-model="subDesc"
+                placeholder="补充这个子任务的做法、验收标准…敲 ## 变标题、- 变列表，可直接粘贴截图"
+                :min-height="200"
+                @upload-image="onSubImage"
+              />
             </div>
-            <MarkdownEditor
-              v-model="subDesc"
-              placeholder="补充这个子任务的做法、验收标准…敲 ## 变标题、- 变列表，可直接粘贴截图"
-              :min-height="200"
-              @upload-image="onSubImage"
-            />
-          </div>
 
-          <!-- 历史数据里挂在子任务上的图片；新粘贴的图现在直接进描述正文 -->
-          <div v-if="openSub.images?.length" class="field">
-            <div class="field-label">图片</div>
-            <div class="img-grid">
-              <div v-for="(im, i) in openSub.images" :key="i" class="img-cell">
-                <img :src="im.url" :alt="im.name" @click="viewImage(im.url)" />
-                <button class="img-del" title="移除" @click="removeSubImage(i)"><i class="ri-close-line"></i></button>
+            <!-- 历史数据里挂在子任务上的图片；新粘贴的图现在直接进描述正文 -->
+            <div v-if="openSub.images?.length" class="field">
+              <div class="field-label">图片</div>
+              <div class="img-grid">
+                <div v-for="(im, i) in openSub.images" :key="i" class="img-cell">
+                  <img :src="im.url" :alt="im.name" @click="viewImage(im.url)" />
+                  <button class="img-del" title="移除" @click="removeSubImage(i)"><i class="ri-close-line"></i></button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="field">
-            <InlineSubtasks :task-id="task.id" :parent-id="openSubId" />
-          </div>
-
-          <AiRunArchive
-            v-if="AI_RUN_ENABLED"
-            class="sub-ai-archive"
-            :runs="openSubAiRuns"
-            :loading="aiRunsLoading"
-            :loaded="aiRunsLoaded"
-            :requested-run-id="requestedRunId"
-            :show-scope="false"
-            @refresh="refreshTaskAiRuns"
-            @upload-image="onContinueImage"
-          />
-        </div>
-
-        <div v-else class="main">
-          <div class="type-line"><WorkItemIcon :kind="task.workItemType || 'task'" :size="18" /><select aria-label="工作项类型" :value="task.workItemType || 'task'" @change="data.patchTask(task.id, { workItemType: ($event.target as HTMLSelectElement).value as 'task' | 'requirement' | 'bug' }, '修改了工作项类型')"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select></div>
-          <textarea ref="taskTitleArea" class="title-input" rows="1" :value="task.title" @input="editTitle"></textarea>
-
-          <div class="field">
-            <div class="field-headline">
-              <div class="field-label">描述</div>
-              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" :error-message="data.taskSaveError(task.id)" />
+          </template>
+          <template v-else>
+            <div class="field">
+              <div class="field-headline">
+                <div class="field-label">描述</div>
+              </div>
+              <MarkdownEditor
+                v-model="desc"
+                placeholder="补充背景、目标与边界…敲 ## 变标题、- 变列表，可直接粘贴截图"
+                :min-height="84"
+                @upload-image="onTaskImage"
+              />
             </div>
-            <MarkdownEditor
-              v-model="desc"
-              placeholder="补充背景、目标与边界…敲 ## 变标题、- 变列表，可直接粘贴截图"
-              :min-height="84"
-              @upload-image="onTaskImage"
-            />
-          </div>
 
-          <div v-if="task.images && task.images.length" class="field">
-            <div class="field-label">图片</div>
-            <div class="img-grid">
-              <div v-for="(im, i) in task.images" :key="i" class="img-cell">
-                <img :src="im.url" :alt="im.name" @click="viewImage(im.url)" />
-                <button class="img-del" title="移除" @click="removeImage(i)"><i class="ri-close-line"></i></button>
+            <div v-if="task.images && task.images.length" class="field">
+              <div class="field-label">图片</div>
+              <div class="img-grid">
+                <div v-for="(im, i) in task.images" :key="i" class="img-cell">
+                  <img :src="im.url" :alt="im.name" @click="viewImage(im.url)" />
+                  <button class="img-del" title="移除" @click="removeImage(i)"><i class="ri-close-line"></i></button>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div v-if="stepsTotal" class="field">
-            <div class="steps-head">
-              <div class="field-label nomb">步骤</div>
-              <span class="steps-count wao-tabular">{{ stepsDone }} / {{ stepsTotal }}</span>
-              <span class="steps-bar"><span class="steps-fill" :style="{ width: stepPct + '%' }"></span></span>
-            </div>
-            <div>
-              <div v-for="(sp, i) in task.steps" :key="i" class="check-row" @click="toggleStep(i, 'steps')">
-                <span class="cbox sq" :class="{ done: sp.done }"><i class="ri-check-line"></i></span>
-                <span class="check-text" :class="{ done: sp.done }">{{ sp.text }}</span>
+            <div v-if="stepsTotal" class="field">
+              <div class="steps-head">
+                <div class="field-label nomb">步骤</div>
+                <span class="steps-count wao-tabular">{{ stepsDone }} / {{ stepsTotal }}</span>
+                <span class="steps-bar"><span class="steps-fill" :style="{ width: stepPct + '%' }"></span></span>
+              </div>
+              <div>
+                <div v-for="(sp, i) in task.steps" :key="i" class="check-row" @click="toggleStep(i, 'steps')">
+                  <span class="cbox sq" :class="{ done: sp.done }"><i class="ri-check-line"></i></span>
+                  <span class="check-text" :class="{ done: sp.done }">{{ sp.text }}</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="field">
-            <InlineSubtasks :task-id="task.id" />
-          </div>
-
-          <div v-if="task.files.length" class="field">
-            <div class="field-label">附件</div>
-            <div class="attach-list">
-              <div
-                v-for="(f, i) in task.files"
-                :key="f.id ?? i"
-                class="attach"
-                :class="{ legacy: !f.id }"
-              >
-                <button
-                  type="button"
-                  class="attach-open"
-                  :disabled="!f.id"
-                  :title="f.id ? '打开真实文件下载页' : '历史附件没有可下载的文件正文'"
-                  @click="openLinkedFile(f.id)"
+            <div v-if="task.files.length" class="field">
+              <div class="field-label">附件</div>
+              <div class="attach-list">
+                <div
+                  v-for="(f, i) in task.files"
+                  :key="f.id ?? i"
+                  class="attach"
+                  :class="{ legacy: !f.id }"
                 >
-                  <i :class="f.icon"></i>
-                  <span class="attach-name ellip">{{ taskFileDisplayName(f) }}</span>
-                  <span class="attach-size">{{ f.id ? f.size : `${f.size} · 仅历史记录` }}</span>
-                  <i :class="f.id ? 'ri-arrow-right-s-line dl' : 'ri-information-line dl'"></i>
-                </button>
-                <button class="relation-unlink" :aria-label="`取消关联文件 ${taskFileDisplayName(f)}`" title="取消关联" @click="removeAttachedFile(i)"><i class="ri-link-unlink-m"></i></button>
+                  <button
+                    type="button"
+                    class="attach-open"
+                    :disabled="!f.id"
+                    :title="f.id ? '打开真实文件下载页' : '历史附件没有可下载的文件正文'"
+                    @click="openLinkedFile(f.id)"
+                  >
+                    <i :class="f.icon"></i>
+                    <span class="attach-name ellip">{{ taskFileDisplayName(f) }}</span>
+                    <span class="attach-size">{{ f.id ? f.size : `${f.size} · 仅历史记录` }}</span>
+                    <i :class="f.id ? 'ri-arrow-right-s-line dl' : 'ri-information-line dl'"></i>
+                  </button>
+                  <button class="relation-unlink" :aria-label="`取消关联文件 ${taskFileDisplayName(f)}`" title="取消关联" @click="removeAttachedFile(i)"><i class="ri-link-unlink-m"></i></button>
+                </div>
               </div>
+              <button class="text-btn" :disabled="attachmentUploading" @click="attachmentInput?.click()">
+                <i :class="attachmentUploading ? 'ri-loader-4-line spin' : 'ri-upload-2-line'"></i>
+                {{ attachmentUploading ? '上传中…' : '上传并关联附件' }}
+              </button>
+              <input ref="attachmentInput" type="file" hidden @change="uploadAttachment" />
             </div>
-            <button class="text-btn" :disabled="attachmentUploading" @click="attachmentInput?.click()">
-              <i :class="attachmentUploading ? 'ri-loader-4-line spin' : 'ri-upload-2-line'"></i>
-              {{ attachmentUploading ? '上传中…' : '上传并关联附件' }}
-            </button>
-            <input ref="attachmentInput" type="file" hidden @change="uploadAttachment" />
-          </div>
 
+          </template>
+        </template>
+        <template #subtasks>
+          <div v-if="!openSub && fullChildren.length" class="full-child-tasks">
+            <div class="field-label">下级任务</div>
+            <button v-for="child in fullChildren" :key="child.id" type="button" class="full-child-link" @click="ui.openTask(child.id)"><WorkItemIcon :kind="child.workItemType || 'task'" /><span>#{{ child.number ?? '…' }} {{ child.title }}</span></button>
+          </div>
+          <div class="main detail-subtasks">
+            <KeepAlive :max="30"><InlineSubtasks :key="detailContextKey" :task-id="task.id" :parent-id="openSubId" /></KeepAlive>
+          </div>
+        </template>
+        <template #activity>
           <AiRunArchive
             v-if="AI_RUN_ENABLED"
-            :runs="aiRuns"
+            :class="{ 'sub-ai-archive': openSub }"
+            :runs="openSub ? openSubAiRuns : aiRuns"
             :loading="aiRunsLoading"
             :loaded="aiRunsLoaded"
             :requested-run-id="requestedRunId"
+            :show-scope="!openSub"
             @refresh="refreshTaskAiRuns"
             @upload-image="onContinueImage"
           />
-
-        </div>
-
+        </template>
+        <template #properties>
         <!-- 子任务属性：与任务属性栏同一位置、同一版式 -->
         <div v-if="openSub" class="props">
           <div class="props-label">子任务属性</div>
@@ -1561,7 +1590,8 @@ async function uploadAttachment(event: Event) {
             </template>
           </div>
         </div>
-      </div>
+        </template>
+      </TaskDetailLayout>
     </aside>
     <TaskRelationPicker
       v-if="relationOpen"
@@ -1583,6 +1613,14 @@ async function uploadAttachment(event: Event) {
 </template>
 
 <style scoped>
+.detail-title, .detail-subtasks { min-width: 0; }
+.detail-meta { border: 0; padding: 4px 8px; border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: var(--wao-font-caption); cursor: pointer; }
+.detail-meta:hover { color: var(--wao-primary-text); background: var(--wao-primary-soft); }
+.full-child-tasks { margin-bottom: var(--wao-space-2); }
+.full-child-link { display: flex; align-items: center; gap: var(--wao-space-1); width: 100%; padding: 10px 0; text-align: left; border: 0; border-bottom: 1px solid var(--wao-line); background: transparent; color: var(--wao-primary-text); cursor: pointer; }
+.full-child-link span { min-width: 0; overflow-wrap: anywhere; }
+@media (pointer: coarse) { .detail-meta { min-height: 44px; } }
+
 .task-save-conflict { padding: 12px 20px; color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
 .task-save-conflict button { margin-left: 10px; }
 .task-save-conflict pre { max-height: 180px; overflow: auto; white-space: pre-wrap; }
@@ -1693,7 +1731,7 @@ async function uploadAttachment(event: Event) {
 .mask {
   position: fixed;
   inset: 0;
-  background: rgba(23, 25, 35, 0.32);
+  background: var(--wao-mask-bg);
   z-index: 80;
 }
 /* 居中弹框（参照 ONES 工作项详情）：任务与子任务都在这里打开 */
@@ -1706,9 +1744,9 @@ async function uploadAttachment(event: Event) {
   height: min(860px, calc(100vh - 48px));
   background: var(--wao-bg-card);
   z-index: 81;
-  border-radius: 8px;
+  border-radius: var(--wao-radius-modal);
   overflow: hidden;
-  box-shadow: 0 16px 48px rgba(16, 18, 28, 0.22);
+  box-shadow: var(--wao-shadow-modal);
   display: flex;
   flex-direction: column;
   animation: waoTaskModal 0.18s ease;
@@ -1716,6 +1754,9 @@ async function uploadAttachment(event: Event) {
 @keyframes waoTaskModal {
   from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
   to { opacity: 1; transform: translate(-50%, -50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer { animation: none; }
 }
 .crumbs {
   display: flex;
@@ -1871,17 +1912,6 @@ async function uploadAttachment(event: Event) {
   color: var(--wao-warning-strong);
 }
 
-.dbody {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-}
-.main {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 22px 28px 30px;
-}
 .title-input {
   width: 100%;
   border: none;
@@ -2382,12 +2412,11 @@ async function uploadAttachment(event: Event) {
 
 /* 属性栏：关联与评论也在这里，比原来宽一点 */
 .props {
-  width: 330px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--wao-divider);
-  background: var(--wao-bg-sub-2);
-  overflow-y: auto;
-  padding: 16px 16px 24px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: transparent;
 }
 .menu-mask {
   position: fixed;
@@ -2789,8 +2818,7 @@ async function uploadAttachment(event: Event) {
 }
 
 @media (max-width: 760px) {
-  /* 当前抽屉的主体是 .dbody / .main / .props，不要沿用旧版的 drawer-body 类名。
-     手机上改为一个连续的纵向滚动区，避免主内容和属性栏同时被压成窄列。 */
+  /* 分区外壳负责正文与属性的窄屏切换，任务浮层占满可用视口。 */
   .drawer {
     width: 100%;
     max-width: none;
@@ -2829,24 +2857,8 @@ async function uploadAttachment(event: Event) {
   .share-menu {
     width: min(236px, calc(100vw - 16px));
   }
-  .dbody {
-    display: block;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-  .main {
-    overflow: visible;
-    padding: 18px 16px 24px;
-  }
   .title-input {
     font-size: 20px;
-  }
-  .props {
-    width: auto;
-    overflow: visible;
-    border-top: 1px solid var(--wao-divider);
-    border-left: none;
-    padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
   }
   .check-row {
     min-height: 32px;
