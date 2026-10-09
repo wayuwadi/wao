@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Independent cloud readiness checks; no sessions, arbitrary targets or promotion."""
 import argparse
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -9,17 +8,15 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-import urllib.parse
 
 TARGETS = {
     'main': 'https://wao.wayuwa.cn/api/edge/ready',
-    'linux2': 'https://linux2.wayuwa.cn:9443/api/edge/ready',
 }
 
 
 PLANNED_DRAIN_DIR = Path('/run/wao-nginx-upstreams')
 PLANNED_DRAIN_MAX_SECONDS = 2 * 3600
-# Jenkins touches this marker when the Linux2 application is replaced in place.
+# A recent marker identifies an explicitly planned application replacement.
 DEPLOY_WINDOW_SECONDS = 10 * 60
 # The timer runs every minute. A short clean interval must not close a
 # flapping incident and cause a new Feishu alert for the same failure.
@@ -33,24 +30,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def probe(url):
     try:
-        host = urllib.parse.urlsplit(url).hostname
         command = ['curl', '--silent', '--fail', '--max-time', '4', '--connect-timeout', '2',
                    '--max-filesize', '4096', '--proto', '=https',
                    '-H', 'Origin: https://wao.wayuwa.cn']
-        if host == 'linux2.wayuwa.cn':
-            answer = subprocess.run(['dig', '+time=2', '+tries=1', '+short', 'A', host, '@223.5.5.5'],
-                                    capture_output=True, text=True, timeout=3, check=True)
-            addresses = []
-            for line in answer.stdout.splitlines():
-                try:
-                    address = ipaddress.ip_address(line.strip())
-                    if address.version == 4 and address.is_global:
-                        addresses.append(str(address))
-                except ValueError:
-                    continue
-            if not addresses:
-                return False
-            command += ['--resolve', f'{host}:9443:{addresses[0]}']
         response = subprocess.run(command + [url], capture_output=True, text=True, timeout=5, check=True)
         value = json.loads(response.stdout)
         return (isinstance(value, dict) and value.get('code') == 0
