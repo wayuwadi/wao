@@ -1696,6 +1696,73 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('最新正文回传后失焦，不能恢复此前暂存的旧 Markdown', async () => {
+    const w = await mountEditor({ modelValue: '第一行' })
+    const editable = w.get('[contenteditable]').element as HTMLElement
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    editable.focus()
+    await w.setProps({ modelValue: '旧服务端正文' })
+    e.commands.insertContentAt(e.state.doc.content.size, '<p>第二行刚写完</p>')
+    await nextTick()
+    await w.setProps({ modelValue: e.getMarkdown() })
+    editable.blur()
+    await nextTick()
+    expect(e.getMarkdown()).toContain('第二行刚写完')
+    expect(e.getMarkdown()).not.toContain('旧服务端正文')
+    w.unmount()
+  })
+
+  it('当前正文得到确认时取消旧回灌，即使没有触发新的编辑事务', async () => {
+    const w = await mountEditor({ modelValue: '当前正文' })
+    const editable = w.get('[contenteditable]').element as HTMLElement
+    editable.focus()
+    await w.setProps({ modelValue: '过期正文', document: { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: '过期富文本' }] },
+    ] } })
+    await w.setProps({ modelValue: '当前正文', document: null })
+    editable.blur()
+    await nextTick()
+    expect(w.get('.md-body').text()).toBe('当前正文')
+    w.unmount()
+  })
+
+  it('旧快照暂存后继续输入，即使父页面尚未回传也保留新一行', async () => {
+    const w = await mountEditor({ modelValue: '第一行' })
+    const editable = w.get('[contenteditable]').element as HTMLElement
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    editable.focus()
+    await w.setProps({ modelValue: '过期正文', document: { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: '过期富文本' }] },
+    ] } })
+    e.commands.insertContentAt(e.state.doc.content.size, '<p>第二行刚写完</p>')
+    await nextTick()
+    editable.blur()
+    await nextTick()
+    expect(e.getMarkdown()).toContain('第二行刚写完')
+    expect(e.getMarkdown()).not.toContain('过期')
+    w.unmount()
+  })
+
+  it('最新富文本回传后失焦，不能恢复此前暂存的旧 JSON 正文', async () => {
+    const w = await mountEditor({ modelValue: '第一行', document: { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: '第一行' }] },
+    ] } })
+    const editable = w.get('[contenteditable]').element as HTMLElement
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    editable.focus()
+    await w.setProps({ document: { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: '旧富文本正文' }] },
+    ] } })
+    e.commands.insertContentAt(e.state.doc.content.size, '<p>第二行刚写完</p>')
+    await nextTick()
+    await w.setProps({ modelValue: e.getMarkdown(), document: e.getJSON() as RichDocNode })
+    editable.blur()
+    await nextTick()
+    expect(e.getMarkdown()).toContain('第二行刚写完')
+    expect(e.getMarkdown()).not.toContain('旧富文本正文')
+    w.unmount()
+  })
+
   it('失焦后把输入期间错过的外部更新补灌回来', async () => {
     const w = await mountEditor({ modelValue: '本地内容' })
     const editable = w.find('.md-body [contenteditable]').element as HTMLElement
