@@ -10,7 +10,7 @@ import NoteComposer from '@/components/notes/NoteComposer.vue'
 import NoteAiStageButton from '@/components/notes/NoteAiStageButton.vue'
 import { useNoteImageMode } from '@/composables/noteImageMode'
 import { saveCompanionDraft, fetchAiReceipts, fetchAiResults } from '@/api/noteAiCompanion'
-import NoteDiscoveryInline from '@/components/notes/NoteDiscoveryInline.vue'
+import NoteDiscoverySavedList from '@/components/notes/NoteDiscoverySavedList.vue'
 import { fetchDiscoveryCurrent, fetchDiscoverySource, type Discovery } from '@/api/noteDiscoveries'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { freezeNoteAiInput, retainNoteAiResult, fetchNoteOriginals } from '@/api/noteOriginals'
@@ -29,7 +29,7 @@ import { notePolishVersions, noteEnrichmentStatus, activateNoteWorkflowMember } 
 import { fetchNoteAiWorkflows, startSavedNoteStage } from '@/api/noteAiWorkflows'
 // 阅读器有全局键盘与焦点监听；每条测试释放组件，避免跨案例响应。
 enableAutoUnmount(afterEach)
-vi.mock('@/api/noteDiscoveries', () => ({ fetchDiscoveryCurrent: vi.fn().mockResolvedValue({ discovery: null, automationState: 'OFF', revision: '' }), fetchDiscoverySource: vi.fn(), feedbackDiscovery: vi.fn(), clearDiscoveryLegacyCache: vi.fn() }))
+vi.mock('@/api/noteDiscoveries', () => ({ fetchDiscoveryCurrent: vi.fn().mockResolvedValue({ discovery: null, automationState: 'OFF', revision: '' }), fetchDiscoveryPage: vi.fn().mockResolvedValue({ items: [], nextCursor: null }), fetchDiscoverySource: vi.fn(), feedbackDiscovery: vi.fn(), clearDiscoveryLegacyCache: vi.fn() }))
 vi.mock('@/api/noteAiWorkflows', () => ({ fetchNoteAiWorkflows: vi.fn().mockResolvedValue([]), retryNoteAiWorkflow: vi.fn(), startSavedNoteStage: vi.fn() }))
 vi.mock('@/api/noteAiCompanion', async importOriginal => ({ ...await importOriginal<object>(), saveCompanionDraft: vi.fn(), fetchAiReceipts: vi.fn().mockResolvedValue([]), fetchAiResults: vi.fn().mockResolvedValue({ items: [], attempts: [] }) }))
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn().mockResolvedValue('[]'), savePreference: vi.fn().mockResolvedValue(undefined) }))
@@ -130,20 +130,25 @@ describe('小记集中记录空间', () => {
     expect(wrapper.find('.note-card.editing').exists()).toBe(false)
     wrapper.unmount()
   })
-  it('发现条可直接关闭，刷新同一条不再弹出，新发现仍可显示且不改变反馈', async () => {
+  it('默认列表不读取或展示已有发现，重新打开和刷新后仍直接显示小记', async () => {
     const finding: Discovery = { id: 'close-one', origin: 'AUTO', headline: '可关闭的发现', observation: '依据', valueReason: '价值', restricted: false, evidence: [], feedback: { saved: true, dismissed: false, correction: null, version: 0 } }
     vi.mocked(fetchDiscoveryCurrent).mockResolvedValue({ discovery: finding, automationState: 'ON', lastOutcome: null, revision: '1' })
     useDataStore().apiLive = true
+    useDataStore().docs.one = doc('one', '直接浏览的小记')
+    vi.mocked(fetchDiscoveryCurrent).mockClear()
     let wrapper = await view(); await flushPromises()
-    await wrapper.get('[aria-label="关闭这条发现"]').trigger('click'); await flushPromises()
-    expect(wrapper.findComponent(NoteDiscoveryInline).exists()).toBe(false)
+    expect(wrapper.find('.note-discovery').exists()).toBe(false)
+    expect(wrapper.get('[data-note-id="one"]').text()).toContain('直接浏览的小记')
+    await wrapper.get('[aria-label="刷新小记清单"]').trigger('click'); await flushPromises()
+    expect(fetchDiscoveryCurrent).not.toHaveBeenCalled()
     expect(finding.feedback).toEqual({ saved: true, dismissed: false, correction: null, version: 0 })
     wrapper.unmount(); wrapper = await view(); await flushPromises()
-    expect(wrapper.findComponent(NoteDiscoveryInline).exists()).toBe(false)
+    expect(wrapper.find('.note-discovery').exists()).toBe(false)
     wrapper.unmount()
     vi.mocked(fetchDiscoveryCurrent).mockResolvedValue({ discovery: { ...finding, id: 'close-two' }, automationState: 'ON', lastOutcome: null, revision: '2' })
     wrapper = await view(); await flushPromises()
-    expect(wrapper.findComponent(NoteDiscoveryInline).exists()).toBe(true)
+    expect(wrapper.find('.note-discovery').exists()).toBe(false)
+    expect(fetchDiscoveryCurrent).not.toHaveBeenCalled()
     wrapper.unmount()
     vi.mocked(fetchDiscoveryCurrent).mockResolvedValue({ discovery: null, automationState: 'OFF', lastOutcome: null, revision: '' })
   })
@@ -813,12 +818,14 @@ describe('小记集中记录空间', () => {
   })
   it('成员切换后丢弃迟到的发现来源，不写入新成员文档状态', async () => {
     const finding: Discovery = { id: 'synthetic-discovery', origin: 'AUTO', headline: '合成联系', observation: '合成判断', valueReason: '合成价值', restricted: false, evidence: [], feedback: { saved: false, dismissed: false, correction: null, version: 0 } }
-    vi.mocked(fetchDiscoveryCurrent).mockResolvedValueOnce({ discovery: finding, automationState: 'READY', lastOutcome: 'PUBLISHED', revision: '1' })
     let finish!: (value: Doc) => void
     vi.mocked(fetchDiscoverySource).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     const data = useDataStore(), apply = vi.spyOn(data, 'applyRemoteDoc')
     const wrapper = await view(); await flushPromises()
-    wrapper.getComponent(NoteDiscoveryInline).vm.$emit('source', finding.id, 'old-source', new Event('click'))
+    await openFilters(wrapper)
+    await wrapper.findAll('.filter-options button').find(button => button.text() === '已收藏的发现')!.trigger('click')
+    await flushPromises()
+    wrapper.getComponent(NoteDiscoverySavedList).vm.$emit('source', finding.id, 'old-source', new Event('click'))
     await flushPromises()
     useSessionStore().accept({ member: { id: 'other-member', name: '另一合成成员', initial: '测', color: '#4358d6', role: '成员' } } as never)
     await flushPromises(); finish(doc('old-source', '不能落入新成员状态')); await flushPromises()

@@ -26,10 +26,8 @@ import { toast } from '@/composables/toast'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
 import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
-import NoteDiscoveryInline from '@/components/notes/NoteDiscoveryInline.vue'
 import NoteDiscoverySavedList from '@/components/notes/NoteDiscoverySavedList.vue'
-import { useNoteDiscoveries } from '@/composables/useNoteDiscoveries'
-import { fetchDiscoverySource, feedbackDiscovery, clearDiscoveryLegacyCache, type Discovery } from '@/api/noteDiscoveries'
+import { fetchDiscoverySource, clearDiscoveryLegacyCache } from '@/api/noteDiscoveries'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { resolvedRichContent } from '@/utils/richDoc'
@@ -829,7 +827,7 @@ function onReaderKeydown(event: KeyboardEvent) {
   if (event.key === 'End') { event.preventDefault(); void selectReadingNote(readerNotes.value[readerNotes.value.length - 1]!.id) }
 }
 const showBackToTop = ref(false)
-function onNotesScroll() { discoveries.applyPending(); showBackToTop.value = window.scrollY > 480 || (notesList.value?.scrollTop ?? 0) > 480 }
+function onNotesScroll() { showBackToTop.value = window.scrollY > 480 || (notesList.value?.scrollTop ?? 0) > 480 }
 function backToTop() {
   const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
   if ((notesList.value?.scrollHeight ?? 0) > (notesList.value?.clientHeight ?? 0) + 1) notesList.value?.scrollTo({ top: 0, behavior })
@@ -1098,7 +1096,6 @@ function onCreated(id: string) {
   companionExplicitId.value = ''
   void companion.value?.refresh()
   void loadAiReceipts()
-  void discoveries.refresh()
   query.value = ''
   selectedTag.value = ''
   limit.value = PAGE_SIZE
@@ -1107,7 +1104,6 @@ function onCreated(id: string) {
   void loadServerWorkflows()
 }
 function onEdited(sourceId: string, savedId: string) {
-  void discoveries.refresh()
   delete noteDrafts.value[sourceId]
   closeEditing(sourceId)
   highlighted.value = savedId
@@ -1199,43 +1195,8 @@ watch([() => session.currentUser.id, notes], ([memberId, values], previous) => {
   }
 }, { immediate: true })
 const discoveryMode = ref<'notes' | 'saved' | 'legacy'>('notes')
-const discoveryExpanded = ref(false)
-const discoveryUndo = ref<Discovery | null>(null)
-let undoTimer: ReturnType<typeof setTimeout> | undefined
-function discoverySafe() {
-  return !reading.value && !editingIds.value.length && !discoveryExpanded.value
-    && (notesList.value?.scrollTop ?? 0) < 20 && window.scrollY < 100
-    && !document.activeElement?.closest('input, textarea, [contenteditable="true"]')
-}
-function preserveDiscoveryPosition() {
-  const list = notesList.value
-  if (!list) return
-  const anchor = Array.from(list.querySelectorAll<HTMLElement>('.note-card')).find(card => card.getBoundingClientRect().bottom > list.getBoundingClientRect().top)
-  if (!anchor) return
-  const top = anchor.getBoundingClientRect().top
-  const ownScroll = getComputedStyle(list).overflowY === 'auto'
-  void nextTick(() => { if (!anchor.isConnected) return; const delta = anchor.getBoundingClientRect().top - top; if (ownScroll) list.scrollTop += delta; else window.scrollBy(0, delta) })
-}
-const discoveries = useNoteDiscoveries(() => session.currentUser.id, () => data.apiLive, discoverySafe, preserveDiscoveryPosition)
-function discoveryChanged(item: Discovery) {
-  if (item.feedback.dismissed) {
-    discoveries.current.value = null
-    discoveryExpanded.value = false
-    discoveryUndo.value = item
-    if (undoTimer) clearTimeout(undoTimer)
-    undoTimer = setTimeout(() => { discoveryUndo.value = null }, 20_000)
-  } else discoveries.current.value = item
-}
-async function undoDiscovery() {
-  const item = discoveryUndo.value
-  if (!item) return
-  const memberId = session.currentUser.id
-  try { const updated = await feedbackDiscovery(item, { dismissed: false }); if (memberId !== session.currentUser.id) return; discoveryUndo.value = null; discoveries.current.value = updated }
-  catch { toast('撤销没有保存成功，请重试', 'error') }
-}
 function selectDiscoveryMode(mode: 'notes' | 'saved' | 'legacy') { discoveryMode.value = mode; filterOpen.value = false }
-watch(() => session.currentUser.id, () => { discoveryUndo.value = null; discoveryMode.value = 'notes'; if (undoTimer) clearTimeout(undoTimer) })
-onBeforeUnmount(() => { if (undoTimer) clearTimeout(undoTimer) })
+watch(() => session.currentUser.id, () => { discoveryMode.value = 'notes' })
 onMounted(() => void loadPins())
 </script>
 
@@ -1271,8 +1232,6 @@ onMounted(() => void loadPins())
         </div>
         <NoteDiscoverySavedList v-if="discoveryMode !== 'notes'" :mode="discoveryMode" :member-id="session.currentUser.id" @source="openDiscoverySource" />
         <template v-else>
-        <NoteDiscoveryInline v-if="discoveries.current.value && !discoveries.hidden.value" :item="discoveries.current.value" @close="discoveries.hide()" @changed="discoveryChanged" @expanded="discoveryExpanded = $event" @source="openDiscoverySource" />
-        <p v-if="discoveryUndo" class="discovery-undo" role="status">已收起这条发现 <button type="button" @click="undoDiscovery">撤销</button></p>
         <div v-if="managingTags" class="new-tag-form" aria-label="标签管理">
           <select v-model="sourceTag" aria-label="待处理标签" :disabled="tagSaving"><option value="">选择标签</option><option v-for="tag in availableTags" :key="tag" :value="tag">{{ tag }}</option></select>
           <button :disabled="tagSaving || !sourceTag" @click="manageTag(false)">删除标签（保留文章）</button>
