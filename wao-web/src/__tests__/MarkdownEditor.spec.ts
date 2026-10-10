@@ -973,6 +973,62 @@ function pasteHtmlInto(el: Element, html: string) {
 }
 
 describe('MarkdownEditor（所见即所得）', () => {
+  it('图片嵌入模式右键改名使用原相对地址，清空名称回到默认编号', async () => {
+    const w = await mountEditor({ modelValue: '![自定义旧名](/api/images/one/raw)', imageControls: true, imageContextControls: true, previewImages: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    await w.get('.md-body img').trigger('contextmenu', { clientX: 20, clientY: 30 }); await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[aria-label="图片名称"]')!
+    expect(document.activeElement).toBe(input)
+    input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+    document.body.querySelector<HTMLFormElement>('.note-image-menu')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await nextTick()
+    expect(e.getJSON().content![0]?.attrs).toMatchObject({ src: '/api/images/one/raw', alt: '' })
+    expect(input.value).toBe('图片 1')
+    w.unmount()
+  })
+  it('菜单打开后选中位置改变，不把名称写到另一张相同原图，输入仍可复制保留', async () => {
+    const w = await mountEditor({ modelValue: '![image.png](/api/images/one/raw)\n\n![image.png](/api/images/one/raw)', imageControls: true, imageContextControls: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const handle = w.vm as unknown as { renameImageAt: (index: number, event: MouseEvent) => boolean }
+    handle.renameImageAt(1, new MouseEvent('click')); await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[aria-label="图片名称"]')!
+    input.value = '待保存名称'; input.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+    const before = e.getJSON()
+    e.commands.setNodeSelection(e.state.doc.firstChild!.nodeSize)
+    document.body.querySelector<HTMLFormElement>('.note-image-menu')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await nextTick()
+    expect(e.getJSON()).toEqual(before)
+    expect(document.body.textContent).toContain('图片位置已变化')
+    expect(input.value).toBe('待保存名称')
+    e.commands.setTextSelection(0); await nextTick()
+    expect(document.body.querySelector<HTMLInputElement>('[aria-label="图片名称"]')?.value).toBe('待保存名称')
+    w.unmount()
+  })
+  it('改名只更新指定图片，保留正文、地址、尺寸与缩进，支持撤销和 Markdown 重载', async () => {
+    const original = '开头保留\n\n![image.png](/api/images/one/raw "wao-image-size:50%xauto;indent=1")\n\n中间保留\n\n![image.png](/api/images/one/raw)\n\n结尾保留'
+    const w = await mountEditor({ modelValue: original, imageControls: true, imageContextControls: true, imageReferences: true })
+    const e = (w.vm as unknown as { editor: Editor }).editor
+    const before = e.getJSON()
+    expect(w.text()).toContain('图片 1')
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+    const handle = w.vm as unknown as { renameImageAt: (index: number, event: MouseEvent) => boolean }
+    expect(handle.renameImageAt(2, new MouseEvent('click'))).toBe(true)
+    await flushPromises()
+    expect(document.body.querySelector<HTMLDetailsElement>('.note-image-menu details')?.open).toBe(false)
+    const input = document.body.querySelector<HTMLInputElement>('[aria-label="图片名称"]')!
+    input.value = '任务进展 [第 1 周]'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    document.body.querySelector<HTMLFormElement>('.note-image-menu')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await nextTick()
+    const images = e.getJSON().content!.filter(n => n.type === 'image')
+    expect(images[0]).toEqual(before.content!.find(n => n.type === 'image'))
+    expect(images[1]?.attrs).toMatchObject({ src: '/api/images/one/raw', alt: '任务进展 [第 1 周]' })
+    expect(e.getJSON().content!.filter(n => n.type !== 'image')).toEqual(before.content!.filter(n => n.type !== 'image'))
+    expect(w.emitted('upload-image')).toBeUndefined()
+    const restored = await mountEditor({ modelValue: e.getMarkdown(), imageReferences: true })
+    expect((restored.vm as unknown as { editor: Editor }).editor.getJSON()).toEqual(e.getJSON())
+    e.commands.undo()
+    expect(e.getJSON()).toEqual(before)
+    restored.unmount(); w.unmount()
+  })
   it('小记左键不打开设置，右键统一高度可一次撤销且不上传', async () => {
     const w = await mountEditor({ modelValue: '![一](/api/images/one/raw "wao-image-size:50%xauto")\n\n![二](/api/images/two/raw "wao-image-size:50%xauto")', imageControls: true, imageContextControls: true })
     const e = (w.vm as unknown as { editor: Editor }).editor
@@ -1040,7 +1096,7 @@ describe('MarkdownEditor（所见即所得）', () => {
       input.value = value!; input.dispatchEvent(new Event('input', { bubbles: true }))
     }
     await nextTick()
-    document.body.querySelector<HTMLFormElement>('.note-image-menu')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    ;[...document.body.querySelectorAll<HTMLButtonElement>('.note-image-menu button')].find(b => b.textContent?.includes('应用固定尺寸'))!.click()
     await nextTick()
     expect(e.getJSON().content![0]!.attrs).toMatchObject({ width: 320, height: 160 })
     const restored = await mountEditor({ modelValue: e.getMarkdown(), document: e.getJSON() as RichDocNode, imageContextControls: true })

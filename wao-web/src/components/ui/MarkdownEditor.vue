@@ -34,6 +34,7 @@ import { CellSelection } from '@tiptap/pm/tables'
 import { NodeSelection, TextSelection, Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
 import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
+import { imageDisplayName } from '@/utils/imageDisplayName'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { closeHistory } from '@tiptap/pm/history'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
@@ -315,6 +316,43 @@ function focusImageBoundary(position: number, after: boolean) {
   e.view.dispatch(tr.scrollIntoView()); e.view.focus()
 }
 const imageMenu = ref<{ src: string; x: number; y: number } | null>(null)
+const imageNameTarget = ref<{ position: number; alt: unknown } | null>(null)
+function selectedImageNumber() {
+  const e = editor.value
+  if (!e) return 1
+  let count = 0, selected = 1
+  e.state.doc.descendants((node, position) => {
+    if (node.type.name !== 'image' || !/^(https?:\/\/|\/(?!\/))/i.test(String(node.attrs.src))) return
+    count++
+    if (position === e.state.selection.from) selected = count
+  })
+  return selected
+}
+function showImageMenu(src: string, x: number, y: number) {
+  imageNameTarget.value = editor.value ? { position: editor.value.state.selection.from, alt: editor.value.getAttributes('image').alt } : null
+  imageNameInput.value = imageDisplayName(editor.value?.getAttributes('image').alt, selectedImageNumber())
+  imageNameError.value = ''
+  imageNameSaved.value = false
+  imageMenu.value = { src, x, y }
+}
+/** 从编辑侧栏的名称直接进入同一图片菜单，不触发上传或保存。 */
+function renameImageAt(index: number, event: MouseEvent): boolean {
+  const e = editor.value
+  if (!e || props.readonly) return false
+  let count = 0, position: number | null = null
+  e.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'image' || !/^(https?:\/\/|\/(?!\/))/i.test(String(node.attrs.src))) return
+    if (++count === index) position = pos
+  })
+  if (position === null) return false
+  e.commands.setNodeSelection(position)
+  syncSelectionControls(e)
+  imageApplyAll.value = false
+  const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
+  showImageMenu(e.getAttributes('image').src, rect?.left ?? event.clientX, rect?.bottom ?? event.clientY)
+  nextTick(() => document.querySelector<HTMLInputElement>('.note-image-menu [aria-label="图片名称"]')?.select())
+  return true
+}
 function fullImageSource(image: HTMLImageElement): string {
   return image.dataset.fullSrc || image.currentSrc || image.src
 }
@@ -328,7 +366,8 @@ function openImageMenu(event: MouseEvent) {
     syncSelectionControls(editor.value)
     imageApplyAll.value = false
   }
-  imageMenu.value = { src: fullImageSource(target), x: event.clientX, y: event.clientY }
+  const src = props.imageContextControls && !props.readonly ? editor.value?.getAttributes('image').src : undefined
+  showImageMenu(typeof src === 'string' ? src : fullImageSource(target), event.clientX, event.clientY)
 }
 
 type ImageDimension = number | `${number}%` | null
@@ -449,7 +488,7 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
   },
   renderMarkdown: (node) => {
     const src = node.attrs?.src ?? ''
-    const alt = node.attrs?.alt ?? ''
+    const alt = String(node.attrs?.alt ?? '').replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]')
     const title = encodeImageTitle(node.attrs?.width, node.attrs?.height, node.attrs?.title, node.attrs?.indent)
     return title ? `![${alt}](${src} "${title}")` : `![${alt}](${src})`
   },
@@ -499,8 +538,8 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
       dom.append(button)
       const update = () => {
         button.hidden = typeof current.attrs.src !== 'string' || !/^(https?:\/\/|\/(?!\/))/i.test(current.attrs.src)
+        button.dataset.imageName = current.attrs.alt || ''
         caption.textContent = current.attrs.alt ? ` · ${current.attrs.alt}` : ''
-        button.title = current.attrs.alt || '查看右侧图片'
       }
       update()
       return { dom, update(next) { if (next.type !== current.type) return false; current = next; update(); return true },
@@ -559,7 +598,7 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
         editor.value.commands.setNodeSelection(pos)
         syncSelectionControls(editor.value)
         imageApplyAll.value = false
-        imageMenu.value = { src: current.attrs.src, x: event.clientX, y: event.clientY }
+        showImageMenu(current.attrs.src, event.clientX, event.clientY)
       })
       const update = () => {
         const attrs = current.attrs
@@ -571,8 +610,8 @@ const DocumentImage = Image.extend<ImageOptions & { previewImages: boolean; cont
           const indent = imageIndent(attrs.indent) * 24
           if (indent) dom.style.marginLeft = `min(${indent}px,50%)`
           reference.hidden = typeof attrs.src !== 'string' || !/^(https?:\/\/|\/(?!\/))/i.test(attrs.src)
+          reference.dataset.imageName = attrs.alt || ''
           reference.querySelector('.reading-image-caption')!.textContent = attrs.alt ? ` · ${attrs.alt}` : ''
-          reference.title = attrs.alt || '查看右侧图片'
           before.hidden = after.hidden = props.readonly
           if (!dom.contains(reference)) { image.removeAttribute('src'); dom.replaceChildren(before, reference, after) }
           return
@@ -903,6 +942,9 @@ function refreshImageReferences(e: Editor) {
     const index = offset + 1
     button.dataset.imageReference = String(index)
     button.querySelector('.reading-image-number')!.textContent = `图 ${index}`
+    const name = imageDisplayName(button.dataset.imageName, index)
+    button.querySelector('.reading-image-caption')!.textContent = ` · ${name}`
+    button.title = name
     button.setAttribute('aria-label', `查看图 ${index}${button.title ? `：${button.title}` : ''}`)
     button.setAttribute('aria-current', String(props.activeImageReference === index))
   })
@@ -1297,6 +1339,9 @@ const imageWidthInput = ref('')
 const imageHeightInput = ref('')
 const imageAltInput = ref('')
 const imageTitleInput = ref('')
+const imageNameInput = ref('')
+const imageNameError = ref('')
+const imageNameSaved = ref(false)
 const selectedImageScale = ref<number | null>(null)
 const imageSizeError = ref('')
 const imageMenuRequested = ref(false)
@@ -1569,6 +1614,26 @@ function applyImageDescription() {
     alt: imageAltInput.value.trim(),
     title: imageTitleInput.value.trim() || null,
   }).run()
+}
+
+function saveImageName() {
+  const e = editor.value
+  if (!e || props.readonly || !(e.state.selection instanceof NodeSelection)
+    || e.state.selection.node.type.name !== 'image' || e.state.selection.node.attrs.src !== imageMenu.value?.src
+    || e.state.selection.from !== imageNameTarget.value?.position || e.state.selection.node.attrs.alt !== imageNameTarget.value?.alt) {
+    imageNameError.value = '图片位置已变化，请重新打开菜单；输入的名称仍保留'
+    return
+  }
+  const name = imageNameInput.value.trim()
+  if (name.length > 120 || /[\r\n]/.test(name)) {
+    imageNameError.value = '名称最多 120 字，请使用单行文字'
+    return
+  }
+  e.commands.updateAttributes('image', { alt: name })
+  imageNameTarget.value = { position: e.state.selection.from, alt: name }
+  imageNameInput.value = imageDisplayName(name, selectedImageNumber())
+  imageNameError.value = ''
+  imageNameSaved.value = true
 }
 
 function openSelectedImage() {
@@ -2333,7 +2398,7 @@ function positionAtPoint(left: number, top: number) {
     return found ? { position: found.pos, viewportTop: e.view.coordsAtPos(found.pos).top } : null
   } catch { return null /* 布局尚未就绪时仍允许进入编辑，不阻塞用户。 */ }
 }
-defineExpose({ dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, appendBookExcerpt, focusSearch, positionAtPoint, focusImageReference })
+defineExpose({ dismissTransientUi, clearSentContent, appendMarkdown, copyFormatted, removeImageAt, insertTextAtSelection, appendPlainText, appendBookExcerpt, focusSearch, positionAtPoint, focusImageReference, renameImageAt })
 watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
@@ -2357,21 +2422,24 @@ onBeforeUnmount(() => {
 <template>
   <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0, bare }" @contextmenu="openImageMenu">
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null">
-      <form v-if="imageContextControls && imageControls && !readonly && editor?.isActive('image')" class="note-image-menu" @submit.prevent="applyImageDimensions">
+      <form v-if="imageContextControls && imageControls && !readonly" class="note-image-menu" @submit.prevent="saveImageName">
         <header><b>图片操作</b><button type="button" aria-label="关闭图片操作" @click="imageMenu = null"><i class="ri-close-line"></i></button></header>
+        <label class="image-name-label">图片名称<div class="image-name-field"><input v-model="imageNameInput" aria-label="图片名称" maxlength="120" placeholder="输入易读名称" @input="imageNameSaved = false" /><button type="submit" aria-label="保存图片名称" title="保存名称（Enter）"><i class="ri-check-line" aria-hidden="true"></i></button></div></label>
+        <p v-if="imageNameError" class="image-name-error" role="alert">{{ imageNameError }}</p>
+        <p v-else-if="imageNameSaved" class="image-name-saved" role="status">名称已更新，随小记保存</p>
         <button type="button" class="image-menu-row" @click="openSelectedImage(); imageMenu = null"><i class="ri-fullscreen-line"></i>全屏查看</button>
-        <div class="image-menu-section"><span>调整范围</span>
+        <div class="image-menu-section">
           <div class="image-size-scope" role="group" aria-label="图片尺寸调整范围"><button type="button" :aria-pressed="!imageApplyAll" @click="imageApplyAll = false">当前图片</button><button type="button" :aria-pressed="imageApplyAll" @click="imageApplyAll = true">本篇全部</button></div>
-          <div class="image-menu-caption"><span>宽度比例</span><span>点击即生效</span></div>
           <div class="image-scale-options"><button v-for="percent in IMAGE_SCALES" :key="percent" type="button" :aria-pressed="selectedImageScale === percent" :class="{ active: selectedImageScale === percent }" @click="setImageScale(percent)">{{ percent }}%</button></div>
-          <div class="image-menu-caption"><span>固定尺寸</span></div>
-          <div class="note-image-pixels"><label>宽度 · px<input v-model="imageWidthInput" type="number" min="1" max="4000" placeholder="自动" aria-label="图片宽度（像素）" @input="selectedImageScale = null" /></label><label>高度 · px<input v-model="imageHeightInput" type="number" min="1" max="4000" placeholder="自动" aria-label="图片高度（像素）" @input="selectedImageScale = null" /></label></div>
-          <button type="submit" class="image-menu-apply">应用固定尺寸 <span aria-hidden="true">↵</span></button>
-          <button type="button" class="image-menu-row" @click="chooseUniformHeight"><i class="ri-align-top"></i>统一本篇图片高度<span class="image-uniform-value">{{ imageHeightInput || '240' }} px</span></button>
-          <div v-if="imageSizeError" class="image-size-error" role="alert">{{ imageSizeError }}</div>
         </div>
-        <div class="image-menu-section"><button type="button" class="image-menu-row" @click="changeImageRow(false)"><i class="ri-corner-down-left-line"></i>独占一行</button><button type="button" class="image-menu-row" @click="changeImageRow(true)"><i class="ri-layout-column-line"></i>与上一张并排</button><button type="button" class="image-menu-row" @click="clearImageSize">恢复原始尺寸</button></div>
-        <p class="image-menu-footnote">图片完整显示，保持原始比例</p>
+        <div class="image-row-options"><button type="button" class="image-menu-row" @click="changeImageRow(false)"><i class="ri-corner-down-left-line"></i>独占一行</button><button type="button" class="image-menu-row" @click="changeImageRow(true)"><i class="ri-layout-column-line"></i>与上一张并排</button></div>
+        <details class="image-menu-section"><summary>更多尺寸与布局</summary>
+          <div class="note-image-pixels"><label>宽度 · px<input v-model="imageWidthInput" type="number" min="1" max="4000" placeholder="自动" aria-label="图片宽度（像素）" @input="selectedImageScale = null" @keydown.enter.prevent="applyImageDimensions" /></label><label>高度 · px<input v-model="imageHeightInput" type="number" min="1" max="4000" placeholder="自动" aria-label="图片高度（像素）" @input="selectedImageScale = null" @keydown.enter.prevent="applyImageDimensions" /></label></div>
+          <button type="button" class="image-menu-apply" @click="applyImageDimensions">应用固定尺寸 <span aria-hidden="true">↵</span></button>
+          <button type="button" class="image-menu-row" @click="chooseUniformHeight"><i class="ri-align-top"></i>统一本篇图片高度<span class="image-uniform-value">{{ imageHeightInput || '240' }} px</span></button>
+          <button type="button" class="image-menu-row" @click="clearImageSize">恢复原始尺寸</button>
+          <div v-if="imageSizeError" class="image-size-error" role="alert">{{ imageSizeError }}</div>
+        </details>
       </form>
     </ImageCopyMenu>
     <input
@@ -2762,12 +2830,23 @@ onBeforeUnmount(() => {
 .md-body :deep(.note-image-node.ProseMirror-selectednode) { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .md-body :deep(.note-image-fullscreen) { position: absolute; right: 7px; top: 7px; opacity: 0; display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-1); font: 12px/1.4 inherit; cursor: pointer; }
 .md-body :deep(.note-image-node:hover .note-image-fullscreen), .md-body :deep(.note-image-node:focus-within .note-image-fullscreen) { opacity: 1; }
-.note-image-menu { width: 256px; color: var(--wao-text-1); font-size: 12px; }
+.note-image-menu { width: 232px; max-width: calc(100vw - 34px); color: var(--wao-text); font: inherit; }
 .note-image-menu header { display: flex; justify-content: space-between; align-items: center; font-size: 14px; margin: 3px 3px 6px; }
-.note-image-menu button { border: 0; border-radius: 8px; background: transparent; color: inherit; padding: 6px 5px; cursor: pointer; }
+.note-image-menu button { border: 0; border-radius: var(--wao-radius-control); background: transparent; color: inherit; font: inherit; padding: 6px 5px; cursor: pointer; }
 .note-image-menu button:hover { background: var(--wao-bg-sub); }
 .note-image-menu .image-menu-row { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; }
-.image-menu-section { border-top: 1px solid var(--wao-line-control); padding-top: 10px; margin-top: 8px; }
+.image-menu-section { border-top: 1px solid var(--wao-line-control); padding-top: 6px; margin-top: 6px; }
+.image-menu-section summary { cursor: pointer; padding: 5px; color: var(--wao-text-weak); }
+.image-name-label { display: block; margin: 4px 3px 8px; color: var(--wao-text-weak); }
+.image-name-field { display: flex; gap: 4px; margin-top: 4px; }
+.image-name-field input { width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; }
+.image-name-field input:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 1px; }
+.image-name-field button { flex: none; padding: 6px 8px; color: var(--wao-primary-text); background: var(--wao-primary-soft); }
+.image-name-error, .image-name-saved { margin: 4px 3px; font-size: 12px; }
+.image-name-error { color: var(--wao-danger); }
+.image-name-saved { color: var(--wao-text-weak); }
+.image-row-options { display: grid; grid-template-columns: 1fr 1fr; margin-top: 6px; }
+.note-image-menu .image-row-options button { gap: 4px; padding: 6px 4px; white-space: nowrap; }
 .image-menu-section > span { color: var(--wao-text-weak); }
 .note-image-menu .image-scale-options { margin-top: 8px; }
 .note-image-menu .image-scale-options button { flex: 1; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-1); font-size: 12px; padding: 6px 4px; }
@@ -2784,7 +2863,7 @@ onBeforeUnmount(() => {
 .image-menu-caption > span + span { color: var(--wao-primary-text); }
 .image-uniform-value { margin-left: auto; color: var(--wao-text-weak); }
 .image-menu-footnote { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--wao-line-control); color: var(--wao-text-weak); font-size: 12px; }
-@media (pointer: coarse) { .md-body :deep(.note-image-fullscreen) { opacity: 1; min-height: 40px; } .note-image-menu button { min-height: 40px; } }
+@media (pointer: coarse) { .md-body :deep(.note-image-fullscreen) { opacity: 1; min-height: 40px; } .note-image-menu button { min-height: 44px; } .image-name-field input { font-size: 16px; } }
 .character-count { position:sticky; bottom:0; z-index:1; flex-shrink:0; width:fit-content; max-width:100%; margin-left:auto; padding:4px 8px; border-radius:4px; background:var(--wao-bg-card,#fff); color:var(--wao-text-weak,#646a73); font-size:12px; line-height:20px; font-variant-numeric:tabular-nums; }
 .character-count.docked { position:static; padding:3px 16px; }
 .polish-resume {
