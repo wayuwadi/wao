@@ -14,6 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 /** 小记 AI 配置的唯一读写入口，沿用既有成员偏好键。 */
 @Service
 public class NoteAiSettingsService {
+    public static final String DEFAULT_POLISH_MODEL = "gpt-6-luna";
+    public static final String DEFAULT_POLISH_EFFORT = "low";
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private LocalCodexModelService models;
     public static final String DEFAULTS = "note-ai-defaults-v1";
     public static final List<String> KEYS = List.of(DEFAULTS, "note-ai-model-v1", "note-title-prompt-v1",
             "article-overview-image-prompt-v1", "text-polish.prompt.v1", "note-polish-prompt-v1");
@@ -25,7 +29,7 @@ public class NoteAiSettingsService {
     }
     public record Settings(boolean title, boolean polish, boolean image, String executionMode, int maxConcurrent,
             String model, String reasoningEffort, String titlePrompt, String imagePrompt, String polishPrompt,
-            long titleEpoch, long imageEpoch, long polishEpoch) {
+            long titleEpoch, long imageEpoch, long polishEpoch, String polishModel, String polishReasoningEffort) {
         public boolean enabled(String stage) { return switch(stage) { case "title" -> title; case "image" -> image; case "tags" -> true; default -> polish; }; }
         public long epoch(String stage) { return switch(stage) { case "title" -> titleEpoch; case "image" -> imageEpoch; case "tags" -> 0; default -> polishEpoch; }; }
     }
@@ -62,7 +66,8 @@ public class NoteAiSettingsService {
             reasoningEffort(node.path("reasoningEffort").asText("medium")),
             text(values.get("note-title-prompt-v1")),text(values.get("article-overview-image-prompt-v1")),
             text(canonical == null || canonical.isBlank() ? values.get("note-polish-prompt-v1") : canonical),
-            node.path("titleEpoch").asLong(),node.path("imageEpoch").asLong(),node.path("polishEpoch").asLong());
+            node.path("titleEpoch").asLong(),node.path("imageEpoch").asLong(),node.path("polishEpoch").asLong(),
+            polishModel(node.path("polishModel").asText(null)), polishEffort(node.path("polishReasoningEffort").asText(null)));
         return new View(s,hash(write(values)), raw != null && !raw.isBlank(), "沿用服务主机已获准 AI 配置；实际任务失败会保留原因");
     }
     /** 锁定成员以保护多设备设置与工作流并发占用。 */
@@ -79,6 +84,13 @@ public class NoteAiSettingsService {
             throw new ConflictException("小记 AI 设置已在其他设备更新，请重新读取；未保存设置仍保留");
         Settings next = request.settings();
         String effort = reasoningEffort(next.reasoningEffort());
+        // 老客户端省略新增字段时保留账号当前选择，不能用默认值覆盖它。
+        String polishModel = next.polishModel() == null ? old.settings().polishModel() : polishModel(next.polishModel());
+        String polishEffort = next.polishReasoningEffort() == null ? old.settings().polishReasoningEffort() : polishEffort(next.polishReasoningEffort());
+        if (models != null && (next.polishModel() != null || next.polishReasoningEffort() != null)) {
+            polishModel = models.validate(polishModel);
+            polishEffort = models.validateEffort(polishModel, polishEffort);
+        }
         for (String value : List.of(text(next.model()),text(next.titlePrompt()),text(next.imagePrompt()),text(next.polishPrompt())))
             if (value.length()>4000) throw new BadRequestException("设置内容最多 4000 字符");
         ObjectNode defaults;
@@ -86,7 +98,7 @@ public class NoteAiSettingsService {
         catch (Exception e) { throw new BadRequestException("已有设置格式异常"); }
         defaults.put("title",next.title()).put("polish",next.polish()).put("image",next.image())
             .put("executionMode","parallel").put("maxConcurrent",0)
-            .put("reasoningEffort",effort);
+            .put("reasoningEffort",effort).put("polishModel",polishModel).put("polishReasoningEffort",polishEffort);
         for(String stage:List.of("title","image","polish")) defaults.put(stage+"Epoch",old.settings().epoch(stage)+(old.settings().enabled(stage)&&!next.enabled(stage)?1:0));
         preferences.upsert(member,DEFAULTS,write(defaults));
         preferences.upsert(member,"note-ai-model-v1",text(next.model()));
@@ -118,6 +130,14 @@ public class NoteAiSettingsService {
     /** 比较策略版本或内容副本的稳定摘要。 */
     public static String hash(String value) { try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));}catch(Exception e){throw new IllegalStateException(e);} }
     private static String text(String value){return value==null?"":value;}
+    private static String polishModel(String value) {
+        if (value == null || value.isBlank()) return DEFAULT_POLISH_MODEL;
+        if (!LocalCodexModelService.validId(value)) throw new BadRequestException("润色模型标识无效，请重新选择");
+        return value;
+    }
+    private static String polishEffort(String value) {
+        return reasoningEffort(value == null || value.isBlank() ? DEFAULT_POLISH_EFFORT : value);
+    }
     private static String reasoningEffort(String value){
         if(value==null||value.isBlank())return "medium";
         if(!List.of("none","minimal","low","medium","high","xhigh","max").contains(value))

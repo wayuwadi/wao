@@ -50,7 +50,7 @@ const items = [
   { id: 'display', label: '显示与图片', icon: 'ri-layout-line' },
   { id: 'capabilities', label: 'AI 能力', icon: 'ri-cpu-line' },
   { id: 'titlePrompt', label: '标题提示词', icon: 'ri-heading' },
-  { id: 'polishPrompt', label: '正文提示词', icon: 'ri-text' },
+  { id: 'polishPrompt', label: '正文润色', icon: 'ri-text' },
   { id: 'imagePrompt', label: '配图提示词', icon: 'ri-image-line' },
   { id: 'execution', label: '执行安排', icon: 'ri-list-check-2' },
 ]
@@ -89,7 +89,11 @@ const navigationItems = computed(() =>
             draft.value.maxConcurrent !== remote.value.settings.maxConcurrent
           : item.id in promptLabels
             ? draft.value[item.id as keyof typeof promptLabels] !==
-              remote.value.settings[item.id as keyof typeof promptLabels]
+                remote.value.settings[item.id as keyof typeof promptLabels] ||
+              (item.id === 'polishPrompt' &&
+                (draft.value.polishModel !== remote.value.settings.polishModel ||
+                  draft.value.polishReasoningEffort !==
+                    remote.value.settings.polishReasoningEffort))
             : false),
   })),
 )
@@ -102,6 +106,26 @@ const {
   loadModels,
   reset,
 } = useAiModelCatalog(draft, true)
+const polishModel = computed(() => draft.value?.polishModel || 'gpt-6-luna')
+const polishEffort = computed(() => draft.value?.polishReasoningEffort || 'low')
+const polishCatalogModel = computed(() =>
+  catalog.value?.models.find((item) => item.id === polishModel.value),
+)
+const polishEfforts = computed(() => polishCatalogModel.value?.reasoningEfforts || [])
+const polishValidationError = computed(() => {
+  if (!draft.value || !catalog.value) return ''
+  if (!polishCatalogModel.value) return '目录中找不到润色模型，已有选择保留；请刷新目录或重新选择'
+  if (!polishEfforts.value.includes(polishEffort.value))
+    return '润色模型不支持所选思考深度，请重新选择'
+  return ''
+})
+function normalizeSettings(value: NoteAiSettings): NoteAiSettings {
+  return {
+    ...value,
+    polishModel: value.polishModel ?? 'gpt-6-luna',
+    polishReasoningEffort: value.polishReasoningEffort ?? 'low',
+  }
+}
 let generation = 0,
   applying = false,
   draftOwner = session.currentUser.id
@@ -110,7 +134,7 @@ function restore() {
     const retained = noteSettingsDraft(draftOwner)
     if (retained) {
       applying = true
-      draft.value = retained.draft
+      draft.value = normalizeSettings(retained.draft)
       version.value = retained.version
       dirty.value = true
       applying = false
@@ -162,6 +186,7 @@ async function load() {
   error.value = ''
   try {
     const result = await fetchNoteAiSettings()
+    result.settings = normalizeSettings(result.settings)
     if (ticket !== generation) return
     remote.value = result
     preferences.noteAiDefaults = { ...result.settings }
@@ -191,16 +216,21 @@ function keepDraft() {
 }
 async function save() {
   if (!draft.value || !remote.value || saving.value || loading.value || conflict.value) return
-  if (validationError.value) {
-    error.value = validationError.value
+  if (validationError.value || polishValidationError.value) {
+    error.value = validationError.value || polishValidationError.value
     return
   }
   const ticket = generation,
-    submitted = JSON.parse(JSON.stringify(draft.value)) as NoteAiSettings
+    submitted = {
+      ...JSON.parse(JSON.stringify(draft.value)),
+      polishModel: polishModel.value,
+      polishReasoningEffort: polishEffort.value,
+    } as NoteAiSettings
   saving.value = true
   error.value = ''
   try {
     const result = await saveNoteAiSettings(submitted, version.value)
+    result.settings = normalizeSettings(result.settings)
     if (ticket !== generation) return
     remote.value = result
     version.value = result.version
@@ -270,7 +300,22 @@ onBeforeUnmount(() => {
     >
       <template #engine
         ><AIModelFields
-          v-if="draft && active !== 'display'"
+          v-if="draft && active === 'polishPrompt'"
+          :model="polishModel"
+          :reasoning-effort="polishEffort"
+          @update:model="draft.polishModel = $event"
+          @update:reasoning-effort="draft.polishReasoningEffort = $event"
+          :catalog="catalog"
+          :efforts="polishEfforts"
+          :loading="catalogLoading"
+          :disabled="loading || saving"
+          :error="catalogError || polishValidationError"
+          scope="正文润色"
+          default-effort="low"
+          description="整篇与选中文字润色共用。默认 GPT-6 Luna · 低思考，优先快速完成；保存后用于下一次任务。"
+          @refresh="loadModels"
+        /><AIModelFields
+          v-else-if="draft && active !== 'display'"
           v-model:model="draft.model"
           v-model:reasoning-effort="draft.reasoningEffort"
           :catalog="catalog"
@@ -280,7 +325,7 @@ onBeforeUnmount(() => {
           :error="catalogError || validationError"
           scope="小记"
           allow-default
-          description="仅用于小记标题、正文与配图，不影响卦象。"
+          description="用于小记标题、标签与配图；正文润色可在左侧独立设置，不影响卦象。"
           @refresh="loadModels"
         />
         <p v-else-if="active !== 'display'" role="status">
@@ -337,7 +382,12 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <fieldset v-if="draft && active !== 'display'" :disabled="loading || saving">
-        <p v-if="active === 'imagePrompt'" class="identity-default-link">自动配图按内容选用本人形象：任务进展、计划和技术说明优先用信息图；生活场景需要本人时才使用。<RouterLink to="/digital-members">管理默认形象</RouterLink></p>
+        <p v-if="active === 'imagePrompt'" class="identity-default-link">
+          自动配图按内容选用本人形象：任务进展、计划和技术说明优先用信息图；生活场景需要本人时才使用。<RouterLink
+            to="/digital-members"
+            >管理默认形象</RouterLink
+          >
+        </p>
         <template v-if="active === 'capabilities'"
           ><div class="section-heading">
             <div>
@@ -385,7 +435,13 @@ onBeforeUnmount(() => {
           ><div class="section-heading">
             <div>
               <h3>{{ items.find((item) => item.id === promptField)?.label }}</h3>
-              <p>用于下一次生成；留空沿用默认提示词。</p>
+              <p>
+                {{
+                  promptField === 'polishPrompt'
+                    ? '轻量润色适合日常记录；需要复杂改写时可选择 Astra。提示词留空沿用默认。'
+                    : '用于下一次生成；留空沿用默认提示词。'
+                }}
+              </p>
             </div>
             <span class="default-tag">{{
               draft[promptField] ? '自定义提示词' : '默认提示词'
@@ -407,7 +463,10 @@ onBeforeUnmount(() => {
           </div>
           <div class="behavior-note">
             <i class="ri-information-line" aria-hidden="true"></i>
-            <span>标题、正文、标签和配图可并行处理，包括多篇小记和多项选段生图。每项任务独立保存进度；实际调用仍以 Codex 的响应为准。</span>
+            <span
+              >标题、正文、标签和配图可并行处理，包括多篇小记和多项选段生图。每项任务独立保存进度；实际调用仍以
+              Codex 的响应为准。</span
+            >
           </div></template
         >
       </fieldset>
@@ -422,13 +481,16 @@ onBeforeUnmount(() => {
             }}
           </p>
           <p>
+            正文润色：{{ remote.settings.polishModel || 'gpt-6-luna' }}；思考深度：{{
+              remote.settings.polishReasoningEffort || 'low'
+            }}
+          </p>
+          <p>
             润色标题：{{ remote.settings.title ? '开启' : '关闭' }}；润色正文：{{
               remote.settings.polish ? '开启' : '关闭'
             }}；自动配图：{{ remote.settings.image ? '开启' : '关闭' }}
           </p>
-          <p>
-            执行方式：独立任务并行，无成员入队数量上限
-          </p>
+          <p>执行方式：独立任务并行，无成员入队数量上限</p>
           <template v-for="(label, field) in promptLabels" :key="field"
             ><h4>{{ label }}</h4>
             <pre>{{ remote.settings[field] || '沿用默认' }}</pre>

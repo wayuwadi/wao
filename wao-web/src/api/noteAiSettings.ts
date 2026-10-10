@@ -3,6 +3,8 @@ import type { NoteAiDefaults } from '@/stores/preferences'
 export interface NoteAiSettings extends NoteAiDefaults {
   model: string
   reasoningEffort: string
+  polishModel?: string
+  polishReasoningEffort?: string
   titlePrompt: string
   imagePrompt: string
   polishPrompt: string

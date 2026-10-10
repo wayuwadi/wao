@@ -548,6 +548,7 @@ const detailDemoComment = ref('')
           <template v-if="settingSection === 'expression'"
             ><h3>表达偏好</h3>
             <p>下面是演示内容，修改后切换项目或关闭重开，仍保留在本页。</p>
+            <p>模型与思考深度按能力独立设置；正文润色默认低思考，其他能力保留各自选择。字段与保存栏沿用同一组件。</p>
             <AiPromptEditor
               v-model="prompt"
               :default-value="defaultPrompt"

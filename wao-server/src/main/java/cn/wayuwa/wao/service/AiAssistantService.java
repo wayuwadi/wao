@@ -522,15 +522,21 @@ public class AiAssistantService {
                 "已有一项润色正在执行，请等待完成", true, capabilityId, DeepSeekPurpose.POLISH).getId();
     }
 
-    /** 短选区润色使用既有模型与低推理档位，不串行限制独立选区；工作台和小记自动整理偏好保持原样。 */
+    /** 内部兼容入口使用日常润色默认，独立选区不人为串行。 */
     public String enqueueDocumentPolishJob(String operationKey, String originalText, String methodPrompt) {
+        return enqueueDocumentPolishJob(operationKey, originalText, methodPrompt,
+                NoteAiSettingsService.DEFAULT_POLISH_MODEL, NoteAiSettingsService.DEFAULT_POLISH_EFFORT);
+    }
+
+    /** 按已认证成员的正文润色配置入队，模型和深度固定到本次任务。 */
+    public String enqueueDocumentPolishJob(String operationKey, String originalText, String methodPrompt, String model, String effort) {
         if (!StringUtils.hasText(originalText)) throw new BadRequestException("请先输入需要润色的原文");
         if (!StringUtils.hasText(methodPrompt)) throw new BadRequestException("润色提示词不能为空");
         var modelApi = eligibleDefaultAccount(DeepSeekPurpose.POLISH);
         String instruction = textPolishSystemPrompt() + "\n" + textPolishMaterial(originalText, methodPrompt);
         if (modelApi == null && localNotes != null && localNotes.enabled()) {
             return localNotes.enqueueWithEffort(internalMemberId(operationKey), instruction,
-                    DeepSeekPurpose.POLISH.name(), validateNoteModel(null), "low");
+                    DeepSeekPurpose.POLISH.name(), validateNoteModel(model), effort);
         }
         return enqueueReadOnlyJob(internalMemberId(operationKey), instruction,
                 "已有一项润色正在执行，请等待完成", true,
@@ -539,11 +545,16 @@ public class AiAssistantService {
 
     /** 小记正文优先使用显式启用的本机 Codex；未启用时保留获准 API 的既有路径。 */
     public String enqueueNotePolishJob(String operationKey, String originalText, String methodPrompt, String model) {
+        return enqueueNotePolishJob(operationKey, originalText, methodPrompt, model, NoteAiSettingsService.DEFAULT_POLISH_EFFORT);
+    }
+
+    /** 正文润色使用独立模型与深度，不继承标题、配图或内部任务账号设置。 */
+    public String enqueueNotePolishJob(String operationKey, String originalText, String methodPrompt, String model, String effort) {
         if (!StringUtils.hasText(originalText)) throw new BadRequestException("请先输入需要润色的原文");
         if (!StringUtils.hasText(methodPrompt)) throw new BadRequestException("润色提示词不能为空");
-        if (localNotes != null && localNotes.enabled()) return localNotes.enqueue(internalMemberId(operationKey),
+        if (localNotes != null && localNotes.enabled()) return localNotes.enqueueWithEffort(internalMemberId(operationKey),
                 textPolishSystemPrompt() + "\n" + textPolishMaterial(originalText, methodPrompt),
-                DeepSeekPurpose.POLISH.name(), validateNoteModel(model));
+                DeepSeekPurpose.POLISH.name(), validateNoteModel(model), effort);
         return enqueueReadOnlyJob(internalMemberId(operationKey),
                 textPolishSystemPrompt() + "\n" + textPolishMaterial(originalText, methodPrompt),
                 "已有一项润色正在执行，请等待完成", true, defaultCapabilityId(DeepSeekPurpose.POLISH),

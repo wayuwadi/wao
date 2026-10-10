@@ -14,9 +14,15 @@ class TextPolishJobServiceTest {
     private final TextPolishService polish = mock(TextPolishService.class);
     private final AiAssistantService assistant = mock(AiAssistantService.class);
     private final NoteTagService noteTags = mock(NoteTagService.class);
-    private final TextPolishJobService service = new TextPolishJobService(jobs, polish, assistant, noteTags);
+    private final NoteAiSettingsService settings = mock(NoteAiSettingsService.class);
+    private final TextPolishJobService service = new TextPolishJobService(jobs, polish, assistant, noteTags, settings);
     private final String request = "0123456789abcdef0123456789abcdef";
     private final String id = "pj" + request;
+
+    @org.junit.jupiter.api.BeforeEach void defaultSettings() {
+        when(settings.get("m1")).thenReturn(new NoteAiSettingsService(mock(org.springframework.jdbc.core.JdbcTemplate.class),
+                mock(cn.wayuwa.wao.mapper.MemberPreferenceMapper.class), new com.fasterxml.jackson.databind.ObjectMapper()).parse(java.util.Map.of()));
+    }
 
     @Test void partialOutputIsPreviewOnlyAndNeverEntersHistory() {
         when(jobs.findOwned(id, "m1")).thenReturn(job("WORKSPACE"));
@@ -52,13 +58,13 @@ class TextPolishJobServiceTest {
     @Test void submitsWithoutWaitingAndPreservesDocumentInstructions() {
         when(jobs.lockMember("m1")).thenReturn("m1");
         when(polish.prepare("m1", "原文")).thenReturn(new TextPolishService.PreparedPolish("原文", "用户方法"));
-        when(assistant.enqueueDocumentPolishJob(eq(id), eq("原文"), contains("Markdown"))).thenReturn("ac1");
+        when(assistant.enqueueDocumentPolishJob(eq(id), eq("原文"), contains("Markdown"), eq("gpt-6-luna"), eq("low"))).thenReturn("ac1");
         when(assistant.readOnlyJobResult(id, "ac1")).thenReturn(new AiAssistantService.ReadOnlyJobResult("ac1", "secure_queued", null, null));
         var result = service.submit("m1", request, "DOCUMENT", " 原文 ");
         assertThat(result.status()).isEqualTo("QUEUED");
         assertThat(result.polished()).isNull();
         verify(jobs).insert(any());
-        verify(assistant).enqueueDocumentPolishJob(eq(id),eq("原文"),contains("Markdown"));
+        verify(assistant).enqueueDocumentPolishJob(eq(id),eq("原文"),contains("Markdown"),eq("gpt-6-luna"),eq("low"));
         verify(polish, never()).recordResult(any(), any(), any(), any(), any());
     }
 
@@ -70,6 +76,24 @@ class TextPolishJobServiceTest {
         verify(assistant, never()).enqueueTextPolishJob(any(), any(), any());
         assertThatThrownBy(() -> service.submit("m1", request, "DOCUMENT", "修改后的原文"))
                 .hasMessageContaining("请求内容已改变");
+        verifyNoInteractions(settings);
+    }
+
+    @Test void bothPolishKindsUseAuthenticatedMembersDedicatedChoiceRatherThanImageModelOrInternalId() {
+        var configured = new NoteAiSettingsService(mock(org.springframework.jdbc.core.JdbcTemplate.class),
+                mock(cn.wayuwa.wao.mapper.MemberPreferenceMapper.class), new com.fasterxml.jackson.databind.ObjectMapper()).parse(
+                java.util.Map.of(NoteAiSettingsService.DEFAULTS, "{\"reasoningEffort\":\"high\",\"polishModel\":\"gpt-6-sol\",\"polishReasoningEffort\":\"low\"}", "note-ai-model-v1", "gpt-6-astra"));
+        when(settings.get("m1")).thenReturn(configured);
+        when(jobs.lockMember("m1")).thenReturn("m1");
+        when(polish.prepare(eq("m1"),anyString())).thenReturn(new TextPolishService.PreparedPolish("原文","用户方法"));
+        when(assistant.enqueueDocumentPolishJob(eq(id),anyString(),anyString(),eq("gpt-6-sol"),eq("low"))).thenReturn("ac1");
+        when(assistant.enqueueNotePolishJob(eq(id),anyString(),anyString(),eq("gpt-6-sol"),eq("low"))).thenReturn("ac1");
+        when(assistant.readOnlyJobResult(id,"ac1")).thenReturn(new AiAssistantService.ReadOnlyJobResult("ac1","secure_queued",null,null));
+        service.submit("m1", request, "DOCUMENT", "原文");
+        service.submit("m1", request, "NOTE_BODY", "原文", "gpt-6-astra", null, null);
+        verify(assistant).enqueueDocumentPolishJob(eq(id),anyString(),anyString(),eq("gpt-6-sol"),eq("low"));
+        verify(assistant).enqueueNotePolishJob(eq(id),anyString(),anyString(),eq("gpt-6-sol"),eq("low"));
+        verify(settings, times(2)).get("m1");
     }
 
     @Test void rejectsOtherMembersBeforeReadingModelOutput() {

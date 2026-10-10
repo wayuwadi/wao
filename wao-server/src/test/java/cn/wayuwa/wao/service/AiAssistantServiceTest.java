@@ -63,7 +63,8 @@ class AiAssistantServiceTest {
         service.enqueueNoteTitleJob("title", "合成正文");
         service.enqueueNotePolishJob("polish", "合成正文", "保留事实", null);
         service.enqueueNoteTagsJob("tags", "合成正文", "[\"工作\"]", null);
-        verify(local, org.mockito.Mockito.times(3)).enqueue(anyString(), anyString(), anyString(), eq("gpt-6-astra"));
+        verify(local, org.mockito.Mockito.times(2)).enqueue(anyString(), anyString(), anyString(), eq("gpt-6-astra"));
+        verify(local).enqueueWithEffort(anyString(),anyString(),eq("POLISH"),eq("gpt-6-astra"),eq("low"));
         service.enqueueArticleImageJob("member", "合成正文", "合成配图", "gpt-6-astra");
         var captured = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
         verify(mapper).insertReadOnlyQueued(captured.capture());
@@ -742,12 +743,12 @@ class AiAssistantServiceTest {
     }
 
     @Test
-    void documentSelectionUsesSameModelWithLowEffortAndIndependentTasks() {
+    void documentSelectionUsesLightweightDefaultAndIndependentTasks() {
         var local = enableLocalBusinessAi();
-        when(local.enqueueWithEffort(anyString(),anyString(),eq("POLISH"),eq("gpt-6-astra"),eq("low"))).thenReturn("ac-selection");
+        when(local.enqueueWithEffort(anyString(),anyString(),eq("POLISH"),eq("gpt-6-luna"),eq("low"))).thenReturn("ac-selection");
         assertThat(service.enqueueDocumentPolishJob("selection-a", "300 篇合成正文", "保留事实与 Markdown")).isEqualTo("ac-selection");
         service.enqueueDocumentPolishJob("selection-b", "不同的合成选区", "保留事实与 Markdown");
-        verify(local,org.mockito.Mockito.times(2)).enqueueWithEffort(anyString(),contains("Markdown"),eq("POLISH"),eq("gpt-6-astra"),eq("low"));
+        verify(local,org.mockito.Mockito.times(2)).enqueueWithEffort(anyString(),contains("Markdown"),eq("POLISH"),eq("gpt-6-luna"),eq("low"));
         verify(mapper,never()).selectCount(any());
         verify(local,never()).reasoningEffort(anyString(),anyString());
     }
