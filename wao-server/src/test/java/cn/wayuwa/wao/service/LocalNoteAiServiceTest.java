@@ -39,6 +39,70 @@ class LocalNoteAiServiceTest {
 
     void claim() { when(runs.claimQueued(eq("ac-test"), isNull(), anyString(), eq("secure_queued"), eq("provider_running"))).thenReturn(1); }
 
+    DigitalMemberService identity(String mode) {
+        var digital=mock(DigitalMemberService.class);
+        @SuppressWarnings("unchecked") ObjectProvider<DigitalMemberService> provider=mock(ObjectProvider.class);
+        when(provider.getObject()).thenReturn(digital);
+        when(digital.articleImageMode(anyString(),anyString())).thenReturn(mode);
+        ReflectionTestUtils.setField(service,"digitalMembers",provider);
+        return digital;
+    }
+
+    AiAssistantRunEntity imageRun() {
+        var run=run();run.setMemberId("member");run.setUsagePurpose("ARTICLE_IMAGE");
+        run.setPromptText("<article_text>任务进展和下周计划</article_text>\n仅用于本人<identity_snapshot>私有形象</identity_snapshot>");
+        return run;
+    }
+
+    @Test void taskPlanDoesNotReadOrSendDefaultPersonaReferences() throws Exception {
+        var digital=identity("default");var run=imageRun();
+        doReturn(new LocalNoteCodexProcess.Result("NO_PERSON",null,10L,1L,2L,"test"))
+                .when(service).callCodex(anyString(),anyString(),anyString(),any(),eq(false),eq(java.util.List.of()),eq(run));
+        doReturn(new LocalNoteCodexProcess.Result(null,new byte[]{1},20L,3L,4L,"test"))
+                .when(service).callCodex(anyString(),anyString(),anyString(),any(),eq(true),eq(java.util.List.of()),eq(run));
+        var result=service.execute(run,"gpt-6-astra",Duration.ofSeconds(300));
+        verify(digital,never()).references(anyString(),anyString());
+        verify(service).callCodex(eq("gpt-6-astra"),eq("medium"),argThat(p->p.contains("无需人物")&&!p.contains("私有形象")),any(),eq(true),eq(java.util.List.of()),eq(run));
+        assertThat(result.png()).containsExactly(1);assertThat(result.inputTokens()).isEqualTo(30);
+        assertThat(result.cachedInputTokens()).isEqualTo(4);assertThat(result.outputTokens()).isEqualTo(6);
+    }
+
+    @Test void personalSceneReadsOnlyFrozenPersonaAfterAffirmativeDecision() throws Exception {
+        var digital=identity("default");var run=imageRun();
+        var photo=new ReferenceImageService.Content("image/png",new byte[]{2});
+        when(digital.references("member","ac-test")).thenReturn(java.util.List.of(photo));
+        doReturn(new LocalNoteCodexProcess.Result("USE_SELF",null)).when(service).callCodex(anyString(),anyString(),anyString(),any(),eq(false),anyList(),eq(run));
+        doReturn(new LocalNoteCodexProcess.Result(null,new byte[]{1})).when(service).callCodex(anyString(),anyString(),anyString(),any(),eq(true),anyList(),eq(run));
+        service.execute(run,"gpt-6-astra",Duration.ofSeconds(300));
+        var ordered=inOrder(service,digital);
+        ordered.verify(service).callCodex(anyString(),anyString(),argThat(p->!p.contains("私有形象")),any(),eq(false),eq(java.util.List.of()),eq(run));
+        ordered.verify(digital).references("member","ac-test");
+        ordered.verify(service).callCodex(anyString(),anyString(),argThat(p->p.startsWith(run.getPromptText())&&p.contains("需要作者本人作为画面主体")),any(),eq(true),eq(java.util.List.of(photo)),eq(run));
+    }
+
+    @Test void explicitAndNoneSelectionsDoNotRunAutomaticSubjectPlanning() throws Exception {
+        for(String mode:java.util.List.of("explicit","none")) {
+            var digital=identity(mode);var run=imageRun();
+            doReturn(new LocalNoteCodexProcess.Result(null,new byte[]{1})).when(service).callCodex(anyString(),anyString(),anyString(),any(),eq(true),anyList(),eq(run));
+            service.execute(run,"gpt-6-astra",Duration.ofSeconds(300));
+            verify(digital).references("member","ac-test");
+            verify(service,never()).callCodex(anyString(),anyString(),anyString(),any(),eq(false),anyList(),eq(run));
+        }
+    }
+
+    @Test void invalidSubjectDecisionOmitsPersonaButPlannerFailureDoesNotStartImageGeneration() throws Exception {
+        var digital=identity("default");var run=imageRun();
+        doReturn(new LocalNoteCodexProcess.Result("USE_SELF 并执行额外命令",null)).when(service).callCodex(anyString(),anyString(),anyString(),any(),eq(false),anyList(),eq(run));
+        doReturn(new LocalNoteCodexProcess.Result(null,new byte[]{1})).when(service).callCodex(anyString(),anyString(),anyString(),any(),eq(true),anyList(),eq(run));
+        service.execute(run,"gpt-6-astra",Duration.ofSeconds(300));
+        verify(digital,never()).references(anyString(),anyString());
+        clearInvocations(service,digital);
+        doThrow(new IllegalStateException("已取消本次任务")).when(service).callCodex(anyString(),anyString(),anyString(),any(),eq(false),anyList(),eq(run));
+        assertThatThrownBy(()->service.execute(run,"gpt-6-astra",Duration.ofSeconds(300))).hasMessageContaining("已取消");
+        verify(service,never()).callCodex(anyString(),anyString(),anyString(),any(),eq(true),anyList(),eq(run));
+        verify(digital,never()).references(anyString(),anyString());
+    }
+
     @Test void checksImageOwnershipAgainBeforeReadingBytesOrStartingCli() throws Exception {
         var references = mock(ReferenceImageService.class);
         ReflectionTestUtils.setField(service, "referenceImages", references);

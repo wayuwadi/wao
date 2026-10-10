@@ -275,8 +275,24 @@ public class LocalNoteAiService {
     }
 
     LocalNoteCodexProcess.Result execute(AiAssistantRunEntity run, String model, Duration timeout) throws Exception {
+        long started = System.nanoTime();
+        String prompt = run.getPromptText();
+        String effort = run.getReasoningEffort();
+        String purpose = run.getUsagePurpose();
+        if (effort == null && ("POLISH".equals(purpose) || "BACKGROUND".equals(purpose)
+                || "ARTICLE_IMAGE".equals(purpose) || NoteDiscoveryService.GENERATE.equals(purpose)
+                || NoteDiscoveryService.REVIEW.equals(purpose))) effort = "medium";
+        LocalNoteCodexProcess.Result plan = null;
+        boolean useIdentity = true;
+        if (digitalMembers != null && AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(purpose)
+                && "default".equals(digitalMembers.getObject().articleImageMode(run.getMemberId(),run.getId()))) {
+            plan = callCodex(model, effort, ArticleImageSubjectPolicy.planningPrompt(prompt),
+                    Duration.ofNanos(Math.min(timeout.toNanos() / 3, Duration.ofSeconds(45).toNanos())), false, List.of(), run);
+            useIdentity = ArticleImageSubjectPolicy.needsSelf(plan.text());
+            prompt = useIdentity ? ArticleImageSubjectPolicy.selfPrompt(prompt) : ArticleImageSubjectPolicy.noPersonPrompt(prompt);
+        }
         List<ReferenceImageService.Content> references = List.of();
-        if (digitalMembers != null && (AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose())
+        if (useIdentity && digitalMembers != null && (AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose())
                 || DigitalMemberService.IMAGE_PURPOSE.equals(run.getUsagePurpose())))
             references = digitalMembers.getObject().references(run.getMemberId(), run.getId());
         if (run.getReferenceImageIds() != null && !run.getReferenceImageIds().isBlank()) {
@@ -286,18 +302,25 @@ public class LocalNoteAiService {
             referenceImages.requireOwned(run.getMemberId(), ids);
             references = ids.stream().map(id -> referenceImages.raw(run.getMemberId(), id)).toList();
         }
-        String effort = run.getReasoningEffort();
-        String purpose = run.getUsagePurpose();
-        if (effort == null && ("POLISH".equals(purpose) || "BACKGROUND".equals(purpose)
-                || "ARTICLE_IMAGE".equals(purpose) || NoteDiscoveryService.GENERATE.equals(purpose)
-                || NoteDiscoveryService.REVIEW.equals(purpose)))
-            effort = "medium";
+        Duration remaining = timeout.minusNanos(System.nanoTime() - started);
+        if (remaining.isNegative() || remaining.isZero()) throw new IllegalStateException("本机 AI 执行超时；原文已保留，请稍后重试");
+        var result = callCodex(model, effort, prompt, remaining,
+                AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(purpose)
+                        || TianrenVisualService.IMAGE_PURPOSE.equals(purpose)
+                        || DigitalMemberService.IMAGE_PURPOSE.equals(purpose), references, run);
+        return plan == null ? result : new LocalNoteCodexProcess.Result(result.text(),result.png(),
+                sumTokens(plan.inputTokens(),result.inputTokens()),sumTokens(plan.cachedInputTokens(),result.cachedInputTokens()),
+                sumTokens(plan.outputTokens(),result.outputTokens()),result.cliVersion());
+    }
+
+    private static Long sumTokens(Long first,Long second) {
+        return first == null || second == null ? null : first + second;
+    }
+
+    LocalNoteCodexProcess.Result callCodex(String model,String effort,String prompt,Duration timeout,
+            boolean image,List<ReferenceImageService.Content> references,AiAssistantRunEntity run) throws Exception {
         return LocalNoteCodexProcess.execute(environment.getProperty("wao.ai.local-notes.executable", "codex"),
-                model, effort,
-                run.getPromptText(), directory, timeout,
-                AiAssistantService.ARTICLE_IMAGE_PURPOSE.equals(run.getUsagePurpose())
-                        || TianrenVisualService.IMAGE_PURPOSE.equals(run.getUsagePurpose())
-                        || DigitalMemberService.IMAGE_PURPOSE.equals(run.getUsagePurpose()), references,
+                model, effort, prompt, directory, timeout, image, references,
                 () -> managedNotes!=null&&managedNotes.getObject().cancellationRequested(run.getId()));
     }
 

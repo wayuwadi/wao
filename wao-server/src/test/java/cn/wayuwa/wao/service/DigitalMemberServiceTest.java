@@ -38,6 +38,18 @@ class DigitalMemberServiceTest {
         service=new DigitalMemberService(db,new ObjectMapper(),provider,runMapper,new MockEnvironment().withProperty("wao.ai.local-notes.reference-images-enabled","true"));
     }
     private Subject person(String name) {return service.create("a",new Create(name,"human","家人","male","长发，圆框眼镜"));}
+    @Test void defaultPersonaCanFreezeBeforeToolAvailabilityButReadingChosenReferencesStillRequiresCapability() throws Exception {
+        var s=person("本人");var p=photo(s.id());
+        var look=service.createLook("a",s.id(),new CreateLook("本人形象","",List.of(p.id()),p.id()));
+        String version=look.versions().get(0).id();service.confirm("a",version);service.bind("a",new Bind(s.id(),version,0L));
+        ((MockEnvironment)org.springframework.test.util.ReflectionTestUtils.getField(service,"environment"))
+                .setProperty("wao.ai.local-notes.reference-images-enabled","false");
+        var frozen=service.freeze("a",null);service.record("a","default-task","ARTICLE_IMAGE","hash",frozen);
+        assertThat(service.articleImageMode("a","default-task")).isEqualTo("default");
+        assertThatThrownBy(()->service.references("a","default-task")).hasMessageContaining("参考图能力当前不可用");
+        assertThatThrownBy(()->service.freeze("a",new IdentitySelection("explicit",s.id(),version))).hasMessageContaining("未核验启用");
+        assertThat(service.freeze("a",new IdentitySelection("none",null,null)).subjectId()).isNull();
+    }
     @Test void deletingDefaultVersionKeepsHistoryAndFrozenReferencesAndRestoreDoesNotRebind() throws Exception {
         var s=person("本人");var p=photo(s.id());var look=service.createLook("a",s.id(),new CreateLook("本人形象","",List.of(p.id()),p.id()));
         String version=look.versions().get(0).id();service.confirm("a",version);service.bind("a",new Bind(s.id(),version,0L));
