@@ -522,6 +522,21 @@ public class AiAssistantService {
                 "已有一项润色正在执行，请等待完成", true, capabilityId, DeepSeekPurpose.POLISH).getId();
     }
 
+    /** 短选区润色使用既有模型与低推理档位，不串行限制独立选区；工作台和小记自动整理偏好保持原样。 */
+    public String enqueueDocumentPolishJob(String operationKey, String originalText, String methodPrompt) {
+        if (!StringUtils.hasText(originalText)) throw new BadRequestException("请先输入需要润色的原文");
+        if (!StringUtils.hasText(methodPrompt)) throw new BadRequestException("润色提示词不能为空");
+        var modelApi = eligibleDefaultAccount(DeepSeekPurpose.POLISH);
+        String instruction = textPolishSystemPrompt() + "\n" + textPolishMaterial(originalText, methodPrompt);
+        if (modelApi == null && localNotes != null && localNotes.enabled()) {
+            return localNotes.enqueueWithEffort(internalMemberId(operationKey), instruction,
+                    DeepSeekPurpose.POLISH.name(), validateNoteModel(null), "low");
+        }
+        return enqueueReadOnlyJob(internalMemberId(operationKey), instruction,
+                "已有一项润色正在执行，请等待完成", true,
+                modelApi == null ? LOCAL_CODEX_CAPABILITY : modelApi.id(), DeepSeekPurpose.POLISH, null, true).getId();
+    }
+
     /** 小记正文优先使用显式启用的本机 Codex；未启用时保留获准 API 的既有路径。 */
     public String enqueueNotePolishJob(String operationKey, String originalText, String methodPrompt, String model) {
         if (!StringUtils.hasText(originalText)) throw new BadRequestException("请先输入需要润色的原文");

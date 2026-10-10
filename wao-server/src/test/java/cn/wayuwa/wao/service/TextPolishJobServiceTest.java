@@ -52,12 +52,13 @@ class TextPolishJobServiceTest {
     @Test void submitsWithoutWaitingAndPreservesDocumentInstructions() {
         when(jobs.lockMember("m1")).thenReturn("m1");
         when(polish.prepare("m1", "原文")).thenReturn(new TextPolishService.PreparedPolish("原文", "用户方法"));
-        when(assistant.enqueueTextPolishJob(eq(id), eq("原文"), contains("Markdown"))).thenReturn("ac1");
+        when(assistant.enqueueDocumentPolishJob(eq(id), eq("原文"), contains("Markdown"))).thenReturn("ac1");
         when(assistant.readOnlyJobResult(id, "ac1")).thenReturn(new AiAssistantService.ReadOnlyJobResult("ac1", "secure_queued", null, null));
         var result = service.submit("m1", request, "DOCUMENT", " 原文 ");
         assertThat(result.status()).isEqualTo("QUEUED");
         assertThat(result.polished()).isNull();
         verify(jobs).insert(any());
+        verify(assistant).enqueueDocumentPolishJob(eq(id),eq("原文"),contains("Markdown"));
         verify(polish, never()).recordResult(any(), any(), any(), any(), any());
     }
 

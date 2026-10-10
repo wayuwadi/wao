@@ -742,6 +742,17 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void documentSelectionUsesSameModelWithLowEffortAndIndependentTasks() {
+        var local = enableLocalBusinessAi();
+        when(local.enqueueWithEffort(anyString(),anyString(),eq("POLISH"),eq("gpt-6-astra"),eq("low"))).thenReturn("ac-selection");
+        assertThat(service.enqueueDocumentPolishJob("selection-a", "300 篇合成正文", "保留事实与 Markdown")).isEqualTo("ac-selection");
+        service.enqueueDocumentPolishJob("selection-b", "不同的合成选区", "保留事实与 Markdown");
+        verify(local,org.mockito.Mockito.times(2)).enqueueWithEffort(anyString(),contains("Markdown"),eq("POLISH"),eq("gpt-6-astra"),eq("low"));
+        verify(mapper,never()).selectCount(any());
+        verify(local,never()).reasoningEffort(anyString(),anyString());
+    }
+
+    @Test
     void synchronousSelectedTextPolishUsesLocalAndKeepsPolishPurpose() {
         enableLocalBusinessAi();
         var done = assistantRun("succeeded");

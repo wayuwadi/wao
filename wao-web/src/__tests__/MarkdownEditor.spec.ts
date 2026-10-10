@@ -17,6 +17,8 @@ import { rotateImage } from '@/utils/rotateImage'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { fetchNoteAiSettings, saveNoteAiSettings } from '@/api/noteAiSettings'
 import { startArticleImage, fetchArticleImage } from '@/api/articleImages'
+import { freezeNoteAiInput, retainNoteAiResult, type NoteAiOrigin } from '@/api/noteOriginals'
+vi.mock('@/api/noteOriginals', () => ({ freezeNoteAiInput: vi.fn().mockResolvedValue({ snapshotId: 'snapshot' }), retainNoteAiResult: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/api/imageRotation', () => ({ loadRotationImage: vi.fn() }))
 vi.mock('@/utils/rotateImage', () => ({ rotateImage: vi.fn() }))
 
@@ -64,6 +66,7 @@ async function mountEditor(props: {
   compact?: boolean
   toolbarTarget?: HTMLElement | null
   document?: RichDocNode | null
+  noteAiOrigin?: NoteAiOrigin
 }) {
   // jsdom 的 Range 缺少布局 API；BubbleMenu 只需要一个稳定空矩形完成挂载。
   if (!Range.prototype.getClientRects) {
@@ -894,7 +897,7 @@ describe('文章总览配图', () => {
     select.value = 'gpt-6-luna'
     select.dispatchEvent(new Event('change', { bubbles: true }))
     await nextTick()
-    const save = [...modal.querySelectorAll('button')].find(button => button.textContent?.includes('保存设置'))!
+    const save = [...modal.querySelectorAll('button')].find(button => button.textContent?.includes('保存小记 AI 设置'))!
     save.click()
     await flushPromises()
     expect(saveNoteAiSettings).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-6-luna', polishPrompt: '默认正文润色方法' }), 'v1')
@@ -2058,6 +2061,56 @@ describe('MarkdownEditor（所见即所得）', () => {
 
     expect(w.find('.polish-error').exists()).toBe(false)
     expect(w.findAll('.polish-compare pre')[1]?.text()).toBe('重试后的润色结果。')
+    w.unmount()
+  })
+
+  it('小记留存失败只重试应用同一成果，跨段正文、标题和原图完整保存', async () => {
+    vi.mocked(polishDocumentText).mockClear()
+    vi.mocked(retainNoteAiResult).mockClear()
+    vi.mocked(retainNoteAiResult).mockRejectedValueOnce(new Error('结果留存暂时不可用'))
+    vi.mocked(polishDocumentText).mockResolvedValueOnce({ polished: '第一段表达更流畅。\r\n\r\n第二段保留 300 篇与【小站】。', taskId: 'pj' + 'a'.repeat(32) })
+    const source = '第一段原文。\n\n第二段原文。\n\n![原图](/api/images/original/raw)'
+    const w = await mountEditor({ modelValue: source, polishable: true, noteAiOrigin: { stableId: 'n', docId: 'n', sourceRev: 1, title: '手动标题', blocks: [], links: [] } })
+    const instance = w.vm as unknown as { editor: Editor; startPolish: () => Promise<void> }
+    const second = instance.editor.state.doc.child(1)
+    instance.editor.commands.setTextSelection({ from: 1, to: instance.editor.state.doc.child(0).nodeSize + second.nodeSize - 1 })
+    await instance.startPolish(); await flushPromises()
+    const beforeApply = instance.editor.getMarkdown()
+    await w.find('.polish-apply').trigger('click'); await flushPromises()
+    expect(w.find('.polish-error').text()).toContain('结果留存暂时不可用')
+    expect(instance.editor.getMarkdown()).toBe(beforeApply)
+    expect(w.find('.polish-apply').attributes('disabled')).toBeUndefined()
+    await w.find('.polish-error button').trigger('click'); await flushPromises()
+    expect(polishDocumentText).toHaveBeenCalledTimes(1)
+    expect(retainNoteAiResult).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(retainNoteAiResult).mock.calls[1]).toEqual(vi.mocked(retainNoteAiResult).mock.calls[0])
+    const updates = w.emitted('update:modelValue') as [string][]
+    const retained = vi.mocked(retainNoteAiResult).mock.calls[1]![2]
+    expect(retained.markdown).toBe(updates[updates.length - 1]?.[0])
+    expect(retained.title).toBe('手动标题')
+    expect(retained.markdown).toContain('![原图](/api/images/original/raw)')
+    expect(w.emitted('ai-applied')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('小记应用等待期间正文变化，不覆盖新内容也不发出成果采用事件', async () => {
+    vi.mocked(retainNoteAiResult).mockClear()
+    let complete!: () => void
+    vi.mocked(retainNoteAiResult).mockImplementationOnce(() => new Promise<void>(resolve => { complete = resolve }))
+    vi.mocked(polishDocumentText).mockResolvedValueOnce({ polished: '保留事实的润色。', taskId: 'pj' + 'b'.repeat(32) })
+    const w = await mountEditor({ modelValue: '等待润色的原文。', polishable: true, noteAiOrigin: { stableId: 'draft', title: '', blocks: [], links: [] } })
+    const instance = w.vm as unknown as { editor: Editor; startPolish: () => Promise<void> }
+    instance.editor.commands.setTextSelection({ from: 1, to: 10 })
+    await instance.startPolish(); await flushPromises()
+    await w.find('.polish-apply').trigger('click'); await flushPromises()
+    expect(w.find('.polish-apply').text()).toContain('正在替换')
+    await w.find('.polish-apply').trigger('click')
+    expect(retainNoteAiResult).toHaveBeenCalledTimes(1)
+    instance.editor.commands.insertContentAt(1, '新的输入。')
+    complete(); await flushPromises()
+    expect(instance.editor.getMarkdown()).toContain('新的输入。')
+    expect(instance.editor.getMarkdown()).not.toContain('保留事实的润色。')
+    expect(w.emitted('ai-applied')).toBeFalsy()
     w.unmount()
   })
 

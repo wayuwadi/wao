@@ -28,10 +28,10 @@ import Image, { type ImageOptions } from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TaskItem } from '@tiptap/extension-list'
 import { Markdown } from '@tiptap/markdown'
-import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
+import { CommandManager, Extension, mergeAttributes, type Editor } from '@tiptap/core'
 import { TableKit } from '@tiptap/extension-table'
 import { CellSelection } from '@tiptap/pm/tables'
-import { NodeSelection, TextSelection, Plugin, PluginKey } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection, Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
 import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
 import { notePreviewImages, type NotePreviewImage } from '@/utils/notePreviewImages'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
@@ -643,6 +643,8 @@ interface PolishDialog {
   sourceContent?: NoteSourceContent
   progress?: string
   failed?: boolean
+  applyError?: boolean
+  applying?: boolean
   from: number
   to: number
   original: string
@@ -684,7 +686,7 @@ function restorePolish() {
     const dialog = saved.dialog as PolishDialog
     // 通用页面可能同时挂载多个编辑器，只在完整正文匹配时恢复冻结选区。
     if (!dialog.requestId?.match(/^[a-f0-9]{32}$/) || dialog.sourceDocument !== editor.value.getMarkdown()) return
-    polishDialog.value = { ...dialog, loading: false }
+    polishDialog.value = { ...dialog, loading: false, applying: false }
     if (!dialog.polished && !dialog.failed) void requestPolish(polishDialog.value)
   } catch { /* 无效缓存不覆盖正文。 */ }
 }
@@ -1202,7 +1204,10 @@ async function retryPolish() {
       polishDialog.value.requestId = newPolishRequestId()
       polishDialog.value.startedAt = Date.now()
       polishDialog.value.failed = false
+      polishDialog.value.polished = ''
+      polishDialog.value.taskId = undefined
     }
+    polishDialog.value.applyError = false
     await requestPolish(polishDialog.value)
   }
 }
@@ -1216,7 +1221,9 @@ function keepOriginal() {
 async function applyPolish() {
   const e = editor.value
   const dialog = polishDialog.value
-  if (!e || !dialog || !dialog.polished) return
+  if (!e || !dialog || !dialog.polished || dialog.applying || dialog.loading) return
+  dialog.error = ''
+  dialog.applyError = false
   if (e.getMarkdown() !== dialog.sourceDocument) {
     dialog.error = '等待润色期间文档已发生变化。为避免覆盖新内容，请保留原文后重新选择。'
     return
@@ -1231,18 +1238,26 @@ async function applyPolish() {
   const options = dialog.inline
     ? undefined
     : { contentType: 'markdown' as const, updateSelection: true }
+  let proposed: Transaction | undefined
   if (props.noteAiOrigin) {
     if(!dialog.sourceContent || !dialog.requestId || !dialog.taskId) { dialog.error = '来源或任务关联缺失，请重新润色；原稿保留'; return }
     // 在真正修改编辑器前确认结果留存；数据库失败不能应用并丢掉来源。
-    const proposed = e.state.tr
-    const fragment = dialog.inline ? e.schema.text((replacement as { text: string }).text, dialog.marks.map(mark => e.schema.markFromJSON(mark))) : e.schema.nodeFromJSON(e.markdown!.parse(dialog.polished)).content
-    proposed.replaceWith(dialog.from, dialog.to, fragment)
+    // 与最终写入使用同一命令和事务，避免跨段拟合产生空段导致留存与保存不一致。
+    const commands = new CommandManager({ editor: e, state: e.state })
+    commands.chain().insertContentAt({ from: dialog.from, to: dialog.to }, replacement, options)
+      .command(({ tr }) => { proposed = tr; return true }).run()
+    if (!proposed) { dialog.error = '结果无法应用到当前选区，原稿保留'; return }
     const candidate = e.markdown?.serialize(proposed.doc.toJSON()) ?? dialog.sourceContent.markdown
+    dialog.applying = true
     try { await retainNoteAiResult(dialog.requestId, dialog.taskId, { ...dialog.sourceContent, markdown: candidate, document: proposed.doc.toJSON() as RichDocNode }) }
-    catch(cause) { dialog.error = cause instanceof Error ? cause.message : '原稿保存失败，请重试'; return }
+    catch(cause) { dialog.applyError = true; dialog.error = cause instanceof Error ? cause.message : '结果留存失败，请重试替换；原稿保留'; persistPolish(dialog); return }
+    finally { dialog.applying = false }
     if (e.getMarkdown() !== dialog.sourceDocument || polishDialog.value !== dialog) { dialog.error = '内容已更新，旧结果未应用'; return }
   }
-  e.chain()
+  if (proposed) {
+    e.view.dispatch(proposed)
+    e.commands.focus()
+  } else e.chain()
     .focus()
     .insertContentAt({ from: dialog.from, to: dialog.to }, replacement, options)
     .run()
@@ -2697,10 +2712,10 @@ onBeforeUnmount(() => {
           <button
             v-if="polishDialog.original.length <= 4000"
             type="button"
-            :disabled="polishDialog.loading"
-            @click="retryPolish"
+            :disabled="polishDialog.loading || polishDialog.applying"
+            @click="polishDialog.applyError ? applyPolish() : retryPolish()"
           >
-            重试
+            {{ polishDialog.applyError ? '重试替换' : '重试' }}
           </button>
         </div>
 
@@ -2709,7 +2724,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="polish-retry"
-            :disabled="polishDialog.loading"
+            :disabled="polishDialog.loading || polishDialog.applying"
             @click="retryPolish"
           >
             <i class="ri-refresh-line"></i>重新润色
@@ -2717,10 +2732,10 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="polish-apply"
-            :disabled="polishDialog.loading || !polishDialog.polished || !!polishDialog.error"
+            :disabled="polishDialog.loading || polishDialog.applying || !polishDialog.polished || (!!polishDialog.error && !polishDialog.applyError)"
             @click="applyPolish"
           >
-            <i class="ri-check-line"></i>替换选区
+            <i class="ri-check-line"></i>{{ polishDialog.applying ? '正在替换…' : polishDialog.applyError ? '重试替换' : '替换选区' }}
           </button>
         </footer>
       </section>

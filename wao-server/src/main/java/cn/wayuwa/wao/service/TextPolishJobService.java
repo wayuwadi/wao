@@ -86,6 +86,7 @@ public class TextPolishJobService {
             default -> prepared.promptSnapshot();
         };
         String runId = switch (kind) {
+            case "DOCUMENT" -> assistant.enqueueDocumentPolishJob(id, original, method);
             case "NOTE_TITLE" -> assistant.enqueueNoteTitleJob(id, original, method, requestedModel);
             case "NOTE_BODY" -> assistant.enqueueNotePolishJob(id, original, method, requestedModel);
             case "NOTE_TAGS" -> assistant.enqueueNoteTagsJob(id, original, tagsJson, requestedModel);

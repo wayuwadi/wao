@@ -159,8 +159,18 @@ public class NoteOriginalService {
             var submitted=one("SELECT original_text FROM text_polish_job WHERE id=? AND member_id=?",result.taskId(),member);
             String expected="title".equals(stage)?"sha256:"+NoteAiSettingsService.hash(str(t,"input_text")):str(t,"input_text");
             if(submitted==null||!expected.equals(str(submitted,"original_text")))throw new ConflictException("模型输入与快照不一致");}
-        if(output==null||!("title".equals(stage)?output.strip().equals(result.content().title()):result.content().markdown()!=null&&(result.content().markdown().contains(output)||result.content().markdown().contains(output.replaceAll("\\s*\\n+\\s*"," ")))))throw new ConflictException("结果没有保留对应 AI 输出");
+        if(output==null||!("title".equals(stage)?output.strip().equals(result.content().title()):retainsOutput(result.content().markdown(),output,"image".equals(stage))))throw new ConflictException("结果没有保留对应 AI 输出");
         result(member,request,result.taskId(),result.content(),null,"DRAFT_RESULT");
+    }
+    // Tiptap 会重排软换行、段间空白并转义标点；只接受完整输出的展示等价，保留所有文字、数字与链接。
+    private static boolean retainsOutput(String markdown,String output,boolean image){
+        if(markdown==null||output.isBlank())return false;
+        if(image)return markdown.contains(output);
+        return presentationText(markdown).contains(presentationText(output));
+    }
+    private static String presentationText(String markdown){
+        return markdown.replaceAll("\\\\([!\"#$%&'()*+,./:;<=>?@\\[\\]\\\\^_`{|}~-])","$1")
+                .replaceAll("(?U)\\s+"," ").strip();
     }
     /** 兼容写入前幂等归档尚存的旧对照，历史 migration 和当前正文不变。 */
     @Transactional
