@@ -114,7 +114,7 @@ watch(
               :checked="modelValue.mode === 'default'"
               @change="mode('default')"
             /><span
-              >本人默认<small>{{
+              >按内容选用本人<small>{{
                 defaultName && library.binding.versionId ? `（${defaultName}）` : '（尚未设置）'
               }}</small></span
             ></label
@@ -126,6 +126,7 @@ watch(
               @change="mode('explicit')"
             />本次指定</label
           >
+          <p>任务进展、计划和技术说明优先不放人物；生活场景需要本人时，才使用默认形象。</p>
           <div v-if="modelValue.mode === 'explicit'" class="choices">
             <p v-if="!choices.length">还没有已确认的形象，请先在图库确认一个版本。</p>
             <template v-else

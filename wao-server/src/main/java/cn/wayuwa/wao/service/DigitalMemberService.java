@@ -320,13 +320,13 @@ public class DigitalMemberService {
                 } else if(s.mainAssetId()!=null) assets.add(s.mainAssetId());
             } else data.put("gender",profile(member).gender());
         }
-        if(!assets.isEmpty()&&!capability().referenceImage())throw new BadRequestException("本机参考图生成尚未核验启用，请保留图库，或选择不出现具体人物");
+        if("explicit".equals(mode)&&!assets.isEmpty()&&!capability().referenceImage())throw new BadRequestException("本机参考图生成尚未核验启用，请保留图库，或选择不出现具体人物");
         data.put("versionId",version);data.put("assetIds",assets);
         List<Map<String,String>> manifest=new ArrayList<>();
         for(String asset:assets)manifest.add(Map.of("id",asset,"sha256",db.queryForObject("SELECT content_hash FROM digital_asset WHERE id=? AND member_id=?",String.class,asset,member)));
         data.put("manifest",manifest);String snapshot=write(data);
         String instruction="none".equals(mode)?"画面不出现具体人物、家庭成员或宠物，只使用场景、物件与文字。":
-                "以下是当前账号明确确认的数字成员资料。只在本人的生活场景需要主体时使用默认本人；引用、他人经历不要替换成本人。explicit 模式使用指定成员。性别必须符合资料；unknown 不猜测性别、年龄或身份；性别不决定发型。参考图须真实传给 image_generation 的参考输入，不能仅描述图片。保持参考主体的脸部、毛色与识别特征，不用陌生人替代。";
+                "以下是当前账号明确确认的数字成员资料。本人默认先按全文判断是否需要本人出镜；任务进展、工作复盘、计划和技术说明不为装饰加入人物。引用、他人经历不要替换成本人。explicit 模式使用指定成员。只有本次已决定使用人物时，参考图才须真实传给 image_generation 的参考输入；保持参考主体的脸部、毛色与识别特征，不用陌生人替代。性别必须符合资料；unknown 不猜测性别、年龄或身份；性别不决定发型。";
         return new Snapshot(mode,subject,version,snapshot,instruction+"\n<identity_snapshot>\n"+snapshot+"\n</identity_snapshot>");
     }
     /** 计算客户端请求载荷的稳定摘要，用于同请求号重试冲突检测。 */
@@ -342,6 +342,11 @@ public class DigitalMemberService {
     public void record(String member,String run,String purpose,String inputHash,Snapshot snapshot) {
         db.update("INSERT INTO digital_generation_use(run_id,member_id,subject_id,version_id,mode,purpose,input_hash,payload_hash,snapshot_json) VALUES(?,?,?,?,?,?,?,?,?)",
                 run,member,snapshot.subjectId(),snapshot.versionId(),snapshot.mode(),purpose,inputHash,sha(snapshot.json().getBytes(java.nio.charset.StandardCharsets.UTF_8)),snapshot.json());
+    }
+    /** 读取本次冻结的选择方式；按需判断不得重新读取后来修改的账号绑定。 */
+    public String articleImageMode(String member,String run) {
+        var modes=db.queryForList("SELECT mode FROM digital_generation_use WHERE run_id=? AND member_id=? AND purpose='ARTICLE_IMAGE'",String.class,run,member);
+        return modes.isEmpty()?"default":modes.get(0);
     }
     /** 执行器只从本次冻结清单取已鉴权、哈希吻合的私有参考，禁止读取客户端文件路径。 */
     public List<ReferenceImageService.Content> references(String member,String run) {
