@@ -4,6 +4,8 @@ CLI 后续稳定版升级、指针配置、每日检查及回退见 [本机 Code
 
 依据 ADR-306。小记单份最新正文继续有效；本机调用沿用已登录 Codex 的 ChatGPT 额度，不需要新增 API Key。旧 Runner 保持下线。
 
+Windows2 使用本人默认形象却提示参考图尚未启用时，按 [Windows2 小记配图恢复](windows2-notes-image-recovery.md) 区分登录、实际工具能力和主机开关；登录成功不等于参考图能力已开启。
+
 ## 运行产品服务
 
 前提：Java 17、Maven、现有数据库环境变量与已登录的 Codex CLI，CLI 支持 `exec --ignore-user-config --ignore-rules` 和内置 `image_generation`。先用 `codex login status` 核对登录；不复制或打印认证文件。
