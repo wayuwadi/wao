@@ -30,7 +30,7 @@ async function open(saved = 'gpt-5.6-sol') {
 }
 describe('本机动态模型目录', () => {
   it('显示执行器的新模型，保存并重新打开保留精确选择', async () => {
-    vi.mocked(fetchCodexModels).mockResolvedValue({ models: [{ id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', reasoningEfforts: ['low', 'medium', 'high'] }, { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', reasoningEfforts: ['medium'] }], stale: false, updatedAt: '2026-10-03', message: '自动刷新' })
+    vi.mocked(fetchCodexModels).mockResolvedValue({ models: [{ id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', reasoningEfforts: ['low', 'medium', 'high'] }, { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', reasoningEfforts: ['medium'] }, { id: 'gpt-6-luna', label: 'GPT-6 Luna', reasoningEfforts: ['low', 'medium'] }], stale: false, updatedAt: '2026-10-03', message: '自动刷新' })
     const wrapper = await open()
     expect((wrapper.get('[aria-label="小记处理模型"]').element as HTMLSelectElement).value).toBe('gpt-5.6-sol')
     await wrapper.get('[aria-label="小记处理模型"]').setValue('gpt-6.1-sol')

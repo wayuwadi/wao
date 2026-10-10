@@ -1,5 +1,7 @@
 # WAO CLI 规格与能力台账
 
+2026-10-10：[正文润色模型设置](notes-polish-model-settings-2026-10-10.md)增加浏览器成员私有模型与思考深度，选区和整篇共用，继续通过原设置 CAS 保存。工作区令牌没有成员 AI 偏好或模型执行权限，本次不新增 CLI/MCP 命令，不扩大旧授权。
+
 2026-10-08：[小记标题输入意图](notes-automatic-title-intent-2026-10-08.md)区分飞书正文的临时标题、浏览器清空标题与真实手写标题。CLI/MCP 的 `update_document` 实时 schema 仍要求非空标题，省略标题表示不改；本次不开放终端清空标题或自动执行模型，不新增命令、工具或权限。
 
 2026-10-07：CLI 0.3.0 按 [Pet CLI 上传与分享](pet-cli-upload-and-sharing.md) 提供 `pets list/upload/share/unshare`。能力中心新授权分别选择 `list_my_pets`、`upload_pet`、`share_pet`；multipart 文件传输通过独立 Bearer HTTP 入口，MCP 不搬运 ZIP。旧连接与日常预设不扩权；上传私人保存，分享单独确认并匿名核验下载包。本节取代下方“Skill/Pet 暂不新增终端上传”中的 Pet 部分，Skill 和设备签发边界不变。

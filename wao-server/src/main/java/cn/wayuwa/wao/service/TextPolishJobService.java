@@ -28,9 +28,10 @@ public class TextPolishJobService {
     private final TextPolishService polish;
     private final AiAssistantService assistant;
     private final NoteTagService noteTags;
+    private final NoteAiSettingsService settings;
 
-    public TextPolishJobService(TextPolishJobMapper jobs, TextPolishService polish, AiAssistantService assistant, NoteTagService noteTags) {
-        this.jobs = jobs; this.polish = polish; this.assistant = assistant; this.noteTags = noteTags;
+    public TextPolishJobService(TextPolishJobMapper jobs, TextPolishService polish, AiAssistantService assistant, NoteTagService noteTags, NoteAiSettingsService settings) {
+        this.jobs = jobs; this.polish = polish; this.assistant = assistant; this.noteTags = noteTags; this.settings = settings;
     }
 
     /** 同一请求重复提交只返回原任务；任务与 AI 队列在一个事务中落库。 */
@@ -85,10 +86,12 @@ public class TextPolishJobService {
                     + TAGS_START + tagsJson + TAGS_END;
             default -> prepared.promptSnapshot();
         };
+        // 用已认证成员读取专用偏好；内部 AI 任务标识不是真实成员。
+        var polishSettings = "DOCUMENT".equals(kind) || "NOTE_BODY".equals(kind) ? settings.get(memberId).settings() : null;
         String runId = switch (kind) {
-            case "DOCUMENT" -> assistant.enqueueDocumentPolishJob(id, original, method);
+            case "DOCUMENT" -> assistant.enqueueDocumentPolishJob(id, original, method, polishSettings.polishModel(), polishSettings.polishReasoningEffort());
             case "NOTE_TITLE" -> assistant.enqueueNoteTitleJob(id, original, method, requestedModel);
-            case "NOTE_BODY" -> assistant.enqueueNotePolishJob(id, original, method, requestedModel);
+            case "NOTE_BODY" -> assistant.enqueueNotePolishJob(id, original, method, polishSettings.polishModel(), polishSettings.polishReasoningEffort());
             case "NOTE_TAGS" -> assistant.enqueueNoteTagsJob(id, original, tagsJson, requestedModel);
             default -> assistant.enqueueTextPolishJob(id, original, method);
         };

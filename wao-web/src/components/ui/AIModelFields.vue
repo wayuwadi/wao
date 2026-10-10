@@ -13,8 +13,9 @@ const props = withDefaults(
     scope: string
     allowDefault?: boolean
     description: string
+    defaultEffort?: string
   }>(),
-  { error: '', loading: false, disabled: false, allowDefault: false },
+  { error: '', loading: false, disabled: false, allowDefault: false, defaultEffort: 'medium' },
 )
 const emit = defineEmits<{
   'update:model': [value: string]
@@ -71,7 +72,7 @@ const labels: Record<string, string> = {
             {{ catalog ? '当前模型不支持' : '已保留，待确认' }}
           </option>
           <option v-for="effort in efforts" :key="effort" :value="effort">
-            {{ labels[effort] || effort }}{{ effort === 'medium' ? ' · 默认' : '' }}
+            {{ labels[effort] || effort }}{{ effort === defaultEffort ? ' · 默认' : '' }}
           </option>
         </select></label
       >

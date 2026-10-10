@@ -28,7 +28,7 @@ vi.mock('@/api/assistant', () => ({
 vi.mock('@/api/favorites', () => ({ fetchPreference: vi.fn(), savePreference: vi.fn() }))
 vi.mock('@/api/noteAiSettings', () => ({ fetchNoteAiSettings: vi.fn(), saveNoteAiSettings: vi.fn() }))
 vi.mock('@/api/articleImages', () => ({ startArticleImage: vi.fn(), fetchArticleImage: vi.fn() }))
-vi.mock('@/api/codexModels', () => ({ fetchCodexModels: vi.fn().mockResolvedValue({ models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', reasoningEfforts: ['medium', 'high'] }, { id: 'gpt-6-luna', label: 'GPT-6 Luna', reasoningEfforts: ['medium', 'high'] }], stale: false, message: '自动刷新', updatedAt: '2026-10-03' }) }))
+vi.mock('@/api/codexModels', () => ({ fetchCodexModels: vi.fn().mockResolvedValue({ models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', reasoningEfforts: ['low', 'medium', 'high'] }, { id: 'gpt-6-luna', label: 'GPT-6 Luna', reasoningEfforts: ['low', 'medium', 'high'] }], stale: false, message: '自动刷新', updatedAt: '2026-10-03' }) }))
 vi.mock('@/api/textPolish', () => ({ fetchTextPolishWorkspace: vi.fn().mockResolvedValue({ prompt: '默认正文润色方法', records: [] }), saveTextPolishPrompt: vi.fn().mockResolvedValue('默认正文润色方法') }))
 
 /** Tiptap 需要真实 DOM 与一帧时间来完成挂载。 */
@@ -891,7 +891,7 @@ describe('文章总览配图', () => {
     const modal = document.body.querySelector<HTMLElement>('[role="dialog"][aria-label="小记设置"]')!
     expect(modal.querySelector<HTMLSelectElement>('[aria-label="小记处理模型"]')?.value).toBe('')
     expect(modal.textContent).toContain('标题提示词')
-    expect(modal.textContent).toContain('正文提示词')
+    expect(modal.textContent).toContain('正文润色')
     expect(modal.textContent).toContain('配图提示词')
     const select = modal.querySelector<HTMLSelectElement>('[aria-label="小记处理模型"]')!
     select.value = 'gpt-6-luna'

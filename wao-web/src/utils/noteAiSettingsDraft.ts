@@ -24,6 +24,9 @@ export function noteSettingsDraft(member: string): Pending | null {
     )
   )
     throw new Error('本机小记 AI 设置草稿格式无法读取')
+  for (const field of ['polishModel', 'polishReasoningEffort'] as const)
+    if (value.draft[field] !== undefined && typeof value.draft[field] !== 'string')
+      throw new Error('本机正文润色设置草稿格式无法读取')
   retained.set(member, structuredClone(value))
   return value
 }

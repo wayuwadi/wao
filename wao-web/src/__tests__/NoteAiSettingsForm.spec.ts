@@ -52,7 +52,10 @@ describe('小记 AI 设置原子保存与草稿', () => {
     rememberNoteSettingsDraft(useSessionStore().currentUser.id, null)
     vi.clearAllMocks()
     vi.mocked(fetchCodexModels).mockResolvedValue({
-      models: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', reasoningEfforts: ['medium', 'high'] }],
+      models: [
+        { id: 'gpt-6-astra', label: 'GPT-6 Astra', reasoningEfforts: ['low', 'medium', 'high'] },
+        { id: 'gpt-6-luna', label: 'GPT-6 Luna', reasoningEfforts: ['low', 'medium'] },
+      ],
       stale: false,
       updatedAt: null,
       message: '',
@@ -74,7 +77,7 @@ describe('小记 AI 设置原子保存与草稿', () => {
     await button(wrapper, '基于默认修改').trigger('click')
     await wrapper.get('textarea').setValue('定制标题')
     expect(button(wrapper, '标题提示词').attributes('aria-label')).toContain('待保存')
-    expect(button(wrapper, '正文提示词').attributes('aria-label')).not.toContain('待保存')
+    expect(button(wrapper, '正文润色').attributes('aria-label')).not.toContain('待保存')
     await button(wrapper, '恢复默认').trigger('click')
     expect(wrapper.get('[aria-label="恢复默认前的内容对比"]').text()).toContain('定制标题')
     await button(wrapper, '确认恢复默认').trigger('click')
@@ -164,6 +167,64 @@ describe('小记 AI 设置原子保存与草稿', () => {
       expect.objectContaining({ reasoningEffort: 'medium' }),
       'v1',
     )
+  })
+  it('正文润色提供独立轻量默认，保存和重开保留选择且不改标题配图参数', async () => {
+    const wrapper = form()
+    await flushPromises()
+    await button(wrapper, '正文润色').trigger('click')
+    expect(
+      (wrapper.get('[aria-label="正文润色处理模型"]').element as HTMLSelectElement).value,
+    ).toBe('gpt-6-luna')
+    expect(
+      (wrapper.get('[aria-label="正文润色思考深度"]').element as HTMLSelectElement).value,
+    ).toBe('low')
+    expect(wrapper.get('[aria-label="正文润色思考深度"]').text()).toContain('低 · 默认')
+    await wrapper.get('[aria-label="正文润色处理模型"]').setValue('gpt-6-astra')
+    await wrapper.get('[aria-label="正文润色思考深度"]').setValue('high')
+    expect(button(wrapper, '正文润色').attributes('aria-label')).toContain('待保存')
+    wrapper.unmount()
+    const reopened = form()
+    await flushPromises()
+    await button(reopened, '正文润色').trigger('click')
+    expect(
+      (reopened.get('[aria-label="正文润色处理模型"]').element as HTMLSelectElement).value,
+    ).toBe('gpt-6-astra')
+    vi.mocked(saveNoteAiSettings).mockResolvedValue({
+      ...view(),
+      settings: { ...view().settings, polishModel: 'gpt-6-astra', polishReasoningEffort: 'high' },
+    })
+    await button(reopened, '保存小记 AI 设置').trigger('click')
+    await flushPromises()
+    expect(saveNoteAiSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        model: '',
+        reasoningEffort: 'medium',
+        polishModel: 'gpt-6-astra',
+        polishReasoningEffort: 'high',
+      }),
+      'v1',
+    )
+    expect(reopened.text()).toContain('设置已保存')
+  })
+  it('润色目录不可用或深度不兼容时保留原选择并阻止保存', async () => {
+    vi.mocked(fetchNoteAiSettings).mockResolvedValue({
+      ...view(),
+      settings: {
+        ...view().settings,
+        polishModel: 'missing-polish-model',
+        polishReasoningEffort: 'high',
+      },
+    })
+    const wrapper = form()
+    await flushPromises()
+    await button(wrapper, '正文润色').trigger('click')
+    expect(wrapper.text()).toContain('missing-polish-model')
+    await button(wrapper, '保存小记 AI 设置').trigger('click')
+    expect(saveNoteAiSettings).not.toHaveBeenCalled()
+    await wrapper.get('[aria-label="正文润色处理模型"]').setValue('gpt-6-luna')
+    await wrapper.get('footer button.primary').trigger('click')
+    expect(wrapper.text()).toContain('润色模型不支持所选思考深度')
+    expect(saveNoteAiSettings).not.toHaveBeenCalled()
   })
   it('关闭再打开保护设置草稿，未保存开关不被重新读取覆盖', async () => {
     const first = form()
