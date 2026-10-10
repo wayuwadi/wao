@@ -918,6 +918,9 @@ const editor = useEditor({
     tableMenu.value = null
     selectionDismissed.value = false
     if (!editorReady.value || props.readonly) return
+    // 后续输入已经推进正文，不能在失焦时恢复输入前暂存的外部快照。
+    pendingExternal = null
+    pendingExternalDocument = null
     const markdown = e.getMarkdown()
     const document = e.getJSON() as RichDocNode
     emit('update:modelValue', markdown)
@@ -2307,42 +2310,45 @@ function articleText(): string { return editor.value?.state.doc.textContent ?? '
  *
  * <p>等于自己刚发出的内容时不动，否则光标会跳。**正在输入时也一律不灌**：语音听写会持续
  * 往同一个位置追加文本，中途被 setContent 换掉整篇内容，听写引擎会把这一段从头再念一遍，
- * 结果就是内容重复。错过的外部更新记在 {@link pendingExternal}，等失焦再补上。
+ * 结果就是内容重复。外部更新暂存在 {@link pendingExternal}；收到更新值确认或继续输入后
+ * 立即作废旧快照。失焦仅应用仍然对应当前 props 且没有被后续输入替代的更新。
  */
 let pendingExternal: string | null = null
 let pendingExternalDocument: RichDocNode | null = null
 function applyExternal(next: string) {
   const e = editor.value
+  // 相等也是最新值的确认，必须作废此前暂存的旧值。
+  pendingExternal = null
   if (!e || next === e.getMarkdown()) return
   if (e.isFocused) {
     pendingExternal = next
     return
   }
-  pendingExternal = null
   e.commands.setContent(next, { contentType: 'markdown', emitUpdate: false })
 }
 function applyExternalDocument(next: RichDocNode | null) {
   const e = editor.value
+  pendingExternalDocument = null
   if (!e || !next || JSON.stringify(next) === JSON.stringify(e.getJSON())) return
   if (e.isFocused) {
     pendingExternalDocument = next
     return
   }
-  pendingExternalDocument = null
   e.commands.setContent(editorBlockImages(next), { emitUpdate: false })
 }
 /** 失焦时把输入期间错过的外部更新补灌回来。 */
 function flushExternal() {
   const nextDocument = pendingExternalDocument
   pendingExternalDocument = null
-  if (nextDocument && editor.value && JSON.stringify(nextDocument) !== JSON.stringify(editor.value.getJSON())) {
+  if (nextDocument && editor.value && JSON.stringify(nextDocument) === JSON.stringify(props.document)
+    && JSON.stringify(nextDocument) !== JSON.stringify(editor.value.getJSON())) {
     editor.value.commands.setContent(editorBlockImages(nextDocument), { emitUpdate: false })
     pendingExternal = null
     return
   }
   const next = pendingExternal
   pendingExternal = null
-  if (next != null && editor.value && next !== editor.value.getMarkdown()) {
+  if (next != null && next === props.modelValue && editor.value && next !== editor.value.getMarkdown()) {
     editor.value.commands.setContent(next, { contentType: 'markdown', emitUpdate: false })
   }
 }
