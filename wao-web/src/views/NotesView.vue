@@ -269,7 +269,7 @@ const searchRequest = ref(0)
 const sort = ref<'updatedDesc' | 'createdDesc' | 'updatedAsc'>('updatedDesc')
 const imageFilter = ref<'all' | 'yes' | 'no'>('all')
 const timeFilter = ref<'all' | 'today' | 'yesterday' | 'earlier'>('all')
-const selectedAuthor = ref('')
+const selectedAuthor = ref('__me__')
 const showSystemArticles = ref(true)
 const filterOpen = ref(false)
 const filterControl = ref<HTMLElement>()
@@ -286,11 +286,18 @@ useOverlayDismiss(() => pageActionsOpen.value, closePageActions, event => {
   if (!pageActionsControl.value?.contains(event.target as Node)) pageActionsOpen.value = false
 })
 const selectedTag = ref<string | null>('')
-const noteListPreferenceKey = `wao-note-list-preferences-v1:${session.currentUser.id}`
 const noteListPreferenceLoaded = ref(false)
-function restoreNoteListPreferences() {
+let noteListPreferenceMember = ''
+function noteListPreferenceKey(member: string) { return `wao-note-list-preferences-v2:${member}` }
+function restoreNoteListPreferences(member: string) {
+  noteListPreferenceLoaded.value = false
+  noteListPreferenceMember = member
+  resetFilters()
+  query.value = ''
+  searchFocus.value = { id: '', term: '' }
+  filterOpen.value = false
   try {
-    const saved = JSON.parse(localStorage.getItem(noteListPreferenceKey) || 'null') as Partial<{ sort: string; imageFilter: string; timeFilter: string; selectedAuthor: string; selectedTag: string | null; showSystemArticles: boolean }> | null
+    const saved = member ? JSON.parse(localStorage.getItem(noteListPreferenceKey(member)) || 'null') as Partial<{ sort: string; imageFilter: string; timeFilter: string; selectedAuthor: string; selectedTag: string | null; showSystemArticles: boolean }> | null : null
     if (saved?.sort && ['updatedDesc', 'createdDesc', 'updatedAsc'].includes(saved.sort)) sort.value = saved.sort as typeof sort.value
     if (saved?.imageFilter && ['all', 'yes', 'no'].includes(saved.imageFilter)) imageFilter.value = saved.imageFilter as typeof imageFilter.value
     if (saved?.timeFilter && ['all', 'today', 'yesterday', 'earlier'].includes(saved.timeFilter)) timeFilter.value = saved.timeFilter as typeof timeFilter.value
@@ -298,23 +305,24 @@ function restoreNoteListPreferences() {
     if (saved?.selectedTag === null || typeof saved?.selectedTag === 'string') selectedTag.value = saved.selectedTag
     if (typeof saved?.showSystemArticles === 'boolean') showSystemArticles.value = saved.showSystemArticles
   } catch { /* 忽略损坏的列表偏好，使用默认筛选。 */ }
-  noteListPreferenceLoaded.value = true
+  noteListPreferenceLoaded.value = !!member
 }
-restoreNoteListPreferences()
+watch(() => session.currentUser.id, restoreNoteListPreferences, { immediate: true, flush: 'sync' })
 watch([sort, imageFilter, timeFilter, selectedAuthor, selectedTag, showSystemArticles], () => {
-  if (!noteListPreferenceLoaded.value) return
-  try { localStorage.setItem(noteListPreferenceKey, JSON.stringify({ sort: sort.value, imageFilter: imageFilter.value, timeFilter: timeFilter.value, selectedAuthor: selectedAuthor.value, selectedTag: selectedTag.value, showSystemArticles: showSystemArticles.value })) }
+  const member = session.currentUser.id
+  if (!noteListPreferenceLoaded.value || !member || member !== noteListPreferenceMember) return
+  try { localStorage.setItem(noteListPreferenceKey(member), JSON.stringify({ sort: sort.value, imageFilter: imageFilter.value, timeFilter: timeFilter.value, selectedAuthor: selectedAuthor.value, selectedTag: selectedTag.value, showSystemArticles: showSystemArticles.value })) }
   catch { /* 偏好无法持久化时仍可在当前页面使用筛选。 */ }
 }, { flush: 'sync' })
 const activeFilterCount = computed(() => Number(!!selectedTag.value || selectedTag.value === null)
-  + Number(!!selectedAuthor.value) + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc') + Number(!showSystemArticles.value))
+  + Number(selectedAuthor.value !== '__me__') + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc') + Number(!showSystemArticles.value))
 const filterSummary = computed(() => [selectedTag.value === null ? '无标签' : selectedTag.value ? `# ${selectedTag.value}` : '',
-  selectedAuthor.value ? `作者：${authorName(selectedAuthor.value)}` : '',
+  selectedAuthor.value === '__me__' ? '我的小记' : selectedAuthor.value ? `作者：${authorName(selectedAuthor.value)}` : '全部作者',
   showSystemArticles.value ? '' : '已隐藏系统文章',
   imageFilter.value === 'yes' ? '有图' : imageFilter.value === 'no' ? '无图' : '',
   { today: '今天', yesterday: '昨天', earlier: '以前', all: '' }[timeFilter.value],
   { updatedDesc: '最近更新', createdDesc: '最近创建', updatedAsc: '最早更新' }[sort.value]].filter(Boolean).join(' · '))
-function resetFilters() { selectedTag.value = ''; selectedAuthor.value = ''; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc'; showSystemArticles.value = true }
+function resetFilters() { selectedTag.value = ''; selectedAuthor.value = '__me__'; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc'; showSystemArticles.value = true }
 function onOutsideFilter(event: PointerEvent) {
   if (!filterControl.value?.contains(event.target as Node)) filterOpen.value = false
   if (readerMore.value?.open && !readerMore.value.contains(event.target as Node)) closeReaderMore()
@@ -850,7 +858,7 @@ const matching = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
   return notes.value.filter(doc => (selectedTag.value === null ? !doc.tags?.length : !selectedTag.value || doc.tags?.includes(selectedTag.value))
     && (showSystemArticles.value || !doc.systemGenerated)
-    && (!selectedAuthor.value || (doc.systemGenerated ? '__system__' : doc.author) === selectedAuthor.value)
+    && (selectedAuthor.value === '__me__' ? !!session.currentUser.id && doc.author === session.currentUser.id : !selectedAuthor.value || (doc.systemGenerated ? '__system__' : doc.author) === selectedAuthor.value)
     && (imageFilter.value === 'all' || (notePreviewImages(displayedContent(doc)).length > 0) === (imageFilter.value === 'yes'))
     && inTimeRange(doc.updated, timeFilter.value)
     && (!needle || `${displayedTitle(doc)}\n${documentSearchText({ blocks: doc.blocks, content: displayedContent(doc) })}\n${displayedTags(doc).join(' ')}`.toLocaleLowerCase().includes(needle)))
@@ -1249,7 +1257,7 @@ onMounted(() => void loadPins())
             <div v-if="filterOpen" id="note-filter-panel" class="filter-panel" role="group" aria-label="小记筛选与排序">
               <div class="filter-group system-filter"><strong>系统文章</strong><button type="button" class="system-visibility" role="switch" aria-label="显示系统文章" :aria-checked="showSystemArticles" @click="showSystemArticles = !showSystemArticles"><span>显示系统文章</span><span class="system-switch-track" aria-hidden="true"></span></button></div>
               <div class="filter-group"><strong>标签</strong><div class="filter-options"><button type="button" :aria-pressed="selectedTag === ''" @click="selectedTag = ''">全部</button><button type="button" :aria-pressed="selectedTag === null" @click="selectedTag = null">无标签</button><button v-for="tag in availableTags" :key="tag" type="button" :aria-pressed="selectedTag === tag" @click="selectedTag = tag"># {{ tag }}</button></div></div>
-              <div class="filter-group"><strong>作者</strong><select v-model="selectedAuthor" aria-label="按作者筛选"><option value="">全部作者</option><option v-for="author in availableAuthors" :key="author.id" :value="author.id">{{ author.name }}</option></select></div>
+              <div class="filter-group"><strong>作者</strong><select v-model="selectedAuthor" aria-label="按作者筛选"><option value="__me__">我的小记（当前账号）</option><option value="">全部作者</option><option v-for="author in availableAuthors" :key="author.id" :value="author.id">{{ author.name }}</option></select></div>
               <div class="filter-group"><strong>图片</strong><div class="filter-options"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'yes', label: '有图' }, { value: 'no', label: '无图' }]" :key="option.value" type="button" :aria-pressed="imageFilter === option.value" @click="imageFilter = option.value as typeof imageFilter">{{ option.label }}</button></div></div>
               <div class="filter-group"><strong>更新时间</strong><div class="filter-options"><button v-for="option in [{ value: 'all', label: '不限' }, { value: 'today', label: '今天' }, { value: 'yesterday', label: '昨天' }, { value: 'earlier', label: '以前' }]" :key="option.value" type="button" :aria-pressed="timeFilter === option.value" @click="timeFilter = option.value as typeof timeFilter">{{ option.label }}</button></div></div>
               <div class="filter-group"><strong>排序</strong><select v-model="sort" aria-label="小记排序"><option value="updatedDesc">最近更新</option><option value="createdDesc">最近创建</option><option value="updatedAsc">最早更新</option></select></div>
