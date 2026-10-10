@@ -3,6 +3,7 @@ import { usePreferenceStore } from '@/stores/preferences'
 import { useNoteDisplayPreferences } from '@/composables/noteDisplayPreferences'
 import NoteOriginalReader from '@/components/notes/NoteOriginalReader.vue'
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
+import { imageDisplayName } from '@/utils/imageDisplayName'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
 import NoteAiStageButton from '@/components/notes/NoteAiStageButton.vue'
 import NoteAiCompanion from '@/components/notes/NoteAiCompanion.vue'
@@ -1321,9 +1322,9 @@ onMounted(() => void loadPins())
             <div class="note-body" :ref="value => setNotePreviewBody(note.id, value)"><MarkdownEditor :search-request="String(searchRequest)" :search-term="searchFocus.id === note.id ? searchFocus.term : ''" :ref="value => setNoteEditor(note.id, value)" :model-value="displayedMarkdown(note) || note.title" :document="displayedContent(note).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="cardActiveImages[note.id] ?? null" bare advanced allow-h1 :min-height="0" @image-reference="locateCardImage(note.id, $event)" @character-count="onNoteCharacterCount(note.id, $event)" /></div>
             <aside v-if="notePreviews.get(note.id)?.length" class="note-images" :class="{ expanded: isNotePreviewExpanded(note.id) }" aria-label="小记图片总览">
               <span>图片总览 <b>{{ notePreviews.get(note.id)?.length }} 张</b></span>
-              <figure v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image-item" :class="{ active: cardActiveImages[note.id] === index + 1 }" :data-card-image="index + 1" :aria-label="`图 ${index + 1} ${image.alt}`">
-              <button class="note-image" type="button" :aria-label="`放大图 ${index + 1}：${image.alt || '正文配图'}`" :title="image.alt || `放大图片 ${index + 1}`" @click.stop="openImage(image, $event, cardImages(note), index)">
-                <img :src="notePreviewSource(image.src)" :alt="image.alt || `小记图片 ${index + 1}`" loading="lazy">
+              <figure v-for="(image, index) in notePreviews.get(note.id)" :key="`${image.src}:${index}`" class="note-image-item" :class="{ active: cardActiveImages[note.id] === index + 1 }" :data-card-image="index + 1" :aria-label="`图 ${index + 1} ${imageDisplayName(image.alt, index + 1)}`">
+              <button class="note-image" type="button" :aria-label="`放大图 ${index + 1}：${imageDisplayName(image.alt, index + 1)}`" :title="imageDisplayName(image.alt, index + 1)" @click.stop="openImage(image, $event, cardImages(note), index)">
+                <img :src="notePreviewSource(image.src)" :alt="imageDisplayName(image.alt, index + 1)" loading="lazy">
               </button>
               <figcaption><span>图 {{ index + 1 }}</span><button class="note-image-return" type="button" :aria-label="`返回正文图 ${index + 1}的位置`" @click.stop="returnToCardImageReference(note.id, index + 1)">返回正文</button></figcaption>
               </figure>

@@ -35,7 +35,7 @@ const MarkdownEditor = defineAsyncComponent({
   loader: () => import('@/components/ui/MarkdownEditor.vue'),
   loadingComponent: defineComponent({ setup: () => () => h('p', { role: 'status' }, '正在加载编辑器…') }),
 })
-const noteEditor = ref<{ focusImageReference?: (index: number) => boolean; dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean; appendBookExcerpt?: (text: string, source: string, reflection: string) => boolean } | null>(null)
+const noteEditor = ref<{ focusImageReference?: (index: number) => boolean; renameImageAt?: (index: number, event: MouseEvent) => boolean; dismissTransientUi?: () => boolean; removeImageAt: (index: number) => boolean; insertTextAtSelection: (text: string, deleteBefore?: number) => boolean; appendPlainText: (text: string) => boolean; appendBookExcerpt?: (text: string, source: string, reflection: string) => boolean } | null>(null)
 const excerptDialog = ref<InstanceType<typeof BookExcerptDialog>>()
 const excerptOpen = ref(false)
 function insertExcerpt(text: string, source: string, reflection: string) {
@@ -137,6 +137,10 @@ let imageTrigger: HTMLElement | null = null
 watch(imageMode, () => { activeImage.value = null })
 function locateDraftImage(index: number) { activeImage.value = index; if (props.contained) emit('image-reference', index); else imagesPanel.value?.locate(index) }
 function returnToDraftImage(index: number) { activeImage.value = index; noteEditor.value?.focusImageReference?.(index) }
+function renameDraftImage(index: number, event: MouseEvent) {
+  if (saving.value || props.loading) return
+  noteEditor.value?.renameImageAt?.(index, event)
+}
 async function openDraftImage(image: NotePreviewImage, event: MouseEvent, index?: number) {
   imageTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
   galleryImages.value = draftImages.value.map(item => ({ ...item }))
@@ -618,7 +622,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile">
 
       </MarkdownEditor>
-      </div><NoteReadingImages v-if="!contained && imageMode === 'references' && draftImages.length" ref="imagesPanel" class="composer-images" :images="draftImages" :active="activeImage" @return="returnToDraftImage" @fullscreen="openDraftImage" /></div>
+      </div><NoteReadingImages v-if="!contained && imageMode === 'references' && draftImages.length" ref="imagesPanel" class="composer-images" :images="draftImages" :active="activeImage" :editable="!saving && !loading" @rename="renameDraftImage" @return="returnToDraftImage" @fullscreen="openDraftImage" /></div>
       <NoteComposerTags v-if="!inline" add-button v-model="newTag" :choices="quickChoices" :selected="tags" :saving="saving" :creating="creatingTag" :create-open="tagCreateOpen" :error="tagError" @toggle="toggleTag" @create="createTag" @toggle-create="toggleTagCreate" @close-create="tagCreateOpen = false" @menu="(event, tag) => tagMenu?.open(event, tag)" />
     </div>
     <Teleport to="body"><div v-if="imagePreview" class="composer-image-lightbox" role="dialog" aria-modal="true" :aria-label="imagePreview.alt || '小记图片预览'" @click.self="closeDraftImage" @keydown="imagePreviewKeys"><button ref="imageClose" type="button" aria-label="关闭图片预览" @click="closeDraftImage"><i class="ri-close-line" aria-hidden="true"></i></button><img :src="imagePreview.src" :alt="imagePreview.alt" /><NoteImageNavigator :images="galleryImages" :index="galleryIndex" @change="changeGallery" /></div></Teleport>

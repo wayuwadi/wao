@@ -7,6 +7,7 @@ import WaoField from '@/components/ui/WaoField.vue'
 import TodoDayLayout from '@/components/todo/TodoDayLayout.vue'
 import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
+import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
 import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
@@ -393,6 +394,8 @@ const detailDemoComment = ref('')
           >
           <section class="reference-section">
             <h2>浮层的边界</h2>
+            <p>图片菜单使用同一套 13px 字体，名称与常用操作直接展示；精确尺寸放入展开区。长名称省略显示，完整内容通过悬浮查看。下面为图片名称示例，不写入账号。</p>
+            <NoteReadingImages :images="[{ src: '/brand/wao-soft-loop-v4.svg', alt: 'image.png' }, { src: '/brand/wao-soft-loop-v4.svg', alt: '有意义的自定义图片名称，长名称也保持布局稳定' }]" :active="null" />
             <div class="popover-sample" role="group" aria-label="浮层外观示例">
               <strong>当前内容的操作</strong><span>轻量菜单使用浮层阴影</span
               ><WaoButton variant="ghost" @click="feedback = '浮层示例操作已触发。'"
