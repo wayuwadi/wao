@@ -19,8 +19,27 @@ class NoteOriginalServiceTest extends NoteAiManagedServiceTest {
   try(var c=db.getDataSource().getConnection()){ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V177__note_original_snapshots.sql"));}
   db.execute("CREATE TABLE note_polish_version(doc_id VARCHAR(32),member_id VARCHAR(32),source_markdown CLOB,polished_markdown CLOB,updated_at TIMESTAMP)");
   db.execute("CREATE TABLE image_blob(id VARCHAR(32) PRIMARY KEY)");db.execute("CREATE TABLE file_blob(id VARCHAR(32) PRIMARY KEY)");
+  db.execute("CREATE TABLE text_polish_job(id VARCHAR(34) PRIMARY KEY,member_id VARCHAR(32),original_text CLOB)");
   ObjectProvider<KnowledgeService> provider=mock(ObjectProvider.class);when(provider.getObject()).thenReturn(knowledge);
   originals=new NoteOriginalService(db,json,settings,provider,text,image);ReflectionTestUtils.setField(managed,"originals",originals);
+ }
+ @Test void draftPolishAcceptsOnlyCompletePresentationEquivalentOutputAndRetainsItIdempotently(){
+  String request="1".repeat(32), task="pj"+request, input="选区原文";
+  var source=new NoteOriginalService.Content("手动标题",input,null,List.of(),List.of());
+  tx.executeWithoutResult(t->originals.freeze("m",new NoteOriginalService.Input(request,"draft",null,null,"polish",source,input,null)));
+  db.update("INSERT INTO text_polish_job VALUES(?,?,?)",task,"m",input);
+  String ai="  今天保留 300 篇。\r\n\r\n在【小站】发布 *文章*。  ";
+  when(text.get("m",task)).thenReturn(new TextPolishJobService.Result(task,"SUCCEEDED","完成",ai,null,null));
+  var candidate=new NoteOriginalService.Content("手动标题","未选文字\n\n今天保留 300 篇。\n\n在【小站】发布 \\*文章\\*。\n\n![原图](/api/images/original/raw)",null,List.of(),List.of());
+  tx.executeWithoutResult(t->originals.draftResult("m",request,new NoteOriginalService.DraftResult(task,candidate)));
+  tx.executeWithoutResult(t->originals.draftResult("m",request,new NoteOriginalService.DraftResult(task,candidate)));
+  assertThat(db.queryForObject("SELECT application FROM note_ai_transformation WHERE id=?",String.class,request)).isEqualTo("DRAFT_RESULT");
+  for(String changed:List.of("今天保留 30 篇。\n\n在【小站】发布 *文章*。","今天保留 300 篇。","完全不同的正文")){
+   var invalid=new NoteOriginalService.Content("手动标题",changed,null,List.of(),List.of());
+   assertThatThrownBy(()->tx.executeWithoutResult(t->originals.draftResult("m",request,new NoteOriginalService.DraftResult(task,invalid)))).hasMessageContaining("没有保留");
+  }
+  when(text.get("m",task)).thenReturn(new TextPolishJobService.Result(task,"RUNNING","生成中",ai,null,null));
+  assertThatThrownBy(()->tx.executeWithoutResult(t->originals.draftResult("m",request,new NoteOriginalService.DraftResult(task,candidate)))).hasMessageContaining("未完成");
  }
  @Test void initialAndTwoRoundsRemainExactIncludingWhitespaceRichContentAndReferences() throws Exception {
   String raw="  原始记录  \n\n![用户图](/api/images/user/raw)\n[附件](/api/files/user/download)\n";
