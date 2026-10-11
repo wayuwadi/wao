@@ -39,7 +39,7 @@ public class LocalCodexQuotaService {
         this.enabled = enabled; this.executable = executable; this.source = source;
     }
 
-    /** 每分钟采样一次；查询也会补采，统一关闭调度时不会启动后台任务。 */
+    /** 显式启用后每分钟采样一次；全局调度关闭时由独立调度调用，查询也会节流补采。 */
     @Scheduled(fixedDelay = 60000, initialDelay = 10000)
     public void refresh() {
         if (!enabled || !sampling.tryLock()) return;
