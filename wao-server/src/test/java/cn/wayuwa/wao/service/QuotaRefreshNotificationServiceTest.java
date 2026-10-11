@@ -43,6 +43,7 @@ class QuotaRefreshNotificationServiceTest {
         var card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
         verify(notifier).notifyResetCardIncrease(card.capture());
         verify(notifier, never()).notifyCard(any());
+        verify(notifier, never()).notifyCodexQuotaRefresh(any());
         assertThat(card.getValue().title()).isEqualTo("Codex 重置卡已增加");
         assertThat(card.getValue().body()).contains("123 张 → 125 张").doesNotContain("125%");
     }
@@ -59,6 +60,7 @@ class QuotaRefreshNotificationServiceTest {
                 .contains("\"remainingPercent\":80")
                 .doesNotContain("token");
         verify(notifier, never()).notifyCard(any());
+        verify(notifier, never()).notifyCodexQuotaRefresh(any());
     }
 
     @Test
@@ -78,6 +80,7 @@ class QuotaRefreshNotificationServiceTest {
         service.observeRunner("rn1", current);
         verify(notifier, org.mockito.Mockito.times(2)).notifyResetCardIncrease(any());
         verify(notifier, never()).notifyCard(any());
+        verify(notifier, never()).notifyCodexQuotaRefresh(any());
     }
 
     @Test
@@ -85,12 +88,12 @@ class QuotaRefreshNotificationServiceTest {
         QuotaRefreshNotificationStateEntity baseline = baseline(20);
         when(mapper.selectForUpdate("runner-account:wage@example.com")).thenReturn(baseline);
         when(notificationSettings.allows(any())).thenReturn(true);
-        when(notifier.notifyCard(any())).thenReturn(true);
+        when(notifier.notifyCodexQuotaRefresh(any())).thenReturn(true);
 
         service.observeRunner("rn1", report(0));
 
         ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
-        verify(notifier).notifyCard(card.capture());
+        verify(notifier).notifyCodexQuotaRefresh(card.capture());
         assertThat(card.getValue().title()).isEqualTo("AI 额度已刷新");
         assertThat(card.getValue().body()).contains("80% → 100%").contains("周额度");
         assertThat(card.getValue().linkUrl()).isEqualTo("https://wao.example");
@@ -104,11 +107,11 @@ class QuotaRefreshNotificationServiceTest {
         String oldSnapshot = baseline.getSnapshotJson();
         when(mapper.selectForUpdate("runner-account:wage@example.com")).thenReturn(baseline);
         when(notificationSettings.allows(any())).thenReturn(true);
-        when(notifier.notifyCard(any())).thenReturn(false);
+        when(notifier.notifyCodexQuotaRefresh(any())).thenReturn(false);
 
         service.observeRunner("rn1", report(0));
 
-        verify(notifier).notifyCard(any());
+        verify(notifier).notifyCodexQuotaRefresh(any());
         verify(mapper, never()).updateById(any(QuotaRefreshNotificationStateEntity.class));
         assertThat(baseline.getSnapshotJson()).isEqualTo(oldSnapshot);
     }
@@ -122,6 +125,7 @@ class QuotaRefreshNotificationServiceTest {
         service.observeRunner("rn1", report(0));
 
         verify(notifier, never()).notifyCard(any());
+        verify(notifier, never()).notifyCodexQuotaRefresh(any());
         verify(mapper).updateById(baseline);
         assertThat(baseline.getSnapshotJson()).contains("\"remainingPercent\":100");
     }
@@ -134,6 +138,7 @@ class QuotaRefreshNotificationServiceTest {
         service.observeRunner("rn1", report(20));
 
         verify(notifier, never()).notifyCard(any());
+        verify(notifier, never()).notifyCodexQuotaRefresh(any());
         verify(mapper).updateById(baseline);
         assertThat(baseline.getSnapshotJson()).contains("\"remainingPercent\":80");
     }
@@ -146,6 +151,46 @@ class QuotaRefreshNotificationServiceTest {
         verify(mapper).insert(saved.capture());
         org.mockito.Mockito.clearInvocations(mapper, notifier, notificationSettings);
         return saved.getValue();
+    }
+
+    @Test
+    void resetCardsAreObservedEvenWhenQuotaWindowsAreMissing() {
+        var state = new QuotaRefreshNotificationStateEntity();
+        state.setSnapshotJson("[{\"key\":\"reset-cards\",\"label\":\"可用重置卡\",\"remainingPercent\":0,\"resetsAt\":null}]");
+        when(mapper.selectForUpdate("runner-account:wage@example.com:reset-cards")).thenReturn(state);
+        when(notificationSettings.allows(any())).thenReturn(true);
+        when(notifier.notifyResetCardIncrease(any())).thenReturn(true);
+        service.observeRunner("local:windows", new RunnerCodexQuotaReport(" WAGE@example.com ", "pro", null, null,
+                new cn.wayuwa.wao.dto.CodexResetCreditsDto(1, List.of())));
+        service.observeRunner("rn2", new RunnerCodexQuotaReport("wage@example.com", "pro", null, null,
+                new cn.wayuwa.wao.dto.CodexResetCreditsDto(1, List.of())));
+        verify(notifier).notifyResetCardIncrease(any());
+        verify(notifier, never()).notifyCodexQuotaRefresh(any());
+        assertThat(state.getSnapshotJson()).contains("\"remainingPercent\":1");
+    }
+
+    @Test
+    void centralCodexUsesFeishuWhileOtherProvidersKeepStationDelivery() {
+        service.observeCentral(List.of(central("codex", 20), central("claude", 20)), List.of());
+        var saved = ArgumentCaptor.forClass(QuotaRefreshNotificationStateEntity.class);
+        verify(mapper, org.mockito.Mockito.times(2)).insert(saved.capture());
+        saved.getAllValues().forEach(state -> when(mapper.selectForUpdate(state.getSourceKey())).thenReturn(state));
+        when(notificationSettings.allows(any())).thenReturn(true);
+        when(notifier.notifyCodexQuotaRefresh(any())).thenReturn(true);
+        when(notifier.notifyCard(any())).thenReturn(true);
+        service.observeCentral(List.of(central("codex", 0), central("claude", 0)), List.of());
+        service.observeCentral(List.of(central("codex", 0), central("claude", 0)), List.of());
+        var codex = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        var claude = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        verify(notifier).notifyCodexQuotaRefresh(codex.capture());
+        verify(notifier).notifyCard(claude.capture());
+        assertThat(codex.getValue().fields()).contains(List.of("账号", "codex"));
+        assertThat(claude.getValue().fields()).contains(List.of("账号", "claude"));
+    }
+
+    private cn.wayuwa.wao.dto.AiSessionQuotaDto central(String provider, int used) {
+        return new cn.wayuwa.wao.dto.AiSessionQuotaDto(provider, provider, provider, "pro", used, 100 - used,
+                null, null, "SYNCED", null);
     }
 
     private RunnerCodexQuotaReport report(int usedPercent) {

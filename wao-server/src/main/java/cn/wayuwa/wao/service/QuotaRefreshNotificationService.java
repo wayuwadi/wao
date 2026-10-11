@@ -60,28 +60,29 @@ public class QuotaRefreshNotificationService {
         Map<String, AccountSnapshot> accounts = new LinkedHashMap<>();
         if (sessions != null) {
             sessions.stream().filter(quota -> "SYNCED".equals(quota.status())).forEach(quota ->
-                    account(accounts, "central:" + quota.accountId(), quota.label())
+                    account(accounts, "central:" + quota.accountId(), quota.label(), quota.provider())
                             .points.add(new QuotaPoint("session", "本轮额度", quota.remainingPercent(),
                                     quota.resetsAt())));
         }
         if (weeks != null) {
             weeks.stream().filter(quota -> "SYNCED".equals(quota.status())).forEach(quota ->
-                    account(accounts, "central:" + quota.accountId(), quota.label())
+                    account(accounts, "central:" + quota.accountId(), quota.label(), quota.provider())
                             .points.add(new QuotaPoint("weekly", "周额度", quota.remainingPercent(),
                                     quota.resetsAt())));
         }
-        accounts.forEach((sourceKey, snapshot) -> safelyObserve(sourceKey, snapshot.label, snapshot.points));
+        accounts.forEach((sourceKey, snapshot) -> safelyObserve(sourceKey, snapshot.label, snapshot.points,
+                "codex".equals(snapshot.provider)));
     }
 
-    /** 处理 Runner 从 Codex 本地接口上报的一次脱敏真实额度。 */
+    /** 处理本机采集器或兼容 Runner 上报的一次脱敏真实 Codex 额度。 */
     @Transactional
     public void observeRunner(String runnerId, RunnerCodexQuotaReport report) {
-        if (report == null || report.limits() == null) return;
+        if (report == null) return;
         String email = normalizeEmail(report.accountEmail());
         String sourceKey = email == null ? "runner:" + runnerId : "runner-account:" + email;
         String label = email == null ? "Codex · " + runnerId : email;
         List<QuotaPoint> points = new ArrayList<>();
-        for (CodexQuotaLimitDto limit : report.limits()) {
+        for (CodexQuotaLimitDto limit : report.limits() == null ? List.<CodexQuotaLimitDto>of() : report.limits()) {
             if (limit == null || limit.windows() == null) continue;
             for (CodexQuotaWindowDto window : limit.windows()) {
                 if (window == null) continue;
@@ -93,24 +94,24 @@ public class QuotaRefreshNotificationService {
                         100 - clamp(window.usedPercent()), resetText(window.resetsAt())));
             }
         }
-        safelyObserve(sourceKey, label, points);
+        safelyObserve(sourceKey, label, points, true);
         if (report.resetCredits() != null && report.resetCredits().availableCount() != null) {
             safelyObserve(sourceKey + ":reset-cards", label, List.of(new QuotaPoint("reset-cards",
-                    "可用重置卡", report.resetCredits().availableCount(), null)));
+                    "可用重置卡", report.resetCredits().availableCount(), null)), true);
         }
     }
 
-    private void safelyObserve(String sourceKey, String accountLabel, List<QuotaPoint> points) {
+    private void safelyObserve(String sourceKey, String accountLabel, List<QuotaPoint> points, boolean codex) {
         if (points == null || points.isEmpty()) return;
         try {
-            observe(sourceKey, accountLabel, points);
+            observe(sourceKey, accountLabel, points, codex);
         } catch (RuntimeException ex) {
             // 通知观测不能阻断额度保存、Runner 心跳或自主调度。
             log.warn("额度刷新通知处理失败，不影响额度业务链路：{}", ex.getClass().getSimpleName());
         }
     }
 
-    private void observe(String sourceKey, String accountLabel, List<QuotaPoint> points) {
+    private void observe(String sourceKey, String accountLabel, List<QuotaPoint> points, boolean codex) {
         List<QuotaPoint> current = points.stream()
                 .filter(point -> point != null && StringUtils.hasText(point.key()))
                 .map(point -> new QuotaPoint(point.key(), point.label(), "reset-cards".equals(point.key())
@@ -156,7 +157,8 @@ public class QuotaRefreshNotificationService {
                 resetCards ? "Codex 重置卡已增加" : "AI 额度已刷新", "green", List.of(List.of("账号", safeLabel(accountLabel))),
                 changes + "\n\n额度来自最新真实采样，可以继续安排需要消耗额度的任务。",
                 homeUrl == null ? null : "查看首页额度", homeUrl);
-        boolean delivered = resetCards ? notifier.notifyResetCardIncrease(card) : notifier.notifyCard(card);
+        boolean delivered = resetCards ? notifier.notifyResetCardIncrease(card)
+                : codex ? notifier.notifyCodexQuotaRefresh(card) : notifier.notifyCard(card);
         if (delivered) updateBaseline(state, accountLabel, current);
     }
 
@@ -196,8 +198,8 @@ public class QuotaRefreshNotificationService {
         }
     }
 
-    private static AccountSnapshot account(Map<String, AccountSnapshot> accounts, String key, String label) {
-        return accounts.computeIfAbsent(key, unused -> new AccountSnapshot(safeLabel(label), new ArrayList<>()));
+    private static AccountSnapshot account(Map<String, AccountSnapshot> accounts, String key, String label, String provider) {
+        return accounts.computeIfAbsent(key, unused -> new AccountSnapshot(safeLabel(label), provider, new ArrayList<>()));
     }
 
     private static String windowLabel(String limitLabel, Long minutes) {
@@ -243,7 +245,7 @@ public class QuotaRefreshNotificationService {
         return Math.max(0, Math.min(100, value));
     }
 
-    private record AccountSnapshot(String label, List<QuotaPoint> points) { }
+    private record AccountSnapshot(String label, String provider, List<QuotaPoint> points) { }
     private record Increase(QuotaPoint previous, QuotaPoint current) { }
     private record QuotaPoint(String key, String label, int remainingPercent, String resetsAt) { }
 }

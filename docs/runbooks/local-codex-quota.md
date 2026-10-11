@@ -36,3 +36,7 @@ mvn -f wao-server/pom.xml '-Dtest=LocalCodexQuotaProcessTest' '-Dwao.codex.live=
 连接现有业务数据库的独立本地服务启用采集，浏览器登录后检查首页、打开详情、刷新、关闭及窄屏展示。确定性测试覆盖多机同账号去重、失败保留、空字段、零张、节流和过期。Linux2 未实际启用前不能声称其采集已验证。
 
 官方协议依据：[Codex app-server](https://learn.chatgpt.com/docs/app-server)。
+
+## 2026-10-11：恢复飞书额度通知
+
+本机成功采样并保存后同时观察额度刷新与重置卡数量增加，复用默认飞书机器人和通知策略；首次只建立基线，发送失败留待下轮重试。配置继续沿用已有采集开关，默认关闭的节点无需额外启用。通知失败不影响额度展示，完整规则见 [恢复通知规格](../specs/codex-quota-feishu-restore-2026-10-11.md)。
