@@ -40,3 +40,5 @@ mvn -f wao-server/pom.xml '-Dtest=LocalCodexQuotaProcessTest' '-Dwao.codex.live=
 ## 2026-10-11：恢复飞书额度通知
 
 本机成功采样并保存后同时观察额度刷新与重置卡数量增加，复用默认飞书机器人和通知策略；首次只建立基线，发送失败留待下轮重试。配置继续沿用已有采集开关，默认关闭的节点无需额外启用。通知失败不影响额度展示，完整规则见 [恢复通知规格](../specs/codex-quota-feishu-restore-2026-10-11.md)。
+
+同日部署修正：`wao.codex-quota.enabled=true` 的实例即使关闭全局调度，也通过独立单线程每分钟采样，无需持续打开首页。全局调度启用时不重复注册；其他后台任务仍由原开关决定。见 [后台采样规格](../specs/local-codex-quota-background-2026-10-11.md)。
