@@ -47,10 +47,10 @@ public class NoteAiCompanionService {
     public static String textDependency(String body){return NoteAiSettingsService.hash(body.replaceAll("!\\[[^]]*]\\([^\\n]*?\\)","").replaceAll("\\s+"," ").strip());}
     private String dependency(DocDto doc,String stage){return "title".equals(stage)?NoteAiSettingsService.hash(doc.title()+textDependency(body(doc))):textDependency(body(doc));}
     /** 读取默认策略不创建记录，也不改写旧成员配置。 */
-    public Map<String,Object> preference(String member){var r=one("SELECT * FROM note_ai_companion_preference WHERE member_id=?",member);return Map.of("mode",r==null?"AUTO":str(r,"result_mode"),"version",r==null?0:((Number)r.get("version")).longValue());}
-    /** 成员策略采用 CAS，入队后的任务保持策略快照。 */
+    public Map<String,Object> preference(String member){var r=one("SELECT * FROM note_ai_companion_preference WHERE member_id=?",member);return Map.of("mode","AUTO","version",r==null?0:((Number)r.get("version")).longValue());}
+    /** 兼容偏好写入采用 CAS，只允许直接生效策略。 */
     @Transactional
-    public Map<String,Object> preference(String member,String mode,long version){settings.lockMember(member);if(mode==null||!List.of("AUTO","REVIEW").contains(mode))throw new BadRequestException("采用方式无效");
+    public Map<String,Object> preference(String member,String mode,long version){settings.lockMember(member);if(!"AUTO".equals(mode))throw new BadRequestException("小记整理已统一为自动生效，不再提供建议模式");
         if(((Number)preference(member).get("version")).longValue()!=version)throw new ConflictException("伴读设置已更新，请重新读取");
         db.update("INSERT INTO note_ai_companion_preference(member_id,result_mode,version) VALUES(?,?,1) ON DUPLICATE KEY UPDATE result_mode=VALUES(result_mode),version=version+1",member,mode);return preference(member);}
     /** 返回执行目录锁真实状态和持久队列；不推测登录或剩余配额。 */
@@ -141,18 +141,17 @@ public class NoteAiCompanionService {
         if(tree instanceof ObjectNode root){var nodes=root.withArray("content");if(nodes.size()>0&&"文章总览图".equals(nodes.get(0).path("attrs").path("alt").asText()))nodes.remove(0);JsonNode live=current.content()==null?null:current.content().document();if(!cover.isEmpty()){JsonNode image=live!=null&&live.path("content").size()>0&&"文章总览图".equals(live.path("content").get(0).path("attrs").path("alt").asText())?live.path("content").get(0).deepCopy():coverNode(cover);nodes.insert(0,image);}}
         return new RichDocContentDto(1,tree,cover.isEmpty()?markdown:cover+"\n\n"+markdown);}
     private ObjectNode coverNode(String line){var match=java.util.regex.Pattern.compile("!\\[[^]]*]\\(([^\\s)]+)").matcher(line);if(!match.find())throw new ConflictException("旧版配图引用无法恢复，请对照原稿查看");var image=json.createObjectNode();image.put("type","image");var attrs=image.putObject("attrs");attrs.put("src",match.group(1)).put("alt","文章总览图").put("width","50%");var size=java.util.regex.Pattern.compile("wao-image-size:([^x]+)x([^\"]+)").matcher(line);if(size.find()){attrs.put("width",size.group(1));if(!"auto".equals(size.group(2)))attrs.put("height",size.group(2));}return image;}
-    /** 无损段落映射；复杂结构无法可靠匹配时拒绝扔掉富文本，建议仍保留。 */
+    /** 简单段落保留富文本属性，其余直接采用润色 Markdown，原稿由不可变记录保留。 */
     public RichDocContentDto polishedContent(DocDto current,String output){
         String markdown=body(current);java.util.regex.Matcher refs=java.util.regex.Pattern.compile("!?\\[[^]]*]\\(([^)]+)\\)").matcher(markdown);
-        String text=markdown.replaceAll("!\\[[^]]*]\\([^\\n]*?\\)","").replaceAll("\\[([^]]*)]\\([^\\n]*?\\)","$1");var numbers=java.util.regex.Pattern.compile("(?<![\\p{L}\\d])\\d+(?:[.,]\\d+)*(?:%|％)?").matcher(text);while(numbers.find())if(!output.contains(numbers.group()))throw new ConflictException("建议改变或遗漏了原文数字，原文保留；请在编辑器对照采用");
-        while(refs.find())if(!output.contains(refs.group(1))&&!refs.group().startsWith("![文章总览图]"))throw new ConflictException("建议没有完整保留图片或附件，原文保留");
+        while(refs.find())if(!output.contains(refs.group(1))&&!refs.group().startsWith("![文章总览图]"))throw new ConflictException("润色结果未完整保留图片、链接或附件；当前正文未改变，请重试");
         String cover=markdown.lines().filter(s->s.startsWith("![文章总览图]")).findFirst().orElse("");if(!cover.isBlank()&&!output.contains(cover))output=cover+"\n\n"+output;
         JsonNode tree=current.content()==null?null:current.content().document();
         if(tree!=null){tree=tree.deepCopy();var nodes=tree.path("content");List<String> paragraphs=new ArrayList<>(Arrays.asList(output.split("\\n\\s*\\n")));int index=0;
             for(JsonNode n:nodes){if(n.path("type").asText().equals("image")){if(index<paragraphs.size()&&paragraphs.get(index).strip().startsWith("!["))index++;continue;}
-                if(!n.path("type").asText().equals("paragraph")||n.path("content").size()>1||n.path("content").size()==1&&(!n.path("content").get(0).path("type").asText().equals("text")||n.path("content").get(0).has("marks"))||index>=paragraphs.size())throw new ConflictException("此篇包含复杂排版，请在编辑器里对照采用；富文本已保留");
-                String p=paragraphs.get(index++);if(p.matches("(?s).*(?:\\n|[#*`\\[<>]).*"))throw new ConflictException("建议改变了段落结构，请在编辑器对照采用");ArrayNode content=((ObjectNode)n).putArray("content");if(!p.isBlank())content.addObject().put("type","text").put("text",p);
-            }if(index!=paragraphs.size())throw new ConflictException("建议改变了段落数量，请在编辑器对照采用");
+                if(!n.path("type").asText().equals("paragraph")||n.path("content").size()>1||n.path("content").size()==1&&(!n.path("content").get(0).path("type").asText().equals("text")||n.path("content").get(0).has("marks"))||index>=paragraphs.size())return new RichDocContentDto(1,null,output);
+                String p=paragraphs.get(index++);if(p.matches("(?s).*(?:\\n|[#*`\\[<>]).*"))return new RichDocContentDto(1,null,output);ArrayNode content=((ObjectNode)n).putArray("content");if(!p.isBlank())content.addObject().put("type","text").put("text",p);
+            }if(index!=paragraphs.size())return new RichDocContentDto(1,null,output);
         }
         return new RichDocContentDto(1,tree,output);
     }

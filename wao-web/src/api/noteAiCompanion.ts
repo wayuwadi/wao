@@ -7,7 +7,7 @@ export interface CompanionOverview {
   queued: number
   running: number
   unread: number
-  mode: 'AUTO' | 'REVIEW'
+  mode: 'AUTO'
   version: number
   capabilityVersion: number
 }
@@ -74,10 +74,6 @@ export interface NoteChat {
 const root = '/api/docs/notes'
 const unwrap = async <T>(p: Promise<{ data: ApiResponse<T> }>): Promise<T> => (await p).data.data
 export const fetchCompanion = () => unwrap<CompanionOverview>(http.get(`${root}/ai-companion`))
-export const saveCompanionMode = (mode: CompanionOverview['mode'], expectedVersion: number) =>
-  unwrap<{ mode: CompanionOverview['mode']; version: number }>(
-    http.put(`${root}/ai-companion/preference`, { mode, expectedVersion }),
-  )
 export const fetchAiResults = (docId: string, cursor?: string) =>
   unwrap<AiResults>(http.get(`${root}/${docId}/ai-results`, { params: { cursor } }))
 export const fetchAiReceipts = () =>

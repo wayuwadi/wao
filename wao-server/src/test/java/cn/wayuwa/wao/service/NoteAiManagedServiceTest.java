@@ -112,6 +112,7 @@ class NoteAiManagedServiceTest {
   ObjectProvider<NoteAiCompanionService> provider=mock(ObjectProvider.class);
   when(provider.getObject()).thenReturn(companion);
   when(companion.preference("m")).thenReturn(Map.of("mode",mode));
+  when(companion.polishedContent(any(),anyString())).thenAnswer(c->new RichDocContentDto(1,null,c.getArgument(1)));
   org.springframework.test.util.ReflectionTestUtils.setField(managed,"companion",provider);
   return companion;
  }
@@ -150,29 +151,60 @@ class NoteAiManagedServiceTest {
   verify(text,times(20)).submit(eq("m"),any(),eq("NOTE_BODY"),any(),any(),any(),any());
   assertThat(db.queryForObject("SELECT COUNT(*) FROM note_ai_stage_attempt WHERE stage='image' AND state='RUNNING'",Integer.class)).isEqualTo(20);
  }
- @Test void reviewModeRetainsCompletedOutputWithoutChangingTheNote(){
+ @Test void legacyReviewModeAlsoAppliesCompletedOutputDirectly(){
   var companion=companion("REVIEW");
   values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
   var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
   tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));
   tx.executeWithoutResult(t->managed.advance("n"));
+  db.update("UPDATE note_ai_stage_attempt SET result_mode='REVIEW' WHERE stage='polish'");
+  when(knowledge.updateDerivedNote(eq("n"),any())).thenReturn(doc("整理后事实","手选标题",2));
   when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成","整理后事实",null,null));
   tx.executeWithoutResult(t->managed.advance("n"));
   verify(companion).capture(anyMap(),eq("整理后事实"));
-  assertThat(managed.status("n","m").stages().get("polish").reasonCode()).isEqualTo("READY");
-  verify(knowledge,never()).updateDerivedNote(any(),any());
+  assertThat(managed.status("n","m").stages().get("polish").reasonCode()).isEqualTo("APPLIED");
+  verify(knowledge).updateDerivedNote(eq("n"),argThat(p->p.content().markdown().equals("整理后事实")&&p.expectedRev()==1));
  }
- @Test void unsafeAutoPolishRetainsSuggestionAndRequiresExplicitReview(){
+ @Test void resourceLossFailsWithRetryInsteadOfCreatingASuggestion(){
   var companion=companion("AUTO");
   values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
   var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
-  when(companion.polishedContent(eq(original),anyString())).thenThrow(new ConflictException("保留复杂格式，请在编辑器确认"));
+  when(companion.polishedContent(eq(original),anyString())).thenThrow(new ConflictException("资源引用缺失，请重试"));
   tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));
   tx.executeWithoutResult(t->managed.advance("n"));
   when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成","整理后事实",null,null));
   tx.executeWithoutResult(t->managed.advance("n"));
   verify(companion).capture(anyMap(),eq("整理后事实"));
-  assertThat(managed.status("n","m").stages().get("polish").reasonCode()).isEqualTo("REVIEW_REQUIRED");
+  assertThat(managed.status("n","m").stages().get("polish").reasonCode()).isEqualTo("EXECUTION_FAILED");
+  verify(knowledge,never()).updateDerivedNote(any(),any());
+ }
+ @Test void retainedCurrentResultAppliesWithoutCallingTheModelAgain(){
+  var originals=mock(NoteOriginalService.class);
+  org.springframework.test.util.ReflectionTestUtils.setField(managed,"originals",originals);
+  companion("AUTO");values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
+  tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='REVIEW_REQUIRED' WHERE stage='polish'");
+  clearInvocations(originals);
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成","整理后事实",null,null));
+  when(knowledge.updateDerivedNote(eq("n"),any())).thenReturn(doc("整理后事实","手选标题",2));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(managed.status("n","m").stages().get("polish").reasonCode()).isEqualTo("APPLIED");
+  verify(text,times(1)).submit(any(),any(),any(),any(),any(),any(),any());
+  verify(originals).freezeAttempt(anyString());
+  verify(knowledge,times(1)).updateDerivedNote(eq("n"),any());
+ }
+ @Test void retainedResultNeverOverwritesNewlySavedBody(){
+  companion("AUTO");values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
+  tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));tx.executeWithoutResult(t->managed.advance("n"));
+  db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='READY' WHERE stage='polish'");
+  when(knowledge.getDoc("n")).thenReturn(doc("后来保存的新事实","手选标题",2));
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成","旧润色事实",null,null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(managed.status("n","m").polish()).isEqualTo("FAILED");
+  verify(text,times(1)).submit(any(),any(),any(),any(),any(),any(),any());
   verify(knowledge,never()).updateDerivedNote(any(),any());
  }
  @Test void importedBookSendsOnlyThoughtsToPolishAndReassemblesExactSource(){

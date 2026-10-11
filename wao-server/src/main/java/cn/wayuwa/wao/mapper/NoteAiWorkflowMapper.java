@@ -40,7 +40,13 @@ public interface NoteAiWorkflowMapper {
              WHERE title_status IN ('PENDING','RUNNING') OR image_status IN ('PENDING','RUNNING')
                 OR polish_status IN ('PENDING','RUNNING') OR EXISTS (
                     SELECT 1 FROM note_ai_stage_attempt a
-                    WHERE a.doc_id=note_ai_workflow.doc_id AND a.state IN ('PENDING','RUNNING'))
+                    WHERE a.doc_id=note_ai_workflow.doc_id AND (a.state IN ('PENDING','RUNNING')
+                        OR (a.state='DONE' AND a.reason_code IN ('READY','REVIEW_REQUIRED')
+                            AND EXISTS (SELECT 1 FROM note_ai_save_signal s JOIN doc d ON d.id=s.doc_id
+                                WHERE s.doc_id=a.doc_id AND s.cycle_id=a.cycle_id
+                                    AND d.deleted_at IS NULL AND d.archived_at IS NULL)
+                            AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM note_ai_stage_attempt b
+                                WHERE b.cycle_id=a.cycle_id AND b.stage=a.stage))))
              ORDER BY CASE WHEN title_status='RUNNING' OR image_status='RUNNING' OR polish_status='RUNNING'
                            THEN 0 ELSE 1 END,
                       updated_at, doc_id LIMIT #{limit}

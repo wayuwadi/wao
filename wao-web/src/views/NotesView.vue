@@ -7,7 +7,7 @@ import { imageDisplayName } from '@/utils/imageDisplayName'
 import NoteWidthSwitch from '@/components/notes/NoteWidthSwitch.vue'
 import NoteAiStageButton from '@/components/notes/NoteAiStageButton.vue'
 import NoteAiCompanion from '@/components/notes/NoteAiCompanion.vue'
-import { fetchAiReceipts, fetchAiResults, type CompanionStage } from '@/api/noteAiCompanion'
+import type { CompanionStage } from '@/api/noteAiCompanion'
 import NoteMediaCopyDialog from '@/components/notes/NoteMediaCopyDialog.vue'
 import NoteTrashDialog from '@/components/notes/NoteTrashDialog.vue'
 import NoteImageNavigator from '@/components/notes/NoteImageNavigator.vue'
@@ -81,28 +81,7 @@ async function closeReaderCompanion() {
   trigger?.focus({ preventScroll: true })
 }
 function openReaderCompanion() { if (!readingNote.value) return; selectCompanion(readingNote.value.id); readerCompanionOpen.value = true }
-const aiReceipts = ref<Record<string, number>>({})
-const reviewSuggestions = ref<Record<string, number>>({})
-const receiptVersions = new Map<string, string>()
-async function loadAiReceipts() {
-  const member = session.currentUser.id
-  try {
-    const values = await fetchAiReceipts()
-    if (session.currentUser.id !== member) return
-    aiReceipts.value = Object.fromEntries(values.map(v => [v.docId, v.unread]))
-    const changed = visible.value.filter(note => note.author === member).map(note => {
-      const flow = serverWorkflows.value[note.id]
-      return { id: note.id, key: `${note.rev}:${aiReceipts.value[note.id] ?? 0}:${flow?.title}:${flow?.image}:${flow?.polish}:${flow?.tags}` }
-    }).filter(note => receiptVersions.get(note.id) !== note.key)
-    await Promise.allSettled(changed.map(async note => {
-      const result = await fetchAiResults(note.id)
-      if (session.currentUser.id !== member) return
-      reviewSuggestions.value[note.id] = result.items.filter(a => a.application === 'PENDING' && a.validity === 'CURRENT').length
-      receiptVersions.set(note.id, note.key)
-    }))
-  } catch { /* 历史回执不可用时不伪造建议。 */ }
-}
-function companionUpdated(doc: Doc) { receiptVersions.delete(doc.id); delete reviewSuggestions.value[doc.id]; delete notePolishVersions[doc.id]; data.applyRemoteDoc(doc); void loadServerWorkflows(); void loadAiReceipts() }
+function companionUpdated(doc: Doc) { delete notePolishVersions[doc.id]; data.applyRemoteDoc(doc); void loadServerWorkflows() }
 function companionRun(stage: CompanionStage | 'four') { const note = notes.value.find(n => n.id === companionNoteId.value); if (note) void retryOrStart(note, stage) }
 async function appendCompanion(text: string, messageId: string) { await stopReading(); writingOpen.value = true; await nextTick(); if (!newComposer.value?.appendPlainText(text, messageId)) toast('未能带入草稿，请从伴读复制回答；已有输入仍保留') }
 function selectCompanion(id: string, entry: typeof companionEntry.value = 'results') { companionExplicitId.value = id; companionNoteId.value = id; companionEntry.value = entry; readerCompanionOpen.value = true }
@@ -161,7 +140,6 @@ const retryingEnrichment = ref<string[]>([])
 const serverWorkflows = ref<Record<string, NoteAiWorkflowStatus>>({})
 let workflowTimer: ReturnType<typeof setInterval> | undefined
 async function loadServerWorkflows() {
-  void loadAiReceipts()
   if (!session.currentUser.id) { serverWorkflows.value = {}; return }
   const memberId = session.currentUser.id
   try {
@@ -776,7 +754,7 @@ watch(() => readerNotes.value.map(note => note.id), ids => {
   else void stopReading()
 })
 let discoverySourceRequest = 0
-watch(() => session.currentUser.id, () => { trashOpen.value = false; mediaCopyContent.value = null; previewImage.value = null; readerEditing.value = false; afterReadingEdit = undefined; readerCompanionOpen.value = false; receiptVersions.clear(); reviewSuggestions.value = {}; discoverySourceRequest++; clearDiscoveryLegacyCache(); void stopReading(); readerPositions.clear(); readingId.value = ''; readerMode.value = 'side' })
+watch(() => session.currentUser.id, () => { trashOpen.value = false; mediaCopyContent.value = null; previewImage.value = null; readerEditing.value = false; afterReadingEdit = undefined; readerCompanionOpen.value = false; discoverySourceRequest++; clearDiscoveryLegacyCache(); void stopReading(); readerPositions.clear(); readingId.value = ''; readerMode.value = 'side' })
 async function openDiscoverySource(itemId: string, docId: string, event: Event) {
   const trigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
   const member = session.currentUser.id, request = ++discoverySourceRequest
@@ -1002,7 +980,6 @@ function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish' | 'tags') {
 const retainedEdits = computed(() => notes.value.filter(note => (editingIds.value.includes(note.id) || searchFocus.value.id === note.id)
   && !matching.value.slice(0, limit.value).some(item => item.id === note.id)))
 const visible = computed(() => [...matching.value.slice(0, limit.value), ...retainedEdits.value])
-watch(() => visible.value.map(note => `${note.id}:${note.rev}`).join('|'), () => void loadAiReceipts())
 const notePreviews = computed(() => new Map(visible.value.map(note => [note.id, cardImages(note)])))
 const cardActiveImages = ref<Record<string, number | undefined>>({})
 watch(() => session.currentUser.id, () => { cardActiveImages.value = {} })
@@ -1095,7 +1072,6 @@ function onCreated(id: string) {
   companionNoteId.value = id
   companionExplicitId.value = ''
   void companion.value?.refresh()
-  void loadAiReceipts()
   query.value = ''
   selectedTag.value = ''
   limit.value = PAGE_SIZE
@@ -1289,7 +1265,7 @@ onMounted(() => void loadPins())
               </figure>
             </aside>
           </div>
-          <div class="note-card-footer"><p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id) || reviewSuggestions[note.id])" :title="workflowMessage(note.id)" class="workflow-status compact-workflow" role="status"><template v-if="noteDrafts[note.id]">草稿已保护 · 有修改待保存</template><button v-else type="button" @click.stop="selectCompanion(note.id)">{{ reviewSuggestions[note.id] ? `待确认 ${reviewSuggestions[note.id]} 项建议` : workflowMessage(note.id) || (serverFailed(note.id) ? '整理未完成 · 查看并重试' : '整理中 · 查看进度') }}</button></p><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click.stop="selectedTag = tag"># {{ tag }}</button></div><div v-if="isNotePreviewExpandable(note.id)" class="note-read-guide"><button class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button></div></div>
+          <div class="note-card-footer"><p v-if="!editingIds.includes(note.id) && (noteDrafts[note.id] || progressVisible(note.id))" :title="workflowMessage(note.id)" class="workflow-status compact-workflow" role="status"><template v-if="noteDrafts[note.id]">草稿已保护 · 有修改待保存</template><button v-else type="button" @click.stop="selectCompanion(note.id)">{{ workflowMessage(note.id) || (serverFailed(note.id) ? '整理未完成 · 查看并重试' : '整理中 · 查看进度') }}</button></p><div v-if="displayedTags(note).length" class="card-tags"><button v-for="tag in displayedTags(note)" :key="tag" @click.stop="selectedTag = tag"># {{ tag }}</button></div><div v-if="isNotePreviewExpandable(note.id)" class="note-read-guide"><button class="note-read-action" type="button" :aria-expanded="isNotePreviewExpanded(note.id)" @click.stop="toggleNotePreview(note.id)"><i :class="isNotePreviewExpanded(note.id) ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>{{ isNotePreviewExpanded(note.id) ? '收起全文' : '展开全文' }}</button></div></div>
           </template>
           <Teleport to="body"><div v-if="confirmingDeleteId === note.id && !reading" :ref="setDeleteConfirmation" :id="`note-delete-confirm-${note.id}`" class="card-delete-confirm" :data-delete-note-id="note.id" :style="deleteConfirmationStyle" role="dialog" :aria-label="`确认删除小记：${note.title}`">
             <span>将此小记移入回收站？7 天内可恢复。{{ editingIds.includes(note.id) ? '当前未保存的编辑会丢失。' : '' }}</span>
@@ -1305,7 +1281,7 @@ onMounted(() => void loadPins())
       </section>
     </div>
     <button v-if="showBackToTop" class="notes-back-top" type="button" aria-label="回到顶部" title="回到顶部" @click="backToTop"><i class="ri-rocket-2-line" aria-hidden="true"></i></button>
-    <NoteAiCompanion v-if="readerCompanionOpen" focused :initial-tab="companionEntry" :overlay-open="readerCompanionOpen" @close-overlay="closeReaderCompanion" ref="companion" :notes="notes" :active-id="companionNoteId" :explicitly-selected="companionExplicitId === companionNoteId && !!companionNoteId" @seen="loadAiReceipts" :blocked="!!companionNoteId && !!notes.find(n => n.id === companionNoteId && hasPendingNoteDraft(n))" @select="id => selectCompanion(id)" @updated="companionUpdated" @run="companionRun" @source="openDiscoverySource" @open-note="openCompanionSource" @edit-note="editCompanionNote" @append="appendCompanion" @append-existing="appendExistingCompanion" @settings="noteSettingsOpen = true" />
+    <NoteAiCompanion v-if="readerCompanionOpen" focused :initial-tab="companionEntry" :overlay-open="readerCompanionOpen" @close-overlay="closeReaderCompanion" ref="companion" :notes="notes" :active-id="companionNoteId" :explicitly-selected="companionExplicitId === companionNoteId && !!companionNoteId" :blocked="!!companionNoteId && !!notes.find(n => n.id === companionNoteId && hasPendingNoteDraft(n))" @select="id => selectCompanion(id)" @updated="companionUpdated" @run="companionRun" @source="openDiscoverySource" @open-note="openCompanionSource" @edit-note="editCompanionNote" @append="appendCompanion" @append-existing="appendExistingCompanion" @settings="noteSettingsOpen = true" />
     <NoteAiSettingsDialog v-model:open="noteSettingsOpen" />
     <Teleport to="body">
       <div v-if="reading && confirmingDeleteId" :ref="setDeleteConfirmation" class="card-delete-confirm" :style="deleteConfirmationStyle" role="dialog" aria-label="确认删除当前小记">

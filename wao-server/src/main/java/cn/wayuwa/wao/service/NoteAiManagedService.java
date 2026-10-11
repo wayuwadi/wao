@@ -147,7 +147,7 @@ public class NoteAiManagedService {
         if(code==null&&"title".equals(stage)&&body.length()>12000)message="标题将仅依据前 12000 个实现字符生成";
         db.update("INSERT INTO note_ai_stage_attempt(id,doc_id,member_id,cycle_id,stage,attempt_no,manual_stage,cancel_epoch,state,reason_code,message,source_json,input_text,policy_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             id(),doc.id(),member,cycle,stage,attempt,manual,s.epoch(stage),code==null?"PENDING":"SKIPPED",code,message,settings.write(doc),input,settings.write(s));
-        if(companion!=null)db.update("UPDATE note_ai_stage_attempt SET result_mode=? WHERE doc_id=? AND cycle_id=? AND stage=? AND attempt_no=?",companion.getObject().preference(member).get("mode"),doc.id(),cycle,stage,attempt);
+        if(companion!=null)db.update("UPDATE note_ai_stage_attempt SET result_mode='AUTO' WHERE doc_id=? AND cycle_id=? AND stage=? AND attempt_no=?",doc.id(),cycle,stage,attempt);
     }
     private String label(String stage){return switch(stage){case "title"->"润色标题";case "image"->"自动配图";case "tags"->"自动标签";default->"润色正文";};}
     private List<Map<String,Object>> attempts(String doc,String cycle){return db.queryForList("SELECT a.* FROM note_ai_stage_attempt a WHERE doc_id=? AND cycle_id=? AND attempt_no=(SELECT MAX(b.attempt_no) FROM note_ai_stage_attempt b WHERE b.cycle_id=a.cycle_id AND b.stage=a.stage) ORDER BY CASE stage WHEN 'title' THEN 0 WHEN 'image' THEN 1 ELSE 2 END",doc,cycle);}
@@ -180,7 +180,11 @@ public class NoteAiManagedService {
         for(var old:db.queryForList("SELECT * FROM note_ai_stage_attempt WHERE member_id=? AND doc_id=? AND state='RUNNING' AND (cycle_id<>? OR attempt_no<(SELECT MAX(b.attempt_no) FROM note_ai_stage_attempt b WHERE b.cycle_id=note_ai_stage_attempt.cycle_id AND b.stage=note_ai_stage_attempt.stage))",member,docId,str(signal,"cycle_id"))){
             if(terminal(old)){retain(old);if(companion!=null)companion.getObject().invalidate(str(old,"id"),"STALE");db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='SOURCE_CHANGED',message='来源已更新，旧结果未采用' WHERE id=?",str(old,"id"));}}
         for(var a:attempts(docId,str(signal,"cycle_id"))){
-            String stage=str(a,"stage"),state=str(a,"state");if(!List.of("PENDING","RUNNING").contains(state))continue;
+            String stage=str(a,"stage"),state=str(a,"state");
+            // 仅接续当前轮的最终成果，直接复用已完成任务，不再次调用模型。
+            boolean retained=state.equals("DONE")&&List.of("READY","REVIEW_REQUIRED").contains(str(a,"reason_code"));
+            if(retained)state="RUNNING";
+            if(!List.of("PENDING","RUNNING").contains(state))continue;
             if(cancelled(a)){
                 if(state.equals("PENDING")||terminal(a)){retain(a);if(companion!=null)companion.getObject().invalidate(str(a,"id"),"CANCELLED");db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='CANCELLED',message='已停止，结果未采用' WHERE id=?",str(a,"id"));}
                 continue;
@@ -198,6 +202,7 @@ public class NoteAiManagedService {
                 settings.lockMember(stageMember);
                 submit(a);continue;
             }
+            if(retained&&originals!=null&&!stage.equals("tags"))originals.freezeAttempt(str(a,"id"));
             doc=knowledge.getObject().getDoc(docId);signal=one("SELECT * FROM note_ai_save_signal WHERE doc_id=?",docId);complete(a,doc,signal);
         }
         projectCurrent(knowledge.getObject().getDoc(docId));return true;
@@ -236,7 +241,6 @@ public class NoteAiManagedService {
             db.update("UPDATE note_ai_stage_attempt SET state='SKIPPED',reason_code='MANUAL_TITLE',message='标题在等待期间已更新，旧结果未采用' WHERE id=?",str(a,"id"));return;
         }
         if(!fingerprint(userBody(doc,str(signal,"cover_url"))).equals(str(signal,"body_hash"))){fail(a,"来源已更新，旧结果未采用");return;}
-        if(companion!=null&&"REVIEW".equals(str(a,"result_mode"))){db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='READY',message='建议已准备，等待你采用' WHERE id=?",str(a,"id"));return;}
         PatchDocRequest patch;
         if(stage.equals("tags")){
             var allowed=noteTags.lockExisting();
@@ -257,7 +261,7 @@ public class NoteAiManagedService {
                 while(links.find())if(!output.contains(links.group(1))){fail(a,"润色结果未完整保留图片、链接或附件；当前正文未改变");return;}
                 output=BookExcerptProtection.reassemble(userBody(doc,str(signal,"cover_url")),output);
                 String cover=presentCover(doc,str(signal,"cover_url"));String body=cover.isBlank()?output:"![文章总览图]("+cover+" \"wao-image-size:50%xauto\")\n\n"+output;
-                if(companion!=null){try{content=companion.getObject().polishedContent(doc,body);}catch(ConflictException unsafe){db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='REVIEW_REQUIRED',message=? WHERE id=?",unsafe.getMessage(),str(a,"id"));return;}}
+                if(companion!=null){try{content=companion.getObject().polishedContent(doc,body);}catch(ConflictException unsafe){fail(a,unsafe.getMessage());return;}}
                 else content=new RichDocContentDto(1,null,body);
                 if(doc.author().equals(str(a,"member_id")))versions.save(str(a,"member_id"),doc.id(),new SaveNotePolishVersionRequest(raw(doc),body,str(a,"job_id")));
             }
@@ -353,7 +357,7 @@ public class NoteAiManagedService {
         var signal=one("SELECT * FROM note_ai_save_signal WHERE doc_id=?",docId);if(signal==null)return;
         settings.lockMember(str(signal,"member_id"));
         String message=error instanceof BadRequestException||error instanceof NotFoundException||error instanceof ConflictException?error.getMessage():"后台整理暂不可用（"+error.getClass().getSimpleName()+"），正文已保存；请重试";
-        for(var a:attempts(docId,str(signal,"cycle_id")))if(List.of("PENDING","RUNNING").contains(str(a,"state"))){
+        for(var a:attempts(docId,str(signal,"cycle_id")))if(List.of("PENDING","RUNNING").contains(str(a,"state"))||str(a,"state").equals("DONE")&&List.of("READY","REVIEW_REQUIRED").contains(str(a,"reason_code"))){
             boolean active=false;
             if("RUNNING".equals(str(a,"state")))try{active=!terminal(a);}catch(RuntimeException unavailable){active=true;}
             if(active)db.update("UPDATE note_ai_stage_attempt SET reason_code='STATUS_UNAVAILABLE',message=? WHERE id=?",message,str(a,"id"));

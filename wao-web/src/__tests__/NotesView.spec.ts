@@ -229,13 +229,15 @@ describe('小记集中记录空间', () => {
     expect(add.mock.calls[1]?.slice(0, 2)).toEqual(['没有手写标题的正文', ''])
     w.unmount()
   })
-  it('已读但尚待采用的建议仍提示，已自动采用的未读成果不显示待确认', async () => {
+  it('列表不再读取或展示待确认建议，保留小记正文', async () => {
     useDataStore().docs = { pending: doc('pending', '等待采用'), adopted: doc('adopted', '已经自动采用') }
     vi.mocked(fetchAiReceipts).mockResolvedValue([{ docId: 'adopted', unread: 4 }])
     vi.mocked(fetchAiResults).mockImplementation(async id => ({ items: [{ stage: 'polish', application: id === 'pending' ? 'PENDING' : 'ADOPTED', validity: 'CURRENT' }], attempts: [] }) as never)
     const wrapper = await view(); await flushPromises()
-    expect(wrapper.get('[data-note-id="pending"]').text()).toContain('待确认 1 项建议')
+    expect(wrapper.get('[data-note-id="pending"]').text()).not.toContain('待确认')
     expect(wrapper.get('[data-note-id="adopted"]').text()).not.toContain('待确认')
+    expect(fetchAiReceipts).not.toHaveBeenCalled()
+    expect(fetchAiResults).not.toHaveBeenCalled()
     wrapper.unmount()
   })
   it.each(['side', 'full'])('阅读 %s 中保存失败可重试，成功后保持布局与原位置', async mode => {
