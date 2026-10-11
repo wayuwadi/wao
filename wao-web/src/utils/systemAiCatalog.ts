@@ -19,13 +19,13 @@ export const systemAiFeatures: SystemAiFeature[] = [
   {
     id: 'note-polish',
     name: '小记整理',
-    summary: '标题、正文与标签建议',
+    summary: '整理标题、正文与标签',
     icon: 'ri-quill-pen-line',
     type: 'AI',
     source: '小记',
     path: '/notes',
     group: 'notes',
-    steps: ['保留原稿', '整理标题与正文', '按采用方式保存成果'],
+    steps: ['保留原稿', '整理标题与正文', '完成后直接更新正文'],
     scope: '本人小记；手动内容与历史原稿保留',
   },
   {
@@ -55,13 +55,13 @@ export const systemAiFeatures: SystemAiFeature[] = [
   {
     id: 'companion',
     name: '小记伴读',
-    summary: '阅读、问答与成果采用',
+    summary: '阅读、问答与结果对照',
     icon: 'ri-chat-smile-2-line',
     type: 'AI',
     source: '小记 · AI 伴读',
     path: '/notes',
     group: 'companion',
-    steps: ['选择本人可读的小记', '基于来源回答', '由本人决定采用成果'],
+    steps: ['选择本人可读的小记', '基于来源回答', '阅读原稿与整理结果对照'],
     scope: '本人小记及明确选择的来源；不自动发布文章',
   },
   {
