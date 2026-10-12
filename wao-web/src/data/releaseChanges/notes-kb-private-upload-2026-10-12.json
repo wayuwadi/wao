@@ -1,0 +1,16 @@
+{
+  "id": "notes-kb-private-upload-2026-10-12",
+  "publishedOn": "2026-10-12",
+  "sourceSubject": "fix(notes): 保护知识库入口中未保存的小记配图",
+  "title": "知识库编辑小记也保护草稿素材",
+  "intro": "新配图和附件上传后立即按私人小记素材保护。",
+  "highlights": [{
+    "featureId": "notes",
+    "eyebrow": "草稿隐私",
+    "title": "统一知识库和小记的私有上传",
+    "summary": "从知识库打开私人小记时，图片不再标记为普通文档来源。",
+    "points": ["正文保存前已拒绝匿名读取新上传的配图", "附件沿用小记私有标记"],
+    "steps": ["从知识库打开私人小记并粘贴图片或上传附件。", "在正文尚未保存时，新素材直链也需要登录才能读取。"],
+    "action": { "target": "notes-compose", "label": "打开小记" }
+  }]
+}
