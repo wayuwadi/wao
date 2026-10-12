@@ -7,7 +7,6 @@ Wants=network-online.target
 Type=oneshot
 DynamicUser=true
 StateDirectory=wao-health-watch
-EnvironmentFile=/etc/wao-health-watch/notification.env
 ExecStart=/usr/bin/python3 /opt/wao-health-watch/health-watch.py
 MemoryMax=64M
 CPUQuota=25%
