@@ -89,6 +89,8 @@ public class KnowledgeService {
     @org.springframework.context.annotation.Lazy
     private NoteOriginalService noteOriginal;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private NoteAssetPrivacyService noteAssetPrivacy;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
     private cn.wayuwa.wao.auth.CurrentMember noteMember;
     private String noteActor() {
         if(NoteAiManagedService.actor()!=null)return NoteAiManagedService.actor();
@@ -99,6 +101,7 @@ public class KnowledgeService {
         return noteSaved(doc,actor,title,selection,false);
     }
     private DocDto noteSaved(DocDto doc,String actor,String title,CreateNoteRequest selection,boolean firstSave) {
+        if(noteAssetPrivacy!=null)noteAssetPrivacy.saved(doc);
         if(noteOriginal!=null&&!NoteAiManagedService.derived()){noteOriginal.saved(doc,actor,firstSave,title);if(selection!=null)noteOriginal.appliedInputs(actor,doc,selection.sourceInputIds());}
         if(noteAiManaged!=null)noteAiManaged.saved(doc,actor,title,selection);
         return doc;
@@ -1543,6 +1546,7 @@ public class KnowledgeService {
     }
 
     private void markDocDeleted(DocEntity d, LocalDateTime now, String memberId, boolean cascade) {
+        if(noteAssetPrivacy!=null && NOTES_KB_ID.equals(d.getKbId()))noteAssetPrivacy.deleted(d.getId());
         d.setDeletedAt(now);
         d.setDeletedBy(memberId);
         d.setCascadeDel(cascade);

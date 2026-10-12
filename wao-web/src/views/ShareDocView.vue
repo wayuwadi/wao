@@ -6,9 +6,10 @@ import WaoLogo from '@/components/WaoLogo.vue'
  * 后端已把块结构渲染成标准 Markdown，这里只负责展示，
  * 并给出 Markdown 直读地址，便于整篇粘给 AI。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiShareDoc } from '@/api/board'
+import { readPublicNote, publicNoteUrl } from '@/api/notePublicShare'
 import { docShareMarkdownUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
@@ -17,27 +18,49 @@ import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 
 const route = useRoute()
 const docId = computed(() => String(route.params.id))
+const token = computed(() => typeof route.params.token === 'string' ? route.params.token : '')
+const expiresAt = ref('')
+let requestId = 0
+let expiryTimer: ReturnType<typeof setTimeout> | undefined
 
 const shared = ref<SharedDoc | null>(null)
 const loading = ref(true)
 const error = ref('')
 
 async function load() {
+  const request = ++requestId
+  clearTimeout(expiryTimer)
   loading.value = true
   error.value = ''
+  shared.value = null
   try {
-    shared.value = await apiShareDoc(docId.value)
-  } catch {
+    if (token.value) {
+      const result = await readPublicNote(token.value)
+      if (request !== requestId) return
+      shared.value = result.doc
+      expiresAt.value = result.expiresAt
+      expiryTimer = setTimeout(() => { shared.value = null; error.value = '分享链接已到期。' }, Math.max(0, new Date(result.expiresAt).getTime() - Date.now()))
+    } else {
+      const result = await apiShareDoc(docId.value)
+      if (request !== requestId) return
+      shared.value = result; expiresAt.value = ''
+    }
+  } catch (cause) {
+    if (request !== requestId) return
     shared.value = null
-    error.value = '这个分享链接无效，或者对应的文档已被删除。'
+    error.value = (cause as { response?: { status?: number } })?.response?.status === 404
+      ? '分享链接无效、已撤销或已到期。小记需要作者主动生成限时分享链接。'
+      : '分享内容加载失败，请重试。'
   } finally {
-    loading.value = false
+    if (request === requestId) loading.value = false
   }
 }
-onMounted(load)
-watch(docId, load)
+function recheck() { if (token.value && document.visibilityState === 'visible') void load() }
+onMounted(() => { void load(); document.addEventListener('visibilitychange', recheck) })
+onBeforeUnmount(() => { requestId++; clearTimeout(expiryTimer); document.removeEventListener('visibilitychange', recheck) })
+watch([docId, token], load)
 
-const mdUrl = computed(() => docShareMarkdownUrl(docId.value))
+const mdUrl = computed(() => token.value ? publicNoteUrl(token.value, true) : docShareMarkdownUrl(docId.value))
 const originalUrl = computed(() =>
   shared.value ? `/kb/${shared.value.kbId}?doc=${encodeURIComponent(shared.value.id)}` : '/kb',
 )
@@ -54,7 +77,7 @@ async function copyMd() {
   <div class="share-page">
     <div class="share-card">
       <div v-if="loading" class="state">正在加载…</div>
-      <div v-else-if="error" class="state err">{{ error }}</div>
+      <div v-else-if="error" class="state err">{{ error }} <button type="button" @click="load">重试</button></div>
 
       <template v-else-if="shared">
         <div class="brand">
@@ -64,6 +87,7 @@ async function copyMd() {
         <h1 class="title">{{ shared.title || (shared.note ? '未命名小记' : '未命名文档') }}</h1>
 
         <div class="meta">
+          <span v-if="expiresAt" class="chip plain">分享快照 · 到期于 {{ new Date(expiresAt).toLocaleString() }}</span>
           <span v-if="shared.updated" class="chip plain">更新于 {{ shared.updated.slice(0, 10) }}</span>
         </div>
 

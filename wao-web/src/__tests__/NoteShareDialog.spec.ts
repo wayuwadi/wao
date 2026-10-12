@@ -1,0 +1,66 @@
+import { DOMWrapper, flushPromises, mount, enableAutoUnmount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import NoteShareDialog from '@/components/notes/NoteShareDialog.vue'
+import { createNoteShare, listNoteShares, revokeNoteShare } from '@/api/notePublicShare'
+import { copyToClipboard } from '@/utils/clipboard'
+vi.mock('@/api/notePublicShare', async original => ({ ...await original<object>(), createNoteShare: vi.fn(), listNoteShares: vi.fn(), revokeNoteShare: vi.fn() }))
+vi.mock('@/utils/clipboard', () => ({ copyToClipboard: vi.fn() }))
+enableAutoUnmount(afterEach)
+const entry = { id: 'share', token: 'ns_' + 'a'.repeat(43), createdAt: '2026-10-12T00:00:00Z', expiresAt: '2026-10-19T00:00:00Z' }
+function body() { return new DOMWrapper(document.body) }
+function button(text: string) { return body().findAll('button').find(value => value.text() === text)! }
+beforeEach(() => { vi.resetAllMocks(); vi.mocked(listNoteShares).mockResolvedValue([]); vi.mocked(createNoteShare).mockResolvedValue(entry); vi.mocked(copyToClipboard).mockResolvedValue(true) })
+afterEach(() => { document.body.innerHTML = '' })
+describe('小记主动限时分享', () => {
+  it('默认私有，打开和读取状态不会创建链接，确认后才分享七天快照', async () => {
+    mount(NoteShareDialog, { props: { noteId: 'private-note', title: '私人标题' } })
+    await flushPromises()
+    expect(listNoteShares).toHaveBeenCalledWith('private-note')
+    expect(createNoteShare).not.toHaveBeenCalled()
+    expect(button('生成限时分享链接').attributes('disabled')).toBeDefined()
+    expect(body().text()).toContain('持有分享链接的人无需登录即可读取')
+    await body().get('input[type=checkbox]').setValue(true)
+    await button('生成限时分享链接').trigger('click'); await flushPromises()
+    expect(createNoteShare).toHaveBeenCalledWith('private-note', 168)
+    expect(copyToClipboard).not.toHaveBeenCalled()
+    await button('复制 Markdown 地址').trigger('click'); await flushPromises()
+    expect(copyToClipboard).toHaveBeenLastCalledWith(`${window.location.origin}/api/share/notes/${entry.token}.md`)
+    await button('撤销链接').trigger('click'); await flushPromises()
+    expect(revokeNoteShare).toHaveBeenCalledWith('private-note', entry.id)
+    expect(body().find('input[readonly]').exists()).toBe(false)
+    expect(body().text()).toContain('当前没有免登录分享链接')
+  })
+  it('失败保留有效期、同意与已有链接，重试和手动复制均可用', async () => {
+    vi.mocked(listNoteShares).mockRejectedValueOnce(new Error('offline'))
+    mount(NoteShareDialog, { props: { noteId: 'private-note' } }); await flushPromises()
+    expect(body().text()).toContain('加载失败')
+    expect(createNoteShare).not.toHaveBeenCalled()
+    await button('重试加载').trigger('click'); await flushPromises()
+    await body().get('select').setValue('1'); await body().get('input[type=checkbox]').setValue(true)
+    vi.mocked(createNoteShare).mockRejectedValueOnce(new Error('offline'))
+    await button('生成限时分享链接').trigger('click'); await flushPromises()
+    expect(body().get<HTMLInputElement>('input[type=checkbox]').element.checked).toBe(true)
+    await button('生成限时分享链接').trigger('click'); await flushPromises()
+    expect(createNoteShare).toHaveBeenLastCalledWith('private-note', 1)
+    vi.mocked(copyToClipboard).mockResolvedValue(false)
+    await button('复制分享页链接').trigger('click'); await flushPromises()
+    expect(body().text()).toContain('手动复制')
+    vi.mocked(revokeNoteShare).mockRejectedValueOnce(new Error('offline'))
+    await button('撤销链接').trigger('click'); await flushPromises()
+    expect(body().text()).toContain('撤销失败')
+    expect(body().find('input[readonly]').exists()).toBe(true)
+  })
+  it('生成中禁止重复和关闭，不丢掉新链接的可撤销入口', async () => {
+    let finish!: (value: typeof entry) => void
+    vi.mocked(createNoteShare).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(NoteShareDialog, { props: { noteId: 'private-note' } }); await flushPromises()
+    await body().get('input[type=checkbox]').setValue(true)
+    await button('生成限时分享链接').trigger('click')
+    await body().get('[aria-label="关闭小记分享设置"]').trigger('click')
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(button('生成限时分享链接').attributes('disabled')).toBeDefined()
+    finish(entry); await flushPromises()
+    expect(createNoteShare).toHaveBeenCalledTimes(1)
+    expect(body().text()).toContain('撤销链接')
+  })
+})

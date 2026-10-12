@@ -108,6 +108,20 @@ public class ShareService {
      */
     public SharedDocDto shareDoc(String docId) {
         DocDto d = knowledge.getDoc(docId);
+        if (KnowledgeService.NOTES_KB_ID.equals(d.kbId())) throw new NotFoundException("分享链接无效或已失效");
+        return projectDoc(d);
+    }
+
+    /** 由小记作者主动创建分享时提取已保存阅读版本，不授予公开访问权限。 */
+    public SharedDocDto noteSnapshot(String docId, String memberId) {
+        DocDto d = knowledge.getDoc(docId);
+        if (memberId == null || !KnowledgeService.NOTES_KB_ID.equals(d.kbId()) || !Objects.equals(memberId,d.author()))
+            throw new cn.wayuwa.wao.common.ForbiddenException("只有小记作者可以管理分享");
+        return projectDoc(d);
+    }
+
+    private SharedDocDto projectDoc(DocDto d) {
+        String docId=d.id();
         boolean note = KnowledgeService.NOTES_KB_ID.equals(d.kbId());
         String markdown = d.content() != null && d.content().markdown() != null
                 ? d.content().markdown()

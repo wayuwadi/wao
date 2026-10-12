@@ -48,6 +48,8 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @RequestMapping("/api/files")
 public class FileController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.wayuwa.wao.service.NoteAssetPrivacyService noteAssets;
     private static final Pattern BYTE_RANGE = Pattern.compile("bytes=(\\d*)-(\\d*)");
     private final FileService files;
     private final CurrentMember currentMember;
@@ -73,11 +75,14 @@ public class FileController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @org.springframework.transaction.annotation.Transactional
     public ApiResponse<FileItemDto> upload(@RequestParam("file") MultipartFile file,
-            @RequestParam(required = false) String projectId, HttpServletRequest request) {
+            @RequestParam(required = false) String projectId, @RequestParam(defaultValue="false") boolean privateNote, HttpServletRequest request) {
         String memberId = currentMember.id(request);
         if (projectId != null) projects.requireAccess(projectId, memberId);
-        return ApiResponse.ok(files.upload(file, memberId, projectId));
+        var uploaded=files.upload(file, memberId, projectId);
+        if(privateNote)noteAssets.privateUpload("files",uploaded.id());
+        return ApiResponse.ok(uploaded);
     }
 
     /** 重新上传到同一个文件 id，沿用原项目权限与下载入口。 */
