@@ -2169,10 +2169,10 @@ export const useDataStore = defineStore('data', () => {
       return false
     }
   }
-  async function uploadFile(file: File, projectId?: string) {
+  async function uploadFile(file: File, projectId?: string, privateNote = false) {
     if (!apiLive.value || file.size > MAX_FILE_BYTES) return null
     try {
-      const item = await apiUploadFile(file, projectId)
+      const item = await (privateNote ? apiUploadFile(file, projectId, true) : apiUploadFile(file, projectId))
       files.value.unshift(item)
       fileLoadState.value = 'loaded'
       fileLoadError.value = ''

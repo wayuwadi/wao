@@ -73,7 +73,14 @@ const router = createRouter({
       component: () => import('@/views/ShareTaskView.vue'),
       meta: { public: true },
     },
-    // 文档 / 小记分享页：公开只读，免登录。
+    // 小记仅通过作者明确生成的限时令牌分享。
+    {
+      path: '/s/n/:token',
+      name: 'share-note',
+      component: () => import('@/views/ShareDocView.vue'),
+      meta: { public: true },
+    },
+    // 普通知识库文档分享页。
     {
       path: '/s/d/:id',
       name: 'share-doc',

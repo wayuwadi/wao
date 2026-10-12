@@ -95,9 +95,10 @@ export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
 export const fetchAutomationJob = (id: string) => get<AutomationJob>(`/api/jobs/${id}`)
 export const fetchFiles = (projectId?: string) =>
   get<FileItem[]>(`/api/files${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`)
-export async function apiUploadFile(file: File, projectId?: string): Promise<FileItem> {
+export async function apiUploadFile(file: File, projectId?: string, privateNote = false): Promise<FileItem> {
   const form = new FormData()
   form.append('file', file)
+  if (privateNote) form.append('privateNote', 'true')
   if (projectId) form.append('projectId', projectId)
   const res = await http.post<ApiResponse<FileItem>>('/api/files', form, { timeout: 120_000 })
   return res.data.data

@@ -27,6 +27,8 @@ import java.time.Duration;
 @RestController
 @RequestMapping("/api/images")
 public class ImageController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.wayuwa.wao.service.NoteAssetPrivacyService noteAssets;
 
     private final ImageService images;
     private final CurrentMember currentMember;
@@ -47,13 +49,16 @@ public class ImageController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @org.springframework.transaction.annotation.Transactional
     public ApiResponse<ImageItemDto> upload(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "source", required = false) String source,
             @RequestParam(required = false) String projectId, HttpServletRequest request) {
         String memberId = currentMember.id(request);
         if (projectId != null) projects.requireAccess(projectId, memberId);
-        return ApiResponse.ok(images.upload(file, source, projectId));
+        var uploaded=images.upload(file, source, projectId);
+        if(source!=null && source.startsWith("小记"))noteAssets.privateUpload("images",uploaded.id());
+        return ApiResponse.ok(uploaded);
     }
 
     /** 直出全尺寸图片；无损优化可在同一 URL 切换 MIME，缓存须定期复核。 */

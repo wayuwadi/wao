@@ -22,6 +22,8 @@ import { openEditorSelectionTask } from '@/composables/editorSelectionTask'
 import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
 import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
+import NoteShareDialog from '@/components/notes/NoteShareDialog.vue'
+const shareNoteId = ref('')
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { blocksToText, textToBlocks } from '@/utils/doc'
 import { resolvedRichContent, richHeadings } from '@/utils/richDoc'
@@ -862,6 +864,7 @@ const moreMenuOpen = ref(false)
 watch(docId, () => { moreMenuOpen.value = false })
 async function copyDocShare(kind: 'page' | 'md') {
   if (!docId.value) return
+  if (data.docs[docId.value]?.kbId === 'kb-notes') { shareMenu.value = false; shareNoteId.value = docId.value; return }
   const url = kind === 'md' ? docShareMarkdownUrl(docId.value) : docShareUrl(docId.value)
   shareMenu.value = false
   toast(
@@ -895,7 +898,7 @@ async function onUploadFile(file: File, done: (item: FileItem | null) => void) {
     done(null)
     return
   }
-  const item = await data.uploadFile(file)
+  const item = await data.uploadFile(file, undefined, kbId.value === 'kb-notes')
   if (!item) toast('文件上传失败，正文仍可继续编辑', 'ri-error-warning-line')
   done(item)
 }
@@ -1399,6 +1402,7 @@ async function saveKbSettings() {
       </section>
     </div>
   </div>
+  <NoteShareDialog v-if="shareNoteId" :key="shareNoteId" :note-id="shareNoteId" :title="data.docs[shareNoteId]?.title" @close="shareNoteId = ''" />
 </template>
 
 <style scoped>

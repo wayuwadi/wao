@@ -35,20 +35,20 @@ class ShareServiceTest {
         var versions = mock(cn.wayuwa.wao.mapper.NotePolishVersionMapper.class);
         var sharing = new ShareService(tasks, projects, aiRuns, knowledge, versions);
         when(knowledge.getDoc("d1")).thenReturn(doc(KnowledgeService.NOTES_KB_ID));
-        String source = service.shareDoc("d1").md();
+        String source = service.noteSnapshot("d1", "wg").md();
         String polished = "![润色图](/api/images/polished/raw)\n润色正文";
         when(versions.findShareVersion("d1")).thenReturn(
                 new cn.wayuwa.wao.mapper.NotePolishVersionMapper.Version("d1", "wg", source, polished));
-        assertThat(sharing.shareDoc("d1").md()).isEqualTo(polished);
-        assertThat(sharing.shareDoc("d1").content()).isNull();
-        assertThat(sharing.toMarkdown(sharing.shareDoc("d1"), BASE)).contains("润色正文", "/api/images/polished/raw");
+        assertThat(sharing.noteSnapshot("d1", "wg").md()).isEqualTo(polished);
+        assertThat(sharing.noteSnapshot("d1", "wg").content()).isNull();
+        assertThat(sharing.toMarkdown(sharing.noteSnapshot("d1", "wg"), BASE)).contains("润色正文", "/api/images/polished/raw");
 
         when(versions.findShareVersion("d1")).thenReturn(
                 new cn.wayuwa.wao.mapper.NotePolishVersionMapper.Version("d1", "wg", "过期原文", polished));
-        assertThat(sharing.shareDoc("d1").md()).isEqualTo(source);
+        assertThat(sharing.noteSnapshot("d1", "wg").md()).isEqualTo(source);
         when(versions.findShareVersion("d1")).thenReturn(
                 new cn.wayuwa.wao.mapper.NotePolishVersionMapper.Version("d1", "other", source, polished));
-        assertThat(sharing.shareDoc("d1").md()).isEqualTo(source);
+        assertThat(sharing.noteSnapshot("d1", "wg").md()).isEqualTo(source);
     }
 
     private TaskDto task() {
@@ -324,7 +324,9 @@ class ShareServiceTest {
     void docInNotesKbIsMarkedAsNote() {
         when(knowledge.getDoc("d2")).thenReturn(doc(KnowledgeService.NOTES_KB_ID));
 
-        assertThat(service.shareDoc("d2").note()).isTrue();
+        assertThatThrownBy(() -> service.shareDoc("d2")).isInstanceOf(NotFoundException.class);
+        assertThat(service.noteSnapshot("d2", "wg").note()).isTrue();
+        assertThatThrownBy(() -> service.noteSnapshot("d2", "other")).isInstanceOf(cn.wayuwa.wao.common.ForbiddenException.class);
     }
 
     @Test
@@ -345,7 +347,7 @@ class ShareServiceTest {
                 List.of(), List.of(), List.of(), KnowledgeService.NOTES_KB_ID, "f1", 1);
         when(knowledge.getDoc("d3")).thenReturn(empty);
 
-        String md = service.toMarkdown(service.shareDoc("d3"), BASE);
+        String md = service.toMarkdown(service.noteSnapshot("d3", "wg"), BASE);
 
         assertThat(md).startsWith("# 未命名小记");
         assertThat(md).contains("（暂无内容）");

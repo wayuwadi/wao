@@ -20,7 +20,9 @@ import { useRoute } from 'vue-router'
 import { useReleaseNoteExperience } from '@/composables/releaseNoteExperience'
 import { useOverlayDismiss } from '@/composables/overlayDismiss'
 import { contentHit, documentSearchText } from '@/utils/contentSearch'
-import { docShareUrl } from '@/utils/share'
+import NoteShareDialog from '@/components/notes/NoteShareDialog.vue'
+const shareNoteId = ref('')
+function openNoteShare(id: string) { shareNoteId.value = id }
 import { copyText, copyToClipboard } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
@@ -467,7 +469,7 @@ function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
   if (editingIds.value.includes(id)) {
     if (!moreButton) return
     contextMenu.value?.openAt(event, `小记：${note.title}`, [
-      { id: 'link', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
+      { id: 'link', label: '分享设置', run: () => openNoteShare(id) },
       { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
     ], moreButton)
     return
@@ -489,7 +491,7 @@ function openNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
     ] : []),
     { id: 'edit', label: '编辑小记', run: () => editNote(id) },
     { id: 'copy', label: '复制内容', run: () => { const note = data.docById(id); if (note) openMediaCopy(note) } },
-    { id: 'link', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
+    { id: 'link', label: '分享设置', run: () => openNoteShare(id) },
     { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
     { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => toggleDeleteConfirmation(id) },
   ], moreButton)
@@ -505,7 +507,7 @@ function openReaderNoteMenu(event: MouseEvent | KeyboardEvent, id: string) {
     { id: 'read', label: '在这里阅读', run: () => selectReadingNote(id) },
     { id: 'edit', label: '就地编辑', run: () => inReader(() => { void selectReadingNote(id).then(() => { if (readingId.value === id) void beginReadingEdit() }) }) },
     { id: 'copy', label: '复制给 Codex', run: () => openMediaCopy(note) },
-    { id: 'share', label: '复制分享链接', run: () => copyText(docShareUrl(id), '公开分享链接已复制') },
+    { id: 'share', label: '分享设置', run: () => openNoteShare(id) },
     { id: 'pin', label: pinnedIds.value.includes(id) ? '取消置顶' : '置顶', disabled: !pinsReady.value || pinSaving.value, run: () => togglePin(id) },
     { id: 'delete', label: '移入回收站', danger: true, separatorBefore: true, disabled: !!deletingId.value, run: () => inReader(() => void toggleDeleteConfirmation(id)) },
   ])
@@ -631,15 +633,16 @@ watch([reading, readingId, () => session.userId], () => {
 async function copyReadingNote(kind: 'share' | 'body') {
   const note = readingNote.value
   if (!note || readerCopyBusy.value || (kind === 'body' && originalsOpen.value)) return
+  if (kind === 'share') { openNoteShare(note.id); return }
   const request = ++readerCopyRequest
   const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
   readerCopyBusy.value = true
   readerCopyStatus.value = '正在复制…'
-  const text = kind === 'share' ? docShareUrl(note.id) : displayedMarkdown(note)
+  const text = displayedMarkdown(note)
   const copied = await copyToClipboard(text)
   if (request !== readerCopyRequest) return
   readerCopyBusy.value = false
-  readerCopyStatus.value = copied ? kind === 'share' ? '公开分享链接已复制' : '正文已复制' : '复制失败，请重试或手动选中复制'
+  readerCopyStatus.value = copied ? '正文已复制' : '复制失败，请重试或手动选中复制'
   await nextTick()
   if (request !== readerCopyRequest) return
   if (trigger?.isConnected && readerDialog.value?.contains(trigger)) trigger.focus({ preventScroll: true })
@@ -1180,6 +1183,7 @@ onMounted(() => void loadPins())
   <main class="notes-page wao-page-frame" @contextmenu="openImageMenu">
     <ImageCopyMenu v-if="imageMenu" v-bind="imageMenu" @close="imageMenu = null" />
     <NoteMediaCopyDialog v-if="mediaCopyContent" :content="mediaCopyContent" :note-id="mediaCopyNote.id" :title="mediaCopyNote.title" @close="mediaCopyContent = null" />
+    <NoteShareDialog v-if="shareNoteId" :key="shareNoteId" :note-id="shareNoteId" :title="data.docs[shareNoteId]?.title" @close="shareNoteId = ''" />
     <NoteTrashDialog v-if="trashOpen" :key="session.currentUser.id" :kb-name="data.kbs.find(kb => kb.id === 'kb-notes')?.name || '小记'" @close="trashOpen = false" @restored="reload" />
     <header class="page-heading"><div class="heading-title"><h1><i class="ri-sticky-note-line"></i>小记</h1><span v-if="todayCountError" class="daily-note-count error" role="alert"><i class="ri-error-warning-line" aria-hidden="true"></i>今日统计读取失败 <button type="button" @click="reload">重试</button></span><span v-else-if="todayCountLoading" class="daily-note-count" role="status"><i class="ri-loader-4-line spin" aria-hidden="true"></i>今日统计中…</span><span v-else class="daily-note-count" title="今日新建小记的正文字符数，不含空白、格式标记和图片"><i class="ri-quill-pen-line" aria-hidden="true"></i><span class="daily-count-label">今日写字 </span>{{ todayCharacters.toLocaleString('zh-CN') }} 字</span><button class="writing-toggle writing-region-toggle" type="button" :aria-label="writingOpen ? '收起记录区' : '展开记录区 · 继续写'" :title="writingOpen ? '收起记录区' : '展开记录区 · 继续写'" :aria-expanded="writingOpen" aria-controls="notes-writing-pane" @click="writingOpen = !writingOpen"><i :class="writingOpen ? 'ri-layout-left-line' : 'ri-quill-pen-line'" aria-hidden="true"></i><span>{{ writingOpen ? '收起记录区' : '展开记录区 · 继续写' }}</span></button><button class="writing-toggle notes-settings-toggle" type="button" aria-label="小记设置" @click="noteSettingsOpen = true"><i class="ri-settings-3-line" aria-hidden="true"></i><span>小记设置</span></button><button class="writing-toggle notes-trash-toggle" type="button" aria-label="小记回收站" @click="trashOpen = true"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>回收站</span></button><div ref="pageActionsControl" class="notes-page-actions"><button ref="pageActionsButton" type="button" aria-label="小记更多操作" aria-haspopup="true" :aria-expanded="pageActionsOpen" aria-controls="notes-page-actions" @click="pageActionsOpen = !pageActionsOpen"><i class="ri-more-line" aria-hidden="true"></i></button><div v-if="pageActionsOpen" id="notes-page-actions" class="notes-page-actions-panel" role="group" aria-label="小记更多操作"><button type="button" @click="choosePageAction('settings')"><i class="ri-settings-3-line" aria-hidden="true"></i>小记设置</button><button type="button" @click="choosePageAction('trash')"><i class="ri-delete-bin-line" aria-hidden="true"></i>回收站</button></div></div></div><span>{{ notes.length }} 条记录</span></header>
     <div ref="workspace" class="notes-workspace" :inert="readerCompanionOpen ? true : undefined" :style="writingStyle" :class="{ 'writing-collapsed': !writingOpen, resizing }">
@@ -1299,7 +1303,7 @@ onMounted(() => void loadPins())
             <button type="button" aria-label="复制当前小记图文" :disabled="originalsOpen" @click="openMediaCopy(readingNote)"><i class="ri-file-copy-2-line" aria-hidden="true"></i><span>复制</span></button>
             <details ref="readerMore" class="reader-more"><summary tabindex="0" aria-label="更多阅读操作"><i class="ri-more-line" aria-hidden="true"></i><span>更多</span></summary><div class="reader-more-panel" @click="closeReaderMore">
             <button v-if="readingNote.author === session.currentUser.id" class="reader-companion-toggle" type="button" @click="openReaderCompanion"><i class="ri-sparkling-2-line" aria-hidden="true"></i><span>AI 改了什么</span></button>
-            <button type="button" aria-label="复制小记分享链接" title="复制当前小记的公开只读分享链接" :disabled="readerCopyBusy" @click="copyReadingNote('share')"><i class="ri-share-forward-line" aria-hidden="true"></i><span>分享</span></button>
+            <button type="button" aria-label="小记分享设置" title="主动生成限时分享链接或撤销已有链接" :disabled="readerCopyBusy" @click="copyReadingNote('share')"><i class="ri-share-forward-line" aria-hidden="true"></i><span>分享</span></button>
             <button type="button" aria-label="复制小记正文" :title="originalsOpen ? '返回当前内容后复制正文' : '复制当前正文（Markdown）'" :disabled="readerCopyBusy || originalsOpen" @click="copyReadingNote('body')"><i class="ri-file-copy-line" aria-hidden="true"></i><span>复制正文</span></button>
             <button v-if="readingNote.author === session.currentUser.id" type="button" :disabled="readerEditing" @click="selectCompanion(readingNote.id, 'chat')"><i class="ri-chat-3-line" aria-hidden="true"></i><span>聊聊这篇</span></button>
             <button type="button" :ref="setReaderDeleteButton" :aria-label="`删除小记：${readingNote.title}`" :disabled="!!deletingId" @click="guardReadingEdit(() => void toggleDeleteConfirmation(readingId)) || toggleDeleteConfirmation(readingId)"><i class="ri-delete-bin-line" aria-hidden="true"></i><span>删除</span></button>

@@ -2,17 +2,35 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ShareDocView from '@/views/ShareDocView.vue'
 import { apiShareDoc } from '@/api/board'
+import { readPublicNote } from '@/api/notePublicShare'
+const route = vi.hoisted(() => ({ params: { id: 'd-sized', token: '' } }))
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { id: 'd-sized' } }),
+  useRoute: () => route,
 }))
 
 vi.mock('@/api/board', () => ({
   apiShareDoc: vi.fn<(typeof import('@/api/board'))['apiShareDoc']>(),
 }))
+vi.mock('@/api/notePublicShare', async original => ({ ...await original<object>(), readPublicNote: vi.fn() }))
 
 describe('ShareDocView', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => { vi.clearAllMocks(); route.params.token = '' })
+
+  it('小记使用令牌快照，失效清空正文并显示可重试状态', async () => {
+    route.params.token = 'ns_' + 'a'.repeat(43)
+    vi.mocked(readPublicNote).mockResolvedValueOnce({ doc: { id: 'private', title: '快照标题', note: true, kbId: 'kb-notes', updated: '', md: '私有分享快照' }, expiresAt: new Date(Date.now() + 60_000).toISOString() })
+    const wrapper = mount(ShareDocView)
+    await flushPromises()
+    expect(readPublicNote).toHaveBeenCalledWith(route.params.token)
+    expect(apiShareDoc).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('快照标题')
+    vi.mocked(readPublicNote).mockRejectedValueOnce({ response: { status: 404 } })
+    document.dispatchEvent(new Event('visibilitychange')); await flushPromises()
+    expect(wrapper.find('.doc-body').exists()).toBe(false)
+    expect(wrapper.text()).toContain('已撤销或已到期')
+    wrapper.unmount()
+  })
 
   it('公开分享页按服务端 Markdown 中保存的图片尺寸展示', async () => {
     vi.mocked(apiShareDoc).mockResolvedValue({
