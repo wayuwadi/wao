@@ -48,7 +48,8 @@ async function load() {
   } catch (cause) {
     if (request !== requestId) return
     shared.value = null
-    error.value = (cause as { response?: { status?: number } })?.response?.status === 404
+    const failure = cause as { status?: number; response?: { status?: number } }
+    error.value = (failure?.status ?? failure?.response?.status) === 404
       ? '分享链接无效、已撤销或已到期。小记需要作者主动生成限时分享链接。'
       : '分享内容加载失败，请重试。'
   } finally {
