@@ -16,30 +16,25 @@ class WatchTests(unittest.TestCase):
     def test_only_current_public_entry_is_monitored(self):
         self.assertEqual(set(watch.TARGETS), {'main'})
 
-    def test_transient_failure_does_not_alert_and_recovery_resets_count(self):
-        state, _, message = watch.update({}, {'main': False}, 100)
-        self.assertIsNone(message)
-        state, problems, message = watch.update(state, {'main': True}, 101)
+    def test_transient_failure_and_recovery_record_real_status(self):
+        state, problems = watch.update({}, {'main': False}, 100)
         self.assertFalse(problems)
-        self.assertIsNone(message)
+        self.assertEqual(state['healthy'], {'main': False})
+        state, problems = watch.update(state, {'main': True}, 101)
+        self.assertFalse(problems)
         self.assertEqual(state['failures']['main'], 0)
 
-    def test_persistent_failure_deduplicates_and_recovers(self):
-        state, _, _ = watch.update({}, {'main': False}, 100)
-        state, problems, message = watch.update(state, {'main': False}, 160)
-        self.assertIn('main', message)
-        state.update(notified=problems, sent=160)
-        state, _, message = watch.update(state, {'main': False}, 220)
-        self.assertIsNone(message)
-        _, _, message = watch.update(state, {'main': False}, 160 + 4 * 3600)
-        self.assertIsNotNone(message)
-        for now in range(300, 300 + 60 * (watch.RECOVERY_SUCCESS_CHECKS - 1), 60):
-            state, _, message = watch.update(state, {'main': True}, now)
-            self.assertIsNone(message)
-        _, problems, message = watch.update(
-            state, {'main': True}, 300 + 60 * (watch.RECOVERY_SUCCESS_CHECKS - 1))
-        self.assertFalse(problems)
-        self.assertIn('恢复', message)
+    def test_persistent_failure_is_recorded_and_recovery_resets_it(self):
+        state = {}
+        for now in (100, 160, 220, 160 + 4 * 3600):
+            state, problems = watch.update(state, {'main': False}, now)
+        self.assertEqual(problems, ['main'])
+        self.assertEqual(state['failures']['main'], 4)
+        self.assertFalse(state['notificationsEnabled'])
+        state, problems = watch.update(state, {'main': True}, now + 60)
+        self.assertEqual(problems, [])
+        self.assertEqual(state['healthy'], {'main': True})
+        self.assertEqual(state['successes'], 1)
 
     def test_recent_release_window_silences_targets_until_it_expires(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -50,16 +45,20 @@ class WatchTests(unittest.TestCase):
                              {'main'})
             self.assertEqual(watch.planned_drains(101 + watch.DEPLOY_WINDOW_SECONDS, Path(folder)), set())
 
-    def test_main_flapping_does_not_repeat_incident_notifications(self):
+    def test_planned_release_keeps_actual_probe_result_without_failure_count(self):
+        state, problems = watch.update({}, {'main': False}, 160, {'main'})
+        self.assertEqual(problems, [])
+        self.assertEqual(state['failures'], {'main': 0})
+        self.assertEqual(state['healthy'], {'main': False})
+
+    def test_main_flapping_records_checks_without_notification_state(self):
         state = {}
-        sent = []
         for i, healthy in enumerate([False, False, True, False, False, True, False, False]):
-            state, problems, message = watch.update(state, {'main': healthy}, 160 + 60 * i)
-            if message:
-                sent.append(message)
-                state.update(notified=problems, sent=state['checked'])
-        self.assertEqual(len(sent), 1)
-        self.assertEqual(state['notified'], ['main'])
+            state, problems = watch.update(state, {'main': healthy}, 160 + 60 * i)
+            self.assertFalse(state['notificationsEnabled'])
+            self.assertNotIn('notified', state)
+            self.assertNotIn('sent', state)
+        self.assertEqual(problems, ['main'])
 
     def test_retired_linux2_state_is_removed_without_sending_a_notification(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -67,27 +66,46 @@ class WatchTests(unittest.TestCase):
             state.write_text(json.dumps({'failures': {'linux2': 11474},
                 'healthy': {'main': True, 'linux2': False}, 'notified': ['linux2'], 'sent': 1}))
             with patch('sys.argv', ['watch', '--state', str(state)]), \
-                 patch.object(watch, 'probe', return_value=True) as probe, \
-                 patch.object(watch, 'notify') as send:
+                 patch.object(watch, 'probe', return_value=True) as probe:
                 self.assertEqual(watch.main(), 0)
                 probe.assert_called_once_with(watch.TARGETS['main'])
-                send.assert_not_called()
             saved = json.loads(state.read_text())
             self.assertEqual(saved['failures'], {'main': 0})
             self.assertEqual(saved['healthy'], {'main': True})
-            self.assertEqual(saved['notified'], [])
+            self.assertNotIn('notified', saved)
+            self.assertNotIn('sent', saved)
+            self.assertFalse(saved['notificationsEnabled'])
 
-    def test_failed_delivery_is_retried_without_claiming_notified(self):
+    def test_failure_and_recovery_with_leftover_webhook_only_call_readiness_probe(self):
         with tempfile.TemporaryDirectory() as folder:
             state = Path(folder) / 'state.json'
-            state.write_text(json.dumps({'failures': {'main': 2}}))
+            state.write_text(json.dumps({'failures': {'main': 2}, 'notified': ['main'], 'sent': 1}))
             with patch('sys.argv', ['watch', '--state', str(state)]), \
-                 patch.object(watch, 'probe', return_value=False), \
-                 patch.object(watch, 'notify', side_effect=ValueError('private detail')) as send:
+                 patch.dict(os.environ, {'FEISHU_COMMENT_WEBHOOK_URL': 'https://example.invalid/old-webhook'}), \
+                 patch.object(watch.subprocess, 'run') as run:
+                run.return_value = SimpleNamespace(stdout='{"code":50300,"data":null}')
                 self.assertEqual(watch.main(), 1)
-                self.assertNotIn('sent', json.loads(state.read_text()))
+                saved = json.loads(state.read_text())
+                self.assertEqual(saved['failures'], {'main': 3})
+                self.assertEqual(saved['healthy'], {'main': False})
+                run.return_value = SimpleNamespace(stdout='{"code":0,"data":{"protocol":1}}')
+                self.assertEqual(watch.main(), 0)
+                saved = json.loads(state.read_text())
+                self.assertEqual(saved['healthy'], {'main': True})
+                self.assertFalse(saved['notificationsEnabled'])
+                self.assertEqual(run.call_count, 2)
+                for call in run.call_args_list:
+                    self.assertEqual(call.args[0][-1], watch.TARGETS['main'])
+                    self.assertNotIn('--data', call.args[0])
+
+    def test_check_only_does_not_change_recorded_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder) / 'state.json'
+            state.write_text('{"checked":1}')
+            with patch('sys.argv', ['watch', '--check-only', '--state', str(state)]), \
+                 patch.object(watch, 'probe', return_value=False):
                 self.assertEqual(watch.main(), 1)
-                self.assertEqual(send.call_count, 2)
+            self.assertEqual(state.read_text(), '{"checked":1}')
 
     def test_probe_rejects_wrong_contract_and_network_failure(self):
         with patch.object(watch.subprocess, 'run') as run:

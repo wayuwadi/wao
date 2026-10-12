@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Independent cloud readiness checks; no sessions, arbitrary targets or promotion."""
+"""Independent cloud readiness checks with local records only; no notifications."""
 import argparse
 import json
 import os
 from pathlib import Path
 import subprocess
 import time
-import urllib.error
-import urllib.request
 
 TARGETS = {
     'main': 'https://wao.wayuwa.cn/api/edge/ready',
@@ -15,17 +13,8 @@ TARGETS = {
 
 
 PLANNED_DRAIN_DIR = Path('/run/wao-nginx-upstreams')
-PLANNED_DRAIN_MAX_SECONDS = 2 * 3600
 # A recent marker identifies an explicitly planned application replacement.
 DEPLOY_WINDOW_SECONDS = 10 * 60
-# The timer runs every minute. A short clean interval must not close a
-# flapping incident and cause a new Feishu alert for the same failure.
-RECOVERY_SUCCESS_CHECKS = 10
-
-
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
 
 
 def probe(url):
@@ -53,32 +42,15 @@ def planned_drains(now, runtime_dir=PLANNED_DRAIN_DIR):
 
 
 def update(previous, results, now, planned=()):
-    """Remember notified targets for the entire incident, including flapping."""
+    """Record real readiness without sending failure or recovery messages."""
     failures = {name: (previous.get('failures', {}).get(name, 0) + 1 if not good and name not in planned else 0)
                 for name, good in results.items()}
     problems = sorted(name for name, count in failures.items() if count >= 2)
-    old = previous.get('notified', [])
     successes = previous.get('successes', 0) + 1 if all(results.values()) else 0
-    notification = None
-    if problems and (set(problems) - set(old) or now - previous.get('sent', 0) >= 4 * 3600):
-        notification = '[WAO 基础设施告警] 就绪检查连续失败：' + ', '.join(problems) + '。请检查入口、应用与权威数据库；不会自动提升数据库。'
-        problems = sorted(set(problems) | set(old))
-    elif not problems and old and successes >= RECOVERY_SUCCESS_CHECKS:
-        notification = '[WAO 基础设施恢复] 所有在役入口的应用与权威数据库就绪检查均已恢复。'
-    state = {**previous, 'checked': now, 'failures': failures, 'healthy': results, 'successes': successes}
-    return state, problems, notification
-
-
-def notify(message):
-    webhook = os.environ.get('FEISHU_COMMENT_WEBHOOK_URL', '')
-    if not webhook.startswith('https://open.feishu.cn/open-apis/bot/v2/hook/'):
-        raise ValueError('Notification configuration unavailable')
-    payload = json.dumps({'msg_type': 'text', 'content': {'text': message}}).encode()
-    request = urllib.request.Request(webhook, data=payload, headers={'Content-Type': 'application/json'})
-    with urllib.request.build_opener(NoRedirect).open(request, timeout=10) as response:
-        result = json.loads(response.read(4096))
-    if result.get('code', result.get('StatusCode', -1)) != 0:
-        raise ValueError('Notification was not accepted')
+    retained = {key: value for key, value in previous.items() if key not in ('notified', 'sent')}
+    state = {**retained, 'checked': now, 'failures': failures, 'healthy': results,
+             'successes': successes, 'notificationsEnabled': False}
+    return state, problems
 
 
 def main():
@@ -95,22 +67,13 @@ def main():
         previous = json.loads(args.state.read_text())
     except (OSError, ValueError):
         previous = {}
-    previous['notified'] = [name for name in previous.get('notified', []) if name in targets]
     now = int(time.time())
-    state, problems, message = update(previous, results, now, planned_drains(now))
-    failed_delivery = False
-    if message:
-        try:
-            notify(message)
-            state.update(notified=problems, sent=state['checked'])
-        except Exception:
-            print('Notification delivery failed; inspect private configuration locally.')
-            failed_delivery = True
+    state, problems = update(previous, results, now, planned_drains(now))
     args.state.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.state.with_suffix('.tmp')
     temporary.write_text(json.dumps(state))
     os.replace(temporary, args.state)
-    return 1 if problems or failed_delivery else 0
+    return 1 if problems else 0
 
 
 if __name__ == '__main__':
