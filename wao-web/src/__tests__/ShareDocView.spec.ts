@@ -25,10 +25,19 @@ describe('ShareDocView', () => {
     expect(readPublicNote).toHaveBeenCalledWith(route.params.token)
     expect(apiShareDoc).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('快照标题')
-    vi.mocked(readPublicNote).mockRejectedValueOnce({ response: { status: 404 } })
+    vi.mocked(readPublicNote).mockRejectedValueOnce(Object.assign(new Error('分享链接无效或已失效'), { status: 404 }))
     document.dispatchEvent(new Event('visibilitychange')); await flushPromises()
     expect(wrapper.find('.doc-body').exists()).toBe(false)
     expect(wrapper.text()).toContain('已撤销或已到期')
+    wrapper.unmount()
+  })
+
+  it('网络故障保留加载失败反馈，不误报分享已经失效', async () => {
+    vi.mocked(apiShareDoc).mockRejectedValueOnce(new Error('网络中断'))
+    const wrapper = mount(ShareDocView)
+    await flushPromises()
+    expect(wrapper.text()).toContain('分享内容加载失败，请重试')
+    expect(wrapper.text()).not.toContain('已撤销或已到期')
     wrapper.unmount()
   })
 
