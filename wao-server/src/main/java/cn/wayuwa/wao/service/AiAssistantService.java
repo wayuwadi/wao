@@ -610,6 +610,16 @@ public class AiAssistantService {
                 defaultCapabilityId(DeepSeekPurpose.BACKGROUND), DeepSeekPurpose.BACKGROUND, null).getId();
     }
 
+    /** 按当前小记原文生成只读思考提纲，不查询其他资产、不消费生图任务。 */
+    public String enqueueNoteThinkingJob(String operationKey,String originalText,String model,String effort,String method) {
+        if(!StringUtils.hasText(originalText)||originalText.length()>12000) throw new BadRequestException("思考图需要1至12000字的原文");
+        String prompt=method+"\n<note_text>\n"+originalText+"\n</note_text>";
+        if(localNotes!=null&&localNotes.enabled()) return localNotes.enqueueWithEffort(internalMemberId(operationKey),
+            prompt,DeepSeekPurpose.BACKGROUND.name(),validateNoteModel(model),effort);
+        return enqueueReadOnlyJob(internalMemberId(operationKey),prompt,"思考提纲正在处理中",true,
+            defaultCapabilityId(DeepSeekPurpose.BACKGROUND),DeepSeekPurpose.BACKGROUND,null,true).getId();
+    }
+
     /** 校验实际本机模型目录，未知模型不静默切换。 */
     public String validateNoteModel(String model) { return localModels.validate(model); }
 

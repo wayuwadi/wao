@@ -53,7 +53,7 @@ public class TextPolishJobService {
             String requestedModel, String titlePrompt, String notePolishPrompt, List<String> allowedTags) {
         if (requestId == null || !requestId.matches("[a-f0-9]{32}")) throw new BadRequestException("润色请求标识无效");
         if (!"DOCUMENT".equals(kind) && !"WORKSPACE".equals(kind)
-                && !"NOTE_TITLE".equals(kind) && !"NOTE_BODY".equals(kind) && !"NOTE_TAGS".equals(kind))
+                && !"NOTE_TITLE".equals(kind) && !"NOTE_BODY".equals(kind) && !"NOTE_TAGS".equals(kind) && !"NOTE_THINKING".equals(kind))
             throw new BadRequestException("任务类型无效");
         if (jobs.lockMember(memberId) == null) throw new NotFoundException("成员不存在");
         String id = "pj" + requestId;
@@ -73,7 +73,7 @@ public class TextPolishJobService {
         List<String> safeTags = "NOTE_TAGS".equals(kind) ? requestedTags.stream().filter(noteTags.list()::contains).toList() : List.of();
         if ("NOTE_TAGS".equals(kind) && safeTags.isEmpty()) throw new BadRequestException("请先选择已有标签");
         String tagsJson = "NOTE_TAGS".equals(kind) ? writeTags(safeTags) : null;
-        var prepared = "NOTE_TITLE".equals(kind) || "NOTE_TAGS".equals(kind) ? null : polish.prepare(memberId, original);
+        var prepared = "NOTE_TITLE".equals(kind) || "NOTE_TAGS".equals(kind) || "NOTE_THINKING".equals(kind) ? null : polish.prepare(memberId, original);
         if ("DOCUMENT".equals(kind) && original.length() > 4000) throw new BadRequestException("一次最多润色 4000 字");
         String method = switch (kind) {
             case "DOCUMENT" -> "改进表达的清晰度、流畅度与自然度，保留 Markdown 块结构，不增加标题或解释。";
@@ -82,6 +82,7 @@ public class TextPolishJobService {
                     + "保留事实、数字、原意和 Markdown 链接与图片；不要添加原文没有的信息，只返回润色后的正文。";
             case "NOTE_TITLE" -> titlePrompt == null || titlePrompt.isBlank()
                     ? DEFAULT_NOTE_TITLE_PROMPT : titlePrompt.trim();
+            case "NOTE_THINKING" -> NoteThinkingImageService.PROMPT + (notePolishPrompt==null ? "" : "\n"+notePolishPrompt);
             case "NOTE_TAGS" -> "小记标签推荐。严格只从下列已有标签中选择最多 3 个；没有合适标签时只返回“无”。每行只输出一个标签名称；不可创建或修改标签。\n"
                     + TAGS_START + tagsJson + TAGS_END;
             default -> prepared.promptSnapshot();
@@ -92,6 +93,7 @@ public class TextPolishJobService {
             case "DOCUMENT" -> assistant.enqueueDocumentPolishJob(id, original, method, polishSettings.polishModel(), polishSettings.polishReasoningEffort());
             case "NOTE_TITLE" -> assistant.enqueueNoteTitleJob(id, original, method, requestedModel);
             case "NOTE_BODY" -> assistant.enqueueNotePolishJob(id, original, method, polishSettings.polishModel(), polishSettings.polishReasoningEffort());
+            case "NOTE_THINKING" -> assistant.enqueueNoteThinkingJob(id, original, requestedModel, settings.get(memberId).settings().reasoningEffort(),method);
             case "NOTE_TAGS" -> assistant.enqueueNoteTagsJob(id, original, tagsJson, requestedModel);
             default -> assistant.enqueueTextPolishJob(id, original, method);
         };
@@ -115,7 +117,7 @@ public class TextPolishJobService {
         String message = switch (status) {
             case "QUEUED" -> assistant.polishQueueMessage();
             case "RUNNING" -> "AI 正在润色；结果会保留，无需重复提交";
-            case "SUCCEEDED" -> "NOTE_TITLE".equals(job.kind()) ? "标题已生成" : "NOTE_TAGS".equals(job.kind()) ? "标签已推荐" : "润色已完成";
+            case "SUCCEEDED" -> "NOTE_TITLE".equals(job.kind()) ? "标题已生成" : "NOTE_THINKING".equals(job.kind()) ? "思考提纲已生成" : "NOTE_TAGS".equals(job.kind()) ? "标签已推荐" : "润色已完成";
             default -> run.error() == null ? "润色失败，请重试；原文已保留" : run.error();
         };
         TextPolishRecordDto record = "SUCCEEDED".equals(status) && "WORKSPACE".equals(job.kind())

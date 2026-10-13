@@ -106,6 +106,30 @@ afterEach(() => {
   wrappers.length = 0
 })
 
+it('思考图展示独立图片和提纲，具体问题可带入对话但不会覆盖已有输入', async () => {
+  vi.mocked(fetchAiResults).mockResolvedValue({ items: [{ ...candidate, stage: 'thinking', application: 'APPLIED', resultText: '思考提纲', thinkingImage: { imageUrl: '/api/images/thought/raw', outline: '思考提纲', title: '核心发现', questions: ['哪些条件值得验证？'], sourceRev: 4, current: true } }] as never, attempts: [], nextCursor: '' })
+  const w = render(); await flushPromises()
+  await w.findAll('button').find(button => button.text() === '思考图')!.trigger('click'); await flushPromises()
+  expect(w.get('.result-image').attributes('src')).toBe('/api/images/thought/raw')
+  expect(w.text()).not.toContain('变更范围：')
+  await w.findAll('button').find(button => button.text().includes('继续聊：'))!.trigger('click'); await flushPromises()
+  expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('哪些条件值得验证？')
+  await w.get('textarea').setValue('我还在写的问题')
+  await (w.vm as unknown as { seedThinkingQuestion: (text: string) => Promise<void> }).seedThinkingQuestion('另一个问题')
+  expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('我还在写的问题')
+  expect(w.text()).toContain('还有未发送的问题')
+  expect(askNoteChat).not.toHaveBeenCalled()
+})
+
+it('图片失败时仍能查看和复制思考提纲，不显示空图片或伪造已生成', async () => {
+  vi.mocked(fetchAiResults).mockResolvedValue({ items: [{ ...candidate, stage: 'thinking', resultText: '已保存提纲', thinkingImage: { imageUrl: '', outline: '已保存提纲', title: '发现', questions: ['具体问题？'], sourceRev: 4, current: true } }] as never, attempts: [], nextCursor: '' })
+  const w=render();await flushPromises();await w.findAll('button').find(button=>button.text()==='思考图')!.trigger('click')
+  expect(w.find('.result-image').exists()).toBe(false)
+  expect(w.text()).toContain('图片未生成，思考提纲已保留')
+  expect(w.text()).toContain('思考提纲已保存')
+  expect(w.findAll('button').some(button=>button.text()==='复制成果')).toBe(true)
+})
+
 it('按需打开绑定本篇，不展示选篇框；关闭重开保留问题且没有后台闲置轮询', async () => {
   vi.useFakeTimers()
   try {

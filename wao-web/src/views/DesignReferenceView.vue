@@ -395,7 +395,7 @@ const detailDemoComment = ref('')
           <section class="reference-section">
             <h2>浮层的边界</h2>
             <p>图片菜单使用同一套 13px 字体，名称与常用操作直接展示；精确尺寸放入展开区。长名称省略显示，完整内容通过悬浮查看。下面为图片名称示例，不写入账号。</p>
-            <NoteReadingImages :images="[{ src: '/brand/wao-soft-loop-v4.svg', alt: 'image.png' }, { src: '/brand/wao-soft-loop-v4.svg', alt: '有意义的自定义图片名称，长名称也保持布局稳定' }]" :active="null" />
+            <NoteReadingImages :images="[{ src: '/brand/wao-soft-loop-v4.svg', alt: 'image.png' }, { src: '/brand/wao-soft-loop-v4.svg', alt: '思考图（合成演示）', derived: true, sourceRev: 1, current: false, outline: '原文观察：合成记录。AI推测：待验证的关系。下一步：补充一次观察。', questions: ['哪一个条件值得单独观察？'] }]" :active="null" @question="feedback = '合成问题示例，没有打开私人会话。'" />
             <div class="popover-sample" role="group" aria-label="浮层外观示例">
               <strong>当前内容的操作</strong><span>轻量菜单使用浮层阴影</span
               ><WaoButton variant="ghost" @click="feedback = '浮层示例操作已触发。'"

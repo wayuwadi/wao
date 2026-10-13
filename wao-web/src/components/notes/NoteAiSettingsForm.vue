@@ -79,7 +79,7 @@ const navigationItems = computed(() =>
       !!draft.value &&
       !!remote.value &&
       (item.id === 'capabilities'
-        ? ['model', 'reasoningEffort', 'title', 'polish', 'image'].some(
+        ? ['model', 'reasoningEffort', 'title', 'polish', 'image', 'thinking'].some(
             (key) =>
               draft.value![key as keyof NoteAiSettings] !==
               remote.value!.settings[key as keyof NoteAiSettings],
@@ -122,6 +122,7 @@ const polishValidationError = computed(() => {
 function normalizeSettings(value: NoteAiSettings): NoteAiSettings {
   return {
     ...value,
+    thinking: value.thinking ?? true,
     polishModel: value.polishModel ?? 'gpt-6-luna',
     polishReasoningEffort: value.polishReasoningEffort ?? 'low',
   }
@@ -416,6 +417,13 @@ onBeforeUnmount(() => {
               description="已有自动配图保留，避免重复生成。"
               icon="ri-image-line"
               control-label="保存后自动配图"
+            />
+            <AiSettingsToggleRow
+              :model-value="draft.thinking ?? true" @update:model-value="draft.thinking = $event"
+              title="思考图"
+              description="从本篇原文提炼关系、具体问题与小验证，独立保存为第二张 AI 图片。"
+              icon="ri-lightbulb-line"
+              control-label="保存后自动生成思考图"
             />
           </div>
           <div class="behavior-note">

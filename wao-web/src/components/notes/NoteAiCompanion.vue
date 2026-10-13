@@ -80,6 +80,7 @@ const labels: Record<CompanionStage, string> = {
   title: '标题',
   tags: '标签',
   image: '配图',
+  thinking: '思考图',
 }
 const overview = ref<CompanionOverview>(),
   results = ref<AiResults>(),
@@ -518,7 +519,12 @@ onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   window.removeEventListener('resize', resizePanel)
 })
-defineExpose({ refresh })
+async function seedThinkingQuestion(text: string) {
+  if (question.value.trim()) { error.value = '伴读里还有未发送的问题，已保留；请先处理后再带入新问题'; return }
+  question.value = text; tab.value = 'chat'
+  await nextTick(); panel.value?.querySelector<HTMLTextAreaElement>('textarea')?.focus()
+}
+defineExpose({ refresh, seedThinkingQuestion })
 </script>
 
 <template>
@@ -627,7 +633,7 @@ defineExpose({ refresh })
             </div>
             <template v-if="artifact">
               <div class="artifact-status">
-                <b>{{ applicationLabel(artifact.application) }}</b
+                <b>{{ stage === 'thinking' ? artifact.thinkingImage?.imageUrl ? '思考图已保存' : '思考提纲已保存' : applicationLabel(artifact.application) }}</b
                 ><span v-if="artifact.validity === 'STALE'">来源已更新 · 仅供对照</span
                 ><small>来源 v{{ artifact.sourceRev }}</small>
               </div>
@@ -648,6 +654,12 @@ defineExpose({ refresh })
                   <pre>{{ artifact.sourceText }}</pre>
                 </details></template
               >
+              <template v-else-if="stage === 'thinking' && artifact.thinkingImage">
+                <img v-if="artifact.thinkingImage.imageUrl" class="result-image" :src="artifact.thinkingImage.imageUrl" alt="思考图：原文观察、AI 推测与待验证问题" />
+                <p v-else>图片未生成，思考提纲已保留；可以重试或带着问题继续聊。</p>
+                <details><summary>查看可复制提纲</summary><pre>{{ artifact.thinkingImage.outline }}</pre></details>
+                <button v-for="item in artifact.thinkingImage.questions" :key="item" :disabled="blocked" @click="seedThinkingQuestion(item)">继续聊：{{ item }}</button>
+              </template>
               <template v-else
                 ><div class="diff-summary">
                   变更范围：移除 {{ artifact.removedChars }} · 新增 {{ artifact.addedChars }} 个字符
@@ -664,7 +676,7 @@ defineExpose({ refresh })
                 </div></template
               >
               <div class="artifact-actions">
-                <button :disabled="busy || blocked" @click="emit('run', stage)">重新整理</button>
+                <button :disabled="busy || blocked" @click="emit('run', stage)">{{ stage === 'thinking' ? '换个角度 / 重新生成' : '重新整理' }}</button>
                 <button @click="copyText(artifact.resultText, '成果已复制')">复制成果</button>
               </div>
               <ul

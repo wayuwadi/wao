@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { notePreviewSource, type NotePreviewImage } from '@/utils/notePreviewImages'
+import { copyText } from '@/utils/clipboard'
 import { imageDisplayName } from '@/utils/imageDisplayName'
 defineProps<{ images: NotePreviewImage[]; active: number | null; unavailable?: boolean; editable?: boolean }>()
-const emit = defineEmits<{ return: [index: number]; fullscreen: [image: NotePreviewImage, event: MouseEvent, index: number]; rename: [index: number, event: MouseEvent] }>()
+const emit = defineEmits<{ return: [index: number]; fullscreen: [image: NotePreviewImage, event: MouseEvent, index: number]; question: [text: string]; rename: [index: number, event: MouseEvent] }>()
 const root = ref<HTMLElement | null>(null)
 const failed = ref<Record<string, boolean>>({})
 function locate(index: number) {
@@ -23,7 +24,12 @@ defineExpose({ locate })
         <span v-if="failed[image.src]" class="reading-image-error">图片加载失败，点击查看原图</span>
         <img v-else :src="notePreviewSource(image.src)" :alt="imageDisplayName(image.alt, offset + 1)" loading="lazy" @error="failed[image.src] = true" />
       </button>
-      <div class="reading-image-actions"><button type="button" :aria-label="`返回正文图 ${offset + 1}的位置`" @click="emit('return', offset + 1)"><i class="ri-arrow-left-up-line" aria-hidden="true"></i>返回正文</button><button type="button" :aria-label="`全屏查看图 ${offset + 1}`" @click="emit('fullscreen', image, $event, offset)"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏</button></div>
+      <div class="reading-image-actions"><button v-if="!image.derived" type="button" :aria-label="`返回正文图 ${offset + 1}的位置`" @click="emit('return', offset + 1)"><i class="ri-arrow-left-up-line" aria-hidden="true"></i>返回正文</button><button type="button" :aria-label="`全屏查看图 ${offset + 1}`" @click="emit('fullscreen', image, $event, offset)"><i class="ri-fullscreen-line" aria-hidden="true"></i>全屏</button></div>
+      <template v-if="image.derived">
+        <p class="reading-images-empty">AI 思考图 · 来源 v{{ image.sourceRev }}{{ image.current === false ? ' · 原文已更新，仅供对照' : '' }}</p>
+        <details><summary>思考提纲</summary><pre class="thinking-outline">{{ image.outline }}</pre><button type="button" @click="copyText(image.outline || '', '思考提纲已复制')">复制提纲</button></details>
+        <button v-for="item in image.questions" :key="item" class="thinking-question" type="button" @click="emit('question', item)">继续聊：{{ item }}</button>
+      </template>
     </figure>
   </aside>
 </template>
@@ -47,6 +53,8 @@ img { display: block; width: 100%; height: auto; max-height: 280px; object-fit: 
 .reading-image-actions i { margin-right: 3px; }
 button:hover { color: var(--wao-primary-text); }
 button:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 3px; }
+.thinking-outline { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; }
+.thinking-question { display: block; width: 100%; margin-top: var(--wao-space-1); padding: var(--wao-space-1); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-primary-text); text-align: left; font: inherit; line-height: 1.7; cursor: pointer; }
 @media (max-width: 650px) { .reader-images { border-left: 0; border-top: 1px solid var(--wao-line); padding: 20px 18px; } figure { max-width: 440px; } }
 @media (pointer: coarse) { .image-name-button { min-height: 44px; } }
 </style>

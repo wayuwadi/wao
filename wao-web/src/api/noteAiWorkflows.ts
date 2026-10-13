@@ -1,11 +1,15 @@
 import { http, type ApiResponse } from './http'
 
+export interface NoteThinkingImage { imageUrl: string; outline: string; title: string; questions: string[]; sourceRev: number; current: boolean }
+
 export interface NoteAiWorkflowStatus {
   docId: string
   title: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED'
   image: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED'
   polish: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED'
   tags?: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED'
+  thinking?: NoteAiWorkflowStatus['title']
+  thinkingImage?: NoteThinkingImage | null
   message: string | null
   stages?: Record<string, { reasonCode: string; message: string; retryable: boolean; action: string; jobId: string; sourceVersion: number }>
 }
