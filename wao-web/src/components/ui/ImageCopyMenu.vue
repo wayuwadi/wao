@@ -2,12 +2,15 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import { copyOriginalImage } from '@/utils/noteMediaClipboard'
 
 const props = defineProps<{ src: string; x: number; y: number }>()
 const emit = defineEmits<{ close: [] }>()
 const firstAction = ref<HTMLButtonElement | null>(null)
 const menuElement = ref<HTMLElement | null>(null)
 const position = ref<{ left: number; top: number } | null>(null)
+const copying = ref(false)
+const copyError = ref('')
 const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
 const menuStyle = computed(() => position.value ? { left: `${position.value.left}px`, top: `${position.value.top}px` } : { visibility: 'hidden' as const })
 function placeMenu() {
@@ -33,32 +36,15 @@ onMounted(() => {
 onBeforeUnmount(() => { resizeObserver?.disconnect(); window.removeEventListener('resize', placeMenu); if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true }) })
 
 async function copyImage() {
-  const src = props.src
-  emit('close')
+  if (copying.value) return
+  copying.value = true
+  copyError.value = ''
   try {
-    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw new Error('剪贴板不支持图片')
-    const response = await fetch(src, { credentials: 'same-origin' })
-    if (!response.ok) throw new Error('图片读取失败')
-    const source = await response.blob()
-    let png = source
-    if (source.type !== 'image/png') {
-      const bitmap = await createImageBitmap(source)
-      try {
-        const canvas = document.createElement('canvas')
-        canvas.width = bitmap.width
-        canvas.height = bitmap.height
-        const context = canvas.getContext('2d')
-        if (!context) throw new Error('图片转换失败')
-        context.drawImage(bitmap, 0, 0)
-        png = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
-          value => value ? resolve(value) : reject(new Error('图片转换失败')), 'image/png'))
-      } finally { bitmap.close() }
-    }
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+    await copyOriginalImage(props.src)
     toast('图片已复制', 'ri-file-copy-line')
-  } catch {
-    toast('复制图片失败，请重试或复制图片地址', 'ri-error-warning-line', { duration: 6000 })
-  }
+    emit('close')
+  } catch (cause) { copyError.value = cause instanceof Error ? cause.message : '复制图片失败，请重试' }
+  finally { copying.value = false }
 }
 
 async function copyAddress() {
@@ -75,8 +61,9 @@ async function copyAddress() {
         :style="menuStyle">
         <slot></slot>
         <div class="image-copy-actions">
-          <button ref="firstAction" type="button" role="menuitem" @click="copyImage"><i class="ri-file-copy-line" aria-hidden="true"></i>复制图片</button>
-          <button type="button" role="menuitem" @click="copyAddress"><i class="ri-link" aria-hidden="true"></i>复制图片链接</button>
+          <button ref="firstAction" type="button" role="menuitem" :disabled="copying" @click="copyImage"><i class="ri-file-copy-line" aria-hidden="true"></i>{{ copying ? '正在复制…' : copyError ? '重试复制图片' : '复制图片' }}</button>
+          <p v-if="copyError" class="image-copy-error" role="alert">{{ copyError }}</p>
+          <button type="button" role="menuitem" :disabled="copying" @click="copyAddress"><i class="ri-link" aria-hidden="true"></i>复制图片链接</button>
         </div>
       </div>
     </div>
@@ -89,6 +76,8 @@ async function copyAddress() {
 .image-copy-menu button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-radius: var(--wao-radius-control); padding: 7px 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .image-copy-menu button:hover, .image-copy-menu button:focus-visible { background: var(--wao-bg-sub); }
 .image-copy-actions { display: grid; }
+.image-copy-menu button:disabled { opacity: .6; cursor: wait; }
+.image-copy-error { margin: 4px 8px; max-width: 240px; font-size: 12px; overflow-wrap: anywhere; color: var(--wao-danger-strong); }
 .image-copy-menu:has(.note-image-menu) .image-copy-actions { border-top: 1px solid var(--wao-line-control); padding-top: 5px; margin-top: 5px; }
 @media (pointer: coarse) { .image-copy-menu button { min-height: 44px; } }
 </style>

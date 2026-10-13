@@ -1,5 +1,6 @@
 import { renderMarkdown } from './markdown'
 import type { RichDocContent } from '@/types'
+import { readClipboardImage } from '@/api/imageClipboard'
 
 /** 保留正文、资源链接和图号，原图通过独立的图片剪贴板步骤复制。 */
 export function noteMediaCopyText(content: RichDocContent): string {
@@ -16,25 +17,56 @@ export function noteMediaCopyText(content: RichDocContent): string {
   return (root.textContent ?? '').trim()
 }
 
-/** 复制完整尺寸图片，独立 PNG 表示确保接收方识别为图片附件。 */
+function canvasPng(image: CanvasImageSource, width: number, height: number): Promise<Blob> {
+  const canvas = document.createElement('canvas')
+  canvas.width = width; canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('图片转换失败，请重试')
+  context.drawImage(image, 0, 0)
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob(
+    value => value ? resolve(value) : reject(new Error('图片转换失败，请重试')), 'image/png'))
+}
+
+async function originalPng(src: string): Promise<Blob> {
+  const url = new URL(src, window.location.href).href
+  // 只复用确实加载了原地址的图片；data-full-src 指向原图的预览不能代替原图。
+  const loaded = [...document.images].find(image => image.complete && image.naturalWidth > 0
+    && image.naturalHeight > 0 && (image.currentSrc || image.src) === url)
+  if (loaded) {
+    try { return await canvasPng(loaded, loaded.naturalWidth, loaded.naturalHeight) }
+    catch { /* 跨域画布或解码失败时继续尝试读取原始地址。 */ }
+  }
+  const source = await readClipboardImage(src)
+  if (source.type === 'image/png') return source
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(source)
+      try { return await canvasPng(bitmap, bitmap.width, bitmap.height) }
+      finally { bitmap.close() }
+    } catch { /* 部分浏览器不能将 SVG 等格式解码为位图，改用图片元素。 */ }
+  }
+  const objectUrl = URL.createObjectURL(source)
+  try {
+    const image = new Image()
+    image.src = objectUrl
+    await image.decode()
+    if (!image.naturalWidth || !image.naturalHeight) throw new Error('图片解码失败，请重试')
+    return await canvasPng(image, image.naturalWidth, image.naturalHeight)
+  } finally { URL.revokeObjectURL(objectUrl) }
+}
+
+/** 点击时立即请求剪贴板写入，图片读取和完整尺寸转换在该请求内完成。 */
 export async function copyOriginalImage(src: string): Promise<void> {
   if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw new Error('当前浏览器不支持复制图片，请在 HTTPS 或本机浏览器中重试')
-  const png = (async () => {
-    const response = await fetch(src, { credentials: 'same-origin' })
-    if (!response.ok) throw new Error('原图读取失败，请重试')
-    const source = await response.blob()
-    if (source.type === 'image/png') return source
-    const bitmap = await createImageBitmap(source)
-    try {
-      const canvas = document.createElement('canvas')
-      canvas.width = bitmap.width; canvas.height = bitmap.height
-      const context = canvas.getContext('2d')
-      if (!context) throw new Error('图片转换失败，请重试')
-      context.drawImage(bitmap, 0, 0)
-      return await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('图片转换失败')), 'image/png'))
-    } finally { bitmap.close() }
-  })()
-  void png.catch(() => { /* write 提前被拒绝时，异步图片读取也有接收方。 */ })
+  const png = originalPng(src)
+  let imageError: unknown
+  void png.catch(cause => { imageError = cause })
   // 在点击手势内调用 write，把异步读取放入 ClipboardItem，以兼容手势限制。
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+  try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]) }
+  catch (cause) {
+    if (imageError instanceof Error) throw imageError
+    if (cause && typeof cause === 'object' && 'name' in cause && cause.name === 'NotAllowedError')
+      throw new Error('浏览器未允许复制图片，请保持页面在前台后重试')
+    throw new Error('图片复制失败，请重试')
+  }
 }
