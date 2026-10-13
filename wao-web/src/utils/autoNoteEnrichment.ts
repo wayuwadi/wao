@@ -11,7 +11,7 @@ import { resolveNoteModel } from '@/utils/noteAiModel'
 import { readNoteDraft } from '@/utils/noteDraftStorage'
 
 type Step = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
-export type NoteWorkflowProgress = { title: Step; image: Step; polish: Step; tags: Step; message?: string }
+export type NoteWorkflowProgress = { title: Step; image: Step; polish: Step; tags: Step; thinking?: Step; message?: string }
 type AutoJob = {
   memberId: string; docId: string; rev: number
   titleRequestId: string; titleDone: boolean

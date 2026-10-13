@@ -17,6 +17,16 @@ import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 /** SQL 状态与真实版本竞态；模型输出仅为明确测试样本。 */
 class NoteAiCompanionServiceTest {
+    @Test void historicalThinkingFlagTracksCurrentSourceInsteadOfStoredCreationFlag() throws Exception {
+        var fake=mock(JdbcTemplate.class);
+        var probe=new NoteAiCompanionService(fake,json,settings,mock(ObjectProvider.class),mock(ObjectProvider.class),mock(AiAssistantConversationService.class),mock(AiAssistantRunMapper.class),mock(NoteTagService.class));
+        var result=new NoteThinkingImageService.Result("/api/images/old/raw","提纲","发现",List.of("问题"),1,null,true);
+        Map<String,Object> row=Map.of("id","a","stage","thinking","source_json",json.writeValueAsString(current),"result_text",json.writeValueAsString(result),"application","APPLIED");
+        Map<String,Object> view=org.springframework.test.util.ReflectionTestUtils.invokeMethod(probe,"view",row,current);
+        assertThat(view.get("validity")).isEqualTo("STALE");
+        assertThat(((NoteThinkingImageService.Result)view.get("thinkingImage")).current()).isFalse();
+        verify(knowledge,never()).updateDerivedNote(any(),any());
+    }
     JdbcTemplate db;ObjectMapper json=new ObjectMapper();NoteAiCompanionService service;KnowledgeService knowledge;NoteAiSettingsService settings;DocDto current;
     @BeforeEach void setup() throws Exception {
         var ds=new DriverManagerDataSource("jdbc:h2:mem:"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE","sa","");db=new JdbcTemplate(ds);

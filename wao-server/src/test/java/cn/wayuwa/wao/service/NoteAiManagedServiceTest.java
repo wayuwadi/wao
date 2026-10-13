@@ -27,7 +27,7 @@ class NoteAiManagedServiceTest {
   db.execute("CREATE TABLE doc(id VARCHAR(32) PRIMARY KEY,author_id VARCHAR(32),kb_id VARCHAR(32),deleted_at TIMESTAMP,archived_at TIMESTAMP)");db.update("INSERT INTO doc VALUES('n','m','kb-notes',NULL,NULL)");
   db.execute("CREATE TABLE note_ai_workflow(doc_id VARCHAR(32) PRIMARY KEY,member_id VARCHAR(32),base_rev INT,original_title VARCHAR(256),source_markdown_hash CHAR(64),title_status VARCHAR(16),image_status VARCHAR(16),polish_status VARCHAR(16),last_error VARCHAR(500),updated_at TIMESTAMP)");
   try(var connection=ds.getConnection()){ScriptUtils.executeSqlScript(connection,new ClassPathResource("db/migration/V176__note_save_ai_settings.sql"));}
-  values=new LinkedHashMap<>();var prefs=mock(MemberPreferenceMapper.class);
+  values=new LinkedHashMap<>();values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false}");var prefs=mock(MemberPreferenceMapper.class);
   when(prefs.find(anyString(),anyString())).thenAnswer(c->values.get(c.getArgument(1)));
   doAnswer(c->{values.put(c.getArgument(1),c.getArgument(2));return null;}).when(prefs).upsert(anyString(),anyString(),anyString());
   settings=new NoteAiSettingsService(db,prefs,new ObjectMapper());knowledge=mock(KnowledgeService.class);text=mock(TextPolishJobService.class);image=mock(ArticleImageService.class);
@@ -40,7 +40,7 @@ class NoteAiManagedServiceTest {
  }
  DocDto doc(String body,String title,int rev){return new DocDto("n",title,"m",null,null,false,List.of(),List.of(),new RichDocContentDto(1,null,body),List.of(),"kb-notes",null,rev);}
  @Test void automaticCoverKeepsLegacyBodyAndDoesNotInvalidateOtherStages(){
-  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":true,\"polish\":true}");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":true,\"polish\":true}");
   String body="早起下楼的真实记录。".repeat(12)+"\n\n第二段保留原样。";
   var current=new java.util.concurrent.atomic.AtomicReference<>(new DocDto("n","首行","m",null,null,false,
       List.of(),List.of(new DocBlockDto(null,null,body,null,null)),null,List.of(),"kb-notes",null,1));
@@ -96,7 +96,7 @@ class NoteAiManagedServiceTest {
   }
  }
  @Test void plainImageUrlIsNotACoverAndPolishDoesNotBringDeletedCoverBack(){
-  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false,\"polish\":true}");
   var current=doc("链接 /api/images/old/raw 是资料","标题",1);when(knowledge.getDoc("n")).thenReturn(current);
   tx.executeWithoutResult(t->managed.saved(current,"m","标题",null));db.update("UPDATE note_ai_save_signal SET cover_url='/api/images/old/raw'");
   tx.executeWithoutResult(t->managed.advance("n"));
@@ -153,7 +153,7 @@ class NoteAiManagedServiceTest {
  }
  @Test void legacyReviewModeAlsoAppliesCompletedOutputDirectly(){
   var companion=companion("REVIEW");
-  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false,\"polish\":true}");
   var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
   tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));
   tx.executeWithoutResult(t->managed.advance("n"));
@@ -167,7 +167,7 @@ class NoteAiManagedServiceTest {
  }
  @Test void resourceLossFailsWithRetryInsteadOfCreatingASuggestion(){
   var companion=companion("AUTO");
-  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false,\"polish\":true}");
   var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
   when(companion.polishedContent(eq(original),anyString())).thenThrow(new ConflictException("资源引用缺失，请重试"));
   tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));
@@ -181,7 +181,7 @@ class NoteAiManagedServiceTest {
  @Test void retainedCurrentResultAppliesWithoutCallingTheModelAgain(){
   var originals=mock(NoteOriginalService.class);
   org.springframework.test.util.ReflectionTestUtils.setField(managed,"originals",originals);
-  companion("AUTO");values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  companion("AUTO");values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false,\"polish\":true}");
   var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
   tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));
   tx.executeWithoutResult(t->managed.advance("n"));
@@ -196,7 +196,7 @@ class NoteAiManagedServiceTest {
   verify(knowledge,times(1)).updateDerivedNote(eq("n"),any());
  }
  @Test void retainedResultNeverOverwritesNewlySavedBody(){
-  companion("AUTO");values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  companion("AUTO");values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false,\"polish\":true}");
   var original=doc("原始事实","手选标题",1);when(knowledge.getDoc("n")).thenReturn(original);
   tx.executeWithoutResult(t->managed.saved(original,"m","手选标题",null));tx.executeWithoutResult(t->managed.advance("n"));
   db.update("UPDATE note_ai_stage_attempt SET state='DONE',reason_code='READY' WHERE stage='polish'");
@@ -208,7 +208,7 @@ class NoteAiManagedServiceTest {
   verify(knowledge,never()).updateDerivedNote(any(),any());
  }
  @Test void importedBookSendsOnlyThoughtsToPolishAndReassemblesExactSource(){
-  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false,\"polish\":true}");
   String prefix="![书摘原图](/api/images/original/raw)\n\n## 书摘\n\n> 这是\\*书里原文\\*\n> \n> 第二段\n\n来源：微信读书实际给出的来源\n\n## 我的感想\n\n";
   String thoughts="这是我读完之后的感想与生活经历。";
   var current=new java.util.concurrent.atomic.AtomicReference<>(doc(prefix+thoughts,"手选标题",1));
@@ -223,7 +223,7 @@ class NoteAiManagedServiceTest {
   assertThat(managed.status("n","m").polish()).isEqualTo("DONE");
  }
  @Test void quoteWithoutPersonalThoughtsDoesNotRequestPolish(){
-  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":true}");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false,\"polish\":true}");
   var book=doc("## 书摘\n\n> 很长的书摘也不属于个人感想。\n\n## 我的感想\n\n","手选标题",1);
   when(knowledge.getDoc("n")).thenReturn(book);
   tx.executeWithoutResult(t->managed.saved(book,"m","手选标题",null));
@@ -232,7 +232,7 @@ class NoteAiManagedServiceTest {
   verify(text,never()).submit(any(),any(),eq("NOTE_BODY"),any(),any(),any(),any());
  }
  @Test void tagsContinueOnServerMergeManualChoicesAndRejectUnknownAndDeletedNames(){
-  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false}");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false,\"polish\":false}");
   when(noteTags.list()).thenReturn(List.of("提示词","已删除"));
   when(noteTags.lockExisting()).thenReturn(List.of("提示词","手选"));
   var initial=doc("常用提示词整理与复用","首行",1);
@@ -249,7 +249,7 @@ class NoteAiManagedServiceTest {
   verify(noteTags,never()).create(any());
  }
  @Test void noTagsOrNoMatchingTagSkipsWithoutCreatingOrChangingContent(){
-  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false}");
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false,\"polish\":false}");
   var initial=doc("常用提示词","标题",1);when(knowledge.getDoc("n")).thenReturn(initial);
   tx.executeWithoutResult(t->managed.saved(initial,"m","",null));
   assertThat(managed.status("n","m").tags()).isEqualTo("SKIPPED");
@@ -264,13 +264,69 @@ class NoteAiManagedServiceTest {
   verify(knowledge,never()).updateDerivedNote(any(),any());
  }
  @Test void missingPreferenceDefaultsAndExplicitFalseStayDifferentFromCorruptPreference(){
+  values.remove(NoteAiSettingsService.DEFAULTS);
   assertThat(settings.get("m").settings().title()).isTrue();assertThat(settings.get("m").configured()).isFalse();
-  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false}");assertThat(settings.get("m").settings().title()).isFalse();assertThat(settings.get("m").settings().polish()).isTrue();
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false,\"image\":false}");assertThat(settings.get("m").settings().title()).isFalse();assertThat(settings.get("m").settings().polish()).isTrue();
   values.put(NoteAiSettingsService.DEFAULTS,"bad-json");assertThatThrownBy(()->settings.get("m")).isInstanceOf(BadRequestException.class);
+ }
+ @Test void thinkingIsAutomaticIndependentIdempotentAndNeverWritesBodyOrCover() throws Exception {
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false,\"thinking\":true}");
+  var current=doc(NoteThinkingImageServiceTest.SOURCE,"手动标题",1);when(knowledge.getDoc("n")).thenReturn(current);
+  var companion=companion("AUTO");
+  db.execute("CREATE TABLE note_ai_artifact(id CHAR(32),doc_id VARCHAR(32),member_id VARCHAR(32),stage VARCHAR(16),result_text CLOB,application VARCHAR(16),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+  var thinking=mock(NoteThinkingImageService.class);org.springframework.test.util.ReflectionTestUtils.setField(managed,"thinkingImages",thinking);
+  var plan=new ObjectMapper().readTree(NoteThinkingImageServiceTest.PLAN);
+  var result=new NoteThinkingImageService.Result("/api/images/thought/raw","真实思考提纲","核心发现",List.of("具体追问"),1,plan,true);
+  when(thinking.prepare(eq(NoteThinkingImageServiceTest.PLAN),eq(NoteThinkingImageServiceTest.SOURCE),eq(1))).thenReturn(new NoteThinkingImageService.Result("",result.outline(),result.title(),result.questions(),1,plan,true));
+  when(thinking.generate(eq(NoteThinkingImageServiceTest.PLAN),eq(NoteThinkingImageServiceTest.SOURCE),eq(1),anyString())).thenReturn(result);
+  doAnswer(c->{Map<String,Object> a=c.getArgument(0);db.update("INSERT INTO note_ai_artifact(id,doc_id,member_id,stage,result_text,application) VALUES(?,?,'m','thinking',?,'PENDING')",a.get("id"),a.get("doc_id"),c.getArgument(1));return null;}).when(companion).capture(anyMap(),anyString());
+  doAnswer(c->{db.update("UPDATE note_ai_artifact SET result_text=? WHERE id=?",settings.write(c.getArgument(1)),c.getArgument(0));return null;}).when(companion).updateThinkingResult(anyString(),any());
+  doAnswer(c->{db.update("UPDATE note_ai_artifact SET application='APPLIED' WHERE id=?",c.getArgument(0,String.class));return null;}).when(companion).applied(anyString(),any());
+  tx.executeWithoutResult(t->managed.saved(current,"m","手动标题",null));
+  tx.executeWithoutResult(t->managed.saved(current,"m","手动标题",null));
+  assertThat(db.queryForObject("SELECT COUNT(*) FROM note_ai_stage_attempt WHERE stage='thinking'",Integer.class)).isEqualTo(1);
+  tx.executeWithoutResult(t->managed.advance("n"));
+  verify(text).submit(eq("m"),anyString(),eq("NOTE_THINKING"),eq(NoteThinkingImageServiceTest.SOURCE),isNull(),isNull(),isNull());
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成",NoteThinkingImageServiceTest.PLAN,null,null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(managed.status("n","m").thinking()).isEqualTo("DONE");
+  assertThat(managed.status("n","m").thinkingImage().current()).isTrue();
+  assertThat(managed.status("n","m").thinkingImage().sourceRev()).isEqualTo(1);
+  verify(knowledge,never()).updateDerivedNote(any(),any());verifyNoInteractions(image);
+  tx.executeWithoutResult(t->managed.manual("m","n","thinking",1,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  verify(text).submit(eq("m"),eq("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),eq("NOTE_THINKING"),eq(NoteThinkingImageServiceTest.SOURCE),isNull(),isNull(),contains("核心发现"));
+  tx.executeWithoutResult(t->managed.saved(doc("原文改了","手动标题",2),"m","手动标题",null));
+  assertThat(managed.status("n","m").thinkingImage().current()).isFalse();
+ }
+ @Test void thinkingDisabledWhileQueuedCannotPublishAndManualThinkingRequiresAuthor() {
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false,\"thinking\":true}");
+  var current=doc("这是一篇真实小记，记录了具体问题。","标题",1);when(knowledge.getDoc("n")).thenReturn(current);
+  companion("AUTO");var thinking=mock(NoteThinkingImageService.class);org.springframework.test.util.ReflectionTestUtils.setField(managed,"thinkingImages",thinking);
+  tx.executeWithoutResult(t->managed.saved(current,"m","标题",null));tx.executeWithoutResult(t->managed.advance("n"));
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false,\"thinking\":false}");
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成",NoteThinkingImageServiceTest.PLAN,null,null));
+  tx.executeWithoutResult(t->managed.advance("n"));verifyNoInteractions(thinking);verify(knowledge,never()).updateDerivedNote(any(),any());
+  db.update("INSERT INTO member VALUES('other')");
+  assertThatThrownBy(()->tx.executeWithoutResult(t->managed.manual("other","n","thinking",1,"ffffffffffffffffffffffffffffffff"))).isInstanceOf(NotFoundException.class);
+ }
+ @Test void thinkingRenderFailureKeepsValidatedCopyableOutlineAndNeverWritesBody() {
+  values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false,\"thinking\":true}");
+  var current=doc(NoteThinkingImageServiceTest.SOURCE,"标题",1);when(knowledge.getDoc("n")).thenReturn(current);
+  var companion=companion("AUTO");var thinking=mock(NoteThinkingImageService.class);org.springframework.test.util.ReflectionTestUtils.setField(managed,"thinkingImages",thinking);
+  var result=new NoteThinkingImageService.Result("","经过校验的可复制提纲","一个发现",List.of("具体问题"),1,null,true);
+  when(thinking.prepare(anyString(),anyString(),eq(1))).thenReturn(result);
+  when(thinking.generate(anyString(),anyString(),eq(1),anyString())).thenThrow(new BadRequestException("排版失败，提纲保留"));
+  tx.executeWithoutResult(t->managed.saved(current,"m","标题",null));tx.executeWithoutResult(t->managed.advance("n"));
+  when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成",NoteThinkingImageServiceTest.PLAN,null,null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  verify(companion).capture(anyMap(),contains("经过校验的可复制提纲"));verify(companion,never()).updateThinkingResult(any(),any());
+  assertThat(db.queryForObject("SELECT state FROM note_ai_stage_attempt WHERE stage='thinking'",String.class)).isEqualTo("FAILED");
+  verify(knowledge,never()).updateDerivedNote(any(),any());
  }
  @Test void allEightCombinationsAreAppliedWithoutShortBodyGate(){
   for(int mask=0;mask<8;mask++){
-   values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":"+((mask&1)!=0)+",\"image\":"+((mask&2)!=0)+",\"polish\":"+((mask&4)!=0)+"}");
+   values.put(NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":"+((mask&1)!=0)+",\"image\":"+((mask&2)!=0)+",\"polish\":"+((mask&4)!=0)+"}");
    var doc=doc("真实短内容"+mask,"首行",mask+1);tx.executeWithoutResult(s->managed.saved(doc,"m","",null));
    var status=managed.status("n","m");assertThat(status.title()).isEqualTo((mask&1)!=0?"PENDING":"SKIPPED");assertThat(status.polish()).isEqualTo((mask&4)!=0?"PENDING":"SKIPPED");assertThat(status.image()).isEqualTo("SKIPPED");
   }
@@ -330,9 +386,9 @@ class NoteAiManagedServiceTest {
  }
  @Test void closingAndReopeningIncrementsFenceAndCannotReviveOldAttempt(){
   tx.executeWithoutResult(s->managed.saved(doc("短内容","标题",1),"m","",null));
-  tx.executeWithoutResult(s->settings.saveLegacy("m",NoteAiSettingsService.DEFAULTS,"{\"title\":false}"));
+  tx.executeWithoutResult(s->settings.saveLegacy("m",NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":false}"));
   assertThat(settings.get("m").settings().titleEpoch()).isEqualTo(1);
-  tx.executeWithoutResult(s->settings.saveLegacy("m",NoteAiSettingsService.DEFAULTS,"{\"title\":true}"));
+  tx.executeWithoutResult(s->settings.saveLegacy("m",NoteAiSettingsService.DEFAULTS,"{\"thinking\":false,\"title\":true}"));
   when(knowledge.getDoc("n")).thenReturn(doc("短内容","标题",1));tx.executeWithoutResult(s->managed.advance("n"));
   assertThat(managed.status("n","m").title()).isEqualTo("SKIPPED");
   assertThat(managed.status("n","m").stages().get("title").reasonCode()).isEqualTo("DISABLED");

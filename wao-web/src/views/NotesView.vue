@@ -150,7 +150,7 @@ async function loadServerWorkflows() {
     const previous = serverWorkflows.value
     serverWorkflows.value = Object.fromEntries(values.map(value => [value.docId, value]))
     if (values.some(value => ['title', 'image', 'polish', 'tags'].some(stage => {
-      const key = stage as 'title' | 'image' | 'polish' | 'tags'
+      const key = stage as 'title' | 'image' | 'polish' | 'tags' | 'thinking'
       return value[key] === 'DONE' && previous[value.docId]?.[key] !== 'DONE'
     }))) {
       void data.refreshDocs()
@@ -603,7 +603,7 @@ const readerImagesPanel = ref<{ locate: (index: number) => void } | null>(null)
 const readerActiveImage = ref<number | null>(null)
 const readerImages = computed(() => {
   const content = originalsOpen.value ? readerOriginalContent.value : readingNote.value ? displayedContent(readingNote.value) : null
-  return content ? notePreviewImages(content) : []
+  return content ? withThinkingImage(notePreviewImages(content), originalsOpen.value ? '' : readingNote.value?.id ?? '') : []
 })
 watch([readingId, originalsOpen, () => JSON.stringify(readerImages.value)], () => { readerActiveImage.value = null })
 watch([readingId, originalsOpen], () => { readerOriginalContent.value = null })
@@ -839,7 +839,7 @@ const matching = computed(() => {
   return notes.value.filter(doc => (selectedTag.value === null ? !doc.tags?.length : !selectedTag.value || doc.tags?.includes(selectedTag.value))
     && (showSystemArticles.value || !doc.systemGenerated)
     && (selectedAuthor.value === '__me__' ? !!session.currentUser.id && doc.author === session.currentUser.id : !selectedAuthor.value || (doc.systemGenerated ? '__system__' : doc.author) === selectedAuthor.value)
-    && (imageFilter.value === 'all' || (notePreviewImages(displayedContent(doc)).length > 0) === (imageFilter.value === 'yes'))
+    && (imageFilter.value === 'all' || (cardImages(doc).length > 0) === (imageFilter.value === 'yes'))
     && inTimeRange(doc.updated, timeFilter.value)
     && (!needle || `${displayedTitle(doc)}\n${documentSearchText({ blocks: doc.blocks, content: displayedContent(doc) })}\n${displayedTags(doc).join(' ')}`.toLocaleLowerCase().includes(needle)))
 })
@@ -852,28 +852,35 @@ function inTimeRange(value: string, range: typeof timeFilter.value) {
   return range === 'today' ? date >= today : range === 'yesterday' ? date >= yesterday && date < today : date < yesterday
 }
 function displayedMarkdown(note: Doc) { return displayedContent(note).markdown }
-function cardImages(note: Doc): NotePreviewImage[] {
-  return notePreviewImages(displayedContent(note))
+function withThinkingImage(images: NotePreviewImage[], id: string): NotePreviewImage[] {
+  const result = serverWorkflows.value[id]?.thinkingImage
+  return result ? [...images, { src: result.imageUrl, alt: `思考图 · ${result.title}`, derived: true, sourceRev: result.sourceRev, current: result.current, outline: result.outline, questions: result.questions }] : images
 }
-function stageIcon(stage: 'title' | 'image' | 'polish' | 'tags') { return { title: 'T', image: '▧', polish: '✦', tags: '#' }[stage] }
-function stageLabel(stage: 'title' | 'image' | 'polish' | 'tags') { return { title: '标题', image: '配图', polish: '润色', tags: '标签' }[stage] }
+async function continueThinking(text: string) {
+  openReaderCompanion(); await nextTick(); await companion.value?.seedThinkingQuestion(text)
+}
+function cardImages(note: Doc): NotePreviewImage[] {
+  return withThinkingImage(notePreviewImages(displayedContent(note)), note.id)
+}
+function stageIcon(stage: 'title' | 'image' | 'polish' | 'tags' | 'thinking') { return { title: 'T', image: '▧', polish: '✦', tags: '#', thinking: '◇' }[stage] }
+function stageLabel(stage: 'title' | 'image' | 'polish' | 'tags' | 'thinking') { return { title: '标题', image: '配图', polish: '润色', tags: '标签', thinking: '思考图' }[stage] }
 function workflowProgress(id: string) {
   const server = serverWorkflows.value[id]
   if (!server) return noteEnrichmentProgress[id]
   const state = (value: NoteAiWorkflowStatus['title']) => value.toLowerCase() as 'pending' | 'running' | 'done' | 'failed' | 'skipped'
   const local = noteEnrichmentProgress[id]
-  const combined = { title: state(server.title), image: state(server.image), polish: state(server.polish), tags: server.tags ? state(server.tags) : local?.tags ?? 'skipped' }
+  const combined = { title: state(server.title), image: state(server.image), polish: state(server.polish), tags: server.tags ? state(server.tags) : local?.tags ?? 'skipped', thinking: server.thinking ? state(server.thinking) : 'skipped' }
   return combined
 }
 function progressVisible(id: string) {
   const steps = workflowProgress(id)
   return !!steps && Object.values(steps).some(value => value === 'running' || value === 'pending' || value === 'failed') || /失败|超时|未完成/.test(noteEnrichmentStatus[id] || '')
 }
-function stageDisabled(id: string, stage: 'title' | 'image' | 'polish' | 'tags') {
+function stageDisabled(id: string, stage: 'title' | 'image' | 'polish' | 'tags' | 'thinking') {
   return retryingEnrichment.value.includes(id) || workflowProgress(id)?.[stage] === 'running'
     || !!serverWorkflows.value[id] && ['PENDING', 'RUNNING'].includes(serverWorkflows.value[id]![stage] ?? '')
 }
-function stageActionText(id: string, stage: 'title' | 'image' | 'polish' | 'tags') {
+function stageActionText(id: string, stage: 'title' | 'image' | 'polish' | 'tags' | 'thinking') {
   const detail = serverWorkflows.value[id]?.stages?.[stage]
   if (detail?.message) return detail.message + (stageDisabled(id, stage) ? '' : '；点击手动执行一次')
   const value = workflowProgress(id)?.[stage]
@@ -885,7 +892,7 @@ function stageActionText(id: string, stage: 'title' | 'image' | 'polish' | 'tags
 }
 function serverFailed(id: string) {
   const server = serverWorkflows.value[id]
-  return !!server && (server.title === 'FAILED' || server.image === 'FAILED' || server.polish === 'FAILED' || server.tags === 'FAILED')
+  return !!server && (server.title === 'FAILED' || server.image === 'FAILED' || server.polish === 'FAILED' || server.tags === 'FAILED' || server.thinking === 'FAILED')
 }
 function workflowMessage(id: string) {
   const server = serverWorkflows.value[id]
@@ -920,7 +927,7 @@ function fourStageComplete(id: string, stage: typeof aiStages[number]) {
   return server?.[stage] === 'SKIPPED' && ['EXISTING_IMAGE', 'MANUAL_TITLE', 'NO_MATCHING_TAGS'].includes(server.stages?.[stage]?.reasonCode ?? '')
 }
 function fourComplete(id: string) { return aiStages.every(stage => fourStageComplete(id, stage)) }
-async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 'tags' | 'four') {
+async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 'tags' | 'thinking' | 'four') {
   if (retryingEnrichment.value.includes(note.id)) return
   if (stage === 'four' && fourComplete(note.id)) { toast('四项已完成，无需重复执行'); return }
   retryingEnrichment.value = [...retryingEnrichment.value, note.id]
@@ -975,7 +982,7 @@ async function retryOrStart(note: Doc, stage?: 'title' | 'image' | 'polish' | 't
     retryingEnrichment.value = retryingEnrichment.value.filter(id => id !== note.id)
   }
 }
-function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish' | 'tags') {
+function onStageClick(note: Doc, stage: 'title' | 'image' | 'polish' | 'tags' | 'thinking') {
   if (stageDisabled(note.id, stage)) return
   void retryOrStart(note, stage)
 }
@@ -1242,6 +1249,7 @@ onMounted(() => void loadPins())
             <span v-if="chargingNote === note.id" class="four-charge-hint" role="status">按住 3 秒 · 松开取消</span>
             <span class="note-meta-trailing"><span class="card-action-slot"><span class="card-identity"><span class="author" :class="{ 'system-author': note.systemGenerated }" :title="note.systemGenerated ? 'Skill 生成的系统文章' : undefined"><i v-if="note.systemGenerated" class="ri-sparkling-line" aria-hidden="true"></i>{{ noteAuthorName(note) }}</span><time :title="timeLabel(note.updated || note.created)">{{ new Date(note.updated || note.created).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</time></span><span class="card-hover-actions"><div class="stage-list" :class="{ 'stage-list-complete': !progressVisible(note.id), 'stage-list-open': mobileActionsId === note.id }" role="group" aria-label="AI 产出与按需操作">
               <NoteAiStageButton v-for="stage in aiStages" :key="stage" :class="`stage-${workflowProgress(note.id)?.[stage] || 'pending'}`" hold-enabled :disabled="stageDisabled(note.id, stage)" :title="`${stageLabel(stage)}：${stageActionText(note.id, stage)}；长按 3 秒一键四连`" :aria-label="`${stageLabel(stage)}${stageActionText(note.id, stage)}，长按 3 秒一键四连`" @activate="onStageClick(note, stage)" @four="retryOrStart(note, 'four')" @charging="chargingNote = $event ? note.id : ''">{{ stageIcon(stage) }}</NoteAiStageButton>
+              <NoteAiStageButton :disabled="stageDisabled(note.id, 'thinking')" :title="`思考图：${stageActionText(note.id, 'thinking')}`" :aria-label="`思考图${stageActionText(note.id, 'thinking')}`" @activate="onStageClick(note, 'thinking')"><i class="ri-lightbulb-line" aria-hidden="true"></i></NoteAiStageButton>
             </div><span class="card-quick-actions"><button type="button" aria-label="复制小记图文" title="复制正文、原图或交给 Codex" @click.stop="openMediaCopy(note)"><i class="ri-file-copy-2-line" aria-hidden="true"></i></button><button type="button" class="card-delete-icon" :ref="value => setDeleteButton(note.id, value)" :aria-label="`删除小记：${note.title}`" :aria-expanded="confirmingDeleteId === note.id" title="删除小记（移入回收站）" :disabled="!!deletingId" @click.stop="toggleDeleteConfirmation(note.id)"><i class="ri-delete-bin-line" aria-hidden="true"></i></button></span></span></span><span v-if="highlighted === note.id && !editingIds.includes(note.id)" class="saved" role="status">已保存</span><span v-if="noteCounts[note.id] !== undefined && !editingIds.includes(note.id)" class="note-count">{{ noteCounts[note.id]?.toLocaleString('zh-CN') }} 字</span>
               <button class="note-more-actions" type="button" :aria-label="`小记操作：${note.title}`" aria-haspopup="menu" @click.stop="openNoteMenu($event, note.id)"><i class="ri-more-line" aria-hidden="true"></i></button>
               <button class="note-touch-ai" type="button" aria-label="显示 AI 操作" :aria-expanded="mobileActionsId === note.id" @click.stop="mobileActionsId = mobileActionsId === note.id ? '' : note.id"><i class="ri-sparkling-line" aria-hidden="true"></i></button>
@@ -1322,7 +1330,7 @@ onMounted(() => void loadPins())
               <div v-if="displayedTags(readingNote).length" class="reader-tags"><span v-for="tag in displayedTags(readingNote)" :key="tag"># {{ tag }}</span></div>
               <div class="reader-content" @dblclick="editReadingNote"><div class="reader-body"><MarkdownEditor ref="readerEditor" :model-value="displayedMarkdown(readingNote) || readingNote.title" :document="displayedContent(readingNote).document" :readonly="true" preview-images image-references note-media-copy :active-image-reference="readerActiveImage" bare advanced allow-h1 :min-height="0" @image-reference="locateReadingImage" @character-count="restoreReaderPosition" /></div></div></template></div>
               <div class="reader-resizer reader-images-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="图片清单宽度" :aria-valuemin="readerWidths.minimum.images" :aria-valuemax="readerWidths.limit('images')" :aria-valuenow="readerWidths.widths.value.images" title="拖拽调整宽度，双击恢复默认；方向键微调" @pointerdown="readerWidths.start('images', $event)" @keydown="readerWidths.keydown('images', $event)" @dblclick="readerWidths.reset('images')"><span></span></div>
-              <NoteReadingImages :key="`${readingNote.id}:${originalsOpen ? originalPositionKey : 'current'}`" ref="readerImagesPanel" :images="readerImages" :active="readerActiveImage" :unavailable="originalsOpen && !readerOriginalContent" @return="returnToImageReference" @fullscreen="(image, event, index) => openImage(image, event, readerImages, index)" /></div>
+              <NoteReadingImages :key="`${readingNote.id}:${originalsOpen ? originalPositionKey : 'current'}`" ref="readerImagesPanel" :images="readerImages" :active="readerActiveImage" :unavailable="originalsOpen && !readerOriginalContent" @question="continueThinking" @return="returnToImageReference" @fullscreen="(image, event, index) => openImage(image, event, readerImages, index)" /></div>
             </article>
             <footer class="reader-controls"><button type="button" aria-label="上一篇小记（←）" :disabled="readingIndex <= 0" @click="moveReader(-1)"><i class="ri-arrow-left-line" aria-hidden="true"></i>上一篇</button><span>{{ readingIndex + 1 }} / {{ readerNotes.length }}<small> · ← → 翻篇 · Esc 退出</small></span><button type="button" aria-label="下一篇小记（→）" :disabled="readingIndex >= readerNotes.length - 1" @click="moveReader(1)">下一篇<i class="ri-arrow-right-line" aria-hidden="true"></i></button></footer>
           </div>

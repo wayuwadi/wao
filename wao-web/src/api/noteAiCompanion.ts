@@ -1,6 +1,7 @@
 import { http, type ApiResponse } from './http'
+import type { NoteThinkingImage } from './noteAiWorkflows'
 import type { Doc, RichDocContent } from '@/types'
-export type CompanionStage = 'title' | 'image' | 'polish' | 'tags'
+export type CompanionStage = 'title' | 'image' | 'polish' | 'tags' | 'thinking'
 export interface CompanionOverview {
   available: boolean
   message: string
@@ -19,6 +20,7 @@ export interface AiArtifact {
   sourceText: string
   currentText?: string
   currentRev?: number
+  thinkingImage?: NoteThinkingImage
   resultText: string
   tagRecommendations?: { name: string; reason: string }[]
   application: string
