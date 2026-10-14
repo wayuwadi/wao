@@ -318,10 +318,11 @@ const detailDemoComment = ref('')
           </section>
           <section class="reference-section">
             <h2>主清单与日常区</h2>
-            <p>未完成子事项默认展开，仍在推进的任务直接可见，已完成内容按需回看。低频操作放进更多菜单；辅助区承载日常与记录，窄屏沿用页面滚动。以下为布局示例。</p>
+            <p>未完成子事项默认展开，仍在推进的任务直接可见，已完成内容按需回看。每日固定和随手记收在侧边，默认不展开，按需打开；窄屏入口横排，沿用页面滚动。以下为布局示例。</p>
             <TodoDayLayout primary-label="主清单布局示例" secondary-label="日常区布局示例">
               <section aria-label="任务清单示例"><h3>今日安排 · 示例</h3><p>一件要做的事，清楚放在前面。</p><TodoTaskChecklist task-id="design-todo" :subs="todoExampleSubs" @toggle="toggleTodoExample" /><WaoButton variant="ghost" @click="feedback = '记进展与任务详情位于任务更多菜单；本示例没有修改真实任务。'">更多操作示例</WaoButton></section>
-              <template #secondary><WaoCard><h3>每日固定 · 示例</h3><p>早晨与晚上的日常事项。</p></WaoCard><WaoCard><h3>随手记 · 示例</h3><p>先看最近几条，需要时再展开。</p></WaoCard></template>
+              <template #routine><WaoCard><h3>每日固定 · 示例</h3><p>早晨与晚上的日常事项。</p></WaoCard></template>
+              <template #notes><WaoCard><h3>随手记 · 示例</h3><p>先看最近几条，需要时再展开；收起保留正在写的内容。</p></WaoCard></template>
             </TodoDayLayout>
           </section>
           <section class="reference-section">
