@@ -48,7 +48,8 @@ export function matchesFault(request, fault) {
   if (fault?.taskId) {
     const path = request.url?.split('?')[0] ?? ''
     const base = `/api/tasks/${fault.taskId}`
-    return request.method === 'PUT' && (path === base || (path.startsWith(`${base}/operations/`) && /^[A-Za-z0-9_-]{1,120}$/.test(path.slice(`${base}/operations/`.length))))
+    return (['PUT', 'DELETE'].includes(request.method) && path === base)
+      || (request.method === 'PUT' && path.startsWith(`${base}/operations/`) && /^[A-Za-z0-9_-]{1,120}$/.test(path.slice(`${base}/operations/`.length)))
   }
   if (!fault || request.method !== 'PATCH') return false
   // 不解码斜线，不接受前缀、正则或通配符。

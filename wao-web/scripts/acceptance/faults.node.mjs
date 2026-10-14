@@ -17,6 +17,15 @@ test('任务故障只命中指定任务的保存，不阻断版本读取或其�
   }
 })
 
+test('删除失败验收只拦截指定任务，不拦截其他任务或子资源删除', () => {
+  const fault = { taskId: 't_acceptance' }
+  assert.equal(matchesFault({ method: 'DELETE', url: '/api/tasks/t_acceptance' }, fault), true)
+  for (const url of ['/api/tasks/t_other', '/api/tasks/t_acceptance/subtasks', '/api/tasks/t_acceptance/operations/op_123']) {
+    assert.equal(matchesFault({ method: 'DELETE', url }, fault), false)
+  }
+  assert.equal(matchesFault({ method: 'GET', url: '/api/tasks/t_acceptance' }, fault), false)
+})
+
 test('项目保存故障严格限于指定 ID 的 PATCH，不影响任务或其他项目', () => {
   const fault = { projectId: 'p_acceptance' }
   assert.equal(matchesFault({ method: 'PATCH', url: '/api/projects/p_acceptance' }, fault), true)

@@ -1353,7 +1353,8 @@ watch(visibleTaskIds, (ids) => {
 </template>
 
 <style scoped>
-.task-root-drop { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; height: 44px; margin-bottom: -44px; padding: 8px; border: 1px dashed var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-3); }
+/* Drag target covers the sticky table header (z-index: 3), including resize controls. */
+.task-root-drop { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; height: 44px; margin-bottom: -44px; padding: 8px; border: 1px dashed var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-3); }
 .task-root-drop.on { border-color: var(--wao-primary); background: var(--wao-primary-soft); color: var(--wao-primary-text); }
 .task-operation-error { color: var(--wao-danger-strong); font-size: 13px; }
 .task-operation-error button { margin-left: 8px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
