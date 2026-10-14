@@ -127,9 +127,61 @@ const visibleGroups = computed(() => taskView.value === 'list'
     taskGroups.value[2]!,
   ])
 async function changePriority(entry: DayTask, priority: Priority) {
-  if (past.value || data.taskSaveState(entry.task.id) === 'saving') return
+  if (past.value || !data.taskById(entry.task.id) || data.taskSaveState(entry.task.id) === 'saving' || current(entry).pr === priority) return
   data.patchTask(entry.task.id, { pr: priority })
   await data.flushTask(entry.task.id)
+}
+const draggedTask = ref<{ id: string; date: string; member: string } | null>(null)
+const dropPriority = ref<Priority | null>(null)
+function clearDrag() { draggedTask.value = null; dropPriority.value = null }
+watch(() => [props.date, identity(), taskView.value], clearDrag, { flush: 'sync' })
+const canDrag = (entry: DayTask) => taskView.value === 'quadrant' && !past.value && !isTaskFinished(shown(entry))
+  && !!data.taskById(entry.task.id) && data.taskSaveState(entry.task.id) !== 'saving' && noteFor.value !== entry.task.id
+function startTaskDrag(event: DragEvent, entry: DayTask) {
+  if (!canDrag(entry)) { event.preventDefault(); return }
+  const selection = window.getSelection()
+  if (selection && !selection.isCollapsed && event.currentTarget instanceof Node && selection.anchorNode && event.currentTarget.contains(selection.anchorNode)) { event.preventDefault(); return }
+  draggedTask.value = { id: entry.task.id, date: props.date, member: identity() }
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('application/x-wao-day-task', entry.task.id)
+    event.dataTransfer.setData('text/plain', entry.task.id)
+  }
+}
+function dragEntry() {
+  const source = draggedTask.value
+  if (!source || source.date !== props.date || source.member !== identity()) return
+  const entry = day.value?.tasks.find(item => item.task.id === source.id)
+  return entry && canDrag(entry) ? entry : undefined
+}
+function isPriority(value: string): value is Priority { return TASK_QUADRANTS.some(item => item.priority === value) }
+function editingDropTarget(event: DragEvent) {
+  return event.target instanceof Element && !!event.target.closest('input, textarea, select, [contenteditable="true"], .task-note-composer')
+}
+function overQuadrant(event: DragEvent, group: string) {
+  if (!draggedTask.value) return
+  event.preventDefault()
+  if (!isPriority(group) || !dragEntry() || editingDropTarget(event)) {
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    dropPriority.value = null
+    if (editingDropTarget(event)) event.stopPropagation()
+    return
+  }
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dropPriority.value = group
+}
+function leaveQuadrant(event: DragEvent, group: string) {
+  if (event.currentTarget instanceof Node && event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+  if (dropPriority.value === group) dropPriority.value = null
+}
+async function dropOnQuadrant(event: DragEvent, group: string) {
+  if (!draggedTask.value) return
+  const entry = dragEntry()
+  clearDrag()
+  event.preventDefault()
+  event.stopPropagation()
+  if (!entry || !isPriority(group) || editingDropTarget(event)) return
+  await changePriority(entry, group)
 }
 function openTaskMenu(event: MouseEvent, entry: DayTask) {
   taskMenu.value?.openAt(event, `任务：${shown(entry).title}`, [
@@ -256,8 +308,9 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
           </nav>
           <p v-if="viewError" class="task-error" role="status">{{ viewError }} <button type="button" @click="switchView(taskView)">重试记住视图</button></p>
           <p v-if="past && taskView === 'quadrant'" class="day-context">按任务现有优先级分组，正文与进展仍展示当日快照。</p>
+          <p v-if="!past && taskView === 'quadrant'" class="day-context">拖动任务标题或左侧拖动柄到其他象限，优先级会自动调整并保存。</p>
           <div class="day-task-groups" :class="{ 'day-quadrants': taskView === 'quadrant' }">
-          <WaoCard v-for="group in visibleGroups" :key="group.id" class="day-task-group" :class="{ 'day-records': group.id === 'records' }" :data-group="group.id">
+          <WaoCard v-for="group in visibleGroups" :key="group.id" class="day-task-group" :class="{ 'day-records': group.id === 'records', 'drop-target': dropPriority === group.id }" :data-group="group.id" @dragover.capture="overQuadrant($event, group.id)" @dragleave="leaveQuadrant($event, group.id)" @drop.capture="dropOnQuadrant($event, group.id)">
             <header v-if="group.id !== 'records'" class="section-heading">
               <h3>{{ group.label }} <span>{{ group.items.length }} 件</span></h3>
             </header>
@@ -268,11 +321,12 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
             </header>
             <div v-show="group.id !== 'records' || recordsVisible" :id="group.id === 'records' ? recordsId : undefined">
               <p v-if="!group.items.length" class="day-empty">{{ group.id === 'records' ? '这一天还没有已收尾的任务' : taskView === 'quadrant' ? '这个象限没有当天待办' : past ? '这一天还没有可靠的任务安排记录' : '这一天还没有安排，写下一件想做的事' }}</p>
-              <article v-for="entry in group.items" :key="entry.task.id" class="day-task" :class="{ 'task-finished': isTaskFinished(shown(entry)) }">
+              <article v-for="entry in group.items" :key="entry.task.id" class="day-task" :data-task-id="entry.task.id" :class="{ 'task-finished': isTaskFinished(shown(entry)), dragging: draggedTask?.id === entry.task.id }">
                 <div class="day-task-main">
                   <div class="task-heading">
+                    <span v-if="taskView === 'quadrant' && !past && group.id !== 'records'" class="task-drag-handle" :class="{ 'drag-ready': canDrag(entry) }" :draggable="canDrag(entry)" title="拖到其他象限，自动保存优先级" aria-hidden="true" @dragstart="startTaskDrag($event, entry)" @dragend="clearDrag"><i class="ri-draggable"></i></span>
                     <button v-if="!past && !future" type="button" class="task-check" :aria-label="`完成或重新打开：${shown(entry).title}`" :aria-pressed="isTaskFinished(current(entry))" @click="toggle(entry)">{{ isTaskFinished(current(entry)) ? '✓' : '○' }}</button>
-                    <button class="task-title" type="button" @click="ui.openTask(entry.task.id)">{{ shown(entry).title }}</button>
+                    <button class="task-title" type="button" :draggable="canDrag(entry)" @dragstart="startTaskDrag($event, entry)" @dragend="clearDrag" @click="ui.openTask(entry.task.id)">{{ shown(entry).title }}</button>
                     <span class="task-status">{{ shown(entry).status }}</span>
                     <WaoButton class="task-more" variant="ghost" :aria-label="`更多操作：${shown(entry).title}`" aria-haspopup="menu" @click="openTaskMenu($event, entry)"><i class="ri-more-line" aria-hidden="true"></i></WaoButton>
                   </div>
@@ -289,7 +343,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
                   <button v-if="shown(entry).subs?.length && !checklistOpen(entry.task.id)" class="checklist-reopen" type="button" @click="expanded[entry.task.id] = true">展开 {{ shown(entry).subs.length }} 项子事项</button>
                   <p v-if="data.taskSaveState(entry.task.id) === 'saving'" role="status">正在保存任务…</p>
                   <SaveHint v-if="taskView === 'quadrant' && data.taskSaveState(entry.task.id) === 'saved'" :saved-at="data.taskSavedAt(entry.task.id)" />
-                  <p v-if="data.taskSaveState(entry.task.id) === 'error'" class="task-error" role="alert">{{ data.taskSaveError(entry.task.id) }} <button type="button" @click="ui.openTask(entry.task.id)">处理保存</button></p>
+                  <p v-if="data.taskSaveState(entry.task.id) === 'error'" class="task-error" role="alert">{{ data.taskSaveError(entry.task.id) }} <button v-if="taskView === 'quadrant'" type="button" @click="data.flushTask(entry.task.id)">重试保存</button> <button type="button" @click="ui.openTask(entry.task.id)">处理保存</button></p>
                   <div v-if="noteFor === entry.task.id" class="task-note-composer"><WaoButton variant="ghost" @click="noteFor = null">收起记录</WaoButton><NoteComposer :key="`${identity()}:${date}:${entry.task.id}`" compact autofocus :draft-scope="`day:${identity()}:${date}:${entry.task.id}`" :submit-note="request => submitNote(request, entry.task.id)" /></div>
                   <p v-if="entry.events.length" class="latest-progress">最近进展：{{ entry.events[entry.events.length - 1]!.summary }}</p>
                   <details v-if="entry.events.length" class="day-events">
@@ -347,6 +401,11 @@ button, input, select { font: inherit; }
 .day-quadrants { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .day-quadrants .day-task-group:not(.day-records) { padding: 0 var(--wao-space-2) var(--wao-space-1); border: 1px solid var(--wao-line); border-radius: var(--wao-radius-card); }
 .day-quadrants .day-records { grid-column: 1 / -1; }
+.day-quadrants .day-task-group.drop-target { border-color: var(--wao-primary-line); background: var(--wao-primary-soft); }
+.day-task.dragging { opacity: .55; }
+.task-drag-handle { flex: none; color: var(--wao-text-3); padding-top: 4px; }
+.task-drag-handle.drag-ready, .task-title[draggable='true'] { cursor: grab; }
+.task-drag-handle.drag-ready:active, .task-title[draggable='true']:active { cursor: grabbing; }
 .task-priority-select { min-width: 0; max-width: 100%; min-height: 32px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 12px; padding: 4px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wao-space-1); min-height: 52px; }
 h3 { margin: 0; font-size: 14px; font-weight: 650; color: var(--wao-text); }
