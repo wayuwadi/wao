@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
+import { useIsMobile } from '@/composables/viewport'
 import { renderChatReviewMarkdown } from '@/utils/markdown'
 
 const props = withDefaults(
@@ -13,10 +14,11 @@ const props = withDefaults(
   { imageCount: 0 },
 )
 type Section = 'overview' | 'description' | 'subtasks'
-type Position = { section: Section; scroll: Record<Section, number> }
+type Position = { section: Section; propertiesOpen: boolean; scroll: Record<Section, number> }
 const id = useId()
 const section = ref<Section>('overview')
-const propertiesOpen = ref(false)
+const isMobile = useIsMobile()
+const propertiesOpen = ref(!isMobile.value)
 const scrollArea = ref<HTMLElement>()
 const tabs = computed(() => [
   { id: 'overview' as const, label: '概览' },
@@ -29,6 +31,7 @@ function position(key = props.contextKey): Position {
   if (!positions.has(key))
     positions.set(key, {
       section: 'overview',
+      propertiesOpen: !isMobile.value,
       scroll: { overview: 0, description: 0, subtasks: 0 },
     })
   return positions.get(key)!
@@ -36,6 +39,7 @@ function position(key = props.contextKey): Position {
 function remember(key = props.contextKey) {
   const saved = position(key)
   saved.section = section.value
+  saved.propertiesOpen = propertiesOpen.value
   saved.scroll[section.value] = scrollArea.value?.scrollTop ?? 0
 }
 async function restore() {
@@ -56,6 +60,7 @@ watch(
   (_next, previous) => {
     remember(previous)
     section.value = position().section
+    propertiesOpen.value = position().propertiesOpen
     void restore()
   },
 )
@@ -149,11 +154,11 @@ defineExpose({ selectSection, openProperties })
           <div class="preview-heading">
             <h3>描述</h3>
             <WaoButton variant="ghost" @click="selectSection('description')"
-              >{{ description.trim() || imageCount ? '查看全文' : '添加描述'
+              >{{ $slots.description ? '展开描述' : description.trim() || imageCount ? '查看全文' : '添加描述'
               }}<i class="ri-arrow-right-line" aria-hidden="true"></i
             ></WaoButton>
           </div>
-          <div class="description-preview">
+          <div v-if="!$slots.description" class="description-preview">
             <p v-if="preview">{{ preview }}</p>
             <p v-else>
               {{
@@ -169,12 +174,13 @@ defineExpose({ selectSection, openProperties })
         </section>
         <!-- v-show 保留编辑器、上传和输入法会话；分区切换不重建草稿。 -->
         <section
-          v-show="section === 'description'"
+          v-show="section !== 'subtasks'"
           :id="`${id}-description-panel`"
-          role="tabpanel"
-          :aria-labelledby="`${id}-description-tab`"
+          :class="{ 'overview-description': section === 'overview' }"
+          :role="section === 'description' ? 'tabpanel' : undefined"
+          :aria-labelledby="section === 'description' ? `${id}-description-tab` : undefined"
         >
-          <slot name="description" />
+          <slot name="description" :compact="section === 'overview'" />
         </section>
         <!-- 概览与子任务页签复用同一份列表，保留新增输入、筛选和拖拽状态。 -->
         <section
@@ -204,6 +210,15 @@ defineExpose({ selectSection, openProperties })
 </template>
 
 <style scoped>
+.overview-description {
+  height: clamp(160px, 24vh, 220px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--wao-line);
+  border-radius: var(--wao-radius-control);
+  padding: var(--wao-space-1);
+}
+.overview-description :deep(.field) { padding: 0; margin: 0; }
 .task-detail-layout {
   flex: 1;
   min-height: 0;

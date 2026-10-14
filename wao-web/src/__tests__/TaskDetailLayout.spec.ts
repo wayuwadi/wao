@@ -22,14 +22,13 @@ function layout() {
 }
 
 describe('任务详情分区与浏览状态', () => {
-  it('长描述和图片仅预览原文，首屏子任务可见且全文仍可访问', async () => {
+  it('概览直接展示同一编辑器，固定区域可展开全文且子任务可见', async () => {
     const wrapper = layout()
     expect(wrapper.get('[data-section="overview"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.get('input').isVisible()).toBe(true)
-    expect(wrapper.get('textarea[aria-label="描述草稿"]').isVisible()).toBe(false)
+    expect(wrapper.get('textarea[aria-label="描述草稿"]').isVisible()).toBe(true)
     expect(wrapper.find('.description-preview img').exists()).toBe(false)
-    expect(wrapper.get('.description-preview p').text().length).toBeLessThanOrEqual(280)
-    expect(wrapper.get('.preview-image-hint').text()).toContain('包含图片')
+    expect(wrapper.find('.overview-description').exists()).toBe(true)
     await wrapper.get('.preview-heading button').trigger('click')
     expect(wrapper.get('textarea[aria-label="描述草稿"]').isVisible()).toBe(true)
     expect(wrapper.get('input').isVisible()).toBe(false)
@@ -69,8 +68,7 @@ describe('任务详情分区与浏览状态', () => {
   it('属性与评论收起不丢输入，Esc 收起并将焦点返回属性入口', async () => {
     const wrapper = layout()
     const toggle = wrapper.get('.properties-toggle')
-    expect(wrapper.get('.detail-properties').isVisible()).toBe(false)
-    await toggle.trigger('click')
+    expect(wrapper.get('.detail-properties').isVisible()).toBe(true)
     const comment = wrapper.get('textarea[aria-label="评论草稿"]')
     await comment.setValue('未发送的评论')
     await comment.trigger('keydown', { key: 'Escape' })
@@ -84,8 +82,8 @@ describe('任务详情分区与浏览状态', () => {
   it('支持方向键与首尾导航，空描述给出真实空态且数量随数据刷新', async () => {
     const wrapper = layout()
     await wrapper.setProps({ description: '', subtaskCount: 0 })
-    expect(wrapper.get('.description-preview').text()).toContain('暂无描述')
-    expect(wrapper.get('.preview-heading button').text()).toContain('添加描述')
+    expect(wrapper.get('textarea[aria-label="描述草稿"]').isVisible()).toBe(true)
+    expect(wrapper.get('.preview-heading button').text()).toContain('展开描述')
     await wrapper.get('[data-section="overview"]').trigger('keydown', { key: 'End' })
     expect(wrapper.get('[data-section="subtasks"]').attributes('aria-selected')).toBe('true')
     expect(document.activeElement).toBe(wrapper.get('[data-section="subtasks"]').element)
