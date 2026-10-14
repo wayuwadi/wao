@@ -572,15 +572,59 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
-  it('默认展示概览并收起属性，点击子任务后在弹框主区切成子任务详情', async () => {
+  it('顶部删除入口确认当前对象，失败可重试且不关闭详情，取消不删', async () => {
+    ui.openTask(taskId)
+    const remove = vi.spyOn(data, 'deleteTask').mockResolvedValueOnce(false).mockResolvedValue(true)
+    const w = mountDrawer(); await flushPromises()
+    await w.get('[aria-label="删除当前任务"]').trigger('click')
+    expect(document.querySelector('.settings-dialog-shell')).not.toBeNull()
+    expect(remove).not.toHaveBeenCalled()
+    document.querySelector<HTMLButtonElement>('.settings-dialog-shell .wao-button--secondary')!.click(); await flushPromises()
+    expect(remove).not.toHaveBeenCalled()
+    await w.get('[aria-label="删除当前任务"]').trigger('click')
+    document.querySelector<HTMLButtonElement>('.settings-dialog-shell .wao-button--danger')!.click(); await flushPromises()
+    expect(remove).toHaveBeenCalledWith(taskId)
+    expect(document.querySelector('.settings-dialog-shell')!.textContent).toContain('删除失败')
+    expect(ui.openTaskId).toBe(taskId)
+    document.querySelector<HTMLButtonElement>('.settings-dialog-shell .wao-button--danger')!.click(); await flushPromises()
+    expect(ui.openTaskId).toBeNull()
+    remove.mockRestore()
+  })
+  it('顶部子任务删除只移除确认的子任务并保留父任务和其他子任务', async () => {
+    const first = data.addSub(taskId, '待删除子任务')!
+    const second = data.addSub(taskId, '保留子任务')!
+    ui.openTask(taskId, first)
+    const removeTask = vi.spyOn(data, 'deleteTask')
+    const w = mountDrawer(); await flushPromises()
+    await w.get('[aria-label="删除当前子任务"]').trigger('click')
+    expect(document.querySelector('.settings-dialog-shell')!.textContent).toContain('待删除子任务')
+    document.querySelector<HTMLButtonElement>('.settings-dialog-shell .wao-button--danger')!.click(); await flushPromises()
+    expect(data.subById(taskId, first)).toBeUndefined()
+    expect(data.subById(taskId, second)?.text).toBe('保留子任务')
+    expect(data.taskById(taskId)).toBeDefined()
+    expect(removeTask).not.toHaveBeenCalled()
+    expect(ui.openTaskId).toBe(taskId)
+    expect(ui.openTaskSubId).toBeNull()
+    removeTask.mockRestore()
+  })
+  it('类型选择器使用带图标的菜单，保存到原任务字段', async () => {
+    ui.openTask(taskId)
+    const w = mountDrawer(); await flushPromises()
+    await w.get('[aria-label="工作项类型"]').trigger('click')
+    const requirement = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(button => button.textContent?.includes('需求'))!
+    requirement.click(); await flushPromises()
+    expect(data.taskById(taskId)!.workItemType).toBe('requirement')
+    expect(w.get('[aria-label="工作项类型"]').text()).toContain('需求')
+  })
+  it('默认展示概览并展开属性，点击子任务后在弹框主区切成子任务详情', async () => {
     const subId = data.addSub(taskId, '扫描身份证')!
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
 
-    expect(w.get('.detail-properties').isVisible()).toBe(false)
-    await w.get('.properties-toggle').trigger('click')
     expect(w.get('.detail-properties').isVisible()).toBe(true)
+    await waitFor(w, '.overview-description .md-body')
+    expect(w.get('.overview-description .md-body').isVisible()).toBe(true)
     // 只看右侧栏——「自定义属性」这几个字也出现在种子数据的评论里，全局断言会误判
     expect(w.find('.props').text()).toContain('自定义属性')
     expect(w.find('.type-line').text()).toContain('任务')
