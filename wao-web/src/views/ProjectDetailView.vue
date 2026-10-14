@@ -82,6 +82,9 @@ const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
   return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' ? q : 'list'
 })
+watch(pdTaskView, (view) => {
+  if (view === 'quadrant') actionFilter.value = 'all'
+})
 
 function setTab(t: string) {
   router.replace({ query: { ...route.query, tab: t === '任务' ? undefined : t } })
@@ -908,7 +911,7 @@ watch(visibleTaskIds, (ids) => {
       </template>
     </div>
 
-    <div v-if="projTab === '任务'" class="project-action-filters" role="group" aria-label="需要处理事项快捷筛选">
+    <div v-if="projTab === '任务' && pdTaskView !== 'quadrant'" class="project-action-filters" role="group" aria-label="需要处理事项快捷筛选">
       <span class="action-count-scope">项目计数</span>
       <button :aria-pressed="actionFilter === 'all'" @click="actionFilter = 'all'">全部</button>
       <button v-for="filter in PROJECT_ACTION_FILTERS" :key="filter.id" :aria-pressed="actionFilter === filter.id"
@@ -1402,9 +1405,10 @@ watch(visibleTaskIds, (ids) => {
 }
 .detail.detail-quadrant { display: flex; flex-direction: column; flex: 1; width: 100%; min-width: 0; min-height: 0; box-sizing: border-box; margin: 0; }
 .detail-quadrant > :not(.project-task-content) { flex-shrink: 0; }
-.detail-quadrant .task-view-toolbar { flex-basis: auto; }
+.detail-quadrant > .task-view-toolbar { flex-basis: auto; }
 .detail-quadrant .project-task-content { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .detail-quadrant .project-normal-tasks > :not(.quadrant-view) { flex-shrink: 0; }
+.detail-quadrant :deep(.quadrant-toolbar:empty) { display: none; }
 .detail-quadrant :deep(.copy-preview) { max-height: 25vh; overflow: auto; }
 .spacer {
   flex: 1;
