@@ -46,7 +46,7 @@ import Underline from '@tiptap/extension-underline'
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details'
 import UniqueID from '@tiptap/extension-unique-id'
 import { common, createLowlight } from 'lowlight'
-import DOMPurify from 'dompurify'
+import { isCodexThreadUrl, normalizedLinkUrl, sanitizeContentHtml } from '@/utils/contentLinks'
 import 'katex/dist/katex.min.css'
 import { polishDocumentText } from '@/api/assistant'
 import { newPolishRequestId } from '@/api/polishJobs'
@@ -115,7 +115,7 @@ const OrderedListContinuation = Extension.create({
 
 /** 清理 Word / 飞书粘贴 HTML：保留语义标签，去掉脚本、事件、任意样式和危险 URL。 */
 function sanitizePastedHtml(source: string): string {
-  const safe = DOMPurify.sanitize(source, {
+  const safe = sanitizeContentHtml(source, {
     FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form'],
     FORBID_ATTR: ['srcdoc'],
   })
@@ -791,6 +791,9 @@ const editor = useEditor({
         // 可编辑态由下方 handleClick 统一“选中整段 + 安全新开窗口”，避免插件与编辑菜单各开一次。
         openOnClick: false,
         enableClickSelection: false,
+        protocols: ['codex'],
+        isAllowedUri: (url, context) => /^codex:/i.test(url)
+          ? isCodexThreadUrl(url) : context.defaultValidate(url),
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
       },
     }),
@@ -1444,27 +1447,6 @@ function openLinkEditor() {
   e.commands.blur()
 }
 
-/** 补全常见裸域名，同时拒绝会执行脚本或读取本地数据的协议。 */
-function normalizedLinkUrl(raw: string): string | null {
-  const value = raw.trim()
-  const unsafeSpacing = [...value].some((character) => {
-    const code = character.charCodeAt(0)
-    return /\s/u.test(character) || code < 0x20 || code === 0x7f
-  })
-  if (!value || unsafeSpacing) return null
-  if (/^[\w.-]+\.[a-z]{2,}(?:[/:?#].*)?$/i.test(value)) return `https://${value}`
-  if (/^(\/|#|\.\.?\/)/.test(value)) return value
-  if (/^mailto:[^@]+@[^@]+$/i.test(value)) return value
-  if (/^tel:\+?[0-9().-]+$/i.test(value)) return value
-  try {
-    const parsed = new URL(value)
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return value
-  } catch {
-    // 不是可解析的绝对 HTTP(S) 地址。
-  }
-  return null
-}
-
 function saveLink() {
   const e = editor.value
   const dialog = linkDialog.value
@@ -1476,7 +1458,7 @@ function saveLink() {
     return
   }
   if (!href) {
-    dialog.error = '请输入 http(s)、邮件、电话或站内相对地址'
+    dialog.error = '请输入网页、邮件、电话、站内地址或有效的 Codex 聊天链接'
     return
   }
   const inserted = e

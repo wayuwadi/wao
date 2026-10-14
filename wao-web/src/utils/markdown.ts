@@ -7,6 +7,7 @@
 import DOMPurify from 'dompurify'
 import { Marked } from 'marked'
 import { listIndent, listIndentStyle, readIndentedList } from './listIndent'
+import { sanitizeContentHtml } from './contentLinks'
 
 const marked = new Marked({
   /** 单个换行即断行 —— 用户在描述框里敲回车就该换行，不需要敲两次。 */
@@ -119,7 +120,7 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 export function renderMarkdown(text: string): string {
   if (!text?.trim()) return ''
   const html = marked.parse(text, { async: false })
-  return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR: [...ALLOWED_ATTR, 'data-list-indent'] })
+  return sanitizeContentHtml(html, { ALLOWED_TAGS, ALLOWED_ATTR: [...ALLOWED_ATTR, 'data-list-indent'] })
 }
 
 /**

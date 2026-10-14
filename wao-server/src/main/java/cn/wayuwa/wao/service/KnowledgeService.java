@@ -2066,7 +2066,7 @@ public class KnowledgeService {
                 if (!RICH_MARK_TYPES.contains(markType)) {
                     throw new BadRequestException("文档包含不支持的文字样式：" + markType);
                 }
-                validateRichAttrs(mark.get("attrs"), null);
+                validateRichAttrs(mark.get("attrs"), markType);
             }
         }
         validateRichAttrs(node.get("attrs"), type);
@@ -2116,7 +2116,9 @@ public class KnowledgeService {
             }
             if (("href".equals(entry.getKey()) || "src".equals(entry.getKey()) || "url".equals(entry.getKey())
                     || "snapshot".equals(entry.getKey()))
-                    && value.isTextual() && !value.asText().isBlank() && !safeRichUrl(value.asText())) {
+                    && value.isTextual() && !value.asText().isBlank() && !safeRichUrl(value.asText())
+                    && !("link".equals(nodeType) && "href".equals(entry.getKey())
+                        && CODEX_THREAD_URL.matcher(value.asText()).matches())) {
                 throw new BadRequestException("文档包含不安全的资源地址");
             }
             if (("color".equals(entry.getKey()) || "backgroundColor".equals(entry.getKey()))
@@ -2144,6 +2146,10 @@ public class KnowledgeService {
             }
         });
     }
+
+    private static final Pattern CODEX_THREAD_URL = Pattern.compile(
+            "codex://threads/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            Pattern.CASE_INSENSITIVE);
 
     private static boolean safeRichUrl(String raw) {
         String value = raw == null ? "" : raw.trim().toLowerCase();
