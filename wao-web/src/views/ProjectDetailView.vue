@@ -1345,9 +1345,11 @@ watch(visibleTaskIds, (ids) => {
   </div>
   <ContextActionMenu ref="taskMenu" />
   <SettingsDialogShell v-if="deletion" :title="deletion.subId ? '删除子任务' : '删除任务'" width="460px" height="auto" @close="!deleting && (deletion = null)">
+    <div class="task-delete-body">
     <p class="task-delete-title">确定删除「{{ deletion.title }}」？</p>
     <p>{{ deletion.subId ? '下级子事项保留并上移一级。' : '内嵌子事项一并删除，独立下级任务保留并移回顶层。' }}此操作不可恢复。</p>
     <p v-if="operationError" class="task-operation-error" role="alert">{{ operationError }}</p>
+    </div>
     <template #footer><WaoButton :disabled="deleting" @click="deletion = null">取消</WaoButton><WaoButton variant="danger" :loading="deleting" :disabled="operationBusy" @click="confirmDelete">{{ operationError ? '重试删除' : '确认删除' }}</WaoButton></template>
   </SettingsDialogShell>
 </template>
@@ -1359,6 +1361,9 @@ watch(visibleTaskIds, (ids) => {
 .task-operation-error { color: var(--wao-danger-strong); font-size: 13px; }
 .task-operation-error button { margin-left: 8px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .task-delete-title { overflow-wrap: anywhere; color: var(--wao-text); }
+.task-delete-body { padding: var(--wao-space-3); overflow-wrap: anywhere; }
+.task-delete-body p { margin: 0; }
+.task-delete-body p + p { margin-top: var(--wao-space-2); }
 .project-task-table th { position: relative; }
 .column-resize-handle { position: absolute; inset: 0 -5px 0 auto; width: 10px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; z-index: 2; }
 .column-resize-handle::after { content: ''; position: absolute; inset: 6px 4px; background: var(--wao-line-control); }
