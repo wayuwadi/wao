@@ -1,0 +1,16 @@
+{
+  "id": "projects-card-summary-2026-10-14",
+  "publishedOn": "2026-10-14",
+  "sourceSubject": "fix(projects): 精简项目卡片底部信息",
+  "title": "项目卡片更清爽",
+  "intro": "移除卡片底部两组重复任务统计及未排期占位，保留项目的主要信息。",
+  "prominence": "minor",
+  "highlights": [{
+    "featureId": "projects",
+    "eyebrow": "项目列表",
+    "title": "卡片聚焦项目名称与目标",
+    "summary": "任务总数和内嵌子项统计不再重复占用项目卡片空间。",
+    "points": ["移除未收尾／任务总数与内嵌子项统计。", "未排期不再占位；真实截止日期和成员头像仍保留。"],
+    "steps": ["打开项目列表，查看精简后的卡片。", "进入项目任务页查看任务数量，或继续按任务收尾率排序。"]
+  }]
+}
