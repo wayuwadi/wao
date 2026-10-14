@@ -248,7 +248,7 @@ const searchRequest = ref(0)
 const sort = ref<'updatedDesc' | 'createdDesc' | 'updatedAsc'>('updatedDesc')
 const imageFilter = ref<'all' | 'yes' | 'no'>('all')
 const timeFilter = ref<'all' | 'today' | 'yesterday' | 'earlier'>('all')
-const selectedAuthor = ref('__me__')
+const selectedAuthor = ref('')
 const showSystemArticles = ref(true)
 const filterOpen = ref(false)
 const filterControl = ref<HTMLElement>()
@@ -267,7 +267,7 @@ useOverlayDismiss(() => pageActionsOpen.value, closePageActions, event => {
 const selectedTag = ref<string | null>('')
 const noteListPreferenceLoaded = ref(false)
 let noteListPreferenceMember = ''
-function noteListPreferenceKey(member: string) { return `wao-note-list-preferences-v2:${member}` }
+function noteListPreferenceKey(member: string) { return `wao-note-list-preferences-v3:${member}` }
 function restoreNoteListPreferences(member: string) {
   noteListPreferenceLoaded.value = false
   noteListPreferenceMember = member
@@ -276,11 +276,13 @@ function restoreNoteListPreferences(member: string) {
   searchFocus.value = { id: '', term: '' }
   filterOpen.value = false
   try {
-    const saved = member ? JSON.parse(localStorage.getItem(noteListPreferenceKey(member)) || 'null') as Partial<{ sort: string; imageFilter: string; timeFilter: string; selectedAuthor: string; selectedTag: string | null; showSystemArticles: boolean }> | null : null
+    const current = member ? localStorage.getItem(noteListPreferenceKey(member)) : null
+    const previous = member && current === null ? localStorage.getItem(`wao-note-list-preferences-v2:${member}`) : null
+    const saved = member ? JSON.parse(current ?? previous ?? 'null') as Partial<{ sort: string; imageFilter: string; timeFilter: string; selectedAuthor: string; selectedTag: string | null; showSystemArticles: boolean }> | null : null
     if (saved?.sort && ['updatedDesc', 'createdDesc', 'updatedAsc'].includes(saved.sort)) sort.value = saved.sort as typeof sort.value
     if (saved?.imageFilter && ['all', 'yes', 'no'].includes(saved.imageFilter)) imageFilter.value = saved.imageFilter as typeof imageFilter.value
     if (saved?.timeFilter && ['all', 'today', 'yesterday', 'earlier'].includes(saved.timeFilter)) timeFilter.value = saved.timeFilter as typeof timeFilter.value
-    if (typeof saved?.selectedAuthor === 'string') selectedAuthor.value = saved.selectedAuthor
+    if (current !== null && typeof saved?.selectedAuthor === 'string') selectedAuthor.value = saved.selectedAuthor
     if (saved?.selectedTag === null || typeof saved?.selectedTag === 'string') selectedTag.value = saved.selectedTag
     if (typeof saved?.showSystemArticles === 'boolean') showSystemArticles.value = saved.showSystemArticles
   } catch { /* 忽略损坏的列表偏好，使用默认筛选。 */ }
@@ -294,14 +296,14 @@ watch([sort, imageFilter, timeFilter, selectedAuthor, selectedTag, showSystemArt
   catch { /* 偏好无法持久化时仍可在当前页面使用筛选。 */ }
 }, { flush: 'sync' })
 const activeFilterCount = computed(() => Number(!!selectedTag.value || selectedTag.value === null)
-  + Number(selectedAuthor.value !== '__me__') + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc') + Number(!showSystemArticles.value))
+  + Number(selectedAuthor.value !== '') + Number(imageFilter.value !== 'all') + Number(timeFilter.value !== 'all') + Number(sort.value !== 'updatedDesc') + Number(!showSystemArticles.value))
 const filterSummary = computed(() => [selectedTag.value === null ? '无标签' : selectedTag.value ? `# ${selectedTag.value}` : '',
   selectedAuthor.value === '__me__' ? '我的小记' : selectedAuthor.value ? `作者：${authorName(selectedAuthor.value)}` : '全部作者',
   showSystemArticles.value ? '' : '已隐藏系统文章',
   imageFilter.value === 'yes' ? '有图' : imageFilter.value === 'no' ? '无图' : '',
   { today: '今天', yesterday: '昨天', earlier: '以前', all: '' }[timeFilter.value],
   { updatedDesc: '最近更新', createdDesc: '最近创建', updatedAsc: '最早更新' }[sort.value]].filter(Boolean).join(' · '))
-function resetFilters() { selectedTag.value = ''; selectedAuthor.value = '__me__'; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc'; showSystemArticles.value = true }
+function resetFilters() { selectedTag.value = ''; selectedAuthor.value = ''; imageFilter.value = 'all'; timeFilter.value = 'all'; sort.value = 'updatedDesc'; showSystemArticles.value = true }
 function onOutsideFilter(event: PointerEvent) {
   if (!filterControl.value?.contains(event.target as Node)) filterOpen.value = false
   if (readerMore.value?.open && !readerMore.value.contains(event.target as Node)) closeReaderMore()
@@ -1197,7 +1199,7 @@ onMounted(() => void loadPins())
       <aside v-show="writingOpen" id="notes-writing-pane" class="writing-pane" aria-label="新建小记区">
         <NoteComposer ref="newComposer" :key="`${session.currentUser.id}:new`" :focus-request="writingFocusRequest" :loading="loading" :tag-options="availableTags" @tag-created="tagNames = [...new Set([...tagNames, $event])]" @saved="onCreated" />
       </aside>
-      <div v-show="writingOpen" class="writing-resizer" role="separator" tabindex="0" aria-label="调整记录区宽度" aria-orientation="vertical" aria-controls="notes-writing-pane" :aria-valuenow="writingPercentage" aria-valuemin="25" aria-valuemax="60" :aria-valuetext="`记录区宽度 ${writingPercentage}%`" title="拖拽调整宽度，双击恢复三分之一；方向键微调" @pointerdown="startWritingResize" @keydown="resizeWritingByKey" @dblclick="resetWritingWidth"><span aria-hidden="true"></span></div>
+      <div v-show="writingOpen" class="writing-resizer" role="separator" tabindex="0" aria-label="调整记录区宽度" aria-orientation="vertical" aria-controls="notes-writing-pane" :aria-valuenow="writingPercentage" aria-valuemin="25" aria-valuemax="60" :aria-valuetext="`记录区宽度 ${writingPercentage}%`" title="拖拽调整宽度，双击恢复默认宽度；方向键微调" @pointerdown="startWritingResize" @keydown="resizeWritingByKey" @dblclick="resetWritingWidth"><span aria-hidden="true"></span></div>
       <section ref="notesList" class="notes-list" aria-label="小记清单" @scroll.passive="onNotesScroll">
         <div class="list-toolbar">
           <label class="search"><i class="ri-search-line"></i><input v-model="query" type="search" placeholder="搜索内容或标签" aria-label="搜索小记内容"><button v-if="query" type="button" aria-label="清除小记查找" @click="query = ''">清除</button></label>
@@ -1361,7 +1363,7 @@ h1 i { color: #7a5cc6; }
 .page-heading > span { color: var(--wao-text-faint); white-space: nowrap; font-size: 12px; }
 .writing-toggle { margin: 0; white-space: nowrap; border: 1px solid var(--wao-line-control); }
 .writing-toggle i { margin-right: 6px; }
-.notes-workspace { display: grid; grid-template-columns: clamp(240px, var(--notes-writing-width, 33.333333%), calc(100% - 340px)) 20px minmax(0, 1fr); gap: 0; align-items: stretch; }
+.notes-workspace { display: grid; grid-template-columns: clamp(240px, var(--notes-writing-width, clamp(33.333333%, 600px, 60%)), calc(100% - 340px)) 20px minmax(0, 1fr); gap: 0; align-items: stretch; }
 .writing-resizer { display: flex; align-items: center; justify-content: center; min-height: 80px; cursor: col-resize; touch-action: none; outline: none; }
 .writing-resizer span { width: 3px; height: 48px; border-radius: 3px; background: var(--wao-line-control); transition: background .15s, height .15s; }
 .writing-resizer:hover span, .writing-resizer:focus-visible span, .resizing .writing-resizer span { height: 80px; background: var(--wao-primary); }
@@ -1370,6 +1372,7 @@ h1 i { color: #7a5cc6; }
 .resizing .writing-pane, .resizing .notes-list { pointer-events: none; }
 .notes-workspace.writing-collapsed { grid-template-columns: minmax(0, 1fr); }
 .writing-collapsed .notes-list { border-left: 0; }
+.writing-pane :deep(.composer-footer > button) { flex-shrink: 0; white-space: nowrap; }
 .writing-pane { min-width: 0; position: sticky; top: 20px; }
 .companion-receipt { color:var(--wao-primary-text); opacity:0; visibility:hidden; }
 .companion-receipt.unread, .note-card:hover .companion-receipt, .note-card:focus-within .companion-receipt { opacity:1; visibility:visible; }
