@@ -17,6 +17,8 @@ Jenkins 使用 `deploy/jenkins/windows-build-deploy.ps1`，由维护者提供独
 
 V33 从当前部署制品原样取得，保持字节和 SHA256，不手工重写。Maven 的 `legacy-migration-compat` profile 将其复制到构建资源，公开源码不保存旧 Webhook。构建脚本再次验证最终 JAR 中的字节哈希；资源缺失、哈希错误或位于公开源码目录内时拒绝发布。
 
+带兼容资源的生产 JAR 仍含旧迁移内容，只保存在私有构建和生产目录，不能上传到公开 Release、制品附件或源码压缩包。面向社区的制品须从公开源码进行普通构建，不启用此私有 profile。
+
 因此原数据库的已执行 Flyway 校验和保持有效，不运行 `repair`，不修改历史表，也不重新执行旧初始化 SQL。新安装不提供兼容目录，直接使用公开迁移和独立空数据库。
 
 首次切换时，私有 `open-source-commit-map.private` 把旧发布 SHA 对应到脱敏后的同一版本。后续直接使用公开历史；找不到唯一映射时构建失败，不猜测发布范围。
