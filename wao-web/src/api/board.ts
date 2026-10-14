@@ -74,6 +74,11 @@ export const apiMergeNoteTag = (source: string, target: string) => post<void>('/
 export const fetchOrg = () => get<Org>('/api/org')
 export const fetchAreas = () => get<Area[]>('/api/areas')
 export const fetchProjects = () => get<Project[]>('/api/projects')
+/** 设置冲突恢复读取最新快照，不使用本机短缓存。 */
+export async function apiGetProject(id: string): Promise<Project> {
+  const res = await http.get<ApiResponse<Project>>(`/api/projects/${encodeURIComponent(id)}`)
+  return res.data.data
+}
 export const fetchTasks = () => get<Task[]>('/api/tasks')
 /** 单条任务最新快照；不走桌面短缓存，用于保存冲突后的合并。 */
 export const apiGetTask = (id: string) => get<Task>(`/api/tasks/${encodeURIComponent(id)}`)
@@ -294,6 +299,8 @@ export async function apiCreateProject(payload: CreateProjectPayload): Promise<P
 }
 
 export interface PatchProjectPayload {
+  members?: string[]
+  expectedMembers?: string[]
   /** 不传表示不改；空串清空截止日期。 */
   due?: string
   name?: string

@@ -1701,6 +1701,15 @@ components:
       type: object
       description: 空字段不改
       properties:
+        members:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: 仅项目负责人可替换成员列表，省略不改，空数组保留负责人；成员必须来自组织目录
+        expectedMembers:
+          type: array
+          items: { type: string }
+          description: 修改成员时必填的编辑前快照；成员或项目详情并发变化返回 409，非负责人返回 403
         due: { type: string, nullable: true, description: "yyyy-MM-dd；省略或 null 不改，空串清空；无效日期拒绝保存" }
         name: { type: string }
         area: { type: string }
