@@ -397,15 +397,11 @@ onBeforeUnmount(() => {
               </div>
               <div class="pc-goal">{{ p.goalShort }}</div>
               <div class="pc-meta">
-                <span class="pc-m" :title="'任务实体各计一次；主任务已完成但内嵌子项未全部完成时仍未收尾。'"><i class="ri-checkbox-circle-line"></i>{{ data.taskLoadState === 'loaded' ? p.completionLabel : data.taskLoadState === 'error' ? '任务计数读取失败' : '任务计数加载中…' }}</span>
-                <span class="pc-m" :style="{ color: p.dueColor }"><i class="ri-calendar-line"></i>{{ p.dueStr }}</span>
+                <span v-if="p.due" class="pc-m" :style="{ color: p.dueColor }"><i class="ri-calendar-line"></i>{{ p.dueStr }}</span>
                 <span class="spacer"></span>
                 <span class="pc-avs">
                   <span v-for="(mv, i) in p.memberAvs" :key="i" class="pc-av" :style="{ background: mv.color }">{{ mv.initial }}</span>
                 </span>
-              </div>
-              <div v-if="data.taskLoadState === 'loaded' && p.completion.subTotal" class="pc-m" title="内嵌清单子项单独计数，不加入任务总数；包括全部层级。">
-                内嵌子项未收尾 {{ p.completion.subOpen }}／共 {{ p.completion.subTotal }} 项
               </div>
             </div>
           </div>
