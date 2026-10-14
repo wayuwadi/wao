@@ -9,6 +9,7 @@ import TodoTaskChecklist from '@/components/todo/TodoTaskChecklist.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
 import NoteReadingImages from '@/components/notes/NoteReadingImages.vue'
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
+import ProjectSettingsLayout, { type ProjectSettingsTab } from '@/components/ui/ProjectSettingsLayout.vue'
 import AiSettingsLayout from '@/components/ui/AiSettingsLayout.vue'
 import AiSettingsToggleRow from '@/components/ui/AiSettingsToggleRow.vue'
 import AiPromptEditor from '@/components/ui/AiPromptEditor.vue'
@@ -58,6 +59,8 @@ async function readTokens() {
 watch(theme, readTokens)
 onMounted(readTokens)
 const sampleTitle = ref('给一个念头留个位置')
+const projectDemoTab = ref<ProjectSettingsTab>('basic')
+const projectDemoName = ref('阅读计划（演示）')
 const sampleError = ref('')
 const feedback = ref('')
 
@@ -387,6 +390,18 @@ const detailDemoComment = ref('')
                 <WaoButton @click="dialog = item.id">查看{{ item.label }}</WaoButton></WaoCard
               >
             </div>
+          </section>
+          <section class="reference-section">
+            <h2>项目设置分项</h2>
+            <p>基本信息直接编辑，成员与危险操作分开。以下为合成演示，切换不清空输入，不读取成员或写入账号。</p>
+            <SettingsDialogShell title="项目设置示例" description="合成演示" width="760px" height="auto" embedded :theme="theme">
+              <ProjectSettingsLayout v-model="projectDemoTab" :member-count="2">
+                <template #basic><WaoField v-slot="field" label="项目名称"><input :id="field.id" v-model="projectDemoName" /></WaoField></template>
+                <template #members><p>示例负责人 · 负责人</p><p>示例成员 · 项目成员</p></template>
+                <template #more><p>删除项目需要二次确认，失败时保留项目和输入。</p><WaoButton variant="danger" @click="feedback = '删除仅为演示，没有修改账号。'">删除示例</WaoButton></template>
+              </ProjectSettingsLayout>
+              <template #footer><div class="demo-save-footer"><span>演示输入留在本页</span><WaoButton variant="primary" @click="feedback = '项目设置演示，没有保存到账号。'">演示保存并关闭</WaoButton></div></template>
+            </SettingsDialogShell>
           </section>
           <WaoCard variant="soft"
             ><h3>一套外壳，保留各自的业务语义。</h3>

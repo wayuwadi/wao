@@ -96,7 +96,7 @@ describe('设计参考的本地交互与复用边界', () => {
       .find((button) => button.textContent?.trim() === '演示保存')!
       .click()
     await vi.advanceTimersByTimeAsync(800)
-    expect(document.querySelector('.settings-dialog-shell')!.textContent).toContain(
+    expect(document.querySelector('.settings-dialog-mask:not(.embedded) .settings-dialog-shell')!.textContent).toContain(
       '演示已保存 · 未写入账号',
     )
     wrapper.unmount()

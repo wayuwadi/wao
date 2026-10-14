@@ -1848,15 +1848,9 @@ export const useDataStore = defineStore('data', () => {
 
   /** 删除项目及其任务；知识库和文档独立保留；apiLive 时写透后端。 */
   async function deleteProject(id: string) {
+    if (apiLive.value) await apiDeleteProject(id)
     projects.value = projects.value.filter((p) => p.id !== id)
     tasks.value = tasks.value.filter((t) => t.project !== id)
-    if (apiLive.value) {
-      try {
-        await apiDeleteProject(id)
-      } catch {
-        /* 后端删除失败时不回滚，避免残留幽灵项目困扰 UI */
-      }
-    }
   }
 
   /** 把任务先落本地草稿，再以 600ms 去抖、严格串行的方式写透后端。 */
