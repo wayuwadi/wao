@@ -13,3 +13,6 @@
 - [CLI 能力说明](specs/wao-cli.md)
 
 安全和贡献约定在根目录 [SECURITY.md](../SECURITY.md)、[CONTRIBUTING.md](../CONTRIBUTING.md)。
+
+- [当前功能细则](specs/README.md)
+- [旧 SHA 到公开历史 SHA 的映射](history-map.tsv)
