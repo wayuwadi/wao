@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { ref } from 'vue'
 const fetchDay = vi.hoisted(() => vi.fn())
 vi.mock('@/api/dayWorkspace', async importOriginal => ({ ...await importOriginal<typeof import('@/api/dayWorkspace')>(), fetchDayWorkspace: fetchDay }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }), useRoute: () => ({ query: {} }) }))
@@ -211,6 +212,84 @@ describe('待办日工作区', () => {
     expect(wrapper.get('[data-group="P3"] .task-error').text()).toContain('保存失败')
     expect(wrapper.get<HTMLSelectElement>('.task-priority-select').element.value).toBe('P3')
     expect(wrapper.get('[data-group="P0"]').text()).toContain('这个象限没有当天待办')
+    wrapper.unmount()
+  })
+  const dragFixture = async () => {
+    const data = useDataStore(), task = data.tasks[0]!
+    task.pr = 'P0'; task.status = '进行中'; task.subs = []
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [{ task, snapshot: task, planned: true, events: [] }] })
+    localStorage.setItem('wao-todo-day-view-v1:a:wg', 'quadrant')
+    const patch = vi.spyOn(data, 'patchTask'), flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    const saveState = ref<'idle' | 'error' | 'saving'>('idle')
+    vi.spyOn(data, 'taskSaveState').mockImplementation(() => saveState.value)
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' }, global: { stubs: { TaskSchedulePopover: true, NoteComposer: true } } }); await flushPromises()
+    const transfer = { effectAllowed: '', dropEffect: '', setData: vi.fn() }
+    return { data, task, wrapper, patch, flush, transfer, saveState }
+  }
+  it('任务标题可拖到四个象限及空象限，自动调整优先级并保存', async () => {
+    const { task, wrapper, patch, flush, transfer } = await dragFixture()
+    for (const priority of ['P1', 'P3', 'P2', 'P0']) {
+      await wrapper.get('.task-title').trigger('dragstart', { dataTransfer: transfer })
+      await wrapper.get(`[data-group="${priority}"] h3`).trigger('dragover', { dataTransfer: transfer })
+      expect(wrapper.get(`[data-group="${priority}"]`).classes()).toContain('drop-target')
+      await wrapper.get(`[data-group="${priority}"] h3`).trigger('drop', { dataTransfer: transfer }); await flushPromises()
+      expect(wrapper.get(`[data-group="${priority}"] .task-title`).text()).toBe(task.title)
+      expect(patch).toHaveBeenLastCalledWith(task.id, { pr: priority })
+      expect(flush).toHaveBeenLastCalledWith(task.id)
+      expect(wrapper.find('.drop-target').exists()).toBe(false)
+    }
+    expect(transfer.setData).toHaveBeenCalledWith('application/x-wao-day-task', task.id)
+    wrapper.unmount()
+  })
+  it('同格释放、取消和外部编号释放不保存，内部进展编辑区不接受任务释放', async () => {
+    const { wrapper, patch, flush, transfer } = await dragFixture()
+    await wrapper.get('[data-group="P3"]').trigger('drop', { dataTransfer: transfer })
+    await wrapper.get('.task-drag-handle').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('[data-group="P0"]').trigger('drop', { dataTransfer: transfer })
+    await wrapper.get('.task-title').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('.task-title').trigger('dragend')
+    await wrapper.get('[data-group="P3"]').trigger('drop', { dataTransfer: transfer })
+    await wrapper.get('.task-title').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('.task-priority-select').trigger('drop', { dataTransfer: transfer })
+    await flushPromises()
+    expect(patch).not.toHaveBeenCalled(); expect(flush).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-group="P0"] .task-title').exists()).toBe(true)
+    wrapper.unmount()
+  })
+  it('失败保留新象限与原地重试，保存中不能发起或完成拖动', async () => {
+    const { data, task, wrapper, patch, flush, transfer, saveState } = await dragFixture()
+    saveState.value = 'error'
+    vi.spyOn(data, 'taskSaveError').mockReturnValue('保存失败，选择仍保留')
+    await wrapper.get('.task-title').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.get('[data-group="P3"]').trigger('drop', { dataTransfer: transfer }); await flushPromises()
+    expect(wrapper.get('[data-group="P3"] [role="alert"]').text()).toContain('保存失败')
+    await wrapper.findAll('[role="alert"] button').find(item => item.text() === '重试保存')!.trigger('click')
+    expect(flush).toHaveBeenCalledTimes(2)
+    expect(flush).toHaveBeenLastCalledWith(task.id)
+    await wrapper.get('.task-title').trigger('dragstart', { dataTransfer: transfer })
+    saveState.value = 'saving'; await flushPromises()
+    expect(wrapper.get('.task-title').attributes('draggable')).toBe('false')
+    await wrapper.get('[data-group="P1"]').trigger('drop', { dataTransfer: transfer })
+    expect(patch).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+  it('日期、布局、成员切换后旧拖动失效，历史任务只读', async () => {
+    const { wrapper, patch, transfer } = await dragFixture()
+    await wrapper.get('.task-title').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.setProps({ date: '2026-10-04' }); await flushPromises()
+    await wrapper.get('[data-group="P3"]').trigger('drop', { dataTransfer: transfer })
+    await wrapper.get('.task-title').trigger('dragstart', { dataTransfer: transfer })
+    await wrapper.findAll('.day-view-switch button')[0]!.trigger('click')
+    await wrapper.findAll('.day-view-switch button')[1]!.trigger('click')
+    await wrapper.get('[data-group="P3"]').trigger('drop', { dataTransfer: transfer })
+    await wrapper.get('.task-title').trigger('dragstart', { dataTransfer: transfer })
+    useSessionStore().accept({ accountId: 'other', member: { id: 'other', name: '其他', initial: '?', color: '', role: '' }, identities: [], createdAt: '' }); await flushPromises()
+    await wrapper.findAll('.day-view-switch button')[1]!.trigger('click'); await flushPromises()
+    await wrapper.get('[data-group="P3"]').trigger('drop', { dataTransfer: transfer })
+    await wrapper.setProps({ date: '2026-10-02' }); await flushPromises()
+    expect(wrapper.get('.task-title').attributes('draggable')).toBe('false')
+    expect(wrapper.find('.task-drag-handle').exists()).toBe(false)
+    expect(patch).not.toHaveBeenCalled()
     wrapper.unmount()
   })
   it('历史四象限保留当日快照且不提供优先级修改，本机存储失败不阻断切换', async () => {
