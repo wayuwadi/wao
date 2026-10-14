@@ -13,6 +13,8 @@ import { toast } from '@/composables/toast'
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import TaskDetailLayout from '@/components/task/TaskDetailLayout.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
 import SubtaskProperties from '@/components/task/SubtaskProperties.vue'
 import WorkItemIcon from '@/components/task/WorkItemIcon.vue'
 import { AI_RUN_ENABLED, selectableTaskStatuses } from '@/config/features'
@@ -75,7 +77,14 @@ async function copyLocalTask() {
   toast(ok ? '本机任务内容已复制' : '复制失败，请重试')
 }
 
-const menu = ref<'status' | 'pr' | 'owner' | 'participants' | 'prop' | 'share' | 'group' | null>(null)
+const menu = ref<'status' | 'pr' | 'owner' | 'participants' | 'prop' | 'share' | 'group' | 'type' | null>(null)
+const typeAnchor = ref<HTMLButtonElement | null>(null)
+const currentWorkItemType = computed(() => task.value?.workItemType || 'task')
+const WORK_ITEM_TYPES = [{ id: 'requirement' as const, label: '需求' }, { id: 'task' as const, label: '任务' }, { id: 'bug' as const, label: '缺陷' }]
+function setWorkItemType(kind: 'task' | 'requirement' | 'bug') {
+  if (task.value) data.patchTask(task.value.id, { workItemType: kind }, '修改了工作项类型')
+  menu.value = null
+}
 const commentText = ref('')
 const mentionOpen = ref(false)
 const sendingComment = ref(false)
@@ -291,6 +300,34 @@ async function removeComment(index: number) {
 // ---- 删除任务 ----
 /** 二次确认状态：删任务不可撤销，点一次先变成「确认删除」。 */
 const confirmingDelete = ref(false)
+const deleteTarget = ref<{ taskId: string; subId?: string; title: string } | null>(null)
+const deletingCurrent = ref(false)
+const deleteCurrentError = ref('')
+watch([() => ui.openTaskId, openSubId], () => { if (!deletingCurrent.value) deleteTarget.value = null })
+function requestDeleteCurrent() {
+  if (!task.value) return
+  deleteCurrentError.value = ''
+  deleteTarget.value = { taskId: task.value.id, ...(openSubId.value ? { subId: openSubId.value } : {}), title: openSub.value?.text ?? task.value.title }
+}
+async function confirmDeleteCurrent() {
+  const target = deleteTarget.value
+  if (!target || deletingCurrent.value) return
+  deletingCurrent.value = true; deleteCurrentError.value = ''
+  try {
+    if (target.subId) {
+      if (data.subById(target.taskId, target.subId)) data.removeSub(target.taskId, target.subId)
+      await data.flushTask(target.taskId)
+      if (data.apiLive && data.taskSaveState(target.taskId) !== 'saved') throw new Error('子任务删除尚未保存，请重试；本机修改已保留。')
+      if (ui.openTaskId === target.taskId && ui.openTaskSubId === target.subId) backToTask()
+    } else {
+      if (!(await data.deleteTask(target.taskId))) throw new Error('任务删除失败，请重试。')
+      if (ui.openTaskId === target.taskId) ui.closeTask()
+    }
+    deleteTarget.value = null
+    toast(`已删除${target.subId ? '子任务' : '任务'}「${target.title}」`, 'ri-delete-bin-line')
+  } catch (error) { deleteCurrentError.value = error instanceof Error ? error.message : '删除失败，请重试。' }
+  finally { deletingCurrent.value = false }
+}
 async function removeTask() {
   const t = task.value
   if (!t) return
@@ -946,7 +983,7 @@ async function uploadAttachment(event: Event) {
 <template>
   <template v-if="task && tv">
     <div class="mask" @click="close"></div>
-    <aside class="drawer" role="dialog" aria-modal="true" :aria-label="openSub ? `子任务 ${openSub.text}` : `任务 ${task.title}`" :inert="data.movingSubtasks">
+    <aside class="drawer" role="dialog" aria-modal="true" :aria-label="openSub ? `子任务 ${openSub.text}` : `任务 ${task.title}`" :inert="data.movingSubtasks || deletingCurrent">
       <!-- 顶栏 -->
       <div class="dhead">
         <nav class="crumbs" aria-label="任务层级">
@@ -1036,6 +1073,7 @@ async function uploadAttachment(event: Event) {
             </button>
           </div>
         </div>
+        <button class="icon-btn delete-current" type="button" :aria-label="openSub ? '删除当前子任务' : '删除当前任务'" :title="openSub ? '删除当前子任务' : '删除当前任务'" @click="requestDeleteCurrent"><i class="ri-delete-bin-line" aria-hidden="true"></i></button>
         <button class="icon-btn" title="关闭（Esc）" @click="close"><i class="ri-close-line"></i></button>
       </div>
 
@@ -1081,7 +1119,14 @@ async function uploadAttachment(event: Event) {
 
             </template>
             <template v-else>
-              <div class="type-line"><WorkItemIcon :kind="task.workItemType || 'task'" :size="18" /><select aria-label="工作项类型" :value="task.workItemType || 'task'" @change="data.patchTask(task.id, { workItemType: ($event.target as HTMLSelectElement).value as 'task' | 'requirement' | 'bug' }, '修改了工作项类型')"><option value="requirement">需求</option><option value="task">任务</option><option value="bug">缺陷</option></select></div>
+              <div class="type-line">
+                <button ref="typeAnchor" class="work-item-type" type="button" aria-label="工作项类型" aria-haspopup="menu" :aria-expanded="menu === 'type'" @click="menu = menu === 'type' ? null : 'type'">
+                  <WorkItemIcon :kind="task.workItemType || 'task'" :size="18" /><span>{{ WORK_ITEM_TYPES.find(kind => kind.id === currentWorkItemType)?.label }}</span><i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+                </button>
+                <CellMenu v-if="menu === 'type'" :anchor="typeAnchor" :min-width="160" @close="menu = null">
+                  <button v-for="kind in WORK_ITEM_TYPES" :key="kind.id" type="button" role="menuitemradio" :aria-checked="currentWorkItemType === kind.id" @click="setWorkItemType(kind.id)"><WorkItemIcon :kind="kind.id" /><span>{{ kind.label }}</span><i v-if="(task.workItemType || 'task') === kind.id" class="ri-check-line" aria-hidden="true"></i></button>
+                </CellMenu>
+              </div>
               <textarea ref="taskTitleArea" class="title-input" rows="1" :value="task.title" @input="editTitle"></textarea>
 
             </template>
@@ -1094,10 +1139,10 @@ async function uploadAttachment(event: Event) {
           <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error' && !data.taskDraftErrors[task.id]" :error-message="data.taskSaveError(task.id)" />
           <button v-if="saveState === 'error' && !data.taskConflicts[task.id]" type="button" class="text-btn small" @click="data.flushTask(task.id)">重试保存</button>
         </template>
-        <template #description>
+        <template #description="{ compact }">
           <template v-if="openSub">
             <div class="field">
-              <div class="field-headline">
+              <div v-if="!compact" class="field-headline">
                 <div class="field-label">描述</div>
               </div>
               <MarkdownEditor
@@ -1122,7 +1167,7 @@ async function uploadAttachment(event: Event) {
           </template>
           <template v-else>
             <div class="field">
-              <div class="field-headline">
+              <div v-if="!compact" class="field-headline">
                 <div class="field-label">描述</div>
               </div>
               <MarkdownEditor
@@ -1593,6 +1638,10 @@ async function uploadAttachment(event: Event) {
         </template>
       </TaskDetailLayout>
     </aside>
+    <SettingsDialogShell v-if="deleteTarget" :title="deleteTarget.subId ? '删除子任务' : '删除任务'" width="480px" height="auto" @close="!deletingCurrent && (deleteTarget = null)">
+      <div class="delete-confirm-body"><p>确认删除「{{ deleteTarget.title }}」？</p><p>此操作不可撤销，请确认当前对象。</p><p v-if="deleteCurrentError" role="alert">{{ deleteCurrentError }}</p></div>
+      <template #footer><WaoButton variant="secondary" :disabled="deletingCurrent" @click="deleteTarget = null">取消</WaoButton><WaoButton variant="danger" :disabled="deletingCurrent" :loading="deletingCurrent" @click="confirmDeleteCurrent">确认删除</WaoButton></template>
+    </SettingsDialogShell>
     <TaskRelationPicker
       v-if="relationOpen"
       :docs="relationDocs"
@@ -1613,6 +1662,11 @@ async function uploadAttachment(event: Event) {
 </template>
 
 <style scoped>
+.work-item-type { display: inline-flex; align-items: center; gap: var(--wao-space-1); min-height: 36px; padding: 6px 10px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text); font: inherit; cursor: pointer; }
+.work-item-type:hover, .work-item-type[aria-expanded='true'] { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
+.work-item-type:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
+.delete-current { color: var(--wao-danger); }
+.delete-confirm-body { padding: var(--wao-space-3); overflow-wrap: anywhere; }
 .detail-title, .detail-subtasks { min-width: 0; }
 .detail-meta { border: 0; padding: 4px 8px; border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: var(--wao-font-caption); cursor: pointer; }
 .detail-meta:hover { color: var(--wao-primary-text); background: var(--wao-primary-soft); }

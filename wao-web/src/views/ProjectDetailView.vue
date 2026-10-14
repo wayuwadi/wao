@@ -42,6 +42,7 @@ import { shareUrl } from '@/utils/share'
 import { AI_RUN_ENABLED } from '@/config/features'
 import { useTaskPreferencesStore } from '@/stores/taskPreferences'
 import { PROJECT_TABLE_COLUMNS, DEFAULT_PROJECT_TABLE_COLUMNS, type ProjectTableColumn } from '@/utils/projectTableColumns'
+import { useMemberPreference } from '@/composables/memberPreference'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,7 +144,64 @@ const tableGrouped = columnPreference('table-grouped-v1')
 type TableSortColumn = ProjectTableColumn
 const visibleColumnKeys = computed(() => taskPreferences.columns)
 const visibleColumns = computed(() => PROJECT_TABLE_COLUMNS.filter(column => visibleColumnKeys.value.includes(column.key)))
-const tableMinWidth = computed(() => 280 + visibleColumns.value.reduce((total, column) => total + column.width, 0))
+type ColumnWidths = Partial<Record<ProjectTableColumn, number>>
+const columnWidths = useMemberPreference<ColumnWidths>(() => `project-table-widths-v1:${pid.value}`, raw => {
+  try {
+    const value: unknown = JSON.parse(raw ?? '{}')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    return Object.fromEntries(PROJECT_TABLE_COLUMNS.flatMap(column => {
+      const width = (value as Record<string, unknown>)[column.key]
+      return typeof width === 'number' && Number.isFinite(width) ? [[column.key, Math.max(column.key === 'title' ? 160 : 48, Math.min(2000, Math.round(width)))]] : []
+    }))
+  } catch { return {} }
+}, widths => JSON.stringify(widths))
+const widthDraft = ref<ColumnWidths | null>(null)
+const activeWidths = computed(() => widthDraft.value ?? columnWidths.value.value)
+const customWidths = computed(() => Object.keys(activeWidths.value).length > 0)
+const defaultColumnWidth = (key: ProjectTableColumn) => PROJECT_TABLE_COLUMNS.find(column => column.key === key)!.width || 280
+const widthForColumn = (key: ProjectTableColumn) => activeWidths.value[key] ?? defaultColumnWidth(key)
+const tableMinWidth = computed(() => visibleColumns.value.reduce((total, column) => total + widthForColumn(column.key), 0))
+let resizingColumn: { key: ProjectTableColumn; x: number; widths: ColumnWidths } | null = null
+function snapshotWidths(element: HTMLElement): ColumnWidths {
+  const snapshot = { ...activeWidths.value }
+  element.closest('table')?.querySelectorAll<HTMLElement>('th[data-column-key]').forEach(header => {
+    const key = header.dataset.columnKey as ProjectTableColumn
+    snapshot[key] = Math.round(header.getBoundingClientRect().width) || widthForColumn(key)
+  })
+  return snapshot
+}
+function resizeColumn(event: PointerEvent) {
+  if (!resizingColumn) return
+  const { key, x, widths } = resizingColumn
+  widthDraft.value = { ...widths, [key]: Math.max(key === 'title' ? 160 : 48, Math.min(2000, (widths[key] ?? defaultColumnWidth(key)) + event.clientX - x)) }
+}
+function stopColumnResize(save = true) {
+  if (resizingColumn && widthDraft.value && save) void columnWidths.set(widthDraft.value)
+  resizingColumn = null; widthDraft.value = null
+  window.removeEventListener('pointermove', resizeColumn)
+  window.removeEventListener('pointerup', finishColumnResize)
+  window.removeEventListener('pointercancel', cancelColumnResize)
+}
+function finishColumnResize() { stopColumnResize() }
+function cancelColumnResize() { stopColumnResize(false) }
+function startColumnResize(event: PointerEvent, key: ProjectTableColumn) {
+  if (event.button !== 0) return
+  const widths = snapshotWidths(event.currentTarget as HTMLElement)
+  widthDraft.value = widths
+  resizingColumn = { key, x: event.clientX, widths }
+  window.addEventListener('pointermove', resizeColumn)
+  window.addEventListener('pointerup', finishColumnResize)
+  window.addEventListener('pointercancel', cancelColumnResize)
+}
+function resizeColumnByKey(event: KeyboardEvent, key: ProjectTableColumn) {
+  if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return
+  event.preventDefault()
+  const widths = snapshotWidths(event.currentTarget as HTMLElement)
+  widths[key] = Math.max(key === 'title' ? 160 : 48, Math.min(2000, (widths[key] ?? defaultColumnWidth(key)) + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 64 : 16)))
+  void columnWidths.set(widths)
+}
+watch([pid, () => session.userId], cancelColumnResize)
+onBeforeUnmount(cancelColumnResize)
 function saveColumns(keys: ProjectTableColumn[]) { void taskPreferences.setColumns(keys) }
 function toggleColumn(key: ProjectTableColumn) {
   if (key === 'title') return
@@ -532,21 +590,30 @@ function toggleGroupDone(id: string) {
 /** 分组头上的「+」：就地展开一行输入框，回车即建，手机上不用再进弹窗。 */
 function startQuickAdd(groupId: string) {
   if (quickAddState.value === 'submitting') return
-  if (quickAddGroup.value !== null && (quickAddText.value.trim() || quickAddState.value === 'error')) {
+  if (quickAddDraftGroup.value !== groupId && (quickAddText.value.trim() || quickAddState.value === 'error')) {
     toast('请先完成当前输入，内容已保留', 'ri-information-line')
     return
   }
   if (collapsedGroups.value.includes(groupId)) toggleGroup(groupId)
   quickAddGroup.value = groupId
+  if (quickAddDraftGroup.value === groupId && (quickAddText.value.trim() || quickAddState.value === 'error')) {
+    nextTick(() => firstOf(quickAddInput.value)?.focus())
+    return
+  }
+  quickAddDraftGroup.value = groupId
   quickAddText.value = ''
   quickAddState.value = 'idle'
   quickAddPendingId.value = null
   nextTick(() => firstOf(quickAddInput.value)?.focus())
 }
+const quickAddDraftGroup = ref<string | null>(null)
+function closeQuickAdd() {
+  if (quickAddState.value !== 'submitting') quickAddGroup.value = null
+}
 async function submitQuickAdd(groupId: string) {
   if (quickAddState.value === 'submitting') return
   const title = quickAddText.value.trim()
-  if (!title) return
+  if (!title) { closeQuickAdd(); return }
   // 快速新建不替用户排期：截止日期留空，需要时再在表格里点选。
   const payload = {
     title, project: pid.value, pr: 'P2' as const, owner: session.currentUser.id,
@@ -823,6 +890,7 @@ watch(visibleTaskIds, (ids) => {
             <div class="column-choices" role="group" aria-label="表格可见字段"><label v-for="column in PROJECT_TABLE_COLUMNS" :key="column.key"><input type="checkbox" :checked="visibleColumnKeys.includes(column.key)" :disabled="column.key === 'title'" @change="toggleColumn(column.key)" />{{ column.label }}</label></div>
             <p v-if="taskPreferences.columnsError" role="alert">{{ taskPreferences.columnsError }}<button type="button" @click="taskPreferences.retryColumns()">重试同步字段</button></p>
             <small v-else role="status">{{ taskPreferences.columnsState === 'loading' ? '正在读取账号偏好…' : taskPreferences.columnsState === 'saving' ? '正在同步字段…' : taskPreferences.columnsState === 'saved' ? '已同步到账号，其他设备打开时恢复' : '登录后可同步到其他设备' }}</small>
+            <button type="button" class="width-reset" @click="columnWidths.set({})">恢复默认列宽</button>
             <span class="display-settings-label">表格分组方式</span>
             <div class="table-seg" role="group" aria-label="表格分组方式">
               <button :class="{ on: !tableGrouped }" :aria-pressed="!tableGrouped" @click="tableGrouped = false">不分组</button>
@@ -914,17 +982,24 @@ watch(visibleTaskIds, (ids) => {
           <i :class="operationBusy ? 'ri-loader-4-line' : 'ri-indent-decrease'"></i>{{ operationBusy ? '正在保存任务层级…' : '拖到这里成为主任务' }}
         </div>
         <p v-if="operationError" class="task-operation-error" role="alert">{{ operationError }}<button @click="operationError = ''">收起提示</button></p>
-        <table :style="{ minWidth: `${tableMinWidth}px` }" class="project-task-table" aria-label="项目任务表格">
-          <colgroup><col v-for="column in visibleColumns" :key="column.key" :style="{ width: column.width ? `${column.width}px` : 'auto' }" /></colgroup>
+        <div v-if="columnWidths.error.value || columnWidths.state.value === 'saving'" class="column-width-status" role="status">
+          {{ columnWidths.error.value || '正在保存列宽…' }}<button v-if="columnWidths.error.value" type="button" @click="columnWidths.retry">重试列宽</button>
+        </div>
+        <table :style="{ minWidth: `${tableMinWidth}px`, ...(customWidths ? { width: `${tableMinWidth}px` } : {}) }" class="project-task-table" aria-label="项目任务表格">
+          <colgroup><col v-for="column in visibleColumns" :key="column.key" :style="{ width: customWidths ? `${widthForColumn(column.key)}px` : column.width ? `${column.width}px` : 'auto' }" /></colgroup>
           <thead>
             <tr>
-              <th v-for="column in visibleColumns" :key="column.key" scope="col" :aria-sort="sortDirection(column.key)">
+              <th v-for="column in visibleColumns" :key="column.key" :data-column-key="column.key" scope="col" :aria-sort="sortDirection(column.key)">
                 <div class="table-title-heading">
                   <button class="table-sort" type="button" :aria-label="`按${column.label}${sortDirection(column.key) === 'ascending' ? '降序' : '升序'}排序`" @click="toggleTableSort(column.key)">
                     {{ column.label }}<i :class="sortDirection(column.key) === 'ascending' ? 'ri-arrow-up-line' : sortDirection(column.key) === 'descending' ? 'ri-arrow-down-line' : 'ri-expand-up-down-line'" aria-hidden="true"></i>
                   </button>
                   <button v-if="column.key === 'title'" class="group-op" aria-label="快速新建任务" title="只输入标题新建任务" @click="startQuickAdd(tableGrouped ? groups[0]!.id : '__all')"><i class="ri-add-line"></i></button>
                 </div>
+                <button type="button" class="column-resize-handle" role="separator" aria-orientation="vertical"
+                  :aria-label="`调整${column.label}列宽`" :aria-valuenow="widthForColumn(column.key)" :aria-valuemin="column.key === 'title' ? 160 : 48" :aria-valuemax="2000"
+                  @pointerdown.stop.prevent="startColumnResize($event, column.key)" @click.stop
+                  @keydown.stop="resizeColumnByKey($event, column.key)"></button>
               </th>
             </tr>
           </thead>
@@ -966,7 +1041,7 @@ watch(visibleTaskIds, (ids) => {
                       :disabled="quickAddState === 'submitting'"
                       placeholder="任务标题，回车创建，连着敲可以一次录好几条"
                       @keydown.enter.prevent="!$event.isComposing && submitQuickAdd(section.id)"
-                      @keydown.esc="quickAddGroup = null"
+                      @keydown.esc.stop.prevent="!$event.isComposing && closeQuickAdd()"
                     />
                     <button class="group-add-done" :disabled="quickAddState === 'submitting'" @click="quickAddState === 'error' ? submitQuickAdd(section.id) : (quickAddGroup = null)">
                       {{ quickAddState === 'submitting' ? '提交中' : quickAddState === 'error' ? '重试' : '完成' }}
@@ -1093,8 +1168,8 @@ watch(visibleTaskIds, (ids) => {
                 v-model="quickAddText"
                 :disabled="quickAddState === 'submitting'"
                 placeholder="任务标题，回车创建，连着敲可以一次录好几条"
-                @keydown.enter.prevent="submitQuickAdd(g.id)"
-                @keydown.esc="quickAddGroup = null"
+                @keydown.enter.prevent="!$event.isComposing && submitQuickAdd(g.id)"
+                @keydown.esc.stop.prevent="!$event.isComposing && closeQuickAdd()"
               />
               <button class="group-add-done" :disabled="quickAddState === 'submitting'" @click="quickAddState === 'error' ? submitQuickAdd(g.id) : (quickAddGroup = null)">
                 {{ quickAddState === 'submitting' ? '提交中' : quickAddState === 'error' ? '重试' : '完成' }}
@@ -1283,6 +1358,12 @@ watch(visibleTaskIds, (ids) => {
 .task-operation-error { color: var(--wao-danger-strong); font-size: 13px; }
 .task-operation-error button { margin-left: 8px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .task-delete-title { overflow-wrap: anywhere; color: var(--wao-text); }
+.project-task-table th { position: relative; }
+.column-resize-handle { position: absolute; inset: 0 -5px 0 auto; width: 10px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; z-index: 2; }
+.column-resize-handle::after { content: ''; position: absolute; inset: 6px 4px; background: var(--wao-line-control); }
+.column-resize-handle:hover::after, .column-resize-handle:focus-visible::after { background: var(--wao-primary); }
+.width-reset { margin-top: var(--wao-space-1); padding: 6px 8px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; cursor: pointer; }
+.column-width-status { padding: var(--wao-space-1); color: var(--wao-text-3); font-size: var(--wao-font-caption); }
 .column-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
 .column-choices label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
 .column-choices input { accent-color: var(--wao-primary); }

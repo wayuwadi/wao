@@ -411,7 +411,7 @@ const detailDemoComment = ref('')
         <template v-else-if="active === 'task-detail'">
           <div class="section-heading">
             <small>TASK DETAIL</small><h1>描述再长，也能找到下一步。</h1>
-            <p>概览展示原文预览与子任务，描述独立阅读和编辑，属性与评论按需展开。</p>
+            <p>概览直接编辑描述并限制显示高度，子任务紧接其后；桌面默认展开属性与评论，描述页签用于阅读全文。</p>
           </div>
           <p class="demonstration-note">演示数据 · 下方输入只保留在本页，不写入账号。</p>
           <div class="task-detail-demo">
