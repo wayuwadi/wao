@@ -99,7 +99,7 @@ const projGroups = computed(() => {
   } else {
     groups = [{ id: 'all', label: '全部项目', dot: '#9A9DA9', items: list, hide: true }]
   }
-  return groups.map((g) => ({
+  return groups.filter((g) => g.hide || g.items.length > 0).map((g) => ({
     id: g.id, label: g.label, dot: g.dot,
     count: g.hide ? filteredProjects.value.length : projectGroups.value.find((group) => group.id === g.id)?.projectIds.filter((id) => filteredProjects.value.some((project) => project.id === id)).length ?? g.items.length,
     showHead: !g.hide,

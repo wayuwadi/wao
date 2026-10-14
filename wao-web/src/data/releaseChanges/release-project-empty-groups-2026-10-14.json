@@ -1,0 +1,22 @@
+{
+  "id": "release-project-empty-groups-2026-10-14",
+  "publishedOn": "2026-10-14",
+  "sourceSubject": "fix(projects): 项目列表隐藏没有项目的分组",
+  "title": "项目列表隐藏空分组",
+  "intro": "项目列表只展示当前页有项目的分组，空分组仍可作为移动目标。",
+  "highlights": [
+    {
+      "featureId": "projects",
+      "eyebrow": "体验修复",
+      "title": "空分组不再占据项目列表",
+      "summary": "搜索和翻页后也不显示空分组标题。",
+      "points": [
+        "保留个人分组设置与移动目标。"
+      ],
+      "steps": [
+        "打开项目列表，只看到有项目的分组。",
+        "搜索或翻页，空标题自动隐藏。"
+      ]
+    }
+  ]
+}
