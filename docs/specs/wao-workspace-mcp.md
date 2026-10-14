@@ -1,5 +1,7 @@
 # WAO 工作区 MCP
 
+2026-10-14：[Codex 聊天链接](markdown-codex-thread-links-2026-10-14.md)沿用现有文档 Markdown 读写与知识库范围校验，公共服务仅在富文本 `link.href` 中新增合法聊天地址白名单。不增加工具、schema 字段或旧令牌权限。
+
 2026-10-14：项目成员管理仅通过浏览器会话开放给负责人，工作区工具 `update_project` 继续使用原字段白名单，不开放 members / expectedMembers，旧令牌不获得共享管理权限。
 
 2026-10-14：新增显式授权的 `promote_subtask`，参数 `task_id`、`subtask_id`、`expected_source_version` 均必填。返回源任务和新主任务，保留永久编号与子树；旧快照拒绝，沿用成员可见性与项目范围。现有设备权限快照不变，旧令牌不会自动获得提升能力；见 [项目任务优化规格](project-task-optimization-2026-10-14.md)。
