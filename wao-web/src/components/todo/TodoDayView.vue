@@ -241,7 +241,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
     <template v-else-if="day">
       <p v-if="day.historyCoverage === 'BEFORE_BASELINE'" class="coverage" role="status">这一天早于可靠记录起点。可查看有依据的小记，不根据当前状态补造任务历史。</p>
       <p v-else-if="past || future" class="day-context">{{ past ? '回看这一天留下的真实记录，任务与固定事项只读，可以补记。' : '先安排，实际进展留给当天。' }}</p>
-      <TodoDayLayout>
+      <TodoDayLayout :reset-key="`${identity()}:${date}`">
         <template #default>
           <nav class="day-view-switch" aria-label="当天任务布局">
             <WaoButton :aria-pressed="taskView === 'list'" variant="ghost" @click="switchView('list')"><i class="ri-list-check-2" aria-hidden="true"></i>清单</WaoButton>
@@ -305,8 +305,10 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
                 <p v-if="taskPreferences.recentError" class="task-error" role="status">最近使用项目：{{ taskPreferences.recentError }} <button type="button" @click="taskPreferences.retryRecent()">重试同步最近项目</button></p>
               </div>
         </template>
-        <template #secondary>
+        <template #routine>
           <DailyRoutineSection :date="date" />
+        </template>
+        <template #notes>
           <WaoCard class="day-notes">
             <header class="section-heading"><h3>{{ past ? '当天记录与补记' : '随手记' }} <span>{{ day.notes.length }}</span></h3><WaoButton v-if="!future" class="section-action" variant="ghost" :aria-expanded="noteFor === ''" @click="noteFor = noteFor === '' ? null : ''">{{ noteFor === '' ? '收起输入' : past ? '补记这一天' : '写一条' }}</WaoButton></header>
             <NoteComposer v-if="noteFor === '' && !future" :key="`${identity()}:${date}:free`" compact :draft-scope="`day:${identity()}:${date}:free`" :submit-note="request => submitNote(request)" />
