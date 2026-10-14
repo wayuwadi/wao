@@ -3,10 +3,21 @@
   "version": "0.3.0",
   "description": "WAO 工作区命令行工具",
   "type": "module",
-  "bin": { "wao": "bin/wao.js" },
-  "files": ["bin", "src", "README.md"],
-  "scripts": { "test": "node --test", "pack:check": "npm pack --dry-run" },
-  "engines": { "node": ">=22" },
-  "license": "UNLICENSED",
+  "bin": {
+    "wao": "bin/wao.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
   "private": true
 }

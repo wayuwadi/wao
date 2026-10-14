@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
   clearTimeout(timer.value)
   clearTimeout(saveTimer)
 })
-const repository = 'https://github.com/wayuwacn/wao/blob/main/'
+const repository = 'https://github.com/wayuwadi/wao/blob/main/'
 const detailDemoDescription = ref('先说明背景、目标与边界，再把具体执行拆成子任务。\n\n'+ '这里是长描述演示，切换分区不会清空正在输入的文字。\n'.repeat(16))
 const detailDemoSubtasks = ref([
   { title: '确认目标与验收标准', done: true },

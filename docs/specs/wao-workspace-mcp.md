@@ -1,25 +1,6 @@
 # WAO 工作区 MCP
 
-2026-10-14：[Codex 聊天链接](markdown-codex-thread-links-2026-10-14.md)沿用现有文档 Markdown 读写与知识库范围校验，公共服务仅在富文本 `link.href` 中新增合法聊天地址白名单。不增加工具、schema 字段或旧令牌权限。
-
-2026-10-14：项目成员管理仅通过浏览器会话开放给负责人，工作区工具 `update_project` 继续使用原字段白名单，不开放 members / expectedMembers，旧令牌不获得共享管理权限。
-
-2026-10-14：新增显式授权的 `promote_subtask`，参数 `task_id`、`subtask_id`、`expected_source_version` 均必填。返回源任务和新主任务，保留永久编号与子树；旧快照拒绝，沿用成员可见性与项目范围。现有设备权限快照不变，旧令牌不会自动获得提升能力；见 [项目任务优化规格](project-task-optimization-2026-10-14.md)。
-
-2026-10-07：Pet 上传与分享通过独立 CLI Bearer HTTP 入口实现，MCP 工具目录不增加二进制上传或设备签发能力；新连接可显式选择 Pet 操作，旧令牌不扩权。详见 [Pet CLI 上传与分享](pet-cli-upload-and-sharing.md)。
-
-2026-10-06：[能力中心](capability-center.md) 增加实际接入验证元数据。鉴权后的 `tools/list` 成功记录时间与实际可见工具数，目录运行失败记录失败时间；签发、initialize、管理列表和最近访问不算成功。浏览器 `/api/workspace-mcp/tokens` DTO 新增可空 `lastVerifiedAt`、`verifiedToolCount`、`lastVerificationFailedAt`；原令牌权限、tools/list/schema 与调用响应保持。元数据记录失败不改变工具目录结果，不新增验证或令牌管理工具。
-
-2026-10-06：[系统文章来源](notes-system-generated-source.md) 在既有 `create_note` / `update_document` 中增加布尔字段 `system_generated`，`list_notes.include_system` 可在分页前隐藏系统文章。来源不改变真实 author 或操作权限，更新本人小记需当前 `expected_rev`；旧授权不增加工具，旧文档创建可用受版本保护的更新补标。
-
-2026-10-04：[iOS 小记系统采集](ios-notes-system-capture.md) 不增加 tools/list 或设备权限。剪贴板/麦克风/系统分享属于人工设备入口；既有文档写入口沿用权限和版本契约，引用保护服务不会启动 MCP 自动 AI 消耗。
-
-2026-10-04 日常能力补全：新授权目录包含小记及标签、历史任务、子任务编辑与移动、评论、文档关联、模板及归档、执行安排、每日进展和全文检索。能力中心提供「日常完整」选项，先填入授权草稿，再由用户确认范围并签发；已有连接不自动扩大权限。新增工具、并发条件和验收契约见 [日常能力首批补全](workspace-mcp-daily-capabilities.md)，CLI 同步升级至 0.2.0。下方「首批工具」为原 20 项兼容基线。
-
-2026-10-04：授权入口统一迁至独立「能力中心」→「我的连接」（`/capabilities?area=connections`），旧设置地址重定向。逐项授权固定操作快照和项目／知识库范围，CLI 与 MCP 共用服务端检查；旧整体令牌不原地扩权。原兼容目录包含 20 项 MCP 业务操作和 CLI 单独的 HTML 发布；本次日常补全扩展到 48 项 MCP 操作。Skill/Pet 与应用接入由中心管理，暂不新增终端上传、令牌签发或应用授权工具，避免设备自行扩权。当前契约见 [能力中心](capability-center.md) 和 ADR-322；下文旧设置入口说明为迁移前历史。
-2026-10-03：[小记保存后自动整理](notes-save-ai-settings.md)新增浏览器会话的聚合设置与单项阶段 API。成员个人设置和主动 AI 消耗不属于既有文档令牌范围，不新增 CLI 命令或 MCP 工具；通用文档写入明确阻止自动入队，同时仍使旧来源失效。未来开放须单独设计执行范围、配额与版本条件。
-
-2026-10-03：浏览器[执行安排与截止分离](task-execution-schedule-2026-10-03.md)不改变现有 MCP 工具定义。`update_task.due` 仍仅修改截止，未开放开始日期/执行时段写入；不自动扩大旧令牌权限。
+本文件描述当前契约；修改记录在 Git 历史中查看。
 
 ## 目标与入口
 
@@ -54,7 +35,7 @@ WAO 设置 → 管理与连接 → WAO CLI 与 MCP（`/settings?tab=workspace-mc
 - `list_open_tasks` 不返回别人的私人项目任务；若知识库带有真实项目关联，也不能越过项目可见性。
 - 创建与更新任务、项目、文件夹和文档复用现有业务服务；文档版本冲突得到明确工具错误，不吞掉本地草稿。
 
-## 子任务状态修改（2026-09-24）
+## 子任务状态修改
 
 用户明确要求开放独立子任务状态更新，新增 `update_subtask_status`，只向现有可读写令牌开放；每次调用继续检查成员项目可见性，只读令牌不可调用。`update_task` 仍仅修改主任务。
 
@@ -64,24 +45,12 @@ WAO 设置 → 管理与连接 → WAO CLI 与 MCP（`/settings?tab=workspace-mc
 
 CLI：`wao subtasks status SUB_ID --task-id TASK_ID --status 待验证 --expected-subtask-version VERSION`。部署后必须先通过实时 tools/list 确认新工具可见；不得在旧服务尚未部署时猜测调用。
 
-## 小记最新正文（2026-09-30）
-
-2026-10-11：[小记润色直接生效](notes-direct-polish-2026-10-11.md) 取消建议确认，完整写回并接续当前轮次的有效历史结果。该后台流程不新增工作区工具、调用分发或旧令牌权限；私人 AI 历史继续使用浏览器会话鉴权，普通小记更新仍保护来源与版本。
+## 小记最新正文
 
 浏览器最新正文交互见 `notes-single-latest-content.md`。后台润色以源正文与文档版本条件写回；浏览器保存触发的自动续跑不新增工作区工具，不改变令牌可见能力、文档写入权限或冲突语义。
 
-2026-10-02：项目 AI Run 退役（ADR-303）；现有工作区工具没有派工或 Runner 协议能力，不新增工具或扩大令牌权限。
+私人小记原稿、保存前 AI 输入及结果关联不加入 workspace tools/list，旧文档 scope 不包含历史来源或个人 AI 设置。普通写入仍参与用户来源保护与旧任务失效，不新增自动 AI 权限。见 [当前架构](../architecture.md)。
 
-2026-10-02：WeKnora 同步退役（ADR-305），不改变原生知识库读取和编辑工具；无新的同步权限。
+## 机器人管理边界
 
-2026-10-03：ADR-313 将既有浏览器润色、问答与后台只读分析迁至本机 Codex；服务主机队列不是工作区执行授权，不新增 MCP 工具或旧令牌权限，私有图片仍按浏览器成员鉴权。详见 [业务 AI 本机执行](business-ai-local-codex.md)。
-
-私人小记原稿、保存前 AI 输入及结果关联不加入 workspace tools/list，旧文档 scope 不包含历史来源或个人 AI 设置。普通写入仍参与用户来源保护与旧任务失效，不新增自动 AI 权限。见 [不可变原稿](notes-immutable-originals.md)。
-
-## 2026-10-07 机器人管理边界
-
-能力中心机器人配置与诊断仅接受管理员浏览器会话；Webhook、共享应用密钥、接收路由和事件诊断不增加 Workspace MCP 工具，不扩大历史设备令牌授权。群消息创建待办／小记使用发送者飞书身份绑定，不接受 MCP 伪造平台消息。契约见 [飞书机器人规格](feishu-bot-center.md)。
-
-2026-10-07：新增数字成员图库仅供当前浏览器成员会话使用；没有新增工作区工具定义或分发，不将真实成员照片、性别、候选确认、头像生成消费隐含到旧 workspace Token。后续独立私有形象 scope 和重新授权之后再评估 MCP/CLI 覆盖，参见 [数字成员图库](digital-member-library.md)。
-
-2026-10-07：自主建设已按用户要求终止（ADR-332）。相关 Web API、代码执行协调器和飞书决定路由移除，该项目没有新增 MCP 工具，既有 tools/list 与令牌权限不变。
+能力中心机器人配置与诊断仅接受管理员浏览器会话；Webhook、共享应用密钥、接收路由和事件诊断不增加 Workspace MCP 工具，不扩大历史设备令牌授权。群消息创建待办／小记使用发送者飞书身份绑定，不接受 MCP 伪造平台消息。契约见 [当前架构](../architecture.md)。

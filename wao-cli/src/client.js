@@ -1,6 +1,6 @@
 import { createPetClient } from './pets-client.js'
 
-const DEFAULT_URL = 'https://wao.wayuwa.cn/api/mcp/workspace'
+const DEFAULT_URL = 'http://localhost:9000/api/mcp/workspace'
 const MCP_PATH = '/api/mcp/workspace'
 const MAX_HTML_BYTES = 10 * 1024 * 1024
 

@@ -44,7 +44,7 @@ post_status() {
       -H 'Accept: application/vnd.github+json' \
       -H "Authorization: Bearer $GITHUB_PAT" \
       -H 'X-GitHub-Api-Version: 2022-11-28' \
-      "https://api.github.com/repos/wayuwacn/wao/statuses/$sha" \
+      "https://api.github.com/repos/wayuwadi/wao/statuses/$sha" \
       --data "$payload" >/dev/null; then
     # Commit status is observability metadata. A transient GitHub/TLS outage after a
     # verified production rollout must not relabel that rollout as failed.

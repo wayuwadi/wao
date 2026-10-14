@@ -346,7 +346,7 @@ public class AiEvolutionService {
     private static int workflowScore(AiWorkflowDto workflow) {
         String name = workflow.projectName().toLowerCase(Locale.ROOT);
         String repo = workflow.config().repoUrl().toLowerCase(Locale.ROOT);
-        return (repo.contains("wayuwacn/wao") ? 10 : 0) + (name.contains("wao") || name.contains("all in one") ? 5 : 0);
+        return (repo.contains("wayuwadi/wao") ? 10 : 0) + (name.contains("wao") || name.contains("all in one") ? 5 : 0);
     }
 
     private void outcome(String message, String runId, String suggestionId) {

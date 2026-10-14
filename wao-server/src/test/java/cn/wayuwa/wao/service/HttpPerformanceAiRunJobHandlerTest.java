@@ -111,7 +111,7 @@ class HttpPerformanceAiRunJobHandlerTest {
 
     private void workflow() {
         AiProjectConfigDto config = new AiProjectConfigDto(
-                "p-wao", true, "https://github.com/wayuwacn/wao.git", "main", "wao", "codex", null, 2, 2);
+                "p-wao", true, "https://github.com/wayuwadi/wao.git", "main", "wao", "codex", null, 2, 2);
         when(aiRuns.listWorkflows()).thenReturn(List.of(new AiWorkflowDto(
                 "p-wao", "Wa All in One", config, null, 0, 1, 0, null)));
         ProjectEntity project = new ProjectEntity();
