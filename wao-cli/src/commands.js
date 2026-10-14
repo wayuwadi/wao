@@ -22,6 +22,7 @@ export const COMMANDS = new Map([
   ['subtasks update', ['update_subtask', 'subtask_id']],
   ['subtasks reorder', ['reorder_subtasks', 'task_id']],
   ['subtasks move', ['move_subtask', 'subtask_id']],
+  ['subtasks promote', ['promote_subtask', 'subtask_id']],
   ['knowledge list', ['list_knowledge_bases']],
   ['knowledge get', ['get_knowledge_base', 'kb_id']],
   ['knowledge create', ['create_knowledge_base']],

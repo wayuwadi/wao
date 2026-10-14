@@ -81,6 +81,8 @@ public class WorkspaceMcpOperations {
                     "task_id:s! subtask_id:s! target_task_id:s! parent_id:s? expected_source_version:s! expected_target_version:s!");
             tool(tools, "move_task", "同项目内调整完整任务父级；null 或空串表示顶层", false,
                     "task_id:s! parent_task_id:s?! expected_parent_id:s?!");
+            tool(tools, "promote_subtask", "将子事项及其后代提升为主任务，保留编号与内容；需读取时子任务版本", false,
+                    "task_id:s! subtask_id:s! expected_source_version:s!");
             tool(tools, "add_task_comment", "以令牌成员身份追加任务评论", false, "task_id:s! text:s!");
             tool(tools, "update_task_comment", "修改本人任务评论", false, "task_id:s! comment_id:s! text:s!");
             tool(tools, "link_task_document", "增删一个可见文档关联，保留其他任务字段", false,
@@ -131,6 +133,13 @@ public class WorkspaceMcpOperations {
             case "archive_document", "unarchive_document" -> lifecycle(name, a, member);
             case "create_subtask", "update_subtask", "reorder_subtasks" -> editSubtask(name, a, member);
             case "move_subtask" -> moveSubtask(a, member);
+            case "promote_subtask" -> {
+                TaskDto source = tasks.get(text(a, "task_id", true, 64), member);
+                if (!Objects.equals(source.subtaskVersion(), text(a, "expected_source_version", true, 64)))
+                    throw new ConflictException("子任务已更新，请重新读取源任务");
+                yield subtaskMove.promote(source.id(), text(a, "subtask_id", true, 128),
+                        new PromoteSubtaskRequest(source.subs()), member);
+            }
             case "move_task" -> hierarchy.move(text(a, "task_id", true, 64), text(a, "parent_task_id", false, 64),
                     text(a, "expected_parent_id", false, 64), member);
             case "add_task_comment" -> tasks.addComment(text(a, "task_id", true, 64), member, text(a, "text", true, 20000));
@@ -592,6 +601,7 @@ public class WorkspaceMcpOperations {
             case "archive_document" -> "归档文档"; case "unarchive_document" -> "恢复归档文档";
             case "create_subtask" -> "新增子任务"; case "update_subtask" -> "修改子任务";
             case "reorder_subtasks" -> "调整子任务顺序"; case "move_subtask" -> "跨任务移动子任务";
+            case "promote_subtask" -> "将子事项提升为主任务";
             case "move_task" -> "调整任务层级"; case "add_task_comment" -> "追加任务评论";
             case "update_task_comment" -> "修改本人评论"; case "link_task_document" -> "修改任务文档关联";
             case "search_workspace" -> "全文搜索"; case "get_todo_day" -> "读取每日安排与进展";

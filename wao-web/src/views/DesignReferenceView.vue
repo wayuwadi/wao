@@ -258,6 +258,7 @@ const detailDemoComment = ref('')
               <h3 class="type-example">给一个念头留个位置</h3>
               <p class="body-example">随手写下来，稍后再慢慢整理。</p>
               <p>辅助信息不抢主内容，也不能淡到难读。</p>
+              <p>四象限任务标题与项目单行排列，长标题省略并提供完整提示；保存失败允许展开重试。项目拖拽的浅底表示移为子任务，行边缘插入线表示前后排序，更多菜单保留键盘入口。</p>
               <p class="measurements">标题 20–24 · 正文 14 · 辅助 12–13</p>
               <div class="spacing-examples">
                 <div v-for="(space, index) in [8, 16, 24, 32]" :key="space">

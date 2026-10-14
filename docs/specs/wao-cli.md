@@ -73,7 +73,7 @@ CLI 支持通过独立授权的现有托管页 API 发布一个公开 HTML 页�
 | 任务读取 | `list_open_tasks`、`list_tasks`、`get_task` | `tasks open`、`tasks list`、`tasks get ID`；list 支持实时 schema 的条件与分页 |
 | 子任务状态 | `update_subtask_status` | `subtasks status ID` |
 | 任务写入 | `create_task`、`update_task` | `tasks create`、`tasks update ID` |
-| 子任务编辑 | `create_subtask`、`update_subtask`、`reorder_subtasks`、`move_subtask` | `subtasks create TASK_ID`、`subtasks update SUB_ID`、`subtasks reorder TASK_ID`、`subtasks move SUB_ID`；版本条件不自动替换 |
+| 子任务编辑 | `create_subtask`、`update_subtask`、`reorder_subtasks`、`move_subtask`、`promote_subtask` | `subtasks create TASK_ID`、`subtasks update SUB_ID`、`subtasks reorder TASK_ID`、`subtasks move SUB_ID`、`subtasks promote SUB_ID --task-id TASK_ID --expected-source-version VERSION`；版本条件不自动替换，提升需独立授权 |
 | 任务关系 | `move_task`、`link_task_document` | `tasks move ID`、`tasks document ID --mode add/remove` |
 | 任务评论 | `add_task_comment`、`update_task_comment` | `tasks comment TASK_ID` / `comments add TASK_ID`、`comments update COMMENT_ID --task-id TASK_ID` |
 | 知识库读取 | `list_knowledge_bases`、`get_knowledge_base` | `knowledge list`、`knowledge get ID` |

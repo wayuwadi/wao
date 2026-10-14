@@ -34,7 +34,7 @@ const props = defineProps<{
   ownerFilter?: string | null
 }>()
 const hasColumn = (key: string) => props.columns?.includes(key) ?? true
-const emit = defineEmits<{ 'add-sub': [parentId: string | null]; 'close-add': [] }>()
+const emit = defineEmits<{ 'add-sub': [parentId: string | null]; 'close-add': []; 'sub-drag': [payload: { taskId: string; subId: string } | null]; menu: [event: MouseEvent | KeyboardEvent, subId: string] }>()
 const data = useDataStore()
 const order = useTaskOrderStore()
 const orderScope = computed(() => `subs:${props.taskId}`)
@@ -121,16 +121,19 @@ watch(() => [props.adding, props.addParentId], () => {
 })
 const doneCount = computed(() => rows.value.filter(row => row.sub.done).length)
 function drag(event: DragEvent, subId: string) {
+  if (data.movingSubtasks || data.movingTask) { event.preventDefault(); return }
   draggingSub.value = subId
+  emit('sub-drag', { taskId: props.taskId, subId })
   event.dataTransfer?.setData(SUBTASK_DRAG_TYPE, JSON.stringify({ taskId: props.taskId, subId }))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
 function dragOver(event: DragEvent, id: string) {
   orderingOver.value = draggingSub.value && draggingSub.value !== id ? { id, after: taskDropAfter(event) } : null
 }
+function endDrag() { draggingSub.value = null; orderingOver.value = null; emit('sub-drag', null) }
 async function drop(event: DragEvent, targetId?: string | null) {
   const payload = readSubtaskDrag(event), after = taskDropAfter(event)
-  draggingSub.value = null; orderingOver.value = null
+  endDrag()
   if (!payload || !targetId || payload.subId === targetId) return
   localError.value = ''
   const source = data.subById(payload.taskId, payload.subId), target = data.subById(props.taskId, targetId)
@@ -259,7 +262,8 @@ function add() {
       </tr>
       <tr
         v-else
-        class="inline-sub-row" :class="{ 'is-done': item.row.sub.done, 'order-before': orderingOver?.id === item.row.key && !orderingOver.after, 'order-after': orderingOver?.id === item.row.key && orderingOver.after }" draggable="true" @dragstart.stop="drag($event, item.row.key)" @dragover.prevent.stop="dragOver($event, item.row.key)" @dragleave="orderingOver = null" @dragend="draggingSub = null; orderingOver = null" @drop.prevent.stop="drop($event, item.row.key)"
+        class="inline-sub-row" :class="{ 'is-done': item.row.sub.done, 'order-before': orderingOver?.id === item.row.key && !orderingOver.after, 'order-after': orderingOver?.id === item.row.key && orderingOver.after }" draggable="true" @dragstart.stop="drag($event, item.row.key)" @dragover.prevent.stop="dragOver($event, item.row.key)" @dragleave="orderingOver = null" @dragend="endDrag" @drop.prevent.stop="drop($event, item.row.key)"
+        tabindex="0" :aria-label="`子任务：${item.row.sub.text}`" @contextmenu="emit('menu', $event, item.row.key)" @keydown="emit('menu', $event, item.row.key)" @keydown.enter.self.prevent="ui.openTask(taskId, item.row.key)"
         @click="ui.openTask(taskId, item.row.key)"
       >
         <td v-if="hasColumn('number')" class="sub-number wao-tabular">{{ item.row.sub.number ?? '…' }}</td>
@@ -291,6 +295,7 @@ function add() {
             >
               {{ item.row.sub.text }}
             </button><span class="row-tools">
+              <button class="row-tool" :aria-label="`更多子任务操作：${item.row.sub.text}`" title="更多操作" aria-haspopup="menu" @click.stop="emit('menu', $event, item.row.key)"><i class="ri-more-line"></i></button>
               <button class="row-tool" title="修改标题" :aria-label="`修改子任务 ${item.row.sub.text} 的标题`" @click.stop="startRename(item.row.key, item.row.sub.text)"><i class="ri-pencil-line"></i></button>
               <button class="row-tool" title="在这条下添加子任务" :aria-label="`在 ${item.row.sub.text} 下添加子任务`" @click.stop="emit('add-sub', item.row.key)"><i class="ri-add-line"></i></button>
             </span></template>

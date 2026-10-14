@@ -19,7 +19,7 @@ public record WorkspaceCapabilityPolicy(List<String> permissions, List<String> p
     public static final List<String> WRITE = java.util.stream.Stream.concat(LEGACY_WRITE.stream(), java.util.stream.Stream.of(
             "create_note_tag", "create_note", "update_note_tags", "create_doc_template", "update_doc_template",
             "archive_document", "unarchive_document", "create_subtask", "update_subtask", "reorder_subtasks",
-            "move_subtask", "move_task", "add_task_comment", "update_task_comment", "link_task_document",
+            "move_subtask", "promote_subtask", "move_task", "add_task_comment", "update_task_comment", "link_task_document",
             "schedule_task", "record_daily_note")).toList();
     public static final List<String> ALL = java.util.stream.Stream.concat(
             java.util.stream.Stream.concat(READ.stream(), WRITE.stream()),

@@ -537,6 +537,12 @@ export async function apiMoveSubtask(source: Task, subId: string, target: Task, 
   })
 }
 
+/** 将内嵌子事项及后代提升为主任务，返回源与新任务。 */
+export const apiPromoteSubtask = (source: Task, subId: string) =>
+  post<Task[]>(`/api/tasks/${encodeURIComponent(source.id)}/subs/${encodeURIComponent(subId)}/promote`, {
+    expectedSourceSubs: source.subs,
+  })
+
 /** 调整完整任务的归属，保留原始任务全部内容与编号。 */
 export const apiMoveTask = (task: Task, parentTaskId: string | null) =>
   post<Task>(`/api/tasks/${encodeURIComponent(task.id)}/parent`, {

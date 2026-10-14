@@ -41,6 +41,7 @@ import {
   apiPutTask,
   apiGetTask,
   apiMoveSubtask,
+  apiPromoteSubtask,
   apiMoveTask,
   apiReauthJob,
   apiUploadImage,
@@ -1381,6 +1382,7 @@ export const useDataStore = defineStore('data', () => {
     return new Set([
       ...Object.keys(taskDrafts.value),
       ...Object.keys(taskPersisting).filter((id) => taskPersisting[id]),
+      ...lockedSubtaskIds,
       ...recent,
     ])
   }
@@ -2050,20 +2052,24 @@ export const useDataStore = defineStore('data', () => {
   async function moveSubtask(sourceId: string, subId: string, targetId: string, parentId?: string | null): Promise<void> {
     if (movingSubtasks.value || preparingSubtaskMove) throw new Error('正在移动子任务，请稍后再试')
     const source = taskById(sourceId), target = taskById(targetId)
+    const member = useSessionStore().userId
     if (!source || !target) throw new Error('任务不存在或尚未加载')
     preparingSubtaskMove = true
     try {
       await Promise.all([...new Set([sourceId, targetId])].map(flushTask))
+      if (member !== useSessionStore().userId) throw new Error('成员已切换，请在原成员下重试')
       if ([sourceId, targetId].some(id => taskSaveState(id) === 'error')) throw new Error('请先重试保存任务，再移动子任务')
       movingSubtasks.value = true
       lockedSubtaskIds.add(sourceId)
       lockedSubtaskIds.add(targetId)
       const saved = await apiMoveSubtask(clone(source), subId, clone(target), parentId)
+      if (member !== useSessionStore().userId) return
       for (const item of saved) {
         const local = taskById(item.id)
         if (local) {
           local.subs = item.subs
           local.subtaskVersion = item.subtaskVersion
+          local.editVersion = item.editVersion
           taskSubBases[item.id] = clone(item.subs)
           taskTouchedAt[item.id] = Date.now()
           if (taskSaveState(item.id) === 'saving') storeTaskDraft(local)
@@ -2075,8 +2081,44 @@ export const useDataStore = defineStore('data', () => {
       movingSubtasks.value = false
       lockedSubtaskIds.clear()
       for (const id of new Set([sourceId, targetId])) {
-        if (taskSaveState(id) === 'saving') persistTask(id)
+        if (member === useSessionStore().userId && taskSaveState(id) === 'saving') persistTask(id)
       }
+    }
+  }
+
+  /** 保存草稿后原子提升子事项，保留在途输入并保护成员隔离。 */
+  async function promoteSubtask(sourceId: string, subId: string): Promise<Task> {
+    if (movingSubtasks.value || preparingSubtaskMove) throw new Error('正在移动子任务，请稍后再试')
+    const source = taskById(sourceId), member = useSessionStore().userId
+    if (!source) throw new Error('任务尚未加载')
+    preparingSubtaskMove = true
+    try {
+      await flushTask(sourceId)
+      if (member !== useSessionStore().userId) throw new Error('成员已切换，请在原成员下重试')
+      if (taskSaveState(sourceId) === 'error') throw new Error('请先保存任务草稿，再提升子任务')
+      movingSubtasks.value = true
+      lockedSubtaskIds.add(sourceId)
+      const [saved, promoted] = await apiPromoteSubtask(clone(source), subId)
+      if (member !== useSessionStore().userId) throw new Error('成员已切换，请在原成员下核对结果')
+      if (!saved || !promoted) throw new Error('提升结果不完整，请刷新后核对')
+      const local = taskById(sourceId)
+      if (local) {
+        local.subs = saved.subs
+        local.subtaskVersion = saved.subtaskVersion
+        local.editVersion = saved.editVersion
+        taskSubBases[sourceId] = clone(saved.subs)
+        taskTouchedAt[sourceId] = Date.now()
+        if (taskSaveState(sourceId) === 'saving') storeTaskDraft(local)
+        else clearTaskDraft(sourceId)
+      }
+      if (!taskById(promoted.id)) tasks.value.push(promoted)
+      taskTouchedAt[promoted.id] = Date.now()
+      return promoted
+    } finally {
+      preparingSubtaskMove = false
+      movingSubtasks.value = false
+      lockedSubtaskIds.delete(sourceId)
+      if (member === useSessionStore().userId && taskSaveState(sourceId) === 'saving') persistTask(sourceId)
     }
   }
 
@@ -2525,7 +2567,7 @@ export const useDataStore = defineStore('data', () => {
     ensureDocsLoaded, refreshDocs, ensureDocLoaded, docLoadErrors,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     taskDraftErrors, useServerTask, taskConflicts, taskSaveState, taskSavedAt, taskSaveError, flushTask, flushWorkspace, runTaskOperation, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
-    movingTask, moveTask, movingSubtasks, moveSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
+    movingTask, moveTask, movingSubtasks, moveSubtask, promoteSubtask, subById, subKey, addSub, reorderSub, updateSub, setSubState, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, replaceFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,
     hostedPages, hostedPageLoadState, hostedPageLoadError, refreshHostedPages, saveHostedPage, replaceHostedPage, deleteHostedPage,
