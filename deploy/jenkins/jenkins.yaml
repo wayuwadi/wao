@@ -92,7 +92,7 @@ jobs:
         description('WAO main: collect pushes for 60 seconds, test once, build immutable SHA images, deploy Linux2 and cloud static assets.')
         quietPeriod(60)
         properties {
-          githubProjectUrl('https://github.com/wayuwacn/wao/')
+          githubProjectUrl('https://github.com/wayuwadi/wao/')
         }
         parameters {
           booleanParam('DEPLOY_PRODUCTION', true, '关闭时只做完整影子构建，不触碰生产节点。')
@@ -106,7 +106,7 @@ jobs:
             scm {
               git {
                 remote {
-                  url('git@github.com:wayuwacn/wao.git')
+                  url('git@github.com:wayuwadi/wao.git')
                   credentials('wao-github-scm-ssh')
                   refspec('+refs/heads/${WAO_JENKINS_SCM_BRANCH}:refs/remotes/origin/${WAO_JENKINS_SCM_BRANCH}')
                 }
@@ -134,7 +134,7 @@ jobs:
         description('WAO 桌面客户端自建发布：Linux2 构建 Windows，Mac 节点构建通用包，Linux2 统一签名和原子发布。')
         quietPeriod(300)
         properties {
-          githubProjectUrl('https://github.com/wayuwacn/wao/')
+          githubProjectUrl('https://github.com/wayuwadi/wao/')
         }
         parameters {
           booleanParam('PUBLISH_CLIENT', false, '双端构建、原公钥验签和公开哈希核对后发布；仅 main。')
@@ -145,7 +145,7 @@ jobs:
             scm {
               git {
                 remote {
-                  url('ssh://git@ssh.github.com:443/wayuwacn/wao.git')
+                  url('ssh://git@ssh.github.com:443/wayuwadi/wao.git')
                   credentials('wao-github-scm-ssh')
                   refspec('+refs/heads/main:refs/remotes/origin/main')
                 }

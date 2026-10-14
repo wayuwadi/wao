@@ -33,3 +33,13 @@ deploy/backups/
 deploy/nginx/wao.wayuwa.cn.conf
 deploy/.public-ip
 deploy/.jumpserver-asset-key.pub
+
+# Private runtime state, local tools, migration compatibility and credentials
+work/
+*.private.*
+private/
+legacy-migrations/
+*.pfx
+*.sqlite
+*.sqlite3
+.local-data/
