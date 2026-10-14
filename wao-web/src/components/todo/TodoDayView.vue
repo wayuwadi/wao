@@ -41,6 +41,13 @@ const checklistOpen = (id: string) => expanded.value[id] !== false
 const createProject = ref('')
 const draftError = ref('')
 const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
+const routineRemaining = ref<number | null>(null)
+const routineCountState = ref<'loading' | 'ready' | 'error'>('loading')
+watch(() => [props.date, identity()], () => { routineRemaining.value = null; routineCountState.value = 'loading' }, { flush: 'sync' })
+function updateRoutineSummary(date: string, member: string, remaining: number | null, state: 'loading' | 'ready' | 'error') {
+  if (date !== props.date || member !== identity()) return
+  routineRemaining.value = remaining; routineCountState.value = state
+}
 const taskView = ref<'list' | 'quadrant'>('list')
 const viewError = ref('')
 const viewKey = () => `wao-todo-day-view-v1:${identity()}`
@@ -241,7 +248,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
     <template v-else-if="day">
       <p v-if="day.historyCoverage === 'BEFORE_BASELINE'" class="coverage" role="status">这一天早于可靠记录起点。可查看有依据的小记，不根据当前状态补造任务历史。</p>
       <p v-else-if="past || future" class="day-context">{{ past ? '回看这一天留下的真实记录，任务与固定事项只读，可以补记。' : '先安排，实际进展留给当天。' }}</p>
-      <TodoDayLayout :reset-key="`${identity()}:${date}`">
+      <TodoDayLayout :reset-key="`${identity()}:${date}`" :routine-remaining="routineRemaining" :routine-count-state="routineCountState" :note-count="day.notes.length">
         <template #default>
           <nav class="day-view-switch" aria-label="当天任务布局">
             <WaoButton :aria-pressed="taskView === 'list'" variant="ghost" @click="switchView('list')"><i class="ri-list-check-2" aria-hidden="true"></i>清单</WaoButton>
@@ -306,7 +313,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
               </div>
         </template>
         <template #routine>
-          <DailyRoutineSection :date="date" />
+          <DailyRoutineSection :date="date" @summary="updateRoutineSummary" />
         </template>
         <template #notes>
           <WaoCard class="day-notes">

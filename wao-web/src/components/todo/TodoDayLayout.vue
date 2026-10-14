@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, useId, watch } from 'vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
-const props = withDefaults(defineProps<{ primaryLabel?: string; secondaryLabel?: string; resetKey?: string }>(), {
+const props = withDefaults(defineProps<{ primaryLabel?: string; secondaryLabel?: string; resetKey?: string; routineRemaining?: number | null; routineCountState?: 'loading' | 'ready' | 'error'; noteCount?: number }>(), {
   primaryLabel: '当天任务',
   secondaryLabel: '日常与小记',
+  routineCountState: 'loading',
 })
 const active = ref<'routine' | 'notes' | null>(null)
 const panelId = useId()
@@ -23,8 +24,8 @@ function close() {
       <section class="day-primary" :aria-label="primaryLabel"><slot /></section>
       <aside class="day-secondary" :aria-label="secondaryLabel" @keydown.esc.stop.prevent="close">
         <nav class="day-side-rail" aria-label="当天辅助面板">
-          <WaoButton :id="`${panelId}-routine-toggle`" ref="routineButton" variant="ghost" :aria-expanded="active === 'routine'" :aria-controls="`${panelId}-routine`" @click="toggle('routine')"><i class="ri-repeat-line" aria-hidden="true"></i><span>每日固定</span></WaoButton>
-          <WaoButton :id="`${panelId}-notes-toggle`" ref="notesButton" variant="ghost" :aria-expanded="active === 'notes'" :aria-controls="`${panelId}-notes`" @click="toggle('notes')"><i class="ri-edit-box-line" aria-hidden="true"></i><span>随手记</span></WaoButton>
+          <WaoButton :id="`${panelId}-routine-toggle`" ref="routineButton" variant="ghost" :aria-label="routineCountState === 'error' ? '每日固定，数量暂无法读取，展开后重试' : routineCountState === 'loading' || routineRemaining == null ? '每日固定，正在读取数量' : `每日固定，${routineRemaining} 项未做`" :title="routineCountState === 'error' ? '数量暂无法读取，展开后重试' : '当天早晨与晚上待处理的固定事项'" :aria-expanded="active === 'routine'" :aria-controls="`${panelId}-routine`" @click="toggle('routine')"><i class="ri-repeat-line" aria-hidden="true"></i><span>每日固定</span><small class="day-side-count" aria-hidden="true">{{ routineCountState === 'error' ? '!' : routineCountState === 'loading' || routineRemaining == null ? '…' : routineRemaining }}</small></WaoButton>
+          <WaoButton :id="`${panelId}-notes-toggle`" ref="notesButton" variant="ghost" :aria-label="noteCount == null ? '随手记，正在读取数量' : `随手记，${noteCount} 条记录`" :aria-expanded="active === 'notes'" :aria-controls="`${panelId}-notes`" @click="toggle('notes')"><i class="ri-edit-box-line" aria-hidden="true"></i><span>随手记</span><small class="day-side-count" aria-hidden="true">{{ noteCount ?? '…' }}</small></WaoButton>
         </nav>
         <div v-show="active" class="day-side-panels">
           <header class="day-side-heading"><strong>{{ active === 'routine' ? '每日固定' : '随手记' }}</strong><WaoButton variant="ghost" aria-label="收起当天辅助面板" @click="close"><i class="ri-arrow-right-s-line" aria-hidden="true"></i>收起</WaoButton></header>
@@ -44,6 +45,7 @@ function close() {
 .day-side-rail { display: flex; flex-direction: column; gap: var(--wao-space-1); border-left: 1px solid var(--wao-line); padding-left: var(--wao-space-1); }
 .day-side-rail button { flex-direction: column; padding: var(--wao-space-1); min-width: 40px; }
 .day-side-rail span { writing-mode: vertical-rl; letter-spacing: .15em; }
+.day-side-count { min-width: 2ch; padding-inline: 4px; border-radius: var(--wao-radius-control); background: var(--wao-bg-sub); color: var(--wao-text-2); font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.6; }
 .day-side-rail button[aria-expanded='true'] { background: var(--wao-primary-soft); }
 .day-side-panels { flex: 1; min-width: 0; }
 .day-side-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--wao-space-1); margin-bottom: var(--wao-space-1); color: var(--wao-text-2); font-size: 13px; }
