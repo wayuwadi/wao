@@ -8,6 +8,27 @@ info:
 servers:
   - url: /api
 paths:
+  /tasks/{id}/subs/{subId}/promote:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: subId, in: path, required: true, schema: { type: string } }
+    post:
+      summary: 将内嵌子事项及后代原子提升为同项目主任务
+      description: 保留永久编号与已有内容；以源子事项完整快照拒绝并发覆盖，稳定目标身份使重复请求不创建重复任务。仅当前浏览器成员会话可调用；工作区 MCP 另需显式 promote_subtask 授权。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedSourceSubs]
+              properties:
+                expectedSourceSubs: { type: array, items: { type: object } }
+      responses:
+        '200': { description: ApiResponse 包裹源任务和提升后的任务，按此顺序返回 }
+        '400': { description: 子事项不存在或仍有未结束的 AI 执行，未迁移任何内容 }
+        '403': { description: 当前成员无项目访问权限 }
+        '409': { description: 子事项快照已更新，未迁移任何内容 }
   /decisions:
     get:
       summary: 列出当前成员已发布的个人决策

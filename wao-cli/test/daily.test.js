@@ -15,6 +15,7 @@ const string = { type: 'string' }
 const integer = { type: 'integer' }
 const nullable = { type: ['string', 'null'] }
 const tools = [
+  { name: 'promote_subtask', inputSchema: { properties: { task_id: string, subtask_id: string, expected_source_version: string }, required: ['task_id', 'subtask_id', 'expected_source_version'] } },
   { name: 'get_workspace_info', inputSchema: { properties: {} }, annotations: { readOnlyHint: true } },
   { name: 'list_notes', inputSchema: { properties: { keyword: string, tags: { type: 'array', items: string }, include_system: { type: 'boolean' }, offset: integer, limit: integer } }, annotations: { readOnlyHint: true } },
   { name: 'get_document', inputSchema: { properties: { document_id: string }, required: ['document_id'] }, annotations: { readOnlyHint: true } },
@@ -37,6 +38,19 @@ function fixture({ visible = tools, data = args => args, fail = null } = {}) {
   } }
   return { calls, stdout, stderr, options: { clientFactory: () => client, tokenProvider: async () => 'test-token', stdout: stdout.stream, stderr: stderr.stream } }
 }
+
+test('子事项提升使用实时授权与显式版本，错误不重复写入', async () => {
+  const f = fixture()
+  await run(['subtasks', 'promote', 's1', '--task-id', 't1', '--expected-source-version', 'v1'], f.options)
+  assert.deepEqual(f.calls, [{ name: 'promote_subtask', args: { subtask_id: 's1', task_id: 't1', expected_source_version: 'v1' } }])
+  await assert.rejects(() => run(['subtasks', 'promote', 's1', '--task-id', 't1'], f.options), /缺少必填字段/)
+  const denied = fixture({ visible: [] })
+  await assert.rejects(() => run(['subtasks', 'promote', 's1', '--task-id', 't1', '--expected-source-version', 'v1'], denied.options), /promote_subtask/)
+  assert.equal(denied.calls.length, 0)
+  const failed = fixture({ fail: '版本冲突' })
+  await assert.rejects(() => run(['subtasks', 'promote', 's1', '--task-id', 't1', '--expected-source-version', 'v1'], failed.options), /版本冲突/)
+  assert.equal(failed.calls.length, 1)
+})
 
 test('系统小记沿用实时授权工具的显式来源，列表可隐藏且旧服务不猜测支持', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'wao-system-notes-'))

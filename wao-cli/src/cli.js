@@ -30,7 +30,7 @@ const HELP = `WAO 工作区 CLI
   wao tasks comment TASK_ID --text 文字
   wao comments update COMMENT_ID --task-id TASK_ID --text 文字
   wao tasks document TASK_ID --document-id DOC_ID --mode add --expected-edit-version VERSION
-  wao subtasks create TASK_ID | update ID | reorder TASK_ID | move ID
+  wao subtasks create TASK_ID | update ID | reorder TASK_ID | move ID | promote ID
   wao subtasks status ID --task-id TASK_ID --status 待验证 --expected-subtask-version VERSION
   wao knowledge list | get ID | create | update ID | move
   wao documents list KB_ID | get ID | create | update ID

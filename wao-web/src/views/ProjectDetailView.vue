@@ -4,7 +4,7 @@ import { searchProjectTasks } from '@/utils/projectTaskSearch'
 import TaskOrderStatus from '@/components/task/TaskOrderStatus.vue'
 import ProjectTaskSearch from '@/components/task/ProjectTaskSearch.vue'
 import { useTaskOrderStore } from '@/stores/taskOrder'
-import { taskDropAfter } from '@/utils/taskDrop'
+import { taskHierarchyDrop } from '@/utils/taskDrop'
 import { taskTreeRows } from '@/utils/taskHierarchy'
 import { isTaskFinished as isFinished, projectCompletion, projectCompletionLabel } from '@/utils/projectCompletion'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -33,6 +33,12 @@ import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 import InlineSubtasks from '@/components/task/InlineSubtasks.vue'
 import ProjectTaskRow from '@/components/task/ProjectTaskRow.vue'
+import ContextActionMenu from '@/components/ui/ContextActionMenu.vue'
+import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
+import WaoButton from '@/components/ui/WaoButton.vue'
+import type { ContextAction } from '@/types/contextAction'
+import { copyText } from '@/utils/clipboard'
+import { shareUrl } from '@/utils/share'
 import { AI_RUN_ENABLED } from '@/config/features'
 import { useTaskPreferencesStore } from '@/stores/taskPreferences'
 import { PROJECT_TABLE_COLUMNS, DEFAULT_PROJECT_TABLE_COLUMNS, type ProjectTableColumn } from '@/utils/projectTableColumns'
@@ -271,7 +277,17 @@ function onProjectDeleted() {
 
 // ---- 拖拽：看板改状态 / 列表排序 ----
 const dragId = ref<string | null>(null)
+const draggedSub = ref<{ taskId: string; subId: string } | null>(null)
+const hierarchyOver = ref<{ id: string; side: 'before' | 'inside' | 'after' } | null>(null)
+const rootDropOver = ref(false)
+const taskMenu = ref<InstanceType<typeof ContextActionMenu> | null>(null)
+const operationError = ref('')
+const deletion = ref<{ id: string; subId?: string; title: string } | null>(null)
+const deleting = ref(false)
+const operationBusy = computed(() => data.movingTask || data.movingSubtasks)
+function endHierarchyDrag() { dragId.value = null; draggedSub.value = null; hierarchyOver.value = null; rootDropOver.value = false }
 function onDragStart(id: string, event: DragEvent) {
+  if (operationBusy.value) { event.preventDefault(); return }
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('text/plain', id)
@@ -650,29 +666,93 @@ const tableSections = computed(() => {
     ? sections.sort((a, b) => (tableSort.value!.direction === 'asc' ? 1 : -1) * a.name.localeCompare(b.name, 'zh-CN'))
     : sections
 })
-const orderingOver = ref<{ id: string; after: boolean } | null>(null)
-function onTableDragOver(id: string, event: DragEvent) {
-  orderingOver.value = dragId.value && dragId.value !== id ? { id, after: taskDropAfter(event) } : null
-}
 async function moveUnder(id: string, parentId: string | null) {
+  operationError.value = ''
   try {
     await data.moveTask(id, parentId)
     if (parentId) collapsedSubTasks.value = collapsedSubTasks.value.filter(value => value !== parentId)
     toast(parentId ? '已移为子任务，内容与编号保持不变' : '已移回顶层', 'ri-node-tree')
-  } catch (error) { toast(error instanceof Error ? error.message : '移动失败，请重试', 'ri-error-warning-line') }
+  } catch (error) { operationError.value = error instanceof Error ? error.message : '移动失败，请重试'; toast(operationError.value, 'ri-error-warning-line') }
 }
 async function onTableDrop(overId: string, _sectionId: string, event: DragEvent) {
-  orderingOver.value = null
-  if (readSubtaskDrag(event)) return
-  const id = dragId.value
-  dragId.value = null
+  const side = taskHierarchyDrop(event), payload = readSubtaskDrag(event), id = dragId.value
+  endHierarchyDrag()
+  if (operationBusy.value) return
+  if (payload) {
+    operationError.value = ''
+    try {
+      await data.moveSubtask(payload.taskId, payload.subId, overId, null)
+      collapsedSubTasks.value = collapsedSubTasks.value.filter(value => value !== overId)
+      toast('子任务已移动，内容与编号保持不变', 'ri-node-tree')
+    } catch (error) { operationError.value = error instanceof Error ? error.message : '移动失败，请重试' }
+    return
+  }
   const source = id ? data.taskById(id) : undefined, target = data.taskById(overId)
   if (!source || !target || source.id === target.id) return
+  if (side === 'inside') { await moveUnder(source.id, overId); return }
   if ((source.parentTaskId || null) !== (target.parentTaskId || null)) {
-    toast('只能在同一层级内排序，拖拽不会更改父子关系', 'ri-information-line'); return
+    await moveUnder(source.id, target.parentTaskId || null)
+    if (operationError.value) return
   }
-  await taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), source.id, overId, taskDropAfter(event))
+  await taskOrder.move(orderScope.value, ptasks.value.map(t => t.id), source.id, overId, side === 'after')
 }
+function hierarchyDragOver(id: string, event: DragEvent) {
+  hierarchyOver.value = !operationBusy.value && (draggedSub.value || dragId.value && dragId.value !== id)
+    ? { id, side: draggedSub.value ? 'inside' : taskHierarchyDrop(event) } : null
+}
+async function promoteSub(taskId: string, subId: string) {
+  operationError.value = ''
+  try { await data.promoteSubtask(taskId, subId); toast('已提升为主任务，原编号与内容保持不变', 'ri-indent-decrease') }
+  catch (error) { operationError.value = error instanceof Error ? error.message : '提升失败，请重试' }
+}
+async function dropAtRoot(event: DragEvent) {
+  const payload = readSubtaskDrag(event), id = dragId.value
+  endHierarchyDrag()
+  if (operationBusy.value) return
+  if (payload) await promoteSub(payload.taskId, payload.subId)
+  else if (id) await moveUnder(id, null)
+}
+function openTaskMenu(event: MouseEvent | KeyboardEvent, id: string, subId?: string) {
+  if (event instanceof KeyboardEvent) {
+    if (!(event.shiftKey && event.key === 'F10') && event.key !== 'ContextMenu') return
+    event.preventDefault()
+  } else if (event.type === 'contextmenu') {
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, a, [contenteditable="true"]')) return
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed && selection.anchorNode && event.currentTarget instanceof Node && event.currentTarget.contains(selection.anchorNode)) return
+  }
+  const task = data.taskById(id), sub = subId ? data.subById(id, subId) : null
+  if (!task || subId && !sub) return
+  const title = sub?.text ?? task.title, disabled = operationBusy.value
+  const actions: ContextAction[] = [
+    { id: 'open', label: '打开任务', run: () => ui.openTask(id, subId) },
+    { id: 'link', label: '复制分享链接', run: () => copyText(shareUrl(id, subId), '分享链接已复制') },
+    { id: 'number', label: '复制任务编号', run: () => copyText(String(sub?.number ?? task.number ?? (subId || id)), '任务编号已复制') },
+  ]
+  if (subId) actions.push({ id: 'promote', label: '提升为主任务', disabled, separatorBefore: true, run: () => promoteSub(id, subId) })
+  else {
+    actions.push({ id: 'add', label: '添加子任务', disabled, run: () => startAddSub(id, null) })
+    if (task.parentTaskId) actions.push({ id: 'detach', label: '移回主任务', disabled, run: () => moveUnder(id, null) })
+  }
+  actions.push({ id: 'delete', label: subId ? '删除子任务' : '删除任务', danger: true, separatorBefore: true, disabled,
+    run: () => { deletion.value = { id, subId, title }; operationError.value = '' } })
+  void taskMenu.value?.openAt(event, `任务：${title}`, actions)
+}
+async function confirmDelete() {
+  const selected = deletion.value
+  if (!selected || deleting.value || operationBusy.value) return
+  deleting.value = true; operationError.value = ''
+  try {
+    if (selected.subId) {
+      data.removeSub(selected.id, selected.subId); await data.flushTask(selected.id)
+      if (data.taskSaveState(selected.id) === 'error') operationError.value = '删除尚未保存，本机草稿已保留，请打开任务处理保存'
+      else toast('子任务已删除', 'ri-delete-bin-line')
+      deletion.value = null
+    } else if (await data.deleteTask(selected.id)) { toast('任务已删除', 'ri-delete-bin-line'); deletion.value = null }
+    else operationError.value = '删除失败，任务已保留，请重试'
+  } finally { deleting.value = false }
+}
+watch([pid, () => session.userId], () => { if (!deleting.value) deletion.value = null; endHierarchyDrag() })
 function tableRows(section: typeof tableSections.value[number]) {
   const candidates = [...section.open, ...(section.doneOpen ? section.done : [])]
   // 未完成后代仍需展示已完成父任务作为上下文。
@@ -900,6 +980,11 @@ watch(visibleTaskIds, (ids) => {
       <template v-if="pdTaskView === 'list'">
       <div class="task-list-card task-table-scroll">
         <TaskOrderStatus :scope="orderScope" />
+        <div v-if="dragId || draggedSub || operationBusy" class="task-root-drop" :class="{ on: rootDropOver }" role="status"
+          @dragover.prevent="rootDropOver = true" @dragleave="rootDropOver = false" @drop.prevent.stop="dropAtRoot">
+          <i :class="operationBusy ? 'ri-loader-4-line' : 'ri-indent-decrease'"></i>{{ operationBusy ? '正在保存任务层级…' : '拖到这里成为主任务' }}
+        </div>
+        <p v-if="operationError" class="task-operation-error" role="alert">{{ operationError }}<button @click="operationError = ''">收起提示</button></p>
         <div v-if="columnWidths.error.value || columnWidths.state.value === 'saving'" class="column-width-status" role="status">
           {{ columnWidths.error.value || '正在保存列宽…' }}<button v-if="columnWidths.error.value" type="button" @click="columnWidths.retry">重试列宽</button>
         </div>
@@ -976,7 +1061,8 @@ watch(visibleTaskIds, (ids) => {
                     :columns="visibleColumnKeys"
                     :depth="depth"
                     :child-task-count="childTaskCount(t.id)"
-                    :order-side="orderingOver?.id === t.id ? (orderingOver.after ? 'after' : 'before') : undefined"
+                    :order-side="hierarchyOver?.id === t.id ? hierarchyOver.side : undefined"
+                    @menu="openTaskMenu($event, t.id)"
                     @detach="moveUnder(t.id, null)"
                     :groups="groups"
                     :group-id="groupIdOf(t)"
@@ -987,9 +1073,9 @@ watch(visibleTaskIds, (ids) => {
                     @add-sub="startAddSub(t.id, null)"
                     @open="openTask(t.id)"
                     @dragstart="onDragStart(t.id, $event)"
-                    @dragend="dragId = null; orderingOver = null"
-                    @dragleave="orderingOver = null"
-                    @dragover.prevent="onTableDragOver(t.id, $event)"
+                    @dragend="endHierarchyDrag"
+                    @dragleave="hierarchyOver = null"
+                    @dragover.prevent="hierarchyDragOver(t.id, $event)"
                     @drop.prevent.stop="onTableDrop(t.id, section.id, $event)"
                   />
                 </tbody>
@@ -1005,6 +1091,8 @@ watch(visibleTaskIds, (ids) => {
                   :columns="visibleColumnKeys"
                   @add-sub="(parentId) => startAddSub(t.id, parentId)"
                   @close-add="addingSub = null"
+                  @sub-drag="draggedSub = $event"
+                  @menu="(event, subId) => openTaskMenu(event, t.id, subId)"
                 />
               </template>
               <tbody v-if="section.header && !section.total && quickAddGroup !== section.id">
@@ -1258,9 +1346,27 @@ watch(visibleTaskIds, (ids) => {
       @deleted="onProjectDeleted"
     />
   </div>
+  <ContextActionMenu ref="taskMenu" />
+  <SettingsDialogShell v-if="deletion" :title="deletion.subId ? '删除子任务' : '删除任务'" width="460px" height="auto" @close="!deleting && (deletion = null)">
+    <div class="task-delete-body">
+    <p class="task-delete-title">确定删除「{{ deletion.title }}」？</p>
+    <p>{{ deletion.subId ? '下级子事项保留并上移一级。' : '内嵌子事项一并删除，独立下级任务保留并移回顶层。' }}此操作不可恢复。</p>
+    <p v-if="operationError" class="task-operation-error" role="alert">{{ operationError }}</p>
+    </div>
+    <template #footer><WaoButton :disabled="deleting" @click="deletion = null">取消</WaoButton><WaoButton variant="danger" :loading="deleting" :disabled="operationBusy" @click="confirmDelete">{{ operationError ? '重试删除' : '确认删除' }}</WaoButton></template>
+  </SettingsDialogShell>
 </template>
 
 <style scoped>
+/* Drag target covers the sticky table header (z-index: 3), including resize controls. */
+.task-root-drop { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; height: 44px; margin-bottom: -44px; padding: 8px; border: 1px dashed var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-3); }
+.task-root-drop.on { border-color: var(--wao-primary); background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.task-operation-error { color: var(--wao-danger-strong); font-size: 13px; }
+.task-operation-error button { margin-left: 8px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.task-delete-title { overflow-wrap: anywhere; color: var(--wao-text); }
+.task-delete-body { padding: var(--wao-space-3); overflow-wrap: anywhere; }
+.task-delete-body p { margin: 0; }
+.task-delete-body p + p { margin-top: var(--wao-space-2); }
 .project-task-table th { position: relative; }
 .column-resize-handle { position: absolute; inset: 0 -5px 0 auto; width: 10px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; z-index: 2; }
 .column-resize-handle::after { content: ''; position: absolute; inset: 6px 4px; background: var(--wao-line-control); }

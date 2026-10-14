@@ -4,8 +4,8 @@ import { flushPromises } from '@vue/test-utils'
 import { taskTreeRows, taskDropIsNesting } from '@/utils/taskHierarchy'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
-import { apiMoveTask, apiPutTask, apiDeleteTask } from '@/api/board'
-vi.mock('@/api/board', async original => ({ ...await original<object>(), apiMoveTask: vi.fn(), apiPutTask: vi.fn(), apiDeleteTask: vi.fn() }))
+import { apiMoveTask, apiPutTask, apiDeleteTask, apiPromoteSubtask } from '@/api/board'
+vi.mock('@/api/board', async original => ({ ...await original<object>(), apiMoveTask: vi.fn(), apiPutTask: vi.fn(), apiDeleteTask: vi.fn(), apiPromoteSubtask: vi.fn() }))
 beforeEach(() => {
   localStorage.clear(); setActivePinia(createPinia()); seedDataStore(); vi.clearAllMocks()
   vi.mocked(apiPutTask).mockImplementation(async (_id, task) => task as never)
@@ -53,4 +53,24 @@ it('删除父任务失败保留关系，成功后子任务立即回顶层并保�
   vi.mocked(apiDeleteTask).mockResolvedValueOnce(undefined)
   expect(await data.deleteTask(parent.id)).toBe(true)
   expect(child.parentTaskId).toBeNull(); expect(child.desc).toBe('保留内容')
+})
+
+it('子事项提升保留在途标题草稿并更新保存版本，重复操作和失败不丢原项', async () => {
+  const data = useDataStore(), source = data.tasks[0]!
+  source.subs = [{ id: 's1', text: '提升', done: false, number: 7 }]
+  const promoted = { ...source, id: 'promoted', title: '提升', subs: [], number: 7 }
+  let resolve!: (value: typeof data.tasks) => void
+  vi.mocked(apiPromoteSubtask).mockReturnValueOnce(new Promise(r => resolve = r))
+  const pending = data.promoteSubtask(source.id, 's1'); await flushPromises()
+  await expect(data.promoteSubtask(source.id, 's1')).rejects.toThrow('正在移动')
+  data.patchTask(source.id, { title: '提升请求中继续输入' })
+  resolve([{ ...source, title: '旧标题', subs: [], editVersion: 'new-version', subtaskVersion: 'new-subs' }, promoted])
+  await pending
+  expect(source.title).toBe('提升请求中继续输入'); expect(source.subs).toEqual([])
+  expect(source.editVersion).toBe('new-version'); expect(data.taskById('promoted')?.number).toBe(7)
+  await data.flushTask(source.id)
+  source.subs = [{ id: 's2', text: '失败保留', done: false }]
+  vi.mocked(apiPromoteSubtask).mockRejectedValueOnce(new Error('离线'))
+  await expect(data.promoteSubtask(source.id, 's2')).rejects.toThrow('离线')
+  expect(source.subs[0]?.text).toBe('失败保留'); expect(data.movingSubtasks).toBe(false)
 })

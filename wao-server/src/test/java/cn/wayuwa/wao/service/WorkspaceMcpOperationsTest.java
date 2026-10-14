@@ -179,6 +179,26 @@ class WorkspaceMcpOperationsTest {
         verifyNoInteractions(move);
     }
 
+    @Test void promotionRequiresExplicitGrantCurrentVersionAndProjectScope() throws Exception {
+        var old = task("t1", "待办", List.of(new Step("子", false, "s1", "正文", List.of())));
+        when(tasks.get("t1", "m1")).thenReturn(old);
+        var args = json.readTree("{\"task_id\":\"t1\",\"subtask_id\":\"s1\",\"expected_source_version\":\"subs-v1\"}");
+        var previous = new WorkspaceMcpTokenService.AuthenticatedToken("old", "m1", true, false,
+                new WorkspaceCapabilityPolicy(List.of("get_task", "move_subtask"), null, null));
+        assertThat(tools.list(previous).toString()).doesNotContain("promote_subtask");
+        assertThatThrownBy(() -> tools.call("promote_subtask", args, previous)).hasMessageContaining("未授权");
+        assertThatThrownBy(() -> tools.call("promote_subtask", args, token(false, false))).hasMessageContaining("没有写权限");
+        var scoped = new WorkspaceMcpTokenService.AuthenticatedToken("scoped", "m1", true, false,
+                new WorkspaceCapabilityPolicy(List.of("get_task", "promote_subtask"), List.of("other-project"), null));
+        when(tasks.lockWorkspaceTask("t1", "m1")).thenReturn(old);
+        assertThatThrownBy(() -> tools.call("promote_subtask", args, scoped)).hasMessageContaining("授权范围");
+        var stale = args.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) stale).put("expected_source_version", "stale");
+        assertThatThrownBy(() -> tools.call("promote_subtask", stale, writer)).isInstanceOf(ConflictException.class);
+        verifyNoInteractions(move);
+        tools.call("promote_subtask", args, writer);
+        verify(move).promote(eq("t1"), eq("s1"), eq(new PromoteSubtaskRequest(old.subs())), eq("m1"));
+    }
+
     @Test void stableNoteCreateReplayReturnsLatestWithoutOverwritingLaterEdits() throws Exception {
         String id = "7e2bfde1eb7446128e30d8175319f229";
         var identity = new cn.wayuwa.wao.domain.AccountEntity();

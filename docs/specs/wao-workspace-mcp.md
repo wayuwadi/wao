@@ -4,6 +4,8 @@
 
 2026-10-14：项目成员管理仅通过浏览器会话开放给负责人，工作区工具 `update_project` 继续使用原字段白名单，不开放 members / expectedMembers，旧令牌不获得共享管理权限。
 
+2026-10-14：新增显式授权的 `promote_subtask`，参数 `task_id`、`subtask_id`、`expected_source_version` 均必填。返回源任务和新主任务，保留永久编号与子树；旧快照拒绝，沿用成员可见性与项目范围。现有设备权限快照不变，旧令牌不会自动获得提升能力；见 [项目任务优化规格](project-task-optimization-2026-10-14.md)。
+
 2026-10-07：Pet 上传与分享通过独立 CLI Bearer HTTP 入口实现，MCP 工具目录不增加二进制上传或设备签发能力；新连接可显式选择 Pet 操作，旧令牌不扩权。详见 [Pet CLI 上传与分享](pet-cli-upload-and-sharing.md)。
 
 2026-10-06：[能力中心](capability-center.md) 增加实际接入验证元数据。鉴权后的 `tools/list` 成功记录时间与实际可见工具数，目录运行失败记录失败时间；签发、initialize、管理列表和最近访问不算成功。浏览器 `/api/workspace-mcp/tokens` DTO 新增可空 `lastVerifiedAt`、`verifiedToolCount`、`lastVerificationFailedAt`；原令牌权限、tools/list/schema 与调用响应保持。元数据记录失败不改变工具目录结果，不新增验证或令牌管理工具。

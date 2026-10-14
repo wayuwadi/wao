@@ -81,6 +81,7 @@ wao subtasks update SUBTASK_ID --task-id TASK_ID --due 2026-10-10 --expected-edi
 wao subtasks reorder TASK_ID --subtask-ids '["s2","s1"]' --expected-edit-version VERSION
 wao subtasks move SUBTASK_ID --task-id SOURCE_ID --target-task-id TARGET_ID --expected-source-version SOURCE_VERSION --expected-target-version TARGET_VERSION
 wao tasks move TASK_ID --parent-task-id null --expected-parent-id PARENT_ID
+wao subtasks promote SUBTASK_ID --task-id SOURCE_ID --expected-source-version SOURCE_VERSION
 wao tasks comment TASK_ID --text "验收记录"
 wao comments update COMMENT_ID --task-id TASK_ID --text "修订验收记录"
 wao tasks document TASK_ID --document-id DOCUMENT_ID --mode add --expected-edit-version VERSION
