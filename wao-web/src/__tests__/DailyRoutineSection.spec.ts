@@ -38,4 +38,38 @@ describe('每日固定事项',()=>{
     await w.get('input[aria-label="固定事项标题"]').setValue('尚未保存的早晨事项');await w.findAll('button').find(b=>b.text()==='收起管理')!.trigger('click');await w.findAll('button').find(b=>b.text()==='管理')!.trigger('click')
     expect((w.get('input[aria-label="固定事项标题"]').element as HTMLInputElement).value).toBe('尚未保存的早晨事项');expect(api.rule).not.toHaveBeenCalled()
   })
+  it('剩余数量统计整天早晚 OPEN，完成、跳过与恢复后使用保存确认的数量', async () => {
+    const entries = [
+      { ...occurrence, templateId: 'morning', status: 'OPEN' },
+      { ...occurrence, templateId: 'evening', period: 'EVENING', status: 'OPEN' },
+      { ...occurrence, templateId: 'done', status: 'DONE' },
+      { ...occurrence, templateId: 'skipped', status: 'SKIPPED' },
+    ]
+    const range = { ...fixture(), days: [{ date: '2026-10-03', occurrences: entries }] }
+    api.read.mockResolvedValue(range)
+    const w = mount(DailyRoutineSection, { props: { date: '2026-10-03' } }); await morning(w)
+    expect(w.emitted('summary')!.slice(-1)[0]).toEqual(['2026-10-03', 'a:wg', 2, 'ready'])
+    entries[0]!.status = 'DONE'
+    await w.findAll('.routine-check')[0]!.trigger('click'); await flushPromises()
+    expect(w.emitted('summary')!.slice(-1)[0]).toEqual(['2026-10-03', 'a:wg', 1, 'ready'])
+    entries[0]!.status = 'OPEN'
+    await w.findAll('.routine-row button').find(button => button.text() === '恢复未做')!.trigger('click'); await flushPromises()
+    expect(w.emitted('summary')!.slice(-1)[0]).toEqual(['2026-10-03', 'a:wg', 2, 'ready'])
+    w.unmount()
+  })
+  it('读取中与失败不报零，日期切换不让旧响应覆盖新日期数量', async () => {
+    let resolveOld!: (value: unknown) => void
+    api.read.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    const w = mount(DailyRoutineSection, { props: { date: '2026-10-03' } })
+    expect(w.emitted('summary')!.slice(-1)[0]).toEqual(['2026-10-03', 'a:wg', null, 'loading'])
+    api.read.mockRejectedValueOnce(new Error('断开连接'))
+    await w.setProps({ date: '2026-10-04' }); await flushPromises()
+    expect(w.emitted('summary')!.slice(-1)[0]).toEqual(['2026-10-04', 'a:wg', null, 'error'])
+    resolveOld(fixture()); await flushPromises()
+    expect(w.emitted('summary')!.slice(-1)[0]).toEqual(['2026-10-04', 'a:wg', null, 'error'])
+    api.read.mockResolvedValue({ ...fixture('2026-10-04'), days: [{ date: '2026-10-04', occurrences: [] }] })
+    await w.findAll('button').find(button => button.text() === '重新加载')!.trigger('click'); await flushPromises()
+    expect(w.emitted('summary')!.slice(-1)[0]).toEqual(['2026-10-04', 'a:wg', 0, 'ready'])
+    w.unmount()
+  })
 })

@@ -3,6 +3,24 @@ import { mount } from '@vue/test-utils'
 import TodoDayLayout from '@/components/todo/TodoDayLayout.vue'
 
 describe('按天辅助侧边栏', () => {
+  it('折叠时仍显示剩余项数与全部记录数，数量更新不自动展开，零与未知可区分', async () => {
+    const wrapper = mount(TodoDayLayout, { props: { routineRemaining: 3, routineCountState: 'ready', noteCount: 5 } })
+    const buttons = wrapper.findAll('.day-side-rail button')
+    expect(buttons[0]!.attributes('aria-label')).toBe('每日固定，3 项未做')
+    expect(buttons[1]!.attributes('aria-label')).toBe('随手记，5 条记录')
+    expect(wrapper.findAll('.day-side-count').map(item => item.text())).toEqual(['3', '5'])
+    await wrapper.setProps({ routineRemaining: 0, noteCount: 0 })
+    expect(wrapper.findAll('.day-side-count').map(item => item.text())).toEqual(['0', '0'])
+    expect(buttons.every(button => button.attributes('aria-expanded') === 'false')).toBe(true)
+    await wrapper.setProps({ routineRemaining: null, routineCountState: 'loading' })
+    expect(buttons[0]!.get('.day-side-count').text()).toBe('…')
+    await wrapper.setProps({ routineCountState: 'error' })
+    expect(buttons[0]!.get('.day-side-count').text()).toBe('!')
+    expect(buttons[0]!.attributes('aria-label')).toContain('展开后重试')
+    await buttons[0]!.trigger('click')
+    expect(buttons[0]!.attributes('aria-expanded')).toBe('true')
+    wrapper.unmount()
+  })
   it('默认折叠，打开一个面板时任务仍在，切换与收起保留输入节点和草稿', async () => {
     const wrapper = mount(TodoDayLayout, { attachTo: document.body, slots: {
       default: '<p>今天要做的事</p>', routine: '<p>早晚固定清单</p>', notes: '<textarea aria-label="随手记草稿"></textarea>',
