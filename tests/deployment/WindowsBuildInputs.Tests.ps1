@@ -34,3 +34,5 @@ try {
     if (-not $resolved.StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()), [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid test cleanup boundary' }
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }
+# Expected failing Git probes must not leak their native exit status to CI's wrapper.
+exit 0
