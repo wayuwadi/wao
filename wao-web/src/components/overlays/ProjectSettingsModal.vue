@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import SettingsDialogShell from '@/components/ui/SettingsDialogShell.vue'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useSessionStore } from '@/stores/session'
+import { fetchMembers, apiGetProject } from '@/api/board'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import {
@@ -15,12 +17,58 @@ import {
 } from '@/api/ai'
 import { AI_ENGINES, engineLabel } from '@/composables/aiEngines'
 import { AI_RUN_ENABLED } from '@/config/features'
-import type { AiEngine, AiRunner, AiSkillCapability, Project } from '@/types'
+import type { AiEngine, AiRunner, AiSkillCapability, Project, Member } from '@/types'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ close: []; deleted: [] }>()
 
 const data = useDataStore()
+const session = useSessionStore()
+const canManageMembers = computed(() => session.userId === props.project.owner)
+const originalMembers = ref([...props.project.members])
+const selectedMembers = ref([...new Set([props.project.owner, ...originalMembers.value])])
+const memberConflict = ref(false)
+const memberReview = ref('')
+const memberDirectory = ref<Member[]>([])
+const membersLoading = ref(false)
+const membersError = ref('')
+const memberToAdd = ref('')
+const membersChanged = computed(() => JSON.stringify([...selectedMembers.value].sort()) !== JSON.stringify([...new Set([props.project.owner, ...originalMembers.value])].sort()))
+const availableMembers = computed(() => memberDirectory.value.filter(member => !selectedMembers.value.includes(member.id)))
+async function loadMembers() {
+  membersLoading.value = true
+  membersError.value = ''
+  try { memberDirectory.value = await fetchMembers() }
+  catch { membersError.value = '成员列表读取失败，请重试；现有选择已保留。' }
+  finally { membersLoading.value = false }
+}
+function addMember() {
+  if (!canManageMembers.value || !availableMembers.value.some(member => member.id === memberToAdd.value)) return
+  selectedMembers.value.push(memberToAdd.value)
+  memberToAdd.value = ''
+}
+function removeMember(id: string) {
+  if (!canManageMembers.value || id === props.project.owner) return
+  selectedMembers.value = selectedMembers.value.filter(member => member !== id)
+}
+function memberName(id: string) {
+  return memberDirectory.value.find(member => member.id === id)?.name ?? session.memberById(id).name
+}
+async function refreshMemberSelection() {
+  if (saving.value) return
+  saving.value = true
+  try {
+    const latest = await apiGetProject(props.project.id)
+    const additions = selectedMembers.value.filter(id => !originalMembers.value.includes(id))
+    const removals = originalMembers.value.filter(id => !selectedMembers.value.includes(id))
+    selectedMembers.value = [...new Set([latest.owner, ...latest.members.filter(id => !removals.includes(id)), ...additions])]
+    originalMembers.value = [...latest.members]
+    memberConflict.value = false
+    saveError.value = ''
+    memberReview.value = `最新已保存成员：${latest.members.map(memberName).join('、')}。已保留本次添加和移除，请确认列表后保存。`
+  } catch (error) { saveError.value = error instanceof Error ? error.message : '读取最新成员失败，选择已保留，请重试。' }
+  finally { saving.value = false }
+}
 
 const name = ref(props.project.name)
 const area = ref(props.project.area)
@@ -89,7 +137,7 @@ const ICONS = [
 const saving = ref(false),
   saveError = ref('')
 const basicSnapshot = () =>
-  JSON.stringify([name.value, area.value, goal.value, icon.value, due.value])
+  JSON.stringify([name.value, area.value, goal.value, icon.value, due.value, selectedMembers.value])
 const basicOriginal = basicSnapshot()
 const aiSnapshot = () =>
   JSON.stringify([
@@ -121,7 +169,7 @@ async function requestClose() {
 }
 
 async function save() {
-  if (saving.value) return
+  if (saving.value || memberConflict.value) return
   if (!name.value.trim()) {
     saveError.value = '请填写项目名称，输入已保留。'
     return
@@ -139,6 +187,7 @@ async function save() {
       goal: goal.value.trim(),
       icon: icon.value,
       ...(due.value !== originalDue ? { due: due.value } : {}),
+      ...(canManageMembers.value && membersChanged.value ? { members: [...selectedMembers.value], expectedMembers: [...originalMembers.value] } : {}),
     })
     if (!projectSaved) throw new Error('项目设置保存失败，请重试')
     // AI Run 下线期间不展示、也不读取执行配置，保存时绝不能用空白默认值覆盖服务端已有配置。
@@ -162,6 +211,7 @@ async function save() {
     toast('项目设置与 AI Run 配置已保存', 'ri-check-line')
     emit('close')
   } catch (error) {
+    memberConflict.value = membersChanged.value && typeof error === 'object' && error !== null && 'status' in error && error.status === 409
     saveError.value = error instanceof Error ? error.message : '项目设置保存失败'
     toast(saveError.value, 'ri-error-warning-line')
   } finally {
@@ -222,6 +272,7 @@ async function generatePairCode() {
 }
 
 onMounted(() => {
+  void loadMembers()
   if (AI_RUN_ENABLED) void loadAiConfig()
 })
 </script>
@@ -229,13 +280,14 @@ onMounted(() => {
 <template>
   <SettingsDialogShell
     title="项目设置"
-    description="名称、日期与项目属性"
+    description="名称、日期、项目成员与属性"
     width="760px"
     height="auto"
     @close="requestClose"
   >
     <div class="project-settings-body" :inert="saving || undefined">
       <p v-if="saveError" class="save-error" role="alert">{{ saveError }}</p>
+      <button v-if="memberConflict" type="button" class="btn-ghost" @click="refreshMemberSelection">读取最新成员并保留我的修改</button>
       <section class="basic-fields">
         <div>
           <div class="label">项目名称</div>
@@ -250,6 +302,28 @@ onMounted(() => {
             </button>
             <span v-if="!due">未排期</span>
           </div>
+        </div>
+      </section>
+      <section class="project-members" aria-label="项目成员">
+        <h3>项目成员</h3>
+        <p class="members-help">{{ canManageMembers ? '添加或移除成员后，点击保存设置生效。负责人始终保留。' : '只有项目负责人可以添加或移除成员。' }}</p>
+        <p v-if="memberReview" class="members-help" role="status">{{ memberReview }}</p>
+        <p v-if="membersLoading" role="status">正在读取组织成员…</p>
+        <p v-if="membersError" role="alert">{{ membersError }} <button type="button" class="btn-ghost" @click="loadMembers">重新读取</button></p>
+        <ul class="member-list">
+          <li v-for="id in selectedMembers" :key="id">
+            <span>{{ memberName(id) }}{{ id === project.owner ? ' · 负责人' : '' }}</span>
+            <button v-if="canManageMembers && id !== project.owner" type="button" class="btn-ghost"
+              :aria-label="`移除成员：${memberName(id)}`" @click="removeMember(id)">移除</button>
+          </li>
+        </ul>
+        <div v-if="canManageMembers" class="member-add">
+          <label for="project-member-add">添加成员</label>
+          <select id="project-member-add" v-model="memberToAdd" :disabled="membersLoading || !!membersError">
+            <option value="">{{ availableMembers.length ? '选择组织成员' : '没有可添加的成员' }}</option>
+            <option v-for="member in availableMembers" :key="member.id" :value="member.id">{{ member.name }}</option>
+          </select>
+          <button type="button" class="btn-ghost" :disabled="!memberToAdd || membersLoading || !!membersError" @click="addMember">添加</button>
         </div>
       </section>
       <details class="optional-project">
@@ -464,7 +538,7 @@ onMounted(() => {
       <div class="foot">
         <span class="save-status">{{ saving ? '正在保存…' : '关闭时保存本次修改' }}</span>
         <button class="btn-ghost" :disabled="saving" @click="requestClose">完成并关闭</button>
-        <button class="btn-primary" :disabled="saving || !name.trim()" @click="save">
+        <button class="btn-primary" :disabled="saving || memberConflict || !name.trim()" @click="save">
           {{ saving ? '保存中…' : '保存设置' }}
         </button>
       </div>
@@ -473,6 +547,14 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.project-members { margin-top: 22px; border-top: 1px solid var(--wao-line); padding-top: 16px; }
+.project-members h3 { margin: 0; font-size: 14px; }
+.members-help { color: var(--wao-text-3); font-size: 12px; }
+.member-list { list-style: none; padding: 0; margin: 12px 0; }
+.member-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
+.member-list span { overflow-wrap: anywhere; }
+.member-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.member-add select { flex: 1; min-width: 0; padding: 8px; color: var(--wao-text); background: var(--wao-bg-card); border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); }
 .due-editor {
   display: flex;
   align-items: center;

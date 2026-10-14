@@ -115,7 +115,7 @@ onBeforeUnmount(() => projectLayout.clearCreateGroupTarget())
     </div>
 
     <div class="foot">
-      <span class="foot-tip">创建后可随时邀请成员并设置查看 / 编辑权限</span>
+      <span class="foot-tip">创建后可在项目设置中添加或移除成员</span>
       <div class="spacer"></div>
       <button class="btn-ghost" @click="requestClose">保留草稿并关闭</button>
       <button class="btn-primary" :disabled="!name.trim() || saving" @click="create">{{ saving ? '创建中…' : '创建项目' }}</button>

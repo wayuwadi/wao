@@ -27,6 +27,61 @@ import org.mockito.ArgumentCaptor;
 
 class ProjectServiceTest {
 
+    private PatchProjectRequest membership(List<String> next, List<String> expected) {
+        return new PatchProjectRequest(null, null, null, null, null, null, null, null, next, expected);
+    }
+
+    @Test
+    void ownerCanAddAndRemoveMembersWithoutLosingDetail() {
+        ProjectEntity entity = project("shared", "wg", "[\"wg\"]");
+        entity.setDetailJson("{\"members\":[\"wg\"],\"icon\":\"ri-plant-line\",\"docs\":[\"doc-a\"]}");
+        when(mapper.selectById("shared")).thenReturn(entity);
+        when(members.list()).thenReturn(List.of(new cn.wayuwa.wao.dto.MemberDto("wg", "甲", "甲", "", ""),
+                new cn.wayuwa.wao.dto.MemberDto("wd", "乙", "乙", "", "")));
+        when(mapper.update(any(ProjectEntity.class), any(com.baomidou.mybatisplus.core.conditions.Wrapper.class))).thenReturn(1);
+        ProjectDto added = service.update("shared", membership(List.of("wd", "wd"), List.of("wg")), "wg");
+        assertThat(added.members()).containsExactly("wg", "wd");
+        assertThat(added.docs()).containsExactly("doc-a");
+        assertThat(added.icon()).isEqualTo("ri-plant-line");
+        assertThat(added.visibility()).contains("2 人");
+        assertThat(service.get("shared", "wd").id()).isEqualTo("shared");
+        ProjectDto removed = service.update("shared", membership(List.of(), List.of("wg", "wd")), "wg");
+        assertThat(removed.members()).containsExactly("wg");
+        assertThat(removed.visibility()).isEqualTo("仅自己可见");
+        assertThatThrownBy(() -> service.get("shared", "wd")).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void membershipRejectsNonOwnersUnknownMembersAndStaleSelections() {
+        ProjectEntity entity = project("shared", "wg", "[\"wg\",\"wd\"]");
+        when(mapper.selectById("shared")).thenReturn(entity);
+        when(members.list()).thenReturn(List.of(new cn.wayuwa.wao.dto.MemberDto("wg", "甲", "甲", "", "")));
+        assertThatThrownBy(() -> service.update("shared", membership(List.of(), List.of("wg", "wd")), "wd"))
+                .isInstanceOf(cn.wayuwa.wao.common.ForbiddenException.class);
+        assertThatThrownBy(() -> service.update("shared", membership(List.of("unknown"), List.of("wg", "wd")), "wg"))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.update("shared", membership(List.of(), List.of("wg")), "wg"))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+        assertThatThrownBy(() -> service.update("shared", membership(List.of(), null), "wg"))
+                .isInstanceOf(BadRequestException.class);
+        verify(mapper, never()).update(any(ProjectEntity.class), any(com.baomidou.mybatisplus.core.conditions.Wrapper.class));
+    }
+
+    @Test
+    void membershipWriteUsesDetailCompareAndSwapAndRejectsConcurrentChange() {
+        ProjectEntity entity = project("shared", "wg", "[\"wg\"]");
+        String previous = entity.getDetailJson();
+        when(mapper.selectById("shared")).thenReturn(entity);
+        assertThatThrownBy(() -> service.update("shared", membership(List.of(), List.of("wg")), "wg"))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class);
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<ProjectEntity>> update =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper.class);
+        verify(mapper).update(any(ProjectEntity.class), update.capture());
+        assertThat(update.getValue().getSqlSegment()).contains("detail_json");
+        assertThat(update.getValue().getSqlSegment()).contains("AS JSON");
+        assertThat(update.getValue().getParamNameValuePairs().values()).contains(previous);
+    }
+
     @Test
     void deadlinesAreExplicitAndOldPatchesPreserveHistory() {
         assertThat(service.create(new CreateProjectRequest("未排期", "career", "", false, false), "wg").due()).isEmpty();

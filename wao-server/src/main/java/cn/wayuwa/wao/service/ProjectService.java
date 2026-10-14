@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Set;
 
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.ForbiddenException;
+import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.dto.Activity;
@@ -19,6 +21,7 @@ import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.TaskGroupDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -213,6 +216,28 @@ public class ProjectService {
      */
     public ProjectDto update(String id, PatchProjectRequest req, String memberId) {
         ProjectEntity e = requireVisible(id, memberId);
+        String previousDetail = e.getDetailJson();
+        List<String> nextMembers = null;
+        if (req.members() != null) {
+            if (memberId == null || !memberId.equals(e.getOwnerId())) {
+                throw new ForbiddenException("只有项目负责人可以添加或移除成员");
+            }
+            if (req.expectedMembers() == null) throw new BadRequestException("请提供编辑前的项目成员列表");
+            if (!new HashSet<>(nn(parse(previousDetail).members())).equals(new HashSet<>(req.expectedMembers()))) {
+                throw new ConflictException("项目成员已被修改，请重新打开设置后确认；当前输入已保留");
+            }
+            Set<String> knownMembers = new HashSet<>();
+            members.list().forEach(member -> knownMembers.add(member.id()));
+            nextMembers = new ArrayList<>();
+            nextMembers.add(e.getOwnerId());
+            for (String selected : req.members()) {
+                if (selected == null || !knownMembers.contains(selected)) {
+                    throw new BadRequestException("请选择现有组织成员");
+                }
+                if (!nextMembers.contains(selected)) nextMembers.add(selected);
+            }
+            e.setVisibility(nextMembers.size() == 1 ? "仅自己可见" : "项目成员 " + nextMembers.size() + " 人 · 可查看");
+        }
         if (req.due() != null) e.setDueDate(normalizeDue(req.due()));
         if (req.name() != null && !req.name().isBlank()) {
             e.setName(req.name().trim());
@@ -232,16 +257,25 @@ public class ProjectService {
         if (req.notifyEnabled() != null) {
             e.setNotifyEnabled(req.notifyEnabled());
         }
-        if ((req.icon() != null && !req.icon().isBlank()) || req.taskGroups() != null) {
+        if ((req.icon() != null && !req.icon().isBlank()) || req.taskGroups() != null || nextMembers != null) {
             ProjectDetail d = parse(e.getDetailJson());
             String icon = req.icon() != null && !req.icon().isBlank() ? req.icon() : d.icon();
             List<TaskGroupDto> groups = req.taskGroups() == null
                     ? d.taskGroups() : normalizeGroups(req.taskGroups());
-            e.setDetailJson(write(new ProjectDetail(d.members(), d.milestones(), d.msDates(), d.trend(),
+            e.setDetailJson(write(new ProjectDetail(nextMembers == null ? d.members() : nextMembers, d.milestones(), d.msDates(), d.trend(),
                     d.blockers(), d.docs(), d.files(), d.activity(), icon, groups, d.startedAt())));
         }
         e.setUpdatedLabel("刚刚");
-        projectMapper.updateById(e);
+        if (nextMembers == null) projectMapper.updateById(e);
+        else {
+            UpdateWrapper<ProjectEntity> update = new UpdateWrapper<ProjectEntity>().eq("id", id);
+            if (previousDetail == null) update.isNull("detail_json");
+            // detail_json 是 MySQL 原生 JSON，条件更新必须比较 JSON 值，不能直接比较 SQL 字符串。
+            else update.apply("detail_json = CAST({0} AS JSON)", previousDetail);
+            if (projectMapper.update(e, update) != 1) {
+                throw new ConflictException("项目已被修改，请重新打开设置后确认；当前输入已保留");
+            }
+        }
         return toDto(e);
     }
 

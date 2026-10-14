@@ -1777,7 +1777,7 @@ export const useDataStore = defineStore('data', () => {
   /** 更新项目字段（名称 / 领域 / 状态 / 目标 / 图标 / 通知开关）；apiLive 时写透后端。 */
   async function updateProject(
     id: string,
-    patch: { name?: string; area?: string; status?: Project['status']; goal?: string; icon?: string; notifyEnabled?: boolean; due?: string },
+    patch: { name?: string; area?: string; status?: Project['status']; goal?: string; icon?: string; notifyEnabled?: boolean; due?: string; members?: string[]; expectedMembers?: string[] },
   ): Promise<boolean> {
     const p = projectById(id)
     if (!p) return false
@@ -1786,8 +1786,9 @@ export const useDataStore = defineStore('data', () => {
       const saved = await apiPatchProject(id, patch)
       Object.assign(p, patch, saved)
       return true
-    } catch {
+    } catch (error) {
       /* 表单保留输入，列表继续展示已持久化结果；调用方提示重试。 */
+      if (patch.members !== undefined) throw error
       return false
     }
   }
