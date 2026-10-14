@@ -169,6 +169,62 @@ describe('待办日工作区', () => {
     expect(wrapper.get('.todo-checklist input').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
+  it('四象限仅使用当天记录，保留未收尾子项、日期和添加草稿，单独记住成员选择', async () => {
+    const data = useDataStore(), base = data.tasks[0]!
+    data.tasks = ['P0', 'P1', 'P2', 'P3'].map((pr, i) => ({ ...base, id: `q${i}`, title: `当日${pr}`, pr, status: '待办', subs: [] })) as typeof data.tasks
+    data.tasks.push({ ...base, id: 'other-day', title: '其他日期', pr: 'P0' })
+    data.tasks[1]!.status = '已完成'; data.tasks[1]!.subs = [{ id: 'pending', text: '还需验收', done: false, status: '待验证' }]
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: data.tasks.slice(0, 4).map(task => ({ task, snapshot: task, planned: task.id !== 'q3', events: [] })) })
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' }, global: { stubs: { TaskSchedulePopover: true } } }); await flushPromises()
+    await wrapper.get('[aria-label="当天要做的事"]').setValue('未提交的标题')
+    const draft = localStorage.getItem('wao-day-task-draft-v1:a:wg:2026-10-03')
+    await wrapper.findAll('.day-view-switch button')[1]!.trigger('click')
+    for (const pr of ['P0', 'P1', 'P2', 'P3']) expect(wrapper.get(`[data-group="${pr}"]`).text()).toContain(`当日${pr}`)
+    expect(wrapper.text()).not.toContain('其他日期')
+    expect(wrapper.get('[data-group="P1"]').text()).toContain('还需验收')
+    expect(wrapper.get('[data-group="P3"]').text()).toContain('当天留下了进展')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="选择待办日期"]').element.value).toBe('2026-10-03')
+    expect(wrapper.get<HTMLInputElement>('[aria-label="当天要做的事"]').element.value).toBe('未提交的标题')
+    expect(localStorage.getItem('wao-day-task-draft-v1:a:wg:2026-10-03')).toBe(draft)
+    expect(localStorage.getItem('wao-todo-day-view-v1:a:wg')).toBe('quadrant')
+    expect(localStorage.getItem('wao-todo-view-v1')).toBeNull()
+    wrapper.unmount()
+    const restored = mount(TodoDayView, { props: { date: '2026-10-03' } }); await flushPromises()
+    expect(restored.find('.day-quadrants').exists()).toBe(true)
+    useSessionStore().accept({ accountId: 'other', member: { id: 'other', name: '其他', initial: '?', color: '', role: '' }, identities: [], createdAt: '' }); await flushPromises()
+    expect(restored.find('.day-quadrants').exists()).toBe(false)
+    restored.unmount()
+  })
+  it('四象限调整优先级走串行保存，失败选择留在新象限且可处理保存', async () => {
+    const data = useDataStore(), task = data.tasks[0]!
+    task.pr = 'P0'; task.status = '进行中'; task.subs = []
+    fetchDay.mockResolvedValue({ ...fixture('2026-10-03'), tasks: [{ task, snapshot: task, planned: true, events: [] }] })
+    const patch = vi.spyOn(data, 'patchTask')
+    const flush = vi.spyOn(data, 'flushTask').mockResolvedValue(undefined)
+    vi.spyOn(data, 'taskSaveState').mockReturnValue('error')
+    vi.spyOn(data, 'taskSaveError').mockReturnValue('保存失败，选择仍保留')
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-03' }, global: { stubs: { TaskSchedulePopover: true } } }); await flushPromises()
+    await wrapper.findAll('.day-view-switch button')[1]!.trigger('click')
+    await wrapper.get('.task-priority-select').setValue('P3'); await flushPromises()
+    expect(patch).toHaveBeenCalledWith(task.id, { pr: 'P3' })
+    expect(flush).toHaveBeenCalledWith(task.id)
+    expect(wrapper.get('[data-group="P3"] .task-error').text()).toContain('保存失败')
+    expect(wrapper.get<HTMLSelectElement>('.task-priority-select').element.value).toBe('P3')
+    expect(wrapper.get('[data-group="P0"]').text()).toContain('这个象限没有当天待办')
+    wrapper.unmount()
+  })
+  it('历史四象限保留当日快照且不提供优先级修改，本机存储失败不阻断切换', async () => {
+    fetchDay.mockResolvedValue(fixture('2026-10-02'))
+    const wrapper = mount(TodoDayView, { props: { date: '2026-10-02' } }); await flushPromises()
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => { throw new Error('只读存储') })
+    await wrapper.findAll('.day-view-switch button')[1]!.trigger('click')
+    expect(wrapper.find('.day-quadrants').exists()).toBe(true)
+    expect(wrapper.text()).toContain('按任务现有优先级分组')
+    expect(wrapper.get('.task-title').text()).toBe('当天原名称')
+    expect(wrapper.find('.task-priority-select').exists()).toBe(false)
+    expect(wrapper.text()).toContain('无法记住本机视图')
+    wrapper.unmount()
+  })
   it('今日安排与未排期进展、已收尾分开，未收尾子项不能被完成分组隐藏', async () => {
     const data = useDataStore(), base = data.tasks[0]!
     data.tasks = [

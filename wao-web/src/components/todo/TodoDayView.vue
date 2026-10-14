@@ -21,6 +21,9 @@ import DailyRoutineSection from './DailyRoutineSection.vue'
 import TodoDayLayout from './TodoDayLayout.vue'
 import WaoCard from '@/components/ui/WaoCard.vue'
 import WaoButton from '@/components/ui/WaoButton.vue'
+import SaveHint from '@/components/ui/SaveHint.vue'
+import { TASK_QUADRANTS } from '@/utils/taskQuadrants'
+import type { Priority } from '@/types'
 
 const props = defineProps<{ date: string }>()
 const emit = defineEmits<{ 'update:date': [date: string]; all: [] }>()
@@ -38,6 +41,18 @@ const checklistOpen = (id: string) => expanded.value[id] !== false
 const createProject = ref('')
 const draftError = ref('')
 const identity = () => `${session.account?.accountId ?? ''}:${session.userId}`
+const taskView = ref<'list' | 'quadrant'>('list')
+const viewError = ref('')
+const viewKey = () => `wao-todo-day-view-v1:${identity()}`
+watch(() => identity(), () => {
+  try { taskView.value = localStorage.getItem(viewKey()) === 'quadrant' ? 'quadrant' : 'list'; viewError.value = '' }
+  catch { taskView.value = 'list'; viewError.value = '无法读取本机视图偏好，仍可切换视图。' }
+}, { immediate: true })
+function switchView(view: 'list' | 'quadrant') {
+  taskView.value = view
+  try { localStorage.setItem(viewKey(), view); viewError.value = '' }
+  catch { viewError.value = '无法记住本机视图选择，当前视图仍保留。' }
+}
 const newKey = () => `wao-day-task-draft-v1:${identity()}:${props.date}`
 const selectionProtected = ref(false)
 function automaticProject() {
@@ -97,6 +112,18 @@ const taskGroups = computed(() => {
 })
 const recordsVisible = computed(() => recordsOpen.value || taskGroups.value[2]!.items.some(entry =>
   noteFor.value === entry.task.id || data.taskSaveState(entry.task.id) === 'saving' || data.taskSaveState(entry.task.id) === 'error'))
+const visibleGroups = computed(() => taskView.value === 'list'
+  ? taskGroups.value.filter(item => item.id !== 'progress' || item.items.length)
+  : [
+    ...TASK_QUADRANTS.map(quadrant => ({ id: quadrant.priority, label: `${quadrant.label} · ${quadrant.priority}`,
+      items: [...taskGroups.value[0]!.items, ...taskGroups.value[1]!.items].filter(entry => current(entry).pr === quadrant.priority) })),
+    taskGroups.value[2]!,
+  ])
+async function changePriority(entry: DayTask, priority: Priority) {
+  if (past.value || data.taskSaveState(entry.task.id) === 'saving') return
+  data.patchTask(entry.task.id, { pr: priority })
+  await data.flushTask(entry.task.id)
+}
 function openTaskMenu(event: MouseEvent, entry: DayTask) {
   taskMenu.value?.openAt(event, `任务：${shown(entry).title}`, [
     { id: 'detail', label: '查看任务详情', run: () => ui.openTask(entry.task.id) },
@@ -216,7 +243,14 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
       <p v-else-if="past || future" class="day-context">{{ past ? '回看这一天留下的真实记录，任务与固定事项只读，可以补记。' : '先安排，实际进展留给当天。' }}</p>
       <TodoDayLayout>
         <template #default>
-          <WaoCard v-for="group in taskGroups.filter(item => item.id !== 'progress' || item.items.length)" :key="group.id" class="day-task-group" :class="{ 'day-records': group.id === 'records' }" :data-group="group.id">
+          <nav class="day-view-switch" aria-label="当天任务布局">
+            <WaoButton :aria-pressed="taskView === 'list'" variant="ghost" @click="switchView('list')"><i class="ri-list-check-2" aria-hidden="true"></i>清单</WaoButton>
+            <WaoButton :aria-pressed="taskView === 'quadrant'" variant="ghost" @click="switchView('quadrant')"><i class="ri-layout-grid-line" aria-hidden="true"></i>四象限</WaoButton>
+          </nav>
+          <p v-if="viewError" class="task-error" role="status">{{ viewError }} <button type="button" @click="switchView(taskView)">重试记住视图</button></p>
+          <p v-if="past && taskView === 'quadrant'" class="day-context">按任务现有优先级分组，正文与进展仍展示当日快照。</p>
+          <div class="day-task-groups" :class="{ 'day-quadrants': taskView === 'quadrant' }">
+          <WaoCard v-for="group in visibleGroups" :key="group.id" class="day-task-group" :class="{ 'day-records': group.id === 'records' }" :data-group="group.id">
             <header v-if="group.id !== 'records'" class="section-heading">
               <h3>{{ group.label }} <span>{{ group.items.length }} 件</span></h3>
             </header>
@@ -226,7 +260,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
               </button>
             </header>
             <div v-show="group.id !== 'records' || recordsVisible" :id="group.id === 'records' ? recordsId : undefined">
-              <p v-if="!group.items.length" class="day-empty">{{ group.id === 'records' ? '这一天还没有已收尾的任务' : past ? '这一天还没有可靠的任务安排记录' : '这一天还没有安排，写下一件想做的事' }}</p>
+              <p v-if="!group.items.length" class="day-empty">{{ group.id === 'records' ? '这一天还没有已收尾的任务' : taskView === 'quadrant' ? '这个象限没有当天待办' : past ? '这一天还没有可靠的任务安排记录' : '这一天还没有安排，写下一件想做的事' }}</p>
               <article v-for="entry in group.items" :key="entry.task.id" class="day-task" :class="{ 'task-finished': isTaskFinished(shown(entry)) }">
                 <div class="day-task-main">
                   <div class="task-heading">
@@ -237,7 +271,8 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
                   </div>
                   <div class="task-meta">
                     <span v-if="data.projectById(entry.task.project)" class="task-project">{{ data.projectById(entry.task.project)?.name }}</span>
-                    <span v-if="!past" class="task-priority">{{ entry.task.pr }}</span>
+                    <select v-if="!past && taskView === 'quadrant'" class="task-priority-select" :aria-label="`调整象限：${shown(entry).title}`" :value="current(entry).pr" :disabled="data.taskSaveState(entry.task.id) === 'saving'" @change="changePriority(entry, ($event.target as HTMLSelectElement).value as Priority)"><option v-for="quadrant in TASK_QUADRANTS" :key="quadrant.priority" :value="quadrant.priority">{{ quadrant.priority }} · {{ quadrant.label }}</option></select>
+                    <span v-else-if="!past" class="task-priority">{{ current(entry).pr }}</span>
                     <TaskSchedulePopover v-if="!past" :key="`${identity()}:${entry.task.id}`" :task="current(entry)" :day="date" @saved="refresh()" />
                     <span v-else class="past-schedule">当日安排：{{ entry.snapshot.startAt ? entry.snapshot.startAt.slice(11, 16) : entry.snapshot.schedulePeriod === 'MORNING' ? '早晨' : entry.snapshot.schedulePeriod === 'AFTERNOON' ? '下午' : entry.snapshot.schedulePeriod === 'EVENING' ? '晚上' : entry.snapshot.start ? '不定时' : '未排期' }}</span>
                     <span v-if="!entry.planned" class="task-trace">当天留下了进展，未安排在这一天</span>
@@ -246,6 +281,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
                   <TodoTaskChecklist v-if="shown(entry).subs?.length" v-show="checklistOpen(entry.task.id)" :task-id="entry.task.id" :subs="shown(entry).subs" :order="!past && !future ? taskOrder.state(`subs:${entry.task.id}`).ids : undefined" :read-only="past || future || !data.taskById(entry.task.id)" :saving="data.taskSaveState(entry.task.id) === 'saving' || data.movingSubtasks" @toggle="toggleSubtask(entry, $event)" />
                   <button v-if="shown(entry).subs?.length && !checklistOpen(entry.task.id)" class="checklist-reopen" type="button" @click="expanded[entry.task.id] = true">展开 {{ shown(entry).subs.length }} 项子事项</button>
                   <p v-if="data.taskSaveState(entry.task.id) === 'saving'" role="status">正在保存任务…</p>
+                  <SaveHint v-if="taskView === 'quadrant' && data.taskSaveState(entry.task.id) === 'saved'" :saved-at="data.taskSavedAt(entry.task.id)" />
                   <p v-if="data.taskSaveState(entry.task.id) === 'error'" class="task-error" role="alert">{{ data.taskSaveError(entry.task.id) }} <button type="button" @click="ui.openTask(entry.task.id)">处理保存</button></p>
                   <div v-if="noteFor === entry.task.id" class="task-note-composer"><WaoButton variant="ghost" @click="noteFor = null">收起记录</WaoButton><NoteComposer :key="`${identity()}:${date}:${entry.task.id}`" compact autofocus :draft-scope="`day:${identity()}:${date}:${entry.task.id}`" :submit-note="request => submitNote(request, entry.task.id)" /></div>
                   <p v-if="entry.events.length" class="latest-progress">最近进展：{{ entry.events[entry.events.length - 1]!.summary }}</p>
@@ -255,7 +291,10 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
                   </details>
                 </div>
               </article>
-              <template v-if="group.id === 'planned'">
+            </div>
+          </WaoCard>
+          </div>
+              <div class="day-add-task">
                 <form v-if="!past" class="day-create" @submit.prevent="createTask">
                   <input v-model="title" aria-label="当天要做的事" placeholder="＋ 写下当天要做的一件事" :disabled="creating" maxlength="500" />
                   <select v-model="createProject" aria-label="任务所属项目" :disabled="creating" @change="selectionProtected = true"><option value="">选择项目</option><option v-for="project in availableProjects" :key="project.id" :value="project.id">{{ project.name }}</option></select>
@@ -264,9 +303,7 @@ onBeforeUnmount(() => { unsubscribe(); clearTimeout(refreshTimer) })
                 <p v-if="createError" class="task-error" role="alert">{{ createError }}</p>
                 <p v-if="draftError" class="task-error" role="alert">{{ draftError }} <button type="button" @click="protectDraft">重试保护草稿</button></p>
                 <p v-if="taskPreferences.recentError" class="task-error" role="status">最近使用项目：{{ taskPreferences.recentError }} <button type="button" @click="taskPreferences.retryRecent()">重试同步最近项目</button></p>
-              </template>
-            </div>
-          </WaoCard>
+              </div>
         </template>
         <template #secondary>
           <DailyRoutineSection :date="date" />
@@ -295,6 +332,13 @@ h2 { margin: 0; color: var(--wao-text); font-size: 22px; font-weight: 700; }
 button, input, select { font: inherit; }
 .day-heading input { width: 154px; min-width: 0; min-height: var(--wao-control-height); padding: 7px 10px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); }
 .day-task-group { padding: 0; border: 0; border-radius: 0; }
+.day-view-switch { display: flex; gap: var(--wao-space-1); }
+.day-view-switch button[aria-pressed='true'] { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.day-task-groups { display: grid; min-width: 0; gap: var(--wao-space-2); }
+.day-quadrants { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.day-quadrants .day-task-group:not(.day-records) { padding: 0 var(--wao-space-2) var(--wao-space-1); border: 1px solid var(--wao-line); border-radius: var(--wao-radius-card); }
+.day-quadrants .day-records { grid-column: 1 / -1; }
+.task-priority-select { min-width: 0; max-width: 100%; min-height: 32px; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 12px; padding: 4px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wao-space-1); min-height: 52px; }
 h3 { margin: 0; font-size: 14px; font-weight: 650; color: var(--wao-text); }
 .section-heading span { margin-left: var(--wao-space-1); color: var(--wao-text-3); font-size: 12px; font-weight: 400; }
@@ -340,6 +384,7 @@ button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 button:disabled { opacity: .55; cursor: default; }
 @container todo-day (max-width: 600px) {
+  .day-quadrants { grid-template-columns: minmax(0, 1fr); }
   h2 { font-size: 21px; }
   .day-heading nav { width: 100%; }
   .day-heading input { flex: 1; }
