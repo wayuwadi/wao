@@ -1,5 +1,7 @@
 # WAO 工作区 MCP
 
+2026-10-14：[Codex 聊天链接](markdown-codex-thread-links-2026-10-14.md)沿用现有文档 Markdown 读写与知识库范围校验，公共服务仅在富文本 `link.href` 中新增合法聊天地址白名单。不增加工具、schema 字段或旧令牌权限。
+
 2026-10-14：项目成员管理仅通过浏览器会话开放给负责人，工作区工具 `update_project` 继续使用原字段白名单，不开放 members / expectedMembers，旧令牌不获得共享管理权限。
 
 2026-10-07：Pet 上传与分享通过独立 CLI Bearer HTTP 入口实现，MCP 工具目录不增加二进制上传或设备签发能力；新连接可显式选择 Pet 操作，旧令牌不扩权。详见 [Pet CLI 上传与分享](pet-cli-upload-and-sharing.md)。

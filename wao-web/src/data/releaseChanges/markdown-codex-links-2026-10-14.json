@@ -1,0 +1,16 @@
+{
+  "id": "markdown-codex-links-2026-10-14",
+  "publishedOn": "2026-10-14",
+  "sourceSubject": "fix(knowledge): 知识库与小记支持 Codex 聊天链接",
+  "title": "从知识库和小记打开 Codex 聊天",
+  "intro": "把讨论入口保存在正文或表格中，下次点击链接即可继续查看。",
+  "highlights": [{
+    "featureId": "notes",
+    "eyebrow": "正文链接",
+    "title": "保留可点击的 Codex 聊天地址",
+    "summary": "正文链接、链接编辑和富文本复制粘贴支持 Codex 聊天入口。",
+    "points": ["知识库与小记保存后重新打开仍保留聊天链接", "只有点击才交给浏览器打开本机 Codex"],
+    "steps": ["复制 Codex 聊天的深度链接。", "在知识库或小记中选中文字，通过链接工具填入 codex://threads/ 后接聊天 ID 的完整地址。", "保存后点击聊天链接，按浏览器提示打开本机 Codex。"],
+    "action": { "target": "notes-compose", "label": "打开小记" }
+  }]
+}
