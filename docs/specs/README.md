@@ -5,6 +5,7 @@
 - [capability-center](capability-center.md)
 - [markdown-codex-thread-links-2026-10-14](markdown-codex-thread-links-2026-10-14.md)
 - [notes-direct-polish-2026-10-11](notes-direct-polish-2026-10-11.md)
+- [小记默认作者与记录区宽度](notes-default-authors-and-writing-width-2026-10-11.md)
 - [notes-thinking-image-2026-10-13](notes-thinking-image-2026-10-13.md)
 - [project-list-direct-rename-2026-10-14](project-list-direct-rename-2026-10-14.md)
 - [project-list-empty-groups-2026-10-14](project-list-empty-groups-2026-10-14.md)
