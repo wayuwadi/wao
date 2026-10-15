@@ -30,6 +30,17 @@ class ArticleImageServiceTest {
     private final AiRunService aiRuns = mock(AiRunService.class);
     private final ImageService images = mock(ImageService.class);
     private final ArticleImageService service = new ArticleImageService(assistant, runs, aiRuns, images);
+    @Test void thinkingImageIsPrivateFromStorageAndDoesNotReuseOverviewName() throws Exception {
+        var privacy=mock(NoteAssetPrivacyService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service,"noteAssets",privacy);
+        when(privacy.thinkingImageRun("ac1")).thenReturn(true);
+        when(runs.selectById("ac1")).thenReturn(run());
+        var runner=new AiRunnerNodeEntity();runner.setId("linux2");when(aiRuns.authenticateRunner("token")).thenReturn(runner);
+        when(images.store(any(),eq("image/png"),eq("思考图.png"),eq("小记思考图 · ac1"))).thenReturn(new ImageItemDto("thought","思考图.png","1KB","今天","小记","/api/images/thought/raw","",""));
+        when(runs.attachArticleImage("ac1","linux2","claim","/api/images/thought/raw")).thenReturn(1);
+        assertThat(service.upload("token","ac1","claim",new MockMultipartFile("image","valid.png","image/png",png()))).isEqualTo("/api/images/thought/raw");
+        verify(privacy).privateUpload("images","thought");
+    }
 
     @Test
     void startsForCurrentMemberAndHidesAnotherMembersJob() {

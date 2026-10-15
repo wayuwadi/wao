@@ -20,7 +20,8 @@ public class NoteAiSettingsService {
     private LocalCodexModelService models;
     public static final String DEFAULTS = "note-ai-defaults-v1";
     public static final List<String> KEYS = List.of(DEFAULTS, "note-ai-model-v1", "note-title-prompt-v1",
-            "article-overview-image-prompt-v1", "text-polish.prompt.v1", "note-polish-prompt-v1");
+            "article-overview-image-prompt-v1", "text-polish.prompt.v1", "note-polish-prompt-v1",
+            "note-thinking-prompt-v1", "note-thinking-image-prompt-v1");
     private final JdbcTemplate db;
     private final MemberPreferenceMapper preferences;
     private final ObjectMapper json;
@@ -29,18 +30,20 @@ public class NoteAiSettingsService {
     }
     public record Settings(boolean title, boolean polish, boolean image, String executionMode, int maxConcurrent,
             String model, String reasoningEffort, String titlePrompt, String imagePrompt, String polishPrompt,
-            long titleEpoch, long imageEpoch, long polishEpoch, String polishModel, String polishReasoningEffort, Boolean thinking, long thinkingEpoch) {
+            long titleEpoch, long imageEpoch, long polishEpoch, String polishModel, String polishReasoningEffort, Boolean thinking, long thinkingEpoch,
+            String thinkingPrompt, String thinkingImagePrompt) {
+        public Settings(boolean title,boolean polish,boolean image,String executionMode,int maxConcurrent,String model,String reasoningEffort,String titlePrompt,String imagePrompt,String polishPrompt,long titleEpoch,long imageEpoch,long polishEpoch,String polishModel,String polishReasoningEffort,Boolean thinking,long thinkingEpoch) { this(title,polish,image,executionMode,maxConcurrent,model,reasoningEffort,titlePrompt,imagePrompt,polishPrompt,titleEpoch,imageEpoch,polishEpoch,polishModel,polishReasoningEffort,thinking,thinkingEpoch,null,null); }
         public Settings(boolean title,boolean polish,boolean image,String executionMode,int maxConcurrent,String model,String reasoningEffort,String titlePrompt,String imagePrompt,String polishPrompt,long titleEpoch,long imageEpoch,long polishEpoch,String polishModel,String polishReasoningEffort) { this(title,polish,image,executionMode,maxConcurrent,model,reasoningEffort,titlePrompt,imagePrompt,polishPrompt,titleEpoch,imageEpoch,polishEpoch,polishModel,polishReasoningEffort,null,0); }
         public boolean enabled(String stage) { return switch(stage) { case "title" -> title; case "image" -> image; case "tags" -> true; case "thinking" -> thinking==null||thinking; default -> polish; }; }
         public long epoch(String stage) { return switch(stage) { case "title" -> titleEpoch; case "image" -> imageEpoch; case "tags" -> 0; case "thinking" -> thinkingEpoch; default -> polishEpoch; }; }
     }
-    public record PromptDefaults(String titlePrompt, String polishPrompt, String imagePrompt) { }
+    public record PromptDefaults(String titlePrompt, String polishPrompt, String imagePrompt, String thinkingPrompt, String thinkingImagePrompt) { }
     public record View(Settings settings, String version, boolean configured, String availability,
             PromptDefaults defaultPrompts) {
         public View(Settings settings, String version, boolean configured, String availability) {
             this(settings, version, configured, availability, new PromptDefaults(
                     TextPolishJobService.DEFAULT_NOTE_TITLE_PROMPT, TextPolishService.DEFAULT_PROMPT,
-                    NoteAiManagedService.DEFAULT_IMAGE_PROMPT));
+                    NoteAiManagedService.DEFAULT_IMAGE_PROMPT, NoteThinkingImageService.PROMPT, NoteThinkingImageService.IMAGE_PROMPT));
         }
     }
     public record Save(Settings settings, String expectedVersion) { }
@@ -68,7 +71,8 @@ public class NoteAiSettingsService {
             text(values.get("note-title-prompt-v1")),text(values.get("article-overview-image-prompt-v1")),
             text(canonical == null || canonical.isBlank() ? values.get("note-polish-prompt-v1") : canonical),
             node.path("titleEpoch").asLong(),node.path("imageEpoch").asLong(),node.path("polishEpoch").asLong(),
-            polishModel(node.path("polishModel").asText(null)), polishEffort(node.path("polishReasoningEffort").asText(null)), node.path("thinking").asBoolean(true),node.path("thinkingEpoch").asLong());
+            polishModel(node.path("polishModel").asText(null)), polishEffort(node.path("polishReasoningEffort").asText(null)), node.path("thinking").asBoolean(true),node.path("thinkingEpoch").asLong(),
+            text(values.get("note-thinking-prompt-v1")),text(values.get("note-thinking-image-prompt-v1")));
         return new View(s,hash(write(values)), raw != null && !raw.isBlank(), "沿用服务主机已获准 AI 配置；实际任务失败会保留原因");
     }
     /** 锁定成员以保护多设备设置与工作流并发占用。 */
@@ -92,7 +96,7 @@ public class NoteAiSettingsService {
             polishModel = models.validate(polishModel);
             polishEffort = models.validateEffort(polishModel, polishEffort);
         }
-        for (String value : List.of(text(next.model()),text(next.titlePrompt()),text(next.imagePrompt()),text(next.polishPrompt())))
+        for (String value : List.of(text(next.model()),text(next.titlePrompt()),text(next.imagePrompt()),text(next.polishPrompt()),text(next.thinkingPrompt()),text(next.thinkingImagePrompt())))
             if (value.length()>4000) throw new BadRequestException("设置内容最多 4000 字符");
         ObjectNode defaults;
         try { String raw=preferences.find(member,DEFAULTS); defaults=raw==null||raw.isBlank()?json.createObjectNode():(ObjectNode)json.readTree(raw); }
@@ -107,6 +111,8 @@ public class NoteAiSettingsService {
         preferences.upsert(member,"note-title-prompt-v1",text(next.titlePrompt()));
         preferences.upsert(member,"article-overview-image-prompt-v1",text(next.imagePrompt()));
         preferences.upsert(member,"text-polish.prompt.v1",text(next.polishPrompt()));
+        if(next.thinkingPrompt()!=null) preferences.upsert(member,"note-thinking-prompt-v1",next.thinkingPrompt());
+        if(next.thinkingImagePrompt()!=null) preferences.upsert(member,"note-thinking-image-prompt-v1",next.thinkingImagePrompt());
         return get(member);
     }
     /** 老偏好入口也递增关闭代次，并以同一成员锁串行化。 */

@@ -19,6 +19,8 @@ const view = () => ({
     titlePrompt: '服务端默认标题',
     polishPrompt: '服务端默认正文',
     imagePrompt: '服务端默认配图',
+    thinkingPrompt: '服务端默认洞察',
+    thinkingImagePrompt: '服务端默认思考图样式',
   },
   settings: {
     title: false,
@@ -31,6 +33,8 @@ const view = () => ({
     titlePrompt: '',
     polishPrompt: '',
     imagePrompt: '',
+    thinkingPrompt: '',
+    thinkingImagePrompt: '',
     titleEpoch: 1,
     imageEpoch: 1,
     polishEpoch: 0,
@@ -46,6 +50,20 @@ describe('小记 AI 设置原子保存与草稿', () => {
   function button(wrapper: ReturnType<typeof mount>, label: string) {
     return wrapper.findAll('button').find((item) => item.text().replace(/待保存$/, '') === label)!
   }
+  it('第二张图分别展示真实默认洞察和样式，草稿跨分项与重开保留，保存不改总览图', async () => {
+    let wrapper=form();await flushPromises()
+    await button(wrapper,'思考洞察').trigger('click')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('服务端默认洞察')
+    await button(wrapper,'基于默认修改').trigger('click');await wrapper.get('textarea').setValue('聚焦关键取舍')
+    await button(wrapper,'思考图样式').trigger('click')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('服务端默认思考图样式')
+    await button(wrapper,'基于默认修改').trigger('click');await wrapper.get('textarea').setValue('深色手绘关系图')
+    wrapper.unmount();wrapper=form();await flushPromises()
+    await button(wrapper,'思考图样式').trigger('click')
+    expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('深色手绘关系图')
+    await button(wrapper,'保存小记 AI 设置').trigger('click');await flushPromises()
+    expect(saveNoteAiSettings).toHaveBeenCalledWith(expect.objectContaining({thinkingPrompt:'聚焦关键取舍',thinkingImagePrompt:'深色手绘关系图',imagePrompt:''}),'v1')
+  })
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()

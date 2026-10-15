@@ -3,6 +3,8 @@ import type { NoteAiDefaults } from '@/stores/preferences'
 export interface NoteAiSettings extends NoteAiDefaults {
   thinking?: boolean
   thinkingEpoch?: number
+  thinkingPrompt?: string
+  thinkingImagePrompt?: string
   model: string
   reasoningEffort: string
   polishModel?: string
@@ -19,7 +21,7 @@ export interface NoteAiSettingsView {
   version: string
   configured: boolean
   availability: string
-  defaultPrompts?: Pick<NoteAiSettings, 'titlePrompt' | 'polishPrompt' | 'imagePrompt'>
+  defaultPrompts?: Pick<NoteAiSettings, 'titlePrompt' | 'polishPrompt' | 'imagePrompt' | 'thinkingPrompt' | 'thinkingImagePrompt'>
 }
 export async function fetchNoteAiSettings() {
   return (await http.get<ApiResponse<NoteAiSettingsView>>('/api/docs/notes/ai-settings')).data.data

@@ -34,6 +34,8 @@ import org.springframework.stereotype.Service;
 /** 小记、算卦和业务助手共用的本机执行出口，不依赖 Runner。默认关闭，按主机显式启用。 */
 @Service
 public class LocalNoteAiService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private NoteAssetPrivacyService noteAssets;
     @Autowired(required = false)
     private ObjectProvider<TianrenVisualService> tianrenVisuals;
     @Autowired(required = false)
@@ -247,7 +249,9 @@ public class LocalNoteAiService {
             String response = companion==null?result.text():companion.getObject().validateChatRun(run,result.text());
             String storedImageId = null;
             if (result.png() != null) {
-                var stored = images.store(result.png(), "image/png", "文章总览图.png", "文章总览图 · " + run.getId());
+                boolean thinking=noteAssets!=null&&noteAssets.thinkingImageRun(run.getId());
+                var stored = images.store(result.png(), "image/png", thinking?"思考图.png":"文章总览图.png", (thinking?"小记思考图 · ":"文章总览图 · ") + run.getId());
+                if(thinking)noteAssets.privateUpload("images",stored.id());
                 storedImageId = stored.id(); response = stored.url();
             }
             // 只有明确返回 CAS 失败才清理孤儿；数据库提交结果未知时不能删除可能已被引用的图片。

@@ -78,6 +78,16 @@ class AiAssistantServiceTest {
         org.mockito.Mockito.verifyNoInteractions(accountService);
     }
 
+    @Test void thinkingImageUsesItsOwnVisualPromptAndGoalWithoutOverviewInstructions() {
+        var local=mock(LocalNoteAiService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service,"localNotes",local);
+        when(local.capabilityId()).thenReturn("local-notes-test");
+        String id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        assertThat(service.enqueueThinkingImageJob("member","观察：散步后清醒。推测：可能与休息有关。","深色手绘关系图","gpt-6-astra",id)).isEqualTo(id);
+        var captured=ArgumentCaptor.forClass(AiAssistantRunEntity.class);verify(mapper).insertReadOnlyQueued(captured.capture());
+        assertThat(captured.getValue().getPromptText()).contains("第二张推进思考","深色手绘关系图","观察：散步后清醒","只调用内置 image_gen","推测和待验证").doesNotContain("文章开头使用的真实 PNG 总览图");
+        assertThat(captured.getValue().getWebSearchEnabled()).isFalse();
+    }
     @Test void twentyImageRequestsForSameMemberAreAcceptedAndRetryReusesItsOwnJob() {
         var local = mock(LocalNoteAiService.class);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "localNotes", local);

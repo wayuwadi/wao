@@ -22,6 +22,8 @@ import org.springframework.web.multipart.MultipartFile;
 /** 把登录成员的文章交给本地 Codex ImageGen，并将生成的 PNG 收进既有图床。 */
 @Service
 public class ArticleImageService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private NoteAssetPrivacyService noteAssets;
     private static final byte[] PNG_SIGNATURE = {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10};
 
     private final AiAssistantService assistant;
@@ -52,6 +54,11 @@ public class ArticleImageService {
                 ? assistant.enqueueNoteWorkflowArticleImageJob(memberId, request.articleText(), request.visualPrompt(), request.model(), request.requestId())
                 : assistant.enqueueArticleImageJob(memberId, request.articleText(), request.visualPrompt(), request.model(), request.requestId(), request.identitySelection());
         return get(memberId, id);
+    }
+
+    /** 思考图使用独立入队身份及视觉偏好，不采用总览图或人物形象配置。 */
+    ArticleImageJobDto startThinkingWorkflow(String memberId, ArticleImageRequest request) {
+        return get(memberId, assistant.enqueueThinkingImageJob(memberId,request.articleText(),request.visualPrompt(),request.model(),request.requestId()));
     }
 
     /** 只向任务发起人返回状态和已入图床的图片地址。 */
@@ -92,7 +99,9 @@ public class ArticleImageService {
         try { bytes = file.getBytes(); }
         catch (IOException exception) { throw new BadRequestException("读取生成图片失败，请重试"); }
         validatePng(bytes);
-        ImageItemDto image = images.store(bytes, "image/png", "文章总览图.png", "文章总览图 · " + runId);
+        boolean thinking=noteAssets!=null&&noteAssets.thinkingImageRun(runId);
+        ImageItemDto image = images.store(bytes, "image/png", thinking?"思考图.png":"文章总览图.png", (thinking?"小记思考图 · ":"文章总览图 · ") + runId);
+        if(thinking)noteAssets.privateUpload("images",image.id());
         if (runs.attachArticleImage(runId, runnerId, claimToken, image.url()) != 1) {
             images.delete(image.id());
             throw new BadRequestException("图片任务已经由其他节点处理，请重试");

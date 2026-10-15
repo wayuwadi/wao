@@ -270,6 +270,8 @@ class NoteAiManagedServiceTest {
   values.put(NoteAiSettingsService.DEFAULTS,"bad-json");assertThatThrownBy(()->settings.get("m")).isInstanceOf(BadRequestException.class);
  }
  @Test void thinkingIsAutomaticIndependentIdempotentAndNeverWritesBodyOrCover() throws Exception {
+  db.execute("CREATE TABLE IF NOT EXISTS text_polish_job(id VARCHAR(32))");
+  db.execute("ALTER TABLE text_polish_job ADD COLUMN IF NOT EXISTS ai_run_id VARCHAR(32)");
   values.put(NoteAiSettingsService.DEFAULTS,"{\"title\":false,\"image\":false,\"polish\":false,\"thinking\":true}");
   var current=doc(NoteThinkingImageServiceTest.SOURCE,"手动标题",1);when(knowledge.getDoc("n")).thenReturn(current);
   var companion=companion("AUTO");
@@ -278,7 +280,8 @@ class NoteAiManagedServiceTest {
   var plan=new ObjectMapper().readTree(NoteThinkingImageServiceTest.PLAN);
   var result=new NoteThinkingImageService.Result("/api/images/thought/raw","真实思考提纲","核心发现",List.of("具体追问"),1,plan,true);
   when(thinking.prepare(eq(NoteThinkingImageServiceTest.PLAN),eq(NoteThinkingImageServiceTest.SOURCE),eq(1))).thenReturn(new NoteThinkingImageService.Result("",result.outline(),result.title(),result.questions(),1,plan,true));
-  when(thinking.generate(eq(NoteThinkingImageServiceTest.PLAN),eq(NoteThinkingImageServiceTest.SOURCE),eq(1),anyString())).thenReturn(result);
+  values.put("note-thinking-prompt-v1","只挖掘方法迁移");values.put("note-thinking-image-prompt-v1","深色关系图");
+  when(image.startThinkingWorkflow(eq("m"),any())).thenAnswer(c->new ArticleImageJobDto(c.getArgument(1,ArticleImageRequest.class).requestId(),"QUEUED","等待",null));
   doAnswer(c->{Map<String,Object> a=c.getArgument(0);db.update("INSERT INTO note_ai_artifact(id,doc_id,member_id,stage,result_text,application) VALUES(?,?,'m','thinking',?,'PENDING')",a.get("id"),a.get("doc_id"),c.getArgument(1));return null;}).when(companion).capture(anyMap(),anyString());
   doAnswer(c->{db.update("UPDATE note_ai_artifact SET result_text=? WHERE id=?",settings.write(c.getArgument(1)),c.getArgument(0));return null;}).when(companion).updateThinkingResult(anyString(),any());
   doAnswer(c->{db.update("UPDATE note_ai_artifact SET application='APPLIED' WHERE id=?",c.getArgument(0,String.class));return null;}).when(companion).applied(anyString(),any());
@@ -286,16 +289,28 @@ class NoteAiManagedServiceTest {
   tx.executeWithoutResult(t->managed.saved(current,"m","手动标题",null));
   assertThat(db.queryForObject("SELECT COUNT(*) FROM note_ai_stage_attempt WHERE stage='thinking'",Integer.class)).isEqualTo(1);
   tx.executeWithoutResult(t->managed.advance("n"));
-  verify(text).submit(eq("m"),anyString(),eq("NOTE_THINKING"),eq(NoteThinkingImageServiceTest.SOURCE),isNull(),isNull(),isNull());
+  verify(text).submit(eq("m"),anyString(),eq("NOTE_THINKING"),eq(NoteThinkingImageServiceTest.SOURCE),isNull(),eq("只挖掘方法迁移"),isNull());
+  values.put("note-thinking-image-prompt-v1","其他设备后来改成了漫画");
   when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成",NoteThinkingImageServiceTest.PLAN,null,null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  String drawing=db.queryForObject("SELECT job_id FROM note_ai_stage_attempt WHERE stage='thinking'",String.class);
+  assertThat(managed.status("n","m").thinking()).isEqualTo("RUNNING");
+  var request=org.mockito.ArgumentCaptor.forClass(ArticleImageRequest.class);verify(image).startThinkingWorkflow(eq("m"),request.capture());
+  assertThat(request.getValue().visualPrompt()).isEqualTo("深色关系图");
+  assertThat(request.getValue().articleText()).isEqualTo("真实思考提纲");
+  when(image.get("m",drawing)).thenReturn(new ArticleImageJobDto(drawing,"RUNNING","绘制中",null));
+  tx.executeWithoutResult(t->managed.advance("n"));
+  assertThat(managed.mayStart(drawing)).isTrue();
+  when(image.get("m",drawing)).thenReturn(new ArticleImageJobDto(drawing,"SUCCEEDED","完成","/api/images/thought/raw"));
   tx.executeWithoutResult(t->managed.advance("n"));
   assertThat(managed.status("n","m").thinking()).isEqualTo("DONE");
   assertThat(managed.status("n","m").thinkingImage().current()).isTrue();
   assertThat(managed.status("n","m").thinkingImage().sourceRev()).isEqualTo(1);
-  verify(knowledge,never()).updateDerivedNote(any(),any());verifyNoInteractions(image);
+  verify(knowledge,never()).updateDerivedNote(any(),any());verify(thinking,never()).generate(any(),any(),anyInt(),any());
+  verify(image,never()).startNoteWorkflow(any(),any());
   tx.executeWithoutResult(t->managed.manual("m","n","thinking",1,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
   tx.executeWithoutResult(t->managed.advance("n"));
-  verify(text).submit(eq("m"),eq("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),eq("NOTE_THINKING"),eq(NoteThinkingImageServiceTest.SOURCE),isNull(),isNull(),contains("核心发现"));
+  verify(text).submit(eq("m"),eq("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),eq("NOTE_THINKING"),eq(NoteThinkingImageServiceTest.SOURCE),isNull(),eq("只挖掘方法迁移"),contains("核心发现"));
   tx.executeWithoutResult(t->managed.saved(doc("原文改了","手动标题",2),"m","手动标题",null));
   assertThat(managed.status("n","m").thinkingImage().current()).isFalse();
  }
@@ -316,7 +331,7 @@ class NoteAiManagedServiceTest {
   var companion=companion("AUTO");var thinking=mock(NoteThinkingImageService.class);org.springframework.test.util.ReflectionTestUtils.setField(managed,"thinkingImages",thinking);
   var result=new NoteThinkingImageService.Result("","经过校验的可复制提纲","一个发现",List.of("具体问题"),1,null,true);
   when(thinking.prepare(anyString(),anyString(),eq(1))).thenReturn(result);
-  when(thinking.generate(anyString(),anyString(),eq(1),anyString())).thenThrow(new BadRequestException("排版失败，提纲保留"));
+  when(image.startThinkingWorkflow(any(),any())).thenThrow(new BadRequestException("绘图失败，提纲保留"));
   tx.executeWithoutResult(t->managed.saved(current,"m","标题",null));tx.executeWithoutResult(t->managed.advance("n"));
   when(text.get("m","job")).thenReturn(new TextPolishJobService.Result("job","SUCCEEDED","完成",NoteThinkingImageServiceTest.PLAN,null,null));
   tx.executeWithoutResult(t->managed.advance("n"));
